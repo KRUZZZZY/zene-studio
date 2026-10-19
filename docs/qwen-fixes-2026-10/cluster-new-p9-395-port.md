@@ -99,6 +99,8 @@ test log is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-395-
 | **Family run after the header change, 9/9 passed** | the same `ctest -R` | **0** | `test-7.log` |
 | The GUI command-list tests that carry the `safestart` extras | `cmake --build build --target CommandFormTest CommandPaletteTest` | 0 | `build-10.log` |
 | Command palette / form run, 2/2 passed | `ctest -R '^(CommandFormTest\|CommandPaletteTest)$' --output-on-failure` | 0 | `test-8.log` |
+| Final rebuild of every touched target (committed state) | `cmake --build build --target zene SafeStartTest SafeStartLoadPathTest PluginQuarantineMenuTest ControlRegistryTest ControlResultSchemaTest ControlSurfaceReferenceTest CrashReporterTest CommandFormTest CommandPaletteTest` | 0 | `build-11.log` |
+| **Final run of the whole family, 11/11 passed** | `ctest -R '^(SafeStartTest\|SafeStartLoadPathTest\|PluginQuarantineMenuTest\|ControlCommandsSnapshot\|ControlRegistryTest\|ControlResultSchemaTest\|ControlSurfaceReferenceTest\|CrashReporterTest\|ControlNegativeControl\|CommandFormTest\|CommandPaletteTest)$' --output-on-failure` | **0** | `test-9.log` |
 | **Gates (all 8 rows)** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `gate-1.log` |
 | Complexity ratchet, raw | `bash tests/complexity-gate.sh --check` | 1 (red on the train: 6 pre-existing items, none of them in a file I changed) | `gate-complexity.log` |
 | File-length ratchet, raw | `bash tests/file-length-gate.sh --check` | 1 (red on the train: 14 pre-existing items, none of them in a file I changed) | `gate-file-length.log` |
@@ -114,7 +116,8 @@ Totals: 18 passed, 2 failed, 0 skipped, 0 blacklisted
 The affected family holds **9 ctest tests** (SafeStartTest, SafeStartLoadPathTest,
 PluginQuarantineMenuTest, ControlCommandsSnapshot, ControlRegistryTest, ControlResultSchemaTest,
 ControlSurfaceReferenceTest, CrashReporterTest, ControlNegativeControl); the final run passed 9/9
-with no skips. The two GUI command-list tests that carry the `safestart` extras passed 2/2.
+with no skips. The two GUI command-list tests that carry the `safestart` extras passed 2/2, and the
+last run of all eleven together (`test-9.log`) passed 11/11.
 
 ## Files in this change
 
