@@ -39,6 +39,10 @@ using AudioEndpointEntryTestHook = void (*)(void*);
 std::atomic<AudioEndpointEntryTestHook> audioEndpointEntryTestHook{nullptr};
 std::atomic<void*> audioEndpointEntryTestContext{nullptr};
 
+using ModuleLoadTestHook = void (*)(void*);
+std::atomic<ModuleLoadTestHook> moduleLoadTestHook{nullptr};
+std::atomic<void*> moduleLoadTestContext{nullptr};
+
 } // namespace
 #endif
 
@@ -185,6 +189,20 @@ void WasmWorker::notifyAudioEndpointEnteredForTest()
 		hook(audioEndpointEntryTestContext.load(std::memory_order_relaxed));
 	}
 }
+
+void WasmWorker::setModuleLoadTestHook(ModuleLoadTestHook hook, void* context)
+{
+	moduleLoadTestContext.store(context, std::memory_order_relaxed);
+	moduleLoadTestHook.store(hook, std::memory_order_release);
+}
+
+void WasmWorker::notifyModuleLoadForTest()
+{
+	if (const auto hook = moduleLoadTestHook.load(std::memory_order_acquire))
+	{
+		hook(moduleLoadTestContext.load(std::memory_order_relaxed));
+	}
+}
 #endif
 
 bool WasmWorker::hasPendingWork() const
@@ -246,6 +264,11 @@ bool WasmWorker::drainOnLane()
 
 bool WasmWorker::loadModuleOnLane()
 {
+#ifdef LMMS_TESTING
+	// The seam fires before the module is compiled, so a test can hold the
+	// load and look at the worker while it is still Loading.
+	notifyModuleLoadForTest();
+#endif
 	m_sandbox = std::make_unique<WasmSandbox>();
 	std::string error;
 	if (!m_sandbox->loadModuleFile(m_modulePath, error))

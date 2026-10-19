@@ -77,6 +77,9 @@ public:
 	void setModuleParam(std::uint32_t index, float value) { m_worker.setParam(index, value); }
 
 	//! Frames of latency the loaded module reports (0 when it reports none).
+	//! A replacement that is still loading has no module yet: the effect keeps
+	//! compensating the latency the replaced module declared (see
+	//! latencyFrames()), which this accessor does not report.
 	int moduleLatency() const { return m_worker.declaredLatency(); }
 
 	//! Total frames this effect adds to the signal path: the module's declared
@@ -94,7 +97,10 @@ protected:
 private:
 	//! Control thread: stop the worker, start it on \p path and record the path
 	//! when it is hosted; \p error receives the worker's reason otherwise.
-	bool startWorker(const QString& path, QString* error);
+	//! \p preservedLatency is the latency the module being replaced declared:
+	//! it is kept while the replacement loads, so the compensation does not
+	//! vanish in the middle of a reload.
+	bool startWorker(const QString& path, QString* error, int preservedLatency);
 	//! Control thread: the worker stopped under the engine's model-change guard.
 	void stopWorker();
 	//! Control thread: the owning chain's latency cache refreshed (PDC).
@@ -113,6 +119,14 @@ private:
 	WasmEffectControls* m_controls = nullptr;
 	wasm::WasmWorker m_worker;
 	bool m_loaded = false;
+
+	//! The latency the module being replaced declared, kept until the
+	//! replacement resolves. The worker forgets the declared latency when it
+	//! is stopped, so without this the effect would report no latency - and
+	//! pass the audio through - while the new module compiles, while the
+	//! chain's PDC cache still held the old figure. Control thread writes,
+	//! audio thread reads.
+	std::atomic<int> m_preservedLatency{0};
 
 	//! Largest module latency the dry path compensates for.
 	static constexpr std::uint32_t maxCompensatedLatency = wasm::WasmWorker::maxBlockFrames;
