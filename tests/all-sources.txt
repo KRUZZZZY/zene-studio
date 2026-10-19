@@ -2443,10 +2443,10 @@ tests/src/core/AudioBusTest.cpp
 tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioEngineTeardownTest.cpp
-tests/src/core/AudioOssWriteTest.cpp
 tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioJackPortRestartTest.cpp
+tests/src/core/AudioOssWriteTest.cpp
 tests/src/core/AudioPortsModelTest.cpp
 tests/src/core/AudioPortsTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
