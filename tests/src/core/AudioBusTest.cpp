@@ -29,7 +29,9 @@
 #include <array>
 #include <bitset>
 #include <cmath>
+#include <iostream>
 #include <limits>
+#include <sstream>
 
 #include "AudioPortsModel.h"
 #include "Engine.h"
@@ -283,6 +285,24 @@ private slots:
 		t.setSample(0, 0, 1.f);
 		t.bus().silenceChannels(*model);
 		QCOMPARE(t.sample(0, 0), 1.f);
+	}
+
+	//! sanitize() is part of audio processing and must not write to the console,
+	//! including when debug logging is enabled.
+	void SanitizeDoesNotWriteToConsole()
+	{
+		TestBus t{8};
+		auto model = std::make_unique<TestAudioPortsModel>(0, 2, false);
+		model->out().setPin(1, 1, false);
+		t.setSample(0, 0, std::numeric_limits<float>::quiet_NaN());
+
+		std::ostringstream output;
+		auto* previousOutput = std::cout.rdbuf(output.rdbuf());
+		t.bus().sanitize(*model);
+		std::cout.rdbuf(previousOutput);
+
+		QVERIFY(output.str().empty());
+		QCOMPARE(t.sample(0, 0), 0.f);
 	}
 
 	//! sanitize() with only one pin enabled only touches that track channel;
