@@ -50,6 +50,7 @@
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "SampleFrame.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
@@ -159,6 +160,40 @@ private slots:
 		QCOMPARE(target, static_cast<std::uint64_t>(std::llround(bars * barFrames)));  // whole bars: the stop was quantised
 		checkQuantisedStart(status);
 		landAndCompare(status, target, QStringLiteral("stopped.wav"));
+	}
+
+	//! Save, then undo, then redo a landed take, through the journal the way the GUI's Ctrl+Z does (MainWindow::undo):
+	//! each of the undo and the redo changes the song, so each leaves it marked modified. The step's own callbacks do
+	//! not call setModified(); ProjectJournal::undo()/redo() do. control.undo is not used here: it refuses after a save
+	//! (project.save is a non-reversible transaction, so the agent path has nothing to undo past it).
+	void undoAndRedoOfALandedTakeMarkTheSongModified()
+	{
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("bars"), 1}}).ok);
+		QVERIFY(recordUntilDone());
+		const QString path = m_dir.filePath(QStringLiteral("saved-then-undone.wav"));
+		const ControlResult landed = run(QStringLiteral("session.record_slot_land"), {{QStringLiteral("file"), path}});
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QVERIFY(Engine::getSong()->isModified());
+
+		const QString first = m_dir.filePath(QStringLiteral("landed.mmp"));
+		QVERIFY2(run(QStringLiteral("project.save"), {{QStringLiteral("path"), first}}).ok, "the save failed");
+		QVERIFY(!Engine::getSong()->isModified());
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr && journal->canUndo());
+		journal->undo();
+		QVERIFY(Engine::getSong()->sessionModel().slot(m_column, 0).isEmpty());
+		QVERIFY2(Engine::getSong()->isModified(), "the undo changed the cell but left the song marked clean");
+
+		const QString second = m_dir.filePath(QStringLiteral("undone.mmp"));
+		QVERIFY2(run(QStringLiteral("project.save"), {{QStringLiteral("path"), second}}).ok, "the second save failed");
+		QVERIFY(!Engine::getSong()->isModified());
+
+		QVERIFY(journal->canRedo());
+		journal->redo();
+		QCOMPARE(Engine::getSong()->sessionModel().slot(m_column, 0).audioSource(), path);
+		QVERIFY2(Engine::getSong()->isModified(), "the redo changed the cell but left the song marked clean");
 	}
 
 	void theSurfaceRefusesWhatItCannotRecord()
