@@ -510,6 +510,20 @@ private slots:
 		oneNote();
 		Song* song = Engine::getSong();
 		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+		// A failed QCOMPARE returns from this function before its last lines, and a loop left on or a count left at
+		// the 32-bit limit would fail the tests that run after it: the guard puts both back on every return path.
+		struct RestoreLoop
+		{
+			Song* song;
+			Timeline& timeline;
+			std::uint64_t wraps;
+			~RestoreLoop()
+			{
+				song->stop();
+				timeline.setLoopEnabled(false);
+				song->setLoopWrapsForTest(wraps);
+			}
+		} restore{song, timeline, song->loopWraps()};
 		timeline.setLoopPoints(TimePos(0), TimePos(48));
 		timeline.setLoopEnabled(true);
 		song->setPlayPos(0, Song::PlayMode::Song);
@@ -521,8 +535,6 @@ private slots:
 		for (int period = 0; period < 2000 && song->loopWraps() == limit; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 		QCOMPARE(static_cast<std::uint64_t>(song->loopWraps()), limit + 1);
 		QCOMPARE(MidiPlayback::instance().pass(), 1);
-		song->stop();
-		timeline.setLoopEnabled(false);
 	}
 
 	void anArticulationPlaysItsKeyswitchFirst()

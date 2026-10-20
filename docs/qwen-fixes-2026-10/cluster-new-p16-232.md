@@ -147,3 +147,45 @@ section above). The eight gate commands the script runs all exit 0 except the tw
 expects: `complexity` (no item in a changed file) and `file-length` (`NotePlaybackTest.cpp`, already over 500 lines
 on the base). The gates were therefore run directly, not through the script; the script itself was not re-run to
 a PASS.
+
+## Round 2 — review REWORK (cleanup on early return)
+
+The review (`qa/reviews/new-p16-232.r1.md`) found that when the regression failed without the fix, its `QCOMPARE`
+returned before the cleanup at the end of the test. The loop stayed enabled and two later tests
+(`aLoopedClipPlaysItsStartAgain`, `chaseSoundsANotePlaybackStartsInside`) failed in the RED run.
+
+**Change (test only).** `tests/src/core/NotePlaybackTest.cpp:508` `aLoopWrapCountPassesTheThirtyTwoBitLimit` now
+declares a local RAII guard `RestoreLoop` (line 515; constructed at line 526). Its destructor, which runs on every
+return path, calls `song->stop()`, `timeline.setLoopEnabled(false)`, and `setLoopWrapsForTest(<count captured at
+construction>)`. The end-of-test cleanup lines were removed because the guard does them. The fix is unchanged.
+
+**Evidence (all logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-232.r2/logs/`).**
+
+| Step | Command | EXIT | Log |
+| --- | --- | --- | --- |
+| Build test with guard, fix in place | `cmake --build build --target NotePlaybackTest -j4` | 0 | `build-1.log` |
+| GREEN, NotePlaybackTest | `ctest -R '^NotePlaybackTest$' --output-on-failure` (in `build/tests`) | 8 | `test-green-1.log` — 23 passed, 1 failed (`monstroNoteStartDoesNotAllocate`, environmental) |
+| GREEN, regression alone | `./NotePlaybackTest aLoopWrapCountPassesTheThirtyTwoBitLimit` | 0 | `test-green-1-single.log` — PASS |
+| Save fix diff | `git diff ed8e1b478 527d072b4 -- include/Song.h include/MidiPlayback.h src/core/MidiPlayback.cpp src/core/MarkerActions.cpp > fix.patch` | 0 (91 lines) | `fix.patch` |
+| Proof: revert fix | `git apply -R fix.patch` | 0 | — |
+| Rebuild reverted | `cmake --build build --target zene NotePlaybackTest -j4` | 0 | `build-2.log` |
+| RED, reverted code, with guard | `ctest -R '^NotePlaybackTest$' --output-on-failure` | 8 | `test-red-1.log` — `aLoopWrapCountPassesTheThirtyTwoBitLimit` fails at `NotePlaybackTest.cpp:536`: Actual 0, Expected 4294967296. The two clip tests now PASS (the cleanup bug is gone). Totals 22 passed, 2 failed (the regression and the environmental monstro case). |
+| Re-apply fix | `git apply fix.patch` | 0 | — |
+| Rebuild fixed | `cmake --build build --target zene NotePlaybackTest UnmuteChaseTest SessionPerformTest ArticulationPlaybackTest -j4` | 0 | `build-3.log` |
+| GREEN, affected family | `ctest -R '^(NotePlaybackTest\|UnmuteChaseTest\|SessionPerformTest\|ArticulationPlaybackTest)$' --output-on-failure` | 8 | `test-green-2.log` — 4 of 4 ctest entries ran; 3 pass; NotePlaybackTest 23 passed, 1 failed (monstro only) |
+| GREEN, regression alone | `./NotePlaybackTest aLoopWrapCountPassesTheThirtyTwoBitLimit` | 0 | `test-green-2-single.log` — PASS |
+
+Gates re-run on the round-2 tree (same eight commands as before; logs `gate-*.log`):
+fork-sources 0, all-sources-reproduce 0, no-upstream-regression 0, check-namespace 0, no-tautology 0,
+doc-figures 0; complexity 1 (6 REGRESSION lines, none in a file this change touches); file-length 1 (one line in a
+changed file: `new file over 500 lines: tests/src/core/NotePlaybackTest.cpp (653)`).
+
+**Correction to the file-length note above.** Earlier I quoted `wc -l` for the base commit (742). The gate counts
+code lines. The review measured the base `NotePlaybackTest.cpp` at 624 code lines, so the item was already over 500
+before this change; it is not new. The gate's count rose from 643 to 653 because of the guard.
+
+**Monstro.** The reviewer also observed `monstroNoteStartDoesNotAllocate` fail in the reverted run. It fails
+with and without the fix, so it is independent of this change. Its plugin is not built in this worktree.
+
+Line numbers in the round-1 sections (for example the regression at `NotePlaybackTest.cpp:506-527` and the RED
+assertion at `:522`) are from round 1; the round-2 numbers above are current.
