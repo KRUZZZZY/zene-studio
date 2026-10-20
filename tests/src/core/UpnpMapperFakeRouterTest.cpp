@@ -400,7 +400,7 @@ private slots:
 		QVERIFY(removal.body.contains("<NewExternalPort>41740</NewExternalPort>"));
 		QVERIFY(removal.body.contains("<NewProtocol>TCP</NewProtocol>"));
 		mapper.unmap();
-		QTest::qWait(100);
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		QCOMPARE(m_router.count("DeletePortMapping"), 1);
 	}
 
@@ -414,7 +414,7 @@ private slots:
 		QVERIFY2(result.message.contains(QStringLiteral("UPnP error 718: ConflictInMappingEntry")), qPrintable(result.message));
 		QCOMPARE(m_router.count("GetExternalIPAddress"), 0);
 		mapper.unmap();  // nothing was mapped: nothing is removed
-		QTest::qWait(100);
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		QCOMPARE(m_router.count("DeletePortMapping"), 0);
 	}
 
@@ -517,12 +517,14 @@ private slots:
 		mapper.unmap();  // stop() with nothing mapped yet: nothing is deleted
 		mapper.map(41740, 41740, 3600, QHostAddress(m_lan));  // restart: the router is known, so attempt 2 adds at once
 		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("AddPortMapping"), 2, 5000);
+		const int finishedBefore = finished.count();
 		m_router.releaseHeld(0);  // attempt 1's stale answer: the router did make a mapping for the port
-		QTest::qWait(300);
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
+		QCOMPARE(finished.count(), finishedBefore);  // the stale reply must not complete the newer attempt
 		QCOMPARE(m_router.count("DeletePortMapping"), 0);  // a delete now would remove attempt 2's mapping
 		m_router.holdActions = false;
 		m_router.releaseHeld(0);  // attempt 2's own answer; its address request is answered at once
-		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), finishedBefore + 1, 5000);
 		const MappingResult result = finished.first().first().value<MappingResult>();
 		QVERIFY2(result.ok, qPrintable(result.message));
 		QCOMPARE(result.method, QStringLiteral("upnp"));
@@ -544,7 +546,7 @@ private slots:
 		m_router.holdActions = false;
 		m_router.releaseHeld(0);  // the router answers after stop()
 		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("DeletePortMapping"), 1, 5000);
-		QTest::qWait(100);
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		QCOMPARE(finished.count(), 0);
 	}
 

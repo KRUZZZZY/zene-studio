@@ -110,6 +110,7 @@ void PmpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lifetime
 void PmpMapper::unmap()
 {
 	const bool mapped = m_result.ok;
+	const Step step = m_step;
 	const bool pending = m_step != Step::Idle;
 	const bool pcpMapping = m_result.method == QLatin1String("pcp");
 	m_timer->stop();
@@ -123,9 +124,16 @@ void PmpMapper::unmap()
 	}
 	else if (pending)
 	{
-		// Either protocol may have reached the router before stop; expire both best-effort.
-		m_socket->writeDatagram(encodePcpMapRequest(m_nonce, m_client, m_internal, 0, 0), m_gateway, m_serverPort);
-		m_socket->writeDatagram(encodePmpMapRequest(m_internal, 0, 0), m_gateway, m_serverPort);
+		// Only expire a mapping that this attempt could actually have created. A PCP attempt may have
+		// reached the router; a NAT-PMP mapping is only possible once the map request itself is out.
+		if (step == Step::Pcp)
+		{
+			m_socket->writeDatagram(encodePcpMapRequest(m_nonce, m_client, m_internal, 0, 0), m_gateway, m_serverPort);
+		}
+		else if (step == Step::PmpMap)
+		{
+			m_socket->writeDatagram(encodePmpMapRequest(m_internal, 0, 0), m_gateway, m_serverPort);
+		}
 	}
 	m_result = MappingResult();
 }

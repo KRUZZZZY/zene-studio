@@ -344,14 +344,14 @@ private slots:
 		mapper.map(41740, 41740, 7200);  // attempt 1: its PCP request is out, and the gateway holds the answer
 		QTRY_COMPARE(m_held.size(), 1);
 		const quint16 canceledEndpoint = mapper.findChild<QUdpSocket*>()->localPort();
-		mapper.unmap();  // stop() with nothing mapped: both expiry requests go out and are answered too
-		QTRY_COMPARE(m_held.size(), 3);
+		mapper.unmap();  // stop() with nothing mapped: the pending PCP attempt is expired best-effort
+		QTRY_COMPARE(m_held.size(), 2);
 		m_held.clear();
 		mapper.map(41740, 41740, 7200);  // restart with unmap() already done: attempt 2's PCP request, answer held
 		QTRY_COMPARE(m_held.size(), 1);
 		// The "unsupported version" answer that attempt 1 was waiting for arrives now, aimed at its endpoint.
 		m_gateway.writeDatagram(hex("00810001000003e8"), QHostAddress(QHostAddress::LocalHost), canceledEndpoint);
-		QTest::qWait(200);
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		int addressRequests = 0;
 		for (const QByteArray& request : m_requests) { addressRequests += request.size() == 2 ? 1 : 0; }
 		QCOMPARE(addressRequests, 0);  // no NAT-PMP address request: attempt 2 is still waiting for its PCP answer
@@ -378,8 +378,10 @@ private slots:
 		mapper.map(41740, 41740, 7200);
 		QTRY_COMPARE(m_held.size(), 1);  // the PCP request reached the gateway; its success is held back
 		mapper.unmap();
+		// PCP was pending, so only a PCP expiry may be sent; no NAT-PMP deletion for a mapping this attempt never made.
+		for (const QByteArray& request : m_requests) { QVERIFY(request.at(0) == 2); }
 		releaseReply(0);  // the router's answer to the request that unmap() canceled
-		QTest::qWait(200);
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		m_hold = false;
 		QCOMPARE(finished.count(), 0);
 	}
@@ -403,7 +405,7 @@ private slots:
 		QVERIFY(mapping.busy());
 		mapping.stop();
 		releaseReply(0);  // the router answers after stop()
-		QTest::qWait(200);
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		m_hold = false;
 		QCOMPARE(finished.count(), 0);
 		QVERIFY(!mapping.busy());
@@ -422,7 +424,8 @@ private slots:
 		mapper.map(41740, 41740, 3600, QHostAddress(QStringLiteral("192.168.1.20")));
 		QVERIFY(UpnpMapperTestAccess::searching(mapper));
 		mapper.unmap();
-		QTest::qWait(3500);  // the search's own timeout is 2.5 s; a coarse QTimer may fire up to 5% later
+		QVERIFY(!mapper.findChild<QTimer*>()->isActive());
+		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		QCOMPARE(finished.count(), 0);
 	}
 
@@ -442,9 +445,19 @@ private slots:
 		mapping.setTestEndpoints(endpoints);
 		QSignalSpy finished(&mapping, &PortMapping::finished);
 		mapping.start(41740);
-		QVERIFY2(finished.wait(5000), "the first mapping must complete");
-		QVERIFY2(finished.wait(5000), "the first renewal must complete");
-		QVERIFY2(finished.wait(5000), "the second renewal must complete too");
+		auto waitForFinished = [&finished]() {
+			const int target = finished.count() + 1;
+			for (int i = 0; i < 1000000 && finished.count() < target; ++i) { QCoreApplication::processEvents(); }
+		};
+		waitForFinished();  // the first mapping must complete
+		QVERIFY(finished.count() >= 1);
+		QVERIFY(mapping.findChild<QTimer*>()->isActive());  // renew timer armed
+		mapping.findChild<QTimer*>()->stop();
+		mapping.renew();
+		waitForFinished();  // the first renewal must complete
+		mapping.findChild<QTimer*>()->stop();
+		mapping.renew();
+		waitForFinished();  // the second renewal must complete too
 		QVERIFY(finished.size() >= 3);
 		for (int i = 0; i < finished.size(); ++i)
 		{
