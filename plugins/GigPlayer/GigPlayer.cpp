@@ -78,7 +78,43 @@ Plugin::Descriptor PLUGIN_EXPORT gigplayer_plugin_descriptor =
 	nullptr,
 } ;
 
+
+
+/*! \brief Mix one resampled block of a sample into the instrument's output buffer.
+ *
+ * \p out is the buffer of the whole instrument for this period: EVERY sample of
+ * EVERY note is mixed into it, so this only ADDS to what is already there.
+ *
+ * A resampler that made no progress - it consumed no input and produced no
+ * output - contributes nothing: the rest of the block is silenced.
+ *
+ * \returns the number of frames mixed into \p out.
+ *
+ * This is exported so that the regression test
+ * (tests/src/plugins/PluginPortsMigrationTest.cpp) can drive the no-progress
+ * path with an injected resampler result. The render path in
+ * GigInstrument::playImpl() calls exactly this function.
+ */
+f_cnt_t PLUGIN_EXPORT gigplayerMixResampledBlock(
+		SampleFrame* out, f_cnt_t outOffset, f_cnt_t outFrames,
+		const SampleFrame* mix, f_cnt_t inputFramesUsed, f_cnt_t outputFramesGenerated)
+{
+	if (inputFramesUsed == 0 && outputFramesGenerated == 0)
+	{
+		std::fill_n(&out[outOffset], outFrames - outOffset, SampleFrame{});
+		return 0;
+	}
+
+	const auto framesToMix = std::min(outputFramesGenerated, outFrames - outOffset);
+	for (f_cnt_t i = 0; i < framesToMix; ++i)
+	{
+		out[outOffset + i] += mix[i];
+	}
+
+	return framesToMix;
 }
+
+} // extern "C"
 
 GigInstrument::GigInstrument(InstrumentTrack* _instrument_track)
 	: Instrument(_instrument_track, &gigplayer_plugin_descriptor, nullptr, Flag::IsSingleStreamed | Flag::IsNotBendable)
@@ -460,16 +496,15 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 					{&sample.m_sourceBufferView.data()[0][0], 2, sample.m_sourceBufferView.size()},
 					{&sample.m_mixBufferView.data()[0][0], 2, sample.m_mixBufferView.size()});
 
+				// The output buffer is shared by every sample of every note, so
+				// mixing only adds to it. A resampler that made no progress
+				// contributes nothing and leaves the rest of the block alone.
+				const auto framesToMix = gigplayerMixResampledBlock(out.data(), framesMixed, frames,
+						sample.m_mixBufferView.data(), inputFramesUsed, outputFramesGenerated);
+
 				if (inputFramesUsed == 0 && outputFramesGenerated == 0)
 				{
-					std::fill_n(&out[framesMixed], frames - framesMixed, SampleFrame{});
 					break;
-				}
-
-				const auto framesToMix = std::min(outputFramesGenerated, frames - framesMixed);
-				for (auto i = f_cnt_t{0}; i < framesToMix; ++i)
-				{
-					out[framesMixed + i] += sample.m_mixBufferView[i];
 				}
 
 				sample.m_sourceBufferView = sample.m_sourceBufferView.subspan(inputFramesUsed);
