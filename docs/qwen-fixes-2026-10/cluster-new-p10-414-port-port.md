@@ -157,7 +157,24 @@ cached count and once per pool construction. No audio-thread function was modifi
 control command was added.
 
 **Registration.** The two inherited product files are declared with a reason in
-`tests/upstream-modifications.txt` (the last two lines); `tests/src/core/ThreadPoolTest.cpp` is
-fork-NEW and already listed in `tests/fork-sources.txt:2476` and registered as a CTest target in
-`tests/CMakeLists.txt:663`, so no new file had to be registered. `feature_check.py` exits 0
-(`logs/gate-feature.log`).
+`tests/upstream-modifications.txt` (beside the other ThreadPool declarations, after the
+new-p10-413-port entries); `tests/src/core/ThreadPoolTest.cpp` is fork-NEW and already listed in
+`tests/fork-sources.txt:2476` and registered as a CTest target in `tests/CMakeLists.txt:663`, so no
+new file had to be registered. `feature_check.py` exits 0 (`logs/gate-feature.log`).
+
+## Port check against the newest line
+
+This job is a port, so the change was checked against the line the train failed on. The four changed
+files were applied to a `050/m0-train-9` extract:
+
+| Command | Exit | Result |
+|---|---:|---|
+| `git diff HEAD~1 -- include/ThreadPool.h src/core/ThreadPool.cpp tests/src/core/ThreadPoolTest.cpp tests/upstream-modifications.txt > .../logs/port-patch-vs-train9.diff` | 0 | The port's patch. |
+| `rm -rf /tmp/zene-t9 && mkdir -p /tmp/zene-t9 && git archive 050/m0-train-9 \| tar -x -C /tmp/zene-t9` | 0 | The newest line's tree. |
+| `cd /tmp/zene-t9 && git apply --check --verbose .../logs/port-patch-vs-train9.diff` | 0 | All four files apply with **no conflict**: `include/ThreadPool.h` and `src/core/ThreadPool.cpp` unchanged there, the three `tests/src/core/ThreadPoolTest.cpp` hunks apply with offsets, and the ledger hunk applies at line 2613. |
+
+Two things were done for that: the regression does not depend on the slot order (the newest line's
+`enqueues*` slots build the global singleton before the accepted branch's regression asserted on it),
+and the two ledger lines sit beside the other ThreadPool declarations instead of at the end of the
+file — the tail of `tests/upstream-modifications.txt` differs between the lines, so an append there
+does not apply.
