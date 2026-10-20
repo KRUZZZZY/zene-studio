@@ -193,6 +193,25 @@ ControlResult noReporter(const QString& command)
 			"documented no-op (include/CrashReporter.h)").arg(command));
 }
 
+/*! The reporter's `offered` sentinel: a REGULAR FILE the reporter wrote itself.
+ *
+ *  writeSmallFile() opens that sentinel with O_NOFOLLOW
+ *  (src/core/CrashReporter.cpp:170-184), so the reporter never writes THROUGH
+ *  a symlink planted at the name - and it never creates one either. A symlink
+ *  there is therefore not a marker the reporter wrote: it is something else
+ *  occupying the name, and the write cannot happen.
+ *
+ *  QFileInfo::isFile() alone is not enough: it FOLLOWS symlinks and answers
+ *  true for a symlink to a regular file, which would let a path the reporter
+ *  refused to write be reported as an acknowledgement. A marker is a regular
+ *  file that is not a symlink.
+ */
+bool isOfferedMarker(const QString& path)
+{
+	const QFileInfo info(path);
+	return info.isFile() && !info.isSymbolicLink();
+}
+
 /*! crash.list_reports - the reporter's state, from the module's own public
  *  predicates. Read-only, and it answers in every configuration: an instance
  *  with no reporter reports no directory and no report rather than refusing,
@@ -227,8 +246,12 @@ ControlResult handleListReports()
 	// report exists and has not been offered yet" (CrashReporter.cpp:
 	// hasPendingReport), which is exactly what the offer dialog is gated on.
 	result.insert(QStringLiteral("pending"), crashreporter::hasPendingReport());
+	// `offered` is the same state crash.acknowledge_report decides by, read
+	// the same way: the sentinel is a regular file the reporter wrote, so a
+	// directory - or a symlink, which the reporter refuses to write through -
+	// at that path is not an acknowledgement.
 	result.insert(QStringLiteral("offered"),
-		paths.valid && QFileInfo::exists(wire(paths.offered)));
+		paths.valid && isOfferedMarker(wire(paths.offered)));
 	// A marker left behind means the previous run did not exit cleanly; the
 	// module removes it on the clean path (endSession()).
 	const bool markerLeft = crashreporter::sessionMarkerExists();
@@ -291,7 +314,13 @@ ControlResult handleAcknowledgeReport()
 	// for it. Refuse before the write, the way crash.enable refuses "already
 	// armed" and a second discard is not_found - crash.list_reports' `offered`
 	// is where the state this leaves behind is read.
-	if (QFileInfo::exists(wire(paths.offered)))
+	//
+	// The sentinel is a regular FILE the reporter wrote: it opens the name with
+	// O_NOFOLLOW, so a symlink planted there is never written through, and a
+	// directory is not a file at all. A path that merely EXISTS is therefore
+	// not an acknowledgement - so refusing here as "ALREADY acknowledged" would
+	// be a claim about a state that never happened.
+	if (isOfferedMarker(wire(paths.offered)))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1: the report at %2 is ALREADY acknowledged (its `offered` sentinel %3 "
@@ -303,14 +332,20 @@ ControlResult handleAcknowledgeReport()
 	crashreporter::acknowledgePendingReport();
 
 	// The engine operation returns void, so the effect is READ BACK rather than
-	// assumed: a sentinel that could not be written (a read-only working
-	// directory) must not be reported as an acknowledge that happened.
-	const bool offered = QFileInfo::exists(wire(paths.offered));
-	if (!offered)
+	// assumed: the sentinel must be a regular file the reporter wrote, and the
+	// report must no longer be pending. A path that merely exists is not
+	// enough - a directory occupying the sentinel's name blocks the write, a
+	// symlink there is refused by the reporter (O_NOFOLLOW), and a write that
+	// failed (a read-only working directory) leaves no sentinel at all.
+	const bool markerWritten = isOfferedMarker(wire(paths.offered));
+	const bool pending = crashreporter::hasPendingReport();
+	if (!markerWritten || pending)
 	{
 		return ControlResult::failure(ControlErrorKind::Busy,
-			QStringLiteral("%1: the report at %2 exists but its `offered` sentinel %3 could not be written, "
-				"so the report will be offered again on the next start. Nothing else was changed")
+			QStringLiteral("%1: the report at %2 was NOT acknowledged: its `offered` sentinel %3 is not a "
+				"regular file the reporter wrote (it writes that sentinel with O_NOFOLLOW, so a "
+				"directory, a symlink or anything else at that path blocks the write) or the report is "
+				"still pending. Nothing else was changed and the report file is untouched")
 				.arg(AcknowledgeName, wire(paths.report), wire(paths.offered)));
 	}
 
@@ -319,7 +354,7 @@ ControlResult handleAcknowledgeReport()
 	result.insert(QStringLiteral("report_path"), wire(paths.report));
 	result.insert(QStringLiteral("offered_marker_path"), wire(paths.offered));
 	result.insert(QStringLiteral("report"), fileJson(paths.report));
-	result.insert(QStringLiteral("pending"), crashreporter::hasPendingReport());
+	result.insert(QStringLiteral("pending"), pending);
 	result.insert(QStringLiteral("offered"), true);
 	result.insert(QStringLiteral("__transaction"),
 		QJsonObject{{QStringLiteral("before"), before},
