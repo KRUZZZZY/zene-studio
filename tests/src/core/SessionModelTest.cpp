@@ -513,6 +513,42 @@ private slots:
 			static_cast<int>( LaunchQuantisation::Global ) );
 	}
 
+	//! The session-wide setting persists through the native <z:scenes> section
+	//! and had the same recognised-only-four problem: a global EightBars came
+	//! back as Bar. Every grid must survive that save and reload.
+	void everyGlobalLaunchQuantisationSurvivesAReload()
+	{
+		const LaunchQuantisation grids[] = {
+			LaunchQuantisation::None,
+			LaunchQuantisation::Bar,
+			LaunchQuantisation::TwoBars,
+			LaunchQuantisation::FourBars,
+			LaunchQuantisation::Sixteenth,
+			LaunchQuantisation::Eighth,
+			LaunchQuantisation::Quarter,
+			LaunchQuantisation::Half,
+			LaunchQuantisation::EightBars,
+		};
+		for( const LaunchQuantisation grid : grids )
+		{
+			SessionModel source;
+			source.setTrackCount( 1 );
+			source.setSceneCount( 1 );
+			source.setGlobalLaunchQuantisation( grid );
+
+			QDomDocument doc;
+			QDomElement root = doc.createElement( QStringLiteral( "song" ) );
+			doc.appendChild( root );
+			QDomElement section = source.saveScenesSection( doc, root );
+			QVERIFY( !section.isNull() );
+
+			SessionModel reloaded;
+			QVERIFY( reloaded.restoreScenesSection( section ) );
+			QCOMPARE( static_cast<int>( reloaded.globalLaunchQuantisation() ),
+				static_cast<int>( grid ) );
+		}
+	}
+
 	//! Growing and shrinking the grid keeps the slots that remain.
 	void gridResizePreservesSlots()
 	{
