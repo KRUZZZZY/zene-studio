@@ -30,6 +30,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QLocale>
 #include <QMessageBox>
 #include <QSet>
 
@@ -176,12 +177,14 @@ QStringList wordsOf(const QString& text)
 	return text.split(QLatin1Char('_'), Qt::SkipEmptyParts);
 }
 
-//! A whole number in full (a tick, a size - never "1.23457e+06"), else as Qt writes it.
+//! A whole number in full (a tick, a size - never "1.23457e+06"), else the shortest text that reads back as the same
+//! number: a value typed into a form or taken from a default must not change on its way to the command.
 QString numberText(double number)
 {
 	constexpr double MaxExactWhole = 9007199254740992.0;  // 2^53: every whole number below it is exact in a double
 	const bool whole = std::abs(number) < MaxExactWhole && number == std::floor(number);
-	return whole ? QString::number(static_cast<qint64>(number)) : QString::number(number);
+	if (whole) { return QString::number(static_cast<qint64>(number)); }
+	return QString::number(number, 'g', QLocale::FloatingPointShortest);
 }
 
 bool isPrimitiveArray(const QJsonArray& array)
