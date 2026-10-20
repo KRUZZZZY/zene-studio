@@ -106,6 +106,16 @@ bool isRotationId(const QString& id, int* revision)
 bool resolveSlot(const QString& projectPath, const QString& recoveryFile, const QString& id,
 	RevisionSlot* slot, QString* error)
 {
+	// Every family below is derived FROM the project path (`<file>.rev<n>`,
+	// `<file>.bak`, the autosave's identity). With no project file they would
+	// resolve against the working directory, so an unsaved session names no
+	// artefact at all - the refusal the git family gets in listProjectRevisions.
+	if (projectPath.isEmpty())
+	{
+		*error = QStringLiteral("'%1' names no artefact: the session has no project file yet")
+			.arg(id);
+		return false;
+	}
 	int revision = 0;
 	if (isRotationId(id, &revision))
 	{
