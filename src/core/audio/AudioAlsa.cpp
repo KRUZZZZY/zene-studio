@@ -109,15 +109,22 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	if (count > 0)
 	{
 		auto ufds = new pollfd[count];
-		snd_pcm_poll_descriptors( m_handle, ufds, count );
-		for (int i = 0; i < std::max(3, count); ++i)
+		// The retrieval can FAIL: ALSA then fills nothing, and the array
+		// still holds whatever was in the fresh allocation. Reading it would
+		// hand an unrelated descriptor to fcntl(), so a failed retrieval
+		// skips the CLOEXEC setup entirely (cluster new-p15-252).
+		const int descriptorCount = snd_pcm_poll_descriptors( m_handle, ufds, count );
+		if (descriptorCount > 0)
 		{
-			const int fd = ( i >= count ) ? ufds[0].fd+i : ufds[i].fd;
-			int oldflags = fcntl( fd, F_GETFD, 0 );
-			if( oldflags < 0 )
-				continue;
-			oldflags |= FD_CLOEXEC;
-			fcntl( fd, F_SETFD, oldflags );
+			for (int i = 0; i < std::max(3, descriptorCount); ++i)
+			{
+				const int fd = ( i >= descriptorCount ) ? ufds[0].fd+i : ufds[i].fd;
+				int oldflags = fcntl( fd, F_GETFD, 0 );
+				if( oldflags < 0 )
+					continue;
+				oldflags |= FD_CLOEXEC;
+				fcntl( fd, F_SETFD, oldflags );
+			}
 		}
 		delete[] ufds;
 	}
