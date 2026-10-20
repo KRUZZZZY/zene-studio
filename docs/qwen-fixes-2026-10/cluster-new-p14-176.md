@@ -35,7 +35,8 @@ Build environment note: the default ccache temporary directory `/run/user/1000/c
 | Patch used for 4b | `git diff -- src/gui/clips/MidiClipView.cpp > logs/fix.patch` | 0 | `fix.patch` (the product diff; `cmp` matched the diff again before the revert) |
 | Ratchet gates (direct, the same scripts `feature_check.py` runs) | see Self-check below | see below | `gate-4-*.log`, `gate-5-*.log` |
 | `feature_check.py` (logs redirected, see below) | `python3 -I <copy with logs to LOG FOLDER> <worktree>` | 0, **RESULT: PASS** (8 rows) | `feature-check-1.log` |
-| `submit_check.py` | (run before this report was written; see Self-check) | 1 | `submit-check-1.log` |
+| `submit_check.py` (after the fix commit `3a4eecafc`) | `python3 submit_check.py <worktree> new-p14-176` | 1: commits, clean tree, report, tests and registration PASS; **gates FAIL only because the unmodified `feature_check.py` cannot create its log directory** (`PermissionError`, `logs/feature-check-unmodified.log`) | `submit-check-2.log` |
+| Unmodified `feature_check.py` | `python3 feature_check.py <worktree>` | 1 (same `PermissionError`) | `feature-check-unmodified.log` |
 
 Gate outcomes at the final tree:
 
@@ -49,5 +50,7 @@ Gate outcomes at the final tree:
 - **The fix is at the cause and complete.** Yes. The menu's product is widened at the one place it is computed (`MidiClipView.cpp:303`). The clamp, the `std::max(1, …)` guard and the `float` siblings (`:529`, `:599`) are checked above. The paint sibling (`:759`) is fixed too and has no test (see Evidence).
 - **No collateral damage.** The loader limit is unchanged and only applies to loading; the menu and paint change only results that overflowed int before. No new limit or check, so no caller is affected.
 - **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The RED run above shows the defect on this tree.
+
+Submit-check note. The first `submit_check.py` run, before the fix was committed, also flagged the working tree and missing report; both are resolved by the commit and this report. The remaining FAIL is the gate row, which cannot pass in this sandbox because the write-jail blocks the log directory the script creates next to the worktree. The copy run above is the evidence for that row.
 
 Gate-running notes. `tests/` gate scripts were run directly from the worktree. `feature_check.py` and `submit_check.py` write their logs to `<worktree>/../…-feature-check`, which the write-jail refuses (`PermissionError` at `mkdir`, from `feature_check.py` line 71, before any gate ran). I ran a copy of `feature_check.py` (`/tmp/p14-gate/feature_check_logdir.py`) that writes its logs to the LOG FOLDER and reads the existing `gate-baselines` cache. The row logic is unchanged. The unmodified script's own RESULT is therefore unverified here.
