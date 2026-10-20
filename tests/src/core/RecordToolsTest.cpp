@@ -40,6 +40,7 @@
 #include "AutomationTrack.h"
 #include "Clip.h"
 #include "ControlCompSupport.h"
+#include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -596,6 +597,46 @@ private slots:
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
 #else
 		QSKIP("one filesystem under two mount points needs a mount namespace, which this platform has not");
+#endif
+	}
+
+	//! The budget's key is the FILESYSTEM's identity, not the path. Windows names a volume by its
+	//! GUID (QStorageInfo::device()), which one volume keeps under every path it is mounted at: the
+	//! mount point (QStorageInfo::rootPath()) names the MOUNT, not the volume, so it is the fallback
+	//! for a storage info that knows no GUID. POSIX names a filesystem by the device the kernel
+	//! mounts it from (st_dev): the device LABEL is not an identity (every tmpfs mount answers
+	//! "tmpfs"), so two independent filesystems keep two budgets.
+	//! (Regression for review-e39984ffb: the rootPath() key split one volume into two budgets.)
+	void theBudgetKeyIsTheFilesystemIdentity()
+	{
+		const QString volumeId = QStringLiteral("volume-one");
+		const QString firstMount = QStringLiteral("/mnt/first");
+		const QString secondMount = QStringLiteral("/mnt/second");
+		const control::VolumeNaming windows = control::VolumeNaming::VolumeId;
+		// One volume under two mount points: ONE key, so both routes share the pool of free bytes.
+		QCOMPARE(control::filesystemIdentityKey(firstMount, windows, volumeId, firstMount),
+			control::filesystemIdentityKey(secondMount, windows, volumeId, secondMount));
+		// The mount point is the fallback only: it names no volume, so it names neither of these.
+		QVERIFY(control::filesystemIdentityKey(firstMount, windows, QString(), firstMount)
+			!= control::filesystemIdentityKey(firstMount, windows, volumeId, firstMount));
+		QVERIFY(control::filesystemIdentityKey(firstMount, windows, QString(), firstMount)
+			!= control::filesystemIdentityKey(secondMount, windows, QString(), secondMount));
+		// POSIX: the device the kernel mounts the filesystem from is the identity - two paths onto
+		// one filesystem share it, whatever the device label says.
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("a"))));
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("b"))));
+		const control::VolumeNaming posix = control::VolumeNaming::KernelDevice;
+		QCOMPARE(control::filesystemIdentityKey(takes.filePath(QStringLiteral("a")), posix,
+			QStringLiteral("tmpfs"), takes.path()),
+			control::filesystemIdentityKey(takes.filePath(QStringLiteral("b")), posix,
+				QStringLiteral("tmpfs"), takes.path()));
+		// The naming this platform uses for itself.
+#ifdef _WIN32
+		QCOMPARE(control::platformVolumeNaming(), control::VolumeNaming::VolumeId);
+#else
+		QCOMPARE(control::platformVolumeNaming(), control::VolumeNaming::KernelDevice);
 #endif
 	}
 };

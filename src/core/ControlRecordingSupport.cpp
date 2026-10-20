@@ -321,12 +321,14 @@ VolumeNaming platformVolumeNaming()
 QString filesystemIdentityKey(const QString& path, VolumeNaming naming, const QString& deviceId,
 	const QString& mountPoint)
 {
-	// The volume's GUID is not read yet: this round keeps the rule the branch inherited.
-	Q_UNUSED(deviceId);
 	if (naming == VolumeNaming::VolumeId)
 	{
-		// The mount point names the volume.
-		return QStringLiteral("path:") + mountPoint;
+		// The volume's GUID (QStorageInfo::device()) names the volume: one volume mounted at
+		// several paths keeps ONE key, so its routes share one budget of free bytes. The mount
+		// point (QStorageInfo::rootPath()) names the MOUNT, not the volume, so it is the
+		// fallback for a storage info that knows no GUID - and never the identity.
+		return deviceId.isEmpty() ? QStringLiteral("path:") + mountPoint
+			: QStringLiteral("vol:") + deviceId;
 	}
 #ifndef _WIN32
 	// The device the kernel mounts the filesystem from: the device LABEL (every tmpfs mount

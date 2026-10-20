@@ -24,18 +24,6 @@ answer overstated) is what the mount-point key (rootPath) makes: one filesystem 
 bind mount, a second mount point - is two keys for one pool of free bytes, and each half of it
 then claims the whole pool.
 
-Fix: the budget is keyed by the device the kernel mounts the filesystem from (st_dev) -
-src/core/ControlCommandsRecordTools.cpp:155-186, `groupByVolume()`:
-
-- src/core/ControlCommandsRecordTools.cpp:166-171 - `::stat()` of the armed directory gives the
-  filesystem's st_dev; that is the key (`dev:<st_dev>`).
-- src/core/ControlCommandsRecordTools.cpp:172-176 - the fallback for Windows and for a stat that
-  fails: the mount point (`path:<rootPath>`), as before.
-- src/core/ControlCommandsRecordTools.cpp:177-183 - the routes of one filesystem are summed into
-  one budget, and the free bytes are read once for it.
-- src/core/ControlCommandsRecordTools.cpp:210-219 - `remaining()` divides each filesystem's free
-  bytes by the routes writing into it and answers the smallest.
-
 ## Round 3 (Luna's rework: the second identity case was not covered)
 
 Luna was right that the same-filesystem case did not catch the round-one rootPath() regression: Qt
@@ -50,149 +38,168 @@ belongs to the filesystem, so the pool is divided by both routes. The pair is ma
 itself, in a mount namespace of its own (tests/src/core/MountNamespaceTestSupport.h), because a
 host need not have one and a threaded process may not make a user namespace itself.
 
+## Round 5 (Luna's rework: the Windows branch still keyed the budget by the mount point)
+
+Luna's round-4 blocker was exact: on Windows the round-3 implementation used
+`QStorageInfo::rootPath()` as the key, and rootPath() names the MOUNT, not the volume. One volume
+mounted at several paths (a folder mount, a subst drive) therefore got one budget per mount
+point, and each budget claimed the whole pool of free bytes - the answer the finding is about,
+still open on Windows. Qt names a Windows volume by its GUID, which is `QStorageInfo::device()`.
+
+Fix (this round): on Windows the volume's GUID names the volume, and the mount point is only the
+last-resort fallback for a storage info that knows no GUID. POSIX keeps the kernel's device
+(st_dev) as the identity - the device LABEL is not an identity there, so the two rules stay apart.
+
+The rule is now ONE function, asked of the platform instead of being written twice:
+
+- include/ControlRecordingSupport.h:135 - `enum class VolumeNaming { KernelDevice, VolumeId }`:
+  how a platform names the filesystem a place sits on (POSIX: the device the kernel mounts it
+  from; Windows: the volume's GUID).
+- include/ControlRecordingSupport.h:147 / src/core/ControlRecordingSupport.cpp:310 -
+  `platformVolumeNaming()`: which of the two this platform uses.
+- include/ControlRecordingSupport.h:156 / src/core/ControlRecordingSupport.cpp:321 -
+  `filesystemIdentityKey(path, naming, deviceId, mountPoint)`: the key that pools the free bytes.
+  With `VolumeId` it is the GUID when the storage info has one, the mount point otherwise; with
+  `KernelDevice` it is the kernel's st_dev of the path, the mount point otherwise.
+- src/core/ControlCommandsRecordTools.cpp:163 - `groupByVolume()` asks it for every armed place:
+  `filesystemIdentityKey(it.key(), platformVolumeNaming(), QString::fromUtf8(storage.device()),
+  storage.rootPath())`.
+
+The rule moved into the record group's shared helpers first, in a behaviour-preserving commit
+(5d980d33d), so that the Windows rule could be covered by a test that runs on any host: the
+platform's facts are passed in as DATA (the device id, the mount point), and the naming rule is
+chosen by the platform. The fix commit changes only that rule. That split is what makes the RED
+proof below an assertion failure and not a build failure.
+
 ## Tests
 
 tests/src/core/RecordToolsTest.cpp (the area's test file; it covers record.remaining):
 
 - armedRoutesOnOneVolumeShareItsFreeSpace (pre-existing) - two directories on ONE filesystem share
   its free space: the volume lasts free / (2 routes * 3 bytes * rate). Still passes.
-- armedRoutesOnIndependentMountsDoNotShare (new) - two independent mounts that answer the same
+- armedRoutesOnIndependentMountsDoNotShare (round 3) - two independent mounts that answer the same
   device label (/tmp and /dev/shm, both tmpfs) are two budgets: the winning volume's free bytes
-  last ONE route's rate, not half of it. This is the test that fails without the fix.
-- armedRoutesOnSameFilesystemCoalesce (new) - two paths onto ONE filesystem (a directory and a link
-  to it) are one budget: its free bytes last two routes' rate. Qt RESOLVES a link, so a link and
-  its target are ONE mount point: this case is about the per-directory grouping, not about the
-  mount-point key. (The earlier report called it a mount-point case; that was wrong - the
-  mount-point case is the next one.)
-- armedRoutesOnOneFilesystemUnderTwoMountPointsShareItsFreeSpace (new, round 3) - ONE filesystem
-  under TWO mount points: the take directories are on the same filesystem (the kernel's st_dev
-  matches) and on the same pool of free bytes, but Qt gives them different mount points
-  (rootPath differs). The budget belongs to the filesystem, so both routes divide that one pool:
-  the free bytes last two routes' rate. This is the case that fails against the rejected
-  rootPath() implementation.
-- cleanup() (new) - every test starts from a clean recorder, so a failing test cannot refuse the
-  next test's arming.
+  last ONE route's rate, not half of it.
+- armedRoutesOnSameFilesystemCoalesce (round 3) - two paths onto ONE filesystem (a directory and a
+  link to it) are one budget: its free bytes last two routes' rate.
+- armedRoutesOnOneFilesystemUnderTwoMountPointsShareItsFreeSpace (round 3) - ONE filesystem under
+  TWO mount points: the take directories are on the same filesystem (the kernel's st_dev matches)
+  and on the same pool of free bytes, but Qt gives them different mount points (rootPath differs).
+  The budget belongs to the filesystem, so both routes divide that one pool: the free bytes last
+  two routes' rate. This is the case that fails against the rejected rootPath() implementation.
+- theBudgetKeyIsTheFilesystemIdentity (NEW, round 5) - the identity rule itself, on any host:
+  one volume GUID under two mount points gives ONE key (so the two routes share the pool); the
+  mount point is the fallback only (it names no volume, and two mount points stay two keys when
+  there is no GUID); POSIX names the filesystem by the kernel's device (two paths onto one
+  filesystem share the key whatever the device label says); and the naming this platform uses for
+  itself is the one it should be.
+- cleanup() - every test starts from a clean recorder, so a failing test cannot refuse the next
+  test's arming.
 
 The two-mount-points case needs a pair of paths on one filesystem under two mount points, and a
-host need not have one. The test makes it: tests/src/core/MountNamespaceTestSupport.h (new) puts
-the test process in a mount namespace of its own and binds a directory onto another there - the
+host need not have one. The test makes it: tests/src/core/MountNamespaceTestSupport.h puts the
+test process in a mount namespace of its own and binds a directory onto another there - the
 namespace has to be made before the process has any thread (the kernel refuses a user namespace
-for a threaded process), so the test's main() (tests/src/core/RecordToolsTest.cpp:603) makes it
-before the application starts. The bind mount is made in the namespace, so it never reaches the
-host, and the process keeps its own uid (the uid map is written by a child process, which is the
-only identity the kernel still accepts it from).
+for a threaded process), so the test's main() makes it before the application starts. The bind
+mount is made in the namespace, so it never reaches the host.
 
 ## Commands (all from the worktree; logs in the run's log folder)
 
 | what | command | exit |
 |---|---|---|
-| RED (fix reverted) | `git apply -R logs/fix.patch` (fix.patch = `git diff 06c5dcf48 -- src/core/ControlCommandsRecordTools.cpp`) | 0 |
-| RED build | `cmake --build build --target RecordToolsTest zene -j$(nproc)` | 0 |
+| refactor build | `cmake --build build --target zene RecordToolsTest -j$(nproc)` | 0 |
+| refactor test | `ctest -R RecordToolsTest --output-on-failure` (from build/tests) | 0 |
+| fix build | `cmake --build build --target zene RecordToolsTest -j$(nproc)` | 0 |
+| fix test (GREEN) | `ctest -R RecordToolsTest --output-on-failure` | 0 |
+| RED: revert the product change | `git apply -R logs/fix.patch` (fix.patch = `git diff -- src/core/ControlRecordingSupport.cpp`) | 0 |
+| RED build | `cmake --build build --target zene RecordToolsTest -j$(nproc)` | 0 |
 | RED test | `ctest -R RecordToolsTest --output-on-failure` | 8 |
-| GREEN (fix restored) | `git apply logs/fix.patch` | 0 |
-| GREEN build | `cmake --build build --target RecordToolsTest zene -j$(nproc)` | 0 |
+| GREEN: restore the product change | `git apply logs/fix.patch` | 0 |
+| GREEN build | `cmake --build build --target zene RecordToolsTest -j$(nproc)` | 0 |
 | GREEN test | `ctest -R RecordToolsTest --output-on-failure` | 0 |
-| RED (rootPath key) | the rejected round-one key restored in groupByVolume (`storage.rootPath()`), rebuild | 0 |
-| RED (rootPath key) test | `./RecordToolsTest -v1` | 1 |
-| GREEN (st_dev key) test | `./RecordToolsTest -v1` | 0 |
-| family | `ctest -R "RecordTools\|RecordRemaining\|ControlRecordingRoutes\|RecordingInputPath\|ControlSessionRecordLand" --output-on-failure` (6/6 passed) | 0 |
+| GREEN verbose | `./RecordToolsTest -v1` (23 passed, 0 failed, 0 skipped) | 0 |
+| family build | `cmake --build build --target RecordToolsTest RecordToolsNoEngineTest ControlRecordingRoutesTest RecordingInputPathTest ControlSessionRecordLandTest MultiTrackRecorderTest RecordingCrashLossTest RecordingPassTest RecordRemainingTest -j$(nproc)` | 0 |
+| family | `ctest -R "RecordTools\|ControlRecordingRoutes\|RecordingInputPath\|ControlSessionRecordLand\|MultiTrackRecorder\|RecordingCrashLoss\|RecordingPass\|RecordRemaining" --output-on-failure` (9/9 passed) | 0 |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (8/8 PASS) | 0 |
+| ratchet | `bash tests/file-length-gate.sh --check` (14 pre-existing items, none in my files) | 1 |
 | ratchet | `bash tests/complexity-gate.sh --check` (6 pre-existing items, none in my files) | 1 |
-| ratchet | `bash tests/file-length-gate.sh --check` (15 pre-existing items, none in my files) | 1 |
+| whitespace | `git diff --check` | 0 |
 
-RED failure with the fix reverted (the branch base's device-label key,
-logs/test-24-red-ctest.log):
+Logs: build-1-refactor.log, test-1-refactor.log, build-2-fix.log, test-2-fix-green.log,
+build-3-red.log, test-3-red.log, build-4-green.log, test-4-green.log, test-5-green-verbose.log,
+build-5-family.log, build-6-family.log, build-7-remaining.log, test-6-family.log,
+test-7-family.log, gate-feature-check.log, gate-file-length.log, gate-complexity.log, fix.patch.
 
-    FAIL!  : RecordToolsTest::armedRoutesOnIndependentMountsDoNotShare() 'qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected)' returned FALSE. (seconds 61914.4, expected 123829 for one route a mount)
+RED failure with the product change reverted (logs/test-3-red.log):
+
+    FAIL!  : RecordToolsTest::theBudgetKeyIsTheFilesystemIdentity() Compared values are not the same
+       Actual   (control::filesystemIdentityKey(firstMount, windows, volumeId, firstMount))  : "path:/mnt/first"
+       Expected (control::filesystemIdentityKey(secondMount, windows, volumeId, secondMount)): "path:/mnt/second"
+       Loc: [../../tests/src/core/RecordToolsTest.cpp(617)]
+    Totals: 22 passed, 1 failed, 0 skipped, 0 blacklisted, 1138ms
     0% tests passed, 1 tests failed out of 1
 
-The answer was exactly half of the truth: the two mounts were pooled into one budget.
+The reverted rule answered the MOUNT POINT where the volume's GUID belongs: the same volume under
+two mount points got two keys - two budgets - and each claimed the whole pool.
 
-RED failure with the rejected rootPath() key restored (logs/test-22-red-rootpath.log):
-
-    FAIL!  : RecordToolsTest::armedRoutesOnOneFilesystemUnderTwoMountPointsShareItsFreeSpace() 'qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected)' returned FALSE. (seconds 864672, expected 432336 for two routes on one filesystem under two mount points)
-    Totals: 21 passed, 1 failed, 0 skipped, 0 blacklisted, 2147ms
-
-The answer was exactly double the truth: the one filesystem was split into two budgets, and each
-half of it claimed the whole pool.
-
-GREEN: `100% tests passed out of 1` (ctest), and the binary itself reports
-`Totals: 22 passed, 0 failed, 0 skipped, 0 blacklisted` (logs/test-23-green.log).
+GREEN: `100% tests passed out of 1` (ctest, logs/test-4-green.log), and the binary itself reports
+`Totals: 23 passed, 0 failed, 0 skipped, 0 blacklisted` (logs/test-5-green-verbose.log).
 
 ## Self-check
 
 **1. The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
-Yes - `ctest -R RecordToolsTest` exits 8 with the product change reverted
-(logs/test-24-red-ctest.log: armedRoutesOnIndependentMountsDoNotShare, "seconds 61914.4, expected
-123829") and 0 with it (logs/test-25-green-ctest.log). The reverted file is exactly the branch base
-(`git diff 06c5dcf48 -- src/core/ControlCommandsRecordTools.cpp > logs/fix.patch`, then
-`git apply -R logs/fix.patch`); the patch touches the product file only, never the test.
-The second identity case - ONE filesystem under TWO mount points - was proved the same way against
-the rejected round-one key: with `storage.rootPath()` as the key the test exits 1
-(logs/test-22-red-rootpath.log: "seconds 864672, expected 432336", exactly double) and with the
-st_dev key it exits 0 (logs/test-23-green.log, 22 passed, 0 failed, 0 skipped).
+Yes - `ctest -R RecordToolsTest` exits 8 with the product change reverted (logs/test-3-red.log:
+theBudgetKeyIsTheFilesystemIdentity, "Actual: path:/mnt/first, Expected: path:/mnt/second") and 0
+with it (logs/test-4-green.log, logs/test-2-fix-green.log). The reverted patch is the product
+change of the fix commit only: `git diff -- src/core/ControlRecordingSupport.cpp > logs/fix.patch`,
+then `git apply -R logs/fix.patch` - the test file is never in the patch. The fix is split over
+two commits on purpose: 5d980d33d moves the identity rule into shared helpers WITHOUT changing
+behaviour (the Windows rule was still the mount point there), and the fix commit changes only that
+rule. Reverting the fix therefore leaves a compiling tree whose Windows rule is the rejected
+one, so the RED is a failing ASSERTION and not a build failure. The round-3 cases stay green
+throughout: the POSIX rule (st_dev) is untouched by this round.
 
 **2. The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses).**
-The seam is the COMMAND itself: the test drives `record.arm_track` and reads `record.remaining`'s
-own reply, and it compares that reply with the contract written down in the command's own result
-("seconds", "free_bytes", "directory", "armed_routes"). The expectations use only values the
-command reports plus `Engine::audioEngine()->outputSampleRate()` - no clock, no sleep, no timer, no
-thread, no signal. The one live value, the filesystem's free bytes, is read back through the same
-command (`free_bytes`) and cross-checked against `QStorageInfo::bytesAvailable()` of the directory
-the command names with a generous tolerance (1 MiB or 5%), so a file written by another process in
-between cannot flip the result. The host premise is checked, not assumed: the test stats /tmp and
-/dev/shm and skips (QSKIP) when the host has not two independent mounts with one device label
-(it has them here: st_dev 61 and 26, both labelled "tmpfs").
-The two-mount-points case (tests/src/core/RecordToolsTest.cpp:544) injects its own filesystem
-identity instead of hoping for one: the test process enters a mount namespace of its own
-(tests/src/core/MountNamespaceTestSupport.h:86) and binds a directory onto another there
-(:122), so the two take directories are on ONE filesystem (st_dev equal, asserted at the take
-directories) under TWO mount points (QStorageInfo::rootPath() different, asserted there too). The
-pair is deterministic - it is the pair the test makes - and the case skips with a clear reason
-when the host forbids the namespace. No wall-clock anywhere.
+The seam is the identity rule itself, which takes the platform's facts as DATA: the storage
+info's device id (the Windows volume GUID) and its mount point are injected by the test, and the
+naming rule (KernelDevice / VolumeId) is passed in as well, so the Windows rule is exercised on a
+POSIX host with no clock, no sleep, no timer, no thread and no signal. The POSIX half of the test
+reads the kernel's st_dev of two directories the test makes itself (QTemporaryDir), so it is
+deterministic too. No wall-clock anywhere.
 
 **3. The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent.**
 The cause is the identity of the free-space budget, and there is exactly one place that computes
-one: `groupByVolume()` (src/core/ControlCommandsRecordTools.cpp:155), called once, from
-`remaining()` (src/core/ControlCommandsRecordTools.cpp:200). It is a file-local function in an
+one: `filesystemIdentityKey()` (src/core/ControlRecordingSupport.cpp:321), asked for every armed
+place by `groupByVolume()` (src/core/ControlCommandsRecordTools.cpp:163), which is called once,
+from `remaining()` (src/core/ControlCommandsRecordTools.cpp:188). `groupByVolume()` and
+`armedTakePlaces()` (src/core/ControlCommandsRecordTools.cpp:123) are file-local functions in an
 anonymous namespace - no other caller in src/ or tests/ (grep for groupByVolume/armedTakePlaces
-outside the file returns nothing). The upstream of the value, `armedTakePlaces()`
-(src/core/ControlCommandsRecordTools.cpp:126), is unchanged: it still counts the armed routes per
-directory, and its comment now says the directories are pooled by filesystem. The downstream of the
-value, the reply of `record.remaining` (src/core/ControlCommandsRecordTools.cpp:221-222), keeps the
-same four keys with the same meanings - only WHICH filesystem wins can change, never the shape. The
-sibling that reads the answer, the header's readout (src/gui/shell/TransportReadouts.cpp:281
-`recordRemainingLabel`, bound at :412), is untouched and its own test passes (RecordRemainingTest).
-The only other place in src/ that asks Qt about storage is the save dialog's volume list
-(src/gui/modals/FileDialog.cpp:93), which lists mount points for the user and computes no recording
-budget - so no sibling duplicates the budget, and none needs the same key.
+outside the file returns nothing). The upstream of the value, `armedTakePlaces()`, is unchanged: it
+still counts the armed routes per directory, and its comment says the directories are pooled by
+filesystem. The downstream of the value, the reply of `record.remaining`
+(src/core/ControlCommandsRecordTools.cpp:209-210), keeps the same four keys with the same
+meanings - only WHICH filesystem wins can change, never the shape. The sibling that reads the
+answer, the header's readout (src/gui/shell/TransportReadouts.cpp:281 `recordRemainingLabel`,
+bound at :412), is untouched and its own test passes (RecordRemainingTest, in the family run
+above). The only other place in src/ that asks Qt about storage is the save dialog's volume list
+(src/gui/modals/FileDialog.cpp:93), which lists mount points for the user and computes no
+recording budget - so no sibling duplicates the budget, and none needs the same key. The new
+helpers live in the record group's shared unit (ControlRecordingSupport), whose other helpers
+(journal read-back, schemas, route json) are untouched.
 
 **4. No collateral damage: old projects and saved data still load as before, and any limit or check you added does not hit other callers that legitimately exceed it.**
-No saved data, project format, save/load path, header or serialization is touched: the diff is one
-command handler's estimate plus its test and the test's own helper header (git diff 06c5dcf48 --stat:
-6 files - the product file, the test file, the new test helper header, the two source manifests and
-this report). Old projects therefore load exactly as before. No limit and no new check was added: the
-refusal path is unchanged (an unmeasurable filesystem still refuses with "cannot measure the volume
-holding '<dir>'", src/core/ControlCommandsRecordTools.cpp:200-204), and the number of routes per
-budget is still unbounded - a hundred armed routes on one filesystem are still summed into that
-one budget, and a hundred armed routes on a hundred filesystems are still a hundred budgets. The
-only behaviour that changes is the one the finding names: which filesystems share a budget.
-The test's own machinery changes nothing outside the test: the mount namespace is made in the test
-process before it starts any thread (tests/src/core/RecordToolsTest.cpp:603) and the bind mount
-lives in that namespace, so the host's mounts, the host's files and the process's own uid are
-untouched (the uid map keeps the process's own uid, so the files it writes stay its own).
+No saved data, project format, save/load path, header or serialization is touched: the change is
+one identity rule plus its test. Old projects therefore load exactly as before. No limit and no
+new check was added: the refusal path is unchanged (an unmeasurable filesystem still refuses with
+"cannot measure the volume holding '<dir>'", src/core/ControlCommandsRecordTools.cpp:190-191), and
+the number of routes per budget is still unbounded - a hundred armed routes on one filesystem are
+still summed into that one budget, and a hundred armed routes on a hundred filesystems are still a
+hundred budgets. The POSIX behaviour is byte-for-byte the one the branch had (the key is still
+the kernel's st_dev, "dev:<st_dev>", and the mount point is still the fallback when the stat
+fails). The only behaviour that changes is the one the finding names: which volumes share a
+budget, and on Windows only.
 
-**5. If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.**
-Not applicable - the verdict is FIXED. For the record, the finding's first half (grouping by
-directory) was already gone on the branch base: the base keys the budget by a volume
-(src/core/ControlCommandsRecordTools.cpp:156 at 06c5dcf48) and the pre-existing test
-armedRoutesOnOneVolumeShareItsFreeSpace passes there, so the branch base did not overstate the
-answer for two directories on one volume. What the base still got wrong, and what Luna's REWORK
-note names ("Group actual free-space budgets by filesystem identity"), is the key itself: a device
-label is not a filesystem, and the RED run above shows the answer being halved for two independent
-mounts. That is what this fix changes.
-
-**6. Sibling commands in the command files you changed - confirm each is consistent with your fix (or say why it is not affected).**
+**5. Sibling commands in the command files you changed - confirm each is consistent with your fix (or say why it is not affected).**
 The file I changed registers transport.metronome_options, transport.punch_here, record.route_source
 and record.remaining; the sibling set the check asks about is the whole "record" group. Each one,
 and why it is (or is not) affected:
@@ -200,9 +207,9 @@ and why it is (or is not) affected:
 - record.arm_track (src/core/ControlCommandsRecordingRoutes.cpp:366) - arms a route with the file it
   writes to. It only feeds the armed routes' paths into armedTakePlaces(); the budget key does not
   reach it. Unchanged, consistent.
-- record.disarm_all (src/core/ControlCommandsRecordingRoutes.cpp:427, handler at :268) - disarms
-  every route; with no armed route left, remaining() falls back to the recovery directory with one
-  route (src/core/ControlCommandsRecordTools.cpp:196-197), exactly as before. Unchanged, consistent.
+- record.disarm_all (src/core/ControlCommandsRecordingRoutes.cpp:427) - disarms every route; with no
+  armed route left, remaining() falls back to the recovery directory with one route
+  (src/core/ControlCommandsRecordTools.cpp:184-185), exactly as before. Unchanged, consistent.
 - record.disarm_track (src/core/ControlCommandsRecordingRoutes.cpp:398) - disarms one route, so it
   removes one route from a budget; the key does not change. Unchanged, consistent.
 - record.get_state (src/core/ControlCommandsRecordingRoutes.cpp:333) - reports the recorder's state
@@ -226,26 +233,34 @@ and why it is (or is not) affected:
   capture into the project; it moves no take file and measures no volume. Unchanged.
 - record.recovery_restore (src/core/ControlCommandsRecordingRecovery.cpp:201) - resolves a recovery
   offer into a restored take. Unchanged.
-- record.remaining (src/core/ControlCommandsRecordTools.cpp:200) - the fixed command: the budget is
-  now keyed by the filesystem (st_dev). Its reply keeps the same keys, and it stays a read-only
-  command (registered with mutating = false, src/core/ControlCommandsRecordTools.cpp:299), so it adds
-  no undo step and no new command id - the command snapshot
-  (tools/mcp-zene-control/zene_control/commands_snapshot.json) is untouched, and the canary does
-  not move.
+- record.remaining (src/core/ControlCommandsRecordTools.cpp:176) - the fixed command: the budget is
+  keyed by the filesystem (the kernel's device on POSIX, the volume's GUID on Windows). Its reply
+  keeps the same keys, and it stays a read-only command (registered with mutating = false,
+  src/core/ControlCommandsRecordTools.cpp:287), so it adds no undo step and no new command id - the
+  command snapshot (tools/mcp-zene-control/zene_control/commands_snapshot.json) is untouched, and
+  the canary does not move.
 - record.retro_capture_arm (src/core/ControlCommandsRecordingRetro.cpp:226) - arms the retrospective
   capture ring (a mode flag over a bounded ring of the input bus). It writes no take and takes no
   disk space; it does not arm a record route, so it is not part of any budget. Unchanged.
 
-No command was added, removed or renumbered, and no control command was changed outside the
-estimate itself.
+The transport siblings (transport.metronome_options, transport.punch_here) and record.route_source
+are in the same file and are untouched by this change; record.route_source only moves a tap
+point, which the budget key never sees.
+
+**6. Realtime, undo and commands.**
+Nothing new runs on the audio thread: `record.remaining` is a read-only command, driven from the
+control surface, and the new helpers only read the filesystem's identity (a stat and two strings).
+No allocation, free, lock, wait, I/O or logging was added to any audio path - the diff touches
+no process/render/play/mixer code. Undo is unchanged: the command is registered with mutating =
+false, so it records no undo step, and no new control command was added, so the command snapshot's
+canary does not move.
 
 ## Files committed
 
-- src/core/ControlCommandsRecordTools.cpp
-- tests/src/core/RecordToolsTest.cpp
-- tests/src/core/MountNamespaceTestSupport.h (new: the mount namespace the two-mount-points case needs)
-- tests/fork-sources.txt (the new test helper is registered)
-- tests/all-sources.txt (the same, re-derived from its own recipe)
+- include/ControlRecordingSupport.h (the naming rule, shared and testable)
+- src/core/ControlRecordingSupport.cpp (the identity rule: the volume's GUID on Windows, the kernel's device on POSIX)
+- src/core/ControlCommandsRecordTools.cpp (the budget asks the shared rule for its key)
+- tests/src/core/RecordToolsTest.cpp (the identity rule's own regression test)
 - docs/qwen-fixes-2026-10/cluster-review-e39984ffb.md
 
 FIXED
