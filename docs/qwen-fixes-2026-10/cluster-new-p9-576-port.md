@@ -129,6 +129,10 @@ All logs are under
 - **Verdict evidence (REAL).** Pre-fix `src/core/AutomationLatency.cpp:177-182` wrote each clip's
   atomic inside the walk while `m_enabled` stayed true; the RED run (exit 8, `0.2` vs `0.25`) is the
   observed mixture.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence: not applicable - verdict is FIXED.** The pre-fix code
+  is in this branch's history at `2da2ed356` (`src/core/AutomationLatency.cpp:177-182`, per-clip
+  atomic stores during the walk) and the regression fails against it (exit 8), so the defect was
+  neither already fixed nor a false positive here.
 
 ## Files committed
 
