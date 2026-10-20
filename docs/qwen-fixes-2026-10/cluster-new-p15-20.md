@@ -132,9 +132,22 @@ it, and both pass on the real code.
   added to `tests/src/core/SessionTuningTest.cpp` (lines 1339-1377). Round 1 declined to add a test
   because it would duplicate `:1331-1337`. The reviewer asked for one, and the new case is not a
   duplicate: it checks two calls in a row and undo after the second, which `:1331-1337` does not.
-- **"gates (feature_check.py)"**: feature_check.py still cannot run from this sandbox (see above).
-  Each gate it calls was run by hand on the final tree (table above). Six pass. The two ratchets
-  exit 1 with pre-existing items that name no file this branch changed.
+- **"gates (feature_check.py)"**: still FAIL in the completion check, and NOT resolved here.
+  feature_check.py writes its logs to `zene-qwen-new-p15-20-feature-check`, a sibling of the
+  worktree, outside the write-jail. A direct run from this shell fails with
+  `PermissionError` on `fork-sources.log` in that folder (EXIT 1). The completion-check run wrote
+  all eight log files there (14:35-14:36) and still reported FAIL, but its output shows only the
+  row name, so I cannot see which row failed. What I can show:
+  - Each SIMPLE gate, run by hand on the final tree, exits 0 (table above).
+  - The two ratchets exit 1 raw, with pre-existing items. Their feature_check verdict is
+    computed by `FC.base_listings` (cache hit for base `2da2ed356`, read only) and `FC.key` /
+    `FC.item_file` from `feature_check.py`, run in memory with `python3 -I`
+    (`/tmp/p15-ratchet-readonly.py`). Result: complexity 6 regression lines, 0 new in changed files;
+    file-length 15 regression lines, 0 new in changed files. Changed files are the report and
+    `tests/src/core/SessionTuningTest.cpp`, and no ratchet line names either.
+  By the harness's own rules this tree should pass the gates row. The row stays FAIL because I
+  could not run the script itself. Someone with an unrestricted shell should run
+  `python3 feature_check.py <worktree>` and check the table.
 - **ASK 1 — the regression test FAILS with the product change reverted and PASSES with it**: the
   product "change" is the finding's fix, applied as a mutation. Under it the new test exits 1
   (`:1359`), and the full binary exits 2 with the existing test also failing (`:1337`). With the
