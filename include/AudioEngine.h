@@ -55,6 +55,7 @@
 
 #ifdef LMMS_TESTING
 class AudioBusPlayHandleQueueTest;
+class ArrangeToolsTest;
 #endif
 
 namespace lmms
@@ -559,6 +560,10 @@ private:
 	struct AutomatableModelRegistry;
 #ifdef LMMS_TESTING
 	friend class ::AudioBusPlayHandleQueueTest;
+	// The track-version regression reads the change mutex directly: it is the
+	// lock the audio thread takes, and a test needs to see whether a model
+	// edit runs inside it.
+	friend class ::ArrangeToolsTest;
 #endif
 	void renderNextBuffer(AudioBufferView<float> auto dst)
 	{
