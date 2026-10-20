@@ -29,6 +29,8 @@
 #include <QDomElement>
 #include <QWriteLocker>
 
+#include <atomic>
+
 #include "AutomationClip.h"
 #include "AutomationLatency.h"
 #include "AutomationRenderScratch.h"
@@ -271,6 +273,46 @@ int TrackContainer::countTracks( Track::Type _tt ) const
 }
 
 
+
+
+#ifdef LMMS_TESTING
+namespace
+{
+
+//! The seam behind TrackContainer::trackIndexScanCount(): candidates a linear
+//! position lookup examined. Relaxed because the test reads it on one thread.
+std::atomic<std::uint64_t> s_trackIndexScans{0};
+
+} // namespace
+#endif
+
+
+int TrackContainer::trackIndex( const Track * _track ) const
+{
+	const TrackList& list = m_tracks;
+	for( int i = 0; i < static_cast<int>( list.size() ); ++i )
+	{
+#ifdef LMMS_TESTING
+		s_trackIndexScans.fetch_add( 1, std::memory_order_relaxed );
+#endif
+		if( list[i] == _track ) { return i; }
+	}
+	return -1;
+}
+
+
+#ifdef LMMS_TESTING
+std::uint64_t TrackContainer::trackIndexScanCount() noexcept
+{
+	return s_trackIndexScans.load( std::memory_order_relaxed );
+}
+
+
+void TrackContainer::resetTrackIndexScanCount() noexcept
+{
+	s_trackIndexScans.store( 0, std::memory_order_relaxed );
+}
+#endif
 
 
 void TrackContainer::addTrack( Track * _track )
