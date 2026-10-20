@@ -58,12 +58,16 @@ Every row is a command I ran in this round, with the exit code it printed.
 | Restore the product hunk | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-98-port.r3/logs/fix.patch` | — | 0 |
 | Rebuild (restored) | `cmake --build build --target zene InstrumentSetupUiTest -j2` | `build-7.log` | 0 |
 | **GREEN** | `ctest -R '^InstrumentSetupUiTest$' --output-on-failure` (run from `build/tests`) | `test-10.log` | **0** |
-| File-length gate | `bash tests/file-length-gate.sh --check` | `gate-6.log` | 1 |
-| Complexity gate | `bash tests/complexity-gate.sh --check` | `gate-7.log` | 1 |
-| File-length gate, whole tree | `bash tests/file-length-gate.sh --check --scope all` | `gate-8.log` | 1 |
-| Complexity gate, whole tree | `bash tests/complexity-gate.sh --check --scope all` | `gate-9.log` | 1 |
-| Aggregate gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port` | `gate-10.log` | 0 |
+| File-length gate | `bash tests/file-length-gate.sh --check` | `gate-11.log` | 1 |
+| Complexity gate | `bash tests/complexity-gate.sh --check` | `gate-12.log` | 1 |
+| File-length gate, whole tree | `bash tests/file-length-gate.sh --check --scope all` | `gate-13.log` | 1 |
+| Complexity gate, whole tree | `bash tests/complexity-gate.sh --check --scope all` | `gate-14.log` | 1 |
+| Aggregate gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port` | `gate-15.log` | 0 |
 | Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port new-p12-98-port` | `submit-5.log` | 0 |
+
+The gate rows are the runs made **after** the commits landed (the same commands run before them,
+in `gate-6.log` … `gate-10.log`, produced byte-identical REGRESSION lists and the same exit
+codes). `submit-5.log` is the final pre-submit run, against the committed tree.
 
 The two commit references in the red proof are stable: `ded355440871a86cc907cdc2d6465f2d3d597a6b`
 is the parent of the fix commit `47b57a6ae15ad44ba1563c6c97564c246e0221f0`, so the patch is the
@@ -88,7 +92,7 @@ round's commits touch `tests/src/gui/InstrumentSetupUiTest.cpp` and
 the same baselines scoped to *my* files and reports `PASS complexity — no new item in your files`
 and `PASS file-length — no new item in your files`.
 
-`bash tests/file-length-gate.sh --check` → exit 1 (`gate-6.log`), header
+`bash tests/file-length-gate.sh --check` → exit 1 (`gate-11.log`), header
 `file-length-gate: 1792 fork-scope sources measured; 19 exceed 500 code lines`, 14 REGRESSION
 entries, none of them mine:
 
@@ -109,7 +113,7 @@ REGRESSION: new file over 500 lines: tests/src/core/VideoTrackTest.cpp (589)
 REGRESSION: new file over 500 lines: tests/src/gui/ArrangerTimelineTest.cpp (689)
 ```
 
-`bash tests/complexity-gate.sh --check` → exit 1 (`gate-7.log`), 6 REGRESSION entries, none of
+`bash tests/complexity-gate.sh --check` → exit 1 (`gate-12.log`), 6 REGRESSION entries, none of
 them mine:
 
 ```
@@ -121,7 +125,7 @@ REGRESSION: new function over target: lmms::control::rotateProjectRevision@151-2
 REGRESSION: new function over target: lmms::importedOverrides@168-205@src/gui/ControlCommandsShortcuts.cpp (CCN 11)
 ```
 
-The whole-tree scope (`--scope all`, `gate-8.log` and `gate-9.log`, both exit 1) is red on
+The whole-tree scope (`--scope all`, `gate-13.log` and `gate-14.log`, both exit 1) is red on
 unrelated violations as well; neither `tests/src/gui/InstrumentSetupUiTest.cpp` (436 code lines)
 nor `tests/src/core/InstrumentLayersCommandsTest.cpp` (498 code lines) is named in either output.
 
