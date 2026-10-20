@@ -18,6 +18,8 @@ The regression is `RevisionTimelineTest::comparisonTagUnionUsesSetMembership` in
 | Reapplied-patch GREEN | Reapply product patch, rebuild, then `ctest` (commands below; logs `build-6.log` and `test-6.log`) | Apply EXIT=0; build EXIT=0; test EXIT=0; 1/1 ctest passed |
 | Affected test family | `ctest -R 'Revision|revision' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/test-7.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` (from `build/tests`) | EXIT=0; 1/1 test passed (`RevisionTimelineTest`) |
 | Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-2450 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/feature-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` | EXIT=0; all gates PASS; complexity and file-length report no new item |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-2450 2450 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/submit-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` | EXIT=0; RESULT: PASS - submit |
+| Final feature-gate rerun after the initial report commit | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-2450 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/feature-2.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` | EXIT=0; all gates PASS; complexity and file-length report no new item |
 
 ## Commands and exit codes
 
@@ -45,7 +47,15 @@ The required reverse-patch proof ran these exact commands:
 - `ctest -R RevisionTimelineTest --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/test-6.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0; the restored code passes.
 - `ctest -R 'Revision|revision' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/test-7.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` — EXIT=0; 1/1 affected-family test passed.
 
-The feature-check command and EXIT=0 are recorded in the evidence table above.
+The feature-check commands and EXIT=0 results are recorded in the evidence table above.
+
+The completion check ran from the worktree root and returned EXIT=0:
+
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-2450 2450 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/submit-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc`
+
+The final feature-check rerun after this report update is:
+
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-2450 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2450.r1/logs/feature-2.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc`
 
 ## Self-check
 
@@ -57,6 +67,8 @@ The feature-check command and EXIT=0 are recorded in the evidence table above.
 - **Verdict evidence:** FIXED is appropriate because the old implementation had linear list membership inside the right-tag loop, and the deterministic reverse-patch test fails when that implementation is restored. The existing object-construction guard was already present at `RevisionTimelineCompare.cpp:163`.
 
 ## Files committed
+
+The code, regression and initial report were committed as `a29d42e82` (`Fix cluster 2450 revision compare tag union`). This report update records the completion-check result.
 
 - `src/core/RevisionTimelineCompare.cpp`
 - `tests/src/core/RevisionTimelineTest.cpp`
