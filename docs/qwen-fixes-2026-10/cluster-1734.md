@@ -88,15 +88,15 @@ ctest -R '^AutomationModesTest$' --output-on-failure > /home/kruzzzzy/.local/sha
 EXIT=0 — 1/1 ctest target passed.
 ```
 
-Committed files: `src/core/Song.cpp`, `src/core/AutomationClip.cpp`, `tests/src/core/AutomationModesTest.cpp`, and the cluster 5388 rows in `tests/upstream-modifications.txt`. The report is committed with this fix. Commit message names cluster 5388.
+Committed files: `src/core/Song.cpp`, `src/core/AutomationClip.cpp`, `tests/src/core/AutomationModesTest.cpp`, and the cluster 5388 rows in `tests/upstream-modifications.txt`. The report was committed with this fix. Commit: `675c8b178` (`fix(core): defer realtime automation writes (clusters 1734 3562 5388)`).
 
 ## Evidence table
 
 | Cluster | RED | GREEN | Final affected-family run | Feature gate | Completion gate | Files committed |
 |---|---|---|---|---|---|---|
-| 1734 | `test-17.log`, ctest exit 8 | `test-18.log`, ctest exit 0 | `test-28.log`, 2/2 targets passed | `feature_check.py`, exit 0 | `submit_check.py`, recorded after final commit | Song.cpp, TempoMapTest.cpp, upstream-modifications.txt |
-| 3562 | `test-19.log`, ctest exit 8 | `test-20.log`, ctest exit 0 | `test-28.log`, 2/2 targets passed | `feature_check.py`, exit 0 | `submit_check.py`, recorded after final commit | Song.cpp, CMakeLists.txt, AutomationModesTest.cpp, upstream-modifications.txt |
-| 5388 | `test-26.log`, ctest exit 8 | `test-27.log`, ctest exit 0 | `test-28.log`, 2/2 targets passed | `feature_check.py`, exit 0 | `submit_check.py`, recorded after final commit | Song.cpp, AutomationClip.cpp, AutomationModesTest.cpp, upstream-modifications.txt, this report |
+| 1734 | `test-17.log`, ctest exit 8 | `test-18.log`, ctest exit 0 | `test-28.log`, 2/2 targets passed | `feature_check.py`, exit 0 | `submit_check.py`, exit 0 | Song.cpp, TempoMapTest.cpp, upstream-modifications.txt |
+| 3562 | `test-19.log`, ctest exit 8 | `test-20.log`, ctest exit 0 | `test-28.log`, 2/2 targets passed | `feature_check.py`, exit 0 | `submit_check.py`, exit 0 | Song.cpp, CMakeLists.txt, AutomationModesTest.cpp, upstream-modifications.txt |
+| 5388 | `test-26.log`, ctest exit 8 | `test-27.log`, ctest exit 0 | `test-28.log`, 2/2 targets passed | `feature_check.py`, exit 0 | `submit_check.py`, exit 0 | Song.cpp, AutomationClip.cpp, AutomationModesTest.cpp, upstream-modifications.txt, this report |
 
 Final combined commands:
 
@@ -107,6 +107,8 @@ ctest -R '^(TempoMapTest|AutomationModesTest)$' --output-on-failure > /home/kruz
 EXIT=0 — 2/2 ctest targets passed.
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-1734
 EXIT=0 — all rows PASS, including complexity and file-length (no new items).
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-1734 1734
+EXIT=0 — completion check passed; working tree was clean.
 ```
 
 A separate exploratory save regression was removed after it segfaulted in the fixture's `ModulationLayer::saveSettings()` before reaching its assertion (`test-24.log`). The final regression suite does not count that attempt as a pass; the queue path itself is covered by the deterministic timer-drain test.
@@ -118,3 +120,4 @@ A separate exploratory save regression was removed after it segfaulted in the fi
 - **The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent.** Yes. `setTempo()` invalidates under the render guard; `forgetAutomatedModel()` uses the render-period mutex; both `Song::processAutomations()` and the `NotePlayHandle::processTimePos()` caller of `recordValue()` are covered by the queued write path.
 - **No collateral damage: old projects and saved data still load as before, and any limit or check added does not hit other callers that legitimately exceed it.** The tempo memo and write queue are runtime-only and do not change project format or load behavior. The queue is preallocated for sixteen full render periods and increments its overflow counter if exhausted; saves and Stop drain pending points before persisting or replacing the project.
 - **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code or intended contract that shows it.** Not applicable: all three verdicts are FIXED based on the RED/GREEN evidence above.
+- **Completion check.** `submit_check.py` returned exit 0 after the fix/report commit, with a clean worktree.
