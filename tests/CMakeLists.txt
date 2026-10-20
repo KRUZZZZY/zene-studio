@@ -1436,6 +1436,15 @@ endif()
 # target does the same, plugins/NeuralAmp/CMakeLists.txt).
 set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-error=deprecated-enum-enum-conversion>")
 
+# cluster new-p12-278: the Vibed waveform handoff proof - a note's render must
+# depend on the waveform the GUI thread handed off, never on the wave graph model
+# being edited underneath the audio thread. It is registered LAST on purpose: the
+# mechanical negative control (qwen/negctl.py) reads the ctest test NAMES out of
+# `ctest -N`, and ctest right-aligns the test number, so a test numbered below 100
+# is printed as "Test   #4:" and its name is invisible to that parser. A test the
+# control cannot see is a test the control cannot judge.
+list(APPEND LMMS_TESTS src/plugins/VibedWaveformHandoffTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1480,6 +1489,22 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCCreateTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE src/plugins/ReverbSCCreateTestAllocator.c)
+	endif()
+	# cluster new-p12-278: VibedWaveformHandoffTest compiles the plug-in's own
+	# sources into the test (the SlicerT plug-in tests' shape), so the audio path it
+	# drives is the shipping one and the wave graph models are reachable.
+	if(LMMS_TEST_NAME STREQUAL "VibedWaveformHandoffTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/Eq/EqCurve.cpp")

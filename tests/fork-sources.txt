@@ -2772,3 +2772,5 @@ docs/qwen-fixes-2026-10/cluster-new-p9-326-port.md
 tests/src/gui/CPULoadWidgetTest.cpp
 # cluster new-p11-43-port (2026-10): ALREADY-FIXED port report for note.slide_clear's inverse.
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
+# cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
+tests/src/plugins/VibedWaveformHandoffTest.cpp
