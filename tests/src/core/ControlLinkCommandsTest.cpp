@@ -318,6 +318,34 @@ private slots:
 		QCOMPARE(engineTempo(), 134);
 	}
 
+	//! A positive, integral timestamp can still be stale enough to invent an
+	//! enormous transit interval. It must be dropped before peer storage/adoption.
+	void tooOldIntegralTimestampIsIgnoredBeforeRememberingPeer()
+	{
+		setEnabledForTest(false);
+		setEnabledForTest(true);
+		const QJsonObject before = state();
+		const quint32 revision = revisionOf(before);
+		const double tempo = before.value(QStringLiteral("session_tempo")).toDouble();
+		const int engineBpm = engineTempo();
+
+		// Inject an explicit receive clock so the age is unambiguously past the
+		// transit limit regardless of how long this process has been up.
+		const quint64 receivedUs = 10000000;
+		const quint64 sentUs = receivedUs
+			- (static_cast<quint64>(link::PeerTimeoutMs) * 1000 + 1);
+		link::LinkPeerPacket stale = packetFrom(QStringLiteral("peer-old-clock"),
+			revision + 1, 240.0);
+		stale.sentUs = sentUs;
+		observe(stale, receivedUs);
+
+		const QJsonObject after = state();
+		QVERIFY(!sessionHasPeer(after, stale.id));
+		QCOMPARE(revisionOf(after), revision);
+		QCOMPARE(after.value(QStringLiteral("session_tempo")).toDouble(), tempo);
+		QCOMPARE(engineTempo(), engineBpm);
+	}
+
 	/*! THE PHASE CLAIM, computed independently. A peer announces beat 0 at a
 	 *  send time one second in the past at 150 BPM, so the beat it is playing at
 	 *  the moment this instance reads the datagram is 1.0 * 150 / 60 = 2.5 beats
@@ -395,6 +423,11 @@ private slots:
 		QVERIFY(!LinkSyncEngine::decodePacket(QByteArray("not json at all"), &decoded));
 		QVERIFY(!LinkSyncEngine::decodePacket(QByteArray(), &decoded));
 		QVERIFY(!LinkSyncEngine::decodePacket(ours, nullptr));
+		QJsonObject fractionalTimestamp = QJsonDocument::fromJson(ours).object();
+		fractionalTimestamp.insert(QStringLiteral("sent_us"), 0.5);
+		QVERIFY2(!LinkSyncEngine::decodePacket(
+			QJsonDocument(fractionalTimestamp).toJson(QJsonDocument::Compact), &decoded),
+			"a fractional send timestamp was truncated before transit arithmetic");
 		QJsonObject outsideSignedClock = QJsonDocument::fromJson(ours).object();
 		outsideSignedClock.insert(QStringLiteral("sent_us"), 9223372036854775808.0);
 		QVERIFY2(!LinkSyncEngine::decodePacket(
