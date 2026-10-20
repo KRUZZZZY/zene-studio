@@ -2707,3 +2707,5 @@ docs/qwen-fixes-2026-10/cluster-new-p11-81-port.md
 tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp
 # cluster new-p16-196: the rt_alloc_probe tool is fork-new (added after the gate base) and carries the block-size check.
 plugins/NeuralAmp/tests/rt_alloc_probe.cpp
+# cluster new-p16-196: the rt_alloc_probe block-size cluster report is fork-NEW (added after the gate base), so it is listed with the other fork-NEW files of this cluster.
+docs/qwen-fixes-2026-10/cluster-new-p16-196.md
