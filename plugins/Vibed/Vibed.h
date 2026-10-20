@@ -73,6 +73,7 @@ private:
 	static constexpr int s_sampleLength = 128;
 	static constexpr int s_stringCount = 9;
 
+public:
 	/*! The waveform the audio thread is allowed to read.
 	 *
 	 * graphModel is GUI-thread storage: a waveform drag, the smooth and normalize
@@ -87,6 +88,9 @@ private:
 	 * samples() only ever reads the published slot, and no publication touches
 	 * that slot again until the one after next, so a reader always sees one
 	 * waveform in full.
+	 *
+	 * The class is public so the regression test can drive the hand-off
+	 * itself; nothing outside the plug-in uses it.
 	 */
 	class WaveformSnapshot
 	{
@@ -115,6 +119,7 @@ private:
 		int m_stale{1};  //!< GUI thread only: the slot a reader may still be copying
 	};
 
+private:
 	//! Re-read one string's graph model and hand the waveform off.
 	void publishWaveform(int str);
 

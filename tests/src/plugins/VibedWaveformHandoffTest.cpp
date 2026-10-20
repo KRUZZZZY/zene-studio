@@ -267,7 +267,49 @@ private slots:
 		QCOMPARE(foreign.load(), 0);
 	}
 
+	//! The hand-off must protect a reader that HOLDS a waveform: the writer may
+	//! publish as often as it likes, but a waveform the reader took must not
+	//! change under it. This is the deterministic form of the reported race -
+	//! the reader here is paused on a snapshot while three further publications
+	//! go past.
+	void aHeldWaveformSurvivesThreePublications()
+	{
+		Vibed::WaveformSnapshot snapshot;
+		const auto first = flatWaveform(0.25f);
+		snapshot.publish(first.data());
+
+		// The audio thread takes the published waveform and keeps it while it
+		// copies it into the string.
+		const float* held = snapshot.samples();
+
+		// The GUI thread publishes three more waveforms meanwhile.
+		const auto second = flatWaveform(-0.5f);
+		snapshot.publish(second.data());
+		const auto third = flatWaveform(0.75f);
+		snapshot.publish(third.data());
+		const auto fourth = flatWaveform(-1.f);
+		snapshot.publish(fourth.data());
+
+		QVERIFY2(std::memcmp(held, first.data(), sizeof(first)) == 0,
+			"a waveform the reader was holding was rewritten by a later "
+			"publication: the reader would copy a half-written waveform");
+
+		// The control: the publications did reach the next reader, so the check
+		// above has the power to fail.
+		const float* latest = snapshot.samples();
+		QVERIFY2(std::memcmp(latest, fourth.data(), sizeof(fourth)) == 0,
+			"the last publication did not reach the reader");
+	}
+
 private:
+	//! One flat waveform of `kWaveLength` samples.
+	static std::array<float, kWaveLength> flatWaveform(float value)
+	{
+		std::array<float, kWaveLength> samples;
+		samples.fill(value);
+		return samples;
+	}
+
 	bool m_engineUp = false;
 	InstrumentTrack* m_track = nullptr;
 	std::unique_ptr<Vibed> m_instrument;
