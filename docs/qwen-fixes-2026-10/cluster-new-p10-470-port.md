@@ -144,6 +144,9 @@ stated. Logs are in
 | All gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py . > .../logs/gate-feature-check-3.log 2>&1` | 0 |
 | Complexity ratchet (raw) | `bash tests/complexity-gate.sh --check > .../logs/gate-complexity-3.log 2>&1` | 1 |
 | File-length ratchet (raw) | `bash tests/file-length-gate.sh --check > .../logs/gate-file-length-3.log 2>&1` | 1 |
+| Post-commit build of the committed tree | `cmake --build build --target zene analyzer AudioPluginTest > .../logs/build-final-3.log 2>&1` | 0 |
+| Post-commit run of the targeted test | `cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure > .../logs/test-final-5.log 2>&1` | 0 |
+| Post-commit gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py . > .../logs/gate-feature-check-4.log 2>&1` | 0 |
 
 `test-final-3.log` records `1/1 Test #492: AudioPluginTest ... Passed` and
 `100% tests passed out of 1`; `test-final-4.log` records
