@@ -2,75 +2,71 @@
 
 # Cluster new-p17-176: the dialog keeps its download label during inference
 
-The stem-split progress dialog set its label to "Downloading the stem model, then separating (offline job)..." only while `fetching_model` was true, and nothing set it back when the fetch ended. A first-use split therefore showed the download text for the whole separation. The label is now set from the job phase on every poll: the download text while fetching, "Separating stems (offline job)..." otherwise.
+The stem-split progress dialog set its label to "Downloading the stem model, then separating (offline job)..." only while `fetching_model` was true, and nothing set it back when the fetch ended. A first-use split therefore showed the download text for the whole separation. Round 2 (Luna REWORK) found that the round-1 regression called a helper and never ran the poll, so it still passed with the original poll condition restored. The regression now drives the real `pollJob` through a scripted status source, and the fix is back in `pollJob` where the bug was.
 
 ## Evidence (file:line, current tree)
 
-- `src/gui/StemSplitController.cpp:293-305` - new `applyPhaseLabel(dialog, fetchingModel)`: download text when fetching, separation text otherwise.
-- `src/gui/StemSplitController.cpp:332` - `pollJob` calls it on every poll (the old `if (fetching) setLabelText(...)` block is gone).
-- `src/gui/StemSplitController.cpp:268` - the initial dialog label, `"Separating stems (offline job)..."`, is the same text the helper now restores.
-- `include/StemSplitController.h:84` - declaration, public static, as the test seam (no new control command, no timer in the test).
-- `tests/src/core/StemSplitPipelineTest.cpp:604-615` - `dialogLabelFollowsJobPhase()`: label after `(dialog, true)` contains "Downloading the stem model"; after `(dialog, false)` it no longer contains "Downloading" and contains "Separating stems".
-- Callers and siblings: `setLabelText` is called only from `applyPhaseLabel` (the initial label is set in `startJob`, line 268). The completed, failed and cancelled paths close the dialog, so no label is shown after them. No other file reads `fetching_model` for the GUI (`rg fetching_model` shows the backend producer in `src/core/ControlStemSupport.cpp:475` and the command schema only).
-- No audio path, no undo, no save/load, no command file is touched.
+- `src/gui/StemSplitController.cpp:331-337` - `pollJob`'s dialog update: the download label while `fetching_model` is true (`:331-334`), and the separation label otherwise (`:335-338`, the `else` added by this fix).
+- `src/gui/StemSplitController.cpp:312-314` - the status read goes through the seam: `s_statusReader` when set, else `stem.job_status` through the registry.
+- `src/gui/StemSplitController.cpp:57` - `s_statusReader`, empty by default (the registry path is unchanged in production).
+- `src/gui/StemSplitController.cpp:297-300` - `setStatusReaderForTest`, the setter the test uses.
+- `include/StemSplitController.h:85-86` - the `StatusReader` type and the setter declaration; `:48` forward-declares `ControlResult`.
+- `tests/src/core/StemSplitPipelineTest.cpp:605-687` - `pollRestoresPhaseLabelWhenFetchingEnds()`: a real `splitClipToStems` creates the dialog and job; three scripted statuses (fetching at 25%, separating at 50%, cancelled) are delivered to the controller's own `pollJob` through `QMetaObject::invokeMethod`. The label assertion that fails without the fix is at `:678`.
+- `:630-642` - a `Cleanup` guard that restores the registry status path and cancels the submitted job on every exit path.
+- Callers and siblings: `setLabelText` is called only in `pollJob` (`:333`, `:337`) and once in `startJob` (`:272`, the initial text, which equals the restored separation text). The completed, failed and cancelled branches close or reset the dialog, so no label is visible afterwards. No other file reads `fetching_model` for the GUI (`src/core/ControlStemSupport.cpp:475` is the backend producer; the command schema is in `src/core/ControlCommandsStems.cpp`).
+- No audio path, no undo step, no save or load, no command, no new control command.
 
-## Method
+## Why the seam is at the status read
 
-The regression test cannot gate the real model fetch: `StemSurface` in `src/core/ControlStemSupport.cpp:132-147` hard-wires `StemModelStore::fetchDefaultModelIfMissing`, and `ControlRegistry::registerCommand` is fatal on a duplicate id with no unregister (`src/core/ControlRegistry.cpp:151-159`). So the test drives the label helper that `pollJob` calls, with a stack `QProgressDialog` and no timers, sleeps or threads.
+The real fetch is hard-wired in `StemSurface` (`src/core/ControlStemSupport.cpp:132-147`), and `ControlRegistry::registerCommand` is fatal on a duplicate id with no unregister (`src/core/ControlRegistry.cpp:151-159`). So a test cannot replace `stem.job_status` in the registry. The seam is the one place `pollJob` reads a job's status, so the test runs everything after that read (the progress value, the label, and the state dispatch) on the real code, with no timer and no event loop. The test never spins the event loop, so the 150 ms poll timer cannot interleave.
 
-Commit staging: the helper, its declaration and the test were staged as a behaviour-preserving first stage (helper still had the bug), the RED run was taken, then only the one-line-plus-else fix was left unstaged, so `git diff` produced exactly the fix for the revert step (4b).
+## Commands and exit codes (round 2)
 
-## Commands and exit codes
+Environment note: every build sets `CCACHE_TEMPDIR=/tmp/ccache-tmp-p17176`, because the default ccache temp dir (`/run/user/1000/ccache-tmp`) is not writable in this session. Logs are in `runs/new-p17-176.r2/logs/`.
 
-Environment note: the default ccache temp dir (`/run/user/1000/ccache-tmp`) is not writable in this session, so every build below sets `CCACHE_TEMPDIR=/tmp/ccache-tmp-p17176`. No code change came from this.
+| # | Command (worktree / `build/tests`) | Log | EXIT | Result |
+|---|---|---|---|---|
+| R1 | `env CCACHE_TEMPDIR=... cmake --build build --target zene StemSplitPipelineTest -j4` - stage 1: the ORIGINAL `if (fetching_model)` poll condition, the seam, the new test, no `else` | build-r2-1-stage1.log | 0 | builds |
+| R2 | `ctest -R '^StemSplitPipelineTest$' -V --output-on-failure` - stage 1 | test-r2-red-1-stage1.log | 8 | `FAIL! : pollRestoresPhaseLabelWhenFetchingEnds() '!progress->labelText().contains("Downloading")' returned FALSE`, `Loc: StemSplitPipelineTest.cpp(678)`; 14 passed, 1 failed |
+| R3 | `env CCACHE_TEMPDIR=... cmake --build build --target zene StemSplitPipelineTest -j4` - stage 1 + fix (`else` branch) | build-r2-2-fix.log | 0 | builds |
+| R4 | `ctest -R '^StemSplitPipelineTest$' -V --output-on-failure` - **GREEN with fix** | test-r2-green-1.log | 0 | `Totals: 15 passed, 0 failed, 0 skipped` |
+| R5 | `git diff -- src/gui/StemSplitController.cpp include/StemSplitController.h > logs/fix-r2.patch` | - | 0 | 15-line patch: the `else` branch only (the staged stage 1 is the index) |
+| R6 | `git apply -R logs/fix-r2.patch` - **fix reverted: the original `if (fetching_model)` poll behaviour** | - | 0 | - |
+| R7 | `env CCACHE_TEMPDIR=... cmake --build build --target zene StemSplitPipelineTest -j4` | build-r2-3-revert.log | 0 | builds |
+| R8 | `ctest -R '^StemSplitPipelineTest$' -V --output-on-failure` - **RED with the original poll behaviour** | test-r2-red-2-revert.log | **8** | same `FAIL!` at `StemSplitPipelineTest.cpp(678)`; 14 passed, 1 failed |
+| R9 | `git apply logs/fix-r2.patch` - fix restored | - | 0 | - |
+| R10 | `env CCACHE_TEMPDIR=... cmake --build build --target zene StemSplitPipelineTest -j4` | build-r2-4-reapply.log | 0 | builds |
+| R11 | `ctest -R '^StemSplitPipelineTest$' -V --output-on-failure` - **GREEN restored** | test-r2-green-2-reapply.log | 0 | `Totals: 15 passed, 0 failed, 0 skipped` |
+| R12 | branch-base feature check: `python3 feature_check_local_r2.py <worktree>` (the shipped `feature_check.py` with its log folder redirected; see below) | gate-r2-1.log | 0 | `RESULT: PASS`, 8 of 8 rows PASS |
 
-| # | Command (run from the worktree / `build/tests`) | Log | EXIT |
-|---|---|---|---|
-| 1 | `cmake --build build --target StemSplitPipelineTest -j4` | build-1.log | 2 (ccache temp dir permission; no compile) |
-| 2 | `env CCACHE_TEMPDIR=/tmp/ccache-tmp-p17176 cmake --build build --target StemSplitPipelineTest -j4` | build-2.log | 0 |
-| 3 | `ctest -R '^StemSplitPipelineTest$' --output-on-failure` (baseline, before any edit) | test-base.log | 0 (1/1 passed, 0 skipped) |
-| 4 | `env CCACHE_TEMPDIR=... cmake --build build --target zene StemSplitPipelineTest -j4` (stage 1, bug kept) | build-3.log | 0 |
-| 5 | `ctest -R '^StemSplitPipelineTest$' --output-on-failure` - **RED** (stage 1, no fix) | test-red-1.log | **8** |
-| 6 | `git diff -- src/gui/StemSplitController.cpp include/StemSplitController.h > .../logs/fix.patch` | - | 0 (15-line patch) |
-| 7 | `git apply -R .../logs/fix.patch` (revert fix only) | - | 0 |
-| 8 | `env CCACHE_TEMPDIR=... cmake --build build --target zene StemSplitPipelineTest -j4` | build-4-revert.log | 0 |
-| 9 | `ctest -R '^StemSplitPipelineTest$' --output-on-failure` - **RED, fix reverted (step 4b)** | test-red-2.log | **8** |
-| 10 | `git apply .../logs/fix.patch` (restore fix) | - | 0 |
-| 11 | `env CCACHE_TEMPDIR=... cmake --build build --target zene StemSplitPipelineTest -j4` | build-5-fix.log | 0 |
-| 12 | `ctest -R '^StemSplitPipelineTest$' --output-on-failure` - **GREEN** | test-green-1.log | 0 |
-| 13 | `ctest -R '^StemSplitPipelineTest$' -V --output-on-failure` - GREEN, counted | test-green-2.log | 0 |
-| 14 | `python3 feature_check.py <worktree>` as shipped | gate-1.log | 1 (see below) |
-| 15 | `python3 /tmp/p17176-gate/feature_check_local.py <worktree>` - gate copy, log folder redirected | gate-2.log | **0** (RESULT: PASS) |
+The restored `if (fetching_model)` in R6 is the original poll line, byte-for-byte the condition at the base commit (`2da2ed356`, `src/gui/StemSplitController.cpp:317` there). R8 is the reviewer's exact reproduction: restore the old poll behaviour and the regression fails.
 
-The RED failure in runs 5 and 9 is the same assertion, verbatim from the log:
-
-`FAIL!  : StemSplitPipelineTest::dialogLabelFollowsJobPhase() '!dialog.labelText().contains(QStringLiteral("Downloading"))' returned FALSE. (Downloading the stem model, then separating (offline job)...)`
-`Loc: [../../tests/src/core/StemSplitPipelineTest.cpp(611)]`
-
-Run 14 failed only because the shipped script writes its logs to `<worktree>/../<name>-feature-check/`, which is the parent directory of the worktree and outside the write-jail (`PermissionError: ... zene-qwen-new-p17-176-feature-check`). I did not write there. The copy in run 15 is the same script with two paths changed (`ROOT` pointed at the existing qwen directory so the existing base-listing cache `gate-baselines/2da2ed356...json` is read; `logs` pointed at `runs/new-p17-176.r1/logs/feature-check-1/`). No gate logic was altered.
+Round-1 history, for the record: the round-1 test called a helper with the bug, and passed with the poll condition restored (the REWORK reason). That helper and its declaration are removed in this round.
 
 ## Evidence table
 
 | Item | Result |
 |---|---|
-| RED command / exit | run 5 (`test-red-1.log`) and run 9 (`test-red-2.log`): EXIT 8 |
-| GREEN command / exit | run 12 (`test-green-1.log`) and run 13 (`test-green-2.log`): EXIT 0 |
-| Affected family | `StemSplitPipelineTest`: 15 cases executed in GREEN (14 existing + 1 new), 0 failed, 0 skipped (`Totals: 15 passed, 0 failed, 0 skipped`). Baseline run 3 executed 1 ctest entry; the RED run reported `14 passed, 1 failed`. |
-| Ratchet gates (complexity, file-length) | PASS, "no new item in your files" (`gate-2.log`) |
-| Simple gates (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures) | PASS, exit 0 each (`gate-2.log`) |
-| Gate script exit | feature_check (copy): EXIT 0. As shipped: EXIT 1 (log-folder permission, not a gate result) |
+| RED command / exit | R2 and R8 (`ctest -R '^StemSplitPipelineTest$' -V`): EXIT 8, `FAIL!` at `StemSplitPipelineTest.cpp(678)` |
+| GREEN command / exit | R4 and R11: EXIT 0 |
+| Affected family | `StemSplitPipelineTest`: 15 cases executed in GREEN (14 existing + 1 new), 0 failed, 0 skipped |
+| Ratchet gates (complexity, file-length) | PASS, "no new item in your files" (`gate-r2-1.log`) |
+| Simple gates (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures) | PASS, exit 0 each (`gate-r2-1.log`) |
+| Branch-base feature check | `feature_check_local_r2.py`: EXIT 0, RESULT: PASS (base `2da2ed356`, 4 changed files) |
 | Files committed | `include/StemSplitController.h`, `src/gui/StemSplitController.cpp`, `tests/src/core/StemSplitPipelineTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p17-176.md` |
 | New files / registration | none new; `tests/fork-sources.txt` and `tests/upstream-modifications.txt` not touched (gates `fork-sources` and `no-upstream-regression` PASS) |
 
+The shipped `feature_check.py` exits 1 in this sandbox (run in round 1, `gate-1.log`): it writes its logs to `<worktree>/../<name>-feature-check/`, outside the write-jail (`PermissionError`). I did not write there. The copy used for R12 is the same script with two paths changed: `ROOT` points at the existing qwen directory, so the base-listing cache `gate-baselines/2da2ed356...json` is read, and `logs` points at `runs/new-p17-176.r2/logs/feature-check-2/`. No gate logic was altered.
+
 ## Self-check
 
-- **The regression test FAILS with the product change reverted and PASSES with it.** Run 9 (EXIT 8, fix reverted via `git apply -R fix.patch`) and run 12 (EXIT 0, fix re-applied). The stage-1 state (run 5) shows the same failure with the buggy helper.
-- **The test is deterministic.** It calls `gui::StemSplitController::applyPhaseLabel` directly on a stack `QProgressDialog` and asserts the label text. No timers, sleeps, threads or model downloads. The seam is the public static `applyPhaseLabel` (`include/StemSplitController.h:84`).
-- **The fix is at the cause and complete.** The cause is that the label was only set in one branch of the poll. The helper sets the label in both branches on every poll. The only other label-setting call (the initial label in `startJob`, `src/gui/StemSplitController.cpp:268`) already uses the same separation text.
-- **No collateral damage.** GUI-only change: no save/load, no project data, no limit or check added, no change to the backend, to `fetching_model` production (`src/core/ControlStemSupport.cpp:475`), or to the command schema.
-- **Realtime, undo and commands.** Nothing on the audio thread; the helper runs on the GUI thread from `pollJob`. No undo step is involved. No new control command (no `ControlCommandsSnapshot` change).
-- **Registration and gates.** No new files. Gates PASS (run 15, RESULT: PASS). The shipped gate script is blocked by the write-jail (run 14, EXIT 1), reported above.
+- **The regression test FAILS with the product change reverted and PASSES with it.** R8 (EXIT 8, original poll condition restored via `git apply -R`) and R11 (EXIT 0, fix restored). The failing assertion is the one the reviewer's reproduction hits: the label after the second poll still reads "Downloading the stem model".
+- **The test runs the real poll path.** The test calls the controller's private `pollJob` through `QMetaObject::invokeMethod` (`tests/src/core/StemSplitPipelineTest.cpp:672, 676, 682`), not a helper. The only substitution is the status read, through the seam at `src/gui/StemSplitController.cpp:312-314`.
+- **The test is deterministic.** No wall-clock timing, sleeps or threads. The statuses are scripted in order, the poll runs synchronously with no event loop, and the first poll asserts the progress value 25 and the download label before the second poll is sent. The real job is cancelled in the guard.
+- **The fix is at the cause and complete.** The cause was the poll setting the label in one branch only. `pollJob` now sets the separation label when `fetching_model` is false. The initial label in `startJob` (`src/gui/StemSplitController.cpp:272`) already uses the same separation text, and the terminal states close the dialog.
+- **No collateral damage.** GUI-only. `s_statusReader` is empty by default, so production reads `stem.job_status` exactly as before. No save or load, no limit, no check added.
+- **Realtime, undo and commands.** Nothing on the audio thread. The poll runs on the GUI thread. No undo step. No new control command, so no `ControlCommandsSnapshot` change.
+- **Registration and gates.** No new files. Gates PASS (R12). The shipped script is blocked by the write-jail, reported above.
 - **Sibling commands.** No command file changed, so no sibling command list applies.
-- **Portability.** `QProgressDialog::setLabelText` and `labelText` are present in Qt 5.15 and Qt 6. No new Qt API.
+- **Portability.** `QProgressDialog::setLabelText`, `labelText`, `value`, `isVisible` exist in Qt 5.15 and Qt 6. `QMetaObject::invokeMethod` with a string name is in both. No new Qt API.
 - **Verdict-specific item (ALREADY-FIXED / FALSE-POSITIVE evidence).** Not applicable: the verdict is FIXED.
-- **Completion check.** `python3 submit_check.py <worktree> new-p17-176` → `submit-check-1.log`, EXIT 1. PASS: commits on the branch, working tree clean, report verdict line, tests changed. FAIL: `gates (feature_check.py)` only. That check runs the shipped `feature_check.py`, which hits the same write-jail `PermissionError` as run 14 (its log folder is outside the worktree). The same gates pass with the log folder redirected (run 15, EXIT 0, RESULT: PASS). The completion-check failure is therefore environmental, not a gate result; the loop's own run of the shipped script should be checked by the reviewer.

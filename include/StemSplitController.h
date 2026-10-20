@@ -28,6 +28,7 @@
 #include <QPointer>
 #include <QString>
 
+#include <functional>
 #include <memory>
 
 #include "TimePos.h"
@@ -44,6 +45,7 @@ namespace lmms
 class SampleBuffer;
 class SampleClip;
 class Song;
+struct ControlResult;
 
 namespace gui
 {
@@ -78,10 +80,10 @@ public:
 	// Asynchronous entry point of the clip context-menu action.
 	void splitClipToStems(SampleClip* clip);
 
-	// Sets the dialog's label for the job phase: the model download while the
-	// worker fetches it, the separation otherwise. pollJob calls it on every
-	// poll; public so the pipeline test can drive it without a timer.
-	static void applyPhaseLabel(QProgressDialog* dialog, bool fetchingModel);
+	//! How pollJob reads one job's `stem.job_status` result. Empty means the
+	//! registry; the pipeline test replaces it to script the states a poll sees.
+	using StatusReader = std::function<ControlResult(int jobId)>;
+	static void setStatusReaderForTest(StatusReader reader);
 
 private slots:
 	void pollJob();
