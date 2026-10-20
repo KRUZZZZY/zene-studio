@@ -94,11 +94,14 @@ Round 2 (LOG FOLDER `new-p15-261.r2/logs`). Run from the worktree unless noted.
 | 16 | `python3 tests/doc-figures-gate.py` | 0 | `25-doc-figures.log` |
 | 17 | `bash tests/complexity-gate.sh --check` | 1 (ratchet, see below) | `26-complexity.log` |
 | 18 | `bash tests/file-length-gate.sh --check` | 1 (ratchet, see below) | `27-file-length.log` |
-| 19 | `python3 .../qwen/feature_check.py <worktree>` | **1 — blocked** (`PermissionError` creating `<worktree>-feature-check`, outside the write-jail) | `28-feature-check.log` |
+| 19 | `python3 .../qwen/feature_check.py <worktree>` | **1 — blocked** (`PermissionError`, see below) | `28-feature-check.log` |
+| 20 | `python3 .../qwen/feature_check.py <worktree>` (re-check, round 2 final) | **1 — blocked** (`PermissionError: ... zene-qwen-new-p15-261-feature-check/fork-sources.log`) | `30-feature-check-recheck.log` |
+| 21 | `python3 .../qwen/submit_check.py <worktree> new-p15-261` (round 2 final) | 1 — "gates" row FAIL (it runs row 20), "tests added or changed" PASS | `29-submit-check.log` |
 
-**Row 19 is blocked by the environment.** `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check`
-(`feature_check.py:70-71`). That is the projects directory, outside the write-jail. Rows 11–18 are the same commands its
-`SIMPLE` and `RATCHET` lists run (lines 22–29), run directly from the worktree.
+**Rows 19–21 are blocked by the environment.** `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check`
+(`feature_check.py:70-71`). That is the projects directory, outside the write-jail. Round 1 failed creating that directory;
+round 2 finds it present but not writable from here (`PermissionError` writing `fork-sources.log`). Nothing was changed to get around it.
+Rows 11–18 are the same commands its `SIMPLE` and `RATCHET` lists run (lines 22–29), run directly from the worktree.
 
 Ratchet rows 17–18 exit 1. Their `REGRESSION` lines (6 and 15) name pre-existing train items, and neither log mentions `AudioJack`
 (`grep -c AudioJack` → 0 for both). This worktree changes only `tests/src/core/AudioJackPortRestartTest.cpp` and the report, so no
@@ -131,6 +134,8 @@ Round 1 (LOG FOLDER `new-p15-261.r1/logs`): the evidence grep (`01-evidence.log`
   (`QTEST_GUILESS_MAIN` → `QTEST_MAIN`) affects only this test file.
 - **FALSE-POSITIVE evidence (code file:line or contract):** `src/core/audio/AudioJack.cpp:508` and `:565-569`;
   `include/AudioJack.h:84-103`, `:98`, `:70`. Contract: the purpose comment at `include/AudioJack.h:98` (the client exists only to list port names during construction).
-- **`submit_check.py` and build notes:** "tests added or changed" is now satisfied by the test file change. `feature_check.py` cannot write its logs
-  from my write-jail (row 19), so its gate rows were run directly (rows 11–18). The build needed `CCACHE_TEMPDIR=/tmp/ccache-tmp-p15`
+- **`submit_check.py` and build notes:** "tests added or changed" is now satisfied by the test file change (`tests/src/core/AudioJackPortRestartTest.cpp`).
+  The "gates (feature_check.py)" row still FAILs in my run, but only because `feature_check.py` cannot write its logs from my write-jail
+  (rows 19–21, `PermissionError`). Every gate command it runs passes or shows only the known train ratchet reds (rows 11–18).
+  The gate row needs to be re-run from outside the jail to confirm. The build needed `CCACHE_TEMPDIR=/tmp/ccache-tmp-p15`
   because ccache could not write under `/run/user/1000` (row 1).
