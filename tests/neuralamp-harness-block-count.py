@@ -16,8 +16,8 @@ def run_harness(harness, model_path, *args):
 	)
 
 
-def main():
-	harness = sys.argv[1]
+def write_fixture(directory):
+	"""Write a minimal valid WaveNet model the harness can load."""
 	model = {
 		"architecture": "WaveNet",
 		"version": "0.5.0",
@@ -35,9 +35,48 @@ def main():
 		},
 		"weights": [1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
 	}
+	path = Path(directory) / "minimal-valid.nam"
+	path.write_text(json.dumps(model), encoding="utf-8")
+	return path
+
+
+def rejection_failure(harness, model_path, args, expected):
+	"""Return why the run was not rejected cleanly, or None when it was."""
+	result = run_harness(harness, model_path, *args)
+	output = result.stdout + result.stderr
+	if result.returncode != 2:
+		return "args={} exit={} (expected 2): {}".format(
+			" ".join(args), result.returncode, output)
+	if "terminate called" in output:
+		return "args={} aborted instead of reporting a usage error: {}".format(
+			" ".join(args), output)
+	if expected not in output:
+		return "args={} did not report {!r}: {}".format(" ".join(args), expected, output)
+	return None
+
+
+def main():
+	harness = sys.argv[1]
+	cases = [
+		# The reported case: the block total overflowed a 32-bit addition and
+		# asked for a huge allocation.
+		(["--blocks", "2147483647"], "generated run exceeds 4194304 samples"),
+		# Both counts at INT_MAX: the sum alone overflows the narrow type.
+		(["--blocks", "2147483647", "--warmup", "2147483647"],
+			"generated run exceeds 4194304 samples"),
+		# A count that no longer fits the narrow type must be refused, never wrapped.
+		(["--blocks", "2147483648"], "generated run exceeds 4194304 samples"),
+		# Counts that are not numbers at all must be refused as usage errors.
+		(["--blocks", "99999999999999999999"], "--blocks must be an integer"),
+		(["--blocks", "not-a-number"], "--blocks must be an integer"),
+		(["--warmup", "99999999999999999999"], "--warmup must be an integer"),
+		(["--block", "2147483648"], "--block must be an integer"),
+		# Counts that are numbers but out of range keep their own message.
+		(["--blocks", "0"], "--blocks must be >= 1"),
+		(["--warmup", "-1"], "--warmup must be >= 0"),
+	]
 	with tempfile.TemporaryDirectory(prefix="zene-nam-block-count-") as temp_dir:
-		model_path = Path(temp_dir) / "minimal-valid.nam"
-		model_path.write_text(json.dumps(model), encoding="utf-8")
+		model_path = write_fixture(temp_dir)
 
 		# This small generated run proves the fixture loads and processes before
 		# the oversized count is exercised through that same code path. The tiny
@@ -53,13 +92,11 @@ def main():
 			sys.stderr.write(smoke_output)
 			return 1
 
-		result = run_harness(harness, model_path, "--blocks", "2147483647")
-		output = result.stdout + result.stderr
-		expected = "error: generated run exceeds 4194304 samples"
-		if result.returncode != 2 or expected not in output:
-			sys.stderr.write("FAIL: oversized block count was not rejected before allocation\n")
-			sys.stderr.write(output)
-			return 1
+		for args, expected in cases:
+			failure = rejection_failure(harness, model_path, args, expected)
+			if failure is not None:
+				sys.stderr.write("FAIL: {}\n".format(failure))
+				return 1
 	print("PASS: oversized generated run rejected with a valid NAM model")
 	return 0
 
