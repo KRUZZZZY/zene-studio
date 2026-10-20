@@ -125,34 +125,48 @@ No new item in a changed product file. The ratchet exit 1 is the train's known s
 
 ## Self-check
 
-Answers to the submit_check items (`submit_check.py` output in the next section).
+Each ASK item of `submit_check.py`, answered with its evidence:
 
-1. **Each new test FAILS with the product change reverted and PASSES with it.** Yes. Reverted: `test-13-proof-red-unfixed.log`,
-   EXIT 8, `Actual 2 / Expected 1 / DeviceDspTest.cpp(979)`. Restored: `test-14-proof-green-fixed.log`, EXIT 0.
-   Honest limit: the RED fails at the undo-depth assertion, which is the first assertion that can fail. The later
-   assertion that the project stays clean is not reached on the reverted code, so I did not observe it failing. The
-   original code sets the modified flag unconditionally (`ControlCommandsDeviceTools.cpp:306` base), so it would fail too,
-   but that is read from the code, not run.
-2. **Acceptance criteria are proven by tests run here.** The finding's criteria are: `changed: 0` records no undo step, and
-   the project stays clean. The first is asserted at line 979 and observed (test-13, test-14). The second is asserted at
-   line 980 and passes (test-14, test-16). No separate acceptance table exists for this fix record.
-3. **Each edit is one undo step; reversibility class honest.** A Console apply that changes something still records one
-   undo step: `ControlCommandsDeviceTools.cpp:95` takes one `addUndoStep` for all changed models, and the existing tests
-   `oneConsoleApplyIsOneUndoStep` and `theConsoleGoesOnEveryChannel` pass (test-15). No command was added or changed; the
-   reversibility table is unchanged.
-4. **Nothing added runs on the audio thread.** The changed functions run in control command handlers (`consoleApply`,
-   `writeValues`) and in `consoleTemplate` under them. The `ScopedJournalMute` toggles `ProjectJournal::setJournalling` on the
-   calling thread. None is on the audio path.
-5. **Old projects still load and render as before; save/load unchanged.** No file format, no save code, no load code
-   changed. The only persisted effect is the undo history, which a no-op apply no longer adds to.
-6. **Portability (Qt 5.15 / MSVC / macOS).** The changed code uses only `std::clamp`, `QVector`, `ProjectJournal`'s
-   `isJournalling`/`setJournalling`, all already used in this tree. No new Qt-6-only API and no platform-specific code.
-7. **Sibling commands.** `plugin.randomise` / `plugin.blend` (`writeValues`) were changed to use the same count. `mixer.console_apply`
-   is the other command in the touched file. Its removal path (`removeConsoles`, reached through `mixer.console_apply` with
-   `remove: true`) already set modified only when something was removed, so it is consistent with the new rule and was not changed.
-8. **Gates.** `feature_check.py` could not run (`PermissionError`, see Gates). Each listed gate was run by hand, with
-   EXIT codes above: the six simple gates exit 0; the two ratchets exit 1 with no new item in a changed file.
+1. **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Yes. Reverted:
+   `test-13-proof-red-unfixed.log`, `ctest -R '^DeviceDspTest$'` EXIT **8**, `Actual 2 / Expected 1 / DeviceDspTest.cpp(979)`.
+   Restored: `test-14-proof-green-fixed.log`, EXIT **0**. The reverted state is the whole product diff (the three product
+   files), reversed with `git apply -R` and reapplied from `fix.patch`.
+   Honest limit: the RED stops at the undo-depth assertion (line 979), the first that can fail. The clean-project
+   assertion (line 980) is not reached on the reverted code, so I did not observe it fail. The original code sets the
+   modified flag unconditionally (`ControlCommandsDeviceTools.cpp:306` at base), so it would fail too; that is read from
+   the code, not run.
+2. **The test is deterministic (no wall-clock timing, sleeps or races; name the seam or injected values).** Yes. There is no
+   timing and no concurrency. The test runs the commands on the test thread, with the same registry and mixer as the other
+   console tests. Its only fixture is a `QTemporaryDir` file, saved with `saveProjectFile` and marked clean with
+   `noteProjectSaved` (the method `MixerToolsTest::aClampOnlyAdjustmentDoesNothing` uses). The inputs are fixed (drive 40).
+3. **The fix is at the cause and complete (every caller and sibling checked and consistent).** `writeModelsRecorded` has
+   two callers, both updated: `consoleApply` (`ControlCommandsDeviceTools.cpp:325`) and `writeValues`
+   (`ControlCommandsDeviceParams.cpp:294`). The scratch build (`consoleTemplate`, `:257`) has one caller, `consoleApply`.
+   `removeConsoles` already set modified only when something was removed (the same rule). `placeConsoles` is unchanged
+   and still reports `added`. The cause is the undo step itself, not the reply text.
+4. **No collateral damage (old projects load as before; any limit or check added does not hit legitimate callers).** No
+   save or load code, no file format and no limit or check were added. A real Console change still takes one step and the
+   same `added`/`changed` values (`oneConsoleApplyIsOneUndoStep`, `theConsoleGoesOnEveryChannel` pass in test-15). The
+   only changed outcome is a no-op write (undo step and modified flag removed), and for `plugin.randomise` / `plugin.blend`,
+   a value outside its range that clamps to the value the model already has (before: step and `changed: 1`; now: neither).
+5. **Any alternative contract for the no-op case (ALREADY-FIXED or FALSE-POSITIVE evidence).** Not applicable: the verdict is
+   FIXED. Evidence that the defect was real at base: `ControlCommandsDeviceTools.cpp:306` (base) and RED test-2.
+6. **Sibling commands in the command files changed.** The check lists the `rack.*` group, because `rack.split` is
+   registered in `ControlCommandsDeviceTools.cpp:392`. None of those commands calls `writeModelsRecorded`, `consoleTemplate`,
+   or `ScopedJournalMute`; those are called only from `consoleApply` (`:322`, `:325`) and `writeValues`
+   (`ControlCommandsDeviceParams.cpp:294`). The `mixer.console_apply` path (removal included) and `plugin.randomise` /
+   `plugin.blend` are the consistent siblings, and both are covered above.
+7. **Registration and gates.** The product files are registered already (`fork-sources` and `no-upstream-regression` gates
+   exit 0; no new file was added, so `tests/fork-sources.txt` / `tests/upstream-modifications.txt` need no change). The
+   six simple gates exit 0 when run by hand. The two ratchets exit 1, with no new item in a changed file (see Gates).
+   **The `feature_check.py` gate itself still fails here** (`PermissionError` creating
+   `zene-qwen-new-p15-10-feature-check` next to the worktree, outside this session's write-jail). That item is blocked
+   from this session; the other checks and the hand-run gates are the evidence I have.
 
 ## Submit check
 
-Output of `submit_check.py` is in the commit-time section below (`submit-check-1.log`).
+`submit_check.py new-p15-10` (`submit-check-1.log`, EXIT 1) after commit `c82e795dc`:
+
+- PASS: commits on the branch; working tree clean; report present; tests changed (`DeviceDspTest.cpp`).
+- FAIL: `gates (feature_check.py)`. Cause: `PermissionError` on the gate's log folder, described above. Not a code result.
+- The six ASK items are answered in the Self-check section above.
