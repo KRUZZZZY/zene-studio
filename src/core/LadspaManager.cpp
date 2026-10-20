@@ -55,7 +55,14 @@ LadspaManager::LadspaManager()
 								split( LADSPA_PATH_SEPERATOR );
 	ladspaDirectories += ConfigManager::inst()->ladspaDir().split( ',' );
 
+	// Two bundled locations, both scanned: "plugins:ladspa" is the LADSPA
+	// directory of the "plugins" search path - the plugin directory relative
+	// to the application, where a build or an installation keeps its modules -
+	// and "plugins/ladspa" the LADSPA directory relative to the working
+	// directory. Neither entry reaches the other location, so replacing one
+	// by the other loses the modules of the location it did not name.
 	ladspaDirectories.push_back( "plugins:ladspa" );
+	ladspaDirectories.push_back( "plugins/ladspa" );
 #ifndef LMMS_BUILD_WIN32
 	ladspaDirectories.push_back( qApp->applicationDirPath() + '/' + LIB_DIR + "ladspa" );
 	ladspaDirectories.push_back( "/usr/lib/ladspa" );
