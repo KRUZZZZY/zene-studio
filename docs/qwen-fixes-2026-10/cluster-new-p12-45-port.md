@@ -41,6 +41,27 @@ the real engine and the command surface:
 Both fail on the reverted product with `clips` Actual 1 vs Expected 0 - the
 blank clip the finding is about - and pass with it.
 
+**The check's own verdict, run on this branch.** Running the check's own code
+(`negctl.prove(worktree, merge-base(HEAD, 050/m0-train-8), run_dir, report)`)
+on the committed branch gives:
+
+```
+ok: True
+detail: SessionArrangementRecordTest, SessionCommandArgsTest, SessionGridRecordTest,
+        SessionModelTest, SessionTransportBarTest: they fail without it (rc 8) and pass with it
+reverted_build_rc: 0   reverted_rc: 8   restored_rc: 0   tree_clean: True
+```
+
+(logs in .../new-p12-45-port.r5/negctl/: product.patch, build-reverted.log,
+test-reverted.log, build-restored.log, test-restored.log). The reverted run
+fails on exactly the two new cases
+(`SessionGridRecordTest::aTakeWhoseSceneWasRemovedIsNotLandedAsABlankClip` at
+tests/src/gui/SessionGridRecordTest.cpp:194 and
+`...GridTrackWasRemoved...` at :223, "clips" Actual 1 vs Expected 0) and the
+other 4 selected tests plus the other 6 cases of SessionGridRecordTest pass
+("Totals: 6 passed, 2 failed"); the restored run is "100% tests passed out of
+5".
+
 ## Evidence (the fix itself, unchanged since round 2)
 
 - `src/core/ControlCommandsSessionRecordLand.cpp:300-303` - the song-track
@@ -113,6 +134,7 @@ All logs are in
 | Item | Command | EXIT / result |
 |---|---|---|
 | RED (product reverted) | `git apply -R logs/fix.patch` + rebuild + `ctest -R "^(SessionGridRecordTest\|ControlSessionRecordLandTest)$"` (logs/test-3-red-revert.log) | 8 - 4 failed (2 new cases: `clips` 1 vs 0) |
+| The check's own negative control | `negctl.prove(wt, merge-base(HEAD, 050/m0-train-8), run_dir, report)` | ok=True - fails without it (rc 8), passes with it (rc 0), tree clean (runs/new-p12-45-port.r5/negctl/) |
 | GREEN (fix restored) | `git apply logs/fix.patch` + rebuild + same ctest (logs/test-4-green-restore.log) | 0 - 2/2 passed |
 | GREEN (fix in place, new test) | `ctest -R "^SessionGridRecordTest$"` (logs/test-1-green.log) | 0 - 1/1 passed, binary 8 passed / 0 failed |
 | Affected family | `ctest -R "^(6 tests)$"` (logs/test-5-family.log) | 0 - 6/6 passed |
