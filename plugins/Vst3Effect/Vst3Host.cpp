@@ -684,15 +684,7 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 		// in before the events drained now: a note-off left at the previous boundary must release
 		// its note before a note-on at offset 0 starts the next one. The carried count comes out
 		// of this request's event-list room, so a drain can never push a carried event out.
-		const int32 deferred = d.deferredEvents.getEventCount();
-		for (int32 i = 0; i < deferred; ++i)
-		{
-			Event event{};
-			if (d.deferredEvents.getEvent(i, event) != kResultOk) { continue; }
-			event.sampleOffset = 0;
-			d.inputEvents.addEvent(event);
-		}
-		d.deferredEvents.clear();
+		const int32 deferred = d.prependDeferredEvents();
 		drainMidiIntoEventList(d.midiQueue, d.midiEvents, d.inputEvents,
 			d.eventInputBusIndex, frames, &d.controllerMap, &d.inputParamChanges,
 			kMaxMidiEventsPerBlock - deferred);
@@ -715,6 +707,20 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 
 	// The next request drains into the full list again.
 	if (d.midiEnabled) { d.processData.inputEvents = &d.inputEvents; }
+}
+
+auto HostedPlugin::Impl::prependDeferredEvents() -> int
+{
+	const int32 count = deferredEvents.getEventCount();
+	for (int32 i = 0; i < count; ++i)
+	{
+		Event event{};
+		if (deferredEvents.getEvent(i, event) != kResultOk) { continue; }
+		event.sampleOffset = 0;
+		inputEvents.addEvent(event);
+	}
+	deferredEvents.clear();
+	return count;
 }
 
 void HostedPlugin::Impl::runChunk(const float* const* inputs, float* const* outputs,

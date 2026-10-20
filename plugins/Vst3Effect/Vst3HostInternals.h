@@ -152,6 +152,9 @@ struct HostedPlugin::Impl
 	//! Vst3Host.h.
 	void runChunk(const float* const* inputs, float* const* outputs, int numInputs,
 		int numOutputs, int offset, int chunk, bool firstChunk, bool lastChunk);
+	//! Moves the previous request's carried boundary events to offset 0 of this request's list.
+	//! @returns how many events it inserted, which is the room the drain must leave them.
+	auto prependDeferredEvents() -> int;
 	// runChunk's three steps (split for the complexity target, unchanged).
 	void sliceEvents(int offset, int chunk, bool lastChunk);
 	void mapBuses(const float* const* inputs, float* const* outputs, int numInputs, int numOutputs, int offset, int chunk);
