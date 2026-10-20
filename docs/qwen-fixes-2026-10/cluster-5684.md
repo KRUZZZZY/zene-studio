@@ -20,7 +20,7 @@ replacement. It does not: the audio-thread entry point takes the track lock with
   once; it cannot wait for the writer.
 - `include/Track.h:416-419` — `bool tryLock() { return m_processingLock.tryLock(); }`
   (non-blocking `QMutex::tryLock`).
-- `src/tracks/InstrumentTrackNotes.cpp:245` — the map read
+- `src/tracks/InstrumentTrackNotes.cpp:247` — the map read
   `m_articulations.at(note.conditions().articulation)` is inside `triggerNote()`,
   which `InstrumentTrack::play` calls at `src/tracks/InstrumentTrack.cpp:1037` while
   it holds that `tryLock()`. The map is never read outside the `tryLock` section.
