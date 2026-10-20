@@ -19,6 +19,7 @@ The configured tree is `RelWithDebInfo`, where `LMMS_DEBUG` is disabled. A full 
 | Final configured build and family test | `cmake --build build --target zene AudioBusTest -j2` then `LOG_DIR=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5491.r1/logs && ctest -R '^AudioBusTest$' --output-on-failure > "$LOG_DIR/test-7.log" 2>&1; rc=$?; echo "EXIT=$rc"; exit "$rc"` | 0 / 0 | Normal `RelWithDebInfo` build passed; 1/1 registered CTest passed. |
 | Final family test detail (`build/tests`) | `LOG_DIR=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5491.r1/logs && ctest -R '^AudioBusTest$' -V > "$LOG_DIR/test-8.log" 2>&1; rc=$?; echo "EXIT=$rc"; exit "$rc"` | 0 | 23 QtTest cases passed, 0 failed, 0 skipped; 1/1 CTest passed. |
 | Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5491 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5491.r1/logs/gate-1.log 2>&1; rc=$?; echo "EXIT=$rc"; exit "$rc"` | 0 | `gate-1.log`: all gates PASS, including complexity and file length. |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5491 5491 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5491.r1/logs/gate-submit-1.log 2>&1; rc=$?; echo "EXIT=$rc"; exit "$rc"` | 0 | `submit_check.py` passed; all five `?` prompts are answered below with evidence. |
 
 ## Other commands and logs
 
@@ -42,11 +43,12 @@ The temporary generated build-flag edit was restored; `build/src/CMakeFiles/lmms
 
 ## Self-check
 
-- `AudioBus::sanitize()` still clears a non-finite channel and leaves finite clamping unchanged; the new regression checks clearing, and the full `AudioBusTest` passes.
-- The sibling paired sanitizer (`sanitizeBuffer()`) and `sanitizeAll()` do not log; the only console writes were in the removed single-channel branch. `AudioBuffer::sanitize()` is a separate implementation and is unchanged.
-- The product path adds no allocation, lock, wait, command, undo action, saved-data change, or console I/O.
-- The inherited test change is registered with a reason in `tests/upstream-modifications.txt`; `src/core/AudioBus.cpp` is already listed as fork-new in `tests/fork-sources.txt`.
-- The test family ran 1 registered CTest target and 23 QtTest cases, with no skips (final verbose output: `test-8.log`).
+- **Regression proof:** the pre-fix test failed with exit 8 (`test-3.log`); the fixed test passed with exit 0 (`test-4.log`). Reversing the product patch made it fail again with exit 8 (`test-5.log`); reapplying the patch passed with exit 0 (`test-6.log`). These runs used the same captured-output assertion.
+- **Determinism:** `SanitizeDoesNotWriteToConsole` injects `quiet_NaN()` into a stack-owned `TestBus`, selects one output channel with `setPin(1, 1, false)`, calls `sanitize()` synchronously, and checks the captured stream and cleared sample (`tests/src/core/AudioBusTest.cpp:292-306`). It uses no clock, sleeps, timing threshold, or worker thread to drive the tested buffer.
+- **Cause, callers, and siblings:** `include/AudioPorts.h:202` calls `coreInOut.sanitize(*m_ap)`, which is the model-driven path containing the removed per-channel write. The paired path calls `sanitizeBuffer()` (`src/core/AudioBus.cpp:65, 131-140`) and `sanitizeAll()` calls that same log-free helper (`src/core/AudioBus.cpp:170-185`; called from `src/core/AudioBusHandle.cpp:243`). `AudioBuffer::sanitize()` is a separate implementation and is unchanged.
+- **No collateral behavior:** only the debug console writes and unused include were removed. Non-finite channel clearing, quiet-channel marking, and finite clamping remain in the same branches (`src/core/AudioBus.cpp:109-156`); no file format, load/save path, limits, undo state, or command behavior changed.
+- **Verdict question:** the ALREADY-FIXED/FALSE-POSITIVE evidence prompt does not apply; this finding is FIXED and was real, as shown by the original `LMMS_DEBUG` `std::cout` writes at `src/core/AudioBus.cpp:112-116` and the red/green runs above.
+- **Registration and counts:** `tests/src/core/AudioBusTest.cpp` is registered in `tests/upstream-modifications.txt`; `src/core/AudioBus.cpp` is already listed as fork-new in `tests/fork-sources.txt`. The test family ran 1 registered CTest target and 23 QtTest cases, with no skips (`test-8.log`).
 
 ## Files in this fix
 
