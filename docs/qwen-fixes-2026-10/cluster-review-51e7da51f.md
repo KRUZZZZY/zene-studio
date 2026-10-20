@@ -333,9 +333,15 @@ EXIT=8
       - ScriptDawRemovalUndoTest: the audio-change-lock case of the OTHER
         cluster (see the review-51e7da51f section below)
       - ScriptMemoryBudgetTest::aSystemAllocationFailureIsNotReportedAsBudgetExhaustion:
-        this machine's allocator satisfies a SIZE_MAX realloc, so the case's
-        premise ("a size no allocator can satisfy") does not hold here. The
-        code path is untouched by this batch.
+        a PRE-EXISTING failure of that case's own expression form on this
+        toolchain: the case asserts that one inlined
+        `allocate(&system, nullptr, 0, SIZE_MAX)` returns null, and the
+        compiler folds that impossible allocation into a non-null value (split
+        into two statements the same call returns null, and the case passes).
+        The case's translation unit includes none of the files this batch
+        changed (no AutomatableModel.h, no ControlStructuralSupport.h, no
+        ScriptDawBindings.h), so it compiles the same before and after these
+        commits and fails the same way.
 
 ## Self-check
 
