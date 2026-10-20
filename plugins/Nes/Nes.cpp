@@ -25,6 +25,9 @@
 
 #include "Nes.h"
 
+#include <cstddef>
+#include <memory>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -564,8 +567,13 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 	
 	if (!n->m_pluginData)
 	{
-		auto nes = new NesObject(this, Engine::audioEngine()->outputSampleRate(), n);
-		n->m_pluginData = nes;
+		// The note state is created on the audio path, so it lives in the note
+		// handle's inline storage instead of the heap.
+		static_assert(sizeof(NesObject) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(NesObject) <= alignof(std::max_align_t));
+		n->m_pluginData = std::construct_at(
+			static_cast<NesObject*>(n->pluginDataStorage()),
+			this, Engine::audioEngine()->outputSampleRate(), n);
 	}
 
 	auto nes = static_cast<NesObject*>(n->m_pluginData);
@@ -578,7 +586,11 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 
 void NesInstrument::deleteNotePluginData( NotePlayHandle * n )
 {
-	delete static_cast<NesObject *>( n->m_pluginData );
+	if (n->m_pluginData != nullptr)
+	{
+		std::destroy_at(static_cast<NesObject*>(n->m_pluginData));
+		n->m_pluginData = nullptr;
+	}
 }
 
 

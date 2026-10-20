@@ -373,6 +373,32 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(allocations), 0ull);
 	}
 
+	void nesNoteStartDoesNotAllocate()
+	{
+		Engine::getSong()->clearProject();
+		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(m_track != nullptr);
+		Instrument* instrument = m_track->loadInstrument(QStringLiteral("nes"));
+		QVERIFY(instrument != nullptr);
+		QCOMPARE(instrument->nodeName(), QStringLiteral("nes"));
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		std::vector<SampleFrame> output(static_cast<std::size_t>(frames));
+		const Note note(TimePos(384), TimePos(0), 60);
+		NotePlayHandle* nph = NotePlayHandleManager::acquire(m_track, 0, frames, note);
+		QVERIFY(nph->m_pluginData == nullptr);
+
+		allocationCount = 0;
+		countAllocations = true;
+		instrument->playNote(nph, std::span<SampleFrame>{output});
+		countAllocations = false;
+		const std::uint64_t allocations = allocationCount;
+		QVERIFY(nph->m_pluginData != nullptr);
+		NotePlayHandleManager::release(nph);
+
+		QCOMPARE(static_cast<qulonglong>(allocations), 0ull);
+	}
+
 	void monstroConcurrentVoicesKeepIndependentModulation()
 	{
 		const auto [serialTrack, serialInstrument] = createModulatedMonstroTrack();
