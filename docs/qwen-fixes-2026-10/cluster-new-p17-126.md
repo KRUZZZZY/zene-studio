@@ -76,4 +76,5 @@ No new files were added, so no registration in `tests/fork-sources.txt` or `test
 - Qt portability: `QLabel`, `QVBoxLayout`, `QHBoxLayout` are already used in this file; no Qt-6-only API added.
 - Sibling commands: no command file changed, so the snapshot and sibling-command steps do not apply.
 - Gates: six pass; ratchets red for other files only; the wrapper itself could not run (see above).
-- Working tree: clean after the commit below (report, fix and test committed together).
+- Working tree: clean after the commit (report, fix and test committed together, commit `363145d5a`).
+- Completion check (`submit_check.py <worktree> new-p17-126`, EXIT 1, `submit-check-1.log`): PASS for commits, clean tree, report verdict, tests changed. The one FAIL is the `gates (feature_check.py)` row, the write-jail log-folder problem above, not a gate failure: the six gates pass and the ratchets show nothing in my files. Ask item 5 (ALREADY-FIXED / FALSE-POSITIVE) does not apply: the verdict is FIXED.
