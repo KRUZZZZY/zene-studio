@@ -70,3 +70,4 @@ The shipped `feature_check.py` exits 1 in this sandbox (run in round 1, `gate-1.
 - **Sibling commands.** No command file changed, so no sibling command list applies.
 - **Portability.** `QProgressDialog::setLabelText`, `labelText`, `value`, `isVisible` exist in Qt 5.15 and Qt 6. `QMetaObject::invokeMethod` with a string name is in both. No new Qt API.
 - **Verdict-specific item (ALREADY-FIXED / FALSE-POSITIVE evidence).** Not applicable: the verdict is FIXED.
+- **Completion check (round 2).** `python3 submit_check.py <worktree> new-p17-176` → `runs/new-p17-176.r2/logs/submit-check-r2.log`, EXIT 1. PASS: commits on the branch, working tree clean, report verdict line, tests changed. FAIL: `gates (feature_check.py)` only, the same write-jail `PermissionError` as R12's shipped-script run. The ASK items are answered above (the test-revert proof is R8/R11; determinism is the scripted status seam; the fix and its callers are in the Evidence section).
