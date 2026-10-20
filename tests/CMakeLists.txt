@@ -1197,6 +1197,8 @@ set(LMMS_TESTS
 	src/gui/ShortcutsCommandsTest.cpp
 	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
 	src/gui/WorkflowFeedbackTest.cpp
+	# CPU load indicator: a steady 1% profiler reading advances the main readout, and it falls back to 0%.
+	src/gui/CPULoadWidgetTest.cpp
 	# 0.5.0 theme 24: the task indicator and its list
 	src/gui/TaskIndicatorTest.cpp
 	# 0.5.0 Q050-179 (WF-085): the header's Rec left readout shows record.remaining's estimate.
@@ -2458,7 +2460,7 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
-	ShellHomesTest TaskCenterTest TaskIndicatorTest RecordRemainingTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
+	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

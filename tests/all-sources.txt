@@ -2847,6 +2847,7 @@ tests/src/gui/AutomationLaneChildGuiTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserDragUrlTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
+tests/src/gui/CPULoadWidgetTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/ChainPresetMenuTest.cpp

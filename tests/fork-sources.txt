@@ -119,6 +119,7 @@
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/EqCurveTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/EqFilterTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/doc-pricing-model-gate.py ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
@@ -203,6 +204,7 @@
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/EqCurveTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/NeuralAmp/tests/compare_rate_test.py ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
+#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-10-10 (new-p10-108): XyPadPairTest now exercises the Delay plug-in's XyPad directly. Its two test-local headers
 #   provide AUTOMOC inputs for the already-configured target without changing the CMake build graph.
@@ -2763,3 +2765,5 @@ plugins/NeuralAmp/tests/rt_alloc_probe.cpp
 docs/qwen-fixes-2026-10/cluster-new-p16-196.md
 # cluster new-p9-326-port (2026-10): fix and verification report for the OpulenZ held-voice velocity-scaling defect.
 docs/qwen-fixes-2026-10/cluster-new-p9-326-port.md
+# cluster new-p10-95-port-port (2026-10): CPU load readout rounding regression test (fork-NEW; named in both recipe copies).
+tests/src/gui/CPULoadWidgetTest.cpp
