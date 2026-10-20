@@ -62,7 +62,7 @@ Reverse proof: with touch events accepted but not handled, build exit 0 and
   new punch state uses the existing optional `<timeline>` attributes. Take-lane display state is
   derived, never saved.
 - Tests run: `ctest -R '^(ArrangerTakePunchTest|ArrangerTimelineTest|TakeLanesPanelTest|CanvasKeyboardTest|PunchWindowTest|RecordingLatencyTest)$'`
-  exit 0, 6/6 (test-final3 log); `python3 tests/control-punch-transcript.py build/zene` exit 0
+  exit 0, 6/6 (test-final4 log); `python3 tests/control-punch-transcript.py build/zene` exit 0
   (punch-transcript-final2 log); `python3 tests/doc-figures-gate.py` exit 0.
 - Gates: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
   no-tautology and doc-figures exit 0; complexity and file-length report no new item in this
@@ -73,9 +73,9 @@ Reverse proof: with touch events accepted but not handled, build exit 0 and
 Commands and exit codes observed (logs under `build/q050-logs/`):
 
 - Build: `cmake --build build --target zene ArrangerTakePunchTest ArrangerTimelineTest TakeLanesPanelTest RecordingLatencyTest CanvasKeyboardTest PunchWindowTest -- -j4`
-  exit 0 (build-final2, after the test move; the earlier builds build-22/build-23 also exited 0).
+  exit 0 (build-final2 after the test move, and build-24 after the final touch fix; the earlier builds build-22/build-23 also exited 0).
 - Tests: `ctest -R '^(ArrangerTakePunchTest|ArrangerTimelineTest|TakeLanesPanelTest|CanvasKeyboardTest|PunchWindowTest|RecordingLatencyTest)$'`
-  exit 0, 6/6 (test-final3).
+  exit 0, 6/6 (test-final4).
 - Punch transcript: `python3 tests/control-punch-transcript.py build/zene` exit 0
   (punch-transcript-final2); its new check "the punch edit left every loop attribute unchanged" ok.
 - Gates: six simple gates exit 0; complexity and file-length PASS in the patched
@@ -94,7 +94,7 @@ Commands and exit codes observed (logs under `build/q050-logs/`):
 | `CompSwipeStrip::rebuildTakes()` returns without reading | 0 | `TakeLanesPanelTest::theStripShowsTakeWaveformsAndTheCompHighlight` (`takeBands()` 0, expected 2) | 1 |
 | Touch events accepted but not handled | 0 | `TakeLanesPanelTest::aTouchSwipeCompsTheSameRangeAsAMouse` (`segments.size()` 0, expected 1) | 1 |
 
-Restored, the same commands exit 0 (test-final3). The recording gate pre-dates this unit, so
+Restored, the same commands exit 0 (test-final4). The recording gate pre-dates this unit, so
 `RecordingLatencyTest` stays green on a UI revert; it is cited for the inside/outside behaviour,
 not as a red-on-revert proof.
 
