@@ -2795,6 +2795,28 @@ ExportOutcome Song::exportProjectMidi(QString const & exportFileName) const
 
 }
 
+namespace
+{
+//! A TEST hook (see setExportCloseFailureHook): empty in every real run.
+ExportCloseFailureHook s_exportCloseFailureHook;
+}
+
+ExportOutcome exportOutcomeAfterClose(const QFileDevice& file, bool writeOk)
+{
+	// A TEST hook: the close is forced to count as failed, the way a flush error or an
+	// error the close itself reports would.
+	if (s_exportCloseFailureHook && s_exportCloseFailureHook()) { return ExportOutcome::Incomplete; }
+	// The file's state AFTER the close: a flush error (the bytes the device still held)
+	// and an error the close itself reports only show up then.
+	if (file.error() != QFileDevice::NoError) { return ExportOutcome::Incomplete; }
+	return writeOk ? ExportOutcome::Written : ExportOutcome::Incomplete;
+}
+
+void setExportCloseFailureHook(ExportCloseFailureHook hook)
+{
+	s_exportCloseFailureHook = std::move(hook);
+}
+
 
 
 void Song::updateFramesPerTick()
