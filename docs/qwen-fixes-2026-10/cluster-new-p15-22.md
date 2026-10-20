@@ -123,9 +123,11 @@ files are fork-owned (`ControlCommandsNoteEdit.cpp`, `NoteEditRangeTest.cpp`, bo
 
 Results of `python3 .../qwen/submit_check.py <worktree> new-p15-22` run before the commit (`submit-check-1.log`, EXIT 1):
 FAIL "commits on the branch" and "working tree clean", FAIL "report ... missing", FAIL "report has a Self-check section",
-FAIL "tests added or changed"; these are the state before this commit. Re-run after the commit: see the final message.
-The `gates (feature_check.py)` row fails for the environment reason above (the sibling log folder is outside the
-write-jail). The gates themselves pass (gates-3.log, EXIT 0).
+FAIL "tests added or changed"; these are the state before this commit.
+After the fix commit (`submit-check-2.log`, EXIT 1): PASS commits on the branch, PASS working tree clean, PASS report,
+PASS tests added or changed (`tests/src/core/NoteEditRangeTest.cpp`). The one FAIL is `gates (feature_check.py)`, for the
+environment reason above (the sibling log folder is outside the write-jail). The gates themselves pass (gates-3.log,
+EXIT 0).
 
 1. **Regression test fails with the change reverted and passes with it.** Yes. RED: `run-range-red.log`, EXIT 2, 2 failures
    at `NoteEditRangeTest.cpp:225` and `:244`. GREEN: `run-range-green2.log`, EXIT 0, 10 passed. The timbre guard passes
