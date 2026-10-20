@@ -37,8 +37,28 @@ Evidence:
 - Stem family: `cd build/tests && ctest -R '^Stem' --output-on-failure` EXIT=0, 4/4 passed.
 - Gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-255` EXIT=0, RESULT: PASS.
 
-Files committed:
-- include/StemSeparation/StemModelStore.h
-- src/core/StemModelStore.cpp
-- tests/src/core/StemModelStoreTest.cpp
-- docs/qwen-fixes-2026-10/cluster-new-p12-255.md
+## Self-check
+
+- Regression proof (exit codes): reversed only the cleanup hunk at
+  `src/core/StemModelStore.cpp:458` (keeping the test seam), rebuilt
+  (`cmake --build build --target StemModelStoreTest -j12`, EXIT=0), ran
+  `cd build/tests && ./StemModelStoreTest -silent` (EXIT=1, 21 passed / 1 failed:
+  `partialFiles(...).isEmpty()` returned FALSE). Restored the hunk, rebuilt
+  (`cmake --build build --target zene StemModelStoreTest -j12`, EXIT=0), ran
+  the same test (EXIT=0, 22 passed / 0 failed). Reversing the entire product patch
+  would also remove the test seam and prevent the test from compiling, so the
+  targeted hunk reversal is the meaningful proof.
+- Determinism: the rename-loser branch is triggered synchronously by
+  `StemModelStore::setDownloadRenameHook`, which creates the verified final file
+  inside `download()` between `QFile::remove(finalPath)` and `QFile::rename()`.
+  No sleep, timer or race decides pass/fail; the only timing in the test is an
+  incidental HTTP response delay, not the condition under test.
+- Cause and completeness: `download()` is the sole installer path; its siblings
+  (transfer failure and verify failure) still remove `partPath`, and the
+  concurrent-success test continues to pass. No other caller of `QFile::rename`
+  for this file exists.
+- Collateral damage: no saved-data or project format change; the hook is null in
+  production, so normal downloads are unaffected. The added cleanup only removes
+  this attempt's own staging file on the rename-loser branch.
+- Verdict is FIXED (not ALREADY-FIXED/FALSE-POSITIVE), so the code-contract item
+  does not apply.
