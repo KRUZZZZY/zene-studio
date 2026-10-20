@@ -619,7 +619,11 @@ float NotePlayHandle::slidePitchOffset( int fromKey, int toKey, float progress )
 
 void NotePlayHandle::updateFrequency()
 {
-	int masterPitch = m_instrumentTrack->m_useMasterPitchModel.value() ? Engine::getSong()->masterPitch() : 0;
+	// The mark is spent before the inputs are read, so a mark that lands while this update runs is kept
+	// for the next period instead of being cleared together with an update that did not see it.
+	m_frequencyNeedsUpdate = false;
+
+	int masterPitch =m_instrumentTrack->m_useMasterPitchModel.value() ? Engine::getSong()->masterPitch() : 0;
 	int baseNote = m_instrumentTrack->baseNoteModel()->value();
 	float detune = m_baseDetuning->value();
 	float instrumentPitch = m_instrumentTrack->pitchModel()->value();
