@@ -1027,7 +1027,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			// NOTE: a note that starts inside a selected span plays whole. A track
 			// with no composite and no audition skips this entirely.
 			if (_clip_num < 0 && !compPlays(c, c->startPosition().getTicks()
-				+ c->startTimeOffset().getTicks() + currentNote->pos().getTicks()))
+				+ c->startTimeOffset().getTicks() + currentNote->pos().getTicks() + passBase))
 			{
 				++nit;
 				continue;

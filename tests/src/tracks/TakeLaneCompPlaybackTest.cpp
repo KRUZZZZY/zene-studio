@@ -460,6 +460,29 @@ private slots:
 		delete track;
 	}
 
+	//! Cluster 5080: the comp lookup follows the loop pass playing, not the note's first-pass position.
+	void loopedClipCompReadsThePassPlaying()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false); clip->changeLength(TimePos(384));
+		QVERIFY(clip->addNote(Note(TimePos(24), TimePos(48), 60), false) != nullptr);
+		TakeLaneModel& comp = track->takeLanes();
+		comp.addLane(); comp.addLane();
+		QVERIFY(comp.selectSegment(0, 192, 0));
+		QVERIFY(comp.selectSegment(192, 384, 1));
+		ClipEdits edits = clip->clipEdits();
+		edits.loopTicks = 96;
+		clip->setClipEdits(edits);
+		QCOMPARE(playFrom(track, 144), (QList<int>{60}));  // second pass: song tick 144 is still lane 0
+		QVERIFY2(playFrom(track, 240).isEmpty(),  // third pass: 240 is lane 1, so the lane-0 note must not play
+			"the comp was read at the note's first-pass position (48) instead of the pass playing (240)");
+		delete track;
+	}
+
 private:
 	int m_rate = 44100;
 };
