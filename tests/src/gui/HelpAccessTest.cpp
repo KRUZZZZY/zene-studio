@@ -37,6 +37,7 @@
 #include <QFile>
 #include <QFrame>
 #include <QJsonArray>
+#include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QTemporaryDir>
@@ -171,6 +172,49 @@ private slots:
 		tour->showStep(1);
 		QCOMPARE(tour->step(), 1);
 		QVERIFY(GuidedTour::start(QStringLiteral("no-such-tour"), &window, &error) == nullptr);
+	}
+
+	void aMalformedTourIsNotListedOrStarted()
+	{
+		// The tours folder holds one usable tour and two that would show nothing: one whose step has no
+		// title or text, and one that is not JSON. The temporary tree is put in front of the shipped tours
+		// for this test only; the search path is put back before anything else runs.
+		QTemporaryDir root;
+		QVERIFY(root.isValid());
+		QVERIFY(QDir().mkpath(root.filePath(QStringLiteral("tours"))));
+		const auto write = [&](const QString& file, const QByteArray& body) {
+			QFile out(root.filePath(QStringLiteral("tours/") + file));
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QCOMPARE(out.write(body), body.size());
+		};
+		write(QStringLiteral("good.json"), R"({"title":"Good","steps":[{"title":"Step","text":"Some text"}]})");
+		write(QStringLiteral("blank.json"), R"({"title":"Blank","steps":[{}]})");
+		write(QStringLiteral("broken.json"), "{ not json");
+
+		QWidget window;
+		window.resize(800, 600);
+		const QStringList saved = QDir::searchPaths(QStringLiteral("data"));
+		QDir::setSearchPaths(QStringLiteral("data"), {root.path()});
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("blank\\.json")));
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("broken\\.json")));
+		const QJsonArray listed = GuidedTour::tours();
+		QString blankError;
+		QString brokenError;
+		QString error;
+		GuidedTour* blank = GuidedTour::start(QStringLiteral("blank"), &window, &blankError);
+		GuidedTour* broken = GuidedTour::start(QStringLiteral("broken"), &window, &brokenError);
+		GuidedTour* good = GuidedTour::start(QStringLiteral("good"), &window, &error);
+		QDir::setSearchPaths(QStringLiteral("data"), saved);
+
+		QCOMPARE(listed.size(), 1);
+		QCOMPARE(listed.at(0).toObject().value(QStringLiteral("name")).toString(), QStringLiteral("good"));
+		QVERIFY(blank == nullptr);
+		QVERIFY2(blankError.contains(QStringLiteral("blank")), qPrintable(blankError));
+		QVERIFY(broken == nullptr);
+		QVERIFY2(brokenError.contains(QStringLiteral("broken")), qPrintable(brokenError));
+		QVERIFY2(good != nullptr, qPrintable(error));
+		QCOMPARE(good->stepCount(), 1);
+		delete good;
 	}
 
 	void aTourTracksTargetMovementAndScrollingWithoutResizingWindow()
