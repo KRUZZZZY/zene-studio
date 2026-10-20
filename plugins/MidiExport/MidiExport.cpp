@@ -270,12 +270,17 @@ ExportOutcome MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 		writeChunk(mtrack);
 	}
 
-	// A half-written file is the caller's to remove (Incomplete); a complete one is
-	// the caller's to replace (Written). Neither is guessed from the file's presence
-	// on disk: this call knows which of the two it is.
-	const bool complete = midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
+	// The file's error is read TWICE, because the two errors live at different times:
+	// BEFORE the close it is the failed write (a close that succeeds CLEARS that error -
+	// Qt resets the device status), and AFTER it is the flush error (the bytes the
+	// device still held) or an error the close itself reports, which only shows up then.
+	// Reading the error before the close alone missed both.
+	const bool writeOk = midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
 	f.close();
-	return complete ? ExportOutcome::Written : ExportOutcome::Incomplete;
+	// A half-written file - or one that did not close cleanly - is the caller's to remove
+	// (Incomplete); a complete one is the caller's to replace (Written). Neither is guessed
+	// from the file's presence on disk: this call knows which of the two it is.
+	return exportOutcomeAfterClose(f, writeOk);
 }
 
 void MidiExport::writeMidiClip(MidiNoteVector &midiClip, const QDomNode& n,
