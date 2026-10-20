@@ -17,6 +17,7 @@
 #include <memory>
 
 #include "ConfigManager.h"
+#include "ComboBox.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "LedCheckBox.h"
@@ -36,9 +37,9 @@ namespace
 {
 
 //! The instrument view's "Bowed" checkbox, or nullptr when the view has none.
-LedCheckBox* bowedCheckBox(QWidget* view)
+gui::LedCheckBox* bowedCheckBox(QWidget* view)
 {
-	for (LedCheckBox* box : view->findChildren<LedCheckBox*>())
+	for (gui::LedCheckBox* box : view->findChildren<gui::LedCheckBox*>())
 	{
 		if (box->text() == QStringLiteral("Bowed")) { return box; }
 	}
@@ -46,7 +47,7 @@ LedCheckBox* bowedCheckBox(QWidget* view)
 }
 
 //! The "strike" attribute the instrument writes into a project: "1" bowed, "0" struck.
-QString savedStrike(Instrument* instrument)
+QString savedStrike(MalletsInstrument* instrument)
 {
 	QDomDocument doc;
 	QDomElement element = doc.createElement(QStringLiteral("instrument"));
@@ -83,23 +84,32 @@ private slots:
 		const std::unique_ptr<MalletsInstrument> instrument{new MalletsInstrument(track)};
 
 		QWidget parent;
-		const std::unique_ptr<gui::MalletsInstrumentView> view{
-			new gui::MalletsInstrumentView(instrument.get(), &parent)};
+		const std::unique_ptr<gui::PluginView> pluginView{instrument->createView(&parent)};
+		auto* view = dynamic_cast<gui::MalletsInstrumentView*>(pluginView.get());
+		QVERIFY(view != nullptr);
+		auto* presets = view->findChild<gui::ComboBox*>();
+		QVERIFY(presets != nullptr);
+		// The first BandedWG preset is index 10; select it through the instrument's preset control.
+		for (int i = 0; i < 10; ++i) { presets->selectNext(); }
+		QCOMPARE(presets->model()->value(), 10);
+		parent.show();
+		view->show();
 
-		LedCheckBox* bowed = bowedCheckBox(view.get());
+		gui::LedCheckBox* bowed = bowedCheckBox(view);
 		QVERIFY2(bowed != nullptr, "the BandedWG view has no Bowed checkbox, so the setting cannot be changed in the UI");
+		QVERIFY2(bowed->isVisible(), "the Bowed checkbox is hidden for the selected BandedWG preset");
 
 		// The setting defaults to bowed, and the checkbox shows it.
-		QVERIFY(bowed->isChecked());
+		QVERIFY(bowed->model()->value());
 		QCOMPARE(savedStrike(instrument.get()), QStringLiteral("1"));
 
 		// A click on the checkbox writes through to the instrument's setting.
 		bowed->click();
-		QVERIFY(!bowed->isChecked());
+		QVERIFY(!bowed->model()->value());
 		QCOMPARE(savedStrike(instrument.get()), QStringLiteral("0"));
 
 		bowed->click();
-		QVERIFY(bowed->isChecked());
+		QVERIFY(bowed->model()->value());
 		QCOMPARE(savedStrike(instrument.get()), QStringLiteral("1"));
 
 		// The other direction: a struck setting loaded from a project shows on the checkbox.
@@ -107,7 +117,7 @@ private slots:
 		QDomElement element = doc.createElement(QStringLiteral("instrument"));
 		element.setAttribute(QStringLiteral("strike"), QStringLiteral("0"));
 		instrument->loadSettings(element);
-		QVERIFY2(!bowed->isChecked(), "a loaded Bowed=0 setting does not reach the checkbox");
+		QVERIFY2(!bowed->model()->value(), "a loaded Bowed=0 setting does not reach the checkbox");
 	}
 };
 

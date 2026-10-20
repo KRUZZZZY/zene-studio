@@ -1,6 +1,26 @@
-BLOCKED
+FIXED
 
-Cluster new-p17-90: "The Mallets 'Bowed' setting has no visible control". The finding is REAL. The fix is written, but it has NOT been built or run: the lane's configured build tree has no target for the new test, and reconfiguring is refused in this lane. RED and GREEN were not observed, so nothing below claims a test result.
+Cluster new-p17-90: "The Mallets 'Bowed' setting has no visible control". The finding is REAL. At lane handoff, the new test had not been built or run because its target was absent from the configured tree. Independent QA regenerated the tree, tightened the test to use the production view factory and select a visible BandedWG preset, then verified GREEN and RED with only the product change reversed. The original lane log below records the handoff state; reviewer evidence follows.
+
+## Reviewer follow-up (2026-10-20)
+
+- `MalletsInstrumentViewTest` now goes through `Instrument::createView`, selects preset index 10 (Uniform bar), asserts the Bowed control is visible, then checks the checkbox/model/save/load path. This follows the actual UI factory, which rebinds the view model after the view constructor returns.
+- The lane's new test had three C++ API errors and bypassed the production view factory. QA corrected these in the test only; the product patch is unchanged.
+- Build and test logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-90.r1/logs/`.
+
+| step | command | EXIT | result |
+| --- | --- | --- | --- |
+| configure | `/usr/bin/cmake -S . -B build` | 0 | regenerated test target |
+| GREEN build | `cmake --build build --target zene malletsstk MalletsInstrumentViewTest -j4` | 0 | all three targets built |
+| GREEN | `ctest -R '^MalletsInstrumentViewTest$' --output-on-failure` from `build/tests` | 0 | 1/1 passed |
+| product reversal | `git apply -R qa-product-reversal.patch` | 0 | only `Mallets.cpp`/`.h` product hunks reverted |
+| RED build | `cmake --build build --target MalletsInstrumentViewTest -j4` | 0 | reverted product and test compiled |
+| RED | `ctest -R '^MalletsInstrumentViewTest$' --output-on-failure` from `build/tests` | 8 | failed at `bowed != nullptr`, as expected |
+| restore | `git checkout -- plugins/Stk/Mallets/Mallets.cpp plugins/Stk/Mallets/Mallets.h` | 0 | restored committed product patch |
+| restored build | `cmake --build build --target zene malletsstk MalletsInstrumentViewTest -j4` | 0 | all three targets built |
+| restored GREEN | `ctest -R '^MalletsInstrumentViewTest$' --output-on-failure` from `build/tests` | 0 | 1/1 passed |
+| existing `^Mallets$` attempt | `ctest -R '^Mallets$' --output-on-failure` from `build/tests` | 0 | CTest found no tests; not counted as a pass |
+| feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-90` | 0 | all eight gates PASS; no new complexity or file-length item |
 
 ## Evidence that the finding is real (HEAD b61e5f965, before this change)
 
@@ -34,7 +54,7 @@ Cluster new-p17-90: "The Mallets 'Bowed' setting has no visible control". The fi
 - The existing `^Mallets$` ctest runs `tests/reference/Stk/Mallets/`, which is the frozen Part C reference copy (`git log` of that path: `cfdb7a558`). It compares samples and cannot see a missing control, so it was not used and was not edited.
 - Registration: `tests/all-sources.txt` (new entry, sorted before `MissingDevicesNoEntryModule.cpp`), and `tests/upstream-modifications.txt` (reasoned lines for `Mallets.cpp`, `Mallets.h` and `tests/CMakeLists.txt`).
 
-## Commands run, with EXIT codes
+## Lane commands run at handoff, with EXIT codes
 
 | step | command | EXIT | log (LOG FOLDER) |
 | --- | --- | --- | --- |
@@ -50,20 +70,20 @@ Cluster new-p17-90: "The Mallets 'Bowed' setting has no visible control". The fi
 
 Gate result from the copy, before the commit (`gate-1.log`): `fork-sources` FAIL and `all-sources-reproduce` FAIL, both on the same line. The manifests are derived from committed history (`git diff --diff-filter=A 4e677cb6c6ab HEAD`), so the uncommitted test entry is "in the manifest but not derived". Everything else passed: `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity` (no new item in my files), `file-length` (no new item in my files). The gate was re-run after the commit; see the Self-check section.
 
-## What the parent must do before this can be verified
+## Lane handoff plan (completed by the reviewer above)
 
 1. From the worktree, reconfigure the lane tree: `cmake -S . -B build`. The lane cannot do this (guard, exit 97).
 2. `cmake --build build --target MalletsInstrumentViewTest -j4`, logged. Expect the build to compile `Mallets.cpp` into the test.
 3. RED per procedure 4b on the committed fix: `git show <fix-commit> -- plugins/Stk/Mallets > fix.patch && git apply -R fix.patch`, rebuild, `ctest -R '^MalletsInstrumentViewTest$' --output-on-failure` from `build/tests`. Expect the "no Bowed checkbox" failure. Then `git apply fix.patch`, rebuild, run again. Expect a pass.
 4. Run `^Mallets$` as well, to confirm the Part C reference still passes.
 
-Open risks I could not check by reading alone:
+Open risks the lane could not check at handoff:
 
 - `LedCheckBox::setModel` must set the checked state from the model when it is bound. I assumed this; the test's first `isChecked()` assertion checks it.
 - The embedded `artwork` pixmap is not compiled into the test (no `EMBEDDED_RESOURCES`). If `PluginPixmapLoader` needs it, the view should still build, but the background may be blank. This does not affect the checkbox assertions.
 - Any `cmake --build` on this tree after the `tests/CMakeLists.txt` edit may try to regenerate and hit the same guard. I inferred this from file times and did not run it.
 
-## Self-check
+## Lane self-check at handoff
 
 `submit_check.py` (log `submit-check-1.log`, EXIT=1) passes the commit, clean-tree, report, test-registration and test-added items. It fails only "gates (feature_check.py)", which is the write-jail problem in the table above: the real script cannot write its sibling log directory. The same checks, run from a copy with the log directory moved into the LOG FOLDER, pass on the committed tree (`gate-2.log`, EXIT=0, all eight gates PASS). Answers to the open items:
 
