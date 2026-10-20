@@ -52,6 +52,7 @@ logs in .../runs/new-p12-255.r6/logs):
 | GREEN build | `cmake --build build --target zene StemModelStoreTest -j16` (log `build-3-restored.log`) | 0 | built |
 | GREEN again, focused ctest | `ctest -R '^StemModelStoreTest$' --output-on-failure` in `build/tests` (log `test-4-restored.log`) | 0 | 1/1 test passed (443 StemModelStoreTest) |
 | Stem family | `ctest -R '^Stem' --output-on-failure` in `build/tests` (log `test-6-stem-family.log`) | 0 | 4/4 passed: StemExportTest, StemJobManagerTest, StemModelStoreTest, StemSplitPipelineTest |
+| GREEN, committed tree | `ctest -R '^StemModelStoreTest$' --output-on-failure` in `build/tests` (log `test-7-final-committed.log`) | 0 | 1/1 test passed (443 StemModelStoreTest) |
 | Gate (all) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (log `gate-1-feature-check.log`) | 0 | `RESULT: PASS`; complexity and file-length rows: "no new item in your files" |
 | Gate: complexity ratchet | `bash tests/complexity-gate.sh --check` (log `gate-2-complexity.log`) | 1 | 6 `REGRESSION:` rows, all in files this commit does not touch (`tests/src/gui/XyPadPairTest.cpp`, `src/core/DawProjectReadTracks.cpp`, `src/core/ControlCommandsMixerTools.cpp`, `src/core/ControlCommandsMixerStrip.cpp`, `src/core/ProjectRevisions.cpp`, `src/gui/ControlCommandsShortcuts.cpp`) |
 | Gate: file-length ratchet | `bash tests/file-length-gate.sh --check` (log `gate-3-file-length.log`) | 1 | 14 `REGRESSION:` rows, all in files this commit does not touch (`src/core/SmfInterchangeReader.cpp`, `src/core/TakeLane.cpp`, `tests/src/core/{CollabTransport,ControlAutomationScript,ControlDeviceCatalogue,ControlEditCommands,CustomAccess,DeviceDsp,HardwareIo,NotePlayback,RackMacros,RevisionTimeline,VideoTrack}Test.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`) |
@@ -71,6 +72,11 @@ Files committed this round:
 - `tests/src/core/StemModelStoreTest.cpp` (the hook now records and asserts that it
   ran, opened the destination, wrote all expected bytes and left a destination that
   verifies against the pinned spec).
+- `docs/qwen-fixes-2026-10/cluster-new-p12-255.md` (this report).
+
+Final state of the committed tree: `ctest -R '^StemModelStoreTest$' --output-on-failure`
+in `build/tests` (log `test-7-final-committed.log`) EXIT=0, 1/1 test passed;
+`git status --porcelain=v1` empty.
 
 ## Self-check
 
