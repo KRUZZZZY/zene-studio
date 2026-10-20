@@ -25,6 +25,7 @@
 
 
 #include <algorithm>
+#include <numeric>
 #include <QPainter>
 
 #include "AudioEngine.h"
@@ -109,10 +110,11 @@ void CPULoadWidget::updateCpuLoad()
 	// to be useful as overload indicator in AudioEngine::criticalXRuns().
 	// The midpoint rounds toward the new reading, so any nonzero difference moves the
 	// readout: from 0% a steady 1% reaches 1%, and from 1% a reading of 0% comes back.
+	// std::midpoint computes without signed overflow, so large uncapped readings
+	// (cpuLoad() has no 100% ceiling) cannot wrap the sum the way a plain
+	// (current + target + 1) / 2 could.
 	const int target = profilerLoad();
-	const int new_load = target > m_currentLoad
-		? (m_currentLoad + target + 1) / 2
-		: (m_currentLoad + target) / 2;
+	const int new_load = std::midpoint(target, m_currentLoad);
 
 	if (new_load != m_currentLoad)
 	{

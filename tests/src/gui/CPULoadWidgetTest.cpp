@@ -25,7 +25,9 @@
 /*! The smoothed CPU load the widget displays (its tooltip's "DSP total"). The widget reads the
  *  profiler's integer reading, so a 1% steady load from a displayed 0% must advance the readout,
  *  a rise of one must keep advancing it, and the readout must come back down - all driven through
- *  CPULoadWidget::setCpuLoadForTesting, so no audio period is timed and the result is deterministic. */
+ *  CPULoadWidget::setCpuLoadForTesting, so no audio period is timed and the result is deterministic.
+ *  The profiler reading is uncapped (AudioEngineProfiler::cpuLoad() has no 100% ceiling), so the
+ *  average must also stay correct for large readings whose sum passes INT_MAX. */
 
 #include <QtTest>
 
@@ -88,6 +90,46 @@ private slots:
 		widget.setCpuLoadForTesting(0);
 		QVERIFY(QMetaObject::invokeMethod(&widget, "updateCpuLoad", Qt::DirectConnection));
 		QVERIFY2(widget.toolTip().contains(QStringLiteral("DSP total: 0%")), qPrintable(widget.toolTip()));
+	}
+
+	// Boundary, upward: the profiler reading is uncapped, so a rise from 1,073,741,823 to
+	// 1,073,741,824 must still round toward the new reading - the sum-plus-one expression
+	// (current + target + 1) overflows signed int for exactly these two valid readings.
+	void largeReadingsRoundUpWithoutOverflow()
+	{
+		CPULoadWidget widget(nullptr);
+		widget.setCpuLoadForTesting(1073741823);
+		bool reached = false;
+		for (int i = 0; i < 64 && !reached; ++i)
+		{
+			QVERIFY(QMetaObject::invokeMethod(&widget, "updateCpuLoad", Qt::DirectConnection));
+			reached = widget.toolTip().contains(QStringLiteral("DSP total: 1073741823%"));
+		}
+		QVERIFY2(reached, qPrintable(widget.toolTip()));
+
+		widget.setCpuLoadForTesting(1073741824);
+		QVERIFY(QMetaObject::invokeMethod(&widget, "updateCpuLoad", Qt::DirectConnection));
+		QVERIFY2(widget.toolTip().contains(QStringLiteral("DSP total: 1073741824%")), qPrintable(widget.toolTip()));
+	}
+
+	// Boundary, downward: 1,500,000,000 falling to 1,000,000,000 sums past INT_MAX, so the
+	// plain (current + target) / 2 average overflows too; the midpoint of the two readings is
+	// 1,250,000,000 and the readout must land there instead of wrapping.
+	void largeReadingsRoundDownWithoutOverflow()
+	{
+		CPULoadWidget widget(nullptr);
+		widget.setCpuLoadForTesting(1500000000);
+		bool reached = false;
+		for (int i = 0; i < 64 && !reached; ++i)
+		{
+			QVERIFY(QMetaObject::invokeMethod(&widget, "updateCpuLoad", Qt::DirectConnection));
+			reached = widget.toolTip().contains(QStringLiteral("DSP total: 1500000000%"));
+		}
+		QVERIFY2(reached, qPrintable(widget.toolTip()));
+
+		widget.setCpuLoadForTesting(1000000000);
+		QVERIFY(QMetaObject::invokeMethod(&widget, "updateCpuLoad", Qt::DirectConnection));
+		QVERIFY2(widget.toolTip().contains(QStringLiteral("DSP total: 1250000000%")), qPrintable(widget.toolTip()));
 	}
 };
 
