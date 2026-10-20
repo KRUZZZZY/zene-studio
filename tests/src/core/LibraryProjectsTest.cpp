@@ -212,6 +212,68 @@ private slots:
 		QCOMPARE(roots.first().toString(), QStringLiteral("samples"));  // the stored root, not every root
 	}
 
+	//! A collection saved from a category-filtered search keeps the category:
+	//! running it later answers the same filtered question, and clearing the
+	//! file's category changes what the collection finds - a collection follows
+	//! the library, facet included (0.5.0 L11, WF-007).
+	void aSavedCollectionKeepsItsCategoryFilter()
+	{
+		const QString samples = ConfigManager::inst()->userSamplesDir();
+		QVERIFY(QDir().mkpath(samples));
+		// Named uniquely: the samples root is this test's own but an earlier
+		// slot already left files in it, and every count below is scoped by
+		// this prefix rather than by the folder's whole contents.
+		const QString kick = samples + QStringLiteral("/facet-kick.wav");
+		const QString snare = samples + QStringLiteral("/facet-snare.wav");
+		touch(kick);
+		touch(snare);
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), kick}, {QStringLiteral("category"), QStringLiteral("Drums")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.category.set"),
+			{{QStringLiteral("path"), snare}, {QStringLiteral("category"), QStringLiteral("Loops")}}).ok);
+
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Drum Kits")},
+			{QStringLiteral("root"), QStringLiteral("samples")},
+			{QStringLiteral("category"), QStringLiteral("Drums")}}).ok);
+		const ControlResult found = run(QStringLiteral("browser.collection_run"),
+			{{QStringLiteral("name"), QStringLiteral("Drum Kits")}});
+		QVERIFY2(found.ok, qPrintable(found.errorMessage));
+		QCOMPARE(found.result.value(QStringLiteral("matched")).toInt(), 1);  // the kick, not the snare
+		QCOMPARE(found.result.value(QStringLiteral("items")).toArray().first().toObject()
+			.value(QStringLiteral("name")).toString(), QStringLiteral("facet-kick.wav"));
+
+		// The stored query carries the category, so a re-save and a re-list agree.
+		const QJsonArray saved = run(QStringLiteral("browser.collections")).result
+			.value(QStringLiteral("collections")).toArray();
+		bool sawCategory = false;
+		for (const QJsonValue& value : saved)
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() != QLatin1String("Drum Kits")) { continue; }
+			QCOMPARE(entry.value(QStringLiteral("query")).toObject()
+				.value(QStringLiteral("category")).toString(), QStringLiteral("Drums"));
+			sawCategory = true;
+		}
+		QVERIFY2(sawCategory, "the saved collection does not carry its category");
+
+		// The collection follows the library: clearing the kick's category empties it.
+		QVERIFY(run(QStringLiteral("browser.category.clear"), {{QStringLiteral("path"), kick}}).ok);
+		QCOMPARE(run(QStringLiteral("browser.collection_run"),
+			{{QStringLiteral("name"), QStringLiteral("Drum Kits")}}).result
+			.value(QStringLiteral("matched")).toInt(), 0);
+		// And an "Any category" collection (no category argument) sees both files again.
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Every Sample")},
+			{QStringLiteral("root"), QStringLiteral("samples")},
+			{QStringLiteral("text"), QStringLiteral("facet")}}).ok);
+		QCOMPARE(run(QStringLiteral("browser.collection_run"),
+			{{QStringLiteral("name"), QStringLiteral("Every Sample")}}).result
+			.value(QStringLiteral("matched")).toInt(), 2);
+		QVERIFY(run(QStringLiteral("browser.collection_remove"),
+			{{QStringLiteral("name"), QStringLiteral("Drum Kits")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.collection_remove"),
+			{{QStringLiteral("name"), QStringLiteral("Every Sample")}}).ok);
+	}
+
 	void aTrackPresetRoundTrips()
 	{
 		Track* sample = Track::create(Track::Type::Sample, Engine::getSong());

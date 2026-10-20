@@ -211,6 +211,28 @@ const ReversibilityRow kSnapshotRows[] = {
 		"path and tag (`applies: command`), dispatched by control.undo; the "
 		"the tag set the edit started from is in the transaction's before-state",
 		""),
+	// 0.5.0 L11 (WF-007): the category facet's two verbs, beside the tag edits.
+	// The same store document, the same absence of a JournallingObject, and the
+	// inverse is the recorded COMMAND with the value the edit started from (the
+	// wasm.load pattern: set restores the previous category, or clears when
+	// there was none).
+	R("browser.category.set", RC::Snapshot, true,
+		"the category table lives in the tag store, a user-config file, not a "
+		"JournallingObject: there is no object checkpoint that holds a path's "
+		"category, and the project journal is deliberately not used for state "
+		"outside the project",
+		"the recorded inverse is the COMMAND that puts the previous category "
+		"back - browser.category.set with it, or browser.category.clear when "
+		"there was none (`applies: command`), dispatched by control.undo "
+		"through the registry; before.category holds it, bounded by the tag "
+		"label cap",
+		""),
+	R("browser.category.clear", RC::Snapshot, true,
+		"the same store and the same absence of a checkpoint",
+		"the recorded inverse is the COMMAND browser.category.set with the "
+		"category the file carried (`applies: command`), dispatched by "
+		"control.undo; before.category holds it",
+		""),
 #ifdef LMMS_HAVE_WASM
 	// =====================================================================
 	// The wasm.* group (item #614) - the WASM DSP sandbox's agent surface. A

@@ -1021,6 +1021,15 @@ Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progress
 adds one row: Q050-040's `clip.set_mute` (`true_inverse`, the song editor's clip mute and the agents' one command), measured
 by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358`.
 
+**Q050-170, the browser's category facet (2026-10-19)** adds three rows: `browser.categories`
+(`not_mutating`, the vocabulary read beside `browser.tags`) and the `browser.category.set` /
+`browser.category.clear` pair (both `snapshot`, each recording its inverse as a paired command).
+Measured on this wasm-off build with the part-2 probe: `rows=831 true_inverse=416 snapshot=41
+irreversible=22 not_mutating=352` (`DECLARED rows=831 entries=831 duplicates=0`) - exactly the
+train-5 figure plus these three rows, with the `wasm.load` option applied as above - so the block
+below moves by the same three rows to `rows=840 true_inverse=417 snapshot=44 irreversible=22
+not_mutating=357`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state

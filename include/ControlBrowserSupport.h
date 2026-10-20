@@ -90,6 +90,12 @@ QJsonObject browserStringListProperty();
  */
 bool readBrowserFileArgument(const QJsonObject& args, QString* key, ControlResult* error);
 
+/*! Reads \a raw as one label ('tag', 'category'): trimmed, printable and within
+ *  MaxTagLength. Shared by the tag edits and the category facet, so both agree
+ *  on what a label can be.
+ */
+bool readTagValue(const QString& raw, QString* label, const QString& where, ControlResult* error);
+
 /*! Reads `path` and `tag` for the two mutating verbs, enforcing the tag bound.
  *  The file must exist: the store keys on the canonical path, so a tag on a
  *  path that is not there would be filed under a name no query can ever list.
@@ -106,6 +112,10 @@ ControlResult browserQueryCommand(const QJsonObject& args);
 //! verbs return, so a caller never has to guess what the store became.
 QJsonObject browserTagState(const QString& key, const QStringList& tags);
 
+//! The category of one file plus the store's location: the read-back both
+//! category verbs return, so a caller never has to guess what the store became.
+QJsonObject browserCategoryState(const QString& key, const QString& category);
+
 /*! The SPEC A16 transaction for a tag edit.
  *
  * The tag store is a user-config file and not a JournallingObject, so no
@@ -116,6 +126,15 @@ QJsonObject browserTagState(const QString& key, const QStringList& tags);
  */
 QJsonObject browserTagTransaction(const QString& key, const QString& tag,
 	const QStringList& before, const QString& inverseOp, const QString& mechanism);
+
+/*! The SPEC A16 transaction for a category edit (0.5.0 L11, WF-007): the same
+ * store document as the tags, one category per file, so the before-state is the
+ * single category the edit started from and the inverse is the recorded COMMAND
+ * (`applies: "command"`) that puts it back - browser.category.set with it, or
+ * browser.category.clear when there was none.
+ */
+QJsonObject browserCategoryTransaction(const QString& key, const QString& before,
+	const QString& inverseOp, const QJsonObject& inverseArgs, const QString& mechanism);
 
 } // namespace control
 

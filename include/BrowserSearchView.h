@@ -52,7 +52,9 @@ namespace lmms::gui
 /*! 0.5.0 L11: one browser source over the registry's library commands.
  *  - WF-003: the search field takes browser.query's expressions (OR, -word, "phrase", name: path:
  *    tag: kind: ext:);
- *  - WF-007: a kind filter (audio, preset, project, midi) and a root filter (the library's roots);
+ *  - WF-007: a kind filter (audio, preset, project, midi), a root filter (the library's roots) and
+ *    - 0.5.0 L11 (WF-007) completed - a category filter beside them, populated from the catalog's
+ *    own categories (browser.categories), "Any category" restoring the whole result set;
  *  - R-workflow-4 (0.5.0 L11): "Search file metadata" - browser.query's 'probe' - matches what the
  *    audio files themselves say: the embedded title/artist/album/comment/genre and the sample rate,
  *    channels, frames and duration, opening at most probe_limit (200) files per search;
@@ -95,6 +97,8 @@ public:
 	int resultCount() const;
 	QTreeWidget* results() const { return m_results; }
 	QListWidget* galleryView() const { return m_gallery; }
+	//! The category facet (Any category + the catalog's own), for tests and the panel.
+	QComboBox* categoryFilter() const { return m_category; }
 	class BrowserResultActions* actions() const { return m_actions; }
 
 private:
@@ -117,6 +121,8 @@ private:
 	void showItems(const QJsonArray& items);
 	void fillGallery(const QJsonArray& items);
 	void refreshCollections();
+	//! Re-read the category vocabulary (browser.categories) into the filter, keeping the selection.
+	void refreshCategories();
 	void refreshIndexStatus();
 	void saveCollection();
 	void showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind);
@@ -125,6 +131,7 @@ private:
 	QLineEdit* m_search = nullptr;
 	QComboBox* m_kind = nullptr;
 	QComboBox* m_root = nullptr;
+	QComboBox* m_category = nullptr;  //!< the category facet (Any category + the catalog's own)
 	QCheckBox* m_indexed = nullptr;
 	QCheckBox* m_probe = nullptr;
 	QLabel* m_status = nullptr;

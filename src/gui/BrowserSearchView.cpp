@@ -122,6 +122,10 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 		m_root->addItem(root.toObject().value(QStringLiteral("label")).toString(root.toObject().value(QStringLiteral("id")).toString()),
 			root.toObject().value(QStringLiteral("id")).toString());
 	}
+	// The category facet (0.5.0 L11, WF-007): the catalog's own categories beside kind and
+	// source. "Any category" is the empty selection and restores the whole result set.
+	m_category = new QComboBox(contentParent());
+	m_category->setAccessibleName(tr("Category"));
 	m_indexed = new QCheckBox(tr("Whole library"), contentParent());  // WF-012
 	m_indexed->setObjectName(QStringLiteral("browserSearchIndexed"));
 	m_indexed->setToolTip(tr("Search the library index instead of walking the folders"));
@@ -136,6 +140,7 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	top->addWidget(m_search, 1);
 	top->addWidget(m_kind);
 	top->addWidget(m_root);
+	top->addWidget(m_category);
 	top->addWidget(m_indexed);
 	top->addWidget(m_probe);
 	addContentLayout(top);
@@ -187,11 +192,13 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	connect(m_search, &QLineEdit::returnPressed, this, [this] { search(m_liveEntry); });  // typed: refreshed in place
 	connect(m_kind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_root, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
+	connect(m_category, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connect(m_indexed, &QCheckBox::toggled, m_root, &QWidget::setDisabled);  // the index has no roots to filter by
 	connect(m_indexed, &QCheckBox::toggled, m_probe, &QWidget::setDisabled);  // the index holds no embedded metadata
 	connect(m_probe, &QCheckBox::toggled, this, &BrowserSearchView::runSearch);
 	connectLists();
+	refreshCategories();
 	refreshCollections();
 	refreshIndexStatus();
 }
@@ -283,6 +290,9 @@ QJsonObject BrowserSearchView::queryArgs() const
 {
 	QJsonObject args{{QStringLiteral("text"), m_search->text()}, {QStringLiteral("limit"), 500}};
 	if (m_kind->currentIndex() > 0) { args.insert(QStringLiteral("kind"), m_kind->currentText()); }
+	// The category facet (0.5.0 L11, WF-007): index 0 is "Any category" and sends nothing,
+	// so an unselected facet restores the full result set in both query modes.
+	if (m_category->currentIndex() > 0) { args.insert(QStringLiteral("category"), m_category->currentData().toString()); }
 	if (!m_indexed->isChecked() && !m_root->currentData().toString().isEmpty())
 	{
 		args.insert(QStringLiteral("root"), m_root->currentData().toString());
@@ -324,11 +334,14 @@ void BrowserSearchView::restoreQuery(const QJsonObject& entry)
 	const bool indexed = command == QLatin1String("browser.index_query");
 	if (!indexed && command != QLatin1String("browser.query")) { return; }  // a collection or similar sounds: no search of its own
 	const QJsonObject args = entry.value(QStringLiteral("args")).toObject();
-	const QSignalBlocker kind(m_kind), root(m_root), index(m_indexed), probe(m_probe);  // shown already: no search again
+	const QSignalBlocker kind(m_kind), root(m_root), category(m_category), index(m_indexed), probe(m_probe);  // shown already: no search again
 	// The same text is left alone, so a live search never moves the cursor of the field being typed in.
 	if (m_search->text() != args.value(QStringLiteral("text")).toString()) { m_search->setText(args.value(QStringLiteral("text")).toString()); }
 	m_kind->setCurrentIndex(std::max(0, m_kind->findText(args.value(QStringLiteral("kind")).toString())));
 	m_root->setCurrentIndex(std::max(0, m_root->findData(args.value(QStringLiteral("root")).toString())));
+	// A history entry can name a category the vocabulary gained (or lost) since it ran: the
+	// entry's own value is re-selected by data, absent from the list becoming "Any category".
+	m_category->setCurrentIndex(std::max(0, m_category->findData(args.value(QStringLiteral("category")).toString())));
 	m_indexed->setChecked(indexed);
 	m_probe->setChecked(!indexed && args.value(QStringLiteral("probe")).toBool());
 	m_root->setDisabled(indexed);
@@ -436,6 +449,23 @@ void BrowserSearchView::refreshCollections()
 	m_collections->setVisible(m_collections->count() > 0);
 }
 
+void BrowserSearchView::refreshCategories()
+{
+	// The vocabulary is what the catalog carries now (browser.categories reads the store):
+	// a category a file was given since the last look appears here, and one no file carries
+	// any more disappears. The selection follows by value, so a surviving choice is kept.
+	const QString selected = m_category->currentData().toString();
+	const QSignalBlocker block(m_category);  // repopulating must not re-run the search it feeds
+	m_category->clear();
+	m_category->addItem(tr("Any category"), QString());
+	for (const QJsonValue& value : run(QStringLiteral("browser.categories")).result.value(QStringLiteral("categories")).toArray())
+	{
+		const QString category = value.toObject().value(QStringLiteral("category")).toString();
+		m_category->addItem(category, category);
+	}
+	m_category->setCurrentIndex(std::max(0, m_category->findData(selected)));
+}
+
 void BrowserSearchView::refreshIndexStatus()
 {
 	const QJsonObject status = run(QStringLiteral("browser.index_status")).result;
@@ -500,9 +530,16 @@ void BrowserSearchView::showRowMenu(QWidget* view, const QPoint& at, const QStri
 		menu.addSeparator();
 	}
 	addBrowserTagMenu(&menu, path);
+	addBrowserCategoryMenu(&menu, path);
 	const QAction* chosen = menu.exec(static_cast<QAbstractScrollArea*>(view)->viewport()->mapToGlobal(at));
-	// A tag edit: the list is shown again as it stands (the current history entry, not a new one).
-	if (chosen != nullptr && chosen->data().toString().startsWith(QLatin1String("browser.tag"))) { m_showingMedia ? showProjectMedia() : goHistory(0); }
+	// A tag or category edit: the list is shown again as it stands (the current history entry,
+	// not a new one), and the category filter's vocabulary follows the edit.
+	const QString command = chosen != nullptr ? chosen->data().toString() : QString();
+	if (command.startsWith(QLatin1String("browser.tag")) || command.startsWith(QLatin1String("browser.category")))
+	{
+		refreshCategories();
+		m_showingMedia ? showProjectMedia() : goHistory(0);
+	}
 }
 
 } // namespace lmms::gui

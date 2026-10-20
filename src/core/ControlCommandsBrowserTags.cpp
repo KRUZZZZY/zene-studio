@@ -1,6 +1,8 @@
 /*
  * ControlCommandsBrowserTags.cpp - the browser.* group's mutating half:
- *                                  browser.tag.add and browser.tag.remove.
+ *                                  browser.tag.add and browser.tag.remove,
+ *                                  and the category facet's
+ *                                  browser.category.set / browser.category.clear.
  *
  * WHAT THESE WRITE, AND WHY THE INVERSE IS A COMMAND. A tag is filed in the
  * user's config directory (include/BrowserCatalog.h records why not the project
@@ -11,7 +13,9 @@
  * PAIRED COMMAND (`applies: "command"`), which control.undo dispatches through
  * the registry. `browser.tag.add` and `browser.tag.remove` are therefore each
  * other's inverse, and the test drives add -> control.undo -> read back, not
- * just the descriptor.
+ * just the descriptor. The category facet (0.5.0 L11, WF-007) writes the same
+ * store document, one category per file, and its inverse is the recorded
+ * COMMAND with the value the edit started from.
  *
  * Every refusal happens BEFORE the write: a tag that is already there, a tag
  * that is not there, an unreadable store, a library already at the distinct-tag
@@ -164,6 +168,110 @@ ControlResult tagRemove(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+// 0.5.0 L11 (WF-007): the category facet. ONE category per file, in the same
+// store document as the tags (a "categories" table an older store simply does
+// not carry); the file the edit names is addressed the way the tag edits
+// address one, and every refusal happens before the write. The inverse of an
+// edit is the recorded COMMAND with the category it started from
+// (browserCategoryTransaction): control.undo dispatches it through the registry.
+
+QString setMechanism()
+{
+	return QStringLiteral("snapshot: the category table lives in the tag store, a user-config "
+		"JSON file, not a JournallingObject, so no ProjectJournal checkpoint can hold it. The "
+		"inverse is the COMMAND that puts the previous category back - browser.category.set "
+		"with it, or browser.category.clear when there was none (applies=command), dispatched "
+		"by control.undo through the registry");
+}
+
+QString clearMechanism()
+{
+	return QStringLiteral("snapshot: the category table lives in the tag store, a user-config "
+		"JSON file, not a JournallingObject, so no ProjectJournal checkpoint can hold it. The "
+		"inverse is the COMMAND browser.category.set with the category the file carried "
+		"(applies=command), dispatched by control.undo through the registry");
+}
+
+ControlResult categorySet(const QJsonObject& args)
+{
+	QString key;
+	ControlResult error;
+	if (!readBrowserFileArgument(args, &key, &error)) { return error; }
+	QString category;
+	if (!readTagValue(args.value(QStringLiteral("category")).toString(), &category,
+		QStringLiteral("'category'"), &error))
+	{
+		return error;
+	}
+
+	BrowserTagStore* store = nullptr;
+	if (!loadedStore(&store, &error)) { return error; }
+
+	const QString before = store->categoryOf(key);
+	if (QString::compare(before, category, Qt::CaseInsensitive) == 0)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 already carries the category '%2': an edit that changes nothing "
+				"is not an edit, and nothing was written").arg(key, category));
+	}
+
+	QJsonObject inverseArgs{{QStringLiteral("path"), key}};
+	QString inverseOp;
+	if (before.isEmpty())
+	{
+		inverseOp = QStringLiteral("browser.category.clear");
+	}
+	else
+	{
+		inverseOp = QStringLiteral("browser.category.set");
+		inverseArgs.insert(QStringLiteral("category"), before);
+	}
+
+	QString why;
+	if (!store->setCategory(key, category, &why))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the category was not persisted: %1").arg(why));
+	}
+
+	QJsonObject result = browserCategoryState(key, store->categoryOf(key));
+	result.insert(QStringLiteral("action"), QStringLiteral("set"));
+	result.insert(QStringLiteral("__transaction"),
+		browserCategoryTransaction(key, before, inverseOp, inverseArgs, setMechanism()));
+	return ControlResult::success(result);
+}
+
+ControlResult categoryClear(const QJsonObject& args)
+{
+	QString key;
+	ControlResult error;
+	if (!readBrowserFileArgument(args, &key, &error)) { return error; }
+
+	BrowserTagStore* store = nullptr;
+	if (!loadedStore(&store, &error)) { return error; }
+
+	const QString before = store->categoryOf(key);
+	if (before.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("%1 carries no category").arg(key));
+	}
+
+	QString why;
+	if (!store->clearCategory(key, &why))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the clearing was not persisted: %1").arg(why));
+	}
+
+	QJsonObject result = browserCategoryState(key, QString());
+	result.insert(QStringLiteral("action"), QStringLiteral("cleared"));
+	result.insert(QStringLiteral("__transaction"),
+		browserCategoryTransaction(key, before, QStringLiteral("browser.category.set"),
+			QJsonObject{{QStringLiteral("path"), key}, {QStringLiteral("category"), before}}, clearMechanism()));
+	return ControlResult::success(result);
+}
+
 } // namespace
 
 void registerBrowserTagCommands(ControlRegistry& registry)
@@ -217,6 +325,62 @@ void registerBrowserTagCommands(ControlRegistry& registry)
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return tagRemove(args); };
+		registry.registerCommand(cmd);
+	}
+
+	// The category facet (0.5.0 L11, WF-007), beside the tag edits: ONE category
+	// per file, the label bounds are the tags', and the inverse is the recorded
+	// command with the category the edit started from.
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("browser.category.set");
+		cmd.group = QStringLiteral("browser");
+		cmd.verb = QStringLiteral("category.set");
+		cmd.description = QStringLiteral("Classify a file in the browser's library: 'category' "
+			"(a label with a tag's bounds) is filed against the file's canonical path in the "
+			"tag store's categories table, ONE per file - setting it over an existing one "
+			"replaces it, and the vocabulary browser.categories lists and the Search view's "
+			"category filter offer grows with it. The write is reported: a category that "
+			"cannot be persisted is a refusal, not a silent success. Refused when the file "
+			"already carries it. Reversible: the recorded inverse is browser.category.set "
+			"with the previous category (browser.category.clear when there was none), which "
+			"control.undo dispatches.");
+		cmd.argsSchema = objectSchema({
+			{QStringLiteral("path"), stringProperty()},
+			{QStringLiteral("category"), stringProperty()},
+		}, {QStringLiteral("path"), QStringLiteral("category")});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("path"), stringProperty()},
+			{QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("action"), stringProperty()},
+			{QStringLiteral("store_path"), stringProperty()},
+		});
+		cmd.mutating = true;
+		cmd.handler = [](const QJsonObject& args) { return categorySet(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("browser.category.clear");
+		cmd.group = QStringLiteral("browser");
+		cmd.verb = QStringLiteral("category.clear");
+		cmd.description = QStringLiteral("Remove a file's category from the browser's library, "
+			"persisting the store. Not-found when the file carries none: a clearing that "
+			"clears nothing is a refusal. Reversible: the recorded inverse is "
+			"browser.category.set with the category the file carried, which control.undo "
+			"dispatches.");
+		cmd.argsSchema = objectSchema({
+			{QStringLiteral("path"), stringProperty()},
+		}, {QStringLiteral("path")});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("path"), stringProperty()},
+			{QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("action"), stringProperty()},
+			{QStringLiteral("store_path"), stringProperty()},
+		});
+		cmd.mutating = true;
+		cmd.handler = [](const QJsonObject& args) { return categoryClear(args); };
 		registry.registerCommand(cmd);
 	}
 }
