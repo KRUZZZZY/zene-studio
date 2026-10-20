@@ -407,6 +407,27 @@ private slots:
 		QCOMPARE(song->tracks().size(), tracks);
 	}
 
+	void enterOnAMissingProjectAssetDoesNotTryToLoadIt()
+	{
+		const QString gone = m_dir.filePath(QStringLiteral("enter-gone.wav"));
+		QVERIFY(!QFileInfo::exists(gone));
+		BrowserSearchView view(nullptr);
+		// Project Media lists a missing reference with the kind "missing" (BrowserSearchView::showProjectMedia).
+		QTreeWidgetItem* row = browserresults::rowOf({{QStringLiteral("name"), QFileInfo(gone).fileName()},
+			{QStringLiteral("kind"), QStringLiteral("missing")}, {QStringLiteral("path"), gone},
+			{QStringLiteral("size_bytes"), qint64(-1)}, {QStringLiteral("modified_ms"), qint64(-1)}});
+		view.results()->addTopLevelItem(row);
+		view.results()->setCurrentItem(row);
+		Song* song = Engine::getSong();
+		const std::size_t tracks = song->tracks().size();
+		QSignalSpy failures(view.actions(), &BrowserResultActions::failed);
+		QTest::keyClick(view.results(), Qt::Key_Return);  // Enter: nothing to load, so no "not a file" load failure
+		QCOMPARE(failures.count(), 0);
+		QTest::keyClick(view.results(), Qt::Key_Return, Qt::ShiftModifier);  // Shift+Enter: no sample track either
+		QCOMPARE(failures.count(), 0);
+		QCOMPARE(song->tracks().size(), tracks);
+	}
+
 	void spaceTogglesThePreviewAndAnotherResultStopsIt()
 	{
 		const QString a = taketest::writeToneWav(m_dir.filePath(QStringLiteral("a.wav")), 440.0);
