@@ -2734,3 +2734,5 @@ tests/src/gui/ExportProjectDialogPresetTest.cpp
 # is derived by the recipe. Held by the arranger's lane-child rendering, fold/hide,
 # deletion and the agent surface.
 tests/src/gui/AutomationLaneChildGuiTest.cpp
+# cluster new-p12-181-port (2026-10): UPnP initial mapping must use the requested lease; fix and report.
+docs/qwen-fixes-2026-10/cluster-new-p12-181-port.md
