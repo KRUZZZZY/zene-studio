@@ -121,6 +121,15 @@ public:
 	//! Control/test helper: block until every submitted block has been processed.
 	bool waitForIdle(int timeoutMs);
 
+#ifdef LMMS_TESTING
+	//! Test seam: called on the pool lane right before the module is compiled,
+	//! so a test can hold the load and observe the Loading state instead of
+	//! racing it.
+	using ModuleLoadTestHook = void (*)(void*);
+	static void setModuleLoadTestHook(ModuleLoadTestHook hook, void* context);
+	static void notifyModuleLoadForTest();
+#endif
+
 private:
 	//! The pool's lanes drive claimForLane()/drainOnLane()/releaseLane(); they
 	//! are the only callers that may, and nothing else reaches them.

@@ -49,12 +49,16 @@
 #include <wasmtime/trap.h>
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <mutex>
 #include <new>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -140,6 +144,71 @@ std::string readFile(const QString& path)
 	return std::string(std::istreambuf_iterator<char>(in),
 		std::istreambuf_iterator<char>());
 }
+
+/*! Holds a module load, so a test can look at the worker while it is Loading.
+ *
+ * The worker's lane stops in the test seam (WasmWorker::setModuleLoadTestHook)
+ * right before it compiles the module, and stays there until the test
+ * releases it. The Loading state is therefore observed, not raced for: no
+ * sleeping, no polling for a state that may already have passed.
+ */
+class ModuleLoadGate
+{
+public:
+	ModuleLoadGate()
+	{
+		WasmWorker::setModuleLoadTestHook(&ModuleLoadGate::onModuleLoad, this);
+	}
+
+	~ModuleLoadGate()
+	{
+		release();
+		WasmWorker::setModuleLoadTestHook(nullptr, nullptr);
+	}
+
+	ModuleLoadGate(const ModuleLoadGate&) = delete;
+	ModuleLoadGate& operator=(const ModuleLoadGate&) = delete;
+
+	//! Waits until the lane reached the seam. Bounded, so a load that never
+	//! gets there fails the test instead of hanging it.
+	bool waitUntilHeld(int timeoutMs)
+	{
+		std::unique_lock<std::mutex> lock(m_mutex);
+		return m_condition.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+			[this] { return m_held; });
+	}
+
+	//! Lets the held load continue.
+	void release()
+	{
+		{
+			std::lock_guard<std::mutex> lock(m_mutex);
+			m_released = true;
+		}
+		m_condition.notify_all();
+	}
+
+private:
+	static void onModuleLoad(void* context)
+	{
+		auto* self = static_cast<ModuleLoadGate*>(context);
+		std::unique_lock<std::mutex> lock(self->m_mutex);
+		if (self->m_held)
+		{
+			// Only the first load is held; a later one (a re-instantiation)
+			// runs straight through.
+			return;
+		}
+		self->m_held = true;
+		self->m_condition.notify_all();
+		self->m_condition.wait(lock, [self] { return self->m_released; });
+	}
+
+	std::mutex m_mutex;
+	std::condition_variable m_condition;
+	bool m_held = false;
+	bool m_released = false;
+};
 } // namespace
 
 class WasmSandboxTest : public QObject
@@ -186,6 +255,9 @@ private slots:
 
 	// ---- mixer audit C1b: the PDC chain cache follows a module load ----
 	void p6_moduleLoadRefreshesTheChainLatencyCache();
+
+	// ---- cluster new-p8-250: a reload keeps the latency compensation ----
+	void p7_reloadKeepsLatencyCompensationWhileLoading();
 
 private:
 };
@@ -1053,6 +1125,96 @@ void WasmSandboxTest::p6_moduleLoadRefreshesTheChainLatencyCache()
 	QCOMPARE(cachedAfterLoad, kTrueLatency);
 	QCOMPARE(reportedAfterBlock, kTrueLatency);
 	QCOMPARE(cachedAfterBlock, kTrueLatency);
+}
+
+// ---------------------------------------------------------------------------
+// Cluster new-p8-250: replacing a loaded module must not take the old
+// module's latency compensation away while the replacement loads.
+//
+// startWorker() stops the worker before the replacement is hosted, and
+// WasmWorker::stop() clears the declared latency with it. While the new
+// module compiled, the effect therefore reported no latency at all and
+// passed the audio through, while the owning chain's PDC cache still held
+// the old figure - so this effect's audio sat 64 frames plus one host
+// period ahead of everything else in the project, exactly as long as the
+// load took.
+//
+// The load is held in the worker's test seam, so the Loading state is
+// observed rather than raced for: no sleeping, no polling for a state that
+// may already have passed.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p7_reloadKeepsLatencyCompensationWhileLoading()
+{
+	constexpr int kModuleLatency = 64;
+	const int periodFrames = static_cast<int>(Engine::audioEngine()->framesPerPeriod());
+	const int kTrueLatency = kModuleLatency + periodFrames;
+
+	EffectChain chain{nullptr};
+	auto* effect = new WasmEffect(&chain, nullptr);
+	chain.appendEffect(effect);
+	QString error;
+	QVERIFY2(effect->loadModule(modulePath("latency"), &error), qPrintable(error));
+	QCOMPARE(effect->latencyFrames(), kTrueLatency);
+	QCOMPARE(chain.latencyFrames(), kTrueLatency);
+
+	// The replacement declares no latency, so once it is loaded the effect
+	// reports none.
+	const QString replacement = modulePath("gain");
+
+	ModuleLoadGate gate;
+	bool loaded = false;
+	QString loadError;
+	std::thread loader([&]
+	{
+		loaded = effect->loadModule(replacement, &loadError);
+	});
+
+	// The lane is now holding the load: the worker is Loading and the
+	// replacement has not been compiled yet.
+	const bool held = gate.waitUntilHeld(10000);
+	const auto stateWhileLoading = effect->worker().state();
+	const int reportedWhileLoading = effect->latencyFrames();
+	const int cachedWhileLoading = chain.latencyFrames();
+
+	// The dry path has to stay aligned with the reported latency: the
+	// impulse may not come out while the module is not running.
+	AudioBuffer buffer(periodFrames, DEFAULT_CHANNELS);
+	buffer.allocateInterleavedBuffer();
+	for (int f = 0; f < periodFrames; ++f)
+	{
+		buffer.interleavedBuffer()[f][0] = 1.0f;
+		buffer.interleavedBuffer()[f][1] = 1.0f;
+	}
+	buffer.assumeNonSilent(0);
+	buffer.assumeNonSilent(1);
+	const bool processed = effect->processAudioBuffer(buffer);
+	const float firstOutput = buffer.interleavedBuffer()[0][0];
+
+	gate.release();
+	loader.join();
+
+	QVERIFY2(held, "the replacement never reached the worker's load seam");
+	QVERIFY(stateWhileLoading == WasmWorker::State::Loading);
+	QVERIFY2(loaded, qPrintable(loadError));
+	// The compensation the running module declared is still in force, and the
+	// chain's PDC cache still agrees with it.
+	QCOMPARE(reportedWhileLoading, kTrueLatency);
+	QCOMPARE(cachedWhileLoading, kTrueLatency);
+	QVERIFY(processed);
+	QCOMPARE(firstOutput, 0.0f);
+
+	// The replacement resolved: its own latency (none) is in force now, and
+	// the chain's cache follows it.
+	QCOMPARE(effect->worker().declaredLatency(), 0);
+	QCOMPARE(effect->latencyFrames(), 0);
+	QCOMPARE(chain.latencyFrames(), 0);
+
+	qInfo("P7 reload: while the replacement loaded the effect reported %d "
+		"frames and the chain %d (expected %d = %d module + %d host period); "
+		"after it resolved: effect=%d chain=%d",
+		reportedWhileLoading, cachedWhileLoading, kTrueLatency, kModuleLatency,
+		periodFrames, effect->latencyFrames(), chain.latencyFrames());
 }
 
 } // namespace lmms::wasm

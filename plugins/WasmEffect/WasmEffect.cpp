@@ -92,6 +92,7 @@ bool WasmEffect::loadModule(const QString& path, QString* error)
 	{
 		stopWorker();
 		m_loaded = false;
+		m_preservedLatency.store(0, std::memory_order_relaxed);
 		m_controls->setModulePath(QString());
 		refreshChainLatency();
 		return false;
@@ -106,14 +107,19 @@ bool WasmEffect::loadModule(const QString& path, QString* error)
 		return failLoad(error, why);
 	}
 	const QString previous = m_loaded ? modulePath() : QString();
-	if (startWorker(path, &why))
+	// The latency the running module declares. It is kept for the whole
+	// operation: while the replacement loads, and while the old module is put
+	// back, the effect has to keep compensating what it compensated before, or
+	// the chain's PDC alignment jumps for as long as the load takes.
+	const int runningLatency = m_worker.declaredLatency();
+	if (startWorker(path, &why, runningLatency))
 	{
 		if (error != nullptr) { error->clear(); }
 		return true;
 	}
 	// The module is sound but the worker could not host it (the pool is full, or the load timed
 	// out): put back the module that was running rather than leave a device with nothing loaded.
-	if (!previous.isEmpty()) { startWorker(previous, nullptr); }
+	if (!previous.isEmpty()) { startWorker(previous, nullptr, runningLatency); }
 	return failLoad(error, why);
 }
 
@@ -123,13 +129,22 @@ bool WasmEffect::failLoad(QString* error, const QString& why)
 	return false;
 }
 
-bool WasmEffect::startWorker(const QString& path, QString* error)
+bool WasmEffect::startWorker(const QString& path, QString* error, int preservedLatency)
 {
+	// The worker forgets the declared latency when it is stopped, so the
+	// latency of the module this one replaces is kept here until the load
+	// resolved.
+	m_preservedLatency.store(preservedLatency, std::memory_order_relaxed);
 	stopWorker();
 	std::string err;
 	m_loaded = m_worker.start(path.toStdString(), err);
 	if (m_loaded) { m_controls->setModulePath(path); }
 	else if (error != nullptr) { *error = QString::fromStdString(err); }
+	// The module that runs now declares its own latency, so the preserved one
+	// is only needed while a replacement is in flight. A load that failed
+	// keeps it: the old module is put back, and the effect has to keep
+	// compensating its latency until that is done.
+	if (m_loaded) { m_preservedLatency.store(0, std::memory_order_relaxed); }
 	refreshChainLatency();
 	return m_loaded;
 }
@@ -163,7 +178,17 @@ int WasmEffect::compensatedModuleLatency() const
 {
 	// One bound for the report and the dry path (round 6): the report used the module's raw value, which
 	// could pass what the dry path delays by, and overflow an int once the block was added to INT_MAX.
-	return std::clamp(m_worker.declaredLatency(), 0, static_cast<int>(maxCompensatedLatency));
+	//
+	// The module's declared latency while a module runs. A replacement that is
+	// still loading has none yet, so the latency the module it replaces
+	// declared is kept: the report and the dry path must not lose the
+	// compensation while the new module compiles - the chain's PDC cache is
+	// only refreshed once the load resolved.
+	const int declared = m_worker.declaredLatency();
+	const int frames = declared > 0
+		? declared
+		: m_preservedLatency.load(std::memory_order_relaxed);
+	return std::clamp(frames, 0, static_cast<int>(maxCompensatedLatency));
 }
 
 int WasmEffect::latencyFrames() const
