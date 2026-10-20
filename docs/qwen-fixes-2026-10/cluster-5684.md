@@ -1,3 +1,5 @@
+Verdict: FALSE-POSITIVE
+
 5684: FALSE-POSITIVE
 new-p14-36: FIXED
 new-p17-18: FIXED
@@ -134,6 +136,11 @@ The gate script copy changes only `logs = Path("/tmp/zene-5684-feature-check")`;
   (`notes`, `group`); `track.articulations*` use `articulations`,
   `notes_remapped`; `transport.groove`/`transport.midi_options` use their own
   result objects. None reads `note.lyrics`' `set`/`syllables` or its input forms.
+  The submit check also lists the rest of the `transport.*` group because this
+  file registers two of them: `transport.audition_start/stop`, `get_state`,
+  `low_latency`, `metronome_options`, `panic`, `play`, `punch_*`, `record`,
+  `record_options` live in other command files and take no lyric argument, so
+  they are not affected by either handler change.
 - **Log folder deviation.** The mandated `runs/5684.r1/logs` path is EACCES under
   this session's file sandbox, even after `chmod 777`; the same numbered logs are
   kept in `/tmp/zene-5684-logs` and `build/qwen-logs`.
