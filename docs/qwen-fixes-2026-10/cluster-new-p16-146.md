@@ -1,6 +1,6 @@
 # Cluster new-p16-146: frequency updates leave the dirty flag set
 
-**Verdict: FIXED**
+**Verdict: FIXED** - gate acceptance **BLOCKED** on the shared gate baseline (review round 1 returned REWORK for this reason; see "Review round 2" below). The fix and its regression are verified; the two direct `--check` gates exit 1 on the base commit too, and clearing them needs a baseline decision by the parent.
 
 `NotePlayHandle::setFrequencyUpdate()` sets `m_frequencyNeedsUpdate`, and nothing ever cleared it. Once a note was marked, `play()` called `updateFrequency()` on every later period for the life of the note. `updateFrequency()` now spends the mark before it reads its inputs, so a note recomputes its frequency only when something marks it again.
 
@@ -68,6 +68,30 @@ Affected-family test count for the final run (row 21): 13 executed, 13 passed. T
 - `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (row 22): **EXIT=1**. The script creates its log directory beside the worktree (`…/zene-qwen-new-p16-146-feature-check`), which is outside the write jail (`PermissionError`, `gates-1.log`). I did not edit the script.
 - The same gate functions, command lists and pass criteria were run with `/tmp/zene-new-p16-146-gates/run_gates.py` (it imports `feature_check.py` unchanged and only redirects the per-gate logs to `logs/gates-1/`): **EXIT=0, RESULT: PASS**. Rows: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures all PASS (exit 0); complexity and file-length PASS ("no new item in your files"). Summary in `gates-1-summary.log`.
 
+## Review round 2 (REWORK: direct gates red)
+
+Review `new-p16-146.r1.md`: the fix and regression check out; `bash tests/complexity-gate.sh --check` and `bash tests/file-length-gate.sh --check` both exit 1, and the review asked for green direct gates before resubmitting. Logs in `runs/new-p16-146.r2/logs/`.
+
+| Command (worktree root unless noted) | Log | EXIT | Result |
+|---|---|---|---|
+| `bash tests/complexity-gate.sh --check` | complexity-gate-2.log | 1 | 6 `REGRESSION` lines, 6 unique items |
+| `bash tests/file-length-gate.sh --check` | file-length-gate-2.log | 1 | 15 `REGRESSION` lines, 14 unique files (ControlShutdownHookTest.cpp listed twice) |
+| `python3 -I /tmp/zene-new-p16-146-gates/run_gates.py <worktree> <logs>/gates-3` (same gate functions as `feature_check.py`, logs redirected) | gates-3-summary.log | 0 | all 8 gates PASS; complexity and file-length PASS ("no new item in your files") |
+
+**Why the direct gates fail, and why it is not this change.** The direct gates compare against the committed `tests/file-length-baseline.tsv` (7 lines on this branch, the same file as on the base commit `2da2ed356`), and that baseline does not list the current violations. None of the violating items is in a file this branch touches (`src/core/NotePlayHandle.cpp`, `tests/src/core/MpePlaybackTest.cpp`, `tests/upstream-modifications.txt`, this report). Evidence:
+
+- The cached base listing `gate-baselines/2da2ed356e1bde5fb67f46ed5157d186f0adb95c.json` (computed by the shared tooling on the base code) already contains the same items: 6 complexity and 14 file-length keys. Comparing the keys from `complexity-gate-2.log` and `file-length-gate-2.log` against it gives **0 keys not in base** and **0 violations in the changed files**.
+- The complexity run also prints `improved:` lines for baseline entries that are no longer over the limit (for example `registerFollowGetState`), which shows the committed baseline is stale on the base commit.
+
+So the direct gates are already red on the base commit with these exact items. I did not re-anchor the baselines (`--reanchor` is forbidden for this fix), and I did not edit the unrelated violating files, as the review asked. **Decision needed from the parent:** either re-anchor the complexity and file-length baselines on the base as its own recorded change, or have the train clear the 20 listed files. Until one of those happens, the direct `--check` commands cannot exit 0 from this branch.
+
+Tests rerun for round 2 (after `CCACHE_TEMPDIR=/tmp/zene-new-p16-146-ccache-tmp cmake --build build --target zene MpePlaybackTest -j4`, EXIT=0, `build-r2-1.log`):
+
+- `ctest -R '^MpePlaybackTest$' -V` from `build/tests`: EXIT=0, `PASS aFrequencyMarkIsSpentByItsUpdate()`, 1/1 (`test-r2-mpe.log`).
+- Family of 13 from `build/tests`: EXIT=0, 13/13 passed (`test-r2-family.log`).
+
+Round 2 product code is unchanged from round 1; the commit adds only this report section.
+
 ## Behaviour consequence (reviewer decision)
 
 `masterPitch` is read inside `updateFrequency()` (`src/core/NotePlayHandle.cpp:623`), and its change does not mark notes: the `dataChanged` connection in `src/core/Song.cpp:194-195` is commented out. Before this fix, a note that had been marked once recomputed every period, so it also followed master-pitch automation from then on. After the fix it follows master-pitch changes only when it is marked again, like a note that was never marked. This is by reading the code; I did not add a test for it. The consistent behaviour (master-pitch changes marking the handles) would be a separate change, and I did not make it here.
@@ -77,7 +101,7 @@ Affected-family test count for the final run (row 21): 13 executed, 13 passed. T
 `submit_check.py new-p16-146` (log `submit-check-1.log`, EXIT=1):
 
 - PASS commits on the branch; PASS working tree clean; PASS report present; PASS tests added or changed (`MpePlaybackTest.cpp`).
-- **FAIL gates (feature_check.py)** - an environment fault, not a gate result. `feature_check.py` creates its log directory at `<worktree>-feature-check` (`feature_check.py:71`), outside the write jail, and fails with `PermissionError` (`logs/gates-1.log`). I did not edit the shared script. The same gate functions, command lists and pass rule, run through `/tmp/zene-new-p16-146-gates/run_gates.py` with logs in the LOG FOLDER, give **EXIT=0, RESULT: PASS** on the committed tree (`logs/gates-2-summary.log`, 4 changed files; complexity and file-length PASS). The shared gate needs to be run from a location the jail allows, or its log directory made configurable, to close this item.
+- **FAIL gates (feature_check.py)** - an environment fault, not a gate result. `feature_check.py` creates its log directory at `<worktree>-feature-check` (`feature_check.py:71`), outside the write jail, and fails with `PermissionError` (`logs/gates-1.log`). I did not edit the shared script. The same gate functions, command lists and pass rule, run through `/tmp/zene-new-p16-146-gates/run_gates.py` with logs in the LOG FOLDER, give **EXIT=0, RESULT: PASS** on the committed tree (`logs/gates-2-summary.log`, 4 changed files; complexity and file-length PASS). The shared gate needs to be run from a location the jail allows, or its log directory made configurable, to close this item. Separately, the direct `--check` gates exit 1 on the base commit too (see "Review round 2"); that is the open gate blocker.
 - ? Regression fails reverted and passes with the change: **yes**. RED with the fix reverted: `test-red-1.log` EXIT=8 (`261.626 Hz became 523.251 Hz`); the step 4b revert run: `test-4b-unfixed.log` EXIT=8; with the fix re-applied: `test-4b-fixed.log` EXIT=0 (`PASS aFrequencyMarkIsSpentByItsUpdate`). Commands and EXIT codes are in the table above.
 - ? Deterministic: **yes**. No wall-clock time, sleeps or threads. The test uses a standalone `NotePlayHandle` on a fixed key and a fixed block size (`m_frames`) rendered through the same `renderBlock()` helper that `MpePlaybackTest` already uses. The one input it changes is an MPE pitch bend of exactly 1200 cents (ratio 2), set directly with `setMpePitchCents()`. The assertions compare floats against the value the handle itself produced, with tolerances `1e-3f` and `1e-2f`.
 - ? Fix at the cause and complete: **yes**. The clear is in `updateFrequency()` itself, so all callers are covered: constructor (`src/core/NotePlayHandle.cpp:117`), `play()` (`:309`), `processTimePos()` (`:715`), sub-note recursion (`:695`). The clear runs before the inputs are read, so a mark that lands during an update survives to the next period (plain bool, same as the existing design; no lock added). Marks that set the flag are unchanged: `InstrumentTrack.cpp:440, 519, 803`, `InstrumentTrackNotes.cpp:92`, `ChordFollow.h:50`, `InstrumentTrack.h:135-139`, `SessionTuning.cpp:315`. Their tests pass (`SessionTuningTest` 1/13, `ClipTransposeTest`, `MpeExpressionTest`, `MpeInputPathTest`, `MpeNoteStorageTest`, `SlideNotesTest`, `NotePlaybackTest` 23/23, `ArticulationPlaybackTest`, `ExprSynth`, `ExprSynthAllocation`, `InstrumentLayerZonePublishTest`, `AudioFileProcessorPlayheadTest` 3/3: 13/13 in `test-final-family.log`).
