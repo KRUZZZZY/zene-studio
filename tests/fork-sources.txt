@@ -2747,3 +2747,5 @@ docs/qwen-fixes-2026-10/cluster-new-p12-181-port.md
 docs/qwen-fixes-2026-10/cluster-new-p12-151-port.md
 tests/src/core/AudioEngineProfilerTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-208-port.md
+# cluster new-p9-603-port (2026-10): BitInvader's per-note wavetable copy lives in the note handle, so the render path makes no heap allocation; the regression test is fork-NEW.
+tests/src/plugins/BitInvaderAllocationTest.cpp

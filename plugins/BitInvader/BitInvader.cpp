@@ -23,6 +23,8 @@
  */
 
 #include <cmath>
+#include <cstddef>
+#include <memory>
 #include <QDomElement>
 
 #include "BitInvader.h"
@@ -45,7 +47,6 @@ namespace lmms
 {
 
 
-static const int wavetableSize = 200;
 static const float defaultNormalizationFactor = 1.0f;
 
 extern "C"
@@ -76,7 +77,6 @@ BSynth::BSynth( float * _shape, NotePlayHandle * _nph, bool _interpolation,
 	sample_rate( _sample_rate ),
 	interpolation( _interpolation)
 {
-	sample_shape = new float[wavetableSize];
 	for (int i=0; i < wavetableSize; ++i)
 	{
 		float buf = _shape[i] * _factor;
@@ -91,12 +91,6 @@ BSynth::BSynth( float * _shape, NotePlayHandle * _nph, bool _interpolation,
 		}
 		sample_shape[i] = buf;
 	}
-}
-
-
-BSynth::~BSynth()
-{
-	delete[] sample_shape;
 }
 
 
@@ -258,8 +252,11 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 {
 	if (!nph->m_pluginData)
 	{
+		static_assert(sizeof(BSynth) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(BSynth) <= alignof(std::max_align_t));
 		float factor = !m_normalize.value() ? defaultNormalizationFactor : m_normalizeFactor;
-		nph->m_pluginData = new BSynth(
+		nph->m_pluginData = std::construct_at(
+					static_cast<BSynth*>( nph->pluginDataStorage() ),
 					const_cast<float*>( m_graph.samples() ),
 					nph,
 					m_interpolation.value(), factor,
@@ -283,7 +280,7 @@ void BitInvader::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 
 void BitInvader::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<BSynth *>( _n->m_pluginData );
+	std::destroy_at( static_cast<BSynth *>( _n->m_pluginData ) );
 }
 
 
