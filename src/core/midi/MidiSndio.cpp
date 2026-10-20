@@ -28,6 +28,7 @@
 #ifdef LMMS_HAVE_SNDIO
 
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
 #include <sndio.h>
 #include <fcntl.h>
@@ -39,6 +40,20 @@
 
 namespace lmms
 {
+
+
+//! How long teardown waits for the writer to drain before it abandons a stalled write.
+static constexpr auto writerTeardownGrace = std::chrono::milliseconds( 1000 );
+
+
+//! The writer's share of the output path: the handle and the read end of the pipe, which the
+//! writer closes when it finishes. Whoever holds the shared_ptr keeps them valid.
+struct MidiSndio::OutputWriter
+{
+	mio_hdl* hdl = nullptr;
+	int readFd = -1;
+	std::promise<void> finished;
+};
 
 
 //! Creates the output pipe. Its write end is non-blocking, so sendByte() never waits on it.
@@ -91,8 +106,12 @@ MidiSndio::MidiSndio() :
 	}
 
 	start( QThread::LowPriority );
-	m_writer.reset( QThread::create( [this] { writeQueuedBytes(); } ) );
-	m_writer->start();
+
+	m_output = std::make_shared<OutputWriter>();
+	m_output->hdl = m_hdl;
+	m_output->readFd = m_outPipe[0];
+	m_writerDone = m_output->finished.get_future();
+	m_writer = std::thread( &MidiSndio::runWriter, m_output );
 }
 
 
@@ -108,27 +127,24 @@ MidiSndio::~MidiSndio()
 		}
 	}
 
-	if( m_writer )
+	if( m_output )
 	{
-		m_quit.store(true);
-		// The byte wakes the writer out of its read; it then sees m_quit and stops.
-		[[maybe_unused]] const ssize_t woke = ::write( m_outPipe[1], "", 1 );
-		if( !m_writer->wait( 1000 ) )
-		{
-			m_writer->terminate();
-			m_writer->wait();
-		}
-	}
-
-	if( m_hdl != nullptr )
-	{
-		mio_close( m_hdl );
-	}
-
-	if( m_outPipe[0] >= 0 )
-	{
-		::close( m_outPipe[0] );
+		// Closing the write end is the end of the queue: the writer writes what is still
+		// queued, then closes the handle. The reader has already stopped, so nothing else uses it.
 		::close( m_outPipe[1] );
+		m_outPipe[1] = -1;
+
+		// A writer blocked inside mio_write cannot be stopped from outside without
+		// corrupting sndio state, so it is abandoned instead of terminated. It keeps its
+		// own handle and closes it when the write returns; nothing here touches it again.
+		if( m_writerDone.wait_for( writerTeardownGrace ) == std::future_status::ready )
+		{
+			m_writer.join();
+		}
+		else
+		{
+			m_writer.detach();
+		}
 	}
 }
 
@@ -154,27 +170,26 @@ void MidiSndio::sendByte( const unsigned char c )
 }
 
 
-//! Runs on m_writer, the only thread that writes to the device, so a blocking mio_write() here
-//! cannot hold up the caller of sendByte().
-void MidiSndio::writeQueuedBytes()
+//! The only thread that writes to the device, so a blocking mio_write() here cannot hold up the
+//! caller of sendByte(). It takes no pointer to MidiSndio, so it can outlive the object.
+void MidiSndio::runWriter(std::shared_ptr<OutputWriter> out)
 {
 	char buf[0x100];
 	while( true )
 	{
-		const ssize_t n = ::read( m_outPipe[0], buf, sizeof( buf ) );
+		const ssize_t n = ::read( out->readFd, buf, sizeof( buf ) );
 		if( n < 0 && errno == EINTR )
 		{
 			continue;
 		}
-		// m_quit is checked after every read, so bytes still queued at shutdown are discarded
-		// rather than written to a device that may be going away.
-		if( n <= 0 || m_quit.load() )
+		// 0 means the write end is closed and every queued byte has been read.
+		if( n <= 0 )
 		{
 			break;
 		}
 		for( size_t done = 0; done < static_cast<size_t>( n ); )
 		{
-			const size_t written = mio_write( m_hdl, buf + done, static_cast<size_t>( n ) - done );
+			const size_t written = mio_write( out->hdl, buf + done, static_cast<size_t>( n ) - done );
 			if( written == 0 )
 			{
 				break;
@@ -182,6 +197,9 @@ void MidiSndio::writeQueuedBytes()
 			done += written;
 		}
 	}
+	mio_close( out->hdl );
+	::close( out->readFd );
+	out->finished.set_value();
 }
 
 

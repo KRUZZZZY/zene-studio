@@ -30,6 +30,15 @@ QByteArray deviceBytes;
 QSemaphore bytesWritten;
 //! The thread that performed the most recent device write.
 QThread* writerThread = nullptr;
+//! The next `stallWrites` device writes block on writeGate, as a stalled device would.
+int stallWrites = 0;
+QSemaphore writeStarted;
+QSemaphore writeGate;
+//! How many times the device handle was closed, the bytes the device had accepted
+//! at the moment of the last close, and a permit released per close.
+int closeCalls = 0;
+QByteArray closedBytes;
+QSemaphore closed;
 
 mio_hdl* fakeHandle()
 {
@@ -42,7 +51,13 @@ void resetDevice(bool opens)
 	mioWriteCalls = 0;
 	deviceBytes.clear();
 	writerThread = nullptr;
+	stallWrites = 0;
+	closeCalls = 0;
+	closedBytes.clear();
 	bytesWritten.tryAcquire(bytesWritten.available());
+	writeStarted.tryAcquire(writeStarted.available());
+	writeGate.tryAcquire(writeGate.available());
+	closed.tryAcquire(closed.available());
 }
 } // namespace
 
@@ -53,12 +68,21 @@ extern "C" mio_hdl* mio_open(const char*, unsigned int, int)
 
 extern "C" void mio_close(mio_hdl*)
 {
+	++closeCalls;
+	closedBytes = deviceBytes;
+	closed.release();
 }
 
 extern "C" size_t mio_write(mio_hdl*, const void* buf, size_t size)
 {
 	++mioWriteCalls;
 	writerThread = QThread::currentThread();
+	if (stallWrites > 0)
+	{
+		--stallWrites;
+		writeStarted.release();
+		writeGate.acquire();
+	}
 	deviceBytes.append(static_cast<const char*>(buf), static_cast<qsizetype>(size));
 	bytesWritten.release(static_cast<int>(size));
 	return size;
@@ -128,6 +152,44 @@ private slots:
 		midi.sendByte(0x7F);
 		QVERIFY(bytesWritten.tryAcquire(3, 5000));
 		QCOMPARE(deviceBytes, QByteArray::fromHex("903C7F"));
+	}
+
+	//! Ordinary teardown drains the queue: every byte sent before the client is
+	//! destroyed reaches the device before the handle is closed.
+	void queuedBytesAreDeliveredBeforeTeardownCloses()
+	{
+		resetDevice(true);
+		{
+			TestMidiSndio midi;
+			midi.sendByte(0x90);
+			midi.sendByte(0x3C);
+			midi.sendByte(0x7F);
+		}
+		QVERIFY(closed.tryAcquire(1, 5000));
+		QCOMPARE(closeCalls, 1);
+		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F"));
+	}
+
+	//! A device write that never returns must not hold teardown up, and the thread
+	//! must not be killed inside the write. Teardown gives up on the writer and
+	//! leaves the handle open; the writer closes it when the write returns, after
+	//! delivering the bytes that were queued behind the stalled one.
+	void stalledWriteTeardownDoesNotCloseTheHandleUnderTheWrite()
+	{
+		resetDevice(true);
+		stallWrites = 1;
+		{
+			TestMidiSndio midi;
+			midi.sendByte(0x90);
+			QVERIFY(writeStarted.tryAcquire(1, 5000));
+			midi.sendByte(0x3C);
+			midi.sendByte(0x7F);
+		}
+		QCOMPARE(closeCalls, 0);
+		writeGate.release();
+		QVERIFY(closed.tryAcquire(1, 5000));
+		QCOMPARE(closeCalls, 1);
+		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F"));
 	}
 };
 
