@@ -22,6 +22,22 @@ enqueue failsafe**.
 
 There is one defect, one line, one function. It was fixed once, at the cause.
 
+Each finding has its **own** regression (round 1 was sent back because the
+second finding shared the first one's test):
+
+| finding | its own regression | where |
+| --- | --- | --- |
+| `new-p9-254` (the note path must not log or allocate on the render thread) | `PluginPortsMigrationTest::lb302NoteEnqueueFailsafeStaysRealtimeSafe` | `tests/src/plugins/PluginPortsMigrationTest.cpp:2306` |
+| `new-p14-134` (the retry exhaustion of the note path must not log) | `Lb302NotePathTest::lb302RetryExhaustionDoesNotLog` (and its sibling `lb302RetryExhaustionIsCountedAndReportedOffTheAudioThread`) | `tests/src/plugins/Lb302NotePathTest.cpp` |
+
+`Lb302NotePathTest` is its own CTest target: the plugin's own sources are
+compiled into that test binary (the `SlicerTZoomTest` /
+`Vst3EffectIntegrationTest` pattern, `tests/CMakeLists.txt`), so the code under
+test is the shipped one, the test loads no plugin module and needs **no
+platform skip** - it runs everywhere - and it can be run on its own:
+`ctest -R '^Lb302NotePathTest$'` is EXIT 1 with the product change reversed
+and EXIT 0 with the fix.
+
 `Lb302Synth::playNoteImpl` is the instrument's per-note callback. It is
 reached from the render thread: `AudioEngine::renderStageInstruments()`
 (`src/core/AudioEngine.cpp:836`) runs every play handle on the audio thread,
@@ -98,13 +114,29 @@ The rt-safety whole-tree sweep now measures this path, and it knows what
   message seam: it counts the messages of the calling thread only (thread
   local, so the render thread's own messages are neither recorded nor raced
   on) and keeps them out of the test output.
+- `tests/src/plugins/Lb302NotePathTest.cpp` - the **new-p14-134** regression
+  (round 2). It is a CTest target of its own (`Lb302NotePathTest`): the
+  plugin's sources are compiled into it, so it loads no plugin module and
+  needs no platform skip. Its two slots are
+  `lb302RetryExhaustionDoesNotLog()` (the finding's own claim: the retry
+  exhaustion of the note path logs nothing, and allocates nothing) and
+  `lb302RetryExhaustionIsCountedAndReportedOffTheAudioThread()` (the drop is
+  counted, and the report names the count and drains it). The failsafe is
+  reached by structure: 512 enqueues against a ring buffer that holds far
+  fewer, so 384 of them take the failsafe on every run.
+- `tests/CMakeLists.txt` - registers the `Lb302NotePathTest` target
+  (the `SlicerTZoomTest` / `Vst3EffectIntegrationTest` pattern: the plugin's
+  own sources are compiled into the test binary).
+- `tests/all-sources.txt:2928` and `tests/fork-sources.txt` - the new test
+  source is registered in both scope manifests; `bash
+  tests/all-sources-reproduce.sh` prints `REPRODUCES` again.
 - `tests/upstream-modifications.txt:2410-2411` - the two inherited product
   files are declared in the divergence ledger with their reasons.
 
 The suggested `ctest -R '^Lb302$'` selector has no registered test in this
 configured tree (`ctest -N -R '^Lb302$'` reports `Total Tests: 0`); the
-`Lb302` slice is covered by `PluginPortsMigrationTest`, which is the
-registered test used here.
+`Lb302` slice is covered by `PluginPortsMigrationTest` and by the new
+`Lb302NotePathTest`, the two registered tests used here.
 
 ### One pre-existing failure, not caused by this change
 
@@ -141,6 +173,37 @@ The affected CTest family (`PluginPortsMigrationTest`) runs **1** test
 executable with 48 test functions (45 passed, 1 pre-existing failure, 2
 skipped) on every fixed-code run.
 
+### Round 2: the new-p14-134 regression on its own
+
+Round 1 was sent back because both findings shared one test. The second
+finding now has its own test, in its own CTest target, proved the same way
+(product change reversed -> the test fails; product change restored -> it
+passes). The product patch is the same `.../logs/fix.patch`: it holds the two
+product files only, built from the base commit
+`git diff $(git merge-base HEAD $(cat .../FIX-BASE))..HEAD -- plugins/Lb302/Lb302.cpp plugins/Lb302/Lb302.h`.
+
+| Phase | Exact command | Exit | Result |
+| --- | --- | ---: | --- |
+| Register the new target | `cmake --build build --target lb302 -- -j12 > .../logs/build-reconfigure-1.log 2>&1; echo EXIT=$?` | 0 | The build system re-ran CMake, so the new `Lb302NotePathTest` target exists. |
+| Build the new test | `cmake --build build --target Lb302NotePathTest -- -j12 > .../logs/build-note-path-2.log 2>&1; echo EXIT=$?` | 0 | The plugin's sources compile into the test binary. |
+| **GREEN (new-p14-134)** | `QT_QPA_PLATFORM=offscreen ctest -R '^Lb302NotePathTest$' --output-on-failure > .../logs/test-note-path-green-2.log 2>&1; echo EXIT=$?` | 0 | 1/1 passed. |
+| Reverse the product fix | `git apply -R .../logs/fix.patch` | 0 | The product code is back to the `qDebug()` version. |
+| Rebuild without the fix | `cmake --build build --target Lb302NotePathTest -- -j12 > .../logs/build-note-path-red-3.log 2>&1; echo EXIT=$?` | 0 | Rebuilt with the base product code. |
+| **RED (new-p14-134)** | `QT_QPA_PLATFORM=offscreen ctest -R '^Lb302NotePathTest$' --output-on-failure > .../logs/test-note-path-red-3.log 2>&1; echo EXIT=$?` | 8 | `FAIL! ... 'logged == 0' returned FALSE. (the LB302 note path logged 384 message(s) when its enqueue retries ran out)` and `FAIL! ... the LB302 instrument does not expose the dropped-note counter`; QtTest totals: 2 passed, 2 failed, 0 skipped. |
+| **RED, slot by slot** | `QT_QPA_PLATFORM=offscreen ./Lb302NotePathTest lb302RetryExhaustionDoesNotLog > .../logs/test-note-path-slot-red.log 2>&1; echo EXIT=$?` | 1 | The finding's own slot fails on its own. |
+| **RED, slot by slot** | `QT_QPA_PLATFORM=offscreen ./Lb302NotePathTest lb302RetryExhaustionIsCountedAndReportedOffTheAudioThread > .../logs/test-note-path-slot2-red.log 2>&1; echo EXIT=$?` | 1 | The counter/report slot fails on its own. |
+| **RED, the new-p9-254 slot** | `QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest lb302NoteEnqueueFailsafeStaysRealtimeSafe > .../logs/test-pluginports-slot-red.log 2>&1; echo EXIT=$?` | 1 | The first finding's slot fails on its own. |
+| Restore the product fix | `git apply .../logs/fix.patch` | 0 | The fix is back. |
+| Rebuild with the fix | `cmake --build build --target zene lb302 Lb302NotePathTest PluginPortsMigrationTest -- -j12 > .../logs/build-final-green-2.log 2>&1; echo EXIT=$?` | 0 | Rebuilt with the fix. |
+| **GREEN, slot by slot** | `QT_QPA_PLATFORM=offscreen ./Lb302NotePathTest lb302RetryExhaustionDoesNotLog > .../logs/test-note-path-slot-green.log 2>&1; echo EXIT=$?` | 0 | The finding's own slot passes on its own. |
+| **GREEN, slot by slot** | `QT_QPA_PLATFORM=offscreen ./Lb302NotePathTest lb302RetryExhaustionIsCountedAndReportedOffTheAudioThread > .../logs/test-note-path-slot2-green.log 2>&1; echo EXIT=$?` | 0 | The counter/report slot passes on its own. |
+| **GREEN, the new-p9-254 slot** | `QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest lb302NoteEnqueueFailsafeStaysRealtimeSafe > .../logs/test-pluginports-slot-green.log 2>&1; echo EXIT=$?` | 0 | The first finding's slot passes on its own. |
+| **GREEN (family)** | `QT_QPA_PLATFORM=offscreen ctest -R '^Lb302NotePathTest$\|^PluginPortsMigrationTest$\|^RtSafety(Sweep\|SelfTest)$' --output-on-failure > .../logs/test-family-final.log 2>&1; echo EXIT=$?` | 8 | 3/4 targets pass: `Lb302NotePathTest` **Passed**, `RtSafetySweep` Passed, `RtSafetySelfTest` Passed; `PluginPortsMigrationTest` fails only on the pre-existing `nonRealtimeLadspaEffectsAreInvalid` (the missing SWH Decimator fixture) - its own new-p9-254 slot passes. |
+
+The affected CTest family now runs **2** test executables for this cluster
+(`Lb302NotePathTest` with 2 slots, `PluginPortsMigrationTest` with 48) plus
+the two rt-safety ctests.
+
 ### The static guard, proved the same way
 
 | Phase | Exact command | Exit | Result |
@@ -155,11 +218,13 @@ skipped) on every fixed-code run.
 
 | Gate | Exact command | Exit | Result |
 | --- | --- | ---: | --- |
-| All gates (the enforced table) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-254 > .../logs/feature-check-1.log 2>&1; echo EXIT=$?` | 0 | **PASS** - fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity ("no new item in your files"), file-length ("no new item in your files"). |
-| Complexity ratchet (raw, fork scope) | `bash tests/complexity-gate.sh --check > .../logs/gate-complexity-1.log 2>&1; echo EXIT=$?` | 1 | Red **on the train**: 6 pre-existing regressions, none in a file this change touches (`XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp`, `ControlCommandsShortcuts.cpp`). The new functions are under the target: `Lb302Synth::droppedNoteCount` CCN 1, `Lb302Synth::reportDroppedNotes` CCN 4, `PluginPortsMigrationTest::lb302NoteEnqueueFailsafeStaysRealtimeSafe` CCN 6 (lizard 1.24.0). |
-| File-length ratchet (raw, fork scope) | `bash tests/file-length-gate.sh --check > .../logs/gate-file-length-1.log 2>&1; echo EXIT=$?` | 1 | Red **on the train**: two pre-existing new test files over 500 lines (`tests/src/core/VideoTrackTest.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`), neither touched here. `plugins/Lb302/Lb302.cpp` is an inherited file outside the enforced fork scope. |
+| All gates (the enforced table) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-254 > .../logs/feature-check-3.log 2>&1; echo EXIT=$?` | 0 | **PASS** - fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity ("no new item in your files"), file-length ("no new item in your files"). |
+| Complexity ratchet (raw, fork scope) | `bash tests/complexity-gate.sh --check > .../logs/gate-complexity-2.log 2>&1; echo EXIT=$?` | 1 | Red **on the train**: 6 pre-existing regressions, none in a file this change touches (`XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp`, `ControlCommandsShortcuts.cpp`). The new functions are under the target: `Lb302Synth::droppedNoteCount` CCN 1, `Lb302Synth::reportDroppedNotes` CCN 4, `PluginPortsMigrationTest::lb302NoteEnqueueFailsafeStaysRealtimeSafe` CCN 6, every function of `Lb302NotePathTest` CCN <= 3 (lizard 1.24.0). |
+| File-length ratchet (raw, fork scope) | `bash tests/file-length-gate.sh --check > .../logs/gate-file-length-2.log 2>&1; echo EXIT=$?` | 1 | Red **on the train**: pre-existing new files over 500 lines (`tests/src/core/DeviceDspTest.cpp`, `tests/src/core/NotePlaybackTest.cpp`, ...), none of them touched here. `plugins/Lb302/Lb302.cpp` is an inherited file outside the enforced fork scope; the new `tests/src/plugins/Lb302NotePathTest.cpp` is 199 code lines. |
+| Duplication ratchet (raw, fork scope) | `bash tests/duplication-gate.sh > .../logs/gate-duplication-1.log 2>&1; echo EXIT=$?` | 0 | "PASS: duplicated lines 0.33% (budget 5%)" over 1794 fork sources - the new test file adds no clone. |
 | Inherited-file ledger | `bash tests/no-upstream-regression-gate.sh > .../logs/gate-upstream-1.log 2>&1; echo EXIT=$?` | 0 | "PASS: every change to upstream-inherited code ... is declared (1495 changed path(s) declared; the ledger holds 2124 entries)". |
-| Fork-source manifest | `bash tests/fork-sources-gate.sh > .../logs/gate-fork-sources-1.log 2>&1; echo EXIT=$?` | 0 | PASS. |
+| Fork-source manifest | `bash tests/fork-sources-gate.sh > .../logs/gate-fork-sources-2.log 2>&1; echo EXIT=$?` | 0 | PASS - "every tracked source in scope is registered (1791 fork-NEW, 1212 inherited, 48 tooling)". |
+| Whole-tree manifest | `bash tests/all-sources-reproduce.sh > .../logs/all-sources-reproduce-1.log 2>&1; echo EXIT=$?` | 0 | "REPRODUCES: the entry list in all-sources.txt is the recipe's own output." |
 | Whole-tree file-length scope (not enforced, red on the train) | `bash tests/file-length-gate.sh --scope all --check > .../logs/gate-file-length-all.log 2>&1; echo EXIT=$?` | 1 | Red on the train for 20+ files (`AudioEngine.cpp`, `GigPlayer.cpp`, ...). This change adds one line to that list (`plugins/Lb302/Lb302.cpp grew 526 -> 545`); the scope is not part of the default run and its baseline may not be re-anchored by a bug fix. |
 
 The build was rebuilt from scratch for the changed targets before every
@@ -169,16 +234,24 @@ PluginPortsMigrationReference -- -j12` (`.../logs/build-final-1.log`, EXIT=0).
 ## Self-check
 
 1. **The regression test FAILS with the product change reverted and PASSES
-   with it.** RED: `ctest -R '^PluginPortsMigrationTest$'` -> EXIT=8, "the
-   LB302 note path logged 384 message(s) from the audio-thread callback".
-   Revert proof: `git apply -R .../fix.patch` + rebuild -> EXIT=8 with the
-   same assertion; `git apply .../fix.patch` + rebuild -> the test PASSES
-   (45 passed, 1 pre-existing failure). The static guard behaves the same
-   way: the sweep exits 1 on the reverted code and 0 on the fixed code.
+   with it.** Each finding has its own test, and each was proved on its own:
+   - `new-p9-254`: `ctest -R '^PluginPortsMigrationTest$'` -> EXIT=8, "the
+     LB302 note path logged 384 message(s) from the audio-thread callback";
+     the slot alone (`./PluginPortsMigrationTest
+     lb302NoteEnqueueFailsafeStaysRealtimeSafe`) -> EXIT=1 with the product
+     change reversed, EXIT=0 with the fix.
+   - `new-p14-134`: `ctest -R '^Lb302NotePathTest$'` -> EXIT=8 with the
+     product change reversed ("the LB302 note path logged 384 message(s) when
+     its enqueue retries ran out") and EXIT=0 with the fix; the slot alone
+     (`./Lb302NotePathTest lb302RetryExhaustionDoesNotLog`) -> EXIT=1
+     reversed, EXIT=0 restored.
+   The static guard behaves the same way: the sweep exits 1 on the reverted
+   code and 0 on the fixed code.
 2. **The test is deterministic.** No wall-clock timing, no sleeps, no races:
    the failsafe is reached by *structure* (512 enqueues against a 128-slot
    ring buffer), the allocation count comes from the harness' own
-   `partc::RealtimeAllocationWatch` seam, the message count from the
+   `partc::RealtimeAllocationWatch` seam (and from the equivalent
+   `AllocationWatch` of the new test), the message count from the
    thread-local `LogCapture` seam, and the counter/report are read through
    the meta-object (`QMetaObject::invokeMethod`). The same input produces
    the same 384 drops on every run.
@@ -230,8 +303,13 @@ PluginPortsMigrationReference -- -j12` (`.../logs/build-final-1.log`, EXIT=0).
 - `plugins/Lb302/Lb302.cpp` - the failsafe counts instead of logging; the
   control-thread report; the report timer.
 - `plugins/Lb302/Lb302.h` - the counter and the two accessors.
-- `tests/src/plugins/PluginPortsMigrationTest.cpp` - the regression and its
-  message seam.
+- `tests/src/plugins/PluginPortsMigrationTest.cpp` - the **new-p9-254**
+  regression and its message seam.
+- `tests/src/plugins/Lb302NotePathTest.cpp` - the **new-p14-134** regression,
+  in its own CTest target (no plugin module, no platform skip).
+- `tests/CMakeLists.txt` - registers the `Lb302NotePathTest` target.
+- `tests/all-sources.txt`, `tests/fork-sources.txt` - the new test source is
+  registered in both scope manifests.
 - `tests/rt_safety_source.py` - the `qt-log` rule.
 - `tests/rt_safety_selftest.py` - the rule's positive control.
 - `tests/rt-safety-scope.txt` - the LB302 note path is declared.
