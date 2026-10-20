@@ -29,6 +29,7 @@
 #include <QFileSystemWatcher>
 #include <QProxyStyle>
 
+class LmmsStyleTest;
 
 namespace lmms::gui
 {
@@ -62,6 +63,7 @@ private:
 	QImage colorizeXpm( const char * const * xpm, const QBrush& fill ) const;
 	void hoverColors( bool sunken, bool hover, bool active, QColor& color, QColor& blend ) const;
 	void reloadCustomStyle();
+	friend class ::LmmsStyleTest;
 	QFileSystemWatcher m_styleReloader;
 	QString m_customCssPath;
 };
