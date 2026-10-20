@@ -175,8 +175,23 @@ public:
 	//! again without waiting, so a thread that does not hold the lock can never ride on another thread's hold.
 	static std::uint64_t callerKey() noexcept
 	{
+#ifdef LMMS_TESTING
+		if( const auto hashForTest = s_callerIdHashForTest.load( std::memory_order_relaxed ) )
+		{
+			return static_cast<std::uint64_t>( hashForTest( std::this_thread::get_id() ) ) | 1u;
+		}
+#endif
 		return static_cast<std::uint64_t>( std::hash<std::thread::id>{}( std::this_thread::get_id() ) ) | 1u;
 	}
+
+#ifdef LMMS_TESTING
+	//! Lets the regression force a collision in the legacy thread-id hash path.
+	using CallerIdHashForTest = std::uint64_t (*)( std::thread::id );
+	static void setCallerIdHashForTest( CallerIdHashForTest _hash ) noexcept
+	{
+		s_callerIdHashForTest.store( _hash, std::memory_order_relaxed );
+	}
+#endif
 
 	// recursive lock, owned per thread
 	inline void lock()
@@ -375,6 +390,9 @@ private:
 	//! Thread that holds the data lock (0: none) and its recursion depth; the depth is touched by the owner only.
 	std::atomic<std::uint64_t> m_owner{0};
 	int m_depth = 0;
+#ifdef LMMS_TESTING
+	inline static std::atomic<CallerIdHashForTest> s_callerIdHashForTest{nullptr};
+#endif
 };
 #endif // SYNC_WITH_SHM_FIFO
 
