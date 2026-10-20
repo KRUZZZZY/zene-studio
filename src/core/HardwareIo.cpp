@@ -290,8 +290,9 @@ void loadMixer(const QDomElement& mixerElement)
 		if (!validIndex || k < 0 || k >= MaxCues) { continue; }
 		CueMaster& cue = s_cueMasters[static_cast<std::size_t>(k)];
 		cue.name = element.attribute(QStringLiteral("name"));
-		const float cueLevel = element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat();
-		cue.level = std::isfinite(cueLevel) ? std::clamp(cueLevel, 0.f, 2.f) : 1.f;  // non-finite: the cuemix's default
+		bool levelOk = false;
+		const float cueLevel = element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat(&levelOk);
+		cue.level = levelOk && std::isfinite(cueLevel) ? std::clamp(cueLevel, 0.f, 2.f) : 1.f;  // unparsable or non-finite: the cuemix's default
 		cue.output = readDestination(element, QStringLiteral("output"));
 		cue.followListen = element.attribute(QStringLiteral("listen"), QStringLiteral("1")).toInt() != 0;
 	}
