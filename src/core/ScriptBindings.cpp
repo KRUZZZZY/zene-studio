@@ -205,7 +205,7 @@ void enqueueTrackRename(Track* track, const QString& name)
 	}
 	ScriptCommand command = makeCommand(ScriptCommand::Type::SetTrackName);
 	command.object0 = track;
-	if (!setCommandText(command, name)) { throw std::runtime_error("setName: name is longer than 255 bytes"); }
+	if (!setCommandText(command, name)) { throw std::runtime_error("setName: name is longer than 255 bytes or contains a NUL byte"); }
 	ScriptEngine::instance()->enqueue(command);
 }
 
@@ -752,7 +752,7 @@ void LuaPatternClip::setName(const QString& name)
 	if (!m_clip) { return; }
 	ScriptCommand command = makeCommand(ScriptCommand::Type::SetClipName);
 	command.object0 = m_clip;
-	if (!setCommandText(command, name)) { throw std::runtime_error("setName: name is longer than 255 bytes"); }
+	if (!setCommandText(command, name)) { throw std::runtime_error("setName: name is longer than 255 bytes or contains a NUL byte"); }
 	ScriptEngine::instance()->enqueue(command);
 }
 

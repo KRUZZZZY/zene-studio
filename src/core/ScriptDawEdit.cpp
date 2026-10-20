@@ -66,6 +66,8 @@ bool setCommandText(ScriptCommand& command, const QString& text)
 {
 	const QByteArray utf8 = text.toUtf8();
 	if (utf8.size() >= static_cast<int>(sizeof(command.text))) { return false; }
+	// The apply side reads the payload back as a C string, so a NUL would end it early.
+	if (utf8.contains('\0')) { return false; }
 	std::strncpy(command.text, utf8.constData(), sizeof(command.text) - 1);
 	command.text[sizeof(command.text) - 1] = '\0';
 	return true;
@@ -91,8 +93,9 @@ void enqueueDaw(ScriptCommand command)
 }
 
 //! A rename travels in the fixed 256-byte payload, like SetTrackName's.
-//! False when the name does not fit whole: the payload is left empty rather
-//! than carrying a truncation that may also be a broken UTF-8 sequence.
+//! False when the name does not fit whole or holds a NUL byte: the payload is
+//! left empty rather than carrying a truncation that may also be a broken UTF-8
+//! sequence, or a prefix that the apply side would read back as the whole name.
 bool namedDawCommand(ScriptDawBindings::Op op, void* target, const QString& name,
 	ScriptCommand& command)
 {
@@ -363,7 +366,7 @@ void LuaMixerChannel::setName(const QString& name)
 	if (!namedDawCommand(ScriptDawBindings::Op::SetChannelName, channel, name, command))
 	{
 		logRefusal(QStringLiteral("renaming this channel"), ControlResult::failure(
-			ControlErrorKind::InvalidArgs, QStringLiteral("name exceeds the %1-byte command payload limit")
+			ControlErrorKind::InvalidArgs, QStringLiteral("name exceeds the %1-byte command payload limit or contains a NUL byte")
 				.arg(ScriptCommandTextSize - 1)));
 		return;
 	}
@@ -386,7 +389,7 @@ LuaEffect& LuaEffectChain::loadEffect(const QString& device) const
 	if (!namedDawCommand(ScriptDawBindings::Op::LoadEffect, chain, device, command))
 	{
 		logRefusal(QStringLiteral("loading '%1'").arg(device), ControlResult::failure(
-			ControlErrorKind::InvalidArgs, QStringLiteral("device name exceeds the %1-byte command payload limit")
+			ControlErrorKind::InvalidArgs, QStringLiteral("device name exceeds the %1-byte command payload limit or contains a NUL byte")
 				.arg(ScriptCommandTextSize - 1)));
 		return ScriptDawBindings::newEffect(nullptr, nullptr);
 	}
