@@ -285,7 +285,9 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	const std::shared_ptr<const SampleBuffer>& audioSample)
 {
 	QJsonObject landed = pairState(pair);
-	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
+	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size())
+		|| pair.track >= model.trackCount() || pair.scene < 0
+		|| pair.scene >= model.sceneCount())
 	{
 		return pairNotLanded(pair, QStringLiteral("column_has_no_song_track"));
 	}

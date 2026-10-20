@@ -343,6 +343,24 @@ private slots:
 		QCOMPARE(pending(), size_t{0});
 	}
 
+	//! A recorded cell whose session grid slot is removed before landing is reported not landed
+	//! (not turned into a blank clip) and consumes the ring.
+	void anOutOfGridCellIsReportedNotLanded()
+	{
+		QVERIFY(recorder().recordStart(0, 1, 0));
+		QVERIFY(recorder().recordStop(0, 1, 96));
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("skipped_columns")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("collapsed")).toInt(), 0);
+		QCOMPARE(landedEntry(landed, 0).value(QStringLiteral("reason")).toString(), QStringLiteral("column_has_no_song_track"));
+		QCOMPARE(m_first->getClips().size(), size_t{0});
+		QCOMPARE(pending(), size_t{0});
+	}
+
 	//! A start with no stop yet: the pass is refused, names what still plays, and consumes NOTHING.
 	void aStillOpenLaunchRefusesAndConsumesNothing()
 	{
