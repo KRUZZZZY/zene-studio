@@ -938,6 +938,34 @@ private slots:
 			.value(QStringLiteral("enabled")).toBool(), wasEnabled);
 	}
 
+	//! A seed the project already holds changes nothing, so it takes NO undo step.
+	//! note.random_seed_set recorded one anyway, and the next control.undo unwound
+	//! that no-op instead of the real seed edit behind it, leaving the edit applied.
+	void theUnchangedSeedTakesNoUndoStep()
+	{
+		const ControlResult initial = run(QStringLiteral("note.random_seed_get"));
+		QVERIFY2(initial.ok, qPrintable(initial.errorMessage));
+		const double original = initial.result.value(QStringLiteral("seed")).toDouble();
+
+		// A real edit first, so there IS a step for a no-op to shadow.
+		const double edited = original == 424242.0 ? 515151.0 : 424242.0;
+		const ControlResult changed = run(QStringLiteral("note.random_seed_set"),
+			QJsonObject{{QStringLiteral("seed"), edited}});
+		QVERIFY2(changed.ok, qPrintable(changed.errorMessage));
+		QCOMPARE(changed.result.value(QStringLiteral("changed")).toBool(), true);
+
+		const ControlResult same = run(QStringLiteral("note.random_seed_set"),
+			QJsonObject{{QStringLiteral("seed"), edited}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QCOMPARE(same.result.value(QStringLiteral("changed")).toBool(), false);
+		QCOMPARE(same.result.value(QStringLiteral("previous")).toDouble(), edited);
+
+		// ONE undo must take the real edit back, not the no-op.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble(), original);
+	}
+
 	//! scale.from_detected_key's ADVERTISED inverse must be able to restore the
 	//! context it replaced. Replaying the forward command as its own inverse
 	//! cannot: that handler ignores the recorded root/scale and re-reads the

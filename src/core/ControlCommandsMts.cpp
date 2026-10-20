@@ -326,6 +326,11 @@ ControlResult masterSet(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, error);
 	}
+	// A value the flag already has changes nothing, so it takes NO undo step (the
+	// device.mpe_set rule): a step here would be the top entry, and control.undo would
+	// unwind the no-op instead of the real flag change behind it. The publication above
+	// still ran - a repeated arm re-registers the master exactly as it always did.
+	if (enabled == wasEnabled) { return ControlResult::success(fullState()); }
 	// The flag pair is bounded, so it is ONE recorded action step - the same
 	// shape transport and clock use for a mode switch.
 	control::addUndoStep(

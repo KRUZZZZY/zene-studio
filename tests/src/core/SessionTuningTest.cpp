@@ -1309,6 +1309,14 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 			QVERIFY(disarmed.ok);
 			QVERIFY(!run(QStringLiteral("mts.get_state")).result
 				.value(QStringLiteral("mts_master")).toBool());
+			// A repeated disarm changes nothing and takes no undo step, so ONE undo
+			// must reach the real disarm above and bring the master back.
+			const ControlResult repeated = run(QStringLiteral("mts.master_set"),
+				QJsonObject{{QStringLiteral("enabled"), false}});
+			QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+			REV_UNDO_OR_FAIL();
+			QVERIFY(run(QStringLiteral("mts.get_state")).result
+				.value(QStringLiteral("mts_master")).toBool());
 			return;
 		}
 
@@ -1328,13 +1336,13 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		std::fprintf(stdout, "MTS712_EVIDENCE mts master arm refused: %s\n",
 			qPrintable(armed.errorMessage));
 
-		// Disarming what was never armed is idempotent - and as a SUCCESSFUL
-		// mutator it records exactly ONE undo step (A16), while the refused
-		// arm above recorded none.
+		// Disarming what was never armed is idempotent, and a value the flag already
+		// has changes nothing, so it takes NO undo step - the refused arm above
+		// recorded none either.
 		const ControlResult disarmed = run(QStringLiteral("mts.master_set"),
 			QJsonObject{{QStringLiteral("enabled"), false}});
 		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
-		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
 
 };
