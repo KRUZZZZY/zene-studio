@@ -148,8 +148,8 @@ struct ArmedVolume
 //! it (filesystemIdentityKey()): POSIX by the device the kernel mounts it from (st_dev), which pools
 //! every path of one filesystem - a directory, a link to it, a second mount of it - and keeps
 //! independent filesystems apart even when they report the same device name (two tmpfs mounts both
-//! answer 'tmpfs'); Windows by the volume it is mounted at. False, with @a unmeasured set, when a
-//! place's filesystem cannot be measured.
+//! answer 'tmpfs'); Windows by the volume's GUID, which one volume keeps under every path it is
+//! mounted at. False, with @a unmeasured set, when a place's filesystem cannot be measured.
 bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>* volumes, QString* unmeasured)
 {
 	for (auto it = places.cbegin(); it != places.cend(); ++it)
