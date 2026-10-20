@@ -436,6 +436,7 @@ constexpr std::int32_t MidiAllNotesOffController = 123;
 
 //! RemotePlugin::setPeriodBudgetForTesting(); 0 = one audio period. Read on the audio thread, so lock-free.
 std::atomic<std::int64_t> s_periodBudgetForTestingUs{0};
+std::atomic<std::int64_t> s_queryReplyTimeoutForTestingMs{0};
 
 //! The time one processing period lasts.
 auto periodBudget() -> std::chrono::steady_clock::duration
@@ -472,6 +473,11 @@ auto periodDeadline(std::chrono::steady_clock::time_point now) -> std::chrono::s
 void RemotePlugin::setPeriodBudgetForTesting(std::chrono::microseconds budget)
 {
 	s_periodBudgetForTestingUs.store(budget.count(), std::memory_order_relaxed);
+}
+
+void RemotePlugin::setQueryReplyTimeoutForTesting(std::chrono::milliseconds timeout)
+{
+	s_queryReplyTimeoutForTestingMs.store(timeout.count(), std::memory_order_relaxed);
 }
 
 
@@ -821,6 +827,10 @@ void RemotePlugin::hideUI()
 RemotePluginBase::message RemotePlugin::waitForReplyWithin( const RemotePluginBase::message & _wm,
 	std::chrono::milliseconds _timeout )
 {
+	if (const auto ms = s_queryReplyTimeoutForTestingMs.load(std::memory_order_relaxed); ms > 0)
+	{
+		_timeout = std::chrono::milliseconds{ms};
+	}
 	const auto deadline = std::chrono::steady_clock::now() + _timeout;
 	for (;;)
 	{

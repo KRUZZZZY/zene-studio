@@ -48,8 +48,9 @@ capper tests moved into `runPeriodsUntilTheCountMoves`, which asserts it for eve
 comparisons are unchanged. Added: the new test's checks.
 
 ## Not covered
-- Main-thread query tests use `QueryReplyTimeout` (100 ms), not the period budget; none failed in 65 loaded runs, but
-  under extreme load a reply later than 100 ms would still fail them. Left unchanged (no evidence).
+- Deadline-focused main-thread query tests retain `QueryReplyTimeout` (100 ms). The large-message content test uses a
+  scoped 5 s query budget because the 900 KB debug message exceeded that timeout under load; other query cases keep
+  the production deadline.
 - The send-room seam is Linux-only (SIOCOUTQ); the new case QSKIPs elsewhere.
 
 ## Files

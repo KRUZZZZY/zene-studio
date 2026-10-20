@@ -219,6 +219,19 @@ public:
 	ScopedReplyBudget& operator=(const ScopedReplyBudget&) = delete;
 };
 
+class ScopedQueryReplyBudget
+{
+public:
+	explicit ScopedQueryReplyBudget(std::chrono::milliseconds timeout = std::chrono::seconds{5})
+	{
+		RemotePlugin::setQueryReplyTimeoutForTesting(timeout);
+	}
+	~ScopedQueryReplyBudget() { RemotePlugin::setQueryReplyTimeoutForTesting(std::chrono::milliseconds{0}); }
+
+	ScopedQueryReplyBudget(const ScopedQueryReplyBudget&) = delete;
+	ScopedQueryReplyBudget& operator=(const ScopedQueryReplyBudget&) = delete;
+};
+
 /*!
  * Runs periods until the client's output-count report moves the count off \a from, or \a limit passes.
  *
@@ -967,6 +980,7 @@ private slots:
 		QVERIFY2(!plugin.failed(), "a complete message near the window size failed the plugin");
 
 		// The main thread reads the big message as part of its own wait.
+		const ScopedQueryReplyBudget queryInTime;
 		QCOMPARE(plugin.isUIVisible(), 1);
 		QVERIFY(!plugin.failed());
 		const ScopedReplyBudget replyInTime;
@@ -1311,15 +1325,18 @@ private slots:
 		QVERIFY(!plugin.failed());
 
 		std::atomic<bool> held{false};
+		std::atomic<bool> release{false};
 		std::thread renderStandIn{[&] {
 			Engine::audioEngine()->requestChangeInModel();
 			held = true;
+			while (!release) { std::this_thread::yield(); }
 			std::this_thread::sleep_for(std::chrono::milliseconds{300});
 			Engine::audioEngine()->doneChangeInModel();
 		}};
 		while (!held) { std::this_thread::yield(); }
 
 		const auto started = std::chrono::steady_clock::now();
+		release = true;
 		ports.audioPortsModel().setChannelCounts(0, 3);
 		const auto elapsed = std::chrono::steady_clock::now() - started;
 		renderStandIn.join();

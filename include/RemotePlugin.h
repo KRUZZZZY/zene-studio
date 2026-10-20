@@ -217,6 +217,9 @@ public:
 	//! about the deadline: a client in another process cannot always answer within one period on a loaded machine.
 	static void setPeriodBudgetForTesting(std::chrono::microseconds budget);
 
+	//! Tests only: override a main-thread query's bounded wait; zero (the default) keeps QueryReplyTimeout.
+	static void setQueryReplyTimeoutForTesting(std::chrono::milliseconds timeout);
+
 	//! Waits up to \a _timeout for the reply to \a _wm, other messages read meanwhile going through processMessage().
 	//! The caller holds the communication lock. @return the reply, or an undefined message on timeout or loss.
 	message waitForReplyWithin( const message & _wm, std::chrono::milliseconds _timeout = QueryReplyTimeout );
