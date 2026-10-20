@@ -479,6 +479,7 @@ int main( int argc, char * * argv )
 	bool renderTracks = false;
 	bool renderStems = false;
 	int stemTailBars = 1;
+	bool stemTailBarsSpecified = false;
 	// The render RANGE (feature row 71, "selection to audio"): the span of ticks
 	// the render is limited to, or -1 for "the whole project" - which is what
 	// every render this product has produced so far rendered. Both ends are
@@ -849,6 +850,7 @@ int main( int argc, char * * argv )
 				return usageError( QString( "Invalid tail length %1" ).arg( argv[i] ) );
 			}
 			stemTailBars = bars;
+			stemTailBarsSpecified = true;
 		}
 		else if( arg == "--range-start" || arg == "--range-end" )
 		{
@@ -1180,6 +1182,14 @@ int main( int argc, char * * argv )
 			}
 			fileToLoad = QString::fromLocal8Bit( argv[i] );
 		}
+	}
+
+	// `--tail-bars` feeds exportStems() only, so accepting it for another action
+	// would silently drop it. Refuse it before the project is loaded or an
+	// output is opened, including the explicit zero that still names the option.
+	if( stemTailBarsSpecified && !renderStems )
+	{
+		return usageError( "--tail-bars is only valid for exportstems" );
 	}
 
 	// Test file argument before continuing
