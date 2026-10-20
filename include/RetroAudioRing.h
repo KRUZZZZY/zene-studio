@@ -139,6 +139,16 @@ public:
 				== m_snapshotEpoch.load(std::memory_order_relaxed);
 	}
 
+	//! Producer: true while a consumer has a snapshot in flight, before the
+	//! producer's acknowledgement. A producer that must not disturb the window
+	//! the consumer is reading defers ring-visible state changes until this
+	//! answers false; handing the frames to push() still acknowledges the
+	//! request (and the period is dropped, as it always is during a snapshot).
+	bool snapshotInFlight() const noexcept
+	{
+		return m_snapshotPending.load(std::memory_order_acquire);
+	}
+
 	//! Consumer: copy the retained window, oldest first, into \a dst - at most
 	//! \a maxFrames of the oldest retained frames. Returns the number copied; 0
 	//! when the ring is empty or no consistent window could be read within the
@@ -182,6 +192,40 @@ public:
 	void endSnapshot() noexcept
 	{
 		m_snapshotPending.store(false, std::memory_order_release);
+	}
+
+	//! Producer: drop a period that was deferred because a snapshot was in
+	//! flight, WITHOUT admitting its frames to the ring. If a snapshot is
+	//! still pending the period is counted as paused and the snapshot is
+	//! acknowledged; if the snapshot has since been released the period is
+	//! simply discarded. Realtime-safe: no allocation, no lock, O(1).
+	void dropPeriod(std::size_t count) noexcept
+	{
+		if (count == 0) { return; }
+		if (m_snapshotPending.load(std::memory_order_acquire))
+		{
+			m_pausedDrops.fetch_add(static_cast<std::uint64_t>(count), std::memory_order_relaxed);
+			m_writerAck.store(m_snapshotEpoch.load(std::memory_order_acquire), std::memory_order_release);
+		}
+	}
+
+	//! Producer: drop the retained frames. Unlike reset() this runs ON the
+	//! producer thread while a consumer may be mid-snapshot: it moves the head
+	//! through the same publication sequence push() writes under, so a
+	//! consumer's copyOut() sees the sequence change, re-reads, and can never
+	//! pair a pre-discard head with post-discard slots. The cumulative counters
+	//! are left alone - they describe the capture, not one segment, and
+	//! rewriting them from the producer would race the consumer's reads.
+	//! Realtime-safe: three atomic stores, no lock, no allocation, O(1).
+	void discardRetained() noexcept
+	{
+		const auto sequence = m_sequence.load(std::memory_order_relaxed);
+		m_sequence.store(sequence + 1, std::memory_order_relaxed);  // odd: rewriting
+		// The odd sequence is visible before the head moves (a release store
+		// alone lets the head store move ahead of it).
+		std::atomic_thread_fence(std::memory_order_release);
+		m_head.store(0, std::memory_order_release);
+		m_sequence.store(sequence + 2, std::memory_order_release);  // even: consistent
 	}
 
 	//! Frames retained right now, clamped to capacity().
