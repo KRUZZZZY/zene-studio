@@ -96,7 +96,11 @@ void SampleTrack::monitorModeChanged()
 	if( m_monitorHandle == nullptr )
 	{
 		m_monitorHandle = new InputMonitorHandle( this );
-		Engine::audioEngine()->addPlayHandle( m_monitorHandle );
+		if (!Engine::audioEngine()->addPlayHandle(m_monitorHandle))
+		{
+			delete m_monitorHandle;
+			m_monitorHandle = nullptr;
+		}
 	}
 }
 

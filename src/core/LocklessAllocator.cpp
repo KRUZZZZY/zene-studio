@@ -117,7 +117,6 @@ void * LocklessAllocator::alloc()
 	{
 		if( !available )
 		{
-			fprintf( stderr, "LocklessAllocator: No free space\n" );
 			return nullptr;
 		}
 	}
