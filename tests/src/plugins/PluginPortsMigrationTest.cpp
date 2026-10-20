@@ -157,6 +157,40 @@ namespace
 
 using MainFn = lmms::Plugin* (*)(lmms::Model*, void*);
 
+/*!
+ * Captures the log messages the OWNING thread emits while the capture is
+ * alive, so a test can prove that a path logs nothing. The messages are
+ * counted and the first one is kept; they are not printed, so a failing run
+ * stays readable. The state is thread-local: a message from another thread
+ * (the render thread) is neither recorded nor raced on.
+ */
+class LogCapture
+{
+public:
+	LogCapture() : m_previous(qInstallMessageHandler(&LogCapture::handler))
+	{
+		s_count = 0;
+		s_first.clear();
+	}
+	~LogCapture() { qInstallMessageHandler(m_previous); }
+	LogCapture(const LogCapture&) = delete;
+	LogCapture& operator=(const LogCapture&) = delete;
+
+	int count() const { return s_count; }
+	QString first() const { return s_first; }
+
+private:
+	static void handler(QtMsgType, const QMessageLogContext&, const QString& message)
+	{
+		++s_count;
+		if (s_first.isEmpty()) { s_first = message; }
+	}
+
+	inline static thread_local int s_count = 0;
+	inline static thread_local QString s_first;
+	QtMessageHandler m_previous = nullptr;
+};
+
 struct MigratedModule
 {
 	const char* plugin;
@@ -716,6 +750,7 @@ private slots:
 	void slice6PluginsAreLiveAndExact();
 	void partialInitializationCleansAcquiredResources();
 	void lb302DecayTracksSampleRateChanges();
+	void lb302NoteEnqueueFailsafeStaysRealtimeSafe();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
 	void fastBassBoostFrequencySetterHonoursFloor();
@@ -2249,6 +2284,113 @@ void PluginPortsMigrationTest::lb302DecayTracksSampleRateChanges()
 	QVERIFY2(difference == 0.0f,
 		qPrintable(QString{"LB302 did not apply the new sample-rate decay coefficient (max delta %1)"}
 			.arg(difference, 0, 'g', 9)));
+}
+
+/*!
+ * Cluster new-p9-254 and new-p14-134: the LB302 note path must stay
+ * realtime-safe.
+ *
+ * `Lb302Synth::playNoteImpl` is the per-note callback of the instrument and
+ * runs on the audio render thread. When its bounded enqueue retries run out
+ * it used to call `qDebug()`: logging formats a message, which allocates and
+ * takes a lock - both forbidden on that path. The failsafe now counts the
+ * drop in a lock-free counter, and a control-thread timer reports it.
+ *
+ * The test drives the failsafe deterministically, without any timing: the
+ * note ring buffer of the instrument is filled with more enqueues than any
+ * capacity it can declare, so the enqueues past the capacity find the buffer
+ * full, burn their retry budget and take the failsafe. The test then proves
+ * that the note path neither logged nor allocated, that the drop was
+ * recorded, and that the report happens on the control thread.
+ */
+void PluginPortsMigrationTest::lb302NoteEnqueueFailsafeStaysRealtimeSafe()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	lmms::NotePlayHandleManager::init();
+	auto* engine = lmms::Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_lb302)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("lb302");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	std::unique_ptr<lmms::Instrument> instrument{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * partc::Buffers)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * partc::Buffers,
+		note, nullptr, -1, lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> data(frames);
+	const std::span<lmms::SampleFrame> buffer{data};
+
+	// The ring buffer holds at most a couple of hundred notes, so this many
+	// enqueues fill it and then keep taking the failsafe.
+	constexpr int enqueueAttempts = 512;
+
+	int logged = 0;
+	QString firstMessage;
+	partc::RealtimeAllocationCounts counts;
+	{
+		LogCapture capture;
+		partc::RealtimeAllocationWatch::begin();
+		for (int attempt = 0; attempt < enqueueAttempts; ++attempt)
+		{
+			instrument->playNote(&handle, buffer);
+		}
+		counts = partc::RealtimeAllocationWatch::end();
+		logged = capture.count();
+		firstMessage = capture.first();
+	}
+
+	QVERIFY2(logged == 0,
+		qPrintable(QString{"the LB302 note path logged %1 message(s) from the audio-thread "
+			"callback, first: %2"}.arg(logged).arg(firstMessage)));
+	QVERIFY2(counts.allocations == 0 && counts.deallocations == 0,
+		qPrintable(QString{"the LB302 note path allocated %1 time(s) and freed %2 time(s)"}
+			.arg(static_cast<qulonglong>(counts.allocations))
+			.arg(static_cast<qulonglong>(counts.deallocations))));
+
+	// The failsafe recorded the drop in a lock-free counter ...
+	quint64 dropped = 0;
+	QVERIFY2(QMetaObject::invokeMethod(instrument.get(), "droppedNoteCount",
+		Qt::DirectConnection, Q_RETURN_ARG(quint64, dropped)),
+		"the LB302 instrument does not expose the dropped-note counter");
+	QVERIFY2(dropped > 0, "the LB302 enqueue failsafe did not record a dropped note");
+
+	// ... and the control thread reports it.
+	int reported = 0;
+	QString report;
+	{
+		LogCapture capture;
+		QVERIFY2(QMetaObject::invokeMethod(instrument.get(), "reportDroppedNotes",
+			Qt::DirectConnection),
+			"the LB302 instrument does not expose the dropped-note report");
+		reported = capture.count();
+		report = capture.first();
+	}
+	QVERIFY2(reported == 1,
+		qPrintable(QString{"the dropped-note report logged %1 message(s)"}.arg(reported)));
+	QVERIFY2(report.contains(QString::number(dropped)),
+		qPrintable(QString{"the dropped-note report does not name the count: %1"}.arg(report)));
+
+	quint64 afterReport = 1;
+	QVERIFY(QMetaObject::invokeMethod(instrument.get(), "droppedNoteCount",
+		Qt::DirectConnection, Q_RETURN_ARG(quint64, afterReport)));
+	QVERIFY2(afterReport == 0, "the dropped-note report did not drain the counter");
+
+	instrument->deleteNotePluginData(&handle);
+	handle.m_pluginData = nullptr;
 }
 
 /*!

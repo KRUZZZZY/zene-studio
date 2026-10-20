@@ -34,6 +34,7 @@
 #include <numbers>
 
 #include <QDebug>
+#include <QTimer>
 
 #include "AutomatableButton.h"
 #include "BandLimitedWave.h"
@@ -242,6 +243,14 @@ Lb302Synth::Lb302Synth(InstrumentTrack* instrumentTrack)
 	// need to explicitly call recalcFilter() again.
 	filterChanged();
 	decayChanged();
+
+	// The note-enqueue failsafe runs on the audio thread and may not log, so
+	// it counts the notes it drops. This timer lives in the instrument's own
+	// (control) thread and reports the count from there.
+	auto* dropReporter = new QTimer(this);
+	dropReporter->setInterval(1000);
+	connect(dropReporter, &QTimer::timeout, this, &Lb302Synth::reportDroppedNotes);
+	dropReporter->start();
 
 	Engine::audioEngine()->addPlayHandle(new InstrumentPlayHandle(this, instrumentTrack));
 }
@@ -509,7 +518,10 @@ void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 	{
 		if (!tries--)
 		{
-			qDebug() << "Lb302: Note dropped due to catastrophically poor performance! This should never happen!";
+			// The note path runs on the audio thread, which may not log:
+			// logging allocates and takes a lock. The drop is counted in a
+			// lock-free counter that the control thread reports instead.
+			m_droppedNoteCount.fetch_add(1, std::memory_order_relaxed);
 			return;
 		}
 		const auto occupied = static_cast<std::ptrdiff_t>(writeClaimedExpected)
@@ -539,6 +551,25 @@ void Lb302Synth::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>)
 	{
 		writeCommittedExpected = index; // Reset this as the CAS will have changed it
 		busyWaitHint();
+	}
+}
+
+
+quint64 Lb302Synth::droppedNoteCount() const
+{
+	return m_droppedNoteCount.load(std::memory_order_relaxed);
+}
+
+
+void Lb302Synth::reportDroppedNotes()
+{
+	// The report is the control thread's job: the render thread may not log.
+	if (Engine::audioEngine() != nullptr && Engine::audioEngine()->isRenderThread()) { return; }
+
+	const auto dropped = m_droppedNoteCount.exchange(0, std::memory_order_relaxed);
+	if (dropped > 0)
+	{
+		qWarning() << "Lb302:" << dropped << "notes dropped by the note enqueue failsafe";
 	}
 }
 

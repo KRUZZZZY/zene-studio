@@ -115,6 +115,14 @@ RULES: Tuple[Rule, ...] = (
         pattern=r"\b(printf|fprintf|puts|fputs|perror)\s*\(",
         note="synchronous stdio output can block the audio thread",
     ),
+    Rule(
+        id="qt-log",
+        category="blocking-io",
+        pattern=r"\bq(?:Debug|Info|Warning|Critical)\s*\(",
+        note="Qt logging formats a message (it allocates) and takes the logging lock; "
+             "the audio thread may do neither. qFatal is not covered: it aborts the "
+             "process instead of logging and continuing, which is another hazard",
+    ),
 )
 
 RULES_BY_ID: Dict[str, Rule] = {rule.id: rule for rule in RULES}
@@ -129,7 +137,7 @@ BOUND: Tuple[str, ...] = (
     "NO VIRTUAL DISPATCH / FUNCTION POINTERS / MACROS: an implementation reached through "
     "an interface, a macro or an include is checked only if the scope names it too.",
     "NO GENERAL COST, SYSCALL OR I/O CHECK: only allocation, locking, container growth, "
-    "and synchronous stdio output are checked.",
+    "synchronous stdio output and Qt logging are checked.",
     "NO ALIASING ANALYSIS: a hit is a mention of a construct, not proof that it runs on "
     "the audio thread. An allowlist line with a reason is how a tolerated mention is said.",
 )

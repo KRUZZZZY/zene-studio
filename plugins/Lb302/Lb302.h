@@ -159,6 +159,20 @@ public slots:
 
 	void db24Toggled();
 
+	//! @brief The number of notes the enqueue failsafe has dropped since the last report.
+	//!
+	//! The counter is written on the audio thread (a lock-free increment) and
+	//! read on the control thread, so reading it never blocks and never
+	//! allocates.
+	quint64 droppedNoteCount() const;
+
+	//! @brief Reports the notes the enqueue failsafe dropped since the last report.
+	//!
+	//! This runs on the control thread (the timer that calls it lives in the
+	//! instrument's own thread), because the audio thread may not log: the
+	//! report is where the diagnostic the failsafe used to print belongs.
+	void reportDroppedNotes();
+
 private:
 	void processNote(NotePlayHandle* nph);
 	void process(SampleFrame* outbuf, const f_cnt_t size);
@@ -306,6 +320,15 @@ private:
 	//!
 	//! @see playNote
 	alignas(hardware_destructive_interference_size) std::atomic_size_t m_notesWriteClaimed {0};
+
+	//! @brief The number of notes the enqueue failsafe has dropped.
+	//!
+	//! The enqueue failsafe runs on the audio thread, which may not log: it
+	//! counts the dropped note here instead, and the control thread reports
+	//! the count (see @ref reportDroppedNotes).
+	//!
+	//! @see playNoteImpl
+	alignas(hardware_destructive_interference_size) std::atomic_size_t m_droppedNoteCount {0};
 };
 
 
