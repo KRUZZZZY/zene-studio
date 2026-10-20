@@ -24,7 +24,9 @@
 #include <QFile>
 #include <QTemporaryDir>
 #include <algorithm>
+#include <cmath>
 #include <memory>
+#include <numbers>
 #include <vector>
 
 #include "DrumSynth.h"
@@ -69,6 +71,25 @@ std::vector<int16_t> render(const QString& path)
 	const auto samples = std::unique_ptr<int16_t[]>{rawSamples};
 	if (frames <= 0 || !samples) { return {}; }
 	return {samples.get(), samples.get() + frames};
+}
+
+// A tone whose envelope ends at time zero: the tone has no positive duration to sweep over.
+bool writeZeroDurationToneFixture(const QString& path, int droop)
+{
+	const auto contents = QStringLiteral(
+		"[General]\n"
+		"Version=DrumSynth v2.0\n"
+		"Level=0\n"
+		"[Tone]\n"
+		"On=1\n"
+		"Level=100\n"
+		"F1=440\n"
+		"F2=880\n"
+		"Phase=0\n"
+		"Droop=%1\n"
+		"Envelope=0,100\n").arg(droop).toUtf8();
+	QFile file(path);
+	return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
 }
 
 } // namespace
@@ -129,6 +150,30 @@ Envelope=0,00000001 100,0
 		QCOMPARE(oversizedSamples.size(), prefixSamples.size());
 		QVERIFY2(oversizedSamples == prefixSamples,
 			"an envelope point beyond the supported capacity changed the rendered prefix");
+	}
+
+	void zeroDurationToneUsesItsStartingFrequency_data()
+	{
+		QTest::addColumn<int>("droop");
+		QTest::newRow("static") << 0;
+		QTest::newRow("with-droop") << 40;
+	}
+
+	void zeroDurationToneUsesItsStartingFrequency()
+	{
+		QFETCH(int, droop);
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString path = directory.filePath(QStringLiteral("zero-duration.ds"));
+		QVERIFY(writeZeroDurationToneFixture(path, droop));
+
+		const auto samples = render(path);
+		QCOMPARE(samples.size(), std::size_t{2400});
+
+		// A tone without a positive envelope duration has no sweep to run, so it stays at F1.
+		const float phaseIncrement = 2.f * std::numbers::pi_v<float> * 440.f / 44100.f;
+		const auto expected = static_cast<int16_t>(10000.f * std::sin(phaseIncrement));
+		QCOMPARE(samples.front(), expected);
 	}
 };
 
