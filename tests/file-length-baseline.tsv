@@ -4,5 +4,4 @@ src/core/ScriptBindings.cpp	930
 src/core/ScriptEngine.cpp	662
 plugins/Vst3Effect/Vst3Host.cpp	661
 include/AudioPorts.h	644
-tests/src/core/InstrumentLayersCommandsTest.cpp	539
 src/wasm/WasmSandbox.cpp	512

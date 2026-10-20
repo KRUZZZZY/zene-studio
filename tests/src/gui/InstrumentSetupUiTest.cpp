@@ -43,6 +43,7 @@
 #include <QPointer>
 #include <QJsonArray>
 #include <QMenu>
+#include <QTextStream>
 #include <QToolButton>
 
 #include "AudioBusHandle.h"
@@ -67,6 +68,7 @@
 #include "InstrumentTrack.h"
 #include "MenuTestSupport.h"
 #include "MidiClip.h"
+#include "MidiEvent.h"
 #include "ModulationLayer.h"
 #include "Note.h"
 #include "NotePlayHandle.h"
@@ -192,6 +194,21 @@ void saveAndReload(InstrumentTrack* track)
 	doc.appendChild(root);
 	const QDomElement saved = track->saveState(doc, root);
 	track->restoreState(saved);
+}
+
+//! The track's own state as the XML an inserted layer is built from. The journalling id is left
+//! out: the layer is a track of its own and must not claim the parent's journalling object.
+QString layerTemplateXml(InstrumentTrack* track)
+{
+	QDomDocument doc;
+	QDomElement wrapper = doc.createElement(QStringLiteral("wrapper"));
+	doc.appendChild(wrapper);
+	QDomElement state = track->saveState(doc, wrapper);
+	state.removeChild(state.firstChildElement(QStringLiteral("journallingObject")));
+	QString xml;
+	QTextStream stream(&xml);
+	state.save(stream, -1);
+	return xml;
 }
 
 //! The loudest sample @a bus carries while one note plays on @a track's clip for a few periods (its layers get the
@@ -429,6 +446,38 @@ private slots:
 				qPrintable(QStringLiteral("an undeclared button: ") + button->text()));
 		}
 		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! A held live note follows the same layer when the undo of a layer removal inserts the removed
+	//! predecessor back: the note-off must reach the layer that is sounding, not the inserted one.
+	void liveNoteOffFollowsLayerAfterUndoInsert()
+	{
+		const QString target = revtest::addTrack();
+		QVERIFY(!target.isEmpty());
+		InstrumentTrack* parent = trackOf(target);
+		QVERIFY(parent != nullptr);
+		const QString layerTemplate = layerTemplateXml(parent);
+		QCOMPARE(parent->layers().insertLayer(1, layerTemplate), 1);
+		QCOMPARE(parent->layers().insertLayer(2, layerTemplate), 2);
+		RackZone secondLayerZone;
+		secondLayerZone.chain = 2;
+		QCOMPARE(parent->layers().zones().addZone(secondLayerZone), 0);
+
+		InstrumentTrack* soundingLayer = parent->layers().layer(2);
+		QVERIFY(soundingLayer != nullptr);
+		parent->processInEvent(MidiEvent(MidiNoteOn, 0, 60, 100, nullptr, MidiEvent::Source::Internal));
+		NotePlayHandle* heldNote = soundingLayer->playingNote(60);
+		QVERIFY(heldNote != nullptr);
+		QVERIFY(!heldNote->isReleased());
+
+		const QString removedLayer = parent->layers().layerXml(1);
+		QVERIFY(parent->layers().removeLayer(1));
+		QCOMPARE(parent->layers().layer(1), soundingLayer);
+		QCOMPARE(parent->layers().insertLayer(1, removedLayer), 1);
+		QCOMPARE(parent->layers().layer(2), soundingLayer);
+
+		parent->processInEvent(MidiEvent(MidiNoteOff, 0, 60, 0, nullptr, MidiEvent::Source::Internal));
+		QVERIFY2(heldNote->isReleased(), "the held note's release missed its original layer after undo");
 	}
 
 	//! MX-120: from the track's menu and its device card, a modulator made per-voice on the track's notes, bound to a

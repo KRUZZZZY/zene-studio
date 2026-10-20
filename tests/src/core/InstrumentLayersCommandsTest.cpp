@@ -36,9 +36,7 @@
 #include <QJsonObject>
 
 #include <QFileInfo>
-#include <QTextStream>
 
-#include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "ControlInstrumentCommands.h"
 #include "Engine.h"
@@ -46,7 +44,6 @@
 #include "Instrument.h"
 #include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
-#include "MidiEvent.h"
 #include "Mixer.h"
 #include "ModulationLayer.h"
 #include "NotePlayHandle.h"
@@ -118,19 +115,6 @@ void saveAndReload(InstrumentTrack* track)
 	doc.appendChild(root);
 	const QDomElement saved = track->saveState(doc, root);
 	track->restoreState(saved);
-}
-
-QString trackStateWithoutJournalId(InstrumentTrack* track)
-{
-	QDomDocument doc;
-	QDomElement wrapper = doc.createElement(QStringLiteral("wrapper"));
-	doc.appendChild(wrapper);
-	QDomElement state = track->saveState(doc, wrapper);
-	state.removeChild(state.firstChildElement(QStringLiteral("journallingObject")));
-	QString xml;
-	QTextStream stream(&xml);
-	state.save(stream, -1);
-	return xml;
 }
 
 } // namespace
@@ -397,37 +381,6 @@ private slots:
 		QVERIFY(track != nullptr);
 		QCOMPARE(track->layers().zones().zone(zonesBefore)->lowKey, 60);   // the removed zone is first again
 		QCOMPARE(track->layers().zones().zone(zonesBefore + 1)->lowKey, 70);
-	}
-
-	//! A held live note follows the same layer when undo inserts the removed predecessor back.
-	void liveNoteOffFollowsLayerAfterUndoInsert()
-	{
-		const QString target = revtest::addTrack();
-		QVERIFY(!target.isEmpty());
-		InstrumentTrack* parent = trackOf(target);
-		QVERIFY(parent != nullptr);
-		const QString layerTemplate = trackStateWithoutJournalId(parent);
-		QCOMPARE(parent->layers().insertLayer(1, layerTemplate), 1);
-		QCOMPARE(parent->layers().insertLayer(2, layerTemplate), 2);
-		RackZone secondLayerZone;
-		secondLayerZone.chain = 2;
-		QCOMPARE(parent->layers().zones().addZone(secondLayerZone), 0);
-
-		InstrumentTrack* soundingLayer = parent->layers().layer(2);
-		QVERIFY(soundingLayer != nullptr);
-		parent->processInEvent(MidiEvent(MidiNoteOn, 0, 60, 100, nullptr, MidiEvent::Source::Internal));
-		NotePlayHandle* heldNote = soundingLayer->playingNote(60);
-		QVERIFY(heldNote != nullptr);
-		QVERIFY(!heldNote->isReleased());
-
-		const QString removedLayer = parent->layers().layerXml(1);
-		QVERIFY(parent->layers().removeLayer(1));
-		QCOMPARE(parent->layers().layer(1), soundingLayer);
-		QCOMPARE(parent->layers().insertLayer(1, removedLayer), 1);
-		QCOMPARE(parent->layers().layer(2), soundingLayer);
-
-		parent->processInEvent(MidiEvent(MidiNoteOff, 0, 60, 0, nullptr, MidiEvent::Source::Internal));
-		QVERIFY2(heldNote->isReleased(), "the held note's release missed its original layer after undo");
 	}
 
 	//! MX-114: a MIDI part is added and removed through the surface, undone, and saved with the track.
