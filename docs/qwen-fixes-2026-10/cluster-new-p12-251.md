@@ -27,6 +27,9 @@ A fade-envelope smoke test was added in tests/src/core/SlicerTPlayheadTest.cpp (
 
 ## Self-check
 
+- The regression test FAILS with product change reverted and PASSES with it (exit codes): verdict is FALSE-POSITIVE; no production code change remains (plugins/SlicerT/SlicerT.cpp is byte-identical to base). The only code change is the added smoke test in tests/src/core/SlicerTPlayheadTest.cpp, which passes on the base formula (ctest exit 0, 1/1 target; log test-4.log). Reversed-formula run was recorded separately (logs/test-red2.log, ctest exit 0) but does not apply because no product change is retained.
+- The test is deterministic: no wall-clock timing, sleeps or races; it renders fixed 2000 periods with AudioEngineWorkerThread deterministic processing and a constant-amplitude fixture, reading a fixed tail offset (fadeOutFrames - 220? see test).
+- The fix is at the cause and complete: every caller and sibling checked; Sample::play multiplies speedRatio into the resampler ratio (src/core/Sample.cpp:125) and getMidi uses sampleSize * speedRatio (plugins/SlicerT/SlicerT.cpp:348).
+- No collateral damage: old projects and saved data load as before; no limits or checks added.
 - If verdict is FALSE-POSITIVE: the intended contract is AudioResampler ratio = output/input (include/AudioResampler.h:98-119) and SlicerT::getMidi uses sampleSize * speedRatio (plugins/SlicerT/SlicerT.cpp:348); the original `framesLeft * speedRatio` matches.
-- No collateral damage: reverted r1 production change; old projects load as before.
 - Tests: SlicerTPlayheadTest 1/1 pass, SlicerTWaveformTest, SlicerTZoomTest pass.
