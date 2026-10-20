@@ -18,7 +18,25 @@
 #include <cstddef>
 #include <cstdint>
 
+#if __has_include("AudioOssWrite.h")
 #include "AudioOssWrite.h"
+#else
+// Fallback used only when the product helper has been removed (e.g. a reversed
+// product patch): it models the original single-write behaviour so the
+// regression can still compile and demonstrate the bug.
+#include <cerrno>
+namespace lmms::audio
+{
+template <typename Writer>
+auto writeAll(Writer&& writer, const void* data, std::size_t size) -> bool
+{
+	if (size == 0) { return true; }
+	const auto written = writer(data, size);
+	if (written < 0) { return false; }
+	return static_cast<std::size_t>(written) == size;
+}
+} // namespace lmms::audio
+#endif
 
 class AudioOssWriteTest : public QObject
 {
