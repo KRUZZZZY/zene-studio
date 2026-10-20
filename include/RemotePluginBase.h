@@ -173,15 +173,12 @@ public:
 
 	//! Identifies the calling thread. The data lock is owned by one thread at a time: only the owner may enter it
 	//! again without waiting, so a thread that does not hold the lock can never ride on another thread's hold.
-	static std::uint64_t callerKey() noexcept
+	static const void * callerKey() noexcept
 	{
-#ifdef LMMS_TESTING
-		if( const auto hashForTest = s_callerIdHashForTest.load( std::memory_order_relaxed ) )
-		{
-			return static_cast<std::uint64_t>( hashForTest( std::this_thread::get_id() ) ) | 1u;
-		}
-#endif
-		return static_cast<std::uint64_t>( std::hash<std::thread::id>{}( std::this_thread::get_id() ) ) | 1u;
+		// Every live thread has a distinct instance of this thread-local object. Its address is a collision-free
+		// ownership token for as long as that thread can own this FIFO lock.
+		thread_local const char callerToken = 0;
+		return &callerToken;
 	}
 
 #ifdef LMMS_TESTING
@@ -214,7 +211,7 @@ public:
 		if( m_owner.load( std::memory_order_acquire ) != callerKey() ) { return; }
 		if( --m_depth == 0 )
 		{
-			m_owner.store( 0, std::memory_order_release );
+			m_owner.store( nullptr, std::memory_order_release );
 			m_dataSem.release();
 		}
 	}
@@ -388,7 +385,7 @@ private:
 	SystemSemaphore m_dataSem;
 	SystemSemaphore m_messageSem;
 	//! Thread that holds the data lock (0: none) and its recursion depth; the depth is touched by the owner only.
-	std::atomic<std::uint64_t> m_owner{0};
+	std::atomic<const void *> m_owner{nullptr};
 	int m_depth = 0;
 #ifdef LMMS_TESTING
 	inline static std::atomic<CallerIdHashForTest> s_callerIdHashForTest{nullptr};

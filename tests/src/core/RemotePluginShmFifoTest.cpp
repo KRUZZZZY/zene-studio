@@ -48,7 +48,8 @@ private slots:
 	{
 		shmFifo::setCallerIdHashForTest(&collidingThreadHash);
 		std::barrier start{3};
-		std::uint64_t keys[2]{};
+		using CallerKey = decltype(shmFifo::callerKey());
+		CallerKey keys[2]{};
 		std::thread first([&] {
 			start.arrive_and_wait();
 			keys[0] = shmFifo::callerKey();
