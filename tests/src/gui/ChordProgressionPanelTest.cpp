@@ -31,8 +31,10 @@
 
 #include <QtTest>
 
+#include <QLabel>
 #include <QPushButton>
 #include <QString>
+#include <QTableWidget>
 #include <QVector>
 
 #include "../core/ChordTestSupport.h"
@@ -135,6 +137,59 @@ private slots:
 				.arg(describe(notesOf(clip)), describe(before))));
 
 		ShellSelection::instance()->setClip(nullptr);
+	}
+
+	/*! A refused Write says why in the status line. After a successful write, a
+	 *  Write with no clip selected must replace the earlier "Wrote ..." message
+	 *  with the refusal, not leave the stale success standing, and it must not
+	 *  touch the clip. */
+	void aRefusedWriteSaysWhyInTheStatusLine()
+	{
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 40, 0, 60));
+
+		control::ClipRef ref;
+		ControlResult error;
+		QVERIFY2(control::resolveClip(clip, &ref, &error),
+			qPrintable(error.errorMessage));
+		ShellSelection::instance()->setClip(ref.clip);
+
+		ChordProgressionPanel panel;
+		panel.setScale(QStringLiteral("Major"), 0);
+		QVERIFY(panel.selectProgression(QStringLiteral("I-V-vi-IV")));
+		auto* write = panel.findChild<QPushButton*>(QStringLiteral("progressionWrite"));
+		auto* status = panel.findChild<QLabel*>(QStringLiteral("progressionStatus"));
+		QVERIFY2(write != nullptr && status != nullptr,
+			"the Write button or the status line is not in the panel");
+
+		write->click();
+		QCOMPARE(notesOf(clip).size(), 12);
+		QVERIFY2(status->text().startsWith(QStringLiteral("Wrote ")),
+			qPrintable(status->text()));
+
+		ShellSelection::instance()->setClip(nullptr);
+		write->click();
+		QCOMPARE(status->text(), QStringLiteral("Select a MIDI clip in the arranger first."));
+		QCOMPARE(notesOf(clip).size(), 12);
+	}
+
+	/*! A Write with no progression selected says so in the status line, rather
+	 *  than leaving whatever the panel last showed. */
+	void aWriteWithNoProgressionSelectedSaysWhyInTheStatusLine()
+	{
+		ChordProgressionPanel panel;
+		auto* write = panel.findChild<QPushButton*>(QStringLiteral("progressionWrite"));
+		auto* status = panel.findChild<QLabel*>(QStringLiteral("progressionStatus"));
+		auto* table = panel.findChild<QTableWidget*>(QStringLiteral("progressionTable"));
+		QVERIFY2(write != nullptr && status != nullptr && table != nullptr,
+			"a panel control is missing");
+
+		panel.setScale(QStringLiteral("Major"), 0);
+		table->setCurrentIndex(QModelIndex());
+		QCOMPARE(table->currentRow(), -1);
+		write->click();
+		QCOMPARE(status->text(), QStringLiteral("Select a progression first."));
 	}
 
 	/*! A write through the panel replaces the clip's notes (the generator's own
