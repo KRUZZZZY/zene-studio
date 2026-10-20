@@ -177,6 +177,7 @@ bool BrowserResultActions::load(const QModelIndex& row, bool sampleTrack)
 
 bool BrowserResultActions::loadPath(const QString& path, const QString& kind, bool sampleTrack)
 {
+	if (kind == BrowserSearchView::tr("missing")) { return false; }  // a project's missing file: nothing on disk to load, so no command
 	stopPreview();  // nothing keeps playing over what was just loaded
 	const ControlResult loaded = loadFile(path, kind, sampleTrack);
 	if (!loaded.ok && !loaded.errorMessage.isEmpty()) { emit failed(loaded.errorMessage); }
