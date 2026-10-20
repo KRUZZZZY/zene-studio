@@ -76,8 +76,13 @@ results are the newest line's own state, not a regression from this port):
 Neither failure names a file touched by this port. `rg -c "NoteSlide|NoteExpression"` over both
 logs returns zero matches; the complexity regressions in `gate-5-complexity-final.log` are
 pre-existing unrelated items on the newest line (`dotCentreAlong`, `parseNotes`, `adjust`,
-`setStrip`, `rotateProjectRevision`, `importedOverrides`), and the file-length regression is
-`tests/src/core/DeviceDspTest.cpp (752)`. `HostedPlugin::Impl::runChunk` is listed as
+`setStrip`, `rotateProjectRevision`, `importedOverrides`), and the file-length gate reports
+14 unrelated over-length files (one example: `tests/src/core/DeviceDspTest.cpp (752)`; full
+list in `gate-6-file-length-final.log`: SmfInterchangeReader.cpp, TakeLane.cpp,
+CollabTransportTest.cpp, ControlAutomationScriptTest.cpp, ControlDeviceCatalogueTest.cpp,
+ControlEditCommandsTest.cpp, CustomAccessTest.cpp, DeviceDspTest.cpp, HardwareIoTest.cpp,
+NotePlaybackTest.cpp, RackMacrosTest.cpp, RevisionTimelineTest.cpp, VideoTrackTest.cpp,
+ArrangerTimelineTest.cpp). `HostedPlugin::Impl::runChunk` is listed as
 *improved* in that log, not a regression. Gate limits and baselines were left untouched, as
 required.
 
