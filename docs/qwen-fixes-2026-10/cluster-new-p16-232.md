@@ -116,3 +116,34 @@ file `include/Song.h` was changed, so one reason line was appended to `tests/ups
 - 32-bit target lock-freedom of `std::atomic<std::uint64_t>` (`Song.cpp:620` fetch_add). The 64-bit atomics already
   used on the audio side (`include/AudioEngine.h:680` onwards) make the same assumption.
 - The full ctest suite was not run; only the four-binary family above.
+
+## Self-check
+
+- **Regression fails with the product change reverted, passes with it.** Yes. Reverted (`git apply -R fix.patch`,
+  EXIT 0), rebuilt (`build-4.log`, EXIT 0), `ctest -R '^NotePlaybackTest$'` EXIT 8 (`test-red-2.log`): the new case
+  fails at `NotePlaybackTest.cpp:522` with Actual 0, Expected 4294967296. Re-applied (`git apply`, EXIT 0), rebuilt
+  (`build-5.log`, EXIT 0), `./NotePlaybackTest aLoopWrapCountPassesTheThirtyTwoBitLimit` EXIT 0 (`test-green-2-single.log`).
+- **Deterministic.** Yes. No sleeps and no wall-clock time. The test sets the count to 0xFFFFFFFF through the test seam
+  `Song::setLoopWrapsForTest` (`include/Song.h:386`), then renders periods (bounded to 2000 iterations, the same pattern
+  as the existing loop-wrap tests) until one loop wrap is played. The render is driven by the test, not by a timer.
+- **Fix at the cause, every caller and sibling checked.** The writer (`src/core/Song.cpp:620` fetch_add) and the
+  accessor (`include/Song.h:384`) use the same type. The readers are `src/core/Song.cpp:563` (passes the count to
+  `MidiPlayback::tickPlayed`, now `std::uint64_t`), `src/core/MidiPlayback.cpp:73,84` (subtraction), and
+  `src/core/MarkerActions.cpp:69,81,92` (`Counts`, `countsNow`, `movedBetween`). The tests that read the count are
+  `tests/src/core/UnmuteChaseTest.cpp:247,364` and `tests/src/core/NotePlaybackTest.cpp:488`; they use `const auto`, so
+  they compile on both the old and new type. A grep for `loopWraps|m_loopWraps|tickPlayed` in `src` and `tests` found no
+  other caller. `tests/src/core/SessionPerformTest.cpp` includes `MarkerActions.h` but does not read the count.
+- **No collateral damage.** The count is runtime state and is not written to any project file (no serialisation of
+  `loopWraps`; `grep -rn loopWraps src include` shows only the readers and writer above). Old projects load as before.
+  The change adds no limit or check. The seam is a test-only setter and is not a control command. Realtime: the render
+  thread still does only `fetch_add` on an atomic (`Song.cpp:620`); no allocation, lock, or log was added. Undo: the
+  count is not part of undo.
+
+## Gate status (honest)
+
+`submit_check.py` reports `gates (feature_check.py)` as FAIL because `feature_check.py` could not write its logs
+outside the write-jail (`PermissionError` on `<worktree>/../zene-qwen-new-p16-232-feature-check`, see the Gates
+section above). The eight gate commands the script runs all exit 0 except the two ratchets, which exit 1 as the brief
+expects: `complexity` (no item in a changed file) and `file-length` (`NotePlaybackTest.cpp`, already over 500 lines
+on the base). The gates were therefore run directly, not through the script; the script itself was not re-run to
+a PASS.
