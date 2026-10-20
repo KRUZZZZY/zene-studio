@@ -222,7 +222,7 @@ RESULT: PASS
 
 The two ratchets (complexity, file-length) are the ones that only fail on items NEW in the
 files this change touches: the fix adds no function and no new file over 500 lines, and
-the new test source is 108 lines.
+the new test source is 113 lines.
 
 ## Files committed
 
