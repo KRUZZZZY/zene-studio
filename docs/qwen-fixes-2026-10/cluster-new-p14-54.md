@@ -69,15 +69,21 @@ the committed version).
 
 ## Self-check
 
-- Each new test FAILS with the product change reverted: no product change to revert. The sensitivity check is the
-  equivalent: removing the journal's undo mark (the mechanism the verdict relies on) makes the test fail with the
-  finding's message (`test-5-mutation.log`, exit 1), and restoring it passes (`test-6-restored.log`, exit 0).
-- The regression test is deterministic: no wall clock, sleeps or races. The take is recorded with the test's own
-  period driver (`recordUntilDone`, as the neighbouring cases do); the save and undo/redo are synchronous calls.
-- The fix is at the cause: not applicable (no defect). The claim's cause is the one at :148 and :185 in the journal, which
-  the finding did not name.
-- No collateral damage: no product code changed; no save format, command or limit touched.
-- Verdict evidence: the code citations above (file:line) plus the runtime check.
+- **Test FAILS with the change reverted and PASSES with it.** There is no product change to revert, because the defect
+  does not exist; the new case passes on the original code (`test-3-baseline.log` exit 0, `test-4-newcase-baseline.log`
+  exit 0). The sensitivity check stands in for RED/GREEN: removing the journal's undo mark (`ProjectJournal.cpp:148`, the
+  mechanism the verdict relies on) makes the case fail with the finding's message at `SessionAudioRecordTest.cpp:187`
+  (`test-5-mutation.log`, exit 1), and restoring it passes (`test-6-restored.log`, exit 0).
+- **Deterministic.** No wall clock, sleep or thread. The take is driven by the test's own period calls through
+  `recordUntilDone()` (`SessionAudioRecordTest.cpp:244-248`, a bounded loop on `period()`), as the neighbouring cases do.
+  The save, undo and redo are synchronous calls on `ProjectJournal`.
+- **Fix at the cause, every caller and sibling checked.** No fix was made because the claim is refuted. The cause the
+  finding points at is covered by the journal: `ProjectJournal.cpp:148` (undo) and `:185` (redo). The siblings with the
+  same callback shape (`ControlCommandsAlternatives.cpp:136-137`, `ControlCommandsCueMix.cpp:193-194`) also rely on the
+  journal rather than their lambdas. Nothing was changed in them.
+- **No collateral damage.** No product code changed. No save format, command, limit or check was touched. Old projects
+  load as before by construction.
+- **Verdict evidence.** The file:line citations in "Evidence" above, plus the runtime results in the table.
 - Environment deviations, stated plainly: (1) ccache needed `CCACHE_TEMPDIR` under `/tmp` (the default `/run/user/1000`
   was not writable). (2) The gate script could not run as written (its log folder is outside the write-jail); the copy in
   `/tmp` changes only the two path lines. Gate logic, gate limits and baselines are unchanged; the baseline JSON for base
