@@ -42,5 +42,10 @@ Affected family count: 1/1 CTest executable (`RecordToolsTest`). The existing me
 - Cause and sibling paths: `Metronome.cpp:39-42` is the scheduler caller of `click()`; the click path now already acquires from the prepared pool at `MetronomeOptions.cpp:169-170`. Stored config is parsed in `MetronomeOptions.cpp:92-94`; live command and undo changes continue through `setOptions()` and the unchanged `boundedLevel()` path at `MetronomeOptions.cpp:127-136`. Options are loaded during control-thread registration at `ProjectSectionRegistry.cpp:70` and `ControlCommandsRecordTools.cpp:260`.
 - Collateral behavior: valid numeric config values still flow through `boundedLevel()` with the existing 0..2 clamp; NaN still defaults to 1. `setOptions()` and undo behavior are unchanged. The regression restores the raw config setting it observed before injecting `invalid`.
 - Already-fixed evidence: `MetronomeOptions.cpp:169-170` returns the preallocated pooled handle, and existing commit `e88364fcc` introduced that path. The new pooled-handle assertion and the allocation-probe test both fail under the old allocation behavior.
-- Gates: final `feature_check.py` exit 0 (`logs/32-final-feature-check.log`). The final `submit_check.py` exit code will be added after it runs on the committed report.
+- Gates: `feature_check.py` exit 0 (`logs/33-final-feature-check.log`); `submit_check.py` exit 0 (`logs/34-submit-check.log`).
 - Files: this batch changes `src/core/MetronomeOptions.cpp`, `tests/src/core/RecordToolsTest.cpp`, and `docs/qwen-fixes-2026-10/cluster-5127.md`; no new product file was added.
+
+| Gate | Command | Exit | Log |
+| --- | --- | ---: | --- |
+| Feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5127` | 0 | `logs/33-final-feature-check.log` |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5127 5127` | 0 | `logs/34-submit-check.log` |
