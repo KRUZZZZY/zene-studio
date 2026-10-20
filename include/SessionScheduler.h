@@ -38,6 +38,10 @@
 #include "SessionPlayback.h"
 #include "lmms_export.h"
 
+#ifdef LMMS_TESTING
+class SessionSchedulerTest;
+#endif
+
 namespace lmms
 {
 
@@ -387,6 +391,10 @@ public:
 	const SessionArrangementRecorder& arrangementRecorder() const noexcept;
 
 private:
+#ifdef LMMS_TESTING
+	friend class ::SessionSchedulerTest;
+#endif
+
 	struct Command
 	{
 		int track = 0;
@@ -474,7 +482,10 @@ private:
 	bool enqueue( const Command& command ) noexcept;
 	ActiveSlot* findSlot( int track, int scene ) noexcept;
 	ActiveSlot* claimSlot( int track, int scene ) noexcept;
-	void drainCommands( const SessionClockContext& ctx ) noexcept;
+	//! Applies at most `budget` queued commands, in order; the rest stay queued for the next period.
+	void drainCommands( const SessionClockContext& ctx, std::size_t budget ) noexcept;
+	//! Applies one dequeued command. Audio thread; the body of drainCommands' loop.
+	void applyCommand( const Command& command, const SessionClockContext& ctx ) noexcept;
 	//! Audio thread: applies one published cell's content (#597); body in SessionPlayback.cpp.
 	bool applySlotContent( const SessionSlotContent& content ) noexcept;
 	//! Publishes one start event for the model thread. Audio thread; body in SessionFollow.cpp.

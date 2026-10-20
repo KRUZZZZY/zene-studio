@@ -299,62 +299,71 @@ SessionScheduler::ActiveSlot* SessionScheduler::claimSlot( int track, int scene 
 }
 
 
-void SessionScheduler::drainCommands( const SessionClockContext& ctx ) noexcept
+void SessionScheduler::drainCommands( const SessionClockContext& ctx, std::size_t budget ) noexcept
 {
+	// Bounded by the period's budget: a producer that refills slots as they
+	// open must not keep the audio callback in this loop. What is left stays
+	// queued, in order, for the next period.
 	Command command;
-	while( m_queue.pop( command ) )
+	for( std::size_t drained = 0; drained < budget && m_queue.pop( command ); ++drained )
 	{
 		m_processed.fetch_add( 1, std::memory_order_relaxed );
-		if( command.type == LaunchCommandType::Follow )
-		{
-			// A plan install, not a launch: it is stored for the cell and read
-			// by any playback of it (task #641). Counted like a dropped press
-			// when there is no free entry.
-			if( !installFollowPlan( command.track, command.scene, command.plan ) )
-			{
-				m_dropped.fetch_add( 1, std::memory_order_relaxed );
-			}
-			continue;
-		}
-		// R5.2's two scene commands and WF-070's jump (SessionSceneFollow.cpp).
-		if( applySceneCommand( command, ctx ) ) { continue; }
-		if( command.type == LaunchCommandType::Content )
-		{
-			// Content, not a launch: stored for the cell and read by the render
-			// path (#597). Touches no launch state.
-			applySlotContent( command.content );
-			continue;
-		}
-		ActiveSlot* slot = findSlot( command.track, command.scene );
-
-		if( command.type == LaunchCommandType::Press )
-		{
-			if( slot == nullptr )
-			{
-				slot = claimSlot( command.track, command.scene );
-			}
-			if( slot == nullptr )
-			{
-				// No free entry: the press is lost rather than allocated for.
-				m_dropped.fetch_add( 1, std::memory_order_relaxed );
-				continue;
-			}
-			// The mode and quantisation of the *press* decide how the slot
-			// behaves; a Release/Stop later uses what was stored here, so a
-			// model edit mid-launch cannot half-apply.
-			slot->mode = command.mode;
-			slot->quantisation = command.quantisation;
-		}
-		else if( slot == nullptr )
-		{
-			// Nothing is launched on that slot, so a release or stop is a
-			// no-op (in particular a Gate release never seen by a press).
-			continue;
-		}
-
-		applyLaunchCommand( slot->state, slot->mode, slot->quantisation,
-			command.type, ctx );
+		applyCommand( command, ctx );
 	}
+}
+
+
+void SessionScheduler::applyCommand( const Command& command, const SessionClockContext& ctx ) noexcept
+{
+	if( command.type == LaunchCommandType::Follow )
+	{
+		// A plan install, not a launch: it is stored for the cell and read
+		// by any playback of it (task #641). Counted like a dropped press
+		// when there is no free entry.
+		if( !installFollowPlan( command.track, command.scene, command.plan ) )
+		{
+			m_dropped.fetch_add( 1, std::memory_order_relaxed );
+		}
+		return;
+	}
+	// R5.2's two scene commands and WF-070's jump (SessionSceneFollow.cpp).
+	if( applySceneCommand( command, ctx ) ) { return; }
+	if( command.type == LaunchCommandType::Content )
+	{
+		// Content, not a launch: stored for the cell and read by the render
+		// path (#597). Touches no launch state.
+		applySlotContent( command.content );
+		return;
+	}
+	ActiveSlot* slot = findSlot( command.track, command.scene );
+
+	if( command.type == LaunchCommandType::Press )
+	{
+		if( slot == nullptr )
+		{
+			slot = claimSlot( command.track, command.scene );
+		}
+		if( slot == nullptr )
+		{
+			// No free entry: the press is lost rather than allocated for.
+			m_dropped.fetch_add( 1, std::memory_order_relaxed );
+			return;
+		}
+		// The mode and quantisation of the *press* decide how the slot
+		// behaves; a Release/Stop later uses what was stored here, so a
+		// model edit mid-launch cannot half-apply.
+		slot->mode = command.mode;
+		slot->quantisation = command.quantisation;
+	}
+	else if( slot == nullptr )
+	{
+		// Nothing is launched on that slot, so a release or stop is a
+		// no-op (in particular a Gate release never seen by a press).
+		return;
+	}
+
+	applyLaunchCommand( slot->state, slot->mode, slot->quantisation,
+		command.type, ctx );
 }
 
 
@@ -425,7 +434,7 @@ void SessionScheduler::processAudio( const SessionClockContext& snapshot,
 	SessionClockContext ctx = snapshot;
 	ctx.positionTicks = m_positionTicks;
 
-	drainCommands( ctx );
+	drainCommands( ctx, CommandQueueCapacity );
 	advanceSlots( ctx );
 	evaluateSceneFollow( ctx );
 	publishColumns();
