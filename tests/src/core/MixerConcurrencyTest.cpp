@@ -54,6 +54,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -62,12 +63,14 @@
 #include "AudioBus.h"
 #include "AudioBusHandle.h"
 #include "AudioEngine.h"
+#include "AudioEngineWorkerThread.h"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerSnapshots.h"
 #include "PlayHandle.h"
 #include "SampleFrame.h"
+#include "ThreadableJob.h"
 
 using namespace lmms;
 using partd::PeriodHarness;
@@ -183,6 +186,37 @@ bool escapesTheRenderPeriod(Mutate&& mutate, Changed&& changed)
 	worker.join();
 	return escaped;
 }
+
+//! Feeds one block into a mixer channel from a render thread. The job is taken
+//! by the render pool (or run inline by the calling thread), so the feeding
+//! thread owns a render slot - exactly where production feeds a channel from
+//! (AudioBusHandle::doProcessing and InstrumentOutputBuses::send).
+class FeedChannelJob : public ThreadableJob
+{
+public:
+	FeedChannelJob(Mixer* mixer, mix_ch_t channel, std::vector<SampleFrame> block, int adds = 1) :
+		m_mixer(mixer),
+		m_channel(channel),
+		m_block(std::move(block)),
+		m_adds(adds),
+		m_data{m_block.data()},
+		m_bus(m_data, 1, static_cast<f_cnt_t>(m_block.size()))
+	{
+	}
+	bool requiresProcessing() const override { return true; }
+protected:
+	void doProcessing() override
+	{
+		for (int i = 0; i < m_adds; ++i) { m_mixer->mixToChannel(m_bus, m_channel); }
+	}
+private:
+	Mixer* m_mixer;
+	mix_ch_t m_channel;
+	std::vector<SampleFrame> m_block;
+	int m_adds;
+	SampleFrame* m_data[1];
+	AudioBus m_bus;
+};
 
 } // namespace
 
@@ -810,6 +844,101 @@ private slots:
 		QVERIFY2(handle.producerDrainedPlayHandleEdits() > 0, "a queue nobody drains must be drained by its producer");
 		QCOMPARE(handle.droppedPlayHandleEdits(), quint64(0));
 		handle.doProcessing();
+	}
+
+	// -----------------------------------------------------------------------
+	// BUG 9 (cluster new-p10-249) - the period's input add must not be a
+	// shared read-modify-write the render workers would contend on.
+	//
+	// Several play handles may feed one channel in one period: AudioEngine runs
+	// them on its QThread::idealThreadCount()-1 workers (AudioEngine.cpp:315)
+	// and on the inline (engine) thread, and each one's AudioBusHandle ends in
+	// Mixer::mixToChannel(). The accumulation is therefore shared, and it used
+	// to be shared through a lock - a QMutex first, a spin flag after - which
+	// AGENTS.md rule 4 forbids on an audio-thread path ("no allocation, no
+	// mutex, no logging").
+	//
+	// The accumulation is single-owner now: every render thread adds its block
+	// into its OWN per-channel partial (indexed by
+	// AudioEngineWorkerThread::currentRenderSlot()), and Mixer::reduceInputPartials()
+	// - the period barrier, at the top of masterMix - folds the partials into
+	// the channel buses. No worker waits, and no worker spins.
+	//
+	// The first slot below proves the design from the outside: a block fed on
+	// a render thread does NOT land in the shared channel bus (that would be
+	// the shared read-modify-write the old guard existed for), and it lands
+	// when the barrier runs. The second proves that every feeder's block
+	// still reaches the channel - the sum is unchanged.
+	// -----------------------------------------------------------------------
+	void aRenderThreadsBlockStaysOutOfTheSharedChannelBusUntilTheBarrier()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		MixerChannel* channel = mixer->mixerChannel(1);
+		channel->m_bus.silenceAllChannels();
+		channel->m_hasInput = false;
+
+		const f_cnt_t fpp = partd::periodFrames();
+
+		// The feed runs where production runs it: on a render thread.
+		FeedChannelJob job(mixer, 1, std::vector<SampleFrame>(fpp, SampleFrame(0.25f, -0.25f)));
+		AudioEngineWorkerThread::addJob(&job);
+		AudioEngineWorkerThread::startAndWaitForJobs();
+
+		// The shared channel bus must not have moved.
+		const SampleFrame* channelBus = channel->m_bus.bus()[0];
+		partd::evidence("MIXCONC_249 shared_bus_after_feed l=%.6f r=%.6f",
+			static_cast<double>(channelBus[0][0]), static_cast<double>(channelBus[0][1]));
+		QVERIFY2(channelBus[0][0] == 0.0f && channelBus[0][1] == 0.0f,
+			"a render thread wrote its block straight into the shared channel bus: the "
+			"accumulation still runs on the worker instead of at the period barrier");
+
+		// The barrier: the block reaches the channel, and the master carries it.
+		std::vector<SampleFrame> out(fpp);
+		renderPeriod(mixer, out);
+		partd::evidence("MIXCONC_249 master_after_barrier l=%.6f r=%.6f",
+			static_cast<double>(out[0][0]), static_cast<double>(out[0][1]));
+		QVERIFY2(std::abs(out[0][0] - 0.25f) < 1e-5f && std::abs(out[0][1] + 0.25f) < 1e-5f,
+			"the period barrier did not fold the render thread's partial into the channel");
+	}
+
+	//! Every feeder's block has to land: four render threads feed the same
+	//! channel in one period and the sum is exact.
+	void everyRenderThreadsBlockLandsAtThePeriodBarrier()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() < 2) { mixer->createChannel(); }
+		MixerChannel* channel = mixer->mixerChannel(1);
+		channel->m_bus.silenceAllChannels();
+		channel->m_hasInput = false;
+
+		const f_cnt_t fpp = partd::periodFrames();
+		constexpr int kFeeders = 4;
+		constexpr int kAdds = 250;
+		std::vector<std::unique_ptr<FeedChannelJob>> jobs;
+		jobs.reserve(kFeeders);
+		for (int feeder = 0; feeder < kFeeders; ++feeder)
+		{
+			jobs.emplace_back(std::make_unique<FeedChannelJob>(
+				mixer, 1, std::vector<SampleFrame>(fpp, SampleFrame(0.5f, -0.5f)), kAdds));
+		}
+		for (std::unique_ptr<FeedChannelJob>& job : jobs) { AudioEngineWorkerThread::addJob(job.get()); }
+		AudioEngineWorkerThread::startAndWaitForJobs();
+
+		std::vector<SampleFrame> out(fpp);
+		renderPeriod(mixer, out);
+
+		const float expected = 0.5f * kFeeders * kAdds;
+		partd::evidence("MIXCONC_249 barrier_sum l=%.6f r=%.6f expected=%.6f",
+			static_cast<double>(out[0][0]), static_cast<double>(out[0][1]),
+			static_cast<double>(expected));
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			QCOMPARE(out[f][0], expected);
+			QCOMPARE(out[f][1], -expected);
+		}
 	}
 };
 

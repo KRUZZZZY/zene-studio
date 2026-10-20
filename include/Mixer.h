@@ -40,6 +40,7 @@
 
 #include <array>
 #include <atomic>
+#include <bitset>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -154,7 +155,25 @@ public:
 	MeterValue m_liveBakedPeakRight;
 	std::atomic<bool> m_livePostInsertsBaked{false};  //!< Whether this period's live baked peaks are valid.
 	QString m_name;
-	QMutex m_lock;
+	/*! One render thread's private slice of this channel's input (cluster new-p10-249).
+	 *  Mixer::mixToChannel runs on every AudioEngine render thread, so adding straight
+	 *  into m_bus would be a shared read-modify-write that needs a guard - and a guard
+	 *  on the render path is what AGENTS.md rule 4 forbids ("no allocation, no mutex, no
+	 *  logging"). Instead a render thread adds its block into its OWN partial, which no
+	 *  other thread ever touches, and Mixer::reduceInputPartials() - the single owner,
+	 *  at the period barrier in masterMix - sums the live partials into m_bus. No
+	 *  worker waits or spins: there is no shared guard at all. */
+	struct InputPartial
+	{
+		std::vector<SampleFrame> buffer;      //!< one period of frames, zero unless live
+		std::bitset<MaxTrackChannels> quiet;  //!< this slot's AND of the sources it fed
+		int frames = 0;                       //!< the frames this slot fed
+		bool live = false;                    //!< true when a render thread fed this slot
+	};
+	/*! Indexed by AudioEngineWorkerThread::currentRenderSlot(): one slot per render
+	 *  thread, plus one for a caller that is not on a render thread (the control side
+	 *  and the tests). Sized once, at construction, so the render path never grows it. */
+	std::vector<InputPartial> m_inputPartials;
 	bool m_queued; // are we queued up for rendering yet?
 	//! Are we muted? Updated per period by Mixer::masterMix so the render
 	//! thread and the workers do not call m_muteModel.value() repeatedly.
@@ -550,6 +569,11 @@ public:
 	~Mixer() override;
 
 	void mixToChannel(const AudioBus& bus, mix_ch_t channel);
+
+	//! Sums every render thread's input partial for every channel into the channel
+	//! bus: the single owner of the worker-fed accumulation, run at the period
+	//! barrier (the top of masterMix) once the render workers have joined.
+	void reduceInputPartials();
 
 	void prepareMasterMix();
 	void masterMix( SampleFrame* _buf );

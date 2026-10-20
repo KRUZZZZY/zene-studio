@@ -48,6 +48,8 @@ thread_local AudioEngineWorkerThread::DeferredPlayHandleEdits*
 	AudioEngineWorkerThread::s_currentDeferredPlayHandleEdits = nullptr;
 AudioEngineWorkerThread::DeferredPlayHandleEdits AudioEngineWorkerThread::s_inlineDeferredPlayHandleEdits;
 std::atomic<std::uint64_t> AudioEngineWorkerThread::s_deferredPlayHandleEditOverflows{0};
+thread_local int AudioEngineWorkerThread::s_renderSlot = -1;
+int AudioEngineWorkerThread::s_inlineRenderSlot = 0;
 
 //! Off when the engine starts: live playback keeps the pool (see the header).
 static std::atomic<bool> s_deterministicProcessing{false};
@@ -266,6 +268,8 @@ void AudioEngineWorkerThread::wakeWorkers()
 
 void AudioEngineWorkerThread::startAndWaitForJobs()
 {
+	const int previousRenderSlot = s_renderSlot;
+	if (previousRenderSlot < 0) { s_renderSlot = s_inlineRenderSlot; }
 	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
 	s_currentDeferredPlayHandleEdits = &s_inlineDeferredPlayHandleEdits;
 	if (deterministicProcessing())
@@ -284,6 +288,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 		globalJobQueue.wait();
 		s_currentDeferredPlayHandleEdits = previousPending;
 		drainDeferredPlayHandleEdits();
+		s_renderSlot = previousRenderSlot;
 		return;
 	}
 
@@ -295,6 +300,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 	globalJobQueue.wait();
 	s_currentDeferredPlayHandleEdits = previousPending;
 	drainDeferredPlayHandleEdits();
+	s_renderSlot = previousRenderSlot;
 }
 
 
@@ -303,6 +309,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 void AudioEngineWorkerThread::run()
 {
 	disableDenormals();
+	s_renderSlot = m_renderSlot;
 	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
 	s_currentDeferredPlayHandleEdits = &m_deferredPlayHandleEdits;
 
@@ -332,6 +339,7 @@ void AudioEngineWorkerThread::run()
 		}
 	}
 	s_currentDeferredPlayHandleEdits = previousPending;
+	s_renderSlot = -1;
 }
 
 } // namespace lmms

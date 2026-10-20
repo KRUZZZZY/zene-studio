@@ -360,12 +360,14 @@ AudioEngine::AudioEngine(bool renderOnly)
 	for( int i = 0; i < m_numWorkers+1; ++i )
 	{
 		auto wt = new AudioEngineWorkerThread(this);
+		wt->setRenderSlot(i);
 		if( i < m_numWorkers )
 		{
 			wt->start( QThread::TimeCriticalPriority );
 		}
 		m_workers.push_back( wt );
 	}
+	AudioEngineWorkerThread::setInlineRenderSlot(m_numWorkers);
 	connect(&m_playHandleCapacityTimer, &QTimer::timeout, this, [this] {
 		serviceSampleVoicePoolOnControlThread();
 		topUpPlayHandleCapacityOnControlThread();
