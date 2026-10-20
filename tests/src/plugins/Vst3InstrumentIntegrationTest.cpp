@@ -74,6 +74,8 @@
 #include "DeviceOptions.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "EffectControlDialog.h"
+#include "EffectControls.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -190,6 +192,7 @@ private slots:
 	void testTheInstrumentsOwnEditorOpensInItsOwnWindow();
 	void testAnEffectsEditorOpensAtItsDeviceScale();
 	void testReadOnlyParametersAreNotKnobs();
+	void testReadOnlyParametersAreNotEffectKnobs();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -860,6 +863,31 @@ void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreNotKnobs()
 	QVERIFY2(knobs.first()->model() == instrument->parameterModel(0),
 		"the surviving knob is not the automatable Level parameter");
 
+}
+
+/*! cluster new-p14-364 BUG 4, on the effect side: the vst3effect module hosting the same
+ *  fixture builds its generated effect view from the same descriptors. Its read-only "Meter"
+ *  must not own a knob either - the effect's view filters hidden parameters only otherwise,
+ *  and a knob dragged there writes into a value the plug-in owns. Only "Level" may keep one. */
+void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreNotEffectKnobs()
+{
+	Plugin::Descriptor::SubPluginFeatures::Key key;
+	key.name = QStringLiteral("Zene VST3 Test Instrument");
+	key.attributes[QStringLiteral("file")] = QStringLiteral(VST3_TEST_INSTRUMENT_BUNDLE);
+	key.attributes[QStringLiteral("class")] = QStringLiteral("Zene VST3 Test Instrument");
+	EffectChain chain(nullptr);
+	Effect* effect = Effect::instantiate(QStringLiteral("vst3effect"), &chain, &key);
+	QVERIFY2(effect != nullptr, "the vst3effect module did not instantiate through the plug-in factory");
+	chain.appendEffect(effect);
+
+	// Declared after the chain, so the view is destroyed before the effect its knobs edit
+	std::unique_ptr<gui::EffectControlDialog> view{effect->controls()->createView()};
+	QVERIFY2(view != nullptr, "the effect has no generated view");
+
+	const auto knobs = view->findChildren<gui::Knob*>();
+	QCOMPARE(knobs.size(), 1);
+	QVERIFY2(knobs.first()->model()->displayName() == QStringLiteral("Level"),
+		"the surviving effect knob is not the automatable Level parameter");
 }
 
 } // namespace lmms
