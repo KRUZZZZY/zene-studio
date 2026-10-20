@@ -382,6 +382,8 @@ public:
 	 *  wrap's jump is announced, so a playbackPositionJumped listener can tell the two apart; any thread
 	 *  may read it. It only counts up and starts at 0 with the song. */
 	unsigned loopWraps() const { return m_loopWraps.load(std::memory_order_acquire); }
+	//! Test seam: sets the wrap count, so a test can start it near the 32-bit limit (2^32 wraps cannot be played).
+	void setLoopWrapsForTest(unsigned wraps) { m_loopWraps.store(wraps, std::memory_order_release); }
 
 	void updateLength();
 	bar_t length() const
