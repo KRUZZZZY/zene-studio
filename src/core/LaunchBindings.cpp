@@ -46,11 +46,10 @@ const QString kSection = QStringLiteral("launcher");
 const QString kKey = QStringLiteral("bindings");
 
 //! A stored binding's channel: -1 (any channel) or a MIDI channel 0..15. False for anything else (a fraction, a word,
-//! -2), which is no channel at all - the binding is skipped rather than read as any channel. A missing channel is -1.
+//! -2), which is no channel at all - the binding is skipped rather than read as any channel. A missing channel is invalid.
 bool storedChannel(const QJsonObject& binding, int* out)
 {
 	const QJsonValue value = binding.value(QStringLiteral("channel"));
-	if (value.isUndefined()) { *out = -1; return true; }
 	if (!value.isDouble()) { return false; }
 	const double channel = value.toDouble();
 	if (channel != std::floor(channel) || channel < -1 || channel > 15) { return false; }
