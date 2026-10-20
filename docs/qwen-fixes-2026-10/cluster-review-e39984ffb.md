@@ -199,7 +199,20 @@ the kernel's st_dev, "dev:<st_dev>", and the mount point is still the fallback w
 fails). The only behaviour that changes is the one the finding names: which volumes share a
 budget, and on Windows only.
 
-**5. Sibling commands in the command files you changed - confirm each is consistent with your fix (or say why it is not affected).**
+**5. If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.**
+Not applicable - the verdict is FIXED. For the record, the finding's two halves split like this:
+the first half ("groups armed recording destinations by directory rather than filesystem") was
+already gone on the branch base 06c5dcf48 (the base keyed the budget by a volume, not by a
+directory - src/core/ControlCommandsRecordTools.cpp:156 at 06c5dcf48), and the second half ("group
+actual free-space budgets by filesystem identity") was not: the base's key was the device LABEL
+(half the truth - two tmpfs mounts answer "tmpfs" - so two independent filesystems shared one
+budget), the round-3 key was the mount point (the other half - one volume mounted twice was two
+budgets), and the round-5 key is the filesystem identity itself: the kernel's st_dev on POSIX, the
+volume's GUID on Windows. The contract the fix restores is the command's own description
+(src/core/ControlCommandsRecordTools.cpp:286: "the free space where takes are written, at the rate
+the armed routes write") read over the filesystem that space belongs to.
+
+**6. Sibling commands in the command files you changed - confirm each is consistent with your fix (or say why it is not affected).**
 The file I changed registers transport.metronome_options, transport.punch_here, record.route_source
 and record.remaining; the sibling set the check asks about is the whole "record" group. Each one,
 and why it is (or is not) affected:
@@ -247,7 +260,7 @@ The transport siblings (transport.metronome_options, transport.punch_here) and r
 are in the same file and are untouched by this change; record.route_source only moves a tap
 point, which the budget key never sees.
 
-**6. Realtime, undo and commands.**
+**7. Realtime, undo and commands.**
 Nothing new runs on the audio thread: `record.remaining` is a read-only command, driven from the
 control surface, and the new helpers only read the filesystem's identity (a stat and two strings).
 No allocation, free, lock, wait, I/O or logging was added to any audio path - the diff touches
@@ -257,10 +270,19 @@ canary does not move.
 
 ## Files committed
 
+This round (the Windows rule and its test):
+
 - include/ControlRecordingSupport.h (the naming rule, shared and testable)
 - src/core/ControlRecordingSupport.cpp (the identity rule: the volume's GUID on Windows, the kernel's device on POSIX)
 - src/core/ControlCommandsRecordTools.cpp (the budget asks the shared rule for its key)
 - tests/src/core/RecordToolsTest.cpp (the identity rule's own regression test)
 - docs/qwen-fixes-2026-10/cluster-review-e39984ffb.md
+
+Earlier rounds of this cluster (already on the branch):
+
+- src/core/ControlCommandsRecordTools.cpp (the budget is pooled per filesystem at all)
+- tests/src/core/RecordToolsTest.cpp (the round-3 cases)
+- tests/src/core/MountNamespaceTestSupport.h (the mount namespace the two-mount-points case needs)
+- tests/fork-sources.txt, tests/all-sources.txt (the new test helper is registered)
 
 FIXED
