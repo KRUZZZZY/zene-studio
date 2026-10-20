@@ -80,3 +80,15 @@ Answers to the completion check's questions, with the evidence:
 8. **Collateral.** The existing family tests pass: `ArrangerTimelineTest` 28/28 and `ArrangerOverlaysVideoLaneTest` 10/10. Test-suite-wide, the new test restores the lane preference on every exit path, so the cases after it see the same state as before.
 9. **Gates.** Six gates exit 0; complexity and file-length exit 1 on the train, with no new item in my files (see the ratchet comparison). `feature_check.py` itself could not run here (outside the write-jail). Its rows are reproduced above, not reported as its output.
 10. **Manual GUI check.** Not done. Only offscreen tests ran (`QT_QPA_PLATFORM=offscreen`). The menu itself was not exercised.
+
+### Answers to the pre-submit check's questions (`submit-check-1.log`)
+
+- **The regression test fails with the change reverted and passes with it.** Yes: RED exit 8 (`test-2-red.log`), reverted proof exit 8 (`test-6-proof-unfixed.log`), restored exit 0 (`test-7-proof-fixed.log`). See the table above.
+- **The test is deterministic.** It uses no sleeps, no `QTRY_*`, no timers and no wall-clock values. Each step is a synchronous `run(...)` to the control command, which calls `relayout()` directly, followed by a check of geometry, `isHidden()` and `laneRect()`. Nothing waits on the event loop.
+- **The fix is at the cause and complete.** Yes. The cause is the single `setVisible(height > 0)` in `relayout()`, and item 7 above lists the callers checked. The chord-only path goes through the same `relayout()`.
+- **No collateral damage.** The fix adds no limit or check that another caller could hit. Old projects are unaffected because the project format is unchanged. With any lane drawn, the layout is unchanged. The only changed behaviour is the all-hidden case, which is the bug.
+- **ALREADY-FIXED or FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED.
+
+### Pre-submit check: remaining FAIL
+
+`submit_check.py` reports `FAIL gates (feature_check.py)`. That row is environmental, not a gate result. `feature_check.py` tries to create `zene-qwen-new-p15-245-feature-check/` beside the worktree and failed with `PermissionError` (`gate-1-feature-check.log`, EXIT=1). The directory is outside the writable area for this run, and I did not change the script. Each gate it runs was run directly from the worktree, as listed in the gates table above: six exit 0, and the two ratchets exit 1 with no new item in my changed files. The owner or a session with access to that directory should run `feature_check.py` once to get its PASS/FAIL table.
