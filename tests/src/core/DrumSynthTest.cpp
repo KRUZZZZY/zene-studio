@@ -28,6 +28,8 @@
 #include <memory>
 #include <numbers>
 #include <vector>
+#include <limits>
+#include <new>
 
 #include "DrumSynth.h"
 
@@ -93,6 +95,12 @@ bool writeZeroDurationToneFixture(const QString& path, int droop)
 }
 
 } // namespace
+
+namespace lmms {
+extern float envpts[8][3][32];
+extern float timestretch;
+extern int chkOn[8];
+}
 
 class DrumSynthTest : public QObject
 {
@@ -174,6 +182,68 @@ Envelope=0,00000001 100,0
 		const float phaseIncrement = 2.f * std::numbers::pi_v<float> * 440.f / 44100.f;
 		const auto expected = static_cast<int16_t>(10000.f * std::sin(phaseIncrement));
 		QCOMPARE(samples.front(), expected);
+	}
+
+	void refusesAnEnvelopeWhoseRoundedLengthOverflows()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath("oversized.ds"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray content = "[General]\nVersion=DrumSynth v2.0\nStretch=100\n\n"
+			"[Tone]\nOn=1\nEnvelope=0,0 3e9,0\n";
+		QCOMPARE(file.write(content), static_cast<qint64>(content.size()));
+		file.close();
+
+		int16_t* samples = nullptr;
+		int frames = -1;
+		bool allocationFailed = false;
+		try
+		{
+			DrumSynth synth;
+			frames = synth.GetDSFileSamples(file.fileName(), samples, 2, 44100);
+		}
+		catch (const std::bad_alloc&)
+		{
+			allocationFailed = true;
+		}
+		delete[] samples;
+
+		QVERIFY2(!allocationFailed, "An overflowing duration must be rejected before allocation");
+		QCOMPARE(frames, 0);
+		QVERIFY(samples == nullptr);
+	}
+
+	void mapsAFractionalStepAboveMaxToTheSafeMaximumLength()
+	{
+		// globals declared at file scope below
+
+		// Reset envelope state, then install a duration whose step count is
+		// fractional just above maxSteps; truncation must yield maxSteps.
+		for (int e = 0; e < 8; e++)
+		{
+			chkOn[e] = 0;
+			for (int t = 0; t < 3; t++)
+			{
+				for (int p = 0; p < 32; p++)
+				{
+					envpts[e][t][p] = -1.f;
+				}
+			}
+		}
+		constexpr int blockLength = 1200;
+		constexpr int baseLength = 2 * blockLength;
+		constexpr int maxSteps = (std::numeric_limits<int>::max() - baseLength) / blockLength;
+		const float boundarySteps = static_cast<float>(maxSteps) + 0.5f;
+		envpts[1][0][0] = boundarySteps * blockLength;
+		envpts[1][0][1] = -1.f;
+		chkOn[0] = 1;
+		timestretch = 1.f;
+
+		DrumSynth synth;
+		const int length = synth.LongestEnv();
+		const int expectedLength = baseLength + (blockLength * maxSteps);
+		QCOMPARE(length, expectedLength);
 	}
 };
 

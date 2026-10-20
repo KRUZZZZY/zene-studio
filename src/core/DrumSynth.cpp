@@ -31,6 +31,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <new>
 #include <sstream>
 
 #include "lmms_math.h"
@@ -43,6 +45,26 @@
 namespace lmms {
 
 using namespace std;
+
+namespace {
+
+bool checkedWaveSampleCount(int channels, long length, std::size_t& sampleCount)
+{
+	if (channels <= 0 || length <= 0) { return false; }
+	if (static_cast<unsigned long long>(length) > numeric_limits<std::size_t>::max()) { return false; }
+	const auto channelCount = static_cast<std::size_t>(channels);
+	const auto frameCount = static_cast<std::size_t>(length);
+	const auto maxSamplesByBytes = numeric_limits<std::size_t>::max() / sizeof(int16_t);
+	if (frameCount > static_cast<std::size_t>(numeric_limits<long>::max()) / channelCount
+		|| frameCount > maxSamplesByBytes / channelCount)
+	{
+		return false;
+	}
+	sampleCount = channelCount * frameCount;
+	return true;
+}
+
+} // namespace
 
 // const int     Fs    =  44100;
 const int MAX = 0;
@@ -88,7 +110,12 @@ int DrumSynth::LongestEnv()
 	}
 	// l *= timestretch;
 
-	return 2400 + (1200 * static_cast<int>(l / 1200));
+	constexpr int blockLength = 1200;
+	constexpr int baseLength = 2 * blockLength;
+	constexpr int maxSteps = (numeric_limits<int>::max() - baseLength) / blockLength;
+	const float steps = l / blockLength;
+	if (!std::isfinite(steps) || steps >= static_cast<float>(maxSteps) + 1.0f) { return 0; }
+	return baseLength + (blockLength * static_cast<int>(steps));
 }
 
 float DrumSynth::LoudestEnv()
@@ -568,11 +595,13 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 		envData[i][PNT] = 0;
 	}
 	Length = LongestEnv();
+	std::size_t waveSampleCount = 0;
+	if (!checkedWaveSampleCount(channels, Length, waveSampleCount)) { return 0; }
 
 	// allocate the buffer
 	// if(wave!=NULL) free(wave);
 	// wave = new int16_t[channels * (Length + 1280)]; //wave memory buffer
-	wave = new int16_t[channels * Length]; // wave memory buffer
+	wave = new (std::nothrow) int16_t[waveSampleCount]; // wave memory buffer
 	if (wave == nullptr)
 	{
 		return 0;
