@@ -43,13 +43,36 @@ std::atomic<float> s_right{0.f};
 std::atomic<float> s_liveLeft{0.f};   //!< the same maxima for the live meter's own read (MX-134)
 std::atomic<float> s_liveRight{0.f};
 
+#ifdef LMMS_TESTING
+// The test seam: the raise's observation point. It is null in production, and it is only ever
+// installed by a test (InputMeterTest.cpp).
+detail::PeakObservationHook s_peakObservationHook = nullptr;
+#endif
+
 void raise(std::atomic<float>& held, float value)
 {
 	float current = held.load(std::memory_order_relaxed);
-	while (value > current && !held.compare_exchange_weak(current, value, std::memory_order_relaxed)) { }
+#ifdef LMMS_TESTING
+	if (s_peakObservationHook != nullptr) { s_peakObservationHook(held, current); }
+#endif
+	// The raise is atomic with respect to a reader's clear: the sample is only skipped when the cell
+	//  still holds what was observed. A reader that cleared the cell in between makes the
+	//  compare/exchange fail, so the sample is raised into the cleared cell instead of lost with it.
+	while (true)
+	{
+		const float desired = value > current ? value : current;
+		if (held.compare_exchange_weak(current, desired, std::memory_order_relaxed)) { return; }
+	}
 }
 
 } // namespace
+
+#ifdef LMMS_TESTING
+void detail::setPeakObservationHook(PeakObservationHook hook)
+{
+	s_peakObservationHook = hook;
+}
+#endif
 
 void measure(const SampleFrame* buffer, f_cnt_t frames)
 {

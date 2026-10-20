@@ -27,6 +27,10 @@
 #include "LmmsTypes.h"
 #include "lmms_export.h"
 
+#ifdef LMMS_TESTING
+#	include <atomic>
+#endif
+
 namespace lmms
 {
 
@@ -47,6 +51,21 @@ LMMS_EXPORT void take(float* left, float* right);
 //! every period's, so a transient between two polls is not missed - from a second pair of maxima, so it
 //! never empties what meter.input takes, nor the other way round. One live reader at a time.
 LMMS_EXPORT void live(float* left, float* right);
+
+#ifdef LMMS_TESTING
+namespace detail
+{
+
+//! Test seam: the point where the audio thread has observed the held peak and is about to commit the
+//!  raise. The hook is called with the cell it observed and the value it saw; a test may clear the
+//!  cell there, exactly as a reader that reads in that window does. Production never installs a hook.
+using PeakObservationHook = void (*)(std::atomic<float>& held, float observed);
+
+//! Install the test seam's hook (nullptr removes it).
+LMMS_EXPORT void setPeakObservationHook(PeakObservationHook hook);
+
+} // namespace detail
+#endif
 
 } // namespace inputmeter
 
