@@ -378,6 +378,31 @@ struct NesNoiseRender
 	std::vector<float> samples;
 };
 
+// Single-streamed instrument whose play() heap-allocates each period, as a plugin
+// does when it builds per-period scratch storage. Proves the realtime watch covers play().
+class AllocatingSingleStreamInstrument final : public lmms::Instrument
+{
+public:
+	explicit AllocatingSingleStreamInstrument(lmms::InstrumentTrack* track) :
+		Instrument(track, nullptr, nullptr, Instrument::Flag::IsSingleStreamed)
+	{
+	}
+
+	QString nodeName() const override { return QStringLiteral("allocatingsinglestreaminstrument"); }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	lmms::gui::PluginView* instantiateView(QWidget*) override { return nullptr; }
+
+	void play(lmms::SampleFrame*) override
+	{
+		m_scratch = std::make_unique<float[]>(ScratchSamples);
+	}
+
+private:
+	static constexpr std::size_t ScratchSamples = 64;
+	std::unique_ptr<float[]> m_scratch;
+};
+
 void renderInstrumentPeriods(lmms::Instrument& instrument, lmms::NotePlayHandle& note,
 	lmms::f_cnt_t frames, int periods, std::vector<float>* output)
 {
@@ -881,6 +906,7 @@ private slots:
 	void opulenzReloadEmulatorReplacesEmulatorUnderMutex();
 	void opulenzRendersTheProvidedSpanSize();
 	void opulenzReappliesVelocityScalingToHeldVoice();
+	void realtimeWatchCoversSingleStreamedPlay();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
 	void gigKeyboardDimensionUsesPressedKey();
@@ -3393,6 +3419,23 @@ void PluginPortsMigrationTest::opulenzReappliesVelocityScalingToHeldVoice()
 		before, after, before > 0.0 ? after / before : 0.0);
 	QVERIFY2(before > 1.0e-6, "held OpulenZ note rendered silence before the level change");
 	QVERIFY2(after < before * 0.01, "held OpulenZ voice did not apply the changed velocity scaling");
+}
+
+void PluginPortsMigrationTest::realtimeWatchCoversSingleStreamedPlay()
+{
+	// renderInstrumentBuffers() must charge the allocation that play() makes on a
+	// single-streamed instrument to the period it happens in, not drop it.
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	AllocatingSingleStreamInstrument inst{track.get()};
+
+	const auto frames = static_cast<lmms::f_cnt_t>(lmms::Engine::audioEngine()->framesPerPeriod());
+	partc::RealtimeAllocationCounts counts;
+	partc::renderInstrumentBuffers(inst, frames, lmms::DefaultKey, &counts);
+
+	QVERIFY2(counts.allocations == static_cast<std::size_t>(partc::Buffers),
+		qPrintable(QString{"play() allocations counted: %1, expected one per period (%2)"}
+			.arg(static_cast<qulonglong>(counts.allocations))
+			.arg(partc::Buffers)));
 }
 
 void PluginPortsMigrationTest::gigPatchDialogPreviewsSelectedProgram()

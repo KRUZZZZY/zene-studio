@@ -1028,18 +1028,19 @@ inline auto renderInstrumentBuffers(Instrument& inst, f_cnt_t frames, int key,
 		std::fill(data.begin(), data.end(), SampleFrame{0.0f, 0.0f});
 		const std::span<SampleFrame> span{data};
 
-		// InstrumentTrack::playNote() first, then InstrumentPlayHandle::play().
+		// InstrumentTrack::playNote() first, then InstrumentPlayHandle::play(). Both
+		// run inside the period's watch, so allocations in either are counted.
 		if (realtimeCounts) { RealtimeAllocationWatch::begin(); }
 		inst.playNote(&nph, span);
+		if (inst.isSingleStreamed())
+		{
+			inst.play(span);
+		}
 		if (realtimeCounts)
 		{
 			const auto periodCounts = RealtimeAllocationWatch::end();
 			realtimeCounts->allocations += periodCounts.allocations;
 			realtimeCounts->deallocations += periodCounts.deallocations;
-		}
-		if (inst.isSingleStreamed())
-		{
-			inst.play(span);
 		}
 
 		for (f_cnt_t f = 0; f < frames; ++f)
