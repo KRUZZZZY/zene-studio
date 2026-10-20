@@ -111,3 +111,7 @@ include/MidiHandoffQueue.h	MidiChannelOverflow::raise	Carla's any-thread MIDI pr
 include/MidiHandoffQueue.h	pushOrRecord	Carla's any-thread MIDI producer publishes an event or records the refusal
 include/MidiHandoffQueue.h	drainMidi	Carla's audio callback stages queued events and all-notes-off cuts in order
 src/core/midi/MidiEventToByteSeq.cpp	writeToByteSeq	Carla's audio callback encodes each queued event into Carla's native MIDI format
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::playNoteImpl	Watsyn's per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::claimWave	called from WatsynInstrument::playNoteImpl on the audio thread: pins the wavetable snapshot the note renders with
+plugins/Watsyn/Watsyn.cpp	WatsynVoice::renderOutput	called from WatsynInstrument::playNoteImpl on the audio thread: renders the note's oscillators into the note's own buffer
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::deleteNotePluginData	called when a Watsyn note ends, on the thread that released the note handle: gives the wavetable snapshot back

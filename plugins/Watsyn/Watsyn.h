@@ -36,6 +36,7 @@
 
 #include <atomic>
 #include <span>
+#include <vector>
 
 namespace lmms
 {
@@ -74,31 +75,51 @@ class PixmapButton;
 class WatsynView;
 }
 
-class WatsynObject
+/*!
+ * An immutable snapshot of the four wavetables.
+ *
+ * The GUI thread publishes a new snapshot whenever a graph changes and every
+ * note pins the snapshot that was current when it started. A sounding note
+ * therefore keeps the wave it started with - the copy the upstream code made
+ * per note - but notes that start while the same snapshot is current share
+ * one buffer instead of one buffer each.
+ */
+class WatsynWave
 {
 public:
-	WatsynObject() = default;
-	virtual ~WatsynObject();
+	//! Holders: the instrument's own reference plus one per note that pinned it.
+	std::atomic<int> pins{1};
 
-	//! Claims this voice for one note. Lock-free: an atomic flag, no mutex.
-	bool tryAcquire() noexcept;
-	//! Gives the voice back to the pool when its note ends.
-	void release() noexcept;
-	//! Prepares the voice for a new note: phases, wave snapshot and knobs.
-	void initialize( float * _A1wave, float * _A2wave,
-					float * _B1wave, float * _B2wave,
-					int _amod, int _bmod, sample_rate_t _samplerate, NotePlayHandle * _nph,
-					WatsynInstrument * _w );
+	float data[4][WAVELEN];
+};
+
+/*!
+ * The per-note state of Watsyn.
+ *
+ * It lives in the note handle's inline storage - the same place Monstro's
+ * synth lives - so a note start neither allocates nor takes a slot from a
+ * pool of preallocated voices. How many Watsyn notes may sound at the same
+ * time is the note manager's limit, not Watsyn's: there is no voice cap that
+ * could silence or delay an admissible note.
+ */
+class WatsynVoice
+{
+public:
+	WatsynVoice( WatsynInstrument * _parent, NotePlayHandle * _nph, WatsynWave * _wave );
+	~WatsynVoice();
 
 	//! Renders the mixed oscillator output straight into the note's buffer.
 	void renderOutput( std::span<SampleFrame> out );
+
 	inline sample_rate_t samplerate() const
 	{
 		return m_samplerate;
 	}
 
 private:
-	std::atomic_flag m_inUse = ATOMIC_FLAG_INIT;
+	//! Gives the wavetable snapshot back to the instrument.
+	void releaseWave() noexcept;
+
 	int m_amod;
 	int m_bmod;
 
@@ -106,14 +127,10 @@ private:
 	NotePlayHandle * m_nph;
 
 	WatsynInstrument * m_parent;
+	WatsynWave * m_wave;
 
 	float m_lphase [NUM_OSCS];
 	float m_rphase [NUM_OSCS];
-
-	float m_A1wave [WAVELEN];
-	float m_A2wave [WAVELEN];
-	float m_B1wave [WAVELEN];
-	float m_B2wave [WAVELEN];
 };
 
 class WatsynInstrument : public Instrument
@@ -121,7 +138,7 @@ class WatsynInstrument : public Instrument
 	Q_OBJECT
 public:
 	WatsynInstrument( InstrumentTrack * _instrument_track );
-	~WatsynInstrument() override = default;
+	~WatsynInstrument() override;
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
@@ -272,7 +289,25 @@ private:
 	float B1_wave [WAVELEN];
 	float B2_wave [WAVELEN];
 
-	friend class WatsynObject;
+	//! The wavetable snapshot the next note pins.
+	std::atomic<WatsynWave*> m_wave{nullptr};
+	//! How many threads are inside the window in which a note pins the
+	//! current snapshot. The GUI thread reads it to learn that no note is
+	//! about to pin the snapshot it just retired.
+	std::atomic<int> m_waveClaimers{0};
+	//! Snapshots that may be filled again (GUI thread only).
+	std::vector<WatsynWave*> m_freeWaves;
+	//! Snapshots waiting for their last holder (GUI thread only).
+	std::vector<WatsynWave*> m_retiredWaves;
+
+	//! Publishes the current wavetables as the snapshot the next note pins.
+	void publishWave();
+	//! Pins the current snapshot for a note. Runs on the audio thread.
+	WatsynWave* claimWave() noexcept;
+	//! Moves the snapshots no note holds any more back into the free list.
+	void recycleWaves();
+
+	friend class WatsynVoice;
 	friend class gui::WatsynView;
 };
 
