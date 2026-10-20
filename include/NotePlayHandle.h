@@ -369,7 +369,48 @@ public:
 		return std::exp2( pitchCents / ( 100.f * 12.f ) );
 	}
 
+	/*! Q050-016: the note's MPE pitch bend at the current play position - the
+	 *  stream's value at this tick when the note carries a pitch stream, else
+	 *  the scalar snapshot (#601). updateFrequency() reads this, so streamed
+	 *  pitch curves retune a built-in synthesiser from period to period while
+	 *  the pitch bend events the stream schedules reach a MIDI consumer
+	 *  sample-accurately. */
+	int effectiveMpePitchCents() const;
+
+	/*! Q050-016: send the expression events whose point falls in this period,
+	 *  each at its own frame offset inside the period, so the stream's pitch,
+	 *  pressure and timbre reach the instrument where the points name them.
+	 *  A note with no stream does nothing at all (the scalar path is
+	 *  unchanged). Realtime contract: reads only the note's own vectors, no
+	 *  allocation and no lock, the same path the note-on events use. */
+	void scheduleMpeExpressionStream( f_cnt_t framesThisPeriod );
+
+	/*! Q050-016: the period offset of a stream point's frame, or
+	 *  kNoMpeStreamOffset when it falls outside the period. Pure math, so
+	 *  static (unit-tested in MpeNoteStorageTest, like slidePitchOffset in
+	 *  SlideNotesTest): the scheduler passes everything it needs.
+	 *
+	 *  64-bit throughout: frame positions past 2^31 are real (f_cnt_t is
+	 *  64-bit), and on LLP64 (Windows) `long` is 32 bits, so std::lround and
+	 *  `long` deltas truncate them. std::llround and std::int64_t keep them. */
+	static f_cnt_t mpeStreamPointOffset( tick_t tick, f_cnt_t startFrame,
+		f_cnt_t framesThisPeriod, f_cnt_t periodStart, double framesPerTick );
+
+	//! The "this point is not in the period" answer of mpeStreamPointOffset().
+	static constexpr f_cnt_t kNoMpeStreamOffset = static_cast<f_cnt_t>( -1 );
+
 private:
+	//! Q050-016: send one streamed axis value to the instrument (pitch bend,
+	//! channel pressure or CC74) at \a offset frames into the period.
+	void sendMpeExpressionAxisEvent( int axis, int value, f_cnt_t offset );
+
+	//! Q050-016: the tick, from the note's own start, a frame within it sits at.
+	tick_t mpeStreamTick( f_cnt_t frameWithinNote ) const;
+
+	//! Q050-016: schedule the points of one axis that fall in this period.
+	void scheduleMpeStreamAxis( const std::vector<MpeExpressionPoint>* points, int axis, int base,
+		bool firstPeriod, f_cnt_t startFrame, tick_t startTick, tick_t endTick,
+		f_cnt_t framesThisPeriod, f_cnt_t periodStart, float framesPerTick );
 	class BaseDetuning
 	{
 	public:

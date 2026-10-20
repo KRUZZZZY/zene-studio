@@ -39,6 +39,7 @@ namespace lmms::test
 
 thread_local bool tlCountAllocations = false;
 thread_local std::uint64_t tlAllocationCount = 0;
+thread_local std::uint64_t tlFreeCount = 0;
 
 } // namespace lmms::test
 
@@ -103,18 +104,28 @@ void* operator new[](std::size_t size, std::align_val_t align, const std::nothro
 	return ::operator new(size, align, tag);
 }
 
-void operator delete(void* ptr) noexcept { std::free(ptr); }
-void operator delete[](void* ptr) noexcept { std::free(ptr); }
-void operator delete(void* ptr, std::size_t) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, std::size_t) noexcept { std::free(ptr); }
-void operator delete(void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }
-void operator delete[](void* ptr, const std::nothrow_t&) noexcept { std::free(ptr); }
+// Every deallocation form ends in one of the two counted base forms below, so
+// a free anywhere in the program - library code included - is counted once.
+void operator delete(void* ptr) noexcept
+{
+	lmms::test::noteFree(ptr);
+	std::free(ptr);
+}
+void operator delete[](void* ptr) noexcept { ::operator delete(ptr); }
+void operator delete(void* ptr, std::size_t) noexcept { ::operator delete(ptr); }
+void operator delete[](void* ptr, std::size_t) noexcept { ::operator delete(ptr); }
+void operator delete(void* ptr, const std::nothrow_t&) noexcept { ::operator delete(ptr); }
+void operator delete[](void* ptr, const std::nothrow_t&) noexcept { ::operator delete(ptr); }
+void operator delete(void* ptr, std::align_val_t) noexcept
+{
+	lmms::test::noteFree(ptr);
 #ifdef _WIN32
-// _aligned_malloc memory must go back through _aligned_free.
-void operator delete(void* ptr, std::align_val_t) noexcept { _aligned_free(ptr); }
+	// _aligned_malloc memory must go back through _aligned_free.
+	_aligned_free(ptr);
 #else
-void operator delete(void* ptr, std::align_val_t) noexcept { std::free(ptr); }
+	std::free(ptr);
 #endif
+}
 void operator delete[](void* ptr, std::align_val_t align) noexcept { ::operator delete(ptr, align); }
 void operator delete(void* ptr, std::size_t, std::align_val_t align) noexcept { ::operator delete(ptr, align); }
 void operator delete[](void* ptr, std::size_t, std::align_val_t align) noexcept { ::operator delete(ptr, align); }

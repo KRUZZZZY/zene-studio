@@ -59,7 +59,14 @@ LMMS_EXPORT void setNoteTransformPrompt(NoteTransformPrompt prompt);
  *  Humanize timing... and Scale velocities... - each asking for its amount and running
  *  note.randomize / note.velocity_scale on the notes selected in @a clip, or on the whole clip
  *  when none is selected (the commands' own 'selection' / 'clip' scopes). Seeded like the command:
- *  the project's seed, so the same notes roll the same way. One undo step each. */
+ *  the project's seed, so the same notes roll the same way. One undo step each.
+ *
+ *  Q050-016 adds the streams' GUI path beside them: MPE pitch ramp... (asks for the bend at the
+ *  note's end in cents and writes a {0:0, len:value} pitch stream, keeping the other axes) and
+ *  Clear MPE expression streams (empties every axis of the notes that carry a stream, skipping
+ *  the rest so no empty undo step is pushed). Both run the shared note.expression_stream_set
+ *  command - the same id the agent surface uses - with one MidiClip-checkpoint undo step per
+ *  note. */
 LMMS_EXPORT QList<QAction*> makeNoteTransformActions(std::function<const MidiClip*()> clip, QObject* parent);
 
 } // namespace lmms::gui

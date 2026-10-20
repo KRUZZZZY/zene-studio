@@ -71,10 +71,13 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <span>
 #include <vector>
 
+#include "../plugins/MpeConsumerProbe.h"
+#include "AllocationProbe.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BufferManager.h"
@@ -84,9 +87,11 @@
 #include "InstrumentTrack.h"
 #include "Midi.h"
 #include "MpeExpression.h"
+#include "MpeStreamSnapshot.h"
 #include "Note.h"
 #include "NotePlayHandle.h"
 #include "PluginFactory.h"
+#include "RealtimeScope.h"
 #include "SampleFrame.h"
 #include "Song.h"
 #include "Track.h"
@@ -424,6 +429,204 @@ private slots:
 
 		m_track->processInEvent( MidiEvent( MidiNoteOff, 1, kKey ) );
 		MpeExpression::setEnabled( false );
+	}
+
+	//! Q050-016 (the acceptance's MIDI-output half): a note carrying an
+	//! expression STREAM reaches the instrument with each axis's change at the
+	//! frame offset the point's tick schedules. The consumer probe records the
+	//! offset each event arrived with, so the assertion is the offset itself,
+	//! not a block the change can be inferred to have happened in.
+	void scheduledExpressionStreamReachesTheInstrumentAtItsOffsets()
+	{
+		auto* probe = dynamic_cast<lmms::testmpe::ConsumerProbe*>( m_track->instrument() );
+		QVERIFY2( probe != nullptr, "the MPE test consumer does not implement the probe" );
+
+		// Several tick offsets must fall inside one period for the scheduled
+		// frame offset to be observable: raise the tempo so frames-per-tick is
+		// small next to the period.
+		Engine::getSong()->tempoModel().setValue( 999 );
+		Engine::updateFramesPerTick();
+		const float framesPerTick = Engine::framesPerTick();
+		QVERIFY( framesPerTick > 0.f );
+		const int ticksPerPeriod = static_cast<int>( m_frames / framesPerTick );
+		QVERIFY2( ticksPerPeriod >= 4,
+			qPrintable( QStringLiteral( "only %1 tick(s) per period - the offsets cannot be told "
+				"apart" ).arg( ticksPerPeriod ) ) );
+
+		const f_cnt_t frames = m_frames * 8;
+		const int pitchTick = 1;
+		const int pressureTick = 2;
+		const int timbreTick = 3;
+
+		// A reference note with no expression in the same block, so the base
+		// level is measured rather than hard-coded.
+		Note plain( TimePos::fromFrames( frames, framesPerTick ), TimePos( 0 ), kKey );
+		NotePlayHandle plainHandle( m_track, 0, frames, plain, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+		const float plainLevel = renderBlock( &plainHandle );
+
+		Note note( TimePos::fromFrames( frames, framesPerTick ), TimePos( 0 ), kKey );
+		MpeExpressionStream stream;
+		stream.setPitch( { { static_cast<tick_t>( pitchTick ), 1200 } } );
+		stream.setPressure( { { static_cast<tick_t>( pressureTick ), 64 } } );
+		stream.setTimbre( { { static_cast<tick_t>( timbreTick ), 32 } } );
+		note.setMpeStream( stream );
+		QVERIFY( note.hasMpeStream() );
+
+		NotePlayHandle handle( m_track, 0, frames, note, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+		// One period is enough: every point sits inside it.
+		const float level = renderBlock( &handle );
+
+		const int channel = handle.midiChannel();
+		std::fprintf( stdout, "MPE_EVIDENCE stream offsets channel=%d level=%.6f "
+			"pitch=%d@%llu pressure=%d@%llu timbre=%d@%llu fpt=%.3f\n", channel, level,
+			probe->value( lmms::testmpe::Axis::Pitch, channel ),
+			static_cast<unsigned long long>( probe->lastOffset( lmms::testmpe::Axis::Pitch, channel ) ),
+			probe->value( lmms::testmpe::Axis::Pressure, channel ),
+			static_cast<unsigned long long>( probe->lastOffset( lmms::testmpe::Axis::Pressure, channel ) ),
+			probe->value( lmms::testmpe::Axis::Timbre, channel ),
+			static_cast<unsigned long long>( probe->lastOffset( lmms::testmpe::Axis::Timbre, channel ) ),
+			framesPerTick );
+		std::fflush( stdout );
+
+		QVERIFY2( plainLevel > 0.05f && level > 0.05f, "a note rendered nothing" );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Pitch, channel ), 1200 );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Pressure, channel ), 64 );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Timbre, channel ), 32 );
+		// Each event arrived at the frame its tick names: frame = tick * fpt.
+		QCOMPARE( static_cast<long long>(
+			probe->lastOffset( lmms::testmpe::Axis::Pitch, channel ) ),
+			static_cast<long long>( std::lround( pitchTick * framesPerTick ) ) );
+		QCOMPARE( static_cast<long long>(
+			probe->lastOffset( lmms::testmpe::Axis::Pressure, channel ) ),
+			static_cast<long long>( std::lround( pressureTick * framesPerTick ) ) );
+		QCOMPARE( static_cast<long long>(
+			probe->lastOffset( lmms::testmpe::Axis::Timbre, channel ) ),
+			static_cast<long long>( std::lround( timbreTick * framesPerTick ) ) );
+
+		// ... and the audio carries all three axes, by the ratios they ask for.
+		const float wanted = ( 1.0f + 64.0f / 127.0f ) * ( 1.0f + 32.0f / 127.0f )
+			* ( 1.0f + 1200.0f / 4800.0f );
+		QVERIFY2( std::fabs( level / plainLevel - wanted ) < 0.01f,
+			qPrintable( QStringLiteral( "the streamed block is %1x the plain one; the three "
+				"scheduled axes ask for %2x" ).arg( level / plainLevel, 0, 'f', 4 )
+					.arg( wanted, 0, 'f', 4 ) ) );
+	}
+
+	//! Q050-016 round 2 (realtime): acquiring a handle for a streamed note -
+	//! the audio thread's own path (InstrumentTrack::play ->
+	//! NotePlayHandleManager::acquire -> the Note copy) - allocates nothing the
+	//! plain note does not. The whole acquire is not allocation-free for ANY
+	//! note (the handle builds its upstream detuning object), so this slot is
+	//! the comparison; the stream's own operations are measured absolutely
+	//! (0 allocations, 0 frees) in MpeStreamSnapshotTest and in
+	//! MpeNoteStorageTest::streamedNoteCopiesAllocateNothing.
+	void streamedHandleAcquisitionAllocatesNothingExtra()
+	{
+		// Warm up: the pool, the track's handle list and one-shot caches
+		// allocate on first use, and that is not the stream's bill.
+		Note warmNote( TimePos( 384 ), TimePos( 0 ), kKey );
+		for( int i = 0; i < 2; ++i )
+		{
+			NotePlayHandle* warm = NotePlayHandleManager::acquire(
+				m_track, 0, m_frames * 8, warmNote );
+			NotePlayHandleManager::release( warm );
+		}
+
+		Note plain( TimePos( 384 ), TimePos( 0 ), kKey );
+		Note streamed( TimePos( 384 ), TimePos( 0 ), kKey );
+		MpeExpressionStream stream;
+		stream.setPitch( { { 0, 0 }, { 96, 1200 } } );
+		stream.setPressure( { { 0, 64 } } );
+		stream.setTimbre( { { 48, 32 } } );
+		streamed.setMpeStream( stream );
+		QVERIFY( streamed.hasMpeStream() );
+
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		NotePlayHandle* plainHandle = NotePlayHandleManager::acquire(
+			m_track, 0, m_frames * 8, plain );
+		const std::uint64_t plainAllocations = lmms::test::tlAllocationCount;
+		lmms::test::resetAllocationCount();
+		NotePlayHandle* streamedHandle = NotePlayHandleManager::acquire(
+			m_track, 0, m_frames * 8, streamed );
+		const std::uint64_t streamedAllocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+
+		std::fprintf( stdout, "MPE_EVIDENCE handle allocations plain=%llu streamed=%llu\n",
+			static_cast<unsigned long long>( plainAllocations ),
+			static_cast<unsigned long long>( streamedAllocations ) );
+		std::fflush( stdout );
+
+		NotePlayHandleManager::release( plainHandle );
+		NotePlayHandleManager::release( streamedHandle );
+
+		QCOMPARE( streamedAllocations, plainAllocations );
+	}
+
+	//! Q050-016 round 3 (realtime): the note is edited and then cleared while
+	//! a handle for it is alive. The handle still plays exactly the stream it
+	//! was started with (the edit published new snapshots; it never touched
+	//! the one the handle holds), and when the handle is released on the
+	//! realtime path holding the LAST reference, the snapshot is retired, not
+	//! freed: it stays alive until a control-thread reclaim frees it.
+	void editingWhileAHandlePlaysKeepsItsStreamAndItsReleaseNeverFrees()
+	{
+		auto* probe = dynamic_cast<lmms::testmpe::ConsumerProbe*>( m_track->instrument() );
+		QVERIFY2( probe != nullptr, "the MPE test consumer does not implement the probe" );
+		Engine::getSong()->tempoModel().setValue( 999 );
+		Engine::updateFramesPerTick();
+		const float framesPerTick = Engine::framesPerTick();
+		QVERIFY( m_frames / framesPerTick >= 4 );
+
+		MpeStreamSnapshot::reclaimRetired();
+		const std::size_t live = MpeStreamSnapshot::liveCount();
+		const std::size_t retired = MpeStreamSnapshot::retiredCount();
+		const f_cnt_t frames = m_frames * 8;
+		Note note( TimePos::fromFrames( frames, framesPerTick ), TimePos( 0 ), kKey );
+		MpeExpressionStream started;
+		started.setPitch( { { 1, 1200 } } );
+		started.setPressure( { { 2, 64 } } );
+		started.setTimbre( { { 3, 32 } } );
+		note.setMpeStream( started );
+
+		NotePlayHandle* handle = NotePlayHandleManager::acquire( m_track, 0, frames, note );
+
+		// The editing thread replaces the stream, then removes it.
+		MpeExpressionStream edited;
+		edited.setPitch( { { 1, -1200 } } );
+		edited.setPressure( { { 2, 10 } } );
+		edited.setTimbre( { { 3, 5 } } );
+		note.setMpeStream( edited );
+		note.clearMpeStream();
+		QVERIFY( !note.hasMpeStream() );
+		QCOMPARE( MpeStreamSnapshot::liveCount(), live + 1 );  // only the handle's
+
+		renderBlock( handle );
+		const int channel = handle->midiChannel();
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Pitch, channel ), 1200 );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Pressure, channel ), 64 );
+		QCOMPARE( probe->value( lmms::testmpe::Axis::Timbre, channel ), 32 );
+		QCOMPARE( static_cast<long long>( probe->lastOffset( lmms::testmpe::Axis::Timbre, channel ) ),
+			static_cast<long long>( std::lround( 3 * framesPerTick ) ) );
+
+		{
+			const RealtimeScope realtime;
+			NotePlayHandleManager::release( handle );
+		}
+		std::fprintf( stdout, "MPE_EVIDENCE realtime release live=%llu->%llu retired=%llu->%llu\n",
+			static_cast<unsigned long long>( live + 1 ),
+			static_cast<unsigned long long>( MpeStreamSnapshot::liveCount() ),
+			static_cast<unsigned long long>( retired ),
+			static_cast<unsigned long long>( MpeStreamSnapshot::retiredCount() ) );
+		std::fflush( stdout );
+		QCOMPARE( MpeStreamSnapshot::liveCount(), live + 1 );
+		QCOMPARE( MpeStreamSnapshot::retiredCount(), retired + 1 );
+
+		QCOMPARE( MpeStreamSnapshot::reclaimRetired(), retired + 1 );
+		QCOMPARE( MpeStreamSnapshot::liveCount(), live );
+		QCOMPARE( MpeStreamSnapshot::retiredCount(), std::size_t{ 0 } );
 	}
 
 private:

@@ -748,8 +748,12 @@ library to work.
   all. Warp marker editing is drivable through the socket, not from the interface.
 - **MPE: all three axes reach playback.** Per-note expression is captured from MPE input, stored on the note
   and editable; **pitch, pressure and timbre are all applied on playback** — pitch as a frequency ratio,
-  pressure and timbre as MIDI events on the note's own member channel (task #649). There is still no per-note
-  expression editor.
+  pressure   and timbre as MIDI events on the note's own member channel (task #649). Since Q050-016 each axis can also
+  carry a **time-varying event stream** (ordered `(tick, value)` points per note, saved as the optional
+  `mpepitchpts` / `mpepressurepts` / `mpetimbrepts` attributes and played at each point's own offset through
+  `note.expression_stream_set` / `note.expression_stream_get`); there is still no per-note expression
+  *editor* — drawing and dragging the streams in a curve view is the dependent unit Q050-137, and the streams
+  are drivable through the socket only.
   Verified in the tree: `docs/MPE.md` §0 is the implementing lane's verdict — expression is captured from
   MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
   and editable through a headless API, with all three axes reaching the instrument through the playback path
@@ -1548,7 +1552,12 @@ line each, because the scope contract asks for one each:
 - *(Updated 2026-09-30.)* **The piano roll's note-tools menu now has Randomize velocities..., Humanize
   timing... and Scale velocities...** (`note.randomize` / `note.velocity_scale` on the selected notes, or
   the clip when none is selected; `NoteTransformActionsTest`), and slide notes have had a draw tool (Note
-  tools ▸ Slide notes, Shift+L) since the slide work. Still socket-only: the seed, velocity offset and
+  tools ▸ Slide notes, Shift+L) since the slide work. *(Updated 2026-10-16, Q050-016 round 2.)* The same
+  menu now has the MPE streams' GUI path beside them: **MPE pitch ramp...** (asks the bend at the note's
+  end in cents and writes a `{0:0, len:value}` pitch stream through the shared `note.expression_stream_set`
+  command, keeping the other axes) and **Clear MPE expression streams** (empties every axis of the notes
+  that carry a stream, skipping the rest so no empty undo step is pushed) — one undo step per note either
+  way (`NoteTransformActionsTest`: GUI trigger, registry effect, `control.undo`). Still socket-only: the seed, velocity offset and
   the typed transpose. The bullet below is the earlier record.
 - **Note randomisation, transforms and slide notes are drivable through the socket, not from the interface.**
   `note.randomize` (the seeded roll), `note.random_seed_get` / `note.random_seed_set` (the project's MIDI

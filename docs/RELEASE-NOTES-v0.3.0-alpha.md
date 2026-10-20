@@ -1036,6 +1036,10 @@ not_mutating=357`.
 `rows=829 true_inverse=417 snapshot=39 irreversible=22 not_mutating=351`, which is the block below minus
 wasm's option row, exactly.
 
+**Q050-016** (MPE expression event streams) adds two `note.expression_stream_*` rows - one
+`true_inverse` (`note.expression_stream_set`, a MidiClip checkpoint) and one `not_mutating`
+(`note.expression_stream_get`) - so the figure below moved by two:
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state

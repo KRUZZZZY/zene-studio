@@ -102,6 +102,29 @@ private slots:
 		QCOMPARE(address % 64, std::uintptr_t{0});
 	}
 
+	//! Frees are counted too (Q050-016 round 3): a direct call of the global
+	//! deallocation function is one free, and destroying a node built in
+	//! lmmsobjs frees at least its own block.
+	void countsFrees()
+	{
+		void* block = ::operator new(64);
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		::operator delete(block);
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(lmms::test::tlFreeCount, std::uint64_t{1});
+		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
+
+		auto node = lmms::RoutingGraph::createNode(QStringLiteral("gain"));
+		QVERIFY(node != nullptr);
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		node.reset();
+		lmms::test::tlCountAllocations = false;
+		QVERIFY2(lmms::test::tlFreeCount >= 1,
+			"destroying a library-built node was not counted as a free");
+	}
+
 	//! Counting is off outside the window: the same library allocation made
 	//! with the probe disarmed leaves the count where it was.
 	void doesNotCountWhileDisarmed()

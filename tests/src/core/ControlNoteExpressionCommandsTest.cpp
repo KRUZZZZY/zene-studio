@@ -183,6 +183,83 @@ private slots:
 		evidence("note-slide-clear",
 			QStringLiteral("no-op leaves transaction history unchanged; clear inverse replays"));
 	}
+
+	//! Q050-016 (the acceptance's command half): write points at known note
+	//! offsets and read back exactly the same values and order, then undo in
+	//! one step.
+	void expressionStreamWritesAndReadsBackAtKnownOffsets()
+	{
+		QString clip;
+		QString note;
+		QVERIFY(buildClipWithNote(&clip, &note));
+
+		QJsonObject empty = run(QStringLiteral("note.expression_stream_get"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}}).result;
+		QCOMPARE(empty.value(QStringLiteral("has_stream")).toBool(), false);
+		QCOMPARE(empty.value(QStringLiteral("pitch")).toArray().size(), 0);
+
+		auto point = [](int tick, int value) {
+			return QJsonObject{{QStringLiteral("tick"), tick}, {QStringLiteral("value"), value}};
+		};
+		const QJsonArray pitch{ point(0, 0), point(96, 1200), point(192, -2400) };
+		const QJsonArray pressure{ point(0, 10), point(48, 64) };
+		const QJsonArray timbre{ point(96, 32) };
+
+		const ControlResult set = run(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
+				{QStringLiteral("pitch"), pitch}, {QStringLiteral("pressure"), pressure},
+				{QStringLiteral("timbre"), timbre}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("has_stream")).toBool(), true);
+
+		const QJsonObject read = run(QStringLiteral("note.expression_stream_get"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}}).result;
+		QCOMPARE(read.value(QStringLiteral("has_stream")).toBool(), true);
+		// Exact order and values, tick and value.
+		QCOMPARE(read.value(QStringLiteral("pitch")).toArray(), pitch);
+		QCOMPARE(read.value(QStringLiteral("pressure")).toArray(), pressure);
+		QCOMPARE(read.value(QStringLiteral("timbre")).toArray(), timbre);
+
+		// An axis the call omits keeps its points; an empty array clears only
+		// that axis.
+		QVERIFY(run(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
+				{QStringLiteral("timbre"), QJsonArray{}}}).ok);
+		const QJsonObject after = run(QStringLiteral("note.expression_stream_get"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}}).result;
+		QCOMPARE(after.value(QStringLiteral("has_stream")).toBool(), true);
+		QCOMPARE(after.value(QStringLiteral("timbre")).toArray().size(), 0);
+		QCOMPARE(after.value(QStringLiteral("pitch")).toArray(), pitch);
+
+		// A malformed point is a typed refusal, not a point at zero.
+		ControlResult bad = run(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
+				{QStringLiteral("pitch"), QJsonArray{ point(0, 99999) }}});
+		QCOMPARE(bad.errorKind, ControlErrorKind::InvalidArgs);
+		bad = run(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
+				{QStringLiteral("pressure"), QJsonArray{ point(-5, 10) }}});
+		QCOMPARE(bad.errorKind, ControlErrorKind::InvalidArgs);
+
+		// Emptying every axis removes the stream entirely.
+		QVERIFY(run(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note},
+				{QStringLiteral("pitch"), QJsonArray{}},
+				{QStringLiteral("pressure"), QJsonArray{}},
+				{QStringLiteral("timbre"), QJsonArray{}}}).ok);
+		QCOMPARE(run(QStringLiteral("note.expression_stream_get"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}})
+			.result.value(QStringLiteral("has_stream")).toBool(), false);
+
+		// One undo takes the last write back (the empty stream becomes the
+		// three axes again), and another undo takes the clear back.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(run(QStringLiteral("note.expression_stream_get"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), note}})
+			.result.value(QStringLiteral("pitch")).toArray(), pitch);
+		evidence("note-expression-stream",
+			QStringLiteral("points at known offsets round trip; malformed refused; one undo step"));
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlNoteExpressionCommandsTest)
