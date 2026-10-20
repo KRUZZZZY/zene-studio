@@ -57,6 +57,7 @@ set(LMMS_TESTS
 	# Short ALSA writes must advance through every remaining frame in a period.
 	src/core/AudioAlsaWriteTest.cpp
 	src/core/AudioBufferTest.cpp
+	src/core/AudioOssWriteTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
 	src/core/AudioEngineTeardownTest.cpp
