@@ -31,21 +31,26 @@ Build commands ran from the worktree root; CTest commands from `build/tests`.
 
 | Purpose | Exact command | Exit |
 |---|---|---:|
-| Build test target (fix in place) | `cmake --build build --target Vst3ChunkProbeTest -j8 > .../logs/build-1.log 2>&1; echo EXIT=$?` | 0 |
-| GREEN | `ctest -R '^Vst3ChunkProbeTest$' --output-on-failure > .../logs/test-3.log 2>&1; echo EXIT=$?` | 0 |
-| Reverse product fix | `git apply -R .../logs/fix.patch` | 0 |
-| Rebuild reversed | `cmake --build build --target Vst3ChunkProbeTest -j8 > .../logs/build-2.log 2>&1; echo EXIT=$?` | 0 |
-| RED | `ctest -R '^Vst3ChunkProbeTest$' --output-on-failure > .../logs/test-2.log 2>&1; echo EXIT=$?` | 8 |
-| Restore product fix | `git apply .../logs/fix.patch` | 0 |
-| Rebuild restored | `cmake --build build --target Vst3ChunkProbeTest -j8 > .../logs/build-3.log 2>&1; echo EXIT=$?` | 0 |
-| GREEN again | `ctest -R '^Vst3ChunkProbeTest$' --output-on-failure > .../logs/test-3.log 2>&1; echo EXIT=$?` | 0 |
-| Vst3HostTest family | `ctest -R '^Vst3HostTest$' --output-on-failure > .../logs/test-6.log 2>&1; echo EXIT=$?` | 0 |
-| Rebuild zene | `cmake --build build --target zene -j8 > .../logs/build-5.log 2>&1; echo EXIT=$?` | 0 |
-| Feature check | `python3 .../feature_check.py <worktree> > .../logs/gate-1.log 2>&1; echo EXIT=$?` | 0 |
+| Build fixture and test target (fix in place) | `cmake --build build --target vst3-chunk-probe Vst3ChunkProbeTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/build-1.log 2>&1; echo EXIT=$?` | 0 |
+| Initial GREEN (`'^Vst3ChunkProbeTest$'`, 1 test selected) | `ctest -R '^Vst3ChunkProbeTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/test-1.log 2>&1; echo EXIT=$?` | 0 |
+| Extract product fix to patch | `git diff -- plugins/Vst3Effect/Vst3Host.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/fix.patch` | 0 |
+| Reverse product fix | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/fix.patch` | 0 |
+| Rebuild with fix reversed | `cmake --build build --target Vst3ChunkProbeTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/build-2.log 2>&1; echo EXIT=$?` | 0 |
+| RED (`'^Vst3ChunkProbeTest$'`, 1 test selected, 1 failed) | `ctest -R '^Vst3ChunkProbeTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/test-2.log 2>&1; echo EXIT=$?` | 8 |
+| Restore product fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/fix.patch` | 0 |
+| Rebuild with fix restored | `cmake --build build --target Vst3ChunkProbeTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/build-3.log 2>&1; echo EXIT=$?` | 0 |
+| GREEN again (`'^Vst3ChunkProbeTest$'`, 1 test selected) | `ctest -R '^Vst3ChunkProbeTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/test-3.log 2>&1; echo EXIT=$?` | 0 |
+| Build Vst3HostTest | `cmake --build build --target Vst3HostTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/build-4.log 2>&1; echo EXIT=$?` | 0 |
+| Vst3HostTest family (`'^Vst3HostTest$'`, 1 test selected) | `ctest -R '^Vst3HostTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/test-6.log 2>&1; echo EXIT=$?` | 0 |
+| Rebuild zene | `cmake --build build --target zene -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/build-5.log 2>&1; echo EXIT=$?` | 0 |
+| Raw complexity ratchet | `bash tests/complexity-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/gate-complexity.log 2>&1; echo EXIT=$?` | 1 |
+| Raw file-length ratchet | `bash tests/file-length-gate.sh --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/gate-filelength.log 2>&1; echo EXIT=$?` | 1 |
+| Feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-442-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-442-port.r2/logs/gate-1.log 2>&1; echo EXIT=$?` | 0 |
 
-RED failed at `std::isfinite(probe.paramNormalized(HugeNormDefaultParamId))` (a default of
-`1.0e300` reached the parameter array as infinity). GREEN executed the full
-`Vst3ChunkProbeTest` suite with 0 failures.
+The raw complexity and file-length checks exit 1 because of pre-existing baseline entries in the
+train; the feature check reports no new ratchet items in the changed files. The RED run failed at
+`std::isfinite(probe.paramNormalized(HugeNormDefaultParamId))` (a default of `1.0e300` reached
+the parameter array as infinity). The GREEN runs executed their selected suites with 0 failures.
 
 ## Files in this commit
 
@@ -71,3 +76,5 @@ RED failed at `std::isfinite(probe.paramNormalized(HugeNormDefaultParamId))` (a 
   non-finite ones. No saved-data format or control command changed.
 - Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE; the unsanitized code was at
   `plugins/Vst3Effect/Vst3Host.cpp:286` before this change.
+
+FIXED
