@@ -32,7 +32,9 @@
 
 #include <QtTest>
 
+#include <QFile>
 #include <QJsonArray>
+#include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QMenu>
@@ -82,6 +84,16 @@ QTreeWidgetItem* audioRow(const QString& path)
 QJsonArray historyEntries()
 {
 	return run(QStringLiteral("browser.history")).result.value(QStringLiteral("entries")).toArray();
+}
+
+//! Whether one of the view's labels shows @a text (the status line is the one that shows a refusal).
+bool labelShows(const QWidget* view, const QString& text)
+{
+	for (const QLabel* label : view->findChildren<QLabel*>())
+	{
+		if (label->text().contains(text)) { return true; }
+	}
+	return false;
 }
 
 } // namespace
@@ -337,6 +349,25 @@ private slots:
 		QCOMPARE(row->text(browserresults::Size), QStringLiteral("-"));       // not "0" for an unknown size
 		QCOMPARE(row->text(browserresults::Modified), QStringLiteral("-"));  // not 1970-01-01
 		QVERIFY(!row->text(browserresults::Name).isEmpty());                  // the rest of the row is untouched
+	}
+
+	void aRefusedCollectionRemovalSaysWhyOnTheStatusLine()  // 0.5.0 BUG 12: the store's refusal is shown, not dropped
+	{
+		qputenv("ZENE_BROWSER_COLLECTIONS", m_dir.filePath(QStringLiteral("collections.json")).toLocal8Bit());
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Snares")},
+			{QStringLiteral("text"), QStringLiteral("snare")}}).ok);
+		BrowserSearchView view(nullptr);  // lists "Snares"
+		// Removed behind the list's back (another window, a script): the menu's Remove on the stale row is refused.
+		QVERIFY(run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), QStringLiteral("Snares")}}).ok);
+		view.removeCollection(QStringLiteral("Snares"));
+		QVERIFY2(labelShows(&view, QStringLiteral("no collection 'Snares'")), "a refused removal showed nothing");
+		// A damaged store is refused too, and the collection file is left as it is.
+		QFile store(m_dir.filePath(QStringLiteral("collections.json")));
+		QVERIFY(store.open(QIODevice::WriteOnly));
+		store.write("[\"not an object\"]");
+		store.close();
+		view.removeCollection(QStringLiteral("Snares"));
+		QVERIFY2(labelShows(&view, QStringLiteral("is not a JSON object")), "a damaged store's refusal showed nothing");
 	}
 
 private:
