@@ -199,6 +199,8 @@ ControlResult articulationsSet(const QJsonObject& args)
 	// 'from' (optional): where each new entry stood in the old map, so the notes follow their articulation.
 	std::vector<ArticulationNoteChange> moved;
 	const std::vector<Articulation> before = track->articulations().entries();
+	// The map as it stands BEFORE the edit: the before-state the reversibility record names.
+	const QJsonArray beforeMap = track->articulations().toJson();
 	if (args.contains(QStringLiteral("from")))
 	{
 		std::vector<int> from;
@@ -216,8 +218,12 @@ ControlResult articulationsSet(const QJsonObject& args)
 	announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true));
 	addUndoStep([id, before, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, before, moved, false)); },
 		[id, entries, moved]() { announceArticulationEdits(id, applyArticulationEdit(id, entries, moved, true)); });
-	return ControlResult::success({{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()},
-		{QStringLiteral("notes_remapped"), static_cast<int>(moved.size())}});
+	QJsonObject result{{QStringLiteral("track"), id}, {QStringLiteral("articulations"), track->articulations().toJson()},
+		{QStringLiteral("notes_remapped"), static_cast<int>(moved.size())}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("track"), id},
+		{QStringLiteral("articulations"), beforeMap}}, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Action checkpoint: control.undo restores this track's previous articulation map")));
+	return ControlResult::success(result);
 }
 
 ControlResult articulations(const QJsonObject& args)
@@ -240,6 +246,8 @@ ControlResult groove(const QJsonObject& args)
 	MidiPlayback& playback = MidiPlayback::instance();
 	const float before = playback.swing();
 	const int beforeGrid = playback.swingGrid();
+	const QJsonObject beforeState{{QStringLiteral("swing"), static_cast<double>(before)},
+		{QStringLiteral("grid"), beforeGrid == MidiPlayback::DefaultSwingGrid ? QStringLiteral("16th") : QStringLiteral("8th")}};
 	const double swingValue = args.value(QStringLiteral("swing")).toDouble(before);
 	if (!std::isfinite(swingValue) || swingValue < 0.0 || swingValue > MidiPlayback::MaxSwing)
 	{
@@ -253,7 +261,10 @@ ControlResult groove(const QJsonObject& args)
 	addUndoStep([before, beforeGrid]() { MidiPlayback::instance().setSwing(before, beforeGrid); },
 		[swing, grid]() { MidiPlayback::instance().setSwing(swing, grid); });
 	Engine::getSong()->setModified();
-	return ControlResult::success(grooveState());
+	QJsonObject result = grooveState();
+	result.insert(QStringLiteral("__transaction"), transactionPayload(beforeState, QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Action checkpoint: control.undo restores the previous swing and grid")));
+	return ControlResult::success(result);
 }
 
 ControlResult midiOptions(const QJsonObject& args)
@@ -263,13 +274,20 @@ ControlResult midiOptions(const QJsonObject& args)
 	const int offset = args.value(QStringLiteral("offset_ms")).toInt(playback.offsetMs());
 	const bool beforeChase = playback.chase();
 	const int beforeOffset = playback.offsetMs();
+	const QJsonObject before{{QStringLiteral("chase"), beforeChase}, {QStringLiteral("offset_ms"), beforeOffset}};
 	if (chase != beforeChase || offset != beforeOffset)
 	{
 		playback.setPreferences(chase, offset);
 		addUndoStep([beforeChase, beforeOffset]() { MidiPlayback::instance().setPreferences(beforeChase, beforeOffset); },
 			[chase, offset]() { MidiPlayback::instance().setPreferences(chase, offset); });
 	}
-	return ControlResult::success({{QStringLiteral("chase"), playback.chase()}, {QStringLiteral("offset_ms"), playback.offsetMs()}});
+	QJsonObject result{{QStringLiteral("chase"), playback.chase()}, {QStringLiteral("offset_ms"), playback.offsetMs()}};
+	if (chase != beforeChase || offset != beforeOffset)
+	{
+		result.insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("control.undo"), {}, true,
+			QStringLiteral("Action checkpoint: control.undo restores the previous chase and MIDI offset preferences")));
+	}
+	return ControlResult::success(result);
 }
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, const QStringList& required,
