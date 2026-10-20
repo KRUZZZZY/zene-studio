@@ -145,11 +145,14 @@ entry in `tests/rt-safety-scope.txt`).
 ```
 python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py \
     /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3705 \
-    > logs/gate-1.log 2>&1   EXIT=0
+    > logs/gate-1.log 2>&1   EXIT=0     (8 changed files, before this report was added)
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py \
+    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3705 \
+    > logs/gate-2.log 2>&1   EXIT=0     (9 changed files, the final tree)
 ```
 
 ```
-feature-check zene-qwen-3705 (base b61e5f965, 8 changed files)
+feature-check zene-qwen-3705 (base b61e5f965, 9 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3705-feature-check)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -159,6 +162,15 @@ feature-check zene-qwen-3705 (base b61e5f965, 8 changed files)
   PASS  complexity              no new item in your files
   PASS  file-length             no new item in your files
 RESULT: PASS
+```
+
+The pre-submit check passes as well:
+
+```
+python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py \
+    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3705 3705 \
+    > logs/submit-check-2.log 2>&1   EXIT=0
+RESULT: PASS - submit
 ```
 
 ## Collateral behaviour
