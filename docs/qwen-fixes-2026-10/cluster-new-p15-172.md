@@ -10,6 +10,27 @@ Same-file batch: three bugs in `include/RemotePlugin.h` (the RPC base of the
 out-of-process plugin hosting). Each one is decided, fixed and proved on its
 own; the evidence tables are per bug.
 
+## Files committed
+
+| Cluster | Commit | Product files | Test files |
+|---|---|---|---|
+| new-p15-172 | `20d4fdd02` (+ `fac602ef3`, indentation) | `include/RemotePlugin.h`, `src/core/RemotePlugin.cpp` | `tests/src/core/RemotePluginAudioPortsTest.cpp` |
+| new-p14-255 | `a887f1f40` | `include/RemotePlugin.h` | `tests/src/core/RemotePluginClientE2ETest.cpp`, `tests/src/plugins/FakeRemotePluginClient.cpp` |
+| new-p14-256 | `668dc92c9` | `include/RemotePlugin.h`, `src/core/RemotePlugin.cpp` | `tests/src/core/RemotePluginClientE2ETest.cpp`, `tests/src/plugins/FakeRemotePluginClient.cpp` |
+| report | `778b56ae5` | - | `docs/qwen-fixes-2026-10/cluster-new-p15-172.md` |
+
+Also changed: `tests/upstream-modifications.txt` (the divergence ledger gets
+one entry per change, with the reason).
+
+## Gates (whole batch, final run)
+
+| Check | Command (exact) | Exit/result |
+|---|---|---|
+| All gates (`gate-3-final.log`) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py . > .../gate-3-final.log 2>&1; echo EXIT=$?` | **0** - fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length: all PASS |
+| Pre-submit check (`submit-check-3-final.log`) | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py . new-p15-172 > .../submit-check-3-final.log 2>&1; echo EXIT=$?` | **0** - "RESULT: PASS - submit" (the ASK items are answered in the Self-check section below) |
+| Final dependent rebuild (`build-15-final.log`) | `cmake --build build --target zene lmmsobjs RemotePluginAudioPortsTest RemotePluginClientE2ETest -j 8 > .../build-15-final.log 2>&1; echo EXIT=$?` | 0 |
+| Final affected-family run (`test-15-final.log`) | `ctest -R 'RemotePlugin\|ZynSeparateProcess' --output-on-failure > .../test-15-final.log 2>&1; echo EXIT=$?` | **0**; 3/3 passed |
+
 ---
 
 ## 1. new-p15-172 - the audio thread reads `QProcess` state from another thread
