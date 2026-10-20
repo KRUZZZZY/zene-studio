@@ -109,6 +109,12 @@ the CTest commands ran from `build/tests`. Every log is in
 | Whole-parent control (every product hunk of both rounds reversed) | `git diff HEAD~1 -- include/ProjectRevisions.h src/core/ProjectRevisions.cpp > .../logs/fix4.patch && git apply -R .../logs/fix4.patch` then `cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-16.log 2>&1` then `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > .../logs/test-25.log 2>&1` | 0 / 0 / 8 | With the whole product fix reversed, all THREE cases fail (2 passed, 3 failed): every one of them is a regression proof. |
 | Fork-source manifest gate | `bash tests/fork-sources-gate.sh > .../logs/gate-12.log 2>&1` | 0 | 1791 fork-NEW entries, 0 stale; the new test source is registered. |
 | Unregistered-test gate | `bash tests/unregistered-tests-gate.sh > .../logs/gate-13.log 2>&1` | 0 | 516 test sources scanned, every one registered or declared. |
+| Final build of the committed tree | `cmake --build build --target zene ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-21.log 2>&1` | 0 | Rebuilt from the commit. |
+| A CTest run from the worktree ROOT | `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > .../logs/test-30.log 2>&1` | 97 | Refused by the lane guard (`bunny-guard: run ctest from <lane>/build/tests`); no test ran. The required invocation from `build/tests` is the one below. |
+| Final GREEN of the committed tree, from `build/tests` | `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest)$' --output-on-failure > .../logs/test-32.log 2>&1` | 0 | 5/5 ctest cases passed. |
+| Final affected-family count of the committed tree | `ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure -V > .../logs/test-33.log 2>&1` | 0 | 1 registered ctest case; 5 QtTest cases passed, 0 failed, 0 skipped. |
+| Final complexity gate on the committed tree | `bash tests/complexity-gate.sh --check > .../logs/gate-14.log 2>&1` | 1 | The same five rows as `gate-10.log` (the `diff` of the `REGRESSION:` lines is empty). |
+| Final file-length gate on the committed tree | `bash tests/file-length-gate.sh --check > .../logs/gate-15.log 2>&1` | 1 | The same fourteen rows as `gate-11.log` (the `diff` of the `REGRESSION:` lines is empty). |
 
 ### Gates
 
