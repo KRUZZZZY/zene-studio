@@ -265,11 +265,12 @@ public:
 	 *    frame, bounded to [0, frames - 1], in the chunk that frame falls in and
 	 *    rebased to it (0.5.0 W4), so no point lands past numSamples;
 	 *    MIDI events are delivered in the chunk their sample offset falls in,
-	 *    with the offset rebased to that chunk, and an event whose offset is at
-	 *    or beyond the end of the request is delivered with the LAST chunk at
-	 *    that chunk's end offset - exactly the `std::clamp(offset, 0, frames)`
-	 *    the host applied before it chunked, so a note-off written at a block
-	 *    boundary still releases the note.
+	 *    with the offset rebased to that chunk, so every event offset lies in
+	 *    [0, chunk). An event whose offset is at or beyond the end of the
+	 *    request is carried into the NEXT request and delivered there at offset
+	 *    0, so it is still seen exactly once: a note-off written at a block
+	 *    boundary releases the note, and no event is ever handed to the plug-in
+	 *    at sampleOffset == numSamples.
 	 *
 	 * A request of 0 frames does nothing at all. If there are frames but the
 	 * host is not prepared (or has been released), every supplied output channel
@@ -277,6 +278,14 @@ public:
 	 */
 	void process(const float* const* inputs, float* const* outputs,
 		int numInputs, int numOutputs, int frames);
+
+#ifdef LMMS_TESTING
+	//! Test-only: how many events the LAST chunk handed to the plug-in carried.
+	auto lastChunkEventCount() const -> int;
+	//! Test-only: sample offset of that chunk's event @a index, or -1 when there is none. A VST3
+	//! event offset is always in [0, chunk length).
+	auto lastChunkEventOffset(int index) const -> int;
+#endif
 
 	//! GUI thread: plug-in rendered string for a normalized value
 	auto paramDisplayValue(std::uint32_t id, float normalized) const -> QString;

@@ -158,9 +158,11 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, int32 noteId, Even
 
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 	EventList& events, int32 busIndex, int frames, const MidiControllerMap* controllers,
-	IParameterChanges* changes) -> int
+	IParameterChanges* changes, int maxEvents) -> int
 {
-	const auto capacity = scratch.size();
+	const auto capacity = maxEvents < 0
+		? scratch.size()
+		: std::min(scratch.size(), static_cast<std::size_t>(maxEvents));
 	std::size_t count = 0;
 	MidiEventIn midi;
 	while (count < capacity && queue.pop(&midi))

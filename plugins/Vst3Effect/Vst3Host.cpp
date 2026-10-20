@@ -613,6 +613,7 @@ void HostedPlugin::release()
 	while (d.midiProducers.load() != 0) { std::this_thread::yield(); }
 	d.midiQueue.reset();
 	d.inputEvents.clear();
+	d.deferredEvents.clear();
 	d.midiEvents.clear();
 }
 
@@ -679,8 +680,22 @@ void HostedPlugin::process(const float* const* inputs, float* const* outputs,
 	if (d.processData.inputEvents != nullptr)
 	{
 		d.inputEvents.clear();
+		// Events carried from the previous request belong at this request's first sample, and go
+		// in before the events drained now: a note-off left at the previous boundary must release
+		// its note before a note-on at offset 0 starts the next one. The carried count comes out
+		// of this request's event-list room, so a drain can never push a carried event out.
+		const int32 deferred = d.deferredEvents.getEventCount();
+		for (int32 i = 0; i < deferred; ++i)
+		{
+			Event event{};
+			if (d.deferredEvents.getEvent(i, event) != kResultOk) { continue; }
+			event.sampleOffset = 0;
+			d.inputEvents.addEvent(event);
+		}
+		d.deferredEvents.clear();
 		drainMidiIntoEventList(d.midiQueue, d.midiEvents, d.inputEvents,
-			d.eventInputBusIndex, frames, &d.controllerMap, &d.inputParamChanges);
+			d.eventInputBusIndex, frames, &d.controllerMap, &d.inputParamChanges,
+			kMaxMidiEventsPerBlock - deferred);
 	}
 
 	// 2. chunks: every chunk but the last is exactly maxBlockSize long and the
@@ -736,14 +751,13 @@ void HostedPlugin::Impl::sliceEvents(int offset, int chunk, bool lastChunk)
 {
 	// 1b. this chunk's slice of the drained MIDI list. An event belongs to the
 	//     chunk its sample offset falls in, rebased to that chunk's start. The
-	//     BOUNDARY RULE is the one the pre-chunking host had
-	//     (`std::clamp(frameOffset, 0, frames)`): an event whose offset is at or
-	//     beyond the end of the request is delivered with the LAST chunk, at
-	//     that chunk's end offset, so it is still seen exactly once. Dropping
-	//     those events instead would turn a note-off written at the block
-	//     boundary into a note that never releases
-	//     (Vst3InstrumentTest::testDistinctInputGivesDistinctOutput caught
-	//     exactly that).
+	//     BOUNDARY RULE: an event whose offset is at or beyond the end of the
+	//     request is not inside any chunk, so it is carried into the next
+	//     request and delivered there at offset 0. It is still seen exactly
+	//     once - dropping it would turn a note-off written at the block
+	//     boundary into a note that never releases - and the plug-in is never
+	//     handed an offset outside [0, chunk), which is what the old
+	//     `std::clamp(frameOffset, 0, frames)` rule produced on the last chunk.
 	if (processData.inputEvents != nullptr)
 	{
 		chunkEvents.clear();
@@ -757,7 +771,9 @@ void HostedPlugin::Impl::sliceEvents(int offset, int chunk, bool lastChunk)
 			if (event.sampleOffset >= limit)
 			{
 				if (!lastChunk) { continue; }
-				event.sampleOffset = limit;
+				event.sampleOffset = 0;
+				deferredEvents.addEvent(event);
+				continue;
 			}
 			event.sampleOffset -= offset;
 			chunkEvents.addEvent(event);
@@ -835,6 +851,19 @@ auto HostedPlugin::paramDisplayValue(std::uint32_t id, float normalized) const -
 	}
 	return {};
 }
+
+#ifdef LMMS_TESTING
+auto HostedPlugin::lastChunkEventCount() const -> int
+{
+	return m_impl->chunkEvents.getEventCount();
+}
+
+auto HostedPlugin::lastChunkEventOffset(int index) const -> int
+{
+	const auto* event = m_impl->chunkEvents.getEventByIndex(index);
+	return event != nullptr ? event->sampleOffset : -1;
+}
+#endif
 
 auto hostChunkingStats() -> HostChunkingStats
 {
