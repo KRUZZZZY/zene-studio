@@ -139,6 +139,15 @@ public:
 	static void setDeterministicProcessing(bool deterministic);
 	static bool deterministicProcessing();
 
+	//! Test-only observation point on the worker's queue-drain decision. Production
+	//! never installs one. `BeforeWait` lets a test establish that the worker has read
+	//! the current wake generation (so its next wake cannot be lost); `BeforeQueue`
+	//! holds a worker in the window between reading the switch and taking the queue;
+	//! `AfterQueue` reports that the worker has left that path.
+	enum class WorkerDrainProbeStage { BeforeWait, BeforeQueue, AfterQueue };
+	using WorkerDrainProbe = void (*)(WorkerDrainProbeStage);
+	static void setWorkerDrainProbeForTesting(WorkerDrainProbe probe);
+
 	//! The render slot of the calling thread, or -1 outside a render job (cluster new-p10-249).
 	//! Every render thread owns one slot in [0, AudioEngine::renderThreadCount()): the pool
 	//! workers 0..n-1 and the inline (engine) thread n. The mixer hands a render thread its
@@ -175,6 +184,7 @@ private:
 	static void waitForWake(std::uint32_t seen);
 
 	static JobQueue globalJobQueue;
+	static std::atomic<WorkerDrainProbe> s_workerDrainProbe;
 	//! The render slot of the calling thread; -1 until it runs a render job
 	//! (cluster new-p10-249). A worker sets it to its own m_renderSlot for the whole run
 	//! loop; startAndWaitForJobs() sets it to the inline slot for the length of the call.

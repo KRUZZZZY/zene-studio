@@ -53,10 +53,16 @@ int AudioEngineWorkerThread::s_inlineRenderSlot = 0;
 
 //! Off when the engine starts: live playback keeps the pool (see the header).
 static std::atomic<bool> s_deterministicProcessing{false};
+std::atomic<AudioEngineWorkerThread::WorkerDrainProbe> AudioEngineWorkerThread::s_workerDrainProbe{nullptr};
 
 void AudioEngineWorkerThread::setDeterministicProcessing(bool deterministic)
 {
 	s_deterministicProcessing.store(deterministic, std::memory_order_release);
+}
+
+void AudioEngineWorkerThread::setWorkerDrainProbeForTesting(WorkerDrainProbe probe)
+{
+	s_workerDrainProbe.store(probe, std::memory_order_release);
 }
 
 bool AudioEngineWorkerThread::deterministicProcessing()
@@ -316,6 +322,8 @@ void AudioEngineWorkerThread::run()
 	std::uint32_t seen = s_wakeGeneration.load(std::memory_order_acquire);
 	while( !m_quit.load( std::memory_order_acquire ) )
 	{
+		const WorkerDrainProbe probe = s_workerDrainProbe.load(std::memory_order_acquire);
+		if( probe != nullptr ) { probe( WorkerDrainProbeStage::BeforeWait ); }
 		// Sleep until the generation moves. This used to be a QWaitCondition with a 100 ms
 		// bound, and the bound was load-bearing: a worker preempted between reading m_quit and
 		// reaching wait() missed the wake meant for it (13 of 64 PdcMixerTest runs under load,
@@ -335,7 +343,9 @@ void AudioEngineWorkerThread::run()
 		// thread on both macOS jobs without this check).
 		if( !deterministicProcessing() )
 		{
+			if( probe != nullptr ) { probe( WorkerDrainProbeStage::BeforeQueue ); }
 			globalJobQueue.run();
+			if( probe != nullptr ) { probe( WorkerDrainProbeStage::AfterQueue ); }
 		}
 	}
 	s_currentDeferredPlayHandleEdits = previousPending;
