@@ -282,6 +282,12 @@ private:
  *  (A separate pair of buffers, m_rtSlots, serves the pinned realtime read path
  *  used by Song/Track; see withRealtimeMap() below.)
  *
+ *  The reader is BOUNDED by construction: one copy, one attempt, no retry, no
+ *  wait. A reader never spins on a writer that is paused mid-edit - it answers
+ *  with the last COMPLETED edit instead. That is the whole difference from the
+ *  seqlock this replaced, where a reader retried until the writer's version
+ *  came back even and unchanged, with no bound on how long that could take.
+ *
  *  When the map is NOT active - the default, and every project that predates
  *  the feature - the audio thread does not even call snapshot(): the timing path
  *  reads `active()` and returns.
@@ -301,9 +307,14 @@ public:
 		{
 			const bool changed = fn(m_map);
 			const unsigned target = 1u - m_publishedSnapshot.load(std::memory_order_seq_cst);
-			// Only the control thread waits. The audio reader copies the other buffer
-			// and never waits for an edit or for another reader.
-			while (m_snapshotReaders.load(std::memory_order_seq_cst) != 0u) { }
+			// Only the control thread waits, and only for a reader that is
+			// already copying the other buffer. The audio reader copies the
+			// published buffer and never waits for an edit or for another
+			// reader, so this wait is bounded by one copy of the map.
+			while (m_snapshotReaders.load(std::memory_order_seq_cst) != 0u)
+			{
+				std::this_thread::yield();
+			}
 			m_snapshots[target] = m_map;
 			m_publishedSnapshot.store(target, std::memory_order_seq_cst);
 			publishRealtime();
@@ -321,10 +332,13 @@ public:
 	//! written); the audio thread uses snapshot().
 	const TempoMap& map() const noexcept { return m_map; }
 
-	//! The map as of the last completed edit. Lock-free, allocation-free and
-	//! bounded; safe to call from the audio thread.
+	/*! The map as of the last completed edit. Lock-free, allocation-free and
+	 *  bounded: exactly one copy attempt, no retry, no wait. Safe to call from
+	 *  the audio thread - a writer paused mid-edit does not hold it up; it
+	 *  answers with the last map that was published. */
 	TempoMap snapshot() const noexcept
 	{
+		if (m_snapshotProbe != nullptr) { m_snapshotProbe(); }
 		m_snapshotReaders.fetch_add(1, std::memory_order_seq_cst);
 		const unsigned published = m_publishedSnapshot.load(std::memory_order_seq_cst);
 		TempoMap copy = m_snapshots[published];
@@ -363,6 +377,11 @@ public:
 	//! Test seam: called between a reader's pin and its re-check, to force a publication there. Null in product use.
 	void setPinProbeForTest(void (*probe)()) { m_rtPinProbe = probe; }
 
+	/*! Test seam: called by snapshot() once per copy attempt, so a test can
+	 *  count the attempts a reader makes. Null in product use, so the audio
+	 *  thread pays one null-pointer test and nothing else. */
+	void setSnapshotProbeForTest(void (*probe)()) { m_snapshotProbe = probe; }
+
 private:
 	//! Control thread, after an edit: write the idle slot (waiting for any reader still pinned to it) and flip.
 	void publishRealtime()
@@ -385,6 +404,7 @@ private:
 	mutable std::array<std::atomic<int>, 2> m_rtReaders{};
 	std::atomic<int> m_rtLive{0};
 	void (*m_rtPinProbe)() = nullptr;
+	void (*m_snapshotProbe)() = nullptr;
 	void (*m_publishHook)(void*, const TempoMap&) = nullptr;
 	void* m_publishOwner = nullptr;
 };
