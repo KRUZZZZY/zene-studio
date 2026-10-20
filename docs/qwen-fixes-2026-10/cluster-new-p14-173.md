@@ -114,7 +114,10 @@ file ... Permission denied`). No repository file changed for this.
 
 ## Self-check
 
-`submit_check.py` was run (`submit-check-1.log`, EXIT 1) before this report was committed. Its items:
+`submit_check.py` was run twice. Before the commit (`submit-check-1.log`, EXIT 1) it failed six items. After
+the commit with this report (`submit-check-2.log`, EXIT 1) five pass: commits on the branch, working tree clean,
+report present, tests changed (`MidiClockSourceTest.cpp`). The one FAIL is `gates (feature_check.py)`, which is
+blocked by the write-jail (see Gates) and not by a gate result. The items it asks for are answered below:
 
 - **Regression test FAILS with the product change reverted and PASSES with it.** Yes. Reverted: `test-11-4b-red.log`, EXIT 1, `FAIL!` with `Actual -1294967296`. Fixed: `test-12-4b-green.log`, EXIT 0. The reversal patch is `fix.patch` = `git diff -- src/core/MidiClockState.cpp` (the seam header is kept, because removing it stops the test compiling, which proves nothing). The first-location RED is `test-1-red.log` (EXIT 8).
 - **Deterministic: no wall-clock timing, sleeps or races.** Yes. It uses the `LMMS_TESTING` friend seam to write the counters, computes `stateJson()` on the test thread, and runs no writer thread. The audio device is stopped in `initTestCase`, so no period runs during the probe. The singleton is restored before any assertion.
