@@ -42,6 +42,8 @@
 #include <QtTest>
 
 #include <QFile>
+#include <QTimer>
+
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -56,6 +58,7 @@
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -145,6 +148,12 @@ void playFromZero(Song* song, int periods)
 	{
 		song->processNextBuffer();
 	}
+}
+
+bool drainAutomationWrites(Song* song)
+{
+	auto* timer = song->findChild<QTimer*>(QStringLiteral("automationWriteDrainTimer"));
+	return timer != nullptr && QMetaObject::invokeMethod(timer, "timeout", Qt::DirectConnection);
 }
 
 //! A scenario in the mode decision table: a touch made in run @p touchRun
@@ -261,6 +270,7 @@ private slots:
 			song->processNextBuffer();
 		}
 		rig.volume.noteAutomationTouchEnd();
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != beforeTouch,
 			"Touch wrote nothing - the Read-mode assertion above proves nothing");
 	}
@@ -293,6 +303,7 @@ private slots:
 			rig.volume.setValue(0.9f - 0.02f * i);
 			song->processNextBuffer();
 		}
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != before, "a held Touch pass wrote nothing");
 
 		// Release: Touch returns to reading - unlike Latch (see below).
@@ -377,6 +388,32 @@ private slots:
 			"cache removal must acquire the render guard before accessing m_oldAutomatedValues");
 	}
 
+	//! Write modes must hand points to the control thread. The render pass itself
+	//! leaves the clip untouched; draining the queued points applies them later.
+	void testAutomationWritesAreQueuedOffTheRenderPath()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+		rig.writeCurve();
+		QCOMPARE(Engine::projectJournal()->journallingObject(
+			static_cast<JournallingObject*>(&rig.clip)->id()),
+			static_cast<JournallingObject*>(&rig.clip));
+		rig.volume.setAutomationMode(AutomationMode::Write);
+		const auto before = timeMapBits(rig.clip);
+
+		song->playSong();
+		song->getTimeline().setTicks(0);
+		song->processNextBuffer();
+		for (int i = 0; i < 8; ++i)
+		{
+			rig.volume.setValue(0.2f + 0.05f * i);
+			song->processNextBuffer();
+		}
+		QCOMPARE(timeMapBits(rig.clip), before);
+		QVERIFY(drainAutomationWrites(song));
+		QVERIFY2(timeMapBits(rig.clip) != before, "the control-thread drain applied no queued writes");
+	}
+
 	//! The touch timeout bounds the write window, so a lost mouse-up cannot
 	//! leave a control writing into its automation forever.
 	void testTouchTimeoutEndsTheGesture()
@@ -451,6 +488,7 @@ private slots:
 			rig.volume.setValue(0.8f - 0.02f * i);
 			song->processNextBuffer();
 		}
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != before, "a Latch pass wrote nothing");
 
 		// The transport stops: the token drops to zero and the latch is over.
@@ -509,6 +547,7 @@ private slots:
 			rig.volume.setValue(0.2f + 0.05f * i);
 			song->processNextBuffer();
 		}
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(timeMapBits(rig.clip) != before,
 			"a Write pass with the transport running wrote nothing");
 	}
@@ -710,6 +749,7 @@ private slots:
 		rig.volume.setValue(0.7f);
 		song->getTimeline().setTicks(0);
 		for (int i = 0; i < 3; ++i) { song->processNextBuffer(); }
+		QVERIFY(drainAutomationWrites(song));
 		QVERIFY2(rig.clip.getTimeMap().contains(192),
 			"the Write pass erased a node it never reached");
 		QCOMPARE(nodeBitsAt(rig.clip, 192), tailBefore);
@@ -735,6 +775,7 @@ private slots:
 			song->processNextBuffer();
 		}
 		rig.volume.noteAutomationTouchEnd();
+		QVERIFY(drainAutomationWrites(song));
 		const auto afterTouch = timeMapBits(rig.clip);
 
 		rig.volume.setAutomationMode(AutomationMode::Read);

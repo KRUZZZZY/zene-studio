@@ -2631,3 +2631,6 @@ tests/src/core/TempoMapTest.cpp	cluster 1734: inject a render period after the l
 src/core/Song.cpp	cluster 3562: acquire the render-period guard before mutating the automated-model cache.
 tests/src/core/AutomationModesTest.cpp	cluster 3562: assert cache removal acquires the render guard before accessing the cache.
 tests/CMakeLists.txt	cluster 3562: provide the Song.cpp path for the deterministic cache-guard source invariant in AutomationModesTest.
+src/core/Song.cpp	cluster 5388: queue realtime automation points for a guarded control-thread drain and flush before Stop or project save.
+src/core/AutomationClip.cpp	cluster 5388: defer recordValue mutations when called inside RealtimeScope; the render thread enqueues by journal ID and a control-thread drain performs clip edits.
+tests/src/core/AutomationModesTest.cpp	cluster 5388: assert write-mode clip edits occur only after the deterministic control-thread queue drain.

@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QSet>
+#include <QTimer>
 #include <QUuid>
 #include <QThread>
 
@@ -111,6 +112,10 @@ static quint64 nextDocumentIdentity()
 
 tick_t TimePos::s_ticksPerBar = DefaultTicksPerBar;
 
+namespace
+{
+void drainPendingAutomationWrites();
+}
 
 
 Song::Song() :
@@ -148,6 +153,12 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	auto* automationWriteTimer = new QTimer(this);
+	automationWriteTimer->setObjectName(QStringLiteral("automationWriteDrainTimer"));
+	automationWriteTimer->setInterval(10);
+	connect(automationWriteTimer, &QTimer::timeout, this, &drainPendingAutomationWrites);
+	automationWriteTimer->start();
+
 	// Frozen takes keep the committed tempo map in step with every publication (control thread, render period
 	// held), so a pass whose pinned read loses to a publication still places the take on the current map.
 	m_tempoMap.setPublishHook( []( void* owner, const TempoMap& map )
@@ -248,11 +259,86 @@ Song::Song() :
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
 }
 
+namespace
+{
 
+struct PendingAutomationWrite
+{
+	jo_id_t clipId;
+	tick_t tick;
+	float value;
+};
 
+struct PendingAutomationWriteQueue
+{
+	// Keep sixteen complete render periods queued while the control timer is delayed.
+	static constexpr std::size_t Capacity = AutomationRenderScratch::RenderCapacity * 16;
+	static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+
+	std::array<PendingAutomationWrite, Capacity> entries{};
+	std::atomic<std::uint32_t> readIndex{0};
+	std::atomic<std::uint32_t> writeIndex{0};
+	std::atomic<std::uint32_t> overflows{0};
+
+	void push(jo_id_t clipId, tick_t tick, float value) noexcept
+	{
+		const auto write = writeIndex.load(std::memory_order_relaxed);
+		const auto read = readIndex.load(std::memory_order_acquire);
+		if (write - read >= Capacity)
+		{
+			overflows.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+		entries[write % Capacity] = {clipId, tick, value};
+		writeIndex.store(write + 1, std::memory_order_release);
+	}
+
+	void discardPending() noexcept
+	{
+		readIndex.store(writeIndex.load(std::memory_order_acquire), std::memory_order_release);
+	}
+
+	void drain()
+	{
+		if (readIndex.load(std::memory_order_relaxed) == writeIndex.load(std::memory_order_acquire)) { return; }
+
+		AudioEngine* const audio = Engine::audioEngine();
+		if (audio == nullptr) { discardPending(); return; }
+		const auto renderLock = audio->requestChangesGuard();
+		const auto available = writeIndex.load(std::memory_order_acquire);
+		auto read = readIndex.load(std::memory_order_relaxed);
+		if (read == available) { return; }
+
+		ProjectJournal* const journal = Engine::projectJournal();
+		while (read != available)
+		{
+			const PendingAutomationWrite write = entries[read % Capacity];
+			++read;
+			readIndex.store(read, std::memory_order_release);
+			if (journal == nullptr) { continue; }
+			auto* clip = dynamic_cast<AutomationClip*>(journal->journallingObject(write.clipId));
+			if (clip != nullptr) { clip->recordValue(TimePos(write.tick), write.value); }
+		}
+	}
+};
+
+PendingAutomationWriteQueue s_pendingAutomationWrites;
+
+void drainPendingAutomationWrites()
+{
+	s_pendingAutomationWrites.drain();
+}
+
+} // namespace
+
+void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept
+{
+	s_pendingAutomationWrites.push(static_cast<JournallingObject*>(clip)->id(), time.getTicks(), value);
+}
 
 Song::~Song()
 {
+	s_pendingAutomationWrites.discardPending();
 	// From this line on, a model that is destroyed cannot report into the
 	// automation cache any more. It has to happen here, in the destructor body,
 	// because the song's own models (m_tempoModel and friends, the metronome's)
@@ -745,7 +831,8 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 				// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
 				// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
 				// and store that so that when playing it back, it scales the value correctly.
-				p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
+				s_pendingAutomationWrites.push(static_cast<JournallingObject*>(p)->id(), relTime.getTicks(),
+					recordedModel->inverseScaledValue(recordedModel->value<float>()));
 
 				noteRecordedModel(recordedModel);
 			}
@@ -1212,6 +1299,9 @@ void Song::stop()
 	m_playMode = PlayMode::None;
 
 	Engine::audioEngine()->doneChangeInModel();
+	// The last points must be applied before a caller can save or replace the
+	// project immediately after Stop.
+	if (!RealtimeScope::isActive()) { s_pendingAutomationWrites.drain(); }
 
 	emit stopped();
 	emit playbackStateChanged();
@@ -1544,6 +1634,7 @@ void Song::clearProject()
 	{
 		stop();
 	}
+	s_pendingAutomationWrites.discardPending();
 
 	// A pending Record press (or an active recording pass) belongs to the
 	// project being cleared - the latch must not survive into the next one
@@ -2278,6 +2369,9 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFor
 			.arg(m_notLoadedSections.join(QStringLiteral(", ")));
 		return false;
 	}
+
+	// Include every queued write in an immediate save made during playback.
+	if (!RealtimeScope::isActive()) { s_pendingAutomationWrites.drain(); }
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	buildProjectDocument( dataFile );

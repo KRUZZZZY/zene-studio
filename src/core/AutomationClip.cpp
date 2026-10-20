@@ -42,11 +42,14 @@
 #include "Note.h"
 #include "PatternStore.h"
 #include "ProjectJournal.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 
 
 namespace lmms
 {
+
+void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept;
 
 int AutomationClip::s_quantization = 1;
 const float AutomationClip::DEFAULT_MIN_VALUE = 0;
@@ -483,6 +486,12 @@ void AutomationClip::resetTangents(const int tick0, const int tick1)
 
 void AutomationClip::recordValue(TimePos time, float value)
 {
+	if (RealtimeScope::isActive())
+	{
+		queueAutomationClipWrite(this, time, value);
+		return;
+	}
+
 	QMutexLocker m(&m_clipMutex);
 
 	if( value != m_lastRecordedValue )
