@@ -272,7 +272,9 @@ PluginPortsMigrationReference -- -j12` (`.../logs/build-final-1.log`, EXIT=0).
    by the audio path, and `PluginPortsMigrationTest::migratedPluginsPreserveBehaviour`
    (which compares the migrated plugin sample-by-sample against the frozen
    pre-migration reference) still passes, as does the whole family
-   (45 passed / 1 pre-existing failure / 2 skipped). `saveSettings`/
+   (45 passed / 1 pre-existing failure / 2 skipped). The new
+   `Lb302NotePathTest` target is a new test executable: it adds no product
+   code, no command and no data. `saveSettings`/
    `loadSettings` are unchanged, so old projects load exactly as before and
    nothing new is written to the project file. The new limit is no limit:
    the failsafe still drops the note after the same
