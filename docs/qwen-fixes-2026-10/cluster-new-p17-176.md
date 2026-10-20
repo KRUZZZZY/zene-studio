@@ -72,3 +72,5 @@ Run 14 failed only because the shipped script writes its logs to `<worktree>/../
 - **Registration and gates.** No new files. Gates PASS (run 15, RESULT: PASS). The shipped gate script is blocked by the write-jail (run 14, EXIT 1), reported above.
 - **Sibling commands.** No command file changed, so no sibling command list applies.
 - **Portability.** `QProgressDialog::setLabelText` and `labelText` are present in Qt 5.15 and Qt 6. No new Qt API.
+- **Verdict-specific item (ALREADY-FIXED / FALSE-POSITIVE evidence).** Not applicable: the verdict is FIXED.
+- **Completion check.** `python3 submit_check.py <worktree> new-p17-176` → `submit-check-1.log`, EXIT 1. PASS: commits on the branch, working tree clean, report verdict line, tests changed. FAIL: `gates (feature_check.py)` only. That check runs the shipped `feature_check.py`, which hits the same write-jail `PermissionError` as run 14 (its log folder is outside the worktree). The same gates pass with the log folder redirected (run 15, EXIT 0, RESULT: PASS). The completion-check failure is therefore environmental, not a gate result; the loop's own run of the shipped script should be checked by the reviewer.
