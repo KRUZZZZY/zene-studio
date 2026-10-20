@@ -26,6 +26,7 @@
 #define LADSPA_CONTROLS_H
 
 #include "EffectControls.h"
+#include "LadspaBase.h"
 #include "LadspaMatrixControlDialog.h"
 
 namespace lmms
@@ -73,7 +74,7 @@ protected slots:
 private:
 	LadspaEffect * m_effect;
 	ch_cnt_t m_processors;
-	int m_controlCount;
+	control_count_t m_controlCount;
 	bool m_noLink;
 	BoolModel m_stereoLinkModel;
 	//! control vector for each processor

@@ -48,6 +48,16 @@ enum class BufferRate {
 
 enum class BufferDataType { Toggled, Enum, Integer, Floating, Time, None };
 
+//! Number of control ports summed over every processor. Not ch_cnt_t: a plugin with
+//! 65536 control ports would otherwise read back as 0.
+using control_count_t = int;
+
+//! Port count to control count, without narrowing the value on the way.
+inline control_count_t controlCountOf( qsizetype _portCount )
+{
+	return static_cast<control_count_t>( _portCount );
+}
+
 //! This struct is used to hold port descriptions internally
 //! which where received from the ladspa plugin
 struct port_desc_t

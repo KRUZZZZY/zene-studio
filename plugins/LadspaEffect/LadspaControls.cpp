@@ -24,8 +24,6 @@
 
 #include <QDomElement>
 
-#include <limits>
-
 #include "LadspaBase.h"
 #include "LadspaControl.h"
 #include "LadspaEffect.h"
@@ -47,11 +45,7 @@ LadspaControls::LadspaControls( LadspaEffect * _eff ) :
 				Qt::DirectConnection );
 
 	multi_proc_t controls = m_effect->getPortControls();
-	// The manager accepts port counts past 16 bits, so the total of all processors' controls must not
-	// be stored in a 16-bit ch_cnt_t (65536 controls would read back as 0).
-	static_assert( std::numeric_limits<decltype( m_controlCount )>::max() >= 65536,
-		"LADSPA control count must hold at least 65536 controls" );
-	m_controlCount = static_cast<int>( controls.count() );
+	m_controlCount = controlCountOf( controls.count() );
 
 	for( ch_cnt_t proc = 0; proc < m_processors; proc++ )
 	{
