@@ -137,8 +137,9 @@ ControlResult lyrics(const QJsonObject& args)
 	}
 	clip->addJournalCheckPoint();
 	for (int i = 0; i < notes.size(); ++i) { setLyric(notes[i], syllables.value(i)); }
+	// Every note in scope was written: the covered ones got a syllable, the rest were cleared.
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.lyrics"),
-		{{QStringLiteral("set"), static_cast<int>(std::min(notes.size(), syllables.size()))}, {QStringLiteral("syllables"), syllables.size()}}));
+		{{QStringLiteral("set"), static_cast<int>(notes.size())}, {QStringLiteral("syllables"), syllables.size()}}));
 }
 
 ControlResult group(const QJsonObject& args, bool join)
