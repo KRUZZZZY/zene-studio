@@ -174,7 +174,9 @@ ControlResult disarmTrackArm(TrackRecorder& target, const QString& trackId, int 
 }
 
 //! `armed: true`: validate the take path and the input channel, then start a
-//! real capture and record the inverse (this command with armed: false).
+//! real capture. No inverse is recorded: the take file the capture writes stays
+//! on disk once the capture stops, so the contract row is irreversible and
+//! control.undo refuses this command instead of half-reversing it.
 ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QString& trackId,
 	int route, const QJsonObject& args, int sampleRate)
 {
@@ -220,14 +222,6 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 
 	QJsonObject result = armReply(target, trackId, route);
 	result.insert(QStringLiteral("sample_rate"), sampleRate);
-	QJsonObject before;
-	before.insert(QStringLiteral("track"), trackId);
-	before.insert(QStringLiteral("armed"), false);
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("track"), trackId);
-	inverseArgs.insert(QStringLiteral("armed"), false);
-	result.insert(QStringLiteral("__transaction"),
-		control::commandTransaction(before, QStringLiteral("track.set_arm"), inverseArgs));
 	return ControlResult::success(result);
 }
 
@@ -292,9 +286,10 @@ void registerTrackSetArm(ControlRegistry& registry)
 		"input path, so a route armed while nothing is staged records silence: "
 		"record.input_get_state reports whether a capture device is open and how many frames are "
 		"staged ('capture_capable', 'capture_open', 'capture_reason', 'input_frames_staged'). "
-		"Arming is reversible - the recorded inverse is track.set_arm with armed: false, which "
-		"stops the capture and retires the journal and leaves the take on disk; disarming is not, "
-		"and says so in its own record, because re-arming starts a NEW take.");
+		"Arming writes a take file that stays on disk when the capture stops, so it has no "
+		"complete inverse and control.undo refuses this command; stop the capture with this "
+		"command again, armed: false, or with record.disarm_track. Disarming records no inverse "
+		"either, because re-arming starts a NEW take.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("track"), control::stringProperty()},
 		{QStringLiteral("armed"), control::booleanProperty()},
@@ -363,7 +358,7 @@ ArmBatch armEach(const QJsonArray& ids, bool armed)
 			// refuse - so the batch has to ask the route's own before-state, or it
 			// reports tracks whose state it never changed.
 			if (!armed && !one.result.value(QStringLiteral("armed_before")).toBool()) { continue; }
-			one.result.remove(QStringLiteral("__transaction"));  // the batch records no inverse: its takes outlive the captures
+			one.result.remove(QStringLiteral("__transaction"));  // the per-track reply carries no transaction payload: neither arm verb records an inverse
 			out.changed.append(trackId);
 			out.routes.append(one.result);
 			continue;

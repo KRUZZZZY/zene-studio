@@ -1020,10 +1020,10 @@ Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progress
 `ReversibilityContractTest` on the merged tree: `rows=841 true_inverse=419 snapshot=42 irreversible=22 not_mutating=358`.
 **M0 merge train 7** (`050/m0-train-7`, 2026-10-19: train 6 + 19 accepted fixes and the 0.5.0 units Q050-026 and Q050-040)
 adds one row: Q050-040's `clip.set_mute` (`true_inverse`, the song editor's clip mute and the agents' one command), measured
-by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=41 irreversible=23 not_mutating=358`.
+by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=40 irreversible=24 not_mutating=358`.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=842 true_inverse=420 snapshot=41 irreversible=23 not_mutating=358
+     measured: rows=842 true_inverse=420 snapshot=40 irreversible=24 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
@@ -2203,9 +2203,11 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   contradiction exactly: a real recorder in the tree with no command that could start it, and the id that
   should, registered to refuse. It now starts a capture on the record route a song track's position maps to,
   writes a 24-bit WAV, **journals the take** beside it (so a crash mid-take is offered to the next start by
-  `record.recovery_get_state`), and is taken back by `control.undo` through its recorded inverse. **No field
-  is added to the track's serialization format** — the arm state lives on the recorder, where it always did,
-  which is the objection the old refusal was right to raise.
+  `record.recovery_get_state`). **No field is added to the track's serialization format** — the arm state lives
+  on the recorder, where it always did, which is the objection the old refusal was right to raise. The take
+  file, though, outlives the capture: it stays on disk when the capture stops, so the arming has no complete
+  inverse and `control.undo` **refuses** it (the row is `irreversible`, and the batch row
+  `track.set_arm_many` says the same) rather than disarming the route and leaving the take behind.
 - **The recorder is drivable.** `record.get_state`, `record.arm_track`, `record.disarm_track` and
   `record.disarm_all` address up to `MultiTrackRecorder::MaxRoutes` (16) routes, each able to select **any**
   input channel in `[0, input_channel_capacity)`. A route is a file plus a channel; several routes may record
@@ -2214,9 +2216,9 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   bounded window of the most recent 2^20 frames (~21.8 s at 48 kHz) of the engine's input bus, drop-oldest
   with the overwritten count reported, a consistent copy that never blocks the audio thread, and a one-pass
   stereo 24-bit WAV of exactly the retained frames. The model is `RetroMidiCapture`'s, deliberately.
-  - **A16.** Twelve rows, in the group file `src/core/ControlReversibilityTableRecording.cpp`: `snapshot` for
-    `track.set_arm` (with a paired-command inverse), `irreversible` for `track.set_arm_many` (its takes outlive the
-    captures, so the batch has no complete inverse and control.undo refuses it), `true_inverse` for
+  - **A16.** Twelve rows, in the group file `src/core/ControlReversibilityTableRecording.cpp`: `irreversible` for
+    `track.set_arm` and for `track.set_arm_many` (their takes outlive the captures, so neither the single arm nor
+    the batch has a complete inverse and control.undo refuses both), `true_inverse` for
     `record.input_set` (the config write's previous plan), `irreversible` for `record.arm_track` (its take
     remains after disarming) and for `record.disarm_track` and `record.disarm_all` (both stop capture and retire
     journals while leaving takes on disk), and six `not_mutating` rows for the inspectors and operations outside

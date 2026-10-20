@@ -2508,6 +2508,7 @@ tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/CollabPolicyTest.cpp
 tests/src/core/CollabTransportTest.cpp
 tests/src/core/ConfigMigrationTest.cpp
+tests/src/core/ControlArmReversibilityTest.cpp
 tests/src/core/ControlAutomationModesTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlBounceRenderTest.cpp

@@ -49,34 +49,6 @@ using RC = ReversibilityClass;
 const ReversibilityRow kRecordingRows[] = {
 
 	// =====================================================================
-	// snapshot - the inverse is a bounded recorded state, and for these rows
-	// that state is a COMMAND: control.undo dispatches the paired verb.
-	// =====================================================================
-	R("track.set_arm", RC::Snapshot, true,
-		"arming a song track starts a capture on the record route its position maps "
-		"to, and that capture writes a WAV and a take journal beside it. The TRACK is "
-		"not written to: no attribute is added to the track's element, which is why "
-		"the old refusal's objection (inventing a serialization field) no longer "
-		"applies and why this row changed class from not_mutating",
-		"action checkpoint: the recorded undo step is track.set_arm with armed: false, "
-		"which stops the capture and retires the journal. DISARMING records no "
-		"inverse - re-arming starts a NEW take rather than restoring the one that was "
-		"stopped, and the registry records that honestly as 'this command recorded no "
-		"inverse or snapshot'",
-		"the take: delete it where the reply says it is (the default is "
-		"zene-take-trk<N>.wav beside this instance's recovery file)"),
-	// W1: the mixer's Arm All in one call.
-	R("track.set_arm_many", RC::Irreversible, false,
-		"arming the named routes creates WAV take files and journals beside them. "
-		"Disarming retires the journals, but the take files remain on disk, outside "
-		"the project state this command can restore",
-		"no complete inverse exists: disarming can stop the captures, but cannot "
-		"remove or restore the takes. The registry refuses control.undo rather than "
-		"claiming that this partial action reverses the command",
-		"stop each route with record.disarm_track using the route ids in the reply; "
-		"keep or delete each take at the file path returned for that route"),
-
-	// =====================================================================
 	// true_inverse - the inverse is a live checkpoint, reached as a command
 	// because the thing written is the config file, not the project.
 	// =====================================================================
@@ -108,9 +80,37 @@ const ReversibilityRow kRecordingRows[] = {
 		""),
 
 	// =====================================================================
-	// irreversible - these stop live captures and retire take journals, but
+	// irreversible - these arm a capture whose take outlives it, or stop one:
 	// the take files stay on disk and cannot be restored by control.undo.
 	// =====================================================================
+	R("track.set_arm", RC::Irreversible, false,
+		"arming a song track starts a capture on the record route its position maps "
+		"to, and that capture writes a WAV and a take journal beside it. The TRACK is "
+		"not written to: no attribute is added to the track's element, which is why "
+		"the old refusal's objection (inventing a serialization field) no longer "
+		"applies. The take file, though, stays on disk once the capture stops, "
+		"outside the project state this command could restore",
+		"no complete inverse exists: disarming can stop the capture and retire the "
+		"journal, but it cannot remove or restore the take. The registry refuses "
+		"control.undo rather than claiming that this partial action reverses the "
+		"command. DISARMING records no inverse either - re-arming starts a NEW take "
+		"rather than restoring the one that was stopped",
+		"stop the capture with track.set_arm armed: false (or with "
+		"record.disarm_track); the take: keep or delete it where the reply says it "
+		"is (the default is zene-take-trk<N>.wav beside this instance's recovery "
+		"file)"),
+
+	// W1: the mixer's Arm All in one call.
+	R("track.set_arm_many", RC::Irreversible, false,
+		"arming the named routes creates WAV take files and journals beside them. "
+		"Disarming retires the journals, but the take files remain on disk, outside "
+		"the project state this command can restore",
+		"no complete inverse exists: disarming can stop the captures, but cannot "
+		"remove or restore the takes. The registry refuses control.undo rather than "
+		"claiming that this partial action reverses the command",
+		"stop each route with record.disarm_track using the route ids in the reply; "
+		"keep or delete each take at the file path returned for that route"),
+
 	R("record.disarm_track", RC::Irreversible, false,
 		"stops one route's capture and retires its journal, and the take file stays "
 		"on disk. Re-arming starts a new take rather than restoring this one",
