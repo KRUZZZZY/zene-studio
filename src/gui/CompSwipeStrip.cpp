@@ -27,6 +27,7 @@
 
 #include <QJsonArray>
 #include <QKeyEvent>
+#include <QList>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QResizeEvent>
@@ -94,6 +95,13 @@ QPoint touchPos(const QWidget* widget,
 	return widget->mapFromGlobal(point.screenPos().toPoint());
 #endif
 }
+
+//! QTouchEvent exposed touchPoints() through Qt 5.15; Qt 6 moved the list to points().
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+const QList<QEventPoint>& touchPoints(const QTouchEvent* event) { return event->points(); }
+#else
+const QList<QTouchEvent::TouchPoint>& touchPoints(const QTouchEvent* event) { return event->touchPoints(); }
+#endif
 
 } // namespace
 
@@ -354,7 +362,7 @@ void CompSwipeStrip::cancelTouch()
 bool CompSwipeStrip::beginTouch(QTouchEvent* event)
 {
 	if (m_touchActive) { event->accept(); return true; }
-	for (const auto& point : event->points())
+	for (const auto& point : touchPoints(event))
 	{
 		const QPoint pos = touchPos(this, point);
 		const int lane = laneAt(pos.y());
@@ -373,7 +381,7 @@ bool CompSwipeStrip::beginTouch(QTouchEvent* event)
 bool CompSwipeStrip::followTouch(QTouchEvent* event)
 {
 	if (!m_touchActive) { return false; }
-	for (const auto& point : event->points())
+	for (const auto& point : touchPoints(event))
 	{
 		if (point.id() != m_touchId) { continue; }
 		const QPoint pos = touchPos(this, point);

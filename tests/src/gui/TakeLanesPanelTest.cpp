@@ -111,6 +111,17 @@ bool hasWaveformInk(const QImage& image, const QRect& rect)
 	return total - mostCommon > 0;
 }
 
+//! Qt 5.15's touch sequence commit() returns void; Qt 6 returns whether delivery accepted it.
+bool commitTouchSequence(QTest::QTouchEventSequence& sequence)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return sequence.commit();
+#else
+	sequence.commit();
+	return true;
+#endif
+}
+
 
 
 } // namespace
@@ -345,22 +356,22 @@ private slots:
 		{
 			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
 			sequence.press(0, QPoint(fromX, rowY));
-			QVERIFY(sequence.commit());
+			QVERIFY(commitTouchSequence(sequence));
 			sequence.release(0, QPoint(fromX, rowY));
-			QVERIFY(sequence.commit());
+			QVERIFY(commitTouchSequence(sequence));
 		}
 		QCOMPARE(segmentsOf().size(), 0);
 
 		auto swipe = [strip, rowY](int from, int to) {
 			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
 			sequence.press(0, QPoint(from, rowY));
-			const bool pressed = sequence.commit();
+			const bool pressed = commitTouchSequence(sequence);
 			sequence.move(0, QPoint((from + to) / 2, rowY));
-			const bool moved = sequence.commit();
+			const bool moved = commitTouchSequence(sequence);
 			sequence.move(0, QPoint(to, rowY));
-			const bool movedAgain = sequence.commit();
+			const bool movedAgain = commitTouchSequence(sequence);
 			sequence.release(0, QPoint(to, rowY));
-			const bool released = sequence.commit();
+			const bool released = commitTouchSequence(sequence);
 			return pressed && moved && movedAgain && released;
 		};
 		QVERIFY2(swipe(fromX, toX), "the touch swipe was not delivered");

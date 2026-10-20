@@ -2704,6 +2704,11 @@ docs/qwen-fixes-2026-10/cluster-Q050-148.md
 docs/qwen-fixes-2026-10/cluster-new-p10-518-port.md
 # cluster new-p11-81-port (2026-10): report for the delay primitive per-channel cursor fix ported onto 050/m0-train-5.
 docs/qwen-fixes-2026-10/cluster-new-p11-81-port.md
+# cluster Q050-147 (2026-10): punch ruler, take waveform, and touch-comp feature docs and verification report.
+docs/050-features/Q050-123.md
+docs/050-features/Q050-147.md
+docs/050-features/Q050-274.md
+docs/qwen-fixes-2026-10/cluster-Q050-147.md
 include/TakeLaneRows.h
 include/TakeWaveform.h
 src/gui/TakeWaveform.cpp

@@ -55,6 +55,8 @@ constexpr f_cnt_t kInputLatency = 300;
 constexpr std::size_t kImpulseAt = 4410;
 //! 0.5.0 L03 (Q050-147): a second transient inside a punch region that starts half a bar in.
 constexpr std::size_t kInsidePunchAt = 24000;
+//! 0.5.0 L03 (Q050-147): a third transient after punch-out; it must not reach the take.
+constexpr std::size_t kAfterPunchAt = 40000;
 constexpr tick_t kPunchBegin = 48;
 constexpr tick_t kPunchEnd = 96;
 
@@ -147,6 +149,7 @@ private slots:
 		std::vector<SampleFrame> data(static_cast<std::size_t>(rate), SampleFrame(0.0f, 0.0f));
 		data[kImpulseAt] = SampleFrame(1.0f, 1.0f);
 		data[kInsidePunchAt] = SampleFrame(1.0f, 1.0f);
+		data[kAfterPunchAt] = SampleFrame(1.0f, 1.0f);
 		auto* played = dynamic_cast<SampleClip*>(player->createClip(TimePos(0)));
 		played->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
 		auto* take = dynamic_cast<SampleClip*>(recorder->createClip(TimePos(0)));
@@ -154,7 +157,7 @@ private slots:
 		take->setAutoResize(false);
 		take->setRecord(true);
 		song->playAndRecord();
-		QTest::qWait(700);
+		QTest::qWait(1100);
 		song->stop();
 		QTRY_VERIFY_WITH_TIMEOUT(!take->isRecord(), 3000);
 		player->setMuted(true);
@@ -169,6 +172,14 @@ private slots:
 		{
 			QVERIFY2(std::fabs(buffer->data()[i][0]) <= 0.5f,
 				qPrintable(QStringLiteral("the take captured a frame outside the punch range at %1").arg(i)));
+		}
+		// The later outside impulse is past punch-out; the rest of the take stays silent too.
+		QVERIFY(buffer->size() > kAfterPunchAt);
+		const std::size_t punchOutFrame = static_cast<std::size_t>(std::ceil(kPunchEnd * Engine::framesPerTick()));
+		for (std::size_t i = punchOutFrame; i < buffer->size(); ++i)
+		{
+			QVERIFY2(std::fabs(buffer->data()[i][0]) <= 0.5f,
+				qPrintable(QStringLiteral("the take captured a frame after punch-out at %1").arg(i)));
 		}
 		// The inside one is there, aligned to the frame it was played on.
 		const long long recordedAt = firstTransient(take);
