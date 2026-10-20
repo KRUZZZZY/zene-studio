@@ -381,7 +381,9 @@ public:
 	 *  looped clip's) - not a seek, which moves the position too. The audio thread bumps it before the
 	 *  wrap's jump is announced, so a playbackPositionJumped listener can tell the two apart; any thread
 	 *  may read it. It only counts up and starts at 0 with the song. */
-	unsigned loopWraps() const { return m_loopWraps.load(std::memory_order_acquire); }
+	std::uint64_t loopWraps() const { return m_loopWraps.load(std::memory_order_acquire); }
+	//! Test seam: sets the wrap count, so a test can start it near the 32-bit limit (2^32 wraps cannot be played).
+	void setLoopWrapsForTest(std::uint64_t wraps) { m_loopWraps.store(wraps, std::memory_order_release); }
 
 	void updateLength();
 	bar_t length() const
@@ -831,7 +833,7 @@ private:
 	//! thread's followTempoMap() and the control thread's setTempo() both write it.
 	std::atomic<int> m_tempoMapAppliedTempo{-1};
 	//! The loop wraps the audio thread played (loopWraps()).
-	std::atomic<unsigned> m_loopWraps{0};
+	std::atomic<std::uint64_t> m_loopWraps{0};
 	//! The modulation layer and its lock-free hand-off to the audio thread
 	//! (#602, docs/MODULATION.md).
 	ModulationLayerPublisher m_modulationLayer;

@@ -511,7 +511,7 @@ private slots:
 		song->setPlayPos(0, Song::PlayMode::Song);
 		MidiPlayback::instance().stopped();  // the test above fed it by hand: a fresh start, as after a stop
 		song->playSong();
-		const unsigned before = song->loopWraps();
+		const auto before = song->loopWraps();
 		for (int period = 0; period < 2000 && song->loopWraps() == before; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 		QCOMPARE(song->loopWraps(), before + 1);
 		QCOMPARE(MidiPlayback::instance().pass(), 1);
@@ -527,6 +527,40 @@ private slots:
 		QCOMPARE(MidiPlayback::instance().pass(), 1);
 		song->stop();
 		timeline.setLoopEnabled(false);
+	}
+
+	//! The wrap count only counts up: past 2^32 wraps it keeps going instead of rolling back to 0 (Song.h
+	//! loopWraps). The count starts at the 32-bit limit through the test seam, as 2^32 wraps cannot be played.
+	void aLoopWrapCountPassesTheThirtyTwoBitLimit()
+	{
+		oneNote();
+		Song* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+		// A failed QCOMPARE returns from this function before its last lines, and a loop left on or a count left at
+		// the 32-bit limit would fail the tests that run after it: the guard puts both back on every return path.
+		struct RestoreLoop
+		{
+			Song* song;
+			Timeline& timeline;
+			std::uint64_t wraps;
+			~RestoreLoop()
+			{
+				song->stop();
+				timeline.setLoopEnabled(false);
+				song->setLoopWrapsForTest(wraps);
+			}
+		} restore{song, timeline, song->loopWraps()};
+		timeline.setLoopPoints(TimePos(0), TimePos(48));
+		timeline.setLoopEnabled(true);
+		song->setPlayPos(0, Song::PlayMode::Song);
+		MidiPlayback::instance().stopped();
+		const std::uint64_t limit = 0xFFFFFFFFull;
+		song->setLoopWrapsForTest(limit);
+		song->playSong();
+		QCOMPARE(static_cast<std::uint64_t>(song->loopWraps()), limit);
+		for (int period = 0; period < 2000 && song->loopWraps() == limit; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		QCOMPARE(static_cast<std::uint64_t>(song->loopWraps()), limit + 1);
+		QCOMPARE(MidiPlayback::instance().pass(), 1);
 	}
 
 	void anArticulationPlaysItsKeyswitchFirst()

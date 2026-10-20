@@ -244,7 +244,7 @@ private slots:
 		timeline.setLoopEnabled(true);
 		song->setPlayPos(0, Song::PlayMode::Song);
 		song->playSong();
-		const unsigned before = song->loopWraps();
+		const auto before = song->loopWraps();
 		for (int period = 0; period < 2000 && song->loopWraps() == before; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 		QCOMPARE(song->loopWraps(), before + 1);
 		QVERIFY2(handleKeys(m_track).size() <= 1, "a loop must not double the note already sounding");
@@ -361,7 +361,7 @@ private slots:
 		timeline.setLoopEnabled(true);
 		song->setPlayPos(0, Song::PlayMode::Song);
 		song->playSong();
-		const unsigned before = song->loopWraps();
+		const auto before = song->loopWraps();
 		for (int period = 0; period < 2000 && song->loopWraps() == before; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 		QCOMPARE(song->loopWraps(), before + 1);
 		QVERIFY2(handleKeys(m_track).size() <= 2, "a loop must not double a twin already sounding");

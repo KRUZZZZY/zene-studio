@@ -66,7 +66,7 @@ std::atomic<unsigned>& jumps()
 struct Counts
 {
 	unsigned jumps = 0;
-	unsigned wraps = 0;
+	std::uint64_t wraps = 0;
 	bool operator!=(const Counts& other) const { return jumps != other.jumps || wraps != other.wraps; }
 };
 
@@ -89,7 +89,7 @@ enum class Moved { Not, Wrapped, Jumped, Racing };
 Moved movedBetween(const Counts& before, const Counts& now)
 {
 	const unsigned jumped = now.jumps - before.jumps;
-	const unsigned wrapped = now.wraps - before.wraps;
+	const std::uint64_t wrapped = now.wraps - before.wraps;
 	if (wrapped > jumped) { return Moved::Racing; }
 	if (jumped == 0) { return Moved::Not; }
 	return jumped == wrapped ? Moved::Wrapped : Moved::Jumped;

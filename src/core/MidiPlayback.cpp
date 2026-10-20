@@ -70,7 +70,7 @@ void MidiPlayback::setPreferences(bool chase, int offsetMs)
 	ConfigManager::inst()->setValue(QStringLiteral("midi"), QStringLiteral("playbackoffset"), QString::number(this->offsetMs()));  // as clamped
 }
 
-void MidiPlayback::tickPlayed(tick_t tick, unsigned loopWraps)
+void MidiPlayback::tickPlayed(tick_t tick, std::uint64_t loopWraps)
 {
 	const bool restarted = m_restart.exchange(false, std::memory_order_relaxed);
 	if (restarted)
@@ -81,7 +81,7 @@ void MidiPlayback::tickPlayed(tick_t tick, unsigned loopWraps)
 	}
 	m_chasingNow = restarted || tick != m_lastTick + 1;  // the first tick is a start, whatever tick it is (-1 too)
 	// Only a loop wrap is a pass: a seek back moves the position the same way but is not one (0.5.0 W2).
-	const unsigned wraps = loopWraps - m_lastWraps;  // unsigned: a counter that wrapped round still subtracts right
+	const std::uint64_t wraps = loopWraps - m_lastWraps;  // modular: a counter that wrapped round still subtracts right
 	if (wraps != 0) { m_pass.fetch_add(static_cast<int>(wraps), std::memory_order_relaxed); }
 	m_lastWraps = loopWraps;
 	m_lastTick = tick;
