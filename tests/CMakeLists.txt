@@ -565,6 +565,12 @@ set(LMMS_TESTS
 	# a real git repository for the history half - driven through the registry, so
 	# the proof covers the path a socket client takes.
 	src/core/RevisionTimelineTest.cpp
+	# The keep-3 restore's staging file (cluster new-p12-185-port): a restore
+	# whose replacement failed keeps the bytes it staged, and the retry of that
+	# restore finds them again - including for a project file whose name holds
+	# glob characters. Split out of RevisionTimelineTest to keep that file under
+	# the file-length ratchet.
+	src/core/ProjectRevisionRestoreStagingTest.cpp
 	# ARCH-4 S1b: the elements a loader did not claim, kept verbatim so that
 	# opening and re-saving cannot destroy them (SPEC-ARCH-4 1.6.1). The
 	# mechanism's own slots are unit-level; the owed proof is the integration

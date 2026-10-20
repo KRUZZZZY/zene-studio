@@ -434,50 +434,6 @@ private slots:
 		QCOMPARE(readBytes(m_project), before);
 	}
 
-	//! A failed restore can leave its requested bytes staged after the rotation
-	//! has changed rev0. Retrying that revision must consume the pending staged
-	//! target instead of staging the bytes the rotation put in rev0.
-	void failedRestoreRetryUsesPendingStagedTarget()
-	{
-		buildFixture();
-		const QByteArray requested = documentWith(2);
-		const QByteArray rotatedLive = documentWith(3);
-		const QString pending = projectRevisionPath(m_project, 0) + QStringLiteral(".restore");
-		QVERIFY(writeBytes(m_project, rotatedLive));
-		QVERIFY(writeBytes(projectRevisionPath(m_project, 0), rotatedLive));
-		QVERIFY(writeBytes(projectRevisionPath(m_project, 1), requested));
-		QVERIFY(writeBytes(pending, requested));
-
-		QString error;
-		QVERIFY2(restoreProjectRevision(m_project, 0, &error), qPrintable(error));
-		QCOMPARE(readBytes(m_project), requested);
-		QVERIFY(!QFileInfo::exists(pending));
-	}
-
-	//! The staging files of a NEW restore attempt are unique, and for a project
-	//! whose file name starts with a dot they are hidden too - but a retry must
-	//! still find the requested target instead of the overwritten rev0.
-	void failedRestoreRetryFindsHiddenUuidStage()
-	{
-		buildFixture();
-		m_project = path(QStringLiteral(".hidden.mmp"));
-		const QByteArray requested = documentWith(2);
-		const QByteArray rotatedLive = documentWith(3);
-		const QString revision = projectRevisionPath(m_project, 0);
-		const QString pending = revision
-			+ QStringLiteral(".restore.4c0c55e0-809d-4923-a9d0-c708fd0adf7c");
-		QVERIFY(writeBytes(m_project, rotatedLive));
-		QVERIFY(writeBytes(revision, rotatedLive));
-		QVERIFY(writeBytes(projectRevisionPath(m_project, 1), requested));
-		QVERIFY(writeBytes(pending, requested));
-		QVERIFY(QFileInfo(pending).isHidden());
-
-		QString error;
-		QVERIFY2(restoreProjectRevision(m_project, 0, &error), qPrintable(error));
-		QCOMPARE(readBytes(m_project), requested);
-		QVERIFY(!QFileInfo::exists(pending));
-	}
-
 	//! Luna cluster 5236: a shift copy that fails does NOT take the destination
 	//! backup with it, and the rotation says it was refused. copyRevision()
 	//! removed the destination BEFORE copying, so a failed shift destroyed an
