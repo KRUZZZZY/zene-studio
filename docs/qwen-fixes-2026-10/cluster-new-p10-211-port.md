@@ -43,11 +43,13 @@ Working directory: `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio
 
 ## Self-check
 
-- RED without product fix: exit 8, 2 assertions failed (see test-2.log).
-- GREEN with product fix: exit 0 (see test-3.log).
+- The regression test FAILS with the product change reverted (exit 8, 2 assertions failed, see test-2.log) and PASSES with it (exit 0, see test-3.log).
+- The test is deterministic: the stale case injects `receivedUs = 10000000` and `sentUs = receivedUs - (PeerTimeoutMs*1000 + 1)` instead of `LinkSyncEngine::monotonicMicros()`; no sleeps or races.
+- The fix is at the cause and complete: `readPacketFields` validates `sent_us` before conversion, and `observePacket` validates before peer storage/adoption; every caller (`decodePacket`, `handleDatagram`, `observePacket`, `followNewestRevision`) routes through these checks. Sibling `adoptionPlacesTheSharedBeatPhase` remains within the 1.5s limit.
+- No collateral damage: old projects/saved data are unaffected (no persistence format change); the injected 10s receive clock is test-only and does not alter production limits; legitimate peers within 1.5s still pass.
+- Verdict is FIXED (not ALREADY-FIXED/FALSE-POSITIVE); evidence is the code changes in 33dc244bc.
 - Affected family: 1 passed, 2 skipped (see test-4.log).
 - feature_check.py: exit 0, RESULT: PASS (see feature_check.log).
-- Timestamps in the stale regression are injected (receivedUs/sentUs), not wall-clock dependent.
 - `git status` clean after commit.
 filePath">
 /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-211-port/docs/qwen-fixes-2026-10/cluster-new-p10-211-port.md
