@@ -33,6 +33,10 @@
 # UpgradeExtendedNoteRangeTest.cpp: the FFmpeg stream's refused-seek regression, a fork-NEW
 # test source in the fork's own bug-fix scope (the port of new-p8-242, whose first test could
 # not be built on FFmpeg 7+ because it reached for the private AVInputFormat::read_seek).
+# 2026-10-20 (cluster new-p12-53-port): NoteSelectionIdentityTest.cpp is fork-added relative
+# to the base - the regression for the control selection store keeping the selected notes' ids
+# - so it belongs in this manifest. Its entry is emitted in the sorted source list below; no
+# other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -2387,6 +2391,7 @@ tests/src/core/NoteCurvesAcrossTest.cpp
 tests/src/core/NoteEditRangeTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/NotePlaybackTest.cpp
+tests/src/core/NoteSelectionIdentityTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp
 tests/src/core/NoteToolsTest.cpp
 tests/src/core/OutOfProcessHostClientLoopTest.cpp

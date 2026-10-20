@@ -48,10 +48,9 @@ void markSelected(MidiClip* clip, const QVector<int>& positions)
 	for (int position : positions) { clip->notes()[position]->setSelected(true); }
 }
 
-//! The ids of the notes whose own selection flag is set. The selection STORE holds
-//! note-list positions, which a reorder (note.move, note.split, ...) invalidates, so a
-//! previous selection reported from it names the wrong note; the flags travel with the
-//! note objects.
+//! The ids of the notes whose own selection flag is set. The flags travel with the note
+//! objects, so a reorder (note.move, note.split, ...) or a removal cannot make this
+//! report a note the client never selected.
 QJsonArray selectedNoteIds(const MidiClip* clip)
 {
 	QJsonArray ids;
@@ -101,8 +100,8 @@ void registerNoteSelect(ControlRegistry& registry)
 		MidiClip* clip = control::resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 		if (clip == nullptr) { return error; }
 		const QString clipText = control::clipId(ref.id);
-		// Read BEFORE the new selection is marked, and from the notes' own flags: the
-		// store holds positions, which a reorder invalidates.
+		// Read BEFORE the new selection is marked, and from the notes' own flags:
+		// they travel with the notes, so an unread selection still reads true.
 		const QJsonArray previous = selectedNoteIds(clip);
 		QVector<int> wanted;
 		for (const QJsonValue& value : args.value(QStringLiteral("notes")).toArray())
@@ -110,16 +109,16 @@ void registerNoteSelect(ControlRegistry& registry)
 			// The argument names the OBJECT by its id (Note::id(),
 			// SPEC-stable-ids.md slice 2), exactly as note.remove/note.move
 			// resolve theirs: resolveNote looks the id up in the clip and fills
-			// `position` with where the note currently sits. That position is
-			// what the selection store holds - it is view state (SPEC A16) and
-			// carries no ids of its own - and it is reported back as ids below.
+			// `position` with where the note currently sits. The selection store
+			// records that note's id from that position, so the selection follows
+			// the note if the clip's list is later re-sorted or shortened.
 			int position = -1;
 			Note* note = control::resolveNote(clip, value.toString(), &position, &error);
 			if (note == nullptr) { return error; }
 			wanted.append(position);
 		}
 		withGroupMates(clip, &wanted);
-		control::selectNotes(clipText, static_cast<int>(clip->notes().size()), wanted);
+		control::selectNotes(clipText, *clip, wanted);
 		// The view state the comment above names: the notes' own selection flags, which the
 		// note editor and the classic piano roll draw and act on. Before 0.5.0 only the index
 		// store above was written, so a selection made over the socket never reached the
@@ -127,12 +126,11 @@ void registerNoteSelect(ControlRegistry& registry)
 		markSelected(clip, wanted);
 		clip->dataChanged();
 
-		// The selection is reported as the IDS of the notes at the stored
-		// positions (rollState reports the same way). A position the clip's list
-		// no longer holds is dropped rather than reported as a dangling id.
+		// Report the selected notes' ids in the clip's current note order
+		// (rollState reports the same way).
 		const NoteVector& noteList = clip->notes();
 		QJsonArray selected;
-		for (int position : control::selectedNoteIndices(clipText))
+		for (int position : control::selectedNoteIndices(clipText, *clip))
 		{
 			if (position >= 0 && position < static_cast<int>(noteList.size()))
 			{

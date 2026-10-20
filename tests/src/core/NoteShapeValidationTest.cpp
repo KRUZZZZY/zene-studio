@@ -280,7 +280,7 @@ private slots:
 		QVERIFY(m_clip->notes()[1]->selected());
 		QVERIFY(!m_clip->notes()[2]->selected());
 		const QVector<int> expectedIndices{0, 1};
-		QCOMPARE(control::selectedNoteIndices(clip()), expectedIndices);
+		QCOMPARE(control::selectedNoteIndices(clip(), *m_clip), expectedIndices);
 		QJsonArray expectedSelected{noteIds().at(0), noteIds().at(1)};
 		QCOMPARE(selected.result.value(QStringLiteral("selected")).toArray(), expectedSelected);
 	}

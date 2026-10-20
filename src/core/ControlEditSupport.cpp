@@ -247,7 +247,9 @@ namespace
 
 QString s_selectedClip;
 QString s_noteSelectionClip;
-QVector<int> s_selectedNotes;
+//! Note::id() values, not note-list positions: an id travels with its note
+//! through a removal or a re-sort, a position names whichever note slides into it.
+QVector<int> s_selectedNoteIds;
 
 } // namespace
 
@@ -261,27 +263,38 @@ QString selectedClipId()
 	return s_selectedClip;
 }
 
-void selectNotes(const QString& clip, int noteCount, const QVector<int>& indices)
+void selectNotes(const QString& clip, const MidiClip& midiClip, const QVector<int>& indices)
 {
 	QVector<int> kept;
 	for (int index : indices)
 	{
-		if (index >= 0 && index < noteCount) { kept.append(index); }
+		if (index >= 0 && index < static_cast<int>(midiClip.notes().size()))
+		{
+			kept.append(midiClip.notes()[index]->id());
+		}
 	}
 	std::sort(kept.begin(), kept.end());
 	kept.erase(std::unique(kept.begin(), kept.end()), kept.end());
 	s_noteSelectionClip = clip;
-	s_selectedNotes = kept;
+	s_selectedNoteIds = kept;
 }
 
-bool noteSelected(const QString& clip, int index)
+bool noteSelected(const QString& clip, const MidiClip& midiClip, int index)
 {
-	return s_noteSelectionClip == clip && s_selectedNotes.contains(index);
+	return s_noteSelectionClip == clip && index >= 0
+		&& index < static_cast<int>(midiClip.notes().size())
+		&& s_selectedNoteIds.contains(midiClip.notes()[index]->id());
 }
 
-QVector<int> selectedNoteIndices(const QString& clip)
+QVector<int> selectedNoteIndices(const QString& clip, const MidiClip& midiClip)
 {
-	return s_noteSelectionClip == clip ? s_selectedNotes : QVector<int>();
+	QVector<int> indices;
+	if (s_noteSelectionClip != clip) { return indices; }
+	for (int index = 0; index < static_cast<int>(midiClip.notes().size()); ++index)
+	{
+		if (s_selectedNoteIds.contains(midiClip.notes()[index]->id())) { indices.append(index); }
+	}
+	return indices;
 }
 
 // ---------------------------------------------------------------------------
@@ -358,17 +371,16 @@ QJsonObject rollState(const ClipRef& ref)
 			// The clip the note belongs to travels with the note, so a caller that
 			// only kept a note id can still address it.
 			entry.insert(QStringLiteral("clip"), clipId(ref.id));
-			entry.insert(QStringLiteral("selected"), noteSelected(clipId(ref.id), index));
+			entry.insert(QStringLiteral("selected"), noteSelected(clipId(ref.id), *midiClip, index));
 			notes.append(entry);
 			++index;
 		}
-		// The selection itself is positions inside the clip - it is view state
-		// the project file does not carry, so it has no id of its own - and it
-		// is REPORTED as the ids of the notes at those positions, because an id
-		// is what a client can address. An index the list no longer has (the
-		// note was deleted) is dropped rather than reported as a dangling id.
+		// The selection is view state and is not serialized, so it has no id of
+		// its own to store; it keeps the SELECTED NOTES' ids and maps them to the
+		// clip's current positions here, for this response. A note that was
+		// removed since no longer names anything and is simply not reported.
 		const NoteVector& noteList = midiClip->notes();
-		for (int selectedIndex : selectedNoteIndices(clipId(ref.id)))
+		for (int selectedIndex : selectedNoteIndices(clipId(ref.id), *midiClip))
 		{
 			if (selectedIndex >= 0 && selectedIndex < static_cast<int>(noteList.size()))
 			{

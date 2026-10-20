@@ -327,12 +327,12 @@ private slots:
 		QVERIFY(sawNoteRemove);
 	}
 
-	/*! The selection is stored as positions in the note list
-	 *  (control::selectNotes, src/core/ControlEditSupport.cpp:264-275), and
-	 *  roll.get_state reports the ids of the notes AT those positions. Removing a
-	 *  note BEFORE a selected one shifts every later note down one, so the stored
-	 *  position now names a different note: after removing note A, `selected_notes`
-	 * named B before the remove and names C after - a note the client never selected.
+	/*! BEFORE the fix, the selection was stored as POSITIONS in the note list
+	 *  (control::selectNotes, src/core/ControlEditSupport.cpp) and roll.get_state
+	 *  reported the ids of the notes AT those positions. Removing a note BEFORE a
+	 *  selected one shifted every later note down one, so the stored position named
+	 *  a different note: after removing note A, `selected_notes` named B before the
+	 *  remove and named C after. The store keeps the selected notes' ids now.
 	 */
 	void aNoteRemovalDoesNotShiftTheSelectionOntoAnotherNote()
 	{
@@ -358,7 +358,7 @@ private slots:
 		}
 		QCOMPARE(ids.size(), 3);
 
-		// Select the LAST note - the position most likely to shift.
+		// Select the LAST note - the one most likely to shift.
 		const ControlResult selected = registry->invoke(QStringLiteral("note.select"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("notes"), QJsonArray{ids.at(2)}}});
 		QVERIFY2(selected.ok, qPrintable(selected.errorMessage));
@@ -367,8 +367,8 @@ private slots:
 			ids.at(2));
 
 		// Remove the FIRST note. The selection was on the note whose id is
-		// ids.at(2); after the removal that note is at position 1, so the stored
-		// position must follow it - not stay at 2 and name whatever landed there.
+		// ids.at(2); after the removal that note is at position 1, so the selection
+		// must follow the note - not stay at 2 and name whatever landed there.
 		QVERIFY2(registry->invoke(QStringLiteral("note.remove"),
 			{{QStringLiteral("clip"), clip}, {QStringLiteral("note"), ids.at(0)}}).ok,
 			"the first note did not remove");
@@ -380,17 +380,17 @@ private slots:
 		QCOMPARE(selectedNotes.size(), 1);
 		QVERIFY2(selectedNotes.first().toString() == ids.at(2),
 			qPrintable(QStringLiteral("after removing the first note the selection reported "
-				"note \"%1\", but the note that WAS selected is \"%2\" - the stored position "
-				"now names a note the client never selected")
+				"note \"%1\", but the note that WAS selected is \"%2\" - the selection landed "
+				"on a note the client never selected")
 				.arg(selectedNotes.first().toString(), ids.at(2))));
 	}
 
-	/*! The same defect as the removal case above, reached the other way:
-	 *  note.move re-sorts the clip (clip->rearrangeAllNotes()) but, unlike
-	 *  note.remove, did not remap the stored positions - so a selected index
-	 *  silently starts naming a DIFFERENT note. Selecting the first note and
-	 *  moving it past the second leaves the selection pointing at position 0,
-	 *  which is now the second note.
+	/*! The same defect as the removal case above, reached the other way.
+	 *  BEFORE the fix, note.move re-sorted the clip (clip->rearrangeAllNotes())
+	 *  without remapping the stored positions, so a selected index silently
+	 *  started naming a DIFFERENT note: selecting the first note and moving it
+	 *  past the second left the selection pointing at position 0, which was
+	 *  then the second note.
 	 */
 	void aNoteMoveDoesNotShiftTheSelectionOntoAnotherNote()
 	{
@@ -439,7 +439,7 @@ private slots:
 		QVERIFY2(selectedNotes.first().toString() == ids.at(0),
 			qPrintable(QStringLiteral("after moving the selected note past the other one the "
 				"selection reported note \"%1\", but the note that WAS selected is \"%2\" - the "
-				"stored position now names a note the client never selected")
+				"selection landed on a note the client never selected")
 				.arg(selectedNotes.first().toString(), ids.at(0))));
 	}
 
