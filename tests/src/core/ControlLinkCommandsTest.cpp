@@ -329,10 +329,15 @@ private slots:
 		const double tempo = before.value(QStringLiteral("session_tempo")).toDouble();
 		const int engineBpm = engineTempo();
 
+		// Inject an explicit receive clock so the age is unambiguously past the
+		// transit limit regardless of how long this process has been up.
+		const quint64 receivedUs = 10000000;
+		const quint64 sentUs = receivedUs
+			- (static_cast<quint64>(link::PeerTimeoutMs) * 1000 + 1);
 		link::LinkPeerPacket stale = packetFrom(QStringLiteral("peer-old-clock"),
 			revision + 1, 240.0);
-		stale.sentUs = 1;
-		observe(stale, LinkSyncEngine::monotonicMicros());
+		stale.sentUs = sentUs;
+		observe(stale, receivedUs);
 
 		const QJsonObject after = state();
 		QVERIFY(!sessionHasPeer(after, stale.id));
