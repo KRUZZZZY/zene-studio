@@ -52,6 +52,7 @@
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+#include "ControlSampleArray.h"
 #include "ControlWasmSupport.h"
 
 #include "src/wasm/WasmAbi.h"
@@ -226,17 +227,6 @@ std::vector<float> rampInput(std::uint32_t frames)
 	return out;
 }
 
-std::vector<float> jsonToFloats(const QJsonArray& values)
-{
-	std::vector<float> out;
-	out.reserve(static_cast<std::size_t>(values.size()));
-	for (const QJsonValue& value : values)
-	{
-		out.push_back(static_cast<float>(value.toDouble()));
-	}
-	return out;
-}
-
 QString statusName(wasm::CallResult::Status status)
 {
 	switch (status)
@@ -309,8 +299,17 @@ ControlResult handleProcess(const QJsonObject& args)
 	const float sampleRate = args.contains(QStringLiteral("sample_rate"))
 		? static_cast<float>(args.value(QStringLiteral("sample_rate")).toDouble()) : 48000.0f;
 	const bool callerInput = args.contains(QStringLiteral("input"));
-	const std::vector<float> input = callerInput
-		? jsonToFloats(args.value(QStringLiteral("input")).toArray()) : rampInput(frames);
+	std::vector<float> input = rampInput(frames);
+	// The caller's samples are read through the ONE reader both sample-taking
+	// commands use (ControlSampleArray.h), so a malformed array is refused
+	// here exactly as it is in wasm.render_offline - and never reaches the
+	// module as a different stimulus than the caller sent.
+	const ControlResult read = readInputArgument(args, frames, &input);
+	if (!read.ok)
+	{
+		return ControlResult::failure(read.errorKind,
+			wasmNotFound(QStringLiteral("wasm.process"), read.errorMessage));
+	}
 
 	const wasm::HostProcessOutcome outcome = host.process(frames, sampleRate, input);
 	if (outcome.status == wasm::CallResult::Status::Error)
@@ -372,7 +371,10 @@ void registerWasmProcessCommand(ControlRegistry& registry)
 			"process() is entered once per channel plane, exactly as WasmWorker enters it, and "
 			"plane 0's output is read back. 'frames' (1..8192) and 'sample_rate' default to 48 and "
 			"48000; 'input' supplies plane 0's samples, and when it is absent the conformance "
-			"suite's rising ramp is used. 'status' is 'ok', 'trap' or 'error': a trap is REPORTED "
+			"suite's rising ramp is used. 'input' may hold at most 'frames' samples, and every "
+			"one of them must be a finite number within the float range: a malformed array is "
+			"refused (invalid_args) instead of being run with as something else. 'status' is "
+			"'ok', 'trap' or 'error': a trap is REPORTED "
 			"rather than thrown, which is the sandbox's whole purpose. The call's own outcome is a "
 			"successful result; only having nothing to run is a refusal."),
 		{{QStringLiteral("frames"),

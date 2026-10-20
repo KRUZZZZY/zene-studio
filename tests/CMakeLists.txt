@@ -222,6 +222,12 @@ set(LMMS_TESTS
 	# on Windows before the empty-session refusal.
 	src/core/ControlRenderOutputPathTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# The rules a caller's sample array has to satisfy before a render or a
+	# process is driven with it (cluster new-p10-76-port): the ONE reader the
+	# wasm.* commands use (include/ControlSampleArray.h), tested in every
+	# configuration - the reader is pure Qt, so the test runs where the
+	# wasmtime C API is not there to compile the commands themselves.
+	src/core/ControlSampleArrayTest.cpp
 	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
 	src/core/ControlRegistryNestingTest.cpp
 	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and

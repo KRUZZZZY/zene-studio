@@ -813,6 +813,7 @@ include/ControlRegistryGroups.h
 include/ControlResultCheck.h
 include/ControlReversibility.h
 include/ControlRoom.h
+include/ControlSampleArray.h
 include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlStemSupport.h
@@ -1658,6 +1659,7 @@ src/core/ControlReversibilityTableW3Library.cpp
 src/core/ControlReversibilityTableWasmRender.cpp
 src/core/ControlReversibilityTableWindow.cpp
 src/core/ControlRoom.cpp
+src/core/ControlSampleArray.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
@@ -2316,6 +2318,7 @@ tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
+tests/src/core/ControlSampleArrayTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlVerbInverseTest.cpp
