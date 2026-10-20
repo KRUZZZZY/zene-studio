@@ -10,7 +10,7 @@ commit 00695e33 is a docs-only self-check answer and was not ported.
 ## Finding and verdict
 
 Real, not already fixed on this branch. The `track_` branch of `TrackContainerView::dropEvent` called
-`Track::create(..., m_tc)` and recorded nothing: `src/gui/editors/TrackContainerView.cpp:622` (HEAD, pre-fix) created the
+`Track::create(..., m_tc)` and recorded nothing: `src/gui/editors/TrackContainerView.cpp:622` (base `b61e5f965`, pre-fix) created the
 copy with no undo step, so Edit > Undo left it in the song.
 
 The same bug has a sibling in `PatternEditor::dropEvent`, which creates the copy in the PatternStore and
@@ -146,8 +146,8 @@ The driver imports `feature_check.py`'s own gate lists and helpers (`SIMPLE`, `R
    (`test-4-family.log`, table above). `ControlEditCommandsTest` fails the same way with the fix reverted
    (`test-6-reverted-controledit.log`).
 5. **Verdict.** FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so the code-citation item does not apply. The
-   pre-fix evidence is `TrackContainerView.cpp:622` at HEAD (`git show HEAD~1:src/gui/editors/TrackContainerView.cpp`
-   before the fix commit) and `PatternEditor.cpp:157` at HEAD.
+   pre-fix evidence is `TrackContainerView.cpp:622` and `PatternEditor.cpp:157` in the base commit
+   `b61e5f965` (`git show b61e5f965:src/gui/editors/TrackContainerView.cpp`).
 
 **Gates item: FAIL, environmental, not a code failure.** `submit_check.py` runs `feature_check.py`, which
 creates `<worktree>-feature-check` beside the worktree; that path is outside the write-jail, so the script exits 1
