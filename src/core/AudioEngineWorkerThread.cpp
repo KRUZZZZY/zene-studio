@@ -59,14 +59,19 @@ std::atomic<int> AudioEngineWorkerThread::s_activeDrains{0};
 
 void AudioEngineWorkerThread::setDeterministicProcessing(bool deterministic)
 {
-	s_deterministicProcessing.store(deterministic, std::memory_order_release);
+	// Seq_cst on both sides of this handshake is deliberate: the setter writes the
+	// switch and then reads the drain count, while a worker increments the count and
+	// then re-reads the switch (a Dekker-style pattern). Without a total order the
+	// setter's count load could pass its own switch store and both sides could miss
+	// each other, so use the sequentially consistent order for those four operations.
+	s_deterministicProcessing.store(deterministic, std::memory_order_seq_cst);
 	if (!deterministic) { return; }
 
 	// A worker that read the switch as off just before the store may be about to
 	// enter globalJobQueue::run(). Do not return until every such worker has left,
 	// so the renderer that queues its jobs after this call is the only drainer.
 	// Only the export thread calls this with true; the workers never block here.
-	while (s_activeDrains.load(std::memory_order_acquire) != 0)
+	while (s_activeDrains.load(std::memory_order_seq_cst) != 0)
 	{
 		std::this_thread::yield();
 	}
@@ -360,8 +365,8 @@ void AudioEngineWorkerThread::run()
 			// landed between the read above and here either sees this worker counted
 			// (and waits) or is seen by the re-check, so the worker cannot take a job
 			// the export queued after its setDeterministicProcessing(true) returned.
-			s_activeDrains.fetch_add(1, std::memory_order_acq_rel);
-			if( !deterministicProcessing() )
+			s_activeDrains.fetch_add(1, std::memory_order_seq_cst);
+			if( !s_deterministicProcessing.load( std::memory_order_seq_cst ) )
 			{
 				globalJobQueue.run();
 			}
