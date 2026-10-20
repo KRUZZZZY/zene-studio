@@ -49,6 +49,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QList>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
@@ -92,6 +93,16 @@ QString addClip(const QString& track, int position)
 		{{QStringLiteral("track"), track}, {QStringLiteral("position"), position},
 			{QStringLiteral("length"), 192}});
 	return clip.ok ? clip.result.value(QStringLiteral("clip")).toString() : QString();
+}
+
+//! Every entry of the document's provenance log, in order. The content a rollback has to
+//! give back - the count and the newest sequence alone say nothing about WHICH entries it kept.
+QList<provenance::Change> provenanceEntries()
+{
+	QList<provenance::Change> entries;
+	const provenance::Section& section = provenance::Section::instance();
+	for (int i = 0; i < section.size(); ++i) { entries.append(section.at(i)); }
+	return entries;
 }
 
 //! A 12-note Scala keyboard mapping, linear, A4 = 440 Hz on key 69.
@@ -503,7 +514,14 @@ private slots:
 		const QStringList previousRecentProjects = ConfigManager::inst()->recentlyOpenedProjects();
 		const int previousProvenanceSize = provenance::Section::instance().size();
 		const quint64 previousProvenanceLastSeq = provenance::Section::instance().lastSeq();
+		// The whole log, entry by entry: a rollback that keeps the count but swaps the
+		// entries for the new document's has replaced the session's history, not restored it.
+		const QList<provenance::Change> previousProvenance = provenanceEntries();
 		QVERIFY2(previousProvenanceSize > 0, "the seeded undoable change left no provenance to preserve");
+		QVERIFY2(previousProvenance.size() == previousProvenanceSize,
+			"the provenance snapshot does not match the log it was taken from");
+		QVERIFY2(previousProvenance.last().command == QStringLiteral("track.add"),
+			"the seeded track.add change is not the newest provenance entry");
 		const auto hasPreservedTrack = [song]
 		{
 			return std::any_of(song->tracks().begin(), song->tracks().end(), [](const Track* track)
@@ -531,6 +549,7 @@ private slots:
 		const bool undoSurvived = Engine::projectJournal()->canUndo();
 		const int provenanceSizeAfter = provenance::Section::instance().size();
 		const quint64 provenanceLastSeqAfter = provenance::Section::instance().lastSeq();
+		const QList<provenance::Change> provenanceAfter = provenanceEntries();
 		QVERIFY(QDir(partialPath).removeRecursively());
 		QVERIFY2(preservedAfterFailure, "a save-time failure replaced the current session");
 		QCOMPARE(fileAfterFailure, previousFile);
@@ -538,10 +557,32 @@ private slots:
 		QCOMPARE(typeAfterFailure, previousType);
 		QVERIFY2(newRecentPathsExist, "restoring the original session left a dead recent-project entry");
 		QVERIFY2(undoSurvived, "a save-time failure dropped the undo history of the restored session");
+		// The count and the sequence are not the content: every entry - the seeded
+		// track.add change among them - has to be the very same change it was before.
+		int firstDifferent = -1;
+		const qsizetype common = std::min(provenanceAfter.size(), previousProvenance.size());
+		for (qsizetype i = 0; i < common; ++i)
+		{
+			if (!(provenanceAfter.at(i) == previousProvenance.at(i)))
+			{
+				firstDifferent = static_cast<int>(i);
+				break;
+			}
+		}
+		const bool sameEntries = firstDifferent < 0 && provenanceAfter.size() == previousProvenance.size();
+		QVERIFY2(sameEntries, qPrintable(QStringLiteral(
+			"a save-time failure did not give the original session's provenance back: %1 entries instead of %2")
+			.arg(provenanceAfter.size()).arg(previousProvenance.size())
+			+ (firstDifferent < 0 ? QString()
+				: QStringLiteral("; entry %1 is '%2' where '%3' was")
+					.arg(firstDifferent)
+					.arg(provenanceAfter.at(firstDifferent).command, previousProvenance.at(firstDifferent).command))));
 		QVERIFY2(provenanceSizeAfter == previousProvenanceSize,
 			"a save-time failure dropped or replaced the original session's provenance");
 		QVERIFY2(provenanceLastSeqAfter == previousProvenanceLastSeq,
 			"a save-time failure changed the original session's provenance sequence");
+		QVERIFY2(provenanceAfter.last().command == QStringLiteral("track.add"),
+			"the seeded track.add change is not the newest provenance entry after the rollback");
 
 		// The history is not only present but usable, and it is the step the change made.
 		REQUIRE_OK(run(QStringLiteral("control.undo")), "control.undo");
