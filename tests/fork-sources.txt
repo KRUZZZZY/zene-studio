@@ -2745,3 +2745,4 @@ tests/src/gui/AutomationLaneChildGuiTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-181-port.md
 # cluster new-p12-151-port (2026-10): NES audio-thread note-state allocation fix and verification report (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p12-151-port.md
+tests/src/core/AudioEngineProfilerTest.cpp

@@ -25,18 +25,23 @@
 #include "AudioEngineProfiler.h"
 
 #include <cstdint>
+#include <thread>
+
+#include <QFile>
 
 namespace lmms
 {
 
 AudioEngineProfiler::AudioEngineProfiler() :
 	m_periodTimer(),
-	m_cpuLoad( 0 ),
-	m_outputFile()
+	m_cpuLoad( 0 )
 {
 }
 
-
+AudioEngineProfiler::~AudioEngineProfiler()
+{
+	stopWriter();
+}
 
 void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t framesPerPeriod )
 {
@@ -59,19 +64,80 @@ void AudioEngineProfiler::finishPeriod( sample_rate_t sampleRate, f_cnt_t frames
 		m_detailLoad[i].store(newLoad * 0.05f + oldLoad * 0.95f, std::memory_order_relaxed);
 	}
 
-	if( m_outputFile.isOpen() )
+	// Hand the measurement to a bounded buffer; a non-audio thread drains it.
+	const std::uint64_t writeIndex = m_writeIndex.load(std::memory_order_relaxed);
+	const std::uint64_t readIndex = m_readIndex.load(std::memory_order_acquire);
+	if (writeIndex - readIndex < BufferCapacity)
 	{
-		m_outputFile.write( QString( "%1\n" ).arg( periodElapsed ).toLatin1() );
+		m_buffer[writeIndex % BufferCapacity] = periodElapsed;
+		m_writeIndex.store(writeIndex + 1, std::memory_order_release);
 	}
 }
 
+void AudioEngineProfiler::writerLoop()
+{
+	// The file object is created here, used here and destroyed here: it belongs
+	// to the writer thread alone. A member would be constructed on the thread
+	// that created the profiler and destroyed with it, while this thread used
+	// it - a QObject may only be used from the thread it lives in.
+	QFile outputFile;
+	if (!m_outputFileName.isEmpty())
+	{
+		outputFile.setFileName(m_outputFileName);
+		if (!outputFile.open(QFile::WriteOnly | QFile::Truncate))
+		{
+			return;
+		}
+	}
 
+	while (true)
+	{
+		bool wrote = false;
+		const std::uint64_t readIndex = m_readIndex.load(std::memory_order_relaxed);
+		const std::uint64_t writeIndex = m_writeIndex.load(std::memory_order_acquire);
+		std::uint64_t current = readIndex;
+		while (current < writeIndex)
+		{
+			if (outputFile.isOpen())
+			{
+				outputFile.write(QString("%1\n").arg(m_buffer[current % BufferCapacity]).toLatin1());
+			}
+			current++;
+			m_readIndex.store(current, std::memory_order_release);
+			wrote = true;
+		}
+		if (!m_running.load(std::memory_order_relaxed) &&
+			m_readIndex.load(std::memory_order_acquire) == m_writeIndex.load(std::memory_order_acquire))
+		{
+			break;
+		}
+		if (!wrote)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	}
+
+	if (outputFile.isOpen())
+	{
+		outputFile.close();
+	}
+}
+
+void AudioEngineProfiler::stopWriter()
+{
+	m_running.store(false, std::memory_order_relaxed);
+	if (m_writerThread.joinable())
+	{
+		m_writerThread.join();
+	}
+}
 
 void AudioEngineProfiler::setOutputFile( const QString& outputFile )
 {
-	m_outputFile.close();
-	m_outputFile.setFileName( outputFile );
-	m_outputFile.open( QFile::WriteOnly | QFile::Truncate );
+	stopWriter();
+	m_outputFileName = outputFile;
+	m_running.store(true, std::memory_order_relaxed);
+	m_writerThread = std::thread(&AudioEngineProfiler::writerLoop, this);
 }
 
 } // namespace lmms
