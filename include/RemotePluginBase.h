@@ -109,6 +109,7 @@ class shmFifo
 #ifdef LMMS_TESTING
 	friend class ::RemotePluginShmFifoTest;
 #endif
+	friend class RemotePluginBase;
 
 	// need this union to handle different sizes of sem_t on 32 bit
 	// and 64 bit platforms
@@ -216,6 +217,23 @@ public:
 		}
 	}
 
+	//! Reserves the write direction across FIFO-space waits, independently of the reader's data semaphore.
+	inline void lockWriter()
+	{
+		while( m_writerBusy.test_and_set( std::memory_order_acquire ) ) { std::this_thread::yield(); }
+	}
+
+	//! Audio-thread form: it never waits when a blocking message writer owns the write direction.
+	inline bool tryLockWriter()
+	{
+		return !m_writerBusy.test_and_set( std::memory_order_acquire );
+	}
+
+	inline void unlockWriter()
+	{
+		m_writerBusy.clear( std::memory_order_release );
+	}
+
 	// wait until message-semaphore is available
 	inline void waitForMessage()
 	{
@@ -320,6 +338,14 @@ public:
 
 
 private:
+	//! Keeps the historical single-level release until the writer-wait regression is applied.
+	inline int releaseLockForSpaceWait()
+	{
+		const int depth = m_depth;
+		unlock();
+		return depth;
+	}
+
 	void read( void * _buf, int _len )
 	{
 		if( isInvalid() )
@@ -368,7 +394,7 @@ private:
 							m_data->startPtr;
 				m_data->startPtr = 0;
 			}
-			unlock();
+			releaseLockForSpaceWait();
 #ifndef LMMS_BUILD_WIN32
 			usleep( 5 );
 #endif
@@ -387,6 +413,7 @@ private:
 	//! Thread that holds the data lock (0: none) and its recursion depth; the depth is touched by the owner only.
 	std::atomic<const void *> m_owner{nullptr};
 	int m_depth = 0;
+	std::atomic_flag m_writerBusy = ATOMIC_FLAG_INIT;
 #ifdef LMMS_TESTING
 	inline static std::atomic<CallerIdHashForTest> s_callerIdHashForTest{nullptr};
 #endif

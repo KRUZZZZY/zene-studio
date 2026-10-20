@@ -66,6 +66,37 @@ private slots:
 		QVERIFY(keys[0] != keys[1]);
 	}
 
+	void recursiveSpaceWaitReleasesTheDataSemaphore()
+	{
+		shmFifo fifo;
+		fifo.lock();
+		fifo.lock();
+		const int savedDepth = fifo.releaseLockForSpaceWait();
+		QCOMPARE(savedDepth, 2);
+
+		bool readerAcquired = false;
+		std::thread reader([&] {
+			readerAcquired = fifo.tryLockFor(0);
+			if( readerAcquired ) { fifo.unlock(); }
+		});
+		reader.join();
+		if( !readerAcquired ) { fifo.unlock(); }
+
+		QVERIFY(readerAcquired);
+	}
+
+	void writerReservationExcludesAnotherWriter()
+	{
+		shmFifo fifo;
+		fifo.lockWriter();
+		const bool secondWriterEntered = fifo.tryLockWriter();
+		fifo.unlockWriter();
+		QVERIFY(!secondWriterEntered);
+
+		QVERIFY(fifo.tryLockWriter());
+		fifo.unlockWriter();
+	}
+
 private:
 	static std::uint64_t collidingThreadHash(std::thread::id) noexcept
 	{
