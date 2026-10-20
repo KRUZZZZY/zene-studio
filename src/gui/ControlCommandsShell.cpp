@@ -406,7 +406,9 @@ void registerSaveVersion(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Save the session as the NEXT VERSION of its file - "
 		"<name>-01.mmp, -02, ... the first free one - and make that the project's file; the "
 		"previous version stays on disk untouched. File > Save as New Version dispatches this. "
-		"Refused while the session has no file yet (save it once with project.save first). "
+		"Refused while the session has no file yet (save it once with project.save first), and "
+		"refused when the version number in the file's name cannot be advanced (the widest "
+		"version number, or a suffix that is not a number). "
 		"Needs no interface.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({{QStringLiteral("file"), stringProperty()},
@@ -422,8 +424,21 @@ void registerSaveVersion(ControlRegistry& registry)
 					"save it once with project.save {path}"));
 		}
 		QString next = previous;
-		do { gui::VersionedSaveDialog::changeFileNameVersion(next, true); }
-		while (QFile::exists(next));
+		// The next version is the first free name after the current one. A name whose
+		// version cannot be advanced - the widest version number, or a suffix that is
+		// not a number at all - is REFUSED here: the name would not change, so the
+		// "while that one exists" loop below would look at the same file for ever.
+		for (;;)
+		{
+			if (!gui::VersionedSaveDialog::changeFileNameVersion(next, true))
+			{
+				return ControlResult::failure(ControlErrorKind::Refused,
+					QStringLiteral("the version number in '%1' cannot be advanced, so there is "
+						"no next version to write: save the project under another name "
+						"(project.save {path}) and try again").arg(previous));
+			}
+			if (!QFile::exists(next)) { break; }
+		}
 		if (!song->guiSaveProjectAs(next))
 		{
 			return ControlResult::failure(ControlErrorKind::Refused,

@@ -21303,7 +21303,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Save the session as the NEXT VERSION of its file - <name>-01.mmp, -02, ... the first free one - and make that the project's file; the previous version stays on disk untouched. File > Save as New Version dispatches this. Refused while the session has no file yet (save it once with project.save first). Needs no interface.",
+      "description": "Save the session as the NEXT VERSION of its file - <name>-01.mmp, -02, ... the first free one - and make that the project's file; the previous version stays on disk untouched. File > Save as New Version dispatches this. Refused while the session has no file yet (save it once with project.save first), and refused when the version number in the file's name cannot be advanced (the widest version number, or a suffix that is not a number). Needs no interface.",
       "group": "project",
       "id": "project.save_version",
       "mutating": true,
