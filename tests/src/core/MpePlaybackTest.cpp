@@ -629,6 +629,36 @@ private slots:
 		QCOMPARE( MpeStreamSnapshot::retiredCount(), std::size_t{ 0 } );
 	}
 
+	//! new-p16-146: a frequency mark is spent by the update it asks for. Once
+	//! updateFrequency() has applied it, a later period must not recompute the
+	//! note's frequency - only a new mark does. Without that, every later
+	//! play() period of a marked note recomputes its frequency.
+	void aFrequencyMarkIsSpentByItsUpdate()
+	{
+		Note note( TimePos::fromFrames( m_frames * 8, Engine::framesPerTick() ),
+			TimePos( 0 ), kKey );
+		NotePlayHandle handle( m_track, 0, m_frames * 8, note, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+
+		handle.setFrequencyUpdate();  // a pitch change marks the note...
+		renderBlock( &handle );       // ...and the next period applies the mark
+		const float applied = handle.frequency();
+
+		// An input nothing marks: an MPE pitch bend of one octave (frequency ratio 2).
+		handle.setMpePitchCents( 1200 );
+		renderBlock( &handle );
+		QVERIFY2( std::fabs( handle.frequency() - applied ) < 1e-3f,
+			qPrintable( QStringLiteral( "the spent mark recomputed the frequency: %1 Hz became %2 Hz" )
+				.arg( applied, 0, 'f', 3 ).arg( handle.frequency(), 0, 'f', 3 ) ) );
+
+		// A new mark is honoured: the bend is applied on the next period.
+		handle.setFrequencyUpdate();
+		renderBlock( &handle );
+		QVERIFY2( std::fabs( handle.frequency() - 2.f * applied ) < 1e-2f,
+			qPrintable( QStringLiteral( "a new mark did not apply the bend: %1 Hz, wanted %2 Hz" )
+				.arg( handle.frequency(), 0, 'f', 3 ).arg( 2.f * applied, 0, 'f', 3 ) ) );
+	}
+
 private:
 	//! One block of one note, rendered through the real playback path. The
 	//! level is read from the LAST frame of the block: the declicking fade-in
