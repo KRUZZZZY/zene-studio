@@ -37,6 +37,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <vector>
 
 namespace lmms
 {
@@ -82,12 +83,25 @@ public:
 	 * VibratingString copies the whole waveform, so reading the model there is a
 	 * data race that hands the string a half-applied waveform.
 	 *
-	 * Three slots, one writer (the GUI thread), no lock and no allocation on
-	 * either side. publish() fills the one slot that is neither the published
-	 * one nor the one a reader may still be copying, then flips the index;
-	 * samples() only ever reads the published slot, and no publication touches
-	 * that slot again until the one after next, so a reader always sees one
-	 * waveform in full.
+	 * The GUI thread publishes an immutable copy instead. A publication fills a
+	 * waveform nobody can see yet and hands it over with one atomic store; a
+	 * published waveform is never written again, so the audio thread reads one
+	 * waveform in full however many publications pass while it copies.
+	 *
+	 * The audio thread announces the waveform it took, so the GUI thread sees
+	 * which published waveform it must not reuse: the announced one stays out
+	 * of the free list until the reader takes another one (the reader copies
+	 * the waveform it took before it takes another one). While the reader is
+	 * between taking a waveform and announcing it, the GUI thread cannot tell
+	 * which one it took, so it reuses none of them. The two flags are read and
+	 * written with sequentially consistent ordering, which is what makes that
+	 * hand-over race free: the reader's "I am reading" store and the writer's
+	 * "is it reading" load cannot both miss each other.
+	 *
+	 * One writer (the GUI thread, where every samplesChanged is emitted), one
+	 * reader (the audio thread), no lock, no allocation and no logging on the
+	 * audio thread: it takes the published waveform with one atomic load and
+	 * makes the same copy it always made.
 	 *
 	 * The class is public so the regression test can drive the hand-off
 	 * itself; nothing outside the plug-in uses it.
@@ -95,28 +109,81 @@ public:
 	class WaveformSnapshot
 	{
 	public:
+		WaveformSnapshot()
+		{
+			m_published.store(new Waveform{}, std::memory_order_release);
+		}
+
+		~WaveformSnapshot()
+		{
+			delete m_published.load(std::memory_order_relaxed);
+			for (auto* waveform : m_retired) { delete waveform; }
+			for (auto* waveform : m_free) { delete waveform; }
+		}
+
+		//! The published waveform: the audio thread takes it and copies it.
+		const float* samples()
+		{
+			// Announce the waveform before the writer may reuse it: the writer
+			// keeps the announced one out of the free list until the next read.
+			m_readerReading.store(true, std::memory_order_seq_cst);
+			Waveform* published = m_published.load(std::memory_order_seq_cst);
+			m_readerWaveform.store(published, std::memory_order_seq_cst);
+			m_readerReading.store(false, std::memory_order_seq_cst);
+			return published->data.data();
+		}
+
 		//! Hand off `s_sampleLength` samples as the current waveform.
 		void publish(const float* samples)
 		{
-			// m_front and m_stale are always two different slots, so this is the
-			// third one.
-			const int front = m_front.load(std::memory_order_acquire);
-			const int back = 3 - front - m_stale;
-			std::copy_n(samples, s_sampleLength, m_slots[back].begin());
-			m_stale = front;  // a reader may still be copying that slot
-			m_front.store(back, std::memory_order_release);
-		}
-
-		//! The published waveform, stable until the next publication.
-		const float* samples() const
-		{
-			return m_slots[m_front.load(std::memory_order_acquire)].data();
+			Waveform* fresh = takeFree();
+			std::copy_n(samples, s_sampleLength, fresh->data.begin());
+			Waveform* old = m_published.exchange(fresh, std::memory_order_seq_cst);
+			m_retired.push_back(old);
+			reclaim();
 		}
 
 	private:
-		std::array<std::array<float, s_sampleLength>, 3> m_slots{};
-		std::atomic<int> m_front{0};
-		int m_stale{1};  //!< GUI thread only: the slot a reader may still be copying
+		//! One immutable waveform.
+		struct Waveform
+		{
+			std::array<float, s_sampleLength> data;
+		};
+
+		//! A waveform nobody can be reading: a free one, or a new one.
+		Waveform* takeFree()
+		{
+			if (m_free.empty()) { return new Waveform{}; }
+			Waveform* waveform = m_free.back();
+			m_free.pop_back();
+			return waveform;
+		}
+
+		//! The published waveforms the reader cannot be using any more.
+		void reclaim()
+		{
+			// While the reader is between taking a waveform and announcing it,
+			// the writer cannot tell which one it took, so it reuses none.
+			if (m_readerReading.load(std::memory_order_seq_cst)) { return; }
+			Waveform* held = m_readerWaveform.load(std::memory_order_seq_cst);
+			for (auto it = m_retired.begin(); it != m_retired.end(); )
+			{
+				if (*it == held) { ++it; continue; }
+				m_free.push_back(*it);
+				it = m_retired.erase(it);
+			}
+		}
+
+		//! The waveform the audio thread reads.
+		std::atomic<Waveform*> m_published{nullptr};
+		//! The waveform the reader last took: it may still be copying it.
+		std::atomic<Waveform*> m_readerWaveform{nullptr};
+		//! True while the reader is between taking a waveform and announcing it.
+		std::atomic<bool> m_readerReading{false};
+		//! Published waveforms waiting to be reused. GUI thread only.
+		std::vector<Waveform*> m_retired;
+		//! Waveforms that may be written into. GUI thread only.
+		std::vector<Waveform*> m_free;
 	};
 
 private:
