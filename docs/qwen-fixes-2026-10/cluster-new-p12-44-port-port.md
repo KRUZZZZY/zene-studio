@@ -60,7 +60,8 @@ The affected family (the land test, the reversibility contract/undo tests, the u
 
 ## Gates
 
-- `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - EXIT=0 (all rows PASS)
+- `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - EXIT=0 (all rows PASS) - logs/feature-check-2.log
+- `ctest -R ControlCommandsSnapshot --output-on-failure` (from build/tests) - EXIT=0, 1/1 passed - logs/test-snapshot-1.log (the command surface is unchanged: no id was added, renamed or removed)
 
 ## Files committed
 
@@ -79,3 +80,5 @@ The affected family (the land test, the reversibility contract/undo tests, the u
 - **No collateral damage.** No saved-data or project format changes, no new command, no new limit: the pass now pushes ONE step where it pushed N, so it evicts FEWER older steps of the user's history than before (1 instead of N at the bound). A pass that touches no track pushes no step at all, as before (no pair -> no checkpoint). The only behaviour that changes is the one the finding names.
 - **Realtime, undo and commands.** Nothing here runs on the audio thread: the checkpoint is taken on the command's own (UI) thread, in the handler, exactly where the per-pair checkpoint used to be; the recorder ring is written by the audio thread but only READ here. The undo stays ONE honest step - the pass's single composite step restores every touched track, and the recorded transaction still names the FIRST clip for `clip.delete`. No new control command was added, so the ControlCommandsSnapshot canary does not move.
 - **Sibling commands in the files I changed.** `src/core/ControlCommandsSessionRecordLand.cpp` registers exactly one command (`session.arrangement_record_land`); `src/core/ControlCommandsSessionRecordInternal.h` is a private header shared with `src/core/ControlCommandsSessionRecord.cpp` (the TAP half - arm/status/back-to-arrangement), which does not land clips and is not affected; `src/core/ControlReversibilityTableSessionView.cpp` holds the six `session.*` rows, of which only the land row is touched - the other five (`arrangement_record_arm`, `arrangement_record_status`, `back_to_arrangement`, `follow_set`, `follow_get_state`) are not_mutating rows and are unchanged.
+- **The ALREADY-FIXED / FALSE-POSITIVE question does not apply here**: the verdict is FIXED. The code that shows the bug WAS present on this branch is `src/core/ControlCommandsSessionRecordLand.cpp:353` before the fix (`track->addJournalCheckPoint();` inside `landPairState()`, called once per pair), and the intended contract it contradicted is `src/core/ControlReversibilityTableSessionView.cpp:119-131` ("taken once per touched track before its first clip is created"). Both were measured RED on this branch (logs/test-red-1.log).
+- **The command surface did not move.** The land command's description and the contract row's prose changed, but no command was added, renamed or removed: `ctest -R ControlCommandsSnapshot --output-on-failure` (from build/tests) - EXIT=0, 1/1 passed (logs/test-snapshot-1.log). The snapshot ratchet compares command IDS, and the id set is unchanged.
