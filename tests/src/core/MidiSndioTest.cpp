@@ -4,12 +4,13 @@
 
 #include <atomic>
 #include <cstddef>
+#include <memory>
+#include <thread>
 #include <type_traits>
 
 #include <poll.h>
 #include <sndio.h>
 
-#include <QElapsedTimer>
 #include <QSemaphore>
 #include <QThread>
 
@@ -35,6 +36,8 @@ QThread* writerThread = nullptr;
 int stallWrites = 0;
 QSemaphore writeStarted;
 QSemaphore writeGate;
+//! One permit per reader-thread exit. The reader exits only after teardown has set m_quit.
+QSemaphore readerFinished;
 //! How many times the device handle was closed, the bytes the device had accepted
 //! at the moment of the last close, and a permit released per close.
 int closeCalls = 0;
@@ -58,6 +61,7 @@ void resetDevice(bool opens)
 	bytesWritten.tryAcquire(bytesWritten.available());
 	writeStarted.tryAcquire(writeStarted.available());
 	writeGate.tryAcquire(writeGate.available());
+	readerFinished.tryAcquire(readerFinished.available());
 	closed.tryAcquire(closed.available());
 }
 } // namespace
@@ -157,35 +161,34 @@ private slots:
 
 	//! Ordinary teardown drains the queue: bytes still queued when teardown begins
 	//! reach the device before the handle is closed. The writer is held inside its
-	//! first device write while two more bytes queue behind it, and the gate opens
-	//! only once teardown has visibly started (m_quit is set), so the queue is
-	//! provably non-empty at that moment. Discarding it would fail the close check.
+	//! first device write while two more bytes queue behind it. The gate opens only
+	//! after the reader thread has finished, which can only happen once the
+	//! destructor has set m_quit, so the queue is provably non-empty at that moment.
+	//! Discarding it would fail the close check.
 	void queuedBytesAreDeliveredBeforeTeardownCloses()
 	{
 		resetDevice(true);
 		stallWrites = 1;
-		auto* midi = new TestMidiSndio;
+		auto midi = std::make_unique<TestMidiSndio>();
 		QVERIFY(midi->isRunning());
+		// The reader emits finished() after its loop has seen m_quit. The callback
+		// touches only globals, so it stays valid whatever happens to the client.
+		QThread* reader = midi.get();
+		QObject::connect(reader, &QThread::finished, this, [] { readerFinished.release(); },
+			Qt::DirectConnection);
 		midi->sendByte(0x90);
 		QVERIFY(writeStarted.tryAcquire(1, 5000));
 		midi->sendByte(0x3C);
 		midi->sendByte(0x7F);
 
-		// Teardown runs on its own thread, so this thread can watch m_quit change.
-		QThread* teardown = QThread::create([midi] { delete midi; });
-		teardown->start();
-		bool teardownStarted = false;
-		QElapsedTimer waited;
-		waited.start();
-		while (!(teardownStarted = midi->m_quit.load()) && waited.elapsed() < 5000)
-		{
-			QThread::yieldCurrentThread();
-		}
+		// The client is destroyed on its own thread; this thread only waits on globals.
+		std::thread teardown([owned = std::move(midi)]() mutable { owned.reset(); });
+		const bool teardownStarted = readerFinished.tryAcquire(1, 5000);
+		// Release the writer on every path, so the teardown thread can always be joined.
 		writeGate.release();
-		QVERIFY(teardownStarted);
-		QVERIFY(teardown->wait(10000));
-		delete teardown;
+		teardown.join();
 
+		QVERIFY(teardownStarted);
 		QVERIFY(closed.tryAcquire(1, 5000));
 		QCOMPARE(closeCalls, 1);
 		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F"));

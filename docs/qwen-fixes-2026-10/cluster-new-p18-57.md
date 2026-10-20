@@ -62,6 +62,43 @@ Round 2 logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p1
 
 Review round 2 (REWORK) asked that `queuedBytesAreDeliveredBeforeTeardownCloses` prove, deterministically, that bytes are still queued when teardown begins. The round-2 version queued bytes without a barrier, so the writer could consume them before teardown and the test could pass with the bug present.
 
+The round-3 test (below) polled the client's `m_quit` from another thread while that thread deleted the client. Review round 3 (REWORK) flagged it: a delayed poll can read freed memory. Round 4 replaces the polling; the round-3 wording is kept here as history.
+
+## Round 4: teardown-start signal without touching the object
+
+Review round 3 asked for a teardown-start signal whose storage outlives the client, with the teardown thread joined on every path. The test (`tests/src/core/MidiSndioTest.cpp`, `queuedBytesAreDeliveredBeforeTeardownCloses`) now works like this:
+
+1. `stallWrites = 1`; create the client with `std::make_unique`; assert `isRunning()`.
+2. Connect the reader's `QThread::finished` to a callback that only releases the global semaphore `readerFinished` (direct connection, test object as context). The callback never touches the client.
+3. `sendByte(0x90)`; wait on `writeStarted`, so the writer is blocked inside its first device write.
+4. `sendByte(0x3C)`, `sendByte(0x7F)`: both are queued behind the blocked write.
+5. Hand the client to a `std::thread` that destroys it. The test thread never touches the client again.
+6. Wait on `readerFinished` (5 s bound), then **unconditionally** release `writeGate` and join the teardown thread, so the join happens on the timeout path too. Only then `QVERIFY` the signal and assert `closedBytes == 903C7F`.
+
+Why the signal means teardown has begun: the reader thread's loop exits only after it has seen `m_quit`, and `m_quit` is set only by the destructor. Qt emits `finished` after `run()` returns, so `readerFinished` can be released only after teardown has started. The gate cannot open before that, so the two bytes are in the pipe when teardown begins. If teardown discards them, the close check fails. In the test, the reader's `finished` is the teardown-start signal; it is published by the reader thread as the destructor's first effect (`m_quit`) takes hold.
+
+Round-4 evidence (logs in `runs/new-p18-57.r4/logs/`):
+
+| Step | Command | Log | EXIT |
+| --- | --- | --- | --- |
+| R4 build (first attempt) | `cmake --build build --target zene MidiSndioTest MidiReconnectTest -j4` | `build-green-r4-1.log` | 2 (`connect` overload did not resolve; fixed with the context form) |
+| R4 build | same, after the fix | `build-green-r4-3.log` | 0 |
+| **R4 GREEN** (round-2 product code) | `./MidiSndioTest` | `test-green-r4-1.log` | **0** (8 passed, 0 failed) |
+| R4 drain alone | `./MidiSndioTest queuedBytesAreDeliveredBeforeTeardownCloses` x5 | `test-green-r4-drain-1..5.log` | 0 each |
+| **R4 RED** (round-1 product code, via `git checkout 8a6b5a0f8 -- include/MidiSndio.h src/core/midi/MidiSndio.cpp`) | build, then drain alone x5 | `build-4b-reverted-r4.log`, `test-4b-reverted-r4-drain-1..5.log` | build 0; each run **1** (`closedBytes` is `"\x90"`, `MidiSndioTest.cpp:194`) |
+| R4 restore (`git checkout HEAD -- include/MidiSndio.h src/core/midi/MidiSndio.cpp`) | status shows only the test file | - | 0 |
+| R4 restored | rebuild; `./MidiSndioTest` | `build-restored-r4.log`, `test-restored-r4.log` | build 0; run 0 (8 passed) |
+| **R4 family** | `ctest -R 'Midi(Sndio\|Reconnect)' --output-on-failure` | `test-family-r4-1.log` | **0** (5/5 passed, including `ControlMidiReconnect`) |
+| gates (raw commands) | `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures` | `gate-<name>-r4.log` | 0 / 0 / 0 / 0 / 0 / 0 |
+| | `bash tests/complexity-gate.sh --check` | `gate-complexity-r4.log` | 1 (6 items in other files; 0 mention MidiSndio) |
+| | `bash tests/file-length-gate.sh --check` | `gate-file-length-r4.log` | 1 (15 items in other files; 0 mention MidiSndio) |
+| **feature check** (copy, see note) | `python3 -I /tmp/fc-p18-57/feature_check.py <worktree>` | `feature-check-run-r4.log` | **0** (`RESULT: PASS`, all 8 rows PASS) |
+| whitespace | `git diff --check` | - | 0 |
+
+The round-3 version and its evidence are kept below for the history.
+
+### Round 3 version (superseded)
+
 The test now works like this (`tests/src/core/MidiSndioTest.cpp`, `queuedBytesAreDeliveredBeforeTeardownCloses`):
 
 1. `stallWrites = 1`; create the client; assert `isRunning()` (the reader is up).
@@ -117,7 +154,7 @@ The round-2 stalled-write test is unchanged and still passes on the round-2 prod
 ## Self-check
 
 - **The regression tests FAIL with the product change reverted and PASS with it (exit codes).** Round 3: drain test on the round-1 product EXIT 1 in 5 of 5 runs; restored round-2 product: `MidiSndioTest` EXIT 0, 8/8, and the drain test alone EXIT 0 in 5 of 5 runs. Round 2: reverted drain EXIT 1, stall EXIT 134 (watchdog timeout at 300 s). Round 1: reverted EXIT 8 on `MidiSndioTest.cpp:117`, restored EXIT 0.
-- **The tests are deterministic.** The device is injected: `mio_open`, `mio_write`, `mio_read`, `mio_pollfd`, `mio_revents` and `mio_close` are fakes in `MidiSndioTest.cpp`. Synchronisation uses `QSemaphore`s that the fake releases (`bytesWritten` per byte accepted, `writeStarted` when a stalled write begins, `closed` per close). The drain test's barrier is the observed `m_quit` flip (round 3, residual timing assumption above). Each test waits on exactly what it expects. The only time bounds are `tryAcquire(n, 5000)` and the 5 s failure bound on the `m_quit` spin, which return as soon as the event happens, and the production grace in residual risk 4. No sleeps. The stall test asserts `closeCalls == 0` only while the writer is provably blocked, because `writeStarted` was acquired first.
+- **The tests are deterministic.** The device is injected: `mio_open`, `mio_write`, `mio_read`, `mio_pollfd`, `mio_revents` and `mio_close` are fakes in `MidiSndioTest.cpp`. Synchronisation uses `QSemaphore`s that the fake releases (`bytesWritten` per byte accepted, `writeStarted` when a stalled write begins, `closed` per close). The drain test's barrier is the reader thread's `finished` signal, released only after the destructor has set `m_quit` (round 4). The test never reads the client after handing it to the teardown thread. Each test waits on exactly what it expects. The only time bounds are `tryAcquire(n, 5000)`, which return as soon as the event happens, and the production grace in residual risk 4. No sleeps. The stall test asserts `closeCalls == 0` only while the writer is provably blocked, because `writeStarted` was acquired first.
 - **The fix is at the cause and complete.** `mio_write` appears only in `runWriter` (`MidiSndio.cpp:192`). `mio_close` appears in `runWriter` (`MidiSndio.cpp:200`) and in the constructor's pipe-failure path (`MidiSndio.cpp:102`), where no writer exists yet. The destructor no longer closes the handle. The ordinary path closes the handle before the destructor returns, which keeps the reconnect test's shutdown checks true (`MidiReconnectTest` 15 passed, 0 failed, re-run this round). The failed-open path is unchanged. Callers of `sendByte()` are unchanged.
 - **No collateral damage.** No saved-data format, no control command (no `ControlCommandsSnapshot` change), no limit that other callers hit. Behaviour changes are residual risks 2, 3 and 5. Project files are unaffected.
 - **Verdict is FIXED, so no ALREADY-FIXED or FALSE-POSITIVE evidence is needed.**
