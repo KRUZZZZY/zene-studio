@@ -29,6 +29,7 @@
 
 #include "ClipView.h"
 #include "ComboBox.h"
+#include "ControlTrackCreation.h"
 #include "DataFile.h"
 #include "embed.h"
 #include "MainWindow.h"
@@ -175,6 +176,8 @@ void PatternEditor::dropEvent(QDropEvent* de)
 			t->deleteClips();
 			t->createClipsForPattern(m_ps->numOfPatterns() - 1);
 		}
+		// The copy is one undo step in the store it was dropped into (control::recordCreatedTrack, container form).
+		control::recordCreatedTrack( t, model() );
 		m_ps->updateAfterTrackAdd();
 
 		de->accept();

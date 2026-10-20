@@ -30,6 +30,7 @@ namespace lmms
 {
 
 class Track;
+class TrackContainer;
 
 namespace control
 {
@@ -38,6 +39,10 @@ namespace control
  *  redo builds it again from what it was saved as (so a redo after other edits gets an equal track,
  *  not a dangling pointer). Used by clip.slice_to_instrument and clip.audio_to_midi. */
 LMMS_EXPORT void recordCreatedTrack(Track* track);
+
+/*! The same step for a track created in @a container rather than the song: a Pattern Editor copy lives in the
+ *  PatternStore. Undo removes it from @a container and redo builds it there, never in the song. */
+LMMS_EXPORT void recordCreatedTrack(Track* track, TrackContainer* container);
 
 /*! The live track whose stable id (Track::id) is @a id, or nullptr when none has it any more. Undo steps hold a
  *  track's id and look it up here when they run - never a Track* another step may already have freed (AGENTS.md). */
