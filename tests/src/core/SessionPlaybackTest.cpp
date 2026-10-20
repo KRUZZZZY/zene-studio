@@ -25,6 +25,7 @@
  */
 #include <QtTest/QtTest>
 
+#include "SessionModel.h"
 #include "SessionPlayback.h"
 #include "SessionScheduler.h"
 
@@ -387,6 +388,68 @@ private slots:
 		QCOMPARE( int( scheduler.playbackForColumn( 1 ).positionTicks ), 96 );
 		scheduler.processAudio( clock( 40 ), kFramesPerPeriod );
 		QCOMPARE( int( scheduler.playbackForColumn( 1 ).positionTicks ), 106 );
+	}
+
+	//! review-390ec761c: real -> empty churn across the whole table gives every entry
+	//! back, so a later live cell still installs through the scheduler queue.
+	void aCellThatGoesEmptyGivesItsEntryBackThroughTheScheduler()
+	{
+		SessionScheduler scheduler;
+		for( int scene = 0; scene < int( SessionSlotContentTable::Capacity ); ++scene )
+		{
+			QVERIFY( scheduler.publishSlotContent( 0, scene, 7, 0 ) );
+			QVERIFY( scheduler.publishSlotContent( 0, scene, -1, 0 ) );
+		}
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		QVERIFY2( scheduler.publishSlotContent( 1, 0, 9, 0 ), "a churned table refused a live cell" );
+		QVERIFY( scheduler.requestLaunch( 1, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 1 ).patternId, 9 );
+	}
+
+	//! 5349's reported path: a grid one cell wider than the table, with empty cells
+	//! before the only MIDI cell, still publishes that clip instead of filling the
+	//! table with the empties and refusing it.
+	void aGridOfEmptyCellsLeavesTheTableForTheMidiCell()
+	{
+		const int midiScene = int( SessionSlotContentTable::Capacity );
+		SessionModel model;
+		model.setTrackCount( 1 );
+		model.setSceneCount( midiScene + 1 );
+		model.slot( 0, midiScene ).setPatternReference( 7 );
+
+		SessionScheduler scheduler;
+		QVERIFY( publishSessionSlotContent( scheduler, model ) > 0 );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QVERIFY( scheduler.requestLaunch( 0, midiScene, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+		QCOMPARE( scheduler.playbackForColumn( 0 ).patternId, 7 );
+	}
+
+	//! new-p8-219: an audio cell publishes a negative pattern id WITH its clip and shape,
+	//! and the view the renderer reads carries them instead of only the id.
+	void anAudioCellCarriesItsClipToTheRenderPath()
+	{
+		static int sentinel = 0;
+		const auto* const clip = reinterpret_cast<const SampleBuffer*>( &sentinel );
+		SessionAudioShape shape;
+		shape.gain = 0.5f;
+		shape.loopStartFrames = 12;
+		shape.loopLengthFrames = 34;
+
+		SessionScheduler scheduler;
+		QVERIFY( scheduler.publishSlotContent( 0, 0, -1, 0, false, 0, clip, shape ) );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		const SessionSlotPlayback view = scheduler.playbackForColumn( 0 );
+		QVERIFY( view.playing );
+		QCOMPARE( view.patternId, -1 );
+		QCOMPARE( view.clip, clip );
+		QCOMPARE( view.audio.gain, 0.5f );
+		QCOMPARE( view.audio.loopStartFrames, std::int64_t( 12 ) );
+		QCOMPARE( view.audio.loopLengthFrames, std::int64_t( 34 ) );
 	}
 };
 
