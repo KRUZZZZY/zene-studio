@@ -14,12 +14,19 @@ was never counted and the harness reported zero for that period.
   `if (inst.isSingleStreamed()) { inst.play(span); }` (1040-1042). `play()` ran outside the watch.
 - Post-fix code, same function: `begin()` (1033), `playNote` (1034), `if isSingleStreamed { play(span) }`
   (1036-1038), `end()` (1041). Both per-period calls are inside the watch.
-- Callers of `renderInstrumentBuffers` (`PluginPortsHarness.h:1008`) go through `renderInstrumentInFreshThread`
-  (`PluginPortsHarness.h:1070`). The only caller that passes a counts pointer is the migrated-instrument loop in
-  `PluginPortsMigrationTest.cpp:1762-1763`, and only for `freeboy` and `tripleoscillator`. Neither is
-  single-streamed, so the `play()` branch never runs for them and their counts are unchanged. The other callers
-  (`PluginPortsHarness.h:1239`, `PluginPortsMigrationTest.cpp:1372, 2005, 2064, 3508`) pass no counts pointer, so
-  no watch runs and behaviour is unchanged.
+- Callers of the counted path, `renderInstrumentBuffers(..., &counts)` (`PluginPortsHarness.h:1008`), are
+  of two kinds:
+  - Direct counted call: the new regression, `PluginPortsMigrationTest.cpp:3206`, with a single-streamed probe.
+    This is the only call that exercises the `play()` branch under the watch.
+  - Fresh-thread counted call: the migrated-instrument loop, `PluginPortsMigrationTest.cpp:1762-1763`, which calls
+    `renderInstrumentInFreshThread` (`PluginPortsHarness.h:1070`) with `&realtimeCounts`. It runs only for
+    `freeboy` and `tripleoscillator` (`realtimeChecked`, `PluginPortsMigrationTest.cpp:1760`). Neither is single-streamed, so the `play()`
+    branch never runs for them and their counts are unchanged.
+- Direct no-count callers of `renderInstrumentBuffers`: `PluginPortsMigrationTest.cpp:585` and `:3360`. They pass
+  no counts pointer, so no watch runs.
+- Fresh-thread no-count callers of `renderInstrumentInFreshThread`: `PluginPortsHarness.h:1239`,
+  `PluginPortsMigrationTest.cpp:1372, 2005, 2064, 3508`, and `PluginPortsMigrationReference.cpp:233`. None pass a
+  counts pointer, so no watch runs and behaviour is unchanged.
 - Sibling watch: the note-plugin-data cleanup watch (`PluginPortsHarness.h:1056-1061`) is a separate window
   outside the per-period loop and is untouched. `handleMidiEvent` (once, before the loop) is not per-period
   and stays unwatched by design. `renderInstrumentPeriods` (`PluginPortsMigrationTest.cpp` ~406) has no watch and
@@ -84,3 +91,16 @@ The two ratchets fail only on items in other files, as the brief says they do on
 5. **Verdict:** FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so the "already fixed" citation does not apply. The pre-fix code is cited above.
 
 **Not checked:** I did not measure whether the real OpulenZ `play()` allocates, and I did not add it to the realtime-checked list, because that would widen the test's scope. I did not run the full ctest suite, only the `PluginPortsMigrationTest` family. The `feature_check.py` PASS table was not produced (write-jail), so the gate evidence above is per-command, not the combined table.
+
+## Rework round 1 (review: REWORK, caller evidence)
+
+The only change this round is the caller evidence under "Evidence" above (the callers bullet). The product and test code are unchanged since commit `d178478b2`. The rebuild and reruns below were done on the current tree (logs in `~/.local/share/zene-bunny-fix/qwen/runs/new-p14-227.r2/logs`; the r1 logs cited above are in `...new-p14-227.r1/logs`):
+
+| Step | Command | EXIT | Result |
+| --- | --- | --- | --- |
+| rebuild | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p14-227 cmake --build build --target zene PluginPortsMigrationTest PluginPortsMigrationReference -j4` | 0 | build-r2-1.log |
+| family ctest | `cd build/tests && ctest -R '^PluginPortsMigrationTest$' --output-on-failure` | 8 | test-r2-1.log: `PASS realtimeWatchCoversSingleStreamedPlay()`; Totals 57 passed, 1 failed (`nonRealtimeLadspaEffectsAreInvalid`, missing SWH Decimator fixture, unrelated), 2 skipped |
+| gates (same eight commands as above) | fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures | 0 each | gate-*-r2.log |
+| ratchets | complexity-gate.sh --check / file-length-gate.sh --check | 1 / 1 | 6 and 15 REGRESSION lines, none naming `PluginPortsHarness.h` or `PluginPortsMigrationTest.cpp` (grep count 0) |
+
+`feature_check.py` is still blocked by the write-jail, as described above.
