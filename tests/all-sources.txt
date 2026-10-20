@@ -2738,6 +2738,7 @@ tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
 tests/src/core/RenderJobQueueTest.cpp
+tests/src/core/RenderSourceGuardTest.cpp
 tests/src/core/RetroAudioCaptureTest.cpp
 tests/src/core/RetroMidiCaptureCommandsTest.cpp
 tests/src/core/RetroMidiRingTest.cpp
