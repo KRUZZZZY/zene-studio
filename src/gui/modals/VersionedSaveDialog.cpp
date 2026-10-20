@@ -42,12 +42,32 @@ namespace lmms::gui
 {
 
 
+// The hook a test installed to answer "which version number does this name carry?".
+static VersionedSaveDialog::VersionNumberHook s_versionNumberHook;
+
+
+//! The version number the name carries: the hook's answer while a test installed one,
+//! the digits parsed by the product otherwise.
+static bool versionNumberOf(const QString& digits, qulonglong& version)
+{
+	if (s_versionNumberHook) { return s_versionNumberHook(digits, version); }
+	bool ok = false;
+	version = digits.toULongLong(&ok);
+	return ok;
+}
+
+
 // An unparseable number, or an increment past the widest value, must refuse before the name is touched
 static bool parseIncrementableVersion( const QString &number, bool increment, qulonglong &version )
 {
-	bool ok = false;
-	version = number.toULongLong( &ok );
+	const bool ok = versionNumberOf(number, version);
 	return ok && !( increment && version == std::numeric_limits<qulonglong>::max() );
+}
+
+
+void VersionedSaveDialog::setVersionNumberHook( VersionNumberHook hook )
+{
+	s_versionNumberHook = std::move(hook);
 }
 
 

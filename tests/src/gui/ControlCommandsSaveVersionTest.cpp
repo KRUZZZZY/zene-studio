@@ -27,16 +27,16 @@
 
 #include <QFile>
 #include <QJsonObject>
-#include <QMutex>
-#include <QMutexLocker>
-#include <QThread>
-#include <QWaitCondition>
+#include <QList>
+
+#include <limits>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "Song.h"
+#include "VersionedSaveDialog.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -49,47 +49,6 @@ QByteArray readBytes(const QString& path)
 	QFile file(path);
 	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
-
-//! Takes the file away from a handler that is still running, so a regression cannot hang the
-//! suite. The command's loop looks for the first free name and keeps finding the same file, so
-//! without this the test would never end. The budget is a safety net, not an assertion: the
-//! outcome of the test is the same whether the file is taken away before or during the loop.
-class StuckLoopBreaker : public QThread
-{
-public:
-	explicit StuckLoopBreaker(const QString& path) : m_path(path) {}
-
-	//! The handler returned in time: nothing is taken away.
-	void release()
-	{
-		QMutexLocker locker(&m_mutex);
-		m_released = true;
-		m_condition.wakeAll();
-	}
-
-protected:
-	void run() override
-	{
-		QMutexLocker locker(&m_mutex);
-		while (!m_released)
-		{
-			if (!m_condition.wait(&m_mutex, kBudgetMs))
-			{
-				locker.unlock();
-				QFile::remove(m_path);
-				return;
-			}
-		}
-	}
-
-private:
-	//! Long enough that a handler which returns at all has returned long before.
-	static const int kBudgetMs = 5000;
-	QString m_path;
-	QMutex m_mutex;
-	QWaitCondition m_condition;
-	bool m_released = false;
-};
 
 } // namespace
 
@@ -107,6 +66,7 @@ private slots:
 
 	void cleanupTestCase()
 	{
+		VersionedSaveDialog::setVersionNumberHook(nullptr);
 		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
@@ -124,12 +84,23 @@ private slots:
 		const QByteArray before = readBytes(path);
 		QVERIFY(!before.isEmpty());
 
-		StuckLoopBreaker breaker(path);
-		breaker.start();
+		// The version numbers this name answers with, in order. The first one is the widest
+		// version number, so the first answer refuses exactly as the digits in the name do.
+		// The second one is a small number, so a caller that IGNORES the refusal gets a
+		// name that is free and its loop ends: the test is bounded by what the hook says,
+		// not by a timer and not by touching the file.
+		QList<qulonglong> answers{std::numeric_limits<qulonglong>::max(), 42};
+		VersionedSaveDialog::setVersionNumberHook(
+			[answers](const QString&, qulonglong& version) mutable {
+				if (answers.isEmpty()) { version = 1; return true; }
+				version = answers.takeFirst();
+				return true;
+			});
+
 		const ControlResult result =
 			ControlRegistry::instance()->invoke(QStringLiteral("project.save_version"));
-		breaker.release();
-		breaker.wait();
+
+		VersionedSaveDialog::setVersionNumberHook(nullptr);
 
 		QVERIFY2(!result.ok, "project.save_version did not refuse a version it cannot advance");
 		QVERIFY(result.errorKind == ControlErrorKind::Refused);
