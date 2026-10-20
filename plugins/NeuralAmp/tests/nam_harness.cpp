@@ -661,7 +661,7 @@ int main(int argc, char** argv)
 	for (int b = 0; b < opt.blocks; ++b)
 	{
 		const int64_t off =
-			static_cast<int64_t>(opt.warmupBlocks + b) * opt.blockSize;
+			(static_cast<int64_t>(opt.warmupBlocks) + b) * opt.blockSize;
 		std::memcpy(inBlock.data(), input.data() + off,
 			static_cast<size_t>(opt.blockSize) * sizeof(float));
 
@@ -683,9 +683,9 @@ int main(int argc, char** argv)
 	wallTotalUs = std::chrono::duration<double, std::micro>(wallEnd - wallStart).count();
 
 	// Measured region only (skip warmup for signal statistics).
-	std::vector<float> measuredIn(input.begin() + opt.warmupBlocks * opt.blockSize,
+	std::vector<float> measuredIn(input.begin() + static_cast<int64_t>(opt.warmupBlocks) * opt.blockSize,
 		input.end());
-	std::vector<float> measuredOut(output.begin() + opt.warmupBlocks * opt.blockSize,
+	std::vector<float> measuredOut(output.begin() + static_cast<int64_t>(opt.warmupBlocks) * opt.blockSize,
 		output.end());
 
 	// (a) sanity.
