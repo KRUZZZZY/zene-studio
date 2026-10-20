@@ -73,7 +73,7 @@ protected slots:
 private:
 	LadspaEffect * m_effect;
 	ch_cnt_t m_processors;
-	ch_cnt_t m_controlCount;
+	int m_controlCount;
 	bool m_noLink;
 	BoolModel m_stereoLinkModel;
 	//! control vector for each processor
