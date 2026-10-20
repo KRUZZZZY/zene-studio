@@ -16,18 +16,17 @@ Evidence:
 - include/AudioResampler.h:119 ratio convention output/input.
 - src/core/Sample.cpp:125 `setRatio(sampleRateRatio * freqRatio * ratio)`.
 
-Regression test removed: tests/src/core/SlicerTPlayheadTest.cpp `fadeTimingStaysCorrectWhenSpeedDiffers` (asserted the reversed formula).
+A fade-envelope smoke test was added in tests/src/core/SlicerTPlayheadTest.cpp (constant-amplitude fixture) asserting the fade stays in the output tail. Production restored to base; no product change remains.
 
 ## Evidence table
 
 | Check | Result |
 | --- | --- |
 | Production reverted | plugins/SlicerT/SlicerT.cpp:158 back to `*` |
-| Test removed | SlicerTPlayheadTest.cpp fade method removed |
-| upstream-modifications entry removed | yes |
+| Gates | feature_check.py PASS |
 
 ## Self-check
 
-- No production code change beyond reverting the r1 patch.
-- No new tests; existing SlicerT tests unchanged in behaviour.
-- Gates: to be run.
+- If verdict is FALSE-POSITIVE: the intended contract is AudioResampler ratio = output/input (include/AudioResampler.h:98-119) and SlicerT::getMidi uses sampleSize * speedRatio (plugins/SlicerT/SlicerT.cpp:348); the original `framesLeft * speedRatio` matches.
+- No collateral damage: reverted r1 production change; old projects load as before.
+- Tests: SlicerTPlayheadTest 1/1 pass, SlicerTWaveformTest, SlicerTZoomTest pass.

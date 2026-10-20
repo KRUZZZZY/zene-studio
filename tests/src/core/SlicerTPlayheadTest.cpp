@@ -68,6 +68,53 @@ using namespace revtest;
 namespace
 {
 
+constexpr int kFadeTestRate = 44100;
+
+QString writeConstantWav(const QString& path)
+{
+	const auto frames = kFadeTestRate * 2;
+	QByteArray pcm;
+	pcm.reserve(frames * 2);
+	for (int i = 0; i < frames; ++i)
+	{
+		const auto value = static_cast<qint16>(16000);
+		pcm.append(static_cast<char>(value & 0xff));
+		pcm.append(static_cast<char>((value >> 8) & 0xff));
+	}
+
+	QByteArray out;
+	const auto put32 = [&out](quint32 v) {
+		out.append(static_cast<char>(v & 0xff));
+		out.append(static_cast<char>((v >> 8) & 0xff));
+		out.append(static_cast<char>((v >> 16) & 0xff));
+		out.append(static_cast<char>((v >> 24) & 0xff));
+	};
+	const auto put16 = [&out](quint16 v) {
+		out.append(static_cast<char>(v & 0xff));
+		out.append(static_cast<char>((v >> 8) & 0xff));
+	};
+
+	out.append("RIFF");
+	put32(36 + pcm.size());
+	out.append("WAVEfmt ");
+	put32(16);
+	put16(1);
+	put16(1);
+	put32(kFadeTestRate);
+	put32(kFadeTestRate * 2);
+	put16(2);
+	put16(16);
+	out.append("data");
+	put32(pcm.size());
+	out.append(pcm);
+
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly)) { return {}; }
+	file.write(out);
+	file.close();
+	return path;
+}
+
 //! One real render period, driven by the test (the device is stopped).
 void renderPeriod()
 {
@@ -291,6 +338,77 @@ private slots:
 			}
 			audio->removePlayHandlesOfTypes(track, PlayHandle::Type::NotePlayHandle);
 		}
+	}
+
+	//! Regression: SlicerT fade envelope stays in the last fadeOutFrames output frames when speed changes.
+	//! At speed 2 (pitch -12 st), the corrected formula keeps the fade in the output tail; the reversed
+	//! (divide) formula would start it roughly four times earlier.
+	void fadeEnvelopeStaysInOutputTailWhenSpeedChanges()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = writeConstantWav(scratch.filePath(QStringLiteral("constant.wav")));
+		QVERIFY(!wav.isEmpty());
+
+		Engine::getSong()->clearProject();
+		const QString id = addTrack(QStringLiteral("instrument"));
+		QVERIFY(!id.isEmpty());
+		ControlResult failure;
+		auto* track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &failure));
+		QVERIFY(track != nullptr);
+		InstrumentLoaderThread loader(nullptr, track, QStringLiteral("slicert"));
+		loader.start();
+		QVERIFY(loader.wait());
+		QCoreApplication::processEvents();
+		Instrument* const slicer = track->instrument();
+		QVERIFY(slicer != nullptr);
+		QVERIFY(QMetaObject::invokeMethod(slicer, "updateFile", Qt::DirectConnection, Q_ARG(QString, wav)));
+
+		AudioEngine* const audio = Engine::audioEngine();
+		audio->setOverloadSheddingEnabled(false);
+		track->pitchModel()->setValue(-1200.0f);   // pitchRatio = 2  (speedRatio = 2)
+		const Note note(TimePos(1), TimePos(0), track->baseNote());
+		auto* const handle = NotePlayHandleManager::acquire(track, 0,
+			audio->framesPerPeriod() * 2000, note);
+		QVERIFY(audio->addPlayHandle(handle));
+
+		std::vector<SampleFrame> all;
+		for (int i = 0; i < 2000; ++i)
+		{
+			const auto period = audio->renderNextPeriod();
+			all.insert(all.end(), period.begin(), period.end());
+		}
+
+		int lastActive = static_cast<int>(all.size()) - 1;
+		while (lastActive >= 0 && std::fabs(all[lastActive][0]) <= 1e-4f) { --lastActive; }
+		QVERIFY(lastActive > 4000);
+
+		const int fadeOutFrames = std::max(1, static_cast<int>(10.0f / 1000.0f
+			* audio->outputSampleRate()));
+
+		const int refIndex = lastActive - fadeOutFrames * 4;
+		QVERIFY(refIndex >= 0);
+		const float refAmp = std::fabs(all[refIndex][0]);
+		QVERIFY(refAmp > 1e-3f);
+
+		// Two fade windows before the tail: still full amplitude under the correct formula.
+		const int farIndex = lastActive - fadeOutFrames * 2;
+		QVERIFY(farIndex >= 0);
+		const float farRatio = std::fabs(all[farIndex][0]) / refAmp;
+		QVERIFY2(farRatio > 0.95f,
+			qPrintable(QStringLiteral("fade started too early: farRatio=%1").arg(farRatio)));
+
+		// Inside the fade window: attenuated.
+		const int nearIndex = lastActive - 220;
+		QVERIFY(nearIndex >= 0);
+		const float nearRatio = std::fabs(all[nearIndex][0]) / refAmp;
+		QVERIFY2(nearRatio < 0.99f && nearRatio > 0.0f,
+			qPrintable(QStringLiteral("fade not applied in tail: nearRatio=%1").arg(nearRatio)));
+
+		// Tail: essentially silent.
+		const float tailRatio = std::fabs(all[lastActive][0]) / refAmp;
+		QVERIFY2(tailRatio < 0.1f,
+			qPrintable(QStringLiteral("tail not faded: tailRatio=%1").arg(tailRatio)));
 	}
 
 	//! Cluster 4467 round 2: removing a track with a live SlicerT state destroys the note before the instrument.
