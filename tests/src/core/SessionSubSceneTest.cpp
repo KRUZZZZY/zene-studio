@@ -271,6 +271,62 @@ private slots:
 		QVERIFY2(kept.contains(QStringLiteral("v=\"2\"")) && kept.contains(QStringLiteral("Future")) && kept.contains(QStringLiteral("z:later")), qPrintable(kept));
 	}
 
+	//! QString::toInt() returns 0 for text, so a row or column that is not a number must be refused by its ok flag;
+	//! read as 0 it would attach the sub-scene to scene 0 (or column 0) instead of leaving it out.
+	void aNonNumericSubSceneRowIsRefusedNotSceneZero()
+	{
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral("<z:subscene name=\"Text\" scene=\"abc\" tracks=\"0,2\"/>")));
+		SubScene text;
+		text.name = QStringLiteral("Keep");
+		text.scene = 3;
+		QVERIFY(!text.restoreState(doc.documentElement()));
+		QCOMPARE(text.scene, 3);  // *this unchanged, as the header promises
+		QCOMPARE(text.name, QStringLiteral("Keep"));
+
+		QVERIFY(doc.setContent(QStringLiteral("<z:subscene name=\"Gap\" scene=\"0\" tracks=\"0,x\"/>")));
+		SubScene column;
+		QVERIFY(!column.restoreState(doc.documentElement()));
+
+		// A real row 0 still restores as row 0.
+		QVERIFY(doc.setContent(QStringLiteral("<z:subscene name=\"Zero\" scene=\"0\" tracks=\"0,2\"/>")));
+		SubScene zero;
+		QVERIFY(zero.restoreState(doc.documentElement()));
+		QCOMPARE(zero.scene, 0);
+
+		// Through a project file: one malformed row makes the whole section unclaimed (SessionSubScenes::load), so it is
+		// kept verbatim and nothing is read from it - the "abc" row is not attached to scene 0.
+		Song* song = Engine::getSong();
+		std::vector<SubScene> kept = song->sessionModel().subScenes();
+		SubScene seed;
+		seed.name = QStringLiteral("Seed");
+		seed.tracks = {0};
+		song->sessionModel().setSubScenes({seed});
+		const QString base = m_dir.filePath(QStringLiteral("nonnumeric-base.mmp"));
+		const bool saved = song->saveProjectFile(base, false);
+		song->sessionModel().setSubScenes(std::move(kept));
+		QVERIFY(saved);
+		QString text_file = QString::fromUtf8(readFileBytes(base));
+		const int from = text_file.indexOf(QStringLiteral("<z:subscenes"));
+		const int to = text_file.indexOf(QStringLiteral("</z:subscenes>"));
+		QVERIFY(from > 0 && to > from);
+		const QString edited = QStringLiteral("<z:subscenes v=\"1\"><z:subscene name=\"Bad\" scene=\"abc\" tracks=\"0,2\"/>"
+			"<z:subscene name=\"Good\" scene=\"1\" tracks=\"0\"/></z:subscenes>");
+		text_file.replace(from, to + int(qstrlen("</z:subscenes>")) - from, edited);
+		const QString path = m_dir.filePath(QStringLiteral("nonnumeric.mmp"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(text_file.toUtf8());
+		file.close();
+		song->loadProject(path);
+		QVERIFY2(song->loadRefusal().isEmpty(), qPrintable(song->loadRefusal()));
+		QVERIFY(song->sessionModel().subScenes().empty());  // not read with a guessed row 0
+		const QString resaved = m_dir.filePath(QStringLiteral("nonnumeric-resaved.mmp"));
+		QVERIFY(song->saveProjectFile(resaved, false));
+		const QString section = sectionText(resaved, QStringLiteral("z:subscenes"));
+		QVERIFY2(section.contains(QStringLiteral("scene=\"abc\"")) && section.contains(QStringLiteral("name=\"Bad\"")), qPrintable(section));
+	}
+
 private:
 	//! Drop what is queued or playing: the reset is taken on the scheduler's next period, with what was queued before it.
 	static void settle(SessionScheduler& scheduler)
