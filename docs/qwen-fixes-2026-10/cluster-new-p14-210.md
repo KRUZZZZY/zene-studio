@@ -56,7 +56,14 @@ The 4b patch is `fix-v2.patch` in the LOG FOLDER. It is the diff from `fixless-v
 | complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 |
 | file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 |
 
-The two ratchets are red on the train on purpose. I checked them the way `feature_check.py` does: each REGRESSION line's key (its own `key()`/`item_file()` helpers) against the cached base listing `gate-baselines/ded355440871a86cc907cdc2d6465f2d3d597a6b.json`, limited to my changed file. Complexity has 6 REGRESSION lines and file-length has 15. None is a new item in a changed file. The file-length item for `tests/src/core/NotePlaybackTest.cpp` is already in the base listing, so it is not new. No new function is over CCN 10: the new functions are the two small helpers and the two test slots, none of them complex.
+The two ratchets are red on the train on purpose. The base is `2da2ed356`, the commit the branch was cut from and the `merge-base` of HEAD and `050/m0-train-8`. Its tree was exported with `git archive` to `/tmp/zene-p14-base-src` (`git worktree add` is refused by the bunny guard in this lane), and both ratchets were run there (`base-complexity-4.log`, `base-file-length-4.log`). Comparing the REGRESSION keys with `feature_check.py`'s own `key()` (`compare_base.py`, read-only):
+
+- complexity: 6 keys at HEAD, 6 at base, none new, none gone.
+- file-length: 14 keys at HEAD, 14 at base, none new, none gone. `tests/src/core/NotePlaybackTest.cpp` is over 500 lines at base too (624 lines there, 686 at HEAD), so its key is unchanged.
+
+No new function is over CCN 10: the new functions are the two small helpers and the two test slots, none of them complex.
+
+A note on an earlier pass: I first compared against a cached listing for a different base (`ded355…`). That was the wrong base and its result is not used here.
 
 ## Self-check
 
@@ -68,6 +75,7 @@ The two ratchets are red on the train on purpose. I checked them the way `featur
    - Over-aligned allocations inside this binary: the `renderMonstroVoiceSetConcurrent` helper in this file now goes through `allocateAligned` and is freed by the matching aligned delete. `monstroConcurrentVoicesKeepIndependentModulation` passes (`test-17-final-GREEN.log`).
 4. **No collateral damage.** Yes. The change is test-only, in the `NotePlaybackTest` binary. No product code, saved project data or load path is touched. Counting `monstroNoteStartDoesNotAllocate` is now a real check: it reads 0 with the counter working. The positive controls show the counter sees plain allocations.
 5. **Verdict FIXED**, not ALREADY-FIXED or FALSE-POSITIVE, so no separate proof is needed for those.
+6. **Completion check** (`submit_check.py`, `submit-check-2.log`, after the commit): commits on the branch, clean tree, report present, tests changed all PASS. `gates (feature_check.py)` still FAILs, because the wrapper cannot create `<worktree>-feature-check` outside the write-jail (`gate-feature-check-1.log`). The component gates above all ran with the wrapper's own commands and checks. This item is the only open FAIL, and it is environmental, not a code result.
 
 Other checks: the audio path, undo and commands are unchanged. The fix adds no logging, locking or allocation to any product path, and no control command, so `ControlCommandsSnapshot` does not move. The test file is already listed in `tests/fork-sources.txt:2377`; no new file and no upstream-modifications entry are needed.
 
@@ -77,3 +85,4 @@ Other checks: the audio path, undo and commands are unchanged. The fix adds no l
 - To load the real `monstro` instrument, the `monstro` plugin target had to be built into the worktree's `build/` (`build/plugins/libmonstro.so`). That is a build artifact, not a source change.
 - Build commands needed `CCACHE_TEMPDIR` pointed at `/tmp` and `MAKEFLAGS` unset, because the inherited jobserver fifo and the `/run/user` ccache directory are not writable from this session.
 - Only the `NotePlaybackTest` family was run. The full `ctest` was not run.
+- `git worktree add` and `git worktree list` are refused by the bunny guard in this lane (`base-worktree-add.log`). The base was exported with `git archive` into `/tmp/zene-p14-base-src` instead, which is left in place (the run rules say to delete nothing outside the worktree).
