@@ -431,6 +431,35 @@ private slots:
 		delete track;
 	}
 
+	//! Cluster 4172: a controller lane of a take the composite does not select never reaches the instrument.
+	void controllerLanesFollowTheComposite()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false); clip->changeLength(TimePos(384));
+		clip->setLaneIndex(1);
+		clip->setControllerPoints(ControllerKind::ControlChange, 7, {{0, 64}});
+		TakeLaneModel& comp = track->takeLanes();
+		comp.addLane(); comp.addLane();
+		QVERIFY(comp.selectSegment(0, 384, 0));
+		MidiPort* port = track->midiPort();
+		port->setOutputChannel(6);
+		port->setMode(MidiPort::Mode::Output);
+		const quint64 written = port->outputEventsWritten();
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(!track->play(TimePos(0), frames, 0, -1));
+		QCOMPARE(port->outputEventsWritten(), written);
+		// Auditioning the take's own lane must still play its controllers (the gate is the comp, not the feature).
+		comp.setAuditionLane(1);
+		track->play(TimePos(1), frames, 0, -1);
+		QCOMPARE(port->outputEventsWritten(), written + 1);
+		comp.setAuditionLane(-1);
+		delete track;
+	}
+
 private:
 	int m_rate = 44100;
 };
