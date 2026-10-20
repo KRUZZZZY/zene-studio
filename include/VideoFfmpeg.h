@@ -72,8 +72,8 @@ struct MediaStream
 
 	//! The next decoded frame into @a frame, reading packets through @a packet as needed; false at the end or on an error.
 	bool receive(AVFrame* frame, AVPacket* packet);
-	//! Seek to the key frame at or before @a seconds and empty the decoder.
-	void seek(double seconds);
+	//! Seek to the key frame at or before @a seconds and empty the decoder; false when the demuxer refuses the seek.
+	bool seek(double seconds);
 
 private:
 	//! Send the stream's next packet to the decoder, or start flushing it at the end; false when nothing is left.
