@@ -24,11 +24,18 @@
 #include <QFile>
 #include <QTemporaryDir>
 #include <algorithm>
+#include <limits>
 #include <new>
 
 #include "DrumSynth.h"
 
 using namespace lmms;
+
+namespace lmms {
+extern float envpts[8][3][32];
+extern float timestretch;
+extern int chkOn[8];
+}
 
 class DrumSynthTest : public QObject
 {
@@ -97,6 +104,38 @@ Envelope=0,00000001 100,0
 		QVERIFY2(!allocationFailed, "An overflowing duration must be rejected before allocation");
 		QCOMPARE(frames, 0);
 		QVERIFY(samples == nullptr);
+	}
+
+	void mapsAFractionalStepAboveMaxToTheSafeMaximumLength()
+	{
+		// globals declared at file scope below
+
+		// Reset envelope state, then install a duration whose step count is
+		// fractional just above maxSteps; truncation must yield maxSteps.
+		for (int e = 0; e < 8; e++)
+		{
+			chkOn[e] = 0;
+			for (int t = 0; t < 3; t++)
+			{
+				for (int p = 0; p < 32; p++)
+				{
+					envpts[e][t][p] = -1.f;
+				}
+			}
+		}
+		constexpr int blockLength = 1200;
+		constexpr int baseLength = 2 * blockLength;
+		constexpr int maxSteps = (std::numeric_limits<int>::max() - baseLength) / blockLength;
+		const float boundarySteps = static_cast<float>(maxSteps) + 0.5f;
+		envpts[1][0][0] = boundarySteps * blockLength;
+		envpts[1][0][1] = -1.f;
+		chkOn[0] = 1;
+		timestretch = 1.f;
+
+		DrumSynth synth;
+		const int length = synth.LongestEnv();
+		const int expectedLength = baseLength + (blockLength * maxSteps);
+		QCOMPARE(length, expectedLength);
 	}
 };
 

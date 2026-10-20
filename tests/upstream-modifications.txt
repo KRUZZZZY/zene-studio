@@ -2407,3 +2407,4 @@ tests/rt-safety-scope.txt	Q050-041: declares CarlaInstrument::playImpl, handleMi
 src/common/SharedMemory.cpp	ci-train-5: cast the Windows FileView handle through void* before Header* (mingw64/windows-arm64 build break from new-p9-457); no behaviour change.
 tests/CMakeLists.txt	ci-train-5: build VstEffectControlsTest only where the vsteffect target exists (macOS configure break).
 src/core/DrumSynth.cpp	cluster new-p10-143-port: reject envelope lengths outside the public int frame range and validate the channel-expanded sample count against the long write cursor and allocation byte limit before allocating; DrumSynthTest covers the overflow refusal.
+include/DrumSynth.h	cluster new-p10-143-port: expose LongestEnv() for boundary regression coverage of the fractional-step guard.

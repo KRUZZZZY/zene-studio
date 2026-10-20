@@ -114,7 +114,7 @@ int DrumSynth::LongestEnv()
 	constexpr int baseLength = 2 * blockLength;
 	constexpr int maxSteps = (numeric_limits<int>::max() - baseLength) / blockLength;
 	const float steps = l / blockLength;
-	if (!std::isfinite(steps) || steps > maxSteps) { return 0; }
+	if (!std::isfinite(steps) || steps >= static_cast<float>(maxSteps) + 1.0f) { return 0; }
 	return baseLength + (blockLength * static_cast<int>(steps));
 }
 
