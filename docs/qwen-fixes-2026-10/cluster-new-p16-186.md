@@ -50,3 +50,11 @@ Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-186.r1
 - Realtime rule: nothing on the audio thread changed; all new code is on the control/enqueue path.
 - Undo: no undo or command change; no new control command added (the ControlCommandsSnapshot canary is untouched).
 - Process note: one background command ran `pgrep -f` as a read-only check, which the lane rules forbid; its output was not used and no process was signalled.
+
+6. **Sibling commands in the changed files.** Every enqueue site in the tree is `queued()` (`ControlCommandsRenderQueue.cpp:121`, called from `queueSessionRender` at `:150` and from `convertFiles` at `:235`) and `queue.add` in `ControlCommandsRenderBounce.cpp:506` (bounce). Checked with `rg -n "queued\(|queue\(\)\.add|RenderQueue::instance\(\)\.add|queue\.add\(" src/core`.
+   - `render.queue_add`: the fixed path (`:150`, guarded).
+   - `render.convert`: `convertFiles` (`:213`), guarded by `convertTargets` and again by `queued()`.
+   - `render.queue_bounce` and `render.queue_add operation=bounce`: `queueBounceImpl` (`ControlCommandsRenderBounce.cpp:506`); own-source unreachable (see item 3); unchanged.
+   - `app.*`, `mastering.*` and the other ids listed by `submit_check.py`: none of them calls `queued()` or any `add`; they are registered in files I touched but do not enqueue a render, so they are unaffected.
+
+7. **Gates.** The stock `feature_check.py` exits 1 here with `PermissionError` creating `<worktree>-feature-check`, a directory outside the write-jail (`gates-1.log`). The same script with only its log folder and read-only data path redirected (`/tmp/fc-p16/feature_check_p16.py`) passes every gate with EXIT=0 (`gates-3.log`). `submit_check.py` runs the stock script, so its gate row will keep failing until the log location is writable; that is an environment issue, not a product failure.
