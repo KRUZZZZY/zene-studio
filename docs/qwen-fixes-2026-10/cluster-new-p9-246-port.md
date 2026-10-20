@@ -125,11 +125,19 @@ All logs are in
   attempt was removed.
 - **No collateral damage:** the rendered output of a Mallets note is unchanged
   (sample-exact against the reference module, sha256 `590b443f...26339cf`,
-  `max|delta|=0`); no project format, save file or setting changed; the
-  limit is per instrument and only a note beyond 128 simultaneous notes of the
-  *same* instrument is affected (it waits for a voice instead of being played
-  immediately, as it was before the previous attempt's global pool was
-  exhausted).
+  `max|delta|=0`); no project format, save file or setting changed; no other
+  caller of the changed code exists (the pool is private to the plugin and no
+  control command, script or Lua binding reaches it). The one visible change is
+  the limit itself, and it is stated plainly: a *single* Mallets instrument
+  voices at most 128 notes at the same time, so a note that starts while all
+  128 voices are busy waits for one instead of being played at once. The
+  previous attempt on this branch had the same policy (a note that found no
+  voice waited), only against a shared pool of 1024 voices that *every*
+  Mallets instrument competed for - so the change is from "1024 voices shared
+  by the whole project" to "128 voices per instrument", which is the product
+  limit the QA review asked to establish and enforce. Every other instrument
+  in the project now keeps its own voices instead of losing them to another
+  instrument's notes.
 - **Realtime, undo and commands:** the render path only does atomic
   compare-exchange, atomic loads/stores and the STK arm calls; it allocates
   nothing, frees nothing, locks nothing, waits for nothing and logs nothing
