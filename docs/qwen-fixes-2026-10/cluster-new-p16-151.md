@@ -59,7 +59,7 @@ Gates, run as the individual commands `feature_check.py` runs (see below):
 
 Gate caveat: `feature_check.py` itself cannot run in this sandbox. It writes its logs to `<worktree>/../<name>-feature-check/` (`projects/zene-studio-program/zene-qwen-new-p16-151-feature-check`), and `mkdir` fails with `PermissionError`. That directory is outside my write-jail. Its ratchet rule is "no new item in a changed file". I ran the same commands from the worktree and checked that rule by hand: the ratchet items for my two files are none, and the other lines are in untouched files. I did not get the script's base-comparison table, so the PASS rows for complexity and file-length are my reading, not the script's output.
 
-`submit_check.py`: run after this commit, output in `logs/gate-submit-*.log`.
+`submit_check.py` after the fix commit (`logs/gate-submit-2.log`, EXIT 1): PASS for commits on the branch, clean working tree, this report, and tests changed; FAIL only for `gates (feature_check.py)`, which cannot run in this sandbox (see the gate caveat above). The five ASK items are answered in the Self-check section.
 
 ## Self-check
 
