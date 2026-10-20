@@ -31,6 +31,7 @@
 #ifdef LMMS_HAVE_SNDIO
 
 #include <atomic>
+#include <memory>
 
 #include <QThread>
 
@@ -68,8 +69,14 @@ protected:
 	void run() override;
 
 private:
+	void writeQueuedBytes();
+
 	mio_hdl *m_hdl;
 	std::atomic<bool> m_quit;
+	//! Output queue between sendByte() and m_writer: [0] is read by the writer,
+	//! [1] is written by sendByte() without blocking.
+	int m_outPipe[2];
+	std::unique_ptr<QThread> m_writer;
 } ;
 
 

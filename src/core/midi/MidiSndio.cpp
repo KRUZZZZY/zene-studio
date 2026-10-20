@@ -27,9 +27,12 @@
 
 #ifdef LMMS_HAVE_SNDIO
 
+#include <cerrno>
 #include <cstdlib>
 #include <sndio.h>
+#include <fcntl.h>
 #include <poll.h>
+#include <unistd.h>
 
 #include "ConfigManager.h"
 
@@ -38,9 +41,29 @@ namespace lmms
 {
 
 
+//! Creates the output pipe. Its write end is non-blocking, so sendByte() never waits on it.
+static bool openOutputPipe( int fds[2] )
+{
+	if( ::pipe( fds ) != 0 )
+	{
+		return false;
+	}
+	if( ::fcntl( fds[1], F_SETFL, ::fcntl( fds[1], F_GETFL ) | O_NONBLOCK ) < 0 )
+	{
+		::close( fds[0] );
+		::close( fds[1] );
+		fds[0] = -1;
+		fds[1] = -1;
+		return false;
+	}
+	return true;
+}
+
+
 MidiSndio::MidiSndio() :
 	MidiClientRaw(),
-	m_quit( false )
+	m_quit( false ),
+	m_outPipe{ -1, -1 }
 {
 	QString dev = probeDevice();
 
@@ -59,7 +82,17 @@ MidiSndio::MidiSndio() :
 		return;
 	}
 
+	if( !openOutputPipe( m_outPipe ) )
+	{
+		mio_close( m_hdl );
+		m_hdl = nullptr;
+		printf( "sndio: failed creating the MIDI output pipe\n" );
+		return;
+	}
+
 	start( QThread::LowPriority );
+	m_writer.reset( QThread::create( [this] { writeQueuedBytes(); } ) );
+	m_writer->start();
 }
 
 
@@ -75,9 +108,27 @@ MidiSndio::~MidiSndio()
 		}
 	}
 
+	if( m_writer )
+	{
+		m_quit.store(true);
+		// The byte wakes the writer out of its read; it then sees m_quit and stops.
+		[[maybe_unused]] const ssize_t woke = ::write( m_outPipe[1], "", 1 );
+		if( !m_writer->wait( 1000 ) )
+		{
+			m_writer->terminate();
+			m_writer->wait();
+		}
+	}
+
 	if( m_hdl != nullptr )
 	{
 		mio_close( m_hdl );
+	}
+
+	if( m_outPipe[0] >= 0 )
+	{
+		::close( m_outPipe[0] );
+		::close( m_outPipe[1] );
 	}
 }
 
@@ -97,7 +148,40 @@ void MidiSndio::sendByte( const unsigned char c )
 		return;
 	}
 
-	mio_write( m_hdl, &c, 1 );
+	// Never waits on the device: the byte goes into the pipe for m_writer. When the pipe is full
+	// (the device has stalled for a long time) the byte is dropped instead of holding up the caller.
+	[[maybe_unused]] const ssize_t queued = ::write( m_outPipe[1], &c, 1 );
+}
+
+
+//! Runs on m_writer, the only thread that writes to the device, so a blocking mio_write() here
+//! cannot hold up the caller of sendByte().
+void MidiSndio::writeQueuedBytes()
+{
+	char buf[0x100];
+	while( true )
+	{
+		const ssize_t n = ::read( m_outPipe[0], buf, sizeof( buf ) );
+		if( n < 0 && errno == EINTR )
+		{
+			continue;
+		}
+		// m_quit is checked after every read, so bytes still queued at shutdown are discarded
+		// rather than written to a device that may be going away.
+		if( n <= 0 || m_quit.load() )
+		{
+			break;
+		}
+		for( size_t done = 0; done < static_cast<size_t>( n ); )
+		{
+			const size_t written = mio_write( m_hdl, buf + done, static_cast<size_t>( n ) - done );
+			if( written == 0 )
+			{
+				break;
+			}
+			done += written;
+		}
+	}
 }
 
 
