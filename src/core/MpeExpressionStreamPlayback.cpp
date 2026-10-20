@@ -41,7 +41,8 @@
  *  the unchanged scalar path (sendMpeExpressionMidi). This file adds no state
  *  to the handle: it recomputes the current window from m_totalFramesPlayed, so
  *  a point is sent exactly once (the windows are half-open, [startTick,
- *  endTick)).
+ *  endTick)). The points are sorted, so each axis seeks to its first point in
+ *  the window with a binary search instead of walking the stream's history.
  *
  *  Realtime contract (absolute): the audio thread reads the note's own vectors
  *  (no allocation), takes no lock, does no I/O and emits no Qt signal. The only
@@ -55,6 +56,7 @@
  *  is written out in MpeStreamSnapshot.h.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -80,7 +82,34 @@ enum StreamAxis
 	AxisCount = 3,
 };
 
+#ifdef LMMS_TESTING
+//! Set by MpePlaybackTest through the LMMS_TESTING seam below; null in product
+//! use. It counts the points the scheduling loop examines, which is how the
+//! test shows a period no longer walks the stream's history.
+std::size_t* s_mpeStreamPointScanCounterForTest = nullptr;
+
+inline void noteMpeStreamPointExamined()
+{
+	if( s_mpeStreamPointScanCounterForTest != nullptr )
+	{
+		++*s_mpeStreamPointScanCounterForTest;
+	}
+}
+#else
+inline void noteMpeStreamPointExamined()
+{
+}
+#endif
+
 } // namespace
+
+
+#ifdef LMMS_TESTING
+void NotePlayHandle::setMpeStreamPointScanCounterForTest( std::size_t* counter )
+{
+	s_mpeStreamPointScanCounterForTest = counter;
+}
+#endif
 
 
 tick_t NotePlayHandle::mpeStreamTick( f_cnt_t frameWithinNote ) const
@@ -187,23 +216,30 @@ void NotePlayHandle::scheduleMpeStreamAxis( const std::vector<MpeExpressionPoint
 		sendMpeExpressionAxisEvent( axis, base, periodStart );
 	}
 
-	for( const MpeExpressionPoint& point : *points )
-	{
-		if( point.tick < startTick )
+	// Seek to this period's first point instead of walking the stream from its
+	// start: the points are sorted (MpeExpressionStream::setPitch sorts them),
+	// so lower_bound lands in O(log n) comparisons and past points are never
+	// visited. The audio thread must not pay for the stream's whole history on
+	// every period (new-p20-84).
+	auto point = std::lower_bound( points->begin(), points->end(), startTick,
+		[]( const MpeExpressionPoint& candidate, tick_t tick )
 		{
-			continue;
-		}
-		if( point.tick >= endTick )
+			return candidate.tick < tick;
+		} );
+	for( ; point != points->end(); ++point )
+	{
+		if( point->tick >= endTick )
 		{
 			break;	// sorted: every later point is later still
 		}
-		const f_cnt_t at = mpeStreamPointOffset( point.tick, startFrame, framesThisPeriod,
+		noteMpeStreamPointExamined();
+		const f_cnt_t at = mpeStreamPointOffset( point->tick, startFrame, framesThisPeriod,
 			periodStart, framesPerTick );
 		if( at == kNoMpeStreamOffset )
 		{
 			continue;
 		}
-		sendMpeExpressionAxisEvent( axis, point.value, at );
+		sendMpeExpressionAxisEvent( axis, point->value, at );
 	}
 }
 
