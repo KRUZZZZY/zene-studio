@@ -137,7 +137,7 @@ static void storeEnvelopeValue(int env, int row, int point, const char* token, b
 	{
 		return;
 	}
-	if (tokenTooLong || sscanf(token, "%f", &envpts[env][row][point]) == 0)
+	if (tokenTooLong || sscanf(token, "%f", &envpts[env][row][point]) == 0 || !std::isfinite(envpts[env][row][point]))
 	{
 		envpts[env][row][point] = 0.f;
 	}
@@ -291,7 +291,7 @@ float DrumSynth::GetPrivateProfileFloat(const char* sec, const char* key, float 
 	float f = 0.f;
 
 	GetPrivateProfileString(sec, key, "", tmp, sizeof(tmp), file);
-	if (sscanf(tmp, "%f", &f) != 1)
+	if (sscanf(tmp, "%f", &f) != 1 || !std::isfinite(f))
 	{
 		f = def;
 	}
@@ -893,6 +893,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 		{
 			for (j = 0; j < 1200; j++)
 			{
+				if (!std::isfinite(DF[j])) { DF[j] = 0.f; }
 				DF[j] = DGain * static_cast<int>(DF[j] / DAtten);
 			}
 
@@ -922,6 +923,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 
 		for (j = 0; j < 1200; j++) // clipping + output
 		{
+			if (!std::isfinite(DF[j])) { DF[j] = 0.f; }
 			if (DF[j] > clippoint)
 			{
 				wave[wavewords++] = clippoint;
