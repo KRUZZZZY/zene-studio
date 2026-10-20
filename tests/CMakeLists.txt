@@ -5704,13 +5704,23 @@ if(TARGET nam_harness AND PYTHON3_EXECUTABLE)
 endif()
 
 # Regression for the NeuralAmp harness's generated-run block-count overflow.
-# The Python driver writes a minimal valid .nam model and invokes the separately
-# built, headless harness with both a small run and an oversized block count.
-if(PYTHON3_EXECUTABLE AND TARGET nam_harness)
-	add_test(NAME NeuralAmpHarnessBlockCount
-		COMMAND ${PYTHON3_EXECUTABLE}
-			${CMAKE_CURRENT_SOURCE_DIR}/neuralamp-harness-block-count.py
-			$<TARGET_FILE:nam_harness>
-	)
-	set_tests_properties(NeuralAmpHarnessBlockCount PROPERTIES TIMEOUT 60)
+# The test drives the separately built, headless harness with a minimal valid
+# .nam model, an oversized block count and the counts around it. The test
+# executable depends on the nam_harness target on purpose: building the test
+# then always rebuilds the harness it exercises, so the harness under test can
+# never be a stale binary that hides a change in its own source.
+#
+# The source file is named after the test (not "<name>Test.cpp") so that the
+# file name, the target and the ctest name are one thing.
+if(TARGET nam_harness)
+	add_executable(NeuralAmpHarnessBlockCount src/plugins/NeuralAmpHarnessBlockCount.cpp)
+	add_test(NAME NeuralAmpHarnessBlockCount COMMAND NeuralAmpHarnessBlockCount)
+	target_compile_features(NeuralAmpHarnessBlockCount PRIVATE cxx_std_20)
+	target_link_libraries(NeuralAmpHarnessBlockCount PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+	target_compile_definitions(NeuralAmpHarnessBlockCount PRIVATE
+		"NAM_HARNESS_EXECUTABLE=\"$<TARGET_FILE:nam_harness>\"")
+	add_dependencies(NeuralAmpHarnessBlockCount nam_harness)
+	set_tests_properties(NeuralAmpHarnessBlockCount PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 60)
 endif()
