@@ -141,6 +141,72 @@ bool isRotationId(const QString& id)
 		&& number.at(0) >= QLatin1Char('0') && number.at(0) <= QLatin1Char('2');
 }
 
+//! The recorded UNDO half of revisions.restore: put revision 0 - the file the
+//! restore rotated in - back over the live file, or, when the restore CREATED
+//! the file, remove it, because a file that never existed cannot be restored.
+void undoRestoreStep(const QString& target, bool liveExisted)
+{
+	if (liveExisted)
+	{
+		QString reason;
+		if (control::restoreProjectRevision(target, 0, &reason)) { return; }
+		control::recordActionRestoreFailure(
+			QStringLiteral("the project file %1 was NOT put back from the revision this "
+				"restore rotated in (revision 0) - %2. The live file still holds what it "
+				"held when the undo ran; revisions.list reports the retained set and "
+				"restores what it still holds").arg(target, reason));
+		return;
+	}
+	const bool removed = QFile::remove(target);
+	const QFileInfo remaining(target);
+	if (!removed && (remaining.exists() || remaining.isSymLink()))
+	{
+		control::recordActionRestoreFailure(
+			QStringLiteral("the project file %1, created by revisions.restore, could NOT be "
+				"removed during undo - the path still exists").arg(target));
+	}
+}
+
+//! The recorded REDO half: re-restore the revision the call chose, from that
+//! revision's own artefact (a redo replays the step, so a vanished artefact
+//! fails exactly as the undo's does). Reported the same way, through the same
+//! channel.
+void redoRestoreStep(const QString& target, const QString& recoveryFile,
+	const QString& id, const QString& restoredSha)
+{
+	QString reason;
+	if (isRotationId(id))
+	{
+		// -1: the undo's own rotation left the set in a shape where these
+		// bytes are no longer retained. Restoring some other revision
+		// instead would be a wrong-bytes overwrite, so the redo leaves the
+		// file as the undo left it.
+		const int current = revisionHoldingBytes(target, restoredSha);
+		if (current < 0)
+		{
+			control::recordActionRestoreFailure(
+				QStringLiteral("the project file %1 was NOT re-restored: the bytes this "
+					"restore brought in (sha256 %2) are no longer retained in the "
+					"keep-3 set, so redo leaves the live file exactly as the undo left "
+					"it. revisions.list reports the retained set").arg(target, restoredSha));
+			return;
+		}
+		if (control::restoreProjectRevision(target, current, &reason)) { return; }
+		control::recordActionRestoreFailure(
+			QStringLiteral("the project file %1 was NOT re-restored from revision %2 - %3. "
+				"The live file still holds what it held when the redo ran; revisions.list "
+				"reports the retained set and restores what it still holds")
+				.arg(target).arg(current).arg(reason));
+		return;
+	}
+	if (control::restoreTimelineRevision(target, recoveryFile, id, &reason)) { return; }
+	control::recordActionRestoreFailure(
+		QStringLiteral("the project file %1 was NOT re-restored from revision '%2' - %3. "
+			"The live file still holds what it held when the redo ran; revisions.list "
+			"reports the retained set and restores what it still holds")
+			.arg(target, id, reason));
+}
+
 //! Record the ONE action step a successful restore carries: the undo restores
 //! revision 0 (the file this call rotated in) - or, when the restore CREATED the
 //! file, removes it, because a file that never existed cannot be restored. The
@@ -149,30 +215,8 @@ void recordRestoreUndoStep(const QString& target, const QString& recoveryFile,
 	const QString& id, bool liveExisted, const QString& restoredSha)
 {
 	control::addUndoStep(
-		[target, liveExisted]() {
-			if (liveExisted)
-			{
-				QString ignored;
-				control::restoreProjectRevision(target, 0, &ignored);
-				return;
-			}
-			QFile::remove(target);
-		},
-		[target, recoveryFile, id, restoredSha]() {
-			QString ignored;
-			if (isRotationId(id))
-			{
-				// -1: the undo's own rotation left the set in a shape where these
-				// bytes are no longer retained. Restoring some other revision
-				// instead would be a wrong-bytes overwrite, so the redo leaves the
-				// file as the undo left it.
-				const int current = revisionHoldingBytes(target, restoredSha);
-				if (current < 0) { return; }
-				control::restoreProjectRevision(target, current, &ignored);
-				return;
-			}
-			control::restoreTimelineRevision(target, recoveryFile, id, &ignored);
-		});
+		[target, liveExisted]() { undoRestoreStep(target, liveExisted); },
+		[target, recoveryFile, id, restoredSha]() { redoRestoreStep(target, recoveryFile, id, restoredSha); });
 }
 
 // ---------------------------------------------------------------------------

@@ -314,6 +314,28 @@ std::optional<ControlResult> restoreFailureOf(const QString& verb, const QString
 			"hand").arg(verb, what, failed->errorMessage));
 }
 
+/*! The typed failure for the journal step that just ran when its FILE operation
+ *  did not complete, or nullopt.
+ *
+ *  The file half of the record `restoreFailureOf` reads: a recorded ACTION step
+ *  whose inverse is a file operation (`revisions.restore`) is `void` for the same
+ *  reason a device recreate is, and a restore that failed left the project file
+ *  exactly as it was - so `undone: true` / `redone: true` over it claims a file
+ *  put back that is not there. `Refused`, the kind the restore itself answers,
+ *  because the step ran and its inverse is exactly what was refused.
+ */
+std::optional<ControlResult> actionRestoreFailureOf(const QString& verb, const QString& command)
+{
+	const QString reason = takeActionRestoreFailure();
+	if (reason.isEmpty()) { return std::nullopt; }
+	const QString what = command.isEmpty()
+		? QStringLiteral("the last journal step")
+		: QStringLiteral("'%1'").arg(command);
+	return ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("cannot %1 %2: the recorded step ran but the project file was NOT "
+			"restored - %3").arg(verb, what, reason));
+}
+
 //! Unwinds one step of the engine's own undo stack.
 //!
 //! \a commands is how many COMMANDS that one step covered: 1 for an ordinary
@@ -327,6 +349,7 @@ ControlResult undoThroughJournal(const QString& command, int commands = 1,
 {
 	ProjectJournal* journal = Engine::projectJournal();
 	clearStructuralRestoreFailure();  // see restoreFailureOf
+	clearActionRestoreFailure();      // as above: only THIS step's failure is reported
 	bool undone = false;
 	if (journal != nullptr && journal->canUndo())
 	{
@@ -334,6 +357,7 @@ ControlResult undoThroughJournal(const QString& command, int commands = 1,
 		undone = true;
 	}
 	if (std::optional<ControlResult> failed = restoreFailureOf(QStringLiteral("undo"), command)) { return *failed; }
+	if (std::optional<ControlResult> failed = actionRestoreFailureOf(QStringLiteral("undo"), command)) { return *failed; }
 	QJsonObject result;
 	result.insert(QStringLiteral("undone"), undone);
 	result.insert(QStringLiteral("undone_command"), command);
@@ -543,12 +567,14 @@ void registerRedoCommand(ControlRegistry& registry)
 		auto* journal = Engine::projectJournal();
 		bool redone = false;
 		clearStructuralRestoreFailure();  // as control.undo: only THIS step's failure is reported
+		clearActionRestoreFailure();
 		if (journal != nullptr && journal->canRedo())
 		{
 			journal->redo();
 			redone = true;
 		}
 		if (std::optional<ControlResult> failed = restoreFailureOf(QStringLiteral("redo"), QString())) { return *failed; }
+		if (std::optional<ControlResult> failed = actionRestoreFailureOf(QStringLiteral("redo"), QString())) { return *failed; }
 		QJsonObject result;
 		result.insert(QStringLiteral("redone"), redone);
 		result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());
