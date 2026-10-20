@@ -23,8 +23,11 @@
  */
 
 /*! The pad over a real channel rack with two macros: a drag of several moves sets both macros and ONE control.undo puts
- *  both back (it used to be one step per axis per move); with the Y macro removed by another client while the pad is open,
- *  a move is refused whole - X does not move either - and the pad's status line names the refusal. */
+ *  both back (it used to be one step per axis per move). An open pad follows the rack's macro list as it really changes:
+ *  a macro added through rack.macro_add (what Rack > Add macro... runs) makes a pad opened on an empty rack usable
+ *  without reopening; a macro removed by another client is followed - the axes re-select by NAME, so a shifted
+ *  macro-<n> id does not silently point at a different macro - and when the last macro goes the pad is disabled again
+ *  and says so on the next move, with changed() fired so an open axis list drops its now-empty rows. */
 
 #include <QtTest>
 
@@ -34,6 +37,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QPixmap>
+#include <QSignalSpy>
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -283,11 +287,22 @@ private slots:
 		QVERIFY(std::abs(area->point().y() - macroValue(channel, QStringLiteral("macro-0"))) < 1e-4);
 		axes.at(1)->setCurrentIndex(1);
 
-		// Another client removes the Y macro while the pad is open: the next move is refused whole, and says so.
+		// Another client removes the Y macro while the pad is open: the pad follows the change - Y re-selects by
+		// name onto the one macro left - so the next move drives that macro instead of a stale macro-<n> id.
 		QVERIFY(run(QStringLiteral("rack.macro_remove"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-1")}}).ok);
+		QCOMPARE(axes.at(0)->currentText(), QStringLiteral("Cutoff"));
+		QCOMPARE(axes.at(1)->currentText(), QStringLiteral("Cutoff"));
 		area->moved(QPointF(0.7, 0.7));
+		QVERIFY(status->text().isEmpty());
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - 0.7) < 1e-4);
+
+		// When the LAST macro goes, the pad has nothing left to drive: the next move is refused whole, and says so.
+		QVERIFY(run(QStringLiteral("rack.macro_remove"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-0")}}).ok);
+		QVERIFY(!area->isEnabled());
+		QCOMPARE(axes.at(0)->count(), 0);
+		QCOMPARE(axes.at(1)->count(), 0);
+		area->moved(QPointF(0.2, 0.2));
 		QVERIFY2(status->text().startsWith(QStringLiteral("Not set")), qPrintable(status->text()));
-		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - x0) < 1e-4);  // X did not move alone
 	}
 
 	//! Cluster 5481: the dot is drawn at point * width() / height(), while the pointer maps a
@@ -363,6 +378,76 @@ private slots:
 		QTest::keyClick(area, Qt::Key_Right);
 		QVERIFY2(std::abs(reported.x() - 0.51) < 1e-6, "a key press did not report the new place");
 	}
+	//! A pad opened before the rack has any macros becomes usable once one is added, without reopening and without
+	//! anyone telling the pad: Rack > Add macro... runs rack.macro_add, and the open pad follows that path.
+	void thePadBecomesUsableWhenAMacroIsAddedAfterOpening()
+	{
+		while (Engine::mixer()->numChannels() <= 5) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(5));
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		const auto combos = dialog.findChildren<QComboBox*>();
+		QCOMPARE(combos.size(), 2);
+		QVERIFY(!area->isEnabled());
+		QCOMPARE(combos.at(0)->count(), 0);
+		QCOMPARE(combos.at(1)->count(), 0);
+
+		QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QStringLiteral("Tone")}}).ok);
+		QVERIFY2(area->isEnabled(), "the pad stayed disabled after a macro was added through rack.macro_add");
+		QCOMPARE(combos.at(0)->count(), 1);
+		QCOMPARE(combos.at(1)->count(), 1);
+		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-0"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-0"));
+	}
+
+	//! Removing an EARLIER macro shifts the macro-<n> ids of every later one (RackMacros::removeMacro erases its
+	//! vector entry): the axes must keep following the chosen macros through index shifts, even when names are duplicated.
+	void thePadKeepsItsChosenMacrosWhenAnEarlierOneIsRemoved()
+	{
+		while (Engine::mixer()->numChannels() <= 6) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(6));
+		for (const char* name : {"Alpha", "Twin", "Twin"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
+		}
+		XyPadDialog dialog(channel);
+		const auto combos = dialog.findChildren<QComboBox*>();
+		QCOMPARE(combos.size(), 2);
+		combos.at(0)->setCurrentIndex(2);  // X drives the second Twin (macro-2)
+		combos.at(1)->setCurrentIndex(1);  // Y drives the first Twin (macro-1)
+		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-2"));
+		QCOMPARE(dialog.macroName(false), QStringLiteral("Twin"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-1"));
+
+		QVERIFY(run(QStringLiteral("rack.macro_remove"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-0")}}).ok);
+		QCOMPARE(dialog.macroName(false), QStringLiteral("Twin"));
+		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-1"));  // still the second Twin, not the first one
+		QCOMPARE(dialog.macroName(true), QStringLiteral("Twin"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-0"));  // still the first Twin
+	}
+
+	//! When the LAST macro is removed while the pad is open, the pad goes back to disabled with empty axis lists and
+	//! still emits changed(), so an open axis list reloads its now-empty rows instead of showing ghosts.
+	void thePadSaysChangedWhenTheLastMacroIsRemoved()
+	{
+		while (Engine::mixer()->numChannels() <= 7) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(7));
+		QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QStringLiteral("Solo")}}).ok);
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		const auto combos = dialog.findChildren<QComboBox*>();
+		QVERIFY(area->isEnabled());
+		QCOMPARE(combos.at(0)->count(), 1);
+		QSignalSpy changed(&dialog, &XyPadDialog::changed);
+		QVERIFY(changed.isValid());
+
+		QVERIFY(run(QStringLiteral("rack.macro_remove"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-0")}}).ok);
+		QVERIFY(!area->isEnabled());
+		QCOMPARE(combos.at(0)->count(), 0);
+		QCOMPARE(combos.at(1)->count(), 0);
+		QCOMPARE(changed.count(), 1);  // the open list is told to drop its rows
+	}
+
 };
 
 QTEST_MAIN(XyPadPairTest)

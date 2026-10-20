@@ -31,6 +31,7 @@
 #include <QString>
 #include <QWidget>
 
+#include "RackMacros.h"
 #include "lmms_export.h"
 
 class QComboBox;
@@ -82,6 +83,7 @@ class LMMS_EXPORT XyPadDialog : public QDialog
 	Q_OBJECT
 public:
 	XyPadDialog(const QString& channel, QWidget* parent = nullptr);
+	~XyPadDialog() override;
 
 	//! What the editable axis list (theme 10) reads and writes: the rack's channel, an axis's macro id
 	//! ("macro-<n>", empty when the rack has none) and name, and the pad.
@@ -89,8 +91,10 @@ public:
 	QString macroId(bool y) const;
 	QString macroName(bool y) const;
 	XyPadArea* area() const { return m_area; }
-	//! Show where the chosen macros stand now (after an edit made elsewhere).
-	void refresh() { syncPoint(); }
+	//! Show where the chosen macros stand now (after a VALUE edit made elsewhere). The axis lists
+	//! and the enabled state follow rack macro add/remove on their own (the constructor listens to
+	//! the rack's own macro list), so a list change needs no refresh call.
+	void refresh() { fillMacros(); }
 
 signals:
 	//! The dot moved or the axes changed: the list re-reads.
@@ -107,6 +111,9 @@ private:
 	XyPadArea* m_area;
 	//! W1: the last refused move's reason, cleared by the next move that lands (one line, never a box per move).
 	QLabel* m_status;
+	//! The rack macro-list listener this pad opened (RackMacros::addChangeListener); 0 when the
+	//! channel resolved to no rack. Removed in the destructor - by id, never through a pointer.
+	RackMacros::ChangeListenerId m_macroListener = 0;
 };
 
 } // namespace lmms::gui

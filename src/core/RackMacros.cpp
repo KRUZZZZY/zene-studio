@@ -82,6 +82,29 @@ Effect* effectOfTarget(Rack& rack, const RackMacroTarget& target, QString* why)
 	return effects[static_cast<std::size_t>(target.effect)];
 }
 
+//! The change listeners of every RackMacros in the process, keyed by ChangeListenerId (see
+//! RackMacros::addChangeListener): PROCESS-lifetime, like ControlRegistry's shutdown hooks, so
+//! an id-based removal stays safe after the list or the listener's owner was destroyed. Control
+//! thread only - the audio thread never touches macros - so no lock guards it.
+struct ListenerEntry
+{
+	int id = 0;
+	const RackMacros* source = nullptr;
+	RackMacros::ChangeListener listener;
+};
+
+struct ListenerStore
+{
+	int nextId = 0;
+	std::vector<ListenerEntry> entries;
+};
+
+ListenerStore& listeners()
+{
+	static ListenerStore store;
+	return store;
+}
+
 } // namespace
 
 float shapeMacroValue(float value, float curve)
@@ -124,6 +147,45 @@ AutomatableModel* rackMacroTargetModel(Rack& rack, const RackMacroTarget& target
 // RackMacros
 // ---------------------------------------------------------------------------
 
+RackMacros::~RackMacros()
+{
+	// A dying list drops its own listeners, so a watcher that outlives it never hears a
+	// pointer compare against a stale source again - and a later id-based removal of that
+	// watcher is a harmless miss.
+	auto& store = listeners();
+	std::erase_if(store.entries, [this](const ListenerEntry& entry) { return entry.source == this; });
+}
+
+auto RackMacros::addChangeListener(ChangeListener listener) -> ChangeListenerId
+{
+	auto& store = listeners();
+	store.entries.push_back({++store.nextId, this, std::move(listener)});
+	return store.nextId;
+}
+
+bool RackMacros::removeChangeListener(ChangeListenerId id)
+{
+	if (id == 0) { return false; }
+	auto& store = listeners();
+	const auto found = std::find_if(store.entries.begin(), store.entries.end(),
+		[id](const ListenerEntry& entry) { return entry.id == id; });
+	if (found == store.entries.end()) { return false; }
+	store.entries.erase(found);
+	return true;
+}
+
+void RackMacros::notifyListChanged(int index, int shift) const
+{
+	// A snapshot first: a listener may add or remove listeners (open or close a watcher
+	// while being told), and mutating the store mid-walk would invalidate it.
+	std::vector<ChangeListener> due;
+	for (const ListenerEntry& entry : listeners().entries)
+	{
+		if (entry.source == this) { due.push_back(entry.listener); }
+	}
+	for (const ChangeListener& listener : due) { listener(index, shift); }
+}
+
 auto RackMacros::macroCount() const -> int
 {
 	return static_cast<int>(m_macros.size());
@@ -147,6 +209,7 @@ auto RackMacros::addMacro(const QString& name, float value) -> int
 	entry.name = name;
 	entry.value = std::clamp(value, 0.0f, 1.0f);
 	m_macros.push_back(entry);
+	notifyListChanged();
 	return macroCount() - 1;
 }
 
@@ -155,6 +218,7 @@ auto RackMacros::insertMacro(int index, const RackMacro& macro) -> bool
 	if (index < 0) { return false; }
 	if (index > macroCount()) { return false; }
 	m_macros.insert(m_macros.begin() + index, macro);
+	notifyListChanged(index, 1);
 	return true;
 }
 
@@ -162,6 +226,7 @@ auto RackMacros::removeMacro(int index) -> bool
 {
 	if (macro(index) == nullptr) { return false; }
 	m_macros.erase(m_macros.begin() + index);
+	notifyListChanged(index, -1);
 	return true;
 }
 
@@ -242,7 +307,9 @@ auto RackMacros::apply(int index, Rack& rack, bool journalWrites) -> std::vector
 
 void RackMacros::clear()
 {
+	if (m_macros.empty()) { return; }
 	m_macros.clear();
+	notifyListChanged();
 }
 
 void RackMacros::reindexChains(int removedIndex)
@@ -291,7 +358,10 @@ void RackMacros::saveSettings(QDomDocument& doc, QDomElement& rackElement) const
 
 void RackMacros::loadSettings(const QDomElement& rackElement)
 {
-	clear();
+	// Reset directly rather than through clear(): ONE notification for the whole reload, not
+	// one for the transient empty list in the middle of it.
+	const bool hadMacros = !m_macros.empty();
+	m_macros.clear();
 
 	for (QDomElement macroElement = rackElement.firstChildElement(QStringLiteral("macro"));
 		!macroElement.isNull();
@@ -321,6 +391,7 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 
 		m_macros.push_back(entry);
 	}
+	if (hadMacros || !m_macros.empty()) { notifyListChanged(); }
 }
 
 } // namespace lmms

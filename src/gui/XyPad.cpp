@@ -41,10 +41,12 @@
 #include "AccessibleWidgets.h"
 #include "Accessibility.h"
 #include "ControlMixerSupport.h"
+#include "ControlRackSupport.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "ItemList.h"
 #include "Mixer.h"
+#include "Rack.h"
 #include "ShellChrome.h"
 
 namespace lmms::gui
@@ -237,6 +239,28 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	m_area->moved = [this](QPointF point) { send(point); };
 	// A new choice of macro shows where that macro stands, not where the last one was.
 	for (QComboBox* axis : {m_x, m_y}) { connect(axis, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { syncPoint(); }); }
+	// Follow the rack's macro LIST while the pad is open, however it changes: Rack > Add macro...
+	// (RackMenu), an agent's rack.macro_add / rack.macro_remove, and control.undo all go through
+	// RackMacros' own mutators, so the axis lists and the enabled state rebuild in place - a pad
+	// opened before the rack had any macros becomes usable when one is added, without reopening.
+	// The listener is keyed by id (never a rack pointer), so a channel removed under an open pad
+	// cannot leave the destructor touching freed memory.
+	if (Rack* rack = resolveRack(m_channel, &ignored))
+	{
+		m_macroListener = rack->macros().addChangeListener([this](int index, int shift) {
+			for (QComboBox* axis : {m_x, m_y})
+			{
+				const int current = axis->currentIndex();
+				if (index >= 0 && current >= index) { axis->setItemData(current, QStringLiteral("macro-%1").arg(current + shift)); }
+			}
+			fillMacros();
+		});
+	}
+}
+
+XyPadDialog::~XyPadDialog()
+{
+	RackMacros::removeChangeListener(m_macroListener);
 }
 
 QString XyPadDialog::macroId(bool y) const
@@ -252,13 +276,35 @@ QString XyPadDialog::macroName(bool y) const
 void XyPadDialog::fillMacros()
 {
 	const QJsonArray macros = rackMacros(m_channel);
+	// Preserve macro-N IDs across insert/remove shifts; names are labels and may be duplicated.
+	const QString xId = m_x->currentData().toString();
+	const QString yId = m_y->currentData().toString();
+	m_x->blockSignals(true);
+	m_y->blockSignals(true);
+	m_x->clear();
+	m_y->clear();
 	for (int i = 0; i < macros.size(); ++i)
 	{
 		const QString name = macros.at(i).toObject().value(QStringLiteral("name")).toString();
 		m_x->addItem(name, QStringLiteral("macro-%1").arg(i));
 		m_y->addItem(name, QStringLiteral("macro-%1").arg(i));
 	}
-	if (macros.size() > 1) { m_y->setCurrentIndex(1); }
+	if (!macros.isEmpty())
+	{
+		int xi = xId.isEmpty() ? 0 : m_x->findData(xId);
+		if (xi < 0) { xi = 0; }
+		m_x->setCurrentIndex(xi);
+		int yi;
+		if (yId.isEmpty()) { yi = macros.size() > 1 ? 1 : 0; }
+		else
+		{
+			yi = m_y->findData(yId);
+			if (yi < 0) { yi = macros.size() > 1 ? 1 : 0; }
+		}
+		m_y->setCurrentIndex(yi);
+	}
+	m_x->blockSignals(false);
+	m_y->blockSignals(false);
 	m_area->setEnabled(!macros.isEmpty());
 	syncPoint();
 }
@@ -268,6 +314,7 @@ void XyPadDialog::syncPoint()
 	if (m_x->count() == 0)
 	{
 		m_area->setToolTip(QObject::tr("This channel's rack has no macros yet: add one with Rack > Add macro... in the channel's menu."));
+		emit changed();  // the axis list follows: its rows are gone with the macros, and must not stay on screen
 		return;
 	}
 	const QJsonArray macros = rackMacros(m_channel);
