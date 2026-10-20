@@ -72,6 +72,13 @@ CompressorEffect::CompressorEffect(Model* parent, const Descriptor::SubPluginFea
 
 	m_yL[0] = m_yL[1] = COMP_NOISE_FLOOR;
 
+	// The visualizer starts at rest: the audio thread publishes the first block's values, the
+	// control dialog samples them from then on.
+	m_displayPeak[0] = m_displayPeak[1] = COMP_NOISE_FLOOR;
+	m_displayGain[0] = m_displayGain[1] = 1.f;
+	m_publishedEnvelope[0] = m_publishedEnvelope[1] = COMP_NOISE_FLOOR;
+	m_publishedGain[0] = m_publishedGain[1] = 1.f;
+
 	// 200 ms
 	m_crestTimeConst = std::exp(-1.f / (0.2f * m_sampleRate));
 
@@ -399,8 +406,10 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 				m_scLookBuf[i][m_lookWrite] = temp;
 			}
 
-			// For the visualizer
-			m_displayPeak[i] = qMax(scVal, m_displayPeak[i]);
+			// For the visualizer. The hold is shared with the control dialog, which samples
+			// and resets it, so it is atomic.
+			m_displayPeak[i].store(qMax(scVal, m_displayPeak[i].load(std::memory_order_relaxed)),
+				std::memory_order_relaxed);
 
 			const float currentPeakDbfs = ampToDbfs(scVal);
 
@@ -486,8 +495,18 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 		deepest = std::min({deepest, m_gainResult[0], m_gainResult[1]});
 
 		// For visualizer
-		m_displayGain[0] = qMax(m_gainResult[0], m_displayGain[0]);
-		m_displayGain[1] = qMax(m_gainResult[1], m_displayGain[1]);
+		m_displayGain[0].store(qMax(m_gainResult[0], m_displayGain[0].load(std::memory_order_relaxed)),
+			std::memory_order_relaxed);
+		m_displayGain[1].store(qMax(m_gainResult[1], m_displayGain[1].load(std::memory_order_relaxed)),
+			std::memory_order_relaxed);
+
+		// Publish what the control dialog resets the visualizer's holds to: the detector's
+		// envelope and the gain this block applied. The dialog reads these and not the audio
+		// thread's own working state, which the next block overwrites while the dialog reads it.
+		m_publishedEnvelope[0].store(m_yL[0], std::memory_order_relaxed);
+		m_publishedEnvelope[1].store(m_yL[1], std::memory_order_relaxed);
+		m_publishedGain[0].store(m_gainResult[0], std::memory_order_relaxed);
+		m_publishedGain[1].store(m_gainResult[1], std::memory_order_relaxed);
 
 		// Delay the signal by 20 ms via ring buffer if lookahead is enabled
 		if (lookahead)
@@ -577,6 +596,8 @@ void CompressorEffect::processBypassedImpl()
 		m_deepestGain.store(1.f, std::memory_order_relaxed);
 		m_displayPeak[0] = m_displayPeak[1] = COMP_NOISE_FLOOR;
 		m_displayGain[0] = m_displayGain[1] = COMP_NOISE_FLOOR;
+		m_publishedEnvelope[0] = m_publishedEnvelope[1] = COMP_NOISE_FLOOR;
+		m_publishedGain[0] = m_publishedGain[1] = 1.f;
 		std::fill(std::begin(m_scLookBuf[0]), std::end(m_scLookBuf[0]), COMP_NOISE_FLOOR);
 		std::fill(std::begin(m_scLookBuf[1]), std::end(m_scLookBuf[1]), COMP_NOISE_FLOOR);
 		std::fill(std::begin(m_inLookBuf[0]), std::end(m_inLookBuf[0]), 0);

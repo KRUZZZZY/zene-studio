@@ -1471,6 +1471,12 @@ set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-W
 # control cannot see is a test the control cannot judge.
 list(APPEND LMMS_TESTS src/plugins/VibedWaveformHandoffTest.cpp)
 
+# Cluster new-p15-300: the compressor's control dialog shared its visualizer fields with the
+# audio thread. The regression reads the plugin's header, so the test only needs the header's
+# include path - the plugin itself stays a module. Registered LAST, like the test above, so
+# the mechanical negative control (qwen/negctl.py) can see its name in `ctest -N`.
+list(APPEND LMMS_TESTS src/plugins/CompressorVisualizerTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1531,6 +1537,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "CompressorVisualizerTest")
+		# Cluster new-p15-300: the regression reads the compressor's header to check that the
+		# visualizer state the control dialog and the audio thread share is published
+		# (atomic) instead of shared. Only the header is needed - the plugin stays a module.
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Compressor)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCBaseTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c)
