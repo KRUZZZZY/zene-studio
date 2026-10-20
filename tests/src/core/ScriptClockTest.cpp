@@ -525,6 +525,10 @@ void ScriptClockTest::aLogLineCannotMasqueradeAsABudgetFailure()
 
 	const QJsonObject entry = entryFor(clock.stateJson(), QStringLiteral("lc-t-masq"));
 	QCOMPARE(entry.value(QStringLiteral("errors")).toInt(), 1);
+	// A failed dispatch is also a completed one: `fires` counts every dispatch
+	// that completed (Ok or an error) and `errors` the failed subset, as
+	// ScriptClock.h documents. Pinned so the overlap is not "fixed" away.
+	QCOMPARE(entry.value(QStringLiteral("fires")).toInt(), 1);
 	QCOMPARE(entry.value(QStringLiteral("budget_exceeded")).toInt(), 0);
 	QCOMPARE(entry.value(QStringLiteral("last_error_kind")).toString(),
 		QStringLiteral("script"));
