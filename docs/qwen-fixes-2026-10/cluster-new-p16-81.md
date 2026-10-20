@@ -132,3 +132,26 @@ Items from the completion-check list for a non-feature fix:
 8. **Registration.** No new files. Changed existing files are already registered.
 9. **Gates.** See the Gates section: `feature_check.py` itself cannot write its log folder from this jail (EXIT 1).
    The same gate list run through a driver with logs in the LOG folder returned EXIT 0, PASS.
+
+Answers to the completion-check judgement items, by their wording:
+
+- **The regression test FAILS with your product change reverted and PASSES with it (exit codes).** Yes: RED
+  `test-2-red.log` EXIT 8 (before the fix); unfixed proof `test-6-proof-unfixed.log` EXIT 8; fixed
+  `test-3-green.log` and `test-7-proof-refixed.log` EXIT 0.
+- **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses).**
+  Yes. Both tests build XML in memory from fixed attribute strings (`"abc"`, `"0"`) and call
+  `ChannelHardwareIo::load` and `hardwareio::loadMixer` directly. No seam or injected value is needed.
+- **The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent.**
+  Yes. See "Sibling readers checked" above: both `toInt() != 0` default-on flags in `HardwareIo.cpp` now go through
+  `savedFlag()`. `HardwareInsert.cpp:220` and `Mixer.cpp:2695` default to false and were left as they are.
+- **No collateral damage: old projects and saved data still load as before, and any limit or check you added does not hit other callers that legitimately exceed it.**
+  Yes for old projects. The helper adds no limit. The one behaviour change, non-integer text such as `"false"`, is
+  listed under "Behaviour change to review".
+- **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.**
+  Not applicable. The verdict is FIXED (REAL); the defect is at `src/core/HardwareIo.cpp:96` and `:292` on the base.
+
+Completion check (`submit_check.py`, `submit-1.log`, EXIT 1): commits on the branch PASS, working tree clean PASS,
+report PASS, tests added or changed PASS (`tests/src/core/HardwareIoTest.cpp`). The **gates row is FAIL only
+because `feature_check.py` cannot create `zene-qwen-new-p16-81-feature-check` outside the jail** (EXIT 1,
+`PermissionError`). The gate list itself passes when run through the driver (EXIT 0, see Gates). I did not
+edit the check or the gate to get around this.
