@@ -17,3 +17,10 @@ Files committed:
 - src/core/ControlCommandsSessionRecordLand.cpp
 - tests/src/core/ControlSessionRecordLandTest.cpp
 - docs/qwen-fixes-2026-10/cluster-new-p12-45-port.md
+
+## Self-check
+- Regression test FAILS with product change reverted (EXIT=8, 12 passed 1 failed) and PASSES with it (EXIT=0, 13 passed 0 failed); see logs/test-3.log and logs/test-4.log.
+- Deterministic: no sleeps/timing; uses injected recorder events (recordStart/recordStop) and a shrunk grid (session.set_grid) as the seam.
+- Cause and complete: landPairState is the only landing entry; validateLandPairs already skips out-of-grid pairs in preflight. All callers (session.arrangement_record_land handler) unchanged; sibling no-song-track path stays consistent.
+- No collateral damage: only adds bounds checks mirroring pairHasSlot; existing in-grid pairs unaffected; saved data untouched.
+- Verdict FIXED with code evidence src/core/ControlCommandsSessionRecordLand.cpp:287-291.
