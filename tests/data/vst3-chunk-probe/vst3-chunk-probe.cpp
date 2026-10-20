@@ -56,6 +56,7 @@
 #include "pluginterfaces/vst/vstspeaker.h"
 
 #include <cstring>
+#include <limits>
 
 namespace Steinberg {
 namespace Vst {
@@ -65,6 +66,8 @@ namespace ZeneChunkProbe {
 // A stable, documented class UID. Generated once for this fixture and never
 // reused: a host that stores it must resolve the same class across versions.
 static const FUID kChunkProbeUID (0x7C4E1A55, 0x2B8F4D31, 0xA5D90E64, 0x13F7C2B8);
+// The same rule for the second class: its own UID, generated once here.
+static const FUID kInvalidDefaultsProbeUID (0x3E7B51C4, 0x86A94D2F, 0xB50C17E8, 0x69AD42F1);
 
 // One automatable parameter. The witness counters travel in the state, not in
 // the parameter surface: a parameter is a control the user automates, and
@@ -72,6 +75,12 @@ static const FUID kChunkProbeUID (0x7C4E1A55, 0x2B8F4D31, 0xA5D90E64, 0x13F7C2B8
 enum
 {
 	kGainParam = 100
+};
+
+enum
+{
+	kHugeNormDefault = 200,
+	kNaNaNormDefault = 201
 };
 
 static const float kDefaultGain = 1.0f;
@@ -478,6 +487,50 @@ tresult PLUGIN_API ChunkProbe::getEditorState (IBStream* stream)
 }
 
 //------------------------------------------------------------------------
+// The second class the factory registers, and why it exists: the host took
+// the plug-in's own parameter default straight from getParamNormalized() when
+// it described the parameters at load and stored it into the array the audio
+// thread reads (plugins/Vst3Effect/Vst3Host.cpp, the description loop in
+// HostedPlugin::load). A default with no meaning - NaN, or a double too large
+// for float - therefore needs a plug-in that reports one to be testable.
+// ChunkProbe cannot: its single Gain default is a constant a test depends on,
+// so this class carries the odd defaults in its own parameter surface and
+// never processes audio.
+class InvalidDefaultsProbe : public SingleComponentEffect
+{
+public:
+	//--- called by the factory macro ------------------------------------
+	static FUnknown* createInstance (void* /*context*/)
+	{
+		return static_cast<IAudioProcessor*> (new InvalidDefaultsProbe ());
+	}
+
+	//--- IPluginBase ----------------------------------------------------
+	tresult PLUGIN_API initialize (FUnknown* context) SMTG_OVERRIDE;
+};
+
+tresult PLUGIN_API InvalidDefaultsProbe::initialize (FUnknown* context)
+{
+	const tresult result = SingleComponentEffect::initialize (context);
+	if (result != kResultOk)
+	{
+		return result;
+	}
+	addAudioInput (STR16 ("Audio In"), SpeakerArr::kStereo);
+	addAudioOutput (STR16 ("Audio Out"), SpeakerArr::kStereo);
+	// The Parameter container stores both values as they are (vstparameters.cpp
+	// Parameter::Parameter assigns the default raw), so the host sees exactly
+	// what a misbehaving plug-in would report: 1.0e300 overflows float on the
+	// cast, and NaN passes std::clamp() untouched.
+	parameters.addParameter (STR16 ("Huge Default"), nullptr, /*stepCount*/ 0, 1.0e300,
+	                         ParameterInfo::kCanAutomate, kHugeNormDefault);
+	parameters.addParameter (STR16 ("NaN Default"), nullptr, /*stepCount*/ 0,
+	                         std::numeric_limits<double>::quiet_NaN (),
+	                         ParameterInfo::kCanAutomate, kNaNaNormDefault);
+	return kResultOk;
+}
+
+//------------------------------------------------------------------------
 } // namespace ZeneChunkProbe
 } // namespace Vst
 } // namespace Steinberg
@@ -499,5 +552,17 @@ DEF_CLASS2 (INLINE_UID_FROM_FUID (Steinberg::Vst::ZeneChunkProbe::kChunkProbeUID
             "1.0.0",
             kVstVersionString,
             Steinberg::Vst::ZeneChunkProbe::ChunkProbe::createInstance)
+
+// The second class: same category and subcategory, so the host reads it as an
+// effect too; its parameters are the odd defaults its test asserts on.
+DEF_CLASS2 (INLINE_UID_FROM_FUID (Steinberg::Vst::ZeneChunkProbe::kInvalidDefaultsProbeUID),
+            PClassInfo::kManyInstances,
+            kVstAudioEffectClass,
+            "Zene VST3 Invalid Defaults Probe",
+            Steinberg::Vst::kDistributable,
+            Steinberg::Vst::PlugType::kFx,
+            "1.0.0",
+            kVstVersionString,
+            Steinberg::Vst::ZeneChunkProbe::InvalidDefaultsProbe::createInstance)
 
 END_FACTORY

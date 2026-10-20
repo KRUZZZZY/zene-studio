@@ -293,8 +293,8 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 			desc.shortTitle = fromString128(info.shortTitle);
 			desc.units = fromString128(info.units);
 			desc.stepCount = info.stepCount;
-			desc.defaultNormalized = static_cast<float>(
-				d.controller->getParamNormalized(info.id));
+			desc.defaultNormalized = sanitizedNormalized(
+				d.controller->getParamNormalized(info.id), 0.f);
 			desc.readOnly = (info.flags & ParameterInfo::kIsReadOnly) != 0;
 			desc.hidden = (info.flags & ParameterInfo::kIsHidden) != 0;
 			desc.stepped = info.stepCount > 0;
