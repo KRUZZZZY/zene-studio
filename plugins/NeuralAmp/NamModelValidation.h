@@ -18,6 +18,7 @@
 #include <json.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <stdexcept>
 
@@ -26,6 +27,15 @@ namespace lmms::nam::detail
 
 inline constexpr std::size_t kMaxModelLayers = 256;
 inline constexpr std::size_t kMaxModelBytes = 512U * 1024U * 1024U;
+
+/// json::parse builds a heap tree that can outgrow the text it reads: measured
+/// up to 23 bytes of heap per byte of input (empty objects in an array, "{},"),
+/// with 32 as the analytic bound (a heap map plus its parent slot, doubled by
+/// vector capacity slack). The file is refused before parsing when it is larger
+/// than the engine budget divided by this, so parser memory stays inside it.
+inline constexpr std::uintmax_t kParserBytesPerInputByte = 32U;
+inline constexpr std::uintmax_t kMaxModelFileBytes =
+	static_cast<std::uintmax_t>(kMaxModelBytes) / kParserBytesPerInputByte;
 
 
 inline std::size_t checkedProduct(std::size_t left, std::size_t right)

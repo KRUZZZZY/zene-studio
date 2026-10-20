@@ -35,6 +35,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -128,6 +129,75 @@ bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
 }
 
 
+/// The parse limit: 512 MiB of engine memory divided by the parser's worst
+/// measured expansion of 32 bytes of heap per byte of .nam text.
+constexpr std::uintmax_t kParseLimitBytes = 512ULL * 1024ULL * 1024ULL / 32ULL;
+
+
+bool writeFixture(const std::filesystem::path& path, const std::string& content)
+{
+	{
+		std::ofstream output(path, std::ios::binary | std::ios::trunc);
+		output << content;
+	}
+	if (std::filesystem::file_size(path) != content.size())
+	{
+		std::cerr << "could not write model fixture\n";
+		return false;
+	}
+	return true;
+}
+
+
+/// The model JSON with an unused string field, sized so the file is exactly
+/// `bytes` long. The model itself stays valid, so only the size can refuse it.
+std::string paddedModelJson(const ModelShape& shape, std::uintmax_t bytes)
+{
+	const std::string model = modelJson(shape);
+	const std::string prefix = model.substr(0, model.size() - 1) + ",\"padding\":\"";
+	const std::string suffix = "\"}";
+	return prefix + std::string(bytes - prefix.size() - suffix.size(), 'x') + suffix;
+}
+
+
+bool refusesOversizedFile(const std::filesystem::path& path)
+{
+	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes + 1)))
+	{
+		return false;
+	}
+
+	std::string error;
+	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	if (model || error.find("size limit") == std::string::npos)
+	{
+		std::cerr << "loader accepted or misreported a model file one byte over the "
+		             "parse limit\n";
+		return false;
+	}
+	return true;
+}
+
+
+bool loadsFileAtLimit(const std::filesystem::path& path)
+{
+	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes)))
+	{
+		return false;
+	}
+
+	std::string error;
+	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	if (!model)
+	{
+		std::cerr << "loader refused a model file exactly at the parse limit: "
+		          << error << '\n';
+		return false;
+	}
+	return true;
+}
+
+
 }  // namespace
 
 
@@ -187,6 +257,12 @@ int main()
 	tooManyLayers.kernelSize = 1;
 	tooManyLayers.layerCount = 257;
 	if (!rejectsModel(fixture, tooManyLayers, "too many layers"))
+	{
+		std::filesystem::remove_all(directory);
+		return 1;
+	}
+
+	if (!refusesOversizedFile(fixture) || !loadsFileAtLimit(fixture))
 	{
 		std::filesystem::remove_all(directory);
 		return 1;
