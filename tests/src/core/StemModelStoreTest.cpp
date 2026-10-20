@@ -664,13 +664,27 @@ private slots:
 		spec.sha256 = QString::fromLatin1(Sha256OfAbc);
 		spec.sizeBytes = 3;
 
+		// The hook stands in for the concurrent installer. Every step of the
+		// injection is recorded and asserted below: if the hook did not run,
+		// could not open the destination, did not write every byte or left a
+		// destination that does not verify against the pinned spec, the
+		// ordinary rename would have succeeded and the rename-loser path would
+		// never have been exercised - the test would pass without proving
+		// anything about it.
+		bool hookRan = false;
+		bool hookOpenedDestination = false;
+		bool hookWroteAllBytes = false;
+		bool hookDestinationVerified = false;
 		StemModelStore::setDownloadRenameHook([&](const QString& finalPath) {
+			hookRan = true;
 			QFile f(finalPath);
-			if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
-			{
-				f.write("abc");
-				f.close();
-			}
+			hookOpenedDestination = f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+			if (!hookOpenedDestination) { return; }
+			hookWroteAllBytes = (f.write("abc") == 3);
+			f.close();
+			// The competing installer must have the pinned bytes in place
+			// BEFORE this attempt's rename, or that rename would succeed.
+			hookDestinationVerified = StemModelStore::verify(finalPath, spec.sha256, spec.sizeBytes);
 		});
 
 		QString error;
@@ -679,6 +693,10 @@ private slots:
 
 		StemModelStore::setDownloadRenameHook({});
 
+		QVERIFY2(hookRan, "the rename hook did not run");
+		QVERIFY2(hookOpenedDestination, "the rename hook could not open the destination file");
+		QVERIFY2(hookWroteAllBytes, "the rename hook did not write all expected bytes");
+		QVERIFY2(hookDestinationVerified, "the rename hook's destination does not verify against the pinned spec");
 		QVERIFY2(ok, qPrintable(error));
 		QVERIFY(StemModelStore::verify(dir.filePath(spec.name + QStringLiteral(".onnx")),
 			spec.sha256, spec.sizeBytes));
