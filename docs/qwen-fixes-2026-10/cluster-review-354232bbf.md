@@ -141,3 +141,14 @@ Two commits this round: `9f2e71e2f` (the seam + the regression, RED on purpose) 
   `QFile::close()` (void since Qt 6 - the verdict comes from the device status, not from a return
   value) and `std::function` - all available in Qt 5.15. No `windows.h` macro names, no
   `std::filesystem`, no Qt-6-only call.
+- **Sibling commands in the command files I changed** (`src/core/ControlCommandsProjectLifecycle.cpp`
+  registers `project.new`, `project.save_as_template`, `project.import`, `project.export_midi` and
+  `transport.set_metronome`): only `project.export_midi` writes a file, and this round touched
+  neither the handler nor the other commands - the change is in the export filter and in the
+  verdict the handler reads. The completion check lists the whole `transport.*` group, but the
+  only transport command in the file is `transport.set_metronome` (a boolean on the metronome);
+  the rest live in other command files that this change does not touch.
+- **The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The defect is present in the code
+  this branch started from: `plugins/MidiExport/MidiExport.cpp` read the file's error before
+  `f.close()`, so a flush or close error was invisible and the export reported `Written`; the
+  regression is red against exactly that code (`test-12-round4-reverted-red.log`, exit 8).
