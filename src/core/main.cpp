@@ -495,6 +495,15 @@ int main( int argc, char * * argv )
 	// surface's mastering.run reads back from the child process it starts. Empty
 	// unless the caller asks for it, so the CLI's printed output is unchanged.
 	QString masteringReportPath;
+	// Whether the --report option was GIVEN, which is a different fact from
+	// the path it carries: `--report ''` gives an empty path, and that is a
+	// refusal, not a request for no report. The first parsing stage records
+	// it, because the second stage's actions (upgrade, makebundle, dump,
+	// compress) return from there and would never see the option.
+	bool reportGiven = false;
+	// Whether the path the --report option carries is empty (the option was
+	// given without one, or with an empty one).
+	bool reportPathEmpty = true;
 	// One flag for "the user gave -o": the stem export's directory check and the
 	// mastering job's candidate-directory check read the same fact. The two lanes
 	// named it differently (outputSpecified / outputGiven); merge train 3C keeps
@@ -547,6 +556,17 @@ int main( int argc, char * * argv )
 			// Scripts always run headless; the script's LuaLog output goes to
 			// stdout and the process exit code reports success.
 			coreOnly = true;
+		}
+		else if (arg == "--report")
+		{
+			// The report option belongs to "master" alone, so this stage - the
+			// one that runs before ANY action - is where it is noticed. The
+			// value belongs to the option, so it is consumed here as well: a
+			// path that reads like an action keyword ("master") must not be
+			// taken for that action.
+			reportGiven = true;
+			++i;
+			reportPathEmpty = ( i >= argc ) || QString::fromLocal8Bit( argv[i] ).isEmpty();
 		}
 		else if (arg == "--allowroot")
 		{
@@ -633,6 +653,41 @@ int main( int argc, char * * argv )
 	// High-DPI scaling is always enabled in Qt >= 6.0
 	QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
 #endif
+
+	// The --report path belongs to "master": the report is the machine-readable
+	// half of that action's measurements, and no other action writes one. An
+	// ordinary command that accepted the option would store the path and then
+	// ignore it - the action would succeed and the requested report would never
+	// appear, which a caller cannot detect.
+	//
+	// The refusal is here, before the second parsing stage and before the
+	// application exists, because that stage's actions (upgrade, makebundle,
+	// dump, compress) return from it: a --report they never looked at would be
+	// accepted and then ignored, and the action would have run already. The
+	// order of the arguments does not matter - the first stage saw the option
+	// wherever it stood.
+	//
+	// The message goes to stderr DIRECTLY, not through usageError()'s Qt
+	// message handler: where the toolchain's Qt writes its log to the system
+	// journal rather than to stderr (stderr is not a console there), the
+	// qCritical is swallowed and the operator is left with a non-zero exit and
+	// no word about the option that caused it. The other CLI refusals in this
+	// file (dump:, compress:, master:, the control socket) print the same way.
+	if( reportGiven )
+	{
+		if( !mastering )
+		{
+			fprintf( stderr, "\n--report is only valid with master.\n\nTry \"%s --help\" for more "
+				"information.\n\n", argv[0] );
+			return EXIT_FAILURE;
+		}
+		if( reportPathEmpty )
+		{
+			fprintf( stderr, "\nNo report path specified.\n\nTry \"%s --help\" for more "
+				"information.\n\n", argv[0] );
+			return EXIT_FAILURE;
+		}
+	}
 
 	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
 	if (!coreOnly) { lmms::appearance::applyStoredScale(); }

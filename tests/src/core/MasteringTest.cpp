@@ -38,6 +38,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -154,6 +156,7 @@ private slots:
 		QVERIFY(m_dir.isValid());
 		QString projectPath;
 		QVERIFY2(writeFixture(m_dir.path(), projectPath), "fixture project could not be written");
+		m_projectPath = projectPath;
 		Engine::getSong()->loadProject(projectPath);
 		QVERIFY(!Engine::getSong()->isEmpty());
 		// Three sample tracks, so a non-silent mix is a real mix and not one
@@ -493,6 +496,77 @@ private slots:
 			"a loudness the meter could not measure was reported as a number");
 	}
 
+	//! `--report` belongs to `master`; an ordinary render must refuse it before rendering.
+	void reportOptionIsRejectedOutsideMaster()
+	{
+		const QString reportPath = m_dir.filePath(QStringLiteral("unexpected-report.json"));
+		const QString renderPath = m_dir.filePath(QStringLiteral("ordinary-render.wav"));
+		const CliRun run = runCli(m_dir.path(), {QStringLiteral("--allowroot"),
+			QStringLiteral("render"), m_projectPath, QStringLiteral("--output"), renderPath,
+			QStringLiteral("--report"), reportPath});
+		QVERIFY2(run.status == QProcess::NormalExit, run.output.constData());
+		QVERIFY2(run.exitCode != 0, run.output.constData());
+		QVERIFY2(run.output.contains("only valid with master"), run.output.constData());
+		// Refused BEFORE anything ran: no report was written, and the render the
+		// command asked for did not happen either.
+		QVERIFY(!QFileInfo::exists(reportPath));
+		QVERIFY(!QFileInfo::exists(renderPath));
+	}
+
+	//! The other shapes of the same mistake: a --report that an action which
+	//! returns early never sees, and a --report with no path to write to.
+	void reportOptionIsRefused_data()
+	{
+		QTest::addColumn<QStringList>("arguments");
+		QTest::addColumn<QString>("message");
+		QTest::addColumn<QStringList>("absentFiles");
+
+		// The report is parsed before the action, and the action (upgrade)
+		// returns from the option parse - so without the refusal the file
+		// would be upgraded and the report would silently never be written.
+		QTest::newRow("a report before an early-returning action")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("--report"),
+				m_dir.filePath(QStringLiteral("early-report.json")), QStringLiteral("upgrade"),
+				m_projectPath, m_dir.filePath(QStringLiteral("upgraded.mmp"))}
+			<< QStringLiteral("only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("early-report.json")),
+				m_dir.filePath(QStringLiteral("upgraded.mmp"))};
+
+		// An empty path is not a report: the option was given, so it is
+		// refused - and nothing is rendered.
+		QTest::newRow("an empty report path")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("render"), m_projectPath,
+				QStringLiteral("--output"), m_dir.filePath(QStringLiteral("empty-render.wav")),
+				QStringLiteral("--report"), QString()}
+			<< QStringLiteral("only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("empty-render.wav"))};
+
+		// For master the option is right, but there is no file to write: the
+		// run is refused, and no candidate directory appears.
+		QTest::newRow("an empty report path for master")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("master"), m_projectPath,
+				QStringLiteral("-o"), m_dir.filePath(QStringLiteral("empty-candidates")),
+				QStringLiteral("--report"), QString()}
+			<< QStringLiteral("No report path specified")
+			<< QStringList{m_dir.filePath(QStringLiteral("empty-candidates"))};
+	}
+
+	void reportOptionIsRefused()
+	{
+		QFETCH(QStringList, arguments);
+		QFETCH(QString, message);
+		QFETCH(QStringList, absentFiles);
+
+		const CliRun run = runCli(m_dir.path(), arguments);
+		QVERIFY2(run.status == QProcess::NormalExit, run.output.constData());
+		QVERIFY2(run.exitCode != 0, run.output.constData());
+		QVERIFY2(run.output.contains(message.toUtf8()), run.output.constData());
+		for (const QString& path : absentFiles)
+		{
+			QVERIFY2(!QFileInfo::exists(path), qPrintable(path));
+		}
+	}
+
 	/*! A WAV the run cannot read is REFUSED, never quietly left out. The
 	 *  before-state capture has to hold every .wav the run may overwrite: a file
 	 *  filtered out of the capture is a file whose old bytes are not recorded and
@@ -563,6 +637,7 @@ private:
 	}
 
 	QTemporaryDir m_dir;
+	QString m_projectPath;
 	OutputSettings m_outputSettings{44100, 160, OutputSettings::BitDepth::Depth16Bit,
 		OutputSettings::StereoMode::Stereo};
 	QVector<MasteringCandidateReport> m_candidateReport;

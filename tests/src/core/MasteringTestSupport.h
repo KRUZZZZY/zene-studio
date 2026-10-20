@@ -1,5 +1,6 @@
 /*
- * MasteringTestSupport.h - a real project fixture and waveform helpers
+ * MasteringTestSupport.h - a real project fixture, waveform helpers and a
+ * runner for the shipped CLI
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -25,9 +26,12 @@
 #ifndef LMMS_MASTERING_TEST_SUPPORT_H
 #define LMMS_MASTERING_TEST_SUPPORT_H
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QPair>
+#include <QProcess>
+#include <QProcessEnvironment>
 #include <QString>
 #include <QTextStream>
 #include <QVector>
@@ -258,6 +262,67 @@ inline bool writeFixture(const QString& directory, QString& projectPath)
 
 	projectPath = QDir(directory).filePath(QStringLiteral("fixture.mmp"));
 	return writeProject(projectPath, directory, tracks);
+}
+
+/**
+ * What one run of the shipped CLI did: how it ended, and what it said.
+ */
+struct CliRun
+{
+	QProcess::ExitStatus status = QProcess::CrashExit;
+	int exitCode = -1;
+	QByteArray output;
+};
+
+/**
+ * The application binary of this build. Its path is compiled in by
+ * tests/CMakeLists.txt, so the CLI under test is the one this build produced -
+ * never a missing or a stale binary.
+ */
+inline QString zeneBinary()
+{
+#ifdef ZENE_APP_BINARY
+	return QStringLiteral(ZENE_APP_BINARY);
+#else
+	QString path = QDir(QCoreApplication::applicationDirPath()).absoluteFilePath(
+		QStringLiteral("../zene"));
+#ifdef Q_OS_WIN
+	path += QStringLiteral(".exe");
+#endif
+	return path;
+#endif
+}
+
+/**
+ * Runs the shipped CLI with the given arguments, in an environment of its own
+ * (its own HOME, so it cannot touch the session's), and returns what it did.
+ * The real command line is the thing under test: the option is parsed in
+ * main(), and a refusal has to happen on the path a user takes.
+ */
+inline CliRun runCli(const QString& workDirectory, const QStringList& arguments)
+{
+	QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+	environment.insert(QStringLiteral("QT_QPA_PLATFORM"), QStringLiteral("offscreen"));
+	environment.insert(QStringLiteral("HOME"), workDirectory);
+	environment.insert(QStringLiteral("XDG_CONFIG_HOME"),
+		QDir(workDirectory).filePath(QStringLiteral("config")));
+	environment.insert(QStringLiteral("XDG_DATA_HOME"),
+		QDir(workDirectory).filePath(QStringLiteral("data")));
+
+	QProcess process;
+	process.setProcessEnvironment(environment);
+	process.start(zeneBinary(), arguments);
+	if (!process.waitForStarted(30000) || !process.waitForFinished(120000))
+	{
+		CliRun failed;
+		failed.output = process.errorString().toUtf8();
+		return failed;
+	}
+	CliRun run;
+	run.status = process.exitStatus();
+	run.exitCode = process.exitCode();
+	run.output = process.readAllStandardOutput() + process.readAllStandardError();
+	return run;
 }
 
 } // namespace masteringtest
