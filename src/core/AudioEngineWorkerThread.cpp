@@ -30,6 +30,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <thread>
 
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
@@ -54,10 +55,21 @@ int AudioEngineWorkerThread::s_inlineRenderSlot = 0;
 //! Off when the engine starts: live playback keeps the pool (see the header).
 static std::atomic<bool> s_deterministicProcessing{false};
 std::atomic<AudioEngineWorkerThread::WorkerDrainProbe> AudioEngineWorkerThread::s_workerDrainProbe{nullptr};
+std::atomic<int> AudioEngineWorkerThread::s_activeDrains{0};
 
 void AudioEngineWorkerThread::setDeterministicProcessing(bool deterministic)
 {
 	s_deterministicProcessing.store(deterministic, std::memory_order_release);
+	if (!deterministic) { return; }
+
+	// A worker that read the switch as off just before the store may be about to
+	// enter globalJobQueue::run(). Do not return until every such worker has left,
+	// so the renderer that queues its jobs after this call is the only drainer.
+	// Only the export thread calls this with true; the workers never block here.
+	while (s_activeDrains.load(std::memory_order_acquire) != 0)
+	{
+		std::this_thread::yield();
+	}
 }
 
 void AudioEngineWorkerThread::setWorkerDrainProbeForTesting(WorkerDrainProbe probe)
@@ -344,7 +356,16 @@ void AudioEngineWorkerThread::run()
 		if( !deterministicProcessing() )
 		{
 			if( probe != nullptr ) { probe( WorkerDrainProbeStage::BeforeQueue ); }
-			globalJobQueue.run();
+			// Re-check after publishing that this worker may drain: an enable that
+			// landed between the read above and here either sees this worker counted
+			// (and waits) or is seen by the re-check, so the worker cannot take a job
+			// the export queued after its setDeterministicProcessing(true) returned.
+			s_activeDrains.fetch_add(1, std::memory_order_acq_rel);
+			if( !deterministicProcessing() )
+			{
+				globalJobQueue.run();
+			}
+			s_activeDrains.fetch_sub(1, std::memory_order_release);
 			if( probe != nullptr ) { probe( WorkerDrainProbeStage::AfterQueue ); }
 		}
 	}

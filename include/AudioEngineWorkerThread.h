@@ -185,6 +185,10 @@ private:
 
 	static JobQueue globalJobQueue;
 	static std::atomic<WorkerDrainProbe> s_workerDrainProbe;
+	//! Workers currently inside globalJobQueue::run(). Enabling deterministic
+	//! processing waits for this to reach zero (see setDeterministicProcessing()),
+	//! so a worker that read the switch as off cannot still drain an export's queue.
+	static std::atomic<int> s_activeDrains;
 	//! The render slot of the calling thread; -1 until it runs a render job
 	//! (cluster new-p10-249). A worker sets it to its own m_renderSlot for the whole run
 	//! loop; startAndWaitForJobs() sets it to the inline slot for the length of the call.
