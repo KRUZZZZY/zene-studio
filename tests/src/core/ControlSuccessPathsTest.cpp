@@ -64,6 +64,7 @@
 #include "ModulationTestSupport.h"
 #include "ProjectInfo.h"
 #include "ProjectJournal.h"
+#include "ProvenanceSection.h"
 #include "RackTestSupport.h"
 #include "Song.h"
 #include "Track.h"
@@ -500,6 +501,9 @@ private slots:
 		const bool previousModified = song->isModified();
 		const QString previousType = ProjectInfo::instance().documentType();
 		const QStringList previousRecentProjects = ConfigManager::inst()->recentlyOpenedProjects();
+		const int previousProvenanceSize = provenance::Section::instance().size();
+		const quint64 previousProvenanceLastSeq = provenance::Section::instance().lastSeq();
+		QVERIFY2(previousProvenanceSize > 0, "the seeded undoable change left no provenance to preserve");
 		const auto hasPreservedTrack = [song]
 		{
 			return std::any_of(song->tracks().begin(), song->tracks().end(), [](const Track* track)
@@ -525,6 +529,8 @@ private slots:
 				return previousRecentProjects.contains(recent) || QFile::exists(recent);
 			});
 		const bool undoSurvived = Engine::projectJournal()->canUndo();
+		const int provenanceSizeAfter = provenance::Section::instance().size();
+		const quint64 provenanceLastSeqAfter = provenance::Section::instance().lastSeq();
 		QVERIFY(QDir(partialPath).removeRecursively());
 		QVERIFY2(preservedAfterFailure, "a save-time failure replaced the current session");
 		QCOMPARE(fileAfterFailure, previousFile);
@@ -532,6 +538,10 @@ private slots:
 		QCOMPARE(typeAfterFailure, previousType);
 		QVERIFY2(newRecentPathsExist, "restoring the original session left a dead recent-project entry");
 		QVERIFY2(undoSurvived, "a save-time failure dropped the undo history of the restored session");
+		QVERIFY2(provenanceSizeAfter == previousProvenanceSize,
+			"a save-time failure dropped or replaced the original session's provenance");
+		QVERIFY2(provenanceLastSeqAfter == previousProvenanceLastSeq,
+			"a save-time failure changed the original session's provenance sequence");
 
 		// The history is not only present but usable, and it is the step the change made.
 		REQUIRE_OK(run(QStringLiteral("control.undo")), "control.undo");

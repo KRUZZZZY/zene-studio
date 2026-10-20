@@ -47,8 +47,10 @@
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
+#include "DataFile.h"
 #include "ProjectInfo.h"
 #include "ProjectJournal.h"
+#include "ProvenanceSection.h"
 #include "ReferenceProject.h"
 #include "Song.h"
 
@@ -217,6 +219,19 @@ ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 	// The undo/redo stacks a project load clears (Song::clearProject -> clearJournal). Held here and put
 	// back with the restore, so a rollback gives the history back rather than an empty one.
 	ProjectJournal::DetachedHistory history = Engine::projectJournal()->detachHistory();
+	// Provenance is append-only and document-scoped: project.new replaces the session and records its own
+	// change, so restoreUndoSnapshot (which keeps the log current at restore time) would carry the new
+	// document's log back instead of this session's. Capture this session's log now and put it back on
+	// rollback.
+	DataFile originalLogCarrier(DataFile::Type::SongProject);
+	provenance::writeTo(originalLogCarrier);
+	QDomDocument originalLogDocument;
+	QDomElement originalLog = originalLogCarrier.content().firstChildElement(provenance::nodeName());
+	if (!originalLog.isNull())
+	{
+		originalLog = originalLogDocument.importNode(originalLog, true).toElement();
+		originalLogDocument.appendChild(originalLog);
+	}
 	const auto restorePrevious = [&]()
 	{
 		const ControlResult restored = restoreSession(*song, *snapshot, previousFile, skippedSections, previousModified);
@@ -224,6 +239,9 @@ ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 		{
 			ProjectInfo::instance().setDocumentType(previousType);
 			Engine::projectJournal()->reattachHistory(std::move(history));
+			// restoreUndoSnapshot kept the log current at restore time; replace it with the original one.
+			provenance::Section::instance().clear();
+			if (!originalLog.isNull()) { provenance::Section::instance().load(originalLog); }
 		}
 		return restored;
 	};
