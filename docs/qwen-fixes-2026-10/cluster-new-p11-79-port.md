@@ -139,6 +139,10 @@ Commands ran from the worktree root except `ctest`, which ran from `build/tests`
 | gate table | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p11-79-port` | **0**; 8/8 rows PASS | `gate-1-feature-check.log` |
 | complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 — 6 pre-existing items, **none in the files of this change** | `gate-2-complexity.log` |
 | file-length ratchet | `bash tests/file-length-gate.sh --check` | 1 — 14 pre-existing items, **none in the files of this change** | `gate-3-file-length.log` |
+| round-1 rework re-run (report-only change) | `cmake --build build --target zene DelayLfoAutomationTest` | 0 | `build-11-r1-rework.log` |
+| round-1 rework re-run | `ctest -R '^DelayLfoAutomationTest$' --output-on-failure` | 0; 1/1 passed | `test-13-r1-rework.log` |
+| round-1 rework re-run | `ctest -R 'Delay\|Lfo' --output-on-failure` | 0; 6/6 passed | `test-14-r1-family.log` |
+| round-1 rework gates | `python3 .../feature_check.py <worktree>` | 0; 8/8 rows PASS | `gate-4-r1-rework.log` |
 
 RED failure line (`test-1-red.log`, repeated identically in `test-5-reverse-red.log`):
 
