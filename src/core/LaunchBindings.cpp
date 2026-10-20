@@ -23,6 +23,7 @@
  */
 #include "LaunchBindings.h"
 
+#include <cmath>
 #include <memory>
 
 #include <QJsonDocument>
@@ -44,6 +45,18 @@ std::unique_ptr<LaunchBindings> s_bindings;
 const QString kSection = QStringLiteral("launcher");
 const QString kKey = QStringLiteral("bindings");
 
+//! A stored binding's channel: -1 (any channel) or a MIDI channel 0..15. False for anything else (a fraction, a word,
+//! -2), which is no channel at all - the binding is skipped rather than read as any channel. A missing channel is invalid.
+bool storedChannel(const QJsonObject& binding, int* out)
+{
+	const QJsonValue value = binding.value(QStringLiteral("channel"));
+	if (!value.isDouble()) { return false; }
+	const double channel = value.toDouble();
+	if (channel != std::floor(channel) || channel < -1 || channel > 15) { return false; }
+	*out = static_cast<int>(channel);
+	return true;
+}
+
 //! The binding for @a note: an exact channel first, then one for any channel.
 QJsonObject bindingFor(const LaunchNote& note)
 {
@@ -52,7 +65,8 @@ QJsonObject bindingFor(const LaunchNote& note)
 	{
 		const QJsonObject binding = value.toObject();
 		if (binding.value(QStringLiteral("key")).toInt(-1) != note.key) { continue; }
-		const int channel = binding.value(QStringLiteral("channel")).toInt(-1);
+		int channel = -1;
+		if (!storedChannel(binding, &channel)) { continue; }
 		if (channel == note.channel) { return binding; }
 		if (channel < 0) { any = binding; }
 	}
