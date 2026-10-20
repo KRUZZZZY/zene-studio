@@ -89,6 +89,13 @@ std::uint32_t dropBit(std::uint32_t mask, int removed)
 	return below | ((mask >> (removed + 1)) << removed);
 }
 
+//! @a mask with a layer inserted before @a inserted and every higher bit moved up one.
+std::uint32_t insertBit(std::uint32_t mask, int inserted)
+{
+	const std::uint32_t below = mask & ((1u << inserted) - 1u);
+	return below | ((mask & ~((1u << inserted) - 1u)) << 1);
+}
+
 //! 0.5.0 F2 interface: a layer's mix as attributes of its element (only what differs from the default). The
 //! names carry a prefix because a layer's own <track> element already has a "muted" of its own.
 void writeMix(QDomElement& element, const InstrumentLayers::Mix& mix)
@@ -184,6 +191,7 @@ void InstrumentLayers::adopt(InstrumentTrack* track, int index)
 		m_slots[at].store(m_slots[at - 1].load(std::memory_order_relaxed), std::memory_order_release);
 	}
 	m_slots[static_cast<std::size_t>(index - 1)].store(track, std::memory_order_release);
+	for (auto& live : m_liveLayers) { live.store(insertBit(live.load(std::memory_order_relaxed), index), std::memory_order_relaxed); }
 	followMixerChannel(m_owner->mixerChannelModel()->value());
 }
 
