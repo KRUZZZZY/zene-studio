@@ -227,11 +227,25 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		if (len < 0)
+		{
+			invalidate();
+			return ret;
+		}
 		if (len > 0)
 		{
+			// Never trust the wire length before allocating: the FIFO can only hold what is left of the
+			// message it has already signalled.
+			lock();
+			const bool fits = !isInvalid() && len <= m_data->endPtr - m_data->startPtr;
+			unlock();
+			if (!fits)
+			{
+				invalidate();
+				return ret;
+			}
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
 	}
@@ -643,11 +657,17 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		// The socket peer's length is untrusted. This transport accepts a frame only while it fits in the
+		// peek window, so a longer argument is refused before it is allocated.
+		if (len < 0 || static_cast<std::size_t>(len) > PeekWindowBytes)
+		{
+			invalidate();
+			return ret;
+		}
 		if (len > 0)
 		{
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
 	}

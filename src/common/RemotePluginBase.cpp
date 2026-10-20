@@ -378,6 +378,8 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chron
 		return ReceiveResult::Lost;
 	}
 	_out.id = id;
+	std::size_t consumed = 2 * sizeof(std::int32_t);
+	constexpr std::size_t lengthBytes = sizeof(std::int32_t);
 	for (std::int32_t i = 0; i < count; ++i)
 	{
 		std::int32_t length = 0;
@@ -386,7 +388,17 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chron
 			invalidate();
 			return ReceiveResult::Lost;
 		}
-		std::string arg(static_cast<std::size_t>(length), '\0');
+		// The whole frame must fit in the peek window (see peekNextMessage()), so an argument that cannot fit
+		// in what is left is malformed. Refuse it before its length is turned into an allocation.
+		const auto argSize = static_cast<std::size_t>(length);
+		if (consumed > PeekWindowBytes || lengthBytes > PeekWindowBytes - consumed
+			|| argSize > PeekWindowBytes - consumed - lengthBytes)
+		{
+			invalidate();
+			return ReceiveResult::Lost;
+		}
+		consumed += lengthBytes + argSize;
+		std::string arg(argSize, '\0');
 		if (length > 0 && !readExactlyWithin(arg.data(), length, _progress, total))
 		{
 			invalidate();

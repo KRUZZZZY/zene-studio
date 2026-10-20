@@ -735,6 +735,53 @@ private slots:
 		::close(sockets[1]);
 	}
 
+	//! A partial frame must not make the host allocate a string the wire length claims before the payload
+	//! has arrived: one argument of 8 MiB is refused as soon as its length exceeds what a frame can hold.
+	//! The hook supplies the length only after the peek has seen the 8-byte header, so the buggy path really
+	//! reaches the allocation, and it stops before any payload read.
+	void oversizedStartedFrameLengthIsRefusedBeforeAllocating()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			const std::int32_t header[] = {IdDebugMessage, 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+
+			constexpr std::int32_t claimedLength = 8 * 1024 * 1024;
+			int positiveWaits = 0;
+			receiver.waitHook = [&sockets, &positiveWaits](int timeoutMs)
+			{
+				if (timeoutMs == 0) { return true; }
+				++positiveWaits;
+				if (positiveWaits == 3)
+				{
+					// The receive is about to read the argument length: give it the oversized one.
+					const std::int32_t length = claimedLength;
+					return ::write(sockets[1], &length, sizeof(length))
+						== static_cast<ssize_t>(sizeof(length));
+				}
+				return positiveWaits < 4; // the payload never arrives
+			};
+
+			lmms::test::tlCountAllocations = true;
+			lmms::test::resetAllocationCount();
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveWithin(
+				std::chrono::steady_clock::now() + std::chrono::seconds{1},
+				std::chrono::milliseconds{50}, m);
+			const auto allocations = lmms::test::tlAllocationCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+			QCOMPARE(allocations, std::uint64_t{0});
+		}
+
+		::close(sockets[1]);
+	}
+
 #endif
 
 #ifndef SYNC_WITH_SHM_FIFO
