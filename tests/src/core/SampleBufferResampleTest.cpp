@@ -27,8 +27,10 @@
 #include <QFile>
 #include <QProcess>
 #include <QTemporaryDir>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <numbers>
 #include <vector>
 
@@ -36,6 +38,32 @@
 #include "SampleBufferResample.h"
 
 using namespace lmms;
+
+
+namespace
+{
+
+std::vector<std::int16_t> renderDrumSynth(const QString& path, const char* level)
+{
+	const QByteArray settings = QStringLiteral(
+		"[General]\nVersion=DrumSynth v2.0\nLevel=%1\nStretch=100\nTuning=0\nFilter=0\n"
+		"FilterEnv=0,0 100,0\n\n[Tone]\nOn=1\nLevel=100\nF1=440\nF2=440\n"
+		"Droop=0\nPhase=0\nEnvelope=0,100 1200,0\n")
+		.arg(QLatin1String(level)).toUtf8();
+	{
+		QFile file(path);
+		if (!file.open(QIODevice::WriteOnly) || file.write(settings) != settings.size()) { return {}; }
+	}
+
+	std::int16_t* samples = nullptr;
+	const int frames = DrumSynth{}.GetDSFileSamples(path, samples, 1, 44100);
+	const std::unique_ptr<std::int16_t[]> ownedSamples(samples);
+	if (frames <= 0 || !ownedSamples) { return {}; }
+	return {ownedSamples.get(), ownedSamples.get() + frames};
+}
+
+} // namespace
+
 
 //! Engine audit E27: stem separation resamples a source to 44.1 kHz instead of refusing it, so
 //! the resample must keep the audio's length in time and its pitch.
@@ -95,6 +123,17 @@ private slots:
 		const auto output = resampleBuffer(input, 44100);
 		QVERIFY(output.get() != input.get());
 		QVERIFY(output->audioFile().isEmpty());
+	}
+
+	void aNonfiniteDrumSynthLevelUsesTheDefaultGain()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const auto expected = renderDrumSynth(directory.filePath(QStringLiteral("default.ds")), "0");
+		const auto actual = renderDrumSynth(directory.filePath(QStringLiteral("nan.ds")), "nan");
+		QVERIFY(!expected.empty());
+		QVERIFY(std::any_of(expected.begin(), expected.end(), [](std::int16_t sample) { return sample != 0; }));
+		QVERIFY(actual == expected);
 	}
 
 	void negativeDrumSynthDistortionRateDoesNotHang()
