@@ -34,6 +34,7 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -45,6 +46,8 @@
 #include "MidiClip.h"
 #include "MidiPort.h"
 #include "Note.h"
+#include "PatternStore.h"
+#include "PatternTrack.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -310,6 +313,39 @@ private slots:
 		QVERIFY(!file.tracks[1].events.empty());
 		QCOMPARE(file.tracks[1].events.back().status, 0xFF);
 		QCOMPARE(file.tracks[1].events.back().type, 0x2F);
+	}
+
+	//! Zero pattern steps: writePatternClip() divides by `steps * 12`. The loader keeps a clip's step count at
+	//! one bar or more (MidiClip::loadSettings), so the export never divides by zero. This runs the pattern path
+	//! with a note in a pattern-store clip restored from a project element that says steps="0".
+	void aZeroStepPatternExportsWithoutDividingByZero()
+	{
+		// The pattern track goes in first: the store track then gets its clip for pattern 0.
+		auto* pattern = dynamic_cast<PatternTrack*>(Track::create(Track::Type::Pattern, Engine::getSong()));
+		QVERIFY(pattern != nullptr);
+		auto* store = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::patternStore()));
+		QVERIFY(store != nullptr);
+		store->setName(QStringLiteral("Store"));
+		store->midiPort()->setOutputChannel(1);
+		auto* storeClip = dynamic_cast<MidiClip*>(store->getClip(0));
+		QVERIFY(storeClip != nullptr);
+		storeClip->addNote(Note(TimePos(24), TimePos(0), 60, 100), false);
+		storeClip->rearrangeAllNotes();
+
+		QDomDocument doc;
+		QDomElement parent = doc.createElement("track");
+		QDomElement authored = storeClip->saveState(doc, parent);
+		authored.setAttribute("steps", "0");
+		storeClip->restoreState(authored);
+
+		QVERIFY(pattern->createClip(TimePos(0)) != nullptr);
+
+		SmfFile file;
+		QVERIFY(exportAndParse(&file));
+		QCOMPARE(int(file.tracks.size()), 2); // conductor + the pattern-store instrument
+		int ons = 0;
+		for (const SmfEvent& e : file.tracks[1].events) { if ((e.status & 0xF0) == 0x90) { ++ons; } }
+		QCOMPARE(ons, 1); // one note at tick 0 in a one-bar pattern
 	}
 
 private:
