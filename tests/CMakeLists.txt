@@ -3040,6 +3040,11 @@ add_test(NAME PluginPortsMigrationTest COMMAND PluginPortsMigrationTest)
 # assertion on any machine with no display (CI, headless shell).
 set_tests_properties(PluginPortsMigrationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p9-326: the focused OpulenZ held-note regression. It runs in the
+# PluginPortsMigrationTest executable (the plugin-module host it needs lives
+# there), so the registration is a second ctest entry over the same binary.
+add_test(NAME OpulenZ COMMAND PluginPortsMigrationTest opulenzReappliesVelocityScalingToHeldVoice)
+set_tests_properties(OpulenZ PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 )

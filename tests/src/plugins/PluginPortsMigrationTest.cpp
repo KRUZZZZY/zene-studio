@@ -880,6 +880,7 @@ private slots:
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void opulenzReloadEmulatorReplacesEmulatorUnderMutex();
 	void opulenzRendersTheProvidedSpanSize();
+	void opulenzReappliesVelocityScalingToHeldVoice();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
 	void gigKeyboardDimensionUsesPressedKey();
@@ -3304,6 +3305,94 @@ void PluginPortsMigrationTest::opulenzRendersTheProvidedSpanSize()
 		});
 	QVERIFY2(shortSpanBoundaryPreserved && longSpanFullyWritten,
 		"OpulenZ wrote outside a short span or left the tail of a long span unwritten");
+}
+
+/*!
+ * Regression for cluster new-p9-326: OpulenZ never re-applied the
+ * velocity-scaled operator levels to a voice that was already sounding, so a
+ * held note kept the level it was given at note-on and the operator level
+ * knobs had no effect on it until some later MIDI event touched the voice.
+ *
+ * The plugin's models are addressed through the attribute names its own
+ * saveSettings()/loadSettings() pair uses - the same round trip the track
+ * uses to persist an instrument - so the test drives the product's public
+ * surface and needs no copy of the plugin's private class layout.
+ */
+void PluginPortsMigrationTest::opulenzReappliesVelocityScalingToHeldVoice()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_opulenz)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	// The module entry point hands out an instrument the track does NOT own:
+	// Instrument's QObject parent is null, so InstrumentTrack's destructor
+	// (which deletes only its own m_instrument) would leave this instance and
+	// its sample-rate connection alive for the rest of the test process. The
+	// test owns it instead. The unique_ptr is declared after the track and
+	// while the module is still loaded, so the instrument is destroyed first -
+	// before the track it points at and before the library it came from - on
+	// every exit path, including the early returns of the assertions.
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+
+	// The OPL2 operator level register is inverted: level 63 writes register
+	// value 0 (loudest), level 0 writes register value 63 (silent).
+	const auto setOperatorLevels = [](lmms::Instrument& inst, const QString& op1Level,
+		const QString& op2Level)
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement("instrument");
+		QDomElement state = inst.saveState(doc, root);
+		state.setAttribute("op1_lvl", op1Level);
+		state.setAttribute("op2_lvl", op2Level);
+		inst.restoreState(state);
+	};
+	setOperatorLevels(*instrument, QStringLiteral("63"), QStringLiteral("63"));
+
+	// Open a voice and never release it: the plugin re-scales only the
+	// voices that are still sounding.
+	instrument->handleMidiEvent(lmms::MidiEvent{lmms::MidiNoteOn, 0, 69, 127}, lmms::TimePos{0}, 0);
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const auto renderEnergy = [&](int periods)
+	{
+		double energy = 0.0;
+		for (int period = 0; period < periods; ++period)
+		{
+			std::fill(buffer.begin(), buffer.end(), lmms::SampleFrame{0.0f, 0.0f});
+			instrument->play(std::span<lmms::SampleFrame>{buffer});
+			for (const auto& sample : buffer)
+			{
+				energy += sample.left() * sample.left() + sample.right() * sample.right();
+			}
+		}
+		return energy;
+	};
+
+	// Warm up first: the envelope has to reach its sustain level before the
+	// energy of the held voice is measured.
+	constexpr int WarmupPeriods = 8;
+	constexpr int MeasuredPeriods = 8;
+	renderEnergy(WarmupPeriods);
+	const double before = renderEnergy(MeasuredPeriods);
+
+	setOperatorLevels(*instrument, QStringLiteral("0"), QStringLiteral("0"));
+	const double after = renderEnergy(MeasuredPeriods);
+
+	qInfo("OpulenZ held voice energy: before=%g after=%g ratio=%g",
+		before, after, before > 0.0 ? after / before : 0.0);
+	QVERIFY2(before > 1.0e-6, "held OpulenZ note rendered silence before the level change");
+	QVERIFY2(after < before * 0.01, "held OpulenZ voice did not apply the changed velocity scaling");
 }
 
 void PluginPortsMigrationTest::gigPatchDialogPreviewsSelectedProgram()

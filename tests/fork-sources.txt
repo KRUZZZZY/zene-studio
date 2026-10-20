@@ -2761,3 +2761,5 @@ tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp
 plugins/NeuralAmp/tests/rt_alloc_probe.cpp
 # cluster new-p16-196: the rt_alloc_probe block-size cluster report is fork-NEW (added after the gate base), so it is listed with the other fork-NEW files of this cluster.
 docs/qwen-fixes-2026-10/cluster-new-p16-196.md
+# cluster new-p9-326-port (2026-10): fix and verification report for the OpulenZ held-voice velocity-scaling defect.
+docs/qwen-fixes-2026-10/cluster-new-p9-326-port.md
