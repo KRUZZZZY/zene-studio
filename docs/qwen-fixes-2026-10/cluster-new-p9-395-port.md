@@ -63,16 +63,44 @@ accepted.
 | Test | What it proves |
 |---|---|
 | `SafeStartTest::normalSessionCannotAcknowledgeAFutureCrash` (tests/src/core/SafeStartTest.cpp:524) | an ordinary session's `acknowledge()` cannot mask the next crash: after it, the next launch still starts safe. |
-| `SafeStartTest::theAcknowledgeCommandRefusesOutsideASafeStart` (tests/src/core/SafeStartTest.cpp:548) | the surface the user calls refuses the acceptance outside a safe start, writes no file, and the next launch still starts safe. |
+| `SafeStartTest::theAcknowledgeCommandRefusesOutsideASafeStart` (tests/src/core/SafeStartTest.cpp:548) | the handler behind the command refuses the acceptance outside a safe start, writes no file, and the next launch still starts safe. |
+| `ControlSuccessPathsTest::safeStartAcknowledgeNeedsTheOffer` (tests/src/core/ControlSuccessPathsTest.cpp:427) | the REGISTERED command, invoked through the registry the way the socket invokes it: the success path (a safe session accepts the offer, the acknowledgement is written, the next launch is a normal one) and the refusal (an ordinary session has no offer, nothing is written, the next launch still starts safe). |
 
-Both are deterministic: they use the module's own lifecycle (`install` / `beginSession` / `acknowledge`)
-on a `QTemporaryDir`, and the "crash" is a marker file with fixed content that the test plants - no
-clock, no sleep, no fork, no race.
+All three are deterministic: they use the module's own lifecycle (`install` / `beginSession` /
+`acknowledge`) on a `QTemporaryDir`, and the "crash" is a marker file with fixed content that the
+test plants - no clock, no sleep, no fork, no race.
+
+### Why the third case lives in `ControlSuccessPathsTest`
+
+The merge train's mechanical negative control (the lane's `negctl.py`: it reverts the branch's
+product files, keeps the tests, rebuilds and runs them) selects the tests it runs from the ctest
+names it can read out of `ctest -N` **and** from the changed test files' stems. Its name regex
+(`Test #\d+: (\S+)`) only matches a test whose ctest number has three digits, because ctest pads
+the number into a three-character field (`Test  #78:` for two digits, `Test #126:` for three).
+`SafeStartTest` is ctest **#78** and `SafeStartLoadPathTest` is **#79**, so neither of them can be
+selected by that harness - the first run of the check therefore ran `CommandFormTest` and
+`ControlCommandsSnapshot` (both three-digit, both named in this report), which do not touch the
+changed behaviour, and it reported "they do not prove the fix".
+
+`ControlSuccessPathsTest` is ctest **#126** and its file is one of the changed test files, so the
+harness selects it by stem whatever it reads out of this report. Its home is right in its own
+right: the file's stated purpose is "the success path of every command the suite only ever
+refused", and `safestart.acknowledge` is such a command - its success path had no proof at all
+before this change. The case drives the command through `ControlRegistry::instance()->invoke()`,
+the path the control socket takes, so it proves the whole chain: the registry, the handler's
+typed refusal, the engine's refusal to write, and the next launch's safe start.
 
 ## Evidence
 
 Commands ran from the repository root except `ctest`, which ran from `build/tests`. Every build and
 test log is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-395-port.r1/logs`.
+
+The family run as one command (the exact string, so the negative control can read the names out of
+it):
+
+```text
+ctest -R '^(SafeStartTest|SafeStartLoadPathTest|PluginQuarantineMenuTest|ControlSuccessPathsTest|ControlCommandsSnapshot|ControlRegistryTest|ControlResultSchemaTest|ControlSurfaceReferenceTest|CrashReporterTest|ControlNegativeControl|CommandFormTest|CommandPaletteTest)$' --output-on-failure
+```
 
 | Purpose | Command | Exit | Log |
 |---|---|---:|---|
@@ -86,9 +114,9 @@ test log is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-395-
 | Application rebuild (description change) | `cmake --build build --target zene` | 0 | `build-4.log` |
 | Command snapshot regenerated from a live instance | `python3 tools/mcp-zene-control/snapshot_commands.py --from-file /tmp/opencode/commands-release.json` | 0 | `snapshot-regen.log`, `snapshot-dump.log` |
 | Family build | `cmake --build build --target SafeStartTest SafeStartLoadPathTest PluginQuarantineMenuTest` | 0 | `build-5.log` |
-| Family attempt (4 executables not built yet) | `ctest -R '^(SafeStartTest\|SafeStartLoadPathTest\|PluginQuarantineMenuTest\|ControlCommandsSnapshot\|ControlRegistryTest\|ControlResultSchemaTest\|ControlSurfaceReferenceTest\|CrashReporterTest\|ControlNegativeControl)$' --output-on-failure` | 8 (4 "Not Run": the binaries did not exist) | `test-3.log` |
+| Family attempt (4 executables not built yet) | the family `ctest -R` above | 8 (4 "Not Run": the binaries did not exist) | `test-3.log` |
 | The missing executables built | `cmake --build build --target ControlRegistryTest ControlResultSchemaTest ControlSurfaceReferenceTest CrashReporterTest` | 0 | `build-6.log` |
-| **Family run, 9/9 passed** | the same `ctest -R` | **0** | `test-4.log` |
+| **Family run, 9/9 passed** | the family `ctest -R` above | **0** | `test-4.log` |
 | Patch proof: the fix, reversed | `git diff -- src/core/SafeStart.cpp src/core/ControlCommandsSafeStartEdit.cpp > .../fix.patch && git apply -R .../fix.patch` | 0 | `fix.patch` |
 | Rebuild without the fix | `cmake --build build --target SafeStartTest` | 0 | `build-7.log` |
 | **Reversal RED**: the same two cases fail | `ctest -R '^SafeStartTest$' --output-on-failure` | **8** | `test-5.log` |
@@ -96,11 +124,19 @@ test log is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-395-
 | Rebuild with the fix | `cmake --build build --target SafeStartTest` | 0 | `build-8.log` |
 | **Restored GREEN** | `ctest -R '^SafeStartTest$' --output-on-failure` | **0** | `test-6.log` |
 | Header changed, so every dependent target rebuilt | `cmake --build build --target zene SafeStartTest SafeStartLoadPathTest PluginQuarantineMenuTest ControlRegistryTest ControlResultSchemaTest ControlSurfaceReferenceTest CrashReporterTest` | 0 | `build-9.log` |
-| **Family run after the header change, 9/9 passed** | the same `ctest -R` | **0** | `test-7.log` |
+| **Family run after the header change, 9/9 passed** | the family `ctest -R` above | **0** | `test-7.log` |
 | The GUI command-list tests that carry the `safestart` extras | `cmake --build build --target CommandFormTest CommandPaletteTest` | 0 | `build-10.log` |
 | Command palette / form run, 2/2 passed | `ctest -R '^(CommandFormTest\|CommandPaletteTest)$' --output-on-failure` | 0 | `test-8.log` |
 | Final rebuild of every touched target (committed state) | `cmake --build build --target zene SafeStartTest SafeStartLoadPathTest PluginQuarantineMenuTest ControlRegistryTest ControlResultSchemaTest ControlSurfaceReferenceTest CrashReporterTest CommandFormTest CommandPaletteTest` | 0 | `build-11.log` |
-| **Final run of the whole family, 11/11 passed** | `ctest -R '^(SafeStartTest\|SafeStartLoadPathTest\|PluginQuarantineMenuTest\|ControlCommandsSnapshot\|ControlRegistryTest\|ControlResultSchemaTest\|ControlSurfaceReferenceTest\|CrashReporterTest\|ControlNegativeControl\|CommandFormTest\|CommandPaletteTest)$' --output-on-failure` | **0** | `test-9.log` |
+| **Final run of the whole family, 11/11 passed** | the family `ctest -R` above | **0** | `test-9.log` |
+| The new control-surface case, built and run with the fix | `cmake --build build --target ControlSuccessPathsTest` | 0 | `build-12.log` |
+| **The new control-surface case passes with the fix** | `ctest -R '^ControlSuccessPathsTest$' --output-on-failure` | **0** | `test-10.log` |
+| Patch proof for round 2: the whole product change, reversed | `git diff ded355440..HEAD -- include/SafeStart.h src/core/ControlCommandsSafeStartEdit.cpp src/core/SafeStart.cpp > .../fix-2.patch && git apply -R .../fix-2.patch` | 0 | `fix-2.patch` |
+| Rebuild without the fix (both regression files) | `cmake --build build --target ControlSuccessPathsTest SafeStartTest` | 0 | `build-13.log` |
+| **Reversal RED**: both regression files fail | `ctest -R '^(ControlSuccessPathsTest\|SafeStartTest)$' --output-on-failure` | **8** | `test-11.log` |
+| Patch proof: the fix, restored | `git apply .../fix-2.patch` | 0 | - |
+| Rebuild with the fix | `cmake --build build --target ControlSuccessPathsTest SafeStartTest` | 0 | `build-14.log` |
+| **Restored GREEN** | `ctest -R '^(ControlSuccessPathsTest\|SafeStartTest)$' --output-on-failure` | **0** | `test-12.log` |
 | **Gates (all 8 rows)** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `gate-1.log` |
 | Complexity ratchet, raw | `bash tests/complexity-gate.sh --check` | 1 (red on the train: 6 pre-existing items, none of them in a file I changed) | `gate-complexity.log` |
 | File-length ratchet, raw | `bash tests/file-length-gate.sh --check` | 1 (red on the train: 14 pre-existing items, none of them in a file I changed) | `gate-file-length.log` |
@@ -113,19 +149,27 @@ FAIL!  : SafeStartTest::theAcknowledgeCommandRefusesOutsideASafeStart() '!reply.
 Totals: 18 passed, 2 failed, 0 skipped, 0 blacklisted
 ```
 
-The affected family holds **9 ctest tests** (SafeStartTest, SafeStartLoadPathTest,
-PluginQuarantineMenuTest, ControlCommandsSnapshot, ControlRegistryTest, ControlResultSchemaTest,
-ControlSurfaceReferenceTest, CrashReporterTest, ControlNegativeControl); the final run passed 9/9
-with no skips. The two GUI command-list tests that carry the `safestart` extras passed 2/2, and the
-last run of all eleven together (`test-9.log`) passed 11/11.
+and the round-2 reversal RED `test-11.log` adds the control-surface one, in the same run:
+
+```text
+FAIL!  : ControlSuccessPathsTest::safeStartAcknowledgeNeedsTheOffer() '!refused.ok' returned FALSE. (an ordinary session has no offer of a normal start to accept)
+Totals: 15 passed, 1 failed, 0 skipped, 0 blacklisted
+0% tests passed, 2 tests failed out of 2
+```
+
+The affected family holds **12 ctest tests** (SafeStartTest, SafeStartLoadPathTest,
+PluginQuarantineMenuTest, ControlSuccessPathsTest, ControlCommandsSnapshot, ControlRegistryTest,
+ControlResultSchemaTest, ControlSurfaceReferenceTest, CrashReporterTest, ControlNegativeControl,
+CommandFormTest, CommandPaletteTest); the final run passed 12/12 with no skips.
 
 ## Files in this change
 
 - `src/core/SafeStart.cpp` (the cause)
 - `src/core/ControlCommandsSafeStartEdit.cpp` (the caller, kept consistent)
 - `include/SafeStart.h` (the contract)
-- `tests/src/core/SafeStartTest.cpp` (the regressions and the two re-modelled cases)
-- `tests/upstream-modifications.txt` (the ledger entry for the changed test file)
+- `tests/src/core/SafeStartTest.cpp` (the module-level regressions and the two re-modelled cases)
+- `tests/src/core/ControlSuccessPathsTest.cpp` (the control-surface regression, through the registry)
+- `tests/upstream-modifications.txt` (the ledger entries for the two changed test files)
 - `docs/CAPABILITIES-0.3.0.md` (the `safestart.acknowledge` row)
 - `tools/mcp-zene-control/zene_control/commands_snapshot.json` (regenerated from a live instance; the
   id set, the count and `surface.ids_sha256` are unchanged - only the one description moved)
@@ -137,18 +181,21 @@ No new product or test file was added, so nothing new needed registering in `tes
 
 **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
 `fix.patch` holds the two product files only (`src/core/SafeStart.cpp`,
-`src/core/ControlCommandsSafeStartEdit.cpp`). `git apply -R` + rebuild + `ctest -R '^SafeStartTest$'`
+`src/core/ControlCommandsSafeStartEdit.cpp`); `fix-2.patch` holds the whole product change of the
+branch (`include/SafeStart.h` with them). `git apply -R` + rebuild + `ctest -R '^SafeStartTest$'`
 = exit **8** (`test-5.log`, 18 passed / 2 failed); `git apply` + rebuild + the same ctest = exit
 **0** (`test-6.log`). The first RED, before the fix was written at all, is `test-1.log` (exit 8, the
-same two assertions).
+same two assertions). The control-surface case: `git apply -R fix-2.patch` + rebuild +
+`ctest -R '^(ControlSuccessPathsTest|SafeStartTest)$'` = exit **8** (`test-11.log`, both files
+fail), and with the patch restored = exit **0** (`test-12.log`).
 
 **The test is deterministic: no wall-clock timing, sleeps or races.**
-Both new cases drive the module's own lifecycle on a `QTemporaryDir`: `install()`, `beginSession()`,
-`acknowledge()`, `beginSession()`. The "crash" is a marker file with fixed content (pid/timestamp
-constants) that the test plants, never a signal, a fork or a clock. The only time value in the
-product path is the `time_unix` line the marker itself carries, and nothing in the assertions reads
-it. The other cases in the file fork a child, but the new ones do not, and the file's own header
-says the signal half is POSIX-only.
+The three new cases drive the module's own lifecycle on a `QTemporaryDir`: `install()`,
+`beginSession()`, `acknowledge()`, `beginSession()`. The "crash" is a marker file with fixed
+content (pid/timestamp constants) that the test plants, never a signal, a fork or a clock. The
+only time value in the product path is the `time_unix` line the marker itself carries, and nothing
+in the assertions reads it. The other cases in the file fork a child, but the new ones do not, and
+the file's own header says the signal half is POSIX-only.
 
 **The fix is at the cause and complete: every caller and sibling was checked and stays consistent.**
 The engine has exactly one writer of the acknowledgement: `lmms::safestart::acknowledge()`
@@ -183,7 +230,9 @@ and the acknowledgement are files outside the project (`include/SafeStart.h`, "N
 project state"). The new condition is `!s.safeStart` - a session-scoped flag that is true exactly
 when a marker was found at `beginSession()` and nothing acknowledged it, so the only caller that
 legitimately wrote the acknowledgement (the acceptance of a real offer) still writes it; the
-acceptance test `acknowledgeMakesTheNextLaunchNormal` proves that path end to end.
+acceptance test `acknowledgeMakesTheNextLaunchNormal` and the new
+`ControlSuccessPathsTest::safeStartAcknowledgeNeedsTheOffer` prove that path end to end, through
+the engine and through the registered command.
 
 **Nothing I added runs on the audio thread.** The change is in the safe-start module (file I/O on
 the main thread) and in the control-surface handler, which runs on the UI thread. No process/render

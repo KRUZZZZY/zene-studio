@@ -59,6 +59,7 @@
 #include "Mixer.h"
 #include "ModulationTestSupport.h"
 #include "RackTestSupport.h"
+#include "SafeStart.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -421,6 +422,68 @@ private slots:
 
 		if (hadTool) { qputenv("MMPZ_GIT_TOOL", saved); }
 		else { qunsetenv("MMPZ_GIT_TOOL"); }
+	}
+
+	/*! The safe-start acknowledgement belongs to the OFFER, and the offer is
+	 *  made in a session that started safe and nowhere else (the stderr line
+	 *  main() prints and safestart.get_state's `offer` block are both gated on
+	 *  safeStartActive()). The acknowledgement is CONSUMED by the next launch,
+	 *  so one written in an ordinary session would hide the crash marker that
+	 *  launch finds: that launch would start normal, with the third-party
+	 *  plug-in that killed the previous one.
+	 *
+	 *  Both halves of the command are proved here, through the registry, the
+	 *  way the socket calls it: the success path (a safe session accepts the
+	 *  offer and the next launch is a normal one) and the refusal (an ordinary
+	 *  session has no offer to accept, so nothing is written and the next
+	 *  launch still starts safe).
+	 */
+	void safeStartAcknowledgeNeedsTheOffer()
+	{
+		QTemporaryDir crashed;
+		QVERIFY(crashed.isValid());
+		QVERIFY(safestart::install(crashed.path().toStdString()));
+		// A marker left by a crashed run, planted the way a crashed session
+		// leaves it: this session starts SAFE, so the offer is on the table.
+		{
+			QFile marker(QString::fromStdString(safestart::markerPath()));
+			QVERIFY(marker.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			marker.write("Zene Studio safe-start marker v1\npid=4242\ntime_unix=1700000000\n");
+		}
+		safestart::beginSession();
+		QVERIFY2(safestart::safeStartActive(), "a marker behind the session must make it a safe start");
+
+		// THE SUCCESS PATH: the offer is accepted and the acknowledgement is
+		// written for the next launch.
+		REQUIRE_OK(run(QStringLiteral("safestart.acknowledge")), "safestart.acknowledge");
+		QVERIFY2(safestart::acknowledged(), "the accepted offer must write the acknowledgement");
+		QVERIFY2(safestart::markerExists(), "the accepted offer must NOT delete the marker");
+		// The next launch consumes it and is a normal one.
+		safestart::beginSession();
+		QVERIFY2(!safestart::acknowledged(),
+			"the acknowledgement must be CONSUMED by the launch it was written for");
+		QVERIFY2(!safestart::safeStartActive(), "the acknowledged launch must be a normal one");
+		safestart::endSession();
+
+		// AN ORDINARY SESSION HAS NO OFFER: the acceptance is refused, and
+		// nothing is written - the next launch must still start safe.
+		QTemporaryDir ordinary;
+		QVERIFY(ordinary.isValid());
+		QVERIFY(safestart::install(ordinary.path().toStdString()));
+		safestart::beginSession();
+		QVERIFY2(!safestart::safeStartActive(), "no marker was behind it: not a safe start");
+		const ControlResult refused = run(QStringLiteral("safestart.acknowledge"));
+		QVERIFY2(!refused.ok, "an ordinary session has no offer of a normal start to accept");
+		QVERIFY2(refused.errorKind == ControlErrorKind::NotFound,
+			"the refusal must be typed as 'not found': there is no offer, not a busy file");
+		QVERIFY2(!refused.errorMessage.isEmpty(), "a refusal must say why it refused");
+		QVERIFY2(!safestart::acknowledged(), "a refused acceptance must not write the acknowledgement");
+		// The crash this session would leave behind is still honoured by the
+		// next launch: nothing was written that could hide it.
+		safestart::beginSession();
+		QVERIFY2(safestart::safeStartActive(),
+			"the next launch after a crash must start safe, whatever was called in between");
+		safestart::endSession();
 	}
 
 private:
