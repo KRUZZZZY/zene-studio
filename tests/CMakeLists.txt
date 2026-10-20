@@ -560,6 +560,8 @@ set(LMMS_TESTS
 	# is told, and a REFUSED load is not a partial one.
 	src/core/PartialLoadTest.cpp
 	src/plugins/PatmanLoadTest.cpp
+	# cluster new-p10-380-port-port: a short sid_fillbuffer fill must leave the un-written tail silent.
+	src/plugins/SidInstrument.cpp
 	src/core/ProjectOpenIntegrityTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp
@@ -1822,6 +1824,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "RealtimeSnapshotTest"
 		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
+		# cluster new-p10-380-port-port: plays a real SID note through the build's sid module.
+		OR LMMS_TEST_NAME STREQUAL "SidInstrument"
 		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
@@ -2259,6 +2263,9 @@ set_target_properties(mpe_test_consumer PROPERTIES
 # module (and a module that fails to load fails the test instead of skipping it).
 if(TARGET receiver AND TARGET insertrecorder)
 	add_dependencies(ReceiverEffectTest receiver insertrecorder)
+endif()
+if(TARGET sid AND TARGET SidInstrument)
+	add_dependencies(SidInstrument sid)
 endif()
 if(TARGET tripleoscillator)
 	add_dependencies(SessionPlaybackRenderTest tripleoscillator)

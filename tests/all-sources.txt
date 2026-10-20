@@ -3015,6 +3015,7 @@ tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/plugins/RnnoiseDenoiserEffectTest.cpp
 tests/src/plugins/RnnoiseHarnessOutputTest.cpp
 tests/src/plugins/SampleRateDependentLadspa.cpp
+tests/src/plugins/SidInstrument.cpp
 tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/SlicerTZoomTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp

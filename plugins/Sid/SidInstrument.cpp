@@ -26,6 +26,7 @@
 #include <sid.h>
 
 
+#include <algorithm>
 #include <cmath>
 
 #include "SidInstrument.h"
@@ -371,7 +372,12 @@ void SidInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 
 	sidreg[24] = data8&0x00FF;
 
-	sid_fillbuffer(sidreg.data(), state, delta_t, buf, frames);
+	// sid_fillbuffer returns how many samples the emulator produced. A rate change under a living note
+	// (the SID was created at the old rate) or a deferred register write leaves the cycle budget short of
+	// `frames`; the tail of `buf` is then never written, so it is silenced instead of being converted
+	// from stale stack bytes.
+	const auto produced = std::clamp(sid_fillbuffer(sidreg.data(), state, delta_t, buf, frames), 0, static_cast<int>(frames));
+	std::fill(buf + produced, buf + frames, short{0});
 
 	// loop backwards to avoid overwriting data in the short-to-float conversion
 	for (auto frame = std::size_t{0}; frame < frames; ++frame)
