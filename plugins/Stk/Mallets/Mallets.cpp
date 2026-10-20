@@ -31,8 +31,8 @@
 #include <QMessageBox>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 #include <stk/BandedWG.h>
@@ -78,110 +78,107 @@ Plugin::Descriptor PLUGIN_EXPORT malletsstk_plugin_descriptor =
 namespace
 {
 
-constexpr std::size_t MALLETS_VOICE_POOL_CAPACITY = PlayHandle::MaxNumber;
+//! How many notes one Mallets instrument voices at the same time. This is the
+//! product limit of the instrument: the pool of prepared voices is sized
+//! after it, so the limit is enforced by the instrument itself and no other
+//! instrument can take its voices away.
+constexpr std::size_t MALLETS_VOICE_LIMIT = 128;
 
-//! One preconstructed voice and its claim flag. The synth is built once, on the
-//! constructing thread, so the render thread only resets and arms it.
-struct MalletsVoiceSlot
-{
-	MalletsSynth synth;
-	std::atomic<bool> inUse{false};
-};
+//! The number of STK families a prepared voice pool holds a voice for. The
+//! order matches MalletsSynth::Family.
+constexpr std::size_t MALLETS_FAMILY_COUNT =
+	static_cast<std::size_t>( MalletsSynth::Family::BandedWG ) + 1;
 
 } // namespace
 
 
-/*! A bounded pool of prepared Mallets voices, one array per STK family.
+//! One prepared voice per STK family plus the claim state of the slot. The
+//! voices are built once, on the constructing thread, so the render thread
+//! only resets and arms the voice of the family its note belongs to.
+struct MalletsVoiceSlot
+{
+	MalletsSynth voices[MALLETS_FAMILY_COUNT];
+	std::atomic<bool> inUse{false};
+	std::atomic<int> family{0};
+};
 
-	The voice objects, their delay buffers and the one-time STK global setup are
-	created here, off the audio thread; the render thread only claims a slot with
-	a non-blocking compare-exchange, re-arms the prepared voice in place and
-	returns the slot when the note ends. No allocation and no lock runs on the
-	render thread.
+
+/*! The prepared voices of one Mallets instrument.
+
+	The voices, their delay buffers and the one-time STK global setup are
+	created here, off the audio thread; the render thread only claims a slot
+	with a non-blocking compare-exchange, arms the prepared voice in place and
+	gives the slot back when the note ends. No allocation and no lock runs on
+	the render thread.
+
+	An instrument voices at most MALLETS_VOICE_LIMIT notes at the same time. A
+	note that starts while every voice is busy is not dropped: it stays silent
+	and takes a voice as soon as one of the running notes ends.
 */
 class MalletsVoicePool
 {
 public:
 	explicit MalletsVoicePool( sample_rate_t _sample_rate ) :
-		m_sampleRate( _sample_rate ),
-		m_modalBar( std::make_unique<MalletsVoiceSlot[]>( MALLETS_VOICE_POOL_CAPACITY ) ),
-		m_tubeBell( std::make_unique<MalletsVoiceSlot[]>( MALLETS_VOICE_POOL_CAPACITY ) ),
-		m_bandedWG( std::make_unique<MalletsVoiceSlot[]>( MALLETS_VOICE_POOL_CAPACITY ) )
+		m_slots( std::make_unique<MalletsVoiceSlot[]>( MALLETS_VOICE_LIMIT ) )
 	{
-		for( std::size_t i = 0; i < MALLETS_VOICE_POOL_CAPACITY; ++i )
+		for( std::size_t i = 0; i < MALLETS_VOICE_LIMIT; ++i )
 		{
-			m_modalBar[i].synth.init( MalletsSynth::Family::ModalBar, _sample_rate );
-			m_tubeBell[i].synth.init( MalletsSynth::Family::TubeBell, _sample_rate );
-			m_bandedWG[i].synth.init( MalletsSynth::Family::BandedWG, _sample_rate );
+			m_slots[i].voices[static_cast<std::size_t>(MalletsSynth::Family::ModalBar)]
+				.init( MalletsSynth::Family::ModalBar, _sample_rate );
+			m_slots[i].voices[static_cast<std::size_t>(MalletsSynth::Family::TubeBell)]
+				.init( MalletsSynth::Family::TubeBell, _sample_rate );
+			m_slots[i].voices[static_cast<std::size_t>(MalletsSynth::Family::BandedWG)]
+				.init( MalletsSynth::Family::BandedWG, _sample_rate );
 		}
 	}
 
-	sample_rate_t sampleRate() const { return m_sampleRate; }
-
-	MalletsVoiceSlot* acquire( MalletsSynth::Family _family ) noexcept
+	//! Claims a prepared voice of the given family, or returns nullptr when
+	//! every voice of the instrument is busy.
+	MalletsVoiceSlot* claim( MalletsSynth::Family _family ) noexcept
 	{
-		switch( _family )
-		{
-			case MalletsSynth::Family::ModalBar: return acquireFrom( m_modalBar );
-			case MalletsSynth::Family::TubeBell: return acquireFrom( m_tubeBell );
-			case MalletsSynth::Family::BandedWG: return acquireFrom( m_bandedWG );
-		}
-		return nullptr;
+		MalletsVoiceSlot* slot = findFreeSlot();
+		if( slot == nullptr ) { return nullptr; }
+		// The family is published before the note uses the voice.
+		slot->family.store( static_cast<int>( _family ), std::memory_order_release );
+		return slot;
 	}
 
+	//! Gives the voice of a finished note back to the pool.
 	static void release( MalletsVoiceSlot* _slot ) noexcept
 	{
-		if( _slot != nullptr )
-		{
-			_slot->inUse.store( false, std::memory_order_release );
-		}
+		if( _slot == nullptr ) { return; }
+		_slot->inUse.store( false, std::memory_order_release );
 	}
 
 private:
-	static MalletsVoiceSlot* acquireFrom( const std::unique_ptr<MalletsVoiceSlot[]>& _slots ) noexcept
+	//! An unused slot of the pool.
+	MalletsVoiceSlot* findFreeSlot() noexcept
 	{
-		for( std::size_t i = 0; i < MALLETS_VOICE_POOL_CAPACITY; ++i )
+		for( std::size_t i = 0; i < MALLETS_VOICE_LIMIT; ++i )
 		{
 			bool expected = false;
-			if( _slots[i].synth.ready()
-				&& _slots[i].inUse.compare_exchange_strong( expected, true,
+			if( m_slots[i].inUse.compare_exchange_strong( expected, true,
 					std::memory_order_acquire, std::memory_order_relaxed ) )
 			{
-				return &_slots[i];
+				return &m_slots[i];
 			}
 		}
 		return nullptr;
 	}
 
-	sample_rate_t m_sampleRate;
-	std::unique_ptr<MalletsVoiceSlot[]> m_modalBar;
-	std::unique_ptr<MalletsVoiceSlot[]> m_tubeBell;
-	std::unique_ptr<MalletsVoiceSlot[]> m_bandedWG;
+	std::unique_ptr<MalletsVoiceSlot[]> m_slots;
 };
 
 
 namespace
 {
 
-//! Shared, sample-rate-keyed pool. Building it allocates and loads rawwaves, so
-//! it happens on the non-audio thread that first needs it and is reused by every
-//! later instrument at the same rate.
-MalletsVoicePool* malletsVoicePoolForSampleRate( sample_rate_t _sample_rate )
+//! The STK family a preset belongs to.
+MalletsSynth::Family familyForPreset( const int _preset )
 {
-	static std::mutex poolsMutex;
-	static std::vector<std::unique_ptr<MalletsVoicePool>> pools;
-	const std::lock_guard<std::mutex> lock( poolsMutex );
-	for( const auto& pool : pools )
-	{
-		if( pool->sampleRate() == _sample_rate )
-		{
-			return pool.get();
-		}
-	}
-	auto pool = std::make_unique<MalletsVoicePool>( _sample_rate );
-	MalletsVoicePool* result = pool.get();
-	pools.push_back( std::move( pool ) );
-	return result;
+	if( _preset < 9 ) { return MalletsSynth::Family::ModalBar; }
+	if( _preset == 9 ) { return MalletsSynth::Family::TubeBell; }
+	return MalletsSynth::Family::BandedWG;
 }
 
 } // namespace
@@ -189,7 +186,7 @@ MalletsVoicePool* malletsVoicePoolForSampleRate( sample_rate_t _sample_rate )
 
 MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	Instrument( _instrument_track, &malletsstk_plugin_descriptor ),
-	m_voicePool( malletsVoicePoolForSampleRate( Engine::audioEngine()->outputSampleRate() ) ),
+	m_voicePool( std::make_unique<MalletsVoicePool>( Engine::audioEngine()->outputSampleRate() ) ),
 	m_hardnessModel(64.0f, 0.0f, 128.0f, 0.1f, this, tr( "Hardness" )),
 	m_positionModel(64.0f, 0.0f, 64.0f, 0.1f, this, tr( "Position" )),
 	m_vibratoGainModel(0.0f, 0.0f, 128.0f, 0.1f, this, tr( "Vibrato gain" )),
@@ -248,11 +245,24 @@ MalletsInstrument::MalletsInstrument( InstrumentTrack * _instrument_track ):
 	m_scalers.append( 7.0 );
 
 	// Prepared voices are voiced for one sample rate; a device change rebuilds
-	// the shared pool off the audio thread.
+	// the pool off the audio thread. The pool of the old rate stays alive
+	// while notes still hold a voice of it.
 	QObject::connect( Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this]() {
-		m_voicePool = malletsVoicePoolForSampleRate( Engine::audioEngine()->outputSampleRate() );
+		auto pool = std::make_unique<MalletsVoicePool>( Engine::audioEngine()->outputSampleRate() );
+		m_retiredPools.push_back( std::move( m_voicePool ) );
+		m_voicePool = std::move( pool );
 	} );
 }
+
+
+
+
+//! The prepared voices and the pools of earlier sample rates are freed here,
+//! on the control thread. A note that outlives its instrument already reaches
+//! a deleted instrument in the engine (InstrumentTrack's destructor deletes
+//! the instrument while the engine still owns the note handles), so the pool
+//! is freed with the instrument it belongs to.
+MalletsInstrument::~MalletsInstrument() = default;
 
 
 
@@ -457,68 +467,34 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 		// STK is not thread-safe, so its global setup and voice construction
 		// happen off the audio thread; here the render thread only claims a
 		// prepared voice and arms it in place. No allocation, no lock.
-		MalletsVoiceSlot* slot = nullptr;
-		if( p < 9 )
-		{
-			slot = m_voicePool->acquire( MalletsSynth::Family::ModalBar );
-		}
-		else if( p == 9 )
-		{
-			slot = m_voicePool->acquire( MalletsSynth::Family::TubeBell );
-		}
-		else
-		{
-			slot = m_voicePool->acquire( MalletsSynth::Family::BandedWG );
-		}
+		const auto family = familyForPreset( p );
+		MalletsVoiceSlot* slot = m_voicePool->claim( family );
 		if( slot == nullptr )
 		{
+			// Every voice of this instrument is busy: the note waits for one
+			// and takes it in a later period.
 			return;
 		}
 
-		if( p < 9 )
+		auto* ps = &slot->voices[static_cast<std::size_t>( family )];
+		if( !ps->ready() )
 		{
-			slot->synth.armModalBar( freq,
-						vel,
-						m_stickModel.value(),
-						hardness,
-						position,
-						m_vibratoGainModel.value(),
-						m_vibratoFreqModel.value(),
-						p,
-						(uint8_t) m_spreadModel.value() );
+			// The STK voice could not be built: give the slot back.
+			MalletsVoicePool::release( slot );
+			return;
 		}
-		else if( p == 9 )
-		{
-			slot->synth.armTubeBell( freq,
-						vel,
-						p,
-						m_lfoDepthModel.value(),
-						modulator,
-						crossfade,
-						m_lfoSpeedModel.value(),
-						m_adsrModel.value(),
-						(uint8_t) m_spreadModel.value() );
-		}
-		else
-		{
-			slot->synth.armBandedWG( freq,
-						vel,
-						pressure,
-						m_motionModel.value(),
-						m_vibratoModel.value(),
-						p - 10,
-						m_strikeModel.value() * 128.0,
-						speed,
-						(uint8_t) m_spreadModel.value() );
-		}
-		slot->synth.setPresetIndex(p);
+
+		armVoice( ps, p, freq, vel, hardness, position, modulator, crossfade,
+				pressure, speed );
+		ps->setPresetIndex(p);
 		_n->m_pluginData = slot;
 	}
 
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
 
-	auto ps = &static_cast<MalletsVoiceSlot*>(_n->m_pluginData)->synth;
+	auto* slot = static_cast<MalletsVoiceSlot*>(_n->m_pluginData);
+	auto ps = &slot->voices[static_cast<std::size_t>( slot->family.load( std::memory_order_acquire ) )];
 	ps->setFrequency(freq);
 
 	p = ps->presetIndex();
@@ -550,20 +526,56 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 
 
 
-void MalletsInstrument::deleteNotePluginData( NotePlayHandle * _n )
+void MalletsInstrument::armVoice( MalletsSynth * _ps, const int _preset, const float _freq,
+		const float _vel, const float _hardness, const float _position, const float _modulator,
+		const float _crossfade, const float _pressure, const float _speed ) const
 {
-	if( _n->m_pluginData == nullptr )
+	if( _preset < 9 )
 	{
-		_n->m_pluginData = nullptr;
-		return;
+		_ps->armModalBar( _freq,
+					_vel,
+					m_stickModel.value(),
+					_hardness,
+					_position,
+					m_vibratoGainModel.value(),
+					m_vibratoFreqModel.value(),
+					_preset,
+					(uint8_t) m_spreadModel.value() );
 	}
-	MalletsVoicePool::release( static_cast<MalletsVoiceSlot*>( _n->m_pluginData ) );
-	_n->m_pluginData = nullptr;
+	else if( _preset == 9 )
+	{
+		_ps->armTubeBell( _freq,
+					_vel,
+					_preset,
+					m_lfoDepthModel.value(),
+					_modulator,
+					_crossfade,
+					m_lfoSpeedModel.value(),
+					m_adsrModel.value(),
+					(uint8_t) m_spreadModel.value() );
+	}
+	else
+	{
+		_ps->armBandedWG( _freq,
+					_vel,
+					_pressure,
+					m_motionModel.value(),
+					m_vibratoModel.value(),
+					_preset - 10,
+					m_strikeModel.value() * 128.0,
+					_speed,
+					(uint8_t) m_spreadModel.value() );
+	}
 }
 
-bool MalletsInstrument::noteHasVoice( NotePlayHandle * _n ) const
+
+
+
+void MalletsInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	return _n != nullptr && _n->m_pluginData != nullptr;
+	auto* slot = static_cast<MalletsVoiceSlot*>( _n->m_pluginData );
+	_n->m_pluginData = nullptr;
+	MalletsVoicePool::release( slot );
 }
 
 

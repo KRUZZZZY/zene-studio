@@ -29,6 +29,9 @@
 
 #include <stk/Instrmnt.h>
 
+#include <memory>
+#include <vector>
+
 #include "ComboBox.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
@@ -73,6 +76,11 @@ public:
 	//! here, on the constructing (non-audio) thread; the arm*() methods below
 	//! only reset and re-arm the prepared voice on the render thread.
 	MalletsSynth() = default;
+
+	//! A prepared voice owns its STK instrument and its delay buffer, so it
+	//! is never copied.
+	MalletsSynth( const MalletsSynth& ) = delete;
+	MalletsSynth& operator=( const MalletsSynth& ) = delete;
 
 	bool init( Family _family, const sample_rate_t _sample_rate );
 
@@ -204,13 +212,9 @@ class MalletsInstrument : public Instrument
 	Q_OBJECT
 public:
 	MalletsInstrument( InstrumentTrack * _instrument_track );
-	~MalletsInstrument() override = default;
+	~MalletsInstrument() override;
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
-
-	//! Whether the note claimed a prepared voice (false only if the shared pool
-	//! was exhausted, which cannot happen for engine-supported concurrency).
-	bool noteHasVoice( NotePlayHandle * _n ) const;
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
@@ -223,7 +227,19 @@ public:
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
 
-	MalletsVoicePool* m_voicePool = nullptr;
+	//! Arms the prepared voice of a family with the parameters of the note.
+	void armVoice( MalletsSynth * _ps, int _preset, float _freq, float _vel,
+			float _hardness, float _position, float _modulator, float _crossfade,
+			float _pressure, float _speed ) const;
+
+	//! The prepared voices of this instrument. The pool belongs to the
+	//! instrument, so the number of notes it voices at the same time is the
+	//! instrument's own limit and no other instrument can take its voices.
+	std::unique_ptr<MalletsVoicePool> m_voicePool;
+
+	//! Pools of an earlier sample rate. They stay alive while notes still
+	//! hold a voice of theirs.
+	std::vector<std::unique_ptr<MalletsVoicePool>> m_retiredPools;
 
 	FloatModel m_hardnessModel;
 	FloatModel m_positionModel;

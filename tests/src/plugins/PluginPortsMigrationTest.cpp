@@ -847,7 +847,7 @@ private slots:
 	void xpressiveSynthIsNotCopyable();
 	void granularPitchShifterAdvertisesAllControls();
 	void migratedPluginsPreserveBehaviour();
-	void malletsPoolCoversEngineConcurrency();
+	void malletsVoiceLimitIsEnforcedPerInstrument();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
@@ -1911,7 +1911,14 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 	}
 }
 
-void PluginPortsMigrationTest::malletsPoolCoversEngineConcurrency()
+/*! One Mallets instrument voices at most this many notes at the same time -
+	the product limit of the instrument (plugins/Stk/Mallets/Mallets.cpp,
+	MALLETS_VOICE_LIMIT). The limit belongs to the instrument, so two Mallets
+	instruments voice voiceLimit notes each.
+*/
+constexpr int malletsVoiceLimit = 128;
+
+void PluginPortsMigrationTest::malletsVoiceLimitIsEnforcedPerInstrument()
 {
 	if (!testHostCanLoadPluginModules())
 	{
@@ -1928,7 +1935,8 @@ void PluginPortsMigrationTest::malletsPoolCoversEngineConcurrency()
 	QVERIFY(frames > 0);
 
 	constexpr int instances = 2;
-	constexpr int notesPerInstance = 100;
+	// More notes than one instrument may voice at the same time.
+	constexpr int notesPerInstance = malletsVoiceLimit + 50;
 
 	std::vector<std::unique_ptr<lmms::InstrumentTrack>> tracks;
 	std::vector<lmms::Instrument*> instruments;
@@ -1967,24 +1975,79 @@ void PluginPortsMigrationTest::malletsPoolCoversEngineConcurrency()
 	}
 
 	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
-	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
 	const std::span<lmms::SampleFrame> span{data};
 
-	partc::RealtimeAllocationCounts counts;
-	partc::RealtimeAllocationWatch::begin();
-	for (auto& nh : notes)
-	{
+	//! Renders one period of a note into a cleared buffer and reports whether
+	//! the note produced any audio at all. A note that owns a prepared voice
+	//! is audible; a note that waits for a voice is not.
+	auto renderNote = [&](const NoteHolder& nh) {
 		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
 		nh.instrument->playNote(nh.handle, span);
+		for (const auto& frame : data)
+		{
+			if (frame.left() != 0.0f || frame.right() != 0.0f) { return true; }
+		}
+		return false;
+	};
+
+	partc::RealtimeAllocationCounts counts;
+	std::vector<char> audible(notes.size(), 0);
+	std::vector<char> stillAudible(notes.size(), 0);
+
+	// Period 1: every note is started. The notes that fit into the voice
+	// limit of their instrument have to be audible: they own a prepared voice,
+	// not a silence marker.
+	partc::RealtimeAllocationWatch::begin();
+	for (std::size_t i = 0; i < notes.size(); ++i)
+	{
+		audible[i] = renderNote(notes[i]) ? 1 : 0;
 	}
 	const auto periodCounts = partc::RealtimeAllocationWatch::end();
 	counts.allocations += periodCounts.allocations;
 	counts.deallocations += periodCounts.deallocations;
 
-	for (const auto& nh : notes)
+	for (int inst = 0; inst < instances; ++inst)
 	{
-		QVERIFY2(nh.handle->m_pluginData != nullptr,
-			"Mallets note was silenced by voice-pool exhaustion");
+		const int base = inst * notesPerInstance;
+		for (int j = 0; j < malletsVoiceLimit; ++j)
+		{
+			QVERIFY2(audible[base + j] != 0,
+				qPrintable(QString{"Mallets note %1 of instrument %2 was silenced instead of "
+					"taking a prepared voice"}
+					.arg(j).arg(inst)));
+		}
+	}
+
+	// Period 2: an instrument voices at most malletsVoiceLimit notes at a
+	// time. The notes beyond the limit wait for a voice, so they stay silent
+	// as long as the voices are busy.
+	for (std::size_t i = 0; i < notes.size(); ++i)
+	{
+		stillAudible[i] = renderNote(notes[i]) ? 1 : 0;
+	}
+
+	for (int inst = 0; inst < instances; ++inst)
+	{
+		const int base = inst * notesPerInstance;
+		int voiced = 0;
+		for (int j = 0; j < notesPerInstance; ++j)
+		{
+			voiced += stillAudible[base + j];
+		}
+		QVERIFY2(voiced == malletsVoiceLimit,
+			qPrintable(QString{"Mallets instrument %1 voiced %2 notes at once, the product "
+				"limit of one instrument is %3"}
+				.arg(inst).arg(voiced).arg(malletsVoiceLimit)));
+
+		// The notes beyond the limit wait for a voice: they are not dropped,
+		// but they are silent while every voice of the instrument is busy.
+		for (int j = malletsVoiceLimit; j < notesPerInstance; ++j)
+		{
+			QVERIFY2(stillAudible[base + j] == 0,
+				qPrintable(QString{"Mallets instrument %1 voiced its note %2 although it "
+					"already had %3 notes running"}
+					.arg(inst).arg(j).arg(malletsVoiceLimit)));
+		}
 	}
 
 	partc::RealtimeAllocationWatch::begin();
