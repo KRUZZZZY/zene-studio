@@ -249,6 +249,10 @@ LuaEffectChain& newEffectChain(const QString& mixerChannelId);
 LuaEffect& newEffect(const QString& mixerChannelId, Effect* effect);
 LuaMixer& mixerView();
 
+//! How many view wrappers the pools hold right now: the pools grow with the
+//! OBJECTS a script names, not with the accesses it makes (a diagnostic).
+int viewPoolSize();
+
 //! Apply one queued command on the apply side. Returns true when \a type was
 //! a DAW-control op, i.e. when the caller must not look at it again.
 bool applyQueuedCommand(const ScriptCommand& command);

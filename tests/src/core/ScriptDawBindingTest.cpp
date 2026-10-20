@@ -50,6 +50,7 @@
 #include "Mixer.h"
 #include "ProjectJournal.h"
 #include "ScriptApiVersion.h"
+#include "ScriptDawBindings.h"
 #include "ScriptEngine.h"
 
 using namespace lmms;
@@ -570,6 +571,33 @@ print("after-write valid=" .. tostring(channel:isValid()))
 		QCOMPARE(logs.at(0), qstr("valid=false gain=0.0 muted=false soloed=false"));
 		QCOMPARE(logs.at(1), qstr("chain=false gain-model=false"));
 		QCOMPARE(logs.at(2), qstr("after-write valid=false"));
+	}
+
+	/*! A script that reads the same channel many times must not leave a
+	 *  wrapper behind per READ: the wrappers are C++ objects the Lua collector
+	 *  cannot reclaim, so a pool that grew with the accesses grew outside the
+	 *  Lua memory budget (new-p12-245). The pool holds one view per object, so
+	 *  five hundred reads of one channel leave the one view behind.
+	 *
+	 *  The pools are cleared when a run starts, so the two runs are measured
+	 *  on their own: one read against five hundred. */
+	void aRepeatedChannelReadDoesNotGrowTheViewPool()
+	{
+		ScriptEngine* engine = ScriptEngine::instance();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr("local c = zene.mixer():channel(0)\n"), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const int once = ScriptDawBindings::viewPoolSize();
+
+		QCOMPARE(int(engine->runString(qstr(
+			"for i = 1, 500 do local c = zene.mixer():channel(0) end\n"), &error)),
+			int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const int many = ScriptDawBindings::viewPoolSize();
+
+		QVERIFY2(once > 0, "the run made no view at all");
+		QCOMPARE(many, once);
 	}
 
 	/*! The version policy's Lua face: the surface this build reports is the

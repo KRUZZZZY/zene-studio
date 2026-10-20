@@ -68,6 +68,7 @@ extern "C"
 
 #include "LuaBridge/LuaBridge.h"
 
+#include <QHash>
 #include <QString>
 #include <QStringList>
 
@@ -86,22 +87,43 @@ namespace
 // invalidates an existing element - and the pool is recycled only once the
 // previous lua_State has been closed).
 //
+// The pool holds ONE wrapper per OBJECT, not one per access. The wrappers are
+// C++ objects the Lua collector cannot reclaim, so a pool that grew with the
+// accesses grew outside the Lua memory budget: a script that read the same
+// channel a thousand times left a thousand wrappers behind (new-p12-245). The
+// key is the object's stable identity - the channel's id, the chain's channel
+// id, the device's own id - and a wrapper never changes after it is made, so
+// every reference Lua holds keeps naming the same view.
 // ---------------------------------------------------------------------------
 
 template<class T>
 class ViewPool
 {
 public:
-	T& add(const T& value)
+	//! The view for \a key: the one the pool already holds, or a new one made
+	//! by \a make.
+	template<class Maker>
+	T& add(const QString& key, Maker make)
 	{
-		m_items.push_back(value);
+		const auto found = m_index.constFind(key);
+		if (found != m_index.constEnd())
+		{
+			const int at = found.value();
+			if (at >= 0 && at < static_cast<int>(m_items.size())) { return m_items[at]; }
+		}
+		m_items.push_back(make());
+		m_index[key] = static_cast<int>(m_items.size()) - 1;
 		return m_items.back();
 	}
 
-	void clear() { m_items.clear(); }
+	void clear() { m_items.clear(); m_index.clear(); }
+
+	//! How many views the pool holds.
+	int size() const { return static_cast<int>(m_items.size()); }
 
 private:
 	std::deque<T> m_items;
+	QHash<QString, int> m_index;
 };
 
 ViewPool<LuaMixerChannel>& mixerChannelPool()
@@ -247,23 +269,41 @@ EffectChain* mixerChannelEffectChain(const QString& mixerChannelId)
 
 LuaMixerChannel& newMixerChannel(MixerChannel* channel)
 {
-	return mixerChannelPool().add(LuaMixerChannel(channel));
+	// The channel's own id is the key: the same channel read twice is the same
+	// view, and a channel that is gone is a view that reports itself invalid.
+	return mixerChannelPool().add(control::channelIdOf(channel),
+		[channel]() { return LuaMixerChannel(channel); });
 }
 
 LuaEffectChain& newEffectChain(const QString& mixerChannelId)
 {
-	return effectChainPool().add(LuaEffectChain(mixerChannelId));
+	return effectChainPool().add(mixerChannelId,
+		[mixerChannelId]() { return LuaEffectChain(mixerChannelId); });
 }
 
 LuaEffect& newEffect(const QString& mixerChannelId, Effect* effect)
 {
-	return effectPool().add(LuaEffect(mixerChannelId, effect == nullptr ? -1 : effect->id()));
+	// The device's own id is the key: it is unique for the life of the project,
+	// so the pool holds one view per device and never one per access. A view of
+	// no device is keyed by the channel it was asked about, so the invalid
+	// views do not pile up either.
+	const QString key = effect == nullptr
+		? QStringLiteral("none:%1").arg(mixerChannelId)
+		: control::effectIdOf(effect);
+	return effectPool().add(key, [mixerChannelId, effect]() {
+		return LuaEffect(mixerChannelId, effect == nullptr ? -1 : effect->id());
+	});
 }
 
 LuaMixer& mixerView()
 {
 	static LuaMixer view;
 	return view;
+}
+
+int viewPoolSize()
+{
+	return mixerChannelPool().size() + effectChainPool().size() + effectPool().size();
 }
 
 void registerAll(lua_State* L)

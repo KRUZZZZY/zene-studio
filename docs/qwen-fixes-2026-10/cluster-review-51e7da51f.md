@@ -94,3 +94,94 @@ the branch (e228edf8b), so reverting THIS commit's own product diff does not
 make the case fail - the case would still pass. The RED proof above therefore
 reverts the historical pre-1663 shape instead, which is the bug the finding
 describes.
+
+new-p12-245: FIXED
+
+## What the finding says
+
+`src/core/ScriptDawBindings.cpp:94-103`: "`ViewPool::add` appends a new
+wrapper every time, and the pools are only cleared between script runs. Lua
+garbage collection does not reclaim those C++ wrappers. ... A script repeatedly
+calls `zene.mixer():channel(0)`. The deque grows for the whole run, outside the
+Lua memory budget." The fix: "Reuse views by stable object identity, or
+otherwise bound the per-run pools while preserving references held by Lua."
+
+## Why it was real
+
+`ViewPool::add` pushed a copy on every call and `newMixerChannel()` /
+`newEffectChain()` / `newEffect()` called it on EVERY access. The pools are
+cleared in `ScriptDawBindings::beginRun()` (src/core/ScriptDawBindings.cpp:219),
+i.e. once per script run, and the wrappers are C++ objects the Lua collector
+cannot reclaim - so a run that read the same channel N times left N wrappers
+behind, outside the Lua memory budget the script is held to.
+
+## The fix
+
+`src/core/ScriptDawBindings.cpp` - the pool holds ONE wrapper per OBJECT:
+
+* `ViewPool::add(key, make)` looks the key up and hands back the wrapper it
+  already holds; a new wrapper is made only for a key the pool has not seen.
+* The key is the object's stable identity: the mixer channel's own id
+  (`control::channelIdOf`), the chain's mixer-channel id, and the device's own
+  id (`control::effectIdOf`, the `fx-<n>` the engine assigns once and never
+  reuses).
+* A wrapper never changes after it is made, so every reference Lua holds keeps
+  naming the same view - the "preserving references held by Lua" half of the
+  finding's fix.
+* `ScriptDawBindings::viewPoolSize()` is a read-only diagnostic the regression
+  case measures the pool with.
+
+The three pools are cleared per run exactly as before
+(`ScriptDawBindings::beginRun()`), so nothing outside a run is kept.
+
+## RED / GREEN
+
+RED - the pool keying reverted (the diagnostic accessor stays, so the case
+compiles and runs; the patch is `logs/fix-p12-245.patch`):
+
+```
+$ git apply -R logs/fix-p12-245.patch
+$ cmake --build build --target ScriptDawBindingTest -j 18 > logs/build-17-p12-red.log 2>&1; echo EXIT=$?
+EXIT=0
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./ScriptDawBindingTest > logs/test-binding-p12-red.log 2>&1; echo EXIT=$?
+EXIT=1
+```
+
+    FAIL!  : ScriptDawBindingTest::aRepeatedChannelReadDoesNotGrowTheViewPool() Compared values are not the same
+       Actual   (many): 500
+       Expected (once): 1
+    Totals: 13 passed, 1 failed, 1 skipped, 0 blacklisted, 1688ms
+
+(Five hundred reads left five hundred wrappers behind.)
+
+GREEN - the fix in place:
+
+```
+$ git apply logs/fix-p12-245.patch
+$ cmake --build build --target ScriptDawBindingTest ScriptDawEffectsTest -j 18 > logs/build-18-p12-green.log 2>&1; echo EXIT=$?
+EXIT=0
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./ScriptDawBindingTest > logs/test-binding-p12-green.log 2>&1; echo EXIT=$?
+EXIT=0        (Totals: 14 passed, 0 failed, 1 skipped)
+$ QT_QPA_PLATFORM=offscreen ./ScriptDawEffectsTest > logs/test-effects-p12-green.log 2>&1; echo EXIT=$?
+EXIT=0        (Totals: 8 passed, 0 failed, 0 skipped)
+```
+
+The skipped case is `aScriptsLoadedEffectIsUndoneOnTheChannelItNames`, which
+needs the amplifier module; it is unrelated to this finding.
+
+## The script family, with the build's own effect modules present
+
+```
+$ cmake --build build --target bassbooster tripleoscillator amplifier -j 18 > logs/build-20-modules.log 2>&1; echo EXIT=$?
+EXIT=0
+$ cd build/tests && ctest -R "Script|LuaApiSurface" --output-on-failure > logs/test-script-family-3.log 2>&1; echo EXIT=$?
+EXIT=8
+```
+
+    13 tests: 11 passed, 2 failed
+      - ScriptDawRemovalUndoTest: the audio-change-lock case of the OTHER
+        cluster (see the review-51e7da51f section below)
+      - ScriptMemoryBudgetTest::aSystemAllocationFailureIsNotReportedAsBudgetExhaustion:
+        this machine's allocator satisfies a SIZE_MAX realloc, so the case's
+        premise ("a size no allocator can satisfy") does not hold here. The
+        code path is untouched by this batch.
