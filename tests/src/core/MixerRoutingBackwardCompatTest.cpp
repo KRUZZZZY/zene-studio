@@ -28,6 +28,7 @@
 
 #include "EffectChain.h"
 #include "Mixer.h"
+#include "Song.h"
 #include "VcaGroup.h"
 
 #include <QDomDocument>
@@ -67,6 +68,45 @@ int effectCountOf(EffectChain& chain)
 	saveChainXml(chain, doc, chainXml);
 	return chainXml.elementsByTagName("effect").size();
 }
+
+//! A project-supplied channel index the mixer cannot address. The item that
+//! carries it must be refused: the mixer holds a bounded number of channels,
+//! so an unbounded index would try to allocate billions of them. A number
+//! outside the supported range must also be REPORTED, so the user learns that
+//! the file names a channel this mixer does not have.
+struct RefusedIndexCase
+{
+	const char* xml;    //!< the mixer element that carries the index
+	int channels;       //!< the channels the mixer must hold after the load
+	const char* value;  //!< the offending value, as the file spells it
+	bool reported;      //!< whether the load must collect a load error
+	int members;        //!< the VCA members the group must hold (-1: no group)
+};
+
+//! Every path a project-supplied index reaches the mixer on, each with the
+//! first number outside the supported range (512 - the range ends at 511),
+//! with a number that does not fit in an int at all (2147483648), with a
+//! number that does not fit in 64 bits either and is padded with whitespace
+//! (the conversion trims it, so it is still a number), and with a value that
+//! is not a number ("abc"). None of them may become a channel, and the numeric
+//! ones must be reported: a failed conversion to an int used to return 0,
+//! which is the master.
+static const RefusedIndexCase kRefusedIndexCases[] = {
+	{"<mixer><mixerchannel num=\"512\" muted=\"0\" volume=\"1\" name=\"Far\"><bus/></mixerchannel></mixer>", 1, "512", true, -1},
+	{"<mixer><mixerchannel num=\"2147483648\" muted=\"0\" volume=\"1\" name=\"Over\"><bus/></mixerchannel></mixer>", 1, "2147483648", true, -1},
+	{"<mixer><mixerchannel num=\" 99999999999999999999999 \" muted=\"0\" volume=\"1\" name=\"Padded\"><bus/></mixerchannel></mixer>", 1, " 99999999999999999999999 ", true, -1},
+	{"<mixer><mixerchannel num=\"abc\" muted=\"0\" volume=\"1\" name=\"Word\"><bus/></mixerchannel></mixer>", 1, "abc", false, -1},
+	{"<mixer><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Sender\"><send channel=\"512\" amount=\"1\"/></mixerchannel></mixer>", 2, "512", true, -1},
+	{"<mixer><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Sender\"><send channel=\"2147483648\" amount=\"1\"/></mixerchannel></mixer>", 2, "2147483648", true, -1},
+	{"<mixer><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Sender\"><send channel=\" 99999999999999999999999 \" amount=\"1\"/></mixerchannel></mixer>", 2, " 99999999999999999999999 ", true, -1},
+	{"<mixer><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Sender\"><send channel=\"abc\" amount=\"1\"/></mixerchannel></mixer>", 2, "abc", false, -1},
+	{"<mixer><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Sender\"><sidechain-send channel=\"512\"/></mixerchannel></mixer>", 2, "512", true, -1},
+	{"<mixer><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Sender\"><sidechain-send channel=\"2147483648\"/></mixerchannel></mixer>", 2, "2147483648", true, -1},
+	{"<mixer><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Sender\"><sidechain-send channel=\"abc\"/></mixerchannel></mixer>", 2, "abc", false, -1},
+	{"<mixer><vcagroup name=\"Group\"><member channel=\"512\"/></vcagroup></mixer>", 1, "512", true, 0},
+	{"<mixer><vcagroup name=\"Group\"><member channel=\"2147483648\"/></vcagroup></mixer>", 1, "2147483648", true, 0},
+	{"<mixer><vcagroup name=\"Group\"><member channel=\"abc\"/></vcagroup></mixer>", 1, "abc", false, 0},
+};
 
 } // namespace
 
@@ -169,6 +209,72 @@ private slots:
 	}
 
 	void cleanupTestCase() { destroyEngine(); }
+
+	// A project-supplied channel index that this mixer cannot address must be
+	// refused, never used: the mixer holds a bounded number of channels, so an
+	// unbounded index would try to allocate billions of them. A number outside
+	// the supported range must be reported as a load error as well, so the
+	// user learns that the file names a channel this mixer does not have. A
+	// number that does not fit in an int at all (2147483648) is such a
+	// number: a failed conversion to an int returns 0, and 0 is the master -
+	// so it must not be routed there, and it must not be dropped in silence
+	// either.
+	void aProjectIndexTheMixerCannotAddressIsRefusedAndReported()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(Engine::getSong() != nullptr);
+
+		for (const RefusedIndexCase& refused : kRefusedIndexCases)
+		{
+			Engine::getSong()->clearErrors();
+
+			QDomDocument doc;
+			QDomElement root;
+			QVERIFY2(parseMixerElement(refused.xml, doc, root),
+				"the fixture is not valid XML");
+			mixer->loadSettings(root);
+
+			QCOMPARE(mixer->numChannels(), refused.channels);
+			if (refused.reported)
+			{
+				QVERIFY2(Engine::getSong()->hasErrors(),
+					qPrintable(QString("no load error for the index '%1'").arg(refused.value)));
+				QVERIFY2(Engine::getSong()->errorSummary().contains(QString::fromLatin1(refused.value)),
+					qPrintable(Engine::getSong()->errorSummary()));
+			}
+			else
+			{
+				QVERIFY2(!Engine::getSong()->hasErrors(),
+					qPrintable(QString("unexpected load error for the index '%1': %2")
+						.arg(refused.value).arg(Engine::getSong()->errorSummary())));
+			}
+
+			// The refused index must not have become channel 0: nothing may
+			// be routed to the master because of it.
+			for (int i = 0; i < mixer->numChannels(); ++i)
+			{
+				MixerChannel* ch = mixer->mixerChannel(i);
+				for (MixerRoute* r : ch->m_sends)
+				{
+					QVERIFY2(r->receiverIndex() != 0,
+						qPrintable(QString("channel %1 routes to the master").arg(i)));
+				}
+				for (MixerSidechainRoute* r : ch->m_sidechainSends)
+				{
+					QVERIFY2(r->receiverIndex() != 0,
+						qPrintable(QString("channel %1 sidechains to the master").arg(i)));
+				}
+			}
+
+			if (refused.members >= 0)
+			{
+				QVERIFY2(mixer->vcaGroups().size() == 1, "the VCA group was dropped");
+				QVERIFY2(mixer->vcaGroups().front()->members().empty(),
+					"the refused index joined the VCA group");
+			}
+		}
+	}
 
 	// A Phase C-era project (no bus, no sidechain elements) must load with
 	// byte-identical routing to a programmatically built equivalent graph,
