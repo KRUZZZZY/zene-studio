@@ -51,6 +51,10 @@ namespace
 //! The poll interval of the progress dialog. The job runs on the surface's own
 //! worker; this reads its atomics, so it is cheap and answers in milliseconds.
 constexpr int PollIntervalMs = 150;
+
+//! Where pollJob reads a job's status from. Empty means stem.job_status through
+//! the registry; the pipeline test replaces it with a scripted reader.
+StemSplitController::StatusReader s_statusReader;
 } // namespace
 
 StemSplitController::StemSplitController(QWidget* parent) :
@@ -290,6 +294,14 @@ bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& 
 
 
 
+void StemSplitController::setStatusReaderForTest(StatusReader reader)
+{
+	s_statusReader = reader;
+}
+
+
+
+
 void StemSplitController::pollJob()
 {
 	if (m_jobId < 0)
@@ -297,8 +309,10 @@ void StemSplitController::pollJob()
 		stopPolling();
 		return;
 	}
-	const ControlResult status = ControlRegistry::instance()->invoke(
-		QStringLiteral("stem.job_status"), QJsonObject{{QStringLiteral("job_id"), m_jobId}});
+	const ControlResult status = s_statusReader
+		? s_statusReader(m_jobId)
+		: ControlRegistry::instance()->invoke(
+			QStringLiteral("stem.job_status"), QJsonObject{{QStringLiteral("job_id"), m_jobId}});
 	if (!status.ok)
 	{
 		failJob(status.errorMessage);
@@ -317,6 +331,10 @@ void StemSplitController::pollJob()
 		if (job.value(QStringLiteral("fetching_model")).toBool(false))
 		{
 			m_dialog->setLabelText(tr("Downloading the stem model, then separating (offline job)..."));
+		}
+		else
+		{
+			m_dialog->setLabelText(tr("Separating stems (offline job)..."));
 		}
 	}
 	const QString state = job.value(QStringLiteral("state")).toString();

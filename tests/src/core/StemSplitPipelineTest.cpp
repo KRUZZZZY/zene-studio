@@ -597,6 +597,95 @@ subprocess.Popen(
 		QCOMPARE(song->tracks().size(), trackCount);
 	}
 
+	/* Bug (cluster new-p17-176): pollJob set the model-download label while
+	 *  fetching_model was true and never restored it, so the separation ran
+	 *  under the download text. This drives the REAL pollJob through three
+	 *  scripted statuses (fetching, separating, cancelled) using the status
+	 *  reader seam, and checks the dialog after each poll. */
+	void pollRestoresPhaseLabelWhenFetchingEnds()
+	{
+		auto* song = Engine::getSong();
+		auto* sourceTrack = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(sourceTrack != nullptr);
+		auto* source = dynamic_cast<SampleClip*>(sourceTrack->createClip(TimePos(0)));
+		QVERIFY(source != nullptr);
+		source->setName(QStringLiteral("Poll label source"));
+		source->setSampleBuffer(makeSineMix(1));
+
+		struct Step
+		{
+			const char* state;
+			double progress;
+			bool fetching;
+		};
+		const std::array<Step, 3> steps{{
+			{"running", 0.25, true},       // first poll: the model is being fetched
+			{"running", 0.50, false},      // second poll: fetching has ended, separation runs
+			{"cancelled", 0.50, false}}};  // third poll: the job ends and the dialog closes
+		int jobId = -1;
+		std::size_t polls = 0;
+
+		// Restores the real status reader and cancels the job the test submitted,
+		// on every exit path (QVERIFY returns early).
+		struct Cleanup
+		{
+			int* jobId;
+			~Cleanup()
+			{
+				gui::StemSplitController::setStatusReaderForTest(gui::StemSplitController::StatusReader{});
+				if (*jobId >= 0)
+				{
+					ControlRegistry::instance()->invoke(QStringLiteral("stem.job_cancel"),
+						QJsonObject{{QStringLiteral("job_id"), *jobId}});
+				}
+			}
+		} cleanup{&jobId};
+
+		gui::StemSplitController::setStatusReaderForTest(
+			[&jobId, &polls, &steps](int submitted) {
+				jobId = submitted;
+				const std::size_t index = polls < steps.size() ? polls : steps.size() - 1;
+				++polls;
+				const Step& step = steps[index];
+				const QJsonObject job{
+					{QStringLiteral("job_id"), submitted},
+					{QStringLiteral("state"), QString::fromLatin1(step.state)},
+					{QStringLiteral("progress"), step.progress},
+					{QStringLiteral("fetching_model"), step.fetching}};
+				return ControlResult::success(QJsonObject{{QStringLiteral("jobs"), QJsonArray{job}}});
+			});
+
+		gui::StemSplitController controller;
+		controller.splitClipToStems(source);
+
+		QProgressDialog* dialog = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			auto* candidate = qobject_cast<QProgressDialog*>(widget);
+			if (candidate != nullptr && candidate->isVisible()) { dialog = candidate; }
+		}
+		QVERIFY(dialog != nullptr);
+		QPointer<QProgressDialog> progress(dialog);
+
+		// Each poll is the controller's own pollJob, which reads its status from
+		// the script. No event loop runs, so the poll timer cannot interleave.
+		QVERIFY(QMetaObject::invokeMethod(&controller, "pollJob", Qt::DirectConnection));
+		QCOMPARE(progress->value(), 25);
+		QVERIFY(progress->labelText().contains(QStringLiteral("Downloading the stem model")));
+
+		QVERIFY(QMetaObject::invokeMethod(&controller, "pollJob", Qt::DirectConnection));
+		QCOMPARE(progress->value(), 50);
+		QVERIFY2(!progress->labelText().contains(QStringLiteral("Downloading")),
+			qPrintable(progress->labelText()));
+		QVERIFY(progress->labelText().contains(QStringLiteral("Separating stems")));
+
+		QVERIFY(QMetaObject::invokeMethod(&controller, "pollJob", Qt::DirectConnection));
+		QCOMPARE(polls, std::size_t{3});
+		QVERIFY(progress.isNull() || !progress->isVisible());
+
+		delete sourceTrack;
+	}
+
 	void testStemTrackBuilderRejectsAnIncompleteSet()
 	{
 		auto* song = Engine::getSong();

@@ -28,6 +28,7 @@
 #include <QPointer>
 #include <QString>
 
+#include <functional>
 #include <memory>
 
 #include "TimePos.h"
@@ -44,6 +45,7 @@ namespace lmms
 class SampleBuffer;
 class SampleClip;
 class Song;
+struct ControlResult;
 
 namespace gui
 {
@@ -77,6 +79,11 @@ public:
 
 	// Asynchronous entry point of the clip context-menu action.
 	void splitClipToStems(SampleClip* clip);
+
+	//! How pollJob reads one job's `stem.job_status` result. Empty means the
+	//! registry; the pipeline test replaces it to script the states a poll sees.
+	using StatusReader = std::function<ControlResult(int jobId)>;
+	static void setStatusReaderForTest(StatusReader reader);
 
 private slots:
 	void pollJob();
