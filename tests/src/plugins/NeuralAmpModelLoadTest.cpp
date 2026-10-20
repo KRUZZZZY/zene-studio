@@ -49,6 +49,7 @@
 #include "Engine.h"
 #include "NeuralAmpEffect.h"
 #include "SampleFrame.h"
+#include "nam/NamModel.h"
 
 using namespace lmms;
 using Clock = std::chrono::steady_clock;
@@ -328,6 +329,41 @@ private slots:
 		selector.join();
 		QCOMPARE(allocations, std::uint64_t{0});
 		QVERIFY(finite);
+	}
+
+	// new-p12-163-port: a layer with a non-positive dilation is rejected at parse time, so it can
+	// never reach the convolution history (the patrol's repro: kernel 3, dilation -1). The same
+	// fixture with a positive dilation is the control that the weights themselves are well-formed.
+	void nonPositiveDilationIsRejectedByTheLoader()
+	{
+		const auto writeDilated = [this](const QString& base, const QString& dilations) {
+			QFile file(path(base));
+			if (!file.open(QIODevice::WriteOnly)) { return false; }
+			file.write(QStringLiteral(
+				"{\"version\":\"0.5.0\",\"architecture\":\"WaveNet\",\"metadata\":{\"name\":\"%1\"},"
+				"\"config\":{\"layers\":[{\"input_size\":1,\"condition_size\":1,\"head_size\":1,\"head_bias\":false,"
+				"\"channels\":1,\"kernel_size\":3,\"dilations\":[%2],\"activation\":\"Tanh\"}],\"head\":null},"
+				"\"weights\":[0.5,0.1,0.2,0.3,0.4,0.1,0.5,0.9,0.7,0.6]}").arg(base, dilations).toUtf8());
+			return true;
+		};
+
+		QVERIFY(writeDilated("dilation_pos", QStringLiteral("1")));
+		std::string posError;
+		auto posModel = nam::NamModel::loadFromFile(path("dilation_pos").toStdString(), &posError);
+		QVERIFY2(posModel != nullptr, posError.c_str());
+		QVERIFY(posError.empty());
+
+		QVERIFY(writeDilated("dilation_neg", QStringLiteral("-1")));
+		std::string negError;
+		auto negModel = nam::NamModel::loadFromFile(path("dilation_neg").toStdString(), &negError);
+		QVERIFY(negModel == nullptr);
+		QVERIFY(!negError.empty());
+
+		QVERIFY(writeDilated("dilation_zero", QStringLiteral("0")));
+		std::string zeroError;
+		auto zeroModel = nam::NamModel::loadFromFile(path("dilation_zero").toStdString(), &zeroError);
+		QVERIFY(zeroModel == nullptr);
+		QVERIFY(!zeroError.empty());
 	}
 };
 
