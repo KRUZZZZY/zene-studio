@@ -92,7 +92,8 @@ private slots:
 
 	//! A throwing handler must not leave the registry's running-handler counts raised:
 	//! otherwise the next top-level edit is treated as nested, its observer notification
-	//! is suppressed and its record is held forever. (cluster new-p10-83-port)
+	//! is suppressed and its record is held forever. Its exception becomes a typed
+	//! control error instead of escaping the control surface. (cluster new-p10-83-port)
 	void throwingHandlerRestoresDispatchDepth()
 	{
 		ControlRegistry* registry = ControlRegistry::instance();
@@ -121,19 +122,22 @@ private slots:
 		});
 		registry->clearTransactions();
 
-		bool threw = false;
+		ControlResult thrown;
+		bool escaped = false;
 		try
 		{
-			registry->invoke(throwing.id);
+			thrown = registry->invoke(throwing.id);
 		}
-		catch (const std::runtime_error&)
+		catch (const std::exception&)
 		{
-			threw = true;
+			escaped = true;
 		}
 		const ControlResult afterThrow = registry->invoke(later.id);
 		registry->setCommandObserver({});
 
-		QVERIFY(threw);
+		QVERIFY2(!escaped, "a handler's exception must not escape the control surface");
+		QVERIFY(!thrown.ok);
+		QCOMPARE(controlErrorKindName(thrown.errorKind), QStringLiteral("refused"));
 		QVERIFY(afterThrow.ok);
 		QCOMPARE(observed, QStringList{later.id});
 		const QJsonArray transactions = registry->transactions();

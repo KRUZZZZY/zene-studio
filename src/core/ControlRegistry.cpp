@@ -39,6 +39,8 @@
 #include <QMetaObject>
 #include <QThread>
 
+#include <exception>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -89,6 +91,30 @@ ControlRegistry::ShutdownHookId nextShutdownHookId()
 {
 	static ControlRegistry::ShutdownHookId next = 0;
 	return ++next;
+}
+
+//! The text of a thrown exception, safely (what() may be null).
+QString exceptionText(const std::exception& error)
+{
+	const char* what = error.what();
+	return what != nullptr ? QString::fromUtf8(what) : QString();
+}
+
+/*! The typed control error a handler's exception becomes - the control surface's
+ *  error boundary (a handler that throws is a FAILED command, never a crash and
+ *  never a silent success). The error vocabulary is closed
+ *  (include/ControlRegistry.h) and `refused` is the kind this surface already
+ *  uses for a command that could not be carried out - a file that could not be
+ *  written (src/gui/ControlCommandsShortcuts.cpp), a locked track (WF-044): the
+ *  message names the command and what the handler said, so the agent can tell
+ *  WHICH command failed and why. A mutating command says so as well: it may
+ *  have changed the project before it failed. */
+ControlResult controlErrorFromException(const QString& commandId, bool mutating, const QString& what)
+{
+	QString message = QStringLiteral("command '%1' failed").arg(commandId);
+	if (!what.isEmpty()) { message += QStringLiteral(": %1").arg(what); }
+	if (mutating) { message += QStringLiteral(" (the project may be partly changed)"); }
+	return ControlResult::failure(ControlErrorKind::Refused, message);
 }
 
 } // namespace
@@ -268,10 +294,28 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 	const bool mutating = cmd->mutating;
 	const QString commandId = cmd->id;
 	return runOnUiThread([this, handler, mutating, commandId, args]() {
-		// 0.5.0 F6 (WF-050): on a peer that joined a collaboration session, an edit is the host's to apply.
-		ControlResult elsewhere;
-		if (collab::CommandTap::intercepted(commandId, mutating, m_depth, args, &elsewhere)) { return elsewhere; }
-		return runHandler(handler, commandId, mutating, args);
+		/*! The control surface's error boundary: NOTHING a command does escapes
+		 *  invoke() as an exception. A handler's exception is translated by the
+		 *  frame that ran it (runHandler), so its bookkeeping still runs; this
+		 *  catch is the outer guarantee for everything else the dispatch does
+		 *  (the collaboration tap, a step that throws), so the socket answers the
+		 *  agent with a typed control error instead of the application going
+		 *  down with it. */
+		try
+		{
+			// 0.5.0 F6 (WF-050): on a peer that joined a collaboration session, an edit is the host's to apply.
+			ControlResult elsewhere;
+			if (collab::CommandTap::intercepted(commandId, mutating, m_depth, args, &elsewhere)) { return elsewhere; }
+			return runHandler(handler, commandId, mutating, args);
+		}
+		catch (const std::exception& e)
+		{
+			return controlErrorFromException(commandId, mutating, exceptionText(e));
+		}
+		catch (...)
+		{
+			return controlErrorFromException(commandId, mutating, QString());
+		}
 	});
 }
 
@@ -385,6 +429,27 @@ void markFoldedNestedChanges(ControlResult* result, int folded, int foldedBefore
 	result->result.insert(QStringLiteral("__transaction"), descriptor);
 }
 
+/*! Runs the handler and turns an exception into the typed control error it
+ *  becomes. The translation happens in the frame that ran the handler, so the
+ *  frame's bookkeeping still runs: the records of the children this call ran are
+ *  written by it, and not left for a later command to flush under its own name. */
+ControlResult runHandlerGuarded(const std::function<ControlResult(const QJsonObject&)>& handler,
+	const QString& commandId, bool mutating, const QJsonObject& args)
+{
+	try
+	{
+		return handler(args);
+	}
+	catch (const std::exception& e)
+	{
+		return controlErrorFromException(commandId, mutating, exceptionText(e));
+	}
+	catch (...)
+	{
+		return controlErrorFromException(commandId, mutating, QString());
+	}
+}
+
 } // namespace
 
 ControlResult ControlRegistry::runHandler(
@@ -435,7 +500,10 @@ ControlResult ControlRegistry::runHandler(
 		};
 		const EditBracket edit(journal, mutating, commandId);
 		DepthGuard depthGuard{m_depth, m_mutatingDepth, m_wrapperDepth, mutating};
-		result = handler(args);
+		// A handler that throws (a file that could not be written, a plug-in that
+		// could not be loaded) becomes a TYPED control error here, in the frame
+		// that ran it - and the frame's bookkeeping below still runs.
+		result = runHandlerGuarded(handler, commandId, mutating, args);
 	}
 
 	bool coalesced = false;
