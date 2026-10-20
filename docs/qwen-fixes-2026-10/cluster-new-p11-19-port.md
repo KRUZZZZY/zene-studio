@@ -84,7 +84,9 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 | GREEN, the product change restored | `cd build/tests && ctest -R '^ControlCrashAcknowledgeTest$' --output-on-failure` | 0 | 1/1 passed. `test-16.log`. |
 | Family after the move (7 tests) | `cd build/tests && ctest -R 'Crash|crash|ControlCommandsSnapshot' --output-on-failure` | 0 | 7/7 passed: CrashReporterArmTest, CrashReporterTest, RecordingCrashLossTest, CrashReportMenuTest, **ControlCrashAcknowledgeTest**, ControlCrashReporter, ControlCommandsSnapshot. `test-17.log`. |
 | The harness's own negative control on this branch | `negctl.prove(<worktree>, 'ded355440', <run>/negctl-sim, <report text>)` | 0 | `ok: true` - "ControlCommandsSnapshot, ControlCrashAcknowledgeTest: they fail without it (rc 8) and pass with it"; `reverted_rc` 8, `restored_rc` 0, `tree_clean` true. Reverted run: `test-18.log`; restored run: `test-19.log`; builds: `build-17.log`, `build-18.log`. |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | RESULT: PASS (8 rows, no FAIL). `gate-1.log` (before the commit), `gate-2.log`/`gate-3.log` (after it), `gate-4.log` (after the docs commit), `gate-5.log` (with the new test file registered). |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | RESULT: PASS (8 rows, no FAIL). `gate-1.log` (before the commit), `gate-2.log`/`gate-3.log` (after it), `gate-4.log` (after the docs commit), `gate-5.log` (with the new test file registered), `gate-6.log` (final, on the committed tree). |
+| Final family run on the committed tree | `cd build/tests && ctest -R 'Crash\|crash\|ControlCommandsSnapshot' --output-on-failure` | 0 | 7/7 passed. `test-20.log`. |
+| The harness's negative control, final, on the committed tree | `negctl.prove(<worktree>, 'ded355440', <run>/negctl-final, <report text>)` | 0 | `ok: true`, `reverted_rc` 8, `restored_rc` 0, `tree_clean` true. `negctl-final.json`. |
 
 ## Build and reversal commands
 
@@ -209,3 +211,13 @@ module code is untouched, so its Windows no-op build is unchanged.
 - `tests/upstream-modifications.txt` - the ledger entries for the inherited files this
   change touches.
 - `docs/qwen-fixes-2026-10/cluster-new-p11-19-port.md` - this report.
+
+## Closing summary
+
+The accepted fix is ported onto the newest line by hand: the `offered` marker counts as
+an acknowledgement only when it is a FILE the reporter wrote, and the report is read back
+as no longer pending before the command claims success. The regression lives in a ctest
+of its own (`ControlCrashAcknowledgeTest`, #469), so the negative control that reverts
+the product change finds it, rebuilds its binary and sees it fail (rc 8) and pass again
+with the change restored (rc 0). Seven tests of the affected family and the
+command-surface canary pass, and every gate is green. Verdict: FIXED
