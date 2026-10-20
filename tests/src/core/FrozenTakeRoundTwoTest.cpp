@@ -29,6 +29,7 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "AudioDevice.h"
+#include "Clip.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -234,6 +235,53 @@ private slots:
 		QCOMPARE(loadedTake.mutedClips.size(), std::size_t{1});
 		QCOMPARE(loadedTake.mutedClips.front().startTicks, tick_t{24});
 		QCOMPARE(loadedTake.mutedClips.front().lengthTicks, tick_t{96});
+	}
+
+	//! new-p12-286: malformed start ticks must not make unfreeze target a muted clip at tick zero.
+	void malformedMutedClipStartDoesNotUnmuteTickZeroClip()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = nullptr;
+		const QString error = prepareFrozenTake(scratch, 440.0, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const QString trackId = QStringLiteral("trk-%1").arg(track->id());
+		const ControlResult added = run(QStringLiteral("clip.add"),
+			{{QStringLiteral("track"), trackId}, {QStringLiteral("position"), 0}, {QStringLiteral("length"), 192}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(added.result.value(QStringLiteral("length")).toInt(), 192);
+		QVERIFY(!track->getClips().empty());
+		track->getClips().front()->setMuted(true);
+
+		Song* const song = Engine::getSong();
+		const QString projectPath = scratch.filePath(QStringLiteral("malformed-frozen-muted.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		QFile savedProject(projectPath);
+		QVERIFY(savedProject.open(QIODevice::ReadOnly));
+		QDomDocument document;
+		QVERIFY(document.setContent(savedProject.readAll()));
+		savedProject.close();
+		QDomElement projectTrack = document.documentElement()
+			.firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("trackcontainer"))
+			.firstChildElement(QStringLiteral("track"));
+		QVERIFY(!projectTrack.isNull());
+		projectTrack.setAttribute(QStringLiteral("frozenMuted"), QStringLiteral("bad:192"));
+		QFile malformedProject(projectPath);
+		QVERIFY(malformedProject.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(malformedProject.write(document.toByteArray()) >= 0);
+		malformedProject.close();
+
+		song->loadProject(projectPath);
+		auto* const loaded = dynamic_cast<SampleTrack*>(song->tracks().back());
+		QVERIFY(loaded != nullptr);
+		QCOMPARE(loaded->getClips().size(), std::size_t{1});
+		Clip* const loadedClip = loaded->getClips().front();
+		QVERIFY(loadedClip->isMuted());
+		QVERIFY(loaded->isFrozen());
+
+		loaded->unfreeze();
+		QVERIFY2(loadedClip->isMuted(), "an invalid frozenMuted entry must not unmute the tick-zero clip");
 	}
 
 	//! Cluster 5414 round 2: a 2-second take looping every 4 ticks can hold more than eight live passes.
