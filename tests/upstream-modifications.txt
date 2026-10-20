@@ -2728,3 +2728,8 @@ src/core/Song.cpp	cluster review-354232bbf: exportProjectMidi returns the export
 # cluster new-p10-493: the OSS output loop must finish short writes and retry EINTR.
 src/core/audio/AudioOss.cpp	cluster new-p10-493: write each rendered PCM buffer completely, retry EINTR, and stop the backend on zero progress or another write error; covered by AudioOssWriteTest.
 tests/CMakeLists.txt	cluster new-p10-493: register AudioOssWriteTest in the existing unit-test target list.
+docs/RELEASE-NOTES-v0.3.0-alpha.md	cluster new-p8-81-port-port: the self-checking A16 histogram moves track.set_arm_many from snapshot to irreversible, and the two prose mentions of the row follow the table.
+tests/CMakeLists.txt	cluster new-p8-81-port-port: registers ControlArmReversibilityTest in LMMS_TESTS, the regression for the single-track arm's undo refusal.
+tests/all-sources.txt	cluster new-p8-81-port-port: re-derives the whole-tree C/C++ source manifest from its own recipe, which now carries the new ControlArmReversibilityTest source.
+include/ControlReversibility.h	cluster new-p8-81-port-port: the recording group file's description says the reclassified track.set_arm records no inverse (its take outlives the capture); comment only.
+docs/RELEASE-NOTES-v0.3.0-alpha.md	cluster new-p8-81-port-port: the A16 histogram moves track.set_arm from snapshot to irreversible (snapshot=40 irreversible=24), and the two prose mentions of the row follow the table.

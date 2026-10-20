@@ -237,7 +237,8 @@ LMMS_EXPORT const ReversibilityRow* reversibilityExportPresetRowTable(int* rowCo
  *  `record.retro_capture_arm` / `record.retro_capture_status` /
  *  `record.retro_capture_to_take`, and the RE-CLASSIFIED `track.set_arm` - which
  *  used to be one of the four documented refusals in the passive block and is now
- *  a real arm verb with a command inverse. A GROUP file on the same seam as the
+ *  a real arm verb whose take file outlives the capture, so it records no
+ *  inverse. A GROUP file on the same seam as the
  *  mastering and scan-and-crash files. Joined into reversibilityRowTable(). */
 LMMS_EXPORT const ReversibilityRow* reversibilityRecordingRowTable(int* rowCount);
 /*! The `revisions.*` group's three rows (feature-list row 76, OWNER-31 item 30:

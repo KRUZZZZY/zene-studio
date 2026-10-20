@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-19T15:18:20Z",
+  "captured_at": "2026-10-20T05:30:18Z",
   "commands": [
     {
       "args_schema": {
@@ -30218,7 +30218,7 @@
         ],
         "type": "object"
       },
-      "description": "Arm or disarm a song track for recording. Arming starts a capture on the record route the track's position in the song maps to: the interleaved input channel named by 'input_channel' (default: the route's own index) is written to a 24-bit WAV and the take is journalled beside it, so a crash mid-take is recoverable (record.recovery_get_state). 'file' must be absolute and defaults to zene-take-trk<N>.wav beside this instance's recovery file. The frames a route records come from the engine's input path, so a route armed while nothing is staged records silence: record.input_get_state reports whether a capture device is open and how many frames are staged ('capture_capable', 'capture_open', 'capture_reason', 'input_frames_staged'). Arming is reversible - the recorded inverse is track.set_arm with armed: false, which stops the capture and retires the journal and leaves the take on disk; disarming is not, and says so in its own record, because re-arming starts a NEW take.",
+      "description": "Arm or disarm a song track for recording. Arming starts a capture on the record route the track's position in the song maps to: the interleaved input channel named by 'input_channel' (default: the route's own index) is written to a 24-bit WAV and the take is journalled beside it, so a crash mid-take is recoverable (record.recovery_get_state). 'file' must be absolute and defaults to zene-take-trk<N>.wav beside this instance's recovery file. The frames a route records come from the engine's input path, so a route armed while nothing is staged records silence: record.input_get_state reports whether a capture device is open and how many frames are staged ('capture_capable', 'capture_open', 'capture_reason', 'input_frames_staged'). Arming writes a take file that stays on disk when the capture stops, so it has no complete inverse and control.undo refuses this command; stop the capture with this command again, armed: false, or with record.disarm_track. Disarming records no inverse either, because re-arming starts a NEW take.",
       "group": "track",
       "id": "track.set_arm",
       "mutating": true,
@@ -30284,7 +30284,7 @@
         ],
         "type": "object"
       },
-      "description": "Arm or disarm several song tracks for recording in one call - the mixer's Arm All. Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their takes stay on disk). Disarming records no inverse, as track.set_arm's does not.",
+      "description": "Arm or disarm several song tracks for recording in one call - the mixer's Arm All. Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' each one's route reply. Arming writes take files that remain on disk when captures stop, so control.undo refuses this command; stop each route with record.disarm_track using its route id from 'routes'. Disarming records no inverse, as track.set_arm's does not.",
       "group": "track",
       "id": "track.set_arm_many",
       "mutating": true,
@@ -35895,11 +35895,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-81-port-port/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-aedsu8rh/zene.sock",
-    "version": "0.4.0-alpha.3221+ba3b2d9"
+    "source_socket": "/tmp/zctl-run-w4jv7qmw/zene.sock",
+    "version": "0.4.0-alpha.3224+7855747"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

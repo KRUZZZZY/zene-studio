@@ -71,7 +71,7 @@ snd_pcm_readi (blocking,       pushInputFramesWide ─┐                   reco
 | `record.get_state` | not_mutating | every route: arm, channel, take, journal, counters |
 | `record.arm_track` | irreversible | arms one route and creates a take outside the project journal; `control.undo` refuses, and the take remains until kept or deleted manually |
 | `record.disarm_track` / `record.disarm_all` | not_mutating | stop the capture, retire the journal, keep the take |
-| `track.set_arm` | snapshot | arms the route a song track's position maps to (was a refusal until 0.3.0) |
+| `track.set_arm` | irreversible | arms the route a song track's position maps to (was a refusal until 0.3.0); the take stays on disk, so `control.undo` refuses and the take is kept or deleted by hand |
 | `record.retro_capture_arm` / `_status` | not_mutating | the window's mode and its state |
 | `record.retro_capture_to_take` | not_mutating | writes the retained window to a WAV |
 
@@ -103,6 +103,6 @@ snd_pcm_readi (blocking,       pushInputFramesWide ─┐                   reco
   and an empty window refused rather than written. **No hardware.**
 - `ControlRecordInputs` (`tests/control-record-inputs.py`) — the **real binary over `--control-socket`**:
   registration of all nine new ids, the arbitrary input count proved **across a restart**, a route armed for
-  input channel 7 (refused before the restart, accepted after), `track.set_arm`'s real capture taken back by
-  `control.undo`, the retro window's arm/status/take, every typed refusal, and the A16 classes read back from
-  `control.transactions`.
+  input channel 7 (refused before the restart, accepted after), `track.set_arm`'s real capture, whose undo is
+  **refused** because the take stays on disk (the route and the take survive the refusal), the retro window's
+  arm/status/take, every typed refusal, and the A16 classes read back from `control.transactions`.

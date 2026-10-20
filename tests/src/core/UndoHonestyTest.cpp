@@ -25,8 +25,9 @@
 /*! W1: control.redo reports a device it could not re-create as control.undo does; a record whose inverse is the journal
  *  but whose call left no step there is refused rather than unwinding an older edit (E19); Copy to Channels (plugin.copy /
  *  chain.copy with a list of destinations) is one undo step; rack.remove_chain of the last chain is undone with its
- *  devices; rack.macro_set_pair sets two macros as one step; track.set_arm_many arms as one step; undoing controller.map
- *  over an LFO connection puts the LFO back; note.pitch_curve_set's before-state names every note's curve. */
+ *  devices; rack.macro_set_pair sets two macros as one step; Arm All cannot claim to undo take files it leaves behind;
+ *  undoing controller.map over an LFO connection puts the LFO back; note.pitch_curve_set's before-state names every
+ *  note's curve. */
 
 #include <QtTest>
 
@@ -43,6 +44,7 @@
 #include <QFile>
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QScopeGuard>
 #include <QStringList>
 #include <QTemporaryDir>
 
@@ -400,9 +402,14 @@ private slots:
 		QVERIFY(std::abs(macroValue(channel, x) - x0) < 1e-4);
 	}
 
-	//! Arm All: one track.set_arm_many is ONE undo step that disarms exactly what it armed.
-	void armingSeveralTracksIsOneStep()
+	//! Arm All cannot be undone because its take files remain after capture stops.
+	void armAllRefusesUndoThatWouldLeaveItsTakesBehind()
 	{
+		// The default takes sit beside the working directory's recovery file: keep them in a private folder.
+		QTemporaryDir takes;
+		QVERIFY(takes.isValid());
+		const auto restoreDir = qScopeGuard([previous = ConfigManager::inst()->workingDir()] { ConfigManager::inst()->setWorkingDir(previous); });
+		ConfigManager::inst()->setWorkingDir(takes.path());
 		QJsonArray tracks;
 		for (int i = 0; i < 3; ++i)
 		{
@@ -419,15 +426,17 @@ private slots:
 		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), tracks}, {QStringLiteral("armed"), true}}).errorKind,
 			ControlErrorKind::Busy);
 		const ControlResult undo = run(QStringLiteral("control.undo"));
-		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
-		QCOMPARE(undo.result.value(QStringLiteral("restored_by")).toString(), QStringLiteral("track.set_arm_many"));
-		for (const QJsonValue& id : tracks) { QVERIFY(!control::trackRecordArmed(control::resolveTrack(id.toString(), &error))); }
-		for (const QJsonValue& route : armed.result.value(QStringLiteral("routes")).toArray())  // the takes stay on disk: tidy up
-		{
-			QFile::remove(route.toObject().value(QStringLiteral("file")).toString());
-		}
-		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), QJsonArray{}}, {QStringLiteral("armed"), true}}).errorKind,
-			ControlErrorKind::InvalidArgs);
+		const QJsonArray routes = armed.result.value(QStringLiteral("routes")).toArray();
+		bool tracksStillArmed = true, takesRemain = true;
+		for (const QJsonValue& id : tracks) { tracksStillArmed = tracksStillArmed && control::trackRecordArmed(control::resolveTrack(id.toString(), &error)); }
+		for (const QJsonValue& route : routes) { takesRemain = takesRemain && QFile::exists(route.toObject().value(QStringLiteral("file")).toString()); }
+		// Stop each route on either implementation, so a RED run leaves no capture running.
+		for (const QJsonValue& route : routes) { QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), route.toObject().value(QStringLiteral("route")).toInt()}}).ok); }
+		QVERIFY2(!undo.ok, "control.undo claimed it could remove the takes from track.set_arm_many");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("track.set_arm_many")), qPrintable(undo.errorMessage));
+		QVERIFY2(tracksStillArmed && takesRemain, "a refused undo changed the tracks or took the takes away");
+		QCOMPARE(run(QStringLiteral("track.set_arm_many"), {{QStringLiteral("tracks"), QJsonArray{}}, {QStringLiteral("armed"), true}}).errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	//! A map over an LFO connection: undo puts the LFO back (it used to leave the parameter unconnected).

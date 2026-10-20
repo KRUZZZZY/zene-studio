@@ -103,6 +103,10 @@ set(LMMS_TESTS
 	src/core/BounceInPlaceTest.cpp
 	# Default bounce paths must keep separate unsaved projects from replacing each other's files.
 	src/core/ControlBounceSupportTest.cpp
+	# The single-track arm (track.set_arm) and its batch sibling: the capture writes a take
+	# that outlives it, so control.undo refuses both instead of disarming and leaving the
+	# take behind.
+	src/core/ControlArmReversibilityTest.cpp
 	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
