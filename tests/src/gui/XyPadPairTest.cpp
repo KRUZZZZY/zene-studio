@@ -361,29 +361,29 @@ private slots:
 	}
 
 	//! Removing an EARLIER macro shifts the macro-<n> ids of every later one (RackMacros::removeMacro erases its
-	//! vector entry): the axes must keep following the macros they had chosen - by name - not whichever macro keeps
-	//! the old id.
+	//! vector entry): the axes must keep following the chosen macros through index shifts, even when names are duplicated.
 	void thePadKeepsItsChosenMacrosWhenAnEarlierOneIsRemoved()
 	{
 		while (Engine::mixer()->numChannels() <= 6) { Engine::mixer()->createChannel(); }
 		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(6));
-		for (const char* name : {"Alpha", "Beta", "Gamma"})
+		for (const char* name : {"Alpha", "Twin", "Twin"})
 		{
 			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
 		}
 		XyPadDialog dialog(channel);
 		const auto combos = dialog.findChildren<QComboBox*>();
 		QCOMPARE(combos.size(), 2);
-		combos.at(0)->setCurrentIndex(2);  // X drives Gamma (macro-2)
-		combos.at(1)->setCurrentIndex(1);  // Y drives Beta (macro-1)
+		combos.at(0)->setCurrentIndex(2);  // X drives the second Twin (macro-2)
+		combos.at(1)->setCurrentIndex(1);  // Y drives the first Twin (macro-1)
 		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-2"));
-		QCOMPARE(dialog.macroName(true), QStringLiteral("Beta"));
+		QCOMPARE(dialog.macroName(false), QStringLiteral("Twin"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-1"));
 
 		QVERIFY(run(QStringLiteral("rack.macro_remove"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-0")}}).ok);
-		QCOMPARE(dialog.macroName(false), QStringLiteral("Gamma"));  // still Gamma, now macro-1 - not Beta at macro-1
-		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-1"));
-		QCOMPARE(dialog.macroName(true), QStringLiteral("Beta"));  // still Beta, now macro-0
-		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-0"));
+		QCOMPARE(dialog.macroName(false), QStringLiteral("Twin"));
+		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-1"));  // still the second Twin, not the first one
+		QCOMPARE(dialog.macroName(true), QStringLiteral("Twin"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-0"));  // still the first Twin
 	}
 
 	//! When the LAST macro is removed while the pad is open, the pad goes back to disabled with empty axis lists and

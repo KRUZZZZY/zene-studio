@@ -247,7 +247,14 @@ XyPadDialog::XyPadDialog(const QString& channel, QWidget* parent) :
 	// cannot leave the destructor touching freed memory.
 	if (Rack* rack = resolveRack(m_channel, &ignored))
 	{
-		m_macroListener = rack->macros().addChangeListener([this] { fillMacros(); });
+		m_macroListener = rack->macros().addChangeListener([this](int index, int shift) {
+			for (QComboBox* axis : {m_x, m_y})
+			{
+				const int current = axis->currentIndex();
+				if (index >= 0 && current >= index) { axis->setItemData(current, QStringLiteral("macro-%1").arg(current + shift)); }
+			}
+			fillMacros();
+		});
 	}
 }
 
@@ -269,12 +276,9 @@ QString XyPadDialog::macroName(bool y) const
 void XyPadDialog::fillMacros()
 {
 	const QJsonArray macros = rackMacros(m_channel);
-	// Identity by NAME, not by macro-<n> id: removing an earlier macro erases its vector entry and
-	// shifts every later id (RackMacros::removeMacro), so the old id would silently name a
-	// different macro - or the removed one's neighbour. A name that is gone falls back to the
-	// default (X on the first, Y on the second when there is one).
-	const QString xName = m_x->currentText();
-	const QString yName = m_y->currentText();
+	// Preserve macro-N IDs across insert/remove shifts; names are labels and may be duplicated.
+	const QString xId = m_x->currentData().toString();
+	const QString yId = m_y->currentData().toString();
 	m_x->blockSignals(true);
 	m_y->blockSignals(true);
 	m_x->clear();
@@ -287,14 +291,14 @@ void XyPadDialog::fillMacros()
 	}
 	if (!macros.isEmpty())
 	{
-		int xi = xName.isEmpty() ? 0 : m_x->findText(xName);
+		int xi = xId.isEmpty() ? 0 : m_x->findData(xId);
 		if (xi < 0) { xi = 0; }
 		m_x->setCurrentIndex(xi);
 		int yi;
-		if (yName.isEmpty()) { yi = macros.size() > 1 ? 1 : 0; }
+		if (yId.isEmpty()) { yi = macros.size() > 1 ? 1 : 0; }
 		else
 		{
-			yi = m_y->findText(yName);
+			yi = m_y->findData(yId);
 			if (yi < 0) { yi = macros.size() > 1 ? 1 : 0; }
 		}
 		m_y->setCurrentIndex(yi);

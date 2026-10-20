@@ -135,7 +135,8 @@ public:
 	 *  Listeners run synchronously, on the thread inside the mutating call itself - the control
 	 *  thread; the audio thread never touches macros. A listener may open or close a UI watcher,
 	 *  so a notification walks a snapshot of the callbacks, never the live store. */
-	using ChangeListener = std::function<void()>;
+	//! Listener args are the changed index and index shift (+1 insert, -1 remove; -1 means unchanged).
+	using ChangeListener = std::function<void(int, int)>;
 	/*! An un-register token; 0 means "no listener". The store is PROCESS-lifetime (as
 	 *  ControlRegistry's shutdown hooks) and keyed by these ids, so removeChangeListener stays
 	 *  safe after THIS list - or the listener's owner - is gone: a UI watcher holds the id, never
@@ -201,7 +202,7 @@ public:
 
 private:
 	//! Runs every listener registered for THIS list (see addChangeListener).
-	void notifyListChanged() const;
+	void notifyListChanged(int index = -1, int shift = 0) const;
 
 	std::vector<RackMacro> m_macros;
 };

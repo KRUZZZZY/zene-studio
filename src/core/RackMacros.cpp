@@ -174,7 +174,7 @@ bool RackMacros::removeChangeListener(ChangeListenerId id)
 	return true;
 }
 
-void RackMacros::notifyListChanged() const
+void RackMacros::notifyListChanged(int index, int shift) const
 {
 	// A snapshot first: a listener may add or remove listeners (open or close a watcher
 	// while being told), and mutating the store mid-walk would invalidate it.
@@ -183,7 +183,7 @@ void RackMacros::notifyListChanged() const
 	{
 		if (entry.source == this) { due.push_back(entry.listener); }
 	}
-	for (const ChangeListener& listener : due) { listener(); }
+	for (const ChangeListener& listener : due) { listener(index, shift); }
 }
 
 auto RackMacros::macroCount() const -> int
@@ -218,7 +218,7 @@ auto RackMacros::insertMacro(int index, const RackMacro& macro) -> bool
 	if (index < 0) { return false; }
 	if (index > macroCount()) { return false; }
 	m_macros.insert(m_macros.begin() + index, macro);
-	notifyListChanged();
+	notifyListChanged(index, 1);
 	return true;
 }
 
@@ -226,7 +226,7 @@ auto RackMacros::removeMacro(int index) -> bool
 {
 	if (macro(index) == nullptr) { return false; }
 	m_macros.erase(m_macros.begin() + index);
-	notifyListChanged();
+	notifyListChanged(index, -1);
 	return true;
 }
 
