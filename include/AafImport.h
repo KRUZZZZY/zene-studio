@@ -227,6 +227,8 @@ struct AafLossReport
 	int envelopePointsDropped = 0;
 	int missingMediaClips = 0;     //!< clips whose source file is missing (not built)
 	int beyondSongLength = 0;      //!< clips past MaxSongLength (filled in by the builder)
+	int markersBeyondSongLength = 0; //!< markers before the song start or past MaxSongLength (filled in by the builder)
+	int markersRefused = 0;        //!< markers the marker list had no room for, MaxMarkers (filled in by the builder)
 	int trackGainClamps = 0;      //!< track gains clipped to the sample fader range (read-only report or builder)
 	QStringList warnings;          //!< LibAAF's own warnings and errors, at most AafMaxWarnings
 
@@ -262,6 +264,8 @@ struct AafBuildReport
 	int markers = 0;
 	int missingMediaClips = 0;
 	int beyondSongLength = 0;
+	int markersBeyondSongLength = 0;
+	int markersRefused = 0;
 	int trackGainClamps = 0;
 };
 
