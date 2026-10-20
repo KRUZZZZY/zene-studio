@@ -181,6 +181,106 @@ RESULT: PASS
   audio-thread capture drain moved from the two former entries to
   `AudioEngine::drainCaptureStages` in `tests/rt-safety-scope.txt`.
 
+## Self-check
+
+Every item the pre-submit check asks about, with the evidence this session
+produced.
+
+**? The regression test FAILS with your product change reverted and PASSES with
+it (exit codes).**
+Reverted: `git apply -R logs/fix.patch` (EXIT=0) → `cmake --build build --target
+CapturePublisherTest -j 8` (BUILD_EXIT=0) → `ctest -R '^CapturePublisherTest$'`
+(**TEST_EXIT=8**, `logs/test-revert-1.log`: the two new cases fail with
+`inputWideFrames(): 64` vs `0` and `inputFramesStaged(): 64` vs `0`).
+Re-applied: `git apply logs/fix.patch` (APPLY_EXIT=0) → rebuild (BUILD_EXIT=0) →
+`ctest -R '^CapturePublisherTest$'` (**TEST_EXIT=0**, `logs/test-reapply-1.log`).
+The same two cases failed on the untouched tree before the fix
+(`logs/test-red-1.log`, EXIT=8) and pass with it (`logs/test-green-1.log`,
+EXIT=0). The patch contains the product files only — the test file was never
+reverted, so the test is the same binary in both runs.
+
+**? The test is deterministic: no wall-clock timing, sleeps or races (name the
+seam or injected values it uses).**
+The seam is the pair of publication entry points of the engine itself:
+`AudioEngine::pushInputFramesWide()` (the wide block) and
+`AudioEngine::pushInputFrames()` (the stereo pair). The test publishes the wide
+block, renders once — the state the capture thread is preempted in — and asserts
+that **neither** representation was consumed; it then publishes the stereo pair
+of that same block with fixed values (`SampleFrame(0.25f, 0.5f)`, 64 frames) and
+asserts that **both** are consumed together. Every value is a literal
+(`0.25f`, `0.5f`, 64 frames); there is no clock, no sleep, no thread and no
+timing assumption in the test — the interleaving is produced by the order of the
+calls, not by a race. The second case uses the same seam: a four-channel wide
+block that is left undrained, then a two-channel block through the publisher,
+whose width change the wide path refuses.
+
+**? The fix is at the cause and complete: every caller and sibling of what you
+changed was checked and stays consistent.**
+- `pushInputFramesWide()` has exactly one caller,
+  `AudioDevice::publishCaptured` (`src/core/audio/AudioDevice.cpp:80`); the
+  return type changed to `std::size_t` in the declaration
+  (`include/AudioEngine.h:415`) and the definition
+  (`src/core/AudioEngine.cpp:692`) together, and no other call site exists
+  (`grep -rn pushInputFramesWide src include tests`).
+- Every backend that captures goes through that one publisher:
+  `src/core/audio/AudioAlsa.cpp:618`, `src/core/audio/AudioJack.cpp:475`,
+  `src/core/audio/AudioSdl.cpp:194`, `src/core/audio/AudioPortAudio.cpp:228` —
+  no backend publishes to the wide path on its own, so the pairing covers all of
+  them.
+- The other producer of the stereo ring, `AudioEngine::pushInputFrames()`, is
+  unchanged: it is used by the Dummy loopback
+  (`src/core/AudioEngine.cpp:1883`) and by tests, and it never sets the wide
+  flag, so that path drains exactly as before.
+- The two drains that were merged are declared and defined together
+  (`include/AudioEngine.h:696`, `src/core/AudioEngine.cpp:626`), and the only
+  caller, `swapBuffers()` (`src/core/AudioEngine.cpp:1036`), was updated.
+- `AudioWideInputStage::drain()` gained a limit; the declaration
+  (`include/AudioWideInputStage.h:98`) and the definition
+  (`src/core/AudioWideInputStage.cpp:87`) changed together, and the direct caller
+  in `tests/src/core/CapturePublisherTest.cpp` keeps working through the default
+  argument.
+- The recorder's own choice (STAGE 4, `src/core/AudioEngine.cpp:966-984`:
+  the wide block when the wide stage has frames, the stereo bus otherwise) was
+  checked and left as it is: with the paired drain the two representations of one
+  block are always consumed in the same period, so the rule can no longer
+  alternate between them mid-take.
+- `tests/rt-safety-scope.txt` names the audio-thread drain; the two entries for
+  the functions that were merged were replaced by the one that exists now, so
+  the declared audio-thread frontier still covers the code (the `RtSafetySweep`
+  ctest passes).
+
+**? No collateral damage: old projects and saved data still load as before, and
+any limit or check you added does not hit other callers that legitimately exceed
+it.**
+No project, save, undo or command surface was touched: the diff is confined to
+the capture path, one test file, the RT-safety scope file and the divergence
+ledger (`git show --stat 9102db166`). No new control command was added, so the
+`ControlCommandsSnapshot` canary does not move. The new limits are internal to
+the capture path: the wide stage's drain limit is the number of frames the
+stereo ring holds, which is bounded by the same `InputStageCapacityFrames`
+(16384) the ring and the destination buffer already use, so no caller can
+exceed it; the publisher's `accepted` count is what the wide stage actually
+took, so it can only be smaller than the block, never larger. A capture path
+that does not use the wide path is unaffected (the `m_captureWideInUse` flag is
+clear for it, and the stereo ring drains on its own — the `DummyPacingTest`,
+`InputMonitorTest`, `HardwareIoTest` and `SessionAudioRecordTest` cases in the
+family run below all exercise that path). The one deliberate behaviour change is
+named in the report: a block the wide path refuses whole no longer reaches the
+stereo bus alone, because that is the misalignment itself; it is counted by the
+wide path's drop counter.
+
+**? If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+the intended contract that shows it.**
+Not applicable: the verdict is **FIXED**, and the "before" evidence is quoted
+above with file:line (`src/core/audio/AudioDevice.cpp:76` and `:91` (old) for
+the two publications, `src/core/AudioEngine.cpp:1015`/`:1019` (old) for the two
+independent drains, `src/core/AudioEngine.cpp:966-984` (old) for the recorder's
+choice between the two representations). The intended contract is
+`docs/RECORD-INPUTS.md` §4: "the N captured channels reach the recorders through
+the wide path, and the bus carries the configured pair" — the two are two
+representations of the same capture, which is what the fix makes true at the
+drain as well as at the publication.
+
 ## Files committed
 
 - `src/core/audio/AudioDevice.cpp` — `publishCaptured`: one block, two
