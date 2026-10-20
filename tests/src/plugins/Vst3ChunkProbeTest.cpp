@@ -111,6 +111,7 @@ private slots:
 	void testIdentity();
 	void testFailedOutputBusActivationRefreshesLayout();
 	void testOutOfRangeOutputBusActivationDoesNotMutate();
+	void testNegativeOutputBusActivationDoesNotMutate();
 	void testChunkedProcessing();
 	void testChannelWithoutACallerBufferOverAFullRequest();
 	void testZeroFramesIsANoOp();
@@ -182,6 +183,22 @@ void Vst3ChunkProbeTest::testOutOfRangeOutputBusActivationDoesNotMutate()
 	QCOMPARE(plugin.busLayout().outputs, 2);
 
 	QVERIFY(!plugin.activateOutputBuses(3));
+	QVERIFY(!plugin.outputBusDescriptors()[1].active);
+	QVERIFY(!plugin.outputBusDescriptors()[2].active);
+	QCOMPARE(plugin.busLayout().outputs, 2);
+	QCOMPARE(plugin.busLayout().outputBusChannels, (std::vector<int>{2}));
+}
+
+void Vst3ChunkProbeTest::testNegativeOutputBusActivationDoesNotMutate()
+{
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(VST3_CHUNK_PROBE_PATH),
+		QString::fromLatin1(TestPluginClass), &error), qPrintable(error));
+	QCOMPARE(plugin.outputBusDescriptors().size(), std::size_t{3});
+	QCOMPARE(plugin.busLayout().outputs, 2);
+
+	QVERIFY(!plugin.activateOutputBuses(-1));
 	QVERIFY(!plugin.outputBusDescriptors()[1].active);
 	QVERIFY(!plugin.outputBusDescriptors()[2].active);
 	QCOMPARE(plugin.busLayout().outputs, 2);
