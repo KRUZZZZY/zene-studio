@@ -459,14 +459,17 @@ changed was checked and stays consistent.**
   still goes through `applyMarkers()` → `SampleClip::setWarpMarkers()`, whose
   `WarpMarkers::set()` rejects a set that is not strictly increasing in both
   coordinates: the set the fix builds is, by construction.
-- The `warp` group's sibling commands were checked and are unaffected: `warp.add`
-  and `warp.clear` write the marker set the render path reads, and they are
-  written in PLAY frames — which is the coordinate the quantise now writes too,
-  so the two agree. `warp.stretch` does not touch the markers. The whole group is
-  `warp.add`, `warp.list`, `warp.move`, `warp.quantize`, `warp.remove`,
-  `warp.set` and `warp.stretch`. No command id, argument or schema changed, so
-  `tools/mcp-zene-control/zene_control/commands_snapshot.json` is unchanged and
-  the ControlCommandsSnapshot canary does not move.
+- The `warp` group's sibling commands were checked one by one and are consistent
+  with the fix: `warp.add`, `warp.set`, `warp.move`, `warp.remove` and `warp.list`
+  write or read the marker set the render path reads, and they are written in
+  PLAY frames — which is the coordinate the quantise now writes too, so the two
+  agree (before the fix the quantise wrote SOURCE frames while the render path
+  read PLAY frames: that is the disagreement the fix closes). `warp.stretch` does
+  not touch the markers. `warp.quantize` is the command this fix changes. The
+  whole group is `warp.add`, `warp.list`, `warp.move`, `warp.quantize`,
+  `warp.remove`, `warp.set`, `warp.stretch`. No command id, argument or schema
+  changed, so `tools/mcp-zene-control/zene_control/commands_snapshot.json` is
+  unchanged and the ControlCommandsSnapshot canary does not move.
 - `SampleClip::timelinePosAt()` — its only callers are the transient overlay, the
   slice/analysis/arrange/transport-map commands and the quantise; the refactor
   routes the same mirror through `playFrameFor()` and returns the same values
@@ -533,3 +536,14 @@ No Qt-6-only API, no `windows.h` macro name and no `std::filesystem` was used.
 The new code uses `<algorithm>`, `<utility>`, `<vector>`, `<array>` and
 `std::sort`/`std::pair`/`std::span`, all of which the project already uses
 (`std::span` is already in the test file), and the project is C++20.
+
+**7. "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+the intended contract that shows it."**
+
+Not applicable: all three verdicts in this batch are FIXED, and each one carries
+its own `file:line` evidence above. The two parts of the review-17b7bfa95
+finding that were ALREADY FIXED in this tree (the unsigned underflow and the
+asymmetric-trim mirror) are named as such in that section, with the commit that
+fixed them (`09674ea8a`) and the code that carries the fix
+(`src/core/SampleClip.cpp:809` `SampleClip::timelinePosAt()` and its regression
+`SampleClipWindowTest::aReversedImpulseSoundsWhereItsTransientPlaces()`).
