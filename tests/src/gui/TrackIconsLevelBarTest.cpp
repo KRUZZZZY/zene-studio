@@ -34,6 +34,7 @@
 
 #include <QApplication>
 #include <QHelpEvent>
+#include <QIcon>
 #include <QPointer>
 #include <QTemporaryDir>
 #include <QToolButton>
@@ -42,6 +43,7 @@
 #include "AudioEngine.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
+#include "embed.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
@@ -80,6 +82,12 @@ protected:
 QColor pixelOf(LevelBar& bar, int x, int y)
 {
 	return bar.grab().toImage().pixelColor(x, y);
+}
+
+//! Whether two icons paint the same pixels: the header shows what the button holds.
+bool sameGlyph(const QIcon& a, const QIcon& b)
+{
+	return a.pixmap(24, 24).toImage() == b.pixmap(24, 24).toImage();
 }
 
 } // namespace
@@ -129,6 +137,8 @@ private slots:
 		QVERIFY(!applyTrackIcon(&button, track, &shown));
 		QVERIFY(shown.empty());
 		QVERIFY(!button.icon().isNull());
+		QVERIFY2(sameGlyph(button.icon(), QIcon(embed::getIconPixmap("sample_track"))),
+			"the header still shows the icon chosen before, not the type glyph");
 
 		// Back to the first, then removed: the glyph returns.
 		TrackLooks::instance().setIcon(track->id(), name);
