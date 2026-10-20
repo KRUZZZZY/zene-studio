@@ -122,6 +122,10 @@ private:
 	//! Error recovery for the capture PCM (overrun/suspend), the read-side twin
 	//! of handleError()'s write-side one.
 	int handleCaptureError( int _err );
+	//! Reports the capture failures the capture thread parked (see
+	//! m_captureOverrunError). NOT for the capture thread: this runs on the
+	//! thread that closes the capture, which is not an audio thread.
+	void reportCaptureErrors();
 
 	snd_pcm_t * m_handle;
 
@@ -147,6 +151,13 @@ private:
 	std::thread m_captureThread;
 	std::atomic<bool> m_captureStop;
 	std::atomic<bool> m_captureOpen;
+	//! The ALSA error code of a capture recovery that FAILED, parked by the
+	//! capture thread: that thread may not log (its own rule), so the code
+	//! waits here until a non-audio thread reports it. 0: nothing parked.
+	std::atomic<int> m_captureOverrunError;
+	//! The same for the suspend recovery (the two recoveries report
+	//! different failures).
+	std::atomic<int> m_captureSuspendError;
 } ;
 
 } // namespace lmms

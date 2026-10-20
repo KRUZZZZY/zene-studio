@@ -1322,6 +1322,9 @@ ENDIF()
 
 if(LMMS_HAVE_ALSA)
 	list(APPEND LMMS_TESTS src/core/AudioAlsaPollDescriptorTest.cpp)
+	# cluster 4584: the ALSA capture thread must not log a failed recovery -
+	# the failure is parked and reported by the thread that closes the capture.
+	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
 endif()
 
 # The sndio MIDI output guard needs the optional backend and its API.
