@@ -94,22 +94,22 @@ note-offs for every channel would satisfy it too.
 ### RED / GREEN (step 4b)
 
 ```
-$ git diff -- plugins/Vestige/Vestige.cpp > $L/fix.patch && git apply -R $L/fix.patch
+$ git diff b61e5f965..HEAD -- plugins/Vestige/Vestige.cpp > $L/fix.patch && git apply -R $L/fix.patch
 EXIT=0
-$ cmake --build build --target VestigeMidiHandoffTest -j8            # $L/build-14-red.log
+$ cmake --build build --target VestigeMidiHandoffTest -j8            # $L/build-18-red.log
 EXIT=0
-$ cd build/tests && ctest -R '^VestigeMidiHandoffTest$' --output-on-failure   # $L/test-15-red.log
+$ cd build/tests && ctest -R '^VestigeMidiHandoffTest$' --output-on-failure   # $L/test-19-red.log
 EXIT=8
   FAIL!  : VestigeMidiHandoffTest::turnOffAllEndsTheNotesOfEveryMidiChannel() 'covered[channel].covered()'
            returned FALSE. (channel 1 was not cut: a note that is sounding on it keeps sounding
            after "Turn off all notes")
-  Totals: 3 passed, 1 failed, 0 skipped, 0 blacklisted, 1241ms
+  Totals: 3 passed, 1 failed, 0 skipped, 0 blacklisted, 2039ms
 
 $ git apply $L/fix.patch
 EXIT=0
-$ cmake --build build --target VestigeMidiHandoffTest vestige -j8    # $L/build-15-green.log
+$ cmake --build build --target VestigeMidiHandoffTest vestige -j8    # $L/build-19-green.log
 EXIT=0
-$ cd build/tests && ctest -R '^VestigeMidiHandoffTest$' --output-on-failure   # $L/test-16-green.log
+$ cd build/tests && ctest -R '^VestigeMidiHandoffTest$' --output-on-failure   # $L/test-20-green.log
 EXIT=0
   100% tests passed out of 1
 ```

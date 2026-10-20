@@ -206,8 +206,10 @@ private:
 		QVERIFY2(button != nullptr, "the instrument view has no \"Turn off all notes\" button");
 		button->click();
 
-		view->deleteLater();
-		root->deleteLater();
+		// The view first: its destructor walks the parent chain to find the
+		// instrument track window, so the chain has to be intact while it goes.
+		delete view;
+		delete root;
 	}
 
 	//! What the button sent for every MIDI channel.
