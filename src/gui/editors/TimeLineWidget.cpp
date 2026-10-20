@@ -621,7 +621,6 @@ void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
 		auto begin = getClickedTime(event->x()).getTicks();
 		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = TimePos(begin).quantize(m_snapSize).getTicks(); }
 		const tick_t end = std::max<tick_t>(begin + 1, m_timeline->punchEnd());
-		m_timeline->setPunchRange(begin, end);
 		invokePunchSet(begin, end, true);
 		update();
 	});
@@ -632,7 +631,6 @@ void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
 		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = TimePos(end).quantize(m_snapSize).getTicks(); }
 		const tick_t begin = std::min<tick_t>(std::max<tick_t>(0, end - 1), m_timeline->punchBegin());
 		if (end <= begin) { return; }
-		m_timeline->setPunchRange(begin, end);
 		invokePunchSet(begin, end, true);
 		update();
 	});

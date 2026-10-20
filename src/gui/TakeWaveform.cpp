@@ -32,6 +32,14 @@
 namespace lmms::gui
 {
 
+TakeWaveform::~TakeWaveform()
+{
+	for (const QMetaObject::Connection& connection : m_clipDestroyedConnections)
+	{
+		QObject::disconnect(connection);
+	}
+}
+
 void TakeWaveform::paint(QPainter& painter, const SampleClip& clip, const QRect& clipRect,
 	const QRect& viewport, const QColor& color)
 {
@@ -44,6 +52,15 @@ void TakeWaveform::paint(QPainter& painter, const SampleClip& clip, const QRect&
 	{
 		entry.buffer = buffer;
 		entry.thumbnail = SampleThumbnail{clip.sample()};
+	}
+	if (!m_clipDestroyedConnections.contains(&clip))
+	{
+		const SampleClip* key = &clip;
+		m_clipDestroyedConnections.insert(key, QObject::connect(const_cast<SampleClip*>(&clip),
+			&QObject::destroyed, [this, key] {
+				m_cache.remove(key);
+				m_clipDestroyedConnections.remove(key);
+			}));
 	}
 
 	const QRect renderRect = clipRect.intersected(viewport);

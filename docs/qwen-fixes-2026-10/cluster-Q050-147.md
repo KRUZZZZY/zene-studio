@@ -138,3 +138,19 @@ targets.
 
 Snapshot regenerated live: 833 ids / 76 groups; `doc-figures-gate.py` PASS; no new ids, so the A16
 histogram is unchanged. Only `transport.punch_set`'s description changed.
+
+## Feature verifier follow-up (2026-10-20)
+
+- The context-menu Set punch in/out actions no longer mutate `Timeline` before invoking
+  `transport.punch_set`; the registered command now checkpoints the pre-edit state, preserving
+  one-step undo for those edits.
+- The shared `TakeWaveform` cache removes a clip's entry when that `SampleClip` is destroyed and
+  disconnects its destruction callbacks before its owning widget goes away, releasing retained
+  sample buffers as takes are deleted.
+- Verifier build `cmake --build build --target zene ArrangerTakePunchTest ArrangerTimelineTest
+  TakeLanesPanelTest RecordingLatencyTest CanvasKeyboardTest PunchWindowTest -- -j4`: exit 0.
+- Verifier CTest `ctest --output-on-failure -R
+  '^(ArrangerTakePunchTest|ArrangerTimelineTest|TakeLanesPanelTest|CanvasKeyboardTest|PunchWindowTest|RecordingLatencyTest)$'`:
+  6/6 passed, exit 0. `tests/control-punch-transcript.py build/zene`: exit 0.
+- `python3 tests/doc-figures-gate.py`: PASS, exit 0. `feature_check.py`: all gates PASS, no new
+  complexity or file-length items, exit 0.

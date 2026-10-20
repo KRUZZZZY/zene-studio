@@ -29,6 +29,7 @@
 
 #include <QColor>
 #include <QHash>
+#include <QMetaObject>
 #include <QRect>
 
 #include "SampleThumbnail.h"
@@ -59,6 +60,8 @@ namespace lmms::gui
 class LMMS_EXPORT TakeWaveform
 {
 public:
+	~TakeWaveform();
+
 	//! Paint @a clip's waveform inside @a clipRect, clipped to @a viewport. Nothing is drawn for
 	//! a clip without loaded audio. Call on the GUI thread.
 	void paint(QPainter& painter, const SampleClip& clip, const QRect& clipRect, const QRect& viewport,
@@ -71,6 +74,9 @@ private:
 		SampleThumbnail thumbnail;
 	};
 	QHash<const SampleClip*, Entry> m_cache;
+	//! A cached thumbnail owns its sample buffer; remove it when its clip is deleted, and disconnect
+	//! these callbacks if the widget that owns this painter is deleted first.
+	QHash<const SampleClip*, QMetaObject::Connection> m_clipDestroyedConnections;
 };
 
 } // namespace lmms::gui
