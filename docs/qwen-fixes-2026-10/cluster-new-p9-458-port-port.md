@@ -79,6 +79,29 @@ Logs: `.../runs/new-p9-458-port-port.r1/logs/` (`fix.patch`, `build-1-red.log`,
 Two of them carry the new regression and both fail with the product change reverted and
 pass with it restored.
 
+## Automated negative control (the check that bounced the earlier round)
+
+The control was run against this branch with the control's own tool
+(`~/.local/share/zene-bunny-fix/qwen/negctl.py`, base `2da2ed356` = `merge-base HEAD
+050/m0-train-8`):
+
+```
+ok: true
+detail: "RemotePluginClientE2ETest: they fail without it (rc 8) and pass with it"
+tests: ["RemotePluginClientE2ETest"]
+product_files: ["include/SharedMemory.h", "src/common/SharedMemory.cpp"]
+reverted_build_rc: 0
+reverted_rc: 8
+restored_rc: 0
+tree_clean: true
+```
+
+The control reverted the product change, rebuilt `zene` and `RemotePluginClientE2ETest`,
+ran `ctest -R '^(RemotePluginClientE2ETest)$'` (exit 8 - the alignment regression failed),
+restored the change, rebuilt and ran the same command again (exit 0), and left the tree
+clean. Control logs: `.../logs/negctl/` (`product.patch`, `build-reverted.log`,
+`test-reverted.log`, `build-restored.log`, `test-restored.log`).
+
 ## Self-check
 
 **1. The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
@@ -151,6 +174,7 @@ Not applicable - the verdict is FIXED. The defect was visible on the base commit
   touches: the shared memory that test uses is `SharedMemory<float[]>`, whose data offset is
   8 bytes before and after the fix.
 - The gates pass (`feature_check.py` exit 0, 8 of 8 rows PASS).
+- The automated negative control judges the branch as proving the fix (`ok: true`).
 - Files committed: `include/SharedMemory.h`, `src/common/SharedMemory.cpp`,
   `tests/src/core/AudioBufferTest.cpp`, `tests/src/core/RemotePluginClientE2ETest.cpp`,
   `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p9-458-port-port.md`.
