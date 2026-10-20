@@ -63,11 +63,13 @@ Every row is a command I ran in this round, with the exit code it printed.
 | File-length gate, whole tree | `bash tests/file-length-gate.sh --check --scope all` | `gate-13.log` | 1 |
 | Complexity gate, whole tree | `bash tests/complexity-gate.sh --check --scope all` | `gate-14.log` | 1 |
 | Aggregate gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port` | `gate-15.log` | 0 |
-| Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port new-p12-98-port` | `submit-5.log` | 0 |
+| Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port new-p12-98-port` | `submit-5.log`, `submit-6.log` | 0 |
 
-The gate rows are the runs made **after** the commits landed (the same commands run before them,
-in `gate-6.log` … `gate-10.log`, produced byte-identical REGRESSION lists and the same exit
-codes). `submit-5.log` is the final pre-submit run, against the committed tree.
+The gate rows are the runs made after the code-and-test commit (`93a9c8680`) landed; the same
+commands run before it, in `gate-6.log` … `gate-10.log`, produced byte-identical REGRESSION lists
+and the same exit codes. `submit-5.log` is the pre-submit run against that committed tree and
+`submit-6.log` the same command re-run after the report's citation commit — both exit 0 with a
+clean working tree. The only change after `submit-6.log` is this paragraph.
 
 The two commit references in the red proof are stable: `ded355440871a86cc907cdc2d6465f2d3d597a6b`
 is the parent of the fix commit `47b57a6ae15ad44ba1563c6c97564c246e0221f0`, so the patch is the
