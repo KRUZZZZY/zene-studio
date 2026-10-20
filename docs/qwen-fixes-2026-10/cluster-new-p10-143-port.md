@@ -35,3 +35,11 @@ Affected-family count: **3 CTest tests executed** (`DrumSynthLevelTest`, `DrumSy
 - `tests/src/core/DrumSynthTest.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p10-143-port.md`
+
+## Self-check
+
+- Regression FAILS with product change reverted and PASSES with it: RED `test-9.log` exit 8 (1 failure, `mapsAFractionalStepAboveMaxToTheSafeMaximumLength`), GREEN `test-10.log` exit 0; oversized case RED `test-2.log` exit 8 from the prior round.
+- Deterministic: no timing, sleeps or races; uses injected envelope values (`3e9`, and `maxSteps + 0.5` via globals) and direct `LongestEnv()` seam.
+- Cause and completeness: only `LongestEnv()` boundary condition changed; `checkedWaveSampleCount()` and all callers (`GetDSFileSamples`, SampleDecoder) unchanged and consistent; header exposes `LongestEnv()` for the seam.
+- No collateral damage: boundary change only widens acceptance of a previously renderable narrow range; oversized durations still rejected; old projects unaffected since no saved data format change.
+- Verdict FIXED, not already-fixed/false-positive.
