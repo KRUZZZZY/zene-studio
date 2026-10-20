@@ -41,6 +41,7 @@ class Track;
 }
 
 class QResizeEvent;
+class QTouchEvent;
 
 namespace lmms::gui
 {
@@ -131,6 +132,9 @@ private:
 	void cycleAtCursor();
 	//! 0.5.0 L03 (Q050-274): a single-finger swipe; true when the event was a touch this strip took.
 	bool touchEvent(QEvent* event);
+	bool beginTouch(QTouchEvent* event);
+	bool followTouch(QTouchEvent* event);
+	void cancelTouch();
 	//! Normalise, commit once through comp.select, and say what happened.
 	void commitDrag(int lane, int from, int to);
 	//! 0.5.0 L03 (Q050-123): take bands for the current state (also after a resize).

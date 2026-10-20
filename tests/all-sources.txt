@@ -751,8 +751,10 @@ include/TabBar.h
 include/TabButton.h
 include/TabWidget.h
 include/TakeLane.h
+include/TakeLaneRows.h
 include/TakeLanesPanel.h
 include/TakeRecorder.h
+include/TakeWaveform.h
 include/TaskCenter.h
 include/TaskCommands.h
 include/TaskIndicator.h
@@ -2247,6 +2249,7 @@ src/gui/StringPairDrag.cpp
 src/gui/SubWindow.cpp
 src/gui/SurroundPanner.cpp
 src/gui/TakeLanesPanel.cpp
+src/gui/TakeWaveform.cpp
 src/gui/TaskIndicator.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
@@ -2371,6 +2374,7 @@ src/gui/tracks/FolderSummaryLane.cpp
 src/gui/tracks/InstrumentTrackView.cpp
 src/gui/tracks/PatternTrackView.cpp
 src/gui/tracks/SampleTrackView.cpp
+src/gui/tracks/TakeLaneRows.cpp
 src/gui/tracks/TrackContentWidget.cpp
 src/gui/tracks/TrackGrip.cpp
 src/gui/tracks/TrackLabelButton.cpp

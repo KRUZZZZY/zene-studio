@@ -16,11 +16,11 @@ Feature doc: `docs/050-features/Q050-147.md`.
 
 | # | Criterion | Test | Exit |
 |---|---|---|---|
-| 1 | Separate punch band, draggable handles, arm control | `ArrangerTimelineTest::thePunchRangeHasItsOwnHandlesAndArmControl` (band/handles/arm; reverse proofs below) | 0 |
+| 1 | Separate punch band, draggable handles, arm control | `ArrangerTakePunchTest::thePunchRangeHasItsOwnHandlesAndArmControl` (band/handles/arm; reverse proofs below) | 0 |
 | 2 | Handles leave loop unchanged; recording only inside the range | Same GUI test (loop attributes before/after); `RecordingLatencyTest::anArmedPunchRegionCapturesTheInsideTransientAndOnlyIt`; `tests/control-punch-transcript.py` loop-attribute check | 0 / 0 / 0 |
 
 Reverse proofs:
-- arm lambda disabled: `ArrangerTimelineTest::thePunchRangeHasItsOwnHandlesAndArmControl` exit 1
+- arm lambda disabled: `ArrangerTakePunchTest::thePunchRangeHasItsOwnHandlesAndArmControl` exit 1
   (`punchArmed()` false);
 - `getPunchAction()` disabled: same test exit 1 (end handle drag expected 960, actual 768).
 - The audio gate pre-dates this unit; its inside/outside proof is `RecordingLatencyTest` exit 0 and
@@ -32,7 +32,7 @@ Feature doc: `docs/050-features/Q050-123.md`.
 
 | # | Criterion | Test | Exit |
 |---|---|---|---|
-| 1 | Lane clip geometry + aligned waveforms in the arrangement; per-take waveforms and active-segment highlight in the comp strip | `ArrangerTimelineTest::takeLaneRowsAlignWaveformsWithTheRulerAndKeepTheCompPanel`; `TakeLanesPanelTest::theStripShowsTakeWaveformsAndTheCompHighlight` | 0 / 0 |
+| 1 | Lane clip geometry + aligned waveforms in the arrangement; per-take waveforms and active-segment highlight in the comp strip | `ArrangerTakePunchTest::takeLaneRowsAlignWaveformsWithTheRulerAndKeepTheCompPanel`; `TakeLanesPanelTest::theStripShowsTakeWaveformsAndTheCompHighlight` | 0 / 0 |
 | 2 | Qt GUI test checks ruler alignment and keeps the existing comp panel | Same two tests (scroll + zoom ruler comparisons; panel controls and strip present) | 0 / 0 |
 
 Reverse proofs:
@@ -60,7 +60,7 @@ exit 1 (`segments.size()` 0 instead of 1).
 - No project-format change. Old projects load with empty/disarmed punch and unchanged rendering;
   new punch state uses the existing optional `<timeline>` attributes. Take-lane display state is
   derived, never saved.
-- Tests run: `ctest -R '^(ArrangerTimelineTest|TakeLanesPanelTest|CanvasKeyboardTest|PunchWindowTest|RecordingLatencyTest)$'`
+- Tests run: `ctest -R '^(ArrangerTakePunchTest|ArrangerTimelineTest|TakeLanesPanelTest|CanvasKeyboardTest|PunchWindowTest|RecordingLatencyTest)$'`
   exit 0 (test-3 log); `python3 tests/control-punch-transcript.py build/zene` exit 0
   (punch-transcript-2 log).
 

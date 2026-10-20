@@ -333,57 +333,68 @@ bool CompSwipeStrip::event(QEvent* event)
 bool CompSwipeStrip::touchEvent(QEvent* genericEvent)
 {
 	auto* event = static_cast<QTouchEvent*>(genericEvent);
-	const auto eventType = event->type();
-	if (eventType == QEvent::TouchCancel)
+	if (event->type() == QEvent::TouchCancel)
 	{
-		m_touchActive = false;
-		m_touchId = -1;
-		m_dragLane = -1;
+		cancelTouch();
+		event->accept();
+		return true;
+	}
+	if (event->type() == QEvent::TouchBegin) { return beginTouch(event); }
+	return followTouch(event);
+}
+
+void CompSwipeStrip::cancelTouch()
+{
+	m_touchActive = false;
+	m_touchId = -1;
+	m_dragLane = -1;
+	update();
+}
+
+bool CompSwipeStrip::beginTouch(QTouchEvent* event)
+{
+	if (m_touchActive) { event->accept(); return true; }
+	for (const auto& point : event->points())
+	{
+		const QPoint pos = touchPos(this, point);
+		const int lane = laneAt(pos.y());
+		if (static_cast<int>(point.state()) != static_cast<int>(Qt::TouchPointPressed) || lane < 0) { continue; }
+		m_touchActive = true;
+		m_touchId = point.id();
+		m_dragLane = lane;
+		m_dragFrom = m_dragTo = tickAt(pos.x());
 		update();
 		event->accept();
 		return true;
 	}
+	return false;
+}
 
-	if (eventType == QEvent::TouchBegin)
-	{
-		if (m_touchActive) { event->accept(); return true; }
-		for (const auto& point : event->points())
-		{
-			const QPoint pos = touchPos(this, point);
-			const int lane = laneAt(pos.y());
-			if (static_cast<int>(point.state()) != static_cast<int>(Qt::TouchPointPressed) || lane < 0) { continue; }
-			m_touchActive = true;
-			m_touchId = point.id();
-			m_dragLane = lane;
-			m_dragFrom = m_dragTo = tickAt(pos.x());
-			update();
-			event->accept();
-			return true;
-		}
-		return false;
-	}
-
+bool CompSwipeStrip::followTouch(QTouchEvent* event)
+{
 	if (!m_touchActive) { return false; }
-
 	for (const auto& point : event->points())
 	{
 		if (point.id() != m_touchId) { continue; }
 		const QPoint pos = touchPos(this, point);
-		if (eventType == QEvent::TouchEnd || static_cast<int>(point.state()) == static_cast<int>(Qt::TouchPointReleased))
+		const bool released = event->type() == QEvent::TouchEnd
+			|| static_cast<int>(point.state()) == static_cast<int>(Qt::TouchPointReleased);
+		if (!released)
 		{
 			m_dragTo = tickAt(pos.x());
+			update();
+		}
+		else
+		{
 			const int lane = m_dragLane;
-			const int from = m_dragFrom;
+			m_dragTo = tickAt(pos.x());
 			const int to = m_dragTo;
+			const int from = m_dragFrom;
 			m_touchActive = false;
 			m_touchId = -1;
 			m_dragLane = -1;
 			commitDrag(lane, from, to);
-			event->accept();
-			return true;
 		}
-		m_dragTo = tickAt(pos.x());
-		update();
 		event->accept();
 		return true;
 	}

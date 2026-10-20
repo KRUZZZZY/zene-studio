@@ -79,34 +79,38 @@ void TakeLaneRows::refreshNow()
 	watch();
 }
 
-void TakeLaneRows::watch()
+std::vector<int> TakeLaneRows::laneIndexes() const
 {
 	std::vector<int> lanes;
-	if (m_track != nullptr)
-	{
-		for (const TakeLane& lane : m_track->takeLanes().lanes()) { lanes.push_back(lane.index); }
-	}
+	if (m_track == nullptr) { return lanes; }
+	for (const TakeLane& lane : m_track->takeLanes().lanes()) { lanes.push_back(lane.index); }
+	return lanes;
+}
 
+std::vector<TakeLaneRows::Band> TakeLaneRows::bandsFor(const std::vector<int>& lanes) const
+{
 	std::vector<Band> bands;
+	if (lanes.empty() || height() <= 0 || m_track == nullptr) { return bands; }
 	const int rows = static_cast<int>(lanes.size());
-	if (rows > 0 && height() > 0)
+	const int rowHeight = std::max(1, height() / rows);
+	for (Clip* clip : m_track->getClips())
 	{
-		const int rowHeight = std::max(1, height() / rows);
-		for (Clip* clip : m_track->getClips())
-		{
-			if (clip == nullptr) { continue; }
-			const int row = static_cast<int>(std::distance(lanes.begin(),
-				std::find(lanes.begin(), lanes.end(), clip->laneIndex())));
-			if (row < 0 || row >= rows) { continue; }
-			const int left = xOfTick(clip->startPosition().getTicks());
-			const int right = std::max(left + 1, xOfTick(clip->endPosition().getTicks()));
-			const int top = row * rowHeight;
-			bands.push_back({clip->laneIndex(), clip->startPosition().getTicks(), clip->endPosition().getTicks(),
-				QRect(left, top + 2, right - left, std::max(2, rowHeight - 4)),
-				QPointer<Clip>(clip)});
-		}
+		if (clip == nullptr) { continue; }
+		const int row = static_cast<int>(std::distance(lanes.begin(),
+			std::find(lanes.begin(), lanes.end(), clip->laneIndex())));
+		if (row < 0 || row >= rows) { continue; }
+		const int left = xOfTick(clip->startPosition().getTicks());
+		const int right = std::max(left + 1, xOfTick(clip->endPosition().getTicks()));
+		const int top = row * rowHeight;
+		bands.push_back({clip->laneIndex(), clip->startPosition().getTicks(), clip->endPosition().getTicks(),
+			QRect(left, top + 2, right - left, std::max(2, rowHeight - 4)), QPointer<Clip>(clip)});
 	}
+	return bands;
+}
 
+void TakeLaneRows::watch()
+{
+	const std::vector<int> lanes = laneIndexes();
 	const bool visible = !lanes.empty();
 	if (visible != isVisible()) { setVisible(visible); }
 	if (!visible)
@@ -121,15 +125,12 @@ void TakeLaneRows::watch()
 	}
 	setGeometry(parentWidget()->rect());
 	raise();
+	const std::vector<Band> bands = bandsFor(lanes);
 	if (lanes != m_lanes || bands != m_bands)
 	{
-		m_lanes = std::move(lanes);
-		m_bands = std::move(bands);
+		m_lanes = lanes;
+		m_bands = bands;
 		update();
-	}
-	else
-	{
-		setGeometry(parentWidget()->rect());
 	}
 }
 

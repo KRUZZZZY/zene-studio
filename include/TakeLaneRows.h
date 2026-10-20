@@ -89,6 +89,8 @@ protected:
 
 private:
 	void watch();
+	std::vector<int> laneIndexes() const;
+	std::vector<Band> bandsFor(const std::vector<int>& lanes) const;
 	int xOfTick(tick_t tick) const;
 	int rowOfLane(int lane) const;
 
