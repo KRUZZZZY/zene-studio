@@ -63,19 +63,20 @@ logs are in
 | Step | Exact command | Exit | Result |
 |---|---|---:|---|
 | Build (fix) | `CCACHE_TEMPDIR=/tmp/zene-ccache-tmp-p8-17 cmake --build build --target zene ControlSuccessPathsTest -j4` | 0 | `build-6-green.log` |
-| GREEN | `ctest -R '^ControlSuccessPathsTest$' --output-on-failure` (from `build/tests`) | 0 | `test-6-green.log`, 1/1 passed, 17/17 slots |
-| Proof: reverse the product | `git apply -R logs/fix.patch` | 0 | `fix.patch` = the round-3 product diff for `src/core/ControlCommandsDocuments.cpp` |
+| GREEN | `ctest -R '^ControlSuccessPathsTest$' --output-on-failure` (from `build/tests`) | 0 | `test-6-green.log`, 1/1 passed |
+| Proof: reverse the product | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-17-port.r5/logs/fix.patch` | 0 | `fix.patch` = the round-3 product diff for `src/core/ControlCommandsDocuments.cpp` |
 | Build (reversed) | `CCACHE_TEMPDIR=/tmp/zene-ccache-tmp-p8-17 cmake --build build --target zene ControlSuccessPathsTest -j4` | 0 | `build-7-reversed.log` |
 | RED | `ctest -R '^ControlSuccessPathsTest$' --output-on-failure` (from `build/tests`) | 8 | `test-7-reversed.log`: `'sameEntries' returned FALSE. (a save-time failure did not give the original session's provenance back: 0 entries instead of 53)`, 16 passed / 1 failed |
-| Re-apply | `git apply logs/fix.patch` | 0 | |
+| Re-apply | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-17-port.r5/logs/fix.patch` | 0 | |
 | Build (restored) | `CCACHE_TEMPDIR=/tmp/zene-ccache-tmp-p8-17 cmake --build build --target zene ControlSuccessPathsTest -j4` | 0 | `build-8-restored.log` |
 | GREEN (final) | `ctest -R '^ControlSuccessPathsTest$' --output-on-failure` (from `build/tests`) | 0 | `test-8-restored.log`, 1/1 passed |
-| feature_check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `feature-check-2.log`: 8 rows PASS, `RESULT: PASS` |
+| Slot count (final) | `QT_QPA_PLATFORM=offscreen ./ControlSuccessPathsTest` (from `build/tests`) | 0 | `test-10-slots.log`: `Totals: 17 passed, 0 failed, 0 skipped` |
+| feature_check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `feature-check-3.log`: 8 rows PASS, `RESULT: PASS` |
 | Complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 | `gate-complexity-2.log`: 6 REGRESSION lines, none in `src/core/ControlCommandsDocuments.cpp` or `tests/src/core/ControlSuccessPathsTest.cpp` |
 | File-length ratchet | `bash tests/file-length-gate.sh --check` | 1 | `gate-file-length-2.log`: 14 REGRESSION lines, none in the two files above (`ControlSuccessPathsTest.cpp` measures 446 code lines, under the 500 limit) |
 
 Affected ctest family: `ControlSuccessPathsTest` - 1 registered ctest, 17 Qt
-slots. RED 16 passed / 1 failed, GREEN 17 passed / 0 failed.
+functions. RED 16 passed / 1 failed, GREEN 17 passed / 0 failed.
 
 `ArrangingCatchUpTest` (the other test that drives `project.new_document`,
 `tests/src/core/ArrangingCatchUpTest.cpp:255`) was run as well
@@ -98,11 +99,11 @@ Each item of the completion check, answered with its evidence.
 
 1. **The regression test FAILS with the product change reverted and PASSES with
    it (exit codes).** RED: `ctest -R '^ControlSuccessPathsTest$' --output-on-failure`
-   after `git apply -R logs/fix.patch` -> EXIT 8,
+   after `git apply -R .../logs/fix.patch` -> EXIT 8,
    `'sameEntries' returned FALSE. (a save-time failure did not give the original
    session's provenance back: 0 entries instead of 53)`, 16 passed / 1 failed
    (`test-7-reversed.log`). GREEN: the same ctest after
-   `git apply logs/fix.patch` -> EXIT 0, 1/1 passed (`test-8-restored.log`);
+   `git apply .../logs/fix.patch` -> EXIT 0, 1/1 passed (`test-8-restored.log`);
    the identical run before the reversal was also EXIT 0 (`test-6-green.log`).
    The reversal takes away exactly the round-3 product hunk (`logs/fix.patch` =
    the diff of `src/core/ControlCommandsDocuments.cpp` between `9057d23ef` and
