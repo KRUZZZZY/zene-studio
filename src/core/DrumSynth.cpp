@@ -211,6 +211,19 @@ float DrumSynth::waveform(float ph, int form)
 	return (saw01 < 0.5f) ? 1.f : -1.f;
 }
 
+// The tone envelope can end at time zero, which leaves no positive duration to divide by.
+static float durationOrOneSample(float duration)
+{
+	return duration == 0.f ? 1.f : duration;
+}
+
+// A tone without a positive envelope duration has no sweep to run, so it keeps its start frequency.
+static float tonePhaseAtSample(float start, float difference, long sample, float duration)
+{
+	if (duration <= 0.f) { return start; }
+	return start + (sample / duration) * difference;
+}
+
 std::size_t DrumSynth::GetPrivateProfileString(const char* sec,
 	const char* key, const char* def, char* buffer, std::size_t size,
 	QString file)
@@ -437,9 +450,10 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	if (TDroopRate > 0.f)
 	{
 		TDroopRate = fastPow10f((TDroopRate - 20.0f) / 30.0f);
-		TDroopRate = TDroopRate * -4.f / envData[1][MAX];
-		TDroop = 1;
-		F2 = F1 + ((F2 - F1) / (1.f - std::exp(TDroopRate * envData[1][MAX])));
+		const float duration = durationOrOneSample(envData[1][MAX]);
+		TDroop = envData[1][MAX] > 0.f;
+		TDroopRate = TDroopRate * -4.f / duration;
+		F2 = F1 + ((F2 - F1) / (1.f - std::exp(TDroopRate * duration)));
 		ddF = F1 - F2;
 	}
 	else
@@ -651,7 +665,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 			{
 				for (t = tpos; t <= tplus; t++)
 				{
-					phi[t - tpos] = F1 + (t / envData[1][MAX]) * ddF;
+					phi[t - tpos] = tonePhaseAtSample(F1, ddF, t, envData[1][MAX]);
 				}
 			}
 			for (t = tpos; t <= tplus; t++)
