@@ -2784,3 +2784,6 @@ tests/src/gui/CPULoadWidgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+# Q050-103 (2026-10-21): the sampler's voice pool and its envelope/voice-reuse test (fork-NEW).
+plugins/AudioFileProcessor/SamplerVoicePool.h
+tests/src/core/SamplerEnvelopeVoiceTest.cpp

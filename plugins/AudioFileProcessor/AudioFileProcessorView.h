@@ -38,6 +38,7 @@ class AutomatableButtonGroup;
 class Knob;
 class PixmapButton;
 class ComboBox;
+class LcdSpinBox;
 class AudioFileProcessorWaveView;
 
 
@@ -76,6 +77,9 @@ private:
 	AutomatableButtonGroup* m_loopGroup;
 	PixmapButton* m_stutterButton;
 	ComboBox* m_interpBox;
+	Knob* m_attackKnob;
+	Knob* m_releaseKnob;
+	LcdSpinBox* m_voiceLimitBox;
 } ;
 
 } // namespace gui

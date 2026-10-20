@@ -34,6 +34,12 @@
 
 #include <QDomElement>
 
+#include "ExportRenderSettings.h"
+
+#include <algorithm>
+#include <memory>
+#include <new>
+
 
 namespace lmms
 {
@@ -76,6 +82,13 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 	m_loopModel( 0, 0, 2, this, tr( "Loop mode" ) ),
 	m_stutterModel( false, this, tr( "Stutter" ) ),
 	m_interpolationModel( this, tr( "Interpolation mode" ) ),
+	// The release default is the 3 ms the sampler always applied; attack 0 changes nothing.
+	m_attackModel( 0.f, 0.f, 2000.f, 0.1f, this, tr( "Attack" ) ),
+	m_releaseModel( 3.f, 0.f, 5000.f, 0.1f, this, tr( "Release" ) ),
+	m_voiceLimitModel( SamplerVoicePool::MaxVoices, 1, SamplerVoicePool::MaxVoices, this, tr( "Voice limit" ) ),
+	// Built for the converter Sample::play asks for, so a note start never re-creates a converter state.
+	m_voices( std::make_unique<SamplerVoicePool>(
+		AudioResampler::modeForSrcQuality( ExportRenderSettings::srcQuality() ) ) ),
 	m_nextPlayStartPoint( 0 ),
 	m_nextPlayBackwards( false )
 {
@@ -104,6 +117,33 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 
 
 
+int AudioFileProcessor::activeVoices() const
+{
+	return m_voices->activeVoices();
+}
+
+
+
+
+void AudioFileProcessor::applyAttack(SampleFrame* dst, f_cnt_t frames, f_cnt_t firstFrame) const
+{
+	const float attackMs = m_attackModel.value();
+	if (attackMs <= 0.f) { return; }
+
+	const f_cnt_t attackFrames = std::max<f_cnt_t>(1, static_cast<f_cnt_t>(std::ceil(attackMs * getSampleRate() / 1000.f)));
+	if (firstFrame >= attackFrames) { return; }
+
+	const f_cnt_t last = std::min(frames, attackFrames - firstFrame);
+	for (f_cnt_t f = 0; f < last; ++f)
+	{
+		const float gain = static_cast<float>(firstFrame + f) / static_cast<float>(attackFrames);
+		for (ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch) { dst[f][ch] *= gain; }
+	}
+}
+
+
+
+
 void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out)
 {
 	const f_cnt_t frames = nph->framesLeftForCurrentPeriod();
@@ -119,8 +159,16 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 		return;
 	}
 
-	if( !nph->m_pluginData )
+	SamplerVoicePool* const pool = m_voices.get();
+
+	auto* handle = static_cast<NoteVoice*>(nph->m_pluginData);
+	if( !handle )
 	{
+		// First period of this note: take a voice (a free one, or the reuse policy's) - no allocation.
+		handle = std::construct_at(static_cast<NoteVoice*>(nph->pluginDataStorage()));
+		nph->m_pluginData = handle;
+		handle->claim = pool->acquire(m_voiceLimitModel.value());
+
 		if (m_stutterModel.value() == true && m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame()))
 		{
 			// Restart playing the note if in stutter mode, not in loop mode,
@@ -128,40 +176,35 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 			m_nextPlayStartPoint = m_sample.startFrame();
 			m_nextPlayBackwards = false;
 		}
-		// set interpolation mode for libsamplerate
-		auto interpolationMode = AudioResampler::Mode::Linear;
-		switch( m_interpolationModel.value() )
+		if (handle->claim.valid())
 		{
-			case 0:
-				interpolationMode = AudioResampler::Mode::ZOH;
-				break;
-			case 1:
-				interpolationMode = AudioResampler::Mode::Linear;
-				break;
-			case 2:
-				interpolationMode = AudioResampler::Mode::SincMedium;
-				break;
+			auto& state = pool->voice(handle->claim.index).state;
+			state.setFrameIndex(m_nextPlayStartPoint);
+			state.setBackwards(m_nextPlayBackwards);
 		}
-
-		nph->m_pluginData = new Sample::PlaybackState(interpolationMode);
-		static_cast<Sample::PlaybackState*>(nph->m_pluginData)->setFrameIndex(m_nextPlayStartPoint);
-		static_cast<Sample::PlaybackState*>(nph->m_pluginData)->setBackwards(m_nextPlayBackwards);
-
-// debug code
-/*		qDebug( "frames %d", m_sample->frames() );
-		qDebug( "startframe %d", m_sample->startFrame() );
-		qDebug( "nextPlayStartPoint %d", m_nextPlayStartPoint );*/
 	}
+
+	// The note's voice is gone: the reuse policy took it (and the fade-out finished), or every voice was taken when the
+	// note started. Either way the note is silent from here.
+	if (!pool->owns(handle->claim))
+	{
+		zeroSampleFrames(out.data(), frames + offset);
+		publishPlayhead( 0 );
+		return;
+	}
+
+	auto& voice = pool->voice(handle->claim.index);
+	if (nph->isReleased()) { pool->markReleased(handle->claim); }
 
 	if( ! nph->isFinished() )
 	{
-		if (m_sample.play(out.data() + offset,
-						static_cast<Sample::PlaybackState*>(nph->m_pluginData),
+		if (m_sample.play(out.data() + offset, &voice.state,
 						frames, static_cast<Sample::Loop>(m_loopModel.value()),
 						DefaultBaseFreq / nph->frequency()))
 		{
+			applyAttack(out.data() + offset, frames, nph->totalFramesPlayed());
 			applyRelease(out.data(), nph);
-			publishPlayhead(static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex());
+			publishPlayhead(voice.state.frameIndex());
 		}
 		else
 		{
@@ -173,10 +216,31 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 	{
 		publishPlayhead( 0 );
 	}
+
+	if (pool->isStolen(handle->claim))
+	{
+		// The reuse policy chose this note's voice: fade the note out over a few milliseconds, then hand the voice on.
+		const f_cnt_t fadeFrames = std::max<f_cnt_t>(1,
+			static_cast<f_cnt_t>(std::ceil(SamplerVoicePool::StealFadeMs * getSampleRate() / 1000.f)));
+		f_cnt_t done = voice.stealFramesDone;
+		SampleFrame* dst = out.data() + offset;
+		for (f_cnt_t f = 0; f < frames; ++f, ++done)
+		{
+			const float gain = done >= fadeFrames ? 0.f : 1.f - static_cast<float>(done) / static_cast<float>(fadeFrames);
+			for (ch_cnt_t ch = 0; ch < DEFAULT_CHANNELS; ++ch) { dst[f][ch] *= gain; }
+		}
+		voice.stealFramesDone = done;
+		if (done >= fadeFrames)
+		{
+			pool->free(handle->claim);
+			return;
+		}
+	}
+
 	if( m_stutterModel.value() == true )
 	{
-		m_nextPlayStartPoint = static_cast<Sample::PlaybackState*>(nph->m_pluginData)->frameIndex();
-		m_nextPlayBackwards = static_cast<Sample::PlaybackState*>(nph->m_pluginData)->backwards();
+		m_nextPlayStartPoint = voice.state.frameIndex();
+		m_nextPlayBackwards = voice.state.backwards();
 	}
 }
 
@@ -199,7 +263,9 @@ void AudioFileProcessor::pollPlayhead()
 
 void AudioFileProcessor::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<Sample::PlaybackState*>(_n->m_pluginData);
+	auto* handle = static_cast<NoteVoice*>(_n->m_pluginData);
+	m_voices->free(handle->claim);
+	std::destroy_at(handle);
 }
 
 
@@ -220,6 +286,9 @@ void AudioFileProcessor::saveSettings(QDomDocument& doc, QDomElement& elem)
 	m_loopPointModel.saveSettings(doc, elem, "lframe");
 	m_stutterModel.saveSettings(doc, elem, "stutter");
 	m_interpolationModel.saveSettings(doc, elem, "interp");
+	m_attackModel.saveSettings(doc, elem, "atk");
+	m_releaseModel.saveSettings(doc, elem, "rel");
+	m_voiceLimitModel.saveSettings(doc, elem, "voices");
 }
 
 
@@ -266,6 +335,12 @@ void AudioFileProcessor::loadSettings(const QDomElement& elem)
 	{
 		m_interpolationModel.setValue(1.0f); // linear by default
 	}
+
+	// Projects from before Q050-103 carry none of these: a missing one loads its default (attack 0, release 3 ms,
+	// the full voice limit), which renders the sampler exactly as those projects always did.
+	m_attackModel.loadSettings(elem, "atk");
+	m_releaseModel.loadSettings(elem, "rel");
+	m_voiceLimitModel.loadSettings(elem, "voices");
 
 	pointChanged();
 	emit sampleUpdated();

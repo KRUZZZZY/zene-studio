@@ -837,6 +837,8 @@ set(LMMS_TESTS
 	# Cluster new-p12-315: the playhead leaves the render thread - playback must
 	# not emit isPlaying synchronously, and the GUI poll delivers the coalesced value.
 	src/core/AudioFileProcessorPlayheadTest.cpp
+	# 0.5.0 Q050-103: the sampler's attack/release envelope and voice-reuse policy, rendered through the real module.
+	src/core/SamplerEnvelopeVoiceTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
 	src/core/CustomAccessTest.cpp
@@ -1824,6 +1826,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
 		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
+		OR LMMS_TEST_NAME STREQUAL "SamplerEnvelopeVoiceTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
@@ -1851,6 +1854,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
+
+	# Q050-103: the envelope and voice-reuse test renders through the build's audiofileprocessor module.
+	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeVoiceTest")
+		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()
 
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
