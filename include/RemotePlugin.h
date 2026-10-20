@@ -197,13 +197,12 @@ public:
 	//! MIDI events refused because the hand-off queue was full, since construction.
 	std::uint64_t midiEventsDropped() const { return m_midiOverflow.recorded(); }
 
-	void updateSampleRate( sample_rate_t _sr )
-	{
-		lock();
-		sendMessage( message( IdSampleRateInformation ).addInt( _sr ) );
-		waitForReplyWithin( message( IdInformationUpdated ) );
-		unlock();
-	}
+	//! Tells the client which sample rate to run at. The client acknowledges the new
+	//! rate with IdInformationUpdated; a client that does not acknowledge it is still
+	//! running at the old one, and the two sides would render at different rates -
+	//! so the plugin is failed instead of carrying on with a rate the client never
+	//! took. Main thread: a rate change is a main-thread event.
+	void updateSampleRate( sample_rate_t _sr );
 
 
 	virtual void toggleUI()

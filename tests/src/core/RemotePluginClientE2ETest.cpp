@@ -1322,6 +1322,64 @@ private slots:
 		QVERIFY2(plugin.failed(), "the protocol failure was erased by the host-info wait");
 	}
 
+	/*!
+	 * A sample-rate update the client does not acknowledge must not be treated as
+	 * successful.
+	 *
+	 * The host tells the client which rate to run at, and the client acknowledges it
+	 * with IdInformationUpdated. A client that does not acknowledge it is still
+	 * running at the old rate while this host renders at the new one, so the two
+	 * sides disagree about the rate - the silent wrong audio the acknowledgement
+	 * exists to prevent. The plugin must be failed instead of carrying on.
+	 */
+	void unansweredSampleRateUpdateFailsThePlugin()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the sample-rate "
+				"acknowledgement is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("deafsamplerate")}),
+			"could not start/connect the deaf fake client");
+		QVERIFY(!plugin.failed());
+
+		plugin.updateSampleRate(Engine::audioEngine()->outputSampleRate());
+
+		QVERIFY2(plugin.failed(), "an unacknowledged sample-rate update was treated as successful");
+	}
+
+	/*!
+	 * The positive control for the check above: a client that acknowledges the new
+	 * rate is not failed.
+	 *
+	 * The stand-in client answers IdSampleRateInformation with IdInformationUpdated,
+	 * exactly like the real client does, so the plugin keeps running at the rate the
+	 * host told it to use.
+	 */
+	void acknowledgedSampleRateUpdateKeepsThePlugin()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the sample-rate "
+				"acknowledgement is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client),
+			"could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		plugin.updateSampleRate(Engine::audioEngine()->outputSampleRate());
+
+		QVERIFY2(!plugin.failed(), "an acknowledged sample-rate update failed the plugin");
+	}
+
 private:
 	std::unique_ptr<MessageRecorder> m_recorder;
 };

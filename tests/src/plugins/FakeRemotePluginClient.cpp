@@ -132,6 +132,12 @@ constexpr std::size_t BigDebugBytes = 900000;
 //! "deafquery" mode: the client never answers IdIsUIVisible, as a hung editor would not.
 bool g_deafQuery = false;
 
+//! "deafsamplerate" mode: the client never acknowledges a sample-rate update (no
+//! IdInformationUpdated), as a client that is busy or broken would not. Every other
+//! mode acknowledges it, exactly like the real client (RemotePluginClient::
+//! processMessage answers IdSampleRateInformation with IdInformationUpdated).
+bool g_deafSampleRate = false;
+
 //! "badhostinfo" mode: when the host asks for the client's host info (IdSyncKey), the
 //! client first sends a message the host has to refuse - the retired single-count id
 //! IdChangeInputCount - and only then the IdHostInfoGotten itself. The host refuses
@@ -412,6 +418,13 @@ auto handleMessage(const Message& message) -> bool
 		if (!message.args.empty()) { attachSharedBlock(message.args[0]); }
 		break;
 
+	case IdSampleRateInformation:
+		// The real client takes the new rate and acknowledges it
+		// (RemotePluginClient::processMessage). "deafsamplerate" is the client that
+		// does not: it keeps running at the old rate.
+		if (!g_deafSampleRate && !sendMessage(IdInformationUpdated, {})) { return false; }
+		break;
+
 	case IdBufferSizeInformation:
 		// The host sends (and replies with) its frame count. This is the value
 		// a client lays its planes out with (RemotePluginClient::bufferSize()).
@@ -628,7 +641,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery|badhostinfo]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery|badhostinfo|deafsamplerate]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -647,11 +660,12 @@ int main(int argc, char** argv)
 	g_dropQuery = mode == "dropquery";
 	g_emptyQuery = mode == "emptyquery";
 	g_badHostInfo = mode == "badhostinfo";
+	g_deafSampleRate = mode == "deafsamplerate";
 	g_garbage = mode == "garbage";
 	g_halfHandshake = mode == "halfhandshake";
 	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
 		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage", "dropquery",
-		"emptyquery", "badhostinfo"};
+		"emptyquery", "badhostinfo", "deafsamplerate"};
 	if (std::find_if(std::begin(knownModes), std::end(knownModes),
 			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{

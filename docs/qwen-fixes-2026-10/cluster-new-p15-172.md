@@ -4,7 +4,7 @@
 
 new-p15-172: FIXED
 new-p14-255: FIXED
-new-p14-256: NEEDS-CONTEXT
+new-p14-256: FIXED
 
 Same-file batch: three bugs in `include/RemotePlugin.h` (the RPC base of the
 out-of-process plugin hosting). Each one is decided, fixed and proved on its
@@ -217,10 +217,171 @@ order, the host reads them in that order, and nothing waits for a clock.
 
 **Verdict: FIXED**
 
-(filled in below)
+### The bug (REAL)
+
+`include/RemotePlugin.h:190-196` (before the fix) -
+
+```cpp
+	void updateSampleRate( sample_rate_t _sr )
+	{
+		lock();
+		sendMessage( message( IdSampleRateInformation ).addInt( _sr ) );
+		waitForReplyWithin( message( IdInformationUpdated ) );
+		unlock();
+	}
+```
+
+`waitForReplyWithin()` is the **bounded** wait: it gives up after
+`QueryReplyTimeout` (100 ms, `include/RemotePlugin.h:209`) and returns an
+undefined message. The reply was thrown away, so the host went on rendering at
+the new rate while the client - which never acknowledged `IdSampleRateInformation`
+- went on rendering at the old one. The two sides then disagree about the
+sample rate, which is the silent wrong audio the acknowledgement exists to
+prevent; the host has no way to tell the client to go back.
+
+The client half of the protocol answers this message with `IdInformationUpdated`
+(`include/RemotePluginClient.h:261-269`), so a client that does not answer is
+broken, busy or gone.
+
+Caller: `plugins/ZynAddSubFx/ZynAddSubFx.cpp:558` (the Zyn instrument's
+out-of-process host) is the only one in the tree.
+
+### The fix (at the cause)
+
+The reply is now checked, and a client that does not acknowledge the new rate
+fails the plugin (which silences it - `process()` renders silence for a failed
+plugin, `src/core/RemotePlugin.cpp:470-474`) instead of continuing with two
+different rates:
+
+* `include/RemotePlugin.h:200-206` - the declaration, with the contract in the
+  comment.
+* `src/core/RemotePlugin.cpp:801-817` - the definition:
+  `waitForReplyWithin()`'s result is compared with `IdInformationUpdated`; an
+  unanswered update logs one `qCritical` line and sets `m_failed = true`.
+
+The function moved out of line (it was inline in the header) so that the
+diagnostic can be logged from the .cpp, which already includes `<QDebug>`; the
+header and the definition changed together.
+
+**Realtime / undo / commands:** the call is a main-thread event (a rate
+change), the flag is the existing `std::atomic<bool> m_failed`, no new
+allocation, lock, wait or command was added, and the bounded wait itself is
+unchanged (100 ms, as before).
+
+### The regression
+
+`tests/src/core/RemotePluginClientE2ETest.cpp:1339` -
+`unansweredSampleRateUpdateFailsThePlugin()`: the stand-in client
+(`tests/src/plugins/FakeRemotePluginClient.cpp`, the new `deafsamplerate` mode)
+never acknowledges a sample-rate update, and the plugin must be failed.
+
+The positive control is the same test's sibling
+`acknowledgedSampleRateUpdateKeepsThePlugin()` (line 1372): the stand-in client
+now answers `IdSampleRateInformation` with `IdInformationUpdated` exactly like
+the real client does, and a plugin whose client acknowledged the new rate keeps
+running. The fixture change is what makes the control meaningful - before it,
+the stand-in never answered and the control could not have passed.
+
+The test is deterministic: the client either answers or it does not, and the
+host's bounded wait is the production behaviour being tested (the verdict does
+not depend on how long the wait took).
+
+### Evidence (new-p14-256)
+
+| Check | Command (exact) | Exit/result |
+|---|---|---|
+| GREEN build after the fix (`build-10-p14-256.log`) | `cmake --build build --target RemotePluginClientE2ETest FakeRemotePluginClient zene -j 8 > .../build-10-p14-256.log 2>&1; echo EXIT=$?` | 0 |
+| GREEN after the fix (`test-10-p14-256.log`) | `ctest -R '^RemotePluginClientE2ETest$' --output-on-failure > .../test-10-p14-256.log 2>&1; echo EXIT=$?` | **0**; 1/1 passed |
+| PROOF: remove the product patch (`fix.patch`) | `git diff -- include/RemotePlugin.h src/core/RemotePlugin.cpp > .../fix.patch && git apply -R .../fix.patch; echo EXIT=$?` | 0 (both the declaration and the definition) |
+| PROOF: rebuild without the fix (`build-11-p14-256-red.log`) | `cmake --build build --target RemotePluginClientE2ETest -j 8 > .../build-11-p14-256-red.log 2>&1; echo EXIT=$?` | 0 |
+| PROOF: RED without the fix (`test-11-p14-256-red.log`) | `ctest -R '^RemotePluginClientE2ETest$' --output-on-failure > .../test-11-p14-256-red.log 2>&1; echo EXIT=$?` | **8**; `unansweredSampleRateUpdateFailsThePlugin()` - *"'plugin.failed()' returned FALSE. (an unacknowledged sample-rate update was treated as successful)"*; 28 passed, 1 failed |
+| PROOF: restore the patch (`build-12-p14-256-green.log`) | `git apply .../fix.patch; echo EXIT=$?` then `cmake --build build --target RemotePluginClientE2ETest -j 8 > .../build-12-p14-256-green.log 2>&1; echo EXIT=$?` | 0; 0 |
+| PROOF: GREEN with the fix again (`test-12-p14-256-green.log`) | `ctest -R '^RemotePluginClientE2ETest$' --output-on-failure > .../test-12-p14-256-green.log 2>&1; echo EXIT=$?` | **0**; 1/1 passed |
+| Dependent rebuild, every target that includes the header (`build-13-p14-256-deps.log`) | `cmake --build build --target zene lmmsobjs RemotePluginAudioPortsTest RemotePluginClientE2ETest FakeRemotePluginClient ZynSeparateProcessTest vestige vsteffect ZynAddSubFxCore RemoteZynAddSubFx RemoteVstPlugin64 NativeLinuxRemoteVstPlugin64 -j 8 > .../build-13-p14-256-deps.log 2>&1; echo EXIT=$?` | 0 |
+| Affected-family run (`test-13-p14-256-family.log`) | `ctest -R 'RemotePlugin\|ZynSeparateProcess' --output-on-failure > .../test-13-p14-256-family.log 2>&1; echo EXIT=$?` | **0**; 3/3 passed (RemotePluginAudioPortsTest, RemotePluginClientE2ETest, ZynSeparateProcessTest) |
+| The **real** client acknowledges the rate (no collateral damage) | `./RemotePluginClientE2ETest` (29 passed, 0 skipped - the real-client case runs) and `./ZynSeparateProcessTest` (6 passed; no "did not acknowledge" line) | 0; 0 |
 
 ---
 
 ## Self-check
 
-(filled in at the end of the batch)
+**1. Does each regression test FAIL with the product change reverted and PASS with
+it?**
+
+Yes, one RED/GREEN proof per bug, each with the product patch reversed and
+re-applied (`git apply -R` / `git apply` of the recorded `fix.patch`):
+
+| Bug | RED (product patch reverted) | GREEN (patch restored) |
+|---|---|---|
+| new-p15-172 | `ctest -R '^RemotePluginAudioPortsTest$'` -> **exit 8**, `runningStateIsCachedNotReadFromTheProcess()` and `cachedRunningStateFollowsTheProcessLifecycle()` both fail | `ctest -R '^RemotePluginAudioPortsTest$'` -> **exit 0** |
+| new-p14-255 | `ctest -R '^RemotePluginClientE2ETest$'` -> **exit 8**, `hostInfoWaitKeepsAnEarlierProtocolFailure()` fails | `ctest -R '^RemotePluginClientE2ETest$'` -> **exit 0** |
+| new-p14-256 | `ctest -R '^RemotePluginClientE2ETest$'` -> **exit 8**, `unansweredSampleRateUpdateFailsThePlugin()` fails | `ctest -R '^RemotePluginClientE2ETest$'` -> **exit 0** |
+
+**2. Is the test deterministic - no wall-clock timing, sleeps or races?**
+
+Yes. The seams are:
+
+* new-p15-172: the `LMMS_TESTING` friend declaration in
+  `include/RemotePlugin.h` lets the test steer the cached running state
+  (`CachedRunningState::steer()`) and emit the `QProcess`' `finished()` signal
+  (`CachedRunningState::finishProcess()`) directly. The probe is fail-closed,
+  so in the unfixed tree the test **fails at run time** (it does not fail to
+  compile) - which is what the RED proof above shows.
+* new-p14-255: the stand-in client sends a fixed message sequence (retired id,
+  then `IdHostInfoGotten`); the host reads them in that order. No clock.
+* new-p14-256: the stand-in client either answers the rate update or does not;
+  the host's 100 ms bound is the production behaviour under test, and the
+  verdict does not depend on how long the wait took. The positive control
+  proves the other branch.
+
+**3. Is the fix at the cause and complete - every caller and sibling checked?**
+
+* new-p15-172: `m_process.state()` is read in exactly two places -
+  `isRunning()` (fixed) and `~RemotePlugin()` (left alone on purpose: after
+  `m_watcher.wait()` the `QProcess` has been moved back to the plugin's thread
+  by `ProcessWatcher::run()`, so that read is same-thread).
+  `hostProcessId()` also reads the `QProcess`, but its header documents it as
+  a deliberate query and its callers are main-thread ones
+  (`plugins/ZynAddSubFx/ZynAddSubFx.cpp:450`,
+  `src/core/ControlCommandsOutOfProcessSupport.cpp:181`) - not the audio thread
+  this bug is about.
+* new-p14-255: the sibling `waitForInitDone()` (`src/core/RemotePlugin.cpp:
+  402-403`) already had the "preserve the failure" contract; the fix makes
+  `waitForHostInfoGotten()` match it. The only caller is
+  `plugins/VstBase/VstPlugin.cpp:217`, which reads `failed()` right after the
+  wait - so the preserved verdict is what that check now sees.
+* new-p14-256: the only caller is `plugins/ZynAddSubFx/ZynAddSubFx.cpp:558`;
+  the client half that has to answer is `include/RemotePluginClient.h:261-269`
+  (`IdSampleRateInformation` -> `IdInformationUpdated`), and both in-tree
+  remote clients use it. The VST path has its own `updateSampleRate()`
+  (`plugins/VstBase/VstPlugin.cpp:349`) and is not touched.
+
+**4. No collateral damage?**
+
+* No project data, save format or command surface is touched: the three
+  changes are in the remote-plugin RPC layer. No command was added, nothing
+  on the audio thread allocates, frees, locks, waits or logs (the new atomic
+  load replaces a `QProcess::state()` call).
+* The new failure verdict in `updateSampleRate()` only fires for a client that
+  does not acknowledge the rate; the real client does, and the real-client
+  cases pass (29/29 in `RemotePluginClientE2ETest`, including the
+  `RemoteZynAddSubFx` case that calls `updateSampleRate()`; 6/6 in
+  `ZynSeparateProcessTest`, with no "did not acknowledge" line).
+* The new failure verdict in `waitForHostInfoGotten()` only fires for a client
+  that violates the protocol; the VST handshake is unchanged for a well-behaved
+  client.
+* The cached running state follows the client exactly as `QProcess::state()`
+  did (true from the start of the process until it ends), so no caller sees a
+  different answer than before.
+* One pre-existing flake was found and is **not** caused by this batch:
+  `RemotePluginClientE2ETest::midiSentPerPeriodIsCapped()` fails under heavy
+  machine load (the host's non-blocking send finds no room, so a period is
+  skipped and the client sees more than one period's MIDI events). Measured
+  with the pristine `HEAD~1` product code and with this branch's code, 8
+  interleaved runs each under 16 spinners: 6/8 failures on both
+  (`logs/flake-capper-pre-existing.log`).
+
+**5. Verdict evidence (ALREADY-FIXED / FALSE-POSITIVE)?**
+
+Not applicable - all three bugs are REAL and FIXED; the evidence for each is
+the code quoted above (the pre-fix source lines) plus the RED/GREEN proof.

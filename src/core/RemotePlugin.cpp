@@ -798,6 +798,24 @@ void RemotePlugin::showUI()
 	unlock();
 }
 
+void RemotePlugin::updateSampleRate( sample_rate_t _sr )
+{
+	lock();
+	sendMessage( message( IdSampleRateInformation ).addInt( _sr ) );
+	// The client acknowledges the new rate with IdInformationUpdated. A client that
+	// does not acknowledge it is still running at the old rate while this host
+	// renders at the new one - the two sides would disagree about the rate, which
+	// is the silent wrong audio the acknowledgement exists to prevent. The plugin is
+	// failed instead of carrying on with a rate the client never took.
+	const message reply = waitForReplyWithin( message( IdInformationUpdated ) );
+	if( reply.id != IdInformationUpdated )
+	{
+		qCritical() << "RemotePlugin: the remote client did not acknowledge the new sample rate; the plugin is failed";
+		m_failed = true;
+	}
+	unlock();
+}
+
 void RemotePlugin::hideUI()
 {
 	lock();
