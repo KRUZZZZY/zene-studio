@@ -493,6 +493,11 @@ private slots:
 		onRoute.setAttribute(QStringLiteral("depth"), QStringLiteral("0.5"));
 		onRoute.setAttribute(QStringLiteral("persample"), QStringLiteral("1"));
 		off.appendChild(onRoute);
+		// A route without a parameter is ignored, so its unrelated malformed flag
+		// must not make this otherwise valid modulator disappear.
+		QDomElement unnamedRoute = valid.createElement(QStringLiteral("route"));
+		unnamedRoute.setAttribute(QStringLiteral("persample"), QStringLiteral("bad"));
+		off.appendChild(unnamedRoute);
 		validRoot.appendChild(off);
 		QDomElement plain = valid.createElement(QStringLiteral("modulator"));
 		plain.setAttribute(QStringLiteral("name"), QStringLiteral("Plain"));

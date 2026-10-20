@@ -162,9 +162,9 @@ parameter= depth=/>` per route.
 - **A corrupt or empty block loads as an EMPTY layer**, never a repaired one: a modulator whose rate
   or phase is outside the engine's bounds is refused rather than clamped, and a route with no
   parameter name is dropped. `ModulationLayerTest::aCorruptBlockLoadsAsAnEmptyLayer` measures all
-  three shapes. A boolean (`unipolar`, `active`, `pervoice`, a route's `persample`) that is present
-  and is not `0` or `1` refuses its modulator, as a malformed phase does; `active="bad"` must not
-  load as an inactive modulator. `ModulationLayerTest::aMalformedBooleanIsRefused` measures it.
+  three shapes. A boolean (`unipolar`, `active`, `pervoice`, or `persample` on a named route) that is
+  present and is not `0` or `1` refuses its modulator, as a malformed phase does; `active="bad"` must
+  not load as an inactive modulator. `ModulationLayerTest::aMalformedBooleanIsRefused` measures it.
   Nothing is guessed, so a truncated block degrades to "no modulation" rather than to something
   nobody authored.
 - `ModulationLayerTest::theLayerPersistsAndReloads` requires saved = loaded = re-saved.

@@ -183,7 +183,7 @@ ModulationRoute readRoute(const QDomElement& element)
 	return route;
 }
 
-//! The routes of one <modulator>, each named and checked. False when a route's
+//! The named routes of one <modulator>, each checked. False when a named route's
 //! flag is present and is not "0" or "1"; \a routes then holds nothing useful.
 bool readRoutes(const QDomElement& node, QList<ModulationRoute>* routes)
 {
@@ -193,8 +193,8 @@ bool readRoutes(const QDomElement& node, QList<ModulationRoute>* routes)
 		const QDomElement routeElement = routeNodes.at(r).toElement();
 		if (routeElement.isNull()) { continue; }
 		ModulationRoute route = readRoute(routeElement);
-		if (!readRouteFlags(routeElement, &route)) { return false; }
 		if (route.parameter.isEmpty()) { continue; }
+		if (!readRouteFlags(routeElement, &route)) { return false; }
 		routes->append(route);
 	}
 	return true;
@@ -209,8 +209,9 @@ bool readRoutes(const QDomElement& node, QList<ModulationRoute>* routes)
  *  that can never resolve.
  *
  *  A boolean that is present and is not "0" or "1" refuses the block the same
- *  way, route flags included: every route is read and checked before the
- *  modulator is added, so a corrupt route leaves nothing half-loaded.
+ *  way, including flags on named routes: each named route is checked before the
+ *  modulator is added, so a corrupt route leaves nothing half-loaded. A route
+ *  without a parameter is still ignored.
  */
 bool loadModulator(const QDomElement& node, ModulationLayer* layer)
 {

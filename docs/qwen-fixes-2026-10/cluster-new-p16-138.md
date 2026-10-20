@@ -31,8 +31,9 @@ it: `loadSettings()` returned true for `active="bad"`.
   (fallback false). `readRouteFlags` (`:155`) reads `persample` (fallback false).
 - `readSource` (`:160`) / `readRoute` (`:174`) no longer parse those flags; they keep the other fields
   unchanged.
-- `readRoutes` (`:188`) reads every route and checks its flag before anything is added, so one corrupt
-  route refuses the whole `<modulator>` and nothing is left half-loaded. It was extracted from
+- `readRoutes` (`:188`) keeps the existing route-without-parameter drop, then checks flags on each
+  named route before anything is added, so one corrupt named route refuses the whole `<modulator>`
+  and nothing is left half-loaded. It was extracted from
   `loadModulator` to keep that function at CCN 8 (the gate's limit is 10; the first version measured 11).
 - `loadModulator` (`:215`): `readSourceFlags` joins the phase check (`:220`); the route loop now calls
   `readRoutes` (`:228`), and routes are added only after `addModulator` succeeds, as before.
@@ -54,7 +55,9 @@ Deterministic: a DOM built in memory, no timing, no seam needed. It checks:
 1. `active`, `unipolar`, `pervoice` each set to `"bad"` on a `<modulator>` make `loadSettings` return
    false with `modulatorCount() == 0`.
 2. `persample="bad"` on a `<route>` refuses the whole modulator.
-3. `"0"`/`"1"` read as written, and absent flags keep defaults (checked on a second, valid layer).
+3. `persample="bad"` on a route without a parameter leaves that route ignored; it does not discard
+   a modulator with a named route.
+4. `"0"`/`"1"` read as written, and absent flags keep defaults (checked on a second, valid layer).
 
 ## Evidence (exact commands, EXIT codes; logs in `…/logs/`)
 
@@ -122,8 +125,9 @@ No new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt`
 - **Deterministic.** The test builds its DOM in memory and runs no timer, sleep or thread. No seam
   needed; the input is the XML attribute text.
 - **Fix at the cause and complete.** The four boolean reads (`unipolar`, `active`, `pervoice`,
-  `persample`) are all covered by `readSourceFlags`/`readRouteFlags`. The route path is checked before
-  the modulator is added. Save-side and other XML readers were checked as described above.
+  `persample`) are all covered by `readSourceFlags`/`readRouteFlags`; the latter applies to named
+  routes before the modulator is added. Unnamed routes remain ignored. Save-side and other XML readers
+  were checked as described above.
 - **No collateral damage.** The writer has only ever written `0`/`1` (`git log -p`), so every saved
   project still loads the same. The changed refusal applies only to values that never came from this
   writer. The family and related tests pass (6 tests, 0 failed).
@@ -135,3 +139,33 @@ No new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt`
   from this sandbox. BLOCKED on that one row; every gate command it runs was run directly (table above),
   and the two ratchets exit 1 only on items in unchanged files. The runner needs a re-run from outside
   the jail to confirm its table.
+
+## Independent QA reviewer follow-up (2026-10-20)
+
+The reviewer found that the first version validated `persample` before dropping a route with no
+`parameter`. That changed the old behavior for an inert route, so `readRoutes` now drops unnamed routes
+before checking their boolean flags. `aMalformedBooleanIsRefused` covers both a bad `persample` on a
+named route (refused) and one on an unnamed route (ignored while its named route still loads).
+
+- Final build: `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p16-138 cmake --build build --target zene ModulationLayerTest ModulationLayerProjectRoundTripTest ModulationRateTest -j4` — EXIT 0 (`qa-build-4-final.log`).
+- Focused ctests, each from `build/tests`:
+
+  ```sh
+  ctest -R '^ModulationLayerTest$' --output-on-failure
+  ctest -R '^ModulationLayerProjectRoundTripTest$' --output-on-failure
+  ctest -R '^ModulationRateTest$' --output-on-failure
+  ```
+
+  Each exited 0 with 1/1 passed (`qa-test-4-ModulationLayerTest.log`,
+  `qa-test-5-ModulationLayerProjectRoundTripTest.log`, `qa-test-6-ModulationRateTest.log`).
+- QA correction reversal: `git diff -- src/core/ModulationLayer.cpp > /tmp/new-p16-138-qa-product.patch`
+  and `git apply -R /tmp/new-p16-138-qa-product.patch` each exited 0; rebuilding `zene ModulationLayerTest`
+  exited 0 (`qa-build-2-reversed.log`). Then `ctest -R '^ModulationLayerTest$' --output-on-failure`
+  from `build/tests` exited 8: `aMalformedBooleanIsRefused` found one loaded modulator, expected two
+  (`qa-test-2-reversed.log`). Applying the patch again exited 0; the final build and focused tests above
+  passed.
+- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p16-138`
+  exited 0; all gates passed and both ratchets found no new changed-file items (`qa-gate-2-feature-check.log`).
+
+The original completion-check limitation was specific to the fixer's sandbox. The independent review
+ran `feature_check.py` successfully, so that limitation is resolved for this review.
