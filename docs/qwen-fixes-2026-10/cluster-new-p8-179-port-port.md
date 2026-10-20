@@ -70,6 +70,34 @@ FAIL!  : UpnpMapperFakeRouterTest::staleAddAfterStopIsTakenBack()             Ac
 The product fix itself is in the earlier commits of this branch: `include/PortMapping.h`,
 `src/core/PortMapping.cpp`, `src/core/PortMappingPmp.cpp`, `src/core/PortMappingUpnp.cpp`.
 
+## Round 6 re-verification (no product change)
+
+Luna's round-5 feedback section was empty, so this round changed no product or test code. It re-proved the fix from
+scratch on the current tree (logs in `runs/new-p8-179-port-port.r6/logs/`):
+
+| Step | Command | Exit | Log |
+| --- | --- | --- | --- |
+| product diff | `git diff 2da2ed356 -- include/PortMapping.h src/core/PortMapping.cpp src/core/PortMappingPmp.cpp src/core/PortMappingUpnp.cpp > logs/fix.patch` | 0 | `fix.patch` |
+| RED revert | `git apply -R logs/fix.patch` | 0 | - |
+| RED build | `cmake --build build --target zene PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest CollabPolicyTest -j4` | 0 | `build-2-red.log` |
+| RED run | `cd build/tests && ctest -R 'PortMapping\|UpnpMapper\|CollabPolicy' --output-on-failure` | **8** (same 7 cases fail) | `test-2-red.log` |
+| GREEN restore | `git apply logs/fix.patch` | 0 | - |
+| GREEN build | same cmake command, -j4 | 0 | `build-3-green.log` |
+| GREEN run | same ctest command | **0** (4 of 4 targets, 100 % passed) | `test-3-green.log` |
+| gates, by hand | `fork-sources-gate.sh`, `all-sources-reproduce.sh`, `no-upstream-regression-gate.sh`, `check-namespace`, `no-tautology-gate.sh`, `doc-figures-gate.py` | 0 each | `gate-*.log` |
+| ratchets, by hand | `tests/complexity-gate.sh --check` / `tests/file-length-gate.sh --check` | 1 / 1 (train-wide) | `gate-complexity.log`, `gate-filelen.log` |
+
+The ratchet items listed are `ControlCommandsShortcuts.cpp` (`importedOverrides`, CCN 11) and
+`tests/src/core/CollabTransportTest.cpp` (846 lines), among others: none is in a file this branch changed
+(no `PortMapping*`/`UpnpMapper*` line in either log).
+
+**`feature_check.py` could not run in this session.** It writes its gate logs to `<worktree>-feature-check/`, a
+sibling folder outside this lane's write-jail; it died with `PermissionError: [Errno 13]` on
+`.../zene-qwen-new-p8-179-port-port-feature-check/fork-sources.log` (`logs/gates-1.log`, exit 1) before running any
+gate. I therefore ran the same eight gate commands by hand (table above) and compared the ratchet listings with the
+files this branch changed, which is what the script does. The loop's own run of `feature_check.py` outside the jail is
+the authoritative result; it passed with exit 0 in the previous round (`logs/gates-2.log` of that round).
+
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Reverting the
