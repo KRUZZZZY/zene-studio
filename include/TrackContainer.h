@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "Track.h"
+#include "AutomationLatency.h"
 #include "JournallingObject.h"
 #include "UnclaimedElements.h"
 
@@ -198,14 +199,20 @@ public:
 	}
 
 	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum = -1) const;
+	//! The same read against one pinned AutomationLatency snapshot (the control thread pins one itself).
+	AutomatedValueMap automatedValuesAt(TimePos time, int clipNum,
+		const AutomationLatency::ReadSnapshot& snapshot) const;
 
 	/*! The automation read itself, into \a level (cleared first): the value every automated model has at
 	 *  \a time, ordered by model. \a inner is the scratch a pattern clip's own read nests in; null for a
 	 *  container that holds no pattern clips. With bounded scratches this allocates nothing, which is
 	 *  what Song::processAutomations needs on the audio thread. A Song adds its global automation track and
-	 *  a PatternStore clamps the time to its pattern, so each overrides this and not automatedValuesAt. */
-	virtual void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	 *  a PatternStore clamps the time to its pattern, so each overrides this and not automatedValuesAt.
+	 *  The 4-argument form pins the current latency snapshot once; an audio period passes its own. */
+	void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
 		TimePos time, int clipNum = -1) const;
+	virtual void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+		TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const;
 
 signals:
 	void trackAdded( lmms::Track * _track );
@@ -252,7 +259,8 @@ protected:
 	//! Adds \a track's clips for a read at \a time (the pattern editor's \a clipNum, or every clip up to it).
 	static void gatherAutomationClips(AutomationRenderScratch& level, Track* track, TimePos time, int clipNum);
 	//! Turns the clips gathered in \a level into its values: absolute clips, then pattern clips, then relative ones.
-	static void collectAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner, TimePos time);
+	static void collectAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner, TimePos time,
+		const AutomationLatency::ReadSnapshot& snapshot);
 
 	mutable QReadWriteLock m_tracksMutex;
 

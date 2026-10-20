@@ -2626,3 +2626,11 @@ src/core/ControlCommandsSettings.cpp	new-p12-46-port: audio.device_set advertise
 tests/control-no-audio-device.py	new-p12-46-port: replay the empty-prior-value audio.device_set inverse and verify it restores the empty config value.
 include/MidiSndio.h	cluster new-p12-126-port: the sndio MIDI shutdown flag is declared std::atomic<bool> instead of volatile bool, so the reader thread's poll and the destructor's store are not a data race; covered by MidiSndioTest::quitFlagIsAtomic.
 tests/src/core/SmfInterchangeTest.cpp	new-p11-21 (2026-10-12): adds a regression assertion that smf_read marks an out-of-range conductor map unimportable and reports the same validation reason used by smf_import.
+include/AutomationClip.h	cluster new-p9-576-port: stores derived clip latency in two banks and exposes the bank selected by an AutomationLatency read snapshot.
+src/core/AutomationClip.cpp	cluster new-p9-576-port: reads the published clip latency through a pinned AutomationLatency snapshot.
+include/TrackContainer.h	cluster new-p9-576-port: adds snapshot-aware automation value reads so a block can keep one latency bank across every clip.
+src/core/TrackContainer.cpp	cluster new-p9-576-port: passes one latency snapshot through absolute, relative and nested pattern automation reads.
+include/PatternStore.h	cluster new-p9-576-port: declares snapshot-aware pattern automation reads.
+src/core/PatternStore.cpp	cluster new-p9-576-port: carries the current block's latency snapshot through the pattern time offset.
+include/Song.h	cluster new-p9-576-port: declares block-snapshot overloads for automation ramps, per-tick values and processAutomations.
+src/core/Song.cpp	cluster new-p9-576-port: captures one latency snapshot per audio period and uses it for ramps and per-tick reads.

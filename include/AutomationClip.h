@@ -43,6 +43,7 @@ namespace lmms
 {
 
 class AutomationTrack;
+class AutomationLatency;
 class TimePos;
 
 namespace gui
@@ -231,9 +232,10 @@ public:
 
 	//! 0.5.0 MX-160: the latency (frames) upstream of the parameter this clip drives, which the
 	//! clip's reading lags by while latency-compensated automation is on (AutomationLatency).
-	//! Written by the control thread, read by the audio thread; never saved (it is derived).
-	int latencyFrames() const { return m_latencyFrames.load( std::memory_order_relaxed ); }
-	void setLatencyFrames( int frames ) { m_latencyFrames.store( frames, std::memory_order_relaxed ); }
+	//! Derived control-thread data, read through a pinned AutomationLatency snapshot; never saved.
+	int latencyFrames() const;
+	//! Read only while holding the matching AutomationLatency::ReadSnapshot.
+	int latencyFramesForSnapshot(unsigned bank) const { return m_latencyFrames[bank]; }
 
 	QString name() const;
 
@@ -338,8 +340,10 @@ private:
 	//! Serialized only when it is ON, so a project that never asked for it
 	//! saves the bytes it always saved; loadSettings resets it on absence.
 	RampSetting m_rampSetting = RampSetting::Default;
-	//! 0.5.0 MX-160: see latencyFrames(); a copy starts at 0 and the next refresh sets it.
-	std::atomic<int> m_latencyFrames{ 0 };
+	//! 0.5.0 MX-160: double-buffered; refresh writes the inactive bank before publishing it to readers.
+	int m_latencyFrames[2]{ 0, 0 };
+	void setLatencyFramesForSnapshot(unsigned bank, int frames) { m_latencyFrames[bank] = frames; }
+	friend class AutomationLatency;
 
 	bool m_dragging;
 	bool m_dragKeepOutValue; // Should we keep the current dragged node's outValue?

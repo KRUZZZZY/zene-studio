@@ -486,6 +486,9 @@ void Song::processNextBuffer()
 
 	const auto framesPerTick = Engine::framesPerTick();
 	const auto framesPerPeriod = Engine::audioEngine()->framesPerPeriod();
+	// 0.5.0 MX-160: one latency snapshot pins every clip's latency for the WHOLE period (ramps and
+	// per-tick reads alike), so a refresh publishing new latencies mid-period cannot mix banks here.
+	const auto latencySnapshot = AutomationLatency::instance().readSnapshot();
 
 	// Sample-accurate automation (feature row 9). BEFORE the tick loop, because
 	// the whole block's curve has to be in the parameters before the first
@@ -494,7 +497,7 @@ void Song::processNextBuffer()
 	// clips that opted in (automation.ramp_set), plus default Discrete clips
 	// whose latency compensation needs the frame offset that per-tick reads lose.
 	buildAutomationRamps(trackList, getPlayPos(), framesPerPeriod,
-		static_cast<int>(timeline.frameOffset()));
+		static_cast<int>(timeline.frameOffset()), latencySnapshot);
 
 	f_cnt_t frameOffsetInPeriod = 0;
 
@@ -561,7 +564,7 @@ void Song::processNextBuffer()
 		{
 			// First frame of tick: process automation and play tracks
 			MidiPlayback::instance().tickPlayed(getPlayPos().getTicks(), m_loopWraps.load(std::memory_order_relaxed));  // 0.5.0 L07/W2: chase and the loop pass
-			processAutomations(trackList, getPlayPos(), framesToPlay);
+			processAutomations(trackList, getPlayPos(), framesToPlay, latencySnapshot);
 			processMetronome(frameOffsetInPeriod);
 
 			// Column index of the next track in the song's own track list;
@@ -623,7 +626,8 @@ bool Song::enforceLoop(const TimePos& begin, const TimePos& end, bool wrapping)
 }
 
 
-void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t)
+void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_cnt_t,
+	const AutomationLatency::ReadSnapshot& latencySnapshot)
 {
 	TrackContainer* container = this;
 	int clipNum = -1;
@@ -653,13 +657,13 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 	AutomationRenderScratch spillInner;
 	AutomationRenderScratch spillClips;
 	AutomationRenderScratch* valuesIn = &m_automationLevel;
-	container->fillAutomatedValues(*valuesIn, &m_automationInner, timeStart, clipNum);
+	container->fillAutomatedValues(*valuesIn, &m_automationInner, timeStart, clipNum, latencySnapshot);
 	if (valuesIn->overflows() != 0 || m_automationInner.overflows() != 0)
 	{
 		m_automationScratchOverflows.fetch_add(1, std::memory_order_relaxed);
 		valuesIn->takeOverflows();
 		m_automationInner.takeOverflows();
-		container->fillAutomatedValues(spillValues, &spillInner, timeStart, clipNum);
+		container->fillAutomatedValues(spillValues, &spillInner, timeStart, clipNum, latencySnapshot);
 		valuesIn = &spillValues;
 	}
 	AutomationRenderScratch& values = *valuesIn;
@@ -1414,6 +1418,14 @@ void Song::processModulation()
 void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & blockStart,
 	f_cnt_t frames, int frameOffsetInTick )
 {
+	// A caller with no period's own snapshot pins one now (the tests' direct entry; the engine pins once).
+	const auto latencySnapshot = AutomationLatency::instance().readSnapshot();
+	buildAutomationRamps(trackList, blockStart, frames, frameOffsetInTick, latencySnapshot);
+}
+
+void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & blockStart,
+	f_cnt_t frames, int frameOffsetInTick, const AutomationLatency::ReadSnapshot& latencySnapshot )
+{
 	/*! Sample-accurate automation (feature-list row 9,
 	 *  docs/SAMPLE-ACCURATE-AUTOMATION.md). Runs ONCE PER AUDIO BLOCK, at the
 	 *  block's own play position, and only over the automation clips that asked
@@ -1460,12 +1472,13 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 			auto* automationClip = dynamic_cast<AutomationClip*>( clip );
 			const bool latencyNeedsRamp = automationClip != nullptr
 				&& automationClip->rampSetting() == AutomationClip::RampSetting::Default
-				&& AutomationLatency::instance().enabled() && automationClip->latencyFrames() > 0;
+				&& latencySnapshot.enabled() && latencySnapshot.latencyFrames(automationClip) > 0;
 			// 0.5.0 MX-160: the block as the latent audio sees it - the same start unless the project
 			// turned latency-compensated automation on (moved before the song's start, it reads nothing).
 			TimePos readStart = blockStart;
 			int readOffsetInTick = frameOffsetInTick;
-			AutomationLatency::instance().shiftBlock( automationClip, framesPerTick, &readStart, &readOffsetInTick );
+			AutomationLatency::instance().shiftBlock(automationClip, framesPerTick, &readStart,
+				&readOffsetInTick, latencySnapshot);
 			if( automationClip == nullptr || (!automationClip->sampleAccurate() && !latencyNeedsRamp)
 				|| !automationClip->hasAutomation() || automationClip->isMuted()
 				|| automationClip->startPosition() > readStart )
@@ -1495,14 +1508,14 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 
 
 void Song::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
-	TimePos time, int clipNum) const
+	TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const
 {
 	// The global automation track first, then the song's own tracks: the same order the clips were always
 	// gathered in, and with no track list built on the way (that vector was an audio-thread allocation).
 	level.clear();
 	gatherAutomationClips(level, m_globalAutomationTrack, time, clipNum);
 	for (Track* track : tracks()) { gatherAutomationClips(level, track, time, clipNum); }
-	collectAutomatedValues(level, inner, time);
+	collectAutomatedValues(level, inner, time, snapshot);
 }
 
 
