@@ -1,3 +1,5 @@
+FIXED
+
 # Cluster new-p11-79-port — "Automated delay LFO rate is interpreted as seconds per cycle" (Delay)
 
 **Verdict: FIXED.** The bug was real on this line (it was never ported here), the
