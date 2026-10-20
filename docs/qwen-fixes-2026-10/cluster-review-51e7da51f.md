@@ -1,5 +1,10 @@
 # Cluster review-51e7da51f - three findings in src/core/ScriptDawBindings.cpp
 
+**Verdict:** ALREADY-FIXED (review-51e7da51f) / ALREADY-FIXED (1663) / FIXED (new-p12-245)
+
+One line per finding, each followed by its evidence and the commands it was
+measured with:
+
 review-51e7da51f: ALREADY-FIXED
 ## What the finding says
 
