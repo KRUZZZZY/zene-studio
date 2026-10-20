@@ -29,15 +29,36 @@ valid file, and the report is no longer pending* - to BOTH places that decide th
 | `src/core/ControlCommandsCrash.cpp:303` | The "ALREADY acknowledged" refusal now fires only when the marker path is a FILE (`QFileInfo(...).isFile()`). A directory at that path was never written and cannot be written, so it is not an acknowledgement and the refusal would be a claim about a state that never happened. |
 | `src/core/ControlCommandsCrash.cpp:319-330` | The success is READ BACK, as the accepted fix requires: the marker must be a FILE the reporter wrote **and** `hasPendingReport()` must read back false. A path that merely exists is not enough, so the command can no longer report `acknowledged: true` for a marker it did not write. The reply reuses the same `pending` readback value. |
 | `src/core/ControlCommandsCrash.cpp:230-234` | The sibling read: `crash.list_reports`' `offered` field now uses the same rule as the write (`isFile()`), so the read and the write agree on what "offered" means. `pending` is untouched - it stays the module's own predicate (`hasPendingReport()`), which the reply's `note` names. |
-| `tests/src/core/CrashReporterTest.cpp:519-567` | `acknowledge_refuses_directory_at_offered_marker`: builds a real report, puts a real DIRECTORY at the `offered`-marker path, calls the registered `crash.acknowledge_report` command and asserts a typed `busy` refusal, that the report file survives, that the blocking directory is untouched, and that `crash.list_reports` does not report the report as `offered`. |
-| `tests/src/core/CrashReporterTest.cpp:107-115` | The `cleanup()` slot: the engine is torn down again after that one case, so the cases around it (which must not get an engine) are unaffected. |
-| `tests/upstream-modifications.txt:2409` | Records the regression added to the inherited `CrashReporterTest` source. |
+| `tests/src/core/ControlCrashAcknowledgeTest.cpp:81-127` | `acknowledge_refuses_directory_at_offered_marker`: builds a real report, puts a real DIRECTORY at the `offered`-marker path, calls the registered `crash.acknowledge_report` command and asserts a typed `busy` refusal (`:114`), that the report file survives, that the blocking directory is untouched, and that `crash.list_reports` does not report the report as `offered` (`:125-126`). |
+| `tests/src/core/ControlCrashAcknowledgeTest.cpp:57-64` | The `cleanup()` slot: the engine is torn down again after that one case, so nothing else in this binary inherits an engine. |
+| `tests/CMakeLists.txt:1290-1295` | Registers the new source, appended LAST so its ctest carries a three-digit number (see "The test the negative control can find"). |
+| `tests/all-sources.txt:2495`, `tests/fork-sources.txt:2233` | The new source is registered in both scope manifests, so the whole-tree and the fork ratchets measure it. |
+| `tests/upstream-modifications.txt:2409-2411` | The ledger entries for the inherited files this change touches (the CMake registration and the two manifests). |
 
 The fault state is reached through the real path: the report is written where the
 reporter writes it (`pendingReportPath()`), the directory is created with
 `QDir::mkdir()` at the marker path the reporter uses
 (`crashreporter::kOfferedMarkerName`), and the command is invoked through
 `ControlRegistry::invoke("crash.acknowledge_report")` - the same seam a client uses.
+
+### The test the negative control can find
+
+The round-1 review ran the harness's own negative control, which reverts the product
+change, rebuilds and re-runs the branch's tests. It reported
+`ControlCommandsSnapshot PASS with the product change reverted - they do not prove the
+fix`, and it was right: ctest pads the test NUMBER to three digits, so a test
+registered below #100 is listed as `Test  #77:` and the control's discovery regex
+(`Test #\d+: (\S+)`) never sees it. `CrashReporterTest` is #77, so the control found no
+crash test at all, rebuilt only `zene`, and ran the one test its discovery did find -
+the command-surface canary, which does not touch this behaviour.
+
+So the regression now lives in its own file and its own ctest,
+`ControlCrashAcknowledgeTest`, registered LAST in `LMMS_TESTS` so it carries a
+three-digit number (`Test #469`). The control now discovers it, rebuilds ITS binary
+against the reverted product code (the product lives in the `lmmsobjs` object library,
+so a test binary that is not relinked keeps the old code) and sees it fail. The
+simulation of the harness's own `prove()` on this branch is in the evidence table.
+
 
 ## Evidence table
 
@@ -59,7 +80,11 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 | Restored GREEN, final product diff re-applied | `cd build/tests && ctest -R '^CrashReporterTest$' --output-on-failure` | 0 | 1/1 passed. `test-11.log`. |
 | Final family + canary | `cd build/tests && ctest -R 'Crash|crash|ControlCommandsSnapshot' --output-on-failure` | 0 | 6/6 passed. `test-12.log`. |
 | Post-commit verification of the committed tree | `cd build/tests && ctest -R 'Crash|crash|ControlCommandsSnapshot' --output-on-failure` | 0 | 6/6 passed after a fresh rebuild of the committed code. `test-13.log`. |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | RESULT: PASS (8 rows, no FAIL). `gate-1.log` (before the commit), `gate-2.log` and `gate-3.log` (after it). |
+| RED, the regression in its own ctest, product code reverted | `cd build/tests && ctest -R '^ControlCrashAcknowledgeTest$' --output-on-failure` | 8 | `FAIL! ... Actual (result.errorKind) 5, Expected (Busy) 4` at `tests/src/core/ControlCrashAcknowledgeTest.cpp(114)`; 2 passed, 1 failed. `test-15.log`. |
+| GREEN, the product change restored | `cd build/tests && ctest -R '^ControlCrashAcknowledgeTest$' --output-on-failure` | 0 | 1/1 passed. `test-16.log`. |
+| Family after the move (7 tests) | `cd build/tests && ctest -R 'Crash|crash|ControlCommandsSnapshot' --output-on-failure` | 0 | 7/7 passed: CrashReporterArmTest, CrashReporterTest, RecordingCrashLossTest, CrashReportMenuTest, **ControlCrashAcknowledgeTest**, ControlCrashReporter, ControlCommandsSnapshot. `test-17.log`. |
+| The harness's own negative control on this branch | `negctl.prove(<worktree>, 'ded355440', <run>/negctl-sim, <report text>)` | 0 | `ok: true` - "ControlCommandsSnapshot, ControlCrashAcknowledgeTest: they fail without it (rc 8) and pass with it"; `reverted_rc` 8, `restored_rc` 0, `tree_clean` true. Reverted run: `test-18.log`; restored run: `test-19.log`; builds: `build-17.log`, `build-18.log`. |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | RESULT: PASS (8 rows, no FAIL). `gate-1.log` (before the commit), `gate-2.log`/`gate-3.log` (after it), `gate-4.log` (after the docs commit), `gate-5.log` (with the new test file registered). |
 
 ## Build and reversal commands
 
@@ -75,7 +100,14 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 | `cmake --build build --target CrashReporterTest` (final reversal RED build) | 0 | `build-8.log` |
 | `cmake --build build --target CrashReporterTest zene` (final GREEN build) | 0 | `build-9.log` |
 | `cmake --build build --target CrashReporterTest zene` (post-commit verification build) | 0 | `build-10.log` |
-| `git diff -- src/core/ControlCommandsCrash.cpp > <logs>/fix.patch` | 0 | the product-only diff used for the reversal proof |
+| `cmake --build build --target ControlCrashAcknowledgeTest zene` (new test, before the CMake re-run: no such target yet) | 2 | `build-11.log`; the tree had to be reconfigured first (`build-12.log`) |
+| `cmake --build build --target zene` (reconfigure, registers the new ctest) | 0 | `build-12.log` |
+| `cmake --build build --target ControlCrashAcknowledgeTest` (the new test binary) | 0 | `build-13.log` |
+| `cmake --build build --target ControlCrashAcknowledgeTest zene` (reversal RED build, own test) | 0 | `build-14.log` |
+| `cmake --build build --target ControlCrashAcknowledgeTest zene` (restored GREEN build, own test) | 0 | `build-15.log` |
+| `cmake --build build --target CrashReporterTest CrashReporterArmTest RecordingCrashLossTest CrashReportMenuTest` | 0 | `build-16.log` |
+| `cmake --build build --target ControlCrashAcknowledgeTest zene` (the harness's negative control: reverted, then restored) | 0 | `build-17.log`, `build-18.log` |
+| `git diff ded355440..HEAD -- src/core/ControlCommandsCrash.cpp > <logs>/fix.patch` | 0 | the product-only diff used for the reversal proof (the product change is committed, so the diff is taken against the base) |
 | `git apply -R <logs>/fix.patch` | 0 | product diff removed before the reversal RED run |
 | `git apply <logs>/fix.patch` | 0 | product diff restored before the final GREEN run |
 
@@ -83,13 +115,17 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 
 **The regression test FAILS with the product change reverted and PASSES with it.**
 Reverting only the product hunks (`git apply -R <logs>/fix.patch`), rebuilding and running
-`ctest -R '^CrashReporterTest$' --output-on-failure` from `build/tests` exits **8** with
-`Actual (result.errorKind) 5, Expected (lmms::ControlErrorKind::Busy) 4` - the newest
-line's "ALREADY acknowledged" pre-check answers `Refused` for a directory at the marker
-path (`test-10.log`). Re-applying the patch and rebuilding gives exit **0** (`test-11.log`).
-The first RED run, before the product code was touched at all, failed the same way
-(`test-2.log`). No test was weakened: the case is new, and the assertions are the
-accepted branch's ones plus the `crash.list_reports` read.
+`ctest -R '^ControlCrashAcknowledgeTest$' --output-on-failure` from `build/tests` exits
+**8** with `Actual (result.errorKind) 5, Expected (lmms::ControlErrorKind::Busy) 4` at
+`tests/src/core/ControlCrashAcknowledgeTest.cpp(114)` - the newest line's "ALREADY
+acknowledged" pre-check answers `Refused` for a directory at the marker path
+(`test-15.log`). Re-applying the patch and rebuilding gives exit **0**
+(`test-16.log`). The harness's OWN negative control (`negctl.prove()`) on this branch
+reports `ok: true`, `reverted_rc` 8 and `restored_rc` 0 with
+`tree_clean: true` - the control now discovers the test, rebuilds its binary against the
+reverted product code and sees it fail (`test-18.log`, `test-19.log`). No test was
+weakened: the case is new, and the assertions are the accepted branch's ones plus the
+`crash.list_reports` read.
 
 **The test is deterministic.** No clock, no sleep, no retry, no race: the fault state is
 built with `QFile::write` for the report and `QDir::mkdir` for the directory, both
@@ -162,7 +198,14 @@ module code is untouched, so its Windows no-op build is unchanged.
 
 - `src/core/ControlCommandsCrash.cpp` - the fix (marker-is-a-file rule for the refusal,
   the success read-back and the `offered` read).
-- `tests/src/core/CrashReporterTest.cpp` - the regression `acknowledge_refuses_directory_at_offered_marker`
-  and the `cleanup()` that tears the engine down after it.
-- `tests/upstream-modifications.txt` - the ledger entry for the inherited test file.
+- `tests/src/core/ControlCrashAcknowledgeTest.cpp` - NEW: the regression
+  `acknowledge_refuses_directory_at_offered_marker` and the `cleanup()` that tears the
+  engine down after it, in a ctest of its own so the negative control finds and rebuilds
+  it.
+- `tests/CMakeLists.txt` - registers the new test (appended last, so its ctest carries a
+  three-digit number).
+- `tests/all-sources.txt`, `tests/fork-sources.txt` - the new source in both scope
+  manifests.
+- `tests/upstream-modifications.txt` - the ledger entries for the inherited files this
+  change touches.
 - `docs/qwen-fixes-2026-10/cluster-new-p11-19-port.md` - this report.
