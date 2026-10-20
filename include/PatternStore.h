@@ -92,8 +92,10 @@ public:
 	void fixIncorrectPositions();
 	void createClipsForPattern(int pattern);
 
+	//! The latency snapshot rides through the pattern's time offset unchanged (see TrackContainer).
+	using TrackContainer::fillAutomatedValues;
 	void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
-		TimePos time, int clipNum) const override;
+		TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const override;
 
 public slots:
 	void play();

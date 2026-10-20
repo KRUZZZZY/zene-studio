@@ -220,6 +220,9 @@ public:
 	 *  own), and it returns at its first test when no clip has opted in. */
 	void buildAutomationRamps(const TrackList& trackList, const TimePos& blockStart,
 		f_cnt_t frames, int frameOffsetInTick);
+	//! The same publish against one pinned AutomationLatency snapshot; an audio period passes its own.
+	void buildAutomationRamps(const TrackList& trackList, const TimePos& blockStart,
+		f_cnt_t frames, int frameOffsetInTick, const AutomationLatency::ReadSnapshot& latencySnapshot);
 
 	inline int getLoadingTrackCount() const
 	{
@@ -430,8 +433,10 @@ public:
 	}
 
 	//! Adds the song's global automation track to the read (see TrackContainer::fillAutomatedValues).
+	//! The 4-argument form pins the current latency snapshot once; an audio period passes its own.
+	using TrackContainer::fillAutomatedValues;
 	void fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
-		TimePos time, int clipNum = -1) const override;
+		TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const override;
 
 	/*! Forgets @p model in the automated-value cache of the live song, if there
 	 *  is one (see `m_oldAutomatedValues`). The cache holds the RAW pointers of
@@ -793,7 +798,8 @@ private:
 	 *  preserved for. */
 	bool restoreGuiSection(const QDomElement & element);
 
-	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames);
+	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames,
+		const AutomationLatency::ReadSnapshot& latencySnapshot);
 	void noteRecordedModel(const AutomatableModel* model);
 	void processMetronome(size_t bufferOffset);
 	//! Recompute every frozen track's overlap allowance on the control thread after loop changes.

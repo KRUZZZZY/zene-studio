@@ -396,14 +396,15 @@ namespace
 
 //! 0.5.0 ED-199: each relative clip's distance from the middle of its range, added to what the
 //! absolute clips set (or the parameter's own value for the run), clamped to the parameter.
-void applyRelativeClips(const std::vector<Clip*>& clips, TimePos time, AutomationRenderScratch& values)
+void applyRelativeClips(const std::vector<Clip*>& clips, TimePos time, AutomationRenderScratch& values,
+	const AutomationLatency::ReadSnapshot& snapshot)
 {
 	const quint64 run = AutomatableModel::automationTransportRun();
 	for (Clip* clip : clips)
 	{
 		auto* p = dynamic_cast<AutomationClip*>(clip);
 		// Read where the absolute clips are read: the latent audio's time when compensation is on (review L19 #3).
-		const TimePos readTime = AutomationLatency::instance().readTime(clip, time);
+		const TimePos readTime = AutomationLatency::instance().readTime(clip, time, snapshot);
 		if (p == nullptr || !p->isRelative() || clip->isMuted() || clip->startPosition() > readTime || !p->hasAutomation()) { continue; }
 		TimePos relTime = readTime - p->startPosition() - p->startTimeOffset();
 		relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
@@ -425,9 +426,16 @@ void applyRelativeClips(const std::vector<Clip*>& clips, TimePos time, Automatio
 AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum) const
 {
 	// The control thread's read: unbounded scratch, the same code the audio thread runs on its own.
+	const auto snapshot = AutomationLatency::instance().readSnapshot();
+	return automatedValuesAt(time, clipNum, snapshot);
+}
+
+AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum,
+	const AutomationLatency::ReadSnapshot& snapshot) const
+{
 	AutomationRenderScratch level;
 	AutomationRenderScratch inner;
-	fillAutomatedValues(level, &inner, time, clipNum);
+	fillAutomatedValues(level, &inner, time, clipNum, snapshot);
 	AutomatedValueMap valueMap;
 	for (const AutomationRenderScratch::Entry& entry : level.entries()) { valueMap.insert(entry.model, entry.value); }
 	return valueMap;
@@ -437,9 +445,18 @@ AutomatedValueMap TrackContainer::automatedValuesAt(TimePos time, int clipNum) c
 void TrackContainer::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
 	TimePos time, int clipNum) const
 {
+	// Without a period's own snapshot the caller pins one now (control thread, tests, editors).
+	const auto snapshot = AutomationLatency::instance().readSnapshot();
+	fillAutomatedValues(level, inner, time, clipNum, snapshot);
+}
+
+
+void TrackContainer::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const
+{
 	level.clear();
 	for (Track* track : tracks()) { gatherAutomationClips(level, track, time, clipNum); }
-	collectAutomatedValues(level, inner, time);
+	collectAutomatedValues(level, inner, time, snapshot);
 }
 
 
@@ -464,7 +481,8 @@ void TrackContainer::gatherAutomationClips(AutomationRenderScratch& level, Track
 }
 
 
-void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner, TimePos time)
+void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
+	TimePos time, const AutomationLatency::ReadSnapshot& snapshot)
 {
 	const std::vector<Clip*>& clips = level.clips();
 
@@ -474,7 +492,7 @@ void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, Auto
 	{
 		// 0.5.0 MX-160: an automation clip is read where the latent audio is - `time` itself unless
 		// the project turned latency-compensated automation on.
-		const TimePos readTime = AutomationLatency::instance().readTime(clip, time);
+		const TimePos readTime = AutomationLatency::instance().readTime(clip, time, snapshot);
 		if (clip->isMuted() || clip->startPosition() > readTime) {
 			continue;
 		}
@@ -508,7 +526,7 @@ void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, Auto
 			patTime = std::min(patTime, clip->length());
 			patTime = patTime % (patStore->lengthOfPattern(patIndex) * TimePos::ticksPerBar());
 
-			patStore->fillAutomatedValues(*inner, nullptr, patTime, patIndex);
+			patStore->fillAutomatedValues(*inner, nullptr, patTime, patIndex, snapshot);
 			for (const AutomationRenderScratch::Entry& entry : inner->entries())
 			{
 				// override old values, pattern track with the highest index takes precedence
@@ -521,7 +539,7 @@ void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, Auto
 		}
 	}
 
-	applyRelativeClips(clips, time, level);
+	applyRelativeClips(clips, time, level, snapshot);
 }
 
 

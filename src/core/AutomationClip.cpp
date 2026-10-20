@@ -31,6 +31,7 @@
 
 #include "AutomationRamp.h"
 #include "AutomationClip.h"
+#include "AutomationLatency.h"
 
 #include "AudioEngine.h"
 
@@ -67,6 +68,11 @@ AutomationClip::AutomationClip( AutomationTrack * _auto_track ) :
 }
 
 
+int AutomationClip::latencyFrames() const
+{
+	const auto snapshot = AutomationLatency::instance().readSnapshot();
+	return snapshot.latencyFrames(this);
+}
 
 
 AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :

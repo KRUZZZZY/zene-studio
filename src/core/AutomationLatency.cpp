@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <thread>
 
 #include <QDomElement>
 #include <QTimer>
@@ -141,13 +142,85 @@ AutomationLatency& AutomationLatency::instance()
 	return *latency;
 }
 
+AutomationLatency::ReadSnapshot::ReadSnapshot(const AutomationLatency* owner, std::uint32_t state) :
+	m_owner(owner), m_state(state)
+{
+}
+
+AutomationLatency::ReadSnapshot::ReadSnapshot(ReadSnapshot&& other) noexcept :
+	m_owner(other.m_owner), m_state(other.m_state)
+{
+	other.m_owner = nullptr;
+}
+
+AutomationLatency::ReadSnapshot& AutomationLatency::ReadSnapshot::operator=(ReadSnapshot&& other) noexcept
+{
+	if (this == &other) { return *this; }
+	if (m_owner != nullptr) { m_owner->releaseSnapshot(m_state); }
+	m_owner = other.m_owner;
+	m_state = other.m_state;
+	other.m_owner = nullptr;
+	return *this;
+}
+
+AutomationLatency::ReadSnapshot::~ReadSnapshot()
+{
+	if (m_owner != nullptr) { m_owner->releaseSnapshot(m_state); }
+}
+
+bool AutomationLatency::ReadSnapshot::enabled() const
+{
+	return (m_state & EnabledBit) != 0;
+}
+
+int AutomationLatency::ReadSnapshot::latencyFrames(const AutomationClip* clip) const
+{
+	// An unpinned fallback (its acquisition raced the final validation) reads no bank at all.
+	return (clip == nullptr || m_owner == nullptr) ? 0 : clip->latencyFramesForSnapshot(m_state & SlotBit);
+}
+
+bool AutomationLatency::enabled() const
+{
+	return (m_state.load(std::memory_order_acquire) & EnabledBit) != 0;
+}
+
+AutomationLatency::ReadSnapshot AutomationLatency::readSnapshot() const
+{
+	// Strictly bounded and non-waiting (audio thread): register on the published bank and validate that
+	// the publication did not change while registering. A publication that raced the registration is
+	// retried at most SnapshotAttempts times; after that the snapshot pins NO bank and reads this block
+	// uncompensated - coherently for every clip - so a refresh can never make the audio thread wait or
+	// spin unboundedly. The writer side (refreshClips) is where waiting for or skipping a busy bank
+	// lives, on the control thread.
+	for (int attempt = 0; attempt < SnapshotAttempts; ++attempt)
+	{
+		const std::uint32_t state = m_state.load(std::memory_order_seq_cst);
+		const std::uint32_t slot = state & SlotBit;
+		m_readers[slot].fetch_add(1, std::memory_order_seq_cst);
+		if (m_state.load(std::memory_order_seq_cst) == state) { return ReadSnapshot(this, state); }
+		m_readers[slot].fetch_sub(1, std::memory_order_seq_cst);
+	}
+	return ReadSnapshot(nullptr, 0);
+}
+
+void AutomationLatency::releaseSnapshot(std::uint32_t state) const
+{
+	m_readers[state & SlotBit].fetch_sub(1, std::memory_order_seq_cst);
+}
+
+void AutomationLatency::setEnabledState(bool on)
+{
+	const std::uint32_t state = m_state.load(std::memory_order_seq_cst);
+	const std::uint32_t generation = (state + GenerationStep) & ~(SlotBit | EnabledBit);
+	m_state.store(generation | (state & SlotBit) | (on ? EnabledBit : 0u), std::memory_order_seq_cst);
+}
+
 void AutomationLatency::setEnabled(bool on)
 {
-	// Readers see the switch go off at once, and come on only after every clip's latency is in place,
-	// so no period mixes compensated and uncompensated clips.
-	if (!on) { m_enabled.store(false, std::memory_order_release); }
+	// Readers capture the switch and bank together; enabling publishes only after refresh has filled its bank.
+	if (!on) { setEnabledState(false); }
 	refreshAs(on);
-	m_enabled.store(on, std::memory_order_release);
+	if (on) { setEnabledState(true); }
 	poll(on);
 }
 
@@ -164,21 +237,34 @@ void AutomationLatency::poll(bool on)
 	else { m_poll->stop(); }
 }
 
-void AutomationLatency::refresh() { refreshAs(enabled()); }
+void AutomationLatency::refresh() { refreshAs(enabled(), false); }
 
-void AutomationLatency::refreshAs(bool on)
+void AutomationLatency::refreshAs(bool on, bool waitForFreeBank)
 {
 	Song* song = Engine::getSong();
 	// Mid-load the track list is still being built (a load processes events): the load's own walk catches up.
 	if (song == nullptr || song->isLoadingProject() || Engine::mixer() == nullptr || Engine::patternStore() == nullptr) { return; }
-	refreshClips(on);
+	refreshClips(on, waitForFreeBank);
 }
 
-void AutomationLatency::refreshClips(bool on)
+bool AutomationLatency::refreshClips(bool on, bool waitForFreeBank)
 {
-	forEachAutomationClip([on](AutomationClip* clip) {
-		clip->setLatencyFrames(on && !clip->objects().empty() ? upstreamFrames(clip->firstObject()) : 0);
+	std::uint32_t state = m_state.load(std::memory_order_seq_cst);
+	std::uint32_t slot = (state & SlotBit) ^ 1u;
+	while (m_readers[slot].load(std::memory_order_seq_cst) != 0)
+	{
+		if (!waitForFreeBank) { return false; }
+		std::this_thread::yield();
+		state = m_state.load(std::memory_order_seq_cst);
+		slot = (state & SlotBit) ^ 1u;
+	}
+	forEachAutomationClip([on, slot](AutomationClip* clip) {
+		clip->setLatencyFramesForSnapshot(slot, on && !clip->objects().empty() ? upstreamFrames(clip->firstObject()) : 0);
 	});
+	state = m_state.load(std::memory_order_seq_cst);
+	const std::uint32_t generation = (state + GenerationStep) & ~(SlotBit | EnabledBit);
+	m_state.store(generation | (state & EnabledBit) | slot, std::memory_order_seq_cst);
+	return true;
 }
 
 int AutomationLatency::upstreamFrames(const AutomatableModel* model)
@@ -196,26 +282,43 @@ int AutomationLatency::compensatedClips(int* largestFrames)
 	int clips = 0;
 	*largestFrames = 0;
 	if (Engine::getSong() == nullptr || Engine::patternStore() == nullptr) { return 0; }
-	forEachAutomationClip([&clips, largestFrames](AutomationClip* clip) {
-		if (clip->latencyFrames() <= 0) { return; }
+	const auto snapshot = instance().readSnapshot();
+	forEachAutomationClip([&clips, largestFrames, &snapshot](AutomationClip* clip) {
+		const int frames = snapshot.latencyFrames(clip);
+		if (frames <= 0) { return; }
 		++clips;
-		*largestFrames = std::max(*largestFrames, clip->latencyFrames());
+		*largestFrames = std::max(*largestFrames, frames);
 	});
 	return clips;
 }
 
 TimePos AutomationLatency::readTime(const Clip* clip, TimePos time) const
 {
-	if (!enabled()) { return time; }
+	const auto snapshot = readSnapshot();
+	return readTime(clip, time, snapshot);
+}
+
+TimePos AutomationLatency::readTime(const Clip* clip, TimePos time, const ReadSnapshot& snapshot) const
+{
+	if (!snapshot.enabled()) { return time; }
 	const auto* automation = dynamic_cast<const AutomationClip*>(clip);
-	const int frames = automation != nullptr ? automation->latencyFrames() : 0;
+	const int frames = snapshot.latencyFrames(automation);
 	return frames > 0 ? TimePos(time.getTicks() - ticksFor(frames, Engine::framesPerTick())) : time;
 }
 
 void AutomationLatency::shiftBlock(const AutomationClip* clip, double framesPerTick, TimePos* start, int* frameOffsetInTick) const
 {
-	if (!enabled() || clip == nullptr || clip->latencyFrames() <= 0) { return; }
-	if (!shiftFrames(clip->latencyFrames(), framesPerTick, start, frameOffsetInTick)) { *start = TimePos(-1); }
+	const auto snapshot = readSnapshot();
+	shiftBlock(clip, framesPerTick, start, frameOffsetInTick, snapshot);
+}
+
+void AutomationLatency::shiftBlock(const AutomationClip* clip, double framesPerTick, TimePos* start,
+	int* frameOffsetInTick, const ReadSnapshot& snapshot) const
+{
+	if (!snapshot.enabled() || clip == nullptr) { return; }
+	const int frames = snapshot.latencyFrames(clip);
+	if (frames <= 0) { return; }
+	if (!shiftFrames(frames, framesPerTick, start, frameOffsetInTick)) { *start = TimePos(-1); }
 }
 
 int AutomationLatency::ticksFor(int latencyFrames, double framesPerTick)
@@ -246,7 +349,7 @@ void AutomationLatency::save(QDomDocument& doc, QDomElement& parent) const
 void AutomationLatency::load(const QDomElement& element)
 {
 	// The tracks may not be loaded yet: the poll computes the clips' latencies once the project is in.
-	m_enabled.store(element.attribute(QStringLiteral("enabled"), QStringLiteral("0")).toInt() != 0, std::memory_order_relaxed);
+	setEnabledState(element.attribute(QStringLiteral("enabled"), QStringLiteral("0")).toInt() != 0);
 	poll(enabled());
 	if (enabled()) { refreshOnceLoaded(); }
 }
@@ -261,14 +364,14 @@ void AutomationLatency::refreshOnceLoaded()
 	auto connection = std::make_shared<QMetaObject::Connection>();
 	*connection = QObject::connect(song, &Song::projectLoaded, m_poll, [this, connection] {
 		QObject::disconnect(*connection);
-		refreshClips(enabled());
+		refreshClips(enabled(), true);
 	});
 }
 
 void AutomationLatency::clear()
 {
 	// The project's clips are going away: no walk here, a new clip starts at 0.
-	m_enabled.store(false, std::memory_order_relaxed);
+	setEnabledState(false);
 	poll(false);
 }
 

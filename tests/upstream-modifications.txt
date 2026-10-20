@@ -2749,3 +2749,11 @@ include/MidiSndio.h	cluster new-p18-57: declares the output pipe, the writer thr
 src/core/NotePlayHandle.cpp	new-p16-146 (2026-10-20): updateFrequency() spends the frequency mark (m_frequencyNeedsUpdate is cleared before the inputs are read), so a marked note recomputes its frequency only when marked again instead of every later play() period; regression: MpePlaybackTest::aFrequencyMarkIsSpentByItsUpdate.
 src/gui/clips/MidiClipView.cpp	new-p14-176: the step menu widens the cursor offset to qint64 before multiplying by the step count (the product overflowed int for a large valid count), and the beat-clip paint computes each step x in qint64; covered by MidiClipStepMenuTest::aStepMenuFarAcrossAHugeBeatClipEditsTheStepUnderTheCursor.
 src/core/InstrumentLayers.cpp	BUG new-p12-98: shift saved per-key live-layer masks when insertion moves a sounding layer; regression InstrumentSetupUiTest::liveNoteOffFollowsLayerAfterUndoInsert.
+include/AutomationClip.h	cluster new-p9-576-port: stores derived clip latency in two banks and exposes the bank selected by an AutomationLatency read snapshot.
+src/core/AutomationClip.cpp	cluster new-p9-576-port: reads the published clip latency through a pinned AutomationLatency snapshot.
+include/TrackContainer.h	cluster new-p9-576-port: adds snapshot-aware automation value reads so a block can keep one latency bank across every clip.
+src/core/TrackContainer.cpp	cluster new-p9-576-port: passes one latency snapshot through absolute, relative and nested pattern automation reads.
+include/PatternStore.h	cluster new-p9-576-port: declares snapshot-aware pattern automation reads.
+src/core/PatternStore.cpp	cluster new-p9-576-port: carries the current block's latency snapshot through the pattern time offset.
+include/Song.h	cluster new-p9-576-port: declares block-snapshot overloads for automation ramps, per-tick values and processAutomations.
+src/core/Song.cpp	cluster new-p9-576-port: captures one latency snapshot per audio period and uses it for ramps and per-tick reads.

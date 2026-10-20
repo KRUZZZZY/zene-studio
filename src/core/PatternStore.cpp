@@ -232,7 +232,7 @@ void PatternStore::createClipsForPattern(int pattern)
 }
 
 void PatternStore::fillAutomatedValues(AutomationRenderScratch& level, AutomationRenderScratch* inner,
-	TimePos time, int clipNum) const
+	TimePos time, int clipNum, const AutomationLatency::ReadSnapshot& snapshot) const
 {
 	Q_ASSERT(clipNum >= 0);
 	Q_ASSERT(time.getTicks() >= 0);
@@ -244,7 +244,7 @@ void PatternStore::fillAutomatedValues(AutomationRenderScratch& level, Automatio
 		time = lengthTicks;
 	}
 
-	TrackContainer::fillAutomatedValues(level, inner, time + (TimePos::ticksPerBar() * clipNum), clipNum);
+	TrackContainer::fillAutomatedValues(level, inner, time + (TimePos::ticksPerBar() * clipNum), clipNum, snapshot);
 }
 
 
