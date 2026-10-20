@@ -70,6 +70,11 @@
 # 2026-10-20 (cluster new-p12-53-port): tests/src/core/NoteSelectionIdentityTest.cpp - the
 # fork-NEW regression for the control selection store keeping the selected notes' ids - is
 # now a tracked source, so the recipe derives it and the entry list below lists it.
+# 2026-10-20 (cluster new-p14-358 / 5451): tests/src/plugins/VestigeMidiHandoffTest.cpp - the
+# fork-NEW regression for the VeSTige VST host's MIDI path ("Turn off all notes" ends the notes
+# of every MIDI channel, and the note path publishes into the hand-off queue instead of taking
+# the plug-in mutex) - is now a tracked source, so the recipe derives it and the entry list
+# below lists it.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -3019,6 +3024,7 @@ tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/SlicerTZoomTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/TripleOscillatorUserWaveTest.cpp
+tests/src/plugins/VestigeMidiHandoffTest.cpp
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3ChunkProbeTest.cpp
