@@ -2542,6 +2542,7 @@ tests/src/core/ControlTempoMapCommandsTest.cpp
 tests/src/core/ControlVcaCommandsTest.cpp
 tests/src/core/ControlVcaEditGroupsTest.cpp
 tests/src/core/ControlVcaLockedEditsTest.cpp
+tests/src/core/ControlVcaNestTest.cpp
 tests/src/core/ControlVcaTestSupport.h
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp

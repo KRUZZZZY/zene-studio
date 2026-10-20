@@ -700,6 +700,9 @@ set(LMMS_TESTS
 	# entity's own edit set + lock in the mixer element. The helpers both halves
 	# use are in src/core/ControlVcaTestSupport.h.
 	src/core/ControlVcaEditGroupsTest.cpp
+	# vca.set_links / vca.set_parent with a request that changes nothing: no undo step, no
+	# modified mark, and the one real change still one undo step (src/core/ControlCommandsVcaNest.cpp).
+	src/core/ControlVcaNestTest.cpp
 	# R3.5: the phase-locked split, trim, slip and fade.
 	src/core/ControlVcaLockedEditsTest.cpp
 	# R3.2: clip.consolidate - the clips' own audio (gain, fades, the composite's gate, a
@@ -2346,7 +2349,7 @@ set_tests_properties(PatcherCommandsTest PROPERTIES
 # Qt platform plugin for the same reason the two above do. So does its sibling,
 # ControlVcaEditGroupsTest - the same group's edit half, split out for the
 # 500-line file ratchet.
-set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest PROPERTIES
+set_tests_properties(ControlVcaCommandsTest ControlVcaEditGroupsTest ControlVcaNestTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # ClipLinkTest, ClipLinkPersistenceTest and ImportDetectionTest are the other way
 # round, and cost a CI cycle to learn: the TEST may be guiless, but the BINARY is

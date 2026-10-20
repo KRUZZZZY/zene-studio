@@ -53,6 +53,8 @@ struct GroupLinks
 	bool mute = true;
 	bool solo = true;
 	bool suspended = false;
+
+	bool operator==(const GroupLinks& other) const = default;
 };
 
 GroupLinks linksOf(const VcaGroup* group)
@@ -96,16 +98,26 @@ ControlResult change(VcaGroup* group, const GroupLinks& next, const QString& com
 {
 	const int id = group->id();
 	const GroupLinks before = linksOf(group);
-	control::addUndoStep([id, before]() { apply(id, before); }, [id, next]() { apply(id, next); });
-	apply(id, next);
-	Engine::getSong()->setModified();
+	// A request for what the group already has changes nothing: it records no undo step, marks nothing modified and
+	// carries no transaction, so the registry records nothing for the call either.
+	const bool changed = next != before;
+	if (changed)
+	{
+		control::addUndoStep([id, before]() { apply(id, before); }, [id, next]() { apply(id, next); });
+		apply(id, next);
+		Engine::getSong()->setModified();
+	}
 	QJsonObject result = groupState(group);
 	result.insert(QStringLiteral("parent"), parentIdOf(next));
 	result.insert(QStringLiteral("links"), linksJson(next));
-	QJsonObject previous{{QStringLiteral("group"), vcaGroupId(id)}, {QStringLiteral("parent"), parentIdOf(before)},
-		{QStringLiteral("links"), linksJson(before)}};
-	result.insert(QStringLiteral("__transaction"), control::transactionPayload(previous, command, inverseArgs(id, before, command),
-		true, QStringLiteral("action checkpoint: the recorded undo step puts the group's previous nesting and links back")));
+	if (changed)
+	{
+		QJsonObject previous{{QStringLiteral("group"), vcaGroupId(id)}, {QStringLiteral("parent"), parentIdOf(before)},
+			{QStringLiteral("links"), linksJson(before)}};
+		result.insert(QStringLiteral("__transaction"), control::transactionPayload(previous, command,
+			inverseArgs(id, before, command), true,
+			QStringLiteral("action checkpoint: the recorded undo step puts the group's previous nesting and links back")));
+	}
 	return ControlResult::success(result);
 }
 
