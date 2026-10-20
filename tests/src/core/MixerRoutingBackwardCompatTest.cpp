@@ -281,6 +281,30 @@ private slots:
 		}
 	}
 
+	// Duplicate mixerchannel elements are not additional channels. They must
+	// not inflate the load bound enough for a send target to allocate channels
+	// that the file does not describe.
+	void duplicateChannelElementsCannotInflateProjectIndexBound()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		Engine::getSong()->clearErrors();
+
+		QDomDocument doc;
+		QDomElement root;
+		QVERIFY2(parseMixerElement(
+			"<mixer><mixerchannel num=\"0\"><send channel=\"4\"/></mixerchannel>"
+			"<mixerchannel num=\"0\"/><mixerchannel num=\"0\"/><mixerchannel num=\"0\"/></mixer>",
+			doc, root), "the duplicate-index fixture is not valid XML");
+
+		mixer->loadSettings(root);
+
+		QCOMPARE(mixer->numChannels(), 1);
+		QVERIFY2(Engine::getSong()->hasErrors(), "the unsupported send target was not reported");
+		QVERIFY2(Engine::getSong()->errorSummary().contains("4"),
+			qPrintable(Engine::getSong()->errorSummary()));
+	}
+
 	// A project the APPLICATION created and saved must load back exactly as
 	// it was saved. The application creates channels without a limit
 	// (Mixer::createChannel(), mixer.create_channel) and writes one

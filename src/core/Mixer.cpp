@@ -30,6 +30,7 @@
 
 #include <QDebug>
 #include <QDomElement>
+#include <QSet>
 #include <QScopedValueRollback>
 
 #include "AudioBusHandle.h"
@@ -87,21 +88,26 @@ bool looksLikeDecimalInteger(const QString& text)
 	return true;
 }
 
-//! The number of channels the project file describes. The application writes
-//! one <mixerchannel> element per channel - the master included - so the
-//! elements ARE the channels the file has.
+//! The number of distinct channel indices the project file describes. The
+//! application writes one <mixerchannel> element per channel with a distinct
+//! index, so a saved project keeps its full range. Counting unique indices
+//! prevents duplicate elements from inflating the allocation bound.
 int countDescribedChannels( const QDomElement & _this )
 {
-	int count = 0;
+	QSet<qlonglong> indices;
 	for( QDomNode node = _this.firstChild(); ! node.isNull(); node = node.nextSibling() )
 	{
-		if( node.toElement().nodeName() == QString( "mixerchannel" ) ) { ++count; }
+		const QDomElement channel = node.toElement();
+		if( channel.nodeName() != QString( "mixerchannel" ) ) { continue; }
+		bool ok = false;
+		const qlonglong index = channel.attribute( "num" ).toLongLong( &ok );
+		if( ok && index >= 0 ) { indices.insert( index ); }
 	}
-	return count;
+	return indices.size();
 }
 
 //! True when the index is one the project file backs up: 0..describedChannels.
-//! The bound is the FILE's own channel count, not a fixed number, so a
+//! The bound is the FILE's own distinct channel indices, not a fixed number, so a
 //! project the application created and saved loads however many channels it
 //! has - while an index the file does not describe (which is what a hostile
 //! file asks for) is refused: honouring it would let a 60-byte file choose

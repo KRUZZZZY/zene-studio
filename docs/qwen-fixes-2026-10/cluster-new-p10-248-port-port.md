@@ -31,18 +31,20 @@ the project file itself, so the loader and the application cannot disagree.
 
 ## What round 2 changed
 
-The bound is now **the number of channels the file describes**: the application
-writes one `<mixerchannel>` element per channel (the master included -
-`src/core/Mixer.cpp:2465`), so the elements ARE the channels the file has. A
-project-supplied index may address `0..describedChannels` - the channels the
-file describes, plus the one channel a file may name without describing it
-(the behaviour the loader has always had). An index beyond that names a
-channel the file does not have, and honouring it would let the FILE choose how
-much memory the load takes - which is the bug this cluster is about.
+The bound is now **the number of distinct nonnegative channel indices in the
+file's `<mixerchannel num>` attributes**. The application writes one
+`<mixerchannel>` element with a distinct index per channel (the master included
+- `src/core/Mixer.cpp:2465`), so an application-saved project still describes
+all its channels. A project-supplied index may address `0..describedChannels` -
+the distinct indices in the file, plus the one channel a file may name without
+describing it (the behaviour the loader has always had). Repeated elements
+cannot inflate this bound. An index beyond it names a channel the file does
+not have, and honouring it would let the FILE choose how much memory the load
+takes - which is the bug this cluster is about.
 
 | Location (after round 2) | Behaviour |
 | --- | --- |
-| `src/core/Mixer.cpp:93` `countDescribedChannels` | counts the `<mixerchannel>` elements of the file being loaded |
+| `src/core/Mixer.cpp:93` `countDescribedChannels` | counts distinct, nonnegative, parseable `num` indices on `<mixerchannel>` elements |
 | `src/core/Mixer.cpp:109` `isSupportedProjectMixerIndex` | the supported range is `0..describedChannels` - the file's own, not a constant |
 | `src/core/Mixer.cpp:118` `parseProjectChannelIndex` | reads the attribute as `qlonglong`; an index the file does not back up is `OutOfRange`, a value that is not a number is `NotANumber` |
 | `src/core/Mixer.cpp:2631` `Mixer::allocateChannelsTo(num, describedChannels)` | the allocation itself refuses an index outside the file's range (second line of defence) |
@@ -58,15 +60,17 @@ and the whitespace-aware overflow classification.
 ### Why the bound cannot reject a project the application produced
 
 The application creates channels without a limit and writes one
-`<mixerchannel>` element per channel, so an application-written project with N
-channels describes N channels and names the indices `0..N-1`. The loader's
-bound is that same N, so such a project always loads - with all N channels.
+`<mixerchannel>` element per channel with a distinct index, so an
+application-written project with N channels has N distinct indices and names
+`0..N-1`. The loader's bound is that same N, so such a project always loads -
+with all N channels.
 The regression `aChannelTheApplicationCanCreateSurvivesSaveAndLoad` proves it
 for the channel at index 512 (the index round 1's constant cut off).
 
-The bound is also the *allocation* bound: the loader can never create more
-channels than the file holds elements, so a hostile file cannot ask for two
-billion channels no matter how small it is.
+The bound is also the *allocation* bound: the loader can create at most one
+more channel than the file's distinct channel indices, preserving the legacy
+one-unnamed-target behavior. Duplicate elements do not increase that limit,
+and a hostile file cannot ask for two billion channels with one index.
 
 ## What was wrong (the pre-fix code, this branch's base `2da2ed356`)
 
@@ -115,6 +119,11 @@ path with `num="2147483647"` would have created 2147483647 channels.
    name and its volume, and that the load collected **no** error - the
    application's own project must not draw a complaint.
 
+3. `duplicateChannelElementsCannotInflateProjectIndexBound` - four duplicate
+   `num="0"` channel elements must not make a send to channel 4 look
+   supported. It asserts that the mixer stays at one channel and collects an
+   error naming the target.
+
 The newest line's own malformed-input tests
 (`aMalformedSendTargetIsSkippedNotRoutedToMaster`,
 `aNegativeChannelNumberIsRejectedNotIndexed`,
@@ -122,9 +131,9 @@ The newest line's own malformed-input tests
 `aMalformedChannelNumberDoesNotOverwriteTheMaster`) were **kept** - they exist
 on this line and not on the port's base.
 
-Both tests are deterministic: they use fixed XML fixtures and the mixer's own
-save/load (`Mixer::saveSettings` / `Mixer::loadSettings`); the only injected
-values are the fixture strings and the song's error list
+All three regressions are deterministic: they use fixed XML fixtures and the
+mixer's own save/load (`Mixer::saveSettings` / `Mixer::loadSettings`); the only
+injected values are the fixture strings and the song's error list
 (`Song::clearErrors()` / `hasErrors()` / `errorSummary()`). No timer, no
 sleep, no thread, no audio period.
 
@@ -235,7 +244,8 @@ registered in `tests/all-sources.txt` and `tests/CMakeLists.txt`, so no
   bound is derived from, and neither was changed.
 * **No collateral damage: old projects and saved data still load as before, and
   any limit or check you added does not hit other callers that legitimately
-  exceed it.** The bound is the file's own channel count, so it cannot be
+  exceed it.** The bound is the file's own distinct nonnegative channel-index
+  count, so it cannot be
   exceeded by anything the application produces: the application writes one
   `<mixerchannel>` element per channel, and every one of the 31 shipped `.mmp`
   fixtures has contiguous indices (`elements == max(num) + 1`, checked with a
@@ -262,3 +272,25 @@ registered in `tests/all-sources.txt` and `tests/CMakeLists.txt`, so no
   `:2580`, `:2612`, `:2683`, `:2718`, `:2817` of the pre-fix tree), and the
   measured pre-fix behaviour is the RED run against the base code (513
   channels for a project that named 512).
+
+## QA follow-up
+
+Independent review found that counting raw `<mixerchannel>` elements let
+duplicate elements inflate the allocation bound. `countDescribedChannels`
+now counts distinct, parseable, nonnegative `num` indices. The saved-project
+round trip remains valid because `saveSettings()` emits each channel once with
+its own index. The added deterministic regression
+`duplicateChannelElementsCannotInflateProjectIndexBound` uses four repeated
+`num="0"` elements and a send to index 4; it requires one channel after load
+and a collected error.
+
+| Check | Command | EXIT / result |
+| --- | --- | --- |
+| Build the product and affected test targets | `cmake --build build --target zene MixerRoutingBackwardCompatTest ProjectOpenIntegrityTest -j12` | **0** (`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-248-port-port.r2/logs/qa-build-2.log`; restored final build `qa-build-4-restored.log`) |
+| Focused tests | `cd build/tests && ctest -R '^(MixerRoutingBackwardCompatTest\|ProjectOpenIntegrityTest)$' --output-on-failure` | **0**, 2/2 passed (`qa-ctest-4-restored.log`) |
+| Reverse the distinct-index product change | `git diff -- src/core/Mixer.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-248-port-port.r2/logs/qa-unique-bound.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-248-port-port.r2/logs/qa-unique-bound.patch` | **0** |
+| Rebuild with that change reversed | `cmake --build build --target zene MixerRoutingBackwardCompatTest ProjectOpenIntegrityTest -j12` | **0** (`qa-build-3-reversed.log`) |
+| Duplicate-index regression with the change reversed | `cd build/tests && ctest -R '^MixerRoutingBackwardCompatTest$' --output-on-failure` | **8**; `duplicateChannelElementsCannotInflateProjectIndexBound` observed 5 channels, expected 1 (`qa-ctest-3-reversed.log`) |
+| Restore the change and rebuild | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-248-port-port.r2/logs/qa-unique-bound.patch`; then `cmake --build build --target zene MixerRoutingBackwardCompatTest ProjectOpenIntegrityTest -j12` | **0** for both (`qa-build-4-restored.log`) |
+| Focused tests after restore | `cd build/tests && ctest -R '^(MixerRoutingBackwardCompatTest\|ProjectOpenIntegrityTest)$' --output-on-failure` | **0**, 2/2 passed (`qa-ctest-4-restored.log`) |
+| Required feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-248-port-port` | **0**, 8/8 PASS; complexity and file-length show no new item (`qa-feature-check-2.log`) |
