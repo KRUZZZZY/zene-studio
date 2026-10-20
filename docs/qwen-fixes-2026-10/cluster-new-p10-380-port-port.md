@@ -47,7 +47,25 @@ Build env note: `ccache` could not use `/run/user/1000/ccache-tmp` in this sandb
 
 Affected-family tests executed: 2 ctest tests (`SidInstrument`, `PluginPortsMigrationTest`), 1 + 1 SID slots pass; `PluginPortsMigrationTest`'s one failing slot is the missing SWH fixture, not touched by this change.
 
-Gates: see the Self-check section.
+Gates (`gates-3.log`, run after the commit because all-sources is derived from tracked files; first run `gates-2.log` was red only
+for fork-sources/all-sources-reproduce because the new test file was still untracked):
+
+| Gate | Result |
+|---|---|
+| fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length | all PASS, `RESULT: PASS`, EXIT=0 |
+
+Gate-runner caveat: the official `feature_check.py` cannot create its log directory `<worktree>-feature-check` (sibling of the worktree, outside
+the write-jail: `PermissionError`, `gates-1.log`, EXIT=1), so `submit_check.py` reports its "gates" item FAIL for that reason only. I ran an
+identical copy (`/tmp/p10380-gate/feature_check_tmp.py`: only the `logs` path redirected to /tmp and `ROOT` pinned to the original
+directory; gate commands and limits untouched) - that is the table above.
 
 Files committed: `plugins/Sid/SidInstrument.cpp`, `tests/src/plugins/SidInstrument.cpp`, `tests/CMakeLists.txt`, `tests/fork-sources.txt`,
 `tests/all-sources.txt`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p10-380-port-port.md`.
+
+## Self-check
+
+- **Reverted -> FAIL, applied -> PASS:** reverted: `ctest -R '^SidInstrument$'` EXIT=8 (`test-4b-red.log`, tail frame 224 = 0.580078); fix applied: EXIT=0 for `SidInstrument` (`test-green-1.log`, `test-4b-green.log`).
+- **Deterministic:** no timing, sleeps or threads. The rate change is injected with `AudioDevice::setSampleRateForTesting` (44100 then 96000), the SID is driven by direct `playNote` calls, and the stack is poisoned with a fixed 0xA5 pattern by a noinline helper. The asserted frames are the last 32 of the period, always in the un-produced tail (~46% of the period is produced at 96 kHz). Run red 3x (same failure) and green repeatedly.
+- **Cause and completeness:** the cause is `playNoteImpl` ignoring `sid_fillbuffer`'s produced count while converting the whole `short buf[frames]` VLA (`plugins/Sid/SidInstrument.cpp:271`, `:375-380`). `sid_fillbuffer` (`:241`) has exactly one caller (`rg -n sid_fillbuffer`: `:241` definition, `:379` call). The newer register-write scheduler (`SidPlaybackScheduler.h` `fillBuffer`) makes short returns possible for more reasons; the tail zero-fill covers all of them. The `_alloca` branch (`#else`, MSVC) is the same `buf` and is covered by the same fill.
+- **No collateral damage:** nothing saved or loaded is touched. When `produced == frames` (constant rate, the normal case) `std::fill` is empty and the output is bit-identical. `std::clamp` only guards a negative or oversized return. No new limit or check on callers; no command added; no allocation/lock/log on the audio thread.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; verdict is FIXED (the earlier FALSE-POSITIVE reasoning assumed a constant rate, disproved by the 44.1 -> 96 kHz measurement above).
