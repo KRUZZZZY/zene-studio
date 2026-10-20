@@ -23,6 +23,7 @@
 #include <memory>
 #include <span>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 #include "AudioDevice.h"
@@ -64,6 +65,77 @@ bool knownBlock(const Block& block, const std::vector<Block>& states)
 		if (identical(block, state)) { return true; }
 	}
 	return false;
+}
+
+//! One flat waveform of `kWaveLength` samples.
+std::array<float, kWaveLength> flatWaveform(float value)
+{
+	std::array<float, kWaveLength> samples;
+	samples.fill(value);
+	return samples;
+}
+
+/*! Whether the plug-in has the immutable waveform hand-off.
+ *
+ * The mechanical negative control reverts the WHOLE product change, so in that
+ * state the hand-off the deterministic case drives is not there at all. The
+ * case is compiled through this trait, so the file still builds there and the
+ * control sees the behavioural failures the reverted plug-in produces (an
+ * in-place model edit that reaches a note) instead of a build error.
+ */
+template <typename T, typename = void>
+struct HasWaveformHandOff : std::false_type
+{};
+
+template <typename T>
+struct HasWaveformHandOff<T, std::void_t<typename T::WaveformSnapshot>> : std::true_type
+{};
+
+//! The held-waveform check, in a template so that it is only compiled where
+//! the hand-off exists.
+template <typename Snapshot>
+void checkHeldWaveform()
+{
+	Snapshot snapshot;
+	const auto first = flatWaveform(0.25f);
+	snapshot.publish(first.data());
+
+	// The audio thread takes the published waveform and keeps it while it
+	// copies it into the string.
+	const float* held = snapshot.samples();
+
+	// The GUI thread publishes three more waveforms meanwhile.
+	const auto second = flatWaveform(-0.5f);
+	snapshot.publish(second.data());
+	const auto third = flatWaveform(0.75f);
+	snapshot.publish(third.data());
+	const auto fourth = flatWaveform(-1.f);
+	snapshot.publish(fourth.data());
+
+	QVERIFY2(std::memcmp(held, first.data(), sizeof(first)) == 0,
+		"a waveform the reader was holding was rewritten by a later "
+		"publication: the reader would copy a half-written waveform");
+
+	// The control: the publications did reach the next reader, so the check
+	// above has the power to fail.
+	const float* latest = snapshot.samples();
+	QVERIFY2(std::memcmp(latest, fourth.data(), sizeof(fourth)) == 0,
+		"the last publication did not reach the reader");
+}
+
+//! Runs the held-waveform check against the plug-in's hand-off.
+template <typename T>
+void runHeldWaveformCheck()
+{
+	if constexpr (HasWaveformHandOff<T>::value)
+	{
+		checkHeldWaveform<typename T::WaveformSnapshot>();
+	}
+	else
+	{
+		QFAIL("the plug-in has no immutable waveform hand-off: the audio thread "
+			"reads the wave graph model the GUI thread rewrites");
+	}
 }
 
 } // namespace
@@ -274,42 +346,10 @@ private slots:
 	//! go past.
 	void aHeldWaveformSurvivesThreePublications()
 	{
-		Vibed::WaveformSnapshot snapshot;
-		const auto first = flatWaveform(0.25f);
-		snapshot.publish(first.data());
-
-		// The audio thread takes the published waveform and keeps it while it
-		// copies it into the string.
-		const float* held = snapshot.samples();
-
-		// The GUI thread publishes three more waveforms meanwhile.
-		const auto second = flatWaveform(-0.5f);
-		snapshot.publish(second.data());
-		const auto third = flatWaveform(0.75f);
-		snapshot.publish(third.data());
-		const auto fourth = flatWaveform(-1.f);
-		snapshot.publish(fourth.data());
-
-		QVERIFY2(std::memcmp(held, first.data(), sizeof(first)) == 0,
-			"a waveform the reader was holding was rewritten by a later "
-			"publication: the reader would copy a half-written waveform");
-
-		// The control: the publications did reach the next reader, so the check
-		// above has the power to fail.
-		const float* latest = snapshot.samples();
-		QVERIFY2(std::memcmp(latest, fourth.data(), sizeof(fourth)) == 0,
-			"the last publication did not reach the reader");
+		runHeldWaveformCheck<Vibed>();
 	}
 
 private:
-	//! One flat waveform of `kWaveLength` samples.
-	static std::array<float, kWaveLength> flatWaveform(float value)
-	{
-		std::array<float, kWaveLength> samples;
-		samples.fill(value);
-		return samples;
-	}
-
 	bool m_engineUp = false;
 	InstrumentTrack* m_track = nullptr;
 	std::unique_ptr<Vibed> m_instrument;
