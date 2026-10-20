@@ -9,6 +9,7 @@
 #include <poll.h>
 #include <sndio.h>
 
+#include <QElapsedTimer>
 #include <QSemaphore>
 #include <QThread>
 
@@ -154,17 +155,37 @@ private slots:
 		QCOMPARE(deviceBytes, QByteArray::fromHex("903C7F"));
 	}
 
-	//! Ordinary teardown drains the queue: every byte sent before the client is
-	//! destroyed reaches the device before the handle is closed.
+	//! Ordinary teardown drains the queue: bytes still queued when teardown begins
+	//! reach the device before the handle is closed. The writer is held inside its
+	//! first device write while two more bytes queue behind it, and the gate opens
+	//! only once teardown has visibly started (m_quit is set), so the queue is
+	//! provably non-empty at that moment. Discarding it would fail the close check.
 	void queuedBytesAreDeliveredBeforeTeardownCloses()
 	{
 		resetDevice(true);
+		stallWrites = 1;
+		auto* midi = new TestMidiSndio;
+		QVERIFY(midi->isRunning());
+		midi->sendByte(0x90);
+		QVERIFY(writeStarted.tryAcquire(1, 5000));
+		midi->sendByte(0x3C);
+		midi->sendByte(0x7F);
+
+		// Teardown runs on its own thread, so this thread can watch m_quit change.
+		QThread* teardown = QThread::create([midi] { delete midi; });
+		teardown->start();
+		bool teardownStarted = false;
+		QElapsedTimer waited;
+		waited.start();
+		while (!(teardownStarted = midi->m_quit.load()) && waited.elapsed() < 5000)
 		{
-			TestMidiSndio midi;
-			midi.sendByte(0x90);
-			midi.sendByte(0x3C);
-			midi.sendByte(0x7F);
+			QThread::yieldCurrentThread();
 		}
+		writeGate.release();
+		QVERIFY(teardownStarted);
+		QVERIFY(teardown->wait(10000));
+		delete teardown;
+
 		QVERIFY(closed.tryAcquire(1, 5000));
 		QCOMPARE(closeCalls, 1);
 		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F"));

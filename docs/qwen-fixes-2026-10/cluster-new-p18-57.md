@@ -24,7 +24,7 @@
 
 ## Round-2 tests (`tests/src/core/MidiSndioTest.cpp`)
 
-- `queuedBytesAreDeliveredBeforeTeardownCloses`: sends three bytes, destroys the client, asserts the close happens after all three were written (`closedBytes == 903C7F`).
+- `queuedBytesAreDeliveredBeforeTeardownCloses` (barrier version, see round 3): the writer is held in its first device write, two more bytes queue behind it, and the gate opens only after `m_quit` has been observed set, so the queue is provably non-empty when teardown begins. Asserts the close happens after all three bytes were written (`closedBytes == 903C7F`).
 - `stalledWriteTeardownDoesNotCloseTheHandleUnderTheWrite`: the fake device blocks the first write (`stallWrites = 1`, `writeStarted` / `writeGate`); two more bytes are queued behind it; the client is destroyed; asserts teardown returned with `closeCalls == 0`, then releases the gate and asserts the writer closed the handle once with `903C7F` delivered.
 - The four round-1 tests are unchanged.
 
@@ -58,6 +58,40 @@ Round 2 logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p1
 
 **Note on build.** ccache could not write under `/run/user/1000`. Builds used `CCACHE_TEMPDIR=/tmp/ccache-tmp-p18-57`. No code change was involved.
 
+## Round 3: deterministic ordinary-drain regression
+
+Review round 2 (REWORK) asked that `queuedBytesAreDeliveredBeforeTeardownCloses` prove, deterministically, that bytes are still queued when teardown begins. The round-2 version queued bytes without a barrier, so the writer could consume them before teardown and the test could pass with the bug present.
+
+The test now works like this (`tests/src/core/MidiSndioTest.cpp`, `queuedBytesAreDeliveredBeforeTeardownCloses`):
+
+1. `stallWrites = 1`; create the client; assert `isRunning()` (the reader is up).
+2. `sendByte(0x90)`; wait on `writeStarted`, so the writer is provably blocked inside its first device write.
+3. `sendByte(0x3C)`, `sendByte(0x7F)`: both are queued behind the blocked write.
+4. Start teardown (`delete midi`) on its own thread, so this thread can watch the object.
+5. Spin with `QThread::yieldCurrentThread()` until `midi->m_quit` is true, which the destructor sets first. The loop has a 5 s failure bound; it is not a sleep.
+6. Only then `writeGate.release()`. Join the teardown thread and assert `closedBytes == 903C7F` at close.
+
+The gate cannot open before `m_quit` is set, so the two bytes are in the pipe when teardown starts. If teardown discards them, the close check fails.
+
+Residual timing assumption in step 5, recorded honestly: the spin reads the object's `m_quit` until it sees it. If the spinning thread were not scheduled for longer than the 1000 ms teardown grace after `m_quit` was set, the destructor would finish first and that last read would touch freed memory. Under this test the grace expiring means the gate has not been released, so the spin cannot have finished. The window needs a full second of starvation of the spinning thread, and I have not seen it. Removing it would need a test seam in production code, which I did not add. Say so if you want that seam.
+
+Round-3 evidence (logs in `runs/new-p18-57.r3/logs/`):
+
+| Step | Command | Log | EXIT |
+| --- | --- | --- | --- |
+| R3 GREEN (round-2 product, barrier test) | `cmake --build build --target zene MidiSndioTest MidiReconnectTest -j4`; `./MidiSndioTest` | `build-green-r3-1.log`, `test-green-r3-1.log` | build 0; run 0 (8 passed, 0 failed) |
+| **R3 RED (round-1 product, barrier test)** | `git diff 8a6b5a0f8 HEAD -- include/MidiSndio.h src/core/midi/MidiSndio.cpp > logs/r2-product.patch`; `git apply -R logs/r2-product.patch`; rebuild; `./MidiSndioTest queuedBytesAreDeliveredBeforeTeardownCloses` x5 | `test-4b-reverted-r3-drain-1..5.log` | build 0; each run **1** (`closedBytes` is `"\x90"`, `MidiSndioTest.cpp:191`; `3C 7F` discarded) |
+| R3 restore | `git apply logs/r2-product.patch`; rebuild; `./MidiSndioTest` | `build-4b-restored-r3.log`, `test-4b-restored-r3.log` | build 0; run 0 (8 passed); drain test alone x5 each 0 |
+| R3 family build | `cmake --build build --target MidiReconnectActionTest ControlMidiReconnectSharedTest MidiSndioTest MidiReconnectTest zene -j4` | `build-family-r3-1.log` | 0 |
+| **R3 family** | `ctest -R 'Midi(Sndio\|Reconnect)' --output-on-failure` | `test-family-r3-1.log` | **0** (5/5 passed, including `ControlMidiReconnect`) |
+| gates (raw commands) | `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures` | `gate-<name>-r3.log` | 0 / 0 / 0 / 0 / 0 / 0 |
+| | `bash tests/complexity-gate.sh --check` | `gate-complexity-r3.log` | 1 (6 items in other files; 0 mention MidiSndio) |
+| | `bash tests/file-length-gate.sh --check` | `gate-file-length-r3.log` | 1 (15 items in other files; 0 mention MidiSndio) |
+| **feature check** (copy, see note) | `python3 -I /tmp/fc-p18-57/feature_check.py <worktree>` | `feature-check-run-r3.log` | **0** (`RESULT: PASS`, all 8 rows PASS) |
+| whitespace | `git diff --check` | - | 0 |
+
+The round-2 stalled-write test is unchanged and still passes on the round-2 product code (8/8 with it). Its reverted-code result (EXIT 134, watchdog timeout) is in the round-2 table above.
+
 ## Round-1 record (kept for history)
 
 | Step | Command | Log | EXIT |
@@ -82,8 +116,8 @@ Round 2 logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p1
 
 ## Self-check
 
-- **The regression tests FAIL with the product change reverted and PASS with it (exit codes).** Round 2: reviewed code (reverted) drain test EXIT 1, stall test EXIT 134 (watchdog timeout at 300 s); restored: `MidiSndioTest` EXIT 0, 8/8. Round 1: reverted EXIT 8 on `MidiSndioTest.cpp:117`, restored EXIT 0.
-- **The tests are deterministic.** The device is injected: `mio_open`, `mio_write`, `mio_read`, `mio_pollfd`, `mio_revents` and `mio_close` are fakes in `MidiSndioTest.cpp`. Synchronisation uses `QSemaphore`s that the fake releases (`bytesWritten` per byte accepted, `writeStarted` when a stalled write begins, `closed` per close). Each test waits on exactly what it expects. The only time bounds are `tryAcquire(n, 5000)`, which return as soon as the event happens, and the production grace in residual risk 4. No sleeps. The stall test asserts `closeCalls == 0` only while the writer is provably blocked, because `writeStarted` was acquired first.
+- **The regression tests FAIL with the product change reverted and PASS with it (exit codes).** Round 3: drain test on the round-1 product EXIT 1 in 5 of 5 runs; restored round-2 product: `MidiSndioTest` EXIT 0, 8/8, and the drain test alone EXIT 0 in 5 of 5 runs. Round 2: reverted drain EXIT 1, stall EXIT 134 (watchdog timeout at 300 s). Round 1: reverted EXIT 8 on `MidiSndioTest.cpp:117`, restored EXIT 0.
+- **The tests are deterministic.** The device is injected: `mio_open`, `mio_write`, `mio_read`, `mio_pollfd`, `mio_revents` and `mio_close` are fakes in `MidiSndioTest.cpp`. Synchronisation uses `QSemaphore`s that the fake releases (`bytesWritten` per byte accepted, `writeStarted` when a stalled write begins, `closed` per close). The drain test's barrier is the observed `m_quit` flip (round 3, residual timing assumption above). Each test waits on exactly what it expects. The only time bounds are `tryAcquire(n, 5000)` and the 5 s failure bound on the `m_quit` spin, which return as soon as the event happens, and the production grace in residual risk 4. No sleeps. The stall test asserts `closeCalls == 0` only while the writer is provably blocked, because `writeStarted` was acquired first.
 - **The fix is at the cause and complete.** `mio_write` appears only in `runWriter` (`MidiSndio.cpp:192`). `mio_close` appears in `runWriter` (`MidiSndio.cpp:200`) and in the constructor's pipe-failure path (`MidiSndio.cpp:102`), where no writer exists yet. The destructor no longer closes the handle. The ordinary path closes the handle before the destructor returns, which keeps the reconnect test's shutdown checks true (`MidiReconnectTest` 15 passed, 0 failed, re-run this round). The failed-open path is unchanged. Callers of `sendByte()` are unchanged.
 - **No collateral damage.** No saved-data format, no control command (no `ControlCommandsSnapshot` change), no limit that other callers hit. Behaviour changes are residual risks 2, 3 and 5. Project files are unaffected.
 - **Verdict is FIXED, so no ALREADY-FIXED or FALSE-POSITIVE evidence is needed.**
