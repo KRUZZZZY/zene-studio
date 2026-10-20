@@ -44,6 +44,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <array>
 #include <memory>
 #include <span>
 #include <vector>
@@ -61,6 +62,7 @@
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TimePos.h"
+#include "WarpMarkers.h"
 
 #if __has_include("SampleWindow.h")
 #include "SampleWindow.h"
@@ -567,6 +569,37 @@ private slots:
 		QVERIFY2(std::abs(static_cast<int>(clip->length()) - static_cast<int>(clip->sampleLength())) <= 1,
 				 qPrintable(QStringLiteral("the length stayed at %1, the window says %2")
 						.arg(clip->length().getTicks()).arg(clip->sampleLength().getTicks())));
+	}
+
+	//! BUG new-p17-158: a source whose rate is zero has no frames per tick, so
+	//! the clip-to-timeline mapping has nothing to divide by. It has to answer
+	//! with a DEFINED position - the clip's own origin, the fallback the linear
+	//! branch already gets from TimePos::fromFrames() - and not with a position
+	//! computed from a zero rate, which put the frame hundreds of ticks outside
+	//! the clip that owns it.
+	void aZeroRateSourceMapsToTheClipOrigin()
+	{
+		SampleTrack track(Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+
+		// a zero-rate source: 1024 frames of silence at rate 0
+		std::vector<SampleFrame> data(1024, SampleFrame(0.0f, 0.0f));
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), 0));
+		QVERIFY(clip->clipFramesPerTick() <= 0.0f);
+
+		const auto origin = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
+
+		// the linear mapping answers with the origin ...
+		QCOMPARE(clip->timelinePosAt(0).getTicks(), origin);
+		QCOMPARE(clip->timelinePosAt(512).getTicks(), origin);
+
+		// ... and so must the warped one, which used to divide by the zero rate
+		const std::array<WarpMarker, 2> markers{ WarpMarker{ 256, 4 }, WarpMarker{ 768, 12 } };
+		QVERIFY(clip->setWarpMarkers(std::span<const WarpMarker>(markers)));
+		QCOMPARE(clip->timelinePosAt(0).getTicks(), origin);
+		QCOMPARE(clip->timelinePosAt(512).getTicks(), origin);
+		QCOMPARE(clip->timelinePosAt(1023).getTicks(), origin);
 	}
 
 	//! I5: the length the author sees is the window's length, and a tempo change

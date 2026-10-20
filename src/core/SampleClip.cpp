@@ -779,6 +779,13 @@ TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
 {
 	const auto framesPerTick = clipFramesPerTick();
 	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
+	// BUG new-p17-158: a source whose rate is zero has no frames per tick, so
+	// there is nothing to divide by (windowTicksFor() and leadOutputFramesAt()
+	// refuse the same rate). The mapping answers with the clip's own origin -
+	// the defined fallback the linear branch already gets from
+	// TimePos::fromFrames() - instead of a position computed from a zero rate,
+	// which put the frame hundreds of ticks outside the clip that owns it.
+	if (!(framesPerTick > 0.0f)) { return TimePos(originTicks); }
 	// Luna cluster 2484: this mapping never consulted the play DIRECTION, so a reversed clip placed every
 	// source frame where the forward clip placed it. Sample::render reverses the WHOLE buffer: buffer frame
 	// f is read at play frame (size - 1 - f), and the window is played in play frames. So a reversed frame
