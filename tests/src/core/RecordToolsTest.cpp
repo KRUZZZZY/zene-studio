@@ -38,6 +38,7 @@
 #include "ControlCompSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "ConfigManager.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MetronomeOptions.h"
@@ -96,14 +97,24 @@ class RecordToolsTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		ConfigManager* const config = ConfigManager::inst();
+		const QString storedLevel = config->value(QStringLiteral("metronome"), QStringLiteral("level"), QStringLiteral("1"));
+		config->setValue(QStringLiteral("metronome"), QStringLiteral("level"), QStringLiteral("invalid"));
 		Engine::init(true);
 		ControlRegistry::setReady(true);
+		m_levelLoadedFromInvalidConfig = metronomeoptions::options().level;
+		config->setValue(QStringLiteral("metronome"), QStringLiteral("level"), storedLevel);
 	}
 
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	void invalidStoredLevelUsesDefault()
+	{
+		QCOMPARE(m_levelLoadedFromInvalidConfig, 1.f);
 	}
 
 	void aCompEdgeMoves()
@@ -417,6 +428,9 @@ private slots:
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
 	}
+
+private:
+	float m_levelLoadedFromInvalidConfig = 0.f;
 };
 
 QTEST_MAIN(RecordToolsTest)
