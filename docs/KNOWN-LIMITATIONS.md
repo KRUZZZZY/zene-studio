@@ -808,18 +808,38 @@ library to work.
 Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium, best) - set through
 `export.set_dither` / `export.set_src_quality`; `ExportQualityControlsTest`.)* No RPDF, by decision.
 
+- *(Updated 2026-10-19.)* **The Search view searches by tag and - with the Search file metadata
+  toggle - by embedded metadata now** (Q050-075): typing `tag:drums` finds the files tagged
+  `drums` alongside the other expression fields (`kind:`, `name:`, `path:`, `ext:`), and the
+  toggle sends `probe: true` to `browser.query` so a search matches what the audio files
+  themselves say - the embedded title/artist/album/comment/genre and the sample rate, channels,
+  frames and duration - opening at most 200 files per search (the command's `probe_limit`,
+  `LibraryMenusTest`). The whole-library index takes no `probe` (it stores no embedded
+  metadata), so the toggle is disabled while **Whole library** is on. `browser.query` re-reads
+  the tag store file before matching, so a `tag:` search reflects tags written by another
+  instance or earlier in the session. The waveform peak cache and peak drawing stay socket-only
+  (`browser.peaks`): the Search view draws no waveforms. The bullets below are the earlier
+  records.
 - *(Updated 2026-09-30.)* **A file's context menu in the browser now has a Tags submenu**: every tag the
   library knows, the file's own checked - check to add (`browser.tag.add`), uncheck to remove
-  (`browser.tag.remove`) - and New tag... (`BrowserTagMenuTest`). Searching by tag or by metadata, and
-  the peak cache, are still socket-only. The bullet below is the pre-menu record.
+  (`browser.tag.remove`) - and New tag... (`BrowserTagMenuTest`). Searching by tag and by metadata is in
+  the Search view now (the bullet above); the waveform peak cache alone is still socket-only. The bullet
+  below is the pre-menu record.
 - **Browser tag/metadata search and the waveform peak cache have no interface — added 2026-09-13.**
+  *(Superseded for tag and metadata search: both are in the Search view - `tag:` alongside the other
+  expression fields, embedded and numeric metadata behind the Search file metadata toggle. Only the
+  waveform peak cache and peak drawing are still socket-only; see the bullet above. What follows is the
+  record as of its date.)*
   The browser's items can be queried by name, by tag and by what the audio file itself says it is (sample
   rate, channels, length and the embedded title/artist/album/comment/genre tags), and a file's waveform
   peaks are read through a bounded cache — all of it drivable through `--control-socket`
   (`browser.roots`, `browser.query`, `browser.tags`, `browser.peaks`, `browser.tag.add`,
-  `browser.tag.remove`). **Nothing in the interface can do any of it**: the browser's filter box still
-  matches file names only, there is no tag column, no tag editor and no query UI, and the browser does not
-  draw a waveform — drivable through the socket, not from the interface. The tags are persisted in the
+  `browser.tag.remove`). **Nothing in the interface can draw a waveform**: the browser's filter box
+  matches file names only, there is no tag column or tag editor, and the browser does not draw a
+  waveform — the peaks are drivable through the socket, not from the interface. (The filter box and
+  the missing tag column and tag editor are pre-menu and pre-search-view details of this record; tags
+  are edited from a file's Tags submenu and searched from the Search view, as the bullets above say.)
+  The tags are persisted in the
   user's config directory (`browser-tags.json`), not in the project file, so they are a property of the
   user's library rather than of a project; `docs/RELEASE-NOTES-v0.3.0-alpha.md` carries the same sentence.
 - **Tempo and time-signature changes have no editor — added 2026-09-13.** The engine is in (a persisted,
