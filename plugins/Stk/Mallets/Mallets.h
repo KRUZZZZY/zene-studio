@@ -208,6 +208,10 @@ public:
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
+	//! Whether the note claimed a prepared voice (false only if the shared pool
+	//! was exhausted, which cannot happen for engine-supported concurrency).
+	bool noteHasVoice( NotePlayHandle * _n ) const;
+
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;
 

@@ -45,6 +45,7 @@
 #include "FontHelper.h"
 #include "GuiApplication.h"
 #include "InstrumentTrack.h"
+#include "PlayHandle.h"
 
 #include "embed.h"
 #include "lmms_math.h"
@@ -77,11 +78,7 @@ Plugin::Descriptor PLUGIN_EXPORT malletsstk_plugin_descriptor =
 namespace
 {
 
-//! Sentinel stored in NotePlayHandle::m_pluginData when every prepared voice of
-//! the required family is in use. The note renders silence.
-char noMalletsVoiceMarker;
-
-constexpr std::size_t MALLETS_VOICE_POOL_CAPACITY = 128;
+constexpr std::size_t MALLETS_VOICE_POOL_CAPACITY = PlayHandle::MaxNumber;
 
 //! One preconstructed voice and its claim flag. The synth is built once, on the
 //! constructing thread, so the render thread only resets and arms it.
@@ -414,8 +411,6 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 		return;
 	}
 
-	if (_n->m_pluginData == &noMalletsVoiceMarker) { return; }
-
 	int p = m_presetsModel.value();
 
 	const float freq = _n->frequency();
@@ -477,7 +472,6 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 		}
 		if( slot == nullptr )
 		{
-			_n->m_pluginData = &noMalletsVoiceMarker;
 			return;
 		}
 
@@ -558,13 +552,18 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 
 void MalletsInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	if( _n->m_pluginData == nullptr || _n->m_pluginData == &noMalletsVoiceMarker )
+	if( _n->m_pluginData == nullptr )
 	{
 		_n->m_pluginData = nullptr;
 		return;
 	}
 	MalletsVoicePool::release( static_cast<MalletsVoiceSlot*>( _n->m_pluginData ) );
 	_n->m_pluginData = nullptr;
+}
+
+bool MalletsInstrument::noteHasVoice( NotePlayHandle * _n ) const
+{
+	return _n != nullptr && _n->m_pluginData != nullptr;
 }
 
 

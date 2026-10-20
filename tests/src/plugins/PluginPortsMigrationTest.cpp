@@ -847,6 +847,7 @@ private slots:
 	void xpressiveSynthIsNotCopyable();
 	void granularPitchShifterAdvertisesAllControls();
 	void migratedPluginsPreserveBehaviour();
+	void malletsPoolCoversEngineConcurrency();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
@@ -1907,6 +1908,113 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 	{
 		qWarning().noquote() << QString{"UNPROVEN %1: %2"}
 			.arg(QString::fromUtf8(gap.plugin), QString::fromUtf8(gap.reason));
+	}
+}
+
+void PluginPortsMigrationTest::malletsPoolCoversEngineConcurrency()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_malletsstk)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	const lmms::f_cnt_t frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	QVERIFY(frames > 0);
+
+	constexpr int instances = 2;
+	constexpr int notesPerInstance = 100;
+
+	std::vector<std::unique_ptr<lmms::InstrumentTrack>> tracks;
+	std::vector<lmms::Instrument*> instruments;
+	tracks.reserve(instances);
+	instruments.reserve(instances);
+	partc::prepareInstrumentEnvironment("malletsstk");
+
+	for (int i = 0; i < instances; ++i)
+	{
+		auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+		auto* inst = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+		QVERIFY(inst != nullptr);
+		partc::applyInstrumentTestSettings(*inst, "malletsstk");
+		tracks.push_back(std::move(track));
+		instruments.push_back(inst);
+	}
+
+	struct NoteHolder
+	{
+		lmms::NotePlayHandle* handle = nullptr;
+		lmms::Instrument* instrument = nullptr;
+	};
+
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames)}, lmms::TimePos{0}, lmms::DefaultKey};
+	std::vector<NoteHolder> notes;
+	notes.reserve(instances * notesPerInstance);
+	for (int i = 0; i < instances; ++i)
+	{
+		for (int j = 0; j < notesPerInstance; ++j)
+		{
+			auto handle = lmms::NotePlayHandleManager::acquire(
+				instruments[i]->instrumentTrack(), 0, frames, note, nullptr, -1,
+				lmms::NotePlayHandle::Origin::MidiClip);
+			notes.push_back({handle, instruments[i]});
+		}
+	}
+
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	const std::span<lmms::SampleFrame> span{data};
+
+	partc::RealtimeAllocationCounts counts;
+	partc::RealtimeAllocationWatch::begin();
+	for (auto& nh : notes)
+	{
+		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+		nh.instrument->playNote(nh.handle, span);
+	}
+	const auto periodCounts = partc::RealtimeAllocationWatch::end();
+	counts.allocations += periodCounts.allocations;
+	counts.deallocations += periodCounts.deallocations;
+
+	for (const auto& nh : notes)
+	{
+		QVERIFY2(nh.handle->m_pluginData != nullptr,
+			"Mallets note was silenced by voice-pool exhaustion");
+	}
+
+	partc::RealtimeAllocationWatch::begin();
+	for (auto& nh : notes)
+	{
+		if (nh.handle->m_pluginData != nullptr)
+		{
+			nh.instrument->deleteNotePluginData(nh.handle);
+		}
+	}
+	const auto cleanupCounts = partc::RealtimeAllocationWatch::end();
+	counts.allocations += cleanupCounts.allocations;
+	counts.deallocations += cleanupCounts.deallocations;
+
+	QVERIFY2(counts.allocations == 0 && counts.deallocations == 0,
+		qPrintable(QString{"render allocations=%1, deallocations=%2"}
+			.arg(static_cast<qulonglong>(counts.allocations))
+			.arg(static_cast<qulonglong>(counts.deallocations))));
+
+	for (auto& nh : notes)
+	{
+		if (nh.handle != nullptr)
+		{
+			lmms::NotePlayHandleManager::release(nh.handle);
+		}
+	}
+
+	for (auto* inst : instruments)
+	{
+		delete inst;
 	}
 }
 
