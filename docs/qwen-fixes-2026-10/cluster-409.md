@@ -172,14 +172,23 @@ reason (the new class does not exist without the patch).
    real impulse response through the real plugin module) passes. No project file, save
    format, command, parameter or default changed; old projects load exactly as before.
    The scope is a guard, not a limit: nothing refuses a legitimate caller.
-5. **Realtime, undo and commands.** Nothing was added to the audio thread: `process()` and
+5. **Verdict ALREADY-FIXED or FALSE-POSITIVE?** Not applicable - the verdict is FIXED. The
+   code that shows the defect and the code that removes it are cited above: the unguarded
+   planner calls at `plugins/ConvolutionReverb/ConvolutionKernel.cpp:37-47` and
+   `plugins/ConvolutionReverb/ConvolutionKernel.h:71,77` (pre-fix), and the scoped ones at
+   `plugins/ConvolutionReverb/ConvolutionKernel.cpp:36-56`, `:66-80` and
+   `plugins/ConvolutionReverb/ConvolutionKernel.h:77-102` (post-fix).
+
+Then the remaining rules of this lane:
+
+6. **Realtime, undo and commands.** Nothing was added to the audio thread: `process()` and
    `convolveChannel()` are untouched - no allocation, no free, no lock, no wait, no
    logging, no signal. The scope is taken only on the control thread (kernel construction
    and destruction). Undo is untouched: no command was added or changed, and
    `plugin.impulse_load` keeps its one undo step (the state restore calls the same
    `loadImpulse()`).
-6. **Old projects and saved data.** Unchanged - the fix touches no serializer, no
+7. **Old projects and saved data.** Unchanged - the fix touches no serializer, no
    parameter and no project structure.
-7. **Portability.** The new code uses only C++20 standard library features
+8. **Portability.** The new code uses only C++20 standard library features
    (`std::atomic`, `thread_local`) and the engine's existing API; no Qt-6-only API, no
    `windows.h` macro names, no `std::filesystem`.
