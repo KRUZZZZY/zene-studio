@@ -84,7 +84,7 @@ std::size_t AudioWideInputStage::push(const float* interleaved, int channels, f_
 }
 
 
-void AudioWideInputStage::drain() noexcept
+void AudioWideInputStage::drain(f_cnt_t maxFrames) noexcept
 {
 	// The other half of the double buffer: whatever the consumer was reading is
 	// now the write side, so a drain never writes under a live reader.
@@ -98,8 +98,12 @@ void AudioWideInputStage::drain() noexcept
 		return;
 	}
 
+	// At most the frames the caller asked for, so the wide block and the
+	// stereo pair can be drained as ONE capture block (cluster 3705); the rest
+	// stays in the ring for the next period.
 	const auto staged = m_stage->available();
-	const auto frames = std::min(staged, static_cast<std::size_t>(m_capacityFrames));
+	const auto frames = std::min({ staged, static_cast<std::size_t>(m_capacityFrames),
+		static_cast<std::size_t>(maxFrames) });
 	if (frames == 0)
 	{
 		return;

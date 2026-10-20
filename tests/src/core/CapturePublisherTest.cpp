@@ -173,6 +173,59 @@ private slots:
 		QCOMPARE(engine->inputBuffer()[5][1], 5.0f);
 	}
 
+	//! Luna cluster 3705: the N-CHANNEL block and the stereo pair are TWO REPRESENTATIONS
+	//! OF ONE CAPTURE BLOCK. The publisher pushes the wide block first and the stereo pair
+	//! second, so a render that lands between the two pushes used to consume one
+	//! representation now and the other in the next period: the recorder took the wide
+	//! block in one period and fell back to the same stereo block in the next - the same
+	//! audio twice, and the stereo bus a whole block behind the recorders. The two must
+	//! be drained as one block.
+	void theWideBlockAndItsStereoPairAreDrainedAsOneBlock()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		engine->renderNextPeriod();  // drain whatever the Dummy left behind
+		const f_cnt_t frames = 64;
+		const std::vector<float> wide(static_cast<std::size_t>(frames) * 2, 0.25f);
+		// The capture thread is preempted between the two pushes: the wide block is
+		// published, its stereo pair is not.
+		engine->pushInputFramesWide(wide.data(), 2, frames);
+		engine->renderNextPeriod();
+		// Neither representation may be consumed on its own.
+		QCOMPARE(engine->inputWideFrames(), f_cnt_t{0});
+		QCOMPARE(engine->inputBufferFrames(), f_cnt_t{0});
+		// The stereo pair of the SAME block arrives...
+		const std::vector<SampleFrame> pair(static_cast<std::size_t>(frames), SampleFrame(0.25f, 0.5f));
+		engine->pushInputFrames(pair.data(), frames);
+		engine->renderNextPeriod();
+		// ... and now both representations of that one block are consumed, together.
+		QCOMPARE(engine->inputWideFrames(), frames);
+		QCOMPARE(engine->inputBufferFrames(), frames);
+		QCOMPARE(engine->inputBuffer()[0][0], 0.25f);
+		QCOMPARE(engine->inputBuffer()[0][1], 0.5f);
+	}
+
+	//! The two representations are one block: a block the wide path refuses whole (a
+	//! width change while frames are still staged) must not be published to the stereo
+	//! path ALONE - the two paths would then be one block apart, and the recorder would
+	//! take the wide block in one period and this one in the next.
+	void aBlockTheWidePathRefusesIsNotPublishedToTheStereoPathAlone()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		engine->renderNextPeriod();
+		// A four-channel block that is NOT drained: the wide ring still holds it, so
+		// the next block's width cannot be adopted and the wide path refuses it.
+		const std::vector<float> four(64 * 4, 0.5f);
+		engine->pushInputFramesWide(four.data(), 4, 64);
+		const std::size_t stereoBefore = engine->inputFramesStaged();
+		FakeCaptureDevice device(engine);
+		device.prepare(64, 0, 1);
+		const std::vector<float> two(64 * 2, 0.25f);
+		device.publish(two, 2);
+		// The wide path refused the two-channel block, so the stereo path must not
+		// take it alone.
+		QCOMPARE(engine->inputFramesStaged(), stereoBefore);
+	}
+
 	//! BUGS_FOUND 11.9: the stage's width was fixed at its 128-channel storage, so a real
 	//! device's block was always refused. It now carries the producer's width, changing it
 	//! only once every block of the old width has been drained.

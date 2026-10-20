@@ -408,7 +408,11 @@ public:
 	//! Capture thread: stage one interleaved N-channel block. Realtime-safe. A
 	//! block wider than AudioInputPath::MaxChannels, or of a different width
 	//! than the one already staged, is refused whole and counted.
-	void pushInputFramesWide(const float* interleaved, int channels, f_cnt_t frames) noexcept;
+	//! \returns the frames the stage took (0 when it refused the block whole).
+	//! The publisher needs that number: the stereo representation of a capture
+	//! block is published for EXACTLY the frames the wide path took, so the two
+	//! paths are always one block (cluster 3705).
+	std::size_t pushInputFramesWide(const float* interleaved, int channels, f_cnt_t frames) noexcept;
 	//! Render thread: the N-channel input of the most recently rendered period.
 	const float* inputWideBuffer() const noexcept;
 	f_cnt_t inputWideFrames() const noexcept;
@@ -450,7 +454,15 @@ public:
 	 *  never held, so a take that starts there must not skip it. Read on the render thread;
 	 *  every device start (AudioDevice::startProcessing) resets it. */
 	bool inputStreamStarted() const { return m_inputStreamStarted.load(std::memory_order_relaxed); }
-	void resetInputStream() { m_inputStreamStarted.store(false, std::memory_order_relaxed); }
+	/*! A device (re)start: the capture path has delivered nothing yet, and the
+	 *  next device publishes its own blocks. The wide-path flag follows it, so
+	 *  a device that does not use the wide path at all drains the stereo ring
+	 *  on its own (cluster 3705). */
+	void resetInputStream()
+	{
+		m_inputStreamStarted.store(false, std::memory_order_relaxed);
+		m_captureWideInUse.store(false, std::memory_order_relaxed);
+	}
 
 	/**
 	 * @brief Renders the next audio period.
@@ -663,14 +675,25 @@ private:
 	//! m_inputBuffer[m_inputBufferRead]. Both m_inputBuffer entries are sized
 	//! to InputStageCapacityFrames, so a drain can never overrun them.
 	std::unique_ptr<SampleFrameRingBuffer> m_inputStage;
-	void drainInputStage() noexcept;
 
 	//! The N-CHANNEL capture stage (0.3.0, feature row 64; see
 	//! include/AudioWideInputStage.h). Allocated once in the constructor, off
 	//! every realtime thread, and drained once per rendered period beside
 	//! m_inputStage. May be null only before the constructor has run.
 	std::unique_ptr<AudioWideInputStage> m_wideInputStage;
-	void drainWideInputStage() noexcept;
+
+	/*! Whether the capture path publishes BOTH representations of a capture
+	 *  block - the N-channel block and the stereo pair (cluster 3705). Set by
+	 *  the first pushInputFramesWide(), cleared by every device (re)start.
+	 *  While it is set, the two stages are drained as ONE block: as many
+	 *  frames as both of them hold, so a render can never take the wide block
+	 *  in one period and the stereo pair in the next. A capture path that
+	 *  never uses the wide path drains the stereo ring on its own, exactly as
+	 *  it always did. */
+	std::atomic<bool> m_captureWideInUse{false};
+
+	//! Render thread: drain the capture stages once per rendered period.
+	void drainCaptureStages() noexcept;
 
 	//! prototype: N-route capture (task #556; N-wide since 0.3.0)
 	MultiTrackRecorder m_recorder;
