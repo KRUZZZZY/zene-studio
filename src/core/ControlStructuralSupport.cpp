@@ -70,6 +70,7 @@
 #include <QJsonObject>
 #include <QPointer>
 
+#include "AutomatableModel.h"
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
@@ -327,7 +328,11 @@ Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml)
 	// a chain (the restore reads the device's own parameters and state, and the
 	// device's chain pointer is set at instantiation), and the device is not in
 	// any chain yet, so the render thread never runs it: no audio change lock is
-	// taken here.
+	// taken here. The device's own models are not registered with the audio
+	// engine while it is built (the registration is deferred until the device
+	// is attached), so a model the render thread cannot see is written without
+	// the change lock the render thread takes once per period.
+	const DeferredModelRegistrationScope deferredRegistration;
 	Effect* effect = Effect::instantiate(pluginName, chain, hosted ? &key : nullptr);
 	if (effect == nullptr)
 	{
@@ -351,6 +356,19 @@ Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml)
 
 void attachRecordedDevice(EffectChain* chain, Effect* effect, int index)
 {
+	// The device's own models were created while the build deferred their
+	// registration, so the render thread has not seen them yet. They are
+	// registered here, under the change lock this function's callers already
+	// hold: a model that is not registered is not render-visible, and the
+	// device joins a chain from here on.
+	for (AutomatableModel* model : effect->findChildren<AutomatableModel*>(
+			QString(), Qt::FindChildrenRecursively))
+	{
+		if (!model->isRegisteredWithAudioEngine())
+		{
+			Engine::audioEngine()->registerAutomatableModel(model);
+		}
+	}
 	// The only change to the chain, and the only part that needs the audio change
 	// lock: appendEffect() puts the device at the END of the chain, which is where a
 	// project load leaves it too, and the recorded index is restored afterwards.

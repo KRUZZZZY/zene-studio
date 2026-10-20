@@ -1,7 +1,154 @@
 # Cluster review-51e7da51f - three findings in src/core/ScriptDawBindings.cpp
 
-1663: ALREADY-FIXED
+review-51e7da51f: ALREADY-FIXED
+## What the finding says
 
+"Commit introduced `aScriptsRemovedEffectIsUndoneByItsOwnStep` but
+`applyRemoveEffect` still does not call `journalEffectRemoval` before delete.
+Missing native plugin skipped this case and masked failure. Finish existing
+journal-before-delete integration, prove new regression really executes with
+plugin present and passes undo restoration; preserve script undo and realtime
+ownership contracts."
+
+## The journal-before-delete integration is on this branch
+
+`src/core/ScriptDawEdit.cpp:231` records the removal BEFORE the device is
+detached and deleted (`:240-241`):
+
+```cpp
+	Effect* effect = effects[index];
+	...
+	if (!control::journalEffectRemoval(chain, effect, index))
+	{
+		... the removal is refused and the device stays ...
+	}
+	// A recorded removal pushes exactly one checkpoint: the structural step.
+	control::detachEffect(chain, effect);
+	effect->deleteLater();
+```
+
+That is commit b9234d896 ("fix(rework 51e7da51f): a script's removeEffect was
+not undoable", 2026-10-08), which is an ancestor of this branch. The finding's
+first sentence describes the tree BEFORE that commit.
+
+## The masked failure was real, and it hid a red case
+
+This worktree's build held no plug-in module at all (`build/plugins` had no
+`.so`), so EVERY case of `tests/src/core/ScriptDawRemovalUndoTest.cpp` skipped
+("this build lists no loadable effect module") and the file's ctest line was
+green without running a thing. With the build's own BassBooster module
+present, the file runs 13 cases - and one of them FAILED:
+
+    FAIL!  : ScriptDawRemovalUndoTest::aRecordedDeviceIsBuiltWithoutTheAudioChangeLock()
+              'releasedByFlag.load()' returned FALSE. (building the recorded device waited for the
+              audio change lock (the holder's safety bound ran out))
+
+That is the cluster's REALTIME OWNERSHIP contract, and it was broken on this
+branch - not by this cluster, but by a later engine change. gdb on the blocked
+build (gdb -batch -ex "break lmms::control::instantiateRecordedDevice" -ex
+"tbreak lmms::AudioEngine::requestChangeInModel" ...):
+
+    #1  lmms::AutomatableModel::setInitValue(float)
+    #2  lmms::AutomatableModel::AutomatableModel(...)
+    #3  lmms::Effect::Effect(...)
+    #10 lmms::Effect::instantiate(...)
+    #11 lmms::control::instantiateRecordedDevice(lmms::EffectChain*, QString const&)
+
+The recorded device's BUILD creates the device's models, and every model
+construction takes the audio change lock (AudioEngine::registerAutomatableModel,
+`std::lock_guard{m_changeMutex}`, src/core/AudioEngine.cpp:446) and every model
+write takes it again (AutomatableModel::setValue -> modelChangeGuard,
+src/core/AutomatableModel.cpp:415). Both were introduced AFTER this cluster's
+round-7 case (commit 117fd0126, 2026-10-08) by cluster 2647 (commit c28751cef,
+2026-10-09), which made the engine's model registry lock-backed. With the
+engine as it stands, a device build cannot be lock-free: the registration
+itself is under the lock the render thread takes once per period.
+
+## The fix
+
+A model the render thread cannot see needs no change lock: it is not in the
+engine's registry, so the render prepass never reads it.
+
+* `include/AutomatableModel.h` - `isRegisteredWithAudioEngine()` exposes whether
+  the model is in the engine's render-visible registry, and
+  `DeferredModelRegistrationScope` defers the registration of the models created
+  while it is alive.
+* `src/core/AutomatableModel.cpp` - the model-change guard skips the lock for a
+  model that is not registered (a model being constructed: it registers at the
+  end of its own constructor, and the models of a device built with the
+  registration deferred). A REGISTERED model is written exactly as before.
+* `src/core/ControlStructuralSupport.cpp` - the recorded device's build runs
+  under the deferral scope, and `attachRecordedDevice()` registers the device's
+  own models when the device joins the chain, under the change lock that attach
+  already takes. The undo closure, the redo closure and the other callers of
+  `instantiateRecordedDevice()` are unchanged: one structural undo step, one
+  recorded removal.
+
+Nothing on the audio thread changed: the render thread still takes the change
+lock once per period, and the models it reads are the registered ones.
+
+## The masked skip is closed at the root
+
+`tests/CMakeLists.txt` - the script's DAW tests now bring the build's own
+effect modules up with them, so a targeted build of the test no longer leaves
+the cases skipping:
+
+```cmake
+	if(LMMS_TEST_NAME STREQUAL "ScriptDawRemovalUndoTest")
+		add_dependencies(${LMMS_TEST_NAME} bassbooster)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest")
+		add_dependencies(${LMMS_TEST_NAME} bassbooster amplifier)
+	endif()
+```
+
+## RED / GREEN
+
+RED - the journal-before-delete integration removed (the shape the finding
+describes; the patch is `logs/pre-51e7da51f-no-journal.patch`):
+
+```
+$ git apply logs/pre-51e7da51f-no-journal.patch
+$ cmake --build build --target ScriptDawRemovalUndoTest -j 18 > logs/build-21-red-51e7da51f.log 2>&1; echo EXIT=$?
+EXIT=0
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./ScriptDawRemovalUndoTest > logs/test-removal-red-51e7da51f.log 2>&1; echo EXIT=$?
+EXIT=7
+```
+
+    FAIL!  : ScriptDawRemovalUndoTest::aScriptsRemovedEffectIsUndoneByItsOwnStep() Compared values are not the same
+    FAIL!  : ScriptDawRemovalUndoTest::aScriptsRemovedEffectIsUndoneOnceAtTheUndoCap() ...
+    FAIL!  : ScriptDawRemovalUndoTest::aScriptsRemovedEffectIsUndoneOnceAtCapOne() ...
+    FAIL!  : ScriptDawRemovalUndoTest::aScriptsRemovedLastEffectOfADisabledChainStaysDisabledOnUndo() ...
+    FAIL!  : ScriptDawRemovalUndoTest::aScriptsRemovedEffectFromADisabledChainWithTwoStaysDisabledOnUndo() ...
+    FAIL!  : ScriptDawRemovalUndoTest::aRecordedDeviceIsBuiltWithoutTheAudioChangeLock() ...
+    FAIL!  : ScriptDawRemovalUndoTest::aScriptsRemovalThatCannotBeUndoneIsRefused() ...
+    Totals: 6 passed, 7 failed, 0 skipped, 0 blacklisted, 11368ms
+
+GREEN - the integration restored and the realtime contract repaired:
+
+```
+$ git checkout -- src/core/ScriptDawEdit.cpp
+$ cmake --build build --target ScriptDawRemovalUndoTest -j 18 > logs/build-22-green-51e7da51f.log 2>&1; echo EXIT=$?
+EXIT=0
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./ScriptDawRemovalUndoTest > logs/test-removal-green-51e7da51f.log 2>&1; echo EXIT=$?
+EXIT=1        (12 passed, 1 failed - the audio-change-lock case above)
+```
+
+and with the deferred registration in place:
+
+```
+$ cmake --build build --target ScriptDawRemovalUndoTest -j 18 > logs/build-24-engine-fix.log 2>&1; echo EXIT=$?
+EXIT=0
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./ScriptDawRemovalUndoTest > logs/test-removal-engine-fix.log 2>&1; echo EXIT=$?
+EXIT=0        (Totals: 13 passed, 0 failed, 0 skipped, 0 blacklisted, 1222ms)
+```
+
+The whole file now runs (0 skipped) and passes, with the build's own effect
+module present - the undo restoration the finding asks for
+(`aScriptsRemovedEffectIsUndoneByItsOwnStep`: the device comes back on one
+undo, redo takes it out again) and the realtime ownership contract beside it.
+
+1663: ALREADY-FIXED
 ## What the finding says
 
 `src/core/ScriptDawBindings.cpp:430` (`LuaMixerChannel::gain()`) and
@@ -96,7 +243,6 @@ reverts the historical pre-1663 shape instead, which is the bug the finding
 describes.
 
 new-p12-245: FIXED
-
 ## What the finding says
 
 `src/core/ScriptDawBindings.cpp:94-103`: "`ViewPool::add` appends a new
@@ -185,3 +331,90 @@ EXIT=8
         this machine's allocator satisfies a SIZE_MAX realloc, so the case's
         premise ("a size no allocator can satisfy") does not hold here. The
         code path is untouched by this batch.
+
+## Self-check
+
+**1. The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
+
+* new-p12-245: `git apply -R logs/fix-p12-245.patch` (the pool keying) ->
+  `cmake --build build --target ScriptDawBindingTest` EXIT=0, then
+  `./ScriptDawBindingTest` EXIT=1 with
+  `FAIL! aRepeatedChannelReadDoesNotGrowTheViewPool() Actual (many): 500 /
+  Expected (once): 1`. `git apply logs/fix-p12-245.patch` -> EXIT=0
+  (14 passed, 0 failed). The patch reverts the pool keying only; the
+  read-only diagnostic the case measures with stays, so the case compiles and
+  runs in both states.
+* 1663: the mixer-channel fix the new case pins is ALREADY on the branch
+  (e228edf8b), so reverting THIS commit's own diff does not make it fail; the
+  RED proof applies the pre-1663 shape instead
+  (`logs/pre-1663-raw-pointer.patch`): the case then reads the deleted
+  channel's fader model and the binary aborts -
+  `QFATAL ... AutomatableModel::controllerValue(int) lacks implementation for a
+  scale type`, EXIT=134. With the branch's fix: EXIT=0 (13 passed).
+* review-51e7da51f: the journal-before-delete integration removed
+  (`logs/pre-51e7da51f-no-journal.patch`) -> `./ScriptDawRemovalUndoTest`
+  EXIT=7 with 7 failed cases, among them
+  `aScriptsRemovedEffectIsUndoneByItsOwnStep`. With the integration and the
+  deferred model registration in place: EXIT=0, 13 passed, 0 skipped.
+
+**2. The test is deterministic: no wall-clock timing, sleeps or races.**
+
+* The pool case counts the wrappers the pool holds after a run - a count, not
+  a duration; the two runs are compared with each other.
+* The channel-view case reads the engine's own state (the mixer, the channel
+  list) after a removal the script performed; no timer, no sleep, no thread.
+* The device-view case reads the chain the engine holds.
+* The removal-undo cases are the cluster's own: they read the chain and the
+  project journal's undo depth. The audio-change-lock case is the cluster's
+  own handshake (a holder thread plus a flag), not a wall-clock bound - it was
+  not changed here.
+
+**3. The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent.**
+
+* The DAW view pools: all three (`mixerChannelPool`, `effectChainPool`,
+  `effectPool`) are keyed, and every maker (`newMixerChannel`,
+  `newEffectChain`, `newEffect`) goes through the keyed `add`. The pools are
+  still cleared once per run (`ScriptDawBindings::beginRun`), so nothing
+  outlives a run.
+* The device view: `newEffect()` is called from `LuaEffectChain::effect()`
+  (src/core/ScriptDawEffects.cpp) and from `LuaEffectChain::loadEffect()`'s
+  refusal path (src/core/ScriptDawEdit.cpp); both now pass the channel's id
+  and the device's id. `LuaEffect`'s accessors (index, id, pluginName,
+  displayName, enabled, parameterCount, parameterName, parameter) all resolve
+  through the same two ids.
+* The model-change guard: every call site in src/core/AutomatableModel.cpp is a
+  member function and now asks about ITS OWN model; the destructor keeps its
+  explicit guard (the model is unregistered by then, but the destructor holds
+  the lock itself).
+* The deferred registration: `instantiateRecordedDevice()` is called by
+  `recreateEffectFromState()` and by the removal's undo closure - both attach
+  the device through `attachRecordedDevice()`, which registers the device's
+  models. The test that builds a device without attaching it deletes it, and
+  an unregistered model is unregistered on destruction as before.
+
+**4. No collateral damage: old projects and saved data still load as before, and any limit or check added does not hit other callers that legitimately exceed it.**
+
+* No project file, save format or load path was touched. The pools and the
+  views are Lua-side only.
+* The deferred registration is scoped to the recorded device's build. A model
+  created anywhere else registers with the audio engine exactly as before, and
+  a REGISTERED model's write takes the change lock exactly as before - the
+  guard only skips the lock for a model the render thread cannot see (a model
+  being constructed, and the models of a device that is not in a chain yet).
+* The model/automation/device/undo families were run after the change:
+  27 passed, 1 failed (`ControlDeviceCatalogueTest` - "Patman plugin is
+  unavailable", the module is not built in this tree), 10 not run (their
+  binaries are not built here). The script family: 12 of 13 passed, the one
+  failure being the audio-change-lock case this commit fixes.
+
+**5. If the verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.**
+
+* 1663: `src/core/ScriptDawBindings.cpp:431-436` (the mixer-channel view
+  resolves its channel by the stable id on every access) and
+  `include/ScriptBindings.h:231` (the track view holds a QPointer). The
+  finding's recipe is covered by the new
+  `ScriptDawBindingTest::aRemovedChannelsViewIsInert`.
+* review-51e7da51f: `src/core/ScriptDawEdit.cpp:231` records the removal
+  before the device is detached at `:240-241`; the case
+  `ScriptDawRemovalUndoTest::aScriptsRemovedEffectIsUndoneByItsOwnStep` proves
+  the undo restoration.

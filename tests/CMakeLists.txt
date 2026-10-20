@@ -1738,6 +1738,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 
+	# The script's removeEffect undo cases load the build's own effect modules, and a
+	# targeted build of the test alone did not build them: every case skipped ("this
+	# build lists no loadable effect module") and the undo regression ran nowhere. The
+	# modules are built with the test, so the cases run wherever the test is built.
+	if(LMMS_TEST_NAME STREQUAL "ScriptDawRemovalUndoTest")
+		add_dependencies(${LMMS_TEST_NAME} bassbooster)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest")
+		add_dependencies(${LMMS_TEST_NAME} bassbooster amplifier)
+	endif()
+
 	# Q050-020: the MIDI export test loads the midiexport module through the plug-in factory.
 	if(LMMS_TEST_NAME STREQUAL "MidiExportTest")
 		add_dependencies(${LMMS_TEST_NAME} midiexport)

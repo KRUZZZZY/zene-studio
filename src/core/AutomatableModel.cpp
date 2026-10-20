@@ -51,12 +51,21 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
 static_assert(std::atomic<bool>::is_always_lock_free,
 	"AutomatableModel registration flag requires an always-lock-free bool atomic");
 
-AudioEngine::RequestChangesGuard modelChangeGuard()
+//! The depth of the deferred model registration on this thread: while it is
+//! above zero, a model created here is not registered with the audio engine.
+thread_local unsigned s_deferredRegistrations = 0;
+
+AudioEngine::RequestChangesGuard modelChangeGuard(const AutomatableModel* model)
 {
 	AudioEngine* const engine = Engine::audioEngine();
-	return RealtimeScope::isActive() || engine == nullptr
-		? AudioEngine::RequestChangesGuard{}
-		: engine->requestChangesGuard();
+	if (RealtimeScope::isActive() || engine == nullptr) { return AudioEngine::RequestChangesGuard{}; }
+	// A model the render thread cannot see needs no change lock: it is not in
+	// the engine's registry, so the render prepass never reads it. That is the
+	// case for a model that is still being constructed (it is registered at the
+	// end of its own constructor) and for the models of a device that is built
+	// with the registration deferred.
+	if (model != nullptr && !model->isRegisteredWithAudioEngine()) { return AudioEngine::RequestChangesGuard{}; }
+	return engine->requestChangesGuard();
 }
 
 [[maybe_unused]] bool modelDestructionWouldBlockOnRender(AudioEngine* engine) noexcept
@@ -67,6 +76,18 @@ AudioEngine::RequestChangesGuard modelChangeGuard()
 } // namespace
 
 long AutomatableModel::s_periodCounter = 0;
+
+DeferredModelRegistrationScope::DeferredModelRegistrationScope() noexcept
+{
+	m_outer = s_deferredRegistrations == 0;
+	++s_deferredRegistrations;
+}
+
+DeferredModelRegistrationScope::~DeferredModelRegistrationScope() noexcept
+{
+	if (m_outer) { s_deferredRegistrations = 0; }
+	else { --s_deferredRegistrations; }
+}
 
 
 
@@ -96,7 +117,14 @@ AutomatableModel::AutomatableModel(
 	m_renderValue = m_value;
 	m_publishedValuePair.store(packValuePair(m_value, m_value), std::memory_order_relaxed);
 	setInitValue( val );
-	if (!Engine::audioEngine()->registerAutomatableModel(this)) { throw std::bad_alloc{}; }
+	// The model is registered with the audio engine at the end of its own
+	// constructor - unless the registration is deferred, which is what a device
+	// that is built outside a chain does: the device is not rendered, so its
+	// models are registered when it is attached.
+	if (s_deferredRegistrations == 0 && !Engine::audioEngine()->registerAutomatableModel(this))
+	{
+		throw std::bad_alloc{};
+	}
 }
 
 
@@ -384,7 +412,7 @@ jo_id_t AutomatableModel::lastTouched()
 
 void AutomatableModel::setValue(const float value, const bool isAutomated, const bool journal)
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (fittedValue(value) == m_value)
 	{
 		// TODO check why we need this signal, is there a better solution?
@@ -554,7 +582,7 @@ size_t AutomatableModel::countLinks() const
 
 void AutomatableModel::linkToModel(AutomatableModel* other)
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (isLinkedToModel(other)) { return; }
 
 	if (valueBuffer() && other->valueBuffer())
@@ -578,7 +606,7 @@ void AutomatableModel::linkToModel(AutomatableModel* other)
 
 void AutomatableModel::unlink()
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	invalidateLinkedValueBufferCaches();
 	getLastLinkedModel()->m_nextLink = m_nextLink;
 	m_nextLink = this;
@@ -589,7 +617,7 @@ void AutomatableModel::unlink()
 
 void AutomatableModel::setControllerConnection( ControllerConnection* c )
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	m_controllerConnection = c;
 	invalidateLinkedValueBufferCaches();
 	if( c )
@@ -658,7 +686,7 @@ ValueBuffer * AutomatableModel::valueBuffer()
 	// Keep the historic control-side query useful for editors and unit tests.
 	// During a render the caller above is strictly read-only; this guarded path
 	// can prepare a cache only after render has quiesced.
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (!m_registeredWithAudioEngine.load(std::memory_order_acquire))
 	{
 		engine->recordUnregisteredAutomatableBufferRequest();
@@ -902,7 +930,7 @@ const AutomationRamp* AutomatableModel::automationRamp() const noexcept
 
 void AutomatableModel::unlinkControllerConnection()
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if( m_controllerConnection )
 	{
 		m_controllerConnection->disconnect( this );
@@ -917,7 +945,7 @@ void AutomatableModel::unlinkControllerConnection()
 
 void AutomatableModel::setInitValue( const float value )
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	m_initValue = fittedValue( value );
 	bool journalling = testAndSetJournalling( false );
 	setValue( value );
@@ -999,7 +1027,7 @@ float AutomatableModel::globalAutomationValueAt( const TimePos& time )
 
 void AutomatableModel::setUseControllerValue(bool b)
 {
-	auto changeGuard = modelChangeGuard();
+	auto changeGuard = modelChangeGuard(this);
 	if (b)
 	{
 		m_useControllerValue = true;
