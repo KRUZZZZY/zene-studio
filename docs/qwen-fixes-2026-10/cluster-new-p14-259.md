@@ -1,3 +1,4 @@
+FIXED
 new-p14-259: FIXED
 
 Evidence: `include/RemotePluginBase.h:159-166, 682-683, 860-868, 422, 954` now stores both shared-memory and socket invalidation flags as `std::atomic<bool>` and reads/writes them with relaxed atomic operations. `RemotePluginAudioPortsTest::remoteConnectionInvalidFlagIsAtomic()` (`tests/src/core/RemotePluginAudioPortsTest.cpp:313-316`) fails on the original socket member type and passes after the change.
