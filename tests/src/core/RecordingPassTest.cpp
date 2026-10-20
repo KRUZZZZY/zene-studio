@@ -340,6 +340,55 @@ private slots:
 		LaunchBindings::setBindings({});
 		QCOMPARE(afterLearnedRelease, SlotPhase::Playing);
 	}
+
+	//! A hand-edited binding whose channel is no MIDI channel (-2, a word, a fraction) is skipped, not an any-channel
+	//! binding that launches on every channel; a channel 0..15 and -1 still match as they did.
+	void aBindingWithAnInvalidChannelIsSkipped()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(Track::create(Track::Type::Instrument, song) != nullptr);
+		QVERIFY(Track::create(Track::Type::Pattern, song) != nullptr);
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 5}}).ok);
+		for (int scene = 0; scene < 5; ++scene)
+		{
+			QVERIFY(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), 0}, {QStringLiteral("scene"), scene},
+				{QStringLiteral("type"), QStringLiteral("midi")}, {QStringLiteral("pattern"), 0},
+				{QStringLiteral("mode"), QStringLiteral("gate")}, {QStringLiteral("quantisation"), QStringLiteral("none")}}).ok);
+		}
+		const auto binding = [](int key, const QJsonValue& channel, int scene) {
+			return QJsonObject{{QStringLiteral("key"), key}, {QStringLiteral("channel"), channel}, {QStringLiteral("action"), QStringLiteral("slot")},
+				{QStringLiteral("track"), 0}, {QStringLiteral("scene"), scene}};
+		};
+		LaunchBindings::setBindings(QJsonArray{binding(60, -2, 0), binding(61, QStringLiteral("bad"), 1), binding(62, 3, 2),
+			binding(63, -1.5, 3), binding(64, -1, 4)});
+		LaunchBindings* bindings = LaunchBindings::connect(QString(), QString());
+		SessionScheduler& scheduler = song->sessionScheduler();
+		SessionClockContext clock;
+		clock.ticksPerBar = song->ticksPerBar();
+		clock.framesPerTick = 4.0f;
+		clock.transportRunning = true;
+		// All five cells share track 0, where a launch stops the cell it replaces: each note is checked as it lands.
+		bindings->applyNote(LaunchNote{3, 60, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 0), SlotPhase::Idle);  // key 60, channel -2: skipped
+		bindings->applyNote(LaunchNote{3, 61, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 1), SlotPhase::Idle);  // key 61, channel "bad": skipped
+		bindings->applyNote(LaunchNote{3, 62, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 2), SlotPhase::Playing);  // key 62, channel 3: an exact match
+		bindings->applyNote(LaunchNote{3, 63, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 3), SlotPhase::Idle);  // key 63, channel -1.5: skipped, so 62 keeps playing
+		QCOMPARE(scheduler.slotPhase(0, 2), SlotPhase::Playing);
+		bindings->applyNote(LaunchNote{5, 64, true});
+		scheduler.processAudio(clock, 16);
+		QCOMPARE(scheduler.slotPhase(0, 4), SlotPhase::Playing);  // key 64, channel -1: any channel
+		LaunchBindings::disconnect();
+		LaunchBindings::setBindings({});
+	}
 };
 
 QTEST_MAIN(RecordingPassTest)
