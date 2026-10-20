@@ -2746,6 +2746,7 @@ tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
 tests/src/core/SampleAccurateAutomationTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
+tests/src/core/ScaleIntervalOverflowTest.cpp
 tests/src/core/ScenesUpconvertTest.cpp
 tests/src/core/ScriptBindingsTest.cpp
 tests/src/core/ScriptClockTest.cpp
