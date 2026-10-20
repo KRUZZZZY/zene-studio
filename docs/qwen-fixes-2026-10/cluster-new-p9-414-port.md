@@ -176,7 +176,7 @@ Both wraps are the ones the finding names: the numerator becomes `2`, the denomi
 
 | Evidence | Exact command | Exit | Log |
 | --- | --- | ---: | --- |
-| The harness's own negative control | `negctl.prove(<worktree>, ded355440, <run dir>, <report text>)` | see below | `negctl/` |
+| The harness's own negative control | `negctl.prove(<worktree>, ded355440, <run dir>, <report text>)` | ok: true (reverted rc 8, restored rc 0) | `negctl/` |
 | Affected family, verbose | `ctest -R '^ScaleIntervalOverflowTest$|^ControlNoteScaleVerbsTest$|^SessionTuningTest$|^PhaseFChannelScaleTest$' --verbose` | 0 | `29-family-verbose.log` |
 | All gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `30-feature-check.log` |
 | Complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 | `31-complexity-gate.log` |
@@ -188,6 +188,22 @@ complexity ratchet reports only pre-existing functions (none in `src/core/Scale.
 new test) and the file-length ratchet only pre-existing new files over 500 lines (the new test
 file is 138 lines). `feature_check.py` compares both listings with the base commit and reports
 "no new item in your files" for both rows, so the gate table is all PASS.
+
+The negative control that rejected the first attempt is the same experiment this report
+claims, run by the harness itself: it reverted the product diff (`src/core/Scale.cpp` only),
+rebuilt `zene` and `ScaleIntervalOverflowTest`, ran the tests, restored the diff, rebuilt and
+ran again. Its verdict on this branch:
+
+```
+{"ok": true,
+ "detail": "PhaseFChannelScaleTest, ScaleIntervalOverflowTest: they fail without it (rc 8) and pass with it",
+ "product_files": ["src/core/Scale.cpp"],
+ "reverted_build_rc": 0, "reverted_rc": 8, "restored_rc": 0, "tree_clean": true}
+```
+
+`negctl/test-reverted.log` shows the regression failing on the reverted tree - `Actual 2 /
+Expected 1` and `Actual 1.5 / Expected 1`, "5 passed, 2 failed" - and `negctl/test-restored.log`
+shows both tests passing on the restored tree.
 
 `05-sibling-families.log` is the first sibling-family run of round 1: it exited 8 because
 those two test executables had never been built in this tree ("Unable to find executable"). The
