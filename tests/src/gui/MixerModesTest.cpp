@@ -336,6 +336,70 @@ private slots:
 		QCOMPARE(muteModel->value(), wasMuted);
 	}
 
+	//! A send knob's model is the selected source's send to this strip; focusing it must not select
+	//! its destination and hide the control before the keyboard can adjust it.
+	void sendKnobKeepsItsSourceWhileFocused()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* destination = strip(m_return);
+		mixerView->setCurrentMixerChannel(m_sender);
+		destination->soloButton()->setFocus();
+		QTRY_VERIFY(destination->soloButton()->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), destination);
+
+		// The send belongs to the selected source, so restoring that source shows the knob on its target.
+		mixerView->setCurrentMixerChannel(m_sender);
+		FloatModel* sendModel = Engine::mixer()->channelSendModel(m_sender, m_return);
+		QVERIFY(sendModel != nullptr);
+		const QList<QWidget*> controls = destination->keyboardFocusOrder();
+		QVERIFY(!controls.isEmpty());
+		auto* sendKnob = qobject_cast<Knob*>(controls.first());
+		QVERIFY(sendKnob != nullptr);
+		QCOMPARE(announcedName(sendKnob), QStringLiteral("Send to Verb"));
+		QVERIFY(sendKnob->isVisibleTo(mixerView));
+
+		const float original = sendModel->value();
+		sendKnob->setFocus();
+		QTRY_VERIFY(sendKnob->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		QVERIFY(sendKnob->isVisibleTo(mixerView));
+		QTest::keyClick(sendKnob, Qt::Key_Up);
+		QVERIFY(sendModel->value() > original);
+		sendModel->setValue(original);
+
+		// Keep the source selected while Ctrl+Tab follows the same send to an adjacent destination.
+		const ControlResult created = run(QStringLiteral("bus.create"));
+		const int adjacentIndex = created.result.value(QStringLiteral("index")).toInt(-1);
+		QCOMPARE(adjacentIndex, m_return + 1);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(m_sender)},
+			{QStringLiteral("to"), ch(adjacentIndex)}, {QStringLiteral("amount"), 0.25}}).ok);
+		syncMixer();
+		mixerView->setCurrentMixerChannel(m_sender);
+		destination = strip(m_return);
+		const QList<QWidget*> refreshedControls = destination->keyboardFocusOrder();
+		QVERIFY(!refreshedControls.isEmpty());
+		sendKnob = qobject_cast<Knob*>(refreshedControls.first());
+		QVERIFY(sendKnob != nullptr);
+		MixerChannelView* adjacent = strip(adjacentIndex);
+		const QList<QWidget*> adjacentControls = adjacent->keyboardFocusOrder();
+		QVERIFY(!adjacentControls.isEmpty());
+		auto* adjacentSendKnob = qobject_cast<Knob*>(adjacentControls.first());
+		QVERIFY(adjacentSendKnob != nullptr);
+		const QString adjacentName = Engine::mixer()->mixerChannel(adjacentIndex)->m_name;
+		QCOMPARE(announcedName(adjacentSendKnob), QStringLiteral("Send to %1").arg(adjacentName));
+
+		QTest::keyClick(sendKnob, Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), adjacentSendKnob);
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		QTest::keyClick(adjacentSendKnob, Qt::Key_Backtab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), sendKnob);
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		mixerView->deleteChannel(adjacentIndex);
+		syncMixer();
+	}
+
 	//! Acceptance 2: Tab and Shift+Tab walk the strip's controls in order and wrap inside it.
 	void tabMovesThroughOneStripsControls()
 	{

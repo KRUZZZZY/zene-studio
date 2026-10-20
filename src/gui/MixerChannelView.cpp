@@ -245,10 +245,11 @@ bool MixerChannelView::eventFilter(QObject* watched, QEvent* event)
 	{
 		m_mixerView->setCurrentMixerChannel(this);
 	}
-	else if (event->type() == QEvent::FocusIn && watched != this)
+	else if (event->type() == QEvent::FocusIn && watched != this && watched != m_sendKnob)
 	{
 		// The selected strip is the one the keyboard is in: the mixer's own shortcuts (Left/Right,
-		// Up/Down) and the send knob follow the focus, not a strip clicked earlier.
+		// Up/Down) follow the focus, not a strip clicked earlier. A send knob is the selected source's
+		// send to this strip, so selecting its destination would hide the very control being focused.
 		if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
 	}
 	else if (event->type() == QEvent::KeyPress)
@@ -335,8 +336,9 @@ void MixerChannelView::moveFocusToAdjacentChannel(QWidget* from, bool forward)
 	{
 		MixerChannelView* other = view->channelView(index);
 		if (other == nullptr || !other->isVisibleTo(view)) { continue; }
-		// Select first: the send knob's model and visibility depend on the current channel.
-		view->setCurrentMixerChannel(other);
+		// Select first: the send knob's model and visibility depend on the current channel. A focused
+		// send knob keeps its source selected while moving between destination strips.
+		if (from != m_sendKnob) { view->setCurrentMixerChannel(other); }
 		const QList<QWidget*> targets = other->keyboardFocusOrder();
 		if (targets.isEmpty()) { continue; }
 		QWidget* target = nullptr;

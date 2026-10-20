@@ -10,7 +10,7 @@ no command, project data, undo step or persistence is added.
 | # | Criterion | Command / test | What it proves | Exit |
 |---|---|---|---|---|
 | 1 | Faders and LED buttons accept focus and keyboard adjustment and appear in the accessibility walk | `ctest -R '^MixerModesTest$' --output-on-failure` (log `test-MixerModesTest-6.log`), case `mixerControlsTakeFocusAndAnswerTheKeys` | Mute/solo/fader/pan are `Qt::TabFocus`; the strip's visible Tab stops are walked through `QAccessible` with non-empty names; roles are Slider/Dial/Button; names are "Fader Lead", "Mute Lead", etc.; End/Home/PageUp/Up move the fader model and Space toggles Mute. | 0 |
-| 2 | Ctrl+Tab / Ctrl+Shift+Tab move to the same control on adjacent channels; Tab moves within a strip; focus and the name are announced | same ctest run, cases `tabMovesThroughOneStripsControls`, `ctrlTabMovesTheSameControlAcrossChannels` | Tab/Shift+Tab walk the strip forward and in reverse (same set, reverse order) and wrap inside it; Ctrl+Tab takes Mute→Mute and Fader→Fader on the next channel, Ctrl+Shift+Tab comes back; the selected channel follows the focus; each focused control's confirmed accessible name is checked. | 0 |
+| 2 | Ctrl+Tab / Ctrl+Shift+Tab move to the same control on adjacent channels; Tab moves within a strip; focus and the name are announced | same ctest run, cases `tabMovesThroughOneStripsControls`, `ctrlTabMovesTheSameControlAcrossChannels`, `sendKnobKeepsItsSourceWhileFocused` | Tab/Shift+Tab walk the strip forward and in reverse (same set, reverse order) and wrap inside it; Ctrl+Tab takes Mute→Mute and Fader→Fader on the next channel, Ctrl+Shift+Tab comes back; the send-knob case checks its name and keyboard adjustment, then follows that send across adjacent destinations while preserving its source. | 0 |
 | 3 | Regression covers forward, reverse and boundary behaviour | same ctest run, case `ctrlTabDoesNotWrapAtTheMixerEnds` | First proves forward/reverse movement still works into the last/first channel, then that Ctrl+Tab at the last channel and Ctrl+Shift+Tab at Master keep both focus and selection. | 0 |
 | - | Accessible walk still holds | `ctest -R '^(AccessibilityWalkTest|KnobKeyboardTest)$' --output-on-failure` (log `test-a11y-knob-2.log`) | The product-wide walk finds no unnamed focusable widget; the knob/fader/button keyboard contract is unchanged. | 0 |
 | - | Mixer neighbours | `ctest -R '^(MixerSendsOnFadersTest|MixerSelectionIdentityTest)$' --output-on-failure` (log `test-mixer-neighbours-1.log`) | Send-on-faders and selection identity still pass with the new FocusIn selection. | 0 |
@@ -57,6 +57,13 @@ complexity (no new item) and file-length (no new item) all PASS; overall exit 0.
 - **GUI and agent paths.** Per the scoping brief this action is GUI focus state only and explicitly
   out of scope for an agent command; no user-facing mixing edit was added, so the existing
   GUI/agent command pairs are unaffected.
+- **Review follow-up: contextual send focus.** The original FocusIn selection moved from the source
+  to the send knob's destination, which hid the focused send. `sendKnobKeepsItsSourceWhileFocused`
+  failed on the submitted code (`./MixerModesTest sendKnobKeepsItsSourceWhileFocused`, exit 1),
+  then passed with the source-preserving focus behavior. Ctrl+Tab now retains that source while
+  moving to the same send on an adjacent destination. Rebuilt `zene` and all five named test targets;
+  ctest for `MixerModesTest`, `AccessibilityWalkTest`, `KnobKeyboardTest`,
+  `MixerSelectionIdentityTest`, and `MixerSendsOnFadersTest` all exit 0.
 - **Snapshot/doc figures.** No command metadata changed, so the live snapshot is not stale; the
   `doc-figures` gate passes (exit 0). No A16 histogram change was reported by
   `ReversibilityContractTest` (not touched).
