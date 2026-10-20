@@ -8,9 +8,9 @@ new-p12-286: ALREADY-FIXED; evidence: src/core/Track.cpp:216-237 checks both con
 
 | Bug | RED test (exit) | GREEN test (exit) | Affected CTest family | Gates | Committed files |
 |---|---|---|---|---|---|
-| 5414: ALREADY-FIXED | `./AutomationRenderAllocationTest startingFrozenTakeDoesNotAllocateOnRealtimePath` (1; 7 allocations) | same command (0; 0 allocations) | combined command `ctest -R '^(UnclaimedTrackTypeTest|FrozenTakeRoundTwoTest|AutomationRenderAllocationTest)$' --output-on-failure` (0; 3/3) | feature_check 0; submit_check pending | tests/src/core/AutomationRenderAllocationTest.cpp; report |
-| new-p16-248: FIXED | `./UnclaimedTrackTypeTest malformedTrackTypesArePreservedNotCoerced` (1; 3 tracks) | same command (0) | `ctest -R '^UnclaimedTrackTypeTest$' --output-on-failure` (0; 1/1) | feature_check 0; submit_check pending | src/core/Track.cpp; tests/src/core/UnclaimedTrackTypeTest.cpp; tests/upstream-modifications.txt; report |
-| new-p12-286: ALREADY-FIXED | `./FrozenTakeRoundTwoTest malformedMutedClipStartDoesNotUnmuteTickZeroClip` (1; muted tick-zero clip was unmuted) | same command (0) | combined CTest command (0; 3/3) | feature_check 0; submit_check pending | tests/src/core/FrozenTakeRoundTwoTest.cpp; report |
+| 5414: ALREADY-FIXED | `./AutomationRenderAllocationTest startingFrozenTakeDoesNotAllocateOnRealtimePath` (1; 7 allocations) | same command (0; 0 allocations) | combined command `ctest -R '^(UnclaimedTrackTypeTest|FrozenTakeRoundTwoTest|AutomationRenderAllocationTest)$' --output-on-failure` (0; 3/3) | feature_check 0; submit_check 0 (submit-check-2.log) | tests/src/core/AutomationRenderAllocationTest.cpp; report |
+| new-p16-248: FIXED | `./UnclaimedTrackTypeTest malformedTrackTypesArePreservedNotCoerced` (1; 3 tracks) | same command (0) | `ctest -R '^UnclaimedTrackTypeTest$' --output-on-failure` (0; 1/1) | feature_check 0; submit_check 0 (submit-check-2.log) | src/core/Track.cpp; tests/src/core/UnclaimedTrackTypeTest.cpp; tests/upstream-modifications.txt; report |
+| new-p12-286: ALREADY-FIXED | `./FrozenTakeRoundTwoTest malformedMutedClipStartDoesNotUnmuteTickZeroClip` (1; muted tick-zero clip was unmuted) | same command (0) | combined CTest command (0; 3/3) | feature_check 0; submit_check 0 (submit-check-2.log) | tests/src/core/FrozenTakeRoundTwoTest.cpp; report |
 
 ## Self-check
 
@@ -21,5 +21,5 @@ new-p12-286: ALREADY-FIXED; evidence: src/core/Track.cpp:216-237 checks both con
 - ALREADY-FIXED evidence: the pooled voice is acquired at src/core/Track.cpp:1419 from preconstructed slots (src/core/AudioEngine.cpp:143-184); both tick conversions are checked at src/core/Track.cpp:219-237. Their focused red/green mutation results are recorded above.
 - Commits and files: `edc9fac6f` (new-p16-248) includes src/core/Track.cpp, tests/src/core/UnclaimedTrackTypeTest.cpp, tests/upstream-modifications.txt, and this report; `ad458db06` (new-p12-286) includes tests/src/core/FrozenTakeRoundTwoTest.cpp and this report; `d10797d62` (5414) includes tests/src/core/AutomationRenderAllocationTest.cpp and this report.
 - `feature_check.py`: exit 0; all gates passed, complexity and file-length reported no new item (feature-check-4.log).
-- `submit_check.py`: the first run exited 1 because the report did not start with a recognized verdict and lacked these answers (submit-check-1.log); this report now starts with `Verdict: FIXED` and answers all five prompts. The final checker run is recorded after completion.
+- `submit_check.py`: the first run exited 1 because the report did not start with a recognized verdict and lacked these answers (submit-check-1.log); the clean-tree rerun exited 0 after `Verdict: FIXED` and all five evidence answers were added (submit-check-2.log).
 - Build reconfiguration: `cmake -S . -B build` exited 97 because the lane guard said configuring is the parent's job; all requested targets built successfully in the supplied configured tree.
