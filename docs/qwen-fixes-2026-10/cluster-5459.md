@@ -157,8 +157,8 @@ The reversed state failed again with `lastChunkEventCount` 1 vs 0; the restored 
 ## Affected-family run
 
 ```
-CCACHE_TEMPDIR=/tmp/ccache-tmp CCACHE_READONLY=1 cmake --build build --target zene Vst3BusMapTest Vst3HostTest Vst3ChunkProbeTest Vst3EffectIntegrationTest Vst3InstrumentFixtureProbe Vst3InstrumentTest Vst3InstrumentIntegrationTest > /tmp/5459-logs/build-family-1.log 2>&1   # EXIT=0
-cd build/tests && ctest -R 'Vst3' --output-on-failure > /tmp/5459-logs/test-family-1.log 2>&1                                                                                                  # EXIT=0
+CCACHE_TEMPDIR=/tmp/ccache-tmp CCACHE_READONLY=1 cmake --build build --target zene Vst3BusMapTest Vst3HostTest Vst3ChunkProbeTest Vst3EffectIntegrationTest Vst3InstrumentFixtureProbe Vst3InstrumentTest Vst3InstrumentIntegrationTest > /tmp/5459-logs/build-family-final2.log 2>&1   # EXIT=0
+cd build/tests && ctest -R 'Vst3' --output-on-failure > /tmp/5459-logs/test-family-final2.log 2>&1                                                                                                  # EXIT=0
 ```
 
 Seven CTest targets ran, seven passed (`Vst3BusMapTest`, `Vst3HostTest`, `Vst3ChunkProbeTest`,
