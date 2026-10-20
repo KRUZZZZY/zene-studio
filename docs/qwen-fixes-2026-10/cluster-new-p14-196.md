@@ -81,7 +81,7 @@ Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py
 
 So every gate row is PASS under the script's rules, but the wrapper itself could not run in this sandbox; the table above is the mirror run, not the script's output.
 
-Completion check: `python3 …/submit_check.py <worktree> new-p14-196` → `submit-check-1.log`. Its first run (before this commit) listed the expected items: nothing committed, the report missing, and the gate row failing for the jail reason above.
+Completion check: `python3 …/submit_check.py <worktree> new-p14-196` → `submit-check-1.log` (before this commit: nothing committed, report missing, gate row failing for the jail reason above). Final run on the committed branch → `submit-check-2.log`, **EXIT 1**: commits, clean working tree, report and tests-changed rows PASS; the only FAIL is the gate row, because `feature_check.py` cannot create its log folder outside the write jail. The gate evidence is the mirror run above.
 
 ## Decision for the owner
 
