@@ -43,6 +43,7 @@
 #include "Mixer.h"
 #include "MetronomeOptions.h"
 #include "RecorderTaps.h"
+#include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TakeLane.h"
@@ -115,6 +116,17 @@ private slots:
 	void invalidStoredLevelUsesDefault()
 	{
 		QCOMPARE(m_levelLoadedFromInvalidConfig, 1.f);
+	}
+
+	//! Cluster 5127: metronome clicks use the preallocated sample voice pool.
+	void metronomeClickUsesPreparedVoice()
+	{
+		metronomeoptions::setOptions({1.0f, true, false, 0});
+		PlayHandle* const click = metronomeoptions::click(false, 0);
+		QVERIFY(click != nullptr);
+		const auto* const sampleVoice = dynamic_cast<const SamplePlayHandle*>(click);
+		QVERIFY(sampleVoice != nullptr);
+		QVERIFY(sampleVoice->isPooledVoice());
 	}
 
 	void aCompEdgeMoves()
