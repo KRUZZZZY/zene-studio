@@ -26,7 +26,8 @@
  *  supported range with a length would otherwise end past it. The position+length edit and a
  *  length-only edit are covered here, as is note.resize's independent range check. The limit
  *  itself stays reachable. Other note commands (scale, ratchet, add_many, clipboard, slide and
- *  Mod X / Y) are covered by NoteEditingCommandsTest. */
+ *  Mod X / Y) are covered by NoteEditingCommandsTest. A batch that changes no note records no undo
+ *  step (BUG 12, cluster new-p15-22): tested at the end of this file. */
 
 #include <QtTest>
 
@@ -35,6 +36,7 @@
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -83,6 +85,21 @@ private:
 			{{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"), QJsonArray{entry}}});
 		return result.ok ? ControlErrorKind::None : result.errorKind;
 	}
+
+	//! One note.edit setting the velocity of @a note.
+	ControlResult editVelocity(const QString& note, int value)
+	{
+		return run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), note}, {QStringLiteral("velocity"), value}}}}});
+	}
+
+	//! Coalescing groups same-command calls inside a wall-clock window; 0 makes each call its own undo step.
+	static bool setCoalescing(int windowMs)
+	{
+		return run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), windowMs}}).ok;
+	}
+
+	int velocity() const { return static_cast<int>(m_clip->notes()[0]->getVolume()); }
 
 private slots:
 	void initTestCase()
@@ -191,6 +208,58 @@ private slots:
 		QCOMPARE(restored.result.value(QStringLiteral("restored")).toInt(), 0);
 		QCOMPARE(m_clip->notes()[0]->pos().getTicks(), 24);
 		QCOMPARE(m_clip->notes()[0]->length().getTicks(), 48);
+	}
+
+	void noteEditOfValuesAlreadySetRecordsNoUndoStep()
+	{
+		// BUG 12 (cluster new-p15-22): the call that changed nothing took a MidiClip checkpoint, so
+		// control.undo consumed its step and the real edit before it stayed.
+		QVERIFY(setCoalescing(0));
+		freshClip();
+		const QString note = control::noteIdOf(m_clip->notes()[0]);
+		const int original = velocity();
+		QVERIFY(editVelocity(note, 90).ok);
+		QCOMPARE(velocity(), 90);
+		const ControlResult again = editVelocity(note, 90);
+		QVERIFY(again.ok);
+		QCOMPARE(again.result.value(QStringLiteral("edited")).toInt(), 0);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		// The undo reverts the real edit: the call that changed nothing left no step to consume.
+		QCOMPARE(velocity(), original);
+		QVERIFY(setCoalescing(control::UndoCoalesceWindowMs));
+	}
+
+	void aBatchThatSetsAValueBackChangesNothing()
+	{
+		// Two entries on one note that cancel out leave it as it was, so the batch takes no undo step.
+		QVERIFY(setCoalescing(0));
+		freshClip();
+		const QString note = control::noteIdOf(m_clip->notes()[0]);
+		const int original = velocity();
+		QVERIFY(editVelocity(note, 90).ok);
+		const ControlResult back = run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), note}, {QStringLiteral("velocity"), 80}},
+				QJsonObject{{QStringLiteral("note"), note}, {QStringLiteral("velocity"), 90}}}}});
+		QVERIFY(back.ok);
+		QCOMPARE(back.result.value(QStringLiteral("edited")).toInt(), 0);
+		QCOMPARE(velocity(), 90);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(velocity(), original);
+		QVERIFY(setCoalescing(control::UndoCoalesceWindowMs));
+	}
+
+	void aZeroTimbreOnAPlainNoteIsStillAChange()
+	{
+		// Timbre 0 is a value, not "no expression": setting it captures the note's MPE expression, so the
+		// note changes although its timbre reads 0 as before. Guards the no-change check against
+		// dropping such an edit.
+		freshClip();
+		QVERIFY(!m_clip->notes()[0]->hasMpeExpression());
+		const ControlResult result = run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), control::noteIdOf(m_clip->notes()[0])}, {QStringLiteral("timbre"), 0}}}}});
+		QVERIFY(result.ok);
+		QCOMPARE(result.result.value(QStringLiteral("edited")).toInt(), 1);
+		QVERIFY(m_clip->notes()[0]->hasMpeExpression());
 	}
 };
 
