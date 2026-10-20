@@ -56,7 +56,9 @@ QJsonObject messageCountsJson(Counter counter)
 			MidiClockMessage::Continue, MidiClockMessage::Stop, MidiClockMessage::SongPosition,
 			MidiClockMessage::TimeCode})
 	{
-		out.insert(midiClockMessageName(message), static_cast<int>(counter(message)));
+		// The counts are unsigned 32-bit and only grow: report them as qint64, because
+		// an int narrowing turns any count above INT_MAX negative.
+		out.insert(midiClockMessageName(message), static_cast<qint64>(counter(message)));
 	}
 	return out;
 }
@@ -70,7 +72,7 @@ QJsonObject MidiClock::stateJson() const
 	master.insert(QStringLiteral("port"), masterPort());
 	master.insert(QStringLiteral("port_ready"), masterPortReady());
 	master.insert(QStringLiteral("period_ms"), periodMs());
-	master.insert(QStringLiteral("emitted_total"), static_cast<int>(emittedTotal()));
+	master.insert(QStringLiteral("emitted_total"), static_cast<qint64>(emittedTotal()));
 	master.insert(QStringLiteral("emitted"),
 		messageCountsJson([this](MidiClockMessage m) { return emittedCount(m); }));
 	master.insert(QStringLiteral("last_emitted"), midiClockMessageName(emittedAt(0)));
@@ -95,7 +97,7 @@ QJsonObject MidiClock::stateJson() const
 	// no source is chosen, because nothing is dropped then - which is also how a
 	// caller tells "nothing is arriving" from "everything arriving is the wrong
 	// device".
-	slave.insert(QStringLiteral("ignored"), static_cast<int>(slaveIgnoredCount()));
+	slave.insert(QStringLiteral("ignored"), static_cast<qint64>(slaveIgnoredCount()));
 	slave.insert(QStringLiteral("follow_tempo"), slaveFollowTempo());
 	slave.insert(QStringLiteral("locked"), tracker.locked());
 	slave.insert(QStringLiteral("tempo_bpm"), tracker.tempoBpm());
