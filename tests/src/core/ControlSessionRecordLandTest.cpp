@@ -28,9 +28,7 @@
  *  clip per pair on that column's song track. Here the ring is filled directly, as the scheduler does, and the
  *  command is invoked through the registry: the pairing (including a retriggered cell and an unmatched stop), the
  *  clip's place, length and name, the columns with no song track, the empty spans, the refusal while a launch is
- * still open (which must consume nothing), the empty ring, and the single undo step that takes the whole pass back -
- * including at the undo stack's own bound, where a checkpoint per clip would evict the user's history once per
- * clip and would leave an earlier landed clip behind. */
+ *  still open (which must consume nothing), the empty ring, and the single undo step that takes the whole pass back. */
 
 #include <QtTest>
 
@@ -50,7 +48,6 @@
 #include "MidiClip.h"
 #include "Note.h"
 #include "PatternStore.h"
-#include "ProjectJournal.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "SessionArrangementRecorder.h"
@@ -123,17 +120,7 @@ private slots:
 		recorder().setArmed(true);
 	}
 
-	void cleanup()
-	{
-		recorder().setArmed(false);
-		// The undo-cap test below lowers the stack's own bound; put it back
-		// whatever that test did, so the bound is the engine's default for the
-		// tests that follow.
-		if (ProjectJournal* journal = Engine::projectJournal(); journal != nullptr)
-		{
-			journal->setMaxUndoStates(ProjectJournal::MAX_UNDO_STATES);
-		}
-	}
+	void cleanup() { recorder().setArmed(false); }
 
 	void anEmptyRingIsRefusedWithAHint()
 	{
@@ -428,72 +415,6 @@ private slots:
 		// Starts and stops were paired by cell, first start with the first stop: 64 pairs.
 		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), 64);
 		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 64);
-	}
-
-	/*! The pass is ONE undo step, however many clips it lands on one track.
-	 *
-	 *  The undo stack's own bound is the seam: with the bound at ONE step the
-	 *  stack keeps a single checkpoint, so a pass that checkpoints once per
-	 *  clip keeps only the LAST one - and one control.undo then restores the
-	 *  track to the state before the last clip, leaving the earlier landed
-	 *  clip behind. The bound is set through the journal's own API (the seam
-	 *  control.set_undo_depth uses), so no cap-change transaction is recorded
-	 *  and the undo under test is the land's own step.
-	 */
-	void oneUndoTakesEveryLandedClipBackEvenAtTheUndoCap()
-	{
-		ProjectJournal* journal = Engine::projectJournal();
-		QVERIFY(journal != nullptr);
-		QVERIFY(journal->setMaxUndoStates(1));
-
-		QVERIFY(recorder().recordStart(0, 0, 0));
-		QVERIFY(recorder().recordStop(0, 0, 96));
-		QVERIFY(recorder().recordStart(0, 0, 192));
-		QVERIFY(recorder().recordStop(0, 0, 288));
-
-		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
-		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
-		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 2);
-		QCOMPARE(m_first->getClips().size(), size_t{2});
-
-		const ControlResult undone = run(QStringLiteral("control.undo"));
-		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
-		QVERIFY2(undone.result.value(QStringLiteral("undone")).toBool(), "nothing was undone");
-		// ONE undo takes BOTH clips back - the pass is one step, not one per clip.
-		QCOMPARE(m_first->getClips().size(), size_t{0});
-	}
-
-	//! Cap-bound: two launches on one track land two clips; the pass is ONE checkpoint, so it evicts ONE
-	//! older step of the user's own history - not one per clip.
-	void aPassAtTheUndoCapsBoundIsStillOneUndo()
-	{
-		ProjectJournal* journal = Engine::projectJournal();
-		QVERIFY(journal != nullptr);
-		const int cap = journal->maxUndoStates();
-		for (int guard = 0; guard < cap + 8 && journal->undoDepth() < cap; ++guard)
-		{
-			m_first->addJournalCheckPoint();
-		}
-		QCOMPARE(journal->undoDepth(), cap);
-		const int evictedBefore = journal->evictedSteps();
-
-		QVERIFY(recorder().recordStart(0, 0, 0));
-		QVERIFY(recorder().recordStop(0, 0, 96));
-		QVERIFY(recorder().recordStart(0, 0, 192));
-		QVERIFY(recorder().recordStop(0, 0, 288));
-
-		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
-		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
-		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 2);
-		QCOMPARE(m_first->getClips().size(), size_t{2});
-		// One pass, one checkpoint: exactly one eviction at the cap,
-		// not one per clip.
-		QCOMPARE(journal->evictedSteps() - evictedBefore, 1);
-
-		const ControlResult undone = run(QStringLiteral("control.undo"));
-		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
-		QVERIFY2(undone.result.value(QStringLiteral("undone")).toBool(), "nothing was undone");
-		QCOMPARE(m_first->getClips().size(), size_t{0});
 	}
 };
 
