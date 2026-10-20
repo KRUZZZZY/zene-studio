@@ -4,25 +4,26 @@ Verdict: FIXED
 
 ## Evidence
 
-- File: src/core/ControlCommandsRecordTools.cpp, function groupByVolume (lines ~146-166).
-- Bug: grouping armed recording destinations by QStorageInfo::device() merged distinct mounts that
-  share a device name (e.g. multiple tmpfs mounts) and split the same mount only by accident of
-  device string; filesystem identity is the mount (rootPath/st_dev).
-- Fix: group by storage.rootPath() (the mount point / filesystem identity) instead of
-  storage.device().
+- File: src/core/ControlCommandsRecordTools.cpp, function groupByVolume.
+- Bug: grouping armed recording destinations by QStorageInfo::device() merged independent mounts
+  sharing a device label (e.g. two tmpfs mounts) into one free-space budget, and (in the prior
+  rootPath() variant) split paths sharing one underlying filesystem. Filesystem identity is st_dev.
+- Fix: group by st_dev (via stat) on POSIX, falling back to rootPath() on Windows/when stat fails.
 
 ## Tests
 
 - tests/src/core/RecordToolsTest.cpp: armedRoutesOnOneVolumeShareItsFreeSpace (existing) still passes.
-- tests/src/core/RecordToolsTest.cpp: armedRoutesOnDifferentMountsDoNotShare (new) fails without fix
-  (merged mounts) and passes with fix.
+- tests/src/core/RecordToolsTest.cpp: armedRoutesOnIndependentMountsDoNotShare (new): independent mounts
+  sharing a device label are separate budgets.
+- tests/src/core/RecordToolsTest.cpp: armedRoutesOnSameFilesystemCoalesce (new): paths sharing one
+  filesystem (directory + link) are pooled.
 
 ## Commands
 
-- RED (fix reverted): cmake --build build --target RecordToolsTest EXIT=0; ctest -R RecordToolsTest EXIT=8
-  (armedRoutesOnDifferentMountsDoNotShare failed: seconds 62121.6 vs expected 64930.5)
-- GREEN (fix applied): cmake --build build --target RecordToolsTest EXIT=0; ctest -R RecordToolsTest EXIT=0
-  (1/1 tests passed)
+- RED (device grouping restored): cmake --build build --target RecordToolsTest EXIT=0;
+  ctest -R RecordToolsTest EXIT=8 (armedRoutesOnIndependentMountsDoNotShare: seconds 62108.7 vs expected 111868)
+- GREEN (st_dev grouping): cmake --build build --target RecordToolsTest EXIT=0;
+  ctest -R RecordToolsTest EXIT=0 (3/3 tests passed)
 - ctest RecordToolsNoEngineTest EXIT=0 (1/1 passed)
 - bash tests/complexity-gate.sh --check EXIT=1 (pre-existing baseline regressions, not introduced)
 - bash tests/file-length-gate.sh --check EXIT=1 (pre-existing baseline regressions, not introduced)

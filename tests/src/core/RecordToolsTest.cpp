@@ -32,6 +32,7 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 #include <QStorageInfo>
+#include <sys/stat.h>
 
 #include "AudioEngine.h"
 #include "AutomationTrack.h"
@@ -419,15 +420,39 @@ private slots:
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
 	}
 
-	//! Filesystems are identified by their mount, not by their device name: two mounts reporting the
-	//! same device (e.g. two tmpfs mounts) are distinct free-space budgets, so their routes are not
-	//! pooled. (Regression for review-e39984ffb: grouping by device() merged distinct mounts.)
-	void armedRoutesOnDifferentMountsDoNotShare()
+	//! Independent mounts that happen to share a device label (e.g. two tmpfs mounts) are distinct
+	//! free-space budgets, so their routes are not pooled. (Regression for review-e39984ffb: grouping
+	//! by device() merged distinct mounts.)
+	void armedRoutesOnIndependentMountsDoNotShare()
 	{
-		QTemporaryDir tmpTakes;
+		const QString tmpPath = QStringLiteral("/tmp");
+		const QString shmPath = QStringLiteral("/dev/shm");
+		struct stat stTmp, stShm;
+		if (::stat(tmpPath.toUtf8().constData(), &stTmp) != 0
+			|| ::stat(shmPath.toUtf8().constData(), &stShm) != 0)
+		{
+			QSKIP("required mount points are not available on this host");
+		}
+		const QStorageInfo tmpStorage(tmpPath);
+		const QStorageInfo shmStorage(shmPath);
+		if (!tmpStorage.isValid() || !shmStorage.isValid())
+		{
+			QSKIP("required volumes cannot be measured on this host");
+		}
+		if (stTmp.st_dev == stShm.st_dev)
+		{
+			QSKIP("host does not provide two independent mounts sharing a device label");
+		}
+		// The two mounts are expected to advertise the same device label for this test's premise.
+		if (tmpStorage.device() != shmStorage.device())
+		{
+			QSKIP("host mounts do not share a device label");
+		}
+
+		QTemporaryDir tmpTakes(QStringLiteral("/tmp/zt-XXXXXX"));
 		QVERIFY2(tmpTakes.isValid(), "could not make a tmp take directory");
 		QVERIFY(QDir().mkpath(tmpTakes.filePath(QStringLiteral("d"))));
-		QTemporaryDir shmTakes(QStringLiteral("/dev/shm/zene-takes-XXXXXX"));
+		QTemporaryDir shmTakes(shmPath + QStringLiteral("/zene-takes-XXXXXX"));
 		QVERIFY2(shmTakes.isValid(), "could not make a shm take directory");
 		QVERIFY(QDir().mkpath(shmTakes.filePath(QStringLiteral("d"))));
 
@@ -443,6 +468,43 @@ private slots:
 		const double freeShm = static_cast<double>(QStorageInfo(shmTakes.path()).bytesAvailable());
 		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
 		const double expected = std::min(freeTmp, freeShm) / (rate * 3.0);
+		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
+		qDebug() << "INDEP seconds=" << seconds << "expected=" << expected;
+		QVERIFY2(qAbs(seconds - expected) <= qMax(1.0, expected * 1e-2),
+			qPrintable(QStringLiteral("seconds %1, expected %2").arg(seconds).arg(expected)));
+
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
+	}
+
+	//! Multiple paths onto the same underlying filesystem (e.g. a directory and a link to it) share
+	//! one free-space pool, so their routes are pooled. (Regression for review-e39984ffb: grouping by
+	//! mount point split paths sharing one filesystem.)
+	void armedRoutesOnSameFilesystemCoalesce()
+	{
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("d"))));
+
+		const QString linkPath = takes.path() + QStringLiteral("/link");
+		QVERIFY2(QFile::link(takes.path(), linkPath), "could not create a link to the take directory");
+
+		struct stat stReal, stLink;
+		QVERIFY2(::stat(takes.path().toUtf8().constData(), &stReal) == 0, "stat(real) failed");
+		QVERIFY2(::stat(linkPath.toUtf8().constData(), &stLink) == 0, "stat(link) failed");
+		QVERIFY2(stReal.st_dev == stLink.st_dev, "link does not share the underlying filesystem");
+
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), takes.filePath(QStringLiteral("d/route0.wav"))}}).ok, "arm 0 refused");
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 1},
+			{QStringLiteral("file"), linkPath + QStringLiteral("/d/route1.wav")}}).ok, "arm 1 refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
+		const double freeBytes = static_cast<double>(QStorageInfo(takes.path()).bytesAvailable());
+		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		const double expected = freeBytes / (rate * 3.0 * 2.0);
 		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
 		QVERIFY2(qAbs(seconds - expected) <= qMax(1.0, expected * 1e-2),
 			qPrintable(QStringLiteral("seconds %1, expected %2").arg(seconds).arg(expected)));

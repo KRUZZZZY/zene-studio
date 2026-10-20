@@ -29,6 +29,7 @@
  *  - record.remaining (WF-085): how long the free disk space lasts at the rate the armed routes write. */
 
 #include <QFileInfo>
+#include <sys/stat.h>
 #include <QJsonObject>
 #include <QMap>
 #include <QStorageInfo>
@@ -140,9 +141,10 @@ struct ArmedVolume
 	int routes = 0;
 };
 
-//! Groups the armed places by the filesystem they sit on. The free space belongs to the FILESYSTEM,
-//! not to each directory: two armed directories on one mount draw on the same pool, so their routes are
-//! summed per mount. False, with @a unmeasured set, when a place's filesystem cannot be measured.
+//! Groups the armed places by the filesystem they sit on (its st_dev identity, which coalesces
+//! bind mounts and other paths sharing one free-space pool while distinguishing independent mounts
+//! that merely share a device label). False, with @a unmeasured set, when a place's filesystem
+//! cannot be measured.
 bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>* volumes, QString* unmeasured)
 {
 	for (auto it = places.cbegin(); it != places.cend(); ++it)
@@ -153,8 +155,18 @@ bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>*
 			*unmeasured = it.key();
 			return false;
 		}
-		const QString volume = storage.rootPath();
-		ArmedVolume& entry = (*volumes)[volume];
+		QString volume;
+#ifndef _WIN32
+		struct stat fsStat;
+		if (::stat(it.key().toUtf8().constData(), &fsStat) == 0)
+		{
+			volume = QStringLiteral("st_dev:%1").arg(static_cast<qulonglong>(fsStat.st_dev));
+		}
+		else
+#endif
+		{
+			volume = storage.rootPath();
+		}		ArmedVolume& entry = (*volumes)[volume];
 		if (entry.routes == 0)
 		{
 			entry.dir = it.key();
