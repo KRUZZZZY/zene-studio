@@ -31,6 +31,9 @@
 #ifdef LMMS_HAVE_SNDIO
 
 #include <atomic>
+#include <future>
+#include <memory>
+#include <thread>
 
 #include <QThread>
 
@@ -68,8 +71,19 @@ protected:
 	void run() override;
 
 private:
+	struct OutputWriter;
+	//! Body of m_writer. It holds its own share of the state, so it stays valid
+	//! after MidiSndio is gone if teardown has to abandon a stalled write.
+	static void runWriter(std::shared_ptr<OutputWriter> out);
+
 	mio_hdl *m_hdl;
 	std::atomic<bool> m_quit;
+	//! Output queue between sendByte() and m_writer: [0] is read by the writer,
+	//! [1] is written by sendByte() without blocking. Closing [1] ends the queue.
+	int m_outPipe[2];
+	std::shared_ptr<OutputWriter> m_output;
+	std::thread m_writer;
+	std::future<void> m_writerDone;
 } ;
 
 
