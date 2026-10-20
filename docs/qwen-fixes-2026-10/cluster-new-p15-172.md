@@ -41,23 +41,23 @@ QTBUG-8819. The state was read on every audio period.
 The running state is cached in an atomic that the process lifecycle updates,
 so the audio thread never touches the `QProcess`:
 
-* `include/RemotePlugin.h:118-131` - `isRunning()` now returns
+* `include/RemotePlugin.h:118-130` - `isRunning()` now returns
   `m_clientRunning.load(std::memory_order_acquire)` (the `DEBUG_REMOTE_PLUGIN`
   branch is unchanged).
-* `include/RemotePlugin.h:299-306` - the new member
+* `include/RemotePlugin.h:304-309` - the new member
   `std::atomic<bool> m_clientRunning{false}`: *"The QProcess lives in the
   watcher thread (init() moves it there) and the audio thread reads
   isRunning(), so the state is cached here instead of being read from the
   QProcess across those threads."*
-* `src/core/RemotePlugin.cpp:99-105` - `ProcessWatcher::run()` sets the cached
+* `src/core/RemotePlugin.cpp:99-106` - `ProcessWatcher::run()` sets the cached
   state **before** `process.start(...)`, i.e. exactly where the client comes to
   life and on the thread that owns the `QProcess`.
-* `src/core/RemotePlugin.cpp:941-945` - `processFinished()` clears it: the
+* `src/core/RemotePlugin.cpp:955-959` - `processFinished()` clears it: the
   client is gone.
-* `src/core/RemotePlugin.cpp:988-991` - `processErrored()` clears it for
+* `src/core/RemotePlugin.cpp:996-1000` - `processErrored()` clears it for
   `QProcess::FailedToStart`, the one error that is *not* followed by
   `finished()`.
-* `src/core/RemotePlugin.cpp:274-276` - `init()` clears it when a reused
+* `src/core/RemotePlugin.cpp:273-276` - `init()` clears it when a reused
   plugin starts a new connection (the old client's state must not carry over).
 
 The semantics are preserved exactly: the old code answered `true` for
@@ -86,18 +86,18 @@ this bug is about. It is left as it is.
 
 `tests/src/core/RemotePluginAudioPortsTest.cpp`:
 
-* `runningStateIsCachedNotReadFromTheProcess()` (line 349) - `isRunning()`
+* `runningStateIsCachedNotReadFromTheProcess()` (line 360) - `isRunning()`
   answers from the **cache**, not from the `QProcess`. The `QProcess` in the
   test was never started, so its own state is "not running"; a `QProcess` read
   would answer "not running" even with the cache saying "running".
-* `cachedRunningStateFollowsTheProcessLifecycle()` (line 386) - the cached
+* `cachedRunningStateFollowsTheProcessLifecycle()` (line 390) - the cached
   state follows the client's lifecycle: the `QProcess`' `finished()` signal
   (which the host's `processFinished()` slot is connected to directly) clears
   it.
 
 The seam is the `LMMS_TESTING` friend declaration in
-`include/RemotePlugin.h:471-476` and the fail-closed probe
-`CachedRunningState` in the test file (lines 274-311). The probe's primary
+`include/RemotePlugin.h:472-477` and the fail-closed probe
+`CachedRunningState` in the test file (lines 288-317). The probe's primary
 template is selected whenever the cached state is not reachable from the test
 (no friend seam, i.e. the unfixed tree), so **both tests fail at run time in
 the unfixed tree instead of failing to compile** - the unfixed tree is exactly
@@ -166,7 +166,7 @@ handshake) is the only one in the tree.
 
 ### The fix (at the cause)
 
-`include/RemotePlugin.h:134-142` -
+`include/RemotePlugin.h:134-143` -
 
 ```cpp
 	inline void waitForHostInfoGotten()
@@ -187,7 +187,7 @@ allocation, lock, wait or log was added, and no command was added.
 
 ### The regression
 
-`tests/src/core/RemotePluginClientE2ETest.cpp:1284` -
+`tests/src/core/RemotePluginClientE2ETest.cpp:1295` -
 `hostInfoWaitKeepsAnEarlierProtocolFailure()`: the stand-in client
 (`tests/src/plugins/FakeRemotePluginClient.cpp`, the new `badhostinfo` mode)
 answers the host's `IdSyncKey` with the **retired** `IdChangeInputCount` id
@@ -253,9 +253,9 @@ fails the plugin (which silences it - `process()` renders silence for a failed
 plugin, `src/core/RemotePlugin.cpp:470-474`) instead of continuing with two
 different rates:
 
-* `include/RemotePlugin.h:200-206` - the declaration, with the contract in the
+* `include/RemotePlugin.h:200-205` - the declaration, with the contract in the
   comment.
-* `src/core/RemotePlugin.cpp:801-817` - the definition:
+* `src/core/RemotePlugin.cpp:801-816` - the definition:
   `waitForReplyWithin()`'s result is compared with `IdInformationUpdated`; an
   unanswered update logs one `qCritical` line and sets `m_failed = true`.
 
@@ -270,13 +270,13 @@ unchanged (100 ms, as before).
 
 ### The regression
 
-`tests/src/core/RemotePluginClientE2ETest.cpp:1339` -
+`tests/src/core/RemotePluginClientE2ETest.cpp:1335` -
 `unansweredSampleRateUpdateFailsThePlugin()`: the stand-in client
 (`tests/src/plugins/FakeRemotePluginClient.cpp`, the new `deafsamplerate` mode)
 never acknowledges a sample-rate update, and the plugin must be failed.
 
 The positive control is the same test's sibling
-`acknowledgedSampleRateUpdateKeepsThePlugin()` (line 1372): the stand-in client
+`acknowledgedSampleRateUpdateKeepsThePlugin()` (line 1363): the stand-in client
 now answers `IdSampleRateInformation` with `IdInformationUpdated` exactly like
 the real client does, and a plugin whose client acknowledged the new rate keeps
 running. The fixture change is what makes the control meaningful - before it,
