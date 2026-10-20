@@ -1,87 +1,171 @@
 # Cluster new-p12-200
 
-**Verdict: FIXED** (round 4, rework on top of rounds 1-3; addresses Luna's REWORK
-review `qa/reviews/new-p12-200.r3.md`)
+**Verdict: FIXED**
 
-## Round 4 (this rework)
+## Summary
 
-Luna's r3 review accepted the production fix but asked for two changes:
+One retrospective take could label frames recorded at several sample rates with a single
+rate: `RetroAudioCapture`'s ring stored frames without their rate while the writer
+assigned one rate to the whole window. Capture now stays rate-homogeneous: when a period
+arrives at a rate different from the frames already retained, the stale frames are
+dropped through the ring's realtime-safe producer-side discard
+(`RetroAudioRing::discardRetained()` on a real transition, `dropPeriod()` when a
+snapshot is in flight) and the new rate is published together with a fresh generation
+in one atomic tag, so `takeWindow()` validates frames and label as one snapshot. The take
+command labels the file with `window.sampleRate` instead of the live engine rate.
 
-1. **Test cleanup on every path.** `aDeferredTransitionPeriodIsNotAdmittedAfterTheSnapshotReleases`
-   asserted `QVERIFY(state.paused)` *before* releasing the snapshot, signalling the
-   producer, joining it, and clearing the hook - so a timed-out pause wait would
-   terminate the test while the producer thread was still spinning inside the hook
-   and the ring was left mid-snapshot. The test now releases the snapshot, signals
-   the producer to resume, joins it, and clears the hook on **every** path (including
-   a timed-out wait) *before* the `QVERIFY(state.paused)` assertion, so a failure can
-   only terminate the test cleanly.
-2. **Behavioral RED proof.** The r3 report's RED evidence was a compile error
-   (`setPushPauseTestHook` not a member without the product changes), which does not
-   prove the regression. The RED below is a reproducible **behavioral** failure: the
-   bug is reintroduced by swapping the deferred-period `dropPeriod()` for a
-   `m_ring.push()` of the new-rate frames into the still-old-rate ring, the test is
-   rebuilt, and the focused test fails because the window holds 400 frames (300
-   old-rate + 100 new-rate) where 300 are expected - exactly the mixed-rate window
-   the fix refuses.
+## Code evidence
 
-The production change (r3) is unchanged: a period that observes a pending snapshot is
-treated as deferred for its whole lifetime and is dropped via the realtime-safe
-`RetroAudioRing::dropPeriod()` instead of being admitted to the old-rate ring.
+- `src/core/RetroAudioCapture.cpp:121-165` `push()` - rate check, deferred-period drop.
+- `src/core/RetroAudioCapture.cpp:167-187` `transitionRateIfNeeded()` - held==0 init, equal no-op,
+  pending deferral, real transition discards + bumps generation.
+- `src/core/RetroAudioCapture.cpp:190-240` `takeWindow()` - tag-validated copy, refused on
+  unsettled snapshot.
+- `src/core/ControlCommandsRecordingRetro.cpp:174-179` `retroToTake()` - uses
+  `window.sampleRate > 0 ? window.sampleRate : engineSampleRate()`.
+- `src/core/AudioEngine.cpp:978-979` - caller passes `static_cast<int>(inputSampleRate())`.
 
-## Evidence
+## Regression test
 
-| Check | Result |
-|---|---|
-| RED (reintroduce bug: deferred period `m_ring.push()` instead of `dropPeriod()`) | `cmake --build ... --target zene RetroAudioCaptureTest` EXIT=0; `ctest -R '^RetroAudioCaptureTest$'` EXIT=8. Behavioral failure: `window.frames.size()` Actual 400, Expected 300 (`aDeferredTransitionPeriodIsNotAdmittedAfterTheSnapshotReleases`). Not a crash, not a compile error. |
-| GREEN (fixed: deferred period dropped) | `ctest -R '^RetroAudioCaptureTest$'` EXIT=0 (all 12 QTest functions pass). |
-| Live control path | `ctest -R '^ControlRecordInputs$'` EXIT=0. |
-| Complexity gate | EXIT=1 (pre-existing; regressions in `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ProjectRevisions.cpp`, `ControlCommandsShortcuts.cpp` - none touched here). |
-| File-length gate | EXIT=1 (pre-existing; files >500 lines unrelated to this change). |
-| Files committed | `tests/src/core/RetroAudioCaptureTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p12-200.md`. |
+`tests/src/core/RetroAudioCaptureTest.cpp` function
+`aDeferredTransitionPeriodIsNotAdmittedAfterTheSnapshotReleases` (QTest). Without the fix
+the deferred period is admitted to the old-rate ring and the window holds 400 frames
+(300 old-rate + 100 new-rate) where 300 are expected.
 
-## Commands and exit codes (r4 logs: `~/.local/share/zene-bunny-fix/qwen/runs/new-p12-200.r4/logs`)
+## Runnable RED sequence
 
-```text
-# Build the fixed tree and the focused test (GREEN baseline).
-cmake --build build --target zene RetroAudioCaptureTest -j4 > LOGS/build-green.log 2>&1; echo EXIT=$?   # EXIT=0
-cd build/tests && ctest -R '^RetroAudioCaptureTest$' --output-on-failure > LOGS/test-green.log 2>&1; echo EXIT=$?   # EXIT=0
+Define once:
 
-# RED: reintroduce the bug by admitting the deferred period to the old-rate ring.
-git diff -- src/core/RetroAudioCapture.cpp > LOGS/red.patch        # fixed -> buggy (push instead of dropPeriod)
-git apply LOGS/red.patch
-cmake --build build --target zene RetroAudioCaptureTest -j4 > LOGS/build-red.log 2>&1; echo BUILD_EXIT=$?   # EXIT=0
-cd build/tests && ctest -R '^RetroAudioCaptureTest$' --output-on-failure > LOGS/test-red.log 2>&1; echo TEST_EXIT=$?   # EXIT=8 (FAIL: 400 vs 300)
-
-# GREEN: restore the fix and rerun.
-git apply -R LOGS/red.patch
-cmake --build build --target zene RetroAudioCaptureTest -j4 > LOGS/build-green2.log 2>&1; echo BUILD_EXIT=$?   # EXIT=0
-cd build/tests && ctest -R '^RetroAudioCaptureTest$' --output-on-failure > LOGS/test-green2.log 2>&1; echo TEST_EXIT=$?   # EXIT=0
-
-# Unaffected family and gates.
-cd build/tests && ctest -R '^ControlRecordInputs$' --output-on-failure > LOGS/test-ci.log 2>&1; echo EXIT=$?   # EXIT=0
-bash tests/complexity-gate.sh --check > LOGS/gate-ccn.log 2>&1; echo EXIT=$?   # EXIT=1 (pre-existing, unrelated)
-bash tests/file-length-gate.sh --check > LOGS/gate-len.log 2>&1; echo EXIT=$?   # EXIT=1 (pre-existing, unrelated)
+```
+LOGDIR=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-200.r5/logs
+WT=/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-200
 ```
 
-## Round 3 (prior, retained for context)
+Working directory is `$WT` unless a step says otherwise.
 
-Luna's r2 review found a remaining timeout interleaving: in `RetroAudioCapture::push()`
-the producer could observe a pending snapshot, defer the rate transition, and then have
-the snapshot released before `ring.push()` admitted that period under the unchanged
-old-rate tag - leaving mixed-rate frames in the ring while tag validation still
-succeeded.
+1. GREEN baseline (fixed tree):
 
-Fix: a period that observes a pending snapshot is now treated as deferred for its
-whole lifetime and is dropped via a new realtime-safe `RetroAudioRing::dropPeriod()`
-instead of being admitted to the old-rate ring. `dropPeriod()` acknowledges the
-snapshot if it is still pending and silently discards the period if it has since
-been released, so a deferred period can never be admitted under the old rate even
-when the snapshot flag clears before admission. The intended deferred transition
-and snapshot acknowledgement are preserved. The rate decision was split into
-`RetroAudioCapture::transitionRateIfNeeded()` to keep `push()` within the
-complexity ratchet.
+```
+cd "$WT" && cmake --build build --target zene RetroAudioCaptureTest -j4 \
+  > "$LOGDIR/build-1-green.log" 2>&1   # EXIT=0
+cd "$WT/build/tests" && ctest -R '^RetroAudioCaptureTest$' --output-on-failure \
+  > "$LOGDIR/test-2-green.log" 2>&1    # EXIT=0
+```
 
-A deterministic regression
-(`aDeferredTransitionPeriodIsNotAdmittedAfterTheSnapshotReleases`) pauses the
-producer after the pending check via a test hook, releases the snapshot, then
-resumes admission, and verifies the subsequent take holds only the old-rate frames.
+2. Reintroduce the bug (fixed -> buggy). Exact edit in
+`src/core/RetroAudioCapture.cpp` (the deferred-period branch):
+
+```
+-		m_ring.dropPeriod(static_cast<std::size_t>(count));
++		m_ring.push(frames, static_cast<std::size_t>(count));
+```
+
+Apply it from a clean fixed tree with:
+
+```
+cd "$WT" && python3 - <<'PY'
+from pathlib import Path
+p = Path("src/core/RetroAudioCapture.cpp")
+s = p.read_text()
+old = "\t\tm_ring.dropPeriod(static_cast<std::size_t>(count));"
+new = "\t\tm_ring.push(frames, static_cast<std::size_t>(count));"
+assert s.count(old) == 1, s.count(old)
+p.write_text(s.replace(old, new))
+PY
+```
+
+3. Build and run RED:
+
+```
+cd "$WT" && cmake --build build --target zene RetroAudioCaptureTest -j4 \
+  > "$LOGDIR/build-3-red.log" 2>&1     # EXIT=0
+cd "$WT/build/tests" && ctest -R '^RetroAudioCaptureTest$' --output-on-failure \
+  > "$LOGDIR/test-4-red.log" 2>&1      # EXIT=8
+```
+
+Observed failure (`test-4-red.log`): `window.frames.size()` Actual 400, Expected 300
+(`aDeferredTransitionPeriodIsNotAdmittedAfterTheSnapshotReleases`).
+
+4. Restore the fix:
+
+```
+cd "$WT" && python3 - <<'PY'
+from pathlib import Path
+p = Path("src/core/RetroAudioCapture.cpp")
+s = p.read_text()
+old = "\t\tm_ring.push(frames, static_cast<std::size_t>(count));"
+new = "\t\tm_ring.dropPeriod(static_cast<std::size_t>(count));"
+# Only revert the deferred-period branch: it is the one followed by the early return.
+marker = new + "\n\t\treturn;"
+assert s.count(old + "\n\t\treturn;") == 1
+p.write_text(s.replace(old + "\n\t\treturn;", new + "\n\t\treturn;", 1))
+PY
+```
+
+(Equivalent: `git checkout -- src/core/RetroAudioCapture.cpp` on a clean tree.)
+
+5. Rebuild and run GREEN:
+
+```
+cd "$WT" && cmake --build build --target zene RetroAudioCaptureTest -j4 \
+  > "$LOGDIR/build-5-green.log" 2>&1   # EXIT=0
+cd "$WT/build/tests" && ctest -R '^RetroAudioCaptureTest$' --output-on-failure \
+  > "$LOGDIR/test-6-green.log" 2>&1    # EXIT=0
+```
+
+6. Unaffected family and gates:
+
+```
+cd "$WT/build/tests" && ctest -R '^ControlRecordInputs$' --output-on-failure \
+  > "$LOGDIR/test-7-ci.log" 2>&1       # EXIT=0
+cd "$WT" && bash tests/complexity-gate.sh --check \
+  > "$LOGDIR/gate-8-ccn.log" 2>&1      # EXIT=1 (pre-existing, unrelated files)
+cd "$WT" && bash tests/file-length-gate.sh --check \
+  > "$LOGDIR/gate-9-len.log" 2>&1      # EXIT=1 (pre-existing, unrelated files)
+cd "$WT" && python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$WT" \
+  > "$LOGDIR/feature-check.log" 2>&1   # EXIT=0
+```
+
+## Commands and exit codes
+
+| Step | Command (cwd) | Exit |
+|---|---|---|
+| build fixed | `cmake --build build --target zene RetroAudioCaptureTest` ($WT) | 0 |
+| test fixed | `ctest -R '^RetroAudioCaptureTest$'` ($WT/build/tests) | 0 |
+| build buggy | `cmake --build build --target zene RetroAudioCaptureTest` ($WT) | 0 |
+| test buggy (RED) | `ctest -R '^RetroAudioCaptureTest$'` ($WT/build/tests) | 8 (400 vs 300) |
+| restore | edit revert / `git checkout -- src/core/RetroAudioCapture.cpp` ($WT) | 0 |
+| build restored | `cmake --build build --target zene RetroAudioCaptureTest` ($WT) | 0 |
+| test restored (GREEN) | `ctest -R '^RetroAudioCaptureTest$'` ($WT/build/tests) | 0 |
+| ControlRecordInputs | `ctest -R '^ControlRecordInputs$'` ($WT/build/tests) | 0 |
+| complexity gate | `bash tests/complexity-gate.sh --check` ($WT) | 1 (pre-existing) |
+| file-length gate | `bash tests/file-length-gate.sh --check` ($WT) | 1 (pre-existing) |
+| feature_check | `python3 .../feature_check.py $WT` | 0 |
+
+## Self-check
+
+- **Regression test fails with the product change reverted and passes with it (exit codes):**
+  RED `ctest -R '^RetroAudioCaptureTest$'` exit 8, observed `window.frames.size()` Actual 400 vs Expected 300
+  (`test-4-red.log`); GREEN exit 0 (`test-6-green.log`). The test is unchanged between the two runs.
+- **Deterministic (no wall-clock timing/sleeps/races; name the seam):** the regression uses the
+  `RetroAudioCapture::setPushPauseTestHook` test seam plus `ring().beginSnapshot()` /
+  `ring().endSnapshot()` to create a deterministic in-flight snapshot; the producer is joined
+  before any assertion. The 5-second steady_clock loop is only a safety bound for waiting on the
+  hook and is not a pass criterion.
+- **Fix at the cause and complete (callers/siblings checked):** the single caller
+  `AudioEngine.cpp:978` passes `inputSampleRate()`; `transitionRateIfNeeded()` covers held==0,
+  equal rate, pending deferral, and real transition; `dropPeriod()` acknowledges a still-pending
+  snapshot. Command-side sibling `retroToTake` now labels with `window.sampleRate`. The other
+  `record.*` commands (`arm_track`, `disarm_all`, etc.) live in unchanged files and do not touch
+  the ring or rate handling, so they are unaffected.
+- **No collateral damage:** no project/save format or persisted state changes; arm state is runtime
+  mode state; no new limit applied to other callers; old projects load unchanged.
+- **Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE:** the bug was real and is fixed here.
+- **Sibling commands in changed command file (`ControlCommandsRecordingRetro.cpp`):**
+  `record.retro_capture_arm` (arm flag only, no rate logic),
+  `record.retro_capture_status` (counters; `sample_rate` field is engine rate for capacity seconds),
+  `record.retro_capture_to_take` (now labels the take with `window.sampleRate`). All three consistent
+  with the fix. The remaining `record.*` commands listed in the ASK are in files this cluster did
+  not change and are not affected.
+- **Gates:** `feature_check.py` exit 0; complexity and file-length gates exit 1 on pre-existing
+  unrelated files only (none in this cluster's changed files).
