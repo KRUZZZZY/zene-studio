@@ -41,7 +41,7 @@ Design choices:
 - `QVERIFY2` is called from the test body, not from inside a lambda, so the first failure ends the test.
 - A local scope guard restores the transport, the empty set and the prompt answer however the test ends. Without it, a RED run left state behind and broke `learnMidiBindsTheNextNoteToAScene` (see the superseded runs below).
 - After each load the test calls `QCoreApplication::sendPostedEvents()`. Without that, the second `project.open` in the binary segfaulted inside `Song::clearProject`, which ran a queued `TrackView` lambda against a track it had just removed (backtrace in `test-1-red.log`). I did not investigate that crash further and I make no claim about it in the app; it is flagged below.
-- The only waits are a bounded `QTest::qWaitFor(transportPlaying, 3 s)` for playback to start, the same pattern as the file's existing `QTRY` checks. The assertions after each key press or trigger are synchronous.
+- The only waits are bounded `QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000)` checks for playback to start, matching the file's existing `QTRY` checks. The assertions after each key press or trigger are synchronous.
 
 ## Commands and exit codes
 
@@ -106,7 +106,7 @@ No new files were created, so no registration in `tests/fork-sources.txt`, `test
 Bug-cluster items. The checker's feature-only items (acceptance table, Qt 5.15 portability, audio thread, manual) do not apply to a bug fix.
 
 1. **Each new test FAILS with the product change reverted and PASSES restored.** Yes. Reverted: `ctest` EXIT 8, `PerformViewTest.cpp(336)` (test-9). Restored: EXIT 0 (test-10); direct run 10/10 (test-11).
-2. **The test is deterministic: no wall-clock timing, sleeps or races.** No timing assertion. The only waits are a bounded poll for playback to start (`qWaitFor`, 3 s, the file's existing `QTRY` pattern), and `sendPostedEvents()`, which flushes queued events without a timer. The assertions after each key press or trigger run synchronously. The quit-prompt answer is injected with `setQuitPromptAnswer`, so no dialog can block.
+2. **The test is deterministic: no wall-clock timing, sleeps or races.** No timing assertion. The only waits are bounded polls for playback to start (`QTRY_VERIFY_WITH_TIMEOUT`, 3 s, the file's existing `QTRY` pattern), and `sendPostedEvents()`, which flushes queued events without a timer. The assertions after each key press or trigger run synchronously. The quit-prompt answer is injected with `setQuitPromptAnswer`, so no dialog can block.
 3. **The fix is at the cause and complete.** The cause is the order of the question and the end-of-set check. Callers checked: the keyboard (`performKey` → `stepSong`), the buttons (disabled at the ends and also routed through `stepSong`), and the grid's Next/Previous Song (`addSongStep`, which is fixed). `session.setlist_go` itself is unchanged on purpose.
 4. **No collateral damage.** No limit was added, and no file format or save path changed. Old projects and saved setlists load exactly as before. The only behaviour change is at the ends of the setlist on the two GUI paths, listed above.
 5. **Realtime, undo and commands.** The change is GUI-thread only and touches no audio code. It reads `session.setlist`, which does not mutate. No command was added or changed, so the snapshot is not affected, and no undo step was added or removed.

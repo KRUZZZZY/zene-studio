@@ -30,8 +30,6 @@
 
 #include <QtTest>
 
-#include <chrono>
-
 #include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -99,7 +97,7 @@ bool openUnsavedAndPlaying(int to, const QString& path)
 	if (Engine::getSong()->projectFileName() != path) { return false; }
 	QCoreApplication::sendPostedEvents();  // deliver the track views the load queued, before the next load removes them
 	Engine::getSong()->setModified();
-	return run(QStringLiteral("transport.play")).ok && QTest::qWaitFor(transportPlaying, std::chrono::seconds(3));
+	return run(QStringLiteral("transport.play")).ok;
 }
 
 //! Whether a song step at the end of the set did nothing: still playing, the same song open and unsaved, the same place.
@@ -332,15 +330,19 @@ private slots:
 		QVERIFY(nextSong != nullptr && previousSong != nullptr);
 
 		QVERIFY2(openUnsavedAndPlaying(1, second), "the last song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
 		view->performKey(Qt::Key_PageDown);
 		QVERIFY2(nothingHappened(second, 1), "Page Down at the last song stopped, asked about, or reopened the song");
 		QVERIFY2(openUnsavedAndPlaying(1, second), "the last song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
 		nextSong->trigger();
 		QVERIFY2(nothingHappened(second, 1), "Next Song at the last song stopped, asked about, or reopened the song");
 		QVERIFY2(openUnsavedAndPlaying(0, first), "the first song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
 		view->performKey(Qt::Key_PageUp);
 		QVERIFY2(nothingHappened(first, 0), "Page Up at the first song stopped, asked about, or reopened the song");
 		QVERIFY2(openUnsavedAndPlaying(0, first), "the first song did not open, unsaved, playing");
+		QTRY_VERIFY_WITH_TIMEOUT(transportPlaying(), 3000);
 		previousSong->trigger();
 		QVERIFY2(nothingHappened(first, 0), "Previous Song at the first song stopped, asked about, or reopened the song");
 	}
