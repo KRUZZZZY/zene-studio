@@ -86,6 +86,8 @@ public:
 	Q_INVOKABLE void settleSearch();
 	//! Run the saved collection @a name.
 	void runCollection(const QString& name);
+	//! Remove the saved collection @a name (the list's menu); a refusal shows on the status line.
+	void removeCollection(const QString& name);
 	//! The indexed sounds most like the file at @a path.
 	void findSimilar(const QString& path);
 	//! List the project's media.

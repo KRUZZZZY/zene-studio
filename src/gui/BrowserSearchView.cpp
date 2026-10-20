@@ -238,11 +238,7 @@ void BrowserSearchView::connectLists()
 		QMenu menu(this);
 		QAction* remove = menu.addAction(tr("Remove Collection"));
 		remove->setProperty("controlCommand", QStringLiteral("browser.collection_remove"));
-		if (menu.exec(m_collections->viewport()->mapToGlobal(at)) == remove)
-		{
-			run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), item->text()}});
-			refreshCollections();
-		}
+		if (menu.exec(m_collections->viewport()->mapToGlobal(at)) == remove) { removeCollection(item->text()); }
 	});
 	connect(m_results, &QWidget::customContextMenuRequested, this, [this](const QPoint& at) {
 		if (QTreeWidgetItem* item = m_results->itemAt(at))
@@ -494,6 +490,13 @@ void BrowserSearchView::saveCollection()
 	const ControlResult saved = run(QStringLiteral("browser.collection_save"), args);
 	if (!saved.ok) { m_status->setText(saved.errorMessage); }
 	refreshCollections();
+}
+
+void BrowserSearchView::removeCollection(const QString& name)
+{
+	const ControlResult removed = run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), name}});
+	if (!removed.ok) { m_status->setText(removed.errorMessage); }
+	refreshCollections();  // the list shows what the store holds: a refused removal leaves its collection listed
 }
 
 void BrowserSearchView::addPreviewEntries(QMenu* menu, const QString& path)
