@@ -59,22 +59,12 @@ namespace lmms
 namespace
 {
 
-//! The most channels a PROJECT file may name. A project is untrusted input:
-//! a channel index in it is a number, and a number that names a channel this
-//! mixer cannot hold must not turn into an allocation of that many channels.
-constexpr int MaxProjectMixerChannels = 512;
-
-bool isSupportedProjectMixerIndex(int index)
-{
-	return index >= 0 && index < MaxProjectMixerChannels;
-}
-
 //! What a project-supplied channel index turned out to be.
 enum class ProjectIndex
 {
 	Ok,          //!< a channel index this mixer can address
 	NotANumber,  //!< the attribute carries no number at all
-	OutOfRange   //!< a number outside the supported index range
+	OutOfRange   //!< a number the project file does not back up
 };
 
 //! True when the text is a decimal integer literal - a number that did not
@@ -97,11 +87,35 @@ bool looksLikeDecimalInteger(const QString& text)
 	return true;
 }
 
+//! The number of channels the project file describes. The application writes
+//! one <mixerchannel> element per channel - the master included - so the
+//! elements ARE the channels the file has.
+int countDescribedChannels( const QDomElement & _this )
+{
+	int count = 0;
+	for( QDomNode node = _this.firstChild(); ! node.isNull(); node = node.nextSibling() )
+	{
+		if( node.toElement().nodeName() == QString( "mixerchannel" ) ) { ++count; }
+	}
+	return count;
+}
+
+//! True when the index is one the project file backs up: 0..describedChannels.
+//! The bound is the FILE's own channel count, not a fixed number, so a
+//! project the application created and saved loads however many channels it
+//! has - while an index the file does not describe (which is what a hostile
+//! file asks for) is refused: honouring it would let a 60-byte file choose
+//! how much memory the load takes.
+bool isSupportedProjectMixerIndex(int index, int describedChannels)
+{
+	return index >= 0 && index <= describedChannels;
+}
+
 //! Read a project-supplied channel index. The value is converted as a WIDE
 //! integer first: QString::toInt() fails on a number that does not fit in an
 //! int and returns 0 for it, and 0 is the master - a conversion failure must
-//! never become a channel.
-ProjectIndex parseProjectChannelIndex(const QString& text, int& index)
+//! never become a channel. An index the file does not back up is refused.
+ProjectIndex parseProjectChannelIndex(const QString& text, int describedChannels, int& index)
 {
 	bool ok = false;
 	const qlonglong value = text.toLongLong(&ok);
@@ -112,7 +126,7 @@ ProjectIndex parseProjectChannelIndex(const QString& text, int& index)
 		index = 0;
 		return looksLikeDecimalInteger(text) ? ProjectIndex::OutOfRange : ProjectIndex::NotANumber;
 	}
-	if (value < 0 || value >= MaxProjectMixerChannels)
+	if (value < 0 || value > describedChannels)
 	{
 		index = 0;
 		return ProjectIndex::OutOfRange;
@@ -2614,12 +2628,13 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 }
 
 // make sure we have at least num channels
-void Mixer::allocateChannelsTo(int num)
+void Mixer::allocateChannelsTo(int num, int describedChannels)
 {
-	// A project-driven index is bounded: the number comes from a file, and a
-	// file that names two billion channels must not allocate two billion
-	// channels (it would hang the load and exhaust the memory).
-	if (!isSupportedProjectMixerIndex(num)) { return; }
+	// A project-driven index is bounded by what the file describes: the
+	// number comes from a file, and a file that names two billion channels
+	// must not allocate two billion channels (it would hang the load and
+	// exhaust the memory).
+	if (!isSupportedProjectMixerIndex(num, describedChannels)) { return; }
 	while (static_cast<std::size_t>(num) >= m_mixerChannels.size())
 	{
 		createChannel();
@@ -2636,13 +2651,19 @@ void Mixer::loadSettings( const QDomElement & _this )
 	m_feedbackMode = false;
 	const QScopedValueRollback<bool> loadingSettings(m_loadingSettings, true);
 	QDomNode node = _this.firstChild();
-	const auto reportUnsupportedIndex = [](const QString& item, const QString& value)
+	// The channels this file describes. Every project-supplied index is
+	// bounded by them, so the loader can never be talked into allocating more
+	// channels than the file itself holds - and a project the application
+	// created and saved (it writes one <mixerchannel> element per channel)
+	// always loads, however many channels it has.
+	const int describedChannels = countDescribedChannels( _this );
+	const auto reportUnsupportedIndex = [](const QString& item, const QString& value, int describedChannels)
 	{
 		if (Song* song = Engine::getSong())
 		{
 			song->collectError(QObject::tr(
-				"Project mixer %1 index '%2' is outside the supported range 0-%3; item ignored.")
-				.arg(item, value, QString::number(MaxProjectMixerChannels - 1)));
+				"Project mixer %1 index '%2' is outside the range this project describes (0-%3); item ignored.")
+				.arg(item, value, QString::number(describedChannels)));
 		}
 	};
 
@@ -2663,14 +2684,14 @@ void Mixer::loadSettings( const QDomElement & _this )
 			// become channel 0 (the master) here. The main pass below
 			// reports the element once, so this pre-pass stays quiet.
 			int busNum = 0;
-			if( parseProjectChannelIndex( mixch.attribute( "num" ), busNum ) != ProjectIndex::Ok )
+			if( parseProjectChannelIndex( mixch.attribute( "num" ), describedChannels, busNum ) != ProjectIndex::Ok )
 			{
 				continue;
 			}
 			// Zero is the master, which cannot be a bus, so only a positive
 			// number is one.
 			if( busNum <= 0 ) { continue; }
-			allocateChannelsTo( busNum );
+			allocateChannelsTo( busNum, describedChannels );
 			m_mixerChannels[busNum]->setIsBus( true );
 		}
 	}
@@ -2693,24 +2714,25 @@ void Mixer::loadSettings( const QDomElement & _this )
 		// fit in an int must not become channel 0: toInt() alone would return
 		// 0 and let this element overwrite the master. A `num` that is not a
 		// number at all names no channel, so it is skipped whole; a number
-		// outside the supported range is refused AND reported, so the user
-		// learns that the file names a channel this mixer cannot have. Zero
-		// is the master, a real channel that clear() creates, so its saved
-		// state must still load.
+		// the file does not back up is refused AND reported, so the user
+		// learns that the file names a channel it does not have. Zero is the
+		// master, a real channel that clear() creates, so its saved state
+		// must still load.
 		int num = 0;
-		const ProjectIndex numKind = parseProjectChannelIndex( mixch.attribute( "num" ), num );
+		const ProjectIndex numKind =
+			parseProjectChannelIndex( mixch.attribute( "num" ), describedChannels, num );
 		if( numKind != ProjectIndex::Ok )
 		{
 			if( numKind == ProjectIndex::OutOfRange )
 			{
-				reportUnsupportedIndex( QStringLiteral( "channel" ), mixch.attribute( "num" ) );
+				reportUnsupportedIndex( QStringLiteral( "channel" ), mixch.attribute( "num" ), describedChannels );
 			}
 			node = node.nextSibling();
 			continue;
 		}
 
 		// allocate enough channels
-		allocateChannelsTo( num );
+		allocateChannelsTo( num, describedChannels );
 
 		// The stable id (SPEC-stable-ids.md rules R1/R2, slice 2) - the same
 		// shape Track::loadTrack uses for the track element. A file that
@@ -2774,24 +2796,24 @@ void Mixer::loadSettings( const QDomElement & _this )
 			{
 				int sendTo = 0;
 				const ProjectIndex sendKind =
-					parseProjectChannelIndex( chDataItem.attribute( "channel" ), sendTo );
+					parseProjectChannelIndex( chDataItem.attribute( "channel" ), describedChannels, sendTo );
 				// A `channel` that is not a channel index is not routed
 				// anywhere: createChannelSend() indexes m_mixerChannels with
 				// it. Zero (the master) is the one valid low number, so a
 				// target that is not a number at all, or that is negative or
-				// out of range, is refused here rather than converted to an
-				// unsigned index downstream - and rather than silently
-				// becoming the master, which is what a failed conversion to
-				// an int used to do.
+				// outside the range the file describes, is refused here
+				// rather than converted to an unsigned index downstream - and
+				// rather than silently becoming the master, which is what a
+				// failed conversion to an int used to do.
 				if( sendKind != ProjectIndex::Ok )
 				{
 					if( sendKind == ProjectIndex::OutOfRange )
 					{
-						reportUnsupportedIndex( QStringLiteral( "send target" ), chDataItem.attribute( "channel" ) );
+						reportUnsupportedIndex( QStringLiteral( "send target" ), chDataItem.attribute( "channel" ), describedChannels );
 					}
 					continue;
 				}
-				allocateChannelsTo( sendTo ) ;
+				allocateChannelsTo( sendTo, describedChannels ) ;
 				const bool preFader =
 					chDataItem.attribute( "prefader" ).toInt() != 0;
 				MixerRoute * mxr = createChannelSend( num, sendTo, 1.0f, preFader );
@@ -2817,7 +2839,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 			{
 				int sendTo = 0;
 				const ProjectIndex sendKind =
-					parseProjectChannelIndex( chDataItem.attribute( "channel" ), sendTo );
+					parseProjectChannelIndex( chDataItem.attribute( "channel" ), describedChannels, sendTo );
 				// Same rule as a <send>: a target that is not a channel index
 				// is not a channel, and createSidechainSend() converts it to
 				// an unsigned index - so a failed conversion must not become
@@ -2826,11 +2848,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 				{
 					if( sendKind == ProjectIndex::OutOfRange )
 					{
-						reportUnsupportedIndex( QStringLiteral( "sidechain send target" ), chDataItem.attribute( "channel" ) );
+						reportUnsupportedIndex( QStringLiteral( "sidechain send target" ), chDataItem.attribute( "channel" ), describedChannels );
 					}
 					continue;
 				}
-				allocateChannelsTo( sendTo );
+				allocateChannelsTo( sendTo, describedChannels );
 				const int mode = chDataItem.attribute( "mode" ).toInt();
 				const SidechainTapPoint tap =
 					( mode >= 0 && mode <= 3 )
@@ -2923,12 +2945,13 @@ void Mixer::loadSettings( const QDomElement & _this )
 			// names, so nothing is skipped that a real project could contain.
 			const QString channelAttr = memberDom.attribute( "channel" );
 			int channel = 0;
-			const ProjectIndex memberKind = parseProjectChannelIndex( channelAttr, channel );
+			const ProjectIndex memberKind =
+				parseProjectChannelIndex( channelAttr, describedChannels, channel );
 			if( memberKind != ProjectIndex::Ok )
 			{
 				if( memberKind == ProjectIndex::OutOfRange )
 				{
-					reportUnsupportedIndex( QStringLiteral( "VCA member" ), channelAttr );
+					reportUnsupportedIndex( QStringLiteral( "VCA member" ), channelAttr, describedChannels );
 				}
 				continue;
 			}

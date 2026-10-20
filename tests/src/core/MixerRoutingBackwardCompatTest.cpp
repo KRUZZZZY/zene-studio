@@ -70,10 +70,11 @@ int effectCountOf(EffectChain& chain)
 }
 
 //! A project-supplied channel index the mixer cannot address. The item that
-//! carries it must be refused: the mixer holds a bounded number of channels,
-//! so an unbounded index would try to allocate billions of them. A number
-//! outside the supported range must also be REPORTED, so the user learns that
-//! the file names a channel this mixer does not have.
+//! carries it must be refused: a project file may only name the channels it
+//! describes, so an index beyond that would ask the loader to allocate a
+//! number of channels the file does not hold - billions of them for a
+//! hostile file. A number outside the described range must also be REPORTED,
+//! so the user learns that the file names a channel it does not have.
 struct RefusedIndexCase
 {
 	const char* xml;    //!< the mixer element that carries the index
@@ -83,14 +84,14 @@ struct RefusedIndexCase
 	int members;        //!< the VCA members the group must hold (-1: no group)
 };
 
-//! Every path a project-supplied index reaches the mixer on, each with the
-//! first number outside the supported range (512 - the range ends at 511),
-//! with a number that does not fit in an int at all (2147483648), with a
-//! number that does not fit in 64 bits either and is padded with whitespace
-//! (the conversion trims it, so it is still a number), and with a value that
-//! is not a number ("abc"). None of them may become a channel, and the numeric
-//! ones must be reported: a failed conversion to an int used to return 0,
-//! which is the master.
+//! Every path a project-supplied index reaches the mixer on, each with an
+//! index the file does not describe (512, while the fixture describes ONE
+//! channel), with a number that does not fit in an int at all (2147483648),
+//! with a number that does not fit in 64 bits either and is padded with
+//! whitespace (the conversion trims it, so it is still a number), and with a
+//! value that is not a number ("abc"). None of them may become a channel, and
+//! the numeric ones must be reported: a failed conversion to an int used to
+//! return 0, which is the master.
 static const RefusedIndexCase kRefusedIndexCases[] = {
 	{"<mixer><mixerchannel num=\"512\" muted=\"0\" volume=\"1\" name=\"Far\"><bus/></mixerchannel></mixer>", 1, "512", true, -1},
 	{"<mixer><mixerchannel num=\"2147483648\" muted=\"0\" volume=\"1\" name=\"Over\"><bus/></mixerchannel></mixer>", 1, "2147483648", true, -1},
@@ -106,6 +107,9 @@ static const RefusedIndexCase kRefusedIndexCases[] = {
 	{"<mixer><vcagroup name=\"Group\"><member channel=\"512\"/></vcagroup></mixer>", 1, "512", true, 0},
 	{"<mixer><vcagroup name=\"Group\"><member channel=\"2147483648\"/></vcagroup></mixer>", 1, "2147483648", true, 0},
 	{"<mixer><vcagroup name=\"Group\"><member channel=\"abc\"/></vcagroup></mixer>", 1, "abc", false, 0},
+	// A file that describes two channels and names a third one that is not
+	// there: the two it describes must load, the third must be refused.
+	{"<mixer><mixerchannel num=\"0\" muted=\"0\" volume=\"1\" name=\"Master\"/><mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Kick\"/><mixerchannel num=\"2147483647\" muted=\"0\" volume=\"1\" name=\"Ghost\"/></mixer>", 2, "2147483647", true, -1},
 };
 
 } // namespace
@@ -211,14 +215,15 @@ private slots:
 	void cleanupTestCase() { destroyEngine(); }
 
 	// A project-supplied channel index that this mixer cannot address must be
-	// refused, never used: the mixer holds a bounded number of channels, so an
-	// unbounded index would try to allocate billions of them. A number outside
-	// the supported range must be reported as a load error as well, so the
-	// user learns that the file names a channel this mixer does not have. A
-	// number that does not fit in an int at all (2147483648) is such a
-	// number: a failed conversion to an int returns 0, and 0 is the master -
-	// so it must not be routed there, and it must not be dropped in silence
-	// either.
+	// refused, never used: a project file may only name the channels it
+	// describes, so an index beyond that would ask the loader to allocate a
+	// number of channels the file does not hold - billions of them for a
+	// hostile file. A number outside the described range must be reported as a
+	// load error as well, so the user learns that the file names a channel it
+	// does not have. A number that does not fit in an int at all (2147483648)
+	// is such a number: a failed conversion to an int returns 0, and 0 is the
+	// master - so it must not be routed there, and it must not be dropped in
+	// silence either.
 	void aProjectIndexTheMixerCannotAddressIsRefusedAndReported()
 	{
 		Mixer* mixer = Engine::mixer();
@@ -274,6 +279,59 @@ private slots:
 					"the refused index joined the VCA group");
 			}
 		}
+	}
+
+	// A project the APPLICATION created and saved must load back exactly as
+	// it was saved. The application creates channels without a limit
+	// (Mixer::createChannel(), mixer.create_channel) and writes one
+	// <mixerchannel> element per channel, so a project with 513 channels
+	// describes 513 channels - and the loader must not cut it off at a
+	// channel the application could create and save itself. This is the
+	// other half of the rule the refused-index case above states: a file may
+	// only name the channels it describes, and this file describes 513.
+	void aChannelTheApplicationCanCreateSurvivesSaveAndLoad()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(Engine::getSong() != nullptr);
+
+		mixer->clear();
+		while (mixer->numChannels() <= 512) { mixer->createChannel(); }
+		QCOMPARE(mixer->numChannels(), 513);
+
+		// State on the last channel that the round trip has to carry.
+		mixer->mixerChannel(512)->m_name = "Round trip 512";
+		mixer->mixerChannel(512)->m_volumeModel.setValue(0.25f);
+
+		// Save it the way the application does.
+		QDomDocument savedDoc;
+		QDomElement savedRoot = savedDoc.createElement("root");
+		savedDoc.appendChild(savedRoot);
+		mixer->saveSettings(savedDoc, savedRoot);
+		const QString savedXml = savedDoc.toString();
+		QVERIFY2(savedXml.contains("num=\"512\""), "the saved project does not carry channel 512");
+
+		// And load it back.
+		Engine::getSong()->clearErrors();
+		QDomDocument reloadDoc;
+		QDomElement reloadRoot;
+		QVERIFY2(parseMixerElement(savedXml.toUtf8().constData(), reloadDoc, reloadRoot),
+			"the saved project is not valid XML");
+		mixer->loadSettings(reloadRoot);
+
+		QCOMPARE(mixer->numChannels(), 513);
+		QCOMPARE(mixer->mixerChannel(512)->m_name, QString("Round trip 512"));
+		QVERIFY2(qAbs(mixer->mixerChannel(512)->m_volumeModel.value() - 0.25f) < 0.0001f,
+			qPrintable(QString("the volume of channel 512 is %1")
+				.arg(mixer->mixerChannel(512)->m_volumeModel.value())));
+		// The application's own project must load without a complaint: a load
+		// error here would mean the loader refuses something the application
+		// can produce.
+		QVERIFY2(!Engine::getSong()->hasErrors(),
+			qPrintable(Engine::getSong()->errorSummary()));
+		evidence("ROUND_TRIP_512 channels=%d name=%s",
+			mixer->numChannels(),
+			qPrintable(mixer->mixerChannel(512)->m_name));
 	}
 
 	// A Phase C-era project (no bus, no sidechain elements) must load with
