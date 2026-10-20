@@ -34,6 +34,7 @@
 #include "AudioBusHandle.h"
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
+#include "AudioEngineWorkerThread.h"
 #include "DspLoadProbe.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -252,6 +253,18 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 	m_sidechainBuffer.silenceAllChannels();
 	m_postFaderBuffer.silenceAllChannels();
 	m_surround.init( Engine::audioEngine()->framesPerPeriod() );  // 0.5.0 F7: the side buffer, once
+
+	// cluster new-p10-249: one input partial per render thread (plus one for a
+	// caller outside a render job), sized here on the control thread so the
+	// worker-fed accumulation never allocates on the audio path. A render thread
+	// writes only its own slot; Mixer::reduceInputPartials() reduces the slots
+	// at the period barrier.
+	m_inputPartials.resize( static_cast<std::size_t>(Engine::audioEngine()->renderThreadCount()) + 1 );
+	for( MixerChannel::InputPartial & partial : m_inputPartials )
+	{
+		partial.buffer.assign( Engine::audioEngine()->framesPerPeriod(), SampleFrame{} );
+		partial.quiet.set();
+	}
 }
 
 
@@ -1839,24 +1852,65 @@ void Mixer::mixToChannel(const AudioBus& bus, mix_ch_t channel)
 	{
 		return;
 	}
-	if (mixerChannel->m_muteModel.value() == false)
+	if (mixerChannel->m_muteModel.value() != false)
 	{
-		// Several play handles may feed this channel in one period, each from an
-		// AudioEngine worker, so the accumulation needs mutual exclusion. It is
-		// held for one block add and nothing else: the realtime-safe spin flag,
-		// never a kernel-sleeping mutex on the render path (AGENTS.md rule 4,
-		// cluster new-p10-249).
-		while (mixerChannel->m_lock.test_and_set(std::memory_order_acquire)) {}
+		return;
+	}
 
+	// cluster new-p10-249: render threads never touch the shared channel bus
+	// directly. They fold their block into their OWN partial, which no other
+	// thread touches; Mixer::reduceInputPartials() sums the partials at the
+	// period barrier (top of masterMix). A caller that is not on a render job
+	// (the control side, the tests) accumulates straight into the channel bus,
+	// exactly as before, so its data is visible immediately.
+	const int slot = AudioEngineWorkerThread::currentRenderSlot();
+	if (slot >= 0 && static_cast<std::size_t>(slot) < mixerChannel->m_inputPartials.size() - 1)
+	{
+		MixerChannel::InputPartial & partial = mixerChannel->m_inputPartials[static_cast<std::size_t>(slot)];
+		const int frames = std::min( static_cast<int>(bus.frames()), static_cast<int>(partial.buffer.size()) );
+		MixHelpers::add(partial.buffer.data(), bus.bus()[0], frames);
+		partial.quiet &= bus.quietChannels(); // mix silence status
+		partial.frames = std::max(partial.frames, frames);
+		partial.live = true;
+	}
+	else
+	{
 		MixHelpers::add(mixerChannel->m_bus.bus()[0], bus.bus()[0], bus.frames());
 		mixerChannel->m_bus.quietChannels() &= bus.quietChannels(); // mix silence status
 		mixerChannel->m_hasInput = true;
-
-		mixerChannel->m_lock.clear(std::memory_order_release);
 	}
 }
 
 
+
+
+//! The period barrier: the render workers have joined (STAGE 1 and STAGE 2 are
+//! done), so every render thread's input partial is complete and private. This
+//! is the single owner of the worker-fed accumulation: it sums the live partials
+//! into the channel buses before any channel is processed.
+void Mixer::reduceInputPartials()
+{
+	for( MixerChannel * channel : m_mixerChannels )
+	{
+		for( MixerChannel::InputPartial & partial : channel->m_inputPartials )
+		{
+			if( ! partial.live )
+			{
+				continue;
+			}
+			const int frames = partial.frames;
+			MixHelpers::add(channel->m_bus.bus()[0], partial.buffer.data(), frames);
+			channel->m_bus.quietChannels() &= partial.quiet; // mix silence status
+			channel->m_hasInput = true;
+
+			// The partial is spent: clear it for the next period.
+			partial.live = false;
+			partial.frames = 0;
+			partial.quiet.set();
+			std::fill(partial.buffer.begin(), partial.buffer.begin() + frames, SampleFrame{});
+		}
+	}
+}
 
 
 void Mixer::prepareMasterMix()
@@ -2162,6 +2216,10 @@ void Mixer::masterMix( SampleFrame* _buf )
 {
 	const int fpp = Engine::audioEngine()->framesPerPeriod();
 
+	// cluster new-p10-249: fold render-thread input partials into the channel
+	// buses at the period barrier, before any channel is processed.
+	reduceInputPartials();
+
 	// add the channels that have no dependencies (no incoming senders, ie.
 	// no receives) to the jobqueue. The channels that have receives get
 	// added when their senders get processed, which is detected by
@@ -2361,6 +2419,14 @@ void Mixer::clearChannel(mix_ch_t index)
 	}
 	ch->m_sidechainBuffer.silenceAllChannels();
 	ch->m_postFaderBuffer.silenceAllChannels();
+	// cluster new-p10-249: drop any pending render-thread input partials.
+	for( MixerChannel::InputPartial & partial : ch->m_inputPartials )
+	{
+		partial.live = false;
+		partial.frames = 0;
+		partial.quiet.set();
+		std::fill(partial.buffer.begin(), partial.buffer.end(), SampleFrame{});
+	}
 
 	// send only to master
 	if( index > 0)
