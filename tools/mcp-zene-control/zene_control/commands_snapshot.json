@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-19T15:18:20Z",
+  "captured_at": "2026-10-20T16:36:19Z",
   "commands": [
     {
       "args_schema": {
@@ -15920,7 +15920,7 @@
         ],
         "type": "object"
       },
-      "description": "Put lyrics on notes: 'text' is split into syllables at spaces and hyphens and laid on the notes in 'scope' (the whole clip when left out) in time order - notes past the last syllable lose theirs - or 'lyrics' gives each note its own: a list of {note, text}. The note editor draws them on the notes. One undo step.",
+      "description": "Put lyrics on notes: give exactly one of 'text' - split into syllables at spaces and hyphens and laid on the notes in 'scope' (the whole clip when left out) in time order, and notes past the last syllable lose theirs - or 'lyrics', which gives each note its own: a list of {note, text}. Giving both is an error. The note editor draws them on the notes. One undo step.",
       "group": "note",
       "id": "note.lyrics",
       "mutating": true,
@@ -35511,14 +35511,14 @@
   ],
   "count": 833,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5684/build/zene",
+    "binary_bytes": 30348624,
+    "binary_sha256": "a2547386a9b73c4c01250c0a191778d572c91490ce3f4b1a27ac453d01a2406b",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5684",
+    "lane_head": "2da2ed356e1bde5fb67f46ed5157d186f0adb95c",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-aedsu8rh/zene.sock",
-    "version": "0.4.0-alpha.3221+ba3b2d9"
+    "source_socket": "/tmp/zctl-run-jt4_1e1_/zene.sock",
+    "version": "0.4.0-alpha.3222+2da2ed3"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

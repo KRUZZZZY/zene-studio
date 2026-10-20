@@ -111,14 +111,19 @@ ControlResult lyrics(const QJsonObject& args)
 {
 	ClipRef ref;
 	ControlResult error;
-	if (args.contains(QStringLiteral("lyrics")))
+	// 'text' and 'lyrics' are two spellings of the same request: one of them, never both (and never
+	// neither), so neither is silently dropped. Refuse before resolving the clip or checkpointing.
+	const bool byNote = args.contains(QStringLiteral("lyrics"));
+	if (byNote == args.contains(QStringLiteral("text")))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, byNote
+			? QStringLiteral("give either 'text' or 'lyrics', not both")
+			: QStringLiteral("give the lyrics: 'text', or 'lyrics' per note"));
+	}
+	if (byNote)
 	{
 		MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 		return clip == nullptr ? error : lyricsByNote(clip, ref, args.value(QStringLiteral("lyrics")).toArray());
-	}
-	if (!args.contains(QStringLiteral("text")))
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give the lyrics: 'text', or 'lyrics' per note"));
 	}
 	QVector<Note*> notes;
 	MidiClip* clip = clipAndNotes(args, false, &ref, &notes, &error);
@@ -284,9 +289,10 @@ void registerNotePlaybackCommands(ControlRegistry& registry)
 {
 	MidiPlayback::instance();  // registers its project section before a project loads
 	const QJsonObject scope = enumProperty({QStringLiteral("clip"), QStringLiteral("selection")});
-	add(registry, "note.lyrics", QStringLiteral("Put lyrics on notes: 'text' is split into syllables at spaces and hyphens and laid "
-		"on the notes in 'scope' (the whole clip when left out) in time order - notes past the last syllable lose theirs - or "
-		"'lyrics' gives each note its own: a list of {note, text}. The note editor draws them on the notes. One undo step."),
+	add(registry, "note.lyrics", QStringLiteral("Put lyrics on notes: give exactly one of 'text' - split into syllables at "
+		"spaces and hyphens and laid on the notes in 'scope' (the whole clip when left out) in time order, and notes past "
+		"the last syllable lose theirs - or 'lyrics', which gives each note its own: a list of {note, text}. Giving both "
+		"is an error. The note editor draws them on the notes. One undo step."),
 		{{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("text"), stringProperty()}, {QStringLiteral("lyrics"), arrayProperty()},
 			{QStringLiteral("scope"), scope}}, {QStringLiteral("clip")}, true, lyrics);
 	add(registry, "note.group", QStringLiteral("Make the notes in 'scope' (the selection when left out) one group: selecting one "

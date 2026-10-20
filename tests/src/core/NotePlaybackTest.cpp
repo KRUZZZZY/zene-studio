@@ -633,6 +633,25 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! 'text' and 'lyrics' are two spellings of the same request: both together is ambiguous, so the
+	//! command refuses it instead of silently dropping one of them.
+	void lyricsRejectBothInputFormsTogether()
+	{
+		Note* note = oneNote();
+		const QString clip = control::clipIdOf(m_clip);
+		QVERIFY(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}, {QStringLiteral("text"), QStringLiteral("original")}}).ok);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult result = run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("text"), QStringLiteral("ignored")},
+			{QStringLiteral("lyrics"), QJsonArray{QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)},
+				{QStringLiteral("text"), QStringLiteral("per note")}}}}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(lyricText(note->conditions().lyric), QStringLiteral("original"));
+		QCOMPARE(journal->undoDepth(), depthBefore);
+	}
+
 	//! A non-finite swing must not survive setSwing: std::clamp leaves a NaN
 	//! untouched (every comparison against it is false), and the value reaches
 	//! delayFrames(), save() and shouldPersist() from there.
