@@ -80,6 +80,13 @@ Log files are in `logs/`: `probe-red-*.log`, `probe-green-*.log`, `probe-green-s
 | C20 | `python3 /tmp/fc-p16-196/feature_check_logs.py <worktree>` on commit 9f21b8d0f | 0 | gates-3.log (final, 8/8 PASS) |
 | C21 | `python3 /tmp/fc-p16-196/submit_check_copy.py <worktree> new-p16-196` after the manifest commit 9f21b8d0f, before this report was committed | 1 | submit-2.log: only `working tree clean` FAIL (the report was uncommitted); all gates PASS |
 | C22 | same as C21, after the report commit 47c66362b | 0 | submit-3.log: `RESULT: PASS - submit` |
+| C23 | review round 1: `cmake --build build --target rt_alloc_probe NeuralAmpAllocProbeArgumentsTest -j4` (targets rebuilt) | 0 | build-r2-1-rebuild.log |
+| C24 | `cd build/tests && ctest -R NeuralAmpAllocProbeArgumentsTest --output-on-failure` | 0 | test-r2-1-green.log: `100% tests passed out of 1` |
+| C25 | spec invocation, positional: `build/plugins/rt_alloc_probe <minimal.nam> 512` | 0 | spec-cmd-positional.log: `RESULT: NO ALLOCATION IN PROCESS PATH` |
+| C26 | old invocation: `build/plugins/rt_alloc_probe <minimal.nam> --blocks 512` | 2 | spec-cmd-blocks-old.log: `blockSize must be in [1, 8192]` |
+| C27 | `bash tests/complexity-gate.sh --check` (on 4b4f1e12b) | 1 | ratchet-complexity-r2.log: 6 `REGRESSION` lines, 6 distinct files, none changed by this branch |
+| C28 | `bash tests/file-length-gate.sh --check` (on 4b4f1e12b) | 1 | ratchet-file-length-r2.log: 15 `REGRESSION` lines, 14 distinct files (`tests/src/core/ControlShutdownHookTest.cpp` twice), none changed by this branch |
+| C29 | feature gate copy on 4b4f1e12b (`/tmp/fc-p16-196/feature_check.py`, log folder r2) | 0 | gates-r2.log: 8/8 PASS |
 
 Notes on C15-C21: the gate writes its logs to a sibling of the worktree, which the write-jail forbids. The copy in C16 has its log folder moved into the LOG folder and its ROOT pointed at the qwen directory (where `FIX-BASE` and the cached base listings are). `submit_check.py` is run from a `/tmp` copy for the same reason: its gate step calls `feature_check.py` from its own directory. Its checks are unchanged.
 
@@ -89,7 +96,7 @@ Notes on C15-C21: the gate writes its logs to a sibling of the worktree, which t
 - `NeuralAmpProfileArgumentsTest` (1 test, exit 0, unchanged code).
 - Total executed in the family: 2. Zero tests executed would have been an error; this was not the case.
 
-### Gates (C20, on commit 9f21b8d0f)
+### Gates (C20 on 9f21b8d0f; the same 8 of 8 hold on 4b4f1e12b, C29)
 
 | gate | result |
 | --- | --- |
@@ -103,17 +110,25 @@ Notes on C15-C21: the gate writes its logs to a sibling of the worktree, which t
 | file-length (ratchet) | PASS: no new item in your files |
 | RESULT | PASS, exit 0 |
 
-The ratchet logs also print `FAIL: complexity ratchet regressed (check mode: baseline not written)` and the same for file-length. Those are the train-wide red items the table's "no new item in your files" rule exists for; none of them lists a file this branch touched.
+Two ratchets are red on the train. These are the known train-wide failures, not regressions from this branch, and the feature gate's ratchet rows pass because they count only new items in the files the branch changed. Run directly (C27, C28):
+
+- `bash tests/complexity-gate.sh --check` exits 1 with 6 `REGRESSION` entries, one per function in 6 files (for example `dotCentreAlong` in `tests/src/gui/XyPadPairTest.cpp`).
+- `bash tests/file-length-gate.sh --check` exits 1 with 15 `REGRESSION` lines covering 14 files (for example `src/core/TakeLane.cpp (575)`; `tests/src/core/ControlShutdownHookTest.cpp` appears twice).
+
+None of the 20 files named is in this branch's diff. `git diff --name-only 2da2ed356..HEAD` lists 8 files: the report, the spec, `rt_alloc_probe.cpp`, `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`, `NeuralAmpAllocProbeArgumentsTest.cpp` and `tests/upstream-modifications.txt`. The ratchet logs are `ratchet-complexity-r2.log` and `ratchet-file-length-r2.log`.
 
 ### Files committed
 
 - `c8046be7b`: `plugins/NeuralAmp/tests/rt_alloc_probe.cpp` (fix), `tests/CMakeLists.txt` (registration), `tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp` (new regression test), `tests/upstream-modifications.txt` (`tests/CMakeLists.txt` is an inherited file; reason recorded), `docs/qwen-fixes-2026-10/cluster-new-p16-196.md` (this report, first version)
 - `9f21b8d0f`: `tests/fork-sources.txt` (`tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp` and `plugins/NeuralAmp/tests/rt_alloc_probe.cpp` registered as fork-new), `tests/all-sources.txt` (re-derived, one line added)
 - `47c66362b`: this report (verdict, Self-check and the C15-C22 rows).
+- `4f0eb2a6c`: correction of the submit-check rows in this report.
+- `4b4f1e12b`: review round 1: `docs/specs/NEURAL-AMP.md` invokes `rt_alloc_probe` with the positional block size (`512`), and `tests/fork-sources.txt` lists this report as fork-NEW.
+- Final commit: this report, updated with C23-C29, the ratchet record and the Self-check.
 
 ## Follow-up (not changed here)
 
-`docs/specs/NEURAL-AMP.md:415` shows `build-rel/plugins/rt_alloc_probe ... --blocks 512`. The probe has no `--blocks` option. The old code read that as block 0 and reported a false pass. The new code exits 2 with the range message. The doc should be changed to `... 512` in a separate docs change.
+`docs/specs/NEURAL-AMP.md:415` documented `build-rel/plugins/rt_alloc_probe ... --blocks 512`. The probe has no `--blocks` option, and the old code read that as block 0 and reported a false pass. Review round 1 asked for the positional form, so the line now reads `... 512` (commit `4b4f1e12b`). The old form now exits 2 (C26).
 
 ## Self-check
 
@@ -125,3 +140,4 @@ Answers to the pre-submit list, each with the evidence above:
 - **"No collateral damage: old projects still load as before, and any limit or check you added does not hit other callers that legitimately exceed it."** No project or save format is involved. The bound is `[1, NamModel::kMaxBlock]`, the same bound the model enforces for its buffers and the same as `nam_profile`. The default (512) and the bounds (`1`, `8192`) still exit 0 with `NO ALLOCATION` (C14 test and probe-green logs). The one caller that passes an invalid value is the docs example in the Follow-up section, which the old code silently measured wrongly.
 - **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it."** Not applicable: the verdict is FIXED (REAL). The defect is shown at `rt_alloc_probe.cpp:91` (before the fix) and reproduced in C4.
 - **Undo, realtime and command items.** Not applicable. No control command was added or changed, no undo step is involved, and nothing on any audio path was touched: the change is in the CLI `main()` before the measured window.
+- **Review round 1 (Luna REWORK).** (1) The spec's probe invocation is corrected to the positional block size (`docs/specs/NEURAL-AMP.md`; C25 exit 0, C26 old form exit 2). (2) This report is registered in `tests/fork-sources.txt` as fork-NEW. (3) The touched targets were rebuilt and `NeuralAmpAllocProbeArgumentsTest` reran with exit 0 (C23, C24). (4) The two ratchets are recorded above as known train-wide failures (C27, C28). The regression evidence (C11, C14) is unchanged because the product file did not change in round 2.
