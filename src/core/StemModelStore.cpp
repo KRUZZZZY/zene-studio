@@ -443,6 +443,10 @@ bool StemModelStore::download(const StemModelSpec& spec,
 		return false;
 	}
 	QFile::remove(finalPath);
+	if (StemModelStore::s_downloadRenameHook)
+	{
+		StemModelStore::s_downloadRenameHook(finalPath);
+	}
 	if (!QFile::rename(partPath, finalPath))
 	{
 		// A concurrent installer may have moved the same pinned bytes into place
@@ -460,5 +464,12 @@ bool StemModelStore::download(const StemModelSpec& spec,
 	}
 	return true;
 }
+
+void StemModelStore::setDownloadRenameHook(std::function<void(const QString& finalPath)> hook)
+{
+	s_downloadRenameHook = std::move(hook);
+}
+
+std::function<void(const QString&)> StemModelStore::s_downloadRenameHook;
 
 } // namespace lmms

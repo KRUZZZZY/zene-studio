@@ -112,6 +112,15 @@ public:
 		const DownloadProgressFn& progress,
 		QString* error = nullptr,
 		const std::atomic<bool>* cancel = nullptr);
+
+	// Test seam: a hook invoked between removing the final path and renaming
+	// the verified staging file into place. Production leaves it unset. Tests
+	// use it to deterministically simulate a concurrent installer winning the
+	// rename. Not part of the public contract.
+	static void setDownloadRenameHook(std::function<void(const QString& finalPath)> hook);
+
+private:
+	static std::function<void(const QString& finalPath)> s_downloadRenameHook;
 };
 
 } // namespace lmms

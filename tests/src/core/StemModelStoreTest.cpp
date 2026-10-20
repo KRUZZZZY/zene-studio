@@ -596,6 +596,99 @@ private slots:
 		QSslConfiguration::setDefaultConfiguration(previous);
 	}
 
+	//! Deterministic rename-loser path: a concurrent installer moves the pinned
+	//! bytes into place between this attempt's remove(finalPath) and its rename.
+	//! The rename then fails, but the file verifies, so download() reports
+	//! success and must remove its own staging file (no duplicate model left).
+	void testDownloadRenameLoserReportsSuccessAndRemovesStaging()
+	{
+		QTemporaryDir certDir;
+		QVERIFY(certDir.isValid());
+
+		QProcess proc;
+		proc.start(QStringLiteral("openssl"),
+			{QStringLiteral("req"), QStringLiteral("-x509"), QStringLiteral("-newkey"),
+			 QStringLiteral("rsa:2048"), QStringLiteral("-keyout"),
+			 certDir.filePath(QStringLiteral("key.pem")), QStringLiteral("-out"),
+			 certDir.filePath(QStringLiteral("cert.pem")), QStringLiteral("-days"),
+			 QStringLiteral("1"), QStringLiteral("-nodes"), QStringLiteral("-subj"),
+			 QStringLiteral("/CN=127.0.0.1")});
+		QVERIFY(proc.waitForFinished(10000));
+		QCOMPARE(proc.exitCode(), 0);
+
+		QFile certFile(certDir.filePath(QStringLiteral("cert.pem")));
+		QVERIFY(certFile.open(QIODevice::ReadOnly));
+		const QByteArray certPem = certFile.readAll();
+		certFile.close();
+		QFile keyFile(certDir.filePath(QStringLiteral("key.pem")));
+		QVERIFY(keyFile.open(QIODevice::ReadOnly));
+		const QByteArray keyPem = keyFile.readAll();
+		keyFile.close();
+
+		const QSslConfiguration previous = QSslConfiguration::defaultConfiguration();
+		QSslConfiguration cfg = previous;
+		cfg.setPeerVerifyMode(QSslSocket::VerifyNone);
+		QSslConfiguration::setDefaultConfiguration(cfg);
+
+		QNetworkProxy::setApplicationProxy(QNetworkProxy(QNetworkProxy::NoProxy));
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		SslServer server(certPem, keyPem);
+		QVERIFY(server.listen(QHostAddress::LocalHost));
+
+		QObject::connect(&server, &QTcpServer::newConnection, [&]() {
+			while (server.hasPendingConnections())
+			{
+				QSslSocket* sock = qobject_cast<QSslSocket*>(server.nextPendingConnection());
+				connect(sock, &QSslSocket::sslErrors, sock, [sock](const QList<QSslError>&){ sock->ignoreSslErrors(); });
+				auto respond = [sock]() {
+					std::this_thread::sleep_for(std::chrono::milliseconds(50));
+					sock->readAll();
+					const QByteArray body("abc");
+					QByteArray resp = QByteArrayLiteral("HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\n\r\n");
+					resp.append(body);
+					sock->write(resp);
+					sock->flush();
+					QTimer::singleShot(100, sock, [sock](){ sock->disconnectFromHost(); });
+				};
+				connect(sock, &QSslSocket::encrypted, sock, respond);
+				if (sock->isEncrypted()) { respond(); }
+			}
+		});
+
+		StemModelSpec spec;
+		spec.name = QStringLiteral("rename-loser");
+		spec.url = QStringLiteral("https://127.0.0.1:%1/x").arg(server.serverPort());
+		spec.sha256 = QString::fromLatin1(Sha256OfAbc);
+		spec.sizeBytes = 3;
+
+		StemModelStore::setDownloadRenameHook([&](const QString& finalPath) {
+			QFile f(finalPath);
+			if (f.open(QIODevice::WriteOnly | QIODevice::Truncate))
+			{
+				f.write("abc");
+				f.close();
+			}
+		});
+
+		QString error;
+		std::atomic<bool> cancel{false};
+		const bool ok = StemModelStore::download(spec, dir.path(), {}, &error, &cancel);
+
+		StemModelStore::setDownloadRenameHook({});
+
+		QVERIFY2(ok, qPrintable(error));
+		QVERIFY(StemModelStore::verify(dir.filePath(spec.name + QStringLiteral(".onnx")),
+			spec.sha256, spec.sizeBytes));
+		QVERIFY2(partialFiles(dir.path(), spec.name).isEmpty(),
+			qPrintable(QStringLiteral("leftover staging files: ") + partialFiles(dir.path(), spec.name).join(QStringLiteral(", "))));
+
+		QSslConfiguration::setDefaultConfiguration(previous);
+		server.close();
+	}
+
 };
 
 QTEST_GUILESS_MAIN(StemModelStoreTest)
