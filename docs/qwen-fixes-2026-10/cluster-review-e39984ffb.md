@@ -247,3 +247,5 @@ estimate itself.
 - tests/fork-sources.txt (the new test helper is registered)
 - tests/all-sources.txt (the same, re-derived from its own recipe)
 - docs/qwen-fixes-2026-10/cluster-review-e39984ffb.md
+
+FIXED
