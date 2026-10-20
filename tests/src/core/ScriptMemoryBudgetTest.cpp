@@ -212,6 +212,40 @@ private slots:
 		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
 	}
 
+	//! BUG 12: setting the budget to the value it already has changes nothing,
+	//! so it records nothing. The reply says changed:false, but before the fix
+	//! the call still wrote a reversible transaction whose inverse put back the
+	//! same value, so the next control.undo spent its one step on that no-op and
+	//! left the real change in place. The last record must still be the real one.
+	void settingTheBudgetItAlreadyHasRecordsNoUndoStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+
+		const ControlResult real = registry->invoke(QStringLiteral("script.set_memory_budget"),
+			QJsonObject{{QStringLiteral("bytes"), static_cast<int>(2 * OneMiB)}});
+		QVERIFY2(real.ok, qPrintable(real.errorMessage));
+		QVERIFY(real.result.value(QStringLiteral("changed")).toBool());
+
+		const ControlResult same = registry->invoke(QStringLiteral("script.set_memory_budget"),
+			QJsonObject{{QStringLiteral("bytes"), static_cast<int>(2 * OneMiB)}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QVERIFY2(!same.result.value(QStringLiteral("changed")).toBool(),
+			"a repeated budget was reported as a change");
+		QCOMPARE(engine->memoryBudget(), 2 * OneMiB);
+
+		// control.undo reads lastTransaction(): it must still describe the real
+		// change, whose before-state is the default cap, not the no-op.
+		const ControlRegistry::Transaction* last = registry->lastTransaction();
+		QVERIFY2(last != nullptr, "the real budget change recorded no transaction");
+		QCOMPARE(last->command, QStringLiteral("script.set_memory_budget"));
+		QCOMPARE(last->before.value(QStringLiteral("memory_budget")).toInt(),
+			int(ScriptEngine::DefaultMemoryBudgetBytes));
+
+		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+	}
+
 	//! A budget refusal and a system allocation failure reach the run as the
 	//! SAME LUA_ERRMEM with different causes, and only one of them is fixed by
 	//! raising the budget. The allocator counted both as `refused` and every
