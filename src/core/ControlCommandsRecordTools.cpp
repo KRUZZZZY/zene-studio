@@ -29,10 +29,13 @@
  *  - record.remaining (WF-085): how long the free disk space lasts at the rate the armed routes write. */
 
 #include <QFileInfo>
-#include <sys/stat.h>
 #include <QJsonObject>
 #include <QMap>
 #include <QStorageInfo>
+
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #include "AudioEngine.h"
 #include "ConfigManager.h"
@@ -118,7 +121,8 @@ ControlResult punchHere(const QJsonObject& args)
 //! Where the armed routes write their takes, counted per directory: an armed route
 //! writes to the file name it was armed with (record.arm_track 'file', which may sit
 //! on another volume), and a route with no path yet writes beside the recovery file.
-//! Routes sharing a directory share its free space.
+//! Routes on one filesystem share its free space, whether or not they write into one
+//! directory - groupByVolume pools the directories by filesystem.
 QMap<QString, int> armedTakePlaces(const MultiTrackRecorder& recorder, const QString& recoveryDir)
 {
 	QMap<QString, int> places;
@@ -141,10 +145,13 @@ struct ArmedVolume
 	int routes = 0;
 };
 
-//! Groups the armed places by the filesystem they sit on (its st_dev identity, which coalesces
-//! bind mounts and other paths sharing one free-space pool while distinguishing independent mounts
-//! that merely share a device label). False, with @a unmeasured set, when a place's filesystem
-//! cannot be measured.
+//! Groups the armed places by the filesystem they sit on. The free space belongs to the FILESYSTEM,
+//! not to each directory: two armed directories on one filesystem draw on the same pool, so their
+//! routes are summed per filesystem. A filesystem is told apart by the device the kernel mounts it
+//! from (st_dev): that pools every path of one filesystem - a directory, a link to it, a second
+//! mount of it - and keeps independent filesystems apart even when they report the same device
+//! name (two tmpfs mounts both answer 'tmpfs'). False, with @a unmeasured set, when a place's
+//! filesystem cannot be measured.
 bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>* volumes, QString* unmeasured)
 {
 	for (auto it = places.cbegin(); it != places.cend(); ++it)
@@ -160,13 +167,14 @@ bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>*
 		struct stat fsStat;
 		if (::stat(it.key().toUtf8().constData(), &fsStat) == 0)
 		{
-			volume = QStringLiteral("st_dev:%1").arg(static_cast<qulonglong>(fsStat.st_dev));
+			volume = QStringLiteral("dev:%1").arg(static_cast<qulonglong>(fsStat.st_dev));
 		}
 		else
 #endif
 		{
-			volume = storage.rootPath();
-		}		ArmedVolume& entry = (*volumes)[volume];
+			volume = QStringLiteral("path:%1").arg(storage.rootPath());
+		}
+		ArmedVolume& entry = (*volumes)[volume];
 		if (entry.routes == 0)
 		{
 			entry.dir = it.key();

@@ -108,6 +108,13 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! A test that fails leaves its routes armed, and the next test would be refused its arming
+	//! because of it: every test starts from a clean recorder.
+	void cleanup()
+	{
+		run(QStringLiteral("record.disarm_all"));
+	}
+
 	void aCompEdgeMoves()
 	{
 		SampleTrack* track = twoTakeTrack();
@@ -450,10 +457,10 @@ private slots:
 		}
 
 		QTemporaryDir tmpTakes(QStringLiteral("/tmp/zt-XXXXXX"));
-		QVERIFY2(tmpTakes.isValid(), "could not make a tmp take directory");
+		if (!tmpTakes.isValid()) { QSKIP("cannot make a take directory under /tmp"); }
 		QVERIFY(QDir().mkpath(tmpTakes.filePath(QStringLiteral("d"))));
 		QTemporaryDir shmTakes(shmPath + QStringLiteral("/zene-takes-XXXXXX"));
-		QVERIFY2(shmTakes.isValid(), "could not make a shm take directory");
+		if (!shmTakes.isValid()) { QSKIP("cannot make a take directory under /dev/shm"); }
 		QVERIFY(QDir().mkpath(shmTakes.filePath(QStringLiteral("d"))));
 
 		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
@@ -464,14 +471,21 @@ private slots:
 		const ControlResult left = run(QStringLiteral("record.remaining"));
 		QVERIFY2(left.ok, qPrintable(left.errorMessage));
 		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
-		const double freeTmp = static_cast<double>(QStorageInfo(tmpTakes.path()).bytesAvailable());
-		const double freeShm = static_cast<double>(QStorageInfo(shmTakes.path()).bytesAvailable());
+		const QString dir = left.result.value(QStringLiteral("directory")).toString();
+		QVERIFY2(dir.startsWith(tmpTakes.path()) || dir.startsWith(shmTakes.path()),
+			qPrintable(QStringLiteral("directory %1 is neither of the two take directories").arg(dir)));
+		// The free bytes the answer quotes are the ones of the volume it names.
+		const double free = left.result.value(QStringLiteral("free_bytes")).toDouble();
+		const double measured = static_cast<double>(QStorageInfo(dir).bytesAvailable());
+		QVERIFY2(qAbs(free - measured) <= qMax(1048576.0, measured * 0.05),
+			qPrintable(QStringLiteral("free_bytes %1, measured %2 on %3").arg(free).arg(measured).arg(dir)));
+		// Each mount has a route of its own, so the winning volume's free bytes last ONE route's
+		// writing rate; pooling the two mounts into one budget would halve the answer.
 		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
-		const double expected = std::min(freeTmp, freeShm) / (rate * 3.0);
+		const double expected = free / (rate * 3.0);
 		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
-		qDebug() << "INDEP seconds=" << seconds << "expected=" << expected;
-		QVERIFY2(qAbs(seconds - expected) <= qMax(1.0, expected * 1e-2),
-			qPrintable(QStringLiteral("seconds %1, expected %2").arg(seconds).arg(expected)));
+		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
+			qPrintable(QStringLiteral("seconds %1, expected %2 for one route a mount").arg(seconds).arg(expected)));
 
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
@@ -502,12 +516,16 @@ private slots:
 		const ControlResult left = run(QStringLiteral("record.remaining"));
 		QVERIFY2(left.ok, qPrintable(left.errorMessage));
 		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
-		const double freeBytes = static_cast<double>(QStorageInfo(takes.path()).bytesAvailable());
+		// One filesystem, two routes: its free bytes last two routes' writing rate.
+		const double free = left.result.value(QStringLiteral("free_bytes")).toDouble();
+		const double measured = static_cast<double>(QStorageInfo(takes.path()).bytesAvailable());
+		QVERIFY2(qAbs(free - measured) <= qMax(1048576.0, measured * 0.05),
+			qPrintable(QStringLiteral("free_bytes %1, measured %2").arg(free).arg(measured)));
 		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
-		const double expected = freeBytes / (rate * 3.0 * 2.0);
+		const double expected = free / (rate * 3.0 * 2.0);
 		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
-		QVERIFY2(qAbs(seconds - expected) <= qMax(1.0, expected * 1e-2),
-			qPrintable(QStringLiteral("seconds %1, expected %2").arg(seconds).arg(expected)));
+		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
+			qPrintable(QStringLiteral("seconds %1, expected %2 for two routes on one filesystem").arg(seconds).arg(expected)));
 
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
