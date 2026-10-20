@@ -3286,6 +3286,18 @@ if(TARGET nam_profile)
 	add_dependencies(NeuralAmpProfileArgumentsTest nam_profile)
 endif()
 
+# rt_alloc_probe exists only on Linux (ld --wrap); its argument checks guard the real-time
+# measurement, so a malformed block size must be refused rather than reported as "no allocation".
+if(TARGET rt_alloc_probe)
+	add_executable(NeuralAmpAllocProbeArgumentsTest src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp)
+	add_test(NAME NeuralAmpAllocProbeArgumentsTest COMMAND NeuralAmpAllocProbeArgumentsTest)
+	target_compile_features(NeuralAmpAllocProbeArgumentsTest PRIVATE cxx_std_20)
+	target_link_libraries(NeuralAmpAllocProbeArgumentsTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+	target_compile_definitions(NeuralAmpAllocProbeArgumentsTest PRIVATE
+		"NAM_ALLOC_PROBE_EXECUTABLE=\"$<TARGET_FILE:rt_alloc_probe>\"")
+	add_dependencies(NeuralAmpAllocProbeArgumentsTest rt_alloc_probe)
+endif()
+
 # Native CLAP hosting tests. They only exist when the MIT licensed CLAP headers
 # (>= 1.2.10) are available; see cmake/modules/ClapHeaders.cmake. The port map
 # is pure data transformation, so it is tested without loading a plug-in.

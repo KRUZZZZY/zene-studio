@@ -21,7 +21,8 @@
  *       -o build/rt_alloc_probe
  *
  * Usage: build/rt_alloc_probe plugins/NeuralAmp/models/wavenet_a1_standard.nam [blockSize]
- * Exit code 0 = no allocation in the process path, 1 = allocation detected.
+ * blockSize is a whole decimal number in [1, NamModel::kMaxBlock]; default 512.
+ * Exit code 0 = no allocation in the process path, 1 = allocation detected, 2 = usage error.
  *
  * Copyright (c) 2026 AI-KOS Team
  *
@@ -35,8 +36,10 @@
 
 #include "nam/NamModel.h"
 
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <string>
 #include <vector>
@@ -81,6 +84,23 @@ void operator delete[](void* p) noexcept { ++g_deleteArr; __real_free(p); }
 void operator delete(void* p, std::size_t) noexcept { ++g_delete; __real_free(p); }
 void operator delete[](void* p, std::size_t) noexcept { ++g_deleteArr; __real_free(p); }
 
+// The whole argument must be a decimal integer that fits in int and lies in [1, kMaxBlock].
+// atoi() would read "abc" as 0 (an empty measurement that still reports "NO ALLOCATION") and
+// "-1" as a negative block that becomes a huge vector size.
+static bool parseBlockSize(const char* text, int& value)
+{
+	char* end = nullptr;
+	errno = 0;
+	const long parsed = std::strtol(text, &end, 10);
+	if (end == text || *end != '\0' || errno == ERANGE ||
+	    parsed < std::numeric_limits<int>::min() || parsed > std::numeric_limits<int>::max())
+	{
+		return false;
+	}
+	value = static_cast<int>(parsed);
+	return value >= 1 && value <= lmms::nam::NamModel::kMaxBlock;
+}
+
 int main(int argc, char** argv)
 {
 	if (argc < 2)
@@ -88,7 +108,12 @@ int main(int argc, char** argv)
 		std::fprintf(stderr, "usage: %s model.nam [blockSize]\n", argv[0]);
 		return 2;
 	}
-	const int block = (argc > 2) ? std::atoi(argv[2]) : 512;
+	int block = 512;
+	if (argc > 2 && !parseBlockSize(argv[2], block))
+	{
+		std::fprintf(stderr, "blockSize must be in [1, %d]\n", lmms::nam::NamModel::kMaxBlock);
+		return 2;
+	}
 
 	std::string error;
 	std::unique_ptr<lmms::nam::NamModel> model = lmms::nam::NamModel::loadFromFile(argv[1], &error);
