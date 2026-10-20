@@ -187,6 +187,9 @@ set(LMMS_TESTS
 	src/core/ControlChordWriteTest.cpp
 	src/core/ControlDeviceCatalogueTest.cpp
 	src/core/ControlEditCommandsTest.cpp
+	# The control selection store keeps the SELECTED NOTES' ids, so a removal
+	# cannot shift the selection onto another note (cluster new-p12-53-port).
+	src/core/NoteSelectionIdentityTest.cpp
 	# The session-sync surface (D11 "Ableton Link sync"): the five link.*
 	# commands, the typed refusals, the A16 inverses through control.undo, and
 	# the model's own arithmetic - the revision total order and the phase a
@@ -5074,6 +5077,10 @@ endif()
 # (tracks, MidiClips, notes) rather than only reading them, so it needs a Qt
 # platform plugin even though the assertions never open a window.
 set_tests_properties(ControlEditCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The selection-identity test edits real Song model objects (a track, a clip,
+# notes) through the registry, so it wants a Qt platform plugin too.
+set_tests_properties(NoteSelectionIdentityTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The 0.3.0 verb wave's inverse proof: clip.trim / clip.slip / note.probability_set
 # edit real Song model objects through the registry and then undo them through

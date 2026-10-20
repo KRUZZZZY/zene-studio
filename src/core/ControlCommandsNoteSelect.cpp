@@ -48,10 +48,9 @@ void markSelected(MidiClip* clip, const QVector<int>& positions)
 	for (int position : positions) { clip->notes()[position]->setSelected(true); }
 }
 
-//! The ids of the notes whose own selection flag is set. The selection STORE holds
-//! note-list positions, which a reorder (note.move, note.split, ...) invalidates, so a
-//! previous selection reported from it names the wrong note; the flags travel with the
-//! note objects.
+//! The ids of the notes whose own selection flag is set. The flags travel with the note
+//! objects, so a reorder (note.move, note.split, ...) or a removal cannot make this
+//! report a note the client never selected.
 QJsonArray selectedNoteIds(const MidiClip* clip)
 {
 	QJsonArray ids;
