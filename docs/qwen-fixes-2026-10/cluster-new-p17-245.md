@@ -48,7 +48,7 @@ Round-2 logs (this rework): `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/run
 | Raw ratchets name none of our files | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-245 && grep -c -e BrowserSearchView -e LibraryMenusTest /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-245.r2/logs/raw-complexity.log /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-245.r2/logs/raw-file-length.log; echo EXIT=$?` | 1 | Counts: raw-complexity.log 0, raw-file-length.log 0. `grep` exits 1 when no line matches, so EXIT=1 here means zero matches in both files. |
 | Submit check | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-245 && python3 -I /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-245 new-p17-245 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-245.r2/logs/submit-check-2.log 2>&1; echo EXIT=$?` | 1 | Gate row only (`FAIL gates (feature_check.py)`): its line 104 runs the direct gate in place, which hits the sandbox denial above. Every other row PASS; the `?` items are answered in Self-check. Log: `submit-check-2.log`. Run on the committed reworked report. |
 
-Table notes: in the table, `\|` stands for a literal `|` in the executed command (GitHub table escaping). The `sed` row's `s\|...\|...\|` uses `|` as its delimiter.
+Table notes: in the table, `\|` stands for a literal `|` in the executed command (GitHub table escaping). The `sed` row uses `|` as its delimiter; its three substitutions are written out in full.
 
 ## Self-check
 
