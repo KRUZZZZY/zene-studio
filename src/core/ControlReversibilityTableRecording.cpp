@@ -66,16 +66,15 @@ const ReversibilityRow kRecordingRows[] = {
 		"the take: delete it where the reply says it is (the default is "
 		"zene-take-trk<N>.wav beside this instance's recovery file)"),
 	// W1: the mixer's Arm All in one call.
-	R("track.set_arm_many", RC::Snapshot, true,
-		"the same capture as track.set_arm, for each named track: every armed route "
-		"writes a WAV and a take journal beside it, and no track's element is "
-		"written to",
-		"action checkpoint: ONE recorded undo step - this command with armed: false "
-		"over exactly the tracks the call armed (a track already armed, or one that "
-		"refused, is not in it) - stops those captures and retires their journals. "
-		"DISARMING records no inverse, as track.set_arm's does not: re-arming starts "
-		"NEW takes",
-		"the takes: delete them where the route replies say they are"),
+	R("track.set_arm_many", RC::Irreversible, false,
+		"arming the named routes creates WAV take files and journals beside them. "
+		"Disarming retires the journals, but the take files remain on disk, outside "
+		"the project state this command can restore",
+		"no complete inverse exists: disarming can stop the captures, but cannot "
+		"remove or restore the takes. The registry refuses control.undo rather than "
+		"claiming that this partial action reverses the command",
+		"stop each route with record.disarm_track using the route ids in the reply; "
+		"keep or delete each take at the file path returned for that route"),
 
 	// =====================================================================
 	// true_inverse - the inverse is a live checkpoint, reached as a command

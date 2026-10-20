@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-19T15:18:20Z",
+  "captured_at": "2026-10-20T00:04:57Z",
   "commands": [
     {
       "args_schema": {
@@ -29908,7 +29908,7 @@
         ],
         "type": "object"
       },
-      "description": "Arm or disarm several song tracks for recording in one call - the mixer's Arm All. Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their takes stay on disk). Disarming records no inverse, as track.set_arm's does not.",
+      "description": "Arm or disarm several song tracks for recording in one call - the mixer's Arm All. Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' each one's route reply. Arming writes take files that remain on disk when captures stop, so control.undo refuses this command; stop each route with record.disarm_track using its route id from 'routes'. Disarming records no inverse, as track.set_arm's does not.",
       "group": "track",
       "id": "track.set_arm_many",
       "mutating": true,
@@ -35514,11 +35514,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-81-port-port/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-aedsu8rh/zene.sock",
-    "version": "0.4.0-alpha.3221+ba3b2d9"
+    "source_socket": "/tmp/zctl-run-m9ve4t3u/zene.sock",
+    "version": "0.4.0-alpha.3222+2da2ed3"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

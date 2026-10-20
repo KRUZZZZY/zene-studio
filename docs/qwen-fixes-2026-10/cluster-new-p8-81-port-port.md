@@ -1,0 +1,101 @@
+# Cluster new-p8-81-port-port
+
+Verdict: **FIXED** (port of the accepted fix from `bugs/qwen-new-p8-81-port`, written by hand onto this branch off the newest line `050/m0-train-8`; no merge, cherry-pick or rebase).
+
+Finding: "`track.set_arm_many` is marked reversible although undo leaves its takes behind" (`src/core/ControlReversibilityTableRecording.cpp:80`, historical line numbers).
+
+## Is the finding real on this branch?
+
+Yes. The newest line still carried the defect when this work started:
+
+- `src/core/ControlReversibilityTableRecording.cpp:69-78` (base `2da2ed356`): `R("track.set_arm_many", RC::Snapshot, true, ...)` with the inverse "ONE recorded undo step - this command with armed: false over exactly the tracks the call armed ...".
+- `src/core/ControlCommandsArrangementState.cpp:401-405` (base `2da2ed356`, handler `setArmMany`): on arming, the handler inserted a `__transaction` whose inverse disarmed the batch's tracks, so `control.undo` succeeded and disarmed the tracks while the take WAV files stayed on disk.
+- The command's own description (`src/core/ControlCommandsArrangementState.cpp:414-415`, base) promised "Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their takes stay on disk)" - the same contradiction the finding names.
+
+`git merge-base --is-ancestor 70a924a8a HEAD` -> exit 1 (the accepted fix is not in this tree), so the port was needed.
+
+The RED run below reproduces exactly that: on the unfixed product `control.undo` returns `ok` and the regression fails on it.
+
+## Fix (what was changed, and why this option)
+
+The finding offered two options: mark the row irreversible, or make the inverse remove and redo the takes. I took the first, as the accepted fix did. A take is a file on disk outside the project state that `control.undo` restores, so "remove and redo" would have to delete files a user may already have recorded into; that is a design call for the owner. The honest registry answer is a typed refusal.
+
+| File | Change |
+| --- | --- |
+| `src/core/ControlReversibilityTableRecording.cpp:69-77` | The row is now `RC::Irreversible, false`; the reason says the take files outlive the captures and are outside the project state, the mechanism says no complete inverse exists, the fallback names `record.disarm_track` and the route's take path. |
+| `src/core/ControlCommandsArrangementState.cpp:378-380` | Handler comment corrected (no more "ONE undo step"). |
+| `src/core/ControlCommandsArrangementState.cpp:399-401` | The `__transaction` insertion on arm is removed: the batch records no inverse. The registry then writes the honest record ("this command recorded no inverse or snapshot") and `control.undo` refuses it typed. |
+| `src/core/ControlCommandsArrangementState.cpp:366` | The per-track `__transaction` strip comment now says why (the batch records no inverse: its takes outlive the captures). |
+| `src/core/ControlCommandsArrangementState.cpp:414-416` | The command description no longer promises a one-step undo; it says `control.undo` refuses the command and names `record.disarm_track`. No command added or removed. |
+| `src/gui/RecordLaunchMenus.cpp:65-67` | Comment only: the Arm All menu no longer claims one undo step takes the arm back. |
+| `docs/RELEASE-NOTES-v0.3.0-alpha.md:946-948, 1021-1026, 2217-2222` | The A16 histogram moves one row (`snapshot=42 irreversible=22` -> `snapshot=41 irreversible=23`), in the published block and in the measurement line right above it (the accepted fix moved both, so the document quotes one current figure); the two prose mentions of the row follow the table. `ReversibilityContractTest` checks the published block against the table on every run. |
+| `tools/mcp-zene-control/zene_control/commands_snapshot.json` | DERIVED file, regenerated from a live instance of the fixed binary with the bridge's own generator (`tools/mcp-zene-control/snapshot_commands.py --socket ...`), never hand-written: the one `track.set_arm_many` description plus `captured_at` and the instance provenance. The id surface is unchanged (`ids_sha256 8995baf1...`, 833 ids / 76 groups). |
+| `tests/src/core/UndoHonestyTest.cpp:405-440` | Regression test `armAllRefusesUndoThatWouldLeaveItsTakesBehind` replaces `armingSeveralTracksIsOneStep` (the old test asserted the undo that is now refused). It runs in a private working directory, so its takes do not depend on `~/Documents`. The header comment is updated to match. |
+| `tests/upstream-modifications.txt` | One line for the inherited `docs/RELEASE-NOTES-v0.3.0-alpha.md` change. |
+
+No new files were created, so no `tests/fork-sources.txt` entry was needed: every changed file is already registered (the release notes in `tests/upstream-modifications.txt`, the rest in `tests/fork-sources.txt`; `commands_snapshot.json` is a derived artefact that is checked by `ControlCommandsSnapshot`).
+
+### Why the refusal is honest, and what the sibling rows do
+
+- The contract class is the single source of truth: `ControlRegistry::stampContract` (`src/core/ControlRegistry.cpp:543-571`) drops a handler's reversible claim when the table says `irreversible`, and `ControlCommandsControl.cpp:400-406` turns a non-reversible top record into the typed refusal `ControlErrorKind::Irreversible` whose message names the command, its class and the row's fallback.
+- The single-track sibling `track.set_arm` (`src/core/ControlReversibilityTableRecording.cpp:55-67`) is deliberately left as it is (`snapshot`, reversible): the accepted fix made the same choice, the finding does not cover it, and changing it is an owner decision (see "Other observation" below). Its own fallback already says "the take: delete it where the reply says it is".
+- `record.disarm_track` and `record.disarm_all` were already `irreversible` and are unchanged.
+- Nothing new was added to the audio thread: the change is a table row, a comment, and the removal of one JSON object built in the control handler (not on the audio path). `control.undo` stays ONE honest step: it now refuses instead of half-undoing.
+
+## Evidence table
+
+Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-81-port-port.r1/logs` (named below by file).
+
+| Evidence | Exact command | EXIT / count |
+| --- | --- | --- |
+| RED, the ported regression on the UNFIXED product | `cmake --build build --target UndoHonestyTest -j8 > logs/build-1.log 2>&1`; `cd build/tests && ctest -R UndoHonestyTest --output-on-failure > logs/test-1.log 2>&1` | build EXIT **0**; test EXIT **8**; `FAIL! : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE. (control.undo claimed it could remove the takes from track.set_arm_many)` at `UndoHonestyTest.cpp(435)`; `Totals: 12 passed, 1 failed, 4 skipped` |
+| GREEN, the same test with the fix in place | `cmake --build build --target zene UndoHonestyTest ReversibilityContractTest -j8 > logs/build-2.log 2>&1`; `cd build/tests && ctest -R "UndoHonestyTest|ReversibilityContractTest" --output-on-failure > logs/test-2.log 2>&1` | build EXIT **0**; test EXIT **0** (`100% tests passed out of 2`) |
+| Step 4b, RED with the fix reverse-applied | `git diff -- src/core/ControlReversibilityTableRecording.cpp src/core/ControlCommandsArrangementState.cpp src/gui/RecordLaunchMenus.cpp docs/RELEASE-NOTES-v0.3.0-alpha.md > logs/fix.patch` (EXIT 0, 130 lines); `git apply -R --check logs/fix.patch` (EXIT **0**); `git apply -R logs/fix.patch` (EXIT **0**); `cmake --build build --target zene UndoHonestyTest -j8 > logs/build-4.log 2>&1` (EXIT **0**); `cd build/tests && ctest -R UndoHonestyTest --output-on-failure > logs/test-5.log 2>&1` | apply EXIT 0; build EXIT 0; test EXIT **8**; the same `FAIL! : ... '!undo.ok' returned FALSE.`; `Totals: 12 passed, 1 failed, 4 skipped` |
+| Step 4b, GREEN with the fix re-applied | `git apply logs/fix.patch` (EXIT **0**); `cmake --build build --target zene UndoHonestyTest -j8 > logs/build-5.log 2>&1` (EXIT **0**); `cd build/tests && ctest -R UndoHonestyTest --output-on-failure > logs/test-6.log 2>&1` | apply EXIT 0; build EXIT 0; test EXIT **0** (`100% tests passed out of 1`) |
+| Affected family (10 ctests) | `cmake --build build --target ControlEditCommandsTest ReversibilityUndoTest ReversibilityUndoDeviceTest UndoHonestyStateTest CommandPaletteTest CommandFormTest ControlRecordingRoutesTest RecordToolsTest -j8 > logs/build-3.log, logs/build-6.log 2>&1` (EXIT **0**); `cd build/tests && ctest -R "CommandPaletteTest|CommandFormTest|ControlRecordingRoutesTest|RecordToolsTest|ControlEditCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|ReversibilityUndoDeviceTest|UndoHonestyTest|UndoHonestyStateTest" --output-on-failure > logs/test-8.log 2>&1` | EXIT **0**, `100% tests passed out of 10` (10 test binaries, 0 failed) |
+| Reversibility family incl. the two transcripts | `cd build/tests && ctest -R "ControlEditCommandsTest|ReversibilityContractTest|ReversibilityUndoTest|ReversibilityUndoDeviceTest|UndoHonestyTest|UndoHonestyStateTest|ControlReversibilityTranscript" --output-on-failure > logs/test-4.log 2>&1` | EXIT **8**: 6 of 7 passed; only `ControlReversibilityTranscript` failed - see "Environmental failures" below (identical failure with the fix reverse-applied) |
+| Recording surface (python, live binary) | `cd build/tests && ctest -R "ControlRecordInputs|ControlUndoStructuralTranscript|ControlRecordingRecovery" --output-on-failure > logs/test-9.log 2>&1`; then `ctest -R "ControlUndoStructuralTranscript|ControlReversibilityTranscript" > logs/test-10.log 2>&1` | first run EXIT 8 (the LADSPA plugin was not built yet); after `cmake --build build --target ladspaeffect` (EXIT 0, `logs/build-7.log`): `ControlUndoStructuralTranscript` **Passed**, `ControlRecordingRecovery` **Passed**, `ControlRecordInputs` **Passed**, `ControlReversibilityTranscript` still failed (environmental) |
+| Offline command surface regenerated from a live instance | `python3 /tmp/opencode/dump_snapshot.py build/zene /tmp/opencode/snapshot-new.json /tmp/opencode/commands-live.json > logs/snapshot-1.log 2>&1` (the script starts the real binary with `--control-socket`, asks it for `control.commands_list`, then runs `tools/mcp-zene-control/snapshot_commands.py --socket ... --out ...`) | EXIT **0**; `live capture: 833 command(s)`; generator exit 0; `surface: 833 id(s) across 76 group(s), ids_sha256 8995baf17d1f3e2c27b9575378bdf5c3bd6f6df2af22259511d9ea318017dbb5` - byte-identical to the committed snapshot's `ids_sha256`; the diff is 5 lines (`captured_at`, the one description, and the three provenance lines) |
+| Snapshot ratchet | `cd build/tests && ctest -R "ControlCommandsSnapshot" --output-on-failure > logs/test-7.log 2>&1` | EXIT **0** (`1/1 Test #598 ControlCommandsSnapshot ... Passed`) |
+| Gates (the brief's gate) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-81-port-port > logs/gate-1.log 2>&1` | EXIT **0** - `PASS` on all 8 rows (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item in your files") |
+| Complexity ratchet (raw) | `bash tests/complexity-gate.sh --check > logs/gate-2.log 2>&1` | EXIT **1** (pre-existing, 6 `REGRESSION` entries, none in a file this change touches) |
+| File-length ratchet (raw) | `bash tests/file-length-gate.sh --check > logs/gate-3.log 2>&1` | EXIT **1** (pre-existing, 15 `REGRESSION` entries, none in a file this change touches) |
+| Violation sets, base vs final | `diff <(grep REGRESSION /tmp/cx-base.log \| sort) <(grep REGRESSION logs/gate-2.log \| sort)`; the same for the file-length gate | identical in both gates - this change adds no entry and re-anchors no baseline |
+| Registration | `rg "^<file>\t" tests/upstream-modifications.txt` and `rg "^<file>$" tests/fork-sources.txt` for each changed file | the release notes is declared in `tests/upstream-modifications.txt` (a new line was added for this change); every other changed file is already in `tests/fork-sources.txt`; no new file was created |
+
+## Environmental failures (not caused by this change)
+
+`ControlReversibilityTranscript` fails in this sandbox with `section E could not run: plugin.list offered no 'amplifier' device`: the catalogue in this build offers only the 7 LADSPA devices, so the parameter sweep has no device to drive. Proof that it is pre-existing: with the fix reverse-applied (`git apply -R logs/fix.patch`, `logs/build-8.log` EXIT 0) the same test fails with the same message (`logs/test-11.log`, EXIT 8). The transcript script never mentions `track.set_arm_many` (`rg set_arm tests/control-reversibility-transcript.py` -> no match), and sections A-D of it (the transaction/undo sections) pass in both runs.
+
+Before `cmake --build build --target ladspaeffect` was run, the same two transcripts failed earlier still, at `plugin.load` of the LADSPA host plugin (`the LADSPA host plugin 'ladspaeffect' is not in this build`), because that plugin target was not built in this tree. Building it (EXIT 0, `logs/build-7.log`) fixed `ControlUndoStructuralTranscript`; the section-E device choice is the one failure left.
+
+## Gate status, stated plainly
+
+`feature_check.py` PASSES (EXIT 0) on this tree. The two raw ratchets it wraps - `tests/complexity-gate.sh --check` and `tests/file-length-gate.sh --check` - exit **1** on this branch, and they already did on the base commit `2da2ed356`: the violation sets are byte-identical before and after this change (see the diff rows above). The entries are in files this change does not touch (for example `src/core/TakeLane.cpp` at 575 code lines, `tests/src/core/ControlEditCommandsTest.cpp` at 542, and six complexity functions such as `lmms::adjust` in `src/core/ControlCommandsMixerTools.cpp`). This change adds no entry to either gate and does not re-anchor either gate or its baseline.
+
+The one file this change touches that the file-length ratchet measures is `tests/src/core/UndoHonestyTest.cpp`: 494 code lines before, **500** code lines after (the ratchet's limit is 500, and the gate reports it as no new violation). The ported test is the accepted one, compacted exactly as the accepted fix compacted it: the same four assertions remain (`!undo.ok`, the `Irreversible` kind, the refusal naming `track.set_arm_many`, and the tracks and takes unchanged after the refused undo), plus the `InvalidArgs` check from the original test.
+
+## Other observation (not changed here: NEEDS-CONTEXT for the owner)
+
+`track.set_arm` (the single-track row, `src/core/ControlReversibilityTableRecording.cpp:55-67`) is still `RC::Snapshot, true`. Its undo also leaves the take file on disk: the row's own fallback says "the take: delete it". The accepted fix treated the batch as irreversible and left the single-track arm reversible. That is inconsistent with the batch decision, and the finding does not cover `track.set_arm`. Deciding whether the single-track row needs the same treatment is an owner call, so I left it alone.
+
+## Self-check
+
+Every ASK item of `submit_check.py`, answered with the evidence above.
+
+1. **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** RED: `git apply -R logs/fix.patch` (EXIT 0) -> `cmake --build build --target zene UndoHonestyTest -j8` (EXIT 0) -> `ctest -R UndoHonestyTest --output-on-failure` (EXIT **8**, `FAIL! : UndoHonestyTest::armAllRefusesUndoThatWouldLeaveItsTakesBehind() '!undo.ok' returned FALSE.`). GREEN: `git apply logs/fix.patch` (EXIT 0) -> same build (EXIT 0) -> same ctest (EXIT **0**). The first RED run on the untouched base tree is `logs/test-1.log` (EXIT 8, same assertion).
+2. **The test is deterministic: no wall-clock timing, sleeps or races.** The test drives three control commands and reads the recorder's own state; there is no timer, no sleep and no thread in it. The take files it creates are made hermetic by a test seam instead of by timing: `ConfigManager::inst()->setWorkingDir(takes.path())` points the default take path (`control::defaultRecoveryDir()` = the directory of `recoveryFile()`) at a `QTemporaryDir`, restored by a `qScopeGuard` when the case ends. The armed state is read back from the recorder (`control::trackRecordArmed`) and the takes are checked with `QFile::exists` on the path the reply itself returned.
+3. **The fix is at the cause and complete: every caller and sibling was checked and stays consistent.** The cause is the contract row plus the handler's inverse: `src/core/ControlReversibilityTableRecording.cpp:69-77` (the row) and `src/core/ControlCommandsArrangementState.cpp:378-380, 399-401` (the handler, whose `__transaction` is what made the undo claim to reverse the batch). The registry seam that turns the row into a typed refusal was read and is unchanged (`src/core/ControlRegistry.cpp:543-571`, `src/core/ControlCommandsControl.cpp:400-406`). Callers of `track.set_arm_many` that exist in the tree: the GUI menu (`src/gui/RecordLaunchMenus.cpp:71-82`, comment updated), the collaboration host-deny list (`src/core/CollabPolicy.cpp:110-113`, unaffected by the class), and the tests (`tests/src/core/ControlEditCommandsTest.cpp:633-671`, which arms and disarms without undoing - it still passes). Siblings in the same recording group: `track.set_arm` (single, left `snapshot` on purpose, see the observation above), `record.disarm_track` and `record.disarm_all` (already `irreversible`), `record.arm_track` (already `irreversible`). The command's description, the GUI comment, the release notes and the offline command snapshot all follow the table.
+4. **No collateral damage: old projects and saved data still load as before, and no added limit hits other callers.** Nothing about the project's serialization changes: the arming never wrote to the track's element (the row's own reason says so), and the fix only removes a recorded undo step and changes a table row's class. No file format, no saved data and no project file is touched, so old projects load exactly as before. The new check is a class in the contract table, which is per command id, not a limit: `track.set_arm_many` is the only row it touches, and the only "limit"-like rule involved (`ReversibilityContractTest`'s "an irreversible row declares `reversible=false` and a fallback") is satisfied by this row and applies to no other caller. The refusal itself is the registry's existing typed path, already used by `record.disarm_track` and `project.save`.
+5. **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.** Not applicable - the verdict is FIXED. The defect was on this branch at `src/core/ControlReversibilityTableRecording.cpp:69-78` and `src/core/ControlCommandsArrangementState.cpp:401-405` (base `2da2ed356`), and `git merge-base --is-ancestor 70a924a8a HEAD` returned exit 1, so the accepted fix was not in this tree.
+
+## Files committed
+
+- `src/core/ControlReversibilityTableRecording.cpp`
+- `src/core/ControlCommandsArrangementState.cpp`
+- `src/gui/RecordLaunchMenus.cpp` (comment only)
+- `tests/src/core/UndoHonestyTest.cpp`
+- `docs/RELEASE-NOTES-v0.3.0-alpha.md` (A16 histogram figures and the two prose mentions of the row)
+- `tools/mcp-zene-control/zene_control/commands_snapshot.json` (derived; regenerated from a live instance of the fixed binary)
+- `tests/upstream-modifications.txt` (one line for the inherited release-notes change)
+- `docs/qwen-fixes-2026-10/cluster-new-p8-81-port-port.md` (this report)

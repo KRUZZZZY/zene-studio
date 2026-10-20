@@ -363,7 +363,7 @@ ArmBatch armEach(const QJsonArray& ids, bool armed)
 			// refuse - so the batch has to ask the route's own before-state, or it
 			// reports tracks whose state it never changed.
 			if (!armed && !one.result.value(QStringLiteral("armed_before")).toBool()) { continue; }
-			one.result.remove(QStringLiteral("__transaction"));  // the batch records ONE transaction for all of them
+			one.result.remove(QStringLiteral("__transaction"));  // the batch records no inverse: its takes outlive the captures
 			out.changed.append(trackId);
 			out.routes.append(one.result);
 			continue;
@@ -375,9 +375,9 @@ ArmBatch armEach(const QJsonArray& ids, bool armed)
 	return out;
 }
 
-/*! track.set_arm_many (W1): the mixer's Arm All as ONE call and ONE undo step. Arming records one inverse - this command
- *  with armed: false over exactly the tracks it armed - so one control.undo disarms them all; disarming records none, as
- *  track.set_arm's disarm does not (re-arming starts a NEW take). */
+/*! track.set_arm_many (W1): the mixer's Arm All as ONE call. Arming creates take files that remain on disk after the
+ *  captures stop, so the batch has no complete inverse and control.undo refuses it. Stop each route with
+ *  record.disarm_track; disarming records no inverse because re-arming starts a NEW take. */
 ControlResult setArmMany(const QJsonObject& args)
 {
 	const QJsonArray ids = args.value(QStringLiteral("tracks")).toArray();
@@ -398,11 +398,6 @@ ControlResult setArmMany(const QJsonObject& args)
 	}
 	QJsonObject result{{QStringLiteral("armed"), armed}, {QStringLiteral("tracks"), batch.changed},
 		{QStringLiteral("refused"), batch.refused}, {QStringLiteral("routes"), batch.routes}};
-	if (armed)
-	{
-		const QJsonObject inverse{{QStringLiteral("tracks"), batch.changed}, {QStringLiteral("armed"), false}};
-		result.insert(QStringLiteral("__transaction"), control::commandTransaction(inverse, QStringLiteral("track.set_arm_many"), inverse));
-	}
 	return ControlResult::success(result);
 }
 
@@ -416,8 +411,9 @@ void registerTrackSetArmMany(ControlRegistry& registry)
 		"Each track in 'tracks' (trk-<n> ids) is armed or disarmed as track.set_arm does it, with its default take file and "
 		"input channel; a track already armed is skipped, and a track that refuses (past the last record route, say) is "
 		"listed in 'refused' with its reason while the others still go ahead. 'tracks' answers the ones changed, 'routes' "
-		"each one's route reply. Arming is ONE undo step: control.undo disarms exactly the tracks this call armed (their "
-		"takes stay on disk). Disarming records no inverse, as track.set_arm's does not.");
+		"each one's route reply. Arming writes take files that remain on disk when captures stop, so control.undo refuses "
+		"this command; stop each route with record.disarm_track using its route id from 'routes'. Disarming records no "
+		"inverse, as track.set_arm's does not.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("tracks"), trackIdsProperty()},
 		{QStringLiteral("armed"), control::booleanProperty()},

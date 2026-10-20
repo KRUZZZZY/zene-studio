@@ -944,7 +944,8 @@ workflow.set_scope, window.layout_project_save and window.layout_project_clear (
 window.layout_project_apply (`not_mutating`) (+13); the seven macro.* rows became workflow.* unchanged.
 
 **0.5.0 catch-up wave 1** added rack.macro_set_pair and chord.follow_set (`true_inverse`), track.set_arm_many
-(`snapshot`, one step disarms what it armed) and, in WASM builds, wasm.device_load (`true_inverse`) (+4).
+(`irreversible`: its takes outlive the captures, so control.undo refuses it) and, in WASM builds, wasm.device_load
+(`true_inverse`) (+4).
 
 **0.5.0 catch-up wave 2** (+54, three new groups):
 - F1 hardware I/O: audio.io_setup, mixer.hardware_output, mixer.cue_send, mixer.cue_master, mixer.hardware_insert and
@@ -1019,10 +1020,10 @@ Q050-035's `stem.tracks_create` (`true_inverse`) and Q050-019's `window.progress
 `ReversibilityContractTest` on the merged tree: `rows=841 true_inverse=419 snapshot=42 irreversible=22 not_mutating=358`.
 **M0 merge train 7** (`050/m0-train-7`, 2026-10-19: train 6 + 19 accepted fixes and the 0.5.0 units Q050-026 and Q050-040)
 adds one row: Q050-040's `clip.set_mute` (`true_inverse`, the song editor's clip mute and the agents' one command), measured
-by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358`.
+by `ReversibilityContractTest` on the merged tree: `rows=842 true_inverse=420 snapshot=41 irreversible=23 not_mutating=358`.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=842 true_inverse=420 snapshot=42 irreversible=22 not_mutating=358
+     measured: rows=842 true_inverse=420 snapshot=41 irreversible=23 not_mutating=358
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
@@ -2214,7 +2215,8 @@ window's, next to the MIDI half's `docs/MIDI-RETRO-CAPTURE.md`.
   with the overwritten count reported, a consistent copy that never blocks the audio thread, and a one-pass
   stereo 24-bit WAV of exactly the retained frames. The model is `RetroMidiCapture`'s, deliberately.
   - **A16.** Twelve rows, in the group file `src/core/ControlReversibilityTableRecording.cpp`: `snapshot` for
-    `track.set_arm` and `track.set_arm_many` (each with a paired-command inverse), `true_inverse` for
+    `track.set_arm` (with a paired-command inverse), `irreversible` for `track.set_arm_many` (its takes outlive the
+    captures, so the batch has no complete inverse and control.undo refuses it), `true_inverse` for
     `record.input_set` (the config write's previous plan), `irreversible` for `record.arm_track` (its take
     remains after disarming) and for `record.disarm_track` and `record.disarm_all` (both stop capture and retire
     journals while leaving takes on disk), and six `not_mutating` rows for the inspectors and operations outside
