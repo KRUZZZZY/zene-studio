@@ -32,7 +32,11 @@ namespace lmms
 
 std::vector<f_cnt_t> clipTransientFrames(SampleClip& clip)
 {
-	const SampleWindow window = clip.sampleWindow();
+	// The transients are the clip's AUDIO's, so they are detected where the
+	// audio is: the clip's audible window - its window for a forward source,
+	// the window's mirror for a reversed one, whose whole-buffer reversal
+	// (Sample::render) means it sounds the mirror of the window it was given.
+	const SampleWindow window = clip.audibleWindow();
 	const Sample& sample = clip.sample();
 	std::vector<f_cnt_t> out;
 	if (sample.data() == nullptr || window.sourceOut <= window.sourceIn

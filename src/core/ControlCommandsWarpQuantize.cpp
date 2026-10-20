@@ -28,7 +28,10 @@
  *  ONE Clip journal checkpoint (the markers live in the clip's <warp> element), so one undo takes it
  *  back; the audio itself is not touched. */
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
+#include <vector>
 
 #include "ClipTransients.h"
 #include "ControlEdit.h"
@@ -59,14 +62,25 @@ int quantisedMarkers(const SampleClip& clip, const std::vector<f_cnt_t>& transie
 	// origin reported "no transient found" although the detector found four.
 	tick_t last = 0;
 	bool emitted = false;
-	for (const f_cnt_t frame : transients)
+	// The marker set is written in PLAY frames - the coordinate the warp map
+	// itself is written in (the render path asks the map about play frames) -
+	// and a reversed clip's transients reach that coordinate in the opposite
+	// order: the source frame that sounds LAST is the first one played. So the
+	// transients are walked in play-frame order, which is the only order in
+	// which the set is strictly increasing in both coordinates. A forward clip's
+	// play frame is its source frame, so its set is exactly the one it was.
+	std::vector<std::pair<f_cnt_t, f_cnt_t>> ordered;
+	ordered.reserve(transients.size());
+	for (const f_cnt_t frame : transients) { ordered.emplace_back(clip.playFrameFor(frame), frame); }
+	std::sort(ordered.begin(), ordered.end());
+	for (const auto& [playFrame, frame] : ordered)
 	{
 		if (count >= WarpMarkers::MaxMarkers) { break; }
 		const tick_t now = clip.timelinePosAt(frame).getTicks() - origin;
 		const tick_t target = static_cast<tick_t>(std::lround(static_cast<double>(now) / grid)) * grid;
 		const tick_t moved = now + static_cast<tick_t>(std::lround((target - now) * strength));
 		if (emitted && moved <= last) { continue; }
-		(*markers)[static_cast<std::size_t>(count++)] = WarpMarker{frame, moved};
+		(*markers)[static_cast<std::size_t>(count++)] = WarpMarker{playFrame, moved};
 		last = moved;
 		emitted = true;
 	}

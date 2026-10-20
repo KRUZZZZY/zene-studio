@@ -93,8 +93,30 @@ public:
 	 *
 	 *  This is the state a trim, a slip or a split authors. The playback path
 	 *  reads it and never writes it: a playback pass derives the window it renders
-	 *  and hands it to the play handle as a snapshot (I1). */
+	 *  and hands it to the play handle as a snapshot (I1).
+	 *
+	 *  The window is a PLAY range: the frames the clip plays, in play order. */
 	SampleWindow sampleWindow() const { return m_window; }
+
+	/*! The source frames the clip actually sounds.
+	 *
+	 *  For a forward source that is the window itself. For a reversed source it
+	 *  is the window's MIRROR: Sample::render reverses the WHOLE buffer, so the
+	 *  frame played at play frame `p` is the buffer frame `size - 1 - p` and a
+	 *  reversed clip sounds the mirror of the window it was given. Everything
+	 *  that looks at the clip's AUDIO - the transient detector, the slice and
+	 *  the quantise commands - has to look at this range, not at the window. */
+	SampleWindow audibleWindow() const;
+
+	/*! The play frame of a source frame: the position in the window traversal.
+	 *
+	 *  This is the coordinate the warp map is written in (the render path asks
+	 *  the map about play frames) and the coordinate a reversed clip's
+	 *  transients have to be ordered in: for a reversed source the play frame
+	 *  of the buffer frame `f` is `size - 1 - f`. A source frame outside the
+	 *  window is clamped to the window's nearest edge, exactly as the timeline
+	 *  mapping clamps it. */
+	f_cnt_t playFrameFor(f_cnt_t sourceFrame) const;
 
 	/*! Authors the window; the single place the well-formedness rule (I4) lives.
 	 *
@@ -109,7 +131,16 @@ public:
 	void setSampleStartFrame( f_cnt_t startFrame );
 	void setSamplePlayLength( f_cnt_t length );
 
+	/*! The play frame a timeline position plays: the position in the window
+	 *  traversal, which is the coordinate the warp map is written in and the
+	 *  one the play handles unfold. For a forward source it is the source
+	 *  frame; for a reversed source it is the position whose source frame is
+	 *  the buffer's mirror. */
 	f_cnt_t sourceFrameAt(TimePos timelinePos) const override;
+
+	/*! The timeline position a SOURCE frame is reached at: where the buffer
+	 *  frame `sourceFrame` sounds, in the clip's play direction. A frame
+	 *  outside the window is clamped to the window's nearest edge. */
 	TimePos timelinePosAt(f_cnt_t sourceFrame) const override;
 
 	/*! The clip's own rate: source frames per project tick (#597).

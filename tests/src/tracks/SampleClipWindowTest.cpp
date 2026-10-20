@@ -602,6 +602,42 @@ private slots:
 		QCOMPARE(clip->timelinePosAt(1023).getTicks(), origin);
 	}
 
+	//! A frame outside the window has no place on the timeline, and the mapping
+	//! has to say so in a DEFINED way: the window's nearest edge, not a wrapped
+	//! or an underflowed position. A frame past the end of the source is the
+	//! case the unsigned arithmetic used to wrap on (Luna cluster 2484), and it
+	//! has to stay defined in both play directions.
+	void aFrameOutsideTheWindowMapsToItsNearestEdge()
+	{
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		clip->setSampleStartFrame(trimIn(rate));
+		clip->setSamplePlayLength(trimOut(rate));
+
+		const auto size = static_cast<f_cnt_t>(clip->sample().sampleSize());
+		const auto origin = clip->startPosition().getTicks();
+		const auto last = clip->endPosition().getTicks();
+
+		// a frame past the end of the source
+		for (const f_cnt_t frame : { size + 1000, size * 4 })
+		{
+			const auto forward = clip->timelinePosAt(frame).getTicks();
+			QVERIFY2(forward >= origin && forward <= last,
+					 qPrintable(QStringLiteral("the frame %1 mapped to the tick %2, outside the clip").arg(frame).arg(forward)));
+		}
+
+		// and the same for a reversed clip, whose mirror of that frame is a
+		// negative play frame
+		clip->sample().setReversed(true);
+		for (const f_cnt_t frame : { size + 1000, size * 4 })
+		{
+			const auto reversed = clip->timelinePosAt(frame).getTicks();
+			QVERIFY2(reversed >= origin && reversed <= last,
+					 qPrintable(QStringLiteral("the reversed frame %1 mapped to the tick %2, outside the clip").arg(frame).arg(reversed)));
+		}
+	}
+
 	//! I5: the length the author sees is the window's length, and a tempo change
 	//! re-fits that length without ever touching the window itself.
 	void windowLengthAndTempoChange()
