@@ -84,9 +84,11 @@ cd build/tests && ctest -R '^MpePlaybackTest$' -V > $LOGS/test-green-2.log 2>&1
 #         Totals: 12 passed, 0 failed, 0 skipped, 0 blacklisted
 ```
 
-The same RED/GREEN pair was also run before the patch was created
-(`build-red-1.log`, `build-green-1.log`, `test-green-1.log`), with the same
-17,924 / 256 counts.
+The first RED/GREEN pair was also run before `fix.patch` was created:
+`test-red-1.log` failed at EXIT=8 with the same `examined=17924` line, and the
+first GREEN run (`test-green-1.log`) passed at EXIT=0 (`100% tests passed`).
+The `examined=256` count was seen in the verbose GREEN run above
+(`test-green-2.log`); ctest without `-V` does not print the slot's stdout.
 
 ## Affected family
 
