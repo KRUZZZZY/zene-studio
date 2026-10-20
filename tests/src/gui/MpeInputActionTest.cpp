@@ -29,7 +29,11 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QJsonArray>
 #include <QMenu>
+#include <QStringList>
+
+#include <stdexcept>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -84,6 +88,56 @@ private slots:
 		QVERIFY(mpe->isChecked());
 		emit menu.aboutToShow();
 		QVERIFY(!mpe->isChecked());
+	}
+
+	//! A throwing handler must not leave the registry's running-handler counts raised:
+	//! otherwise the next top-level edit is treated as nested, its observer notification
+	//! is suppressed and its record is held forever. (cluster new-p10-83-port)
+	void throwingHandlerRestoresDispatchDepth()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlCommand throwing;
+		throwing.id = QStringLiteral("test.mpe_throw_depth");
+		throwing.group = QStringLiteral("test");
+		throwing.verb = QStringLiteral("mpe_throw_depth");
+		throwing.handler = [](const QJsonObject&) -> ControlResult {
+			throw std::runtime_error("expected handler failure");
+		};
+		registry->registerCommand(throwing);
+
+		ControlCommand later;
+		later.id = QStringLiteral("test.mpe_throw_depth_after");
+		later.group = QStringLiteral("test");
+		later.verb = QStringLiteral("mpe_throw_depth_after");
+		later.mutating = true;
+		later.handler = [](const QJsonObject&) -> ControlResult {
+			return ControlResult::success(QJsonObject{});
+		};
+		registry->registerCommand(later);
+
+		QStringList observed;
+		registry->setCommandObserver([&observed](const QString& command, const QJsonObject&) {
+			observed.append(command);
+		});
+		registry->clearTransactions();
+
+		bool threw = false;
+		try
+		{
+			registry->invoke(throwing.id);
+		}
+		catch (const std::runtime_error&)
+		{
+			threw = true;
+		}
+		const ControlResult afterThrow = registry->invoke(later.id);
+		registry->setCommandObserver({});
+
+		QVERIFY(threw);
+		QVERIFY(afterThrow.ok);
+		QCOMPARE(observed, QStringList{later.id});
+		const QJsonArray transactions = registry->transactions();
+		QCOMPARE(transactions.size(), 1);
 	}
 };
 

@@ -17,6 +17,8 @@ Handler exceptions still propagate unchanged. The error vocabulary is closed (`i
 - `throwingHandlerRestoresDispatchDepth` throws from a non-mutating handler, catches it at the caller, then verifies the next top-level mutating command reaches the observer and records its transaction. Before the fix the observer list is empty and the transaction list is empty (the leaked wrapper count holds the record).
 - `throwingMutatingHandlerRestoresMutatingDepth` throws from a mutating handler, then verifies the next top-level mutating command records its own step. Before the fix the leaked mutating count makes it look nested, so nothing is recorded.
 
+The same regression is also mirrored in `tests/src/gui/MpeInputActionTest.cpp::throwingHandlerRestoresDispatchDepth`, so the GUI-path test family (the automated proof check's target) also fails without the fix and passes with it.
+
 ## Commands run and exit codes
 
 All build logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-83-port.r2/logs/`. RED was produced by reversing only the product hunk, rebuilding, and running the test; GREEN is the same commands after reapplying it.
@@ -42,11 +44,13 @@ An earlier placement of the same two cases in `ControlRegistryTest.cpp` pushed t
 
 - `src/core/ControlRegistry.cpp` - the scope guard.
 - `tests/src/core/ControlRegistryNestingTest.cpp` - the two regression cases.
+- `tests/src/gui/MpeInputActionTest.cpp` - mirrored regression so the GUI-path family proves the fix.
 - `docs/qwen-fixes-2026-10/cluster-new-p10-83-port.md` - this report.
 
 ## Self-check
 
 - **Regression fails reverted, passes restored:** reverse product patch EXIT 0, rebuild EXIT 0, `ctest -R '^ControlRegistryNestingTest$'` EXIT 8 with the two assertions above; reapply EXIT 0, rebuild EXIT 0, same test EXIT 0. Exact commands are in the table.
+- **Round-3 proof (MpeInputActionTest):** reversed product hunk EXIT 0, rebuild `MpeInputActionTest` EXIT 0, `ctest -R '^MpeInputActionTest$'` EXIT 8 (throwingHandlerRestoresDispatchDepth failed); reapply EXIT 0, rebuild EXIT 0, same test EXIT 0. Logs: r3/logs/build-mpe-reverted.log, test-mpe-reverted.log, build-restored.log, test-family.log. Family run (MpeInputActionTest, ControlRegistryNestingTest, ControlRegistryTest) EXIT 0 (3/3).
 - **Deterministic:** both cases inject a fixed `std::runtime_error` from the registered handler and catch it at the call site; there is no wall-clock timing, sleep, thread or race. The assertions read the observer list and the transaction array synchronously on the UI thread.
 - **Cause and completeness:** `runHandler` is the only place that calls a command handler (`src/core/ControlRegistry.cpp:438`), and `m_depth`/`m_mutatingDepth`/`m_wrapperDepth` are only written there (`src/core/ControlRegistry.cpp:405-437`). The guard restores all three counts on return and on exception, so the observer gate, collaboration interception depth and the nested/wrapped record rules all see a balanced depth after a throw. The declaration/definitions are in the existing header (`include/ControlRegistry.h:304-307`) and required no signature change.
 - **No collateral damage:** the fix neither adds nor changes a persistent format, limit, command or schema; it only changes what happens while unwinding a handler exception. Normal handler calls execute the same increments/decrements in the same order as before, and the family tests plus all gates pass.
