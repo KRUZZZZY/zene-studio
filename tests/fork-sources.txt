@@ -2608,6 +2608,7 @@ tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
+tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/FakeHostModule.cpp
@@ -2707,4 +2708,3 @@ include/TakeLaneRows.h
 include/TakeWaveform.h
 src/gui/TakeWaveform.cpp
 src/gui/tracks/TakeLaneRows.cpp
-tests/src/gui/ArrangerTakePunchTest.cpp

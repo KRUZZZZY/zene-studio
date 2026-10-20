@@ -2829,6 +2829,7 @@ tests/src/gui/AgentSurfaceReportTest.cpp
 tests/src/gui/ArrangerFileDropTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
+tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/gui/AutomationClipDisconnectTest.cpp
