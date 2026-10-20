@@ -45,4 +45,5 @@ built manually with `/usr/bin/cmake` from a temporary project that compiles
 - `tests/CMakeLists.txt`
 - `tests/all-sources.txt`
 - `tests/upstream-modifications.txt`
+- `tests/fork-sources.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p10-532-port.md`
