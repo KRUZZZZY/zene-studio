@@ -1483,3 +1483,36 @@ private slots:
 QTEST_MAIN(RecordingRealtimeTest)
 
 #include "RecordingRealtimeTest.moc"
+	//! The render path publishes atomically; the GUI poll delivers playingChanged outside it.
+	void sampleTrackPlayingChangeIsDeliveredByGuiPoll()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
+		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(),
+			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setMuted(true);
+		QSignalSpy playingChanged(track, SIGNAL(playingChanged()));
+		QVERIFY(playingChanged.isValid());
+
+		{
+			const lmms::RealtimeScope realtime;
+			track->play(lmms::TimePos(0), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
+		}
+		QVERIFY(track->isPlaying());
+		QCOMPARE(playingChanged.count(), 0);
+		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
+		QCOMPARE(playingChanged.count(), 1);
+		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
+		QCOMPARE(playingChanged.count(), 1);
+
+		track->setPlaying(false);
+		QCOMPARE(playingChanged.count(), 1);
+		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
+		QCOMPARE(playingChanged.count(), 2);
+		delete track;
+	}

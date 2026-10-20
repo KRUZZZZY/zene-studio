@@ -58,8 +58,7 @@ SampleTrack::SampleTrack(TrackContainer* tc) :
 	m_volumeModel(DefaultVolume, MinVolume, MaxVolume, 0.1f, this, tr("Volume")),
 	m_panningModel(DefaultPanning, PanningLeft, PanningRight, 0.1f, this, tr("Panning")),
 	m_mixerChannelModel(0, 0, 0, this, tr("Mixer channel")),
-	m_audioBusHandle(tr("Sample track"), true, &m_volumeModel, &m_panningModel, &m_mutedModel),
-	m_isPlaying(false)
+	m_audioBusHandle(tr("Sample track"), true, &m_volumeModel, &m_panningModel, &m_mutedModel)
 {
 	setName(tr("Sample track"));
 	m_panningModel.setCenterValue(DefaultPanning);
@@ -130,6 +129,15 @@ bool activeTakeForPlayback(const SampleClip& clip, bool comped, bool playAllTake
 std::uint64_t SampleTrack::deferredClipStarts() noexcept
 {
 	return s_deferredClipStarts.load(std::memory_order_relaxed);
+}
+
+
+void SampleTrack::notifyPlayingChanged()
+{
+	const bool playing = isPlaying();
+	if (m_lastNotifiedPlaying == playing) { return; }
+	m_lastNotifiedPlaying = playing;
+	emit playingChanged();
 }
 
 bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,

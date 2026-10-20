@@ -88,15 +88,14 @@ public:
 		return "sampletrack";
 	}
 
-	bool isPlaying()
+	bool isPlaying() const noexcept
 	{
-		return m_isPlaying;
+		return m_isPlaying.load(std::memory_order_relaxed);
 	}
 
-	void setPlaying(bool playing)
+	void setPlaying(bool playing) noexcept
 	{
-		if (m_isPlaying != playing) { emit playingChanged(); }
-		m_isPlaying = playing;
+		m_isPlaying.store(playing, std::memory_order_relaxed);
 	}
 
 	//! R2.1: the monitor handle while the mode is not Off, else nullptr. Model thread.
@@ -117,17 +116,19 @@ protected:
 
 private:
 	std::atomic<bool> m_clipUpdatesSuspended{false};
+	std::atomic<bool> m_isPlaying{false};
+	bool m_lastNotifiedPlaying = false; // GUI thread: compared by the periodic playing-state poll.
 	InputMonitorHandle* m_monitorHandle = nullptr;
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;
 	IntModel m_mixerChannelModel;
 	AudioBusHandle m_audioBusHandle;
-	bool m_isPlaying;
-
-
-
 	friend class gui::SampleTrackView;
 	friend class gui::SampleTrackWindow;
+
+private slots:
+	//! Emit the GUI-facing state change from SampleTrackView's main-thread periodic poll.
+	void notifyPlayingChanged();
 
 } ;
 
