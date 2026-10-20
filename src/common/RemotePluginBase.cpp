@@ -70,8 +70,8 @@ RemotePluginBase::RemotePluginBase() :
 	m_frameScratch.resize(SHM_FIFO_SIZE);
 #else
 	m_frameScratch.resize(PeekWindowBytes);
-#endif
-#endif
+#endif // SYNC_WITH_SHM_FIFO
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
 	// make sure, we're using common ways to print/scan
 	// floats to/from strings (',' vs. '.' for decimal point etc.)
 	setlocale(LC_NUMERIC, "C");
@@ -576,7 +576,7 @@ bool RemotePluginBase::readFrameLockedBounded(message & _out)
 	return parseBoundedFrame(m_frameScratch.data(), offset, _out);
 }
 #endif // BUILD_REMOTE_PLUGIN_CLIENT
-#endif
+#endif // SYNC_WITH_SHM_FIFO
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 RemotePluginBase::ReceiveResult RemotePluginBase::receiveFrameBefore(

@@ -922,8 +922,9 @@ private:
 #else
 	//! Reads the complete socket frame peekNextMessage() sized into m_frameScratch; no argument decoding.
 	ReceiveResult receiveBoundedSocketFrame( message & _out );
-#endif
-#endif
+#endif // SYNC_WITH_SHM_FIFO
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 	static int & waitDepthCounter()
 	{
