@@ -20,9 +20,9 @@ Feature doc: `docs/050-features/Q050-147.md`.
 | 2 | Handles leave loop unchanged; recording only inside the range | Same GUI test (loop attributes before/after); `RecordingLatencyTest::anArmedPunchRegionCapturesTheInsideTransientAndOnlyIt`; `tests/control-punch-transcript.py` loop-attribute check | 0 / 0 / 0 |
 
 Reverse proofs:
-- arm lambda disabled: `ArrangerTakePunchTest::thePunchRangeHasItsOwnHandlesAndArmControl` exit 1
-  (`punchArmed()` false);
-- `getPunchAction()` disabled: same test exit 1 (end handle drag expected 960, actual 768).
+- arm lambda disabled: build exit 0, `ArrangerTakePunchTest::thePunchRangeHasItsOwnHandlesAndArmControl`
+  exit 1 (`timeline.punchArmed()` false);
+- `getPunchAction()` disabled: build exit 0, same test exit 1 (end handle drag expected 960, actual 768).
 - The audio gate pre-dates this unit; its inside/outside proof is `RecordingLatencyTest` exit 0 and
   `PunchWindowTest` exit 0.
 
@@ -36,8 +36,9 @@ Feature doc: `docs/050-features/Q050-123.md`.
 | 2 | Qt GUI test checks ruler alignment and keeps the existing comp panel | Same two tests (scroll + zoom ruler comparisons; panel controls and strip present) | 0 / 0 |
 
 Reverse proofs:
-- arrangement rows not created: `takeLaneRowsAlign...` exit 1 (`rows != nullptr`);
-- `CompSwipeStrip::rebuildTakes()` emptied: `theStripShows...` exit 1 (`takeBands().size() == 0`).
+- arrangement rows not created: build exit 0, `takeLaneRowsAlign...` exit 1 (`rows != nullptr`);
+- `CompSwipeStrip::rebuildTakes()` emptied: build exit 0, `theStripShows...` exit 1
+  (`takeBands().size()` 0 instead of 2).
 
 ## Q050-274 - touch swipes for comp selection
 
@@ -48,8 +49,8 @@ Feature doc: `docs/050-features/Q050-274.md`.
 | 1 | Touch swipe selects the same region in `comp.get_state` | `TakeLanesPanelTest::aTouchSwipeCompsTheSameRangeAsAMouse` (touch, tap, reverse swipe) | 0 |
 | 2 | Existing mouse and keyboard comp gestures still pass | Same test's mouse-parity half; `CanvasKeyboardTest` (ctest) | 0 / 0 |
 
-Reverse proof: with touch events consumed but not handled, `aTouchSwipeCompsTheSameRangeAsAMouse`
-exit 1 (`segments.size()` 0 instead of 1).
+Reverse proof: with touch events accepted but not handled, build exit 0 and
+`aTouchSwipeCompsTheSameRangeAsAMouse` exit 1 (`segments.size()` 0 instead of 1).
 
 ## Commands, format and tests
 
@@ -61,10 +62,79 @@ exit 1 (`segments.size()` 0 instead of 1).
   new punch state uses the existing optional `<timeline>` attributes. Take-lane display state is
   derived, never saved.
 - Tests run: `ctest -R '^(ArrangerTakePunchTest|ArrangerTimelineTest|TakeLanesPanelTest|CanvasKeyboardTest|PunchWindowTest|RecordingLatencyTest)$'`
-  exit 0 (test-3 log); `python3 tests/control-punch-transcript.py build/zene` exit 0
-  (punch-transcript-2 log).
+  exit 0, 6/6 (test-final2 log); `python3 tests/control-punch-transcript.py build/zene` exit 0
+  (punch-transcript-final log); `python3 tests/doc-figures-gate.py` exit 0.
+- Gates: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
+  no-tautology and doc-figures exit 0; complexity and file-length report no new item in this
+  branch's files (the train's own pre-existing entries stay red as on the base).
 
 ## Self-check
 
-See the per-unit feature docs and the final report for commands, exit codes, reversibility,
-snapshot regeneration, portability guards and realtime reasoning.
+Commands and exit codes observed (logs under `build/q050-logs/`):
+
+- Build: `cmake --build build --target zene ArrangerTakePunchTest ArrangerTimelineTest TakeLanesPanelTest RecordingLatencyTest CanvasKeyboardTest PunchWindowTest -- -j4`
+  exit 0 (build-final; the test move was rebuilt with build-22/build-23, both exit 0).
+- Tests: `ctest -R '^(ArrangerTakePunchTest|ArrangerTimelineTest|TakeLanesPanelTest|CanvasKeyboardTest|PunchWindowTest|RecordingLatencyTest)$'`
+  exit 0, 6/6 (test-final2).
+- Punch transcript: `python3 tests/control-punch-transcript.py build/zene` exit 0
+  (punch-transcript-final); its new check "the punch edit left every loop attribute unchanged" ok.
+- Gates: six simple gates exit 0; complexity and file-length PASS in the patched
+  `feature_check` run (`RESULT: PASS`, feature-check-run2). The stock script cannot create
+  `<worktree>-feature-check` in this sandbox (the parent directory is write-protected), so the
+  same script was run from a local copy with only the log directory redirected
+  (`build/q050-logs/checker`); every gate command and comparison is unchanged.
+
+**1. Each new test fails with the product change reverted; passes restored.**
+
+| Reverse-proof | Build | Test | Exit |
+|---|---|---|---|
+| Punch handles disabled (`getPunchAction` returns `NoAction`) | 0 | `ArrangerTakePunchTest::thePunchRangeHasItsOwnHandlesAndArmControl` (punch end stayed 768, expected 960) | 1 |
+| Punch arm lambda writes nothing | 0 | same test (`punchArmed()` false) | 1 |
+| Take-lane rows not created in `TrackView` | 0 | `ArrangerTakePunchTest::takeLaneRowsAlignWaveformsWithTheRulerAndKeepTheCompPanel` (`rows == nullptr`) | 1 |
+| `CompSwipeStrip::rebuildTakes()` returns without reading | 0 | `TakeLanesPanelTest::theStripShowsTakeWaveformsAndTheCompHighlight` (`takeBands()` 0, expected 2) | 1 |
+| Touch events accepted but not handled | 0 | `TakeLanesPanelTest::aTouchSwipeCompsTheSameRangeAsAMouse` (`segments.size()` 0, expected 1) | 1 |
+
+Restored, the same commands exit 0 (test-final2). The recording gate pre-dates this unit, so
+`RecordingLatencyTest` stays green on a UI revert; it is cited for the inside/outside behaviour,
+not as a red-on-revert proof.
+
+**2. Every acceptance criterion is proven by a test run here.**
+
+See the three feature docs: Q050-147 row 1/2 (`ArrangerTakePunchTest`, `RecordingLatencyTest`,
+transcript, all exit 0), Q050-123 row 1/2 (`ArrangerTakePunchTest`, `TakeLanesPanelTest::theStrip...`,
+exit 0), Q050-274 row 1/2 (`TakeLanesPanelTest::aTouch...`, `CanvasKeyboardTest`, exit 0).
+
+**3. One undo step per edit; honest reversibility classes.**
+
+The punch drag previews on the timeline and, on release, restores the pre-drag range before one
+`transport.punch_set`; the test's single `control.undo` restores the pre-drag end (no second undo
+needed). Touch and mouse commits call one `comp.select`, which is `true_inverse` with a Track
+checkpoint. No command id, schema or class changed: `punch_set`/`punch_clear` and `comp.select`
+remain `true_inverse`; `punch_get_state`/`comp.get_state` remain `not_mutating`.
+
+**4. Realtime.**
+
+No audio-thread path changed. The diff is GUI/ruler, GUI take rows, `TakeWaveform` (GUI-thread
+thumbnail cache) and command descriptions; the capture path keeps reading the existing atomic
+punch window (`AudioEngine::punchWindow`, `SampleRecordHandle::writePunched`). No allocation,
+free, lock, wait, I/O or Qt signal was added on the render thread.
+
+**5. Old projects and round-trip.**
+
+No format change. `Timeline::loadSettings` still resets punch on absent attributes; the transcript
+proves a project that never punched saves no punch attributes and that the region round-trips
+through save/open. Take-lane rows and waveforms are derived from the existing track/clip model and
+add no saved display state; the old comp panel still reads `comp.get_state`.
+
+**6. Portability.**
+
+Touch coordinate mapping is guarded at compile time for Qt 5.15 (`QTouchEvent::TouchPoint::pos()`
+/`screenPos()`) and Qt 6.8 (`QEventPoint::position()`/`globalPosition()`); no Qt-6-only API is used
+unguarded. No `small`/`near`/`far`/`interface`/`min`/`max` identifiers were added, no
+`std::filesystem`, and no POSIX-only call. `std::clamp`/`std::find`/`QPointer` are available on all
+targets.
+
+**7. Commands metadata.**
+
+Snapshot regenerated live: 833 ids / 76 groups; `doc-figures-gate.py` PASS; no new ids, so the A16
+histogram is unchanged. Only `transport.punch_set`'s description changed.
