@@ -120,6 +120,33 @@ cd build/tests && QT_QPA_PLATFORM=offscreen \
   --output-on-failure                                                EXIT=0 (5/5 passed)
 ```
 
+## Gates
+
+The gate scripts write their run logs beside the worktree
+(`<worktree>-feature-check/`), which is outside the same sandbox and fails with
+`PermissionError` before any gate runs:
+
+```
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>   EXIT=1
+  PermissionError: ... zene-qwen-review-390ec761c-feature-check
+```
+
+The run below used a copy of each script with ONLY that log directory redirected
+to `/tmp`; the gate logic, commands and limits are untouched:
+
+```
+python3 /tmp/feature_check_local.py <worktree>    EXIT=0
+  PASS fork-sources / all-sources-reproduce / no-upstream-regression /
+       check-namespace / no-tautology / doc-figures
+  PASS complexity (no new item in your files)
+  PASS file-length (no new item in your files)
+  RESULT: PASS
+
+python3 /tmp/submit_check_local.py <worktree> review-390ec761c   EXIT=0
+  PASS commits / clean tree / report / tests added / gates
+  RESULT: PASS - submit
+```
+
 ## Self-check
 
 - **Regression test fails with the product change reverted:** proved above per bug;
