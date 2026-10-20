@@ -1206,6 +1206,9 @@ set(LMMS_TESTS
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
+	# The instrument track's render path: it reads no GUI state, it allocates no
+	# clip container, and the MPE expression it plays is one atomic snapshot.
+	src/tracks/InstrumentTrackRenderPathTest.cpp
 	src/tracks/SampleClipStretchTest.cpp
 	# R3.1: the composite plays, and a lane can be auditioned.
 	src/tracks/TakeLaneCompPlaybackTest.cpp

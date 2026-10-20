@@ -360,6 +360,24 @@ public:
 	//! Returns a non-owning pointer to the model for the knob at the given index in the track's MIDI CC rack
 	FloatModel* midiCCModel(int index) const { return m_midiCCModel[index].get(); }
 
+	/*! Whether the piano roll is recording right now.
+	 *
+	 *  PUBLISHED BY THE GUI, READ BY THE RENDER THREAD. The piano roll's own flag
+	 *  (PianoRoll::m_recording) is a plain bool the GUI thread writes, so the render
+	 *  path must not read it: InstrumentTrack::play() runs on the audio thread, and
+	 *  asking a QWidget from there is both a data race and a Qt call on the wrong
+	 *  thread (cluster new-p15-83). The state is published here instead, as one
+	 *  atomic word with relaxed ordering - a flag, with no order to keep. */
+	static void setPianoRollRecording(bool recording) noexcept
+	{
+		s_pianoRollRecording.store(recording, std::memory_order_relaxed);
+	}
+	//! The published piano-roll recording state (see setPianoRollRecording).
+	static bool isPianoRollRecording() noexcept
+	{
+		return s_pianoRollRecording.load(std::memory_order_relaxed);
+	}
+
 signals:
 	void instrumentChanged();
 	void midiNoteOn( const lmms::Note& );
@@ -463,6 +481,10 @@ private:
 
 	bool m_hasAutoMidiDev;
 	static InstrumentTrack *s_autoAssignedTrack;
+
+	//! The published piano-roll recording state (see setPianoRollRecording): the
+	//! GUI writes it, the render thread reads it, and nothing else touches it.
+	inline static std::atomic_bool s_pianoRollRecording{false};
 
 	NotePlayHandleList m_processHandles;
 

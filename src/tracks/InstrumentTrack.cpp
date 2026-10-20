@@ -29,7 +29,6 @@
 #include "ConfigManager.h"
 #include "ControllerConnection.h"
 #include "DataFile.h"
-#include "GuiApplication.h"
 #include "Mixer.h"
 #include "InstrumentTrackView.h"
 #include "Instrument.h"
@@ -41,7 +40,6 @@
 #include "NoteRandom.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
-#include "PianoRoll.h"
 #include "Pitch.h"
 #include "Song.h"
 #include "MissingDevices.h"
@@ -941,8 +939,11 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	// Handle automation: detuning
 	for (const auto& processHandle : m_processHandles)
 	{
+		// The recording state comes from the published flag, not from the piano roll:
+		// this loop runs on the audio thread, and the piano roll is a Qt object the
+		// GUI thread owns (cluster new-p15-83).
 		processHandle->processTimePos(
-			_start, m_pitchModel.value(), gui::getGUI() && gui::getGUI()->pianoRoll()->isRecording());
+			_start, m_pitchModel.value(), isPianoRollRecording());
 	}
 
 	if ( clips.size() == 0 )

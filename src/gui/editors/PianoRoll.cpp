@@ -4406,6 +4406,9 @@ void PianoRoll::record()
 
 	m_midiClip->addJournalCheckPoint();
 	m_recording = true;
+	// Published for the render thread, which must not read this window's flag
+	// (cluster new-p15-83).
+	InstrumentTrack::setPianoRollRecording(true);
 	notePassStart();
 
 	Engine::getSong()->playMidiClip( m_midiClip, false );
@@ -4430,6 +4433,9 @@ void PianoRoll::recordAccompany()
 
 	m_midiClip->addJournalCheckPoint();
 	m_recording = true;
+	// Published for the render thread, which must not read this window's flag
+	// (cluster new-p15-83).
+	InstrumentTrack::setPianoRollRecording(true);
 	notePassStart();
 
 	if( m_midiClip->getTrack()->trackContainer() == Engine::getSong() )
@@ -4483,6 +4489,9 @@ void PianoRoll::stop()
 {
 	Engine::getSong()->stop();
 	m_recording = false;
+	// Published for the render thread, which must not read this window's flag
+	// (cluster new-p15-83).
+	InstrumentTrack::setPianoRollRecording(false);
 	// The pass is over, so its pending starts are over too: a key still physically down when the
 	// transport stops will never send its key-up to a live pass, and a start left in the list would
 	// sit in front of the next pass's - pairing that pass's release with this one's start.
