@@ -1470,6 +1470,11 @@ set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-W
 # is printed as "Test   #4:" and its name is invisible to that parser. A test the
 # control cannot see is a test the control cannot judge.
 list(APPEND LMMS_TESTS src/plugins/VibedWaveformHandoffTest.cpp)
+# The BandedWG "Bowed" checkbox: the Mallets instrument view must expose it, bound to the strike setting.
+# The test compiles the Mallets sources, so it is registered only where STK is found.
+if(LMMS_HAVE_STK)
+	list(APPEND LMMS_TESTS src/plugins/MalletsInstrumentViewTest.cpp)
+endif()
 
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
@@ -1657,6 +1662,22 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=patman)
 		add_dependencies(${LMMS_TEST_NAME} patman)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "MalletsInstrumentViewTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Stk/Mallets/Mallets.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Stk/Mallets/Mallets.h
+		)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Stk/Mallets
+			${CMAKE_BINARY_DIR}/plugins/Stk/Mallets
+		)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=malletsstk
+			MALLETS_TEST_STK_DIR="${STK_RAWWAVE_ROOT}")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE unofficial::libstk::libstk)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()

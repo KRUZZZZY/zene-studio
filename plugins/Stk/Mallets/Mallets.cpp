@@ -554,8 +554,8 @@ QWidget * MalletsInstrumentView::setupBandedWGControls( QWidget * _parent )
 	auto widget = new QWidget(_parent);
 	widget->setFixedSize( 250, 250 );
 	
-/*	m_strikeLED = new LedCheckBox( tr( "Bowed" ), widget );
-	m_strikeLED->move( 138, 25 );*/
+	m_strikeLED = new LedCheckBox( tr( "Bowed" ), widget );
+	m_strikeLED->move( 138, 25 );
 
 	m_pressureKnob = new Knob(KnobType::Vintage32, tr("Pressure"), SMALL_FONT_SIZE, widget);
 	m_pressureKnob->move( 30, 90 );
@@ -596,7 +596,7 @@ void MalletsInstrumentView::modelChanged()
 //	m_motionKnob->setModel( &inst->m_motionModel );
 //	m_vibratoKnob->setModel( &inst->m_vibratoModel );
 	m_velocityKnob->setModel( &inst->m_velocityModel );
-//	m_strikeLED->setModel( &inst->m_strikeModel );
+	m_strikeLED->setModel( &inst->m_strikeModel );
 	m_presetsCombo->setModel( &inst->m_presetsModel );
 	m_spreadKnob->setModel( &inst->m_spreadModel );
 	m_randomKnob->setModel(&inst->m_randomModel);
