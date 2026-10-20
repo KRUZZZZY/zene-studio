@@ -86,7 +86,9 @@ Plugin::Descriptor PLUGIN_EXPORT gigplayer_plugin_descriptor =
  * EVERY note is mixed into it, so this only ADDS to what is already there.
  *
  * A resampler that made no progress - it consumed no input and produced no
- * output - contributes nothing: the rest of the block is silenced.
+ * output - contributes nothing at all. The frames it does not fill are left
+ * exactly as they are, because the other samples have already mixed their
+ * audio into them.
  *
  * \returns the number of frames mixed into \p out.
  *
@@ -101,7 +103,10 @@ f_cnt_t PLUGIN_EXPORT gigplayerMixResampledBlock(
 {
 	if (inputFramesUsed == 0 && outputFramesGenerated == 0)
 	{
-		std::fill_n(&out[outOffset], outFrames - outOffset, SampleFrame{});
+		// This sample has nothing to contribute to the rest of the block.
+		// The output buffer is SHARED with the other samples and notes, so
+		// the frames this sample does not fill are left alone: clearing
+		// them would erase the audio they have already mixed in.
 		return 0;
 	}
 
