@@ -156,6 +156,14 @@ OnnxRuntimeStemSeparator::OnnxRuntimeStemSeparator(QString modelPath) :
 
 
 
+bool OnnxRuntimeStemSeparator::segmentFits(int, int, QString*)
+{
+	return true;
+}
+
+
+
+
 QString OnnxRuntimeStemSeparator::runtimeVersion()
 {
 	return QString::fromStdString(Ort::GetVersionString());

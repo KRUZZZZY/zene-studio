@@ -56,6 +56,9 @@ public:
 private:
 	friend class ::OnnxRuntimeStemSeparatorTest;
 	using PostRunTestHook = void (*)();
+	// Whether a segment of \a segment frames over \a frames input frames is indexed safely
+	// by the int arithmetic of separate(); false, with \a error, when it is not.
+	static bool segmentFits(int frames, int segment, QString* error);
 	PostRunTestHook m_postRunTestHook = nullptr;
 	QString m_modelPath;
 };
