@@ -106,7 +106,7 @@ the CTest commands ran from `build/tests`. Every log is in
 | Final build of app and tests | `cmake --build build --target zene ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-20.log 2>&1` | 0 | App and both test targets rebuilt with the fix. |
 | Final GREEN, whole affected family | `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|ProjectContainerSaveTest\|ControlProjectArchiveTest\|DataFileSaveIntegrityTest\|ProjectContainerTest\|ProjectContainerEntriesTest)$' --output-on-failure > .../logs/test-29.log 2>&1` | 0 | **10/10 ctest cases passed.** |
 | Final affected-family count | `ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure -V > .../logs/test-27.log 2>&1` | 0 | 1 registered ctest case; 5 QtTest cases passed, 0 failed, 0 skipped. |
-| Whole-parent control (every product hunk of both rounds reversed) | `git diff HEAD~1 -- include/ProjectRevisions.h src/core/ProjectRevisions.cpp > .../logs/fix4.patch && git apply -R .../logs/fix4.patch` then `cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-16.log 2>&1` then `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > .../logs/test-25.log 2>&1` | 0 / 0 / 8 | With the whole product fix reversed, all THREE cases fail (2 passed, 3 failed): every one of them is a regression proof. |
+| Whole-parent control (every product hunk of both rounds reversed) | `git diff ded355440 -- include/ProjectRevisions.h src/core/ProjectRevisions.cpp > .../logs/fix4.patch && git apply -R .../logs/fix4.patch` then `cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-16.log 2>&1` then `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > .../logs/test-25.log 2>&1` | 0 / 0 / 8 | With the whole product fix reversed, all THREE cases fail (2 passed, 3 failed): every one of them is a regression proof. (`ded355440` is the parent of this lane; the patch was written while the branch head was the round-1 commit, where `HEAD~1` named that same parent.) |
 | Fork-source manifest gate | `bash tests/fork-sources-gate.sh > .../logs/gate-12.log 2>&1` | 0 | 1791 fork-NEW entries, 0 stale; the new test source is registered. |
 | Unregistered-test gate | `bash tests/unregistered-tests-gate.sh > .../logs/gate-13.log 2>&1` | 0 | 516 test sources scanned, every one registered or declared. |
 | Final build of the committed tree | `cmake --build build --target zene ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-21.log 2>&1` | 0 | Rebuilt from the commit. |
@@ -115,6 +115,12 @@ the CTest commands ran from `build/tests`. Every log is in
 | Final affected-family count of the committed tree | `ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure -V > .../logs/test-33.log 2>&1` | 0 | 1 registered ctest case; 5 QtTest cases passed, 0 failed, 0 skipped. |
 | Final complexity gate on the committed tree | `bash tests/complexity-gate.sh --check > .../logs/gate-14.log 2>&1` | 1 | The same five rows as `gate-10.log` (the `diff` of the `REGRESSION:` lines is empty). |
 | Final file-length gate on the committed tree | `bash tests/file-length-gate.sh --check > .../logs/gate-15.log 2>&1` | 1 | The same fourteen rows as `gate-11.log` (the `diff` of the `REGRESSION:` lines is empty). |
+| Final build for the self-check run | `cmake --build build --target zene ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-22.log 2>&1` | 0 | Rebuilt from the committed tree. |
+| Final GREEN of the whole affected family | `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|ProjectContainerSaveTest\|ControlProjectArchiveTest\|DataFileSaveIntegrityTest\|ProjectContainerTest\|ProjectContainerEntriesTest)$' --output-on-failure > .../logs/test-34.log 2>&1` | 0 | 10/10 ctest cases passed. |
+| Final affected-family count | `ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure -V > .../logs/test-35.log 2>&1` | 0 | 1 registered ctest case; 5 QtTest cases passed, 0 failed, 0 skipped. |
+| Final complexity gate | `bash tests/complexity-gate.sh --check > .../logs/gate-16.log 2>&1` | 1 | The same five rows as `gate-14.log` (the `diff` of the `REGRESSION:` lines is empty). |
+| Final file-length gate | `bash tests/file-length-gate.sh --check > .../logs/gate-17.log 2>&1` | 1 | The same fourteen rows as `gate-15.log` (the `diff` of the `REGRESSION:` lines is empty). |
+| Final fork-source / unregistered-test gates | `bash tests/fork-sources-gate.sh > .../logs/gate-18.log 2>&1` and `bash tests/unregistered-tests-gate.sh > .../logs/gate-19.log 2>&1` | 0 / 0 | Every tracked source registered, every test source registered or declared. |
 
 ### Gates
 
@@ -154,3 +160,115 @@ by this change.
 - `tests/all-sources.txt`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p12-185-port.md`
+
+## Self-check
+
+### 1. The regression FAILS with the product change reverted and PASSES with it (exit codes)
+
+| State | Exact command | Exit | Result |
+| --- | --- | ---: | --- |
+| Round-2 product hunks reverted | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-185-port.r1/logs/fix5.patch` (exit 0) → `cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-19.log 2>&1` (exit 0) → `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > .../logs/test-28.log 2>&1` | **8** | 1 of 5 cases failed: `failedRestoreRetryFindsStageForANameWithGlobCharacters` (4 passed, 1 failed). The live file held the rotated bytes (3 notes) instead of the requested document (2 notes). |
+| Every product hunk of both rounds reverted (the patch `fix4.patch` is the diff against the lane's parent, `ded355440`) | `git apply -R .../logs/fix4.patch` (exit 0) → `cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest > .../logs/build-16.log 2>&1` (exit 0) → `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > .../logs/test-25.log 2>&1` | **8** | 3 of 5 cases failed (2 passed, 3 failed): all three retry regressions fail without the fix. |
+| The fix in place | `ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure > .../logs/test-18.log 2>&1` and `ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure -V > .../logs/test-19.log 2>&1` | **0** | 1/1 ctest case; 5 QtTest cases passed, 0 failed, 0 skipped. |
+| The fix in place, committed tree | `ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest)$' --output-on-failure > .../logs/test-32.log 2>&1` | **0** | 5/5 ctest cases passed. |
+| The original wildcard lookup (the review's finding) | `ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure > .../logs/test-17.log 2>&1` | **8** | The bracketed-name case failed before the literal-matching change. |
+
+### 2. The test is deterministic: no wall-clock timing, sleeps or races
+
+The seam is the **on-disk state of a failed restore**, seeded directly: the
+test writes the live file, `.rev0`, `.rev1` and the staging file into a
+`QTemporaryDir` (`tests/src/core/ProjectRevisionRestoreStagingTest.cpp:88-110`,
+`seedFailedRestore`), and the only product call is
+`restoreProjectRevision()` - a synchronous file-level function. There is no
+timer, no sleep, no thread and no clock read in the test, and it does not use
+the `setRevisionReplacementFailureForTest()` failure seam at all: the state
+after the failed replacement is written instead of provoked.
+
+The injected values are fixed: the requested document `documentWith(2)`, the
+rotated live document `documentWith(3)`, the project names `song.mmp`,
+`.hidden.mmp` and `song[1].mmp`, and the stage suffix
+`.restore.4c0c55e0-809d-4923-a9d0-c708fd0adf7c`. The product's own
+`QUuid::createUuid()` (used only for the name of a NEW stage,
+`src/core/ProjectRevisions.cpp:154`) never enters the assertions: the cases
+assert on the seeded stage names, and a case that seeds one asserts that this
+one is gone afterwards.
+
+### 3. The fix is at the cause and complete: every caller and sibling checked
+
+Callers of `restoreProjectRevision()` (the only function whose behaviour
+changed), all checked and consistent:
+
+* `src/core/RevisionTimeline.cpp:399` - a rotation id ("rev0".."rev2") delegates
+  to the policy's own restore, so it gets the preserved stage.
+* `src/core/ControlCommandsProjectFiles.cpp:353` (`project.restore_revision`)
+  and its recorded undo/redo steps at `:367` and `:377`.
+* `src/core/ControlCommandsRevisions.cpp:156` (the undo of a `revisions.restore`)
+  and `:171` (its redo).
+* `include/ProjectRevisions.h:89` - the declaration, whose contract now names
+  the stage.
+
+Siblings of the changed code:
+
+* `replaceProjectWithStaged()` (`src/core/ProjectRevisions.cpp:376`) - the
+  function that CONSUMES the stage. It already keeps the staging file until
+  the replacement is in place, so a failed replacement leaves the staged bytes;
+  its declaration (`include/ProjectRevisions.h:98`) is unchanged and no
+  `preserveStagingOnFailure` parameter was invented for it.
+* `restoreTimelineRevision()` (`src/core/RevisionTimeline.cpp:384`) - the
+  sibling restore of the timeline's STABLE artefacts (`.bak`, autosave, git).
+  It stages under its own name (`<file>.timeline-stage`, `:409`), which is not
+  a revision stage and cannot be picked up by the pending-stage lookup; its
+  source artefact is not rotated away, so a retry re-stages the same bytes.
+  It is deliberately untouched - the finding and the accepted upstream fix are
+  about the keep-3 restore, the only one that takes its target out of the set.
+* `rotateProjectRevision()` - split into `shiftRevisionsUp` (CCN 5) and
+  `countRetainedRevisions` (CCN 3) to clear the complexity row in this lane's
+  own file; same steps, same order, same refusal messages, covered by the
+  rotation and save cases of `RevisionTimelineTest`,
+  `ProjectContainerSaveTest`, `DataFileSaveIntegrityTest`,
+  `ProjectContainerTest`, `ProjectContainerEntriesTest` and
+  `ControlProjectArchiveTest` (10/10 ctest cases green, `.../logs/test-29.log`).
+
+### 4. No collateral damage
+
+* **Old projects and saved data load as before.** The change touches only the
+  side files next to a project (`<file>.rev<n>.restore`, and the new
+  `<file>.rev<n>.restore.<uuid>`): the project file itself, its format and the
+  keep-3 revision set (`.rev0`/`.rev1`/`.rev2`) are untouched, and
+  `projectRevisionState()` still reports exactly the policy's slots. A project
+  saved before this change has no stage file at all, so nothing about its
+  contents or its revisions changes.
+* **No limit or check was added.** There is no cap, threshold or new refusal
+  path: the pending-stage lookup replaced a wildcard match with a literal
+  prefix comparison over the same directory. For a file name without glob
+  characters the two match the same files; for one with glob characters the
+  new lookup matches the correct file, which the old one missed. The prefix is
+  `<project>.<revision file>.restore.`, so it can only ever match a stage of
+  that project and that revision - no other project or revision is affected.
+* **The one deliberate trade-off**, inherited from the accepted upstream fix: a
+  stage left by a failed attempt is now kept and reused by the next attempt at
+  the same revision, instead of being overwritten. That is the fix's point
+  (the staged bytes are the only copy of the requested target), the stage is a
+  side file the user can delete to discard it, and the legacy `.restore` name
+  is still recognised so a stage left by the older code is recovered rather
+  than clobbered.
+* **The gates' limits and baselines were not touched**, and the new test
+  source is registered everywhere it must be (`tests/CMakeLists.txt`,
+  `tests/fork-sources.txt`, `tests/all-sources.txt`, with the inherited
+  `tests/CMakeLists.txt` change recorded in `tests/upstream-modifications.txt`):
+  `bash tests/fork-sources-gate.sh` and `bash tests/unregistered-tests-gate.sh`
+  both exit 0.
+
+### 5. ALREADY-FIXED / FALSE-POSITIVE
+
+Not applicable: the verdict is **FIXED**, not ALREADY-FIXED or
+FALSE-POSITIVE. The newest line did not carry the fix - at the lane's parent
+commit (`ded355440`) the restore removed the fixed staging path before every
+attempt (`src/core/ProjectRevisions.cpp:279-285`, and again at `:296` on a
+refused rotation), which is what the three regressions above are red against.
+The fix lives at
+`src/core/ProjectRevisions.cpp:128` (`pendingRestoreStagingPath`), `:141-148`
+(the literal prefix match), `:154` (`newRestoreStagingPath`), `:316` (the
+stage is reused instead of re-staged) and `:336` (a refused rotation keeps
+the stage); the contract is stated on the declaration at
+`include/ProjectRevisions.h:77`.
