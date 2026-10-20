@@ -2705,3 +2705,5 @@ docs/qwen-fixes-2026-10/cluster-new-p10-518-port.md
 docs/qwen-fixes-2026-10/cluster-new-p11-81-port.md
 # cluster new-p16-196: regression for the rt_alloc_probe block-size argument check (fork-new test source).
 tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp
+# cluster new-p16-196: the rt_alloc_probe tool is fork-new (added after the gate base) and carries the block-size check.
+plugins/NeuralAmp/tests/rt_alloc_probe.cpp
