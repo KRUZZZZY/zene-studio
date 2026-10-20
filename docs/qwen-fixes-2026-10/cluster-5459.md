@@ -185,6 +185,17 @@ check-namespace, no-tautology, doc-figures, complexity, file-length. The direct 
 fails before any gate with `PermissionError` creating
 `.../zene-studio-program/zene-qwen-5459-feature-check` (environmental, not a gate failure).
 
+The completion check on the synchronized copy is PASS:
+
+```
+GIT_OPTIONAL_LOCKS=0 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /tmp/zene-qwen-5459-check 5459 > /tmp/5459-logs/submit-check-final2.log 2>&1   # EXIT=0
+```
+
+The same check on the real worktree reports only the gate row as FAIL
+(`/tmp/5459-logs/submit-check-real.log`, EXIT=1) for the same log-directory permission reason;
+every other row (commits, clean tree, report, tests) passes, and both paths use the same git
+HEAD and the same commit set.
+
 ## Files committed
 
 - `15756b30d` — `test(vst3): prove the MIDI drop counter is atomic (cluster 2613)`:
