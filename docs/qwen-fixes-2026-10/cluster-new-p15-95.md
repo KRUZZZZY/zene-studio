@@ -29,7 +29,7 @@ I wrote a regression (fixture module plus `LadspaControlCountTest`, wired throug
 
 1. The test needs 2 x 32768 control ports on a mono plugin, so `LadspaEffect` builds 65,536 `LadspaControl` objects.
 2. Each control creates several `AutomatableModel`/`JournallingObject` instances. `ProjectJournal::allocID` (`src/core/ProjectJournal.cpp:269-275`) probes linearly from a random start. `fastRand()` returns only 15 bits (`include/lmms_math.h:89-94`), and IDs sit in a 2^23 window (`ProjectJournal.cpp:43`). Sampled stacks show construction inside `LadspaControls::LadspaControls` -> `LadspaControl::LadspaControl` -> `AutomatableModel` -> `JournallingObject::JournallingObject` -> `ProjectJournal::allocID`, so per-object cost rises as the journal fills. I did not measure the scaling curve; the quadratic reading is from the code and samples, not a timing series.
-3. QTest's per-function watchdog aborted the case at 300 s (exit 134). A one-hour run was started (`red-long-1.log`) but had not finished when I stopped waiting. Its result is NOT known.
+3. QTest's per-function watchdog aborted the case at 300 s (exit 134). A run with the watchdog raised to one hour (`red-long-1.log`) also aborted: "Test function timed out" at 3600000 ms, EXIT=134, ELAPSED=3606 s. No assertion was reached, so the case cannot finish within an hour in this tree.
 
 So the RED step (fails without the fix) and the GREEN step were never observed. Reverting the fix to prove RED is not possible in this lane.
 
@@ -46,7 +46,7 @@ So the RED step (fails without the fix) and the GREEN step were never observed. 
 | 7 | `ctest -R '^LadspaControlCountTest$' --output-on-failure` (from build/tests) | 8 (Timeout at 120 s) | test-red-1.log |
 | 8 | direct run, one case, `timeout 60` | 124 | direct-1.log |
 | 9 | direct run, one case, timed | 134 (QTest 300 s watchdog) ELAPSED=305 s | direct-timed-2.log |
-| 10 | direct run, one case, `QTEST_FUNCTION_TIMEOUT=3600000` | not finished when I stopped waiting | red-long-1.log |
+| 10 | direct run, one case, `QTEST_FUNCTION_TIMEOUT=3600000` | 134 (watchdog at 3600000 ms; ELAPSED=3606s, no assertion reached) | red-long-1.log |
 | 11 | `python3 feature_check.py <worktree>` | 1 (PermissionError: script writes logs to `<worktree>-feature-check`, outside the write-jail) | gates-1.log |
 | 12 | `python3 submit_check.py <worktree> new-p15-95` | 1 (report missing, nothing committed, self-check missing) | submit-1.log |
 
