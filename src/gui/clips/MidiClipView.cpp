@@ -298,7 +298,9 @@ void MidiClipView::constructContextMenu( QMenu * _cm )
 		// Luna cluster 3261: the product and the `- 1` were `int`, so a malformed step count
 		// (a negative or astronomically large one loaded from a project) overflowed here.
 		const QPoint at = mapFromGlobal(QCursor::pos());
-		const qint64 step = (at.x() - BORDER_WIDTH) * m_clip->m_steps
+		// new-p14-176: the loader allows up to INT_MAX / (2 * ticksPerBar) steps, so a cursor well across
+		// the clip overflowed the product in int; widen one operand before the multiplication.
+		const qint64 step = static_cast<qint64>(at.x() - BORDER_WIDTH) * m_clip->m_steps
 			/ std::max(1, width() - BORDER_WIDTH * 2);
 		addStepEditsMenu(_cm, m_clip,
 			static_cast<int>(std::clamp(step, qint64{0}, qint64{std::max(0, m_clip->m_steps - 1)})));
@@ -754,7 +756,7 @@ void MidiClipView::paintEvent( QPaintEvent * )
 			Note* n = m_clip->noteAtStep(it);
 
 			// figure out x and y coordinates for step graphic
-			const int x = BORDER_WIDTH + static_cast<int>(it * w / steps);
+			const int x = BORDER_WIDTH + static_cast<int>(static_cast<qint64>(it) * w / steps);
 			const int y = BeatStepButtonOffset;
 
 			const bool isAtPlayPos = Engine::getSong()->getPlayPos(Song::PlayMode::Pattern) * TimePos::stepsPerBar() / TimePos::ticksPerBar() == it
