@@ -41,6 +41,8 @@
 #include <cmath>
 #include <cmath>
 #include <array>
+#include <barrier>
+#include <thread>
 #include <cmath>
 #include "BasicFilters.h"
 
@@ -882,6 +884,9 @@ private slots:
 	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
 	void sidShortSegmentsKeepRegisterWritesOrdered();
+	void watsynOverlappingNotesAreIndependentAndAllocationFree();
+	void watsynServesEveryAdmittedNoteWithoutAllocating();
+	void watsynKeepsTheWaveANoteStartedWith();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
@@ -2428,6 +2433,360 @@ void PluginPortsMigrationTest::sidShortSegmentsKeepRegisterWritesOrdered()
 	QVERIFY(sid.clockedCycles - cyclesBeforeNextSegment <= 26);
 	QCOMPARE(sid.overwrittenPendingWrites, 0);
 	QVERIFY(progress.registerIndex > 2);
+}
+
+/*!
+ * Cluster new-p9-521 (port): Watsyn must not allocate on the note path, and
+ * two notes that sound at the same time must not share render buffers.
+ *
+ * The allocation count comes from the replacement operator new this file
+ * already defines (it feeds partc::RealtimeAllocationWatch), so the test
+ * binary keeps exactly ONE replacement allocation function: the shared
+ * zene_allocation_probe cannot be linked here, it would define a second
+ * operator new and the link would fail with a duplicate symbol.
+ *
+ * The reference pass renders every note on its own; the concurrent pass starts
+ * the same notes together on worker threads. Each worker compares its samples
+ * with its own reference and counts the allocations its own thread made.
+ */
+void PluginPortsMigrationTest::watsynOverlappingNotesAreIndependentAndAllocationFree()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto& instruments = migratedInstruments();
+	const auto module = std::find_if(instruments.begin(), instruments.end(),
+		[](const auto& candidate) { return std::string{candidate.plugin} == "watsyn"; });
+	QVERIFY(module != instruments.end());
+
+	auto* lib = new QLibrary{QString::fromUtf8(module->path)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	const auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	lmms::NotePlayHandleManager::init();
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	constexpr std::size_t concurrentNotes = 8;
+	constexpr int periods = 16;
+	const std::array<int, concurrentNotes> keys{36, 40, 43, 47, 50, 55, 59, 64};
+	const auto acquireNote = [&](int key) {
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * periods)},
+			lmms::TimePos{0}, key};
+		return lmms::NotePlayHandleManager::acquire(track.get(), 0, frames * periods, note, nullptr, -1,
+			lmms::NotePlayHandle::Origin::MidiClip);
+	};
+	const auto releaseNote = [instrument](lmms::NotePlayHandle* handle) {
+		if (handle->m_pluginData != nullptr)
+		{
+			instrument->deleteNotePluginData(handle);
+			handle->m_pluginData = nullptr;
+		}
+		lmms::NotePlayHandleManager::release(handle);
+	};
+	const auto spanOf = [frames](std::vector<lmms::SampleFrame>& buffer, int period) {
+		return std::span<lmms::SampleFrame>{buffer.data() + period * frames, static_cast<std::size_t>(frames)};
+	};
+
+	// Reference: every note rendered on its own, one after the other.
+	std::array<std::vector<lmms::SampleFrame>, concurrentNotes> expected;
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		expected[i].resize(static_cast<std::size_t>(frames) * periods);
+		auto* handle = acquireNote(keys[i]);
+		for (int period = 0; period < periods; ++period)
+		{
+			instrument->playNote(handle, spanOf(expected[i], period));
+		}
+		releaseNote(handle);
+	}
+
+	// Concurrent: the same notes, started together on worker threads.
+	std::array<lmms::NotePlayHandle*, concurrentNotes> handles{};
+	std::array<std::vector<lmms::SampleFrame>, concurrentNotes> actual;
+	std::array<std::size_t, concurrentNotes> allocations{};
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		actual[i].resize(static_cast<std::size_t>(frames) * periods);
+		handles[i] = acquireNote(keys[i]);
+	}
+
+	std::barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
+	std::array<std::thread, concurrentNotes> workers;
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		workers[i] = std::thread{[&, i] {
+			start.arrive_and_wait();
+			partc::RealtimeAllocationWatch::begin();
+			for (int period = 0; period < periods; ++period)
+			{
+				instrument->playNote(handles[i], spanOf(actual[i], period));
+			}
+			const auto counts = partc::RealtimeAllocationWatch::end();
+			allocations[i] = counts.allocations;
+		}};
+	}
+	start.arrive_and_wait();
+	for (auto& worker : workers)
+	{
+		worker.join();
+	}
+
+	float maxDelta = 0.0f;
+	for (std::size_t i = 0; i < concurrentNotes; ++i)
+	{
+		for (std::size_t frame = 0; frame < actual[i].size(); ++frame)
+		{
+			maxDelta = std::max(maxDelta, std::abs(expected[i][frame].left() - actual[i][frame].left()));
+			maxDelta = std::max(maxDelta, std::abs(expected[i][frame].right() - actual[i][frame].right()));
+		}
+		releaseNote(handles[i]);
+	}
+	delete instrument;
+
+	const auto allocationFree = std::all_of(allocations.begin(), allocations.end(),
+		[](std::size_t count) { return count == 0; });
+	qInfo("Watsyn overlap max|delta|=%g worker note allocations=%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu",
+		static_cast<double>(maxDelta), allocations[0], allocations[1], allocations[2], allocations[3],
+		allocations[4], allocations[5], allocations[6], allocations[7]);
+	QVERIFY2(maxDelta <= 1e-6f, "concurrent Watsyn notes contaminated each other's output");
+	QVERIFY2(allocationFree, "Watsyn note start allocated on a rendering worker");
+}
+
+/*!
+ * Cluster new-p9-521 (port, round 2): Watsyn must serve EVERY note the note
+ * manager admits. The first fix kept the per-note state in a pool of 256
+ * preallocated voices and silenced every note beyond the 256th, while the note
+ * manager grows its cache as needed and has no such limit - a supported
+ * workload lost a period or a whole short note.
+ *
+ * The test plays more notes than that pool had (320), all of them sounding at
+ * the same time, and checks that every one of them renders its own audio and
+ * that no rendering worker allocates.
+ */
+void PluginPortsMigrationTest::watsynServesEveryAdmittedNoteWithoutAllocating()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto& instruments = migratedInstruments();
+	const auto module = std::find_if(instruments.begin(), instruments.end(),
+		[](const auto& candidate) { return std::string{candidate.plugin} == "watsyn"; });
+	QVERIFY(module != instruments.end());
+
+	auto* lib = new QLibrary{QString::fromUtf8(module->path)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	const auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	lmms::NotePlayHandleManager::init();
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	// More notes than the voice pool the first fix used.
+	constexpr std::size_t noteCount = 320;
+	constexpr std::size_t workerCount = 8;
+	const auto keyFor = [](std::size_t index) { return 24 + static_cast<int>(index % 80); };
+	const auto acquireNote = [&](int key) {
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 4)},
+			lmms::TimePos{0}, key};
+		return lmms::NotePlayHandleManager::acquire(track.get(), 0, frames * 4, note, nullptr, -1,
+			lmms::NotePlayHandle::Origin::MidiClip);
+	};
+	const auto releaseNote = [instrument](lmms::NotePlayHandle* handle) {
+		if (handle->m_pluginData != nullptr)
+		{
+			instrument->deleteNotePluginData(handle);
+			handle->m_pluginData = nullptr;
+		}
+		lmms::NotePlayHandleManager::release(handle);
+	};
+
+	// Reference: every note rendered on its own.
+	std::vector<std::vector<lmms::SampleFrame>> expected(noteCount);
+	for (std::size_t i = 0; i < noteCount; ++i)
+	{
+		expected[i].resize(static_cast<std::size_t>(frames));
+		auto* handle = acquireNote(keyFor(i));
+		instrument->playNote(handle, std::span<lmms::SampleFrame>{expected[i]});
+		releaseNote(handle);
+	}
+
+	// All notes at once: every note is sounding while the others render.
+	std::vector<lmms::NotePlayHandle*> handles(noteCount, nullptr);
+	std::vector<std::vector<lmms::SampleFrame>> actual(noteCount);
+	for (std::size_t i = 0; i < noteCount; ++i)
+	{
+		actual[i].resize(static_cast<std::size_t>(frames));
+		handles[i] = acquireNote(keyFor(i));
+	}
+
+	std::vector<std::size_t> allocations(workerCount, 0);
+	std::vector<std::thread> workers;
+	for (std::size_t w = 0; w < workerCount; ++w)
+	{
+		workers.emplace_back([&, w] {
+			partc::RealtimeAllocationWatch::begin();
+			for (std::size_t i = w; i < noteCount; i += workerCount)
+			{
+				instrument->playNote(handles[i], std::span<lmms::SampleFrame>{actual[i]});
+			}
+			const auto counts = partc::RealtimeAllocationWatch::end();
+			allocations[w] = counts.allocations;
+		});
+	}
+	for (auto& worker : workers)
+	{
+		worker.join();
+	}
+
+	float maxDelta = 0.0f;
+	int silentNotes = 0;
+	for (std::size_t i = 0; i < noteCount; ++i)
+	{
+		float peak = 0.0f;
+		for (std::size_t frame = 0; frame < actual[i].size(); ++frame)
+		{
+			maxDelta = std::max(maxDelta, std::abs(expected[i][frame].left() - actual[i][frame].left()));
+			maxDelta = std::max(maxDelta, std::abs(expected[i][frame].right() - actual[i][frame].right()));
+			peak = std::max(peak, std::abs(actual[i][frame].left()));
+			peak = std::max(peak, std::abs(actual[i][frame].right()));
+		}
+		if (peak <= 0.0f) { ++silentNotes; }
+		releaseNote(handles[i]);
+	}
+	delete instrument;
+
+	const auto allocationFree = std::all_of(allocations.begin(), allocations.end(),
+		[](std::size_t count) { return count == 0; });
+	qInfo("Watsyn %zu simultaneous notes: max|delta|=%g silent notes=%d worker allocations=%zu,%zu,%zu,%zu,%zu,%zu,%zu,%zu",
+		noteCount, static_cast<double>(maxDelta), silentNotes, allocations[0], allocations[1],
+		allocations[2], allocations[3], allocations[4], allocations[5], allocations[6], allocations[7]);
+	QVERIFY2(silentNotes == 0, "Watsyn silenced a note it could have played");
+	QVERIFY2(maxDelta <= 1e-6f, "simultaneous Watsyn notes contaminated each other's output");
+	QVERIFY2(allocationFree, "Watsyn note start allocated on a rendering worker");
+}
+
+/*!
+ * Cluster new-p9-521 (port, round 2): a Watsyn note keeps the wavetable it
+ * started with.
+ *
+ * The upstream code copied the wavetables into the note's own object ("copy
+ * wavegraphs to the synth object to prevent race conditions"). The snapshot
+ * the fix shares between the notes must keep that promise: a note that is
+ * already sounding renders the wave it started with, while the next note
+ * renders the wave that was just edited.
+ */
+void PluginPortsMigrationTest::watsynKeepsTheWaveANoteStartedWith()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto& instruments = migratedInstruments();
+	const auto module = std::find_if(instruments.begin(), instruments.end(),
+		[](const auto& candidate) { return std::string{candidate.plugin} == "watsyn"; });
+	QVERIFY(module != instruments.end());
+
+	auto* lib = new QLibrary{QString::fromUtf8(module->path)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	const auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	lmms::NotePlayHandleManager::init();
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const auto acquireNote = [&](int key) {
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 4)},
+			lmms::TimePos{0}, key};
+		return lmms::NotePlayHandleManager::acquire(track.get(), 0, frames * 4, note, nullptr, -1,
+			lmms::NotePlayHandle::Origin::MidiClip);
+	};
+	const auto releaseNote = [instrument](lmms::NotePlayHandle* handle) {
+		if (handle->m_pluginData != nullptr)
+		{
+			instrument->deleteNotePluginData(handle);
+			handle->m_pluginData = nullptr;
+		}
+		lmms::NotePlayHandleManager::release(handle);
+	};
+	const auto peakOf = [](const std::vector<lmms::SampleFrame>& buffer) {
+		float peak = 0.0f;
+		for (const auto& frame : buffer)
+		{
+			peak = std::max(peak, std::abs(frame.left()));
+			peak = std::max(peak, std::abs(frame.right()));
+		}
+		return peak;
+	};
+
+	// The wave the instrument starts with, and the same wave with every
+	// sample set to zero: an oscillator that reads it renders silence.
+	QDomDocument doc;
+	QDomElement root = doc.createElement("instrument");
+	const QDomElement saved = instrument->saveState(doc, root);
+	const auto silentWave = [](const QString& encoded) {
+		int size = 0;
+		char* data = nullptr;
+		lmms::base64::decode(encoded, &data, &size);
+		std::vector<float> zeros(static_cast<std::size_t>(size) / sizeof(float), 0.0f);
+		QString out;
+		lmms::base64::encode(reinterpret_cast<const char*>(zeros.data()), size, out);
+		delete[] data;
+		return out;
+	};
+	QDomElement silent = saved.cloneNode(true).toElement();
+	for (const auto* name : {"a1_wave", "a2_wave", "b1_wave", "b2_wave"})
+	{
+		silent.setAttribute(name, silentWave(saved.attribute(name)));
+	}
+
+	// A note that is already sounding when the wave changes.
+	auto* sounding = acquireNote(60);
+	std::vector<lmms::SampleFrame> first(static_cast<std::size_t>(frames));
+	instrument->playNote(sounding, std::span<lmms::SampleFrame>{first});
+
+	instrument->restoreState(silent);
+
+	std::vector<lmms::SampleFrame> second(static_cast<std::size_t>(frames));
+	instrument->playNote(sounding, std::span<lmms::SampleFrame>{second});
+	releaseNote(sounding);
+
+	// A note that starts after the change renders the new wave.
+	auto* fresh = acquireNote(60);
+	std::vector<lmms::SampleFrame> third(static_cast<std::size_t>(frames));
+	instrument->playNote(fresh, std::span<lmms::SampleFrame>{third});
+	releaseNote(fresh);
+
+	delete instrument;
+
+	const float firstPeak = peakOf(first);
+	const float secondPeak = peakOf(second);
+	const float thirdPeak = peakOf(third);
+	qInfo("Watsyn wave peaks: first period=%g second period=%g note after the edit=%g",
+		static_cast<double>(firstPeak), static_cast<double>(secondPeak), static_cast<double>(thirdPeak));
+	QVERIFY2(firstPeak > 0.0f, "the Watsyn note rendered no sound at all");
+	QVERIFY2(secondPeak > 0.0f, "a sounding Watsyn note lost the wave it started with");
+	QVERIFY2(thirdPeak <= 0.0f, "a new Watsyn note did not render the edited wave");
 }
 
 void PluginPortsMigrationTest::monoDelayUpdatesItsDelayAcrossSampleRateChanges()

@@ -24,6 +24,11 @@
 
 #include <QDomElement>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <memory>
+
 #include "Watsyn.h"
 #include "base64.h"
 #include "AudioEngine.h"
@@ -62,55 +67,56 @@ Plugin::Descriptor PLUGIN_EXPORT watsyn_plugin_descriptor =
 
 
 
-WatsynObject::WatsynObject( float * _A1wave, float * _A2wave,
-					float * _B1wave, float * _B2wave,
-					int _amod, int _bmod, const sample_rate_t _samplerate, NotePlayHandle * _nph, f_cnt_t _frames,
-					WatsynInstrument * _w ) :
-				m_amod( _amod ),
-				m_bmod( _bmod ),
-				m_samplerate( _samplerate ),
-				m_nph( _nph ),
-				m_fpp( _frames ),
-				m_parent( _w )
+WatsynVoice::WatsynVoice( WatsynInstrument * _parent, NotePlayHandle * _nph, WatsynWave * _wave ) :
+			m_amod( _parent->m_amod.value() ),
+			m_bmod( _parent->m_bmod.value() ),
+			m_samplerate( Engine::audioEngine()->outputSampleRate() ),
+			m_nph( _nph ),
+			m_parent( _parent ),
+			m_wave( _wave )
 {
-	m_abuf = new SampleFrame[_frames];
-	m_bbuf = new SampleFrame[_frames];
-
-	m_lphase[A1_OSC] = 0.0f;
-	m_lphase[A2_OSC] = 0.0f;
-	m_lphase[B1_OSC] = 0.0f;
-	m_lphase[B2_OSC] = 0.0f;
-
-	m_rphase[A1_OSC] = 0.0f;
-	m_rphase[A2_OSC] = 0.0f;
-	m_rphase[B1_OSC] = 0.0f;
-	m_rphase[B2_OSC] = 0.0f;
-
-	// copy wavegraphs to the synth object to prevent race conditions
-
-	memcpy( &m_A1wave, _A1wave, sizeof( m_A1wave ) );
-	memcpy( &m_A2wave, _A2wave, sizeof( m_A2wave ) );
-	memcpy( &m_B1wave, _B1wave, sizeof( m_B1wave ) );
-	memcpy( &m_B2wave, _B2wave, sizeof( m_B2wave ) );
+	std::fill_n(m_lphase, NUM_OSCS, 0.0f);
+	std::fill_n(m_rphase, NUM_OSCS, 0.0f);
 }
 
 
-
-WatsynObject::~WatsynObject()
+WatsynVoice::~WatsynVoice()
 {
-	delete[] m_abuf;
-	delete[] m_bbuf;
+	releaseWave();
 }
 
 
-void WatsynObject::renderOutput( f_cnt_t _frames )
+void WatsynVoice::releaseWave() noexcept
 {
-	if( m_abuf == nullptr )
-		m_abuf = new SampleFrame[m_fpp];
-	if( m_bbuf == nullptr )
-		m_bbuf = new SampleFrame[m_fpp];
+	// The snapshot goes back to the instrument; the GUI thread frees it once
+	// no note holds it any more. The audio thread never frees it.
+	if (m_wave != nullptr)
+	{
+		m_wave->pins.fetch_sub(1, std::memory_order_release);
+		m_wave = nullptr;
+	}
+}
 
-	for( f_cnt_t frame = 0; frame < _frames; frame++ )
+
+void WatsynVoice::renderOutput( std::span<SampleFrame> out )
+{
+	const f_cnt_t frames = static_cast<f_cnt_t>(out.size());
+
+	// envelope parameters
+	const float envAmt = m_parent->m_envAmt.value();
+	const float envAtt = ( m_parent->m_envAtt.value() * samplerate() ) / 1000.0f;
+	const float envHold = ( m_parent->m_envHold.value() * samplerate() ) / 1000.0f;
+	const float envDec = ( m_parent->m_envDec.value() * samplerate() ) / 1000.0f;
+	const float envLen = envAtt + envDec + envHold;
+	const float tfp_ = static_cast<float>(m_nph->totalFramesPlayed());
+	const float mixvalue_ = m_parent->m_abmix.value();
+	// if the mix envelope is active and we haven't gone past its end, the mix
+	// is calculated per frame, otherwise once per period
+	const bool useMixEnvelope = envAmt != 0.0f && tfp_ < envLen;
+	const float fixedBmix = ( ( mixvalue_ + 100.0 ) / 200.0 );
+	const float fixedAmix = 1.0 - fixedBmix;
+
+	for( f_cnt_t frame = 0; frame < frames; frame++ )
 	{
 		// put phases of 1-series oscs into variables because phase modulation might happen
 		float A1_lphase = m_lphase[A1_OSC];
@@ -122,13 +128,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 
 		// A2
 		sample_t A2_L = m_parent->m_lvol[A2_OSC] * std::lerp(
-			m_A2wave[static_cast<int>(m_lphase[A2_OSC])],
-			m_A2wave[static_cast<int>(m_lphase[A2_OSC] + 1) % WAVELEN],
+			m_wave->data[1][static_cast<int>(m_lphase[A2_OSC])],
+			m_wave->data[1][static_cast<int>(m_lphase[A2_OSC] + 1) % WAVELEN],
 			fraction(m_lphase[A2_OSC])
 		);
 		sample_t A2_R = m_parent->m_rvol[A2_OSC] * std::lerp(
-			m_A2wave[static_cast<int>(m_rphase[A2_OSC])],
-			m_A2wave[static_cast<int>(m_rphase[A2_OSC] + 1) % WAVELEN],
+			m_wave->data[1][static_cast<int>(m_rphase[A2_OSC])],
+			m_wave->data[1][static_cast<int>(m_rphase[A2_OSC] + 1) % WAVELEN],
 			fraction(m_rphase[A2_OSC])
 		);
 
@@ -142,13 +148,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 		}
 		// A1
 		sample_t A1_L = m_parent->m_lvol[A1_OSC] * std::lerp(
-			m_A1wave[static_cast<int>(A1_lphase)],
-			m_A1wave[static_cast<int>(A1_lphase + 1) % WAVELEN],
+			m_wave->data[0][static_cast<int>(A1_lphase)],
+			m_wave->data[0][static_cast<int>(A1_lphase + 1) % WAVELEN],
 			fraction(A1_lphase)
 		);
 		sample_t A1_R = m_parent->m_rvol[A1_OSC] * std::lerp(
-			m_A1wave[static_cast<int>(A1_rphase)],
-			m_A1wave[static_cast<int>(A1_rphase + 1) % WAVELEN],
+			m_wave->data[0][static_cast<int>(A1_rphase)],
+			m_wave->data[0][static_cast<int>(A1_rphase + 1) % WAVELEN],
 			fraction(A1_rphase)
 		);
 
@@ -156,13 +162,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 
 		// B2
 		sample_t B2_L = m_parent->m_lvol[B2_OSC] * std::lerp(
-			m_B2wave[static_cast<int>(m_lphase[B2_OSC])],
-			m_B2wave[static_cast<int>(m_lphase[B2_OSC] + 1) % WAVELEN],
+			m_wave->data[3][static_cast<int>(m_lphase[B2_OSC])],
+			m_wave->data[3][static_cast<int>(m_lphase[B2_OSC] + 1) % WAVELEN],
 			fraction(m_lphase[B2_OSC])
 		);
 		sample_t B2_R = m_parent->m_rvol[B2_OSC] * std::lerp(
-			m_B2wave[static_cast<int>(m_rphase[B2_OSC])],
-			m_B2wave[static_cast<int>(m_rphase[B2_OSC] + 1) % WAVELEN],
+			m_wave->data[3][static_cast<int>(m_rphase[B2_OSC])],
+			m_wave->data[3][static_cast<int>(m_rphase[B2_OSC] + 1) % WAVELEN],
 			fraction(m_rphase[B2_OSC])
 		);
 
@@ -184,13 +190,13 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 		}
 		// B1
 		sample_t B1_L = m_parent->m_lvol[B1_OSC] * std::lerp(
-			m_B1wave[static_cast<int>(B1_lphase) % WAVELEN],
-			m_B1wave[static_cast<int>(B1_lphase + 1) % WAVELEN],
+			m_wave->data[2][static_cast<int>(B1_lphase) % WAVELEN],
+			m_wave->data[2][static_cast<int>(B1_lphase + 1) % WAVELEN],
 			fraction(B1_lphase)
 		);
 		sample_t B1_R = m_parent->m_rvol[B1_OSC] * std::lerp(
-			m_B1wave[static_cast<int>(B1_rphase) % WAVELEN],
-			m_B1wave[static_cast<int>(B1_rphase + 1) % WAVELEN],
+			m_wave->data[2][static_cast<int>(B1_rphase) % WAVELEN],
+			m_wave->data[2][static_cast<int>(B1_rphase + 1) % WAVELEN],
 			fraction(B1_rphase)
 		);
 
@@ -211,9 +217,6 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 				A1_R *= A2_R;
 				break;
 		}
-		m_abuf[frame][0] = A1_L;
-		m_abuf[frame][1] = A1_R;
-
 		// B-series modulation (other than phase mod)
 		switch( m_bmod )
 		{
@@ -230,8 +233,35 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 				B1_R *= B2_R;
 				break;
 		}
-		m_bbuf[frame][0] = B1_L;
-		m_bbuf[frame][1] = B1_R;
+
+		// mix the a/b streams according to the mixing knob
+		float amix = fixedAmix;
+		float bmix = fixedBmix;
+		if (useMixEnvelope)
+		{
+			float mixvalue = mixvalue_;
+			const float tfp = tfp_ + static_cast<float>(frame);
+			// handle mixing envelope
+			if( tfp < envAtt )
+			{
+				mixvalue = qBound( -100.0f, mixvalue + ( tfp / envAtt * envAmt ), 100.0f );
+			}
+			else if ( tfp >= envAtt && tfp < envAtt + envHold )
+			{
+				mixvalue = qBound( -100.0f, mixvalue + envAmt, 100.0f );
+			}
+			else
+			{
+				mixvalue = qBound( -100.0f, mixvalue + envAmt - ( ( tfp - ( envAtt + envHold ) ) / envDec * envAmt ), 100.0f );
+			}
+
+			// get knob values
+			bmix = ( ( mixvalue + 100.0 ) / 200.0 );
+			amix = 1.0 - bmix;
+		}
+
+		out[frame][0] = ( A1_L * amix ) + ( B1_L * bmix );
+		out[frame][1] = ( A1_R * amix ) + ( B1_R * bmix );
 
 		// update phases
 		for( int i = 0; i < NUM_OSCS; i++ )
@@ -243,6 +273,87 @@ void WatsynObject::renderOutput( f_cnt_t _frames )
 		}
 	}
 
+}
+
+
+WatsynInstrument::~WatsynInstrument()
+{
+	// The notes are gone (the track silences them before it deletes the
+	// instrument), so every snapshot can be freed here.
+	for (auto* wave : m_freeWaves) { delete wave; }
+	for (auto* wave : m_retiredWaves) { delete wave; }
+	delete m_wave.exchange(nullptr);
+}
+
+
+void WatsynInstrument::publishWave()
+{
+	recycleWaves();
+
+	// The GUI thread fills a snapshot and publishes it. A note that starts
+	// later pins it; a note that is already sounding keeps the snapshot it
+	// started with.
+	WatsynWave* fresh = nullptr;
+	if (!m_freeWaves.empty())
+	{
+		fresh = m_freeWaves.back();
+		m_freeWaves.pop_back();
+	}
+	else
+	{
+		fresh = new WatsynWave();
+	}
+	fresh->pins.store(1, std::memory_order_relaxed);
+	std::memcpy( fresh->data[0], A1_wave, sizeof( A1_wave ) );
+	std::memcpy( fresh->data[1], A2_wave, sizeof( A2_wave ) );
+	std::memcpy( fresh->data[2], B1_wave, sizeof( B1_wave ) );
+	std::memcpy( fresh->data[3], B2_wave, sizeof( B2_wave ) );
+
+	WatsynWave* old = m_wave.exchange(fresh, std::memory_order_seq_cst);
+	if (old != nullptr)
+	{
+		// The instrument gives up its own reference. The snapshot stays
+		// alive until the notes that pinned it are done with it.
+		old->pins.fetch_sub(1, std::memory_order_acq_rel);
+		m_retiredWaves.push_back(old);
+	}
+
+	recycleWaves();
+}
+
+
+WatsynWave* WatsynInstrument::claimWave() noexcept
+{
+	// The claim announces itself, so that the GUI thread can tell whether a
+	// note is about to pin the snapshot it is about to retire: the count is
+	// zero exactly when no note is inside this window.
+	m_waveClaimers.fetch_add(1, std::memory_order_seq_cst);
+	WatsynWave* wave = m_wave.load(std::memory_order_seq_cst);
+	wave->pins.fetch_add(1, std::memory_order_relaxed);
+	m_waveClaimers.fetch_sub(1, std::memory_order_seq_cst);
+	return wave;
+}
+
+
+void WatsynInstrument::recycleWaves()
+{
+	// A retired snapshot may be filled again once no note holds it. The
+	// claimer count has to be zero as well: a note that was about to pin the
+	// snapshot when it was retired would still raise its pin count.
+	if (m_waveClaimers.load(std::memory_order_seq_cst) != 0) { return; }
+
+	for (auto it = m_retiredWaves.begin(); it != m_retiredWaves.end(); )
+	{
+		if ((*it)->pins.load(std::memory_order_acquire) == 0)
+		{
+			m_freeWaves.push_back(*it);
+			it = m_retiredWaves.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
 }
 
 
@@ -343,120 +454,25 @@ WatsynInstrument::WatsynInstrument( InstrumentTrack * _instrument_track ) :
 
 void WatsynInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out)
 {
-	if (!_n->m_pluginData)
-	{
-		auto w = new WatsynObject(&A1_wave[0], &A2_wave[0], &B1_wave[0], &B2_wave[0], m_amod.value(), m_bmod.value(),
-			Engine::audioEngine()->outputSampleRate(), _n, Engine::audioEngine()->framesPerPeriod(), this);
-
-		_n->m_pluginData = w;
-	}
-
 	const f_cnt_t frames = _n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = _n->noteOffset();
-	SampleFrame* buffer = out.data() + offset;
 
-	auto w = static_cast<WatsynObject*>(_n->m_pluginData);
-
-	SampleFrame* abuf = w->abuf();
-	SampleFrame* bbuf = w->bbuf();
-
-	w-> renderOutput( frames );
-
-	// envelope parameters
-	const float envAmt = m_envAmt.value();
-	const float envAtt = ( m_envAtt.value() * w->samplerate() ) / 1000.0f;
-	const float envHold = ( m_envHold.value() * w->samplerate() ) / 1000.0f;
-	const float envDec = ( m_envDec.value() * w->samplerate() ) / 1000.0f;
-	const float envLen = envAtt + envDec + envHold;
-	const auto tfp_ = static_cast<float>(_n->totalFramesPlayed());
-
-	// if sample-exact is enabled, use sample-exact calculations...
-	// disabled pending proper implementation of sample-exactness
-/*	if( engine::audioEngine()->currentQualitySettings().sampleExactControllers )
+	auto voice = static_cast<WatsynVoice*>(_n->m_pluginData);
+	if (!voice)
 	{
-		for( f_cnt_t f=0; f < frames; f++ )
-		{
-			const float tfp = tfp_ + f;
-			// handle mixing envelope
-			float mixvalue = m_abmix.value( f );
-			if( envAmt != 0.0f && tfp < envLen )
-			{
-				if( tfp < envAtt )
-				{
-					mixvalue = qBound( -100.0f, mixvalue + ( tfp / envAtt * envAmt ), 100.0f );
-				}
-				else if ( tfp >= envAtt && tfp < envAtt + envHold )
-				{
-					mixvalue = qBound( -100.0f, mixvalue + envAmt, 100.0f );
-				}
-				else
-				{
-					mixvalue = qBound( -100.0f, mixvalue + envAmt - ( ( tfp - ( envAtt + envHold ) ) / envDec * envAmt ), 100.0f );
-				}
-			}
-			// get knob values in sample-exact way
-			const float bmix = ( ( mixvalue + 100.0 ) / 200.0 );
-			const float amix = 1.0 - bmix;
-
-			// mix a/b streams according to mixing knob
-			_working_buffer[f][0] = ( abuf[f][0] * amix ) +
-									( bbuf[f][0] * bmix );
-			_working_buffer[f][1] = ( abuf[f][1] * amix ) +
-									( bbuf[f][1] * bmix );
-		}
-	}
-	else*/ 
-	
-	// if sample-exact is not enabled, use simpler calculations:
-	// if mix envelope is active, and we haven't gone past the envelope end, use envelope-aware calculation...
-	if( envAmt != 0.0f && tfp_ < envLen )
-	{
-		const float mixvalue_ = m_abmix.value();
-		for( f_cnt_t f=0; f < frames; f++ )
-		{
-			float mixvalue = mixvalue_;
-			const float tfp = tfp_ + f;
-			// handle mixing envelope
-			if( tfp < envAtt )
-			{
-				mixvalue = qBound( -100.0f, mixvalue + ( tfp / envAtt * envAmt ), 100.0f );
-			}
-			else if ( tfp >= envAtt && tfp < envAtt + envHold )
-			{
-				mixvalue = qBound( -100.0f, mixvalue + envAmt, 100.0f );
-			}
-			else
-			{
-				mixvalue = qBound( -100.0f, mixvalue + envAmt - ( ( tfp - ( envAtt + envHold ) ) / envDec * envAmt ), 100.0f );
-			}
-
-			// get knob values
-			const float bmix = ( ( mixvalue + 100.0 ) / 200.0 );
-			const float amix = 1.0 - bmix;
-
-			// mix a/b streams according to mixing knob
-			buffer[f][0] = ( abuf[f][0] * amix ) +
-									( bbuf[f][0] * bmix );
-			buffer[f][1] = ( abuf[f][1] * amix ) +
-									( bbuf[f][1] * bmix );
-		}
+		// The per-note state lives in the note handle's own storage, so a
+		// note start neither allocates nor takes a slot from a pool: every
+		// note the note manager admits gets a voice.
+		static_assert(sizeof(WatsynVoice) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(WatsynVoice) <= alignof(std::max_align_t));
+		voice = std::construct_at(static_cast<WatsynVoice*>(_n->pluginDataStorage()),
+			this, _n, claimWave());
+		_n->m_pluginData = voice;
 	}
 
-	// ... mix envelope is inactive or we've past the end of envelope, so use a faster calculation to save cpu
-	else
-	{
-		// get knob values
-		const float bmix = ( ( m_abmix.value() + 100.0 ) / 200.0 );
-		const float amix = 1.0 - bmix;
-		for( f_cnt_t f=0; f < frames; f++ )
-		{
-			// mix a/b streams according to mixing knob
-			buffer[f][0] = ( abuf[f][0] * amix ) +
-									( bbuf[f][0] * bmix );
-			buffer[f][1] = ( abuf[f][1] * amix ) +
-									( bbuf[f][1] * bmix );
-		}
-	}
+	// The oscillators are mixed into the note's own buffer, so notes that
+	// sound at the same time never share a render buffer.
+	voice->renderOutput(std::span<SampleFrame>{out.data() + offset, static_cast<std::size_t>(frames)});
 
 	applyRelease(out.data(), _n);
 }
@@ -464,8 +480,16 @@ void WatsynInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> o
 
 void WatsynInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<WatsynObject *>( _n->m_pluginData );
+	if (auto voice = static_cast<WatsynVoice*>(_n->m_pluginData))
+	{
+		// The voice gives the wavetable snapshot back and leaves the handle's
+		// storage; clearing the pointer keeps a second cleanup from handing
+		// the same snapshot to two notes.
+		std::destroy_at(voice);
+		_n->m_pluginData = nullptr;
+	}
 }
+
 
 
 void WatsynInstrument::saveSettings( QDomDocument & _doc,
@@ -643,6 +667,9 @@ void WatsynInstrument::updateWaveA1()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &A1_wave[0], const_cast<float*>( a1_graph.samples() ) );
+	// publish the new wavetable: notes that start now use it, notes that are
+	// already sounding keep the snapshot they started with
+	publishWave();
 }
 
 
@@ -650,6 +677,7 @@ void WatsynInstrument::updateWaveA2()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &A2_wave[0], const_cast<float*>( a2_graph.samples() ) );
+	publishWave();
 }
 
 
@@ -657,6 +685,7 @@ void WatsynInstrument::updateWaveB1()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &B1_wave[0], const_cast<float*>( b1_graph.samples() ) );
+	publishWave();
 }
 
 
@@ -664,6 +693,7 @@ void WatsynInstrument::updateWaveB2()
 {
 	// do sinc+oversampling on the wavetables to improve quality
 	srccpy( &B2_wave[0], const_cast<float*>( b2_graph.samples() ) );
+	publishWave();
 }
 
 

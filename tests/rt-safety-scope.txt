@@ -118,3 +118,7 @@ src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::release	Q050-016: a NoteP
 src/core/midi/MpeStreamSnapshot.cpp	MpeStreamSnapshot::retire	Q050-016: release() pushes a snapshot whose last reference the audio thread dropped onto the lock-free retire list
 src/core/MpeExpressionStreamPlayback.cpp	NotePlayHandle::scheduleMpeExpressionStream	Q050-016: NotePlayHandle::play calls it every period on the audio thread to send the stream points that fall in the period
 src/core/MpeExpressionStreamPlayback.cpp	NotePlayHandle::scheduleMpeStreamAxis	Q050-016: scheduleMpeExpressionStream's per-axis walk, on the audio thread
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::playNoteImpl	Watsyn's per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::claimWave	called from WatsynInstrument::playNoteImpl on the audio thread: pins the wavetable snapshot the note renders with
+plugins/Watsyn/Watsyn.cpp	WatsynVoice::renderOutput	called from WatsynInstrument::playNoteImpl on the audio thread: renders the note's oscillators into the note's own buffer
+plugins/Watsyn/Watsyn.cpp	WatsynInstrument::deleteNotePluginData	called when a Watsyn note ends, on the thread that released the note handle: gives the wavetable snapshot back
