@@ -45,7 +45,12 @@ Every row below is a command I ran in this round and the exit code it printed.
 | Complexity gate | `bash tests/complexity-gate.sh --check` | `gate-1.log` | 1 |
 | File-length gate | `bash tests/file-length-gate.sh --check` | `gate-2.log` | 1 |
 | Aggregate gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port` | `gate-3.log` | 0 |
-| Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port new-p12-98-port` | `submit-1.log` | 0 |
+| Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-98-port new-p12-98-port` | `submit-3.log` | 0 |
+
+`submit-3.log` is the final run, against the committed tree. The two earlier runs of the same
+command are also in the folder: `submit-1.log` (before this report was rewritten, exit 0) and
+`submit-2.log` (before this report was committed, exit 1 — its only failing item was
+`working tree clean`, which the commit then resolved).
 
 The RED run (`test-4.log`) fails exactly at the new assertion:
 
@@ -58,10 +63,10 @@ With the product hunk restored, the same command exits 0 (`test-5.log`).
 
 ### The two direct gates exit 1 — on unrelated, pre-existing violations
 
-Both direct gates are red on this train. Every violation they name is in a file this commit does
-not touch; `git show --stat HEAD` lists only `src/core/InstrumentLayers.cpp`,
-`tests/src/core/InstrumentLayersCommandsTest.cpp`, `tests/upstream-modifications.txt`,
-`tests/file-length-baseline.tsv` and this report. The aggregate gate
+Both direct gates are red on this train. Every violation they name is in a file this branch's fix
+does not touch; `git show --stat 47b57a6ae` (the fix commit) lists only
+`src/core/InstrumentLayers.cpp`, `tests/src/core/InstrumentLayersCommandsTest.cpp`,
+`tests/upstream-modifications.txt`, `tests/file-length-baseline.tsv` and the report. The aggregate gate
 `feature_check.py` (exit 0) compares against the same baselines scoped to *my* files and reports
 `PASS complexity — no new item in your files` and `PASS file-length — no new item in your files`.
 
