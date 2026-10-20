@@ -143,15 +143,22 @@ RemotePluginBase::SendResult RemotePluginBase::sendFrameNonBlocking( const char 
 #ifdef SYNC_WITH_SHM_FIFO
 	// Exact room check: the frame is written only when the FIFO has space for all of it, so the write never waits.
 	// A data lock that is busy (the client is writing) means there is no room now.
-	if( !m_out->tryLockFor( 0 ) ) { return SendResult::NoRoom; }
+	if( !m_out->tryLockWriter() ) { return SendResult::NoRoom; }
+	if( !m_out->tryLockFor( 0 ) )
+	{
+		m_out->unlockWriter();
+		return SendResult::NoRoom;
+	}
 	if( m_out->freeSpace() < _size )
 	{
 		m_out->unlock();
+		m_out->unlockWriter();
 		return SendResult::NoRoom;
 	}
 	m_out->writeRaw( _frame, static_cast<int>( _size ) );
 	m_out->unlock();
 	m_out->messageSent();
+	m_out->unlockWriter();
 	return SendResult::Sent;
 #else
 	if( isInvalid() ) { return SendResult::Broken; }
@@ -270,6 +277,7 @@ RemotePluginBase::SendResult RemotePluginBase::flushPendingSend()
 int RemotePluginBase::sendMessage(const message & _m)
 {
 #ifdef SYNC_WITH_SHM_FIFO
+	m_out->lockWriter();
 	m_out->lock();
 	m_out->writeInt(_m.id);
 	m_out->writeInt(_m.data.size());
@@ -281,6 +289,7 @@ int RemotePluginBase::sendMessage(const message & _m)
 	}
 	m_out->unlock();
 	m_out->messageSent();
+	m_out->unlockWriter();
 #else
 	pthread_mutex_lock(&m_sendMutex);
 	if (m_txTailSize != 0)

@@ -217,23 +217,6 @@ public:
 		}
 	}
 
-	//! Reserves the write direction across FIFO-space waits, independently of the reader's data semaphore.
-	inline void lockWriter()
-	{
-		while( m_writerBusy.test_and_set( std::memory_order_acquire ) ) { std::this_thread::yield(); }
-	}
-
-	//! Audio-thread form: it never waits when a blocking message writer owns the write direction.
-	inline bool tryLockWriter()
-	{
-		return !m_writerBusy.test_and_set( std::memory_order_acquire );
-	}
-
-	inline void unlockWriter()
-	{
-		m_writerBusy.clear( std::memory_order_release );
-	}
-
 	// wait until message-semaphore is available
 	inline void waitForMessage()
 	{
@@ -338,12 +321,37 @@ public:
 
 
 private:
-	//! Keeps the historical single-level release until the writer-wait regression is applied.
+	//! Serializes writers separately from readers while a blocking message yields the data semaphore for space.
+	inline void lockWriter()
+	{
+		while( m_writerBusy.test_and_set( std::memory_order_acquire ) ) { std::this_thread::yield(); }
+	}
+
+	//! Audio-thread form: it never waits when a blocking message writer owns the write direction.
+	inline bool tryLockWriter()
+	{
+		return !m_writerBusy.test_and_set( std::memory_order_acquire );
+	}
+
+	inline void unlockWriter()
+	{
+		m_writerBusy.clear( std::memory_order_release );
+	}
+
+	//! Drops every recursive data-lock level so a reader can consume queued bytes during a space wait.
 	inline int releaseLockForSpaceWait()
 	{
 		const int depth = m_depth;
-		unlock();
+		while( m_depth > 0 ) { unlock(); }
 		return depth;
+	}
+
+	//! Restores the caller's recursive-lock depth after the writer reacquires the data semaphore.
+	inline void reacquireLockAfterSpaceWait( int _depth )
+	{
+		if( _depth == 0 ) { return; }
+		lock();
+		for( int depth = 1; depth < _depth; ++depth ) { lock(); }
 	}
 
 	void read( void * _buf, int _len )
@@ -382,7 +390,7 @@ private:
 			return;
 		}
 		lock();
-		while( _len > SHM_FIFO_SIZE - m_data->endPtr )
+		while( !isInvalid() && _len > SHM_FIFO_SIZE - m_data->endPtr )
 		{
 			// if no space is left, try to move data to front
 			if( m_data->startPtr > 0 )
@@ -394,11 +402,17 @@ private:
 							m_data->startPtr;
 				m_data->startPtr = 0;
 			}
-			releaseLockForSpaceWait();
+			const int lockDepth = releaseLockForSpaceWait();
 #ifndef LMMS_BUILD_WIN32
 			usleep( 5 );
 #endif
-			lock();
+			if( isInvalid() ) { return; }
+			reacquireLockAfterSpaceWait( lockDepth );
+		}
+		if( isInvalid() )
+		{
+			unlock();
+			return;
 		}
 		std::memcpy(m_data->data + m_data->endPtr, _buf, _len);
 		m_data->endPtr += _len;
