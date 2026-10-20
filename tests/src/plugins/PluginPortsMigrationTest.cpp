@@ -866,6 +866,7 @@ private slots:
 	void lb302DecayTracksSampleRateChanges();
 	void slice7PluginsAreLiveAndExact();
 	void slice8PluginsAreLiveAndExact();
+	void gigPlayerKeepsReleaseTriggerAcrossRegions();
 	void waterfallHistoryIsCopiedUnderProcessorLocks();
 	void fastBassBoostFrequencySetterHonoursFloor();
 	void xpressiveRandomVectorRejectsOutOfRangeFloatInputs();
@@ -3485,6 +3486,52 @@ void PluginPortsMigrationTest::gigKeyboardDimensionUsesPressedKey()
 #endif
 }
 
+
+void PluginPortsMigrationTest::gigPlayerKeepsReleaseTriggerAcrossRegions()
+{
+#if defined(PART_C_MIGRATED_gigplayer) && defined(PART_C_GIG_FILE)
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	lmms::NotePlayHandleManager::init();
+	const auto [entry, descriptor] = partc::loadPluginModule(
+		PART_C_MIGRATED_gigplayer, QStringLiteral("gigplayer"));
+	QVERIFY2(entry != nullptr && descriptor != nullptr, "GigPlayer module did not load");
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = dynamic_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	std::unique_ptr<lmms::Instrument> instrumentOwner{instrument};
+	partc::applyInstrumentTestSettings(*instrument, "gigplayer");
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 2)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * 2, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> output(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> buffer{output};
+
+	instrument->playNote(&handle, buffer);
+	instrument->play(buffer);
+	instrument->deleteNotePluginData(&handle);
+	handle.m_pluginData = nullptr;
+	instrument->play(buffer);
+
+	double releaseMean = 0.0;
+	for (const auto& frame : output)
+	{
+		releaseMean += (frame.left() + frame.right()) * 0.5;
+	}
+	releaseMean /= static_cast<double>(frames);
+	QVERIFY2(releaseMean > 0.05,
+		"GigPlayer did not render the release-trigger probe after note-off");
+#else
+	QSKIP("GigPlayer or its .gig fixture is unavailable in this build");
+#endif
+}
 
 QTEST_MAIN(PluginPortsMigrationTest)
 #include "PluginPortsMigrationTest.moc"

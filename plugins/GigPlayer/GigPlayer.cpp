@@ -854,7 +854,7 @@ void GigInstrument::addSamples( GigNote & gignote, bool wantReleaseSample )
 		// notes and not when we get the release samples.
 		if( wantReleaseSample != true )
 		{
-			gignote.release = dim.release;
+			gignote.release = gignote.release || dim.release;
 		}
 
 		if( pSample != nullptr && pSample->SamplesTotal != 0 )

@@ -1,11 +1,13 @@
 /*
  * make_gig.cpp - create a minimal but valid .gig instrument file with libgig.
  *
- * By default, create one instrument ("Sine440", bank 0 / program 0), one
- * sample (440 Hz sine, 2 s, 16-bit mono 44100 Hz), one region spanning the
- * whole keyboard, and one dimension region pointing at the sample. Passing
- * --pingpong or --single-frame-loop creates directional loop fixtures used by
- * the regression tests.
+ * By default, create one instrument ("Sine440", bank 0 / program 0) with two
+ * samples (a 440 Hz sine and a constant release probe, both 2 s, 16-bit mono
+ * 44100 Hz) and two adjacent key regions: the first has a release-trigger
+ * dimension whose zones point at those samples; the second has no dimensions
+ * and does not cover the test key. Passing --keyboard creates a two-zone
+ * keyboard-dimension fixture, and --pingpong / --single-frame-loop create
+ * directional loop fixtures used by the regression tests.
  * Built with:
  *   g++ -std=c++17 make_gig.cpp -o make_gig $(pkg-config --cflags --libs gig)
  *
@@ -55,6 +57,7 @@ int main(int argc, char** argv)
         else if (out.empty()) out = arg;
     }
     if (keyboardDimension) pingPong = false;
+    const bool releaseTrigger = !pingPong && !keyboardDimension;
     if (out.empty())
     {
         if (keyboardDimension) out = "keyboard-dimension.gig";
@@ -76,7 +79,7 @@ int main(int argc, char** argv)
         f->pInfo->Comments  = pingPong
             ? "Bidirectional loop fixture for LMMS GigPlayer verification"
             : (keyboardDimension ? "Keyboard dimension regression fixture for LMMS GigPlayer verification"
-                                 : "Minimal one-instrument one-sample .gig for LMMS GigPlayer verification");
+                                 : "GigPlayer release-trigger regression fixture");
         f->pInfo->Copyright = "public domain test tone";
 
         // ---------------------------------------------------------------- sample
@@ -87,6 +90,13 @@ int main(int argc, char** argv)
         {
             silentSample = f->AddSample();
             configureSample(silentSample, "zone1_silence");
+        }
+        gig::Sample* releaseSample = nullptr;
+        std::vector<int16_t> releasePcm;
+        if (releaseTrigger)
+        {
+            releaseSample = f->AddSample();
+            configureSample(releaseSample, "release_probe_2s");
         }
 
         std::vector<int16_t> pcm(N);
@@ -130,6 +140,10 @@ int main(int argc, char** argv)
                 pcm[i] = int16_t(std::lround(
                     0.5 * 32767.0 * env * std::sin(2.0 * M_PI * FREQ * double(i) / SR)));
             }
+            if (releaseTrigger)
+            {
+                releasePcm.assign(N, 8192);
+            }
         }
 
         // ------------------------------------------------------------ instrument
@@ -145,34 +159,81 @@ int main(int argc, char** argv)
             instr->DimensionKeyRange.high = 80;
         }
 
-        gig::Region* r = instr->AddRegion();     // Region ctor creates dim region 0
-        r->SetKeyRange(0, 127);
-        r->VelocityRange.low  = 0;
-        r->VelocityRange.high = 127;
+        if (releaseTrigger)
+        {
+            gig::Region* r = instr->AddRegion();
+            r->SetKeyRange(0, 100);
+            r->VelocityRange.low  = 0;
+            r->VelocityRange.high = 127;
 
-        if (keyboardDimension)
-        {
-            gig::dimension_def_t dimension{
-                gig::dimension_keyboard, 1, 2, gig::split_type_normal, 64.0f};
-            r->AddDimension(&dimension);
-        }
-        for (uint32_t i = 0; i < r->DimensionRegions; ++i)
-        {
-            gig::DimensionRegion* dr = r->pDimensionRegions[i];
-            dr->pSample     = (keyboardDimension && i == 1) ? silentSample : s;
-            dr->UnityNote   = 60;
-            dr->FineTune    = 0;
-            dr->PitchTrack  = !pingPong;
-            dr->SampleLoops = 0;
-            if (pingPong)
+            gig::dimension_def_t releaseDimension;
+            releaseDimension.dimension = gig::dimension_releasetrigger;
+            releaseDimension.bits = 1;
+            releaseDimension.zones = 2;
+            releaseDimension.split_type = gig::split_type_bit;
+            releaseDimension.zone_size = 0.0f;
+            r->AddDimension(&releaseDimension);
+
+            uint dimensionValues[8] = {};
+            for (uint releaseZone = 0; releaseZone < 2; ++releaseZone)
             {
-                dr->EG1Sustain = 1000;
-                DLS::sample_loop_t loop{};
-                loop.Size = sizeof(loop);
-                loop.LoopType = gig::loop_type_bidirectional;
-                loop.LoopStart = LoopStart;
-                loop.LoopLength = loopLength;
-                dr->AddSampleLoop(&loop);
+                dimensionValues[0] = releaseZone;
+                gig::DimensionRegion* dr = r->GetDimensionRegionByValue(dimensionValues);
+                dr->pSample     = releaseZone == 0 ? s : releaseSample;
+                dr->UnityNote   = 60;
+                dr->FineTune    = 0;
+                dr->PitchTrack  = true;
+                dr->SampleLoops = 0;
+                if (releaseZone == 1)
+                {
+                    dr->ReleaseTriggerDecay = 8;
+                }
+            }
+
+            // This later, non-release region deliberately does not cover MIDI key
+            // 60. Its dimension state still follows the first region during note
+            // setup, exposing accidental replacement of the release flag.
+            gig::Region* laterRegion = instr->AddRegion();
+            laterRegion->SetKeyRange(101, 127);
+            laterRegion->VelocityRange.low = 0;
+            laterRegion->VelocityRange.high = 127;
+            laterRegion->pDimensionRegions[0]->pSample = s;
+            laterRegion->pDimensionRegions[0]->UnityNote = 60;
+            laterRegion->pDimensionRegions[0]->FineTune = 0;
+            laterRegion->pDimensionRegions[0]->PitchTrack = true;
+            laterRegion->pDimensionRegions[0]->SampleLoops = 0;
+        }
+        else
+        {
+            gig::Region* r = instr->AddRegion();     // Region ctor creates dim region 0
+            r->SetKeyRange(0, 127);
+            r->VelocityRange.low  = 0;
+            r->VelocityRange.high = 127;
+
+            if (keyboardDimension)
+            {
+                gig::dimension_def_t dimension{
+                    gig::dimension_keyboard, 1, 2, gig::split_type_normal, 64.0f};
+                r->AddDimension(&dimension);
+            }
+            for (uint32_t i = 0; i < r->DimensionRegions; ++i)
+            {
+                gig::DimensionRegion* dr = r->pDimensionRegions[i];
+                dr->pSample     = (keyboardDimension && i == 1) ? silentSample : s;
+                dr->UnityNote   = 60;
+                dr->FineTune    = 0;
+                dr->PitchTrack  = !pingPong;
+                dr->SampleLoops = 0;
+                if (pingPong)
+                {
+                    dr->EG1Sustain = 1000;
+                    DLS::sample_loop_t loop{};
+                    loop.Size = sizeof(loop);
+                    loop.LoopType = gig::loop_type_bidirectional;
+                    loop.LoopStart = LoopStart;
+                    loop.LoopLength = loopLength;
+                    dr->AddSampleLoop(&loop);
+                }
             }
         }
 
@@ -181,6 +242,10 @@ int main(int argc, char** argv)
         if (silentSample != nullptr)
         {
             silentSample->Resize(N);
+        }
+        if (releaseSample != nullptr)
+        {
+            releaseSample->Resize(N);
         }
         f->Save(out);   // write file skeleton, reserve sample data space
 
@@ -202,6 +267,17 @@ int main(int argc, char** argv)
             {
                 fprintf(stderr, "ERROR: wrote %lld of %u silent sample points\n",
                         (long long) silentWritten, (unsigned) N);
+                return 1;
+            }
+        }
+        if (releaseSample != nullptr)
+        {
+            releaseSample->SetPos(0);
+            const gig::file_offset_t releaseWritten = releaseSample->Write(releasePcm.data(), N);
+            if (releaseWritten != gig::file_offset_t(N))
+            {
+                fprintf(stderr, "ERROR: wrote %lld of %u release sample points\n",
+                        (long long) releaseWritten, (unsigned) N);
                 return 1;
             }
         }
