@@ -147,9 +147,34 @@ The base-commit results from round 3 still hold: both direct gates exit 1 on `2d
 
 `masterPitch` is read inside `updateFrequency()` (`src/core/NotePlayHandle.cpp:623`), and its change does not mark notes: the `dataChanged` connection in `src/core/Song.cpp:194-195` is commented out. Before this fix, a note that had been marked once recomputed every period, so it also followed master-pitch automation from then on. After the fix it follows master-pitch changes only when it is marked again, like a note that was never marked. This is by reading the code; I did not add a test for it. The consistent behaviour (master-pitch changes marking the handles) would be a separate change, and I did not make it here.
 
+## Review round 5 (DISPUTE: parent disposition still not obtained)
+
+Review `new-p16-146.r4.md` asks for the parent's explicit disposition of the red direct gates, recorded here, then fresh direct gate runs and resubmission.
+
+**Disposition status: NOT OBTAINED (unchanged from round 4).** What was checked this round:
+- The loop scripts have no disposition field. A search of `docs/` and the qwen loop folder for a recorded disposition or re-anchor decision on these two baselines found none.
+- `ListAgents` shows one peer, `zene-studio-program-bb`. It is not confirmed to be the parent, so I did not message it.
+- The round-4 owner notification got no reply. I did not send a second one.
+
+I have **not** recorded a disposition I do not have. I did not re-anchor any baseline and did not edit any unrelated flagged file. The needed decision is one of the two options from round 3: re-anchor `tests/complexity-baseline.tsv` and `tests/file-length-baseline.tsv` on the base as a recorded change, or have the train fix the listed files. Until one of them is chosen, gate acceptance stays BLOCKED.
+
+**Direct gates, round 5** (branch at `ee3d0c297`, worktree clean before this commit, unpiped exit codes; logs in `runs/new-p16-146.r5/logs/`):
+
+| Command | EXIT | Result | Log |
+|---|---|---|---|
+| `bash tests/complexity-gate.sh --check` | 1 | 6 `REGRESSION` lines; "complexity ratchet regressed" | `complexity-gate-check-r5-1.log` |
+| `bash tests/file-length-gate.sh --check` | 1 | 15 `REGRESSION` lines (14 unique files) | `file-length-gate-check-r5-1.log` |
+
+Both sets of `REGRESSION` lines are identical to the base-commit runs from round 3 (sorted `diff` is empty for each gate; base logs in `runs/new-p16-146.r3/logs/base-*-gate-check.log`). This branch adds no violation.
+
+Other checks this round:
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`feature-check-r5-1.log`): EXIT=1, `PermissionError` writing `<worktree>-feature-check/fork-sources.log`, outside the write jail. This is the environment fault from round 4; the script is not edited.
+- `python3 -I /tmp/zene-new-p16-146-gates/run_gates.py <worktree> <logs>/gates-1` (same gate functions, logs in the LOG FOLDER; the `gates-1` folder was created first): EXIT=0, all 8 PASS (`gates-r5-summary.log`).
+- No product code has changed since `8a0442c69`, so the round-4 test result (`test-r4-mpe.log`, `aFrequencyMarkIsSpentByItsUpdate` PASS) stands. I did not rerun it this round.
+
 ## Self-check
 
-`submit_check.py new-p16-146` (log `submit-check-1.log`, EXIT=1):
+`submit_check.py new-p16-146` (log `submit-check-1.log`, EXIT=1; round 5 rerun `submit-check-r5-1.log`, EXIT=1, same single FAIL):
 
 - PASS commits on the branch; PASS working tree clean; PASS report present; PASS tests added or changed (`MpePlaybackTest.cpp`).
 - **FAIL gates (feature_check.py)** - an environment fault, not a gate result. `feature_check.py` creates its log directory at `<worktree>-feature-check` (`feature_check.py:71`), outside the write jail, and fails with `PermissionError` (`logs/gates-1.log`). I did not edit the shared script. The same gate functions, command lists and pass rule, run through `/tmp/zene-new-p16-146-gates/run_gates.py` with logs in the LOG FOLDER, give **EXIT=0, RESULT: PASS** on the committed tree (`logs/gates-2-summary.log`, 4 changed files; complexity and file-length PASS). The shared gate needs to be run from a location the jail allows, or its log directory made configurable, to close this item. Separately, the direct `--check` gates exit 1 on the base commit too (see "Review round 2"); that is the open gate blocker.
@@ -159,3 +184,4 @@ The base-commit results from round 3 still hold: both direct gates exit 1 on `2d
 - ? No collateral damage: **mostly, with one behaviour consequence to review.** Save and load are untouched, and no limit or check was added. The consequence: `masterPitch` is read inside `updateFrequency()` (`NotePlayHandle.cpp:623`) and its change does not mark notes (`Song.cpp:194-195`, the connection is commented out). A note that had been marked before this fix kept recomputing and followed master-pitch changes; after it, it follows them only when marked again. This is by reading only, not tested. A decision is needed on whether master-pitch changes should mark handles; I did not make that change.
 - Realtime: the change adds one bool store to a path that already runs; no allocation, lock, log or allocating Qt call is added. Undo: no command is added or changed. Verdict is a real defect, so no ALREADY-FIXED or FALSE-POSITIVE proof is needed.
 - Environment notes: the first targeted build failed under ccache (`/run/user/1000` not writable), so `CCACHE_TEMPDIR=/tmp/zene-new-p16-146-ccache-tmp` was used. The `monstro` and `audiofileprocessor` plugins were not built in this targeted tree and failed their tests with `Plugin not found`; building them made both pass (rows 18-20). `ExprSynthTest` and `ExprSynthAllocation` are not CMake target names here (`ExprSynth` and `ExprSynthAllocationTest`).
+- Round 5 check: `submit_check.py` (`submit-check-r5-1.log`, EXIT=1) still shows only the FAIL on `gates (feature_check.py)`, which is the write-jail `PermissionError` above. The driver run gives EXIT=0, all 8 PASS (`gates-r5-summary.log`). The two direct `--check` gates exit 1 on the base commit and on this branch with identical items (see Review round 5). That open blocker needs the parent's disposition, which this session cannot obtain, so this item is not resolved here.
