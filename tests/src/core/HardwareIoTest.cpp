@@ -687,6 +687,52 @@ private slots:
 		QVERIFY(ignored);
 	}
 
+	void malformedPrefaderKeepsItsDefault()
+	{
+		// "prefader" defaults to true. A malformed value ("abc") is not a zero: it must keep the default,
+		// while a well-formed "0" still switches the send to post-fader.
+		QDomDocument doc;
+		QDomElement channelElement = doc.createElement(QStringLiteral("mixerchannel"));
+		doc.appendChild(channelElement);
+		QDomElement element = doc.createElement(QStringLiteral("hardwareio"));
+		channelElement.appendChild(element);
+		QDomElement malformed = doc.createElement(QStringLiteral("cue"));
+		malformed.setAttribute(QStringLiteral("index"), 0);
+		malformed.setAttribute(QStringLiteral("level"), QStringLiteral("0.5"));
+		malformed.setAttribute(QStringLiteral("prefader"), QStringLiteral("abc"));
+		element.appendChild(malformed);
+		QDomElement zero = doc.createElement(QStringLiteral("cue"));
+		zero.setAttribute(QStringLiteral("index"), 1);
+		zero.setAttribute(QStringLiteral("level"), QStringLiteral("0.5"));
+		zero.setAttribute(QStringLiteral("prefader"), QStringLiteral("0"));
+		element.appendChild(zero);
+		ChannelHardwareIo loaded;
+		loaded.load(channelElement, Engine::audioEngine()->framesPerPeriod());
+		QVERIFY(loaded.cues[0].preFader);   // malformed: the default, pre-fader
+		QVERIFY(!loaded.cues[1].preFader);  // "0" is a real value: post-fader
+	}
+
+	void malformedListenKeepsItsDefault()
+	{
+		// A cue master's "listen" defaults to true. A malformed value ("abc") must keep the default,
+		// while a well-formed "0" still stops the cue following the listen.
+		QDomDocument mixDoc;
+		QDomElement mixerElement = mixDoc.createElement(QStringLiteral("mixer"));
+		mixDoc.appendChild(mixerElement);
+		QDomElement malformedMix = mixDoc.createElement(QStringLiteral("cuemix"));
+		malformedMix.setAttribute(QStringLiteral("index"), 0);
+		malformedMix.setAttribute(QStringLiteral("listen"), QStringLiteral("abc"));
+		mixerElement.appendChild(malformedMix);
+		QDomElement zeroMix = mixDoc.createElement(QStringLiteral("cuemix"));
+		zeroMix.setAttribute(QStringLiteral("index"), 1);
+		zeroMix.setAttribute(QStringLiteral("listen"), QStringLiteral("0"));
+		mixerElement.appendChild(zeroMix);
+		hardwareio::loadMixer(mixerElement);
+		QVERIFY(hardwareio::cueMaster(0).followListen);   // malformed: the default, follows listen
+		QVERIFY(!hardwareio::cueMaster(1).followListen);  // "0" switches it off
+		hardwareio::resetMixer();
+	}
+
 private:
 	//! What everythingSurvivesASaveAndLoad routed, read back after the load.
 	static void verifyLoaded(Mixer& mixer)
