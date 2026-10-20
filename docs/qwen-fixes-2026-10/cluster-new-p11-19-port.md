@@ -16,28 +16,32 @@ acknowledged"), while the accepted test asserted `Busy`.
 
 That is the same conflation the finding names, one layer earlier: the pre-check asks
 "does a path exist at the marker name?" where the question is "was the marker written?".
-The reporter writes the sentinel as a FILE (`writeSmallFile()` opens it for writing,
-`src/core/CrashReporter.cpp:170-184`), so a path that merely EXISTS is not an
-acknowledgement. The port therefore applies the accepted fix's rule - *the marker is a
-valid file, and the report is no longer pending* - to BOTH places that decide the state
-(the pre-check and the success), and keeps the read side of the same state consistent.
+The reporter writes the sentinel as a FILE (`writeSmallFile()` opens it for writing
+with `O_NOFOLLOW`, `src/core/CrashReporter.cpp:170-184`), so a path that merely EXISTS
+is not an acknowledgement - and neither is a symlink there, which the reporter refuses
+to write through. The port therefore applies the accepted fix's rule - *the marker is a
+valid file the reporter wrote, and the report is no longer pending* - to ALL the places
+that decide the state (the pre-check, the success read-back and the read that publishes
+it), through ONE rule (`isOfferedMarker`).
 
 ## File:line evidence
 
 | File | Evidence |
 |---|---|
-| `src/core/ControlCommandsCrash.cpp:303` | The "ALREADY acknowledged" refusal now fires only when the marker path is a FILE (`QFileInfo(...).isFile()`). A directory at that path was never written and cannot be written, so it is not an acknowledgement and the refusal would be a claim about a state that never happened. |
-| `src/core/ControlCommandsCrash.cpp:319-330` | The success is READ BACK, as the accepted fix requires: the marker must be a FILE the reporter wrote **and** `hasPendingReport()` must read back false. A path that merely exists is not enough, so the command can no longer report `acknowledged: true` for a marker it did not write. The reply reuses the same `pending` readback value. |
-| `src/core/ControlCommandsCrash.cpp:230-234` | The sibling read: `crash.list_reports`' `offered` field now uses the same rule as the write (`isFile()`), so the read and the write agree on what "offered" means. `pending` is untouched - it stays the module's own predicate (`hasPendingReport()`), which the reply's `note` names. |
-| `tests/src/core/ControlCrashAcknowledgeTest.cpp:81-127` | `acknowledge_refuses_directory_at_offered_marker`: builds a real report, puts a real DIRECTORY at the `offered`-marker path, calls the registered `crash.acknowledge_report` command and asserts a typed `busy` refusal (`:114`), that the report file survives, that the blocking directory is untouched, and that `crash.list_reports` does not report the report as `offered` (`:125-126`). |
-| `tests/src/core/ControlCrashAcknowledgeTest.cpp:57-64` | The `cleanup()` slot: the engine is torn down again after that one case, so nothing else in this binary inherits an engine. |
+| `src/core/ControlCommandsCrash.cpp:196-212` | `isOfferedMarker()` - the ONE rule for "the reporter wrote the sentinel": a regular file that is NOT a symlink. `writeSmallFile()` opens the sentinel with `O_NOFOLLOW` (`src/core/CrashReporter.cpp:170-184`), so the reporter never writes THROUGH a symlink planted at that name and never creates one; `QFileInfo::isFile()` alone is not enough because it FOLLOWS symlinks and answers true for a symlink to a regular file. |
+| `src/core/ControlCommandsCrash.cpp:323` | The "ALREADY acknowledged" refusal fires only for a real marker file. A directory - or a symlink - at that path was never written by the reporter, so refusing as "ALREADY acknowledged" would be a claim about a state that never happened. |
+| `src/core/ControlCommandsCrash.cpp:340-348` | The success is READ BACK, as the accepted fix requires: the marker must be a regular file the reporter wrote **and** `hasPendingReport()` must read back false. A path that merely exists is not enough, so the command can no longer report `acknowledged: true` for a marker it did not write. The reply reuses the same `pending` readback value. |
+| `src/core/ControlCommandsCrash.cpp:250-254` | The sibling read: `crash.list_reports`' `offered` field uses the same rule as the write, so the read and the write agree on what "offered" means. `pending` is untouched - it stays the module's own predicate (`hasPendingReport()`), which the reply's `note` names. |
+| `tests/src/core/ControlCrashAcknowledgeTest.cpp:85-131` | `acknowledge_refuses_directory_at_offered_marker`: builds a real report, puts a real DIRECTORY at the `offered`-marker path, calls the registered `crash.acknowledge_report` command and asserts a typed `busy` refusal (`:118`), that the report file survives, that the blocking directory is untouched, and that `crash.list_reports` does not report the report as `offered` (`:129-130`). |
+| `tests/src/core/ControlCrashAcknowledgeTest.cpp:139-197` | `acknowledge_refuses_symlink_at_offered_marker`: the same fault state one step further - a SYMLINK to a regular file at the marker path (`::symlink`, POSIX only). It asserts the typed `busy` refusal (`:180`), that the link TARGET's bytes are untouched (the reporter writes no through a symlink), that the report survives, and that `crash.list_reports` does not report the report as `offered` (`:195-196`). |
+| `tests/src/core/ControlCrashAcknowledgeTest.cpp:61-68` | The `cleanup()` slot: the engine is torn down again after each case, so nothing else in this binary inherits an engine. |
 | `tests/CMakeLists.txt:1290-1295` | Registers the new source, appended LAST so its ctest carries a three-digit number (see "The test the negative control can find"). |
 | `tests/all-sources.txt:2495`, `tests/fork-sources.txt:2233` | The new source is registered in both scope manifests, so the whole-tree and the fork ratchets measure it. |
 | `tests/upstream-modifications.txt:2409-2411` | The ledger entries for the inherited files this change touches (the CMake registration and the two manifests). |
 
 The fault state is reached through the real path: the report is written where the
 reporter writes it (`pendingReportPath()`), the directory is created with
-`QDir::mkdir()` at the marker path the reporter uses
+`QDir::mkdir()` and the symlink with `::symlink()` at the marker path the reporter uses
 (`crashreporter::kOfferedMarkerName`), and the command is invoked through
 `ControlRegistry::invoke("crash.acknowledge_report")` - the same seam a client uses.
 
@@ -84,6 +88,11 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 | GREEN, the product change restored | `cd build/tests && ctest -R '^ControlCrashAcknowledgeTest$' --output-on-failure` | 0 | 1/1 passed. `test-16.log`. |
 | Family after the move (7 tests) | `cd build/tests && ctest -R 'Crash|crash|ControlCommandsSnapshot' --output-on-failure` | 0 | 7/7 passed: CrashReporterArmTest, CrashReporterTest, RecordingCrashLossTest, CrashReportMenuTest, **ControlCrashAcknowledgeTest**, ControlCrashReporter, ControlCommandsSnapshot. `test-17.log`. |
 | The harness's own negative control on this branch | `negctl.prove(<worktree>, 'ded355440', <run>/negctl-sim, <report text>)` | 0 | `ok: true` - "ControlCommandsSnapshot, ControlCrashAcknowledgeTest: they fail without it (rc 8) and pass with it"; `reverted_rc` 8, `restored_rc` 0, `tree_clean` true. Reverted run: `test-18.log`; restored run: `test-19.log`; builds: `build-17.log`, `build-18.log`. |
+| RED, the SYMLINK marker, product change reversed | `cd build/tests && ctest -R '^ControlCrashAcknowledgeTest$' --output-on-failure` | 8 | `FAIL! ... Actual (result.errorKind) 5, Expected (Busy) 4` at `tests/src/core/ControlCrashAcknowledgeTest.cpp(180)`; 3 passed, 1 failed. `test-22.log`. |
+| GREEN, the product change restored | `cd build/tests && ctest -R '^ControlCrashAcknowledgeTest$' --output-on-failure` | 0 | 1/1 passed. `test-23.log`. |
+| Family after the symlink fix | `cd build/tests && ctest -R 'Crash\|crash\|ControlCommandsSnapshot' --output-on-failure` | 0 | 7/7 passed. `test-24.log`. |
+| Raw complexity ratchet (its own check mode) | `bash tests/complexity-gate.sh --check` | 1 | Pre-existing violations in OTHER files only; neither `ControlCommandsCrash.cpp` nor `ControlCrashAcknowledgeTest.cpp` is reported. The branch-comparing gate (`feature_check.py`) is the one that decides this branch: PASS. `gate-raw-complexity.log`. |
+| Raw file-length ratchet (its own check mode) | `bash tests/file-length-gate.sh --check` | 1 | Pre-existing violations in OTHER files only (`RevisionTimelineTest.cpp`, `VideoTrackTest.cpp`, `ArrangerTimelineTest.cpp`); the new test file is 205 lines. `gate-raw-filelength.log`. |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | RESULT: PASS (8 rows, no FAIL). `gate-1.log` (before the commit), `gate-2.log`/`gate-3.log` (after it), `gate-4.log` (after the docs commit), `gate-5.log` (with the new test file registered), `gate-6.log` (final, on the committed tree). |
 | Final family run on the committed tree | `cd build/tests && ctest -R 'Crash\|crash\|ControlCommandsSnapshot' --output-on-failure` | 0 | 7/7 passed. `test-20.log`. |
 | The harness's negative control, final, on the committed tree | `negctl.prove(<worktree>, 'ded355440', <run>/negctl-final, <report text>)` | 0 | `ok: true`, `reverted_rc` 8, `restored_rc` 0, `tree_clean` true. `negctl-final.json`. |
@@ -108,6 +117,10 @@ is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-19-port.r1/l
 | `cmake --build build --target ControlCrashAcknowledgeTest zene` (reversal RED build, own test) | 0 | `build-14.log` |
 | `cmake --build build --target ControlCrashAcknowledgeTest zene` (restored GREEN build, own test) | 0 | `build-15.log` |
 | `cmake --build build --target CrashReporterTest CrashReporterArmTest RecordingCrashLossTest CrashReportMenuTest` | 0 | `build-16.log` |
+| `cmake --build build --target ControlCrashAcknowledgeTest zene` (the symlink fix) | 0 | `build-19.log` |
+| `cmake --build build --target ControlCrashAcknowledgeTest zene` (reversal RED build, symlink fix removed) | 0 | `build-20.log` |
+| `cmake --build build --target ControlCrashAcknowledgeTest zene` (restored GREEN build) | 0 | `build-21.log` |
+| `cmake --build build --target CrashReporterTest CrashReporterArmTest RecordingCrashLossTest CrashReportMenuTest` | 0 | `build-22.log` |
 | `cmake --build build --target ControlCrashAcknowledgeTest zene` (the harness's negative control: reverted, then restored) | 0 | `build-17.log`, `build-18.log` |
 | `git diff ded355440..HEAD -- src/core/ControlCommandsCrash.cpp > <logs>/fix.patch` | 0 | the product-only diff used for the reversal proof (the product change is committed, so the diff is taken against the base) |
 | `git apply -R <logs>/fix.patch` | 0 | product diff removed before the reversal RED run |
@@ -138,18 +151,36 @@ API (`install`, `pendingReportPath`, `kOfferedMarkerName`), which is what the co
 itself uses.
 
 **The fix is at the cause and complete.** The cause is the conflation "a path exists at
-the marker name" = "the marker was written". Both places in
-`handleAcknowledgeReport` that answer that question now use the same rule
-(`src/core/ControlCommandsCrash.cpp:303` and `:319-330`), and the read side that
-publishes the same state (`crash.list_reports`' `offered`,
-`src/core/ControlCommandsCrash.cpp:230-234`) uses it too. Checked and left consistent:
-`crash.discard_report` answers a different question ("was there something at that path
-before the unlink"), and it already reads the unlink back
-(`pathsLeftAfterDiscard`, `src/core/ControlCommandsCrash.cpp:359-365`), so a directory at
-the marker path is reported there as "could NOT be discarded" - honest, and unchanged;
-the module's own `hasPendingReport()` is untouched, because it is the module's predicate
-and the reply says so. The reply's `pending` field now carries the same value the
-success decision used, so the reply cannot disagree with the decision that produced it.
+the marker name" = "the marker was written". All THREE places that answer that question
+now use ONE rule - `isOfferedMarker()` (`src/core/ControlCommandsCrash.cpp:209-212`): a
+regular file that is NOT a symlink, because the reporter writes the sentinel with
+`O_NOFOLLOW` and never writes through a symlink. The places are the "already
+acknowledged" pre-check (`:323`), the post-write success read-back (`:340-348`) and the
+sibling read that publishes the same state (`crash.list_reports`' `offered`,
+`:250-254`) - so the command and the list view cannot disagree about what was
+acknowledged, and neither can claim an acknowledgement the reporter never wrote
+(a directory blocks the write; a symlink is refused by the writer).
+Checked and left consistent: `crash.discard_report` answers a different question ("was
+there something at that path before the unlink"), and it already reads the unlink back
+(`pathsLeftAfterDiscard`, `src/core/ControlCommandsCrash.cpp:378-384`), so a directory or
+a symlink at the marker path is reported there as "could NOT be discarded" - honest, and
+unchanged; the module's own `hasPendingReport()` is untouched, because it is the
+module's predicate and the reply says so. The reply's `pending` field now carries the
+same value the success decision used, so the reply cannot disagree with the decision
+that produced it.
+
+**No collateral damage.** The change is confined to the state "something that is not a
+regular file occupies the `offered`-marker path". Every normal path is untouched: a real
+marker file still refuses a second acknowledge with `Refused` (the accepted branch's
+behaviour, and what `tests/control-crash-reporter.py` asserts), an absent marker still
+writes the sentinel and still answers `acknowledged: true`, and `crash.list_reports`
+still reports `offered: true` once the sentinel is a file. The reporter never creates a
+symlink and never writes through one, so no state it produces is affected by rejecting
+symlinks. No project state, no saved data, no project file and no undo step is involved:
+the command touches only the reporter's sentinel, as before. The command surface is
+unchanged - no new command, no changed id, description or schema (the
+`ControlCommandsSnapshot` canary passes), so the MCP bridge and the GUI menu are
+unaffected.
 
 **No collateral damage.** The change is confined to the state "a non-file occupies the
 `offered`-marker path". Every normal path is untouched: a real marker file still refuses
@@ -176,34 +207,37 @@ branch's exact false success - its pre-check answers `Refused` before the write,
 `acknowledged: true` cannot be reported for a marker the reporter never wrote. But it
 answers with a false claim about the state ("ALREADY acknowledged" for a path that was
 never written), and the success path's own check was still "a path exists" rather than
-"the marker is a file and the report is no longer pending", which is the contract the
-accepted fix was written to establish (`src/core/ControlCommandsCrash.cpp:292-330`
-before and after this change, quoted in the evidence table above). The ported rule
-closes both, and the regression proves it.
+"the marker is a regular file the reporter wrote and the report is no longer pending",
+which is the contract the accepted fix was written to establish
+(`src/core/ControlCommandsCrash.cpp:292-348` before and after this change, quoted in the
+evidence table above). The ported rule closes both, and the regressions prove it.
 
 **Sibling commands in the files I changed** (`crash.*`, all registered in
 `src/core/ControlCommandsCrash.cpp`): `crash.list_reports` - read side, updated to the
-same marker rule and covered by the new case; `crash.acknowledge_report` - the fix
+same marker rule and covered by both new cases; `crash.acknowledge_report` - the fix
 itself; `crash.discard_report` - deletes the report and the sentinel and reads the
-unlink back, unchanged and consistent (a directory at the marker path is reported as
-"could NOT be discarded", which is true); `crash.enable` / `crash.disable` - arm and
-disarm the signal handlers, they never look at the marker path, unaffected;
+unlink back, unchanged and consistent (a directory or a symlink at the marker path is
+reported as "could NOT be discarded", which is true); `crash.enable` / `crash.disable` -
+arm and disarm the signal handlers, they never look at the marker path, unaffected;
 `crash.upload_report` - a documented refusal, it never looks at the marker path,
 unaffected.
 
-**Portability.** `QFileInfo::isFile()` and `QFileInfo::exists()` are both plain Qt
-(non-Windows-specific) and the change uses nothing newer than what the file already
-uses; no `windows.h` name, no `std::filesystem`, no platform branch. The reporter's
-module code is untouched, so its Windows no-op build is unchanged.
+**Portability.** `QFileInfo::isFile()`, `QFileInfo::isSymbolicLink()` and
+`QFileInfo::exists()` are all plain Qt (non-Windows-specific) and the change uses
+nothing newer than what the file already uses; no `windows.h` name, no
+`std::filesystem`, no platform branch. The reporter's module code is untouched, so its
+Windows no-op build is unchanged, and the new case's `::symlink` call sits inside the
+POSIX-only branch of the test (the Windows branch keeps its documented no-op case).
 
 ## Files committed
 
-- `src/core/ControlCommandsCrash.cpp` - the fix (marker-is-a-file rule for the refusal,
-  the success read-back and the `offered` read).
-- `tests/src/core/ControlCrashAcknowledgeTest.cpp` - NEW: the regression
-  `acknowledge_refuses_directory_at_offered_marker` and the `cleanup()` that tears the
-  engine down after it, in a ctest of its own so the negative control finds and rebuilds
-  it.
+- `src/core/ControlCommandsCrash.cpp` - the fix (the marker-is-a-regular-file rule
+  for the refusal, the success read-back and the `offered` read).
+- `tests/src/core/ControlCrashAcknowledgeTest.cpp` - NEW: the regressions
+  `acknowledge_refuses_directory_at_offered_marker` and
+  `acknowledge_refuses_symlink_at_offered_marker`, and the `cleanup()` that tears the
+  engine down after each of them, in a ctest of its own so the negative control finds
+  and rebuilds it.
 - `tests/CMakeLists.txt` - registers the new test (appended last, so its ctest carries a
   three-digit number).
 - `tests/all-sources.txt`, `tests/fork-sources.txt` - the new source in both scope
@@ -215,9 +249,12 @@ module code is untouched, so its Windows no-op build is unchanged.
 ## Closing summary
 
 The accepted fix is ported onto the newest line by hand: the `offered` marker counts as
-an acknowledgement only when it is a FILE the reporter wrote, and the report is read back
-as no longer pending before the command claims success. The regression lives in a ctest
-of its own (`ControlCrashAcknowledgeTest`, #469), so the negative control that reverts
-the product change finds it, rebuilds its binary and sees it fail (rc 8) and pass again
-with the change restored (rc 0). Seven tests of the affected family and the
-command-surface canary pass, and every gate is green. Verdict: FIXED
+an acknowledgement only when it is a regular file the reporter wrote ITSELF - not a
+directory, and not a symlink, which the reporter refuses to write through (`O_NOFOLLOW`)
+- and the report is read back as no longer pending before the command claims success.
+One rule (`isOfferedMarker`) decides it in the read, in the pre-check and in the
+success check, so the command and the list view cannot disagree. The regressions live
+in a ctest of its own (`ControlCrashAcknowledgeTest`, #469), so the negative control
+that reverts the product change finds them, rebuilds their binary and sees them fail
+(rc 8) and pass again with the change restored (rc 0). Seven tests of the affected
+family and the command-surface canary pass, and every gate is green. Verdict: FIXED

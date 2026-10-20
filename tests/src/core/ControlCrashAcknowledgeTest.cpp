@@ -47,6 +47,10 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#ifndef Q_OS_WIN
+#include <unistd.h>
+#endif
+
 class ControlCrashAcknowledgeTest : public QObject
 {
 	Q_OBJECT
@@ -119,6 +123,72 @@ private slots:
 
 		// The read side must agree with the write side: the sentinel was never
 		// written, so crash.list_reports must not call the report "offered".
+		const lmms::ControlResult listed = lmms::ControlRegistry::instance()->invoke(
+			QStringLiteral("crash.list_reports"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("report_count")).toInt(), 1);
+		QCOMPARE(listed.result.value(QStringLiteral("offered")).toBool(), false);
+	}
+
+	// -----------------------------------------------------------------------
+	// The same fault state, one step further: a SYMLINK to a regular file
+	// where the sentinel belongs. The reporter opens that name with
+	// O_NOFOLLOW, so it never writes THROUGH a symlink - the sentinel was
+	// never written, and the command must not call the report acknowledged.
+	// -----------------------------------------------------------------------
+	void acknowledge_refuses_symlink_at_offered_marker()
+	{
+		lmms::Engine::init(true);
+		m_engineStarted = true;
+		lmms::ControlRegistry::setReady(true);
+
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(lmms::crashreporter::install(dir.path().toStdString()));
+
+		// A report is there to acknowledge.
+		const QString reportPath = QString::fromStdString(lmms::crashreporter::pendingReportPath());
+		const QFileInfo reportInfo(reportPath);
+		QVERIFY(QDir().mkpath(reportInfo.absolutePath()));
+		QFile report(reportPath);
+		QVERIFY(report.open(QIODevice::WriteOnly));
+		QCOMPARE(report.write("pending crash report\n"), qint64(21));
+		report.close();
+		QVERIFY(QFileInfo(reportPath).isFile());
+
+		// The fault state: a SYMLINK to a regular file where the sentinel
+		// belongs. The target holds its own bytes, so a write through the
+		// link would be visible in it.
+		const QString markerPath = QDir(reportInfo.absolutePath())
+			.filePath(QString::fromUtf8(lmms::crashreporter::kOfferedMarkerName));
+		const QString targetPath = QDir(reportInfo.absolutePath())
+			.filePath(QStringLiteral("sentinel-target.txt"));
+		QFile target(targetPath);
+		QVERIFY(target.open(QIODevice::WriteOnly));
+		QCOMPARE(target.write("target bytes\n"), qint64(13));
+		target.close();
+		QVERIFY2(::symlink(targetPath.toLocal8Bit().constData(),
+			markerPath.toLocal8Bit().constData()) == 0, "could not plant the symlink");
+		QVERIFY(QFileInfo(markerPath).isSymbolicLink());
+
+		const lmms::ControlResult result = lmms::ControlRegistry::instance()->invoke(
+			QStringLiteral("crash.acknowledge_report"));
+		QVERIFY2(!result.ok, qPrintable(result.errorMessage));
+		// `busy`, NOT `refused`: the sentinel was never written, so this is not
+		// the "already offered" no-change case - the report was never
+		// acknowledged and the command must not say it was.
+		QCOMPARE(result.errorKind, lmms::ControlErrorKind::Busy);
+		// The link target is untouched: the reporter does not write through a
+		// symlink, and neither does this command.
+		QFile targetRead(targetPath);
+		QVERIFY(targetRead.open(QIODevice::ReadOnly));
+		QCOMPARE(targetRead.readAll(), QByteArray("target bytes\n"));
+		targetRead.close();
+		// The report is kept - the user still has to attach it.
+		QVERIFY(QFileInfo(reportPath).isFile());
+
+		// The read side must agree with the write side: a symlink was never a
+		// written marker.
 		const lmms::ControlResult listed = lmms::ControlRegistry::instance()->invoke(
 			QStringLiteral("crash.list_reports"));
 		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
