@@ -33,13 +33,10 @@
 #include <QMap>
 #include <QStorageInfo>
 
-#ifndef _WIN32
-#include <sys/stat.h>
-#endif
-
 #include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "ControlCommandDef.h"
+#include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
@@ -147,11 +144,12 @@ struct ArmedVolume
 
 //! Groups the armed places by the filesystem they sit on. The free space belongs to the FILESYSTEM,
 //! not to each directory: two armed directories on one filesystem draw on the same pool, so their
-//! routes are summed per filesystem. A filesystem is told apart by the device the kernel mounts it
-//! from (st_dev): that pools every path of one filesystem - a directory, a link to it, a second
-//! mount of it - and keeps independent filesystems apart even when they report the same device
-//! name (two tmpfs mounts both answer 'tmpfs'). False, with @a unmeasured set, when a place's
-//! filesystem cannot be measured.
+//! routes are summed per filesystem. The filesystem is told apart by the identity its platform gives
+//! it (filesystemIdentityKey()): POSIX by the device the kernel mounts it from (st_dev), which pools
+//! every path of one filesystem - a directory, a link to it, a second mount of it - and keeps
+//! independent filesystems apart even when they report the same device name (two tmpfs mounts both
+//! answer 'tmpfs'); Windows by the volume it is mounted at. False, with @a unmeasured set, when a
+//! place's filesystem cannot be measured.
 bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>* volumes, QString* unmeasured)
 {
 	for (auto it = places.cbegin(); it != places.cend(); ++it)
@@ -162,18 +160,8 @@ bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>*
 			*unmeasured = it.key();
 			return false;
 		}
-		QString volume;
-#ifndef _WIN32
-		struct stat fsStat;
-		if (::stat(it.key().toUtf8().constData(), &fsStat) == 0)
-		{
-			volume = QStringLiteral("dev:%1").arg(static_cast<qulonglong>(fsStat.st_dev));
-		}
-		else
-#endif
-		{
-			volume = QStringLiteral("path:%1").arg(storage.rootPath());
-		}
+		const QString volume = filesystemIdentityKey(it.key(), platformVolumeNaming(),
+			QString::fromUtf8(storage.device()), storage.rootPath());
 		ArmedVolume& entry = (*volumes)[volume];
 		if (entry.routes == 0)
 		{

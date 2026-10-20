@@ -30,6 +30,10 @@
 #include <QFileInfo>
 #include <QJsonArray>
 
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
+
 #include "ConfigManager.h"
 #include "AudioEngine.h"
 #include "AudioInputPath.h"
@@ -297,6 +301,45 @@ QString takePathArg(const QJsonObject& args, int route, ControlResult* error)
 	}
 	return QDir(defaultRecoveryDir()).absoluteFilePath(
 		QStringLiteral("zene-take-route%1.wav").arg(route));
+}
+
+// ---------------------------------------------------------------------------
+// The recording budget's filesystem identity (see the header).
+// ---------------------------------------------------------------------------
+
+VolumeNaming platformVolumeNaming()
+{
+#ifdef _WIN32
+	// Windows names a volume by its GUID (the storage info's device id).
+	return VolumeNaming::VolumeId;
+#else
+	// POSIX names a filesystem by the device the kernel mounts it from (st_dev).
+	return VolumeNaming::KernelDevice;
+#endif
+}
+
+QString filesystemIdentityKey(const QString& path, VolumeNaming naming, const QString& deviceId,
+	const QString& mountPoint)
+{
+	// The volume's GUID is not read yet: this round keeps the rule the branch inherited.
+	Q_UNUSED(deviceId);
+	if (naming == VolumeNaming::VolumeId)
+	{
+		// The mount point names the volume.
+		return QStringLiteral("path:") + mountPoint;
+	}
+#ifndef _WIN32
+	// The device the kernel mounts the filesystem from: the device LABEL (every tmpfs mount
+	// answers "tmpfs") is not an identity, so it is not used here.
+	struct stat fsStat;
+	if (::stat(path.toUtf8().constData(), &fsStat) == 0)
+	{
+		return QStringLiteral("dev:") + QString::number(static_cast<qulonglong>(fsStat.st_dev));
+	}
+#else
+	Q_UNUSED(path);
+#endif
+	return QStringLiteral("path:") + mountPoint;
 }
 
 } // namespace control
