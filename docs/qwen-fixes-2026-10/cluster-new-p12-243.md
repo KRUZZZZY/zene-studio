@@ -97,3 +97,13 @@ Tests executed: `ScriptDawBindingTest` 13 passed, 0 failed, 1 skipped (pre-exist
 - Control-surface string arguments are not checked for NUL in this change. The finding is about the script path only.
 
 ## Self-check
+
+`submit_check.py` run: `.../logs/submit-1.log`, **EXIT=1**. Passing: commits on the branch, working tree clean, this report, tests changed. **FAIL: `gates (feature_check.py)`** is an environment block, not a gate failure: the shared runner creates `<worktree>/../zene-qwen-new-p12-243-feature-check/` and gets `PermissionError` (`gates-1.log`) because that location is outside the write area. The gates themselves pass with the identical runner pointed at the run folder (`gates-2.log`, EXIT=0, table above). I did not edit the shared runner or the check. The loop should run `feature_check.py` where it can write its log directory.
+
+ASK items:
+
+1. **Regression fails reverted, passes with the fix.** RED `test-1-red.log` EXIT=8 (two FAIL!, actual `"A"`); GREEN `test-2-green.log` / `test-5-reapplied.log` EXIT=0; reverted `test-4-reverted.log` EXIT=8. Mutation-proof commands are in the Regression proof section.
+2. **Deterministic.** No sleeps, timing, threads or races. The direct test feeds a literal `QByteArray("A\0B", 3)`. The Lua test uses one fixed mixer channel and asserts right after `runString`. The rename is applied inside that call: the RED run already shows `Actual "A"` at that point, so there is nothing to wait for. Same pattern as `anOverlongChannelNameIsRejectedWithoutChangingTheEngine`.
+3. **At the cause and complete.** The single rejection point is `setCommandText` (`ScriptDawEdit.cpp:70`). All four callers route through it (listed in Evidence). The only writer of `command.text` is `setCommandText` (checked: `ScriptCommandBridge.cpp:284` never writes text). The refusal messages were made consistent at all four sites.
+4. **No collateral damage.** The check refuses only NUL, which the payload already could not carry (any byte after a NUL was lost). Names without NUL, and every name within the 255-byte limit, take the same path as before. The payload is in memory only; no save format or stored project data changes. The overlong refusals keep their "255-byte" text, and the existing overlong tests pass (`test-2-green.log`, `test-3-green-verbose.log`). The 11-target family has the same four pre-existing environmental failures as baseline and no new ones (see the family section).
+5. **Verdict FIXED**, so ALREADY-FIXED / FALSE-POSITIVE evidence does not apply.
