@@ -361,20 +361,43 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		// ran, revision N held a different file and the redo wrote THAT over the
 		// live one, undoing nothing the caller could see.
 		const QString restoredSha = sha256OfFile(target);
+		// The recorded halves REPORT their file operation, they do not swallow
+		// it: a journal action's closure is `void`, so a restore that could not
+		// put the file back has no other way to reach the caller - and the
+		// sibling command (`revisions.restore`) reports the same failure the
+		// same way, through the same channel.
 		control::addUndoStep(
 			[target]() {
-				QString ignored;
-				control::restoreProjectRevision(target, 0, &ignored);
+				QString reason;
+				if (control::restoreProjectRevision(target, 0, &reason)) { return; }
+				control::recordActionRestoreFailure(
+					QStringLiteral("the project file %1 was NOT put back from the revision this "
+						"restore rotated in (revision 0) - %2. The live file still holds what it "
+						"held when the undo ran; project.get_state reports the retained set and "
+						"project.restore_revision restores what it still holds").arg(target, reason));
 			},
 			[target, restoredSha]() {
-				QString ignored;
+				QString reason;
 				// -1: the undo's own rotation left the set in a shape where these
 				// bytes are no longer retained. Restoring some other revision
 				// instead would be a wrong-bytes overwrite, so the redo leaves the
-				// file as the undo left it.
+				// file as the undo left it - and says that it did.
 				const int current = revisionHoldingBytes(target, restoredSha);
-				if (current < 0) { return; }
-				control::restoreProjectRevision(target, current, &ignored);
+				if (current < 0)
+				{
+					control::recordActionRestoreFailure(
+						QStringLiteral("the project file %1 was NOT re-restored: the bytes this "
+							"restore brought in (sha256 %2) are no longer retained in the "
+							"keep-3 set, so redo leaves the live file exactly as the undo left "
+							"it. project.get_state reports the retained set").arg(target, restoredSha));
+					return;
+				}
+				if (control::restoreProjectRevision(target, current, &reason)) { return; }
+				control::recordActionRestoreFailure(
+					QStringLiteral("the project file %1 was NOT re-restored from revision %2 - %3. "
+						"The live file still holds what it held when the redo ran; "
+						"project.get_state reports the retained set and restores what it still "
+						"holds").arg(target).arg(current).arg(reason));
 			});
 
 		QJsonObject result;

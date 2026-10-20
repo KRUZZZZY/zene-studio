@@ -1041,6 +1041,70 @@ private slots:
 		QCOMPARE(readBytes(m_project), documentWith(3));
 	}
 
+	//! The SIBLING path into the same restore helper: `project.restore_revision`
+	//! records its OWN undo step, and that step's file operation can fail the
+	//! same way. `undone: true` over a project file that was NOT put back is the
+	//! same lie, so the sibling must report it the same way.
+	void undoOfAProjectRestoreRevisionThatCannotPutTheFileBackFailsTyped()
+	{
+		buildFixture();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult restored = registry->invoke(QStringLiteral("project.restore_revision"),
+			QJsonObject{{QStringLiteral("path"), m_project},
+				{QStringLiteral("revision"), 0}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(2));
+
+		// Take away the very artefact the recorded inverse reads: revision 0 is
+		// the file the restore rotated in, and the undo restores exactly that.
+		QVERIFY(QFile::remove(projectRevisionPath(m_project, 0)));
+
+		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
+		QVERIFY2(!undo.ok, "control.undo answered 'undone: true' although the project file was NOT "
+			"restored - the sibling step's own revision 0 was gone");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("project.restore_revision")),
+			qPrintable(undo.errorMessage));
+		QVERIFY2(!undo.errorMessage.contains(QStringLiteral("irreversible")),
+			qPrintable(undo.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(2));
+	}
+
+	//! The sibling's REDO half: it re-resolves the bytes the restore brought in
+	//! and re-restores them. When those bytes are no longer retained the redo
+	//! restores NOTHING - and must say so instead of answering 'redone: true'.
+	void redoOfAProjectRestoreRevisionWhoseRotationBytesAreGoneFailsTyped()
+	{
+		buildFixture();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult restored = registry->invoke(QStringLiteral("project.restore_revision"),
+			QJsonObject{{QStringLiteral("path"), m_project},
+				{QStringLiteral("revision"), 0}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(2));
+
+		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(3));
+
+		// Take away every retained copy of the bytes this restore brought in, so
+		// the redo cannot re-resolve them.
+		for (int rev = 0; rev < 3; ++rev)
+		{
+			const QString revPath = projectRevisionPath(m_project, rev);
+			if (QFileInfo::exists(revPath) && readBytes(revPath) == documentWith(2))
+			{
+				QVERIFY(QFile::remove(revPath));
+			}
+		}
+
+		const ControlResult redo = registry->invoke(QStringLiteral("control.redo"), QJsonObject());
+		QVERIFY2(!redo.ok, "control.redo answered 'redone: true' although the project file was NOT "
+			"restored - the selected bytes are no longer retained");
+		QCOMPARE(redo.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(readBytes(m_project), documentWith(3));
+	}
+
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)
