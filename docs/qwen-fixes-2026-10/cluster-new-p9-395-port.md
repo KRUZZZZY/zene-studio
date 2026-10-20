@@ -137,9 +137,30 @@ ctest -R '^(SafeStartTest|SafeStartLoadPathTest|PluginQuarantineMenuTest|Control
 | Patch proof: the fix, restored | `git apply .../fix-2.patch` | 0 | - |
 | Rebuild with the fix | `cmake --build build --target ControlSuccessPathsTest SafeStartTest` | 0 | `build-14.log` |
 | **Restored GREEN** | `ctest -R '^(ControlSuccessPathsTest\|SafeStartTest)$' --output-on-failure` | **0** | `test-12.log` |
-| **Gates (all 8 rows)** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `gate-1.log` |
-| Complexity ratchet, raw | `bash tests/complexity-gate.sh --check` | 1 (red on the train: 6 pre-existing items, none of them in a file I changed) | `gate-complexity.log` |
-| File-length ratchet, raw | `bash tests/file-length-gate.sh --check` | 1 (red on the train: 14 pre-existing items, none of them in a file I changed) | `gate-file-length.log` |
+| The lane's own negative control, run on the committed branch | `negctl.prove(<worktree>, ded355440, <run dir>, <this report>)` | **0** (`ok: true`, `reverted_rc: 8`, `restored_rc: 0`, `tree_clean: true`) | `negctl-run-2.log` |
+| Final rebuild of every touched target (committed state) | `cmake --build build --target zene SafeStartTest SafeStartLoadPathTest PluginQuarantineMenuTest ControlSuccessPathsTest ControlRegistryTest ControlResultSchemaTest ControlSurfaceReferenceTest CrashReporterTest CommandFormTest CommandPaletteTest` | 0 | `build-15.log` |
+| **Final run of the whole family, 12/12 passed** | the family `ctest -R` above | **0** | `test-13.log` |
+| **Gates (all 8 rows)** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `gate-2.log` |
+| Complexity ratchet, raw | `bash tests/complexity-gate.sh --check` | 1 (red on the train: 6 pre-existing items, none of them in a file I changed) | `gate-complexity-2.log` |
+| File-length ratchet, raw | `bash tests/file-length-gate.sh --check` | 1 (red on the train: 14 pre-existing items, none of them in a file I changed) | `gate-file-length-2.log` |
+
+The lane's negative control is the merge train's own mechanical check, and it is the one the review
+of round 1 quoted: it reverts the branch's product files, keeps the tests, rebuilds, runs the
+selected tests, restores the product files, rebuilds and runs them again. On the committed branch
+it reports:
+
+```text
+ok: true
+detail: CommandFormTest, CommandPaletteTest, ControlCommandsSnapshot, ControlNegativeControl,
+        ControlSuccessPathsTest, PluginQuarantineMenuTest: they fail without it (rc 8) and pass with it
+reverted_build_rc: 0, reverted_rc: 8, restored_rc: 0, tree_clean: true
+```
+
+(`negctl-run-2.log`; the harness's own logs are in `.../new-p9-395-port.r1/negctl/` - with the
+product change reverted, `ControlSuccessPathsTest` is the one that fails:
+`FAIL! : ControlSuccessPathsTest::safeStartAcknowledgeNeedsTheOffer() '!refused.ok' returned FALSE.
+(an ordinary session has no offer of a normal start to accept)`, and with it restored all six
+pass.)
 
 The RED run `test-1.log` and the reversal RED `test-5.log` fail on the same two assertions:
 
