@@ -71,12 +71,19 @@ MidiExport::MidiExport() : ExportFilter( &midiexport_plugin_descriptor)
 
 
 
-bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
+ExportOutcome MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 			const TrackContainer::TrackList &patternStoreTracks,
 			int tempo, int masterPitch, const QString &filename)
 {
 	QFile f(filename);
-	f.open(QIODevice::WriteOnly);
+	// Exclusive create: never truncate a file that is already there (a collision
+	// with a file the user keeps beside the target must not be destroyed). A
+	// failed open means THIS call created nothing, so the caller must not touch
+	// the path either: the outcome says which of the two happened.
+	if (!f.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+	{
+		return ExportOutcome::NotCreated;
+	}
 	QDataStream midiout(&f);
 
 	QDomElement element;
@@ -263,11 +270,18 @@ bool MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 		writeChunk(mtrack);
 	}
 
-	return true;
-
+	// The file's error is read TWICE, because the two errors live at different times:
+	// BEFORE the close it is the failed write (a close that succeeds CLEARS that error -
+	// Qt resets the device status), and AFTER it is the flush error (the bytes the
+	// device still held) or an error the close itself reports, which only shows up then.
+	// Reading the error before the close alone missed both.
+	const bool writeOk = midiout.status() == QDataStream::Ok && f.error() == QFileDevice::NoError;
+	f.close();
+	// A half-written file - or one that did not close cleanly - is the caller's to remove
+	// (Incomplete); a complete one is the caller's to replace (Written). Neither is guessed
+	// from the file's presence on disk: this call knows which of the two it is.
+	return exportOutcomeAfterClose(f, writeOk);
 }
-
-
 
 void MidiExport::writeMidiClip(MidiNoteVector &midiClip, const QDomNode& n,
 				int base_pitch, double base_volume, int base_time)

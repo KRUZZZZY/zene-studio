@@ -42,6 +42,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "ExportFilter.h"
 #include "ImportFilter.h"
 #include "Metronome.h"
 #include "Song.h"
@@ -75,6 +76,23 @@ bool controlReplaceFileAtomically(const QString& source, const QString& target, 
 		return false;
 	}
 	return true;
+}
+
+namespace
+{
+//! A TEST hook (see setControlExportMidiTempPathHook): empty in every real run.
+ExportMidiTempPathHook s_exportMidiTempPathHook;
+}
+
+QString controlExportMidiTempPath(const QString& targetPath)
+{
+	return targetPath + QStringLiteral(".zene-export-")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
+}
+
+void setControlExportMidiTempPathHook(ExportMidiTempPathHook hook)
+{
+	s_exportMidiTempPathHook = std::move(hook);
 }
 
 } // namespace control
@@ -266,20 +284,37 @@ void registerProjectExportMidi(ControlRegistry& registry)
 		//! stale file a successful export of this call. The export goes to a sibling
 		//! path with a UNIQUE name (so no file the user keeps beside the target is
 		//! ever removed), and the target is replaced only once that output is proven.
-		const QString temp = path + QStringLiteral(".zene-export-")
-			+ QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".tmp");
-		Engine::getSong()->exportProjectMidi(temp);
-		const QFileInfo written(temp);
-		if (!written.exists())
+		const QString temp = controlExportMidiTempPath(path);
+		// A TEST hook: it is called with `temp` just before the exporter claims it, so a
+		// test can put a file there and force the collision case exactly where it
+		// happens. Nothing in the product sets it.
+		if (s_exportMidiTempPathHook) { s_exportMidiTempPathHook(temp); }
+		// The export CREATES the temporary file (exclusively) and says whether it did.
+		// That answer - not an existence check made before the export - is what says who
+		// owns the path: a path that was taken belongs to someone else and is never
+		// written to and never removed; the partial output of a failed export is ours.
+		const ExportOutcome outcome = Engine::getSong()->exportProjectMidi(temp);
+		if (outcome != ExportOutcome::Written)
 		{
+			// Only a file THIS call created is ours to remove. When the export says it
+			// created nothing, the path was taken: it is left exactly as it was.
+			if (outcome == ExportOutcome::Incomplete) { QFile::remove(temp); }
 			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
-				"filter is not loadable in this process)").arg(path));
+				"filter is not loadable in this process, or the temporary path was taken)").arg(path));
 		}
-		const qint64 bytes = static_cast<qint64>(written.size());
+		const qint64 bytes = QFileInfo(temp).size();
+		if (bytes <= 0)
+		{
+			QFile::remove(temp);
+			return refused(QStringLiteral("no MIDI file was written for '%1' (the midiexport "
+				"filter wrote an empty file)").arg(path));
+		}
 		// The replacement is atomic (controlReplaceFileAtomically): on failure the previous
 		// export at `path` is still there, byte for byte, and the call is refused.
 		ControlResult replaceError;
 		const bool replaced = controlReplaceFileAtomically(temp, path, &replaceError);
+		// The temporary file is ours (this call created it), so it goes either way: after
+		// a successful replacement its bytes are on the target already.
 		QFile::remove(temp);
 		if (!replaced)
 		{

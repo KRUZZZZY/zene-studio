@@ -35,12 +35,16 @@
 #include <QtTest>
 
 #include <QJsonObject>
+#include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 #include <vector>
 
+#include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ExportFilter.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MidiPort.h"
@@ -191,7 +195,13 @@ private slots:
 		Engine::destroy();
 	}
 
-	void init() { Engine::getSong()->clearProject(); }
+	void init()
+	{
+		Engine::getSong()->clearProject();
+		// The test seams must never outlive the case that set them.
+		control::setControlExportMidiTempPathHook(nullptr);
+		setExportCloseFailureHook(nullptr);
+	}
 
 	//! Acceptance 1: mid-song tempo and metre changes are the conductor track's events.
 	void tempoMapChangesAreWrittenToTheConductorTrack()
@@ -310,6 +320,112 @@ private slots:
 		QVERIFY(!file.tracks[1].events.empty());
 		QCOMPARE(file.tracks[1].events.back().status, 0xFF);
 		QCOMPARE(file.tracks[1].events.back().type, 0x2F);
+	}
+
+	//! A file already present at the path the exporter is asked to write must not
+	//! be truncated: creation is exclusive, so a collision is a failed export.
+	void collidingPathIsNotClobberedByExport()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("collide.mid"));
+		const QByteArray userBytes("USER-FILE-AT-COLLIDING-PATH");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(userBytes) == userBytes.size());
+		}
+		// The export is refused: the path was taken, so it was never written to.
+		Engine::getSong()->exportProjectMidi(path);
+		QFile kept(path);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), userBytes);
+	}
+
+	/*! A file that occupies the TEMPORARY path the export writes to must survive the call
+	 *  whole: it is neither written to nor removed, and the previous export at the target
+	 *  survives too. The collision is forced through the product's test seam - a file is put
+	 *  at the temporary path exactly where the export claims it - so the case is a fact of
+	 *  the test rather than a race. */
+	void aCollidingTemporaryPathKeepsTheUserFileAndThePreviousExport()
+	{
+		// The export works at all in this process (the filter loads), so the refusal below
+		// is the collision and nothing else.
+		const ControlResult works = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), m_dir.filePath(QStringLiteral("works.mid"))}});
+		QVERIFY2(works.ok, qPrintable(works.errorMessage));
+
+		const QString path = m_dir.filePath(QStringLiteral("collision.mid"));
+		const QByteArray previous("PREVIOUS-EXPORT-BYTES");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(previous) == previous.size());
+		}
+		const QByteArray userBytes("USER-FILE-AT-THE-TEMPORARY-PATH");
+		QString candidate;
+		bool wroteUserFile = false;
+		control::setControlExportMidiTempPathHook([&](const QString& tempPath) {
+			candidate = tempPath;
+			QFile file(tempPath);
+			if (file.open(QIODevice::WriteOnly))
+			{
+				wroteUserFile = (file.write(userBytes) == userBytes.size());
+			}
+		});
+		const ControlResult result = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), path}});
+		control::setControlExportMidiTempPathHook(nullptr);
+
+		QVERIFY(!candidate.isEmpty());
+		QVERIFY(wroteUserFile);
+		QVERIFY2(!result.ok, "the export reported success although its temporary path was taken");
+		// The file that was already there is untouched: not written to, not removed.
+		QFile kept(candidate);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), userBytes);
+		// The previous export is still there, byte for byte.
+		QFile previousFile(path);
+		QVERIFY(previousFile.open(QIODevice::ReadOnly));
+		QCOMPARE(previousFile.readAll(), previous);
+	}
+
+	/*! An output file that did not close cleanly (a flush error, or an error the close
+	 *  itself reports) is an INCOMPLETE export: the command is refused, the partial
+	 *  temporary file is removed, and the previous export at the target survives byte for
+	 *  byte. The close is forced through the product's test seam, so the case is a fact of
+	 *  the test rather than a broken filesystem. */
+	void aFailedCloseLeavesThePreviousExportInPlace()
+	{
+		// The export works at all in this process (the filter loads), so the refusal below
+		// is the failed close and nothing else.
+		const ControlResult works = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), m_dir.filePath(QStringLiteral("works.mid"))}});
+		QVERIFY2(works.ok, qPrintable(works.errorMessage));
+
+		const QString path = m_dir.filePath(QStringLiteral("close-failure.mid"));
+		const QByteArray previous("PREVIOUS-EXPORT-BYTES");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(previous) == previous.size());
+		}
+
+		QString tempPath;
+		control::setControlExportMidiTempPathHook([&](const QString& p) { tempPath = p; });
+		// The close reports a failure.
+		setExportCloseFailureHook([] { return true; });
+		const ControlResult result = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), path}});
+		setExportCloseFailureHook(nullptr);
+		control::setControlExportMidiTempPathHook(nullptr);
+
+		QVERIFY2(!result.ok, "the export reported success although its file did not close cleanly");
+		QVERIFY(!tempPath.isEmpty());
+		// The partial output this call created is removed.
+		QVERIFY2(!QFileInfo::exists(tempPath), "the partial temporary file was left behind");
+		// The previous export is still there, byte for byte.
+		QFile kept(path);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), previous);
 	}
 
 private:

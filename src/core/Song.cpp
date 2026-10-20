@@ -2811,7 +2811,7 @@ QStringList Song::unclaimedElements() const
  *  walk carries one test for both elements instead of one each. */
 
 
-void Song::exportProjectMidi(QString const & exportFileName) const
+ExportOutcome Song::exportProjectMidi(QString const & exportFileName) const
 {
 	// instantiate midi export plugin
 	TrackContainer::TrackList const & tracks = this->tracks();
@@ -2820,13 +2820,33 @@ void Song::exportProjectMidi(QString const & exportFileName) const
 	ExportFilter *exf = dynamic_cast<ExportFilter *> (Plugin::instantiate("midiexport", nullptr, nullptr));
 	if (exf)
 	{
-		exf->tryExport(tracks, patternStoreTracks, getTempo(), m_masterPitchModel.value(), exportFileName);
+		return exf->tryExport(tracks, patternStoreTracks, getTempo(), m_masterPitchModel.value(), exportFileName);
 	}
-	else
-	{
-		qDebug() << "failed to load midi export filter!";
-	}
+	qDebug() << "failed to load midi export filter!";
+	return ExportOutcome::NotCreated;
 
+}
+
+namespace
+{
+//! A TEST hook (see setExportCloseFailureHook): empty in every real run.
+ExportCloseFailureHook s_exportCloseFailureHook;
+}
+
+ExportOutcome exportOutcomeAfterClose(const QFileDevice& file, bool writeOk)
+{
+	// A TEST hook: the close is forced to count as failed, the way a flush error or an
+	// error the close itself reports would.
+	if (s_exportCloseFailureHook && s_exportCloseFailureHook()) { return ExportOutcome::Incomplete; }
+	// The file's state AFTER the close: a flush error (the bytes the device still held)
+	// and an error the close itself reports only show up then.
+	if (file.error() != QFileDevice::NoError) { return ExportOutcome::Incomplete; }
+	return writeOk ? ExportOutcome::Written : ExportOutcome::Incomplete;
+}
+
+void setExportCloseFailureHook(ExportCloseFailureHook hook)
+{
+	s_exportCloseFailureHook = std::move(hook);
 }
 
 
