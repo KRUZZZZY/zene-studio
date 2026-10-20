@@ -827,6 +827,8 @@ public:
 private slots:
 	void initTestCase();
 	void freeBoyShapeBufferIsReleased();
+	void invalidSbiSignatureIsRejected_data();
+	void invalidSbiSignatureIsRejected();
 	void waveSampleDefaultsInterpolationToDisabled();
 	void gigPlayerAcceptsMidiNoteZero();
 	void lfoStartsFromInitializedState();
@@ -1017,6 +1019,70 @@ void PluginPortsMigrationTest::freeBoyShapeBufferIsReleased()
 	QDomElement savedParent = savedDocument.createElement("instrument");
 	const QDomElement saved = instrument->saveState(savedDocument, savedParent);
 	QCOMPARE(saved.attribute("sampleShape"), encodedShape);
+}
+
+void PluginPortsMigrationTest::invalidSbiSignatureIsRejected_data()
+{
+	QTest::addColumn<QByteArray>("signature");
+	QTest::addColumn<bool>("expectRenamed");
+	// The SBI signature is four bytes: "SBI" followed by 0x1a. A file that
+	// only starts with "SBI" is not an SBI patch and must not be decoded.
+	QTest::newRow("wrong fourth byte") << QByteArray{"SBIX", 4} << false;
+	QTest::newRow("truncated signature") << QByteArray{"SBI", 3} << false;
+	// The genuine signature is still accepted: the fix must not reject
+	// every file, and the renamed track is what proves the file was read.
+	QTest::newRow("genuine signature") << QByteArray{"SBI\x1a", 4} << true;
+}
+
+void PluginPortsMigrationTest::invalidSbiSignatureIsRejected()
+{
+	QFETCH(QByteArray, signature);
+	QFETCH(bool, expectRenamed);
+
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_opulenz)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	const auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("opulenz");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	// This matches the plugin's stored name, so a decoded file would rename it.
+	const QString originalName = QStringLiteral("OpulenZ");
+	track->setName(originalName);
+	auto inst = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(inst != nullptr);
+
+	QTemporaryDir tmp;
+	QVERIFY(tmp.isValid());
+	// 52 bytes is the full SBI file; the name field is 32 bytes at offset 4.
+	// The signature bytes are copied in one by one so the file keeps its
+	// length, whatever the row's signature is.
+	QByteArray sbi(52, '\0');
+	for (int i = 0; i < signature.size(); ++i) { sbi[i] = signature[i]; }
+	sbi.replace(4, 32, QByteArray{"Invalid SBI Patch"}.leftJustified(32, ' '));
+	QFile file{tmp.filePath("test-patch.sbi")};
+	QVERIFY(file.open(QIODevice::WriteOnly));
+	QCOMPARE(file.write(sbi), static_cast<qint64>(sbi.size()));
+	file.close();
+
+	inst->loadFile(file.fileName());
+	if (expectRenamed)
+	{
+		QCOMPARE(track->displayName(), QString::fromLatin1(sbi.mid(4, 32)));
+	}
+	else
+	{
+		QCOMPARE(track->displayName(), originalName);
+	}
 }
 
 void PluginPortsMigrationTest::waveSampleDefaultsInterpolationToDisabled()
