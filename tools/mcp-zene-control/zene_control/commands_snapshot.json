@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-20T05:30:18Z",
+  "captured_at": "2026-10-20T11:24:46Z",
   "commands": [
     {
       "args_schema": {
@@ -35890,23 +35890,23 @@
       }
     }
   ],
-  "count": 833,
+  "count": 840,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-81-port-port/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-w4jv7qmw/zene.sock",
-    "version": "0.4.0-alpha.3224+7855747"
+    "source_socket": "/tmp/zctl-run-q6wctsv4/zene.sock",
+    "version": "0.4.0-alpha.3571+265ae69"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 833,
-    "ids_sha256": "8995baf17d1f3e2c27b9575378bdf5c3bd6f6df2af22259511d9ea318017dbb5"
+    "id_count": 840,
+    "ids_sha256": "18737fd2704b013ad0f227373fad7038165995414240f2b793c98dd7617eb1b9"
   }
 }
