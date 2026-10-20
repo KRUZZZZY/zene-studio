@@ -25,6 +25,8 @@
 #ifndef DELAYCONTROLSDIALOG_H
 #define DELAYCONTROLSDIALOG_H
 
+#include <algorithm>
+
 #include "EffectControlDialog.h"
 
 namespace lmms
@@ -36,6 +38,31 @@ class FloatModel;
 
 namespace gui
 {
+
+namespace xyPadCoordinates
+{
+
+//! The pixel a value is drawn at. The range is mapped over the drawable
+//! extent (extent - 1), so the last pixel is the end of the range: mapping it
+//! over the pixel COUNT instead would put the maximum one pixel outside the
+//! widget and leave the last in-bounds pixel short of the maximum.
+inline int pixelForValue(float value, float minimum, float maximum, int extent)
+{
+	if (extent <= 1 || maximum <= minimum) { return 0; }
+	const float normalized = std::clamp((value - minimum) / (maximum - minimum), 0.f, 1.f);
+	return static_cast<int>(normalized * (extent - 1));
+}
+
+//! The value a pixel stands for: the same mapping, inverted.
+inline float valueForPixel(int pixel, float minimum, float maximum, int extent)
+{
+	if (extent <= 1 || maximum <= minimum) { return minimum; }
+	const int boundedPixel = std::clamp(pixel, 0, extent - 1);
+	if (boundedPixel == extent - 1) { return maximum; }
+	return minimum + (static_cast<float>(boundedPixel) / (extent - 1)) * (maximum - minimum);
+}
+
+} // namespace xyPadCoordinates
 
 class DelayControlsDialog : public EffectControlDialog
 {
