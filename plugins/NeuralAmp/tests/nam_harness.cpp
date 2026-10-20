@@ -536,13 +536,13 @@ int main(int argc, char** argv)
 		return 2;
 	}
 	int64_t totalSamples = 0;
+	if (opt.warmupBlocks < 0)
+	{
+		std::fprintf(stderr, "error: --warmup must be >= 0\n");
+		return 2;
+	}
 	if (opt.wavRun.empty())
 	{
-		if (opt.warmupBlocks < 0)
-		{
-			std::fprintf(stderr, "error: --warmup must be >= 0\n");
-			return 2;
-		}
 		if (!planGeneratedSamples(opt.blocks, opt.warmupBlocks, opt.blockSize, totalSamples))
 		{
 			std::fprintf(stderr,

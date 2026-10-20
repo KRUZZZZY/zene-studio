@@ -68,6 +68,7 @@ private slots:
 	void rejectsACountBeyondInt64();
 	void rejectsAnOutOfRangeFrameCount();
 	void keepsTheRangeMessages();
+	void rejectsNegativeWarmupInWavRun();
 	void runsASmallGeneratedRun();
 
 private:
@@ -76,6 +77,7 @@ private:
 
 	std::unique_ptr<QTemporaryDir> m_directory;
 	QString m_modelPath;
+	QString m_wavPath;
 };
 
 void NeuralAmpHarnessBlockCountTest::initTestCase()
@@ -96,6 +98,14 @@ void NeuralAmpHarnessBlockCountTest::initTestCase()
 		"weights":[1.0,1.0,0.0,0.0,1.0,0.0,1.0,0.0,1.0]
 	})json";
 	QCOMPARE(model.write(data), qint64(data.size()));
+
+	m_wavPath = m_directory->filePath(QStringLiteral("input.wav"));
+	QFile wav(m_wavPath);
+	QVERIFY(wav.open(QIODevice::WriteOnly));
+	const QByteArray wavData = QByteArray::fromHex(
+		"524946462800000057415645666d7420100000000100010044ac000088580100"
+		"02001000646174610400000000000000");
+	QCOMPARE(wav.write(wavData), qint64(wavData.size()));
 }
 
 HarnessResult NeuralAmpHarnessBlockCountTest::runHarness(const QStringList& arguments) const
@@ -183,6 +193,14 @@ void NeuralAmpHarnessBlockCountTest::keepsTheRangeMessages()
 	expectRejected({QStringLiteral("--blocks"), QStringLiteral("0")}, "--blocks must be >= 1");
 	expectRejected({QStringLiteral("--warmup"), QStringLiteral("-1")}, "--warmup must be >= 0");
 	expectRejected({QStringLiteral("--block"), QStringLiteral("99999")}, "--block must be in [1, 8192]");
+}
+
+void NeuralAmpHarnessBlockCountTest::rejectsNegativeWarmupInWavRun()
+{
+	// WAV-run mode does not use warmup, but the CLI has always rejected a
+	// negative --warmup in every mode.
+	expectRejected({QStringLiteral("--wav-run"), m_wavPath,
+		QStringLiteral("--warmup"), QStringLiteral("-1")}, "--warmup must be >= 0");
 }
 
 void NeuralAmpHarnessBlockCountTest::runsASmallGeneratedRun()

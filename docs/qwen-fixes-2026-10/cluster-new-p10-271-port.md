@@ -14,12 +14,14 @@ The finding was real against the upstream base of this branch and is fixed at th
   (`std::length_error: cannot create std::vector larger than max_size()`).
 - The first half of the fix (wide addition + a 4,194,304-sample limit) is already on this
   branch in commit `68ad344a0`; commit `4b4c05418` completed the family (64-bit counts, a
-  non-throwing count parser, a bounded sample plan). This round fixes the **proof**, not the
-  behaviour: see "Why the regression was rebuilt" below.
+  non-throwing count parser, a bounded sample plan). The later build-dependency change fixes
+  the **proof** (see "Why the regression was rebuilt" below); an independent QA correction
+  restores the shared negative-warmup validation and is recorded at the end of this report.
 
 ## What changed
 
-`plugins/NeuralAmp/tests/nam_harness.cpp` (product, unchanged since `4b4c05418`)
+`plugins/NeuralAmp/tests/nam_harness.cpp` (overflow implementation from `4b4c05418`, with the
+negative-warmup validation restored to the shared option checks by the QA correction below)
 
 | Location | Change |
 |---|---|
@@ -28,7 +30,7 @@ The finding was real against the upstream base of this branch and is fixed at th
 | `nam_harness.cpp:78-89` | `parseIntOption()` — the same, range-checked against `int` (used for the frame count). |
 | `nam_harness.cpp:95-104` | `planGeneratedSamples()` — bounds both counts *before* adding them, so the sum (`<= 2 * limit`) and the product (checked against `limit / blockSize` before multiplying) cannot overflow; a run over the limit is refused before any buffer exists. |
 | `nam_harness.cpp:480-503` | `--block`, `--blocks` and `--warmup` are parsed with the checked parsers; a malformed or out-of-range value is a usage error (exit 2), not an abort. |
-| `nam_harness.cpp:546-552` | The generated-run plan replaces the inline `int` addition; the rejection message and exit code are unchanged. |
+| `nam_harness.cpp:539-553` | Negative `--warmup` is rejected in both modes; the widened generated-run plan stays guarded to generated mode and replaces the inline `int` addition. |
 | `nam_harness.cpp:684-685, 711, 721, 728, 750-751, 816-817` | Every consumer of the widened counts was made consistent: `int64_t` loop counters, `%lld` formats (rendered text unchanged), explicit `size_t` cast for `blockUs.reserve()`, and the sample offsets are now wide products of two 64-bit operands. |
 
 `tests/src/plugins/NeuralAmpHarnessBlockCount.cpp` (new regression, ctest
@@ -40,8 +42,9 @@ the harness exits normally with code 2 and reports the expected message: the rep
 addition), a count past the narrow type (`--blocks 2147483648`), counts that are not numbers
 (`--blocks not-a-number`, `--blocks 99999999999999999999`, `--warmup many`), the same for
 `--block`, and the pre-existing range messages (`--blocks 0`, `--warmup -1`,
-`--block 99999`). A final slot runs a small legitimate generated run to prove the harness
-still works.
+`--block 99999`). It also supplies a valid WAV-run fixture with `--warmup -1` and requires the
+existing exit-2 warmup diagnostic. A final slot runs a small legitimate generated run to prove
+the harness still works.
 
 `tests/CMakeLists.txt:5706-5726` — the ctest is now the C++ test target, and the target
 **depends on `nam_harness`**:
@@ -123,8 +126,8 @@ NeuralAmpHarnessBlockCount` over both gate logs finds nothing, and `feature_chec
 - `tests/upstream-modifications.txt` (ledger reason names the new regression)
 - `docs/qwen-fixes-2026-10/cluster-new-p10-271-port.md` (this report)
 
-The product change itself is in `plugins/NeuralAmp/tests/nam_harness.cpp`, committed in
-`4b4c05418` (this branch's previous commit) and unchanged here.
+The overflow product change is in `plugins/NeuralAmp/tests/nam_harness.cpp`, committed in
+`4b4c05418`; this report's QA correction restores the existing negative-warmup validation.
 
 ## Self-check
 
@@ -159,8 +162,8 @@ The product change itself is in `plugins/NeuralAmp/tests/nam_harness.cpp`, commi
   (`nam_harness.cpp:728`), `blockUs.reserve()` (`nam_harness.cpp:721`), the measured-region
   offsets (`nam_harness.cpp:750-751`), the two report lines (`nam_harness.cpp:684-685`,
   `nam_harness.cpp:816-817`) and the CPU maths (`nam_harness.cpp:806-811`) - all wide, with the
-  rendered output text unchanged. The other path into the same arithmetic, the `--wav-run` mode,
-  never allocates from a block count and is untouched. Sibling tool in the same directory,
+  rendered output text unchanged. The `--wav-run` mode never allocates from a block count; the
+  negative-warmup option check is shared across both modes and has a WAV-run regression. Sibling tool in the same directory,
   `plugins/NeuralAmp/tests/nam_profile.cpp:115-132`, already parses its counts with a
   range-checked `strtol`; the harness now follows the same rule (checked parse, no throwing
   `std::stoi`). The frame count stays `int` on purpose: it is bounded by `NamModel::kMaxBlock`
@@ -171,8 +174,8 @@ The product change itself is in `plugins/NeuralAmp/tests/nam_harness.cpp`, commi
   product code, no project format, no saved data, no plugin state. The new limit applies to the
   generated-signal mode only and rejects exactly what it did before (a run above 4,194,304
   samples); the accepted range is unchanged (`--blocks 8192 --block 512` = exactly the limit is
-  still accepted, `--blocks 0` and `--warmup -1` still produce their old messages, and the test
-  asserts those messages). The only behaviour that changes is on input that used to abort the
+  still accepted, `--blocks 0` and negative `--warmup` still produce their existing messages in
+  both generated and WAV-run modes, and the test asserts those messages). The only behaviour that changes is on input that used to abort the
   process: a count that is not an integer or does not fit the type is now a usage error with
   exit code 2, which is what the harness documents (`nam_harness.cpp:11`, "Exit code 0 = all
   checks passed, 1 = a check failed, 2 = usage/load error"). The other callers of the harness
@@ -189,3 +192,26 @@ The product change itself is in `plugins/NeuralAmp/tests/nam_harness.cpp`, commi
   the verdict is FIXED. For the record, the narrow addition the finding quotes existed at the
   upstream base of this branch (`ded355440`, `plugins/NeuralAmp/tests/nam_harness.cpp:610`),
   and the RED run above shows the regression failing against exactly that state.
+
+## Independent QA correction (2026-10-20)
+
+The earlier review point was still present: the negative `--warmup` check sat inside the
+generated-mode condition, so a valid WAV-run with `--warmup -1` exited 0. The regression now
+checks that valid WAV-run input, and the check is again shared by both modes at
+`plugins/NeuralAmp/tests/nam_harness.cpp:539-543`.
+
+| Phase | Command (run from the repository root unless stated) | Exit |
+|---|---|---:|
+| WAV-run regression against the submitted nested check | `ctest -R '^NeuralAmpHarnessBlockCount$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-271-port.r6/logs/test-warmup-red.log 2>&1` (from `build/tests`; the WAV-run case got exit 0 with empty stderr) | **8** |
+| Build after correction | `cmake --build build --target zene nam_harness NeuralAmpHarnessBlockCount -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-271-port.r6/logs/build-green-final.log 2>&1` | **0** |
+| Regression after correction | `ctest -R '^NeuralAmpHarnessBlockCount$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-271-port.r6/logs/test-green-final.log 2>&1` (from `build/tests`, 1/1 passed) | **0** |
+| Existing WAV-run sample-rate regression | `ctest -R '^NeuralAmpWavRunSampleRateWarning$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-271-port.r6/logs/test-wav-rate-final.log 2>&1` (from `build/tests`, 1/1 passed) | **0** |
+| Whole product-hunk reverse build | `cmake --build build --target zene nam_harness NeuralAmpHarnessBlockCount -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-271-port.r6/logs/build-red-all-qa.log 2>&1` | **0** |
+| Whole product-hunk reverse regression | `ctest -R '^NeuralAmpHarnessBlockCount$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-271-port.r6/logs/test-red-all-qa.log 2>&1` (from `build/tests`; 6 failures include `std::length_error` for `--blocks 2147483647`) | **8** |
+| Restore committed product hunks | `git checkout -- plugins/NeuralAmp/tests/nam_harness.cpp` | **0** |
+| Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-271-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-271-port.r6/logs/feature-check-after-report.log 2>&1` -> `RESULT: PASS`, no new complexity or file-length items | **0** |
+
+The full reverse used `git diff ded355440871a86cc907cdc2d6465f2d3d597a6b --
+plugins/NeuralAmp/tests/nam_harness.cpp` and `git apply -R` on the resulting patch, leaving all
+test hunks in place. The reverted run returned CTest exit 8; after `git checkout` and restoring
+the shared warmup check, the rebuilt regression and the existing WAV-run test both passed.
