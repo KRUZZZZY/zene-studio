@@ -115,12 +115,17 @@ public:
 
 	~RemotePlugin() override;
 
+	//! Whether the client process is running. The QProcess itself lives in the watcher
+	//! thread (init() moves it there), and the audio thread reads this (process()), so
+	//! the state is cached in an atomic the process lifecycle updates - reading
+	//! QProcess::state() from the audio thread would be an unsynchronized read of
+	//! another thread's QObject.
 	inline bool isRunning()
 	{
 #ifdef DEBUG_REMOTE_PLUGIN
 		return true;
 #else
-		return m_process.state() != QProcess::NotRunning;
+		return m_clientRunning.load(std::memory_order_acquire);
 #endif // DEBUG_REMOTE_PLUGIN
 	}
 
@@ -292,6 +297,13 @@ private:
 	QProcess m_process;
 	ProcessWatcher m_watcher;
 
+	//! Whether the client process is running. The QProcess lives in the watcher thread
+	//! (init() moves it there) and the audio thread reads isRunning(), so the state is
+	//! cached here instead of being read from the QProcess across those threads. It is
+	//! set where the process is started (ProcessWatcher::run()) and cleared by the
+	//! process lifecycle (processFinished(), processErrored()).
+	std::atomic<bool> m_clientRunning{false};
+
 	//! The last channel-count request processMessage refused, and whether one is waiting to be reported.
 	//! Atomics, so the audio thread records them without allocating or locking.
 	std::atomic<bool> m_refusalPending{false};
@@ -452,6 +464,13 @@ private:
 #endif // not SYNC_WITH_SHM_FIFO
 
 	friend class ProcessWatcher;
+
+#ifdef LMMS_TESTING
+	//! Test seam for the regression that pins the cached running state (cluster
+	//! new-p15-172): the test reads and steers m_clientRunning to prove that
+	//! isRunning() answers from the cache and not from the QProcess.
+	friend class ::RemotePluginAudioPortsTest;
+#endif
 
 
 private slots:
