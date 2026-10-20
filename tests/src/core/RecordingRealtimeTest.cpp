@@ -680,6 +680,34 @@ private slots:
 		delete track;
 	}
 
+	//! The scheduling pass uses bounded inline storage even when a clip starts but is muted.
+	void mutedSampleClipSchedulingDoesNotAllocate()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
+		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(),
+			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setMuted(true); // schedule the clip without constructing a play handle.
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		{
+			const lmms::RealtimeScope realtime;
+			track->play(lmms::TimePos(0), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
+		}
+		lmms::test::tlCountAllocations = false;
+
+		QCOMPARE(asNumber(lmms::test::tlAllocationCount), asNumber(0));
+		QVERIFY(clip->isPlaying());
+		QVERIFY(track->isPlaying());
+		delete track;
+	}
+
 	//! The gap table keeps every lost frame once it overflows the bounded track: 600 losses into
 	//! 256 primary + 256 overflow records merge only the remainder into the newest record.
 	void gapTableKeepsEveryLostFrameWhenItOverflows()
