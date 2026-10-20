@@ -193,6 +193,37 @@ def read_saved(path):
         return handle.read()
 
 
+def loop_attributes(text):
+    """The timeline's loop brace attributes, read from the saved project (no loop getter exists)."""
+    import re
+    element = re.search(r"<timeline\b[^>]*>", text)
+    if not element:
+        return {}
+    return {name: re.search(r'%s="([^"]*)"' % name, element.group(0)).group(1)
+            for name in ("lp0pos", "lp1pos", "lpstate")
+            if re.search(r'%s="([^"]*)"' % name, element.group(0))}
+
+
+def check_punch_edits_leave_the_loop_alone(session, recorder, outdir):
+    """0.5.0 L03 (Q050-147): a punch edit moves the punch range, never the loop brace."""
+    before_path = os.path.join(outdir, "loop-before.mmp")
+    session.result("project.save", {"path": before_path})
+    before = loop_attributes(read_saved(before_path))
+    recorder.check("the saved project carries the loop brace",
+                   set(before) == {"lp0pos", "lp1pos", "lpstate"}, "loop=%r" % before)
+
+    session.result("transport.punch_set", {"start": PUNCH_START, "end": PUNCH_END, "enabled": True})
+    state = punch_state(session)
+    recorder.check("the agent edit moved the punch range",
+                   state.get("punch_begin") == PUNCH_START and state.get("punch_end") == PUNCH_END,
+                   "begin=%r end=%r" % (state.get("punch_begin"), state.get("punch_end")))
+    after_path = os.path.join(outdir, "loop-after.mmp")
+    session.result("project.save", {"path": after_path})
+    after = loop_attributes(read_saved(after_path))
+    recorder.check("the punch edit left every loop attribute unchanged",
+                   after == before, "before=%r after=%r" % (before, after))
+
+
 def check_save(session, recorder, outdir):
     """The region is project state: the saved file carries it."""
     saved_path = os.path.join(outdir, "punched.mmp")
@@ -369,6 +400,7 @@ def run_checks(session, instance, recorder, outdir):
     check_set(session, recorder)
     check_the_gate_at_positions(session, recorder)
     check_disarm_keeps_the_range(session, recorder)
+    check_punch_edits_leave_the_loop_alone(session, recorder, outdir)
     saved_path = check_save(session, recorder, outdir)
     check_load_round_trip(session, recorder, saved_path)
     check_a_project_that_never_punched(session, recorder, outdir)

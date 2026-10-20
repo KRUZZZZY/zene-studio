@@ -53,6 +53,10 @@ namespace
 constexpr f_cnt_t kOutputLatency = 200;
 constexpr f_cnt_t kInputLatency = 300;
 constexpr std::size_t kImpulseAt = 4410;
+//! 0.5.0 L03 (Q050-147): a second transient inside a punch region that starts half a bar in.
+constexpr std::size_t kInsidePunchAt = 24000;
+constexpr tick_t kPunchBegin = 48;
+constexpr tick_t kPunchEnd = 96;
 
 //! The first frame of @a clip's audio above half scale, or -1.
 long long firstTransient(SampleClip* clip)
@@ -125,6 +129,53 @@ private slots:
 		timeline.setPunchEnabled(false);
 		QVERIFY(take != nullptr);
 		QCOMPARE(firstTransient(take), -1LL);
+	}
+
+	//! 0.5.0 L03 (Q050-147): the same gate, proven from both sides. The loopback plays two
+	//! transients, one before the punch-in and one inside the range; the take holds the inside
+	//! one at the tick it was played and silence everywhere before the range.
+	void anArmedPunchRegionCapturesTheInsideTransientAndOnlyIt()
+	{
+		Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		timeline.setPunchRange(kPunchBegin, kPunchEnd);
+		timeline.setPunchEnabled(true);
+
+		Song* song = Engine::getSong();
+		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		auto* player = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* recorder = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		std::vector<SampleFrame> data(static_cast<std::size_t>(rate), SampleFrame(0.0f, 0.0f));
+		data[kImpulseAt] = SampleFrame(1.0f, 1.0f);
+		data[kInsidePunchAt] = SampleFrame(1.0f, 1.0f);
+		auto* played = dynamic_cast<SampleClip*>(player->createClip(TimePos(0)));
+		played->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+		auto* take = dynamic_cast<SampleClip*>(recorder->createClip(TimePos(0)));
+		take->changeLength(played->length());
+		take->setAutoResize(false);
+		take->setRecord(true);
+		song->playAndRecord();
+		QTest::qWait(700);
+		song->stop();
+		QTRY_VERIFY_WITH_TIMEOUT(!take->isRecord(), 3000);
+		player->setMuted(true);
+		recorder->setMuted(true);
+		timeline.setPunchEnabled(false);
+
+		const auto buffer = take->sample().buffer();
+		QVERIFY(buffer != nullptr);
+		QVERIFY(buffer->size() > kInsidePunchAt);
+		// The outside impulse (frame 4410) is not in the take at all: silence before punch-in.
+		for (std::size_t i = 0; i < static_cast<std::size_t>(kPunchBegin * Engine::framesPerTick()); ++i)
+		{
+			QVERIFY2(std::fabs(buffer->data()[i][0]) <= 0.5f,
+				qPrintable(QStringLiteral("the take captured a frame outside the punch range at %1").arg(i)));
+		}
+		// The inside one is there, aligned to the frame it was played on.
+		const long long recordedAt = firstTransient(take);
+		QVERIFY2(recordedAt >= 0, "the take captured nothing inside the punch range");
+		QVERIFY2(std::llabs(recordedAt - static_cast<long long>(kInsidePunchAt)) <= 1,
+			qPrintable(QStringLiteral("the inside transient landed at %1, not %2")
+				.arg(recordedAt).arg(kInsidePunchAt)));
 	}
 
 private:

@@ -145,7 +145,10 @@ Record menu and press Record. Record &gt; Count-In and Pre-Roll starts the take 
 for MIDI between overdub (the notes already in the clip stay) and replace (a recorded note erases the notes it overlaps, at any pitch - notes only; controllers and automation are kept); the header's Rec mode readout shows which. Positions and lengths read in bars and beats - right-click a position, or use the Tempo Map's picker, for ticks or time; any of them can be typed. After a looped recording, Split into Loop Passes (the sample clip's menu) puts every pass on its own take lane: drag
 along a lane in the take-lanes view to comp that range, double-click to cycle the take (or Record &gt; Next Take Here). Retrospective capture keeps what you
 played without recording - save it as a clip or a take afterwards. Record &gt; Punch In Here and Punch Out Here set
-the punch region at the play position while you record; Metronome Sound and Level chooses the click, its level, the
+the punch region at the play position while you record, and the Song Editor's ruler draws that region in a band of its
+own under the loop brace: drag either end handle to set punch-in and punch-out, or drag the band to move the whole range.
+The toolbar's Punch in/out button arms and disarms it without losing its bounds, Clear punch range forgets them, and
+neither the handles nor the button change the loop markers - the two ranges are independent. Metronome Sound and Level chooses the click, its level, the
 accent and whether it clicks only while recording. Track &gt; Takes and Comping moves the edge between two takes, or comps
 several tracks (a kit) at once. The header's Rec left readout shows how much recording time the
 disk's free space still allows at what the armed routes write (record.remaining - "-" when a volume

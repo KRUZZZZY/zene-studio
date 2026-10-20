@@ -41,6 +41,7 @@
 #include <limits>
 
 #include <QAbstractSlider>
+#include <QAction>
 #include <QRegularExpression>
 #include <QMouseEvent>
 #include <QImage>
@@ -798,6 +799,100 @@ private slots:
 		QVERIFY(run(QStringLiteral("transport.audition_stop")).ok);  // tidy whatever happened
 		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
 	}
+
+	//! 0.5.0 L03 (Q050-147): the punch range has its own band and handles under the loop brace,
+	//! and the toolbar's arm control arms/disarms it without ever reading the loop markers. A drag
+	//! is one transport.punch_set - one undo step - and leaves the loop exactly as it was.
+	void thePunchRangeHasItsOwnHandlesAndArmControl()
+	{
+		Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		timeline.clearPunch();
+		auto* arm = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchAction"));
+		auto* clear = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchClearAction"));
+		QVERIFY2(arm != nullptr, "the song editor has no punch arm action");
+		QVERIFY2(clear != nullptr, "the song editor has no punch clear action");
+		QVERIFY(!arm->isChecked());
+		QVERIFY(!clear->isEnabled());
+
+		const tick_t loopBegin = timeline.loopBegin().getTicks();
+		const tick_t loopEnd = timeline.loopEnd().getTicks();
+		const bool loopEnabled = timeline.loopEnabled();
+
+		// Arm at the play position: the range starts there, not at the loop brace.
+		Engine::getSong()->setPlayPos(TimePos(3 * Bar), Song::PlayMode::Song);
+		arm->trigger();
+		QVERIFY2(timeline.punchArmed(), "arming the punch action did not arm the punch range");
+		QCOMPARE(timeline.punchBegin(), tick_t{3 * Bar});
+		QCOMPARE(timeline.punchEnd(), tick_t{4 * Bar});
+		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
+		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+		QCOMPARE(timeline.loopEnabled(), loopEnabled);
+
+		TimeLineWidget* ruler = m_editor->timeLine();
+		// The offscreen test window does not always give the ruler its laid-out height; a real one
+		// is 32 pixels. Give it that, so the band's own row can be checked against the loop's.
+		ruler->resize(std::max(1200, ruler->width()), 32);
+		QVERIFY(ruler->hasPunchRange());
+		const QRect band = ruler->punchBandRect();
+		QVERIFY2(!band.isEmpty(), "the ruler did not reserve a band for the punch range");
+		// Its own band, not the whole ruler: the loop brace keeps the room above it.
+		QVERIFY(band.height() >= 2);
+		QVERIFY(band.height() < ruler->height());
+		QCOMPARE(band.bottom(), ruler->height() - 1);
+		QCOMPARE(ruler->punchBeginHandleRect().center().x(), ruler->markerX(TimePos(3 * Bar)));
+		QCOMPARE(ruler->punchEndHandleRect().center().x(), ruler->markerX(TimePos(4 * Bar)));
+
+		// Drag the out handle one bar to the right. The loop is untouched and one undo puts it back.
+		QPoint from = ruler->punchEndHandleRect().center();
+		QPoint to(ruler->markerX(TimePos(5 * Bar)), from.y());
+		QTest::mousePress(ruler, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(ruler, to);
+		QTest::mouseRelease(ruler, Qt::LeftButton, Qt::NoModifier, to);
+		QCOMPARE(timeline.punchBegin(), tick_t{3 * Bar});
+		QCOMPARE(timeline.punchEnd(), tick_t{5 * Bar});
+		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
+		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+		QCOMPARE(timeline.loopEnabled(), loopEnabled);
+		QVERIFY2(run(QStringLiteral("control.undo")).ok, "the punch drag was not one undo step");
+		QCOMPARE(timeline.punchEnd(), tick_t{4 * Bar});
+
+		// The in handle moves just as independently.
+		from = ruler->punchBeginHandleRect().center();
+		to = QPoint(ruler->markerX(TimePos(2 * Bar)), from.y());
+		QTest::mousePress(ruler, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(ruler, to);
+		QTest::mouseRelease(ruler, Qt::LeftButton, Qt::NoModifier, to);
+		QCOMPARE(timeline.punchBegin(), tick_t{2 * Bar});
+		QCOMPARE(timeline.punchEnd(), tick_t{4 * Bar});
+		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
+		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+
+		// Disarming keeps the bounds for another pass; clearing forgets them.
+		arm->trigger();
+		QVERIFY2(!timeline.punchEnabled(), "disarming the punch action left it armed");
+		QCOMPARE(timeline.punchBegin(), tick_t{2 * Bar});
+		QCOMPARE(timeline.punchEnd(), tick_t{4 * Bar});
+		QVERIFY(!timeline.punchArmed());
+
+		// An agent's edit leaves the same range and the GUI reflects its arm state.
+		QVERIFY(run(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), 1 * Bar},
+			{QStringLiteral("end"), 2 * Bar}, {QStringLiteral("enabled"), true}}).ok);
+		QCOMPARE(arm->isChecked(), true);
+		QCOMPARE(timeline.punchBegin(), tick_t{1 * Bar});
+		QCOMPARE(timeline.punchEnd(), tick_t{2 * Bar});
+		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
+		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+
+		QVERIFY(clear->isEnabled());
+		clear->trigger();
+		QCOMPARE(timeline.punchBegin(), tick_t{0});
+		QCOMPARE(timeline.punchEnd(), tick_t{0});
+		QVERIFY(!timeline.punchEnabled());
+		QCOMPARE(arm->isChecked(), false);
+		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
+		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+	}
+
 
 	private:
 	//! The REAL arrangement.nudge (its production declaration, through the arranger): three presses on one clip are
