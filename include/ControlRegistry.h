@@ -474,6 +474,9 @@ LMMS_EXPORT void registerBounceLandCommand(ControlRegistry& registry);
 //! render.stems - per-track stem export through the shipped `exportstems` CLI
 //! (docs/STEM-EXPORT.md).
 LMMS_EXPORT void registerRenderStemsCommands(ControlRegistry& registry);
+//! render.sections - the song's named sections, one bounded file each, through
+//! render.render (0.5.0 L12, Q050-009).
+LMMS_EXPORT void registerRenderSectionsCommands(ControlRegistry& registry);
 //! note.add/remove/move/resize/velocity_set/select and roll.get_state
 LMMS_EXPORT void registerNoteCommands(ControlRegistry& registry);
 //! plugin.* and dsp.get_state - the device catalogue, load/unload/bypass,

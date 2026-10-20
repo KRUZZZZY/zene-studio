@@ -49,7 +49,6 @@
 # green) while the whole-tree scope measured neither it nor its entries. Regenerating is what
 # found it; the file has no over-target function and is under 500 lines, so this adds a
 # measured file and moves no baseline.
-
 # 2026-09-15 (030/ratchet-decision, the whole-tree ratchet decision). The entry list below is
 # the recipe's output again, which it was not: FIVE tracked C/C++ sources were missing from it
 # - include/CrashReporterFormat.h, src/core/CrashReporterFormat.cpp, src/core/CrashReporterWindows.cpp,
@@ -636,6 +635,7 @@ include/RenderManager.h
 include/RenderPeriodClock.h
 include/RenderPresetMenu.h
 include/RenderQueue.h
+include/RenderRangeMenu.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h
@@ -1589,6 +1589,7 @@ src/core/ControlCommandsReference.cpp
 src/core/ControlCommandsRemote.cpp
 src/core/ControlCommandsRenderBounce.cpp
 src/core/ControlCommandsRenderQueue.cpp
+src/core/ControlCommandsRenderSections.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
@@ -2221,6 +2222,7 @@ src/gui/RecordLaunchMenus.cpp
 src/gui/RecordingRecoveryMenu.cpp
 src/gui/ReferenceProjectPanel.cpp
 src/gui/RenderPresetMenu.cpp
+src/gui/RenderRangeMenu.cpp
 src/gui/RowTableView.cpp
 src/gui/SampleEditorDialog.cpp
 src/gui/SampleRangeFields.cpp
@@ -2855,6 +2857,7 @@ tests/src/gui/EnvelopeGraphTest.cpp
 tests/src/gui/EqCurveTest.cpp
 tests/src/gui/EqFader.h
 tests/src/gui/ExportChannelsTest.cpp
+tests/src/gui/ExportProjectDialogPresetTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/FileRevealerTest.cpp
@@ -2912,6 +2915,7 @@ tests/src/gui/RecordRemainingTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
+tests/src/gui/RenderRangeMenuTest.cpp
 tests/src/gui/RowTableViewTest.cpp
 tests/src/gui/SampleClipWarpModeMenuTest.cpp
 tests/src/gui/SampleEditorDialogTest.cpp

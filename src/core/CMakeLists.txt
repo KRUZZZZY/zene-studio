@@ -446,6 +446,9 @@ set(LMMS_SRCS
 	# product already ships (`lmms exportstems`), with the same declared bound every
 	# render-running command carries - see the file header and docs/RENDER-CHILD-WAIT.md.
 	core/ControlCommandsRenderStems.cpp
+	# render.sections (0.5.0 L12, Q050-009): the song's named sections exported one
+	# bounded file each, through render.render.
+	core/ControlCommandsRenderSections.cpp
 	core/ControlCommandsRack.cpp
 	core/ControlCommandsRackMacros.cpp
 	core/ControlCommandsRackZones.cpp
