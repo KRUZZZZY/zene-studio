@@ -5,7 +5,8 @@
 Soundpipe success paths in `plugins/ReverbSC/base.c` now return `SP_OK` (1) instead of
 `0` (`SP_NOT_OK` is 0), matching `base.h`'s status constants. `sp_createn` already
 returned `SP_OK`; `sp_destroy` and `sp_process` returned `0` on success and now
-return `SP_OK`. `sp_create` delegates to `sp_createn`.
+return `SP_OK`. `sp_create` delegates to `sp_createn`. (Note: `sp_process` is compiled
+out in this configuration because `NO_LIBSNDFILE` is defined in `base.h`.)
 
 ## Evidence
 
@@ -35,8 +36,9 @@ built manually with `/usr/bin/cmake` from a temporary project that compiles
 | Restore production fix: `git apply .../fix.patch` | — | 0 |
 | Rebuild after restoring fix | `/usr/bin/cmake --build ... --target ReverbSCBaseTest` (`manualbuild-5.log`) | 0 |
 | GREEN after restoring fix | `/tmp/scratchpad/reverbtest/build/ReverbSCBaseTest` (`test-3.log`) | 0, 3 passed |
-| Complexity gate | `bash tests/complexity-gate.sh --check` (`gate-complexity-1.log`) | 1 (pre-existing baseline drift; no changed file listed) |
-| File-length gate | `bash tests/file-length-gate.sh --check` (`gate-filelength-1.log`) | 1 (pre-existing baseline drift; no changed file listed) |
+| ReverbSC CTest family | `ctest -R 'ReverbSC|ReverbSc'` (`test-ctest-1.log`) | 0, 4 tests passed |
+| Complexity gate | `bash tests/complexity-gate.sh --check` (`gate-complexity-2.log`) | 1 (pre-existing baseline drift; no changed file listed) |
+| File-length gate | `bash tests/file-length-gate.sh --check` (`gate-filelength-2.log`) | 1 (pre-existing baseline drift; no changed file listed) |
 
 ## Files committed
 
