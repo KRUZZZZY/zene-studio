@@ -2907,7 +2907,6 @@ tests/src/gui/WcagContrastTest.cpp
 tests/src/gui/WorkflowFeedbackTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/gui/XyPadPairTest.cpp
-tests/src/plugins/Analyzer.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp

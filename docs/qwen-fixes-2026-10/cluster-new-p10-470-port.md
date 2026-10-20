@@ -1,181 +1,203 @@
-# Cluster new-p10-470-port — the SpectrumAnalyzer's SA_DEBUG members are initialized where they are declared
+# Cluster new-p10-470-port — the SpectrumAnalyzer's SA_DEBUG debug timer
 
-Verdict: **FIXED** on this branch (`bugs/qwen-new-p10-470-port`).
+Verdict: **ALREADY-FIXED** on this branch (`bugs/qwen-new-p10-470-port`).
 
-## What the finding said, and what the tree actually held
+## The finding
 
-The finding (Luna's patrol, `plugins/SpectrumAnalyzer/Analyzer.h:78` in the tree it
-inspected) was: *"`m_last_dump_time` has no initializer, and the constructor does not
-initialize it. The debug processing path reads it on every audio callback ... the first
-call to `processImpl()` reads the uninitialized member, which is undefined behavior.
-fix: Initialize the debug counters and timer fields."*
+Luna's patrol reported, for `plugins/SpectrumAnalyzer/Analyzer.h:78`: *"`m_last_dump_time`
+has no initializer, and the constructor does not initialize it. The debug processing path
+reads it on every audio callback ... the first call to `processImpl()` reads the
+uninitialized member, which is undefined behavior. fix: Initialize the debug counters and
+timer fields."*
 
-That was true of the tree the patrol walked: the declaration carried no initializer and
-the constructor did not name the members, so under `SA_DEBUG` the members were
-default-initialized (indeterminate) and the debug path read them - the counters were even
-used as a divisor (`m_sum_execution / m_dump_count`).
+## Evidence that the finding does not hold on this branch
 
-On this branch the sibling cluster new-p10-471 (commit `13d8b4604`) had already changed
-the timer's type to `std::chrono::steady_clock::time_point` and had added a constructor
-initialization for the four members, so the indeterminate read was no longer reachable
-*through the constructor* - but the declaration still carried no initializer, the
-initialization depended on the constructor remembering to name the members, and the
-sibling class `SaProcessor` had the same defect with no constructor initialization at all.
+The parent of this port, `ded355440871` (the commit this branch was cut from, and the
+merge-base with the train `050/m0-train-8`), already initializes every `SA_DEBUG`
+member of the plugin before the audio thread can read one:
 
-## The fix (file:line)
+- `plugins/SpectrumAnalyzer/Analyzer.cpp:67-72` — the constructor's initializer list names
+  all four of them:
+  ```cpp
+  	#ifdef SA_DEBUG
+  	, m_last_dump_time(std::chrono::steady_clock::now())
+  	, m_dump_count(0)
+  	, m_sum_execution(0.0f)
+  	, m_max_execution(0.0f)
+  	#endif
+  ```
+  A member that a constructor's initializer list names is not default-initialized, so
+  none of the four can be indeterminate - the "uninitialized debug timer" the finding
+  describes cannot exist here.
+- `plugins/SpectrumAnalyzer/Analyzer.cpp:90-99` — `processImpl()` reads `m_last_dump_time`
+  (line 91, the `isStatsIntervalElapsed` predicate), reads `m_dump_count` (lines 93 and 96)
+  and resets them (lines 98-99). `processImpl()` is a member function: it can only run
+  after the constructor of the same object has returned, so every read happens on a
+  defined value.
+- `plugins/SpectrumAnalyzer/Analyzer.cpp:113-115` — the same function increments
+  `m_dump_count` and accumulates `m_sum_execution` / `m_max_execution`, again only on
+  defined values.
+- The initializer list arrived with commit `13d8b4604` ("Fix analyzer debug timer
+  (cluster new-p10-471)"), an ancestor of the parent; that commit also changed the timer
+  to `std::chrono::steady_clock::time_point` and added the five second predicate at
+  `plugins/SpectrumAnalyzer/Analyzer.h:66-72`.
+- The area keeps its registered regression: `tests/src/plugins/AudioPluginTest.cpp:764-769`
+  (`analyzerDebugTimerUsesMonotonicTimePoint`, added by the same commit) checks the
+  predicate with injected timestamps (four seconds is below the threshold, six seconds
+  reaches it) and pins the timer's type. It runs in the registered ctest `AudioPluginTest`.
 
-The initialization now lives with the declaration in both classes of the plugin, so it
-cannot be lost by a later constructor change, and the constructor no longer repeats it:
+## Behavioural proof (throw-away probe, not part of this branch)
 
-- `plugins/SpectrumAnalyzer/Analyzer.h:88-93` - the four `SA_DEBUG` members carry
-  declaration-level initializers; the debug timer is anchored with the construction-time
-  steady clock, so the five second reporting window starts when the plugin is built (the
-  value the constructor used to write).
-- `plugins/SpectrumAnalyzer/Analyzer.cpp:59-69` - the constructor no longer names the
-  `SA_DEBUG` members.
-- `plugins/SpectrumAnalyzer/SaProcessor.h:160-165` - the same four members of the data
-  processor carry declaration-level initializers. This is the sibling of the finding:
-  `plugins/SpectrumAnalyzer/SaProcessor.cpp:153-165` reads `m_last_dump_time` and
-  `m_dump_count` on every analysed block and divides the accumulated time by the dump
-  counter, and the `SaProcessor` constructor (`SaProcessor.cpp:50-60`) never named them.
+The code citation above was confirmed at run time. A probe test - the round-3 test file
+plus its `Analyzer` ctest target, used only for the experiment and **not committed** -
+was built against the parent's product code exactly as it is on this branch:
 
-Values at construction are unchanged with respect to the pre-port tree
-(`13d8b4604`): the timer is the construction-time clock reading, the counters are zero.
-Nothing outside the `SA_DEBUG` blocks changed, so the plugin's behaviour, its saved
-settings and the project files it writes are untouched.
+```
+cmake --build build --target Analyzer > .../logs/build-probe-1.log 2>&1          EXIT=0
+cd build/tests && ctest -R '^Analyzer$' --output-on-failure > .../logs/test-probe-1.log 2>&1   EXIT=8
+```
 
-## The regression test
+`test-probe-1.log` records:
 
-`tests/src/plugins/Analyzer.cpp` (ctest `Analyzer`, registered in `tests/CMakeLists.txt`
-and `tests/all-sources.txt`; it compiles the plugin's own sources with `SA_DEBUG`):
+```
+PASS   : AnalyzerTest::debugMembersAreInitializedBeforeTheFirstAudioCallback()
+FAIL!  : AnalyzerTest::processorDebugMembersAreInitializedBeforeTheFirstAnalysis() ...
+   Actual   (processor->m_dump_count): 32767
+   Expected (0)                      : 0
+```
 
-- `AnalyzerTest::debugMembersAreInitializedBeforeTheFirstAudioCallback` poisons the exact
-  storage the `Analyzer` will occupy with the byte pattern `0xAB`, constructs the plugin
-  in place, and asserts that the debug members do not hold that pattern and that the
-  counters are zero; it then drives one `processImpl()` callback - the path the finding
-  names - and checks that the debug counters count it once.
-- `AnalyzerTest::processorDebugMembersAreInitializedBeforeTheFirstAnalysis` does the same
-  for the sibling `SaProcessor`, which is the class that divides by the dump counter.
+The `Analyzer` case **passes** with the parent's product code: the constructor defines
+the timer and the counters, so the reported bug is absent. The same probe was then run
+against the state the finding describes - the constructor no longer naming the members -
+and it fails there, which shows the probe is sensitive to the very thing the finding
+describes:
 
-Determinism: the test injects the "uninitialized" value itself (the poisoned storage)
-instead of relying on luck, and it never measures a duration - the only clock value it
-compares is the stored timestamp against a `now()` read *after* the construction, which is
-a monotonic invariant, never a timing race. No sleep, no timer and no thread
-synchronisation are involved. The five second predicate itself is covered with injected
-timestamps by the sibling cluster's `AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint`.
+```
+cmake --build build --target Analyzer > .../logs/build-probe-2.log 2>&1          EXIT=0
+cd build/tests && ctest -R '^Analyzer$' --output-on-failure > .../logs/test-probe-2.log 2>&1   EXIT=8
+```
 
-Stability was measured: 10 runs of the unfixed build failed every time (no crash, the
-objects are torn down by a guard even when an assertion aborts the test), 20 runs of the
-fixed build passed every time.
+```
+FAIL!  : AnalyzerTest::debugMembersAreInitializedBeforeTheFirstAudioCallback() ...
+   Actual   (analyzer->m_dump_count): -1602742832
+   Expected (0)                     : 0
+```
 
-## Evidence
+After the experiment the probe file, its `tests/CMakeLists.txt` target and its
+`tests/all-sources.txt` entry were removed again, and the product sources were restored
+to the parent's content.
 
-All commands ran from the worktree root unless another directory is stated. Logs are in
+## What this port changes
+
+Nothing in the product. The earlier rounds of this port had added declaration-level
+initializers to `plugins/SpectrumAnalyzer/Analyzer.h` and
+`plugins/SpectrumAnalyzer/SaProcessor.h`, removed the constructor's `SA_DEBUG`
+initializer list, and added a new `Analyzer` regression target
+(`tests/src/plugins/Analyzer.cpp` plus its `tests/CMakeLists.txt` and
+`tests/all-sources.txt` registrations) and the matching `tests/upstream-modifications.txt`
+entries. All of that is removed by this commit:
+
+- `plugins/SpectrumAnalyzer/Analyzer.cpp` keeps the parent's constructor initialization
+  (lines 67-72) - the fix that makes the reported bug impossible.
+- `plugins/SpectrumAnalyzer/Analyzer.h` and `plugins/SpectrumAnalyzer/SaProcessor.h` are
+  back to the parent's content.
+- `tests/src/plugins/Analyzer.cpp` is deleted, together with its `Analyzer` ctest target
+  and its `tests/all-sources.txt` entry; `ctest -N -R '^Analyzer$'` now reports
+  `Total Tests: 0`.
+- The `tests/upstream-modifications.txt` entries the port had added for the three
+  inherited files are back to the parent's text.
+
+## Out of scope: a separate defect in the sibling class `SaProcessor`
+
+The probe above exposed a different, still-open defect in the same plugin, in the data
+processor rather than in the plugin class. It is **not** the reported finding and is not
+fixed by this port; it is tracked separately:
+
+- `plugins/SpectrumAnalyzer/SaProcessor.h:160-165` — the data processor's `SA_DEBUG`
+  members (`m_last_dump_time`, `m_dump_count`, `m_sum_execution`, `m_max_execution`)
+  have no initializer, and its constructor (`plugins/SpectrumAnalyzer/SaProcessor.cpp:50-60`)
+  does not name them, so they are indeterminate.
+- `plugins/SpectrumAnalyzer/SaProcessor.cpp:153-165` — the analysis thread reads them on
+  every analysed block and divides the accumulated time by the dump counter
+  (`m_sum_execution / m_dump_count`, line 158) with an indeterminate divisor.
+- The probe's `SaProcessor` case fails on the parent's code
+  (`Actual (processor->m_dump_count): 32767`), which is the evidence for this separate
+  issue.
+
+A follow-up cluster should give the data processor the same declaration-level
+initializers the plugin class received from new-p10-471. It is left untouched here
+because the review of this port asks for the analyzer port to be reported as
+ALREADY-FIXED with no production change.
+
+## Verification on the current (already-fixed) code
+
+Exact commands run in this session, from the worktree root unless another directory is
+stated. Logs are in
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-470-port.r3/logs`.
 
-| Step | Exact command | Exit |
+| Check | Exact command | Exit |
 | --- | --- | ---: |
-| RED, product fix reversed | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-470-port.r3/logs/fix.patch` | 0 |
-| RED, rebuild | `cmake --build build --target Analyzer > .../logs/build-red-8.log 2>&1` | 0 |
-| RED, regression fails | `cd build/tests && ctest -R '^Analyzer$' --output-on-failure > .../logs/test-red-8.log 2>&1` | 8 |
-| GREEN, product fix restored | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-470-port.r3/logs/fix.patch` | 0 |
-| GREEN, rebuild | `cmake --build build --target Analyzer > .../logs/build-green-6.log 2>&1` | 0 |
-| GREEN, regression passes | `cd build/tests && ctest -R '^Analyzer$' --output-on-failure > .../logs/test-green-6.log 2>&1` | 0 |
-| Family build (zene + plugin + both test binaries) | `cmake --build build --target zene analyzer Analyzer AudioPluginTest > .../logs/build-family-2.log 2>&1` | 0 |
-| Family run (2 ctest targets) | `cd build/tests && ctest -R '^(Analyzer\|AudioPluginTest)$' --output-on-failure > .../logs/test-family-6.log 2>&1` | 0 |
-| Gates (all of them) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py . > .../logs/gate-feature-check-2.log 2>&1` | 0 |
-| Complexity ratchet (raw) | `bash tests/complexity-gate.sh --check > .../logs/gate-complexity-2.log 2>&1` | 1 |
-| File-length ratchet (raw) | `bash tests/file-length-gate.sh --check > .../logs/gate-file-length-2.log 2>&1` | 1 |
+| Build the product and the registered test binary | `cmake --build build --target zene analyzer AudioPluginTest > .../logs/build-final-2.log 2>&1` | 0 |
+| The port's test target is gone | `cd build/tests && ctest -N -R '^Analyzer$' > .../logs/ctest-discovery-1.log 2>&1` | 0 (`Total Tests: 0`) |
+| The registered coverage for this area passes | `cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure > .../logs/test-final-3.log 2>&1` | 0 |
+| The same binary, per case | `cd build/tests && QT_QPA_PLATFORM=offscreen ./AudioPluginTest > .../logs/test-final-4.log 2>&1` | 0 (21 passed, 0 failed) |
+| All gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py . > .../logs/gate-feature-check-3.log 2>&1` | 0 |
+| Complexity ratchet (raw) | `bash tests/complexity-gate.sh --check > .../logs/gate-complexity-3.log 2>&1` | 1 |
+| File-length ratchet (raw) | `bash tests/file-length-gate.sh --check > .../logs/gate-file-length-3.log 2>&1` | 1 |
 
-`fix.patch` holds the complete product fix and was produced with
-`git diff -- plugins/SpectrumAnalyzer/Analyzer.h plugins/SpectrumAnalyzer/Analyzer.cpp plugins/SpectrumAnalyzer/SaProcessor.h > .../logs/fix.patch`
-against a staged baseline in which the four `SA_DEBUG` members of both classes have no
-initializer and the constructor does not name them - that is the state the finding
-describes ("`m_last_dump_time` has no initializer, and the constructor does not initialize
-it"). The patch therefore contains exactly the declaration-level initializers, and
-reverting it reproduces the uninitialised members.
+`test-final-3.log` records `1/1 Test #492: AudioPluginTest ... Passed` and
+`100% tests passed out of 1`; `test-final-4.log` records
+`PASS : AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint()` and
+`Totals: 21 passed, 0 failed`.
 
-The RED log records the two failures of the unfixed build:
-```
-FAIL!  : AnalyzerTest::debugMembersAreInitializedBeforeTheFirstAudioCallback() Compared values are not the same
-   Actual   (analyzer->m_dump_count): -1298971184
-   Expected (0)                     : 0
-FAIL!  : AnalyzerTest::processorDebugMembersAreInitializedBeforeTheFirstAnalysis() Compared values are not the same
-   Actual   (processor->m_dump_count): 32765
-   Expected (0)                     : 0
-```
-
-The GREEN log records `1/1 Test #476: Analyzer ... Passed` and `100% tests passed out of 1`.
-
-Affected family: 2 ctest targets (`Analyzer`, `AudioPluginTest`), both green; the QtTest
-binaries report 4/4 and 21/21 test functions. `AudioPluginTest`'s `nam` and `gate` cases
-need the optional fixtures `nam_harness` and the `gate` plugin module, which are
-`EXCLUDE_FROM_ALL` and were not built in this build tree; after
-`cmake --build build --target nam_harness gate` (exit 0) the whole family is green.
-
-The two raw ratchet gates exit 1 because they are red on the train on purpose: they list
-6 (complexity) and 14 (file-length) items, none of them in a file this change touches -
-`feature_check.py` compares both lists against the base commit and reports
-`no new item in your files` for each, so all eight gates pass.
+`feature_check.py` reports `PASS` for all eight gates. The two raw ratchet gates exit 1
+because they are red on the train on purpose: they list 6 (complexity) and 14
+(file-length) items, none of them in a file this port touches - `feature_check.py`
+compares both lists against the base commit and reports `no new item in your files` for
+each.
 
 ## Files committed
 
-- `plugins/SpectrumAnalyzer/Analyzer.h` - declaration-level initializers for the four `SA_DEBUG` members.
-- `plugins/SpectrumAnalyzer/Analyzer.cpp` - the constructor no longer names the `SA_DEBUG` members.
-- `plugins/SpectrumAnalyzer/SaProcessor.h` - the same for the data processor's `SA_DEBUG` members.
-- `tests/src/plugins/Analyzer.cpp` - the regression test (two cases).
-- `tests/upstream-modifications.txt` - the divergence reasons for the three inherited files.
 - `docs/qwen-fixes-2026-10/cluster-new-p10-470-port.md` - this report.
+- `plugins/SpectrumAnalyzer/Analyzer.cpp`, `plugins/SpectrumAnalyzer/Analyzer.h`,
+  `plugins/SpectrumAnalyzer/SaProcessor.h`, `tests/CMakeLists.txt`,
+  `tests/all-sources.txt`, `tests/upstream-modifications.txt` - restored to the parent's
+  content, so the branch's only difference from the parent is this report.
 
 ## Self-check
 
-**Does the regression test fail with the product change reverted and pass with it?**
-Yes - `ctest -R '^Analyzer$'` exits 8 with the fix reversed (`test-red-8.log`, the two
-assertions quoted above) and exits 0 with the fix applied (`test-green-6.log`).
+**The regression test fails with the product change reverted and passes with it.** This
+port has no product change to revert - the finding is already fixed at the parent - so no
+new regression is added; the area's registered regression
+`AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint` (ctest `AudioPluginTest`)
+was rerun and passes (`ctest -R '^AudioPluginTest$'` exit 0, 21/21 test functions). The
+behavioural proof of the already-fixed state is the throw-away probe documented above:
+it passes against the parent's product code and fails when the parent's constructor
+initialization is removed. `submit_check.py`'s mechanical item "tests added or changed"
+therefore reports FAIL for this branch: an ALREADY-FIXED port carries no product change
+and no new test, which is the convention of the other ALREADY-FIXED clusters in this
+repository (`docs/qwen-fixes-2026-10/cluster-5371.md`, `cluster-1530.md`,
+`cluster-3591.md` - their commits touch the report only).
 
-**Is the test deterministic (no wall-clock timing, sleeps or races)?**
-Yes - the seam is the poisoned storage: the test writes the `0xAB` pattern over the
-object's storage before the placement construction, so an uninitialised member has a
-deterministic value instead of whatever the stack held. The only clock value compared is
-the stored timestamp against a `now()` read after the construction (a monotonic
-invariant, never a duration). There is no sleep, no timer and no thread synchronisation;
-10 unfixed runs failed every time and 20 fixed runs passed every time.
+**Is the test deterministic?** The registered test that covers the area injects its
+timestamps (four and six seconds) instead of measuring wall-clock time; the throw-away
+probe used a poisoned storage pattern rather than a timing race. No sleep, no timer and
+no thread synchronisation are involved anywhere.
 
-**Is the fix at the cause and complete - every caller and sibling checked?**
-The cause is a member that no initialiser defines; the fix defines the members at their
-declaration. Every reader of the four members was checked: `Analyzer::processImpl`
-(`plugins/SpectrumAnalyzer/Analyzer.cpp:80-112`) and the data processor's debug block
-(`plugins/SpectrumAnalyzer/SaProcessor.cpp:153-165`) - the sibling class with the same
-defect, which is fixed in the same commit and covered by the second test case. A tree-wide
-grep shows the four names only in `Analyzer.h`/`Analyzer.cpp`, `SaProcessor.h`/`SaProcessor.cpp`
-and the test; the reference copies under `tests/reference/SpectrumAnalyzer/` are the
-pre-port snapshot and are not built. The five second predicate
-(`plugins/SpectrumAnalyzer/Analyzer.h:66-72`) and the timer type are unchanged, so the
-sibling cluster's `AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint` still holds.
-One related defect was found but deliberately **not** changed: the data processor still
-measures its interval with a 32-bit `high_resolution_clock` counter
-(`plugins/SpectrumAnalyzer/SaProcessor.cpp:154`), which is the truncated-counter problem
-cluster new-p10-471 fixed on the other side of the plugin; fixing it would change the
-debug output cadence and is outside this finding.
+**Is the fix at the cause and complete?** There is nothing to fix in this port: the
+cause (a member that no initialiser defines) does not exist on this branch, the
+constructor defines all four members (`plugins/SpectrumAnalyzer/Analyzer.cpp:67-72`), and
+every reader of them (`plugins/SpectrumAnalyzer/Analyzer.cpp:90-99` and `:113-115`) runs
+after the constructor. The one remaining hole in the same plugin - the data processor's
+own `SA_DEBUG` members - is a different defect, evidenced above and left to a separate
+cluster.
 
-**No collateral damage?** The change touches only the `SA_DEBUG` blocks, which exist only
-in debug builds. The plugin has no serialised state of its own (its controls are the
-project's own models), so old projects and saved data load exactly as before, and no
-limit or check was added that other callers could hit. The values at construction are the
-same as before the port (timer = construction-time clock, counters = 0), so the debug
-output covers the same period with the same content. Nothing on the audio thread
-allocates, frees, locks, waits or logs because of this change: the debug path already
-read a clock and printed every five seconds, and the change only decides where the
-initial value comes from - a clock read during construction, not during processing.
-No control command was added, so the `ControlCommandsSnapshot` canary does not move.
+**No collateral damage?** The product sources, the test registrations and the
+divergence ledger are byte-for-byte the parent's content, so old projects, saved data and
+the plugin's behaviour are exactly what the parent produced. The port adds no command, no
+limit and no check, and it changes nothing on the audio thread.
 
-**Files changed and their effect**
+**Files changed by this port** - the report only; every other path is restored to the
+parent's content, which is what `git diff ded355440871` shows.
 
-| File | Effect |
-| --- | --- |
-| `plugins/SpectrumAnalyzer/Analyzer.h` | the four `SA_DEBUG` members get declaration-level initializers (timer anchored at construction) |
-| `plugins/SpectrumAnalyzer/Analyzer.cpp` | the constructor stops naming the `SA_DEBUG` members |
-| `plugins/SpectrumAnalyzer/SaProcessor.h` | the same four members of the data processor get declaration-level initializers |
-| `tests/src/plugins/Analyzer.cpp` | the regression test for both classes |
-| `tests/upstream-modifications.txt` | the divergence reasons for the three inherited files |
-| `docs/qwen-fixes-2026-10/cluster-new-p10-470-port.md` | this report |
+**Verdict: ALREADY-FIXED**

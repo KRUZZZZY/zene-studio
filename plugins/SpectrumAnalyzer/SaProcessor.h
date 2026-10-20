@@ -28,7 +28,6 @@
 #define SAPROCESSOR_H
 
 #include <atomic>
-#include <chrono>
 #include <fftw3.h>
 #include <QMutex>
 #include <QRgb>
@@ -158,10 +157,10 @@ private:
 	QRgb makePixel(float left, float right) const;
 
 	#ifdef SA_DEBUG
-		unsigned int m_last_dump_time = std::chrono::high_resolution_clock::now().time_since_epoch().count();
-		unsigned int m_dump_count = 0;
-		float m_sum_execution = 0.0f;
-		float m_max_execution = 0.0f;
+		unsigned int m_last_dump_time;
+		unsigned int m_dump_count;
+		float m_sum_execution;
+		float m_max_execution;
 	#endif
 };
 
