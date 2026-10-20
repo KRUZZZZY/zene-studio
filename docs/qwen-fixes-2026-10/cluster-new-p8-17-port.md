@@ -52,3 +52,18 @@ RED 16 passed / 1 failed, GREEN 17 passed / 0 failed.
 - `docs/qwen-fixes-2026-10/cluster-new-p8-17-port.md`
 - `src/core/ControlCommandsDocuments.cpp`
 - `tests/src/core/ControlSuccessPathsTest.cpp`
+
+## Self-check
+
+- Regression test fails with product change reverted and passes with it: RED exit code 8
+  (`provenanceSizeAfter == previousProvenanceSize` FALSE), GREEN exit code 0.
+- Deterministic: no sleeps/timing/races. Failure is induced by creating a directory
+  named `mastering.mpt.new` so `DataFile::writeFile` cannot write its temp file;
+  provenance is compared by size and last seq.
+- Cause complete: only `newFromRecipe` changed; `restoreSession`/`restoreUndoSnapshot`
+  signatures unchanged; siblings (`failedBuiltInDocumentKeepsCurrentSession`) untouched.
+  `Song.cpp` not modified.
+- No collateral damage: rollback still restores content, file, modified flag, document
+  type, undo/redo history; provenance restored only on rollback. Success path
+  unchanged.
+- Verdict FIXED, not ALREADY-FIXED/FALSE-POSITIVE.
