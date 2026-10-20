@@ -1105,6 +1105,42 @@ private slots:
 		QCOMPARE(readBytes(m_project), documentWith(3));
 	}
 
+
+	//! An unsaved session has no project-file revisions. Its rotation and backup
+	//! paths are built FROM the empty project path, which would name `.rev0` and
+	//! `.bak` in the working directory, while its session autosave remains valid.
+	void anUnsavedSessionListsNoArtefactsFromTheWorkingDirectory()
+	{
+		const QString unsaved = path(QStringLiteral("unsaved"));
+		QVERIFY(QDir().mkpath(unsaved));
+		QVERIFY(writeBytes(unsaved + QStringLiteral("/.bak"), documentWith(1)));
+		QVERIFY(writeBytes(unsaved + QStringLiteral("/.rev0"), documentWith(2)));
+		const QString unsavedAutosave = path(QStringLiteral("unsaved-recover.mmp"));
+		QVERIFY(writeBytes(unsavedAutosave, documentWith(4)));
+		QVERIFY(writeBytes(unsavedAutosave + QStringLiteral(".bak"), documentWith(5)));
+
+		// Restore the working directory however the test ends, so no later test
+		// inherits this one's.
+		struct RestoreCurrentDirectory
+		{
+			QString previous;
+			~RestoreCurrentDirectory() { QDir::setCurrent(previous); }
+		} restore{QDir::currentPath()};
+		QVERIFY(QDir::setCurrent(unsaved));
+
+		QJsonObject gitReport;
+		const QVector<RevisionEntry> entries =
+			listProjectRevisions(QString(), unsavedAutosave, false, &gitReport);
+		QCOMPARE(entries.size(), 2);
+		QCOMPARE(revisionTimelineState(QString(), unsavedAutosave, false)
+			.value(QStringLiteral("count")).toInt(), 2);
+		QVERIFY(findRevision(QString(), recoveryFile(), QStringLiteral("rev0")).id.isEmpty());
+		QVERIFY(findRevision(QString(), recoveryFile(), QStringLiteral("backup")).id.isEmpty());
+		QCOMPARE(findRevision(QString(), unsavedAutosave, QStringLiteral("autosave")).id,
+			QStringLiteral("autosave"));
+		QCOMPARE(findRevision(QString(), unsavedAutosave, QStringLiteral("autosave_prev")).id,
+			QStringLiteral("autosave_prev"));
+	}
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)

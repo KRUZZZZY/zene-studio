@@ -101,13 +101,29 @@ bool isRotationId(const QString& id, int* revision)
 	return true;
 }
 
+bool needsProjectPath(const QString& projectPath, const QString& id, bool rotation)
+{
+	return projectPath.isEmpty()
+		&& (rotation || id == QLatin1String("backup") || id.startsWith(QLatin1String("git:")));
+}
+
 //! The slot \a id names, whether or not its artefact is still on disk. False when
 //! the id names nothing this timeline can ever hold.
 bool resolveSlot(const QString& projectPath, const QString& recoveryFile, const QString& id,
 	RevisionSlot* slot, QString* error)
 {
 	int revision = 0;
-	if (isRotationId(id, &revision))
+	const bool rotation = isRotationId(id, &revision);
+	// Rotation, backup and git ids need a project path. In an unsaved session
+	// the first two would resolve against the working directory; the autosave
+	// paths are session-level files and remain independently resolvable.
+	if (needsProjectPath(projectPath, id, rotation))
+	{
+		*error = QStringLiteral("'%1' names no artefact: the session has no project file yet")
+			.arg(id);
+		return false;
+	}
+	if (rotation)
 	{
 		slot->id = id;
 		slot->source = sourceOfSlot(id);
