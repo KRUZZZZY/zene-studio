@@ -1,5 +1,7 @@
 # Cluster 5051 — chain topology edits outside the model-change guard
 
+Verdict: ALREADY-FIXED (5051) / FIXED (new-p14-98)
+
 5051: ALREADY-FIXED
 new-p14-98: FIXED
 
