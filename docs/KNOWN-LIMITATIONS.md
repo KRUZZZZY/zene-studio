@@ -2303,9 +2303,14 @@ nested tab) and the settings and export dialogs, and asks Qt's accessibility lay
 every widget Tab can reach - 155 of them. The walks found 43 announced as nothing; all 43 are
 named, and the ratchet list is empty. **Knobs are now keyboard-operable** (Tab reaches them;
 arrows step as the wheel does, PageUp/PageDown coarsely, Home/End to the ends - `KnobKeyboardTest`)
-and named from their label, model or hint. **What it does not cover:** faders and LED buttons still
-take no keyboard focus (the mixer's own keys move the current channel's fader), and dialogs other
-than those two are not walked. The paragraph below is the 2026-09-22 record.
+and named from their label, model or hint. **Faders and model (LED) buttons take Tab focus too**
+(0.5.0 theme 10) and answer the slider and button keys; a mixer strip's controls are walked with
+Tab and Shift+Tab (wrapping inside the strip), and Ctrl+Tab / Ctrl+Shift+Tab move to the same
+control on the adjacent channel, stopping at the first and last channel (`MixerModesTest`). Each
+strip control is named with its channel's name through Qt's accessibility bridge. **What it does
+not cover:** dialogs other than those walked are not checked, and no screen reader has been run
+(the bridge is asserted, not a real screen reader - see the note below). The paragraph below is
+the 2026-09-22 record.
 
 The accessibility + palette pass of SPEC-zene-ui-v0 §5 item 1 swept exactly three
 surfaces - the Focus Desk shell (`src/gui/FocusDesk.cpp`, `FocusDeskPane.cpp`,
