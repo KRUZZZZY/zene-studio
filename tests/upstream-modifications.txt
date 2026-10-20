@@ -2630,4 +2630,6 @@ include/SampleTrack.h	new-p16-206: publishes playing state with a relaxed atomic
 src/tracks/SampleTrack.cpp	new-p16-206: emits playingChanged only from the GUI polling slot; setPlaying on the render path only stores the atomic state.
 src/gui/tracks/SampleTrackView.cpp	new-p16-206: the existing main-thread periodic update polls and publishes SampleTrack playing changes.
 tests/src/core/RecordingRealtimeTest.cpp	new-p16-206: verifies the render path emits no playingChanged and the GUI poll emits it once per observed state transition.
+src/tracks/SampleTrack.cpp	new-p14-277: clears SampleClip's playing latch when a prepared take claim fails, allowing the next pass to retry.
+tests/src/core/RecordingRealtimeTest.cpp	new-p14-277: consumes both prepared handles and verifies two failed passes each reach the claim and leave the clip latch clear.
 tests/src/core/SmfInterchangeTest.cpp	new-p11-21 (2026-10-12): adds a regression assertion that smf_read marks an out-of-range conductor map unimportable and reports the same validation reason used by smf_import.

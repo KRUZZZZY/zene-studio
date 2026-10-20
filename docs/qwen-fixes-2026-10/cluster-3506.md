@@ -29,3 +29,21 @@ Commands and proof:
 - `sample_track_targets=$(rg -l '#include "SampleTrack.h"' tests/src --glob '*.cpp' | sed 's#^.*/##; s/\.cpp$//' | sort -u)` followed by `cmake --build build --parallel 4 --target zene $sample_track_targets > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/build-012-header-dependents-parallel.log 2>&1` — EXIT 0; `zene` and 63 dependent test targets built.
 - `ctest -R '^(RecordingRealtimeTest|WarpQuantizeTest|EngineRenderBenchmarkTest|NoteBackgroundAudioTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/test-010-affected-families.log 2>&1` (cwd: `build/tests`) — EXIT 0; 4/4 CTest targets passed.
 - `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3506 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/gate-003-pre-commit-new-p16-206.log 2>&1` — EXIT 0; all gates PASS.
+
+new-p14-277: FIXED
+Evidence: `src/tracks/SampleTrack.cpp:281-285` now clears `SampleClip::isPlaying` when `claimRecordHandle()` returns null, before counting and continuing. `RecordingRealtimeTest::failedRecordHandleClaimLeavesClipRetryable` consumes both prepared handles, invokes two deterministic passes at the same position, and verifies the claim counter advances on both while the clip latch is clear after each.
+
+Commands and proof:
+- `cmake --build build --target RecordingRealtimeTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/build-008-claim-red.log 2>&1` (regression added, latch fix absent) — EXIT 0.
+- `QT_QPA_PLATFORM=offscreen ./RecordingRealtimeTest failedRecordHandleClaimLeavesClipRetryable > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/test-008-claim-red.log 2>&1` (cwd: `build/tests`) — EXIT 1; the latch-cleared assertion failed.
+- `cmake --build build --target RecordingRealtimeTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/build-009-claim-green.log 2>&1` — EXIT 0.
+- `QT_QPA_PLATFORM=offscreen ./RecordingRealtimeTest failedRecordHandleClaimLeavesClipRetryable > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/test-009-claim-green.log 2>&1` (cwd: `build/tests`) — EXIT 0; `Totals: 3 passed, 0 failed`.
+- `git diff -- src/tracks/SampleTrack.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/fix-p14.patch` — EXIT 0.
+- `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/fix-p14.patch` — EXIT 0.
+- `cmake --build build --target RecordingRealtimeTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/build-013-claim-proof-red.log 2>&1` — EXIT 0.
+- `QT_QPA_PLATFORM=offscreen ./RecordingRealtimeTest failedRecordHandleClaimLeavesClipRetryable > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/test-013-claim-proof-red.log 2>&1` (cwd: `build/tests`) — EXIT 1; the latch-cleared assertion failed again.
+- `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/fix-p14.patch` — EXIT 0.
+- `cmake --build build --target RecordingRealtimeTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/build-014-claim-proof-green.log 2>&1` — EXIT 0.
+- `QT_QPA_PLATFORM=offscreen ./RecordingRealtimeTest failedRecordHandleClaimLeavesClipRetryable > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/test-014-claim-proof-green.log 2>&1` (cwd: `build/tests`) — EXIT 0; `Totals: 3 passed, 0 failed`.
+- `ctest -R '^(RecordingRealtimeTest|WarpQuantizeTest|EngineRenderBenchmarkTest|NoteBackgroundAudioTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/test-015-final-affected-families.log 2>&1` (cwd: `build/tests`) — EXIT 0; 4/4 CTest targets passed.
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3506 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/gate-005-pre-commit-new-p14-277.log 2>&1` — EXIT 0; all gates PASS.

@@ -708,6 +708,86 @@ private slots:
 		delete track;
 	}
 
+	//! The render path publishes atomically; the GUI poll delivers playingChanged outside it.
+	void sampleTrackPlayingChangeIsDeliveredByGuiPoll()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
+		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(),
+			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setMuted(true);
+		QSignalSpy playingChanged(track, SIGNAL(playingChanged()));
+		QVERIFY(playingChanged.isValid());
+
+		{
+			const lmms::RealtimeScope realtime;
+			track->play(lmms::TimePos(0), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
+		}
+		QVERIFY(track->isPlaying());
+		QCOMPARE(playingChanged.count(), 0);
+		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
+		QCOMPARE(playingChanged.count(), 1);
+		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
+		QCOMPARE(playingChanged.count(), 1);
+
+		track->setPlaying(false);
+		QCOMPARE(playingChanged.count(), 1);
+		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
+		QCOMPARE(playingChanged.count(), 2);
+		delete track;
+	}
+
+	//! A missing prepared take clears the latch, so the next pass retries the claim.
+	void failedRecordHandleClaimLeavesClipRetryable()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+		clip->setRecord(true);
+		song->playAndRecord();
+		auto* first = clip->claimRecordHandle();
+		auto* second = clip->claimRecordHandle();
+		QVERIFY(first != nullptr && second != nullptr);
+		QCOMPARE(clip->recordTakesReady(), 0);
+
+		const auto before = lmms::SampleRecordHandle::unpreparedTakes();
+		const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+		bool returnedNoHandleOnFirstPass = false;
+		{
+			const lmms::RealtimeScope realtime;
+			returnedNoHandleOnFirstPass = !track->play(lmms::TimePos(0), frames, 0, -1);
+		}
+		const bool latchClearedAfterFirstPass = !clip->isPlaying();
+		const auto countAfterFirstPass = lmms::SampleRecordHandle::unpreparedTakes() - before;
+		bool returnedNoHandleOnSecondPass = false;
+		{
+			const lmms::RealtimeScope realtime;
+			returnedNoHandleOnSecondPass = !track->play(lmms::TimePos(0), frames, 0, -1);
+		}
+		const bool latchClearedAfterSecondPass = !clip->isPlaying();
+		const auto countAfterSecondPass = lmms::SampleRecordHandle::unpreparedTakes() - before;
+
+		song->stop();
+		delete first;
+		delete second;
+		lmms::SampleRecordHandle::pumpTakes();
+		delete track;
+
+		QVERIFY(returnedNoHandleOnFirstPass && returnedNoHandleOnSecondPass);
+		QVERIFY(latchClearedAfterFirstPass && latchClearedAfterSecondPass);
+		QCOMPARE(countAfterFirstPass, std::uint64_t{1});
+		QCOMPARE(countAfterSecondPass, std::uint64_t{2});
+	}
+
 	//! The gap table keeps every lost frame once it overflows the bounded track: 600 losses into
 	//! 256 primary + 256 overflow records merge only the remainder into the newest record.
 	void gapTableKeepsEveryLostFrameWhenItOverflows()
@@ -1483,36 +1563,3 @@ private slots:
 QTEST_MAIN(RecordingRealtimeTest)
 
 #include "RecordingRealtimeTest.moc"
-	//! The render path publishes atomically; the GUI poll delivers playingChanged outside it.
-	void sampleTrackPlayingChangeIsDeliveredByGuiPoll()
-	{
-		auto* song = lmms::Engine::getSong();
-		song->stop();
-		auto* track = new lmms::SampleTrack(song);
-		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
-		QVERIFY(clip != nullptr);
-		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
-		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(),
-			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
-		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
-		clip->setMuted(true);
-		QSignalSpy playingChanged(track, SIGNAL(playingChanged()));
-		QVERIFY(playingChanged.isValid());
-
-		{
-			const lmms::RealtimeScope realtime;
-			track->play(lmms::TimePos(0), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
-		}
-		QVERIFY(track->isPlaying());
-		QCOMPARE(playingChanged.count(), 0);
-		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
-		QCOMPARE(playingChanged.count(), 1);
-		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
-		QCOMPARE(playingChanged.count(), 1);
-
-		track->setPlaying(false);
-		QCOMPARE(playingChanged.count(), 1);
-		QVERIFY(QMetaObject::invokeMethod(track, "notifyPlayingChanged", Qt::DirectConnection));
-		QCOMPARE(playingChanged.count(), 2);
-		delete track;
-	}

@@ -279,6 +279,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 				handle = st->claimRecordHandle();
 				if( handle == nullptr )
 				{
+					st->setIsPlaying( false );
 					SampleRecordHandle::countUnpreparedTake();
 					continue;
 				}
