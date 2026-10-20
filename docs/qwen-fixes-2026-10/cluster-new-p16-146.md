@@ -92,6 +92,34 @@ Tests rerun for round 2 (after `CCACHE_TEMPDIR=/tmp/zene-new-p16-146-ccache-tmp 
 
 Round 2 product code is unchanged from round 1; the commit adds only this report section.
 
+## Review round 3 (DISPUTE: the gate blocker is not resolved)
+
+Review `new-p16-146.r2.md`: the defect is real at the base commit (the clear is missing there), the fix and regression are in the tree, and both direct gates still exit 1. The reviewer asks that the shared gate status be resolved with the parent before resubmission. **That is not resolved.** I have no confirmed channel to the parent from this worktree. The only session listed by `ListAgents` is a peer, `zene-studio-program-bb`, and I have not confirmed it is the parent, so I did not message it. I did not reanchor any baseline or edit any unrelated file.
+
+**Direct gates on the base commit itself.** I extracted `2da2ed356` with `git archive` into `/tmp/zene-new-p16-146-base-2da2ed356` (no change to this worktree or to refs) and ran the exact commands there:
+
+| Command | Tree | EXIT | Result |
+|---|---|---|---|
+| `bash tests/complexity-gate.sh --check` | base `2da2ed356` | 1 | 6 `REGRESSION` lines |
+| `bash tests/file-length-gate.sh --check` | base `2da2ed356` | 1 | 15 `REGRESSION` lines |
+| `bash tests/complexity-gate.sh --check` | branch (`d78c1155d` + round-2 report) | 1 | 6 `REGRESSION` lines, identical to base |
+| `bash tests/file-length-gate.sh --check` | branch | 1 | 15 `REGRESSION` lines, identical to base |
+
+Logs: `runs/new-p16-146.r3/logs/base-*-gate-check.log` and `branch-*-gate-check.log`. A diff of the `REGRESSION` lines between base and branch is empty for both gates. This branch adds no violation and touches none of the listed files.
+
+So the two direct gates are red on the base commit by the same items, and this branch does not change that. Clearing them is a train-level decision, not part of this fix.
+
+**Requested from the parent (decision needed; nothing done here):** choose one of
+1. re-anchor `tests/complexity-baseline.tsv` and `tests/file-length-baseline.tsv` on the current base as a recorded baseline change (owner-recorded reason, as in the repo's earlier re-anchor commits), or
+2. have the train fix the 20 listed files, after which this branch's direct checks will exit 0 without any change here.
+
+Until the parent picks one, this cluster's gate acceptance stays BLOCKED.
+
+**Tests and gates, round 3** (logs in `runs/new-p16-146.r3/logs/`):
+- `CCACHE_TEMPDIR=/tmp/zene-new-p16-146-ccache-tmp cmake --build build --target zene MpePlaybackTest -j4`: EXIT=0 (`build-r3-1.log`).
+- `ctest -R '^MpePlaybackTest$' -V` from `build/tests`: EXIT=0, `PASS aFrequencyMarkIsSpentByItsUpdate()` (`test-r3-mpe.log`).
+- Feature-check gates via the driver (same gate functions as `feature_check.py`): EXIT=0, all 8 PASS (`gates-r3-summary.log`).
+
 ## Behaviour consequence (reviewer decision)
 
 `masterPitch` is read inside `updateFrequency()` (`src/core/NotePlayHandle.cpp:623`), and its change does not mark notes: the `dataChanged` connection in `src/core/Song.cpp:194-195` is commented out. Before this fix, a note that had been marked once recomputed every period, so it also followed master-pitch automation from then on. After the fix it follows master-pitch changes only when it is marked again, like a note that was never marked. This is by reading the code; I did not add a test for it. The consistent behaviour (master-pitch changes marking the handles) would be a separate change, and I did not make it here.
