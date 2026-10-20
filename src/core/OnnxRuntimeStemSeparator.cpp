@@ -95,20 +95,58 @@ bool resolveStemOutputs(Ort::Session& session, const std::vector<std::string>& o
 	return true;
 }
 
-/*! False, with \a error, when an output the stems are read from is smaller than what the loop
- *  below reads: two channels of \a segment frames, at \a stemStride floats per stem in the
- *  stacked layout. A dynamic dimension is only known once the model has run. */
+// \a shape without its size-1 axes: [1, 2, T] and [2, T] are the same planar block.
+std::vector<int64_t> withoutUnitAxes(const std::vector<int64_t>& shape)
+{
+	std::vector<int64_t> dims;
+	for (const int64_t dim : shape)
+	{
+		if (dim != 1)
+		{
+			dims.push_back(dim);
+		}
+	}
+	return dims;
+}
+
+/*! True when \a value is a float32 tensor laid out as the loop reads it: a planar stereo block
+ *  [2, \a segment] per stem (a size-1 batch axis is allowed), or in the stacked layout one
+ *  [1, S, 2, \a segment] tensor with S >= NumStems. Size-1 axes are dropped before the shape is
+ *  compared, so a transposed [\a segment, 2] block or an int64 tensor of the same size is refused.
+ *  Checked on the tensor a run returned: a dynamic dimension is only known once the model has run. */
+bool isStemBlockLayout(const Ort::Value& value, bool stacked, int segment)
+{
+	if (!value.IsTensor())
+	{
+		return false;
+	}
+	const auto info = value.GetTensorTypeAndShapeInfo();
+	if (info.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT)
+	{
+		return false;
+	}
+	const auto dims = withoutUnitAxes(info.GetShape());
+	if (stacked)
+	{
+		return dims.size() == 3 && dims[0] >= NumStems && dims[1] == Channels && dims[2] == segment;
+	}
+	return dims.size() == 2 && dims[0] == Channels && dims[1] == segment;
+}
+
+/*! False, with \a error, when an output the stems are read from is not a float32 stereo block of
+ *  \a segment frames in the layout the loop below reads (see isStemBlockLayout). \a stemStride is
+ *  non-zero only in the stacked layout, where all stems share output 0 (resolveStemOutputs). */
 bool outputsHoldSegment(const std::vector<Ort::Value>& outputs, const std::array<int, NumStems>& stemOutput,
 	std::ptrdiff_t stemStride, int segment, void (*postRunHook)(), QString* error)
 {
+	const bool stacked = stemStride != 0;
 	for (int s = 0; s < NumStems; ++s)
 	{
 		const auto index = static_cast<std::size_t>(stemOutput[static_cast<std::size_t>(s)]);
-		const auto needed = static_cast<std::size_t>(s * stemStride + static_cast<std::ptrdiff_t>(Channels) * segment);
 		if (postRunHook != nullptr) { postRunHook(); }
-		if (index >= outputs.size() || outputs[index].GetTensorTypeAndShapeInfo().GetElementCount() < needed)
+		if (index >= outputs.size() || !isStemBlockLayout(outputs[index], stacked, segment))
 		{
-			*error = QStringLiteral("Model output %1 is smaller than a %2-frame stereo segment")
+			*error = QStringLiteral("Model output %1 is not a float32 stereo block of %2 frames")
 				.arg(index).arg(segment);
 			return false;
 		}

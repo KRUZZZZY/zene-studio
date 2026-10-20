@@ -63,6 +63,19 @@ void throwFromPostRunValidation()
 	throw Ort::Exception("injected post-Run output validation failure", ORT_FAIL);
 }
 
+// Runs one of the broken four-output stubs (same gains and element count as the good one):
+// the loader must refuse its outputs instead of reading them as planar float stereo blocks.
+void expectOutputLayoutRefused(const QString& fixture)
+{
+	OnnxRuntimeStemSeparator separator(QStringLiteral(LMMS_TEST_DATA_DIR) + QStringLiteral("/") + fixture);
+	StemSet stems;
+	QString error;
+	const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+		[](float) { return true; }, stems, error);
+	QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
+	QVERIFY2(error.contains(QStringLiteral("float32 stereo block")), qPrintable(error));
+}
+
 } // namespace
 
 class OnnxRuntimeStemSeparatorTest : public QObject
@@ -181,6 +194,18 @@ private slots:
 			maxError = std::max(maxError, std::abs(sum - mix->data()[i].left()));
 		}
 		QVERIFY(maxError < 1.0e-4f);
+	}
+
+	void testTransposedOutputsAreRefused()
+	{
+		// [1, T, 2] per stem: the element count is right, the channel axis is not.
+		expectOutputLayoutRefused(QStringLiteral("stub-4stem-transposed.onnx"));
+	}
+
+	void testNonFloatOutputsAreRefused()
+	{
+		// [1, 2, T] per stem as int64: the shape is right, the element type is not.
+		expectOutputLayoutRefused(QStringLiteral("stub-4stem-int64.onnx"));
 	}
 
 	void testCancelIsObserved()
