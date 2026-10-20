@@ -94,29 +94,55 @@ touched, and the product sources are at HEAD.
 
 ## Self-check
 
-- **Regression test fails with the product change reverted and passes with it**:
-  RED exit 8 (`'sameEntries' returned FALSE ... 0 entries instead of 53`),
-  GREEN exit 0. The reversal takes away exactly the round-3 product hunk
-  (`logs/fix.patch`, the diff of `src/core/ControlCommandsDocuments.cpp` between
-  `9057d23ef` and `40d64819b`); the test file is never reverted.
-- **Deterministic**: no sleeps, no wall-clock, no races. The failure is induced
-  by making `mastering.mpt.new` a DIRECTORY in the cache template folder, so
-  `DataFile::writeFile` cannot write its temporary file; the log is compared
-  entry by entry on content, with no timestamp of the test's own.
-- **The content is what is compared, not the count**: the snapshot is the whole
-  `QList<provenance::Change>` and the comparison is `provenance::Change`'s
-  `operator==` (`include/ProvenanceSection.h:71`), which covers seq, at, actor,
-  instance, command, target, before, after and nested - the seeded
-  `track.add` entry among them (asserted to be the newest entry before the
-  failure and after the rollback).
-- **Cause complete**: the product change is in `newFromRecipe` only; its two
-  siblings (`failedBuiltInDocumentKeepsCurrentSession`, the preflight path) and
-  the other entry into it (`newDocument`'s user-template and default-template
-  paths) are untouched and still pass. `Song.cpp` unchanged, no header changed,
-  no new control command.
-- **No collateral damage**: the change is in the test only. The product file is
-  byte-identical to HEAD; old projects and saved data are unaffected.
-- **Verdict FIXED**, not ALREADY-FIXED / FALSE-POSITIVE: the finding is real
-  (`newFromRecipe` replaced the session before it knew the template could be
-  written) and the branch carries the fix; this round closes the review's last
-  gap, the proof that the original provenance CONTENT comes back.
+Each item of the completion check, answered with its evidence.
+
+1. **The regression test FAILS with the product change reverted and PASSES with
+   it (exit codes).** RED: `ctest -R '^ControlSuccessPathsTest$' --output-on-failure`
+   after `git apply -R logs/fix.patch` -> EXIT 8,
+   `'sameEntries' returned FALSE. (a save-time failure did not give the original
+   session's provenance back: 0 entries instead of 53)`, 16 passed / 1 failed
+   (`test-7-reversed.log`). GREEN: the same ctest after
+   `git apply logs/fix.patch` -> EXIT 0, 1/1 passed (`test-8-restored.log`);
+   the identical run before the reversal was also EXIT 0 (`test-6-green.log`).
+   The reversal takes away exactly the round-3 product hunk (`logs/fix.patch` =
+   the diff of `src/core/ControlCommandsDocuments.cpp` between `9057d23ef` and
+   `40d64819b`); the test file is never reverted.
+2. **The test is deterministic: no wall-clock timing, sleeps or races (name the
+   seam or injected values it uses).** The failure is induced by a filesystem
+   seam, not by time: the test makes `mastering.mpt.new` a DIRECTORY inside the
+   cache template folder (`tests/src/core/ControlSuccessPathsTest.cpp:489-491`),
+   so `DataFile::writeFile` cannot write its temporary file and the save
+   refuses. The rollback's effect is then read from the session itself (the
+   tracks, the file name, the modified flag, the document type, the journal, the
+   provenance log). No sleep, no timer, no thread, no timestamp of the test's
+   own is used.
+3. **The fix is at the cause and complete: every caller and sibling of what you
+   changed was checked and stays consistent.** The change is in the test only.
+   The product path it covers - `newFromRecipe`
+   (`src/core/ControlCommandsDocuments.cpp:200-255`) - has one caller
+   (`newDocument`, line 264) and three failure exits, and each of them is
+   covered: the preflight refusal (`recipeTemplateWritable`, line 205) by
+   `failedBuiltInDocumentKeepsCurrentSession`, the post-`project.new` refusals
+   (lines 250, 252, 254) by `failedBuiltInDocumentSaveKeepsCurrentSession`. The
+   sibling entry points of `newDocument` - the user's own template
+   (`<template dir>/<type>.mpt`) and the default template - do not build a
+   recipe and do not write a cache template, so they are unaffected.
+   `ArrangingCatchUpTest::newDocumentsCarryTheirTypesTemplate` (the success
+   path of the same command) still passes. No header changed, no signature
+   changed, `Song.cpp` unchanged, no new control command.
+4. **No collateral damage: old projects and saved data still load as before, and
+   any limit or check you added does not hit other callers that legitimately
+   exceed it.** `src/core/ControlCommandsDocuments.cpp` is byte-identical to
+   HEAD (`git diff --exit-code -- src/core/ControlCommandsDocuments.cpp` ->
+   EXIT 0), so no product behaviour, no saved file and no old project changes.
+   No limit or check was added to any product path. The test's own additions
+   read the provenance section and compare it; they add no threshold.
+5. **If the verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+   the intended contract that shows it.** Not applicable - the verdict is
+   FIXED. The finding is real: `newFromRecipe` replaced the session before it
+   knew the cache template could be written
+   (`src/core/ControlCommandsDocuments.cpp:249-252`), and the branch carries the
+   fix (preflight at lines 205, rollback at lines 235-247, provenance capture
+   and restore at lines 222-234 and 242-244). This round closes the review's
+   last gap: the proof that the original provenance CONTENT comes back.
+
