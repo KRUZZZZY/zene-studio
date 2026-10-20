@@ -25,15 +25,25 @@ the step runs, read after, so the reply describes exactly the step that just ran
 | RED build | `cmake --build build --target zene RevisionTimelineTest` | 0 | built |
 | RED run | `ctest -R RevisionTimelineTest` (build/tests) | 8 | 24 passed, 3 failed |
 | fix build | `cmake --build build --target zene RevisionTimelineTest` | 0 | built |
-| GREEN run | `ctest -R RevisionTimelineTest` (build/tests) | 0 | 27 passed, 0 failed |
+| GREEN run | `ctest -R RevisionTimelineTest` (build/tests) | 0 | 28 passed, 0 failed |
 | reverse product diff | `git apply -R logs/fix.patch` | 0 | reverted |
 | no-fix build | `cmake --build build --target zene RevisionTimelineTest` | 0 | built |
 | no-fix run | `ctest -R RevisionTimelineTest` | 8 | 24 passed, 3 failed |
 | re-apply | `git apply logs/fix.patch` | 0 | restored |
 | refix build | `cmake --build build --target zene RevisionTimelineTest` | 0 | built |
-| refix run | `ctest -R RevisionTimelineTest` | 0 | 27 passed, 0 failed |
+| refix run | `ctest -R RevisionTimelineTest` | 0 | 28 passed, 0 failed |
 | complexity gate | `bash tests/complexity-gate.sh --check` | 1 | pre-existing regressions only; none introduced by this change |
 | file-length gate | `bash tests/file-length-gate.sh --check` | 1 | pre-existing regressions only; none introduced by this change |
+
+## Rework (round 1)
+
+Luna asked to close the remaining misleading-success path: `redoRestoreStep` silently
+returned when `revisionHoldingBytes(target, restoredSha)` was negative, after which
+`control.redo` reported `redone: true`. It now records an action-restore failure
+explaining that the selected bytes are no longer retained and redo left the live
+file unchanged. Regression `redoOfARestoreWhoseRotationBytesAreGoneFailsTyped`
+added (rotation restore, undo, remove retained copy, redo -> typed refusal, file
+unchanged): RED before (27 passed, 1 failed), GREEN after (28 passed, 0 failed).
 
 ## Files committed
 

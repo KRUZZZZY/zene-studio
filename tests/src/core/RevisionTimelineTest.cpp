@@ -1005,6 +1005,42 @@ private slots:
 		QVERIFY(!QFileInfo(createdProject).exists());
 	}
 
+
+	//! REDO of a rotation restore whose selected bytes are no longer retained must
+	//! not answer success: the redo leaves the live file unchanged, and reporting
+	//! `redone: true` would claim a restore that did not happen.
+	void redoOfARestoreWhoseRotationBytesAreGoneFailsTyped()
+	{
+		buildFixture();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult restored = registry->invoke(QStringLiteral("revisions.restore"),
+			QJsonObject{{QStringLiteral("project"), m_project},
+				{QStringLiteral("id"), QStringLiteral("rev0")}});
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(2));
+
+		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(readBytes(m_project), documentWith(3));
+
+		// Take away every retained copy of the bytes this restore brought in, so
+		// the redo cannot re-resolve them.
+		for (int rev = 0; rev < 3; ++rev)
+		{
+			const QString revPath = projectRevisionPath(m_project, rev);
+			if (QFileInfo::exists(revPath) && readBytes(revPath) == documentWith(2))
+			{
+				QVERIFY(QFile::remove(revPath));
+			}
+		}
+
+		const ControlResult redo = registry->invoke(QStringLiteral("control.redo"), QJsonObject());
+		QVERIFY2(!redo.ok, "control.redo answered 'redone: true' although the project file was NOT "
+			"restored - the selected bytes are no longer retained");
+		QCOMPARE(redo.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(readBytes(m_project), documentWith(3));
+	}
+
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)

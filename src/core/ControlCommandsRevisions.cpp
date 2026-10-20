@@ -182,7 +182,15 @@ void redoRestoreStep(const QString& target, const QString& recoveryFile,
 		// instead would be a wrong-bytes overwrite, so the redo leaves the
 		// file as the undo left it.
 		const int current = revisionHoldingBytes(target, restoredSha);
-		if (current < 0) { return; }
+		if (current < 0)
+		{
+			control::recordActionRestoreFailure(
+				QStringLiteral("the project file %1 was NOT re-restored: the bytes this "
+					"restore brought in (sha256 %2) are no longer retained in the "
+					"keep-3 set, so redo leaves the live file exactly as the undo left "
+					"it. revisions.list reports the retained set").arg(target, restoredSha));
+			return;
+		}
 		if (control::restoreProjectRevision(target, current, &reason)) { return; }
 		control::recordActionRestoreFailure(
 			QStringLiteral("the project file %1 was NOT re-restored from revision %2 - %3. "
