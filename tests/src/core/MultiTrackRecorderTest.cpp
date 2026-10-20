@@ -33,6 +33,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
+#include <QTextStream>
 
 #include "RecordingJournal.h"
 #include "SampleFrame.h"
@@ -177,6 +178,71 @@ private slots:
 		// the whole point: recovery must find the take it journalled
 		QVERIFY(recjournal::isRecoverable(opened));
 		QCOMPARE(recjournal::scan(dir.path()).size(), 1);
+	}
+
+	//! A line break in a valid POSIX filename must survive journal recovery.
+	//! The journal is a `key=value` file read one line at a time, so a raw
+	//! newline inside the path split the value across two lines: the reader
+	//! looked for a take that was never recorded and recovery offered nothing
+	//! for a capture that really happened.
+	void JournalRecoversTakePathContainingNewline()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath(QStringLiteral("take\npart.wav"));
+		// isRecoverable() asks the filesystem whether the take is there, so the
+		// take itself must exist for this to be about the journal's own format.
+		QFile takeFile(take);
+		QVERIFY(takeFile.open(QIODevice::WriteOnly));
+		takeFile.close();
+
+		TakeJournal written;
+		written.state = QStringLiteral("in_progress");
+		written.takePath = take;
+		written.sampleRate = 48000;
+		written.channels = 2;
+		const QString journal = recjournal::journalPathFor(take);
+		QVERIFY(recjournal::write(journal, written));
+
+		TakeJournal opened;
+		QVERIFY(recjournal::read(journal, &opened));
+		QCOMPARE(opened.takePath, take);
+		QVERIFY(recjournal::isRecoverable(opened));
+		const QList<TakeJournal> recovered = recjournal::scan(dir.path());
+		QCOMPARE(recovered.size(), 1);
+		QCOMPARE(recovered.front().takePath, take);
+	}
+
+	//! A journal written by an OLDER build (version 1) holds LITERAL values:
+	//! its fields were never escaped, so decoding them would rewrite a path
+	//! that merely CONTAINS a backslash. Old journals must still load exactly
+	//! as they did.
+	void JournalReadsAVersion1FileLiterally()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath(QStringLiteral("literal\\n take.wav"));
+		QFile takeFile(take);
+		QVERIFY(takeFile.open(QIODevice::WriteOnly));
+		takeFile.close();
+
+		const QString journal = recjournal::journalPathFor(take);
+		QFile file(journal);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+		QTextStream out(&file);
+		out << "# zene-studio recording journal - a side file, never part of a project\n";
+		out << "version=1\n";
+		out << "state=in_progress\n";
+		out << "take=" << take << "\n";
+		out << "sample_rate=48000\n";
+		out.flush();
+		file.close();
+
+		TakeJournal opened;
+		QVERIFY(recjournal::read(journal, &opened));
+		QCOMPARE(opened.takePath, take);
+		// the backslash is still a backslash: nothing decoded a version 1 value.
+		QVERIFY(opened.takePath.contains(QLatin1Char('\\')));
 	}
 } ;
 

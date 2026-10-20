@@ -2379,6 +2379,7 @@ tests/src/core/ModulationRateTest.cpp
 tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/NamModelLoaderTest.cpp
+tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NamModelPrewarmTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
 tests/src/core/NeuralAmpWavInputTest.cpp

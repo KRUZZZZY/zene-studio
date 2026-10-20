@@ -8,13 +8,22 @@
  * a thread that must not allocate more than a few hundred bytes:
  *
  *   # zene-studio recording journal - a side file, never part of a project
- *   version=1
+ *   version=2
  *   state=in_progress
  *   take=/home/me/takes/take-01.wav
  *   sample_rate=48000
  *   channels=1
  *   frames_on_disk=96000
  *   updated_utc=2026-09-13T20:15:01Z
+ *
+ * A path is a legal POSIX filename, and a legal POSIX filename may hold a
+ * newline. Version 2 therefore ESCAPES the string fields (a backslash, an LF
+ * and a CR become `\\`, `\n` and `\r`), because a raw newline in a value
+ * split it across two lines and the reader - which reads one line at a time -
+ * then looked for a take that was never recorded. Version 1 journals, written
+ * before the escaping existed, hold literal values and are still read
+ * literally: decoding them would rewrite a path that merely contains a
+ * backslash.
  *
  * `state=in_progress` is the whole point: a journal that is still in progress
  * when a process starts is a capture that died. A clean stop REMOVES the
@@ -67,6 +76,59 @@ namespace
 
 //! The one state a crashed capture leaves.
 const QString StateInProgress = QStringLiteral("in_progress");
+
+//! The format version this build writes: the string fields are escaped.
+const int CurrentJournalVersion = 2;
+
+/*! Escapes the characters that would break a line-oriented field: a backslash,
+ *  a line feed and a carriage return. A path is a legal POSIX filename and may
+ *  hold any of them, and a raw line feed in a value split the value across
+ *  two lines - which the reader, one line at a time, could not put back
+ *  together. */
+QString escapeFieldValue(const QString& value)
+{
+	QString escaped;
+	escaped.reserve(value.size());
+	for (const QChar ch : value)
+	{
+		if (ch == QLatin1Char('\\')) { escaped += QStringLiteral("\\\\"); }
+		else if (ch == QLatin1Char('\n')) { escaped += QStringLiteral("\\n"); }
+		else if (ch == QLatin1Char('\r')) { escaped += QStringLiteral("\\r"); }
+		else { escaped += ch; }
+	}
+	return escaped;
+}
+
+/*! Decodes an escaped field value. An escape this reader does not know is kept
+ *  as it was written, so a value that was never escaped by us is not mangled
+ *  into something else. */
+QString decodeFieldValue(const QString& value)
+{
+	QString decoded;
+	decoded.reserve(value.size());
+	for (qsizetype i = 0; i < value.size(); ++i)
+	{
+		const QChar ch = value.at(i);
+		if (ch != QLatin1Char('\\') || i + 1 >= value.size())
+		{
+			decoded += ch;
+			continue;
+		}
+		const QChar escaped = value.at(++i);
+		if (escaped == QLatin1Char('n')) { decoded += QLatin1Char('\n'); }
+		else if (escaped == QLatin1Char('r')) { decoded += QLatin1Char('\r'); }
+		else if (escaped == QLatin1Char('\\')) { decoded += QLatin1Char('\\'); }
+		else { decoded += QLatin1Char('\\'); decoded += escaped; }
+	}
+	return decoded;
+}
+
+//! The format version a journal's `version=` line names (0 when it names none).
+int journalVersion(const QString& line)
+{
+	if (!line.startsWith(QLatin1String("version="))) { return 0; }
+	return line.mid(8).toInt();
+}
 
 /*! Reads a RIFF chunk's 4-byte id. An empty id at EOF or on a short read, so a
  *  truncated file cannot be mistaken for a chunk. */
@@ -127,7 +189,7 @@ void applyNumberField(const QString& key, const QString& value, TakeJournal* jou
  * measures a method, and a chain of one branch per field is the shape that walks
  * past the limit every time a field is added (Gate 4 caught this at CCN 11).
  */
-void applyLine(const QString& line, TakeJournal* journal)
+void applyLine(const QString& line, TakeJournal* journal, bool escapedFields)
 {
 	const int equals = line.indexOf(QLatin1Char('='));
 	if (equals <= 0) { return; }
@@ -135,7 +197,9 @@ void applyLine(const QString& line, TakeJournal* journal)
 	// leading or trailing whitespace in it is part of where the take went.
 	const QString key = line.left(equals).trimmed();
 	const QString value = line.mid(equals + 1);
-	applyStringField(key, value, journal);
+	// A version 2 value is escaped (a path may hold a newline); a version 1
+	// value is literal and stays exactly as it was written.
+	applyStringField(key, escapedFields ? decodeFieldValue(value) : value, journal);
 	applyNumberField(key, value, journal);
 }
 
@@ -157,20 +221,23 @@ bool write(const QString& journalPath, const TakeJournal& journal)
 	if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) { return false; }
 	QTextStream out(&file);
 	out << "# zene-studio recording journal - a side file, never part of a project\n";
-	out << "version=1\n";
-	out << "state=" << (journal.state.isEmpty() ? StateInProgress : journal.state) << "\n";
-	out << "take=" << journal.takePath << "\n";
+	out << "version=" << CurrentJournalVersion << "\n";
+	// Every string field is escaped: a path may hold a newline, and a raw one
+	// would split the value across two lines.
+	out << "state="
+		<< escapeFieldValue(journal.state.isEmpty() ? StateInProgress : journal.state) << "\n";
+	out << "take=" << escapeFieldValue(journal.takePath) << "\n";
 	out << "sample_rate=" << journal.sampleRate << "\n";
 	out << "channels=" << journal.channels << "\n";
 	out << "frames_on_disk=" << static_cast<qulonglong>(journal.framesOnDisk) << "\n";
-	if (!journal.projectPath.isEmpty()) { out << "project=" << journal.projectPath << "\n"; }
-	if (!journal.track.isEmpty()) { out << "track=" << journal.track << "\n"; }
+	if (!journal.projectPath.isEmpty()) { out << "project=" << escapeFieldValue(journal.projectPath) << "\n"; }
+	if (!journal.track.isEmpty()) { out << "track=" << escapeFieldValue(journal.track) << "\n"; }
 	if (journal.startTicks >= 0) { out << "start_ticks=" << journal.startTicks << "\n"; }
 	// Stamped here rather than by the caller: the field's whole value is that it
 	// is the moment the file was written, and a writer that forgets it would
 	// make a stale journal look current.
 	out << "updated_utc="
-		<< QDateTime::currentDateTimeUtc().toString(Qt::ISODate) << "\n";
+		<< escapeFieldValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODate)) << "\n";
 	out.flush();
 	return file.commit();
 }
@@ -181,6 +248,9 @@ bool read(const QString& journalPath, TakeJournal* journal)
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return false; }
 	QTextStream in(&file);
 	TakeJournal parsed;
+	// A version 1 journal (written before the escaping) holds LITERAL values;
+	// from version 2 on, the string fields are escaped and are decoded here.
+	bool escapedFields = false;
 	while (!in.atEnd())
 	{
 		// The COMMENT and blankness tests want the trimmed line, but the line
@@ -190,7 +260,15 @@ bool read(const QString& journalPath, TakeJournal* journal)
 		const QString line = in.readLine();
 		const QString probe = line.trimmed();
 		if (probe.isEmpty() || probe.startsWith(QLatin1Char('#'))) { continue; }
-		applyLine(line, &parsed);
+		// The version line is written first, so it is read before the fields
+		// it describes. A journal without one is a version 1 journal.
+		const int version = journalVersion(probe);
+		if (version > 0)
+		{
+			escapedFields = version >= 2;
+			continue;
+		}
+		applyLine(line, &parsed, escapedFields);
 	}
 	if (parsed.takePath.isEmpty()) { return false; }
 	if (journal != nullptr) { *journal = parsed; }
