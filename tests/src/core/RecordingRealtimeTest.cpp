@@ -419,6 +419,9 @@ private slots:
 	//! Starting an armed recording: the arming builds the take's accumulator and drain thread on the
 	//! main thread, so the render callback that starts the pass only claims the prepared take and
 	//! allocates nothing. The take still records the input the pass is given.
+	//! Cluster 3508 regression: on the old code SampleTrack::play constructed the
+	//! SampleRecordHandle (accumulator ring, scratch, shared state and std::thread) inside the
+	//! render callback, which the allocation probe below catches.
 	void recorderStartIsPreparedBeforeTheCallbackPath()
 	{
 		auto* song = lmms::Engine::getSong();
@@ -433,6 +436,7 @@ private slots:
 		// drain thread are built here, and both takes are ready before the transport ever rolls.
 		clip->setRecord(true);
 		QCOMPARE(clip->recordTakesReady(), 2);
+		const auto unpreparedBefore = lmms::SampleRecordHandle::unpreparedTakes();
 
 		// Playback starts only now, so the setup above provably precedes it. The first probed
 		// period starts the pass (SampleTrack::play claims the prepared take and schedules the
@@ -448,6 +452,8 @@ private slots:
 		const auto counted = lmms::test::tlAllocationCount;
 		lmms::test::tlCountAllocations = false;
 		QCOMPARE(asNumber(counted), asNumber(0));
+		// And the pass found the prepared take: no unprepared-take fallback was taken.
+		QCOMPARE(lmms::SampleRecordHandle::unpreparedTakes(), unpreparedBefore);
 
 		// And the take still records: drive real periods and stop.
 		driveRecordPeriods(20);
