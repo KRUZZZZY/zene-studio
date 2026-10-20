@@ -290,9 +290,15 @@ library to work.
   With Edit Group...**, the `vca.edit_move` form prefilled with the clip
   (`src/gui/shell/ShellCommandMenus.cpp:327`, attached to the Clip section's title bar by
   `src/gui/shell/InspectorPanel.cpp:383`; the Inspector's channel menu has no VCA submenu). Every
-  menu line runs a registered command the socket runs; each command is one recorded undo step (the
-  one exception is **New VCA group** above, which is two), and the strip's fader, Mute and Solo are
-  the group's own models, so a strip edit, a menu edit and a socket edit move one state
+  menu line runs a registered command the socket runs. Each **submitted mutating** action is one
+  recorded undo step - the membership ticks, the Links and Put Inside choices, the Groups list's
+  row actions and New Group..., Colour a Group's Channels..., the submitted Move With Edit Group...
+  form and the strip's fader, Mute and Solo - with **New VCA group** above the one exception (two
+  command invocations, two steps). The launchers themselves do not edit or add a step:
+  **Groups...** opens a list whose read-only `vca.list` query writes nothing, and **Move With Edit
+  Group...** (like **Colour a Group's Channels...**) opens a form that becomes one step when
+  submitted. The strip's fader, Mute and Solo are the group's own models, so a strip edit, a menu
+  edit and a socket edit move one state
   (`VcaStripViewTest::theStripsControlsAreTheGroupsOwnModels`,
   `theChannelMenuEditsMembershipThroughTheCommands`,
   `theStripsMenuChoosesLinksAndNestingThroughTheCommands`,
