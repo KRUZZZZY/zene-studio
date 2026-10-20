@@ -295,6 +295,23 @@ private slots:
 		QCOMPARE(out[6][0], 0.0f);
 	}
 
+	//! A fractional step that does not divide the sample length still sounds the last source frame for
+	//! EVERY visit it makes inside it: the tail is held for the rest of its duration, not cut at the
+	//! first visit.
+	void aFractionalStepSoundsEveryFinalFrameVisit()
+	{
+		const SampleBuffer three(std::vector<SampleFrame>{{1.0f, 1.0f}, {2.0f, 2.0f}, {3.0f, 3.0f}}, kWavRate);
+		RackZoneVoice voice;
+		voice.restart();
+		std::vector<SampleFrame> out(16, SampleFrame{});
+		// A quarter-frame step walks the position 0, 0.25, ..., 2.75 (twelve outputs) and then passes
+		// the end of the sample; the last source frame is held for the four positions inside it.
+		QVERIFY(!voice.render(three, out.data(), static_cast<f_cnt_t>(out.size()), 0.25, 1.0f, false));
+		const float expected[] = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 2.75f, 3.0f, 3.0f, 3.0f, 3.0f};
+		for (int i = 0; i < 12; ++i) { QCOMPARE(out[static_cast<std::size_t>(i)][0], expected[i]); }
+		QCOMPARE(out[12][0], 0.0f);
+	}
+
 	//! E20/E38 on the audio path: delivering zoned notes, playing a zone's sample and rendering the rack
 	//! allocate nothing.
 	void zonedNotesAllocateNothing()
