@@ -59,14 +59,26 @@ void appendPaintCell(std::vector<std::pair<int, int>>& painted, int key, int sta
 	if (!taken) { painted.emplace_back(key, start); }
 }
 
-//! The parameter (0 < t <= 1) at which a path that moves by @a delta from @a from reaches the next
-//! multiple of @a step, or 2 when it moves nowhere or crosses none before its end.
-double boundaryParam(double from, double delta, int step)
+//! The cell index (in multiples of @a step) the path is in just after it leaves @a from moving by
+//! @a delta: the floor cell, except at an exact boundary moving backwards, where the path is already
+//! in the cell below it (the floor cell is the one it started on and immediately left).
+int cellAtStart(double from, double delta, int step)
+{
+	const double ratio = from / step;
+	const double whole = std::floor(ratio);
+	if (delta < 0.0 && ratio - whole < 1e-9) { return static_cast<int>(whole) - 1; }
+	return static_cast<int>(whole);
+}
+
+//! The parameter (0 < t < 1) at which the path from @a from, moving by @a delta, leaves @a cell
+//! through its next boundary, or 2 when it moves nowhere or reaches no boundary before the end
+//! (the end point is painted with its own cell).
+double nextBoundaryParam(int cell, double from, double delta, int step)
 {
 	if (delta == 0.0) { return 2.0; }
-	const double first = delta > 0.0 ? (std::floor(from / step) + 1.0) * step : (std::ceil(from / step) - 1.0) * step;
-	const double t = (first - from) / delta;
-	return t > 0.0 && t <= 1.0 ? t : 2.0;
+	const double boundary = (delta > 0.0 ? cell + 1.0 : static_cast<double>(cell)) * step;
+	const double t = (boundary - from) / delta;
+	return t > 0.0 && t < 1.0 ? t : 2.0;
 }
 
 //! The key on the grid's row @a row, or -1 when there is no such row: NoteGrid finds a row by
@@ -113,22 +125,20 @@ void NoteCanvas::paintAlong(const QPoint& from, const QPoint& to)
 	const double fromRow = static_cast<double>(from.y() + grid.scrollY());
 	const double tickDelta = grid.tickAtX(to.x()) - fromTick;
 	const double rowDelta = static_cast<double>(to.y() + grid.scrollY()) - fromRow;
-	const int cellStep = tickDelta > 0.0 ? cellTicks : -cellTicks;
-	const int rowStep = rowDelta > 0.0 ? 1 : -1;
-	int cell = std::max(0, NoteGrid::snapDown(static_cast<int>(fromTick), cellTicks));
-	int row = static_cast<int>(std::floor(fromRow / rowHeight));
-	appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), cell);
+	int cell = cellAtStart(fromTick, tickDelta, cellTicks);
+	int row = cellAtStart(fromRow, rowDelta, rowHeight);
+	appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), std::max(0, cell * cellTicks));
 	// The path's parameter at the next boundary on each axis: whichever comes first is stepped, both of them
-	// on a corner, and the walk ends when neither axis has a boundary left inside the segment.
-	double cellParam = boundaryParam(fromTick, tickDelta, cellTicks);
-	double rowParam = boundaryParam(fromRow, rowDelta, rowHeight);
-	while (cellParam <= 1.0 || rowParam <= 1.0)
+	// on a corner, and the walk ends before the end point, which extendPaint paints with its own cell.
+	double cellParam = nextBoundaryParam(cell, fromTick, tickDelta, cellTicks);
+	double rowParam = nextBoundaryParam(row, fromRow, rowDelta, rowHeight);
+	while (cellParam < 1.0 || rowParam < 1.0)
 	{
 		const bool cellFirst = cellParam <= rowParam;
 		const bool rowFirst = rowParam <= cellParam;
-		if (cellFirst) { cell += cellStep; cellParam = (cell + cellStep - fromTick) / tickDelta; }
-		if (rowFirst) { row += rowStep; rowParam = ((row + rowStep) * rowHeight - fromRow) / rowDelta; }
-		appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), std::max(0, cell));
+		if (cellFirst) { cell += tickDelta > 0.0 ? 1 : -1; cellParam = nextBoundaryParam(cell, fromTick, tickDelta, cellTicks); }
+		if (rowFirst) { row += rowDelta > 0.0 ? 1 : -1; rowParam = nextBoundaryParam(row, fromRow, rowDelta, rowHeight); }
+		appendPaintCell(m_painted, scaleKey(keyOfRow(grid, row)), std::max(0, cell * cellTicks));
 	}
 	extendPaint(to);
 }

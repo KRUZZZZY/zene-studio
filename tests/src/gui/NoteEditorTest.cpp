@@ -524,6 +524,62 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 	}
 
+	void aBackwardTimeBoundaryPaintStrokePaintsTheCellsItEnters()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		const NoteGrid& g = m_editor->state().grid;
+		// Start exactly on a 12-tick boundary (tick 300) and leave key 62's row at once while moving left:
+		// after the press the path is in cell 288 on key 63, then on key 64, and never enters cell 300 on
+		// key 63 (the cell on the far side of the boundary it started on).
+		const QPoint from(static_cast<int>(g.xOfTick(300)), g.yOfKey(62));
+		const QPoint to(static_cast<int>(g.xOfTick(288)), g.yOfKey(64));
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), to);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 288, 63) != nullptr, "the path enters cell 288 on key 63");
+		QVERIFY2(noteAt(m_clip, 288, 64) != nullptr, "the release cell on key 64 is painted");
+		QVERIFY2(noteAt(m_clip, 300, 63) == nullptr, "cell 300 is never entered on key 63");
+		QCOMPARE(m_clip->notes().size(), std::size_t{5});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aBackwardRowBoundaryPaintStrokePaintsTheCellsItEnters()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		const NoteGrid& g = m_editor->state().grid;
+		// Start exactly on the top of key 60's row and move left and up: after the press the path is on key
+		// 61 in cell 288, then enters cell 276 on key 61. It never enters cell 276 on key 60.
+		const QPoint from(static_cast<int>(g.xOfTick(295)), g.yOfKey(60));
+		const QPoint to(static_cast<int>(g.xOfTick(283)), g.yOfKey(61));
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), to);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 288, 61) != nullptr, "the path enters cell 288 on key 61");
+		QVERIFY2(noteAt(m_clip, 276, 61) != nullptr, "the path enters cell 276 on key 61");
+		QVERIFY2(noteAt(m_clip, 276, 60) == nullptr, "cell 276 is never entered on key 60");
+		QCOMPARE(m_clip->notes().size(), std::size_t{5});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
+	void aBackwardPaintStrokeEndingOnACellBoundaryDoesNotPaintTheCellBeyondIt()
+	{
+		m_editor->setTool(NoteTool::Paint);
+		const NoteGrid& g = m_editor->state().grid;
+		// A stroke that ends exactly on the boundary at tick 288 stays in cell 288: it never enters cell 276.
+		const QPoint from(static_cast<int>(g.xOfTick(295)), g.yOfKey(62) + g.rowHeight() / 2);
+		const QPoint to(static_cast<int>(g.xOfTick(288)), from.y());
+		QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseMove(m_editor->canvas(), to);
+		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 288, 62) != nullptr, "the release cell is painted");
+		QVERIFY2(noteAt(m_clip, 276, 62) == nullptr, "cell 276 is beyond the release and is never entered");
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+	}
+
 	void altWheelChangesTheSelectionsVelocityAsOneEdit()
 	{
 		// The FL model (2026-10-03): Alt+wheel over a note sets the velocity (Alt alone no longer drags it).
