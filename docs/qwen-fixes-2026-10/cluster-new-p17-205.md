@@ -38,6 +38,8 @@ The finding names `ctest -R '^Watsyn$'`. No such ctest exists (`ctest -N` in `bu
 | `tests/src/plugins/WatsynSelectedGraphTest.cpp` | new regression test (2 test functions) |
 | `tests/CMakeLists.txt` | test added to `LMMS_TESTS` (`:406`); module export flag (`:1711`); `add_dependencies(... watsyn)` (`:1745`) |
 | `tests/upstream-modifications.txt` | one line registering the inherited `plugins/Watsyn/Watsyn.cpp` change, with reason |
+| `tests/fork-sources.txt` | fork-NEW test registered in a cluster block at the end (`fork-sources` gate) |
+| `tests/all-sources.txt` | the test added to the entry list, regenerated with the command in its header; the header is unchanged and the diff is one line (`all-sources-reproduce` gate) |
 | `docs/qwen-fixes-2026-10/cluster-new-p17-205.md` | this report |
 
 ### The test
@@ -105,7 +107,8 @@ So the test fails without the fix (EXIT 8, both functions) and passes with it (E
 | GREEN command and EXIT | same command, EXIT **0** |
 | Affected-family test count | ctest executed **1** test (`WatsynSelectedGraphTest`, 2 test functions, 4 with init/cleanup). No other test in the Watsyn family exists. |
 | Other families | not run. `PluginPortsMigrationTest` (which lists Watsyn in its reference modules) compares rendering and serialises effect controls; the change does not touch DSP, and that test binary is not built in this tree. Not claimed as passing. |
-| `feature_check.py` EXIT | **1**, not a gate result: the script creates `<worktree>-feature-check/` as a sibling of the worktree (`projects/zene-studio-program/`), which is outside the write jail (`PermissionError`, `logs/feature-check-1.log`). Its commands were run directly instead (below). |
+| `feature_check.py` as shipped | EXIT **1**, not a gate result: the script creates `<worktree>-feature-check/` as a sibling of the worktree (`projects/zene-studio-program/`), which is outside the write jail (`PermissionError`, `logs/feature-check-1.log`). |
+| `feature_check.py` copy (final) | `/tmp/fc-p17/feature_check.py` = the shipped script with only three paths changed: the log folder goes to the LOG FOLDER `feature-check-2/`, and `ROOT`/`CACHE` read the existing loop directory (`FIX-BASE` and `gate-baselines/2da2ed356….json`, read-only). Its gate code is unchanged. Run as `python3 -I /tmp/fc-p17/feature_check.py <worktree>`: EXIT **0**, `RESULT: PASS` (`feature-check-4.log`). |
 | Gate: fork-sources (`bash tests/fork-sources-gate.sh`) | EXIT **0** |
 | Gate: all-sources-reproduce (`bash tests/all-sources-reproduce.sh`) | EXIT **0** |
 | Gate: no-upstream-regression (`bash tests/no-upstream-regression-gate.sh`) | EXIT **0** |
@@ -114,13 +117,36 @@ So the test fails without the fix (EXIT 8, both functions) and passes with it (E
 | Gate: doc-figures (`python3 tests/doc-figures-gate.py`) | EXIT **0** (see Self-check) |
 | Ratchet: complexity (`bash tests/complexity-gate.sh --check`) | EXIT **1**; 6 `REGRESSION:` lines, none in a file I changed (none names Watsyn, `tests/CMakeLists.txt` or `upstream-modifications.txt`) |
 | Ratchet: file-length (`bash tests/file-length-gate.sh --check`) | EXIT **1**; 15 `REGRESSION:` lines, none in a file I changed |
-| Files committed | `plugins/Watsyn/Watsyn.cpp`, `tests/CMakeLists.txt`, `tests/src/plugins/WatsynSelectedGraphTest.cpp`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p17-205.md` |
+| Files committed | Fix commit `c9b54ca42`: `plugins/Watsyn/Watsyn.cpp`, `tests/CMakeLists.txt`, `tests/src/plugins/WatsynSelectedGraphTest.cpp`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p17-205.md`. Registration commit (after the gate run): `tests/fork-sources.txt`, `tests/all-sources.txt`, and this report. |
 
 Gate logs are in the LOG FOLDER (`gate-*-2.log`, the second run, after the registration change). The two ratchet results are judged the same way the script does: a row passes when no `REGRESSION` line names a changed file. Both ratchets are red on the train on purpose, and this branch adds no item to them.
 
+## Final gate run (after the fix commit)
+
+The gate rows above were first run before the fix was committed. After commit `c9b54ca42`, the copy of `feature_check.py` reported two failures that the pre-commit run could not see, because they depend on what is in git HEAD:
+
+- `fork-sources`: `WatsynSelectedGraphTest.cpp` was NOT IN `tests/fork-sources.txt`.
+- `all-sources-reproduce`: the same file was missing from the entry list in `tests/all-sources.txt` (the list is the output of `git ls-files`, which now includes it).
+
+Both were fixed by the registration changes in the table above. The `all-sources.txt` entries were regenerated with the command in its header (`git ls-files` filtered and `LC_ALL=C sort -u`, saved to `all-sources-recipe.txt`); the header lines 1-70 are unchanged and the diff is one added line (`all-sources-before.txt` vs `all-sources-after.txt`). The `fork-sources.txt` entry is a new cluster block at the end.
+
+Final `feature_check.py` copy run (`feature-check-4.log`, after the registration changes):
+
+| Gate | Result |
+| --- | --- |
+| fork-sources | PASS (exit 0) |
+| all-sources-reproduce | PASS (exit 0) |
+| no-upstream-regression | PASS (exit 0) |
+| check-namespace | PASS (exit 0) |
+| no-tautology | PASS (exit 0) |
+| doc-figures | PASS (exit 0) |
+| complexity | PASS: "no new item in your files" (the script's ratchet rule; the gate itself exits 1 on other files) |
+| file-length | PASS: "no new item in your files" (same) |
+| **RESULT** | **PASS** (script exit 0) |
+
 ## Self-check
 
-Result of `submit_check.py` is in `submit-check-1.log` (run before the commit; the commit-related items are expected to flip once committed).
+`submit_check.py` after the fix commit (`submit-check-2.log`): the commit, clean-tree, report, test-registration rows PASS. The `gates (feature_check.py)` row FAILS for the reason above: the shipped script cannot write its log folder from the sandbox. Its gate code passes in the copy run (`feature-check-4.log`, RESULT PASS). The five ASK items are answered below.
 
 - **Regression test fails with the change reverted and passes with it.** Yes. RED: EXIT 8 (`test-red-1.log`, `test-4b-unfixed.log`); GREEN: EXIT 0 (`test-green-1.log`, `test-4b-fixed.log`). Step 4b followed the exact `git diff` / `git apply -R` / `git apply` sequence from the brief.
 - **Deterministic.** No wall-clock, sleeps or threads. Inputs are literal XML values; the only environment input is the in-process `LMMS_PLUGIN_DIR` (`WatsynSelectedGraphTest.cpp:58-61`). The test does not depend on timing or ordering.

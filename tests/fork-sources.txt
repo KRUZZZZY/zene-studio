@@ -2703,3 +2703,5 @@ docs/qwen-fixes-2026-10/cluster-Q050-148.md
 docs/qwen-fixes-2026-10/cluster-new-p10-518-port.md
 # cluster new-p11-81-port (2026-10): report for the delay primitive per-channel cursor fix ported onto 050/m0-train-5.
 docs/qwen-fixes-2026-10/cluster-new-p11-81-port.md
+# cluster new-p17-205: regression for Watsyn's selected oscillator graph save/load (the selgraph attribute), fork-NEW test.
+tests/src/plugins/WatsynSelectedGraphTest.cpp
