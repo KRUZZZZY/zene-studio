@@ -78,7 +78,8 @@ Log files are in `logs/`: `probe-red-*.log`, `probe-green-*.log`, `probe-green-s
 | C18 | fix for C17: register `plugins/NeuralAmp/tests/rt_alloc_probe.cpp` in `tests/fork-sources.txt` (fork-new, added after the gate base) and re-derive `tests/all-sources.txt` (C19) | - | commit 9f21b8d0f |
 | C19 | regenerate: `{ git ls-files '*.c' ... ; git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } \| LC_ALL=C sort -u` into a temp file; `diff` against the current entries shows only `+tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp` (diff exit 1, as expected); spliced under the unchanged 70-line header; the manifest's "Verify it" check prints `REPRODUCES` | 1 then REPRODUCES | - |
 | C20 | `python3 /tmp/fc-p16-196/feature_check_logs.py <worktree>` on commit 9f21b8d0f | 0 | gates-3.log (final, 8/8 PASS) |
-| C21 | `python3 /tmp/fc-p16-196/submit_check_copy.py <worktree> new-p16-196` on 9f21b8d0f | 1 | submit-2.log: only `working tree clean` FAIL (uncommitted report at that point); all gates PASS |
+| C21 | `python3 /tmp/fc-p16-196/submit_check_copy.py <worktree> new-p16-196` after the manifest commit 9f21b8d0f, before this report was committed | 1 | submit-2.log: only `working tree clean` FAIL (the report was uncommitted); all gates PASS |
+| C22 | same as C21, after the report commit 47c66362b | 0 | submit-3.log: `RESULT: PASS - submit` |
 
 Notes on C15-C21: the gate writes its logs to a sibling of the worktree, which the write-jail forbids. The copy in C16 has its log folder moved into the LOG folder and its ROOT pointed at the qwen directory (where `FIX-BASE` and the cached base listings are). `submit_check.py` is run from a `/tmp` copy for the same reason: its gate step calls `feature_check.py` from its own directory. Its checks are unchanged.
 
@@ -108,7 +109,7 @@ The ratchet logs also print `FAIL: complexity ratchet regressed (check mode: bas
 
 - `c8046be7b`: `plugins/NeuralAmp/tests/rt_alloc_probe.cpp` (fix), `tests/CMakeLists.txt` (registration), `tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp` (new regression test), `tests/upstream-modifications.txt` (`tests/CMakeLists.txt` is an inherited file; reason recorded), `docs/qwen-fixes-2026-10/cluster-new-p16-196.md` (this report, first version)
 - `9f21b8d0f`: `tests/fork-sources.txt` (`tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp` and `plugins/NeuralAmp/tests/rt_alloc_probe.cpp` registered as fork-new), `tests/all-sources.txt` (re-derived, one line added)
-- Final commit: this report (verdict, Self-check and the C15-C21 rows).
+- `47c66362b`: this report (verdict, Self-check and the C15-C22 rows).
 
 ## Follow-up (not changed here)
 
