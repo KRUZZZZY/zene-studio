@@ -84,9 +84,6 @@ bool triggerSubmenuItemOfContextMenu(QWidget* target, const QPoint& at, const QS
 		}
 		menu->close();
 	});
-	QTimer::singleShot(1500, []() {
-		if (QWidget* popup = QApplication::activePopupWidget()) { popup->close(); }
-	});
 	QContextMenuEvent context(QContextMenuEvent::Mouse, at, target->mapToGlobal(at), Qt::NoModifier);
 	QCoreApplication::sendEvent(target, &context);
 	return found;
