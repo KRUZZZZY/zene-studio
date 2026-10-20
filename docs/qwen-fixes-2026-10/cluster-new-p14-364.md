@@ -1,6 +1,6 @@
-# Cluster new-p14-364: VST3 effect view exposes read-only parameters as knobs
+FIXED
 
-**Verdict: FIXED**
+# Cluster new-p14-364: VST3 effect view exposes read-only parameters as knobs
 
 The VST3 effect's generated view built one knob for every visible parameter. It filtered `hidden` but not `readOnly`, so a visible read-only meter got an editable knob. The fix skips read-only parameters in the knob grid, matching the VST3 instrument's generated view.
 
@@ -35,15 +35,15 @@ Environment note: `ccache` could not create its temporary file under `/run/user/
 | # | Command (run from the worktree unless noted) | EXIT | Log |
 | - | --- | --- | --- |
 | 1 | `cmake --build build --target zene vst3effect vst3instrument Vst3InstrumentIntegrationTest -j4` | 2 | `build-1-red.log` (ccache temp-file permission error, before any test code was compiled) |
-| 2 | same, with `CCACHE_TEMPDIR=/tmp/...` | 2 | `build-2-red.log` (my test used `EffectView.h`, which does not define `EffectControlDialog`; fixed to `EffectControlDialog.h` and `EffectControls.h`) |
-| 3 | same, with `CCACHE_TEMPDIR=/tmp/...` | 0 | `build-3-red.log` (RED build, fix not applied) |
+| 2 | `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p14-364 cmake --build build --target zene vst3effect vst3instrument Vst3InstrumentIntegrationTest -j4` | 2 | `build-2-red.log` (my test used `EffectView.h`, which does not define `EffectControlDialog`; fixed to `EffectControlDialog.h` and `EffectControls.h`) |
+| 3 | `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p14-364 cmake --build build --target zene vst3effect vst3instrument Vst3InstrumentIntegrationTest -j4` | 0 | `build-3-red.log` (RED build, fix not applied) |
 | 4 | `cd build/tests && ctest -R '^Vst3InstrumentIntegrationTest$' --output-on-failure` | 8 | `test-1-red.log` (**RED**: `FAIL! ... testReadOnlyParametersAreNotEffectKnobs()`, `Actual (knobs.size()): 2`, `Expected (1): 1`, `Loc: [...Vst3InstrumentIntegrationTest.cpp(888)]`, `Totals: 15 passed, 1 failed`) |
 | 5 | `git diff -- plugins/Vst3Effect/Vst3EffectControlDialog.cpp > logs/fix.patch` | 0 | — |
 | 6 | `git apply -R logs/fix.patch` | 0 | — |
-| 7 | `cmake --build ...` (same targets, `build-5-4b-without-fix.log`) | 0 | — |
+| 7 | `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p14-364 cmake --build build --target zene vst3effect vst3instrument Vst3InstrumentIntegrationTest -j4` | 0 | `build-5-4b-without-fix.log` |
 | 8 | `cd build/tests && ctest -R '^Vst3InstrumentIntegrationTest$' -V` | 8 | `test-3-4b-without-fix.log` (**FAIL without fix**: `Actual (knobs.size()): 2`, `Totals: 15 passed, 1 failed`) |
 | 9 | `git apply logs/fix.patch` | 0 | — |
-| 10 | `cmake --build ...` (same targets, `build-6-4b-with-fix.log`) | 0 | — |
+| 10 | `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p14-364 cmake --build build --target zene vst3effect vst3instrument Vst3InstrumentIntegrationTest -j4` | 0 | `build-6-4b-with-fix.log` |
 | 11 | `cd build/tests && ctest -R '^Vst3InstrumentIntegrationTest$' -V` | 0 | `test-4-4b-with-fix.log` (**GREEN**: `Totals: 16 passed, 0 failed`; `100% tests passed out of 1`) |
 
 Affected family (VST3 tests that compile or host the changed dialog):
