@@ -34,6 +34,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <system_error>
 #include <thread>
 #include <tuple>
@@ -205,6 +206,33 @@ private slots:
 			QFAIL("pool destruction abandoned the queued task's promise");
 		}
 		QVERIFY(queuedTaskRan.load(std::memory_order_acquire));
+	}
+
+	void throwingTaskCompletesItsFutureAndKeepsThePoolUsable()
+	{
+		// A throwing task must not escape the worker thread: the exception has to reach the
+		// caller through the future instead of terminating the process.
+		auto pool = std::make_unique<lmms::ThreadPool>(1);
+		auto failedTask = pool->enqueue([] { throw std::runtime_error{"task failure"}; });
+		bool caught = false;
+		try
+		{
+			failedTask.get();
+		}
+		catch (const std::runtime_error& exception)
+		{
+			caught = true;
+			QCOMPARE(QString::fromUtf8(exception.what()), QStringLiteral("task failure"));
+		}
+		QVERIFY2(caught, "future::get() did not rethrow the task's exception");
+
+		// The worker must survive the failed task and stay usable.
+		std::atomic<bool> followupTaskRan{false};
+		auto followupTask = pool->enqueue([&followupTaskRan] {
+			followupTaskRan.store(true, std::memory_order_release);
+		});
+		followupTask.get();
+		QVERIFY(followupTaskRan.load(std::memory_order_acquire));
 	}
 
 	void partialStartupFailureStopsStartedWorkers()
