@@ -54,6 +54,18 @@ None. The only production-path behaviour touched was the temporary removal used 
 - `tests/src/plugins/NeuralAmpModelLoadTest.cpp` (new regression `nonPositiveDilationIsRejectedByTheLoader`; fork-new file already registered in tests/fork-sources.txt:2552, so Gate 6 needs no ledger entry)
 - `docs/qwen-fixes-2026-10/cluster-new-p12-163-port.md` (this report)
 
+## Round 2 rework (report-first-line fix, rerun evidence)
+
+Round-2 review (qa/reviews/new-p12-163-port.r2.md) required the verdict on line 1; the heading now follows it (`f10e1b955`, report-only — loader and regression test untouched). Rerun after the correction, logs in the same LOG FOLDER:
+
+| Step | Command | EXIT |
+|---|---|---|
+| Rebuild | `cmake --build build --target zene NeuralAmpModelLoadTest nam_harness > LOGS/build-7.log 2>&1` | 0 |
+| Targeted tests | `ctest -R "NeuralAmpModelLoadTest\|NamLoaderTest" --output-on-failure > LOGS/test-green-7.log 2>&1` (cwd `build/tests`) | 0 — 9/9 passed |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/gates-3.log 2>&1` | 0 — RESULT: PASS (all 8) |
+
+(A `submit_check.py` run before this section was committed exited 1 only on "working tree clean", because this report edit was then uncommitted — LOGS/submit-check-3.log; it passes once the report is committed.)
+
 ## Self-check
 
 - **The regression test FAILS with your product change reverted and PASSES with it (exit codes).** Yes, proven twice. New test: with the 4-line dilation guard temporarily removed and `NeuralAmpModelLoadTest` rebuilt, the single slot exited 1 with "FAIL! ... 'negModel == nullptr' returned FALSE" (LOGS/test-red-2-single.log); with the guard restored and rebuilt, it exited 0 ("Totals: 3 passed, 0 failed", LOGS/test-green-5-single.log) and the ctest family `NamLoaderTest|NeuralAmpModelLoad` exited 0 with 9/9 passed (LOGS/test-green-6.log). The pre-existing harness case was proven the same way: with the guard removed, `ctest -R NamLoaderTest_dilation-negative` exited 8 with "FAIL: unexpected loader result for config dilation-negative" (LOGS/test-red-1.log); restored, `ctest -R NamLoaderTest` exited 0 with 8/8 (LOGS/test-green-2.log).
