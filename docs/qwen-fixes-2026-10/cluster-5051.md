@@ -170,6 +170,19 @@ python3 build/5051-logs/feature_check_local.py <worktree>
 #   RESULT: PASS   EXIT=0
 ```
 
+The pre-submit check was run twice for the same reason.  The stock tool
+(`submit-2.log`) passes every item except the gate row, which cannot create its
+sibling log directory; the equivalent copy with the gate log path redirected
+(`build/5051-logs/qwen-tools/submit_check.py`, ROOT/FIX-BASE pinned to the
+original tool directory) passes every row:
+
+```
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5051
+# submit-2.log: PASS commits / clean / report / tests; FAIL gates (log dir EACCES); EXIT=1
+python3 build/5051-logs/qwen-tools/submit_check.py <worktree> 5051
+# submit-local-1.log: PASS commits / clean / report / tests / gates; RESULT: PASS; EXIT=0
+```
+
 ## Files committed
 
 - `src/core/EffectChain.cpp` — guard in `loadSettings()`; test-only probe seam.
