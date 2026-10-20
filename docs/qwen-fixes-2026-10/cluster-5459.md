@@ -1,5 +1,7 @@
 # Cluster 5459 — VST3 host batch (5459, 2613, 5460)
 
+Verdict: FIXED
+
 5459: ALREADY-FIXED
 2613: ALREADY-FIXED
 5460: FIXED
