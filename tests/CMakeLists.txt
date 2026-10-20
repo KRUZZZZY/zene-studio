@@ -1471,6 +1471,19 @@ set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-W
 # control cannot see is a test the control cannot judge.
 list(APPEND LMMS_TESTS src/plugins/VibedWaveformHandoffTest.cpp)
 
+# cluster new-p14-358 / 5451: the VeSTige VST host's MIDI path. "Turn off all notes"
+# has to end the notes of every MIDI channel, and the note path must reach the plug-in
+# through the bounded hand-off queue instead of the plug-in mutex. It is registered LAST
+# for the same reason as the test above: the mechanical negative control reads the ctest
+# test NAMES out of `ctest -N`, and only the high-numbered ones are visible to it.
+list(APPEND LMMS_TESTS src/plugins/VestigeMidiHandoffTest.cpp)
+
+# The VeSTige plug-in is a VST2 host: where that host is not built (macOS: no VST2
+# host) there is nothing to test.
+if(NOT TARGET vestige)
+	list(REMOVE_ITEM LMMS_TESTS src/plugins/VestigeMidiHandoffTest.cpp)
+endif()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1531,6 +1544,30 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
+	endif()
+	# cluster new-p14-358 / 5451: VestigeMidiHandoffTest compiles the VeSTige plug-in's
+	# own sources into the test (the SlicerT and Vibed tests' shape), so the "Turn off all
+	# notes" button and the note path under test are the shipping ones. The plug-in's
+	# artwork is generated in its build directory; without CMP0118 the GENERATED mark is
+	# per-directory, so a fresh configure of THIS directory would refuse a file that does
+	# not exist yet. add_dependencies below orders its build.
+	if(LMMS_TEST_NAME STREQUAL "VestigeMidiHandoffTest")
+		set_source_files_properties("${CMAKE_BINARY_DIR}/plugins/Vestige/qrc_vestige.cpp"
+			PROPERTIES GENERATED TRUE)
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vestige/Vestige.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vestige/Vestige.h
+			${CMAKE_BINARY_DIR}/plugins/Vestige/qrc_vestige.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vestige
+			${CMAKE_BINARY_DIR}/plugins/Vestige)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=vestige)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
+		add_dependencies(${LMMS_TEST_NAME} vestige)
+		# The vstbase module resolves the LMMS core symbols from its host process,
+		# so the test binary has to export its symbols exactly like the zene
+		# executable does.
+		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCBaseTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c)

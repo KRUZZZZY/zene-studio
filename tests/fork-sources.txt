@@ -2784,3 +2784,7 @@ tests/src/gui/CPULoadWidgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+# cluster new-p14-358 / 5451 (2026-10): the VeSTige VST host MIDI path regression test (fork-NEW).
+tests/src/plugins/VestigeMidiHandoffTest.cpp
+# cluster new-p14-358 / 5451 (2026-10): the VeSTige VST host MIDI path fix and verification report (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-5451.md
