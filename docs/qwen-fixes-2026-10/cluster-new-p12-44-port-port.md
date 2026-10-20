@@ -70,6 +70,14 @@ The commands are the RED/GREEN block above, run against the SAME tree:
 - `cmake --build build --target zene ControlSessionRecordLandUndoTest -j 16 > logs/build-newtest-reapply-1.log 2>&1` - EXIT=0
 - `ctest -R ControlSessionRecordLandUndoTest --output-on-failure > logs/test-newtest-reapply-1.log 2>&1` (from build/tests) - **EXIT=0** - 1/1 test passed
 
+### The repo's own negative control, run on this branch
+
+`negctl.prove()` (the harness the review loop runs) on this tree - the run's `negctl/` folder:
+
+- reverted: the harness's own `ctest` run fails, and the ONE failing test is the regression - `456 - ControlSessionRecordLandUndoTest (Failed)`, both cases failing (`Actual 1, Expected 0` and `Actual 2, Expected 1`); the seven collateral tests pass. `reverted_rc` = 8, `reverted_build_rc` = 0.
+- restored: 8/8 tests pass (`restored_rc` = 0), `tree_clean` = true.
+- the harness's verdict: `ok: true` - "ControlCommandsSnapshot, ControlSessionRecordLandUndoTest, ReversibilityContractTest, ReversibilityUndoTest, SessionArrangementRecordTest, SessionFollowTest, UndoBoundsTest, UndoHonestyTest: they fail without it (rc 8) and pass with it".
+
 ## Gates
 
 - `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - EXIT=0 (all rows PASS) - logs/feature-check-2.log
