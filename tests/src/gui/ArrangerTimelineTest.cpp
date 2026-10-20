@@ -830,7 +830,17 @@ private slots:
 		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
 	}
 
-	private:
+	//! QtTest runs only the private slots. A test method declared under `private:` is never run, so this asks the
+	//! meta-object for each of the timeline tests that must run.
+	void everyTimelineTestIsAPrivateSlot()
+	{
+		for (const char* name : {"aBurstOfRealNudgesIsOneUndoStep()", "theNavigatorRangeIncludesSongsNearTheTickLimit()",
+			"oversizedScrollPositionsReachTheEndOfTheArranger()"})
+		{
+			QVERIFY2(staticMetaObject.indexOfSlot(name) >= 0, name);
+		}
+	}
+
 	//! The REAL arrangement.nudge (its production declaration, through the arranger): three presses on one clip are
 	//! one undo step and one record, and control.undo puts the clip back where it started. A press on another clip
 	//! starts its own run.
