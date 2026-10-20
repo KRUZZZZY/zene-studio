@@ -86,6 +86,12 @@ public:
 		return m_sample;
 	}
 
+	//! The take's audio, read-only: the waveform painters (TakeWaveform) need its peaks.
+	const Sample& sample() const
+	{
+		return m_sample;
+	}
+
 	TimePos sampleLength() const;
 
 	/*! The clip's authored window into its source audio (design §2.2).

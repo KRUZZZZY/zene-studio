@@ -37,6 +37,7 @@
 
 #include <QtTest>
 
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 
@@ -59,6 +60,7 @@
 #include "ArrangerZoom.h"
 #include "Clip.h"
 #include "ClipLockFeedback.h"
+#include "CompSwipeStrip.h"
 #include "ClipView.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -78,6 +80,11 @@
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectMarkers.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
+#include "TakeLaneRows.h"
+#include "TakeLanesPanel.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
@@ -103,6 +110,41 @@ Clip* clipAt(Track* track, tick_t start, tick_t length)
 	clip->changeLength(TimePos(length));
 	clip->setAutoResize(false);
 	return clip;
+}
+
+//! 0.5.0 L03 (Q050-123): a take with audible peaks, so the waveform painter has something to draw.
+SampleClip* waveTake(Track* track, tick_t start, tick_t length)
+{
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(start)));
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	std::vector<SampleFrame> data(static_cast<std::size_t>(std::max(1, rate / 4)));
+	for (std::size_t i = 0; i < data.size(); ++i)
+	{
+		const float value = static_cast<float>(std::sin(static_cast<double>(i) * 0.08)) * 0.7f;
+		data[i] = SampleFrame(value, -value);
+	}
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+	clip->changeLength(TimePos(length));
+	clip->movePosition(TimePos(start));
+	return clip;
+}
+
+//! True when the middle column of @a rect holds a pixel other than the take's fill: the waveform.
+bool hasWaveformInk(const QImage& image, const QRect& rect)
+{
+	const QRect visible = rect.intersected(image.rect()).adjusted(0, 3, 0, -3);
+	if (visible.isEmpty()) { return false; }
+	const int x = visible.center().x();
+	QHash<QRgb, int> counts;
+	int total = 0;
+	for (int y = visible.top(); y <= visible.bottom(); ++y)
+	{
+		++counts[image.pixel(x, y)];
+		++total;
+	}
+	int mostCommon = 0;
+	for (auto it = counts.cbegin(); it != counts.cend(); ++it) { mostCommon = std::max(mostCommon, it.value()); }
+	return total - mostCommon > 0;
 }
 
 ClipView* viewOf(const Clip* clip)
@@ -893,6 +935,82 @@ private slots:
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
 	}
 
+	//! 0.5.0 L03 (Q050-123): a sample track with take lanes shows one row per lane, every take at
+	//! its own place on the same mapping as the bar ruler - at two zoom levels - and its waveform
+	//! is painted inside that rectangle. The existing take-lanes panel stays available beside it.
+	void takeLaneRowsAlignWaveformsWithTheRulerAndKeepTheCompPanel()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		SampleClip* first = waveTake(track, 0, 2 * Bar);
+		SampleClip* second = waveTake(track, 3 * Bar, 2 * Bar);
+		const QString id = control::trackIdOf(track);
+		QVERIFY(run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), id}}).ok);
+		QVERIFY(run(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), id}}).ok);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)},
+			{QStringLiteral("lane"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)},
+			{QStringLiteral("lane"), 1}}).ok);
+		QCoreApplication::processEvents();
+
+		TrackView* view = nullptr;
+		for (TrackView* candidate : m_editor->trackViews())
+		{
+			if (candidate->getTrack() == track) { view = candidate; }
+		}
+		QVERIFY2(view != nullptr, "the sample track has no row in the arranger");
+		auto* rows = view->getTrackContentWidget()->findChild<TakeLaneRows*>(QStringLiteral("takeLaneRows"));
+		QVERIFY2(rows != nullptr, "the sample track has no take-lane rows");
+		QTRY_VERIFY_WITH_TIMEOUT(rows->isVisible(), 3000);
+		rows->refreshNow();
+		QCOMPARE(rows->lanes().size(), std::size_t{2});
+
+		const auto contentX = [this](tick_t tick) {
+			const TimeLineWidget* ruler = m_editor->timeLine();
+			return ruler->markerX(TimePos(tick)) - ruler->markerX(m_editor->currentPosition());
+		};
+		auto bands = rows->bands();
+		QCOMPARE(bands.size(), std::size_t{2});
+		QCOMPARE(bands[0].lane, 0);
+		QCOMPARE(bands[0].rect.left(), contentX(first->startPosition().getTicks()));
+		QCOMPARE(bands[0].rect.right() + 1, contentX(first->endPosition().getTicks()));
+		QCOMPARE(bands[1].lane, 1);
+		QCOMPARE(bands[1].rect.left(), contentX(second->startPosition().getTicks()));
+		QVERIFY(bands[0].rect.top() < bands[1].rect.top());
+
+		const QImage drawn = view->getTrackContentWidget()->grab().toImage();
+		QVERIFY2(hasWaveformInk(drawn, bands[0].rect), "the first take's lane holds no waveform");
+		QVERIFY2(hasWaveformInk(drawn, bands[1].rect), "the second take's lane holds no waveform");
+
+		// Scrolling moves the rows with the ruler, and a zoom keeps the same tick at the same place.
+		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 2 * Bar}}).ok);
+		QCoreApplication::processEvents();
+		rows->refreshNow();
+		bands = rows->bands();
+		QCOMPARE(bands[0].rect.left(), contentX(first->startPosition().getTicks()));
+		QCOMPARE(bands[1].rect.left(), contentX(second->startPosition().getTicks()));
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 80},
+			{QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+		QCoreApplication::processEvents();
+		rows->refreshNow();
+		bands = rows->bands();
+		QCOMPARE(bands[1].rect.left(), contentX(second->startPosition().getTicks()));
+		QCOMPARE(bands[1].rect.right() + 1, contentX(second->endPosition().getTicks()));
+
+		// The existing comp panel is still the place takes are auditioned and comped.
+		TakeLanesPanel panel(id);
+		panel.refresh();
+		QVERIFY(panel.compButton() != nullptr);
+		QVERIFY(panel.addLaneButton() != nullptr);
+		QVERIFY(panel.auditionButton(0) != nullptr);
+		QVERIFY(panel.strip() != nullptr);
+		QCOMPARE(panel.strip()->takeBands().size(), std::size_t{2});
+		for (const CompSwipeStrip::TakeBand& band : panel.strip()->takeBands())
+		{
+			QCOMPARE(band.rect.left(), panel.strip()->tickToX(band.begin));
+			QCOMPARE(band.rect.right() + 1, panel.strip()->tickToX(band.end));
+		}
+	}
 
 	private:
 	//! The REAL arrangement.nudge (its production declaration, through the arranger): three presses on one clip are

@@ -52,6 +52,7 @@
 #include "TrackGrip.h"
 #include "TrackContainerView.h"
 #include "TrackSpacers.h"
+#include "TakeLaneRows.h"
 #include "ClipView.h"
 
 
@@ -155,6 +156,15 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 	for (const auto& clip : m_track->m_clips)
 	{
 		createClipView(clip);
+	}
+
+	// 0.5.0 L03 (Q050-123): a sample track's take lanes get rows of their own over the content
+	// area. The rows are hidden while the track has no lanes and take no mouse input, so an
+	// ordinary track's arrangement is untouched. Later lanes, clip edits and undos are read
+	// back by the rows' own watch.
+	if (m_track->type() == Track::Type::Sample)
+	{
+		new TakeLaneRows{m_track, this};
 	}
 
 	m_trackContainerView->addTrackView( this );

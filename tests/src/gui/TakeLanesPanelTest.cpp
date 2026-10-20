@@ -32,12 +32,14 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QImage>
 #include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QSpinBox>
 #include <QTableView>
 #include <QToolButton>
 
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -72,6 +74,44 @@ SampleClip* addTake(Track* track, float level)
 	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
 	return clip;
 }
+
+//! 0.5.0 L03 (Q050-123): a take with visible peaks at a known place and length.
+SampleClip* addWaveTake(Track* track, tick_t start, tick_t length)
+{
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(start)));
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	std::vector<SampleFrame> data(static_cast<std::size_t>(std::max(1, rate / 4)));
+	for (std::size_t i = 0; i < data.size(); ++i)
+	{
+		// A steady tone draws one horizontal line: the waveform is then a few pixels in a column
+		// that would otherwise be the take's fill, which is what the ink check reads.
+		data[i] = SampleFrame(0.6f, -0.6f);
+	}
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+	clip->changeLength(TimePos(length));
+	clip->movePosition(TimePos(start));
+	return clip;
+}
+
+//! True when the middle column of @a rect holds a pixel other than its most common one.
+bool hasWaveformInk(const QImage& image, const QRect& rect)
+{
+	const QRect visible = rect.intersected(image.rect()).adjusted(0, 3, 0, -3);
+	if (visible.isEmpty()) { return false; }
+	const int x = visible.center().x();
+	QHash<QRgb, int> counts;
+	int total = 0;
+	for (int y = visible.top(); y <= visible.bottom(); ++y)
+	{
+		++counts[image.pixel(x, y)];
+		++total;
+	}
+	int mostCommon = 0;
+	for (auto it = counts.cbegin(); it != counts.cend(); ++it) { mostCommon = std::max(mostCommon, it.value()); }
+	return total - mostCommon > 0;
+}
+
+
 
 } // namespace
 
@@ -211,6 +251,59 @@ private slots:
 		QCOMPARE(segment.value(QStringLiteral("end")).toInt(), length);
 		QCOMPARE(segment.value(QStringLiteral("lane")).toInt(), 1);
 	}
+
+	//! 0.5.0 L03 (Q050-123): the strip draws every take's waveform at its own place on the strip's
+	//! span, the active comp segment is highlighted over it, and the panel's existing controls stay.
+	void theStripShowsTakeWaveformsAndTheCompHighlight()
+	{
+		const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		Track* track = control::resolveTrack(id, &error);
+		QVERIFY(track != nullptr);
+		SampleClip* first = addWaveTake(track, 0, TimePos::ticksPerBar());
+		SampleClip* second = addWaveTake(track, TimePos::ticksPerBar(), TimePos::ticksPerBar());
+		TakeLanesPanel panel(id);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)},
+			{QStringLiteral("lane"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)},
+			{QStringLiteral("lane"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), 0},
+			{QStringLiteral("end"), TimePos::ticksPerBar() / 2}, {QStringLiteral("lane"), 0}}).ok);
+		panel.resize(640, 420);
+		panel.show();
+		QCoreApplication::processEvents();
+		panel.refresh();
+
+		CompSwipeStrip* strip = panel.strip();
+		QVERIFY(strip != nullptr);
+		QCOMPARE(strip->takeBands().size(), std::size_t{2});
+		for (const CompSwipeStrip::TakeBand& band : strip->takeBands())
+		{
+			QCOMPARE(band.rect.left(), strip->tickToX(band.begin));
+			QCOMPARE(band.rect.right() + 1, strip->tickToX(band.end));
+		}
+
+		const QImage drawn = strip->grab().toImage();
+		QVERIFY2(hasWaveformInk(drawn, strip->takeBands()[0].rect), "lane 0's take has no waveform");
+		QVERIFY2(hasWaveformInk(drawn, strip->takeBands()[1].rect), "lane 1's take has no waveform");
+
+		// The active segment tints its half of lane 0; the rest of the row is not tinted.
+		const QRect row = strip->takeBands()[0].rect;
+		const int highlighted = drawn.pixel(strip->tickToX(TimePos::ticksPerBar() / 4), row.top() + 2);
+		const int plain = drawn.pixel(strip->tickToX(3 * TimePos::ticksPerBar() / 2), row.top() + 2);
+		QVERIFY2(highlighted != plain, "the active comp segment is not highlighted on lane 0");
+
+		// The existing panel is still the way a take is auditioned and comped.
+		QVERIFY(panel.compButton() != nullptr);
+		QVERIFY(panel.auditionButton(0) != nullptr);
+		QVERIFY(panel.auditionButton(1) != nullptr);
+		QVERIFY(panel.laneBox()->count() >= 2);
+	}
+
+
 };
 
 QTEST_MAIN(TakeLanesPanelTest)

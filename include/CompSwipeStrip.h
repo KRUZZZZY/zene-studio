@@ -27,9 +27,20 @@
 #include <vector>
 
 #include <QJsonObject>
+#include <QPointer>
 #include <QWidget>
 
+#include "LmmsTypes.h"
+#include "TakeWaveform.h"
 #include "lmms_export.h"
+
+namespace lmms
+{
+class Clip;
+class Track;
+}
+
+class QResizeEvent;
 
 namespace lmms::gui
 {
@@ -54,6 +65,21 @@ public:
 		int lane = 0;
 	};
 
+	//! 0.5.0 L03 (Q050-123): one take clip's row in the strip: where its waveform is drawn, on the
+	//! strip's own tick->pixel mapping. A test reads these to check a take's alignment.
+	struct TakeBand
+	{
+		int lane = 0;
+		int begin = 0;
+		int end = 0;
+		QRect rect;
+		//! Guarded: an undo (or a project load) replaces a track's clips, and a paint may run
+		//! before the next refresh has re-read them.
+		QPointer<Clip> clip;
+
+		bool operator==(const TakeBand&) const = default;
+	};
+
 	CompSwipeStrip(const QString& trackId, QWidget* parent);
 
 	void setState(const QJsonObject& state);
@@ -66,6 +92,10 @@ public:
 	QString trackId() const { return m_trackId; }
 	const std::vector<Segment>& segments() const { return m_segments; }
 	const std::vector<int>& lanes() const { return m_lanes; }
+	//! 0.5.0 L03 (Q050-123): each take clip's band, rebuilt from the track when the state is read.
+	const std::vector<TakeBand>& takeBands() const { return m_takeBands; }
+	//! The strip's tick-to-pixel mapping, for a test comparing a band with the ruler.
+	int tickToX(int tick) const { return xOf(tick); }
 	//! The keyboard's place: the lane, the tick, and the range's other end (-1: no range).
 	int keyLane() const;
 	int keyTick() const { return m_keyTick; }
@@ -81,6 +111,7 @@ signals:
 protected:
 	bool event(QEvent* event) override;
 	void paintEvent(QPaintEvent* event) override;
+	void resizeEvent(QResizeEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void mouseReleaseEvent(QMouseEvent* event) override;
@@ -98,6 +129,12 @@ private:
 	int movedTick(int key, bool byBar) const;
 	void compAtCursor();
 	void cycleAtCursor();
+	//! 0.5.0 L03 (Q050-274): a single-finger swipe; true when the event was a touch this strip took.
+	bool touchEvent(QEvent* event);
+	//! Normalise, commit once through comp.select, and say what happened.
+	void commitDrag(int lane, int from, int to);
+	//! 0.5.0 L03 (Q050-123): take bands for the current state (also after a resize).
+	void rebuildTakes();
 	//! The comp's segment holding @a tick, or nullptr.
 	const Segment* segmentAt(int tick) const;
 
@@ -109,6 +146,12 @@ private:
 	int m_dragLane = -1;
 	int m_dragFrom = 0;
 	int m_dragTo = 0;
+	//! 0.5.0 L03 (Q050-274): the finger being followed; -1 when no touch sequence is live.
+	int m_touchId = -1;
+	bool m_touchActive = false;
+	QPointer<Track> m_track;
+	std::vector<TakeBand> m_takeBands;
+	TakeWaveform m_waves;
 	int m_keyRow = 0;       //!< theme 10: the lane row the keys act on
 	int m_keyTick = 0;      //!< ... the cursor's tick
 	int m_keyAnchor = -1;   //!< ... the marked range's other end, or -1
