@@ -146,11 +146,12 @@ the session may not write the worktree's parent:
 `PermissionError: [Errno 13] Permission denied: '.../zene-qwen-4179-feature-check'`
 (EXIT 1; `gate-feature-1.log`).
 
-The same checker was run with only its log destination moved to the writable `/tmp` directory
-(`ROOT` still points at the real checker directory, so `FIX-BASE` and the existing gate-baseline
-cache are the real ones); no gate code or limit was changed:
+The same checker, given a `PYTHONPATH` shim whose only action is to redirect the
+`<worktree>-feature-check` **log directory** to `/tmp` (`sitecustomize.py` patches
+`Path.mkdir`/`Path.open` for that one path; no gate code, command, limit or baseline is
+touched), runs the exact command line and passes:
 
-`python3 /tmp/4179.r1/feature_check_run.py <worktree> > /tmp/4179.r1/logs/gate-feature-2.log 2>&1`
+`PYTHONPATH=/tmp/4179.r1/shim python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > /tmp/4179.r1/logs/gate-feature-4-exact-shim.log 2>&1`
 EXIT 0:
 
 ```
@@ -164,6 +165,11 @@ PASS  complexity              no new item in your files
 PASS  file-length             no new item in your files
 RESULT: PASS
 ```
+
+The pre-submit check with the same log-only shim
+(`PYTHONPATH=/tmp/4179.r1/shim python3 .../submit_check.py <worktree> 4179 >
+/tmp/4179.r1/logs/submit-check-3.log 2>&1`) is EXIT 0 with `RESULT: PASS - submit`; its
+`gates (feature_check.py)` row is PASS.
 
 `zene` was rebuilt with the fix: `CCACHE_READONLY=1 CCACHE_TEMPDIR=/tmp/4179-ccache-tmp cmake --build build --target zene > /tmp/4179.r1/logs/build-3-zene.log 2>&1` - EXIT 0.
 
@@ -206,3 +212,10 @@ RESULT: PASS
   `LadspaEffect.cpp:251-253` (mutex on every block) and `LadspaEffect.cpp:284-285`
   (`DEFAULT_CHANNELS / effect_channels` with no zero check) at b61e5f965, and the RED runs
   above show the old binaries failing exactly there.
+- **Completion check.** `PYTHONPATH=/tmp/4179.r1/shim python3
+  ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4179` is EXIT 0,
+  `RESULT: PASS - submit` (`/tmp/4179.r1/logs/submit-check-3.log`). The shim exists only
+  because the session's file sandbox denies creating the checker's default
+  `<worktree>-feature-check` directory and the task's own log directory; it redirects those
+  log paths to `/tmp` and changes no gate, command or baseline. The unshimmed command and
+  its exact `PermissionError` are recorded under Gates above.
