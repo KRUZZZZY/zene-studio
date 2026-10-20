@@ -216,6 +216,36 @@ private slots:
 		QTRY_COMPARE(lanes->height(), without);
 	}
 
+	//! Hiding every lane keeps the ruler on screen as a strip: its context menu is the only in-UI way to show a lane
+	//! again, and a hidden ruler takes no right-click.
+	void aRulerWithEveryLaneHiddenKeepsItsContextMenuReachable()
+	{
+		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
+		QVERIFY(lanes != nullptr);
+		using Lane = ArrangerRulerLanes::Lane;
+		const QJsonObject allLanesOn{{QStringLiteral("sections"), true}, {QStringLiteral("markers"), true},
+			{QStringLiteral("tempo"), true}, {QStringLiteral("chords"), true}};
+		// However the case ends, every lane shows again: the cases after it read the lanes.
+		struct LanesShownAgain
+		{
+			const QJsonObject& lanesOn;
+			~LanesShownAgain() { run(QStringLiteral("arrangement.ruler_lanes"), lanesOn); }
+		} shownAgain{allLanesOn};
+		const QJsonObject everyLaneOff{{QStringLiteral("sections"), false}, {QStringLiteral("markers"), false},
+			{QStringLiteral("tempo"), false}, {QStringLiteral("chords"), false}};
+		QVERIFY(run(QStringLiteral("arrangement.ruler_lanes"), everyLaneOff).ok);
+		QVERIFY(lanes->laneRect(Lane::Sections).isEmpty());
+		QVERIFY2(!lanes->isHidden(), "hiding every lane hid the ruler, which took its context menu with it");
+		QVERIFY2(lanes->height() > 0, "no room is left under the ruler to right-click");
+
+		QVERIFY(run(QStringLiteral("arrangement.ruler_lanes"), {{QStringLiteral("markers"), true}}).ok);
+		QVERIFY(!lanes->laneRect(Lane::Markers).isEmpty());
+		QVERIFY(lanes->laneRect(Lane::Sections).isEmpty());
+		QVERIFY(run(QStringLiteral("arrangement.ruler_lanes"), allLanesOn).ok);
+		QVERIFY(!lanes->isHidden());
+		QVERIFY(!lanes->laneRect(Lane::Sections).isEmpty());
+	}
+
 	void aKeyboardZoomKeepsThePlayheadInPlace()
 	{
 		clipAt(m_track, 40 * Bar, Bar);  // a song long enough to scroll
