@@ -58,6 +58,7 @@
 #include <QFile>
 #include <QRegularExpression>
 #include <QFile>
+#include <QSemaphore>
 #include <QThread>
 
 #include <atomic>
@@ -94,8 +95,12 @@ constexpr int kExitBudgetMs = 2000;
 //! thread's scheduling.
 constexpr int kWorkers = 8;
 
+//! Budget for the fake PulseAudio handshake: the device thread answers the
+//! case's event (a refused connect, a failed stream, a rendered period) and
+//! the case waits for it. It is a FAILURE BOUND, not a timing assertion - the
+//! events themselves are released by the fake, never by the clock.
 #if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
-std::atomic<unsigned> gPulseMainloopFreeCalls{0};
+constexpr int kPulseHandshakeMs = 5000;
 #endif
 
 struct LifetimeProbe
@@ -131,26 +136,204 @@ struct LifetimeProbe
 } // namespace
 
 #if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
-// These test-only PulseAudio symbols make mainloop/context creation deterministic.
+//! The fake PulseAudio server the PulseAudio cases drive.
+//!
+//! ONE set of test-only symbols serves every case. The mainloop/context
+//! creation failure (cluster new-p12-319) and the stream failure cases
+//! (cluster new-p9-568) used to define the SAME libpulse entry points
+//! separately, and two definitions of one symbol cannot be linked into one
+//! binary - so the scenarios are merged here instead: each case says which
+//! answer the fake gives, and the case order does not matter.
+
+//! Which answer the fake server gives.
+enum class PulseScenario
+{
+	//! pa_context_new() answers null: the device must release the mainloop.
+	ContextCreationFails,
+	//! pa_stream_connect_playback() answers an error: the device must not
+	//! report the connection as established.
+	PlaybackConnectRejected,
+	//! The connect succeeds and the stream enters PA_STREAM_FAILED after it.
+	StreamFailsLater,
+};
+
+struct FakePulseState
+{
+	//! How often the device iterated the mainloop.
+	std::atomic<int> mainloopIterations{0};
+	//! The device asked for a playback connection.
+	std::atomic<bool> playbackConnectionCalled{false};
+	//! The fake handed the stream its PA_STREAM_FAILED state.
+	std::atomic<bool> streamFailureDelivered{false};
+	//! How often the mainloop was released.
+	std::atomic<unsigned> mainloopFreeCalls{0};
+};
+
+//! The opaque libpulse types, completed so the fake can carry the callbacks
+//! the product registers on them.
+struct pa_mainloop
+{
+	int unused = 0;
+};
+
+struct pa_context
+{
+	pa_context_notify_cb_t stateCallback = nullptr;
+	void* stateUserdata = nullptr;
+	pa_context_state_t state = PA_CONTEXT_UNCONNECTED;
+};
+
+struct pa_stream
+{
+	pa_context* context = nullptr;
+	pa_stream_notify_cb_t stateCallback = nullptr;
+	void* stateUserdata = nullptr;
+	pa_stream_state_t state = PA_STREAM_UNCONNECTED;
+};
+
+FakePulseState gFakePulse;
+PulseScenario gPulseScenario = PulseScenario::ContextCreationFails;
+pa_context gFakeContext;
+pa_stream gFakeStream;
+
+//! Selects the scenario and clears the recorded events, so a case never sees
+//! the previous case's handshake.
+void setPulseScenario(PulseScenario scenario)
+{
+	gPulseScenario = scenario;
+	gFakePulse.mainloopIterations.store(0, std::memory_order_relaxed);
+	gFakePulse.playbackConnectionCalled.store(false, std::memory_order_relaxed);
+	gFakePulse.streamFailureDelivered.store(false, std::memory_order_relaxed);
+	gFakePulse.mainloopFreeCalls.store(0, std::memory_order_relaxed);
+}
+
+// These test-only PulseAudio symbols replace the libpulse entry points the
+// device uses, so the cases decide what the server answers.
 extern "C" pa_mainloop* pa_mainloop_new(void)
 {
-	return reinterpret_cast<pa_mainloop*>(1);
+	static pa_mainloop mainloop;
+	return &mainloop;
 }
 
-extern "C" pa_mainloop_api* pa_mainloop_get_api(pa_mainloop*)
+extern "C" pa_mainloop_api* pa_mainloop_get_api(pa_mainloop* mainloop)
 {
-	return reinterpret_cast<pa_mainloop_api*>(1);
-}
-
-extern "C" pa_context* pa_context_new(pa_mainloop_api*, const char*)
-{
-	return nullptr;
+	return reinterpret_cast<pa_mainloop_api*>(mainloop);
 }
 
 extern "C" void pa_mainloop_free(pa_mainloop*)
 {
-	gPulseMainloopFreeCalls.fetch_add(1, std::memory_order_relaxed);
+	gFakePulse.mainloopFreeCalls.fetch_add(1, std::memory_order_relaxed);
 }
+
+//! One iteration of the fake mainloop. In the StreamFailsLater scenario it
+//! hands the stream the PA_STREAM_FAILED state a server hands out when the
+//! sink goes away - the event the device has to react to.
+extern "C" int pa_mainloop_iterate(pa_mainloop*, int, int*)
+{
+	gFakePulse.mainloopIterations.fetch_add(1, std::memory_order_relaxed);
+	if (gPulseScenario == PulseScenario::StreamFailsLater
+		&& !gFakePulse.streamFailureDelivered.load(std::memory_order_relaxed)
+		&& gFakeStream.stateCallback != nullptr)
+	{
+		gFakeStream.state = PA_STREAM_FAILED;
+		gFakeStream.stateCallback(&gFakeStream, gFakeStream.stateUserdata);
+		gFakePulse.streamFailureDelivered.store(true, std::memory_order_release);
+	}
+	return 0;
+}
+
+extern "C" pa_context* pa_context_new(pa_mainloop_api*, const char*)
+{
+	if (gPulseScenario == PulseScenario::ContextCreationFails) { return nullptr; }
+	gFakeContext = {};
+	return &gFakeContext;
+}
+
+extern "C" void pa_context_set_state_callback(pa_context* context, pa_context_notify_cb_t callback, void* userdata)
+{
+	context->stateCallback = callback;
+	context->stateUserdata = userdata;
+}
+
+//! The fake context reaches PA_CONTEXT_READY as soon as it is asked to
+//! connect - the state change the product's callback reacts to.
+extern "C" int pa_context_connect(pa_context* context, const char*, pa_context_flags_t, const pa_spawn_api*)
+{
+	context->state = PA_CONTEXT_READY;
+	if (context->stateCallback != nullptr) { context->stateCallback(context, context->stateUserdata); }
+	return 0;
+}
+
+extern "C" pa_context_state_t pa_context_get_state(const pa_context* context)
+{
+	return context->state;
+}
+
+extern "C" int pa_context_errno(const pa_context*)
+{
+	return 1;
+}
+
+extern "C" const char* pa_strerror(int)
+{
+	return "fake PulseAudio error";
+}
+
+extern "C" void pa_context_disconnect(pa_context*) {}
+extern "C" void pa_context_unref(pa_context*) {}
+
+extern "C" pa_stream* pa_stream_new(pa_context* context, const char*, const pa_sample_spec*, const pa_channel_map*)
+{
+	gFakeStream = {};
+	gFakeStream.context = context;
+	gFakeStream.state = PA_STREAM_CREATING;
+	return &gFakeStream;
+}
+
+extern "C" void pa_stream_set_state_callback(pa_stream* stream, pa_stream_notify_cb_t callback, void* userdata)
+{
+	stream->stateCallback = callback;
+	stream->stateUserdata = userdata;
+}
+
+extern "C" void pa_stream_set_write_callback(pa_stream*, pa_stream_request_cb_t, void*) {}
+
+//! The connect answer the scenario asks for: an error in
+//! PlaybackConnectRejected, success otherwise.
+extern "C" int pa_stream_connect_playback(pa_stream*, const char*, const pa_buffer_attr*, pa_stream_flags_t,
+	const pa_cvolume*, pa_stream*)
+{
+	gFakePulse.playbackConnectionCalled.store(true, std::memory_order_release);
+	return gPulseScenario == PulseScenario::PlaybackConnectRejected ? -1 : 0;
+}
+
+extern "C" pa_stream_state_t pa_stream_get_state(const pa_stream* stream)
+{
+	return stream->state;
+}
+
+extern "C" pa_context* pa_stream_get_context(const pa_stream* stream)
+{
+	return stream->context;
+}
+
+extern "C" int pa_stream_disconnect(pa_stream*) { return 0; }
+extern "C" void pa_stream_unref(pa_stream*) {}
+
+//! Stops the device and drops the render tap when the case ends - also when
+//! an assertion returns early, so a failing case never leaves a running
+//! device behind (the AudioDevice destructor asserts it was stopped).
+struct PulseTestCleanup
+{
+	AudioPulseAudio& device;
+	QMetaObject::Connection renderConnection;
+
+	~PulseTestCleanup()
+	{
+		if (static_cast<AudioDevice&>(device).isRunning()) { device.stopProcessing(); }
+		QObject::disconnect(renderConnection);
+	}
+};
 #endif
 
 class AudioEngineTeardownTest : public QObject
@@ -333,20 +516,97 @@ private slots:
 		QCOMPARE(stranded, 0);
 	}
 
-	void contextCreationFailureFreesPulseMainloop()
+	//! A playback connection the server REFUSES must not leave the device
+	//! reporting itself connected. The device has to take the engine's own
+	//! render fallback instead of running on a stream that never played: the
+	//! engine renders a period, and the PulseAudio mainloop is never entered.
+	void rejectedPulsePlaybackConnectionFallsBackToRendering()
 	{
 #if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
+		setPulseScenario(PulseScenario::PlaybackConnectRejected);
 		bool success = false;
 		AudioPulseAudio device(success, Engine::audioEngine());
 		QVERIFY(success);
 
-		gPulseMainloopFreeCalls.store(0, std::memory_order_relaxed);
+		// The tap: the engine emits nextAudioBuffer once per rendered period,
+		// and the fallback renders the periods the PulseAudio path would have
+		// written into the stream. The semaphore is the handshake - the case
+		// waits for the device's own thread to report a rendered period.
+		std::atomic<int> renderedPeriods{0};
+		QSemaphore rendered;
+		PulseTestCleanup cleanup{device, QObject::connect(Engine::audioEngine(),
+			&AudioEngine::nextAudioBuffer, this, [&renderedPeriods, &rendered](const SampleFrame*) {
+				renderedPeriods.fetch_add(1, std::memory_order_relaxed);
+				rendered.release();
+			}, Qt::DirectConnection)};
+
+		device.startProcessing();
+		const bool fellBack = rendered.tryAcquire(1, kPulseHandshakeMs);
+		device.stopProcessing();
+
+		QVERIFY2(gFakePulse.playbackConnectionCalled.load(std::memory_order_acquire),
+			"the device never asked for a playback connection, so the case proved nothing");
+		QVERIFY2(fellBack, "the device stayed on the PulseAudio path after the connect was refused");
+		QVERIFY(renderedPeriods.load(std::memory_order_relaxed) > 0);
+		// The refused connect is answered while the context callback runs, so
+		// the device never iterates the mainloop it has no stream on.
+		QCOMPARE(gFakePulse.mainloopIterations.load(std::memory_order_relaxed), 0);
+#else
+		QSKIP("PulseAudio symbol interposition is exercised on Linux builds with PulseAudio support");
+#endif
+	}
+
+	//! A stream that FAILS after the connection was established must take the
+	//! device off the PulseAudio path: the engine renders through the fallback
+	//! instead of the device sitting on a dead stream that produces silence.
+	void failedPulseStreamLeavesThePulseAudioPath()
+	{
+#if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
+		setPulseScenario(PulseScenario::StreamFailsLater);
+		bool success = false;
+		AudioPulseAudio device(success, Engine::audioEngine());
+		QVERIFY(success);
+
+		std::atomic<int> renderedPeriods{0};
+		QSemaphore rendered;
+		PulseTestCleanup cleanup{device, QObject::connect(Engine::audioEngine(),
+			&AudioEngine::nextAudioBuffer, this, [&renderedPeriods, &rendered](const SampleFrame*) {
+				renderedPeriods.fetch_add(1, std::memory_order_relaxed);
+				rendered.release();
+			}, Qt::DirectConnection)};
+
+		device.startProcessing();
+		const bool fellBack = rendered.tryAcquire(1, kPulseHandshakeMs);
+		device.stopProcessing();
+
+		QVERIFY2(gFakePulse.playbackConnectionCalled.load(std::memory_order_acquire),
+			"the device never asked for a playback connection, so the case proved nothing");
+		QVERIFY2(gFakePulse.streamFailureDelivered.load(std::memory_order_acquire),
+			"the fake never handed the stream its failure, so the case proved nothing");
+		QVERIFY2(fellBack, "the device stayed on the PulseAudio path after the stream failed");
+		QVERIFY(renderedPeriods.load(std::memory_order_relaxed) > 0);
+		// The failure arrives on the first mainloop iteration and the device
+		// leaves the loop with it, so no second iteration happens.
+		QCOMPARE(gFakePulse.mainloopIterations.load(std::memory_order_relaxed), 1);
+#else
+		QSKIP("PulseAudio symbol interposition is exercised on Linux builds with PulseAudio support");
+#endif
+	}
+
+	void contextCreationFailureFreesPulseMainloop()
+	{
+#if defined(LMMS_HAVE_PULSEAUDIO) && defined(Q_OS_LINUX)
+		setPulseScenario(PulseScenario::ContextCreationFails);
+		bool success = false;
+		AudioPulseAudio device(success, Engine::audioEngine());
+		QVERIFY(success);
+
 		device.startProcessing();
 		const bool threadStopped = device.wait(kExitBudgetMs);
 		device.stopProcessing();
 
 		QVERIFY(threadStopped);
-		QCOMPARE(gPulseMainloopFreeCalls.load(std::memory_order_relaxed), 1U);
+		QCOMPARE(gFakePulse.mainloopFreeCalls.load(std::memory_order_relaxed), 1U);
 #else
 		QSKIP("PulseAudio symbol interposition is exercised on Linux builds with PulseAudio support");
 #endif
