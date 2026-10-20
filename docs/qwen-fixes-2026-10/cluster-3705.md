@@ -307,3 +307,30 @@ drain as well as at the publication.
 - `tests/rt-safety-scope.txt` — the renamed audio-thread entry.
 - `tests/upstream-modifications.txt` — the divergence ledger entries.
 - `docs/qwen-fixes-2026-10/cluster-3705.md` — this report.
+
+## Independent QA follow-up (2026-10-20)
+
+The paired drain also had to bound its non-wide-mode drain by the staged-frame
+snapshot. If render observed no wide frames and the capture thread published the
+first wide block before the drain call, an unbounded drain could consume that
+new block alone while the mode flag still read false. `drainCaptureStages()` now
+passes the observed `wideStaged` count as the limit in that branch. The added
+`aWideBlockPublishedAfterTheSnapshotWaitsForTheNextDrain` case checks the
+snapshot/publish/drain ordering without a timing assumption.
+
+QA verification:
+
+```
+cmake --build build --target zene CapturePublisherTest RecordingRealtimeTest RecordingInputPathTest InputMonitorTest RecordingLatencyTest InputChannelRingTest MultiTrackRecorderTest RetroAudioCaptureTest HardwareIoTest DummyPacingTest VcaRefreshAtomicityTest TripleOscillatorUserWaveTest SessionAudioRecordTest -j 12
+EXIT=0
+
+cd build/tests && ctest -R '^(CapturePublisherTest|RecordingRealtimeTest|RecordingInputPathTest|InputMonitorTest|RecordingLatencyTest|InputChannelRingTest|MultiTrackRecorderTest|RetroAudioCaptureTest|HardwareIoTest|DummyPacingTest|VcaRefreshAtomicityTest|TripleOscillatorUserWaveTest|SessionAudioRecordTest|RtSafetySweep)$' --output-on-failure
+EXIT=0 (14/14 passed)
+
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3705
+EXIT=0
+```
+
+The original RED/restore proof was already captured by the fix loop at
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3705.r1/negctl` and was
+not repeated during QA.

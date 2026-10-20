@@ -662,7 +662,7 @@ void AudioEngine::drainCaptureStages() noexcept
 	if( m_wideInputStage != nullptr )
 	{
 		m_wideInputStage->drain( wideInUse ? static_cast<f_cnt_t>( frames )
-			: std::numeric_limits<f_cnt_t>::max() );
+			: static_cast<f_cnt_t>( wideStaged ) );
 	}
 }
 

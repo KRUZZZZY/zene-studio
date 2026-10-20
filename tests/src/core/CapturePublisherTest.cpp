@@ -226,6 +226,22 @@ private slots:
 		QCOMPARE(engine->inputFramesStaged(), stereoBefore);
 	}
 
+	//! A block published after the render's staged-frame snapshot belongs to the next
+	//! drain. This is the capture/render interleaving where the mode flag can still read
+	//! false; the first render must not drain newly arrived wide frames on its own.
+	void aWideBlockPublishedAfterTheSnapshotWaitsForTheNextDrain()
+	{
+		AudioWideInputStage stage(AudioInputPath::MaxChannels, 128);
+		const std::size_t observed = stage.stagedFrames();  // render's snapshot: empty
+		const std::vector<float> wide(64 * 2, 0.25f);
+		QCOMPARE(stage.push(wide.data(), 2, 64), std::size_t{64});
+		stage.drain(static_cast<f_cnt_t>(observed));
+		QCOMPARE(stage.frames(), f_cnt_t{0});
+		QCOMPARE(stage.stagedFrames(), std::size_t{64});
+		stage.drain(64);
+		QCOMPARE(stage.frames(), f_cnt_t{64});
+	}
+
 	//! BUGS_FOUND 11.9: the stage's width was fixed at its 128-channel storage, so a real
 	//! device's block was always refused. It now carries the producer's width, changing it
 	//! only once every block of the old width has been drained.
