@@ -120,6 +120,29 @@ Until the parent picks one, this cluster's gate acceptance stays BLOCKED.
 - `ctest -R '^MpePlaybackTest$' -V` from `build/tests`: EXIT=0, `PASS aFrequencyMarkIsSpentByItsUpdate()` (`test-r3-mpe.log`).
 - Feature-check gates via the driver (same gate functions as `feature_check.py`): EXIT=0, all 8 PASS (`gates-r3-summary.log`).
 
+## Review round 4 (DISPUTE: parent disposition still not obtained)
+
+Review `new-p16-146.r3.md` asks for the parent's explicit disposition of the red direct gates, recorded here, before resubmission.
+
+**Disposition status: NOT OBTAINED.** What was tried:
+- No disposition mechanism exists in the loop scripts (`qwenfix.py`, `submit_check.py`, `feature_check.py` and the queue tools contain no disposition field), and no earlier cluster record holds one for these baselines.
+- `ListAgents` shows one peer session, `zene-studio-program-bb`. It is not confirmed to be the parent, so I did not message it.
+- I sent one request to the owner with `notify-me` (EXIT=0): the two direct gates exit 1 on both the base `2da2ed356` and this branch with the same 6 and 14 items, none in files this branch touches; the options are to re-anchor the two baselines on base, or for the train to fix the listed files.
+
+No reply arrived within this session. I have **not** recorded a disposition I do not have, and I have not re-anchored any baseline or edited any unrelated file. This cluster stays BLOCKED on gate acceptance until the owner or the parent answers with one of the two options.
+
+**Fresh results, round 4** (logs in `runs/new-p16-146.r4/logs/`, unpiped exit codes; branch at `187e7e6bb`, worktree clean):
+
+| Command | EXIT | Result |
+|---|---|---|
+| `bash tests/complexity-gate.sh --check` | 1 | 6 `REGRESSION` lines (`complexity-gate-check.log`) |
+| `bash tests/file-length-gate.sh --check` | 1 | 15 `REGRESSION` lines, 14 unique files (`file-length-gate-check.log`) |
+| `CCACHE_TEMPDIR=/tmp/zene-new-p16-146-ccache-tmp cmake --build build --target zene MpePlaybackTest -j4` | 0 | `build-r4-1.log` |
+| `ctest -R '^MpePlaybackTest$' -V` from `build/tests` | 0 | `PASS aFrequencyMarkIsSpentByItsUpdate()` (`test-r4-mpe.log`) |
+| `python3 -I /tmp/zene-new-p16-146-gates/run_gates.py <worktree> <logs>/gates-1` (same gate functions as `feature_check.py`) | 0 | all 8 PASS (`gates-r4-summary.log`) |
+
+The base-commit results from round 3 still hold: both direct gates exit 1 on `2da2ed356` with identical `REGRESSION` lines (`runs/new-p16-146.r3/logs/base-*-gate-check.log`).
+
 ## Behaviour consequence (reviewer decision)
 
 `masterPitch` is read inside `updateFrequency()` (`src/core/NotePlayHandle.cpp:623`), and its change does not mark notes: the `dataChanged` connection in `src/core/Song.cpp:194-195` is commented out. Before this fix, a note that had been marked once recomputed every period, so it also followed master-pitch automation from then on. After the fix it follows master-pitch changes only when it is marked again, like a note that was never marked. This is by reading the code; I did not add a test for it. The consistent behaviour (master-pitch changes marking the handles) would be a separate change, and I did not make it here.
