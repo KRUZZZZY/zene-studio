@@ -128,6 +128,10 @@ No new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt`
   project still loads the same. The changed refusal applies only to values that never came from this
   writer. The family and related tests pass (6 tests, 0 failed).
 - **Verdict FIXED**, so the ALREADY-FIXED / FALSE-POSITIVE evidence line does not apply.
-- **Known open item.** `feature_check.py` and `submit_check.py` cannot write their log folders from this
-  sandbox. The gate commands were run directly (table above); the runner's own pass/fail row is not
-  independently confirmed.
+- **Completion check (`submit_check.py`, `submit-check-2.log`, EXIT 1 on the committed tree):** PASS for
+  commits on the branch, clean working tree, report present, tests changed. FAIL only for
+  `gates (feature_check.py)`: the runner creates `<worktree>/../zene-qwen-new-p16-138-feature-check`
+  outside the write-jail (`PermissionError`, `gates-1-feature-check.log`), so it cannot produce its table
+  from this sandbox. BLOCKED on that one row; every gate command it runs was run directly (table above),
+  and the two ratchets exit 1 only on items in unchanged files. The runner needs a re-run from outside
+  the jail to confirm its table.
