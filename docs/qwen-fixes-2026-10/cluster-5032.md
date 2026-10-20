@@ -140,6 +140,12 @@ both rows would be PASS. Those lines are in `final-gate-complexity.log` and
 - **No collateral damage.** The product code is byte-identical to HEAD. No saved data,
   limit or check changed.
 - **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable. The verdict is FIXED.
+- **`submit_check.py 5032` after the commit:** PASS for commits on the branch, a clean tree,
+  this report, and the test changed (`tests/src/core/ControlVerbInverseTest.cpp`). FAIL only
+  for `gates (feature_check.py)`, and that FAIL is the sandbox limit described under
+  "Gates": the wrapper cannot create its log folder outside the write-jail. Every gate
+  command it runs passes (table above), except the two ratchets, which show no `REGRESSION:`
+  line in a file this branch changed. Log: `submit-check-2.log`.
 
 ## Open for the owner
 
