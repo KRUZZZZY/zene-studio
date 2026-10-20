@@ -18,11 +18,12 @@ src/core/ControlCommandsRecordTools.cpp:156 (base):
 
 `QStorageInfo::device()` is the DEVICE LABEL, not the filesystem: every tmpfs mount answers
 "tmpfs". Two independent filesystems that report the same label were therefore merged into one
-budget, their routes pooled, and the answer halved - the remaining time was reported for a pool of
-free space that does not exist. The reverse error (one filesystem split into two budgets, and the
-answer overstated) is what the mount-point key (rootPath) makes: one filesystem mounted twice - a
-bind mount, a second mount point - is two keys for one pool of free bytes, and each half of it
-then claims the whole pool.
+budget: the route counts were pooled while the free-space value came from only the first path.
+That can understate or overstate the limiting duration depending on the pools' free-space values
+(with equal pools, it halves the answer). The reverse error (one filesystem split into two
+budgets, and the answer overstated) is what the mount-point key (rootPath) makes: one filesystem
+mounted twice - a bind mount, a second mount point - is two keys for one pool of free bytes, and
+each half of it then claims the whole pool.
 
 ## Round 3 (Luna's rework: the second identity case was not covered)
 
