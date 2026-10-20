@@ -45,6 +45,7 @@
 #include "Song.h"
 #include "TimePos.h"
 #include "UnattendedRun.h"
+#include "WarpMarkers.h"
 
 namespace lmms::gui
 {
@@ -76,7 +77,7 @@ bool run(const Clip* clip, const QString& command, QJsonObject args)
 	const ControlResult result = ControlRegistry::instance()->invoke(command, args);
 	if (result.ok) { return true; }
 	if (isUnattendedRun()) { qWarning("%s refused: %s", qPrintable(command), qPrintable(result.errorMessage)); }
-	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Gain and fades"), result.errorMessage); }
+	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Clip edit refused"), result.errorMessage); }
 	return false;
 }
 
@@ -150,6 +151,38 @@ void addClipTrimActions(QMenu* menu, Clip* clip)
 }
 
 void setClipGainPrompt(std::function<std::optional<double>(double)> prompt) { s_gainPrompt = std::move(prompt); }
+
+void addClipWarpModeMenu(QMenu* menu, Clip* clip)
+{
+	auto* audio = dynamic_cast<SampleClip*>(clip);
+	if (audio == nullptr) { return; }
+	QMenu* sub = menu->addMenu(QMenu::tr("Warp mode"));
+	// The five spec modes in the order the spec names them, then the WSOLA
+	// engine the pitch-preserving modes fall back to and files have called
+	// "wsola" since row 30 (Q050-036). Every item drives warp.stretch - the
+	// same registered command the agent surface takes - so a refusal (a linear
+	// clip with no rate change, a build without librubberband) is its typed one.
+	const std::pair<QString, WarpStretchMode> modes[] = {
+		{QMenu::tr("Beats"), WarpStretchMode::Beats},
+		{QMenu::tr("Tones"), WarpStretchMode::Tones},
+		{QMenu::tr("Texture"), WarpStretchMode::Texture},
+		{QMenu::tr("Re-Pitch"), WarpStretchMode::Resample},
+		{QMenu::tr("Complex"), WarpStretchMode::Complex},
+		{QMenu::tr("Pitch-preserving (WSOLA)"), WarpStretchMode::PreservePitch}};
+	auto* group = new QActionGroup(sub);
+	for (const auto& [text, mode] : modes)
+	{
+		QAction* action = sub->addAction(text);
+		action->setCheckable(true);
+		action->setChecked(audio->warpStretchMode() == mode);
+		action->setData(QStringLiteral("warp.stretch"));
+		group->addAction(action);
+		const QString name = warpStretchModeName(mode);
+		QObject::connect(action, &QAction::triggered, sub, [clip, name] {
+			run(clip, QStringLiteral("warp.stretch"), {{QStringLiteral("mode"), name}});
+		});
+	}
+}
 
 void addClipEditsMenu(QMenu* menu, Clip* clip)
 {

@@ -2535,6 +2535,11 @@ tests/src/plugins/ExprSynthTest.cpp
 # BUG 16 (new-p10-136): file manager discovery falls back when the MIME query returns nothing.
 tests/src/gui/FileRevealerTest.cpp
 tests/src/tracks/SampleClipRubberBandTest.cpp
+# Q050-036: the specified warp mode set - selection through the command, one
+# deterministic render per mode, and a project-file round trip across clips.
+tests/src/tracks/SampleClipWarpModesTest.cpp
+# Q050-036: the Warp mode context-menu items, driving the same warp.stretch.
+tests/src/gui/SampleClipWarpModeMenuTest.cpp
 # 2026-10-12 (cluster new-p10-375): the SlicerT waveform endpoint regression test is fork-NEW.
 # It is named in both recipe copies above because tests/src/plugins is outside the core/tracks pathspec.
 tests/src/plugins/SlicerTWaveformTest.cpp

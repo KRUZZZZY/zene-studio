@@ -282,8 +282,15 @@ protected:
 	float m_sourceTempo = 0.0f;
 	/*! How a rate change is rendered (feature-list row 30): the historical
 	 *  resampling, or the pitch-preserving WSOLA stretch. `Resample` is the
-	 *  default, so a clip that does not ask renders exactly as it did. */
-	WarpStretchMode m_stretchMode = WarpStretchMode::Resample;
+	 *  default, so a clip that does not ask renders exactly as it did.
+	 *  Atomic: the control thread publishes it (release) while the render
+	 *  thread reads it at play-handle construction (acquire); a Rubber
+	 *  Band-backed mode is only stored AFTER prepareWarpStretchMode() built
+	 *  its voices, so a reader that sees the mode finds the pool. */
+	std::atomic<WarpStretchMode> m_stretchMode{WarpStretchMode::Resample};
+	//! Control thread, before a mode is published: lets a subclass build what the
+	//! mode needs (SampleClip: the Rubber Band voices). Never called on the audio thread.
+	virtual void prepareWarpStretchMode(WarpStretchMode mode) { Q_UNUSED(mode); }
 
 	//! Writes the `<warp>` child (mode/tempo/stretch/marker — the vocabulary
 	//! ports unchanged) ONLY when the clip is not at every default: additive,

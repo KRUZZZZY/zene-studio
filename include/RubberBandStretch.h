@@ -33,6 +33,7 @@
 
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
+#include "WarpMarkers.h"
 #include "lmms_export.h"
 
 namespace RubberBand
@@ -51,6 +52,14 @@ namespace lmms
  *  material, and it is an OPTIONAL dependency: a build without it keeps the
  *  mode in its vocabulary and renders such a clip through WSOLA.
  *
+ *  Q050-036: the voice is built FOR a warp mode — the two modes
+ *  warpModeUsesRubberBand() names each get the option set that makes them
+ *  distinct (Beats the single short window for the crispest timing,
+ *  Complex the full multi-resolution settings the "rubberband" mode
+ *  has always rendered). The options are fixed at construction: changing
+ *  Rubber Band's window or transients mid-stream can reallocate, and the
+ *  voice starts on the audio thread.
+ *
  *  REALTIME, measured rather than assumed (Rubber Band 3.3.0, R3 engine, real-
  *  time mode, a malloc/posix_memalign interposer on the calling thread):
  *  `process()`, `retrieve()`, `setTimeRatio()` and `setPitchScale()` allocate
@@ -66,7 +75,7 @@ public:
 	//! which is also the size `setMaxProcessSize` promises it.
 	static constexpr int MaxBlock = 2048;
 
-	RubberBandVoice(int sourceRate);
+	RubberBandVoice(int sourceRate, WarpStretchMode mode = WarpStretchMode::Complex);
 	~RubberBandVoice();
 
 	RubberBandVoice(const RubberBandVoice&) = delete;
@@ -120,14 +129,20 @@ private:
 	std::int64_t m_toDiscard = 0;
 };
 
-/*! A clip's voices. Built on the control thread when the clip asks for the
- *  Rubber Band mode; claimed by the play handle on the audio thread.
+/*! A clip's voices. Built on the control thread when the clip asks for a
+ *  Rubber Band-backed mode; claimed by the play handle on the audio thread.
  *
  *  Two voices, because two handles of one clip can overlap (a loop restart, a
  *  seek back into the clip) and the recycler needs a moment to reset the one
  *  just released. A handle that finds none ready renders through WSOLA and
  *  the miss is counted, so a caller that needs every pass on Rubber Band can
  *  check `misses()` rather than listen for it.
+ *
+ *  Q050-036: a clip keeps one pool PER Rubber Band-backed mode it has used
+ *  (SampleClip::rubberBandPool names the current mode's), because a voice's
+ *  options are fixed at construction and a live handle must never see its
+ *  voice destroyed under it. The unused pools' voices are simply never
+ *  claimed.
  */
 class LMMS_EXPORT RubberBandPool
 {
@@ -138,7 +153,7 @@ public:
 	//! and every claim misses, which is the WSOLA fallback.
 	static bool available();
 
-	explicit RubberBandPool(int sourceRate);
+	explicit RubberBandPool(int sourceRate, WarpStretchMode mode = WarpStretchMode::Complex);
 	~RubberBandPool();
 
 	RubberBandPool(const RubberBandPool&) = delete;
