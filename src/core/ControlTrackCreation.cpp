@@ -90,6 +90,14 @@ void removeFromContainer(TrackContainer* container, Track* track)
 	updatePatternEditor(container);
 }
 
+//! What an undo step keeps of one created track: its id (written back by a redo), its saved document, its container.
+struct Recorded
+{
+	std::shared_ptr<int> id;
+	QString saved;
+	TrackContainer* container;
+};
+
 } // namespace
 
 void recordCreatedTrack(Track* track)
@@ -99,25 +107,46 @@ void recordCreatedTrack(Track* track)
 
 void recordCreatedTrack(Track* track, TrackContainer* container)
 {
+	recordCreatedTracks({captureCreatedTrack(track, container)});
+}
+
+CreatedTrack captureCreatedTrack(Track* track, TrackContainer* container)
+{
 	QDomDocument doc;
 	QDomElement root = doc.createElement(QStringLiteral("root"));
 	doc.appendChild(root);
 	track->saveState(doc, root);
-	const QString saved = doc.toString();
-	// The id, not the pointer: another step (track.remove, then its undo) can free this track and build an
-	// equal one, and the redo below may build it under a new id, which it writes back (review W3-batchB #1).
-	// The redo builds the track in the same container it was made in: a PatternStore copy stays in the store.
-	auto id = std::make_shared<int>(track->id());
-	addUndoStep([id, container]() {
-			if (Track* live = trackWithIdIn(container, *id)) { removeFromContainer(container, live); }
-		},
-		[id, container, saved]() {
-			QDomDocument again;
-			again.setContent(saved);
-			if (Track* made = Track::create(again.documentElement().firstChildElement(), container))
+	return CreatedTrack{track, container, doc.toString()};
+}
+
+void recordCreatedTracks(const QVector<CreatedTrack>& created)
+{
+	if (created.isEmpty()) { return; }
+	// The id, not the pointer: another step (track.remove, then its undo) can free a track and build an equal one,
+	// and the redo writes the new id back (review W3-batchB #1). A redo builds each track in the container it was
+	// made in: a PatternStore copy stays in the store.
+	auto records = std::make_shared<QVector<Recorded>>();
+	for (const CreatedTrack& c : created)
+	{
+		records->append(Recorded{std::make_shared<int>(c.track->id()), c.saved, c.container});
+	}
+	addUndoStep([records]() {
+			// Last made, first removed: a track another one depends on goes after it.
+			for (auto it = records->crbegin(); it != records->crend(); ++it)
 			{
-				*id = made->id();
-				updatePatternEditor(container);
+				if (Track* live = trackWithIdIn(it->container, *it->id)) { removeFromContainer(it->container, live); }
+			}
+		},
+		[records]() {
+			for (const Recorded& r : *records)
+			{
+				QDomDocument again;
+				again.setContent(r.saved);
+				if (Track* made = Track::create(again.documentElement().firstChildElement(), r.container))
+				{
+					*r.id = made->id();
+					updatePatternEditor(r.container);
+				}
 			}
 		});
 }

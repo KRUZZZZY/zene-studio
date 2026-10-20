@@ -147,6 +147,24 @@ void PatternEditor::loadSettings(const QDomElement& element)
 
 
 
+namespace
+{
+
+//! The pattern track a copy needs when the Song has none. PatternStore::updateAfterTrackAdd would make it once the copy
+//! joins the store, after the copy is made; it is made here first, and captured while the store is still empty, because
+//! a pattern track's saved state includes the store (see control::CreatedTrack). Empty when the Song already has one.
+QVector<control::CreatedTrack> firstPatternTrack(PatternStore* store)
+{
+	QVector<control::CreatedTrack> created;
+	if (store->numOfPatterns() != 0) { return created; }
+	Song* song = Engine::getSong();
+	song->addPatternTrack();
+	created.append(control::captureCreatedTrack(song->tracks().back(), song));
+	return created;
+}
+
+} // namespace
+
 void PatternEditor::dropEvent(QDropEvent* de)
 {
 	QString type = StringPairDrag::decodeKey( de );
@@ -155,6 +173,7 @@ void PatternEditor::dropEvent(QDropEvent* de)
 	if( type.left( 6 ) == "track_" )
 	{
 		DataFile dataFile( value.toUtf8() );
+		QVector<control::CreatedTrack> created = firstPatternTrack(m_ps);
 		Track * t = Track::create( dataFile.content().firstChild().toElement(), model() );
 
 		// Ensure pattern clips exist
@@ -176,8 +195,10 @@ void PatternEditor::dropEvent(QDropEvent* de)
 			t->deleteClips();
 			t->createClipsForPattern(m_ps->numOfPatterns() - 1);
 		}
-		// The copy is one undo step in the store it was dropped into (control::recordCreatedTrack, container form).
-		control::recordCreatedTrack( t, model() );
+		// The copy and the Song's pattern track, if this drop had to make one, are one undo step: undo removes both,
+		// and redo builds the Song track first, so the copy is not added twice.
+		created.append(control::captureCreatedTrack(t, model()));
+		control::recordCreatedTracks( created );
 		m_ps->updateAfterTrackAdd();
 
 		de->accept();

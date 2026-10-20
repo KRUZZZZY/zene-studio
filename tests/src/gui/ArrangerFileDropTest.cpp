@@ -401,6 +401,54 @@ private slots:
 		delete pattern;
 	}
 
+	//! The same Ctrl-drag into a Song with no pattern track: the copy's creation also makes the Song's pattern track, and
+	//! that track belongs to the drop's one undo step. Undo removes both; redo restores both.
+	void aTrackCopiedIntoAnEmptyPatternEditorIsOneUndoStep()
+	{
+		const auto songPatternTracks = []() {
+			int count = 0;
+			for (Track* track : Engine::getSong()->tracks()) { count += track->type() == Track::Type::Pattern ? 1 : 0; }
+			return count;
+		};
+		PatternStore* store = Engine::patternStore();
+		QCOMPARE(songPatternTracks(), 0);  // the precondition: the drop must create the Song's first pattern track
+		QCOMPARE(store->numOfPatterns(), 0);
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
+		const int depth = Engine::projectJournal()->undoDepth();
+		std::unique_ptr<QMimeData> mime = trackCopyDrag(m_instrument);
+		PatternEditor* patternView = getGUI()->patternEditor()->m_editor;
+		const QPoint point(10, 10);
+
+		QDragEnterEvent enter(point, Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(patternView, &enter);
+		QVERIFY2(enter.isAccepted(), "the Pattern Editor refused a track drag");
+		QDropEvent drop(QPointF(point), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(patternView, &drop);
+		QVERIFY(drop.isAccepted());
+		QCOMPARE(songPatternTracks(), 1);  // the copy's creation made the Song's pattern track
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks + 1);
+		Track* copy = store->tracks().back();
+		QVERIFY(dynamic_cast<InstrumentTrack*>(copy) != nullptr);
+		QCOMPARE(copy->numOfClips(), 1);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);  // red: the Song's pattern track is not in the step
+
+		Engine::projectJournal()->undo();  // one step: the copy and the Song's pattern track both go
+		QCOMPARE(songPatternTracks(), 0);
+		QCOMPARE(store->numOfPatterns(), 0);
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+
+		Engine::projectJournal()->redo();  // both come back, the Song's pattern track first
+		QCOMPARE(songPatternTracks(), 1);
+		QCOMPARE(store->numOfPatterns(), 1);
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks + 1);
+		QCoreApplication::processEvents();  // the redone track's view is built on the next turn
+		QCOMPARE(store->tracks().back()->numOfClips(), 1);  // one pattern clip, not one from the redo and one from the restore
+	}
+
 	void aDragWithNoFileIsNotTaken()
 	{
 		TrackContentWidget* lane = viewOf(m_instrument)->getTrackContentWidget();
