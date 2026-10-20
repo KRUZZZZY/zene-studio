@@ -60,6 +60,12 @@ All logs are in
 | gates (all) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `RESULT: PASS` — fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all PASS (`gate-feature-check.log`) |
 | complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 | red on the train: 6 items, none in a file this branch changed (`gate-complexity.log`) |
 | file-length ratchet | `bash tests/file-length-gate.sh --check` | 1 | red on the train: 14 items, the only one in a changed file is `tests/src/core/RevisionTimelineTest.cpp`, which was ALREADY over the limit at the base commit (`gate-file-length.log`) |
+| final build (committed tree) | `cmake --build build --parallel 12 --target zene RevisionTimelineTest` | 0 | built (`build-7-final.log`) |
+| final family run (committed tree) | `ctest -R "RevisionTimelineTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|UndoHonestyTest\|UndoHonestyStateTest\|UndoBoundsTest\|ProjectRevIdsTest\|ControlSuccessPathsTest\|ProjectStateTest\|ProjectToolsTest" --output-on-failure` | 0 | 11/11 targets passed (`test-7-final.log`) |
+| final gates (committed tree) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `RESULT: PASS`, every row PASS (`gate-feature-check-final.log`) |
+| final complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 | the same 6 pre-existing items (`gate-complexity-final.log`) |
+| final file-length ratchet | `bash tests/file-length-gate.sh --check` | 1 | the same 14 pre-existing items (`gate-file-length-final.log`) |
+| pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p11-47-port` | 0 | `RESULT: PASS - submit` (`submit-check.log`) |
 
 Affected-family test count: the `RevisionTimelineTest` target holds **28 Qt test
 functions** (30 with `initTestCase`/`cleanupTestCase`); the wider family run above
