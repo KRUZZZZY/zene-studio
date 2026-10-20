@@ -15,6 +15,12 @@ measured on rendered audio against a real latent instrument, reconciled `README.
 match the owning `KNOWN-LIMITATIONS.md` change, and pinned each limit to the case that measures
 it. See the round-2 rows below and `docs/050-features/Q050-169.md` § Rework log.
 
+Round 3 (rework after the round-2 REWORK verdict): `InstrumentLatencyPdcTest` now has a guarded
+`clapinstrument` dependency beside its CLAP fixture dependency, so a targeted build that names only
+`zene` and the test builds the host module, and all 14 slots (including the clamp, automation and
+monitoring cases) run with zero skips. The dependency's red control reproduced the review's skip
+scenario. No docs, command, format or product code changed. Exact commands and exits in § Round 3.
+
 ## Acceptance table (exact commands and EXIT codes seen)
 
 | Criterion | Command (dir stated; unpiped; EXIT recorded) | Result |
@@ -62,6 +68,29 @@ registered `InstrumentLatencyPdcTest` binary.
 | Latency test, all slots | `./build/tests/InstrumentLatencyPdcTest > <logs>/test-21-rework-final2.log 2>&1; echo EXIT=$?` — **14/14 PASS, 0 QSKIP** | EXIT=0 |
 | Transient regression-sweep failures were module availability, not this lane | `ControlDeviceCatalogueTest`/`InstrumentLayersCommandsTest` need `patman`/`tripleoscillator`; after `cmake --build build --target patman tripleoscillator` (`<logs>/build-9-rework-modules.log`) they pass (`<logs>/test-18-rework-modules.log`) | EXIT=0, 2/2 |
 | Round-2 gates (exact pre-commit tree) | `{ <gate>; echo "EXIT=$?"; } > <logs>/gate-r2-<n>-<name>.log` — file-length & complexity `exit 1` (pre-existing train-5 red; both regression listings byte-identical to baseline, no lane file listed, test file 470/500 lines, new slots CCN ≤ 4); fork-sources, all-sources, no-upstream, namespace, tautology, doc-figures all `exit 0` | as stated |
+
+## Round 3 (rework) — targeted build dependency, exact commands and EXIT codes
+
+The round-2 verdict was REWORK because `InstrumentLatencyPdcTest` depended on the CLAP fixture but
+not the `clapinstrument` host module: a targeted build left the module out, CTest exited 0, and the
+three new clamp/automation/monitoring cases skipped. `tests/CMakeLists.txt` now has
+`add_dependencies(InstrumentLatencyPdcTest clapinstrument)` inside `if(TARGET clapinstrument)`,
+beside the existing fixture dependency.
+
+`<logs>` below = `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-169.r3/logs`.
+
+| What was proved | Command (dir; unpiped) | Result |
+|---|---|---|
+| Clean configured tree, host module never named: `zene` + the test build builds and links `clapinstrument` | `cmake --build build --target zene InstrumentLatencyPdcTest -- -j4 > <logs>/build-1.log 2>&1; echo EXIT=$?` (worktree root) | EXIT=0; log has `Linking CXX shared module ../libclapinstrument.so` + `Built target clapinstrument` |
+| CTest green | `ctest -R '^InstrumentLatencyPdcTest$' --output-on-failure > <logs>/test-1-ctest.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=0, 1/1 passed |
+| Zero skips, all slots incl. the three new cases | `./InstrumentLatencyPdcTest > <logs>/test-2-slots.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=0, `Totals: 14 passed, 0 failed, 0 skipped` |
+| Red control — reproduce the review: remove only the new dependency hunk, delete `build/plugins/libclapinstrument.so`, build the test target | `cmake --build build --target InstrumentLatencyPdcTest -- -j4 > <logs>/build-2-negative.log 2>&1; echo EXIT=$?` | EXIT=0, and `libclapinstrument.so` is **not** recreated; no `clapinstrument` line in the log |
+| Red control — CTest still exits 0 while the CLAP cases skip | `ctest -R '^InstrumentLatencyPdcTest$' --output-on-failure > <logs>/test-3-negative-ctest.log 2>&1; echo EXIT=$?`, then `./InstrumentLatencyPdcTest > <logs>/test-4-negative-slots.log 2>&1; echo EXIT=$?` | CTest EXIT=0; slots EXIT=0 with `Totals: 7 passed, 0 failed, 7 skipped` (including `instrumentLatencyAboveTheCapacityIsClampedAndDiagnosed`, `automationCompensationDoesNotCountTheInstrumentsLatency`, `lowLatencyModeDoesNotBypassALatentInstrument`) |
+| Restore the hunk, rebuild the same two targets: module comes back and the suite is green again | `cmake --build build --target zene InstrumentLatencyPdcTest -- -j4 > <logs>/build-3-restored.log 2>&1; echo EXIT=$?`, then ctest + direct run into `<logs>/test-5-restored-ctest.log` and `<logs>/test-6-restored-slots.log` | EXIT=0; `Built target clapinstrument`; CTest EXIT=0; slots EXIT=0, `Totals: 14 passed, 0 failed, 0 skipped` |
+
+The two injected-source edits (dependency hunk removed, `libclapinstrument.so` deleted) were undone
+byte-for-byte: `sha256sum tests/CMakeLists.txt` before removal and after restore is
+`305ef0ce8ab626a79314aea2508c0bf538af8bbcff05a1756c5eee020a575b06`, and the module is rebuilt.
 
 ## What was built (file:line)
 
@@ -119,7 +148,59 @@ None — no project-format path touched; old projects load and render as before.
 
 - `README.md`
 - `docs/KNOWN-LIMITATIONS.md`
+- `tests/CMakeLists.txt`
 - `tests/data/clap-test-plugin/clap-test-instrument.c`
 - `tests/src/core/InstrumentLatencyPdcTest.cpp`
 - `docs/050-features/Q050-169.md`
 - `docs/qwen-fixes-2026-10/cluster-Q050-169.md` (this file)
+
+## Self-check
+
+- **? Each new test FAILS with your product change reverted (reverse the non-test hunks, rebuild,
+  run: exit code?), then PASSES restored.** Round 3's change is the CMake dependency, so its red
+  control is the skip scenario: with only the new `add_dependencies` hunk removed and
+  `build/plugins/libclapinstrument.so` deleted, `cmake --build build --target
+  InstrumentLatencyPdcTest -- -j4` exited 0 **without** recreating the module
+  (`logs/.../build-2-negative.log`), CTest exited 0 (`test-3-negative-ctest.log`), and the direct
+  run exited 0 with `Totals: 7 passed, 0 failed, 7 skipped` — the three clamp/automation/monitoring
+  cases among the skips (`test-4-negative-slots.log`). Restored, the same build exited 0 and rebuilt
+  the module (`build-3-restored.log`), CTest exited 0 (`test-5-restored-ctest.log`), and the direct
+  run exited 0 with `Totals: 14 passed, 0 failed, 0 skipped` (`test-6-restored-slots.log`). The
+  documentation assertion's red run was repeated this round: inserting `no instrument latency
+  compensation` into `docs/KNOWN-LIMITATIONS.md` makes `theLimitationsPageStatesWhichHostsReportLatency`
+  fail (`test-7-doc-negative.log`, EXIT=1, `Totals: 13 passed, 1 failed`); after restoring the page
+  byte-for-byte the same binary exits 0 with 14/14 (`test-8-doc-restored.log`).
+- **? Every acceptance criterion is proven by a test you ran yourself (name the test and its exit
+  code per criterion).** All three are asserted by
+  `InstrumentLatencyPdcTest::theLimitationsPageStatesWhichHostsReportLatency` and cross-checked on
+  rendered audio by the same binary, which I ran this round: EXIT=0, `Totals: 14 passed, 0 failed,
+  0 skipped` (`test-2-slots.log`, `test-8-doc-restored.log`). AC1 (blanket denial absent): the slot
+  asserts the forbidden string is gone, with the red run above. AC2 (CLAP/VST3/LV2 supported;
+  out-of-process/VST2(Vestige)/Carla non-reporting; built-ins 0): the slot asserts all four
+  statements and `clap/vst3/lv2InstrumentLatencyAlignsTheOtherTracks` measure the three hosts. AC3
+  (polling/clamp/automation/monitoring limits): `*LatencyChangeIsPickedUp`,
+  `instrumentLatencyAboveTheCapacityIsClampedAndDiagnosed`,
+  `automationCompensationDoesNotCountTheInstrumentsLatency` and
+  `lowLatencyModeDoesNotBypassALatentInstrument` all PASS in that 14/14 run.
+- **? Each edit is ONE undo step, and every new or changed command has an honest reversibility
+  class.** Not applicable: no command or GUI action is added, changed or removed, so nothing new
+  enters the undo system and no reversibility class changes. The edits are documentation text, test
+  code and a test-target dependency.
+- **? Nothing you added runs on the audio thread and allocates, frees, locks, waits, does I/O or
+  emits a signal.** No product or audio-thread source changed; the diff is `README.md`,
+  `docs/KNOWN-LIMITATIONS.md`, `docs/050-features/Q050-169.md`, `tests/CMakeLists.txt`,
+  `tests/data/clap-test-plugin/clap-test-instrument.c` and
+  `tests/src/core/InstrumentLatencyPdcTest.cpp`. The test's checks run on the control thread like
+  the existing cases.
+- **? Old projects still load and render exactly as before; new data round-trips through save and
+  load.** No project-format read or write path was touched; the fixture change only raises a test
+  fixture's maximum latent count (existing tests still use 257/113), and no product rendering path
+  changed.
+- **? Qt 5.15 / MSVC / macOS < 10.15 portability: no Qt-6-only API without a guard, no windows.h
+  macro names, no std::filesystem outside _WIN32.** The round-3 diff is CMake only
+  (`add_dependencies` under `if(TARGET clapinstrument)`) plus documentation; it adds no Qt API,
+  Windows identifier or filesystem call. The test code was already portable in round 2.
+- **Gates.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
+  (`logs/feature-check-1.log`) printed `RESULT: PASS`: fork-sources, all-sources-reproduce,
+  no-upstream-regression, check-namespace, no-tautology and doc-figures exit 0; complexity and
+  file-length report no new item in this unit's files.
