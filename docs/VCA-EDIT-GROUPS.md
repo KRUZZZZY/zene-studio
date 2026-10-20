@@ -181,7 +181,16 @@ by the SAME DELTA. Then all of them - anchor included - are one undo step.
 5. **No interface, and no Lua binding.** There is no VCA strip, no group menu,
    no member list and no phase-lock toggle in `src/gui/`, and the socket (plus
    the MCP bridge over it) is the only way to reach any of this. That is the
-   `docs/KNOWN-LIMITATIONS.md` line.
+   `docs/KNOWN-LIMITATIONS.md` line. *(2026-10-18 (Q050-171): superseded. M3.7
+   built the VCA strip, the channel's VCA group submenu, Project tools ▸
+   Groups... (with Phase Lock On/Off and the edit-set add/remove lines) and the
+   Inspector Clip menu's Move With Edit Group..., all through these commands,
+   and "no Lua binding" is now the wrong phrase: every id here is callable
+   through the generic `zene.command()` bridge. This bullet and the
+   `docs/KNOWN-LIMITATIONS.md` line it cites were the record of the time. What
+   the interface still does not offer - the other four phase-locked edits, the
+   edit set's track list, shared membership through `also: true` - is listed in
+   that bullet now.)*
 6. **The edit half is not audibly proved by this lane.** The mix half's
    audibility was measured before it (`VcaGroupTest` renders and measures a dB
    delta, bit-exactly reversible). This lane's end-to-end proof drives the model

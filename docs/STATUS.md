@@ -185,7 +185,11 @@ not rounded up.
   StemExport src/gui` returns nothing).
 - **Racks / VCAs** — *Exists:* engine, persistence, tests (above). *Missing:* a UI and a scripting path — a rack or
   a group can only arrive by loading a project that already contains one. Macros and key/velocity zones are outside
-  the rack slice, and chain switching is not crossfaded, so it can click.
+  the rack slice, and chain switching is not crossfaded, so it can click. *(2026-10-18 (Q050-171): superseded for
+  both families. A mixer channel's Rack submenu adds and removes chains and sets macros, and the VCA strip, its
+  Links/Put Inside menus, the channel's VCA group submenu and Project tools ▸ Groups... (create, rename, remove,
+  edit set, phase lock) all exist; "no scripting path" is no longer the right phrase either, since `zene.command()`
+  reaches every `rack.*` and `vca.*` id. The remaining limits are in `docs/KNOWN-LIMITATIONS.md`.)*
 - **Out-of-process plugin hosting** — *Exists:* VST2/Vestige is always separate-process; ZynAddSubFx has an opt-in
   per-plugin `separateprocess` toggle; `RemoteZynAddSubFx` builds unconditionally; `ZynSeparateProcessTest`,
   `RemotePluginClientE2ETest`. *Missing:* isolation for the new families — `docs/KNOWN-LIMITATIONS.md` records "no

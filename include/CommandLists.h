@@ -40,7 +40,8 @@ namespace CommandLists
 LMMS_EXPORT ListSpec revisions();
 //! WF-035: the project's file references, relink a missing one, collect media.
 LMMS_EXPORT ListSpec missingFiles(const QString& project);
-//! MX-069: VCA groups - rename, remove, create.
+//! MX-069 / ED-034: VCA groups - rename, remove, the edit set (add/remove a track), phase lock
+//! on/off, create.
 LMMS_EXPORT ListSpec vcaGroups();
 //! ED-147: a sample clip's warp markers - move, remove, add.
 LMMS_EXPORT ListSpec warpMarkers(const QString& clip);
