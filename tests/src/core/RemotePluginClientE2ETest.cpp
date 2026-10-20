@@ -198,6 +198,60 @@ private:
 	QString m_previous;
 };
 
+/*!
+ * Widens the processing period's wait for its reply, for one test (RemotePlugin::setPeriodBudgetForTesting()).
+ *
+ * The real wait is one audio period (about 20 ms). The fake client is another process, so on a loaded machine
+ * it misses that window now and then, and a test about what the client says then fails for a reason it does not
+ * test (a late reply is skipped, the next request is never sent, the client's report never comes). Tests about
+ * the deadline itself - late, stalled or half-written replies - keep the real budget.
+ */
+class ScopedReplyBudget
+{
+public:
+	explicit ScopedReplyBudget(std::chrono::microseconds budget = std::chrono::seconds{5})
+	{
+		RemotePlugin::setPeriodBudgetForTesting(budget);
+	}
+	~ScopedReplyBudget() { RemotePlugin::setPeriodBudgetForTesting(std::chrono::microseconds{0}); }
+
+	ScopedReplyBudget(const ScopedReplyBudget&) = delete;
+	ScopedReplyBudget& operator=(const ScopedReplyBudget&) = delete;
+};
+
+/*!
+ * Runs periods until the client's output-count report moves the count off \a from, or \a limit passes.
+ *
+ * These clients send a count report in every reply, so no period of theirs is a processed one (asserted for each).
+ * The report is applied on this (the main) thread before the next period, as the main thread's timer does - a
+ * period with one pending sends nothing. How many periods it takes is not fixed: a period whose MIDI finds no
+ * room in the socket (the client process reading slowly on a loaded machine) is skipped by design and its events
+ * stay queued, so a fixed count of periods could end before the queue had drained.
+ */
+template<typename Ports>
+void runPeriodsUntilTheCountMoves(RemotePlugin& plugin, Ports& ports, ch_cnt_t from,
+	std::chrono::milliseconds limit = std::chrono::seconds{10})
+{
+	const auto until = std::chrono::steady_clock::now() + limit;
+	while (ports.audioPortsModel().out().channelCount() == from && std::chrono::steady_clock::now() < until)
+	{
+		QVERIFY(!plugin.process());
+		plugin.applyDeferredClientRequests();
+		std::this_thread::sleep_for(std::chrono::milliseconds{1});   // the client reads between periods
+	}
+}
+
+//! Shrinks the room a non-blocking send may use, for one test (RemotePluginBase::setSendRoomForTesting()).
+class ScopedSendRoom
+{
+public:
+	explicit ScopedSendRoom(std::size_t bytes) { RemotePluginBase::setSendRoomForTesting(bytes); }
+	~ScopedSendRoom() { RemotePluginBase::setSendRoomForTesting(0); }
+
+	ScopedSendRoom(const ScopedSendRoom&) = delete;
+	ScopedSendRoom& operator=(const ScopedSendRoom&) = delete;
+};
+
 //! The allocations \a body makes on this thread, counted by the allocation probe.
 template<typename Body>
 auto countAllocations(Body&& body) -> std::uint64_t
@@ -327,6 +381,7 @@ private slots:
 
 		// A held note, so the synth has something to render.
 		plugin.processMidiEvent(MidiEvent{MidiNoteOn, 0, 60, 100}, 0);
+		const ScopedReplyBudget replyInTime;
 
 		float peak[2] = {0.0f, 0.0f};
 		for (int period = 1; period <= 2; ++period)
@@ -392,6 +447,7 @@ private slots:
 		QCOMPARE(out.frames(), frames);
 		QCOMPARE(out.bufferPtr(1) - out.bufferPtr(0), static_cast<std::ptrdiff_t>(frames));
 
+		const ScopedReplyBudget replyInTime;
 		for (int period = 1; period <= 2; ++period)
 		{
 			QVERIFY2(!plugin.failed(), "the fake client died between periods");
@@ -604,6 +660,7 @@ private slots:
 		std::fill(out.bufferPtr(0), out.bufferPtr(0) + frames, 1.0f);
 		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
 
+		const ScopedReplyBudget replyInTime;
 		QVERIFY(!plugin.process());
 		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{4}, 2000);
@@ -683,6 +740,7 @@ private slots:
 
 		// The client finishes its message and reply after its pause; the next period completes.
 		std::this_thread::sleep_for(std::chrono::milliseconds{1200});
+		const ScopedReplyBudget replyInTime;
 		QVERIFY2(plugin.process(), "the period after the client finished its message did not complete");
 	}
 
@@ -723,12 +781,9 @@ private slots:
 		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{1});
 
 		m_recorder->clear();
-		// Up to four periods: the drain is capped per period, so the cut comes after the note-ons in the later ones.
-		for (int period = 0; period < 4; ++period)
-		{
-			QVERIFY(!plugin.process());
-			QTest::qWait(30);
-		}
+		// At least four periods: the drain is capped per period, so the cut comes after the note-ons in the later ones.
+		const ScopedReplyBudget replyInTime;
+		runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
 
 		// The main-thread pump reports the refusal when it applies the deferred work.
@@ -765,6 +820,7 @@ private slots:
 		QCOMPARE(plugin.processingOverruns(), std::uint64_t{1});
 		std::this_thread::sleep_for(std::chrono::milliseconds{400});
 
+		const ScopedReplyBudget replyInTime;      // period 1 had the real budget, so its reply was late
 		QVERIFY2(plugin.process(), "the period after the late reply did not complete");
 		QCOMPARE(plugin.processingOverruns(), std::uint64_t{1});
 
@@ -800,6 +856,7 @@ private slots:
 		RemotePlugin plugin{ports.controller()};
 		QVERIFY2(startClient(plugin, client), "could not start/connect the fake client");
 		QVERIFY(!plugin.failed());
+		const ScopedReplyBudget replyInTime;
 
 		// Warm-up: let every first-use allocation happen before counting.
 		for (int i = 0; i < 3; ++i) { QVERIFY(plugin.process()); }
@@ -912,6 +969,7 @@ private slots:
 		// The main thread reads the big message as part of its own wait.
 		QCOMPARE(plugin.isUIVisible(), 1);
 		QVERIFY(!plugin.failed());
+		const ScopedReplyBudget replyInTime;
 		QVERIFY2(plugin.process(), "the period after the large message did not complete");
 	}
 
@@ -943,15 +1001,13 @@ private slots:
 		plugin.processMidiEvent(MidiEvent(MidiNoteOff, 3, 60, 0), 0);
 		QCOMPARE(plugin.midiEventsDropped(), std::uint64_t{1});
 
+		// Each period's count report is applied before the next, as in refusedNoteOffBecomesAllNotesOffInOrder().
+		const ScopedReplyBudget replyInTime;
 		QVERIFY(!plugin.process());
-		QTest::qWait(30);
+		plugin.applyDeferredClientRequests();
 		plugin.processMidiEvent(MidiEvent(MidiNoteOn, 3, 64, 100), 0);   // queued after the refusal
 
-		for (int period = 0; period < 4; ++period)
-		{
-			QVERIFY(!plugin.process());
-			QTest::qWait(30);
-		}
+		runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
 	}
 
@@ -978,10 +1034,45 @@ private slots:
 		QVERIFY(!plugin.failed());
 
 		for (int i = 0; i < 256; ++i) { plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0); }
-		QVERIFY(!plugin.process());
-		QTest::qWait(30);
-		QVERIFY(!plugin.process());
+		// The client's second request carries the first's note-on count: 3 with the cap, 4 without it.
+		const ScopedReplyBudget replyInTime;
+		runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3}, 2000);
+	}
+
+	/*!
+	 * The per-period MIDI cap holds across periods skipped for want of room in the socket.
+	 *
+	 * The host's send room is shrunk to a few frames, so a period sends a little MIDI and then finds no room: it
+	 * is skipped before its request. The client is still in the same period until that request arrives, so the
+	 * periods after it may only send what is left of the cap. The "capper" client reports 3 when its period carried
+	 * at most 128 note-ons and 4 when it carried more. (Found under machine load on 2026-10-20: a request that found
+	 * no room after its period's MIDI let the next period send another 128, and the client got all 256 at once.)
+	 */
+	void midiCapHoldsAcrossPeriodsSkippedForRoom()
+	{
+#ifndef __linux__
+		QSKIP("the send-room seam needs Linux's queued-bytes count (SIOCOUTQ)");
+#endif
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the cap across skipped periods is "
+				"UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("capper")}), "could not start/connect the capper client");
+		QVERIFY(!plugin.failed());
+
+		for (int i = 0; i < 256; ++i) { plugin.processMidiEvent(MidiEvent(MidiNoteOn, 0, 60, 100), 0); }
+		const ScopedReplyBudget replyInTime;
+		{
+			const ScopedSendRoom tight{2048};      // a few frames: every period runs out of room part-way
+			runPeriodsUntilTheCountMoves(plugin, ports, ch_cnt_t{2});
+		}
+		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{3});
 	}
 
 	/*!
@@ -1189,6 +1280,7 @@ private slots:
 		QVERIFY(!plugin.failed());
 
 		m_recorder->clear();
+		const ScopedReplyBudget replyInTime;      // the garbage frame must arrive inside the period to be read
 		QVERIFY(!plugin.process());
 		plugin.applyDeferredClientRequests();
 
@@ -1269,6 +1361,7 @@ private slots:
 		std::fill(out.bufferPtr(1), out.bufferPtr(1) + frames, 1.0f);
 
 		// The client asked for 4 outputs during this period and sent no planes for them.
+		const ScopedReplyBudget replyInTime;
 		QVERIFY(!plugin.process());
 		QCOMPARE(ports.audioPortsModel().out().channelCount(), ch_cnt_t{2});
 		for (f_cnt_t frame = 0; frame < frames; ++frame)

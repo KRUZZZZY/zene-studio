@@ -24,6 +24,7 @@
 
 #include "RemotePluginBase.h"
 
+#include <atomic>
 #include <charconv>
 
 #ifndef SYNC_WITH_SHM_FIFO
@@ -138,6 +139,17 @@ std::size_t RemotePluginBase::frameFromMessage( char * _out, std::size_t _capaci
 	return static_cast<std::size_t>( cursor - _out );
 }
 
+namespace
+{
+//! RemotePluginBase::setSendRoomForTesting(); 0 = the socket's own limit. Read on the audio thread: lock-free.
+std::atomic<std::size_t> s_sendRoomForTesting{0};
+}
+
+void RemotePluginBase::setSendRoomForTesting( std::size_t bytes )
+{
+	s_sendRoomForTesting.store( bytes, std::memory_order_relaxed );
+}
+
 RemotePluginBase::SendResult RemotePluginBase::sendFrameNonBlocking( const char * _frame, std::size_t _size )
 {
 #ifdef SYNC_WITH_SHM_FIFO
@@ -174,6 +186,10 @@ RemotePluginBase::SendResult RemotePluginBase::sendFrameNonBlocking( const char 
 			&& ::getsockopt( m_socket, SOL_SOCKET, SO_SNDBUF, &sndbuf, &sndbufLength ) == 0
 			&& queued >= 0
 			&& static_cast<std::size_t>( queued ) + _size + 1024 <= static_cast<std::size_t>( sndbuf ) / 2;
+		if( const auto limit = s_sendRoomForTesting.load( std::memory_order_relaxed ); room && limit != 0 )
+		{
+			room = static_cast<std::size_t>( queued ) + _size <= limit;
+		}
 #endif
 		if( room )
 		{

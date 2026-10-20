@@ -434,9 +434,16 @@ constexpr std::size_t MidiDrainPerPeriod = 128;
 //! Controller number of "all notes off" (channel mode message).
 constexpr std::int32_t MidiAllNotesOffController = 123;
 
+//! RemotePlugin::setPeriodBudgetForTesting(); 0 = one audio period. Read on the audio thread, so lock-free.
+std::atomic<std::int64_t> s_periodBudgetForTestingUs{0};
+
 //! The time one processing period lasts.
 auto periodBudget() -> std::chrono::steady_clock::duration
 {
+	if (const auto us = s_periodBudgetForTestingUs.load(std::memory_order_relaxed); us > 0)
+	{
+		return std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::microseconds{us});
+	}
 	const auto frames = Engine::audioEngine()->framesPerPeriod();
 	const auto rate = Engine::audioEngine()->outputSampleRate();
 	if (rate == 0) { return std::chrono::milliseconds{20}; }
@@ -460,6 +467,12 @@ auto periodDeadline(std::chrono::steady_clock::time_point now) -> std::chrono::s
 }
 
 } // namespace
+
+
+void RemotePlugin::setPeriodBudgetForTesting(std::chrono::microseconds budget)
+{
+	s_periodBudgetForTestingUs.store(budget.count(), std::memory_order_relaxed);
+}
 
 
 
@@ -576,8 +589,10 @@ bool RemotePlugin::processPeriod()
 		return false;
 	}
 
-	// The request is counted as owed once sent, so a late reply is always drained later.
+	// The request is counted as owed once sent, so a late reply is always drained later. The MIDI it carries ends
+	// with it: the next client period's cap starts again.
 	++m_owedProcessingReplies;
+	m_midiSentSinceRequest = 0;
 
 	switch (collectProcessingReplies(periodDeadline(start)))
 	{
@@ -749,10 +764,14 @@ RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
 		const auto result = sendFrameNonBlocking(m_pendingMidi.data(), m_pendingMidiSize);
 		if (result != SendResult::Sent) { return result; }
 		m_pendingMidiSize = 0;
+		++m_midiSentSinceRequest;
 	}
 
-	// The drain is ordered and capped (see drainMidi()). A frame that cannot be sent is kept in m_pendingMidi and
-	// goes first next period, so nothing is taken from the queue without a place to go.
+	// The drain is ordered and capped per client period (see drainMidi()): what an earlier, skipped period already
+	// sent before this request counts. A frame that cannot be sent is kept in m_pendingMidi and goes first next
+	// period, so nothing is taken from the queue without a place to go.
+	const auto budget = MidiDrainPerPeriod - std::min(MidiDrainPerPeriod, m_midiSentSinceRequest);
+	if (budget == 0) { return SendResult::Sent; }
 	SendResult failure = SendResult::Sent;
 	const auto emitFrame = [this, &failure](const std::array<std::int32_t, 5>& values) -> bool
 	{
@@ -762,13 +781,14 @@ RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
 		if (result == SendResult::Sent)
 		{
 			m_pendingMidiSize = 0;
+			++m_midiSentSinceRequest;
 			return true;
 		}
 		failure = result;
 		return false;
 	};
 
-	drainMidi(m_midiHandoff, m_midiOverflow, MidiDrainPerPeriod,
+	drainMidi(m_midiHandoff, m_midiOverflow, budget,
 		[&](const HandoffMidiEvent& event) -> bool
 		{
 			return emitFrame({event.type, event.channel, event.param1, event.param2,
@@ -777,7 +797,8 @@ RemotePluginBase::SendResult RemotePlugin::sendQueuedMidiEvents()
 		[&](int channel) -> bool
 		{
 			return emitFrame({MidiControlChange, channel, MidiAllNotesOffController, 0, 0});
-		});
+		},
+		budget);
 	return failure;
 }
 
