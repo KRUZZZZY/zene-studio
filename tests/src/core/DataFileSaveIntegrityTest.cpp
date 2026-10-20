@@ -86,6 +86,18 @@ bool occupy( const QString& path )
 	return writeText( path + QStringLiteral( "/occupied" ), QStringLiteral( "keep out" ) );
 }
 
+//! Arms the save-fault seam for exactly one save and disarms it before
+//! returning, whatever the save did. Callers assert on the result only after
+//! this returns: a failed QVERIFY returns from the test function, so a disarm
+//! written after an assertion would be skipped and the seam would stay armed.
+bool saveWithFault( DataFile& dataFile, const QString& target, const QString& point )
+{
+	qputenv( "ZENE_TEST_SAVE_FAULT", point.toUtf8() );
+	const bool saved = dataFile.writeFile( target );
+	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+	return saved;
+}
+
 
 /*! \brief Captures the Qt log lines emitted while it is alive, so a test can
  *  ASSERT that a report line was actually printed rather than merely tolerate
@@ -377,14 +389,11 @@ private slots:
 			const QString oldText = readText( target );
 			QVERIFY( oldText.contains( QStringLiteral( "</zene-project>" ) ) );
 
-			// Arm the fault, attempt a DIFFERENT save, disarm before asserting
-			// (so an early QVERIFY return cannot leak the env var into a later
-			// test and cascade failures).
-			qputenv( "ZENE_TEST_SAVE_FAULT", point.toUtf8() );
+			// Attempt a DIFFERENT save with the fault armed; saveWithFault()
+			// disarms before any assertion below can return early.
 			DataFile second( DataFile::Type::SongProject );
 			second.content().setAttribute( "s5probe", "new" );
-			const bool saved = second.writeFile( target );
-			qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+			const bool saved = saveWithFault( second, target, point );
 
 			QVERIFY2( !saved, qPrintable( QStringLiteral(
 				"the save was not interrupted at %1" ).arg( point ) ) );
@@ -452,11 +461,9 @@ private slots:
 		// Leave a COMPLETE .new the way a real interruption does: fault the
 		// save right after the temp is written, so the orphan is byte-for-byte
 		// what an interrupted save leaves behind.
-		qputenv( "ZENE_TEST_SAVE_FAULT", "after-write" );
 		DataFile second( DataFile::Type::SongProject );
 		second.content().setAttribute( "s5probe", "new" );
-		QVERIFY( !second.writeFile( target ) );
-		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QVERIFY( !saveWithFault( second, target, QStringLiteral( "after-write" ) ) );
 		QVERIFY( QFile::exists( temp ) );
 		QVERIFY( readText( temp ).contains( QStringLiteral( "s5probe=\"new\"" ) ) );
 		QCOMPARE( readText( target ), oldText );	// canonical untouched by the crash
@@ -480,6 +487,28 @@ private slots:
 		QVERIFY( readText( target ).contains( QStringLiteral( "s5probe=\"new\"" ) ) );
 		// ...and the orphan that used to sit there forever is consumed.
 		QVERIFY2( !QFile::exists( temp ), "the adopted .new was not consumed" );
+	}
+
+	//! The seam is disarmed on every exit of saveWithFault(), including a save
+	//! that does not stop where the seam asks. A name writeFile() does not check
+	//! lets the save complete, so the result is success and the seam must still
+	//! be clear when the assertions below run - a failed assertion returns from
+	//! the test and would otherwise leave the seam armed for later tests.
+	void saveFaultIsDisarmedWhenTheSaveDoesNotStop()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		DataFile dataFile( DataFile::Type::SongProject );
+		dataFile.content().setAttribute( "s5probe", "unstopped" );
+
+		const bool saved = saveWithFault( dataFile, target, QStringLiteral( "no-such-point" ) );
+		QVERIFY2( qgetenv( "ZENE_TEST_SAVE_FAULT" ).isEmpty(),
+			"the save-fault seam was left armed after the save" );
+		QVERIFY2( saved, "a seam name writeFile() does not check stopped the save" );
+		QVERIFY( readText( target ).contains( QStringLiteral( "s5probe=\"unstopped\"" ) ) );
 	}
 
 	//! ARCH-4 S5, SPEC-ARCH-4 1.8 part 2. The other half: a .new truncated
