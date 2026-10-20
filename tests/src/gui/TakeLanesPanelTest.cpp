@@ -303,7 +303,94 @@ private slots:
 		QVERIFY(panel.laneBox()->count() >= 2);
 	}
 
+	//! 0.5.0 L03 (Q050-274): a one-finger horizontal swipe comps the lane it starts on, in either
+	//! direction, through comp.select - and a mouse drag over the same pixels selects the same
+	//! range, so touch is a second way to make the existing gesture, not a second model.
+	void aTouchSwipeCompsTheSameRangeAsAMouse()
+	{
+		const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		Track* track = control::resolveTrack(id, &error);
+		QVERIFY(track != nullptr);
+		SampleClip* first = addWaveTake(track, 0, TimePos::ticksPerBar());
+		SampleClip* second = addWaveTake(track, 0, TimePos::ticksPerBar());
+		TakeLanesPanel panel(id);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QTest::mouseClick(panel.addLaneButton(), Qt::LeftButton);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)},
+			{QStringLiteral("lane"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)},
+			{QStringLiteral("lane"), 1}}).ok);
+		panel.resize(640, 420);
+		panel.show();
+		QCoreApplication::processEvents();
+		CompSwipeStrip* strip = panel.strip();
+		QVERIFY(strip != nullptr);
+		QVERIFY(strip->width() > 100);
+		panel.refresh();
+		const auto segmentsOf = [&id] {
+			return run(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), id}})
+				.result.value(QStringLiteral("composite")).toObject().value(QStringLiteral("segments")).toArray();
+		};
+		QCOMPARE(segmentsOf().size(), 0);
 
+		const int rowY = 22 + 10;  // CompSwipeStrip::RowHeight is 22: the second lane
+		const int fromX = strip->width() / 4;
+		const int toX = 3 * strip->width() / 4;
+		const int expectedBegin = strip->tickAt(std::min(fromX, toX));
+		const int expectedEnd = strip->tickAt(std::max(fromX, toX));
+
+		// A tap leaves the comp alone.
+		{
+			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
+			sequence.press(0, QPoint(fromX, rowY));
+			QVERIFY(sequence.commit());
+			sequence.release(0, QPoint(fromX, rowY));
+			QVERIFY(sequence.commit());
+		}
+		QCOMPARE(segmentsOf().size(), 0);
+
+		auto swipe = [strip, rowY](int from, int to) {
+			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
+			sequence.press(0, QPoint(from, rowY));
+			const bool pressed = sequence.commit();
+			sequence.move(0, QPoint((from + to) / 2, rowY));
+			const bool moved = sequence.commit();
+			sequence.move(0, QPoint(to, rowY));
+			const bool movedAgain = sequence.commit();
+			sequence.release(0, QPoint(to, rowY));
+			const bool released = sequence.commit();
+			return pressed && moved && movedAgain && released;
+		};
+		QVERIFY2(swipe(fromX, toX), "the touch swipe was not delivered");
+		QJsonArray segments = segmentsOf();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), expectedBegin);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), expectedEnd);
+
+		// The same drag with a mouse selects the same lane and range.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(segmentsOf().size(), 0);
+		QTest::mousePress(strip, Qt::LeftButton, Qt::NoModifier, QPoint(fromX, rowY));
+		QTest::mouseMove(strip, QPoint(toX, rowY));
+		QTest::mouseRelease(strip, Qt::LeftButton, Qt::NoModifier, QPoint(toX, rowY));
+		segments = segmentsOf();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), expectedBegin);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), expectedEnd);
+
+		// A swipe the other way is the same half-open range.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(swipe(toX, fromX), "the reverse touch swipe was not delivered");
+		segments = segmentsOf();
+		QCOMPARE(segments.size(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 1);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), expectedBegin);
+		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), expectedEnd);
+	}
 };
 
 QTEST_MAIN(TakeLanesPanelTest)
