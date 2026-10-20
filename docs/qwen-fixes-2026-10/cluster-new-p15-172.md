@@ -3,7 +3,7 @@
 **Verdict: FIXED**
 
 new-p15-172: FIXED
-new-p14-255: NEEDS-CONTEXT
+new-p14-255: FIXED
 new-p14-256: NEEDS-CONTEXT
 
 Same-file batch: three bugs in `include/RemotePlugin.h` (the RPC base of the
@@ -133,7 +133,83 @@ executed 3/3 successfully.
 
 **Verdict: FIXED**
 
-(filled in below)
+### The bug (REAL)
+
+`include/RemotePlugin.h:129-133` (before the fix) -
+
+```cpp
+	inline void waitForHostInfoGotten()
+	{
+		m_failed = waitForMessage( IdHostInfoGotten ).id
+							!= IdHostInfoGotten;
+	}
+```
+
+`waitForMessage()` reads the client's messages and hands each one to
+`processMessage()`, and `processMessage()` is what *fails* the plugin on a
+protocol mismatch: the retired single-count ids (`src/core/RemotePlugin.cpp:
+1052-1064`) and a message with too few arguments
+(`src/core/RemotePlugin.cpp:1015-1020`) both set `m_failed = true`. The
+assignment above then **overwrites** that verdict with the wait's own result:
+the client sent `IdHostInfoGotten`, so `m_failed` became `false` again and the
+plugin carried on as if nothing had happened.
+
+The sibling `waitForInitDone()` (`src/core/RemotePlugin.cpp:402-403`) has
+always preserved it (`m_failed = m_failed || !initDone;`) - with the comment
+that the verdict of a protocol mismatch has to be sticky, because the failure
+path otherwise degrades into the silent wrong audio it exists to prevent.
+`waitForHostInfoGotten()` is the same wait on the same flag and had lost that
+property.
+
+Callers: `plugins/VstBase/VstPlugin.cpp:217` (`VstPlugin::tryLoad()`, the VST
+handshake) is the only one in the tree.
+
+### The fix (at the cause)
+
+`include/RemotePlugin.h:134-142` -
+
+```cpp
+	inline void waitForHostInfoGotten()
+	{
+		const bool gotHostInfo = waitForMessage( IdHostInfoGotten ).id == IdHostInfoGotten;
+		m_failed = m_failed || !gotHostInfo;
+	}
+```
+
+The wait's own result is now *or-ed* into the existing failure state, exactly
+as `waitForInitDone()` does it. A plugin that was failed while the wait was
+running stays failed; a plugin that was not failed is failed when the host
+info does not arrive (unchanged).
+
+**Realtime / undo / commands:** the wait runs on the main thread (the VST
+plugin's load path), the flag is an existing `std::atomic<bool>`, no new
+allocation, lock, wait or log was added, and no command was added.
+
+### The regression
+
+`tests/src/core/RemotePluginClientE2ETest.cpp:1284` -
+`hostInfoWaitKeepsAnEarlierProtocolFailure()`: the stand-in client
+(`tests/src/plugins/FakeRemotePluginClient.cpp`, the new `badhostinfo` mode)
+answers the host's `IdSyncKey` with the **retired** `IdChangeInputCount` id
+first and only then with `IdHostInfoGotten`. The host refuses the retired id
+(refused loudly, `m_failed = true`) and then waits for the host info - and
+the failure must survive that wait. The test asserts both halves: the refusal
+was reported ("removed message id") and the plugin is still failed.
+
+The test is deterministic: the client sends its three messages in a fixed
+order, the host reads them in that order, and nothing waits for a clock.
+
+### Evidence (new-p14-255)
+
+| Check | Command (exact) | Exit/result |
+|---|---|---|
+| GREEN build after the fix (`build-6-p14-255.log`) | `cmake --build build --target RemotePluginClientE2ETest FakeRemotePluginClient -j 20 > .../build-6-p14-255.log 2>&1; echo EXIT=$?` | 0 |
+| GREEN after the fix (`test-6-p14-255.log`) | `ctest -R '^RemotePluginClientE2ETest$' --output-on-failure > .../test-6-p14-255.log 2>&1; echo EXIT=$?` | **0**; 1/1 passed |
+| PROOF: remove the product patch (`fix.patch`) | `git diff -- include/RemotePlugin.h > .../fix.patch && git apply -R .../fix.patch; echo EXIT=$?` | 0 |
+| PROOF: rebuild without the fix (`build-8-p14-255-red.log`) | `cmake --build build --target RemotePluginClientE2ETest -j 8 > .../build-8-p14-255-red.log 2>&1; echo EXIT=$?` | 0 |
+| PROOF: RED without the fix (`test-8-p14-255-red.log`) | `ctest -R '^RemotePluginClientE2ETest$' --output-on-failure > .../test-8-p14-255-red.log 2>&1; echo EXIT=$?` | **8**; `hostInfoWaitKeepsAnEarlierProtocolFailure()` - *"'plugin.failed()' returned FALSE. (the protocol failure was erased by the host-info wait)"*; 26 passed, 1 failed |
+| PROOF: restore the patch (`build-9-p14-255-green.log`) | `git apply .../fix.patch; echo EXIT=$?` then `cmake --build build --target RemotePluginClientE2ETest -j 8 > .../build-9-p14-255-green.log 2>&1; echo EXIT=$?` | 0; 0 |
+| PROOF: GREEN with the fix again (`test-9-p14-255-green.log`) | `ctest -R '^RemotePluginClientE2ETest$' --output-on-failure > .../test-9-p14-255-green.log 2>&1; echo EXIT=$?` | **0**; 1/1 passed |
 
 ---
 

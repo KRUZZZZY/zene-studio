@@ -132,6 +132,13 @@ constexpr std::size_t BigDebugBytes = 900000;
 //! "deafquery" mode: the client never answers IdIsUIVisible, as a hung editor would not.
 bool g_deafQuery = false;
 
+//! "badhostinfo" mode: when the host asks for the client's host info (IdSyncKey), the
+//! client first sends a message the host has to refuse - the retired single-count id
+//! IdChangeInputCount - and only then the IdHostInfoGotten itself. The host refuses
+//! the retired id and fails the plugin, and the wait for the host info that follows
+//! must not erase that verdict.
+bool g_badHostInfo = false;
+
 //! "latequery" mode: the first IdIsUIVisible is answered "1" after LateQueryDelayMs (later than the host waits);
 //! the next one is answered "0" at once.
 bool g_lateQuery = false;
@@ -389,6 +396,18 @@ auto handleMessage(const Message& message) -> bool
 	case IdQuit:
 		return false;
 
+	case IdSyncKey:
+		// The host asks for the client's host info (the VST handshake). In
+		// "badhostinfo" mode the client sends a message the host has to refuse
+		// first, and only then the host info, so the host's wait for the host info
+		// is the one that has to keep the failure the refusal recorded.
+		if (g_badHostInfo)
+		{
+			if (!sendMessage(IdChangeInputCount, {"0"})) { return false; }
+			if (!sendMessage(IdHostInfoGotten, {})) { return false; }
+		}
+		break;
+
 	case IdChangeSharedMemoryKey:
 		if (!message.args.empty()) { attachSharedBlock(message.args[0]); }
 		break;
@@ -609,7 +628,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery|badhostinfo]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -627,11 +646,12 @@ int main(int argc, char** argv)
 	g_lateQuery = mode == "latequery";
 	g_dropQuery = mode == "dropquery";
 	g_emptyQuery = mode == "emptyquery";
+	g_badHostInfo = mode == "badhostinfo";
 	g_garbage = mode == "garbage";
 	g_halfHandshake = mode == "halfhandshake";
 	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
 		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage", "dropquery",
-		"emptyquery"};
+		"emptyquery", "badhostinfo"};
 	if (std::find_if(std::begin(knownModes), std::end(knownModes),
 			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{

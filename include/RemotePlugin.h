@@ -131,10 +131,15 @@ public:
 
 	bool init( const QString &pluginExecutable, bool waitForInitDoneMsg, QStringList extraArgs = {} );
 
+	//! Waits for the client's IdHostInfoGotten. A failure recorded while the wait is
+	//! running - a retired message id, a message with too few arguments - stays: the
+	//! wait's own result must not erase it, exactly as waitForInitDone() does. The
+	//! verdict of a protocol mismatch is what keeps the host from rendering the wrong
+	//! audio, so it has to be sticky.
 	inline void waitForHostInfoGotten()
 	{
-		m_failed = waitForMessage( IdHostInfoGotten ).id
-							!= IdHostInfoGotten;
+		const bool gotHostInfo = waitForMessage( IdHostInfoGotten ).id == IdHostInfoGotten;
+		m_failed = m_failed || !gotHostInfo;
 	}
 
 	//! Waits for the remote client's IdInitDone. On success the audio ports are
