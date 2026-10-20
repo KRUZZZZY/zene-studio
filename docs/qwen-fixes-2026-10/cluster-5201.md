@@ -6,33 +6,38 @@ ALREADY-FIXED
 
 The finding is already fixed on this branch. `OnnxRuntimeStemSeparator::separate()` enters its `try` at `src/core/OnnxRuntimeStemSeparator.cpp:182`. It calls `initializeSession()` at `:213-214`; that helper constructs `Ort::Session` at `:124`. The segment loop calls `runSessionSegment()` at `:266-267`, where `session.Run()` is at `:141`. Both exception sites are inside the same `try`. The `Ort::Exception` handler at `:313-317` stores `what()` in `error` and returns `Status::Failed`; the `std::exception` handler at `:318-322` does the same. The ONNX Runtime header also declares `Ort::Exception` as deriving from `std::exception` (`onnxruntime_cxx_api.h:54`).
 
-The existing deterministic regression `testPostRunOrtExceptionIsReturnedAsFailure()` in `tests/src/core/OnnxRuntimeStemSeparatorTest.cpp:111-132` injects an `Ort::Exception` through `m_postRunTestHook`, checks that it does not escape `separate()`, and verifies `Status::Failed` plus the reported error. The hook is called in post-run validation at `src/core/OnnxRuntimeStemSeparator.cpp:108`. `initializeSession()` and `runSessionSegment()` each have one caller, both inside `separate()`.
+The suite already had `testPostRunOrtExceptionIsReturnedAsFailure()` to inject an `Ort::Exception` after `Run`. I added `testMalformedModelExceptionIsReturnedBySeparator()` at `tests/src/core/OnnxRuntimeStemSeparatorTest.cpp:90-115`: it gives `separate()` a present but corrupt temporary model and verifies the exception is converted to `Status::Failed` with an error. The new test is synchronous and has no timing, sleeps, or races. `initializeSession()` and `runSessionSegment()` each have one caller, both inside `separate()`.
 
-This behavior was added before this task in ancestor commit `3db2618ef5915e056316a50a17076be07e74aab9`, titled `fix(stems): catch ONNX errors across separation (cluster 5201)`. The existing test and production catch are already in `HEAD`; no product or test changes were needed for this cluster.
+This behavior was added before this task in ancestor commit `3db2618ef5915e056316a50a17076be07e74aab9`, titled `fix(stems): catch ONNX errors across separation (cluster 5201)`. The production catch is already in `HEAD`; this task adds only the direct session-construction regression test and this report.
 
 ## Verification
 
 | Check | Command/result |
 | --- | --- |
-| RED/reverted-fix run | N/A: this branch already contains the fix, so per procedure step 2 I skipped the regression-writing/reversion steps. No RED result is claimed. |
-| Build | EXIT=0 |
-| Existing ONNX test | EXIT=0; 1/1 test passed. |
+| RED regression | With the exception handlers temporarily removed, `testMalformedModelExceptionIsReturnedBySeparator()` fails its `!exceptionEscaped` assertion. Build EXIT=0; CTest EXIT=8, 1/1 test failed. |
+| GREEN regression | After `git apply -R` restored the existing catch, build EXIT=0 and CTest EXIT=0, 1/1 test passed. |
 | Feature gates | EXIT=0; all eight checks PASS, including complexity and file length. |
-| Completion check | To run after committing this report. |
-| Files committed for cluster 5201 | `docs/qwen-fixes-2026-10/cluster-5201.md` only. |
+| Completion check | Initial run before adding the direct test failed only `tests added or changed` (EXIT=1); rerun after committing the test is pending. |
+| Files for this task | `tests/src/core/OnnxRuntimeStemSeparatorTest.cpp`; `docs/qwen-fixes-2026-10/cluster-5201.md`. |
 
-Commands run (exact shell commands):
+Commands run (exact shell commands; CTest commands ran from `build/tests`):
 
 ```sh
-mkdir -p /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs && cmake --build build --target zene OnnxRuntimeStemSeparatorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/build-1.log 2>&1; build_exit=$?; echo EXIT=$build_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/build-1.log; exit "$build_exit"
-ctest -R '^OnnxRuntimeStemSeparatorTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/test-1.log 2>&1; test_exit=$?; echo EXIT=$test_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/test-1.log; exit "$test_exit"
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5201 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/feature-check-1.log 2>&1; gate_exit=$?; echo EXIT=$gate_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/feature-check-1.log; exit "$gate_exit"
+git diff -- src/core/OnnxRuntimeStemSeparator.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/fix.patch && cmake --build build --target zene OnnxRuntimeStemSeparatorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/build-red.log 2>&1; build_exit=$?; echo EXIT=$build_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/build-red.log; exit "$build_exit"
+ctest -R '^OnnxRuntimeStemSeparatorTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/test-red.log 2>&1; test_exit=$?; echo EXIT=$test_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/test-red.log; exit "$test_exit"
+git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/fix.patch && git diff --exit-code -- src/core/OnnxRuntimeStemSeparator.cpp
+cmake --build build --target zene OnnxRuntimeStemSeparatorTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/build-green.log 2>&1; build_exit=$?; echo EXIT=$build_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/build-green.log; exit "$build_exit"
+ctest -R '^OnnxRuntimeStemSeparatorTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/test-green.log 2>&1; test_exit=$?; echo EXIT=$test_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/test-green.log; exit "$test_exit"
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5201 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/feature-check-3.log 2>&1; gate_exit=$?; echo EXIT=$gate_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/feature-check-3.log; exit "$gate_exit"
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5201 5201 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/submit-check-1.log 2>&1; submit_exit=$?; echo EXIT=$submit_exit | tee -a /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5201.r1/logs/submit-check-1.log; exit "$submit_exit"
 ```
+
+Observed exits for these commands in order: `0`, `8`, `0`, `0`, `0`, `0`, `1`. The completion-check command above ran before this test was added and exited `1`; it failed only `tests added or changed`.
 
 ## Self-check
 
-- **Reverted-fix regression:** No product patch was made in this task. The regression was not reversed because the fix predates this branch task in commit `3db2618ef`; the current existing test passes (1/1). This follows the procedure's ALREADY-FIXED path rather than claiming an unobserved RED result.
-- **Determinism:** The existing test injects `Ort::Exception` through a direct function-pointer hook. It uses no timing, sleep, or race.
+- **Reverted-fix regression:** The product fix predates this task. To prove the new test detects the reported failure, I temporarily removed the existing exception boundary, built, and ran the test family: `build-red.log` EXIT=0; `test-red.log` EXIT=8 with the new test failing because the exception escaped. I restored the exact source with `git apply -R`; `build-green.log` EXIT=0 and `test-green.log` EXIT=0 (1/1 passed). The final source has no production diff.
+- **Determinism:** The new test synchronously writes a fixed corrupt model to `QTemporaryFile` and calls `separate()` directly. It uses no timing, sleep, or race. The red log shows the direct `!exceptionEscaped` assertion failed before the pre-existing asynchronous job test ran.
 - **Cause and coverage:** The session constructor and `session.Run()` are called through helpers inside `separate()`'s exception boundary. Both helpers have one caller there. `Ort::Exception` is explicitly caught, assigned to `error`, and converted to `Status::Failed`.
-- **Collateral behavior:** No production or test code changed; this task does not alter audio-thread behavior, saved data, or other separator callers.
+- **Collateral behavior:** No production code changed; the only code change is a regression test. Audio-thread behavior, saved data, and other separator callers are unchanged.
 - **ALREADY-FIXED evidence:** `src/core/OnnxRuntimeStemSeparator.cpp:182, 213-214, 266-267, 313-322`; `tests/src/core/OnnxRuntimeStemSeparatorTest.cpp:111-132`; ancestor commit `3db2618ef5915e056316a50a17076be07e74aab9`.

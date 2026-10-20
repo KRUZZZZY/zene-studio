@@ -87,6 +87,33 @@ private slots:
 		QVERIFY(!error.isEmpty());
 	}
 
+	void testMalformedModelExceptionIsReturnedBySeparator()
+	{
+		QTemporaryFile model;
+		QVERIFY(model.open());
+		QVERIFY(model.write("not an ONNX model") > 0);
+		QVERIFY(model.flush());
+
+		OnnxRuntimeStemSeparator separator(model.fileName());
+		StemSet stems;
+		QString error;
+		StemSeparator::Status status = StemSeparator::Status::Success;
+		bool exceptionEscaped = false;
+		try
+		{
+			status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+				[](float) { return true; }, stems, error);
+		}
+		catch (...)
+		{
+			exceptionEscaped = true;
+		}
+
+		QVERIFY2(!exceptionEscaped, "a malformed model exception escaped separate()");
+		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
+		QVERIFY(!error.isEmpty());
+	}
+
 	void testMalformedModelFailureIsReportedByStemJob()
 	{
 		QTemporaryFile model;
