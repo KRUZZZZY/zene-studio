@@ -2689,3 +2689,4 @@ include/LocklessList.h	Cluster new-p10-227-port: LocklessList::push now reports 
 src/core/LocklessAllocator.cpp	Cluster new-p10-227-port: exhausted alloc() returns nullptr silently (no logging on the realtime path).
 src/core/AudioEngine.cpp	Cluster new-p10-227-port: addPlayHandle checks LocklessList::push capacity failure and rejects the play handle through its existing cleanup path before publishing it to the bus.
 src/tracks/SampleTrack.cpp	Cluster new-p10-227-port: when adding an InputMonitorHandle fails because the fixed staging list is full, release the track-held handle and clear its pointer.
+include/TimePos.h	cluster new-p10-429: fromFrames() refuses a rate that is zero, negative or not a number, and a quotient that no tick count can hold, instead of converting the undefined quotient to an int; a valid rate keeps the same float quotient and tick position; regression in tests/src/core/MidiLearnTest.cpp.
