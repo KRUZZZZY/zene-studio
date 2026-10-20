@@ -150,24 +150,68 @@ above).
 
 ## Self-check
 
-- **Is the bug real?** Yes — the round-4 QA review reproduced it and this round's regression
-  reproduces the *remaining* hole deterministically (`$L/test-1-red.log`, `$L/test-6-red-final.log`).
-- **Is the fix at the cause?** The cause was "the writer may rewrite the storage the reader is
-  copying". The writer now never writes into a published waveform at all, and never reuses one the
-  reader may still hold; the reader's active waveform is visible to the writer through the
-  announced-waveform pointer.
-- **Every caller and sibling checked.** `WaveformSnapshot` has exactly two callers:
-  `Vibed::publishWaveform` (the writer, [Vibed.cpp:136](../../plugins/Vibed/Vibed.cpp:136)) and
-  `Vibed::playNoteImpl` (the reader, [Vibed.cpp:236](../../plugins/Vibed/Vibed.cpp:236)). There is
-  one instance per string (`std::array<WaveformSnapshot, 9>`), each with its own reader state; the
-  audio thread reads them one after another, so there is exactly one reader per instance. No other
-  code touches `graphModel::samples()` on the audio path — `saveSettings`
-  ([Vibed.cpp:164](../../plugins/Vibed/Vibed.cpp:164)) and `loadSettings` run on the GUI thread.
-- **Collateral damage.** `saveSettings`/`loadSettings` and the project format are untouched, so old
-  projects load exactly as before; every waveform action still reaches the next note (case 2); no
-  limit or check was added that another caller could hit.
-- **Realtime, undo, commands.** The audio thread allocates nothing, frees nothing, locks nothing,
-  waits for nothing and logs nothing — it takes the published waveform with one atomic load and two
-  atomic stores and makes the copy it always made. The allocation is on the GUI thread, and only
-  when nothing could be recycled. Undo is untouched (no command, no undoable step added), and no
-  control command was added.
+**1. Does the regression FAIL with the product change reverted and PASS with it?**
+Yes — the exact commands and exit codes:
+
+- `git diff -- plugins/Vibed/Vibed.cpp plugins/Vibed/Vibed.h > $L/fix.patch` → **EXIT 0**;
+  `git apply -R $L/fix.patch` → **EXIT 0**; `cmake --build build --target VibedWaveformHandoffTest`
+  → **EXIT 0**; `ctest -R '^Vibed' --output-on-failure` (from `build/tests`) → **EXIT 8**,
+  `FAIL! : VibedWaveformHandoffTest::aHeldWaveformSurvivesThreePublications() 'std::memcmp(held,
+  first.data(), sizeof(first)) == 0' returned FALSE.` (`$L/test-6-red-final.log`).
+- `git apply $L/fix.patch` → **EXIT 0**; `cmake --build build --target zene vibedstrings
+  VibedWaveformHandoffTest` → **EXIT 0**; `ctest -R '^Vibed' --output-on-failure` → **EXIT 0**,
+  1/1 passed (`$L/test-7-green-final.log`).
+- The same red/green pair was recorded before the fix commit as well (`$L/test-1-red.log`,
+  **EXIT 8**, and `$L/test-2-green.log`, **EXIT 0**).
+
+**2. Is the test deterministic — no wall-clock timing, no sleeps, no races?**
+Yes. The new case `aHeldWaveformSurvivesThreePublications` runs on ONE thread with FOUR
+publications and no timing at all: it publishes a waveform, takes it with `samples()` (the
+hand-off's own reader entry point — the seam the QA asked for: the reader's active waveform is
+what the writer must not touch), publishes three more waveforms, and compares the held waveform
+with the one it published. The values are injected, not sampled: `flatWaveform(0.25f)`,
+`flatWaveform(-0.5f)`, `flatWaveform(0.75f)`, `flatWaveform(-1.f)`. No clock, no sleep, no
+timeout, no second thread. The older case 4 uses a second thread, but it is a race *probe* for
+the reported symptom, not the regression that proves this fix: case 5 is the deterministic one.
+
+**3. Is the fix at the cause and complete — every caller and sibling checked?**
+The cause was "the writer may rewrite the storage the reader is copying". The writer now never
+writes into a published waveform, and never reuses one the reader may still hold. Every caller
+and sibling was checked:
+
+- `WaveformSnapshot` has exactly two callers: `Vibed::publishWaveform` (the writer,
+  [Vibed.cpp:136](../../plugins/Vibed/Vibed.cpp:136)) and `Vibed::playNoteImpl` (the reader,
+  [Vibed.cpp:236](../../plugins/Vibed/Vibed.cpp:236)). There is one instance per string
+  (`std::array<WaveformSnapshot, 9>`, [Vibed.h:206](../../plugins/Vibed/Vibed.h:206)), each with
+  its own reader state, and the audio thread reads them one after another — one reader per
+  instance, which is what the hand-off's protocol assumes.
+- The other path into the same storage is `graphModel::samples()` itself: the audio path no
+  longer calls it at all; `saveSettings` ([Vibed.cpp:164](../../plugins/Vibed/Vibed.cpp:164)) and
+  `loadSettings` still do, on the GUI thread.
+- Every writer of the model ends in `samplesChanged`
+  ([Graph.cpp:519](../../src/gui/widgets/Graph.cpp:519) … [Graph.cpp:738](../../src/gui/widgets/Graph.cpp:738)),
+  and the plug-in's own connection ([Vibed.cpp:130](../../plugins/Vibed/Vibed.cpp:130)) turns each of
+  those into one publication — including the constructor's first `setWaveToSine()` and a project
+  load, so the published waveform never lags the model.
+- No other code includes `plugins/Vibed/Vibed.h` (only `Vibed.cpp` and the regression test), so
+  no sibling call site was left behind.
+
+**4. No collateral damage — do old projects and saved data still load as before, and does any
+added limit or check hit other callers?**
+`saveSettings`/`loadSettings` and the saved format are untouched, so an old project loads exactly
+as before; the waveform the plug-in publishes is still the model's waveform (case 2 proves every
+waveform action — normalize, the wave buttons, smooth — still reaches the next note, and case 3
+proves the hand-off still filters what was never handed off). No limit, capacity or check was
+added that another caller could hit: the new bookkeeping is per string and per plug-in instance
+(one published waveform, one retired list of at most two entries, one free list of at most two),
+and the behaviour outside the bug is unchanged.
+
+**5. If the verdict were ALREADY-FIXED or FALSE-POSITIVE — the code that shows it.**
+Not applicable: the verdict is **FIXED**. The bug was reproduced on this branch before this round
+(`$L/test-1-red.log`, **EXIT 8**, the same failing assertion) and is gone after it.
+
+**Realtime, undo and commands.** The audio thread allocates nothing, frees nothing, locks nothing,
+waits for nothing and logs nothing: it takes the published waveform with one atomic load and two
+atomic stores and makes the copy it always made. The allocation is on the GUI thread, and only
+when the reader was busy and nothing could be recycled. Undo is untouched — no command and no
+undoable step was added — and no control command was added for this bug fix.
