@@ -305,6 +305,24 @@ EXIT=0
   `fcntl`/`FD_CLOEXEC` that the file already used; the new test uses
   `QSemaphore`, `QFile` and the ALSA headers the file already includes. No
   Qt-6-only API, no `windows.h` name, no `std::filesystem`.
+- **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: both verdicts are FIXED.
+  The code that shows both bugs were real is cited with file:line in the two
+  "Evidence" sections above (cluster 4584: `src/core/audio/AudioAlsa.cpp:606-608`
+  (the loop's own no-logging rule), `:621`/`:650` (the only two call sites of
+  `handleCaptureError()`, both on the capture thread) and the original
+  `:524-525`/`:547-548` `printf()`s; new-p15-252:
+  `src/core/audio/AudioAlsa.cpp:111-113` (the dropped return value) and
+  `:115-120` (the uninitialised `ufds[i].fd` handed to `fcntl()`)).
+
+### Pre-existing failures in this tree (not caused by these fixes)
+
+`ctest -R '^(ControlEngineWiring|ControlGoldenAudio)$'` fails in this tree
+BOTH with the fixes reverted and with them applied (`test-control-baseline.log`
+vs `test-audio-sweep.log`): the device catalogue is empty in this build tree
+and a render ends in `std::bad_alloc`. The product changes were reverted
+(`git apply -R` of both patches), `zene` was rebuilt and the same two tests
+failed identically — so they are this tree's state, not a regression of these
+fixes.
 
 ## Files committed
 
