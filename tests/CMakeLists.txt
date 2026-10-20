@@ -1636,6 +1636,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "DeviceDspTest")
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
+		# Cluster 409: the test compiles the convolution kernel into its binary (with the FFTW
+		# calls interposed), and the kernel's plan lifetime now lives in the scope that takes
+		# the engine's model-change guard - so the scope's translation unit comes with it.
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionFftw.cpp
+			${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionFftw.h
+		)
 	endif()
 
 	# ThreadPoolTest interposes pthread_create to inject a deterministic startup
@@ -3237,6 +3244,42 @@ target_compile_features(DelayControlsTest PRIVATE cxx_std_20)
 target_compile_definitions(DelayControlsTest PRIVATE
 	LMMS_TESTING
 	PLUGIN_NAME=delay
+)
+
+# Cluster 409: FFTW's planner API (creating and destroying a plan, allocating and freeing its
+# buffers) must not run while the audio thread executes a plan. The convolution kernel makes and
+# destroys its plans inside a ConvolutionFftwScope, which takes the engine's model-change guard -
+# the guard the render thread holds for every period it renders. The plugin sources are compiled
+# into this test binary (the TripleOscillatorUserWaveTest pattern) so the kernel's real plan
+# lifetime runs in-process, and the scope's counters are the seam the test reads.
+add_executable(ConvolutionFftwPlanScopeTest
+	src/plugins/ConvolutionFftwPlanScopeTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionReverb.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionReverb.h
+	${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionKernel.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionKernel.h
+	${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionFftw.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionFftw.h
+)
+add_test(NAME ConvolutionFftwPlanScopeTest COMMAND ConvolutionFftwPlanScopeTest)
+set_tests_properties(ConvolutionFftwPlanScopeTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(ConvolutionFftwPlanScopeTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb
+	${CMAKE_BINARY_DIR}/plugins/ConvolutionReverb
+	${FFTW3F_INCLUDE_DIRS}
+)
+target_static_libraries(ConvolutionFftwPlanScopeTest PRIVATE lmmsobjs)
+target_link_libraries(ConvolutionFftwPlanScopeTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+	${FFTW3F_LIBRARIES}
+)
+target_compile_features(ConvolutionFftwPlanScopeTest PRIVATE cxx_std_20)
+target_compile_definitions(ConvolutionFftwPlanScopeTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=convolutionreverb
 )
 
 # Regression test for cluster new-p11-80 (automated LFO amount treated as

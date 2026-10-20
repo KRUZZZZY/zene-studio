@@ -1187,6 +1187,8 @@ plugins/ClapInstrument/ClapInstrumentView.h
 plugins/Compressor/CompressorKeyFilter.h
 plugins/Console/Console.cpp
 plugins/Console/Console.h
+plugins/ConvolutionReverb/ConvolutionFftw.cpp
+plugins/ConvolutionReverb/ConvolutionFftw.h
 plugins/ConvolutionReverb/ConvolutionKernel.cpp
 plugins/ConvolutionReverb/ConvolutionKernel.h
 plugins/ConvolutionReverb/ConvolutionReverb.cpp
@@ -2784,3 +2786,9 @@ tests/src/gui/CPULoadWidgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+# cluster 409 (2026-10): FFTW's planner API may not run while the audio thread executes a plan;
+# the convolution kernel's plans live in a scope that takes the engine's model-change guard
+# (the fork-NEW product sources are listed in the sorted block above; the regression test and
+# the report are named here).
+tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
+docs/qwen-fixes-2026-10/cluster-409.md
