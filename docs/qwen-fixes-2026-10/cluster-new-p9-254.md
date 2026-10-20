@@ -215,6 +215,15 @@ PluginPortsMigrationReference -- -j12` (`.../logs/build-final-1.log`, EXIT=0).
    unchanged). Portability: the fix uses only `QTimer`, `QWarning` and
    `<atomic>`, all present in the supported Qt 5.15/6 and C++20 baseline;
    no Qt-6-only API, no `windows.h` macro, no `std::filesystem`.
+6. **The ALREADY-FIXED / FALSE-POSITIVE question does not apply** - both
+   verdicts are FIXED. For the record, the finding was REAL and the code
+   said so before the fix: `plugins/Lb302/Lb302.cpp:512` held
+   `qDebug() << "Lb302: Note dropped due to catastrophically poor
+   performance! ...";` inside `Lb302Synth::playNoteImpl`, and
+   `src/core/AudioEngine.cpp:836` -> `src/core/NotePlayHandle.cpp:225,307`
+   -> `include/Instrument.h:108` is the path that puts that call on the
+   render thread. The regression reproduced it: 384 log messages on the
+   note path in one test run.
 
 ## Files in the commit
 
