@@ -29,6 +29,14 @@ cmake --build build --target XyPadPairTest zene # EXIT=0, build-4.log
 ctest -R '^XyPadPairTest$' --output-on-failure # EXIT=0, test-3.log
 ```
 
+## Self-check
+
+- The regression test FAILS with the product change reverted and PASSES with it: inverse-patch run exited 1 (`test-2.log`, `area->isEnabled()` returned FALSE), fixed run exited 0 (`test-3.log`), 10/10 XyPadPairTest passing.
+- The test is deterministic: no sleeps, timers or races; it calls `XyPadDialog::refresh()` synchronously after `rack.macro_add` and asserts the resulting combo counts and enabled state.
+- The fix is at the cause and complete: `fillMacros()` is the single place that populates the axis combos and sets `m_area->setEnabled`; `refresh()` (used by `ItemListSurfaceSources` value edits and the existing follow-macros test) now calls it, so lists and enabled state follow macro add/remove/rename. `syncPoint()` still runs at the end and keeps the dot/tooltip consistent. Callers (`ShellCommandMenus` opens the dialog; `ControlCommandsAccessibleEditing` uses `changed()`) are unaffected.
+- No collateral damage: existing tests `aDragIsOneStepAndARefusalIsShown` and `thePadFollowsTheMacrosItIsOverAndSaysWhereItStands` still pass; combos are rebuilt only inside `fillMacros`/`refresh`, with signals blocked during rebuild and selection preserved by macro id, so a value-only edit does not reset the user's axis choice. Saved data and audio paths are untouched.
+- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE, so no code/contract citation for those cases is required.
+
 ## Files committed
 
 - `src/gui/XyPad.cpp`
