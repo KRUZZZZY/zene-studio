@@ -35,6 +35,7 @@
 #include <QtTest>
 #include <limits>
 #include <array>
+#include <cstdint>
 #include <limits>
 #include <numeric>
 #include <stdexcept>
@@ -310,6 +311,37 @@ private slots:
 		QVERIFY_EXCEPTION_THROWN(attached.attach(owner.key()), std::runtime_error);
 	}
 #endif
+
+	//! Verifies that a shared-memory array is aligned for the element type it
+	//! holds: the data starts after the in-band size header, so the data offset
+	//! has to be a multiple of the element alignment
+	void SharedMemoryArray_Alignment()
+	{
+		struct alignas(16) AlignedElement
+		{
+			float values[4];
+		};
+
+		using Array = lmms::SharedMemory<AlignedElement[]>;
+
+		Array owner;
+		owner.create(4);
+		QVERIFY(owner.get() != nullptr);
+		QVERIFY2(reinterpret_cast<std::uintptr_t>(owner.get()) % alignof(AlignedElement) == 0,
+			"the shared array data is not aligned for its element type");
+
+		Array attached;
+		attached.attach(owner.key());
+		QVERIFY(attached.get() != nullptr);
+		QVERIFY2(reinterpret_cast<std::uintptr_t>(attached.get()) % alignof(AlignedElement) == 0,
+			"the attached shared array data is not aligned for its element type");
+
+		QCOMPARE(owner.size(), std::size_t{4});
+		QCOMPARE(attached.size(), std::size_t{4});
+
+		owner[0].values[0] = 1.25f;
+		QCOMPARE(attached[0].values[0], 1.25f);
+	}
 
 	//! Verifies array allocations without a key reject element counts whose byte size would overflow
 	void CreateArrayWithoutKey_RejectsOverflow()
