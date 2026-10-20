@@ -169,6 +169,7 @@ private slots:
 		QCOMPARE(tx->command, QStringLiteral("note.slide_clear"));
 		const QString inverseOp = tx->inverse.value(QStringLiteral("op")).toString();
 		const QJsonObject inverseArgs = tx->inverse.value(QStringLiteral("args")).toObject();
+		QVERIFY(tx->inverse.contains(QStringLiteral("args")));
 		QCOMPARE(inverseOp, QStringLiteral("control.undo"));
 
 		const ControlResult undone = run(inverseOp, inverseArgs);
