@@ -25,6 +25,7 @@
 #ifndef LMMS_RACK_MACROS_H
 #define LMMS_RACK_MACROS_H
 
+#include <functional>
 #include <vector>
 
 #include <QDomDocument>
@@ -129,6 +130,23 @@ public:
 	RackMacros(const RackMacros&) = delete;
 	auto operator=(const RackMacros&) -> RackMacros& = delete;
 
+	/*! Who wants to hear that this macro LIST changed - a macro was added, removed, inserted,
+	 *  cleared or reloaded (value and target edits do NOT notify: the list is the same list).
+	 *  Listeners run synchronously, on the thread inside the mutating call itself - the control
+	 *  thread; the audio thread never touches macros. A listener may open or close a UI watcher,
+	 *  so a notification walks a snapshot of the callbacks, never the live store. */
+	using ChangeListener = std::function<void()>;
+	/*! An un-register token; 0 means "no listener". The store is PROCESS-lifetime (as
+	 *  ControlRegistry's shutdown hooks) and keyed by these ids, so removeChangeListener stays
+	 *  safe after THIS list - or the listener's owner - is gone: a UI watcher holds the id, never
+	 *  a pointer into a rack that a channel removal may already have destroyed. */
+	using ChangeListenerId = int;
+	ChangeListenerId addChangeListener(ChangeListener listener);
+	//! False when @a id is 0 or unknown (already removed, or its list was destroyed).
+	static bool removeChangeListener(ChangeListenerId id);
+
+	~RackMacros();
+
 	auto macroCount() const -> int;
 	auto macro(int index) const -> const RackMacro*;
 	auto macro(int index) -> RackMacro*;
@@ -182,6 +200,9 @@ public:
 	void loadSettings(const QDomElement& rackElement);
 
 private:
+	//! Runs every listener registered for THIS list (see addChangeListener).
+	void notifyListChanged() const;
+
 	std::vector<RackMacro> m_macros;
 };
 
