@@ -92,6 +92,18 @@ namespace lmms
 static bool s_provenanceAdoptedThisLoad = false;
 static std::atomic<quint64> s_nextDocumentIdentity{0};
 
+#ifdef LMMS_TESTING
+namespace
+{
+void (*s_tempoMapMemoBoundaryHookForTest)(Song*) = nullptr;
+}
+
+void setTempoMapMemoBoundaryHookForTest(void (*hook)(Song*)) noexcept
+{
+	s_tempoMapMemoBoundaryHookForTest = hook;
+}
+#endif
+
 static quint64 nextDocumentIdentity()
 {
 	return s_nextDocumentIdentity.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -299,9 +311,10 @@ void Song::masterVolumeChanged()
 
 void Song::setTempo()
 {
-	Engine::audioEngine()->requestChangeInModel();
+	AudioEngine* const audio = Engine::audioEngine();
+	audio->requestChangeInModel();
 	const auto tempo = (bpm_t)m_tempoModel.value();
-	PlayHandleList & playHandles = Engine::audioEngine()->playHandles();
+	PlayHandleList & playHandles = audio->playHandles();
 	for (const auto& playHandle : playHandles)
 	{
 		auto nph = dynamic_cast<NotePlayHandle*>(playHandle);
@@ -312,15 +325,19 @@ void Song::setTempo()
 			nph->unlock();
 		}
 	}
-	Engine::audioEngine()->doneChangeInModel();
-
-	Engine::updateFramesPerTick();
-
 	// With a tempo map in force, the global model is only the tempo of the
-	// region BEFORE the map's first event, so the scalar just recomputed is not
-	// the tempo at the play head. Invalidate the follower's memo so the next
-	// audio block re-applies the mapped tempo (docs/TEMPO-MAP.md section 4).
-	if( m_tempoMap.map().active() ) { m_tempoMapAppliedTempo = -1; }
+	// region BEFORE the map's first event. Reset the follower's memo before
+	// releasing the guard that excludes followTempoMap().
+	if( m_tempoMap.map().active() ) { m_tempoMapAppliedTempo.store(-1, std::memory_order_relaxed); }
+	Engine::updateFramesPerTick();
+	audio->doneChangeInModel();
+
+	#ifdef LMMS_TESTING
+	if( s_tempoMapMemoBoundaryHookForTest != nullptr )
+	{
+		s_tempoMapMemoBoundaryHookForTest( this );
+	}
+	#endif
 
 	m_vstSyncController.setTempo( tempo );
 

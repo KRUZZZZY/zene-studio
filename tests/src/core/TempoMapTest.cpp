@@ -63,6 +63,11 @@
 
 using namespace lmms;
 
+namespace lmms
+{
+void setTempoMapMemoBoundaryHookForTest(void (*hook)(Song*)) noexcept;
+}
+
 namespace
 {
 
@@ -80,6 +85,14 @@ float legacyFramesPerTick(sample_rate_t sampleRate, int bpm)
 sample_rate_t engineSampleRate()
 {
 	return Engine::audioEngine()->outputSampleRate();
+}
+
+float s_tempoMapBoundaryFramesPerTick = 0.0f;
+
+void processAtTempoMapBoundary(Song* song)
+{
+	song->processNextBuffer();
+	s_tempoMapBoundaryFramesPerTick = Engine::framesPerTick();
 }
 
 //! The global tempo model's value, READ from the live song rather than assumed:
@@ -156,6 +169,50 @@ private slots:
 	{
 		Engine::getSong()->stop();
 		Engine::destroy();
+	}
+
+	//! A render period can start as soon as setTempo() releases the model guard.
+	//! Force that exact boundary: the global scalar has been updated, so the map
+	//! memo must already be invalidated before the follower runs.
+	void globalTempoChangeInvalidatesMemoBeforeRenderResumes()
+	{
+		Song* song = Engine::getSong();
+		struct RestoreSongState
+		{
+			Song* song;
+			int tempo;
+			~RestoreSongState()
+			{
+				setTempoMapMemoBoundaryHookForTest(nullptr);
+				song->stop();
+				song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; });
+				song->setTempo(tempo);
+			}
+		} restore{song, song->getTempo()};
+		song->stop();
+		const int originalTempo = restore.tempo;
+		const int mappedTempo = originalTempo == MaxTempo ? originalTempo - 1 : originalTempo + 1;
+		const int changedGlobalTempo = originalTempo == MinTempo ? MaxTempo : MinTempo;
+		const sample_rate_t rate = engineSampleRate();
+
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; }));
+		TempoMapEvent event;
+		event.tick = 0;
+		event.hasTempo = true;
+		event.tempo = mappedTempo;
+		QVERIFY(song->tempoMap().edit([&event](TempoMap& map) { return map.addEvent(event); }));
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.setActive(true); return true; }));
+
+		song->playSong();
+		song->processNextBuffer();
+		QCOMPARE(Engine::framesPerTick(), legacyFramesPerTick(rate, mappedTempo));
+
+		s_tempoMapBoundaryFramesPerTick = 0.0f;
+		setTempoMapMemoBoundaryHookForTest(&processAtTempoMapBoundary);
+		song->setTempo(changedGlobalTempo);
+		setTempoMapMemoBoundaryHookForTest(nullptr);
+		QCOMPARE(s_tempoMapBoundaryFramesPerTick, legacyFramesPerTick(rate, mappedTempo));
+
 	}
 
 	//! (1) The tempo at a tick is the last event at or before it, and the GLOBAL
