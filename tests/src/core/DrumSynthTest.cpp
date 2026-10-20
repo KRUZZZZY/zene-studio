@@ -94,6 +94,22 @@ bool writeZeroDurationToneFixture(const QString& path, int droop)
 	return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
 }
 
+// A tone fixture whose F1 line is `f1Line`; an empty line omits the key so F1 takes its default.
+bool writeToneFrequencyFixture(const QString& path, const QString& f1Line, const QString& toneEnvelope)
+{
+	const auto contents = QStringLiteral(
+		"[General]\n"
+		"Version=DrumSynth v2.0\n"
+		"[Tone]\n"
+		"On=1\n"
+		"Level=100\n"
+		"Envelope=%1\n"
+		"%2"
+		"F2=220\n").arg(toneEnvelope, f1Line).toUtf8();
+	QFile file(path);
+	return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
+}
+
 } // namespace
 
 namespace lmms {
@@ -182,6 +198,55 @@ Envelope=0,00000001 100,0
 		const float phaseIncrement = 2.f * std::numbers::pi_v<float> * 440.f / 44100.f;
 		const auto expected = static_cast<int16_t>(10000.f * std::sin(phaseIncrement));
 		QCOMPARE(samples.front(), expected);
+	}
+
+	void rejectsNonfiniteToneFrequency_data()
+	{
+		QTest::addColumn<QString>("f1Line");
+		QTest::newRow("nan") << QStringLiteral("F1=nan\n");
+		QTest::newRow("inf") << QStringLiteral("F1=inf\n");
+		QTest::newRow("negative-inf") << QStringLiteral("F1=-inf\n");
+	}
+
+	void rejectsNonfiniteToneFrequency()
+	{
+		// A non-finite F1 must fall back to its default, so the render matches a file without the key.
+		QFETCH(QString, f1Line);
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString envelope = QStringLiteral("0,100 1200,0");
+		const QString nonfinitePath = directory.filePath(QStringLiteral("nonfinite-f1.ds"));
+		const QString defaultPath = directory.filePath(QStringLiteral("default-f1.ds"));
+		QVERIFY(writeToneFrequencyFixture(nonfinitePath, f1Line, envelope));
+		QVERIFY(writeToneFrequencyFixture(defaultPath, QString(), envelope));
+
+		const auto expected = render(defaultPath);
+		QVERIFY(std::any_of(expected.begin(), expected.end(), [](int16_t sample) { return sample != 0; }));
+		QVERIFY2(render(nonfinitePath) == expected, "a non-finite F1 must render as the default frequency");
+	}
+
+	void rejectsNonfiniteEnvelopeLevel_data()
+	{
+		QTest::addColumn<QString>("level");
+		QTest::newRow("nan") << QStringLiteral("nan");
+		QTest::newRow("inf") << QStringLiteral("inf");
+		QTest::newRow("negative-inf") << QStringLiteral("-inf");
+	}
+
+	void rejectsNonfiniteEnvelopeLevel()
+	{
+		// A non-finite envelope level must be stored as zero, so the render matches a literal zero level.
+		QFETCH(QString, level);
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString nonfinitePath = directory.filePath(QStringLiteral("nonfinite-envelope.ds"));
+		const QString zeroPath = directory.filePath(QStringLiteral("zero-envelope.ds"));
+		QVERIFY(writeToneFixture(nonfinitePath, QStringLiteral("0,100 600,%1 1200,0").arg(level)));
+		QVERIFY(writeToneFixture(zeroPath, QStringLiteral("0,100 600,0 1200,0")));
+
+		const auto expected = render(zeroPath);
+		QVERIFY(std::any_of(expected.begin(), expected.end(), [](int16_t sample) { return sample != 0; }));
+		QVERIFY2(render(nonfinitePath) == expected, "a non-finite envelope level must be stored as zero");
 	}
 
 	void refusesAnEnvelopeWhoseRoundedLengthOverflows()
