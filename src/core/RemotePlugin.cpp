@@ -951,13 +951,12 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 
 
 void RemotePlugin::processFinished( int exitCode,
-					QProcess::ExitStatus exitStatus )
+						QProcess::ExitStatus exitStatus )
 {
 	// The client is gone: the cached running state (see isRunning()) follows it, so
 	// the audio thread stops asking for periods from a client that is not there.
 	m_clientRunning.store(false, std::memory_order_release);
 	reportRefusedChannelCounts();
-
 	if ( exitStatus == QProcess::CrashExit )
 	{
 		qCritical() << "Remote plugin crashed";
