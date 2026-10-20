@@ -852,6 +852,7 @@ private slots:
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
+	void gigplayerNoProgressFallbackKeepsEarlierSamples();
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
@@ -2119,9 +2120,79 @@ void PluginPortsMigrationTest::gigplayerSingleFrameLoopRepeatsFrame()
 	QVERIFY(std::fabs(firstRepeat) > 1e-4f);
 	QVERIFY2(std::fabs(laterRepeat - firstRepeat) < 0.001f,
 		qPrintable(QString{"one-frame loop should repeat frame 64, got %1 then %2"}
-			.arg(firstRepeat, 0, 'g', 6).arg(laterRepeat, 0, 'g', 6)));
+			.arg(laterRepeat, 0, 'g', 6).arg(firstRepeat, 0, 'g', 6)));
 #endif
 }
+
+// The GIG player mixes EVERY sample of EVERY note into ONE shared output
+// buffer per period. A sample whose resampler made no progress contributes
+// nothing, and it must not touch the frames the other samples have already
+// mixed into that buffer.
+void PluginPortsMigrationTest::gigplayerNoProgressFallbackKeepsEarlierSamples()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	// The mixing step of the render path, exported by the module so that the
+	// no-progress case can be driven with an injected resampler result.
+	using MixResampledBlock = lmms::f_cnt_t (*)(lmms::SampleFrame*, lmms::f_cnt_t, lmms::f_cnt_t,
+		const lmms::SampleFrame*, lmms::f_cnt_t, lmms::f_cnt_t);
+	auto mix = reinterpret_cast<MixResampledBlock>(lib->resolve("gigplayerMixResampledBlock"));
+	QVERIFY2(mix != nullptr, "the GigPlayer module does not export gigplayerMixResampledBlock");
+
+	constexpr lmms::f_cnt_t frames = 64;
+	std::array<lmms::SampleFrame, frames> shared{};
+
+	// Another sample of the same note has already mixed its audio into the
+	// shared buffer of this period.
+	shared[0] = lmms::SampleFrame{0.5f, -0.25f};
+	shared[1] = lmms::SampleFrame{0.25f, 0.125f};
+
+	// A sample whose resampler made no progress: it consumed no input and
+	// produced no output.
+	const std::array<lmms::SampleFrame, 4> notProduced{};
+	const auto mixedNothing = mix(shared.data(), 0, frames, notProduced.data(), 0, 0);
+	QCOMPARE(mixedNothing, lmms::f_cnt_t{0});
+
+	QVERIFY2(shared[0].left() == 0.5f && shared[0].right() == -0.25f,
+		qPrintable(QString{"the no-progress fallback erased the audio of the earlier samples: %1, %2"}
+			.arg(shared[0].left(), 0, 'g', 6).arg(shared[0].right(), 0, 'g', 6)));
+	QVERIFY2(shared[1].left() == 0.25f && shared[1].right() == 0.125f,
+		qPrintable(QString{"the no-progress fallback erased the audio of the earlier samples: %1, %2"}
+			.arg(shared[1].left(), 0, 'g', 6).arg(shared[1].right(), 0, 'g', 6)));
+
+	// The frames this sample did not fill stay silent.
+	for (lmms::f_cnt_t i = 2; i < frames; ++i)
+	{
+		QVERIFY(shared[i].left() == 0.0f && shared[i].right() == 0.0f);
+	}
+
+	// A sample that DID produce frames adds them to the shared buffer; it
+	// never overwrites what the other samples mixed in.
+	const std::array<lmms::SampleFrame, 4> produced{
+		lmms::SampleFrame{0.25f, 0.125f}, lmms::SampleFrame{0.5f, 0.25f},
+		lmms::SampleFrame{0.125f, 0.5f}, lmms::SampleFrame{0.25f, 0.25f}};
+	const auto mixedFrames = mix(shared.data(), 0, frames, produced.data(), 8, produced.size());
+	QCOMPARE(mixedFrames, lmms::f_cnt_t{produced.size()});
+	QCOMPARE(shared[0].left(), 0.75f);
+	QCOMPARE(shared[0].right(), -0.125f);
+	QCOMPARE(shared[1].left(), 0.75f);
+	QCOMPARE(shared[1].right(), 0.375f);
+	QCOMPARE(shared[2].left(), 0.125f);
+	QCOMPARE(shared[2].right(), 0.5f);
+#endif
+}
+
 
 void PluginPortsMigrationTest::dispersionRemainsStableAboveNyquist()
 {
