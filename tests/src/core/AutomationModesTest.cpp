@@ -41,6 +41,7 @@
 
 #include <QtTest>
 
+#include <QFile>
 #include <algorithm>
 #include <atomic>
 #include <bit>
@@ -354,6 +355,26 @@ private slots:
 		}
 		// ...and the stop that every init() in this file performs.
 		song->stop();
+	}
+
+	//! The last-frame automation cache is read on the render thread. Its removal
+	//! path must take the same AudioEngine guard before erasing from the vector.
+	//! This structural assertion makes that synchronization contract deterministic
+	//! to test, without introducing a timing race into the regression.
+	void automatedCacheRemovalUsesTheRenderGuard()
+	{
+		QFile source(QString::fromUtf8(AUTOMATION_CACHE_SOURCE_FILE));
+		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.errorString()));
+		const QString text = QString::fromUtf8(source.readAll());
+		const int begin = text.indexOf(QStringLiteral("void Song::forgetAutomatedModel"));
+		QVERIFY(begin >= 0);
+		const int end = text.indexOf(QStringLiteral("void Song::masterVolumeChanged"), begin);
+		QVERIFY(end > begin);
+		const QString body = text.mid(begin, end - begin);
+		const int guard = body.indexOf(QStringLiteral("requestChangesGuard"));
+		const int cache = body.indexOf(QStringLiteral("m_oldAutomatedValues"));
+		QVERIFY2(guard >= 0 && cache > guard,
+			"cache removal must acquire the render guard before accessing m_oldAutomatedValues");
 	}
 
 	//! The touch timeout bounds the write window, so a lost mouse-up cannot

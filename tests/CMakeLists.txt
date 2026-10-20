@@ -1556,6 +1556,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "AutomationModesTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			AUTOMATION_CACHE_SOURCE_FILE="${CMAKE_SOURCE_DIR}/src/core/Song.cpp")
+	endif()
 	lmms_add_coverage(${LMMS_TEST_NAME})
 	# Lua scripting examples live in the source tree; tests run from build/tests.
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE

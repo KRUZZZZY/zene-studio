@@ -290,6 +290,10 @@ Song* Song::s_automationCacheSong = nullptr;
 
 void Song::forgetAutomatedModel( AutomatableModel* model )
 {
+	AudioEngine* const audio = Engine::audioEngine();
+	const auto renderLock = audio == nullptr
+		? AudioEngine::RequestChangesGuard{}
+		: audio->requestChangesGuard();
 	if( s_automationCacheSong != nullptr )
 	{
 		auto& cache = s_automationCacheSong->m_oldAutomatedValues;
