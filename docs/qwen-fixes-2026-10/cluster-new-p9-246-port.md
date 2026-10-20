@@ -135,6 +135,14 @@ individual gate commands were also run directly in this worktree above.
   wait, I/O, logging or Qt call. The render and cleanup allocation watch
   asserts zero allocations and zero deallocations. No control command or undo
   step was added or changed.
+- **Pre-submit check:** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py
+  /home/kruzzzzy/.cache/zene-tmp/gate-wt-r5 new-p9-246-port` **EXIT=0**
+  (`submit-check-gate-copy.log`): commits, clean tree, report, changed test and
+  gates all PASS. The script was run on the identical committed tree copy
+  because its `feature_check.py` child writes per-gate logs next to the
+  worktree, which this session's sandbox rejects (the same reason the run log
+  folder is replaced by `build/fix-logs-r5/`). The five ASK items are answered
+  by the bullets above.
 - **Gate table:** the unmodified `feature_check.py` reports PASS for
   fork-sources, all-sources-reproduce, no-upstream-regression,
   check-namespace, no-tautology, doc-figures, and PASS for complexity and
