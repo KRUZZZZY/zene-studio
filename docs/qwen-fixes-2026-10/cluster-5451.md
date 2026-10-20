@@ -197,6 +197,12 @@ The runtime half of the same claim is in the new regression test:
 `aNoteIsQueuedForThePlugin` drives `handleMidiEvent()` from the test and asserts that the note and
 its note-off reach the plug-in in order through the queue, with no cut in between.
 
+The whole-tree scope measurement is the repository's own realtime programme
+(`tests/rt-safety-scope.txt`, `tests/rt-safety-sweep.py`, ctest `RtSafetySweep`): "no allocation,
+no locking, no unbounded growth on audio-thread paths". It measures only what the scope file
+declares - "a new audio-thread path that nobody declares is measured by nothing here" - which is
+why the declaration is part of this fix.
+
 ### `processLock()` - the documented host contract, not a VeSTige defect
 
 What is left of the finding is `VestigeInstrument::processLock()`
@@ -238,21 +244,28 @@ this branch, and the remaining part is the shared, intentional contract.
 | `plugins/Vestige/Vestige.cpp` | `VestigeInstrumentView::noteOffAll()`: an all-notes-off for every MIDI channel (new-p14-358) |
 | `tests/src/plugins/VestigeMidiHandoffTest.cpp` | new: the button and the note path of the shipping plug-in (both clusters) |
 | `tests/CMakeLists.txt` | the new test is registered and builds the VeSTige plug-in's own sources |
-| `tests/fork-sources.txt` | the new test source is registered as fork-new |
+| `tests/fork-sources.txt` | the new test source and this report are registered as fork-new |
+| `tests/all-sources.txt` | the whole-tree source manifest is re-derived: the recipe lists the new test source |
 | `tests/rt-safety-scope.txt` | the VeSTige note and render paths are declared audio-thread paths (5451) |
 
 ## Gates
 
 ```
-$ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>       # $L/feature-check-2.log
+$ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>       # $L/feature-check-4.log
 EXIT=0
   PASS  fork-sources / all-sources-reproduce / no-upstream-regression /
         check-namespace / no-tautology / doc-figures / complexity / file-length
   RESULT: PASS
+
+$ python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5451   # $L/submit-check-2.log
+EXIT=0
+  RESULT: PASS - submit
 ```
 
-(The first run failed on the complexity gate: the new test case was over the target at CCN 16.
-The case was split into helpers, the assertion was not weakened, and the gate passes.)
+(The first gate run failed on the complexity gate: the new test case was over the target at CCN 16.
+The case was split into helpers, the assertion was not weakened, and the gate passes. The second
+gate run failed because `tests/all-sources.txt` had not been re-derived for the new test source;
+the manifest is the recipe's output again and both gates pass.)
 
 ## Self-check
 
