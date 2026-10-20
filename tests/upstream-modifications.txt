@@ -731,6 +731,7 @@ plugins/PeakControllerEffect/PeakControllerEffect.cpp	rename layer 1: built-in p
 plugins/ReverbSC/ReverbSC.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/ReverbSC/base.c	cluster new-p12-203 (2026-10): sp_auxdata_alloc reports a refused allocation instead of memset()ing the null pointer; covered by tests/src/plugins/ReverbSCInitTest.cpp
 plugins/ReverbSC/base.c	BUG 13 (new-p10-533): reject non-positive channel counts and fail cleanly when either allocation fails in sp_createn; covered by tests/src/plugins/ReverbSCCreateTest.cpp.
+plugins/ReverbSC/base.c	new-p10-532: Soundpipe create, destroy and file processing now return SP_OK on success, matching base.h's status constants
 plugins/ReverbSC/dcblock.c	new-p9-115: dcblock create reports malloc failure; pair setup checks create/init errors and frees partial state
 plugins/ReverbSC/dcblock.h	new-p9-115: declares checked pair setup used during construction and sample-rate reinitialization
 plugins/ReverbSC/ReverbSC.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo; new-p9-115: failed pair setup leaves the effect safely bypassed
