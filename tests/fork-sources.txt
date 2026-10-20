@@ -2754,3 +2754,9 @@ tests/src/core/AudioEngineProfilerTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-208-port.md
 # cluster new-p9-603-port (2026-10): BitInvader's per-note wavetable copy lives in the note handle, so the render path makes no heap allocation; the regression test is fork-NEW.
 tests/src/plugins/BitInvaderAllocationTest.cpp
+# cluster new-p16-196: regression for the rt_alloc_probe block-size argument check (fork-new test source).
+tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp
+# cluster new-p16-196: the rt_alloc_probe tool is fork-new (added after the gate base) and carries the block-size check.
+plugins/NeuralAmp/tests/rt_alloc_probe.cpp
+# cluster new-p16-196: the rt_alloc_probe block-size cluster report is fork-NEW (added after the gate base), so it is listed with the other fork-NEW files of this cluster.
+docs/qwen-fixes-2026-10/cluster-new-p16-196.md
