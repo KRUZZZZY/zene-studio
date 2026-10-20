@@ -78,6 +78,8 @@ The commands are the RED/GREEN block above, run against the SAME tree:
 - restored: 8/8 tests pass (`restored_rc` = 0), `tree_clean` = true.
 - the harness's verdict: `ok: true` - "ControlCommandsSnapshot, ControlSessionRecordLandUndoTest, ReversibilityContractTest, ReversibilityUndoTest, SessionArrangementRecordTest, SessionFollowTest, UndoBoundsTest, UndoHonestyTest: they fail without it (rc 8) and pass with it".
 
+Re-run on the FINAL tree (after the land test file was restored to the state it had before this branch touched it): `ok: true`, `reverted_rc` = 8, `restored_rc` = 0, `reverted_build_rc` = 0, `tree_clean` = true.
+
 ## Gates
 
 - `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - EXIT=0 (all rows PASS) - logs/feature-check-2.log
@@ -90,6 +92,7 @@ The commands are the RED/GREEN block above, run against the SAME tree:
 - `src/core/ControlReversibilityTableSessionView.cpp` (the contract row's mechanism text)
 - `include/ControlReversibility.h` (the row's prose in the header)
 - `tests/src/core/ControlSessionRecordLandUndoTest.cpp` (the two regression tests, NEW)
+- `tests/src/core/ControlSessionRecordLandTest.cpp` is NOT changed: the cases live in the new binary, and the land test's own cases are untouched.
 - `tests/CMakeLists.txt` (the new test source registered at the end of `LMMS_TESTS`)
 - `tests/fork-sources.txt`, `tests/all-sources.txt` (the new test source registered in both scope manifests)
 - `tests/upstream-modifications.txt` (the reason for the `tests/CMakeLists.txt` divergence)
