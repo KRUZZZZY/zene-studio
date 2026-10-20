@@ -113,3 +113,32 @@ changed here. The output check now refuses a negative `output` either way.
 - `src/core/RoutingGraph.cpp` (product fix, `applyOutputNode`)
 - `tests/src/core/RoutingGraphTest.cpp` (regression document in `LoadMalformedDocuments`)
 - `docs/qwen-fixes-2026-10/cluster-new-p14-266.md` (this report)
+
+## Self-check
+
+- **Regression fails with the product change reverted, passes with it (exit codes).** Yes.
+  RED: `test-red-1.log` EXIT=8, `RoutingGraphTest.cpp(525)`. Revert proof: `test-4b-revert-RED.log`
+  EXIT=8 at the same line, after `git apply -R logs/fix.patch`. With the fix re-applied,
+  `test-4b-fix-GREEN.log` EXIT=0 (1/1 passed). Family `^RoutingGraph`: EXIT=0, 3/3 passed.
+- **Deterministic (no timing, sleeps or races; seam or injected values).** Yes. The test
+  parses fixed XML byte literals (`RoutingGraphTest.cpp:470-475`) into a `QDomDocument`
+  and calls `RoutingGraph::load()`. No timer, sleep, thread or seam. The fix is
+  control-thread parsing only.
+- **Fix at the cause; every caller and sibling checked.** Yes.
+  - The only path into `applyOutputNode()` is `RoutingGraph::load()` (`src/core/RoutingGraph.cpp:364-380`, call at `:377`).
+  - `rg` finds no production caller of `RoutingGraph::load` under `src/` or `include/`. Its callers are the tests (`RoutingGraphTest.cpp:351, 357, 525, 539, 548`).
+  - `setOutputNode()` (`src/core/RoutingGraph.cpp:277-282`) already refuses unknown ids through `node(id)`, so the loader was the only path that let a negative through.
+  - The saver writes only `m_outputNodeId` (`src/core/RoutingGraph.cpp:337`), which is `-1` or a valid id, so the saved form never contains another negative.
+  - Sibling not changed: `loadNodes()` (`src/core/RoutingGraph.cpp:84`) accepts a negative node `id`. This is a separate defect outside the finding. Noted above, not changed.
+- **No collateral damage.** Yes. Saved documents contain `output="-1"` or a non-negative
+  id, and both still load exactly as before. The `-1` and `0` cases are kept
+  (`RoutingGraphTest.cpp:531-549`). No limit or check was added beyond refusing negative
+  values other than `-1`.
+- **Verdict evidence (ALREADY-FIXED / FALSE-POSITIVE).** Not applicable. The verdict is FIXED.
+- **Gates (feature_check.py): not a clean run.** `feature_check.py` crashed before running any
+  gate with `PermissionError` on `…/zene-qwen-new-p14-266-feature-check` (`logs/gates-1.log`).
+  It writes its logs next to the worktree, outside the write-jail. Its gate commands were run
+  one by one from the worktree instead (table above): six PASS, complexity and file-length
+  EXIT=1, with no `REGRESSION` line in a changed file, so both pass by the feature-check rule.
+  `submit_check.py` reports the gates row FAIL for the same crash (`logs/submit-check-1.log`).
+  The owner or the fix loop should re-run `feature_check.py` where it can write its logs.
