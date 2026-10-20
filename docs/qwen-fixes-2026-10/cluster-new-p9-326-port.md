@@ -85,6 +85,20 @@ are addressed by the attribute names the plugin's own
 uses to persist an instrument) - so the test binary carries no dependency on
 the plugin's private header and no copy of the plugin's class layout.
 
+### Ownership of the instrument the test creates
+
+The instance the module entry point hands out is owned by the test, not by
+the track: `Instrument`'s QObject parent is null
+(`src/core/Instrument.cpp:70`, `Plugin(_descriptor, nullptr/* _instrument_track*/, key)`),
+so `InstrumentTrack`'s destructor - which deletes only its own
+`m_instrument` (`src/tracks/InstrumentTrack.cpp:229`) - would leave the
+module-created instance and its sample-rate connection alive for the rest of
+the test process. The test therefore holds it in a `std::unique_ptr`
+declared after the track and while the `QLibrary` is still loaded, so the
+destruction order is instrument -> track -> library on every exit path,
+including the early returns of the assertions
+(`tests/src/plugins/PluginPortsMigrationTest.cpp:2586-2597`).
+
 ### Why the upstream test was not ported verbatim
 
 The upstream branch (commits a58a4bc73, 797dc0b65) put the regression in the
@@ -142,6 +156,26 @@ Commands ran from the worktree root; CTest ran from `build/tests`.
 | Complexity ratchet (after the final edit) | `bash tests/complexity-gate.sh --check > logs/gate-4-complexity-final.log 2>&1; echo EXIT=$?` | EXIT 1 - red on the train for other files; no item in the files this change touches (see below) |
 | File-length ratchet (after the final edit) | `bash tests/file-length-gate.sh --check > logs/gate-5-file-length-final.log 2>&1; echo EXIT=$?` | EXIT 1 - red on the train for other files; no item in the files this change touches (see below) |
 | Feature check (all gates, after the final edit) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-326-port > logs/gate-6-feature-check-final.log 2>&1; echo EXIT=$?` | EXIT 0 - RESULT: PASS, `complexity: no new item in your files`, `file-length: no new item in your files` |
+
+### Round 2 (review REWORK: the test leaked the instrument it created)
+
+| Evidence | Exact command | Result |
+| --- | --- | --- |
+| Build after the ownership fix | `cmake --build build --target zene PluginPortsMigrationTest opulenz -- -j20 > logs/build-16-raii.log 2>&1; echo EXIT=$?` | EXIT 0 |
+| Focused test after the ownership fix | `cd build/tests && ctest -R '^OpulenZ$' --output-on-failure > logs/test-16-raii-focused.log 2>&1; echo EXIT=$?` | EXIT 0, 1/1 |
+| Affected family after the ownership fix | `cd build/tests && ctest -R '^PluginPortsMigrationTest$' --output-on-failure > logs/test-17-raii-family.log 2>&1; echo EXIT=$?` | EXIT 8; 45 passed, 1 failed, 2 skipped - only the pre-existing LADSPA fixture failure |
+| Product patch (base -> HEAD) | `git diff HEAD~2 -- plugins/OpulenZ/OpulenZ.cpp > logs/fix.patch` | the same one-condition product change |
+| Reverse the product patch | `git apply -R logs/fix.patch; echo EXIT=$?` | EXIT 0 |
+| Rebuild with the patch reversed | `cmake --build build --target opulenz -- -j20 > logs/build-18-raii-red.log 2>&1; echo EXIT=$?` | EXIT 0 |
+| RED with the patch reversed (final test) | `cd build/tests && ctest -R '^OpulenZ$' --output-on-failure > logs/test-18-raii-red.log 2>&1; echo EXIT=$?` | EXIT 8, 0/1; failed at `after < before * 0.01` (energy before=1031.38 after=1022.79, ratio 0.991669) |
+| Re-apply the product patch | `git apply logs/fix.patch; echo EXIT=$?` | EXIT 0 |
+| Rebuild after re-applying | `cmake --build build --target opulenz -- -j20 > logs/build-19-raii-green.log 2>&1; echo EXIT=$?` | EXIT 0 |
+| GREEN after re-applying (final test) | `cd build/tests && ctest -R '^OpulenZ$' --output-on-failure > logs/test-19-raii-green.log 2>&1; echo EXIT=$?` | EXIT 0, 1/1 |
+| GREEN, verbose (final test) | `cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest opulenzReappliesVelocityScalingToHeldVoice > logs/test-20-raii-green-verbose.log 2>&1; echo EXIT=$?` | EXIT 0; energy before=1031.38 after=0.0193274, ratio 1.87394e-05 |
+| Complexity ratchet (final) | `bash tests/complexity-gate.sh --check > logs/gate-8-complexity-raii.log 2>&1; echo EXIT=$?` | EXIT 1 - red on the train for other files; no item in the files this change touches |
+| File-length ratchet (final) | `bash tests/file-length-gate.sh --check > logs/gate-9-file-length-raii.log 2>&1; echo EXIT=$?` | EXIT 1 - red on the train for other files; no item in the files this change touches |
+| Feature check (final) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-326-port > logs/gate-10-feature-check-raii.log 2>&1; echo EXIT=$?` | EXIT 0 - RESULT: PASS, `complexity: no new item in your files`, `file-length: no new item in your files` |
+
 
 ### The pre-existing failure in the affected family
 
@@ -206,6 +240,13 @@ with it (exit codes).**
 * Re-apply (`git apply logs/fix.patch`, EXIT 0), rebuild
   (`logs/build-5-reapply.log`, EXIT 0), test -> EXIT 0, 1/1
   (`logs/test-4-green-reapplied.log`).
+* Repeated with the FINAL test (the one that owns the instrument with
+  RAII): reverse (`logs/fix.patch`, EXIT 0) + rebuild
+  (`logs/build-18-raii-red.log`, EXIT 0) -> EXIT 8, 0/1, the same assertion
+  (`logs/test-18-raii-red.log`); re-apply (EXIT 0) + rebuild
+  (`logs/build-19-raii-green.log`, EXIT 0) -> EXIT 0, 1/1
+  (`logs/test-19-raii-green.log`, ratio 1.87394e-05 in
+  `logs/test-20-raii-green-verbose.log`).
 
 **2. The test is deterministic: no wall-clock timing, sleeps or races.**
 
@@ -285,6 +326,13 @@ and a limit or check added here does not hit other callers.**
   unchanged, and the new emulator writes happen in `updatePatch()`, on the
   thread that changed the model - no new allocation, lock, wait or log on
   the render path. No new control command was added.
+* The test owns what it creates: the module-created instrument is held in a
+  `std::unique_ptr` declared after the track and while the `QLibrary` is
+  alive, so the instance, its emulator and its sample-rate connection are
+  released before the track and the module go away, on every exit path
+  including the assertions' early returns
+  (`tests/src/plugins/PluginPortsMigrationTest.cpp:2586-2597`). Nothing the
+  test creates outlives the slot any more.
 
 **5. The verdict is FIXED, not ALREADY-FIXED and not a FALSE-POSITIVE.**
 

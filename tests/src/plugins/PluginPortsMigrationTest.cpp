@@ -2584,7 +2584,16 @@ void PluginPortsMigrationTest::opulenzReappliesVelocityScalingToHeldVoice()
 	QVERIFY(entry != nullptr);
 
 	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
-	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	// The module entry point hands out an instrument the track does NOT own:
+	// Instrument's QObject parent is null, so InstrumentTrack's destructor
+	// (which deletes only its own m_instrument) would leave this instance and
+	// its sample-rate connection alive for the rest of the test process. The
+	// test owns it instead. The unique_ptr is declared after the track and
+	// while the module is still loaded, so the instrument is destroyed first -
+	// before the track it points at and before the library it came from - on
+	// every exit path, including the early returns of the assertions.
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
 	QVERIFY(instrument != nullptr);
 
 	// The OPL2 operator level register is inverted: level 63 writes register
