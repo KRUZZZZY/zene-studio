@@ -93,6 +93,11 @@ No gate baseline or limit was changed.
 - **No collateral damage.** The clip set and its order are exactly `getClipsInRange()`'s, so overlapping
   clips are handed to the note loop as before. No file format, project-load or save path changed, and no
   new limit/check was added. A track with no composite still takes the unchanged `compPlays() == true` path.
+- **ALREADY-FIXED / FALSE-POSITIVE: not applicable.** Each unit's RED run above shows the bug present on
+  the unfixed code, so the verdict is FIXED for all three.
+- **Completion check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py . new-p16-89` passes the
+  commit, clean-tree, report and test-items; its only FAIL is the `feature_check.py` log-folder
+  `PermissionError` described above (`.fix-logs/submit-check-2.log`, EXIT 1).
 - **Realtime, undo, commands.** The only new allocation is `m_playClips.reserve()` on the control thread
   when a clip is added; the render pass only clears and inserts into already-reserved storage. No new lock,
   log, signal or I/O on the audio thread, no undo step, no control command, so the command snapshot is
