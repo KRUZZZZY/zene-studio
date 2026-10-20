@@ -252,13 +252,34 @@ QString XyPadDialog::macroName(bool y) const
 void XyPadDialog::fillMacros()
 {
 	const QJsonArray macros = rackMacros(m_channel);
+	const QString xId = m_x->currentData().toString();
+	const QString yId = m_y->currentData().toString();
+	m_x->blockSignals(true);
+	m_y->blockSignals(true);
+	m_x->clear();
+	m_y->clear();
 	for (int i = 0; i < macros.size(); ++i)
 	{
 		const QString name = macros.at(i).toObject().value(QStringLiteral("name")).toString();
 		m_x->addItem(name, QStringLiteral("macro-%1").arg(i));
 		m_y->addItem(name, QStringLiteral("macro-%1").arg(i));
 	}
-	if (macros.size() > 1) { m_y->setCurrentIndex(1); }
+	if (!macros.isEmpty())
+	{
+		int xi = xId.isEmpty() ? 0 : m_x->findData(xId);
+		if (xi < 0) { xi = 0; }
+		m_x->setCurrentIndex(xi);
+		int yi;
+		if (yId.isEmpty()) { yi = macros.size() > 1 ? 1 : 0; }
+		else
+		{
+			yi = m_y->findData(yId);
+			if (yi < 0) { yi = macros.size() > 1 ? 1 : 0; }
+		}
+		m_y->setCurrentIndex(yi);
+	}
+	m_x->blockSignals(false);
+	m_y->blockSignals(false);
 	m_area->setEnabled(!macros.isEmpty());
 	syncPoint();
 }

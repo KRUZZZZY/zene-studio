@@ -89,8 +89,9 @@ public:
 	QString macroId(bool y) const;
 	QString macroName(bool y) const;
 	XyPadArea* area() const { return m_area; }
-	//! Show where the chosen macros stand now (after an edit made elsewhere).
-	void refresh() { syncPoint(); }
+	//! Show where the chosen macros stand now (after an edit made elsewhere): rebuild the axis lists and the
+	//! enabled state too, so a rack that gained or lost a macro is reflected without reopening the pad.
+	void refresh() { fillMacros(); }
 
 signals:
 	//! The dot moved or the axes changed: the list re-reads.

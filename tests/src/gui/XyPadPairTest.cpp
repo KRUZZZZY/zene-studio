@@ -323,6 +323,28 @@ private slots:
 		QTest::keyClick(area, Qt::Key_Right);
 		QVERIFY2(std::abs(reported.x() - 0.51) < 1e-6, "a key press did not report the new place");
 	}
+	//! A pad opened before the rack has any macros becomes usable once one is added, without reopening.
+	void thePadBecomesUsableWhenAMacroIsAddedAfterOpening()
+	{
+		while (Engine::mixer()->numChannels() <= 5) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(5));
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		const auto combos = dialog.findChildren<QComboBox*>();
+		QCOMPARE(combos.size(), 2);
+		QVERIFY(!area->isEnabled());
+		QCOMPARE(combos.at(0)->count(), 0);
+		QCOMPARE(combos.at(1)->count(), 0);
+
+		QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QStringLiteral("Tone")}}).ok);
+		dialog.refresh();
+		QVERIFY(area->isEnabled());
+		QCOMPARE(combos.at(0)->count(), 1);
+		QCOMPARE(combos.at(1)->count(), 1);
+		QCOMPARE(dialog.macroId(false), QStringLiteral("macro-0"));
+		QCOMPARE(dialog.macroId(true), QStringLiteral("macro-0"));
+	}
+
 };
 
 QTEST_MAIN(XyPadPairTest)
