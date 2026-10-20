@@ -85,6 +85,7 @@ namespace
 // non-owning references, so a wrapper lives in a deque - push_back never
 // invalidates an existing element - and the pool is recycled only once the
 // previous lua_State has been closed).
+//
 // ---------------------------------------------------------------------------
 
 template<class T>
@@ -254,9 +255,9 @@ LuaEffectChain& newEffectChain(const QString& mixerChannelId)
 	return effectChainPool().add(LuaEffectChain(mixerChannelId));
 }
 
-LuaEffect& newEffect(EffectChain* chain, Effect* effect)
+LuaEffect& newEffect(const QString& mixerChannelId, Effect* effect)
 {
-	return effectPool().add(LuaEffect(chain, effect));
+	return effectPool().add(LuaEffect(mixerChannelId, effect == nullptr ? -1 : effect->id()));
 }
 
 LuaMixer& mixerView()

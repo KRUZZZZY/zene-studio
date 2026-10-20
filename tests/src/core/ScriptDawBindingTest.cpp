@@ -535,6 +535,43 @@ private slots:
 			qstr("listed %1 unresolved 0").arg(count)});
 	}
 
+	/*! Cluster 1663, the whole recipe: a script takes a channel view, removes
+	 *  the channel through the command bridge, and then reads and writes the
+	 *  view it kept. The view resolves its channel by the channel's stable id
+	 *  on every access, so the removed channel is never touched: every read is
+	 *  empty, the write is refused, and the view reports itself invalid. A
+	 *  view that held the channel's pointer read - and wrote - a channel that
+	 *  is gone. */
+	void aRemovedChannelsViewIsInert()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		QString error;
+		QCOMPARE(int(engine->runString(qstr(R"LUA(
+local mixer = zene.mixer()
+local channel = mixer:addChannel()
+local id = channel:id()
+zene.command("mixer.remove_channel", {channel = id})
+print("valid=" .. tostring(channel:isValid())
+    .. " gain=" .. channel:gain()
+    .. " muted=" .. tostring(channel:muted())
+    .. " soloed=" .. tostring(channel:soloed()))
+print("chain=" .. tostring(channel:chain():isValid())
+    .. " gain-model=" .. tostring(channel:gainModel():isValid()))
+channel:setGain(0.25)
+print("after-write valid=" .. tostring(channel:isValid()))
+)LUA"), &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		const QStringList logs = engine->takeLogMessages();
+		QCOMPARE(logs.size(), 3);
+		QCOMPARE(logs.at(0), qstr("valid=false gain=0.0 muted=false soloed=false"));
+		QCOMPARE(logs.at(1), qstr("chain=false gain-model=false"));
+		QCOMPARE(logs.at(2), qstr("after-write valid=false"));
+	}
+
 	/*! The version policy's Lua face: the surface this build reports is the
 	 *  version this translation unit was compiled with, and the DAW-control
 	 *  namespace entry is visible in it. */
