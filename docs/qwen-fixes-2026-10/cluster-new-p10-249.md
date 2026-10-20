@@ -59,3 +59,10 @@ are cleared in `reduceInputPartials()` and in `Mixer::clearChannel()`.
 - `tests/src/core/MixerConcurrencyTest.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p10-249.md`
+
+## Self-check
+
+- The regression test FAILS with the product change reverted and PASSES with it: reverted run `ctest -R '^MixerConcurrencyTest$'` EXIT 8 (assertion `channelBus[0][0] == 0.0f && channelBus[0][1] == 0.0f` returned FALSE, `MIXCONC_249 shared_bus_after_feed l=0.250000 r=-0.250000`); reapplied run EXIT 0. Recorded in `logs/test-revert.log` and `logs/test-reapply.log`.
+- The test is deterministic: no sleeps, wall-clock timing or races. It drives render threads through `AudioEngineWorkerThread::addJob()` + `startAndWaitForJobs()` (a synchronisation hook) and asserts the shared bus is untouched until `renderPeriod()` runs the barrier; injected value is the constant 0.25/-0.25 block and the 4x250 feeder count.
+- The fix is at the cause and complete: `mixToChannel`'s only callers (`AudioBusHandle.cpp:265`, `InstrumentOutputBuses.cpp:264`, tests) were checked. Render-thread callers take the partial path; non-render callers (control side, tests such as `InstrumentRoutingTest`, `VcaGroupTest`, `MixingRoutingTest`) keep the original immediate accumulation into `m_bus`, so `m_hasInput` and `m_buffer` stay visible at once and those tests pass (6/6 + 4/4 family runs, EXIT 0). `reduceInputPartials()` is called once at the top of `masterMix()` after the workers join.
+- No collateral damage: partials are preallocated in the `MixerChannel` constructor and cleared in `clearChannel()` and `reduceInputPartials()`; no channel-count limit is added (Mixer channels remain an unbounded vector); old projects load unchanged because `clearChannel`/`clear()` reset the new partials alongside the existing buffers. `feature_check.py` EXIT 0 and `rt-safety-sweep.py --check` EXIT 0.
