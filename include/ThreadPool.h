@@ -106,6 +106,12 @@ public:
 	static auto instance() -> ThreadPool&;
 
 private:
+	//! The worker count a pool may run with. Hardware concurrency is allowed to report zero,
+	//! and a pool without workers would never run its queued tasks.
+	static auto workerCount(size_t hardwareConcurrency) -> size_t
+	{
+		return hardwareConcurrency == 0 ? size_t{1} : hardwareConcurrency;
+	}
 	ThreadPool(size_t numWorkers);
 	void run();
 	std::vector<std::thread> m_workers;
@@ -113,7 +119,7 @@ private:
 	std::atomic<bool> m_done = false;
 	std::condition_variable m_runCond;
 	std::mutex m_runMutex;
-	inline static size_t s_numWorkers = std::thread::hardware_concurrency();
+	inline static size_t s_numWorkers = workerCount(std::thread::hardware_concurrency());
 };
 } // namespace lmms
 

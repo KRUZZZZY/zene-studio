@@ -29,6 +29,7 @@
 namespace lmms {
 ThreadPool::ThreadPool(size_t numWorkers)
 {
+	numWorkers = workerCount(numWorkers);
 	assert(numWorkers > 0);
 
 	m_workers.reserve(numWorkers);
