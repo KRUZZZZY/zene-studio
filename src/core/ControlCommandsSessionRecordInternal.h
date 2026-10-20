@@ -46,9 +46,13 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QVector>
 
 #include "Clip.h"
 #include "ControlVocabulary.h"
+#include "Engine.h"
+#include "JournallingObject.h"
+#include "ProjectJournal.h"
 #include "SessionArrangementRecorder.h"
 #include "SessionModel.h"
 #include "Song.h"
@@ -162,6 +166,41 @@ inline void consumeLandEvents( SessionArrangementRecorder& recorder, std::size_t
 	SessionArrangementRecorder::Event event;
 	std::size_t seen = 0;
 	while( seen < count && recorder.pop( event ) ) { ++seen; }
+}
+
+//! The track a pair will create its clip on - the SAME two gates landPairState
+//! applies before it writes (an in-range column, a span with length), plus that
+//! column's own entry being there. Nullptr when the pair touches no track, and
+//! therefore nothing a journal checkpoint could restore.
+inline Track* landTouchTrack( const Song& song, const LandPair& pair )
+{
+	if( pair.track < 0 || pair.track >= static_cast<int>( song.tracks().size() ) ) { return nullptr; }
+	if( pair.stopTick - pair.startTick <= 0 ) { return nullptr; }
+	return song.tracks()[static_cast<std::size_t>( pair.track )];
+}
+
+/*! ONE composite journal checkpoint for ALL TOUCHED tracks, taken BEFORE the
+ *  pass creates any clip. The per-pair loop does NOT carry it.
+ *
+ *  A checkpoint PER PAIR would be one undo step PER CLIP: the undo stack's own
+ *  bound evicts a step per push, and a step that was evicted is gone - so a
+ *  pass landing two clips on one track could lose the checkpoint that holds the
+ *  track's state before the FIRST clip, and one undo would then restore only
+ *  the later one. One composite step over the distinct touched tracks is the
+ *  whole pass, whatever it lands. */
+inline void checkpointLandTracks( const Song& song, const LandPair* pairs, int pairCount )
+{
+	QVector<JournallingObject*> touched;
+	for( int i = 0; i < pairCount; ++i )
+	{
+		Track* track = landTouchTrack( song, pairs[i] );
+		if( track != nullptr && track->isJournalling() && !touched.contains( track ) )
+		{
+			touched.append( track );
+		}
+	}
+	ProjectJournal* journal = Engine::projectJournal();
+	if( journal != nullptr && !touched.isEmpty() ) { journal->addJournalCheckPoint( touched ); }
 }
 
 //! Creates and reports one landed clip. Audio is loaded during preflight, before
