@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -193,6 +194,54 @@ private slots:
 		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
 			[&](float) { return ++progressCalls < 2; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Cancelled));
+	}
+
+	void testNearIntMaxFramesWithSchemaSegmentIsRefused()
+	{
+		// Reachable from stem.job_start: fitsAtModelRate admits frame counts up to INT_MAX, and both
+		// HTDemucsSegmentFrames and the schema maximum (44100 * 600) pass the segment_frames range.
+		const int intMax = std::numeric_limits<int>::max();
+		QString error;
+		QVERIFY(!OnnxRuntimeStemSeparator::segmentFits(intMax, HTDemucsSegmentFrames, &error));
+		QVERIFY(error.contains(QStringLiteral("too long")));
+		QVERIFY(!OnnxRuntimeStemSeparator::segmentFits(intMax, 44100 * 600, &error));
+	}
+
+	void testSegmentIndexArithmeticIsBounded()
+	{
+		// The largest index separate() forms is below frames + segment / 2 + 2 * segment; that sum
+		// must not exceed INT_MAX, so the sum being exactly INT_MAX is still accepted.
+		const int intMax = std::numeric_limits<int>::max();
+		QString error;
+		QVERIFY(OnnxRuntimeStemSeparator::segmentFits(44100, HTDemucsSegmentFrames, &error));
+
+		const int htdemucsTail = HTDemucsSegmentFrames / 2 + 2 * HTDemucsSegmentFrames;
+		QVERIFY(OnnxRuntimeStemSeparator::segmentFits(intMax - htdemucsTail, HTDemucsSegmentFrames, &error));
+		QVERIFY(!OnnxRuntimeStemSeparator::segmentFits(intMax - htdemucsTail + 1, HTDemucsSegmentFrames, &error));
+
+		const int capSegment = 44100 * 600;
+		const int capTail = capSegment / 2 + 2 * capSegment;
+		QVERIFY(OnnxRuntimeStemSeparator::segmentFits(intMax - capTail, capSegment, &error));
+		QVERIFY(!OnnxRuntimeStemSeparator::segmentFits(intMax - capTail + 1, capSegment, &error));
+
+		// One frame of input: the sum is INT_MAX - 1 at segment 858993458 and INT_MAX + 1 at 858993459.
+		QVERIFY(OnnxRuntimeStemSeparator::segmentFits(1, 858993458, &error));
+		QVERIFY(!OnnxRuntimeStemSeparator::segmentFits(1, 858993459, &error));
+		QVERIFY(!error.isEmpty());
+	}
+
+	void testOverlongSegmentIsRefusedBeforeAllocation()
+	{
+		// Direct API only: 1.5e9 is outside the control schema range. A 1.5e9-frame window alone is 6 GB,
+		// so the refusal must come before any allocation.
+		OnnxRuntimeStemSeparator separator(QStringLiteral(LMMS_TEST_DATA_DIR)
+			+ QStringLiteral("/stub-4stem-linear.onnx"));
+		StemSet stems;
+		QString error;
+		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 1500000000,
+			[](float) { return true; }, stems, error);
+		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
+		QVERIFY(error.contains(QStringLiteral("too long")));
 	}
 };
 
