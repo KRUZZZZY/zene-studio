@@ -291,10 +291,10 @@ ControlResult writeValues(const QList<AutomatableModel*>& models, const std::vec
 		if (model->value<float>() == value) { continue; }
 		writes.emplace_back(model, value);
 	}
-	writeModelsRecorded(writes);
-	if (!writes.empty()) { Engine::getSong()->setModified(); }
+	const int changed = writeModelsRecorded(writes);
+	if (changed > 0) { Engine::getSong()->setModified(); }
 	QJsonObject result = reply;
-	result.insert(QStringLiteral("changed"), static_cast<int>(writes.size()));
+	result.insert(QStringLiteral("changed"), changed);
 	return ControlResult::success(result);
 }
 

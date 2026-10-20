@@ -54,6 +54,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ParameterControls.h"
+#include "ProjectJournal.h"
 #include "Rack.h"
 #include "RackSplit.h"
 #include "SampleDecoder.h"
@@ -81,12 +82,19 @@ void addDeviceCommand(ControlRegistry& registry, const char* id, const QString& 
 	registry.registerCommand(cmd);
 }
 
-void writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>& writes)
+int writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>& writes)
 {
+	std::vector<std::pair<AutomatableModel*, float>> changes;
+	for (const auto& [model, value] : writes)
+	{
+		const float clamped = std::clamp(value, model->minValue<float>(), model->maxValue<float>());
+		if (clamped != model->value<float>()) { changes.emplace_back(model, clamped); }
+	}
 	QVector<JournallingObject*> touched;
-	for (const auto& write : writes) { touched << write.first; }
+	for (const auto& change : changes) { touched << change.first; }
 	if (!touched.isEmpty()) { addUndoStep(touched); }
-	for (const auto& [model, value] : writes) { model->setValue(std::clamp(value, model->minValue<float>(), model->maxValue<float>())); }
+	for (const auto& [model, value] : changes) { model->setValue(value); }
+	return static_cast<int>(changes.size());
 }
 
 } // namespace control
@@ -220,11 +228,37 @@ bool consoleEntry(ControlDeviceEntry* entry, ControlResult* error)
 	return false;
 }
 
+//! Keeps a scratch device's construction and writes out of the user's undo history (the same guard
+//! ControlChainPresetSupport.cpp keeps for its staged chains).
+class ScopedJournalMute
+{
+public:
+	ScopedJournalMute() :
+		m_journal(Engine::projectJournal()),
+		m_wasJournalling(m_journal != nullptr && m_journal->isJournalling())
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(false); }
+	}
+
+	~ScopedJournalMute()
+	{
+		if (m_journal != nullptr) { m_journal->setJournalling(m_wasJournalling); }
+	}
+
+	ScopedJournalMute(const ScopedJournalMute&) = delete;
+	ScopedJournalMute& operator=(const ScopedJournalMute&) = delete;
+
+private:
+	ProjectJournal* m_journal;
+	bool m_wasJournalling;
+};
+
 //! A console's settings document with @a args applied, from an instance on a scratch chain.
 bool consoleTemplate(const QJsonObject& args, QString* state, ControlResult* error)
 {
 	ControlDeviceEntry entry;
 	if (!consoleEntry(&entry, error)) { return false; }
+	const ScopedJournalMute muteJournal;  // the scratch console is not in the project: building it is no undo step
 	EffectChain scratch(nullptr);
 	Effect* effect = controlInstantiateDevice(entry, &scratch, error);
 	if (effect == nullptr) { return false; }
@@ -238,19 +272,6 @@ std::vector<Effect*> consolesOn(const EffectChain& chain)
 	std::vector<Effect*> found;
 	for (Effect* effect : chain.effects()) { if (isConsole(effect)) { found.push_back(effect); } }
 	return found;
-}
-
-//! The writes in @a writes whose clamped value differs from what the model already carries - the
-//! settings that really change, not the ones merely asked for.
-int countChangedWrites(const std::vector<std::pair<AutomatableModel*, float>>& writes)
-{
-	int changed = 0;
-	for (const auto& [model, value] : writes)
-	{
-		const float clamped = std::clamp(value, model->minValue<float>(), model->maxValue<float>());
-		if (clamped != model->value<float>()) { ++changed; }
-	}
-	return changed;
 }
 
 ControlResult removeConsoles()
@@ -301,9 +322,8 @@ ControlResult consoleApply(const QJsonObject& args)
 	if (!consoleTemplate(args, &state, &error)) { return error; }
 	std::vector<std::pair<AutomatableModel*, float>> writes;
 	const int added = placeConsoles(args, state, &writes);
-	const int changed = countChangedWrites(writes);
-	writeModelsRecorded(writes);
-	Engine::getSong()->setModified();
+	const int changed = writeModelsRecorded(writes);
+	if (added > 0 || changed > 0) { Engine::getSong()->setModified(); }
 	return ControlResult::success({{QStringLiteral("added"), added}, {QStringLiteral("changed"), changed},
 		{QStringLiteral("channels"), Engine::mixer()->numChannels()}});
 }

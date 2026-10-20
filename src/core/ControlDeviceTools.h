@@ -51,8 +51,10 @@ void addDeviceCommand(ControlRegistry& registry, const char* id, const QString& 
 	const QStringList& required, bool mutating, ControlResult (*handler)(const QJsonObject&));
 
 //! Write each (model, value) of @a writes as ONE undo step: a journal checkpoint of every model
-//! first, then the values (each clamped to its model's range). Defined in ControlCommandsDeviceTools.cpp.
-void writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>& writes);
+//! first, then the values (each clamped to its model's range). A write that leaves its model at the
+//! value it already has is no change: it is neither recorded nor written. Returns how many models
+//! changed (0 means no undo step was taken). Defined in ControlCommandsDeviceTools.cpp.
+int writeModelsRecorded(const std::vector<std::pair<AutomatableModel*, float>>& writes);
 
 //! 0.5.0 L10 (MX-093): the parameter values plugin.ab stored in slots A and B of @a effect, in
 //! plugin.param_get order; false unless both slots are stored for this device. Defined in
