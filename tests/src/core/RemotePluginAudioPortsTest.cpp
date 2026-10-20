@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <type_traits>
 
 #include <QDir>
@@ -115,6 +116,17 @@ public:
 	~TestRemotePluginBase() override { ::close(m_socket); }
 
 	bool processMessage(const message&) override { return false; }
+
+	//! Lets a test observe the timeout a receive asks for (and supply the bytes the receive then reads)
+	//! without waiting on the wall clock.
+	bool waitForMessageReadable(int timeoutMs) override
+	{
+		if (waitHook) { return waitHook(timeoutMs); }
+		return RemotePluginBase::waitForMessageReadable(timeoutMs);
+	}
+
+	std::function<bool(int)> waitHook;
+	int lastWaitMs = -1;
 };
 #endif
 
@@ -682,6 +694,42 @@ private slots:
 			const auto malformed = receiver.receiveMessage();
 			QVERIFY(receiver.isInvalid());
 			QCOMPARE(malformed.id, static_cast<int>(IdUndefined));
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! A frame that has started can be finished slowly, but never past the query's own deadline: a 100 ms
+	//! query that sees a partial message must not wait up to StartedFrameTimeout (2 s) for the rest.
+	//! The receive asks waitForMessageReadable() for each piece; the hook records that bound and reports
+	//! that the rest never arrives, so no wall clock is involved.
+	void startedFrameWaitIsCappedByTheQueryDeadline()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			// Only the header is on the socket: the peek can tell that a frame started, but not its size.
+			const std::int32_t header[] = {IdDebugMessage, 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+
+			receiver.waitHook = [&receiver](int timeoutMs)
+			{
+				if (timeoutMs == 0) { return true; }
+				receiver.lastWaitMs = timeoutMs;
+				return false; // the rest of the frame never arrives
+			};
+
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveWithin(deadline, RemotePluginBase::StartedFrameTimeout, m);
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+			// The old reader asked for the whole 2 s started-frame bound; the query budget is 200 ms.
+			QVERIFY2(receiver.lastWaitMs < 1000,
+				"a started frame ignored the query deadline and asked to wait up to 2 s");
 		}
 
 		::close(sockets[1]);

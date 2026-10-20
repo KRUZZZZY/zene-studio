@@ -570,8 +570,10 @@ public:
 	//! False if the bytes did not all arrive in time.
 	bool readExactlyWithin( void * _buf, int _len, std::chrono::milliseconds _progress,
 		std::chrono::steady_clock::time_point _total );
-	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout.
-	ReceiveResult receiveStartedFrame( std::chrono::milliseconds _progress, message & _out );
+	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout but
+	//! never past \a _deadline: a short query must not be stretched to the started-frame bound.
+	ReceiveResult receiveStartedFrame( std::chrono::steady_clock::time_point _deadline,
+		std::chrono::milliseconds _progress, message & _out );
 #endif
 
 	//! The whole of a started frame must arrive within this (on top of the per-piece bound of receiveWithin()).
@@ -680,8 +682,9 @@ public:
 	//! Waits at most \a timeoutMs milliseconds (zero polls) for the next message to start arriving.
 	//! @return false when nothing arrived in time. Only the socket transport can time out: the
 	//! shared-memory FIFO has no timed wait, so it reports ready and the caller blocks in
-	//! receiveMessage() as it always did.
-	inline bool waitForMessageReadable(int timeoutMs)
+	//! receiveMessage() as it always did. Virtual so a test can observe the bound a receive asks for
+	//! without waiting for it.
+	virtual bool waitForMessageReadable(int timeoutMs)
 	{
 #ifdef SYNC_WITH_SHM_FIFO
 		(void)timeoutMs;

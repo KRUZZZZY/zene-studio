@@ -363,9 +363,12 @@ bool RemotePluginBase::readExactlyWithin(void * _buf, int _len, std::chrono::mil
 	return true;
 }
 
-RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chrono::milliseconds _progress, message & _out)
+RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chrono::steady_clock::time_point _deadline,
+	std::chrono::milliseconds _progress, message & _out)
 {
-	const auto total = std::chrono::steady_clock::now() + StartedFrameTimeout;
+	// A started frame may take longer than a short query allows. Stop at whichever comes first: the frame's own
+	// bound or the query's deadline.
+	const auto total = std::min(std::chrono::steady_clock::now() + StartedFrameTimeout, _deadline);
 	std::int32_t id = 0;
 	std::int32_t count = 0;
 	if (!readExactlyWithin(&id, sizeof id, _progress, total) || !readExactlyWithin(&count, sizeof count, _progress, total)
@@ -412,7 +415,7 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveWithin(std::chrono::ste
 			if (waitForMessageReadable(0))
 			{
 				// The frame has started: finish it, as far as it goes.
-				return receiveStartedFrame(_progress, _out);
+				return receiveStartedFrame(_deadline, _progress, _out);
 			}
 			if (std::chrono::steady_clock::now() >= _deadline) { return ReceiveResult::Timeout; }
 			{
