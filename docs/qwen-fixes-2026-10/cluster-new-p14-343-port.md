@@ -114,3 +114,44 @@ The driver imports `feature_check.py`'s own gate lists and helpers (`SIMPLE`, `R
 - `tests/upstream-modifications.txt` (two registration lines: `TrackContainerView.cpp`, `PatternEditor.cpp`; the two
   `ControlTrackCreation` files are already in `tests/fork-sources.txt`)
 - `docs/qwen-fixes-2026-10/cluster-new-p14-343-port.md`
+
+## Self-check
+
+1. **Test fails with the product change reverted, passes with it.** Yes. Reverted (`git apply -R`, rebuilt):
+   `ctest -R '^ArrangerFileDropTest$' -V` EXIT 8, `test-5-reverted.log`, both new tests `FAIL!` at
+   `ArrangerFileDropTest.cpp:351` and `:388` (undo depth). Re-applied (`git apply`, rebuilt):
+   EXIT 0, `test-7-green-reapplied.log`, `Totals: 11 passed, 0 failed`. The first RED, before any product
+   change, is `test-1-red.log` (EXIT 8, same two assertions).
+2. **Deterministic.** Yes. No timers, sleeps or threads on this path: the `track_` branch calls `Track::create`
+   synchronously (`TrackContainerView.cpp:623`; the thread in the `instrument` branch is not on this path). The
+   test sends `QDragEnterEvent`/`QDropEvent` at fixed points on the offscreen platform, with the track's own saved
+   state as the drag payload (`trackCopyDrag`), and the zoom is pinned by `arrangement.zoom` in `init()`.
+   `QCoreApplication::processEvents()` in the Pattern Editor test only flushes events already posted.
+3. **At the cause; callers and siblings.** Callers of `recordCreatedTrack(Track*)`: the five existing command
+   callers (`ControlCommandsAudioAnalysis.cpp:118`, `ControlCommandsAudioSlice.cpp:259`,
+   `ControlCommandsBrowserMedia.cpp:323`, `ControlCommandsClipImportFile.cpp:294`,
+   `ControlCommandsRecorder.cpp:112`, `ControlCommandsVideo.cpp:176`) still use the one-argument form, which
+   delegates to the container form with the song. Their undo removes the track through `removeFromContainer`,
+   which for the song calls `removeTrack` as before. Their redo builds the track in the song as before. The one
+   change inside the song path is the undo lookup: `trackWithIdIn(song, id)` scans `Engine::getSong()->tracks()`
+   for `track->id() == id`, the same scan `resolveTrack` does (`src/core/ControlEditSupport.cpp:136-158`); a
+   negative id matches nothing in both. Siblings: the Pattern Editor drop (`PatternEditor.cpp:179-180`) is fixed
+   the same way; the song drop is `TrackContainerView.cpp:623-627`. The other `Track::create` drops in
+   `TrackContainerView::dropEvent` (`instrument`, `samplefile`, `presetfile`) create a new instrument from a
+   browser or file drag, not a copy of an existing track, and are outside this finding. The file drops below the
+   tracks are already journalled by ArrangerFileDrop (`aFileDroppedBelowTheTracksGetsANewTrackAndOneUndoRemovesBoth`,
+   passing in `test-3-green-verbose.log`).
+4. **No collateral damage.** Yes. No format, save or load change; no new control command (the canary is untouched);
+   no limit or check added. The affected family is green except the environmental test noted in Open items
+   (`test-4-family.log`, table above). `ControlEditCommandsTest` fails the same way with the fix reverted
+   (`test-6-reverted-controledit.log`).
+5. **Verdict.** FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so the code-citation item does not apply. The
+   pre-fix evidence is `TrackContainerView.cpp:622` at HEAD (`git show HEAD~1:src/gui/editors/TrackContainerView.cpp`
+   before the fix commit) and `PatternEditor.cpp:157` at HEAD.
+
+**Gates item: FAIL, environmental, not a code failure.** `submit_check.py` runs `feature_check.py`, which
+creates `<worktree>-feature-check` beside the worktree; that path is outside the write-jail, so the script exits 1
+with `PermissionError` (`gates-1-feature-check.log`). The same checks, with logs under `/tmp`, pass:
+`gates-2-feature-check-tmp-logs.log`, `RESULT: PASS` (driver copy: `logs/gate-driver-copy.py`). The
+ratchet items (complexity, file-length) report no new item in the changed files. The gate script itself
+needs to be run where its log folder can be written.
