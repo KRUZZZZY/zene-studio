@@ -604,6 +604,29 @@ private slots:
 		QVERIFY(last > 0);
 	}
 
+	//! THE FOLLOW PREFERENCE IS CONFIGURATION, THE MEASUREMENT IS NOT. Disabling
+	//! the slave forgets the measurement (the tracker is reset), but the saved
+	//! follow-tempo choice survives: a re-enable that names no flag must find the
+	//! mode it was left in, or a plain stop throws the user's choice away.
+	void slaveEnableTogglePreservesFollowTempoPreference()
+	{
+		MidiClock* clock = MidiClock::instance();
+		Engine::getSong()->setTempo(100);
+		clock->setSlaveEnabled(true);
+		clock->setSlaveFollowTempo(true);
+		clock->setSlaveEnabled(false);
+		QVERIFY2(clock->slaveFollowTempo(), "disabling the slave cleared its follow preference");
+		clock->setSlaveEnabled(true);
+		// The pulses carry INJECTED timestamps a minute ahead of the monotonic
+		// clock: the tracker drops its lock when no pulse arrived for half a
+		// second, and the age it measures is the distance from the last pulse to
+		// the audio period's own clock, so a pulse from the future is never aged
+		// out. The measured tempo is 120 whatever the wall clock does.
+		feedClockInput(clock, 120, 48, MidiClock::nowNs() + 60000000000ULL);
+		QCOMPARE(clock->applyMeasuredTempo(), 120);
+		QCOMPARE(Engine::getSong()->getTempo(), 120);
+	}
+
 	//! THE POINTER'S UNIT. A Song Position Pointer is expressed in MIDI BEATS -
 	//! six clock pulses, i.e. a sixteenth note - and this engine resolves a
 	//! sixteenth as twelve ticks. It is the one grid conversion that would

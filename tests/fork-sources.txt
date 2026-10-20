@@ -2703,3 +2703,8 @@ docs/qwen-fixes-2026-10/cluster-Q050-148.md
 docs/qwen-fixes-2026-10/cluster-new-p10-518-port.md
 # cluster new-p11-81-port (2026-10): report for the delay primitive per-channel cursor fix ported onto 050/m0-train-5.
 docs/qwen-fixes-2026-10/cluster-new-p11-81-port.md
+# cluster new-p12-133-port: the MIDI clock follow-preference regression. This fork-NEW clock menu test is
+# registered here so the fork ratchets measure the file the fix touches.
+tests/src/gui/MidiClockMenuTest.cpp
+# cluster new-p12-133-port: the MIDI clock follow-preference fix and its verification report.
+docs/qwen-fixes-2026-10/cluster-new-p12-133-port-port.md

@@ -280,10 +280,13 @@ void MidiClock::setSlaveEnabled(bool enabled) noexcept
 	m_slaveEnabled.store(enabled);
 	if (!enabled)
 	{
-		m_slaveFollowTempo.store(false);
-		// Leaving slave mode forgets the measurement: a caller that re-enables
-		// following must not be handed a tempo measured from a clock it stopped
-		// listening to (the same reason the lock drops when pulses stop).
+		// Leaving slave mode forgets the MEASUREMENT, but not the follow
+		// PREFERENCE. The preference is configuration: it says whether this
+		// follower follows the tempo, and a caller that re-enables the slave
+		// without naming the flag must find the mode it was left in. The
+		// measurement is the opposite - a caller that re-enables following must
+		// not be handed a tempo measured from a clock it stopped listening to
+		// (the same reason the lock drops when pulses stop).
 		m_tracker.reset();
 	}
 }
@@ -417,13 +420,18 @@ void MidiClock::setSlaveDriftBoundMs(double ms) noexcept
 
 void MidiClock::startFollowTimer()
 {
-	if (m_followTimer != nullptr) { return; }
-	m_followTimer = new QTimer();
-	// A functor connection with the timer itself as the context: no receiver
-	// object is needed, and the timer lives on the thread that creates it here
-	// (the control thread - `clock.*` handlers always run on the UI thread).
-	QObject::connect(m_followTimer, &QTimer::timeout, [this]() { applyMeasuredTempo(); });
-	m_followTimer->start(FollowPollMs);
+	if (m_followTimer == nullptr)
+	{
+		m_followTimer = new QTimer();
+		// A functor connection with the timer itself as the context: no receiver
+		// object is needed, and the timer lives on the thread that creates it here
+		// (the control thread - `clock.*` handlers always run on the UI thread).
+		QObject::connect(m_followTimer, &QTimer::timeout, [this]() { applyMeasuredTempo(); });
+	}
+	// The timer is created ONCE, but stopping it does not destroy it: a
+	// disable/re-enable cycle has to start it again, or the follower never
+	// writes the measured tempo to the Song again.
+	if (!m_followTimer->isActive()) { m_followTimer->start(FollowPollMs); }
 }
 
 void MidiClock::stopFollowTimer()
