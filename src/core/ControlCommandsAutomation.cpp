@@ -28,6 +28,7 @@
 
 #include "AutomatableModel.h"
 #include "AutomationClip.h"
+#include "AutomationTrack.h"
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
@@ -99,6 +100,18 @@ QJsonObject trackState(Track* track, int index, bool automatedOnly, int* automat
 	entry.insert(QStringLiteral("type"), trackTypeName(track->type()));
 	entry.insert(QStringLiteral("device_chain"), dynamic_cast<InstrumentTrack*>(track) != nullptr ||
 		track->type() == Track::Type::Sample);
+	// 0.5.0 Q050-022: the child-lane relation, reported from the SAME fields the
+	// arranger renders (so an agent reads the owner and the lane state the GUI
+	// shows). `follows` is the owning track's id for an automation lane, empty
+	// otherwise; `automation_lane_count` counts the lanes following THIS track and
+	// `lanes_collapsed` is the owner-side fold flag (automation.lanes_set_collapsed).
+	const auto* lane = dynamic_cast<const AutomationTrack*>(track);
+	const int followedId = lane != nullptr ? lane->followsTrack() : -1;
+	entry.insert(QStringLiteral("follows"), followedId >= 0
+		? control::trackIdOf(Engine::getSong()->findTrackById(followedId)) : QString());
+	entry.insert(QStringLiteral("automation_lane_count"),
+		static_cast<int>(track->automationLaneChildren().size()));
+	entry.insert(QStringLiteral("lanes_collapsed"), track->automationLanesCollapsed());
 	entry.insert(QStringLiteral("parameters"),
 		parameterListJson(track, automatedOnly, automatedCount));
 	return entry;

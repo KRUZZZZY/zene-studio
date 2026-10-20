@@ -2247,6 +2247,7 @@ tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
+tests/src/core/AutomationLaneChildrenTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationRenderAllocationTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
@@ -2716,3 +2717,10 @@ src/gui/RenderRangeMenu.cpp
 src/core/ControlCommandsRenderSections.cpp
 tests/src/gui/RenderRangeMenuTest.cpp
 tests/src/gui/ExportProjectDialogPresetTest.cpp
+# 2026-10-16 (Q050-022, R-workflow-197): the GUI half of the automation-lane-as-child
+# feature. This fork-NEW product test lives under tests/src/gui, which the recipe's
+# pathspec (tests/src/core, tests/src/tracks) does not cover, so it is named here by hand
+# like the other GUI tests above; its core sibling tests/src/core/AutomationLaneChildrenTest.cpp
+# is derived by the recipe. Held by the arranger's lane-child rendering, fold/hide,
+# deletion and the agent surface.
+tests/src/gui/AutomationLaneChildGuiTest.cpp

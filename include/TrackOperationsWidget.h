@@ -72,6 +72,10 @@ private:
 	AutomatableButton* m_muteBtn;
 	AutomatableButton* m_soloBtn;
 	QToolButton* m_armBtn = nullptr;  //!< 0.5.0 L03 (WF-074): record arm, track.set_arm
+	//! 0.5.0 Q050-022: fold/unfold this track's child automation lanes,
+	//! automation.lanes_set_collapsed. Shown only when the track actually owns
+	//! lanes (updated as the row repaints).
+	QToolButton* m_lanesBtn = nullptr;
 
 	friend class TrackView;
 

@@ -1147,6 +1147,32 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "collapsed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "collapsed"
+        ],
+        "type": "object"
+      },
+      "description": "Fold or unfold a track's child automation lanes in the arranger: with 'collapsed' true every lane following the track (an AutomationTrack whose followsTrack is this track) is hidden under its owner's row, exactly as a collapsed folder hides its children. A live Track checkpoint, so one control.undo takes the fold back off; automation.get_state reports each owner's flag and each lane's owner. One undo step.",
+      "group": "automation",
+      "id": "automation.lanes_set_collapsed",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -29985,6 +30011,11 @@
             "type": "string"
           },
           "index": {
+            "type": "integer"
+          },
+          "lanes_removed": {
+            "maximum": 1919808,
+            "minimum": 0,
             "type": "integer"
           },
           "muted": {

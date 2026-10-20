@@ -116,6 +116,19 @@ LMMS_EXPORT bool moveTrackToIndex(Track* track, int index);
  */
 LMMS_EXPORT bool journalTrackRemoval(Track* track);
 
+/*! Records the inverse of deleting \a owner TOGETHER WITH its child automation
+ *  lanes (every AutomationTrack whose followsTrack() is `owner`'s id) as ONE
+ *  structural step: each track's own XML is captured while it is alive, the undo
+ *  recreates them all (by its own insert order) in ONE step, and the redo
+ *  removes them again. This is what keeps lane ownership consistent through a
+ *  delete - a lane cannot outlive its owner claiming to follow a track that is
+ *  gone - and it costs one Ctrl+Z, not one per track (Q050-022).
+ *
+ *  Falls back to journalTrackRemoval() when \a owner has no lanes. False when
+ *  nothing could be recorded (no journal, or any captured track too large).
+ */
+LMMS_EXPORT bool journalTrackRemovalWithLanes(Track* owner);
+
 /*! Records the inverse of a reorder of \a track from \a fromIndex to
  *  \a toIndex: one structural step whose undo puts the track back at
  *  \a fromIndex and whose redo sends it forward again. The order of a container

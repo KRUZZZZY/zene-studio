@@ -754,6 +754,8 @@ set(LMMS_TESTS
 	src/core/ArrangementModesTest.cpp
 	# 0.5.0 L06: automation lanes, trim, shapes, transform, thinning, curves, last touched.
 	src/core/AutomationLanesTest.cpp
+	# 0.5.0 L06 (Q050-022): automation lanes as track children - ownership, folding, delete-with-owner.
+	src/core/AutomationLaneChildrenTest.cpp
 	# ED-201: automation.write_to_end holds a value from a tick to the song's end.
 	src/core/AutomationWriteToEndTest.cpp
 	# ED-187: thinning keeps custom-segment endpoints and preserves the evaluated curve.
@@ -1042,6 +1044,8 @@ set(LMMS_TESTS
 	src/gui/TrackFolderMenuTest.cpp
 	# 0.5.0 ED-035: a folder's row draws its children's clips as summary clips, each moved, copied or deleted as one.
 	src/gui/FolderSummaryLaneTest.cpp
+	# 0.5.0 L06 (Q050-022): a lane is drawn as a collapsible child under its owner in the arranger.
+	src/gui/AutomationLaneChildGuiTest.cpp
 	# 0.5.0 theme 22: the main window opens where, and as large as, it was left (ui/main.geometry).
 	src/gui/MainWindowGeometryTest.cpp
 	# BUG new-p11-96: clicking the envelope graph turns a negative amount off.
@@ -1724,6 +1728,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NoteEditRangeTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationLanesTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationWriteToEndTest"
+		# 0.5.0 L06 (Q050-022): the lane-child tests load a real instrument's parameter.
+		OR LMMS_TEST_NAME STREQUAL "AutomationLaneChildrenTest"
+		OR LMMS_TEST_NAME STREQUAL "AutomationLaneChildGuiTest"
 		# 0.5.0 W3 engine: post-fader inserts and chain.receive load the build's amplifier and receiver modules.
 		OR LMMS_TEST_NAME STREQUAL "W3EngineTest"
 		OR LMMS_TEST_NAME STREQUAL "MidiExportTest"
@@ -2149,6 +2156,9 @@ endif()
 if(TARGET tripleoscillator)
 	add_dependencies(SessionPlaybackRenderTest tripleoscillator)
 	add_dependencies(SessionTuningTest tripleoscillator)
+	# Q050-022: the lane-child tests drive a real instrument's parameter.
+	add_dependencies(AutomationLaneChildrenTest tripleoscillator)
+	add_dependencies(AutomationLaneChildGuiTest tripleoscillator)
 endif()
 
 # These tests exercise the LV2 host through the plugin factory; build the
@@ -2457,6 +2467,7 @@ set_tests_properties(MidiClipLinkedEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AutomationLaneChildGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MainWindowGeometryTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

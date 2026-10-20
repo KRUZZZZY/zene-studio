@@ -349,6 +349,43 @@ public:
 		m_visible = visible;
 	}
 
+	/*! 0.5.0 Q050-022 (L06): whether this track's automation lanes are FOLDED AWAY
+	 *  in the arranger - the collapsible-child half of "automation lanes under
+	 *  their owning track" (research R-workflow-197).
+	 *
+	 *  A lane is an AutomationTrack whose followsTrack() is this track's id()
+	 *  (automation.lane_add places it right below and following this track). This
+	 *  flag is the OWNER's: true hides every such lane row exactly as a collapsed
+	 *  folder hides its children, and it is persisted on the owner's own <track>
+	 *  element (`autolanes`, written only when folded, reset on absence) so a
+	 *  project that never folded a track re-saves the bytes it always had and one
+	 *  checkpoint restore can take the fold back off. A VIEW flag with no audio
+	 *  meaning: folding a track changes no render. */
+	bool automationLanesCollapsed() const
+	{
+		return m_automationLanesCollapsed;
+	}
+	void setAutomationLanesCollapsed( bool collapsed )
+	{
+		if( m_automationLanesCollapsed == collapsed ) { return; }
+		m_automationLanesCollapsed = collapsed;
+		// 0.5.0 Q050-022: announce the fold so the arranger can re-lay its rows
+		// whichever path set the flag - the view's own button/menu, the agent
+		// surface's command, or an undo/redo of that command (which restores
+		// through loadTrack below). Emitted on the control/GUI thread, never the
+		// render thread.
+		emit automationLanesCollapsedChanged();
+	}
+
+	/*! The automation lanes that FOLLOW this track (its id), in container order -
+	 *  the same relation automation.lane_add writes and the arranger renders as
+	 *  child rows. A track that follows no track is not a lane; a lane whose owner
+	 *  is gone is not returned by anyone. Defined in Track.cpp, which can see
+	 *  AutomationTrack and TrackContainer. */
+	std::vector<Track*> automationLaneChildren() const;
+	//! True when automationLaneChildren() is non-empty.
+	bool hasAutomationLaneChildren() const;
+
 	/*! The mixer channel this track's own output is bound to, or nullptr for a
 	 *  track type that has no channel of its own (a folder, an automation
 	 *  track).
@@ -545,6 +582,10 @@ private:
 	//! The visibility flag a named visibility set writes; true unless the file
 	//! says otherwise (reset on absence in loadTrack).
 	bool m_visible{true};
+	//! 0.5.0 Q050-022: the owner-side fold flag for this track's following
+	//! automation lanes; false unless the file says otherwise (reset on absence
+	//! in loadTrack, the same rule m_visible follows).
+	bool m_automationLanesCollapsed{false};
 
 	friend class gui::TrackView;
 	friend class TrackFolder;
@@ -555,6 +596,10 @@ signals:
 	void nameChanged();
 	void clipAdded( lmms::Clip * );
 	void colorChanged();
+	//! 0.5.0 Q050-022: this track's automation-lane fold flag changed. The
+	//! arranger listens so a fold from the agent surface, the menu, or an
+	//! undo/redo redraws without the caller touching the view.
+	void automationLanesCollapsedChanged();
 } ;
 
 

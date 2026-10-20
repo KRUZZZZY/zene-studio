@@ -41,6 +41,7 @@
 #include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
 #include "AutomatableButton.h"
+#include "AutomationTrack.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
@@ -50,6 +51,7 @@
 #include "StringPairDrag.h"
 #include "Track.h"
 #include "TrackGrip.h"
+#include "TrackContainer.h"
 #include "TrackContainerView.h"
 #include "TrackSpacers.h"
 #include "ClipView.h"
@@ -178,7 +180,27 @@ void TrackView::updateFolderIndent()
 	constexpr int IndentPerLevel = 10;
 	int depth = 0;
 	QString path;
-	for (const TrackFolder* folder = getTrack()->parentFolder(); folder != nullptr; folder = folder->parentFolder())
+	// 0.5.0 Q050-022: an automation lane is drawn one step in from its OWNER, the
+	// same way a folder's child is drawn one step in from the folder. The owner's
+	// own folder depth is inherited, so a lane under a track inside a folder keeps
+	// both indents.
+	const Track* indentFrom = getTrack();
+	QString laneOwnerName;
+	if (const auto* lane = dynamic_cast<const AutomationTrack*>(getTrack()))
+	{
+		if (lane->followsTrack() >= 0)
+		{
+			const TrackContainer* container = getTrack()->trackContainer();
+			const Track* owner = container != nullptr ? container->findTrackById(lane->followsTrack()) : nullptr;
+			if (owner != nullptr)
+			{
+				indentFrom = owner;
+				++depth;
+				laneOwnerName = owner->name();
+			}
+		}
+	}
+	for (const TrackFolder* folder = indentFrom->parentFolder(); folder != nullptr; folder = folder->parentFolder())
 	{
 		++depth;
 		path = path.isEmpty() ? folder->name() : folder->name() + QStringLiteral(" / ") + path;
@@ -199,7 +221,15 @@ void TrackView::updateFolderIndent()
 			child->move(baseX.toInt() + indent, child->y());
 		}
 	}
-	m_trackSettingsWidget.setAccessibleDescription(depth == 0 ? QString() : tr("In folder %1").arg(path));
+	if (!laneOwnerName.isEmpty())
+	{
+		path = path.isEmpty() ? laneOwnerName : laneOwnerName + QStringLiteral(" / ") + path;
+		m_trackSettingsWidget.setAccessibleDescription(tr("Automation lane under %1").arg(path));
+	}
+	else
+	{
+		m_trackSettingsWidget.setAccessibleDescription(depth == 0 ? QString() : tr("In folder %1").arg(path));
+	}
 }
 
 
