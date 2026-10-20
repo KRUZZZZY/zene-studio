@@ -48,8 +48,15 @@ No product code changed in this cluster. `src/core/DrumSynth.cpp` is unchanged f
 
 ## Self-check
 
-- The RED result is real: with `854ada329`'s `DrumSynth.cpp` hunks reverted, the six new cases fail (test-2-red.log, exit 8); with them restored, all pass (test-3-green.log, exit 0).
-- Family: `DrumSynthTest`, `DrumSynthLevelTest`, `SampleBufferResampleTest` 3/3 pass (test-4-family.log, exit 0).
-- Test is deterministic: no timing, sleeps or races; it compares int16 render vectors from `QTemporaryDir` fixtures.
-- Gates: pass on the redirected run (gate-1-feature-check.log, exit 0). The unmodified script cannot run in this write-jail (see table).
-- Open: the "complete numeric parse" half of the finding is not implemented, for the reason above.
+Completion check (`submit_check.py new-p16-62`, saved as submit-check-1.log): commits, clean tree, report and test-changed items PASS; the **gates item FAILS** (see point 6). Answers to the ASK items:
+
+1. **RED/GREEN with the product change reverted and restored.** Reverted with `git apply -R fix.patch` (exit 0), rebuilt (build-2-red.log, exit 0), `ctest -R '^DrumSynthTest$'` exit 8 with six `FAIL!` lines and `Totals: 8 passed, 6 failed` (test-2-red.log). Restored with `git apply fix.patch` (exit 0), rebuilt (build-3-green.log, exit 0), ctest exit 0, `100% tests passed out of 1` (test-3-green.log). The reverted state is the pre-854ada329 DrumSynth.cpp, so this is the proof for the fix.
+2. **Deterministic.** No clock, sleep, thread or random input. Every value is a literal in the test: the tone fixture text is written to a `QTemporaryDir` file, rendered in-process through `DrumSynth::GetDSFileSamples(path, samples, 1, 44100)`, and the int16 vectors are compared exactly. The non-finite input and its expected reference (default F1 or literal `0` level) are both fixed strings.
+3. **At the cause, callers and siblings checked.** No product change in this cluster; the fix is `854ada329`. Its checks cover every route a float takes from a `.ds` file to a sample:
+   - profile floats: all `GetPrivateProfileFloat` callers (`src/core/DrumSynth.cpp:417, 430, 432, 435, 470, 475, 476, 491, 502, 503, 544, 558`) go through the `isfinite` check at `:334`;
+   - envelope values: the only parser is `GetEnv` → `storeEnvelopeValue` (`:161-170`), and every stored point passes `:167`;
+   - generated samples: the two sample conversion sites (`:939` bit-depth, `:969` output clipping) are guarded.
+   `GetPrivateProfileInt` is not affected: an integer parse cannot yield NaN or infinity.
+4. **No collateral damage.** A non-finite value falls back to the documented default (profile → `def`; envelope → `0`, the existing malformed-token behaviour). Finite values are untouched, and no new limit or check was added. Existing projects load the same: `DrumSynthLevelTest`, `DrumSynthTest` and `SampleBufferResampleTest` all pass (test-4-family.log, `100% tests passed out of 3`). Trailing-text parsing (`200abc`) is unchanged; see Not changed above.
+5. **ALREADY-FIXED evidence.** `src/core/DrumSynth.cpp:334` (profile floats), `:167` (envelope), `:939` and `:969` (samples); `git merge-base --is-ancestor 854ada329 HEAD` exit 0.
+6. **Gates.** The unmodified `feature_check.py` exits 1 here: it creates `<worktree>/../zene-qwen-new-p16-62-feature-check/` outside the write-jail (`PermissionError`). It needs to run from an environment that can write beside the worktree. The same gate logic, with only the log folder redirected to the run folder, exits 0 with all rows PASS (gate-1-feature-check.log). This item should be re-run from an environment that can write beside the worktree.
