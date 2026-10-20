@@ -2,27 +2,27 @@
 
 **Verdict: FIXED**
 
-`listProjectRevisions` and `findRevision` built every project-file artefact path from `projectPath`. With `projectPath` empty, `projectRevisionPath("", n)` became `.rev<n>`, the backup became `.bak`, and both resolved against the working directory. A `.bak` or `.rev0` sitting in the working directory was therefore listed as a revision of an unsaved session. `resolveSlot`, the one shared resolver for the rotation, backup, autosave and git families, now refuses every id when there is no project path, so no caller can reach the working directory this way. A deterministic test puts `.bak` and `.rev0` in the working directory and expects an empty timeline.
+`listProjectRevisions` and `findRevision` built project-file artefact paths from `projectPath`. With `projectPath` empty, `projectRevisionPath("", n)` became `.rev<n>` and the backup became `.bak`, so files in the working directory could appear as revisions of an unsaved session. `resolveSlot` now refuses those project-derived rotation, backup and git ids when there is no project path. Session-level autosaves remain independently resolvable from `recoveryFile`, including an autosave with no project identity. A deterministic test puts `.bak` and `.rev0` in the working directory plus an unowned autosave and its backup, and checks that only the two session recovery files are listed.
 
 **Scope note.** The finding describes a user-visible path (`revisions.list` before a save). That path is already refused one layer up: `targetProject` returns "no 'project' given and the session has no project file yet" when the session has no file (`src/core/ControlCommandsRevisions.cpp:86-91`), and the list handler returns that error before calling the helper (`src/core/ControlCommandsRevisions.cpp:213-216`). The defect is therefore latent through the control socket. It is real in the library contract: `listProjectRevisions` and `findRevision` are exported (`include/RevisionTimeline.h`) and return working-directory files for an empty path, which the regression test demonstrates. No GUI code calls them (`rg` finds callers only in `src/core/ControlCommandsRevisions.cpp`, `src/core/RevisionTimeline*.cpp` and the test).
 
 ## Evidence
 
-- `src/core/RevisionTimeline.cpp:106-118`: `resolveSlot` returns false with "names no artefact: the session has no project file yet" when `projectPath` is empty. This sits before the rotation, backup, autosave and git branches, so every id family is covered.
-- `src/core/RevisionTimeline.cpp:240-256` (`findRevision`): calls `resolveSlot` and returns an invalid entry on failure, so `rev0`, `backup`, `autosave` and `git:<sha>` all return empty for an empty path.
-- `src/core/RevisionTimeline.cpp:278-296` (`listProjectRevisions`): unchanged. Its artefact loop now yields nothing for an empty path; its git branch already refused an empty path (`:291`).
+- `src/core/RevisionTimeline.cpp:104-124`: `needsProjectPath` and `resolveSlot` refuse rotation, backup and git ids when `projectPath` is empty. Autosave ids still resolve from the separate `recoveryFile` path.
+- `src/core/RevisionTimeline.cpp:246-281` (`findRevision`): calls `resolveSlot`; `rev0`, `backup` and `git:<sha>` return empty for an empty path, while `autosave` and `autosave_prev` retain their session-level behavior.
+- `src/core/RevisionTimeline.cpp:284-324` (`listProjectRevisions`): the artefact loop now omits project-derived paths for an empty path; its git branch already refused an empty path (`:297`).
 - Callers of the shared resolver, all checked:
-  - `restoreTimelineRevision` refuses an empty path before `resolveSlot` (`src/core/RevisionTimeline.cpp:398-400`).
-  - `readRevisionBytes` (`:370`) is reached from `revisions.compare` and `revisions.restore` only after `target.isEmpty()` is refused (`src/core/ControlCommandsRevisions.cpp:259`, `:331`). The `live` id in `readRevisionBytes` does not use `resolveSlot`, so compare against the live file is unchanged.
-  - `revisionTimelineState` is reached only from `revisions.list`, after the `:213` guard.
-- `tests/src/core/RevisionTimelineTest.cpp:900-925`: new case `anUnsavedSessionListsNoArtefactsFromTheWorkingDirectory`. It writes `.bak` and `.rev0` into a temp directory, switches the working directory there with a restoring guard, and expects `listProjectRevisions("")` and `revisionTimelineState("")` to report 0 and `findRevision("", "rev0"/"backup")` to be invalid.
+  - `restoreTimelineRevision` refuses an empty path before `resolveSlot` (`src/core/RevisionTimeline.cpp:400-419`).
+  - `readRevisionBytes` (`:376`) is reached from `revisions.compare` and `revisions.restore` only after `target.isEmpty()` is refused (`src/core/ControlCommandsRevisions.cpp:259`, `:331`). The `live` id in `readRevisionBytes` does not use `resolveSlot`, so compare against the live file is unchanged.
+  - The production `revisions.list` handler reaches `revisionTimelineState` (`:341`) only after its `:213` guard.
+- `tests/src/core/RevisionTimelineTest.cpp:899-930`: case `anUnsavedSessionListsNoArtefactsFromTheWorkingDirectory` writes `.bak` and `.rev0` into a temp directory, switches the working directory there with a restoring guard, and provides an unowned autosave plus its backup. It expects only `autosave` and `autosave_prev` in the list; the working-directory `rev0` and `backup` remain invalid.
 - Unchanged behaviour: any non-empty `projectPath` takes the same code as before, so saved projects, their `.rev` and `.bak` files and the autosave identity check load and list exactly as they did.
-- Design choice: for an empty path the autosave (`recover.mmp`) is also excluded, not only the rotation and backup files. An unsaved session has no project for its autosave to belong to, and the command path already refuses such sessions, so no socket-visible behaviour changes.
+- The `revisions.list` control command already refuses an unsaved session before reaching this helper, so this API guard adds no socket-visible behavior. It preserves the existing rule that a recovery with no project identity remains visible as a session artefact.
 - No new commands (the canary `ControlCommandsSnapshot` is untouched), no audio-thread code, no undo change. `src/core/RevisionTimeline.cpp` and `tests/src/core/RevisionTimelineTest.cpp` are already registered as fork-new sources (`tests/fork-sources.txt:1795`, `:2435`), so no registration change was needed.
 
 ## Evidence table
 
-Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-150.r1/logs/`. All ctest runs were from `build/tests`. The `env MAKEFLAGS= CCACHE_TEMPDIR=/tmp/zene-p17-150-ccache` prefix is needed on this machine because the inherited make jobserver FIFO and the ccache temp directory under `/run/user` are not writable from this session. The first build attempt failed on those, not on code (`build-red-1.log`, EXIT=2), and it is not a result.
+The following table records the builder's submitted implementation before QA review. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-150.r1/logs/`. All ctest runs were from `build/tests`. The `env MAKEFLAGS= CCACHE_TEMPDIR=/tmp/zene-p17-150-ccache` prefix was needed in that session because the inherited make jobserver FIFO and the ccache temp directory under `/run/user` were not writable. The first build attempt failed on those, not on code (`build-red-1.log`, EXIT=2), and it is not a result.
 
 | Step | Exact command | EXIT | Result |
 | --- | --- | --- | --- |
@@ -44,6 +44,21 @@ Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-150.r1
 | Complexity gate (ratchet, script exit) | `bash tests/complexity-gate.sh --check` (run by the table) | 1 | Red on the train, as the gate's own description says. No item in a changed file is new against base `2da2ed356`. `resolveSlot` is not listed. |
 | File-length gate (ratchet, script exit) | `bash tests/file-length-gate.sh --check` (run by the table) | 1 | `tests/src/core/RevisionTimelineTest.cpp` is listed at 621 lines (`logs/gates/file-length.log:37`). It was already over 500 lines on the base and the gate's key (name, not count) matches the base listing, so it is not new. |
 
+## QA correction and final verification
+
+The submitted guard also hid session-level autosaves when `projectPath` was empty. That conflicted with `RevisionTimeline.cpp:197-204`, which keeps an autosave with no project identity visible rather than hiding a possible unsaved session. The final code narrows the guard to rotation, backup and git IDs; the regression also checks that the independent autosave and its backup remain listed.
+
+| Check | Command | EXIT | Result |
+| --- | --- | --- | --- |
+| Final build | `cmake --build build --target zene RevisionTimelineTest -j4` | 0 | `zene` and `RevisionTimelineTest` rebuilt |
+| Final focused test | `ctest -R '^RevisionTimelineTest$' --output-on-failure` (from `build/tests`) | 0 | 1/1 ctest target passed, 24 Qt cases passed |
+| Final feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-150` | 0 | All rows pass; no new complexity or file-length item |
+| Reverse only the QA correction | `git apply -R /tmp/new-p17-150-qa-product.patch` | 0 | Restored the builder's broad guard for the check |
+| Rebuild with QA correction reversed | `cmake --build build --target zene RevisionTimelineTest -j4` | 0 | targets rebuilt |
+| Regression with QA correction reversed | `ctest -R '^RevisionTimelineTest$' --output-on-failure` (from `build/tests`) | 8 | Test fails at `RevisionTimelineTest.cpp:921`: actual 0, expected 2; 23 cases pass |
+| Restore QA correction | `git apply /tmp/new-p17-150-qa-product.patch` | 0 | Final product code restored |
+| Rebuild and retest restored code | `cmake --build build --target zene RevisionTimelineTest -j4`; `ctest -R '^RevisionTimelineTest$' --output-on-failure` (from `build/tests`) | 0 / 0 | Rebuilt and passed, 24 Qt cases |
+
 ## Files committed
 
 - `src/core/RevisionTimeline.cpp` (the guard in `resolveSlot`)
@@ -52,14 +67,14 @@ Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-150.r1
 
 ## Self-check
 
-**Open FAIL from `submit_check.py` (log `logs/submit-check-1.log`): `gates (feature_check.py)`.** The check runs the stock `feature_check.py`, which exits 1 here before running any gate: it cannot create its log folder `<worktree>/../zene-qwen-new-p17-150-feature-check` (`PermissionError`, outside the write-jail; reproduced with `python3 feature_check.py <worktree>`). The same gate table, with the gate code unchanged and logs in the run folder, passes: `logs/gates-run-2.log`, RESULT PASS, all eight rows. This is an environment limit of this session, not a product failure, and I did not change the gate. Clearing the row needs the stock runner to be able to write its log folder.
+The original `submit_check.py` run recorded a gate failure because its process could not create the sibling log folder. During final QA, the requested stock `feature_check.py` command ran successfully with EXIT 0; all rows passed, including complexity and file-length, with no new item in a touched file.
 
 Answers to the completion check's five items:
 
-1. **Regression fails with the product change reverted, passes with it.** Yes. Reverted with `git apply -R logs/fix.patch` (EXIT 0), rebuilt (EXIT 0), `ctest -R '^RevisionTimelineTest$' -V` **EXIT 8**: `FAIL! ... anUnsavedSessionListsNoArtefactsFromTheWorkingDirectory()`, Actual 2, Expected 0, `RevisionTimelineTest.cpp(919)` (`test-4b-revert.log`). Restored with `git apply logs/fix.patch` (EXIT 0), rebuilt (EXIT 0), ctest **EXIT 0**, 24 passed (`test-4b-reapply.log`). The original code before any product edit also gave EXIT 8 with the same assertion (`test-red-1.log`).
-2. **Deterministic.** No clock, sleep, thread or race. The inputs are fixed files the test writes into its own temp directory (`m_dir`). The working directory is switched to a subfolder of it and restored by a scope guard (`tests/src/core/RevisionTimelineTest.cpp:909-913`). The autosave path is the test's own, set through `ZENE_RECOVERY_FILE` in `initTestCase`, so no real session file is read.
-3. **Fix at the cause, and complete.** The guard is in `resolveSlot` (`src/core/RevisionTimeline.cpp:106-118`), the one function that turns an id into a path for all four families. Its callers, checked: `findRevision` (`:255`), `readRevisionBytes` (`:370`), and `restoreTimelineRevision`, which refuses an empty path first (`:398`) and then calls `resolveSlot` (`:413`). `listProjectRevisions` (`:278`) already refused the git branch for an empty path (`:291`). `revisionTimelineState` (`:335`) is reached only through `revisions.list`. The command handlers refuse an empty target before any helper call: `ControlCommandsRevisions.cpp:86-91` (`targetProject`), `:213`, `:259`, `:331`. The `live` id in `readRevisionBytes` does not use `resolveSlot` and is unchanged.
-4. **No collateral damage.** A non-empty `projectPath` takes the same code as before; the guard is the only new branch and it is taken only for an empty path. Saved projects, their `.rev` and `.bak` files and the autosave identity check are unchanged, and no limit or cap was added. The autosave is also excluded for an empty path, a design choice explained above; no socket command can reach that case.
+1. **Regression fails with the product change reverted, passes with it.** The original test in the builder's evidence failed before its fix (EXIT 8, actual 2 vs expected 0) and passed with it. The final regression was also run with the QA correction reversed (`git apply -R /tmp/new-p17-150-qa-product.patch`, EXIT 0): rebuild EXIT 0, ctest EXIT 8 at line 921 (actual 0 vs expected 2, 23 pass). Restoring the QA correction (EXIT 0), rebuilding (EXIT 0), and rerunning ctest (EXIT 0) passed all 24 Qt cases.
+2. **Deterministic.** No clock, sleep, thread or race. The inputs are fixed files the test writes into its own temp directory (`m_dir`). The working directory is switched to a subfolder of it and restored by a scope guard (`tests/src/core/RevisionTimelineTest.cpp:909-915`). The autosave path is a separate temp file with no identity sidecar, so no real session file is read.
+3. **Fix at the cause, and complete.** The empty-path check (`src/core/RevisionTimeline.cpp:104-124`) covers the project-derived rotation, backup and git IDs, while session-level autosave IDs remain resolvable. Its callers, checked: `findRevision` (`:261`), `readRevisionBytes` (`:376`), and `restoreTimelineRevision`, which refuses an empty path first (`:404`) and then calls `resolveSlot` (`:419`). `listProjectRevisions` (`:284`) already refused the git branch for an empty path (`:297`). The command handlers refuse an empty target before any helper call: `ControlCommandsRevisions.cpp:86-91` (`targetProject`), `:213`, `:259`, `:331`. The `live` id in `readRevisionBytes` does not use `resolveSlot` and is unchanged.
+4. **No collateral damage.** A non-empty `projectPath` takes the same code as before. With an empty path, only project-derived paths are refused; session autosave behavior, including a recovery with no project identity, remains intact. No saved project or recovery data is changed, and no limit or cap was added.
 5. **Not applicable.** The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE. The finding's user-visible route is already refused one layer up (`ControlCommandsRevisions.cpp:86-91`, `:213-216`); the defect is in the library contract, as stated in the scope note.
 
 Also checked: no audio-thread code and no undo change (`restoreTimelineRevision`'s undo step is unchanged), no command added (the canary is untouched), and both touched files are already fork-new sources (`tests/fork-sources.txt:1795`, `:2435`).
