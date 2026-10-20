@@ -100,7 +100,9 @@ is likewise read-only to the sandbox.
 | Regenerate snapshot | `python3 /tmp/capture_5684_snapshot.py` → `snapshot-1.log` | 0 (833 commands, 76 groups, same `ids_sha256`) |
 | Snapshot drift check | `QT_QPA_PLATFORM=offscreen python3 tests/control-commands-snapshot.py build/zene` → `snapshot-check-1.log` | 0 |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 — script cannot create `<worktree>-feature-check` outside the sandbox |
-| Gates (same script, log dir in /tmp) | `python3 /tmp/feature_check_5684.py <worktree>` → `gate-2.log` | 0 — all 8 rows PASS |
+| Gates (same script, log dir in /tmp) | `python3 /tmp/feature_check_5684.py <worktree>` → `gate-2.log`, `gate-3-final.log` | 0 — all 8 rows PASS |
+| Submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5684` → `submit-2.log` | 1 — only the feature_check child's log dir fails; report/tests/commits PASS |
+| Submit check (same check, feature-check log dir in /tmp) | `python3 /tmp/submit_check_5684.py <worktree> 5684` → `submit-3-patched.log` | 0 — RESULT: PASS - submit |
 
 The gate script copy changes only `logs = Path("/tmp/zene-5684-feature-check")`;
 `ROOT` stays the real harness directory and no gate, limit or baseline changed.
