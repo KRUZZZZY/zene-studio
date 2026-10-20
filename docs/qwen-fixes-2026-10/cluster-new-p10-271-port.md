@@ -67,6 +67,9 @@ test **passed** - so it proved nothing. The reason is in
 - `build-reverted.log` shows that the reverted build compiled **`zene` only**. The harness is
   a separate `EXCLUDE_FROM_ALL` target (`plugins/NeuralAmp/tests/CMakeLists.txt:38`), so
   `nam_harness` was **not** rebuilt and the test ran against the stale, already-fixed binary.
+  (The control's log of this round, `.../logs/negctl-build-reverted.log`, now shows
+  `Building CXX object plugins/NeuralAmp/tests/CMakeFiles/nam_harness.dir/nam_harness.cpp.o`
+  next to the test target, and the control's own verdict is `ok: True`.)
 - The Python driver could not express the missing dependency: it is a `ctest` command, not a
   build target, so nothing made the harness rebuild with it.
 
@@ -93,6 +96,7 @@ Working directory is the repository root unless noted. Log folder:
 | Restore the product change | `git apply .../logs/product.patch` | 0 |
 | Restored build (same command as the reverted build) | `cmake --build build --target zene NeuralAmpHarnessBlockCount -- -j4 > .../logs/build-green-d.log 2>&1` | 0 |
 | **GREEN with the product change** | `cd build/tests && ctest -R "^NeuralAmpHarnessBlockCount$" --output-on-failure --timeout 600 > .../logs/test-green-d.log 2>&1` (1/1 passed) | **0** |
+| **The lane's own negative control, re-run on this commit** | `python3 -c "import negctl; print(negctl.prove('<worktree>', 'ded355440', '<run dir>', open('<worktree>/docs/qwen-fixes-2026-10/cluster-new-p10-271-port.md').read()))"` -> `{'ok': True, 'detail': 'NeuralAmpHarnessBlockCount: they fail without it (rc 8) and pass with it', 'product_files': ['plugins/NeuralAmp/tests/nam_harness.cpp'], 'reverted_build_rc': 0, 'reverted_rc': 8, 'restored_rc': 0, 'tree_clean': True}` (its logs: `.../logs/negctl-build-reverted.log`, `.../logs/negctl-test-reverted.log`, `.../logs/negctl-test-restored.log`) | **0** |
 | Build the family test executables | `cmake --build build --target NeuralAmpModelLoadTest NeuralAmpWavInputTest NamModelMonoOutputTest NeuralAmpProfileArgumentsTest NamModelPrewarmTest NamespaceRegistryTest TrackKeyNamesLoadTest -j 8 > .../logs/build-tests-2.log 2>&1` | 0 |
 | **Family run (18/18 passed)** | `cd build/tests && ctest -R "NeuralAmp\|NamLoader\|Nam" --output-on-failure > .../logs/test-family-4.log 2>&1` | **0** |
 | Gates | `python3 .../feature_check.py . > .../logs/feature-check-4.log 2>&1` -> `RESULT: PASS` | 0 |
