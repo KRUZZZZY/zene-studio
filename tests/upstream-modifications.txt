@@ -2742,3 +2742,4 @@ tests/CMakeLists.txt	cluster new-p12-278: builds VibedWaveformHandoffTest and co
 tests/CMakeLists.txt	new-p11-19-port: registers ControlCrashAcknowledgeTest (the crash reporter's `offered` sentinel through the control command) as a ctest of its own, so the negative control that reverts the product change finds and rebuilds it; no other target, flag or option moved.
 tests/all-sources.txt	new-p11-19-port: adds the new ControlCrashAcknowledgeTest source to the checked whole-tree C/C++ source manifest.
 tests/fork-sources.txt	new-p11-19-port: adds the new ControlCrashAcknowledgeTest source to the fork source manifest, so the fork-scope ratchets measure it.
+tests/CMakeLists.txt	new-p12-185-port: registers ProjectRevisionRestoreStagingTest, the keep-3 restore staging/retry proof (cluster new-p12-185-port); one added source path in the LMMS_TESTS list, no target, flag or option moved.
