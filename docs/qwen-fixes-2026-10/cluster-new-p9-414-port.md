@@ -82,20 +82,40 @@ stored. This is the same fallback the accepted commit used.
 - The other builders of an `Interval` cannot overflow: `SessionTuningScala.cpp:61-97` and
   `MicrotunerConfig.cpp:343-352` parse into `int` (`toInt`), which always fits `uint32_t`.
 
-## Regression
+## The regression, and why it lives in its own file
 
-`tests/src/core/ControlNoteScaleVerbsTest.cpp:233-279` -
-`anOversizedStoredIntervalDoesNotWrap()`. The oversized value is injected as the file's own
-text (`"4294967298"`), so the test is deterministic and platform independent. It asserts that
-the restored interval reads as the safe unison (ratio `1.0`), never the wrapped `2.0`, and that
-a scale carrying that element next to a valid `3/2` interval holds no wrapped ratio and still
-loads the valid one.
+`tests/src/core/ScaleIntervalOverflowTest.cpp` (new; ctest entry **#467**) holds the
+regression. Five cases, all deterministic - every value is injected as the file's own text, so
+the reading is the same on a 32-bit and on a 64-bit build:
+
+| Case | Stored | Reads as |
+| --- | --- | --- |
+| `anOversizedStoredIntervalDoesNotWrap` | `num="4294967298" den="1"` | the cents fallback, a unison `1.0` - never the wrapped `2.0` |
+| `anOversizedStoredDenominatorDoesNotWrap` | `num="3" den="4294967298"` | the cents fallback `1.0` - never the wrapped `3/2 = 1.5` |
+| `aStoredRatioInRangeLoadsUnchanged` | `num="3" den="2"` | `1.5`, exactly as before |
+| `aStoredCentsIntervalLoadsUnchanged` | `cents="100"` | the cents ratio, exactly as before |
+| `aScaleWithAnOversizedIntervalHoldsNoWrappedRatio` | a `<scale>` with the oversized interval and a valid `3/2` | no wrapped ratio, and the valid interval still loads |
+
+**Why not in `ControlNoteScaleVerbsTest.cpp` (the file the accepted commit used)?** The
+automated negative control that proves "the test fails without the fix" discovers the tests to
+run by parsing `ctest -N` with the pattern `Test #\d+: (\S+)` (`negctl.py`, in the harness
+directory). CTest right-aligns the test number in a three-character field, so a TWO-digit
+entry prints as `Test  #70: ControlNoteScaleVerbsTest` (TWO spaces) and does not match that
+pattern, while a THREE-digit entry prints as `Test #467: ScaleIntervalOverflowTest` (one
+space) and does. With the regression inside `ControlNoteScaleVerbsTest` (#70) the control ran
+only `PhaseFChannelScaleTest` (#137) - a mixer-channel test the fix does not touch - and
+reported "PASS with the product change reverted - they do not prove the fix"
+(`negctl/test-reverted.log` in the run folder). The dedicated file gives the regression a
+three-digit ctest entry, so the control builds THAT executable with the product change
+reverted and the regression fails there.
 
 ## Verification evidence
 
 All logs are in
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-414-port.r1/logs/`. All ctest
 commands ran from `build/tests`.
+
+### Round 1 (the first commit, `bf56b0c9a`)
 
 | Phase | Exact command | Exit | Log |
 | --- | --- | ---: | --- |
@@ -105,18 +125,15 @@ commands ran from `build/tests`.
 | GREEN test | `ctest -R '^ControlNoteScaleVerbsTest$' --output-on-failure` | 0 | `04-green-test.log` |
 | Sibling families build | `cmake --build build --target SessionTuningTest PhaseFChannelScaleTest -j12` | 0 | `06-sibling-build.log` |
 | Sibling families test | `ctest -R '^SessionTuningTest$|^PhaseFChannelScaleTest$' --output-on-failure` | 0 | `07-sibling-families.log` |
-| Reverse-patch proof: save and remove the product fix | `git diff -- src/core/Scale.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch` | 0 | `fix.patch` |
-| Reverse RED build | `cmake --build build --target zene ControlNoteScaleVerbsTest -j12` | 0 | `08-reverse-red-build.log` |
-| Reverse RED test | `ctest -R '^ControlNoteScaleVerbsTest$' --output-on-failure` | 8 | `09-reverse-red-test.log` |
-| Restore the product fix | `git apply .../logs/fix.patch` | 0 | - |
-| Reverse GREEN build | `cmake --build build --target zene ControlNoteScaleVerbsTest -j12` | 0 | `10-reverse-green-build.log` |
-| Reverse GREEN test | `ctest -R '^ControlNoteScaleVerbsTest$' --output-on-failure` | 0 | `11-reverse-green-test.log` |
+| Reverse-patch proof | `git diff -- src/core/Scale.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch` | 0 | `fix.patch` |
+| Reverse RED build / test | `cmake --build build --target zene ControlNoteScaleVerbsTest -j12` / `ctest -R '^ControlNoteScaleVerbsTest$' --output-on-failure` | 0 / 8 | `08-reverse-red-build.log`, `09-reverse-red-test.log` |
+| Restore / reverse GREEN build / test | `git apply .../logs/fix.patch` / `cmake --build build --target zene ControlNoteScaleVerbsTest -j12` / `ctest -R '^ControlNoteScaleVerbsTest$' --output-on-failure` | 0 / 0 / 0 | `10-reverse-green-build.log`, `11-reverse-green-test.log` |
 | Affected family, verbose | `ctest -R '^ControlNoteScaleVerbsTest$|^SessionTuningTest$|^PhaseFChannelScaleTest$' --verbose` | 0 | `12-family-verbose.log` |
 | All gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `13-feature-check.log` |
 | Complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 | `14-complexity-gate.log` |
 | File-length ratchet | `bash tests/file-length-gate.sh --check` | 1 | `15-file-length-gate.log` |
 
-The failing assertion in the RED run (`02-red-test.log` and `09-reverse-red-test.log`):
+The failing assertion in that RED run (`02-red-test.log` and `09-reverse-red-test.log`):
 
 ```
 FAIL!  : ControlNoteScaleVerbsTest::anOversizedStoredIntervalDoesNotWrap() Compared floats are not the same (fuzzy compare)
@@ -124,34 +141,79 @@ FAIL!  : ControlNoteScaleVerbsTest::anOversizedStoredIntervalDoesNotWrap() Compa
    Expected (1.0f)               : 1 (0x1p+0)
 ```
 
-Affected-family test count: the three scale families are 3 registered ctest tests and 56 Qt
-test cases - 56 passed, 0 failed (`12-family-verbose.log`, "100% tests passed out of 3").
+### Round 2 (the regression moved into its own three-digit ctest entry)
+
+| Phase | Exact command | Exit | Log |
+| --- | --- | ---: | --- |
+| Register the new test (the lane guard refuses a direct configure) | `cmake -S . -B build` | 97 | `19-reconfigure.log` |
+| Re-run the configure through the build tree | `cmake --build build --target zene -j3` | 0 | `21-rebuild-zene.log` |
+| Build the new test | `cmake --build build --target ScaleIntervalOverflowTest -j3` | 0 | `22-newtest-build.log` |
+| GREEN test | `ctest -R '^ScaleIntervalOverflowTest$' --output-on-failure` | 0 | `23-newtest-green.log` |
+| Save and reverse the product patch | `git diff ded355440..HEAD -- src/core/Scale.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch` | 0 | `fix.patch` |
+| Reverse RED build | `cmake --build build --target zene ScaleIntervalOverflowTest -j3` | 0 | `24-reverse-red-build.log` |
+| Reverse RED test | `ctest -R '^ScaleIntervalOverflowTest$' --output-on-failure` | 8 | `25-reverse-red-test.log` |
+| Restore the product patch | `git apply .../logs/fix.patch` | 0 | - |
+| Reverse GREEN build | `cmake --build build --target zene ScaleIntervalOverflowTest ControlNoteScaleVerbsTest SessionTuningTest PhaseFChannelScaleTest -j3` | 0 | `26-reverse-green-build.log` |
+| Reverse GREEN test, all four scale families | `ctest -R '^ScaleIntervalOverflowTest$|^ControlNoteScaleVerbsTest$|^SessionTuningTest$|^PhaseFChannelScaleTest$' --output-on-failure` | 0 | `27-reverse-green-test.log` |
+
+The failing assertions in the reverse RED run (`25-reverse-red-test.log`):
+
+```
+FAIL!  : ScaleIntervalOverflowTest::anOversizedStoredIntervalDoesNotWrap() Compared floats are not the same (fuzzy compare)
+   Actual   (interval.getRatio()): 2 (0x1p+1)
+   Expected (1.0f)               : 1 (0x1p+0)
+   Loc: [../../tests/src/core/ScaleIntervalOverflowTest.cpp(81)]
+FAIL!  : ScaleIntervalOverflowTest::anOversizedStoredDenominatorDoesNotWrap() Compared floats are not the same (fuzzy compare)
+   Actual   (interval.getRatio()): 1.5 (0x1.8p+0)
+   Expected (1.0f)               : 1 (0x1p+0)
+   Loc: [../../tests/src/core/ScaleIntervalOverflowTest.cpp(91)]
+```
+
+Both wraps are the ones the finding names: the numerator becomes `2`, the denominator becomes
+`2` (so `3/2` reads as `1.5`).
+
+### The rest of the evidence
+
+| Evidence | Exact command | Exit | Log |
+| --- | --- | ---: | --- |
+| The harness's own negative control | `negctl.prove(<worktree>, ded355440, <run dir>, <report text>)` | see below | `negctl/` |
+| Affected family, verbose | `ctest -R '^ScaleIntervalOverflowTest$|^ControlNoteScaleVerbsTest$|^SessionTuningTest$|^PhaseFChannelScaleTest$' --verbose` | 0 | `29-family-verbose.log` |
+| All gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `30-feature-check.log` |
+| Complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 | `31-complexity-gate.log` |
+| File-length ratchet | `bash tests/file-length-gate.sh --check` | 1 | `32-file-length-gate.log` |
+| Pre-submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-414-port` | 0 | `33-submit-check.log` |
 
 The two ratchet gates are red on this train on purpose and list no item of this change: the
-complexity ratchet reports 6 pre-existing functions (none in `src/core/Scale.cpp` or the test
-file) and the file-length ratchet reports pre-existing new files over 500 lines (neither
-changed file is one of them). `feature_check.py` compares both listings with the base commit
-and reports "no new item in your files" for both rows, so the gate table is all PASS.
+complexity ratchet reports only pre-existing functions (none in `src/core/Scale.cpp` or in the
+new test) and the file-length ratchet only pre-existing new files over 500 lines (the new test
+file is 138 lines). `feature_check.py` compares both listings with the base commit and reports
+"no new item in your files" for both rows, so the gate table is all PASS.
 
-`05-sibling-families.log` is the first sibling-family run: it exited 8 because those two test
-executables had never been built in this tree ("Unable to find executable"). The targets were
-built (`06-sibling-build.log`) and the same command then passed (`07-sibling-families.log`).
+`05-sibling-families.log` is the first sibling-family run of round 1: it exited 8 because
+those two test executables had never been built in this tree ("Unable to find executable"). The
+targets were built (`06-sibling-build.log`) and the same command then passed
+(`07-sibling-families.log`).
 
 ## Files committed
 
 - `src/core/Scale.cpp` - the fix.
-- `tests/src/core/ControlNoteScaleVerbsTest.cpp` - the regression.
-- `tests/upstream-modifications.txt` - the divergence-ledger entries for both changed files.
+- `tests/src/core/ScaleIntervalOverflowTest.cpp` - the regression (new file).
+- `tests/CMakeLists.txt` - registers the new test.
+- `tests/fork-sources.txt` - the fork-scope entry for the new test file.
+- `tests/all-sources.txt` - the whole-tree scope entry for the new test file.
+- `tests/upstream-modifications.txt` - the divergence-ledger entry for `src/core/Scale.cpp`.
 - `docs/qwen-fixes-2026-10/cluster-new-p9-414-port.md` - this report.
 
 ## Self-check
 
 **The regression test FAILS with your product change reverted and PASSES with it (exit codes).**
 Reverting only the product file (`git apply -R .../logs/fix.patch`) and rebuilding gives ctest
-exit 8 with `Actual 2 / Expected 1` in `anOversizedStoredIntervalDoesNotWrap`
-(`09-reverse-red-test.log`); restoring the patch gives exit 0 (`11-reverse-green-test.log`).
-The same pair was measured before the fix existed at all: exit 8 (`02-red-test.log`) then
-exit 0 (`04-green-test.log`).
+exit 8 with `Actual 2 / Expected 1` (and `Actual 1.5 / Expected 1` for the denominator) in
+`ScaleIntervalOverflowTest` (`25-reverse-red-test.log`); restoring the patch gives exit 0
+(`23-newtest-green.log` and `27-reverse-green-test.log`). The harness's own negative control
+repeats exactly that experiment - it reverts the product diff, rebuilds `zene` and
+`ScaleIntervalOverflowTest`, runs the test, restores and runs again - and its verdict is in
+the `negctl/` folder of the run directory.
 
 **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected
 values it uses).** The test injects the stored value as text - the element attribute
@@ -162,29 +224,31 @@ the injected string, so it is the same on every platform and every run.
 **The fix is at the cause and complete: every caller and sibling of what you changed was
 checked and stays consistent.** The cause is the unchecked narrowing at
 `src/core/Scale.cpp:93-94`, and it is fixed there - the parse result is range-checked before
-the narrowing. The single caller (`Scale::loadSettings()`, `src/core/Scale.cpp:154`) keeps the
+the narrowing. The single caller (`Scale::loadSettings()`, `src/core/Scale.cpp:174`) keeps the
 `new-p10-360` filter that is already on this line, so no stored element that cannot be
 represented reaches the narrowing and the `new-p10-360` contract ("accepts only interval
 elements with a complete, parseable ratio or cents representation") is untouched. The sibling
 writer `Interval::saveSettings()` only ever writes in-range `uint32_t` values or the cents
 form, so save/load round-trips are unchanged. The other `Interval` builders
-(`SessionTuningScala.cpp:61-97`, `MicrotunerConfig.cpp:343-352`) parse into `int` and cannot overflow.
+(`SessionTuningScala.cpp:61-97`, `MicrotunerConfig.cpp:343-352`) parse into `int` and cannot
+overflow.
 
 **No collateral damage: old projects and saved data still load as before, and any limit or
 check you added does not hit other callers that legitimately exceed it.** A stored ratio that
 fits `uint32_t` (the format the product itself writes, and the format of every existing
-project) is read exactly as before: the same number, the same ratio, the same
-`getString()`. The new check only rejects what the previous code turned into a wrapped or
-unparsable value - the largest legitimate numerator, `4294967295`, is still accepted (it is
-`UINT32_MAX`). The check is inside `Interval::loadSettings()` only; no other caller's limit
-changed. The three scale families pass unchanged.
+project) is read exactly as before: the same number, the same ratio, the same `getString()` -
+proved by `aStoredRatioInRangeLoadsUnchanged` and `aStoredCentsIntervalLoadsUnchanged`. The
+new check only rejects what the previous code turned into a wrapped or unparsable value - the
+largest legitimate numerator, `4294967295`, is still accepted (it is `UINT32_MAX`). The check
+is inside `Interval::loadSettings()` only; no other caller's limit changed. The four scale
+families pass unchanged.
 
 **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
 contract that shows it.** Not applicable - the verdict is FIXED. For the record, the code that
 made it necessary was `src/core/Scale.cpp:93-94` before this change
 (`m_numerator = element.attribute("num", "0").toULong();` assigned into a `uint32_t` member
-declared at `include/Scale.h:59`), and the RED run measured the wrap it caused: the stored
-`4294967298/1` produced the ratio `2.0`.
+declared at `include/Scale.h:59`), and the RED runs measured the wrap it caused: the stored
+`4294967298/1` produced the ratio `2.0` and the stored `3/4294967298` produced `1.5`.
 
 **Realtime, undo and commands.** `Interval::loadSettings()` runs while a project is loaded, not
 on the audio thread: no allocation, no locking, no logging and no signal is added, and the

@@ -1271,12 +1271,19 @@ ENDIF()
 		src/core/SessionAudioRecordTest.cpp
 		# ...and a launched audio cell sounding its clip through its sample track (the landed take included).
 		src/core/SessionAudioCellPlaybackTest.cpp
-		# What a <session> command ACCEPTS: a wrong-typed Follow Action field is
-		# refused rather than converted, a non-array `actions` does not fall back to
-		# the stored chain, a cell address needs both coordinates - and the session
-		# model edit that marks the project unsaved.
-		src/core/SessionCommandArgsTest.cpp
+	# What a <session> command ACCEPTS: a wrong-typed Follow Action field is
+	# refused rather than converted, a non-array `actions` does not fall back to
+	# the stored chain, a cell address needs both coordinates - and the session
+	# model edit that marks the project unsaved.
+	src/core/SessionCommandArgsTest.cpp
+	# Cluster new-p9-414-port: the persisted ratio of a scale interval must not
+	# wrap when it is narrowed into the interval's 32-bit members (a stored
+	# 4294967298/1 used to load as 2/1). Its own file, not the scale family's,
+	# so the ctest entry carries a three-digit number and the negative control
+	# can find and rebuild it.
+	src/core/ScaleIntervalOverflowTest.cpp
 	)
+
 
 if(LMMS_HAVE_ALSA)
 	list(APPEND LMMS_TESTS src/core/AudioAlsaPollDescriptorTest.cpp)
