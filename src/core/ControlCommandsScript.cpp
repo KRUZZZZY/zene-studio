@@ -393,16 +393,21 @@ ControlResult scriptSetMemoryBudget(const QJsonObject& args)
 	ScriptEngine* engine = ScriptEngine::instance();
 	const quint64 previous = engine->memoryBudget();
 	const quint64 bytes = static_cast<quint64>(requested);
-	engine->setMemoryBudget(bytes);
+	const bool changed = previous != bytes;
+	// BUG 12: a cap the engine already has is neither set again nor recorded. A
+	// transaction for it would be a reversible no-op on top of the last real
+	// change, and the next control.undo would spend its one step on that no-op.
+	if (changed) { engine->setMemoryBudget(bytes); }
 
 	QJsonObject out;
 	out.insert(QStringLiteral("memory_budget"), static_cast<qint64>(bytes));
 	out.insert(QStringLiteral("previous_memory_budget"), static_cast<qint64>(previous));
-	out.insert(QStringLiteral("changed"), previous != bytes);
+	out.insert(QStringLiteral("changed"), changed);
 	out.insert(QStringLiteral("min_memory_budget"),
 		static_cast<qint64>(ScriptEngine::MinMemoryBudgetBytes));
 	out.insert(QStringLiteral("max_memory_budget"),
 		static_cast<qint64>(ScriptEngine::MaxMemoryBudgetBytes));
+	if (!changed) { return ControlResult::success(out); }
 	out.insert(QStringLiteral("__transaction"),
 		QJsonObject{{QStringLiteral("before"),
 						QJsonObject{{QStringLiteral("memory_budget"), static_cast<qint64>(previous)}}},

@@ -339,11 +339,19 @@ namespace
 //! A true-inverse command leaves a journal step - or, for one with its own mechanism, a transaction payload - whenever it
 //! changes something, so a call that left neither changed nothing (a report-only call, a value it already had) and is
 //! no transaction and no macro step (review W3-batchA #4, #8).
+//! A snapshot command that replies changed:false is the same case (BUG 12): a value it already has leaves nothing to
+//! snapshot, and a record for it would be a reversible no-op on top of the last real change.
 bool changedNothing(bool journalled, quint64 step, const QString& commandId, const ControlResult& result)
 {
-	if (!journalled || step != 0 || result.result.contains(QStringLiteral("__transaction"))) { return false; }
+	if (step != 0 || result.result.contains(QStringLiteral("__transaction"))) { return false; }
 	const control::ReversibilityEntry* row = control::ReversibilityTable::instance().lookup(commandId);
-	return row != nullptr && row->cls == control::ReversibilityClass::TrueInverse;
+	if (row == nullptr) { return false; }
+	if (row->cls == control::ReversibilityClass::Snapshot)
+	{
+		const QJsonValue changed = result.result.value(QStringLiteral("changed"));
+		return changed.isBool() && !changed.toBool();
+	}
+	return journalled && row->cls == control::ReversibilityClass::TrueInverse;
 }
 
 //! WF-033: whether a call is an EDIT whose undo step needs the project as it was before it (the journal's
