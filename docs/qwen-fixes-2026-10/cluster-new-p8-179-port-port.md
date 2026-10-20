@@ -14,3 +14,9 @@ Ported by hand from bugs/qwen-new-p8-179-port (commits ce205fe62, 94be171ee, 5eb
 - Deterministic: uses held replies, fake gateways, processEvents loops; no wall-clock sleeps.
 - Cause/complete: PortMapping, PmpMapper, UpnpMapper callers checked and consistent.
 - Collateral: no saved data changes; scoped deletions only to reachable protocols/stages.
+
+## Self-check
+- Regression test RED/GREEN: reverted product fix, ctest exit 8 (2 targets failed, 5 regression cases); restored, ctest exit 0 (4 targets, 100% passed).
+- Deterministic: held replies, fake gateways, processEvents loops; no wall-clock sleeps.
+- Cause/complete: PortMapping, PmpMapper, UpnpMapper callers checked and consistent.
+- Collateral: no saved data changes; scoped deletions only to reachable protocols/stages.
