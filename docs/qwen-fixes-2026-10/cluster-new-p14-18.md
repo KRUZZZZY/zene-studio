@@ -69,4 +69,5 @@ The two ratchet gates list `REGRESSION` items for other files only (for example 
 - **Tests that pass without the change.** Ruled out by the RED run above.
 - **Test determinism.** No clock, sleep, thread or race. The test uses `Engine::projectJournal()->undoDepth()`, `Song::noteProjectSaved()` and `Song::isModified()`.
 - **Gates.** See the Gates section above: `feature_check.py` could not run in this write-jail; the six simple gates exit 0 when run directly, and the two ratchets exit 1 with no item in a changed file.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED, and the bug is real at the base (see Evidence).
 - **Not checked:** the full `ctest` suite, and the live-instance script `tests/control-note-editor.py` (it mentions `input_transform`, but it is not a ctest target).
