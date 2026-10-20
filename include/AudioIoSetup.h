@@ -107,8 +107,9 @@ LMMS_EXPORT QJsonObject sideJson(const Side& side, int granted);
 LMMS_EXPORT bool parseSide(const QJsonObject& json, Side* side, QString* error);
 
 /*! Read a routing target: "none"; "3" (output 3, mono); "3/4" (a stereo pair); or the name of one of
- *  @a outputs' buses (any case). False, with @a error, for anything else or a pair that is not two
- *  consecutive channels. */
+ *  @a outputs' buses (any case). False, with @a error, for anything else, a pair that is not two
+ *  consecutive channels, or a number beyond @a outputs' channels - a number names a channel of that
+ *  side, so @a outputs' count is its bound. */
 LMMS_EXPORT bool parseDestination(const QString& text, const Side& outputs, Destination* out, QString* error);
 //! The label of @a destination: its bus's name when one matches exactly, else "3/4" or "3", or "none".
 LMMS_EXPORT QString destinationLabel(const Destination& destination, const Side& outputs);
