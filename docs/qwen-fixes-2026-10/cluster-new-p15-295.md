@@ -116,24 +116,16 @@ depends on this formatter (the only hits are the new tests and unrelated constan
 
 ## Self-check
 
-Answers to the completion check's judgement items. Evidence is the log and row in the command table above.
+Answers to the completion check's five judgement items. Evidence is the log or command-table row above.
 
-1. **Each new test FAILS with the product change reverted and PASSES with it.** Yes. Reverted: rows 12-14, EXIT 8,
-   the three new functions fail. Restored: rows 15-16, EXIT 0, 29/29 in `CommandFormTest`. Earlier cycle at rows
-   8-11 gives the same result.
-2. **Every acceptance criterion is proven by a test I ran.** There are no acceptance criteria in this bug record
-   beyond the finding. Its fix criterion (numbers round-trip through `setField()` and form defaults) is covered by
-   `aNumberWrittenToAFieldIsReadBackUnrounded` and `aNumberDefaultIsSentUnrounded`, both passing at row 16.
-3. **Each edit is one undo step; reversibility honest.** The change is a formatter for form text. It adds no command
-   and no edit, so it has no undo or reversibility entry to set.
-4. **Nothing added runs on the audio thread.** The change is in `numberText`, a UI formatter in
-   `src/gui/CommandMetadata.cpp`. It runs only when a form, summary or palette builds text. No allocation, lock, wait,
-   or signal is added beyond the `QString` the old code already built.
-5. **Old projects still load and render as before; new data round-trips.** Projects are not written through this
-   formatter (see Behaviour outside the bug). Values with six or fewer digits render the same. Values with more digits
-   now round-trip through the form (rows 15-16).
-6. **Qt 5.15 / MSVC / macOS portability.** `QLocale::FloatingPointShortest` exists in Qt 5.7 and later, so it is not a
-   Qt 6-only symbol in this sense. The code uses only the `QString::number(double, char, int)` overload, which is
-   the same in Qt 5 and Qt 6. I did not build on Qt 5.15 or on MSVC/macOS here.
+1. **The regression test FAILS with the product change reverted and PASSES with it.** Yes. Reverted (rows 12-14): EXIT 8, and `aNumberWrittenToAFieldIsReadBackUnrounded`, `aNumberDefaultIsSentUnrounded` and `aNumberReadsAsItsShortestExactText` fail (`test-7-proof-unfixed-final.log`). Restored (rows 15-16): EXIT 0, `CommandFormTest` 29/29. The earlier cycle (rows 8-11) gives the same result.
 
-Gates row (`feature_check.py`) will show FAIL in this sandbox for the environment reason above. All other gates pass.
+2. **The test is deterministic.** Yes. The new tests have no wall-clock timing, sleeps, threads or races. They set literal values (`0.123456789`, `0.5`, `1234567`, `0.1`) through `CommandForm::setField()`, `collect()` and `valueText()`, and assert exact values and text. The schema is the fake command already registered in that file.
+
+3. **The fix is at the cause and complete.** The cause is the single formatter `numberText()` (`src/gui/CommandMetadata.cpp:182-187`). I checked its callers and the callers of `valueText()`, which calls it: `fieldRange` (`:334-336`), `valueText` (`:398`), `choiceLabel` (through `valueText`), `src/gui/CommandRun.cpp:143`, `src/gui/CommandListDialog.cpp:61`. All read display or argument text, so they stay consistent. The write path (`src/gui/CommandFormFields.cpp:528`) and read path (`:300`) need no change: the number editor's validator sets no decimals (`:214`). Form defaults take the same path (`src/gui/CommandForm.cpp:227-229`). `max_digits10` was rejected because it prints `0.1` as `0.10000000000000001` in every label (see Verdict).
+
+4. **No collateral damage.** No limit or check was added, so no caller can be refused. Projects are not written through this formatter, so saved data and old projects load as before. Values with six or fewer significant digits display identically (asserted in `aNumberReadsAsItsShortestExactText`). Values with more digits show their full digits in summaries, range hints, run previews and list cells; that is the intended effect of the same formatter. The change is UI text only: no command, no new control command, no ControlCommandsSnapshot change, no undo change, nothing on the audio thread.
+
+5. **Verdict evidence.** The verdict is FIXED, so no ALREADY-FIXED or FALSE-POSITIVE proof is needed. The defect is real: the pre-fix `numberText()` called `QString::number(number)` (six significant digits), reached as traced above (`CommandForm.cpp:247-254` -> `CommandFormFields.cpp:528` -> `CommandMetadata.cpp:398`). The unfixed run reproduces it: `0.123457` for `0.123456789` (`test-2-red.log`, `test-7-proof-unfixed-final.log`).
+
+**Gates row (`feature_check.py`) shows FAIL in this sandbox.** The wrapper cannot create its log directory beside the worktree (`feature_check.py:71`, outside the write-jail), so no gate row is computed. It is not a gate result. The eight gate commands the wrapper runs all pass (exit 0), except complexity and file-length, which are red on the train on purpose and have no REGRESSION item in a changed file (exit 1 raw). The gates row needs a run from a session that can write beside the worktree.
