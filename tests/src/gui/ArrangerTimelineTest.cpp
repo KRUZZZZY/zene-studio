@@ -526,6 +526,37 @@ private slots:
 		QVERIFY(clip->color().has_value());
 	}
 
+	//! Cluster new-p11-8 (ported): the Ctrl+middle-click mute is refused for a locked clip, and the
+	//! menu path refuses it too - the edit must not depend on how it was asked for (Luna cluster 5578).
+	//! The mouse gesture and the menu are one answer, and an unlocked clip takes the very same gesture.
+	void aLockedClipIsNotMutedByCtrlMiddleClick()
+	{
+		Clip* clip = clipAt(m_track, 0, 2 * Bar);
+		QCoreApplication::processEvents();
+		ClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(clip)}}).ok);
+		QVERIFY(EditLocks::instance().locks(clip));
+
+		// The mouse gesture on a locked clip: refused, and the clip stays where it is.
+		const QPoint center(view->width() / 2, view->height() * 3 / 4);
+		QTest::mouseClick(view, Qt::MiddleButton, Qt::ControlModifier, center);
+		QVERIFY2(!clip->isMuted(), "a locked clip was muted by the Ctrl+middle-click gesture");
+		QCOMPARE(m_track->getClips().size(), std::size_t{1});
+		QCOMPARE(clip->startPosition().getTicks(), 0);
+
+		// The menu path on the same locked clip: the same answer, so the finding's premise (that the
+		// context menu mutes what the mouse refuses) does not hold here.
+		view->toggleMute(QVector<ClipView*>{view});
+		QVERIFY2(!clip->isMuted(), "a locked clip was muted by the menu path");
+
+		// An unlocked clip takes the very same gesture, so the lock is what refuses it and not the fixture.
+		QVERIFY(run(QStringLiteral("clip.set_locked"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("locked"), false}}).ok);
+		QTest::mouseClick(view, Qt::MiddleButton, Qt::ControlModifier, center);
+		QVERIFY2(clip->isMuted(), "an unlocked clip was not muted by the Ctrl+middle-click gesture");
+	}
+
 	//! Luna cluster 5578: a lock in a SELECTION keeps the locked clip as it is and still changes the
 	//! unlocked ones, exactly like Delete (WF-044) - the whole selection is not refused just because one
 	//! member is locked.
