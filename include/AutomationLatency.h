@@ -53,7 +53,10 @@ class Clip;
 class LMMS_EXPORT AutomationLatency : public ProjectSection
 {
 public:
-	//! Pins one complete latency publication while an audio block reads its clips.
+	//! Pins one complete latency publication while an audio block reads its clips. A snapshot whose
+	//! acquisition raced its final validation pins no bank at all: enabled() is false and every
+	//! latencyFrames() is 0, so the whole block is read uncompensated - coherently - and safe bank
+	//! reuse is kept (the writer only rewrites banks whose reader count it observed as 0).
 	class ReadSnapshot
 	{
 	public:
@@ -76,7 +79,8 @@ public:
 	static AutomationLatency& instance();
 
 	bool enabled() const;
-	//! Audio thread: pin the currently published bank for one complete block read.
+	//! Audio thread: pin the currently published bank for one complete block read. Strictly bounded
+	//! and non-waiting: at most SnapshotAttempts registrations, then an unpinned fallback snapshot.
 	ReadSnapshot readSnapshot() const;
 	//! Control thread: switch it on (every clip's latency is computed now, then kept current) or off.
 	void setEnabled(bool on);
@@ -116,6 +120,8 @@ private:
 	static constexpr std::uint32_t SlotBit = 1u;
 	static constexpr std::uint32_t EnabledBit = 2u;
 	static constexpr std::uint32_t GenerationStep = 4u;
+	//! Audio thread: readSnapshot() registers at most this many times, then falls back unpinned.
+	static constexpr int SnapshotAttempts = 2;
 
 	AutomationLatency() = default;
 	//! Control thread: start or stop the poll that keeps the clips' latencies current.

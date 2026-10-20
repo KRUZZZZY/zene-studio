@@ -175,7 +175,8 @@ bool AutomationLatency::ReadSnapshot::enabled() const
 
 int AutomationLatency::ReadSnapshot::latencyFrames(const AutomationClip* clip) const
 {
-	return clip == nullptr ? 0 : clip->latencyFramesForSnapshot(m_state & SlotBit);
+	// An unpinned fallback (its acquisition raced the final validation) reads no bank at all.
+	return (clip == nullptr || m_owner == nullptr) ? 0 : clip->latencyFramesForSnapshot(m_state & SlotBit);
 }
 
 bool AutomationLatency::enabled() const
@@ -185,7 +186,13 @@ bool AutomationLatency::enabled() const
 
 AutomationLatency::ReadSnapshot AutomationLatency::readSnapshot() const
 {
-	for (;;)
+	// Strictly bounded and non-waiting (audio thread): register on the published bank and validate that
+	// the publication did not change while registering. A publication that raced the registration is
+	// retried at most SnapshotAttempts times; after that the snapshot pins NO bank and reads this block
+	// uncompensated - coherently for every clip - so a refresh can never make the audio thread wait or
+	// spin unboundedly. The writer side (refreshClips) is where waiting for or skipping a busy bank
+	// lives, on the control thread.
+	for (int attempt = 0; attempt < SnapshotAttempts; ++attempt)
 	{
 		const std::uint32_t state = m_state.load(std::memory_order_seq_cst);
 		const std::uint32_t slot = state & SlotBit;
@@ -193,6 +200,7 @@ AutomationLatency::ReadSnapshot AutomationLatency::readSnapshot() const
 		if (m_state.load(std::memory_order_seq_cst) == state) { return ReadSnapshot(this, state); }
 		m_readers[slot].fetch_sub(1, std::memory_order_seq_cst);
 	}
+	return ReadSnapshot(nullptr, 0);
 }
 
 void AutomationLatency::releaseSnapshot(std::uint32_t state) const
