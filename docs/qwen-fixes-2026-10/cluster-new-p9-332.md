@@ -208,6 +208,11 @@ threads, no sleeps, no wall-clock timing.
   that reads the same pointer (`deleteNotePluginData()`) is safe because the
   note's plugin data is still created before the branch, and every other loop
   over `m_numOscillators` is empty-safe.
+* **The ALREADY-FIXED / FALSE-POSITIVE item does not apply** - neither of the
+  two findings is already fixed on this branch and neither is a false
+  positive: both were reproduced against the original code (a failing
+  assertion for new-p9-332, a SIGSEGV for new-p16-152) and both are fixed
+  here.
 * **new-p16-152 - no collateral damage** - the guard is only reached when no
   oscillator was built, which today never happens (the count is 8), so the
   rendered output of every project is unchanged; the family that renders the
