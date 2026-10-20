@@ -44,6 +44,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QtEndian>
@@ -129,10 +130,20 @@ QJsonObject sideTotals(const QHash<QString, int>& counts, int* elements)
 //! Every tag either side holds, sorted, so the reported order is reproducible.
 QStringList unionOfTags(const QHash<QString, int>& left, const QHash<QString, int>& right)
 {
-	QStringList tags = left.keys();
-	for (const QString& tag : right.keys())
+	QStringList tags;
+	QSet<QString> seen;
+	for (auto it = left.cbegin(); it != left.cend(); ++it)
 	{
-		if (!tags.contains(tag)) { tags.append(tag); }
+		tags.append(it.key());
+		seen.insert(it.key());
+	}
+	for (auto it = right.cbegin(); it != right.cend(); ++it)
+	{
+		if (!seen.contains(it.key()))
+		{
+			tags.append(it.key());
+			seen.insert(it.key());
+		}
 	}
 	std::sort(tags.begin(), tags.end());
 	return tags;
