@@ -848,6 +848,7 @@ private slots:
 	void granularPitchShifterAdvertisesAllControls();
 	void migratedPluginsPreserveBehaviour();
 	void malletsVoiceLimitIsEnforcedPerInstrument();
+	void malletsVoiceLimitSurvivesDeviceChange();
 	void monstroLfoAttackRampsWithinPeriod();
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
@@ -2079,6 +2080,205 @@ void PluginPortsMigrationTest::malletsVoiceLimitIsEnforcedPerInstrument()
 	{
 		delete inst;
 	}
+}
+
+/*! A device change retires the pool of the old sample rate but keeps its
+	sustained notes rendering through it. The product limit belongs to the
+	instrument and therefore has to cover the current pool and every retired
+	pool together: starting more notes after the change must not voice more
+	than malletsVoiceLimit notes of the one instrument.
+*/
+void PluginPortsMigrationTest::malletsVoiceLimitSurvivesDeviceChange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_malletsstk)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto* engine = lmms::Engine::audioEngine();
+	auto* device = engine->audioDev();
+	QVERIFY(device != nullptr);
+	const auto originalRate = device->sampleRate();
+	struct RestoreRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t rate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(rate);
+			emit engine->sampleRateChanged();
+		}
+	} restoreRate{engine, device, originalRate};
+
+	const lmms::f_cnt_t frames = engine->framesPerPeriod();
+	QVERIFY(frames > 0);
+
+	partc::prepareInstrumentEnvironment("malletsstk");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "malletsstk");
+
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	std::vector<lmms::NotePlayHandle*> notes;
+
+	auto acquireNote = [&]() {
+		notes.push_back(lmms::NotePlayHandleManager::acquire(
+			instrument->instrumentTrack(), 0, frames, note, nullptr, -1,
+			lmms::NotePlayHandle::Origin::MidiClip));
+	};
+
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+
+	//! Renders one period of a note into a cleared buffer and reports whether
+	//! the note produced audio. A note that owns a prepared voice is audible;
+	//! a note that waits for a voice is silent.
+	auto renderNote = [&](lmms::NotePlayHandle* handle) {
+		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+		instrument->playNote(handle, span);
+		for (const auto& frame : data)
+		{
+			if (frame.left() != 0.0f || frame.right() != 0.0f) { return true; }
+		}
+		return false;
+	};
+
+	partc::RealtimeAllocationCounts counts;
+
+	// Saturating the instrument's voice limit with sustained notes.
+	for (int i = 0; i < malletsVoiceLimit; ++i) { acquireNote(); }
+
+	std::vector<char> initialAudible(notes.size(), 0);
+	partc::RealtimeAllocationWatch::begin();
+	for (std::size_t i = 0; i < notes.size(); ++i)
+	{
+		initialAudible[i] = renderNote(notes[i]) ? 1 : 0;
+	}
+	{
+		const auto periodCounts = partc::RealtimeAllocationWatch::end();
+		counts.allocations += periodCounts.allocations;
+		counts.deallocations += periodCounts.deallocations;
+	}
+	for (std::size_t i = 0; i < notes.size(); ++i)
+	{
+		QVERIFY2(initialAudible[i] != 0,
+			qPrintable(QString{"Mallets note %1 was silenced before the device change"}
+				.arg(static_cast<int>(i))));
+	}
+	QVERIFY2(notes.size() < static_cast<std::size_t>(2 * malletsVoiceLimit),
+		"the test needs more notes than the instrument may voice at once");
+
+	// Device change: the instrument builds a fresh pool for the new sample
+	// rate and retires the one the sustained notes keep using.
+	const lmms::sample_rate_t changedRate =
+		originalRate == 44100 ? 32000 : 44100;
+	device->setSampleRateForTesting(changedRate);
+	emit engine->sampleRateChanged();
+	QCOMPARE(engine->outputSampleRate(), changedRate);
+
+	// Start more notes of the same instrument after the change.
+	constexpr int extraNotes = 50;
+	for (int i = 0; i < extraNotes; ++i) { acquireNote(); }
+
+	std::vector<char> afterChange(notes.size(), 0);
+	partc::RealtimeAllocationWatch::begin();
+	for (std::size_t i = 0; i < notes.size(); ++i)
+	{
+		afterChange[i] = renderNote(notes[i]) ? 1 : 0;
+	}
+	{
+		const auto periodCounts = partc::RealtimeAllocationWatch::end();
+		counts.allocations += periodCounts.allocations;
+		counts.deallocations += periodCounts.deallocations;
+	}
+
+	int voiced = 0;
+	for (const char audible : afterChange) { voiced += audible; }
+	QVERIFY2(voiced <= malletsVoiceLimit,
+		qPrintable(QString{"Mallets instrument voiced %1 notes after the device change, "
+			"the product limit of one instrument is %2"}
+			.arg(voiced).arg(malletsVoiceLimit)));
+	QVERIFY2(voiced == malletsVoiceLimit,
+		qPrintable(QString{"Mallets instrument voiced %1 notes after the device change, "
+			"expected the %2 sustained notes to keep their voices"}
+			.arg(voiced).arg(malletsVoiceLimit)));
+
+	// The sustained notes keep the voices of the retired pool; the new notes
+	// wait for the shared budget instead of claiming a second instrument's
+	// worth of voices from the fresh pool.
+	for (int i = 0; i < malletsVoiceLimit; ++i)
+	{
+		QVERIFY2(afterChange[static_cast<std::size_t>(i)] != 0,
+			qPrintable(QString{"Mallets sustained note %1 lost its voice across the "
+				"device change"}.arg(i)));
+	}
+	for (std::size_t i = malletsVoiceLimit; i < notes.size(); ++i)
+	{
+		QVERIFY2(afterChange[i] == 0,
+			qPrintable(QString{"Mallets note %1 was voiced over the instrument's limit "
+				"by the fresh pool after the device change"}
+				.arg(static_cast<int>(i) - malletsVoiceLimit)));
+	}
+
+	// Ending some sustained notes frees budget for the waiting notes.
+	constexpr int releasedNotes = 10;
+	for (int i = 0; i < releasedNotes; ++i)
+	{
+		QVERIFY(notes[static_cast<std::size_t>(i)]->m_pluginData != nullptr);
+	}
+	partc::RealtimeAllocationWatch::begin();
+	for (int i = 0; i < releasedNotes; ++i)
+	{
+		instrument->deleteNotePluginData(notes[static_cast<std::size_t>(i)]);
+	}
+	{
+		const auto cleanupCounts = partc::RealtimeAllocationWatch::end();
+		counts.allocations += cleanupCounts.allocations;
+		counts.deallocations += cleanupCounts.deallocations;
+	}
+
+	int newlyVoiced = 0;
+	for (std::size_t i = malletsVoiceLimit; i < notes.size(); ++i)
+	{
+		newlyVoiced += renderNote(notes[i]) ? 1 : 0;
+	}
+	QVERIFY2(newlyVoiced == releasedNotes,
+		qPrintable(QString{"Mallets voiced %1 waiting notes after %2 voices were "
+			"released"}.arg(newlyVoiced).arg(releasedNotes)));
+
+	partc::RealtimeAllocationWatch::begin();
+	for (auto* handle : notes)
+	{
+		if (handle->m_pluginData != nullptr)
+		{
+			instrument->deleteNotePluginData(handle);
+		}
+	}
+	{
+		const auto cleanupCounts = partc::RealtimeAllocationWatch::end();
+		counts.allocations += cleanupCounts.allocations;
+		counts.deallocations += cleanupCounts.deallocations;
+	}
+
+	QVERIFY2(counts.allocations == 0 && counts.deallocations == 0,
+		qPrintable(QString{"render allocations=%1, deallocations=%2"}
+			.arg(static_cast<qulonglong>(counts.allocations))
+			.arg(static_cast<qulonglong>(counts.deallocations))));
+
+	for (auto* handle : notes)
+	{
+		lmms::NotePlayHandleManager::release(handle);
+	}
+	delete instrument;
 }
 
 void PluginPortsMigrationTest::monstroLfoAttackRampsWithinPeriod()

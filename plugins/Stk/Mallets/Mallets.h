@@ -29,6 +29,7 @@
 
 #include <stk/Instrmnt.h>
 
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -240,6 +241,11 @@ private:
 	//! Pools of an earlier sample rate. They stay alive while notes still
 	//! hold a voice of theirs.
 	std::vector<std::unique_ptr<MalletsVoicePool>> m_retiredPools;
+
+	//! The one voice budget of the instrument. Every pool - the current one
+	//! and every retired one that still serves a sustained note - draws from
+	//! this counter, so a device change cannot double the product limit.
+	std::atomic<int> m_voicesInUse{0};
 
 	FloatModel m_hardnessModel;
 	FloatModel m_positionModel;

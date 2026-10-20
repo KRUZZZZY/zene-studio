@@ -89,6 +89,30 @@ constexpr std::size_t MALLETS_VOICE_LIMIT = 128;
 constexpr std::size_t MALLETS_FAMILY_COUNT =
 	static_cast<std::size_t>( MalletsSynth::Family::BandedWG ) + 1;
 
+//! Reserves one note of the instrument's own voice budget. The budget is
+//! shared by the current pool and every retired pool, so notes that keep
+//! rendering through a retired pool still count against the product limit.
+//! Lock-free: a compare-exchange, never a wait.
+bool acquireVoiceBudget( std::atomic<int>& _voicesInUse ) noexcept
+{
+	int used = _voicesInUse.load( std::memory_order_relaxed );
+	while( used < static_cast<int>( MALLETS_VOICE_LIMIT ) )
+	{
+		if( _voicesInUse.compare_exchange_weak( used, used + 1,
+				std::memory_order_acquire, std::memory_order_relaxed ) )
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+//! Gives one note of the budget back when its voice is released.
+void releaseVoiceBudget( std::atomic<int>& _voicesInUse ) noexcept
+{
+	_voicesInUse.fetch_sub( 1, std::memory_order_release );
+}
+
 } // namespace
 
 
@@ -111,9 +135,12 @@ struct MalletsVoiceSlot
 	gives the slot back when the note ends. No allocation and no lock runs on
 	the render thread.
 
-	An instrument voices at most MALLETS_VOICE_LIMIT notes at the same time. A
-	note that starts while every voice is busy is not dropped: it stays silent
-	and takes a voice as soon as one of the running notes ends.
+	An instrument voices at most MALLETS_VOICE_LIMIT notes at the same time. The
+	limit is one budget shared by the current pool and every retired pool of
+	the instrument, so a device change during sustained notes cannot voice a
+	second pool's worth of them. A note that starts while every voice is busy
+	is not dropped: it stays silent and takes a voice as soon as one of the
+	running notes ends.
 */
 class MalletsVoicePool
 {
@@ -468,19 +495,27 @@ void MalletsInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 		// happen off the audio thread; here the render thread only claims a
 		// prepared voice and arms it in place. No allocation, no lock.
 		const auto family = familyForPreset( p );
+		if( !acquireVoiceBudget( m_voicesInUse ) )
+		{
+			// Every voice of this instrument is busy - in the current pool or
+			// in a retired pool that still serves a sustained note: the note
+			// waits for one and takes it in a later period.
+			return;
+		}
 		MalletsVoiceSlot* slot = m_voicePool->claim( family );
 		if( slot == nullptr )
 		{
-			// Every voice of this instrument is busy: the note waits for one
-			// and takes it in a later period.
+			releaseVoiceBudget( m_voicesInUse );
 			return;
 		}
 
 		auto* ps = &slot->voices[static_cast<std::size_t>( family )];
 		if( !ps->ready() )
 		{
-			// The STK voice could not be built: give the slot back.
+			// The STK voice could not be built: give the slot and its budget
+			// back.
 			MalletsVoicePool::release( slot );
+			releaseVoiceBudget( m_voicesInUse );
 			return;
 		}
 
@@ -575,7 +610,9 @@ void MalletsInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
 	auto* slot = static_cast<MalletsVoiceSlot*>( _n->m_pluginData );
 	_n->m_pluginData = nullptr;
+	if( slot == nullptr ) { return; }
 	MalletsVoicePool::release( slot );
+	releaseVoiceBudget( m_voicesInUse );
 }
 
 
