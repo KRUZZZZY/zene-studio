@@ -398,6 +398,9 @@ bool CompSwipeStrip::followTouch(QTouchEvent* event)
 		event->accept();
 		return true;
 	}
+	// A TouchEnd whose released point was not in the list still ends the gesture: leaving the
+	// strip "active" would swallow the next finger's begin.
+	if (event->type() == QEvent::TouchEnd) { cancelTouch(); }
 	event->accept();
 	return true;
 }
