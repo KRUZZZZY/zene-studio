@@ -87,6 +87,42 @@ After the experiment the probe file, its `tests/CMakeLists.txt` target and its
 `tests/all-sources.txt` entry were removed again, and the product sources were restored
 to the parent's content.
 
+## The guard this port adds
+
+The already-fixed state is now locked by a test in the registered executable that
+already covers this area - no new test target, no new test source and no production
+change:
+
+- `tests/src/plugins/AudioPluginTest.cpp:784-805` -
+  `AudioPluginTest::analyzerConstructorInitializesTheDebugMembers` reads the product's
+  constructor out of `plugins/SpectrumAnalyzer/Analyzer.cpp` and asserts that its
+  initializer list names all four `SA_DEBUG` members. The plugin's implementation is not
+  linked into this generic test host (the file says so above the `Analyzer` include), so
+  the guarantee is read from the source; the check is textual, deterministic and free of
+  timing.
+
+Its RED/GREEN proof - the guard fails exactly when the already-fixed state is undone,
+which is the defect the finding describes:
+
+```
+# RED: the constructor's SA_DEBUG initializer list removed (the pre-new-p10-471 state)
+cmake --build build --target AudioPluginTest > .../logs/build-guard-red.log 2>&1      EXIT=0
+cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure > .../logs/test-guard-red.log 2>&1   EXIT=8
+```
+
+```
+FAIL!  : AudioPluginTest::analyzerConstructorInitializesTheDebugMembers() 'initializers.contains(member)' returned FALSE. (the Analyzer constructor does not initialize m_last_dump_time()
+```
+
+```
+# GREEN: the parent's constructor initialization restored
+cmake --build build --target AudioPluginTest > .../logs/build-guard-green.log 2>&1     EXIT=0
+cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure > .../logs/test-guard-green.log 2>&1  EXIT=0
+```
+
+`test-guard-green-2.log` records `Totals: 22 passed, 0 failed` with
+`PASS : AudioPluginTest::analyzerConstructorInitializesTheDebugMembers()`.
+
 ## What this port changes
 
 Nothing in the product. The earlier rounds of this port had added declaration-level
@@ -106,6 +142,9 @@ entries. All of that is removed by this commit:
   `Total Tests: 0`.
 - The `tests/upstream-modifications.txt` entries the port had added for the three
   inherited files are back to the parent's text.
+- The only addition is the guard test in the already registered
+  `tests/src/plugins/AudioPluginTest.cpp` (see above); no new ctest target, no new test
+  source file and no product change.
 
 ## Out of scope: a separate defect in the sibling class `SaProcessor`
 
@@ -147,6 +186,10 @@ stated. Logs are in
 | Post-commit build of the committed tree | `cmake --build build --target zene analyzer AudioPluginTest > .../logs/build-final-3.log 2>&1` | 0 |
 | Post-commit run of the targeted test | `cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure > .../logs/test-final-5.log 2>&1` | 0 |
 | Post-commit gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py . > .../logs/gate-feature-check-4.log 2>&1` | 0 |
+| Guard test, RED (the constructor's initializer list removed) | `cmake --build build --target AudioPluginTest > .../logs/build-guard-red.log 2>&1` and `cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure > .../logs/test-guard-red.log 2>&1` | 0 / 8 |
+| Guard test, GREEN (the parent's initialization restored) | `cmake --build build --target AudioPluginTest > .../logs/build-guard-green.log 2>&1` and `cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure > .../logs/test-guard-green.log 2>&1` | 0 / 0 |
+| The same binary, per case | `cd build/tests && QT_QPA_PLATFORM=offscreen ./AudioPluginTest > .../logs/test-guard-green-2.log 2>&1` | 0 (22 passed, 0 failed) |
+| Gates after the guard was added | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py . > .../logs/gate-feature-check-5.log 2>&1` | 0 |
 
 `test-final-3.log` records `1/1 Test #492: AudioPluginTest ... Passed` and
 `100% tests passed out of 1`; `test-final-4.log` records
@@ -162,6 +205,8 @@ each.
 ## Files committed
 
 - `docs/qwen-fixes-2026-10/cluster-new-p10-470-port.md` - this report.
+- `tests/src/plugins/AudioPluginTest.cpp` - the guard test that locks the already-fixed
+  state (a new case in the executable that already covers this area).
 - `plugins/SpectrumAnalyzer/Analyzer.cpp`, `plugins/SpectrumAnalyzer/Analyzer.h`,
   `plugins/SpectrumAnalyzer/SaProcessor.h`, `tests/CMakeLists.txt`,
   `tests/all-sources.txt`, `tests/upstream-modifications.txt` - restored to the parent's
@@ -169,38 +214,50 @@ each.
 
 ## Self-check
 
-**The regression test fails with the product change reverted and passes with it.** This
-port has no product change to revert - the finding is already fixed at the parent - so no
-new regression is added; the area's registered regression
-`AudioPluginTest::analyzerDebugTimerUsesMonotonicTimePoint` (ctest `AudioPluginTest`)
-was rerun and passes (`ctest -R '^AudioPluginTest$'` exit 0, 21/21 test functions). The
-behavioural proof of the already-fixed state is the throw-away probe documented above:
-it passes against the parent's product code and fails when the parent's constructor
-initialization is removed. `submit_check.py`'s mechanical item "tests added or changed"
-therefore reports FAIL for this branch: an ALREADY-FIXED port carries no product change
-and no new test, which is the convention of the other ALREADY-FIXED clusters in this
-repository (`docs/qwen-fixes-2026-10/cluster-5371.md`, `cluster-1530.md`,
-`cluster-3591.md` - their commits touch the report only).
+**The regression test FAILS with the product change reverted and PASSES with it.**
+This port makes no product change - the reported defect is already fixed at the parent
+`ded355440871` - so there is nothing to revert. What the port does add is a guard that
+locks the already-fixed state: `AudioPluginTest::analyzerConstructorInitializesTheDebugMembers`
+(`tests/src/plugins/AudioPluginTest.cpp:784-805`) fails when the constructor's `SA_DEBUG`
+initializer list is removed (`ctest -R '^AudioPluginTest$'` exit 8,
+`test-guard-red.log`: *"the Analyzer constructor does not initialize m_last_dump_time()"*)
+and passes with the parent's initialization restored (exit 0, `test-guard-green.log`,
+22/22 test functions). The registered coverage that already existed for this area,
+`analyzerDebugTimerUsesMonotonicTimePoint`, passes as well.
 
-**Is the test deterministic?** The registered test that covers the area injects its
-timestamps (four and six seconds) instead of measuring wall-clock time; the throw-away
-probe used a poisoned storage pattern rather than a timing race. No sleep, no timer and
-no thread synchronisation are involved anywhere.
+**Is the test deterministic?** Yes. The guard reads the product's constructor out of
+`plugins/SpectrumAnalyzer/Analyzer.cpp` and looks for the four initializers in the
+initializer list between `Analyzer::Analyzer(` and the constructor body: no clock, no
+sleep, no timer, no thread synchronisation, and the same input always gives the same
+result. The area's other registered test injects its timestamps (four and six seconds)
+instead of measuring wall-clock time, and the throw-away probe described above injected
+the "uninitialized" value itself (a poisoned storage pattern) rather than relying on
+stack luck.
 
-**Is the fix at the cause and complete?** There is nothing to fix in this port: the
-cause (a member that no initialiser defines) does not exist on this branch, the
-constructor defines all four members (`plugins/SpectrumAnalyzer/Analyzer.cpp:67-72`), and
-every reader of them (`plugins/SpectrumAnalyzer/Analyzer.cpp:90-99` and `:113-115`) runs
-after the constructor. The one remaining hole in the same plugin - the data processor's
-own `SA_DEBUG` members - is a different defect, evidenced above and left to a separate
-cluster.
+**Is the fix at the cause and complete?** There is no fix to make in this port: the cause
+of the reported defect (a member that no initialiser defines) does not exist on this
+branch. The parent initializes all four members
+(`plugins/SpectrumAnalyzer/Analyzer.cpp:67-72`), and every reader of them
+(`plugins/SpectrumAnalyzer/Analyzer.cpp:90-99` and `:113-115`) runs only after that
+constructor has returned. The siblings were checked as well: the plugin's other
+`SA_DEBUG` holder, the data processor class `SaProcessor`, still has the same defect and
+is documented below as a separate issue rather than fixed here.
 
-**No collateral damage?** The product sources, the test registrations and the
-divergence ledger are byte-for-byte the parent's content, so old projects, saved data and
-the plugin's behaviour are exactly what the parent produced. The port adds no command, no
-limit and no check, and it changes nothing on the audio thread.
+**No collateral damage?** The product sources, the ctest registrations and the divergence
+ledger are byte-for-byte the parent's content; the port adds one test case to an
+existing test executable and touches nothing else, so old projects, saved data and the
+plugin's behaviour are exactly what the parent produced. No command, no limit and no
+check was added, and nothing on the audio thread changed - the guard only reads a source
+file from the test process.
 
-**Files changed by this port** - the report only; every other path is restored to the
-parent's content, which is what `git diff ded355440871` shows.
+**Files changed by this port**
+
+| File | Effect |
+| --- | --- |
+| `docs/qwen-fixes-2026-10/cluster-new-p10-470-port.md` | this report |
+| `tests/src/plugins/AudioPluginTest.cpp` | the guard test that locks the already-fixed state (one new case in the executable that already covers this area) |
+
+Every other path is restored to the parent's content, which is what
+`git diff ded355440871` shows.
 
 **Verdict: ALREADY-FIXED**
