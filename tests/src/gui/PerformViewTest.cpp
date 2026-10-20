@@ -30,6 +30,9 @@
 
 #include <QtTest>
 
+#include <chrono>
+
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
@@ -45,6 +48,8 @@
 #include "LaunchBindings.h"
 #include "MainWindow.h"
 #include "PerformView.h"
+#include "SessionGridMenus.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -85,6 +90,23 @@ int playingScene(int track)
 bool transportPlaying()
 {
 	return run(QStringLiteral("transport.get_state")).result.value(QStringLiteral("playing")).toBool();
+}
+
+//! Open the setlist's song @a to (an index) at @a path, edit it (unsaved) and play it; false when that did not happen.
+bool openUnsavedAndPlaying(int to, const QString& path)
+{
+	if (!run(QStringLiteral("session.setlist_go"), {{QStringLiteral("to"), QString::number(to)}}).ok) { return false; }
+	if (Engine::getSong()->projectFileName() != path) { return false; }
+	QCoreApplication::sendPostedEvents();  // deliver the track views the load queued, before the next load removes them
+	Engine::getSong()->setModified();
+	return run(QStringLiteral("transport.play")).ok && QTest::qWaitFor(transportPlaying, std::chrono::seconds(3));
+}
+
+//! Whether a song step at the end of the set did nothing: still playing, the same song open and unsaved, the same place.
+bool nothingHappened(const QString& path, int index)
+{
+	return transportPlaying() && Engine::getSong()->projectFileName() == path && Engine::getSong()->isModified()
+		&& run(QStringLiteral("session.setlist")).result.value(QStringLiteral("index")).toInt(-1) == index;
 }
 
 //! The action under @a menu (and its submenus) whose text is @a text, or nullptr.
@@ -278,6 +300,49 @@ private slots:
 		QVERIFY(view->nextSongButton()->isEnabled());
 		QVERIFY(!view->previousSongButton()->isEnabled());
 		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}}).ok);
+	}
+
+	//! At either end of the setlist a song step is nothing: Page Up at the first song, Page Down at the last, and the
+	//! grid's Previous and Next Song. No question about unsaved work, no transport stop (mayChangeProject stops
+	//! playback before it asks), and no reopening of the song that is open.
+	void songStepsAtTheEndsAreNothing()
+	{
+		PerformView* view = PerformView::instance(true);
+		const QString first = m_dir.filePath(QStringLiteral("set-first.mmp"));
+		const QString second = m_dir.filePath(QStringLiteral("set-second.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(first));
+		QVERIFY(Engine::getSong()->saveProjectFile(second));
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{first, second}}}).ok);
+		// The question a step asks would block this test; answered here at once, a step that asks shows as a transport stop.
+		ControlRegistry::setQuitPromptAnswer(ControlRegistry::QuitPromptAnswer::Discard);
+		// Restored however the test ends, so a failed check leaves no prompt answer, set or playing transport behind.
+		struct Restore
+		{
+			~Restore()
+			{
+				run(QStringLiteral("transport.stop"));
+				run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}});
+				ControlRegistry::setQuitPromptAnswer(ControlRegistry::QuitPromptAnswer::Ask);
+			}
+		} restore;
+		QMenu grid;
+		SessionGridMenus::populateGrid(&grid, 2, 3);
+		QAction* nextSong = findAction(&grid, QStringLiteral("Next Song"));
+		QAction* previousSong = findAction(&grid, QStringLiteral("Previous Song"));
+		QVERIFY(nextSong != nullptr && previousSong != nullptr);
+
+		QVERIFY2(openUnsavedAndPlaying(1, second), "the last song did not open, unsaved, playing");
+		view->performKey(Qt::Key_PageDown);
+		QVERIFY2(nothingHappened(second, 1), "Page Down at the last song stopped, asked about, or reopened the song");
+		QVERIFY2(openUnsavedAndPlaying(1, second), "the last song did not open, unsaved, playing");
+		nextSong->trigger();
+		QVERIFY2(nothingHappened(second, 1), "Next Song at the last song stopped, asked about, or reopened the song");
+		QVERIFY2(openUnsavedAndPlaying(0, first), "the first song did not open, unsaved, playing");
+		view->performKey(Qt::Key_PageUp);
+		QVERIFY2(nothingHappened(first, 0), "Page Up at the first song stopped, asked about, or reopened the song");
+		QVERIFY2(openUnsavedAndPlaying(0, first), "the first song did not open, unsaved, playing");
+		previousSong->trigger();
+		QVERIFY2(nothingHappened(first, 0), "Previous Song at the first song stopped, asked about, or reopened the song");
 	}
 
 	//! Learn MIDI: refused (and said) with no controller; with one, the next note binds to the pressed scene.

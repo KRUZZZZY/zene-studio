@@ -487,6 +487,11 @@ void PerformView::stepTempo(int step)
 
 void PerformView::stepSong(const QString& to)
 {
+	// Past either end of the set there is no song to open, so the step is nothing: checked before the question below,
+	// since mayChangeProject also stops the transport before it asks. The buttons are disabled at the same ends.
+	const QJsonObject setlist = run(QStringLiteral("session.setlist")).result;
+	const int target = setlist.value(QStringLiteral("index")).toInt(-1) + (to == QLatin1String("previous") ? -1 : 1);
+	if (target < 0 || target >= setlist.value(QStringLiteral("items")).toArray().size()) { return; }
 	// It opens another project, so unsaved work is asked about first, as the grid's Next Song asks
 	// (MainWindow::mayChangeProject); session.setlist_go itself has nobody to ask.
 	MainWindow* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
