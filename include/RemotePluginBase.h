@@ -86,6 +86,11 @@
 #include "SystemSemaphore.h"
 #endif
 
+#ifdef LMMS_TESTING
+class RemotePluginAudioPortsTest;
+class RemotePluginShmFifoTest;
+#endif
+
 namespace lmms
 {
 
@@ -101,6 +106,10 @@ const int SHM_FIFO_SIZE = 512*1024;
 // implements a FIFO inside a shared memory segment
 class shmFifo
 {
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginShmFifoTest;
+#endif
+
 	// need this union to handle different sizes of sem_t on 32 bit
 	// and 64 bit platforms
 	union sem32_t
@@ -148,12 +157,12 @@ public:
 
 	inline bool isInvalid() const
 	{
-		return m_invalid;
+		return m_invalid.load( std::memory_order_relaxed );
 	}
 
 	void invalidate()
 	{
-		m_invalid = true;
+		m_invalid.store( true, std::memory_order_relaxed );
 	}
 
 	// do we act as master (i.e. not as remote-process?)
@@ -358,7 +367,7 @@ private:
 		unlock();
 	}
 
-	volatile bool m_invalid;
+	std::atomic<bool> m_invalid;
 	bool m_master;
 	SharedMemory<shmData> m_data;
 	SystemSemaphore m_dataSem;
@@ -414,6 +423,10 @@ enum RemoteMessageIDs
 
 class LMMS_EXPORT RemotePluginBase
 {
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginAudioPortsTest;
+#endif
+
 public:
 	struct message
 	{
@@ -610,7 +623,7 @@ public:
 #ifdef SYNC_WITH_SHM_FIFO
 		return m_in->isInvalid() || m_out->isInvalid();
 #else
-		return m_invalid;
+		return m_invalid.load( std::memory_order_relaxed );
 #endif
 	}
 
@@ -795,7 +808,7 @@ protected:
 		m_out->invalidate();
 		m_in->messageSent();
 #else
-		m_invalid = true;
+		m_invalid.store( true, std::memory_order_relaxed );
 #endif
 	}
 
@@ -882,7 +895,7 @@ private:
 	}
 
 
-	bool m_invalid;
+	std::atomic<bool> m_invalid;
 
 	pthread_mutex_t m_receiveMutex;
 	pthread_mutex_t m_sendMutex;

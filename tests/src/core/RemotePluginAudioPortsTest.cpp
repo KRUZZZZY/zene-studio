@@ -280,6 +280,12 @@ class RemotePluginAudioPortsTest : public QObject
 	struct WatcherQuitFlagIsAtomic<T, std::void_t<decltype(T::m_quit)>>
 		: std::is_same<decltype(T::m_quit), std::atomic<bool>> {};
 
+	template<typename T, typename = void>
+	struct RemoteInvalidFlagIsAtomic : std::false_type {};
+	template<typename T>
+	struct RemoteInvalidFlagIsAtomic<T, std::void_t<decltype(T::m_invalid)>>
+		: std::is_same<decltype(T::m_invalid), std::atomic<bool>> {};
+
 private slots:
 	void initTestCase()
 	{
@@ -300,6 +306,13 @@ private slots:
 	void processWatcherQuitFlagIsAtomic()
 	{
 		QVERIFY(( WatcherQuitFlagIsAtomic<ProcessWatcher>::value ));
+	}
+
+	//! The socket reader, audio sender and watcher can invalidate or inspect the
+	//! same transport at once, so its connection flag must be atomic.
+	void remoteConnectionInvalidFlagIsAtomic()
+	{
+		QVERIFY(( RemoteInvalidFlagIsAtomic<RemotePluginBase>::value ));
 	}
 
 	//! RemotePlugin's ctor attaches its buffers to the ports and its dtor
