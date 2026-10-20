@@ -115,6 +115,12 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	connect(&m_pitchRangeModel, SIGNAL(dataChanged()), this, SLOT(updatePitchRange()), Qt::DirectConnection);
 	connect(&m_mixerChannelModel, SIGNAL(dataChanged()), this, SLOT(updateMixerChannel()), Qt::DirectConnection);
 
+	// Cluster new-p16-89: play() collects the clips of a pass. Reserve that storage on the control
+	// thread as the track's clip list grows, so the audio thread never grows it.
+	connect(this, &Track::clipAdded, this, [this](Clip*) {
+		if (getClips().size() > m_playClips.capacity()) { m_playClips.reserve(getClips().size()); }
+	});
+
 	autoAssignMidiDevice(true);
 }
 
@@ -917,7 +923,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	}
 	const float frames_per_tick = Engine::framesPerTick();
 
-	clipVector clips;
+	clipVector& clips = m_playClips;
+	clips.clear();
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{

@@ -38,16 +38,21 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <memory>
 #include <vector>
 
 #include "../core/AllocationProbe.h"
+#include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "MidiPort.h"
+#include "Note.h"
+#include "NotePlayHandle.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
@@ -106,6 +111,30 @@ double meanLevel(const std::vector<SampleFrame>& data, std::size_t from, std::si
 	return to > from ? sum / static_cast<double>(to - from) : 0.0;
 }
 
+//! The keys of @a track's note play handles alive now.
+QList<int> noteKeys(const InstrumentTrack* track)
+{
+	QList<int> keys;
+	for (PlayHandle* handle : Engine::audioEngine()->playHandles())
+	{
+		auto* note = dynamic_cast<NotePlayHandle*>(handle);
+		if (note != nullptr && note->instrumentTrack() == track) { keys << note->key(); }
+	}
+	std::sort(keys.begin(), keys.end());
+	return keys;
+}
+//! Play the arrangement from @a tick; the keys the track has sounding then.
+QList<int> playFrom(InstrumentTrack* track, int tick)
+{
+	Song* song = Engine::getSong();
+	song->setPlayPos(tick, Song::PlayMode::Song);
+	song->playSong();
+	for (int period = 0; period < 3; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+	const QList<int> keys = noteKeys(track);
+	song->stop();
+	for (int period = 0; period < 64 && !noteKeys(track).isEmpty(); ++period) { Engine::audioEngine()->renderNextPeriod(); }
+	return keys;
+}
 } // namespace
 
 class TakeLaneCompPlaybackTest : public QObject
@@ -117,6 +146,8 @@ private slots:
 	{
 		Engine::init(true);
 		m_rate = Engine::audioEngine()->outputSampleRate();
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		NotePlayHandleManager::init();
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
@@ -164,8 +195,7 @@ private slots:
 		SampleClip* first = makeTake(track, m_rate, 0.5f, 0);
 		SampleClip* second = makeTake(track, m_rate, 0.25f, 1);
 		TakeLaneModel& comp = track.takeLanes();
-		comp.addLane();
-		comp.addLane();
+		comp.addLane(); comp.addLane();
 		QVERIFY(comp.selectSegment(0, first->length().getTicks(), 0));
 
 		comp.setAuditionLane(1);
@@ -281,8 +311,7 @@ private slots:
 		SampleClip* take = makeTake(track, m_rate, 0.5f, 0);
 		makeTake(track, m_rate, 0.25f, 1);
 		TakeLaneModel& comp = track.takeLanes();
-		comp.addLane();
-		comp.addLane();
+		comp.addLane(); comp.addLane();
 		const int part = take->length().getTicks() / 160;
 		QVERIFY(part > 0);
 		for (int i = 0; i < 80; ++i)
@@ -314,8 +343,7 @@ private slots:
 	{
 		SampleTrack track(Engine::getSong());
 		TakeLaneModel& comp = track.takeLanes();
-		comp.addLane();
-		comp.addLane();
+		comp.addLane(); comp.addLane();
 		for (int i = 0; i < 256; ++i)
 		{
 			QVERIFY(comp.selectSegment(2 * i, 2 * i + 1, 0));
@@ -368,8 +396,7 @@ private slots:
 		QVERIFY2(track->compPlays(first, 120) && track->compPlays(second, 120),
 			"with no composite every note must play");
 		TakeLaneModel& comp = track->takeLanes();
-		comp.addLane();
-		comp.addLane();
+		comp.addLane(); comp.addLane();
 		QVERIFY(comp.selectSegment(0, 96, 0));
 		QVERIFY(comp.selectSegment(96, 192, 1));
 		QVERIFY(track->compPlays(first, 50));
@@ -380,6 +407,27 @@ private slots:
 		QVERIFY(!track->compPlays(first, 50));
 		QVERIFY(track->compPlays(second, 50));
 		comp.setAuditionLane(-1);
+		delete track;
+	}
+
+	//! Cluster new-p16-89: the arrangement's clip collection must not grow on the audio thread.
+	void clipCollectionDoesNotAllocateOnTheAudioThread()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setAutoResize(false); clip->changeLength(TimePos(384));
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		{
+			const RealtimeScope realtime;
+			track->play(TimePos(0), frames, 0, -1);
+		}
+		test::tlCountAllocations = false;
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
 		delete track;
 	}
 
