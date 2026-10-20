@@ -143,10 +143,6 @@ private slots:
 		ControlRegistry::setReady(true);
 		getGUI()->mainWindow()->show();
 		getGUI()->mainWindow()->revealPanel(QStringLiteral("mixer"));
-		// Keyboard focus only moves in an active window: without this the strips' Tab stops are
-		// stored as the window's focus child and QApplication::focusWidget() stays null.
-		getGUI()->mainWindow()->activateWindow();
-		QVERIFY(QTest::qWaitForWindowActive(getGUI()->mainWindow()));
 		m_sender = Engine::mixer()->createChannel();
 		Engine::mixer()->mixerChannel(m_sender)->m_name = QStringLiteral("Lead");
 		const ControlResult created = run(QStringLiteral("bus.create"));
