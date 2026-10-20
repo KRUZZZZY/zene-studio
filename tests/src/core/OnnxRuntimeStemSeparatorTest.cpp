@@ -194,6 +194,31 @@ private slots:
 			[&](float) { return ++progressCalls < 2; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Cancelled));
 	}
+
+	void testSegmentIndexArithmeticIsBounded()
+	{
+		// The largest index separate() forms is frames + segment / 2 + 2 * segment; it must fit int.
+		QString error;
+		QVERIFY(OnnxRuntimeStemSeparator::segmentFits(44100, HTDemucsSegmentFrames, &error));
+		QVERIFY(OnnxRuntimeStemSeparator::segmentFits(1, 858993458, &error));
+		QVERIFY(!OnnxRuntimeStemSeparator::segmentFits(1, 858993459, &error));
+		QVERIFY(!error.isEmpty());
+		QVERIFY(!OnnxRuntimeStemSeparator::segmentFits(44100, 1500000000, &error));
+		QVERIFY(error.contains(QStringLiteral("too long")));
+	}
+
+	void testOverlongSegmentIsRefusedBeforeAllocation()
+	{
+		// A 1.5e9-frame window alone is 6 GB, so the refusal must come before any allocation.
+		OnnxRuntimeStemSeparator separator(QStringLiteral(LMMS_TEST_DATA_DIR)
+			+ QStringLiteral("/stub-4stem-linear.onnx"));
+		StemSet stems;
+		QString error;
+		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 1500000000,
+			[](float) { return true; }, stems, error);
+		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
+		QVERIFY(error.contains(QStringLiteral("too long")));
+	}
 };
 
 QTEST_GUILESS_MAIN(OnnxRuntimeStemSeparatorTest)

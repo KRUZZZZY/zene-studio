@@ -59,6 +59,9 @@ private:
 	// Whether a segment of \a segment frames over \a frames input frames is indexed safely
 	// by the int arithmetic of separate(); false, with \a error, when it is not.
 	static bool segmentFits(int frames, int segment, QString* error);
+	// The segment separate() runs at: the model's own when \a segmentFrames is 1 or less. 0, with \a error,
+	// when segmentFits() refuses it.
+	static int segmentFor(int frames, int segmentFrames, QString* error);
 	PostRunTestHook m_postRunTestHook = nullptr;
 	QString m_modelPath;
 };

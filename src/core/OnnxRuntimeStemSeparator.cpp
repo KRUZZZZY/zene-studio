@@ -27,7 +27,9 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -156,9 +158,25 @@ OnnxRuntimeStemSeparator::OnnxRuntimeStemSeparator(QString modelPath) :
 
 
 
-bool OnnxRuntimeStemSeparator::segmentFits(int, int, QString*)
+bool OnnxRuntimeStemSeparator::segmentFits(int frames, int segment, QString* error)
 {
-	return true;
+	// separate() indexes the padded input and both stereo halves with int. Its largest index is
+	// below frames + segment / 2 + 2 * segment (padded length plus one segment), so that sum,
+	// taken in 64 bits, must fit int; the chunk count's paddedLength + hop - 1 is below it too.
+	const std::int64_t largestIndexBound = static_cast<std::int64_t>(frames)
+		+ segment / 2 + 2 * static_cast<std::int64_t>(segment);
+	if (largestIndexBound <= std::numeric_limits<int>::max())
+	{
+		return true;
+	}
+	*error = QStringLiteral("A %1-frame segment is too long for a %2-frame input").arg(segment).arg(frames);
+	return false;
+}
+
+int OnnxRuntimeStemSeparator::segmentFor(int frames, int segmentFrames, QString* error)
+{
+	const int segment = segmentFrames > 1 ? segmentFrames : HTDemucsSegmentFrames;
+	return segmentFits(frames, segment, error) ? segment : 0;
 }
 
 
@@ -206,7 +224,11 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 			return Status::Failed;
 		}
 		// A one-frame segment would make the hop below 0 (and the chunk count a division by it).
-		const int segment = segmentFrames > 1 ? segmentFrames : HTDemucsSegmentFrames;
+		const int segment = segmentFor(frames, segmentFrames, &error);
+		if (segment == 0)
+		{
+			return Status::Failed;
+		}
 
 		static Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "zene-stem-split");
 		Ort::SessionOptions options;
