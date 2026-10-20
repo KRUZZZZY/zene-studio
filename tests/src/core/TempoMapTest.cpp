@@ -49,9 +49,11 @@
 #include <QDomDocument>
 
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <chrono>
 #include <future>
+#include <latch>
 #include <memory>
 #include <thread>
 
@@ -455,6 +457,58 @@ private slots:
 
 		QVERIFY(!publisher.edit([](TempoMap& map) { return map.removeEvent(999); }));
 		QCOMPARE(publisher.snapshot().size(), 3);
+	}
+
+	//! A writer paused inside edit() cannot hold the audio reader in snapshot().
+	void thePublisherSnapshotReturnsWhileAnEditIsPaused()
+	{
+		TempoMapPublisher publisher;
+		const TempoMap published = threeEventMap();
+		QVERIFY(publisher.edit([&published](TempoMap& map) { map = published; return true; }));
+
+		std::latch editEntered(1);
+		std::latch finishEdit(1);
+		std::thread writer([&]()
+		{
+			publisher.edit([&](TempoMap& map)
+			{
+				editEntered.count_down();
+				finishEdit.wait();
+				TempoMapEvent event;
+				event.tick = 1152;
+				event.hasTempo = true;
+				event.tempo = 120;
+				return map.addEvent(event);
+			});
+		});
+		editEntered.wait();
+
+		TempoMap observed;
+		std::atomic<bool> snapshotFinished{false};
+		std::latch readerStarted(1);
+		std::thread reader([&]()
+		{
+			readerStarted.count_down();
+			observed = publisher.snapshot();
+			snapshotFinished.store(true, std::memory_order_release);
+		});
+		readerStarted.wait();
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+		while (!snapshotFinished.load(std::memory_order_acquire)
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::yield();
+		}
+		const bool returnedBeforeEdit = snapshotFinished.load(std::memory_order_acquire);
+
+		finishEdit.count_down();
+		reader.join();
+		writer.join();
+
+		QVERIFY(returnedBeforeEdit);
+		QCOMPARE(observed.size(), published.size());
+		QCOMPARE(observed.tempoAtTick(0, kGlobalTempo()), kMappedTempo);
+		QVERIFY(observed.active());
 	}
 
 	//! A throwing edit must leave the publisher readable and discard its partial mutation.

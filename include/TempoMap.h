@@ -272,19 +272,15 @@ private:
 /*! The map plus the lock-free hand-off of it to the audio thread.
  *
  *  The map is authored on the control thread (the transport.* commands) and
- *  read on the audio thread (Song::followTempoMap, once per block). A reader
- *  must never see a half-written set, and it may neither lock nor allocate, so
- *  the hand-off is a seqlock: a writer brackets its edit with an ODD -> EVEN
- *  version bump, and a reader copies the fixed-size value and re-checks the
- *  version, retrying while a write is in progress.
- *
- *  Honest limits, because this is the one place the technique needs saying:
- *  the version bumps are the only atomics, so the value copy itself is a benign
- *  data race by the letter of the C++ memory model - the same trade every
- *  seqlock makes, and it is sound here because there is exactly ONE writer (the
- *  control thread) and it publishes only when an edit lands, not per block. The
- *  reader's cost is a fixed 128-event copy (about 3 KiB on the stack) and no
- *  retry in practice; a reader that has to retry re-reads, it never blocks.
+ *  read on the audio thread (Song::followTempoMap, once per block). Two fixed
+ *  buffers hold complete published maps for snapshot(); a reader pins the current
+ *  buffer, copies it once, then releases the pin. The writer fills the other
+ *  buffer and publishes it atomically; before reusing a buffer, it waits for
+ *  earlier readers to finish. Thus the audio thread neither reads a map being
+ *  edited nor retries when an edit is in progress. Its cost is one fixed
+ *  128-event copy (about 3 KiB on the stack), independent of writer progress.
+ *  (A separate pair of buffers, m_rtSlots, serves the pinned realtime read path
+ *  used by Song/Track; see withRealtimeMap() below.)
  *
  *  When the map is NOT active - the default, and every project that predates
  *  the feature - the audio thread does not even call snapshot(): the timing path
@@ -301,18 +297,21 @@ public:
 	bool edit(Fn&& fn)
 	{
 		const TempoMap previous = m_map;
-		m_version.fetch_add(1, std::memory_order_acq_rel);
 		try
 		{
 			const bool changed = fn(m_map);
-			m_version.fetch_add(1, std::memory_order_acq_rel);
+			const unsigned target = 1u - m_publishedSnapshot.load(std::memory_order_seq_cst);
+			// Only the control thread waits. The audio reader copies the other buffer
+			// and never waits for an edit or for another reader.
+			while (m_snapshotReaders.load(std::memory_order_seq_cst) != 0u) { }
+			m_snapshots[target] = m_map;
+			m_publishedSnapshot.store(target, std::memory_order_seq_cst);
 			publishRealtime();
 			return changed;
 		}
 		catch (...)
 		{
 			m_map = previous;
-			m_version.fetch_add(1, std::memory_order_acq_rel);
 			publishRealtime();
 			throw;
 		}
@@ -326,18 +325,10 @@ public:
 	//! bounded; safe to call from the audio thread.
 	TempoMap snapshot() const noexcept
 	{
-		TempoMap copy;
-		unsigned version = 0;
-		do
-		{
-			version = m_version.load(std::memory_order_acquire);
-			if ((version & 1u) == 0u) { copy = m_map; }  // odd: a write is in progress
-			// The copy's reads complete before the version is read again.
-			std::atomic_thread_fence(std::memory_order_acquire);
-		}
-		// An odd version retries too: `continue` used to reach this test with the
-		// version unchanged and return the default, empty map mid-edit.
-		while ((version & 1u) != 0u || m_version.load(std::memory_order_relaxed) != version);
+		m_snapshotReaders.fetch_add(1, std::memory_order_seq_cst);
+		const unsigned published = m_publishedSnapshot.load(std::memory_order_seq_cst);
+		TempoMap copy = m_snapshots[published];
+		m_snapshotReaders.fetch_sub(1, std::memory_order_seq_cst);
 		return copy;
 	}
 
@@ -387,7 +378,9 @@ private:
 	}
 
 	TempoMap m_map{};
-	std::atomic<unsigned> m_version{0};
+	std::array<TempoMap, 2> m_snapshots{};
+	mutable std::atomic<unsigned> m_snapshotReaders{0};
+	std::atomic<unsigned> m_publishedSnapshot{0};
 	std::array<TempoMap, 2> m_rtSlots{};
 	mutable std::array<std::atomic<int>, 2> m_rtReaders{};
 	std::atomic<int> m_rtLive{0};
