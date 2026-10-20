@@ -36,6 +36,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -43,6 +44,7 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "AllocationProbe.h"
+#include "AutomatableModel.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -68,44 +70,33 @@ using namespace revtest;
 namespace
 {
 
-constexpr int kFadeTestRate = 44100;
-
-QString writeConstantWav(const QString& path)
+//! Appends \a value to \a bytes as a little-endian integer of \a size bytes.
+void appendLittleEndian(QByteArray& bytes, quint32 value, int size)
 {
-	const auto frames = kFadeTestRate * 2;
+	for (int i = 0; i < size; ++i) { bytes.append(static_cast<char>((value >> (8 * i)) & 0xff)); }
+}
+
+//! A constant-amplitude 16-bit mono WAV: the SlicerT fade is then the only thing that changes the
+//! level, so the envelope can be read straight off the rendered frames.
+QString writeConstantWav(const QString& path, int rate, int frames)
+{
 	QByteArray pcm;
 	pcm.reserve(frames * 2);
-	for (int i = 0; i < frames; ++i)
-	{
-		const auto value = static_cast<qint16>(16000);
-		pcm.append(static_cast<char>(value & 0xff));
-		pcm.append(static_cast<char>((value >> 8) & 0xff));
-	}
+	for (int i = 0; i < frames; ++i) { appendLittleEndian(pcm, 16000, 2); }
 
 	QByteArray out;
-	const auto put32 = [&out](quint32 v) {
-		out.append(static_cast<char>(v & 0xff));
-		out.append(static_cast<char>((v >> 8) & 0xff));
-		out.append(static_cast<char>((v >> 16) & 0xff));
-		out.append(static_cast<char>((v >> 24) & 0xff));
-	};
-	const auto put16 = [&out](quint16 v) {
-		out.append(static_cast<char>(v & 0xff));
-		out.append(static_cast<char>((v >> 8) & 0xff));
-	};
-
 	out.append("RIFF");
-	put32(36 + pcm.size());
+	appendLittleEndian(out, 36 + pcm.size(), 4);
 	out.append("WAVEfmt ");
-	put32(16);
-	put16(1);
-	put16(1);
-	put32(kFadeTestRate);
-	put32(kFadeTestRate * 2);
-	put16(2);
-	put16(16);
+	appendLittleEndian(out, 16, 4);
+	appendLittleEndian(out, 1, 2);
+	appendLittleEndian(out, 1, 2);
+	appendLittleEndian(out, rate, 4);
+	appendLittleEndian(out, rate * 2, 4);
+	appendLittleEndian(out, 2, 2);   // block align
+	appendLittleEndian(out, 16, 2);  // bits per sample
 	out.append("data");
-	put32(pcm.size());
+	appendLittleEndian(out, pcm.size(), 4);
 	out.append(pcm);
 
 	QFile file(path);
@@ -115,15 +106,47 @@ QString writeConstantWav(const QString& path)
 	return path;
 }
 
+//! The loudest level over \a count frames from \a from: the slice's own level over a stretch.
+float peakLevel(const std::vector<SampleFrame>& frames, int from, int count)
+{
+	float peak = 0.0f;
+	for (int i = std::max(from, 0); i < from + count && i < static_cast<int>(frames.size()); ++i)
+	{
+		peak = std::max(peak, std::fabs(frames[i][0]));
+	}
+	return peak;
+}
+
+//! The first frame at or after \a whose level passes \a threshold (over it when \a above is set).
+int firstFrame(const std::vector<SampleFrame>& frames, int from, float threshold, bool above)
+{
+	for (int i = std::max(from, 0); i < static_cast<int>(frames.size()); ++i)
+	{
+		const float level = std::fabs(frames[i][0]);
+		if (above ? level > threshold : level < threshold) { return i; }
+	}
+	return -1;
+}
+
+//! The last frame whose level is over \a threshold, or -1.
+int lastFrameAbove(const std::vector<SampleFrame>& frames, float threshold)
+{
+	for (int i = static_cast<int>(frames.size()) - 1; i >= 0; --i)
+	{
+		if (std::fabs(frames[i][0]) > threshold) { return i; }
+	}
+	return -1;
+}
+
 //! One real render period, driven by the test (the device is stopped).
 void renderPeriod()
 {
 	static_cast<void>(Engine::audioEngine()->renderNextPeriod());
 }
 
-QString prepareSlicerTrack(QTemporaryDir& scratch, InstrumentTrack** track)
+//! A SlicerT instrument on a fresh instrument track, playing \a wav.
+QString prepareSlicerTrack(const QString& wav, InstrumentTrack** track)
 {
-	const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("slicer-pool.wav")), 440.0);
 	if (wav.isEmpty()) { return QStringLiteral("could not write the SlicerT fixture"); }
 	Engine::getSong()->clearProject();
 	const QString id = addTrack(QStringLiteral("instrument"));
@@ -312,7 +335,8 @@ private slots:
 		QTemporaryDir scratch;
 		QVERIFY(scratch.isValid());
 		InstrumentTrack* track = nullptr;
-		const QString error = prepareSlicerTrack(scratch, &track);
+		const QString error = prepareSlicerTrack(
+			taketest::writeToneWav(scratch.filePath(QStringLiteral("slicer-pool.wav")), 440.0), &track);
 		QVERIFY2(error.isEmpty(), qPrintable(error));
 		AudioEngine* const audio = Engine::audioEngine();
 		audio->setOverloadSheddingEnabled(false);
@@ -340,75 +364,97 @@ private slots:
 		}
 	}
 
-	//! Regression: SlicerT fade envelope stays in the last fadeOutFrames output frames when speed changes.
-	//! At speed 2 (pitch -12 st), the corrected formula keeps the fade in the output tail; the reversed
-	//! (divide) formula would start it roughly four times earlier.
-	void fadeEnvelopeStaysInOutputTailWhenSpeedChanges()
+	//! Cluster new-p12-251: the SlicerT fade is timed in OUTPUT frames. The remaining output frames of
+	//! the slice are the remaining SOURCE frames times the speed ratio - the ratio is output/input
+	//! (include/AudioResampler.h:97-116) - so the fade belongs in the last fadeOutFrames output frames.
+	//! This plays a slice at speed 2 (BPM sync on, the original BPM twice the song tempo) and reads
+	//! the envelope off the rendered frames: the divide formula the finding proposes would silence the
+	//! slice a quarter of the way before its end.
+	void fadeEnvelopeIsTimedInOutputFrames()
 	{
-		QTemporaryDir scratch;
-		QVERIFY(scratch.isValid());
-		const QString wav = writeConstantWav(scratch.filePath(QStringLiteral("constant.wav")));
-		QVERIFY(!wav.isEmpty());
-
-		Engine::getSong()->clearProject();
-		const QString id = addTrack(QStringLiteral("instrument"));
-		QVERIFY(!id.isEmpty());
-		ControlResult failure;
-		auto* track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &failure));
-		QVERIFY(track != nullptr);
-		InstrumentLoaderThread loader(nullptr, track, QStringLiteral("slicert"));
-		loader.start();
-		QVERIFY(loader.wait());
-		QCoreApplication::processEvents();
-		Instrument* const slicer = track->instrument();
-		QVERIFY(slicer != nullptr);
-		QVERIFY(QMetaObject::invokeMethod(slicer, "updateFile", Qt::DirectConnection, Q_ARG(QString, wav)));
-
 		AudioEngine* const audio = Engine::audioEngine();
 		audio->setOverloadSheddingEnabled(false);
-		track->pitchModel()->setValue(-1200.0f);   // pitchRatio = 2  (speedRatio = 2)
+		const int rate = static_cast<int>(audio->outputSampleRate());
+		QVERIFY(rate > 0);
+		const int sourceFrames = rate / 2;            // half a second of source
+		const int expectedOutput = sourceFrames * 2;  // the slice plays at speed 2
+		const int fadeOutFrames = rate / 10;          // the 100 ms fade the test asks for
+
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = writeConstantWav(scratch.filePath(QStringLiteral("constant.wav")), rate, sourceFrames);
+		QVERIFY(!wav.isEmpty());
+
+		InstrumentTrack* track = nullptr;
+		const QString error = prepareSlicerTrack(wav, &track);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		Instrument* const slicer = track->instrument();
+		QVERIFY(slicer != nullptr);
+
+		// The SlicerT's parameters, in the plugin's own declaration order (plugins/SlicerT/SlicerT.h:83-87).
+		// The type and the range are checked, so a reordered plugin fails the test loudly.
+		auto* const fadeOut = dynamic_cast<FloatModel*>(slicer->parameterModel(1));
+		auto* const originalBpm = dynamic_cast<IntModel*>(slicer->parameterModel(2));
+		auto* const bpmSync = dynamic_cast<BoolModel*>(slicer->parameterModel(4));
+		QVERIFY(fadeOut != nullptr && fadeOut->maxValue() == 100.0f);
+		QVERIFY(originalBpm != nullptr && originalBpm->maxValue() == 999);
+		QVERIFY(bpmSync != nullptr);
+
+		// BPM sync on, and the sample's own tempo twice the song's: the slice plays at speed 2.
+		const int tempo = Engine::getSong()->getTempo();
+		QVERIFY(tempo > 0 && tempo * 2 <= 999);
+		bpmSync->setValue(1.0f);
+		originalBpm->setValue(static_cast<float>(tempo * 2));
+		fadeOut->setValue(100.0f);
+
 		const Note note(TimePos(1), TimePos(0), track->baseNote());
 		auto* const handle = NotePlayHandleManager::acquire(track, 0,
-			audio->framesPerPeriod() * 2000, note);
+			expectedOutput + audio->framesPerPeriod() * 4, note);
 		QVERIFY(audio->addPlayHandle(handle));
 
-		std::vector<SampleFrame> all;
-		for (int i = 0; i < 2000; ++i)
+		std::vector<SampleFrame> rendered;
+		const int periods = (expectedOutput + audio->framesPerPeriod() * 8) / audio->framesPerPeriod() + 4;
+		for (int i = 0; i < periods; ++i)
 		{
 			const auto period = audio->renderNextPeriod();
-			all.insert(all.end(), period.begin(), period.end());
+			rendered.insert(rendered.end(), period.begin(), period.end());
 		}
 
-		int lastActive = static_cast<int>(all.size()) - 1;
-		while (lastActive >= 0 && std::fabs(all[lastActive][0]) <= 1e-4f) { --lastActive; }
-		QVERIFY(lastActive > 4000);
+		const float peak = peakLevel(rendered, 0, static_cast<int>(rendered.size()));
+		QVERIFY(peak > 1e-3f);
+		// Where the slice starts, and the level of the constant signal itself: a quarter of the way
+		// in, past the resampler's step transient at the start.
+		const int origin = firstFrame(rendered, 0, 0.02f * peak, true);
+		QVERIFY(origin >= 0);
+		const float steady = peakLevel(rendered, origin + expectedOutput / 4, 64);
+		QVERIFY(steady > 1e-3f);
 
-		const int fadeOutFrames = std::max(1, static_cast<int>(10.0f / 1000.0f
-			* audio->outputSampleRate()));
+		// The end of the slice's sound (the last frame above a fifth of the level) and the fade's
+		// midpoint (the first frame below half of it).
+		const int lastAudible = lastFrameAbove(rendered, 0.2f * steady);
+		const int fadeMid = firstFrame(rendered, origin + expectedOutput / 2, 0.5f * steady, false);
+		QVERIFY(lastAudible > origin && fadeMid > origin);
 
-		const int refIndex = lastActive - fadeOutFrames * 4;
-		QVERIFY(refIndex >= 0);
-		const float refAmp = std::fabs(all[refIndex][0]);
-		QVERIFY(refAmp > 1e-3f);
+		// The slice plays at speed 2: it sounds for twice the source length. At speed 1 it would be
+		// half of that, and the divide formula would cut it down to a quarter.
+		const int audible = lastAudible - origin;
+		QVERIFY2(audible > expectedOutput * 9 / 10 && audible <= expectedOutput,
+			qPrintable(QStringLiteral("the slice sounded for %1 output frames, expected about %2")
+				.arg(audible).arg(expectedOutput)));
 
-		// Two fade windows before the tail: still full amplitude under the correct formula.
-		const int farIndex = lastActive - fadeOutFrames * 2;
-		QVERIFY(farIndex >= 0);
-		const float farRatio = std::fabs(all[farIndex][0]) / refAmp;
-		QVERIFY2(farRatio > 0.95f,
-			qPrintable(QStringLiteral("fade started too early: farRatio=%1").arg(farRatio)));
+		// The fade sits in the last fadeOutFrames output frames: its midpoint - the half-level
+		// crossing of the cosine ramp - is half a fade window before the end of the slice. The
+		// window allows the sample staging's own granularity (the fade value is computed from the
+		// staged source position, include/Sample.h:72), which is half a fade window at most.
+		const int expectedMid = origin + expectedOutput - fadeOutFrames / 2;
+		QVERIFY2(std::abs(fadeMid - expectedMid) < fadeOutFrames / 5,
+			qPrintable(QStringLiteral("the fade midpoint is at %1, expected about %2")
+				.arg(fadeMid).arg(expectedMid)));
 
-		// Inside the fade window: attenuated.
-		const int nearIndex = lastActive - 220;
-		QVERIFY(nearIndex >= 0);
-		const float nearRatio = std::fabs(all[nearIndex][0]) / refAmp;
-		QVERIFY2(nearRatio < 0.99f && nearRatio > 0.0f,
-			qPrintable(QStringLiteral("fade not applied in tail: nearRatio=%1").arg(nearRatio)));
-
-		// Tail: essentially silent.
-		const float tailRatio = std::fabs(all[lastActive][0]) / refAmp;
-		QVERIFY2(tailRatio < 0.1f,
-			qPrintable(QStringLiteral("tail not faded: tailRatio=%1").arg(tailRatio)));
+		// Before the fade the slice is still at its own level.
+		const int beforeFade = origin + expectedOutput * 85 / 100;
+		QVERIFY(beforeFade < static_cast<int>(rendered.size()));
+		QVERIFY2(std::fabs(rendered[beforeFade][0]) > 0.9f * steady, "the slice was attenuated before the fade");
 	}
 
 	//! Cluster 4467 round 2: removing a track with a live SlicerT state destroys the note before the instrument.
@@ -417,7 +463,8 @@ private slots:
 		QTemporaryDir scratch;
 		QVERIFY(scratch.isValid());
 		InstrumentTrack* track = nullptr;
-		const QString error = prepareSlicerTrack(scratch, &track);
+		const QString error = prepareSlicerTrack(
+			taketest::writeToneWav(scratch.filePath(QStringLiteral("slicer-pool.wav")), 440.0), &track);
 		QVERIFY2(error.isEmpty(), qPrintable(error));
 		AudioEngine* const audio = Engine::audioEngine();
 		const Note note(TimePos(1000000), TimePos(0), track->baseNote());
