@@ -142,3 +142,31 @@ cells the fix is meant to paint.
 - `tests/src/gui/NoteEditorTest.cpp`
 - `tests/fork-sources.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-303-port.md`
+
+
+## Round 3 verification (r3 logs)
+
+Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-303-port.r3/logs`.
+
+| Step | Command | Exit |
+|---|---|---:|
+| Build with fix present | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p9-303r3 cmake --build build --target zene NoteEditorTest -j8 > LOGS/build-1-green.log 2>&1; echo EXIT=$?` | 0 |
+| GREEN | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-1-green.log 2>&1; echo EXIT=$?` (from `build/tests`) | 0 |
+| Save product patch | `git diff b02a0ff2b HEAD -- src/gui/noteeditor/NoteCanvasGestures.cpp src/gui/noteeditor/NoteCanvasInput.cpp include/NoteCanvas.h > LOGS/fix.patch` | 0 |
+| Reverse product patch | `git apply -R LOGS/fix.patch; echo EXIT=$?` | 0 |
+| Build without product change | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p9-303r3 cmake --build build --target zene NoteEditorTest -j8 > LOGS/build-2-reverted.log 2>&1; echo EXIT=$?` | 0 |
+| RED without product change | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-2-reverted-red.log 2>&1; echo EXIT=$?` (from `build/tests`) | 8 (34 passed, 2 failed: narrow-zoom at 312, diagonal at 312/key 66) |
+| Re-apply product patch | `git apply LOGS/fix.patch; echo EXIT=$?` | 0 |
+| Build with change again | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p9-303r3 cmake --build build --target zene NoteEditorTest -j8 > LOGS/build-3-reapplied.log 2>&1; echo EXIT=$?` | 0 |
+| GREEN after re-apply | `ctest -R '^NoteEditorTest$' --output-on-failure > LOGS/test-3-reapplied-green.log 2>&1; echo EXIT=$?` (from `build/tests`) | 0 |
+| Family run | `ctest -R "NoteEditor" --output-on-failure > LOGS/test-4-family.log 2>&1; echo EXIT=$?` (from `build/tests`) | 0 (3 tests passed) |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (PASS) |
+| Whitespace | `git diff --check` | 0 |
+
+## Self-check
+
+- The regression test FAILS with the product change reverted and PASSES with it: `test-2-reverted-red.log` exit 8 (34 passed, 2 failed: `aSparsePaintStrokeAtNarrowZoomPaintsEveryCellThroughTheRelease` at tick 312 and `aSparseDiagonalPaintStrokePaintsEveryCellThePathCrosses` at 312/key 66); `test-3-reapplied-green.log` exit 0 (all pass). Verified by reversing and re-applying `fix.patch` (exits 0 both ways).
+- The test is deterministic: it uses `QTest::mousePress/mouseMove/mouseRelease` with fixed coordinates from `point(tick,key)` (tick->pixel via `grid.xOfTick`, key->pixel via `grid.yOfKey`) and fixed zoom (`setZoom(0.02)` in the narrow case); no sleeps, timers, or wall-clock waits.
+- The fix is at the cause and complete: `paintAlong` now walks the continuous 2-D path over grid boundaries (ticks and row heights) via `boundaryParam`, painting every entered cell; `mouseReleaseEvent` now calls `paintAlong(from, m_currentPos)` so the final segment is covered. Checked siblings: `strokeAlong` (mute/erase) unchanged and still marks notes by rectangle; `extendPaint`/`appendPaintCell` dedupe unchanged; `pressPaint` still seeds the press cell; no header signature change beyond a comment.
+- No collateral damage: no saved-data or project-loading code touched; dedupe is per `(key,start)` so existing single-cell clicks and vertical strokes keep one note per cell; the new release call only runs when `m_drag == Drag::Paint`, so Draw/Mute/Erase/Select behaviour is unchanged.
+- Verdict is FIXED (not already-fixed/false-positive); evidence is the RED/GREEN runs above.
