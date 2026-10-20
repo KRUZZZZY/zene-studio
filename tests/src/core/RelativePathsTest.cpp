@@ -66,6 +66,27 @@ private slots:
 		QCOMPARE(PathUtil::toShortestRelative(""), empty);
 	}
 
+	//! A relative path that names no file in any of the special bases still has
+	//! to come back absolute: that is toAbsolute()'s contract. It used to hand
+	//! the relative path back unchanged, so the file was opened against the
+	//! process working directory - which is not where the reference pointed.
+	void UnmatchedRelativePathsBecomeAbsolute()
+	{
+		using namespace lmms::PathUtil;
+
+		const QString relativePath = QStringLiteral("__zene_relativepaths_unmatched_recording_347.wav");
+		for (const Base base : { Base::UserSample, Base::FactorySample, Base::UserVST })
+		{
+			QVERIFY(!QFileInfo(baseLocation(base) + relativePath).exists());
+		}
+
+		bool error = true;
+		const QString absolute = toAbsolute(relativePath, &error);
+		QVERIFY(QFileInfo(absolute).isAbsolute());
+		QCOMPARE(absolute, QFileInfo(relativePath).absoluteFilePath());
+		QVERIFY(!error);
+	}
+
 	void pathsStartingWithTwoDotsStayRelative()
 	{
 		using namespace lmms;
