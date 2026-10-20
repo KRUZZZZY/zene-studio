@@ -96,9 +96,9 @@ Fix:
 
 - `plugins/Vst3Effect/Vst3HostInternals.h:101` adds a pre-allocated `EventList deferredEvents`
   (sized once with the other host event lists; no audio-thread allocation).
-- `plugins/Vst3Effect/Vst3Host.cpp:774-776` puts a boundary event into `deferredEvents` at offset
-  0 instead of into the current chunk at the chunk's end; `:687-696` inserts those carried events
-  at the start of the next request's `inputEvents` before draining newly queued MIDI, so they are
+- `plugins/Vst3Effect/Vst3Host.cpp:779-782` puts a boundary event into `deferredEvents` at offset
+  0 instead of into the current chunk at the chunk's end; `:687` and `:712-724` insert those
+  carried events at the start of the next request's `inputEvents` before draining new MIDI, so they are
   seen exactly once, at a valid offset 0, and a boundary note-off still releases its note.
 - `plugins/Vst3Effect/Vst3Host.cpp:616` clears the carry in `release()` so no stale event survives
   a re-prepare or project reload.
@@ -111,7 +111,7 @@ Fix:
 
 Regression: `tests/src/plugins/Vst3InstrumentTest.cpp:423`
 `testBoundaryMidiEventsAreCarriedIntoTheNextBlock()` uses the host's test-only chunk witness
-(`plugins/Vst3Effect/Vst3Host.cpp:856-863`, declared under `LMMS_TESTING` in `Vst3Host.h`) to
+(`plugins/Vst3Effect/Vst3Host.cpp:862-869`, declared under `LMMS_TESTING` in `Vst3Host.h`) to
 assert the event list the plug-in actually received: a note-on at `frameOffset == 512` is absent
 from the 512-frame request (count 0) and appears in the next request with `sampleOffset == 0`; the
 same for a note-off at the boundary, which leaves the note held for the whole request that ends
@@ -175,7 +175,7 @@ synchronized copy of the same commit (`/tmp/zene-qwen-5459-check`, source-only c
 submodule gitfiles removed) with the same branch/HEAD:
 
 ```
-GIT_OPTIONAL_LOCKS=0 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /tmp/zene-qwen-5459-check > /tmp/5459-logs/gate-copy-1.log 2>&1   # EXIT=0
+GIT_OPTIONAL_LOCKS=0 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /tmp/zene-qwen-5459-check > /tmp/5459-logs/gate-refactor.log 2>&1   # EXIT=0
 ```
 
 All eight rows passed: fork-sources, all-sources-reproduce, no-upstream-regression,
@@ -191,6 +191,9 @@ fails before any gate with `PermissionError` creating
   `plugins/Vst3Effect/Vst3Host.cpp`, `Vst3Host.h`, `Vst3HostInternals.h`,
   `Vst3MidiEvent.cpp`, `Vst3MidiEvent.h`, `tests/CMakeLists.txt`,
   `tests/src/plugins/Vst3InstrumentTest.cpp`.
+- `98d56c9f1` — `refactor(vst3): keep the boundary carry out of process()'s complexity
+  (cluster 5460)`: `Vst3Host.cpp`, `Vst3HostInternals.h` move the carry insertion into
+  `Impl::prependDeferredEvents()`, so `process()` stays within the complexity target.
 - This report, committed with the batch.
 
 ## Self-check
