@@ -597,6 +597,22 @@ subprocess.Popen(
 		QCOMPARE(song->tracks().size(), trackCount);
 	}
 
+	/* Bug (cluster new-p17-176): the dialog said "Downloading the stem model"
+	 *  while the first job fetched the model, and nothing restored the label
+	 *  when fetching ended, so the separation ran under the download text. The
+	 *  label must follow the phase on every poll, in both directions. */
+	void dialogLabelFollowsJobPhase()
+	{
+		QProgressDialog dialog;
+		gui::StemSplitController::applyPhaseLabel(&dialog, true);
+		QVERIFY(dialog.labelText().contains(QStringLiteral("Downloading the stem model")));
+
+		gui::StemSplitController::applyPhaseLabel(&dialog, false);
+		QVERIFY2(!dialog.labelText().contains(QStringLiteral("Downloading")),
+			qPrintable(dialog.labelText()));
+		QVERIFY(dialog.labelText().contains(QStringLiteral("Separating stems")));
+	}
+
 	void testStemTrackBuilderRejectsAnIncompleteSet()
 	{
 		auto* song = Engine::getSong();

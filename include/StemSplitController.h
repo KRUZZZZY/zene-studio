@@ -78,6 +78,11 @@ public:
 	// Asynchronous entry point of the clip context-menu action.
 	void splitClipToStems(SampleClip* clip);
 
+	// Sets the dialog's label for the job phase: the model download while the
+	// worker fetches it, the separation otherwise. pollJob calls it on every
+	// poll; public so the pipeline test can drive it without a timer.
+	static void applyPhaseLabel(QProgressDialog* dialog, bool fetchingModel);
+
 private slots:
 	void pollJob();
 

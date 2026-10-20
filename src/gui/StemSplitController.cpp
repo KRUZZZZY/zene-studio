@@ -290,6 +290,21 @@ bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& 
 
 
 
+void StemSplitController::applyPhaseLabel(QProgressDialog* dialog, bool fetchingModel)
+{
+	if (fetchingModel)
+	{
+		dialog->setLabelText(tr("Downloading the stem model, then separating (offline job)..."));
+	}
+	else
+	{
+		dialog->setLabelText(tr("Separating stems (offline job)..."));
+	}
+}
+
+
+
+
 void StemSplitController::pollJob()
 {
 	if (m_jobId < 0)
@@ -314,10 +329,7 @@ void StemSplitController::pollJob()
 	if (m_dialog != nullptr)
 	{
 		m_dialog->setValue(qRound(job.value(QStringLiteral("progress")).toDouble(0.0) * 100.0));
-		if (job.value(QStringLiteral("fetching_model")).toBool(false))
-		{
-			m_dialog->setLabelText(tr("Downloading the stem model, then separating (offline job)..."));
-		}
+		applyPhaseLabel(m_dialog, job.value(QStringLiteral("fetching_model")).toBool(false));
 	}
 	const QString state = job.value(QStringLiteral("state")).toString();
 	if (state == QLatin1String("completed")) { completeJob(job); }
