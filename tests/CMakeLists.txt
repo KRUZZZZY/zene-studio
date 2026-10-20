@@ -2926,6 +2926,41 @@ target_compile_definitions(DelayLfoAutomationTest PRIVATE
 )
 add_dependencies(DelayLfoAutomationTest delay)
 
+# Regression test for cluster new-p9-332 (the Organic plugin's oscillator
+# parameters were written by the control thread while the audio thread read
+# them). The Organic plugin sources are compiled into the test binary - the
+# ExprSynth pattern - so the control-thread publish and the audio-thread
+# adoption run in-process without loading a plugin module, and the fix is
+# what the assertions measure. The header is listed so AUTOMOC emits its
+# metaobject.
+add_executable(OrganicParamRaceTest
+	src/plugins/OrganicParamRaceTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Organic/Organic.h
+)
+add_test(NAME OrganicParamRaceTest COMMAND OrganicParamRaceTest)
+# Engine construction needs a Qt platform plugin on a headless machine.
+set_tests_properties(OrganicParamRaceTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(OrganicParamRaceTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Organic
+	${CMAKE_BINARY_DIR}/plugins/Organic
+)
+target_static_libraries(OrganicParamRaceTest PRIVATE lmmsobjs)
+target_link_libraries(OrganicParamRaceTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(OrganicParamRaceTest PRIVATE cxx_std_20)
+target_compile_definitions(OrganicParamRaceTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=organic
+	# Compile-in, not a module: keep the generated export macros empty so the
+	# sources link into the test binary on every platform.
+	PLUGIN_STATIC_DEFINE
+)
+add_dependencies(OrganicParamRaceTest organic)
+
 if(WANT_WASM)
 	# Gate tests for the WASM DSP sandbox. Kept out of LMMS_TESTS so the
 	# pre-existing suite is byte-for-byte unchanged when WANT_WASM=OFF.

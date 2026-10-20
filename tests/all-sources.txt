@@ -2929,6 +2929,7 @@ tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
 tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
+tests/src/plugins/OrganicParamRaceTest.cpp
 tests/src/plugins/PartialInitFailureLadspa.cpp
 tests/src/plugins/PatmanLoadTest.cpp
 tests/src/plugins/PluginPortsHarness.h
