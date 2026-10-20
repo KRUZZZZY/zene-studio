@@ -1,7 +1,7 @@
 ALREADY-FIXED
 
 3506: ALREADY-FIXED
-Evidence: `src/tracks/SampleTrack.cpp:163-169` already stores the per-pass schedule in a fixed `std::array` of 64 clips; excess starts are deferred. The added `RecordingRealtimeTest::mutedSampleClipSchedulingDoesNotAllocate` measures the pass while a muted active clip avoids handle allocation. A vector-backed mutation fails with one observed allocation; the branch's array passes with zero.
+Evidence: `src/tracks/SampleTrack.cpp:175-181` already stores the per-pass schedule in a fixed `std::array` of 64 clips; excess starts are deferred. The added `RecordingRealtimeTest::mutedSampleClipSchedulingDoesNotAllocate` measures the pass while a muted active clip avoids handle allocation. A vector-backed mutation fails with one observed allocation; the branch's array passes with zero.
 
 Commands and proof:
 - `cmake --build build --target RecordingRealtimeTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3506.r1/logs/build-001-vector-red.log 2>&1` (temporary vector-backed storage) — EXIT 0.
