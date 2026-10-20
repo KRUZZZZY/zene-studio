@@ -1287,6 +1287,13 @@ if(LMMS_HAVE_SNDIO)
 	list(APPEND LMMS_TESTS src/core/MidiSndioTest.cpp)
 endif()
 
+# The crash reporter's `offered` sentinel through the CONTROL COMMAND: a
+# directory where the sentinel belongs must not pass for an acknowledgement
+# (cluster new-p11-19-port). Its own file, and appended LAST, so the case is
+# a ctest of its own: the negative control that reverts the product change
+# and re-runs the branch's tests finds it by name and rebuilds its binary.
+LIST(APPEND LMMS_TESTS src/core/ControlCrashAcknowledgeTest.cpp)
+
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
 # CMakeLists.txt). Applied to the unit-test executables only; the Part C
 # reference/migration targets below keep the plain debug build so behaviour

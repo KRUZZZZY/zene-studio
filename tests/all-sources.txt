@@ -2492,6 +2492,7 @@ tests/src/core/ControlBrowserCommandsTest.cpp
 tests/src/core/ControlChainPresetTest.cpp
 tests/src/core/ControlChordCommandsTest.cpp
 tests/src/core/ControlChordWriteTest.cpp
+tests/src/core/ControlCrashAcknowledgeTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp
