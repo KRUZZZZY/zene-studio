@@ -2961,6 +2961,40 @@ target_compile_definitions(OrganicParamRaceTest PRIVATE
 )
 add_dependencies(OrganicParamRaceTest organic)
 
+# Regression test for cluster new-p16-152 (the Organic plugin dereferenced a
+# null oscillator chain when its oscillator count was zero). The Organic
+# plugin sources are compiled into the test binary - the ExprSynth pattern -
+# so the zero-oscillator state runs in-process without loading a plugin
+# module, and the fix is what the assertions measure. The header is listed so
+# AUTOMOC emits its metaobject.
+add_executable(OrganicZeroOscTest
+	src/plugins/OrganicZeroOscTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Organic/Organic.h
+)
+add_test(NAME OrganicZeroOscTest COMMAND OrganicZeroOscTest)
+# Engine construction needs a Qt platform plugin on a headless machine.
+set_tests_properties(OrganicZeroOscTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(OrganicZeroOscTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Organic
+	${CMAKE_BINARY_DIR}/plugins/Organic
+)
+target_static_libraries(OrganicZeroOscTest PRIVATE lmmsobjs)
+target_link_libraries(OrganicZeroOscTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(OrganicZeroOscTest PRIVATE cxx_std_20)
+target_compile_definitions(OrganicZeroOscTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=organic
+	# Compile-in, not a module: keep the generated export macros empty so the
+	# sources link into the test binary on every platform.
+	PLUGIN_STATIC_DEFINE
+)
+add_dependencies(OrganicZeroOscTest organic)
+
 if(WANT_WASM)
 	# Gate tests for the WASM DSP sandbox. Kept out of LMMS_TESTS so the
 	# pre-existing suite is byte-for-byte unchanged when WANT_WASM=OFF.

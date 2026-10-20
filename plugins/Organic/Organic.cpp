@@ -293,8 +293,17 @@ void OrganicInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> 
 	}
 
 	auto osc = static_cast<oscPtr*>(_n->m_pluginData);
-	osc->oscLeft->update(out.data() + offset, frames, 0);
-	osc->oscRight->update(out.data() + offset, frames, 1);
+	if (osc->oscLeft != nullptr && osc->oscRight != nullptr)
+	{
+		osc->oscLeft->update(out.data() + offset, frames, 0);
+		osc->oscRight->update(out.data() + offset, frames, 1);
+	}
+	else if (frames > 0)
+	{
+		// No oscillator was built - the oscillator count is zero. The note is
+		// silent, it does not dereference the null chain head.
+		zeroSampleFrames(out.data() + offset, frames);
+	}
 
 	// -- fx section --
 

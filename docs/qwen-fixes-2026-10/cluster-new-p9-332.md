@@ -1,6 +1,7 @@
 Verdict: **FIXED**
 
 new-p9-332: FIXED
+new-p16-152: FIXED
 
 # Cluster new-p9-332
 
@@ -84,6 +85,80 @@ All build and test logs are in
 | Plugin render comparison (the family that renders the Organic plugin against the frozen upstream copy) | `cmake --build build --target PluginPortsMigrationTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/build-8.log' 2>&1` then `ctest -R '^PluginPortsMigrationTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/test-8.log' 2>&1` | 0 / 0; CTest passed 1/1 (44 QtTest cases). The Organic slice-5 render is still sample-exact against `tests/reference/Organic`. |
 | LADSPA fixture needed by that family | `cmake --build build --target decimator_1202 > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/build-13.log' 2>&1` | 0; before this fixture was built the same family failed on `nonRealtimeLadspaEffectsAreInvalid` ("SWH Decimator test fixture was not loaded"), a missing build artefact unrelated to this change (`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/test-5.log`, exit 8). |
 
+## new-p16-152 - a null oscillator chain was dereferenced when the count was zero
+
+### Decision: the defect is real in the code, and it is fixed
+
+`OrganicInstrument::playNoteImpl()` builds the oscillator chain with a loop
+over `m_numOscillators` and then renders through the chain heads
+(`plugins/Organic/Organic.cpp:236-289` in the original file):
+
+```cpp
+for (int i = m_numOscillators - 1; i >= 0; --i) { ...build oscs_l[i], oscs_r[i]... }
+newOsc->oscLeft = oscs_l[0];
+newOsc->oscRight = oscs_r[0];
+...
+osc->oscLeft->update(out.data() + offset, frames, 0);
+osc->oscRight->update(out.data() + offset, frames, 1);
+```
+
+With a count of zero the loop never runs, `oscs_l[0]` and `oscs_r[0]` stay
+null and the render dereferences them - a null-pointer crash on the audio
+thread. The count is set once, to `NUM_OSCILLATORS` (8), in the constructor
+(`plugins/Organic/Organic.cpp:82`), and `loadSettings()` never reads the saved
+`num_osc` attribute, so **the state is not reachable from today's UI**; the
+defect is a latent one in the render path, and the fix removes it.
+
+### The fix
+
+`plugins/Organic/Organic.cpp:playNoteImpl()` now renders only when the chain
+head exists and otherwise writes silence into the note's frames:
+
+```cpp
+if (osc->oscLeft != nullptr && osc->oscRight != nullptr)
+{
+        osc->oscLeft->update(out.data() + offset, frames, 0);
+        osc->oscRight->update(out.data() + offset, frames, 1);
+}
+else if (frames > 0)
+{
+        zeroSampleFrames(out.data() + offset, frames);
+}
+```
+
+The siblings were checked: the note handle's plugin data is still created
+before the branch, so `OrganicInstrument::deleteNotePluginData()`
+(`plugins/Organic/Organic.cpp:311`) keeps working unchanged (`delete nullptr`
+is a no-op); the fx section that follows multiplies the silent frames and
+keeps them silent; `saveSettings()`, `loadSettings()`,
+`randomiseSettings()`, `updateAllDetuning()` and the knob setup all loop over
+`m_numOscillators` and are safe with a count of zero.
+
+### The regression test
+
+`tests/src/plugins/OrganicZeroOscTest.cpp` compiles the plugin sources into
+the test binary (the `ExprSynth` pattern), drives the count to zero and
+renders a note: on the original code the process dies with a SIGSEGV in the
+render, with the fix the note is silent. The test is deterministic - no
+threads, no sleeps, no wall-clock timing.
+
+## Evidence (new-p16-152)
+
+| Stage | Exact command | Exit / result |
+|---|---|---|
+| Original-code RED build | `cmake --build build --target OrganicZeroOscTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/build-11.log' 2>&1` | 0 |
+| Original-code RED test | `ctest -R '^OrganicZeroOscTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/test-6.log' 2>&1` | 8; `OrganicZeroOscTest (SEGFAULT)` - the null oscillator chain head was dereferenced in the render. CTest ran 1/1 target. |
+| Fixed build | `cmake --build build --target OrganicZeroOscTest OrganicParamRaceTest organic zene > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/build-12.log' 2>&1` | 0 |
+| Fixed GREEN test | `ctest -R '^Organic' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/test-7.log' 2>&1` | 0; CTest passed 2/2 (`OrganicParamRaceTest`, `OrganicZeroOscTest`). |
+| Product patch for the proof | `git diff -- plugins/Organic/Organic.cpp > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/fix-p16-152.patch'` | 0 |
+| Revert the product patch | `git apply -R '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/fix-p16-152.patch'` | 0 |
+| Reverted-code rebuild | `cmake --build build --target OrganicZeroOscTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/build-16.log' 2>&1` | 0 |
+| Proof RED test | `ctest -R '^OrganicZeroOscTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/test-10.log' 2>&1` | 8; `OrganicZeroOscTest (SEGFAULT)` again - the same crash without the fix. |
+| Restore the product patch | `git apply '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/fix-p16-152.patch'` | 0 |
+| Restored-code rebuild | `cmake --build build --target OrganicZeroOscTest OrganicParamRaceTest organic zene > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/build-17.log' 2>&1` | 0 |
+| Proof GREEN test | `ctest -R '^Organic' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/test-11.log' 2>&1` | 0; CTest passed 2/2. |
+| Plugin render comparison (the family that renders the Organic plugin against the frozen upstream copy) | `cmake --build build --target PluginPortsMigrationTest > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/build-18.log' 2>&1` then `ctest -R '^PluginPortsMigrationTest$' --output-on-failure > '/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-332.r1/logs/test-12.log' 2>&1` | 0 / 0; CTest passed 1/1. The Organic render is still sample-exact against `tests/reference/Organic`. |
+
 ## Self-check
 
 * **The regression test FAILS with the product change reverted and PASSES with
@@ -124,6 +199,29 @@ All build and test logs are in
   asserted lock-free at compile time
   (`static_assert(std::atomic<float>::is_always_lock_free)`), so the render
   path can never fall back to a lock.
+* **new-p16-152 - the regression test FAILS with the product change reverted
+  and PASSES with it** - exit 8 with a SIGSEGV on the original code and on the
+  reverted code (`test-6.log`, `test-10.log`), exit 0 with the fix
+  (`test-7.log`, `test-11.log`).
+* **new-p16-152 - the fix is at the cause and complete** - the null chain head
+  is only read in `playNoteImpl()`; the guard is placed there, the sibling
+  that reads the same pointer (`deleteNotePluginData()`) is safe because the
+  note's plugin data is still created before the branch, and every other loop
+  over `m_numOscillators` is empty-safe.
+* **new-p16-152 - no collateral damage** - the guard is only reached when no
+  oscillator was built, which today never happens (the count is 8), so the
+  rendered output of every project is unchanged; the family that renders the
+  Organic plugin against the frozen upstream copy still passes sample-exactly
+  (`test-12.log`).
+
+## Files committed (commit 2 - new-p16-152)
+
+- `plugins/Organic/Organic.cpp` (the null-chain guard in `playNoteImpl()`)
+- `tests/src/plugins/OrganicZeroOscTest.cpp` (the regression test)
+- `tests/CMakeLists.txt` (the test target)
+- `tests/fork-sources.txt`, `tests/all-sources.txt` (the new test source is registered)
+- `tests/upstream-modifications.txt` (the inherited file and why it changed)
+- `docs/qwen-fixes-2026-10/cluster-new-p9-332.md` (this report)
 
 ## Files committed (commit 1 - new-p9-332)
 

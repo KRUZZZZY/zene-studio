@@ -2595,3 +2595,5 @@ docs/qwen-fixes-2026-10/cluster-new-p10-141.md
 tests/src/plugins/SlicerTZoomTest.cpp
 # cluster new-p9-332: the Organic plugin's oscillator parameters are published by the control thread and adopted by the audio thread (fork-NEW regression test).
 tests/src/plugins/OrganicParamRaceTest.cpp
+# cluster new-p16-152: a note without oscillators is silent instead of dereferencing the null oscillator chain (fork-NEW regression test).
+tests/src/plugins/OrganicZeroOscTest.cpp
