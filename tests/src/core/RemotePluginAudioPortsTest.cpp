@@ -191,6 +191,7 @@ import socket, struct, sys, time
 ID_QUIT = 3
 ID_START_PROCESSING = 9
 ID_PROCESSING_DONE = 10
+ID_DEBUG_MESSAGE = 25
 
 sock_path, log_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -237,6 +238,12 @@ while True:
         break
     if message_id == ID_START_PROCESSING and mode == "reply":
         client.sendall(struct.pack("<ii", ID_PROCESSING_DONE, 0))
+    if message_id == ID_START_PROCESSING and mode == "debugreply":
+        # A debug text (longer than the pending slot, so decoding it used to grow a string) and the
+        # reply in one write: the audio thread must read the reply that follows it.
+        text = b"debug-" + b"x" * 1000
+        client.sendall(struct.pack("<iii", ID_DEBUG_MESSAGE, 1, len(text)) + text
+                       + struct.pack("<ii", ID_PROCESSING_DONE, 0))
 )PY";
 
 	if (script.write(contents) != contents.size())
@@ -918,6 +925,49 @@ private slots:
 		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(2));
 
 		QCOMPARE(plugin.process(), true);
+	}
+
+	//! A client can send a debug text and then its IdProcessingDone during a period. The audio thread
+	//! reads both, but decoding the text must not allocate: the arguments are views into a preallocated
+	//! frame buffer. The peer writes both frames in one go, so the period really consumes the debug
+	//! message before its reply.
+	void debugMessageDuringPeriodDoesNotAllocate()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("debugreply")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(2));
+
+		// The first period may allocate for one-time setup; the measured one must not.
+		QCOMPARE(plugin.process(), true);
+
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		const bool processed = plugin.process();
+		const auto allocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+
+		QVERIFY2(processed, "the period did not consume the debug message and its reply");
+		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
 	//! Zero output channels: the ports model accepts channelsOut == 0, so the

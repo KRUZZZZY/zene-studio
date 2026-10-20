@@ -63,6 +63,15 @@ RemotePluginBase::RemotePluginBase() :
 	m_invalid(false)
 #endif
 {
+	// One whole frame, allocated once here (never on the audio thread), for the bounded receive that
+	// hands the audio thread argument views instead of building strings.
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+#ifdef SYNC_WITH_SHM_FIFO
+	m_frameScratch.resize(SHM_FIFO_SIZE);
+#else
+	m_frameScratch.resize(PeekWindowBytes);
+#endif
+#endif
 	// make sure, we're using common ways to print/scan
 	// floats to/from strings (',' vs. '.' for decimal point etc.)
 	setlocale(LC_NUMERIC, "C");
@@ -338,6 +347,36 @@ RemotePluginBase::message RemotePluginBase::receiveMessage()
 
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
+bool RemotePluginBase::parseBoundedFrame(const char * _frame, std::size_t _size, message & _out)
+{
+	// The frame was already checked whole by the peek/payload reader; validate it again while walking the
+	// length prefixes, so nothing is read past the buffer even if a length changed.
+	constexpr std::size_t headerBytes = 2 * sizeof(std::int32_t);
+	if (_size < headerBytes) { return false; }
+	std::int32_t id = 0;
+	std::int32_t count = 0;
+	std::memcpy(&id, _frame, sizeof id);
+	std::memcpy(&count, _frame + sizeof id, sizeof count);
+	if (count < 0) { return false; }
+	std::size_t offset = headerBytes;
+	for (std::int32_t i = 0; i < count; ++i)
+	{
+		std::int32_t length = 0;
+		if (_size - offset < sizeof length) { return false; }
+		std::memcpy(&length, _frame + offset, sizeof length);
+		offset += sizeof length;
+		if (length < 0 || static_cast<std::size_t>(length) > _size - offset) { return false; }
+		offset += static_cast<std::size_t>(length);
+	}
+	if (offset != _size) { return false; }
+	_out.id = id;
+	_out.m_bounded = true;
+	_out.m_boundedFrame = _frame;
+	_out.m_boundedSize = _size;
+	_out.m_boundedCount = static_cast<std::size_t>(count);
+	return true;
+}
+
 #ifndef SYNC_WITH_SHM_FIFO
 bool RemotePluginBase::readExactlyWithin(void * _buf, int _len, std::chrono::milliseconds _progress,
 	std::chrono::steady_clock::time_point _total)
@@ -409,6 +448,41 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveStartedFrame(std::chron
 	return ReceiveResult::Got;
 }
 
+RemotePluginBase::ReceiveResult RemotePluginBase::receiveBoundedSocketFrame(message & _out)
+{
+	constexpr std::size_t headerBytes = 2 * sizeof(std::int32_t);
+	const std::size_t frameBytes = m_peekedFrameBytes;
+	if (frameBytes < headerBytes || frameBytes > m_frameScratch.size())
+	{
+		invalidate();
+		return ReceiveResult::Lost;
+	}
+
+	pthread_mutex_lock(&m_receiveMutex);
+	std::size_t got = 0;
+	while (got < frameBytes)
+	{
+		const ssize_t n = ::read(m_socket, m_frameScratch.data() + got, frameBytes - got);
+		if (n > 0)
+		{
+			got += static_cast<std::size_t>(n);
+			continue;
+		}
+		if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) { continue; }
+		invalidate();
+		pthread_mutex_unlock(&m_receiveMutex);
+		return ReceiveResult::Lost;
+	}
+	const bool parsed = parseBoundedFrame(m_frameScratch.data(), frameBytes, _out);
+	pthread_mutex_unlock(&m_receiveMutex);
+	if (!parsed)
+	{
+		invalidate();
+		return ReceiveResult::Lost;
+	}
+	return _out.id == IdUndefined ? ReceiveResult::Lost : ReceiveResult::Got;
+}
+
 RemotePluginBase::ReceiveResult RemotePluginBase::receiveWithin(std::chrono::steady_clock::time_point _deadline,
 	std::chrono::milliseconds _progress, message & _out)
 {
@@ -468,11 +542,45 @@ RemotePluginBase::message RemotePluginBase::readFrameLocked()
 	}
 	return m;
 }
+
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+bool RemotePluginBase::readFrameLockedBounded(message & _out)
+{
+	constexpr std::size_t headerBytes = 2 * sizeof(std::int32_t);
+	constexpr std::size_t lengthBytes = sizeof(std::int32_t);
+	if (m_frameScratch.size() < headerBytes) { return false; }
+	m_in->readRaw(m_frameScratch.data(), static_cast<int>(headerBytes));
+	if (m_in->isInvalid()) { return false; }
+	std::int32_t count = 0;
+	std::memcpy(&count, m_frameScratch.data() + lengthBytes, sizeof count);
+	if (count < 0 || count > MaxRemoteMessageArguments) { return false; }
+	std::size_t offset = headerBytes;
+	for (std::int32_t i = 0; i < count; ++i)
+	{
+		if (m_frameScratch.size() - offset < lengthBytes) { return false; }
+		m_in->readRaw(m_frameScratch.data() + offset, static_cast<int>(lengthBytes));
+		if (m_in->isInvalid()) { return false; }
+		std::int32_t length = 0;
+		std::memcpy(&length, m_frameScratch.data() + offset, sizeof length);
+		offset += lengthBytes;
+		if (length < 0) { return false; }
+		const auto argSize = static_cast<std::size_t>(length);
+		if (argSize > m_frameScratch.size() - offset) { return false; }
+		if (argSize > 0)
+		{
+			m_in->readRaw(m_frameScratch.data() + offset, length);
+			if (m_in->isInvalid()) { return false; }
+		}
+		offset += argSize;
+	}
+	return parseBoundedFrame(m_frameScratch.data(), offset, _out);
+}
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
 #endif
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 RemotePluginBase::ReceiveResult RemotePluginBase::receiveFrameBefore(
-	std::chrono::steady_clock::time_point _deadline, message & _out )
+	std::chrono::steady_clock::time_point _deadline, message & _out, bool _bounded )
 {
 	const auto remainingMs = [_deadline]() -> int
 	{
@@ -490,7 +598,19 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveFrameBefore(
 		m_in->messageSent();
 		return isInvalid() ? ReceiveResult::Lost : ReceiveResult::Timeout;
 	}
-	_out = readFrameLocked();
+	if (_bounded)
+	{
+		if (!readFrameLockedBounded(_out))
+		{
+			m_in->unlock();
+			invalidate();
+			return ReceiveResult::Lost;
+		}
+	}
+	else
+	{
+		_out = readFrameLocked();
+	}
 	m_in->unlock();
 	return _out.id == IdUndefined ? ReceiveResult::Lost : ReceiveResult::Got;
 #else
@@ -517,6 +637,7 @@ RemotePluginBase::ReceiveResult RemotePluginBase::receiveFrameBefore(
 			continue;
 		case Framing::Complete:
 			// Every byte is already in the socket, so this read does not wait.
+			if (_bounded) { return receiveBoundedSocketFrame(_out); }
 			_out = receiveMessage();
 			return _out.id == IdUndefined ? ReceiveResult::Lost : ReceiveResult::Got;
 		}
