@@ -1,9 +1,11 @@
+ALREADY-FIXED
+
 # Cluster new-p9-479-port-port: a throwing thread-pool task
 
-**Verdict: ALREADY-FIXED** on the newest line (`050/m0-train-8`, base `2da2ed356`). The product change
-of the accepted fix is already present in `include/ThreadPool.h`; what the port adds is the missing
-regression proof (the accepted commit's test slot never reached this line, because the fix itself was
-never merged - the merge conflict the merge train reported was in exactly this header).
+The product change of the accepted fix is already present in `include/ThreadPool.h` on the newest line
+(`050/m0-train-8`, base `2da2ed356`); what the port adds is the missing regression proof (the accepted
+commit's test slot never reached this line, because the fix itself was never merged - the merge
+conflict the merge train reported was in exactly this header).
 
 ## The finding
 
@@ -76,17 +78,53 @@ No product file is touched: `git diff -- include/ThreadPool.h src/core/ThreadPoo
 
 ## The regression test is RED without the product change (proof)
 
-The product change already exists in the tree, so there is no hunk of mine to reverse. The equivalent
-reverse-apply proof is the **exact pre-fix product code** the accepted fix was written against, i.e.
-the parent of the accepted commit:
+The product change already exists in the tree, so there is no hunk of mine to reverse. The reverse-apply
+proof therefore removes the **exception-forwarding block** that the fix consists of - the `try/catch`
+around the task body at `include/ThreadPool.h:75-90` - and shows the new slot failing without it.
+
+### Proof A (canonical reverse-apply, header only)
+
+`include/ThreadPool.h` with the forwarding block removed (the `try/catch` around the task body, i.e.
+the product change reverted) was written into the tree, and the revert was recorded as a patch:
+
+- `git diff -- include/ThreadPool.h > .../logs/fix.patch` (31 lines: `include/ThreadPool.h | 17 +++++------------`)
+- `cmake --build build --target zene ThreadPoolTest -j4` -> exit **0**
+- `cd build/tests && ctest -R '^ThreadPoolTest$' --output-on-failure` -> exit **8**
+- `git apply -R .../logs/fix.patch` -> exit **0** (header restored, `git diff -- include/ThreadPool.h` empty again)
+- `cmake --build build --target zene ThreadPoolTest -j4` -> exit **0**
+- `cd build/tests && ctest -R '^ThreadPoolTest$' --output-on-failure` -> exit **0**
+
+RED result, verbatim from `test-6-red.log` (the whole test file stays in place - no slot is touched):
+
+```
+PASS   : ThreadPoolTest::destructionDrainsQueuedTasks()
+FAIL!  : ThreadPoolTest::throwingTaskCompletesItsFutureAndKeepsThePoolUsable() Caught unhandled exception
+   Loc: [/usr/src/debug/qt6-base/qtbase/src/testlib/qtestcase.cpp(2004)]
+Totals: 7 passed, 1 failed, 0 skipped, 0 blacklisted, 2ms
+terminate called after throwing an instance of 'std::future_error'
+  what():  std::future_error: Broken promise
+...
+202 - ThreadPoolTest (Subprocess aborted)
+```
+
+Only the new slot fails; the other seven slots still pass. Without the forwarding block the exception
+is swallowed by the `std::packaged_task` wrapper, the promise is destroyed without a value, and
+`future::get()` reports `std::future_error: Broken promise` instead of the task's exception - the
+exception no longer reaches the caller, which is exactly the contract this cluster fixes.
+
+### Proof B (the exact pre-fix product code, historical)
+
+The product code the accepted fix was written against - the parent of the accepted commit - also
+reproduces the finding end to end:
 
 - `git show 148c5dc06^:include/ThreadPool.h > include/ThreadPool.h`
 - `git show 148c5dc06^:src/core/ThreadPool.cpp > src/core/ThreadPool.cpp`
 
 That state is `std::queue<std::function<void()>>` + `task();` with no catch anywhere - the reported
-defect. `fix.patch` in the log folder is that same reverse-apply artifact:
-`git diff 148c5dc06^ -- include/ThreadPool.h src/core/ThreadPool.cpp > .../logs/fix.patch`, and
-`git apply -R .../logs/fix.patch` reproduces the pre-fix tree (`git apply -R --check` -> OK).
+defect. `fix-historical-pre-fix.patch` in the log folder is that reverse-apply artifact:
+`git diff 148c5dc06^ -- include/ThreadPool.h src/core/ThreadPool.cpp > .../logs/fix-historical-pre-fix.patch`,
+and `git apply -R .../logs/fix-historical-pre-fix.patch` reproduces the pre-fix tree
+(`git apply -R --check` -> OK).
 
 One documented, temporary consequence: the pre-fix header cannot compile six slots of the current
 test file (it stores the callable in a `std::function`, so it rejects move-only callables, and its
@@ -96,7 +134,7 @@ do not compile). For the RED run only, those slots were removed from the test fi
 `enqueuesRvalueQualifiedCallable`, `enqueuesLvalueQualifiedCallable`,
 `partialStartupFailureStopsStartedWorkers` - the last one needs the newer line's worker-startup fix).
 The new slot was left in. The test file was restored in full afterwards; the committed file has all
-eight slots (see `run-2.log`: 10 PASS lines).
+eight slots (see `run-3.log`: 10 PASS lines).
 
 RED result - the reported symptom, verbatim from `test-2-red.log`:
 
@@ -134,6 +172,18 @@ Every command below was run from the worktree root unless marked `build/tests`.
 | gate-1 | `python3 .../qwen/feature_check.py <worktree> > .../gate-1.log 2>&1` | **0** | `RESULT: PASS` - all 8 gate rows PASS (see below) |
 | gate-2 | `bash tests/complexity-gate.sh --check > .../gate-2-complexity.log 2>&1` | 1 | pre-existing tree-wide regressions (6), none in my files; regression set identical to the base commit |
 | gate-3 | `bash tests/file-length-gate.sh --check > .../gate-3-filelength.log 2>&1` | 1 | pre-existing tree-wide regressions (15), none in my files; regression set identical to the base commit |
+| build-5 | `cmake --build build --target zene ThreadPoolTest -j4 > .../build-5.log 2>&1` | 0 | round 2: rebuild of the committed state (report correction only) |
+| **test-5 (GREEN, round 2)** | `cd build/tests && ctest -R '^ThreadPoolTest$' --output-on-failure > .../test-5-green.log 2>&1` | **0** | `100% tests passed out of 1` |
+| red-revert-header | removal of the exception-forwarding block from `include/ThreadPool.h:75-90`, recorded as `git diff -- include/ThreadPool.h > .../fix.patch` | 0 | the product change is reverted (1 file, 5 insertions, 12 deletions) |
+| build-6 | `cmake --build build --target zene ThreadPoolTest -j4 > .../build-6-red.log 2>&1` | 0 | built against the reverted header |
+| **test-6 (RED, header reverted)** | `cd build/tests && ctest -R '^ThreadPoolTest$' --output-on-failure > .../test-6-red.log 2>&1` | **8** | `FAIL! : ThreadPoolTest::throwingTaskCompletesItsFutureAndKeepsThePoolUsable() Caught unhandled exception` + `std::future_error: Broken promise`; the other 7 slots PASS; `Subprocess aborted` |
+| restore-header | `git apply -R .../fix.patch` | 0 | header restored (`git diff -- include/ThreadPool.h` empty) |
+| build-7 | `cmake --build build --target zene ThreadPoolTest -j4 > .../build-7.log 2>&1` | 0 | rebuilt with the forwarding block back in place |
+| **test-7 (GREEN, restored)** | `cd build/tests && ctest -R '^ThreadPoolTest$' --output-on-failure > .../test-7-green.log 2>&1` | **0** | `100% tests passed out of 1` |
+| run-3 | `cd build/tests && ./ThreadPoolTest > .../run-3.log 2>&1` | 0 | 10 PASS, 0 FAIL (all eight slots, the full committed test file) |
+| gate-4 | `python3 .../qwen/feature_check.py <worktree> > .../gate-4.log 2>&1` | **0** | `RESULT: PASS` - all 8 gate rows PASS after the report correction |
+| gate-5 | `bash tests/complexity-gate.sh --check > .../gate-5-complexity.log 2>&1` | 1 | pre-existing tree-wide regressions (6), none in my files |
+| gate-6 | `bash tests/file-length-gate.sh --check > .../gate-6-filelength.log 2>&1` | 1 | pre-existing tree-wide regressions (15), none in my files |
 
 Affected family: `ctest -R '^ThreadPoolTest$'` runs **1** ctest entry (the only one for this file),
 0 skipped; the binary runs **8 slots** (+ `initTestCase`/`cleanupTestCase`) and all pass
@@ -162,7 +212,8 @@ the **identical** regression sets:
   guard, exit 97); `bash tests/complexity-gate.sh --check` -> exit 1, 6 `REGRESSION` lines
   (`gate-base-complexity.log`); `bash tests/file-length-gate.sh --check` -> exit 1, 15 `REGRESSION`
   lines (`gate-base-file-length.log`).
-- mine: 6 and 15 `REGRESSION` lines (`gate-2-complexity.log`, `gate-3-filelength.log`).
+- mine: 6 and 15 `REGRESSION` lines (`gate-5-complexity.log`, `gate-6-filelength.log`; the earlier
+  pair `gate-2-complexity.log` / `gate-3-filelength.log` shows the same counts).
 - `diff` of the sorted `REGRESSION` lines between base and mine is **empty for both gates**, and no
   line mentions `ThreadPoolTest.cpp` or `ThreadPool.h`. No gate limit or baseline was touched.
 
@@ -184,7 +235,7 @@ have computed itself; the gate baselines in the repository (`tests/complexity-ba
   `src/gui/FileBrowser.cpp` (include only, no pool use) and the test. `rg -n 'enqueue\('` shows the
   **only** production caller of `ThreadPool::enqueue` is `src/gui/FileSearchJob.cpp:57`
   (`m_task = ThreadPool::instance().enqueue(std::move(fn));`), whose callable is void-returning.
-  The two builds of `zene` (build-3/build-4) cover these dependents.
+  The two builds of `zene` (build-3/build-4 and build-6/build-7) cover these dependents.
 - Sibling of the changed behaviour: `ThreadPool::instance()` (the global pool) and locally constructed
   pools share the same `enqueue()`, so both are covered; the test exercises both (the `enqueues*` slots
   use `instance()`, the new slot uses a local one-worker pool).
@@ -220,14 +271,17 @@ it would alter an unrelated file's behaviour, so it is reported, not changed her
 ## Self-check
 
 1. **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
-   Reverted = the pre-fix product code of the accepted commit (`148c5dc06^`): RED
-   `ctest -R '^ThreadPoolTest$'` -> exit **8** (`terminate called after throwing an instance of
-   'std::runtime_error'`, `what(): task failure`, `Received signal 6 (SIGABRT)`, `test-2-red.log`).
-   Restored (the newest line's code, unchanged by this port): GREEN `ctest -R '^ThreadPoolTest$'` ->
-   exit **0**, `1/1 Test #202: ThreadPoolTest ... Passed` (`test-3-green.log`, `test-1.log`).
-   The tree carries no product hunk of mine, so the prescribed `git diff -- <product files> > fix.patch`
-   is empty by construction; `fix.patch` in the log folder is the equivalent reverse-apply artifact for
-   the pre-fix code (`git apply -R .../logs/fix.patch` -> pre-fix tree, `--check` OK).
+   Reverted = the exception-forwarding block of `include/ThreadPool.h:75-90` removed, recorded as
+   `git diff -- include/ThreadPool.h > .../logs/fix.patch`: RED
+   `ctest -R '^ThreadPoolTest$'` -> exit **8**
+   (`FAIL! : ThreadPoolTest::throwingTaskCompletesItsFutureAndKeepsThePoolUsable() Caught unhandled
+   exception` + `std::future_error: Broken promise`, the other 7 slots PASS, `test-6-red.log`);
+   restored with `git apply -R .../logs/fix.patch` (exit **0**): GREEN
+   `ctest -R '^ThreadPoolTest$'` -> exit **0**, `100% tests passed out of 1` (`test-7-green.log`,
+   `test-5-green.log`). The historical pre-fix product code (`git show 148c5dc06^:...`) gives the
+   same RED with the reported symptom: exit **8**, `terminate called after throwing an instance of
+   'std::runtime_error'`, `what(): task failure`, `Received signal 6 (SIGABRT)` (`test-2-red.log`);
+   restoring it gives exit **0** (`test-3-green.log`).
 2. **The test is deterministic.** No wall-clock timing, no sleeps, no races: the slot enqueues a
    callable that throws `std::runtime_error{"task failure"}` and waits on the returned
    `std::future::get()` (a synchronisation point, not a timing assumption), then checks the rethrown
