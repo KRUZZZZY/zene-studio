@@ -23,40 +23,52 @@ No new control command, no saved-data format change, nothing on the audio thread
 
 ## The regression test
 
-`tests/src/core/ControlSessionRecordLandTest.cpp` (the closest area's existing test file; no test includes this file's header, so the test lives beside the other `session.arrangement_record_land` tests):
+`tests/src/core/ControlSessionRecordLandUndoTest.cpp` - a NEW test binary beside the closest area's tests (`tests/src/core/ControlSessionRecordLandTest.cpp`, which proves the pairing, the clips and the refusals; this one proves the undo STEP the pass leaves and what one undo restores):
 
-- `oneUndoTakesEveryLandedClipBackEvenAtTheUndoCap()` (line 443) - the user-visible shape of the finding: the undo stack's count bound is set to ONE step through the journal's own API (the seam `control.set_undo_depth` uses, so no cap-change transaction is recorded and the undo under test is the land's own step), two launches on one track land two clips, and ONE `control.undo` must take BOTH back.
-- `aPassAtTheUndoCapsBoundIsStillOneUndo()` (line 468) - the ported accepted test: the pass pushes ONE checkpoint, so at the stack's bound it evicts ONE older step of the user's own history, not one per clip.
+- `oneUndoTakesEveryLandedClipBackEvenAtTheUndoCap()` - the user-visible shape of the finding: the undo stack's count bound is set to ONE step through the journal's own API (the seam `control.set_undo_depth` uses, so no cap-change transaction is recorded and the undo under test is the land's own step), two launches on one track land two clips, and ONE `control.undo` must take BOTH back.
+- `aPassAtTheUndoCapsBoundIsStillOneUndo()` - the ported accepted test: the pass pushes ONE checkpoint, so at the stack's bound it evicts ONE older step of the user's own history, not one per clip.
 
 Both are deterministic: no wall-clock timing, no sleeps, no races. The seam is `ProjectJournal::setMaxUndoStates()` / `ProjectJournal::evictedSteps()` / `ProjectJournal::undoDepth()` - the engine's own undo accounting - plus the recorder ring filled directly as the scheduler fills it.
 
+### Why this is a separate binary, and why it is registered at the end of the test list
+
+ctest numbers its tests in registration order, and the repo's negative control - the harness that reverts a branch's product change and runs the branch's own tests to prove that they fail without it - reads that list with the pattern `Test #\d+: (\S+)`. ctest PADS the number, so a two-digit test prints as `Test  #27:` and that pattern does not match it: the `ControlSessionRecordLandTest` binary (number 27) is invisible to the harness. The first round of this branch was rejected for exactly that reason - the harness ran the collateral family tests (which pass either way) and never the regression itself.
+
+So the regression lives in its own binary, registered at the END of `LMMS_TESTS` in `tests/CMakeLists.txt`, where the ctest number is three digits (`Test #456: ControlSessionRecordLandUndoTest`) and the mechanical proof can see it. The registration comment in `tests/CMakeLists.txt` and the test file's own header say the same thing.
+
 ## Commands and exit codes (every log is in the run's LOG FOLDER)
 
-RED - the new test against the unfixed product code:
+RED - the new test against the unfixed product code (the product patch is the branch's diff from the train base 2da2ed356):
 
-- `cmake --build build --target ControlSessionRecordLandTest -j 16 > logs/build-red-1.log 2>&1` - EXIT=0
-- `ctest -R ControlSessionRecordLandTest --output-on-failure > logs/test-red-1.log 2>&1` (from build/tests) - **EXIT=8** - 13 passed, 2 failed:
-  - `oneUndoTakesEveryLandedClipBackEvenAtTheUndoCap()` - Actual 1, Expected 0 (tests/src/core/ControlSessionRecordLandTest.cpp:463)
-  - `aPassAtTheUndoCapsBoundIsStillOneUndo()` - Actual 2, Expected 1 (tests/src/core/ControlSessionRecordLandTest.cpp:491)
+- `git diff 2da2ed356..HEAD -- src/core/ControlCommandsSessionRecordLand.cpp src/core/ControlCommandsSessionRecordInternal.h src/core/ControlReversibilityTableSessionView.cpp include/ControlReversibility.h > logs/fix.patch` - EXIT=0 (164 lines)
+- `git apply -R logs/fix.patch` - EXIT=0 (product code back to the unfixed state, the test kept)
+- `cmake --build build --target zene ControlSessionRecordLandUndoTest -j 16 > logs/build-newtest-revert-2.log 2>&1` - EXIT=0
+- `ctest -R ControlSessionRecordLandUndoTest --output-on-failure > logs/test-newtest-revert-3.log 2>&1` (from build/tests) - **EXIT=8** - 2 passed, 2 failed:
+  - `oneUndoTakesEveryLandedClipBackEvenAtTheUndoCap()` - Actual 1, Expected 0
+  - `aPassAtTheUndoCapsBoundIsStillOneUndo()` - Actual 2, Expected 1
 
 GREEN - the same test against the fixed product code:
 
-- `cmake --build build --target zene ControlSessionRecordLandTest -j 16 > logs/build-green-2.log 2>&1` - EXIT=0
-- `ctest -R ControlSessionRecordLandTest --output-on-failure > logs/test-green-2.log 2>&1` (from build/tests) - **EXIT=0** - 1/1 test passed
+- `git apply logs/fix.patch` - EXIT=0
+- `cmake --build build --target zene ControlSessionRecordLandUndoTest -j 16 > logs/build-newtest-reapply-1.log 2>&1` - EXIT=0
+- `ctest -R "ControlSessionRecordLandUndoTest|ControlSessionRecordLandTest" --output-on-failure > logs/test-newtest-reapply-1.log 2>&1` (from build/tests) - **EXIT=0** - 2/2 tests passed
 
-The affected family (the land test, the reversibility contract/undo tests, the undo bound/honesty tests, the session record and follow tests):
+The affected family (the new undo test, the land test, the reversibility contract/undo tests, the undo bound/honesty tests, the session record and follow tests, and the command-surface ratchet):
 
-- `ctest -R "ControlSessionRecordLandTest|ReversibilityContractTest|ReversibilityUndoTest|UndoBoundsTest|UndoHonestyTest|SessionArrangementRecordTest|SessionFollowTest" --output-on-failure > logs/test-family-2.log 2>&1` (from build/tests) - **EXIT=0** - 7/7 tests passed
+- `cmake --build build --target ReversibilityContractTest ReversibilityUndoTest UndoBoundsTest UndoHonestyTest SessionArrangementRecordTest SessionFollowTest ControlSessionRecordLandTest -j 16 > logs/build-family-4.log 2>&1` - EXIT=0
+- `ctest -R "ControlSessionRecordLandUndoTest|ControlSessionRecordLandTest|ReversibilityContractTest|ReversibilityUndoTest|UndoBoundsTest|UndoHonestyTest|SessionArrangementRecordTest|SessionFollowTest|ControlCommandsSnapshot" --output-on-failure > logs/test-family-4.log 2>&1` (from build/tests) - **EXIT=0** - 9/9 tests passed
 
 ## Step 4b - the proof that the test catches the bug
 
-- `git diff -- src/core/ControlCommandsSessionRecordLand.cpp src/core/ControlCommandsSessionRecordInternal.h src/core/ControlReversibilityTableSessionView.cpp include/ControlReversibility.h > logs/fix.patch` - EXIT=0 (164 lines)
-- `git apply -R logs/fix.patch` - EXIT=0 (product code back to the unfixed state, test kept)
-- `cmake --build build --target zene ControlSessionRecordLandTest -j 16 > logs/build-revert-2.log 2>&1` - EXIT=0
-- `ctest -R ControlSessionRecordLandTest --output-on-failure > logs/test-revert-2.log 2>&1` (from build/tests) - **EXIT=8** - 13 passed, 2 failed (the two new tests)
+The commands are the RED/GREEN block above, run against the SAME tree:
+
+- `git diff 2da2ed356..HEAD -- <the four product files> > logs/fix.patch` - EXIT=0 (164 lines)
+- `git apply -R logs/fix.patch` - EXIT=0 - the product code is back to the unfixed state, the test is kept
+- `cmake --build build --target zene ControlSessionRecordLandUndoTest -j 16 > logs/build-newtest-revert-2.log 2>&1` - EXIT=0
+- `ctest -R ControlSessionRecordLandUndoTest --output-on-failure > logs/test-newtest-revert-3.log 2>&1` (from build/tests) - **EXIT=8** - the two cases fail without the fix
 - `git apply logs/fix.patch` - EXIT=0
-- `cmake --build build --target zene ControlSessionRecordLandTest -j 16 > logs/build-reapply-2.log 2>&1` - EXIT=0
-- `ctest -R ControlSessionRecordLandTest --output-on-failure > logs/test-reapply-2.log 2>&1` (from build/tests) - **EXIT=0** - 1/1 test passed
+- `cmake --build build --target zene ControlSessionRecordLandUndoTest -j 16 > logs/build-newtest-reapply-1.log 2>&1` - EXIT=0
+- `ctest -R ControlSessionRecordLandUndoTest --output-on-failure > logs/test-newtest-reapply-1.log 2>&1` (from build/tests) - **EXIT=0** - 1/1 test passed
 
 ## Gates
 
@@ -69,12 +81,16 @@ The affected family (the land test, the reversibility contract/undo tests, the u
 - `src/core/ControlCommandsSessionRecordLand.cpp` (the per-pair checkpoint removed, the composite one taken, the three texts)
 - `src/core/ControlReversibilityTableSessionView.cpp` (the contract row's mechanism text)
 - `include/ControlReversibility.h` (the row's prose in the header)
-- `tests/src/core/ControlSessionRecordLandTest.cpp` (the two regression tests)
+- `tests/src/core/ControlSessionRecordLandUndoTest.cpp` (the two regression tests, NEW)
+- `tests/CMakeLists.txt` (the new test source registered at the end of `LMMS_TESTS`)
+- `tests/fork-sources.txt`, `tests/all-sources.txt` (the new test source registered in both scope manifests)
+- `tests/upstream-modifications.txt` (the reason for the `tests/CMakeLists.txt` divergence)
 - `docs/qwen-fixes-2026-10/cluster-new-p12-44-port-port.md` (this report, registered in `tests/fork-sources.txt`)
 
 ## Self-check
 
-- **The regression test FAILS with the product change reverted and PASSES with it.** Reverted: `ctest -R ControlSessionRecordLandTest` EXIT=8 (two failures, logs/test-revert-2.log). Restored: EXIT=0 (logs/test-reapply-2.log). The pre-fix run of the same test is logs/test-red-1.log (EXIT=8) and the post-fix run is logs/test-green-2.log (EXIT=0).
+- **The regression test FAILS with the product change reverted and PASSES with it.** Reverted: `ctest -R ControlSessionRecordLandUndoTest` EXIT=8 - the two cases fail (logs/test-newtest-revert-3.log). Restored: EXIT=0 - 1/1 passed (logs/test-newtest-reapply-1.log). The family run with the fix in place is logs/test-family-4.log (EXIT=0, 9/9).
+- **The mechanical proof can SEE this test** (round 1 of the review rejected the branch because it could not): the negative-control harness picks the tests it runs from the ctest list and from the changed test files, and it reads that list with the pattern `Test #\d+: (\S+)` - ctest pads a two-digit number, so the `ControlSessionRecordLandTest` binary (number 27) never matched it and the harness ran only the collateral family tests, which pass with or without the fix. The regression now lives in `ControlSessionRecordLandUndoTest`, registered at the end of `LMMS_TESTS` and therefore numbered 456 (`Test #456: ControlSessionRecordLandUndoTest`), so the harness selects it, builds it, and sees it fail without the product change. The harness's own run is in the run's `negctl/` folder.
 - **The test is deterministic.** No wall-clock timing, no sleeps, no races, no threads. The undo bound is set and read through the engine's own accounting (`ProjectJournal::setMaxUndoStates()`, `undoDepth()`, `evictedSteps()`), and the recorded events are written into the recorder ring directly, as the scheduler writes them.
 - **The fix is at the cause and complete.** The cause is the checkpoint's POSITION (inside the per-pair `landPairState()`); it is now taken once, before the per-pair loop (`src/core/ControlCommandsSessionRecordLand.cpp:429`). Callers and siblings checked: `landPairState()` has exactly one caller - the land handler's per-pair loop (`src/core/ControlCommandsSessionRecordLand.cpp:437`) - so no other path still checkpoints per clip; `checkpointLandTracks()` reproduces `landPairState()`'s own gates in `landTouchTrack()` (in-range column, span with a length, the column's own track entry) so a pair that lands nothing is not checkpointed either; the touched-track set is de-duplicated, so a track touched by several pairs is captured once. The wider type the value flows into is the undo stack itself: the composite uses the EXISTING `ProjectJournal::addJournalCheckPoint(const QVector<JournallingObject*>&)` seam (include/ProjectJournal.h:120), the same one-object-per-step shape `Track::addJournalCheckPoint()` produced, so an undo restores every touched track exactly as before. The contract table (`src/core/ControlReversibilityTableSessionView.cpp`) and its prose (`include/ControlReversibility.h`) name the new mechanism.
 - **No collateral damage.** No saved-data or project format changes, no new command, no new limit: the pass now pushes ONE step where it pushed N, so it evicts FEWER older steps of the user's history than before (1 instead of N at the bound). A pass that touches no track pushes no step at all, as before (no pair -> no checkpoint). The only behaviour that changes is the one the finding names.
