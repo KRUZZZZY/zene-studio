@@ -704,6 +704,14 @@ void SampleClip::setSampleWindow(const SampleWindow& window)
 
 	installWindow(clamped);
 
+	// The clip plays exactly its window, so an edited window is a different amount
+	// of audio and the clip's timeline length has to follow it (BUG new-p16-205).
+	// The length is moved here, while auto-resize may still be on, because the
+	// moment it goes off below nothing would move the length any more. A clip in
+	// the pattern store is the one exception: there the pattern owns the length,
+	// exactly as updateLength() has it.
+	if (getTrack()->trackContainer() != Engine::patternStore()) { changeLength(sampleLength()); }
+
 	if (m_window != SampleWindow::full(bufferFrames))
 	{
 		// A window that is not the whole buffer is a manual edit, so it must
@@ -894,9 +902,15 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	if (_this.hasAttribute("srcin") || _this.hasAttribute("srcout"))
 	{
 		const auto srcOut = _this.attribute("srcout");
+		// A window edit moves the clip's length (BUG new-p16-205), and here the
+		// file's own `len` is the one that counts: the length the window moved is
+		// put back, so a file that carries a window loads with the length it was
+		// saved with.
+		const auto savedLength = length();
 		setSampleWindow({ _this.attribute("srcin", "0").toULongLong(),
 			srcOut.isEmpty() ? static_cast<qulonglong>(m_sample.sampleSize())
 				: srcOut.toULongLong() });
+		changeLength(savedLength);
 	}
 
 	setAutoResize(_this.attribute("autoresize", "1").toInt());

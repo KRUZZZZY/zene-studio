@@ -540,6 +540,35 @@ private slots:
 #endif
 	}
 
+	//! BUG new-p16-205: a window edit has to move the clip's timeline length with
+	//! it. The clip plays exactly its window, so a window that is trimmed in half
+	//! is half the audio - a clip that kept its old length would play half a
+	//! clip of silence. The length is moved while auto-resize is still on,
+	//! because the moment auto-resize goes off nothing moves it any more.
+	void trimmingTheWindowMovesTheClipLength()
+	{
+		const int rate = Engine::audioEngine()->outputSampleRate();
+		SampleTrack track(Engine::getSong());
+		auto* clip = makeToneClip(track, rate);
+		clip->setAutoResize(true);
+		clip->updateLength();
+		const auto fullLength = static_cast<int>(clip->length());
+		QVERIFY(fullLength > 1);
+		QCOMPARE(static_cast<int>(clip->length()), static_cast<int>(clip->sampleLength()));
+
+		// trim the source in half
+		const auto half = static_cast<f_cnt_t>(clip->sample().sampleSize()) / 2;
+		clip->setSamplePlayLength(half);
+
+		// the window shrank ...
+		QCOMPARE(asNumber(clip->sampleWindow().sourceOut), asNumber(half));
+		QVERIFY(static_cast<int>(clip->sampleLength()) < fullLength);
+		// ... and the clip's length followed it
+		QVERIFY2(std::abs(static_cast<int>(clip->length()) - static_cast<int>(clip->sampleLength())) <= 1,
+				 qPrintable(QStringLiteral("the length stayed at %1, the window says %2")
+						.arg(clip->length().getTicks()).arg(clip->sampleLength().getTicks())));
+	}
+
 	//! I5: the length the author sees is the window's length, and a tempo change
 	//! re-fits that length without ever touching the window itself.
 	void windowLengthAndTempoChange()
