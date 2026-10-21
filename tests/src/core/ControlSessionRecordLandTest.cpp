@@ -363,6 +363,31 @@ private slots:
 		QCOMPARE(m_first->getClips().size(), size_t{2});
 	}
 
+	//! A tap switched off while a cell is still playing must not strand the
+	//! start it has already recorded: the stop that ends the cell closes it,
+	//! and the performance lands. Without that, the start stays open, the pass
+	//! refuses it every time, and nothing consumes it - the performance can
+	//! never be landed at all.
+	void aDisarmedTapStillLandsThePerformanceItRecorded()
+	{
+		QVERIFY( recorder().recordStart( 0, 0, 0 ) );
+		// The tap is switched off while the cell is still playing.
+		recorder().setArmed( false );
+		// The cell ends after the disarm: the stop that closes the recorded
+		// start is taped anyway.
+		QVERIFY( recorder().recordStop( 0, 0, 192 ) );
+
+		const ControlResult landed = run( QStringLiteral("session.arrangement_record_land") );
+		QVERIFY2( landed.ok, qPrintable( landed.errorMessage ) );
+		QCOMPARE( landed.result.value( QStringLiteral("pairs") ).toInt(), 1 );
+		QCOMPARE( landed.result.value( QStringLiteral("clips") ).toInt(), 1 );
+		QCOMPARE( m_first->getClips().size(), size_t{ 1 } );
+		QCOMPARE( static_cast<int>( m_first->getClips().front()->startPosition().getTicks() ), 0 );
+		QCOMPARE( static_cast<int>( m_first->getClips().front()->length().getTicks() ), 192 );
+		// The pass consumed the ring, so a second pass has nothing to do.
+		QCOMPARE( pending(), size_t{ 0 } );
+	}
+
 	void aColumnWithoutASongTrackAndAnEmptySpanAreReportedNotLanded()
 	{
 		QVERIFY(recorder().recordStart(2, 0, 0));    // column 2: the grid is wider than the song's track list

@@ -47,7 +47,9 @@
 
 #include <QtTest>
 
+#include <atomic>
 #include <cstdint>
+#include <thread>
 
 #include "SessionArrangementRecorder.h"
 #include "SessionFollow.h"
@@ -64,6 +66,28 @@ constexpr f_cnt_t kFramesPerPeriod = 16;
 constexpr float kFramesPerTick = 4.0f;
 constexpr int kSceneCount = 4;
 constexpr std::size_t kCapacity = SessionArrangementRecorder::Capacity;
+
+// The two ends of the deterministic in-flight handshake test. The producer
+// parks INSIDE the write, after it has passed the armed gate; the consumer's
+// wait hook releases it. Flags, not timers: the test never sleeps.
+std::atomic<bool> g_producerParked{ false };
+std::atomic<bool> g_releaseProducer{ false };
+std::atomic<bool> g_consumerWaited{ false };
+
+void parkProducerAtTheWriteBoundary()
+{
+	g_producerParked.store( true, std::memory_order_release );
+	while( !g_releaseProducer.load( std::memory_order_acquire ) )
+	{
+		std::this_thread::yield();
+	}
+}
+
+void releaseTheParkedProducer()
+{
+	g_consumerWaited.store( true, std::memory_order_release );
+	g_releaseProducer.store( true, std::memory_order_release );
+}
 
 SessionClockContext clock(tick_t ticks)
 {
@@ -241,6 +265,127 @@ private slots:
 		// ...and nothing new is taped while it is disarmed.
 		QVERIFY(!recorder.recordStart(1, 1, 192));
 		QCOMPARE(recorder.pending(), std::size_t(1));
+	}
+
+	//! A disarm that races a REAL in-flight write cannot leave that write behind
+	//! the consumer: snapshot() waits the producer out, so the start it already
+	//! passed the gate for is IN the snapshot (and the later stop can close it).
+	//! Without the wait the snapshot runs before the write publishes, sees an
+	//! empty ring, and the start lands without the consumer having seen it.
+	void snapshotWaitsForAnInFlightProducerWrite()
+	{
+		g_producerParked.store( false );
+		g_releaseProducer.store( false );
+		g_consumerWaited.store( false );
+
+		SessionArrangementRecorder recorder;
+		recorder.setArmed( true );
+		recorder.setPushBoundaryHookForTest( &parkProducerAtTheWriteBoundary );
+
+		bool recorded = false;
+		std::thread producer( [&] { recorded = recorder.recordStart( 0, 0, 96 ); } );
+		while( !g_producerParked.load( std::memory_order_acquire ) )
+		{
+			std::this_thread::yield();
+		}
+
+		// The producer is inside push(): it has read armed == true and has not
+		// published. The model thread now disarms and snapshots - the exact
+		// window the finding names.
+		recorder.setArmed( false );
+		recorder.setConsumerWaitHookForTest( &releaseTheParkedProducer );
+		SessionArrangementRecorder::Event events[kCapacity];
+		std::size_t count = 0;
+		std::thread consumer( [&] { count = recorder.snapshot( events, kCapacity ); } );
+		consumer.join();
+		if( !g_consumerWaited.load( std::memory_order_acquire ) )
+		{
+			// Pre-fix path: the snapshot did not wait. Release the producer so
+			// the test fails on the assertion below rather than hanging.
+			g_releaseProducer.store( true, std::memory_order_release );
+		}
+		producer.join();
+
+		recorder.setPushBoundaryHookForTest( nullptr );
+		recorder.setConsumerWaitHookForTest( nullptr );
+
+		QVERIFY( g_consumerWaited.load( std::memory_order_acquire ) );
+		QVERIFY( recorded );
+		QCOMPARE( count, std::size_t( 1 ) );
+		QVERIFY( events[0].started );
+		QCOMPARE( events[0].track, 0 );
+		QCOMPARE( events[0].scene, 0 );
+		QCOMPARE( static_cast<int>( events[0].tick ), 96 );
+	}
+
+	//! A disarmed tap still tapes the stop that closes a start the ring ALREADY
+	//! carries. A start with no stop is what a land pass refuses - and it
+	//! refuses without consuming anything - so a disarm that dropped the
+	//! closing stop would leave the performance unlandable for good. A stop
+	//! that closes nothing is still not taped: a disarmed tap records nothing
+	//! NEW, and a start is never taped while disarmed.
+	void recorderTapesTheStopThatClosesARecordedStart()
+	{
+		SessionArrangementRecorder recorder;
+		recorder.setArmed( true );
+		QVERIFY( recorder.recordStart( 0, 0, 96 ) );
+		recorder.setArmed( false );
+		// The stop that ends the recorded start is taped even though the tap is
+		// disarmed now - the start it closes is already in the ring.
+		QVERIFY( recorder.recordStop( 0, 0, 288 ) );
+		QCOMPARE( recorder.pending(), std::size_t( 2 ) );
+		// A stop that closes NOTHING is not taped.
+		QVERIFY( !recorder.recordStop( 1, 1, 288 ) );
+		QCOMPARE( recorder.pending(), std::size_t( 2 ) );
+		// A START is never taped while disarmed.
+		QVERIFY( !recorder.recordStart( 0, 0, 288 ) );
+		QCOMPARE( recorder.pending(), std::size_t( 2 ) );
+
+		SessionArrangementRecorder::Event events[kCapacity];
+		QCOMPARE( recorder.snapshot( events, kCapacity ), std::size_t( 2 ) );
+		QVERIFY( events[0].started );
+		QCOMPARE( static_cast<int>( events[0].tick ), 96 );
+		QVERIFY( !events[1].started );
+		QCOMPARE( static_cast<int>( events[1].tick ), 288 );
+	}
+
+	//! The user-visible path from the finding: a cell is playing when the tap is
+	//! switched off. Its start is already in the ring; the stop that ends the
+	//! cell arrives while disarmed and must still close that start, or every
+	//! later land pass refuses the performance forever.
+	void aDisarmedTapStillClosesTheStartItRecorded()
+	{
+		SessionScheduler scheduler;
+		scheduler.arrangementRecorder().setArmed( true );
+		QVERIFY( scheduler.requestLaunch( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		SessionClockContext ctx = clock( 0 );
+		scheduler.processAudio( ctx, kFramesPerPeriod );
+		// The cell is playing: its start is in the ring.
+		QCOMPARE( scheduler.arrangementRecorder().pending(), std::size_t( 1 ) );
+
+		// The tap is switched off while the cell is still playing.
+		scheduler.arrangementRecorder().setArmed( false );
+
+		// The cell ends after the disarm: the stop that closes the recorded
+		// start is taped anyway.
+		ctx.positionTicks = kTicksPerBar;
+		QVERIFY( scheduler.requestStop( 0, 0, LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( ctx, kFramesPerPeriod );
+
+		SessionArrangementRecorder::Event events[kCapacity];
+		const std::size_t count = scheduler.arrangementRecorder().snapshot( events, kCapacity );
+		QCOMPARE( count, std::size_t( 2 ) );
+		QVERIFY( events[0].started );
+		QCOMPARE( static_cast<int>( events[0].tick ), 0 );
+		QVERIFY( !events[1].started );
+		QCOMPARE( static_cast<int>( events[1].tick ), static_cast<int>( kTicksPerBar ) );
+		// Nothing is left open: a land pass has nothing to refuse.
+		int open = 0;
+		for( std::size_t i = 0; i < count; ++i )
+		{
+			if( events[i].started ) { ++open; } else { --open; }
+		}
+		QCOMPARE( open, 0 );
 	}
 
 	//! THE #596 ACCEPTANCE, in miniature: one launch request, then nothing but

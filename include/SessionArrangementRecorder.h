@@ -66,6 +66,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <thread>
 
 #include "LmmsTypes.h"
 // LMMS_EXPORT on the class below. Included BY NAME rather than relied on
@@ -113,8 +114,34 @@ public:
 	//! the ring: the caller lands it (see the drain in
 	//! ControlCommandsSessionRecord.cpp), because dropping a performance on
 	//! disarm is exactly the data loss the feature exists to prevent.
-	void setArmed( bool armed ) noexcept { m_armed.store( armed, std::memory_order_relaxed ); }
-	bool armed() const noexcept { return m_armed.load( std::memory_order_relaxed ); }
+	//!
+	//! THE HAND-OFF IS ORDERED, and the audio thread never waits. A disarm may
+	//! race a push that has already passed the armed gate; snapshot() therefore
+	//! waits out that in-flight push before it reads the ring (see
+	//! waitForProducer()). The wait is on the MODEL thread only - the producer
+	//! does one atomic increment and one decrement around its write, whatever
+	//! the consumer is doing. seq_cst on the flag and the counter makes the two
+	//! outcomes exactly: a push that read `true` is in the snapshot, and a push
+	//! that starts after the disarm reads `false` and records nothing. There is
+	//! no interleaving that leaves a late start behind the consumer's back.
+	void setArmed( bool armed ) noexcept { m_armed.store( armed, std::memory_order_seq_cst ); }
+	bool armed() const noexcept { return m_armed.load( std::memory_order_seq_cst ); }
+
+#ifdef LMMS_TESTING
+	/*! Test seams (clusters 2495 / 4926). The push hook runs after the producer
+	 *  has passed the armed gate and before it publishes, so a test can park a
+	 *  REAL in-flight write; the wait hook runs when the consumer first sees
+	 *  that write, so the test can release it without a sleep or a timer.
+	 *  Production builds have neither hook and no extra branch on the write. */
+	void setPushBoundaryHookForTest( void ( *hook )() ) noexcept
+	{
+		m_testPushHook.store( hook, std::memory_order_relaxed );
+	}
+	void setConsumerWaitHookForTest( void ( *hook )() ) noexcept
+	{
+		m_testWaitHook.store( hook, std::memory_order_relaxed );
+	}
+#endif
 
 	//! Audio thread. False when disarmed (nothing recorded) or when the ring is
 	//! full (dropped() has moved). Never allocates.
@@ -136,20 +163,34 @@ public:
 
 	bool push( const Event& event ) noexcept
 	{
-		if( !armed() )
+		// The counter goes up BEFORE the armed read: that is what lets the
+		// model thread tell "this push has already passed the gate" from "this
+		// push starts after the disarm and will see false". The producer never
+		// waits on the consumer.
+		m_producerInFlight.fetch_add( 1, std::memory_order_seq_cst );
+		if( !shouldRecord( event ) )
 		{
+			m_producerInFlight.fetch_sub( 1, std::memory_order_seq_cst );
 			return false;
 		}
+#ifdef LMMS_TESTING
+		if( void ( *hook )() = m_testPushHook.load( std::memory_order_relaxed ) )
+		{
+			hook();
+		}
+#endif
 		const std::size_t write = m_write.load( std::memory_order_relaxed );
 		const std::size_t next = ( write + 1 ) % storageSize;
 		if( next == m_read.load( std::memory_order_acquire ) )
 		{
 			m_dropped.fetch_add( 1, std::memory_order_relaxed );
+			m_producerInFlight.fetch_sub( 1, std::memory_order_seq_cst );
 			return false;
 		}
 		m_data[write] = event;
 		m_write.store( next, std::memory_order_release );
 		m_recorded.fetch_add( 1, std::memory_order_relaxed );
+		m_producerInFlight.fetch_sub( 1, std::memory_order_seq_cst );
 		return true;
 	}
 
@@ -183,6 +224,7 @@ public:
 		{
 			return 0;
 		}
+		waitForProducer();
 		const std::size_t read = m_read.load( std::memory_order_relaxed );
 		const std::size_t write = m_write.load( std::memory_order_acquire );
 		std::size_t count = write >= read ? write - read : storageSize - read + write;
@@ -208,12 +250,80 @@ public:
 
 private:
 	static constexpr std::size_t storageSize = Capacity + 1;
+
+	/*! Whether this event belongs in the ring. A START is taped only while the
+	 *  tap is armed: a disarmed tap records nothing NEW. A STOP is taped while
+	 *  the tap is armed, and also while it is DISARMED when it closes a span the
+	 *  ring already carries. That last rule is what keeps a disarm from
+	 *  stranding a recorded start: an open start is what a land pass refuses,
+	 *  and it refuses without consuming, so dropping the closing stop would
+	 *  leave the performance unlandable for good. */
+	bool shouldRecord( const Event& event ) const noexcept
+	{
+		if( armed() )
+		{
+			return true;
+		}
+		return !event.started && closesRecordedStart( event.track, event.scene );
+	}
+
+	/*! True when the ring already carries a start for this cell with no stop
+	 *  yet. Audio thread, but only for a STOP while disarmed: one bounded pass
+	 *  over the ring's own events, no allocation and no second state to keep in
+	 *  step. For a single cell a start opens and a stop closes the oldest open
+	 *  one, exactly as landPairEvents() pairs them; an unmatched stop closes
+	 *  nothing and does not go negative. */
+	bool closesRecordedStart( int track, int scene ) const noexcept
+	{
+		const std::size_t read = m_read.load( std::memory_order_acquire );
+		const std::size_t write = m_write.load( std::memory_order_acquire );
+		const std::size_t count = write >= read ? write - read : storageSize - read + write;
+		int open = 0;
+		for( std::size_t i = 0; i < count; ++i )
+		{
+			const Event& event = m_data[( read + i ) % storageSize];
+			if( event.track != track || event.scene != scene ) { continue; }
+			if( event.started ) { ++open; }
+			else if( open > 0 ) { --open; }
+		}
+		return open > 0;
+	}
+
+	/*! Model thread: wait out a producer that is between its armed read and its
+	 *  publish. This is the disarm handshake - and it is the CONSUMER that
+	 *  waits, never the audio thread. The counter is seq_cst so the two cases
+	 *  above are exhaustive; the yield is a scheduling courtesy, not a timer.
+	 *  snapshot() is reached from command handlers only, never from process(). */
+	void waitForProducer() const noexcept
+	{
+#ifdef LMMS_TESTING
+		if( m_producerInFlight.load( std::memory_order_seq_cst ) != 0 )
+		{
+			if( void ( *hook )() = m_testWaitHook.load( std::memory_order_relaxed ) )
+			{
+				hook();
+			}
+		}
+#endif
+		while( m_producerInFlight.load( std::memory_order_seq_cst ) != 0 )
+		{
+			std::this_thread::yield();
+		}
+	}
+
 	std::array<Event, storageSize> m_data{};
 	std::atomic<std::size_t> m_read{ 0 };
 	std::atomic<std::size_t> m_write{ 0 };
 	std::atomic<std::uint64_t> m_recorded{ 0 };
 	std::atomic<std::uint64_t> m_dropped{ 0 };
 	std::atomic<bool> m_armed{ false };
+	//! Producers between their armed read and their publish. Audio thread
+	//! increments/decrements; the model thread reads it to fence a disarm.
+	std::atomic<std::size_t> m_producerInFlight{ 0 };
+#ifdef LMMS_TESTING
+	std::atomic<void ( * )()> m_testPushHook{ nullptr };
+	std::atomic<void ( * )()> m_testWaitHook{ nullptr };
+#endif
 };
 
 } // namespace lmms
