@@ -113,8 +113,8 @@ All logs are in
 | Affected family | `cd build/tests && ctest -R "Session" --output-on-failure > logs/test-4-session-family-full.log 2>&1` | 8 | **31 tests run, 30 pass**; the one failure is `AbletonLinkSessionTest` (SIGSEGV inside `lmms::AbletonLinkSession::numPeers()`, after the multicast case SKIPped because this host delivers no multicast datagram). It fails IDENTICALLY on the reverted tree (see `logs/test-5-reversal-red.log`), so it is pre-existing and unrelated to the session serialisation |
 | Build (product + tests) | `cmake --build build --target zene SessionMalformedAttributeTest -j6 > logs/build-2.log 2>&1` | 0 | `zene` and the new test target build |
 | Build (session family) | `cmake --build build --target SessionModelTest SessionFollowTest SessionSceneFollowTest ... -j6 > logs/build-3-session-tests.log 2>&1` | 0 | the 24 session test targets build |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-feature-check-2.log 2>&1` | 1 | see "The gates" below |
-| Pre-submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-238-port > logs/gate-submit-check-1.log 2>&1` | 1 | the ASK items are answered in "Self-check" below |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-feature-check-final.log 2>&1` | 0 | `RESULT: PASS` - all eight rows PASS (see "The gates" below) |
+| Pre-submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p12-238-port > logs/gate-submit-check-final.log 2>&1` | 0 | `RESULT: PASS - submit`; the ASK items are answered in "Self-check" below |
 
 ### The gates
 
