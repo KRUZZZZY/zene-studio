@@ -168,6 +168,43 @@ private slots:
 		QCOMPARE(readBytes(project), requested);
 		QVERIFY(!QFileInfo::exists(pending));
 	}
+
+#ifdef Q_OS_WIN
+	//! Windows: the replacing rename used to narrow the staged and destination paths through the ANSI
+	//! code page, so a project under a directory name that code page cannot represent could not be
+	//! rotated or restored. The name carries an emoji, which no ANSI code page holds. Where the code
+	//! page does hold every character (UTF-8), the defect cannot occur and the test skips.
+	void rotationAndRestoreUseUnicodePathOutsideAnsiCodePage()
+	{
+		const QString dirName = QStringLiteral("proj-\U0001F3B5");
+		if (QString::fromLocal8Bit(dirName.toLocal8Bit()) == dirName)
+		{
+			QSKIP("the active ANSI code page represents every character of the directory name");
+		}
+		QVERIFY(QDir(m_dir.path()).mkdir(dirName));
+		const QString project = m_dir.path() + QLatin1Char('/') + dirName + QStringLiteral("/song.mmp");
+
+		QVERIFY(writeBytes(project, documentWith(3)));
+		bool refused = false;
+		QString reason;
+		QCOMPARE(rotateProjectRevision(project, &refused, &reason), 1);
+		QVERIFY2(!refused, qPrintable(reason));
+		QCOMPARE(readBytes(projectRevisionPath(project, 0)), documentWith(3));
+
+		// The second rotation shifts revision 0 to revision 1 and replaces revision 0: both renames run.
+		QVERIFY(writeBytes(project, documentWith(4)));
+		QCOMPARE(rotateProjectRevision(project, &refused, &reason), 2);
+		QVERIFY2(!refused, qPrintable(reason));
+		QCOMPARE(readBytes(projectRevisionPath(project, 0)), documentWith(4));
+		QCOMPARE(readBytes(projectRevisionPath(project, 1)), documentWith(3));
+
+		// The restore replaces the live file with revision 1 through the same rename.
+		QVERIFY(writeBytes(project, documentWith(5)));
+		QString error;
+		QVERIFY2(restoreProjectRevision(project, 1, &error), qPrintable(error));
+		QCOMPARE(readBytes(project), documentWith(3));
+	}
+#endif
 };
 
 QTEST_GUILESS_MAIN(ProjectRevisionRestoreStagingTest)
