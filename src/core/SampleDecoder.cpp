@@ -51,6 +51,8 @@ namespace {
 #ifdef LMMS_TESTING
 std::atomic<std::uint64_t> s_fullDecodeCallsForTesting{0};
 std::atomic<std::uint64_t> s_limitedDecodeCallsForTesting{0};
+std::atomic<bool> s_failNextOggReadForTesting{false};
+std::atomic<int> s_oggCloseCallsForTesting{0};
 #endif
 
 using Decoder = std::optional<SampleDecoder::Result> (*)(const QString&);
@@ -152,6 +154,11 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 
 	static auto s_close = [](void* stream) -> int {
 		auto file = static_cast<QFile*>(stream);
+#ifdef LMMS_TESTING
+		// libvorbisfile calls this callback exactly once per released decoder state (ov_clear),
+		// so the count is the number of decoder states that were released.
+		s_oggCloseCallsForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
 		file->close();
 		return 0;
 	};
@@ -185,6 +192,10 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 	while (true)
 	{
 		auto samplesRead = ov_read_float(&vorbisFile, &output, numSamples, 0);
+#ifdef LMMS_TESTING
+		// A read error is what a corrupt file produces; the seam drives that path deterministically.
+		if (s_failNextOggReadForTesting.exchange(false)) { samplesRead = -1; }
+#endif
 
 		if (samplesRead < 0) { return std::nullopt; }
 		else if (samplesRead == 0) { break; }
@@ -397,6 +408,30 @@ void SampleDecoder::resetDecodeCallCountsForTesting()
 auto SampleDecoder::decodeCallCountsForTesting() -> DecodeCallCountsForTesting
 {
 	return {s_fullDecodeCallsForTesting.load(std::memory_order_relaxed), s_limitedDecodeCallsForTesting.load(std::memory_order_relaxed)};
+}
+
+auto SampleDecoder::decodeOggVorbisOnlyForTesting(const QString& audioFile) -> std::optional<Result>
+{
+#ifdef LMMS_HAVE_OGGVORBIS
+	return decodeSampleOggVorbis(audioFile);
+#else
+	return std::nullopt;
+#endif
+}
+
+void SampleDecoder::failNextOggReadForTesting()
+{
+	s_failNextOggReadForTesting.store(true, std::memory_order_relaxed);
+}
+
+void SampleDecoder::resetOggCloseCountForTesting()
+{
+	s_oggCloseCallsForTesting.store(0, std::memory_order_relaxed);
+}
+
+auto SampleDecoder::oggCloseCountForTesting() -> int
+{
+	return s_oggCloseCallsForTesting.load(std::memory_order_relaxed);
 }
 #endif
 
