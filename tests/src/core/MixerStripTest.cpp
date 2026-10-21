@@ -318,6 +318,50 @@ private slots:
 		run(QStringLiteral("mixer.set_many"), {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}, {QStringLiteral("muted"), false}});
 	}
 
+	//! Deleting the soloed channel gives every other channel back its pre-solo mute (activateSolo saved it), so
+	//! nothing stays muted with no solo left to restore it (Mixer::deleteChannel).
+	void deletingTheSoloedChannelRestoresTheMutes()
+	{
+		QVERIFY(!mixerstrip::additiveSolo());
+		for (int i = 1; i < Engine::mixer()->numChannels(); ++i) { QVERIFY(!channel(i)->m_soloModel.value()); }
+		channel(1)->m_muteModel.setValue(true);   // muted before the solo: stays muted
+		channel(2)->m_muteModel.setValue(false);  // audible before the solo: must be audible again
+		const int doomed = Engine::mixer()->createChannel();
+		channel(doomed)->m_soloModel.setValue(true);
+		QVERIFY(channel(1)->m_muteModel.value() && channel(2)->m_muteModel.value());  // the solo mutes the others
+		Engine::mixer()->deleteChannel(doomed);
+		QVERIFY(channel(1)->m_muteModel.value());
+		QVERIFY2(!channel(2)->m_muteModel.value(), "deleting the soloed channel must restore the pre-solo mutes");
+		channel(1)->m_muteModel.setValue(false);
+		channel(2)->m_muteModel.setValue(false);
+	}
+
+	//! Additive solo: deleting the channel the engine names as its last solo keeps the other soloed channel heard
+	//! and the unsoloed ones muted (applyAdditiveSolo runs again on the new layout).
+	void deletingAnAdditiveSoloKeepsTheOthers()
+	{
+		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("additive")}}).ok);
+		channel(1)->m_muteModel.setValue(false);
+		channel(2)->m_muteModel.setValue(true);
+		const int first = Engine::mixer()->createChannel();
+		const int second = Engine::mixer()->createChannel();
+		channel(first)->m_soloModel.setValue(true);   // the lower index is the last solo the engine names
+		channel(second)->m_soloModel.setValue(true);
+		QVERIFY(!channel(first)->m_muteModel.value() && !channel(second)->m_muteModel.value());
+		QVERIFY(channel(1)->m_muteModel.value());
+		Engine::mixer()->deleteChannel(first);
+		// the survivor moved down into first's slot
+		QVERIFY2(channel(first)->m_soloModel.value(), "the other soloed channel must stay soloed");
+		QVERIFY2(!channel(first)->m_muteModel.value(), "the other soloed channel must still be heard");
+		QVERIFY(channel(1)->m_muteModel.value());  // nobody soloed channel 1
+		QVERIFY(channel(2)->m_muteModel.value());
+		channel(first)->m_soloModel.setValue(false);
+		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("exclusive")}}).ok);
+		Engine::mixer()->deleteChannel(first);
+		channel(1)->m_muteModel.setValue(false);
+		channel(2)->m_muteModel.setValue(false);
+	}
+
 	void thePreFaderMeterIsReadOnce()
 	{
 		channel(3)->m_preMeterLeft.set(0.f);
