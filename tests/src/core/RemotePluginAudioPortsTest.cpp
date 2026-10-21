@@ -952,7 +952,7 @@ private slots:
 			QVERIFY(result == RemotePluginBase::ReceiveResult::Got);
 			QCOMPARE(m.id, static_cast<int>(IdDebugMessage));
 			QCOMPARE(m.size(), std::size_t{1});
-			QVERIFY(m.stringArgument(0) == std::string_view{text});
+			QVERIFY(m.argumentView(0) == std::string_view{text});
 			QCOMPARE(allocations, std::uint64_t{0});
 		}
 
