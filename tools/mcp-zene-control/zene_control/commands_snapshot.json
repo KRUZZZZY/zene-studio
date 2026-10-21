@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-21T00:35:56Z",
+  "captured_at": "2026-10-21T17:33:23Z",
   "commands": [
     {
       "args_schema": {
@@ -74,7 +74,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Open the manual inside the application - at 'topic' (window, arrange, notes, mix, devices, record, launch, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry and grouped by the manual's sections, found by 'query' when given (a name, a task, a shortcut or a word) - or, with 'whats_this', What's This? mode: the next click on a control shows its full description - or, with 'context' (F1), help for the control with the keyboard focus, needing no hover: the manual at its section with what the control is, the command it runs by name and its shortcut ('context' in the reply). Interface state.",
+      "description": "Open the manual inside the application - at 'topic' (window, arrange, notes, mix, devices, record, launch, workflows, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry and grouped by the manual's sections, found by 'query' when given (a name, a task, a shortcut or a word) - or, with 'whats_this', What's This? mode: the next click on a control shows its full description - or, with 'context' (F1), help for the control with the keyboard focus, needing no hover: the manual at its section with what the control is, the command it runs by name and its shortcut ('context' in the reply). Interface state.",
       "group": "app",
       "id": "app.help",
       "mutating": false,
@@ -26536,7 +26536,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start is still open, because a half-landed performance would lose starts or invent their ends; stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED without consuming anything when MIDI or audio content cannot be copied to the destination track or an audio source cannot be loaded. Reversible: one Track journal checkpoint per touched track, so one control.undo takes the whole pass back.",
+      "description": "Land the recorded performance: pair every recorded launch with the stop that ended it and create ONE arrangement clip per pair on that column's song track, at the recorded ticks. REFUSED - consuming nothing - while any recorded start is still open, because a half-landed performance would lose starts or invent their ends; stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED without consuming anything when MIDI or audio content cannot be copied to the destination track or an audio source cannot be loaded. Reversible: one composite ProjectJournal checkpoint covering all touched tracks, so one control.undo takes the whole pass back.",
       "group": "session",
       "id": "session.arrangement_record_land",
       "mutating": true,
@@ -26566,6 +26566,9 @@
             "type": "integer"
           },
           "recorded": {
+            "type": "integer"
+          },
+          "removed_grid_cells": {
             "type": "integer"
           },
           "skipped_columns": {
@@ -35963,11 +35966,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-484/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-yu88m05u/zene.sock",
-    "version": "0.4.0-alpha.3574+ca6fa2d"
+    "source_socket": "/tmp/zctl-run-m8qqwlcg/zene.sock",
+    "version": "0.4.0-alpha.4211+72cb6cc"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
