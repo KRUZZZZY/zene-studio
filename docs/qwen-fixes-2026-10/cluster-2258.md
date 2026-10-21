@@ -1,3 +1,5 @@
+Verdict: ALREADY-FIXED (2258), FIXED (new-p14-101), FALSE-POSITIVE (new-p16-72)
+
 # Cluster 2258: sample-rate buffers, retired reclamation, saved range
 
 2258: ALREADY-FIXED
