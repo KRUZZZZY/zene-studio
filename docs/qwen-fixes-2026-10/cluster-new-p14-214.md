@@ -59,6 +59,11 @@ double click, accept the dialog, assert exactly one new journal step, then undo 
 original volume. It passes on the unmodified product (`test-3-red.log`: this case is one of the
 5 passing cases while the two real bugs fail), which is the evidence for ALREADY-FIXED.
 
+A control run removed the caller checkpoint at `:1829` temporarily: the guard then failed at
+`undoDepth()` (actual 0, expected 1; `test-8-enter-no-caller-checkpoint.log`, EXIT=1), and after
+restoring the line exactly it passed again (`test-9-enter-restored.log`, EXIT=0, 3 passed / 0
+failed). That shows the guard really enforces the checkpoint the caller provides.
+
 ## Evidence table
 
 | Check | Exact command and observed result |
@@ -127,4 +132,5 @@ cd build/tests && ctest -R '^PianoRollRecordTest$' --output-on-failure > ../qwen
 6. **Portability.** No new Qt-6-only API, no `windows.h` names, no `std::filesystem`.
 7. **ALREADY-FIXED evidence.** `src/gui/editors/PianoRoll.cpp:2144` is the only `enterValue()`
    call, and `:1829` is the checkpoint on its mouse-press path. The guard test at
-   `tests/src/gui/PianoRollRecordTest.cpp:254` passes unmodified.
+   `tests/src/gui/PianoRollRecordTest.cpp:254` passes unmodified; with `:1829` temporarily removed
+   it fails at the expected depth (EXIT=1), and restored it passes (EXIT=0).
