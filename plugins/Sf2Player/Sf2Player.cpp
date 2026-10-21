@@ -85,7 +85,6 @@ Sf2Instrument::Sf2Instrument( InstrumentTrack * _instrument_track ) :
 	Instrument(_instrument_track, &sf2player_plugin_descriptor, nullptr, Flag::IsSingleStreamed),
 	m_resampler(AudioResampler::Mode::Linear),
 	m_synth(nullptr),
-	m_fontId( -1 ),
 	m_filename( "" ),
 	m_lastMidiPitch( -1 ),
 	m_lastMidiPitchRange( -1 ),
@@ -360,7 +359,6 @@ bool Sf2Instrument::publishSynth( fluid_synth_t* synth, int fontId, sample_rate_
 		}
 	}
 
-	m_fontId = fontId;
 	updatePatch();
 	return true;
 }

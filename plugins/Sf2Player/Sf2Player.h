@@ -282,8 +282,6 @@ private:
 	//! The font id of the synth the render thread adopted.
 	int m_activeFontId = -1;
 
-	//! The font id of the published synth (UI side, for the swap event).
-	int m_fontId = -1;
 	QString m_filename;
 	//! Absolute file the published synth was built from, for a sample-rate reload.
 	QString m_sourceFile;
