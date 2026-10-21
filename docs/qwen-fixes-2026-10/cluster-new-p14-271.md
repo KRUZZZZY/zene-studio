@@ -1,11 +1,13 @@
 # Cluster new-p14-271: the SampleDecoder's Ogg and bounded-decode defects
 
+Verdict: FIXED
+
 new-p14-269: FIXED
 new-p14-271: FIXED
 new-p14-276: FIXED
 
-Verdict: **FIXED** for all three bugs of this batch - each with its own
-decision, its own regression test and its own RED/GREEN proof
+All three bugs of this batch are FIXED - each with its own decision, its own
+regression test and its own RED/GREEN proof.
 
 Same-file batch: all three findings are in `src/core/SampleDecoder.cpp`.
 
