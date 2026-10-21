@@ -192,10 +192,16 @@ void tapSides(const ChannelSurround& s, const FrameGain& fader, f_cnt_t frames)
 
 } // namespace
 
+//! A named speaker layout the panner can place a source in (not mono and not a discrete layout).
+bool speakerLayout(surround::Format format)
+{
+	return format != surround::Format::Mono && !surround::isDiscrete(format);
+}
+
 bool panTakesSend(const MixerRoute& route)
 {
 	return route.sender()->m_surround.pan().enabled && !route.sender()->m_surround.isSurround()
-		&& route.receiver()->m_surround.isSurround();
+		&& route.receiver()->m_surround.isSurround() && speakerLayout(route.receiver()->m_surround.format());
 }
 
 void panSend(MixerRoute& route, const SampleFrame* src, f_cnt_t frames)
@@ -271,6 +277,19 @@ void masterOutput(Mixer& mixer, SampleFrame* out, f_cnt_t frames)
 	if (tapping) { surroundexport::beginPeriod(); }  // every period, so a silent one reads as silence
 	MixerChannel& master = *mixer.mixerChannel(0);
 	const ChannelSurround& s = master.m_surround;
+	// A mono master has one channel: its pair is summed, so a stereo device plays the same signal on both
+	// outputs and a one-channel export writes that sum. There is no side buffer to place or fold.
+	if (s.format() == surround::Format::Mono)
+	{
+		const f_cnt_t n = std::min(frames, s.frames());
+		for (f_cnt_t f = 0; f < n; ++f)
+		{
+			const float mono = 0.5f * (out[f][0] + out[f][1]);
+			out[f][0] = mono;
+			out[f][1] = mono;
+		}
+		return;
+	}
 	if (!s.isSurround() || !s.written()) { return; }
 	const FrameGain fader = modelGain(master.m_volumeModel);
 	const f_cnt_t n = std::min(frames, s.frames());
@@ -291,9 +310,23 @@ void masterOutput(Mixer& mixer, SampleFrame* out, f_cnt_t frames)
 void directOut(HardwareOutputBus& bus, MixerChannel& channel, int start, int width, SampleFrame* stereo, f_cnt_t frames)
 {
 	const ChannelSurround& s = channel.m_surround;
+	// A mono channel's one signal is the sum of its pair; the caller then places it as a mono or a stereo
+	// output (bus.add averages it again for width 1), so there is nothing beyond the pair to route.
+	if (s.format() == surround::Format::Mono)
+	{
+		const f_cnt_t n = std::min(frames, s.frames());
+		for (f_cnt_t f = 0; f < n; ++f)
+		{
+			const float mono = 0.5f * (stereo[f][0] + stereo[f][1]);
+			stereo[f][0] = mono;
+			stereo[f][1] = mono;
+		}
+		return;
+	}
 	if (!s.isSurround() || !s.written()) { return; }
 	const FrameGain fader = modelGain(channel.m_volumeModel);
 	const f_cnt_t n = std::min(frames, s.frames());
+	// A discrete layout is identity-routed: its pair at start, start + 1 and plane i at start + i.
 	if (width == 2 && deviceCarries(start, channelCount(s.format())))
 	{
 		placeSides(bus, s, start, fader, n);

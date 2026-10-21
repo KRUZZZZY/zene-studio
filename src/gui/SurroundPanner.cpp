@@ -118,8 +118,25 @@ protected:
 private:
 	void drawSpeakers(QPainter& p, const tokens::Palette& pal)
 	{
-		const QStringList names = surround::speakerNames(m_format);
+		const QStringList names = surround::channelLabels(m_format);
 		p.setFont(tokens::font(tokens::TextRole::Caption));
+		if (surround::isDiscrete(m_format))
+		{
+			// A discrete layout has no speaker positions: draw its channels as an index strip, not as a room.
+			const int count = surround::channelCount(m_format);
+			const QRectF area = room();
+			const double step = area.width() / std::max(1, count);
+			for (int c = 0; c < count; ++c)
+			{
+				p.setPen(pal.textMuted);
+				p.setBrush(pal.panel);
+				const QRectF cell(area.left() + c * step, area.bottom() - 20.0, step - 4.0, 16.0);
+				p.drawRect(cell);
+				p.setPen(pal.text);
+				p.drawText(cell, Qt::AlignCenter, names.value(c));
+			}
+			return;
+		}
 		for (int c = 0; c < surround::channelCount(m_format); ++c)
 		{
 			if (surround::roleOf(m_format, c) == surround::Role::Lfe) { continue; }
@@ -131,7 +148,7 @@ private:
 			p.setBrush(pal.panel);
 			p.drawRect(QRectF(at.x() - 6.0, at.y() - 6.0, 12.0, 12.0));
 			p.setPen(pal.text);
-			p.drawText(QRectF(at.x() - 20.0, at.y() + (y > 0.f ? 8.0 : -24.0), 40.0, 16.0), Qt::AlignCenter, names.at(c));
+			p.drawText(QRectF(at.x() - 20.0, at.y() + (y > 0.f ? 8.0 : -24.0), 40.0, 16.0), Qt::AlignCenter, names.value(c));
 		}
 	}
 

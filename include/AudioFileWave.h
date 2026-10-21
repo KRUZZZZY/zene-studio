@@ -67,10 +67,14 @@ private:
 	//! 0.5.0 F7: a file of more than two channels is WAVE_FORMAT_EXTENSIBLE with the speakers' mask.
 	bool setChannelMap();
 	void finishEncoding();
+	//! A discrete layout has no speaker positions; libsndfile writes its count default mask, so zero it
+	//! after the samples are flushed (WAVEX's dwChannelMask 0 is what "no speaker positions" means).
+	void writeZeroChannelMask();
 
 private:
 	SF_INFO m_si;
 	SNDFILE * m_sf;
+	bool m_zeroChannelMask = false;
 	//! TPDF dither for the integer depths (include/ExportDither.h). Off unless
 	//! OutputSettings::dither() is on; seeded from a constant so a dithered
 	//! render is still reproducible.

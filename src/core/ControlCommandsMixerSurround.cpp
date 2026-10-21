@@ -108,7 +108,10 @@ QJsonObject channelJson(MixerChannel& channel)
 	const surround::Format format = channel.m_surround.format();
 	QJsonObject json{{QStringLiteral("channel"), channelIdOf(&channel)}, {QStringLiteral("name"), channel.m_name},
 		{QStringLiteral("format"), surround::formatName(format)},
+		{QStringLiteral("channels"), surround::channelCount(format)},
 		{QStringLiteral("speakers"), QJsonArray::fromStringList(surround::speakerNames(format))},
+		{QStringLiteral("channel_roles"), QJsonArray::fromStringList(surround::channelLabels(format))},
+		{QStringLiteral("discrete"), surround::isDiscrete(format)},
 		{QStringLiteral("pan"), panJson(channel.m_surround.pan())}, {QStringLiteral("surround_sends"), surroundSends(channel)}};
 	if (channel.m_surround.isSurround()) { json.insert(QStringLiteral("hardware"), hardwareJson(channel)); }
 	return json;
@@ -304,11 +307,14 @@ QJsonObject rangeProperty(double minimum, double maximum)
 void registerSurroundCommands(ControlRegistry& registry)
 {
 	defineCommand(registry, QStringLiteral("mixer.channel_format"), QStringLiteral("Set a channel's speaker format: 'stereo' (the "
-		"default), 'lcr', 'quad', '5.1' or '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs). A surround channel "
-		"keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, "
-		"VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - it is "
-		"downmixed (mixer.downmix_options); its hardware output names its first output and it takes as many as it has channels, "
-		"or the stereo downmix where the device lacks them. Saved with the project; one undo step."),
+		"default), 'lcr', 'quad', '5.1', '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs), 'mono' (one "
+		"M role), or a role-less discrete layout 'discrete-2' .. 'discrete-8'. A surround channel keeps its speakers beyond L/R "
+		"next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance "
+		"on each left/right pair), fader and mute. Into a stereo channel - the master, usually - a named layout is downmixed "
+		"(mixer.downmix_options), while a discrete channel i goes to output i with no speaker folding or reordering. Its hardware "
+		"output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. "
+		"mixer.get_state names the format, its channel count and the channel roles (empty speakers, indices 1..N, for discrete). "
+		"Saved with the project - the count is part of the format name; one undo step."),
 		{{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("format"), enumProperty(surround::formatNames())}},
 		{QStringLiteral("channel"), QStringLiteral("format")}, true, channelFormat);
 	defineCommand(registry, QStringLiteral("mixer.surround_pan"), QStringLiteral("A channel's surround panner, for its sends into "
@@ -327,9 +333,10 @@ void registerSurroundCommands(ControlRegistry& registry)
 		{{QStringLiteral("center_db"), rangeProperty(-60.0, 6.0)}, {QStringLiteral("surround_db"), rangeProperty(-60.0, 6.0)},
 			{QStringLiteral("lfe"), booleanProperty()}, {QStringLiteral("lfe_db"), rangeProperty(-60.0, 12.0)}, {QStringLiteral("reset"), booleanProperty()}},
 		{}, true, downmixOptions);
-	defineCommand(registry, QStringLiteral("mixer.surround_get"), QStringLiteral("Every channel's speaker format, speakers, surround "
-		"panner, the surround channels it sends into and, for a surround channel, the outputs it plays on ('ok') or that it is "
-		"downmixed ('downmix'), with the downmix options ('channel' for one). Read only."),
+	defineCommand(registry, QStringLiteral("mixer.surround_get"), QStringLiteral("Every channel's speaker format, its channel count "
+		"and roles (one 'M' for mono; empty speakers and indices 1..N for a discrete layout), surround panner, the surround "
+		"channels it sends into and, for a surround channel, the outputs it plays on ('ok') or that it is downmixed ('downmix'), "
+		"with the downmix options ('channel' for one). Read only."),
 		{{QStringLiteral("channel"), stringProperty()}}, {}, false, surroundGet);
 }
 

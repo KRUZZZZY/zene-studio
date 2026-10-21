@@ -62,6 +62,8 @@ constexpr std::array<Speaker, surround::MaxChannels> SideSurrounds{{
 
 Speaker speakerAt(surround::Format format, int channel)
 {
+	if (format == surround::Format::Mono) { return {SF_CHANNEL_MAP_MONO, 0x4}; }  // SPEAKER_FRONT_CENTER
+	if (surround::isDiscrete(format)) { return {SF_CHANNEL_MAP_INVALID, 0}; }  // no speaker positions
 	const auto& table = format == surround::Format::Surround71 ? SideSurrounds : BackSurrounds;
 	return table[static_cast<std::size_t>(surround::roleOf(format, channel))];
 }
@@ -139,8 +141,12 @@ QString refusal(const OutputSettings& settings, bool wave)
 	return QString();
 }
 
-surround::Format formatForChannels(int channels)
+surround::Format formatForChannels(int channels, surround::Format preferred)
 {
+	if (channels == static_cast<int>(DEFAULT_CHANNELS)) { return surround::Format::Stereo; }  // a plain stereo file
+	// The selected master keeps its identity even when a named layout has the same channel count:
+	// discrete-6 must stay discrete-6 (mask 0), not become 5.1.
+	if (preferred != surround::Format::Stereo && surround::channelCount(preferred) == channels) { return preferred; }
 	for (int f = 1; f < surround::FormatCount; ++f)
 	{
 		const auto format = static_cast<surround::Format>(f);

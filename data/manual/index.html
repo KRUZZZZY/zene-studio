@@ -129,11 +129,14 @@ channel's "Play Previews Here" sends the browser's previews to it instead of the
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
 round trip measured by a ping and compensated. Interface Channels names your interface's inputs and outputs and pairs them;
-the names are kept per device, not per project. Its Surround menu sets a channel to LCR, quad, 5.1 or 7.1: the Surround
-Panner places a channel's sends into it on a 2-D room with an LFE send and spread, and a stereo master or a stereo export gets
-the standard downmix. Extra channels need a backend with more than two outputs (JACK or ALSA). With a surround master, the
-WAV export's Channels row can write it as it is - Surround: one channel per speaker (6 for 5.1, 8 for 7.1) in the standard
-WAV order with its speaker mask; Stereo, the default, folds it with the downmix.</p>
+the names are kept per device, not per project. Its Surround &gt; Format menu sets a channel to LCR, quad, 5.1, 7.1,
+Mono, or a Discrete layout of 2 to 8 channels: the Surround Panner places a channel's sends into a speaker layout on a 2-D
+room with an LFE send and spread, and a stereo master or a stereo export gets the standard downmix. Mono has one M channel.
+A Discrete layout has no speaker positions at all: channel 1 goes to the first output, channel 2 to the next, and so on, with
+no speaker folding or reordering, and its channels are numbered rather than named. Extra channels need a backend with more
+than two outputs (JACK or ALSA). With a surround master, the WAV export's Channels row can write it as it is - Surround: one
+channel per speaker (6 for 5.1, 8 for 7.1) in the standard WAV order with its speaker mask; Stereo, the default, folds it
+with the downmix.</p>
 
 <p>The mode bar across the top of the mixer shows and sets how it is laid out and what mode it is in. View: Mix shows levels, pan and processing; Routing shows, on every strip, where its signal comes from and where it goes, by channel name, with each send's amount and the hardware output. Density: Compact keeps only the essentials (no inserts or macro knobs, routing on one line); Expanded shows every section turned on in Mixer View. Strips never shrink below their width; use Show to filter channels, or scroll. The mode buttons name what the faders drive, the solo mode (exclusive or additive), who is listening (AFL or PFL) and where the master plays and in what speaker format; click one to change it. Every strip has a badge saying what it is (Master, Return, Group, Track, Channel or VCA, plus its surround format) and a line for the modes it is in (AFL/PFL, Solo safe, Surround pan, Cue, HW insert). Routing Matrix... opens every channel against every channel; filter the senders by name, and double-click or press Enter on a cell to make or change that send.</p>
 

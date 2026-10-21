@@ -64,6 +64,8 @@ public:
 
 protected:
 	int writeData( const void* data, int len );
+	//! A derived writer that has finished its samples may close the file before patching a header field.
+	void closeOutputFile() { m_outputFile.close(); }
 
 	inline bool outputFileOpened() const
 	{
