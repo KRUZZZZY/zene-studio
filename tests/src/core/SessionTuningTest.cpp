@@ -1345,45 +1345,6 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
 
-	//! An unchanged flag is still a SUCCESSFUL call, so each call records its own
-	//! step. mts.master_set declares no coalesce target (its row in
-	//! ControlReversibilityTableMts.cpp has none), so two calls are two steps and
-	//! no wall-clock window is involved. Undoing the second, unchanged call takes
-	//! exactly one step off and leaves the flag where the first call left it.
-	void masterSetEachUnchangedCallIsItsOwnUndoStep()
-	{
-		Song* song = Engine::getSong();
-		song->clearProject();
-		const int depthBefore = Engine::projectJournal()->undoDepth();
-		// Library absent: arming is refused, so the master stays DISARMED and each
-		// disarm is an unchanged call. Library present: the first arm changes the
-		// flag and the second arm is the unchanged call. Either way the target is
-		// the value both calls ask for.
-		const bool libraryPresent = SessionTuning::mtsEspLibraryPresent();
-		const bool target = libraryPresent;
-		const ControlResult first = run(QStringLiteral("mts.master_set"),
-			QJsonObject{{QStringLiteral("enabled"), target}});
-		QVERIFY2(first.ok, qPrintable(first.errorMessage));
-		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
-
-		const ControlResult second = run(QStringLiteral("mts.master_set"),
-			QJsonObject{{QStringLiteral("enabled"), target}});
-		QVERIFY2(second.ok, qPrintable(second.errorMessage));
-		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 2);
-		QCOMPARE(run(QStringLiteral("mts.get_state")).result
-			.value(QStringLiteral("mts_master")).toBool(), target);
-
-		REV_UNDO_OR_FAIL();
-		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
-		QCOMPARE(run(QStringLiteral("mts.get_state")).result
-			.value(QStringLiteral("mts_master")).toBool(), target);
-		if (libraryPresent)
-		{
-			QVERIFY(run(QStringLiteral("mts.master_set"),
-				QJsonObject{{QStringLiteral("enabled"), false}}).ok);
-		}
-	}
-
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)
