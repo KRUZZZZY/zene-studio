@@ -82,6 +82,15 @@ A Windows lane closes this with these steps, using the repo's own procedure:
 
 If the test skips on the Windows machine, the code page holds U+1F3B5 and the defect cannot occur there; use a machine on a single-byte or DBCS ANSI code page.
 
+## Decision needed from the owner
+
+The loop's negative control runs on this Linux host, and for this finding it can only pass. Two ways forward, which I will not choose myself:
+
+1. **Accept a Windows run as the RED/GREEN evidence.** Run steps 1-4 of "Regression proof" on a Windows build (for example the hosted Windows CI job), and record the EXIT codes in this report. The fix can then be verified as FIXED.
+2. **Reclassify the loop's check for Windows-only findings.** The Linux negative control cannot exercise a Windows-only branch, so it should be skipped or marked as not applicable for such findings. The verdict then stays BLOCKED until a Windows run exists.
+
+Until one of these is chosen, the verdict stays **BLOCKED**.
+
 ## Out of scope, not verified
 
 The same narrow-path pattern (`toLocal8Bit()` passed to a path-taking API) appears in `sf_open` calls at `src/core/BounceInPlace.cpp:528,577,598`, `src/core/ClipConsolidate.cpp:99`, `src/core/RenderQueue.cpp:89` and `src/core/audio/AudioFileFlac.cpp:75`. I did not check whether libsndfile treats those narrow paths as the ANSI code page on Windows. That needs its own cluster.
@@ -90,7 +99,12 @@ The same narrow-path pattern (`toLocal8Bit()` passed to a path-taking API) appea
 
 Pre-submit check run 1 (`submit-check-1.log`, round 1): PASS commits, PASS clean tree, PASS report, FAIL tests added or changed, FAIL gates (the `PermissionError` above, not a gate failure). Round 2 added the test; the pre-submit check for round 2 is the authority for the status row.
 
-- ? **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Not answered by a run here. The test is Windows-only, and this host cannot build or run Windows code. The Linux evidence is `test-1-baseline` EXIT 0 and `test-3-after-test-edit` EXIT 0, which show no change on Linux. The RED and GREEN EXIT codes need the Windows run in "Regression proof", steps 2-4. The mechanism for why RED should fail is in "Regression test" above.
+- ? **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Not achievable on this Linux host, and no Linux test of this finding can meet it. The evidence:
+  - My negative control, with the product change reverted by `git apply -R` of `fa5bd3f91`'s `ProjectRevisions.cpp` diff: `build-neg-1-reverted.log` EXIT 0, `test-neg-1-reverted.log` EXIT 0, `1/1 Test #185 Passed`. Restored with `git apply`: `build-neg-2-restored.log` EXIT 0, `test-neg-2-restored.log` EXIT 0, `1/1 Passed`. The loop's own control (`negctl/test-reverted.log`, `test-restored.log`) shows the same pass both ways.
+  - Why no Linux test can fail: `pp-prefix.log` and `pp-postfix.log` (both EXIT 0) preprocess `ProjectRevisions.cpp` before and after the fix with the project's own flags. Each output is 133,190 lines, and `diff` exits 0 with no output (`pp-diff.log`, DIFF_EXIT 0). The fix changes only the `#ifdef Q_OS_WIN` branch, so on Linux the reverted and fixed translation units are identical. The original POSIX branch (`ProjectRevisions.cpp:75-78`, `std::rename` on `QFile::encodeName`) is already correct for every input.
+  - The new slot is compiled only under `Q_OS_WIN`, so on Linux it runs no case. The family's one executed test passes either way.
+  - No Wine route exists on this host. `winegcc` is present and the repo's Wine CMake modules build plugins, but there is no Windows Qt and no Windows build of this product (`find` for `Qt6Core.dll`, `libstdc++-6.dll` returned nothing).
+  - Consequence: the only RED that can show the fix is a Windows run of the test (steps 1-4 in "Regression proof"). The loop's Linux control cannot see it.
 - ? **The test is deterministic.** It uses no wall clock, sleep, random value, thread or injected seam. Its inputs are a fixed directory name, a fixed project name and fixed document bytes, and it operates on real files in `QTemporaryDir`. The only environmental variable is the active ANSI code page, which decides the skip: skip is decided before any file is touched.
 - ? **The fix is at the cause and complete.** The defect is the narrow-path conversion in `replaceWithStaged`, and it is the only one in the revision sources (see Evidence). Both callers are consistent with the fix: `copyRevision` (`:124-126`, reached from `shiftRevisionsUp` `:200` and `rotateProjectRevision` `:269`) and the project replacement (`:393-395`). The test covers all three paths: the copy into revision 0, the shift plus replacement, and the restore replacement. The other revision-file operations (`QFile::remove`, `QDir::entryList`, `QTemporaryFile`, `QFile::setPermissions`) take `QString` through Qt and are Unicode-safe on Windows.
 - ? **No collateral damage.** The product change is inside `#ifdef Q_OS_WIN`; the POSIX branch is unchanged, and `test-1-baseline` and `test-3-after-test-edit` both pass with EXIT 0. The test is also inside `#ifdef Q_OS_WIN`, so Linux test behaviour is unchanged. No file format, saved-data layout, limit or check changed, so old projects and saved data load exactly as before. Windows ASCII names address the same files as before. Only names the ANSI code page cannot represent change behaviour, and those were failing before.
