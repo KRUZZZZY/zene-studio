@@ -47,6 +47,7 @@
 #include <limits>
 
 #include <QDir>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
 #include <QTemporaryDir>
@@ -87,6 +88,19 @@ bool clipAutoResize(const QString& id)
 	ControlResult error;
 	if (!control::resolveClip(id, &ref, &error)) { return false; }
 	return ref.clip->getAutoResize();
+}
+
+//! A note's probability, read from note.list: the one command that publishes the
+//! field. roll.get_state (noteState) does not carry it, so reading the roll would
+//! assert on a field that is never there. NaN for a missing note, so the comparison
+//! fails rather than passing on a default.
+double noteProbability(const QString& clip, int index)
+{
+	const QJsonArray notes = run(QStringLiteral("note.list"),
+		QJsonObject{{QStringLiteral("clip"), clip}}).result.value(QStringLiteral("notes")).toArray();
+	return index < notes.size()
+		? notes.at(index).toObject().value(QStringLiteral("probability")).toDouble()
+		: std::numeric_limits<double>::quiet_NaN();
 }
 
 //! A track with one clip and (for the note verbs) one note on it.
@@ -269,8 +283,10 @@ private slots:
 
 	//! note.probability_set from the trap state: the note starts at the DEFAULT,
 	//! so the checkpoint's XML carries no 'prob' attribute and the restore depends
-	//! on Note::loadSettings reading attribute("prob", "1"). This is the assertion
-	//! that fails if that reset is ever guarded behind hasAttribute().
+	//! on Note::loadSettings reading attribute("prob", "1"). The probability read
+	//! below is what catches a checkpoint taken after the write (Luna cluster 5032).
+	//! It does NOT catch a reset guarded behind hasAttribute(): the note is freshly
+	//! built at the default 1.0 (Note.h m_probability), so that guard is equivalent here.
 	void noteProbabilitySetIsOneUndoableStep()
 	{
 		Fixture fixture;
@@ -283,6 +299,8 @@ private slots:
 				{QStringLiteral("probability"), 0.5}});
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
 		QCOMPARE(set.result.value(QStringLiteral("probability")).toDouble(), 0.5);
+		// The edit is visible before the undo, so the undo below has something to undo.
+		QCOMPARE(noteProbability(fixture.clip, 0), 0.5);
 
 		REV_UNDO_OR_FAIL();
 		// The FIRST edit back is the one the reset-on-absence rule carries: the
@@ -291,6 +309,9 @@ private slots:
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
 		QVERIFY2(after.ok, qPrintable(after.errorMessage));
 		QCOMPARE(after.result.value(QStringLiteral("notes")).toArray().size(), 1);
+		// Luna cluster 5032: the note count above passes even when the undo leaves the
+		// note at 0.5. The probability itself must be the default again.
+		QCOMPARE(noteProbability(fixture.clip, 0), 1.0);
 	}
 
 	//! A probability outside [0, 1] is refused typed BEFORE the checkpoint, so a
