@@ -12,8 +12,8 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public
  * License along with this program (see COPYING); if not, write to the
@@ -25,20 +25,30 @@
 /*! Over a real clip of swung notes: Extract groove... puts a named groove in the pool
  *  (groove.list lists it), the rebuilt menu offers it under Apply groove and applying it to a
  *  straight clip at 100 % moves notes, and Quantize with strength... at 100 % puts a late note back
- *  on the grid - each through its groove.* command. */
+ *  on the grid - each through its groove.* command. A command that REFUSES (an empty clip carries
+ *  no note a groove can be measured from) says so: the refusal is shown to the person who asked
+ *  for it, not swallowed. The test runs the REAL application, because the refusal is shown the
+ *  way the interface shows it - as a floating message over the main window. */
 
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QJsonObject>
+#include <QLabel>
 #include <QMenu>
+#include <QTemporaryDir>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "GrooveMenu.h"
+#include "GuiApplication.h"
+#include "GuiTestApplication.h"
 #include "InstrumentTrack.h"
+#include "MainWindow.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
+#include "TextFloat.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -74,17 +84,38 @@ std::vector<int> positionsOf(const MidiClip* clip)
 	return out;
 }
 
+/*! What the floating messages over the main window say - one label's text per line.
+ *  They are how the interface tells a person what a command answered, so they are
+ *  what the test reads to know the refusal was not swallowed. */
+QString messagesShown()
+{
+	QString text;
+	for (TextFloat* message : getGUI()->mainWindow()->findChildren<TextFloat*>())
+	{
+		for (QLabel* label : message->findChildren<QLabel*>()) { text += label->text() + QLatin1Char('\n'); }
+	}
+	return text;
+}
+
 } // namespace
 
 class GrooveMenuTest : public QObject
 {
 	Q_OBJECT
 
+private:
+	QTemporaryDir m_home;
+
 private slots:
 	void initTestCase()
 	{
-		Engine::init(true);
+		QVERIFY(m_home.isValid());
+		guitest::startGui(m_home);
 		ControlRegistry::setReady(true);
+		// The offscreen platform IS a display here (the platform plugin answers "offscreen",
+		// which is a display a person cannot click on but a message can be shown over), so
+		// the registry is told there is somebody to show a refusal to.
+		ControlRegistry::instance()->setHeadless(false);
 	}
 
 	void cleanupTestCase()
@@ -121,6 +152,22 @@ private slots:
 		emit menu->aboutToShow();
 		named(menu, QMenu::tr("Quantize with strength..."))->trigger();
 		QCOMPARE(positionsOf(late), (std::vector<int>{0, 12, 24}));
+		delete menu;
+	}
+
+	void aRefusedCommandIsShownToTheUser()
+	{
+		// An empty clip carries no note a groove can be measured from, so groove.extract
+		// refuses. The refusal must be shown: the menu closing on a silence is the bug.
+		MidiClip* empty = clipWith({});
+		setGroovePrompts({[] { return std::optional<QString>(QStringLiteral("Empty")); },
+			[](const QString&) { return std::optional<double>(100.0); }});
+		const MidiClip* current = empty;
+		QMenu* menu = makeGrooveMenu([&current] { return current; }, [] { return 12; }, nullptr);
+		named(menu, QMenu::tr("Extract groove from this clip..."))->trigger();
+		const QString shown = messagesShown();
+		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
+		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
 	}
 };
