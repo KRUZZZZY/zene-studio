@@ -2926,6 +2926,56 @@ target_compile_definitions(DelayLfoAutomationTest PRIVATE
 )
 add_dependencies(DelayLfoAutomationTest delay)
 
+# Regression test for cluster new-p9-122 (bug reports new-p9-122, new-p15-58,
+# new-p16-57, new-p17-52 - all one root cause: the unsynchronized float
+# peak-meter handoff between the audio thread and the GUI through EqFader,
+# shared by the Eq, Delay and Compressor dialogs). The Delay plugin sources
+# are compiled into the test binary - the DelayLfoAutomationTest pattern - so
+# the test can drive a real DelayEffect's peak fields through the atomic
+# exchange the GUI timer uses; the Eq control header gives the field-type
+# checks, and the widget/audio-side access patterns are pinned in the sources
+# themselves.
+add_executable(EqPeakHandoffTest
+	src/plugins/EqPeakHandoffTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayEffect.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayEffect.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControls.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControlsDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/DelayControlsDialog.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/Lfo.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/Lfo.h
+	${CMAKE_SOURCE_DIR}/plugins/Delay/StereoDelay.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Delay/StereoDelay.h
+	# EqFader is header-only; AUTOMOC needs the header to emit its metaobject,
+	# which DelayControlsDialog.cpp references (same as DelayLfoAutomationTest).
+	${CMAKE_SOURCE_DIR}/plugins/Eq/EqFader.h
+)
+add_test(NAME EqPeakHandoffTest COMMAND EqPeakHandoffTest)
+# Engine construction needs a Qt platform plugin on a headless machine.
+set_tests_properties(EqPeakHandoffTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(EqPeakHandoffTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Delay
+	${CMAKE_SOURCE_DIR}/plugins/Eq
+	${CMAKE_BINARY_DIR}/plugins/Delay
+)
+target_static_libraries(EqPeakHandoffTest PRIVATE lmmsobjs)
+target_link_libraries(EqPeakHandoffTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(EqPeakHandoffTest PRIVATE cxx_std_20)
+target_compile_definitions(EqPeakHandoffTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=delay
+	# Compile-in, not a module: keep the generated export macros empty so the
+	# sources link into the test binary on every platform.
+	PLUGIN_STATIC_DEFINE
+)
+add_dependencies(EqPeakHandoffTest delay)
+
 if(WANT_WASM)
 	# Gate tests for the WASM DSP sandbox. Kept out of LMMS_TESTS so the
 	# pre-existing suite is byte-for-byte unchanged when WANT_WASM=OFF.

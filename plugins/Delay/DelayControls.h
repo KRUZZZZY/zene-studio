@@ -25,6 +25,8 @@
 #ifndef DELAYCONTROLS_H
 #define DELAYCONTROLS_H
 
+#include <atomic>
+
 #include "EffectControls.h"
 #include "DelayControlsDialog.h"
 
@@ -55,8 +57,11 @@ public:
 		return new gui::DelayControlsDialog( this );
 	}
 
-	float m_outPeakL;
-	float m_outPeakR;
+	// cluster new-p9-122 (new-p16-57): peak meters written on the audio thread
+	// (DelayEffect::processImpl) and read+cleared by the shared EqFader on the
+	// GUI timer - atomics, lock-free, no data race on the handoff.
+	std::atomic<float> m_outPeakL;
+	std::atomic<float> m_outPeakR;
 
 
 private slots:
@@ -76,5 +81,10 @@ private:
 
 
 } // namespace lmms
+
+// The peak meters cross the audio/GUI thread boundary (cluster new-p9-122);
+// a non-lock-free atomic would put a lock or syscall on the render thread.
+static_assert(std::atomic<float>::is_always_lock_free,
+	"DelayControls peak meters are written on the audio thread and must be lock-free");
 
 #endif // DELAYCONTROLS_H

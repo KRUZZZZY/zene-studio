@@ -25,6 +25,8 @@
 #ifndef EQCONTROLS_H
 #define EQCONTROLS_H
 
+#include <atomic>
+
 #include "EffectControls.h"
 #include "EqSpectrumView.h"
 
@@ -62,18 +64,21 @@ public:
 
 	gui::EffectControlDialog* createView() override;
 
-	float m_inPeakL;
-	float m_inPeakR;
-	float m_outPeakL;
-	float m_outPeakR;
+	// cluster new-p9-122 (new-p15-58/new-p17-52): peak meters written on the
+	// audio thread (EqEffect::processImpl) and read+cleared by the GUI's
+	// EqFader on the timer - atomics, lock-free, no data race on the handoff.
+	std::atomic<float> m_inPeakL;
+	std::atomic<float> m_inPeakR;
+	std::atomic<float> m_outPeakL;
+	std::atomic<float> m_outPeakR;
 
 	// The following are linear peaks
-	float m_lowShelfPeakL, m_lowShelfPeakR;
-	float m_para1PeakL, m_para1PeakR;
-	float m_para2PeakL, m_para2PeakR;
-	float m_para3PeakL, m_para3PeakR;
-	float m_para4PeakL, m_para4PeakR;
-	float m_highShelfPeakL, m_highShelfPeakR;
+	std::atomic<float> m_lowShelfPeakL, m_lowShelfPeakR;
+	std::atomic<float> m_para1PeakL, m_para1PeakR;
+	std::atomic<float> m_para2PeakL, m_para2PeakR;
+	std::atomic<float> m_para3PeakL, m_para3PeakR;
+	std::atomic<float> m_para4PeakL, m_para4PeakR;
+	std::atomic<float> m_highShelfPeakL, m_highShelfPeakR;
 
 	EqAnalyser m_inFftBands;
 	EqAnalyser m_outFftBands;
@@ -137,6 +142,11 @@ private:
 	friend class gui::EqControlsDialog;
 	friend class EqEffect;
 };
+
+// The peak meters cross the audio/GUI thread boundary (cluster new-p9-122);
+// a non-lock-free atomic would put a lock or syscall on the render thread.
+static_assert(std::atomic<float>::is_always_lock_free,
+	"EqControls peak meters are written on the audio thread and must be lock-free");
 
 
 } // namespace lmms

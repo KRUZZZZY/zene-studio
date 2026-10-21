@@ -24,6 +24,8 @@
 
 #include "EqEffect.h"
 
+#include <atomic>
+
 #include "Engine.h"
 #include "lmms_math.h"
 
@@ -63,6 +65,18 @@ float frameProgress(const f_cnt_t frame, const f_cnt_t frames)
 	}
 
 	return static_cast<float>(frame) / static_cast<float>(frames - 1);
+}
+
+// cluster new-p9-122 (new-p17-52): raise a peak meter to `value` (the
+// audio-thread max-hold between two GUI ticks). The GUI timer exchanges the
+// field to zero when it displays it; the old load-compare-store raced with
+// that exchange, so a lock-free CAS raise replaces it.
+void raisePeak(std::atomic<float>& peak, float value)
+{
+	float observed = peak.load(std::memory_order_relaxed);
+	while (value > observed && !peak.compare_exchange_weak(observed, value, std::memory_order_relaxed))
+	{
+	}
 }
 
 } // namespace
@@ -177,8 +191,8 @@ ProcessStatus EqEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 	}
 
 	gain(inOut, m_inGain, &m_inPeak);
-	m_eqControls.m_inPeakL = m_eqControls.m_inPeakL < m_inPeak[0] ? m_inPeak[0] : m_eqControls.m_inPeakL;
-	m_eqControls.m_inPeakR = m_eqControls.m_inPeakR < m_inPeak[1] ? m_inPeak[1] : m_eqControls.m_inPeakR;
+	raisePeak(m_eqControls.m_inPeakL, m_inPeak[0]);
+	raisePeak(m_eqControls.m_inPeakR, m_inPeak[1]);
 
 	float periodProgress = 0.0f; // percentage of period processed
 	for (f_cnt_t f = 0; f < inOut.frames(); ++f)
@@ -274,8 +288,8 @@ ProcessStatus EqEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 	SampleFrame outPeak = { 0, 0 };
 	gain(inOut, outGain, &outPeak);
-	m_eqControls.m_outPeakL = m_eqControls.m_outPeakL < outPeak[0] ? outPeak[0] : m_eqControls.m_outPeakL;
-	m_eqControls.m_outPeakR = m_eqControls.m_outPeakR < outPeak[1] ? outPeak[1] : m_eqControls.m_outPeakR;
+	raisePeak(m_eqControls.m_outPeakL, outPeak[0]);
+	raisePeak(m_eqControls.m_outPeakR, outPeak[1]);
 
 	if(m_eqControls.m_analyseOutModel.value( true ) && outSum > 0 && m_eqControls.isViewVisible() )
 	{
@@ -327,26 +341,32 @@ void EqEffect::setBandPeaks( EqAnalyser *fft, int samplerate )
 		return linearPeakBand(freq * (1 - bw * 0.5), freq * (1 + bw * 0.5), fft, samplerate);
 	};
 
-	m_eqControls.m_lowShelfPeakR = m_eqControls.m_lowShelfPeakL =
-		linearPeakBand(m_eqControls.m_lowShelfFreqModel.value() * (1 - m_eqControls.m_lowShelfResModel.value() * 0.5),
-			m_eqControls.m_lowShelfFreqModel.value(), fft , samplerate);
+	const float lowShelf = linearPeakBand(m_eqControls.m_lowShelfFreqModel.value() * (1 - m_eqControls.m_lowShelfResModel.value() * 0.5),
+		m_eqControls.m_lowShelfFreqModel.value(), fft , samplerate);
+	m_eqControls.m_lowShelfPeakL.store(lowShelf, std::memory_order_relaxed);
+	m_eqControls.m_lowShelfPeakR.store(lowShelf, std::memory_order_relaxed);
 
-	m_eqControls.m_para1PeakL = m_eqControls.m_para1PeakR =
-		computePeakBand(m_eqControls.m_para1FreqModel, m_eqControls.m_para1BwModel);
+	const float para1 = computePeakBand(m_eqControls.m_para1FreqModel, m_eqControls.m_para1BwModel);
+	m_eqControls.m_para1PeakL.store(para1, std::memory_order_relaxed);
+	m_eqControls.m_para1PeakR.store(para1, std::memory_order_relaxed);
 
-	m_eqControls.m_para2PeakL = m_eqControls.m_para2PeakR =
-		computePeakBand(m_eqControls.m_para2FreqModel, m_eqControls.m_para2BwModel);
+	const float para2 = computePeakBand(m_eqControls.m_para2FreqModel, m_eqControls.m_para2BwModel);
+	m_eqControls.m_para2PeakL.store(para2, std::memory_order_relaxed);
+	m_eqControls.m_para2PeakR.store(para2, std::memory_order_relaxed);
 
-	m_eqControls.m_para3PeakL = m_eqControls.m_para3PeakR =
-		computePeakBand(m_eqControls.m_para3FreqModel, m_eqControls.m_para3BwModel);
+	const float para3 = computePeakBand(m_eqControls.m_para3FreqModel, m_eqControls.m_para3BwModel);
+	m_eqControls.m_para3PeakL.store(para3, std::memory_order_relaxed);
+	m_eqControls.m_para3PeakR.store(para3, std::memory_order_relaxed);
 
-	m_eqControls.m_para4PeakL = m_eqControls.m_para4PeakR =
-		computePeakBand(m_eqControls.m_para4FreqModel, m_eqControls.m_para4BwModel);
+	const float para4 = computePeakBand(m_eqControls.m_para4FreqModel, m_eqControls.m_para4BwModel);
+	m_eqControls.m_para4PeakL.store(para4, std::memory_order_relaxed);
+	m_eqControls.m_para4PeakR.store(para4, std::memory_order_relaxed);
 
-	m_eqControls.m_highShelfPeakL = m_eqControls.m_highShelfPeakR =
-		linearPeakBand(m_eqControls.m_highShelfFreqModel.value(),
-			m_eqControls.m_highShelfFreqModel.value() * (1 + m_eqControls.m_highShelfResModel.value() * 0.5),
-			fft, samplerate);
+	const float highShelf = linearPeakBand(m_eqControls.m_highShelfFreqModel.value(),
+		m_eqControls.m_highShelfFreqModel.value() * (1 + m_eqControls.m_highShelfResModel.value() * 0.5),
+		fft, samplerate);
+	m_eqControls.m_highShelfPeakL.store(highShelf, std::memory_order_relaxed);
+	m_eqControls.m_highShelfPeakR.store(highShelf, std::memory_order_relaxed);
 }
 
 extern "C"

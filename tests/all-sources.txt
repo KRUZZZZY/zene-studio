@@ -2918,6 +2918,7 @@ tests/src/plugins/ClapLoaderErrorTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
 tests/src/plugins/DelayLfoAutomationTest.cpp
 tests/src/plugins/EqFilterTest.cpp
+tests/src/plugins/EqPeakHandoffTest.cpp
 tests/src/plugins/ExprSynthAllocationTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
 tests/src/plugins/FakeHostModule.cpp
