@@ -222,7 +222,14 @@ void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float*
 	{
 		m_lost.fetch_add(static_cast<std::uint64_t>(distance), std::memory_order_relaxed);
 		const std::uint32_t gap = std::min<std::uint32_t>(static_cast<std::uint32_t>(distance), MaxGapPackets);
-		m_rx.writeSilence(static_cast<std::size_t>(gap) * header.frames);
+		const std::size_t gapFrames = static_cast<std::size_t>(gap) * header.frames;
+		const std::size_t silenced = m_rx.writeSilence(gapFrames);
+		if (silenced < gapFrames)
+		{
+			// The ring was full: the silence frames that did not fit are dropped like any other
+			// frame the ring could not take, so they belong in the overrun count.
+			m_rxOverruns.fetch_add(gapFrames - silenced, std::memory_order_relaxed);
+		}
 	}
 	m_expectedRx = header.sequence + 1;
 	const std::size_t written = m_rx.write(samples, header.frames);

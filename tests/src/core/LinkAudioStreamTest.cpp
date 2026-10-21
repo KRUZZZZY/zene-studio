@@ -42,7 +42,9 @@
 #include <thread>
 #include <vector>
 
+#include <QHostAddress>
 #include <QJsonObject>
+#include <QUdpSocket>
 
 #include <fstream>
 #include <optional>
@@ -365,6 +367,62 @@ private slots:
 		}
 		QCOMPARE(rx2.report().packetsReceived, std::uint64_t{0});
 		QVERIFY(rx2.report().rateMismatches > 0);
+	}
+
+	/*! A sequence gap is replaced by silence. When the RX ring is full that silence does not
+	 *  fit, and the frames the ring could not take are an overrun like any other dropped frame:
+	 *  they must be counted, or the report hides a hole in the audio. */
+	void droppedGapSilenceIsCountedAsAnOverrun()
+	{
+		LinkAudioStream rx;
+		std::string why;
+		QVERIFY2(rx.configure(receiver(20), &why), why.c_str());
+		const quint16 port = static_cast<quint16>(rx.report().boundPort);
+		QVERIFY(port > 0);
+
+		std::vector<SampleFrame> mix(64, SampleFrame(0.f, 0.f));
+		rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), Rate);   // the receiver learns the engine rate
+		QCOMPARE(rx.report().packetsReceived, std::uint64_t{0});
+
+		QUdpSocket sender;
+		std::vector<float> payload(AudioMaxPacketFrames * AudioChannels, 0.25f);
+		std::vector<std::uint8_t> wire(AudioMaxPacketBytes);
+		const auto send = [&](std::uint32_t sequence) {
+			AudioPacketHeader h;
+			h.sequence = sequence;
+			h.sampleRate = Rate;
+			h.frames = static_cast<std::uint16_t>(AudioMaxPacketFrames);
+			const std::size_t bytes = encodeAudioPacket(h, payload.data(), wire.data(), wire.size());
+			if (bytes == 0) { return false; }
+			return sender.writeDatagram(reinterpret_cast<const char*>(wire.data()), bytes,
+				QHostAddress::LocalHost, port) == static_cast<qint64>(bytes);
+		};
+		const auto waitFor = [&](std::uint64_t packets) {
+			QElapsedTimer clock;
+			clock.start();
+			while (rx.report().packetsReceived < packets && clock.elapsed() < 5000) { QTest::qWait(1); }
+			return rx.report().packetsReceived >= packets;
+		};
+
+		// Fill the ring exactly: the first packet, then 56 packets that each skip 8 sequences
+		// (8 * 128 frames of silence plus 128 frames of payload), then one that skips 7 - its
+		// silence takes exactly the rest of the ring and its payload does not fit at all.
+		QVERIFY(send(0));
+		QVERIFY(waitFor(1));
+		for (std::uint32_t k = 1; k <= 56; ++k)
+		{
+			QVERIFY(send(9 * k));
+			QVERIFY(waitFor(k + 1));
+		}
+		QVERIFY(send(512));
+		QVERIFY(waitFor(58));
+		const std::uint64_t beforeGap = rx.report().rxOverruns;
+		QCOMPARE(beforeGap, std::uint64_t{128});   // only the payload that did not fit
+
+		// The next packet skips 8 sequences: not one of the 1024 silence frames fits either.
+		QVERIFY(send(521));
+		QVERIFY(waitFor(59));
+		QCOMPARE(rx.report().rxOverruns - beforeGap, std::uint64_t{1024 + 128});
 	}
 
 	/*! Criterion 1, with Link ACTIVE: two in-process Ableton Link participants whose discovery is
