@@ -400,13 +400,13 @@ whole rack group; here is each one against this fix:
   `rack.layer_remove`, `rack.layer_zone_add`, `rack.layer_zone_remove`,
   `rack.layer_set`, `rack.zone_add`, `rack.zone_remove`, `rack.zone_resolve`
   - these live in `ControlCommandsRack.cpp`, `ControlCommandsRackLayers.cpp`,
-  `ControlCommandsRackSplit.cpp`, `ControlCommandsRackWrap.cpp` and
-  `ControlCommandsRackZones.cpp`, none of which this change touches, and none
-  of them reads or writes a macro value or a target window. The one that
-  meets the macro list is `rack.remove_chain`, which drops the macro targets
-  of the chain it removes through `RackMacros::reindexChains()` - unchanged
-  by this fix, and covered by the existing case
-  `removingAChainReindexesTheMacroTargets()`.
+  `ControlCommandsRackWrap.cpp`, `ControlCommandsRackZones.cpp` and
+  `ControlCommandsDeviceTools.cpp` (`rack.split`), none of which this change
+  touches, and none of them reads or writes a macro value or a target window.
+  The one that meets the macro list is `rack.remove_chain`, which drops the
+  macro targets of the chain it removes through `RackMacros::reindexChains()`
+  (`src/core/Rack.cpp:204`) - unchanged by this fix, and covered by the
+  existing case `removingAChainReindexesTheMacroTargets()`.
 
 **7. Gates.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py
 <worktree>` exited **0** after each of the three commits
