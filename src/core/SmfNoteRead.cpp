@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <deque>
 #include <map>
 
 #include "TimePos.h"
@@ -145,7 +146,7 @@ struct TrackWalk
 	long long tick = 0;
 	int running = 0;
 	bool ended = false;
-	std::map<int, std::vector<QueuedNote>> open;  //!< (channel * 128 + key) -> notes not yet closed, oldest first
+	std::map<int, std::deque<QueuedNote>> open;  //!< (channel * 128 + key) -> notes not yet closed, oldest first
 	std::vector<SmfNote>* out = nullptr;
 
 	long long lmmsTicks(long long fileTicks) const
@@ -172,7 +173,7 @@ struct TrackWalk
 //! A note-on (velocity > 0) opens a note; anything else that reaches here closes the oldest open note of its key.
 void noteMessage(int status, int key, int velocity, TrackWalk* walk)
 {
-	std::vector<QueuedNote>& queue = walk->open[(status & 0x0F) * 128 + key];
+	std::deque<QueuedNote>& queue = walk->open[(status & 0x0F) * 128 + key];
 	if ((status & 0xF0) == 0x90 && velocity > 0)
 	{
 		SmfNote note;
@@ -185,7 +186,7 @@ void noteMessage(int status, int key, int velocity, TrackWalk* walk)
 	else if (!queue.empty())  // a note-off with no note is ignored
 	{
 		walk->close(queue.front().note);
-		queue.erase(queue.begin());
+		queue.pop_front();  // the notes queued behind the closed one must not be moved (new-p14-314)
 	}
 }
 
