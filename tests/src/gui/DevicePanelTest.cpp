@@ -798,6 +798,55 @@ private slots:
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 
+	/*! BUG new-p15-48: the fold handler touched the card's body after the dispatch - and the dispatch runs
+	 *  a command, which can retire the card, so the body would be a dangling pointer. A card that is gone
+	 *  is not touched: the body keeps the state it had. */
+	void foldingACardThatTheDispatchRetiresTouchesNothing()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		const QString effect = loadAnEffect(channel);
+		if (effect.isEmpty()) { QSKIP("this host loads no effect module"); }
+		Effect* device = mixerChannel->m_fxChain.effects().front();
+		DeviceCard::Spec spec;
+		spec.target = channel;
+		spec.plugin = effect;
+		spec.title = device->displayName();
+		spec.effect = device;
+		auto* card = new DeviceCard(spec, {});
+		card->show();
+		QCoreApplication::processEvents();
+		auto* fold = childNamed<QToolButton>(card, QStringLiteral("Fold or open %1").arg(spec.title));
+		QVERIFY(fold != nullptr);
+		// The card's body: the widget the fold hides. It is let out of the card, so it outlives it and
+		// the test can watch what the handler does to it.
+		QWidget* body = nullptr;
+		for (QWidget* child : card->findChildren<QWidget*>())
+		{
+			if (child->parentWidget() == card && child->objectName().isEmpty()) { body = child; }
+		}
+		QVERIFY(body != nullptr);
+		QVERIFY(body->isVisible());
+
+		// A listener that retires the card while the fold command runs (a chain's own signal can do it).
+		bool folding = false;
+		const QPointer<DeviceCard> retired = card;
+		QObject::connect(&mixerChannel->m_fxChain, &EffectChain::dataChanged, &mixerChannel->m_fxChain,
+			[&folding, body, retired] {
+				if (!folding || retired.isNull()) { return; }
+				body->setParent(nullptr);
+				body->show();
+				delete retired.data();
+			});
+		folding = true;
+		fold->click();
+		folding = false;
+		QVERIFY2(retired.isNull(), "the card was not retired while the fold was dispatched");
+		QVERIFY2(body->isVisible(), "the fold touched a card that was already gone");
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the fold the test made
+	}
+
 	//! Theme 12: the device picker lists the catalogue's effects with their type and format in words, and its search
 	//! filters them live; a search that matches nothing shows nothing.
 	void theDevicePickerSearchesAndWordsEachRow()

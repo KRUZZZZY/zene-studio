@@ -113,6 +113,8 @@ private:
 	//! Theme 12: the A/B button (shown once a slot is stored) and the Actions button, at the header's end.
 	void addStateButtons(QHBoxLayout* row, QWidget* header);
 	QWidget* buildParameters(const QList<AutomatableModel*>& parameters);
+	//! Fold or open the card's body: the command decides, and a card the dispatch retired is not touched.
+	void foldCard(bool folded);
 	//! The built-in control dialog of the device: false when it has no view of its own to show.
 	bool openEffectDialog();
 	//! What the card says about the last "Open Editor" that opened nothing (empty: it opened).

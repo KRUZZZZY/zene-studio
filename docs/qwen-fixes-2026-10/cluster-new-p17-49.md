@@ -6,7 +6,68 @@ Three findings in one file, `src/gui/shell/DeviceCard.cpp` (the shell's device c
 each, with its own fix, its own regression test and its own RED/GREEN proof.
 
 new-p17-49: FIXED
+new-p15-48: FIXED
 new-p9-104: FIXED
+
+## new-p15-48: FIXED
+
+### The finding
+
+The fold button's handler used the card **after** the dispatch:
+`if (dispatch(this, "plugin.fold", args).ok) { m_body->setVisible(!folded); }`. The dispatch runs a
+registered command, and a command can retire the card - the card's body would then be a dangling
+pointer. The fix the finding asks for is a `QPointer<DeviceCard>` captured before the dispatch.
+
+### Evidence in the tree (before the fix)
+
+- `src/gui/shell/DeviceCard.cpp:277-283` - the handler read `m_body` (a raw `QWidget*` member) after
+  the dispatch, with no check that the card was still there; the same branch also wrote to the
+  header's fold button (`fold->setChecked(!folded)`), a child of the card.
+- `src/gui/shell/DeviceCard.cpp:319` - `m_body` is a child of the card, so it lives exactly as long
+  as the card: if the card is gone, the pointer dangles.
+- The sibling entry of the same feature already guards the card it uses
+  (`src/gui/shell/DeviceActionMenu.cpp:62`, `[card = QPointer<DeviceCard>(card)] { if (!card.isNull()) ... }`).
+
+**Reachability, measured:** the panel retires a card with `deleteLater()`
+(`src/gui/shell/DevicePanel.cpp:212`) and the dispatch path runs no nested event loop
+(`ControlRegistry::invoke` → the `plugin.fold` handler → `applyOptions` → `EffectChain::dataChanged`),
+so with the panel's own retirement the card is still alive when the handler continues - the finding
+is latent, not everyday. The guard removes the dependence on that: any listener that retires the
+card while the fold command runs (the test below does exactly that) no longer leaves the handler
+writing to a card that is gone.
+
+### The fix
+
+`src/gui/shell/DeviceCard.cpp:311-325` (the new `DeviceCard::foldCard`, called by the header's fold
+button) - the card is captured as a `QPointer<DeviceCard>` before the dispatch, and both writes
+after it (the body's visibility, the button's check mark) happen only while the card is still
+there. The handler moved out of `buildHeader` so that the header's own complexity did not grow
+(the complexity gate rejects a function over 10). Nothing else changed: the same command is
+dispatched, and a card that lives folds exactly as before.
+
+### The regression test
+
+`tests/src/gui/DevicePanelTest.cpp` - `foldingACardThatTheDispatchRetiresTouchesNothing`: a real
+effect on a real mixer channel, a card of its own, and a listener on the chain's own signal that
+retires the card while the fold command runs. The card's body is let out of the card first, so it
+outlives it and the test can watch what the handler does to it. The test asserts that the card was
+retired during the dispatch **and** that its body was left alone.
+
+The test is deterministic: the retirement happens in a signal handler of the chain (a seam, not a
+timing), and the body is read with `isVisible()`. The RED run was repeated five times and failed
+the same way each time.
+
+### Commands and exit codes
+
+| Check | Exact command | Exit | Result |
+|---|---|---:|---|
+| RED (fix reverted) | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-49.r1/logs/fix-p15-48.patch && cmake --build build --target DevicePanelTest zene -j 20` then `ctest -R DevicePanelTest --output-on-failure` (from `build/tests`) | 8 | `FAIL! foldingACardThatTheDispatchRetiresTouchesNothing() 'body->isVisible()' returned FALSE. (the fold touched a card that was already gone)`; 0% tests passed. Repeated 5 times: the same failure each time. |
+| GREEN (fix restored) | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-49.r1/logs/fix-p15-48.patch && cmake --build build --target DevicePanelTest zene -j 20` then `ctest -R DevicePanelTest --output-on-failure` (from `build/tests`) | 0 | 100% tests passed (1 ctest target, 23 test functions). |
+| Dependents of the changed header | `cmake --build build --target InstrumentSetupUiTest RackMenuTest -j 20` then `ctest -R "DevicePanelTest\|InstrumentSetupUiTest\|RackMenuTest" --output-on-failure` (from `build/tests`) | 0 | 3/3 ctest targets passed. |
+
+Logs: `build-14-red.log`, `test-12-red.log` (RED), `build-15-green.log`, `test-13-green.log`
+(GREEN), `build-13.log`, `test-11-family.log` (the family) in
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-49.r1/logs/`.
 
 ## new-p17-49: FIXED
 
@@ -138,20 +199,27 @@ Logs: `build-4-red.log`, `test-4-red.log` (RED), `build-5-green.log`, `test-5-gr
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
-  RED: `ctest -R DevicePanelTest` exit 8 with both new cases failing on `'host != card' returned
-  FALSE`; GREEN: the same command exit 0. The proof is `logs/fix-p9-104.patch` (the product diff
-  only) applied with `-R` and then re-applied.
-- **The test is deterministic.** No wall-clock timing, no sleeps, no races: the test finds the menu
-  the right-click opened by walking the application's widgets, closes it itself, and reads the
-  card's own `QPointer` for its lifetime.
-- **The fix is at the cause and complete.** The cause is the stack menu's ownership: it is no
-  longer a child of the widget its own entry can retire. The sibling path - the Actions button's
-  menu and the shared `EffectDeviceMenu` entries the card's menu reaches - was checked and keeps
-  working; the entries' host is now guarded in both menu builders.
-- **No collateral damage.** The menu offers the same entries in the same order, the same
-  registered commands are dispatched, the dialogs still belong to the card, and no project data,
-  save format or command changed.
-- **Realtime / undo / commands.** Nothing on the audio thread changed; no new control command was
-  added (the commands the menu dispatches are unchanged, so the control snapshot does not move).
+  RED: `ctest -R DevicePanelTest` exit 8 with the new case failing on the exact assertion quoted in
+  each section; GREEN: the same command exit 0. The proof is one product patch per bug
+  (`logs/fix-p17-49.patch`, `logs/fix-p15-48.patch`, `logs/fix-p9-104.patch`), each applied with
+  `-R` and then re-applied.
+- **The test is deterministic.** No wall-clock timing, no sleeps, no races: the menu is found and
+  closed by the test itself, the card's lifetime is read from a `QPointer`, and the fold's
+  retirement happens in a signal handler of the chain (a seam), not after a delay. The RED run of
+  the fold test was repeated five times with the same result.
+- **The fix is at the cause and complete.** Each fix is at the place the finding names: the
+  discarded command result (`new-p17-49`), the unguarded post-dispatch access (`new-p15-48`), the
+  stack menu's ownership (`new-p9-104`). The siblings were checked: the card's other header
+  buttons, the card's other menu (the Actions button's), the shared `EffectDeviceMenu` entries the
+  card's menu reaches, and the panel's own card retirement all keep working; the three tests in
+  the family (`DevicePanelTest`, `InstrumentSetupUiTest`, `RackMenuTest`, the last two of which
+  include the changed header) pass.
+- **No collateral damage.** No project data, no save format, no command and no undo step changed;
+  the menu offers the same entries, the editor opens the same way, and a card that lives folds
+  exactly as before. The gates report "no new item in your files" for complexity and file length.
+- **Realtime / undo / commands.** Nothing on the audio thread was touched (no `process`/`render`
+  path). No new control command was added, so the control snapshot does not move. The fold command
+  still makes one undo step - the test undoes the fold it made.
 - **Old projects load as before.** No saved data, no schema and no file format was touched.
-- **Portability.** Only `QPointer` and `QMenu::setParent` (both Qt 5.15 and Qt 6) are used.
+- **Portability.** Only `QPointer`, `QMenu::setParent` and `QWidget::setParent` (all Qt 5.15 and
+  Qt 6) are used; no windows.h name, no `std::filesystem`.

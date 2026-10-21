@@ -274,13 +274,7 @@ QWidget* DeviceCard::buildHeader()
 		fold->setCheckable(true);
 		fold->setChecked(m_spec.effect->deviceOptions().folded);
 		m_fold = fold;
-		connect(fold, &QToolButton::clicked, this, [this, fold](bool folded) {
-			const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
-				{QStringLiteral("folded"), folded}};
-			// A rack chain's card is not redrawn by its chain's signal, so the card folds itself too.
-			if (dispatch(this, QStringLiteral("plugin.fold"), args).ok) { m_body->setVisible(!folded); }
-			else { fold->setChecked(!folded); }
-		});
+		connect(fold, &QToolButton::clicked, this, [this](bool folded) { foldCard(folded); });
 		row->addWidget(fold);
 		// MX-080: hear only what the device changes (plugin.delta, a monitor switch).
 		auto* delta = new QToolButton(header);
@@ -312,6 +306,22 @@ QWidget* DeviceCard::buildHeader()
 	}
 	row->addWidget(actionsButton(this, header));
 	return header;
+}
+
+//! Fold or open the card's body (MX-113). The command decides; the card folds itself too, because a
+//! rack chain's card is not redrawn by its chain's signal.
+void DeviceCard::foldCard(bool folded)
+{
+	const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin},
+		{QStringLiteral("folded"), folded}};
+	// The dispatch runs a command, and a command can retire this card: the card is guarded, so a card
+	// that is gone by then is not touched (its body would be a dangling pointer).
+	const QPointer<DeviceCard> self(this);
+	if (dispatch(this, QStringLiteral("plugin.fold"), args).ok)
+	{
+		if (!self.isNull()) { m_body->setVisible(!folded); }
+	}
+	else if (!self.isNull()) { m_fold->setChecked(!folded); }
 }
 
 QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
