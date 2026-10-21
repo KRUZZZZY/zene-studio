@@ -46,6 +46,12 @@ const f_cnt_t minimumFrames = 1;
 
 EnvelopeAndLfoParameters::LfoInstances * EnvelopeAndLfoParameters::s_lfoInstances = nullptr;
 
+namespace
+{
+//! The test seam: the publisher calls it while it publishes a snapshot.
+std::function<void()> g_publicationHook;
+} // namespace
+
 
 void EnvelopeAndLfoParameters::LfoInstances::trigger()
 {
@@ -567,9 +573,19 @@ void EnvelopeAndLfoParameters::rebuildAudioState()
 // Hand the new snapshot to the audio thread and retire the previous one. The
 // sequence is odd while the switch happens, so a reader that catches it
 // retries instead of reading a half-published snapshot.
+void EnvelopeAndLfoParameters::setPublicationHook( PublicationHook _hook )
+{
+	g_publicationHook = std::move( _hook );
+}
+
+
+
+
 void EnvelopeAndLfoParameters::publishAudioState( std::unique_ptr<AudioState> _state )
 {
 	m_audioStateSeq.fetch_add( 1, std::memory_order_acq_rel );
+	// the publication point: the test seam holds the publisher here.
+	if( g_publicationHook ) { g_publicationHook(); }
 	AudioState * const old = m_audioState.exchange( _state.release(),
 								std::memory_order_acq_rel );
 	m_audioStateSeq.fetch_add( 1, std::memory_order_release );

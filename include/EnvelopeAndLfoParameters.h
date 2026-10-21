@@ -27,6 +27,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -181,6 +182,20 @@ public:
 	 *  them. */
 	bool holdAudioState();
 	void releaseHeldAudioState();
+
+	/*! TEST SEAM. The publisher calls this hook while it publishes a snapshot,
+	 *  so a test can hold the publication and watch what the audio path does
+	 *  while a publication is in flight. The hook is empty in production. */
+	using PublicationHook = std::function<void()>;
+	static void setPublicationHook( PublicationHook _hook );
+
+	/*! TEST SEAM. How many readers hold a published snapshot right now (the
+	 *  audio path, and the seam above). A test uses it to see whether the
+	 *  audio path claimed the snapshot while the publisher was held. */
+	int audioStateReaders() const
+	{
+		return m_audioStateReaders.load(std::memory_order_seq_cst);
+	}
 
 public slots:
 	void updateSampleVars();
