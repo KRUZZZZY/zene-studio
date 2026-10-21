@@ -37,13 +37,13 @@
  * clip, and audio cells are loaded into a sample clip. A content/track mismatch
  * or unreadable audio source is refused before the ring is consumed.
  *
- * THE INVERSE. The pass creates clips over one Track journal checkpoint per
- * touched track - the clip.add and midi.retro_capture_to_clip shape - so ONE
- * control.undo takes the whole pass back. `before`/`inverse` in the recorded
- * transaction describe the FIRST clip the pass created, which is a complete and
- * exact inverse for that clip (clip.delete removes it); the mechanism names the
- * checkpoints that carry the rest, because a pass creates one clip per completed
- * launch and a transaction carries one inverse.
+ * THE INVERSE. The pass creates clips over ONE composite journal checkpoint
+ * covering every touched track - the clip.add and midi.retro_capture_to_clip
+ * shape - so ONE control.undo takes the whole pass back. `before`/`inverse` in
+ * the recorded transaction describe the FIRST clip the pass created, which is a
+ * complete and exact inverse for that clip (clip.delete removes it); the
+ * mechanism names the checkpoint that carries the rest, because a pass creates
+ * one clip per completed launch and a transaction carries one inverse.
  */
 
 #include <memory>
@@ -368,7 +368,6 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	const int pattern = captured
 		? pair.contentKind == SessionArrangementRecorder::Event::ContentKind::Midi ? pair.patternId : -1
 		: slot.patternId();
-	track->addJournalCheckPoint();
 	Clip* clip = track->createClip(TimePos(pair.startTick));
 	if (clip == nullptr) { return pairNotLanded(pair, QStringLiteral("track_created_no_clip")); }
 	const QString content = copySlotContent(clip, slot, audioSample, pair);
@@ -396,8 +395,8 @@ void registerRecordLand(ControlRegistry& registry)
 		"is still open, because a half-landed performance would lose starts or invent their ends; "
 		"stop the session first (session.stop_all, or session.back_to_arrangement). Also REFUSED "
 		"without consuming anything when MIDI or audio content cannot be copied to the destination "
-		"track or an audio source cannot be loaded. Reversible: one Track journal "
-		"checkpoint per touched track, so one control.undo takes the whole pass back.");
+		"track or an audio source cannot be loaded. Reversible: one composite ProjectJournal "
+		"checkpoint covering all touched tracks, so one control.undo takes the whole pass back.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("landed"), arrayProperty()},
@@ -442,6 +441,11 @@ void registerRecordLand(ControlRegistry& registry)
 		// Every event is paired or an unmatched stop (which has no clip to make),
 		// so the pass can consume the whole ring.
 		consumeLandEvents(recorder, count);
+
+		// ONE composite checkpoint over the distinct touched tracks, taken here -
+		// before the loop below creates anything - so the pass is one undo action
+		// however many clips or tracks it touches.
+		checkpointLandTracks(*song, pairs, pairCount);
 
 		QJsonArray landed;
 		int clips = 0;
@@ -495,8 +499,8 @@ void registerRecordLand(ControlRegistry& registry)
 					QJsonObject{{QStringLiteral("clip"),
 						firstClip.value(QStringLiteral("clip"))}},
 					true,
-					QStringLiteral("ProjectJournal (one Track checkpoint per touched track, "
-						"taken before the pass created its clips: Track::restoreState re-loads "
+					QStringLiteral("ProjectJournal (one composite checkpoint covering all touched "
+						"tracks, taken before the pass created its clips: Track::restoreState re-loads "
 						"the track's serialized clips, which is how the GUI's own clip "
 						"add/delete paths reverse themselves). The recorded inverse names the "
 						"FIRST clip of the pass, which clip.delete removes exactly; "

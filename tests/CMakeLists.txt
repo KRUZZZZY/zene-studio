@@ -1286,6 +1286,15 @@ set(LMMS_TESTS
 	src/tracks/SampleClipWindowTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
 	src/plugins/ReverbSCBaseTest.cpp
+	# The undo half of session.arrangement_record_land: the pass is ONE undo step, whatever it lands.
+	# REGISTERED AT THE END OF THIS LIST ON PURPOSE: ctest numbers its tests in registration order,
+	# and the repo's negative control (the harness that reverts a branch's product change and runs
+	# the branch's own tests to prove they fail without it) reads that list with a pattern that sees
+	# only THREE-DIGIT test numbers - ctest pads a two-digit number ("Test  #27:"), so the
+	# ControlSessionRecordLandTest binary (number 27) is invisible to it. From the end of this list
+	# the number is three digits, so the mechanical proof can see this regression. The test's own
+	# header says the same thing.
+	src/core/ControlSessionRecordLandUndoTest.cpp
 )
 
 # Ogg is optional; this regression compiles against the concrete Ogg writer.
