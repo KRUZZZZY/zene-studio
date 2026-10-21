@@ -25,13 +25,19 @@ re-attempted the setup for ever, and warned on every attempt.
 
 ### Evidence (file:line)
 
-- `plugins/Vst3Instrument/Vst3Instrument.cpp:294-309` (original): the failed
-  `prepare()` only produced a `qWarning`; `m_needsReprepare` was cleared
-  unconditionally, so nothing remembered that the attempt had failed.
-- `plugins/Vst3Instrument/Vst3Instrument.cpp:390-410`: the audio thread raises
-  `m_needsReprepare` on **every** block while the plug-in is not prepared.
-- `plugins/Vst3Instrument/Vst3Instrument.cpp:514-521` (original): `poll()`
-  called `reprepare()` whenever the flag was set - once per 100 ms tick.
+The first three citations are the ORIGINAL (pre-fix) line numbers; the current
+ones are in brackets.
+
+- `plugins/Vst3Instrument/Vst3Instrument.cpp:294-309` (original) [now
+  `:305-340`]: the failed `prepare()` only produced a `qWarning`;
+  `m_needsReprepare` was cleared unconditionally, so nothing remembered that
+  the attempt had failed.
+- `plugins/Vst3Instrument/Vst3Instrument.cpp:390-410` (original) [now
+  `:418-437`]: the audio thread raises `m_needsReprepare` on **every** block
+  while the plug-in is not prepared.
+- `plugins/Vst3Instrument/Vst3Instrument.cpp:514-521` (original) [now
+  `:542-566`]: `poll()` called `reprepare()` whenever the flag was set - once
+  per 100 ms tick.
 - `plugins/Vst3Instrument/Vst3Instrument.cpp:174-177`: the poll timer interval
   is 100 ms - the "every 100 ms" of the finding.
 - `plugins/Vst3Effect/Vst3Host.cpp:481-567`: `HostedPlugin::prepare()` returns
@@ -140,7 +146,7 @@ CTEST_EXIT=0
 ### Callers and siblings checked
 
 - `reprepare()` is called from exactly one place, `poll()`
-  (`plugins/Vst3Instrument/Vst3Instrument.cpp:546`); no control command, no
+  (`plugins/Vst3Instrument/Vst3Instrument.cpp:546-550`); no control command, no
   audio-thread path calls it. The new `mayPrepareAgain()` is called from
   `poll()` only, on the GUI thread - the same thread that owns
   `m_attemptedConfig` / `m_attemptCount`.
@@ -168,7 +174,7 @@ failure does only produce a `qWarning` there. The user-visible part of that
 failure is raised one layer up, by the 0.5.0 Q050-018 "missing devices" lane,
 and it covers VST3 instruments explicitly:
 
-- `plugins/Vst3Instrument/Vst3Instrument.h:91` -
+- `plugins/Vst3Instrument/Vst3Instrument.h:92` -
   `unavailableReason()` returns "the VST3 module or class was not found or
   could not be loaded" whenever the module did not load. That is the hook the
   missing-device machinery uses.
@@ -217,10 +223,10 @@ $ (cd build/tests && ctest -R 'MissingDevices' --output-on-failure)   # log: tes
 
 ### The one gap that is left, stated honestly
 
-The dialog text (`src/core/MissingDevices.cpp:246-258`) names the device and
+The dialog text (`src/core/MissingDevices.cpp:246-259`) names the device and
 says that it "could not be loaded", but it does not repeat the per-device
 `reason` string; the reason itself is carried in the `project.open` reply's
-JSON (`MissingDevice::toJson()`, `src/core/MissingDevices.cpp:47-53`). That is
+JSON (`MissingDevice::toJson()`, `src/core/MissingDevices.cpp:52-58`). That is
 a wording detail of the shared missing-device notice, not a missing VST3
 mechanism, and changing it would touch the notice every format shares - out of
 scope for this bug. No product change was made for cluster 4554.
@@ -287,7 +293,7 @@ touched, so no `tests/upstream-modifications.txt` entry was needed either.
   change is opt-in and off by default (the fixture probe, the host test and
   the effect integration test all still pass).
 - **Verdict ALREADY-FIXED for cluster 4554, with the code that shows it.**
-  `plugins/Vst3Instrument/Vst3Instrument.h:91` (`unavailableReason()`),
+  `plugins/Vst3Instrument/Vst3Instrument.h:92` (`unavailableReason()`),
   `src/tracks/InstrumentTrack.cpp:1140-1144` and `:1189-1197` (the placeholder),
   `src/core/MissingDevices.cpp:208-227` (the collection),
   `src/gui/MainWindow.cpp:239-243` and `src/gui/MissingDevicesNotice.cpp:33-40`
