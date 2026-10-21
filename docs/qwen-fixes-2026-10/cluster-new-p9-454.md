@@ -4,15 +4,15 @@ new-p9-454: FIXED
 
 The SF2 note path no longer allocates on the audio thread. `playNoteImpl()`
 takes one of the instrument's preallocated `Sf2PluginDataSlot`s
-(`plugins/Sf2Player/Sf2Player.h:195`, `Sf2Player.cpp:644`) instead of
+(`plugins/Sf2Player/Sf2Player.h:195`, `Sf2Player.cpp:643`) instead of
 `new Sf2PluginData`, and hands the note to the render stage through the
 bounded, preallocated `MidiHandoffQueue<NoteEventCapacity, Sf2NoteEvent>`
-(`Sf2Player.h:379`, `Sf2Player.cpp:681-692`). The old `QVector<NotePlayHandle*>
+(`Sf2Player.h:377`, `Sf2Player.cpp:680-691`). The old `QVector<NotePlayHandle*>
 m_playingNotes` and its `append()`/mutex are gone; there is no `m_playingNotes`
 member left in the tree. A refused first event releases the claimed slot
-(`Sf2Player.cpp:744-750`) so a full queue cannot leak it. `deleteNotePluginData`
+(`Sf2Player.cpp:743-750`) so a full queue cannot leak it. `deleteNotePluginData`
 queues a pitch-only note-off and returns the slot
-(`Sf2Player.cpp:1202-1228`).
+(`Sf2Player.cpp:1201-1227`).
 
 Regression: `Sf2PlayerRealtimeTest::notePathAllocatesNothing` loads the
 product's own `sf2player` module and counts allocations with the fork's
@@ -29,15 +29,15 @@ or `m_synthMutex`; all three members are removed. The render thread owns the
 active `fluid_synth_t` and adopts a fully built replacement from the UI through
 `Sf2PointerQueue<Sf2SynthSwap, 8>` (`Sf2Player.h:77-140`, `Sf2Player.cpp:847`).
 The old synth travels back on the retire queue and the UI deletes it after the
-render thread has stopped using it (`Sf2Player.cpp:369`, `343`). Reload/font
+render thread has stopped using it (`Sf2Player.cpp:368`, `343`). Reload/font
 changes build the candidate off the audio thread (`reloadSynth`, `openFile`),
 and gain/reverb/chorus/patch/bank/tuning are published as atomics
-(`Sf2Player.h:311-326`) and applied by the render thread in `applyControls()`
-(`Sf2Player.cpp:915`). `noteOn`/`noteOff` (`Sf2Player.cpp:779`, `834`) and
-`renderFrames` (`Sf2Player.cpp:1159`) use the render-owned synth with no lock.
+(`Sf2Player.h:309-324`) and applied by the render thread in `applyControls()`
+(`Sf2Player.cpp:914`). `noteOn`/`noteOff` (`Sf2Player.cpp:778`, `833`) and
+`renderFrames` (`Sf2Player.cpp:1158`) use the render-owned synth with no lock.
 `deleteNotePluginData` does not call into the synth either. The only remaining
 mutex, `m_synthHandoffMutex`, serialises UI-side producers of the hand-off
-queues and is never taken by an audio path (`Sf2Player.h:352`).
+queues and is never taken by an audio path (`Sf2Player.h:350`).
 
 Regression: the fork's RT-safety sweep, with the SF2 audio functions now
 declared in `tests/rt-safety-scope.txt:63-74`, proves there is no allocation,
