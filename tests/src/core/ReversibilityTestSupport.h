@@ -59,10 +59,11 @@ namespace revtest
 {
 using namespace lmms;
 
-//! Forward declaration: addInstrumentTrack() uses the catalogue helpers that are
-//! defined below it (one pass, no reordering of the file's narrative).
+//! Forward declaration: addInstrumentTrack() uses the catalogue and state helpers
+//! that are defined below it (one pass, no reordering of the file's narrative).
 inline QString firstLoadable(const QString& kind);
 inline QString firstLoadableInstrument();
+inline bool hasTrack(const QString& id);
 
 inline ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 {
@@ -100,12 +101,27 @@ inline QString addTrack(const QString& type = QStringLiteral("instrument"))
 //! depending on what this build happens to ship.
 inline QString addInstrumentTrackFor(const QString& device)
 {
+	// Resolve the device BEFORE creating the track: a fixture with nothing to
+	// load must not add one at all. A caller that skips on the empty answer is
+	// not left holding a track it never asked to keep.
+	if (device.isEmpty()) { return QString(); }
 	const QString track = addTrack();
 	if (track.isEmpty()) { return QString(); }
-	if (device.isEmpty()) { return QString(); }
 	const ControlResult loaded = run(QStringLiteral("plugin.load"),
 		{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
-	return loaded.ok ? track : QString();
+	if (!loaded.ok)
+	{
+		// track.add recorded the new track's own undo step immediately before
+		// this load, so undoing it removes the track AND leaves no step behind
+		// for the next test of this shared engine. If the journal could not take
+		// it back (no journal), remove the track directly: a track left behind
+		// on a failure path is the bug this helper must not have.
+		run(QStringLiteral("control.undo"));
+		if (hasTrack(track)) { run(QStringLiteral("track.remove"),
+			{{QStringLiteral("track"), track}}); }
+		return QString();
+	}
+	return track;
 }
 
 //! An instrument track with a real instrument on it (plugin.load), or empty
