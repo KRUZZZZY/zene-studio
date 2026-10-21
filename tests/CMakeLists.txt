@@ -1812,6 +1812,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawRemovalUndoTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyStateTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
 		# m0 blocker follow-up (trackview-uaf): the rack race cases load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "RackDeferredLifetimeTest"

@@ -650,8 +650,54 @@ private slots:
 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
 	}
 
-private:
-	QTemporaryDir m_world;
+ 	//! Renaming a preset to its current name changes nothing and records no undo step.
+ 	void renamingToTheCurrentNameRecordsNoUndoStep()
+ 	{
+ 		const QString source = addInstrumentTrack();
+ 		if (source.isEmpty())
+ 		{
+ 			QSKIP("this build exposes no loadable built-in instrument");
+ 		}
+ 		if (firstLoadableEffect().isEmpty())
+ 		{
+ 			QSKIP("this build exposes no loadable built-in effect");
+ 		}
+ 		QStringList ids;
+ 		QVERIFY2(loadEffects(source, 1, &ids) == 1, "this build has no loadable effect");
+ 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
+ 		run(QStringLiteral("chain.remove"),
+ 			QJsonObject{{QStringLiteral("name"), QStringLiteral("ControlChainPresetTest RenamedNoOp")}});
+ 		QVERIFY(savePreset(source, kPreset).ok);
+
+ 		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"),
+ 			QJsonObject{{QStringLiteral("window_ms"), 0}}).ok);
+
+ 		const QString renamed = QStringLiteral("ControlChainPresetTest RenamedNoOp");
+ 		QVERIFY(run(QStringLiteral("chain.rename"),
+ 			QJsonObject{{QStringLiteral("name"), kPreset},
+ 				{QStringLiteral("to"), renamed}}).ok);
+ 		QVERIFY(storeNames().contains(renamed));
+
+ 		const ControlResult same = run(QStringLiteral("chain.rename"),
+ 			QJsonObject{{QStringLiteral("name"), renamed}, {QStringLiteral("to"), renamed}});
+ 		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+ 		QVERIFY(storeNames().contains(renamed));
+
+ 		const ControlResult undone = run(QStringLiteral("control.undo"));
+ 		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+ 		QVERIFY2(undone.result.value(QStringLiteral("undone")).toBool(),
+ 			qPrintable(QStringLiteral("nothing was undone")));
+ 		QVERIFY(storeNames().contains(kPreset));
+ 		QVERIFY(!storeNames().contains(renamed));
+
+ 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
+ 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), renamed}});
+ 		run(QStringLiteral("control.set_undo_coalescing"),
+ 			QJsonObject{{QStringLiteral("window_ms"), control::UndoCoalesceWindowMs}});
+ 	}
+
+ 	private:
+ 	QTemporaryDir m_world;
 };
 
 QTEST_GUILESS_MAIN(ControlChainPresetTest)
