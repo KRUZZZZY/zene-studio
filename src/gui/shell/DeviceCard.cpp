@@ -382,20 +382,28 @@ void DeviceCard::openEditor()
 	// A hosted plug-in's own window first (VST3 / CLAP); a built-in effect's control dialog when
 	// the device has no native editor.
 	const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin}};
-	if (!invoke(QStringLiteral("plugin.editor_open"), args).ok) { openEffectDialog(); }
+	const ControlResult result = invoke(QStringLiteral("plugin.editor_open"), args);
+	if (result.ok) { setEditorError(QString()); return; }
+	// The built-in control dialog is the fallback for a device with no editor of its own.
+	if (openEffectDialog()) { setEditorError(QString()); return; }
+	// Neither opened: the user is told why the first try failed - a silent no-op says nothing
+	// (the reason is the command's own, not a word of ours).
+	setEditorError(result.errorMessage);
+	announce(this, CommandCall{QStringLiteral("plugin.editor_open"), args, {}, QString(), false}, result);
 }
 
-void DeviceCard::openEffectDialog()
+bool DeviceCard::openEffectDialog()
 {
 	if (m_editor.isNull())
 	{
 		EffectControlDialog* dialog = m_spec.effect->controls()->createView();
-		if (dialog == nullptr) { return; }
+		if (dialog == nullptr) { return false; }
 		m_editor = getGUI()->mainWindow()->addWindowedWidget(dialog);
 		m_editor->setWindowFlag(Qt::WindowMaximizeButtonHint, false);
 	}
 	m_editor->show();
 	m_editor->raise();
+	return true;
 }
 
 void DeviceCard::openPins()

@@ -5,7 +5,65 @@
 Three findings in one file, `src/gui/shell/DeviceCard.cpp` (the shell's device card). One verdict
 each, with its own fix, its own regression test and its own RED/GREEN proof.
 
+new-p17-49: FIXED
 new-p9-104: FIXED
+
+## new-p17-49: FIXED
+
+### The finding
+
+`DeviceCard::openEditor` threw away the result of `plugin.editor_open`:
+`if (!invoke(...).ok) { openEffectDialog(); }`. When the fallback - the built-in control dialog -
+had no view to show either (`if (dialog == nullptr) { return; }`), the function returned without a
+word: no window opened and no error shown, so the user could not tell what went wrong.
+
+### Evidence in the tree (before the fix)
+
+- `src/gui/shell/DeviceCard.cpp:381` - the failed `ControlResult` was discarded, so the command's
+  own reason (why the device has no editor of its own, or why it could not be opened) was lost.
+- `src/gui/shell/DeviceCard.cpp:389` - the fallback's `if (dialog == nullptr) { return; }` returned
+  silently as well: nothing was opened and nothing was said.
+- `src/gui/shell/DeviceCard.cpp:72-81` - the card dispatches through `invoke`/`dispatch`; the
+  shell's own way of telling a user that a command failed is `announce()`
+  (`src/gui/CommandRun.cpp:87`), which this path never reached.
+
+### The fix
+
+- `src/gui/shell/DeviceCard.cpp:368-395` - the command's result is kept. When the device's own
+  editor opens, or the built-in dialog opens, nothing is said (that is the ordinary path for a
+  built-in effect). When **neither** opens, the card reports the command's own reason: the state
+  line under the header says `Open Editor failed: <the command's words>` and the reason is
+  floated as a message over the card (`announce`).
+- `src/gui/shell/DeviceCardState.cpp:191-210` - the state line carries that reason until the editor
+  opens (the state line is the card's own line of words, and it is what a screen reader reads).
+- `include/DevicePanel.h:120-129` - `openEffectDialog()` says whether it opened something, and
+  `setEditorError()` keeps the reason.
+
+Nothing else changed: the same command is dispatched, the same dialog opens, and a device whose
+editor opens is unaffected (no message, no state change).
+
+### The regression test
+
+`tests/src/gui/DevicePanelTest.cpp` - `theCardSaysWhyTheEditorDidNotOpen`: a test device whose
+controls have no view of their own (`NoViewEffect`, built in the test file) sits on a real mixer
+channel, so `plugin.editor_open` refuses it with the command's own reason. The test reads that
+reason from the command, asks the card to open the editor, and asserts that the card's state line
+carries **that** reason (and that the line's accessible name does too).
+
+The test is deterministic: the reason comes from the command itself (no hard-coded string, no
+timing), and the card's state line is read directly.
+
+### Commands and exit codes
+
+| Check | Exact command | Exit | Result |
+|---|---|---:|---|
+| RED (fix reverted) | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-49.r1/logs/fix-p17-49.patch && cmake --build build --target DevicePanelTest zene -j 20` then `ctest -R DevicePanelTest --output-on-failure` (from `build/tests`) | 8 | `FAIL! theCardSaysWhyTheEditorDidNotOpen() 'state->text().contains(failed.errorMessage)' returned FALSE. (On)` - the card said only "On"; 0% tests passed. |
+| GREEN (fix restored) | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-49.r1/logs/fix-p17-49.patch && cmake --build build --target DevicePanelTest zene -j 20` then `ctest -R DevicePanelTest --output-on-failure` (from `build/tests`) | 0 | 100% tests passed (1 ctest target, 22 test functions). |
+| Dependents of the changed header | `cmake --build build --target InstrumentSetupUiTest RackMenuTest -j 20` then `ctest -R "DevicePanelTest\|InstrumentSetupUiTest\|RackMenuTest" --output-on-failure` (from `build/tests`) | 0 | 3/3 ctest targets passed (`include/DevicePanel.h` is included by all three). |
+
+Logs: `build-7-red.log`, `test-6-red.log` (RED), `build-8-green.log`, `test-7-green.log` (GREEN),
+`build-9.log`, `test-8-family.log` (the family), in
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-49.r1/logs/`.
 
 ## new-p9-104: FIXED
 

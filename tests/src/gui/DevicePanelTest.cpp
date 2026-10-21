@@ -65,12 +65,14 @@
 #include "DevicePicker.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "EffectControls.h"
 #include "Engine.h"
 #include "InspectorPanel.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MenuTestSupport.h"
 #include "Mixer.h"
+#include "Model.h"
 #include "RemoteControls.h"
 #include "SampleTrack.h"
 #include "ChannelLevelMeter.h"
@@ -146,6 +148,38 @@ QMenu* visibleMenu()
 	}
 	return nullptr;
 }
+
+//! A device whose controls have no view of their own: the card's fallback editor cannot be created.
+class NoViewEffectControls final : public EffectControls
+{
+public:
+	explicit NoViewEffectControls(Effect* effect) : EffectControls{effect} {}
+	int controlCount() override { return 0; }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	QString nodeName() const override { return QStringLiteral("NoViewEffectControls"); }
+	gui::EffectControlDialog* createView() override { return nullptr; }
+};
+
+//! The test device: a plug-in with no editor of its own and no control view either - so the card's
+//! "Open Editor" has nothing to open, neither the device's own window nor the built-in dialog.
+class NoViewEffect final : public Effect
+{
+public:
+	explicit NoViewEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr}, m_controls{this} {}
+	EffectControls* controls() override { return &m_controls; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	NoViewEffectControls m_controls;
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor NoViewEffect::s_descriptor{
+	"zene-no-view-test-effect", "No view test effect", "", "Zene", 0x0100,
+	Plugin::Type::Effect, nullptr, nullptr, nullptr};
 
 } // namespace
 
@@ -727,6 +761,40 @@ private slots:
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 		QVERIFY2(host != card, "the action menu is a child of the card: the card the menu removes takes the stack menu with it");
 		QVERIFY2(retired.isNull(), "the card of the removed device is still there");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p17-49: an "Open Editor" that opens nothing must say why - the failed plugin.editor_open
+	 *  was discarded, and the built-in dialog is a fallback that can fail too, so the user was left with
+	 *  no window and no word. The card reports the command's own reason. */
+	void theCardSaysWhyTheEditorDidNotOpen()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		auto* effect = new NoViewEffect(&mixerChannel->m_fxChain);
+		mixerChannel->m_fxChain.appendEffect(effect);
+		const QString plugin = control::effectIdOf(effect);
+		DeviceCard::Spec spec;
+		spec.target = channel;
+		spec.plugin = plugin;
+		spec.title = QStringLiteral("No view effect");
+		spec.effect = effect;
+		DeviceCard card(spec, {});
+		card.show();
+		QCoreApplication::processEvents();
+
+		// The command's own refusal: the card has to report THIS one, not a word of its own.
+		const ControlResult failed = run(QStringLiteral("plugin.editor_open"),
+			{{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), plugin}});
+		QVERIFY2(!failed.ok, "the test device has no editor of its own");
+		QVERIFY2(!failed.errorMessage.isEmpty(), "the command refused without saying why");
+
+		card.openEditor();
+		auto* state = card.findChild<QLabel*>(QStringLiteral("deviceState"));
+		QVERIFY(state != nullptr);
+		QVERIFY2(state->text().contains(failed.errorMessage), qPrintable(state->text()));
+		QVERIFY2(state->accessibleName().contains(failed.errorMessage), qPrintable(state->accessibleName()));
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 
