@@ -27,6 +27,7 @@
 #include "SmfNoteRead.h"
 
 #include <algorithm>
+#include <atomic>
 #include <map>
 
 #include "TimePos.h"
@@ -109,6 +110,34 @@ bool isZeroPadding(const QByteArray& bytes, long long from)
 	return true;
 }
 
+std::atomic<long long> g_noteQueueShifts{0};
+
+//! One still-open note in its pitch's queue, counting its own place changes (see smfNoteQueueShiftCount()): the
+//! count a test reads to hold closing the oldest note free for the notes behind it, whatever holds the queue.
+struct QueuedNote
+{
+	SmfNote note{};
+	QueuedNote() = default;
+	explicit QueuedNote(const SmfNote& value) : note(value) {}
+
+	QueuedNote(const QueuedNote& other) : note(other.note) { countShift(); }
+	QueuedNote(QueuedNote&& other) noexcept : note(other.note) { countShift(); }
+	QueuedNote& operator=(const QueuedNote& other) noexcept
+	{
+		note = other.note;
+		countShift();
+		return *this;
+	}
+	QueuedNote& operator=(QueuedNote&& other) noexcept
+	{
+		note = other.note;
+		countShift();
+		return *this;
+	}
+
+	static void countShift() noexcept { g_noteQueueShifts.fetch_add(1, std::memory_order_relaxed); }
+};
+
 //! One track being read: where it is in file ticks, its running status, and the notes still sounding.
 struct TrackWalk
 {
@@ -116,7 +145,7 @@ struct TrackWalk
 	long long tick = 0;
 	int running = 0;
 	bool ended = false;
-	std::map<int, std::vector<SmfNote>> open;  //!< (channel * 128 + key) -> notes not yet closed, oldest first
+	std::map<int, std::vector<QueuedNote>> open;  //!< (channel * 128 + key) -> notes not yet closed, oldest first
 	std::vector<SmfNote>* out = nullptr;
 
 	long long lmmsTicks(long long fileTicks) const
@@ -134,7 +163,7 @@ struct TrackWalk
 	{
 		for (auto& entry : open)
 		{
-			for (const SmfNote& note : entry.second) { close(note); }
+			for (const QueuedNote& queued : entry.second) { close(queued.note); }
 		}
 		open.clear();
 	}
@@ -143,7 +172,7 @@ struct TrackWalk
 //! A note-on (velocity > 0) opens a note; anything else that reaches here closes the oldest open note of its key.
 void noteMessage(int status, int key, int velocity, TrackWalk* walk)
 {
-	std::vector<SmfNote>& queue = walk->open[(status & 0x0F) * 128 + key];
+	std::vector<QueuedNote>& queue = walk->open[(status & 0x0F) * 128 + key];
 	if ((status & 0xF0) == 0x90 && velocity > 0)
 	{
 		SmfNote note;
@@ -151,11 +180,11 @@ void noteMessage(int status, int key, int velocity, TrackWalk* walk)
 		note.key = key;
 		note.velocity = velocity;
 		note.channel = status & 0x0F;
-		queue.push_back(note);
+		queue.emplace_back(note);
 	}
 	else if (!queue.empty())  // a note-off with no note is ignored
 	{
-		walk->close(queue.front());
+		walk->close(queue.front().note);
 		queue.erase(queue.begin());
 	}
 }
@@ -305,6 +334,11 @@ SmfNoteRead readSmfNotes(const QByteArray& bytes)
 	for (const SmfNote& note : read.notes) { read.endTick = std::max(read.endTick, note.start + note.length); }
 	read.ok = true;
 	return read;
+}
+
+long long smfNoteQueueShiftCount()
+{
+	return g_noteQueueShifts.load(std::memory_order_relaxed);
 }
 
 } // namespace lmms::interchange

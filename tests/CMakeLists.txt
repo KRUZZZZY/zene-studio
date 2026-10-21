@@ -1462,6 +1462,13 @@ endif()
 # target does the same, plugins/NeuralAmp/CMakeLists.txt).
 set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wno-error=deprecated-enum-enum-conversion>")
 
+# cluster new-p14-314 (+ new-p16-230, new-p14-313): the SMF note reader's own regressions, one slot per
+# cluster finding, in an executable of their own because ClipImportFileTest (the import path the reader
+# serves) is at the 500-line file-length cap. Appended in this late block on purpose: ctest right-aligns
+# the test number, so a test numbered below 100 prints as "Test   #4:" and the mechanical negative
+# control (qwen/negctl.py) cannot read its name out of ctest -N (see the note under the last append).
+list(APPEND LMMS_TESTS src/core/SmfNoteReadTest.cpp)
+
 # cluster new-p12-278: the Vibed waveform handoff proof - a note's render must
 # depend on the waveform the GUI thread handed off, never on the wave graph model
 # being edited underneath the audio thread. It is registered LAST on purpose: the

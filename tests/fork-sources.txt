@@ -2784,3 +2784,5 @@ tests/src/gui/CPULoadWidgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+# cluster new-p14-314 (2026-10): the SMF note reader's own regression file (fork-NEW).
+tests/src/core/SmfNoteReadTest.cpp

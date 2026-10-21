@@ -70,6 +70,9 @@
 # 2026-10-20 (cluster new-p12-53-port): tests/src/core/NoteSelectionIdentityTest.cpp - the
 # fork-NEW regression for the control selection store keeping the selected notes' ids - is
 # now a tracked source, so the recipe derives it and the entry list below lists it.
+
+# 2026-10-21 (cluster new-p14-314): tests/src/core/SmfNoteReadTest.cpp - the SMF note reader's own
+# regression file - is a tracked source, so the recipe derives it and the entry list below lists it.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -2791,6 +2794,7 @@ tests/src/core/SlideNotesTest.cpp
 tests/src/core/SmfInterchangeRoundTripTest.cpp
 tests/src/core/SmfInterchangeTest.cpp
 tests/src/core/SmfInterchangeTestSupport.h
+tests/src/core/SmfNoteReadTest.cpp
 tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
