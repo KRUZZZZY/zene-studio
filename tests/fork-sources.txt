@@ -2784,3 +2784,5 @@ tests/src/gui/CPULoadWidgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+# cluster review-2bc56f391 (2026-10): the hardware insert ping's state machine is a compare-and-swap, and its verification report (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-review-2bc56f391.md
