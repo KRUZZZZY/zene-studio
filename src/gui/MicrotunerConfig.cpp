@@ -334,8 +334,9 @@ bool MicrotunerConfig::validateScaleForm()
 		if (firstSection.contains('.'))		// cent mode
 		{
 			bool ok = true;
-			firstSection.toFloat(&ok);
+			const float cents = firstSection.toFloat(&ok);
 			if (!ok) {fail(tr("Interval defined in cents cannot be converted to a number")); return false;}
+			if (!Interval::centsGiveUsableRatio(cents)) {fail(tr("Interval defined in cents is out of range: its ratio is not a finite positive number")); return false;}
 		}
 		else								// ratio mode
 		{

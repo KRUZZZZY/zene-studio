@@ -44,7 +44,7 @@ bool hasValidIntervalData(const QDomElement& element)
 		if (!hasCents) { return false; }
 		bool validCents = false;
 		const float cents = element.attribute(QStringLiteral("cents")).toFloat(&validCents);
-		return validCents && std::isfinite(cents);
+		return validCents && Interval::centsGiveUsableRatio(cents);
 	}
 	if (!hasNumerator || !hasDenominator || hasCents) { return false; }
 
@@ -57,6 +57,12 @@ bool hasValidIntervalData(const QDomElement& element)
 
 } // namespace
 
+
+bool Interval::centsGiveUsableRatio(float cents)
+{
+	const float ratio = std::exp2(cents / 1200.f);
+	return std::isfinite(ratio) && ratio > 0.f;
+}
 
 Interval::Interval(float cents) :
 	m_numerator(0),
@@ -177,6 +183,9 @@ void Scale::loadSettings(const QDomElement &element)
 		}
 		node = node.nextSibling();
 	}
+	// Keep the constructor's unison fallback when every stored interval is
+	// invalid. Microtuner::keyToFreq assumes a scale has at least one interval.
+	if (m_intervals.empty()) { m_intervals.emplace_back(1, 1); }
 }
 
 

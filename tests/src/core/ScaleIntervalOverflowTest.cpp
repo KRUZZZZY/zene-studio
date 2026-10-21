@@ -35,6 +35,8 @@
 
 #include <QtTest>
 
+#include <cmath>
+
 #include <QDomDocument>
 
 #include "Scale.h"
@@ -60,6 +62,17 @@ QDomElement centsInterval(QDomDocument& document, const QString& cents)
 	QDomElement element = document.createElement(QStringLiteral("interval"));
 	element.setAttribute(QStringLiteral("cents"), cents);
 	return element;
+}
+
+//! Every interval a loaded scale holds must be a ratio a 32-bit float can hold:
+//! finite and positive. An infinite or zero ratio is not a tuning.
+void requireUsableRatios(const Scale& scale)
+{
+	for (const Interval& loaded : scale.getIntervals())
+	{
+		QVERIFY2(std::isfinite(loaded.getRatio()) && loaded.getRatio() > 0.0f,
+			"a loaded interval holds a ratio that is not finite and positive");
+	}
 }
 
 } // namespace
@@ -131,6 +144,78 @@ private slots:
 			if (loaded.getRatio() == 1.5f) { sawValidInterval = true; }
 		}
 		QVERIFY2(sawValidInterval, "the valid 3/2 interval must still load");
+	}
+
+	//! 200000 cents is a ratio of about 1e50: exp2(200000 / 1200) is infinite in
+	//! the float the interval holds. The project validator must refuse that
+	//! interval - it must not load an infinite ratio - and the valid 3/2 next to
+	//! it still loads.
+	void anOverflowingStoredCentsIntervalIsRefusedNotLoadedAsInfinite()
+	{
+		QDomDocument document;
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		document.appendChild(scaleElement);
+		scaleElement.appendChild(centsInterval(document, QStringLiteral("200000")));
+		scaleElement.appendChild(ratioInterval(document, QStringLiteral("3"), QStringLiteral("2")));
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		requireUsableRatios(scale);
+		QCOMPARE(static_cast<int>(scale.getIntervals().size()), 1);
+		QCOMPARE(scale.getIntervals().front().getRatio(), 1.5f);
+	}
+
+	//! The opposite direction underflows: -200000 cents is about 1e-50, which is
+	//! zero in the float. A zero ratio is not positive and is refused the same way.
+	void anUnderflowingStoredCentsIntervalIsRefusedNotLoadedAsZero()
+	{
+		QDomDocument document;
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		document.appendChild(scaleElement);
+		scaleElement.appendChild(centsInterval(document, QStringLiteral("-200000")));
+		scaleElement.appendChild(ratioInterval(document, QStringLiteral("3"), QStringLiteral("2")));
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		requireUsableRatios(scale);
+		QCOMPARE(static_cast<int>(scale.getIntervals().size()), 1);
+		QCOMPARE(scale.getIntervals().front().getRatio(), 1.5f);
+	}
+
+	//! Refusing the only interval must retain the safe unison scale. Otherwise
+	//! Microtuner::keyToFreq would index an empty interval vector when this scale
+	//! is used by an enabled instrument.
+	void aScaleWithOnlyAnUnusableCentsIntervalFallsBackToUnison()
+	{
+		QDomDocument document;
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		document.appendChild(scaleElement);
+		scaleElement.appendChild(centsInterval(document, QStringLiteral("200000")));
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		QCOMPARE(static_cast<int>(scale.getIntervals().size()), 1);
+		QCOMPARE(scale.getIntervals().front().getRatio(), 1.0f);
+	}
+
+	//! Large cents that the float still holds are a legitimate interval and must
+	//! not be caught by the range check: 150000 cents is a ratio of about 4e37.
+	void aLargeStoredCentsIntervalWhoseRatioFitsStillLoads()
+	{
+		QDomDocument document;
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		document.appendChild(scaleElement);
+		scaleElement.appendChild(centsInterval(document, QStringLiteral("150000")));
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		requireUsableRatios(scale);
+		QCOMPARE(static_cast<int>(scale.getIntervals().size()), 1);
+		QCOMPARE(scale.getIntervals().front().getRatio(), Interval(150000.0f).getRatio());
 	}
 };
 

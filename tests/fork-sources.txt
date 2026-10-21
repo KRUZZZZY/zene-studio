@@ -2903,3 +2903,5 @@ tests/src/core/SmfNoteReadTest.cpp
 tests/src/core/TunerTapTest.cpp
 # cluster new-p8-239-port (2026-10): port finding, test, gate, and completion evidence.
 docs/qwen-fixes-2026-10/cluster-new-p8-239-port.md
+# cluster new-p14-279 (2026-10): Scale interval range-check report.
+docs/qwen-fixes-2026-10/cluster-new-p14-279.md
