@@ -203,10 +203,10 @@ build error.
   the change lock, and no new control command was added (the command surface
   and its snapshot are untouched).
 * **Portability.** Nothing Qt-version specific, no `windows.h` macro, no
-  `std::filesystem`: the change is `std::atomic<std::int64_t>` and
-  `std::int64_t` only. The arithmetic shift used to unpack the figure
-  (`measuredOf`, `include/HardwareInsert.h:153-156`) is well defined in C++20
-  (arithmetic shift, signed) - the project is C++20.
+  `std::filesystem`: the change uses `std::atomic<std::int64_t>` and C++20
+  `std::bit_cast`. The packed measurement is shifted as `std::uint64_t`, then
+  decoded from `std::uint32_t` back to `int` without shifting a negative value
+  or relying on an out-of-range signed conversion.
 * **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
   the intended contract that shows it."** Not applicable: the verdict is FIXED
   and a product change was made. For the record, the clause of the finding that

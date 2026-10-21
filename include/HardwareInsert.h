@@ -26,6 +26,7 @@
 #define LMMS_HARDWARE_INSERT_H
 
 #include <atomic>
+#include <bit>
 #include <cstdint>
 #include <vector>
 
@@ -141,10 +142,13 @@ private:
 	using PingWord = std::int64_t;
 	static constexpr int PingStateBits = 3;
 	static constexpr PingWord PingStateMask = (PingWord{1} << PingStateBits) - 1;
+	static_assert(sizeof(int) == sizeof(std::uint32_t), "hardware insert measurements use 32-bit ints");
 
 	static PingWord packPing(int measured, PingState state) noexcept
 	{
-		return (static_cast<PingWord>(measured) << PingStateBits) | static_cast<PingWord>(state);
+		const auto measuredBits = std::bit_cast<std::uint32_t>(measured);
+		return static_cast<PingWord>((static_cast<std::uint64_t>(measuredBits) << PingStateBits)
+			| static_cast<std::uint64_t>(state));
 	}
 	static PingState pingStateOf(PingWord word) noexcept
 	{
@@ -152,7 +156,8 @@ private:
 	}
 	static int measuredOf(PingWord word) noexcept
 	{
-		return static_cast<int>(word >> PingStateBits);
+		const auto measuredBits = static_cast<std::uint32_t>(static_cast<std::uint64_t>(word) >> PingStateBits);
+		return std::bit_cast<int>(measuredBits);
 	}
 
 	/*! The audio thread's moves on the ping state machine. Each of them takes the word the
