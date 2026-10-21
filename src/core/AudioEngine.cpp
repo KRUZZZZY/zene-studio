@@ -434,9 +434,20 @@ bool AudioEngine::isRenderThread() const noexcept
 
 
 
+void AudioEngine::setAutomatableModelRegistrationFailureForTest(bool fail) noexcept
+{
+	m_failAutomatableModelRegistrationForTest.store(fail, std::memory_order_relaxed);
+}
+
+
 bool AudioEngine::registerAutomatableModel(AutomatableModel* model) noexcept
 {
 	if (model == nullptr) { return false; }
+	if (m_failAutomatableModelRegistrationForTest.load(std::memory_order_relaxed))
+	{
+		m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
 	if (RealtimeScope::isActive())
 	{
 		m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);

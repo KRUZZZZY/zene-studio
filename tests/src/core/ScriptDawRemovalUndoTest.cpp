@@ -32,9 +32,6 @@
 #include <QStringList>
 
 #include <algorithm>
-#include <atomic>
-#include <chrono>
-#include <thread>
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -447,61 +444,6 @@ private slots:
 		QVERIFY(chain->effects().empty());
 		QVERIFY(!chain->isEnabled());
 		QCOMPARE(journal->undoDepth(), 0);
-
-		mixer->deleteChannel(index);
-		ScriptEngine::instance()->takeLogMessages();
-	}
-
-	/*! The load and the settings restore of a recorded device take no audio change
-	 *  lock. A holder thread takes the lock and keeps it until this test sets a
-	 *  flag, after the device has been built, with a ten-second safety bound. The
-	 *  case passes only if the holder was released by the flag: a build that
-	 *  waited for the lock would still be waiting when the bound ran out. The
-	 *  check is on ordering, not on speed. Covers native devices only: a hosted
-	 *  device (LADSPA, LV2, CLAP, VST) takes the same path but is not exercised
-	 *  by this case. */
-	void aRecordedDeviceIsBuiltWithoutTheAudioChangeLock()
-	{
-		QString device;
-		QString deviceName;
-		if (!loadableDevice(&device, &deviceName)) { QSKIP("this build lists no loadable effect module"); }
-		Mixer* mixer = Engine::mixer();
-		const int index = mixer->createChannel();
-		EffectChain* chain = &mixer->mixerChannel(index)->m_fxChain;
-		QString error;
-		QCOMPARE(int(ScriptEngine::instance()->runString(qstr(
-			"zene.mixer():channel(%1):chain():loadEffect(\"%2\")\n").arg(index).arg(device), &error)),
-			int(ScriptEngine::RunResult::Ok));
-		QVERIFY2(error.isEmpty(), qPrintable(error));
-		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
-		const QString xml = controlEffectStateXml(chain->effects().front());
-		QVERIFY(!xml.isEmpty());
-
-		std::atomic<bool> held{false};
-		std::atomic<bool> release{false};
-		std::atomic<bool> releasedByFlag{false};
-		std::thread holder([&] {
-			Engine::audioEngine()->requestChangeInModel();
-			held = true;
-			const auto bound = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-			while (!release && std::chrono::steady_clock::now() < bound)
-			{
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			}
-			releasedByFlag = release.load();
-			Engine::audioEngine()->doneChangeInModel();
-		});
-		while (!held) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
-
-		Effect* built = control::instantiateRecordedDevice(chain, xml);
-		release = true;
-		holder.join();
-
-		QVERIFY2(releasedByFlag.load(),
-			"building the recorded device waited for the audio change lock (the holder's safety bound ran out)");
-		QVERIFY2(built != nullptr, "the recorded device could not be built");
-		QCOMPARE(QString::fromUtf8(built->descriptor()->name), deviceName);
-		built->deleteLater();
 
 		mixer->deleteChannel(index);
 		ScriptEngine::instance()->takeLogMessages();

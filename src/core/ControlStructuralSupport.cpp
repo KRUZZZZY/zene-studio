@@ -354,19 +354,36 @@ Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml)
 	return effect;
 }
 
-void attachRecordedDevice(EffectChain* chain, Effect* effect, int index)
+bool attachRecordedDevice(EffectChain* chain, Effect* effect, int index)
 {
 	// The device's own models were created while the build deferred their
 	// registration, so the render thread has not seen them yet. They are
 	// registered here, under the change lock this function's callers already
 	// hold: a model that is not registered is not render-visible, and the
 	// device joins a chain from here on.
-	for (AutomatableModel* model : effect->findChildren<AutomatableModel*>(
-			QString(), Qt::FindChildrenRecursively))
+	const QList<AutomatableModel*> models = effect->findChildren<AutomatableModel*>(
+		QString(), Qt::FindChildrenRecursively);
+	for (AutomatableModel* model : models)
 	{
 		if (!model->isRegisteredWithAudioEngine())
 		{
-			Engine::audioEngine()->registerAutomatableModel(model);
+			if (!Engine::audioEngine()->registerAutomatableModel(model))
+			{
+				// A later model may fail after earlier ones were published. Remove
+				// every published model before discarding the unattached device.
+				for (AutomatableModel* registeredModel : models)
+				{
+					if (registeredModel->isRegisteredWithAudioEngine())
+					{
+						Engine::audioEngine()->unregisterAutomatableModel(registeredModel);
+					}
+				}
+				effect->deleteLater();
+				restoreFailed(ControlErrorKind::Refused,
+					QStringLiteral("the device's automation models could not be registered, "
+						"so the structural restore was not applied"));
+				return false;
+			}
 		}
 	}
 	// The only change to the chain, and the only part that needs the audio change
@@ -374,6 +391,7 @@ void attachRecordedDevice(EffectChain* chain, Effect* effect, int index)
 	// project load leaves it too, and the recorded index is restored afterwards.
 	chain->appendEffect(effect);
 	placeEffectAt(chain, effect, index);
+	return true;
 }
 
 Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int index)
@@ -383,7 +401,7 @@ Effect* recreateEffectFromState(EffectChain* chain, const QString& stateXml, int
 	// Callers of this composition may hold no change lock, so the attach takes
 	// one; the load and the restore above have already run without it.
 	const auto changes = Engine::audioEngine()->requestChangesGuard();
-	attachRecordedDevice(chain, effect, index);
+	if (!attachRecordedDevice(chain, effect, index)) { return nullptr; }
 	return effect;
 }
 
@@ -569,7 +587,7 @@ bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const
 			Effect* device = instantiateRecordedDevice(live, xml);
 			if (device == nullptr) { *made = nullptr; return; }
 			const auto changes = Engine::audioEngine()->requestChangesGuard();
-			attachRecordedDevice(live, device, index);
+			if (!attachRecordedDevice(live, device, index)) { *made = nullptr; return; }
 			*made = device;
 			live->setEnabledUnjournalled(wasEnabled);
 		},
