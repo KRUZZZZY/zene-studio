@@ -292,6 +292,41 @@ private slots:
 		QVERIFY(logs.front().contains(qstr("255-byte")));
 	}
 
+	//! The payload is read back as a C string, so a NUL byte must be refused whole
+	//! rather than stored as the bytes before it.
+	void aNameWithAnEmbeddedNulIsRefusedBeforeItReachesThePayload()
+	{
+		ScriptCommand command;
+		const QString withNul = QString::fromUtf8(QByteArray("A\0B", 3));
+		QVERIFY(!setCommandText(command, withNul));
+		QVERIFY(command.text[0] == '\0');
+	}
+
+	//! A script rename with an embedded NUL is refused, not renamed to its prefix.
+	void anEmbeddedNulInChannelNameIsRejectedWithoutChangingTheEngine()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		const int index = static_cast<int>(mixer->numChannels());
+		mixer->createChannel();
+		MixerChannel* channel = mixer->mixerChannel(index);
+		QVERIFY(channel != nullptr);
+		const QString originalName = channel->m_name;
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		const QString script = qstr("local c = zene.mixer():channel(%1)\n"
+			"c:setName(string.char(65, 0, 66))\n").arg(index);
+		QString error;
+		QCOMPARE(int(engine->runString(script, &error)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+
+		QCOMPARE(channel->m_name, originalName);
+		const QStringList logs = engine->takeLogMessages();
+		QCOMPARE(logs.size(), 1);
+		QVERIFY(logs.front().contains(qstr("NUL")));
+	}
+
 	//! The same payload limit applies to the device reference used by loadEffect.
 	void anOverlongDeviceReferenceIsRejectedWithoutChangingTheChain()
 	{

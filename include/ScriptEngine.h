@@ -123,8 +123,11 @@ struct ScriptCommand
  * longer name truncates it - and a truncation that lands mid-character splits a
  * UTF-8 sequence, leaving a corrupt name rather than merely a short one. Callers
  * that carry a user-visible string refuse instead of storing a damaged one.
+ * An embedded NUL is refused for the same reason: the payload is read back as a
+ * C string, so the bytes after it would be lost.
  *
- * \return false when \a text does not fit whole (the payload is left untouched).
+ * \return false when \a text does not fit whole or contains a NUL byte (the
+ *         payload is left untouched).
  */
 bool setCommandText(ScriptCommand& command, const QString& text);
 
