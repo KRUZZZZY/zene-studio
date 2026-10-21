@@ -435,6 +435,24 @@ private slots:
 		QCOMPARE(rms.update(2.0f), 2.0f);
 	}
 
+	//! Growing the RMS window must release its new[] buffer with delete[].
+	void growingRmsBufferUsesArrayDeallocation()
+	{
+		test::resetMismatchedArrayReleases();
+		test::tlUntrackedArrayBlocks = 0;
+		test::tlTrackArrayBlocks = true;
+		RmsHelper rms{4};
+		// Keep the inline resize opaque so compilers report the defect at runtime.
+		void (RmsHelper::* volatile resize)(std::size_t) = &RmsHelper::setSize;
+		(rms.*resize)(8);
+		test::tlTrackArrayBlocks = false;
+
+		QVERIFY2(test::tlMismatchedArrayReleases == 0,
+			"RmsHelper::setSize() released a new[] window with scalar delete");
+		QCOMPARE(test::tlUntrackedArrayBlocks, std::uint64_t{0});
+		QCOMPARE(rms.update(0.0f), 0.0f);
+	}
+
 	void formantFilterClampsToLastVowel()
 	{
 		using Filter = BasicFilters<1>;
