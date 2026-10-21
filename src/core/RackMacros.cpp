@@ -431,11 +431,12 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 		entry.name = macroElement.attribute(QStringLiteral("name"));
 		const float rawValue =
 			macroElement.attribute(QStringLiteral("value"), QStringLiteral("0")).toFloat();
-		// A macro's value is a finite number. QString reads a "nan" (or an
+		// A macro's value is a finite 0..1 number. QString reads a "nan" (or an
 		// "inf") attribute as exactly that, and a NaN would be written into
 		// every parameter the macro drives - so a value that is not a number is
-		// stored as 0, and the macro still works.
-		entry.value = isFiniteMacroValue(rawValue) ? rawValue : 0.0f;
+		// stored as 0. A project that says value="2" is out of the contract,
+		// and is clamped into it: the same clamp the API applies.
+		entry.value = isFiniteMacroValue(rawValue) ? std::clamp(rawValue, 0.0f, 1.0f) : 0.0f;
 
 		for (QDomElement targetElement = macroElement.firstChildElement(QStringLiteral("target"));
 			!targetElement.isNull();
@@ -452,10 +453,16 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 			target.high =
 				targetElement.attribute(QStringLiteral("high"), QStringLiteral("1")).toFloat();
 			target.curve = targetElement.attribute(QStringLiteral("curve"), QStringLiteral("0")).toFloat();
-			// A persisted window that carries a number that is not a number is
-			// not loaded: QString reads a "nan" attribute as a NaN, and a NaN
-			// window would be applied as a NaN parameter value.
-			if (!isFiniteMacroTarget(target)) { continue; }
+			// A persisted target is loaded only when it is a target this list
+			// could have stored: a fraction pair inside 0..1, a curve inside
+			// -1..1, a chain and an effect index, and a parameter name. A window
+			// outside 0..1 would drive the parameter to its maximum for EVERY
+			// macro value (the applied fraction is clamped to 1), and a
+			// nonfinite one (QString reads a "nan" attribute as a NaN) would be
+			// applied as a NaN parameter value - so such a target is dropped,
+			// not clamped: clamping a window outside the range would keep the
+			// parameter pinned at its end.
+			if (!isValidMacroTarget(target)) { continue; }
 			entry.targets.push_back(target);
 		}
 

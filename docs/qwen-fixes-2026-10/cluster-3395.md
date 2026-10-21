@@ -4,15 +4,16 @@ Verdict: **FIXED**
 
 3395: FIXED
 5266: FIXED
+new-p12-193: FIXED
 
-Two findings in `src/core/RackMacros.cpp`, fixed in two commits, each with its
-own regression case and its own RED/GREEN proof; the third of this batch
-(new-p12-193) follows in the commit after this one.
+Three findings in `src/core/RackMacros.cpp`, fixed in three commits, each with
+its own regression case and its own RED/GREEN proof.
 
 | cluster | verdict | what was wrong | where |
 |---|---|---|---|
 | 3395 | FIXED | `std::clamp` keeps a NaN (every comparison against NaN is false), so `addMacro()` / `setValue()` stored a value that is not a number, and a project could load one (`value="nan"`). | `src/core/RackMacros.cpp` — `addMacro`, `setValue`, `loadSettings` |
 | 5266 | FIXED | `isValidMacroTarget()` compared the window against its range with `<` / `>` only, so a NaN `low` / `high` / `curve` passed every check, and the loader took the persisted floats as they came. | `src/core/RackMacros.cpp` — `isValidMacroTarget`, `apply`, `loadSettings` |
+| new-p12-193 | FIXED | The loader took the macro's own value and the target window as they came: a project with `value="2"` and a window `2..3` loaded out of range, and applying it drove the parameter to its maximum for every macro value. | `src/core/RackMacros.cpp` — `loadSettings` |
 
 ## 3395 — NaN macro values survive clamping
 
@@ -213,3 +214,188 @@ EXIT=0
 cd build/tests && ctest -R '^RackMacrosTest$' --output-on-failure > $LOGS/test-b4-green.log 2>&1; echo EXIT=$?
 EXIT=0   # GREEN with the fix restored: "100% tests passed out of 1"
 ```
+
+## new-p12-193 — Project-loaded macros bypass range validation
+
+**Verdict: FIXED.**
+
+### The bug
+
+`loadSettings()` read the persisted numbers and stored them as they came:
+
+```cpp
+entry.value = macroElement.attribute(QStringLiteral("value"), QStringLiteral("0")).toFloat();
+...
+target.low = targetElement.attribute(QStringLiteral("low"), QStringLiteral("0")).toFloat();
+target.high = targetElement.attribute(QStringLiteral("high"), QStringLiteral("1")).toFloat();
+```
+
+A macro's value is a 0..1 scalar and a target's window is a pair of
+fractions inside 0..1 - the contract the API enforces (`addMacro()` clamps,
+`isValidMacroTarget()` checks) - but the loader enforced neither. A project
+with `value="2"` and a window `2..3` therefore loaded:
+
+* a macro whose state reported a value outside 0..1, and
+* a window that is not a fraction pair at all. Applied, the fraction is
+  `std::clamp(low + shape(value, curve) * (high - low), 0, 1)` =
+  `std::clamp(2 + 1, 0, 1)` = **1** for every macro value - the parameter was
+  pinned at its maximum and the macro did nothing else.
+
+### The fix
+
+`src/core/RackMacros.cpp`, in `loadSettings()` only:
+
+* the loaded value is **clamped** into 0..1 - the same clamp the API applies
+  (`addMacro()`, `setValue()`), so a project that says `value="2"` loads a
+  macro at 1.0 and the loaded state is inside the contract. A value that is not
+  a number at all stays 0 (cluster 3395);
+* a loaded **target** is kept only when `isValidMacroTarget()` accepts it: a
+  fraction pair inside 0..1, a curve inside -1..1, a chain and an effect
+  index, and a parameter name. A target that is not one is **dropped**, not
+  clamped - clamping a window outside 0..1 would keep the parameter pinned at
+  its end, which is the bug itself.
+
+Nothing else changed: a project inside the contract loads exactly as it did,
+and `saveSettings()` still writes what the list holds.
+
+### Regression test
+
+`tests/src/core/RackMacrosTest.cpp` — new case
+`aProjectLoadedMacroIsValidated()`: a project with `value="2"` and a window
+`2..3` loads a macro whose value is inside 0..1 (1.0) and **no** target;
+applying it writes nothing and leaves the 0..100 parameter where it was
+(pre-fix it was driven to its maximum, 100). The same case then loads a
+project inside the contract (value 0.5, window 0.25..0.75) and requires it to
+load unchanged and to write the same 50 as before.
+
+### Commands run (logs in /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3395.r1/logs)
+
+```
+cmake --build build --target RackMacrosTest > $LOGS/build-c1.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RackMacrosTest$' --output-on-failure > $LOGS/test-c1.log 2>&1; echo EXIT=$?
+EXIT=0   # GREEN with the fix in place: "100% tests passed out of 1"
+
+# 4b: the product change reverted, the test must fail again
+git diff -- src/core/RackMacros.cpp > $LOGS/fix-p12-193.patch
+git apply -R $LOGS/fix-p12-193.patch
+EXIT=0
+
+cmake --build build --target RackMacrosTest > $LOGS/build-c2-red.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RackMacrosTest$' --output-on-failure > $LOGS/test-c2-red.log 2>&1; echo EXIT=$?
+EXIT=8   # RED with the fix reverted:
+         #   "FAIL! : RackMacrosTest::aProjectLoadedMacroIsValidated()
+         #    'reloaded.macro(0)->value <= 1.0f' returned FALSE."
+         #   "Totals: 20 passed, 1 failed" - the project loaded its value of 2.
+
+git apply $LOGS/fix-p12-193.patch
+EXIT=0
+
+cmake --build build --target RackMacrosTest > $LOGS/build-c3-green.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RackMacrosTest$' --output-on-failure > $LOGS/test-c3-green.log 2>&1; echo EXIT=$?
+EXIT=0   # GREEN with the fix restored: "100% tests passed out of 1"
+```
+
+## Files committed
+
+* `src/core/RackMacros.cpp` — the macro value, the target window and the loader.
+* `include/RackMacros.h` — the contracts of `addMacro()`, `insertMacro()`,
+  `setValue()` and `isValidMacroTarget()`.
+* `src/core/ControlCommandsRackMacros.cpp` — `rack.macro_add` and
+  `rack.macro_set` refuse a nonfinite value.
+* `src/core/ControlCommandsRackMacroPair.cpp` — `rack.macro_set_pair` refuses
+  a nonfinite value, whole.
+* `tests/src/core/RackMacrosTest.cpp` — three regression cases.
+* `docs/qwen-fixes-2026-10/cluster-3395.md` — this report.
+
+No new file, no new command, no change to a schema or a description (so
+`tools/mcp-zene-control/zene_control/commands_snapshot.json` stays valid),
+no header added to `tests/fork-sources.txt` (every touched file is already
+listed there).
+
+## Self-check
+
+**1. The regression test FAILS with the product change reverted and PASSES
+with it (exit codes).** Three separate proofs, one per bug - each reverts only
+that bug's product diff (the two earlier fixes stay in place):
+
+| cluster | reverted | RED | restored | GREEN |
+|---|---|---|---|---|
+| 3395 | `git apply -R $LOGS/fix-3395.patch` | build EXIT=0, ctest **EXIT=8** - `FAIL! ... aNonfiniteMacroValueIsRefused ... 'std::isfinite(reloaded.macro(0)->value)' returned FALSE`, "Totals: 18 passed, 1 failed" | `git apply $LOGS/fix-3395.patch` | build EXIT=0, ctest **EXIT=0** - "100% tests passed out of 1" |
+| 5266 | `git apply -R $LOGS/fix-5266.patch` | build EXIT=0, ctest **EXIT=8** - `FAIL! ... aNonfiniteMacroTargetNeverReachesAParameter ... Actual writes.size(): 1, Expected: 0`, "Totals: 19 passed, 1 failed" | `git apply $LOGS/fix-5266.patch` | build EXIT=0, ctest **EXIT=0** |
+| new-p12-193 | `git apply -R $LOGS/fix-p12-193.patch` | build EXIT=0, ctest **EXIT=8** - `FAIL! ... aProjectLoadedMacroIsValidated ... 'reloaded.macro(0)->value <= 1.0f' returned FALSE`, "Totals: 20 passed, 1 failed" | `git apply $LOGS/fix-p12-193.patch` | build EXIT=0, ctest **EXIT=0** |
+
+In every RED run only the new case failed; the other 18/19/20 cases of
+`RackMacrosTest` passed. The whole rack family
+(`ctest -R 'Rack'`) passed after each fix: "100% tests passed out of 8"
+(logs `test-a8-rack-family.log`, `test-b7-rack-family.log`,
+`test-c6-rack-family.log`), and `cmake --build build --target zene` exited 0
+after each fix (`build-a5-zene.log`, `build-b5-zene.log`, `build-c4-zene.log`).
+
+**2. The test is deterministic.** No wall-clock, no sleep, no thread, no race.
+The seam is the project file the test writes itself (a `QDomDocument` with the
+attribute under test) and the fixed inputs it hands the API
+(`std::numeric_limits<float>::quiet_NaN()`, `2.0f`, `0.25f`, `"nan"`); the
+parameter model is read back through the fixture's `gainModel()`. The shared
+fixture is restored through a `QScopeGuard`, so a failing run cannot leave a
+NaN or a moved parameter behind for the next case.
+
+**3. The fix is at the cause and complete.** Every caller and sibling of what
+changed was checked:
+
+* `addMacro()` / `insertMacro()` / `setValue()` — the three storage doors of a
+  macro value. `RackMacros.h` documents all three.
+* `apply()` — the one place a macro value or a target window becomes a
+  parameter value; it refuses a nonfinite macro value and skips a target
+  whose window carries a nonfinite number.
+* `isValidMacroTarget()` — the shared validity check; the command layer
+  (`rack.macro_target_add`) already called it and inherits the refusal.
+* `loadSettings()` — the loader, for the value and for the targets.
+* Callers of the changed API: `ControlCommandsRackMacros.cpp`
+  (`rack.macro_add`, `rack.macro_set`), `ControlCommandsRackMacroPair.cpp`
+  (`rack.macro_set_pair`, through `applyMacroValue`),
+  `ControlRackSupport.cpp:212` (the undo restore - it writes back a recorded,
+  finite value), `Rack.cpp:424` (the loader). The GUI does not store a macro
+  value (`src/gui/MacroKnobs.cpp` drives a knob model, not a macro).
+
+**4. No collateral damage.** A project inside the contract loads exactly as
+before: the new-p12-193 case loads `value="0.5"` with the window
+`0.25..0.75` and requires the same value, the same window and the same write
+(50 on the 0..100 parameter) as before the change. The out-of-range checks
+only bite data that is already outside the documented contract: a macro value
+outside 0..1 (the API clamps it too), a window outside 0..1 (the API refuses
+such a window at bind time), and a nonfinite number (which no API path could
+store before this change). A target with an inverted window (`high < low`) is
+still legal and still loads - `isValidMacroTarget()` only asks for both bounds
+to be inside 0..1. `saveSettings()` is untouched: it writes what the list
+holds.
+
+**5. Realtime, undo and commands.** The macro list is control-thread only
+(`include/RackMacros.h` says so: "the audio thread never reads a macro"), and
+the audio-path allocation test in the same file still reports
+`allocations=0`. Nothing here allocates on the audio thread, and no lock, wait
+or log was added. No new control command was added, and no command's schema
+or description changed. The undo steps are unchanged: `rack.macro_add` and
+`rack.macro_set` still record one step, and a refused value records none.
+
+**6. Sibling commands in the files I changed.** `rack.macro_add`,
+`rack.macro_remove`, `rack.macro_target_add`, `rack.macro_target_remove`,
+`rack.macro_set`, `rack.macro_set_pair` - all consistent: the value-taking
+ones (`macro_add`, `macro_set`, `macro_set_pair`) now refuse a nonfinite
+value with `InvalidArgs` instead of storing it, the target-taking one
+(`macro_target_add`) refuses a nonfinite window through the shared
+`isValidMacroTarget()`, and the two that take no value (`macro_remove`,
+`macro_target_remove`) are untouched.
+
+**7. Gates.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py
+<worktree>` exited **0** after each of the three commits
+(`gate-a1.log`, `gate-b1.log`, `gate-c1.log`): every row PASS, including
+`complexity` and `file-length` ("no new item in your files").
+
+**8. Verdict ALREADY-FIXED or FALSE-POSITIVE.** Not applicable - all three
+findings are FIXED, each with its own failing-then-passing regression.

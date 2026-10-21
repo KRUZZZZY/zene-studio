@@ -353,6 +353,80 @@ private slots:
 		QCOMPARE(static_cast<int>(reloaded.macro(0)->targets.size()), 0);
 	}
 
+	//! A project may not carry a macro value or a target window outside the
+	//! 0..1 contract: the loader clamps the value into it and drops a window
+	//! that is not a fraction pair, instead of driving the parameter to its
+	//! maximum for every macro value. A project that is inside the contract
+	//! loads exactly as it did.
+	void aProjectLoadedMacroIsValidated()
+	{
+		FloatModel* const gain = gainModel();
+		QVERIFY2(gain != nullptr, "the driven chain's 0..100 parameter was not found");
+		const float before = gain->value();
+		// The fixture is shared: put the parameter back whatever happens.
+		const QScopeGuard restore([gain, before]() { gain->setValue(before); });
+
+		// A project that says value="2" with a window 2..3.
+		QDomDocument doc;
+		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		doc.appendChild(rack);
+		QDomElement macroElement = doc.createElement(QStringLiteral("macro"));
+		macroElement.setAttribute(QStringLiteral("name"), QStringLiteral("Out of range"));
+		macroElement.setAttribute(QStringLiteral("value"), QStringLiteral("2"));
+		QDomElement targetElement = doc.createElement(QStringLiteral("target"));
+		targetElement.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		targetElement.setAttribute(QStringLiteral("effect"), 0);
+		targetElement.setAttribute(QStringLiteral("parameter"), QString::fromLatin1(kGainName));
+		targetElement.setAttribute(QStringLiteral("low"), QStringLiteral("2"));
+		targetElement.setAttribute(QStringLiteral("high"), QStringLiteral("3"));
+		macroElement.appendChild(targetElement);
+		rack.appendChild(macroElement);
+
+		RackMacros reloaded;
+		reloaded.loadSettings(rack);
+		QCOMPARE(reloaded.macroCount(), 1);
+		// The loaded state is inside the 0..1 contract.
+		QVERIFY(reloaded.macro(0)->value >= 0.0f);
+		QVERIFY(reloaded.macro(0)->value <= 1.0f);
+		QCOMPARE(reloaded.macro(0)->value, 1.0f);
+		// The window 2..3 is not a fraction pair: it is not loaded, so the
+		// parameter is not pinned at its maximum.
+		QCOMPARE(static_cast<int>(reloaded.macro(0)->targets.size()), 0);
+		gain->setValue(0.0f);
+		const std::vector<RackMacroWrite> writes = reloaded.apply(0, rackUnderTest());
+		QCOMPARE(static_cast<int>(writes.size()), 0);
+		QCOMPARE(gain->value(), 0.0f);
+
+		// A project inside the contract loads exactly as before: the value,
+		// the window and the write it makes are the ones it always was.
+		QDomDocument good;
+		QDomElement goodRack = good.createElement(QStringLiteral("rack"));
+		good.appendChild(goodRack);
+		QDomElement goodMacro = good.createElement(QStringLiteral("macro"));
+		goodMacro.setAttribute(QStringLiteral("name"), QStringLiteral("Inside"));
+		goodMacro.setAttribute(QStringLiteral("value"), QStringLiteral("0.5"));
+		QDomElement goodTarget = good.createElement(QStringLiteral("target"));
+		goodTarget.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		goodTarget.setAttribute(QStringLiteral("effect"), 0);
+		goodTarget.setAttribute(QStringLiteral("parameter"), QString::fromLatin1(kGainName));
+		goodTarget.setAttribute(QStringLiteral("low"), QStringLiteral("0.25"));
+		goodTarget.setAttribute(QStringLiteral("high"), QStringLiteral("0.75"));
+		goodMacro.appendChild(goodTarget);
+		goodRack.appendChild(goodMacro);
+
+		RackMacros loaded;
+		loaded.loadSettings(goodRack);
+		QCOMPARE(loaded.macroCount(), 1);
+		QCOMPARE(loaded.macro(0)->value, 0.5f);
+		QCOMPARE(static_cast<int>(loaded.macro(0)->targets.size()), 1);
+		QCOMPARE(loaded.macro(0)->targets.front().low, 0.25f);
+		QCOMPARE(loaded.macro(0)->targets.front().high, 0.75f);
+		const std::vector<RackMacroWrite> goodWrites = loaded.apply(0, rackUnderTest());
+		QCOMPARE(static_cast<int>(goodWrites.size()), 1);
+		QCOMPARE(goodWrites[0].written, 50.0f);
+		QCOMPARE(gain->value(), 50.0f);
+	}
+
 	//! With macros and zones configured the rack's own process() allocates
 	//! nothing: a macro is not on the audio path, and a zone's routing (0.5.0
 	//! E20) reads blocks prepared when the rack re-wired.
