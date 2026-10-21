@@ -45,20 +45,24 @@ Affected-family test count: 4 ctest targets executed, 4 passed. The new test is 
 
 ## Gates
 
-`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` **could not run in this sandbox**: it writes logs to `<worktree>/../<name>-feature-check/`, and the process failed with `PermissionError` creating `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-31-feature-check` (`logs/gate-1-feature-check.log`, `EXIT=1`). I did not change the script. Instead I ran each command the script lists, from the worktree, with logs in the run folder:
+**Run in the worktree itself, `feature_check.py` could not run:** it writes logs to `<worktree>/../<name>-feature-check/`, and the process failed with `PermissionError` creating `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-31-feature-check` (`logs/gate-1-feature-check.log`, script `EXIT=1`). The parent directory is not writable from this sandbox. I did not change the script.
 
-| Gate | Command | Log | EXIT |
-| --- | --- | --- | --- |
-| fork-sources | `bash tests/fork-sources-gate.sh` | `gate-fork-sources.log` | 0 |
-| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | `gate-all-sources-reproduce.log` | 0 |
-| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | `gate-no-upstream-regression.log` | 0 |
-| check-namespace | `tests/scripted/check-namespace` | `gate-check-namespace.log` | 0 |
-| no-tautology | `bash tests/no-tautology-gate.sh` | `gate-no-tautology.log` | 0 |
-| doc-figures | `python3 tests/doc-figures-gate.py` | `gate-doc-figures.log` | 0 |
-| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | `gate-complexity.log` | 1 (5 `REGRESSION` lines, none in the two files I changed) |
-| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | `gate-file-length.log` | 1 (15 `REGRESSION` lines, none in the two files I changed) |
+**Run unmodified on a copy in `/tmp`, it passes:** I copied the worktree without `build/` to `/tmp/p17-gate/zene-qwen-new-p17-31` (same HEAD `ce6f2c61e`, clean) and ran `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /tmp/p17-gate/zene-qwen-new-p17-31`. Log: `logs/gate-2-feature-check-tmpcopy.log`, script **`EXIT=0`**, `RESULT: PASS`:
 
-The two ratchet gates are red on the train on purpose. Their `REGRESSION` lines name `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ControlCommandsShortcuts.cpp`, `TakeLane.cpp` and other files, but not `ControlCommandsSessionAudioRecord.cpp` or `SessionAudioRecordTest.cpp`. `landSlot` is not named either. The `feature_check.py` rule (fail only on new items in changed files) therefore passes for this change.
+| Gate | Result |
+| --- | --- |
+| fork-sources | PASS (exit 0) |
+| all-sources-reproduce | PASS (exit 0) |
+| no-upstream-regression | PASS (exit 0) |
+| check-namespace | PASS (exit 0) |
+| no-tautology | PASS (exit 0) |
+| doc-figures | PASS (exit 0) |
+| complexity (ratchet) | PASS, "no new item in your files" |
+| file-length (ratchet) | PASS, "no new item in your files" |
+
+The script's own per-gate logs are in `logs/feature-check-tmpcopy/`. Base `b61e5f965`, 3 changed files. A `fatal: gitfile ... doc/wiki/.git` line appears in the output; it comes from git reading a nested gitfile and does not affect any gate result.
+
+I also ran each listed gate command directly in the worktree, with the same results: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology and doc-figures all exit 0. Complexity and file-length exit 1 with 5 and 15 `REGRESSION` lines (`gate-complexity.log`, `gate-file-length.log`). Those lines name `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsMixerStrip.cpp`, `ControlCommandsShortcuts.cpp`, `TakeLane.cpp` and other files, but not `ControlCommandsSessionAudioRecord.cpp`, `SessionAudioRecordTest.cpp` or `landSlot`. The ratchet rule (fail only on new items in changed files) therefore passes.
 
 ## Files committed
 
@@ -73,4 +77,9 @@ The two ratchet gates are red on the train on purpose. Their `REGRESSION` lines 
 
 ## Self-check
 
-(filled in below after running `submit_check.py`)
+- **Regression fails with the change reverted and passes with it.** Reverted (`git apply -R logs/fix.patch`, rebuild **EXIT=0**): `./SessionAudioRecordTest` **EXIT=1**, `FAIL!` at the new slot, actual `errorKind` 0, expected 5 (`logs/test-3-revert-full.log`). Reapplied (`git apply logs/fix.patch`, rebuild **EXIT=0**): `./SessionAudioRecordTest` **EXIT=0**, 6 passed (`logs/test-4-reapply-full.log`); `ctest -R SessionAudioRecordTest` **EXIT=0** (`logs/test-5-ctest-green.log`). The RED run on the original code before any edit gave the same failure (`logs/test-1-red.log`, `logs/test-1-red-direct.log`).
+- **Deterministic.** There are no sleeps, no wall-clock reads and no races. The test stops the device (`initTestCase`, `SessionAudioRecordTest.cpp:104`) and drives every period itself through `period()` (`:209-229`). The input is a pure function of the frame index, `inputFrame(n)` (`:70-74`). The loops are bounded by period counts (`:186` for the new test, `:238` in `recordUntilDone`), not by time.
+- **Fix at the cause, callers and siblings checked.** The landing path has one caller, `landSlot` → `writeAndLand` (`ControlCommandsSessionAudioRecord.cpp:276`), and `takeFinished()` has one caller, `writeAndLand` (`:225`), so the check before `writeAndLand` covers every landing. The record-start guard `recordableProblem` (`:115-118`) already refuses a non-empty cell, so landing now matches recording. The sibling `capture_to_slot` (`ControlCommandsSessionCapture.cpp:97`) has the same missing check, but it is a MIDI path under a different command; it is not changed here and is listed under Follow-ups.
+- **No collateral.** The new refusal fires only when the target cell is non-empty at landing. Before this change that case silently overwrote the cell, so no legitimate caller relied on it. Landing into an empty cell is unchanged: the two existing landing tests in the same file (`aCellRecordsOneBar…`, `aQuantisedStopEnds…`) and the neighbour tests in the family table still pass. No save format or project field changes, so old projects and saved data load as before. The record-start check is unchanged.
+- **Verdict is FIXED,** not ALREADY-FIXED or FALSE-POSITIVE, so the code-citation clause does not apply.
+- **Submit check.** `submit_check.py` reports the gates row FAIL on the worktree itself, for the sandbox reason above (`PermissionError` on the parent directory). The same unmodified `feature_check.py` passes on the `/tmp` copy (`logs/gate-2-feature-check-tmpcopy.log`, `RESULT: PASS`). Only that row is affected; the other submit-check items pass (`logs/submit-check-1.log`).
