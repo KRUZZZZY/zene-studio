@@ -232,6 +232,10 @@ Logs: `build-4-red.log`, `test-4-red.log` (RED), `build-5-green.log`, `test-5-gr
 (from `build/tests`) - exit 0, **6/6 ctest targets passed** (`test-14-wider.log`). These are the
 tests that drive the Device panel, the device card's menus and the device's own dialogs.
 
+An unfiltered `ctest` run over the whole suite is refused by the run harness
+("bunny-guard: run named tests: ctest -R '<regex>' --output-on-failure", exit 97,
+`test-15-full.log`), so the evidence above is the named family, not the whole tree.
+
 ### Files committed
 
 - `src/gui/shell/DeviceCard.cpp` - the card's context menu is let go of before it runs
