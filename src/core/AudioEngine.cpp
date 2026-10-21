@@ -440,6 +440,12 @@ void AudioEngine::setAutomatableModelRegistrationFailureForTest(bool fail) noexc
 }
 
 
+void AudioEngine::setAutomatableModelRegistrationAttemptStateForTest(std::atomic<int>* state) noexcept
+{
+	m_automatableModelRegistrationAttemptStateForTest.store(state, std::memory_order_release);
+}
+
+
 bool AudioEngine::registerAutomatableModel(AutomatableModel* model) noexcept
 {
 	if (model == nullptr) { return false; }
@@ -452,6 +458,15 @@ bool AudioEngine::registerAutomatableModel(AutomatableModel* model) noexcept
 	{
 		m_automatableModelRegistrationFailures.fetch_add(1, std::memory_order_relaxed);
 		return false;
+	}
+
+	if (std::atomic<int>* const attemptState =
+		m_automatableModelRegistrationAttemptStateForTest.load(std::memory_order_acquire))
+	{
+		int expected = 0;
+		attemptState->compare_exchange_strong(expected, 1, std::memory_order_release,
+			std::memory_order_relaxed);
+		attemptState->notify_all();
 	}
 
 	const auto lock = std::lock_guard{m_changeMutex};

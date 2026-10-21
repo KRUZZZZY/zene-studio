@@ -29,8 +29,8 @@
 #include <QScopeGuard>
 #include <QStringList>
 
+#include <atomic>
 #include <future>
-#include <new>
 #include <thread>
 
 #include "AudioEngine.h"
@@ -92,10 +92,9 @@ private:
 
 private slots:
 
-	/*! The load and settings restore must not try model registration while the
-	 *  audio change lock is held elsewhere. A deterministic registration fault
-	 *  returns before taking the lock, so a regression is observed without a
-	 *  timeout or sleep. */
+	/*! The load and settings restore must complete while another thread owns the
+	 *  audio change lock. The test seam reports a registration attempt immediately
+	 *  before its real lock acquisition, so the result is deterministic. */
 	void aRecordedDeviceIsBuiltWithoutTheAudioChangeLock()
 	{
 		QString device;
@@ -115,42 +114,45 @@ private slots:
 
 		AudioEngine* audioEngine = Engine::audioEngine();
 		std::promise<void> acquiredLock;
-		std::promise<void> releaseLock;
-		std::future<void> releaseSignal = releaseLock.get_future();
-		bool releaseSent = false;
+		std::atomic<int> buildEvent{0};
 		std::thread holder([&] {
 			audioEngine->requestChangeInModel();
 			acquiredLock.set_value();
-			releaseSignal.wait();
+			int event = buildEvent.load(std::memory_order_acquire);
+			while (event == 0)
+			{
+				buildEvent.wait(event, std::memory_order_acquire);
+				event = buildEvent.load(std::memory_order_acquire);
+			}
 			audioEngine->doneChangeInModel();
 		});
 		acquiredLock.get_future().wait();
 		const auto releaseHolder = qScopeGuard([&] {
-			if (!releaseSent) { releaseLock.set_value(); }
+			int pending = 0;
+			buildEvent.compare_exchange_strong(pending, 2, std::memory_order_release,
+				std::memory_order_relaxed);
+			buildEvent.notify_all();
 			if (holder.joinable()) { holder.join(); }
+			audioEngine->setAutomatableModelRegistrationAttemptStateForTest(nullptr);
 		});
 
-		const auto registrationFailures = audioEngine->automatableModelRegistrationFailures();
-		audioEngine->setAutomatableModelRegistrationFailureForTest(true);
-		const auto restoreFailureSetting = qScopeGuard([audioEngine] {
-			audioEngine->setAutomatableModelRegistrationFailureForTest(false);
-		});
-		Effect* built = nullptr;
-		try
+		audioEngine->setAutomatableModelRegistrationAttemptStateForTest(&buildEvent);
+		Effect* built = control::instantiateRecordedDevice(chain, xml);
+		int pending = 0;
+		buildEvent.compare_exchange_strong(pending, 2, std::memory_order_release,
+			std::memory_order_relaxed);
+		buildEvent.notify_all();
+		const int observedEvent = buildEvent.load(std::memory_order_acquire);
+		holder.join();
+		audioEngine->setAutomatableModelRegistrationAttemptStateForTest(nullptr);
+		if (observedEvent != 2 && built != nullptr)
 		{
-			built = control::instantiateRecordedDevice(chain, xml);
+			delete built;
+			built = nullptr;
 		}
-		catch (const std::bad_alloc&)
-		{
-			// The injected failure turns the old constructor registration into a
-			// deterministic result before it can wait for the held mutex.
-		}
-		QCOMPARE(audioEngine->automatableModelRegistrationFailures(), registrationFailures);
+		QCOMPARE(observedEvent, 2); // completion wins only when registration did not seek the lock
 		QVERIFY2(built != nullptr, "the recorded device could not be built");
 		QCOMPARE(QString::fromUtf8(built->descriptor()->name), deviceName);
-		releaseLock.set_value();
-		releaseSent = true;
-		holder.join();
 		built->deleteLater();
 
 		mixer->deleteChannel(index);

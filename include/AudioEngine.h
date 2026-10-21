@@ -508,6 +508,8 @@ public:
 	}
 	//! TEST SEAM: make model registration fail before it can acquire the change lock.
 	void setAutomatableModelRegistrationFailureForTest(bool fail) noexcept;
+	//! TEST SEAM: signal before registration attempts to acquire the change lock.
+	void setAutomatableModelRegistrationAttemptStateForTest(std::atomic<int>* state) noexcept;
 	bool isRenderThread() const noexcept;
 
 	/**
@@ -757,6 +759,7 @@ private:
 	std::atomic<std::uint64_t> m_registeredAutomatableModelCount{0};
 	std::atomic<std::uint64_t> m_automatableModelRegistrationFailures{0};
 	std::atomic<bool> m_failAutomatableModelRegistrationForTest{false};
+	std::atomic<std::atomic<int>*> m_automatableModelRegistrationAttemptStateForTest{nullptr};
 	std::atomic<std::uint64_t> m_unregisteredAutomatableBufferRequests{0};
 	std::atomic<std::uint64_t> m_unpreparedAutomatableBufferRequests{0};
 	std::atomic<std::uint64_t> m_unpreparedControllerBufferRequests{0};
