@@ -851,6 +851,20 @@ void VestigeInstrumentView::noteOffAll( void )
 		off.param2 = 0;
 		pushOrRecord( m_vi->m_midiHandoff, m_vi->m_midiOverflow, off );
 	}
+
+	// A note that is sounding on another MIDI channel has to end as well: the plug-in
+	// can receive events on all sixteen channels, and the button used to cover channel
+	// 0 only. The all-notes-off is the message the overflow path sends to cut a channel
+	// (see processImpl()), so the plug-in side of the contract does not change.
+	for( int channel = 0; channel < 16; ++channel )
+	{
+		HandoffMidiEvent cut;
+		cut.type = static_cast<std::uint8_t>( MidiControlChange );
+		cut.channel = static_cast<std::int8_t>( channel );
+		cut.param1 = 123; // All Notes Off
+		cut.param2 = 0;
+		pushOrRecord( m_vi->m_midiHandoff, m_vi->m_midiOverflow, cut );
+	}
 }
 
 

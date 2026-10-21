@@ -136,3 +136,11 @@ plugins/Watsyn/Watsyn.cpp	WatsynInstrument::playNoteImpl	Watsyn's per-note rende
 plugins/Watsyn/Watsyn.cpp	WatsynInstrument::claimWave	called from WatsynInstrument::playNoteImpl on the audio thread: pins the wavetable snapshot the note renders with
 plugins/Watsyn/Watsyn.cpp	WatsynVoice::renderOutput	called from WatsynInstrument::playNoteImpl on the audio thread: renders the note's oscillators into the note's own buffer
 plugins/Watsyn/Watsyn.cpp	WatsynInstrument::deleteNotePluginData	called when a Watsyn note ends, on the thread that released the note handle: gives the wavetable snapshot back
+
+# VeSTige's VST host: the note path publishes into the same bounded hand-off queue as
+# Carla's, and the render path drains it into the plug-in. Neither may take a lock: the
+# note path is reached from the audio thread (every note of every track), the render path
+# from the render thread. The queue is what keeps the note path off the plug-in mutex
+# (the note path took that mutex with a blocking lock() until the queue existed).
+plugins/Vestige/Vestige.cpp	VestigeInstrument::handleMidiEvent	MIDI may arrive on the audio thread (the note path), the GUI thread or the input thread; this producer only publishes a fixed-size event into the bounded hand-off queue
+plugins/Vestige/Vestige.cpp	VestigeInstrument::processImpl	VeSTige's per-period render path: it drains the queued events into the plug-in and calls the plug-in's process
