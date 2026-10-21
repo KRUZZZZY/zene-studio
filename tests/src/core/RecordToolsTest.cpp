@@ -28,19 +28,25 @@
 
 #include <QtTest>
 
+#include <QApplication>
 #include <QDir>
 #include <QJsonArray>
+#include <QScopeGuard>
 #include <QTemporaryDir>
+#include <QStorageInfo>
+#include <sys/stat.h>
 
 #include "AudioEngine.h"
 #include "AutomationTrack.h"
 #include "Clip.h"
 #include "ControlCompSupport.h"
+#include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
-#include "Mixer.h"
 #include "MetronomeOptions.h"
+#include "Mixer.h"
+#include "MountNamespaceTestSupport.h"
 #include "RecorderTaps.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -104,6 +110,13 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	//! A test that fails leaves its routes armed, and the next test would be refused its arming
+	//! because of it: every test starts from a clean recorder.
+	void cleanup()
+	{
+		run(QStringLiteral("record.disarm_all"));
 	}
 
 	void aCompEdgeMoves()
@@ -417,7 +430,228 @@ private slots:
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
 		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
 	}
+
+	//! Independent mounts that happen to share a device label (e.g. two tmpfs mounts) are distinct
+	//! free-space budgets, so their routes are not pooled. (Regression for review-e39984ffb: grouping
+	//! by device() merged distinct mounts.)
+	void armedRoutesOnIndependentMountsDoNotShare()
+	{
+		const QString tmpPath = QStringLiteral("/tmp");
+		const QString shmPath = QStringLiteral("/dev/shm");
+		struct stat stTmp, stShm;
+		if (::stat(tmpPath.toUtf8().constData(), &stTmp) != 0
+			|| ::stat(shmPath.toUtf8().constData(), &stShm) != 0)
+		{
+			QSKIP("required mount points are not available on this host");
+		}
+		const QStorageInfo tmpStorage(tmpPath);
+		const QStorageInfo shmStorage(shmPath);
+		if (!tmpStorage.isValid() || !shmStorage.isValid())
+		{
+			QSKIP("required volumes cannot be measured on this host");
+		}
+		if (stTmp.st_dev == stShm.st_dev)
+		{
+			QSKIP("host does not provide two independent mounts sharing a device label");
+		}
+		// The two mounts are expected to advertise the same device label for this test's premise.
+		if (tmpStorage.device() != shmStorage.device())
+		{
+			QSKIP("host mounts do not share a device label");
+		}
+
+		QTemporaryDir tmpTakes(QStringLiteral("/tmp/zt-XXXXXX"));
+		if (!tmpTakes.isValid()) { QSKIP("cannot make a take directory under /tmp"); }
+		QVERIFY(QDir().mkpath(tmpTakes.filePath(QStringLiteral("d"))));
+		QTemporaryDir shmTakes(shmPath + QStringLiteral("/zene-takes-XXXXXX"));
+		if (!shmTakes.isValid()) { QSKIP("cannot make a take directory under /dev/shm"); }
+		QVERIFY(QDir().mkpath(shmTakes.filePath(QStringLiteral("d"))));
+
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), tmpTakes.filePath(QStringLiteral("d/route0.wav"))}}).ok, "arm 0 refused");
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 1},
+			{QStringLiteral("file"), shmTakes.filePath(QStringLiteral("d/route1.wav"))}}).ok, "arm 1 refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
+		const QString dir = left.result.value(QStringLiteral("directory")).toString();
+		QVERIFY2(dir.startsWith(tmpTakes.path()) || dir.startsWith(shmTakes.path()),
+			qPrintable(QStringLiteral("directory %1 is neither of the two take directories").arg(dir)));
+		// The free bytes the answer quotes are the ones of the volume it names.
+		const double free = left.result.value(QStringLiteral("free_bytes")).toDouble();
+		const double measured = static_cast<double>(QStorageInfo(dir).bytesAvailable());
+		QVERIFY2(qAbs(free - measured) <= qMax(1048576.0, measured * 0.05),
+			qPrintable(QStringLiteral("free_bytes %1, measured %2 on %3").arg(free).arg(measured).arg(dir)));
+		// Each mount has a route of its own, so the winning volume's free bytes last ONE route's
+		// writing rate; pooling the two mounts into one budget would halve the answer.
+		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		const double expected = free / (rate * 3.0);
+		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
+		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
+			qPrintable(QStringLiteral("seconds %1, expected %2 for one route a mount").arg(seconds).arg(expected)));
+
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
+	}
+
+	//! Multiple paths onto the same underlying filesystem (e.g. a directory and a link to it) share
+	//! one free-space pool, so their routes are pooled. (Regression for review-e39984ffb: grouping
+	//! by DIRECTORY split one filesystem into a budget a directory. Qt resolves a link, so a link
+	//! and its target are one mount point - the case that tells the mount-point key apart is
+	//! armedRoutesOnOneFilesystemUnderTwoMountPointsShareItsFreeSpace.)
+	void armedRoutesOnSameFilesystemCoalesce()
+	{
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("d"))));
+
+		const QString linkPath = takes.path() + QStringLiteral("/link");
+		QVERIFY2(QFile::link(takes.path(), linkPath), "could not create a link to the take directory");
+
+		struct stat stReal, stLink;
+		QVERIFY2(::stat(takes.path().toUtf8().constData(), &stReal) == 0, "stat(real) failed");
+		QVERIFY2(::stat(linkPath.toUtf8().constData(), &stLink) == 0, "stat(link) failed");
+		QVERIFY2(stReal.st_dev == stLink.st_dev, "link does not share the underlying filesystem");
+
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), takes.filePath(QStringLiteral("d/route0.wav"))}}).ok, "arm 0 refused");
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 1},
+			{QStringLiteral("file"), linkPath + QStringLiteral("/d/route1.wav")}}).ok, "arm 1 refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
+		// One filesystem, two routes: its free bytes last two routes' writing rate.
+		const double free = left.result.value(QStringLiteral("free_bytes")).toDouble();
+		const double measured = static_cast<double>(QStorageInfo(takes.path()).bytesAvailable());
+		QVERIFY2(qAbs(free - measured) <= qMax(1048576.0, measured * 0.05),
+			qPrintable(QStringLiteral("free_bytes %1, measured %2").arg(free).arg(measured)));
+		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		const double expected = free / (rate * 3.0 * 2.0);
+		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
+		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
+			qPrintable(QStringLiteral("seconds %1, expected %2 for two routes on one filesystem").arg(seconds).arg(expected)));
+
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
+	}
+
+	//! One filesystem under TWO mount points (a bind mount, a filesystem mounted twice): one pool of
+	//! free bytes under two mount-point keys. The budget belongs to the FILESYSTEM, so both routes
+	//! draw on that one pool - a budget keyed by the mount point would give every route its own and
+	//! double the answer.
+	//! (Regression for review-e39984ffb: the rootPath() key split one filesystem into two budgets.)
+	void armedRoutesOnOneFilesystemUnderTwoMountPointsShareItsFreeSpace()
+	{
+#ifdef __linux__
+		QTemporaryDir pool;
+		QVERIFY2(pool.isValid(), "could not make a pool directory");
+		QVERIFY(QDir().mkpath(pool.filePath(QStringLiteral("a"))));
+		QVERIFY(QDir().mkpath(pool.filePath(QStringLiteral("b"))));
+		const QString first = pool.filePath(QStringLiteral("a"));
+		const QString second = pool.filePath(QStringLiteral("b"));
+		// One filesystem under two mount points: the bind mount is made in the mount namespace
+		// this process entered before it started any thread.
+		if (!testsupport::bindMountForTest(first, second))
+		{
+			QSKIP("this host cannot give one filesystem two mount points (no unprivileged mount namespace)");
+		}
+		// The bind mount comes down again when the slot ends, so the pool can be removed.
+		const auto unbind = qScopeGuard([&second]() { testsupport::unbindMountForTest(second); });
+		const QString takeFirst = first + QStringLiteral("/take0");
+		const QString takeSecond = second + QStringLiteral("/take1");
+		QVERIFY(QDir().mkpath(takeFirst));
+		QVERIFY(QDir().mkpath(takeSecond));
+
+		// The case's premises, checked at the take directories themselves: one filesystem (the
+		// kernel's st_dev) and one pool of free bytes, under two mount points.
+		QCOMPARE(testsupport::filesystemDevice(takeFirst), testsupport::filesystemDevice(takeSecond));
+		const QStorageInfo firstStorage(takeFirst);
+		const QStorageInfo secondStorage(takeSecond);
+		QVERIFY2(firstStorage.rootPath() != secondStorage.rootPath(),
+			qPrintable(QStringLiteral("both take directories are under the mount point %1").arg(firstStorage.rootPath())));
+
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 0},
+			{QStringLiteral("file"), takeFirst + QStringLiteral("/route0.wav")}}).ok, "arm 0 refused");
+		QVERIFY2(run(QStringLiteral("record.arm_track"), {{QStringLiteral("route"), 1},
+			{QStringLiteral("file"), takeSecond + QStringLiteral("/route1.wav")}}).ok, "arm 1 refused");
+
+		const ControlResult left = run(QStringLiteral("record.remaining"));
+		QVERIFY2(left.ok, qPrintable(left.errorMessage));
+		QCOMPARE(left.result.value(QStringLiteral("armed_routes")).toInt(), 2);
+		// The free bytes the answer quotes are the ones of the pool the take directories are on.
+		const double free = left.result.value(QStringLiteral("free_bytes")).toDouble();
+		const double measured = static_cast<double>(firstStorage.bytesAvailable());
+		QVERIFY2(qAbs(free - measured) <= qMax(1048576.0, measured * 0.05),
+			qPrintable(QStringLiteral("free_bytes %1, measured %2").arg(free).arg(measured)));
+		// One pool of free bytes for two routes: it lasts two routes' writing rate.
+		const double rate = static_cast<double>(Engine::audioEngine()->outputSampleRate());
+		const double expected = free / (rate * 3.0 * 2.0);
+		const double seconds = left.result.value(QStringLiteral("seconds")).toDouble();
+		QVERIFY2(qAbs(seconds - expected) <= 1e-9 * qMax(1.0, expected),
+			qPrintable(QStringLiteral("seconds %1, expected %2 for two routes on one filesystem under two mount points")
+				.arg(seconds).arg(expected)));
+
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("record.disarm_track"), {{QStringLiteral("route"), 1}}).ok);
+#else
+		QSKIP("one filesystem under two mount points needs a mount namespace, which this platform has not");
+#endif
+	}
+
+	//! The budget's key is the FILESYSTEM's identity, not the path. Windows names a volume by its
+	//! GUID (QStorageInfo::device()), which one volume keeps under every path it is mounted at: the
+	//! mount point (QStorageInfo::rootPath()) names the MOUNT, not the volume, so it is the fallback
+	//! for a storage info that knows no GUID. POSIX names a filesystem by the device the kernel
+	//! mounts it from (st_dev): the device LABEL is not an identity (every tmpfs mount answers
+	//! "tmpfs"), so two independent filesystems keep two budgets.
+	//! (Regression for review-e39984ffb: the rootPath() key split one volume into two budgets.)
+	void theBudgetKeyIsTheFilesystemIdentity()
+	{
+		const QString volumeId = QStringLiteral("volume-one");
+		const QString firstMount = QStringLiteral("/mnt/first");
+		const QString secondMount = QStringLiteral("/mnt/second");
+		const control::VolumeNaming windows = control::VolumeNaming::VolumeId;
+		// One volume under two mount points: ONE key, so both routes share the pool of free bytes.
+		QCOMPARE(control::filesystemIdentityKey(firstMount, windows, volumeId, firstMount),
+			control::filesystemIdentityKey(secondMount, windows, volumeId, secondMount));
+		// The mount point is the fallback only: it names no volume, so it names neither of these.
+		QVERIFY(control::filesystemIdentityKey(firstMount, windows, QString(), firstMount)
+			!= control::filesystemIdentityKey(firstMount, windows, volumeId, firstMount));
+		QVERIFY(control::filesystemIdentityKey(firstMount, windows, QString(), firstMount)
+			!= control::filesystemIdentityKey(secondMount, windows, QString(), secondMount));
+		// POSIX: the device the kernel mounts the filesystem from is the identity - two paths onto
+		// one filesystem share it, whatever the device label says.
+		QTemporaryDir takes;
+		QVERIFY2(takes.isValid(), "could not make a take directory");
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("a"))));
+		QVERIFY(QDir().mkpath(takes.filePath(QStringLiteral("b"))));
+		const control::VolumeNaming posix = control::VolumeNaming::KernelDevice;
+		QCOMPARE(control::filesystemIdentityKey(takes.filePath(QStringLiteral("a")), posix,
+			QStringLiteral("tmpfs"), takes.path()),
+			control::filesystemIdentityKey(takes.filePath(QStringLiteral("b")), posix,
+				QStringLiteral("tmpfs"), takes.path()));
+		// The naming this platform uses for itself.
+#ifdef _WIN32
+		QCOMPARE(control::platformVolumeNaming(), control::VolumeNaming::VolumeId);
+#else
+		QCOMPARE(control::platformVolumeNaming(), control::VolumeNaming::KernelDevice);
+#endif
+	}
 };
 
-QTEST_MAIN(RecordToolsTest)
+int main(int argc, char* argv[])
+{
+	// The last test needs one filesystem under two mount points, and it makes its own mount
+	// namespace for that: the kernel refuses a user namespace for a process that has threads
+	// already, and the engine starts its threads right after this - so the namespace is made
+	// here, before the application exists.
+	testsupport::enterOwnMountNamespace();
+	QApplication app(argc, argv);
+	RecordToolsTest test;
+	QTEST_SET_MAIN_SOURCE_PATH
+	return QTest::qExec(&test, argc, argv);
+}
+
 #include "RecordToolsTest.moc"

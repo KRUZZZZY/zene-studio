@@ -122,6 +122,40 @@ int routeArg(const QJsonObject& args);
 //! the directory its own recovery file lives in.
 QString takePathArg(const QJsonObject& args, int route, ControlResult* error);
 
+// ---------------------------------------------------------------------------
+// The recording budget's filesystem identity (record.remaining).
+//
+// The budget of free bytes belongs to the FILESYSTEM, not to a directory: two
+// armed directories on one filesystem draw on one pool. What names a filesystem
+// is the platform's business, so it is asked for here - once - instead of in
+// the command's handler, where no test could reach it.
+// ---------------------------------------------------------------------------
+
+//! How a platform names the filesystem a place sits on.
+enum class VolumeNaming
+{
+	//! POSIX: the device the kernel mounts the filesystem from (st_dev). The device
+	//! LABEL (QStorageInfo::device() there - every tmpfs mount answers "tmpfs") is
+	//! not an identity: two independent filesystems answer the same one.
+	KernelDevice,
+	//! Windows: the volume's GUID (QStorageInfo::device()), which one volume keeps
+	//! under every path it is mounted at.
+	VolumeId,
+};
+
+//! How this platform names the filesystem a place sits on.
+VolumeNaming platformVolumeNaming();
+
+/*! The key that pools the free bytes of the filesystem @a path sits on.
+ *
+ * @a naming says how the platform names it, @a deviceId is the storage info's
+ * device id and @a mountPoint its mount point. The key names the FILESYSTEM, so
+ * every path onto one filesystem - a directory, a link to it, a second mount of
+ * it - shares one budget of free bytes.
+ */
+QString filesystemIdentityKey(const QString& path, VolumeNaming naming, const QString& deviceId,
+	const QString& mountPoint);
+
 } // namespace control
 
 } // namespace lmms

@@ -36,6 +36,7 @@
 #include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "ControlCommandDef.h"
+#include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
@@ -117,7 +118,8 @@ ControlResult punchHere(const QJsonObject& args)
 //! Where the armed routes write their takes, counted per directory: an armed route
 //! writes to the file name it was armed with (record.arm_track 'file', which may sit
 //! on another volume), and a route with no path yet writes beside the recovery file.
-//! Routes sharing a directory share its free space.
+//! Routes on one filesystem share its free space, whether or not they write into one
+//! directory - groupByVolume pools the directories by filesystem.
 QMap<QString, int> armedTakePlaces(const MultiTrackRecorder& recorder, const QString& recoveryDir)
 {
 	QMap<QString, int> places;
@@ -140,9 +142,14 @@ struct ArmedVolume
 	int routes = 0;
 };
 
-//! Groups the armed places by the volume they sit on. The free space belongs to the VOLUME, not to each
-//! directory: two armed directories on one device draw on the same pool, so their routes are summed per
-//! device. False, with @a unmeasured set, when a place's volume cannot be measured.
+//! Groups the armed places by the filesystem they sit on. The free space belongs to the FILESYSTEM,
+//! not to each directory: two armed directories on one filesystem draw on the same pool, so their
+//! routes are summed per filesystem. The filesystem is told apart by the identity its platform gives
+//! it (filesystemIdentityKey()): POSIX by the device the kernel mounts it from (st_dev), which pools
+//! every path of one filesystem - a directory, a link to it, a second mount of it - and keeps
+//! independent filesystems apart even when they report the same device name (two tmpfs mounts both
+//! answer 'tmpfs'); Windows by the volume's GUID, which one volume keeps under every path it is
+//! mounted at. False, with @a unmeasured set, when a place's filesystem cannot be measured.
 bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>* volumes, QString* unmeasured)
 {
 	for (auto it = places.cbegin(); it != places.cend(); ++it)
@@ -153,7 +160,8 @@ bool groupByVolume(const QMap<QString, int>& places, QMap<QString, ArmedVolume>*
 			*unmeasured = it.key();
 			return false;
 		}
-		const QString volume = storage.device().isEmpty() ? storage.rootPath() : QString::fromUtf8(storage.device());
+		const QString volume = filesystemIdentityKey(it.key(), platformVolumeNaming(),
+			QString::fromUtf8(storage.device()), storage.rootPath());
 		ArmedVolume& entry = (*volumes)[volume];
 		if (entry.routes == 0)
 		{
