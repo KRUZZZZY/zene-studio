@@ -656,7 +656,9 @@ RemotePlugin::ReplyWait RemotePlugin::collectProcessingReplies(std::chrono::stea
 		}
 
 		message m;
-		switch (receiveFrameBefore(slice, m))
+		// On the audio thread the arguments are views into a preallocated frame buffer: decoding a
+		// client message here (a debug text or a channel-count update) must not allocate.
+		switch (receiveFrameBefore(slice, m, true))
 		{
 		case ReceiveResult::Got:
 			break;
@@ -1172,7 +1174,7 @@ bool RemotePlugin::processMessage( const message & _m )
 				// second message while one is pending is dropped.
 				if (!m_pendingDebug)
 				{
-					const auto& text = _m.stringArgument(0);
+					const auto text = _m.argumentView(0);
 					m_pendingDebugLength = std::min(text.size(), m_pendingDebugText.size() - 1);
 					std::copy_n(text.data(), m_pendingDebugLength, m_pendingDebugText.data());
 					m_pendingDebug = true;

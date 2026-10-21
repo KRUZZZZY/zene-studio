@@ -32,10 +32,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <charconv>
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <string_view>
 #include <thread>
 #include <vector>
 #include <cstring>
@@ -227,13 +229,34 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		if (len < 0)
+		{
+			invalidate();
+			return ret;
+		}
 		if (len > 0)
 		{
+			// Never trust the wire length before allocating: the FIFO can only hold what is left of the
+			// message it has already signalled.
+			lock();
+			const bool fits = !isInvalid() && len <= m_data->endPtr - m_data->startPtr;
+			unlock();
+			if (!fits)
+			{
+				invalidate();
+				return ret;
+			}
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
+	}
+
+
+	//! Reads raw bytes of the current message. Does not allocate; the caller holds the data lock.
+	inline void readRaw( void * _buf, int _len )
+	{
+		read( _buf, _len );
 	}
 
 
@@ -454,15 +477,26 @@ public:
 			return *this;
 		}
 
-		inline std::string getString( int _p = 0 ) const
-		{
-			return data[_p];
-		}
-
 		//! Argument \a _p by reference. getString() returns a copy, which allocates on the audio thread.
 		inline const std::string & stringArgument( int _p = 0 ) const
 		{
 			return data[_p];
+		}
+
+		//! Argument \a _p as a view. getString() returns a copy, which allocates on the audio thread.
+		//! In bounded mode (a message received by the audio thread, see receiveFrameBefore()) the view
+		//! points into the receiver's frame buffer and is valid only until that receiver receives again.
+		inline std::string_view argumentView( int _p = 0 ) const
+		{
+			if( !m_bounded ) { return data[_p]; }
+			std::size_t length = 0;
+			const char * arg = boundedArgument( _p, length );
+			return arg ? std::string_view{ arg, length } : std::string_view{};
+		}
+
+		inline std::string getString( int _p = 0 ) const
+		{
+			return std::string{ argumentView( _p ) };
 		}
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
@@ -474,12 +508,24 @@ public:
 
 		inline int getInt( int _p = 0 ) const
 		{
-			return atoi( data[_p].c_str() );
+			if( !m_bounded ) { return atoi( data[_p].c_str() ); }
+			const auto arg = argumentView( _p );
+			if( arg.empty() ) { return 0; }
+			int value = 0;
+			std::from_chars( arg.data(), arg.data() + arg.size(), value );
+			return value;
 		}
 
 		inline float getFloat( int _p ) const
 		{
-			return (float) atof( data[_p].c_str() );
+			if( !m_bounded ) { return (float) atof( data[_p].c_str() ); }
+			const auto arg = argumentView( _p );
+			if( arg.empty() ) { return 0.0f; }
+			char buf[64];
+			const auto length = std::min<std::size_t>( arg.size(), sizeof( buf ) - 1 );
+			std::memcpy( buf, arg.data(), length );
+			buf[length] = '\0';
+			return (float) atof( buf );
 		}
 
 		//! Number of arguments this message carries. The wire format writes the count with
@@ -488,7 +534,7 @@ public:
 		//! getString()/getInt() do not bounds-check.
 		inline std::size_t size() const
 		{
-			return data.size();
+			return m_bounded ? m_boundedCount : data.size();
 		}
 
 		inline bool operator==( const message & _m ) const
@@ -500,6 +546,40 @@ public:
 
 	private:
 		std::vector<std::string> data;
+
+		//! Bounded receive (audio thread): the arguments are the wire bytes in the receiver's frame buffer,
+		//! length-prefixed exactly as they arrived. No string or vector is built for them.
+		bool m_bounded = false;
+		const char * m_boundedFrame = nullptr;
+		std::size_t m_boundedSize = 0;
+		std::size_t m_boundedCount = 0;
+
+		//! Start of argument \a _p in bounded mode, with its length; nullptr when the index or frame is bad.
+		const char * boundedArgument( int _p, std::size_t & _length ) const
+		{
+			_length = 0;
+			if( _p < 0 || static_cast<std::size_t>( _p ) >= m_boundedCount ) { return nullptr; }
+			const char * cursor = m_boundedFrame + 2 * sizeof( std::int32_t );
+			const char * const end = m_boundedFrame + m_boundedSize;
+			for( int i = 0; i <= _p; ++i )
+			{
+				std::int32_t length = 0;
+				if( static_cast<std::size_t>( end - cursor ) < sizeof length ) { return nullptr; }
+				std::memcpy( &length, cursor, sizeof length );
+				cursor += sizeof length;
+				if( length < 0 || static_cast<std::size_t>( length ) > static_cast<std::size_t>( end - cursor ) )
+				{
+					return nullptr;
+				}
+				if( i == _p )
+				{
+					_length = static_cast<std::size_t>( length );
+					return cursor;
+				}
+				cursor += length;
+			}
+			return nullptr;
+		}
 
 		friend class RemotePluginBase;
 
@@ -561,8 +641,11 @@ public:
 	//! Receives the next message, waiting no longer than \a _deadline. Reads only a complete message (socket:
 	//! the framing is checked first; shared memory: a token is taken, and each message is written whole), so a
 	//! client that stops mid-message cannot hold the caller. Used on the audio thread.
+	//! With \a _bounded the arguments are views into a preallocated frame buffer rather than owned strings,
+	//! so decoding a client message there allocates nothing; the views are valid until the next receive.
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
-	ReceiveResult receiveFrameBefore( std::chrono::steady_clock::time_point _deadline, message & _out );
+	ReceiveResult receiveFrameBefore( std::chrono::steady_clock::time_point _deadline, message & _out,
+		bool _bounded = false );
 
 	//! The main thread's bounded receive. Like receiveFrameBefore(), but a frame that has started on the socket is
 	//! finished rather than abandoned: a frame larger than the socket buffer cannot be complete until it is read.
@@ -575,8 +658,10 @@ public:
 	//! False if the bytes did not all arrive in time.
 	bool readExactlyWithin( void * _buf, int _len, std::chrono::milliseconds _progress,
 		std::chrono::steady_clock::time_point _total );
-	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout.
-	ReceiveResult receiveStartedFrame( std::chrono::milliseconds _progress, message & _out );
+	//! Finishes a frame whose first bytes are on the socket (see receiveWithin()), within StartedFrameTimeout but
+	//! never past \a _deadline: a short query must not be stretched to the started-frame bound.
+	ReceiveResult receiveStartedFrame( std::chrono::steady_clock::time_point _deadline,
+		std::chrono::milliseconds _progress, message & _out );
 #endif
 
 	//! The whole of a started frame must arrive within this (on top of the per-piece bound of receiveWithin()).
@@ -646,11 +731,17 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
+		if (len < 0)
+		{
+			invalidate();
+			return ret;
+		}
 		if (len > 0)
 		{
+			// This owning path is the main thread's wait for a whole message (settings, presets, chunks),
+			// which may legitimately be larger than the audio thread's peek window; it is not bounded here.
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
-			ret[len] = '\0';
 		}
 		return ret;
 	}
@@ -685,8 +776,9 @@ public:
 	//! Waits at most \a timeoutMs milliseconds (zero polls) for the next message to start arriving.
 	//! @return false when nothing arrived in time. Only the socket transport can time out: the
 	//! shared-memory FIFO has no timed wait, so it reports ready and the caller blocks in
-	//! receiveMessage() as it always did.
-	inline bool waitForMessageReadable(int timeoutMs)
+	//! receiveMessage() as it always did. Virtual so a test can observe the bound a receive asks for
+	//! without waiting for it.
+	virtual bool waitForMessageReadable(int timeoutMs)
 	{
 #ifdef SYNC_WITH_SHM_FIFO
 		(void)timeoutMs;
@@ -720,6 +812,7 @@ public:
 #ifdef SYNC_WITH_SHM_FIFO
 		return Framing::Complete;
 #else
+		m_peekedFrameBytes = 0;
 		const std::size_t windowBytes = m_peekWindow.size();
 		char * const window = m_peekWindow.data();
 		const ssize_t available = ::recv(m_socket, window, windowBytes, MSG_PEEK | MSG_DONTWAIT);
@@ -752,6 +845,7 @@ public:
 			if (offset > windowBytes) { return Framing::Unusable; }
 			if (offset > size) { return Framing::Incomplete; }
 		}
+		m_peekedFrameBytes = offset;
 		return Framing::Complete;
 #endif
 	}
@@ -818,10 +912,30 @@ protected:
 	std::size_t m_txTailOffset = 0;
 	std::size_t m_txTailSize = 0;
 
+	//! Size of the frame peekNextMessage() found complete, for the bounded receive that consumes it.
+	std::size_t m_peekedFrameBytes = 0;
+
 #endif
 
 
 private:
+#ifndef BUILD_REMOTE_PLUGIN_CLIENT
+	//! One whole wire frame read on the audio thread. A bounded receive points the message's arguments
+	//! into it, so decoding a client message there allocates nothing; it is overwritten by the next receive.
+	std::vector<char> m_frameScratch;
+
+	//! Validates a complete wire frame and makes \a _out view it. Never allocates.
+	bool parseBoundedFrame( const char * _frame, std::size_t _size, message & _out );
+
+#ifdef SYNC_WITH_SHM_FIFO
+	//! Reads the current whole FIFO message into m_frameScratch and makes \a _out view it. The caller holds the lock.
+	bool readFrameLockedBounded( message & _out );
+#else
+	//! Reads the complete socket frame peekNextMessage() sized into m_frameScratch; no argument decoding.
+	ReceiveResult receiveBoundedSocketFrame( message & _out );
+#endif // SYNC_WITH_SHM_FIFO
+#endif // BUILD_REMOTE_PLUGIN_CLIENT
+
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
 	static int & waitDepthCounter()
 	{

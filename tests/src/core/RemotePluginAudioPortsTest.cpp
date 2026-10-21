@@ -33,6 +33,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <type_traits>
 
 #include <QDir>
@@ -115,6 +116,17 @@ public:
 	~TestRemotePluginBase() override { ::close(m_socket); }
 
 	bool processMessage(const message&) override { return false; }
+
+	//! Lets a test observe the timeout a receive asks for (and supply the bytes the receive then reads)
+	//! without waiting on the wall clock.
+	bool waitForMessageReadable(int timeoutMs) override
+	{
+		if (waitHook) { return waitHook(timeoutMs); }
+		return RemotePluginBase::waitForMessageReadable(timeoutMs);
+	}
+
+	std::function<bool(int)> waitHook;
+	int lastWaitMs = -1;
 };
 #endif
 
@@ -179,6 +191,7 @@ import socket, struct, sys, time
 ID_QUIT = 3
 ID_START_PROCESSING = 9
 ID_PROCESSING_DONE = 10
+ID_DEBUG_MESSAGE = 25
 
 sock_path, log_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 
@@ -225,6 +238,12 @@ while True:
         break
     if message_id == ID_START_PROCESSING and mode == "reply":
         client.sendall(struct.pack("<ii", ID_PROCESSING_DONE, 0))
+    if message_id == ID_START_PROCESSING and mode == "debugreply":
+        # A debug text (longer than the pending slot, so decoding it used to grow a string) and the
+        # reply in one write: the audio thread must read the reply that follows it.
+        text = b"debug-" + b"x" * 1000
+        client.sendall(struct.pack("<iii", ID_DEBUG_MESSAGE, 1, len(text)) + text
+                       + struct.pack("<ii", ID_PROCESSING_DONE, 0))
 )PY";
 
 	if (script.write(contents) != contents.size())
@@ -786,6 +805,121 @@ private slots:
 		::close(sockets[1]);
 	}
 
+	//! The bounded socket decoder must enforce the same argument-count cap as the owning socket and FIFO readers.
+	void boundedReceiveRejectsOversizedArgumentCount()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			constexpr int maxMessageArguments = (512 * 1024 - 8) / 4;
+			constexpr std::int32_t count = maxMessageArguments + 1;
+			constexpr std::size_t frameSize = 2 * sizeof(std::int32_t)
+				+ static_cast<std::size_t>(count) * sizeof(std::int32_t);
+			int socketBufferSize = 2 * 1024 * 1024;
+			QVERIFY(::setsockopt(sockets[0], SOL_SOCKET, SO_RCVBUF,
+				&socketBufferSize, sizeof(socketBufferSize)) == 0);
+			QVERIFY(::setsockopt(sockets[1], SOL_SOCKET, SO_SNDBUF,
+				&socketBufferSize, sizeof(socketBufferSize)) == 0);
+
+			std::vector<char> frame(frameSize, '\0'); // every zero-length argument has a zero length prefix
+			const std::int32_t header[] = {IdDebugMessage, count};
+			std::memcpy(frame.data(), header, sizeof(header));
+			QVERIFY(::write(sockets[1], frame.data(), frame.size()) == static_cast<ssize_t>(frame.size()));
+
+			RemotePluginBase::message message;
+			const auto result = receiver.receiveFrameBefore(std::chrono::steady_clock::now(), message, true);
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! A frame that has started can be finished slowly, but never past the query's own deadline: a 100 ms
+	//! query that sees a partial message must not wait up to StartedFrameTimeout (2 s) for the rest.
+	//! The receive asks waitForMessageReadable() for each piece; the hook records that bound and reports
+	//! that the rest never arrives, so no wall clock is involved.
+	void startedFrameWaitIsCappedByTheQueryDeadline()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			// Only the header is on the socket: the peek can tell that a frame started, but not its size.
+			const std::int32_t header[] = {IdDebugMessage, 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+
+			receiver.waitHook = [&receiver](int timeoutMs)
+			{
+				if (timeoutMs == 0) { return true; }
+				receiver.lastWaitMs = timeoutMs;
+				return false; // the rest of the frame never arrives
+			};
+
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds{200};
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveWithin(deadline, RemotePluginBase::StartedFrameTimeout, m);
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+			// The old reader asked for the whole 2 s started-frame bound; the query budget is 200 ms.
+			QVERIFY2(receiver.lastWaitMs < 1000,
+				"a started frame ignored the query deadline and asked to wait up to 2 s");
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! A partial frame must not make the host allocate a string the wire length claims before the payload
+	//! has arrived: one argument of 8 MiB is refused as soon as its length exceeds what a frame can hold.
+	//! The hook supplies the length only after the peek has seen the 8-byte header, so the buggy path really
+	//! reaches the allocation, and it stops before any payload read.
+	void oversizedStartedFrameLengthIsRefusedBeforeAllocating()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			const std::int32_t header[] = {IdDebugMessage, 1};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+
+			constexpr std::int32_t claimedLength = 8 * 1024 * 1024;
+			int positiveWaits = 0;
+			receiver.waitHook = [&sockets, &positiveWaits](int timeoutMs)
+			{
+				if (timeoutMs == 0) { return true; }
+				++positiveWaits;
+				if (positiveWaits == 3)
+				{
+					// The receive is about to read the argument length: give it the oversized one.
+					const std::int32_t length = claimedLength;
+					return ::write(sockets[1], &length, sizeof(length))
+						== static_cast<ssize_t>(sizeof(length));
+				}
+				return positiveWaits < 4; // the payload never arrives
+			};
+
+			lmms::test::tlCountAllocations = true;
+			lmms::test::resetAllocationCount();
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveWithin(
+				std::chrono::steady_clock::now() + std::chrono::seconds{1},
+				std::chrono::milliseconds{50}, m);
+			const auto allocations = lmms::test::tlAllocationCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+			QCOMPARE(allocations, std::uint64_t{0});
+		}
+
+		::close(sockets[1]);
+	}
+
 #endif
 
 #ifndef SYNC_WITH_SHM_FIFO
@@ -922,6 +1056,81 @@ private slots:
 		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(2));
 
 		QCOMPARE(plugin.process(), true);
+	}
+
+	//! The audio-thread receive of a complete debug frame builds argument views, not strings: decoding
+	//! it allocates nothing and the text is still exactly the wire bytes. No peer or deadline is involved.
+	void completeDebugFrameDecodesWithoutAllocating()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			const std::string text(1000, 'x');
+			const std::int32_t header[] = {IdDebugMessage, 1, static_cast<std::int32_t>(text.size())};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+			QVERIFY(::write(sockets[1], text.data(), text.size()) == static_cast<ssize_t>(text.size()));
+
+			lmms::test::tlCountAllocations = true;
+			lmms::test::resetAllocationCount();
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveFrameBefore(
+				std::chrono::steady_clock::now() + std::chrono::seconds{1}, m, true);
+			const auto allocations = lmms::test::tlAllocationCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Got);
+			QCOMPARE(m.id, static_cast<int>(IdDebugMessage));
+			QCOMPARE(m.size(), std::size_t{1});
+			QVERIFY(m.argumentView(0) == std::string_view{text});
+			QCOMPARE(allocations, std::uint64_t{0});
+		}
+
+		::close(sockets[1]);
+	}
+
+	//! A client can send a debug text and then its IdProcessingDone during a period. The audio thread
+	//! reads both, but decoding the text must not allocate: the arguments are views into a preallocated
+	//! frame buffer. The peer writes both frames in one go, so the period really consumes the debug
+	//! message before its reply.
+	void debugMessageDuringPeriodDoesNotAllocate()
+	{
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		if (python.isEmpty())
+		{
+			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("debugreply")}) == false,
+			"the host started a client that connects");
+		if (!plugin.isRunning())
+		{
+			QSKIP("the client stand-in did not start");
+		}
+
+		plugin.processMessage(RemotePlugin::message(IdChangeInputOutputCount).addInt(2).addInt(2));
+
+		// The first period may allocate for one-time setup; the measured one must not.
+		QCOMPARE(plugin.process(), true);
+
+		lmms::test::tlCountAllocations = true;
+		lmms::test::resetAllocationCount();
+		const bool processed = plugin.process();
+		const auto allocations = lmms::test::tlAllocationCount;
+		lmms::test::tlCountAllocations = false;
+
+		QVERIFY2(processed, "the period did not consume the debug message and its reply");
+		QCOMPARE(allocations, std::uint64_t{0});
 	}
 
 	//! Zero output channels: the ports model accepts channelsOut == 0, so the
