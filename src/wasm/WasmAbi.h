@@ -68,6 +68,12 @@ constexpr std::size_t maxLogBytes = 4096;
 //! while still bounding a runaway module to a few milliseconds.
 constexpr std::uint64_t defaultFuelBudget = 1000000;
 
+//! Largest module file either loader accepts (64 MiB). Wasmtime compiles the
+//! module in host memory, so the store's 16 MiB linear-memory limit does not
+//! bound the bytes read from disk; this is checked before the buffer is
+//! allocated, and the load returns an error rather than reading the file.
+constexpr std::size_t maxModuleBytes = 64 * 1024 * 1024;
+
 //! Store limits: 16 MiB of linear memory, 1 instance, 1 memory, 1 table.
 constexpr std::int64_t storeMemoryLimitBytes = 16 * 1024 * 1024;
 constexpr std::int64_t storeTableElementLimit = 10000;

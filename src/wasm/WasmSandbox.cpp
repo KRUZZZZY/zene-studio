@@ -33,6 +33,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <new>
 
 namespace lmms::wasm
 {
@@ -347,6 +348,16 @@ bool WasmSandbox::assembleWat(const std::string& wat, std::vector<std::uint8_t>&
 bool WasmSandbox::loadModuleBytes(const std::uint8_t* bytes, std::size_t size,
 	std::string& error)
 {
+	// The store limit bounds linear memory, not the module image: wasmtime
+	// compiles these bytes in host memory. Refuse an oversized image before
+	// touching the loaded module, so a bad load cannot destroy a good one.
+	if (size > abi::maxModuleBytes)
+	{
+		error = "module is " + std::to_string(size) + " bytes, over the " +
+			std::to_string(abi::maxModuleBytes) + "-byte module size limit";
+		return false;
+	}
+
 	if (m_impl->module != nullptr)
 	{
 		wasmtime_module_delete(m_impl->module);
@@ -436,19 +447,64 @@ bool WasmSandbox::loadModuleBytes(const std::uint8_t* bytes, std::size_t size,
 	return true;
 }
 
-bool WasmSandbox::loadModuleFile(const std::string& path, std::string& error)
+bool WasmSandbox::readModuleFile(const std::string& path,
+	std::vector<std::uint8_t>& out, std::string& error)
 {
-	std::ifstream file(path, std::ios::binary);
+	out.clear();
+	std::ifstream file(path, std::ios::binary | std::ios::ate);
 	if (!file)
 	{
 		error = "cannot open module '" + path + "'";
 		return false;
 	}
-	std::vector<std::uint8_t> bytes((std::istreambuf_iterator<char>(file)),
-		std::istreambuf_iterator<char>());
-	if (bytes.empty())
+
+	const std::streamoff length = file.tellg();
+	if (length < 0)
+	{
+		error = "cannot determine the size of module '" + path + "'";
+		return false;
+	}
+	const auto size = static_cast<std::uintmax_t>(length);
+	if (size > abi::maxModuleBytes)
+	{
+		error = "module '" + path + "' is " + std::to_string(size) +
+			" bytes, over the " + std::to_string(abi::maxModuleBytes) +
+			"-byte module size limit";
+		return false;
+	}
+	if (size == 0)
 	{
 		error = "module '" + path + "' is empty";
+		return false;
+	}
+
+	try
+	{
+		out.resize(static_cast<std::size_t>(size));
+		file.seekg(0, std::ios::beg);
+		file.read(reinterpret_cast<char*>(out.data()),
+			static_cast<std::streamsize>(out.size()));
+		if (!file || file.gcount() != static_cast<std::streamsize>(out.size()))
+		{
+			out.clear();
+			error = "cannot read module '" + path + "'";
+			return false;
+		}
+	}
+	catch (const std::bad_alloc&)
+	{
+		out.clear();
+		error = "not enough memory to read module '" + path + "'";
+		return false;
+	}
+	return true;
+}
+
+bool WasmSandbox::loadModuleFile(const std::string& path, std::string& error)
+{
+	std::vector<std::uint8_t> bytes;
+	if (!readModuleFile(path, bytes, error))
+	{
 		return false;
 	}
 	return loadModuleBytes(bytes.data(), bytes.size(), error);

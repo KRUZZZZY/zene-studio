@@ -77,6 +77,12 @@ public:
 	//! wat2wasm so the build needs no extra tooling.
 	static bool assembleWat(const std::string& wat, std::vector<std::uint8_t>& out, std::string& error);
 
+	//! Read a module file into \p out, enforcing abi::maxModuleBytes. The size
+	//! is checked before the buffer is allocated, and a failed allocation is
+	//! reported through \p error instead of escaping the loader.
+	static bool readModuleFile(const std::string& path, std::vector<std::uint8_t>& out,
+		std::string& error);
+
 	//! Compile and instantiate a module. Returns false and sets \p error on
 	//! malformed input or failed instantiation; never aborts the process.
 	bool loadModuleFile(const std::string& path, std::string& error);
