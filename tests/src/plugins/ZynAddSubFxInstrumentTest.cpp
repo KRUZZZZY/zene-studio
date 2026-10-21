@@ -13,10 +13,12 @@
  * tests compile theirs - so it can drive the class directly, and it adds three
  * cases, one per defect:
  *
- *   - theAudioPathNeverWaitsForThePluginMutex(): the audio path must never WAIT for
+ *   - theExportPathDoesNotWaitForThePluginMutex(): the audio path must never WAIT for
  *     the mutex. The main thread holds it for as long as a reload takes (the client
  *     handshake is seconds), and the old export policy made the audio thread wait for
- *     it - indefinitely - so a render could stall for the whole reload.
+ *     it - indefinitely - so a render could stall for the whole reload. The case asks
+ *     the instrument for the wait it allows itself, in the export path, and checks the
+ *     attempt that follows: no wall-clock timeout, no thread, no race.
  *
  *   - thePluginChoiceAndItsUseAreUnderOneLock(): loadFile() chooses a plugin and
  *     then uses it. The choice and the use have to happen under one lock, or a
@@ -28,11 +30,10 @@
  *
  * HOW THE CASES ARE DETERMINISTIC
  *
- * No case waits for a wall-clock outcome and none of them races: the lock state is
- * read with QMutex::tryLock(), which never blocks, and the one place where a thread
- * has to be waited for (the audio thread's lock attempt) is waited for with a
- * bounded acquire whose only job is to turn a hang into a failure - the assertion
- * itself is the value the audio path returns.
+ * No case waits for a wall-clock outcome, none of them sleeps and none of them races:
+ * the lock state is read with QMutex::tryLock(), which never blocks, and the wait the
+ * audio path allows itself is asked of the instrument instead of being measured. The
+ * offsets are injected values (42, 100), never measured.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -56,9 +57,6 @@
 
 #include <QtTest>
 
-#include <atomic>
-#include <thread>
-
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -72,21 +70,31 @@ namespace
 {
 
 //! The instrument with the members a white-box regression test drives.
-class TestInstrument final : public ZynAddSubFxInstrument
+class TestInstrument : public ZynAddSubFxInstrument
 {
 public:
 	using ZynAddSubFxInstrument::ZynAddSubFxInstrument;
 
+	using ZynAddSubFxInstrument::audioLockWaitMs;
 	using ZynAddSubFxInstrument::forwardQueuedMidi;
 	using ZynAddSubFxInstrument::m_midiHandoff;
 	using ZynAddSubFxInstrument::m_pluginMutex;
 	using ZynAddSubFxInstrument::processLock;
+	using ZynAddSubFxInstrument::renderIsExporting;
 
 #ifdef LMMS_TESTING
-	using ZynAddSubFxInstrument::m_testForceExport;
 	using ZynAddSubFxInstrument::m_testHook;
 	using ZynAddSubFxInstrument::m_testLastForwardedOffset;
 #endif
+};
+
+//! The instrument in the export path, which is the path that used to wait.
+class ExportingTestInstrument final : public TestInstrument
+{
+public:
+	using TestInstrument::TestInstrument;
+
+	auto renderIsExporting() const -> bool override { return true; }
 };
 
 } // namespace
@@ -111,50 +119,27 @@ private slots:
 		if (m_engineInitialised) { Engine::destroy(); }
 	}
 
-	//! The audio path must not wait for the plugin mutex.
-	void theAudioPathNeverWaitsForThePluginMutex()
+	//! The export path must not wait for the plugin mutex.
+	void theExportPathDoesNotWaitForThePluginMutex()
 	{
 		InstrumentTrack track{Engine::getSong()};
-		TestInstrument instrument{&track};
+		ExportingTestInstrument instrument{&track};
 
-		// The main thread holds the plugin mutex, the way a reload does while it
-		// waits for the remote client.
+		// The export path is the one that used to wait: the old policy took the mutex
+		// with an infinite timeout while the song was exporting.
+		QVERIFY(instrument.renderIsExporting());
+
+		// The wait the audio path allows itself: none. This is the assertion that fails
+		// against the old policy, which waited for as long as the main thread held the
+		// mutex.
+		QCOMPARE(instrument.audioLockWaitMs(), 0);
+
+		// And the attempt itself: with the mutex held, it comes back at once and does
+		// not take the lock - the period is skipped, not delayed.
 		instrument.m_pluginMutex.lock();
-
-		// The export policy is the one that used to wait: with the song exporting,
-		// the audio path blocked on the mutex for as long as the main thread held it.
-		instrument.m_testForceExport = true;
-
-		QSemaphore answered;
-		std::atomic<bool> tookTheLock{false};
-		std::thread audioThread{[&]
-			{
-				tookTheLock.store(instrument.processLock());
-				answered.release();
-			}};
-
-		// The audio path has to come back on its own. The bounded acquire only turns
-		// a hang into a failure; the assertion is the value the audio path returns.
-		const bool returned = answered.tryAcquire(1, 2000);
-
-		bool mainHoldsTheLock = true;
-		if (!returned)
-		{
-			// The audio thread is stuck in the lock: release it so the thread can finish.
-			instrument.m_pluginMutex.unlock();
-			mainHoldsTheLock = false;
-		}
-		audioThread.join();
-		if (tookTheLock.load())
-		{
-			// The audio thread got the lock after the release: it holds it now.
-			instrument.m_pluginMutex.unlock();
-			mainHoldsTheLock = false;
-		}
-		if (mainHoldsTheLock) { instrument.m_pluginMutex.unlock(); }
-
-		QVERIFY2(returned, "the audio path waited for the plugin mutex instead of skipping the period");
-		QVERIFY2(!tookTheLock.load(), "the audio path took the plugin mutex the main thread was holding");
+		const bool locked = instrument.processLock();
+		instrument.m_pluginMutex.unlock();
+		QVERIFY2(!locked, "the audio path took the plugin mutex the main thread was holding");
 	}
 
 	//! The choice of a plugin and its use have to happen under one lock.

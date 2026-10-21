@@ -2769,3 +2769,6 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	cluster new-p9-545: loadFile() chooses the p
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster new-p9-545: the regression that the plugin choice and its use, and the hosting getters' read of the plugin pointer, happen under the plugin mutex.
 plugins/ZynAddSubFx/ZynAddSubFx.cpp	cluster new-p16-276: the hand-off keeps the MIDI event's frame offset, and the drain hands that offset to the remote client, which places the event inside the period.
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster new-p16-276: the regression that a queued MIDI event keeps its frame offset and that the drain forwards it.
+plugins/ZynAddSubFx/ZynAddSubFx.cpp	cluster 908 review round 2: the audio path's lock wait is a named policy (audioLockWaitMs()) and the export path is a seam (renderIsExporting()), so the regression can ask for the wait the audio path allows itself instead of measuring a thread.
+plugins/ZynAddSubFx/ZynAddSubFx.h	cluster 908 review round 2: declares renderIsExporting() and audioLockWaitMs(), the seam the deterministic lock regression drives; the m_testForceExport seam is gone.
+tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster 908 review round 2: the lock regression asks the instrument for the wait it allows itself in the export path - no thread, no semaphore, no timeout.

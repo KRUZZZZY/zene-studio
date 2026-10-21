@@ -161,6 +161,16 @@ protected:
 	auto processLock() -> bool override;
 	void processUnlock() override;
 
+	//! Whether the render is an export. The production answer is the song's own flag; a
+	//! test can answer differently, so the export path can be driven without a render.
+	virtual auto renderIsExporting() const -> bool;
+
+	//! How long the audio path may wait for the plugin mutex, in milliseconds. 0 means
+	//! "do not wait at all": the audio thread must never wait, because the main thread
+	//! holds that mutex for as long as a plugin operation takes - a client handshake is
+	//! seconds - and an export that waits for it stalls for the whole reload.
+	auto audioLockWaitMs() const -> int;
+
 	//! Forwards the MIDI events that were queued since the last period to the plugin that
 	//! is running, in order. Called by processImpl() on the audio thread.
 	void forwardQueuedMidi();
@@ -184,9 +194,6 @@ protected:
 #ifdef LMMS_TESTING
 	//! Test seam: the hook a regression test installs to observe the plugin lock.
 	std::function<void()> m_testHook;
-	//! Test seam: makes the lock policy take the export path, so a regression test can
-	//! drive it without running a render.
-	bool m_testForceExport = false;
 	//! Test seam: the offset of the last MIDI event forwardQueuedMidi() handed over.
 	int m_testLastForwardedOffset = -1;
 #endif

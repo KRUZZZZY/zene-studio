@@ -414,11 +414,26 @@ auto ZynAddSubFxInstrument::processLock() -> bool
 	// wait for it while the song was exporting, so a render could stall for the whole
 	// reload (and for as long as the main thread needed the lock, which is unbounded).
 	// The period is skipped instead: the lock is a try, never a wait.
-	//
-	// m_testForceExport is deliberately not consulted: the export policy that waited is
-	// what this removes, and the test seam stays so the regression test compiles
-	// against the fixed tree as well.
-	return m_pluginMutex.tryLock(0);
+	return m_pluginMutex.tryLock(audioLockWaitMs());
+}
+
+
+
+
+auto ZynAddSubFxInstrument::renderIsExporting() const -> bool
+{
+	return Engine::getSong()->isExporting();
+}
+
+
+
+
+auto ZynAddSubFxInstrument::audioLockWaitMs() const -> int
+{
+	// The audio path does not wait for the plugin mutex at all. The export case is why
+	// it matters: an export renders periods back to back, so a wait here stalled the
+	// render for as long as the main thread held the mutex.
+	return 0;
 }
 
 
