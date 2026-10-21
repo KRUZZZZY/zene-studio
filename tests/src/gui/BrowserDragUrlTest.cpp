@@ -293,6 +293,68 @@ private slots:
 		}
 	}
 
+	//! A key that carries a colon survives the StringPair payload: the receiver reads the whole key.
+	void aKeyWithAColonSurvivesTheStringPairPayload()
+	{
+		const QString key = QStringLiteral("preset:factory");
+		const QString value = QStringLiteral("a value with a colon: and a percent % sign");
+		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(key, value));
+
+		QDropEvent drop(QPointF(0, 0), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+		QCOMPARE(StringPairDrag::decodeKey(&drop), key);
+		QCOMPARE(StringPairDrag::decodeValue(&drop), value);
+	}
+
+	//! A key that carries a percent sign survives it too - and a literal "%3A" in a key stays literal.
+	void aKeyWithAPercentSignSurvivesTheStringPairPayload()
+	{
+		const QVector<QString> keys = {
+			QStringLiteral("100%"), QStringLiteral("a%3A"), QStringLiteral("a%25"), QStringLiteral("%:"),
+		};
+		for (const QString& key : keys)
+		{
+			std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(key, QStringLiteral("v")));
+			QDropEvent drop(QPointF(0, 0), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+			QCOMPARE(StringPairDrag::decodeKey(&drop), key);
+			QCOMPARE(StringPairDrag::decodeValue(&drop), QStringLiteral("v"));
+		}
+	}
+
+	//! The payload of a key that carries neither colon nor percent sign is byte for byte what it was.
+	void anOrdinaryKeyKeepsItsPayloadBytes()
+	{
+		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(QStringLiteral("samplefile"),
+									   QStringLiteral("/tmp/dropped.wav")));
+		QCOMPARE(mime->data(Clipboard::mimeType(Clipboard::MimeType::StringPair)),
+			QByteArrayLiteral("samplefile:/tmp/dropped.wav"));
+	}
+
+	//! A target that allows a colon key takes the drag; a target that allows another key does not.
+	void aDragEnterAcceptsTheWholeColonKey()
+	{
+		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(QStringLiteral("preset:factory"),
+									   QStringLiteral("v")));
+
+		QDragEnterEvent enter(QPoint(4, 4), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+		enter.setAccepted(false);
+		QVERIFY2(StringPairDrag::processDragEnterEvent(&enter, QStringLiteral("preset:factory")),
+			"a target that allows the colon key refuses the drag");
+		QVERIFY(enter.isAccepted());
+
+		QDragEnterEvent other(QPoint(4, 4), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+		other.setAccepted(false);
+		QVERIFY(!StringPairDrag::processDragEnterEvent(&other, QStringLiteral("preset")));
+		QVERIFY(!other.isAccepted());
+	}
+
+	//! The clipboard writes the same payload, so a colon key survives the copy too.
+	void theClipboardKeepsAColonKeyIntact()
+	{
+		Clipboard::copyStringPair(QStringLiteral("preset:factory"), QStringLiteral("v"));
+		QCOMPARE(Clipboard::decodeKey(Clipboard::getMimeData()), QStringLiteral("preset:factory"));
+		QCOMPARE(Clipboard::decodeValue(Clipboard::getMimeData()), QStringLiteral("v"));
+	}
+
 private:
 	QTemporaryDir m_home;
 	QTemporaryDir m_files;

@@ -91,7 +91,7 @@ QMimeData * StringPairDrag::createMimeData( const QString & _key, const QString 
 
 	auto m = new QMimeData();
 	m->setData( mimeType( MimeType::StringPair ),
-			( _key + ":" + _value ).toUtf8() );
+			( Clipboard::encodeStringPairKey( _key ) + ":" + _value ).toUtf8() );
 	if( carriesAFilePath( _key ) )
 	{
 		// The same file as a URL, for a plug-in editor or the desktop that takes file URLs; the
@@ -127,8 +127,10 @@ bool StringPairDrag::processDragEnterEvent( QDragEnterEvent * _dee,
 	{
 		return( false );
 	}
-	QString txt = _dee->mimeData()->data( mimeType( MimeType::StringPair ) );
-	if( _allowed_keys.split( ',' ).contains( txt.section( ':', 0, 0 ) ) )
+	// The key is read through the shared decoder, so a key that carries a colon is compared whole
+	// and not split at that colon.
+	QString key = Clipboard::decodeKey( _dee->mimeData() );
+	if( _allowed_keys.split( ',' ).contains( key ) )
 	{
 		_dee->acceptProposedAction();
 		return( true );

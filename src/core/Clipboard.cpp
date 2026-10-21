@@ -32,6 +32,33 @@
 namespace lmms::Clipboard
 {
 
+namespace
+{
+
+/*! The key half of a StringPair payload, unescaped. A percent sign that is not followed by `3A` or
+ *  `25` stays a literal percent sign, so a payload that was never escaped - one written by an older
+ *  Zene, or by hand - decodes exactly as it was read before. */
+QString decodeStringPairKey( const QString & encodedKey )
+{
+	QString key;
+	key.reserve( encodedKey.size() );
+	for( int i = 0; i < encodedKey.size(); ++i )
+	{
+		const QChar c = encodedKey.at( i );
+		if( c == QLatin1Char( '%' ) && i + 2 < encodedKey.size() )
+		{
+			const QString escape = encodedKey.mid( i + 1, 2 );
+			if( escape == QLatin1String( "3A" ) ) { key += QLatin1Char( ':' ); i += 2; continue; }
+			if( escape == QLatin1String( "25" ) ) { key += QLatin1Char( '%' ); i += 2; continue; }
+		}
+		key += c;
+	}
+	return key;
+}
+
+} // namespace
+
+
 	const QMimeData * getMimeData()
 	{
 		// The clipboard can hold nothing at all - no owner yet, an offscreen or headless
@@ -75,7 +102,7 @@ namespace lmms::Clipboard
 
 	void copyStringPair( const QString & key, const QString & value )
 	{
-		QString finalString = key + ":" + value;
+		QString finalString = encodeStringPairKey( key ) + ":" + value;
 
 		auto content = new QMimeData;
 		content->setData( mimeType( MimeType::StringPair ), finalString.toUtf8() );
@@ -85,9 +112,27 @@ namespace lmms::Clipboard
 
 
 
+	QString encodeStringPairKey( const QString & key )
+	{
+		QString encoded;
+		encoded.reserve( key.size() );
+		for( const QChar c : key )
+		{
+			if( c == QLatin1Char( ':' ) ) { encoded += QLatin1String( "%3A" ); }
+			else if( c == QLatin1Char( '%' ) ) { encoded += QLatin1String( "%25" ); }
+			else { encoded += c; }
+		}
+		return encoded;
+	}
+
+
+
+
 	QString decodeKey( const QMimeData * mimeData )
 	{
-		return( QString::fromUtf8( mimeData->data( mimeType( MimeType::StringPair ) ) ).section( ':', 0, 0 ) );
+		const QString payload = QString::fromUtf8(
+			mimeData->data( mimeType( MimeType::StringPair ) ) );
+		return( decodeStringPairKey( payload.section( ':', 0, 0 ) ) );
 	}
 
 
