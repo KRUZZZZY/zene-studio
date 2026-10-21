@@ -306,7 +306,13 @@ void BrowserIndex::scan(const QStringList& dirs, bool features, int maxAnalysed)
 		m_status.error = QStringLiteral("the scan was cancelled; the previous index is kept");
 		return;
 	}
-	walk.status.error = saved ? QString() : QStringLiteral("the index could not be written to %1").arg(storePath());
+	if (!saved)
+	{
+		// Not published: the entries were not written, so queries keep the index the store still holds.
+		m_status.running = false;
+		m_status.error = QStringLiteral("the index could not be written to %1; the previous index is kept").arg(storePath());
+		return;
+	}
 	m_entries = std::move(walk.found);
 	m_status = walk.status;
 }
