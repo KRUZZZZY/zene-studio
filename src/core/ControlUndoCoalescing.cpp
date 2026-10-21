@@ -102,13 +102,16 @@ QString coalescingKey(const QString& commandId, const QJsonObject& args)
 
 	QString key = commandId;
 	// The declaration is "clip", or "target,plugin,name,index" for a parameter:
-	// the VALUES of those arguments, in the declared order, name the target. An
-	// argument a call did not supply contributes an empty field, which keeps the
-	// field positions stable ("ch-1::0" and "ch-1::1" are two parameters).
+	// the VALUES of those arguments, in the declared order, name the target. Keep
+	// the existing default-value key for optional arguments such as plugin.param_set's
+	// index. Only transport.seek's optional gesture token has no target when absent:
+	// an ordinary seek must open its own step rather than coalesce with another seek.
 	for (const QString& raw : entry->coalesceTarget.split(QLatin1Char(',')))
 	{
 		const QString name = raw.trimmed();
 		if (name.isEmpty()) { continue; }
+		if (!args.contains(name) && commandId == QLatin1String("transport.seek")
+			&& name == QLatin1String("gesture")) { return QString(); }
 		key += QLatin1Char(':');
 		const QJsonValue value = args.value(name);
 		key += value.isString() ? value.toString() : QString::number(value.toDouble());

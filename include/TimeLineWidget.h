@@ -28,6 +28,7 @@
 #include <array>
 
 #include <QSize>
+#include <QString>
 #include <QWidget>
 
 #include "Song.h"
@@ -261,6 +262,11 @@ private:
 
 	bool m_isRecording = false;
 	bool m_isPlayheadVisible = true;
+
+	//! The drag token of one arranger playhead gesture: every seek it sends carries the
+	//! same value, so the command's coalescing rule makes the gesture ONE undo step.
+	QString m_seekGesture;
+	quint64 m_seekGestureSerial = 0;
 
 	TextFloat* m_hint = nullptr;
 	int m_initalXSelect;

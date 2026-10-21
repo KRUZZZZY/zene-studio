@@ -44,6 +44,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "ControlUndoCoalescing.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
@@ -490,6 +491,23 @@ private slots:
 		const QJsonArray onTheWire = report.result.value(QStringLiteral("coalescing"))
 			.toObject().value(QStringLiteral("commands")).toArray();
 		QCOMPARE(onTheWire.size(), declared);
+	}
+
+
+	void optionalSeekGestureDoesNotChangeNamedParameterCoalescing()
+	{
+		// A name-based plugin.param_set call legitimately omits its optional index. Its old key
+		// used index 0, so the scrub-token change must not disable same-parameter coalescing.
+		const QJsonObject namedParameter{{QStringLiteral("target"), QStringLiteral("ch-0")},
+			{QStringLiteral("plugin"), QStringLiteral("fx-0")},
+			{QStringLiteral("name"), QStringLiteral("Cutoff")}, {QStringLiteral("value"), 0.5}};
+		QCOMPARE(control::coalescingKey(QStringLiteral("plugin.param_set"), namedParameter),
+			QStringLiteral("plugin.param_set:ch-0:fx-0:Cutoff:0"));
+		QVERIFY(control::coalescingKey(QStringLiteral("transport.seek"),
+			{{QStringLiteral("ticks"), 192}}).isEmpty());
+		QCOMPARE(control::coalescingKey(QStringLiteral("transport.seek"),
+			{{QStringLiteral("ticks"), 192}, {QStringLiteral("gesture"), QStringLiteral("drag-1")}}),
+			QStringLiteral("transport.seek:drag-1"));
 	}
 
 

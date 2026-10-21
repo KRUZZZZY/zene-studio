@@ -31629,6 +31629,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "gesture": {
+            "type": "string"
+          },
           "ticks": {
             "maximum": 2147483647,
             "minimum": 0,
@@ -31640,7 +31643,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the play head to an absolute position in ticks.",
+      "description": "Move the play head to an absolute position in ticks. An optional `gesture` names one drag: consecutive seeks carrying the same value coalesce into one undo step.",
       "group": "transport",
       "id": "transport.seek",
       "mutating": true,

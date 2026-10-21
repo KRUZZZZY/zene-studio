@@ -1021,6 +1021,8 @@ set(LMMS_TESTS
 	# 0.5.0 themes 10/17: the List button on every canvas with an item list, and View > Screen Reader
 	# Announcements, in the real application
 	src/gui/ItemListButtonsTest.cpp
+	# Q050-080: spoken timeline position, selection, and markers
+	src/gui/TimelineSpeechTest.cpp
 	src/gui/RowTableViewTest.cpp
 	# 0.5.0 wave 3 theme 11/15: lane scales and readouts; the Sample Editor's range fields
 	src/gui/LaneReadoutTest.cpp
@@ -2845,6 +2847,7 @@ set_tests_properties(ArticulationMapEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PL
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserDragUrlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FileSearchJobTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TimelineSpeechTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VisibilitySetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CaptureMidiMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ProjectContainerSaveAsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

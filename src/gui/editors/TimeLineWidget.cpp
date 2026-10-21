@@ -441,6 +441,17 @@ void TimeLineWidget::mouseMoveEvent( QMouseEvent* event )
 	switch( m_action )
 	{
 		case Action::MovePositionMarker:
+			if (m_timeline == &Engine::getSong()->getTimeline(Song::PlayMode::Song))
+			{
+				// The arranger's scrub is the registered transport.seek, so every dragged position
+				// is spoken in the configured format. The gesture token keeps the whole drag to
+				// one undo step (ControlRegistry's coalescing rule); before the engine is ready
+				// the direct move below is the old behaviour.
+				QJsonObject args{{QStringLiteral("ticks"), static_cast<qint64>(timeAtCursor.getTicks())}};
+				if (!m_seekGesture.isEmpty()) { args.insert(QStringLiteral("gesture"), m_seekGesture); }
+				const ControlResult moved = ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), args);
+				if (moved.ok) { update(); break; }
+			}
 			m_timeline->setTicks(timeAtCursor.getTicks());
 			if (!( Engine::getSong()->isPlaying()))
 			{
@@ -558,6 +569,7 @@ void TimeLineWidget::mouseReleaseEvent( QMouseEvent* event )
 	}
 	if ( m_action == Action::SelectSongClip ) { emit selectionFinished(); }
 	m_action = Action::NoAction;
+	m_seekGesture.clear();
 }
 
 void TimeLineWidget::commitPunchDrag()
