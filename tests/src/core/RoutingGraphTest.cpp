@@ -467,6 +467,12 @@ void RoutingGraphTest::LoadMalformedDocuments()
 			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"9\">"
 			"<node id=\"0\" type=\"gain\"/>"
 			"</routinggraph></test>"),
+		// a negative output id other than the saved -1 is malformed, not
+		// "no output": it must not be accepted as an absent output node
+		QByteArrayLiteral(
+			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\" output=\"-2\">"
+			"<node id=\"0\" type=\"gain\"/>"
+			"</routinggraph></test>"),
 		// a missing output attribute must not be converted to the valid id zero
 		QByteArrayLiteral(
 			"<test><routinggraph version=\"1\" frames=\"0\" channels=\"0\">"
