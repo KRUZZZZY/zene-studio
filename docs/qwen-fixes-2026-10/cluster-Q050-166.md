@@ -26,8 +26,10 @@ Branch `feat/050-Q050-166-oc`, cut from `050/m0-train-9` (`2da2ed356`). Member `
   built from the command schema; each entry runs `mixer.channel_format` through `ControlRegistry`, the
   same command the agent surface uses.
 - `src/core/SurroundExport.cpp`: mono/discrete formats cannot index the speaker table out of bounds.
-- `src/core/audio/AudioFileWave.cpp`: a discrete layout keeps WAVEX's zero speaker mask instead of asking
-  libsndfile for an all-INVALID map (which it rejects), so a discrete surround export opens and writes.
+- `src/core/audio/AudioFileWave.cpp`: WAV channel-map generation now takes the selected master format
+  (`formatForChannels(channels, masterFormat)`), so discrete-3/-4/-6/-8 no longer inherit LCR/quad/5.1/
+  7.1 masks. libsndfile writes a count default for 4/6/8, so after the samples flush the writer closes
+  the file and clears WAVEX's `dwChannelMask` to 0; named exports keep their masks.
 - `data/manual/index.html`: Mono and Discrete layouts, index routing and the absence of speaker positions.
 - `docs/050-features/Q050-166.md`: the feature record.
 - Tests: `tests/src/core/SurroundTest.cpp` (two new slots, plus helpers) and
@@ -39,7 +41,7 @@ Branch `feat/050-Q050-166-oc`, cut from `050/m0-train-9` (`2da2ed356`). Member `
 | Criterion | Test and evidence | Exit |
 |---|---|---|
 | `mixer.channel_format` accepts mono and discrete channel-count layouts and `mixer.get_state` reports their speaker/channel roles | `SurroundTest::monoAndDiscreteFormatsReadBack` invokes the registered command for `mono` and every `discrete-2`..`discrete-8`; asserts `mixer.get_state` gives `format`, `channels`, empty `speakers` + `channel_roles` `1..N` for discrete and `["M"]` for mono, `mixer.surround_get` agrees, one `control.undo` returns stereo, an invalid count is `invalid_args`. `MixerWindowsTest::theSurroundMenuSetsTheFormatAndOpensThePanner` triggers the actual `Surround > Format > mono` and `discrete-5` menu actions and reads the same values back, then undoes. Direct `./build/tests/SurroundTest` -> `Totals: 15 passed, 0 failed`, exit 0; `./build/tests/MixerWindowsTest` -> `Totals: 11 passed, 0 failed`, exit 0. | 0 |
-| A project round-trip preserves each layout and a render routes every discrete channel to its matching output | `SurroundTest::monoAndDiscreteLayoutsSurviveASaveAndLoad`: each of mono + discrete-2..8 is written by `Mixer::saveSettings`, the mixer is cleared, loaded back, and the format, count, name and roles are re-read (8/8 layouts). `SurroundTest::discreteChannelsReachTheirOwnOutputs`: for every N 2..8, distinct constants on the channel pair and planes 0..N-1 reach outputs 0..N-1 exactly and no other output (checked every frame), and the matrix is index-identity (`m[0][0]`, `m[4][4]` set, `m[4][2]` zero; discrete-8 -> mono does not sum channels 0 and 1). `SurroundExportTest::aDiscreteMasterWritesItsChannelCountWithoutSpeakerMask`: a discrete-5 master writes a 5-channel WAVE_FORMAT_EXTENSIBLE file with mask 0. Direct `SurroundTest` exit 0 (15 passed); direct `SurroundExportTest` exit 0 (10 passed). | 0 |
+| A project round-trip preserves each layout and a render routes every discrete channel to its matching output | `SurroundTest::monoAndDiscreteLayoutsSurviveASaveAndLoad`: each of mono + discrete-2..8 is written by `Mixer::saveSettings`, the mixer is cleared, loaded back, and the format, count, name and roles are re-read (8/8 layouts). `SurroundTest::discreteChannelsReachTheirOwnOutputs`: for every N 2..8, distinct constants on the channel pair and planes 0..N-1 reach outputs 0..N-1 exactly and no other output (checked every frame), and the matrix is index-identity (`m[0][0]`, `m[4][4]` set, `m[4][2]` zero; discrete-8 -> mono does not sum channels 0 and 1). `SurroundExportTest::aDiscreteMasterWritesItsChannelCountWithoutSpeakerMask` (round-1 rework): every discrete master 3..8 - the counts that overlap LCR, quad, 5.1 and 7.1 included - writes a WAVE_FORMAT_EXTENSIBLE file with its own channel count and mask 0. Direct `SurroundTest` exit 0 (15 passed); direct `SurroundExportTest` exit 0 (10 passed). | 0 |
 
 Adjacent regression run: `ctest -R '^(SurroundTest|MixerWindowsTest|SurroundExportTest|ReversibilityContractTest|ControlCommandsSnapshot|AgentSurfaceReportTest)$'`
 -> `100% tests passed out of 6`, exit 0 (`ctest-final-7.log`). `SurroundExportTest` (named layout
@@ -58,6 +60,12 @@ exports plus the discrete-5 header), `ReversibilityContractTest`, `ControlComman
   **EXIT=2**, `monoAndDiscreteFormatsReadBack` and `monoAndDiscreteLayoutsSurviveASaveAndLoad` both fail
   with `actual ""`, `expected "mono"` (`revert-getstate-test.log`). Restored current product files:
   rebuild **EXIT=0**, six-test ctest **EXIT=0** (`ctest-restored.log`, `ctest-final-6.log`).
+- **Round-1 export rework**: with only `src/core/audio/AudioFileWave.cpp` put back at the submitted
+  `HEAD` (so the channel map is inferred from the count again), `cmake --build build --target zene
+  SurroundExportTest` -> **EXIT=0** and `ctest -R '^SurroundExportTest$'` -> **EXIT=8**, the new loop's
+  `h.mask` actual `7`, expected `0` at discrete-3 (`revert-export-build.log`, `revert-export-test.log`).
+  Restored: rebuild **EXIT=0**, `SurroundExportTest` **EXIT=0** (`restore-export-build.log`,
+  `restore-export-test.log`).
 - The prescribed log directory `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-166.r1/logs`
   is read-only from this sandbox (`touch` -> `Permission denied`), so all run logs quoted here are under
   `/tmp/q050-166-logs/`; the worktree is clean apart from the intended changes.
@@ -139,3 +147,5 @@ by a fixed string index before the build.
 `mixer.surround_get` and `mixer.get_state` are the existing registered trio. The schema-backed menu and
 the agent both reach the same `ControlRegistry` command. `AgentSurfaceReportTest` and
 `ControlCommandsSnapshot` pass on the regenerated live snapshot (833/76).
+
+IMPLEMENTED

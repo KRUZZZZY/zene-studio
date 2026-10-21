@@ -74,8 +74,10 @@ LMMS_EXPORT int channelsFor(const OutputSettings& settings);
 //! A Stereo export is never refused here.
 LMMS_EXPORT QString refusal(const OutputSettings& settings, bool wave);
 
-//! The surround format a file of @a channels carries (3 LCR, 4 quad, 6 5.1, 8 7.1), else Stereo.
-LMMS_EXPORT surround::Format formatForChannels(int channels);
+//! The surround format a file of @a channels carries: @a preferred when its own count matches (the
+//! selected master's layout - so discrete-6 does not become 5.1), else 3 LCR, 4 quad, 6 5.1 or 8 7.1,
+//! else Stereo. A plain stereo file always answers Stereo.
+LMMS_EXPORT surround::Format formatForChannels(int channels, surround::Format preferred = surround::Format::Stereo);
 //! libsndfile's channel map (SF_CHANNEL_MAP_*) of @a format, in its channel order; unused entries 0.
 LMMS_EXPORT std::array<int, surround::MaxChannels> sndfileChannelMap(surround::Format format);
 //! The WAVE_FORMAT_EXTENSIBLE dwChannelMask of @a format (5.1: 0x3F, 7.1: 0x63F).

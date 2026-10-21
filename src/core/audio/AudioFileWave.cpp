@@ -226,11 +226,12 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 bool AudioFileWave::setChannelMap()
 {
 	if (channels() <= DEFAULT_CHANNELS) { return true; }
-	const surround::Format format = surroundexport::formatForChannels(channels());
+	const surround::Format format = surroundexport::formatForChannels(channels(), surroundexport::masterFormat());
 	if (format == surround::Format::Stereo) { return false; }
-	// A discrete layout has no speaker mask: WAVEX writes dwChannelMask 0 itself, and libsndfile
-	// refuses an all-INVALID map, so leave its default in place rather than failing the export.
-	if (surround::isDiscrete(format)) { return true; }
+	// A discrete layout has no speaker mask. libsndfile refuses an all-INVALID map and writes a
+	// count-based default mask for some counts (4/6/8), so setChannelMap lets it write and
+	// writeZeroChannelMask() clears the field after the samples are flushed.
+	if (surround::isDiscrete(format)) { m_zeroChannelMask = true; return true; }
 	// Before any audio: libsndfile writes the mask into the header it has not written yet.
 	auto map = surroundexport::sndfileChannelMap(format);
 	return sf_command(m_sf, SFC_SET_CHANNEL_MAP_INFO, map.data(),
@@ -269,7 +270,24 @@ void AudioFileWave::finishEncoding()
 	if( m_sf )
 	{
 		sf_close( m_sf );
+		m_sf = nullptr;
 	}
+	if (m_zeroChannelMask)
+	{
+		closeOutputFile();  // release the writer's handle before reopening the file to patch its header
+		writeZeroChannelMask();
+	}
+}
+
+void AudioFileWave::writeZeroChannelMask()
+{
+	QFile file(outputFile());
+	if (!file.open(QIODevice::ReadWrite)) { return; }
+	const QByteArray header = file.read(4096);
+	const int fmt = header.indexOf("fmt ");
+	// fmt chunk data begins at fmt + 8; dwChannelMask is field 20 of WAVE_FORMAT_EXTENSIBLE's fmt data.
+	if (fmt < 0 || fmt + 32 > header.size()) { return; }
+	if (file.seek(fmt + 28)) { file.write(QByteArray(4, '\0')); file.flush(); }
 }
 
 } // namespace lmms
