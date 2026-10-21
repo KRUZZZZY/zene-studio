@@ -63,8 +63,8 @@ LMMS_EXPORT void announceNoteSelection(const MidiClip* clip, int selectedCount);
 //! filter), window.select and the note editor all speak through this; silent when nothing
 //! is selected. Polite, so view.announcements gates it like every other timeline message.
 LMMS_EXPORT void announceSelection(const Clip* clip, const Track* track, const QString& channel);
-//! Say the named markers crossed between @a before (exclusive) and @a now (inclusive).
-LMMS_EXPORT void announceCrossedMarkers(tick_t before, tick_t now);
+//! Say a named marker snapshot after its crossing action has run.
+LMMS_EXPORT void announceMarkerCrossing(const Marker& marker);
 //! Speak @a message when view.announcements permits it (Polite). Headless it
 //! still records lastAnnouncement(), so tests hear it without a screen reader.
 LMMS_EXPORT void say(const QString& message);

@@ -201,6 +201,14 @@ void runMarkerAction(const Marker& marker)
 	}
 }
 
+void collectCrossedMarker(const Marker& marker, tick_t last, tick_t tick, QVector<Marker>& actions,
+	QVector<Marker>& named)
+{
+	if (marker.tick <= last || marker.tick > tick) { return; }
+	if (!marker.action.isEmpty()) { actions.append(marker); }
+	if (!marker.name.isEmpty()) { named.append(marker); }
+}
+
 } // namespace
 
 int advance(tick_t tick, bool playing)
@@ -213,17 +221,17 @@ int advance(tick_t tick, bool playing)
 	}
 	// Copied first: an action may edit the markers themselves. ProjectMarkers keeps them in tick order.
 	QVector<Marker> crossed;
+	QVector<Marker> namedCrossed;
 	for (const Marker& marker : ProjectMarkers::instance().markers())
 	{
-		if (marker.tick > last && marker.tick <= tick && !marker.action.isEmpty()) { crossed.append(marker); }
+		collectCrossedMarker(marker, last, tick, crossed, namedCrossed);
 	}
-	const tick_t before = last;
 	last = tick;
 	for (const Marker& marker : crossed)
 	{
 		runMarkerAction(marker);
 	}
-	speech::announceCrossedMarkers(before, tick);
+	for (const Marker& marker : namedCrossed) { speech::announceMarkerCrossing(marker); }
 	return static_cast<int>(crossed.size());
 }
 

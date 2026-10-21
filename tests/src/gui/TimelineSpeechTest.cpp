@@ -321,6 +321,21 @@ private slots:
 		setAnnouncements(QStringLiteral("all"));
 	}
 
+	void markerCrossingKeepsItsNameWhenAnActionReplacesTheProject()
+	{
+		const int id = ProjectMarkers::instance().add(Bar, QStringLiteral("Old project marker"), QString());
+		QVERIFY(id >= 0);
+		Marker marker = *ProjectMarkers::instance().find(id);
+		marker.action = QStringLiteral("project.new");
+		QVERIFY(ProjectMarkers::instance().replace(id, marker));
+
+		markeractions::advance(0, false);
+		markeractions::advance(10, true);
+		markeractions::advance(Bar + 10, true);
+		QVERIFY(ProjectMarkers::instance().markers().empty());
+		QVERIFY2(announced().contains(QStringLiteral("Old project marker")), qPrintable(announced()));
+	}
+
 private:
 	QTemporaryDir m_home;
 };

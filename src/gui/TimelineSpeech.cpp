@@ -127,15 +127,9 @@ void announceSelection(const Clip* clip, const Track* track, const QString& chan
 	}
 }
 
-void announceCrossedMarkers(tick_t before, tick_t now)
+void announceMarkerCrossing(const Marker& marker)
 {
-	for (const Marker& marker : ProjectMarkers::instance().markers())
-	{
-		if (!marker.name.isEmpty() && marker.tick > before && marker.tick <= now)
-		{
-			say(markerCrossingSpeech(marker));
-		}
-	}
+	if (!marker.name.isEmpty()) { say(markerCrossingSpeech(marker)); }
 }
 
 } // namespace lmms::speech
