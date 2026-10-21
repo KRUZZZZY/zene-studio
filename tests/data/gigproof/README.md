@@ -11,6 +11,11 @@ that normal notes select the keyboard zone matching their MIDI key. Zone zero
 contains a tone and zone one is silent, making a stale zone selection audible
 to the regression.
 
+`one-frame-release.gig` gives the sustained note a silent one-second sample
+and its release-trigger dimension a sample containing one non-zero frame.
+This makes a release sample dropped before rendering distinguishable from a
+sample that was played.
+
 Without a configure-time `sine440.gig`, the sample-exact harness comparison
 would render silence on both sides and pass vacuously. The CMake gate in
 `tests/CMakeLists.txt` therefore only builds the `gigplayer` harness module
@@ -27,6 +32,7 @@ UNPROVEN.
 | `pingpong.gig` | 51.9 KiB, generated directional-loop regression fixture; hash below |
 | `single-frame-loop.gig` | generated one-frame directional-loop regression fixture |
 | `keyboard-dimension.gig` | 376 KiB, sha256 `f3412f85f7e6763e837b77271df2c07725a3d792d239097170360c3631009239` |
+| `one-frame-release.gig` | generated one-frame release-sample regression fixture |
 | `make_gig.cpp` | Generates all fixtures using only the libgig write API |
 
 The instrument has two samples: the 440 Hz sine used for ordinary notes and a
@@ -61,6 +67,7 @@ sha256sum pingpong.gig  # expect d83de8483b5168af623187b214829f715efcaa5082997ae
 ./make_gig --single-frame-loop single-frame-loop.gig
 ./make_gig keyboard-dimension.gig --keyboard
 sha256sum keyboard-dimension.gig  # expect f3412f85f7e6763e837b77271df2c07725a3d792d239097170360c3631009239
+./make_gig --one-frame-release one-frame-release.gig
 ```
 
 The generator is deterministic: the same libgig version produces the same
