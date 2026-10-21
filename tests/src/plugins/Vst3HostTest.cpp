@@ -167,6 +167,7 @@ private slots:
 	void testNonFiniteParameterValuesAreRefused();
 	void testReprepareGateQuiescesAllActiveAudioCalls();
 	void testDroppedOutputCounterUsesAtomicAccess();
+	void testDroppedMidiCounterUsesAtomicAccess();
 	void testRetriggerGetsANewNoteId();
 
 private:
@@ -586,6 +587,27 @@ void Vst3HostTest::testDroppedOutputCounterUsesAtomicAccess()
 	QVERIFY(host.contains("d.droppedOutput.store(0, std::memory_order_relaxed);"));
 	QVERIFY(host.contains("droppedOutput.fetch_add(1, std::memory_order_relaxed);"));
 	QVERIFY(reports.contains("m_impl->droppedOutput.load(std::memory_order_relaxed)"));
+}
+
+void Vst3HostTest::testDroppedMidiCounterUsesAtomicAccess()
+{
+	const auto sourceRoot = QDir{QCoreApplication::applicationDirPath()};
+	const auto readSource = [&sourceRoot](const QString& relativePath) -> QByteArray
+	{
+		QFile file{sourceRoot.absoluteFilePath(relativePath)};
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return {}; }
+		return file.readAll();
+	};
+	const auto internals = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3HostInternals.h"));
+	const auto host = readSource(QStringLiteral("../../plugins/Vst3Effect/Vst3Host.cpp"));
+	QVERIFY(!internals.isEmpty());
+	QVERIFY(!host.isEmpty());
+	// Several MIDI producers increment this while diagnostics reads it, so the counter itself must
+	// be atomic; a plain integer is a C++ data race even when no test can schedule it.
+	QVERIFY(internals.contains("std::atomic<std::uint64_t> droppedMidi{0};"));
+	QVERIFY(host.contains("++d.droppedMidi"));
+	QVERIFY(host.contains("d.droppedMidi = 0;"));
+	QVERIFY(host.contains("return m_impl->droppedMidi;"));
 }
 
 /*! 0.5.0 MX-120 round 2 (Luna DISPUTE, new-p9-509): a retrigger of a key whose first voice is still in its

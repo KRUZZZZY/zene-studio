@@ -80,11 +80,15 @@ auto midiToVst3Event(const MidiEventIn& midi, Steinberg::int32 busIndex,
  * sorted order the plug-in receives the events (MX-120 round 2).
  *
  * @returns how many events were taken from the queue
+ *
+ * @a maxEvents caps how many events are taken (the caller passes the event
+ * list's remaining room when carried boundary events already occupy part of
+ * it); -1 takes the scratch vector's own capacity, as every older caller does.
  */
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 	Steinberg::Vst::EventList& events, Steinberg::int32 busIndex, int frames,
 	const class MidiControllerMap* controllers = nullptr,
-	Steinberg::Vst::IParameterChanges* changes = nullptr) -> int;
+	Steinberg::Vst::IParameterChanges* changes = nullptr, int maxEvents = -1) -> int;
 
 /**
  * The inverse of midiToVst3Event for what a plug-in WRITES to ProcessData::outputEvents: note-on,

@@ -175,6 +175,7 @@ private slots:
 	void testNoteOnOffsetIsHonoured();
 	void testDistinctInputGivesDistinctOutput();
 	void testNoEventLeaksBetweenBlocks();
+	void testBoundaryMidiEventsAreCarriedIntoTheNextBlock();
 	void testTheQueueIsBoundedAndCountsWhatItDrops();
 	void testStateRoundTripsIntoAFreshInstance();
 	void testProcessAllocatesNothing();
@@ -413,6 +414,44 @@ void Vst3InstrumentTest::testNoEventLeaksBetweenBlocks()
 
 	const auto released = renderWith({noteOff(74, 0)});
 	QVERIFY2(released.isSilent(), "the note lasted past its note-off");
+}
+
+/*! A MIDI event written at the request's end must not be handed to the plug-in at
+ *  sampleOffset == the chunk length: every VST3 event offset lies inside the block. It is carried
+ *  into the next request at offset 0 instead, so it is still seen exactly once. The host's
+ *  test-only chunk witness shows the event list the plug-in actually received. */
+void Vst3InstrumentTest::testBoundaryMidiEventsAreCarriedIntoTheNextBlock()
+{
+	// A note-on at exactly the end of the request: it belongs to the next block, at its first
+	// sample, and must not be in this block's list at all.
+	m_plugin.pushMidiEvent(noteOn(60, 1, TestBlockSize));
+	const auto first = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 0);
+	QVERIFY2(first.isSilent(), "a note-on at the request boundary sounded in the request it ended");
+
+	const auto second = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 1);
+	QCOMPARE(m_plugin.lastChunkEventOffset(0), 0);
+	QVERIFY2(second.allEqual(FixtureLevel),
+		"the boundary note-on did not reach the next block at offset 0");
+	const auto released = renderWith({noteOff(60, 0)});
+	QVERIFY2(released.isSilent(), "the carried note lasted past its note-off");
+
+	// The note-off side: a note-off written at the request's end leaves in the next block, so
+	// the note is still held for the whole request it ends, and the next block starts released.
+	m_plugin.pushMidiEvent(noteOn(61, 1, 0));
+	m_plugin.pushMidiEvent(noteOff(61, TestBlockSize));
+	const auto held = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 1);
+	QCOMPARE(m_plugin.lastChunkEventOffset(0), 0);
+	QVERIFY2(held.allEqual(FixtureLevel),
+		"a note-off at the request boundary released the note before the request ended");
+
+	const auto afterBoundary = renderWith({});
+	QCOMPARE(m_plugin.lastChunkEventCount(), 1);
+	QCOMPARE(m_plugin.lastChunkEventOffset(0), 0);
+	QVERIFY2(afterBoundary.isSilent(),
+		"the carried boundary note-off did not reach the next block at offset 0");
 }
 
 void Vst3InstrumentTest::testTheQueueIsBoundedAndCountsWhatItDrops()
