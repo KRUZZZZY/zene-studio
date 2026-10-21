@@ -162,11 +162,40 @@ void discardPartialBundle(const QString& file)
 	QDir(dir.filePath(QStringLiteral("media"))).removeRecursively();
 }
 
-ControlResult handoff(const QJsonObject& args)
+//! The folders @a path needs but does not have yet, outermost first: mkpath() makes them
+//! all, so a hand off that fails has to take back the ones it made - a destination that
+//! was there before is not one of them.
+QStringList foldersToCreate(const QString& path)
 {
-	const QString dir = args.value(QStringLiteral("dir")).toString();
-	if (!QDir::isAbsolutePath(dir)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dir' is an absolute folder")); }
-	if (!QDir().mkpath(dir)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create '%1'").arg(dir)); }
+	QStringList missing;
+	QString current = QDir::cleanPath(path);
+	while (!current.isEmpty() && current != QLatin1String("/"))
+	{
+		if (QFileInfo::exists(current)) { break; }
+		missing.prepend(current);
+		const QString parent = QFileInfo(current).path();
+		if (parent == current) { break; }
+		current = parent;
+	}
+	return missing;
+}
+
+//! Take back the folders a failed hand off made, innermost first, and only while they are
+//! empty: a folder that holds something is not this hand off's to remove.
+void removeCreatedFolders(const QStringList& folders)
+{
+	for (auto it = folders.crbegin(); it != folders.crend(); ++it)
+	{
+		if (QFileInfo(*it).isSymLink()) { continue; }
+		QDir().rmdir(*it);  // an absolute path: it removes that folder, and only while it is empty
+	}
+}
+
+//! Write the hand-off bundle into @a dir: the session copy, the media folder beside it and
+//! HANDOFF.json. The folder itself is the caller's business - this only ever writes inside
+//! it, and the caller's rollback owns the folders it made.
+ControlResult writeBundle(const QString& dir)
+{
 	Song* song = Engine::getSong();
 	const QString file = copyPath(dir);
 	if (isSessionFile(file))
@@ -207,6 +236,23 @@ ControlResult handoff(const QJsonObject& args)
 	result.insert(QStringLiteral("dir"), dir);
 	result.insert(QStringLiteral("file"), file);
 	return ControlResult::success(result);
+}
+
+ControlResult handoff(const QJsonObject& args)
+{
+	const QString dir = args.value(QStringLiteral("dir")).toString();
+	if (!QDir::isAbsolutePath(dir)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dir' is an absolute folder")); }
+	// The folders this hand off makes are the ones it has to take back if it fails: a
+	// hand off that could not be written leaves nothing of itself behind.
+	const QStringList created = foldersToCreate(dir);
+	if (!QDir().mkpath(dir))
+	{
+		removeCreatedFolders(created);
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create '%1'").arg(dir));
+	}
+	const ControlResult result = writeBundle(dir);
+	if (!result.ok) { removeCreatedFolders(created); }
+	return result;
 }
 
 } // namespace

@@ -32,6 +32,7 @@
 #include <QtTest>
 
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QTemporaryDir>
@@ -41,6 +42,7 @@
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
 #include "Song.h"
@@ -71,6 +73,48 @@ void touch(const QString& path)
 	QFile file(path);
 	QVERIFY(file.open(QIODevice::WriteOnly));
 	file.write("x");
+}
+
+//! @a text written at @a path. Answers false rather than throwing, so a slot can
+//! assert the write happened instead of reading a file that is not there.
+bool writeText(const QString& path, const QString& text)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+	return file.write(text.toUtf8()) >= 0;
+}
+
+//! A project document with the shape Song::loadProject needs, carrying @a songExtras
+//! as the last child of <song> - the position an unclaimed section is read from, and
+//! therefore the position a partial load leaves one out of.
+QString songProject(const QString& songExtras)
+{
+	DataFile fresh(DataFile::Type::SongProject);
+	return QString(
+		"<?xml version=\"1.0\"?>\n"
+		"<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+		"  <head/>\n"
+		"  <song>\n"
+		"    <trackcontainer type=\"song\">\n"
+		"      <track type=\"0\" name=\"t\" muted=\"0\">\n"
+		"        <instrumenttrack/>\n"
+		"      </track>\n"
+		"    </trackcontainer>\n"
+		"%2"
+		"  </song>\n"
+		"</lmms-project>\n").arg(fresh.documentElement().attribute(QStringLiteral("version")), songExtras);
+}
+
+//! Load a project that carries a section the caller asks to skip: the session that
+//! comes back holds less than the file and REFUSES to save itself (SPEC-ARCH-4 1.4).
+//! That refusal is the deterministic way to make a hand off fail after it has made
+//! its destination folder.
+void loadPartially(const QString& path)
+{
+	Song* song = Engine::getSong();
+	song->clearProject();
+	song->setLoadOnLaunch(false);
+	song->loadProject(path, {QStringLiteral("newsection")});
 }
 
 } // namespace
@@ -508,6 +552,43 @@ private slots:
 		const ControlResult refused = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 		QVERIFY2(QFileInfo::exists(sentinel), "a rollback removed the file the media link points at");
+	}
+
+	//! A hand off that fails must not leave the folder it made behind. The destination
+	//! is created BEFORE the bundle is written, so a failure that comes after that
+	//! (here: a session that cannot be saved, because it was loaded with a section
+	//! skipped) must take the empty folder away again. The folders on the way there
+	//! are the hand off's own too: it made them, it takes them back.
+	void aFailedHandOffTakesItsNewFolderBack()
+	{
+		const QString partial = m_dir.filePath(QStringLiteral("partial.mmp"));
+		QVERIFY(writeText(partial, songProject(QStringLiteral("    <newsection/>\n"))));
+		loadPartially(partial);
+		QVERIFY(Engine::getSong()->isPartialLoad());
+
+		const QString dir = m_dir.filePath(QStringLiteral("new-folder/deeper"));
+		QVERIFY(!QFileInfo::exists(dir));
+		const ControlResult failed = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo::exists(dir), "the failed hand off left the folder it created behind");
+		QVERIFY2(!QFileInfo::exists(m_dir.filePath(QStringLiteral("new-folder"))),
+			"the failed hand off left the folder it created on the way behind");
+	}
+
+	//! A folder that was there BEFORE the hand off is not the hand off's to remove: a
+	//! failed hand off leaves it as it found it.
+	void aFailedHandOffKeepsTheFolderItDidNotCreate()
+	{
+		const QString partial = m_dir.filePath(QStringLiteral("partial-2.mmp"));
+		QVERIFY(writeText(partial, songProject(QStringLiteral("    <newsection/>\n"))));
+		loadPartially(partial);
+		QVERIFY(Engine::getSong()->isPartialLoad());
+
+		const QString dir = m_dir.filePath(QStringLiteral("someone-elses-folder"));
+		QVERIFY(QDir().mkpath(dir));
+		const ControlResult failed = run(QStringLiteral("project.handoff"), {{QStringLiteral("dir"), dir}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(QFileInfo(dir).isDir(), "the failed hand off removed a folder it did not create");
 	}
 
 private:
