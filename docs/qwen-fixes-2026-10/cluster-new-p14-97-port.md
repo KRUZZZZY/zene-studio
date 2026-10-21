@@ -92,7 +92,7 @@ All logs are in
 | Product | `cmake --build build --target zene` | 0 |
 | Family | `ctest -R '^(EffectChainMissingDeviceSettingsTest\|MissingDevicesPreserveTest\|MissingDevicesRound2Test\|EffectRackAddTest\|EffectHostingMenuTest\|DeviceToolsChainTest\|DeviceToolsTest\|EffectControlsVisibilityTest\|DeviceCopyTest\|EffectDeviceMenuTest)$' --output-on-failure` (from `build/tests`) | **0** - 10/10 passed |
 | Named family (job brief) | `ctest -R '^(DelayControlsTest\|ConvolutionFftwPlanScopeTest\|EffectRackAddTest)$'` | **0** for DelayControlsTest, ConvolutionFftwPlanScopeTest and EffectRackAddTest |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** - see the table below |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** - the two pre-existing rows below; the other six rows PASS |
 
 Logs: `cmake-1.log`, `build-1.log`, `build-2.log`, `build-red-1.log`,
 `build-green-2.log`, `build-green-3.log`, `build-zene-1.log`,
@@ -117,7 +117,10 @@ Logs: `cmake-1.log`, `build-1.log`, `build-2.log`, `build-red-1.log`,
 The two failing rows were measured **before** any change as well (the first
 `feature_check.py` run of this session, on the untouched tree, reported exactly
 `FAIL fork-sources` / `FAIL all-sources-reproduce` and the same manifest
-mismatch), so they are a train-level state, not this fix. The manifest was left
+mismatch), so they are a train-level state, not this fix. The same check fails
+in the train's own tree at its HEAD (`zene-cachyos` @ `dbb15dded`,
+`bash tests/all-sources-reproduce.sh` -> exit **1**, same manifest mismatch),
+which is the proof that it is not caused by this branch. The manifest was left
 alone on purpose: re-deriving it deletes 1148 vendored paths from a
 whole-tree scope file that every lane shares, and it has nothing to do with this
 bug.
