@@ -41,9 +41,9 @@ namespace lmms::gui
  *  the map's events as transport.tempo_map_get reports them - bar, position (in the time format, bars|beats
  *  by default, its picker running transport.time_format - theme 7), tempo, time signature -
  *  with its Active switch (transport.tempo_map_set_active), "Add at playhead" (tempo_map_add, at
- *  the song's position, the song's tempo and signature, which the row can then be edited from),
- *  Remove (tempo_map_remove) and Clear (tempo_map_clear). An inactive or empty map leaves the
- *  project on its single tempo, as it always was. */
+ *  the song's position, with the tempo and the time signature the MAP has in force there, which
+ *  the row can then be edited from), Remove (tempo_map_remove) and Clear (tempo_map_clear). An
+ *  inactive or empty map leaves the project on its single tempo, as it always was. */
 class LMMS_EXPORT TempoMapPanel : public QDialog
 {
 	Q_OBJECT
@@ -52,7 +52,8 @@ public:
 
 	void refresh();
 	int rowCount() const;
-	//! Adds an event at @a tick with @a bpm (0: the song's tempo); for the button and the tests.
+	//! Adds an event at @a tick with @a bpm (0: the tempo the map has in force there, else the
+	//! song's); for the button and the tests. The event carries the metre in force at @a tick.
 	bool addEvent(int tick, int bpm);
 	bool removeRow(int row);
 	//! ED-050: switch the tempo event at @a row between holding and ramping to the next one.

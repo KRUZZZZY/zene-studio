@@ -175,6 +175,31 @@ private slots:
 		QCOMPARE(table->item(2, 0)->text(), QStringLiteral("3"));  // tick 336: bar 2 ended at 192+144
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
 	}
+	//! BUG 7 (cluster new-p9-475): "Add at playhead" sent the SONG's global time signature (and its
+	//! global tempo) with the new event, so it overwrote what the map had in force at that tick: a
+	//! 3/4 map met a 4/4 song and the add put the song's 4/4 back into the map.
+	void theAddAtPlayheadKeepsTheMappedMetreAndTempo()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 0);
+		// 3/4 at 120 BPM from tick 0 in the map; the song's own metre (4/4) and tempo stay as they are.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 120}, {QStringLiteral("numerator"), 3},
+				{QStringLiteral("denominator"), 4}}).ok);
+		TempoMapPanel panel;
+		// What the "Add at playhead" button does: the event at the play position, with the tempo and
+		// the metre the MAP has in force there (0: the map's own tempo).
+		QVERIFY(panel.addEvent(480, 0));
+		const QJsonArray events = mapState().value(QStringLiteral("events")).toArray();
+		QCOMPARE(events.size(), 2);
+		const QJsonObject added = events.at(1).toObject();
+		QCOMPARE(added.value(QStringLiteral("tick")).toInt(), 480);
+		QCOMPARE(added.value(QStringLiteral("numerator")).toInt(), 3);  // the metre in force, not the song's 4/4
+		QCOMPARE(added.value(QStringLiteral("denominator")).toInt(), 4);
+		QCOMPARE(added.value(QStringLiteral("bpm")).toInt(), 120);  // the tempo in force, not the song's
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+	}
+
 };
 
 QTEST_MAIN(TempoMapPanelTest)
