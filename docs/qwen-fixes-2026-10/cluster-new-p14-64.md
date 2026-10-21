@@ -23,6 +23,9 @@ Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-64.r1/
 
 ## Self-check
 
-- Affected family: 1 test executed, 1 passed.
-- Fix touches only `src/gui/ControlCommandsViewMemory.cpp`; test touches `tests/src/gui/ArrangerKeysNavigatorTest.cpp`.
-- No new control commands; no audio-thread changes.
+- Regression test proof: RED run exit 1 (`test-red-1.log`: `FAIL! ... '!anySelected' returned FALSE. (the different clip stayed highlighted after apply)`); GREEN run exit 0 (`test-green-2.log`: `PASS`); 4b revert/reapply recorded above.
+- Determinism: no sleeps/timers/races; the test drives state directly (track/clip creation, `clip.delete`, `arrangerkeys::selectClip`) and calls `QCoreApplication::processEvents()` to flush view creation, not to wait on timing.
+- Cause and completeness: `selectInArranger` is a file-local helper used only in `applySelection`; the only sibling branches are the `live` non-empty path (`clip.select`) and the empty path (`selectClip(QString())`), both retained and now consistent because the arranger is cleared in the empty path too.
+- Collateral damage: no schema, saved data, or command surface changes; no new limits or checks that could reject legitimate callers. Old projects/load unaffected.
+- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE.
+- Sibling commands: no `arrangement.*` or `range.*` command changed; only `selection.apply` in this file. `location.*`/`selection.*` siblings (`save`, `list`, `remove`, `recall`) are unaffected because the change is confined to `applySelection`'s arranger-clearing side effect.
