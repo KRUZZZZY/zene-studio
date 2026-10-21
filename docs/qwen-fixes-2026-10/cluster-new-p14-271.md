@@ -71,3 +71,54 @@ an LMMS_TESTING-only seam) and
 
 Logs live in
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-271.r1/logs`.
+
+## Bug new-p14-271 — Ogg read errors leak decoder state
+
+**Verdict: FIXED.** This is REAL.
+
+### Evidence
+
+`src/core/SampleDecoder.cpp`, `decodeSampleOggVorbis()`: after a successful
+`ov_open_callbacks()` the decoder state belongs to libvorbisfile, and every
+exit has to release it with `ov_clear()`. Before the fix the error paths
+returned without it:
+
+- `if (vorbisInfo == nullptr) { return std::nullopt; }` (no `ov_clear`),
+- `if (numSamples < 0) { return std::nullopt; }` (no `ov_clear`),
+- `if (samplesRead < 0) { return std::nullopt; }` — the read-error path (no
+  `ov_clear`).
+
+Only the success path called `ov_clear(&vorbisFile)`, so a file that failed
+while decoding leaked libvorbisfile's decoder state on every attempt.
+
+### Fix
+
+`src/core/SampleDecoder.cpp`: a small RAII wrapper, `OggVorbisFileGuard`
+(`src/core/SampleDecoder.cpp:117-131`), releases the state in its destructor.
+Both Ogg decoders take the guard right after a successful
+`ov_open_callbacks()` and no longer call `ov_clear()` by hand, so every exit
+after a successful open releases the state - the error paths included. The
+sibling decoder `boundedOggVorbis()` (which released the state by hand on
+every path) uses the same guard, so the two can no longer drift apart.
+
+### Regression test
+
+`tests/src/core/SampleDecoderOggStateTest.cpp` (fork-NEW): the decoder's
+file-close callback is what libvorbisfile calls when the decoder state is
+released (`ov_clear`), so the callback count is the number of states that
+were released. The test decodes a valid Ogg (the control: exactly one
+release), then makes the next read report an error
+(`SampleDecoder::failNextOggReadForTesting()`, an LMMS_TESTING-only seam that
+returns the same negative value libvorbisfile returns for a read error) and
+pins that the state is released on that path too.
+
+### RED/GREEN proof
+
+| Stage | Exact command (from the worktree) | Exit | Result |
+|---|---|---:|---|
+| RED (original code) | `cmake --build build --target zene && cmake --build build --target SampleDecoderOggStateTest && cd build/tests && ctest -R '^SampleDecoderOggStateTest$' --output-on-failure` | 8 | `red-SampleDecoderOggStateTest.log`: `FAIL! : readErrorPathReleasesTheDecoderState() Compared values are not the same` (`Actual: 0`, `Expected: 1`); `Totals: 2 passed, 1 failed` |
+| GREEN (fix applied) | same commands | 0 | `green-SampleDecoderOggStateTest.log`: `100% tests passed out of 1` |
+| Reversal | `git diff -- src/core/SampleDecoder.cpp include/SampleDecoder.h > logs/fix-271.patch && git apply -R logs/fix-271.patch` | 0 | patch removed, rebuilt |
+| Reversal RED | rebuild + `ctest -R '^SampleDecoderOggStateTest$' --output-on-failure` | 8 | `test-red-271-reversed.log`: `FAIL! : readErrorPathReleasesTheDecoderState() Compared values are not the same` (`Totals: 2 passed, 1 failed`) |
+| Restore | `git apply logs/fix-271.patch` | 0 | patch restored, rebuilt |
+| Restored GREEN | rebuild + `ctest -R '^SampleDecoderOggStateTest$' --output-on-failure` | 0 | `test-green-271-reapplied.log`: `100% tests passed out of 1` |

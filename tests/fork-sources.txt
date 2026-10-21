@@ -2788,3 +2788,5 @@ tests/src/plugins/VibedWaveformHandoffTest.cpp
 tests/src/core/SampleDecoderOggChannelTest.cpp
 # cluster new-p14-271 (2026-10): the fix and verification report for the SampleDecoder's Ogg and bounded-decode defects.
 docs/qwen-fixes-2026-10/cluster-new-p14-271.md
+# cluster new-p14-271 (2026-10): the Ogg Vorbis decoder's decoder-state release regression (fork-NEW).
+tests/src/core/SampleDecoderOggStateTest.cpp

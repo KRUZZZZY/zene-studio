@@ -429,6 +429,6 @@ auto SampleDecoder::oggCloseCountForTesting() -> int
 {
 	return s_oggCloseCallsForTesting.load(std::memory_order_relaxed);
 }
-#endif
+#endif // LMMS_TESTING
 
 } // namespace lmms
