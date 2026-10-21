@@ -21,7 +21,7 @@ as it was (header contract updated at `include/ChordTrack.h:249-253`).
 `include/ChordTrack.h:235-244`): it is the project-loader path, where an absent
 or foreign element means "this project has no chord track" (reset-on-absence).
 `fromXml()` is a restore over a live track, so it validates before delegating to
-that path. Its regression slot `loadSettingsClearsFirst()` (tests line 299) still
+that path. Its regression slot `loadSettingsClearsFirst()` (tests line 330) still
 pins the loader behaviour unchanged.
 
 Callers checked, none depends on a failed `fromXml()` emptying the track:
