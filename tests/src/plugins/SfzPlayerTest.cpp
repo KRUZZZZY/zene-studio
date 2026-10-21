@@ -34,6 +34,7 @@
 #include "Knob.h"
 #include "LcdSpinBox.h"
 #include "NotePlayHandle.h"
+#include "PluginFactory.h"
 #include "../core/ReversibilityTestSupport.h"
 #include "SfzTestSupport.h"
 
@@ -204,6 +205,11 @@ private slots:
 	//! plugin.list shows the instrument and says it loads; plugin.load puts it on a track; plugin.param_* read and set its models.
 	void theInstrumentIsReachableThroughThePluginCommands()
 	{
+		// The plug-in browser lists every instrument descriptor the factory has, and the file browser and browser.load open an
+		// extension through the factory: the module is an instrument that declares .sfz.
+		QVERIFY(!getPluginFactory()->pluginInfo("sfzplayer").isNull());
+		QCOMPARE(getPluginFactory()->pluginInfo("sfzplayer").descriptor->type, Plugin::Type::Instrument);
+		QCOMPARE(getPluginFactory()->pluginSupportingExtension(QStringLiteral("sfz")).info.name(), QStringLiteral("sfzplayer"));
 		const QString id = deviceId();
 		QVERIFY2(!id.isEmpty(), "plugin.list carries no sfzplayer");
 		const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("instrument")}, {QStringLiteral("loadable_only"), true}});
