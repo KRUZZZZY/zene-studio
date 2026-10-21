@@ -53,6 +53,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "Instrument.h"
 #include "Engine.h"
 #include "ModulationLayer.h"
 #include "RealtimeScope.h"
@@ -97,6 +98,19 @@ void publishOne(ModulationLayerPublisher& publisher, FloatModel* model)
 }
 
 } // namespace
+
+namespace
+{
+class TestInstrument : public Instrument
+{
+public:
+	TestInstrument() : Instrument(nullptr, nullptr) {}
+	gui::PluginView* instantiateView(QWidget*) override { return nullptr; }
+	QString nodeName() const override { return QStringLiteral("test"); }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+};
+}
 
 class ModulationAudioViewTest : public QObject
 {
@@ -224,6 +238,40 @@ private slots:
 			"a destroyed target is still reported alive");
 		// Must skip the entry: the raw pointer in the view is dangling now.
 		applyModulationBlock(publisher, view, 0.75);
+	}
+
+	void anInstrumentTargetIsRetiredWhenDestroyed()
+	{
+		ModulationLayerPublisher publisher;
+		auto* model = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+		auto* instrument = new TestInstrument();
+		publisher.edit([model, instrument](ModulationLayer&, ModulationRuntime& runtime) {
+			runtime = ModulationRuntime{};
+			ModulationRuntime::Entry entry;
+			entry.model = model;
+			entry.modulator = 0;
+			entry.depth = 0.25f;
+			entry.base = 0.0f;
+			entry.minimum = -100.0f;
+			entry.maximum = 100.0f;
+			entry.instrument = instrument;
+			entry.noteTarget = 0;
+			runtime.entries[0] = entry;
+			runtime.entryCount = 1;
+			runtime.sources[0] = sine();
+			runtime.sources[0].perVoice = true;
+			runtime.sources[0].triggerTrack = 11;
+			runtime.sourceCount = 1;
+			return true;
+		});
+		publisher.voiceChanged(11, true, 0, 60, 0);
+		const ModulationAudioView view = publisher.snapshot();
+		QVERIFY(publisher.targetAlive(0, view.entries[0].token));
+
+		delete instrument;
+		QVERIFY2(!publisher.targetAlive(0, view.entries[0].token),
+			"an instrument's destruction did not retire its modulation target");
+		delete model;
 	}
 
 	void aRepublishRetiresEveryOlderView()
