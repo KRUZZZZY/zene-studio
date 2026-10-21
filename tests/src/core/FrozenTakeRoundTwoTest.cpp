@@ -445,6 +445,50 @@ private slots:
 		QTest::qWait(130);
 		QCOMPARE(audio->sampleVoiceQueueInvariantFailures(), std::uint64_t{0});
 	}
+
+	//! A take a load rejects (a start tick that does not parse) is discarded, and the clips its freeze muted come back.
+	void rejectedFrozenTakeReleasesItsMutedClips()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("take.wav")), 440.0);
+		QVERIFY(!wav.isEmpty());
+		Song* const song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		auto* const track = dynamic_cast<SampleTrack*>(song->tracks().back());
+		QVERIFY(track != nullptr);
+		Clip* const clip = track->createClip(TimePos(0));
+		QVERIFY(clip != nullptr);
+		const Track::FrozenTake::MutedClip muted{clip->startPosition().getTicks(), clip->length().getTicks()};
+		QString reason;
+		QVERIFY2(track->freezeTo(wav, 0, 192, {muted}, &reason), qPrintable(reason));
+		QVERIFY(clip->isMuted());
+
+		const QString projectPath = scratch.filePath(QStringLiteral("rejected-take.mmp"));
+		QVERIFY(song->saveProjectFile(projectPath));
+		QFile savedProject(projectPath);
+		QVERIFY(savedProject.open(QIODevice::ReadOnly));
+		QDomDocument document;
+		QVERIFY(document.setContent(savedProject.readAll()));
+		savedProject.close();
+		QDomElement projectTrack = document.documentElement()
+			.firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("trackcontainer"))
+			.firstChildElement(QStringLiteral("track"));
+		QVERIFY(!projectTrack.isNull());
+		projectTrack.setAttribute(QStringLiteral("frozenStart"), QStringLiteral("not-a-tick"));
+		QFile changedProject(projectPath);
+		QVERIFY(changedProject.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(changedProject.write(document.toByteArray()) >= 0);
+		changedProject.close();
+		song->loadProject(projectPath);
+
+		QVERIFY(!song->tracks().back()->isFrozen());
+		const Track::clipVector& loadedClips = song->tracks().back()->getClips();
+		QCOMPARE(loadedClips.size(), std::size_t{1});
+		QVERIFY2(!loadedClips.front()->isMuted(), "a rejected take left the clip its freeze muted silent");
+	}
 };
 
 QTEST_GUILESS_MAIN(FrozenTakeRoundTwoTest)

@@ -241,6 +241,16 @@ std::vector<Track::FrozenTake::MutedClip> parseMutedClipsAttribute(const QString
 	return muted;
 }
 
+/*! Releases the mute a frozen take put on each clip it names. A clip the take
+ *  no longer finds (moved or removed since the freeze) is skipped. */
+void unmuteFrozenClips(const std::vector<Track::FrozenTake::MutedClip>& muted, Track::clipVector& clips)
+{
+	for (const Track::FrozenTake::MutedClip& clip : muted)
+	{
+		if (Clip* found = clipAt(clips, clip.startTicks, clip.lengthTicks)) { found->setMuted(false); }
+	}
+}
+
 } // namespace
 
 #ifdef LMMS_TESTING
@@ -882,10 +892,16 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// (frozenTakeSilencesSource), so relinking it later changes nothing audible.
 	if (m_frozen.isFrozen() && m_frozenBuffer == nullptr)
 	{
-		for (const FrozenTake::MutedClip& muted : m_frozen.mutedClips)
-		{
-			if (Clip* clip = clipAt(m_clips, muted.startTicks, muted.lengthTicks)) { clip->setMuted(false); }
-		}
+		unmuteFrozenClips(m_frozen.mutedClips, m_clips);
+	}
+
+	// A take this load rejected (a start or end tick that does not parse) is discarded by loadFrozenTake(), but
+	// the file still carries the clips its freeze muted as muted. Their record is read from the attribute here,
+	// once the clips are loaded, so they come back unmuted with the take gone. The condition is exactly a
+	// rejection: frozenAudio names a file, yet no take was installed.
+	if (!m_frozen.isFrozen() && !element.attribute(QStringLiteral("frozenAudio")).isEmpty())
+	{
+		unmuteFrozenClips(parseMutedClipsAttribute(element.attribute(QStringLiteral("frozenMuted"))), m_clips);
 	}
 
 	int storedHeight = element.attribute( "trackheight" ).toInt();
@@ -1333,6 +1349,7 @@ void Track::loadFrozenTake(const QDomElement& element)
 		|| (element.hasAttribute(QStringLiteral("frozenEnd"))
 			&& !parseTick(element.attribute(QStringLiteral("frozenEnd")), m_frozen.endTicks)))
 	{
+		// loadTrack() releases the clips this rejected take muted, once those clips are loaded.
 		m_frozen = FrozenTake{};
 		return;
 	}
