@@ -27,10 +27,12 @@
  *  is held to:
  *    - new-p14-314: closing the oldest open note of a pitch must not shuffle the notes queued behind it.
  *    - new-p16-230: the end-of-track marker must be zero length and the last event of its track.
+ *    - new-p14-313: a still-open note must count against the note cap like a closed one.
  */
 
 #include <QtTest>
 
+#include "AllocationProbe.h"
 #include "SmfNoteRead.h"
 
 using namespace lmms;
@@ -61,6 +63,15 @@ QByteArray smf(const QByteArray& trackBody, int division = 96, int format = 0, i
 	be32(out, static_cast<quint32>(trackBody.size()));
 	out.append(trackBody);
 	return out;
+}
+
+//! \a count note-ons of one key and no note-off, as one track: the notes close at the track's end.
+QByteArray unclosedNotes(int count)
+{
+	QByteArray body;
+	for (int i = 0; i < count; ++i) { body.append("\x00\x90\x3C\x40", 4); }
+	body.append("\x00\xFF\x2F\x00", 4);
+	return smf(body);
 }
 
 } // namespace
@@ -149,6 +160,38 @@ private slots:
 		QCOMPARE(static_cast<int>(read.notes.size()), 1);
 		QCOMPARE(read.notes[0].start, 0LL);
 		QCOMPARE(read.notes[0].length, 24LL);  // 48 file ticks at division 96
+	}
+
+	void openNotesAreCountedAgainstTheNoteCapBeforeTheyAreMaterialised()
+	{
+		// The note cap (SmfNoteMaxCount) bounds what one file can make the reader hold. Notes still open
+		// at a track's end only reach the output list when the track closes them, so counting only what
+		// was CLOSED let a file of unclosed note-ons hold a queue as deep as the cap and then some, and
+		// was refused only after every one of them was materialised. The over-cap file and the at-cap
+		// file differ by one note; the reader must refuse the first before paying the allocations the
+		// second pays to hold its notes, so the allocation counts (never a clock) must clearly differ.
+		const QByteArray atCap = unclosedNotes(interchange::SmfNoteMaxCount);
+		const QByteArray overCap = unclosedNotes(interchange::SmfNoteMaxCount + 1);
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		const interchange::SmfNoteRead over = interchange::readSmfNotes(overCap);
+		lmms::test::tlCountAllocations = false;
+		const auto overAllocs = lmms::test::tlAllocationCount;
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		const interchange::SmfNoteRead cap = interchange::readSmfNotes(atCap);
+		lmms::test::tlCountAllocations = false;
+		const auto capAllocs = lmms::test::tlAllocationCount;
+
+		QVERIFY2(!over.ok, qPrintable(over.error));
+		QVERIFY2(cap.ok, qPrintable(cap.error));
+		QCOMPARE(static_cast<int>(cap.notes.size()), interchange::SmfNoteMaxCount);
+		constexpr std::uint64_t Noise = 6;  // the real difference is a full output list's own growth
+		QVERIFY2(overAllocs + Noise < capAllocs, qPrintable(QStringLiteral(
+			"reading the cap plus one allocated %1 times, against %2 for exactly the cap: the still-open notes were counted only after they were materialised")
+			.arg(overAllocs).arg(capAllocs)));
 	}
 };
 
