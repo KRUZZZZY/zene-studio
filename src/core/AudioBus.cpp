@@ -25,7 +25,6 @@
 #include "AudioBus.h"
 
 #include <algorithm>
-#include <iostream>
 #include <type_traits>
 
 #include "AudioPortsModel.h"
@@ -109,12 +108,6 @@ void AudioBus::sanitize(const AudioPortsModel& apm)
 
 			if (std::isinf(sample) || std::isnan(sample))
 			{
-#ifdef LMMS_DEBUG
-				// TODO: don't use std::cout here?
-				std::cout << "Bad data, clearing buffer. frame: " << static_cast<std::size_t>(frame - output.data());
-				std::cout << ": value " << sample << " (" << (channel == 0 ? "L" : "R") << ")\n";
-#endif
-
 				// Clear the whole channel if a problem is found
 				for (float* f : output.framesView())
 				{
