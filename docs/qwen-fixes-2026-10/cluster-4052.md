@@ -78,7 +78,7 @@ command does.
 | Application build | `cmake --build build --target zene -j$(nproc) > logs/build-zene-1.log 2>&1` **EXIT=0** (the changed header is included by `src/gui/MainWindow.cpp`, so the app was rebuilt too). |
 | Affected family | `ctest -R 'Controller|Control' --output-on-failure > logs/test-family-1.log 2>&1` **EXIT=8**: 122 CTest targets ran, 53 passed, 69 failed. Every failure is pre-existing and environmental: this build tree has **no plugin modules built** (`find build/plugins -name '*.so'` returns 0), so the device catalogue is empty ("the catalogue lists at least two loadable built-in effects FAILED, devices=[]"). Proof: with the product change reverted (`git apply -R logs/fix.patch`, rebuild **EXIT=0**), `ctest -R '^(ControlEngineWiring|ControlDevices|ControlSuccessPaths)$' --output-on-failure > logs/test-baseline-nofix.log 2>&1` **EXIT=8** with the SAME failures ("no loadable effect", "cards=[]"). The fix was then restored (`git apply logs/fix.patch` **EXIT=0**, rebuild **EXIT=0**, `ctest -R '^ControllerTemplateMenuTest$'` **EXIT=0**). |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gates-1.log 2>&1` **EXIT=0** - fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length all PASS. |
-| Completion check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4052` - see the result recorded in the commit message of the report commit. |
+| Completion check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 4052 > logs/submit-check-1.log 2>&1` **EXIT=0** - "RESULT: PASS - submit": commits on the branch PASS, working tree clean PASS, report PASS, tests added or changed PASS, gates PASS. |
 
 ## Self-check
 
@@ -132,8 +132,13 @@ no allocation, lock, wait, I/O or logging was added to any audio path. No new
 control command was added, so the `ControlCommandsSnapshot` canary is untouched
 (`tools/mcp-zene-control/zene_control/commands_snapshot.json` is not in the diff).
 
-**Portability (Qt 5.15 / MSVC / macOS)?**
-Only `QMenu`, `QPixmap`, `QJsonArray`/`QJsonObject` and the project's own
+**If the verdict were ALREADY-FIXED or FALSE-POSITIVE, the code that shows it?**
+Not applicable - the verdict is FIXED. The code that showed the bug is quoted
+above: `src/gui/ControllerTemplateMenu.cpp:57-60` discarded the `ControlResult`
+returned by `ControlRegistry::instance()->invoke(...)`, and every menu action ran
+through it, so no failure could reach the user.
+
+**Portability (Qt 5.15 / MSVC / macOS)?**Only `QMenu`, `QPixmap`, `QJsonArray`/`QJsonObject` and the project's own
 `TextFloat` are used - all present in Qt 5.15 and Qt 6. `QString::arg` with five
 string arguments, `QStringList::mid`, `QJsonValue::toString` and
 `QStringLiteral` are portable. No `windows.h` macro names, no
