@@ -105,6 +105,47 @@ ListenerStore& listeners()
 	return store;
 }
 
+/**
+ * True when @a value is a number a macro can hold.
+ *
+ * A macro's value is a finite 0..1 scalar. std::clamp does NOT make a
+ * nonfinite value one: every comparison against NaN is false, so clamp hands
+ * NaN straight back - and an infinite value clamps to an end, which is a
+ * different number than the caller meant. So the finiteness is checked here,
+ * before the value is stored or applied.
+ */
+bool isFiniteMacroValue(float value)
+{
+	return std::isfinite(value);
+}
+
+/**
+ * True when @a value is a FRACTION: a finite number inside 0..1.
+ *
+ * A window bound is stated as a fraction of the parameter's own range, and a
+ * nonfinite one is not a fraction. The finiteness has to be checked on its
+ * own: every comparison against NaN is false, so a range check alone lets a
+ * NaN through.
+ */
+bool isMacroFraction(float value)
+{
+	return std::isfinite(value) && value >= 0.0f && value <= 1.0f;
+}
+
+//! True when @a value is a curve: a finite number inside -1..1 (0 is linear).
+bool isMacroCurve(float value)
+{
+	return std::isfinite(value) && value >= -1.0f && value <= 1.0f;
+}
+
+//! True when every number @a target carries is a number - the window bounds and
+//! the curve. A nonfinite one makes the applied fraction a NaN, and a NaN is
+//! what would be written into the parameter model.
+bool isFiniteMacroTarget(const RackMacroTarget& target)
+{
+	return std::isfinite(target.low) && std::isfinite(target.high) && std::isfinite(target.curve);
+}
+
 } // namespace
 
 float shapeMacroValue(float value, float curve)
@@ -119,10 +160,13 @@ bool isValidMacroTarget(const RackMacroTarget& target)
 	if (target.effect < 0) { return false; }
 	if (target.parameter.isEmpty()) { return false; }
 	// The window is a fraction pair: a driver that could leave its own 0..1
-	// span would be unrepresentable in the persisted form.
-	if (target.low < 0.0f || target.low > 1.0f) { return false; }
-	if (target.curve < -1.0f || target.curve > 1.0f) { return false; }
-	return target.high >= 0.0f && target.high <= 1.0f;
+	// span would be unrepresentable in the persisted form. A nonfinite bound
+	// is not a fraction either - and the range check cannot say so, because
+	// every comparison against NaN is false.
+	if (!isMacroFraction(target.low)) { return false; }
+	if (!isMacroFraction(target.high)) { return false; }
+	if (!isMacroCurve(target.curve)) { return false; }
+	return true;
 }
 
 AutomatableModel* rackMacroTargetModel(Rack& rack, const RackMacroTarget& target, QString* why)
@@ -205,6 +249,9 @@ auto RackMacros::macro(int index) const -> const RackMacro*
 
 auto RackMacros::addMacro(const QString& name, float value) -> int
 {
+	// A value that is not a number is refused, not clamped: clamp would keep
+	// NaN as NaN (every comparison against it is false).
+	if (!isFiniteMacroValue(value)) { return -1; }
 	RackMacro entry;
 	entry.name = name;
 	entry.value = std::clamp(value, 0.0f, 1.0f);
@@ -217,6 +264,7 @@ auto RackMacros::insertMacro(int index, const RackMacro& macro) -> bool
 {
 	if (index < 0) { return false; }
 	if (index > macroCount()) { return false; }
+	if (!isFiniteMacroValue(macro.value)) { return false; }
 	m_macros.insert(m_macros.begin() + index, macro);
 	notifyListChanged(index, 1);
 	return true;
@@ -234,6 +282,9 @@ auto RackMacros::setValue(int index, float value) -> bool
 {
 	RackMacro* entry = macro(index);
 	if (entry == nullptr) { return false; }
+	// Same contract as addMacro: a value that is not a number is refused, and
+	// the macro keeps the value it had.
+	if (!isFiniteMacroValue(value)) { return false; }
 	entry->value = std::clamp(value, 0.0f, 1.0f);
 	return true;
 }
@@ -271,9 +322,18 @@ auto RackMacros::apply(int index, Rack& rack, bool journalWrites) -> std::vector
 	std::vector<RackMacroWrite> writes;
 	const RackMacro* entry = macro(index);
 	if (entry == nullptr) { return writes; }
+	// The last line of defence before a parameter model: a macro whose own
+	// value is not a number would write that number into every model it
+	// drives. The storage doors (addMacro, insertMacro, setValue) refuse such
+	// a value already; a macro list that carries one anyway writes nothing.
+	if (!isFiniteMacroValue(entry->value)) { return writes; }
 
 	for (const RackMacroTarget& target : entry->targets)
 	{
+		// A window that carries a number that is not a number would write one
+		// into the model: the fraction below is NaN, and so is the value. The
+		// target is skipped, like one that no longer resolves.
+		if (!isFiniteMacroTarget(target)) { continue; }
 		QString why;
 		AutomatableModel* model = rackMacroTargetModel(rack, target, &why);
 		// A target whose chain, effect or parameter is gone is skipped rather
@@ -369,7 +429,14 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 	{
 		RackMacro entry;
 		entry.name = macroElement.attribute(QStringLiteral("name"));
-		entry.value = macroElement.attribute(QStringLiteral("value"), QStringLiteral("0")).toFloat();
+		const float rawValue =
+			macroElement.attribute(QStringLiteral("value"), QStringLiteral("0")).toFloat();
+		// A macro's value is a finite 0..1 number. QString reads a "nan" (or an
+		// "inf") attribute as exactly that, and a NaN would be written into
+		// every parameter the macro drives - so a value that is not a number is
+		// stored as 0. A project that says value="2" is out of the contract,
+		// and is clamped into it: the same clamp the API applies.
+		entry.value = isFiniteMacroValue(rawValue) ? std::clamp(rawValue, 0.0f, 1.0f) : 0.0f;
 
 		for (QDomElement targetElement = macroElement.firstChildElement(QStringLiteral("target"));
 			!targetElement.isNull();
@@ -386,6 +453,16 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 			target.high =
 				targetElement.attribute(QStringLiteral("high"), QStringLiteral("1")).toFloat();
 			target.curve = targetElement.attribute(QStringLiteral("curve"), QStringLiteral("0")).toFloat();
+			// A persisted target is loaded only when it is a target this list
+			// could have stored: a fraction pair inside 0..1, a curve inside
+			// -1..1, a chain and an effect index, and a parameter name. A window
+			// outside 0..1 would drive the parameter to its maximum for EVERY
+			// macro value (the applied fraction is clamped to 1), and a
+			// nonfinite one (QString reads a "nan" attribute as a NaN) would be
+			// applied as a NaN parameter value - so such a target is dropped,
+			// not clamped: clamping a window outside the range would keep the
+			// parameter pinned at its end.
+			if (!isValidMacroTarget(target)) { continue; }
 			entry.targets.push_back(target);
 		}
 

@@ -41,6 +41,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QString>
 
 #include <cmath>
@@ -224,6 +225,206 @@ private slots:
 			QStringLiteral("targets=3 applied=1 (a missing effect and an unknown parameter are "
 				"skipped, not guessed)"));
 		QVERIFY(macros.removeMacro(macro));
+	}
+
+	//! A macro's value is a FINITE 0..1 scalar. std::clamp does not make a
+	//! nonfinite value one - every comparison against NaN is false, so clamp
+	//! hands NaN straight back - and QString reads a "nan" attribute as NaN,
+	//! so a project can carry one. Such a value is refused at every door that
+	//! stores it, and it never reaches a parameter model.
+	void aNonfiniteMacroValueIsRefused()
+	{
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		RackMacros& macros = rackUnderTest().macros();
+		const int before = macros.macroCount();
+
+		// The door: addMacro refuses it and adds NOTHING (no half-added macro).
+		QCOMPARE(macros.addMacro(QStringLiteral("NaN"), nan), -1);
+		QCOMPARE(macros.macroCount(), before);
+
+		// The door: setValue refuses it and the macro keeps the value it had.
+		const int good = macros.addMacro(QStringLiteral("Fine"), 0.5f);
+		QVERIFY(good >= 0);
+		QVERIFY(!macros.setValue(good, nan));
+		QCOMPARE(macros.macro(good)->value, 0.5f);
+		QVERIFY(!macros.setValue(good, std::numeric_limits<float>::infinity()));
+		QCOMPARE(macros.macro(good)->value, 0.5f);
+
+		// The door: insertMacro refuses it too.
+		RackMacro broken;
+		broken.name = QStringLiteral("Broken");
+		broken.value = nan;
+		QVERIFY(!macros.insertMacro(macros.macroCount(), broken));
+		QCOMPARE(macros.macroCount(), before + 1);
+
+		// The load path: a project that says value="nan" loads a NUMBER, not a
+		// NaN - a NaN here would be written into every parameter the macro
+		// drives.
+		QDomDocument doc;
+		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		doc.appendChild(rack);
+		QDomElement macroElement = doc.createElement(QStringLiteral("macro"));
+		macroElement.setAttribute(QStringLiteral("name"), QStringLiteral("Loaded"));
+		macroElement.setAttribute(QStringLiteral("value"), QStringLiteral("nan"));
+		rack.appendChild(macroElement);
+		RackMacros reloaded;
+		reloaded.loadSettings(rack);
+		QCOMPARE(reloaded.macroCount(), 1);
+		QVERIFY(std::isfinite(reloaded.macro(0)->value));
+		QCOMPARE(reloaded.macro(0)->value, 0.0f);
+
+		// The agent surface: the schema lets NaN through (every comparison
+		// against it is false), so the command has to refuse it itself.
+		const QString channel = underTestChannel();
+		const ControlResult added = revtest::run(QStringLiteral("rack.macro_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QStringLiteral("NaN add")},
+				{QStringLiteral("value"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY2(!added.ok, "rack.macro_add took a NaN value");
+		QCOMPARE(added.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(rackUnderTest().macros().macroCount(), before + 1);
+
+		const ControlResult set = revtest::run(QStringLiteral("rack.macro_set"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-%1").arg(good)},
+				{QStringLiteral("value"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY2(!set.ok, "rack.macro_set took a NaN value");
+		QCOMPARE(set.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(macros.macro(good)->value, 0.5f);
+
+		QVERIFY(macros.removeMacro(good));
+		QCOMPARE(macros.macroCount(), before);
+	}
+
+	//! A macro target's window is a pair of fractions and a curve, and a NaN is
+	//! not a fraction: every comparison against NaN is false, so the range
+	//! checks let it through - and the applied fraction is then a NaN, which
+	//! lands in the parameter model.
+	void aNonfiniteMacroTargetNeverReachesAParameter()
+	{
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+
+		// A target that carries a NaN never reaches the model: the applied
+		// fraction would be a NaN, and so would the value written.
+		RackMacros& macros = rackUnderTest().macros();
+		const int macro = macros.addMacro(QStringLiteral("NaN window"), 1.0f);
+		RackMacroTarget nanCurve = targetOf(kGainName, 0.0f, 1.0f);
+		nanCurve.curve = nan;
+		QCOMPARE(macros.addTarget(macro, nanCurve), 0);
+		FloatModel* const gain = gainModel();
+		QVERIFY2(gain != nullptr, "the driven chain's 0..100 parameter was not found");
+		const float before = gain->value();
+		// The fixture is shared: put the parameter back whatever happens, so a
+		// failure cannot leave a NaN behind for the next case.
+		const QScopeGuard restore([gain, before]() { gain->setValue(before); });
+		const std::vector<RackMacroWrite> writes = macros.apply(macro, rackUnderTest());
+		QCOMPARE(static_cast<int>(writes.size()), 0);
+		QCOMPARE(gain->value(), before);
+		QVERIFY(std::isfinite(gain->value()));
+		QVERIFY(macros.removeMacro(macro));
+
+		// The range check itself: a NaN bound or curve is not a fraction.
+		QVERIFY(!isValidMacroTarget(nanCurve));
+		RackMacroTarget nanLow = targetOf(kGainName, 0.0f, 1.0f);
+		nanLow.low = nan;
+		QVERIFY(!isValidMacroTarget(nanLow));
+		RackMacroTarget nanHigh = targetOf(kGainName, 0.0f, 1.0f);
+		nanHigh.high = nan;
+		QVERIFY(!isValidMacroTarget(nanHigh));
+
+		// A project that says curve="nan" loads no such target: QString reads
+		// a "nan" attribute as a NaN.
+		QDomDocument doc;
+		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		doc.appendChild(rack);
+		QDomElement macroElement = doc.createElement(QStringLiteral("macro"));
+		macroElement.setAttribute(QStringLiteral("name"), QStringLiteral("Loaded"));
+		macroElement.setAttribute(QStringLiteral("value"), QStringLiteral("1"));
+		QDomElement targetElement = doc.createElement(QStringLiteral("target"));
+		targetElement.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		targetElement.setAttribute(QStringLiteral("effect"), 0);
+		targetElement.setAttribute(QStringLiteral("parameter"), QString::fromLatin1(kGainName));
+		targetElement.setAttribute(QStringLiteral("low"), QStringLiteral("0"));
+		targetElement.setAttribute(QStringLiteral("high"), QStringLiteral("1"));
+		targetElement.setAttribute(QStringLiteral("curve"), QStringLiteral("nan"));
+		macroElement.appendChild(targetElement);
+		rack.appendChild(macroElement);
+		RackMacros reloaded;
+		reloaded.loadSettings(rack);
+		QCOMPARE(reloaded.macroCount(), 1);
+		QCOMPARE(static_cast<int>(reloaded.macro(0)->targets.size()), 0);
+	}
+
+	//! A project may not carry a macro value or a target window outside the
+	//! 0..1 contract: the loader clamps the value into it and drops a window
+	//! that is not a fraction pair, instead of driving the parameter to its
+	//! maximum for every macro value. A project that is inside the contract
+	//! loads exactly as it did.
+	void aProjectLoadedMacroIsValidated()
+	{
+		FloatModel* const gain = gainModel();
+		QVERIFY2(gain != nullptr, "the driven chain's 0..100 parameter was not found");
+		const float before = gain->value();
+		// The fixture is shared: put the parameter back whatever happens.
+		const QScopeGuard restore([gain, before]() { gain->setValue(before); });
+
+		// A project that says value="2" with a window 2..3.
+		QDomDocument doc;
+		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		doc.appendChild(rack);
+		QDomElement macroElement = doc.createElement(QStringLiteral("macro"));
+		macroElement.setAttribute(QStringLiteral("name"), QStringLiteral("Out of range"));
+		macroElement.setAttribute(QStringLiteral("value"), QStringLiteral("2"));
+		QDomElement targetElement = doc.createElement(QStringLiteral("target"));
+		targetElement.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		targetElement.setAttribute(QStringLiteral("effect"), 0);
+		targetElement.setAttribute(QStringLiteral("parameter"), QString::fromLatin1(kGainName));
+		targetElement.setAttribute(QStringLiteral("low"), QStringLiteral("2"));
+		targetElement.setAttribute(QStringLiteral("high"), QStringLiteral("3"));
+		macroElement.appendChild(targetElement);
+		rack.appendChild(macroElement);
+
+		RackMacros reloaded;
+		reloaded.loadSettings(rack);
+		QCOMPARE(reloaded.macroCount(), 1);
+		// The loaded state is inside the 0..1 contract.
+		QVERIFY(reloaded.macro(0)->value >= 0.0f);
+		QVERIFY(reloaded.macro(0)->value <= 1.0f);
+		QCOMPARE(reloaded.macro(0)->value, 1.0f);
+		// The window 2..3 is not a fraction pair: it is not loaded, so the
+		// parameter is not pinned at its maximum.
+		QCOMPARE(static_cast<int>(reloaded.macro(0)->targets.size()), 0);
+		gain->setValue(0.0f);
+		const std::vector<RackMacroWrite> writes = reloaded.apply(0, rackUnderTest());
+		QCOMPARE(static_cast<int>(writes.size()), 0);
+		QCOMPARE(gain->value(), 0.0f);
+
+		// A project inside the contract loads exactly as before: the value,
+		// the window and the write it makes are the ones it always was.
+		QDomDocument good;
+		QDomElement goodRack = good.createElement(QStringLiteral("rack"));
+		good.appendChild(goodRack);
+		QDomElement goodMacro = good.createElement(QStringLiteral("macro"));
+		goodMacro.setAttribute(QStringLiteral("name"), QStringLiteral("Inside"));
+		goodMacro.setAttribute(QStringLiteral("value"), QStringLiteral("0.5"));
+		QDomElement goodTarget = good.createElement(QStringLiteral("target"));
+		goodTarget.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		goodTarget.setAttribute(QStringLiteral("effect"), 0);
+		goodTarget.setAttribute(QStringLiteral("parameter"), QString::fromLatin1(kGainName));
+		goodTarget.setAttribute(QStringLiteral("low"), QStringLiteral("0.25"));
+		goodTarget.setAttribute(QStringLiteral("high"), QStringLiteral("0.75"));
+		goodMacro.appendChild(goodTarget);
+		goodRack.appendChild(goodMacro);
+
+		RackMacros loaded;
+		loaded.loadSettings(goodRack);
+		QCOMPARE(loaded.macroCount(), 1);
+		QCOMPARE(loaded.macro(0)->value, 0.5f);
+		QCOMPARE(static_cast<int>(loaded.macro(0)->targets.size()), 1);
+		QCOMPARE(loaded.macro(0)->targets.front().low, 0.25f);
+		QCOMPARE(loaded.macro(0)->targets.front().high, 0.75f);
+		const std::vector<RackMacroWrite> goodWrites = loaded.apply(0, rackUnderTest());
+		QCOMPARE(static_cast<int>(goodWrites.size()), 1);
+		QCOMPARE(goodWrites[0].written, 50.0f);
+		QCOMPARE(gain->value(), 50.0f);
 	}
 
 	//! With macros and zones configured the rack's own process() allocates
