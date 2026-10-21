@@ -208,13 +208,26 @@ this cluster contributes no code change.
   canary does not move. No undo step was added or changed (neither fix touches
   journalled state).
 - **Gates.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
-  -> exit 0, `RESULT: PASS` (`logs/gate-1-feature-check.log`): fork-sources,
-  all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
-  doc-figures, complexity ("no new item in your files") and file-length ("no new item
-  in your files") all PASS. `src/core/ScriptEngine.cpp` shrank from 652 to 646 code
-  lines (the runFile() body moved into the header), so the grandfathered 662-line
-  ratchet entry is not approached; `include/ScriptEngine.h` is 253 code lines, under
-  the 500-line limit. No gate baseline was changed.
+  -> exit 0, `RESULT: PASS` (`logs/gate-2-feature-check.log`, the final run over the
+  committed tree): fork-sources, all-sources-reproduce, no-upstream-regression,
+  check-namespace, no-tautology, doc-figures, complexity ("no new item in your
+  files") and file-length ("no new item in your files") all PASS.
+  `src/core/ScriptEngine.cpp` shrank from 652 to 646 code lines (the runFile() body
+  moved into the header), so the grandfathered 662-line ratchet entry is not
+  approached; `include/ScriptEngine.h` is 253 code lines, under the 500-line limit.
+  No gate baseline was changed.
+- **Completion check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py
+  <worktree> new-p14-292` -> exit 0, `RESULT: PASS - submit`
+  (`logs/submit-check-1.log`): commits on the branch PASS, working tree clean PASS,
+  report PASS, tests added or changed PASS, gates PASS. Every ASK item is answered
+  in this section.
+- **Final test run over the committed tree.**
+  `cmake --build build --target ScriptEngineTest ScriptCommandBridgeTest
+  ScriptBudgetActionTest ScriptBindingsTest ScriptDawBindingTest -j8` -> exit 0
+  (`logs/build-16-final.log`), then `ctest -R '^(ScriptEngineTest|ScriptCommandBridgeTest|
+  ScriptBudgetActionTest|LuaApiSurface|ScriptBindingsTest|ScriptDawBindingTest)$'
+  --output-on-failure` from `build/tests` -> exit 0, 6/6 tests passed
+  (`logs/test-14-final-family.log`).
 - **Known pre-existing failure, not caused by this work.**
   `ScriptMemoryBudgetTest::aSystemAllocationFailureIsNotReportedAsBudgetExhaustion()`
   fails in this environment (a huge allocation succeeds because Linux overcommits).
