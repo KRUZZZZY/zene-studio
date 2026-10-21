@@ -186,10 +186,10 @@ old frames in the RX ring were played at the new rate.
 | check | command | exit | result |
 | --- | --- | --- | --- |
 | product build | `cmake --build build --target zene -j8` | 0 | built (`build-21-repatched-all.log`) |
-| affected family | `cd build/tests && ctest -R '^LinkAudioStreamTest$' --output-on-failure` | 0 | 1 test binary, 18 test functions, all passed (`test-21-repatched-all.log`) |
+| affected family | `cd build/tests && ctest -R '^LinkAudioStreamTest$' --output-on-failure` | 0 | 1 test binary, 18 QTest slots (16 test functions plus init/cleanup), all passed (`test-21-repatched-all.log`) |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | every row PASS (`gate-2.log`) |
-| complexity | `python3 -m lizard src/core/LinkAudioStream.cpp tests/src/core/LinkAudioStreamTest*.{cpp,h}` | 0 | no function over CCN 10 |
-| file length | `bash tests/file-length-gate.sh --check` | 1 | no `LinkAudioStream*` file over 500 code lines (the gate's own train-wide red is pre-existing) |
+| complexity | `python3 -m lizard src/core/LinkAudioStream.cpp tests/src/core/LinkAudioStreamTest.cpp tests/src/core/LinkAudioStreamTestSupport.h` | 0 | no function over CCN 10 |
+| file length | `bash tests/file-length-gate.sh --check` | 1 | no `LinkAudioStream*` file over 500 code lines; the script's exit 1 is the train-wide red that is already on the base (the feature_check row for this gate is PASS) |
 
 ### A pre-existing failure in this test binary (not caused by these fixes)
 
