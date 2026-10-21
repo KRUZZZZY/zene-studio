@@ -62,7 +62,9 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	m_captureChannels( 0 ),
 	m_captureFloat( false ),
 	m_captureStop( false ),
-	m_captureOpen( false )
+	m_captureOpen( false ),
+	m_captureOverrunError( 0 ),
+	m_captureSuspendError( 0 )
 {
 	_success_ful = false;
 
@@ -109,15 +111,22 @@ AudioAlsa::AudioAlsa( bool & _success_ful, AudioEngine*  _audioEngine ) :
 	if (count > 0)
 	{
 		auto ufds = new pollfd[count];
-		snd_pcm_poll_descriptors( m_handle, ufds, count );
-		for (int i = 0; i < std::max(3, count); ++i)
+		// The retrieval can FAIL: ALSA then fills nothing, and the array
+		// still holds whatever was in the fresh allocation. Reading it would
+		// hand an unrelated descriptor to fcntl(), so a failed retrieval
+		// skips the CLOEXEC setup entirely (cluster new-p15-252).
+		const int descriptorCount = snd_pcm_poll_descriptors( m_handle, ufds, count );
+		if (descriptorCount > 0)
 		{
-			const int fd = ( i >= count ) ? ufds[0].fd+i : ufds[i].fd;
-			int oldflags = fcntl( fd, F_GETFD, 0 );
-			if( oldflags < 0 )
-				continue;
-			oldflags |= FD_CLOEXEC;
-			fcntl( fd, F_SETFD, oldflags );
+			for (int i = 0; i < std::max(3, descriptorCount); ++i)
+			{
+				const int fd = ( i >= descriptorCount ) ? ufds[0].fd+i : ufds[i].fd;
+				int oldflags = fcntl( fd, F_GETFD, 0 );
+				if( oldflags < 0 )
+					continue;
+				oldflags |= FD_CLOEXEC;
+				fcntl( fd, F_SETFD, oldflags );
+			}
 		}
 		delete[] ufds;
 	}
@@ -507,6 +516,11 @@ void AudioAlsa::closeCapture()
 		m_captureHwParams = nullptr;
 	}
 	m_captureChannels = 0;
+
+	// The capture thread is gone by now, so the failures it parked are
+	// reported from here - the thread that closes the capture, which is not
+	// an audio thread (cluster 4584).
+	reportCaptureErrors();
 }
 
 
@@ -521,8 +535,10 @@ int AudioAlsa::handleCaptureError( int _err )
 		const int err = snd_pcm_prepare( m_captureHandle );
 		if( err < 0 )
 		{
-			printf( "Can't recover capture from overrun, prepare failed: %s\n",
-				snd_strerror( err ) );
+			// THE CAPTURE THREAD MAY NOT LOG: its own rule says so, and a
+			// stdio call can block it. The code is parked instead, and the
+			// thread that closes the capture reports it (cluster 4584).
+			m_captureOverrunError.store( err, std::memory_order_release );
 		}
 		else
 		{
@@ -544,14 +560,37 @@ int AudioAlsa::handleCaptureError( int _err )
 			err = snd_pcm_prepare( m_captureHandle );
 			if( err < 0 )
 			{
-				printf( "Can't recover capture from suspend, prepare failed: %s\n",
-					snd_strerror( err ) );
+				// Parked, not logged: see the overrun branch above.
+				m_captureSuspendError.store( err, std::memory_order_release );
 			}
 		}
 		return 0;
 	}
 #endif
 	return _err;
+}
+
+
+
+
+void AudioAlsa::reportCaptureErrors()
+{
+	// NOT the capture thread - this runs on the thread that closes the
+	// capture, which is the main thread and not an audio thread. Each parked
+	// failure is reported once, with the text the capture thread used to
+	// print itself.
+	const int overrun = m_captureOverrunError.exchange( 0, std::memory_order_acq_rel );
+	if( overrun < 0 )
+	{
+		printf( "Can't recover capture from overrun, prepare failed: %s\n",
+			snd_strerror( overrun ) );
+	}
+	const int suspend = m_captureSuspendError.exchange( 0, std::memory_order_acq_rel );
+	if( suspend < 0 )
+	{
+		printf( "Can't recover capture from suspend, prepare failed: %s\n",
+			snd_strerror( suspend ) );
+	}
 }
 
 
