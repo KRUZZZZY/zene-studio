@@ -26,7 +26,7 @@
 # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
-plugins/Sid/SidInstrument.cpp	cluster new-p9-429: remove synchronous printf from SidInstrument::playNoteImpl, which runs on the audio render thread; guarded by RtSafetySweep's stdio-output rule.
+plugins/Sid/SidInstrument.cpp	cluster new-p9-429: remove synchronous printf from SidInstrument::playNoteImpl, which runs on the audio render thread; guarded by RtSafetySweep's stdio-output rule. cluster new-p10-380-port-port: silence the tail of the stack buffer when sid_fillbuffer produces fewer samples than the period (rate change under a living note); guarded by tests/src/plugins/SidInstrument.cpp.
 
 
 
