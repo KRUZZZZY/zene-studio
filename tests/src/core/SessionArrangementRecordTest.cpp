@@ -47,7 +47,9 @@
 
 #include <QtTest>
 
+#include <atomic>
 #include <cstdint>
+#include <thread>
 
 #include "SessionArrangementRecorder.h"
 #include "SessionFollow.h"
@@ -64,6 +66,28 @@ constexpr f_cnt_t kFramesPerPeriod = 16;
 constexpr float kFramesPerTick = 4.0f;
 constexpr int kSceneCount = 4;
 constexpr std::size_t kCapacity = SessionArrangementRecorder::Capacity;
+
+// The two ends of the deterministic in-flight handshake test. The producer
+// parks INSIDE the write, after it has passed the armed gate; the consumer's
+// wait hook releases it. Flags, not timers: the test never sleeps.
+std::atomic<bool> g_producerParked{ false };
+std::atomic<bool> g_releaseProducer{ false };
+std::atomic<bool> g_consumerWaited{ false };
+
+void parkProducerAtTheWriteBoundary()
+{
+	g_producerParked.store( true, std::memory_order_release );
+	while( !g_releaseProducer.load( std::memory_order_acquire ) )
+	{
+		std::this_thread::yield();
+	}
+}
+
+void releaseTheParkedProducer()
+{
+	g_consumerWaited.store( true, std::memory_order_release );
+	g_releaseProducer.store( true, std::memory_order_release );
+}
 
 SessionClockContext clock(tick_t ticks)
 {
@@ -241,6 +265,57 @@ private slots:
 		// ...and nothing new is taped while it is disarmed.
 		QVERIFY(!recorder.recordStart(1, 1, 192));
 		QCOMPARE(recorder.pending(), std::size_t(1));
+	}
+
+	//! A disarm that races a REAL in-flight write cannot leave that write behind
+	//! the consumer: snapshot() waits the producer out, so the start it already
+	//! passed the gate for is IN the snapshot (and the later stop can close it).
+	//! Without the wait the snapshot runs before the write publishes, sees an
+	//! empty ring, and the start lands without the consumer having seen it.
+	void snapshotWaitsForAnInFlightProducerWrite()
+	{
+		g_producerParked.store( false );
+		g_releaseProducer.store( false );
+		g_consumerWaited.store( false );
+
+		SessionArrangementRecorder recorder;
+		recorder.setArmed( true );
+		recorder.setPushBoundaryHookForTest( &parkProducerAtTheWriteBoundary );
+
+		bool recorded = false;
+		std::thread producer( [&] { recorded = recorder.recordStart( 0, 0, 96 ); } );
+		while( !g_producerParked.load( std::memory_order_acquire ) )
+		{
+			std::this_thread::yield();
+		}
+
+		// The producer is inside push(): it has read armed == true and has not
+		// published. The model thread now disarms and snapshots - the exact
+		// window the finding names.
+		recorder.setArmed( false );
+		recorder.setConsumerWaitHookForTest( &releaseTheParkedProducer );
+		SessionArrangementRecorder::Event events[kCapacity];
+		std::size_t count = 0;
+		std::thread consumer( [&] { count = recorder.snapshot( events, kCapacity ); } );
+		consumer.join();
+		if( !g_consumerWaited.load( std::memory_order_acquire ) )
+		{
+			// Pre-fix path: the snapshot did not wait. Release the producer so
+			// the test fails on the assertion below rather than hanging.
+			g_releaseProducer.store( true, std::memory_order_release );
+		}
+		producer.join();
+
+		recorder.setPushBoundaryHookForTest( nullptr );
+		recorder.setConsumerWaitHookForTest( nullptr );
+
+		QVERIFY( g_consumerWaited.load( std::memory_order_acquire ) );
+		QVERIFY( recorded );
+		QCOMPARE( count, std::size_t( 1 ) );
+		QVERIFY( events[0].started );
+		QCOMPARE( events[0].track, 0 );
+		QCOMPARE( events[0].scene, 0 );
+		QCOMPARE( static_cast<int>( events[0].tick ), 96 );
 	}
 
 	//! THE #596 ACCEPTANCE, in miniature: one launch request, then nothing but
