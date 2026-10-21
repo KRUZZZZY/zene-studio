@@ -5,7 +5,7 @@ Q050-103: IMPLEMENTED
 Q050-087: IMPLEMENTED (cables are editable on chains the engine routes through its graph; on chains of the shipped audio-ports devices the canvas shows them read-only, with the engine's reason, and still adds / reorders / removes devices - see the scope note)
 Q050-071: IMPLEMENTED (the matrix is published and reproducible; it records a VST3/CLAP state-restore failure it found, which is not fixed here)
 
-Branch `feat/050-Q050-484-oc` (from train 9, `b61e5f965`), seven commits, built and run on Linux/GCC only. Feature records:
+Branch `feat/050-Q050-484-oc` (from train 9, `b61e5f965`), 10 commits (one per unit plus test-split, portability, ledger and report commits), built and run on Linux/GCC only. Feature records:
 `docs/050-features/Q050-484.md`, `Q050-103.md`, `Q050-087.md`, `Q050-071.md`. Logs of every run below are in the run folder
 (`.../runs/Q050-484.r1/logs/`).
 
@@ -88,8 +88,7 @@ targeted build because `ladspaeffect` is not built there (`the LADSPA host plugi
    reference (`PluginPortsMigrationTest`); the SFZ player and the canvas add no data to existing elements, and the patch
    wiring is still session state. A sampler that sounded more than 64 notes at once now fades the oldest/released ones (the limit's
    default, documented).
-6. **Portability** - no Qt-6-only API without a guard (`QMouseEvent::pos()`, `mapToGlobal(QPoint)`, no `QSignalBlocker` on the
-   audio path), no `near`/`far`/`small`/`interface`/`min`/`max` identifiers, no `std::filesystem` outside sfizz's vendored ghc
+6. **Portability** - no Qt-6-only API without a guard (`QMouseEvent::pos()`, `mapToGlobal(QPoint)`), no `near`/`far`/`small`/`interface`/`min`/`max` identifiers, no `std::filesystem` outside sfizz's vendored ghc
    (not `std::filesystem`). Plugin CMake is conditional only on compiler and processor.
 
 Not done / out of scope (also in the feature records): Windows/macOS/arm builds of sfizz are unmeasured; the canvas does not
