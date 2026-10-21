@@ -3,7 +3,7 @@
 Verdict: FIXED
 
 new-p15-63: FIXED
-new-p14-103: PENDING
+new-p14-103: FIXED
 new-p10-127: PENDING
 
 Three bugs in one file (`plugins/Xpressive/ExprSynth.cpp`), each fixed, tested and
@@ -75,7 +75,67 @@ cd build/tests && ctest -R '^ExprSynthAllocation$' --output-on-failure > $LOGS/t
 
 **Verdict: FIXED**
 
-(filled in below)
+### Evidence (the bug was real)
+
+- `plugins/Xpressive/ExprSynth.cpp:795-800` (original code, `ExprSynth::renderOutput`):
+  `if (is_released && m_note_rel_sample == 0) { m_note_rel_sample = m_note_sample; }`.
+  Sample zero is a *valid* release position, but it was also the "not set yet" marker.
+  A note that is released before its first render period stores `m_note_sample == 0`,
+  which leaves the marker looking unset; the next render period therefore stores the
+  *later* sample count as the release position.
+- The consequence is visible in the audio: `m_note_rel_sec` (the `trel` expression
+  variable) is computed from `m_note_sample - m_note_rel_sample` in both render loops
+  (`plugins/Xpressive/ExprSynth.cpp:819` and `:846`), so the release time restarts from
+  zero at the next period boundary instead of counting on from the release.
+- The member was initialised to `0` in the constructor
+  (`plugins/Xpressive/ExprSynth.cpp:739-741`) and is only ever written by that one
+  place, so the marker was the single source of the confusion.
+
+### Fix
+
+- `plugins/Xpressive/ExprSynth.h:111-117`: added `bool m_note_rel_sample_set` next to
+  `m_note_rel_sample`; the release position is now tracked by that flag instead of by
+  the value of the position.
+- `plugins/Xpressive/ExprSynth.cpp:739-742`: the flag starts as `false`.
+- `plugins/Xpressive/ExprSynth.cpp:795-802`: the release position is stored once, when
+  the note is released, and the flag marks it as set. Both render loops keep using
+  `m_note_rel_sample` unchanged, so a note that is released later, or never released,
+  behaves exactly as before.
+
+### Regression
+
+`tests/src/plugins/ExprSynthTest.cpp` — new case
+`releaseTimeCountsOnFromTheReleasePosition`. The note is released (`noteOff(0)`) before
+the first render period, the expression is `trel` (the time since the release), and the
+test renders two periods of 64 frames. It asserts that the release time keeps counting
+(`trel` of the second period is larger than of the first) and that the release position
+stayed at the release sample. The test is deterministic: no wall-clock time, no sleep,
+the frame counter and the sample rate are the only inputs.
+
+### Commands (verbatim, observed EXIT codes)
+
+```
+cmake --build build --target ExprSynth > $LOGS/build-bug2-red.log 2>&1               # BUILD_EXIT=0
+cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug2-red.log 2>&1
+# TEST_EXIT=8  (1 failure: "the release time restarted instead of counting on from the release position")
+cmake --build build --target ExprSynth > $LOGS/build-bug2-green.log 2>&1             # BUILD_EXIT=0
+cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug2-green.log 2>&1
+# TEST_EXIT=0  (1/1 test passed, 5 test functions)
+```
+
+RED/GREEN proof with the product hunks reverted
+(`git diff -- plugins/Xpressive/ExprSynth.cpp plugins/Xpressive/ExprSynth.h > $LOGS/fix-bug2.patch`):
+
+```
+git apply -R $LOGS/fix-bug2.patch                                                     # REVERT_EXIT=0
+cmake --build build --target ExprSynth > $LOGS/build-bug2-revert.log 2>&1            # BUILD_REVERT_EXIT=0
+cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug2-revert.log 2>&1
+# TEST_REVERT_EXIT=8  (1 failure - the test catches the restart)
+git apply $LOGS/fix-bug2.patch                                                        # REAPPLY_EXIT=0
+cmake --build build --target ExprSynth > $LOGS/build-bug2-reapply.log 2>&1           # BUILD_REAPPLY_EXIT=0
+cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug2-reapply.log 2>&1
+# TEST_REAPPLY_EXIT=0  (1/1 test passed)
+```
 
 ## new-p10-127 — Expression-render exceptions are logged from the audio path
 

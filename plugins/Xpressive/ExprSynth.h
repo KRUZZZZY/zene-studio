@@ -111,6 +111,9 @@ private:
 	const WaveSample *m_W1, *m_W2, *m_W3;
 	f_cnt_t m_note_sample;
 	f_cnt_t m_note_rel_sample;
+	//! Whether m_note_rel_sample holds the release position. Sample zero is a valid
+	//! release position, so it cannot be used as the "not set yet" marker.
+	bool m_note_rel_sample_set;
 	float m_note_sample_sec;
 	float m_note_rel_sec;
 	float m_frequency;

@@ -739,6 +739,7 @@ ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSam
 {
 	m_note_sample = 0;
 	m_note_rel_sample = 0;
+	m_note_rel_sample_set = false;
 	m_note_rel_sec = 0;
 	m_note_sample_sec = 0;
 	m_released = 0;
@@ -794,9 +795,12 @@ void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 		expression_t *o2_rawExpr = &(m_exprO2->getData()->m_expression);
 		LastSampleFunction<float> * last_func1 = &m_exprO1->getData()->m_last_func;
 		LastSampleFunction<float> * last_func2 = &m_exprO2->getData()->m_last_func;
-		if (is_released && m_note_rel_sample == 0)
+		if (is_released && !m_note_rel_sample_set)
 		{
+			// The release position is remembered once. Sample zero is a valid
+			// position, so it cannot double as the "not set yet" marker.
 			m_note_rel_sample = m_note_sample;
+			m_note_rel_sample_set = true;
 		}
 		if (o1_valid && o2_valid)
 		{
