@@ -374,6 +374,19 @@ public:
 	bool popMidiInEvent(ScriptMidiEvent* event);
 	//! Number of queued MIDI-in events (worker thread only).
 	int midiInPending() const;
+	/*! MIDI-in events the ring buffer REFUSED because it was full.
+	 *
+	 * The buffer is a fixed-size ring and the policy is non-blocking: an
+	 * event that does not fit is dropped rather than stalling the MIDI
+	 * thread. A dropped event is a LOST event (a lost note-off leaves a note
+	 * sounding), so the loss is counted and the count is readable by the host
+	 * that feeds the buffer - the same shape as the command queue's
+	 * droppedCommandCount().
+	 */
+	quint64 droppedMidiInEventCount() const
+	{
+		return m_midiInDropped.load(std::memory_order_relaxed);
+	}
 
 	//! Parse a `--! lmms-api <major>.<minor>` header. Empty when absent.
 	static QString parseVersionHeader(const QString& source);
@@ -425,6 +438,20 @@ private:
 	ScriptCommandQueue m_commands;
 	LocklessRingBuffer<ScriptMidiEvent> m_midiIn;
 	LocklessRingBufferReader<ScriptMidiEvent> m_midiInReader;
+	//! MIDI-in events the ring buffer refused (it was full). Written by the
+	//! producer thread, read by anyone - the same atomic discipline the
+	//! command queue's drop counter uses.
+	std::atomic<quint64> m_midiInDropped{0};
+
+	//! Count a MIDI-in event the ring buffer refused: a write of zero means
+	//! the buffer was full and the event was dropped.
+	void countDroppedMidiInEvent(std::size_t written)
+	{
+		if (written == 0)
+		{
+			m_midiInDropped.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
 
 	std::atomic<bool> m_running{false};
 	std::atomic<bool> m_autoApply{true};

@@ -803,7 +803,7 @@ QString ScriptEngine::resolveProjectPath(const QString& path, bool forWrite, QSt
 void ScriptEngine::pushMidiInEvent(int channel, int key, int velocity, bool noteOn)
 {
 	const ScriptMidiEvent event{channel, key, velocity, noteOn ? 1 : 0};
-	m_midiIn.write(&event, 1);
+	countDroppedMidiInEvent(m_midiIn.write(&event, 1));
 }
 
 

@@ -799,6 +799,43 @@ for i = 1, 20000 do clip:addNoteAt(60, i, 10, 100) end
 		QCOMPARE(int(engine->runFile(okPath, &okError)), int(ScriptEngine::RunResult::Ok));
 		QVERIFY2(okError.isEmpty(), qPrintable(okError));
 	}
+
+	//! The MIDI-in buffer is a fixed-size ring: when it is full the write is
+	//! REFUSED, and a refused event is a LOST event - a dropped note-off
+	//! leaves a note sounding. The policy stays non-blocking, but the loss is
+	//! counted and the count is readable.
+	void testMidiInOverflowIsCounted()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+
+		// Drain what an earlier test left behind, so the count below is about
+		// this test's own events.
+		ScriptMidiEvent drained;
+		while (engine->popMidiInEvent(&drained)) { }
+
+		const quint64 droppedBefore = engine->droppedMidiInEventCount();
+		constexpr int EventCount = 2000;
+		for (int i = 0; i < EventCount; ++i)
+		{
+			engine->pushMidiInEvent(0, 36 + (i % 60), 100, true);
+		}
+
+		const int pending = engine->midiInPending();
+		const quint64 dropped = engine->droppedMidiInEventCount() - droppedBefore;
+		qInfo() << "midi-in pending:" << pending << "dropped:" << dropped;
+		QVERIFY2(pending > 0, "the ring buffer took nothing at all");
+		QVERIFY2(dropped > 0, "the overflow was not counted");
+		QCOMPARE(dropped, static_cast<quint64>(EventCount - pending));
+
+		// The events that did fit are the FIRST ones: the ring drops the new
+		// events, it does not overwrite the old ones (an overwritten note-off
+		// would silence a note that should sound).
+		ScriptMidiEvent event;
+		QVERIFY(engine->popMidiInEvent(&event));
+		QCOMPARE(event.channel, 0);
+		QCOMPARE(event.key, 36);
+	}
 };
 
 QTEST_GUILESS_MAIN(ScriptEngineTest)
