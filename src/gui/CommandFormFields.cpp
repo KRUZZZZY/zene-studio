@@ -223,7 +223,7 @@ QLineEdit* textEditor(QWidget* parent, const QJsonObject& spec, Kind kind)
 {
 	auto* edit = withKind(new QLineEdit(parent), kind);
 	if (kind == Kind::Text) { constrain(edit, spec); }
-	if (kind == Kind::List) { edit->setPlaceholderText(tr("Values separated by commas")); }
+	if (kind == Kind::List) { edit->setPlaceholderText(tr("Values separated by commas (\\ escapes a comma)")); }
 	if (kind == Kind::Json)
 	{
 		edit->setPlaceholderText(schemaType(spec) == QStringLiteral("array") ? QStringLiteral("[ ... ]") : QStringLiteral("{ ... }"));
@@ -339,6 +339,47 @@ bool listMatchesSchema(const QJsonArray& items, const QJsonObject& spec)
 	return true;
 }
 
+//! The comma list's escape: a backslash makes the next character literal.
+const QLatin1Char ListEscape('\\');
+
+//! The items of a comma list: split on the commas no escape protects, each item's escapes resolved
+//! and its edges trimmed, as an item always was. False when the text ends in a stray escape.
+bool splitListItems(const QString& text, QStringList* items)
+{
+	QString item;
+	bool escaped = false;
+	for (const QChar ch : text)
+	{
+		if (escaped) { item += ch; escaped = false; }
+		else if (ch == ListEscape) { escaped = true; }
+		else if (ch == QLatin1Char(',')) { items->append(item.trimmed()); item.clear(); }
+		else { item += ch; }
+	}
+	if (escaped) { return false; }
+	items->append(item.trimmed());
+	return true;
+}
+
+//! A list's value as the text of its editor: the items separated by commas, a comma inside an item
+//! escaped. A list of records, or one whose text would read as JSON, is written as JSON.
+QString listText(const QJsonValue& value)
+{
+	if (!value.isArray()) { return valueText(value); }
+	const QJsonArray items = value.toArray();
+	QStringList parts;
+	for (const QJsonValue& item : items)
+	{
+		// A record, or an item the comma list cannot say, is JSON's business.
+		if (item.isArray() || item.isObject() || item.toString().trimmed().isEmpty()) { return compactJson(items); }
+		QString part = item.isString() ? item.toString().trimmed() : valueText(item);
+		part.replace(ListEscape, QStringLiteral("\\\\"));
+		part.replace(QLatin1Char(','), QStringLiteral("\\,"));
+		parts.append(part);
+	}
+	const QString text = parts.join(QStringLiteral(", "));
+	return text.startsWith(QLatin1Char('[')) ? compactJson(items) : text;
+}
+
 //! "a, b, c" as a list of the items' type; a list typed as JSON ("[...]") is read as JSON.
 //! An empty item is refused, with the reason in @a error: malformed input is not a shorter list.
 bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value, QString* error)
@@ -351,16 +392,13 @@ bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value, 
 	}
 	else
 	{
-		for (const QString& part : text.split(QLatin1Char(',')))
+		QStringList parts;
+		if (!splitListItems(text, &parts)) { *error = tr("\"%1\" ends with a stray backslash").arg(text); return false; }
+		for (const QString& part : parts)
 		{
-			const QString entry = part.trimmed();
-			if (entry.isEmpty())
-			{
-				*error = tr("\"%1\" has an empty item").arg(text);
-				return false;
-			}
+			if (part.isEmpty()) { *error = tr("\"%1\" has an empty item").arg(text); return false; }
 			QJsonValue item;
-			if (!parseScalar(entry, itemType(spec), &item)) { return false; }
+			if (!parseScalar(part, itemType(spec), &item)) { return false; }
 			items.append(item);
 		}
 	}
@@ -533,7 +571,7 @@ bool writeValue(QWidget* editor, const QJsonObject& spec, const QJsonValue& valu
 		static_cast<QKeySequenceEdit*>(editor)->setKeySequence(QKeySequence::fromString(valueText(value), QKeySequence::PortableText));
 		return true;
 	case Kind::Json: static_cast<QLineEdit*>(editor)->setText(compactJson(value)); return true;
-	case Kind::List:
+	case Kind::List: static_cast<QLineEdit*>(editor)->setText(listText(value)); return true;
 	case Kind::Text: static_cast<QLineEdit*>(editor)->setText(valueText(value)); return true;
 	}
 	return false;

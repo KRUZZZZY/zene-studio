@@ -530,6 +530,30 @@ private slots:
 		QVERIFY(value.isUndefined());
 	}
 
+	//! A string list's items may hold a comma: the editor's text escapes it, and what it reads
+	//! back is the list that was set - the text is not a lossy rendering of the list.
+	void stringListItemsKeepTheirCommas()
+	{
+		QJsonObject spec = prop("array");
+		spec.insert(QStringLiteral("items"), prop("string"));
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.units"), QStringLiteral("names"), spec, false);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		// What the writer puts in the editor reads back as the same list.
+		QVERIFY(formfield::writeValue(editor.value, spec, QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+
+		// Typed as text: an escaped comma is one item's comma.
+		input->setText(QStringLiteral("take\\, 1, rest"));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+	}
+
 	//! 0.5.0 theme 5: an enum offers its values in words (the blank entry says "(Default)"), a list of plain
 	//! values is typed as "a, b", and raw JSON waits under Advanced.
 	void choicesListsAndRawJsonHaveTheirPlaces()
