@@ -2919,3 +2919,7 @@ include/TakeLaneRows.h
 include/TakeWaveform.h
 src/gui/TakeWaveform.cpp
 src/gui/tracks/TakeLaneRows.cpp
+# cluster new-p12-238-port (2026-10): a malformed session attribute must not become a
+# valid target - the Follow Action jump target, the legacy scene index and the
+# legacy clip coordinate (fork-NEW regression source).
+tests/src/core/SessionMalformedAttributeTest.cpp

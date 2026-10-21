@@ -65,6 +65,34 @@ inline double doubleAttribute( const QDomElement& element, const QString& name, 
 	return ok ? value : defaultValue;
 }
 
+//! A whole-number attribute, read STRICTLY. False when the attribute is
+//! absent or does not hold a number at all - QString::toInt() answers 0 for a
+//! nonnumeric text AND for an overflow, and 0 is a VALID index: an unchecked
+//! read of a damaged attribute does not fail loudly, it silently addresses the
+//! first scene, the first track or the first cell. The reader of an index must
+//! therefore go through this helper and REFUSE the malformed value instead of
+//! taking the 0 that toInt() hands back.
+inline bool intAttribute( const QDomElement& element, const QString& name, int& value )
+{
+	if( !element.hasAttribute( name ) ) { return false; }
+	bool ok = false;
+	const int parsed = element.attribute( name ).toInt( &ok );
+	if( !ok ) { return false; }
+	value = parsed;
+	return true;
+}
+
+//! A 0/1 attribute, read STRICTLY: the given default when the attribute is
+//! absent or does not hold a number (the same discipline doubleAttribute
+//! applies to a floating-point attribute).
+inline bool boolAttribute( const QDomElement& element, const QString& name, bool defaultValue )
+{
+	if( !element.hasAttribute( name ) ) { return defaultValue; }
+	bool ok = false;
+	const int parsed = element.attribute( name ).toInt( &ok );
+	return ok ? parsed != 0 : defaultValue;
+}
+
 inline LaunchMode launchModeFromInt( int value )
 {
 	if( value < static_cast<int>( LaunchMode::Trigger )
@@ -172,10 +200,9 @@ inline QString scenesSectionVersion( const std::vector<Scene>& scenes )
 //! parity - the attribute vocabulary never moved).
 inline bool applySceneRow( const QDomElement& row, std::vector<Scene>& scenes )
 {
-	if( !row.hasAttribute( QStringLiteral( "index" ) ) ) { return false; }
-	bool ok = false;
-	const int index = row.attribute( QStringLiteral( "index" ) ).toInt( &ok );
-	if( !ok || static_cast<unsigned>( index ) >= scenes.size() ) { return false; }
+	int index = -1;
+	if( !intAttribute( row, QStringLiteral( "index" ), index ) ) { return false; }
+	if( static_cast<unsigned>( index ) >= scenes.size() ) { return false; }
 	scenes[static_cast<std::size_t>( index )].restoreState( row );
 	return true;
 }
@@ -192,17 +219,12 @@ inline bool applySceneCell( const QDomElement& cell, std::vector<ClipSlot>& slot
 	// would eat the identifier here (cost one compile cycle in S8).
 	if( !cell.hasAttribute( QStringLiteral( "track" ) )
 		|| !cell.hasAttribute( QStringLiteral( "scene" ) ) ) { return false; }
-	bool ok = false;
-	const int track = cell.attribute( QStringLiteral( "track" ) ).toInt( &ok );
-	if( !ok || static_cast<unsigned>( track ) >= static_cast<unsigned>( tracks ) )
-	{
-		return false;
-	}
-	const int scene = cell.attribute( QStringLiteral( "scene" ) ).toInt( &ok );
-	if( !ok || static_cast<unsigned>( scene ) >= static_cast<unsigned>( scenes ) )
-	{
-		return false;
-	}
+	int track = -1;
+	if( !intAttribute( cell, QStringLiteral( "track" ), track ) ) { return false; }
+	if( static_cast<unsigned>( track ) >= static_cast<unsigned>( tracks ) ) { return false; }
+	int scene = -1;
+	if( !intAttribute( cell, QStringLiteral( "scene" ), scene ) ) { return false; }
+	if( static_cast<unsigned>( scene ) >= static_cast<unsigned>( scenes ) ) { return false; }
 	slotList[static_cast<std::size_t>( track ) * static_cast<std::size_t>( scenes )
 		+ static_cast<std::size_t>( scene )].restoreState( cell );
 	return true;
