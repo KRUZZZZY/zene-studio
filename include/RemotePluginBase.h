@@ -189,6 +189,21 @@ public:
 	{
 		s_callerIdHashForTest.store( _hash, std::memory_order_relaxed );
 	}
+	static std::uint64_t callerIdHashForTest( std::thread::id _id ) noexcept
+	{
+		if( const auto hashForTest = s_callerIdHashForTest.load( std::memory_order_relaxed ) )
+		{
+			return hashForTest( _id );
+		}
+		return std::hash<std::thread::id>{}( _id );
+	}
+
+	//! Lets the regression stop a writer when the legacy send path waits for FIFO space.
+	using SpaceWaitHookForTest = void (*)( shmFifo * ) noexcept;
+	static void setSpaceWaitHookForTest( SpaceWaitHookForTest _hook ) noexcept
+	{
+		s_spaceWaitHookForTest.store( _hook, std::memory_order_relaxed );
+	}
 #endif
 
 	// recursive lock, owned per thread
@@ -403,6 +418,10 @@ private:
 				m_data->startPtr = 0;
 			}
 			const int lockDepth = releaseLockForSpaceWait();
+#ifdef LMMS_TESTING
+			if( const auto hook = s_spaceWaitHookForTest.load( std::memory_order_relaxed ) ) { hook( this ); }
+#endif
+			if( isInvalid() ) { return; }
 #ifndef LMMS_BUILD_WIN32
 			usleep( 5 );
 #endif
@@ -430,6 +449,7 @@ private:
 	std::atomic_flag m_writerBusy = ATOMIC_FLAG_INIT;
 #ifdef LMMS_TESTING
 	inline static std::atomic<CallerIdHashForTest> s_callerIdHashForTest{nullptr};
+	inline static std::atomic<SpaceWaitHookForTest> s_spaceWaitHookForTest{nullptr};
 #endif
 };
 #endif // SYNC_WITH_SHM_FIFO

@@ -1856,13 +1856,16 @@ endforeach()
 # Compile the FIFO header in its shared-memory mode independently of the host's
 # selected socket transport, so the ownership and semaphore regressions run on
 # every platform without changing RemotePluginBase's library class layout.
-add_executable(RemotePluginShmFifoTest src/core/RemotePluginShmFifoTest.cpp)
+add_executable(RemotePluginShmFifoTest
+	src/core/RemotePluginShmFifoTest.cpp
+	${CMAKE_SOURCE_DIR}/src/common/RemotePluginBase.cpp
+	${CMAKE_SOURCE_DIR}/src/common/SharedMemory.cpp
+	${CMAKE_SOURCE_DIR}/src/common/SystemSemaphore.cpp)
 target_include_directories(RemotePluginShmFifoTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
-target_static_libraries(RemotePluginShmFifoTest PRIVATE lmmsobjs)
 target_link_libraries(RemotePluginShmFifoTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 target_compile_features(RemotePluginShmFifoTest PRIVATE cxx_std_20)
-target_compile_definitions(RemotePluginShmFifoTest PRIVATE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+target_compile_definitions(RemotePluginShmFifoTest PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 add_test(NAME RemotePluginShmFifoTest COMMAND RemotePluginShmFifoTest)
 
 # Compile RemotePluginBase.cpp in the shared-memory mode too, so its blocking

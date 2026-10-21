@@ -277,6 +277,26 @@ RemotePluginBase::SendResult RemotePluginBase::flushPendingSend()
 int RemotePluginBase::sendMessage(const message & _m)
 {
 #ifdef SYNC_WITH_SHM_FIFO
+	std::size_t frameSize = 2 * sizeof( std::int32_t );
+	if( _m.data.size() > ( SHM_FIFO_SIZE - frameSize ) / sizeof( std::int32_t ) )
+	{
+		// The receiver only gets a token after the complete frame is written. Refuse an aggregate frame that
+		// cannot fit before writing any bytes, and wake both ends so neither waits for an impossible frame.
+		invalidate();
+		m_out->messageSent();
+		return 0;
+	}
+	frameSize += _m.data.size() * sizeof( std::int32_t );
+	for( const auto & argument : _m.data )
+	{
+		if( argument.size() > SHM_FIFO_SIZE - frameSize )
+		{
+			invalidate();
+			m_out->messageSent();
+			return 0;
+		}
+		frameSize += argument.size();
+	}
 	m_out->lockWriter();
 	m_out->lock();
 	m_out->writeInt(_m.id);

@@ -23,6 +23,13 @@
 
 using namespace lmms;
 
+class ShmRemotePluginHarness : public RemotePluginBase
+{
+public:
+	using RemotePluginBase::RemotePluginBase;
+	bool processMessage( const message & ) override { return true; }
+};
+
 class RemotePluginShmFifoTest : public QObject
 {
 	Q_OBJECT
@@ -44,26 +51,70 @@ private slots:
 		QVERIFY(fifo.isInvalid());
 	}
 
-	void callerKeysSurviveForcedHashCollisions()
+	void callerTokensStayDistinctDespiteLegacyHashCollision()
 	{
 		shmFifo::setCallerIdHashForTest(&collidingThreadHash);
 		std::barrier start{3};
+		std::barrier captured{3};
+		std::barrier release{3};
 		using CallerKey = decltype(shmFifo::callerKey());
 		CallerKey keys[2]{};
+		std::thread::id ids[2];
 		std::thread first([&] {
 			start.arrive_and_wait();
+			ids[0] = std::this_thread::get_id();
 			keys[0] = shmFifo::callerKey();
+			captured.arrive_and_wait();
+			release.arrive_and_wait();
 		});
 		std::thread second([&] {
 			start.arrive_and_wait();
+			ids[1] = std::this_thread::get_id();
 			keys[1] = shmFifo::callerKey();
+			captured.arrive_and_wait();
+			release.arrive_and_wait();
 		});
 		start.arrive_and_wait();
+		captured.arrive_and_wait();
+		const bool legacyHashesCollide = shmFifo::callerIdHashForTest( ids[0] )
+			== shmFifo::callerIdHashForTest( ids[1] );
+		const bool distinct = keys[0] != keys[1];
+		release.arrive_and_wait();
 		first.join();
 		second.join();
 		shmFifo::setCallerIdHashForTest(nullptr);
 
-		QVERIFY(keys[0] != keys[1]);
+		QVERIFY(legacyHashesCollide);
+		QVERIFY(distinct);
+	}
+
+	void oversizedAggregateMessageFailsAndReleasesTheReceiver()
+	{
+		auto * hostIn = new shmFifo;
+		auto * clientOut = new shmFifo{hostIn->shmKey()};
+		auto * hostOut = new shmFifo;
+		auto * clientIn = new shmFifo{hostOut->shmKey()};
+		ShmRemotePluginHarness sender{hostIn, hostOut};
+		ShmRemotePluginHarness receiver{clientIn, clientOut};
+
+		const std::string field( 300 * 1024, 'x' );
+		QVERIFY(field.size() < static_cast<std::size_t>( SHM_FIFO_SIZE ));
+		RemotePluginBase::message oversized{IdDebugMessage};
+		oversized.addString( field ).addString( field );
+
+		s_spaceWaitObserved.store( false, std::memory_order_relaxed );
+		shmFifo::setSpaceWaitHookForTest( &interruptSpaceWait );
+		const int bytesSent = sender.sendMessage( oversized );
+		shmFifo::setSpaceWaitHookForTest( nullptr );
+
+		QVERIFY(!s_spaceWaitObserved.load( std::memory_order_relaxed ));
+		QCOMPARE(bytesSent, 0);
+		QVERIFY(sender.isInvalid());
+		RemotePluginBase::message received;
+		const auto result = receiver.receiveFrameBefore( std::chrono::steady_clock::time_point::min(), received );
+		QCOMPARE(result, RemotePluginBase::ReceiveResult::Lost);
+		QCOMPARE(received.id, static_cast<int>( IdUndefined ));
+		QVERIFY(receiver.isInvalid());
 	}
 
 	void recursiveSpaceWaitReleasesTheDataSemaphore()
@@ -98,10 +149,18 @@ private slots:
 	}
 
 private:
+	static void interruptSpaceWait( shmFifo * _fifo ) noexcept
+	{
+		s_spaceWaitObserved.store( true, std::memory_order_relaxed );
+		_fifo->invalidate();
+	}
+
 	static std::uint64_t collidingThreadHash(std::thread::id) noexcept
 	{
 		return 7;
 	}
+
+	inline static std::atomic<bool> s_spaceWaitObserved{false};
 };
 
 QTEST_GUILESS_MAIN(RemotePluginShmFifoTest)
