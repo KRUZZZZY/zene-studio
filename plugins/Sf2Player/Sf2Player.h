@@ -28,15 +28,22 @@
 #define SF2_PLAYER_H
 
 #include <array>
-#include <fluidsynth/types.h>
-#include <QMutex>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <fluidsynth.h>
+#include <QString>
+#include <mutex>
 #include <samplerate.h>
+#include <vector>
 
+#include "ArrayVector.h"
 #include "AudioEngine.h"
 #include "AudioResampler.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
 #include "LcdSpinBox.h"
+#include "MidiHandoffQueue.h"
 #include "SampleFrame.h"
 
 class QLabel;
@@ -55,6 +62,165 @@ class PixmapButton;
 class Sf2InstrumentView;
 class PatchesDialog;
 } // namespace gui
+
+
+/**
+ * A bounded single-producer/single-consumer queue of pointers.
+ *
+ * The instrument hands synths between the UI thread and the render thread with
+ * it. Storage is fixed in the object: pushing and popping copy a pointer and
+ * update one atomic index, so neither side allocates or waits. Each direction
+ * has exactly one producer and one consumer, which is the whole synchronisation
+ * the synth hand-off needs.
+ */
+template<typename T, std::size_t Capacity>
+class Sf2PointerQueue
+{
+	static_assert(Capacity >= 2 && (Capacity & (Capacity - 1)) == 0,
+		"the capacity must be a power of two, at least 2");
+
+public:
+	//! Queues \a value. @return false when the queue is full.
+	auto push(T value) noexcept -> bool
+	{
+		const std::size_t tail = m_tail.load(std::memory_order_relaxed);
+		const std::size_t head = m_head.load(std::memory_order_acquire);
+		if (tail - head >= Capacity) { return false; }
+		m_items[tail & Mask] = value;
+		m_tail.store(tail + 1, std::memory_order_release);
+		return true;
+	}
+
+	//! Takes the oldest value into \a value. @return false when the queue is empty.
+	auto pop(T& value) noexcept -> bool
+	{
+		const std::size_t head = m_head.load(std::memory_order_relaxed);
+		const std::size_t tail = m_tail.load(std::memory_order_acquire);
+		if (head == tail) { return false; }
+		value = m_items[head & Mask];
+		m_head.store(head + 1, std::memory_order_release);
+		return true;
+	}
+
+private:
+	static constexpr std::size_t Mask = Capacity - 1;
+	std::array<T, Capacity> m_items{};
+	alignas(64) std::atomic<std::size_t> m_head{0};
+	alignas(64) std::atomic<std::size_t> m_tail{0};
+};
+
+//! One loaded preset, kept on the UI side so patch names never touch the audio synth.
+struct Sf2PresetInfo
+{
+	int bank = 0;
+	int program = 0;
+	QString name;
+};
+
+/**
+ * A synth handed from the UI thread to the render thread.
+ *
+ * The UI builds and configures the synth completely before publishing it; the
+ * render thread adopts it and is the only thread that uses it afterwards. The
+ * old synth travels back on the retire queue, where the UI thread deletes it
+ * once the render thread has stopped using it.
+ */
+struct Sf2SynthSwap
+{
+	fluid_synth_t* synth = nullptr;
+	int fontId = -1;
+	sample_rate_t sampleRate = 0;
+};
+
+/**
+ * A non-owning reference to a single FluidSynth voice. Captures some initial
+ * properties of the referenced voice to help manage changes to it over time.
+ */
+class FluidVoice
+{
+public:
+	//! Create a reference to the voice currently pointed at by `voice`.
+	explicit FluidVoice(fluid_voice_t* voice) :
+		m_voice{voice},
+		m_id{fluid_voice_get_id(voice)},
+		m_coarseTune{fluid_voice_gen_get(voice, GEN_COARSETUNE)}
+	{ }
+
+	//! Get a pointer to the referenced voice.
+	fluid_voice_t* get() const noexcept { return m_voice; }
+
+	//! Get the original coarse tuning of the referenced voice.
+	float coarseTune() const noexcept { return m_coarseTune; }
+
+	//! Test whether this object still refers to the original voice.
+	bool isValid() const
+	{
+		return fluid_voice_get_id(m_voice) == m_id && fluid_voice_is_playing(m_voice);
+	}
+
+private:
+	fluid_voice_t* m_voice;
+	unsigned int m_id;
+	float m_coarseTune;
+};
+
+//! The state the SF2 player keeps for one playing note.
+struct Sf2PluginData
+{
+	int midiNote;
+	int lastPanning;
+	float lastVelocity;
+	// The soundfonts I checked used at most two voices per note, so space for
+	// four should be safe. This may need to be increased if a soundfont with
+	// more voices per note is found.
+	ArrayVector<FluidVoice, 4> fluidVoices;
+	//! Set by the render thread once the note-on reached the synth.
+	std::atomic<bool> noteOnDone{false};
+	//! Set when a note-off is queued (slot event or the note's teardown).
+	std::atomic<bool> noteOffSent{false};
+	//! Set by the render thread once a slot note-off was processed.
+	std::atomic<bool> noteOffDone{false};
+	panning_t panning;
+};
+
+/**
+ * A preallocated slot holding one note's plugin data.
+ *
+ * The note path runs on the audio thread, so a note's data cannot be allocated
+ * there: the slots are owned by the instrument and a note claims one of them
+ * for as long as it lives. The state word carries the slot's generation, so an
+ * event that names a slot which was released (and possibly claimed by another
+ * note since) is recognised as stale instead of touching a dead note.
+ */
+struct Sf2PluginDataSlot
+{
+	Sf2PluginData data{};
+	//! 0 when the slot is free; otherwise (generation << 1) | 1 while a note owns it.
+	std::atomic<std::uint32_t> state{0};
+};
+
+/**
+ * One note event, handed from the note stage to the render stage.
+ *
+ * The event carries the frame within the period the note happens at and
+ * whether it starts or stops the note, so the render stage does not have to
+ * read the note's mutable state to order the events.
+ */
+struct Sf2NoteEvent
+{
+	NotePlayHandle* handle = nullptr;
+	Sf2PluginDataSlot* slot = nullptr;
+	//! The slot's generation when the event was queued.
+	std::uint32_t generation = 0;
+	//! The frame within the period the event happens at.
+	f_cnt_t offset = 0;
+	//! The MIDI pitch, so a teardown note-off does not need the dead note handle.
+	int midiNote = 0;
+	//! True for a note-on, false for a note-off.
+	bool isNew = false;
+	//! True for a note-off queued when the note handle is destroyed: no slot check.
+	bool standalone = false;
+};
 
 
 class Sf2Instrument : public Instrument
@@ -109,25 +275,81 @@ private:
 	std::span<SampleFrame> m_bufferView;
 
 	fluid_settings_t* m_settings;
-	fluid_synth_t* m_synth;
 
-	fluid_sfont_t* m_font;
+	//! The synth the render thread currently owns. UI code only touches a synth
+	//! before it is published; after that this pointer is the audio thread's.
+	fluid_synth_t* m_synth = nullptr;
+	//! The font id of the synth the render thread adopted.
+	int m_activeFontId = -1;
 
-	int m_fontId;
+	//! The font id of the published synth (UI side, for the swap event).
+	int m_fontId = -1;
 	QString m_filename;
+	//! Absolute file the published synth was built from, for a sample-rate reload.
+	QString m_sourceFile;
+	//! Presets of the published soundfont, so UI queries never read the audio synth.
+	std::vector<Sf2PresetInfo> m_presets;
 
-	// Protect the array of active notes
-	QMutex m_notesRunningMutex;
+	//! How many notes may be pending for this instrument in one period.
+	static constexpr std::size_t NoteEventCapacity = 256;
+	//! How many notes may hold plugin data at the same time.
+	static constexpr std::size_t PluginDataSlotCount = 128;
+	//! How many synth replacements may wait for the render thread.
+	static constexpr std::size_t SynthHandoffCapacity = 8;
 
-	// Protect synth when we are re-creating it.
-	QMutex m_synthMutex;
-	QMutex m_loadMutex;
-
-	std::array<int, 128> m_notesRunning = {};
-	sample_rate_t m_internalSampleRate;
+	//! The number of notes currently running per MIDI pitch. Atomic: the note
+	//! path updates it from the render stage and from the note teardown.
+	std::array<std::atomic<int>, 128> m_notesRunning{};
+	//! Set by the render thread when it adopts a synth; read by renderFrames.
+	std::atomic<sample_rate_t> m_internalSampleRate{0};
 	int m_lastMidiPitch;
 	int m_lastMidiPitchRange;
 	int m_channel;
+
+	//! Synthesis parameters the UI requests. The render thread applies them; the
+	//! UI never calls into the synth the render thread is using.
+	std::atomic<float> m_requestedGain{1.0f};
+	std::atomic<bool> m_requestedReverbOn{false};
+	std::atomic<float> m_requestedReverbRoomSize{0.2f};
+	std::atomic<float> m_requestedReverbDamping{0.0f};
+	std::atomic<float> m_requestedReverbWidth{0.5f};
+	std::atomic<float> m_requestedReverbLevel{0.9f};
+	std::atomic<bool> m_requestedChorusOn{false};
+	std::atomic<float> m_requestedChorusNum{3.0f};
+	std::atomic<float> m_requestedChorusLevel{2.0f};
+	std::atomic<float> m_requestedChorusSpeed{0.3f};
+	std::atomic<float> m_requestedChorusDepth{8.0f};
+	std::atomic<int> m_requestedBank{0};
+	std::atomic<int> m_requestedPatch{0};
+	std::array<std::atomic<double>, 128> m_requestedTuning{};
+	//! Even while the UI writes the tuning table; the render thread only reads an even, stable value.
+	std::atomic<std::uint32_t> m_tuningGeneration{0};
+
+	//! The values the render thread last sent to the current synth.
+	float m_appliedGain = -1.0f;
+	bool m_appliedReverbOn = false;
+	float m_appliedReverbRoomSize = -1.0f;
+	float m_appliedReverbDamping = -1.0f;
+	float m_appliedReverbWidth = -1.0f;
+	float m_appliedReverbLevel = -1.0f;
+	bool m_appliedChorusOn = false;
+	float m_appliedChorusNum = -1.0f;
+	float m_appliedChorusLevel = -1.0f;
+	float m_appliedChorusSpeed = -1.0f;
+	float m_appliedChorusDepth = -1.0f;
+	int m_appliedBank = -1;
+	int m_appliedPatch = -1;
+	int m_appliedFontId = -2;
+	std::uint32_t m_appliedTuningGeneration = 0;
+
+	//! UI -> render: synths ready to be adopted.
+	Sf2PointerQueue<Sf2SynthSwap, SynthHandoffCapacity> m_pendingSynths;
+	//! Render -> UI: synths the render thread no longer uses.
+	Sf2PointerQueue<fluid_synth_t*, SynthHandoffCapacity> m_retiredSynths;
+	//! Render-owned synth waiting for retire queue space (one at most).
+	Sf2SynthSwap m_deferredSynth;
+	//! Serialises UI-side producers/consumers of the two queues; the audio thread never takes it.
+	mutable std::mutex m_synthHandoffMutex;
 
 	gui::LcdSpinBoxModel m_bankNum;
 	gui::LcdSpinBoxModel m_patchNum;
@@ -146,14 +368,51 @@ private:
 	FloatModel m_chorusSpeed;
 	FloatModel m_chorusDepth;
 
-	QVector<NotePlayHandle *> m_playingNotes;
-	QMutex m_playingNotesMutex;
+	/**
+	 * The note events the note stage hands to the render stage.
+	 *
+	 * A bounded, preallocated, lock-free queue: the note path pushes into it
+	 * and the render path drains it, so neither allocates, grows a container
+	 * nor waits for a lock. The render stage re-orders the drained events by
+	 * their offset, so the order the pushes happened in does not matter.
+	 */
+	MidiHandoffQueue<NoteEventCapacity, Sf2NoteEvent> m_noteEvents;
+
+	//! The preallocated per-note plugin data. A note claims a slot for its life.
+	std::array<Sf2PluginDataSlot, PluginDataSlotCount> m_pluginDataSlots;
+
+	//! The events the render stage drained this period, in processing order.
+	std::array<Sf2NoteEvent, NoteEventCapacity> m_pendingEvents;
+	std::size_t m_pendingEventCount = 0;
 
 private:
-	void freeFont();
 	void noteOn( Sf2PluginData * n );
 	void noteOff( Sf2PluginData * n );
 	void renderFrames( f_cnt_t frames, SampleFrame* buf );
+	//! Claims a free plugin-data slot. Returns nullptr when every slot is taken.
+	Sf2PluginDataSlot* acquirePluginDataSlot(std::uint32_t& generation) noexcept;
+	//! Gives the slot back to the pool.
+	void releasePluginDataSlot(Sf2PluginDataSlot* slot) noexcept;
+	//! Queues a note event for the render stage. False when the bounded queue refused it.
+	auto publishNoteEvent(NotePlayHandle* handle, Sf2PluginDataSlot* slot,
+		std::uint32_t generation, f_cnt_t offset, bool isNew) noexcept -> bool;
+	//! Takes the event at \a index out of the render stage's pending list.
+	void removePendingEvent(std::size_t index) noexcept;
+	//! Render thread: adopt any synth the UI published and apply the requested controls.
+	void serviceSynthHandoff() noexcept;
+	void applyControls() noexcept;
+	void resetAppliedControls() noexcept;
+	//! UI thread: build a synth with the current settings (no font loaded).
+	auto createSynth() const -> fluid_synth_t*;
+	//! UI thread: publish a fully configured synth to the render thread.
+	auto publishSynth(fluid_synth_t* synth, int fontId, sample_rate_t sampleRate) -> bool;
+	//! UI thread: delete synths the render thread has finished with.
+	void drainRetiredSynths();
+	void drainRetiredSynthsLocked();
+	//! UI thread: collect the presets of a loaded synth (no render thread access).
+	void collectPresets(fluid_synth_t* synth, std::vector<Sf2PresetInfo>& presets);
+	//! UI thread: a private synth for the patch dialog, so the dialog never reads the audio synth.
+	auto createPatchDialogSynth() -> fluid_synth_t*;
 
 	friend class gui::Sf2InstrumentView;
 
