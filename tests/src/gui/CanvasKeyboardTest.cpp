@@ -355,7 +355,7 @@ private slots:
 	{
 		XyPadArea pad;
 		QPointF reported(-1, -1);
-		pad.moved = [&reported](QPointF point) { reported = point; };
+		pad.moved = [&reported](QPointF point, unsigned) { reported = point; };
 		pad.setPoint(QPointF(0.5, 0.5));
 		pad.setAxisNames(QStringLiteral("Cutoff"), QStringLiteral("Drive"));
 		QTest::keyClick(&pad, Qt::Key_Right);

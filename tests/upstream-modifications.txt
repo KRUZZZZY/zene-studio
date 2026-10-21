@@ -4745,3 +4745,5 @@ src/tracks/InstrumentTrack.cpp	cluster new-p15-83: InstrumentTrack::play() takes
 src/gui/editors/PianoRoll.cpp	cluster new-p15-83: the piano roll publishes its recording state (record(), recordAccompany(), stop()) for the render thread, which may no longer read this window's flag.
 include/PianoRoll.h	cluster new-p15-83: stopRecording() publishes the end of the recording as well, so the state the render thread reads can never outlive the pass it belongs to.
 tests/CMakeLists.txt	cluster new-p15-83: registers src/tracks/InstrumentTrackRenderPathTest.cpp in LMMS_TESTS (the instrument track's render path: no GUI state, no clip-container allocation, one atomic MPE snapshot). Registration and comment only.
+tests/src/gui/XyPadPairTest.cpp	new-p10-477-port-port (2026-10): real mouse-event regression for an XY pad horizontal move preserving a rack macro changed externally while the pad is open.
+tests/src/gui/CanvasKeyboardTest.cpp	new-p10-477-port-port (2026-10): adapts the XyPadArea moved callback assertion to receive the changed-axis mask.
