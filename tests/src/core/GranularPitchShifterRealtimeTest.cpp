@@ -41,6 +41,7 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "Effect.h"
+#include "GranularPitchShifterEffect.h"
 #include "Plugin.h"
 #include "RealtimeScope.h"
 #include "SampleFrame.h"
@@ -147,6 +148,7 @@ private slots:
 	void initTestCase();
 	void cleanupTestCase();
 	void sampleRateHandoffDoesNotAllocateAndKeepsPitchShift();
+	void invalidRangeIsClamped();
 
 private:
 	QLibrary m_plugin;
@@ -237,6 +239,25 @@ void GranularPitchShifterRealtimeTest::sampleRateHandoffDoesNotAllocateAndKeepsP
 	QVERIFY2(std::fabs(measuredFrequency - ExpectedShiftedFrequency) < 18.0,
 		qPrintable(QStringLiteral("pitch render measured %1 Hz; expected near %2 Hz")
 			.arg(measuredFrequency).arg(ExpectedShiftedFrequency)));
+}
+
+void GranularPitchShifterRealtimeTest::invalidRangeIsClamped()
+{
+	auto effect = std::unique_ptr<Effect>(
+		static_cast<Effect*>(m_pluginEntry(nullptr, nullptr)));
+	QVERIFY(effect != nullptr);
+
+	QDomDocument settings;
+	QVERIFY(settings.setContent(QStringLiteral(
+		"<effect><GranularPitchShifterControls><range value=\"99\"/></GranularPitchShifterControls></effect>")));
+	effect->loadSettings(settings.documentElement());
+
+	std::array<SampleFrame, RenderFrames> samples{};
+	SampleFrame* busData[1] = {samples.data()};
+	AudioBus bus{busData, 1, RenderFrames};
+	bus.quietChannels().reset();
+	effect->processAudioBuffer(bus);
+	QVERIFY(true);
 }
 
 QTEST_GUILESS_MAIN(GranularPitchShifterRealtimeTest)
