@@ -110,6 +110,23 @@ ControlChainPresetDevice deviceOf(const QByteArray& state)
 	return device;
 }
 
+/*! Writes a VALID preset file into the store under \a name.
+ *
+ *  The document is built by hand from a device state document, so a check that
+ *  only needs a READABLE preset does not depend on which devices - or which
+ *  plugins - a build happens to ship. chain.rename reads the preset and moves
+ *  its file; it never loads a device.
+ */
+bool writePresetFile(const QString& name)
+{
+	const QString path = controlChainPresetDir() + name + QStringLiteral(".zcp");
+	if (!QDir().mkpath(controlChainPresetDir())) { return false; }
+	const QList<ControlChainPresetDevice> devices{
+		deviceOf(deviceDocument(QStringLiteral("amplifier"), QString(), QString(), 7))};
+	ControlResult error;
+	return controlWriteFileBytes(path, controlChainPresetDocument(name, devices), true, &error);
+}
+
 //! Every preset the store holds, by name.
 QStringList storeNames()
 {
@@ -650,54 +667,49 @@ private slots:
 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
 	}
 
- 	//! Renaming a preset to its current name changes nothing and records no undo step.
- 	void renamingToTheCurrentNameRecordsNoUndoStep()
- 	{
- 		const QString source = addInstrumentTrack();
- 		if (source.isEmpty())
- 		{
- 			QSKIP("this build exposes no loadable built-in instrument");
- 		}
- 		if (firstLoadableEffect().isEmpty())
- 		{
- 			QSKIP("this build exposes no loadable built-in effect");
- 		}
- 		QStringList ids;
- 		QVERIFY2(loadEffects(source, 1, &ids) == 1, "this build has no loadable effect");
- 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
- 		run(QStringLiteral("chain.remove"),
- 			QJsonObject{{QStringLiteral("name"), QStringLiteral("ControlChainPresetTest RenamedNoOp")}});
- 		QVERIFY(savePreset(source, kPreset).ok);
+	//! Renaming a preset to its current name changes nothing and records no undo step.
+	void renamingToTheCurrentNameRecordsNoUndoStep()
+	{
+		const QString renamed = QStringLiteral("ControlChainPresetTest RenamedNoOp");
+		// A VALID preset file, written by hand: chain.rename only reads the preset
+		// and moves its file, it never loads a device, so this check must not depend
+		// on which instruments or effects a build happens to ship.
+		QVERIFY(writePresetFile(kPreset));
+		// One command, one step: the seam that keeps the two renames below from
+		// being coalesced into a single undo step.
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"),
+			QJsonObject{{QStringLiteral("window_ms"), 0}}).ok);
 
- 		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"),
- 			QJsonObject{{QStringLiteral("window_ms"), 0}}).ok);
+		// A REAL rename: the file moves and an undo step is recorded.
+		QVERIFY(run(QStringLiteral("chain.rename"),
+			QJsonObject{{QStringLiteral("name"), kPreset},
+				{QStringLiteral("to"), renamed}}).ok);
+		QVERIFY(storeNames().contains(renamed));
+		QVERIFY(!storeNames().contains(kPreset));
 
- 		const QString renamed = QStringLiteral("ControlChainPresetTest RenamedNoOp");
- 		QVERIFY(run(QStringLiteral("chain.rename"),
- 			QJsonObject{{QStringLiteral("name"), kPreset},
- 				{QStringLiteral("to"), renamed}}).ok);
- 		QVERIFY(storeNames().contains(renamed));
+		// The SAME name again: the store does not change - and no undo step is
+		// recorded, so the single undo below still belongs to the real rename.
+		const ControlResult same = run(QStringLiteral("chain.rename"),
+			QJsonObject{{QStringLiteral("name"), renamed}, {QStringLiteral("to"), renamed}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QVERIFY(storeNames().contains(renamed));
+		QVERIFY(!storeNames().contains(kPreset));
 
- 		const ControlResult same = run(QStringLiteral("chain.rename"),
- 			QJsonObject{{QStringLiteral("name"), renamed}, {QStringLiteral("to"), renamed}});
- 		QVERIFY2(same.ok, qPrintable(same.errorMessage));
- 		QVERIFY(storeNames().contains(renamed));
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY2(undone.result.value(QStringLiteral("undone")).toBool(),
+			qPrintable(QStringLiteral("nothing was undone")));
+		QVERIFY(storeNames().contains(kPreset));
+		QVERIFY(!storeNames().contains(renamed));
 
- 		const ControlResult undone = run(QStringLiteral("control.undo"));
- 		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
- 		QVERIFY2(undone.result.value(QStringLiteral("undone")).toBool(),
- 			qPrintable(QStringLiteral("nothing was undone")));
- 		QVERIFY(storeNames().contains(kPreset));
- 		QVERIFY(!storeNames().contains(renamed));
+		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
+		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), renamed}});
+		run(QStringLiteral("control.set_undo_coalescing"),
+			QJsonObject{{QStringLiteral("window_ms"), control::UndoCoalesceWindowMs}});
+	}
 
- 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), kPreset}});
- 		run(QStringLiteral("chain.remove"), QJsonObject{{QStringLiteral("name"), renamed}});
- 		run(QStringLiteral("control.set_undo_coalescing"),
- 			QJsonObject{{QStringLiteral("window_ms"), control::UndoCoalesceWindowMs}});
- 	}
-
- 	private:
- 	QTemporaryDir m_world;
+	private:
+	QTemporaryDir m_world;
 };
 
 QTEST_GUILESS_MAIN(ControlChainPresetTest)
