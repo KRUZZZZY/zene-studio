@@ -165,7 +165,7 @@ double ModulationLayerPublisher::sinceTrigger(int modulator, int triggerTrack, d
 	return at < 0.0 || seconds < at ? 0.0 : seconds - at;
 }
 
-void ModulationLayerPublisher::publishView()
+void ModulationLayerPublisher::publishView(ModulationAudioView& staged)
 {
 	m_hasLayer.store(m_layer.shouldPersist(), std::memory_order_release);
 	publishTriggers();  // MX-121
@@ -240,7 +240,11 @@ void ModulationLayerPublisher::publishView()
 		}
 		writers.store(targetGateState(token, 0), std::memory_order_release);
 	}
-	m_view = view;
+	// The staged view is handed to the caller, which swaps it into m_view
+	// inside the reader-visible write window. Nothing here is reader-visible
+	// yet, so the audio thread keeps reading the last published view while
+	// this waits for the writers of the targets it rebinds.
+	staged = view;
 }
 
 namespace

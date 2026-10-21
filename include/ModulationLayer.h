@@ -330,6 +330,12 @@ inline float modulatedValue(const ModulatorSource& source, float base, float dep
  *  forgotten publish is impossible, and a reader that copies a fixed-size value
  *  and re-checks the version, retrying while a write is in progress but never
  *  blocking.
+ *
+ *  The write window holds the view swap and nothing else. The publication work
+ *  - including the wait for the audio writes that pinned a target an edit
+ *  rebinds - happens before it, so a reader never retries for as long as an
+ *  edit takes: the retry would be bounded by the writer, not by the audio
+ *  thread.
  */
 class LMMS_EXPORT ModulationLayerPublisher
 {
@@ -344,13 +350,27 @@ public:
 	/*! One mutation of the layer, published the moment it lands. @a fn receives
 	 *  the authored layer and the runtime to rebuild; it returns true when it
 	 *  changed the layer. Callers that only clear stale write targets pass
-	 *  false. */
+	 *  false.
+	 *
+	 *  The mutation and the publication work happen OUTSIDE the reader-visible
+	 *  write window: only the view swap itself is inside it. An edit can wait
+	 *  for the audio writes that pinned a target it rebinds, and that wait
+	 *  belongs to the writer and the edit - a reader that retried for the whole
+	 *  edit would spin for as long as the edit takes, which the audio thread
+	 *  cannot bound. The hand-off is bounded: one fixed-size view copy inside
+	 *  the window. */
 	template <typename Fn>
 	bool edit(Fn&& fn)
 	{
-		m_version.fetch_add(1, std::memory_order_acq_rel);
 		const bool changed = fn(m_layer, m_runtime);
-		publishView();
+		ModulationAudioView staged;
+		publishView(staged);
+		// The write window: the odd version says "a write is in progress", the
+		// even one says "the view below is the published one". Nothing else
+		// happens inside it - a reader that retries does so for the length of
+		// one fixed-size copy, never for the length of an edit.
+		m_version.fetch_add(1, std::memory_order_acq_rel);
+		m_view = staged;
 		m_version.fetch_add(1, std::memory_order_acq_rel);
 		return changed;
 	}
@@ -458,9 +478,10 @@ private:
 	}
 	static void retireTarget(std::atomic<std::uint32_t>& alive, std::atomic<std::uint64_t>& writers,
 		std::uint32_t token);
-	//! Rebuilds m_view and the liveness watches from m_runtime (control thread,
-	//! inside edit()'s write window).
-	void publishView();
+	//! Rebuilds the staged view and the liveness watches from m_runtime (control
+	//! thread, OUTSIDE the reader-visible write window: the writer quiescence
+	//! this waits for belongs to the edit, not to the audio thread).
+	void publishView(ModulationAudioView& staged);
 	//! MX-121: each modulator's trigger track from m_runtime (control thread, from publishView()).
 	void publishTriggers();
 

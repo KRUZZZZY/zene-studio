@@ -410,6 +410,72 @@ private slots:
 		QCOMPARE(valueOf(model), 7.0f);
 	}
 
+	/*! An edit that rebinds a target closes that slot and waits for the audio
+	 *  writes that pinned it. That wait belongs to the writer and the edit, not
+	 *  to the audio thread: while the reader-visible version is odd, every
+	 *  snapshot() retries, so an edit that waits for a writer must not hold the
+	 *  version odd while it waits - the audio thread cannot bound how long an
+	 *  edit waits for a writer. */
+	void anEditWaitingForAnActiveWriterKeepsTheReaderVisibleVersionEven()
+	{
+		ModulationLayerPublisher publisher;
+		FloatModel model(0.0f, -100.0f, 100.0f, 0.01f);
+		publishOne(publisher, &model);
+		const ModulationAudioView view = publisher.snapshot();
+		const std::uint32_t token = view.entries[0].token;
+
+		std::binary_semaphore pinned{0};
+		std::atomic<bool> pinTaken{false};
+		std::atomic<unsigned> versionWhileWaiting{2};
+		std::atomic<int> entriesWhileWaiting{-1};
+
+		std::thread audio([&] {
+			if (!publisher.beginTargetWrite(0, token)) { return; }
+			pinTaken.store(true, std::memory_order_release);
+			pinned.release();
+			// The control thread closes the slot before it waits for this pin,
+			// and it cannot finish that wait until this thread releases the
+			// pin. So the moment the slot reads closed is inside the wait, and
+			// that is where the reader-visible version is read.
+			while (publisher.targetAlive(0, token)) { std::this_thread::yield(); }
+			const unsigned version = publisher.m_version.load(std::memory_order_acquire);
+			versionWhileWaiting.store(version, std::memory_order_release);
+			if ((version & 1u) == 0u)
+			{
+				// The version is even: the snapshot returns the last published
+				// view at once instead of retrying.
+				entriesWhileWaiting.store(publisher.snapshot().entryCount, std::memory_order_release);
+			}
+			publisher.endTargetWrite(0);
+		});
+
+		pinned.acquire();
+		QVERIFY(pinTaken.load(std::memory_order_acquire));
+		// The edit rebinds the target: publishView() closes the slot and waits
+		// for the writer to release its pin.
+		publisher.edit([&model](ModulationLayer&, ModulationRuntime& runtime) {
+			runtime = ModulationRuntime{};
+			ModulationRuntime::Entry entry;
+			entry.model = &model;
+			entry.modulator = 0;
+			entry.depth = 0.25f;
+			entry.base = 0.0f;
+			entry.minimum = -100.0f;
+			entry.maximum = 100.0f;
+			runtime.entries[0] = entry;
+			runtime.entryCount = 1;
+			runtime.sources[0] = sine();
+			runtime.sourceCount = 1;
+			return true;
+		});
+		audio.join();
+
+		QVERIFY2((versionWhileWaiting.load(std::memory_order_acquire) & 1u) == 0u,
+			"the reader-visible version was odd while the edit waited for an active "
+			"writer: the audio thread's snapshot() spins for as long as the edit takes");
+		QCOMPARE(entriesWhileWaiting.load(std::memory_order_acquire), 1);
+	}
+
 	void theViewWritesWhatTheRuntimeWrites()
 	{
 		ModulationLayerPublisher publisher;
