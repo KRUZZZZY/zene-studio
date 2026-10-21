@@ -174,6 +174,10 @@ the target of 10 - no new item in the complexity ratchet. The switch's
    already used in the same file; no Qt-6-only API, no `windows.h` macro name
    and no `std::filesystem` was introduced. The plugin's dialog path is the
    same on every platform.
+7. **The "ALREADY-FIXED / FALSE-POSITIVE" question does not apply** - the
+   verdict is FIXED, and the code that shows the bug is quoted above
+   (`WasmEffectControls.cpp:78` writes `m_error`, the original `statusText()`
+   never read it, and the RED run shows the status line without the reason).
 
 ## Files committed
 
