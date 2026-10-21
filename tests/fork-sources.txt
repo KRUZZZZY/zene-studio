@@ -2786,3 +2786,5 @@ docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 # cluster 908 (2026-10): white-box regression test for the Zyn instrument's audio path, plugin lock and MIDI hand-off (fork-NEW).
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
+# cluster 908 (2026-10): fix and verification report for the ZynAddSubFx plugin mutex, hand-off and hosting getters.
+docs/qwen-fixes-2026-10/cluster-908.md
