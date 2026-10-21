@@ -24,10 +24,11 @@ All build and test commands below were run with the worktree as their current di
 | Feature gates after report update | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-164-port-port-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-164-port-port-port-port.r1/logs/feature-check-2.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | All gates passed; see the table in `feature-check-2.log`. |
 | Feature gates after self-check update | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-164-port-port-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-164-port-port-port-port.r1/logs/feature-check-3.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | All gates passed after the Self-check answers were added. |
 | Completion check before commit | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-164-port-port-port-port new-p10-164-port-port-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-164-port-port-port-port.r1/logs/submit-check-1.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 1 | Ran before commit; reported the expected uncommitted-change failures and listed five self-check prompts, now answered below. |
+| Completion check after fix commit | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-164-port-port-port-port new-p10-164-port-port-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-164-port-port-port-port.r1/logs/submit-check-2.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | `RESULT: PASS - submit`; commit and working tree were clean. |
 
 Affected-family count: CTest ran 1 `PluginPortsMigrationTest` executable; its QtTest run reported 70 outcomes (67 passed, 1 unrelated failure, 2 skipped). The focused regression passed in both standalone green runs and in the family run.
 
-Files to commit:
+Files in fix commit `8bed53001`:
 
 - `plugins/GigPlayer/GigPlayer.cpp`
 - `tests/src/plugins/PluginPortsMigrationTest.cpp`
