@@ -2800,3 +2800,9 @@ plugins/SfzPlayer/SfzSynth.h
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzTestSupport.h
+# Q050-087 (2026-10-21): the device-chain patcher canvas and its test (fork-NEW).
+include/PatcherCanvas.h
+include/PatcherGraph.h
+src/gui/PatcherCanvas.cpp
+src/gui/PatcherGraph.cpp
+tests/src/gui/PatcherCanvasTest.cpp

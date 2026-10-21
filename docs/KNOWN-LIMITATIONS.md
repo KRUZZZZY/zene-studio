@@ -1195,13 +1195,14 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `tests/src/core/PdcMixerTest.cpp` (sample alignment, the `LatencyCompensation::MaxFrames` clamp, the
   bit-identical zero-delay bypass) and the registered transcript `tests/control-pdc-commands.py` proves the
   SURFACE: the numbers are on the wire and they follow the routing. Stated as the bound it is, not hidden.
-- **The routing graph is readable, and the patcher group edits it; there is no patcher GUI — added 2026-09-14,
-  extended 2026-09-15.** The graph a
+- **The routing graph is readable, and the patcher group edits it; the Chain Canvas (Q050-087) draws and edits it where
+  the engine allows — added 2026-09-14, extended 2026-09-15, canvas 2026-10-21.** The graph a
   signal is actually processed through (the effect chain's `RoutingGraph`: its nodes, connections, cached
   topological order and output node, plus a mixer channel's rack graph) is drivable through
   `--control-socket` with `routing.get_state`, and the mixer's routing is settable through `mixer.route_to` /
-  `mixer.send_to` / `mixer.sidechain_to` / `mixer.route_remove` — but **nothing in `src/gui/` draws a patch
-  bay, a cable, a node or a port**, and there is **no patcher canvas**: the `patcher.*` group (added
+  `mixer.send_to` / `mixer.sidechain_to` / `mixer.route_remove` — and since Q050-087 the **Chain Canvas**
+  (Rack > Chain Canvas...; `include/PatcherCanvas.h`) draws a chain's nodes and cables and edits them through the same
+  commands (the canvas has no patch bay of its own and no node an agent cannot also add): the `patcher.*` group (added
   2026-09-15, row 69) reads a chain's graph in patch terms and RE-WIRES it, but the node SET is the effect
   list's — a node can be neither added to nor removed from a chain's graph, and no verb sets a node's own
   parameters. Until 2026-09-15 no command edited a `RoutingGraph`, on two recorded grounds: the class's
@@ -1220,15 +1221,15 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `routing.get_state` also reports and `tests/control-routing-commands.py` measures (two added chains = five
   nodes, six connections, the sum node as the output node, prepared at the engine's own block size). Devices
   that are NOT `AudioPlugin`-derived (a legacy `Effect`) do make a chain graph live, which is what
-  `tests/src/core/PatcherCommandsTest.cpp` builds to prove the edit. The
-  patcher GUI is out of scope for this
-  release, exactly as feature row 28 records.
+  `tests/src/core/PatcherCommandsTest.cpp` and `tests/src/gui/PatcherCanvasTest.cpp` build to prove the edit. **On a chain
+  of shipped devices the Chain Canvas therefore shows the cables read-only, with the reason, while adding, reordering
+  and removing devices still work** (`docs/050-features/Q050-087.md`).
 - **The patcher's edit is guarded, session-scoped and blocking — added 2026-09-15.** `patcher.get_state` /
   `patcher.set_wiring` (feature row 69) let an agent re-wire a target's effect chain through
   `--control-socket`: the wiring is addressed by ROLE (`"input"`, `"effect:<index>"`), it is re-applied by
   every derived rebuild, and `control.undo` restores the previous wiring as ONE step (a chain that was on its
-  derived wiring comes back AS the derivation). Three bounds, stated rather than hidden: (1) **no patcher
-  GUI** — nothing in `src/gui/` shows the wiring the way the socket does; (2) **the wiring is session state**
+  derived wiring comes back AS the derivation). Three bounds, stated rather than hidden: (1) **the canvas
+  edits cables only on a chain the engine routes through its graph** (see the bullet above); (2) **the wiring is session state**
   — no `<routinggraph>` element is written into `<fxchain>`, so a patch does not survive a save/load, exactly
   as the pre-existing re-wired session did not (`docs/ROUTING-GRAPH-LIVE.md` section 7); (3) **the edit is not
   lock-free** — the new graph is built off the audio thread and published under the engine's model-change

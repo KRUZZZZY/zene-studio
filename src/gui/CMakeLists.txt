@@ -191,6 +191,8 @@ SET(LMMS_SRCS
 	gui/shell/DeviceActionMenu.cpp
 	gui/shell/DeviceCardState.cpp
 	gui/shell/DevicePicker.cpp
+	gui/PatcherCanvas.cpp
+	gui/PatcherGraph.cpp
 	gui/MissingDevicesNotice.cpp
 	gui/shell/DevicePanel.cpp
 	gui/shell/InspectorClipFields.cpp

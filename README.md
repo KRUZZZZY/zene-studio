@@ -167,7 +167,7 @@ Not in this build, and not claimed by it:
   This is not the command-line stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON, but the build falls back to OFF when the wasmtime C
   API is absent, and CI provisions none, so it is compiled out in practice.
-- **No patcher GUI** (a hosted plug-in's own X11-embedded editor does open, see above; there is no editor path off X11) — and no third-party plug-in of any kind has
+- **The patcher canvas edits cables only where the engine routes the chain through its graph** (Rack > Chain Canvas... draws every chain as nodes and cables and adds, reorders and removes devices on any chain; the shipped devices keep a chain off the graph, so their cables are shown read-only with the reason) (a hosted plug-in's own X11-embedded editor does open, see above; there is no editor path off X11) — and no third-party plug-in of any kind has
   been proven outside the MIT fixtures this tree ships. (Ableton Link IS in the build since WF-051:
   the arranger toolbar's **Ableton Link** toggle syncs tempo, beat phase and start/stop with Live,
   Bitwig and other Link apps - proven against the reference library and between two Zene instances,

@@ -91,7 +91,9 @@ graph those rows already cover); histogram moved with them
 
 ## 5. What is NOT done
 
-* **No patcher canvas and no GUI.** Nothing in `src/gui/` draws or edits the wiring.
+* **The canvas is the Chain Canvas (Q050-087, `include/PatcherCanvas.h`).** It draws and edits the wiring through
+  `patcher.get_state` / `patcher.set_wiring` and adds, moves and removes devices through `plugin.load` / `plugin.move` /
+  `plugin.unload`; it can edit cables only where this graph is live (see `docs/050-features/Q050-087.md`).
 * **The node set is not authorable.** A node can be neither added to nor removed from a chain's
   graph by a command, and no verb sets a node's own parameters (the read *reports* them - a
   `GainNode`'s `gain`, a `OnePoleLowPassNode`'s `alpha`, a `ConstantSourceNode`'s `value` - because

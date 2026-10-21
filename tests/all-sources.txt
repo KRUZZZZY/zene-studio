@@ -553,6 +553,8 @@ include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
 include/PatchWiring.h
+include/PatcherCanvas.h
+include/PatcherGraph.h
 include/PathUtil.h
 include/PatternClip.h
 include/PatternClipView.h
@@ -2226,6 +2228,8 @@ src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
 src/gui/ParameterGridDialog.cpp
+src/gui/PatcherCanvas.cpp
+src/gui/PatcherGraph.cpp
 src/gui/PeakControllerDialog.cpp
 src/gui/PerformView.cpp
 src/gui/PhaseScopeView.cpp
@@ -2935,6 +2939,7 @@ tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/OnlineHelpNoticeTest.cpp
+tests/src/gui/PatcherCanvasTest.cpp
 tests/src/gui/PerformViewTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp

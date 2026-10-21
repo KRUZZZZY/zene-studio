@@ -174,6 +174,15 @@ project can find them: if the file is missing the player is silent and the proje
 track's SFZ Player with <code>plugin.open_file</code> (one undo step) and reads and sets the settings with
 <code>plugin.param_get</code> and <code>plugin.param_set</code>.</p>
 
+<p>Rack &gt; Chain Canvas... on a mixer channel opens its chain as a patcher graph: the input, one node per device in order, and the cables
+between them. Drag from a node's output port to another node's input port to connect; click a cable and press Delete to remove it;
+Shift-click a cable and drag to give its source a second destination while the first stays. Drag a node sideways (or Move Left / Move
+Right) to reorder the chain, Add device... to append a device, Remove to take one out. Every edit is the same command an agent runs
+(<code>patcher.set_wiring</code>, <code>plugin.move</code>, <code>plugin.load</code>, <code>plugin.unload</code>), one undo step each, and
+the picture always shows what <code>patcher.get_state</code> reports. Cables can only be changed on a chain whose devices the engine routes
+through its graph; on a chain of the built-in devices the cables are shown and the window says why they cannot be edited, while adding,
+reordering and removing devices work as usual. Wiring you author is not saved with the project.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 

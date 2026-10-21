@@ -1022,6 +1022,8 @@ set(LMMS_TESTS
 	src/gui/DevicePanelTest.cpp
 	# 0.5.0 plugin-hosting lane: the effect rack's own "Add effect" picks from the device picker.
 	src/gui/EffectRackAddTest.cpp
+	# 0.5.0 Q050-087: the device-chain patcher canvas - nodes, cables, add / connect / disconnect / reorder, Shift-click fan-out.
+	src/gui/PatcherCanvasTest.cpp
 	# BUG new-p9-242: LV2 help subwindows are destroyed with the view that owns them.
 	src/gui/Lv2ViewBaseLifetimeTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
@@ -1777,6 +1779,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DevicePanelTest"
 		# The rack's "Add effect" adds one real effect from the device picker.
 		OR LMMS_TEST_NAME STREQUAL "EffectRackAddTest"
+		# The canvas adds one real effect (amplifier) through the device picker's hook.
+		OR LMMS_TEST_NAME STREQUAL "PatcherCanvasTest"
 		# The Gate / Modulation / Receiver dialogs are built over one real effect each.
 		OR LMMS_TEST_NAME STREQUAL "PluginControlDialogsTest"
 		# The device menu acts on real amplifier, recorder and convolution reverb effects.
@@ -1871,6 +1875,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
+	endif()
+
+	# Q050-087: the canvas test adds the build's amplifier module through the picker.
+	if(LMMS_TEST_NAME STREQUAL "PatcherCanvasTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
@@ -2545,6 +2554,7 @@ set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest 
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
