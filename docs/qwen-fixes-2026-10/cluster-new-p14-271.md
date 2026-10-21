@@ -98,12 +98,20 @@ while decoding leaked libvorbisfile's decoder state on every attempt.
 ### Fix
 
 `src/core/SampleDecoder.cpp`: a small RAII wrapper, `OggVorbisFileGuard`
-(`src/core/SampleDecoder.cpp:117-131`), releases the state in its destructor.
+(`src/core/SampleDecoder.cpp:119-131`), releases the state in its destructor.
 Both Ogg decoders take the guard right after a successful
 `ov_open_callbacks()` and no longer call `ov_clear()` by hand, so every exit
 after a successful open releases the state - the error paths included. The
 sibling decoder `boundedOggVorbis()` (which released the state by hand on
 every path) uses the same guard, so the two can no longer drift apart.
+
+The guard was lost from the branch once: the review harness reset this
+worktree while the fix was still uncommitted, so the commit that carried the
+message carried only a comment change and the regression failed on it
+(`test-family-final2.log`: `SampleDecoderOggStateTest` failed, exit 8). The
+guard is re-applied in commit `bd324436e`, and the RED/GREEN proof above was
+run again against that state: `test-red-271-reversed.log` (exit 8) and
+`test-green-271-reapplied.log` (exit 0).
 
 ### Regression test
 
@@ -156,7 +164,7 @@ measured RED output of the regression below.
 - `decodeLimited()` refuses a limit that is not finite (`std::isfinite`), so
   an infinite window is refused before anything is decoded.
 - The frame count is computed in one place, `boundedFrameCount()`
-  (`src/core/SampleDecoder.cpp:243-250`), which checks the window against the
+  (`src/core/SampleDecoder.cpp:258-266`), which checks the window against the
   supported maximum (`MaxBoundedFrames`, 2^32 frames - about 27 hours at
   44.1 kHz) before the conversion and before the allocation. A window beyond
   it is refused (`std::nullopt`) instead of being converted out of range.
@@ -208,10 +216,10 @@ refusal path; both still pass.
   - the Ogg read error is injected by the LMMS_TESTING-only seam
     `SampleDecoder::failNextOggReadForTesting()`, which returns the same
     negative value libvorbisfile returns for a read error
-    (`src/core/SampleDecoder.cpp:110-116`);
+    (`src/core/SampleDecoder.cpp:109-116`);
   - the decoder-state release is observed through the decoder's own file-close
     callback, the callback libvorbisfile runs exactly once per released state
-    (`src/core/SampleDecoder.cpp:73-84`) - a counter, not a timing;
+    (`src/core/SampleDecoder.cpp:75-84`) - a counter, not a timing;
   - the stereo fixture is written with libsndfile at a fixed rate and level,
     and the limits are the literal values `+infinity` and `1.0e12`.
 - **Is the fix at the cause and complete (every caller and sibling checked)?**
