@@ -1349,8 +1349,15 @@ void Mixer::deleteChannel( int index )
 		deleteSidechainSend(ch->m_sidechainReceives.front());
 	}
 
-	// if m_lastSoloed was our index, reset it
-	if (m_lastSoloed == index) { m_lastSoloed = -1; }
+	// if m_lastSoloed was our index, the solo goes with the channel: restore the mutes it hid
+	// (activateSolo saved each channel's pre-solo state) before the channel is erased, or nothing
+	// brings them back once m_lastSoloed no longer names a soloed channel.
+	const bool soloRemoved = m_lastSoloed == index;
+	if (soloRemoved)
+	{
+		deactivateSolo();
+		m_lastSoloed = -1;
+	}
 	// if m_lastSoloed is > delete index, it will move left
 	else if (m_lastSoloed > index) { --m_lastSoloed; }
 
@@ -1386,6 +1393,10 @@ void Mixer::deleteChannel( int index )
 			r->updateName();
 		}
 	}
+
+	// Additive solo keeps the other soloed channels on: re-derive the mutes from them on the new layout
+	// (after the renumbering, which applyAdditiveSolo reads through index()).
+	if (soloRemoved && mixerstrip::additiveSolo()) { applyAdditiveSolo(); }
 
 	Engine::audioEngine()->doneChangeInModel();
 	if (!m_clearing) { emit channelDeleted(); }
