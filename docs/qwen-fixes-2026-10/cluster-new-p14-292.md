@@ -13,24 +13,25 @@ new-p12-244: FIXED
 ### Evidence
 
 - [ScriptEngine.cpp](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/src/core/ScriptEngine.cpp:326) `runFile()` no longer reads the file itself. It calls
-  `readScriptSource(path, scriptSourceLimit(memoryBudget()), source, error)`
+  `readScriptSource(path, MaxScriptSourceBytes, source, error)`
   ([ScriptEngine.cpp:328-331](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/src/core/ScriptEngine.cpp:328)),
   which replaced the old `const QString source = QString::fromUtf8(file.readAll());` - the
   unbounded `readAll()` and the whole-file `QString` conversion were the host-side
   allocations that sat outside `ScriptMemoryState`'s Lua allocator budget.
 - [ScriptEngine.h:79](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/include/ScriptEngine.h:79) `MaxScriptSourceBytes` (16 MiB) is the hard
-  source-size limit; [ScriptEngine.h:91](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/include/ScriptEngine.h:91) `scriptSourceLimit()` makes the
-  memory budget the tighter of the two bounds when one is set (a source that cannot fit
-  in the Lua state cannot run anyway).
-- [ScriptEngine.h:107](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/include/ScriptEngine.h:107) `readScriptSource()` refuses the file on its
+  source-size limit; `runFile()` uses that fixed cap independently of the Lua
+  allocation budget. Source length and Lua runtime memory
+  are different quantities: a large comment can be parsed without occupying the Lua state.
+- [ScriptEngine.h:95](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/include/ScriptEngine.h:95) `readScriptSource()` refuses the file on its
   SIZE before reading it (`file.size() > limit`), reads it in 64 KiB chunks
-  ([ScriptEngine.h:135](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/include/ScriptEngine.h:135)) and stops at the limit, so the
-  conversion to `QString` never sees more than `limit` bytes.
+  ([ScriptEngine.h:123](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/include/ScriptEngine.h:123)), and rejects an over-limit accumulated read before
+  conversion, so `QString::fromUtf8()` never sees more than `limit` bytes.
 - [ScriptEngineTest.cpp:745](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292/tests/src/core/ScriptEngineTest.cpp:745)
   `testScriptFileAboveTheSourceLimitIsRefused()` is the regression: a file one byte above
   the limit (with a VALID api header, so the refusal cannot be about the version or the
-  syntax) must be refused with "too large"; a file above a 1 MiB memory budget must be
-  refused the same way; a script inside the limit must still run.
+  syntax) must be refused with "too large"; a 2 MiB comment script runs under a 1 MiB
+  Lua budget because its source is below the independent 16 MiB cap; a small script
+  inside the limit still runs.
 
 ### Verification record (logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs`)
 
@@ -44,6 +45,30 @@ new-p12-244: FIXED
 | GREEN test run | `ctest -R '^ScriptEngineTest$' --output-on-failure > logs/test-3-green.log 2>&1` (from `build/tests`) | 0 - 1/1 test passed |
 | Affected family | `ctest -R '^(ScriptEngineTest|ScriptCommandBridgeTest|ScriptBudgetActionTest)$' --output-on-failure > logs/test-6-family-green.log 2>&1` (from `build/tests`) | 0 - 3/3 tests passed |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-1-feature-check.log 2>&1` | 0 - RESULT: PASS (9/9 gates) |
+
+### QA correction: source length is not Lua allocator usage
+
+The first review found that limiting a file to `min(memoryBudget, 16 MiB)` rejects a
+valid 2 MiB comment-only source under a 1 MiB Lua allocator budget. The comment is
+consumed by the parser but does not become Lua state. `runFile()` now uses the fixed
+16 MiB source cap regardless of that budget, and the regression asserts that
+this larger-than-budget script runs. Before the correction, the same test was red:
+
+| Check | Exact command | Exit |
+|---|---|---:|
+| RED build | `cmake --build build --target ScriptEngineTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-build-before-size-scope2.log 2>&1; echo EXIT=$?` | 0 |
+| RED test | `ctest -R '^ScriptEngineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-test-before-size-scope2.log 2>&1; echo EXIT=$?` (from `build/tests`) | 8 - the 2,097,206-byte file was refused at the 1,048,576-byte Lua budget |
+| Reversed-size build | `cmake --build build --target zene ScriptEngineTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-build-size-red-after-fix.log 2>&1; echo EXIT=$?` | 0 |
+| Reversed-size test | `ctest -R '^ScriptEngineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-test-size-red-after-fix.log 2>&1; echo EXIT=$?` (from `build/tests`) | 8 - the larger-than-budget source was refused again |
+| MIDI-count build with counting call reverted | `cmake --build build --target zene ScriptEngineTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-build-midi-red.log 2>&1; echo EXIT=$?` | 0 |
+| MIDI-count test with counting call reverted | `ctest -R '^ScriptEngineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-test-midi-red.log 2>&1; echo EXIT=$?` (from `build/tests`) | 8 - 1,020 events pending, 0 reported dropped, assertion failed |
+| Restore MIDI-count and source-cap code | `git checkout -- src/core/ScriptEngine.cpp` (0), `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-source-correction.patch` (0), repeated after the size-limit reversal | 0 / 0 |
+| Symlink build with `isSymLink()` guard reverted | `cmake --build build --target zene ScriptEngineTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-build-symlink-red.log 2>&1; echo EXIT=$?` | 0 |
+| Symlink test with guard reverted | `ctest -R '^ScriptEngineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-test-symlink-red.log 2>&1; echo EXIT=$?` (from `build/tests`) | 8 - dangling-link write returned `Ok`, expected `ScriptError` |
+| Restore symlink guard and QA correction | `git checkout -- include/ScriptEngine.h` (0), `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-header-correction.patch` (0) | 0 / 0 |
+| GREEN build (all direct header consumers) | `cmake --build build --target zene ScriptEngineTest ScriptCommandBridgeTest ScriptBudgetActionTest ScriptBindingsTest ScriptDawBindingTest ControlAutomationScriptTest ScriptDawEffectsTest ScriptMemoryBudgetTest ScriptDawRemovalUndoTest ScriptImportTest ScriptStabilisationTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-build-final-header-test-targets.log 2>&1; echo EXIT=$?` | 0 |
+| GREEN family | `QT_QPA_PLATFORM=offscreen ctest -R '^(ScriptEngineTest|ScriptCommandBridgeTest|ScriptBudgetActionTest|LuaApiSurface|ScriptBindingsTest|ScriptDawBindingTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-ctest-final-family.log 2>&1; echo EXIT=$?` (from `build/tests`) | 0 - 6/6 tests passed |
+| Final gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-292 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-292.r2/logs/qa-feature-check-final.log 2>&1; echo EXIT=$?` | 0 - RESULT: PASS; complexity and file-length have no new item in changed files |
 
 ### Files committed
 
@@ -164,9 +189,9 @@ this cluster contributes no code change.
   new API (`logs/build-2-red-nofix.log`, `logs/build-12-redB.log`).
 - **The test is deterministic: no wall-clock timing, sleeps or races (name the seam
   or injected values it uses).**
-  new-p14-292 writes a file of a known size and reads the engine's own size limit
-  (`MaxScriptSourceBytes`, `memoryBudget()`); the memory budget is restored before
-  any assertion, so a failure cannot leak into another test. new-p12-244 pushes a
+  new-p14-292 writes files of known sizes: one byte above the hard source cap is
+  refused, while a 2 MiB comment script runs with a 1 MiB Lua budget; the budget is
+  restored before any assertion, so a failure cannot leak into another test. new-p12-244 pushes a
   fixed number of events (2000) into a ring of a known capacity and compares the
   drop count with `pushed - pending`; no timing, no sleeping, no thread racing: the
   producer and the reader are the same thread in the test.
@@ -186,11 +211,10 @@ this cluster contributes no code change.
   versioned ratchet - `tests/lua-api-surface.py` - and a bug fix must not move it).
 - **No collateral damage: old projects and saved data still load as before, and any
   limit or check you added does not hit other callers that legitimately exceed it.**
-  Neither change touches project data, save/load or the model: the source limit
-  applies to script FILES only, and the shipped scripts and the test scripts are far
-  below 16 MiB (the limit is `min(memoryBudget, 16 MiB)`, and the memory budget's
-  floor is 512 KiB - a script bigger than the budget could never load into the Lua
-  state anyway). The MIDI change adds a counter and changes no event's fate: the
+  Neither change touches project data, save/load or the model: the fixed 16 MiB source
+  cap applies to script FILES only, and a regression confirms a source larger than
+  the Lua budget can still run when it uses little Lua state. The MIDI change adds a
+  counter and changes no event's fate: the
   buffer still drops rather than blocking, and the events that fit are still the
   first ones (asserted).
 - **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the

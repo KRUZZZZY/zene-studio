@@ -326,7 +326,7 @@ ScriptEngine::~ScriptEngine()
 ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* error)
 {
 	QString source;
-	if (!readScriptSource(path, scriptSourceLimit(memoryBudget()), source, error))
+	if (!readScriptSource(path, MaxScriptSourceBytes, source, error))
 	{
 		return RunResult::ScriptError;
 	}

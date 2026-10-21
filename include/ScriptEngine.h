@@ -73,25 +73,13 @@ inline QString deepestExistingAncestor(const QString& path, const QString& root)
  * may hold inside its Lua state. The host's own copies of the source - the
  * bytes read from the file and the QString they decode into - are made before
  * Lua ever sees the script and are NOT charged to that budget, so the source
- * is bounded on its own as well: a file above this limit is refused before it
- * is read, and the read itself stops at the limit.
+ * is bounded independently by this fixed cap: a file above it is refused
+ * before it is read, regardless of the Lua budget.
  */
 constexpr quint64 MaxScriptSourceBytes = 16ull * 1024ull * 1024ull;
 
 //! Bytes read per chunk while a script file is read (bounds the read buffer).
 constexpr qint64 ScriptSourceChunkBytes = 64 * 1024;
-
-/*! \brief The source limit a run with \a memoryBudget enforces.
- *
- * The budget, when it is set, is the tighter of the two bounds: a source that
- * does not fit in the Lua state cannot run anyway, and refusing it before it
- * is read keeps the host's copies inside the budget the user asked for. A
- * budget of 0 (no cap, reachable from C++ only) leaves the hard limit.
- */
-inline quint64 scriptSourceLimit(quint64 memoryBudget)
-{
-	return memoryBudget == 0 ? MaxScriptSourceBytes : qMin(memoryBudget, MaxScriptSourceBytes);
-}
 
 /*! \brief Read a script file into \a source, refusing anything above \a limit.
  *

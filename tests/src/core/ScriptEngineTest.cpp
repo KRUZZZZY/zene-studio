@@ -768,24 +768,26 @@ for i = 1, 20000 do clip:addNoteAt(60, i, 10, 100) end
 		QVERIFY2(error.contains(QStringLiteral("too large")), qPrintable(error));
 		qInfo().noquote() << "oversized script refused:" << error;
 
-		// The memory budget is the tighter bound when it is set: a source
-		// that cannot fit in the Lua state cannot run either, and refusing it
-		// before the read keeps the host inside the budget the user asked for.
-		const QString overBudgetPath =
-			QDir(dir.path()).absoluteFilePath(QStringLiteral("over-budget.lua"));
+		// Source length and the Lua allocator budget measure different things:
+		// comments are read and parsed but do not occupy the Lua state. A source
+		// larger than the budget must still run when its script state fits.
+		const QString largeCommentPath =
+			QDir(dir.path()).absoluteFilePath(QStringLiteral("large-comment.lua"));
 		{
-			QFile file(overBudgetPath);
+			QFile file(largeCommentPath);
 			QVERIFY(file.open(QIODevice::WriteOnly));
 			file.write(header.toUtf8());
-			file.resize(2 * 1024 * 1024);
+			file.write("--");
+			file.write(QByteArray(2 * 1024 * 1024, 'x'));
+			file.write("\nprint('large comment script ran')\n");
 		}
 		engine->setMemoryBudget(1024 * 1024);
-		QString budgetError;
-		const auto overBudget = engine->runFile(overBudgetPath, &budgetError);
+		QString largeCommentError;
+		const auto largeComment = engine->runFile(largeCommentPath, &largeCommentError);
 		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
-		QCOMPARE(int(overBudget), int(ScriptEngine::RunResult::ScriptError));
-		QVERIFY2(budgetError.contains(QStringLiteral("too large")), qPrintable(budgetError));
-		qInfo().noquote() << "over-budget script refused:" << budgetError;
+		qInfo().noquote() << "large comment script result:" << largeCommentError;
+		QCOMPARE(int(largeComment), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(largeCommentError.isEmpty(), qPrintable(largeCommentError));
 
 		// A script inside the limit still runs: the limit must not touch the
 		// ordinary case.
