@@ -105,6 +105,20 @@ ListenerStore& listeners()
 	return store;
 }
 
+/**
+ * True when @a value is a number a macro can hold.
+ *
+ * A macro's value is a finite 0..1 scalar. std::clamp does NOT make a
+ * nonfinite value one: every comparison against NaN is false, so clamp hands
+ * NaN straight back - and an infinite value clamps to an end, which is a
+ * different number than the caller meant. So the finiteness is checked here,
+ * before the value is stored or applied.
+ */
+bool isFiniteMacroValue(float value)
+{
+	return std::isfinite(value);
+}
+
 } // namespace
 
 float shapeMacroValue(float value, float curve)
@@ -205,6 +219,9 @@ auto RackMacros::macro(int index) const -> const RackMacro*
 
 auto RackMacros::addMacro(const QString& name, float value) -> int
 {
+	// A value that is not a number is refused, not clamped: clamp would keep
+	// NaN as NaN (every comparison against it is false).
+	if (!isFiniteMacroValue(value)) { return -1; }
 	RackMacro entry;
 	entry.name = name;
 	entry.value = std::clamp(value, 0.0f, 1.0f);
@@ -217,6 +234,7 @@ auto RackMacros::insertMacro(int index, const RackMacro& macro) -> bool
 {
 	if (index < 0) { return false; }
 	if (index > macroCount()) { return false; }
+	if (!isFiniteMacroValue(macro.value)) { return false; }
 	m_macros.insert(m_macros.begin() + index, macro);
 	notifyListChanged(index, 1);
 	return true;
@@ -234,6 +252,9 @@ auto RackMacros::setValue(int index, float value) -> bool
 {
 	RackMacro* entry = macro(index);
 	if (entry == nullptr) { return false; }
+	// Same contract as addMacro: a value that is not a number is refused, and
+	// the macro keeps the value it had.
+	if (!isFiniteMacroValue(value)) { return false; }
 	entry->value = std::clamp(value, 0.0f, 1.0f);
 	return true;
 }
@@ -271,6 +292,11 @@ auto RackMacros::apply(int index, Rack& rack, bool journalWrites) -> std::vector
 	std::vector<RackMacroWrite> writes;
 	const RackMacro* entry = macro(index);
 	if (entry == nullptr) { return writes; }
+	// The last line of defence before a parameter model: a macro whose own
+	// value is not a number would write that number into every model it
+	// drives. The storage doors (addMacro, insertMacro, setValue) refuse such
+	// a value already; a macro list that carries one anyway writes nothing.
+	if (!isFiniteMacroValue(entry->value)) { return writes; }
 
 	for (const RackMacroTarget& target : entry->targets)
 	{
@@ -369,7 +395,13 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 	{
 		RackMacro entry;
 		entry.name = macroElement.attribute(QStringLiteral("name"));
-		entry.value = macroElement.attribute(QStringLiteral("value"), QStringLiteral("0")).toFloat();
+		const float rawValue =
+			macroElement.attribute(QStringLiteral("value"), QStringLiteral("0")).toFloat();
+		// A macro's value is a finite number. QString reads a "nan" (or an
+		// "inf") attribute as exactly that, and a NaN would be written into
+		// every parameter the macro drives - so a value that is not a number is
+		// stored as 0, and the macro still works.
+		entry.value = isFiniteMacroValue(rawValue) ? rawValue : 0.0f;
 
 		for (QDomElement targetElement = macroElement.firstChildElement(QStringLiteral("target"));
 			!targetElement.isNull();

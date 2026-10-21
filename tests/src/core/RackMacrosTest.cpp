@@ -226,6 +226,73 @@ private slots:
 		QVERIFY(macros.removeMacro(macro));
 	}
 
+	//! A macro's value is a FINITE 0..1 scalar. std::clamp does not make a
+	//! nonfinite value one - every comparison against NaN is false, so clamp
+	//! hands NaN straight back - and QString reads a "nan" attribute as NaN,
+	//! so a project can carry one. Such a value is refused at every door that
+	//! stores it, and it never reaches a parameter model.
+	void aNonfiniteMacroValueIsRefused()
+	{
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		RackMacros& macros = rackUnderTest().macros();
+		const int before = macros.macroCount();
+
+		// The door: addMacro refuses it and adds NOTHING (no half-added macro).
+		QCOMPARE(macros.addMacro(QStringLiteral("NaN"), nan), -1);
+		QCOMPARE(macros.macroCount(), before);
+
+		// The door: setValue refuses it and the macro keeps the value it had.
+		const int good = macros.addMacro(QStringLiteral("Fine"), 0.5f);
+		QVERIFY(good >= 0);
+		QVERIFY(!macros.setValue(good, nan));
+		QCOMPARE(macros.macro(good)->value, 0.5f);
+		QVERIFY(!macros.setValue(good, std::numeric_limits<float>::infinity()));
+		QCOMPARE(macros.macro(good)->value, 0.5f);
+
+		// The door: insertMacro refuses it too.
+		RackMacro broken;
+		broken.name = QStringLiteral("Broken");
+		broken.value = nan;
+		QVERIFY(!macros.insertMacro(macros.macroCount(), broken));
+		QCOMPARE(macros.macroCount(), before + 1);
+
+		// The load path: a project that says value="nan" loads a NUMBER, not a
+		// NaN - a NaN here would be written into every parameter the macro
+		// drives.
+		QDomDocument doc;
+		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		doc.appendChild(rack);
+		QDomElement macroElement = doc.createElement(QStringLiteral("macro"));
+		macroElement.setAttribute(QStringLiteral("name"), QStringLiteral("Loaded"));
+		macroElement.setAttribute(QStringLiteral("value"), QStringLiteral("nan"));
+		rack.appendChild(macroElement);
+		RackMacros reloaded;
+		reloaded.loadSettings(rack);
+		QCOMPARE(reloaded.macroCount(), 1);
+		QVERIFY(std::isfinite(reloaded.macro(0)->value));
+		QCOMPARE(reloaded.macro(0)->value, 0.0f);
+
+		// The agent surface: the schema lets NaN through (every comparison
+		// against it is false), so the command has to refuse it itself.
+		const QString channel = underTestChannel();
+		const ControlResult added = revtest::run(QStringLiteral("rack.macro_add"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QStringLiteral("NaN add")},
+				{QStringLiteral("value"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY2(!added.ok, "rack.macro_add took a NaN value");
+		QCOMPARE(added.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(rackUnderTest().macros().macroCount(), before + 1);
+
+		const ControlResult set = revtest::run(QStringLiteral("rack.macro_set"),
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-%1").arg(good)},
+				{QStringLiteral("value"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY2(!set.ok, "rack.macro_set took a NaN value");
+		QCOMPARE(set.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(macros.macro(good)->value, 0.5f);
+
+		QVERIFY(macros.removeMacro(good));
+		QCOMPARE(macros.macroCount(), before);
+	}
+
 	//! With macros and zones configured the rack's own process() allocates
 	//! nothing: a macro is not on the audio path, and a zone's routing (0.5.0
 	//! E20) reads blocks prepared when the rack re-wired.

@@ -30,6 +30,7 @@
 #include <QJsonObject>
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "ControlCommandDef.h"
@@ -161,12 +162,22 @@ ControlResult setPair(const QJsonObject& args)
 	int x = -1;
 	int y = -1;
 	if (!resolvePair(rack, args, &x, &y, &error)) { return error; }
+	// Both values are checked before either is written, so a pair that names a
+	// number that is not a number is refused whole: the schema lets NaN
+	// through, because every comparison against it is false.
+	const float xValue = static_cast<float>(args.value(QStringLiteral("x_value")).toDouble());
+	const float yValue = static_cast<float>(args.value(QStringLiteral("y_value")).toDouble());
+	if (!std::isfinite(xValue) || !std::isfinite(yValue))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'x_value' and 'y_value' must be finite numbers: a macro's value is a 0..1 scalar"));
+	}
 	const QString id = channelIdOf(channel);
 	const QJsonObject before{{QStringLiteral("channel"), id}, {QStringLiteral("x_macro"), macroId(x)},
 		{QStringLiteral("x_value"), static_cast<double>(rack.macros().macro(x)->value)}, {QStringLiteral("y_macro"), macroId(y)},
 		{QStringLiteral("y_value"), static_cast<double>(rack.macros().macro(y)->value)}};
-	const MacroApplied ax = applyMacroValue(rack, id, x, static_cast<float>(args.value(QStringLiteral("x_value")).toDouble()), false);
-	const MacroApplied ay = applyMacroValue(rack, id, y, static_cast<float>(args.value(QStringLiteral("y_value")).toDouble()), false);
+	const MacroApplied ax = applyMacroValue(rack, id, x, xValue, false);
+	const MacroApplied ay = applyMacroValue(rack, id, y, yValue, false);
 	const bool changed = macroPairChanged(ax, ay);
 	// ONE step for both macros and every parameter they wrote. Undone in reverse, so a parameter both macros drive gets
 	// back the value it had before X wrote it, not the one Y found.

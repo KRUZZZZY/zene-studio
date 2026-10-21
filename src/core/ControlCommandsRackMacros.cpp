@@ -32,6 +32,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -137,6 +138,14 @@ void registerMacroAdd(ControlRegistry& registry)
 		const QString channelIdText = channelIdOf(channel);
 		const int before = rack.macros().macroCount();
 		const int index = rack.macros().addMacro(name, value);
+		// A value that is not a number is refused by the macro list (a macro's
+		// value is a 0..1 scalar, and clamping cannot make NaN one). The schema
+		// lets it through: every comparison against NaN is false.
+		if (index < 0)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'value' must be a finite number: a macro's value is a 0..1 scalar"));
+		}
 
 		addUndoStep(
 			[channelIdText, index]() {
@@ -464,8 +473,16 @@ void registerMacroSet(ControlRegistry& registry)
 
 		const float previousValue = rack.macros().macro(macro)->value;
 		const QString channelIdText = channelIdOf(channel);
-		const MacroApplied applied = applyMacroValue(rack, channelIdText, macro,
-			static_cast<float>(args.value(QStringLiteral("value")).toDouble()));
+		const float requested = static_cast<float>(args.value(QStringLiteral("value")).toDouble());
+		// A value that is not a number is refused whole: the macro keeps the
+		// value it had and no parameter is written (the schema lets NaN
+		// through, because every comparison against it is false).
+		if (!std::isfinite(requested))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'value' must be a finite number: a macro's value is a 0..1 scalar"));
+		}
+		const MacroApplied applied = applyMacroValue(rack, channelIdText, macro, requested);
 		const bool changed = macroAppliedChanged(applied);
 		// ONE undo step for the macro's own scalar AND every parameter it
 		// wrote: the step re-resolves each target at undo time, so it carries no

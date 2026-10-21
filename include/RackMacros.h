@@ -152,14 +152,18 @@ public:
 	auto macro(int index) const -> const RackMacro*;
 	auto macro(int index) -> RackMacro*;
 
-	//! Appends a macro and returns its index (the macro-<n> id).
+	//! Appends a macro and returns its index (the macro-<n> id), or -1 when
+	//! @a value is not a finite number: a macro's value is a 0..1 scalar, and
+	//! clamping cannot make a nonfinite value one (std::clamp hands NaN back).
 	auto addMacro(const QString& name, float value) -> int;
 	//! Inserts a macro at @a index, for the inverse of a removal: the list and
-	//! the macro-<n> ids come back exactly, not merely the contents.
+	//! the macro-<n> ids come back exactly, not merely the contents. False
+	//! when @a index is out of range or the macro's value is not a finite number.
 	auto insertMacro(int index, const RackMacro& macro) -> bool;
 	auto removeMacro(int index) -> bool;
 
-	//! Stores @a value clamped to 0..1. False when there is no such macro.
+	//! Stores @a value clamped to 0..1. False when there is no such macro or
+	//! @a value is not a finite number - then the macro keeps the value it had.
 	auto setValue(int index, float value) -> bool;
 
 	//! Appends a target; -1 when there is no such macro.
