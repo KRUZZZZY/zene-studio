@@ -467,7 +467,8 @@ private slots:
 		QDomDocument pruned;
 		QVERIFY(pruned.setContent(QStringLiteral(
 			"<zene-project version=\"1\" type=\"SongProject\"><head/><song/></zene-project>")));
-		QCOMPARE(UndoHistory::fingerprint(withMeta, true), UndoHistory::fingerprint(pruned, false));
+		QCOMPARE(UndoHistory::fingerprint(withMeta, true, QStringLiteral("1"), QStringLiteral("SongProject")),
+			UndoHistory::fingerprint(pruned, false, QStringLiteral("1"), QStringLiteral("SongProject")));
 	}
 
 	void aChangedRootVersionChangesTheFingerprint()
@@ -478,7 +479,92 @@ private slots:
 		QDomDocument v2;
 		QVERIFY(v2.setContent(QStringLiteral(
 			"<zene-project version=\"2\" type=\"SongProject\"><head/><song><track name=\"x\"/></song></zene-project>")));
-		QVERIFY(UndoHistory::fingerprint(v1, false) != UndoHistory::fingerprint(v2, false));
+		QVERIFY(UndoHistory::fingerprint(v1, false, QStringLiteral("1"), QStringLiteral("SongProject"))
+			!= UndoHistory::fingerprint(v2, false, QStringLiteral("2"), QStringLiteral("SongProject")));
+		// The root's type counts too: the same sections under another type are
+		// not the same project.
+		QVERIFY(UndoHistory::fingerprint(v1, false, QStringLiteral("1"), QStringLiteral("SongProject"))
+			!= UndoHistory::fingerprint(v1, false, QStringLiteral("1"), QStringLiteral("SongProjectTemplate")));
+	}
+
+	//! A file whose root version was changed under it: the history was written
+	//! for the version the file claims, so a load that upgraded the file must
+	//! not accept it - the sections would be read under a format the history
+	//! does not describe. The song sections stay exactly as they were, so only
+	//! the version changed.
+	void anOlderFormatVersionInAFileDiscardsItsHistory()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+		const QString file = path(QStringLiteral("versioned.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+
+		QDomDocument document;
+		{
+			QFile in(file);
+			QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+		}
+		QDomElement root = document.documentElement();
+		const int version = root.attribute(QStringLiteral("version")).toInt();
+		QVERIFY2(version > 0, "the saved file carries no version");
+		root.setAttribute(QStringLiteral("version"), QString::number(version - 1));
+		const QString older = path(QStringLiteral("older-version.mmp"));
+		{
+			QFile out(older);
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QTextStream stream(&out);
+			document.save(stream, 1);
+		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), older}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool() && load.value(QStringLiteral("loaded_steps")).toInt() == 0
+			&& !load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
+	//! A file at the current format, unchanged, whose history carries the
+	//! fingerprint an OLDER build wrote (the scheme before the root's format
+	//! attributes were part of it): the history is still this project's, and it
+	//! loads. The scheme is versioned, so the old value is read as the old
+	//! scheme's - and accepted only while the file's format did not change
+	//! under the load.
+	void aCurrentFormatHistoryUsingTheOldFingerprintStillLoads()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+		const QString file = path(QStringLiteral("legacy.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+
+		QDomDocument document;
+		{
+			QFile in(file);
+			QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+		}
+		QDomElement history = document.documentElement().firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("z:undohistory"));
+		QVERIFY(!history.isNull());
+		// The fingerprint an older build wrote: the sections only.
+		const QString legacy = UndoHistory::legacyFingerprint(document, false);
+		QVERIFY(!legacy.isEmpty());
+		history.setAttribute(QStringLiteral("fingerprint"), legacy);
+		const QString old = path(QStringLiteral("legacy-fingerprint.mmp"));
+		{
+			QFile out(old);
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QTextStream stream(&out);
+			document.save(stream, 1);
+		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), old}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool() && load.value(QStringLiteral("loaded_steps")).toInt() == 2
+			&& load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
 	}
 
 	//! Turning persistence OFF drops the snapshots the steps carried, and turning it back on cannot recapture
