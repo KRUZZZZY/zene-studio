@@ -356,6 +356,9 @@ private slots:
 		QVERIFY(channel(1)->m_muteModel.value());  // nobody soloed channel 1
 		QVERIFY(channel(2)->m_muteModel.value());
 		channel(first)->m_soloModel.setValue(false);
+		// clearing the last solo gives every channel back its pre-solo mute (channel 1 audible, channel 2 still muted)
+		QVERIFY2(!channel(1)->m_muteModel.value(), "clearing the last additive solo must restore channel 1's pre-solo unmuted state");
+		QVERIFY2(channel(2)->m_muteModel.value(), "clearing the last additive solo must keep channel 2's pre-solo mute");
 		QVERIFY(run(QStringLiteral("mixer.solo_mode"), {{QStringLiteral("mode"), QStringLiteral("exclusive")}}).ok);
 		Engine::mixer()->deleteChannel(first);
 		channel(1)->m_muteModel.setValue(false);

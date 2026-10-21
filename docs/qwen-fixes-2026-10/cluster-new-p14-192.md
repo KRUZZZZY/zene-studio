@@ -11,8 +11,9 @@ if (m_lastSoloed == index) { m_lastSoloed = -1; }
 ```
 
 `activateSolo()` (`src/core/Mixer.cpp:934`) had saved each channel's pre-solo mute in
-`m_muteBeforeSolo` and muted every other channel. Only `toggledSolo()` (`:976`, `:1000`) and
-`applyGroupSolo()` (`:1136`) call `deactivateSolo()` (`:944`), which restores those saved mutes. The
+`m_muteBeforeSolo` and muted every other channel. Before the fix, `deactivateSolo()` (`:944`) was called only from
+`toggledSolo()` (`:976`, `:1000`), `applyGroupSolo()` (`:1136`) and `applyAdditiveSolo()`
+(`src/core/MixerStrip.cpp:423`, reached when `m_lastSoloed != -1`). Each restores the saved mutes. The
 delete path reset `m_lastSoloed` without restoring them, so every channel that was audible before the
 solo stayed muted with no solo left to restore it. The finding's description is accurate.
 
@@ -41,6 +42,9 @@ Callers checked:
 - `TrackFolder.cpp:142,397`, `ControlCommandsBus.cpp:110,168`, `ScriptDawEdit.cpp:176`,
   `ControlCommandsDawProject.cpp:247`, `ControlCommandsDrumRack.cpp:133` all go through the same
   function, so the fix covers them.
+- `applyAdditiveSolo()` (`src/core/MixerStrip.cpp:411`) already calls `deactivateSolo()` at `:423`
+  when `m_lastSoloed != -1`, then re-derives the solo from the solo flags. The new `deleteChannel` path
+  (`:1271`, then `:1312`) uses the same pair of steps.
 - `m_soloingGroup` (VCA group solo) is not touched. A channel solo cannot run while a group solo owns
   the mutes, because `toggledSolo()` clears `m_soloingGroup` and `applyGroupSolo()` sets
   `m_lastSoloed = -1`.
@@ -54,8 +58,10 @@ Callers checked:
   audible. This is the RED test for the finding.
 - `deletingAnAdditiveSoloKeepsTheOthers()` (`:341`): additive mode with two new soloed channels. Delete
   the lower one, which the engine names as its last solo. The survivor must stay soloed and audible,
-  and channels 1 and 2 must stay muted. This passes on the original code too. It is a guard against
-  regressions in the path the fix changes.
+  and channels 1 and 2 must stay muted. Once the survivor's solo is cleared, channel 1 must be unmuted
+  again (its pre-solo state) and channel 2 must still be muted (its pre-solo state). Those last checks
+  are what make this test fail when the product change is reversed (round 2, section 6). Without the
+  fix, the state while the survivor is soloed passes, and the restoration checks fail.
 
 No timing, no sleeps, no races. Both tests run on the main thread through the existing
 `Engine::mixer()` fixture.
@@ -167,3 +173,41 @@ Replicated by hand, because `submit_check.py` could not be run within the write-
   `src/core/Mixer.cpp`, `tests/src/core/MixerStripTest.cpp`, `tests/upstream-modifications.txt`,
   `docs/qwen-fixes-2026-10/cluster-new-p14-192.md`.
 - **Never pushed.**
+
+## 6. Round 2: review rework (test-proves-nothing)
+
+Luna's round-1 review (`qa/reviews/new-p14-192.r1.md`) sent the work back once. The blocking point:
+`deletingAnAdditiveSoloKeepsTheOthers` checked only the state while the survivor was still soloed,
+and that state passed with the product change reversed. It never checked the restoration after the
+survivor's solo was cleared.
+
+Change: `tests/src/core/MixerStripTest.cpp:358-362`. After `channel(first)->m_soloModel.setValue(false)`,
+the test now asserts `!channel(1)->m_muteModel.value()` (channel 1 back to its pre-solo unmuted state)
+and `channel(2)->m_muteModel.value()` (channel 2 keeps its pre-solo mute). No product code changed in
+this round. The product fix is still commit `248fcac76`.
+
+Round-2 evidence (log folder `.../new-p14-192.r2/logs`; the reversal used only the `src/core/Mixer.cpp`
+hunks, saved as `fix-r2.patch` with `git diff b61e5f965 -- src/core/Mixer.cpp`):
+
+| Step | Command | EXIT | Result |
+|---|---|---|---|
+| GREEN build | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p14 cmake --build build --target zene MixerStripTest -j4` | 0 | `build-r2-1-green.log` |
+| GREEN test | `cd build/tests && ctest -R '^MixerStripTest$' -V` | 0 | `test-r2-1-green.log`: 19 passed, 0 failed |
+| Reverse | `git apply -R fix-r2.patch` | 0 | only `Mixer.cpp` changed back |
+| RED build | same build command | 0 | `build-r2-2-reversed.log` |
+| RED test | same ctest command | 8 | `test-r2-2-reversed.log`: `FAIL! deletingTheSoloedChannelRestoresTheMutes() '!channel(2)->m_muteModel.value()'`; `FAIL! deletingAnAdditiveSoloKeepsTheOthers() '!channel(1)->m_muteModel.value()' returned FALSE (clearing the last additive solo must restore channel 1's pre-solo unmuted state)`; 17 passed, 2 failed |
+| Reapply | `git apply fix-r2.patch` | 0 | |
+| Refixed build | same build command | 0 | `build-r2-3-refixed.log` |
+| Refixed test | same ctest command | 0 | `test-r2-3-refixed-green.log`: 19 passed, 0 failed |
+
+Mixer family, rerun on the final tree: `ctest -R` over the same 13 targets as section 4 gave EXIT 8,
+with the same results: 11 passed, and `DeviceMovesUndoTest` and `ScriptDawRemovalUndoTest` failed as
+in section 4 (`test-r2-4-family.log`). Those two are the pre-existing environment failures.
+
+Gates on the final tree (`gate-r2-*.log`): fork-sources 0, all-sources-reproduce 0,
+no-upstream-regression 0, check-namespace 0, no-tautology 0, doc-figures 0, complexity 1, file-length 1.
+Neither ratchet lists a REGRESSION line for `src/core/Mixer.cpp`, `tests/src/core/MixerStripTest.cpp`,
+or `tests/upstream-modifications.txt`.
+
+Non-blocking note fixed: the report's `deactivateSolo()` caller list (section 1 and section 2) now
+includes `applyAdditiveSolo()` (`src/core/MixerStrip.cpp:423`).
