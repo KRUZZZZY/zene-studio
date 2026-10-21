@@ -239,6 +239,45 @@ private slots:
 		QVERIFY(!arrangerkeys::selectClip(m_editor, nullptr));
 	}
 
+	void applyingSelectionWithNoSurvivingClipsClearsArrangerSelection()
+	{
+		Track* t = track();
+		Clip* first = clipAt(t, 0, Bar);
+		Clip* second = clipAt(t, 2 * Bar, Bar);
+		QCoreApplication::processEvents();
+		const QString firstId = control::clipIdOf(first);
+		const QString secondId = control::clipIdOf(second);
+
+		const ControlResult saved = run(QStringLiteral("selection.save"),
+			{{QStringLiteral("name"), QStringLiteral("sel")},
+			 {QStringLiteral("clips"), QJsonArray{firstId}}});
+		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
+
+		QVERIFY(run(QStringLiteral("clip.delete"), {{QStringLiteral("clip"), firstId}}).ok);
+		QCoreApplication::processEvents();
+
+		QVERIFY(arrangerkeys::selectClip(m_editor, second));
+		QCoreApplication::processEvents();
+		bool secondSelected = false;
+		for (ClipView* view : m_editor->findChildren<ClipView*>())
+		{
+			if (view->getClip() == second) { secondSelected = view->isSelected(); }
+		}
+		QVERIFY2(secondSelected, "the different clip was not highlighted before apply");
+
+		const ControlResult applied = run(QStringLiteral("selection.apply"),
+			{{QStringLiteral("name"), QStringLiteral("sel")}});
+		QVERIFY2(applied.ok, qPrintable(applied.errorMessage));
+		QCoreApplication::processEvents();
+
+		bool anySelected = false;
+		for (ClipView* view : m_editor->findChildren<ClipView*>())
+		{
+			if (view->isSelected()) { anySelected = true; }
+		}
+		QVERIFY2(!anySelected, "the different clip stayed highlighted after apply");
+	}
+
 	void theNavigatorShowsTheSongAndScrollsToAClick()
 	{
 		prepareSong();
