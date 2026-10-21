@@ -387,7 +387,10 @@ void ZynAddSubFxInstrument::forwardQueuedMidi()
 #ifdef LMMS_TESTING
 			m_testLastForwardedOffset = static_cast<int>(queued.offset);
 #endif
-			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, 0); }
+			// The remote client gets the frame offset, so it can place the event inside the
+			// period. The in-process synth has no sub-period placement: its API takes the
+			// event, not a position, so it applies it at the start of the period it renders.
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, queued.offset); }
 			else { m_localPlugin->processMidiEvent(event); }
 			return true;
 		},
@@ -447,7 +450,9 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 	queued.channel = 0;
 	queued.param1 = event.param( 0 );
 	queued.param2 = event.param( 1 );
-	queued.offset = 0;
+	// The frame offset inside the period travels with the event: the remote client places
+	// the event at that frame, and dropping it here put every event at the period start.
+	queued.offset = static_cast<std::uint32_t>( offset );
 	pushOrRecord( m_midiHandoff, m_midiOverflow, queued );
 
 	return true;

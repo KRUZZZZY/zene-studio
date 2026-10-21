@@ -2767,3 +2767,5 @@ plugins/ZynAddSubFx/ZynAddSubFx.h	cluster 908: the plugin mutex, the two plugin 
 tests/CMakeLists.txt	cluster 908: register the ZynAddSubFxInstrumentTest white-box regression test, which compiles the plug-in's own ZynAddSubFx.cpp the way the VST and CLAP tests compile theirs.
 plugins/ZynAddSubFx/ZynAddSubFx.cpp	cluster new-p9-545: loadFile() chooses the plugin and uses it under one lock, and the hosting getters read the plugin pointer under the lock - a hosting-mode switch deletes the instance under that mutex.
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster new-p9-545: the regression that the plugin choice and its use, and the hosting getters' read of the plugin pointer, happen under the plugin mutex.
+plugins/ZynAddSubFx/ZynAddSubFx.cpp	cluster new-p16-276: the hand-off keeps the MIDI event's frame offset, and the drain hands that offset to the remote client, which places the event inside the period.
+tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster new-p16-276: the regression that a queued MIDI event keeps its frame offset and that the drain forwards it.

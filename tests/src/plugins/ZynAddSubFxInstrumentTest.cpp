@@ -227,6 +227,36 @@ private slots:
 		QCOMPARE(pid, 0);
 	}
 
+	//! A MIDI event's frame offset has to survive the hand-off.
+	void theHandoffKeepsTheEventOffset()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		// The event arrives with a frame offset inside the period.
+		const MidiEvent noteOn{MidiNoteOn, 0, 60, 100};
+		QVERIFY(instrument.handleMidiEvent(noteOn, TimePos(), 42));
+
+		// The queue carries it to the next processed period - with its offset.
+		HandoffMidiEvent queued;
+		QVERIFY(instrument.m_midiHandoff.pop(queued));
+		QCOMPARE(static_cast<int>(queued.type), static_cast<int>(MidiNoteOn));
+		QCOMPARE(static_cast<int>(queued.offset), 42);
+	}
+
+	//! The drain hands the offset over to the plugin.
+	void theDrainForwardsTheEventOffset()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		const MidiEvent noteOn{MidiNoteOn, 0, 60, 100};
+		QVERIFY(instrument.handleMidiEvent(noteOn, TimePos(), 42));
+
+		instrument.forwardQueuedMidi();
+		QCOMPARE(instrument.m_testLastForwardedOffset, 42);
+	}
+
 private:
 	bool m_engineInitialised = false;
 };
