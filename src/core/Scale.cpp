@@ -44,7 +44,7 @@ bool hasValidIntervalData(const QDomElement& element)
 		if (!hasCents) { return false; }
 		bool validCents = false;
 		const float cents = element.attribute(QStringLiteral("cents")).toFloat(&validCents);
-		return validCents && std::isfinite(cents);
+		return validCents && Interval::centsGiveUsableRatio(cents);
 	}
 	if (!hasNumerator || !hasDenominator || hasCents) { return false; }
 
@@ -57,6 +57,12 @@ bool hasValidIntervalData(const QDomElement& element)
 
 } // namespace
 
+
+bool Interval::centsGiveUsableRatio(float cents)
+{
+	const float ratio = std::exp2(cents / 1200.f);
+	return std::isfinite(ratio) && ratio > 0.f;
+}
 
 Interval::Interval(float cents) :
 	m_numerator(0),

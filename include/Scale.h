@@ -42,6 +42,11 @@ public:
 	explicit Interval(float cents);
 	Interval(uint32_t numerator, uint32_t denominator);
 
+	//! True when a cents value gives a ratio the float can hold: exp2(cents / 1200) must be
+	//! finite and positive. A finite cents value can still overflow (200000 cents is about 1e50)
+	//! or underflow to zero, so finiteness of the cents alone is not enough.
+	static bool centsGiveUsableRatio(float cents);
+
 	float getRatio() const {return m_ratio;}
 
 	QString getString() const
