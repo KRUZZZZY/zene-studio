@@ -104,9 +104,17 @@ ControlResult slideSet(const QJsonObject& args)
 	const bool slide = args.value(QStringLiteral("slide")).toBool();
 
 	const bool previous = note->slide();
-	clip->addJournalCheckPoint();
-	note->setSlide(slide);
-	publishSlideEdit(clip);
+	// A slide flag the note ALREADY carries changes nothing: the flag is set to
+	// the value it has, so the edit takes no undo step (control::checkpointNoteEdit)
+	// and the project stays clean - a step that undoes nothing would shadow the
+	// edit under it.
+	const bool changes = previous != slide;
+	control::checkpointNoteEdit(clip, changes);
+	if (changes)
+	{
+		note->setSlide(slide);
+		publishSlideEdit(clip);
+	}
 
 	QJsonObject result = noteState(note, index);
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
@@ -115,6 +123,9 @@ ControlResult slideSet(const QJsonObject& args)
 	// position is what the next edit's re-sort invalidates.
 	result.insert(QStringLiteral("note"), noteIdOf(note));
 	result.insert(QStringLiteral("slide"), note->slide());
+
+	// No step, no inverse: a no-op edit has nothing to record.
+	if (!changes) { return ControlResult::success(result); }
 
 	QJsonObject before;
 	before.insert(QStringLiteral("clip"), clipId(ref.id));
