@@ -59,6 +59,26 @@ LaunchQuantisation restoreGlobalLaunchQuantisation( const QDomElement& element )
 }
 
 
+//! Reads the grid size a <session> block declares. An attribute that does not parse, or is over its clamp, refuses the block.
+bool restoreGridSize( const QDomElement& element, int& tracks, int& scenes )
+{
+	bool ok = false;
+	tracks = element.attribute( QStringLiteral( "tracks" ),
+		QStringLiteral( "0" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( tracks ) > static_cast<unsigned>( MaxTracks ) )
+	{
+		return false;
+	}
+	scenes = element.attribute( QStringLiteral( "scenes" ),
+		QStringLiteral( "0" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( scenes ) > static_cast<unsigned>( MaxScenes ) )
+	{
+		return false;
+	}
+	return true;
+}
+
+
 //! Restores every <scene> child of a <session> block.
 bool restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
 {
@@ -91,19 +111,21 @@ void saveSubScenes( QDomDocument& doc, QDomElement& session, const std::vector<S
 }
 
 
-//! Reads the <subscenes> child back; one that does not parse is left out rather than half-read.
-std::vector<SubScene> restoreSubScenes( const QDomElement& session )
+//! Reads the <subscenes> child back; one that does not parse is left out rather than half-read. A list with more
+//! valid rows than SubScene::MaxCount is refused as a whole (false): the first MaxCount alone would save a shorter list.
+bool restoreSubScenes( const QDomElement& session, std::vector<SubScene>& subScenes )
 {
-	std::vector<SubScene> subScenes;
 	const QDomElement list = session.firstChildElement( QStringLiteral( "subscenes" ) );
 	for( QDomElement element = list.firstChildElement( QStringLiteral( "subscene" ) );
-		!element.isNull() && static_cast<int>( subScenes.size() ) < SubScene::MaxCount;
+		!element.isNull();
 		element = element.nextSiblingElement( QStringLiteral( "subscene" ) ) )
 	{
 		SubScene subScene;
-		if( subScene.restoreState( element ) ) { subScenes.push_back( std::move( subScene ) ); }
+		if( !subScene.restoreState( element ) ) { continue; }
+		if( static_cast<int>( subScenes.size() ) >= SubScene::MaxCount ) { return false; }
+		subScenes.push_back( std::move( subScene ) );
 	}
-	return subScenes;
+	return true;
 }
 
 
@@ -406,16 +428,9 @@ bool SessionModel::restoreState( const QDomElement& element )
 		return false;
 	}
 
-	bool ok = false;
-	const int tracks = element.attribute( QStringLiteral( "tracks" ),
-		QStringLiteral( "0" ) ).toInt( &ok );
-	if( !ok || static_cast<unsigned>( tracks ) > static_cast<unsigned>( MaxTracks ) )
-	{
-		return false;
-	}
-	const int scenes = element.attribute( QStringLiteral( "scenes" ),
-		QStringLiteral( "0" ) ).toInt( &ok );
-	if( !ok || static_cast<unsigned>( scenes ) > static_cast<unsigned>( MaxScenes ) )
+	int tracks = 0;
+	int scenes = 0;
+	if( !restoreGridSize( element, tracks, scenes ) )
 	{
 		return false;
 	}
@@ -431,7 +446,13 @@ bool SessionModel::restoreState( const QDomElement& element )
 		clear();
 		return false;
 	}
-	m_subScenes = restoreSubScenes( element );
+	std::vector<SubScene> subScenes;
+	if( !restoreSubScenes( element, subScenes ) )
+	{
+		clear();
+		return false;
+	}
+	m_subScenes = std::move( subScenes );
 
 	return true;
 }
