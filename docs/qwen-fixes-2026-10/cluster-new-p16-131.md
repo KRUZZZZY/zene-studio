@@ -132,24 +132,72 @@ Commands:
 - docs/qwen-fixes-2026-10/cluster-new-p16-131.md - this report.
 
 ## Self-check
-- Regression FAILS without the fix and PASSES with it: new-p16-131/new-p9-281 RED
-  EXIT=8 (closeCalls 1 vs 0) and GREEN EXIT=0, both by the 4b reversal
-  (git apply -R -> EXIT=8, git apply -> EXIT=0); new-p9-270 RED EXIT=8 ('finished'
-  returned FALSE) with the mutex-taking audio path, GREEN EXIT=0 without it.
-- Deterministic: no sleeps, no wall-clock timing. The OSS regression uses QSemaphore
-  gates (writeStarted/writeGate/closed) and the real teardown grace; the sequencer
-  regression holds the mutex and waits on a semaphore with a 5 s ceiling that a
-  correct implementation reaches in microseconds.
-- Fix at the cause: the descriptor ownership lives in the writer, the one place every
-  OSS output byte passes through; the sibling sndio writer already had that shape and
-  was checked against it. Every caller of the changed behaviour was checked: the
-  constructor's failure paths still close the descriptor they opened (m_fd = -1), the
-  reader thread is stopped before the writer can close the descriptor, and sendByte()
-  still never touches the device.
-- No collateral damage: a normal teardown closes the descriptor at the same point as
-  before (the writer closes it just before it signals, the destructor joins after); a
-  failed open leaves m_fd = -1 and sendByte() no-ops; no project data, save format or
-  undo behaviour is touched; no new control command was added.
-- Realtime: the fix is on the teardown and worker paths only. The audio thread still
-  performs one non-blocking pipe write per byte and allocates nothing, locks nothing
-  and logs nothing.
+1) "The regression test FAILS with your product change reverted and PASSES with it
+   (exit codes)."
+   - new-p16-131 / new-p9-281 (MidiOssTest): RED EXIT=8 (test-red-1.log) before the
+     product change; GREEN EXIT=0 (test-green-1.log). The 4b reversal on the product
+     file alone: `git apply -R .../logs/fix.patch` EXIT=0 -> build EXIT=0 ->
+     `ctest -R '^MidiOssTest$'` EXIT=8 (test-rev-1.log, FAIL "Actual (closeCalls): 1,
+     Expected (0)"); `git apply .../logs/fix.patch` EXIT=0 -> build EXIT=0 ->
+     `ctest -R '^MidiOssTest$'` EXIT=0 (test-reapply-1.log).
+   - new-p9-270 (MidiOutQueueTest): RED EXIT=8 (test-queue-red.log) with the audio path
+     taking the sequencer mutex again ("'finished' returned FALSE"), GREEN EXIT=0
+     (test-queue-green.log) with the product restored (`git checkout --
+     src/core/midi/MidiAlsaSeq.cpp`).
+2) "The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
+   injected values it uses)."
+   - MidiOssTest: the device hooks zeneOssDeviceWrite / zeneOssDeviceClose are the
+     injected seams (tests/src/core/MidiOssTest.cpp:53-74). The stall is a QSemaphore
+     gate, not a timer: writeStarted is released when the fake write is entered and the
+     write blocks on writeGate until the test releases it (MidiOssTest.cpp:23-31).
+     The teardown grace (1000 ms) is the PRODUCT's own constant
+     (src/core/midi/MidiOss.cpp:44), not a test timing assumption: the test only
+     observes that the descriptor was not closed while the write is blocked. The
+     device itself is a real temporary file opened through MIDIDEV.
+   - MidiOutQueueTest: the seam is MidiAlsaSeq::seqMutexForTesting()
+     (include/MidiAlsaSeq.h:68-75, test-only under LMMS_TESTING). The test holds the
+     mutex and waits on a QSemaphore with a 5 s ceiling; the queued path returns in
+     microseconds, and a mutex-taking path would block until the mutex is released -
+     so the outcome does not depend on how fast the machine is.
+3) "The fix is at the cause and complete: every caller and sibling of what you changed
+   was checked and stays consistent."
+   - The descriptor ownership lives in the one place every OSS output byte passes
+     through: the writer (src/core/midi/MidiOss.cpp:194-241). Callers checked:
+     the constructor's two failure paths (open failure leaves m_fd = -1, MidiOss.cpp:88-91;
+     pipe failure closes the descriptor it opened and sets m_fd = -1, MidiOss.cpp:93-98);
+     sendByte() (MidiOss.cpp:170-178) still never touches the device; the reader
+     thread run() is stopped before the writer can close the descriptor, so the two
+     never race on it.
+   - Sibling checked: the sndio writer already owned its handle the same way
+     (src/core/midi/MidiSndio.cpp:175-203) and its destructor never closes it
+     (MidiSndio.cpp:130-148) - the OSS client now has that exact shape.
+   - The clock path (new-p9-270) was traced to the same three clients: the sequencer
+     client (MidiAlsaSeq.cpp:298-311, queued), OSS and sndio (queued). The stale
+     "DIRECT" comment in src/core/MidiClock.cpp:21-25 was corrected.
+4) "No collateral damage: old projects and saved data still load as before, and any
+   limit or check you added does not hit other callers that legitimately exceed it."
+   - Nothing about projects, save files, undo or the control surface was touched: no
+     new control command, no save-format change, no project data touched. The only
+     product behaviour change is WHO closes the OSS device descriptor, and only in the
+     stalled-teardown case: a normal teardown still closes it before the destructor
+     returns (the writer closes it just before it signals, the destructor joins after).
+   - The new test seam is compiled only under LMMS_TESTING and is read by one test;
+     it adds no limit and no check to any other caller.
+5) "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the
+   intended contract that shows it."
+   - new-p9-270 is ALREADY-FIXED in this tree, and the code that shows it is
+     src/core/midi/MidiAlsaSeq.cpp:298-311: the audio-thread processOutEvent() pushes
+     onto the bounded lock-free MidiOutQueue and writes one byte to the non-blocking
+     wake pipe; the sequencer mutex is taken only in processQueuedOutEvent()
+     (MidiAlsaSeq.cpp:314-327), which runs on the sequencer worker thread. The
+     upstream commits that made it so are d259e28ae ("move ALSA output off realtime
+     path") and the cluster-5129 wake-pipe follow-up cc389e112. The intended contract
+     is the same one the raw clients now follow: the audio thread never touches the
+     device or a device lock. This round added the regression that proves it, rather
+     than a second fix.
+   - The residual that is NOT covered by that verdict is named in the report above:
+     MidiAlsaRaw::sendByte (src/core/midi/MidiAlsaRaw.cpp:108-111) still writes to the
+     raw ALSA device on the caller thread. That is a different client from the one the
+     finding names, it affects every MIDI output path rather than the clock's alone,
+     and it carries its own bug id - it is reported here, not silently folded in.
+
