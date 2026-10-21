@@ -518,9 +518,13 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 {
 	Engine::audioEngine()->requestChangeInModel();
 
-	Track * t = create(
-		static_cast<Type>( element.attribute( "type" ).toInt() ),
-									tc );
+	bool typeOk = false;
+	const int typeValue = element.attribute( "type" ).toInt( &typeOk );
+	Track* t = nullptr;
+	if ( typeOk && typeValue >= 0 && typeValue < static_cast<int>( Type::Count ) )
+	{
+		t = create( static_cast<Type>( typeValue ), tc );
+	}
 	if( t != nullptr )
 	{
 		t->restoreState( element );

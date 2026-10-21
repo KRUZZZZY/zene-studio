@@ -273,6 +273,37 @@ private slots:
 		QCOMPARE( serialise( again ), serialise( refused ) );
 	}
 
+	//! A missing or nonnumeric `type` is not the persisted value 0 (Instrument).
+	void malformedTrackTypesArePreservedNotCoerced()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString project = dir.filePath( QStringLiteral( "malformed-types.mmp" ) );
+		QVERIFY( writeText( project, projectWithContainerChildren(
+			"      <track name=\"missing-type\"><futuretrack marker=\"missing\"/></track>\n"
+			"      <track type=\"oops\" name=\"nonnumeric-type\"><futuretrack marker=\"oops\"/></track>\n" ) ) );
+
+		Song* const song = loadFresh( project );
+		QCOMPARE( trackCount( song ), 1 );
+		QCOMPARE( static_cast<int>( song->unclaimedChildren().size() ), 2 );
+		const QStringList reported = song->unclaimedElements();
+		QVERIFY( reported.contains( QStringLiteral( "/song/trackcontainer/track[1]" ) ) );
+		QVERIFY( reported.contains( QStringLiteral( "/song/trackcontainer/track[2]" ) ) );
+
+		const QString saved = dir.filePath( QStringLiteral( "malformed-types-roundtrip.mmp" ) );
+		QVERIFY( song->saveProjectFile( saved ) );
+		const QDomElement container = containerOf( parse( readText( saved ) ) );
+		const QDomElement missing = childWith( container, QStringLiteral( "name" ), QStringLiteral( "missing-type" ) );
+		const QDomElement nonnumeric = childWith( container, QStringLiteral( "name" ), QStringLiteral( "nonnumeric-type" ) );
+		QVERIFY( !missing.isNull() );
+		QVERIFY( !missing.hasAttribute( QStringLiteral( "type" ) ) );
+		QVERIFY( !nonnumeric.isNull() );
+		QCOMPARE( nonnumeric.attribute( QStringLiteral( "type" ) ), QStringLiteral( "oops" ) );
+		QCOMPARE( missing.firstChildElement().attribute( QStringLiteral( "marker" ) ), QStringLiteral( "missing" ) );
+		QCOMPARE( nonnumeric.firstChildElement().attribute( QStringLiteral( "marker" ) ), QStringLiteral( "oops" ) );
+	}
+
 	//! The sibling hole, and the reason the claim test is not simply "did the
 	//! factory refuse it": `Track::create()` reads `type` with
 	//! QVariant::toInt(), so an element with NO `type` attribute reads as 0 - an

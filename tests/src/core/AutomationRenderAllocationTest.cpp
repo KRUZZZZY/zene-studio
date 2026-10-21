@@ -31,7 +31,9 @@
 
 #include <QtTest>
 #include <QDomDocument>
+#include <QTemporaryDir>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <memory>
@@ -46,13 +48,22 @@
 #include "AutomationTrack.h"
 #include "Engine.h"
 #include "RealtimeScope.h"
+#include "SamplePlayHandle.h"
 #include "Song.h"
+#include "TakeLaneTestSupport.h"
 #include "TimePos.h"
 
 using namespace lmms;
 
 namespace
 {
+
+class FrozenTakeProbeTrack final : public SampleTrack
+{
+public:
+	using Track::playFrozenTake;
+	explicit FrozenTakeProbeTrack(TrackContainer* container) : SampleTrack(container) {}
+};
 
 //! One automation track with a flat clip per model: model i is automated to i % 100 (a whole number, so setValue sees no rounding change).
 class Fixture
@@ -198,6 +209,43 @@ private slots:
 		song->playSong();
 		QCOMPARE(allocationsOverPeriods(song, 8), 0ull);
 		song->stop();
+	}
+
+	//! Cluster 5414: the actual frozen-take pass start allocates nothing in a realtime scope.
+	void startingFrozenTakeDoesNotAllocateOnRealtimePath()
+	{
+		Song* const song = Engine::getSong();
+		song->clearProject();
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("take.wav")), 440.0);
+		QVERIFY(!wav.isEmpty());
+		auto* const track = new FrozenTakeProbeTrack(song);
+		QString reason;
+		QVERIFY2(track->freezeTo(wav, 0, 1920, {}, &reason), qPrintable(reason));
+		AudioEngine* const audio = Engine::audioEngine();
+		audio->renderNextPeriod();  // warm the engine before counting this pass start
+
+		test::resetAllocationCount();
+		bool started = false;
+		{
+			const RealtimeScope realtime;
+			test::tlCountAllocations = true;
+			started = track->playFrozenTake(TimePos(0), audio->framesPerPeriod(), 0);
+			test::tlCountAllocations = false;
+		}
+		const std::uint64_t allocations = test::tlAllocationCount;
+		QVERIFY(started);
+		QCOMPARE(allocations, std::uint64_t{0});
+
+		audio->renderNextPeriod();
+		const auto isFrozenPoolVoice = [](PlayHandle* handle) {
+			return handle->type() == PlayHandle::Type::SamplePlayHandle
+				&& static_cast<SamplePlayHandle*>(handle)->isFrozenTakePoolVoice();
+		};
+		QVERIFY(std::any_of(audio->playHandles().begin(), audio->playHandles().end(), isFrozenPoolVoice));
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+		song->clearProject();
 	}
 
 	//! An absolute clip drives a model: the value is set, and no period allocates. The clip is flat on purpose:
