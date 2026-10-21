@@ -93,8 +93,8 @@ sandbox inside modules).
 
 ## 3. The optional manifest
 
-A package may declare itself in the entry script (first 4 KB, same window as the
-version header):
+A package may declare itself in the entry script (first 4 KB of the file,
+counted in bytes; a declaration the window cuts through is not seen):
 
 ```lua
 --! lmms-api 0.1
@@ -117,6 +117,9 @@ const QVector<lmms::ScriptPackage> packages =
 
 * `scan()` lists immediate subdirectories of `scriptsRoot`, keeps those that
   validate as a name and contain `package.lua`, and returns them sorted by name.
+* A package directory or entry script that resolves **outside** `scriptsRoot`
+  (a symlink out of the root) is skipped, like any other unusable directory:
+  the same canonical-path rule the import root applies to modules.
 * Anything else is **skipped, not reported as broken**: a typo'd directory, a
   half-copied package or a loose script must not break a listing of the rest.
 * `isValidName()` and `ScriptPackages::EntryFileName` are exposed so a caller

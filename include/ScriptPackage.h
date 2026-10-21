@@ -27,6 +27,7 @@
 
 #include <QString>
 #include <QVector>
+#include <QtGlobal>
 
 namespace lmms
 {
@@ -79,6 +80,9 @@ bool isValidName(const QString& name);
  *  script, or any file). Empty when absent or malformed. \a version may be
  *  empty in the header itself; that is reported as an empty version, not as an
  *  error.
+ *
+ *  The declaration must lie wholly within the first 4 KB of the source, counted
+ *  in BYTES: the window is a size of the file, not a number of characters.
  */
 ScriptPackage parseManifest(const QString& source);
 
@@ -89,8 +93,20 @@ ScriptPackage parseManifest(const QString& source);
  *  loose example scripts beside packages) and a half-copied directory must not
  *  break the listing. Callers that need to explain a skip can use
  *  isValidName() and EntryFileName themselves.
+ *
+ *  A package directory or entry script that resolves outside \a scriptsRoot (a
+ *  symlink out of the root) is skipped too: a package of this root must not
+ *  reach outside it.
  */
 QVector<ScriptPackage> scan(const QString& scriptsRoot);
+
+/*! Bytes read from package entry scripts since the process started.
+ *
+ *  A test seam for the bounded-read guarantee of scan(): discovery reads the
+ *  manifest window of an entry script, not the whole file, so a large package
+ *  script costs a fixed amount of memory to list. Hosts do not need this.
+ */
+qint64 entryScriptBytesReadForTesting();
 
 } // namespace ScriptPackages
 

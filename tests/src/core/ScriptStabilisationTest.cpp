@@ -43,6 +43,7 @@
 #include <QFile>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QProcess>
 #include <QTemporaryDir>
 
 #include "Engine.h"
@@ -121,6 +122,20 @@ void writeScript(const QString& path, const QString& source)
 	QVERIFY2(file.open(QIODevice::WriteOnly | QIODevice::Truncate), qPrintable(path));
 	file.write(source.toUtf8());
 	file.close();
+}
+
+bool createDirectoryLink(const QString& target, const QString& link)
+{
+#ifdef _WIN32
+	const QString command = QStringLiteral("mklink /J \"%1\" \"%2\"")
+			.arg(QDir::toNativeSeparators(link), QDir::toNativeSeparators(target));
+	QProcess process;
+	process.start(QStringLiteral("cmd.exe"), {QStringLiteral("/d"), QStringLiteral("/c"), command});
+	return process.waitForStarted() && process.waitForFinished(30000)
+			&& process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+#else
+	return QFile::link(target, link);
+#endif
 }
 
 } // namespace
@@ -446,6 +461,137 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 			int(ScriptEngine::RunResult::VersionError));
 		QVERIFY2(!ScriptEngine::instance()->takeLogMessages().contains(QStringLiteral("future ran")),
 			"a package must not bypass the version gate");
+	}
+
+	//! The scanner must not read a WHOLE entry script to find a manifest that
+	//! lives in its first 4 KB: a package script may be megabytes long, and
+	//! discovery allocates what it reads.
+	void packageScanningReadsOnlyTheManifestWindow()
+	{
+		using namespace lmms;
+		QTemporaryDir root;
+		QVERIFY(root.isValid());
+		QDir rootDir(root.path());
+		QVERIFY(rootDir.mkpath(QStringLiteral("big")));
+
+		// A 4 MB entry script whose manifest sits in the first bytes.
+		QByteArray script("--! lmms-api " + QByteArray(kExpectedApiVersion)
+			+ "\n--! lmms-package big 1.0\n");
+		script.append(QByteArray(4 * 1024 * 1024 - script.size(), 'x'));
+		QFile file(rootDir.absoluteFilePath(QStringLiteral("big/package.lua")));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.write(script) == script.size());
+		file.close();
+
+		const qint64 before = ScriptPackages::entryScriptBytesReadForTesting();
+		const QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
+		const qint64 read = ScriptPackages::entryScriptBytesReadForTesting() - before;
+
+		// The package is still found, with its version: bounding the read must
+		// not break discovery.
+		QCOMPARE(static_cast<int>(packages.size()), 1);
+		QCOMPARE(packages[0].name, QStringLiteral("big"));
+		QCOMPARE(packages[0].version, QStringLiteral("1.0"));
+
+		QVERIFY2(read <= 4096,
+			qPrintable(QStringLiteral("discovery read %1 bytes of a 4 MB entry script").arg(read)));
+	}
+
+	//! The manifest window is 4 KB of BYTES, not 4096 characters: a manifest
+	//! that starts past byte 4096 is outside the window, however few characters
+	//! it takes to get there.
+	void manifestWindowIsMeasuredInBytes()
+	{
+		using namespace lmms;
+		// 3000 two-byte characters: 6000 bytes of source, but only 3000
+		// characters - the manifest below sits past byte 4096 and inside
+		// character 4096.
+		const QString far = QString(3000, QChar(0x00E9))
+			+ QStringLiteral("\n--! lmms-package my-fx 1.2.3\n");
+		const ScriptPackage parsed = ScriptPackages::parseManifest(far);
+		QVERIFY2(parsed.name.isEmpty(),
+			"the manifest window is 4096 bytes, not 4096 characters");
+		QVERIFY(parsed.version.isEmpty());
+
+		// The same manifest inside the byte window is still found: the limit
+		// must not swallow a declaration that is there.
+		const QString near = QString(1000, QChar(0x00E9))
+			+ QStringLiteral("\n--! lmms-package my-fx 1.2.3\n");
+		QCOMPARE(ScriptPackages::parseManifest(near).name, QStringLiteral("my-fx"));
+		QCOMPARE(ScriptPackages::parseManifest(near).version, QStringLiteral("1.2.3"));
+
+		// Discovery agrees: a package whose manifest is past the byte window
+		// is listed, with no version.
+		QTemporaryDir root;
+		QVERIFY(root.isValid());
+		QDir rootDir(root.path());
+		QVERIFY(rootDir.mkpath(QStringLiteral("my-fx")));
+		writeScript(rootDir.absoluteFilePath(QStringLiteral("my-fx/package.lua")), near);
+		const QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
+		QCOMPARE(static_cast<int>(packages.size()), 1);
+		QCOMPARE(packages[0].name, QStringLiteral("my-fx"));
+		QCOMPARE(packages[0].version, QStringLiteral("1.2.3"));
+
+		QTemporaryDir farRoot;
+		QVERIFY(farRoot.isValid());
+		QDir farRootDir(farRoot.path());
+		QVERIFY(farRootDir.mkpath(QStringLiteral("my-fx")));
+		writeScript(farRootDir.absoluteFilePath(QStringLiteral("my-fx/package.lua")), far);
+		const QVector<ScriptPackage> farPackages = ScriptPackages::scan(farRoot.path());
+		QCOMPARE(static_cast<int>(farPackages.size()), 1);
+		QCOMPARE(farPackages[0].name, QStringLiteral("my-fx"));
+		QVERIFY2(farPackages[0].version.isEmpty(),
+			"a manifest past byte 4096 is outside the window");
+	}
+
+	//! Discovery stays INSIDE the scripts root: a package directory that is a
+	//! symlink to somewhere else would make the package's imports load from
+	//! outside the root.
+	void packageDiscoveryStaysInsideTheScriptsRoot()
+	{
+		using namespace lmms;
+		QTemporaryDir root;
+		QTemporaryDir outside;
+		QVERIFY(root.isValid());
+		QVERIFY(outside.isValid());
+		QDir rootDir(root.path());
+		QDir outsideDir(outside.path());
+
+		// A package inside the root: it must still be found.
+		QVERIFY(rootDir.mkpath(QStringLiteral("arp")));
+		writeScript(rootDir.absoluteFilePath(QStringLiteral("arp/package.lua")),
+			QStringLiteral("--! lmms-api %1\n--! lmms-package arp 1.0\n")
+				.arg(QString::fromLatin1(kExpectedApiVersion)));
+
+		// A package outside the root, and a symlink to it inside the root.
+		QVERIFY(outsideDir.mkpath(QStringLiteral("evil")));
+		writeScript(outsideDir.absoluteFilePath(QStringLiteral("evil/package.lua")),
+			QStringLiteral("--! lmms-api %1\n--! lmms-package evil 9.9\n")
+				.arg(QString::fromLatin1(kExpectedApiVersion)));
+		QVERIFY(createDirectoryLink(outsideDir.absoluteFilePath(QStringLiteral("evil")),
+			rootDir.absoluteFilePath(QStringLiteral("evil"))));
+
+		// An entry script that is a symlink out of the root: refused as well.
+		// File symlinks need privileges on Windows; the directory-link cases
+		// above and below still cover root containment there.
+	#ifndef _WIN32
+		QVERIFY(rootDir.mkpath(QStringLiteral("leak")));
+		QVERIFY(QFile::link(outsideDir.absoluteFilePath(QStringLiteral("evil/package.lua")),
+			rootDir.absoluteFilePath(QStringLiteral("leak/package.lua"))));
+	#endif
+
+		QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
+		QCOMPARE(static_cast<int>(packages.size()), 1);
+		QCOMPARE(packages[0].name, QStringLiteral("arp"));
+
+		// A symlink that stays INSIDE the root is still a package: only the
+		// escapes are refused.
+		QVERIFY(createDirectoryLink(rootDir.absoluteFilePath(QStringLiteral("arp")),
+			rootDir.absoluteFilePath(QStringLiteral("alias"))));
+		packages = ScriptPackages::scan(root.path());
+		QCOMPARE(static_cast<int>(packages.size()), 2);
+		QCOMPARE(packages[0].name, QStringLiteral("alias"));
+		QCOMPARE(packages[1].name, QStringLiteral("arp"));
 	}
 
 	//! A DIRECTORY named package.lua is not a package: the entry must be a file
