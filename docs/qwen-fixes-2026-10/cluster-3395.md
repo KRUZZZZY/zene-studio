@@ -383,14 +383,30 @@ or log was added. No new control command was added, and no command's schema
 or description changed. The undo steps are unchanged: `rack.macro_add` and
 `rack.macro_set` still record one step, and a refused value records none.
 
-**6. Sibling commands in the files I changed.** `rack.macro_add`,
-`rack.macro_remove`, `rack.macro_target_add`, `rack.macro_target_remove`,
-`rack.macro_set`, `rack.macro_set_pair` - all consistent: the value-taking
-ones (`macro_add`, `macro_set`, `macro_set_pair`) now refuse a nonfinite
-value with `InvalidArgs` instead of storing it, the target-taking one
-(`macro_target_add`) refuses a nonfinite window through the shared
-`isValidMacroTarget()`, and the two that take no value (`macro_remove`,
-`macro_target_remove`) are untouched.
+**6. Sibling commands in the command files I changed.** The check lists the
+whole rack group; here is each one against this fix:
+
+* the value-taking ones - `rack.macro_add`, `rack.macro_set`,
+  `rack.macro_set_pair` - now refuse a nonfinite value with `InvalidArgs`
+  instead of storing it, and `macro_set_pair` still refuses the pair whole
+  (both values are checked before either is written);
+* the target-taking one - `rack.macro_target_add` - refuses a nonfinite
+  window through the shared `isValidMacroTarget()`, and a window outside
+  0..1 as it always did;
+* `rack.macro_remove` and `rack.macro_target_remove` - they take no value and
+  no window, and are untouched;
+* `rack.add_chain`, `rack.remove_chain`, `rack.get_state`, `rack.set_selected`,
+  `rack.split`, `rack.wrap`, `rack.layers`, `rack.layer_add`,
+  `rack.layer_remove`, `rack.layer_zone_add`, `rack.layer_zone_remove`,
+  `rack.layer_set`, `rack.zone_add`, `rack.zone_remove`, `rack.zone_resolve`
+  - these live in `ControlCommandsRack.cpp`, `ControlCommandsRackLayers.cpp`,
+  `ControlCommandsRackSplit.cpp`, `ControlCommandsRackWrap.cpp` and
+  `ControlCommandsRackZones.cpp`, none of which this change touches, and none
+  of them reads or writes a macro value or a target window. The one that
+  meets the macro list is `rack.remove_chain`, which drops the macro targets
+  of the chain it removes through `RackMacros::reindexChains()` - unchanged
+  by this fix, and covered by the existing case
+  `removingAChainReindexesTheMacroTargets()`.
 
 **7. Gates.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py
 <worktree>` exited **0** after each of the three commits
