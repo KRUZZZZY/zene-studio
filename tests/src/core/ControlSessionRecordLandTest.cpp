@@ -383,6 +383,45 @@ private slots:
 		QCOMPARE(pending(), size_t{0});
 	}
 
+	//! A recorded cell whose session SCENE was removed before landing is reported not landed
+	//! with the truthful reason: its song track still exists, only the grid cell went, so it is
+	//! NOT a column without a song track and is counted apart from those. No blank clip; ring consumed.
+	void aRemovedSceneCellIsReportedNotLandedWithTheGridCellReason()
+	{
+		QVERIFY(recorder().recordStart(0, 1, 0));
+		QVERIFY(recorder().recordStop(0, 1, 96));
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 3}, {QStringLiteral("scenes"), 1}}).ok);
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("skipped_columns")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("removed_grid_cells")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("collapsed")).toInt(), 0);
+		QCOMPARE(landedEntry(landed, 0).value(QStringLiteral("reason")).toString(), QStringLiteral("session_grid_cell_removed"));
+		QCOMPARE(m_first->getClips().size(), size_t{0});
+		QCOMPARE(pending(), size_t{0});
+	}
+
+	//! The same when the session grid loses the TRACK of a cell whose song track still exists:
+	//! truthful reason, counted with the removed grid cells, no clip, ring consumed.
+	void aRemovedGridTrackCellIsReportedNotLandedWithTheGridCellReason()
+	{
+		QVERIFY(recorder().recordStart(1, 0, 0));
+		QVERIFY(recorder().recordStop(1, 0, 96));
+		QVERIFY(run(QStringLiteral("session.set_grid"), {{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 2}}).ok);
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("skipped_columns")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("removed_grid_cells")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("collapsed")).toInt(), 0);
+		QCOMPARE(landedEntry(landed, 0).value(QStringLiteral("reason")).toString(), QStringLiteral("session_grid_cell_removed"));
+		QCOMPARE(m_second->getClips().size(), size_t{0});
+		QCOMPARE(pending(), size_t{0});
+	}
+
 	//! A start with no stop yet: the pass is refused, names what still plays, and consumes NOTHING.
 	void aStillOpenLaunchRefusesAndConsumesNothing()
 	{

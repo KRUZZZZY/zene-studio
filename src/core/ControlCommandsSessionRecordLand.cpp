@@ -328,6 +328,18 @@ void addLandedClipFields(QJsonObject* landed, const Clip* clip, const Track* tra
 	landed->insert(QStringLiteral("content"), content);
 }
 
+//! Sorts one NOT-LANDED pair into the pass's summary counts: a column that never had
+//! a song track, a session-grid cell removed since the recording (its song track still
+//! exists), or a pair that collapsed (an empty span, a track that made no clip).
+void countNotLandedPair(const QJsonObject& entry, int* skippedColumns,
+	int* removedGridCells, int* collapsed)
+{
+	const QString reason = entry.value(QStringLiteral("reason")).toString();
+	if (reason == QStringLiteral("column_has_no_song_track")) { ++(*skippedColumns); }
+	else if (reason == QStringLiteral("session_grid_cell_removed")) { ++(*removedGridCells); }
+	else { ++(*collapsed); }
+}
+
 } // namespace
 
 QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, const LandPair& pair,
@@ -337,6 +349,12 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
 	{
 		return pairNotLanded(pair, QStringLiteral("column_has_no_song_track"));
+	}
+	// The song track is there; only the session-grid cell is gone (session.set_grid
+	// shrank the scene or the grid track away) - a different fact, with its own count.
+	if (pair.track >= model.trackCount() || pair.scene < 0 || pair.scene >= model.sceneCount())
+	{
+		return pairNotLanded(pair, QStringLiteral("session_grid_cell_removed"));
 	}
 	const tick_t length = pair.stopTick - pair.startTick;
 	if (length <= 0)
@@ -387,6 +405,7 @@ void registerRecordLand(ControlRegistry& registry)
 		{QStringLiteral("pairs"), integerProperty()},
 		{QStringLiteral("events"), integerProperty()},
 		{QStringLiteral("skipped_columns"), integerProperty()},
+		{QStringLiteral("removed_grid_cells"), integerProperty()},
 		{QStringLiteral("collapsed"), integerProperty()},
 		{QStringLiteral("unmatched_stops"), integerProperty()},
 		{QStringLiteral("recorded"), integerProperty()},
@@ -427,15 +446,14 @@ void registerRecordLand(ControlRegistry& registry)
 		QJsonArray landed;
 		int clips = 0;
 		int skippedColumns = 0;
+		int removedGridCells = 0;
 		int collapsed = 0;
 		for (int i = 0; i < pairCount; ++i)
 		{
 			const QJsonObject entry = landPairState(*song, *model, pairs[i], audioSamples[i]);
 			if (!entry.value(QStringLiteral("landed")).toBool())
 			{
-				if (entry.value(QStringLiteral("reason")).toString()
-					== QStringLiteral("column_has_no_song_track")) { ++skippedColumns; }
-				else { ++collapsed; }
+				countNotLandedPair(entry, &skippedColumns, &removedGridCells, &collapsed);
 			}
 			else { ++clips; }
 			landed.append(entry);
@@ -447,6 +465,7 @@ void registerRecordLand(ControlRegistry& registry)
 		result.insert(QStringLiteral("pairs"), pairCount);
 		result.insert(QStringLiteral("events"), static_cast<int>(count));
 		result.insert(QStringLiteral("skipped_columns"), skippedColumns);
+		result.insert(QStringLiteral("removed_grid_cells"), removedGridCells);
 		result.insert(QStringLiteral("collapsed"), collapsed);
 		result.insert(QStringLiteral("unmatched_stops"), unmatchedStops);
 		result.insert(QStringLiteral("recorded"), static_cast<double>(recorder.recorded()));

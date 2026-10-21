@@ -30,6 +30,7 @@
 
 #include <QtTest>
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
 #include <QTemporaryDir>
@@ -169,6 +170,64 @@ private slots:
 		QVERIFY(!landed.ok);
 		QCOMPARE(recorder.pending(), std::size_t(2));
 		QCOMPARE(Engine::getSong()->tracks().front()->numOfClips(), 0);
+	}
+
+	//! A take recorded into a cell whose SCENE was removed from the grid before the
+	//! land pass is NOT landed as a blank arrangement clip: the song track stays empty
+	//! and the reply names the removed grid cell (the song track itself is still there,
+	//! so this is not a column without a song track).
+	void aTakeWhoseSceneWasRemovedIsNotLandedAsABlankClip()
+	{
+		auto& recorder = Engine::getSong()->sessionScheduler().arrangementRecorder();
+		SessionArrangementRecorder::Event ignored;
+		while (recorder.pop(ignored)) {}  // the ring starts this take empty
+		recorder.setArmed(true);
+		QVERIFY(recorder.recordStart(0, 1, 0));   // cell (0, 1): the grid's second scene
+		QVERIFY(recorder.recordStop(0, 1, 192));
+		// the grid shrinks under the recorded take: scene 1 goes away
+		QVERIFY(run(QStringLiteral("session.set_grid"),
+			{{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 1}}).ok);
+
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("skipped_columns")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("removed_grid_cells")).toInt(), 1);
+		const QJsonObject entry = landed.result.value(QStringLiteral("landed")).toArray().at(0).toObject();
+		QCOMPARE(entry.value(QStringLiteral("landed")).toBool(), false);
+		QCOMPARE(entry.value(QStringLiteral("reason")).toString(), QStringLiteral("session_grid_cell_removed"));
+		QCOMPARE(Engine::getSong()->tracks().front()->numOfClips(), 0);
+		QCOMPARE(recorder.pending(), std::size_t(0));  // the event was consumed, and said so
+	}
+
+	//! The same when the grid loses the TRACK of a cell whose song track still exists.
+	void aTakeWhoseGridTrackWasRemovedIsNotLandedAsABlankClip()
+	{
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		QVERIFY(run(QStringLiteral("session.set_grid"),
+			{{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}).ok);
+		auto& recorder = Engine::getSong()->sessionScheduler().arrangementRecorder();
+		SessionArrangementRecorder::Event ignored;
+		while (recorder.pop(ignored)) {}
+		recorder.setArmed(true);
+		QVERIFY(recorder.recordStart(1, 0, 0));   // cell (1, 0): the grid's second track
+		QVERIFY(recorder.recordStop(1, 0, 192));
+		// the grid shrinks under the recorded take: grid track 1 goes away
+		QVERIFY(run(QStringLiteral("session.set_grid"),
+			{{QStringLiteral("tracks"), 1}, {QStringLiteral("scenes"), 2}}).ok);
+
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), 1);
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("skipped_columns")).toInt(), 0);
+		QCOMPARE(landed.result.value(QStringLiteral("removed_grid_cells")).toInt(), 1);
+		const QJsonObject entry = landed.result.value(QStringLiteral("landed")).toArray().at(0).toObject();
+		QCOMPARE(entry.value(QStringLiteral("landed")).toBool(), false);
+		QCOMPARE(entry.value(QStringLiteral("reason")).toString(), QStringLiteral("session_grid_cell_removed"));
+		QCOMPARE(Engine::getSong()->tracks().at(1)->numOfClips(), 0);
+		QCOMPARE(recorder.pending(), std::size_t(0));
 	}
 
 private:
