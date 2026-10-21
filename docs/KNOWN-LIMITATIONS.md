@@ -274,34 +274,92 @@ library to work.
   generated parameter view and there is no `clap.gui` support anywhere in this tree, so the instrument's own
   window does not open (the same limit the VST3 instrument has). *(Superseded 2026-09-30: R4.3 implements the
   clap.gui life cycle, X11 embedded, and the instrument view's "Show plugin editor" button opens it.)*
-- *(Superseded 2026-09-29/30: the mixer draws a VCA strip per group - fader, mute, solo - and a channel's
-  context menu assigns it to a group, through the `vca.*` commands (M3.7, `VcaStripViewTest`,
-  `VcaStripLifetimeTest`).)* The bullet below is the pre-M3.7 record.
-- **No VCA groups in the interface.** Mix-and-edit groups exist, are tested, and are saved with the project —
-  and since 2026-09-14 the **whole group is drivable through `--control-socket`, which is still the only way
-  to reach one: nothing in the interface creates a group, names one, assigns a member, locks it or edits
-  through it.**
-  Verified in the tree: the group is a real entity (`src/core/VcaGroup.cpp`, `include/VcaGroup.h`, owned by
-  the mixer via `Mixer::createVcaGroup`, `src/core/Mixer.cpp:720`), its gain is applied on the audio path
-  (`:528-545`), and the save/load element it is written as is `vcagroup` with a `vca` child (`:1893`,
-  `:1898`, `:2022`, `:2037`). `docs/VCA-GROUPS.md` is the implementing lane's report; the lane is an ancestor
-  of this tip. *Updated 2026-09-14 (OWNER-31 item 11, lane `030/vca-editgroups`): the UI half of this bullet
-  is still exactly true — nothing in `src/gui/` creates a group, adds a member or toggles the phase lock —
-  but the reachability half is no longer. The `vca.*` control group (14 ids: `vca.create`, `vca.remove`,
-  `vca.list`, `vca.get_state`, `vca.rename`, `vca.set_gain`, `vca.set_mute`, `vca.set_solo`, `vca.assign`,
-  `vca.unassign`, `vca.set_phase_lock`, `vca.track_add`, `vca.track_remove`, `vca.edit_move`) makes the
-  whole group drivable through the socket and the MCP bridge, including the **edit** half the group's name
-  promises: an edit set of tracks (`vca.track_add`) and a phase lock (`vca.set_phase_lock`, ON by default)
-  under which `vca.edit_move` moves a named clip and every other member's clips that overlap its
-  pre-command span by the same delta, so a take recorded across several inputs slides as one object and
-  stays sample-aligned. The edit set is persisted on the group's own `<vcagroup>` element (`locked`, plus
-  one `<edittrack track="n"/>` per member). `docs/VCA-EDIT-GROUPS.md` §1-§4 is that half's report, and
-  the three limits that remain are named there and in `docs/RELEASE-NOTES-v0.3.0-alpha.md`: **one** media
-  edit is propagated (a clip move — trim, slip, split and fades are not), a track deleted while it is in an
-  edit set stays in the set (reported as `missing_tracks` / `skipped_tracks` until `vca.track_remove`), and
-  `vca.set_solo`'s undo does not restore the transient `MixerChannel::m_muteBeforeSolo`. There is still no
-  Lua binding for any of it, and a group's audibility is proved by `VcaGroupTest`'s rendered dB delta, not
-  by the socket transcript.*
+- *(Superseded 2026-09-29/30 (M3.7); the interface half corrected again 2026-10-18 (Q050-171).)*
+  **A VCA group's mix half and its main edit-half gestures are in the interface, and
+  `--control-socket` reaches the same registered commands for the verbs that have no menu, listed
+  below.** The mixer draws a VCA strip per group - type badge, name, member count, Mute, Solo and
+  the group's own fader - while the mix has any groups (`src/gui/VcaStripView.cpp`, built by `MixerView::refreshVcaStrips`,
+  `src/gui/MixerView.cpp:403`, which hides the strip area when the last group is removed). The
+  strip's right-click menu carries **Links** (Level, Mute, Solo and Suspend All, checkable,
+  `vca.set_links`) and **Put Inside** (nesting through `vca.set_parent`; a parent that would close
+  a loop or nest past `MaxGroupDepth` (8, `include/MixerGroups.h:37`) is offered disabled with the
+  reason as its tooltip rather than refused unseen, `src/gui/VcaStripView.cpp:106`). A mixer
+  channel's context menu has a **VCA group** submenu (`src/gui/MixerChannelView.cpp:347`): one
+  checkable membership entry per group (`vca.assign` / `vca.unassign`) and **New VCA group**
+  (`vca.create`, then `vca.assign` for that channel; `populateVcaMenu`,
+  `src/gui/VcaStripView.cpp:168`) - two command invocations, so two recorded undo steps rather
+  than one. **Project tools ▸ Groups...** lists the groups with Rename... (ask), Remove
+  (confirmed), Add Track to Edit Set... and Remove Track from Edit Set... (ask), Phase Lock On and
+  Phase Lock Off, and New Group... (`CommandLists::vcaGroups`, `src/gui/CommandLists.cpp:59`,
+  behind `menuparts::list` in `src/gui/shell/ShellCommandMenus.cpp:526`); **Project tools ▸ Colour
+  a Group's Channels...** runs `vca.color_members`
+  (`src/gui/shell/ShellCommandMenus.cpp:519`); and the Inspector's **Clip** menu carries **Move
+  With Edit Group...**, the `vca.edit_move` form prefilled with the clip
+  (`src/gui/shell/ShellCommandMenus.cpp:327`, attached to the Clip section's title bar by
+  `src/gui/shell/InspectorPanel.cpp:383`; the Inspector's channel menu has no VCA submenu). Every
+  menu line runs a registered command the socket runs. Each **submitted mutating** action is one
+  recorded undo step - the membership ticks, the Links and Put Inside choices, the Groups list's
+  row actions and New Group..., Colour a Group's Channels..., the submitted Move With Edit Group...
+  form and the strip's fader, Mute and Solo - with **New VCA group** above the one exception (two
+  command invocations, two steps). The launchers themselves do not edit or add a step:
+  **Groups...** opens a list whose read-only `vca.list` query writes nothing, and **Move With Edit
+  Group...** (like **Colour a Group's Channels...**) opens a form that becomes one step when
+  submitted. The strip's fader, Mute and Solo are the group's own models, so a strip edit, a menu
+  edit and a socket edit move one state
+  (`VcaStripViewTest::theStripsControlsAreTheGroupsOwnModels`,
+  `theChannelMenuEditsMembershipThroughTheCommands`,
+  `theStripsMenuChoosesLinksAndNestingThroughTheCommands`,
+  `theGroupsListOffersCreateEditSetAndPhaseLock`, `theClipsMenuCarriesMoveWithEditGroup`).
+  The entity is unchanged, with the citations that hold at this tip: a real object
+  (`src/core/VcaGroup.cpp`, `include/VcaGroup.h`) created and owned by the mixer
+  (`Mixer::createVcaGroup`, `src/core/Mixer.cpp:997`), its gain published to each member as
+  `MixerChannel::m_vcaGain` and applied once per period on the audio path (`src/core/Mixer.cpp:762-768`),
+  and saved as the `<vcagroup>` element with its `vca` child, its `locked` attribute and one
+  `<edittrack track="n"/>` per edit-set member (`src/core/Mixer.cpp:2504-2544`), read back at
+  `src/core/Mixer.cpp:2753-2825` - a pre-edit-half element loads as locked with an empty set. `vca.*`
+  is 21 ids: the fourteen of `docs/VCA-EDIT-GROUPS.md` §3 plus `vca.color_members` (one colour for a
+  group's channels), `vca.set_parent` and `vca.set_links` (the strip's Put Inside and Links menus),
+  and the phase-locked `vca.edit_split`, `vca.edit_trim`, `vca.edit_slip` and `vca.edit_fade`; the
+  whole group is registered by one function (`registerVcaCommands`,
+  `src/core/ControlCommandsVca.cpp:468`), and the proofs are `VcaStripViewTest`,
+  `VcaStripLifetimeTest`, `ControlVcaCommandsTest`, `ControlVcaEditGroupsTest`,
+  `ControlVcaLockedEditsTest` and the registered ctest `ControlVcaCommands`
+  (`tests/control-vca-commands.py`). `docs/VCA-GROUPS.md` (the mix lane) and
+  `docs/VCA-EDIT-GROUPS.md` §1-§4 (the edit lane) are the implementing reports, both ancestors of this
+  tip; each now carries its own dated note where its "no interface" lines went stale.
+  What the interface still does not offer, so a reader can tell its limits from everyone's: **(1)** of
+  the phase-locked edits only the move has a menu line - split, trim, slip and fade
+  (`vca.edit_split` / `edit_trim` / `edit_slip` / `edit_fade`) are reachable from the socket or
+  `zene.command()`, so an edge drag, a split or a fade made on a clip in the arranger affects that clip
+  alone and never the edit set; **(2)** the channel's VCA menu never sends the shared-membership form
+  `vca.assign` with `also: true`, so ticking a group for a channel another one already holds is
+  refused (`heldElsewhere`, `src/core/ControlCommandsVcaShared.h:311`) and the menu reports nothing
+  back; **(3)** the Groups... dialog cannot show which tracks an edit set holds - it can add and
+  remove them but has no track column. And the limits that remain regardless of surface: a track
+  deleted while it is in an edit set stays in the set, reported as `missing_tracks` by `vca.get_state`
+  and `skipped_tracks` by an edit (`src/core/ControlCommandsVcaShared.h:177`, `:194`), until somebody says
+  `vca.track_remove`; `vca.set_solo`'s undo does not restore the transient
+  `MixerChannel::m_muteBeforeSolo`, re-derived on the next solo action
+  (`src/core/ControlCommandsVcaMix.cpp:224`, the same limit `track.set_solo` states); a clip
+  delete, a clip gain and a crossfade are not carried by the phase lock - `ControlVcaLockedEditsTest`
+  holds the five edits that are, and `clip.delete`, `clip.set_gain` and `clip.crossfade` affect only
+  the clip they name; and there is no dedicated Lua binding, though that is no longer the sentence to write: every
+  `vca.*` id is scriptable through the generic `zene.command()` bridge, which the sandbox refusal
+  lists do not name (`refusedPrefixes` / `refusedIds`, `src/core/ScriptCommandBridge.cpp:69` and
+  `:80`; the bridge itself at `:272`), so what is missing is menus and read-backs, not reachability. A
+  group's audibility is still proved by `VcaGroupTest`'s rendered dB delta rather than a socket
+  transcript - `tests/control-vca-commands.py` reads state back, it does not re-render; a strip's
+  fader drag undoes through the model's own journal checkpoint (`AutomatableModel` is a
+  `JournallingObject`), like any channel fader.
+- *(The pre-M3.7 record, kept so a reader who meets the old sentence in an older copy of this page can
+  see what replaced it.)* **No VCA groups in the interface.** Mix-and-edit groups exist, are tested,
+  and are saved with the project — and since 2026-09-14 the **whole group was drivable through
+  `--control-socket`, which was then the only way to reach one: nothing in the interface created a
+  group, named one, assigned a member, locked it or edited through it.** Its 2026-09-14 update named
+  fourteen `vca.*` ids and the three limits of the day (one propagated media edit - the move; the
+  deleted track still in the edit set; the `set_solo` undo); its engine citations (`Mixer.cpp:720`,
+  `:528-545`, `:1893`, `:1898`, `:2022`, `:2037`) were stale by the next renumber and the corrected
+  ones are in the bullet above.
 - *(Updated 2026-09-30.)* **A mixer channel's context menu now has a Rack submenu**, read from `rack.get_state`:
   a line naming the chains and the routing; Route to (Parallel, or one chain; `rack.set_selected`); Add
   parallel chain and Remove chain (`rack.add_chain` / `rack.remove_chain`; chain 0 is the channel's own and is

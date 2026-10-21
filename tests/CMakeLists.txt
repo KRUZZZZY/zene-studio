@@ -1205,7 +1205,8 @@ set(LMMS_TESTS
 	src/gui/CommandPaletteTest.cpp
 	# 0.5.0 W1: the schema-built command form, its dispatcher, choice menus and the list dialog.
 	src/gui/CommandFormTest.cpp
-	# M3.7: the mixer's VCA strip and the channel's VCA menu.
+	# M3.7: the mixer's VCA strip and the channel's VCA menu; Q050-171: the Groups list spec and the
+	# Clip menu's Move With Edit Group entry.
 	src/gui/VcaStripViewTest.cpp
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
 	# socket-visible state; every cell focusable and announced; the arrow keys.
