@@ -122,6 +122,8 @@ stated.
 | The wider latency/mixer family | `cmake --build build --target PdcMixerTest MixerConcurrencyTest InstrumentLatencyPdcTest DeviceToolsChainTest -j"$(nproc)"` | 0 | `build-6-family.log` |
 | The wider latency/mixer family, run | From `build/tests`: `ctest -R '^(HardwareIoTest\|ImportTrackIoTest\|PdcMixerTest\|MixerConcurrencyTest\|InstrumentLatencyPdcTest\|DeviceToolsChainTest)$' --output-on-failure` | 0 | `test-6-family.log`; 6 of 6 CTest suites passed (MixerConcurrencyTest, InstrumentLatencyPdcTest, PdcMixerTest, HardwareIoTest, ImportTrackIoTest, DeviceToolsChainTest) |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-review-2bc56f391` | **0** | `gates-1.log`; RESULT: PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item in your files") |
+| Gates, after this report and its registration | the same command | **0** | `gates-2.log`; RESULT: PASS (base b61e5f965, 5 changed files) |
+| Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-review-2bc56f391 review-2bc56f391` | **0** | `submit-check.log`; RESULT: PASS - submit (5 PASS, no FAIL; the five ASK items are answered below) |
 
 The gates were run twice: once with the fix (`gates-1.log`, exit 0) and once
 after this report and its registration were added (`gates-2.log`, exit 0).
@@ -205,3 +207,13 @@ build error.
   `std::int64_t` only. The arithmetic shift used to unpack the figure
   (`measuredOf`, `include/HardwareInsert.h:153-156`) is well defined in C++20
   (arithmetic shift, signed) - the project is C++20.
+* **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+  the intended contract that shows it."** Not applicable: the verdict is FIXED
+  and a product change was made. For the record, the clause of the finding that
+  the branch had already answered is the change-guard one, and the code that
+  shows it is `src/core/ControlCommandsHardwareInsert.cpp:65-76` (the undo's
+  snapshot, cancel and settings restore in one change-lock section, the cancel
+  at line 73) and `src/core/ControlCommandsHardwareInsert.cpp:150` (the undo
+  step that calls it) - that part landed in commit `cdb96259f`. The rest of the
+  finding - the stale transition and the revived measurement - is what this
+  commit fixes.
