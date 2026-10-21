@@ -47,6 +47,7 @@ using lmms::Telemetry;
 
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QScopeGuard>
 
 using lmms::TelemetryConsent;
 using lmms::TelemetryHardware;
@@ -259,7 +260,45 @@ private slots:
 		QVERIFY(!object.contains(QStringLiteral("plugin_vst3_count")));
 	}
 
-	// --- 7. consent persists through ConfigManager -------------------------
+	// --- 7. the session type is a fixed label, not the environment text ----
+	void desktopSessionIsBucketed()
+	{
+		const bool hadValue = qEnvironmentVariableIsSet("XDG_SESSION_TYPE");
+		const QByteArray oldValue = qgetenv("XDG_SESSION_TYPE");
+		const auto restore = qScopeGuard([hadValue, oldValue] {
+			if (hadValue) { qputenv("XDG_SESSION_TYPE", oldValue); }
+			else { qunsetenv("XDG_SESSION_TYPE"); }
+		});
+
+		auto collectWith = [](const QByteArray & sessionType) {
+			qputenv("XDG_SESSION_TYPE", sessionType);
+			return TelemetryHardware::collect().desktopSession;
+		};
+
+		for (const char * known : {"x11", "wayland", "tty"})
+		{
+			QCOMPARE(collectWith(QByteArray(known)), QString::fromLatin1(known));
+		}
+		// Everything that is not one of those fixed tokens - a path, a user
+		// name, a desktop name, free text, a different case - is not carried
+		// into the payload verbatim.
+		for (const char * privateText : {"/home/alice/private-session", "alice@example.com",
+				"kde-plasma", "x11 wayland", "X11", ""})
+		{
+			QCOMPARE(collectWith(QByteArray(privateText)), QStringLiteral("unknown"));
+		}
+
+		qunsetenv("XDG_SESSION_TYPE");
+		QCOMPARE(TelemetryHardware::collect().desktopSession, QStringLiteral("unknown"));
+
+		// The collected value is exactly what the payload carries.
+		qputenv("XDG_SESSION_TYPE", QByteArray("/home/alice/private-session"));
+		Telemetry client(fullyConsented(), nullptr, TelemetryHardware::collect());
+		const QJsonObject object = QJsonDocument::fromJson(client.previewJson()).object();
+		QCOMPARE(object.value(QStringLiteral("desktop_session")).toString(), QStringLiteral("unknown"));
+	}
+
+	// --- 8. consent persists through ConfigManager -------------------------
 	void consentRoundTripsThroughConfigManager()
 	{
 		const TelemetryConsent saved = fullyConsented();
@@ -319,7 +358,7 @@ private slots:
 			"stay reachable by the headless sweep");
 	}
 
-	// --- 8. the packager kill switch (enabled build) -----------------------
+	// --- 9. the packager kill switch (enabled build) -----------------------
 	void killSwitchStateMatchesTheBuild()
 	{
 		QVERIFY(Telemetry::isCompiledIn());
