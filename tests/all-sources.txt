@@ -2939,6 +2939,7 @@ tests/src/plugins/ReverbSCCreateTestAllocator.c
 tests/src/plugins/ReverbSCRawProcessingTest.cpp
 tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/plugins/SampleRateDependentLadspa.cpp
+tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/SlicerTZoomTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp

@@ -2480,6 +2480,8 @@ tests/src/gui/FileRevealerTest.cpp
 tests/src/tracks/SampleClipRubberBandTest.cpp
 # 2026-10-12 (cluster new-p10-375): the SlicerT waveform endpoint regression test is fork-NEW.
 # It is named in both recipe copies above because tests/src/plugins is outside the core/tracks pathspec.
+# cluster new-p9-454 / new-p9-453: the SF2 note-path allocation and lock-free synth hand-off regression.
+tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 # cluster new-p10-116: the anchored-name regression for favourite effects in the picker.

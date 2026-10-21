@@ -2407,3 +2407,4 @@ tests/rt-safety-scope.txt	Q050-041: declares CarlaInstrument::playImpl, handleMi
 src/common/SharedMemory.cpp	ci-train-5: cast the Windows FileView handle through void* before Header* (mingw64/windows-arm64 build break from new-p9-457); no behaviour change.
 tests/CMakeLists.txt	ci-train-5: build VstEffectControlsTest only where the vsteffect target exists (macOS configure break).
 plugins/Sf2Player/Sf2Player.cpp	cluster new-p9-454 / new-p9-453: replace the audio thread's QVector note tracking and its mutexes with preallocated note slots plus a bounded hand-off queue, and give the render thread a lock-free synth hand-off; covered by Sf2PlayerRealtimeTest and RtSafetySweep.
+plugins/Sf2Player/Sf2Player.h	cluster new-p9-454 / new-p9-453: expose the preallocated note slot, the bounded hand-off queues and the render-owned synth state the lock-free rewrites need; covered by Sf2PlayerRealtimeTest and RtSafetySweep.

@@ -69,6 +69,7 @@ for this session are therefore new numbered files under
 Files committed: `include/MidiHandoffQueue.h`,
 `plugins/Sf2Player/Sf2Player.h`, `plugins/Sf2Player/Sf2Player.cpp`,
 `tests/CMakeLists.txt`, `tests/src/plugins/Sf2PlayerRealtimeTest.cpp`,
+`tests/all-sources.txt`, `tests/fork-sources.txt`,
 `tests/rt-safety-scope.txt`, `tests/upstream-modifications.txt`,
 `docs/qwen-fixes-2026-10/cluster-new-p9-454.md`.
 
