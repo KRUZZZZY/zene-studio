@@ -82,7 +82,7 @@ struct LMMS_EXPORT BrowserIndexEntry
  *  size and date, and (when asked) each audio file's features - kept in the user's config directory
  *  (<config>/browser-index.json; ZENE_BROWSER_INDEX names another file), so a search over the whole
  *  library is a lookup instead of a walk, and a similar-sound search has something to compare with.
- *  A scan runs on a worker thread (never the audio thread) and replaces the index when it finishes; a
+ *  A scan runs on a worker thread (never the audio thread) and replaces the index when it finishes and its store is written (a scan whose store cannot be written keeps the previous index and reports the error); a
  *  file whose size and date are unchanged keeps the features it had, so a rescan only measures what is
  *  new. Bounded: MaxEntries files (a longer walk says `truncated`) and MaxAnalysed measured per scan. */
 class LMMS_EXPORT BrowserIndex

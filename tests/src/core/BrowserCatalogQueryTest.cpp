@@ -519,6 +519,48 @@ private slots:
 		QVERIFY2(!manifestIndexed, "the bundle contents were indexed separately");
 	}
 
+	//! A rescan whose index file cannot be written does not publish its entries:
+	//! queries keep the index the store still holds, and a restart reads that same index.
+	void failedIndexSaveKeepsThePreviousIndex()
+	{
+		QTemporaryDir dir;
+		QTemporaryDir store;
+		QVERIFY(dir.isValid());
+		QVERIFY(store.isValid());
+		writeFixture(dir.path(), QStringLiteral("first.wav"), WaveSpec());
+		const QString good = QDir(store.path()).filePath(QStringLiteral("index.json"));
+		// A regular file where the store's folder would be: the save cannot create the store, so it fails.
+		const QString blocker = QDir(store.path()).filePath(QStringLiteral("blocker"));
+		QVERIFY(writeText(blocker, QStringLiteral("not a folder")));
+		const QString unwritable = QDir(blocker).filePath(QStringLiteral("index.json"));
+
+		BrowserIndex& index = BrowserIndex::instance();
+		const auto names = [&index] {
+			QStringList out;
+			for (const BrowserIndexEntry& entry : index.entries()) { out << entry.name; }
+			out.sort();
+			return out;
+		};
+		qputenv("ZENE_BROWSER_INDEX", good.toUtf8());
+		index.reload();
+		QVERIFY(index.scanNow(QStringList{dir.path()}, false, 0));
+		const QStringList published = names();
+		QCOMPARE(published, QStringList{QStringLiteral("first.wav")});
+
+		writeFixture(dir.path(), QStringLiteral("second.wav"), WaveSpec());
+		qputenv("ZENE_BROWSER_INDEX", unwritable.toUtf8());
+		QVERIFY(index.scanNow(QStringList{dir.path()}, false, 0));
+		QVERIFY2(!index.status().error.isEmpty(), "the failed save was not reported");
+		QVERIFY(!index.status().running);
+		QCOMPARE(names(), published);
+
+		// After a restart the store is read again: it holds the index the failed scan did not publish.
+		qputenv("ZENE_BROWSER_INDEX", good.toUtf8());
+		index.reload();
+		QCOMPARE(names(), published);
+		qunsetenv("ZENE_BROWSER_INDEX");
+	}
+
 	//! Exhausting the metadata probe budget while another candidate needs a
 	//! probe marks the result partial, even when that candidate would match.
 	void probeLimitReportsTruncation()
