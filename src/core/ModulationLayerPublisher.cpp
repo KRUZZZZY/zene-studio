@@ -71,6 +71,7 @@ ModulationLayerPublisher::ModulationLayerPublisher()
 ModulationLayerPublisher::~ModulationLayerPublisher()
 {
 	for (QMetaObject::Connection& watch : m_watch) { QObject::disconnect(watch); }
+	for (QMetaObject::Connection& watch : m_instrumentWatch) { QObject::disconnect(watch); }
 }
 
 void ModulationLayerPublisher::publishTriggers()
@@ -197,6 +198,8 @@ void ModulationLayerPublisher::publishView()
 		}
 		QObject::disconnect(m_watch[slot]);
 		m_watch[slot] = QMetaObject::Connection{};
+		QObject::disconnect(m_instrumentWatch[slot]);
+		m_instrumentWatch[slot] = QMetaObject::Connection{};
 		m_alive[slot].store(0, std::memory_order_release);
 		if (slot >= static_cast<std::size_t>(m_runtime.entryCount)) { continue; }
 
@@ -228,6 +231,13 @@ void ModulationLayerPublisher::publishView()
 			[alive, writersPtr, token] {
 				ModulationLayerPublisher::retireTarget(*alive, *writersPtr, token);
 			});
+		if (from.instrument != nullptr)
+		{
+			m_instrumentWatch[slot] = QObject::connect(from.instrument, &Instrument::aboutToBeDestroyed,
+				[alive, writersPtr, token] {
+					ModulationLayerPublisher::retireTarget(*alive, *writersPtr, token);
+				});
+		}
 		writers.store(targetGateState(token, 0), std::memory_order_release);
 	}
 	m_view = view;

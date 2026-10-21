@@ -470,6 +470,7 @@ private:
 	std::array<std::atomic<std::uint32_t>, ModulationRuntime::MaxEntries> m_alive{};
 	mutable std::array<std::atomic<std::uint64_t>, ModulationRuntime::MaxEntries> m_targetWriters{};
 	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_watch{};
+	std::array<QMetaObject::Connection, ModulationRuntime::MaxEntries> m_instrumentWatch{};
 	std::uint32_t m_nextToken = 0;
 	std::atomic<bool> m_hasLayer{false};
 	//! MX-121: each modulator's trigger track (-1: none) as of the last edit, the song time of its

@@ -737,6 +737,107 @@ for i = 1, 20000 do clip:addNoteAt(60, i, 10, 100) end
 		engine->processCommands();
 		engine->setAutoApply(true);
 	}
+
+	//! A script FILE is read into the host's memory before Lua ever sees it,
+	//! and those copies sit OUTSIDE the Lua memory budget: a huge file could
+	//! make the host allocate far past the budget before Lua refused the
+	//! script. The file is therefore refused on its size, before it is read.
+	void testScriptFileAboveTheSourceLimitIsRefused()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		const QString header = QStringLiteral("--! zene-api %1.%2\n")
+				.arg(ZENE_LUA_API_VERSION_MAJOR).arg(ZENE_LUA_API_VERSION_MINOR);
+
+		// One byte above the hard limit. The body is padding, and the header
+		// is a VALID one: the refusal must be about the size, not about the
+		// version or about the syntax.
+		const QString hugePath = QDir(dir.path()).absoluteFilePath(QStringLiteral("huge.lua"));
+		{
+			QFile file(hugePath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write(header.toUtf8());
+			file.resize(static_cast<qint64>(MaxScriptSourceBytes) + 1);
+		}
+		QString error;
+		const auto refused = engine->runFile(hugePath, &error);
+		QCOMPARE(int(refused), int(ScriptEngine::RunResult::ScriptError));
+		QVERIFY2(error.contains(QStringLiteral("too large")), qPrintable(error));
+		qInfo().noquote() << "oversized script refused:" << error;
+
+		// Source length and the Lua allocator budget measure different things:
+		// comments are read and parsed but do not occupy the Lua state. A source
+		// larger than the budget must still run when its script state fits.
+		const QString largeCommentPath =
+			QDir(dir.path()).absoluteFilePath(QStringLiteral("large-comment.lua"));
+		{
+			QFile file(largeCommentPath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write(header.toUtf8());
+			file.write("--");
+			file.write(QByteArray(2 * 1024 * 1024, 'x'));
+			file.write("\nprint('large comment script ran')\n");
+		}
+		engine->setMemoryBudget(1024 * 1024);
+		QString largeCommentError;
+		const auto largeComment = engine->runFile(largeCommentPath, &largeCommentError);
+		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+		qInfo().noquote() << "large comment script result:" << largeCommentError;
+		QCOMPARE(int(largeComment), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(largeCommentError.isEmpty(), qPrintable(largeCommentError));
+
+		// A script inside the limit still runs: the limit must not touch the
+		// ordinary case.
+		const QString okPath = QDir(dir.path()).absoluteFilePath(QStringLiteral("small.lua"));
+		{
+			QFile file(okPath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write((header + QStringLiteral("print('small script ran')\n")).toUtf8());
+		}
+		QString okError;
+		QCOMPARE(int(engine->runFile(okPath, &okError)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(okError.isEmpty(), qPrintable(okError));
+	}
+
+	//! The MIDI-in buffer is a fixed-size ring: when it is full the write is
+	//! REFUSED, and a refused event is a LOST event - a dropped note-off
+	//! leaves a note sounding. The policy stays non-blocking, but the loss is
+	//! counted and the count is readable.
+	void testMidiInOverflowIsCounted()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+
+		// Drain what an earlier test left behind, so the count below is about
+		// this test's own events.
+		ScriptMidiEvent drained;
+		while (engine->popMidiInEvent(&drained)) { }
+
+		const quint64 droppedBefore = engine->droppedMidiInEventCount();
+		constexpr int EventCount = 2000;
+		for (int i = 0; i < EventCount; ++i)
+		{
+			engine->pushMidiInEvent(0, 36 + (i % 60), 100, true);
+		}
+
+		const int pending = engine->midiInPending();
+		const quint64 dropped = engine->droppedMidiInEventCount() - droppedBefore;
+		qInfo() << "midi-in pending:" << pending << "dropped:" << dropped;
+		QVERIFY2(pending > 0, "the ring buffer took nothing at all");
+		QVERIFY2(dropped > 0, "the overflow was not counted");
+		QCOMPARE(dropped, static_cast<quint64>(EventCount - pending));
+
+		// The events that did fit are the FIRST ones: the ring drops the new
+		// events, it does not overwrite the old ones (an overwritten note-off
+		// would silence a note that should sound).
+		ScriptMidiEvent event;
+		QVERIFY(engine->popMidiInEvent(&event));
+		QCOMPARE(event.channel, 0);
+		QCOMPARE(event.key, 36);
+	}
 };
 
 QTEST_GUILESS_MAIN(ScriptEngineTest)

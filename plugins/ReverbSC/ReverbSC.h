@@ -26,6 +26,8 @@
 #ifndef REVERBSC_H
 #define REVERBSC_H
 
+#include <atomic>
+
 #include "AudioPlugin.h"
 #include "ReverbSCControls.h"
 
@@ -56,11 +58,32 @@ public:
 private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
 
+	//! The effect's DSP state: the soundpipe context, the reverb and the two
+	//! DC blockers. A state belongs to exactly one sample rate and is only
+	//! ever used by the thread that took it over.
+	struct DspState
+	{
+		sp_data* sp = nullptr;
+		sp_revsc* revsc = nullptr;
+		sp_dcblock* dcblk[2] = {nullptr, nullptr};
+	};
+
+	//! Creates a state for the given sample rate, or null when an allocation failed.
+	static DspState* createState( sample_rate_t sampleRate );
+	//! Releases a state and everything it owns.
+	static void destroyState( DspState* state );
+	//! Releases the states the audio thread has left behind.
+	void reclaimRetiredStates();
+
 	ReverbSCControls m_reverbSCControls;
-	sp_data *sp;
-	sp_revsc *revsc;
-	sp_dcblock *dcblk[2];
-	QMutex mutex;
+	//! The state the audio thread renders with.
+	std::atomic<DspState*> m_activeState{nullptr};
+	//! A state prepared for a sample-rate change, waiting for the audio boundary.
+	std::atomic<DspState*> m_pendingState{nullptr};
+	//! The states the audio thread has swapped away from; the main thread releases them.
+	std::atomic<DspState*> m_retiredStates[2];
+	//! Rotates over the retired states.
+	std::atomic<unsigned> m_retiredIndex{0};
 	friend class ReverbSCControls;
 } ;
 

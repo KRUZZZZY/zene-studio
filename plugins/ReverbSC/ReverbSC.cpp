@@ -50,39 +50,107 @@ Plugin::Descriptor PLUGIN_EXPORT reverbsc_plugin_descriptor =
 
 ReverbSCEffect::ReverbSCEffect( Model* parent, const Descriptor::SubPluginFeatures::Key* key ) :
 	AudioPlugin(&reverbsc_plugin_descriptor, parent, key),
-	m_reverbSCControls( this ),
-	sp(nullptr),
-	revsc(nullptr),
-	dcblk{nullptr, nullptr}
+	m_reverbSCControls( this )
 {
-	sp_create(&sp);
-	sp->sr = Engine::audioEngine()->outputSampleRate();
-
-	sp_revsc_create(&revsc);
-	if (sp_revsc_init(sp, revsc) != SP_OK)
+	// The DSP state is created before the effect is used. A state that could
+	// not be created leaves the effect bypassed.
+	DspState* state = createState(Engine::audioEngine()->outputSampleRate());
+	if (state != nullptr)
 	{
-		// Allocation failure leaves the effect bypassed and the input untouched.
-		sp_revsc_destroy(&revsc);
-		revsc = nullptr;
-	}
-
-	if (sp_dcblock_create_and_init_pair(sp, dcblk, 1) == SP_NOT_OK)
-	{
-		return;
+		m_activeState.store(state, std::memory_order_release);
 	}
 }
 
 ReverbSCEffect::~ReverbSCEffect()
 {
-	sp_revsc_destroy(&revsc);
-	sp_dcblock_destroy(&dcblk[0]);
-	sp_dcblock_destroy(&dcblk[1]);
-	sp_destroy(&sp);
+	// The effect is torn down with the engine stopped, so the states the
+	// audio thread may still hold are released here.
+	destroyState(m_activeState.exchange(nullptr, std::memory_order_acq_rel));
+	destroyState(m_pendingState.exchange(nullptr, std::memory_order_acq_rel));
+	reclaimRetiredStates();
+}
+
+ReverbSCEffect::DspState* ReverbSCEffect::createState( sample_rate_t sampleRate )
+{
+	auto* state = new DspState();
+
+	if (sp_create(&state->sp) != SP_OK)
+	{
+		// The soundpipe context could not be allocated: there is no state.
+		destroyState(state);
+		return nullptr;
+	}
+	state->sp->sr = sampleRate;
+
+	if (sp_revsc_create(&state->revsc) != SP_OK || state->revsc == nullptr)
+	{
+		// The reverb state could not be created: there is no state to
+		// initialise, so the effect stays bypassed.
+		destroyState(state);
+		return nullptr;
+	}
+	if (sp_revsc_init(state->sp, state->revsc) != SP_OK)
+	{
+		// The state could not be initialised: drop it and stay bypassed.
+		destroyState(state);
+		return nullptr;
+	}
+
+	if (sp_dcblock_create_and_init_pair(state->sp, state->dcblk, 1) == SP_NOT_OK)
+	{
+		destroyState(state);
+		return nullptr;
+	}
+
+	return state;
+}
+
+void ReverbSCEffect::destroyState( DspState* state )
+{
+	if (state == nullptr)
+	{
+		return;
+	}
+	if (state->revsc != nullptr)
+	{
+		sp_revsc_destroy(&state->revsc);
+	}
+	sp_dcblock_destroy(&state->dcblk[0]);
+	sp_dcblock_destroy(&state->dcblk[1]);
+	if (state->sp != nullptr)
+	{
+		sp_destroy(&state->sp);
+	}
+	delete state;
+}
+
+void ReverbSCEffect::reclaimRetiredStates()
+{
+	for (auto& slot : m_retiredStates)
+	{
+		DspState* state = slot.exchange(nullptr, std::memory_order_acq_rel);
+		destroyState(state);
+	}
 }
 
 ProcessStatus ReverbSCEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
-	if (revsc == nullptr || dcblk[0] == nullptr || dcblk[1] == nullptr)
+	// A sample-rate change prepared a new state off the audio thread. Take it
+	// over here, at the audio boundary, and hand the state we leave behind to
+	// the main thread: the audio thread neither allocates nor frees.
+	if (DspState* pending = m_pendingState.exchange(nullptr, std::memory_order_acq_rel))
+	{
+		DspState* previous = m_activeState.exchange(pending, std::memory_order_acq_rel);
+		if (previous != nullptr)
+		{
+			const auto index = m_retiredIndex.fetch_add(1, std::memory_order_relaxed) % 2;
+			m_retiredStates[index].store(previous, std::memory_order_release);
+		}
+	}
+
+	DspState* state = m_activeState.load(std::memory_order_acquire);
+	if (state == nullptr || state->revsc == nullptr ||
+		state->dcblk[0] == nullptr || state->dcblk[1] == nullptr)
 	{
 		// Allocation failure leaves the effect bypassed and the input untouched.
 		return ProcessStatus::ContinueIfNotQuiet;
@@ -111,18 +179,18 @@ ProcessStatus ReverbSCEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 		s[0] *= inGain;
 		s[1] *= inGain;
-		revsc->feedback = (SPFLOAT)(sizeBuf ?
+		state->revsc->feedback = (SPFLOAT)(sizeBuf ?
 			sizeBuf->values()[f]
 			: m_reverbSCControls.m_sizeModel.value());
 
-		revsc->lpfreq = (SPFLOAT)(colorBuf ?
+		state->revsc->lpfreq = (SPFLOAT)(colorBuf ?
 			colorBuf->values()[f]
 			: m_reverbSCControls.m_colorModel.value());
 
 
-		sp_revsc_compute(sp, revsc, &s[0], &s[1], &tmpL, &tmpR);
-		sp_dcblock_compute(sp, dcblk[0], &tmpL, &dcblkL);
-		sp_dcblock_compute(sp, dcblk[1], &tmpR, &dcblkR);
+		sp_revsc_compute(state->sp, state->revsc, &s[0], &s[1], &tmpL, &tmpR);
+		sp_dcblock_compute(state->sp, state->dcblk[0], &tmpL, &dcblkL);
+		sp_dcblock_compute(state->sp, state->dcblk[1], &tmpR, &dcblkR);
 		frame[0] = d * frame[0] + w * dcblkL * outGain;
 		frame[1] = d * frame[1] + w * dcblkR * outGain;
 	}
@@ -132,27 +200,30 @@ ProcessStatus ReverbSCEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 void ReverbSCEffect::changeSampleRate()
 {
-	// Change sr variable in Soundpipe. does not need to be destroyed
-	sp->sr = Engine::audioEngine()->outputSampleRate();
-
-	mutex.lock();
-	sp_revsc_destroy(&revsc);
-	sp_dcblock_destroy(&dcblk[0]);
-	sp_dcblock_destroy(&dcblk[1]);
-
-	sp_revsc_create(&revsc);
-	if (sp_revsc_init(sp, revsc) != SP_OK)
+	// The replacement state is prepared here, off the audio thread, with its
+	// own soundpipe context for the new sample rate. The state the audio
+	// thread may be using is NOT touched: it is released later, after the
+	// audio thread has swapped to the new state.
+	DspState* replacement = createState(Engine::audioEngine()->outputSampleRate());
+	if (replacement == nullptr)
 	{
-		sp_revsc_destroy(&revsc);
-		revsc = nullptr;
-	}
-
-	if (sp_dcblock_create_and_init_pair(sp, dcblk, 1) == SP_NOT_OK)
-	{
-		mutex.unlock();
+		// The new state could not be created: the effect keeps the state it
+		// has and stays as it was.
 		return;
 	}
-	mutex.unlock();
+
+	// Release the states the audio thread has left behind. This happens before
+	// the new state is published, so the audio thread can retire at most one
+	// state per published replacement.
+	reclaimRetiredStates();
+
+	// Hand the new state to the audio thread, which takes it over at its next
+	// block boundary. A state the audio thread never took over is ours.
+	DspState* stale = m_pendingState.exchange(replacement, std::memory_order_acq_rel);
+	if (stale != nullptr)
+	{
+		destroyState(stale);
+	}
 }
 
 extern "C"

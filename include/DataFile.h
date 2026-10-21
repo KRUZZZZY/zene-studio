@@ -114,6 +114,30 @@ public:
 		return m_type;
 	}
 
+	/*! The root's `version` attribute AS THE FILE HAD IT: the number a reader
+	 *  of the file sees, before an upgrade rewrote the root to the current
+	 *  version. A document this build created is always at the current
+	 *  version; a document that did not come from a file answers -1. */
+	int originalFileVersion() const
+	{
+		return m_originalFileVersion;
+	}
+
+	//! The root's `type` attribute as the file had it ("" when it had none).
+	QString originalType() const
+	{
+		return m_originalType;
+	}
+
+	/*! True when loading this document CHANGED its format: the file's own
+	 *  version was behind the current one, and upgrade() rewrote the root (and
+	 *  whatever else an upgrade touches). A file at the current version is
+	 *  loaded as it is - this answers false. */
+	bool sourceFormatChanged() const
+	{
+		return m_sourceFormatChanged;
+	}
+
 	unsigned int legacyFileVersion();
 
 	///
@@ -259,6 +283,12 @@ private:
 	QDomElement m_head;
 	Type m_type;
 	unsigned int m_fileVersion;
+	//! The root's `version` AS THE FILE HAD IT (-1: not from a file).
+	int m_originalFileVersion = -1;
+	//! The root's `type` as the file had it.
+	QString m_originalType;
+	//! True when an upgrade rewrote this document (its version was behind).
+	bool m_sourceFormatChanged = false;
 	bool m_documentIndexEnabled = false;
 	bool m_containerV2 = false;
 	bool m_containerV2Written = false;

@@ -161,10 +161,24 @@ public:
 
 	/*! The document's fingerprint: <head> and every <song> section except the
 	 *  history itself, the append-only provenance log and the document index,
-	 *  each as DocumentIndex's canonical digest (process-independent).
+	 *  each as DocumentIndex's canonical digest (process-independent), plus the
+	 *  root's format attributes - the SCHEME v2 hash, whose value says which
+	 *  scheme wrote it ("sha256:v2:...").
+	 *  \a version and \a type are the root's attributes AS THE FILE HAD THEM:
+	 *  a load that upgraded the file must still measure the version the file
+	 *  claims, or a file whose root version was changed under it would look
+	 *  like the project its history was written from.
 	 *  \a stripMetadata drops `metadata="1"` nodes first, as the writer does on
 	 *  its way to disk - so the save-time and load-time values agree. */
-	static QString fingerprint(const QDomDocument& document, bool stripMetadata);
+	static QString fingerprint(const QDomDocument& document, bool stripMetadata,
+		const QString& version, const QString& type);
+
+	/*! SCHEME v1: the sections only, as written before the root's format
+	 *  attributes were part of the fingerprint. A history written by such a
+	 *  build is still honoured - but only when the file's format did not
+	 *  change under the load, which is what the version the file claims would
+	 *  have told us. */
+	static QString legacyFingerprint(const QDomDocument& document, bool stripMetadata);
 
 	// ---- ProjectSection ----
 	QString elementName() const override;
@@ -184,9 +198,15 @@ private:
 	//! The plan a save would carry out now, over the live undo stack.
 	ProjectJournal::PersistPlan currentPlan() const;
 	void loadSteps(const QDomElement& section);
+	//! Whether the stored fingerprint describes THIS document.
+	bool fingerprintMatches(const QString& stored) const;
 
-	//! beginLoad()'s fingerprint, consumed by load().
+	//! beginLoad()'s fingerprints, consumed by load(): the scheme v2 one and
+	//! the scheme v1 one (a history written before the scheme was versioned).
 	QString m_loadFingerprint;
+	QString m_loadLegacyFingerprint;
+	//! True when the file's format changed under the load (an upgrade ran).
+	bool m_loadSourceFormatChanged = false;
 	Setting m_setting = Setting::Default;
 	int m_saveDepth = 0;
 	SaveReport m_save;

@@ -646,6 +646,11 @@ set(LMMS_TESTS
 	# round trip through the control surface, checking every undo against the
 	# document before the edit (ids, automation links, plug-in data, sample refs).
 	src/core/UndoHistoryPersistenceTest.cpp
+	# WF-033: the undo history's OWN options - the opt-in, the step and byte caps
+	# and what turning persistence off costs. The format half (what a load accepts
+	# and discards) stays in UndoHistoryPersistenceTest.cpp; the fixtures both
+	# halves build are in tests/src/core/UndoHistoryTestSupport.h.
+	src/core/UndoHistoryOptionsTest.cpp
 	# Q050-044: project.open over an unsaved session and script.run each leave ONE
 	# undo step that restores the whole project, and refuse when it would not fit the budget.
 	src/core/SessionCheckpointTest.cpp
@@ -813,6 +818,9 @@ set(LMMS_TESTS
 	src/core/UpgradeExtendedNoteRangeTest.cpp
 	# 0.5.0 L07: what the note-shape verbs refuse - a past-the-limit note, a malformed filter field, an unholdable amount.
 	src/core/NoteShapeValidationTest.cpp
+	# Luna cluster new-p14-41: a note edit that changes NOTHING takes no undo step - note.scale,
+	# note.transform_where and note.slide_set, with the real change as the negative control.
+	src/core/NoteNoOpEditUndoStepTest.cpp
 	# 0.5.0 L07 ED-145/113: a track's MIDI input transform - rules, commands, file, live input.
 	src/core/MidiInputTransformTest.cpp
 	# 0.5.0 L07 ED-137: quantise audio - transients become warp markers on the grid.
@@ -987,6 +995,13 @@ set(LMMS_TESTS
 	# The <z:provenance> version (v="2" only with nested ids) and a file holding two provenance sections.
 	src/core/ProvenanceVersionTest.cpp
 	src/core/StemExportTest.cpp
+	# Clusters 3953/4875/1234: the render.stems verb through a stand-in export child - what a
+	# failed export says, what it reports as written, and what it leaves on disk. Registered
+	# beside the engine's own stem export above, so the two stem-export regressions sit
+	# together; the ctest number it gets here is three digits, which is what the
+	# automated proof check reads out of `ctest -N` (a two-digit number is printed with
+	# a padded space and is invisible to it).
+	src/core/ControlStemExportTest.cpp
 	# The delay ring must rebuild its bounds and cursor when the sample rate changes.
 	src/core/StereoDelay.cpp
 	src/core/TelemetryTest.cpp
@@ -1316,10 +1331,19 @@ set(LMMS_TESTS
 	src/core/ControlSessionRecordLandUndoTest.cpp
 )
 
-# Ogg is optional; this regression compiles against the concrete Ogg writer.
+# Ogg is optional; these regressions require the Ogg decoder and compile against the concrete Ogg writer.
 if(LMMS_HAVE_OGGVORBIS)
-	list(APPEND LMMS_TESTS src/core/AudioFileOggInitTest.cpp)
+	list(APPEND LMMS_TESTS
+		src/core/AudioFileOggInitTest.cpp
+		src/core/SampleDecoderOggChannelTest.cpp
+		src/core/SampleDecoderOggStateTest.cpp
+	)
 endif()
+
+# cluster new-p14-269/271: the Ogg Vorbis decoder's channel handling and the release of its
+# decoder state on every exit (the read-error path included).
+# cluster new-p14-276: the bounded decoder refuses a limit it cannot turn into a frame count.
+list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
 
 # Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
@@ -1433,6 +1457,11 @@ if(LMMS_HAVE_ALSA)
 	# cluster 4584: the ALSA capture thread must not log a failed recovery -
 	# the failure is parked and reported by the thread that closes the capture.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
+endif()
+
+# The OSS MIDI output guard needs the optional backend and its API.
+if(LMMS_HAVE_OSS)
+	list(APPEND LMMS_TESTS src/core/MidiOssTest.cpp)
 endif()
 
 # The sndio MIDI output guard needs the optional backend and its API.
@@ -1978,6 +2007,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawModelRegistrationTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyStateTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
 		# m0 blocker follow-up (trackview-uaf): the rack race cases load the build's amplifier module.
 		OR LMMS_TEST_NAME STREQUAL "RackDeferredLifetimeTest"
@@ -2023,7 +2053,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# WF-033: the restored history must bring back a real instrument's own state.
 		OR LMMS_TEST_NAME STREQUAL "MissingDevicesPreserveTest"
 		OR LMMS_TEST_NAME STREQUAL "MissingDevicesRound2Test"
-		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest"
+		# WF-033: the options half of the undo-history proof needs the same real
+		# instrument (its baseline loads one) as the format half.
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2371,6 +2404,46 @@ target_compile_definitions(ReverbSCInitTest PRIVATE
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_revsc_test_malloc>
 )
 
+# ReverbSC's DSP state lifetime: the effect's own sources are compiled into
+# this test, and the soundpipe C files are built with malloc/calloc/free
+# redirected to a shim in the test, so an allocation failure can be injected
+# into one allocation of a known size and every soundpipe free is counted.
+add_executable(ReverbSCPluginStateTest
+	src/plugins/ReverbSCPluginStateTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSC.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSC.h
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControls.h
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControlDialog.h
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/revsc.c
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/dcblock.c
+)
+add_test(NAME ReverbSCPluginStateTest COMMAND ReverbSCPluginStateTest)
+target_include_directories(ReverbSCPluginStateTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC
+	${CMAKE_BINARY_DIR}/plugins/ReverbSC
+)
+target_static_libraries(ReverbSCPluginStateTest PRIVATE lmmsobjs)
+target_link_libraries(ReverbSCPluginStateTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(ReverbSCPluginStateTest PRIVATE cxx_std_20)
+target_compile_definitions(ReverbSCPluginStateTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=reverbsc
+	$<$<COMPILE_LANGUAGE:C>:malloc=sp_test_malloc>
+	$<$<COMPILE_LANGUAGE:C>:calloc=sp_test_calloc>
+	$<$<COMPILE_LANGUAGE:C>:free=sp_test_free>
+)
+set_target_properties(ReverbSCPluginStateTest PROPERTIES ENABLE_EXPORTS ON)
+set_tests_properties(ReverbSCPluginStateTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Compile the real AudioFileProcessor waveform view into its regression test.
 # UBSan's float-cast-overflow check makes the old negative-double to f_cnt_t
 # conversion fail deterministically on platforms where that undefined cast
@@ -2654,6 +2727,11 @@ set_tests_properties(UndoBoundsTest PROPERTIES
 # UndoHistoryPersistenceTest (WF-033) builds a full Engine with a real
 # instrument and drives project.save / project.open / control.undo.
 set_tests_properties(UndoHistoryPersistenceTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	TIMEOUT 300)
+# UndoHistoryOptionsTest (WF-033) builds the same baseline (a real instrument)
+# and drives project.save / project.open / control.undo.
+set_tests_properties(UndoHistoryOptionsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
 # SessionCheckpointTest (Q050-044) builds a full Engine and drives script.run,

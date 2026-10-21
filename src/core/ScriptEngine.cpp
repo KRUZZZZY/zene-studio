@@ -325,17 +325,11 @@ ScriptEngine::~ScriptEngine()
 
 ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* error)
 {
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly))
+	QString source;
+	if (!readScriptSource(path, MaxScriptSourceBytes, source, error))
 	{
-		if (error != nullptr)
-		{
-			*error = QStringLiteral("cannot open script '%1': %2").arg(path, file.errorString());
-		}
 		return RunResult::ScriptError;
 	}
-	const QString source = QString::fromUtf8(file.readAll());
-	file.close();
 
 	const QString version = parseVersionHeader(source);
 	if (version.isEmpty())
@@ -809,7 +803,7 @@ QString ScriptEngine::resolveProjectPath(const QString& path, bool forWrite, QSt
 void ScriptEngine::pushMidiInEvent(int channel, int key, int velocity, bool noteOn)
 {
 	const ScriptMidiEvent event{channel, key, velocity, noteOn ? 1 : 0};
-	m_midiIn.write(&event, 1);
+	countDroppedMidiInEvent(m_midiIn.write(&event, 1));
 }
 
 

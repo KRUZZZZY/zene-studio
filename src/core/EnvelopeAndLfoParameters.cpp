@@ -46,14 +46,21 @@ const f_cnt_t minimumFrames = 1;
 
 EnvelopeAndLfoParameters::LfoInstances * EnvelopeAndLfoParameters::s_lfoInstances = nullptr;
 
+namespace
+{
+//! The test seams: the publisher calls them while it publishes a snapshot.
+std::function<void()> g_publicationHook;
+std::function<void()> g_publicationStartHook;
+} // namespace
+
 
 void EnvelopeAndLfoParameters::LfoInstances::trigger()
 {
 	QMutexLocker m( &m_lfoListMutex );
 	for (const auto& lfo : m_lfos)
 	{
+		// the LFO phase moved, so the shape cache of that LFO is stale
 		lfo->m_lfoFrame += Engine::audioEngine()->framesPerPeriod();
-		lfo->m_bad_lfoShapeData = true;
 	}
 }
 
@@ -66,7 +73,6 @@ void EnvelopeAndLfoParameters::LfoInstances::reset()
 	for (const auto& lfo : m_lfos)
 	{
 		lfo->m_lfoFrame = 0;
-		lfo->m_bad_lfoShapeData = true;
 	}
 }
 
@@ -104,12 +110,6 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 	m_releaseModel(0.1f, 0.f, 2.f, 0.001f, this, tr("Env release")),
 	m_amountModel(0.f, -1.f, 1.f, 0.005f, this, tr("Env mod amount")),
 	m_valueForZeroAmount( _value_for_zero_amount ),
-	m_pahdFrames( 0 ),
-	m_rFrames( 0 ),
-	m_pahdEnv( nullptr ),
-	m_rEnv( nullptr ),
-	m_pahdBufSize( 0 ),
-	m_rBufSize( 0 ),
 	m_lfoPredelayModel(0.f, 0.f, 1.f, 0.001f, this, tr("LFO pre-delay")),
 	m_lfoAttackModel(0.f, 0.f, 1.f, 0.001f, this, tr("LFO attack")),
 	m_lfoSpeedModel(0.1f, 0.001f, 1.f, 0.0001f,
@@ -120,8 +120,13 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 	m_x100Model( false, this, tr( "LFO frequency x 100" ) ),
 	m_controlEnvAmountModel( false, this, tr( "Modulate env amount" ) ),
 	m_lfoFrame( 0 ),
-	m_lfoAmountIsZero( false ),
-	m_lfoShapeData(nullptr)
+	m_lfoShapeData(nullptr),
+	m_lfoShapeDataVersion( 0 ),
+	m_lfoShapeDataFrame( 0 ),
+	m_audioState( new AudioState() ),
+	m_publicationCounter( 0 ),
+	m_audioStateReaders( 0 ),
+	m_heldAudioState( nullptr )
 {
 	m_amountModel.setCenterValue( 0 );
 	m_lfoAmountModel.setCenterValue( 0 );
@@ -190,9 +195,16 @@ EnvelopeAndLfoParameters::~EnvelopeAndLfoParameters()
 	m_lfoWaveModel.disconnect( this );
 	m_x100Model.disconnect( this );
 
-	delete[] m_pahdEnv;
-	delete[] m_rEnv;
 	delete[] m_lfoShapeData;
+
+	// The published snapshots: the current one and the retired ones a reader
+	// may still hold. The object is going away, so no reader may hold them.
+	delete m_audioState.exchange(nullptr);
+	for (AudioState* state : m_retiredAudioStates)
+	{
+		delete state;
+	}
+	m_retiredAudioStates.clear();
 
 	instances()->remove( this );
 
@@ -206,11 +218,13 @@ EnvelopeAndLfoParameters::~EnvelopeAndLfoParameters()
 
 
 
-inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset )
+inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset,
+							const AudioState & _state,
+							f_cnt_t _lfoFrame )
 {
-	f_cnt_t frame = ( m_lfoFrame + _frame_offset ) % m_lfoOscillationFrames;
-	const float phase = frame / static_cast<float>(
-						m_lfoOscillationFrames );
+	const f_cnt_t oscillationFrames = _state.lfoOscillationFrames;
+	f_cnt_t frame = ( _lfoFrame + _frame_offset ) % oscillationFrames;
+	const float phase = frame / static_cast<float>( oscillationFrames );
 	sample_t shape_sample;
 	switch( static_cast<LfoShape>(m_lfoWaveModel.value())  )
 	{
@@ -224,7 +238,9 @@ inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset 
 			shape_sample = Oscillator::sawSample( phase );
 			break;
 		case LfoShape::UserDefinedWave:
-			shape_sample = Oscillator::userWaveSample(m_userWave.get(), phase);
+			// the wave of the published snapshot: the one the writer published,
+			// and the one that cannot be freed while this snapshot is held.
+			shape_sample = Oscillator::userWaveSample(_state.userWave.get(), phase);
 			break;
 		case LfoShape::RandomWave:
 			if( frame == 0 || !m_randomInitialized )
@@ -239,20 +255,25 @@ inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset 
 			shape_sample = Oscillator::sinSample( phase );
 			break;
 	}
-	return shape_sample * m_lfoAmount;
+	return shape_sample * _state.lfoAmount;
 }
 
 
 
 
-void EnvelopeAndLfoParameters::updateLfoShapeData()
+void EnvelopeAndLfoParameters::updateLfoShapeData( const AudioState & _state )
 {
 	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	const f_cnt_t lfoFrame = m_lfoFrame.load(std::memory_order_relaxed);
 	for( f_cnt_t offset = 0; offset < frames; ++offset )
 	{
-		m_lfoShapeData[offset] = lfoShapeSample( offset );
+		m_lfoShapeData[offset] = lfoShapeSample( offset, _state, lfoFrame );
 	}
-	m_bad_lfoShapeData = false;
+	// The cache belongs to this snapshot and to this phase. Publishing the key
+	// after the data cannot make a cache that was built from another snapshot
+	// look current.
+	m_lfoShapeDataVersion.store( _state.version, std::memory_order_release );
+	m_lfoShapeDataFrame.store( lfoFrame, std::memory_order_release );
 }
 
 
@@ -260,9 +281,10 @@ void EnvelopeAndLfoParameters::updateLfoShapeData()
 
 inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 							f_cnt_t _frame,
-							const f_cnt_t _frames )
+							const f_cnt_t _frames,
+							const AudioState & _state )
 {
-	if( m_lfoAmountIsZero )
+	if( _state.lfoAmountIsZero )
 	{
 		for( f_cnt_t offset = 0; offset < _frames; ++offset )
 		{
@@ -271,7 +293,7 @@ inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 		return;
 	}
 	f_cnt_t offset = 0;
-	for( ; offset < _frames && _frame < m_lfoPredelayFrames;
+	for( ; offset < _frames && _frame < _state.lfoPredelayFrames;
 								++offset, ++_frame )
 	{
 		*_buf++ = 0.0f;
@@ -280,15 +302,20 @@ inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 	{
 		return;
 	}
-	_frame -= m_lfoPredelayFrames;
+	_frame -= _state.lfoPredelayFrames;
 
-	if( m_bad_lfoShapeData )
+	// The cached shape data is used only for the snapshot it was built from
+	// and for the phase it was built at: a snapshot that was published while
+	// this one was held cannot be answered with this cache.
+	if( m_lfoShapeDataVersion.load(std::memory_order_acquire) != _state.version ||
+		m_lfoShapeDataFrame.load(std::memory_order_acquire) !=
+			m_lfoFrame.load(std::memory_order_relaxed) )
 	{
-		updateLfoShapeData();
+		updateLfoShapeData( _state );
 	}
 
-	const float lafI = 1.0f / std::max(minimumFrames, m_lfoAttackFrames);
-	for( ; offset < _frames && _frame < m_lfoAttackFrames; ++offset,
+	const float lafI = 1.0f / std::max(minimumFrames, _state.lfoAttackFrames);
+	for( ; offset < _frames && _frame < _state.lfoAttackFrames; ++offset,
 								++_frame )
 	{
 		*_buf++ = m_lfoShapeData[offset] * _frame * lafI;
@@ -306,29 +333,34 @@ void EnvelopeAndLfoParameters::fillLevel( float * _buf, f_cnt_t _frame,
 						const f_cnt_t _release_begin,
 						const f_cnt_t _frames )
 {
-	QMutexLocker m(&m_paramMutex);
+	// The audio path takes no lock and waits for nothing: it reads the
+	// published parameter snapshot, which the writer hands over atomically.
+	const AudioState * const state = acquireAudioState();
 
-	fillLfoLevel( _buf, _frame, _frames );
+	fillLfoLevel( _buf, _frame, _frames, *state );
+
+	const sample_t * const pahdEnv = state->pahdEnv.data();
+	const sample_t * const rEnv = state->rEnv.data();
 
 	for( f_cnt_t offset = 0; offset < _frames; ++offset, ++_buf, ++_frame )
 	{
 		float env_level;
 		if( _frame < _release_begin )
 		{
-			if( _frame < m_pahdFrames )
+			if( _frame < state->pahdFrames )
 			{
-				env_level = m_pahdEnv[_frame];
+				env_level = pahdEnv[_frame];
 			}
 			else
 			{
-				env_level = m_sustainLevel;
+				env_level = state->sustainLevel;
 			}
 		}
-		else if( ( _frame - _release_begin ) < m_rFrames )
+		else if( ( _frame - _release_begin ) < state->rFrames )
 		{
-			env_level = m_rEnv[_frame - _release_begin] *
-				( ( _release_begin < m_pahdFrames ) ?
-				m_pahdEnv[_release_begin] : m_sustainLevel );
+			env_level = rEnv[_frame - _release_begin] *
+				( ( _release_begin < state->pahdFrames ) ?
+				pahdEnv[_release_begin] : state->sustainLevel );
 		}
 		else
 		{
@@ -340,6 +372,8 @@ void EnvelopeAndLfoParameters::fillLevel( float * _buf, f_cnt_t _frame,
 			env_level * ( 0.5f + *_buf ) :
 			env_level + *_buf;
 	}
+
+	releaseAudioState();
 }
 
 
@@ -394,17 +428,24 @@ void EnvelopeAndLfoParameters::loadSettings( const QDomElement & _this )
 		m_sustainModel.setValue( 1.0 - m_sustainModel.value() );
 	}
 
-	m_userWave = SampleBuffer::emptyBuffer();
+	// The wave file is read outside the lock; the swap of the wave itself is
+	// under it, and the snapshot that carries it is published afterwards.
+	std::shared_ptr<const SampleBuffer> userWave = SampleBuffer::emptyBuffer();
 	if (const auto userWaveFile = _this.attribute("userwavefile"); !userWaveFile.isEmpty())
 	{
 		if (QFileInfo(PathUtil::toAbsolute(userWaveFile)).exists())
 		{
-			m_userWave = SampleBuffer::fromFile(_this.attribute("userwavefile"));
+			userWave = SampleBuffer::fromFile(_this.attribute("userwavefile"));
 		}
-		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }  
+		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
 	}
 
-	updateSampleVars();
+	{
+		QMutexLocker m(&m_paramMutex);
+		m_userWave = userWave;
+		rebuildAudioState();
+	}
+	emit dataChanged();
 }
 
 
@@ -412,8 +453,20 @@ void EnvelopeAndLfoParameters::loadSettings( const QDomElement & _this )
 
 void EnvelopeAndLfoParameters::updateSampleVars()
 {
-	QMutexLocker m(&m_paramMutex);
+	{
+		QMutexLocker m(&m_paramMutex);
+		rebuildAudioState();
+	}
+	emit dataChanged();
+}
 
+
+
+
+// The writer's side: build a snapshot of the parameters and publish it. The
+// audio path never runs this code and never takes m_paramMutex.
+void EnvelopeAndLfoParameters::rebuildAudioState()
+{
 	const float frames_per_env_seg = SECS_PER_ENV_SEGMENT *
 				Engine::audioEngine()->outputSampleRate();
 
@@ -431,121 +484,312 @@ void EnvelopeAndLfoParameters::updateSampleVars()
 					expKnobVal(m_decayModel.value() *
 					(1 - m_sustainModel.value()))));
 
-	m_sustainLevel = m_sustainModel.value();
-	m_amount = m_amountModel.value();
-	if( m_amount >= 0 )
-	{
-		m_amountAdd = ( 1.0f - m_amount ) * m_valueForZeroAmount;
-	}
-	else
-	{
-		m_amountAdd = m_valueForZeroAmount;
-	}
+	const float sustainLevel = m_sustainModel.value();
+	const float amount = m_amountModel.value();
+	const float amountAdd = (amount >= 0) ?
+				( 1.0f - amount ) * m_valueForZeroAmount :
+				m_valueForZeroAmount;
 
-	m_pahdFrames = predelay_frames + attack_frames + hold_frames +
+	auto state = std::make_unique<AudioState>();
+	state->pahdFrames = predelay_frames + attack_frames + hold_frames +
 								decay_frames;
-	m_rFrames = static_cast<f_cnt_t>( frames_per_env_seg *
-					expKnobVal( m_releaseModel.value() ) );
-	m_rFrames = std::max(minimumFrames, m_rFrames);
+	state->rFrames = std::max(minimumFrames, static_cast<f_cnt_t>( frames_per_env_seg *
+					expKnobVal( m_releaseModel.value() ) ));
 
-	if( static_cast<int>( floorf( m_amount * 1000.0f ) ) == 0 )
+	if( static_cast<int>( floorf( amount * 1000.0f ) ) == 0 )
 	{
-		m_rFrames = minimumFrames;
+		state->rFrames = minimumFrames;
 	}
 
-	// if the buffers are too small, make bigger ones - so we only alloc new memory when necessary
-	if( m_pahdBufSize < m_pahdFrames )
-	{
-		sample_t * tmp = m_pahdEnv;
-		m_pahdEnv = new sample_t[m_pahdFrames];
-		delete[] tmp;
-		m_pahdBufSize = m_pahdFrames;
-	}
-	if( m_rBufSize < m_rFrames )
-	{
-		sample_t * tmp = m_rEnv;
-		m_rEnv = new sample_t[m_rFrames];
-		delete[] tmp;
-		m_rBufSize = m_rFrames;
-	}
+	// The envelope buffers of a retired snapshot are reused, so that a
+	// parameter change does not allocate a new buffer every time.
+	state->pahdEnv = takeEnvBuffer( state->pahdFrames );
+	state->rEnv = takeEnvBuffer( state->rFrames );
 
-	const float aa = m_amountAdd;
+	const float aa = amountAdd;
 	for( f_cnt_t i = 0; i < predelay_frames; ++i )
 	{
-		m_pahdEnv[i] = aa;
+		state->pahdEnv[i] = aa;
 	}
 
 	f_cnt_t add = predelay_frames;
 
-	const float afI = ( 1.0f / attack_frames ) * m_amount;
+	const float afI = ( 1.0f / attack_frames ) * amount;
 	for( f_cnt_t i = 0; i < attack_frames; ++i )
 	{
-		m_pahdEnv[add+i] = i * afI + aa;
+		state->pahdEnv[add+i] = i * afI + aa;
 	}
 
 	add += attack_frames;
-	const float amsum = m_amount + m_amountAdd;
+	const float amsum = amount + amountAdd;
 	for( f_cnt_t i = 0; i < hold_frames; ++i )
 	{
-		m_pahdEnv[add + i] = amsum;
+		state->pahdEnv[add + i] = amsum;
 	}
 
 	add += hold_frames;
-	const float dfI = ( 1.0 / decay_frames ) * ( m_sustainLevel -1 ) * m_amount;
+	const float dfI = ( 1.0 / decay_frames ) * ( sustainLevel -1 ) * amount;
 	for( f_cnt_t i = 0; i < decay_frames; ++i )
 	{
-/*
-		m_pahdEnv[add + i] = ( m_sustainLevel + ( 1.0f -
-						(float)i / decay_frames ) *
-						( 1.0f - m_sustainLevel ) ) *
-							m_amount + m_amountAdd;
-*/
-		m_pahdEnv[add + i] = amsum + i*dfI;
+		state->pahdEnv[add + i] = amsum + i*dfI;
 	}
 
-	const float rfI = ( 1.0f / m_rFrames ) * m_amount;
-	for( f_cnt_t i = 0; i < m_rFrames; ++i )
+	const float rfI = ( 1.0f / state->rFrames ) * amount;
+	for( f_cnt_t i = 0; i < state->rFrames; ++i )
 	{
-		m_rEnv[i] = (float)( m_rFrames - i ) * rfI;
+		state->rEnv[i] = (float)( state->rFrames - i ) * rfI;
 	}
 
 	// save this calculation in real-time-part
-	m_sustainLevel = m_sustainLevel * m_amount + m_amountAdd;
+	state->sustainLevel = sustainLevel * amount + amountAdd;
 
 
 	const float frames_per_lfo_oscillation = SECS_PER_LFO_OSCILLATION *
 				Engine::audioEngine()->outputSampleRate();
-	m_lfoPredelayFrames = static_cast<f_cnt_t>( frames_per_lfo_oscillation *
+	state->lfoPredelayFrames = static_cast<f_cnt_t>( frames_per_lfo_oscillation *
 				expKnobVal( m_lfoPredelayModel.value() ) );
-	m_lfoAttackFrames = static_cast<f_cnt_t>( frames_per_lfo_oscillation *
+	state->lfoAttackFrames = static_cast<f_cnt_t>( frames_per_lfo_oscillation *
 				expKnobVal( m_lfoAttackModel.value() ) );
-	m_lfoOscillationFrames = static_cast<f_cnt_t>(
+	state->lfoOscillationFrames = static_cast<f_cnt_t>(
 						frames_per_lfo_oscillation *
 						m_lfoSpeedModel.value() );
 	if( m_x100Model.value() )
 	{
-		m_lfoOscillationFrames /= 100;
+		state->lfoOscillationFrames /= 100;
 	}
-	m_lfoAmount = m_lfoAmountModel.value() * 0.5f;
+	state->lfoAmount = m_lfoAmountModel.value() * 0.5f;
+	state->lfoAmountIsZero =
+		static_cast<int>( floorf( state->lfoAmount * 1000.0f ) ) == 0;
 
-	m_used = true;
-	if( static_cast<int>( floorf( m_lfoAmount * 1000.0f ) ) == 0 )
+	m_used.store( true, std::memory_order_relaxed );
+	if( state->lfoAmountIsZero &&
+		static_cast<int>( floorf( amount * 1000.0f ) ) == 0 )
 	{
-		m_lfoAmountIsZero = true;
-		if( static_cast<int>( floorf( m_amount * 1000.0f ) ) == 0 )
+		m_used.store( false, std::memory_order_relaxed );
+	}
+
+	// the user-defined wave travels with the snapshot: the audio path samples
+	// the published wave, and a wave that is replaced is not freed while a
+	// reader may still be sampling it.
+	state->userWave = m_userWave;
+
+	publishAudioState( std::move(state) );
+}
+
+
+
+
+// Hand the new snapshot to the audio thread and retire the previous one. The
+// sequence is odd while the switch happens, so a reader that catches it
+// retries instead of reading a half-published snapshot.
+void EnvelopeAndLfoParameters::setPublicationHook( PublicationHook _hook )
+{
+	g_publicationHook = std::move( _hook );
+}
+
+
+
+
+void EnvelopeAndLfoParameters::setPublicationStartHook( PublicationHook _hook )
+{
+	g_publicationStartHook = std::move( _hook );
+}
+
+
+
+
+void EnvelopeAndLfoParameters::publishAudioState( std::unique_ptr<AudioState> _state )
+{
+	_state->version = m_publicationCounter.fetch_add( 1, std::memory_order_relaxed ) + 1;
+	// the start of the publication: the test seam holds the publisher here.
+	if( g_publicationStartHook ) { g_publicationStartHook(); }
+	// the publication point: the test seam holds the publisher here.
+	if( g_publicationHook ) { g_publicationHook(); }
+	AudioState * const old = m_audioState.exchange( _state.release(),
+								std::memory_order_seq_cst );
+
+	if( old != nullptr )
+	{
+		m_retiredAudioStates.push_back( old );
+	}
+	reclaimRetiredAudioStates();
+}
+
+
+
+
+// A retired snapshot is freed only when no reader may still hold it.
+void EnvelopeAndLfoParameters::reclaimRetiredAudioStates()
+{
+	// A retired snapshot is freed only when no reader holds one. The check
+	// follows the publication in the total order of the atomics, so a reader
+	// that claims a snapshot either holds the new one or is counted here.
+	if( m_audioStateReaders.load(std::memory_order_seq_cst) != 0 )
+	{
+		return;
+	}
+	for( AudioState * state : m_retiredAudioStates )
+	{
+		// the buffers of a retired snapshot are kept for the next publication
+		if( m_envBufferPool.size() < 8 )
 		{
-			m_used = false;
+			m_envBufferPool.push_back( std::move(state->pahdEnv) );
+			m_envBufferPool.push_back( std::move(state->rEnv) );
+		}
+		delete state;
+	}
+	m_retiredAudioStates.clear();
+}
+
+
+
+
+std::vector<sample_t> EnvelopeAndLfoParameters::takeEnvBuffer( std::size_t _samples )
+{
+	for( auto it = m_envBufferPool.begin(); it != m_envBufferPool.end(); ++it )
+	{
+		if( it->capacity() >= _samples )
+		{
+			std::vector<sample_t> buffer = std::move( *it );
+			m_envBufferPool.erase( it );
+			buffer.resize( _samples );
+			return buffer;
 		}
 	}
-	else
+	return std::vector<sample_t>( _samples );
+}
+
+
+
+
+// The audio path's snapshot. No lock, no wait, no allocation: the snapshot is
+// immutable and the writer hands it over atomically. The reader count keeps
+// the writer from freeing a snapshot that is still in use.
+const EnvelopeAndLfoParameters::AudioState* EnvelopeAndLfoParameters::acquireAudioState() const noexcept
+{
+	// The claim of the published snapshot is a fixed number of atomic
+	// operations: it never waits for the publisher, it never retries and it
+	// never allocates. The reader count is raised before the snapshot is read,
+	// so the publisher cannot free a snapshot that this reader is about to
+	// use: it either sees the count, or this reader reads the new snapshot.
+	m_audioStateReaders.fetch_add( 1, std::memory_order_seq_cst );
+	return m_audioState.load( std::memory_order_seq_cst );
+}
+
+
+
+
+void EnvelopeAndLfoParameters::releaseAudioState() const noexcept
+{
+	m_audioStateReaders.fetch_sub( 1, std::memory_order_seq_cst );
+}
+
+
+
+
+bool EnvelopeAndLfoParameters::holdAudioState()
+{
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return false; }
+	m_heldAudioState = state;
+	return true;
+}
+
+
+
+
+void EnvelopeAndLfoParameters::releaseHeldAudioState()
+{
+	if( m_heldAudioState != nullptr )
 	{
-		m_lfoAmountIsZero = false;
+		releaseAudioState();
+		m_heldAudioState = nullptr;
 	}
+}
 
-	m_bad_lfoShapeData = true;
 
+
+
+f_cnt_t EnvelopeAndLfoParameters::PAHD_Frames() const
+{
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return 0; }
+	const f_cnt_t frames = state->pahdFrames;
+	releaseAudioState();
+	return frames;
+}
+
+
+
+
+f_cnt_t EnvelopeAndLfoParameters::releaseFrames() const
+{
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return 0; }
+	const f_cnt_t frames = state->rFrames;
+	releaseAudioState();
+	return frames;
+}
+
+
+
+
+f_cnt_t EnvelopeAndLfoParameters::getLfoPredelayFrames() const
+{
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return 0; }
+	const f_cnt_t frames = state->lfoPredelayFrames;
+	releaseAudioState();
+	return frames;
+}
+
+
+
+
+f_cnt_t EnvelopeAndLfoParameters::getLfoAttackFrames() const
+{
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return 0; }
+	const f_cnt_t frames = state->lfoAttackFrames;
+	releaseAudioState();
+	return frames;
+}
+
+
+
+
+f_cnt_t EnvelopeAndLfoParameters::getLfoOscillationFrames() const
+{
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return 1; }
+	const f_cnt_t frames = state->lfoOscillationFrames;
+	releaseAudioState();
+	return frames;
+}
+
+
+
+
+void EnvelopeAndLfoParameters::setLfoUserWave( std::shared_ptr<const SampleBuffer> _wave )
+{
+	{
+		QMutexLocker m(&m_paramMutex);
+		m_userWave = _wave ? std::move( _wave ) : SampleBuffer::emptyBuffer();
+		rebuildAudioState();
+	}
 	emit dataChanged();
+}
 
+
+
+
+std::shared_ptr<const SampleBuffer> EnvelopeAndLfoParameters::getLfoUserWave() const
+{
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return m_userWave; }
+	const std::shared_ptr<const SampleBuffer> wave = state->userWave;
+	releaseAudioState();
+	return wave;
 }
 
 
