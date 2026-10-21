@@ -50,6 +50,9 @@
 #include <limits>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef _MSC_VER
+#include <io.h>
+#endif
 
 #include <QByteArray>
 #include <QDir>
@@ -2189,18 +2192,32 @@ void anEmptyApplicationNameIsRefusedByTheWriter()
 	{
 		const QString file = path(m_directory, QStringLiteral("no-report.dawproject"));
 		// Do not pre-create the destination: QSaveFile copies an existing
-		// file's permissions, which would make it readable again. Letting it
-		// create the file under a umask that strips the read bits leaves a
-		// written file the owner cannot read, so a writer that reopens it
-		// (the old behaviour) fails while one that skips the read-back
-		// succeeds.
+		// file's permissions, which would make it readable again. On POSIX,
+		// create it under a umask that strips read bits so the old read-back
+		// fails. MSVC's CRT ignores attempts to remove read permission, but its
+		// supported _umask_s spelling keeps the test target warning-free there.
+		int maskResult = 0;
+		int restoreMaskResult = 0;
+#ifdef _MSC_VER
+		int previous = 0;
+		maskResult = _umask_s(_S_IWRITE, &previous);
+#else
 		const mode_t previous = umask(0466);
+#endif
 		DawProjectModel model = authoredModel();
 		QString error;
 		const bool ok = writeDawProject(file, model, nullptr, &error);
+		// Restore the process-wide mask even if writing the file failed.
+#ifdef _MSC_VER
+		int ignoredMask = 0;
+		restoreMaskResult = _umask_s(previous, &ignoredMask);
+#else
 		umask(previous);
+#endif
 		// restore permissions for cleanup
 		QFile::setPermissions(file, QFile::ReadOwner | QFile::WriteOwner);
+		QVERIFY2(maskResult == 0, "could not set the file permission mask");
+		QVERIFY2(restoreMaskResult == 0, "could not restore the file permission mask");
 		QVERIFY2(ok, qPrintable(error));
 	}
 
