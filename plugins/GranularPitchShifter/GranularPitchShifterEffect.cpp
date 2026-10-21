@@ -24,6 +24,7 @@
 
 #include "GranularPitchShifterEffect.h"
 
+#include <algorithm>
 #include <cmath>
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -69,6 +70,12 @@ GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Desc
 	sampleRateNeedsUpdate();
 	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this,
 		[this] { sampleRateNeedsUpdate(); }, Qt::QueuedConnection);
+	m_reclaimTimer = new QTimer(this);
+	m_reclaimTimer->setInterval(0);
+	QObject::connect(m_reclaimTimer, &QTimer::timeout, this, [this] {
+		reclaimRetiredBuffersIfPending();
+	});
+	m_reclaimTimer->start();
 }
 
 
@@ -278,7 +285,8 @@ void GranularPitchShifterEffect::sampleRateNeedsUpdate()
 	reclaimRetiredBuffers();
 
 	auto prepared = std::make_unique<PreparedBuffers>();
-	const int range = m_granularpitchshifterControls.m_rangeModel.value();
+	const int range = std::clamp(m_granularpitchshifterControls.m_rangeModel.value(), 0,
+		static_cast<int>(std::size(RangeSeconds)) - 1);
 	const float ringBufLength = RangeSeconds[range];
 	prepared->sampleRate = Engine::audioEngine()->outputSampleRate();
 	prepared->nyquist = prepared->sampleRate / 2;
@@ -333,8 +341,16 @@ void GranularPitchShifterEffect::applyPreparedBuffers() noexcept
 	// The prepared object now owns the old ring buffer. Only the control thread
 	// reclaims it, so destroying its vector can never run on the audio thread.
 	retiredSlot->store(prepared, std::memory_order_release);
+	m_retiredPending.store(true, std::memory_order_release);
 }
 
+
+void GranularPitchShifterEffect::reclaimRetiredBuffersIfPending() noexcept
+{
+	if (!m_retiredPending.load(std::memory_order_acquire)) { return; }
+	m_retiredPending.store(false, std::memory_order_release);
+	reclaimRetiredBuffers();
+}
 
 void GranularPitchShifterEffect::reclaimRetiredBuffers() noexcept
 {
