@@ -273,22 +273,30 @@ ControlResult randomSeedSet(const QJsonObject& args)
 	}
 
 	const uint32_t previous = song->midiSeed();
-	song->setMidiSeed(requested);
-	control::addUndoStep(
-		[previous]() {
-			Song* live = Engine::getSong();
-			if (live != nullptr) { live->setMidiSeed(previous); }
-		},
-		[requested]() {
-			Song* live = Engine::getSong();
-			if (live != nullptr) { live->setMidiSeed(requested); }
-		});
+	const bool changed = requested != previous;
+	// A seed the project already holds changes nothing, so it takes NO undo step: a step
+	// here would be the history's top entry, and the next control.undo would unwind the
+	// no-op - leaving the real edit behind it applied (the device.mpe_set rule).
+	if (changed)
+	{
+		song->setMidiSeed(requested);
+		control::addUndoStep(
+			[previous]() {
+				Song* live = Engine::getSong();
+				if (live != nullptr) { live->setMidiSeed(previous); }
+			},
+			[requested]() {
+				Song* live = Engine::getSong();
+				if (live != nullptr) { live->setMidiSeed(requested); }
+			});
+	}
 
 	QJsonObject result;
 	result.insert(QStringLiteral("seed"), static_cast<double>(song->midiSeed()));
 	result.insert(QStringLiteral("previous"), static_cast<double>(previous));
-	result.insert(QStringLiteral("changed"), song->midiSeed() != previous);
+	result.insert(QStringLiteral("changed"), changed);
 	result.insert(QStringLiteral("persisted"), true);
+	if (!changed) { return ControlResult::success(result); }
 	QJsonObject before;
 	before.insert(QStringLiteral("seed"), static_cast<double>(previous));
 	QJsonObject inverseArgs;
