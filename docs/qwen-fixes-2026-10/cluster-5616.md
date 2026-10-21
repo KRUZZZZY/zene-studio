@@ -128,3 +128,106 @@ are NOT caused by this change:
   (indentation only - the functional fix is commit 7317dec00),
   tests/src/core/ControlChainPresetTest.cpp (plugin-free regression),
   tests/upstream-modifications.txt (notes), and this report.
+
+### The submit_check questions, answered one by one
+
+1. "The regression test FAILS with your product change reverted and PASSES with
+   it (exit codes)."
+   RED: `git apply -R .../logs/fix.patch` exit 0 ->
+   `cmake --build build --target ControlChainPresetTest -j 8` exit 0 ->
+   `cd build/tests && QT_QPA_PLATFORM=offscreen ZENE_CONTROL_CHECK_RESULTS=set:1
+   ./ControlChainPresetTest renamingToTheCurrentNameRecordsNoUndoStep` exit 1,
+   with "FAIL! : ControlChainPresetTest::renamingToTheCurrentNameRecordsNoUndoStep()
+   'storeNames().contains(kPreset)' returned FALSE." and "Totals: 2 passed, 1
+   failed, 0 skipped" (logs/test-red2.log). The failure is the bug itself: the
+   no-op rename had eaten the single undo step, so the real rename was still in
+   effect.
+   GREEN: `git apply .../logs/fix.patch` exit 0 -> rebuild exit 0 -> the SAME
+   command exit 0, "Totals: 3 passed, 0 failed, 0 skipped" (logs/test-green3.log).
+2. "The test is deterministic: no wall-clock timing, sleeps or races (name the
+   seam or injected values it uses)."
+   No sleep, no clock read, no thread and no timing comparison. The one seam is
+   the product's own `control.set_undo_coalescing` with `window_ms = 0`, which
+   pins "one command, one undo step" so the two renames cannot coalesce; the
+   window is put back to `control::UndoCoalesceWindowMs` at the end. Everything
+   else is a file in the store written by the test itself
+   (`writePresetFile` -> `controlChainPresetDocument`), so the check does not
+   depend on which devices a build ships, on plugin load order or on the
+   machine.
+3. "The fix is at the cause and complete: every caller and sibling of what you
+   changed was checked and stays consistent."
+   The cause is the no-op path of the chain.rename handler:
+   src/core/ControlCommandsChainEdit.cpp:233-243 returns a no-change success
+   result BEFORE the `addUndoStep` at src/core/ControlCommandsChainEdit.cpp:253.
+   Every caller of that handler was checked: `chain.rename` is registered once
+   (src/core/ControlCommandsChainEdit.cpp:197, registerChainRename) and is the
+   only writer of a preset file name, so there is no second entry point into
+   the same code. The handler's other two exits - occupied target
+   (src/core/ControlCommandsChainEdit.cpp:231) and a failed QFile::rename
+   (src/core/ControlCommandsChainEdit.cpp:244) - already refused WITHOUT
+   recording a step and still do. The read path of the same store
+   (controlChainPresetPath / controlReadChainPreset) is unchanged, so an older
+   preset file is still read exactly as before.
+4. "No collateral damage: old projects and saved data still load as before, and
+   any limit or check you added does not hit other callers that legitimately
+   exceed it."
+   No data format, project file, preset file or configuration changed; the
+   change only decides whether a rename that moves a file onto ITSELF records
+   an undo step. No limit, threshold or check was added anywhere, so no caller
+   can hit a new ceiling. The no-op path reports the same result fields as a
+   real rename (name, renamed_to, path, device_count, dir) minus the
+   `__transaction` payload - the transaction is what marks a recorded action,
+   and nothing was recorded.
+5. "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+   the intended contract that shows it."
+   Not applicable: the verdict is FIXED (the finding was REAL). The evidence is
+   the pre-fix code at src/core/ControlCommandsChainEdit.cpp:233 (commit
+   7317dec00^): `if (toPath != from && !QFile::rename(from, toPath))` - the
+   rename was skipped for an unchanged name, but the handler fell through to
+   `addUndoStep(...)` at src/core/ControlCommandsChainEdit.cpp:253, so the
+   undo stack grew a step whose inverse changed nothing. The same shape is
+   already avoided by mixer.rename_channel, which returns its no-change success
+   without recording a step at src/core/ControlCommandsMixerRename.cpp:76
+   ("the name it has: nothing changed, no step") - the fix makes chain.rename
+   behave like it.
+6. "Sibling commands in the command files you changed - confirm each is
+   consistent with your fix (or say why it is not affected)."
+   The whole chain.* group, each checked:
+   - chain.rename (src/core/ControlCommandsChainEdit.cpp:197) - THE FIXED ONE:
+     a real rename records exactly one undo step, an unchanged name records
+     none, and the two refusal paths record none.
+   - chain.apply (src/core/ControlCommandsChainEdit.cpp:156) - replaces a live
+     chain; it always writes the chain, so it always has a real inverse to
+     record; untouched.
+   - chain.remove (src/core/ControlCommandsChainEdit.cpp:284) - deletes a
+     preset file; it refuses when the file is absent, so it never records a
+     step for something it did not do; untouched.
+   - chain.save (src/core/ControlCommandsChain.cpp:280) - writes a preset file;
+     it refuses to overwrite an unreadable preset and refuses an empty chain
+     (that refusal is asserted by the same test file); untouched.
+   - chain.list (src/core/ControlCommandsChain.cpp:196) and chain.get_state
+     (src/core/ControlCommandsChain.cpp:246) - read only, they record nothing.
+   - chain.copy (src/core/ControlCommandsDeviceCopy.cpp:522) - copies DEVICES
+     between live chains; it does not touch the preset store and does not
+     rename a file.
+   - chain.bypass_all and chain.clean (src/core/ControlCommandsMixerTools.cpp:572
+     and :575) - bypass or remove DEVICES of a live chain; they do not touch
+     the preset store either.
+   - chain.receive (src/core/ControlCommandsW3Engine.cpp) - mixes another
+     channel's audio into a slot; it does not touch the preset store.
+   So chain.rename is the only command in the group that renames a store file,
+   and it is the only one whose no-op case was wrong.
+
+### Gates, once more, after the final commit
+
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py
+  /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5616`
+  -> exit 0, RESULT: PASS (log logs/feature-check-final.log; all eight gates
+  PASS, complexity and file-length report "no new item in your files").
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py
+  /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5616 5616`
+  -> exit 0, "RESULT: PASS - submit" (log logs/submit-check.log); its six
+  questions are answered above.
+- `git diff --check b61e5f9658c2..HEAD` -> exit 0 (the round-1 space-before-tab
+  indentation is fixed).
+- `git status` -> clean.
