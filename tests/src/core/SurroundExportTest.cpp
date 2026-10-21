@@ -271,7 +271,7 @@ private slots:
 	void aDiscreteMasterWritesItsChannelCountWithoutSpeakerMask()
 	{
 		QVERIFY(masterFormat("discrete-5"));
-		const QString out = path(QStringLiteral("discrete5.wav"));
+		const QString out = path(QStringLiteral("discrete-master.wav"));
 		render(surroundSettings(Depth::Depth16Bit), Format::Wave, out);
 		const Header h = readHeader(out);
 		QCOMPARE(h.tag, 0xFFFE);
