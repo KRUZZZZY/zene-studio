@@ -27,6 +27,7 @@
 
 #include <array>
 #include <atomic>
+#include <QTimer>
 #include <numbers>
 #include <vector>
 
@@ -167,6 +168,7 @@ private:
 
 	void applyPreparedBuffers() noexcept;
 	void reclaimRetiredBuffers() noexcept;
+	void reclaimRetiredBuffersIfPending() noexcept;
 	
 	GranularPitchShifterControls m_granularpitchshifterControls;
 	
@@ -174,6 +176,8 @@ private:
 	std::vector<Grain> m_grains;
 	std::atomic<PreparedBuffers*> m_preparedBuffers{nullptr};
 	std::array<std::atomic<PreparedBuffers*>, 2> m_retiredBuffers{};
+	std::atomic<bool> m_retiredPending{false};
+	QTimer* m_reclaimTimer = nullptr;
 
 	std::array<PrefilterLowpass, 2> m_prefilter;
 	std::array<double, 2> m_speed = {1, 1};
