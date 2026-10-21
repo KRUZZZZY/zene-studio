@@ -480,6 +480,17 @@ private slots:
 		QVERIFY2(farTop >= 65 && farBottom <= 65, "the fallback is centred on the used range, not left where the last clip was");
 		QVERIFY2(farTop < 110 && farBottom > 20, "and shows a useful part of it");
 		QVERIFY2(far.value(QStringLiteral("visible_rows")).toInt() >= 30, "with more rows than a stale narrow view would show");
+
+		// In Used fold the two pitches are adjacent visible rows even though their MIDI keys are far apart.
+		m_editor->setFold(NoteFold::Used);
+		m_editor->setClip(wide);
+		const QJsonObject folded = m_editor->describe();
+		QCOMPARE(folded.value(QStringLiteral("rows")).toInt(), 2);
+		QVERIFY2(folded.value(QStringLiteral("row_height")).toInt() > 14,
+			"fit uses the two displayed rows, not the hidden pitches between them");
+		QCOMPARE(folded.value(QStringLiteral("visible_rows")).toInt(), 2);
+
+		m_editor->setFold(NoteFold::None);
 		m_editor->setClip(m_clip);
 		delete wide;
 		delete narrow;

@@ -401,7 +401,11 @@ void NoteEditor::zoomToFit()
 		}
 		else
 		{
-			const int rows = highest - lowest + 1;
+			// A folded grid collapses unused pitches; fit the rows the musician can actually see.
+			const int lowRow = grid.rowOfKey(lowest);
+			const int highRow = grid.rowOfKey(highest);
+			const int rows = lowRow >= 0 && highRow >= 0
+				? std::max(lowRow, highRow) - std::min(lowRow, highRow) + 1 : highest - lowest + 1;
 			const int margin = std::clamp((rows + 3) / 8, 1, 6);
 			const int wanted = height / (rows + 2 * margin);
 			// A range too wide for the minimum row height is the fallback: the smallest readable row,
