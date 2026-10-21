@@ -71,6 +71,11 @@ private:
 		f_cnt_t lfoOscillationFrames = 1;
 		float lfoAmount = 0.f;
 		bool lfoAmountIsZero = true;
+
+		//! The user-defined LFO wave. It is part of the snapshot, so the audio
+		//! path samples the wave that was published with the parameters and the
+		//! wave it samples cannot be freed underneath it.
+		std::shared_ptr<const SampleBuffer> userWave = SampleBuffer::emptyBuffer();
 	};
 
 public:

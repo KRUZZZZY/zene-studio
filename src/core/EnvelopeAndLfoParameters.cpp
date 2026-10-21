@@ -231,7 +231,9 @@ inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset,
 			shape_sample = Oscillator::sawSample( phase );
 			break;
 		case LfoShape::UserDefinedWave:
-			shape_sample = Oscillator::userWaveSample(m_userWave.get(), phase);
+			// the wave of the published snapshot: the one the writer published,
+			// and the one that cannot be freed while this snapshot is held.
+			shape_sample = Oscillator::userWaveSample(_state.userWave.get(), phase);
 			break;
 		case LfoShape::RandomWave:
 			if( frame == 0 || !m_randomInitialized )
@@ -549,6 +551,11 @@ void EnvelopeAndLfoParameters::rebuildAudioState()
 		m_used.store( false, std::memory_order_relaxed );
 	}
 
+	// the user-defined wave travels with the snapshot: the audio path samples
+	// the published wave, and a wave that is replaced is not freed while a
+	// reader may still be sampling it.
+	state->userWave = m_userWave;
+
 	m_bad_lfoShapeData.store( true, std::memory_order_release );
 
 	publishAudioState( std::move(state) );
@@ -735,7 +742,11 @@ f_cnt_t EnvelopeAndLfoParameters::getLfoOscillationFrames() const
 
 std::shared_ptr<const SampleBuffer> EnvelopeAndLfoParameters::getLfoUserWave() const
 {
-	return m_userWave;
+	const AudioState * const state = acquireAudioState();
+	if( state == nullptr ) { return m_userWave; }
+	const std::shared_ptr<const SampleBuffer> wave = state->userWave;
+	releaseAudioState();
+	return wave;
 }
 
 

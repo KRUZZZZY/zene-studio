@@ -19,15 +19,15 @@ same mutex (`:415`) and is called from the parameter side (the knob models'
 
 **The fix.** The parameters the audio path reads are now published as an
 immutable snapshot (`EnvelopeAndLfoParameters::AudioState`,
-`include/EnvelopeAndLfoParameters.h:52-73`). The writer side builds one under
+`include/EnvelopeAndLfoParameters.h:61-80`). The writer side builds one under
 `m_paramMutex` (`rebuildAudioState()`, `src/core/EnvelopeAndLfoParameters.cpp:451`)
 and hands it over with an atomic pointer plus a publication sequence
-(`publishAudioState()`, `:625`). The audio path claims it with
-`acquireAudioState()` (`:706`) - atomic loads and one atomic counter, no lock,
-no wait, no allocation - and releases it when it is done (`:735`). A snapshot
+(`publishAudioState()`, `:570`). The audio path claims it with
+`acquireAudioState()` (`:631`) - atomic loads and one atomic counter, no lock,
+no wait, no allocation - and releases it when it is done (`:652`). A snapshot
 that a reader may still hold is retired, not freed; it is freed when the reader
-count is back to zero (`reclaimRetiredAudioStates()`, `:645`). The envelope
-buffers of a retired snapshot are recycled (`takeEnvBuffer()`, `:684`), so a
+count is back to zero (`reclaimRetiredAudioStates()`, `:588`). The envelope
+buffers of a retired snapshot are recycled (`takeEnvBuffer()`, `:610`), so a
 parameter change still does not allocate a fresh buffer every time.
 
 **The regression.** The tree's own real-time rule gate, the rt-safety sweep
@@ -89,5 +89,83 @@ Files committed for new-p9-118:
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-118.md`
 
-new-p15-57: (filled in by the second commit)
+new-p15-57: FIXED
+
+**The finding.** `loadSettings()` wrote `m_userWave` (a `std::shared_ptr<const
+SampleBuffer>`) without taking `m_paramMutex`, while the audio path read the
+same shared pointer (`src/core/EnvelopeAndLfoParameters.cpp:394` in the
+reported tree; `m_userWave.get()` in `lfoShapeSample()`). A concurrent
+assignment is a data race on the shared pointer, and the last strong reference
+can go away while the audio thread is sampling the buffer.
+
+**Why it was REAL.** The wave was a plain member: the writer replaced it
+(`m_userWave = SampleBuffer::fromFile(...)`) with no synchronisation at all,
+and the reader took a raw pointer out of it (`Oscillator::userWaveSample(
+m_userWave.get(), phase)`) and then sampled the buffer over the whole period.
+The mutex that `fillLevel()` took did not help - `loadSettings()` never took
+it - and after the new-p9-118 commit the audio path no longer takes it either,
+so the wave has to travel with the published snapshot.
+
+**The fix.** The user-defined wave is now part of the published snapshot
+(`EnvelopeAndLfoParameters::AudioState::userWave`,
+`include/EnvelopeAndLfoParameters.h:78`). The writer copies the wave it
+holds into the snapshot it publishes (`rebuildAudioState()`,
+`src/core/EnvelopeAndLfoParameters.cpp:557`), the audio path samples the
+wave of the snapshot it holds (`lfoShapeSample()`,
+`src/core/EnvelopeAndLfoParameters.cpp:236`), and the GUI accessor reports
+the published wave (`getLfoUserWave()`, `:743`). A wave that is replaced is
+no longer freed by the replacement: the snapshot that still carries it is
+retired, not freed, and it is freed only when the reader count is back to zero
+(`reclaimRetiredAudioStates()`, `:588`). The saved project is unchanged: the
+wave file name still comes from the same member (`saveSettings()`,
+`src/core/EnvelopeAndLfoParameters.cpp:381`).
+
+**The regression.** `tests/src/core/EnvelopeAndLfoParametersTest.cpp`:
+
+- `replacedUserWaveIsNotFreedWhileTheAudioPathHoldsIt()` (`:120`) stands in for
+  the audio thread with the test seam `holdAudioState()` (the snapshot the
+  audio path holds while it fills a level), replaces the wave, and requires the
+  wave that is in use to still be alive (`!weakWave.expired()`). Without the
+  fix the replacement drops the last strong reference and frees the buffer the
+  audio path is sampling.
+- `theAudioPathSamplesThePublishedUserWave()` (`:140`) requires the audio path
+  to render the wave that was published with the parameters: replacing the wave
+  changes what `fillLevel()` produces.
+
+### Evidence table
+
+| Check | Exact command and result |
+| --- | --- |
+| RED before fix | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-118.r1/logs/fix-new-p15-57.patch` then `cmake --build build --target EnvelopeAndLfoParametersTest -j $(nproc)` (**EXIT=0**) and `ctest -R '^EnvelopeAndLfoParametersTest$' --output-on-failure > .../logs/test-4-red.log 2>&1; echo EXIT=$?`; **EXIT=8**: `FAIL! : EnvelopeAndLfoParametersTest::replacedUserWaveIsNotFreedWhileTheAudioPathHoldsIt() '!weakWave.expired()' returned FALSE.` (5 passed, 1 failed) |
+| GREEN after fix | `git apply .../fix-new-p15-57.patch` then the same build (**EXIT=0**) and `ctest -R '^(EnvelopeAndLfoParametersTest\|ModulationLayerTest\|ModulationRateTest\|EnvelopeGraphTest\|LfoGraphTest\|RtSafetySweep)$' --output-on-failure > .../logs/test-5-green.log 2>&1; echo EXIT=$?`; **EXIT=0**, 6/6 CTest targets passed |
+| Affected family | 6 CTest targets executed (EnvelopeAndLfoParametersTest, ModulationLayerTest, ModulationRateTest, EnvelopeGraphTest, LfoGraphTest, RtSafetySweep), 6/6 passed; the EnvelopeAndLfoParametersTest binary itself runs 6 test functions, all passed |
+| Build | `cmake --build build --target EnvelopeAndLfoParametersTest -j $(nproc)`; **EXIT=0** (`.../build-tests-4.log`, `.../build-tests-6.log`) |
+| Complexity gate | **EXIT=0** (`PASS complexity - no new item in your files`) |
+| File-length gate | **EXIT=0** (`PASS file-length - no new item in your files`) |
+
+### Build and test commands
+
+```text
+git diff -- src/core/EnvelopeAndLfoParameters.cpp include/EnvelopeAndLfoParameters.h > .../logs/fix-new-p15-57.patch   # 56 lines
+git apply -R .../logs/fix-new-p15-57.patch; echo EXIT=$?   # EXIT=0
+cmake --build build --target EnvelopeAndLfoParametersTest -j $(nproc) > .../logs/build-tests-5.log 2>&1; echo EXIT=$?   # EXIT=0
+ctest -R '^EnvelopeAndLfoParametersTest$' --output-on-failure > .../logs/test-4-red.log 2>&1; echo EXIT=$?   # EXIT=8, RED
+git apply .../logs/fix-new-p15-57.patch; echo EXIT=$?   # EXIT=0
+cmake --build build --target EnvelopeAndLfoParametersTest -j $(nproc) > .../logs/build-tests-6.log 2>&1; echo EXIT=$?   # EXIT=0
+ctest -R '^(EnvelopeAndLfoParametersTest|ModulationLayerTest|ModulationRateTest|EnvelopeGraphTest|LfoGraphTest|RtSafetySweep)$' --output-on-failure > .../logs/test-5-green.log 2>&1; echo EXIT=$?   # EXIT=0, 6/6
+```
+
+The required gates ran from the worktree root:
+
+```text
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-118   # EXIT=0
+```
+
+Files committed for new-p15-57:
+
+- `include/EnvelopeAndLfoParameters.h`
+- `src/core/EnvelopeAndLfoParameters.cpp`
+- `tests/src/core/EnvelopeAndLfoParametersTest.cpp`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p9-118.md`
 

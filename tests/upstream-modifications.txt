@@ -2408,3 +2408,5 @@ src/common/SharedMemory.cpp	ci-train-5: cast the Windows FileView handle through
 tests/CMakeLists.txt	ci-train-5: build VstEffectControlsTest only where the vsteffect target exists (macOS configure break).
 src/core/EnvelopeAndLfoParameters.cpp	new-p9-118: the audio path (fillLevel) no longer takes the parameter mutex; the parameters are published as an immutable snapshot that the audio thread claims atomically, so it never blocks behind a parameter update; regression tests/rt-safety-scope.txt (RtSafetySweep).
 include/EnvelopeAndLfoParameters.h	new-p9-118: the published parameter snapshot (AudioState) and its lock-free claim/release replace the mutex-protected members the audio path read.
+src/core/EnvelopeAndLfoParameters.cpp	new-p15-57: the user-defined LFO wave is published with the parameter snapshot, so the audio path samples the wave the writer published and a replaced wave is not freed while the audio path may still be sampling it; regression tests/src/core/EnvelopeAndLfoParametersTest.cpp.
+include/EnvelopeAndLfoParameters.h	new-p15-57: the published parameter snapshot carries the user-defined LFO wave, which is what the audio path samples.
