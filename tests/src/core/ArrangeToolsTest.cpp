@@ -35,12 +35,14 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QRegularExpression>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
-#include <atomic>
-#include <chrono>
 #include <cstdlib>
+#include <functional>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -95,84 +97,58 @@ SampleClip* loudQuietLoudAtRate(Track* track, int rate, int loudFrames, int quie
 	return clip;
 }
 
-class ModelGuardProbe
-{
-public:
-	~ModelGuardProbe() { finish(); }
-
-	void beginDuringCreate()
-	{
-		AudioEngine* const engine = Engine::audioEngine();
-		m_waiter = std::thread([this, engine] {
-			engine->requestChangeInModel();
-			m_acquired.store(true, std::memory_order_release);
-			engine->doneChangeInModel();
-		});
-
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
-		while (!m_acquired.load(std::memory_order_acquire)
-			&& std::chrono::steady_clock::now() < deadline)
-		{
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-		m_guardHeldDuringCreate = !m_acquired.load(std::memory_order_acquire);
-	}
-
-	void observeRestore()
-	{
-		m_guardHeldDuringRestore = !m_acquired.load(std::memory_order_acquire);
-	}
-
-	void finish()
-	{
-		if (m_waiter.joinable()) { m_waiter.join(); }
-		m_releasedAfterRestore = m_acquired.load(std::memory_order_acquire);
-	}
-
-	bool guardHeldDuringCreate() const { return m_guardHeldDuringCreate; }
-	bool guardHeldDuringRestore() const { return m_guardHeldDuringRestore; }
-	bool releasedAfterRestore() const { return m_releasedAfterRestore; }
-
-private:
-	std::thread m_waiter;
-	std::atomic<bool> m_acquired{false};
-	bool m_guardHeldDuringCreate = false;
-	bool m_guardHeldDuringRestore = false;
-	bool m_releasedAfterRestore = false;
-};
+//! Tells whether the audio engine's change mutex is held right now. The mutex
+//! is the lock the audio thread takes around a render period, so a model edit
+//! that runs while it is held cannot be walked by the audio thread.
+using ChangeMutexProbe = std::function<bool()>;
 
 class GuardProbeSampleClip : public SampleClip
 {
 public:
-	GuardProbeSampleClip(Track* track, ModelGuardProbe* probe) : SampleClip(track), m_probe(probe) {}
+	GuardProbeSampleClip(Track* track, ChangeMutexProbe probe) : SampleClip(track), m_probe(std::move(probe)) {}
 
 	void restoreState(const QDomElement& element) override
 	{
-		m_probe->observeRestore();
+		m_restoreRanInsideGuard = m_probe();
 		SampleClip::restoreState(element);
 	}
 
+	//! True when the change mutex was held while this clip was restored.
+	bool restoreRanInsideGuard() const { return m_restoreRanInsideGuard; }
+
 private:
-	ModelGuardProbe* m_probe;
+	ChangeMutexProbe m_probe;
+	bool m_restoreRanInsideGuard = false;
 };
 
 class GuardProbeSampleTrack : public SampleTrack
 {
 public:
-	using SampleTrack::SampleTrack;
+	GuardProbeSampleTrack(Song* song, ChangeMutexProbe probe) : SampleTrack(song), m_probe(std::move(probe)) {}
 
 	Clip* createClip(const TimePos& pos) override
 	{
-		auto* clip = new GuardProbeSampleClip(this, &m_probe);
+		auto* clip = new GuardProbeSampleClip(this, m_probe);
 		clip->movePosition(pos);
-		m_probe.beginDuringCreate();
+		m_createRanInsideGuard = m_probe();
+		m_lastClip = clip;
 		return clip;
 	}
 
-	ModelGuardProbe& probe() { return m_probe; }
+	//! True when the change mutex was held while the replacement clip was made.
+	bool createRanInsideGuard() const { return m_createRanInsideGuard; }
+	//! True when the change mutex was held while the replacement clip was restored.
+	bool restoreRanInsideGuard() const { return m_lastClip != nullptr && m_lastClip->restoreRanInsideGuard(); }
+	void resetGuardObservations()
+	{
+		m_lastClip = nullptr;
+		m_createRanInsideGuard = false;
+	}
 
 private:
-	ModelGuardProbe m_probe;
+	ChangeMutexProbe m_probe;
+	GuardProbeSampleClip* m_lastClip = nullptr;
+	bool m_createRanInsideGuard = false;
 };
 
 } // namespace
@@ -234,16 +210,57 @@ private slots:
 
 	void replacingTrackVersionKeepsModelGuardThroughClipRestore()
 	{
-		auto track = std::make_unique<GuardProbeSampleTrack>(Engine::getSong());
-		QVERIFY(TrackVersions::replaceClips(track.get(), QStringLiteral("<clips><sampleclip/></clips>")));
-		track->probe().finish();
+		// The audio thread takes the same change mutex the guard takes, so the
+		// device is stopped for the probe: the only holder of the mutex during
+		// the replacement is then the guard itself.
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		const auto restartDevice = qScopeGuard([] { Engine::audioEngine()->audioDev()->startProcessing(); });
 
-		QVERIFY2(track->probe().guardHeldDuringCreate(),
-			"another thread entered the audio model while a replacement clip was being created");
-		QVERIFY2(track->probe().guardHeldDuringRestore(),
-			"another thread entered the audio model before a replacement clip finished restoring");
-		QVERIFY(track->probe().releasedAfterRestore());
+		// Control: with no guard in sight the mutex is free, so a probe that
+		// finds it held really means the replacement ran inside a guard.
+		QVERIFY2(!changeMutexIsHeld(), "the change mutex was held outside the replacement");
+
+		auto track = std::make_unique<GuardProbeSampleTrack>(Engine::getSong(), [this] { return changeMutexIsHeld(); });
+		QVERIFY(TrackVersions::replaceClips(track.get(), QStringLiteral("<clips><sampleclip/></clips>")));
+
+		QVERIFY2(track->createRanInsideGuard(),
+			"the track version replaced its clips outside the audio guard: the change mutex was free while the replacement clip was created");
+		QVERIFY2(track->restoreRanInsideGuard(),
+			"the track version replaced its clips outside the audio guard: the change mutex was free while the replacement clip was restored");
 		QCOMPARE(track->numOfClips(), 1);
+		QVERIFY2(!changeMutexIsHeld(), "the audio change mutex remained held after track-version replacement");
+	}
+
+	void undoAndRedoOfTrackVersionSwitchKeepModelGuardThroughClipRestore()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		const auto restartDevice = qScopeGuard([] { Engine::audioEngine()->audioDev()->startProcessing(); });
+		QVERIFY2(!changeMutexIsHeld(), "the change mutex was held before the version switch");
+
+		auto track = std::make_unique<GuardProbeSampleTrack>(Engine::getSong(), [this] { return changeMutexIsHeld(); });
+		const QString id = control::trackIdOf(track.get());
+		track->createClip(TimePos(0))->setName(QStringLiteral("version A"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		track->deleteClips();
+		track->createClip(TimePos(192))->setName(QStringLiteral("version B"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_switch"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+
+		track->resetGuardObservations();
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(track->createRanInsideGuard(),
+			"undo restored the track-version clips outside the audio guard while creating a clip");
+		QVERIFY2(track->restoreRanInsideGuard(),
+			"undo restored the track-version clips outside the audio guard while restoring a clip");
+		QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("B"));
+
+		track->resetGuardObservations();
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY2(track->createRanInsideGuard(),
+			"redo restored the track-version clips outside the audio guard while creating a clip");
+		QVERIFY2(track->restoreRanInsideGuard(),
+			"redo restored the track-version clips outside the audio guard while restoring a clip");
+		QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("A"));
 	}
 
 	void savingAnotherVersionPreservesEditsToTheActiveVersion()
@@ -524,6 +541,26 @@ private slots:
 		QCOMPARE(clip->notes()[1]->pos().getTicks(), tick_t{96});
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(clip->notes()[0]->key(), 60);
+	}
+
+private:
+	//! Tells whether the audio engine's change mutex is held. A second thread
+	//! tries to take it without blocking: only a free mutex can be taken, so
+	//! the answer is the state of the mutex at that instant - the probe never
+	//! waits and never races a timer.
+	bool changeMutexIsHeld()
+	{
+		std::recursive_mutex& changeMutex = Engine::audioEngine()->m_changeMutex;
+		std::promise<bool> taken;
+		std::future<bool> answer = taken.get_future();
+		std::thread worker([&changeMutex, &taken] {
+			const bool locked = changeMutex.try_lock();
+			if (locked) { changeMutex.unlock(); }
+			taken.set_value(locked);
+		});
+		const bool locked = answer.get();
+		worker.join();
+		return !locked;
 	}
 };
 
