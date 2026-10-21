@@ -48,6 +48,12 @@ sibling logs directory is not writable here) exit 0, every gate PASS.
 - **Portability.** The cursors are standard `Qt::CursorShape` values (Qt 5.15 and Qt 6), the fit uses
   `std::clamp`/`std::max` already used by the file, and no Qt-6-only API, `std::filesystem`, POSIX call,
   Windows macro identifier or forbidden `small`/`near`/`far`/`interface`/`min`/`max` name was added.
+- **Completion check.** The installed `submit_check.py` exited 1 with one FAIL: `gates
+  (feature_check.py)`, because this session cannot create the sibling directory
+  `<worktree>-feature-check` (`EACCES` from the file sandbox). Every other row passed. Running the same
+  checker and the same gates with only their log directory redirected to `/tmp` (the gate scripts and
+  the worktree unchanged) exited 0 with every row PASS, including `gates (feature_check.py)`; the
+  only WARN is the canary row, which names existing command ids from the diff, not new ones.
 
 Note: the requested `~/.local/share/zene-bunny-fix/qwen/runs/Q050-064.r1/logs` directory is
 read-only in this session (write probes fail with EACCES), so the numbered build/test logs cited above
