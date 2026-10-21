@@ -3954,12 +3954,12 @@ tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
 tests/src/core/SampleAccurateAutomationTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
-tests/src/core/SamplerEnvelopeTest.cpp
-tests/src/core/SamplerTestSupport.h
-tests/src/core/SamplerVoiceReuseTest.cpp
 tests/src/core/SampleDecoderLimitTest.cpp
 tests/src/core/SampleDecoderOggChannelTest.cpp
 tests/src/core/SampleDecoderOggStateTest.cpp
+tests/src/core/SamplerEnvelopeTest.cpp
+tests/src/core/SamplerTestSupport.h
+tests/src/core/SamplerVoiceReuseTest.cpp
 tests/src/core/ScaleIntervalOverflowTest.cpp
 tests/src/core/ScenesUpconvertTest.cpp
 tests/src/core/ScriptBindingsTest.cpp

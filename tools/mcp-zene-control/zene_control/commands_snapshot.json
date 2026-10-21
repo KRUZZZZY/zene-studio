@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-21T17:33:23Z",
+  "captured_at": "2026-10-21T20:31:42Z",
   "commands": [
     {
       "args_schema": {
@@ -35966,8 +35966,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-m8qqwlcg/zene.sock",
-    "version": "0.4.0-alpha.4211+72cb6cc"
+    "source_socket": "/tmp/zctl-run-0mufc5az/zene.sock",
+    "version": "0.4.0-alpha.4297+3c504fd"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
