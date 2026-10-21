@@ -275,7 +275,7 @@ private slots:
 			return TelemetryHardware::collect().desktopSession;
 		};
 
-		for (const char * known : {"x11", "wayland", "tty"})
+		for (const char * known : {"x11", "wayland", "tty", "mir", "web"})
 		{
 			QCOMPARE(collectWith(QByteArray(known)), QString::fromLatin1(known));
 		}

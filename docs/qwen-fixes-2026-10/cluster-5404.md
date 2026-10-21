@@ -26,7 +26,7 @@ hardware telemetry on, that text reached the preview and the wire payload.
 
 ## Fix
 
-`src/core/Telemetry.cpp:274-284` adds the closed mapper:
+`src/core/Telemetry.cpp:274-286` adds the closed mapper:
 
 ```cpp
 static QString sessionBucket(const QString & sessionType)
@@ -34,22 +34,26 @@ static QString sessionBucket(const QString & sessionType)
 	if(sessionType == QStringLiteral("x11")) { return QStringLiteral("x11"); }
 	if(sessionType == QStringLiteral("wayland")) { return QStringLiteral("wayland"); }
 	if(sessionType == QStringLiteral("tty")) { return QStringLiteral("tty"); }
+	if(sessionType == QStringLiteral("mir")) { return QStringLiteral("mir"); }
+	if(sessionType == QStringLiteral("web")) { return QStringLiteral("web"); }
 	return QStringLiteral("unknown");
 }
 ```
 
-and `src/core/Telemetry.cpp:316` now calls it:
+and `src/core/Telemetry.cpp:318` now calls it:
 
 ```cpp
 hw.desktopSession = sessionBucket(qEnvironmentVariable("XDG_SESSION_TYPE"));
 ```
 
-The three fixed tokens named by the finding (`x11`, `wayland`, `tty`) keep their
-fixed labels; everything else, including an unset variable, an empty value, a
-path, a user name, a desktop name or a different case, becomes `unknown`.
+The three fixed tokens named by the finding (`x11`, `wayland`, `tty`) and the
+other standard session types (`mir`, `web`) keep their fixed labels. The current
+systemd session-type list includes these values ([systemd documentation](https://www.freedesktop.org/software/systemd/man/devel/pam_systemd.html)); `unspecified` and every other
+value, including an unset variable, an empty value, a path, a user name, a
+desktop name or a different case, becomes `unknown`.
 
 Callers/siblings checked: the only production users of this value are
-`TelemetryHardware::collect()` itself (`src/core/Telemetry.cpp:307`) and its two
+`TelemetryHardware::collect()` itself (`src/core/Telemetry.cpp:309`) and its two
 callers `src/core/ControlCommandsTelemetry.cpp:166` and
 `src/gui/TelemetryConsentDialog.cpp:111`; both go through `collect()`, so both now
 receive the bucketed value. The payload field is unchanged
@@ -60,7 +64,7 @@ value was touched.
 
 `tests/src/core/TelemetryTest.cpp:263-299`,
 `TelemetryTest::desktopSessionIsBucketed`, injects `XDG_SESSION_TYPE` with
-`qputenv()` (no clock, sleep, thread or race), checks the three known tokens, then
+`qputenv()` (no clock, sleep, thread or race), checks the five known tokens, then
 checks that private text (`/home/alice/private-session`, `alice@example.com`,
 `kde-plasma`, `x11 wayland`, `X11`, empty) and an unset variable all become
 `unknown`. It also builds a fully consented payload from `collect()` and checks the
@@ -165,8 +169,9 @@ its thresholds were not changed.
 * `tests/src/core/TelemetryTest.cpp` - `desktopSessionIsBucketed` regression.
 * `docs/qwen-fixes-2026-10/cluster-5404.md` - this report.
 
-`src/core/Telemetry.cpp` and `tests/src/core/TelemetryTest.cpp` are already
-registered in `tests/fork-sources.txt`; no registration edit was needed.
+`src/core/Telemetry.cpp` is registered in `tests/fork-sources.txt`.
+`tests/src/core/TelemetryTest.cpp` predates this fix and was not added as a new
+file here; the `feature_check.py` source-registration gates passed.
 
 ## Self-check
 
@@ -195,11 +200,28 @@ full telemetry ctest family passed 3/3.
 **? No collateral damage: old projects and saved data still load as before, and any limit or check you added does not hit other callers that legitimately exceed it.**
 No project, preset, save/load or undo path is touched. The only changed value is
 the telemetry session label, which is collected at preview/send time and is not
-persisted. The three legitimate fixed values (`x11`, `wayland`, `tty`) are
-unchanged; only non-contract text is replaced by the existing `unknown` label. No
+persisted. The five standard fixed values (`x11`, `wayland`, `tty`, `mir`, `web`)
+are unchanged; only other values are replaced by the existing `unknown` label. No
 limit or check was added for any other caller.
 
 **? If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.**
 Not applicable: the verdict is FIXED, with the pre-fix direct copy at
 `src/core/Telemetry.cpp:304` and the payload write at `src/core/Telemetry.cpp:221`
 shown above.
+
+## QA review correction
+
+The accepted session-type list also preserves `mir` and `web`, which are listed
+by the [systemd session-type documentation](https://www.freedesktop.org/software/systemd/man/devel/pam_systemd.html).
+The regression covers both values. Reversing the QA product hunk makes the
+`mir` assertion fail with `unknown`, while arbitrary environment text still
+collapses to `unknown` with the mapper restored. Both ctest commands ran from
+`build/tests`.
+
+| Check | Command | Exit |
+|---|---|---|
+| Build with QA hunk reversed | `cmake --build build --target zene TelemetryTest --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5404.r1/logs/qa-build-reversed.log 2>&1` | `0` |
+| Test with QA hunk reversed | `QT_QPA_PLATFORM=offscreen ctest -R '^TelemetryTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5404.r1/logs/qa-test-reversed.log 2>&1` | `8` (expected) |
+| Build restored targets | `cmake --build build --target zene TelemetryTest TelemetryTransportTest TelemetryConsentDialogTest --parallel 12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5404.r1/logs/qa-build-restored.log 2>&1` | `0` |
+| Restored telemetry family | `QT_QPA_PLATFORM=offscreen ctest -R '^Telemetry' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5404.r1/logs/qa-test-restored-family.log 2>&1` | `0` |
+| Final feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5404 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5404.r1/logs/qa-feature-check.log 2>&1` | `0` |
