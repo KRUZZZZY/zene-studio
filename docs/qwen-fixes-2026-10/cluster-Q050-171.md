@@ -13,17 +13,28 @@ claim stays as dated history, the two reviewed inaccuracies are corrected (New V
 affect only the addressed clip), and the neighbouring "no interface / no Lua" notes carry dated
 corrections. Docs and test comments only: no command, schema, format or audio-path change.
 
-Acceptance, with the exact commands run from the worktree and the exits seen (`Q050-171.r1/logs/`):
+Acceptance, with the exact commands run from the worktree and the exits seen (round-3 logs in
+`Q050-171.r3/logs/`):
 
 | # | Criterion | Command | Exit |
 |---|-----------|---------|------|
-| 1 | The pre-M3.7 interface claim is clearly historical; current UI and remaining limits accurate | `docs/KNOWN-LIMITATIONS.md:270-355` reviewed against the tree (old text under "The pre-M3.7 record"; current text names the strip, channel menu, Groups list, Clip entry, and separates UI omissions from limits on every surface) | 0 |
-| 1 | The current UI inventory is held by a test, not just prose | `cmake --build build --target VcaStripViewTest -- -j4` (`build-1.log`), `ctest -R VcaStripViewTest -V` (`ctest-2.log`) — 10/10, including `theGroupsListOffersCreateEditSetAndPhaseLock`, `theClipsMenuCarriesMoveWithEditGroup`, `newVcaGroupIsCreateThenAssignTwoUndoSteps` | 0 |
-| 2 | Every referenced UI/command path matches the merged tree | `grep -n` / `sed -n` over `VcaStripView.cpp:106/:168`, `MixerView.cpp:403`, `MixerChannelView.cpp:347`, `CommandLists.cpp:59`, `ShellCommandMenus.cpp:327/:519/:526`, `InspectorPanel.cpp:383`, `Mixer.cpp:997/:762/:2504-2544/:2753-2825`, `ControlCommandsVca.cpp:468`, `ControlCommandsVcaShared.h:177/:311`, `ControlCommandsVcaMix.cpp:224`, `ScriptCommandBridge.cpp:69/:80/:272`, `MixerGroups.h:37`; live snapshot has 21 `vca.*` ids | 0 |
-| 2 | Command behavior behind the stated limits still passes | `cmake --build build --target ControlVcaCommandsTest ControlVcaEditGroupsTest ControlVcaLockedEditsTest VcaGroupTest VcaStripLifetimeTest -- -j4` (`build-2.log`); `ctest -R "VcaGroupTest\|ControlVcaCommandsTest\|ControlVcaEditGroupsTest\|ControlVcaLockedEditsTest\|VcaStripLifetimeTest\|VcaStripViewTest\|ControlVcaCommands" --output-on-failure` (`ctest-3.log`) — 7/7 | 0 |
-| 3 | Test efficacy: the new checks fail when their UI paths are removed | Temporarily removed the Clip menu's `vca.edit_move` line, the Groups list's edit-set action, and the create handler's `vca.assign`; `cmake --build build --target VcaStripViewTest -- -j4` (`build-mutation-1.log`), `ctest -R VcaStripViewTest -V` (`ctest-mutation-1.log`) — the four affected checks fail | 8 |
-| 3 | Tests pass again with the paths restored | Rebuilt (`build-3.log`), `ctest -R VcaStripViewTest -V` (`ctest-4.log`) — 10/10 | 0 |
-| 4 | Figures and gates unchanged | `python3 tests/doc-figures-gate.py` (`doc-figures-1.log`): 833 ids / 76 groups; `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py $PWD` (`feature-check-1.log`) — all eight rows PASS | 0 |
+| 1 | The pre-M3.7 interface claim is clearly historical; current UI and remaining limits are accurate. `docs/KNOWN-LIMITATIONS.md:270-355` reviewed against the tree, and the stated UI held by DRIVING it: `VcaStripViewTest::theGroupsListOffersCreateEditSetAndPhaseLock` triggers Project tools ▸ Groups..., then through the opened dialog runs New Group (`vca.create` form), Rename, Add/Remove Track to Edit Set (forms), Phase Lock Off/On, reads state back and undoes with `control.undo`; `::theClipsMenuCarriesMoveWithEditGroup` submits the Clip menu's Move With Edit Group... form (`moved_count` 2, `delta` 500, both clips at 1500, one undo restores both); `::newVcaGroupIsCreateThenAssignTwoUndoSteps` holds the two-invocation create | `cmake --build build --target VcaStripViewTest -- -j4` (`build-3.log`), `ctest -R VcaStripViewTest --output-on-failure` (`ctest-2.log`) — all nine test functions + init/cleanup pass | 0 |
+| 2 | The referenced UI and command paths match the merged tree. Every cited file:line re-read (`VcaStripView.cpp:106/:168`, `MixerView.cpp:403`, `MixerChannelView.cpp:347`, `CommandLists.cpp:59`, `ShellCommandMenus.cpp:327/:519/:526`, `InspectorPanel.cpp:383`, `Mixer.cpp:997/:762/:2504-2544/:2753-2825`, `ControlCommandsVca.cpp:468`, `ControlCommandsVcaShared.h:177/:311`, `ControlCommandsVcaMix.cpp:224`, `ScriptCommandBridge.cpp:69/:80/:272`, `MixerGroups.h:37`); command behavior behind the stated limits passes; figures unchanged (833 ids / 76 groups) | `cmake --build build --target zene VcaStripViewTest ControlVcaCommandsTest ControlVcaEditGroupsTest ControlVcaLockedEditsTest VcaGroupTest VcaStripLifetimeTest -- -j4` (`build-4.log`); `ctest -R "VcaGroupTest\|ControlVcaCommandsTest\|ControlVcaEditGroupsTest\|ControlVcaLockedEditsTest\|VcaStripLifetimeTest\|VcaStripViewTest\|ControlVcaCommands" --output-on-failure` (`ctest-3.log`) — 7/7; `python3 tests/doc-figures-gate.py` (`doc-figures-2.log`) | 0 |
+| 3 | Test efficacy: the driven tests fail when their UI paths are broken (Phase Lock Off sends `locked: true`, Add Track points at `vca.track_remove`, the Clip line points at `clip.move`) | `cmake --build build --target VcaStripViewTest -- -j4` (`build-mut.log`), `ctest -R VcaStripViewTest --output-on-failure` (`ctest-mut.log`) — the Groups-list and Clip-menu tests fail | 8 |
+| 3 | Same tests pass again with the paths restored | rebuilt (`build-3.log` precedes; restored tree rebuilt in `build-4.log`), `ctest -R VcaStripViewTest` (`ctest-3.log`) | 0 |
+
+## Round-3 rework (review of round 2)
+
+The reviewer found the Groups-list and Clip-menu tests only inspected configuration. They now
+drive it: the Groups list is opened from its Project-menu entry and each action runs through the
+dialog (New Group, Rename, Add / Remove Track to Edit Set, Phase Lock On / Off - forms filled
+and submitted), and the Clip menu's Move With Edit Group... form is triggered from the real
+menu, refused empty, then submitted with a group and position. State is read back (group name,
+edit set, phase lock, clip positions, `moved_count`, `delta`) and each edit is undone with
+`control.undo`, the registered command agents use. The feature report now has exactly one row
+per criterion. Also fixed a latent use-after-free in `aStripWhoseGroupIsRemovedRetiresAtOnce`
+(a `QPointer` rebuilt from a raw pointer after `deleteLater()` ran) that the new tests' longer
+event-loop turns turned into a segfault (first run, `ctest-1.log`, exit 8).
 
 ## Round-1 rework
 

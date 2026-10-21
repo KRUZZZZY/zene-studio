@@ -43,8 +43,11 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomatableButton.h"
+#include "CommandForm.h"
+#include "CommandListDialog.h"
 #include "CommandLists.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
@@ -55,11 +58,14 @@
 #include "ShellCommandMenus.h"
 #include "Song.h"
 #include "TimePos.h"
+#include "Track.h"
 #include "VcaGroup.h"
 #include "VcaStripView.h"
 
 using namespace lmms;
 using namespace lmms::gui;
+using lmms::control::clipIdOf;
+using lmms::control::trackIdOf;
 
 class VcaStripViewTest : public QObject
 {
@@ -154,8 +160,9 @@ private slots:
 	}
 
 	// Q050-171: Project tools ▸ Groups... is the list dialog over vca.* - rename, remove, the edit
-	// set and the phase lock - and its "New Group..." is vca.create, so the dialog reaches the same
-	// commands the socket does.
+	// set and the phase lock - and its "New Group..." is vca.create. The spec is checked, then the
+	// dialog is DRIVEN: each action is run through the dialog (forms filled and submitted), and the
+	// result is read back and undone through the same registered commands the socket offers.
 	void theGroupsListOffersCreateEditSetAndPhaseLock()
 	{
 		const ListSpec spec = CommandLists::vcaGroups();
@@ -190,18 +197,85 @@ private slots:
 		QCOMPARE(spec.extras.size(), 1);
 		QCOMPARE(spec.extras[0].label, QStringLiteral("New Group..."));
 		QCOMPARE(spec.extras[0].call.id, QStringLiteral("vca.create"));
-		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("vca.create")));
+
+		// Opened from the menu entry the musician uses (Project tools ▸ Groups...).
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		QMenu projectMenu;
+		ShellCommandMenus::populateProject(&projectMenu);
+		QAction* entry = actionNamed(&projectMenu, QStringLiteral("Groups..."));
+		QVERIFY2(entry != nullptr, "Project tools has no Groups... entry");
+		QCOMPARE(entry->property("controlCommand").toString(), QStringLiteral("vca.list"));
+		entry->trigger();
+		CommandListDialog* dialog = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			auto* found = qobject_cast<CommandListDialog*>(widget);
+			if (found != nullptr && found->isVisible()) { dialog = found; }
+		}
+		QVERIFY2(dialog != nullptr, "Groups... opened no list dialog");
+		QCOMPARE(dialog->rowCount(), 0);
+
+		// "New Group..." is vca.create through its form: a name, submitted.
+		QCOMPARE(dialog->runExtra(0).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("name"), QStringLiteral("Strings")}}).ok);
+		QCOMPARE(mixer->vcaGroups().size(), std::size_t{1});
+		VcaGroup* group = mixer->vcaGroups().back();
+		QCOMPARE(group->name(), QStringLiteral("Strings"));
+		QCOMPARE(dialog->rowCount(), 1);  // the list was read again
+		QCOMPARE(dialog->row(0).value(QStringLiteral("name")).toString(), QStringLiteral("Strings"));
+
+		// Rename... asks for the name (the group's id comes from the row); one undo restores it.
+		QCOMPARE(dialog->runAction(0, 0).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("name"), QStringLiteral("Brass")}}).ok);
+		QCOMPARE(group->name(), QStringLiteral("Brass"));
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(group->name(), QStringLiteral("Strings"));
+
+		// Add Track to Edit Set... names the track in its form; Remove Track... takes it out again.
+		SampleTrack* member = newSampleTrack();
+		QVERIFY(member != nullptr);
+		const QString track = trackIdOf(member);
+		QCOMPARE(dialog->runAction(0, 2).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("track"), track}}).ok);
+		QCOMPARE(group->editTracks().size(), std::size_t{1});
+		QCOMPARE(dialog->runAction(0, 3).errorKind, ControlErrorKind::Busy);
+		QVERIFY(fillAndSubmit(dialog, {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(group->editTracks().empty());
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);  // the removal, one step
+		QCOMPARE(group->editTracks().size(), std::size_t{1});
+
+		// Phase Lock Off / On run at once (no form: both arguments are known) and are one step each.
+		QVERIFY(group->isPhaseLocked());
+		QVERIFY(dialog->runAction(0, 5).ok);
+		QVERIFY2(!group->isPhaseLocked(), "Phase Lock Off left the group locked");
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY2(group->isPhaseLocked(), "control.undo did not restore the phase lock");
+		QVERIFY(dialog->runAction(0, 5).ok);
+		QVERIFY(dialog->runAction(0, 4).ok);
+		QVERIFY(group->isPhaseLocked());
+
+		dialog->close();
+		mixer->clearVcaGroups();
 	}
 
 	// Q050-171: the Inspector's Clip menu carries Move With Edit Group..., the vca.edit_move form.
+	// Triggered from the menu, the form is filled and submitted: every track of the group's edit
+	// set moves by the anchor's delta, and ONE control.undo puts them all back.
 	void theClipsMenuCarriesMoveWithEditGroup()
 	{
-		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
-		QVERIFY(track != nullptr);
-		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
-		QVERIFY(clip != nullptr);
+		Mixer* mixer = Engine::mixer();
+		mixer->clearVcaGroups();
+		SampleTrack* first = newSampleTrack();
+		SampleTrack* second = newSampleTrack();
+		QVERIFY(first != nullptr && second != nullptr);
+		SampleClip* anchor = newClipAt(first, 1000, 500);
+		SampleClip* partner = newClipAt(second, 1000, 500);
+		QVERIFY(anchor != nullptr && partner != nullptr);
+		const QString group = createAndFill(QStringLiteral("Take"), {first, second});
+
 		QMenu menu;
-		ShellCommandMenus::populateClip(&menu, clip);
+		ShellCommandMenus::populateClip(&menu, anchor);
 		QAction* move = nullptr;
 		for (QAction* action : menu.actions())
 		{
@@ -211,6 +285,32 @@ private slots:
 		QVERIFY2(move->isEnabled(), "Move With Edit Group is disabled while its command is registered");
 		QVERIFY(move->text().contains(QStringLiteral("Move With Edit Group")));
 		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("vca.edit_move")));
+
+		move->trigger();
+		CommandForm* form = visibleForm(nullptr);
+		QVERIFY2(form != nullptr, "Move With Edit Group... opened no form");
+		QVERIFY(form->fields().contains(QStringLiteral("group")));
+		// The form starts from where the clip is; a submission without a group is refused, not run.
+		QJsonObject args;
+		QString error;
+		QVERIFY(!form->collect(&args, &error));
+		QVERIFY(form->setField(QStringLiteral("group"), group));
+		QVERIFY(form->setField(QStringLiteral("position"), 1500));
+		QVERIFY2(form->collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("clip")).toString(), clipIdOf(anchor));
+		form->accept();
+		const ControlResult moved = form->result();
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("moved_count")).toInt(), 2);
+		QCOMPARE(moved.result.value(QStringLiteral("delta")).toInt(), 500);
+		QCOMPARE(static_cast<int>(anchor->startPosition()), 1500);
+		QCOMPARE(static_cast<int>(partner->startPosition()), 1500);
+
+		// ONE recorded step: control.undo puts both clips back.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(static_cast<int>(anchor->startPosition()), 1000);
+		QCOMPARE(static_cast<int>(partner->startPosition()), 1000);
+		mixer->clearVcaGroups();
 	}
 
 	void theStripsMenuChoosesLinksAndNestingThroughTheCommands()
@@ -275,12 +375,13 @@ private slots:
 		Mixer* mixer = Engine::mixer();
 		mixer->clearVcaGroups();
 		VcaGroup* group = mixer->createVcaGroup(QStringLiteral("Doomed"));
-		auto* strip = new VcaStripView(group);
+		QPointer<VcaStripView> strip = new VcaStripView(group);
 		strip->show();
 		QVERIFY(strip->isVisible());
 		QVERIFY(mixer->deleteVcaGroup(group->id()));
 		QVERIFY2(!strip->isVisible(), "the strip stayed up over freed models");
-		QTRY_VERIFY(QPointer<VcaStripView>(strip).isNull());  // deleteLater() ran
+		// Held as a QPointer from the start: rebuilding one from the raw pointer after deleteLater() ran reads freed memory.
+		QTRY_VERIFY(strip.isNull());  // deleteLater() ran
 	}
 
 	void theContextMenuEventOpensTheSameMenu()
@@ -299,6 +400,66 @@ private slots:
 	}
 
 private:
+	//! A sample track in the song.
+	static SampleTrack* newSampleTrack()
+	{
+		return dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+	}
+
+	//! A clip of @a length ticks at @a position on @a track.
+	static SampleClip* newClipAt(SampleTrack* track, int position, int length)
+	{
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(position)));
+		if (clip != nullptr) { clip->changeLength(TimePos(length)); }
+		return clip;
+	}
+
+	//! A group made and filled the way an agent would: vca.create, then vca.track_add per track.
+	static QString createAndFill(const QString& name, const QList<SampleTrack*>& tracks)
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString group = registry->invoke(QStringLiteral("vca.create"), {{QStringLiteral("name"), name}})
+			.result.value(QStringLiteral("group")).toString();
+		for (SampleTrack* track : tracks)
+		{
+			registry->invoke(QStringLiteral("vca.track_add"),
+				{{QStringLiteral("group"), group}, {QStringLiteral("track"), trackIdOf(track)}});
+		}
+		return group;
+	}
+
+	//! The newest form still on screen under @a parent (anywhere when null), or nullptr.
+	static CommandForm* visibleForm(QWidget* parent)
+	{
+		CommandForm* found = nullptr;
+		const QList<CommandForm*> forms = parent != nullptr ? parent->findChildren<CommandForm*>() : allForms();
+		for (CommandForm* form : forms) { if (form->isVisible()) { found = form; } }
+		return found;
+	}
+
+	static QList<CommandForm*> allForms()
+	{
+		QList<CommandForm*> forms;
+		for (QWidget* widget : QApplication::allWidgets())
+		{
+			if (auto* form = qobject_cast<CommandForm*>(widget)) { forms.append(form); }
+		}
+		return forms;
+	}
+
+	//! The form the last form-asking action opened under @a dialog, filled with @a fields and submitted.
+	static ControlResult fillAndSubmit(QWidget* dialog, const QJsonObject& fields)
+	{
+		CommandForm* form = visibleForm(dialog);
+		if (form == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no form opened")); }
+		for (auto it = fields.begin(); it != fields.end(); ++it)
+		{
+			if (!form->setField(it.key(), it.value())) { return ControlResult::failure(ControlErrorKind::InvalidArgs, it.key()); }
+		}
+		form->accept();
+		return form->result();
+	}
+
 	//! Once the strip's menu is up (it is shown inside exec(), so it is polled for, not waited a fixed time), notes
 	//! whether it carries the Links submenu and closes it.
 	static void closePopupWhenUp(bool* sawLinks, int triesLeft = 200)
