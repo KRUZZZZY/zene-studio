@@ -27,6 +27,7 @@
 
 #include <QString>
 #include <QVector>
+#include <QtGlobal>
 
 namespace lmms
 {
@@ -91,6 +92,14 @@ ScriptPackage parseManifest(const QString& source);
  *  isValidName() and EntryFileName themselves.
  */
 QVector<ScriptPackage> scan(const QString& scriptsRoot);
+
+/*! Bytes read from package entry scripts since the process started.
+ *
+ *  A test seam for the bounded-read guarantee of scan(): discovery reads the
+ *  manifest window of an entry script, not the whole file, so a large package
+ *  script costs a fixed amount of memory to list. Hosts do not need this.
+ */
+qint64 entryScriptBytesReadForTesting();
 
 } // namespace ScriptPackages
 

@@ -30,6 +30,7 @@
 #include <QRegularExpression>
 
 #include <algorithm>
+#include <atomic>
 
 namespace lmms
 {
@@ -51,6 +52,10 @@ const QRegularExpression& manifestExpression()
 }
 
 constexpr int ManifestScanBytes = 4096;
+
+//! Bytes read from package entry scripts. A test seam (see
+//! entryScriptBytesReadForTesting()), not part of the package format.
+std::atomic<qint64> s_entryScriptBytesRead{0};
 
 } // namespace
 
@@ -118,7 +123,9 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 		QFile file(entryPath);
 		if (file.open(QIODevice::ReadOnly | QIODevice::Text))
 		{
-			const ScriptPackage declared = parseManifest(QString::fromUtf8(file.readAll()));
+			const QByteArray source = file.readAll();
+			s_entryScriptBytesRead.fetch_add(source.size(), std::memory_order_relaxed);
+			const ScriptPackage declared = parseManifest(QString::fromUtf8(source));
 			file.close();
 			if (declared.name == package.name)
 			{
@@ -132,6 +139,11 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 	std::sort(packages.begin(), packages.end(),
 			[](const ScriptPackage& a, const ScriptPackage& b) { return a.name < b.name; });
 	return packages;
+}
+
+qint64 entryScriptBytesReadForTesting()
+{
+	return s_entryScriptBytesRead.load(std::memory_order_relaxed);
 }
 
 } // namespace ScriptPackages

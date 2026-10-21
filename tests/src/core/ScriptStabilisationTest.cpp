@@ -448,6 +448,40 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 			"a package must not bypass the version gate");
 	}
 
+	//! The scanner must not read a WHOLE entry script to find a manifest that
+	//! lives in its first 4 KB: a package script may be megabytes long, and
+	//! discovery allocates what it reads.
+	void packageScanningReadsOnlyTheManifestWindow()
+	{
+		using namespace lmms;
+		QTemporaryDir root;
+		QVERIFY(root.isValid());
+		QDir rootDir(root.path());
+		QVERIFY(rootDir.mkpath(QStringLiteral("big")));
+
+		// A 4 MB entry script whose manifest sits in the first bytes.
+		QByteArray script("--! lmms-api " + QByteArray(kExpectedApiVersion)
+			+ "\n--! lmms-package big 1.0\n");
+		script.append(QByteArray(4 * 1024 * 1024 - script.size(), 'x'));
+		QFile file(rootDir.absoluteFilePath(QStringLiteral("big/package.lua")));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		QVERIFY(file.write(script) == script.size());
+		file.close();
+
+		const qint64 before = ScriptPackages::entryScriptBytesReadForTesting();
+		const QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
+		const qint64 read = ScriptPackages::entryScriptBytesReadForTesting() - before;
+
+		// The package is still found, with its version: bounding the read must
+		// not break discovery.
+		QCOMPARE(static_cast<int>(packages.size()), 1);
+		QCOMPARE(packages[0].name, QStringLiteral("big"));
+		QCOMPARE(packages[0].version, QStringLiteral("1.0"));
+
+		QVERIFY2(read <= 4096,
+			qPrintable(QStringLiteral("discovery read %1 bytes of a 4 MB entry script").arg(read)));
+	}
+
 	//! A DIRECTORY named package.lua is not a package: the entry must be a file
 	//! a script can be loaded from, and QFileInfo::exists() is true for the
 	//! directory too, so the scanner listed a package whose entry cannot be run.
