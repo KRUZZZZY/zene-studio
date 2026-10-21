@@ -223,3 +223,31 @@ Logs: `build-4-red.log`, `test-4-red.log` (RED), `build-5-green.log`, `test-5-gr
 - **Old projects load as before.** No saved data, no schema and no file format was touched.
 - **Portability.** Only `QPointer`, `QMenu::setParent` and `QWidget::setParent` (all Qt 5.15 and
   Qt 6) are used; no windows.h name, no `std::filesystem`.
+- **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE"** - not applicable: all three findings are
+  FIXED, and each section above cites the code the fix changes (`file:line`).
+
+### The wider family
+
+`ctest -R "DevicePanelTest|RackMenuTest|InstrumentSetupUiTest|EffectDeviceMenuTest|EffectRackAddTest|PluginControlDialogsTest" --output-on-failure`
+(from `build/tests`) - exit 0, **6/6 ctest targets passed** (`test-14-wider.log`). These are the
+tests that drive the Device panel, the device card's menus and the device's own dialogs.
+
+### Files committed
+
+- `src/gui/shell/DeviceCard.cpp` - the card's context menu is let go of before it runs
+  (`new-p9-104`); the failed editor result is kept and reported (`new-p17-49`); the fold handler
+  moved into `DeviceCard::foldCard` and guards the card (`new-p15-48`).
+- `src/gui/shell/DeviceActionMenu.cpp`, `src/gui/EffectDeviceMenu.cpp` - the widget a menu entry
+  belongs to is captured as a `QPointer` (`new-p9-104`).
+- `src/gui/shell/DeviceCardState.cpp` - the card's state line carries the reason an editor did not
+  open (`new-p17-49`).
+- `include/DevicePanel.h` - `openEffectDialog()` says whether it opened something, `setEditorError()`
+  keeps the reason, `foldCard()` is the fold handler (`new-p17-49`, `new-p15-48`).
+- `tests/src/gui/DevicePanelTest.cpp` - the three regression tests and the test device they use.
+- `docs/qwen-fixes-2026-10/cluster-new-p17-49.md` - this report.
+
+### Commits (one per bug)
+
+- `4f8cc7635` - `fix(new-p9-104): the card's context menu is not the card's child`
+- `b339c4e45` - `fix(new-p17-49): an "Open Editor" that opens nothing says why`
+- `a99bb4df6` - `fix(new-p15-48): the fold handler no longer touches a card the dispatch retired`
