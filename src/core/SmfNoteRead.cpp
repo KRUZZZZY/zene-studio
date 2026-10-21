@@ -27,6 +27,8 @@
 #include "SmfNoteRead.h"
 
 #include <algorithm>
+#include <atomic>
+#include <deque>
 #include <map>
 
 #include "TimePos.h"
@@ -109,6 +111,34 @@ bool isZeroPadding(const QByteArray& bytes, long long from)
 	return true;
 }
 
+std::atomic<long long> g_noteQueueShifts{0};
+
+//! One still-open note in its pitch's queue, counting its own place changes (see smfNoteQueueShiftCount()): the
+//! count a test reads to hold closing the oldest note free for the notes behind it, whatever holds the queue.
+struct QueuedNote
+{
+	SmfNote note{};
+	QueuedNote() = default;
+	explicit QueuedNote(const SmfNote& value) : note(value) {}
+
+	QueuedNote(const QueuedNote& other) : note(other.note) { countShift(); }
+	QueuedNote(QueuedNote&& other) noexcept : note(other.note) { countShift(); }
+	QueuedNote& operator=(const QueuedNote& other) noexcept
+	{
+		note = other.note;
+		countShift();
+		return *this;
+	}
+	QueuedNote& operator=(QueuedNote&& other) noexcept
+	{
+		note = other.note;
+		countShift();
+		return *this;
+	}
+
+	static void countShift() noexcept { g_noteQueueShifts.fetch_add(1, std::memory_order_relaxed); }
+};
+
 //! One track being read: where it is in file ticks, its running status, and the notes still sounding.
 struct TrackWalk
 {
@@ -116,7 +146,9 @@ struct TrackWalk
 	long long tick = 0;
 	int running = 0;
 	bool ended = false;
-	std::map<int, std::vector<SmfNote>> open;  //!< (channel * 128 + key) -> notes not yet closed, oldest first
+	std::size_t openCount = 0;  //!< how many notes are still open here; they count against the note cap
+	bool noteCapHit = false;    //!< an open would pass the cap; the track is refused, never truncated
+	std::map<int, std::deque<QueuedNote>> open;  //!< (channel * 128 + key) -> notes not yet closed, oldest first
 	std::vector<SmfNote>* out = nullptr;
 
 	long long lmmsTicks(long long fileTicks) const
@@ -134,29 +166,37 @@ struct TrackWalk
 	{
 		for (auto& entry : open)
 		{
-			for (const SmfNote& note : entry.second) { close(note); }
+			for (const QueuedNote& queued : entry.second) { close(queued.note); }
 		}
 		open.clear();
+		openCount = 0;
 	}
 };
 
 //! A note-on (velocity > 0) opens a note; anything else that reaches here closes the oldest open note of its key.
 void noteMessage(int status, int key, int velocity, TrackWalk* walk)
 {
-	std::vector<SmfNote>& queue = walk->open[(status & 0x0F) * 128 + key];
+	std::deque<QueuedNote>& queue = walk->open[(status & 0x0F) * 128 + key];
 	if ((status & 0xF0) == 0x90 && velocity > 0)
 	{
+		if (walk->out->size() + walk->openCount >= static_cast<std::size_t>(SmfNoteMaxCount))
+		{
+			walk->noteCapHit = true;  // a still-open note counts against the cap like a closed one
+			return;
+		}
 		SmfNote note;
 		note.start = walk->lmmsTicks(walk->tick);
 		note.key = key;
 		note.velocity = velocity;
 		note.channel = status & 0x0F;
-		queue.push_back(note);
+		queue.emplace_back(note);
+		++walk->openCount;
 	}
 	else if (!queue.empty())  // a note-off with no note is ignored
 	{
-		walk->close(queue.front());
-		queue.erase(queue.begin());
+		walk->close(queue.front().note);
+		queue.pop_front();  // the notes queued behind the closed one must not be moved (new-p14-314)
+		--walk->openCount;
 	}
 }
 
@@ -180,7 +220,11 @@ bool skippedEvent(Cursor& cursor, int status, TrackWalk* walk)
 	long long length = 0;
 	if (status == 0xFF && !cursor.u8(&type)) { return false; }
 	if (!cursor.vlq(&length) || !cursor.skip(length)) { return false; }
-	if (status == 0xFF && type == 0x2F) { walk->ended = true; }
+	if (status == 0xFF && type == 0x2F)  // SMF 1.0: the end-of-track marker carries no payload and is the track's last event
+	{
+		if (length != 0 || !cursor.atEnd()) { return false; }
+		walk->ended = true;
+	}
 	walk->running = 0;
 	return true;
 }
@@ -203,7 +247,11 @@ bool trackEvent(Cursor& cursor, TrackWalk* walk)
 	return channelEvent(cursor, status, walk);
 }
 
-bool readTrack(const QByteArray& bytes, int from, int to, int division, std::vector<SmfNote>* out)
+//! How one track was read: to its end, malformed, or past the note cap - the cap is enforced while the
+//! events are read (a still-open note counts like a closed one), so nothing past the cap is materialised.
+enum class TrackResult { Read, Malformed, OverCap };
+
+TrackResult readTrack(const QByteArray& bytes, int from, int to, int division, std::vector<SmfNote>* out)
 {
 	Cursor cursor(bytes, from, to);
 	TrackWalk walk;
@@ -211,11 +259,13 @@ bool readTrack(const QByteArray& bytes, int from, int to, int division, std::vec
 	walk.out = out;
 	while (!cursor.atEnd() && !walk.ended)
 	{
-		if (!trackEvent(cursor, &walk)) { return false; }
-		if (out->size() > static_cast<std::size_t>(SmfNoteMaxCount)) { return false; }
+		if (!trackEvent(cursor, &walk)) { return TrackResult::Malformed; }
+		if (walk.noteCapHit) { return TrackResult::OverCap; }
+		if (out->size() > static_cast<std::size_t>(SmfNoteMaxCount)) { return TrackResult::OverCap; }
 	}
 	walk.closeAll();  // a note never closed ends where its track does
-	return out->size() <= static_cast<std::size_t>(SmfNoteMaxCount);  // counted after the unclosed ones are closed
+	return out->size() <= static_cast<std::size_t>(SmfNoteMaxCount)  // counted after the unclosed ones are closed
+		? TrackResult::Read : TrackResult::OverCap;
 }
 
 bool failWith(SmfNoteRead* read, const QString& message)
@@ -261,9 +311,11 @@ bool readChunks(const QByteArray& bytes, SmfNoteRead* read)
 		if (body + length > bytes.size()) { return failWith(read, QStringLiteral("the MIDI file is truncated inside a chunk")); }
 		if (bytes.mid(static_cast<int>(at), 4) == QByteArrayLiteral("MTrk"))
 		{
-			if (!readTrack(bytes, static_cast<int>(body), static_cast<int>(body + length), read->division, &read->notes))
+			const TrackResult result = readTrack(
+				bytes, static_cast<int>(body), static_cast<int>(body + length), read->division, &read->notes);
+			if (result != TrackResult::Read)
 			{
-				return failWith(read, read->notes.size() > static_cast<std::size_t>(SmfNoteMaxCount)
+				return failWith(read, result == TrackResult::OverCap
 					? QStringLiteral("the MIDI file holds more than %1 notes").arg(SmfNoteMaxCount)
 					: QStringLiteral("track %1 of the MIDI file is malformed").arg(tracksRead + 1));
 			}
@@ -305,6 +357,11 @@ SmfNoteRead readSmfNotes(const QByteArray& bytes)
 	for (const SmfNote& note : read.notes) { read.endTick = std::max(read.endTick, note.start + note.length); }
 	read.ok = true;
 	return read;
+}
+
+long long smfNoteQueueShiftCount()
+{
+	return g_noteQueueShifts.load(std::memory_order_relaxed);
 }
 
 } // namespace lmms::interchange

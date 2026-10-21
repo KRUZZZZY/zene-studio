@@ -69,6 +69,12 @@ struct SmfNoteRead
  *  end; a note-off with no note is ignored. */
 LMMS_EXPORT SmfNoteRead readSmfNotes(const QByteArray& bytes);
 
+//! How many elements the open-note queues have moved so far in this process. Closing the oldest open note of a
+//! pitch must cost nothing for the notes behind it: a queue whose front removal shuffles its whole tail pays one
+//! shuffle per close, which makes reading a track of many overlapping notes of one pitch quadratic. This is the
+//! seam SmfNoteReadTest reads (a count, never a clock) to hold the reader linear in the overlap.
+LMMS_EXPORT long long smfNoteQueueShiftCount();
+
 } // namespace lmms::interchange
 
 #endif // LMMS_SMF_NOTE_READ_H

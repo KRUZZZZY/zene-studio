@@ -2863,3 +2863,5 @@ tests/src/plugins/OrganicZeroOscTest.cpp
 tests/src/plugins/CompressorVisualizerTest.cpp
 # cluster new-p15-300 (2026-10): fix and verification report for the compressor visualizer state race (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p15-300.md
+# cluster new-p14-314 (2026-10): the SMF note reader's own regression file (fork-NEW).
+tests/src/core/SmfNoteReadTest.cpp
