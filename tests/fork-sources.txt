@@ -2786,4 +2786,6 @@ docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 # Q050-103 (2026-10-21): the sampler's voice pool and its envelope/voice-reuse test (fork-NEW).
 plugins/AudioFileProcessor/SamplerVoicePool.h
-tests/src/core/SamplerEnvelopeVoiceTest.cpp
+tests/src/core/SamplerEnvelopeTest.cpp
+tests/src/core/SamplerTestSupport.h
+tests/src/core/SamplerVoiceReuseTest.cpp

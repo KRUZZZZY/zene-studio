@@ -2766,4 +2766,4 @@ plugins/AudioFileProcessor/AudioFileProcessor.cpp	Q050-103: attack/release/voice
 plugins/AudioFileProcessor/AudioFileProcessor.h	Q050-103: attack/release/voice-limit models, a preallocated voice pool with a released-voice-first reuse policy (no allocation on note start), and the knobs; old projects load the old defaults
 plugins/AudioFileProcessor/AudioFileProcessorView.cpp	Q050-103: attack/release/voice-limit models, a preallocated voice pool with a released-voice-first reuse policy (no allocation on note start), and the knobs; old projects load the old defaults
 plugins/AudioFileProcessor/AudioFileProcessorView.h	Q050-103: attack/release/voice-limit models, a preallocated voice pool with a released-voice-first reuse policy (no allocation on note start), and the knobs; old projects load the old defaults
-tests/CMakeLists.txt	Q050-103: register SamplerEnvelopeVoiceTest and its audiofileprocessor module dependency
+tests/CMakeLists.txt	Q050-103: register SamplerEnvelopeTest and SamplerVoiceReuseTest and their audiofileprocessor module dependency

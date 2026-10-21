@@ -84,61 +84,11 @@ public:
 		const int cap = std::clamp(limit, 1, static_cast<int>(MaxVoices));
 		for (int attempt = 0; attempt < 4; ++attempt)
 		{
-			int active = 0;
-			int releasedVictim = -1;
-			int heldVictim = -1;
-			std::uint64_t releasedOrder = ~std::uint64_t{0};
-			std::uint64_t heldOrder = ~std::uint64_t{0};
-			std::uint64_t victimToken = 0;
-			std::uint64_t heldToken = 0;
-			for (int i = 0; i < Capacity; ++i)
-			{
-				const Voice& v = *m_voices[static_cast<std::size_t>(i)];
-				const std::uint64_t token = v.token.load(std::memory_order_acquire);
-				if (token == 0 || v.stolenToken.load(std::memory_order_acquire) == token) { continue; }
-				++active;
-				const std::uint64_t released = v.releaseOrder.load(std::memory_order_acquire);
-				if (released != 0)
-				{
-					if (released < releasedOrder) { releasedOrder = released; releasedVictim = i; victimToken = token; }
-				}
-				else if (const std::uint64_t started = v.startOrder.load(std::memory_order_acquire); started < heldOrder)
-				{
-					heldOrder = started;
-					heldVictim = i;
-					heldToken = token;
-				}
-			}
-			if (active < cap) { break; }
-
-			const int victim = releasedVictim >= 0 ? releasedVictim : heldVictim;
-			if (victim < 0) { break; }
-			std::uint64_t expected = 0;
-			Voice& chosen = *m_voices[static_cast<std::size_t>(victim)];
-			if (chosen.stolenToken.compare_exchange_strong(expected,
-					releasedVictim >= 0 ? victimToken : heldToken, std::memory_order_acq_rel))
-			{
-				break;
-			}
+			const Census now = census();
+			if (now.active < cap || markVictim(now)) { break; }
 			// Another note chose the same voice first: look again.
 		}
-
-		for (int i = 0; i < Capacity; ++i)
-		{
-			Voice& v = *m_voices[static_cast<std::size_t>(i)];
-			std::uint64_t expected = 0;
-			const std::uint64_t token = m_nextToken.fetch_add(1, std::memory_order_relaxed);
-			if (!v.token.compare_exchange_strong(expected, token, std::memory_order_acq_rel)) { continue; }
-
-			// This note owns the voice from here on: nothing else writes its state.
-			v.state.reset();
-			v.stealFramesDone = 0;
-			v.stolenToken.store(0, std::memory_order_relaxed);
-			v.releaseOrder.store(0, std::memory_order_relaxed);
-			v.startOrder.store(m_order.fetch_add(1, std::memory_order_relaxed) + 1, std::memory_order_release);
-			return Claim{i, token};
-		}
-		return {};
+		return claimFreeVoice();
 	}
 
 	//! True while \a claim still names the note's own voice.
@@ -182,6 +132,75 @@ public:
 	}
 
 private:
+	//! The best voice to reuse of one kind: the smallest order number wins.
+	struct Candidate
+	{
+		std::uint64_t order = ~std::uint64_t{0};
+		int index = -1;
+		std::uint64_t token = 0;
+
+		void offer(std::uint64_t candidateOrder, int candidateIndex, std::uint64_t candidateToken) noexcept
+		{
+			if (candidateOrder >= order) { return; }
+			order = candidateOrder;
+			index = candidateIndex;
+			token = candidateToken;
+		}
+	};
+
+	struct Census
+	{
+		int active = 0;     //!< voices sounding and not already chosen for reuse
+		Candidate released; //!< the voice whose note was released the longest ago
+		Candidate held;     //!< the voice whose note started the longest ago
+	};
+
+	Census census() const noexcept
+	{
+		Census result;
+		for (int i = 0; i < Capacity; ++i)
+		{
+			const Voice& v = *m_voices[static_cast<std::size_t>(i)];
+			const std::uint64_t token = v.token.load(std::memory_order_acquire);
+			if (token == 0 || v.stolenToken.load(std::memory_order_acquire) == token) { continue; }
+			++result.active;
+			const std::uint64_t releasedAt = v.releaseOrder.load(std::memory_order_acquire);
+			if (releasedAt != 0) { result.released.offer(releasedAt, i, token); }
+			else { result.held.offer(v.startOrder.load(std::memory_order_acquire), i, token); }
+		}
+		return result;
+	}
+
+	//! Marks the policy's victim for reuse. False when another note marked the same voice first.
+	bool markVictim(const Census& now) noexcept
+	{
+		const Candidate& victim = now.released.index >= 0 ? now.released : now.held;
+		if (victim.index < 0) { return true; }
+		std::uint64_t expected = 0;
+		return m_voices[static_cast<std::size_t>(victim.index)]->stolenToken
+			.compare_exchange_strong(expected, victim.token, std::memory_order_acq_rel);
+	}
+
+	Claim claimFreeVoice() noexcept
+	{
+		for (int i = 0; i < Capacity; ++i)
+		{
+			Voice& v = *m_voices[static_cast<std::size_t>(i)];
+			std::uint64_t expected = 0;
+			const std::uint64_t token = m_nextToken.fetch_add(1, std::memory_order_relaxed);
+			if (!v.token.compare_exchange_strong(expected, token, std::memory_order_acq_rel)) { continue; }
+
+			// This note owns the voice from here on: nothing else writes its state.
+			v.state.reset();
+			v.stealFramesDone = 0;
+			v.stolenToken.store(0, std::memory_order_relaxed);
+			v.releaseOrder.store(0, std::memory_order_relaxed);
+			v.startOrder.store(m_order.fetch_add(1, std::memory_order_relaxed) + 1, std::memory_order_release);
+			return Claim{i, token};
+		}
+		return {};
+	}
+
 	std::vector<std::unique_ptr<Voice>> m_voices;
 	std::atomic<std::uint64_t> m_order{0};
 	std::atomic<std::uint64_t> m_nextToken{1};
