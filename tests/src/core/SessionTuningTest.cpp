@@ -939,6 +939,57 @@ QString writeKbm(QTemporaryDir& dir, const QString& name, const QString& baseFre
 				.arg(mismatch)));
 	}
 
+	//! An .scl has to NAME the scale and DECLARE how many degrees it has before
+	//! it can describe one. readScaleLines() left its degree count at zero when
+	//! the stream carried neither header line, and its "the file carries as many
+	//! interval lines as it declared" check compared zero against zero - so an
+	//! empty .scl was accepted, and the scale built from it held the single 1/1
+	//! interval that loadScaleFile() always starts with: a table in which every
+	//! key has the same pitch. Such a file is refused, typed, and the standing
+	//! table is left alone.
+	void aScaleFileWithoutNameOrDegreeCountIsRefused()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		SessionTuning* tuning = SessionTuning::instance();
+		tuning->reset();
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString good = writeJiScl(dir);
+		QVERIFY(!good.isEmpty());
+		QVERIFY2(run(QStringLiteral("mts.load_scale"),
+			QJsonObject{{QStringLiteral("path"), good}}).ok, "the JI fixture did not load");
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		// A zero-byte file: no name and no degree count at all.
+		const QString empty = dir.filePath(QStringLiteral("empty.scl"));
+		QFile emptyFile(empty);
+		QVERIFY(emptyFile.open(QIODevice::WriteOnly | QIODevice::Text));
+		emptyFile.close();
+		// A file that names the scale but never declares how many degrees it has.
+		const QString nameOnly = writeScl(dir, QStringLiteral("name-only.scl"),
+			{QStringLiteral("missing degree count")});
+		QVERIFY(!nameOnly.isEmpty());
+
+		const QStringList incompletePaths{empty, nameOnly};
+		for (const QString& path : incompletePaths)
+		{
+			const ControlResult loaded = run(QStringLiteral("mts.load_scale"),
+				QJsonObject{{QStringLiteral("path"), path}});
+			QVERIFY2(!loaded.ok, qPrintable(QStringLiteral("incomplete .scl '%1' was accepted: "
+				"it built a one-interval scale whose every key has the same pitch")
+				.arg(path)));
+			QCOMPARE(loaded.errorKind, ControlErrorKind::Refused);
+
+			int mismatch = 0;
+			const QJsonObject after = snapshotState(run(QStringLiteral("mts.get_state")).result);
+			QVERIFY2(sameTable(before, after, &mismatch),
+				qPrintable(QStringLiteral("the refused scale changed the table at key %1")
+					.arg(mismatch)));
+		}
+	}
+
 	//! A .kbm with the standard 12-TET shape but \a declaredSize in field 0 and
 //! exactly \a mappingLines after the header, for the keymaps this test writes
 //! itself.
