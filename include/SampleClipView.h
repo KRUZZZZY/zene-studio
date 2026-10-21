@@ -56,6 +56,14 @@ public slots:
 	void splitToStems();
 #endif
 
+	/*! The transient ticks the overlay draws, relative to the clip's own start.
+	 *
+	 *  The frames are analysed once per audio and per analysed range
+	 *  (m_transientFrames) and placed on the timeline again whenever the clip's
+	 *  timing changes. Public so the overlay's cache invalidation can be
+	 *  regression-tested (a reversal moves the analysed range). */
+	const std::vector<int>& transientTicks();
+
 
 
 protected:
@@ -85,8 +93,7 @@ private:
 	FadeHandle fadeHandleUnder(const QPoint& pos);
 	bool startFadeDrag(QMouseEvent* me);
 	// ED-150: the transients drawn when arrangement.modes show_transients is on, analysed once per audio
-	// and window (m_transientFrames) and placed as ticks again when the clip's timing changes.
-	const std::vector<int>& transientTicks();
+	// and per analysed range (m_transientFrames) and placed as ticks again when the clip's timing changes.
 	std::vector<f_cnt_t> m_transientFrames;
 	QString m_transientAudioKey;
 	std::vector<int> m_transientTicks;

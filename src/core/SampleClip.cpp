@@ -704,6 +704,14 @@ void SampleClip::setSampleWindow(const SampleWindow& window)
 
 	installWindow(clamped);
 
+	// The clip plays exactly its window, so an edited window is a different amount
+	// of audio and the clip's timeline length has to follow it (BUG new-p16-205).
+	// The length is moved here, while auto-resize may still be on, because the
+	// moment it goes off below nothing would move the length any more. A clip in
+	// the pattern store is the one exception: there the pattern owns the length,
+	// exactly as updateLength() has it.
+	if (getTrack()->trackContainer() != Engine::patternStore()) { changeLength(sampleLength()); }
+
 	if (m_window != SampleWindow::full(bufferFrames))
 	{
 		// A window that is not the whole buffer is a manual edit, so it must
@@ -767,23 +775,55 @@ f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 
 
 
-TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
+SampleWindow SampleClip::audibleWindow() const
 {
-	const auto framesPerTick = clipFramesPerTick();
-	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
-	// Luna cluster 2484: this mapping never consulted the play DIRECTION, so a reversed clip placed every
-	// source frame where the forward clip placed it. Sample::render reverses the WHOLE buffer: buffer frame
-	// f is read at play frame (size - 1 - f), and the window is played in play frames. So a reversed frame
-	// sounds where play frame size - 1 - f sounds, not where in + out - 1 - f would (those differ whenever
-	// the window does not end at the buffer's end). Mirrored over the buffer, in signed arithmetic (an
-	// unsigned subtraction wraps for a frame past the buffer end), then clamped to the window's edge.
+	// The window is a PLAY range and a reversed source reads the buffer's
+	// mirror (Sample::render reverses the whole buffer), so the frames a
+	// reversed clip sounds are the window's mirror. A forward clip sounds the
+	// window itself.
+	if (!m_sample.reversed()) { return m_window; }
+	const auto size = static_cast<f_cnt_t>(m_sample.sampleSize());
+	return { size - m_window.sourceOut, size - m_window.sourceIn };
+}
+
+
+
+
+f_cnt_t SampleClip::playFrameFor(f_cnt_t sourceFrame) const
+{
+	// Mirrored over the buffer, in signed arithmetic (an unsigned subtraction
+	// wraps for a frame past the buffer end), then clamped to the window's
+	// edge - the same rule the timeline mapping uses.
 	std::int64_t played = static_cast<std::int64_t>(sourceFrame);
 	if (m_sample.reversed())
 	{
 		played = static_cast<std::int64_t>(m_sample.sampleSize()) - 1 - played;
 	}
-	const auto frame = static_cast<f_cnt_t>(std::clamp(played,
+	return static_cast<f_cnt_t>(std::clamp(played,
 		static_cast<std::int64_t>(m_window.sourceIn), static_cast<std::int64_t>(m_window.sourceOut)));
+}
+
+
+
+
+TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
+{
+	const auto framesPerTick = clipFramesPerTick();
+	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
+	// BUG new-p17-158: a source whose rate is zero has no frames per tick, so
+	// there is nothing to divide by (windowTicksFor() and leadOutputFramesAt()
+	// refuse the same rate). The mapping answers with the clip's own origin -
+	// the defined fallback the linear branch already gets from
+	// TimePos::fromFrames() - instead of a position computed from a zero rate,
+	// which put the frame hundreds of ticks outside the clip that owns it.
+	if (!(framesPerTick > 0.0f)) { return TimePos(originTicks); }
+	// Luna cluster 2484: this mapping never consulted the play DIRECTION, so a reversed clip placed every
+	// source frame where the forward clip placed it. Sample::render reverses the WHOLE buffer: buffer frame
+	// f is read at play frame (size - 1 - f), and the window is played in play frames. So a reversed frame
+	// sounds where play frame size - 1 - f sounds, not where in + out - 1 - f would (those differ whenever
+	// the window does not end at the buffer's end). playFrameFor() is that mirror, clamped to the
+	// window's edge - the same rule the rest of the clip model reads the direction by.
+	const auto frame = playFrameFor(sourceFrame);
 
 	if (m_warp.empty())
 	{
@@ -894,9 +934,15 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	if (_this.hasAttribute("srcin") || _this.hasAttribute("srcout"))
 	{
 		const auto srcOut = _this.attribute("srcout");
+		// A window edit moves the clip's length (BUG new-p16-205), and here the
+		// file's own `len` is the one that counts: the length the window moved is
+		// put back, so a file that carries a window loads with the length it was
+		// saved with.
+		const auto savedLength = length();
 		setSampleWindow({ _this.attribute("srcin", "0").toULongLong(),
 			srcOut.isEmpty() ? static_cast<qulonglong>(m_sample.sampleSize())
 				: srcOut.toULongLong() });
+		changeLength(savedLength);
 	}
 
 	setAutoResize(_this.attribute("autoresize", "1").toInt());
