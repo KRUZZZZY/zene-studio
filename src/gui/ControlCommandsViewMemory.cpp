@@ -363,7 +363,8 @@ ControlResult applySelection(const QJsonObject& args)
 		ControlResult missing;
 		if (resolveClip(id.toString(), &ref, &missing)) { live.append(id); }
 	}
-	const bool clipsRestored = !live.isEmpty() && selectInArranger(live);
+	const bool arrangerOk = selectInArranger(live);
+	const bool clipsRestored = !live.isEmpty() && arrangerOk;
 	if (!live.isEmpty()) { ControlRegistry::instance()->invoke(QStringLiteral("clip.select"), {{QStringLiteral("clip"), live.first()}}); }
 	else { selectClip(QString()); }  // the arranger's selection is empty now, so the surface's is too
 	return ControlResult::success(withOutcome({{QStringLiteral("name"), name}, {QStringLiteral("clips"), live},
