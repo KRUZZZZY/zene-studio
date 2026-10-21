@@ -56,12 +56,14 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
 #include <QStringList>
+#include <QTemporaryFile>
 
 #include "ControlEdit.h"
 #include "ControlExportPresetSupport.h"
@@ -83,6 +85,10 @@ namespace
 //! so the number in the code and the number in the row's limits line cannot drift.
 constexpr int kStemChildStartMs = 30000;
 constexpr int kStemChildRenderMs = 600000;
+//! How much of the child's own words a refusal keeps: the TAIL of its
+//! standard error. The child's error text used to be discarded together with
+//! its output, so a caller learned only THAT the export failed and never WHY.
+constexpr int kStemChildErrorBytes = 2048;
 
 bool stemFormatFromName(const QString& name, ProjectRenderer::ExportFileFormat* format)
 {
@@ -149,24 +155,82 @@ QString parseStemArgs(const QJsonObject& args, StemRequest* request)
 	return QString();
 }
 
-//! Runs the shipped `exportstems` CLI path as a child process.
-bool runCliStemExport(const QString& projectPath, const StemRequest& request, int* exitCode)
+//! The last \a maxBytes of the file at \a path, as text.
+//!
+//! The child's own output is read back from a FILE and not from a pipe: a pipe
+//! fills up and blocks the child, which is the reason the whole-project
+//! render reads a file for the same reason
+//! (src/core/ControlCommandsProject.cpp:326).
+QString tailOfFile(const QString& path, int maxBytes)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
+	const qint64 size = file.size();
+	if (size > maxBytes) { file.seek(size - maxBytes); }
+	return QString::fromLocal8Bit(file.read(maxBytes)).trimmed();
+}
+
+/*! Runs the shipped `exportstems` CLI path as a child process.
+ *
+ *  \a outputDirectory is the directory the child writes into - the caller's
+ *  own, or the staging directory this verb renders into first.
+ *
+ *  \a errorTail receives the child's OWN last words, bounded: a refusal that
+ *  says only "the export failed" leaves the caller with the exit code and
+ *  nothing to act on, while the reason the export failed is exactly what the
+ *  child wrote to its standard error.
+ */
+bool runCliStemExport(const QString& projectPath, const StemRequest& request,
+	const QString& outputDirectory, int* exitCode, QString* errorTail)
 {
 	QStringList arguments{QStringLiteral("exportstems"), projectPath,
-		QStringLiteral("-o"), request.directory,
+		QStringLiteral("-o"), outputDirectory,
 		QStringLiteral("-f"), request.formatName};
 	arguments += controlExportPresetRenderArgs(request.settings);
 	arguments << QStringLiteral("--tail-bars") << QString::number(request.tailBars);
 
+	// The child's output goes to FILES, not to pipes (see tailOfFile): the
+	// child must never block on a full pipe, and the files are read back
+	// afterwards, bounded.
+	QTemporaryFile errorFile;
+	QTemporaryFile outputFile;
+	errorFile.open();
+	outputFile.open();
+	errorFile.close();
+	outputFile.close();
+
 	QProcess renderer;
-	renderer.setStandardOutputFile(QProcess::nullDevice());
-	renderer.setStandardErrorFile(QProcess::nullDevice());
+	renderer.setStandardOutputFile(outputFile.fileName());
+	renderer.setStandardErrorFile(errorFile.fileName());
 	renderer.start(QCoreApplication::applicationFilePath(), arguments);
 	const bool finished = renderer.waitForStarted(kStemChildStartMs)
 		&& renderer.waitForFinished(kStemChildRenderMs);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;
+	*errorTail = tailOfFile(errorFile.fileName(), kStemChildErrorBytes);
+	if (errorTail->isEmpty())
+	{
+		// The child's error text belongs on its standard error; its standard
+		// output is the fallback for the platform where that text went
+		// somewhere else (the same concern as src/core/main.cpp:670).
+		*errorTail = tailOfFile(outputFile.fileName(), kStemChildErrorBytes);
+	}
 	return finished;
+}
+
+//! The refusal a failed export answers with: the exit code, what the run
+//! wrote, and the child's OWN words - the reason the export failed, which used
+//! to be discarded with the child's output.
+QString stemExportFailureMessage(int exitCode, int stemCount, const QString& directory,
+	const QString& errorTail)
+{
+	QString message = QStringLiteral("the stem export failed (exit %1, %2 new file(s) in %3); "
+		"the session is unchanged").arg(exitCode).arg(stemCount).arg(directory);
+	if (!errorTail.isEmpty())
+	{
+		message += QStringLiteral("; the child said: ") + errorTail;
+	}
+	return message;
 }
 
 //! The directory's direct child files, by name -> last modified, so two listings
@@ -236,7 +300,8 @@ ControlResult stemExportSession(const QJsonObject& args)
 	// exist yet - which is the right baseline for the delta.
 	const QHash<QString, QDateTime> before = listingOf(request.directory);
 	int exitCode = -1;
-	const bool finished = runCliStemExport(tempProject, request, &exitCode);
+	QString errorTail;
+	const bool finished = runCliStemExport(tempProject, request, request.directory, &exitCode, &errorTail);
 	QFile::remove(tempProject);
 
 	const QHash<QString, QDateTime> after = listingOf(request.directory);
@@ -244,8 +309,7 @@ ControlResult stemExportSession(const QJsonObject& args)
 	if (!finished || exitCode != 0 || stems.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the stem export failed (exit %1, %2 new file(s) in %3); the session is "
-				"unchanged").arg(exitCode).arg(stems.size()).arg(request.directory));
+			stemExportFailureMessage(exitCode, stems.size(), request.directory, errorTail));
 	}
 
 	QJsonObject result;
