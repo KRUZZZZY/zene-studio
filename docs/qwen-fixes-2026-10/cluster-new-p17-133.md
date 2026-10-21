@@ -59,4 +59,15 @@ The same narrow-path pattern (`toLocal8Bit()` passed to a path-taking API) appea
 
 ## Self-check
 
-Filled in below after `submit_check.py` ran.
+`submit_check.py <worktree> new-p17-133` (log: `…/logs/submit-check-1.log`, EXIT 1, RESULT FAIL, 2 items):
+
+- PASS commits on the branch (`fa5bd3f91`). PASS working tree clean. PASS report present.
+- **FAIL tests added or changed.** Correct: no test was added or changed. The reason is in "Regression proof" above; an untested Windows-only test in the Windows CI matrix was judged riskier than the gap.
+- **FAIL gates (feature_check.py).** Not a gate failure. `feature_check.py` exits 1 with `PermissionError` creating `zene-qwen-new-p17-133-feature-check/` beside the worktree, outside the write-jail (`…/gates-table-2-direct.log`). The same gate commands, run through the `/tmp` wrapper with logs in the run folder, all pass (`gates-table-1.log`, EXIT 0, RESULT PASS). The script's log location needs to be writable, or configurable, in this sandbox; I did not edit the shared script.
+- ? **Regression test fails with the fix reverted and passes with it:** not answered by evidence. There is no test, and the RED/GREEN run needs a Windows build. Step 4b was not run: on Linux a revert changes nothing the tests exercise. The two Linux runs above (`test-1-baseline` EXIT 0 and `test-2-fixed` EXIT 0) show unchanged Linux behaviour, which is not proof of the fix.
+- ? **Deterministic:** no new test. The two existing families (`ProjectRevisionRestoreStagingTest`, `RevisionTimelineTest`) pass before and after; I added no sleeps, timing or races.
+- ? **Fix at the cause and complete:** the defective conversion is the only narrow-path call in the revision sources (`grep -c toLocal8Bit` over `ProjectRevisions.cpp`, `ControlCommandsRevisions.cpp`, `ControlReversibilityTableRevisions.cpp`, `RevisionTimeline*.cpp`: 0 in each after the fix; the one hit before was `:70`). Both `replaceWithStaged` callers are covered: `copyRevision` (`:124-126`, reached from `shiftRevisionsUp` `:200` and `rotateProjectRevision` `:269`) and the project replacement (`:393-395`). The POSIX branch (`:75-78`) was already correct and is unchanged.
+- ? **No collateral damage:** the only change is inside `#ifdef Q_OS_WIN`. The Linux build and both families are unchanged (above). No file format, limit or check changed, so old projects and saved data load exactly as before. On Windows, ASCII names address the same files as before; only names that the ANSI code page cannot represent change behaviour.
+- Verdict is BLOCKED, not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" citation is needed.
+
+**Status:** the defect is real and the fix is committed. The regression test and the RED/GREEN proof are still open. They need a Windows lane to add the test described above and run it on a Windows build, where the RED run should fail before the fix and pass after.
