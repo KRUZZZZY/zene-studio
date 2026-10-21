@@ -54,9 +54,12 @@
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
 #include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "Engine.h"
 #include "ModulationLayer.h"
 #include "RealtimeScope.h"
+#include "Song.h"
+#include "Track.h"
 
 using namespace lmms;
 
@@ -112,9 +115,89 @@ public:
 };
 }
 
+//! cluster 5186 (new-p12-159): what the probe instrument saw when its OWN teardown began.
+namespace
+{
+ModulationLayerPublisher* g_probePublisher = nullptr;
+std::uint32_t g_probeToken = 0;
+bool g_probeToreDown = false;
+bool g_probeGateWasClosed = false;
+
+/*! An instrument a test can watch from its own destructor: it reports whether the modulation target
+ *  that pointed at it was ALREADY closed when the teardown began.
+ *
+ *  A derived destructor runs BEFORE the base one, so a notification that comes from
+ *  Instrument::~Instrument() arrives too late to be seen here - and too late to stop the audio
+ *  thread from calling into the half-destroyed instrument. Only the owner, which knows that the
+ *  teardown is about to start, can close the target in time. */
+class ProbeInstrument : public Instrument
+{
+public:
+	explicit ProbeInstrument(InstrumentTrack* track) : Instrument(track, nullptr) {}
+	~ProbeInstrument() override
+	{
+		if (g_probeToreDown) { return; }  // only the probe under test reports
+		g_probeToreDown = true;
+		g_probeGateWasClosed = g_probePublisher != nullptr
+			&& !g_probePublisher->targetAlive(0, g_probeToken);
+	}
+	gui::PluginView* instantiateView(QWidget*) override { return nullptr; }
+	QString nodeName() const override { return QStringLiteral("cluster5186probe"); }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+};
+}
+
 class ModulationAudioViewTest : public QObject
 {
 	Q_OBJECT
+
+private:
+	//! A track that OWNS a probe instrument, with a published per-voice entry pointing at it.
+	InstrumentTrack* trackWithProbe(ModulationLayerPublisher& publisher, AutomatableModel* model)
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		if (track == nullptr) { return nullptr; }
+		auto* probe = new ProbeInstrument(track);
+		track->m_instrument = probe;  // the track owns it now, as it owns a loaded instrument
+		publisher.edit([model, probe](ModulationLayer&, ModulationRuntime& runtime) {
+			runtime = ModulationRuntime{};
+			ModulationRuntime::Entry entry;
+			entry.model = model;
+			entry.modulator = 0;
+			entry.depth = 0.25f;
+			entry.base = 0.0f;
+			entry.minimum = -100.0f;
+			entry.maximum = 100.0f;
+			entry.instrument = probe;
+			entry.noteTarget = 0;
+			runtime.entries[0] = entry;
+			runtime.entryCount = 1;
+			runtime.sources[0] = sine();
+			runtime.sources[0].perVoice = true;
+			runtime.sources[0].triggerTrack = 11;
+			runtime.sourceCount = 1;
+			return true;
+		});
+		const ModulationAudioView view = publisher.snapshot();
+		g_probePublisher = &publisher;
+		g_probeToken = view.entries[0].token;
+		return track;
+	}
+
+	//! What a project file carries: a track element with a child that names an instrument.
+	static QDomElement trackElementWithInstrumentNode(const QString& nodeName)
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement("track");
+		doc.appendChild(root);
+		QDomElement node = doc.createElement(nodeName);
+		node.setAttribute("name", "cluster5186probe");
+		root.appendChild(node);
+		return root;
+	}
 
 private slots:
 	void initTestCase()
@@ -271,6 +354,43 @@ private slots:
 		delete instrument;
 		QVERIFY2(!publisher.targetAlive(0, view.entries[0].token),
 			"an instrument's destruction did not retire its modulation target");
+		delete model;
+	}
+
+	//! cluster 5186 (new-p12-159): the track's own load path replaces the instrument - the target
+	//! that pointed at the old one must be closed BEFORE the old instrument tears down.
+	void aLoadedInstrumentReplacementClosesTheTargetBeforeTheInstrumentTearsDown()
+	{
+		ModulationLayerPublisher publisher;
+		auto* model = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+		InstrumentTrack* track = trackWithProbe(publisher, model);
+		QVERIFY(track != nullptr);
+		QVERIFY2(publisher.targetAlive(0, g_probeToken), "the published target was not alive");
+
+		// The file names an instrument: the track replaces the one it holds.
+		track->loadTrackSpecificSettings(trackElementWithInstrumentNode("instrument"));
+
+		QVERIFY2(g_probeToreDown, "the track did not replace the instrument it held");
+		QVERIFY2(g_probeGateWasClosed,
+			"the modulation target was still open when the instrument's own teardown began");
+		delete model;
+	}
+
+	//! The same path, through the legacy plug-in node the loader still accepts.
+	void aLegacyInstrumentReplacementClosesTheTargetBeforeTheInstrumentTearsDown()
+	{
+		ModulationLayerPublisher publisher;
+		auto* model = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+		InstrumentTrack* track = trackWithProbe(publisher, model);
+		QVERIFY(track != nullptr);
+		QVERIFY2(publisher.targetAlive(0, g_probeToken), "the published target was not alive");
+
+		// A node that is not one of the known ones: the loader reads it as an instrument plug-in.
+		track->loadTrackSpecificSettings(trackElementWithInstrumentNode("cluster5186legacy"));
+
+		QVERIFY2(g_probeToreDown, "the track did not replace the instrument it held");
+		QVERIFY2(g_probeGateWasClosed,
+			"the modulation target was still open when the instrument's own teardown began");
 		delete model;
 	}
 

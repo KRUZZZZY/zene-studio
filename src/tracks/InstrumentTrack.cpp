@@ -227,12 +227,28 @@ InstrumentTrack::~InstrumentTrack()
 	Engine::audioEngine()->doneChangeInModel();
 
 	// now we're save deleting the instrument
-	if( m_instrument )
-	{
-		emit m_instrument->aboutToBeDestroyed();
-		delete m_instrument;
-		m_instrument = nullptr;
-	}
+	destroyInstrument();
+}
+
+
+/*! cluster 5186 (new-p12-159): the ONE place this track's instrument is destroyed.
+ *
+ *  The per-voice modulation target that points at the instrument is closed BEFORE the instrument's
+ *  own teardown starts. The audio thread's block calls the instrument under a pin on that target,
+ *  and the pin keeps the TARGET alive - not the instrument: a target that outlives the instrument
+ *  is a call into a half-destroyed object. Closing the target here (the notification retires the
+ *  slot and waits for the in-flight write to drain) means that from the first line of the
+ *  instrument's destructor onwards the block skips the entry.
+ *
+ *  The notification cannot come from Instrument's own destructor: a base destructor runs AFTER the
+ *  derived one, so by then the derived teardown has already begun. The owner knows when the
+ *  teardown starts, so the owner notifies. */
+void InstrumentTrack::destroyInstrument()
+{
+	if (m_instrument == nullptr) { return; }
+	emit m_instrument->aboutToBeDestroyed();
+	delete m_instrument;
+	m_instrument = nullptr;
 }
 
 
@@ -1218,8 +1234,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 				}
 				else
 				{
-					delete m_instrument;
-					m_instrument = nullptr;
+					destroyInstrument();
 					m_instrument = Instrument::instantiate(
 						node.toElement().attribute("name"), this, &key);
 					m_instrument->restoreState(node.firstChildElement());
@@ -1242,8 +1257,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 					ControllerConnection::classNodeName() != node.nodeName() &&
 					!node.toElement().hasAttribute( "id" ))
 			{
-				delete m_instrument;
-				m_instrument = nullptr;
+				destroyInstrument();
 				m_instrument = Instrument::instantiate(
 					node.nodeName(), this, nullptr, true);
 				if (m_instrument->nodeName() == node.nodeName())
@@ -1340,8 +1354,7 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 	// 0.5.0 MX-120: the old instrument goes while the render is held off - a per-voice modulator's block
 	// may be handing it a per-note value (ModulationLayerPublisher.cpp).
 	Engine::audioEngine()->requestChangeInModel();
-	delete m_instrument;
-	m_instrument = nullptr;
+	destroyInstrument();
 	m_preservedInstrument = QDomElement();  // 0.5.0 Q050-018: the user chose a new instrument; no placeholder remains
 	Engine::audioEngine()->doneChangeInModel();
 	m_instrument = Instrument::instantiate(_plugin_name, this,
