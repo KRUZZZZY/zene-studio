@@ -26,6 +26,7 @@
 #include <QDomElement>
 #include <QStringList>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -485,12 +486,26 @@ TimePos Note::quantized( const TimePos & m, const int qGrid )
 	{
 		return m;
 	}
-	float p = ( (float) m / qGrid );
-	if( p - floorf( p ) < 0.5f )
-	{
-		return static_cast<int>( p ) * qGrid;
-	}
-	return static_cast<int>( p + 1 ) * qGrid;
+	// new-p16-141: tick positions are integers, and a float cannot represent
+	// every one above 2^24 (16,777,217 became 16,777,216 with a grid of 1).
+	// Snap with quotient/remainder arithmetic in 64 bits instead, and keep the
+	// old rounding: the floor remainder decides the direction, the low side
+	// truncates toward zero (as static_cast<int>(p) did for negative p), and
+	// the high side is trunc((ticks + grid) / grid).
+	const qint64 grid = qGrid;
+	const qint64 ticks = m.getTicks();
+	const qint64 truncQuotient = ticks / grid;
+	qint64 remainder = ticks % grid;
+	if( remainder < 0 ) { remainder += grid; }
+	qint64 snapped = 2 * remainder < grid
+		? truncQuotient * grid
+		: ( ( ticks + grid ) / grid ) * grid;
+	// Rounding up can pass tick_t's maximum even though every input fit;
+	// saturate instead of converting an out-of-range value back to tick_t.
+	snapped = std::clamp( snapped,
+		static_cast<qint64>( std::numeric_limits<tick_t>::min() ),
+		static_cast<qint64>( std::numeric_limits<tick_t>::max() ) );
+	return TimePos( static_cast<tick_t>( snapped ) );
 }
 
 
