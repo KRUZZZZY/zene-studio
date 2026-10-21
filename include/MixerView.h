@@ -71,6 +71,9 @@ public:
 		return m_mixerChannelViews[index];
 	}
 
+	//! The number of strips in the view (the mixer's channels at the last sync).
+	inline int channelCount() const { return m_mixerChannelViews.size(); }
+
 
 	void setCurrentMixerChannel(MixerChannelView* channel);
 	void setCurrentMixerChannel(int channel);

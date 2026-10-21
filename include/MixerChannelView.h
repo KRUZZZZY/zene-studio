@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_MIXER_CHANNEL_VIEW_H
 #define LMMS_GUI_MIXER_CHANNEL_VIEW_H
 
+#include <QList>
 #include <QWidget>
 
 #include "MixerOverlays.h"
@@ -114,6 +115,10 @@ public:
 	QLabel* routingLine() const { return m_routingLine; }
 	QLabel* stateLine() const { return m_stateLine; }
 	AutomatableButton* soloButton() const { return m_soloButton; }
+	/*! The controls Tab reaches in this strip, in the order the eye reads them (send, solo, mute,
+	 *  pan, macros, fader) - only what is visible and enabled now. Ctrl+Tab searches the adjacent
+	 *  strip for the same one. */
+	QList<QWidget*> keyboardFocusOrder() const;
 
 public slots:
 	void renameChannel();
@@ -133,6 +138,14 @@ private:
 	QString elideName(const QString& name);
 	MixerChannel* mixerChannel() const;
 	auto isMasterChannel() const -> bool { return m_channelIndex == 0; }
+	//! True when @a key is one of this strip's traversal keys (Tab, Shift+Tab, Ctrl+Tab, Ctrl+Shift+Tab).
+	bool handleTraversalKey(QKeyEvent* key, QWidget* from);
+	void moveFocusWithinStrip(QWidget* from, bool forward);
+	void moveFocusToAdjacentChannel(QWidget* from, bool forward);
+	//! A stable identity for @a control across strips (-1 for anything that is not a traversal target).
+	int focusRank(const QWidget* control) const;
+	//! Each control's name carries the strip's name, so two strips' "Mute" read apart.
+	void updateAccessibleNames();
 
 private:
 	SendButtonIndicator* m_sendButton;

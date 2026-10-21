@@ -26,10 +26,13 @@
 
 #include "DesignTokens.h"
 
+#include <algorithm>
+
 #include <QCheckBox>
 #include <QChildEvent>
 #include <QFont>
 #include <QGraphicsOpacityEffect>
+#include <QKeyEvent>
 #include <QGraphicsProxyWidget>
 #include <QGraphicsScene>
 #include <QGraphicsView>
@@ -221,6 +224,7 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_meterInfo, 0, Qt::AlignHCenter);
 
 	connect(m_renameLineEdit, &QLineEdit::editingFinished, this, &MixerChannelView::renameFinished);
+	updateAccessibleNames();
 
 	setFocusPolicy(Qt::StrongFocus);
 	// Child controls receive mouse presses directly, so the strip's mousePressEvent does not see them.
@@ -241,7 +245,140 @@ bool MixerChannelView::eventFilter(QObject* watched, QEvent* event)
 	{
 		m_mixerView->setCurrentMixerChannel(this);
 	}
+	else if (event->type() == QEvent::FocusIn && watched != this && watched != m_sendKnob)
+	{
+		// The selected strip is the one the keyboard is in: the mixer's own shortcuts (Left/Right,
+		// Up/Down) follow the focus, not a strip clicked earlier. A send knob is the selected source's
+		// send to this strip, so selecting its destination would hide the very control being focused.
+		if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
+	}
+	else if (event->type() == QEvent::KeyPress)
+	{
+		auto* widget = qobject_cast<QWidget*>(watched);
+		if (widget != nullptr && widget != this && focusRank(widget) >= 0
+			&& handleTraversalKey(static_cast<QKeyEvent*>(event), widget))
+		{
+			return true;
+		}
+	}
 	return QWidget::eventFilter(watched, event);
+}
+
+QList<QWidget*> MixerChannelView::keyboardFocusOrder() const
+{
+	QList<QWidget*> controls;
+	const auto add = [this, &controls](QWidget* control) {
+		if (control != nullptr && (control->focusPolicy() & Qt::TabFocus) != 0
+			&& control->isEnabled() && control->isVisibleTo(m_mixerView))
+		{
+			controls.append(control);
+		}
+	};
+	add(m_sendKnob);
+	add(m_soloButton);
+	add(m_muteButton);
+	add(m_panKnob);
+	if (m_macroKnobs != nullptr)
+	{
+		for (Knob* knob : m_macroKnobs->findChildren<Knob*>(QString(), Qt::FindDirectChildrenOnly)) { add(knob); }
+	}
+	add(m_fader);
+	return controls;
+}
+
+int MixerChannelView::focusRank(const QWidget* control) const
+{
+	if (control == nullptr) { return -1; }
+	if (control == m_sendKnob) { return 0; }
+	if (control == m_soloButton) { return 1; }
+	if (control == m_muteButton) { return 2; }
+	if (control == m_panKnob) { return 3; }
+	if (m_macroKnobs != nullptr)
+	{
+		const QList<Knob*> knobs = m_macroKnobs->findChildren<Knob*>(QString(), Qt::FindDirectChildrenOnly);
+		for (int i = 0; i < knobs.size(); ++i)
+		{
+			if (knobs.at(i) == control) { return 4 + i; }
+		}
+	}
+	if (control == m_fader) { return 100; }
+	return -1;
+}
+
+bool MixerChannelView::handleTraversalKey(QKeyEvent* key, QWidget* from)
+{
+	if (key->key() != Qt::Key_Tab && key->key() != Qt::Key_Backtab) { return false; }
+	const bool backward = key->key() == Qt::Key_Backtab || (key->modifiers() & Qt::ShiftModifier);
+	if (key->modifiers() & Qt::ControlModifier) { moveFocusToAdjacentChannel(from, !backward); }
+	else { moveFocusWithinStrip(from, !backward); }
+	key->accept();
+	return true;
+}
+
+void MixerChannelView::moveFocusWithinStrip(QWidget* from, bool forward)
+{
+	if (m_mixerView->currentMixerChannel() != this) { m_mixerView->setCurrentMixerChannel(this); }
+	const QList<QWidget*> controls = keyboardFocusOrder();
+	if (controls.isEmpty()) { return; }
+	const int position = controls.indexOf(from);
+	const int next = position < 0 ? (forward ? 0 : controls.size() - 1)
+		: (position + (forward ? 1 : -1) + controls.size()) % controls.size();
+	controls.at(next)->setFocus(forward ? Qt::TabFocusReason : Qt::BacktabFocusReason);
+}
+
+void MixerChannelView::moveFocusToAdjacentChannel(QWidget* from, bool forward)
+{
+	const int rank = focusRank(from);
+	const int position = keyboardFocusOrder().indexOf(from);
+	MixerView* view = m_mixerView;
+	for (int index = m_channelIndex + (forward ? 1 : -1); index >= 0 && index < view->channelCount();
+		index += forward ? 1 : -1)
+	{
+		MixerChannelView* other = view->channelView(index);
+		if (other == nullptr || !other->isVisibleTo(view)) { continue; }
+		// Select first: the send knob's model and visibility depend on the current channel. A focused
+		// send knob keeps its source selected while moving between destination strips.
+		if (from != m_sendKnob) { view->setCurrentMixerChannel(other); }
+		const QList<QWidget*> targets = other->keyboardFocusOrder();
+		if (targets.isEmpty()) { continue; }
+		QWidget* target = nullptr;
+		for (QWidget* candidate : targets)
+		{
+			if (other->focusRank(candidate) == rank) { target = candidate; break; }
+		}
+		if (target == nullptr)
+		{
+			const int clamped = std::clamp(position < 0 ? 0 : position, 0, static_cast<int>(targets.size()) - 1);
+			target = targets.at(clamped);
+		}
+		target->setFocus(forward ? Qt::TabFocusReason : Qt::BacktabFocusReason);
+		return;
+	}
+	// At the first or last channel the command leaves focus where it is - it never wraps.
+}
+
+void MixerChannelView::updateAccessibleNames()
+{
+	const MixerChannel* channel = mixerChannel();
+	if (channel == nullptr) { return; }
+	const QString stripName = channel->m_name;
+	const auto name = [stripName](QWidget* control, const QString& role) {
+		if (control != nullptr)
+		{
+			const QString text = tr("%1 %2").arg(role, stripName);
+			if (control->accessibleName() != text) { control->setAccessibleName(text); }
+		}
+	};
+	name(m_sendKnob, tr("Send to"));
+	name(m_soloButton, tr("Solo"));
+	name(m_muteButton, tr("Mute"));
+	name(m_panKnob, tr("Pan"));
+	name(m_fader, tr("Fader"));
+	if (m_macroKnobs != nullptr)
+	{
+		const QString macros = tr("Macros of %1").arg(stripName);
+		if (m_macroKnobs->accessibleName() != macros) { m_macroKnobs->setAccessibleName(macros); }
+	}
 }
 
 void MixerChannelView::setSendsShown(bool shown)
@@ -406,6 +543,8 @@ void MixerChannelView::mouseDoubleClickEvent(QMouseEvent*)
 
 void MixerChannelView::keyPressEvent(QKeyEvent* ke)
 {
+	// Focus on the strip (not on one of its controls) enters its controls at either end.
+	if (handleTraversalKey(ke, this)) { return; }
 	if (ke->key() == Qt::Key_Enter || ke->key() == Qt::Key_Return)
 	{
 		if (m_inRename)
@@ -464,6 +603,7 @@ void MixerChannelView::renameFinished()
 
 	setToolTip(mc->m_name);
 	setAccessibleName(mc->m_name);
+	updateAccessibleNames();
 }
 
 void MixerChannelView::resetColor()
@@ -569,6 +709,7 @@ void MixerChannelView::syncName()
 	if (m_inRename || mc == nullptr) { return; }
 	const QString shown = elideName(mc->m_name);
 	if (m_renameLineEdit->text() != shown) { m_renameLineEdit->setText(shown); }
+	updateAccessibleNames();
 }
 
 QString MixerChannelView::elideName(const QString& name)

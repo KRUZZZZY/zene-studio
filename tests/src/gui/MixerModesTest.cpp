@@ -31,6 +31,7 @@
 
 #include <QtTest>
 
+#include <QAccessible>
 #include <QApplication>
 #include <QComboBox>
 #include <QEvent>
@@ -41,10 +42,12 @@
 #include <QPointer>
 #include <QMenu>
 #include <QPushButton>
+#include <QSet>
 #include <QTimer>
 #include <QToolButton>
 
 #include "AutomatableButton.h"
+#include "AutomatableModel.h"
 #include "ColorChooser.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -52,6 +55,7 @@
 #include "Fader.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
+#include "Knob.h"
 #include "MacroKnobs.h"
 #include "MainWindow.h"
 #include "Mixer.h"
@@ -96,6 +100,33 @@ void syncMixer()
 
 MixerChannelView* strip(int index) { return getGUI()->mixerView()->channelView(index); }
 MixerModeBar* bar() { return getGUI()->mixerView()->modeBar(); }
+
+//! What a screen reader hears for @a widget, through Qt's own accessibility layer.
+QString announcedName(QWidget* widget)
+{
+	QAccessibleInterface* face = QAccessible::queryAccessibleInterface(widget);
+	return face != nullptr ? face->text(QAccessible::Name) : widget->accessibleName();
+}
+
+QAccessible::Role announcedRole(QWidget* widget)
+{
+	QAccessibleInterface* face = QAccessible::queryAccessibleInterface(widget);
+	return face != nullptr ? face->role() : QAccessible::NoRole;
+}
+
+//! Keyboard focus only lives in an active window; a test earlier may have opened a menu.
+bool activateMainWindow()
+{
+	QWidget* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
+	if (window == nullptr) { return false; }
+	window->activateWindow();
+	return QTest::qWaitForWindowActive(window);
+}
+
+AutomatableButton* muteButtonOf(MixerChannelView* view)
+{
+	return view != nullptr ? view->findChild<AutomatableButton*>(QStringLiteral("btn-mute")) : nullptr;
+}
 
 } // namespace
 
@@ -230,6 +261,282 @@ private slots:
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("returns"));
 		emit filter->activated(filter->findData(QStringLiteral("all")));
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("all"));
+	}
+
+	//! Acceptance 1: the fader and the mute/solo (LED) buttons are Tab stops, answer their keys, and
+	//! are in the accessibility walk with the channel's name and the right role.
+	void mixerControlsTakeFocusAndAnswerTheKeys()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* view = strip(m_sender);
+		mixerView->setCurrentMixerChannel(m_sender);
+		const QString channelName = Engine::mixer()->mixerChannel(m_sender)->m_name;
+
+		QWidget* mute = muteButtonOf(view);
+		QWidget* solo = view->soloButton();
+		QVERIFY(mute != nullptr);
+		QVERIFY(solo != nullptr);
+		Fader* fader = view->fader();
+		Knob* pan = view->panKnob();
+		QCOMPARE(mute->focusPolicy(), Qt::TabFocus);
+		QCOMPARE(solo->focusPolicy(), Qt::TabFocus);
+		QCOMPARE(fader->focusPolicy(), Qt::TabFocus);
+
+		// The same walk AccessibilityWalkTest makes: every visible Tab stop, with a name.
+		QSet<QWidget*> walked;
+		for (QWidget* widget : view->findChildren<QWidget*>())
+		{
+			if ((widget->focusPolicy() & Qt::TabFocus) == 0 || !widget->isVisibleTo(mixerView)) { continue; }
+			walked.insert(widget);
+			QVERIFY2(!announcedName(widget).isEmpty(),
+				qPrintable(QStringLiteral("unnamed focusable %1").arg(QString::fromLatin1(widget->metaObject()->className()))));
+		}
+		QVERIFY(walked.contains(fader));
+		QVERIFY(walked.contains(mute));
+		QVERIFY(walked.contains(solo));
+		QVERIFY(walked.contains(pan));
+
+		// Qt's bridge says what each control is, and names it for its channel.
+		QCOMPARE(announcedRole(fader), QAccessible::Slider);
+		QCOMPARE(announcedRole(pan), QAccessible::Dial);
+		QCOMPARE(announcedRole(mute), QAccessible::Button);
+		QCOMPARE(announcedRole(solo), QAccessible::Button);
+		QCOMPARE(announcedName(fader), QStringLiteral("Fader %1").arg(channelName));
+		QCOMPARE(announcedName(mute), QStringLiteral("Mute %1").arg(channelName));
+		QCOMPARE(announcedName(solo), QStringLiteral("Solo %1").arg(channelName));
+		QCOMPARE(announcedName(pan), QStringLiteral("Pan %1").arg(channelName));
+		QCOMPARE(view->accessibleName(), channelName);  // the strip's name is the channel context
+		QVERIFY(announcedName(fader).contains(channelName));
+
+		// The fader answers the slider keys - the same path the keyboard already used.
+		FloatModel* volume = &Engine::mixer()->mixerChannel(m_sender)->m_volumeModel;
+		const float original = volume->value();
+		fader->setFocus();
+		QTRY_VERIFY(fader->hasFocus());
+		QTest::keyClick(fader, Qt::Key_End);
+		QCOMPARE(volume->value(), volume->maxValue());
+		QTest::keyClick(fader, Qt::Key_Home);
+		QCOMPARE(volume->value(), volume->minValue());
+		QTest::keyClick(fader, Qt::Key_PageUp);
+		QVERIFY(volume->value() > volume->minValue());
+		QTest::keyClick(fader, Qt::Key_Up);
+		QVERIFY(volume->value() > volume->minValue());
+		volume->setValue(original);
+
+		// Space presses the model buttons.
+		BoolModel* muteModel = &Engine::mixer()->mixerChannel(m_sender)->m_muteModel;
+		const bool wasMuted = muteModel->value();
+		mute->setFocus();
+		QTRY_VERIFY(mute->hasFocus());
+		QTest::keyClick(mute, Qt::Key_Space);
+		QCOMPARE(muteModel->value(), !wasMuted);
+		QTest::keyClick(mute, Qt::Key_Space);
+		QCOMPARE(muteModel->value(), wasMuted);
+	}
+
+	//! A send knob's model is the selected source's send to this strip; focusing it must not select
+	//! its destination and hide the control before the keyboard can adjust it.
+	void sendKnobKeepsItsSourceWhileFocused()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* destination = strip(m_return);
+		mixerView->setCurrentMixerChannel(m_sender);
+		destination->soloButton()->setFocus();
+		QTRY_VERIFY(destination->soloButton()->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), destination);
+
+		// The send belongs to the selected source, so restoring that source shows the knob on its target.
+		mixerView->setCurrentMixerChannel(m_sender);
+		FloatModel* sendModel = Engine::mixer()->channelSendModel(m_sender, m_return);
+		QVERIFY(sendModel != nullptr);
+		const QList<QWidget*> controls = destination->keyboardFocusOrder();
+		QVERIFY(!controls.isEmpty());
+		auto* sendKnob = qobject_cast<Knob*>(controls.first());
+		QVERIFY(sendKnob != nullptr);
+		QCOMPARE(announcedName(sendKnob), QStringLiteral("Send to Verb"));
+		QVERIFY(sendKnob->isVisibleTo(mixerView));
+
+		const float original = sendModel->value();
+		sendKnob->setFocus();
+		QTRY_VERIFY(sendKnob->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		QVERIFY(sendKnob->isVisibleTo(mixerView));
+		QTest::keyClick(sendKnob, Qt::Key_Up);
+		QVERIFY(sendModel->value() > original);
+		sendModel->setValue(original);
+
+		// Keep the source selected while Ctrl+Tab follows the same send to an adjacent destination.
+		const ControlResult created = run(QStringLiteral("bus.create"));
+		const int adjacentIndex = created.result.value(QStringLiteral("index")).toInt(-1);
+		QCOMPARE(adjacentIndex, m_return + 1);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), ch(m_sender)},
+			{QStringLiteral("to"), ch(adjacentIndex)}, {QStringLiteral("amount"), 0.25}}).ok);
+		syncMixer();
+		mixerView->setCurrentMixerChannel(m_sender);
+		destination = strip(m_return);
+		const QList<QWidget*> refreshedControls = destination->keyboardFocusOrder();
+		QVERIFY(!refreshedControls.isEmpty());
+		sendKnob = qobject_cast<Knob*>(refreshedControls.first());
+		QVERIFY(sendKnob != nullptr);
+		MixerChannelView* adjacent = strip(adjacentIndex);
+		const QList<QWidget*> adjacentControls = adjacent->keyboardFocusOrder();
+		QVERIFY(!adjacentControls.isEmpty());
+		auto* adjacentSendKnob = qobject_cast<Knob*>(adjacentControls.first());
+		QVERIFY(adjacentSendKnob != nullptr);
+		const QString adjacentName = Engine::mixer()->mixerChannel(adjacentIndex)->m_name;
+		QCOMPARE(announcedName(adjacentSendKnob), QStringLiteral("Send to %1").arg(adjacentName));
+
+		QTest::keyClick(sendKnob, Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), adjacentSendKnob);
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		QTest::keyClick(adjacentSendKnob, Qt::Key_Backtab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), sendKnob);
+		QCOMPARE(mixerView->currentMixerChannel(), strip(m_sender));
+		mixerView->deleteChannel(adjacentIndex);
+		syncMixer();
+	}
+
+	//! Acceptance 2: Tab and Shift+Tab walk the strip's controls in order and wrap inside it.
+	void tabMovesThroughOneStripsControls()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		mixerView->setCurrentMixerChannel(m_sender);
+		MixerChannelView* view = strip(m_sender);
+		const QString channelName = Engine::mixer()->mixerChannel(m_sender)->m_name;
+		AutomatableButton* mute = muteButtonOf(view);
+		AutomatableButton* solo = view->soloButton();
+		QVERIFY(mute != nullptr);
+		QVERIFY(solo != nullptr);
+
+		// Walk forward from Solo until Tab comes back to it. The strip's own controls must all be
+		// met on the way - and nothing outside the strip - before the wrap.
+		const auto walk = [&](Qt::Key key, QList<QWidget*>* seen) {
+			seen->append(solo);
+			solo->setFocus();
+			QTRY_COMPARE(QApplication::focusWidget(), solo);
+			for (int i = 0; i < 32; ++i)
+			{
+				QWidget* current = QApplication::focusWidget();
+				QVERIFY(current != nullptr);
+				QTest::keyClick(current, key);
+				QWidget* next = QApplication::focusWidget();
+				QVERIFY(next != nullptr);
+				if (next == solo) { return; }
+				QVERIFY2(!seen->contains(next), "Tab left the strip or repeated a control before wrapping");
+				QVERIFY2(view->isAncestorOf(next), "Tab left the strip");
+				seen->append(next);
+			}
+			QFAIL("Tab did not wrap back to the first control");
+		};
+
+		QList<QWidget*> forward;
+		walk(Qt::Key_Tab, &forward);
+		QTRY_COMPARE(QApplication::focusWidget(), solo);
+		QVERIFY(forward.size() >= 4);
+		QVERIFY(forward.contains(view->fader()));
+		QVERIFY(forward.contains(mute));
+		QVERIFY(forward.contains(view->panKnob()));
+		for (QWidget* control : forward)
+		{
+			QVERIFY(!announcedName(control).isEmpty());
+			// The strip stays the selected channel while the keyboard moves through it.
+			QCOMPARE(mixerView->currentMixerChannel(), view);
+		}
+		QVERIFY(announcedName(view->fader()).contains(channelName));
+
+		// Shift+Tab walks the same set backwards (the last control comes first).
+		QList<QWidget*> reverse;
+		walk(Qt::Key_Backtab, &reverse);
+		QTRY_COMPARE(QApplication::focusWidget(), solo);
+		QCOMPARE(reverse.size(), forward.size());
+		QSet<QWidget*> forwardSet;
+		for (QWidget* control : forward) { forwardSet.insert(control); }
+		QSet<QWidget*> reverseSet;
+		for (QWidget* control : reverse) { reverseSet.insert(control); }
+		QCOMPARE(reverseSet, forwardSet);
+		QCOMPARE(reverse.at(1), forward.last());
+	}
+
+	//! Acceptance 2 and 3: Ctrl+Tab and Ctrl+Shift+Tab reach the same control on the adjacent
+	//! channel, forward and backward, and leave the selection with the focus.
+	void ctrlTabMovesTheSameControlAcrossChannels()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* first = strip(0);
+		MixerChannelView* second = strip(1);
+		const QString firstName = Engine::mixer()->mixerChannel(0)->m_name;
+		const QString secondName = Engine::mixer()->mixerChannel(1)->m_name;
+
+		AutomatableButton* firstMute = muteButtonOf(first);
+		AutomatableButton* secondMute = muteButtonOf(second);
+		QVERIFY(firstMute != nullptr);
+		QVERIFY(secondMute != nullptr);
+		firstMute->setFocus();
+		QTRY_VERIFY(firstMute->hasFocus());
+		QTest::keyClick(firstMute, Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), secondMute);
+		QCOMPARE(mixerView->currentMixerChannel(), second);
+		QCOMPARE(announcedName(secondMute), QStringLiteral("Mute %1").arg(secondName));
+
+		QTest::keyClick(secondMute, Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), firstMute);
+		QCOMPARE(mixerView->currentMixerChannel(), first);
+		QCOMPARE(announcedName(firstMute), QStringLiteral("Mute %1").arg(firstName));
+
+		// A fader is the same fader on the next channel; reverse comes back to this one.
+		first->fader()->setFocus();
+		QTRY_VERIFY(first->fader()->hasFocus());
+		QTest::keyClick(first->fader(), Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), second->fader());
+		QCOMPARE(announcedName(second->fader()), QStringLiteral("Fader %1").arg(secondName));
+		QTest::keyClick(second->fader(), Qt::Key_Backtab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), first->fader());
+	}
+
+	//! Acceptance 3: at the first and last channel the command keeps the focus and the selection -
+	//! after proving it still moves between the channels inside those ends.
+	void ctrlTabDoesNotWrapAtTheMixerEnds()
+	{
+		QVERIFY(activateMainWindow());
+		syncMixer();
+		MixerView* mixerView = getGUI()->mixerView();
+		MixerChannelView* master = strip(0);
+		MixerChannelView* second = strip(1);
+		second->soloButton()->setFocus();
+		QTRY_VERIFY(second->soloButton()->hasFocus());
+		QTest::keyClick(second->soloButton(), Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), master->soloButton());
+		QCOMPARE(mixerView->currentMixerChannel(), master);
+		// From the first channel, backwards stays here.
+		master->soloButton()->setFocus();
+		QTRY_VERIFY(master->soloButton()->hasFocus());
+		QTest::keyClick(master->soloButton(), Qt::Key_Tab, Qt::ControlModifier | Qt::ShiftModifier);
+		QTRY_VERIFY(master->soloButton()->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), master);
+
+		const int last = static_cast<int>(Engine::mixer()->numChannels()) - 1;
+		QVERIFY(last > 1);
+		MixerChannelView* previous = strip(last - 1);
+		MixerChannelView* end = strip(last);
+		previous->fader()->setFocus();
+		QTRY_VERIFY(previous->fader()->hasFocus());
+		QTest::keyClick(previous->fader(), Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_COMPARE(QApplication::focusWidget(), end->fader());
+		QCOMPARE(mixerView->currentMixerChannel(), end);
+		// From the last channel, forwards stays here.
+		end->fader()->setFocus();
+		QTRY_VERIFY(end->fader()->hasFocus());
+		QTest::keyClick(end->fader(), Qt::Key_Tab, Qt::ControlModifier);
+		QTRY_VERIFY(end->fader()->hasFocus());
+		QCOMPARE(mixerView->currentMixerChannel(), end);
 	}
 
 	void ctrlRightClickDoesNotSelectAnotherStrip()
