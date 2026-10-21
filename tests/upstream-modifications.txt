@@ -2631,6 +2631,13 @@ include/Delay.h	cluster new-p11-81-port (port of new-p11-81): keep one ring curs
 src/core/ControlCommandsSettings.cpp	new-p12-46-port: audio.device_set advertises control.undo when its previous configured backend is not valid for audio.device_set.
 tests/control-no-audio-device.py	new-p12-46-port: replay the empty-prior-value audio.device_set inverse and verify it restores the empty config value.
 include/MidiSndio.h	cluster new-p12-126-port: the sndio MIDI shutdown flag is declared std::atomic<bool> instead of volatile bool, so the reader thread's poll and the destructor's store are not a data race; covered by MidiSndioTest::quitFlagIsAtomic.
+tests/src/core/RecordingRealtimeTest.cpp	cluster 3506: adds the muted-clip scheduling allocation regression for SampleTrack::play.
+include/SampleTrack.h	new-p16-206: publishes playing state with a relaxed atomic store/load and declares the GUI-thread notification slot.
+src/tracks/SampleTrack.cpp	new-p16-206: emits playingChanged only from the GUI polling slot; setPlaying on the render path only stores the atomic state.
+src/gui/tracks/SampleTrackView.cpp	new-p16-206: the existing main-thread periodic update polls and publishes SampleTrack playing changes.
+tests/src/core/RecordingRealtimeTest.cpp	new-p16-206: verifies the render path emits no playingChanged and the GUI poll emits it once per observed state transition.
+src/tracks/SampleTrack.cpp	new-p14-277: clears SampleClip's playing latch when a prepared take claim fails, allowing the next pass to retry.
+tests/src/core/RecordingRealtimeTest.cpp	new-p14-277: consumes both prepared handles and verifies two failed passes each reach the claim and leave the clip latch clear.
 tests/src/core/SmfInterchangeTest.cpp	new-p11-21 (2026-10-12): adds a regression assertion that smf_read marks an out-of-range conductor map unimportable and reports the same validation reason used by smf_import.
 include/SampleClip.h	050-Q050-036: the single Rubber Band pool member becomes one pool per Rubber Band-backed mode (Beats, Complex) and rubberBandPool() names the current mode's, so a mode switch never frees voices a live play handle holds; nothing else in the header moves.
 src/core/SampleClip.cpp	050-Q050-036: ensureRubberBandPool builds (once) the pool of the clip's current Rubber Band-backed mode and rubberBandPool() returns it; the voices-per-mode rule of owner decision 12 is unchanged.
