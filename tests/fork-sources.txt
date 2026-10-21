@@ -2919,3 +2919,7 @@ include/TakeLaneRows.h
 include/TakeWaveform.h
 src/gui/TakeWaveform.cpp
 src/gui/tracks/TakeLaneRows.cpp
+# cluster new-p14-97 (2026-10): what a chain saves for a device whose plug-in is missing - the file's own XML with the generic settings the user changed on the placeholder merged in (fork-NEW regression test).
+tests/src/core/EffectChainMissingDeviceSettingsTest.cpp
+# cluster new-p14-97 (2026-10): the cluster report for the placeholder settings defect (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p14-97-port.md

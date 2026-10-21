@@ -142,11 +142,13 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	{
 		// Q050-018 (new-p14-96): the loaded node belongs to its source document. Import a copy; appending it
 		// directly moves it out of that document, so a second save would strip the effect from the first.
-		if (auto dummy = dynamic_cast<DummyEffect*>(effect)) { _this.appendChild(_doc.importNode(dummy->originalPluginData(), true)); }
+		// cluster new-p14-97: the copy carries the generic settings the user changed on the placeholder.
+		if (auto dummy = dynamic_cast<DummyEffect*>(effect)) { _this.appendChild(effect->preservedXmlWithChangedGenericSettings(_doc, dummy->originalPluginData())); }
 		else if (!effect->preservedPluginData().isNull() && !effect->unavailableReason().isEmpty())
 		{
-			// 0.5.0 Q050-018: a wrapper whose plug-in binary is missing writes back what the file had.
-			_this.appendChild(_doc.importNode(effect->preservedPluginData(), true));
+			// 0.5.0 Q050-018: a wrapper whose plug-in binary is missing writes back what the file had -
+			// with the generic settings the user changed on the placeholder merged in (new-p14-97).
+			_this.appendChild(effect->preservedXmlWithChangedGenericSettings(_doc, effect->preservedPluginData()));
 		}
 		else
 		{

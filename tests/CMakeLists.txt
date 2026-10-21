@@ -80,6 +80,10 @@ set(LMMS_TESTS
 	# cluster new-p12-279: EffectControls::m_viewVisible must be atomic because
 	# processImpl() reads it on the audio thread while the GUI writes it.
 	src/core/EffectControlsVisibilityTest.cpp
+	# cluster new-p14-97: what a chain saves for a device whose plug-in is
+	# missing - the file's own XML, with the generic settings the user changed
+	# on the placeholder merged in.
+	src/core/EffectChainMissingDeviceSettingsTest.cpp
 	src/core/AutomationModesTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
 	# real blocks through Song::processNextBuffer() and measures the per-sample
