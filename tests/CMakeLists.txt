@@ -840,6 +840,9 @@ set(LMMS_TESTS
 	# 0.5.0 Q050-103: the sampler's attack/release envelope and its voice-reuse policy, rendered through the real module.
 	src/core/SamplerEnvelopeTest.cpp
 	src/core/SamplerVoiceReuseTest.cpp
+	# 0.5.0 Q050-484: the SFZ instrument (sfizz) - layers, round robins, key switches, state, the command and window routes.
+	src/plugins/SfzPlayerTest.cpp
+	src/plugins/SfzPlayerRealtimeTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
 	src/core/CustomAccessTest.cpp
@@ -1829,6 +1832,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzPlayerTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
@@ -1859,6 +1864,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 
 	# Q050-103: the envelope and voice-reuse test renders through the build's audiofileprocessor module.
+	# Q050-484: the SFZ tests load the build's sfzplayer module (sfizz) and render through it.
+	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
+		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
+	endif()
+
 	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()

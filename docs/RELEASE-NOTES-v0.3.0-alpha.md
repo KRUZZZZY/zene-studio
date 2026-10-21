@@ -1044,7 +1044,7 @@ wasm's option row, exactly.
 **M0 merge train 9** (`050/m0-train-9`, 2026-10-20, automatic): `ReversibilityContractTest` on the merged tree measures `rows=849 true_inverse=422 snapshot=42 irreversible=24 not_mutating=361`.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=849 true_inverse=422 snapshot=42 irreversible=24 not_mutating=361
+     measured: rows=850 true_inverse=423 snapshot=42 irreversible=24 not_mutating=361
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

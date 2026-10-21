@@ -2767,3 +2767,14 @@ plugins/AudioFileProcessor/AudioFileProcessor.h	Q050-103: attack/release/voice-l
 plugins/AudioFileProcessor/AudioFileProcessorView.cpp	Q050-103: attack/release/voice-limit models, a preallocated voice pool with a released-voice-first reuse policy (no allocation on note start), and the knobs; old projects load the old defaults
 plugins/AudioFileProcessor/AudioFileProcessorView.h	Q050-103: attack/release/voice-limit models, a preallocated voice pool with a released-voice-first reuse policy (no allocation on note start), and the knobs; old projects load the old defaults
 tests/CMakeLists.txt	Q050-103: register SamplerEnvelopeTest and SamplerVoiceReuseTest and their audiofileprocessor module dependency
+src/core/ControlCommandsPluginState.cpp	Q050-484: plugin.open_file: open a file in the instrument a track already carries (what the SFZ window's Open button runs); one undo step restores the previous state
+src/core/ControlReversibilityTableAction.cpp	Q050-484: reversibility row for plugin.open_file (true_inverse, action checkpoint)
+src/core/ControlProjectAssets.cpp	Q050-484: the sfzplayer element's src attribute is a project asset (missing-asset reporting and relink)
+src/core/ControlProjectAssetsShared.h	Q050-484: kAssetElements gains the sfzplayer row (6 entries)
+src/core/BrowserCatalog.cpp	Q050-484: .sfz files are browser presets, so browser.load opens them in the SFZ Player
+src/gui/FileBrowser.cpp	Q050-484: the file browser lists .sfz files (the plugin-supported-extension fallback then loads them in the SFZ Player)
+tests/doc-pricing-model-gate.py	Q050-484: the vendored sfizz tree is excluded like the other vendored trees
+tests/fork-sources-gate.sh	Q050-484: the vendored sfizz tree is excluded like the other vendored trees
+tests/scripted/check-namespace	Q050-484: the vendored sfizz tree is excluded like the other vendored trees
+tests/all-sources.txt	Q050-484: the vendored sfizz tree (plugins/SfzPlayer/sfizz) is excluded from the whole-tree scope, like rnnoise and the other vendored trees
+tests/CMakeLists.txt	Q050-484: register SfzPlayerTest and SfzPlayerRealtimeTest and their sfzplayer module dependency

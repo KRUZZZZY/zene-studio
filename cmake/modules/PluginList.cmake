@@ -74,6 +74,7 @@ SET(LMMS_PLUGIN_LIST
 	RnnoiseDenoiser
 	Sf2Player
 	Sfxr
+	SfzPlayer
 	Sid
 	SlewDistortion
 	SlicerT

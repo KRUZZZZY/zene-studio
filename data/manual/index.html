@@ -165,6 +165,15 @@ released the longest ago, or, if every note is still held, the one that started 
 the new note starts from the beginning of the sample with its own attack; the other held notes are not touched. An agent reads and sets
 the same three values with <code>plugin.param_get</code> and <code>plugin.param_set</code> on the track's <code>inst</code> plug-in.</p>
 
+<p>The SFZ Player plays instruments in the open SFZ format (sfizz): samples with velocity layers, round robins and key
+switches. Add it from the browser or the instrument list, or open an .sfz file from the file browser (double-click) - the new
+track holds the player with that file loaded. The window shows the file that is loaded and how many regions it has; Open SFZ...
+loads another. Volume (dB) and Sample quality apply at once; Polyphony and Oversampling reload the file. The file is saved
+with the project by its path (a path relative to the project where it can be), so keep the SFZ and its samples where the
+project can find them: if the file is missing the player is silent and the project keeps its name. An agent loads a file into a
+track's SFZ Player with <code>plugin.open_file</code> (one undo step) and reads and sets the settings with
+<code>plugin.param_get</code> and <code>plugin.param_set</code>.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 

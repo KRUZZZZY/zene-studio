@@ -164,6 +164,10 @@ library to work.
   hosting on Apple builds, so a macOS build has no VST2/Vestige path. Discovery is Linux-native: plug-ins
   are found in each format's standard folders and in your own (`plugin.paths_get` /
   `plugin.paths_set`), and a scan records every candidate file.
+- **SFZ instruments play in the built-in SFZ Player** (Q050-484; the sfizz engine, built into the module on every
+  platform, with libsndfile as the only outside dependency). Velocity layers, round robins and key switches are
+  tested; **only the Linux/GCC build has been built and run** - the other platforms' builds are by construction, and a
+  region whose sample file is missing is silently dropped by sfizz. `docs/050-features/Q050-484.md` has the full list.
 - **The GUI location for per-file scan status and quarantine controls is Project tools ▸ Plug-in
   Modules...** It lists every record the scan holds — its path, its per-file status, its name and the
   error it failed with — and each row offers **Quarantine...** (with a reason), **Release** and

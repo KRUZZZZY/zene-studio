@@ -95,6 +95,7 @@ exclude_files = re.compile(
     'src/3rdparty/|'
     'plugins/NeuralAmp/rtneural/|'
     'plugins/RnnoiseDenoiser/rnnoise/|'
+    'plugins/SfzPlayer/sfizz/|'
     # ODDSound's MTS-ESP API, vendored byte-for-byte with its provenance (thirdparty/mts-esp/README.md):
     'thirdparty/mts-esp/|'
     # non-shipped dev scratch tools and test/demo harnesses:

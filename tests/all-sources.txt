@@ -15,16 +15,16 @@
 #     plugins/Sid/resid, plugins/Xpressive/exprtk, plugins/ZynAddSubFx/zynaddsubfx,
 #     src/3rdparty/{hiir,jack2,qt5-x11embed,ringbuffer,weakjack})
 #   src/3rdparty (85 tracked files), plugins/NeuralAmp/{rtneural,nam,tests},
-#   plugins/RnnoiseDenoiser/rnnoise, and tests/reference (verbatim copies of upstream plugin
+#   plugins/RnnoiseDenoiser/rnnoise, plugins/SfzPlayer/sfizz (vendored sfizz and its dependencies), and tests/reference (verbatim copies of upstream plugin
 #   sources kept for A/B comparison - real sources, but duplicates by construction).
 # Regenerate with (the whole command - no remote state, no arguments):
 #   { git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
-#       | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; \
+#       | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/|plugins/SfzPlayer/sfizz/)' ; \
 #     git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/all-sources.txt) \
 #        <({ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \
-#              | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/)' ; \
+#              | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/|plugins/SfzPlayer/sfizz/)' ; \
 #            git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u) && echo REPRODUCES
 #   Running it by hand is how the list was checked; it is NOT the check any more. Since
 #   2026-09-15 tests/all-sources-reproduce.sh IS this diff, `bash tests/fork-sources-gate.sh`
@@ -1208,6 +1208,13 @@ plugins/Sf2Player/Sf2Player.h
 plugins/Sf2Player/fluidsynthshims.h
 plugins/Sfxr/Sfxr.cpp
 plugins/Sfxr/Sfxr.h
+plugins/SfzPlayer/RtPublished.h
+plugins/SfzPlayer/SfzPlayer.cpp
+plugins/SfzPlayer/SfzPlayer.h
+plugins/SfzPlayer/SfzPlayerView.cpp
+plugins/SfzPlayer/SfzPlayerView.h
+plugins/SfzPlayer/SfzSynth.cpp
+plugins/SfzPlayer/SfzSynth.h
 plugins/Sid/SidInstrument.cpp
 plugins/Sid/SidInstrument.h
 plugins/Sid/SidPlaybackScheduler.h
@@ -3019,6 +3026,9 @@ tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/plugins/RnnoiseDenoiserEffectTest.cpp
 tests/src/plugins/RnnoiseHarnessOutputTest.cpp
 tests/src/plugins/SampleRateDependentLadspa.cpp
+tests/src/plugins/SfzPlayerRealtimeTest.cpp
+tests/src/plugins/SfzPlayerTest.cpp
+tests/src/plugins/SfzTestSupport.h
 tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/SlicerTZoomTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp

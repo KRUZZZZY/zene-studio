@@ -45,7 +45,7 @@
 # Deliberate exclusions (stated, not silently skipped):
 #   - vendored third-party trees: src/3rdparty/, plugins/NeuralAmp/rtneural/,
 #     plugins/NeuralAmp/nam/, plugins/NeuralAmp/tests/,
-#     plugins/RnnoiseDenoiser/rnnoise/ (the same list as fork-sources.txt's header);
+#     plugins/RnnoiseDenoiser/rnnoise/ and plugins/SfzPlayer/sfizz/ (the same list as fork-sources.txt's header);
 #   - tests/reference/** — frozen verbatim copies of upstream files whose provenance
 #     is recorded blob-by-blob in tests/reference/ORIGIN.tsv.
 # Files under those trees are not this repo's code and no ratchet refactors them.
@@ -128,7 +128,7 @@ is_tools_source() {
 is_excluded() {
 	case "$1" in
 		src/3rdparty/*|plugins/NeuralAmp/rtneural/*|plugins/NeuralAmp/nam/* \
-		|plugins/NeuralAmp/tests/*|plugins/RnnoiseDenoiser/rnnoise/*|tests/reference/*)
+		|plugins/NeuralAmp/tests/*|plugins/RnnoiseDenoiser/rnnoise/*|plugins/SfzPlayer/sfizz/*|tests/reference/*)
 			return 0 ;;
 		*) return 1 ;;
 	esac

@@ -91,6 +91,7 @@ const KindRow kKinds[] = {
 	{"lv2", BrowserKind::Preset},
 	{"sf2", BrowserKind::Preset},
 	{"sf3", BrowserKind::Preset},
+	{"sfz", BrowserKind::Preset},
 	{"pat", BrowserKind::Preset},
 	{"mmp", BrowserKind::Project},
 	{"mmpz", BrowserKind::Project},
