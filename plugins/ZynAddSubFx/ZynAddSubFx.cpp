@@ -400,12 +400,17 @@ void ZynAddSubFxInstrument::forwardQueuedMidi()
 
 auto ZynAddSubFxInstrument::processLock() -> bool
 {
-	const bool exporting = Engine::getSong()->isExporting()
-#ifdef LMMS_TESTING
-		|| m_testForceExport
-#endif
-		;
-	return m_pluginMutex.tryLock(exporting ? -1 : 0);
+	// Realtime: the audio path never WAITS for this mutex. The main thread holds it for
+	// as long as a plugin operation takes - a client handshake is seconds, and a preset
+	// load waits for the client to answer - and the old policy made the audio thread
+	// wait for it while the song was exporting, so a render could stall for the whole
+	// reload (and for as long as the main thread needed the lock, which is unbounded).
+	// The period is skipped instead: the lock is a try, never a wait.
+	//
+	// m_testForceExport is deliberately not consulted: the export policy that waited is
+	// what this removes, and the test seam stays so the regression test compiles
+	// against the fixed tree as well.
+	return m_pluginMutex.tryLock(0);
 }
 
 

@@ -3959,6 +3959,52 @@ if(TARGET ZynAddSubFxCore)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
+# ---------------------------------------------------------------------------
+# The Zyn instrument's audio path and its plugin lock (cluster 908).
+#
+# The instrument keeps its plugin instance behind a mutex that also guards the
+# instance's life. Three defects live around that mutex: the audio path could
+# WAIT for it (an export could stall for as long as a reload took), the preset
+# load chose a plugin and used it without holding the lock (a hosting-mode
+# switch could delete the instance in between), and the MIDI hand-off dropped
+# the event's frame offset.
+#
+# The test compiles the plug-in's own ZynAddSubFx.cpp - the way the VST and CLAP
+# tests compile theirs - so it can drive the class directly.
+# ---------------------------------------------------------------------------
+if(TARGET zynaddsubfx AND TARGET ZynAddSubFxCore)
+	add_executable(ZynAddSubFxInstrumentTest
+		src/plugins/ZynAddSubFxInstrumentTest.cpp
+		${CMAKE_SOURCE_DIR}/plugins/ZynAddSubFx/ZynAddSubFx.cpp
+		${CMAKE_SOURCE_DIR}/plugins/ZynAddSubFx/ZynAddSubFx.h
+	)
+	add_test(NAME ZynAddSubFxInstrumentTest COMMAND ZynAddSubFxInstrumentTest)
+	target_include_directories(ZynAddSubFxInstrumentTest PRIVATE
+		# the plug-in's generated plugin_export.h (PLUGIN_EXPORT)
+		${CMAKE_BINARY_DIR}/plugins/ZynAddSubFx
+		${CMAKE_SOURCE_DIR}/plugins/ZynAddSubFx
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	)
+	# the test compiles the plug-in sources itself, so it needs the generated
+	# export header of the plug-in target to exist first
+	add_dependencies(ZynAddSubFxInstrumentTest zynaddsubfx)
+	target_static_libraries(ZynAddSubFxInstrumentTest PRIVATE ZynAddSubFxCore lmmsobjs)
+	target_link_libraries(ZynAddSubFxInstrumentTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+	)
+	target_compile_features(ZynAddSubFxInstrumentTest PRIVATE cxx_std_20)
+	target_compile_definitions(ZynAddSubFxInstrumentTest PRIVATE
+		LMMS_TESTING
+		# This target compiles the plug-in's own ZynAddSubFx.cpp, which defines
+		# zynaddsubfx_plugin_descriptor with PLUGIN_EXPORT: keep it from being
+		# marked dllimport (the same construct as ClapEffectIntegrationTest).
+		PLUGIN_STATIC_DEFINE
+		PLUGIN_NAME=zynaddsubfx)
+	set_tests_properties(ZynAddSubFxInstrumentTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Synthetic plug-in host test (ported from the standards fork): builds a MODULE
 # plug-in from src/plugins/SyntheticAudioPlugin.cpp and drives it through the
 # AudioPlugin host path, so the host code is exercised for real.
