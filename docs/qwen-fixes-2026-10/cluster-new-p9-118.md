@@ -1,5 +1,7 @@
 # Cluster new-p9-118 / new-p15-57: EnvelopeAndLfoParameters audio path
 
+**FIXED**
+
 Two findings in `src/core/EnvelopeAndLfoParameters.cpp`, one file, two commits.
 
 new-p9-118: FIXED
@@ -169,3 +171,94 @@ Files committed for new-p15-57:
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-118.md`
 
+## Self-check
+
+**1. Does the regression test FAIL with the product change reverted and PASS with it (exit codes)?**
+
+Yes, for both bugs, each with its own patch and its own run.
+
+- new-p9-118: `git apply -R .../logs/fix-new-p9-118.patch` (EXIT=0) then
+  `python3 tests/rt-safety-sweep.py --tree . --scope tests/rt-safety-scope.txt --allowlist tests/rt-safety-allowlist.txt --check`
+  (EXIT=1, `FAIL: NEW rt-safety hit: ...EnvelopeAndLfoParameters::fillLevel:lock-guard [locking] ... QMutexLocker m(&m_paramMutex);`
+  - `.../logs/red-p9-118-sweep-lockhit.log`); `git apply .../logs/fix-new-p9-118.patch`
+  (EXIT=0) then the same sweep (EXIT=0, PASS - `.../logs/green-p9-118-sweep.log`).
+- new-p15-57: `git apply -R .../logs/fix-new-p15-57.patch` (EXIT=0), rebuild
+  (EXIT=0), `ctest -R '^EnvelopeAndLfoParametersTest$' --output-on-failure`
+  (EXIT=8, `FAIL! : ...replacedUserWaveIsNotFreedWhileTheAudioPathHoldsIt() '!weakWave.expired()' returned FALSE.`
+  - `.../logs/test-4-red.log`); `git apply .../logs/fix-new-p15-57.patch` (EXIT=0),
+  rebuild (EXIT=0), the same ctest (EXIT=0 - `.../logs/test-3.log`), and the whole
+  family (EXIT=0, 6/6 - `.../logs/test-5-green.log`).
+
+**2. Is the test deterministic - no wall-clock timing, sleeps or races? What seam does it use?**
+
+Yes.
+
+- new-p9-118: the regression is the tree's own source-level rt-safety sweep
+  (`tests/rt-safety-sweep.py`, the CTest `RtSafetySweep`). It reads the declared
+  bodies and matches a rule; there is no clock, no sleep and no thread in it.
+  The declaration it checks is in `tests/rt-safety-scope.txt:59-64`.
+- new-p15-57: `replacedUserWaveIsNotFreedWhileTheAudioPathHoldsIt()` uses the
+  test seam `EnvelopeAndLfoParameters::holdAudioState()` /
+  `releaseHeldAudioState()` (`include/EnvelopeAndLfoParameters.h:176-183`), which
+  makes the test hold exactly what the audio thread holds while it fills a
+  level - the published snapshot - and the `std::weak_ptr` of the wave tells the
+  test whether that wave is still alive. No timing, no sleep, no race: the
+  reader count of the snapshot decides the outcome.
+  `theAudioPathSamplesThePublishedUserWave()` compares two rendered buffers.
+
+**3. Is the fix at the cause and complete - every caller and sibling checked and consistent?**
+
+Yes.
+
+- The callers of the changed path are `InstrumentSoundShaping::playNote`
+  (`src/core/InstrumentSoundShaping.cpp:100`, `:148`, `:153`, `:230`), the
+  tests `ModulationLayerTest` and `ModulationRateTest`, and the new test. The
+  public signature of `fillLevel()` is unchanged, so every caller keeps
+  working; they all pass (6/6 in the family run, plus
+  `DelayLfoAutomationTest`, `DrumSynthLevelTest`, `ModulationAudioViewTest`,
+  `ClipGainEnvelopeTest` and `ExprSynthAllocation` in
+  `.../logs/test-8-targeted2.log`).
+- The siblings of the changed members were moved with them: the envelope
+  tables (`m_pahdEnv`, `m_rEnv`), the frame counts, the sustain level and the
+  LFO figures all live in the same snapshot now, and the readers of each
+  (`PAHD_Frames()`, `releaseFrames()`, `getLfoPredelayFrames()`,
+  `getLfoAttackFrames()`, `getLfoOscillationFrames()`, `getLfoUserWave()`) read
+  that snapshot, so no reader can see a half-updated parameter set.
+- The two flags the old code shared between the writer and the audio thread
+  (`m_bad_lfoShapeData`, `m_lfoFrame`) became atomics, because both sides
+  touch them (`updateSampleVars()` and `LfoInstances::trigger()`).
+- `LfoInstances::trigger()`/`reset()` still take `m_lfoListMutex` - that is a
+  different mutex, it is on the per-period LFO trigger, and it is an accepted
+  hit in `tests/rt-safety-allowlist.txt`; this change does not touch it.
+
+**4. No collateral damage - do old projects and saved data still load as before, and does any limit or check hit other callers?**
+
+- Saved data: the file format is unchanged. `saveSettings()` still writes
+  `userwavefile` from the same wave (`src/core/EnvelopeAndLfoParameters.cpp:365`)
+  and `loadSettings()` still reads the same attribute
+  (`src/core/EnvelopeAndLfoParameters.cpp:416-421`); the two existing tests
+  for that (`missingWaveAttributeClearsPreviousWave`,
+  `emptyWaveAttributeClearsPreviousWave`) still pass.
+- The envelope arithmetic is unchanged: the same expressions, in the same
+  order, with the same values, now written into the snapshot's buffers
+  (`rebuildAudioState()`, `src/core/EnvelopeAndLfoParameters.cpp:451-566`).
+- No new limit or check was added that another caller can trip: the buffer
+  sizes are the same `m_pahdFrames`/`m_rFrames` the old code used, and the
+  recycled buffers are only reused when their capacity is large enough
+  (`takeEnvBuffer()`, `src/core/EnvelopeAndLfoParameters.cpp:610`).
+- The realtime rule: the audio path allocates nothing, frees nothing, locks
+  nothing, waits for nothing and logs nothing - it only reads an immutable
+  snapshot it already holds. The declared audio path is now measured by the
+  rt-safety sweep and is clean.
+
+**5. If the verdict is ALREADY-FIXED or FALSE-POSITIVE - the code (file:line) or the intended contract that shows it.**
+
+Not applicable: both findings were REAL. The code that showed it:
+
+- new-p9-118: `src/core/EnvelopeAndLfoParameters.cpp:309` in the reported tree
+  was `QMutexLocker m(&m_paramMutex);` inside `fillLevel()`, the function
+  `InstrumentSoundShaping` calls on the audio thread, and `updateSampleVars()`
+  held the same mutex while it re-derived the tables.
+- new-p15-57: `src/core/EnvelopeAndLfoParameters.cpp:394` in the reported tree
+  was `m_userWave = SampleBuffer::fromFile(...)` in `loadSettings()`, with no
+  lock, while `lfoShapeSample()` read `m_userWave.get()` on the audio thread.
