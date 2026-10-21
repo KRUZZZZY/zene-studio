@@ -242,21 +242,41 @@ private slots:
 		QCOMPARE(int(launchTickAt(LaunchQuantisation::Bar, clock(192))), 192);
 	}
 
-	//! The table refuses rather than growing, and a refused cell degrades to
-	//! the pre-#597 behaviour instead of a wrong one.
+	//! Drain the command queue while publishing, then prove the 128th distinct
+	//! cell is installed and the next one is refused by the content table.
 	void aFullTableRefusesAndLeavesTheCellSilent()
 	{
 		SessionScheduler scheduler;
-		bool refused = false;
-		for( int i = 0; i < 300; ++i )
+		constexpr int expectedCapacity = 128;
+		QCOMPARE( SessionSlotContentTable::Capacity, std::size_t( expectedCapacity ) );
+		for( int i = 0; i < expectedCapacity; ++i )
 		{
-			if( !scheduler.publishSlotContent( i, 0, 4, 0 ) )
+			QVERIFY( scheduler.publishSlotContent( i, 0, 4, 0 ) );
+			if( ( i + 1 ) % 64 == 0 )
 			{
-				refused = true;
-				break;
+				// Install each batch before filling the next one, so rejection
+				// cannot come from the 256-command queue.
+				scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
 			}
 		}
-		QVERIFY2( refused, "the fixed table accepted 300 cells" );
+
+		// Queue one more distinct cell after all 128 prior entries have been
+		// installed. The enqueue succeeds; the audio-thread table must refuse it.
+		QVERIFY( scheduler.publishSlotContent( expectedCapacity, 0, 4, 0 ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		QVERIFY( scheduler.requestLaunch( expectedCapacity - 1, 0,
+			LaunchMode::Trigger, LaunchQuantisation::None ) );
+		QVERIFY( scheduler.requestLaunch( expectedCapacity, 0,
+			LaunchMode::Trigger, LaunchQuantisation::None ) );
+		scheduler.processAudio( clock( 0 ), kFramesPerPeriod );
+
+		const SessionSlotPlayback installed = scheduler.playbackForColumn( expectedCapacity - 1 );
+		QVERIFY( installed.playing );
+		QCOMPARE( installed.patternId, 4 );
+		const SessionSlotPlayback refused = scheduler.playbackForColumn( expectedCapacity );
+		QVERIFY( refused.playing );
+		QCOMPARE( refused.patternId, -1 );
 	}
 
 	/*! A cell with NOTHING to render does not take an entry of the fixed table.
