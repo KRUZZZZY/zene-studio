@@ -160,3 +160,6 @@ Files committed: `src/gui/ReferenceProjectPanel.cpp`, `tests/src/gui/ReferencePr
   undo/transaction change, no new control command.
 - **Log folder:** the supplied path is not writable by this sandbox (`touch` EACCES on a 0755 user-owned directory);
   all logs are preserved under `dsh/home/new-p17-139-logs/`, including `fix.patch`, both RED and both GREEN runs.
+- **submit_check:** `python3 .../submit_check.py <worktree> new-p17-139` exits 1 with every row PASS except
+  `FAIL gates (feature_check.py)`; that child fails only while creating `<worktree>-feature-check` (PermissionError
+  above). The identical, unchanged gate script exits 0 with just its log path redirected, as the table shows.
