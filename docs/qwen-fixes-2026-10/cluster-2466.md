@@ -10,7 +10,7 @@ loaded the device; on either failure path it returned an empty id but kept the
 track:
 
 - `tests/src/core/ReversibilityTestSupport.h:101-108` (pre-fix): `const QString track = addTrack();` followed by `if (device.isEmpty()) { return QString(); }` and `return loaded.ok ? track : QString();`.
-- A caller that treats the empty id as "skip" (`AutomationModeMenuTest.cpp:84`, `InstrumentLayerZonePublishTest.cpp:86`, `InstrumentSetupUiTest.cpp:341`, `UndoHonestyStateTest.cpp:127`, `:183`) therefore leaked the track into the next test of the same binary. This is the reported failure path.
+- A caller that treats the empty id as "skip" (`AutomationModeMenuTest.cpp:84`, `AutomationEditorEditingTest.cpp:92`, `InstrumentLayerZonePublishTest.cpp:86`, `InstrumentSetupUiTest.cpp:341`, `UndoHonestyStateTest.cpp:127`, `:183`) therefore leaked the track into the next test of the same binary. This is the reported failure path.
 
 The fix is at the cause, in both failure paths:
 
@@ -107,12 +107,11 @@ baselines. No gate limit, baseline or check was altered.
   is the device id argument of `addInstrumentTrackFor`: `QString()` drives the
   no-device path and `dev-999999` drives the `plugin.load` refusal. The observable
   is `track.list`'s count before/after.
-- **The fix is at the cause and complete.** `addInstrumentTrack()` (the only
-  public entry point; all five call sites use it) delegates to
-  `addInstrumentTrackFor`, so every caller gets both cleaned failure paths. The
-  success path still loads through the same `plugin.load` and returns the same
-  track id. The two sibling helpers (`addTrack`, `firstLoadableInstrument`) are
-  unchanged.
+- **The fix is at the cause and complete.** `addInstrumentTrack()` (the callers'
+  entry point; all six call sites use it) delegates to `addInstrumentTrackFor`,
+  so every caller gets both cleaned failure paths. The success path still loads
+  through the same `plugin.load` and returns the same track id. The two sibling
+  helpers (`addTrack`, `firstLoadableInstrument`) are unchanged.
 - **No collateral damage.** No product code, serialization or project-loading path
   changed. The helper only runs in tests. A successful setup is byte-for-byte the
   same sequence (`track.add`, then `plugin.load`); the only early return added is
