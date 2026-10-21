@@ -542,7 +542,7 @@ void WatsynInstrument::saveSettings( QDomDocument & _doc,
 
 	m_amod.saveSettings( _doc, _this, "amod" );
 	m_bmod.saveSettings( _doc, _this, "bmod" );
-/*	m_selectedGraph.saveSettings( _doc, _this, "selgraph" );*/
+	m_selectedGraph.saveSettings( _doc, _this, "selgraph" );
 }
 
 
@@ -599,7 +599,7 @@ void WatsynInstrument::loadSettings( const QDomElement & _this )
 
 	m_amod.loadSettings( _this, "amod" );
 	m_bmod.loadSettings( _this, "bmod" );
-/*	m_selectedGraph.loadSettings( _this, "selgraph" );*/
+	m_selectedGraph.loadSettings( _this, "selgraph" );
 }
 
 

@@ -2817,3 +2817,5 @@ tests/src/gui/PluginCompatEditorProbe.cpp
 tests/src/gui/MidiClockMenuTest.cpp
 # cluster new-p12-133-port: the MIDI clock follow-preference fix and its verification report.
 docs/qwen-fixes-2026-10/cluster-new-p12-133-port-port.md
+# cluster new-p17-205: regression for Watsyn's selected oscillator graph save/load (the selgraph attribute), fork-NEW test.
+tests/src/plugins/WatsynSelectedGraphTest.cpp

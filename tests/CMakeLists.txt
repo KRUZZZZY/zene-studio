@@ -418,6 +418,7 @@ set(LMMS_TESTS
 	src/core/HydrogenImportTest.cpp
 	src/core/MathTest.cpp
 	src/plugins/EqFilterTest.cpp
+	src/plugins/WatsynSelectedGraphTest.cpp
 	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
 	# `meter.*` group's live half): what an armed tap reads, the three negative
 	# controls that keep it honest - silence reads the sentinel, 10 dB more input
@@ -1846,6 +1847,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
+		# Cluster new-p17-205: the Watsyn save/load regression loads the watsyn module.
+		OR LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
@@ -1903,6 +1906,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# so a targeted build has to bring that module up first.
 	if(LMMS_TEST_NAME STREQUAL "UnmuteChaseTest")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
+
+	# Cluster new-p17-205: the Watsyn save/load regression needs the watsyn module built first.
+	if(LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest")
+		add_dependencies(${LMMS_TEST_NAME} watsyn)
 	endif()
 
 	# Q050-020: the MIDI export test loads the midiexport module through the plug-in factory.
