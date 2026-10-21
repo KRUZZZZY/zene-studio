@@ -181,11 +181,26 @@ output directory - no partial stem, no staging directory.
   the finding names. Every caller of the changed code is inside that file:
   `runCliStemExport()` has exactly one caller (the handler), `listingOf()` and
   `writtenStems()` have exactly one caller each (the handler), and the new
-  staging helpers have exactly one caller each. The sibling command that
-  renders through a child process (`bounce.land`, src/core/ControlCommandsRenderBounce.cpp)
-  has its own, separate child runner and is NOT affected by this change - the
-  only shared code is `ControlExportPresetSettings::effective()`, which is read
-  exactly as before.
+  staging helpers have exactly one caller each. No other translation unit
+  names any of them (`grep -rn "listingOf|writtenStems|runCliStemExport|
+  stagingDirectoryFor" src/core/*.cpp` returns only this file).
+- **The sibling commands of the render group are unaffected and stay
+  consistent.** The submit check names `render.convert`, `render.queue_add`,
+  `render.queue_bounce`, `render.queue_cancel`, `render.queue_clear`,
+  `render.queue_list`, `render.queue_report`, `render.render`,
+  `render.sections` and `render.stems`. Only `render.stems` is registered in
+  the file this batch changed
+  (`src/core/ControlCommandsRenderStems.cpp:registerRenderStems`); the others
+  live in their own files - `render.render` in
+  `src/core/ControlCommandsProject.cpp` (its own child runner at :390),
+  `render.sections` in `src/core/ControlCommandsRenderSections.cpp`, the
+  `render.queue_*` verbs in `src/core/ControlCommandsRenderQueue.cpp`, and
+  `render.convert` in the export family - and each keeps its own output
+  handling. The only code they share with this change is
+  `ControlExportPresetSettings::effective()`, which this verb reads exactly as
+  it did before. The other child-process render path, `bounce.land`
+  (`src/core/ControlCommandsRenderBounce.cpp` -> `BounceInPlace`), has its own
+  runner and is not touched either.
 - **No collateral damage.** The verb's arguments, its result schema, its
   command id and its A16 reversibility row are untouched, so the control
   surface's snapshot and its schema checks are unchanged. The stems still land
@@ -205,6 +220,8 @@ output directory - no partial stem, no staging directory.
   table, src/core/ControlReversibilityTableStems.cpp). NO new control command
   was added: the id, the group, the arguments, the result schema and the
   description are byte for byte the ones that were registered before.
+- **Verdict.** All three bugs are FIXED, so no ALREADY-FIXED or FALSE-POSITIVE
+  verdict applies and there is no contract to cite instead of code.
 - **Portability.** The change uses QFile, QDir, QCryptographicHash, QTemporaryFile
   and QProcess - all Qt Core, all present in Qt 5.15 as well as Qt 6 - and no
   windows.h, no std::filesystem and no Qt-6-only API. The test uses
