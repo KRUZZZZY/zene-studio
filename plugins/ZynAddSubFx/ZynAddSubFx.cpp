@@ -314,6 +314,12 @@ void ZynAddSubFxInstrument::loadSettings( const QDomElement & _this )
 void ZynAddSubFxInstrument::loadFile( const QString & _file )
 {
 	const std::string fn = QSTR_TO_STDSTR( _file );
+	// The choice of the plugin and its use belong under one lock. A hosting-mode switch
+	// (the instrument view's checkbox and the control surface's oop.set_mode both end in
+	// reloadPlugin()) deletes the running instance and creates another one under this
+	// very mutex, so a caller that chose an instance without the lock could use it after
+	// it was gone - and the local branch would load the preset into a null pointer.
+	m_pluginMutex.lock();
 	if( m_remotePlugin )
 	{
 		testHook();
@@ -325,10 +331,9 @@ void ZynAddSubFxInstrument::loadFile( const QString & _file )
 	else
 	{
 		testHook();
-		m_pluginMutex.lock();
 		m_localPlugin->loadPreset( fn );
-		m_pluginMutex.unlock();
 	}
+	m_pluginMutex.unlock();
 
 	instrumentTrack()->setName(QFileInfo(_file).baseName().replace(QRegularExpression("^[0-9]{4}-"), QString()));
 
@@ -453,14 +458,24 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 
 QString ZynAddSubFxInstrument::hostingState() const
 {
+	// The plugin pointer is read under the lock: a hosting-mode switch deletes the
+	// instance and creates another one under this very mutex, so an unlocked read
+	// could ask an instance that is already gone.
+	m_pluginMutex.lock();
 	testHook();
+	QString state;
 	if( m_remotePlugin == nullptr )
 	{
-		return QStringLiteral( "in-process" );
+		state = QStringLiteral( "in-process" );
 	}
-	return m_remotePlugin->isRunning() && !m_remotePlugin->failed()
-		? QStringLiteral( "separate-process" )
-		: QStringLiteral( "separate-process-exited" );
+	else
+	{
+		state = (m_remotePlugin->isRunning() && !m_remotePlugin->failed())
+			? QStringLiteral( "separate-process" )
+			: QStringLiteral( "separate-process-exited" );
+	}
+	m_pluginMutex.unlock();
+	return state;
 }
 
 
@@ -470,9 +485,13 @@ qint64 ZynAddSubFxInstrument::hostingProcessId() const
 {
 	// The client is the instrument's own ZynAddSubFxRemotePlugin; its pid is
 	// the QProcess's (feature row 80). Zero means no client is running - the
-	// in-process synth, or a client that has gone away.
+	// in-process synth, or a client that has gone away. Read under the lock, like
+	// hostingState() above: the instance can be replaced while it is being asked.
+	m_pluginMutex.lock();
 	testHook();
-	return m_remotePlugin == nullptr ? 0 : m_remotePlugin->hostProcessId();
+	const auto pid = (m_remotePlugin == nullptr) ? 0 : m_remotePlugin->hostProcessId();
+	m_pluginMutex.unlock();
+	return pid;
 }
 
 

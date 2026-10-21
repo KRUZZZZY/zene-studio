@@ -157,6 +157,76 @@ private slots:
 		QVERIFY2(!tookTheLock.load(), "the audio path took the plugin mutex the main thread was holding");
 	}
 
+	//! The choice of a plugin and its use have to happen under one lock.
+	void thePluginChoiceAndItsUseAreUnderOneLock()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		// The hook runs where loadFile() has chosen the plugin and is about to use it.
+		// tryLock() never blocks, so it reports whether the mutex is free there.
+		bool hookRan = false;
+		bool lockHeldAtTheUse = false;
+		instrument.m_testHook = [&]
+			{
+				hookRan = true;
+				if (!instrument.m_pluginMutex.tryLock(0))
+				{
+					lockHeldAtTheUse = true;
+				}
+				else
+				{
+					instrument.m_pluginMutex.unlock();
+				}
+			};
+
+		// A preset that is not there: the point of the case is the lock, not the preset.
+		instrument.loadFile(QStringLiteral("/nonexistent/zyn-preset.xmz"));
+
+		QVERIFY2(hookRan, "loadFile() did not reach the point where it uses the plugin");
+		QVERIFY2(lockHeldAtTheUse,
+			"loadFile() chose the plugin and used it without holding the plugin mutex, so a "
+			"hosting-mode switch could delete the instance in between");
+	}
+
+	//! The hosting getters read the plugin pointer under the lock, too.
+	void theHostingGettersReadThePluginUnderTheLock()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		bool hookRan = false;
+		bool lockHeldAtTheRead = false;
+		instrument.m_testHook = [&]
+			{
+				hookRan = true;
+				if (!instrument.m_pluginMutex.tryLock(0))
+				{
+					lockHeldAtTheRead = true;
+				}
+				else
+				{
+					instrument.m_pluginMutex.unlock();
+				}
+			};
+
+		const QString state = instrument.hostingState();
+		QVERIFY2(hookRan, "hostingState() did not reach the point where it reads the plugin");
+		QVERIFY2(lockHeldAtTheRead,
+			"hostingState() read the plugin pointer without holding the plugin mutex, so a "
+			"hosting-mode switch could delete the instance in between");
+		QCOMPARE(state, QStringLiteral("in-process"));
+
+		hookRan = false;
+		lockHeldAtTheRead = false;
+		const qint64 pid = instrument.hostingProcessId();
+		QVERIFY2(hookRan, "hostingProcessId() did not reach the point where it reads the plugin");
+		QVERIFY2(lockHeldAtTheRead,
+			"hostingProcessId() read the plugin pointer without holding the plugin mutex, so a "
+			"hosting-mode switch could delete the instance in between");
+		QCOMPARE(pid, 0);
+	}
+
 private:
 	bool m_engineInitialised = false;
 };
