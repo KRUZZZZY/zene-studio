@@ -47,6 +47,8 @@
 #include "Plugin.h"
 #include "Track.h"
 
+//! cluster 5186: the modulation-lifetime regression installs a watchable instrument in a track.
+class ModulationAudioViewTest;
 
 namespace lmms
 {
@@ -415,6 +417,13 @@ private:
 	void recordNoteOffActivity();
 	NoteActivitySnapshot noteActivitySnapshot() const;
 
+	/*! cluster 5186 (new-p12-159): destroys this track's instrument - the ONE place an instrument
+	 *  is destroyed, whatever the reason (the track goes, the file names another instrument, the
+	 *  user picks another one). The modulation target that points at the instrument is closed
+	 *  FIRST, so the audio thread's block can no longer call into an instrument that is tearing
+	 *  down: the base destructor is too late for that, because it runs after the derived one. */
+	void destroyInstrument();
+
 	void processCCEvent(int controller);
 	void processOutEventImpl(const MidiEvent& event, const TimePos& time, f_cnt_t offset,
 		std::atomic_bool* baseInstrumentAccepted);
@@ -526,6 +535,9 @@ private:
 	friend class NotePlayHandle;
 	friend class gui::InstrumentTuningView;
 	friend class gui::MidiCCRackView;
+	//! cluster 5186: the regression needs an instrument in the track it can watch from its own
+	//! destructor, so that it can see the modulation target close BEFORE the teardown starts.
+	friend class ::ModulationAudioViewTest;
 
 } ;
 

@@ -55,6 +55,7 @@ class SampleFrame;
 
 class LMMS_EXPORT Instrument : public Plugin
 {
+	Q_OBJECT
 public:
 	enum class Flag
 	{
@@ -247,6 +248,10 @@ public:
 	//! Display name of the parameter at \a index, or an empty string.
 	QString parameterName(int index) const;
 
+
+signals:
+	//! Emitted before Instrument's state is torn down.
+	void aboutToBeDestroyed();
 
 protected:
 	//! To be implemented by AudioPlugin or plugin implementation.

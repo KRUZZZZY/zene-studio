@@ -4864,3 +4864,11 @@ include/TakeLanesPanel.h	0.5.0 L03 (Q050-123): exposes the existing comp strip f
 src/gui/tracks/TrackView.cpp	0.5.0 L03 (Q050-123): creates the derived take-lane row overlay for sample tracks; it is hidden without lanes and transparent to mouse input. Held by ArrangerTakePunchTest::takeLaneRowsAlignWaveformsWithTheRulerAndKeepTheCompPanel.
 tests/src/core/RecordingLatencyTest.cpp	0.5.0 L03 (Q050-147): loopback proof that an armed punch region records its inside transient and silence both before punch-in and after punch-out.
 tests/src/gui/TakeLanesPanelTest.cpp	0.5.0 L03 (Q050-123, Q050-274): verifies take waveforms/comp highlight in the strip and touch swipe selection with mouse parity; existing panel control coverage remains.
+include/ModulationLayer.h	cluster 5186: add m_instrumentWatch teardown gate for instrument lifetime.
+src/core/ModulationLayerPublisher.cpp	cluster 5186: connect instrument aboutToBeDestroyed to retireTarget; keep per-voice target alive.
+include/Instrument.h	cluster 5186: add aboutToBeDestroyed signal and Q_OBJECT for teardown coordination.
+src/core/Instrument.cpp	cluster 5186: emit aboutToBeDestroyed in destructor.
+src/tracks/InstrumentTrack.cpp	cluster 5186: emit instrument aboutToBeDestroyed before deletion.
+include/InstrumentTrack.h	cluster 5186: befriends ModulationAudioViewTest, the regression that needs an instrument in the track it can watch from its own destructor (a compile-time seam only; the shipped behaviour is unchanged).
+include/InstrumentTrack.h	cluster 5186: declares InstrumentTrack::destroyInstrument() - the one place the track's instrument is destroyed, with the modulation target closed before the teardown starts.
+src/tracks/InstrumentTrack.cpp	cluster 5186: every instrument deletion (the track's destructor, both replacement branches of loadTrackSpecificSettings and loadInstrument) goes through destroyInstrument(), which notifies the modulation publisher before the instrument's derived destructor runs; the instrument is still deleted at the same moment as before.
