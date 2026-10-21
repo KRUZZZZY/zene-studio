@@ -255,7 +255,9 @@ QJsonObject buildJson(const aaf::AafBuildReport& report, const std::vector<int>&
 	return {{QStringLiteral("tracks"), ids}, {QStringLiteral("built_tracks"), report.tracks},
 		{QStringLiteral("built_clips"), report.clips}, {QStringLiteral("built_markers"), report.markers},
 		{QStringLiteral("skipped_missing_media"), report.missingMediaClips},
-		{QStringLiteral("skipped_beyond_song_length"), report.beyondSongLength}};
+		{QStringLiteral("skipped_beyond_song_length"), report.beyondSongLength},
+		{QStringLiteral("skipped_markers_beyond_song_length"), report.markersBeyondSongLength},
+		{QStringLiteral("skipped_markers_refused"), report.markersRefused}};
 }
 
 ControlResult importFile(const QJsonObject& args)
@@ -278,6 +280,8 @@ ControlResult importFile(const QJsonObject& args)
 	aaf::AafBuildReport report;
 	const std::vector<int> made = buildAsOneStep(model, build, &report);
 	loss.beyondSongLength = report.beyondSongLength;
+	loss.markersBeyondSongLength = report.markersBeyondSongLength;
+	loss.markersRefused = report.markersRefused;
 	loss.trackGainClamps = report.trackGainClamps;
 	Engine::getSong()->setModified();
 	QJsonObject result = summary(path, model, loss);

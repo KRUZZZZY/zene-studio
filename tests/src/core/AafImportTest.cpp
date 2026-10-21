@@ -115,6 +115,20 @@ int reportedTrackGainClamps(const Report& report)
 	else { return -1; }
 }
 
+template<typename Report>
+int reportedMarkersBeyondSongLength(const Report& report)
+{
+	if constexpr (requires { report.markersBeyondSongLength; }) { return report.markersBeyondSongLength; }
+	else { return -1; }
+}
+
+template<typename Report>
+int reportedMarkersRefused(const Report& report)
+{
+	if constexpr (requires { report.markersRefused; }) { return report.markersRefused; }
+	else { return -1; }
+}
+
 template<typename Model, typename Loss>
 void populateDryRunGainLoss(const Model& model, Loss& loss)
 {
@@ -324,6 +338,42 @@ private slots:
 		QVERIFY(clip != nullptr);
 		QCOMPARE(clip->startPosition().getTicks(), 0);
 		QVERIFY(ProjectMarkers::instance().markers().isEmpty());
+	}
+
+	//! A marker the song cannot hold is counted in the report, not dropped without a word: one that the shift
+	//! moves before tick 0, one past MaxSongLength, and one that lands. A full marker list is counted too.
+	void theBuilderCountsMarkersTheSongCannotHold()
+	{
+		AafModel model;
+		model.sampleRate = 48000;
+		model.markers = {AafMarker{0, QStringLiteral("Before"), QString()},
+			AafMarker{96000, QStringLiteral("Verse"), QStringLiteral("#ff0000")},
+			AafMarker{qint64{48000} * 60 * 60 * 24, QStringLiteral("Late"), QString()}};
+		AafBuildOptions options;
+		options.shiftFrames = 48000;  // one second: "Before" lands at tick -96, "Verse" at tick 96
+		std::vector<int> made;
+		const AafBuildReport report = buildAafSession(Engine::getSong(), model, options, &made);
+		QCOMPARE(report.markers, 1);
+		QCOMPARE(reportedMarkersBeyondSongLength(report), 2);
+		QCOMPARE(reportedMarkersRefused(report), 0);
+		const QVector<Marker>& markers = ProjectMarkers::instance().markers();
+		QCOMPARE(markers.size(), 1);
+		QCOMPARE(markers[0].name, QStringLiteral("Verse"));
+		QCOMPARE(markers[0].tick, tick_t{96});
+
+		// The list holds MaxMarkers: the one more is refused, and counted as such.
+		AafModel full;
+		full.sampleRate = 48000;
+		for (int index = 0; index <= ProjectMarkers::MaxMarkers; ++index)
+		{
+			full.markers.append(AafMarker{qint64{index} * 48000, QStringLiteral("M%1").arg(index), QString()});
+		}
+		ProjectMarkers::instance().clear();
+		std::vector<int> fullIds;
+		const AafBuildReport fullReport = buildAafSession(Engine::getSong(), full, AafBuildOptions{}, &fullIds);
+		QCOMPARE(fullReport.markers, ProjectMarkers::MaxMarkers);
+		QCOMPARE(reportedMarkersRefused(fullReport), 1);
+		QCOMPARE(reportedMarkersBeyondSongLength(fullReport), 0);
 	}
 
 	//! What the builder made is ordinary project state: it survives a save and a load.

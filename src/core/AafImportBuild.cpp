@@ -153,9 +153,10 @@ void buildMarkers(const AafModel& model, const Placement& place, AafBuildReport*
 	for (const AafMarker& marker : model.markers)
 	{
 		const qint64 tick = place.at(marker.positionFrames);
-		if (tick < 0 || tick > MaxSongLength) { continue; }
+		if (tick < 0 || tick > MaxSongLength) { report->markersBeyondSongLength++; continue; }
 		const QString name = marker.name.isEmpty() ? QStringLiteral("Marker") : marker.name;
 		if (markers.add(static_cast<tick_t>(tick), name, marker.color) >= 0) { report->markers++; }
+		else { report->markersRefused++; }
 	}
 }
 
