@@ -41,6 +41,13 @@ namespace lmms::gui
 using ControllerTemplatePrompt = std::function<std::optional<QString>()>;
 LMMS_EXPORT void setControllerTemplatePrompt(ControllerTemplatePrompt prompt);
 
+/*! Tells the user what a template command did NOT do: a refusal, or a result that
+ *  only half worked (a template whose targets do not resolve in this project). The menu
+ *  closes either way, so without this the failure is silent. An empty notifier restores
+ *  the default, which floats the message over the main window. Replaceable for tests. */
+using ControllerTemplateNotifier = std::function<void(const QString& title, const QString& text)>;
+LMMS_EXPORT void setControllerTemplateNotifier(ControllerTemplateNotifier notifier);
+
 /*! KNOWN-LIMITATIONS "... no template menu": fills @a menu (cleared first; call it from aboutToShow)
  *  with every mapping template saved on this machine - "name (resolvable/bindings)", applying it
  *  (controller.template_apply) - then "Save current mappings as..." (controller.template_save) and a
