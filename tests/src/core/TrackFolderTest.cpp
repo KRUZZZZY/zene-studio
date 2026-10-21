@@ -587,6 +587,32 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A finding read -1 as a valid prior channel, the same value savedChannelFor()
+	//! returns for "no binding". A child's channel model has a minimum of 0 and fits
+	//! every value into its range, so no live child can sit on -1: a recorded binding
+	//! is never the sentinel. This pins that contract. A -1 can still arrive from a
+	//! hand-edited `prevch`, which this test does not cover.
+	void aChildsMixerChannelCannotHoldMinusOneSoTheSentinelIsNeverALiveBinding()
+	{
+		const QString name = QStringLiteral("l-minus-one");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		IntModel* model = child->mixerChannelModel();
+		QVERIFY(model != nullptr);
+		QCOMPARE(model->minValue(), 0.0f);
+		model->setValue(-1.0f);
+		QCOMPARE(static_cast<int>(model->value()), 0);
+
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		QCOMPARE(folder->savedChannelFor(child->id()), 0);
+
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QCOMPARE(static_cast<int>(model->value()), 0);
+		removeAll(name);
+	}
+
 	//! Releasing routing has to give the child back its channel RANGE as well as
 	//! its value: routeChild() widens the model so it can hold the folder's
 	//! channel, and unrouteChild() only put the value back. The deleted channel's
