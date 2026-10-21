@@ -2543,6 +2543,11 @@ tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
+# cluster new-p15-83: the instrument track's render path - it reads no GUI state (the piano roll's
+# recording state is published for the audio thread), it collects the clips it plays into storage
+# reserved on the control thread, and the MPE expression a live note plays with is one atomic
+# snapshot. One file, three slots.
+tests/src/tracks/InstrumentTrackRenderPathTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
 # cluster new-p10-3: product-new regression for the CLAP instrument view's output count after a layout rescan.

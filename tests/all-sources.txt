@@ -3089,6 +3089,7 @@ tests/src/plugins/ZynNoteOffTest.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
+tests/src/tracks/InstrumentTrackRenderPathTest.cpp
 tests/src/tracks/SampleClipRubberBandTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipWarpModesTest.cpp

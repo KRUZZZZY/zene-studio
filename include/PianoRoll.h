@@ -35,6 +35,7 @@
 
 #include "Editor.h"
 #include "ComboBoxModel.h"
+#include "InstrumentTrack.h"
 #include "SerializingObject.h"
 #include "Note.h"
 #include "LmmsTypes.h"
@@ -131,6 +132,9 @@ public:
 	inline void stopRecording()
 	{
 		m_recording = false;
+		// Published for the render thread, which must not read this window's flag
+		// (cluster new-p15-83).
+		InstrumentTrack::setPianoRollRecording(false);
 	}
 
 	inline bool isRecording() const
