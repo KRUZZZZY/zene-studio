@@ -9,7 +9,10 @@
 #include <type_traits>
 
 #include <QSemaphore>
+#include <QTemporaryDir>
 #include <QThread>
+
+#include <unistd.h>
 
 #include "MidiClient.h"
 
@@ -19,8 +22,6 @@
 
 namespace
 {
-bool deviceOpens = true;
-int fakeFdStorage = 0;
 int ossWriteCalls = 0;
 QByteArray deviceBytes;
 QSemaphore bytesWritten;
@@ -28,14 +29,12 @@ QThread* writerThread = nullptr;
 int stallWrites = 0;
 QSemaphore writeStarted;
 QSemaphore writeGate;
-QSemaphore readerFinished;
 int closeCalls = 0;
 QByteArray closedBytes;
 QSemaphore closed;
 
-void resetDevice(bool opens)
+void resetDevice()
 {
-	deviceOpens = opens;
 	ossWriteCalls = 0;
 	deviceBytes.clear();
 	writerThread = nullptr;
@@ -45,7 +44,6 @@ void resetDevice(bool opens)
 	bytesWritten.tryAcquire(bytesWritten.available());
 	writeStarted.tryAcquire(writeStarted.available());
 	writeGate.tryAcquire(writeGate.available());
-	readerFinished.tryAcquire(readerFinished.available());
 	closed.tryAcquire(closed.available());
 }
 } // namespace
@@ -65,12 +63,13 @@ extern "C" ssize_t zeneOssDeviceWrite(int, const void* buf, size_t size)
 	return static_cast<ssize_t>(size);
 }
 
-extern "C" int zeneOssDeviceClose(int)
+extern "C" int zeneOssDeviceClose(int fd)
 {
 	++closeCalls;
 	closedBytes = deviceBytes;
+	const int result = ::close(fd);
 	closed.release();
-	return 0;
+	return result;
 }
 
 class TestMidiOss final : public lmms::MidiOss
@@ -92,7 +91,7 @@ private slots:
 	void failedOpenDoesNotWrite()
 	{
 		qputenv("MIDIDEV", "/definitely/not/a/device");
-		resetDevice(false);
+		resetDevice();
 		TestMidiOss midi;
 		midi.sendByte(0x90);
 		QCOMPARE(ossWriteCalls, 0);
@@ -101,11 +100,12 @@ private slots:
 
 	void deviceWriteRunsOffTheCallerThread()
 	{
-		const QByteArray path = "/tmp/scratchpad/oss-dev.bin";
-		QFile::remove(path);
-		{ QFile f(path); f.open(QIODevice::WriteOnly); f.close(); }
-		qputenv("MIDIDEV", path.constData());
-		resetDevice(true);
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		const QString path = tempDir.filePath("oss-dev.bin");
+		{ QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.close(); }
+		qputenv("MIDIDEV", QFile::encodeName(path));
+		resetDevice();
 		TestMidiOss midi;
 		midi.sendByte(0x90);
 		QVERIFY(bytesWritten.tryAcquire(1, 5000));
@@ -117,11 +117,12 @@ private slots:
 
 	void queuedBytesReachTheDeviceInSendOrder()
 	{
-		const QByteArray path = "/tmp/scratchpad/oss-dev.bin";
-		QFile::remove(path);
-		{ QFile f(path); f.open(QIODevice::WriteOnly); f.close(); }
-		qputenv("MIDIDEV", path.constData());
-		resetDevice(true);
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		const QString path = tempDir.filePath("oss-dev.bin");
+		{ QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.close(); }
+		qputenv("MIDIDEV", QFile::encodeName(path));
+		resetDevice();
 		TestMidiOss midi;
 		midi.sendByte(0x90);
 		midi.sendByte(0x3C);
@@ -139,11 +140,12 @@ private slots:
 	//! a reused - descriptor.
 	void stalledWriteTeardownKeepsTheDescriptorUntilTheWriterFinishes()
 	{
-		const QByteArray path = "/tmp/scratchpad/oss-dev.bin";
-		QFile::remove(path);
-		{ QFile f(path); f.open(QIODevice::WriteOnly); f.close(); }
-		qputenv("MIDIDEV", path.constData());
-		resetDevice(true);
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		const QString path = tempDir.filePath("oss-dev.bin");
+		{ QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.close(); }
+		qputenv("MIDIDEV", QFile::encodeName(path));
+		resetDevice();
 		stallWrites = 1;
 		{
 			// The writer is held inside its first device write while two more bytes

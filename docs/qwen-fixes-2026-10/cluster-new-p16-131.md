@@ -200,4 +200,3 @@ Commands:
      raw ALSA device on the caller thread. That is a different client from the one the
      finding names, it affects every MIDI output path rather than the clock's alone,
      and it carries its own bug id - it is reported here, not silently folded in.
-
