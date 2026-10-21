@@ -373,15 +373,18 @@ QByteArray CollabHost::snapshotFrame(QString* error)
 	// Reject before base64-encoding: the frame carries the project base64-encoded, so an oversized project
 	// cannot fit even before paying for the (large) allocation.
 	const qsizetype base64Size = ((project.size() + 2) / 3) * 4;
-	if (base64Size + 64 >= MaxHostLineBytes)
+	QJsonObject frameObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
+		{QStringLiteral("seq"), static_cast<double>(m_seq)}, {QStringLiteral("bytes"), static_cast<int>(project.size())},
+		{QStringLiteral("data"), QString()}};
+	const QByteArray frameHeader = frameOf(frameObject);
+	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
 	{
 		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
 			.arg(project.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
 		return QByteArray();
 	}
-	const QByteArray frame = frameOf({{QStringLiteral("type"), QStringLiteral("snapshot")},
-		{QStringLiteral("seq"), static_cast<double>(m_seq)}, {QStringLiteral("bytes"), static_cast<int>(project.size())},
-		{QStringLiteral("data"), QString::fromLatin1(project.toBase64())}});
+	frameObject.insert(QStringLiteral("data"), QString::fromLatin1(project.toBase64()));
+	const QByteArray frame = frameOf(frameObject);
 	if (frame.size() >= MaxHostLineBytes)
 	{
 		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")

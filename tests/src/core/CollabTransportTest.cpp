@@ -830,16 +830,36 @@ private slots:
 			qPrintable(notices.last().at(0).toString()));
 	}
 
+	//! The early size check must preserve a project whose exact snapshot frame is below the wire limit.
+	void snapshotFrameAcceptsPayloadThatFits()
+	{
+		// With sequence 0, this payload produces a frame two bytes below MaxHostLineBytes.
+		m_host->setSnapshotProvider([](QString*) { return QByteArray(50'331'606, 'x'); });
+		QSignalSpy notices(m_host.get(), &CollabHost::notice);
+		m_host->broadcastSnapshot(QStringLiteral("boundary"));
+		QCOMPARE(notices.size(), 1);
+		QVERIFY2(notices.last().at(0).toString().contains(QStringLiteral("no project peers")),
+			qPrintable(notices.last().at(0).toString()));
+	}
+
 	//! The size check must precede the base64 encoding in the host source.
 	void snapshotSizeCheckPrecedesEncodingInSource()
 	{
 		QFile hostSource(QStringLiteral(COLLAB_HOST_SOURCE_PATH));
 		QVERIFY2(hostSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(hostSource.errorString()));
 		const QString source = QString::fromUtf8(hostSource.readAll());
-		const qsizetype check = source.indexOf(QStringLiteral("base64Size + 64 >= MaxHostLineBytes"));
+		const qsizetype check = source.indexOf(QStringLiteral("base64Size + frameHeader.size() >= MaxHostLineBytes"));
 		const qsizetype encode = source.indexOf(QStringLiteral("project.toBase64()"));
 		QVERIFY2(check >= 0, "early size check missing");
 		QVERIFY2(encode > check, "encoding precedes the size check");
+
+		QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+		const QString sessionSync = QString::fromUtf8(sessionSyncSource.readAll());
+		const qsizetype fileCheck = sessionSync.indexOf(QStringLiteral("base64Size + frameHeader.size() >= MaxHostLineBytes"));
+		const qsizetype readAll = sessionSync.indexOf(QStringLiteral("return file.readAll();"));
+		QVERIFY2(fileCheck >= 0, "temporary file size check missing");
+		QVERIFY2(readAll > fileCheck, "temporary file is read before the size check");
 	}
 
 	//! Blank lines must not be dropped before the request handler in the host source.

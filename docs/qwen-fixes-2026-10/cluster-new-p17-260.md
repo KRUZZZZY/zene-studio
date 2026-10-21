@@ -6,8 +6,8 @@ new-p9-22: FIXED
 Evidence:
 - src/core/CollabHost.cpp broadcastSnapshot() now counts project-holding recipients via sendToProjectPeers() (now int) and emits "no project peers to re-sync (...)" when there are none, otherwise "peers re-synced (...): N recipient(s)".
 - src/core/CollabHost.cpp onMessage() no longer drops whitespace-only lines before the request handler; CollabSession::handlePeerRequest() answers them with the malformed-wire id:-1 reply.
-- src/core/CollabHost.cpp snapshotFrame() checks base64Size + 64 >= MaxHostLineBytes before frameOf()/toBase64(); src/core/CollabSessionSync.cpp writeSnapshot() checks file size before readAll().
-Tests: tests/src/core/CollabTransportTest.cpp adds broadcastSnapshotReportsRecipients, blankCollaborationLineReceivesMalformedReply, oversizedSnapshotIsRefusedBeforeEncoding, plus source-order checks.
+- src/core/CollabHost.cpp snapshotFrame() uses the exact compact empty-data header size before base64 encoding; src/core/CollabSessionSync.cpp uses the matching current-sequence header size before file.readAll().
+Tests: tests/src/core/CollabTransportTest.cpp adds broadcastSnapshotReportsRecipients, blankCollaborationLineReceivesMalformedReply, oversizedSnapshotIsRefusedBeforeEncoding, and snapshotFrameAcceptsPayloadThatFits; source-order checks cover both base64 framing and the temporary-file read.
 
 Commands:
 - RED: ctest -R '^CollabTransportTest$' --output-on-failure (build/tests) -> exit 8 (logs/test-red.log: 5 FAIL including broadcastSnapshotReportsRecipients, blankCollaborationLineReceivesMalformedReply, snapshotSizeCheckPrecedesEncodingInSource, blankLinesAreDispatchedInSource, peerBroadcastUsesStableIdSnapshot)
@@ -21,5 +21,5 @@ Commands:
 - RED/GREEN: Reverting only product files (src/core/CollabHost.cpp, include/CollabHost.h, src/core/CollabSessionSync.cpp) made CollabTransportTest fail with exit code 8 (logs/test-red.log); restoring them made it pass with exit code 0 (logs/test-green.log).
 - Deterministic: tests use injected snapshot providers, QSignalSpy, and source-order checks; no sleeps or wall-clock timing in the added assertions except existing QTRY macros.
 - Cause/complete: sendToProjectPeers return value updated in header and definition; broadcastPeers/broadcastCommand callers ignore the new return value; CollabHost and CollabSessionSync size checks share the same MaxHostLineBytes limit.
-- Collateral: the early size check only rejects frames that cannot fit (base64Size + 64 >= MaxHostLineBytes); ordinary projects still pass the later exact frame check. writeSnapshot now checks file size before readAll().
+- Collateral: the early size check uses the exact frame header size, so valid near-limit projects remain accepted; writeSnapshot checks file size before readAll().
 - Verdicts: all three batch items are FIXED, not already-fixed/false-positive, with the code changes above.

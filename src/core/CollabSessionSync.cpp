@@ -181,7 +181,11 @@ QByteArray CollabSession::writeSnapshot(QString* error) const
 	// Refuse before reading the whole file into memory: the snapshot is base64-framed, so an oversized
 	// project cannot fit the host's line limit anyway.
 	const qint64 base64Size = ((file.size() + 2) / 3) * 4;
-	if (base64Size + 64 >= MaxHostLineBytes)
+	const QByteArray frameHeader = QJsonDocument(QJsonObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
+		{QStringLiteral("seq"), static_cast<double>(m_host->sequence())},
+		{QStringLiteral("bytes"), static_cast<int>(file.size())}, {QStringLiteral("data"), QString()}})
+		.toJson(QJsonDocument::Compact);
+	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
 	{
 		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
 			.arg(file.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
