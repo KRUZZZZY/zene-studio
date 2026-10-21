@@ -207,6 +207,12 @@ const AutomatableModel * AutomationClip::firstObject() const
 
 float AutomationClip::preFirstValueLocked( const AutomatableModel * target ) const
 {
+	// A relative (trim) clip's value is an offset from the range's middle, not a
+	// parameter value (applyRelativeClips), so it keeps its old pre-first 0.
+	if( isRelative() )
+	{
+		return 0.0f;
+	}
 	const AutomatableModel* model = target;
 	if( model == nullptr && !m_objects.empty() )
 	{
@@ -658,6 +664,11 @@ float AutomationClip::valueAt( const TimePos & _time, bool * beforeFirstNode ) c
 		// arbitrary 0 (the parameter's minimum) that used to slam the control
 		// down on every start and return to the beginning. A point at tick 0 is
 		// simply the first node, so it remains the explicit start value.
+		// A relative (trim) clip is unchanged: it still reads 0 here.
+		if( isRelative() )
+		{
+			return 0;
+		}
 		if( beforeFirstNode != nullptr ) { *beforeFirstNode = true; }
 		return preFirstValueLocked( nullptr );
 	}
@@ -859,7 +870,7 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 	// to several targets can then copy it and replace only the pre-first prefix
 	// for a target whose authored initial value differs, under the one clip lock
 	// this build already takes.
-	if( firstNodeFrame != nullptr )
+	if( firstNodeFrame != nullptr && !isRelative() )
 	{
 		const std::int64_t firstTick = m_timeMap.constBegin().key();
 		const double nodeFrame = ( static_cast<double>( firstTick )

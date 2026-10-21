@@ -187,6 +187,47 @@ private slots:
 		QCOMPARE(clip->valueAt(TimePos(200)), kCurveEnd);
 	}
 
+	//! Review round 2: a RELATIVE (trim) clip is out of scope. Its value is an
+	//! offset from the range's middle, so before its first node it keeps reading
+	//! 0 (an offset of -0.5 on a 0..1 range), NOT the parameter's initial value.
+	//! The model's initial value (0.8) is deliberately not the range midpoint, so
+	//! a pre-first read of it would move the trim offset from -0.5 to +0.3.
+	void aRelativeClipKeepsItsOldPreFirstTrimOffset()
+	{
+		Song* song = Engine::getSong();
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		const double framesPerTick = static_cast<double>(Engine::framesPerTick());
+		constexpr float init = 0.8f;
+		FloatModel model{init, 0.0f, 1.0f, 0.001f};
+		AutomationTrack track(song);
+		AutomationClip* clip = laterFirstNodeClip(track, model);
+		QVERIFY(firstNodeIsAtTick50(clip));
+		clip->setRelative(true);
+
+		// The clip's own read: 0, and it does not claim to be a pre-first parameter read.
+		bool beforeFirst = true;
+		QCOMPARE(clip->valueAt(TimePos(10), &beforeFirst), 0.0f);
+		QVERIFY(!beforeFirst);
+		QCOMPARE(clip->valueAt(TimePos(0)), 0.0f);
+
+		// What the trim does to the parameter: base 0.8 + (0 - 0.5) = 0.3, as before.
+		const float trimmed = song->automatedValuesAt(TimePos(10)).value(&model);
+		QVERIFY2(std::fabs(trimmed - 0.3f) < 1.0e-5f,
+			qPrintable(QStringLiteral("the pre-first trim lands on %1, expected 0.3").arg(trimmed, 0, 'g', 6)));
+
+		// The ramp of a relative clip is unchanged too: 0 before the first node.
+		AutomationRamp ramp;
+		f_cnt_t firstNodeFrame = 99;
+		clip->writeBlockRamp(ramp, clip->startPosition(), frames, framesPerTick, 0, &model, &firstNodeFrame);
+		QCOMPARE(firstNodeFrame, f_cnt_t{0});
+		QVERIFY(ramp.knotCount() > 0);
+		for (f_cnt_t f = 0; f < frames; ++f) { QCOMPARE(ramp.valueAt(f), 0.0f); }
+
+		// At and after the first node nothing moved.
+		QCOMPARE(clip->valueAt(TimePos(50)), kCurveStart);
+		QCOMPARE(clip->valueAt(TimePos(300)), kCurveEnd);
+	}
+
 	//! The audio path reads the SAME pre-first value the map read does, for
 	//! both a stepped (Discrete) and a moving (Linear) curve - one contract -
 	//! and the ramp AT the first node is what it always was.
