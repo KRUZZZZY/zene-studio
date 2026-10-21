@@ -42,7 +42,7 @@ class SampleFrame;
  *  output - folded to mono in a fixed ring, for tuner.get_state to read the pitch of.
  *
  *  AUDIO THREAD: push() allocates nothing, takes no lock and makes no call; when its source is not the
- *  chosen one (the default: none) it is one relaxed atomic load. The ring is a fixed array of atomics in
+ *  chosen one (the default: none) it is one atomic load. The ring is a fixed array of atomics in
  *  static storage, so nothing is ever allocated for it, on any thread.
  *  CONTROL THREAD: setSource() and latest(), which copies the newest frames and refuses a copy the
  *  producer overran while it was taken (the caller reads again on its next refresh). */
@@ -61,13 +61,31 @@ public:
 
 	static TunerTap& instance();
 
-	//! Choosing a source forgets what came in (reset()), so a reading never mixes the old source with the new.
+	//! Choosing a source and forgetting the old frames are published in one generation.
 	void setSource(Source source) noexcept
 	{
-		m_source.store(static_cast<int>(source), std::memory_order_relaxed);
-		reset();  // after the store: a push that takes this reset is ordered after it, and sees the new source
+		publish(source);
+#ifdef LMMS_TESTING
+		// The seam marks the instant the new source and its reset are published, before setSource() returns.
+		if (m_sourcePublishedHook != nullptr) { m_sourcePublishedHook(m_sourcePublishedUser); }
+#endif
 	}
-	Source source() const noexcept { return static_cast<Source>(m_source.load(std::memory_order_relaxed)); }
+	Source source() const noexcept
+	{
+		return static_cast<Source>(m_state.load(std::memory_order_relaxed) & SourceMask);
+	}
+
+#ifdef LMMS_TESTING
+	//! Test seam: setSource() with @a hook run once the new source is published, before it returns.
+	void setSourceWithTestHook(Source source, void (*hook)(void*), void* user = nullptr) noexcept
+	{
+		m_sourcePublishedHook = hook;
+		m_sourcePublishedUser = user;
+		setSource(source);
+		m_sourcePublishedHook = nullptr;
+		m_sourcePublishedUser = nullptr;
+	}
+#endif
 
 	//! AUDIO THREAD: keep @a count frames of @a frames when @a from is the chosen source.
 	void push(Source from, const SampleFrame* frames, f_cnt_t count) noexcept;
@@ -76,19 +94,39 @@ public:
 	//! since the source was chosen, or the copy was overrun.
 	bool latest(float* out, std::size_t count) const noexcept;
 
-	//! Forget what came in (choosing a source does this, so a reading never mixes two sources).
-	//! A request the audio thread takes at its next push, so a push in flight cannot overwrite it (review
-	//! W3-agent-custom #3); until then latest() reports nothing.
-	void reset() noexcept { m_resetPending.store(true, std::memory_order_release); }
+	//! Forget what came in. latest() reports nothing until the audio thread takes this generation at its next push.
+	void reset() noexcept { m_state.fetch_add(GenerationStep, std::memory_order_release); }
 
 private:
+	//! The chosen source and generation of its last reset share one word, so push() always observes both together.
+	static constexpr std::uint64_t SourceMask = 0x3;
+	static constexpr std::uint64_t GenerationStep = 0x4;
+
+	//! Publish @a source and the ring reset as one generation change (the control thread's only writer).
+	void publish(Source source) noexcept
+	{
+		std::uint64_t state = m_state.load(std::memory_order_relaxed);
+		std::uint64_t next;
+		do
+		{
+			next = ((state + GenerationStep) & ~SourceMask)
+				| (static_cast<std::uint64_t>(source) & SourceMask);
+		} while (!m_state.compare_exchange_weak(state, next, std::memory_order_release, std::memory_order_relaxed));
+	}
+
 	std::array<std::atomic<float>, Capacity> m_ring{};
 	std::atomic<std::uint64_t> m_head{0};
 	//! Where the push in progress ends: stored before its slots are written (m_head after), so
 	//! latest() can see a write that has not been published yet overlapping its window.
 	std::atomic<std::uint64_t> m_reserved{0};
-	std::atomic<bool> m_resetPending{false};
-	std::atomic<int> m_source{0};
+	//! Source in the low bits, reset generation in the high bits.
+	std::atomic<std::uint64_t> m_state{0};
+	//! The generation whose reset and first write the producer has completed.
+	std::atomic<std::uint64_t> m_applied{0};
+#ifdef LMMS_TESTING
+	void (*m_sourcePublishedHook)(void*) = nullptr;
+	void* m_sourcePublishedUser = nullptr;
+#endif
 };
 
 } // namespace lmms

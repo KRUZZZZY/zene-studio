@@ -62,10 +62,29 @@ public:
 	//! Choosing a channel (or Off) forgets what came in, so a picture never mixes two channels.
 	void setChannel(int index) noexcept
 	{
-		m_channel.store(index, std::memory_order_relaxed);
-		reset();  // after the store: a push that takes this reset is ordered after it, and sees the new channel
+		publish(index);
+#ifdef LMMS_TESTING
+		// The seam marks the instant the new channel and its reset are published, before setChannel() returns.
+		if (m_channelPublishedHook != nullptr) { m_channelPublishedHook(m_channelPublishedUser); }
+#endif
 	}
-	int channel() const noexcept { return m_channel.load(std::memory_order_relaxed); }
+	int channel() const noexcept
+	{
+		const std::uint64_t encoded = m_state.load(std::memory_order_relaxed) & ChannelMask;
+		return encoded == 0 ? Off : static_cast<int>(encoded - 1);
+	}
+
+#ifdef LMMS_TESTING
+	//! Test seam: setChannel() with @a hook run once the new channel is published, before it returns.
+	void setChannelWithTestHook(int index, void (*hook)(void*), void* user = nullptr) noexcept
+	{
+		m_channelPublishedHook = hook;
+		m_channelPublishedUser = user;
+		setChannel(index);
+		m_channelPublishedHook = nullptr;
+		m_channelPublishedUser = nullptr;
+	}
+#endif
 
 	//! AUDIO THREAD: keep @a count frames of @a frames when channel @a index is the chosen one.
 	void push(int index, const SampleFrame* frames, f_cnt_t count) noexcept;
@@ -78,31 +97,48 @@ public:
 	//! unchanged knows nothing new came in - the channel is muted, or the engine stopped.
 	std::uint64_t written() const noexcept
 	{
-		return m_resetPending.load(std::memory_order_acquire) ? 0 : m_head.load(std::memory_order_acquire);
+		const std::uint64_t state = m_state.load(std::memory_order_acquire);
+		return m_applied.load(std::memory_order_acquire) == state ? m_head.load(std::memory_order_acquire) : 0;
 	}
 
-	//! A request the audio thread takes at its next push, so a push in flight cannot overwrite it; until then
-	//! latest() reports nothing. The generation moves too, so a copy latest() already started is refused
-	//! rather than returned (setChannel() and latest() may run on the control and GUI threads respectively).
-	void reset() noexcept
-	{
-		m_resetPending.store(true, std::memory_order_release);
-		m_generation.fetch_add(2, std::memory_order_release);  // even: only a fresh push may make it odd
-	}
+	//! Advance the same generation used by setChannel(). latest() reports nothing until the producer takes it.
+	void reset() noexcept { m_state.fetch_add(GenerationStep, std::memory_order_release); }
 
 private:
+	//! Channel index + 1 (Off = 0) in the low word and its reset generation in the high word.
+	static constexpr std::uint64_t ChannelMask = 0xFFFFFFFFULL;
+	static constexpr std::uint64_t GenerationStep = 0x100000000ULL;
+
+	//! Publish @a index and the ring reset as one generation change (the control thread's only writer).
+	void publish(int index) noexcept
+	{
+		std::uint64_t state = m_state.load(std::memory_order_relaxed);
+		std::uint64_t next;
+		do
+		{
+			next = ((state + GenerationStep) & ~ChannelMask)
+				| ((static_cast<std::uint64_t>(index) + 1) & ChannelMask);
+		} while (!m_state.compare_exchange_weak(state, next, std::memory_order_release, std::memory_order_relaxed));
+	}
+	bool isSnapshotCurrent(std::uint64_t state, std::uint64_t generation) const noexcept;
+
 	std::array<std::atomic<float>, Capacity> m_left{};
 	std::array<std::atomic<float>, Capacity> m_right{};
 	std::atomic<std::uint64_t> m_head{0};
 	//! Where the push in progress ends: stored before its slots are written (m_head after), so latest() can
 	//! see a write that has not been published yet overlapping its window.
 	std::atomic<std::uint64_t> m_reserved{0};
-	std::atomic<bool> m_resetPending{false};
 	std::atomic<bool> m_writing{false};  //!< a push is in flight: a second producer drops its block
-	std::atomic<int> m_channel{Off};
-	//! Even while the ring is stable, odd while a fresh (post-reset) push rebases it: latest() samples it
-	//! before and after its copy and refuses a window a channel change or rebase stole half of.
+	//! Channel in the low word, reset generation in the high word.
+	std::atomic<std::uint64_t> m_state{0};
+	//! The generation whose reset and first write the producer has completed.
+	std::atomic<std::uint64_t> m_applied{0};
+	//! Even while stable, odd while the producer writes: latest() refuses a window a write changed mid-copy.
 	std::atomic<std::uint64_t> m_generation{0};
+#ifdef LMMS_TESTING
+	void (*m_channelPublishedHook)(void*) = nullptr;
+	void* m_channelPublishedUser = nullptr;
+#endif
 };
 
 } // namespace lmms

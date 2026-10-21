@@ -4800,3 +4800,7 @@ tests/CMakeLists.txt	cluster new-p14-378: registers WasmSandboxHostFuelTest, the
 src/core/lv2/Lv2ControlBase.cpp	cluster new-p17-83: a <lv2state> document that cannot be restored is no longer dropped in silence - the failure is reported through the project load error path (Song::collectError) with the plug-in URI, because the processor then keeps its default state (regression: tests/src/core/Lv2StateTest.cpp aFailedStateRestoreIsReported).
 include/Lv2ControlBase.h	cluster new-p17-83: declares Lv2ControlBase::reportStateRestoreFailure(), the report a failed <lv2state> restore makes (held by tests/src/core/Lv2StateTest.cpp aFailedStateRestoreIsReported).
 tests/CMakeLists.txt	cluster new-p17-83: the LV2 instrument fixture bundle is built for Lv2StateTest as well and its directory is passed as LV2_TEST_INSTRUMENT_DIR, so the test has a real LV2 plug-in to attempt a state restore with (regression: tests/src/core/Lv2StateTest.cpp aFailedStateRestoreIsReported).
+include/TunerTap.h	cluster new-p8-239-port: publish the source and reset generation together; LMMS_TESTING seam makes the intermediate interleaving deterministic.
+src/core/TunerTap.cpp	cluster new-p8-239-port: reset the tuner ring before the first write in each source generation and refuse stale reads.
+include/PhaseScopeTap.h	cluster new-p8-239-port: publish the mixer channel and ring reset together; LMMS_TESTING seam makes the interleaving deterministic.
+src/core/PhaseScopeTap.cpp	cluster new-p8-239-port: reset the phase-scope ring before the first write in each channel generation.

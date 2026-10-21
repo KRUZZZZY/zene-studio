@@ -429,6 +429,8 @@ set(LMMS_TESTS
 	# the group itself is the registered ctest ControlMeterCommands
 	# (tests/control-meter-commands.py).
 	src/core/MeterTapTest.cpp
+	# Source changes publish the tuner ring reset in the same generation.
+	src/core/TunerTapTest.cpp
 	# 0.5.0 L08 (MX-137): the phase view's tap - the chosen channel's newest stereo frames in a fixed ring of
 	# atomics (the tuner tap's pattern), no allocation on the audio side, no torn frame for a racing reader.
 	src/core/PhaseScopeTapTest.cpp
