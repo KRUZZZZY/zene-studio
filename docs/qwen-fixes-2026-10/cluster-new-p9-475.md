@@ -106,11 +106,11 @@ said ("The meter from THIS tick on").
 | GREEN after the fix | Same ctest command, output to `test-2-green.log`; **EXIT=0**, 1/1 CTest target passed. |
 | Reversed-fix proof (whole patch) | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-475.r1/logs/fix.patch` **EXIT=0**; rebuild **EXIT=0**; ctest output to `test-4-red-reversed.log` **EXIT=8**, the same three failures. |
 | Restored-fix proof (whole patch) | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-475.r1/logs/fix.patch` **EXIT=0**; rebuild **EXIT=0**; ctest output to `test-5-green-reapplied.log` **EXIT=0**. |
-| Per-bug proof (new-p9-475) | `git apply .../revert-bug7-new-p9-475.patch` **EXIT=0**; rebuild **EXIT=0**; ctest to `test-6-bug7-new-p9-475-red.log` **EXIT=8** (7 passed, 1 failed: `theAddAtPlayheadKeepsTheMappedMetreAndTempo`); `git apply -R` the same patch **EXIT=0**; rebuild **EXIT=0**; ctest to `test-7-bug7-new-p9-475-green.log` **EXIT=0**. |
-| Per-bug proof (new-p17-187) | `git apply .../revert-bug4-new-p17-187.patch` **EXIT=0**; rebuild **EXIT=0**; ctest to `test-6-bug4-new-p17-187-red.log` **EXIT=8** (7 passed, 1 failed: `theRampButtonIsOffOnAMetreOnlyRow`); `git apply -R` the same patch **EXIT=0**; rebuild **EXIT=0**; ctest to `test-7-bug4-new-p17-187-green.log` **EXIT=0**. |
-| Per-bug proof (new-p17-186) | `git apply .../revert-bug3-new-p17-186.patch` **EXIT=0**; rebuild **EXIT=0**; ctest to `test-6-bug3-new-p17-186-red.log` **EXIT=8** (7 passed, 1 failed: `anOffGridMetreChangeStartsItsOwnBar`); `git apply -R` the same patch **EXIT=0**; rebuild **EXIT=0**; ctest to `test-7-bug3-new-p17-186-green.log` **EXIT=0**. |
-| Affected family | `ctest -R '^(TempoMapPanelTest\|TempoMapTest\|TempoMapPersistenceTest\|SmfInterchangeTest\|SmfInterchangeRoundTripTest\|TapTempoTest)$' --output-on-failure` from `build/tests`, output to `test-9-final.log`; **EXIT=0**, 6/6 CTest targets passed. |
-| App build | `cmake --build build --target zene -j8` output to `build-11-final.log`; **EXIT=0**. |
+| Per-bug proof (new-p9-475) | `git apply .../revert-bug7-new-p9-475.patch` **EXIT=0**; rebuild **EXIT=0** (`build-12-bug7-new-p9-475-reverted.log`); ctest to `test-10-bug7-new-p9-475-red.log` **EXIT=8** - 7 passed, 1 failed: `theAddAtPlayheadKeepsTheMappedMetreAndTempo` and nothing else; `git apply -R` the same patch **EXIT=0** (the final code back). |
+| Per-bug proof (new-p17-187) | `git apply .../revert-bug4-new-p17-187.patch` **EXIT=0**; rebuild **EXIT=0** (`build-12-bug4-new-p17-187-reverted.log`); ctest to `test-10-bug4-new-p17-187-red.log` **EXIT=8** - 7 passed, 1 failed: `theRampButtonIsOffOnAMetreOnlyRow` and nothing else; `git apply -R` the same patch **EXIT=0**. |
+| Per-bug proof (new-p17-186) | `git apply .../revert-bug3-new-p17-186.patch` **EXIT=0**; rebuild **EXIT=0** (`build-12-bug3-new-p17-186-reverted.log`); ctest to `test-10-bug3-new-p17-186-red.log` **EXIT=8** - 7 passed, 1 failed: `anOffGridMetreChangeStartsItsOwnBar` and nothing else; `git apply -R` the same patch **EXIT=0**. |
+| Final build of the committed code | `cmake --build build --target TempoMapPanelTest zene -j8` output to `build-13-final.log`; **EXIT=0**. |
+| Affected family | `ctest -R '^(TempoMapPanelTest\|TempoMapTest\|TempoMapPersistenceTest\|SmfInterchangeTest\|SmfInterchangeRoundTripTest\|TapTempoTest)$' --output-on-failure` from `build/tests`, output to `test-11-final.log`; **EXIT=0**, 6/6 CTest targets passed. |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`, output to `gate-2.log`; **EXIT=0**, every row PASS (complexity and file-length: "no new item in your files"). |
 | Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-475`, output to `submit-check.log`; **EXIT=0**. |
 
@@ -174,15 +174,18 @@ QT_QPA_PLATFORM=offscreen ctest -R '^TempoMapPanelTest$' --output-on-failure > .
 git apply .../logs/fix.patch; echo EXIT=$?  # EXIT=0
 cmake --build build --target TempoMapPanelTest -j8 > .../logs/build-7-reapplied.log 2>&1; echo EXIT=$?  # EXIT=0
 QT_QPA_PLATFORM=offscreen ctest -R '^TempoMapPanelTest$' --output-on-failure > .../logs/test-5-green-reapplied.log 2>&1; echo EXIT=$?  # EXIT=0, GREEN
-bash .../logs/proof-per-bug.sh  # per bug: apply the revert patch, build, ctest, restore, build, ctest
-cmake --build build --target TempoMapPanelTest zene -j8 > .../logs/build-11-final.log 2>&1; echo EXIT=$?  # EXIT=0
-QT_QPA_PLATFORM=offscreen ctest -R '^(TempoMapPanelTest|TempoMapTest|TempoMapPersistenceTest|SmfInterchangeTest|SmfInterchangeRoundTripTest|TapTempoTest)$' --output-on-failure > .../logs/test-9-final.log 2>&1; echo EXIT=$?  # EXIT=0, 6/6
+bash .../logs/proof-per-bug-final.sh  # per bug on the committed code: revert that bug's hunk, build, ctest (RED), restore
+cmake --build build --target TempoMapPanelTest zene -j8 > .../logs/build-13-final.log 2>&1; echo EXIT=$?  # EXIT=0
+QT_QPA_PLATFORM=offscreen ctest -R '^(TempoMapPanelTest|TempoMapTest|TempoMapPersistenceTest|SmfInterchangeTest|SmfInterchangeRoundTripTest|TapTempoTest)$' --output-on-failure > .../logs/test-11-final.log 2>&1; echo EXIT=$?  # EXIT=0, 6/6
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gate-2.log 2>&1; echo EXIT=$?  # EXIT=0
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-475 > .../logs/submit-check.log 2>&1; echo EXIT=$?  # EXIT=0
 ```
 
-Files committed:
+Files committed (one commit per bug, each naming its cluster):
 
-- `src/gui/TempoMapPanel.cpp`
-- `include/TempoMapPanel.h`
-- `tests/src/gui/TempoMapPanelTest.cpp`
-- `docs/qwen-fixes-2026-10/cluster-new-p9-475.md`
+- `3e0ff8982` fix(tempo-map-panel): "Add at playhead" keeps the mapped metre and tempo (cluster new-p9-475)
+  - `src/gui/TempoMapPanel.cpp`, `include/TempoMapPanel.h`, `tests/src/gui/TempoMapPanelTest.cpp`
+- `0af25b0f6` fix(tempo-map-panel): the Ramp button is off on a metre-only row (cluster new-p17-187)
+  - `src/gui/TempoMapPanel.cpp`, `tests/src/gui/TempoMapPanelTest.cpp`
+- `30bc514a8` fix(tempo-map-panel): an off-grid metre change starts its own bar (cluster new-p17-186)
+  - `src/gui/TempoMapPanel.cpp`, `tests/src/gui/TempoMapPanelTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p9-475.md`
