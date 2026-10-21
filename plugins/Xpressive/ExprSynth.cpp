@@ -778,14 +778,27 @@ ExprSynth::~ExprSynth()
 
 void ExprSynth::recordRenderError(const char* message)
 {
-	// The first error wins: a broken expression throws in every period.
-	if (m_pendingErrorSet.load(std::memory_order_relaxed))
+	// The first error wins: a broken expression throws in every period, and the
+	// error is reported once.
+	if (m_pendingErrorSet.load(std::memory_order_relaxed)
+		|| m_errorReported.load(std::memory_order_relaxed))
 	{
 		return;
 	}
 	std::strncpy(m_pendingError, message != nullptr ? message : "", sizeof(m_pendingError) - 1);
 	m_pendingError[sizeof(m_pendingError) - 1] = '\0';
 	m_pendingErrorSet.store(true, std::memory_order_release);
+}
+
+bool ExprSynth::takePendingError()
+{
+	if (!m_pendingErrorSet.exchange(false, std::memory_order_acquire))
+	{
+		return false;
+	}
+	// The expression keeps failing in every period, but the error is reported once.
+	m_errorReported.store(true, std::memory_order_release);
+	return true;
 }
 
 void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)

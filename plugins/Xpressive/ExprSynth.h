@@ -106,9 +106,11 @@ public:
 
 	void renderOutput(f_cnt_t frames, SampleFrame* buf );
 
-	//! Whether a render error is waiting to be reported. The audio thread records it
-	//! (it must not log there), the main thread reports it.
-	bool hasPendingError() const { return m_pendingErrorSet.load(std::memory_order_acquire); }
+	//! Claims the pending render error, if there is one. The audio thread calls it
+	//! after the render, so the error is reported exactly once even though the broken
+	//! expression throws in every period. The message stays available through
+	//! pendingError().
+	bool takePendingError();
 	//! Message of the render error that is waiting to be reported.
 	const char* pendingError() const { return m_pendingError; }
 
@@ -137,6 +139,8 @@ private:
 	//! audio thread never allocates.
 	char m_pendingError[128] = {};
 	std::atomic_bool m_pendingErrorSet{false};
+	//! Whether the recorded error was already claimed by the caller.
+	std::atomic_bool m_errorReported{false};
 
 } ;
 

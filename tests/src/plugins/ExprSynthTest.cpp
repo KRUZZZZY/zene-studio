@@ -64,14 +64,29 @@ struct ThrowingExpressionFunction : public exprtk::ifunction<float>
 template <typename Synth>
 bool readPendingError(Synth& synth, std::string& message)
 {
-	if constexpr (requires { synth.hasPendingError(); synth.pendingError(); })
+	if constexpr (requires { synth.takePendingError(); synth.pendingError(); })
 	{
-		if (!synth.hasPendingError())
+		if (!synth.takePendingError())
 		{
 			return false;
 		}
 		message.assign(synth.pendingError());
 		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+//! Takes the render error a second time. The error must be reported once, even
+//! though the broken expression throws in every period.
+template <typename Synth>
+bool takePendingErrorAgain(Synth& synth)
+{
+	if constexpr (requires { synth.takePendingError(); })
+	{
+		return synth.takePendingError();
 	}
 	else
 	{
@@ -212,6 +227,8 @@ private slots:
 		QVERIFY2(hasPendingError, "the render error was not recorded for a later report");
 		QVERIFY2(message.find("boom") != std::string::npos,
 			"the recorded render error did not carry the exception message");
+		QVERIFY2(!takePendingErrorAgain(synth),
+			"the render error was offered for reporting a second time");
 	}
 
 	void waveTableCopyWaitsForRenderPeriod()

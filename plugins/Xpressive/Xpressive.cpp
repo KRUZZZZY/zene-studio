@@ -251,7 +251,7 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 
 	ps->renderOutput(frames, out.data() + offset);
 
-	if (ps->hasPendingError())
+	if (ps->takePendingError())
 	{
 		// The audio thread does not log, it hands the error to the main thread.
 		recordPendingError(ps->pendingError());

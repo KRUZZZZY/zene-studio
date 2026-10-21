@@ -185,16 +185,15 @@ cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug2-r
 
 ### Fix
 
-- `plugins/Xpressive/ExprSynth.cpp:779-789` (new `ExprSynth::recordRenderError`) and
-  `plugins/Xpressive/ExprSynth.h:136-139`: the render catch records the exception
-  message in a fixed size 128 byte buffer and sets a flag. No allocation, no lock and
-  no logging happen on the audio thread. The first error wins, because a broken
-  expression throws in every period.
-- `plugins/Xpressive/ExprSynth.cpp:872-881`: the catch in `renderOutput` now calls
+- `plugins/Xpressive/ExprSynth.cpp:779-801` (new `ExprSynth::recordRenderError` and
+  `ExprSynth::takePendingError`) and `plugins/Xpressive/ExprSynth.h:109-118`, `:138-141`:
+  the render catch records the exception message in a fixed size 128 byte buffer and
+  sets a flag. No allocation, no lock and no logging happen on the audio thread. The
+  error is claimed with `takePendingError()`, which also marks it as reported: a
+  broken expression throws in every period, but the error is reported once per note.
+- `plugins/Xpressive/ExprSynth.cpp:877-887`: the catch in `renderOutput` now calls
   `recordRenderError(error.what())` (and `recordRenderError("unknown expression
   error")` for a non-`std::exception` throw) instead of logging.
-- `plugins/Xpressive/ExprSynth.h:109-113`: `hasPendingError()` / `pendingError()` let
-  the caller read the recorded error.
 - `plugins/Xpressive/Xpressive.cpp:114-119` (timer), `:252-258` (hand over in
   `playNoteImpl`), `:261-282` (`recordPendingError` / `reportPendingError`) and
   `plugins/Xpressive/Xpressive.h:117-120`, `:149-154`:
@@ -211,9 +210,10 @@ cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug2-r
 function that throws `std::runtime_error("boom")` in the expression's symbol table, so
 the expression evaluation throws inside `renderOutput`. A `qInstallMessageHandler`
 captures everything Qt logs while the period is rendered. The test asserts that the
-render path logged nothing, that the error was recorded for a later report and that the
-recorded message carries the exception text. The test is deterministic: the throw comes
-from the expression function itself, there is no timing, sleep or race involved.
+render path logged nothing, that the error was recorded for a later report, that the
+recorded message carries the exception text and that the error is offered for
+reporting only once. The test is deterministic: the throw comes from the expression
+function itself, there is no timing, sleep or race involved.
 
 ### Commands (verbatim, observed EXIT codes)
 
@@ -227,6 +227,22 @@ cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug3-g
 cmake --build build --target xpressive zene > $LOGS/build-bug3-plugin.log 2>&1        # BUILD_EXIT=0
 ```
 
+RED/GREEN proof with the whole product change of this bug reverted
+(`git diff fe91d2460 -- plugins/Xpressive/ > $LOGS/fix-bug3-final.patch` reverts the
+bug's product hunks, the test file keeps the regression):
+
+```
+git apply -R $LOGS/fix-bug3-final.patch                                                # REVERT_EXIT=0
+cmake --build build --target ExprSynth > $LOGS/build-bug3-final-revert.log 2>&1       # BUILD_REVERT_EXIT=0
+cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug3-final-revert.log 2>&1
+# TEST_REVERT_EXIT=8  (1 failure: "the render path logged on the audio thread: ExprTk exception")
+git apply $LOGS/fix-bug3-final.patch                                                   # REAPPLY_EXIT=0
+cmake --build build --target ExprSynth ExprSynthAllocationTest xpressive zene > $LOGS/build-bug3-final-reapply.log 2>&1
+# BUILD_REAPPLY_EXIT=0
+cd build/tests && ctest -R 'ExprSynth' --output-on-failure > $LOGS/test-bug3-final-reapply.log 2>&1
+# TEST_REAPPLY_EXIT=0  (2/2 tests passed)
+```
+
 ## Self-check
 
 ### 1. The regression test FAILS with the product change reverted and PASSES with it
@@ -235,12 +251,12 @@ cmake --build build --target xpressive zene > $LOGS/build-bug3-plugin.log 2>&1  
 |---|---|---|
 | new-p15-63 | `ctest -R '^ExprSynthAllocation$'` → **TEST_REVERT_EXIT=8**, 2 failures: "the wave object leaked when the cyclic vector failed to grow" / "…when the interpolated cyclic vector failed to grow" | `ctest -R '^ExprSynthAllocation$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
 | new-p14-103 | `ctest -R '^ExprSynth$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the release time restarted instead of counting on from the release position" | `ctest -R '^ExprSynth$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
-| new-p10-127 | `ctest -R '^ExprSynth$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the render path logged on the audio thread: ExprTk exception" | `ctest -R '^ExprSynth$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
+| new-p10-127 | `ctest -R '^ExprSynth$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the render path logged on the audio thread: ExprTk exception" | `ctest -R 'ExprSynth'` → **TEST_REAPPLY_EXIT=0**, 2/2 tests passed |
 
 The first (pre-fix) runs were `TEST_EXIT=8` for all three regressions, with the same
 assertions failing, and `TEST_EXIT=0` after the fix. The exact commands are quoted in
 each bug's section above; the patches are in `$LOGS/fix.patch`,
-`$LOGS/fix-bug2.patch` and `$LOGS/fix-bug3.patch`.
+`$LOGS/fix-bug2.patch` and `$LOGS/fix-bug3-final.patch`.
 
 ### 2. The tests are deterministic (no wall-clock timing, no sleeps, no races)
 
