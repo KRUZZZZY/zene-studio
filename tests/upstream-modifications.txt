@@ -4788,3 +4788,6 @@ plugins/Delay/DelayControls.h	cluster new-p9-122 (new-p16-57): m_outPeakL/R are 
 plugins/Delay/DelayEffect.cpp	cluster new-p9-122 (new-p16-57): relaxed atomic stores to the peak meters shared with EqFader
 plugins/Compressor/CompressorControls.h	cluster new-p9-122: the four peak-meter fields are lock-free std::atomic<float> (Eq/Delay sibling)
 plugins/Compressor/Compressor.cpp	cluster new-p9-122: relaxed atomic stores to the peak meters shared with EqFader (Eq/Delay sibling)
+include/SampleRecordHandle.h	new-p12-217: documents queueOverflows() as diversion to the lossless overflow handoff, not a leaked take.
+src/core/SampleRecordHandle.cpp	new-p12-217: links queue-full retired takes through their existing PendingRecordTake object into a lock-free intrusive handoff, then reaps it on the main thread; covered by RecordingRealtimeTest::fullRetiredTakeQueueStillInstallsClaimedTake.
+tests/src/core/RecordingRealtimeTest.cpp	cluster 5308: verifies handle destruction leaves clip state and signals untouched until the main-thread reaper; new-p12-217: fills all 256 primary slots and verifies the claimed overflow take is installed.
