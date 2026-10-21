@@ -93,8 +93,11 @@ struct RackMacroWrite
 	float written = 0.0f;
 };
 
-//! True when the target's window is a sane fraction pair. The chain, the
-//! effect and the parameter name are checked against the live rack instead
+//! True when the target's window is a sane fraction pair - a finite low and
+//! high inside 0..1 and a finite curve inside -1..1. A nonfinite one is not a
+//! fraction: it survives every range comparison (they are all false against a
+//! NaN) and would be applied as a NaN parameter value. The chain, the effect
+//! and the parameter name are checked against the live rack instead
 //! (rackMacroTargetModel), because only the rack knows them.
 LMMS_EXPORT bool isValidMacroTarget(const RackMacroTarget& target);
 

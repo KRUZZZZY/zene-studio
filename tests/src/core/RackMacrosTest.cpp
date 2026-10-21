@@ -41,6 +41,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QString>
 
 #include <cmath>
@@ -291,6 +292,65 @@ private slots:
 
 		QVERIFY(macros.removeMacro(good));
 		QCOMPARE(macros.macroCount(), before);
+	}
+
+	//! A macro target's window is a pair of fractions and a curve, and a NaN is
+	//! not a fraction: every comparison against NaN is false, so the range
+	//! checks let it through - and the applied fraction is then a NaN, which
+	//! lands in the parameter model.
+	void aNonfiniteMacroTargetNeverReachesAParameter()
+	{
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+
+		// A target that carries a NaN never reaches the model: the applied
+		// fraction would be a NaN, and so would the value written.
+		RackMacros& macros = rackUnderTest().macros();
+		const int macro = macros.addMacro(QStringLiteral("NaN window"), 1.0f);
+		RackMacroTarget nanCurve = targetOf(kGainName, 0.0f, 1.0f);
+		nanCurve.curve = nan;
+		QCOMPARE(macros.addTarget(macro, nanCurve), 0);
+		FloatModel* const gain = gainModel();
+		QVERIFY2(gain != nullptr, "the driven chain's 0..100 parameter was not found");
+		const float before = gain->value();
+		// The fixture is shared: put the parameter back whatever happens, so a
+		// failure cannot leave a NaN behind for the next case.
+		const QScopeGuard restore([gain, before]() { gain->setValue(before); });
+		const std::vector<RackMacroWrite> writes = macros.apply(macro, rackUnderTest());
+		QCOMPARE(static_cast<int>(writes.size()), 0);
+		QCOMPARE(gain->value(), before);
+		QVERIFY(std::isfinite(gain->value()));
+		QVERIFY(macros.removeMacro(macro));
+
+		// The range check itself: a NaN bound or curve is not a fraction.
+		QVERIFY(!isValidMacroTarget(nanCurve));
+		RackMacroTarget nanLow = targetOf(kGainName, 0.0f, 1.0f);
+		nanLow.low = nan;
+		QVERIFY(!isValidMacroTarget(nanLow));
+		RackMacroTarget nanHigh = targetOf(kGainName, 0.0f, 1.0f);
+		nanHigh.high = nan;
+		QVERIFY(!isValidMacroTarget(nanHigh));
+
+		// A project that says curve="nan" loads no such target: QString reads
+		// a "nan" attribute as a NaN.
+		QDomDocument doc;
+		QDomElement rack = doc.createElement(QStringLiteral("rack"));
+		doc.appendChild(rack);
+		QDomElement macroElement = doc.createElement(QStringLiteral("macro"));
+		macroElement.setAttribute(QStringLiteral("name"), QStringLiteral("Loaded"));
+		macroElement.setAttribute(QStringLiteral("value"), QStringLiteral("1"));
+		QDomElement targetElement = doc.createElement(QStringLiteral("target"));
+		targetElement.setAttribute(QStringLiteral("chain"), kDrivenChain);
+		targetElement.setAttribute(QStringLiteral("effect"), 0);
+		targetElement.setAttribute(QStringLiteral("parameter"), QString::fromLatin1(kGainName));
+		targetElement.setAttribute(QStringLiteral("low"), QStringLiteral("0"));
+		targetElement.setAttribute(QStringLiteral("high"), QStringLiteral("1"));
+		targetElement.setAttribute(QStringLiteral("curve"), QStringLiteral("nan"));
+		macroElement.appendChild(targetElement);
+		rack.appendChild(macroElement);
+		RackMacros reloaded;
+		reloaded.loadSettings(rack);
+		QCOMPARE(reloaded.macroCount(), 1);
+		QCOMPARE(static_cast<int>(reloaded.macro(0)->targets.size()), 0);
 	}
 
 	//! With macros and zones configured the rack's own process() allocates

@@ -1,16 +1,18 @@
-# Cluster 3395 — NaN macro values survive clamping
+# Cluster 3395 — macro values, target windows and what a project may load
 
 Verdict: **FIXED**
 
 3395: FIXED
+5266: FIXED
 
-One finding in `src/core/RackMacros.cpp`; the other two of this batch
-(5266, new-p12-193) are fixed in the commits that follow this one, each with
-its own regression case and its own RED/GREEN proof.
+Two findings in `src/core/RackMacros.cpp`, fixed in two commits, each with its
+own regression case and its own RED/GREEN proof; the third of this batch
+(new-p12-193) follows in the commit after this one.
 
 | cluster | verdict | what was wrong | where |
 |---|---|---|---|
-| 3395 | FIXED | `std::clamp` keeps a NaN (every comparison against NaN is false), so `addMacro()` / `setValue()` stored a value that is not a number, and a project could load one (`value="nan"`). | `src/core/RackMacros.cpp:206` (`addMacro`), `:233` (`setValue`), `:359` (`loadSettings`) |
+| 3395 | FIXED | `std::clamp` keeps a NaN (every comparison against NaN is false), so `addMacro()` / `setValue()` stored a value that is not a number, and a project could load one (`value="nan"`). | `src/core/RackMacros.cpp` — `addMacro`, `setValue`, `loadSettings` |
+| 5266 | FIXED | `isValidMacroTarget()` compared the window against its range with `<` / `>` only, so a NaN `low` / `high` / `curve` passed every check, and the loader took the persisted floats as they came. | `src/core/RackMacros.cpp` — `isValidMacroTarget`, `apply`, `loadSettings` |
 
 ## 3395 — NaN macro values survive clamping
 
@@ -125,4 +127,89 @@ EXIT=0
 
 cd build/tests && ctest -R 'Rack' --output-on-failure > $LOGS/test-a8-rack-family.log 2>&1; echo EXIT=$?
 EXIT=0   # the whole rack family: "100% tests passed out of 8" (8 tests)
+```
+
+## 5266 — NaN macro target values can reach parameter models
+
+**Verdict: FIXED.**
+
+### The bug
+
+`isValidMacroTarget()` checked the window with range comparisons only:
+
+```cpp
+if (target.low < 0.0f || target.low > 1.0f) { return false; }
+if (target.curve < -1.0f || target.curve > 1.0f) { return false; }
+return target.high >= 0.0f && target.high <= 1.0f;
+```
+
+**Every comparison against NaN is false**, so a NaN `low`, `high` or `curve`
+passed all of them: the target was accepted as a valid fraction pair, bound to
+a parameter, and applied. `shapeMacroValue(value, NaN)` is
+`std::pow(x, std::pow(4.0f, -NaN))` = NaN, so the applied fraction was a NaN
+and `model->setValue(NaN)` wrote a number that is not a number into the
+parameter model.
+
+The loader had the same hole: `loadSettings()` took the persisted `low`,
+`high` and `curve` as they came, and `QString::toFloat()` reads a `"nan"`
+attribute as exactly a NaN.
+
+### The fix
+
+* `src/core/RackMacros.cpp` — the window is checked as what it is:
+  * two new file-local helpers, `isMacroFraction()` (a finite number inside
+    0..1) and `isMacroCurve()` (a finite number inside -1..1). The finiteness
+    is its own check, because the range comparisons cannot say it;
+  * `isValidMacroTarget()` uses them, so a NaN bound or curve is refused —
+    the agent surface (`rack.macro_target_add`, which already calls
+    `isValidMacroTarget()` at bind time) inherits the refusal;
+  * `apply()` skips a target whose window carries a nonfinite number: the
+    backstop right before a parameter model;
+  * `loadSettings()` does not load a persisted target whose window carries a
+    nonfinite number.
+* `include/RackMacros.h` — `isValidMacroTarget()`'s contract now says that a
+  nonfinite bound or curve is refused.
+
+### Regression test
+
+`tests/src/core/RackMacrosTest.cpp` — new case
+`aNonfiniteMacroTargetNeverReachesAParameter()`: a macro that drives the
+0..100 parameter through a NaN-curve target writes **nothing** and leaves the
+model at the value it had (`writes.size() == 0`, the model is still finite);
+`isValidMacroTarget()` refuses a NaN `curve`, `low` and `high`; and a project
+whose target says `curve="nan"` loads **no** target.
+
+### Commands run (logs in /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/3395.r1/logs)
+
+```
+cmake --build build --target RackMacrosTest > $LOGS/build-b1.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RackMacrosTest$' --output-on-failure > $LOGS/test-b1.log 2>&1; echo EXIT=$?
+EXIT=0   # GREEN with the fix in place: "100% tests passed out of 1"
+
+# 4b: the product change reverted, the test must fail again
+git diff -- src/core/RackMacros.cpp include/RackMacros.h > $LOGS/fix-5266.patch
+git apply -R $LOGS/fix-5266.patch
+EXIT=0
+
+cmake --build build --target RackMacrosTest > $LOGS/build-b3-red.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RackMacrosTest$' --output-on-failure > $LOGS/test-b3-red.log 2>&1; echo EXIT=$?
+EXIT=8   # RED with the fix reverted:
+         #   "FAIL! : RackMacrosTest::aNonfiniteMacroTargetNeverReachesAParameter()
+         #    Compared values are not the same
+         #    Actual   (static_cast<int>(writes.size())): 1
+         #    Expected (0)                              : 0"
+         #   "Totals: 19 passed, 1 failed" - the NaN curve wrote the parameter.
+
+git apply $LOGS/fix-5266.patch
+EXIT=0
+
+cmake --build build --target RackMacrosTest > $LOGS/build-b4-green.log 2>&1; echo EXIT=$?
+EXIT=0
+
+cd build/tests && ctest -R '^RackMacrosTest$' --output-on-failure > $LOGS/test-b4-green.log 2>&1; echo EXIT=$?
+EXIT=0   # GREEN with the fix restored: "100% tests passed out of 1"
 ```

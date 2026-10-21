@@ -119,6 +119,33 @@ bool isFiniteMacroValue(float value)
 	return std::isfinite(value);
 }
 
+/**
+ * True when @a value is a FRACTION: a finite number inside 0..1.
+ *
+ * A window bound is stated as a fraction of the parameter's own range, and a
+ * nonfinite one is not a fraction. The finiteness has to be checked on its
+ * own: every comparison against NaN is false, so a range check alone lets a
+ * NaN through.
+ */
+bool isMacroFraction(float value)
+{
+	return std::isfinite(value) && value >= 0.0f && value <= 1.0f;
+}
+
+//! True when @a value is a curve: a finite number inside -1..1 (0 is linear).
+bool isMacroCurve(float value)
+{
+	return std::isfinite(value) && value >= -1.0f && value <= 1.0f;
+}
+
+//! True when every number @a target carries is a number - the window bounds and
+//! the curve. A nonfinite one makes the applied fraction a NaN, and a NaN is
+//! what would be written into the parameter model.
+bool isFiniteMacroTarget(const RackMacroTarget& target)
+{
+	return std::isfinite(target.low) && std::isfinite(target.high) && std::isfinite(target.curve);
+}
+
 } // namespace
 
 float shapeMacroValue(float value, float curve)
@@ -133,10 +160,13 @@ bool isValidMacroTarget(const RackMacroTarget& target)
 	if (target.effect < 0) { return false; }
 	if (target.parameter.isEmpty()) { return false; }
 	// The window is a fraction pair: a driver that could leave its own 0..1
-	// span would be unrepresentable in the persisted form.
-	if (target.low < 0.0f || target.low > 1.0f) { return false; }
-	if (target.curve < -1.0f || target.curve > 1.0f) { return false; }
-	return target.high >= 0.0f && target.high <= 1.0f;
+	// span would be unrepresentable in the persisted form. A nonfinite bound
+	// is not a fraction either - and the range check cannot say so, because
+	// every comparison against NaN is false.
+	if (!isMacroFraction(target.low)) { return false; }
+	if (!isMacroFraction(target.high)) { return false; }
+	if (!isMacroCurve(target.curve)) { return false; }
+	return true;
 }
 
 AutomatableModel* rackMacroTargetModel(Rack& rack, const RackMacroTarget& target, QString* why)
@@ -300,6 +330,10 @@ auto RackMacros::apply(int index, Rack& rack, bool journalWrites) -> std::vector
 
 	for (const RackMacroTarget& target : entry->targets)
 	{
+		// A window that carries a number that is not a number would write one
+		// into the model: the fraction below is NaN, and so is the value. The
+		// target is skipped, like one that no longer resolves.
+		if (!isFiniteMacroTarget(target)) { continue; }
 		QString why;
 		AutomatableModel* model = rackMacroTargetModel(rack, target, &why);
 		// A target whose chain, effect or parameter is gone is skipped rather
@@ -418,6 +452,10 @@ void RackMacros::loadSettings(const QDomElement& rackElement)
 			target.high =
 				targetElement.attribute(QStringLiteral("high"), QStringLiteral("1")).toFloat();
 			target.curve = targetElement.attribute(QStringLiteral("curve"), QStringLiteral("0")).toFloat();
+			// A persisted window that carries a number that is not a number is
+			// not loaded: QString reads a "nan" attribute as a NaN, and a NaN
+			// window would be applied as a NaN parameter value.
+			if (!isFiniteMacroTarget(target)) { continue; }
 			entry.targets.push_back(target);
 		}
 
