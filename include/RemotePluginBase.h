@@ -88,6 +88,11 @@
 #include "SystemSemaphore.h"
 #endif
 
+#ifdef LMMS_TESTING
+class RemotePluginAudioPortsTest;
+class RemotePluginShmFifoTest;
+#endif
+
 namespace lmms
 {
 
@@ -103,6 +108,11 @@ const int SHM_FIFO_SIZE = 512*1024;
 // implements a FIFO inside a shared memory segment
 class shmFifo
 {
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginShmFifoTest;
+#endif
+	friend class RemotePluginBase;
+
 	// need this union to handle different sizes of sem_t on 32 bit
 	// and 64 bit platforms
 	union sem32_t
@@ -150,12 +160,12 @@ public:
 
 	inline bool isInvalid() const
 	{
-		return m_invalid;
+		return m_invalid.load( std::memory_order_relaxed );
 	}
 
 	void invalidate()
 	{
-		m_invalid = true;
+		m_invalid.store( true, std::memory_order_relaxed );
 	}
 
 	// do we act as master (i.e. not as remote-process?)
@@ -166,10 +176,37 @@ public:
 
 	//! Identifies the calling thread. The data lock is owned by one thread at a time: only the owner may enter it
 	//! again without waiting, so a thread that does not hold the lock can never ride on another thread's hold.
-	static std::uint64_t callerKey() noexcept
+	static const void * callerKey() noexcept
 	{
-		return static_cast<std::uint64_t>( std::hash<std::thread::id>{}( std::this_thread::get_id() ) ) | 1u;
+		// Every live thread has a distinct instance of this thread-local object. Its address is a collision-free
+		// ownership token for as long as that thread can own this FIFO lock.
+		thread_local const char callerToken = 0;
+		return &callerToken;
 	}
+
+#ifdef LMMS_TESTING
+	//! Lets the regression force a collision in the legacy thread-id hash path.
+	using CallerIdHashForTest = std::uint64_t (*)( std::thread::id );
+	static void setCallerIdHashForTest( CallerIdHashForTest _hash ) noexcept
+	{
+		s_callerIdHashForTest.store( _hash, std::memory_order_relaxed );
+	}
+	static std::uint64_t callerIdHashForTest( std::thread::id _id ) noexcept
+	{
+		if( const auto hashForTest = s_callerIdHashForTest.load( std::memory_order_relaxed ) )
+		{
+			return hashForTest( _id );
+		}
+		return std::hash<std::thread::id>{}( _id );
+	}
+
+	//! Lets the regression stop a writer when the legacy send path waits for FIFO space.
+	using SpaceWaitHookForTest = void (*)( shmFifo * ) noexcept;
+	static void setSpaceWaitHookForTest( SpaceWaitHookForTest _hook ) noexcept
+	{
+		s_spaceWaitHookForTest.store( _hook, std::memory_order_relaxed );
+	}
+#endif
 
 	// recursive lock, owned per thread
 	inline void lock()
@@ -192,7 +229,7 @@ public:
 		if( m_owner.load( std::memory_order_acquire ) != callerKey() ) { return; }
 		if( --m_depth == 0 )
 		{
-			m_owner.store( 0, std::memory_order_release );
+			m_owner.store( nullptr, std::memory_order_release );
 			m_dataSem.release();
 		}
 	}
@@ -322,6 +359,39 @@ public:
 
 
 private:
+	//! Serializes writers separately from readers while a blocking message yields the data semaphore for space.
+	inline void lockWriter()
+	{
+		while( m_writerBusy.test_and_set( std::memory_order_acquire ) ) { std::this_thread::yield(); }
+	}
+
+	//! Audio-thread form: it never waits when a blocking message writer owns the write direction.
+	inline bool tryLockWriter()
+	{
+		return !m_writerBusy.test_and_set( std::memory_order_acquire );
+	}
+
+	inline void unlockWriter()
+	{
+		m_writerBusy.clear( std::memory_order_release );
+	}
+
+	//! Drops every recursive data-lock level so a reader can consume queued bytes during a space wait.
+	inline int releaseLockForSpaceWait()
+	{
+		const int depth = m_depth;
+		while( m_depth > 0 ) { unlock(); }
+		return depth;
+	}
+
+	//! Restores the caller's recursive-lock depth after the writer reacquires the data semaphore.
+	inline void reacquireLockAfterSpaceWait( int _depth )
+	{
+		if( _depth == 0 ) { return; }
+		lock();
+		for( int depth = 1; depth < _depth; ++depth ) { lock(); }
+	}
+
 	void read( void * _buf, int _len )
 	{
 		if( isInvalid() )
@@ -358,7 +428,7 @@ private:
 			return;
 		}
 		lock();
-		while( _len > SHM_FIFO_SIZE - m_data->endPtr )
+		while( !isInvalid() && _len > SHM_FIFO_SIZE - m_data->endPtr )
 		{
 			// if no space is left, try to move data to front
 			if( m_data->startPtr > 0 )
@@ -370,25 +440,40 @@ private:
 							m_data->startPtr;
 				m_data->startPtr = 0;
 			}
-			unlock();
+			const int lockDepth = releaseLockForSpaceWait();
+#ifdef LMMS_TESTING
+			if( const auto hook = s_spaceWaitHookForTest.load( std::memory_order_relaxed ) ) { hook( this ); }
+#endif
+			if( isInvalid() ) { return; }
 #ifndef LMMS_BUILD_WIN32
 			usleep( 5 );
 #endif
-			lock();
+			if( isInvalid() ) { return; }
+			reacquireLockAfterSpaceWait( lockDepth );
+		}
+		if( isInvalid() )
+		{
+			unlock();
+			return;
 		}
 		std::memcpy(m_data->data + m_data->endPtr, _buf, _len);
 		m_data->endPtr += _len;
 		unlock();
 	}
 
-	volatile bool m_invalid;
+	std::atomic<bool> m_invalid;
 	bool m_master;
 	SharedMemory<shmData> m_data;
 	SystemSemaphore m_dataSem;
 	SystemSemaphore m_messageSem;
 	//! Thread that holds the data lock (0: none) and its recursion depth; the depth is touched by the owner only.
-	std::atomic<std::uint64_t> m_owner{0};
+	std::atomic<const void *> m_owner{nullptr};
 	int m_depth = 0;
+	std::atomic_flag m_writerBusy = ATOMIC_FLAG_INIT;
+#ifdef LMMS_TESTING
+	inline static std::atomic<CallerIdHashForTest> s_callerIdHashForTest{nullptr};
+	inline static std::atomic<SpaceWaitHookForTest> s_spaceWaitHookForTest{nullptr};
+#endif
 };
 #endif // SYNC_WITH_SHM_FIFO
 
@@ -437,6 +522,10 @@ enum RemoteMessageIDs
 
 class LMMS_EXPORT RemotePluginBase
 {
+#ifdef LMMS_TESTING
+	friend class ::RemotePluginAudioPortsTest;
+#endif
+
 public:
 	struct message
 	{
@@ -700,7 +789,7 @@ public:
 #ifdef SYNC_WITH_SHM_FIFO
 		return m_in->isInvalid() || m_out->isInvalid();
 #else
-		return m_invalid;
+		return m_invalid.load( std::memory_order_relaxed );
 #endif
 	}
 
@@ -894,7 +983,7 @@ protected:
 		m_out->invalidate();
 		m_in->messageSent();
 #else
-		m_invalid = true;
+		m_invalid.store( true, std::memory_order_relaxed );
 #endif
 	}
 
@@ -1001,7 +1090,7 @@ private:
 	}
 
 
-	bool m_invalid;
+	std::atomic<bool> m_invalid;
 
 	pthread_mutex_t m_receiveMutex;
 	pthread_mutex_t m_sendMutex;

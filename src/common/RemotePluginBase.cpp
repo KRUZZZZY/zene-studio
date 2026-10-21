@@ -164,15 +164,22 @@ RemotePluginBase::SendResult RemotePluginBase::sendFrameNonBlocking( const char 
 #ifdef SYNC_WITH_SHM_FIFO
 	// Exact room check: the frame is written only when the FIFO has space for all of it, so the write never waits.
 	// A data lock that is busy (the client is writing) means there is no room now.
-	if( !m_out->tryLockFor( 0 ) ) { return SendResult::NoRoom; }
+	if( !m_out->tryLockWriter() ) { return SendResult::NoRoom; }
+	if( !m_out->tryLockFor( 0 ) )
+	{
+		m_out->unlockWriter();
+		return SendResult::NoRoom;
+	}
 	if( m_out->freeSpace() < _size )
 	{
 		m_out->unlock();
+		m_out->unlockWriter();
 		return SendResult::NoRoom;
 	}
 	m_out->writeRaw( _frame, static_cast<int>( _size ) );
 	m_out->unlock();
 	m_out->messageSent();
+	m_out->unlockWriter();
 	return SendResult::Sent;
 #else
 	if( isInvalid() ) { return SendResult::Broken; }
@@ -295,6 +302,27 @@ RemotePluginBase::SendResult RemotePluginBase::flushPendingSend()
 int RemotePluginBase::sendMessage(const message & _m)
 {
 #ifdef SYNC_WITH_SHM_FIFO
+	std::size_t frameSize = 2 * sizeof( std::int32_t );
+	if( _m.data.size() > ( SHM_FIFO_SIZE - frameSize ) / sizeof( std::int32_t ) )
+	{
+		// The receiver only gets a token after the complete frame is written. Refuse an aggregate frame that
+		// cannot fit before writing any bytes, and wake both ends so neither waits for an impossible frame.
+		invalidate();
+		m_out->messageSent();
+		return 0;
+	}
+	frameSize += _m.data.size() * sizeof( std::int32_t );
+	for( const auto & argument : _m.data )
+	{
+		if( argument.size() > SHM_FIFO_SIZE - frameSize )
+		{
+			invalidate();
+			m_out->messageSent();
+			return 0;
+		}
+		frameSize += argument.size();
+	}
+	m_out->lockWriter();
 	m_out->lock();
 	m_out->writeInt(_m.id);
 	m_out->writeInt(_m.data.size());
@@ -306,6 +334,7 @@ int RemotePluginBase::sendMessage(const message & _m)
 	}
 	m_out->unlock();
 	m_out->messageSent();
+	m_out->unlockWriter();
 #else
 	pthread_mutex_lock(&m_sendMutex);
 	if (m_txTailSize != 0)
