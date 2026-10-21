@@ -16,6 +16,9 @@
 #include <cstring>
 #include <thread>
 
+#include <QMutex>
+#include <QSemaphore>
+
 #ifdef LMMS_HAVE_ALSA
 #include <unistd.h>
 #include "MidiAlsaSeq.h"
@@ -345,6 +348,31 @@ private slots:
 		char wake = 0;
 		QCOMPARE(::read(readFd, &wake, 1), ssize_t{1});
 		QCOMPARE(wake, '\0');
+	}
+
+	//! The audio-thread output path must never take the sequencer mutex. The sequencer
+	//! worker owns that mutex, and a contended mutex on the audio thread can stall an
+	//! audio period - which is how the MIDI clock reached the device from the audio
+	//! path (new-p9-270). The mutex is held for the whole check, so an output path
+	//! that took it would block until the check gives up: the test fails instead of
+	//! hanging, and the mutex is released on every path so the caller can be joined.
+	void processOutEventDoesNotTakeTheSequencerMutex()
+	{
+		lmms::MidiAlsaSeq sequencer{lmms::MidiAlsaSeq::PipeOnlyForTesting{}};
+		QMutex& mutex = sequencer.seqMutexForTesting();
+		mutex.lock();
+		QSemaphore returned;
+		std::thread caller([&] {
+			sequencer.processOutEvent(makeMidiEvent(66), TimePos(), nullptr);
+			returned.release();
+		});
+		// The queued path returns in microseconds; a mutex-taking path blocks until
+		// the mutex is released, which happens below, after the check gave up.
+		const bool finished = returned.tryAcquire(1, 5000);
+		mutex.unlock();
+		caller.join();
+		QVERIFY2(finished,
+			"the audio-thread MIDI output path took the sequencer mutex and can stall an audio period");
 	}
 #endif
 
