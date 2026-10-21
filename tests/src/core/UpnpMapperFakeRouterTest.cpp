@@ -39,8 +39,11 @@
 
 #ifdef ZENE_HAVE_COLLAB
 
+#include <algorithm>
 #include <QHash>
+#include <QNetworkAccessManager>
 #include <QNetworkDatagram>
+#include <QNetworkReply>
 #include <QPointer>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -400,7 +403,6 @@ private slots:
 		QVERIFY(removal.body.contains("<NewExternalPort>41740</NewExternalPort>"));
 		QVERIFY(removal.body.contains("<NewProtocol>TCP</NewProtocol>"));
 		mapper.unmap();
-		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		QCOMPARE(m_router.count("DeletePortMapping"), 1);
 	}
 
@@ -414,7 +416,6 @@ private slots:
 		QVERIFY2(result.message.contains(QStringLiteral("UPnP error 718: ConflictInMappingEntry")), qPrintable(result.message));
 		QCOMPARE(m_router.count("GetExternalIPAddress"), 0);
 		mapper.unmap();  // nothing was mapped: nothing is removed
-		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		QCOMPARE(m_router.count("DeletePortMapping"), 0);
 	}
 
@@ -511,18 +512,29 @@ private slots:
 		m_router.holdActions = true;
 		UpnpMapper mapper;
 		mapper.setSearchEndpoint(QHostAddress(QHostAddress::LocalHost), m_router.searchPort(), true);
-		QSignalSpy finished(&mapper, &UpnpMapper::finished);
+		QSignalSpy finished(&mapper, &UpnpMapper::finished); auto* http = mapper.findChild<QNetworkAccessManager*>(); QVERIFY(http);
+		bool staleAddConsumed = false, externalAddressReplyConsumed = false;
+		connect(http, &QNetworkAccessManager::finished, this, [&staleAddConsumed, &externalAddressReplyConsumed](QNetworkReply* reply) {
+			if (reply->request().rawHeader("SOAPAction").contains("GetExternalIPAddress")) { externalAddressReplyConsumed = true; }
+			if (reply->request().rawHeader("SOAPAction").contains("AddPortMapping")) { staleAddConsumed = true; }
+		}, Qt::QueuedConnection);
 		mapper.map(41740, 41740, 3600, QHostAddress(m_lan));  // attempt 1: search, description, then AddPortMapping held
 		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("AddPortMapping"), 1, 5000);
 		mapper.unmap();  // stop() with nothing mapped yet: nothing is deleted
 		mapper.map(41740, 41740, 3600, QHostAddress(m_lan));  // restart: the router is known, so attempt 2 adds at once
 		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("AddPortMapping"), 2, 5000);
 		const int finishedBefore = finished.count();
+		QCOMPARE(m_router.held.size(), 2);
+		m_router.holdActions = false;  // keep only attempt 2's held AddPortMapping reply; its follow-ups answer normally
 		m_router.releaseHeld(0);  // attempt 1's stale answer: the router did make a mapping for the port
-		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
+		QTRY_VERIFY_WITH_TIMEOUT(staleAddConsumed, 5000);
+		const auto replies = http->findChildren<QNetworkReply*>();
+		const bool hasAddressReply = std::any_of(replies.cbegin(), replies.cend(),
+			[](QNetworkReply* reply) { return reply->request().rawHeader("SOAPAction").contains("GetExternalIPAddress"); });
+		if (hasAddressReply) { QTRY_VERIFY_WITH_TIMEOUT(externalAddressReplyConsumed, 5000); }
+		QVERIFY(m_router.held.size() == 1 && m_router.held.first().request.soapAction.contains("AddPortMapping"));
 		QCOMPARE(finished.count(), finishedBefore);  // the stale reply must not complete the newer attempt
 		QCOMPARE(m_router.count("DeletePortMapping"), 0);  // a delete now would remove attempt 2's mapping
-		m_router.holdActions = false;
 		m_router.releaseHeld(0);  // attempt 2's own answer; its address request is answered at once
 		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), finishedBefore + 1, 5000);
 		const MappingResult result = finished.first().first().value<MappingResult>();
@@ -546,7 +558,6 @@ private slots:
 		m_router.holdActions = false;
 		m_router.releaseHeld(0);  // the router answers after stop()
 		QTRY_COMPARE_WITH_TIMEOUT(m_router.count("DeletePortMapping"), 1, 5000);
-		for (int i = 0; i < 100; ++i) { QCoreApplication::processEvents(); }
 		QCOMPARE(finished.count(), 0);
 	}
 

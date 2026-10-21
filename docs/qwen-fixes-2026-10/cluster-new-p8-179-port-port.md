@@ -1,132 +1,45 @@
 FIXED
 
-"Stopping a pending port map can open the port afterward" was real, and is fixed on this branch.
-The product fix was committed in 3cff36c59 and reworked in 9f0b18c3d; this round added the two
-PortMapping-level regressions that were still missing and re-proved RED/GREEN from scratch.
+## Decision
 
-## Evidence (file:line, current tree)
+REAL. At the pre-fix base `2da2ed356`, `PmpMapper::unmap()` returned when no mapping result existed yet, leaving the pending request and retry timer alive. A late PCP/NAT-PMP answer could then report success or start UPnP after `PortMapping::stop()`.
 
-- `src/core/PortMapping.cpp:151` `PortMapping::stop()` sets `m_stopped = true` (line 154) before it cancels the
-  mappers, so a completion that belongs to the canceled attempt cannot be mistaken for a live one.
-- `src/core/PortMapping.cpp:163` `onPmpFinished()` returns early when the mapping was stopped: the late answer
-  neither reports a success nor starts the UPnP fallback.
-- `src/core/PortMapping.cpp:171` `onUpnpFinished()` returns early for the same reason.
-- `src/core/PortMappingPmp.cpp:110` `PmpMapper::unmap()` cancels a pending attempt (the retry timer stops and the
-  step goes back to `Idle`, so `onReadyRead()` at line 183 drops the late answer) and expires best effort only what
-  that attempt could have created.
-- `src/core/PortMappingUpnp.cpp:251` `UpnpMapper::unmap()` bumps the generation counter (line 253), stops the search
-  timer and clears the search, so the HTTP callbacks of the canceled attempt (lines 156, 201, 236) are ignored.
-- `include/PortMapping.h:156` (`m_active`, `m_generation`) and `include/PortMapping.h:219` (`m_stopped`) hold that state.
+The existing product fix is retained: [PortMapping.cpp](../../src/core/PortMapping.cpp#L151) marks the orchestrator stopped before cancelling either mapper, and its completion handlers return for stopped attempts. [PortMappingPmp.cpp](../../src/core/PortMappingPmp.cpp#L110) stops retries and expires only a protocol stage that may have opened a port. [PortMappingUpnp.cpp](../../src/core/PortMappingUpnp.cpp#L251) invalidates prior callbacks and stops the search timer.
 
-Before the fix (base 2da2ed356): `PmpMapper::unmap()` returned at once when nothing was mapped yet
-(`if (!m_result.ok) { return; }`), so the pending request kept its retry timer, the late answer completed the
-mapper with a success, and `onPmpFinished()` / `onUpnpFinished()` had no check at all.
+## Regression coverage
 
-## Regression tests
+- `PortMappingCodecTest::pmpIgnoresLatePcpReplyAfterUnmap` waits until the fake gateway receives cleanup, then checks PCP MAP (`02 01`), zero lifetime, and that all received requests are PCP (no NAT-PMP deletion). The late reply is synchronized through the mapper socket's `readyRead` signal.
+- `UpnpMapperFakeRouterTest::staleAddAfterStopAndRestartKeepsTheNewerMapping` releases the stale Add reply while the newer Add reply remains held. A queued `QNetworkAccessManager::finished` hook synchronizes on stale reply handling; when that handling creates a `GetExternalIPAddress` follow-up, the test waits for that reply too. It asserts no completion before releasing the newer Add. With product changes reversed, this assertion fails at line 536.
+- The port-mapping tests no longer use fixed-count `processEvents()` loops or `wait(10)` calls. Renewal is driven by direct `renew()` calls; the test checks the armed 3600-second timer but never waits for its timeout.
 
-- `tests/src/core/PortMappingOrchestratorTest.cpp:201` `aLateAnswerAfterStopIsIgnored()` - a mapper's completion
-  after `stop()` must report nothing, must not leave the host busy and must not plan a renewal.
-- `tests/src/core/PortMappingOrchestratorTest.cpp:225` `aLateRefusalAfterStopDoesNotStartTheUpnpFallback()` - a late
-  refusal after `stop()` must not start the UPnP fallback (the search timer stays off, nothing reaches the search
-  endpoint).
-- Already committed: `tests/src/core/PortMappingCodecTest.cpp` (`pmpIgnoresLatePcpReplyAfterUnmap`,
-  `stopCancelsAPendingPortMapping`, `upnpUnmapCancelsSearchTimeout`, `staleAnswerAfterStopAndRestartCannotPoisonTheNewAttempt`)
-  and `tests/src/core/UpnpMapperFakeRouterTest.cpp` (`staleAddAfterStopIsTakenBack`,
-  `staleAddAfterStopAndRestartKeepsTheNewerMapping`).
+## Verification evidence
 
-## Evidence table (exact commands, exit codes as run)
+The focused family is 3 CTest targets (46 QtTest cases): `PortMappingCodecTest`, `PortMappingOrchestratorTest`, and `UpnpMapperFakeRouterTest`.
 
-| Step | Command | Exit | Log |
-| --- | --- | --- | --- |
-| RED revert | `git apply -R .../logs/fix.patch` (product diff vs base 2da2ed356, 4 product files) | 0 | `logs/fix.patch` |
-| RED build | `cmake --build build --target zene PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest CollabPolicyTest -j 12` | 0 | `logs/build-9-red.log` |
-| RED run | `cd build/tests && ctest -R 'PortMapping\|UpnpMapper\|CollabPolicy' --output-on-failure` | **8** (3 of 4 targets failed, 7 failing cases) | `logs/test-8-red.log` |
-| GREEN restore | `git apply .../logs/fix.patch` | 0 | - |
-| GREEN build | `cmake --build build --target zene PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest CollabPolicyTest -j 12` | 0 | `logs/build-10-green.log` |
-| GREEN run | `cd build/tests && ctest -R 'PortMapping\|UpnpMapper\|CollabPolicy' --output-on-failure` | **0** (4 of 4 targets, 100 % passed) | `logs/test-9-green.log` |
-| wider family | `cd build/tests && ctest -R 'Collab' --output-on-failure` | **0** (4 of 4 targets, 100 % passed) | `logs/test-10-collab.log` |
-| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` | **0** (RESULT: PASS; complexity and file-length: "no new item in your files") | `logs/gates-2.log` |
-| ratchet 1 | `bash tests/complexity-gate.sh --check` | 1 (train-wide items only, none in this cluster's files) | `logs/gate-complexity.log` |
-| ratchet 2 | `bash tests/file-length-gate.sh --check` | 1 (train-wide items only, none in this cluster's files) | `logs/gate-file-length.log` |
-| stability | `ctest -R '^PortMappingOrchestratorTest$'` x10 | 0 every run | `logs/flaky-summary-2.log` |
+| Step | Exact command | Exit | Result / log |
+| --- | --- | ---: | --- |
+| Product patch | `git diff 3cff36c59^ HEAD -- include/PortMapping.h src/core/PortMapping.cpp src/core/PortMappingPmp.cpp src/core/PortMappingUpnp.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/fix.patch; code=$?; echo EXIT=$code` | 0 | Product files only; `logs/fix.patch` |
+| Reverse product hunks | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/fix.patch; code=$?; echo EXIT=$code` | 0 | Tests unchanged |
+| RED build | `cmake --build build --target zene PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/build-5-reversed-final.log 2>&1; code=$?; echo EXIT=$code` | 0 | Reversed product compiled |
+| RED run | `ctest -R '^(PortMappingCodecTest|PortMappingOrchestratorTest|UpnpMapperFakeRouterTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/test-5-reversed-final.log 2>&1; code=$?; echo EXIT=$code` | 8 | 3/3 targets fail; stale UPnP completion fails before the newer reply is released (`UpnpMapperFakeRouterTest.cpp:536`) |
+| Restore product hunks | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/fix.patch; code=$?; echo EXIT=$code` | 0 | Product fix restored |
+| GREEN build | `cmake --build build --target zene PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/build-6-restored-final.log 2>&1; code=$?; echo EXIT=$code` | 0 | Final test code compiled |
+| GREEN run | `ctest -R '^(PortMappingCodecTest|PortMappingOrchestratorTest|UpnpMapperFakeRouterTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/test-6-restored-final.log 2>&1; code=$?; echo EXIT=$code` | 0 | 3/3 targets passed |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p8-179-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p8-179-port-port.r7/logs/feature-check-2.log 2>&1; code=$?; echo EXIT=$code` | 0 | All 8 rows PASS; complexity and file-length report no new items |
 
-The failing cases in the RED run (`logs/test-8-red.log`):
+The feature gate table was: fork-sources PASS; all-sources-reproduce PASS; no-upstream-regression PASS; check-namespace PASS; no-tautology PASS; doc-figures PASS; complexity PASS; file-length PASS. The standalone `bash tests/file-length-gate.sh --check` diagnostic exited 1 because it reports 20 train-wide over-limit entries; the changed fake-router test is below the limit after tightening its helper, and the baseline-filtered feature gate passes. The first feature-check trial found that test at 507 code lines; the helper was tightened and the final feature-check passed. Logs were searched with `rg` because no fff grep tool was exposed in this session.
 
-```
-FAIL!  : PortMappingCodecTest::pmpIgnoresLatePcpReplyAfterUnmap()            Actual (finished.count()): 1, Expected 0   (line 386)
-FAIL!  : PortMappingCodecTest::stopCancelsAPendingPortMapping()               Actual (finished.count()): 1, Expected 0   (line 410)
-FAIL!  : PortMappingCodecTest::upnpUnmapCancelsSearchTimeout()                the search timer was still active             (line 427)
-FAIL!  : PortMappingOrchestratorTest::aLateAnswerAfterStopIsIgnored()         Actual (finished.size()): 1, Expected 0     (line 211)
-FAIL!  : PortMappingOrchestratorTest::aLateRefusalAfterStopDoesNotStartTheUpnpFallback()  the fallback search had started (line 242)
-FAIL!  : UpnpMapperFakeRouterTest::staleAddAfterStopAndRestartKeepsTheNewerMapping()   Actual (finished.count()): 2, Expected 1 (line 527)
-FAIL!  : UpnpMapperFakeRouterTest::staleAddAfterStopIsTakenBack()             Actual (DeletePortMapping count): 0, Expected 1 (line 548)
-```
+## Files committed
 
-## Files changed in this round
-
-- `tests/src/core/PortMappingOrchestratorTest.cpp` (two new regression cases; the only file touched now)
-- `docs/qwen-fixes-2026-10/cluster-new-p8-179-port-port.md` (this report)
-
-The product fix itself is in the earlier commits of this branch: `include/PortMapping.h`,
-`src/core/PortMapping.cpp`, `src/core/PortMappingPmp.cpp`, `src/core/PortMappingUpnp.cpp`.
-
-## Round 6 re-verification (no product change)
-
-Luna's round-5 feedback section was empty, so this round changed no product or test code. It re-proved the fix from
-scratch on the current tree (logs in `runs/new-p8-179-port-port.r6/logs/`):
-
-| Step | Command | Exit | Log |
-| --- | --- | --- | --- |
-| product diff | `git diff 2da2ed356 -- include/PortMapping.h src/core/PortMapping.cpp src/core/PortMappingPmp.cpp src/core/PortMappingUpnp.cpp > logs/fix.patch` | 0 | `fix.patch` |
-| RED revert | `git apply -R logs/fix.patch` | 0 | - |
-| RED build | `cmake --build build --target zene PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest CollabPolicyTest -j4` | 0 | `build-2-red.log` |
-| RED run | `cd build/tests && ctest -R 'PortMapping\|UpnpMapper\|CollabPolicy' --output-on-failure` | **8** (same 7 cases fail) | `test-2-red.log` |
-| GREEN restore | `git apply logs/fix.patch` | 0 | - |
-| GREEN build | same cmake command, -j4 | 0 | `build-3-green.log` |
-| GREEN run | same ctest command | **0** (4 of 4 targets, 100 % passed) | `test-3-green.log` |
-| gates, by hand | `fork-sources-gate.sh`, `all-sources-reproduce.sh`, `no-upstream-regression-gate.sh`, `check-namespace`, `no-tautology-gate.sh`, `doc-figures-gate.py` | 0 each | `gate-*.log` |
-| ratchets, by hand | `tests/complexity-gate.sh --check` / `tests/file-length-gate.sh --check` | 1 / 1 (train-wide) | `gate-complexity.log`, `gate-filelen.log` |
-
-The ratchet items listed are `ControlCommandsShortcuts.cpp` (`importedOverrides`, CCN 11) and
-`tests/src/core/CollabTransportTest.cpp` (846 lines), among others: none is in a file this branch changed
-(no `PortMapping*`/`UpnpMapper*` line in either log).
-
-**`feature_check.py` could not run in this session.** It writes its gate logs to `<worktree>-feature-check/`, a
-sibling folder outside this lane's write-jail; it died with `PermissionError: [Errno 13]` on
-`.../zene-qwen-new-p8-179-port-port-feature-check/fork-sources.log` (`logs/gates-1.log`, exit 1) before running any
-gate. I therefore ran the same eight gate commands by hand (table above) and compared the ratchet listings with the
-files this branch changed, which is what the script does. The loop's own run of `feature_check.py` outside the jail is
-the authoritative result; it passed with exit 0 in the previous round (`logs/gates-2.log` of that round).
+- `tests/src/core/PortMappingCodecTest.cpp`
+- `tests/src/core/UpnpMapperFakeRouterTest.cpp`
+- `docs/qwen-fixes-2026-10/cluster-new-p8-179-port-port.md`
 
 ## Self-check
 
-- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Reverting the
-  product diff vs base 2da2ed356 (`git apply -R logs/fix.patch`) and rebuilding gives ctest exit **8** with the seven
-  failing cases listed above (the two new ones fail on `finished.size()` 1 != 0 and on the UPnP fallback search
-  having started); restoring it (`git apply logs/fix.patch`) and rebuilding gives ctest exit **0**, 4 of 4 targets.
-- **The test is deterministic: no wall-clock timing, sleeps or races.** The two new cases inject the mappers' answer
-  through the existing test seam (`emit pmp->finished(...)` / `emit upnp->finished(...)`, the seam the file already
-  documents) and read the state synchronously right after the emission: the UPnP fallback is observed through the
-  search timer the mapper arms (`upnp->findChild<QTimer*>()->isActive()`), not through a wait. The search endpoint is
-  pointed at a loopback socket, so no packet leaves the machine. The older cases use held replies, a fake gateway and
-  `QCoreApplication::processEvents()` loops instead of sleeps. 10 consecutive runs were green.
-- **The fix is at the cause and complete: every caller and sibling was checked and stays consistent.** `stop()` is
-  called by `PortMapping::start()` (line 117), by `~PortMapping()` (line 112) and by `CollabSession::resetToIdle()`
-  (`src/core/CollabSession.cpp:163`, the only production caller, which then destroys the object); `start()` clears
-  `m_stopped` again (line 120) so a fresh attempt is not ignored. `onPmpFinished()`/`onUpnpFinished()` are only
-  connected in the constructor (lines 106-107). `PmpMapper::unmap()` and `UpnpMapper::unmap()` are the two cancel
-  paths and both were reworked so that a stale answer is ignored at its source (the PCP/NAT-PMP step and the UPnP
-  generation) as well as at the orchestrator. `renew()` can only run from the timer that `stop()` stops.
-- **No collateral damage: old projects and saved data still load as before, and no new limit was added.** The change
-  touches no saved data, no command, no serialization and no project format; the only behaviour that changed is that
-  a completion belonging to a canceled attempt is ignored, which is what the finding asks for. The expiry that
-  `PmpMapper::unmap()` sends is scoped to the stage the attempt had reached (PCP or NAT-PMP map), so it cannot delete
-  a mapping the attempt never created. The UPnP fallback deletes only the entry of the attempt it belongs to.
-- **Verdict ALREADY-FIXED / FALSE-POSITIVE?** Not applicable: the verdict is FIXED. The bug was real at base
-  2da2ed356 (`src/core/PortMappingPmp.cpp` at the base: `PmpMapper::unmap()` returned at once when nothing was mapped
-  yet, so the pending request kept retrying and the late answer completed the mapper), which the RED run above shows
-  in the failing assertions.
-- **Realtime, undo and commands.** Nothing in this cluster runs on the audio thread: the changed product files are
-  the port-mapping orchestrator and its two mappers, all on the GUI/control thread, and no new allocation, lock, wait
-  or log was added there. No control command was added or changed (the `ControlCommandsSnapshot` canary is untouched),
-  and no undo step exists in this area.
+- **Does the regression fail with product hunks reversed and pass restored?** Yes. The product-only reversed build exited 0; the 3-target CTest run exited 8, including `staleAddAfterStopAndRestartKeepsTheNewerMapping` failing at the pre-release assertion. Restoring the product patch and rebuilding exited 0; the same 3-target CTest run exited 0.
+- **Is the test deterministic?** Yes. Fake gateway/router receipt and Qt reply signals are the synchronization points. The 5-second `QTRY_*` values are failure bounds, not timing inputs. The renewal test invokes `renew()` directly and does not wait for a timer.
+- **Were callers and sibling paths checked?** Yes. `PortMapping::start()` calls `stop()` and clears the stopped state for the new attempt; the destructor also calls `stop()`. Both mapper completion handlers are connected in the constructor. The PCP/NAT-PMP mapper and UPnP mapper each invalidate their own pending work, and tests cover their cancellation paths plus the orchestrator stop path.
+- **Is there collateral behavior?** No saved-data, serialization, command, or project-format behavior changes. The edits in this round only improve tests; the existing product fix changes only completion and cleanup for canceled mappings.
+- **Does this affect realtime, undo, or commands?** No audio-thread code is touched. Port mapping runs on the control/UI side. No command or undo behavior was added or changed.
+- **Are tests registered and gates passing?** Yes. Both existing test files are registered in `tests/fork-sources.txt`; no new test file was added. The final feature-check passed all 8 rows.
