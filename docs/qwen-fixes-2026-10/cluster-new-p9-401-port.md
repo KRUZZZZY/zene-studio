@@ -122,6 +122,8 @@ All logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-401
 | Exact command | Exit | Result |
 |---|---:|---|
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-401-port` (`$LOGS/gate-feature-1.log`) | **0** | **PASS**: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity ("no new item in your files"), file-length ("no new item in your files"). |
+| the same command, after the commit (`$LOGS/gate-feature-2.log`) | 1 | FAIL on `fork-sources` and `all-sources-reproduce`: the committed new test source was not yet in `tests/all-sources.txt` (the whole-tree scope list), which the recipe in that file's own header derives from `git ls-files`. The list was re-derived with that recipe (one entry added, nothing else changed) and committed. |
+| the same command, after the manifest fix (`$LOGS/gate-feature-3.log`) | **0** | **PASS**: all eight gates green, including `fork-sources` and `all-sources-reproduce`. |
 
 ## Files committed
 
@@ -132,6 +134,7 @@ All logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-401
 | `tests/src/plugins/ReverbSCPluginStateTest.cpp` | the regression (new, fork-NEW). |
 | `tests/CMakeLists.txt` | registers the `ReverbSCPluginStateTest` ctest. |
 | `tests/fork-sources.txt` | registers the new fork-NEW test source (both recipe copies and the list). |
+| `tests/all-sources.txt` | the whole-tree scope list, re-derived with its own recipe so it names the new test source. |
 | `tests/upstream-modifications.txt` | declares the divergence of the changed inherited files with a reason. |
 | `docs/qwen-fixes-2026-10/cluster-new-p9-401-port.md` | this report. |
 
