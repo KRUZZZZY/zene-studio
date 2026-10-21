@@ -73,13 +73,11 @@ bool SessionCellPlayHandle::isFromTrack(const Track* track) const
 namespace
 {
 
-//! @a track's column: its position in the song's track list, or -1. The list only changes under the
-//! engine's model-change lock, which excludes this render.
+//! @a track's column: its maintained position in the song's track list, or -1. One
+//! O(1) read; the position is updated off the audio thread when the list changes.
 int columnOf(const Track* track)
 {
-	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
-	const auto it = std::find(tracks.begin(), tracks.end(), track);
-	return it == tracks.end() ? -1 : static_cast<int>(it - tracks.begin());
+	return Engine::getSong()->trackIndex(track);
 }
 
 } // namespace
