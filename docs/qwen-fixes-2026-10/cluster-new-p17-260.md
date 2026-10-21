@@ -1,3 +1,4 @@
+Verdict: FIXED
 new-p17-260: FIXED
 new-p17-257: FIXED
 new-p9-22: FIXED
@@ -14,3 +15,11 @@ Commands:
 - GREEN family: ctest -R '^CollabPolicyTest$' -> exit 0 (logs/test-5.log)
 - Gate: python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-260 -> exit 0 (logs/gate-1.log, RESULT: PASS)
 - Build: cmake --build build --target CollabTransportTest zene -> exit 0 (logs/build-green.log)
+
+
+## Self-check
+- RED/GREEN: Reverting only product files (src/core/CollabHost.cpp, include/CollabHost.h, src/core/CollabSessionSync.cpp) made CollabTransportTest fail with exit code 8 (logs/test-red.log); restoring them made it pass with exit code 0 (logs/test-green.log).
+- Deterministic: tests use injected snapshot providers, QSignalSpy, and source-order checks; no sleeps or wall-clock timing in the added assertions except existing QTRY macros.
+- Cause/complete: sendToProjectPeers return value updated in header and definition; broadcastPeers/broadcastCommand callers ignore the new return value; CollabHost and CollabSessionSync size checks share the same MaxHostLineBytes limit.
+- Collateral: the early size check only rejects frames that cannot fit (base64Size + 64 >= MaxHostLineBytes); ordinary projects still pass the later exact frame check. writeSnapshot now checks file size before readAll().
+- Verdicts: all three batch items are FIXED, not already-fixed/false-positive, with the code changes above.
