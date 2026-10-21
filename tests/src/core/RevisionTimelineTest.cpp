@@ -341,6 +341,40 @@ private slots:
 		QVERIFY(!helper.contains(QStringLiteral("differing.append")));
 	}
 
+	//! The private union helper uses set membership so a document with many
+	//! distinct tags does not scan the growing result list for every tag.
+	void comparisonTagUnionUsesSetMembership()
+	{
+		const QJsonObject comparison = compareRevisionDocuments(
+			documentWithTagCounts(2048, 1), documentWithTagCounts(2048, 2));
+		QVERIFY(comparison.value(QStringLiteral("readable")).toBool());
+		QCOMPARE(comparison.value(QStringLiteral("differing_tag_count")).toInt(), 2048);
+		const QJsonArray reported = comparison.value(QStringLiteral("differing_tags")).toArray();
+		QCOMPARE(reported.size(), RevisionTimelineBounds::MaxComparedTags);
+		QCOMPARE(reported.first().toObject().value(QStringLiteral("tag")).toString(),
+			QStringLiteral("tag000"));
+		QCOMPARE(reported.last().toObject().value(QStringLiteral("tag")).toString(),
+			QStringLiteral("tag023"));
+
+		// Timing a quadratic scan is flaky; pin its deterministic algorithmic
+		// contract directly, as the neighbouring construction-bound test does.
+		const QString sourcePath = QDir(QCoreApplication::applicationDirPath()).filePath(
+			QStringLiteral("../../src/core/RevisionTimelineCompare.cpp"));
+		const QByteArray sourceBytes = readBytes(sourcePath);
+		QVERIFY2(!sourceBytes.isEmpty(), qPrintable(sourcePath));
+		const QString source = QString::fromUtf8(sourceBytes);
+		const int helperStart = source.indexOf(QStringLiteral("QStringList unionOfTags("));
+		QVERIFY(helperStart >= 0);
+		const int bodyStart = source.indexOf(QLatin1Char('{'), helperStart);
+		const int bodyEnd = source.indexOf(QStringLiteral("\n}"), bodyStart);
+		QVERIFY(bodyStart >= 0 && bodyEnd > bodyStart);
+		const QString helper = source.mid(bodyStart, bodyEnd - bodyStart);
+		QVERIFY(helper.contains(QStringLiteral("QSet<QString> seen")));
+		QVERIFY(helper.contains(QStringLiteral("seen.contains(")));
+		QVERIFY(helper.contains(QStringLiteral("seen.insert(")));
+		QVERIFY(!helper.contains(QStringLiteral("tags.contains(tag)")));
+	}
+
 	//! A `.mmpz` v2 CONTAINER is refused rather than counted. This slot is the
 	//! other half of the one above, and the two are the reason the guard has to
 	//! come BEFORE the `<?xml` probe rather than after it: a v2 container is a
