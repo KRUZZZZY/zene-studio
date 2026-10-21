@@ -150,6 +150,10 @@ said ("The meter from THIS tick on").
   still goes through the single `transport.tempo_map_add` command, so it stays one
   honest undo step, and the command's reversibility class is unchanged (no new
   command).
+- **The ALREADY-FIXED / FALSE-POSITIVE question does not arise.** All three bugs are
+  FIXED: each one was reproduced by its own regression test on the unmodified code
+  (RED, exit 8) before any product change was made, and the code each fix changed is
+  quoted with its line numbers above.
 - **Qt 5.15 / MSVC / macOS portability.** No new Qt API beyond `QTableWidgetItem::data()`
   and `QTableWidget::item()`, both long-standing; no `windows.h` names, no
   `std::filesystem`, no Qt-6-only call.
