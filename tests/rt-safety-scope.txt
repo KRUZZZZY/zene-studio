@@ -143,3 +143,11 @@ plugins/Watsyn/Watsyn.cpp	WatsynInstrument::deleteNotePluginData	called when a W
 # (the note path took that mutex with a blocking lock() until the queue existed).
 plugins/Vestige/Vestige.cpp	VestigeInstrument::handleMidiEvent	MIDI may arrive on the audio thread (the note path), the GUI thread or the input thread; this producer only publishes a fixed-size event into the bounded hand-off queue
 plugins/Vestige/Vestige.cpp	VestigeInstrument::processImpl	VeSTige's per-period render path: it drains the queued events into the plug-in and calls the plug-in's process
+# --- Q050-037: the automation read paths the pre-first contract changed ---------
+# Both are reached from Song::processNextBuffer on the audio thread. They add no
+# allocation, container growth or lock of their own: the clip read and its one
+# existing mutex stay in valueAt()/writeBlockRamp(), and the per-target initial
+# values are plain model scalars. A differing target gets a fixed-capacity ramp
+# COPY with only its pre-first prefix overridden (AutomationRamp::setValueBefore).
+src/core/Song.cpp	Song::buildAutomationRamps	the per-block sample-accurate publish: fixed-capacity stack ramps, a bounded per-target prefix override, no allocation and no lock beyond the clip's own existing one
+src/core/TrackContainer.cpp	TrackContainer::collectAutomatedValues	the per-tick automation read: bounded scratch writes plus per-target scalar initial-value reads; the clip lock stays in valueAt() and is taken once per clip as before

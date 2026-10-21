@@ -3677,6 +3677,7 @@ tests/src/core/AutomationClipTransformTangentTestSupport.h
 tests/src/core/AutomationLaneChildrenTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationModesTest.cpp
+tests/src/core/AutomationPreFirstValueTest.cpp
 tests/src/core/AutomationPrepassProofTest.cpp
 tests/src/core/AutomationRenderAllocationTest.cpp
 tests/src/core/AutomationThinTest.cpp

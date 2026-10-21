@@ -225,7 +225,19 @@ public:
 		return supportsTangentEditing(m_progressionType.load(std::memory_order_relaxed));
 	}
 
-	float valueAt( const TimePos & _time ) const;
+	/*! The curve's value at clip-relative time @a _time.
+	 *
+	 *  Q050-037: BEFORE the first node the curve has not begun, so the clip
+	 *  holds the authored parameter's initial value (inverse-scaled, the domain
+	 *  the time map stores) instead of 0. A point drawn at the clip's start is
+	 *  the first node and therefore the explicit start value. When @a
+	 *  beforeFirstNode is not null it is set to true for that pre-first read, so
+	 *  a playback pass can apply each target's OWN initial value without taking
+	 *  the clip mutex a second time. An empty map keeps returning 0: with no
+	 *  curve there is no start value to define. A RELATIVE (trim) clip is
+	 *  unchanged: its value is an offset, so it keeps reading 0 before its first
+	 *  node and never sets @a beforeFirstNode. */
+	float valueAt( const TimePos & _time, bool * beforeFirstNode = nullptr ) const;
 	float *valuesAfter( const TimePos & _time, std::int64_t firstOffset, std::size_t count ) const;
 
 	// -----------------------------------------------------------------------
@@ -278,9 +290,19 @@ public:
 	 *  the audio thread, allocates nothing (the ramp is the caller's own
 	 *  fixed-capacity object), and takes the clip's own mutex ONCE for the whole
 	 *  block rather than once per evaluation.
-	 */
+	 *
+	 *  @a target selects whose authored initial value the pre-first frames hold
+	 *  (null = the clip's first object, what a single-valued read answers with).
+	 *  When @a firstNodeFrame is not null it receives the first frame of the
+	 *  block whose curve time is at or after the clip's first node (0 when the
+	 *  node is at or before the block, frames+1 when it lies past the block's
+	 *  last frame). Every knot before it belongs to the pre-first region, so a
+	 *  caller publishing to a target with a different initial value can copy the
+	 *  ramp and override only that prefix (`AutomationRamp::setValueBefore`)
+	 *  instead of rebuilding the whole ramp under a second clip lock. */
 	void writeBlockRamp( AutomationRamp & ramp, const TimePos & blockStart, f_cnt_t frames,
-		double framesPerTick, int frameOffsetInTick ) const;
+		double framesPerTick, int frameOffsetInTick,
+		const AutomatableModel * target = nullptr, f_cnt_t * firstNodeFrame = nullptr ) const;
 
 	//! 0.5.0 MX-160: the latency (frames) upstream of the parameter this clip drives, which the
 	//! clip's reading lags by while latency-compensated automation is on (AutomationLatency).
@@ -355,15 +377,22 @@ private:
 	//! ED-185: a Bend segment's value (AutomationClipTransforms.cpp).
 	float bendValueAt( timeMap::const_iterator v, std::int64_t offset ) const;
 
+	/*! Q050-037: the value the curve holds before its first node - @a target's
+	 *  authored initial value, inverse-scaled to the domain the time map stores;
+	 *  a null @a target uses the clip's first object. Caller holds m_clipMutex,
+	 *  so this takes no lock of its own. A clip with no object answers 0. */
+	float preFirstValueLocked( const AutomatableModel * target ) const;
+
 	/*! The curve's value at clip-relative tick @a rel (plus @a fraction of the
 	 *  segment that starts there) - the segment, not the node, so a node whose
-	 *  in- and out-values differ does not make the ramp step early. Caller
-	 *  holds m_clipMutex. Allocates nothing. */
-	float rampValueAt( const TimePos & rel, float fraction ) const;
+	 *  in- and out-values differ does not make the ramp step early. Before the
+	 *  first node it returns @a preFirstValue (Q050-037). Caller holds
+	 *  m_clipMutex. Allocates nothing. */
+	float rampValueAt( const TimePos & rel, float fraction, float preFirstValue ) const;
 	//! One knot: the curve at @a frame of the block (whose first sample sits
 	//! @a frameOffsetInTick frames into its tick). Caller holds m_clipMutex.
 	void addRampKnot( AutomationRamp & ramp, const TimePos & relClipStart, int frame,
-		int frameOffsetInTick, double framesPerTick ) const;
+		int frameOffsetInTick, double framesPerTick, float preFirstValue ) const;
 
 	/**
 	 * @brief

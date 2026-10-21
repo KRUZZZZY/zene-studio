@@ -97,6 +97,13 @@ public:
 	 *  order is broken or the capacity is full. */
 	bool addKnot(f_cnt_t frame, float value) noexcept;
 
+	/*! Q050-037: give every knot whose frame is BEFORE @a frameExclusive the
+	 *  value @a value. Used after a ramp was built once: a clip whose targets
+	 *  have different authored initial values copies the ramp and overrides
+	 *  only the pre-first prefix, so no ramp is rebuilt under a second clip
+	 *  lock. Bounded by MaxKnots; no allocation, no lock. */
+	void setValueBefore(f_cnt_t frameExclusive, float value) noexcept;
+
 	//! One knot at frame 0: the block-quantised behaviour, for comparison.
 	void setBlockValue(float value) noexcept;
 

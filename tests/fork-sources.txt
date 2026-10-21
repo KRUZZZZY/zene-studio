@@ -2919,3 +2919,5 @@ include/TakeLaneRows.h
 include/TakeWaveform.h
 src/gui/TakeWaveform.cpp
 src/gui/tracks/TakeLaneRows.cpp
+# 2026-10-20 (Q050-037): the pre-first-point contract of an automation clip (fork-NEW regression).
+tests/src/core/AutomationPreFirstValueTest.cpp

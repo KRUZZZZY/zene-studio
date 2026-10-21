@@ -82,7 +82,11 @@ Standard MIDI File.</p>
 <p>Edit &gt; Progression... lists the named progressions and spells each one out in the selected scale and key; Write puts the
 chosen progression into the selected MIDI clip as notes, as one undo step.</p>
 <p>Automation can be switched off for reading or writing across the whole song (Project &gt; Automation Read / Write),
-and writes can be limited to the punch region. A control's trim offsets its automation without changing the curve.</p>
+and writes can be limited to the punch region. A control's trim offsets its automation without changing the curve.
+Before an automation clip's first point the controlled parameter holds its authored initial value (or the point you
+drew at the clip's start), so starting at the beginning and returning there give the same value every time; a clip
+saved with a later first point keeps that value when the project is reopened. A trim (relative) clip is not affected:
+before its first point it adds the same offset as before.</p>
 <p>Automation lanes sit under the track they automate. Adding a lane to a track (the agent command <code>automation.lane_add</code>) draws it as an
 indented child row directly beneath its owner, however the tracks are reordered: moving the owner moves the lane with it, and a lane whose
 owner is gone keeps a row of its own so it can still be reached. A track that owns lanes shows a small triangle in its header; click it, or
