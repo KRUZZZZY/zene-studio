@@ -177,8 +177,10 @@ def run_checks(root, report):
           " third-party compatibility")
     check("Kontakt" in readme,
           "README.md: names Kontakt as the library case")
-    check("no third-party plug-in of any kind has" in readme_formats,
-          "README.md plug-in formats paragraph: says no third-party plug-in of any kind has been tested")
+    check("no other third-party plug-in has" in readme_formats,
+          "README.md plug-in formats paragraph: says no third-party plug-in outside the published matrix has been tested")
+    check("docs/PLUGIN-COMPATIBILITY.md" in readme_formats,
+          "README.md plug-in formats paragraph: points at the published third-party compatibility matrix")
     check("not a GUI" not in freadme,
           "README.md: no stale 'not a GUI' claim about the scan cache")
     check("hand-writing an entry in the cache file" not in freadme,
@@ -221,6 +223,8 @@ def run_checks(root, report):
     check("Third-party compatibility is unverified" in kl_formats,
           "docs/KNOWN-LIMITATIONS.md plug-in formats section: separates format loading from tested"
           " third-party compatibility")
+    check("docs/PLUGIN-COMPATIBILITY.md" in kl_formats,
+          "docs/KNOWN-LIMITATIONS.md plug-in formats section: points at the published third-party compatibility matrix")
     check("no Kontakt runtime and has verified no Kontakt library" in kl_formats,
           "docs/KNOWN-LIMITATIONS.md plug-in formats section: states no Kontakt runtime and no verified"
           " Kontakt library")

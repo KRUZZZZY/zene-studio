@@ -2945,6 +2945,7 @@ tests/src/gui/PianoRollBenchmarkTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/PianoViewFocusTest.cpp
 tests/src/gui/PinConnectorTest.cpp
+tests/src/gui/PluginCompatEditorProbe.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp

@@ -174,10 +174,13 @@ library to work.
   **Rescan**; **Edit ▸ Plugin Quarantine** adds and releases entries too. These are the *same*
   registrations an agent drives: `plugin.scan_cache_list`, `plugin.scan_cache_quarantine_add`,
   `plugin.scan_cache_quarantine_remove` and `plugin.rescan`.
-- **Third-party compatibility is unverified.** The only VST3 and CLAP plug-ins this release has been
-  proven against are the MIT fixtures in the source tree (`tests/data/vst3-test-instrument/` and the
-  CLAP test modules); **no third-party plug-in of any kind has been tested by us**. A file the scan
-  finds and loads may still behave differently from those fixtures — that is untested, not claimed.
+- **Third-party compatibility is unverified except for what `docs/PLUGIN-COMPATIBILITY.md` measures.**
+  That page is the measured matrix of named third-party VST3, CLAP and LV2 plug-ins (a pinned package and file
+  hash each) run on one Linux system, with load, editor and state round-trip as separate outcomes and every
+  failure listed; its in-tree fixtures section is a separate set. Beyond the fixtures in the source tree
+  (`tests/data/vst3-test-instrument/` and the CLAP test modules) and those matrix rows, **no other third-party
+  plug-in has been tested by us**. A file the scan finds and loads may still behave differently — that is
+  untested, not claimed.
 - **No verified bridge for Windows plug-ins.** There is no tested Wine/`yabridge` path: a Windows-only
   VST that needs a bridge has not been run here and is not supported.
 - **Kontakt-scale libraries are external.** **SoundFont2** is a supported sampled-instrument format and

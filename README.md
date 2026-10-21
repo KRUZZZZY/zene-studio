@@ -93,8 +93,9 @@ effects and instruments, CLAP effects and instruments, VST2 through Vestige, LV2
 and GUS patches, plus the built-in instruments. **Format availability varies by platform**: each
 platform's build enables its own set, so that list is the Linux one — CMake disables VST hosting on
 Apple builds, so a macOS build has no VST2/Vestige path. **Loading a format is not the same as having
-tested a particular maker's product.** Apart from the MIT fixtures in the source tree, **no third-party
-plug-in of any kind has been tested by us**, there is **no verified Wine/yabridge path** for plug-ins
+tested a particular maker's product.** Apart from the MIT fixtures in the source tree and the pinned plug-ins measured in
+`docs/PLUGIN-COMPATIBILITY.md` (load, editor and state round-trip, with what failed), **no other third-party
+plug-in has been tested by us**, there is **no verified Wine/yabridge path** for plug-ins
 built for Windows, and there is **no Kontakt runtime**: a **Kontakt** library needs Native Instruments'
 own installer and authorization, which are external to this project, and no Kontakt library or
 Kontakt-format runtime has been verified. SoundFont2 is the sampled-instrument format this build

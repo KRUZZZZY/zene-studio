@@ -2806,3 +2806,5 @@ include/PatcherGraph.h
 src/gui/PatcherCanvas.cpp
 src/gui/PatcherGraph.cpp
 tests/src/gui/PatcherCanvasTest.cpp
+# Q050-071 (2026-10-21): the in-process editor probe of the third-party plug-in compatibility matrix (fork-NEW).
+tests/src/gui/PluginCompatEditorProbe.cpp
