@@ -185,7 +185,9 @@ public:
 	 *  beforeFirstNode is not null it is set to true for that pre-first read, so
 	 *  a playback pass can apply each target's OWN initial value without taking
 	 *  the clip mutex a second time. An empty map keeps returning 0: with no
-	 *  curve there is no start value to define. */
+	 *  curve there is no start value to define. A RELATIVE (trim) clip is
+	 *  unchanged: its value is an offset, so it keeps reading 0 before its first
+	 *  node and never sets @a beforeFirstNode. */
 	float valueAt( const TimePos & _time, bool * beforeFirstNode = nullptr ) const;
 	float *valuesAfter( const TimePos & _time, std::int64_t firstOffset, std::size_t count ) const;
 

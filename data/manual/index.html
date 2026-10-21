@@ -73,7 +73,8 @@ chosen progression into the selected MIDI clip as notes, as one undo step.</p>
 and writes can be limited to the punch region. A control's trim offsets its automation without changing the curve.
 Before an automation clip's first point the controlled parameter holds its authored initial value (or the point you
 drew at the clip's start), so starting at the beginning and returning there give the same value every time; a clip
-saved with a later first point keeps that value when the project is reopened.</p>
+saved with a later first point keeps that value when the project is reopened. A trim (relative) clip is not affected:
+before its first point it adds the same offset as before.</p>
 
 <h2 id="notes">Editing notes</h2>
 <p>Double-click a MIDI clip to open it in the note editor. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties; Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
