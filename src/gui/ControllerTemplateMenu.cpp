@@ -30,8 +30,11 @@
 #include <QJsonObject>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPixmap>
 
 #include "ControlRegistry.h"
+#include "GuiApplication.h"
+#include "TextFloat.h"
 
 namespace lmms::gui
 {
@@ -60,9 +63,78 @@ std::optional<QString> askForName()
 	return ok && !name.isEmpty() ? std::optional<QString>(name) : std::nullopt;
 }
 
+//! The float the user reads when a template command refused, or only half worked.
+void showFloat(const QString& title, const QString& text)
+{
+	// No interface to float a message over (a tool embedding the registry).
+	if (getGUI() == nullptr) { return; }
+	TextFloat::displayMessage(title, text, QPixmap(), 5000);
+}
+
+//! The one way a template command's answer reaches the user.
+void notify(const QString& title, const QString& text)
+{
+	if (notifier()) { notifier()(title, text); return; }
+	showFloat(title, text);
+}
+
+//! What the message about a template command is called.
+QString titleOf(const QString& command)
+{
+	if (command == QLatin1String("controller.template_list")) { return QMenu::tr("Mapping templates"); }
+	if (command == QLatin1String("controller.template_save")) { return QMenu::tr("Save mapping template"); }
+	if (command == QLatin1String("controller.template_apply")) { return QMenu::tr("Apply mapping template"); }
+	return QMenu::tr("Delete mapping template");
+}
+
+//! What the user is told when a template applied only partly: the bindings whose
+//! target is not in this project were skipped, and the report names them.
+void reportPartialApply(const QString& name, const ControlResult& result)
+{
+	const int skipped = result.result.value(QStringLiteral("skipped")).toInt();
+	if (skipped <= 0) { return; }
+	const int bound = result.result.value(QStringLiteral("bound")).toInt();
+	QStringList missing;
+	for (const QJsonValue& value : result.result.value(QStringLiteral("missing")).toArray())
+	{
+		missing << value.toString();
+	}
+	if (missing.size() > 5) { missing = missing.mid(0, 5) << QMenu::tr("…"); }
+	notify(titleOf(QStringLiteral("controller.template_apply")), QMenu::tr(
+		"Applied '%1': %2 of %3 mappings were bound; %4 could not be resolved in this "
+		"project and were skipped (%5).")
+		.arg(name, QString::number(bound), QString::number(bound + skipped),
+			QString::number(skipped), missing.join(QStringLiteral(", "))));
+}
+
+//! What the user is told when the template was not there to delete: the command
+//! answers 'removed: false' rather than failing, so the menu has to say it.
+void reportNotRemoved(const QString& name, const ControlResult& result)
+{
+	if (result.result.value(QStringLiteral("removed")).toBool()) { return; }
+	notify(titleOf(QStringLiteral("controller.template_delete")),
+		QMenu::tr("There was no template named '%1' to delete.").arg(name));
+}
+
+//! A template command's answer reaches the user: a refusal, a partial apply, or a
+//! delete of something already gone. A menu closes either way, so without this the
+//! failure is silent.
+void report(const QString& command, const QString& name, const ControlResult& result)
+{
+	if (!result.ok)
+	{
+		notify(titleOf(command), result.errorMessage);
+		return;
+	}
+	if (command == QLatin1String("controller.template_apply")) { reportPartialApply(name, result); return; }
+	if (command == QLatin1String("controller.template_delete")) { reportNotRemoved(name, result); }
+}
+
 void run(const char* command, const QString& name)
 {
-	ControlRegistry::instance()->invoke(QString::fromLatin1(command), {{QStringLiteral("name"), name}});
+	const ControlResult result = ControlRegistry::instance()->invoke(QString::fromLatin1(command),
+		{{QStringLiteral("name"), name}});
+	report(QString::fromLatin1(command), name, result);
 }
 
 } // namespace
@@ -80,8 +152,10 @@ void setControllerTemplateNotifier(ControllerTemplateNotifier replacement)
 void populateControllerTemplateMenu(QMenu* menu)
 {
 	menu->clear();
-	const QJsonArray templates = ControlRegistry::instance()->invoke(QStringLiteral("controller.template_list"),
-		QJsonObject{}).result.value(QStringLiteral("templates")).toArray();
+	const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("controller.template_list"),
+		QJsonObject{});
+	if (!listed.ok) { notify(titleOf(QStringLiteral("controller.template_list")), listed.errorMessage); }
+	const QJsonArray templates = listed.result.value(QStringLiteral("templates")).toArray();
 	QStringList names;
 	for (const QJsonValue& value : templates)
 	{

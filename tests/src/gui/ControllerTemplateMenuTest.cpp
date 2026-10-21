@@ -25,7 +25,10 @@
 /*! Over a throwaway working directory (the template store is under the user's presets, so the test
  *  points ConfigManager elsewhere first and asserts it did): with one MIDI-driven control, "Save
  *  current mappings as..." saves a template, the next menu lists it with its mappings resolvable,
- *  applying it binds, and Delete removes it - each through its controller.template_* command. */
+ *  applying it binds, and Delete removes it - each through its controller.template_* command.
+ *  The menu CLOSES either way, so the two cases where the command did not do what was asked - a
+ *  refused save and a template that applies only partly - must be REPORTED to the user; the test
+ *  installs a notifier (the menu's seam) and asserts it was told. */
 
 #include <QtTest>
 
