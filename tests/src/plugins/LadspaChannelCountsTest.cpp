@@ -9,6 +9,9 @@
 
 #include <QFileInfo>
 
+#include <limits>
+
+#include "LadspaBase.h"
 #include "LadspaManager.h"
 
 using namespace lmms;
@@ -18,6 +21,17 @@ class LadspaChannelCountsTest : public QObject
 	Q_OBJECT
 
 private slots:
+	// LadspaControls kept the control total in a 16-bit ch_cnt_t, so 65536 controls read back as 0
+	// and the global stereo link skipped them. The count type must hold 65536 and keep every value.
+	void controlCountTypeKeepsEveryControlPastTheSixteenBitLimit()
+	{
+		QVERIFY(std::numeric_limits<control_count_t>::max() >= 65536);
+		QCOMPARE(static_cast<int>(controlCountOf(0)), 0);
+		QCOMPARE(static_cast<int>(controlCountOf(65535)), 65535);
+		QCOMPARE(static_cast<int>(controlCountOf(65536)), 65536);
+		QCOMPARE(static_cast<int>(controlCountOf(65537)), 65537);
+	}
+
 	void audioPortsDetermineChannelCounts()
 	{
 		const auto fixturePath = QString::fromUtf8(LADSPA_CHANNEL_FIXTURE_PATH);

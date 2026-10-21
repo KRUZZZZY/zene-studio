@@ -2907,3 +2907,5 @@ docs/qwen-fixes-2026-10/cluster-new-p8-239-port.md
 docs/qwen-fixes-2026-10/cluster-new-p14-279.md
 # cluster review-2bc56f391 (2026-10): the hardware insert ping's state machine is a compare-and-swap, and its verification report (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-review-2bc56f391.md
+# cluster new-p15-95 (2026-10): the LADSPA global stereo link over a 65536-control plugin (fork-NEW regression test).
+tests/src/plugins/LadspaGlobalLinkTest.cpp

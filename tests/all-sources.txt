@@ -3050,6 +3050,7 @@ tests/src/plugins/LadspaChannelCountFixture.cpp
 tests/src/plugins/LadspaChannelCountsTest.cpp
 tests/src/plugins/Lb302NotePathTest.cpp
 tests/src/plugins/MalletsInstrumentViewTest.cpp
+tests/src/plugins/LadspaGlobalLinkTest.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/MpeConsumerProbe.h
 tests/src/plugins/MpeTestConsumer.cpp
