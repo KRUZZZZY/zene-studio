@@ -39,7 +39,9 @@
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MidiClock.h"
 #include "MidiClockMenu.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -91,6 +93,15 @@ private slots:
 		ConfigManager::inst()->loadConfigFile(m_home.filePath(QStringLiteral("zene.xml")));
 		Engine::init(true);
 		ControlRegistry::setReady(true);
+	}
+
+	void cleanup()
+	{
+		// Never leak a clock mode into the next slot: the follower is one object
+		// for the whole run, and a slot that stops early (a failed assertion
+		// returns from the slot) must not leave the slave following.
+		ControlRegistry::instance()->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), false}, {QStringLiteral("follow_tempo"), false}});
 	}
 
 	void cleanupTestCase()
@@ -157,6 +168,59 @@ private slots:
 		QVERIFY(!clockPart("slave").value(QStringLiteral("enabled")).toBool());
 		QVERIFY(!follow->isChecked());
 		QVERIFY(!followTempo->isEnabled());
+	}
+
+	//! The follow preference SURVIVES a disable, and the re-enable actually
+	//! follows again: the poll timer has to be running, or the measured tempo is
+	//! never written to the Song. The menu sends only 'enabled' on the way back,
+	//! so the saved preference is the only thing that carries the mode.
+	void slaveSetRetainsFollowPreferenceAcrossDisable()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		MidiClock* midiClock = MidiClock::instance();
+		Song* song = Engine::getSong();
+		song->setTempo(100);
+
+		registry->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), false}, {QStringLiteral("follow_tempo"), false}});
+		registry->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), true}, {QStringLiteral("follow_tempo"), true}});
+		QVERIFY(clockPart("slave").value(QStringLiteral("follow_tempo")).toBool());
+
+		// The menu sends only enabled:false here; the saved tempo preference must survive.
+		registry->invoke(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), false}});
+		QVERIFY(!clockPart("slave").value(QStringLiteral("enabled")).toBool());
+		QVERIFY(clockPart("slave").value(QStringLiteral("follow_tempo")).toBool());
+
+		// Re-enable using the menu's enabled-only command and send a fresh clock stream.
+		registry->invoke(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), true}});
+		QVERIFY(clockPart("slave").value(QStringLiteral("follow_tempo")).toBool());
+		// The pulses carry INJECTED timestamps: exact 120 BPM intervals, so the
+		// measured tempo is 120 whatever the wall clock does. The stream starts a
+		// minute ahead of the monotonic clock, because the tracker's lock is
+		// dropped when no pulse has arrived for half a second - and the age it
+		// measures is the distance from the LAST pulse to the audio period's own
+		// clock, so a pulse from the future is never aged out. Nothing in this
+		// test waits for the wall clock.
+		const quint64 pulseInterval = 60000000000ULL / (120ULL * MidiClockPulsesPerQuarter);
+		quint64 timestamp = MidiClock::nowNs() + 60000000000ULL;
+		for (int pulse = 0; pulse < 48; ++pulse)
+		{
+			timestamp += pulseInterval;
+			midiClock->handleInputMessage(MidiClockMessage::Clock, 0, timestamp, QString());
+		}
+		QVERIFY(midiClock->slaveEnabled());
+		QVERIFY(midiClock->slaveFollowTempo());
+		QVERIFY(midiClock->tracker().locked());
+		const int measuredTempo = qRound(midiClock->tracker().tempoBpm());
+		QCOMPARE(measuredTempo, 120);
+		// The command must have restarted its existing poll timer: the tempo
+		// changes only when that timer's callback applies the fresh measurement.
+		// The poll runs every 250 ms, so the 1500 ms bound is six polls' worth.
+		QTRY_COMPARE_WITH_TIMEOUT(song->getTempo(), measuredTempo, 1500);
+
+		registry->invoke(QStringLiteral("clock.slave_set"),
+			{{QStringLiteral("enabled"), false}, {QStringLiteral("follow_tempo"), false}});
 	}
 
 	void sendClockShowsTheMasterAcceptedOrRefused()
