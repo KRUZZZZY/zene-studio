@@ -33,13 +33,22 @@
  *  then record again and play the same pitch.  A start left over from the previous pass sits in
  *  front of the new one, so the release pairs with the OLD start and the note is recorded from
  *  where the abandoned pass began.
+ *
+ *  The other two suites here are the note-property edits that must be journal steps of their
+ *  own: a wheel change and an accepted Enter Value dialog.  Both reach the clip through the
+ *  real PianoRoll, and both are undone through the same ProjectJournal the Edit menu uses.
  */
 
 #include <QtTest>
 
 #include <memory>
 
+#include <QApplication>
+#include <QInputDialog>
+#include <QSpinBox>
 #include <QTemporaryDir>
+#include <QTimer>
+#include <QWheelEvent>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -49,8 +58,10 @@
 #include "MidiClip.h"
 #include "Note.h"
 #include "PianoRoll.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "Track.h"
+#include "Timeline.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -121,7 +132,8 @@ private slots:
 		QVERIFY(m_window->isRecording());
 		QVERIFY(Engine::getSong()->isPlaying());
 		Engine::getSong()->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOn(Note(TimePos(0), TimePos(0), Pitch));
+		Note abandoned(TimePos(0), TimePos(0), Pitch);
+		Q_EMIT instrument->midiNoteOn(abandoned);
 		QCOMPARE(static_cast<int>(m_clip->notes().size()), 0);
 
 		m_window->stop();
@@ -132,9 +144,11 @@ private slots:
 		m_window->record();
 		QVERIFY(m_window->isRecording());
 		Engine::getSong()->setPlayPos(SecondPassStart, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOn(Note(TimePos(0), TimePos(0), Pitch));
+		Note secondPass(TimePos(0), TimePos(0), Pitch);
+		Q_EMIT instrument->midiNoteOn(secondPass);
 		Engine::getSong()->setPlayPos(SecondPassStart + 96, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOff(Note(TimePos(96), TimePos(0), Pitch));
+		secondPass.setLength(TimePos(96));
+		Q_EMIT instrument->midiNoteOff(secondPass);
 
 		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
 		// Exactly the second pass's note: it starts where that pass's key-down was, and lasts until its
@@ -156,17 +170,161 @@ private slots:
 		QVERIFY(Engine::getSong()->isPlaying());
 		Engine::getSong()->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
 
-		Q_EMIT instrument->midiNoteOn(Note(TimePos(0), TimePos(0), Pitch));
+		Note liveNote(TimePos(0), TimePos(0), Pitch);
+		Q_EMIT instrument->midiNoteOn(liveNote);
 
 		// The key-up as the MPE input path hands it to the roll: the note-off
 		// velocity rides on the note (InstrumentTrack::trackMpeInputEvent).
-		Note release(TimePos(96), TimePos(0), Pitch);
-		release.setReleaseVelocity(96);
+		liveNote.setLength(TimePos(96));
+		liveNote.setReleaseVelocity(96);
 		Engine::getSong()->setPlayPos(FirstPassStart + 96, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOff(release);
+		Q_EMIT instrument->midiNoteOff(liveNote);
 
 		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
 		QCOMPARE(m_clip->notes().front()->releaseVelocity(), 96);
+	}
+
+	//! A live start is paired with the release of its OWN note handle, not merely with the
+	//! next release of the same pitch.  Two overlapping starts of one pitch - what MPE sends
+	//! on two member channels - released in the opposite order must keep their own start
+	//! positions and lengths.
+	void overlappingStartsOfOnePitchKeepTheirOwnRelease()
+	{
+		auto* instrument = dynamic_cast<InstrumentTrack*>(m_track);
+
+		m_window->record();
+		QVERIFY(m_window->isRecording());
+		QVERIFY(Engine::getSong()->isPlaying());
+
+		Note first(TimePos(0), TimePos(0), Pitch);
+		Note second(TimePos(0), TimePos(0), Pitch);
+
+		Engine::getSong()->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOn(first);
+		Engine::getSong()->setPlayPos(FirstPassStart + 96, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOn(second);
+
+		// The key-ups arrive in the opposite order; each carries its own handle identity and
+		// the length the engine stamped on it before emitting midiNoteOff.
+		second.setLength(TimePos(96));
+		Engine::getSong()->setPlayPos(FirstPassStart + 192, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOff(second);
+		first.setLength(TimePos(240));
+		Engine::getSong()->setPlayPos(FirstPassStart + 240, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOff(first);
+
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 2);
+		const Note* atZero = nullptr;
+		const Note* at96 = nullptr;
+		for (const Note* note : m_clip->notes())
+		{
+			if (note->pos() == TimePos(0)) { atZero = note; }
+			if (note->pos() == TimePos(96)) { at96 = note; }
+		}
+		QVERIFY(atZero != nullptr);
+		QVERIFY(at96 != nullptr);
+		// Key-only pairing gives these the swapped lengths (96 / 240).
+		QCOMPARE(static_cast<int>(atZero->length()), 240);
+		QCOMPARE(static_cast<int>(at96->length()), 96);
+	}
+
+	//! A note-on outside an armed punch window has no pending start. Its later key-up must not
+	//! fall back to pitch and consume another same-pitch handle that started inside the window.
+	void releaseForPunchRejectedStartDoesNotConsumeSamePitchStart()
+	{
+		auto* instrument = dynamic_cast<InstrumentTrack*>(m_track);
+		auto* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::MidiClip);
+		timeline.setPunchRange(SecondPassStart, SecondPassStart + 480);
+		timeline.setPunchEnabled(true);
+
+		m_window->record();
+		QVERIFY(m_window->isRecording());
+		QVERIFY(song->isPlaying());
+
+		Note outside(TimePos(0), TimePos(0), Pitch);
+		Note inside(TimePos(0), TimePos(0), Pitch);
+		song->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOn(outside); // excluded by punch-in
+		song->setPlayPos(SecondPassStart, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOn(inside); // pending, with the same pitch
+
+		outside.setLength(TimePos(192));
+		song->setPlayPos(SecondPassStart + 96, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOff(outside);
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 0);
+
+		inside.setLength(TimePos(144));
+		song->setPlayPos(SecondPassStart + 144, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOff(inside);
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
+		QCOMPARE(static_cast<int>(m_clip->notes().front()->pos()), static_cast<int>(SecondPassStart));
+		QCOMPARE(static_cast<int>(m_clip->notes().front()->length()), 144);
+	}
+
+	//! A wheel edit of the note volume is one journal step: Undo puts the volume back instead
+	//! of leaving the wheel change (and unwinding an older checkpoint).
+	void aWheelEditIsOneJournalStepAndUndoRestoresTheVolume()
+	{
+		Note* note = m_clip->addNote(Note(TimePos(96), TimePos(0), Pitch, DefaultVolume), false);
+		QVERIFY(note != nullptr);
+		note->setSelected(true);
+
+		PianoRoll* roll = m_window->findChild<PianoRoll*>();
+		QVERIFY(roll != nullptr);
+
+		const int depth = Engine::projectJournal()->undoDepth();
+		QWheelEvent up(QPointF(100, roll->height() - 50), QPointF(100, roll->height() - 50),
+			QPoint(0, 0), QPoint(0, 120), Qt::MouseButtons(), Qt::KeyboardModifiers(),
+			Qt::ScrollPhase(), false);
+		QApplication::sendEvent(roll, &up);
+
+		QCOMPARE(static_cast<int>(note->getVolume()), static_cast<int>(DefaultVolume) + 1);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);
+
+		Engine::projectJournal()->undo();
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
+		QCOMPARE(static_cast<int>(m_clip->notes().front()->getVolume()), static_cast<int>(DefaultVolume));
+	}
+
+	//! An accepted Enter Value is one journal step through its real caller.  The mouse press
+	//! that precedes the double click checkpoints the edit area already, so the dialog's
+	//! change reverses with it; this guard fails if that caller checkpoint is removed.
+	void anAcceptedEnterValueIsOneJournalStepThroughTheMousePath()
+	{
+		Note* note = m_clip->addNote(Note(TimePos(96), TimePos(0), Pitch, DefaultVolume), false);
+		QVERIFY(note != nullptr);
+		note->setSelected(true);
+
+		PianoRoll* roll = m_window->findChild<PianoRoll*>();
+		QVERIFY(roll != nullptr);
+		const QPoint point(100, roll->height() - 50);
+
+		const int depth = Engine::projectJournal()->undoDepth();
+		// A real double click is a press (which journals the edit area) followed by the
+		// double-click event; QTest::mouseDClick sends only the latter in this build.
+		QTest::mouseClick(roll, Qt::LeftButton, Qt::NoModifier, point);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);
+
+		bool dialogDriven = false;
+		QTimer::singleShot(0, [&dialogDriven] {
+			auto* dialog = qobject_cast<QInputDialog*>(QApplication::activeModalWidget());
+			if (dialog == nullptr) { return; }
+			auto* spin = dialog->findChild<QSpinBox*>();
+			if (spin == nullptr) { dialog->reject(); return; }
+			spin->setValue(64);
+			dialog->accept();
+			dialogDriven = true;
+		});
+		QTest::mouseDClick(roll, Qt::LeftButton, Qt::NoModifier, point);
+		QVERIFY(dialogDriven);
+
+		QCOMPARE(static_cast<int>(note->getVolume()), 64);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);
+
+		Engine::projectJournal()->undo();
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
+		QCOMPARE(static_cast<int>(m_clip->notes().front()->getVolume()), static_cast<int>(DefaultVolume));
 	}
 
 private:

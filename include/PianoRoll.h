@@ -410,6 +410,11 @@ private:
 	bool m_recording;
 	bool m_doAutoQuantization{false};
 	QList<Note> m_recordingNotes;
+	//! The live handle's Note::id(), parallel to m_recordingNotes (cluster 5214).  A pending
+	//! start is paired with the release of its own handle, not the first pending start of the
+	//! same pitch: MPE can hold one pitch on two member channels, and key-only pairing attached
+	//! the earlier start's position and the later release's expression to the wrong note.
+	QList<int> m_recordingNoteIds;
 	//! 0.5.0 L03 (WF-082): the clip's notes when the pass began - in replace mode a recorded note
 	//! removes those it overlaps. Kept as note ids, which are never reused: a pointer could be
 	//! handed by the allocator to a note recorded later in the same pass, which then read as old.
