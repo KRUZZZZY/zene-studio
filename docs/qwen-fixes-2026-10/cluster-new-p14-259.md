@@ -11,7 +11,7 @@ RED/GREEN proof:
 
 new-p14-261: FIXED
 
-Decision: REAL. `std::hash<std::thread::id>` may collide, so it cannot be an ownership token. `shmFifo::callerKey()` now returns the address of a thread-local token, and `m_owner` stores that pointer at `include/RemotePluginBase.h:175-183,209-232,447`. `lock()`, `tryLockFor()` and `unlock()` use the same token. `callerTokensStayDistinctDespiteLegacyHashCollision()` at `tests/src/core/RemotePluginShmFifoTest.cpp:54-89` holds both threads live at comparison, verifies the injected legacy hashes collide, and verifies their actual FIFO tokens differ.
+Decision: REAL. `std::hash<std::thread::id>` may collide, so it cannot be an ownership token. `shmFifo::callerKey()` now returns the address of a thread-local token, and `m_owner` stores that pointer at `include/RemotePluginBase.h:175-183,209-232,447`. `lock()`, `tryLockFor()` and `unlock()` use the same token. `callerTokensStayDistinctDespiteLegacyHashCollision()` holds both threads live at comparison, verifies the test hash callback collides, asserts `callerKey()` returns an address key, and verifies the live tokens differ. The address-key assertion also fails deterministically if the old integer hash key is restored.
 
 RED/GREEN proof:
 

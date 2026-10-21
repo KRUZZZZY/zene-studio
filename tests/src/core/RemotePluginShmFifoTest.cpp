@@ -58,6 +58,7 @@ private slots:
 		std::barrier captured{3};
 		std::barrier release{3};
 		using CallerKey = decltype(shmFifo::callerKey());
+		const bool callerKeyUsesAddress = std::is_same_v<CallerKey, const void *>;
 		CallerKey keys[2]{};
 		std::thread::id ids[2];
 		std::thread first([&] {
@@ -84,6 +85,7 @@ private slots:
 		second.join();
 		shmFifo::setCallerIdHashForTest(nullptr);
 
+		QVERIFY(callerKeyUsesAddress);
 		QVERIFY(legacyHashesCollide);
 		QVERIFY(distinct);
 	}
