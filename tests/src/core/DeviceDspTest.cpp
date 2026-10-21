@@ -139,6 +139,7 @@ extern "C"
 #include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
 #include "QuadratureLfo.h"
 #include "RmsHelper.h"
 #include "OversamplingHelpers.h"
@@ -948,6 +949,35 @@ private slots:
 		QCOMPARE(parameterValue(ch(2), onTwo, QStringLiteral("Drive")), 40.0);
 		QVERIFY2(again.result.value(QStringLiteral("changed")).toInt() == 0,
 			"a console already carrying the requested drive was reported as changed");
+	}
+
+	//! Luna new-p15-10: applying settings a console already carries changes nothing, so it must take no
+	//! undo step and must not dirty a project that was saved clean.
+	void applyingTheSameSettingsTakesNoUndoStepAndLeavesTheProjectClean()
+	{
+		const QString console = loadByName(ch(1), QStringLiteral("console"));
+		if (console.isEmpty()) { QSKIP("this build has no console module"); }
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		for (int i = 0; i < Engine::mixer()->numChannels(); ++i) { chainOf(i).clear(); }
+		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 40.0}}).ok);
+
+		Song* song = Engine::getSong();
+		ProjectJournal* journal = Engine::projectJournal();
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString fixtureFile = directory.filePath(QStringLiteral("console-same.mmp"));
+		QVERIFY(song->saveProjectFile(fixtureFile, false));
+		song->noteProjectSaved(fixtureFile);
+		QVERIFY(!song->isModified());
+		const int undoDepth = journal->undoDepth();
+
+		const ControlResult same = run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 40.0}});
+		QVERIFY2(same.ok, qPrintable(same.errorMessage));
+		QCOMPARE(same.result.value(QStringLiteral("added")).toInt(), 0);
+		QCOMPARE(same.result.value(QStringLiteral("changed")).toInt(), 0);
+		QCOMPARE(journal->undoDepth(), undoDepth);
+		QVERIFY2(!song->isModified(), "applying unchanged console settings dirtied the project");
 	}
 
 	//! Luna 3873: one mixer.console_apply is ONE undo step however many channels it touched -
