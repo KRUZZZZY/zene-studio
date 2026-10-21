@@ -212,6 +212,33 @@ private slots:
 		QCOMPARE(kind({{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 1}}), ControlErrorKind::InvalidArgs);  // filled
 	}
 
+	//! A cell filled while its take records keeps what was put there: the landing is refused before the take is written,
+	//! the take stays in hand, and once the cell is cleared the same take lands.
+	void aLandingNeverOverwritesACellFilledWhileItRecorded()
+	{
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("bars"), 1}}).ok);
+		for (int i = 0; i < 4000 && state() != QStringLiteral("recording"); ++i) { period(); }
+		QCOMPARE(state(), QStringLiteral("recording"));
+		const QString filled = m_dir.filePath(QStringLiteral("filled.wav"));
+		QVERIFY2(run(QStringLiteral("session.set_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0},
+			{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("source"), filled}}).ok, "the cell was not filled");
+		QVERIFY(recordUntilDone());
+
+		const QString path = m_dir.filePath(QStringLiteral("overwrite.wav"));
+		const ControlResult landed = run(QStringLiteral("session.record_slot_land"), {{QStringLiteral("file"), path}});
+		QCOMPARE(landed.errorKind, ControlErrorKind::Refused);
+		QVERIFY(!QFileInfo::exists(path));  // refused before the take was written
+		QCOMPARE(Engine::getSong()->sessionModel().slot(m_column, 0).audioSource(), filled);
+		QCOMPARE(state(), QStringLiteral("done"));  // the take is still in hand
+
+		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), m_column}, {QStringLiteral("scene"), 0}}).ok);
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		const auto frames = static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble());
+		checkQuantisedStart(status);
+		landAndCompare(status, frames, QStringLiteral("cleared.wav"));
+	}
+
 private:
 	//! One period: the next input frames are staged, then rendered; notes the period the column took over in.
 	void period()
