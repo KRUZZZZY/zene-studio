@@ -229,6 +229,21 @@ output directory - no partial stem, no staging directory.
   (tests/src/core/ControlBounceRenderTest.cpp:492,
   tests/src/core/ProjectRecoveryTest.cpp:79).
 
+## One refinement the staging introduced, and its own test
+
+The staging directory is a path of this verb's own making, and the child's
+words name the directory it was asked to write into - so a refusal could hand
+the caller an internal path it has no business knowing. The refusal therefore
+replaces that path with the caller's own directory
+(`src/core/ControlCommandsRenderStems.cpp:204-223`), and the new slot
+`aFailedExportNamesTheCallersDirectoryNotTheStagingOne()` in
+`tests/src/core/ControlStemExportTest.cpp` requires the refusal to name the
+caller's directory and NOT the staging one. Before the refinement the same
+slot failed with "the child said: fake-child: could not write into
+.../stems/.zene-stems-staging-3557361-1792554364491"
+(`.../logs/test-refine-2.log`, **EXIT=1**); after it the whole family passes
+(`.../logs/test-refine-5.log`, **EXIT=0**, 7 slots, 0 failed).
+
 ## The affected family, and one pre-existing failure that is NOT this batch's
 
 `ctest -R "ControlBounceRenderTest|StemExportTest|ControlRegistryTest|BounceInPlaceTest|ControlRenderJobTest|ControlStemExportTest|ControlStemExportVerb|ControlStemCommands" --output-on-failure`
@@ -239,7 +254,7 @@ output directory - no partial stem, no staging directory.
 | BounceInPlaceTest | Passed (0.10 s) |
 | ControlBounceRenderTest | Passed (2.75 s) - the OTHER child-process render path |
 | ControlRenderJobTest | Passed (8.10 s) |
-| ControlStemExportTest | Passed (2.17 s) - the new regression family |
+| ControlStemExportTest | Passed (2.06 s) - the new regression family (7 slots) |
 | ControlRegistryTest | Passed (1.32 s) |
 | StemExportTest | Passed (2.63 s) - the engine's own stem export |
 | ControlStemExportVerb | Passed (5.08 s) - the END-TO-END transcript against the real binary: the stems land on disk, a RE-export into the same directory still reports the files it rewrote, and a refused export creates nothing |

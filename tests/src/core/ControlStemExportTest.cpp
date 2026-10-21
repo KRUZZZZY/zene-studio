@@ -120,7 +120,10 @@ int fakeStemExport(int argc, char** argv)
 		.split(QLatin1Char(','), Qt::SkipEmptyParts);
 	if (!writeStemFiles(out, pairs, stamp)) { return 3; }
 
-	const QString error = qEnvironmentVariable("ZENE_FAKE_STEM_STDERR");
+	// "{out}" is the directory the child was given - the child's own words
+	// name the directory it was asked to write into.
+	QString error = qEnvironmentVariable("ZENE_FAKE_STEM_STDERR");
+	error.replace(QStringLiteral("{out}"), out);
 	if (!error.isEmpty())
 	{
 		std::fputs(qPrintable(error), stderr);
@@ -235,6 +238,22 @@ private slots:
 		QVERIFY(!failed.ok);
 		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
 		QVERIFY2(failed.errorMessage.contains(QStringLiteral("fake-child: could not open the output directory")),
+			qPrintable(failed.errorMessage));
+	}
+
+	//! The child's own words name the directory the CALLER asked for.
+	void aFailedExportNamesTheCallersDirectoryNotTheStagingOne()
+	{
+		seedSession();
+		const QString directory = out(QStringLiteral("stems"));
+		qputenv("ZENE_FAKE_STEM_STDERR", "fake-child: could not write into {out}");
+		qputenv("ZENE_FAKE_STEM_EXIT", "3");
+
+		const ControlResult failed = exportStems(directory);
+		QVERIFY(!failed.ok);
+		QVERIFY2(failed.errorMessage.contains(directory),
+			qPrintable(failed.errorMessage));
+		QVERIFY2(!failed.errorMessage.contains(QStringLiteral(".zene-stems-staging")),
 			qPrintable(failed.errorMessage));
 	}
 

@@ -26,9 +26,8 @@
  * :305 blocks the dispatch thread on `waitForFinished(600000)`, and every control
  * handler runs ON that thread, so the control surface is DEAD for the whole lifetime of
  * the render child - `control.ping` included. docs/RENDER-CHILD-WAIT.md:120-126 states
- * it as a product defect and :128-141 designs the deferred-reply fix. THIS LANE DOES NOT
- * BUILD THAT FIX. `render.stems` therefore carries the identical bound and says so in
- * its own description and in docs/KNOWN-LIMITATIONS.md.
+ * it as a product defect; THIS LANE DOES NOT BUILD THAT FIX, so `render.stems` carries
+ * the identical bound and says so in its own description.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -155,8 +154,7 @@ QString parseStemArgs(const QJsonObject& args, StemRequest* request)
 
 //! The last \a maxBytes of the file at \a path, as text. The child's own output
 //! is read back from a FILE and not from a pipe: a pipe fills up and blocks the
-//! child (the reason the whole-project render reads a file, too -
-//! src/core/ControlCommandsProject.cpp:326).
+//! child (src/core/ControlCommandsProject.cpp:326 reads a file, too).
 QString tailOfFile(const QString& path, int maxBytes)
 {
 	QFile file(path);
@@ -170,9 +168,8 @@ QString tailOfFile(const QString& path, int maxBytes)
  *
  *  \a outputDirectory is the directory the child writes into - the caller's own,
  *  or the staging directory this verb renders into first. \a errorTail receives
- *  the child's OWN last words, bounded: a refusal that says only "the export
- *  failed" leaves the caller with the exit code and nothing to act on, while
- *  the reason it failed is exactly what the child wrote to its standard error.
+ *  the child's OWN last words, bounded: the reason the export failed is exactly
+ *  what the child wrote to its standard error.
  */
 bool runCliStemExport(const QString& projectPath, const StemRequest& request,
 	const QString& outputDirectory, int* exitCode, QString* errorTail)
@@ -183,9 +180,8 @@ bool runCliStemExport(const QString& projectPath, const StemRequest& request,
 	arguments += controlExportPresetRenderArgs(request.settings);
 	arguments << QStringLiteral("--tail-bars") << QString::number(request.tailBars);
 
-	// The child's error text goes to a FILE, not to a pipe (see tailOfFile):
-	// the child must never block on a full pipe, and the file is read back
-	// afterwards, bounded.
+	// The child's error text goes to a FILE, not to a pipe (see tailOfFile): the
+	// child must never block on a full pipe, and the file is read back, bounded.
 	QTemporaryFile errorFile;
 	errorFile.open();
 	errorFile.close();
@@ -202,17 +198,23 @@ bool runCliStemExport(const QString& projectPath, const StemRequest& request,
 	return finished;
 }
 
-//! The refusal a failed export answers with: the exit code, what the run wrote,
-//! and the child's OWN words - the reason the export failed, which used to be
-//! discarded with the child's output.
+/*! The refusal a failed export answers with: the exit code, what the run wrote,
+ *  and the child's OWN words - the reason the export failed, which used to be
+ *  discarded with the child's output. The child's words name the directory this
+ *  verb rendered into (the staging one), so it is replaced with the caller's own
+ *  directory: a refusal naming an internal staging path would send the caller
+ *  looking for a directory that is none of its business.
+ */
 QString stemExportFailureMessage(int exitCode, int stemCount, const QString& directory,
-	const QString& errorTail)
+	const QString& errorTail, const QString& stagingDirectory = QString())
 {
 	QString message = QStringLiteral("the stem export failed (exit %1, %2 new file(s) in %3); "
 		"the session is unchanged").arg(exitCode).arg(stemCount).arg(directory);
 	if (!errorTail.isEmpty())
 	{
-		message += QStringLiteral("; the child said: ") + errorTail;
+		QString tail = errorTail;
+		if (!stagingDirectory.isEmpty()) { tail.replace(stagingDirectory, directory); }
+		message += QStringLiteral("; the child said: ") + tail;
 	}
 	return message;
 }
@@ -235,7 +237,7 @@ void removeStagingDirectory(const QString& staging)
 
 //! Installs one rendered file over \a target. The earlier file is moved ASIDE
 //! first and put back when the new one cannot be installed, so a failed
-//! promotion never leaves a half-written stem behind.
+//! promotion leaves no half-written stem behind.
 bool installStagedFile(const QString& staged, const QString& target, const QString& staging,
 	QString* error)
 {
@@ -328,9 +330,8 @@ QHash<QString, StemFileState> listingOf(const QString& directory)
  *  BYTES changed is one the run rewrote, whatever the filesystem's clock did with
  *  the modification time: a rewrite that lands inside the same clock tick leaves
  *  the stamp where it was, and a stamp comparison then reports nothing at all -
- *  the export refuses a render it had performed, with "0 new file(s)" in the
- *  refusal. The stamp stays, because a rewrite of byte-identical content leaves
- *  no trace in the content either, and that rewrite is a write.
+ *  the export refuses a render it had performed. The stamp stays, because a
+ *  rewrite of byte-identical content leaves no trace in the content either.
  */
 QJsonArray writtenStems(const QHash<QString, StemFileState>& before,
 	const QHash<QString, StemFileState>& after)
@@ -396,7 +397,7 @@ ControlResult stemExportSession(const QJsonObject& args)
 		// it held before this run.
 		removeStagingDirectory(staging);
 		return ControlResult::failure(ControlErrorKind::Refused,
-			stemExportFailureMessage(exitCode, 0, request.directory, errorTail));
+			stemExportFailureMessage(exitCode, 0, request.directory, errorTail, staging));
 	}
 
 	// The render is complete: install the whole set, or report that it could
