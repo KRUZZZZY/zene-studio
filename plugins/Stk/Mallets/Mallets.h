@@ -323,7 +323,7 @@ private:
 //	Knob * m_motionKnob;
 //	Knob * m_vibratoKnob;
 	Knob * m_velocityKnob;
-//	LedCheckBox * m_strikeLED;
+	LedCheckBox * m_strikeLED;
 
 	ComboBox * m_presetsCombo;
 	Knob * m_spreadKnob;
