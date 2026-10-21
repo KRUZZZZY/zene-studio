@@ -25,6 +25,7 @@
 #ifndef LMMS_SCRIPT_ENGINE_H
 #define LMMS_SCRIPT_ENGINE_H
 
+#include <QFile>
 #include <QFileInfo>
 #include <QMutex>
 #include <QObject>
@@ -64,6 +65,91 @@ inline QString deepestExistingAncestor(const QString& path, const QString& root)
 		probe = QFileInfo(probe).absolutePath();
 	}
 	return probe;
+}
+
+/*! \brief Largest script source the host reads from a FILE, in bytes.
+ *
+ * The Lua memory budget (ScriptEngine::memoryBudget) bounds what the SCRIPT
+ * may hold inside its Lua state. The host's own copies of the source - the
+ * bytes read from the file and the QString they decode into - are made before
+ * Lua ever sees the script and are NOT charged to that budget, so the source
+ * is bounded on its own as well: a file above this limit is refused before it
+ * is read, and the read itself stops at the limit.
+ */
+constexpr quint64 MaxScriptSourceBytes = 16ull * 1024ull * 1024ull;
+
+//! Bytes read per chunk while a script file is read (bounds the read buffer).
+constexpr qint64 ScriptSourceChunkBytes = 64 * 1024;
+
+/*! \brief The source limit a run with \a memoryBudget enforces.
+ *
+ * The budget, when it is set, is the tighter of the two bounds: a source that
+ * does not fit in the Lua state cannot run anyway, and refusing it before it
+ * is read keeps the host's copies inside the budget the user asked for. A
+ * budget of 0 (no cap, reachable from C++ only) leaves the hard limit.
+ */
+inline quint64 scriptSourceLimit(quint64 memoryBudget)
+{
+	return memoryBudget == 0 ? MaxScriptSourceBytes : qMin(memoryBudget, MaxScriptSourceBytes);
+}
+
+/*! \brief Read a script file into \a source, refusing anything above \a limit.
+ *
+ * The file is refused on its SIZE before it is read, so a huge file never
+ * reaches the host's memory; the read that follows is bounded as well (a file
+ * that grew since the size check, or a stream of unknown size, is cut off at
+ * the limit). The conversion to \a source therefore never sees more than
+ * \a limit bytes.
+ *
+ * \return false when the file cannot be read or is above the limit; \a error
+ * then says which.
+ */
+inline bool readScriptSource(const QString& path, quint64 limit, QString& source, QString* error)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("cannot open script '%1': %2").arg(path, file.errorString());
+		}
+		return false;
+	}
+	const qint64 size = file.size();
+	if (size > static_cast<qint64>(limit))
+	{
+		if (error != nullptr)
+		{
+			*error = QStringLiteral("script '%1' is too large: %2 bytes, the limit is %3 bytes")
+					.arg(path).arg(size).arg(limit);
+		}
+		return false;
+	}
+	QByteArray bytes;
+	if (size > 0)
+	{
+		bytes.reserve(static_cast<int>(size));
+	}
+	while (true)
+	{
+		const QByteArray chunk = file.read(ScriptSourceChunkBytes);
+		if (chunk.isEmpty())
+		{
+			break;
+		}
+		bytes += chunk;
+		if (static_cast<quint64>(bytes.size()) > limit)
+		{
+			if (error != nullptr)
+			{
+				*error = QStringLiteral("script '%1' is too large: the limit is %2 bytes")
+						.arg(path).arg(limit);
+			}
+			return false;
+		}
+	}
+	source = QString::fromUtf8(bytes);
+	return true;
 }
 
 //! Capacity of the script -> apply-side command queue, in commands.

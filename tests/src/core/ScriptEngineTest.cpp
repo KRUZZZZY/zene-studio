@@ -737,6 +737,68 @@ for i = 1, 20000 do clip:addNoteAt(60, i, 10, 100) end
 		engine->processCommands();
 		engine->setAutoApply(true);
 	}
+
+	//! A script FILE is read into the host's memory before Lua ever sees it,
+	//! and those copies sit OUTSIDE the Lua memory budget: a huge file could
+	//! make the host allocate far past the budget before Lua refused the
+	//! script. The file is therefore refused on its size, before it is read.
+	void testScriptFileAboveTheSourceLimitIsRefused()
+	{
+		using namespace lmms;
+		auto* engine = ScriptEngine::instance();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+
+		const QString header = QStringLiteral("--! zene-api %1.%2\n")
+				.arg(ZENE_LUA_API_VERSION_MAJOR).arg(ZENE_LUA_API_VERSION_MINOR);
+
+		// One byte above the hard limit. The body is padding, and the header
+		// is a VALID one: the refusal must be about the size, not about the
+		// version or about the syntax.
+		const QString hugePath = QDir(dir.path()).absoluteFilePath(QStringLiteral("huge.lua"));
+		{
+			QFile file(hugePath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write(header.toUtf8());
+			file.resize(static_cast<qint64>(MaxScriptSourceBytes) + 1);
+		}
+		QString error;
+		const auto refused = engine->runFile(hugePath, &error);
+		QCOMPARE(int(refused), int(ScriptEngine::RunResult::ScriptError));
+		QVERIFY2(error.contains(QStringLiteral("too large")), qPrintable(error));
+		qInfo().noquote() << "oversized script refused:" << error;
+
+		// The memory budget is the tighter bound when it is set: a source
+		// that cannot fit in the Lua state cannot run either, and refusing it
+		// before the read keeps the host inside the budget the user asked for.
+		const QString overBudgetPath =
+			QDir(dir.path()).absoluteFilePath(QStringLiteral("over-budget.lua"));
+		{
+			QFile file(overBudgetPath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write(header.toUtf8());
+			file.resize(2 * 1024 * 1024);
+		}
+		engine->setMemoryBudget(1024 * 1024);
+		QString budgetError;
+		const auto overBudget = engine->runFile(overBudgetPath, &budgetError);
+		engine->setMemoryBudget(ScriptEngine::DefaultMemoryBudgetBytes);
+		QCOMPARE(int(overBudget), int(ScriptEngine::RunResult::ScriptError));
+		QVERIFY2(budgetError.contains(QStringLiteral("too large")), qPrintable(budgetError));
+		qInfo().noquote() << "over-budget script refused:" << budgetError;
+
+		// A script inside the limit still runs: the limit must not touch the
+		// ordinary case.
+		const QString okPath = QDir(dir.path()).absoluteFilePath(QStringLiteral("small.lua"));
+		{
+			QFile file(okPath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			file.write((header + QStringLiteral("print('small script ran')\n")).toUtf8());
+		}
+		QString okError;
+		QCOMPARE(int(engine->runFile(okPath, &okError)), int(ScriptEngine::RunResult::Ok));
+		QVERIFY2(okError.isEmpty(), qPrintable(okError));
+	}
 };
 
 QTEST_GUILESS_MAIN(ScriptEngineTest)

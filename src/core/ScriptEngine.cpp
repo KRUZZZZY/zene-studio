@@ -325,17 +325,11 @@ ScriptEngine::~ScriptEngine()
 
 ScriptEngine::RunResult ScriptEngine::runFile(const QString& path, QString* error)
 {
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly))
+	QString source;
+	if (!readScriptSource(path, scriptSourceLimit(memoryBudget()), source, error))
 	{
-		if (error != nullptr)
-		{
-			*error = QStringLiteral("cannot open script '%1': %2").arg(path, file.errorString());
-		}
 		return RunResult::ScriptError;
 	}
-	const QString source = QString::fromUtf8(file.readAll());
-	file.close();
 
 	const QString version = parseVersionHeader(source);
 	if (version.isEmpty())
