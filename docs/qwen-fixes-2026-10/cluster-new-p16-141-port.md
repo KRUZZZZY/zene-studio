@@ -1,3 +1,5 @@
+FIXED
+
 new-p16-141-port: FIXED
 
 ## Verdict
@@ -98,6 +100,7 @@ Log folder:
 | affected family | `cd build/tests && ctest -R 'Note\|Automation\|PianoRoll' --output-on-failure` | 8 | `test-family-green-2.log` |
 | family build | `cmake --build build --target <43 family targets>` | 2 (see note) | `build-family-1.log` |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` | 1 | `feature-check-1.log` |
+| gates (after the manifest re-derivation below) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` | 0 | `feature-check-2.log` |
 
 RED failing assertion (`test-red-1.log`):
 
@@ -139,7 +142,7 @@ identically with the product fix reverted (`test-revert-1.log`):
 
 ### Gates
 
-`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` -> exit **1**
+First run: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` -> exit **1**
 (`feature-check-1.log`):
 
 | gate | result | exit |
@@ -153,16 +156,33 @@ identically with the product fix reverted (`test-revert-1.log`):
 | complexity | PASS | no new item in your files |
 | file-length | PASS | no new item in your files |
 
-The two FAILs are **pre-existing on this branch and unrelated to this port**: both report
-that `tests/all-sources.txt` lists `plugins/SfzPlayer/sfizz/external/abseil-cpp/**` paths
-that the manifest's own "Regenerate with" recipe excludes (`grep -vE '...plugins/SfzPlayer/sfizz/'`),
-i.e. vendored-tree drift on the newest line. Proof that this change is not the cause: with
-this port's three files temporarily restored to their HEAD contents (so the working tree
-was pristine), the same two gates fail the same way - `bash tests/all-sources-reproduce.sh`
-exit **1** (`gate-all-sources-pristine.log`) and `bash tests/fork-sources-gate.sh` exit
-**1** (`gate-fork-sources-pristine.log`), with the diff naming only `sfizz` paths and none
-of this port's files. The registration gate for this change (`no-upstream-regression`)
-PASSES: `src/core/Note.cpp` and `tests/src/core/NoteTransformTest.cpp` are declared in
+The two FAILs were **pre-existing on this branch and unrelated to this port**: both report
+that `tests/all-sources.txt` lists `plugins/SfzPlayer/sfizz/**` paths (1,151 of them) that
+the manifest's own "Regenerate with" recipe excludes
+(`grep -vE '...plugins/SfzPlayer/sfizz/'`), i.e. vendored-tree drift on the newest line.
+Proof that this change is not the cause: with this port's three files temporarily restored
+to their HEAD contents (so the working tree was pristine), the same two gates failed the
+same way - `bash tests/all-sources-reproduce.sh` exit **1**
+(`gate-all-sources-pristine.log`) and `bash tests/fork-sources-gate.sh` exit **1**
+(`gate-fork-sources-pristine.log`), with the diff naming only `sfizz` paths and none of
+this port's files.
+
+The repair the gate itself prescribes ("Fix by re-deriving the list: run the 'Regenerate
+with' command from the manifest's own header and write its output over the entry list
+(never hand-edit, never delete a path the recipe derives)") was applied: `tests/all-sources.txt`
+now holds the byte-exact output of its own recipe, so the vendored sfizz tree (which the
+recipe excludes on purpose - it is not this repo's code) is no longer measured by the
+whole-tree scope, and the sources added on this newer line are listed. No other manifest
+was touched. After that:
+
+```
+bash tests/all-sources-reproduce.sh                 # exit 0 - REPRODUCES (gate-all-sources-after-fix.log)
+bash tests/fork-sources-gate.sh                    # exit 0 - PASS (gate-fork-sources-after-fix.log)
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .   # exit 0 (feature-check-2.log)
+```
+
+The registration gate for this change (`no-upstream-regression`) PASSED in both runs:
+`src/core/Note.cpp` and `tests/src/core/NoteTransformTest.cpp` are declared in
 `tests/upstream-modifications.txt` with a reason.
 
 ## Files committed
@@ -172,6 +192,10 @@ PASSES: `src/core/Note.cpp` and `tests/src/core/NoteTransformTest.cpp` are decla
 - `tests/src/core/NoteTransformTest.cpp` - the regression
   `quantizeKeepsTickPrecisionPastTheFloatMantissa`.
 - `tests/upstream-modifications.txt` - registration of the two inherited files above.
+- `tests/all-sources.txt` - the whole-tree scope manifest re-derived from its own header
+  recipe (the gate's prescribed repair for the pre-existing vendored-sfizz drift that made
+  `fork-sources` / `all-sources-reproduce` red on this branch). No entry was hand-edited;
+  the entry list is now the byte-exact output of the recipe in the manifest's own header.
 - `docs/qwen-fixes-2026-10/cluster-new-p16-141-port.md` - this report.
 
 ## Self-check
@@ -195,3 +219,10 @@ PASSES: `src/core/Note.cpp` and `tests/src/core/NoteTransformTest.cpp` are decla
   registration was needed; the two inherited files changed are registered in
   `tests/upstream-modifications.txt` (the file ends with a newline).
 - **Headers?** Unchanged - the declaration in `include/Note.h` is untouched.
+- **Why did `tests/all-sources.txt` change?** Because `fork-sources` and
+  `all-sources-reproduce` were red before this port (proved on a pristine working tree,
+  see the Gates section) and the gate names the repair itself: re-derive the entry list
+  from the manifest's own header recipe. The re-derivation is mechanical, reproducible and
+  touches no product code; it only makes the manifest agree with the recipe it publishes,
+  which drops the vendored sfizz tree (excluded on purpose - it is not this repo's code)
+  from the whole-tree measurement scope and adds the sources added on this newer line.
