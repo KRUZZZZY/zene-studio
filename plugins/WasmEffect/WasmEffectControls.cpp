@@ -96,33 +96,52 @@ QString WasmEffectControls::statusText() const
 		? tr("(no module)")
 		: QFileInfo(m_modulePath).fileName();
 
+	QString status;
 	if (m_effect->isModuleCorrupted())
 	{
-		return tr("%1: quarantined after a trap - dry passthrough "
+		status = tr("%1: quarantined after a trap - dry passthrough "
 					"(%2 frames compensated)")
 			.arg(name)
 			.arg(m_effect->latencyFrames());
 	}
-
-	switch (m_effect->worker().state())
+	else
 	{
-		case wasm::WasmWorker::State::Idle:
-			return tr("No module loaded - dry passthrough");
-		case wasm::WasmWorker::State::Loading:
-			return tr("%1: loading...").arg(name);
-		case wasm::WasmWorker::State::Ready:
-			return tr("%1: ready - %2 ch, module latency %3 frames, "
-						"effect latency %4 frames")
-				.arg(name)
-				.arg(m_effect->worker().declaredChannels())
-				.arg(m_effect->moduleLatency())
-				.arg(m_effect->latencyFrames());
-		case wasm::WasmWorker::State::Failed:
-			return tr("%1: failed - %2").arg(name, m_effect->lastError());
-		case wasm::WasmWorker::State::Corrupted:
-			return tr("%1: quarantined after a trap").arg(name);
+		switch (m_effect->worker().state())
+		{
+			case wasm::WasmWorker::State::Idle:
+				status = tr("No module loaded - dry passthrough");
+				break;
+			case wasm::WasmWorker::State::Loading:
+				status = tr("%1: loading...").arg(name);
+				break;
+			case wasm::WasmWorker::State::Ready:
+				status = tr("%1: ready - %2 ch, module latency %3 frames, "
+							"effect latency %4 frames")
+					.arg(name)
+					.arg(m_effect->worker().declaredChannels())
+					.arg(m_effect->moduleLatency())
+					.arg(m_effect->latencyFrames());
+				break;
+			case wasm::WasmWorker::State::Failed:
+				status = tr("%1: failed - %2").arg(name, m_effect->lastError());
+				break;
+			case wasm::WasmWorker::State::Corrupted:
+				status = tr("%1: quarantined after a trap").arg(name);
+				break;
+			default:
+				status = tr("unknown state");
+				break;
+		}
 	}
-	return tr("unknown state");
+
+	// A load that was refused keeps its reason in m_error. Without it here the
+	// status line reports the running module ("ready") or "no module loaded",
+	// and the user never learns why the module they picked was refused.
+	if (!m_error.isEmpty() && !status.contains(m_error))
+	{
+		status = tr("%1 - load failed: %2").arg(status, m_error);
+	}
+	return status;
 }
 
 void WasmEffectControls::saveSettings(QDomDocument& doc, QDomElement& parent)
