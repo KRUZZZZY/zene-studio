@@ -39,6 +39,8 @@
 #include "Clip.h"
 
 
+struct AutomationClipRampSettingsTestAccess;
+
 namespace lmms
 {
 
@@ -64,6 +66,8 @@ public:
 		Linear,
 		CubicHermite
 	} ;
+	static_assert(std::atomic<ProgressionType>::is_always_lock_free,
+		"The audio thread reads automation progression without a mutex.");
 
 	//! ED-184: the shapes drawShape writes.
 	enum class Shape { Sine, Triangle, Square, Saw, Random, Adsr };
@@ -86,7 +90,7 @@ public:
 	// progression-type stuff
 	inline ProgressionType progressionType() const
 	{
-		return m_progressionType;
+		return m_progressionType.load(std::memory_order_relaxed);
 	}
 	void setProgressionType( ProgressionType _new_progression_type );
 
@@ -174,7 +178,7 @@ public:
 
 	inline bool canEditTangents() const
 	{
-		return supportsTangentEditing(m_progressionType);
+		return supportsTangentEditing(m_progressionType.load(std::memory_order_relaxed));
 	}
 
 	float valueAt( const TimePos & _time ) const;
@@ -200,14 +204,18 @@ public:
 	 *  project file keeps its bytes; what changes is that an old file's curves now render
 	 *  at sample precision. */
 	enum class RampSetting : std::uint8_t { Default, On, Off };
+	static_assert(std::atomic<RampSetting>::is_always_lock_free,
+		"The audio thread reads ramp settings without a mutex.");
 
 	//! Is this clip rendered at sample precision inside a block? (The resolved setting.)
 	bool sampleAccurate() const
 	{
-		return m_rampSetting == RampSetting::Default ? m_progressionType != ProgressionType::Discrete
-			: m_rampSetting == RampSetting::On;
+		const RampSetting setting = m_rampSetting.load(std::memory_order_relaxed);
+		return setting == RampSetting::Default
+			? m_progressionType.load(std::memory_order_relaxed) != ProgressionType::Discrete
+			: setting == RampSetting::On;
 	}
-	RampSetting rampSetting() const { return m_rampSetting; }
+	RampSetting rampSetting() const { return m_rampSetting.load(std::memory_order_relaxed); }
 	//! Turn it explicitly on or off. Journalled like any other clip edit (the setting is
 	//! serialized, and loadSettings resets it to Default on absence, so a checkpoint
 	//! taken before the first edit takes it back).
@@ -333,13 +341,13 @@ private:
 	timeMap m_oldTimeMap;	// old values for storing the values before setDragValue() is called.
 	float m_tension;
 	bool m_hasAutomation;
-	ProgressionType m_progressionType;
+	std::atomic<ProgressionType> m_progressionType;
 	std::atomic<bool> m_relative{false};  //!< ED-199; atomic: the audio thread reads it
 
 	//! Sample-accurate rendering of this clip's curve (feature-list row 9).
 	//! Serialized only when it is ON, so a project that never asked for it
 	//! saves the bytes it always saved; loadSettings resets it on absence.
-	RampSetting m_rampSetting = RampSetting::Default;
+	std::atomic<RampSetting> m_rampSetting{ RampSetting::Default };
 	//! 0.5.0 MX-160: double-buffered; refresh writes the inactive bank before publishing it to readers.
 	int m_latencyFrames[2]{ 0, 0 };
 	void setLatencyFramesForSnapshot(unsigned bank, int frames) { m_latencyFrames[bank] = frames; }
@@ -360,6 +368,7 @@ private:
 	static const float DEFAULT_MIN_VALUE;
 	static const float DEFAULT_MAX_VALUE;
 
+	friend struct ::AutomationClipRampSettingsTestAccess;
 	friend class gui::AutomationClipView;
 	friend class AutomationNode;
 	friend class gui::AutomationEditor;

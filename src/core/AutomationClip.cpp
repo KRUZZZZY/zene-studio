@@ -80,9 +80,9 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	m_autoTrack( _clip_to_copy.m_autoTrack ),
 	m_objects( _clip_to_copy.m_objects ),
 	m_tension( _clip_to_copy.m_tension ),
-	m_progressionType(_clip_to_copy.m_progressionType),
+	m_progressionType(_clip_to_copy.m_progressionType.load(std::memory_order_relaxed)),
 	m_relative(_clip_to_copy.isRelative()),
-	m_rampSetting(_clip_to_copy.m_rampSetting),
+	m_rampSetting(_clip_to_copy.m_rampSetting.load(std::memory_order_relaxed)),
 	m_dragging(false),
 	m_isRecording(_clip_to_copy.m_isRecording),
 	m_lastRecordedValue(0)
@@ -170,7 +170,7 @@ void AutomationClip::setProgressionType(
 		_new_progression_type == ProgressionType::Linear ||
 		_new_progression_type == ProgressionType::CubicHermite )
 	{
-		m_progressionType = _new_progression_type;
+		m_progressionType.store(_new_progression_type, std::memory_order_relaxed);
 		emit dataChanged();
 	}
 }
@@ -666,7 +666,8 @@ float AutomationClip::valueAt( timeMap::const_iterator v, std::int64_t offset ) 
 	// 0.5.0 ED-185: a point may carry its own curve to the next point.
 	const AutomationNode::Curve curve = v.value().curve();
 	if (curve == AutomationNode::Curve::Bend) { return bendValueAt(v, offset); }
-	const ProgressionType type = curve == AutomationNode::Curve::Clip ? m_progressionType
+	const ProgressionType type = curve == AutomationNode::Curve::Clip
+		? m_progressionType.load(std::memory_order_relaxed)
 		: curve == AutomationNode::Curve::Hold ? ProgressionType::Discrete
 		: curve == AutomationNode::Curve::Linear ? ProgressionType::Linear : ProgressionType::CubicHermite;
 	if (type == ProgressionType::Discrete)
@@ -751,7 +752,7 @@ void AutomationClip::setSampleAccurate( bool on )
 void AutomationClip::setRampSetting( RampSetting setting )
 {
 	QMutexLocker m(&m_clipMutex);
-	m_rampSetting = setting;
+	m_rampSetting.store(setting, std::memory_order_relaxed);
 }
 
 
@@ -936,9 +937,10 @@ void AutomationClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	// asked serialises exactly what it always did. loadSettings resets it to the default
 	// on absence, which is what lets a journal checkpoint taken before the first edit
 	// take it back.
-	if( m_rampSetting != RampSetting::Default )
+	const RampSetting rampSetting = m_rampSetting.load(std::memory_order_relaxed);
+	if( rampSetting != RampSetting::Default )
 	{
-		_this.setAttribute( "sample_accurate", QString::number( m_rampSetting == RampSetting::On ? 1 : 0 ) );
+		_this.setAttribute( "sample_accurate", QString::number( rampSetting == RampSetting::On ? 1 : 0 ) );
 	}
 
 	if (const auto& c = color())
