@@ -36,6 +36,7 @@
 #include <QFile>
 #include <QJsonObject>
 #include <QMenu>
+#include <QStringList>
 #include <QTemporaryDir>
 
 #include "ConfigManager.h"
@@ -114,6 +115,15 @@ QAction* item(QMenu* menu, const QString& text)
 		if (action->text() == text) { return action; }
 	}
 	return nullptr;
+}
+
+//! The warnings the test saw. qInstallMessageHandler takes a plain function pointer, so the
+//! capture cannot be a lambda and lives here.
+QStringList g_warnings;
+
+void captureWarning(QtMsgType type, const QMessageLogContext&, const QString& message)
+{
+	if (type == QtWarningMsg) { g_warnings.append(message); }
 }
 
 } // namespace
@@ -242,7 +252,7 @@ private slots:
 		// One control.undo takes the placement back and the offer returns.
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
-		QCOMPARE(interruptedTakes().size(), 1);
+		QCOMPARE(run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("takes")).toArray().size(), 1);
 		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
 		QFile::remove(take);
 	}
@@ -312,6 +322,47 @@ private slots:
 			QVERIFY2(!result.ok, qPrintable(id + QStringLiteral(" accepted a relative take")));
 			QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
 		}
+	}
+
+	/*! A FAILED record.recovery_get_state is NOT "there is nothing to recover": the takes are
+	 *  UNKNOWN, not absent. The startup offer reports the failure instead of skipping recovery
+	 *  in silence: it is logged, it does not ask to place takes it could not list, and it does not
+	 *  return "nothing to offer". */
+	void aFailedQueryIsNotNothingToRecover()
+	{
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-failed-query.wav"));
+		QVERIFY(writeWav(take, kFrames));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), kFrames}}).ok);
+
+		// The model is not addressable (every engine command is refused with the typed 'busy'
+		// until the application is up), so the query FAILS while the journal is on the disk.
+		QStringList warnings;
+		const QtMessageHandler previous = qInstallMessageHandler(captureWarning);
+		ControlRegistry::setReady(false);
+		int asked = 0;
+		const StartupRecoveryChoice choice = offerRecordingRecovery(nullptr,
+			[&asked](const QJsonArray&) { ++asked; return StartupRecoveryChoice::Place; });
+		ControlRegistry::setReady(true);
+		qInstallMessageHandler(previous);
+		warnings = g_warnings;
+
+		// The failure is reported, not swallowed.
+		QVERIFY(choice != StartupRecoveryChoice::NothingToOffer);
+		QCOMPARE(asked, 0);
+		bool reported = false;
+		for (const QString& line : warnings)
+		{
+			if (line.contains(QStringLiteral("record.recovery_get_state"))) { reported = true; }
+		}
+		QVERIFY2(reported, "the failed recovery query was not reported");
+		// Nothing was placed and nothing was discarded: the journal is exactly as it was.
+		QCOMPARE(journalState(take + QStringLiteral(".rec-journal")), QStringLiteral("in_progress"));
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
 	}
 
 private:
