@@ -29,6 +29,10 @@
 
 #include <stk/Instrmnt.h>
 
+#include <atomic>
+#include <memory>
+#include <vector>
+
 #include "ComboBox.h"
 #include "Instrument.h"
 #include "InstrumentView.h"
@@ -56,11 +60,35 @@ class MalletsInstrumentView;
 } // namespace gui
 
 
+class MalletsVoicePool;
+
+
 class MalletsSynth
 {
 public:
+	enum class Family
+	{
+		ModalBar,
+		TubeBell,
+		BandedWG,
+	};
+
+	//! Build the STK voice and its delay buffer. All allocating setup happens
+	//! here, on the constructing (non-audio) thread; the arm*() methods below
+	//! only reset and re-arm the prepared voice on the render thread.
+	MalletsSynth() = default;
+
+	//! A prepared voice owns its STK instrument and its delay buffer, so it
+	//! is never copied.
+	MalletsSynth( const MalletsSynth& ) = delete;
+	MalletsSynth& operator=( const MalletsSynth& ) = delete;
+
+	bool init( Family _family, const sample_rate_t _sample_rate );
+
+	bool ready() const { return m_voice != nullptr; }
+
 	// ModalBar
-	MalletsSynth( const StkFloat _pitch,
+	void armModalBar( const StkFloat _pitch,
 			const StkFloat _velocity,
 			const StkFloat _control1,
 			const StkFloat _control2,
@@ -68,11 +96,10 @@ public:
 			const StkFloat _control8,
 			const StkFloat _control11,
 			const int _control16,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	// TubeBell
-	MalletsSynth( const StkFloat _pitch,
+	void armTubeBell( const StkFloat _pitch,
 			const StkFloat _velocity,
 			const int _preset,
 			const StkFloat _control1,
@@ -80,11 +107,10 @@ public:
 			const StkFloat _control4,
 			const StkFloat _control11,
 			const StkFloat _control128,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	// BandedWG
-	MalletsSynth( const StkFloat _pitch,
+	void armBandedWG( const StkFloat _pitch,
 			const StkFloat _velocity,
 			const StkFloat _control2,
 			const StkFloat _control4,
@@ -92,8 +118,7 @@ public:
 			const int _control16,
 			const StkFloat _control64,
 			const StkFloat _control128,
-			const uint8_t _delay,
-			const sample_rate_t _sample_rate );
+			const uint8_t _delay );
 
 	inline ~MalletsSynth()
 	{
@@ -170,12 +195,14 @@ public:
 
 
 protected:
-	int m_presetIndex;
-	Instrmnt * m_voice;
+	void resetDelay( const uint8_t _delay );
 
-	StkFloat * m_delay;
-	uint8_t m_delayRead;
-	uint8_t m_delayWrite;
+	int m_presetIndex = 0;
+	Instrmnt * m_voice = nullptr;
+
+	StkFloat * m_delay = nullptr;
+	uint8_t m_delayRead = 0;
+	uint8_t m_delayWrite = 0;
 };
 
 
@@ -186,7 +213,7 @@ class MalletsInstrument : public Instrument
 	Q_OBJECT
 public:
 	MalletsInstrument( InstrumentTrack * _instrument_track );
-	~MalletsInstrument() override = default;
+	~MalletsInstrument() override;
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
 
@@ -200,6 +227,25 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+
+	//! Arms the prepared voice of a family with the parameters of the note.
+	void armVoice( MalletsSynth * _ps, int _preset, float _freq, float _vel,
+			float _hardness, float _position, float _modulator, float _crossfade,
+			float _pressure, float _speed ) const;
+
+	//! The prepared voices of this instrument. The pool belongs to the
+	//! instrument, so the number of notes it voices at the same time is the
+	//! instrument's own limit and no other instrument can take its voices.
+	std::unique_ptr<MalletsVoicePool> m_voicePool;
+
+	//! Pools of an earlier sample rate. They stay alive while notes still
+	//! hold a voice of theirs.
+	std::vector<std::unique_ptr<MalletsVoicePool>> m_retiredPools;
+
+	//! The one voice budget of the instrument. Every pool - the current one
+	//! and every retired one that still serves a sustained note - draws from
+	//! this counter, so a device change cannot double the product limit.
+	std::atomic<int> m_voicesInUse{0};
 
 	FloatModel m_hardnessModel;
 	FloatModel m_positionModel;
