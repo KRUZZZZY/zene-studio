@@ -118,6 +118,22 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 			throw ParseError("cannot open file: " + path);
 		}
 
+		// Refuse an oversized file before the parser reads it: json::parse
+		// allocates in proportion to the file, and the model-size checks
+		// below only run once it has finished.
+		in.seekg(0, std::ios::end);
+		const std::streamoff fileBytes = in.tellg();
+		in.seekg(0, std::ios::beg);
+		if (fileBytes < 0)
+		{
+			throw ParseError("cannot determine the size of file: " + path);
+		}
+		if (static_cast<std::uintmax_t>(fileBytes) > detail::kMaxModelFileBytes)
+		{
+			throw ParseError("model file exceeds the parse size limit (" +
+			                 std::to_string(detail::kMaxModelFileBytes) + " bytes)");
+		}
+
 		json root;
 		try
 		{
