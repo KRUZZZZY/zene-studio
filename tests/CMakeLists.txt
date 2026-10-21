@@ -3400,6 +3400,38 @@ if(WANT_WASM)
 	)
 	add_dependencies(WasmWorkerPoolTest wasm-modules)
 
+	# cluster new-p14-378: the fuel budget a caller asks for must bound the
+	# module's STARTUP, not only its process() calls. The sandbox and the host
+	# it drives are Qt free, so this test compiles those sources itself instead
+	# of linking lmmsobjs - the whole core would cost a full build of it for
+	# one host-side assertion.
+	add_executable(WasmSandboxHostFuelTest
+		src/wasm/WasmSandboxHostFuelTest.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandbox.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandboxHost.cpp
+	)
+	add_test(NAME WasmSandboxHostFuelTest COMMAND WasmSandboxHostFuelTest)
+	target_include_directories(WasmSandboxHostFuelTest PRIVATE
+		# the generated headers the core's own headers carry: lmms_export.h
+		# (build/src) and lmmsconfig.h (build/include)
+		${CMAKE_BINARY_DIR}
+		${CMAKE_BINARY_DIR}/src
+		${CMAKE_BINARY_DIR}/include
+		${CMAKE_SOURCE_DIR}/include
+		${CMAKE_SOURCE_DIR}/src/wasm
+	)
+	target_include_directories(WasmSandboxHostFuelTest SYSTEM PRIVATE ${WASMTIME_INCLUDE_DIRS})
+	target_link_libraries(WasmSandboxHostFuelTest PRIVATE
+		${QT_LIBRARIES}
+		${QT_QTTEST_LIBRARY}
+		${WASMTIME_LIBRARIES}
+		${CMAKE_DL_LIBS}
+	)
+	target_compile_features(WasmSandboxHostFuelTest PRIVATE cxx_std_20)
+	target_compile_definitions(WasmSandboxHostFuelTest PRIVATE LMMS_TESTING)
+	set_tests_properties(WasmSandboxHostFuelTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 	# Drive the public command and inspect its JSON result with a module that emits NaN.
 	add_executable(ControlWasmRenderTest
 		src/core/ControlWasmRenderTest.cpp
