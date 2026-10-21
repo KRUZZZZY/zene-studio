@@ -706,6 +706,38 @@ private slots:
 		::close(sockets[1]);
 	}
 
+	//! The bounded socket decoder must enforce the same argument-count cap as the owning socket and FIFO readers.
+	void boundedReceiveRejectsOversizedArgumentCount()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			constexpr int maxMessageArguments = (512 * 1024 - 8) / 4;
+			constexpr std::int32_t count = maxMessageArguments + 1;
+			constexpr std::size_t frameSize = 2 * sizeof(std::int32_t)
+				+ static_cast<std::size_t>(count) * sizeof(std::int32_t);
+			int socketBufferSize = 2 * 1024 * 1024;
+			QVERIFY(::setsockopt(sockets[0], SOL_SOCKET, SO_RCVBUF,
+				&socketBufferSize, sizeof(socketBufferSize)) == 0);
+			QVERIFY(::setsockopt(sockets[1], SOL_SOCKET, SO_SNDBUF,
+				&socketBufferSize, sizeof(socketBufferSize)) == 0);
+
+			std::vector<char> frame(frameSize, '\0'); // every zero-length argument has a zero length prefix
+			const std::int32_t header[] = {IdDebugMessage, count};
+			std::memcpy(frame.data(), header, sizeof(header));
+			QVERIFY(::write(sockets[1], frame.data(), frame.size()) == static_cast<ssize_t>(frame.size()));
+
+			RemotePluginBase::message message;
+			const auto result = receiver.receiveFrameBefore(std::chrono::steady_clock::now(), message, true);
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Lost);
+			QVERIFY(receiver.isInvalid());
+		}
+
+		::close(sockets[1]);
+	}
+
 	//! A frame that has started can be finished slowly, but never past the query's own deadline: a 100 ms
 	//! query that sees a partial message must not wait up to StartedFrameTimeout (2 s) for the rest.
 	//! The receive asks waitForMessageReadable() for each piece; the hook records that bound and reports

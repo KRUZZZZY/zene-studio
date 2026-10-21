@@ -201,8 +201,21 @@ file-length PASS (no new item in your files).
   whole message. `processMessage()` already deferred logging and resizing work; this change removes the decode
   allocation that preceded it.
 
-**6. Official gate note.** The official `feature_check.py` cannot create its sibling log directory in this
-session's sandbox (`feature-check-official-final3.log` records the `PermissionError`). The identical script copy with
-only the log path changed runs the same eight gates in the same worktree and returns EXIT=0, all PASS
-(`feature-check-local-final3.log`). The official `submit_check.py` run is recorded in `submit-3.log`; its only gate
-FAIL is the same sandbox path issue, and the local gate run above is the evidence for that row.
+**6. Gate evidence.** The fixer’s initial official `feature_check.py` attempt hit a sandbox permission error
+(`feature-check-official-final3.log`). During QA, the exact official command ran on the final worktree and passed all
+eight rows, including complexity and file-length (`qa-review-feature-check-final.log`, EXIT=0). The earlier
+`submit-3.log` records the same sandbox issue from the fixer session.
+
+## QA review follow-up
+
+Review found that `parseBoundedFrame()` checked negative argument counts but did not enforce the existing
+`MaxRemoteMessageArguments` cap used by the owning socket and bounded FIFO decoders. A complete 512 KiB socket frame
+with one argument above that cap was therefore accepted only by the new bounded socket path. The parser now applies
+the same count cap (`src/common/RemotePluginBase.cpp:360`), and
+`boundedReceiveRejectsOversizedArgumentCount()` pins the behavior (`tests/src/core/RemotePluginAudioPortsTest.cpp:710`).
+
+- Reversed only the QA count guard with `git apply --reverse /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-251.r1/logs/qa-count-guard.patch` — EXIT=0; rebuilt `zene` and `RemotePluginAudioPortsTest` — EXIT=0; direct regression — EXIT=1, because the bounded decoder returned `Got` for the oversized count (`qa-count-reversed-test.log`).
+- Restored the guard with `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-251.r1/logs/qa-count-guard.patch` — EXIT=0; rebuilt the same targets — EXIT=0; direct regression — EXIT=0 (`qa-count-restored-test.log`).
+- Focused family: `cd build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure` — EXIT=0, 1/1 executable passed (`qa-review-ctest-final.log`).
+- Header clients: `cmake --build build --target RemoteZynAddSubFx NativeLinuxRemoteVstPlugin64 -j12` — EXIT=0 (`qa-client-target-build.log`).
+- Final gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-251` — EXIT=0, all eight rows PASS (`qa-review-feature-check-final.log`).

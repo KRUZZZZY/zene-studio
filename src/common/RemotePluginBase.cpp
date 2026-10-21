@@ -357,7 +357,7 @@ bool RemotePluginBase::parseBoundedFrame(const char * _frame, std::size_t _size,
 	std::int32_t count = 0;
 	std::memcpy(&id, _frame, sizeof id);
 	std::memcpy(&count, _frame + sizeof id, sizeof count);
-	if (count < 0) { return false; }
+	if (count < 0 || count > MaxRemoteMessageArguments) { return false; }
 	std::size_t offset = headerBytes;
 	for (std::int32_t i = 0; i < count; ++i)
 	{
