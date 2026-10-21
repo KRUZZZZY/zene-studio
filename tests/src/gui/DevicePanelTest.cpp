@@ -48,12 +48,15 @@
 #include <cmath>
 #include <memory>
 
+#include <QApplication>
+#include <QContextMenuEvent>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
 #include <QMenu>
+#include <QTimer>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
@@ -62,12 +65,14 @@
 #include "DevicePicker.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "EffectControls.h"
 #include "Engine.h"
 #include "InspectorPanel.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MenuTestSupport.h"
 #include "Mixer.h"
+#include "Model.h"
 #include "RemoteControls.h"
 #include "SampleTrack.h"
 #include "ChannelLevelMeter.h"
@@ -132,6 +137,49 @@ bool allDeclareRegisteredCommands(QMenu* menu, QString* stray)
 	}
 	return true;
 }
+
+//! The menu a right-click opened: the visible QMenu among the application's widgets (the offscreen
+//! platform has no active popup widget, so the menu is found by what it shows).
+QMenu* visibleMenu()
+{
+	for (QWidget* widget : QApplication::allWidgets())
+	{
+		if (auto* menu = qobject_cast<QMenu*>(widget); menu != nullptr && menu->isVisible()) { return menu; }
+	}
+	return nullptr;
+}
+
+//! A device whose controls have no view of their own: the card's fallback editor cannot be created.
+class NoViewEffectControls final : public EffectControls
+{
+public:
+	explicit NoViewEffectControls(Effect* effect) : EffectControls{effect} {}
+	int controlCount() override { return 0; }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	QString nodeName() const override { return QStringLiteral("NoViewEffectControls"); }
+	gui::EffectControlDialog* createView() override { return nullptr; }
+};
+
+//! The test device: a plug-in with no editor of its own and no control view either - so the card's
+//! "Open Editor" has nothing to open, neither the device's own window nor the built-in dialog.
+class NoViewEffect final : public Effect
+{
+public:
+	explicit NoViewEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr}, m_controls{this} {}
+	EffectControls* controls() override { return &m_controls; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	NoViewEffectControls m_controls;
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor NoViewEffect::s_descriptor{
+	"zene-no-view-test-effect", "No view test effect", "", "Zene", 0x0100,
+	Plugin::Type::Effect, nullptr, nullptr, nullptr};
 
 } // namespace
 
@@ -645,6 +693,158 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(control::effectIdOf(mixerChannel->m_fxChain.effects().front()), first);
 		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p9-104: the card's right-click menu is a stack object, and one of its own entries (Remove)
+	 *  retires the card - so the menu must not be the card's child: a card deleted while the menu's event
+	 *  loop runs would take the stack menu with it and the menu's destructor would run twice. */
+	void theContextMenuIsNotTheCardsChild()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		if (loadAnEffect(channel).isEmpty()) { QSKIP("this host loads no effect module"); }
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
+		QVERIFY(card != nullptr);
+
+		// The menu the right-click opens, and the widget it belongs to.
+		bool opened = false;
+		QWidget* host = nullptr;
+		QTimer::singleShot(0, card, [&opened, &host] {
+			if (QMenu* menu = visibleMenu())
+			{
+				opened = true;
+				host = menu->parentWidget();
+				menu->close();
+			}
+		});
+		QContextMenuEvent event(QContextMenuEvent::Mouse, card->rect().center(), card->mapToGlobal(card->rect().center()));
+		QCoreApplication::sendEvent(card, &event);
+		QVERIFY2(opened, "the card's right-click did not open its action menu");
+		QVERIFY2(host != card, "the action menu is a child of the card: a card retired by the menu's own Remove entry takes the stack menu with it");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p9-104: removing the device from the card's own menu retires the card while the menu's event
+	 *  loop still runs - the card must not take the stack menu with it (the menu would be destroyed twice). */
+	void removingADeviceFromItsOwnMenuDoesNotDestroyTheMenu()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		if (loadAnEffect(channel).isEmpty()) { QSKIP("this host loads no effect module"); }
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
+		QVERIFY(card != nullptr);
+		const QPointer<DeviceCard> retired = card;
+
+		QWidget* host = nullptr;
+		QTimer::singleShot(0, card, [&host] {
+			QMenu* menu = visibleMenu();
+			if (menu == nullptr) { return; }
+			host = menu->parentWidget();
+			if (QAction* remove = menuAction(menu, {QStringLiteral("Remove")})) { remove->trigger(); }
+			menu->close();
+		});
+		QContextMenuEvent event(QContextMenuEvent::Mouse, card->rect().center(), card->mapToGlobal(card->rect().center()));
+		QCoreApplication::sendEvent(card, &event);
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY2(host != card, "the action menu is a child of the card: the card the menu removes takes the stack menu with it");
+		QVERIFY2(retired.isNull(), "the card of the removed device is still there");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p17-49: an "Open Editor" that opens nothing must say why - the failed plugin.editor_open
+	 *  was discarded, and the built-in dialog is a fallback that can fail too, so the user was left with
+	 *  no window and no word. The card reports the command's own reason. */
+	void theCardSaysWhyTheEditorDidNotOpen()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		auto* effect = new NoViewEffect(&mixerChannel->m_fxChain);
+		mixerChannel->m_fxChain.appendEffect(effect);
+		const QString plugin = control::effectIdOf(effect);
+		DeviceCard::Spec spec;
+		spec.target = channel;
+		spec.plugin = plugin;
+		spec.title = QStringLiteral("No view effect");
+		spec.effect = effect;
+		DeviceCard card(spec, {});
+		card.show();
+		QCoreApplication::processEvents();
+
+		// The command's own refusal: the card has to report THIS one, not a word of its own.
+		const ControlResult failed = run(QStringLiteral("plugin.editor_open"),
+			{{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), plugin}});
+		QVERIFY2(!failed.ok, "the test device has no editor of its own");
+		QVERIFY2(!failed.errorMessage.isEmpty(), "the command refused without saying why");
+
+		card.openEditor();
+		auto* state = card.findChild<QLabel*>(QStringLiteral("deviceState"));
+		QVERIFY(state != nullptr);
+		QVERIFY2(state->text().contains(failed.errorMessage), qPrintable(state->text()));
+		QVERIFY2(state->accessibleName().contains(failed.errorMessage), qPrintable(state->accessibleName()));
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p15-48: the fold handler touched the card's body after the dispatch - and the dispatch runs
+	 *  a command, which can retire the card, so the body would be a dangling pointer. A card that is gone
+	 *  is not touched: the body keeps the state it had. */
+	void foldingACardThatTheDispatchRetiresTouchesNothing()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* mixerChannel = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(mixerChannel);
+		const QString effect = loadAnEffect(channel);
+		if (effect.isEmpty()) { QSKIP("this host loads no effect module"); }
+		Effect* device = mixerChannel->m_fxChain.effects().front();
+		DeviceCard::Spec spec;
+		spec.target = channel;
+		spec.plugin = effect;
+		spec.title = device->displayName();
+		spec.effect = device;
+		auto* card = new DeviceCard(spec, {});
+		card->show();
+		QCoreApplication::processEvents();
+		auto* fold = childNamed<QToolButton>(card, QStringLiteral("Fold or open %1").arg(spec.title));
+		QVERIFY(fold != nullptr);
+		// The card's body: the widget the fold hides. It is let out of the card, so it outlives it and
+		// the test can watch what the handler does to it.
+		QWidget* body = nullptr;
+		for (QWidget* child : card->findChildren<QWidget*>())
+		{
+			if (child->parentWidget() == card && child->objectName().isEmpty()) { body = child; }
+		}
+		QVERIFY(body != nullptr);
+		QVERIFY(body->isVisible());
+
+		// A listener that retires the card while the fold command runs (a chain's own signal can do it).
+		bool folding = false;
+		const QPointer<DeviceCard> retired = card;
+		QObject::connect(&mixerChannel->m_fxChain, &EffectChain::dataChanged, &mixerChannel->m_fxChain,
+			[&folding, body, retired] {
+				if (!folding || retired.isNull()) { return; }
+				body->setParent(nullptr);
+				body->show();
+				delete retired.data();
+			});
+		folding = true;
+		fold->click();
+		folding = false;
+		QVERIFY2(retired.isNull(), "the card was not retired while the fold was dispatched");
+		QVERIFY2(body->isVisible(), "the fold touched a card that was already gone");
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the fold the test made
 	}
 
 	//! Theme 12: the device picker lists the catalogue's effects with their type and format in words, and its search

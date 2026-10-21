@@ -192,7 +192,11 @@ void DeviceCard::refreshStateLine()
 {
 	if (m_state == nullptr) { return; }  // the header's first refresh runs before the line is made
 	const devicestate::State state = stateOf(m_spec, m_hosting);
-	const QString text = devicestate::text(state);
+	QString text = devicestate::text(state);
+	if (!m_editorError.isEmpty())  // why the last "Open Editor" did nothing
+	{
+		text += QStringLiteral(" · ") + tr("Open Editor failed: %1").arg(m_editorError);
+	}
 	if (m_state->text() != text)  // set only on a change: each set is announced
 	{
 		m_state->setText(text);

@@ -113,7 +113,17 @@ private:
 	//! Theme 12: the A/B button (shown once a slot is stored) and the Actions button, at the header's end.
 	void addStateButtons(QHBoxLayout* row, QWidget* header);
 	QWidget* buildParameters(const QList<AutomatableModel*>& parameters);
-	void openEffectDialog();
+	//! Fold or open the card's body: the command decides, and a card the dispatch retired is not touched.
+	void foldCard(bool folded);
+	//! The built-in control dialog of the device: false when it has no view of its own to show.
+	bool openEffectDialog();
+	//! What the card says about the last "Open Editor" that opened nothing (empty: it opened).
+	void setEditorError(const QString& error)
+	{
+		if (m_editorError == error) { return; }
+		m_editorError = error;
+		refreshStateLine();
+	}
 	//! Engine audit E18: the device's pin connector - which track channels feed which plug-in
 	//! ports - in its own window (the view existed, nothing opened it).
 	void openPins();
@@ -134,6 +144,7 @@ private:
 	QLabel* m_state = nullptr;  //!< theme 12: the state line - bypass, A/B, latency, hosting, preset - in words
 	QToolButton* m_ab = nullptr;  //!< theme 12: which A/B slot is heard, as a letter; a click toggles
 	QString m_hosting;          //!< "", "crashed" or "quarantined" (the panel's last oop.get_state read)
+	QString m_editorError;      //!< why the last "Open Editor" opened nothing (the card's state line says it)
 };
 
 //! A modulator, placed right after the device it modulates: its shape, rate (drag or type -
