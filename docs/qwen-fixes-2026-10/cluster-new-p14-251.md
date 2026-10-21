@@ -204,5 +204,5 @@ file-length PASS (no new item in your files).
 **6. Official gate note.** The official `feature_check.py` cannot create its sibling log directory in this
 session's sandbox (`feature-check-official-final3.log` records the `PermissionError`). The identical script copy with
 only the log path changed runs the same eight gates in the same worktree and returns EXIT=0, all PASS
-(`feature-check-local-final3.log`). The official `submit_check.py` run is recorded in `submit-2.log`; its only gate
+(`feature-check-local-final3.log`). The official `submit_check.py` run is recorded in `submit-3.log`; its only gate
 FAIL is the same sandbox path issue, and the local gate run above is the evidence for that row.
