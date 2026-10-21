@@ -112,7 +112,8 @@ const ReversibilityRow kMtsRows[] = {
 		"the master-armed flag is engine state with no JournallingObject, so "
 		"the inverse is a recorded ACTION checkpoint: the handler pushes one "
 		"addUndoStep pair BEFORE the flag pair (was/enabled) is the "
-		"before-state it carries into __transaction; arming with no MTS-ESP "
+		"before-state it carries into __transaction; a call that leaves the flag "
+		"as it is pushes none (the device.mpe_set rule); arming with no MTS-ESP "
 		"library is a typed refusal that returns before any write",
 		"control.undo runs the recorded step, which calls "
 		"SessionTuning::setMtsMaster with the before-state's flag - "
