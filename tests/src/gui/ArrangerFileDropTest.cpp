@@ -31,6 +31,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <memory>
 
 #include <QDragEnterEvent>
 #include <QDropEvent>
@@ -42,16 +43,20 @@
 #include "ClipView.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
 #include "MidiClip.h"
+#include "PatternEditor.h"
+#include "PatternStore.h"
 #include "ProjectJournal.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "StringPairDrag.h"
 #include "Track.h"
 #include "TrackContentWidget.h"
 #include "TrackView.h"
@@ -148,6 +153,15 @@ struct PluginDrag
 
 	QMimeData mime;
 };
+
+//! The drag a Ctrl-drag of \a track starts (TrackGrip): the track's own saved document, keyed by its type.
+std::unique_ptr<QMimeData> trackCopyDrag(Track* track)
+{
+	DataFile copy(DataFile::Type::DragNDropData);
+	track->saveState(copy, copy.content());
+	const QString key = QStringLiteral("track_%1").arg(static_cast<int>(track->type()));
+	return std::unique_ptr<QMimeData>(StringPairDrag::createMimeData(key, copy.toString()));
+}
 
 //! Everything a refused drop must leave alone.
 QString stateOf()
@@ -315,6 +329,124 @@ private slots:
 		PluginDrag drag({file(QStringLiteral("cut.mid"))});
 		QVERIFY(!drag.dropOn(m_editor, QPoint(head + PixelsPerBar, m_editor->height() - 4)));
 		QCOMPARE(stateOf(), before);
+	}
+
+	//! A track Ctrl-dragged onto the empty space below the tracks is a copy, and that copy is one undo step.
+	void aTrackCopiedByADropBelowTheTracksIsOneUndoStep()
+	{
+		std::unique_ptr<QMimeData> mime = trackCopyDrag(m_instrument);
+		const int tracks = static_cast<int>(Engine::getSong()->tracks().size());
+		const int depth = Engine::projectJournal()->undoDepth();
+		const int head = viewOf(m_instrument)->getTrackContentWidget()->mapTo(m_editor, QPoint(0, 0)).x();
+		const QPoint point(head + 3 * PixelsPerBar, m_editor->height() - 4);
+
+		QDragEnterEvent enter(point, Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(m_editor, &enter);
+		QVERIFY2(enter.isAccepted(), "the empty space refused a track drag");
+		QDropEvent drop(QPointF(point), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(m_editor, &drop);
+		QVERIFY(drop.isAccepted());
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks + 1);
+		QVERIFY(dynamic_cast<InstrumentTrack*>(Engine::getSong()->tracks().back()) != nullptr);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);  // red: the copy records no undo step
+
+		Engine::projectJournal()->undo();  // what Edit > Undo does; the drop is not a registry command
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks);
+	}
+
+	//! The same Ctrl-drag into the Pattern Editor copies the track into the PatternStore, and that copy is one undo step.
+	void aTrackCopiedIntoThePatternEditorIsOneUndoStep()
+	{
+		// One pattern track gives the store a pattern, so the copy gets the pattern clip and no song track is added.
+		Track* pattern = Track::create(Track::Type::Pattern, Engine::getSong());
+		auto* sourceClip = dynamic_cast<MidiClip*>(m_instrument->createClip(TimePos(0, 0)));
+		QVERIFY(sourceClip != nullptr);
+		sourceClip->changeLength(TimePos(2, 0));
+		PatternEditor* patternView = getGUI()->patternEditor()->m_editor;
+		patternView->updateMaxSteps();
+		const int originalPixelsPerBar = patternView->pixelsPerBar();
+		PatternStore* store = Engine::patternStore();
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
+		const int depth = Engine::projectJournal()->undoDepth();
+		std::unique_ptr<QMimeData> mime = trackCopyDrag(m_instrument);
+		const QPoint point(10, 10);
+
+		QDragEnterEvent enter(point, Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(patternView, &enter);
+		QVERIFY2(enter.isAccepted(), "the Pattern Editor refused a track drag");
+		QDropEvent drop(QPointF(point), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(patternView, &drop);
+		QVERIFY(drop.isAccepted());
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+		Track* copy = store->tracks().back();
+		QVERIFY(dynamic_cast<InstrumentTrack*>(copy) != nullptr);
+		QCOMPARE(copy->numOfClips(), 1);
+		const int copiedPixelsPerBar = patternView->pixelsPerBar();
+		QVERIFY(copiedPixelsPerBar < originalPixelsPerBar);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);  // red: the copy records no undo step
+
+		Engine::projectJournal()->undo();
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+		QCOMPARE(patternView->pixelsPerBar(), originalPixelsPerBar);
+
+		Engine::projectJournal()->redo();  // rebuilt in the PatternStore, not in the song
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+		QCOMPARE(patternView->pixelsPerBar(), copiedPixelsPerBar);
+		QCoreApplication::processEvents();  // the redone track's view is built on the next turn
+
+		delete pattern;
+	}
+
+	//! The same Ctrl-drag into a Song with no pattern track: the copy's creation also makes the Song's pattern track, and
+	//! that track belongs to the drop's one undo step. Undo removes both; redo restores both.
+	void aTrackCopiedIntoAnEmptyPatternEditorIsOneUndoStep()
+	{
+		const auto songPatternTracks = []() {
+			int count = 0;
+			for (Track* track : Engine::getSong()->tracks()) { count += track->type() == Track::Type::Pattern ? 1 : 0; }
+			return count;
+		};
+		PatternStore* store = Engine::patternStore();
+		QCOMPARE(songPatternTracks(), 0);  // the precondition: the drop must create the Song's first pattern track
+		QCOMPARE(store->numOfPatterns(), 0);
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
+		const int depth = Engine::projectJournal()->undoDepth();
+		std::unique_ptr<QMimeData> mime = trackCopyDrag(m_instrument);
+		PatternEditor* patternView = getGUI()->patternEditor()->m_editor;
+		const QPoint point(10, 10);
+
+		QDragEnterEvent enter(point, Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(patternView, &enter);
+		QVERIFY2(enter.isAccepted(), "the Pattern Editor refused a track drag");
+		QDropEvent drop(QPointF(point), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(patternView, &drop);
+		QVERIFY(drop.isAccepted());
+		QCOMPARE(songPatternTracks(), 1);  // the copy's creation made the Song's pattern track
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks + 1);
+		Track* copy = store->tracks().back();
+		QVERIFY(dynamic_cast<InstrumentTrack*>(copy) != nullptr);
+		QCOMPARE(copy->numOfClips(), 1);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);  // red: the Song's pattern track is not in the step
+
+		Engine::projectJournal()->undo();  // one step: the copy and the Song's pattern track both go
+		QCOMPARE(songPatternTracks(), 0);
+		QCOMPARE(store->numOfPatterns(), 0);
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+
+		Engine::projectJournal()->redo();  // both come back, the Song's pattern track first
+		QCOMPARE(songPatternTracks(), 1);
+		QCOMPARE(store->numOfPatterns(), 1);
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks + 1);
+		QCoreApplication::processEvents();  // the redone track's view is built on the next turn
+		QCOMPARE(store->tracks().back()->numOfClips(), 1);  // one pattern clip, not one from the redo and one from the restore
 	}
 
 	void aDragWithNoFileIsNotTaken()

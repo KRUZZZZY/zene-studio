@@ -37,6 +37,7 @@
 #include "TrackContainer.h"
 #include "AudioEngine.h"
 #include "AutomationTrack.h"
+#include "ControlTrackCreation.h"
 #include "DataFile.h"
 #include "DpiHelper.h"
 #include "MainWindow.h"
@@ -619,7 +620,11 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	else if( type.left( 6 ) == "track_" )
 	{
 		DataFile dataFile( value.toUtf8() );
-		Track::create( dataFile.content().firstChild().toElement(), m_tc );
+		Track* copy = Track::create( dataFile.content().firstChild().toElement(), m_tc );
+		// The copy is one undo step, as every track a command creates is (control::recordCreatedTrack). Only the
+		// song's own container is journalled: that step removes the track from the song, and a pattern's
+		// container is not the song.
+		if( copy != nullptr && m_tc == Engine::getSong() ) { control::recordCreatedTrack( copy ); }
 		_de->accept();
 	}
 }
