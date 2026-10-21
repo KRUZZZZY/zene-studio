@@ -47,8 +47,8 @@ class SampleTrack;
  *  names the channel, and a track past the route count reads channel 0). The wide capture
  *  buffer is read when the backend fills it, the stereo input buffer otherwise; the channel
  *  is played mono to both sides. Allocation-free and lock-free: the route table is fixed at
- *  construction (MultiTrackRecorder) and the song's track list only changes under the
- *  engine's model-change lock, which excludes this render. */
+ *  construction (MultiTrackRecorder) and the track's position is maintained on the track by
+ *  TrackContainer, so this reads one atomic instead of scanning the song per period. */
 class LMMS_EXPORT InputMonitorHandle : public PlayHandle
 {
 public:

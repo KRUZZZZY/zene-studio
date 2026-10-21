@@ -54,11 +54,11 @@ namespace
 {
 
 //! The track's record route: its position in the song (track.set_arm's rule), or -1.
+//! The position is maintained by the container (TrackContainer::trackIndex), so the
+//! per-period lookup is a hash read, not a scan of every track.
 int routeOf(const Track* track)
 {
-	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
-	const auto it = std::find(tracks.begin(), tracks.end(), track);
-	return it == tracks.end() ? -1 : static_cast<int>(it - tracks.begin());
+	return Engine::getSong()->trackIndex(track);
 }
 
 //! Copies input channel @a channel into @a buffer, mono to both sides; returns the frames.

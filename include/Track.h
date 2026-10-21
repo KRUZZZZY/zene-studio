@@ -290,6 +290,15 @@ public:
 		return m_trackContainer;
 	}
 
+	/*! This track's position in its TrackContainer, maintained by the container
+	 *  whenever the list changes; -1 for a track the container has not indexed.
+	 *  The input monitor reads it once per audio period (one acquire load) instead
+	 *  of scanning the song for the route it already knows. */
+	int containerIndex() const noexcept
+	{
+		return m_containerIndex.load( std::memory_order_acquire );
+	}
+
 	/*! The FOLDER this track sits in, or nullptr when it is in none
 	 *  (docs/TRACK-FOLDER-DESIGN.md section 1.2; owner items 3+20+21).
 	 *
@@ -524,6 +533,15 @@ private:
 	void updateFrozenVoiceCapacity(bool loopEnabled, tick_t loopBegin, tick_t loopEnd) noexcept;
 	friend class AudioEngine;
 	friend class Song;
+	friend class TrackContainer;
+
+	//! Control-thread update the container makes when the list changes. Release so
+	//! the audio thread's acquire load sees the position the list was reindexed to.
+	void setContainerIndex( int index ) noexcept
+	{
+		m_containerIndex.store( index, std::memory_order_release );
+	}
+	std::atomic<int> m_containerIndex{ -1 };
 
 	bool m_mutedBeforeSolo;
 

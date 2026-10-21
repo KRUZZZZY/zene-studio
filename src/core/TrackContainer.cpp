@@ -29,6 +29,8 @@
 #include <QDomElement>
 #include <QWriteLocker>
 
+#include <atomic>
+
 #include "AutomationClip.h"
 #include "AutomationLatency.h"
 #include "AutomationRenderScratch.h"
@@ -273,6 +275,44 @@ int TrackContainer::countTracks( Track::Type _tt ) const
 
 
 
+#ifdef LMMS_TESTING
+namespace
+{
+
+//! The seam behind TrackContainer::trackIndexScanCount(): candidates a linear
+//! position lookup examined. The maintained index never increments it, so the
+//! regression fails if the scan comes back. Relaxed because the test reads it
+//! on one thread.
+std::atomic<std::uint64_t> s_trackIndexScans{0};
+
+} // namespace
+#endif
+
+
+int TrackContainer::trackIndex( const Track * _track ) const
+{
+	// The position is maintained on the track by addTrack/removeTrack/moveTrack,
+	// so this is one atomic load. The container check keeps a track of a nested
+	// container from being mistaken for one of ours (a pattern track's own list).
+	if( _track == nullptr || _track->trackContainer() != this ) { return -1; }
+	return _track->containerIndex();
+}
+
+
+#ifdef LMMS_TESTING
+std::uint64_t TrackContainer::trackIndexScanCount() noexcept
+{
+	return s_trackIndexScans.load( std::memory_order_relaxed );
+}
+
+
+void TrackContainer::resetTrackIndexScanCount() noexcept
+{
+	s_trackIndexScans.store( 0, std::memory_order_relaxed );
+}
+#endif
+
+
 void TrackContainer::addTrack( Track * _track )
 {
 	if( _track->type() != Track::Type::HiddenAutomation )
@@ -280,6 +320,7 @@ void TrackContainer::addTrack( Track * _track )
 		_track->lock();
 		m_tracksMutex.lockForWrite();
 		m_tracks.push_back( _track );
+		_track->setContainerIndex( static_cast<int>( m_tracks.size() ) - 1 );
 		m_tracksMutex.unlock();
 		_track->unlock();
 		emit trackAdded( _track );
@@ -302,7 +343,15 @@ void TrackContainer::removeTrack( Track * _track )
 		if (_track->isSolo()) {
 			_track->setSolo(false);
 		}
+		const int removed = static_cast<int>(it - m_tracks.begin());
 		m_tracks.erase(it);
+		_track->setContainerIndex(-1);
+		// The tracks after the gap moved one place down; publish their new
+		// positions before the lock is released (off the audio thread).
+		for (int i = removed; i < static_cast<int>(m_tracks.size()); ++i)
+		{
+			m_tracks[static_cast<std::size_t>(i)]->setContainerIndex(i);
+		}
 		lockTracksAccess.unlock();
 
 		if( Engine::getSong() )
@@ -338,8 +387,19 @@ void TrackContainer::moveTrack(Track* track, int indexTo)
 		control::journalTrackMove(track, from, indexTo);
 	}
 
-	m_tracks.erase(std::find(m_tracks.begin(), m_tracks.end(), track));
-	m_tracks.insert(m_tracks.begin() + indexTo, track);
+	const auto found = std::find(m_tracks.begin(), m_tracks.end(), track);
+	if (found != m_tracks.end())
+	{
+		const int fromIndex = static_cast<int>(found - m_tracks.begin());
+		m_tracks.erase(found);
+		m_tracks.insert(m_tracks.begin() + indexTo, track);
+		// Every track between the two ends of the move shifted; publish the new
+		// positions before returning (off the audio thread, under no render).
+		for (int i = std::min(fromIndex, indexTo); i < static_cast<int>(m_tracks.size()); ++i)
+		{
+			m_tracks[static_cast<std::size_t>(i)]->setContainerIndex(i);
+		}
+	}
 
 	emit trackMoved();
 }

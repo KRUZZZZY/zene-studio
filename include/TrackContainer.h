@@ -28,6 +28,7 @@
 
 #include <QReadWriteLock>
 #include <QVector>
+#include <cstdint>
 #include <vector>
 
 #include "Track.h"
@@ -86,6 +87,20 @@ public:
 	{
 		return m_tracks;
 	}
+
+	/*! The track's position in this container, or -1 when it is not one of its
+	 *  tracks. The position is maintained as tracks are added, removed and
+	 *  reordered, so the audio thread's per-period route lookup never scans the
+	 *  song (the input monitor asks for it once per monitored track per period). */
+	int trackIndex( const Track * _track ) const;
+
+#ifdef LMMS_TESTING
+	//! Candidate tracks trackIndex() examined since the last reset - the seam
+	//! that proves the audio-thread lookup does not scan the song. 0 when the
+	//! position is maintained rather than searched for.
+	static std::uint64_t trackIndexScanCount() noexcept;
+	static void resetTrackIndexScanCount() noexcept;
+#endif
 
 	/*! The track whose stable id (the number in trk-<n>) is \a id, or nullptr.
 	 *  Addressing by id and never by position - the same rule every trk-<n>
