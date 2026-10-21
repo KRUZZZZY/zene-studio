@@ -9,6 +9,32 @@ new-p10-127: FIXED
 Three bugs in one file (`plugins/Xpressive/ExprSynth.cpp`), each fixed, tested and
 committed on its own.
 
+## Evidence table
+
+| item | new-p15-63 | new-p14-103 | new-p10-127 |
+|---|---|---|---|
+| verdict | FIXED | FIXED | FIXED |
+| RED command | `ctest -R '^ExprSynthAllocation$'` | `ctest -R '^ExprSynth$'` | `ctest -R '^ExprSynth$'` |
+| RED exit code (before the fix) | 8 | 8 | 8 |
+| GREEN exit code (after the fix) | 0 | 0 | 0 |
+| RED exit code (fix reverted) | 8 | 8 | 8 |
+| GREEN exit code (fix re-applied) | 0 | 0 | 0 |
+| test file | `tests/src/plugins/ExprSynthAllocationTest.cpp` | `tests/src/plugins/ExprSynthTest.cpp` | `tests/src/plugins/ExprSynthTest.cpp` |
+| new test cases | 2 | 1 | 1 |
+
+- Affected test family: `ctest -R 'ExprSynth'` → **2 tests run, 2 passed**
+  (`ExprSynth` = 5 test functions, `ExprSynthAllocation` = 3 test functions),
+  `TEST_EXIT=0` (`$LOGS/test-family-final.log`).
+- Gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` →
+  **GATE_EXIT=0**, every row PASS (`$LOGS/gate-feature-check.log`). The two ratchets
+  that are red on the train (`bash tests/complexity-gate.sh --check` →
+  COMPLEXITY_EXIT=1, `bash tests/file-length-gate.sh --check` → FILELENGTH_EXIT=1)
+  list only pre-existing items of other files; no item of this change is among them
+  (`$LOGS/gate-complexity.log`, `$LOGS/gate-file-length.log`).
+- Build: `cmake --build build --target ExprSynth ExprSynthAllocationTest xpressive
+  zene` → BUILD_EXIT=0 (the plugin and the application build with the changed
+  headers).
+
 ## new-p15-63 — Cyclic wave allocation leaks if vector growth fails
 
 **Verdict: FIXED**
