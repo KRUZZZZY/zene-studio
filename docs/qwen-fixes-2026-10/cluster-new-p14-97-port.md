@@ -123,7 +123,12 @@ in the train's own tree at its HEAD (`zene-cachyos` @ `dbb15dded`,
 which is the proof that it is not caused by this branch. The manifest was left
 alone on purpose: re-deriving it deletes 1148 vendored paths from a
 whole-tree scope file that every lane shares, and it has nothing to do with this
-bug.
+bug. The remedy, if the owner wants it, is the manifest's own documented
+regeneration (its header, "Regenerate with"), and it was verified here without
+touching the tree: writing that output over the entry list makes the check
+print `REPRODUCES: the entry list in all-sources-regen.txt is the recipe's own
+output.` (exit 0). It was not committed here because the merge train re-derives
+this file itself on every cycle and because the change is not this bug's.
 
 ## Self-check
 
