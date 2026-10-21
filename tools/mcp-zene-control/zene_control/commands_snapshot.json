@@ -16231,7 +16231,7 @@
         ],
         "type": "object"
       },
-      "description": "Put lyrics on notes: 'text' is split into syllables at spaces and hyphens and laid on the notes in 'scope' (the whole clip when left out) in time order - notes past the last syllable lose theirs - or 'lyrics' gives each note its own: a list of {note, text}. The note editor draws them on the notes. One undo step.",
+      "description": "Put lyrics on notes: give exactly one of 'text' - split into syllables at spaces and hyphens and laid on the notes in 'scope' (the whole clip when left out) in time order, and notes past the last syllable lose theirs - or 'lyrics', which gives each note its own: a list of {note, text}. Giving both is an error. The note editor draws them on the notes. One undo step.",
       "group": "note",
       "id": "note.lyrics",
       "mutating": true,

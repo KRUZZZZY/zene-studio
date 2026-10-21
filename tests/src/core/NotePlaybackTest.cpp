@@ -772,6 +772,43 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! 'text' and 'lyrics' are two spellings of the same request: both together is ambiguous, so the
+	//! command refuses it instead of silently dropping one of them.
+	void lyricsRejectBothInputFormsTogether()
+	{
+		Note* note = oneNote();
+		const QString clip = control::clipIdOf(m_clip);
+		QVERIFY(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}, {QStringLiteral("text"), QStringLiteral("original")}}).ok);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthBefore = journal->undoDepth();
+		const ControlResult result = run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("text"), QStringLiteral("ignored")},
+			{QStringLiteral("lyrics"), QJsonArray{QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)},
+				{QStringLiteral("text"), QStringLiteral("per note")}}}}});
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(lyricText(note->conditions().lyric), QStringLiteral("original"));
+		QCOMPARE(journal->undoDepth(), depthBefore);
+	}
+
+	//! Every note in scope is written: the ones under the syllables get one, the rest are cleared.
+	//! The reply's 'set' counts every note the command changed, not only the syllables.
+	void lyricsReportEveryNoteTheyWrite()
+	{
+		oneNote();
+		for (int i = 1; i < 3; ++i) { m_clip->addNote(Note(TimePos(24), TimePos(i * 48), 60 + i), false); }
+		const QString clip = control::clipIdOf(m_clip);
+		QVERIFY(run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip}, {QStringLiteral("text"), QStringLiteral("a b c")}}).ok);
+		const ControlResult result = run(QStringLiteral("note.lyrics"), {{QStringLiteral("clip"), clip},
+			{QStringLiteral("text"), QStringLiteral("solo")}});
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(result.result.value(QStringLiteral("set")).toInt(), 3);
+		QCOMPARE(result.result.value(QStringLiteral("syllables")).toInt(), 1);
+		QStringList sung;
+		for (const Note* note : m_clip->notes()) { sung << lyricText(note->conditions().lyric); }
+		QCOMPARE(sung, (QStringList{QStringLiteral("solo"), QString(), QString()}));
+	}
+
 	//! A non-finite swing must not survive setSwing: std::clamp leaves a NaN
 	//! untouched (every comparison against it is false), and the value reaches
 	//! delayFrames(), save() and shouldPersist() from there.
