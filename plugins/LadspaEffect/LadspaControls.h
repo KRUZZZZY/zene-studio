@@ -65,6 +65,24 @@ public:
 		return new gui::LadspaMatrixControlDialog( this );
 	}
 
+#ifdef LMMS_TESTING
+	//! Test seam: reports a port the global stereo link walks over. Installed with
+	//! setLinkPortVisitor() so a test can drive the link over a plugin with more
+	//! control ports than a test can afford to build.
+	using LinkPortVisitor = void( * )( int _port, bool _linked, void * _user );
+
+	//! Test seam: the controls model of a plugin with the given processor and control
+	//! totals, without a LADSPA effect and without building the port controls.
+	LadspaControls( ch_cnt_t _processors, int _controlCount );
+
+	//! Test seam: sets the global stereo-link state, the way the control dialog does.
+	void setGlobalLinkState( bool _state );
+
+	//! Test seam: while a visitor is installed, the global stereo link reports every
+	//! port it walks to it instead of updating the port control of that port.
+	static void setLinkPortVisitor( LinkPortVisitor _visitor, void * _user );
+#endif // LMMS_TESTING
+
 
 protected slots:
 	void updateLinkStatesFromGlobal();
@@ -72,6 +90,9 @@ protected slots:
 
 
 private:
+	//! Applies the global link state to one port of the first processor.
+	void applyLinkToPort( int _port, bool _linked );
+
 	LadspaEffect * m_effect;
 	ch_cnt_t m_processors;
 	control_count_t m_controlCount;

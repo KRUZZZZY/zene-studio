@@ -31,6 +31,15 @@
 namespace lmms
 {
 
+#ifdef LMMS_TESTING
+namespace
+{
+//! The visitor the global stereo link reports the ports it walks to, if one is installed.
+LadspaControls::LinkPortVisitor s_linkPortVisitor = nullptr;
+void * s_linkPortVisitorUser = nullptr;
+}
+#endif // LMMS_TESTING
+
 
 LadspaControls::LadspaControls( LadspaEffect * _eff ) :
 	EffectControls( _eff ),
@@ -85,6 +94,41 @@ LadspaControls::LadspaControls( LadspaEffect * _eff ) :
 		}
 	}
 }
+
+
+
+#ifdef LMMS_TESTING
+LadspaControls::LadspaControls( ch_cnt_t _processors, int _controlCount ) :
+	EffectControls( nullptr ),
+	m_effect( nullptr ),
+	m_processors( _processors ),
+	m_controlCount( static_cast<control_count_t>( _controlCount ) ),
+	m_noLink( false ),
+	m_stereoLinkModel( true, this )
+{
+	connect( &m_stereoLinkModel, SIGNAL( dataChanged() ),
+				this, SLOT( updateLinkStatesFromGlobal() ),
+				Qt::DirectConnection );
+
+	// One (empty) control list per processor, like the real constructor builds.
+	m_controls.resize( _processors );
+}
+
+
+
+void LadspaControls::setGlobalLinkState( bool _state )
+{
+	m_stereoLinkModel.setValue( _state );
+}
+
+
+
+void LadspaControls::setLinkPortVisitor( LinkPortVisitor _visitor, void * _user )
+{
+	s_linkPortVisitor = _visitor;
+	s_linkPortVisitorUser = _user;
+}
+#endif // LMMS_TESTING
 
 
 
@@ -170,20 +214,34 @@ void LadspaControls::updateLinkStatesFromGlobal()
 	{
 		for( int port = 0; port < m_controlCount / m_processors; port++ )
 		{
-			m_controls[0][port]->setLink( true );
+			applyLinkToPort( port, true );
 		}
 	}
 	else if( !m_noLink )
 	{
 		for( int port = 0; port < m_controlCount / m_processors; port++ )
 		{
-			m_controls[0][port]->setLink( false );
+			applyLinkToPort( port, false );
 		}
 	}
 
 	// if global channel link state has changed, always ignore link
 	// status of individual ports in the future
 	m_noLink = false;
+}
+
+
+
+void LadspaControls::applyLinkToPort( int _port, bool _linked )
+{
+#ifdef LMMS_TESTING
+	if( s_linkPortVisitor )
+	{
+		s_linkPortVisitor( _port, _linked, s_linkPortVisitorUser );
+		return;
+	}
+#endif // LMMS_TESTING
+	m_controls[0][_port]->setLink( _linked );
 }
 
 

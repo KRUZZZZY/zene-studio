@@ -1,52 +1,75 @@
-FIXED - LADSPA control totals are no longer 16-bit; a boundary regression fails on the 16-bit type (RED, EXIT 8) and passes on the 32-bit type (GREEN, EXIT 0). Scope limit: the regression exercises the count type and `controlCountOf()`, not a constructed `LadspaControls` holding 65,536 controls (see Limits).
+FIXED - the LADSPA control total is no longer 16-bit, and a regression now drives the real `LadspaControls` global stereo link over a 65,536-control plugin: it fails on the 16-bit type (RED, EXIT 8) and passes on the wide type (GREEN, EXIT 0).
 
 ## Finding
 
-`BUG 6: LADSPA control counts wrap at 65,536` (cluster new-p15-95, base `b61e5f965`). Luna's round-3 review asked for the wider type and a boundary test.
+`BUG 6: LADSPA control counts wrap at 65,536` (cluster new-p15-95, base `b61e5f965`).
 
-## Evidence (file:line, current tree)
+Luna's round-4 review (REWORK) accepted the production change but rejected the regression: round 2's criterion - a regression that exercises `LadspaControls` (or its global-link path) with 65,536 controls and asserts an observable affected behaviour - was still unmet. The round-4 test only checked `numeric_limits<control_count_t>` and `controlCountOf()`, i.e. the type, not the behaviour.
 
-- `include/LadspaBase.h:53` `using control_count_t = int;`, which replaces the 16-bit `ch_cnt_t` (`include/LmmsTypes.h:44`, `std::uint16_t`).
-- `include/LadspaBase.h:56-59` `controlCountOf( qsizetype )`, the one place a port count becomes a control count.
-- `plugins/LadspaEffect/LadspaControls.h:77` `control_count_t m_controlCount;` (was `ch_cnt_t` at base `b61e5f965:LadspaControls.h:76`, and `int` after `cdcc15fb5`).
-- `plugins/LadspaEffect/LadspaControls.cpp:48` `m_controlCount = controlCountOf( controls.count() );`
-- Readers of the count, all now on the wide type: `LadspaControls.h:51` (`int controlCount()`), `LadspaControls.cpp:171,178` (`m_controlCount / m_processors`, the global stereo-link loop), `LadspaControlDialog.cpp:82-83` (column count), and `src/gui/EffectView.cpp:82` (`controlCount() > 0`).
-- The manager already accepts wide counts: `src/core/LadspaManager.cpp:348-351` returns `uint32_t`, and `tests/src/core/LadspaManagerTest.cpp:118` checks a 65536-port plugin.
+## Verdict
 
-## What changed this round (on top of `cdcc15fb5`)
+**REAL, and FIXED.** The defect was real at the base commit and the behaviour-level regression now exists, fails without the fix and passes with it.
 
-- The committed fix's `static_assert` and `<limits>` are removed. The compile-time guard is replaced by a runtime boundary test; the guard could not fail on the old code and gave no RED.
-- The shared count type and `controlCountOf()` live in `include/LadspaBase.h`. That header is already visible to every test, and the 65536-object plugin path is too slow to test (see Limits).
-- The regression is a new slot `controlCountTypeKeepsEveryControlPastTheSixteenBitLimit` in `tests/src/plugins/LadspaChannelCountsTest.cpp`. That test target already exists in the configured build tree. A new CMake target could not be added: this lane's build tree is configured by the parent (`bunny-guard: configuring is the parent's job`).
-- `tests/upstream-modifications.txt`: the two `cluster new-p15-95` entries are rewritten for the new state, and `include/LadspaBase.h` gets an entry.
+## Evidence (file:line, this tree)
+
+- `include/LadspaBase.h:53` `using control_count_t = int;` - the wide control-count type, replacing the 16-bit `ch_cnt_t` (`include/LmmsTypes.h:44`, `std::uint16_t`).
+- `include/LadspaBase.h:56-59` `controlCountOf( qsizetype )` - the one place a port count becomes a control count.
+- `plugins/LadspaEffect/LadspaControls.h:98` `control_count_t m_controlCount;` (was `ch_cnt_t` at base `b61e5f965:LadspaControls.h:76`).
+- `plugins/LadspaEffect/LadspaControls.cpp:57` `m_controlCount = controlCountOf( controls.count() );`
+- The global stereo-link path, the behaviour the finding names: `plugins/LadspaEffect/LadspaControls.cpp:211-229` walks `m_controlCount / m_processors` ports and applies the link state through `applyLinkToPort()` (`:235-246`).
+- Readers of the count, all on the wide type: `LadspaControls.h:51-54` (`int controlCount()`), `LadspaControlDialog.cpp:80-83` (column count), `src/gui/EffectView.cpp:82` (`controlCount() > 0`).
+- The manager already accepts wide counts: `src/core/LadspaManager.cpp:348-351` returns `uint32_t`, and `tests/src/core/LadspaManagerTest.cpp:118` checks a 65536-port plugin. So the host accepted a count the control model could not hold.
+
+## What changed this round (on top of `287d39b2d`)
+
+- **The regression now drives the real class.** `tests/src/plugins/LadspaGlobalLinkTest.cpp` (new) compiles the LADSPA plug-in's own control model into the test target (the SlicerT/Rnnoise plug-in tests' shape, `tests/CMakeLists.txt`) and drives a real `LadspaControls` through the global stereo link with 65,536 controls over two processors.
+- **A test seam, so the walk is observable without building 65,536 port controls.** `plugins/LadspaEffect/LadspaControls.h:68-84` declares, under `#ifdef LMMS_TESTING` only: a constructor that builds the controls model of a plugin with a given processor/control total (no LADSPA effect, no port controls), a setter for the global link state, and a `LinkPortVisitor` the link reports every port it walks to. `plugins/LadspaEffect/LadspaControls.cpp:235-246` applies the link state through `applyLinkToPort()`, which the visitor intercepts. The shipping plug-in is built without `LMMS_TESTING` and keeps the plain path (`m_controls[0][port]->setLink(...)`).
+- The earlier rounds' fix is unchanged: the count type is `control_count_t` (int), the product diff is `include/LadspaBase.h` only.
+- `tests/all-sources.txt` and `tests/fork-sources.txt` register the new test source; `tests/upstream-modifications.txt` records the three product files with the reasons of this round.
+
+## The regression
+
+`tests/src/plugins/LadspaGlobalLinkTest.cpp`, three cases:
+
+1. `theControlTotalOfASixtyFiveThousandControlPluginIsNotTruncated` - a `LadspaControls` with 2 processors and 65,536 controls reports `controlCount() == 65536` (on the 16-bit type it reads back **0**).
+2. `globalStereoLinkCoversEveryPortOfASixtyFiveThousandControlPlugin` - flipping the global link state makes the link walk **32,768** ports of the first processor (65,536 / 2), the last one being port 32,767. On the 16-bit type the walk covers **0** ports - "changing the global link state skips its controls", exactly as the finding describes.
+3. `globalStereoLinkCoversThePortsOfAPluginBelowTheSixteenBitLimit` - a plugin with 100 controls keeps its count and links 50 ports, so the fix changes nothing below the limit.
+
+No clock, no sleep, no thread, no fixture plugin: the counts are integer literals and the link walk is observed through the seam.
 
 ## Regression RED/GREEN
 
-The seam was not in `HEAD`, so `git apply -R` of the fix would remove the seam and fail to compile rather than fail the assertion. The RED state was built by setting the alias back to the pre-fix 16-bit type with the seam present: `using control_count_t = ch_cnt_t;`. The GREEN state is `using control_count_t = int;`. The full product diff for this round is saved as `logs/fix.patch`.
+The product change under proof is the count type in `include/LadspaBase.h`. The fix was committed in an earlier round, so the patch that carries it is generated against the current tree (`git diff -- include/LadspaBase.h > logs/fix.patch`, one line: `using control_count_t = ch_cnt_t;` -> `using control_count_t = int;`) and toggled with `git apply -R` / `git apply`, exactly as step 4b prescribes. The test seam is new in this round and is deliberately NOT part of that patch, so the test stays compilable in the reversed state (the RED build below exits 0 - it builds and links).
 
-| Step | Command (run from `build/tests` for ctest) | EXIT | Log (`qwen/runs/new-p15-95.r4/logs/`) | Result |
+| Step | Command | EXIT | Log (`qwen/runs/new-p15-95.r5/logs/`) | Result |
 |---|---|---|---|---|
-| R0a | `cmake --build build --target LadspaControlCountTest -j4` | 2 | `r4-build-red-1.log` | No rule: the new target needs a reconfigure, which this lane may not run |
-| R0b | `cmake -S . -B build` | 97 | `r4-configure-1.log` | Refused by `bunny-guard` (configuring is the parent's job) |
-| R0c | `cmake --build build --target LadspaChannelCountsTest -j4` (RED, first try) | 2 | `r4-build-red-2.log` | ccache could not write to `/run/user/1000` (environment; not the code) |
-| B1 | `CCACHE_TEMPDIR=/tmp/ccache-tmp-r4 cmake --build build --target LadspaChannelCountsTest -j4` (RED) | 0 | `r4-build-red-3.log` | builds |
-| RED | `ctest -R '^LadspaChannelCountsTest$' --output-on-failure` (RED, `control_count_t = ch_cnt_t`) | **8** | `r4-test-red-1.log` | `FAIL! ... controlCountTypeKeepsEveryControlPastTheSixteenBitLimit() 'std::numeric_limits<control_count_t>::max() >= 65536' returned FALSE` (`LadspaChannelCountsTest.cpp:28`); 3 passed, 1 failed |
-| B2 | `cmake --build build --target LadspaChannelCountsTest ladspaeffect -j4` (GREEN, `control_count_t = int`) | 0 | `r4-build-green-1.log` | builds |
-| GREEN | `ctest -R '^LadspaChannelCountsTest$' --output-on-failure` | 0 | `r4-test-green-1.log` | `100% tests passed, 0 tests failed out of 1` |
-| B3 | `cmake --build build --target zene AutomatableModelTest -j4` | 0 | `r4-build-green-2.log` | rebuilds the dependents of `LadspaBase.h` |
-| B4 | `cmake --build build --target LadspaPortDialogTest -j4` | 0 | `r4-build-green-3.log` | the target was not built before; ctest showed it as `Not Run` |
-| FAM | `ctest -R 'AutomatableModelTest\|Ladspa' --output-on-failure` (from `build/tests`) | 0 | `r4-test-family-green-2.log` | 4/4 passed: LadspaChannelCountsTest, AutomatableModelTest, LadspaManagerTest, LadspaPortDialogTest |
+| B1 | `env -u MAKEFLAGS cmake --build build --target cmake_check_build_system` | 0 | `build-1-regen.log` | the new test target needs the build tree regenerated |
+| B2 | `CCACHE_TEMPDIR=/tmp/ccache-zene cmake --build build --target LadspaGlobalLinkTest -j6` | 0 | `build-2-test.log` | builds and links |
+| T1 | `ctest -R '^LadspaGlobalLinkTest$' --output-on-failure` (from `build/tests`) | 8 | `test-1-green.log` | first run: SIGSEGV in `~LadspaControls` - the seam constructor had not given `m_controls` one list per processor; fixed in the product (below) |
+| B3 | `cmake --build build --target LadspaGlobalLinkTest -j6` (after the fix) | 0 | `build-3-test.log` | builds |
+| T2 | `ctest -R '^LadspaGlobalLinkTest$' --output-on-failure` | 0 | `test-2-green.log` | passes |
+| B4 | `cmake --build build --target LadspaGlobalLinkTest -j6` | 0 | `build-5-green.log` | builds (final test file) |
+| T3 | `ctest -R '^LadspaGlobalLinkTest$' --output-on-failure` | 0 | `test-4-green.log` | passes |
+| **RED** | `git apply -R logs/fix.patch` (the product change reversed: 16-bit count) | 0 | - | `include/LadspaBase.h:53` back to `using control_count_t = ch_cnt_t;` |
+| BR | `cmake --build build --target LadspaGlobalLinkTest -j6` | **0** | `build-12-red-final.log` | the test still COMPILES and links with the product change reversed |
+| **RED** | `ctest -R '^LadspaGlobalLinkTest$' --output-on-failure` | **8** | `test-11-red-final.log` | `FAIL! theControlTotalOfASixtyFiveThousandControlPluginIsNotTruncated() Actual (controls.controlCount()): 0, Expected (65536): 65536` (`:63`) and `FAIL! globalStereoLinkCoversEveryPortOfASixtyFiveThousandControlPlugin() Actual (walk.unlinkedCalls): 0, Expected (32768): 32768` (`:77`); the sub-limit case PASSES |
+| **GREEN** | `git apply logs/fix.patch` (the product change restored) | 0 | - | `include/LadspaBase.h:53` back to `using control_count_t = int;` |
+| BG | `cmake --build build --target LadspaGlobalLinkTest -j6` | 0 | `build-13-green-final.log` | builds |
+| **GREEN** | `ctest -R '^LadspaGlobalLinkTest$' --output-on-failure` | **0** | `test-12-green-final.log` | `100% tests passed out of 1` |
+| BP | `cmake --build build --target ladspaeffect zene -j6` | 0 | `build-11-final.log` | the shipping plug-in and the app rebuild (the plug-in is built WITHOUT `LMMS_TESTING`) |
+| BF | `cmake --build build --target LadspaChannelCountsTest LadspaManagerTest LadspaPortDialogTest -j6` | 0 | `build-10-family.log` | the other LADSPA test binaries had never been built in this tree (ctest showed them as `Not Run`) |
+| FAM | `ctest -R 'Ladspa' --output-on-failure` (from `build/tests`) | 0 | `test-10-family-final.log` | **4/4 passed**: LadspaChannelCountsTest, LadspaManagerTest, LadspaPortDialogTest, LadspaGlobalLinkTest |
 
-Affected-family count: **4 tests executed** (the earlier `Not Run` for LadspaPortDialogTest was a missing executable, fixed by B4).
+Affected-family count: **4 tests executed, 4 passed** (`test-10-family-final.log`).
 
-Deviation from step 4b: the proof toggles the type alias in place (RED, then GREEN) rather than `git apply -R fix.patch`, for the reason given above. Both states were built and run, and both EXIT codes are recorded.
+The RED run is a behaviour failure, not a build failure: the reversed product still compiles the test (BR exit 0) and the test fails on the two 65,536-control assertions.
 
 ## Gates
 
-- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exits **1** with `PermissionError` (`r4-gates-1.log`): it writes its logs to `<worktree>-feature-check`, outside the write-jail.
-- Run instead: a copy of the same script in `qwen/runs/new-p15-95.r4/feature_check_jailed.py`, with only its log folder and its baseline cache moved into the run folder (`diff` against the original shows those three lines). The first run exits **1** because the baseline needs a `git worktree add` in another repo, which is refused (exit 97, `r4-gates-2.log`). The cached baseline for `b61e5f9658c2` was copied from `qwen/gate-baselines/` into the run folder, and the rerun exits **0** (`r4-gates-3.log`):
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exits **0** (`gates-2-feature-check.log`):
 
 ```
+feature-check zene-qwen-new-p15-95 (base b61e5f965, 11 changed files; logs in ...-feature-check)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -58,21 +81,36 @@ Deviation from step 4b: the proof toggles the type alias in place (RED, then GRE
 RESULT: PASS
 ```
 
+- The first gate run of this round (`gates-1-feature-check.log`) exited **1** with `check-namespace` red: the script requires every `#if <MACRO>` block of more than 30 lines to close with `#endif // <MACRO>`. Fixed by closing the three new blocks with `#endif // LMMS_TESTING` (`plugins/LadspaEffect/LadspaControls.cpp:41,131,243`, `plugins/LadspaEffect/LadspaControls.h:84`); `tests/scripted/check-namespace` then reports `0 errors`.
+
+## Product change, in full
+
+Only one line of production behaviour is in this round's proof patch (`logs/fix.patch`):
+
+```diff
+--- a/include/LadspaBase.h
++++ b/include/LadspaBase.h
+-using control_count_t = ch_cnt_t;
++using control_count_t = int;
+```
+
+The rest of this round's product diff is the `LMMS_TESTING` seam (invisible in the shipping build) and the extraction of the link application into `applyLinkToPort()`, which the shipping path calls with the same arguments as before.
+
 ## Siblings found, NOT changed
 
-- `include/LadspaBase.h:67` `uint16_t port_id;` and `:68` `uint16_t control_id;` are still 16-bit. `control_id` takes `m_portControls.count()` at `plugins/LadspaEffect/LadspaEffect.cpp:460`. `control_id` is read only at `LadspaControls.cpp:83`, for processor-0 controls. Those are numbered first, so they stay below 65536 even on a 65,537+ control plugin, and the global link path (`:171,:178`) uses `m_controlCount`, not `control_id`. Still, proc ≥ 1 `control_id`s wrap past 65,536, and `port_id` wraps at plugin port 65,536 (`saveSettings` names). These need their own decision and are out of this finding.
+- `include/LadspaBase.h:67-68` `uint16_t port_id;` and `uint16_t control_id;` are still 16-bit. `control_id` takes `m_portControls.count()` at `plugins/LadspaEffect/LadspaEffect.cpp:460` and is read only at `LadspaControls.cpp:92` for processor-0 controls (numbered first, so below 65,536 even on a bigger plugin); the global link path uses `m_controlCount`, not `control_id`. `port_id` wraps at plugin port 65,536, which `saveSettings` (`LadspaControls.cpp:156`) uses for element names. These need their own decision and are out of this finding.
 
 ## Limits
 
-- The regression tests the count type and `controlCountOf()`. It does not construct a `LadspaControls` with 65,536 controls. The earlier attempts (`new-p15-95.r1`, `red-long-1.log`, 3600 s watchdog, EXIT 134) show that path cannot finish in test time. `ProjectJournal::allocID` (`src/core/ProjectJournal.cpp:269-275`) probes linearly from a `fastRand()` start that is only 15 bits (`include/lmms_math.h:89-94`), so object IDs cluster and each allocation walks the occupied run. That is a separate cluster (it changes saved IDs), and it is the owner's decision.
-- A future edit that changes only the `LadspaControls` member back to a 16-bit type would not fail this test, because the constructor would still go through `controlCountOf()`. The member and the helper share `control_count_t` to keep them together.
+- The regression drives the control model through its test seam, not through a loaded LADSPA plug-in: the earlier attempts (`new-p15-95.r1/logs/red-long-1.log`, 3600 s watchdog, EXIT 134) showed that building 65,536 real `LadspaControl` objects cannot finish in test time - `ProjectJournal::allocID` (`src/core/ProjectJournal.cpp:269-275`) probes linearly from a 15-bit `fastRand()` start, so each object walks the occupied run. That is a separate cluster (it would change saved IDs) and it is the owner's decision. The seam keeps the *link path* of the shipping class - the constructor's port loop is the only part not exercised.
+- The seam lives in the product headers under `#ifdef LMMS_TESTING`, the pattern this tree already uses (`include/EffectControls.h:83`). The shipping plug-in module is compiled without the macro, so the shipped code path is the one from before this round.
 
 ## Self-check
 
-Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-95` exits **1** (`r4-submit-1.log`). Four items PASS: commits on the branch, working tree clean, this report, and tests changed (`LadspaChannelCountsTest.cpp`). The one FAIL is `gates (feature_check.py)`: `submit_check.py` runs the shared `feature_check.py` unchanged, which writes its logs outside the write-jail and exits 1. The same gate checks PASS (`RESULT: PASS`, EXIT 0, `r4-gates-3.log`) with the log folder moved into the run folder (see Gates). This lane cannot change the shared script, so the FAIL is an environment result, not a code result.
-
-- **Test FAILS with the product change reverted and PASSES with it:** yes, by the type flip. RED `ctest -R '^LadspaChannelCountsTest$'` EXIT 8 with `LadspaChannelCountsTest.cpp:28` (`controlCountTypeKeepsEveryControlPastTheSixteenBitLimit()` returned FALSE). GREEN EXIT 0. The RED state is the pre-fix 16-bit type with the seam present, not `git apply -R`, because the seam is new in this round (see Regression RED/GREEN).
-- **Test is deterministic:** no clock, sleep or thread. It passes integer literals to `controlCountOf()` and compares the result. Its only input is the value passed in; it does not construct a `LadspaControls`.
-- **Fix is at the cause and complete:** the cause is the 16-bit `m_controlCount` (`LadspaControls.h:77`, now `control_count_t`). Every reader was checked: `controlCount()` (`LadspaControls.h:51`), the link loops (`LadspaControls.cpp:171,178`), `LadspaControlDialog.cpp:82-83`, and `EffectView.cpp:82`. The processor count `m_processors` stays `ch_cnt_t` (correct: it is a processor count). The sibling 16-bit ids (`LadspaBase.h:67-68`, `LadspaEffect.cpp:460`) are reported above, not changed.
-- **No collateral damage:** `saveSettings` writes `ports` from the total with `controls.count()`, not from `m_controlCount`, so saved files are unchanged. Counts below 65,536 are the same values in `int`. `controlCountOf()` has no limit or rejection, so no caller can be refused. The LADSPA family (4 tests) passes.
-- **ALREADY-FIXED / FALSE-POSITIVE:** not claimed. The verdict is FIXED. The finding was real at base `b61e5f965`: `LadspaControls.h:76` (`ch_cnt_t`) and `LadspaControls.cpp:48` (`m_controlCount = controls.count()`).
+- **Test FAILS with the product change reverted and PASSES with it:** yes. RED `ctest -R '^LadspaGlobalLinkTest$'` EXIT 8 (`test-11-red-final.log`): the count reads back 0 and the global link covers 0 of 32,768 ports; the RED build itself exits 0, so the test really compiles with the product change reversed. GREEN EXIT 0 (`test-12-green-final.log`).
+- **Test is deterministic:** no clock, sleep, thread or race. The counts are integer literals, the link state is set explicitly, and the walk is observed through the seam's callback. The only timing in the test is `Engine::init(true)` (the audio engine the models need), which is the pattern of the other model tests.
+- **Fix is at the cause and complete:** the cause is the 16-bit `m_controlCount`. Every reader was checked: `controlCount()` (`LadspaControls.h:51-54`), the global-link loops (`LadspaControls.cpp:215,222`), `LadspaControlDialog.cpp:80-83`, `EffectView.cpp:82`. The processor count `m_processors` stays `ch_cnt_t` (correct: it counts processors, not controls). The 16-bit `port_id`/`control_id` siblings are reported above, not changed.
+- **No collateral damage:** `saveSettings` writes `ports` from `controls.count()`, not from `m_controlCount`, so saved files are unchanged and old projects load as before. Counts below 65,536 are the same values in `int`. The seam is compiled out of the shipping plug-in, so no shipped behaviour changes; the only shipped change is the widened type, which changes nothing below 65,536 (case 3 of the regression covers that). The LADSPA family passes 4/4.
+- **Realtime, undo, commands:** the changed code is not on the audio thread; the link walk runs on the GUI thread exactly as before. No allocation, lock or logging was added. No control command was added.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not claimed. The verdict is FIXED. The finding was real at base `b61e5f965`: `LadspaControls.h:76` (`ch_cnt_t m_controlCount;`) and `LadspaControls.cpp:48` (`m_controlCount = controls.count();`).
+- **Files committed this round:** `plugins/LadspaEffect/LadspaControls.h`, `plugins/LadspaEffect/LadspaControls.cpp`, `tests/src/plugins/LadspaGlobalLinkTest.cpp` (new), `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p15-95.md`.

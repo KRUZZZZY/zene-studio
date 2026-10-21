@@ -1399,6 +1399,13 @@ endif()
 # and re-runs the branch's tests finds it by name and rebuilds its binary.
 LIST(APPEND LMMS_TESTS src/core/ControlCrashAcknowledgeTest.cpp)
 
+# Cluster new-p15-95: the LADSPA global stereo link over a plugin whose control total
+# is 65536. The LADSPA plug-in's own sources are compiled into the test (the
+# SlicerT plug-in tests' shape), so the link the test drives is the shipping one. Its
+# own file, and appended LAST, so the ctest entry carries a three-digit number and the
+# negative control can find and rebuild it.
+LIST(APPEND LMMS_TESTS src/plugins/LadspaGlobalLinkTest.cpp)
+
 # gcov coverage instrumentation (see WANT_COVERAGE in the top-level
 # CMakeLists.txt). Applied to the unit-test executables only; the Part C
 # reference/migration targets below keep the plain debug build so behaviour
@@ -1551,6 +1558,23 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			"LADSPA_PORT_DIALOG_FIXTURE_DIR=\"$<TARGET_FILE_DIR:SampleRateDependentLadspa>\""
 			"LADSPA_PORT_DIALOG_FIXTURE_FILE=\"$<TARGET_FILE_NAME:SampleRateDependentLadspa>\"")
 		add_dependencies(${LMMS_TEST_NAME} SampleRateDependentLadspa)
+	endif()
+	# cluster new-p15-95: LadspaGlobalLinkTest compiles the LADSPA plug-in's control
+	# model into the test (the SlicerT plug-in tests' shape), so the global stereo link
+	# the test drives is the shipping one. LMMS_TESTING is the define that compiles the
+	# control model's test seam (the visitor the link reports the ports it walks to) in;
+	# the shipping plug-in is built without it and keeps the plain path.
+	if(LMMS_TEST_NAME STREQUAL "LadspaGlobalLinkTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaControls.cpp
+			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaControls.h
+			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaMatrixControlDialog.cpp
+			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaMatrixControlDialog.h
+			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaWidgetFactory.cpp
+			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaWidgetFactory.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING PLUGIN_NAME=ladspaeffect)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
