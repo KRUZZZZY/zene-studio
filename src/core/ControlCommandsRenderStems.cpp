@@ -24,14 +24,10 @@
  *
  * THE DECLARED BOUND, stated rather than hidden. `src/core/ControlCommandsProject.cpp`
  * :305 blocks the dispatch thread on `waitForFinished(600000)`, and every control
- * handler runs ON that thread (ControlRegistry::invoke runs inline when the caller is
- * the app thread), so the control surface is DEAD for the whole lifetime of the render
- * child - `control.ping` included. docs/RENDER-CHILD-WAIT.md:120-126 states it as a
- * product defect and :128-141 designs the deferred-reply fix. THIS LANE DOES NOT BUILD
- * THAT FIX. `render.stems` therefore carries the identical bound and says so in its own
- * description and in docs/KNOWN-LIMITATIONS.md; the ctest that exercises it
- * (tests/control-stem-export-verb.py) scopes its budget per command, exactly the way
- * tests/freeze_bounce_evidence.py does for the four commands that already render.
+ * handler runs ON that thread, so the control surface is DEAD for the whole lifetime of
+ * the render child - `control.ping` included. docs/RENDER-CHILD-WAIT.md:120-126 states
+ * it as a product defect; THIS LANE DOES NOT BUILD THAT FIX, so `render.stems` carries
+ * the identical bound and says so in its own description.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -53,15 +49,18 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QCryptographicHash>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QProcess>
 #include <QStringList>
+#include <QTemporaryFile>
 
 #include "ControlEdit.h"
 #include "ControlExportPresetSupport.h"
@@ -83,6 +82,10 @@ namespace
 //! so the number in the code and the number in the row's limits line cannot drift.
 constexpr int kStemChildStartMs = 30000;
 constexpr int kStemChildRenderMs = 600000;
+//! How much of the child's own words a refusal keeps: the TAIL of its
+//! standard error. The child's error text used to be discarded together with
+//! its output, so a caller learned only THAT the export failed and never WHY.
+constexpr int kStemChildErrorBytes = 2048;
 
 bool stemFormatFromName(const QString& name, ProjectRenderer::ExportFileFormat* format)
 {
@@ -149,35 +152,190 @@ QString parseStemArgs(const QJsonObject& args, StemRequest* request)
 	return QString();
 }
 
-//! Runs the shipped `exportstems` CLI path as a child process.
-bool runCliStemExport(const QString& projectPath, const StemRequest& request, int* exitCode)
+//! The last \a maxBytes of the file at \a path, as text. The child's own output
+//! is read back from a FILE and not from a pipe: a pipe fills up and blocks the
+//! child (src/core/ControlCommandsProject.cpp:326 reads a file, too).
+QString tailOfFile(const QString& path, int maxBytes)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
+	const qint64 size = file.size();
+	if (size > maxBytes) { file.seek(size - maxBytes); }
+	return QString::fromLocal8Bit(file.read(maxBytes)).trimmed();
+}
+
+/*! Runs the shipped `exportstems` CLI path as a child process.
+ *
+ *  \a outputDirectory is the directory the child writes into - the caller's own,
+ *  or the staging directory this verb renders into first. \a errorTail receives
+ *  the child's OWN last words, bounded: the reason the export failed is exactly
+ *  what the child wrote to its standard error.
+ */
+bool runCliStemExport(const QString& projectPath, const StemRequest& request,
+	const QString& outputDirectory, int* exitCode, QString* errorTail)
 {
 	QStringList arguments{QStringLiteral("exportstems"), projectPath,
-		QStringLiteral("-o"), request.directory,
+		QStringLiteral("-o"), outputDirectory,
 		QStringLiteral("-f"), request.formatName};
 	arguments += controlExportPresetRenderArgs(request.settings);
 	arguments << QStringLiteral("--tail-bars") << QString::number(request.tailBars);
 
+	// The child's error text goes to a FILE, not to a pipe (see tailOfFile): the
+	// child must never block on a full pipe, and the file is read back, bounded.
+	QTemporaryFile errorFile;
+	errorFile.open();
+	errorFile.close();
+
 	QProcess renderer;
 	renderer.setStandardOutputFile(QProcess::nullDevice());
-	renderer.setStandardErrorFile(QProcess::nullDevice());
+	renderer.setStandardErrorFile(errorFile.fileName());
 	renderer.start(QCoreApplication::applicationFilePath(), arguments);
 	const bool finished = renderer.waitForStarted(kStemChildStartMs)
 		&& renderer.waitForFinished(kStemChildRenderMs);
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;
+	*errorTail = tailOfFile(errorFile.fileName(), kStemChildErrorBytes);
 	return finished;
 }
 
-//! The directory's direct child files, by name -> last modified, so two listings
-//! can be diffed by CONTENT and not only by name.
-QHash<QString, QDateTime> listingOf(const QString& directory)
+/*! The refusal a failed export answers with: the exit code, what the run wrote,
+ *  and the child's OWN words - the reason the export failed, which used to be
+ *  discarded with the child's output. The child's words name the directory this
+ *  verb rendered into (the staging one), so it is replaced with the caller's own
+ *  directory: a refusal naming an internal staging path would send the caller
+ *  looking for a directory that is none of its business.
+ */
+QString stemExportFailureMessage(int exitCode, int stemCount, const QString& directory,
+	const QString& errorTail, const QString& stagingDirectory = QString())
 {
-	QHash<QString, QDateTime> out;
+	QString message = QStringLiteral("the stem export failed (exit %1, %2 new file(s) in %3); "
+		"the session is unchanged").arg(exitCode).arg(stemCount).arg(directory);
+	if (!errorTail.isEmpty())
+	{
+		QString tail = errorTail;
+		if (!stagingDirectory.isEmpty()) { tail.replace(stagingDirectory, directory); }
+		message += QStringLiteral("; the child said: ") + tail;
+	}
+	return message;
+}
+
+//! The staging directory for one export: INSIDE the output directory, so the
+//! promotion below is a rename on the SAME filesystem, and so the shipped CLI
+//! still creates the output directory itself (src/core/main.cpp:1476).
+QString stagingDirectoryFor(const QString& directory)
+{
+	return QDir(directory).filePath(QStringLiteral(".zene-stems-staging-%1-%2")
+		.arg(QCoreApplication::applicationPid())
+		.arg(QDateTime::currentMSecsSinceEpoch()));
+}
+
+//! Removes the staging directory. Best effort: one left behind is litter, not a failure.
+void removeStagingDirectory(const QString& staging)
+{
+	QDir(staging).removeRecursively();
+}
+
+//! Installs one rendered file over \a target, keeping the earlier file aside
+//! until the whole set promotes. A directory at a stem path is a refusal.
+bool installStagedFile(const QString& staged, const QString& target, const QString& staging,
+	bool* hadTarget, QString* error)
+{
+	const QString name = QFileInfo(target).fileName();
+	const QString aside = QDir(staging).filePath(QStringLiteral(".zene-aside-") + name);
+	*hadTarget = QFile::exists(target);
+	if (*hadTarget && QFileInfo(target).isDir())
+	{
+		*error = QStringLiteral("the output path for %1 is a directory").arg(name);
+		return false;
+	}
+	if (*hadTarget && !QFile::rename(target, aside))
+	{
+		*error = QStringLiteral("could not move the earlier %1 aside").arg(name);
+		return false;
+	}
+	if (!QFile::rename(staged, target))
+	{
+		if (*hadTarget) { QFile::rename(aside, target); }
+		*error = QStringLiteral("could not install the rendered %1").arg(name);
+		return false;
+	}
+	return true;
+}
+
+//! Moves the rendered stems out of the staging directory into the output
+//! directory, overwriting what is there, and reports the names it installed.
+bool promoteStagedFiles(const QString& staging, const QString& directory,
+	QStringList* promoted, QString* error)
+{
+	const QFileInfoList entries = QDir(staging).entryInfoList(QDir::Files | QDir::Hidden, QDir::Name);
+	QStringList replaced;
+	for (const QFileInfo& entry : entries)
+	{
+		const QString name = entry.fileName();
+		if (name.startsWith(QLatin1String(".zene-"))) { continue; }  // our own aside file
+		bool hadTarget = false;
+		if (!installStagedFile(entry.absoluteFilePath(), QDir(directory).filePath(name),
+			staging, &hadTarget, error))
+		{
+			for (int i = promoted->size() - 1; i >= 0; --i)
+			{
+				const QString& previous = promoted->at(i);
+				const QString target = QDir(directory).filePath(previous);
+				QFile::remove(target);
+				if (replaced.contains(previous))
+				{
+					QFile::rename(QDir(staging).filePath(QStringLiteral(".zene-aside-") + previous),
+						target);
+				}
+			}
+			promoted->clear();
+			return false;
+		}
+		if (hadTarget) { replaced.append(name); }
+		promoted->append(name);
+	}
+	for (const QString& name : replaced)
+	{
+		QFile::remove(QDir(staging).filePath(QStringLiteral(".zene-aside-") + name));
+	}
+	return true;
+}
+
+//! One file in an export directory: its CONTENT digest and its stamp.
+struct StemFileState
+{
+	QString digest;      //!< the SHA-256 of the file's content, hex.
+	QDateTime modified;  //!< the stamp - a SECONDARY signal only (see writtenStems).
+};
+
+//! The SHA-256 of a file's content, hex; empty when it cannot be read. Hashed
+//! in CHUNKS, so a long stem is never held in memory whole.
+QString digestOfFile(const QString& path)
+{
+	QCryptographicHash hash(QCryptographicHash::Sha256);
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
+	while (!file.atEnd())
+	{
+		const QByteArray chunk = file.read(64 * 1024);
+		if (chunk.isEmpty()) { break; }
+		hash.addData(chunk);
+	}
+	return QString::fromLatin1(hash.result().toHex());
+}
+
+//! The directory's direct child files, by name -> state: two listings can then
+//! be diffed by CONTENT and not only by name.
+QHash<QString, StemFileState> listingOf(const QString& directory)
+{
+	QHash<QString, StemFileState> out;
 	const QFileInfoList entries = QDir(directory).entryInfoList(QDir::Files, QDir::Name);
 	for (const QFileInfo& entry : entries)
 	{
-		out.insert(entry.fileName(), entry.lastModified());
+		StemFileState state;
+		state.digest = digestOfFile(entry.absoluteFilePath());
+		state.modified = entry.lastModified();
+		out.insert(entry.fileName(), state);
 	}
 	return out;
 }
@@ -189,16 +347,24 @@ QHash<QString, QDateTime> listingOf(const QString& directory)
  *  files would be a lie the socket cannot catch - while a RE-export into the same
  *  directory overwrites the same names, and a name-only diff would then report
  *  nothing and this command would refuse a render it had actually performed.
+ *
+ *  THE CONTENT IS THE SIGNAL, and the stamp is only a secondary one. A file whose
+ *  BYTES changed is one the run rewrote, whatever the filesystem's clock did with
+ *  the modification time: a rewrite that lands inside the same clock tick leaves
+ *  the stamp where it was, and a stamp comparison then reports nothing at all -
+ *  the export refuses a render it had performed. The stamp stays, because a
+ *  rewrite of byte-identical content leaves no trace in the content either.
  */
-QJsonArray writtenStems(const QHash<QString, QDateTime>& before,
-	const QHash<QString, QDateTime>& after)
+QJsonArray writtenStems(const QHash<QString, StemFileState>& before,
+	const QHash<QString, StemFileState>& after)
 {
 	QStringList names = after.keys();
 	names.sort();
 	QJsonArray stems;
 	for (const QString& name : names)
 	{
-		if (!before.contains(name) || before.value(name) != after.value(name))
+		if (!before.contains(name) || before.value(name).digest != after.value(name).digest
+			|| before.value(name).modified != after.value(name).modified)
 		{
 			stems.append(name);
 		}
@@ -231,21 +397,61 @@ ControlResult stemExportSession(const QJsonObject& args)
 			QStringLiteral("could not serialise the session for the stem export"));
 	}
 
+	// The child renders into a STAGING directory inside the output directory,
+	// and the complete set is promoted into the output directory only after
+	// the child succeeded. A render that fails - or that is killed on the
+	// timeout - then leaves the caller's earlier stems exactly as they were,
+	// instead of a half-written set in their place.
+	const QString staging = stagingDirectoryFor(request.directory);
+
 	// The CLI creates the directory itself (QDir().mkpath, src/core/main.cpp:1012), so
 	// a listing taken before the run is simply empty for a directory that does not
 	// exist yet - which is the right baseline for the delta.
-	const QHash<QString, QDateTime> before = listingOf(request.directory);
+	const QHash<QString, StemFileState> before = listingOf(request.directory);
 	int exitCode = -1;
-	const bool finished = runCliStemExport(tempProject, request, &exitCode);
+	QString errorTail;
+	const bool finished = runCliStemExport(tempProject, request, staging, &exitCode, &errorTail);
 	QFile::remove(tempProject);
 
-	const QHash<QString, QDateTime> after = listingOf(request.directory);
-	const QJsonArray stems = writtenStems(before, after);
-	if (!finished || exitCode != 0 || stems.isEmpty())
+	if (!finished || exitCode != 0)
+	{
+		// Nothing was promoted: the output directory still holds exactly what
+		// it held before this run.
+		removeStagingDirectory(staging);
+		return ControlResult::failure(ControlErrorKind::Refused,
+			stemExportFailureMessage(exitCode, 0, request.directory, errorTail, staging));
+	}
+
+	// The render is complete: install the whole set, or report that it could
+	// not be installed.
+	QStringList promoted;
+	QString promoteError;
+	if (!promoteStagedFiles(staging, request.directory, &promoted, &promoteError))
+	{
+		removeStagingDirectory(staging);
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the stem export failed (%1); the session is unchanged")
+				.arg(promoteError));
+	}
+	removeStagingDirectory(staging);
+
+	const QHash<QString, StemFileState> after = listingOf(request.directory);
+	QJsonArray stems = writtenStems(before, after);
+	if (stems.isEmpty())
+	{
+		// Nothing in the output directory's CONTENT changed - a re-export of an
+		// unchanged project writes the same bytes, and a filesystem whose clock
+		// does not move leaves the stamp where it was - so the set the run wrote
+		// itself is what the caller is told about.
+		for (const QString& name : promoted)
+		{
+			stems.append(name);
+		}
+	}
+	if (stems.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the stem export failed (exit %1, %2 new file(s) in %3); the session is "
-				"unchanged").arg(exitCode).arg(stems.size()).arg(request.directory));
+			stemExportFailureMessage(exitCode, 0, request.directory, errorTail));
 	}
 
 	QJsonObject result;
