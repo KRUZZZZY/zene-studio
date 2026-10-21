@@ -42,6 +42,7 @@
 #include "MidiEvent.h"
 #include "MidiInputTransform.h"
 #include "NotePlayHandle.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -347,6 +348,34 @@ private slots:
 		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
 			{QStringLiteral("key_high"), 72}}).ok);
 		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("key_high")).toInt(), 72);
+	}
+
+	//! BUG 12 (new-p14-18): a track-only update changes no transform, yet the handler recorded an
+	//! undo step and marked the song modified - so the next control.undo was spent on that no-op.
+	void aTrackOnlyUpdateChangesNothingAndTakesNoUndoStep()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+		song->noteProjectSaved(QString());  // the project as if saved: a call that changes nothing must leave it so
+		const int beforeNoOp = Engine::projectJournal()->undoDepth();
+		const ControlResult noOp = run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id}});
+		QVERIFY2(noOp.ok, qPrintable(noOp.errorMessage));
+		QVERIFY(!track->inputTransform().active());
+		QCOMPARE(Engine::projectJournal()->undoDepth(), beforeNoOp);  // no step for a call that changed nothing
+		QVERIFY2(!song->isModified(), "a track-only update dirtied the project");
+		QVERIFY(!noOp.result.contains(QStringLiteral("__transaction")));
+
+		// A real edit, then the no-op: the one undo must reach the real edit, not the no-op.
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id},
+			{QStringLiteral("transpose"), -12}}).ok);
+		QVERIFY(track->inputTransform().active());
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), id}}).ok);
+		QCOMPARE(track->inputTransform().toJson().value(QStringLiteral("transpose")).toInt(), -12);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(!track->inputTransform().active(), "the undo reverted the no-op, not the real edit");
 	}
 
 	void liveInputPlaysTheTransformedNote()
