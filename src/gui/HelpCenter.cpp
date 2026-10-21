@@ -27,6 +27,7 @@
 
 #include "DeprecationHelper.h"
 
+#include <QDebug>
 #include <QDir>
 #include <QAbstractScrollArea>
 #include <QFileInfo>
@@ -260,21 +261,6 @@ void HelpCenter::filterReference(const QString& text)
 
 // ---------------------------------------------------------------------------
 
-QJsonArray GuidedTour::tours()
-{
-	QJsonArray out;
-	const QDir dir(dataPath(QStringLiteral("tours")));
-	for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files, QDir::Name))
-	{
-		QFile in(dir.filePath(file));
-		if (!in.open(QIODevice::ReadOnly)) { continue; }
-		const QJsonObject tour = QJsonDocument::fromJson(in.readAll()).object();
-		out.append(QJsonObject{{QStringLiteral("name"), QFileInfo(file).completeBaseName()}, {QStringLiteral("title"), tour.value(QStringLiteral("title"))},
-			{QStringLiteral("steps"), tour.value(QStringLiteral("steps")).toArray().size()}});
-	}
-	return out;
-}
-
 namespace
 {
 
@@ -284,17 +270,55 @@ bool isTourName(const QString& name)
 	return !name.isEmpty() && QFileInfo(name).fileName() == name && !name.contains(QLatin1Char('\\'));
 }
 
+//! Whether @a step has something to show: an object with a title or some text. One with neither would show blank.
+bool isUsableStep(const QJsonValue& step)
+{
+	const QJsonObject object = step.toObject();
+	return step.isObject() && (!object.value(QStringLiteral("title")).toString().isEmpty()
+		|| !object.value(QStringLiteral("text")).toString().isEmpty());
+}
+
+//! The tour in @a in when it is usable: a JSON object whose 'steps' are a non-empty array of usable steps.
+//! An empty object otherwise - the file is not JSON, has no steps, or has a step that would show blank.
+QJsonObject usableTour(QFile& in)
+{
+	const QJsonObject tour = QJsonDocument::fromJson(in.readAll()).object();
+	const QJsonArray steps = tour.value(QStringLiteral("steps")).toArray();
+	const bool usable = !steps.isEmpty() && std::all_of(steps.begin(), steps.end(), isUsableStep);
+	return usable ? tour : QJsonObject();
+}
+
 } // namespace
+
+QJsonArray GuidedTour::tours()
+{
+	QJsonArray out;
+	const QDir dir(dataPath(QStringLiteral("tours")));
+	for (const QString& file : dir.entryList({QStringLiteral("*.json")}, QDir::Files, QDir::Name))
+	{
+		QFile in(dir.filePath(file));
+		if (!in.open(QIODevice::ReadOnly)) { continue; }
+		const QJsonObject tour = usableTour(in);
+		if (tour.isEmpty())
+		{
+			qWarning() << "guided tour" << in.fileName() << "is left out: it is not JSON, has no steps, or has a step with no title or text";
+			continue;
+		}
+		out.append(QJsonObject{{QStringLiteral("name"), QFileInfo(file).completeBaseName()}, {QStringLiteral("title"), tour.value(QStringLiteral("title"))},
+			{QStringLiteral("steps"), tour.value(QStringLiteral("steps")).toArray().size()}});
+	}
+	return out;
+}
 
 GuidedTour* GuidedTour::start(const QString& name, QWidget* window, QString* error)
 {
 	QFile in(QDir(dataPath(QStringLiteral("tours"))).filePath(name + QStringLiteral(".json")));
 	const bool found = isTourName(name) && in.open(QIODevice::ReadOnly);
-	const QJsonArray steps = found ? QJsonDocument::fromJson(in.readAll()).object().value(QStringLiteral("steps")).toArray() : QJsonArray();
+	const QJsonArray steps = found ? usableTour(in).value(QStringLiteral("steps")).toArray() : QJsonArray();
 	if (steps.isEmpty() || window == nullptr)
 	{
 		*error = window == nullptr ? tr("there is no window to show a tour in")
-			: found ? tr("the tour '%1' has no steps: its file is empty or not valid JSON").arg(name)
+			: found ? tr("the tour '%1' is not usable: its file is empty, not valid JSON, or has a step with no title or text").arg(name)
 			: tr("there is no tour '%1'").arg(name);
 		return nullptr;
 	}

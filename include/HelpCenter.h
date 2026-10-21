@@ -98,9 +98,10 @@ class LMMS_EXPORT GuidedTour : public QWidget
 {
 	Q_OBJECT
 public:
-	//! The tours there are: their names (the file names) and titles.
+	//! The usable tours there are: their names (the file names) and titles. A file that is not a usable tour
+	//! (not JSON, no steps, or a step with no title or text) is left out and reported.
 	static QJsonArray tours();
-	//! Start the tour @a name over @a window; nullptr (and @a error) when there is no such tour.
+	//! Start the tour @a name over @a window; nullptr (and @a error) when there is no such usable tour.
 	static GuidedTour* start(const QString& name, QWidget* window, QString* error);
 	int stepCount() const { return static_cast<int>(m_steps.size()); }
 	int step() const { return m_step; }
