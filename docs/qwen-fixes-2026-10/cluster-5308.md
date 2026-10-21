@@ -31,7 +31,9 @@ RED/GREEN evidence: `fix.patch` contains only the product changes. Reversing it 
 
 The affected Qt test family contains 43 QtTest cases (per-case count in the RED log); the final CTest run passed its single registered target. No save format, load path, undo step, or control command changed.
 
-Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5308` exited 0 (`logs/025-feature-check-final.log`, all rows PASS).
+Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5308` exited 0 (`logs/027-feature-check-final.log`, all rows PASS).
+
+Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5308 5308` exited 0 after the first commit (`logs/028-submit-check-after-commit.log`). Its five ASK items are answered in `## Self-check` below.
 
 Files committed: `include/SampleRecordHandle.h`, `src/core/SampleRecordHandle.cpp`, `tests/src/core/RecordingRealtimeTest.cpp`, `tests/upstream-modifications.txt`, and this report.
 
