@@ -67,15 +67,13 @@ inline QJsonObject noteJson(const Note* note)
 inline QJsonObject finish(const ClipRef& ref, MidiClip* clip, const QString& command, QJsonObject result,
 	bool changed = true)
 {
+	result.insert(QStringLiteral("clip"), clipId(ref.id));
+	if (!changed) { return result; }
 	clip->rearrangeAllNotes();
 	clip->updateLength();
 	emit clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
-	if (changed) { Engine::getSong()->setModified(); }
-	result.insert(QStringLiteral("clip"), clipId(ref.id));
-	// An edit that changed nothing has no step behind it, so it has no inverse to
-	// record: a record would claim a reverse that does not exist.
-	if (!changed) { return result; }
+	Engine::getSong()->setModified();
 	// Luna cluster 4806: the inverse named the command itself with EMPTY args, so replaying
 	// it failed validation for every command that requires one (`clip` and `notes` above all):
 	// the advertised pair could never be executed. The journal checkpoint IS the inverse here,

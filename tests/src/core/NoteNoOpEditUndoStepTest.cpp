@@ -187,6 +187,38 @@ private slots:
 		QCOMPARE(shape(*m_clip), before);
 	}
 
+	//! A no-op edit must not use finish() to mirror stale linked content: that
+	//! mirror is a real sibling write with its own journal checkpoint.
+	void anIdentityScaleDoesNotMirrorOrCheckpointLinkedContent()
+	{
+		freshClip();
+		auto* linkedTrack = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(linkedTrack != nullptr);
+		auto* linkedClip = dynamic_cast<MidiClip*>(linkedTrack->createClip(TimePos(192)));
+		QVERIFY(linkedClip != nullptr);
+		const QString linkedId = control::clipIdOf(linkedClip);
+		const ControlResult link = run(QStringLiteral("clip.link_create"),
+			QJsonObject{{QStringLiteral("clip"), clip()}, {QStringLiteral("clips"), QJsonArray{linkedId}}});
+		QVERIFY2(link.ok, qPrintable(link.errorMessage));
+		QCOMPARE(linkedClip->notes().size(), 2);
+
+		// Model a divergent saved/loaded member. A no-op on the source should not
+		// silently repair it or create an undo step for that unrelated write.
+		linkedClip->notes().front()->setKey(72);
+		const QStringList linkedBefore = shape(*linkedClip);
+		ProjectJournal* project = journal();
+		QVERIFY(project != nullptr);
+		const int depthBefore = project->undoDepth();
+		clearModifiedFlag();
+
+		const ControlResult scaled = run(QStringLiteral("note.scale"),
+			QJsonObject{{QStringLiteral("clip"), clip()}});
+		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
+		QCOMPARE(project->undoDepth(), depthBefore);
+		QCOMPARE(shape(*linkedClip), linkedBefore);
+		QVERIFY(!Engine::getSong()->isModified());
+	}
+
 	//! note.transform_where with an action that changes nothing: a transpose of
 	//! zero semitones leaves every key where it was.
 	void aTransposeOfZeroTakesNoUndoStep()
