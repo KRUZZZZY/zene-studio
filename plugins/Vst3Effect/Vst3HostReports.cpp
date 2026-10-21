@@ -77,6 +77,7 @@ auto HostedPlugin::activateOutputBuses(int upTo) -> bool
 {
 	auto& d = *m_impl;
 	if (d.prepared || !d.component) { return false; }
+	if (upTo < 0) { return false; }
 	const int last = std::min(upTo, static_cast<int>(d.outputBusDescs.size()) - 1);
 	if (upTo > last) { return false; }
 	bool activated = true;
