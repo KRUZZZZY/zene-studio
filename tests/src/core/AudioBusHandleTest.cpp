@@ -24,6 +24,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <new>
@@ -37,6 +38,7 @@
 #include "Mixer.h"
 #include "PlayHandle.h"
 #include "Plugin.h"
+#include "RealtimeScope.h"
 #include "SampleFrame.h"
 
 namespace lmms
@@ -266,6 +268,69 @@ private slots:
 			QCOMPARE(storage[f][0], 0.0f);
 			QCOMPARE(storage[f][1], 0.0f);
 		}
+	}
+
+	//! Cluster new-p15-253: constructing an audio bus on the audio path must not register
+	//! it with the engine inline. The registration takes the engine's model lock - a
+	//! render worker would deadlock against the render owner, which holds that lock for
+	//! the whole period and waits for the worker - and it grows the bus list, which is an
+	//! allocation on the audio path. The render owner registers the bus instead.
+	void busCreatedOnTheRealtimePathIsRegisteredByTheRenderOwner()
+	{
+		using namespace lmms;
+
+		AudioBusHandle* bus = nullptr;
+		{
+			// The realtime scope marks this thread as the audio path: the constructor
+			// must behave as it does on the render thread.
+			const RealtimeScope realtime;
+			bus = new AudioBusHandle(QStringLiteral("RealtimeBus"), false);
+		}
+
+		const auto& handles = Engine::audioEngine()->audioBusHandles();
+		QVERIFY(std::find(handles.begin(), handles.end(), bus) == handles.end());
+
+		// The render owner registers the published bus at the start of the next period.
+		Engine::audioEngine()->renderNextPeriod();
+		QVERIFY(std::find(handles.begin(), handles.end(), bus) != handles.end());
+
+		delete bus;
+		QVERIFY(std::find(handles.begin(), handles.end(), bus) == handles.end());
+	}
+
+	//! Cluster new-p12-313: the engine's registration path (addAudioBusHandle) must not
+	//! lock the model nor grow the bus list when it runs on the audio path. The bus is
+	//! registered by the render owner at the start of the next period instead.
+	void engineBusRegistrationOnTheRealtimePathIsDeferred()
+	{
+		using namespace lmms;
+
+		auto* engine = Engine::audioEngine();
+		auto* bus = new AudioBusHandle(QStringLiteral("DeferredBus"), false);
+		// The constructor registered it on the control thread; take it out again so the
+		// registration below is the only one that can put it back.
+		engine->removeAudioBusHandle(bus);
+		const std::size_t before = engine->audioBusHandles().size();
+		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
+			== engine->audioBusHandles().end());
+
+		{
+			const RealtimeScope realtime;
+			engine->addAudioBusHandle(bus);
+		}
+
+		// The registration was deferred: the bus list did not grow on the audio path.
+		QCOMPARE(engine->audioBusHandles().size(), before);
+		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
+			== engine->audioBusHandles().end());
+
+		// The render owner registers it at the start of the next period.
+		engine->renderNextPeriod();
+		QCOMPARE(engine->audioBusHandles().size(), before + 1);
+		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
+			!= engine->audioBusHandles().end());
+
+		delete bus;
 	}
 };
 

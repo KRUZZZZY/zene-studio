@@ -132,14 +132,15 @@ void AudioBusHandle::setExtOutputEnabled(bool enabled)
 	if (enabled != m_extOutputEnabled)
 	{
 		m_extOutputEnabled = enabled;
-		if (m_extOutputEnabled)
+		if (RealtimeScope::isActive())
 		{
-			Engine::audioEngine()->audioDev()->registerPort(this);
+			// The device port setup allocates and can block (the JACK backend registers a
+			// port per channel), so the audio path may not do it (cluster new-p15-253 /
+			// new-p12-313). The control thread applies the update.
+			Engine::audioEngine()->requestDevicePortUpdate(this, enabled);
+			return;
 		}
-		else
-		{
-			Engine::audioEngine()->audioDev()->unregisterPort(this);
-		}
+		Engine::audioEngine()->applyDevicePortUpdate(this, enabled);
 	}
 }
 

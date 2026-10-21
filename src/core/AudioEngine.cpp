@@ -374,6 +374,13 @@ AudioEngine::AudioEngine(bool renderOnly)
 		// Q050-016 round 3: free the expression-stream snapshots the render path
 		// retired (a playing handle held the last reference) - here, off it.
 		MpeStreamSnapshot::reclaimRetired();
+		// Cluster new-p15-253 / new-p12-313: the control thread is the one that may
+		// allocate and call the device. It applies the device port updates a realtime
+		// thread requested, removes (and frees) the buses a render worker handed over,
+		// and keeps room in the bus list for the render owner to grow it.
+		applyPendingDevicePortUpdates();
+		drainPendingAudioBusHandleRetirements();
+		ensureAudioBusHandleCapacityOnControlThread();
 	});
 	m_playHandleCapacityTimer.start(100);
 }
@@ -938,6 +945,12 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	m_profiler.startPeriod();
 	s_renderingThread = true;
 
+	// The buses a realtime thread published are registered here, on the render owner,
+	// under the model lock it holds for the period (cluster new-p15-253 / new-p12-313).
+	// The registration itself allocates nothing: the bus list has room, because the
+	// control thread keeps room in it.
+	promotePendingAudioBusHandles();
+
 	renderStageNoteSetup();     // STAGE 0: clear old play handles and buffers, setup new play handles
 	renderStageInstruments();   // STAGE 1: run and render all play handles
 	renderStageEffects();       // STAGE 2: process effects of all instrument- and sampletracks
@@ -1152,10 +1165,30 @@ void AudioEngine::restoreAudioDevice()
 
 void AudioEngine::addAudioBusHandle(AudioBusHandle* busHandle)
 {
+	if (RealtimeScope::isActive())
+	{
+		// The audio path (cluster new-p15-253 / new-p12-313): the registration takes the
+		// model lock and grows the bus list, and neither may happen here. The bus is
+		// published to a fixed, lock-free queue instead; the render owner registers it at
+		// the start of the next period, under the model lock it holds there.
+		if (m_pendingAudioBusHandles.push(busHandle))
+		{
+			m_deferredAudioBusHandleRegistrations.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+		// The queue is full: the bus cannot be registered on this thread either. It stays
+		// unregistered, and the counter makes the refusal visible.
+		m_droppedAudioBusHandleRegistrations.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+
+	// The control thread: the model lock, exactly as the registration always took it.
+	// (requestChangeInModel is a no-op on the render owner, which holds the lock already.)
 	requestChangeInModel();
 	m_audioBusHandles.push_back(busHandle);
 	if (!RealtimeScope::isActive() && QThread::currentThread() == thread())
 	{
+		reserveAudioBusHandleCapacity();
 		const qsizetype capacity = m_playHandles.capacity();
 		const qsizetype required = static_cast<qsizetype>(m_audioBusHandles.size()
 			* PlayHandle::MaxNumber);
@@ -1171,14 +1204,191 @@ void AudioEngine::addAudioBusHandle(AudioBusHandle* busHandle)
 
 void AudioEngine::removeAudioBusHandle(AudioBusHandle* busHandle)
 {
-	requestChangeInModel();
+	if (s_renderingThread)
+	{
+		// The render owner holds the model lock for the whole period: erase under it.
+		eraseAudioBusHandle(busHandle);
+		return;
+	}
+	if (RealtimeScope::isActive())
+	{
+		// A render worker: the model lock belongs to the render owner, which is waiting
+		// for this worker - taking it here would deadlock. The control thread removes the
+		// bus from the list; the caller keeps the bus alive until then (see
+		// destroyAudioBusHandle, which is the supported way to destroy a bus).
+		m_pendingAudioBusHandleRetirements.push(AudioBusHandleRetirement{busHandle, false});
+		return;
+	}
 
+	const auto lock = std::lock_guard{m_changeMutex};
+	eraseAudioBusHandle(busHandle);
+}
+
+void AudioEngine::destroyAudioBusHandle(AudioBusHandle* busHandle)
+{
+	if (busHandle == nullptr) { return; }
+	if (!RealtimeScope::isActive() || s_renderingThread)
+	{
+		// The control thread, or the render owner: the model lock is free, or held by us.
+		delete busHandle;
+		return;
+	}
+	// A render worker (cluster new-p15-253 / new-p12-313): the model lock belongs to the
+	// render owner, which waits for this worker, and the render may still read the bus.
+	// The engine keeps the bus alive until the control thread has removed it from the
+	// list - that is the safe lifetime handling the realtime path needs.
+	if (!m_pendingAudioBusHandleRetirements.push(AudioBusHandleRetirement{busHandle, true}))
+	{
+		// The queue is full: the bus cannot be freed here (the render owner may still
+		// read it), and it cannot be freed later either. Leaking it is the only safe
+		// answer; the counter makes the refusal visible.
+		m_droppedAudioBusHandleRetirements.fetch_add(1, std::memory_order_relaxed);
+	}
+}
+
+
+void AudioEngine::eraseAudioBusHandle(AudioBusHandle* busHandle)
+{
 	auto it = std::find(m_audioBusHandles.begin(), m_audioBusHandles.end(), busHandle);
 	if (it != m_audioBusHandles.end())
 	{
 		m_audioBusHandles.erase(it);
 	}
-	doneChangeInModel();
+}
+
+
+void AudioEngine::promotePendingAudioBusHandles()
+{
+	// The render owner, under the model lock it holds for the period.
+	AudioBusHandle* busHandle = nullptr;
+	while (m_pendingAudioBusHandles.pop(&busHandle))
+	{
+		if (m_audioBusHandles.size() >= m_audioBusHandles.capacity())
+		{
+			// The bus list cannot grow here - a growth allocates, which the audio path may
+			// not do. The control thread makes room and the bus is registered with the
+			// next period.
+			m_pendingAudioBusHandles.push(busHandle);
+			m_audioBusHandleCapacityRefreshRequested.store(true, std::memory_order_relaxed);
+			break;
+		}
+		m_audioBusHandles.push_back(busHandle);
+		if (busHandle->extOutputEnabled())
+		{
+			// The device port setup allocates: the control thread applies it.
+			m_pendingDevicePortUpdates.push(DevicePortUpdate{busHandle, true});
+		}
+	}
+}
+
+
+void AudioEngine::ensureAudioBusHandleCapacityOnControlThread()
+{
+	// The control thread, and only when the render owner asked for room: the bus list may
+	// only grow under the model lock, which also waits for the render period that could
+	// still be reading it.
+	if (!m_audioBusHandleCapacityRefreshRequested.exchange(false, std::memory_order_relaxed))
+	{
+		return;
+	}
+	const auto renderLock = requestChangesGuard();
+	reserveAudioBusHandleCapacity();
+}
+
+
+void AudioEngine::reserveAudioBusHandleCapacity()
+{
+	// The caller holds the model lock. The room the render owner needs to register a
+	// published bus without allocating (a growth on the audio path is forbidden).
+	const std::size_t required = m_audioBusHandles.size() + PendingAudioBusHandleCapacity;
+	if (m_audioBusHandles.capacity() < required)
+	{
+		m_audioBusHandles.reserve(required);
+	}
+}
+
+
+void AudioEngine::requestDevicePortUpdate(AudioBusHandle* busHandle, bool enable)
+{
+	// A realtime thread only publishes the request: the device call allocates and can
+	// block, and the control thread is the one that may do that.
+	if (!m_pendingDevicePortUpdates.push(DevicePortUpdate{busHandle, enable}))
+	{
+		m_droppedDevicePortUpdates.fetch_add(1, std::memory_order_relaxed);
+	}
+}
+
+
+void AudioEngine::applyDevicePortUpdate(AudioBusHandle* busHandle, bool enable)
+{
+	// The control thread calls the device directly. It must not take the model lock here:
+	// a bus is destroyed under that lock (a play handle's own bus), and the lock is not
+	// recursive.
+	AudioDevice* const device = m_audioDev;
+	if (device == nullptr) { return; }
+	if (enable) { device->registerPort(busHandle); }
+	else { device->unregisterPort(busHandle); }
+}
+
+
+void AudioEngine::applyPendingDevicePortUpdates()
+{
+	// The control thread, from the engine's timer tick: it does not hold the model lock
+	// here, so it can take it for the check below.
+	DevicePortUpdate updates[PendingAudioBusHandleCapacity];
+	std::size_t count = 0;
+	while (count < PendingAudioBusHandleCapacity && m_pendingDevicePortUpdates.pop(&updates[count])) { ++count; }
+	if (count == 0) { return; }
+
+	const auto lock = std::lock_guard{m_changeMutex};
+	AudioDevice* const device = m_audioDev;
+	if (device == nullptr) { return; }
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		const DevicePortUpdate& update = updates[i];
+		// The bus is registered under this address: a setup may be applied (the bus is
+		// alive), a teardown may not (it would unregister the port of the bus that took
+		// the address).
+		const bool registered = std::find(m_audioBusHandles.begin(), m_audioBusHandles.end(),
+			update.bus) != m_audioBusHandles.end();
+		if (update.enable)
+		{
+			// The setup names a live bus: a bus that was destroyed in the meantime is no
+			// longer in the list, and the device must not be handed a freed pointer.
+			if (!registered) { continue; }
+			device->registerPort(update.bus);
+			continue;
+		}
+		// The teardown names a bus that may be gone already: the device uses the pointer
+		// as a key only.
+		if (registered) { continue; }
+		device->unregisterPort(update.bus);
+	}
+}
+
+
+void AudioEngine::drainPendingAudioBusHandleRetirements()
+{
+	// The control thread. The pop is lock-free; the removals need the model lock, which
+	// also waits for the render period that could still be reading the bus.
+	AudioBusHandleRetirement retirements[PendingAudioBusHandleCapacity];
+	std::size_t count = 0;
+	while (count < PendingAudioBusHandleCapacity && m_pendingAudioBusHandleRetirements.pop(&retirements[count]))
+	{
+		++count;
+	}
+	if (count == 0) { return; }
+
+	{
+		const auto lock = std::lock_guard{m_changeMutex};
+		for (std::size_t i = 0; i < count; ++i) { eraseAudioBusHandle(retirements[i].bus); }
+	}
+	// The buses the engine owns are freed here, outside the model lock: their destructor
+	// removes them from the list again, which takes the lock.
+	for (std::size_t i = 0; i < count; ++i)
+	{
+		if (retirements[i].destroy) { delete retirements[i].bus; }
+	}
 }
 
 

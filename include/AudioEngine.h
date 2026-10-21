@@ -43,6 +43,7 @@
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
 #include "LocklessList.h"
+#include "MpscQueue.h"
 #include "AudioEngineProfiler.h"
 #include "MasterLoudnessTap.h"
 #include "PunchWindow.h"
@@ -197,9 +198,55 @@ public:
 
 
 	// audio-bus-handle-stuff
+	//! Registers a bus with the engine.
+	//!
+	//! REALTIME-SAFE (cluster new-p15-253 / new-p12-313). The registration takes the
+	//! model lock and grows the bus list, and neither may happen on the audio path: a
+	//! bus created on the render path is published to a fixed, lock-free queue instead,
+	//! and the render owner registers it at the start of the next period (it holds the
+	//! model lock there). The control thread registers a bus inline, exactly as before.
 	void addAudioBusHandle(AudioBusHandle* busHandle);
 
+	//! Removes a bus from the engine.
+	//!
+	//! REALTIME-SAFE (cluster new-p15-253 / new-p12-313). The render owner removes the
+	//! bus under the model lock it holds for the period; the control thread removes it
+	//! under the model lock; a render worker hands it to the control thread, because the
+	//! model lock belongs to the render owner, which waits for that worker - taking it
+	//! here would deadlock.
 	void removeAudioBusHandle(AudioBusHandle* busHandle);
+
+	//! Destroys a bus whose owner is a play handle (the standalone sample bus).
+	//!
+	//! REALTIME-SAFE (cluster new-p15-253 / new-p12-313). On a render worker the engine
+	//! keeps the bus alive until the control thread has removed it from the bus list, so
+	//! no worker can read a bus that was freed under it.
+	void destroyAudioBusHandle(AudioBusHandle* busHandle);
+
+	//! How many bus registrations a realtime thread published for the render owner
+	//! (diagnostics, cluster new-p15-253 / new-p12-313).
+	std::uint64_t deferredAudioBusHandleRegistrations() const noexcept
+	{
+		return m_deferredAudioBusHandleRegistrations.load(std::memory_order_relaxed);
+	}
+	//! How many published buses the fixed queue could not take (diagnostics).
+	std::uint64_t droppedAudioBusHandleRegistrations() const noexcept
+	{
+		return m_droppedAudioBusHandleRegistrations.load(std::memory_order_relaxed);
+	}
+	//! How many buses a render worker handed over that the fixed queue could not take
+	//! (diagnostics).
+	std::uint64_t droppedAudioBusHandleRetirements() const noexcept
+	{
+		return m_droppedAudioBusHandleRetirements.load(std::memory_order_relaxed);
+	}
+
+	//! Asks the control thread to apply a device port update (the device call allocates).
+	//! A realtime thread only publishes the request; the control thread calls the device.
+	void requestDevicePortUpdate(AudioBusHandle* busHandle, bool enable);
+
+	//! Applies one device port update. Control thread.
+	void applyDevicePortUpdate(AudioBusHandle* busHandle, bool enable);
 
 	//! Read-only view of the registered handles (#605). The audio thread
 	//! iterates this under m_changeMutex (see renderStageEffects), which is the
@@ -634,6 +681,21 @@ private:
 	void renderStageEffects();
 	void renderStageMix();
 
+	//! Registers the buses a realtime thread published. The render owner, under the model
+	//! lock it holds for the period: the bus list cannot grow here (a growth allocates),
+	//! so a bus that does not fit waits for the control thread to make room.
+	void promotePendingAudioBusHandles();
+	//! Removes a bus from the bus list. The caller holds the model lock.
+	void eraseAudioBusHandle(AudioBusHandle* busHandle);
+	//! Keeps room in the bus list for the render owner to grow it without allocating.
+	void ensureAudioBusHandleCapacityOnControlThread();
+	//! Grows the bus list. The caller holds the model lock.
+	void reserveAudioBusHandleCapacity();
+	//! Applies the device port updates a realtime thread published. Control thread.
+	void applyPendingDevicePortUpdates();
+	//! Removes (and frees) the buses a render worker handed over. Control thread.
+	void drainPendingAudioBusHandleRetirements();
+
 
 	void swapBuffers();
 
@@ -642,6 +704,42 @@ private:
 	bool m_renderOnly;
 
 	std::vector<AudioBusHandle*> m_audioBusHandles;
+
+	//! The fixed capacity of the queues below. A power of two, as MpscQueue requires.
+	static constexpr std::size_t PendingAudioBusHandleCapacity = 64;
+
+	//! Buses a realtime thread published: the render owner registers them at the start of
+	//! the next period (cluster new-p15-253 / new-p12-313). Fixed storage, lock-free: the
+	//! publication never allocates and never takes the model lock.
+	MpscQueue<AudioBusHandle*, PendingAudioBusHandleCapacity> m_pendingAudioBusHandles;
+
+	//! A bus a render worker handed over: the control thread removes it from the bus list
+	//! (and frees it, when the owner gave the bus to the engine).
+	struct AudioBusHandleRetirement
+	{
+		AudioBusHandle* bus;
+		bool destroy;
+	};
+	MpscQueue<AudioBusHandleRetirement, PendingAudioBusHandleCapacity> m_pendingAudioBusHandleRetirements;
+
+	//! A device port update a realtime thread requested (the device call allocates).
+	struct DevicePortUpdate
+	{
+		AudioBusHandle* bus;
+		bool enable;
+	};
+	MpscQueue<DevicePortUpdate, PendingAudioBusHandleCapacity> m_pendingDevicePortUpdates;
+
+	//! Buses whose registration was deferred to the render owner (diagnostics).
+	std::atomic<std::uint64_t> m_deferredAudioBusHandleRegistrations{0};
+	//! Published buses the fixed queue could not take (diagnostics).
+	std::atomic<std::uint64_t> m_droppedAudioBusHandleRegistrations{0};
+	//! Buses a render worker handed over that the fixed queue could not take (diagnostics).
+	std::atomic<std::uint64_t> m_droppedAudioBusHandleRetirements{0};
+	//! Device port updates a realtime thread published that the queue could not take.
+	std::atomic<std::uint64_t> m_droppedDevicePortUpdates{0};
+	//! Set by the render owner when the bus list had no room for a published bus.
+	std::atomic<bool> m_audioBusHandleCapacityRefreshRequested{false};
 
 	f_cnt_t m_framesPerAudioBuffer;
 	//! R2.2: the cached round trip; the audio thread reads it when a take starts.
