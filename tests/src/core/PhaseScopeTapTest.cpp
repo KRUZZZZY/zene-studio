@@ -33,6 +33,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -74,6 +75,31 @@ bool mixesValues(const std::vector<float>& left, const std::vector<float>& right
 	return false;
 }
 
+//! What a push made at the instant the new channel is published sees.
+struct ChannelChangeProbe
+{
+	bool read = false;
+	bool mixed = false;
+	std::vector<float> left;
+	std::vector<float> right;
+};
+
+//! The audio thread's push landing in the change: the old channel's frames are still in the ring.
+void pushWhileTheChannelIsPublished(void* data)
+{
+	auto& probe = *static_cast<ChannelChangeProbe*>(data);
+	const auto fresh = ramp(1000.f, 64);
+	tap().push(2, fresh.data(), static_cast<f_cnt_t>(fresh.size()));
+	probe.left.assign(128, 0.f);
+	probe.right.assign(128, 0.f);
+	probe.read = tap().latest(probe.left.data(), probe.right.data(), probe.left.size());
+	for (std::size_t i = 0; probe.read && i < probe.left.size(); ++i)
+	{
+		if (probe.left[i] != 1000.f + static_cast<float>(i)
+			|| probe.right[i] != -(1000.f + static_cast<float>(i))) { probe.mixed = true; }
+	}
+}
+
 } // namespace
 
 class PhaseScopeTapTest : public QObject
@@ -82,6 +108,12 @@ class PhaseScopeTapTest : public QObject
 
 private slots:
 	void init() { tap().setChannel(PhaseScopeTap::Off); }
+
+	void channelRoundTripsTheLargestIndex()
+	{
+		tap().setChannel(std::numeric_limits<int>::max());
+		QCOMPARE(tap().channel(), std::numeric_limits<int>::max());
+	}
 
 	void itListensToNothingByDefault()
 	{
@@ -148,6 +180,30 @@ private slots:
 		QVERIFY(tap().latest(left.data(), right.data(), 16));
 		QCOMPARE(left.front(), 500.f);
 		QCOMPARE(tap().written(), std::uint64_t{16});
+	}
+
+	//! A push at the channel publication cannot leave frames from both channels in a readable window.
+	void aChannelChangeCannotMixTheOldChannelsFrames()
+	{
+		tap().setChannel(1);
+		const auto oldFrames = ramp(1.f, 64);
+		tap().push(1, oldFrames.data(), 64);
+
+		ChannelChangeProbe probe;
+		tap().setChannelWithTestHook(2, &pushWhileTheChannelIsPublished, &probe);
+		QVERIFY2(!probe.read || !probe.mixed,
+			"a window read at the channel change mixed the old channel's frames with the new one's");
+
+		const auto fresh = ramp(1000.f, 128);
+		tap().push(2, fresh.data(), 128);
+		std::vector<float> left(128);
+		std::vector<float> right(128);
+		QVERIFY(tap().latest(left.data(), right.data(), 128));
+		for (std::size_t i = 0; i < left.size(); ++i)
+		{
+			QCOMPARE(left[i], 1000.f + static_cast<float>(i));
+			QCOMPARE(right[i], -(1000.f + static_cast<float>(i)));
+		}
 	}
 
 	//! The audio thread's half allocates nothing, chosen or not (realtime rule).

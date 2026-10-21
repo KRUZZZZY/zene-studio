@@ -2784,3 +2784,8 @@ tests/src/gui/CPULoadWidgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+
+# cluster new-p8-239-port (2026-10): deterministic tuner source-change regression test.
+tests/src/core/TunerTapTest.cpp
+# cluster new-p8-239-port (2026-10): port finding, test, gate, and completion evidence.
+docs/qwen-fixes-2026-10/cluster-new-p8-239-port.md
