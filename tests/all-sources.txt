@@ -2805,6 +2805,7 @@ tests/src/core/ScriptClockTest.cpp
 tests/src/core/ScriptCommandBridgeTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/ScriptDawEffectsTest.cpp
+tests/src/core/ScriptDawModelRegistrationTest.cpp
 tests/src/core/ScriptDawRemovalUndoTest.cpp
 tests/src/core/ScriptEngineTest.cpp
 tests/src/core/ScriptImportTest.cpp

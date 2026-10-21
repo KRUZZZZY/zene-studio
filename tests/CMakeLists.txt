@@ -912,6 +912,8 @@ set(LMMS_TESTS
 	# Round 6 of the script-binding rework: the removal and undo cases, split out of
 	# ScriptDawBindingTest so that file stays under the file-length gate.
 	src/core/ScriptDawRemovalUndoTest.cpp
+	# review-51e7da51f: deterministic recorded-device registration handoff checks.
+	src/core/ScriptDawModelRegistrationTest.cpp
 	src/core/ScriptEngineTest.cpp
 	# Q050-051: the sandboxed Lua `require` - traversal, absolute and Windows paths,
 	# symlink and junction escapes, cycles, bounds, and the sandbox staying closed in modules.
@@ -1937,6 +1939,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawRemovalUndoTest"
+		OR LMMS_TEST_NAME STREQUAL "ScriptDawModelRegistrationTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyTest"
 		OR LMMS_TEST_NAME STREQUAL "UndoHonestyStateTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceMovesUndoTest"
@@ -2029,6 +2032,20 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# track, so the module has to be built beside the test binary.
 	if(LMMS_TEST_NAME STREQUAL "NoteCommandTransactionsTest")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
+
+	# The script's removeEffect undo cases load the build's own effect modules, and a
+	# targeted build of the test alone did not build them: every case skipped ("this
+	# build lists no loadable effect module") and the undo regression ran nowhere. The
+	# modules are built with the test, so the cases run wherever the test is built.
+	if(LMMS_TEST_NAME STREQUAL "ScriptDawRemovalUndoTest")
+		add_dependencies(${LMMS_TEST_NAME} bassbooster)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "ScriptDawModelRegistrationTest")
+		add_dependencies(${LMMS_TEST_NAME} bassbooster amplifier)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest")
+		add_dependencies(${LMMS_TEST_NAME} bassbooster amplifier)
 	endif()
 
 	# Q050-020: the MIDI export test loads the midiexport module through the plug-in factory.
@@ -2538,7 +2555,7 @@ target_compile_definitions(AutomationPrepassProofTest PRIVATE LMMS_AUTOMATION_PR
 # ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
 # ProjectJournal) and drives it through the Lua binding, so it needs the same
 # headless Qt platform. ScriptDawRemovalUndoTest is the same kind of test.
-set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawEffectsTest PROPERTIES
+set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawModelRegistrationTest ScriptDawEffectsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a

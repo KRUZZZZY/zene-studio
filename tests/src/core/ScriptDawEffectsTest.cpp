@@ -189,6 +189,40 @@ print("after valid=" .. tostring(fx:isValid()) .. " id=[" .. fx:id() .. "] plugi
 		QCOMPARE(logs.at(1), QStringLiteral("after valid=false id=[] plugin=[] params=0 count=0"));
 		QVERIFY(Engine::mixer()->mixerChannel(channel)->m_fxChain.effects().empty());
 	}
+
+	/*! A script may remove the CHANNEL that owns a device and then read the
+	 *  device view it kept: the view names the device by the channel's stable
+	 *  id and the device's own id, so it reports itself invalid instead of
+	 *  reading a chain that is gone (cluster 1663). The chain and the device
+	 *  died with the channel, so a view that still held their pointers would
+	 *  read freed memory.
+	 *
+	 *  Two devices on the chain: the view of the SECOND one is the one the
+	 *  script keeps, so the check does not depend on which slot the freed
+	 *  chain's own bookkeeping still holds. */
+	void aDeviceViewOfARemovedChannelReadsNothing()
+	{
+		const int channel = Engine::mixer()->createChannel();
+		auto* chain = &Engine::mixer()->mixerChannel(channel)->m_fxChain;
+		chain->appendEffect(new racktest::RackParamEffect(chain));
+		chain->appendEffect(new racktest::RackParamEffect(chain));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 2);
+
+		QStringList logs;
+		const QString error = run(QStringLiteral(R"LUA(
+local mixer = zene.mixer()
+local channel = mixer:channel(%1)
+local id = channel:id()
+local fx = channel:chain():effect(1)
+print("before valid=" .. tostring(fx:isValid()) .. " plugin=" .. fx:pluginName())
+zene.command("mixer.remove_channel", {channel = id})
+print("after valid=" .. tostring(fx:isValid()) .. " index=" .. fx:index())
+)LUA").arg(channel), &logs);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		QCOMPARE(logs.size(), 2);
+		QCOMPARE(logs.at(0), QStringLiteral("before valid=true plugin=rackparamtest"));
+		QCOMPARE(logs.at(1), QStringLiteral("after valid=false index=-1"));
+	}
 };
 
 QTEST_MAIN(ScriptDawEffectsTest)

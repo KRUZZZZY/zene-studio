@@ -79,6 +79,32 @@ namespace lmms
 
 class ControllerConnection;
 
+/*! While one of these is alive, the models created on this thread are NOT
+ *  registered with the audio engine.
+ *
+ *  A model the render thread cannot see needs no audio change lock: the lock
+ *  the render thread takes once per period exists so a writer and the render
+ *  thread never see a half-written model. A device that is not in any chain is
+ *  not rendered, so the models of a device that is still being built are not
+ *  render-visible, and the build may write them without the lock - a plug-in
+ *  load can take a while, and holding the change lock across it stalls
+ *  rendering for the whole load.
+ *
+ *  The models are registered when the device is attached to a chain
+ *  (ControlStructuralSupport.cpp's attachRecordedDevice), under the change
+ *  lock that attach already takes. */
+class DeferredModelRegistrationScope
+{
+public:
+	DeferredModelRegistrationScope() noexcept;
+	~DeferredModelRegistrationScope() noexcept;
+	DeferredModelRegistrationScope(const DeferredModelRegistrationScope&) = delete;
+	DeferredModelRegistrationScope& operator=(const DeferredModelRegistrationScope&) = delete;
+
+private:
+	bool m_outer{false};
+};
+
 class LMMS_EXPORT AutomatableModel : public Model, public JournallingObject
 {
 	Q_OBJECT
@@ -92,6 +118,17 @@ public:
 
 
 	~AutomatableModel() override;
+
+	/*! True when the model is in the audio engine's render-visible registry.
+	 *
+	 *  A model that is not registered is not read by the render thread: the
+	 *  render prepass walks the registry, and the value buffer of an
+	 *  unregistered model is empty. Such a model may therefore be written
+	 *  without taking the audio change lock. */
+	bool isRegisteredWithAudioEngine() const noexcept
+	{
+		return m_registeredWithAudioEngine.load(std::memory_order_acquire);
+	}
 
 	// Implement those by using the MODEL_IS_VISITABLE macro
 	virtual void accept(ModelVisitor& v) = 0;

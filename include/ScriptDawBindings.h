@@ -141,12 +141,19 @@ public:
  *
  *  Parameters are the engine's own AutomatableModels (the same list
  *  `plugin.param_get` reads), so a parameter read here and a parameter read
- *  through the control surface cannot disagree. */
+ *  through the control surface cannot disagree.
+ *
+ *  The wrapper names its device by STABLE IDS - the mixer channel that owns the
+ *  chain and the device's own id - and resolves them on every access. It holds
+ *  no pointer to the chain and none to the device: a script may remove the
+ *  channel (which takes the chain and every device on it with it) and then read
+ *  the wrapper it kept, and a pointer would dangle (cluster 1663). */
 class LuaEffect
 {
 public:
 	LuaEffect() = default;
-	LuaEffect(EffectChain* chain, Effect* effect) : m_chain(chain), m_effect(effect) {}
+	LuaEffect(const QString& mixerChannelId, int effectId) :
+		m_mixerChannelId(mixerChannelId), m_effectId(effectId) {}
 
 	bool isValid() const { return m_effective() != nullptr; }
 	int index() const;
@@ -168,8 +175,10 @@ public:
 
 private:
 	Effect* m_effective() const;
-	EffectChain* m_chain{nullptr};
-	Effect* m_effect{nullptr};
+	//! The chain the wrapper names, or null when its channel is gone.
+	EffectChain* m_chain() const;
+	QString m_mixerChannelId;
+	int m_effectId{-1};
 };
 
 //! Lua-facing effect chain (registered as `EffectChain`), resolved through its
@@ -237,8 +246,12 @@ EffectChain* mixerChannelEffectChain(const QString& mixerChannelId);
 //! them). Used by the read side above and by the edit side in ScriptDawEdit.cpp.
 LuaMixerChannel& newMixerChannel(MixerChannel* channel);
 LuaEffectChain& newEffectChain(const QString& mixerChannelId);
-LuaEffect& newEffect(EffectChain* chain, Effect* effect);
+LuaEffect& newEffect(const QString& mixerChannelId, Effect* effect);
 LuaMixer& mixerView();
+
+//! How many view wrappers the pools hold right now: the pools grow with the
+//! OBJECTS a script names, not with the accesses it makes (a diagnostic).
+int viewPoolSize();
 
 //! Apply one queued command on the apply side. Returns true when \a type was
 //! a DAW-control op, i.e. when the caller must not look at it again.
