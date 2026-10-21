@@ -797,6 +797,9 @@ set(LMMS_TESTS
 	src/core/UpgradeExtendedNoteRangeTest.cpp
 	# 0.5.0 L07: what the note-shape verbs refuse - a past-the-limit note, a malformed filter field, an unholdable amount.
 	src/core/NoteShapeValidationTest.cpp
+	# Luna cluster new-p14-41: a note edit that changes NOTHING takes no undo step - note.scale,
+	# note.transform_where and note.slide_set, with the real change as the negative control.
+	src/core/NoteNoOpEditUndoStepTest.cpp
 	# 0.5.0 L07 ED-145/113: a track's MIDI input transform - rules, commands, file, live input.
 	src/core/MidiInputTransformTest.cpp
 	# 0.5.0 L07 ED-137: quantise audio - transients become warp markers on the grid.

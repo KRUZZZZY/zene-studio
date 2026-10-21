@@ -2401,6 +2401,7 @@ tests/src/core/NeuralAmpWavInputTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp
 tests/src/core/NoteEditRangeTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
+tests/src/core/NoteNoOpEditUndoStepTest.cpp
 tests/src/core/NotePlaybackTest.cpp
 tests/src/core/NoteSelectionIdentityTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp

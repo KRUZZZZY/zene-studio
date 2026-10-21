@@ -67,5 +67,13 @@ QString scopeName(NoteScope scope)
 	return scope == NoteScope::Clip ? QStringLiteral("clip") : QStringLiteral("selection");
 }
 
+void checkpointNoteEdit(MidiClip* clip, bool changes)
+{
+	// One undo step for a real change, and NO step for a no-op: a step that
+	// undoes nothing would sit on top of the edit behind it and spend the next
+	// undo (the rule in ControlNoteShared.h).
+	if (clip != nullptr && changes) { clip->addJournalCheckPoint(); }
+}
+
 } // namespace control
 } // namespace lmms
