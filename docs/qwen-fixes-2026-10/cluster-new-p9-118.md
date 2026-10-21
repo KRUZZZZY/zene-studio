@@ -327,3 +327,5 @@ Not applicable: both findings were REAL. The code that showed it:
   lock, while `lfoShapeSample()` read `m_userWave.get()` on the audio thread;
   and `src/gui/instrument/EnvelopeAndLfoView.cpp:245` and `:257` replaced the
   wave without publishing it.
+
+**Verdict: FIXED** (new-p9-118, new-p15-57)
