@@ -89,3 +89,21 @@ Changed: `docs/KNOWN-LIMITATIONS.md`, `docs/050-features/Q050-171.md`,
   `vca.rename`/`remove`/`track_add`/`track_remove`/`set_phase_lock`, `vca.color_members`,
   `vca.edit_move`); the tests assert the entries and the registry ids. No new action was added, so
   no new GUI/agent pair was needed.
+
+## Round-3 self-check
+
+- **Gates.** `feature_check.py` cannot run in this jail (it writes its logs to a sibling directory
+  outside the worktree: `PermissionError`), so its gates were run by hand, logs in
+  `Q050-171.r3/logs/gate-*.log`: `fork-sources-gate.sh`, `all-sources-reproduce.sh`,
+  `no-upstream-regression-gate.sh`, `scripted/check-namespace`, `no-tautology-gate.sh`,
+  `doc-figures-gate.py` — all exit 0. `complexity-gate.sh --check` and `file-length-gate.sh
+  --check` exit 1 (red on the train on purpose); no `REGRESSION` line names `VcaStripViewTest.cpp`
+  or any other file this branch changed.
+- **Test efficacy.** First round-3 run, before the `QPointer` fix: exit 8 (`ctest-1.log`, the
+  segfault in the pre-existing strip test). With the three UI lines mutated: exit 8
+  (`ctest-mut.log`); restored: exit 0 (`ctest-2.log`, `ctest-3.log`).
+- **submit_check WARNs** ("no GUI file changed", "no command file changed") are expected: this is a
+  docs unit; the GUI paths it describes already exist and are now driven by `VcaStripViewTest`.
+- Undo steps, realtime, projects and portability: unchanged from the section above; this round
+  touched only a QtTest file and Markdown, using `QtTest`, `QApplication`, `QMenu` and existing
+  headers only (no Qt-6-only API, no `std::filesystem`).
