@@ -1,3 +1,5 @@
+FIXED
+
 5444: FIXED
 new-p14-376: FALSE-POSITIVE
 
@@ -176,3 +178,10 @@ was changed for it.
   (`include/AudioEngine.h:71-73`, `src/core/AudioEngine.cpp:295-299`), below `maxBlockFrames = 8192`
   (`src/wasm/WasmWorker.h:58`), and `docs/WASM-EFFECT-ABI.md:225-229` documents untouched audio
   above that size. See the evidence section above.
+* **Gate-checker environment.** The exact `feature_check.py` command cannot write its sibling
+  `<worktree>-feature-check` directory in this session (`PermissionError: [Errno 13] Permission
+  denied`, exit 1) for the same sandbox reason as the log folder. The equivalent run with only that
+  output directory redirected exits 0 with every gate PASS (table above), and the exact
+  `submit_check.py` agrees on every item it can check: `commits on the branch` PASS, `working tree
+  clean` PASS, `report .../cluster-5444.md` PASS, `tests added or changed` PASS, with only its
+  embedded `gates (feature_check.py)` row FAIL on that same `PermissionError`.
