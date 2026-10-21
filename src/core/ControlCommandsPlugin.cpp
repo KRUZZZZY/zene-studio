@@ -84,7 +84,10 @@ void registerPluginList(ControlRegistry& registry)
 		"instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, "
 		"VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> "
 		"is a catalogue index, not a persisted project id, and 'loadable' says whether "
-		"plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, then "
+		"plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own "
+		"format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, "
+		"the VST3 or CLAP factory's vendor; empty when the format reports none, which the "
+		"device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then "
 		"VST3, then CLAP, so adding a host does not renumber the ids of the formats that were "
 		"already there.");
 	cmd.argsSchema = objectSchema({

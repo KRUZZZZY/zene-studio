@@ -38,6 +38,7 @@
 #include "ConfigManager.h"
 #include "embed.h"
 #include "Plugin.h"
+#include "PluginFactoryScanDetail.h"
 
 // QT qHash specialization, needs to be in global namespace
 qint64 qHash(const QFileInfo& fi)
@@ -56,216 +57,6 @@ namespace lmms
 #endif
 
 std::unique_ptr<PluginFactory> PluginFactory::s_instance;
-
-/*!
- * Host-owned copies of the descriptors rebuilt from cache records.
- *
- * A rebuilt descriptor must stay valid for as long as anyone can hold a
- * pointer to it, so its strings and its pixmap loader live here, owned by the
- * factory, and are only released when the next scan replaces the whole set
- * (the same lifetime rule the live path has: a scan replaces m_pluginInfos).
- */
-class PluginFactory::CachedDescriptorStore
-{
-public:
-	struct Entry
-	{
-		std::vector<std::string> strings;
-		std::shared_ptr<PixmapLoader> logo;
-		Plugin::Descriptor descriptor{};
-	};
-
-	std::vector<std::unique_ptr<Entry>> entries;
-};
-
-namespace
-{
-
-QString fromUtf8OrEmpty(const char* text)
-{
-	return text ? QString::fromUtf8(text) : QString();
-}
-
-/*!
- * Can this remembered record stand in for the live descriptor?
- *
- * Two shapes cannot be rebuilt from JSON and must always take the loading
- * path: a descriptor whose sub-plugin enumeration is a virtual call into the
- * library (SubPluginFeatures), and a descriptor whose logo is a compiled-in
- * XPM (there is no name to look up). Everything else - the native LMMS
- * plugins - is plain data: strings, a version, a type, a pixmap name.
- */
-bool cacheRecordServes(const PluginScanRecord& record)
-{
-	if (record.status != PluginScanRecord::Status::HasDescriptor) { return false; }
-	if (record.hasSubPluginFeatures) { return false; }
-	if (record.logoHasInlinePixmap) { return false; }
-	return true;
-}
-
-//! What one candidate file needs from this scan.
-enum class ScanPlan
-{
-	Load, //!< dlopen it and resolve the descriptor: new, changed, or not rebuildable
-	Serve, //!< answer from the cache; the library stays closed until first use
-	Skip, //!< remembered as "no plugin"/"does not load": leave the file alone
-};
-
-//! The plugin's own descriptor, remembered from the last time it was loaded.
-PluginScanRecord recordFromDescriptor(const QFileInfo& file, const Plugin::Descriptor& descriptor)
-{
-	PluginScanRecord record;
-	record.filePath = file.absoluteFilePath();
-	record.size = file.size();
-	record.mtimeMs = file.lastModified().toMSecsSinceEpoch();
-	record.status = PluginScanRecord::Status::HasDescriptor;
-	record.name = fromUtf8OrEmpty(descriptor.name);
-	record.displayName = fromUtf8OrEmpty(descriptor.displayName);
-	record.description = fromUtf8OrEmpty(descriptor.description);
-	record.author = fromUtf8OrEmpty(descriptor.author);
-	record.supportedFileTypes = fromUtf8OrEmpty(descriptor.supportedFileTypes);
-	record.version = descriptor.version;
-	record.type = static_cast<int>(descriptor.type);
-	if (descriptor.logo)
-	{
-		record.logoName = QString::fromStdString(descriptor.logo->pixmapName());
-		record.logoHasInlinePixmap = descriptor.logo->xpm() != nullptr;
-	}
-	record.hasSubPluginFeatures = descriptor.subPluginFeatures != nullptr;
-	return record;
-}
-
-/*!
- * The fingerprint fields a remembered record is only trusted with: path, size
- * and mtime. PluginScanCache::lookup() serves a record only while all three
- * still match, so a record built here is a valid "this file was looked at"
- * marker (not a plugin, or a failed load) and is rebuilt by the next scan.
- */
-PluginScanRecord fingerprintRecord(const QFileInfo& file)
-{
-	PluginScanRecord record;
-	record.filePath = file.absoluteFilePath();
-	record.size = file.size();
-	record.mtimeMs = file.lastModified().toMSecsSinceEpoch();
-	return record;
-}
-
-//! What one attempted dlopen produced.
-struct PluginLoadOutcome
-{
-	std::shared_ptr<QLibrary> library;        //!< the candidate library, loaded or not
-	Plugin::Descriptor* descriptor = nullptr; //!< set only when one resolved
-	bool loaded = false;                      //!< QLibrary::load() succeeded
-	QString error;                            //!< QLibrary::errorString() when !loaded
-	QString missingDescriptorWarning;         //!< set when the file loads but names no descriptor
-};
-
-/*!
- * Load one candidate and try to resolve the descriptor out of it.
- *
- * The three outcomes the caller distinguishes are: the library did not load
- * (error holds QLibrary::errorString()); it loaded but exposes no descriptor
- * (descriptor is null - with missingDescriptorWarning set when the file did
- * export lmms_plugin_main and the named symbol was missing, which is a real
- * error worth a warning, versus a helper library that is simply not a plugin);
- * or the descriptor resolved.
- */
-PluginLoadOutcome loadPluginDescriptor(const QFileInfo& file)
-{
-	PluginLoadOutcome outcome;
-	// Name this file in the safe-start marker for the length of the dlopen: a
-	// module whose static initialiser kills the process is then identified by
-	// the next launch (Q050-049). Cheap, and only third-party files are written.
-	const lmms::safestart::ActivePluginScope activePlugin("scan", std::string(),
-		file.absoluteFilePath().toStdString(), "lmms-module");
-	outcome.library = std::make_shared<QLibrary>(file.absoluteFilePath());
-	if (!outcome.library->load())
-	{
-		outcome.error = outcome.library->errorString();
-		return outcome;
-	}
-	outcome.loaded = true;
-
-	if (!outcome.library->resolve("lmms_plugin_main")) { return outcome; }
-
-	QString descriptorName = file.baseName() + "_plugin_descriptor";
-	if (descriptorName.left(3) == "lib")
-	{
-		descriptorName = descriptorName.mid(3);
-	}
-
-	outcome.descriptor = reinterpret_cast<Plugin::Descriptor*>(
-		outcome.library->resolve(descriptorName.toUtf8().constData()));
-	if (outcome.descriptor == nullptr)
-	{
-		outcome.missingDescriptorWarning =
-			qApp->translate("PluginFactory",
-				"Zene Studio plugin %1 does not have a plugin descriptor named %2!")
-				.arg(file.absoluteFilePath()).arg(descriptorName);
-	}
-	return outcome;
-}
-
-//! What the remembered record says this run should do with one candidate.
-ScanPlan planForCandidate(const PluginScanRecord* record)
-{
-	if (record == nullptr) { return ScanPlan::Load; }
-	if (record->status != PluginScanRecord::Status::HasDescriptor) { return ScanPlan::Skip; }
-	return cacheRecordServes(*record) ? ScanPlan::Serve : ScanPlan::Load;
-}
-
-/*!
- * Decide what this run has to do for every file that is still a candidate, and
- * count the work each decision implies into the scan stats. Split from the
- * scan loop so the decision table and the loop that acts on it are read
- * separately.
- */
-void planPluginScan(const QSet<QFileInfo>& files, const PluginScanCache& cache,
-	QHash<QString, ScanPlan>& plans, QSet<QFileInfo>& toLoad,
-	PluginFactory::ScanStats& stats, QHash<QString, QString>& errors)
-{
-	for (const QFileInfo& file : files)
-	{
-		const PluginScanRecord* record = cache.lookup(file);
-		const ScanPlan plan = planForCandidate(record);
-		plans.insert(file.absoluteFilePath(), plan);
-		switch (plan)
-		{
-		case ScanPlan::Serve:
-			stats.servedFromCache++;
-			break;
-		case ScanPlan::Skip:
-			stats.negativeFromCache++;
-			if (record != nullptr && record->status == PluginScanRecord::Status::LoadFailed)
-			{
-				// Same error text the failed load produced last time, so
-				// Plugin::instantiate() still explains itself.
-				errors[file.baseName()] = record->error;
-			}
-			break;
-		case ScanPlan::Load:
-			stats.scanned++;
-			toLoad.insert(file);
-			break;
-		}
-	}
-}
-
-/*!
- * Cheap dependency handling: zynaddsubfx needs ZynAddSubFxCore, and loading
- * every library this run actually loads twice is what makes it resolvable.
- * A cache-served plugin takes no part - it is loaded on demand, when it is
- * first instantiated.
- */
-void preloadPluginLibraries(const QSet<QFileInfo>& toLoad)
-{
-	for (const QFileInfo& file : toLoad)
-	{
-		QLibrary(file.absoluteFilePath()).load();
-	}
-}
-
-} // namespace
 
 
 PluginFactory::PluginFactory() :
@@ -398,7 +189,8 @@ QString PluginFactory::scanReport() const
  * Plugin::instantiate() does. SubPluginFeatures and compiled-in logo XPMs are
  * excluded before we get here (see cacheRecordServes()).
  */
-Plugin::Descriptor* PluginFactory::descriptorFromCacheRecord(const PluginScanRecord& record)
+Plugin::Descriptor* PluginFactory::descriptorFromCacheRecord(const PluginScanRecord& record,
+	CachedDescriptorStore& store)
 {
 	auto entry = std::make_unique<CachedDescriptorStore::Entry>();
 	entry->strings.reserve(5);
@@ -423,8 +215,14 @@ Plugin::Descriptor* PluginFactory::descriptorFromCacheRecord(const PluginScanRec
 	}
 	descriptor.subPluginFeatures = nullptr;
 
-	m_cachedDescriptors->entries.push_back(std::move(entry));
-	return &m_cachedDescriptors->entries.back()->descriptor;
+	store.entries.push_back(std::move(entry));
+	return &store.entries.back()->descriptor;
+}
+
+PluginFactory::ScanSink PluginFactory::backgroundScanSink()
+{
+	return ScanSink{&m_backgroundInfos, &m_backgroundDescriptors, &m_backgroundByExt,
+		&m_backgroundErrors, &m_scanCache, m_backgroundStore.get()};
 }
 
 void PluginFactory::discoverPlugins()
@@ -435,6 +233,10 @@ void PluginFactory::discoverPlugins()
 	m_scanStats = ScanStats();
 	m_retiredCachedDescriptors.push_back(std::move(m_cachedDescriptors));
 	m_cachedDescriptors = std::make_unique<CachedDescriptorStore>();
+	// The locals become the live catalogue at the end; the extensions, errors
+	// and cache records land live as they are taken, exactly as before.
+	ScanSink sink{&pluginInfos, &descriptors, &m_pluginByExt, &m_errors,
+		&m_scanCache, m_cachedDescriptors.get()};
 
 	// Re-read the cache on every scan, so an edited quarantine list takes
 	// effect without a restart. A missing, unreadable or corrupt file is not an
@@ -458,7 +260,7 @@ void PluginFactory::discoverPlugins()
 		{
 			const PluginScanRecord* record = m_scanCache.lookup(file);
 			if (record == nullptr) { continue; } // cannot happen: plans were just built
-			appendCacheServedPlugin(*record, file, pluginInfos, descriptors);
+			appendCacheServedPlugin(*record, file, sink);
 			continue;
 		}
 		if (plan == ScanPlan::Skip)
@@ -469,7 +271,7 @@ void PluginFactory::discoverPlugins()
 			continue;
 		}
 
-		scanOnePlugin(file, pluginInfos, descriptors);
+		scanOnePlugin(file, sink);
 	}
 
 	m_pluginInfos = pluginInfos;
@@ -531,7 +333,8 @@ void PluginFactory::dropQuarantinedPlugins(QSet<QFileInfo>& files)
  * SubPluginFeatures descriptor.
  */
 void PluginFactory::addSupportedFileTypes(const QString& supportedFileTypes,
-	const PluginInfo& info, const Plugin::Descriptor::SubPluginFeatures::Key* key)
+	const PluginInfo& info, QMap<QString, PluginInfoAndKey>& byExt,
+	const Plugin::Descriptor::SubPluginFeatures::Key* key)
 {
 	if(!supportedFileTypes.isNull())
 	{
@@ -544,7 +347,7 @@ void PluginFactory::addSupportedFileTypes(const QString& supportedFileTypes,
 			infoAndKey.key = key
 				? *key
 				: Plugin::Descriptor::SubPluginFeatures::Key();
-			m_pluginByExt.insert(ext, infoAndKey);
+			byExt.insert(ext, infoAndKey);
 		}
 	}
 }
@@ -555,8 +358,7 @@ void PluginFactory::addSupportedFileTypes(const QString& supportedFileTypes,
  * descriptor, and remember the outcome - the fingerprint-keyed record - for
  * every one of the three outcomes so the next scan does not repeat the work.
  */
-void PluginFactory::scanOnePlugin(const QFileInfo& file, PluginInfoList& pluginInfos,
-	DescriptorMap& descriptors)
+PluginScanRecord::Status PluginFactory::scanOnePlugin(const QFileInfo& file, ScanSink& sink)
 {
 	const PluginLoadOutcome outcome = loadPluginDescriptor(file);
 
@@ -565,10 +367,10 @@ void PluginFactory::scanOnePlugin(const QFileInfo& file, PluginInfoList& pluginI
 		PluginScanRecord record = fingerprintRecord(file);
 		record.status = PluginScanRecord::Status::LoadFailed;
 		record.error = outcome.error;
-		m_scanCache.store(record);
-		m_errors[file.baseName()] = outcome.error;
+		sink.cache->store(record);
+		sink.errors->insert(file.baseName(), outcome.error);
 		qWarning("%s", outcome.error.toLocal8Bit().data());
-		return;
+		return PluginScanRecord::Status::LoadFailed;
 	}
 
 	if (outcome.descriptor == nullptr)
@@ -580,27 +382,28 @@ void PluginFactory::scanOnePlugin(const QFileInfo& file, PluginInfoList& pluginI
 		// Loads fine but is not an LMMS plugin (helper libraries live in
 		// the same folders): remember it so the next scan does not even
 		// open it.
-		m_scanCache.store(fingerprintRecord(file));
-		return;
+		sink.cache->store(fingerprintRecord(file));
+		return PluginScanRecord::Status::NotAPlugin;
 	}
 
-	appendLoadedPlugin(file, outcome.library, outcome.descriptor, pluginInfos, descriptors);
+	appendLoadedPlugin(file, outcome.library, outcome.descriptor, sink);
+	return PluginScanRecord::Status::HasDescriptor;
 }
 
 //! Append a plugin this run actually loaded, and remember its descriptor.
 void PluginFactory::appendLoadedPlugin(const QFileInfo& file,
 	const std::shared_ptr<QLibrary>& library, Plugin::Descriptor* descriptor,
-	PluginInfoList& pluginInfos, DescriptorMap& descriptors)
+	ScanSink& sink)
 {
 	PluginInfo info;
 	info.file = file;
 	info.library = library;
 	info.descriptor = descriptor;
-	pluginInfos << info;
+	sink.infos->append(info);
 
 	if (info.descriptor->supportedFileTypes)
 	{
-		addSupportedFileTypes(QString(info.descriptor->supportedFileTypes), info);
+		addSupportedFileTypes(QString(info.descriptor->supportedFileTypes), info, *sink.byExt);
 	}
 
 	if (info.descriptor->subPluginFeatures)
@@ -609,12 +412,12 @@ void PluginFactory::appendLoadedPlugin(const QFileInfo& file,
 		info.descriptor->subPluginFeatures->listSubPluginKeys(info.descriptor, subPluginKeys);
 		for (const Plugin::Descriptor::SubPluginFeatures::Key& key : subPluginKeys)
 		{
-			addSupportedFileTypes(key.additionalFileExtensions(), info, &key);
+			addSupportedFileTypes(key.additionalFileExtensions(), info, *sink.byExt, &key);
 		}
 	}
 
-	descriptors.insert(info.descriptor->type, info.descriptor);
-	m_scanCache.store(recordFromDescriptor(file, *info.descriptor));
+	sink.descriptors->insert(info.descriptor->type, info.descriptor);
+	sink.cache->store(recordFromDescriptor(file, *info.descriptor));
 }
 
 /*!
@@ -622,16 +425,16 @@ void PluginFactory::appendLoadedPlugin(const QFileInfo& file,
  * The library is loaded when the plugin is first used (QLibrary::resolve()).
  */
 void PluginFactory::appendCacheServedPlugin(const PluginScanRecord& record, const QFileInfo& file,
-	PluginInfoList& pluginInfos, DescriptorMap& descriptors)
+	ScanSink& sink)
 {
 	PluginInfo info;
 	info.file = file;
 	info.library = std::make_shared<QLibrary>(file.absoluteFilePath());
-	info.descriptor = descriptorFromCacheRecord(record);
-	pluginInfos << info;
+	info.descriptor = descriptorFromCacheRecord(record, *sink.cacheStore);
+	sink.infos->append(info);
 
-	addSupportedFileTypes(QString(info.descriptor->supportedFileTypes), info);
-	descriptors.insert(info.descriptor->type, info.descriptor);
+	addSupportedFileTypes(QString(info.descriptor->supportedFileTypes), info, *sink.byExt);
+	sink.descriptors->insert(info.descriptor->type, info.descriptor);
 }
 
 // Builds QList<QRegularExpression> based on environment variable envVar

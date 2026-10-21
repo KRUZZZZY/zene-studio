@@ -121,14 +121,18 @@ ListSpec pluginsInProject()
 ListSpec pluginManager()
 {
 	ListSpec out = spec("Plug-in Manager", "plugin.list", "devices", {QStringLiteral("display_name"), QStringLiteral("format"),
-		QStringLiteral("kind"), QStringLiteral("loadable"), QStringLiteral("id")});
+		QStringLiteral("kind"), QStringLiteral("vendor"), QStringLiteral("loadable"), QStringLiteral("id")});
 	const QHash<QString, QString> device{{QStringLiteral("device"), QStringLiteral("id")}};
 	out.actions = {act("Add to Favourites", "plugin.organise", device, {{QStringLiteral("favourite"), true}}),
 		act("Remove from Favourites", "plugin.organise", device, {{QStringLiteral("favourite"), false}}),
 		act("Hide", "plugin.organise", device, {{QStringLiteral("hidden"), true}}),
 		act("Show", "plugin.organise", device, {{QStringLiteral("hidden"), false}}),
 		act("Move to Folder...", "plugin.organise", device, {}, true)};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false), readExtra("Plug-in Folders", "plugin.paths_get"),
+	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
+		extra("Rescan in Background", "plugin.scan_start", {}, false),
+		extra("Scan Progress", "plugin.scan_status", {}, false),
+		extra("Cancel Scan", "plugin.scan_cancel", {}, false),
+		readExtra("Plug-in Folders", "plugin.paths_get"),
 		extra("Set Folders...", "plugin.paths_set"), readExtra("Organised Plug-ins", "plugin.organisation")};
 	return out;
 }
@@ -136,12 +140,15 @@ ListSpec pluginManager()
 ListSpec pluginModules()
 {
 	ListSpec out = spec("Plug-in Modules", "plugin.scan_cache_list", "entries", {QStringLiteral("path"), QStringLiteral("status"),
-		QStringLiteral("name"), QStringLiteral("error")});
+		QStringLiteral("name"), QStringLiteral("author"), QStringLiteral("error")});
 	const QHash<QString, QString> path{{QStringLiteral("path"), QStringLiteral("path")}};
 	out.actions = {act("Quarantine...", "plugin.scan_cache_quarantine_add", path, {}, true),
 		act("Release", "plugin.scan_cache_quarantine_remove", path)};
 	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("load_failed_count")};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false)};
+	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
+		extra("Rescan in Background", "plugin.scan_start", {}, false),
+		extra("Scan Progress", "plugin.scan_status", {}, false),
+		extra("Cancel Scan", "plugin.scan_cancel", {}, false)};
 	return out;
 }
 

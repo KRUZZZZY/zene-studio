@@ -200,6 +200,11 @@ set(LMMS_TESTS
 	# the element present when the track holds a chord, ABSENT when it does not.
 	src/core/ControlChordWriteTest.cpp
 	src/core/ControlDeviceCatalogueTest.cpp
+	# Q050-090: plugin.list's `vendor` is the device picker's vendor. The
+	# proof lived in ControlDeviceCatalogueTest.cpp and grew it past the
+	# file-length ratchet, so it is its own binary now - same registry read,
+	# same picker comparison, same built-in amplifier naming Zene Studio.
+	src/core/ControlDeviceVendorTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	# The control selection store keeps the SELECTED NOTES' ids, so a removal
 	# cannot shift the selection onto another note (cluster new-p12-53-port).
@@ -2017,7 +2022,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# WF-033: the restored history must bring back a real instrument's own state.
 		OR LMMS_TEST_NAME STREQUAL "MissingDevicesPreserveTest"
 		OR LMMS_TEST_NAME STREQUAL "MissingDevicesRound2Test"
-		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest"
+		# Q050-090: the vendor proof reads plugin.list through the registry, so
+		# the binary discovers the build tree's modules like its catalogue
+		# sibling does (the built-in amplifier is the case that names Zene Studio).
+		OR LMMS_TEST_NAME STREQUAL "ControlDeviceVendorTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2082,6 +2091,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "MidiExportTest")
 		add_dependencies(${LMMS_TEST_NAME} midiexport)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+
+	# Q050-090: the vendor proof names the built-in amplifier's maker, so the
+	# module it lists is built with the test (a targeted build without it would
+	# list no amplifier and fail for a reason unrelated to the vendor).
+	if(LMMS_TEST_NAME STREQUAL "ControlDeviceVendorTest" AND TARGET amplifier)
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
 	# Q050-030: NeuralAmpModelLoadTest compiles the effect and its engine in, with the worker-delay seam
@@ -5376,6 +5392,23 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-plugin-scan-commands.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlPluginScanCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# plugin.scan_start / scan_status / scan_cancel + plugin.list's vendor
+	# (Q050-090 "Plug-in manager vendor and background scan"): the background
+	# rescan driven over --control-socket - a paced run is followed (progress,
+	# per-file outcomes, the cached catalogue still served), cancelled (the
+	# previous catalogue kept, the cache still answered) and re-run to done,
+	# with the task.list rows and the scan_start irreversible transaction to
+	# prove it; every plugin.list entry's vendor is asserted with the
+	# built-in amplifier naming "Zene Studio". No compile-time switch; a
+	# paced start/cancel needs no plugin files, so nothing is SKIPPED.
+	add_test(NAME ControlPluginScanBackground
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-plugin-scan-background.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPluginScanBackground PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
