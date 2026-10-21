@@ -144,11 +144,10 @@ void renderPeriod()
 	static_cast<void>(Engine::audioEngine()->renderNextPeriod());
 }
 
-//! A SlicerT instrument on a fresh instrument track, playing \a wav.
-QString prepareSlicerTrack(const QString& wav, InstrumentTrack** track)
+//! Adds a SlicerT instrument track that plays \a wav without clearing existing tracks.
+QString addSlicerTrack(const QString& wav, InstrumentTrack** track)
 {
 	if (wav.isEmpty()) { return QStringLiteral("could not write the SlicerT fixture"); }
-	Engine::getSong()->clearProject();
 	const QString id = addTrack(QStringLiteral("instrument"));
 	if (id.isEmpty()) { return QStringLiteral("could not add an instrument track"); }
 	ControlResult failure;
@@ -168,6 +167,12 @@ QString prepareSlicerTrack(const QString& wav, InstrumentTrack** track)
 		return QStringLiteral("SlicerT did not accept the fixture file");
 	}
 	return {};
+}
+
+QString prepareSlicerTrack(const QString& wav, InstrumentTrack** track)
+{
+	Engine::getSong()->clearProject();
+	return addSlicerTrack(wav, track);
 }
 
 bool identicalAudio(const std::vector<SampleFrame>& left, std::span<const SampleFrame> right)
@@ -327,6 +332,48 @@ private slots:
 		for (int i = 0; i < 8; ++i) { renderPeriod(); }
 		test::tlCountAllocations = false;
 		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+	}
+
+	//! Cluster 4467: the first note on a fresh SlicerT claims a preconstructed playback slot.
+	//! Warm the worker and note-buffer paths on one track so the fresh track's first render is probed
+	//! specifically for the per-note PlaybackState allocation.
+	void firstNoteOnFreshSlicerInstrumentAllocatesNothing()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("first-note.wav")), 440.0);
+		QVERIFY(!wav.isEmpty());
+		Engine::getSong()->clearProject();
+		AudioEngine* const audio = Engine::audioEngine();
+		audio->setOverloadSheddingEnabled(false);
+
+		InstrumentTrack* warmTrack = nullptr;
+		QString error = addSlicerTrack(wav, &warmTrack);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const Note warmNote(TimePos(1), TimePos(0), warmTrack->baseNote());
+		auto* const warmHandle = NotePlayHandleManager::acquire(warmTrack, 0,
+			audio->framesPerPeriod() * 2, warmNote);
+		QVERIFY(audio->addPlayHandle(warmHandle));
+		audio->renderNextPeriod();
+
+		InstrumentTrack* freshTrack = nullptr;
+		error = addSlicerTrack(wav, &freshTrack);
+		QVERIFY2(error.isEmpty(), qPrintable(error));
+		const Note firstNote(TimePos(1), TimePos(0), freshTrack->baseNote());
+		auto* const firstHandle = NotePlayHandleManager::acquire(freshTrack, 0,
+			audio->framesPerPeriod() * 2, firstNote);
+		QVERIFY(audio->addPlayHandle(firstHandle));
+
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		audio->renderNextPeriod();
+		test::tlCountAllocations = false;
+		QVERIFY2(firstHandle->m_pluginData != nullptr,
+			"the fresh SlicerT's first note did not claim a preconstructed playback slot");
+		QCOMPARE(test::tlAllocationCount, std::uint64_t{0});
+
+		audio->removePlayHandlesOfTypes(freshTrack, PlayHandle::Type::NotePlayHandle);
+		audio->removePlayHandlesOfTypes(warmTrack, PlayHandle::Type::NotePlayHandle);
 	}
 
 	//! Cluster 4467 round 2: every reused playback slot produces the fresh-state slice output bit-for-bit.
