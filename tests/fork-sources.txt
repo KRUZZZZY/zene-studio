@@ -1150,7 +1150,6 @@ include/TelemetryConsentDialog.h
 include/TelemetryNetworkTransport.h
 include/TempoMap.h
 include/TempoMapPanel.h
-include/TimelineSpeech.h
 include/ToolWindowMemory.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
@@ -2058,7 +2057,6 @@ src/gui/TakeLanesPanel.cpp
 src/gui/TaskIndicator.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
-src/gui/TimelineSpeech.cpp
 src/gui/ToolWindowMemory.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/TrackIcons.cpp
@@ -2706,7 +2704,6 @@ tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
-tests/src/gui/TimelineSpeechTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTakePunchTest.cpp

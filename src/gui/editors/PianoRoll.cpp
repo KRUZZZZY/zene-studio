@@ -55,7 +55,6 @@
 #include "Clipboard.h"
 #include "ComboBox.h"
 #include "ConfigManager.h"
-#include "ControlRegistry.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
 #include "DetuningHelper.h"
@@ -1499,11 +1498,8 @@ void PianoRoll::keyPressEvent(QKeyEvent* ke)
 			break;
 
 		case Qt::Key_Home:
-			// Home is transport.seek, the command the arranger's Home key and the agent use,
-			// so the edit cursor's new position is spoken; the clip-local timeline follows.
-			ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
-				{{QStringLiteral("ticks"), 0}});
 			m_timeLine->timeline()->setTicks(0);
+			Engine::getSong()->setPlayPos(0, Song::PlayMode::None);
 			ke->accept();
 			break;
 

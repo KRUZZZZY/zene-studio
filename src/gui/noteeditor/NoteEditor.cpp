@@ -213,16 +213,8 @@ void NoteEditor::setClip(MidiClip* clip)
 		// emits - repaints the editor, so an agent's edit on the socket shows at once.
 		connect(clip, &MidiClip::dataChanged, this, &NoteEditor::refresh);
 		connect(clip, &QObject::destroyed, this, &NoteEditor::onClipDestroyed);
-		// The clip being edited is the clip the Inspector and the Device panel follow. Go through
-		// the registered selection command, as a track-header or clip click does, so opening the
-		// note editor speaks the same single message and its panels rebuild the same way.
-		const ControlResult selected = ControlRegistry::instance()->invoke(
-			QStringLiteral("window.select"), {{QStringLiteral("clip"), control::clipIdOf(clip)}});
-		if (!selected.ok)
-		{
-			ShellSelection::instance()->setClip(clip);
-			ShellSelection::instance()->announceCurrent();
-		}
+		// The clip being edited is the clip the Inspector and the Device panel follow.
+		ShellSelection::instance()->setClip(clip);
 	}
 	readScale();
 	refresh();

@@ -22,7 +22,6 @@
  *
  */
 
-#include <QCoreApplication>
 #include <QJsonObject>
 #include <tuple>
 
@@ -32,15 +31,12 @@
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
 #include "DevicePanel.h"
-#include "Engine.h"
 #include "GuiApplication.h"
 #include "InspectorPanel.h"
 #include "MainWindow.h"
-#include "Song.h"
 #include "Shell.h"
 #include "ShellPanel.h"
 #include "ShellSelection.h"
-#include "TimelineSpeech.h"
 
 namespace lmms
 {
@@ -107,14 +103,11 @@ ControlResult select(const QJsonObject& args)
 	ControlResult error;
 	if (!applySelection(args, &error)) { return error; }
 	// A changed selection queues the panels' redraw for the next event-loop turn; draw them now,
-	// so the reply describes what they show. The command owns the one announcement (through
-	// ShellSelection, which defers it when the change came from its mouse filter), so every GUI
-	// path that calls window.select and the agent speak the same single message.
+	// so the reply describes what they show.
 	if (before != std::make_tuple(selection->track(), selection->clip(), selection->channel()))
 	{
 		if (auto* inspector = mounted<gui::InspectorPanel>(g, "inspector")) { inspector->rebuild(); }
 		if (auto* devices = mounted<gui::DevicePanel>(g, "devices")) { devices->rebuild(); }
-		selection->announceCurrent();
 	}
 	return ControlResult::success(selectionState(g));
 }

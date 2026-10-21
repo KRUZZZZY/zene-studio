@@ -38,7 +38,6 @@
 #include "Engine.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
-#include "TimelineSpeech.h"
 
 namespace lmms::markeractions
 {
@@ -201,14 +200,6 @@ void runMarkerAction(const Marker& marker)
 	}
 }
 
-void collectCrossedMarker(const Marker& marker, tick_t last, tick_t tick, QVector<Marker>& actions,
-	QVector<Marker>& named)
-{
-	if (marker.tick <= last || marker.tick > tick) { return; }
-	if (!marker.action.isEmpty()) { actions.append(marker); }
-	if (!marker.name.isEmpty()) { named.append(marker); }
-}
-
 } // namespace
 
 int advance(tick_t tick, bool playing)
@@ -221,17 +212,15 @@ int advance(tick_t tick, bool playing)
 	}
 	// Copied first: an action may edit the markers themselves. ProjectMarkers keeps them in tick order.
 	QVector<Marker> crossed;
-	QVector<Marker> namedCrossed;
 	for (const Marker& marker : ProjectMarkers::instance().markers())
 	{
-		collectCrossedMarker(marker, last, tick, crossed, namedCrossed);
+		if (!marker.action.isEmpty() && marker.tick > last && marker.tick <= tick) { crossed.append(marker); }
 	}
 	last = tick;
 	for (const Marker& marker : crossed)
 	{
 		runMarkerAction(marker);
 	}
-	for (const Marker& marker : namedCrossed) { speech::announceMarkerCrossing(marker); }
 	return static_cast<int>(crossed.size());
 }
 

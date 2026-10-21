@@ -269,18 +269,4 @@ signals drop the cards *before* a device is deleted, so no control ever paints a
 parameter; a 2 Hz check while the panel is visible catches what sends no signal (a modulator
 added over the socket).
 
-**Spoken selection, position and markers (Q050-080).** `window.select` says the
-chosen clip (name, track, bar/beat span) or the track/channel with the edit
-cursor, and the GUI selection paths (clip, track-header and mixer-strip
-presses, opening the note editor, the arranger's clip keys) go through that
-same command. `note.select` says the count and the earliest note.
-`transport.play`, `transport.stop` and `transport.seek` say the playhead in
-the configured time format; the arranger's Play/Stop buttons and Space keys
-use those commands, and the arranger's Left/Right/Home keys, a playhead drag
-on its ruler, and Home in the note editor are `transport.seek` too (a ruler
-drag carries one `gesture` token, so the whole scrub is one undo step).
-`marker.jump` plus playback across a marker say the marker's name. All of it
-is Polite through `view.announcements`: heard with All, silent with Errors or
-Off. Proven by `TimelineSpeechTest`.
-
 Screenshots: `docs/ui-logs/050-visual-overhaul/`.

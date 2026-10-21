@@ -413,13 +413,11 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	}
 	else if( ke->key() == Qt::Key_Left )
 	{
-		// The arranger's cursor keys are transport.seek, the same command the transport bar,
-		// the ruler and the agent use - so moving the edit cursor speaks its new position.
 		tick_t t = m_song->getPlayPos(Song::PlayMode::Song).getTicks() - TimePos::ticksPerBar();
 		if( t >= 0 )
 		{
-			ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
-				{{QStringLiteral("ticks"), static_cast<qint64>(t)}});
+			m_song->setPlayPos( t, Song::PlayMode::Song );
+			if (!m_song->isPlaying()) { m_song->setPlayPos(t, Song::PlayMode::None); }
 		}
 	}
 	else if( ke->key() == Qt::Key_Right )
@@ -427,14 +425,14 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 		tick_t t = m_song->getPlayPos(Song::PlayMode::Song).getTicks() + TimePos::ticksPerBar();
 		if( t < MaxSongLength )
 		{
-			ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
-				{{QStringLiteral("ticks"), static_cast<qint64>(t)}});
+			m_song->setPlayPos( t, Song::PlayMode::Song );
+			if (!m_song->isPlaying()) { m_song->setPlayPos(t, Song::PlayMode::None); }
 		}
 	}
 	else if( ke->key() == Qt::Key_Home )
 	{
-		ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
-			{{QStringLiteral("ticks"), 0}});
+		m_song->setPlayPos( 0, Song::PlayMode::Song );
+		if (!m_song->isPlaying()) { m_song->setPlayPos(0, Song::PlayMode::None); }
 	}
 	else if( ke->key() == Qt::Key_Delete || ke->key() == Qt::Key_Backspace )
 	{
@@ -1102,13 +1100,10 @@ void SongEditorWindow::play()
 	emit playTriggered();
 	if( Engine::getSong()->playMode() != Song::PlayMode::Song )
 	{
-		// The Play button and Space start are the registered transport.play command, so
-		// the position they start from is announced through the same path as the agent's.
-		ControlRegistry::instance()->invoke(QStringLiteral("transport.play"));
+		Engine::getSong()->playSong();
 	}
 	else
 	{
-		// A paused song resumes rather than restarting; the command has no pause verb.
 		Engine::getSong()->togglePause();
 	}
 }
@@ -1136,9 +1131,7 @@ void SongEditorWindow::recordAccompany()
 
 void SongEditorWindow::stop()
 {
-	// The Stop button and Space stop are the registered transport.stop command, so the
-	// stopped position is announced once through the shared path.
-	ControlRegistry::instance()->invoke(QStringLiteral("transport.stop"));
+	m_editor->m_song->stop();
 	getGUI()->pianoRoll()->stopRecording();
 	m_editor->m_timeLine->setRecording(false);
 	m_editor->m_positionLine->setRecording(false);

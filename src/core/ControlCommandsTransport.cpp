@@ -21,7 +21,6 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -34,7 +33,6 @@
 #include "SampleTrack.h"
 #include "InputMonitor.h"
 #include "Song.h"
-#include "TimelineSpeech.h"
 #include "Track.h"
 #include "TrackFolder.h"
 
@@ -158,8 +156,6 @@ void registerTransportCommands(ControlRegistry& registry)
 			song->playSong();
 			QJsonObject result;
 			result.insert(QStringLiteral("playing"), song->isPlaying());
-			speech::say(QCoreApplication::translate("TransportSpeech", "Playing from %1")
-				.arg(speech::positionSpeech(song->getPlayPos().getTicks())));
 			return ControlResult::success(result);
 		};
 		registry.registerCommand(cmd);
@@ -211,8 +207,6 @@ void registerTransportCommands(ControlRegistry& registry)
 			song->stop();
 			QJsonObject result;
 			result.insert(QStringLiteral("playing"), false);
-			speech::say(QCoreApplication::translate("TransportSpeech", "Stopped at %1")
-				.arg(speech::positionSpeech(song->getPlayPos().getTicks())));
 			return ControlResult::success(result);
 		};
 		registry.registerCommand(cmd);
@@ -223,12 +217,9 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("transport.seek");
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("seek");
-		cmd.description = QStringLiteral("Move the play head to an absolute position in ticks. An optional `gesture` "
-			"names one drag: consecutive seeks carrying the same value coalesce into one undo step.");
+		cmd.description = QStringLiteral("Move the play head to an absolute position in ticks.");
 		cmd.argsSchema = objectSchema(
-			{{QStringLiteral("ticks"), integerProperty(0, 0x7fffffff)},
-				{QStringLiteral("gesture"), stringProperty()}},
-			{QStringLiteral("ticks")});
+			{{QStringLiteral("ticks"), integerProperty(0, 0x7fffffff)}}, {QStringLiteral("ticks")});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("position_ticks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
@@ -261,8 +252,6 @@ void registerTransportCommands(ControlRegistry& registry)
 
 			QJsonObject result;
 			result.insert(QStringLiteral("position_ticks"), static_cast<qint64>(song->getPlayPos().getTicks()));
-			speech::say(QCoreApplication::translate("TransportSpeech", "Playhead %1")
-				.arg(speech::positionSpeech(song->getPlayPos().getTicks())));
 			QJsonObject before;
 			before.insert(QStringLiteral("position_ticks"), previous);
 			QJsonObject inverse;

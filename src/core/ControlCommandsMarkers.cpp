@@ -40,7 +40,6 @@
 #include "MarkerActions.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
-#include "TimelineSpeech.h"
 
 namespace lmms
 {
@@ -212,7 +211,6 @@ ControlResult jumpMarker(const QJsonObject& args)
 	if (target == nullptr) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no marker to jump to")); }
 	const ControlResult sought = ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), target->tick}});
 	if (!sought.ok) { return sought; }
-	speech::say(speech::markerSpeech(*target));
 	return ControlResult::success(markerJson(*target));
 }
 
