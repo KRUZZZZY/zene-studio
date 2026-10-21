@@ -279,6 +279,56 @@ private slots:
 		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
 	}
 
+	//! new-p14-19 BUG 13: a key-name call whose map is already in the requested state is
+	//! not an edit. storeNames recorded a journal step (and marked the project modified)
+	//! unconditionally, so reapplying the current name, removing a key that had none, or
+	//! applying the empty 'none' preset to an empty track put a no-op on the undo stack:
+	//! the next undo consumed it and left the real edit in place.
+	void aKeyNameEditThatChangesNothingRecordsNoStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QVERIFY(registry != nullptr);
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int coalesceWindow = registry->coalesceWindowMs();
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), 0}}).ok);
+
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		QVERIFY(track != nullptr);
+		const QString id = control::trackIdOf(track);
+
+		// A no-op leaves the journal and the transaction log exactly as it found them.
+		const auto expectNoStep = [&](const QString& command, const QJsonObject& args) {
+			const quint64 stepBefore = journal->topStepSerial();
+			const int countBefore = registry->transactions().size();
+			const ControlResult result = run(command, args);
+			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			QCOMPARE(journal->topStepSerial(), stepBefore);
+			QCOMPARE(registry->transactions().size(), countBefore);
+		};
+
+		// The empty preset on a track that has no names removes nothing.
+		expectNoStep(QStringLiteral("key_names.preset"), {{QStringLiteral("track"), id},
+			{QStringLiteral("preset"), QStringLiteral("none")}});
+		// Removing a key that has no name removes nothing.
+		expectNoStep(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QString()}});
+
+		// Reapplying the current name: the map already holds exactly that.
+		QVERIFY(run(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}}).ok);
+		QCOMPARE(TrackKeyNames::instance().name(track->id(), 24), QStringLiteral("Kick"));
+		expectNoStep(QStringLiteral("key_names.set"), {{QStringLiteral("track"), id}, {QStringLiteral("key"), 24},
+			{QStringLiteral("name"), QStringLiteral("Kick")}});
+
+		// The one real edit is still the step the next undo takes: the no-op did not sit
+		// on top of it and get consumed in its place.
+		QVERIFY(undone());
+		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
+
+		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), coalesceWindow}}).ok);
+	}
+
 	//! An unrecorded journal step above a command is undone without borrowing that command's name.
 	void anUnrecordedTopStepIsReportedWithoutRenamingTheCommandRecord()
 	{
