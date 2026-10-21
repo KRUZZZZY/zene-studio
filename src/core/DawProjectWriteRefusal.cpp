@@ -36,6 +36,8 @@
 
 #include <QString>
 
+#include "InstrumentMidiParts.h"
+#include "Note.h"
 #include "TempoMap.h"
 
 namespace lmms
@@ -56,6 +58,16 @@ bool isPowerOfTwo(int value)
 bool isSupportedTempo(double bpm)
 {
 	return std::isfinite(bpm) && bpm >= DawProjectMinTempo && bpm <= DawProjectMaxTempo;
+}
+
+bool inIntRange(int value, int minimum, int maximum)
+{
+	return value >= minimum && value <= maximum;
+}
+
+bool inDoubleRange(double value, double minimum, double maximum)
+{
+	return std::isfinite(value) && value >= minimum && value <= maximum;
 }
 
 } // namespace
@@ -104,6 +116,55 @@ QString meterRefusal(const DawProjectModel& model)
 		{
 			return QStringLiteral("a metre point at beat %1 has denominator %2, which is not a "
 				"power of two").arg(point.time).arg(point.denominator);
+		}
+	}
+	return QString();
+}
+
+QString noteFieldsRefusal(const DawProjectNote& note)
+{
+	if (!inIntRange(note.channel, 0, InstrumentMidiParts::Channels - 1))
+	{
+		return QStringLiteral("the note channel %1 is outside the supported range 0..%2")
+			.arg(note.channel).arg(InstrumentMidiParts::Channels - 1);
+	}
+	if (!inIntRange(note.key, 0, NumKeys - 1))
+	{
+		return QStringLiteral("the note key %1 is outside the supported range 0..%2")
+			.arg(note.key).arg(NumKeys - 1);
+	}
+	if (!inDoubleRange(note.vel, 0.0, 1.0))
+	{
+		return QStringLiteral("the note vel %1 is outside the supported range 0..1").arg(note.vel);
+	}
+	if (!inDoubleRange(note.rel, 0.0, 1.0))
+	{
+		return QStringLiteral("the note rel %1 is outside the supported range 0..1").arg(note.rel);
+	}
+	return QString();
+}
+
+QString scalarFieldsRefusal(const DawProjectModel& model)
+{
+	for (const DawProjectMixerChannel& channel : model.mixerChannels)
+	{
+		if (!inDoubleRange(channel.volume, 0.0, 2.0))
+		{
+			return QStringLiteral("the mixer channel volume %1 is outside the supported range 0..2")
+				.arg(channel.volume);
+		}
+	}
+	for (const DawProjectTrack& track : model.tracks)
+	{
+		if (track.hasVolume && !inDoubleRange(track.volume, 0.0, 2.0))
+		{
+			return QStringLiteral("the track volume %1 is outside the supported range 0..2")
+				.arg(track.volume);
+		}
+		if (track.hasPan && !inDoubleRange(track.pan, 0.0, 1.0))
+		{
+			return QStringLiteral("the track pan %1 is outside the supported range 0..1")
+				.arg(track.pan);
 		}
 	}
 	return QString();

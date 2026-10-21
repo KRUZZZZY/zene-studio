@@ -45,6 +45,14 @@ QString tempoRefusal(const DawProjectModel& model);
 //! outside the reader's 1..32, or a denominator that is not a power of two.
 QString meterRefusal(const DawProjectModel& model);
 
+//! A note whose channel, key, velocity or release velocity the reader would
+//! reject: outside the supported MIDI/velocity ranges, or non-finite.
+QString noteFieldsRefusal(const DawProjectNote& note);
+
+//! Mixer strips and track strips whose scalar parameters the reader would
+//! reject: outside their supported ranges, or non-finite.
+QString scalarFieldsRefusal(const DawProjectModel& model);
+
 } // namespace interchange
 } // namespace lmms
 

@@ -48,6 +48,11 @@
 
 #include <cmath>
 #include <limits>
+#include <sys/stat.h>
+#include <sys/types.h>
+#ifdef _MSC_VER
+#include <io.h>
+#endif
 
 #include <QByteArray>
 #include <QDir>
@@ -2083,6 +2088,138 @@ void anEmptyApplicationNameIsRefusedByTheWriter()
 	// The positive half: a named model still writes.
 	QVERIFY2(dawProjectXmlFromModel(authoredModel(), &xml, &error), qPrintable(error));
 }
+
+//! Cluster new-p14-87: the writer must refuse invalid note fields that the
+//! reader rejects (channel/key/vel/rel ranges), including non-finite values.
+	void invalidNoteFieldsAreRefusedByTheWriter()
+	{
+		DawProjectModel base = authoredModel();
+		QByteArray xml;
+		QString error;
+
+		// channel out of range
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].channel = 16;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a note with channel 16 was written");
+		}
+		// key out of range
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].key = 128;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a note with key 128 was written");
+		}
+		// vel out of range / non-finite
+		for (const double v : { -0.01, 1.01, std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity() })
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].vel = v;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				qPrintable(QStringLiteral("a note with vel %1 was written").arg(v)));
+		}
+		// rel out of range / non-finite
+		for (const double v : { -0.01, 1.01, std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity() })
+		{
+			DawProjectModel m = base;
+			m.tracks[0].clips[0].notes[0].rel = v;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				qPrintable(QStringLiteral("a note with rel %1 was written").arg(v)));
+		}
+		// positive half
+		QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
+	}
+
+//! Cluster new-p8-100: non-finite / out-of-range scalar parameters must be
+//! refused before they are serialized into invalid XML.
+	void nonFiniteScalarParametersAreRefusedByTheWriter()
+	{
+		DawProjectModel base = authoredModel();
+		QByteArray xml;
+		QString error;
+
+		// NaN mixer volume
+		{
+			DawProjectModel m = base;
+			m.mixerChannels[0].volume = std::numeric_limits<double>::quiet_NaN();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a NaN mixer volume was written");
+		}
+		// infinity mixer volume
+		{
+			DawProjectModel m = base;
+			m.mixerChannels[0].volume = std::numeric_limits<double>::infinity();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"an infinite mixer volume was written");
+		}
+		// out-of-range mixer volume
+		{
+			DawProjectModel m = base;
+			m.mixerChannels[0].volume = 3.0;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"an out-of-range mixer volume was written");
+		}
+		// NaN track volume
+		{
+			DawProjectModel m = base;
+			m.tracks[0].volume = std::numeric_limits<double>::quiet_NaN();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a NaN track volume was written");
+		}
+		// NaN track pan
+		{
+			DawProjectModel m = base;
+			m.tracks[0].pan = std::numeric_limits<double>::quiet_NaN();
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"a NaN track pan was written");
+		}
+		// out-of-range track pan
+		{
+			DawProjectModel m = base;
+			m.tracks[0].pan = 2.0;
+			QVERIFY2(!dawProjectXmlFromModel(m, &xml, &error),
+				"an out-of-range track pan was written");
+		}
+		// positive half
+		QVERIFY2(dawProjectXmlFromModel(base, &xml, &error), qPrintable(error));
+	}
+
+//! Cluster new-p20-42: writing without a report must not read the archive back.
+	void writingWithoutAReportDoesNotReadTheArchive()
+	{
+		const QString file = path(m_directory, QStringLiteral("no-report.dawproject"));
+		// Do not pre-create the destination: QSaveFile copies an existing
+		// file's permissions, which would make it readable again. On POSIX,
+		// create it under a umask that strips read bits so the old read-back
+		// fails. MSVC's CRT ignores attempts to remove read permission, but its
+		// supported _umask_s spelling keeps the test target warning-free there.
+		int maskResult = 0;
+		int restoreMaskResult = 0;
+#ifdef _MSC_VER
+		int previous = 0;
+		maskResult = _umask_s(_S_IREAD, &previous);
+#else
+		const mode_t previous = umask(0466);
+#endif
+		DawProjectModel model = authoredModel();
+		QString error;
+		const bool ok = writeDawProject(file, model, nullptr, &error);
+		// Restore the process-wide mask even if writing the file failed.
+#ifdef _MSC_VER
+		int ignoredMask = 0;
+		restoreMaskResult = _umask_s(previous, &ignoredMask);
+#else
+		umask(previous);
+#endif
+		// restore permissions for cleanup
+		QFile::setPermissions(file, QFile::ReadOwner | QFile::WriteOwner);
+		QVERIFY2(maskResult == 0, "could not set the file permission mask");
+		QVERIFY2(restoreMaskResult == 0, "could not restore the file permission mask");
+		QVERIFY2(ok, qPrintable(error));
+	}
 
 //! Luna cluster 5071: the write report's documented file identity. `bytes` and
 //! `sha256` are documented as describing the FILE, but `sha256` hashed only the
