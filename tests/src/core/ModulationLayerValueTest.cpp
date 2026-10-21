@@ -130,6 +130,51 @@ private slots:
 		QVERIFY(layer.findRoute(routeOf("Panning", 0.1f)) == nullptr);
 	}
 
+	//! Cluster new-p14-199: an INSERTED modulator is bounded like every other
+	//! one. insertModulator() checked the layer's modulator count but neither the
+	//! incoming modulator's own route count nor its source, so a modulator with
+	//! nine routes could be inserted and saved - and the reload, which appends at
+	//! most eight routes per modulator, silently dropped the ninth.
+	void anInsertedModulatorIsBoundedLikeEveryOtherOne()
+	{
+		ModulationLayer layer;
+		QCOMPARE(layer.addModulator(QStringLiteral("Host"), sineAt(1.0f, 0.0f, false)), 0);
+		Modulator captured = *layer.modulator(0);
+		for (int i = 0; i < ModulationLayer::MaxRoutesPerModulator; ++i)
+		{
+			captured.routes.push_back(routeOf("Gain", 0.5f));
+		}
+		QCOMPARE(captured.routeCount(), ModulationLayer::MaxRoutesPerModulator);
+
+		// One route over the bound: the insertion is refused and the layer is
+		// left exactly as it was.
+		Modulator tooMany = captured;
+		tooMany.routes.push_back(routeOf("Panning", 0.5f));
+		QVERIFY(!layer.insertModulator(1, tooMany));
+		QCOMPARE(layer.modulatorCount(), 1);
+
+		// A source the layer would refuse is refused here too: an inserted
+		// modulator has to be one the layer could have authored itself.
+		Modulator invalid = captured;
+		invalid.source.rateHz = 0.0f;  // below MinRateHz
+		QVERIFY(!layer.insertModulator(1, invalid));
+		QCOMPARE(layer.modulatorCount(), 1);
+
+		// AT the bound the insertion goes through, with every route, and the
+		// round trip keeps them all: the check is the bound, not a smaller one.
+		QVERIFY(layer.insertModulator(1, captured));
+		QCOMPARE(layer.modulatorCount(), 2);
+		QCOMPARE(layer.modulator(1)->routeCount(), ModulationLayer::MaxRoutesPerModulator);
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("song"));
+		doc.appendChild(root);
+		QVERIFY(layer.saveSettings(doc, root));
+		ModulationLayer reloaded;
+		QVERIFY(reloaded.loadSettings(root.firstChildElement(QStringLiteral("modulation-layer"))));
+		QCOMPARE(reloaded.modulatorCount(), 2);
+		QCOMPARE(reloaded.modulator(1)->routeCount(), ModulationLayer::MaxRoutesPerModulator);
+	}
+
 	//! 0.5.0 MX-117: random holds a value a cycle and repeats it (no audio-thread state), smooth random
 	//! glides from one to the next, steps play their values a cycle each, the envelope rises over its
 	//! attack and decays; the step values and the attack are saved only for the shapes that read them.

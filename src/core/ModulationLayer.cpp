@@ -446,6 +446,16 @@ bool ModulationLayer::insertModulator(int index, const Modulator& modulator)
 	{
 		return false;
 	}
+	// The layer is bounded (MaxModulators x MaxRoutesPerModulator, include/
+	// ModulationLayer.h), and an inserted modulator brings its own routes with
+	// it: it is held to the same route bound as one whose routes were added one
+	// at a time. Without this, a modulator with nine routes could be inserted
+	// and saved, and the reload - which appends at most eight routes per
+	// modulator - silently dropped the ninth.
+	if (modulator.routeCount() > MaxRoutesPerModulator) { return false; }
+	// The source is checked like every other one: an inserted modulator has to
+	// be one the layer could have authored itself.
+	if (!validSource(modulator.source, nullptr)) { return false; }
 	m_modulators.insert(m_modulators.begin() + index, modulator);
 	return true;
 }

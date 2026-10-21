@@ -202,6 +202,10 @@ public:
 	//! Appends (or inserts at @a index) and returns the modulator's index, or
 	//! -1 when the layer is full. @a source must be valid.
 	int addModulator(const QString& name, const ModulatorSource& source);
+	/*! Inserts @a modulator at @a index, or false when the layer is full, when
+	 *  @a modulator carries more routes than MaxRoutesPerModulator, or when its
+	 *  source is not a valid one - the same bound and the same source rule
+	 *  addModulator() is held to. */
 	bool insertModulator(int index, const Modulator& modulator);
 	bool removeModulator(int index);
 	bool setSource(int index, const ModulatorSource& source);
