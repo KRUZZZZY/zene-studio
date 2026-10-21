@@ -530,6 +530,31 @@ private slots:
 		QCOMPARE(after, before);
 	}
 
+	//! A zero-step transpose in key must not advertise an undo transaction.
+	void zeroStepTransposeInKeyDoesNotAdvertiseAnUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		// The scale the transpose walks in has to exist, or the call is refused
+		// before it can be a no-op at all.
+		QVERIFY2(run(QStringLiteral("scale.root_set"),
+			QJsonObject{{QStringLiteral("root"), 0}}).ok, "could not set the root");
+		QVERIFY2(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("Major")}}).ok, "could not set the scale");
+
+		const int before = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		const ControlResult moved = run(QStringLiteral("note.transpose_in_key"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("steps"), 0}});
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(moved.result.value(QStringLiteral("moved")).toInt(), 0);
+		const int after = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		QCOMPARE(after, before);
+
+		// The scale context is global: leave it as this test found it.
+		QVERIFY(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("")}}).ok);
+	}
+
 	//! A zero velocity delta must not leave a clip checkpoint to undo.
 	void zeroVelocityOffsetDoesNotTakeUndoStep()
 	{
@@ -565,6 +590,11 @@ private slots:
 	}
 
 	//! A no-op invert must not advertise an undo transaction.
+	//!
+	//! The COUNT of the inverted notes is asserted in its own test
+	//! (invertNoOpReportsNoNotesInverted): a test that checks the count first fails on
+	//! the count when the fix is reversed and never reaches the transaction assertion,
+	//! so it would not prove that the no-op stopped advertising an undo.
 	void invertNoOpDoesNotAdvertiseAnUndo()
 	{
 		Fixture fixture;
@@ -573,7 +603,44 @@ private slots:
 		const ControlResult inverted = run(QStringLiteral("note.invert"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
 		QVERIFY2(inverted.ok, qPrintable(inverted.errorMessage));
+		const int after = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		QCOMPARE(after, before);
+	}
+
+	//! A no-op invert reports that it inverted nothing, and moves nothing.
+	void invertNoOpReportsNoNotesInverted()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const ControlResult inverted = run(QStringLiteral("note.invert"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(inverted.ok, qPrintable(inverted.errorMessage));
 		QCOMPARE(inverted.result.value(QStringLiteral("inverted")).toInt(), 0);
+		QCOMPARE(noteKey(fixture.clip, 0), 60);
+	}
+
+	//! A zero velocity delta must not advertise an undo transaction.
+	void zeroVelocityOffsetDoesNotAdvertiseAnUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const int before = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		const ControlResult offset = run(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), 0}});
+		QVERIFY2(offset.ok, qPrintable(offset.errorMessage));
+		const int after = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		QCOMPARE(after, before);
+	}
+
+	//! An identity velocity scale must not advertise an undo transaction.
+	void identityVelocityScaleDoesNotAdvertiseAnUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const int before = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 1.0}});
+		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
 		const int after = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
 		QCOMPARE(after, before);
 	}
