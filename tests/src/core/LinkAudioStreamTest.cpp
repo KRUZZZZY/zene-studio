@@ -42,8 +42,10 @@
 #include <thread>
 #include <vector>
 
+#include <QFile>
 #include <QHostAddress>
 #include <QJsonObject>
+#include <QRegularExpression>
 #include <QUdpSocket>
 
 #include <fstream>
@@ -423,6 +425,22 @@ private slots:
 		QVERIFY(send(521));
 		QVERIFY(waitFor(59));
 		QCOMPARE(rx.report().rxOverruns - beforeGap, std::uint64_t{1024 + 128});
+	}
+
+	/*! The master's frames are SampleFrame objects, not floats: an array of them is not a
+	 *  float array, and the size of one frame says nothing about the type of its bytes, so
+	 *  reading the array through a float* is undefined behaviour. The stream reads the frames
+	 *  channel by channel instead - this pins that (the values themselves are pinned by
+	 *  loopbackExchangeIsSampleExact, which compares every sample of the round trip). */
+	void theFrameArrayIsNotReadAsAFlatFloatArray()
+	{
+		QFile source(QStringLiteral(ZENE_SOURCE_DIR "/src/core/LinkAudioStream.cpp"));
+		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.fileName()));
+		const QString text = QString::fromUtf8(source.readAll());
+		QVERIFY2(!text.contains(QRegularExpression("reinterpret_cast\\s*<\\s*float\\s*\\*")),
+			"the stream must not read a SampleFrame array through a float*");
+		QVERIFY2(!text.contains("sizeof(SampleFrame)"),
+			"the size of a frame does not make an array of frames a float array");
 	}
 
 	/*! Criterion 1, with Link ACTIVE: two in-process Ableton Link participants whose discovery is

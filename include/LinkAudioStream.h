@@ -198,13 +198,15 @@ private:
 	void stopLocked();
 	void resetCounters();
 	void publish(const AudioStreamConfig& cfg);
-	void receivePeriod(float* interleaved, std::size_t period, sample_rate_t sampleRate) noexcept;
-	void addFromRing(float* interleaved, std::size_t period) noexcept;
+	void receivePeriod(SampleFrame* frames, std::size_t period, sample_rate_t sampleRate) noexcept;
+	void addFromRing(SampleFrame* frames, std::size_t period) noexcept;
+	void sendFrames(SampleFrame* frames, f_cnt_t count) noexcept;
 	bool openSocket(const AudioStreamConfig& cfg, std::string* error);
 	void ioLoop();
 	void receiveDatagrams();
 	void sendPending();
 	void acceptPacket(const AudioPacketHeader& header, const float* samples);
+	void insertGapSilence(std::size_t frames) noexcept;
 
 	static std::atomic<LinkAudioStream*> s_active;   //!< the instance() while it runs
 	static LinkAudioStream* s_engineTapped;          //!< set by instance(), UI thread
@@ -219,6 +221,7 @@ private:
 	AudioRing m_tx;                  //!< producer: audio thread; consumer: I/O thread
 	AudioRing m_rx;                  //!< producer: I/O thread; consumer: audio thread
 	std::vector<float> m_scratch;    //!< audio thread's read buffer (preallocated)
+	std::vector<float> m_txBuf;      //!< audio thread's interleaved copy of the master's frames (preallocated)
 	std::vector<std::uint8_t> m_packet;   //!< I/O thread buffers (preallocated)
 	std::vector<float> m_samples;
 

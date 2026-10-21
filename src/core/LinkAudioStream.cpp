@@ -52,8 +52,6 @@ namespace lmms::link
 namespace
 {
 
-static_assert(sizeof(SampleFrame) == AudioChannels * sizeof(float),
-	"the stream reads SampleFrame arrays as interleaved stereo floats");
 static_assert(std::is_same_v<sample_t, float>, "the wire format is float32");
 
 //! Silence inserted for a sequence gap is capped, so a long outage cannot flood the ring.
@@ -61,6 +59,8 @@ constexpr std::uint32_t MaxGapPackets = 8;
 //! A sequence jump further than this is a restarted peer, not loss: resynchronise.
 constexpr std::int32_t ResyncDistance = 64;
 constexpr std::size_t ScratchFrames = 2048;
+//! Frames the audio thread converts at a time (its preallocated buffer); the period may be longer.
+constexpr std::size_t TxChunkFrames = 1024;
 constexpr int IoPollMs = 2;
 //! Datagrams read per wake: under a sustained flood the loop must come back to check the stop flag.
 constexpr int MaxPacketsPerWake = 256;
@@ -82,6 +82,7 @@ LinkAudioStream::LinkAudioStream()
 	: m_tx(AudioRingFrames)
 	, m_rx(AudioRingFrames)
 	, m_scratch(ScratchFrames * AudioChannels, 0.0f)
+	, m_txBuf(TxChunkFrames * AudioChannels, 0.0f)
 	, m_packet(AudioMaxPacketBytes + 64, 0)
 	, m_samples(AudioMaxPacketFrames * AudioChannels, 0.0f)
 {
@@ -140,28 +141,47 @@ void LinkAudioStream::process(SampleFrame* frames, f_cnt_t count, sample_rate_t 
 {
 	m_periods.fetch_add(1, std::memory_order_relaxed);
 	if (m_rate.load(std::memory_order_relaxed) != sampleRate) { m_rate.store(sampleRate, std::memory_order_relaxed); }
-	float* interleaved = reinterpret_cast<float*>(frames);
 
-	if (m_sendOn.load(std::memory_order_relaxed) && m_tx.write(interleaved, static_cast<std::size_t>(count)) < count)
-	{
-		m_txOverruns.fetch_add(1, std::memory_order_relaxed);
-	}
-	if (m_receiveOn.load(std::memory_order_relaxed)) { receivePeriod(interleaved, static_cast<std::size_t>(count), sampleRate); }
+	if (m_sendOn.load(std::memory_order_relaxed)) { sendFrames(frames, count); }
+	if (m_receiveOn.load(std::memory_order_relaxed)) { receivePeriod(frames, static_cast<std::size_t>(count), sampleRate); }
 }
 
-void LinkAudioStream::addFromRing(float* interleaved, std::size_t period) noexcept
+//! The master's frames go into the TX ring as interleaved floats, read channel by channel:
+//! an array of SampleFrame objects is not an array of floats, and reading it as one is
+//! undefined behaviour (the size of the frame says nothing about the type of its bytes).
+void LinkAudioStream::sendFrames(SampleFrame* frames, f_cnt_t count) noexcept
+{
+	std::size_t written = 0;
+	for (f_cnt_t done = 0; done < count;)
+	{
+		const std::size_t n = std::min<std::size_t>(static_cast<std::size_t>(count - done), TxChunkFrames);
+		for (std::size_t i = 0; i < n; ++i)
+		{
+			m_txBuf[i * AudioChannels] = frames[done + i].left();
+			m_txBuf[i * AudioChannels + 1] = frames[done + i].right();
+		}
+		written += m_tx.write(m_txBuf.data(), n);
+		done += static_cast<f_cnt_t>(n);
+	}
+	if (written < static_cast<std::size_t>(count)) { m_txOverruns.fetch_add(1, std::memory_order_relaxed); }
+}
+
+void LinkAudioStream::addFromRing(SampleFrame* frames, std::size_t period) noexcept
 {
 	for (std::size_t done = 0; done < period;)
 	{
 		const std::size_t n = std::min(period - done, ScratchFrames);
 		m_rx.read(m_scratch.data(), n);
-		float* dst = interleaved + done * AudioChannels;
-		for (std::size_t i = 0; i < n * AudioChannels; ++i) { dst[i] += m_scratch[i]; }
+		for (std::size_t i = 0; i < n; ++i)
+		{
+			frames[done + i].left() += m_scratch[i * AudioChannels];
+			frames[done + i].right() += m_scratch[i * AudioChannels + 1];
+		}
 		done += n;
 	}
 }
 
-void LinkAudioStream::receivePeriod(float* interleaved, std::size_t period, sample_rate_t sampleRate) noexcept
+void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sample_rate_t sampleRate) noexcept
 {
 	const std::uint64_t epoch = m_epoch.load(std::memory_order_acquire);
 	if (epoch != m_seenEpoch)
@@ -187,11 +207,22 @@ void LinkAudioStream::receivePeriod(float* interleaved, std::size_t period, samp
 		m_underruns.fetch_add(1, std::memory_order_relaxed);
 		m_primed = false;
 	}
-	if (m_primed) { addFromRing(interleaved, period); }
+	if (m_primed) { addFromRing(frames, period); }
 	const std::size_t left = m_rx.fill();
 	m_latencyFrames.store(left, std::memory_order_relaxed);
 	raiseMax(m_latencyMaxFrames, left);
 	m_primedReport.store(m_primed, std::memory_order_relaxed);
+}
+
+//! The silence that replaces a sequence gap. The frames that do not fit into the RX ring are
+//! dropped, and they are an overrun like any other frame the ring could not take.
+void LinkAudioStream::insertGapSilence(std::size_t frames) noexcept
+{
+	const std::size_t silenced = m_rx.writeSilence(frames);
+	if (silenced < frames)
+	{
+		m_rxOverruns.fetch_add(frames - silenced, std::memory_order_relaxed);
+	}
 }
 
 void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float* samples)
@@ -222,14 +253,7 @@ void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float*
 	{
 		m_lost.fetch_add(static_cast<std::uint64_t>(distance), std::memory_order_relaxed);
 		const std::uint32_t gap = std::min<std::uint32_t>(static_cast<std::uint32_t>(distance), MaxGapPackets);
-		const std::size_t gapFrames = static_cast<std::size_t>(gap) * header.frames;
-		const std::size_t silenced = m_rx.writeSilence(gapFrames);
-		if (silenced < gapFrames)
-		{
-			// The ring was full: the silence frames that did not fit are dropped like any other
-			// frame the ring could not take, so they belong in the overrun count.
-			m_rxOverruns.fetch_add(gapFrames - silenced, std::memory_order_relaxed);
-		}
+		insertGapSilence(static_cast<std::size_t>(gap) * header.frames);
 	}
 	m_expectedRx = header.sequence + 1;
 	const std::size_t written = m_rx.write(samples, header.frames);
