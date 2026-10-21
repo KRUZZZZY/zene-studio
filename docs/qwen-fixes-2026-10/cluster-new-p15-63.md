@@ -15,10 +15,10 @@ committed on its own.
 |---|---|---|---|
 | verdict | FIXED | FIXED | FIXED |
 | RED command | `ctest -R '^ExprSynthAllocationTest$'` | `ctest -R '^ExprSynthTest$'` | `ctest -R '^ExprSynthTest$'` |
-| RED exit code (before the fix) | 8 | 8 | 8 |
-| GREEN exit code (after the fix) | 0 | 0 | 0 |
-| RED exit code (fix reverted) | 8 | 8 | 8 |
-| GREEN exit code (fix re-applied) | 0 | 0 | 0 |
+| RED exit code (bug's own hunk reverted) | 8 | 8 | 8 |
+| GREEN exit code (fix in place) | 0 | 0 | 0 |
+| RED exit code (whole product change reverted) | 8 | 8 | 8 |
+| GREEN exit code (whole product change restored) | 0 | 0 | 0 |
 | test file | `tests/src/plugins/ExprSynthAllocationTest.cpp` | `tests/src/plugins/ExprSynthTest.cpp` | `tests/src/plugins/ExprSynthTest.cpp` |
 | new test cases | 2 | 1 | 1 |
 
@@ -79,26 +79,18 @@ deleted.
 
 LOGS = /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p15-63.r1/logs
 
-```
-cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-red.log 2>&1      # BUILD_EXIT=0
-cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-red.log 2>&1
-# TEST_EXIT=8  (2 failures: "the wave object leaked when the cyclic vector failed to grow")
-cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-green.log 2>&1    # BUILD_EXIT=0
-cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-green.log 2>&1
-# TEST_EXIT=0  (1/1 test passed)
-```
-
-RED/GREEN proof with the product hunk reverted
-(`git diff -- plugins/Xpressive/ExprSynth.cpp > $LOGS/fix.patch`):
+The revert is this bug's own product hunk: `$LOGS/fix-bug1-r3.patch` puts the `new` +
+`push_back` pair of `add_cyclic_vector` back in place of the `std::unique_ptr`.
 
 ```
-git apply -R $LOGS/fix.patch                                                              # REVERT_EXIT=0
-cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-revert.log 2>&1   # BUILD_REVERT_EXIT=0
-cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-revert.log 2>&1
-# TEST_REVERT_EXIT=8  (2 failures - the test catches the leak)
-git apply $LOGS/fix.patch                                                                  # REAPPLY_EXIT=0
-cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-reapply.log 2>&1  # BUILD_REAPPLY_EXIT=0
-cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-reapply.log 2>&1
+git apply $LOGS/fix-bug1-r3.patch                                                          # REVERT_EXIT=0
+cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r3-revert.log 2>&1    # BUILD_REVERT_EXIT=0
+cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r3-revert.log 2>&1
+# TEST_REVERT_EXIT=8  (2 failures: "the wave object leaked when the cyclic vector failed to grow"
+#                       and the same for the interpolated branch)
+git apply -R $LOGS/fix-bug1-r3.patch                                                        # RESTORE_EXIT=0
+cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r3-reapply.log 2>&1  # BUILD_REAPPLY_EXIT=0
+cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r3-reapply.log 2>&1
 # TEST_REAPPLY_EXIT=0  (1/1 test passed)
 ```
 
@@ -145,26 +137,18 @@ the frame counter and the sample rate are the only inputs.
 
 ### Commands (verbatim, observed EXIT codes)
 
-```
-cmake --build build --target ExprSynth > $LOGS/build-bug2-red.log 2>&1               # BUILD_EXIT=0
-cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug2-red.log 2>&1
-# TEST_EXIT=8  (1 failure: "the release time restarted instead of counting on from the release position")
-cmake --build build --target ExprSynth > $LOGS/build-bug2-green.log 2>&1             # BUILD_EXIT=0
-cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug2-green.log 2>&1
-# TEST_EXIT=0  (1/1 test passed, 5 test functions)
-```
-
-RED/GREEN proof with the product hunks reverted
-(`git diff -- plugins/Xpressive/ExprSynth.cpp plugins/Xpressive/ExprSynth.h > $LOGS/fix-bug2.patch`):
+The revert is this bug's own product hunk: `$LOGS/fix-bug2-r3.patch` puts
+`m_note_rel_sample == 0` back as the "not set yet" marker in place of the
+`m_note_rel_sample_set` flag.
 
 ```
-git apply -R $LOGS/fix-bug2.patch                                                     # REVERT_EXIT=0
-cmake --build build --target ExprSynth > $LOGS/build-bug2-revert.log 2>&1            # BUILD_REVERT_EXIT=0
-cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug2-revert.log 2>&1
-# TEST_REVERT_EXIT=8  (1 failure - the test catches the restart)
-git apply $LOGS/fix-bug2.patch                                                        # REAPPLY_EXIT=0
-cmake --build build --target ExprSynth > $LOGS/build-bug2-reapply.log 2>&1           # BUILD_REAPPLY_EXIT=0
-cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug2-reapply.log 2>&1
+git apply $LOGS/fix-bug2-r3.patch                                                        # REVERT_EXIT=0
+cmake --build build --target ExprSynthTest > $LOGS/build-bug2-r3-revert.log 2>&1      # BUILD_REVERT_EXIT=0
+cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug2-r3-revert.log 2>&1
+# TEST_REVERT_EXIT=8  (1 failure: "the release time restarted instead of counting on from the release position")
+git apply -R $LOGS/fix-bug2-r3.patch                                                      # RESTORE_EXIT=0
+cmake --build build --target ExprSynthTest > $LOGS/build-bug2-r3-reapply.log 2>&1    # BUILD_REAPPLY_EXIT=0
+cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug2-r3-reapply.log 2>&1
 # TEST_REAPPLY_EXIT=0  (1/1 test passed)
 ```
 
@@ -222,46 +206,73 @@ function itself, there is no timing, sleep or race involved.
 
 ### Commands (verbatim, observed EXIT codes)
 
-```
-cmake --build build --target ExprSynth > $LOGS/build-bug3-red.log 2>&1                # BUILD_EXIT=0
-cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug3-red.log 2>&1
-# TEST_EXIT=8  (1 failure: "the render path logged on the audio thread: ExprTk exception")
-cmake --build build --target ExprSynth > $LOGS/build-bug3-green.log 2>&1              # BUILD_EXIT=0
-cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug3-green.log 2>&1
-# TEST_EXIT=0  (1/1 test passed, 6 test functions)
-cmake --build build --target xpressive zene > $LOGS/build-bug3-plugin.log 2>&1        # BUILD_EXIT=0
-```
-
-RED/GREEN proof with the whole product change of this bug reverted
-(`git diff fe91d2460 -- plugins/Xpressive/ > $LOGS/fix-bug3-final.patch` reverts the
-bug's product hunks, the test file keeps the regression):
+The revert is this bug's own product hunk: `$LOGS/fix-bug3-r3.patch` puts the
+`catch(...) { WARN_EXPRTK; }` of the render path back.
 
 ```
-git apply -R $LOGS/fix-bug3-final.patch                                                # REVERT_EXIT=0
-cmake --build build --target ExprSynth > $LOGS/build-bug3-final-revert.log 2>&1       # BUILD_REVERT_EXIT=0
-cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug3-final-revert.log 2>&1
+git apply $LOGS/fix-bug3-r3.patch                                                        # REVERT_EXIT=0
+cmake --build build --target ExprSynthTest > $LOGS/build-bug3-r3-revert.log 2>&1       # BUILD_REVERT_EXIT=0
+cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug3-r3-revert.log 2>&1
 # TEST_REVERT_EXIT=8  (1 failure: "the render path logged on the audio thread: ExprTk exception")
-git apply $LOGS/fix-bug3-final.patch                                                   # REAPPLY_EXIT=0
-cmake --build build --target ExprSynth ExprSynthAllocationTest xpressive zene > $LOGS/build-bug3-final-reapply.log 2>&1
-# BUILD_REAPPLY_EXIT=0
-cd build/tests && ctest -R 'ExprSynth' --output-on-failure > $LOGS/test-bug3-final-reapply.log 2>&1
-# TEST_REAPPLY_EXIT=0  (2/2 tests passed)
+git apply -R $LOGS/fix-bug3-r3.patch                                                      # RESTORE_EXIT=0
+cmake --build build --target ExprSynthTest > $LOGS/build-bug3-r3-reapply.log 2>&1     # BUILD_REAPPLY_EXIT=0
+cd build/tests && ctest -R '^ExprSynthTest$' --output-on-failure > $LOGS/test-bug3-r3-reapply.log 2>&1
+# TEST_REAPPLY_EXIT=0  (1/1 test passed)
+cmake --build build --target xpressive zene > $LOGS/build-bug3-plugin.log 2>&1        # BUILD_EXIT=0
 ```
 
 ## Self-check
 
 ### 1. The regression test FAILS with the product change reverted and PASSES with it
 
-| bug | RED (product change reverted) | GREEN (product change in place) |
-|---|---|---|
-| new-p15-63 | `ctest -R '^ExprSynthAllocationTest$'` → **TEST_REVERT_EXIT=8**, 2 failures: "the wave object leaked when the cyclic vector failed to grow" / "…when the interpolated cyclic vector failed to grow" | `ctest -R '^ExprSynthAllocationTest$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
-| new-p14-103 | `ctest -R '^ExprSynthTest$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the release time restarted instead of counting on from the release position" | `ctest -R '^ExprSynthTest$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
-| new-p10-127 | `ctest -R '^ExprSynthTest$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the render path logged on the audio thread: ExprTk exception" | `ctest -R 'ExprSynth'` → **TEST_REAPPLY_EXIT=0**, 2/2 tests passed |
+| bug | RED (bug's own product hunk reverted) | GREEN (fix in place) | RED (whole product change reverted) | GREEN (restored) |
+|---|---|---|---|---|
+| new-p15-63 | `ctest -R '^ExprSynthAllocationTest$'` → **TEST_REVERT_EXIT=8**, 2 failures: "the wave object leaked when the cyclic vector failed to grow" / "…when the interpolated cyclic vector failed to grow" | → **TEST_REAPPLY_EXIT=0**, 1/1 passed | → **reverted_rc=8** (negctl) | → **restored_rc=0** (negctl) |
+| new-p14-103 | `ctest -R '^ExprSynthTest$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the release time restarted instead of counting on from the release position" | → **TEST_REAPPLY_EXIT=0**, 1/1 passed | → **reverted_rc=8** (negctl) | → **restored_rc=0** (negctl) |
+| new-p10-127 | `ctest -R '^ExprSynthTest$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the render path logged on the audio thread: ExprTk exception" | → **TEST_REAPPLY_EXIT=0**, 1/1 passed | → **reverted_rc=8** (negctl) | → **restored_rc=0** (negctl) |
+
+The per-bug proof reverts this bug's own product hunk (the patch is in the log folder,
+`$LOGS/fix-bug1-r3.patch`, `$LOGS/fix-bug2-r3.patch`, `$LOGS/fix-bug3-r3.patch`),
+rebuilds the test target, runs the test, restores the hunk, rebuilds and runs again;
+the summary of that run is `$LOGS/proof-summary-r3.log`. The whole-product-change
+proof is the lane's own negative control, described below.
 
 The first (pre-fix) runs were `TEST_EXIT=8` for all three regressions, with the same
-assertions failing, and `TEST_EXIT=0` after the fix. The exact commands are quoted in
-each bug's section above; the patches are in `$LOGS/fix.patch`,
-`$LOGS/fix-bug2.patch` and `$LOGS/fix-bug3-final.patch`.
+assertions failing, and `TEST_EXIT=0` after the fix.
+
+### The automated negative control (the harness that reverts the product change)
+
+The lane's negative control (`~/.local/share/zene-bunny-fix/qwen/negctl.py`) reverts
+the branch's product change, rebuilds the changed test targets, runs the tests and
+restores the tree. It now judges the branch as **ok**:
+
+```
+python3 /tmp/run_negctl.py
+{ "ok": true,
+  "detail": "ExprSynthAllocationTest, ExprSynthTest: they fail without it (rc 8) and pass with it",
+  "tests": ["ExprSynthAllocationTest", "ExprSynthTest"],
+  "product_files": ["plugins/Xpressive/ExprSynth.cpp", "plugins/Xpressive/ExprSynth.h",
+                    "plugins/Xpressive/Xpressive.cpp", "plugins/Xpressive/Xpressive.h"],
+  "reverted_build_rc": 0, "reverted_rc": 8, "restored_rc": 0, "tree_clean": true }
+```
+
+Its logs are in `$LOGS/negctl/`:
+- `build-reverted.log` — the test targets are recompiled against the reverted product
+  (`Building CXX object tests/CMakeFiles/ExprSynthTest.dir/src/plugins/ExprSynthTest.cpp.o`).
+- `test-reverted.log` — 2 of 2 tests fail, with exactly the four new assertions:
+  `failedCyclicVectorGrowthDoesNotLeakTheWave`, `failedInterpolatedCyclicVectorGrowthDoesNotLeakTheWave`,
+  `releaseTimeCountsOnFromTheReleasePosition` and
+  `expressionRenderErrorIsNotLoggedOnTheAudioThread`.
+- `test-restored.log` — 2 of 2 tests pass with the product change restored.
+
+The control could not judge the branch before the rename: it picks its build targets
+from the CTest names of the changed test sources, and the CTest names were
+`ExprSynth` / `ExprSynthAllocation` while the sources are `ExprSynthTest.cpp` /
+`ExprSynthAllocationTest.cpp`. It therefore rebuilt only the `zene` target, ran the
+**stale** test binaries (still compiled with the fix) and saw them pass with the
+product change reverted. The CTest names and the CMake targets now match the source
+file names, so the reverted product is compiled into the test binaries.
+
 
 ### 2. The tests are deterministic (no wall-clock timing, no sleeps, no races)
 
@@ -344,6 +355,8 @@ no `std::filesystem` were introduced.
 - `plugins/Xpressive/Xpressive.h` (bug new-p10-127)
 - `tests/src/plugins/ExprSynthAllocationTest.cpp` (bug new-p15-63)
 - `tests/src/plugins/ExprSynthTest.cpp` (bugs new-p14-103, new-p10-127)
+- `tests/CMakeLists.txt` (the Xpressive regression targets and their CTest names now
+  match their source file names, so the negative control rebuilds them)
 - `tests/upstream-modifications.txt` (the divergence ledger for the changed
   inherited files)
 - `docs/qwen-fixes-2026-10/cluster-new-p15-63.md` (this report)
