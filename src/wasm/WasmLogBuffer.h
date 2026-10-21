@@ -58,6 +58,14 @@ public:
 		return result;
 	}
 
+	//! Drop any pending message without waiting for a snapshot in progress.
+	void clear() noexcept
+	{
+		if (m_busy.test_and_set(std::memory_order_acquire)) { return; }
+		m_size = 0;
+		m_busy.clear(std::memory_order_release);
+	}
+
 private:
 	std::atomic_flag m_busy = ATOMIC_FLAG_INIT;
 	std::array<char, abi::maxLogBytes> m_text{};

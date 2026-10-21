@@ -135,6 +135,48 @@ bool writeMemoryGrowthModule(QTemporaryFile& file)
 		&& file.flush();
 }
 
+bool writeLoggingModule(QTemporaryFile& file)
+{
+	std::vector<std::uint8_t> bytes;
+	std::string error;
+	static constexpr char wat[] = R"WAT((module
+	(import "env" "host_log" (func $host_log (param i32 i32)))
+	(memory (export "memory") 1)
+	(data (i32.const 1024) "lane-log")
+	(func (export "process") (param $in i32) (param $out i32)
+		(param $frames i32) (param $sample_rate f32) (result i32)
+		(i32.const 1024)
+		(i32.const 8)
+		(call $host_log)
+		(i32.const 0))))WAT";
+	return WasmSandbox::assembleWat(wat, bytes, error) && file.open()
+		&& file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<qint64>(bytes.size()))
+			== static_cast<qint64>(bytes.size())
+		&& file.flush();
+}
+
+struct RelocatedMemoryView
+{
+	std::array<std::uint8_t, 4096> hostView{};
+	bool firstDataQuery = true;
+};
+
+//! The first host data query sees a private host view; every later one sees the
+//! sandbox's real linear memory. A host that keeps the first pointer therefore
+//! reads (and writes) the wrong bytes after the module has run.
+void relocateMemoryView(void* context, bool dataQuery, std::uint8_t*& data,
+	std::size_t& size)
+{
+	auto& view = *static_cast<RelocatedMemoryView*>(context);
+	if (!dataQuery || !view.firstDataQuery)
+	{
+		return;
+	}
+	view.firstDataQuery = false;
+	data = view.hostView.data();
+	size = view.hostView.size();
+}
+
 class MovingMemorySandbox
 {
 public:
@@ -172,11 +214,14 @@ private slots:
 	void testPoolIsSharedAndBounded();
 	void testAQueuedBlockIsPickedUpByAWakeUp();
 	void testStopWaitsForAudioEndpointsToQuiesce();
+	void testStopFreesSlotsTheLaneLeftInFlight();
 	void testEntryRacesWithStopWithoutPostStopEndpointUse();
 	void testRemovalWaitsForLoadedWorkerReaders();
 	void testConcurrentHostLogSnapshotsAreBoundedAndConsistent();
+	void testTakeLogSurvivesStopThroughTheLaneSnapshot();
 	void testMemoryRefreshReacquiresMovedPointer();
 	void testWasmWorkerRefreshesMemoryAfterGrowth();
+	void testWasmWorkerReacquiresRelocatedHostView();
 	void testOfflineRenderRefreshesMemoryAfterGrowth();
 	void testOfflineRenderIsDeterministicWithinTheMeasuredFloor();
 	void testComparatorDetectsADifference();
@@ -311,6 +356,29 @@ void WasmWorkerPoolTest::testStopWaitsForAudioEndpointsToQuiesce()
 		"stop took over the SPSC queues while an audio endpoint was still pinned");
 }
 
+void WasmWorkerPoolTest::testStopFreesSlotsTheLaneLeftInFlight()
+{
+	WasmWorker worker;
+	std::string error;
+	QVERIFY2(worker.start(m_module, error), error.c_str());
+
+	// drainOnLane() gives up pushing a result when m_stop is observed, leaving
+	// the slot Done but in neither queue. stop() must still free it, or a
+	// restart starts with fewer usable slots and eventually drops every block.
+	QVERIFY(worker.m_slots[2].state.load(std::memory_order_acquire) == WasmWorker::SlotState::Free);
+	worker.m_slots[2].frames = 2;
+	worker.m_slots[2].state.store(WasmWorker::SlotState::Done, std::memory_order_release);
+
+	worker.stop();
+
+	for (const WasmWorker::Slot& slot : worker.m_slots)
+	{
+		QVERIFY2(slot.state.load(std::memory_order_acquire) == WasmWorker::SlotState::Free,
+			"stop left a slot in flight, so a restart inherits it");
+		QCOMPARE(slot.frames, std::uint32_t{0});
+	}
+}
+
 void WasmWorkerPoolTest::testEntryRacesWithStopWithoutPostStopEndpointUse()
 {
 	constexpr int StopRaces = 100000;
@@ -424,6 +492,36 @@ void WasmWorkerPoolTest::testWasmWorkerRefreshesMemoryAfterGrowth()
 	worker.stop();
 }
 
+void WasmWorkerPoolTest::testWasmWorkerReacquiresRelocatedHostView()
+{
+	QTemporaryFile module;
+	QVERIFY(writeMemoryGrowthModule(module));
+	WasmWorker worker;
+	std::string error;
+	QVERIFY2(worker.start(module.fileName().toStdString(), error), error.c_str());
+
+	RelocatedMemoryView view;
+	WasmSandbox::setMemoryViewTestHook(&relocateMemoryView, &view);
+	struct ClearHook
+	{
+		~ClearHook() { WasmSandbox::setMemoryViewTestHook(nullptr, nullptr); }
+	} clearHook;
+
+	// The first data query returns a private host view; the module still writes
+	// its real linear memory. A host that reuses the first pointer reads zeros,
+	// while reacquiring the memory after process() reads 42 and 7.
+	const std::array<SampleFrame, 2> input{SampleFrame(0.0f, 0.0f), SampleFrame(0.0f, 0.0f)};
+	std::array<SampleFrame, 2> output{};
+	QVERIFY(worker.submit(input.data(), static_cast<std::uint32_t>(input.size()), TestSampleRate));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(output.data(), static_cast<std::uint32_t>(output.size())));
+	QCOMPARE(output[0][0], 42.0f);
+	QCOMPARE(output[1][0], 7.0f);
+	QCOMPARE(output[0][1], 42.0f);
+	QCOMPARE(output[1][1], 7.0f);
+	worker.stop();
+}
+
 void WasmWorkerPoolTest::testConcurrentHostLogSnapshotsAreBoundedAndConsistent()
 {
 	constexpr std::size_t LogBytes = 4095;
@@ -516,6 +614,28 @@ void WasmWorkerPoolTest::testConcurrentHostLogSnapshotsAreBoundedAndConsistent()
 		static_cast<unsigned long long>(worker.processedBlocks()),
 		static_cast<unsigned long long>(invalidSnapshots.load(std::memory_order_relaxed)));
 	worker.stop();
+}
+
+void WasmWorkerPoolTest::testTakeLogSurvivesStopThroughTheLaneSnapshot()
+{
+	QTemporaryFile module;
+	QVERIFY(writeLoggingModule(module));
+	WasmWorker worker;
+	std::string error;
+	QVERIFY2(worker.start(module.fileName().toStdString(), error), error.c_str());
+
+	const std::array<SampleFrame, 2> input{SampleFrame(0.25f, -0.25f), SampleFrame(0.5f, -0.5f)};
+	std::array<SampleFrame, 2> output{};
+	QVERIFY(worker.submit(input.data(), static_cast<std::uint32_t>(input.size()), TestSampleRate));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(output.data(), static_cast<std::uint32_t>(output.size())));
+
+	// The lane moves host_log() output into the worker-owned snapshot, so the
+	// control thread can still read the last message after stop() has destroyed
+	// the sandbox. takeLog() must not dereference m_sandbox at all.
+	worker.stop();
+	QCOMPARE(worker.takeLog(), std::string("lane-log"));
+	QCOMPARE(worker.takeLog(), std::string());
 }
 
 void WasmWorkerPoolTest::testMemoryRefreshReacquiresMovedPointer()

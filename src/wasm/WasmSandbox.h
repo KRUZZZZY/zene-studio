@@ -121,6 +121,17 @@ public:
 	void setFuelBudget(std::uint64_t fuel);
 	std::uint64_t fuelBudget() const;
 
+#ifdef LMMS_TESTING
+	//! Test seam: lets a test substitute the host view of linear memory for one
+	//! query, so the stale-pointer path after process() can be driven
+	//! deterministically instead of depending on wasmtime moving its mapping.
+	//! The hook receives the real view for a data or a size query and may
+	//! replace either; production builds never call it.
+	using MemoryViewTestHook = void (*)(void* context, bool dataQuery,
+		std::uint8_t*& data, std::size_t& size);
+	static void setMemoryViewTestHook(MemoryViewTestHook hook, void* context);
+#endif
+
 private:
 	struct Impl;
 	std::unique_ptr<Impl> m_impl;

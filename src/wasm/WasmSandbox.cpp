@@ -41,6 +41,12 @@ namespace lmms::wasm
 namespace
 {
 
+#ifdef LMMS_TESTING
+using MemoryViewTestHook = WasmSandbox::MemoryViewTestHook;
+std::atomic<MemoryViewTestHook> memoryViewTestHook{nullptr};
+std::atomic<void*> memoryViewTestContext{nullptr};
+#endif
+
 //! Consume a wasmtime error and render it as text. Takes ownership.
 std::string takeError(wasmtime_error_t* error)
 {
@@ -577,16 +583,47 @@ CallResult WasmSandbox::callVoid(const std::string& exportName)
 
 std::uint8_t* WasmSandbox::memoryData()
 {
-	return m_impl->hasMemory ? wasmtime_memory_data(m_impl->context, &m_impl->memory)
-							 : nullptr;
+	std::uint8_t* data = m_impl->hasMemory
+		? wasmtime_memory_data(m_impl->context, &m_impl->memory)
+		: nullptr;
+#ifdef LMMS_TESTING
+	if (const auto hook = memoryViewTestHook.load(std::memory_order_acquire))
+	{
+		std::size_t size = m_impl->hasMemory
+			? wasmtime_memory_data_size(m_impl->context, &m_impl->memory)
+			: 0;
+		hook(memoryViewTestContext.load(std::memory_order_relaxed), true, data,
+			size);
+	}
+#endif
+	return data;
 }
 
 std::size_t WasmSandbox::memorySize() const
 {
-	return m_impl->hasMemory
+	std::size_t size = m_impl->hasMemory
 		? wasmtime_memory_data_size(m_impl->context, &m_impl->memory)
 		: 0;
+#ifdef LMMS_TESTING
+	if (const auto hook = memoryViewTestHook.load(std::memory_order_acquire))
+	{
+		std::uint8_t* data = m_impl->hasMemory
+			? wasmtime_memory_data(m_impl->context, &m_impl->memory)
+			: nullptr;
+		hook(memoryViewTestContext.load(std::memory_order_relaxed), false, data,
+			size);
+	}
+#endif
+	return size;
 }
+
+#ifdef LMMS_TESTING
+void WasmSandbox::setMemoryViewTestHook(MemoryViewTestHook hook, void* context)
+{
+	memoryViewTestContext.store(context, std::memory_order_relaxed);
+	memoryViewTestHook.store(hook, std::memory_order_release);
+}
+#endif
 
 bool WasmSandbox::writeMemory(std::uint32_t offset, const void* src,
 	std::size_t bytes)
