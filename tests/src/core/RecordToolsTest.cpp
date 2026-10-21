@@ -43,11 +43,13 @@
 #include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "ConfigManager.h"
 #include "Engine.h"
 #include "MetronomeOptions.h"
 #include "Mixer.h"
 #include "MountNamespaceTestSupport.h"
 #include "RecorderTaps.h"
+#include "SamplePlayHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TakeLane.h"
@@ -102,8 +104,13 @@ class RecordToolsTest : public QObject
 private slots:
 	void initTestCase()
 	{
+		ConfigManager* const config = ConfigManager::inst();
+		const QString storedLevel = config->value(QStringLiteral("metronome"), QStringLiteral("level"), QStringLiteral("1"));
+		config->setValue(QStringLiteral("metronome"), QStringLiteral("level"), QStringLiteral("invalid"));
 		Engine::init(true);
 		ControlRegistry::setReady(true);
+		m_levelLoadedFromInvalidConfig = metronomeoptions::options().level;
+		config->setValue(QStringLiteral("metronome"), QStringLiteral("level"), storedLevel);
 	}
 
 	void cleanupTestCase()
@@ -117,6 +124,22 @@ private slots:
 	void cleanup()
 	{
 		run(QStringLiteral("record.disarm_all"));
+	}
+
+	void invalidStoredLevelUsesDefault()
+	{
+		QCOMPARE(m_levelLoadedFromInvalidConfig, 1.f);
+	}
+
+	//! Cluster 5127: metronome clicks use the preallocated sample voice pool.
+	void metronomeClickUsesPreparedVoice()
+	{
+		metronomeoptions::setOptions({1.0f, true, false, 0});
+		PlayHandle* const click = metronomeoptions::click(false, 0);
+		QVERIFY(click != nullptr);
+		const auto* const sampleVoice = dynamic_cast<const SamplePlayHandle*>(click);
+		QVERIFY(sampleVoice != nullptr);
+		QVERIFY(sampleVoice->isPooledVoice());
 	}
 
 	void aCompEdgeMoves()
@@ -639,6 +662,9 @@ private slots:
 		QCOMPARE(control::platformVolumeNaming(), control::VolumeNaming::KernelDevice);
 #endif
 	}
+
+private:
+	float m_levelLoadedFromInvalidConfig = 0.f;
 };
 
 int main(int argc, char* argv[])
