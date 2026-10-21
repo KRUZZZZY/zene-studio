@@ -218,9 +218,18 @@ path change.
 4. **Nothing new runs on the audio thread.** The change is in the control
    thread's load path; no allocation, free, lock, wait, log or signal was
    added, and no audio file was touched.
-5. **Old projects and saved data are unaffected.** No file format, no save
-   path, no project field and no command surface changed; a project that
-   loads a module with the default budget behaves exactly as before.
+5. **Old projects and saved data are unaffected, and the new limit does not hit
+   other callers that legitimately exceed it.** No file format, no save path,
+   no project field and no command surface changed; a project that loads a
+   module with the default budget behaves exactly as before (the default
+   budget is the one the start function already ran under). The limit that was
+   added is the caller's own budget, applied to that caller's load: the two
+   other paths into the same sandbox - `WasmWorker::loadModuleFile()`
+   (`src/wasm/WasmWorker.cpp:274`, the effect's worker) and
+   `WasmOfflineRender` (`src/wasm/WasmOfflineRender.cpp:78`) - name no budget
+   and keep the ABI default, so nothing that legitimately needs more than the
+   default is refused. The whole wasm family (`ctest -R "^Wasm"`, exit 0,
+   56 slots) is green with the fix in place.
 6. **Portability.** The test uses only Qt Test, `QTemporaryDir` and `QFile`;
    no Qt-6-only API (the tree builds with Qt5 and Qt6), no `windows.h` macro
    name, no `std::filesystem`. The production change is three statements in
@@ -230,3 +239,13 @@ path change.
    `wasm.load` keeps its existing one-step undo (the recorded inverse is
    another `wasm.load`), and a refused load still changes nothing, so it still
    needs no inverse.
+8. **The ALREADY-FIXED / FALSE-POSITIVE question does not apply here:** the
+   verdict is FIXED. The evidence that the defect was present on this branch is
+   the original order in `src/wasm/WasmSandboxHost.cpp` - `loadModuleBytes()`
+   (which instantiates and runs the start function) at line 143, and
+   `setFuelBudget(budget)` at line 150 - plus the RED run
+   (`test-red-2.log`, exit 8: the 100 fuel load was accepted), and the
+   intended contract is `WasmSandbox::Impl::primeFuelBudget()`'s own comment
+   at `src/wasm/WasmSandbox.cpp:271-279` ("the store carries the configured
+   budget before any wasm code runs ... instantiation runs the module's start
+   function ... and needs the same headroom").
