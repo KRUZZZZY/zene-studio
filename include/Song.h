@@ -1002,6 +1002,11 @@ signals:
 	//! A recording pass lost \a frames to capture overflow; the GUI shows a notice. Main thread.
 	void recordTakeDropped(qulonglong frames);
 	void projectLoaded();
+	//! Q050-484: an export is about to start (the main thread, before its render thread does): an instrument that streams
+	//! samples from disk loads them whole now, so the export never waits for a loader.
+	void exportPreparing();
+	//! Q050-484: that export's render thread has finished (the main thread).
+	void exportFinished();
 	void playbackStateChanged();
 	void playbackPositionJumped();
 	void lengthChanged( int bars );

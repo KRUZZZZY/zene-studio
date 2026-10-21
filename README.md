@@ -49,7 +49,7 @@ a file saved by this build may not open in a later or older build, so keep backu
 person, can drive the open session over a local UNIX socket. It is opt-in and off by default: an
 instance not started that way has no socket at all. The tree's committed command snapshot
 (`tools/mcp-zene-control/zene_control/commands_snapshot.json`, captured from a live instance and held
-equal to the binary by the `ControlCommandsSnapshot` test) holds **<!-- canary -->840 ids / 76 groups<!-- /canary -->**;
+equal to the binary by the `ControlCommandsSnapshot` test) holds **<!-- canary -->841 ids / 76 groups<!-- /canary -->**;
 the eight `wasm.*` commands are registered on top of that only where the wasmtime C API is found,
 which no release job provisions. Every command carries a JSON schema and a declared reversibility
 class (the A16 contract; in the reference configuration 361 rows - 166 `true_inverse` / 39
@@ -93,8 +93,9 @@ effects and instruments, CLAP effects and instruments, VST2 through Vestige, LV2
 and GUS patches, plus the built-in instruments. **Format availability varies by platform**: each
 platform's build enables its own set, so that list is the Linux one — CMake disables VST hosting on
 Apple builds, so a macOS build has no VST2/Vestige path. **Loading a format is not the same as having
-tested a particular maker's product.** Apart from the MIT fixtures in the source tree, **no third-party
-plug-in of any kind has been tested by us**, there is **no verified Wine/yabridge path** for plug-ins
+tested a particular maker's product.** Apart from the MIT fixtures in the source tree and the pinned plug-ins measured in
+`docs/PLUGIN-COMPATIBILITY.md` (load, editor and state round-trip, with what failed), **no other third-party
+plug-in has been tested by us**, there is **no verified Wine/yabridge path** for plug-ins
 built for Windows, and there is **no Kontakt runtime**: a **Kontakt** library needs Native Instruments'
 own installer and authorization, which are external to this project, and no Kontakt library or
 Kontakt-format runtime has been verified. SoundFont2 is the sampled-instrument format this build
@@ -167,7 +168,7 @@ Not in this build, and not claimed by it:
   This is not the command-line stem *export* above.
 - **WASM DSP sandbox** — `WANT_WASM` defaults ON, but the build falls back to OFF when the wasmtime C
   API is absent, and CI provisions none, so it is compiled out in practice.
-- **No patcher GUI** (a hosted plug-in's own X11-embedded editor does open, see above; there is no editor path off X11) — and no third-party plug-in of any kind has
+- **The patcher canvas edits cables only where the engine routes the chain through its graph** (Rack > Chain Canvas... draws every chain as nodes and cables and adds, reorders and removes devices on any chain; the shipped devices keep a chain off the graph, so their cables are shown read-only with the reason) (a hosted plug-in's own X11-embedded editor does open, see above; there is no editor path off X11) — and no third-party plug-in of any kind has
   been proven outside the MIT fixtures this tree ships. (Ableton Link IS in the build since WF-051:
   the arranger toolbar's **Ableton Link** toggle syncs tempo, beat phase and start/stop with Live,
   Bitwig and other Link apps - proven against the reference library and between two Zene instances,

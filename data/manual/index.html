@@ -157,6 +157,36 @@ EQ (bands that move with the level, on the mid or the side alone), Convolution R
 its menu) and Recorder (records what passes it; its menu puts the last take on a new track). An audio clip's
 Process menu prints a chain's effects onto the clip.</p>
 
+<p>The Audio File Processor (the sampler) has an Attack and a Release knob, in milliseconds, and a Voice limit box in the strip under its
+title. A note fades in from silence over the attack time and, after its key is let go, fades out over the release time; both can be
+automated, and a project saved before they existed plays exactly as it did (no attack, a 3 ms release). The voice limit (1 to 64, the
+most sounding notes the sampler keeps) decides what a new note does when that many are already sounding: it takes the voice that was
+released the longest ago, or, if every note is still held, the one that started the longest ago. That voice fades out over 3 ms and
+the new note starts from the beginning of the sample with its own attack; the other held notes are not touched. An agent reads and sets
+the same three values with <code>plugin.param_get</code> and <code>plugin.param_set</code> on the track's <code>inst</code> plug-in.</p>
+
+<p>The SFZ Player plays instruments in the open SFZ format (sfizz): samples with velocity layers, round robins and key
+switches. Add it from the browser or the instrument list, or open an .sfz file from the file browser (double-click) - the new
+track holds the player with that file loaded. The window shows the file that is loaded and how many regions it has; Open SFZ...
+loads another. Volume (dB) and Sample quality apply at once; Polyphony and Oversampling reload the file. The file is saved
+with the project by its path (a path relative to the project where it can be), so keep the SFZ and its samples where the
+project can find them: if the file is missing the player is silent and the project keeps its name. An agent loads a file into a
+track's SFZ Player with <code>plugin.open_file</code> (one undo step) and reads and sets the settings with
+<code>plugin.param_get</code> and <code>plugin.param_set</code>.</p>
+
+<p>Rack &gt; Chain Canvas... on a mixer channel opens its chain as a patcher graph: the input, one node per device in order, and the cables
+between them. Drag from a node's output port to another node's input port to connect; click a cable and press Delete to remove it;
+Shift-click a cable and drag to give its source a second destination while the first stays. Drag a node sideways (or Move Left / Move
+Right) to reorder the chain, Add device... to append a device, Remove to take one out. Every edit is the same command an agent runs
+(<code>patcher.set_wiring</code>, <code>plugin.move</code>, <code>plugin.load</code>, <code>plugin.unload</code>), one undo step each, and
+the picture always shows what <code>patcher.get_state</code> reports. Cables can only be changed on a chain whose devices the engine routes
+through its graph; on a chain of the built-in devices the cables are shown and the window says why they cannot be edited, while adding,
+reordering and removing devices work as usual. Wiring you author is not saved with the project.</p>
+
+<p>Which third-party plug-ins have actually been run? The compatibility page, <code>docs/PLUGIN-COMPATIBILITY.md</code>, lists the VST3, CLAP and
+LV2 plug-ins that were tried, each by its package, version and file hash, with whether it loaded, whether its own editor opened and whether its saved state
+came back, and every failure. A plug-in that is not on that page is untested - that Zene lists it as loadable only means the host accepted it.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 

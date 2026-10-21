@@ -34,6 +34,8 @@
 #include "DataFile.h"
 #include "FileDialog.h"
 #include "FontHelper.h"
+#include "Knob.h"
+#include "LcdSpinBox.h"
 #include "PixmapButton.h"
 #include "Song.h"
 #include "StringPairDrag.h"
@@ -134,6 +136,19 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 // interpolation selector
 	m_interpBox = new ComboBox(this);
 	m_interpBox->setGeometry(142, 62, 82, ComboBox::DEFAULT_HEIGHT);
+
+// attack / release (ms) and the voice limit - the strip between the logo and the file name
+	m_attackKnob = new Knob(KnobType::Small17, this);
+	m_attackKnob->move(10, 62);
+	m_attackKnob->setHintText(tr("Attack:"), " ms");
+
+	m_releaseKnob = new Knob(KnobType::Small17, this);
+	m_releaseKnob->move(52, 62);
+	m_releaseKnob->setHintText(tr("Release:"), " ms");
+
+	m_voiceLimitBox = new LcdSpinBox(2, this, "Voice limit");
+	m_voiceLimitBox->move(94, 63);
+	m_voiceLimitBox->setToolTip(tr("Voice limit: at this many sounding notes a new note takes over the voice that was released the longest ago, or else the oldest held one"));
 
 // wavegraph
 	m_waveView = 0;
@@ -254,6 +269,12 @@ void AudioFileProcessorView::paintEvent(QPaintEvent*)
 
 	p.setPen(QColor(255, 255, 255));
 	p.drawText(8, 99, file_name);
+
+	// captions of the attack / release / voice controls
+	p.setPen(QColor(200, 200, 200));
+	p.drawText(6, 59, tr("ATTACK"));
+	p.drawText(48, 59, tr("RELEASE"));
+	p.drawText(96, 59, tr("VOICES"));
 }
 
 void AudioFileProcessorView::sampleUpdated()
@@ -285,6 +306,9 @@ void AudioFileProcessorView::modelChanged()
 	m_loopGroup->setModel(&a->loopModel());
 	m_stutterButton->setModel(&a->stutterModel());
 	m_interpBox->setModel(&a->interpolationModel());
+	m_attackKnob->setModel(&a->attackModel());
+	m_releaseKnob->setModel(&a->releaseModel());
+	m_voiceLimitBox->setModel(&a->voiceLimitModel());
 	sampleUpdated();
 }
 

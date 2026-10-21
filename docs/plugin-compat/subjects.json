@@ -1,0 +1,339 @@
+{
+ "fixtures": [
+  {
+   "test": "ControlDeviceCatalogueTest",
+   "what": "the in-tree VST3 and CLAP test modules (tests/data/vst3-test-instrument, the CLAP test modules) through plugin.list and plugin.load"
+  },
+  {
+   "test": "Vst3InstrumentTest, Vst3HostTest",
+   "what": "the MIT VST3 fixture instrument: MIDI event path, allocation-free process, host chunking"
+  },
+  {
+   "test": "PluginNativeEditorTest",
+   "what": "the native editor window around a plug-in view, with fake editor hooks - not a real plug-in editor"
+  },
+  {
+   "test": "Lv2StateTest",
+   "what": "the LV2 state interface against a test bundle"
+  },
+  {
+   "test": "ControlSocketIntegration",
+   "what": "the control-socket transcripts that save and load a hosted device state against the fixture modules"
+  }
+ ],
+ "note": "Pinned third-party subjects of the compatibility matrix (Q050-071). Packages are the distribution files named here, unpacked outside the repository; no plug-in binary is stored in the repo.",
+ "packages": {
+  "calf": {
+   "dir": "calf-0.90.9-2.1-x86_64_v3",
+   "license": "GPL-2.0-or-later / LGPL-2.0-or-later",
+   "project": "http://calf-studio-gear.org",
+   "repo": "cachyos-extra-v3",
+   "sha256": "39e9ea521a727d6f6006eb4fd9548eea546c07eea9af9513af3603480374e189",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/calf-0.90.9-2.1-x86_64_v3.pkg.tar.zst",
+   "version": "0.90.9-2.1"
+  },
+  "dpf-plugins-clap": {
+   "dir": "dpf-plugins-clap-1.7-3.1-x86_64",
+   "license": "ISC / GPL-2.0-or-later / GPL-3.0-or-later / LGPL-3.0-only / MIT",
+   "project": "https://github.com/DISTRHO/DPF-Plugins",
+   "repo": "cachyos-extra-v3",
+   "sha256": "1bb9eddd4adfd462f1ae8b47207973a87b69160f7f09cacffabc3761c136e0fb",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/dpf-plugins-clap-1.7-3.1-x86_64.pkg.tar.zst",
+   "version": "1.7-3.1"
+  },
+  "dpf-plugins-lv2": {
+   "dir": "dpf-plugins-lv2-1.7-3.1-x86_64",
+   "license": "ISC / GPL-2.0-or-later / GPL-3.0-or-later / LGPL-3.0-only / MIT",
+   "project": "https://github.com/DISTRHO/DPF-Plugins",
+   "repo": "cachyos-extra-v3",
+   "sha256": "2b2eab934f7fc6c008eb0a54480f601295a7cfe6cb6e890033f9abebd01923ee",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/dpf-plugins-lv2-1.7-3.1-x86_64.pkg.tar.zst",
+   "version": "1.7-3.1"
+  },
+  "dpf-plugins-vst3": {
+   "dir": "dpf-plugins-vst3-1.7-3.1-x86_64",
+   "license": "ISC / GPL-2.0-or-later / GPL-3.0-or-later / LGPL-3.0-only / MIT",
+   "project": "https://github.com/DISTRHO/DPF-Plugins",
+   "repo": "cachyos-extra-v3",
+   "sha256": "dcc8acd44dec4de7cad58b1b445eceebb3be283b2164d35d9a9ae26b9eb8bf3e",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/dpf-plugins-vst3-1.7-3.1-x86_64.pkg.tar.zst",
+   "version": "1.7-3.1"
+  },
+  "dragonfly-reverb-clap": {
+   "dir": "dragonfly-reverb-clap-3.2.10-5.1-x86_64_v3",
+   "license": "GPL-3.0-or-later",
+   "project": "https://michaelwillis.github.io/dragonfly-reverb/",
+   "repo": "cachyos-extra-v3",
+   "sha256": "380114a70f8de0dbd9a2546cd097a172c35d46c786d7c9ad2ce4e1188b4de9e0",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/dragonfly-reverb-clap-3.2.10-5.1-x86_64_v3.pkg.tar.zst",
+   "version": "3.2.10-5.1"
+  },
+  "dragonfly-reverb-lv2": {
+   "dir": "dragonfly-reverb-lv2-3.2.10-5.1-x86_64_v3",
+   "license": "GPL-3.0-or-later",
+   "project": "https://michaelwillis.github.io/dragonfly-reverb/",
+   "repo": "cachyos-extra-v3",
+   "sha256": "10819d87b9e3fdc93116d4dd16dc6e2ecf4571dcb2ee504c3d3dabc0d9e94e90",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/dragonfly-reverb-lv2-3.2.10-5.1-x86_64_v3.pkg.tar.zst",
+   "version": "3.2.10-5.1"
+  },
+  "dragonfly-reverb-vst3": {
+   "dir": "dragonfly-reverb-vst3-3.2.10-5.1-x86_64_v3",
+   "license": "GPL-3.0-or-later",
+   "project": "https://michaelwillis.github.io/dragonfly-reverb/",
+   "repo": "cachyos-extra-v3",
+   "sha256": "3db82bdf74c1b9c4a7a7484ed6f32e0bd89a9d9070f014fb5c0f9d3b0254736a",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/dragonfly-reverb-vst3-3.2.10-5.1-x86_64_v3.pkg.tar.zst",
+   "version": "3.2.10-5.1"
+  },
+  "freeverb3": {
+   "dir": "freeverb3-3.2.1-5.2-x86_64_v3",
+   "license": "GPL-2.0-only",
+   "project": "http://www.nongnu.org/freeverb3",
+   "repo": "cachyos-extra-v3",
+   "role": "library: shared library the Dragonfly plug-ins need at run time (their package depends on it)",
+   "sha256": "c30ee3612902e8d785a89abc434c88875f1c778a3c771316e3393b1ff9f893e5",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/freeverb3-3.2.1-5.2-x86_64_v3.pkg.tar.zst",
+   "version": "3.2.1-5.2"
+  },
+  "geonkick-lv2": {
+   "dir": "geonkick-lv2-3.7.0-3.1-x86_64_v3",
+   "license": "GPL-3.0-or-later",
+   "project": "https://geonkick.org/",
+   "repo": "cachyos-extra-v3",
+   "sha256": "945674a2c379325f716ade41ffafe239df0ffeb285911b84838b27ac5673f53f",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/geonkick-lv2-3.7.0-3.1-x86_64_v3.pkg.tar.zst",
+   "version": "3.7.0-3.1"
+  },
+  "geonkick-vst3": {
+   "dir": "geonkick-vst3-3.7.0-3.1-x86_64_v3",
+   "license": "GPL-3.0-or-later",
+   "project": "https://geonkick.org/",
+   "repo": "cachyos-extra-v3",
+   "sha256": "9b8f059f01ee3f24d171295c58b99a9b5c5adc652d35159f17d1530fef61a31f",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/geonkick-vst3-3.7.0-3.1-x86_64_v3.pkg.tar.zst",
+   "version": "3.7.0-3.1"
+  },
+  "lsp-plugins-clap": {
+   "dir": "lsp-plugins-clap-1.2.35-1.1-x86_64_v3",
+   "license": "LGPL-3.0-or-later",
+   "project": "https://lsp-plug.in",
+   "repo": "cachyos-extra-v3",
+   "sha256": "512deb5b671d74d883ba5885ee5377a1a361735492a51814092b77bddc01eec7",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/lsp-plugins-clap-1.2.35-1.1-x86_64_v3.pkg.tar.zst",
+   "version": "1.2.35-1.1"
+  },
+  "lsp-plugins-lv2": {
+   "dir": "lsp-plugins-lv2-1.2.35-1.1-x86_64_v3",
+   "license": "LGPL-3.0-or-later",
+   "project": "https://lsp-plug.in",
+   "repo": "cachyos-extra-v3",
+   "sha256": "1c3075d21f99689353d61cbfe837436c3303c79c842d1f10444c4dc2bb8a8594",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/lsp-plugins-lv2-1.2.35-1.1-x86_64_v3.pkg.tar.zst",
+   "version": "1.2.35-1.1"
+  },
+  "mda.lv2": {
+   "dir": "mda.lv2-1.2.12-1.1-x86_64_v3",
+   "license": "0BSD OR MIT / GPL-3.0-or-later",
+   "project": "https://gitlab.com/drobilla/mda-lv2",
+   "repo": "cachyos-extra-v3",
+   "sha256": "20231e80544e8f2d12e020bdd8670686384de80bb5c332e24bc03ba0e5a9a185",
+   "url": "https://mirror.krfoss.org/cachyos/repo/x86_64_v3/cachyos-extra-v3/mda.lv2-1.2.12-1.1-x86_64_v3.pkg.tar.zst",
+   "version": "1.2.12-1.1"
+  }
+ },
+ "schema": 1,
+ "subjects": [
+  {
+   "binary_sha256": "6ceb682a3b9b894d824627c3f09e8f3d9c9a2fc78e7d1c7e20fdeb1d85f3b20a",
+   "file": "usr/lib/vst3/Nekobi.vst3",
+   "format": "vst3",
+   "host_modules": "vst3instrument",
+   "id": "vst3-dpf-nekobi",
+   "kind": "instrument",
+   "name": "Nekobi",
+   "package": "dpf-plugins-vst3",
+   "package_dir": "dpf-plugins-vst3-1.7-3.1-x86_64",
+   "title": "DPF Nekobi"
+  },
+  {
+   "binary_sha256": "9d47235214b093621ec680864c48ef4fdd5c92d960d5e540ee12b386bb260373",
+   "file": "usr/lib/vst3/Geonkick.vst3",
+   "format": "vst3",
+   "host_modules": "vst3instrument",
+   "id": "vst3-geonkick",
+   "kind": "instrument",
+   "name": "Geonkick",
+   "package": "geonkick-vst3",
+   "package_dir": "geonkick-vst3-3.7.0-3.1-x86_64_v3",
+   "title": "Geonkick"
+  },
+  {
+   "binary_sha256": "c8cec45631bd0171bac3b6bbaa778c3a4116eed8bf72feb9d99d7c1680371060",
+   "file": "usr/lib/vst3/3BandEQ.vst3",
+   "format": "vst3",
+   "host_modules": "vst3effect",
+   "id": "vst3-dpf-3bandeq",
+   "kind": "effect",
+   "name": "3 Band EQ",
+   "package": "dpf-plugins-vst3",
+   "package_dir": "dpf-plugins-vst3-1.7-3.1-x86_64",
+   "title": "DPF 3 Band EQ"
+  },
+  {
+   "binary_sha256": "5b04641b442dc0e6d20e9d20dc1bd49d88046f87abeda94d1358f2eb00a1ce66",
+   "file": "usr/lib/vst3/DragonflyRoomReverb.vst3",
+   "format": "vst3",
+   "host_modules": "vst3effect",
+   "id": "vst3-dragonfly-room",
+   "kind": "effect",
+   "name": "Dragonfly Room Reverb",
+   "needs": [
+    "freeverb3"
+   ],
+   "package": "dragonfly-reverb-vst3",
+   "package_dir": "dragonfly-reverb-vst3-3.2.10-5.1-x86_64_v3",
+   "title": "Dragonfly Room Reverb"
+  },
+  {
+   "binary_sha256": "599aff968ce4a31d5803f15469d109dc708b40b0a0d56e30dc423410dc9c8cc9",
+   "file": "usr/lib/clap/Nekobi.clap",
+   "format": "clap",
+   "host_modules": "clapinstrument",
+   "id": "clap-dpf-nekobi",
+   "kind": "instrument",
+   "name": "studio.kx.distrho.Nekobi",
+   "package": "dpf-plugins-clap",
+   "package_dir": "dpf-plugins-clap-1.7-3.1-x86_64",
+   "title": "DPF Nekobi"
+  },
+  {
+   "binary_sha256": "e54fcc770485f3a2e38c014a6c0503984f2233fe3ac893e6dffd8f0d77bfc9d0",
+   "file": "usr/lib/clap/lsp-plugins.clap",
+   "format": "clap",
+   "host_modules": "clapeffect",
+   "id": "clap-lsp-compressor",
+   "kind": "effect",
+   "name": "in.lsp-plug.compressor_stereo",
+   "package": "lsp-plugins-clap",
+   "package_dir": "lsp-plugins-clap-1.2.35-1.1-x86_64_v3",
+   "title": "LSP Compressor Stereo"
+  },
+  {
+   "binary_sha256": "7c7d83665f9968f7ca2fd66dd4c8ad8670ee66236e80539b9e62a749c9c6e3c4",
+   "file": "usr/lib/clap/ProM.clap",
+   "format": "clap",
+   "host_modules": "clapeffect",
+   "id": "clap-dpf-prom",
+   "kind": "effect",
+   "name": "studio.kx.distrho.ProM",
+   "package": "dpf-plugins-clap",
+   "package_dir": "dpf-plugins-clap-1.7-3.1-x86_64",
+   "title": "DPF ProM"
+  },
+  {
+   "binary_sha256": "fc9772586124154c6443cf28c02a4bafef7c8eb244c761fdd7edabea8d03de30",
+   "file": "usr/lib/clap/DragonflyRoomReverb.clap",
+   "format": "clap",
+   "host_modules": "clapeffect",
+   "id": "clap-dragonfly-room",
+   "kind": "effect",
+   "name": "michaelwillis.dragonfly.room",
+   "needs": [
+    "freeverb3"
+   ],
+   "package": "dragonfly-reverb-clap",
+   "package_dir": "dragonfly-reverb-clap-3.2.10-5.1-x86_64_v3",
+   "title": "Dragonfly Room Reverb"
+  },
+  {
+   "binary_sha256": "f5f7aeef426fb4e9adcda7187b9bdc9fa74e3b82600c4cc19a02ba664f273cac",
+   "file": "usr/lib/lv2/calf.lv2",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-calf-reverb",
+   "kind": "effect",
+   "name": "http://calf.sourceforge.net/plugins/Reverb",
+   "package": "calf",
+   "package_dir": "calf-0.90.9-2.1-x86_64_v3",
+   "title": "Calf Reverb"
+  },
+  {
+   "binary_sha256": "ad135a705cb6eb044ba891d949c472b02bd264140f826c952d2bab896e5282c9",
+   "file": "usr/lib/lv2/lsp-plugins.lv2",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-lsp-compressor",
+   "kind": "effect",
+   "name": "http://lsp-plug.in/plugins/lv2/compressor_stereo",
+   "package": "lsp-plugins-lv2",
+   "package_dir": "lsp-plugins-lv2-1.2.35-1.1-x86_64_v3",
+   "title": "LSP Compressor Stereo"
+  },
+  {
+   "binary": "usr/lib/lv2/mda.lv2/Piano.so",
+   "binary_sha256": "ec2e3811012cf23eeed96f966dbc101124135d84307b9825c4bd00efca24c703",
+   "file": "usr/lib/lv2/mda.lv2",
+   "format": "lv2",
+   "host_modules": "lv2instrument",
+   "id": "lv2-mda-piano",
+   "kind": "instrument",
+   "name": "http://drobilla.net/plugins/mda/Piano",
+   "package": "mda.lv2",
+   "package_dir": "mda.lv2-1.2.12-1.1-x86_64_v3",
+   "title": "mda Piano"
+  },
+  {
+   "binary": "usr/lib/lv2/mda.lv2/Ambience.so",
+   "binary_sha256": "ed4d8e89615dcb633ddf87dfb8797236d356a29312d9b822ff2a3c6afe33ed1c",
+   "file": "usr/lib/lv2/mda.lv2",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-mda-ambience",
+   "kind": "effect",
+   "name": "http://drobilla.net/plugins/mda/Ambience",
+   "package": "mda.lv2",
+   "package_dir": "mda.lv2-1.2.12-1.1-x86_64_v3",
+   "title": "mda Ambience"
+  },
+  {
+   "binary_sha256": "b2c28a6578273ae06798ae3b59db4e9434af9269e0b9a54198c2b652cd806a91",
+   "file": "usr/lib/lv2/Nekobi.lv2",
+   "format": "lv2",
+   "host_modules": "lv2instrument",
+   "id": "lv2-dpf-nekobi",
+   "kind": "instrument",
+   "name": "http://distrho.sf.net/plugins/Nekobi",
+   "package": "dpf-plugins-lv2",
+   "package_dir": "dpf-plugins-lv2-1.7-3.1-x86_64",
+   "title": "DPF Nekobi"
+  },
+  {
+   "binary_sha256": "87e647c897c257d2cb618e5bf866acb55c24520c5e068a157e9b44fd4729e7b0",
+   "file": "usr/lib/lv2/geonkick.lv2",
+   "format": "lv2",
+   "host_modules": "lv2instrument",
+   "id": "lv2-geonkick",
+   "kind": "instrument",
+   "name": "http://geonkick.org/geonkick",
+   "package": "geonkick-lv2",
+   "package_dir": "geonkick-lv2-3.7.0-3.1-x86_64_v3",
+   "title": "Geonkick"
+  },
+  {
+   "binary_sha256": "f040486a4b6f0f6d98d99d6956c3dbf219dcd6dbf8114b6bc8b9094b9219038a",
+   "file": "usr/lib/lv2/DragonflyRoomReverb.lv2",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-dragonfly-room",
+   "kind": "effect",
+   "name": "urn:dragonfly:room",
+   "needs": [
+    "freeverb3"
+   ],
+   "package": "dragonfly-reverb-lv2",
+   "package_dir": "dragonfly-reverb-lv2-3.2.10-5.1-x86_64_v3",
+   "title": "Dragonfly Room Reverb"
+  }
+ ]
+}

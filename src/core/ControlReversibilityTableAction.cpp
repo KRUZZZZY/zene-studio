@@ -157,6 +157,13 @@ const ReversibilityRow kActionRows[] = {
 		"state XML through the same controlRestoreDeviceState path "
 		"plugin.state_load itself uses",
 		""),
+	R("plugin.open_file", RC::TrueInverse, true,
+		"the file replaces what the instrument had loaded, and the instrument's PREVIOUS state (its file and "
+		"settings) is captured in the transaction's before-state",
+		"action checkpoint: the recorded undo step restores the captured state XML through the same "
+		"controlRestoreCapturedState path plugin.state_load uses; a file the instrument refuses changes nothing "
+		"(the previous state is put back at once) and records no step",
+		""),
 	R("plugin.preset_load", RC::TrueInverse, true,
 		"same as plugin.state_load: the preset replaces the device's "
 		"parameters and the previous settings are captured first",

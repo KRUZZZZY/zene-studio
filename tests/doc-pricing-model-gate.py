@@ -98,7 +98,7 @@ TIER_RE = re.compile(r"\btier\b|\bpremium\b", re.I)
 # The vendored exclusions, the same set tests/all-sources.txt declares on purpose.
 EXCLUDE_RE = re.compile(
     r"^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/"
-    r"|plugins/RnnoiseDenoiser/rnnoise/|plugins/LadspaEffect/(calf|cmt|swh|tap)/"
+    r"|plugins/RnnoiseDenoiser/rnnoise/|plugins/SfzPlayer/sfizz/|plugins/LadspaEffect/(calf|cmt|swh|tap)/"
     r"|plugins/CarlaBase/carla/|plugins/FreeBoy/game-music-emu/"
     r"|plugins/MidiImport/portsmf/|plugins/OpulenZ/adplug/|plugins/Sid/resid/"
     r"|plugins/Xpressive/exprtk/|plugins/ZynAddSubFx/zynaddsubfx/)"

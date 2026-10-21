@@ -837,6 +837,12 @@ set(LMMS_TESTS
 	# Cluster new-p12-315: the playhead leaves the render thread - playback must
 	# not emit isPlaying synchronously, and the GUI poll delivers the coalesced value.
 	src/core/AudioFileProcessorPlayheadTest.cpp
+	# 0.5.0 Q050-103: the sampler's attack/release envelope and its voice-reuse policy, rendered through the real module.
+	src/core/SamplerEnvelopeTest.cpp
+	src/core/SamplerVoiceReuseTest.cpp
+	# 0.5.0 Q050-484: the SFZ instrument (sfizz) - layers, round robins, key switches, state, the command and window routes.
+	src/plugins/SfzPlayerTest.cpp
+	src/plugins/SfzPlayerRealtimeTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
 	src/core/CustomAccessTest.cpp
@@ -1016,6 +1022,10 @@ set(LMMS_TESTS
 	src/gui/DevicePanelTest.cpp
 	# 0.5.0 plugin-hosting lane: the effect rack's own "Add effect" picks from the device picker.
 	src/gui/EffectRackAddTest.cpp
+	# 0.5.0 Q050-087: the device-chain patcher canvas - nodes, cables, add / connect / disconnect / reorder, Shift-click fan-out.
+	src/gui/PatcherCanvasTest.cpp
+	# 0.5.0 Q050-071: the in-process editor probe of the third-party plug-in compatibility matrix (skips unless ZENE_COMPAT_PROBE names a subject).
+	src/gui/PluginCompatEditorProbe.cpp
 	# BUG new-p9-242: LV2 help subwindows are destroyed with the view that owns them.
 	src/gui/Lv2ViewBaseLifetimeTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
@@ -1771,6 +1781,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DevicePanelTest"
 		# The rack's "Add effect" adds one real effect from the device picker.
 		OR LMMS_TEST_NAME STREQUAL "EffectRackAddTest"
+		# The canvas adds one real effect (amplifier) through the device picker's hook.
+		OR LMMS_TEST_NAME STREQUAL "PatcherCanvasTest"
+		# The compatibility probe loads whatever third-party plug-in it is given through the build's hosting modules.
+		OR LMMS_TEST_NAME STREQUAL "PluginCompatEditorProbe"
 		# The Gate / Modulation / Receiver dialogs are built over one real effect each.
 		OR LMMS_TEST_NAME STREQUAL "PluginControlDialogsTest"
 		# The device menu acts on real amplifier, recorder and convolution reverb effects.
@@ -1824,6 +1838,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
 		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
+		OR LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest"
+		OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzPlayerTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
@@ -1851,6 +1869,30 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
+
+	# Q050-103: the envelope and voice-reuse test renders through the build's audiofileprocessor module.
+	# Q050-484: the SFZ tests load the build's sfzplayer module (sfizz) and render through it.
+	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
+		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
+	endif()
+
+	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
+		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
+	endif()
+
+	# Q050-071: the probe loads third-party plug-ins through the build's hosting modules, so they have to be built first.
+	if(LMMS_TEST_NAME STREQUAL "PluginCompatEditorProbe")
+		foreach(HOST_MODULE vst3effect vst3instrument clapeffect clapinstrument lv2effect lv2instrument)
+			if(TARGET ${HOST_MODULE})
+				add_dependencies(${LMMS_TEST_NAME} ${HOST_MODULE})
+			endif()
+		endforeach()
+	endif()
+
+	# Q050-087: the canvas test adds the build's amplifier module through the picker.
+	if(LMMS_TEST_NAME STREQUAL "PatcherCanvasTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
@@ -2525,6 +2567,8 @@ set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest 
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PluginCompatEditorProbe PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6131,6 +6175,23 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-formats-docs-gate.py)
 	add_test(NAME PluginFormatsDocsGateSelfTest
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-formats-docs-gate.py
+			--self-test)
+	# Q050-484: sfizz's render callback runs no file-pool garbage collection (the symbol table of the built library says so).
+	if(TARGET sfzplayer_sfizz AND NOT MSVC)
+		add_custom_target(SfzRenderThreadGateDeps)
+		add_dependencies(SfzRenderThreadGateDeps sfzplayer_sfizz)
+		add_test(NAME SfzRenderThreadGate
+			COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/sfz-render-thread-gate.py $<TARGET_FILE:sfzplayer_sfizz>)
+		set_tests_properties(SfzRenderThreadGate PROPERTIES SKIP_RETURN_CODE 77)
+	endif()
+
+	# Q050-071: the published third-party compatibility page is what was measured - subjects pinned by package and file
+	# hash, one row per subject, four distinct outcomes, third-party rows apart from the in-tree fixtures, the page
+	# rendered from the results byte for byte. File reads only. The self-test is its red control.
+	add_test(NAME PluginCompatMatrixGate
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-compat-matrix-gate.py --root ${CMAKE_SOURCE_DIR})
+	add_test(NAME PluginCompatMatrixGateSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-compat-matrix-gate.py --root ${CMAKE_SOURCE_DIR}
 			--self-test)
 endif()
 

@@ -479,6 +479,14 @@ public:
 	float trimOffset() const;
 	float effectiveAutomationValue( float writtenValue ) const;
 
+	/*! Q050-103 / Q050-484: a value change made on the audio engine's render thread - an automation tick - does not
+	 *  emit dataChanged() there (a signal on the render thread can post an event, which allocates); it is remembered and
+	 *  emitted by the next flushDeferredChange(), which the model's owner calls from its own (non-render) thread. Off by
+	 *  default: every other model emits as it always did. A change on any other thread emits at once either way. */
+	void setDeferChangeSignalOnRenderThread(bool defer = true) { m_deferChangeSignal = defer; }
+	//! True when a render-thread change was waiting, in which case dataChanged() has just been emitted.
+	bool flushDeferredChange();
+
 public slots:
 	virtual void reset();
 	void unlink();
@@ -574,6 +582,8 @@ private:
 	float m_centerValue;
 
 	bool m_valueChanged;
+	bool m_deferChangeSignal = false;
+	std::atomic<bool> m_changePending{false};
 	float m_oldValue; //!< used by valueBuffer for interpolation
 	//! Render-owned value snapshot and the last publication consumed by the prepass.
 	float m_renderValue = 0.0f;

@@ -32,9 +32,11 @@
 
 #include "Instrument.h"
 #include "Sample.h"
+#include "SamplerVoicePool.h"
 #include "LmmsTypes.h"
 
 #include <atomic>
+#include <memory>
 
 
 namespace lmms
@@ -63,9 +65,10 @@ public:
 
 	auto beatLen(NotePlayHandle* note) const -> f_cnt_t override;
 
+	//! The user's release time. Its default is the 3 ms every earlier version used.
 	float desiredReleaseTimeMs() const override
 	{
-		return 3.f;
+		return m_releaseModel.value();
 	}
 
 	gui::PluginView* instantiateView( QWidget * _parent ) override;
@@ -80,6 +83,12 @@ public:
 	IntModel & loopModel() { return m_loopModel; }
 	BoolModel & stutterModel() { return m_stutterModel; }
 	ComboBoxModel & interpolationModel() { return m_interpolationModel; }
+	FloatModel & attackModel() { return m_attackModel; }
+	FloatModel & releaseModel() { return m_releaseModel; }
+	IntModel & voiceLimitModel() { return m_voiceLimitModel; }
+
+	//! Playback voices in use (stolen ones still fading included). Control-thread / test use.
+	Q_INVOKABLE int activeVoices() const;
 
 
 public slots:
@@ -108,11 +117,24 @@ private:
 	//! GUI-thread poll entry point (invoked by the view's timer, and by tests):
 	//! emits isPlaying only when the published frame changed since the last poll.
 	Q_INVOKABLE void pollPlayhead();
+public:
+	//! GUI-thread: emit the change signals of the envelope / voice-limit models that an automation tick changed on the
+	//! render thread (where they are held back). pollPlayhead() calls it; a test calls it directly.
+	Q_INVOKABLE void flushDeferredSignals();
+private:
 	std::atomic<f_cnt_t> m_playheadFrame{0};
 	//! GUI-thread-only last emitted value (coalescing).
 	f_cnt_t m_playheadShown{0};
 
 	friend class gui::AudioFileProcessorView;
+
+	//! What a note keeps in its inline storage: the voice it plays on (Q050-103).
+	struct NoteVoice
+	{
+		SamplerVoicePool::Claim claim;
+	};
+
+	void applyAttack(SampleFrame* dst, f_cnt_t frames, f_cnt_t firstFrame) const;
 
 	Sample m_sample;
 
@@ -124,6 +146,14 @@ private:
 	IntModel m_loopModel;
 	BoolModel m_stutterModel;
 	ComboBoxModel m_interpolationModel;
+	//! Appended after the models above on purpose: parameter indices follow construction order, and the
+	//! agent surface (plugin.param_*) addresses the earlier ones by index.
+	FloatModel m_attackModel;
+	FloatModel m_releaseModel;
+	IntModel m_voiceLimitModel;
+
+	//! Built once, in the converter mode Sample::play requests, so the render path only claims and releases voices.
+	std::unique_ptr<SamplerVoicePool> m_voices;
 
 	f_cnt_t m_nextPlayStartPoint;
 	bool m_nextPlayBackwards;

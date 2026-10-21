@@ -419,8 +419,25 @@ void AutomatableModel::setValueInternal(const float value)
 	if (oldValue != m_value)
 	{
 		m_valueChanged = true;
-		emit dataChanged();
+		if (m_deferChangeSignal && Engine::audioEngine() != nullptr && Engine::audioEngine()->isRenderThread())
+		{
+			m_changePending.store(true, std::memory_order_release);
+		}
+		else
+		{
+			emit dataChanged();
+		}
 	}
+}
+
+
+
+
+bool AutomatableModel::flushDeferredChange()
+{
+	if (!m_changePending.exchange(false, std::memory_order_acq_rel)) { return false; }
+	emit dataChanged();
+	return true;
 }
 
 

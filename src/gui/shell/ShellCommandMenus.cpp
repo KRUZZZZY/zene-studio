@@ -47,6 +47,7 @@
 #include "InstrumentTrack.h"
 #include "LayoutMenu.h"
 #include "LibraryCommandMenus.h"
+#include "PatcherCanvas.h"
 #include "XyPad.h"
 #include "MidiClip.h"
 #include "Mixer.h"
@@ -446,6 +447,9 @@ void populateChannel(QMenu* menu, const QString& channel)
 	add(rack, "Wire the Chain...", "patcher.set_wiring", {{QStringLiteral("target"), channel}}, true);
 	add(rack, "Wrap the Chain into a Rack Chain", "rack.wrap", self, false);  // L10 (MX-103)
 	add(rack, "Chain Wiring", "patcher.get_state", {{QStringLiteral("target"), channel}}, false, {}, true);
+	QAction* canvas = rack->addAction(tr("Chain Canvas..."));  // Q050-087: the chain as nodes and cables
+	canvas->setProperty("controlCommand", QStringLiteral("patcher.set_wiring"));
+	QObject::connect(canvas, &QAction::triggered, menu, [channel, menu] { showPatcherCanvas(channel, dialogOwner(menu->window())); });
 	QAction* pad = rack->addAction(tr("XY Pad..."));  // MX-110
 	pad->setProperty("controlCommand", QStringLiteral("rack.macro_set"));
 	QObject::connect(pad, &QAction::triggered, menu, [channel, menu] { (new XyPadDialog(channel, dialogOwner(menu->window())))->show(); });

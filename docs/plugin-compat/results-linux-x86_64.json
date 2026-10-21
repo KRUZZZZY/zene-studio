@@ -1,0 +1,455 @@
+{
+ "rows": [
+  {
+   "binary": "usr/lib/vst3/Nekobi.vst3",
+   "binary_sha256": "6ceb682a3b9b894d824627c3f09e8f3d9c9a2fc78e7d1c7e20fdeb1d85f3b20a",
+   "format": "vst3",
+   "host_modules": "vst3instrument",
+   "id": "vst3-dpf-nekobi",
+   "kind": "instrument",
+   "needs": [],
+   "package": "dpf-plugins-vst3",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/dpf-plugins-vst3-1.7-3.1-x86_64/usr/lib/vst3/Nekobi.vst3",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as inst (vst3instrument)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "0 of 4 changed parameters came back after save (96500 bytes), move, load; did not: Buffer Size (1 -> 0.03125), MIDI Ch. 1 CC 19 (1 -> 0), MIDI Ch. 1 CC 40 (1 -> 0), MIDI Ch. 1 CC 61 (1 -> 0)",
+     "outcome": "fail"
+    }
+   },
+   "title": "DPF Nekobi"
+  },
+  {
+   "binary": "usr/lib/vst3/Geonkick.vst3",
+   "binary_sha256": "9d47235214b093621ec680864c48ef4fdd5c92d960d5e540ee12b386bb260373",
+   "format": "vst3",
+   "host_modules": "vst3instrument",
+   "id": "vst3-geonkick",
+   "kind": "instrument",
+   "needs": [],
+   "package": "geonkick-vst3",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/geonkick-vst3-3.7.0-3.1-x86_64_v3/usr/lib/vst3/Geonkick.vst3",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as inst (vst3instrument)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "no parameter with a range to move; the 37201-byte state saved, loaded and saved again identically",
+     "outcome": "pass"
+    }
+   },
+   "title": "Geonkick"
+  },
+  {
+   "binary": "usr/lib/vst3/3BandEQ.vst3",
+   "binary_sha256": "c8cec45631bd0171bac3b6bbaa778c3a4116eed8bf72feb9d99d7c1680371060",
+   "format": "vst3",
+   "host_modules": "vst3effect",
+   "id": "vst3-dpf-3bandeq",
+   "kind": "effect",
+   "needs": [],
+   "package": "dpf-plugins-vst3",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/dpf-plugins-vst3-1.7-3.1-x86_64/usr/lib/vst3/3BandEQ.vst3",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (vst3effect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "0 of 4 changed parameters came back after save (1230 bytes), move, load; did not: Buffer Size (1 -> 0), Low (0 -> 0.5), High (0 -> 0.5), Mid-High Freq (1 -> 0.05263157933950424)",
+     "outcome": "fail"
+    }
+   },
+   "title": "DPF 3 Band EQ"
+  },
+  {
+   "binary": "usr/lib/vst3/DragonflyRoomReverb.vst3",
+   "binary_sha256": "5b04641b442dc0e6d20e9d20dc1bd49d88046f87abeda94d1358f2eb00a1ce66",
+   "format": "vst3",
+   "host_modules": "vst3effect",
+   "id": "vst3-dragonfly-room",
+   "kind": "effect",
+   "needs": [
+    "freeverb3"
+   ],
+   "package": "dragonfly-reverb-vst3",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/dragonfly-reverb-vst3-3.2.10-5.1-x86_64_v3/usr/lib/vst3/DragonflyRoomReverb.vst3",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (vst3effect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "0 of 4 changed parameters came back after save (2043 bytes), move, load; did not: Buffer Size (1 -> 0), Size (1 -> 0.1666666716337204), Wander (1 -> 0.4000000059604645), Low Cut (1 -> 0.019999999552965164)",
+     "outcome": "fail"
+    }
+   },
+   "title": "Dragonfly Room Reverb"
+  },
+  {
+   "binary": "usr/lib/clap/Nekobi.clap",
+   "binary_sha256": "599aff968ce4a31d5803f15469d109dc708b40b0a0d56e30dc423410dc9c8cc9",
+   "format": "clap",
+   "host_modules": "clapinstrument",
+   "id": "clap-dpf-nekobi",
+   "kind": "instrument",
+   "needs": [],
+   "package": "dpf-plugins-clap",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/dpf-plugins-clap-1.7-3.1-x86_64/usr/lib/clap/Nekobi.clap",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as inst (clapinstrument)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "4 of 4 changed parameters came back after save (3616 bytes), move, load",
+     "outcome": "pass"
+    }
+   },
+   "title": "DPF Nekobi"
+  },
+  {
+   "binary": "usr/lib/clap/lsp-plugins.clap",
+   "binary_sha256": "e54fcc770485f3a2e38c014a6c0503984f2233fe3ac893e6dffd8f0d77bfc9d0",
+   "format": "clap",
+   "host_modules": "clapeffect",
+   "id": "clap-lsp-compressor",
+   "kind": "effect",
+   "needs": [],
+   "package": "lsp-plugins-clap",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/lsp-plugins-clap-1.2.35-1.1-x86_64_v3/usr/lib/clap/lsp-plugins.clap",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (clapeffect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "0 of 4 changed parameters came back after save (1550 bytes), move, load; did not: Show pre-mix overlay (1 -> 0), Sidechain listen (1 -> 0), Knee (-23.999412536621094 -> -6.000125408172607), Output level visibility Right (0 -> 1)",
+     "outcome": "fail"
+    }
+   },
+   "title": "LSP Compressor Stereo"
+  },
+  {
+   "binary": "usr/lib/clap/ProM.clap",
+   "binary_sha256": "7c7d83665f9968f7ca2fd66dd4c8ad8670ee66236e80539b9e62a749c9c6e3c4",
+   "format": "clap",
+   "host_modules": "clapeffect",
+   "id": "clap-dpf-prom",
+   "kind": "effect",
+   "needs": [],
+   "package": "dpf-plugins-clap",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/dpf-plugins-clap-1.7-3.1-x86_64/usr/lib/clap/ProM.clap/ProM.clap",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (clapeffect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "no parameter with a range to move; the 832-byte state saved, loaded and saved again identically",
+     "outcome": "pass"
+    }
+   },
+   "title": "DPF ProM"
+  },
+  {
+   "binary": "usr/lib/clap/DragonflyRoomReverb.clap",
+   "binary_sha256": "fc9772586124154c6443cf28c02a4bafef7c8eb244c761fdd7edabea8d03de30",
+   "format": "clap",
+   "host_modules": "clapeffect",
+   "id": "clap-dragonfly-room",
+   "kind": "effect",
+   "needs": [
+    "freeverb3"
+   ],
+   "package": "dragonfly-reverb-clap",
+   "steps": {
+    "editor": {
+     "detail": "opened, drew for one second, closed",
+     "outcome": "pass"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file /tmp/zene-matrix/root/dragonfly-reverb-clap-3.2.10-5.1-x86_64_v3/usr/lib/clap/DragonflyRoomReverb.clap",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (clapeffect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "0 of 4 changed parameters came back after save (1351 bytes), move, load; did not: Dry Level (0 -> 80), Width (50 -> 100), High Cut (1000 -> 16000), Low Cut (200 -> 4)",
+     "outcome": "fail"
+    }
+   },
+   "title": "Dragonfly Room Reverb"
+  },
+  {
+   "binary": "usr/lib/lv2/calf.lv2",
+   "binary_sha256": "f5f7aeef426fb4e9adcda7187b9bdc9fa74e3b82600c4cc19a02ba664f273cac",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-calf-reverb",
+   "kind": "effect",
+   "needs": [],
+   "package": "calf",
+   "steps": {
+    "editor": {
+     "detail": "trk-3/fx-4 (LV2): this plug-in has no editor of its own",
+     "outcome": "unsupported"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file http://calf.sourceforge.net/plugins/Reverb",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (lv2effect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "4 of 4 changed parameters came back after save (983 bytes), move, load",
+     "outcome": "pass"
+    }
+   },
+   "title": "Calf Reverb"
+  },
+  {
+   "binary": "usr/lib/lv2/lsp-plugins.lv2",
+   "binary_sha256": "ad135a705cb6eb044ba891d949c472b02bd264140f826c952d2bab896e5282c9",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-lsp-compressor",
+   "kind": "effect",
+   "needs": [],
+   "package": "lsp-plugins-lv2",
+   "steps": {
+    "editor": {
+     "detail": "trk-3/fx-4 (LV2): this plug-in has no editor of its own",
+     "outcome": "unsupported"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file http://lsp-plug.in/plugins/lv2/compressor_stereo",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (lv2effect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "4 of 4 changed parameters came back after save (2607 bytes), move, load",
+     "outcome": "pass"
+    }
+   },
+   "title": "LSP Compressor Stereo"
+  },
+  {
+   "binary": "usr/lib/lv2/mda.lv2",
+   "binary_sha256": "ec2e3811012cf23eeed96f966dbc101124135d84307b9825c4bd00efca24c703",
+   "format": "lv2",
+   "host_modules": "lv2instrument",
+   "id": "lv2-mda-piano",
+   "kind": "instrument",
+   "needs": [],
+   "package": "mda.lv2",
+   "steps": {
+    "editor": {
+     "detail": "trk-3/inst (LV2): this plug-in has no editor of its own",
+     "outcome": "unsupported"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file http://drobilla.net/plugins/mda/Piano",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as inst (lv2instrument)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "4 of 4 changed parameters came back after save (3365 bytes), move, load",
+     "outcome": "pass"
+    }
+   },
+   "title": "mda Piano"
+  },
+  {
+   "binary": "usr/lib/lv2/mda.lv2",
+   "binary_sha256": "ed4d8e89615dcb633ddf87dfb8797236d356a29312d9b822ff2a3c6afe33ed1c",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-mda-ambience",
+   "kind": "effect",
+   "needs": [],
+   "package": "mda.lv2",
+   "steps": {
+    "editor": {
+     "detail": "trk-3/fx-4 (LV2): this plug-in has no editor of its own",
+     "outcome": "unsupported"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file http://drobilla.net/plugins/mda/Ambience",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (lv2effect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "4 of 4 changed parameters came back after save (683 bytes), move, load",
+     "outcome": "pass"
+    }
+   },
+   "title": "mda Ambience"
+  },
+  {
+   "binary": "usr/lib/lv2/Nekobi.lv2",
+   "binary_sha256": "b2c28a6578273ae06798ae3b59db4e9434af9269e0b9a54198c2b652cd806a91",
+   "format": "lv2",
+   "host_modules": "lv2instrument",
+   "id": "lv2-dpf-nekobi",
+   "kind": "instrument",
+   "needs": [],
+   "package": "dpf-plugins-lv2",
+   "steps": {
+    "editor": {
+     "detail": "trk-3/inst (LV2): this plug-in has no editor of its own",
+     "outcome": "unsupported"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file http://distrho.sf.net/plugins/Nekobi",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as inst (lv2instrument)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "4 of 4 changed parameters came back after save (3209 bytes), move, load",
+     "outcome": "pass"
+    }
+   },
+   "title": "DPF Nekobi"
+  },
+  {
+   "binary": "usr/lib/lv2/geonkick.lv2",
+   "binary_sha256": "87e647c897c257d2cb618e5bf866acb55c24520c5e068a157e9b44fd4729e7b0",
+   "format": "lv2",
+   "host_modules": "lv2instrument",
+   "id": "lv2-geonkick",
+   "kind": "instrument",
+   "needs": [],
+   "package": "geonkick-lv2",
+   "steps": {
+    "editor": {
+     "detail": "trk-3/inst (LV2): this plug-in has no editor of its own",
+     "outcome": "unsupported"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file http://geonkick.org/geonkick",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as inst (lv2instrument)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "no parameter with a range to move; the 38189-byte state saved, loaded and saved again identically",
+     "outcome": "pass"
+    }
+   },
+   "title": "Geonkick"
+  },
+  {
+   "binary": "usr/lib/lv2/DragonflyRoomReverb.lv2",
+   "binary_sha256": "f040486a4b6f0f6d98d99d6956c3dbf219dcd6dbf8114b6bc8b9094b9219038a",
+   "format": "lv2",
+   "host_modules": "lv2effect",
+   "id": "lv2-dragonfly-room",
+   "kind": "effect",
+   "needs": [
+    "freeverb3"
+   ],
+   "package": "dragonfly-reverb-lv2",
+   "steps": {
+    "editor": {
+     "detail": "trk-3/fx-4 (LV2): this plug-in has no editor of its own",
+     "outcome": "unsupported"
+    },
+    "listed": {
+     "detail": "dev id differs per run; file urn:dragonfly:room",
+     "outcome": "pass"
+    },
+    "load": {
+     "detail": "plugin.load put it on a track as fx-10 (lv2effect)",
+     "outcome": "pass"
+    },
+    "state": {
+     "detail": "4 of 4 changed parameters came back after save (1050 bytes), move, load",
+     "outcome": "pass"
+    }
+   },
+   "title": "Dragonfly Room Reverb"
+  }
+ ],
+ "run": {
+  "date_utc": "2026-10-21T01:52:50Z",
+  "display": "Xvfb :97 1280x800x24 (virtual X server, software rendering)",
+  "kernel": "7.2.9-2-cachyos",
+  "machine": "x86_64",
+  "os": "CachyOS",
+  "zene_binary_sha256": "c9707547aca12267afebc4d79a6bfe05c04115c2282f02ffa751bbcd49f8f72f",
+  "zene_version": "0.4.0-alpha.3576+57b4d47"
+ },
+ "schema": 1
+}

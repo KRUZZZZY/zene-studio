@@ -1350,6 +1350,7 @@ QString FileItem::defaultFilters()
 	const auto presetFilters = QStringList{"*.xpf", "*.xml", "*.xiz", "*.lv2"};
 	const auto soundFontFilters = QStringList{"*.sf2", "*.sf3"};
 	const auto patchFilters = QStringList{"*.pat"};
+	const auto sfzFilters = QStringList{"*.sfz"};
 	const auto midiFilters = QStringList{"*.mid", "*.midi", "*.rmi"};
 	
 	auto vstPluginFilters = QStringList{"*.dll"};
@@ -1363,7 +1364,7 @@ QString FileItem::defaultFilters()
 	audioFilters.append("*.mp3");
 #endif
 
-	const auto extensions = projectFilters + presetFilters + soundFontFilters + patchFilters + midiFilters
+	const auto extensions = projectFilters + presetFilters + soundFontFilters + sfzFilters + patchFilters + midiFilters
 		+ vstPluginFilters + audioFilters;
 
 	return extensions.join(" ");
