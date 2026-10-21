@@ -260,9 +260,8 @@ void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float v
 }
 
 
-//! The control thread's half of the deferred automation write (cluster 5388).
-//! The render thread queued the writes it wanted in the clips it wrote to;
-//! here they are applied, in the order they were queued.
+//! Drops the queued writes of every clip: they belong to a project that is
+//! being replaced and must not reach the project that replaces it.
 void Song::discardPendingAutomationWrites()
 {
 	ProjectJournal* const journal = Engine::projectJournal();
@@ -277,6 +276,9 @@ void Song::discardPendingAutomationWrites()
 
 
 
+//! The control thread's half of the deferred automation write (cluster 5388).
+//! The render thread queued the writes it wanted in the clips it wrote to;
+//! here they are applied, in the order they were queued.
 void Song::applyPendingAutomationWrites()
 {
 	// Nothing queued: the drain has no work and does not touch the engine.
