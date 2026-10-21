@@ -107,3 +107,24 @@ Changed: `docs/KNOWN-LIMITATIONS.md`, `docs/050-features/Q050-171.md`,
 - Undo steps, realtime, projects and portability: unchanged from the section above; this round
   touched only a QtTest file and Markdown, using `QtTest`, `QApplication`, `QMenu` and existing
   headers only (no Qt-6-only API, no `std::filesystem`).
+
+## Round-4 rework (automatic proof check)
+
+The loop reverted the non-test hunks (here only the `include/CommandLists.h` comment; the rest
+is Markdown) and `VcaStripViewTest` / `VcaGroupTest` still passed, because no test read the
+changed text. Added `VcaStripViewTest::theLimitationNoteAndHeaderMatchTheInterface`, which reads
+`docs/KNOWN-LIMITATIONS.md` and `include/CommandLists.h` from the source tree and checks them
+against the real `CommandLists::vcaGroups()` spec (every row action and the New Group... extra
+named in the note; the stale no-interface sentence only after "The pre-M3.7 record"; the
+current description before the history; the surfaces, the "two recorded undo steps" wording and
+the limits present; the header comment naming the edit set and the phase lock). `VcaGroupTest`
+is an existing engine test this docs unit does not change; it has no hunk to prove.
+
+| Check | Command | Exit |
+|---|---|---|
+| New test fails with the base `include/CommandLists.h` | `git show 2da2ed356:include/CommandLists.h > include/CommandLists.h`, rebuild (`build-mut1.log`), `ctest -R VcaStripViewTest` (`ctest-mut1.log`) | 8 |
+| New test fails with the base `docs/KNOWN-LIMITATIONS.md` | same with the note (`ctest-mut2.log`) | 8 |
+| Both files restored with `git checkout HEAD --`; `ctest -R VcaStripViewTest` | `ctest-1.log` | 0 |
+| VCA selection (7 tests) | `ctest -R "VcaGroupTest\|ControlVcaCommandsTest\|ControlVcaEditGroupsTest\|ControlVcaLockedEditsTest\|VcaStripLifetimeTest\|VcaStripViewTest\|ControlVcaCommands"` (`ctest-2.log`) | 0 |
+| Gates by hand (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures) | `Q050-171.r4/logs/gate-*.log` | 0 |
+| complexity, file-length | red on the train on purpose; no REGRESSION line names `VcaStripViewTest.cpp` | 1 |

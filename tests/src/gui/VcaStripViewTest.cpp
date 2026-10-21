@@ -35,8 +35,11 @@
 #include <QAction>
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QCoreApplication>
+#include <QFile>
 #include <QMenu>
 #include <QPointer>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTimer>
 
@@ -313,6 +316,55 @@ private slots:
 		mixer->clearVcaGroups();
 	}
 
+	// Q050-171: the limitation note and the Groups list's header comment must keep matching the
+	// interface they describe. Every row action and extra the real ListSpec carries is named in the
+	// note, so a menu line added or renamed without the note fails here; the pre-M3.7 "no
+	// interface" sentence may appear only after the heading that dates it as history.
+	void theLimitationNoteAndHeaderMatchTheInterface()
+	{
+		const QString raw = readSource(QStringLiteral("docs/KNOWN-LIMITATIONS.md"));
+		const QString note = QString(raw).replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));  // wrapped lines read as one
+		const QString header = readSource(QStringLiteral("include/CommandLists.h"));
+		QVERIFY2(!raw.isEmpty(), "docs/KNOWN-LIMITATIONS.md is not reachable from the build directory");
+		QVERIFY2(!header.isEmpty(), "include/CommandLists.h is not reachable from the build directory");
+
+		const qsizetype history = note.indexOf(QStringLiteral("The pre-M3.7 record"));
+		QVERIFY2(history >= 0, "the note does not label the pre-M3.7 claim as history");
+		const qsizetype stale = note.indexOf(QStringLiteral("nothing in the interface created a group"));
+		QVERIFY2(stale > history, "the stale no-interface claim is not confined to the historical record");
+		QVERIFY2(!note.contains(QStringLiteral("nothing in the interface creates a group")),
+			"the note still states the no-interface claim in the present tense");
+		const qsizetype current = note.indexOf(QStringLiteral("A VCA group's mix half and its main edit-half gestures are in the interface"));
+		QVERIFY2(current >= 0 && current < history, "the current interface description does not come before the history");
+
+		// The surfaces the note names, and the corrected undo wording.
+		for (const char* entry : {"**VCA group** submenu", "**New VCA group**", "**Project tools ▸ Groups...**",
+				"Colour a Group's Channels...", "**Move With Edit Group...**", "two recorded undo steps"})
+		{
+			QVERIFY2(note.contains(QString::fromUtf8(entry)), entry);
+		}
+		// Every action of the Groups list, by label, and its "New Group..." extra.
+		const ListSpec spec = CommandLists::vcaGroups();
+		for (const RowAction& action : spec.actions)
+		{
+			QVERIFY2(note.contains(action.label), qPrintable(QStringLiteral("the note never names the Groups action ") + action.label));
+		}
+		QVERIFY2(note.contains(spec.extras.at(0).label), "the note never names the Groups list's New Group...");
+		// The limits it keeps: socket-only phase-locked edits, the unshared membership form, the
+		// deleted track that stays in the set, and the edits the lock does not carry.
+		for (const char* limit : {"vca.edit_split", "also: true", "missing_tracks", "clip.delete"})
+		{
+			QVERIFY2(note.contains(QString::fromUtf8(limit)), limit);
+		}
+
+		// The header comment above vcaGroups() names the whole spec, not only rename/remove/create.
+		const qsizetype declaration = header.indexOf(QStringLiteral("ListSpec vcaGroups();"));
+		QVERIFY(declaration > 0);
+		const QString comment = header.left(declaration).right(300);
+		QVERIFY2(comment.contains(QStringLiteral("edit set")) && comment.contains(QStringLiteral("phase lock")),
+			"include/CommandLists.h's vcaGroups() comment leaves out the edit set and the phase lock");
+	}
+
 	void theStripsMenuChoosesLinksAndNestingThroughTheCommands()
 	{
 		Mixer* mixer = Engine::mixer();
@@ -400,6 +452,17 @@ private slots:
 	}
 
 private:
+	//! A file of the source tree (the test binary runs from <build>/tests), or empty when it is not reachable.
+	static QString readSource(const QString& relative)
+	{
+		for (const char* up : {"/../../", "/../../../"})
+		{
+			QFile file(QCoreApplication::applicationDirPath() + QString::fromLatin1(up) + relative);
+			if (file.open(QIODevice::ReadOnly | QIODevice::Text)) { return QString::fromUtf8(file.readAll()); }
+		}
+		return QString();
+	}
+
 	//! A sample track in the song.
 	static SampleTrack* newSampleTrack()
 	{
