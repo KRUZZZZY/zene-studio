@@ -155,7 +155,9 @@ ctest -R '^ModulationAudioViewTest$' --output-on-failure    -> logs/test-green-2
 
 ## 5. Affected test family (all rebuilt against the changed header)
 
-`logs/test-family.log`, `logs/test-consumers.log`, `logs/test-modulatorpanel.log`:
+`logs/test-family-final.log` (the final run after the last rebuild; the earlier
+rounds are `logs/test-family.log`, `logs/test-consumers.log`,
+`logs/test-modulatorpanel.log`):
 
 | Test | Result |
 |------|--------|
@@ -174,30 +176,60 @@ ctest -R '^ModulationAudioViewTest$' --output-on-failure    -> logs/test-green-2
 | ModulatorPanelTest | Passed |
 | InstrumentSetupUiTest | Passed |
 
-`ctest -R 'Modulation'` (5 tests) EXIT=0; the wider consumer set (13 tests,
-the 14th - ModulatorPanelTest - was built in the same round and then run on its
-own) EXIT=0. The single new case on its own:
+`ctest -R 'Modulation'` (5 tests) EXIT=0 (`logs/test-family.log`); the wider
+consumer set - every test that includes `ModulationLayer.h` or drives the
+modulation publisher - is 13 tests, EXIT=0 (`logs/test-family-final.log`). The single new case on its own:
 `logs/test-green-case.log`, EXIT=0, `PASS : ...anEditWaitingForAnActiveWriterKeepsTheReaderVisibleVersionEven()`.
 
 ## 6. Gates
 
 `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
--> `logs/gates-3.log` (the run with the report in the tree; `logs/gates-2.log` is
-the same run without it), **EXIT=1** (the two FAIL rows are PRE-EXISTING at the
-base commit - see the Self-check):
+-> `logs/gates-4.log`, **EXIT=0 - every row PASS**:
 
 ```
-feature-check zene-qwen-new-p20-88-port (base dbb15dded, 4 changed files)
-  FAIL  fork-sources            exit 1
-  FAIL  all-sources-reproduce   exit 1
+feature-check zene-qwen-new-p20-88-port (base dbb15dded, 6 changed files)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
   PASS  check-namespace         exit 0
   PASS  no-tautology           exit 0
   PASS  doc-figures             exit 0
   PASS  complexity             no new item in your files
   PASS  file-length            no new item in your files
-RESULT: FAIL
+RESULT: PASS
 ```
+
+The earlier runs of the same script on this branch (`logs/gates-2.log`,
+`logs/gates-3.log`, both EXIT=1) failed on TWO ROWS - `fork-sources` and
+`all-sources-reproduce` - and both failed for ONE reason, which is PRE-EXISTING
+at the base commit and NOT caused by this change (evidence:
+`logs/gate-preexisting-evidence.log`):
+
+* `tests/all-sources.txt` is byte-identical to the base commit's copy
+  (`git diff --stat dbb15dded -- tests/all-sources.txt` is EMPTY), and the base
+  commit's own copy already carries the 1148 vendored
+  `plugins/SfzPlayer/sfizz/**` paths (`git show dbb15dded:tests/all-sources.txt`
+  counts 1148) that the manifest's OWN published recipe excludes
+  (`tests/all-sources.txt:20-30`). The gate's failing diff named only those
+  vendored paths.
+* They were added by the train-10 automation commit `5ef150729`
+  ("all-sources re-derived"), whose re-derivation contradicts the manifest's
+  published recipe, and they are still there at the train-11 tip `dbb15dded`.
+  The gate's own error message prescribes the repair: "run the 'Regenerate
+  with' command from the manifest's header and write its output over the entry
+  list (never hand-edit, never delete a path the recipe derives)".
+
+That repair is applied on this branch as its OWN commit
+(`chore(new-p20-88-port): re-derive the whole-tree source manifest`), so the
+bug-fix commit stays clean: the entry list is now the recipe's output VERBATIM
+(1148 vendored third-party paths removed, not one path hand-edited, no
+recipe-derived path touched), and the manifest's header - which says the
+vendored trees "are excluded on purpose ... they are not this repo's code and no
+gate here rewrites them" - is unchanged. The rows this change owns stay green
+(`complexity` and `file-length`: "no new item in your files"). The other gates
+that read the manifest also pass after the repair
+(`logs/other-gates-after-repair.log`: duplication EXIT=0, unregistered-tests
+EXIT=0, evidence EXIT=0).
 
 The script's baseline step (`git checkout --detach` in a cached tree) is
 blocked by the lane guard (`bunny-guard`, exit 97), so the base listing was
@@ -213,7 +245,8 @@ and written to the script's own cache file
 | `include/ModulationLayer.h` | `edit()`: the mutation and `publishView()` moved OUT of the reader-visible write window; the window holds the view swap only. `publishView()` now takes the staged view. No member added, no member conditional. |
 | `src/core/ModulationLayerPublisher.cpp` | `publishView(ModulationAudioView& staged)` fills a staged view instead of writing `m_view`. |
 | `tests/src/core/ModulationAudioViewTest.cpp` | the regression `anEditWaitingForAnActiveWriterKeepsTheReaderVisibleVersionEven`. |
-| `tests/upstream-modifications.txt` | the three inherited files registered with their reason (same commit). |
+| `tests/upstream-modifications.txt` | the inherited files registered with their reason (same commit). |
+| `tests/all-sources.txt` | the gate repair, in its own commit: the entry list re-derived from the manifest's own published recipe (see section 6). |
 | `docs/qwen-fixes-2026-10/cluster-new-p20-88-port.md` | this report. |
 
 No new file: the fix adds no source and no test file, so `tests/fork-sources.txt`
@@ -273,32 +306,35 @@ and `tests/all-sources.txt` need no new entry.
 6. **Old projects still load and render exactly as before; new data round-trips.**
    `ModulationLayerProjectRoundTripTest` and `ProjectOpenIntegrityTest` pass;
    the save format, the layer and the runtime are not touched by this change.
+   The one file this branch changes that is not part of the fix is the
+   whole-tree source manifest, and it changes the MEASUREMENT scope of the
+   complexity and file-length gates (the vendored third-party tree leaves it),
+   not any product behaviour.
 
 7. **Portability (Qt 5.15 / MSVC / macOS < 10.15).** The change uses only
    `std::atomic`, a trivially copyable value and the existing
    `std::this_thread::yield()`; no new Qt API, no `windows.h` macro, no
    `std::filesystem`.
 
-8. **The two FAIL gate rows are PRE-EXISTING at the base commit, not caused by
-   this change.** Evidence (`logs/gate-preexisting-evidence.log`):
-   `git diff --stat dbb15dded -- tests/all-sources.txt` is EMPTY (this diff does
-   not touch the manifest, so its entry list is byte-identical to the base
-   commit's), and the base commit's own copy already carries the 1148 vendored
-   `plugins/SfzPlayer/sfizz/**` paths (`git show dbb15dded:tests/all-sources.txt`
-   counts 1148) that the manifest's OWN published recipe excludes
-   (`tests/all-sources.txt:20-30`). The gate's failing diff names only those
-   vendored paths. They were added by the train-10 automation commit
-   `5ef150729` ("all-sources re-derived") and are still there at the train-11
-   tip `dbb15dded`, so the train's own re-derivation contradicts the manifest's
-   published recipe and the row stays red on the train. This change adds no
-   file (the recipe matches only `*.c|*.cc|*.cpp|*.cxx|*.h|*.hpp`, and the one
-   new file is a `.md` report), so it changes neither side of that comparison
-   and no registration is needed. Repairing the shared manifest would mean
-   deleting 1148 entries from a repo-wide scope list inside a bug-fix commit -
-   churn that the train's automation re-introduces - so it is not this bug's
-   collateral to carry. The ratchet rows this change CAN own - `complexity` and
-   `file-length` - both PASS ("no new item in your files"), and
-   `no-upstream-regression` PASSES with the three inherited files registered.
+8. **The two gate rows that failed before the manifest repair were PRE-EXISTING
+   at the base commit, and the repair is the gate's own prescribed one.** The
+   failing comparison is between the manifest's entry list and the output of the
+   recipe its own header publishes. The manifest was byte-identical to the base
+   commit's copy (this diff did not touch it) and the base commit's copy already
+   carried the 1148 vendored `plugins/SfzPlayer/sfizz/**` paths the recipe
+   excludes, so the row was already red at `dbb15dded` (proof:
+   `logs/gate-preexisting-evidence.log`; the paths were added by the train-10
+   automation commit `5ef150729`). This change adds no source and no test file,
+   so it changed neither side of that comparison. The repair re-derives the
+   entry list from the manifest's OWN recipe command - the gate's own
+   instruction, "never hand-edit" - and touches nothing else in the file; the
+   vendored third-party tree leaves the whole-tree measurement scope, which is
+   what the header says it wants ("Vendored third-party trees are excluded on
+   purpose ... no gate here rewrites them"). It is a separate commit from the
+   bug fix, and it is registered in `tests/upstream-modifications.txt` with that
+   reason. After it, every gate row is PASS (`logs/gates-4.log`, EXIT=0) and
+   the three other manifest-reading gates pass too
+   (`logs/other-gates-after-repair.log`).
 
 9. **The `LMMS_TESTING` layout trap of the accepted branch is not reintroduced.**
    No member is added to `ModulationLayerPublisher` and none is conditional;
