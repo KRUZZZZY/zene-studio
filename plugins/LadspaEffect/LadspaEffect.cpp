@@ -31,6 +31,8 @@
 #include <QMessageBox>
 #include <QVarLengthArray>
 
+#include <thread>
+
 #include "LadspaEffect.h"
 #include "DataFile.h"
 #include "AudioEngine.h"
@@ -117,10 +119,19 @@ void LadspaEffect::changeSampleRate()
 	LadspaControls * controls = m_controls;
 	m_controls = nullptr;
 
-	m_pluginMutex.lock();
+	// The audio callback never waits on a lock. Announce the reconfiguration,
+	// then wait here (the GUI thread) until every in-flight process block has
+	// returned before the handles and port buffers are destroyed. A callback
+	// that starts after the announcement sees m_reconfiguring and processes no
+	// audio, so no block can observe a half re-instantiated plugin.
+	m_reconfiguring.store( true, std::memory_order_seq_cst );
+	while( m_processorsInFlight.load( std::memory_order_seq_cst ) != 0 )
+	{
+		std::this_thread::yield();
+	}
 	pluginDestruction();
 	pluginInstantiation();
-	m_pluginMutex.unlock();
+	m_reconfiguring.store( false, std::memory_order_seq_cst );
 
 	if( m_controls == nullptr )
 	{
@@ -250,7 +261,20 @@ ProcessStatus LadspaEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 auto LadspaEffect::processLock() -> bool
 {
-	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
+	// Realtime: no mutex and no wait. Claim an in-flight slot, then re-check
+	// the announcement so a reconfiguration that started between the first
+	// load and the claim still makes this block skip the plugin state.
+	if( m_reconfiguring.load( std::memory_order_seq_cst ) )
+	{
+		return false;
+	}
+	m_processorsInFlight.fetch_add( 1, std::memory_order_seq_cst );
+	if( m_reconfiguring.load( std::memory_order_seq_cst ) )
+	{
+		m_processorsInFlight.fetch_sub( 1, std::memory_order_seq_cst );
+		return false;
+	}
+	return true;
 }
 
 
@@ -258,7 +282,7 @@ auto LadspaEffect::processLock() -> bool
 
 void LadspaEffect::processUnlock()
 {
-	m_pluginMutex.unlock();
+	m_processorsInFlight.fetch_sub( 1, std::memory_order_seq_cst );
 }
 
 
@@ -280,8 +304,33 @@ void LadspaEffect::pluginInstantiation()
 {
 	Ladspa2LMMS * manager = Engine::getLADSPAManager();
 
-	// Calculate how many processing units are needed.
-	int effect_channels = manager->getDescription( m_key )->inputChannels;
+	// Calculate how many processing units are needed. A Source descriptor has
+	// no audio inputs, so it cannot be split across the effect's channels;
+	// reject it here, before the division, instead of loading it and later
+	// dividing by zero (a saved sub-plugin key can name one).
+	const LadspaManagerDescription * description = manager->getDescription( m_key );
+	if( description == nullptr )
+	{
+		setOkay( false );
+		return;
+	}
+	const int effect_channels = description->inputChannels;
+	if( effect_channels == 0 )
+	{
+		const QString reason = QStringLiteral( "LADSPA plugin %1 has no audio "
+				"inputs and cannot be used as an effect" ).arg( m_key.second );
+		if( lmms::isUnattendedRun() )
+		{
+			qWarning() << reason;
+		}
+		else
+		{
+			QMessageBox::warning( 0, "Effect", reason,
+				QMessageBox::Ok, QMessageBox::NoButton );
+		}
+		setOkay( false );
+		return;
+	}
 	m_processors = DEFAULT_CHANNELS / effect_channels;
 
 	// get inPlaceBroken property

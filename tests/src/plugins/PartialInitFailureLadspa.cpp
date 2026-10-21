@@ -70,6 +70,38 @@ const LADSPA_Descriptor s_descriptor = {
 	cleanup,
 };
 
+// A Source: one audio output and no audio input. Loading it under the effect
+// wrapper must be refused before DEFAULT_CHANNELS / inputChannels is computed.
+const LADSPA_PortDescriptor s_zeroInputPortDescriptors[] = {
+	LADSPA_PORT_OUTPUT | LADSPA_PORT_AUDIO,
+};
+
+const char* s_zeroInputPortNames[] = {"Output"};
+
+const LADSPA_PortRangeHint s_zeroInputPortHints[] = {{0, 0, 0}};
+
+const LADSPA_Descriptor s_zeroInputDescriptor = {
+	0x7f010002,
+	"zero_input_source",
+	LADSPA_PROPERTY_HARD_RT_CAPABLE,
+	"Zero-input source fixture",
+	"Zene Studio tests",
+	"None",
+	1,
+	s_zeroInputPortDescriptors,
+	s_zeroInputPortNames,
+	s_zeroInputPortHints,
+	nullptr,
+	instantiate,
+	connectPort,
+	nullptr,
+	run,
+	nullptr,
+	nullptr,
+	nullptr,
+	cleanup,
+};
+
 } // namespace
 
 #if defined(_MSC_VER)
@@ -100,5 +132,7 @@ extern "C" LADSPA_TEST_EXPORT unsigned long partial_init_failure_cleanups()
 
 extern "C" LADSPA_TEST_EXPORT const LADSPA_Descriptor* ladspa_descriptor(unsigned long index)
 {
-	return index == 0 ? &s_descriptor : nullptr;
+	if (index == 0) { return &s_descriptor; }
+	if (index == 1) { return &s_zeroInputDescriptor; }
+	return nullptr;
 }

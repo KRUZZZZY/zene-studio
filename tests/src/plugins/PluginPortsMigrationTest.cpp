@@ -249,7 +249,13 @@ void operator delete[](void* allocation, std::size_t) noexcept
 	array_allocation_probe::deallocation(allocation);
 	::operator delete(allocation);
 }
+// The audio-path lock regression drives the effect's own private processLock()/
+// processUnlock(). A non-recursive QMutex cannot be acquired twice by the same
+// thread, so a second successful claim is the deterministic evidence that the
+// audio path takes no exclusive mutex - no thread, sleep or clock is involved.
+#define private public
 #include "../../../plugins/LadspaEffect/LadspaEffect.h"
+#undef private
 #include "LmmsTypes.h"
 // Check ring bounds directly before the stale-bound path can reach undefined behavior.
 #define private public
@@ -902,6 +908,8 @@ private slots:
 	void positiveFractionHandlesVeryLargeNegativeValues();
 	void positiveFractionPreservesOrdinaryValues();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
+	void ladspaEffectProcessLockTakesNoExclusiveMutex();
+	void ladspaEffectRejectsZeroInputPlugin();
 	void typedDecodeRejectsIncompleteElement();
 	void basicFiltersCannotBeCopied();
 	void xpressiveSelectionRejectsUnavailableGraphs();
@@ -1590,6 +1598,83 @@ void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSam
 		QVERIFY(effect->controls() == nullptr);
 	}
 	QVERIFY(!effect->isOkay());
+}
+
+void PluginPortsMigrationTest::ladspaEffectProcessLockTakesNoExclusiveMutex()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		lib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	const auto& spec = partc::ladspaSpecs().front();
+	auto key = partc::ladspaKeyFor(descriptor, spec);
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QVERIFY(effect->isOkay());
+
+	// A QMutex is not recursive: if processLock() still owns one, this second
+	// claim from the same thread cannot succeed. The fixed process gate claims
+	// an in-flight slot instead, so both claims are admitted without a wait.
+	const bool first = effect->processLock();
+	const bool second = effect->processLock();
+	if (first) { effect->processUnlock(); }
+	if (second) { effect->processUnlock(); }
+	QVERIFY2(first, "the first process claim must be admitted");
+	QVERIFY2(second, "the audio path still takes an exclusive mutex: a second "
+		"claim from the same thread was refused");
+}
+
+void PluginPortsMigrationTest::ladspaEffectRejectsZeroInputPlugin()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	// partial_init_failure.so also exports a Source descriptor (no audio
+	// inputs). A project can name it under the LADSPA effect wrapper, where
+	// DEFAULT_CHANNELS / inputChannels used to divide by zero.
+	const QString fixturePath = QString::fromUtf8(PART_C_FAILURE_LADSPA_MODULE);
+	auto* fixtureLib = new QLibrary{fixturePath};
+	fixtureLib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(fixtureLib->load(), qPrintable(fixtureLib->errorString()));
+	m_libraries.push_back(fixtureLib);
+
+	auto* hostLib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	hostLib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(hostLib->load(), qPrintable(hostLib->errorString()));
+	m_libraries.push_back(hostLib);
+
+	auto entry = reinterpret_cast<MainFn>(hostLib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		hostLib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	lmms::Plugin::Descriptor::SubPluginFeatures::Key key{descriptor,
+		QStringLiteral("ladspaeffect:zero_input_source")};
+	key.attributes["file"] = QFileInfo{fixturePath}.fileName();
+	key.attributes["plugin"] = QStringLiteral("zero_input_source");
+
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QVERIFY2(!effect->isOkay(),
+		"a zero-input LADSPA source must be rejected as an effect");
+	QVERIFY(effect->controls() == nullptr);
 }
 
 void PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes()
