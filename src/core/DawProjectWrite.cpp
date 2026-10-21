@@ -55,7 +55,9 @@
 
 #include "DawProjectInterchange.h"
 #include "DawProjectWriteRefusal.h"
+#include "InstrumentMidiParts.h"
 #include "LmmsTypes.h"
+#include "Note.h"
 
 namespace lmms
 {
@@ -174,6 +176,24 @@ QString clipRefusal(const DawProjectClip& clip, const DawProjectTrack& track)
 			return unsupportedTime(QStringLiteral("note duration in the clip on track %1").arg(track.id), note.duration);
 		}
 		if (!endFitsTickRange(note.time, note.duration)) { return unsupportedTime(QStringLiteral("note end"), note.time + note.duration); }
+		if (note.channel < 0 || note.channel >= InstrumentMidiParts::Channels)
+		{
+			return QStringLiteral("the note channel %1 is outside the supported range 0..%2")
+				.arg(note.channel).arg(InstrumentMidiParts::Channels - 1);
+		}
+		if (note.key < 0 || note.key >= NumKeys)
+		{
+			return QStringLiteral("the note key %1 is outside the supported range 0..%2")
+				.arg(note.key).arg(NumKeys - 1);
+		}
+		if (!std::isfinite(note.vel) || note.vel < 0.0 || note.vel > 1.0)
+		{
+			return QStringLiteral("the note vel %1 is outside the supported range 0..1").arg(note.vel);
+		}
+		if (!std::isfinite(note.rel) || note.rel < 0.0 || note.rel > 1.0)
+		{
+			return QStringLiteral("the note rel %1 is outside the supported range 0..1").arg(note.rel);
+		}
 	}
 	return QString();
 }
@@ -226,12 +246,41 @@ QString timesRefusal(const DawProjectModel& model)
 	return clipTimesRefusal(model);
 }
 
+//! Mixer strips and track strips carry scalar parameters the reader bounds to
+//! the same ranges the format declares; refuse anything outside them (or
+//! non-finite) before it is serialized into invalid XML.
+QString scalarFieldsRefusal(const DawProjectModel& model)
+{
+	for (const DawProjectMixerChannel& channel : model.mixerChannels)
+	{
+		if (!std::isfinite(channel.volume) || channel.volume < 0.0 || channel.volume > 2.0)
+		{
+			return QStringLiteral("the mixer channel volume %1 is outside the supported range 0..2")
+				.arg(channel.volume);
+		}
+	}
+	for (const DawProjectTrack& track : model.tracks)
+	{
+		if (track.hasVolume && (!std::isfinite(track.volume) || track.volume < 0.0 || track.volume > 2.0))
+		{
+			return QStringLiteral("the track volume %1 is outside the supported range 0..2")
+				.arg(track.volume);
+		}
+		if (track.hasPan && (!std::isfinite(track.pan) || track.pan < 0.0 || track.pan > 1.0))
+		{
+			return QStringLiteral("the track pan %1 is outside the supported range 0..1")
+				.arg(track.pan);
+		}
+	}
+	return QString();
+}
+
 //! Everything the model holds that this engine cannot read back, as one refusal
 //! in the order the header lists them.
 QString modelRefusal(const DawProjectModel& model)
 {
 	for (const QString& refusal : {tempoRefusal(model), meterRefusal(model),
-		identityRefusal(model), timesRefusal(model)})
+		identityRefusal(model), timesRefusal(model), scalarFieldsRefusal(model)})
 	{
 		if (!refusal.isEmpty()) { return refusal; }
 	}
@@ -579,23 +628,25 @@ bool writeDawProject(const QString& path, const DawProjectModel& model,
 
 	// The report's file identity is the FILE: `bytes` and `sha256` are
 	// documented as describing the written .dawproject, so both are taken from
-	// the bytes on disk - the ZIP, not the project.xml entry inside it.
-	QFile written(path);
-	QByteArray container;
-	if (!written.open(QIODevice::ReadOnly))
-	{
-		if (error)
-		{
-			*error = QStringLiteral("the container was written but cannot be read back: %1")
-				.arg(written.errorString());
-		}
-		return false;
-	}
-	container = written.readAll();
-	written.close();
-	const qint64 bytes = container.size();
+	// the bytes on disk - the ZIP, not the project.xml entry inside it. The
+	// read-back and hash exist only to fill those report fields, so they are
+	// skipped entirely when no report is requested.
 	if (report != nullptr)
 	{
+		QFile written(path);
+		QByteArray container;
+		if (!written.open(QIODevice::ReadOnly))
+		{
+			if (error)
+			{
+				*error = QStringLiteral("the container was written but cannot be read back: %1")
+					.arg(written.errorString());
+			}
+			return false;
+		}
+		container = written.readAll();
+		written.close();
+		const qint64 bytes = container.size();
 		report->path = path;
 		report->bytes = bytes;
 		report->sha256 = dawProjectSha256(container);
