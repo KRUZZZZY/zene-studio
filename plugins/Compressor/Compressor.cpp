@@ -577,10 +577,13 @@ ProcessStatus CompressorEffect::processImpl(InterleavedBufferView<float, 2> inOu
 		++f;
 	}
 
-	m_compressorControls.m_outPeakL = lOutPeak;
-	m_compressorControls.m_outPeakR = rOutPeak;
-	m_compressorControls.m_inPeakL = lInPeak;
-	m_compressorControls.m_inPeakR = rInPeak;
+	// cluster new-p9-122: publish the peaks to the GUI's EqFader as relaxed
+	// atomic stores - the old plain assignments raced with the fader's
+	// read-and-clear on the timer (the Eq/Delay sibling defect).
+	m_compressorControls.m_outPeakL.store(lOutPeak, std::memory_order_relaxed);
+	m_compressorControls.m_outPeakR.store(rOutPeak, std::memory_order_relaxed);
+	m_compressorControls.m_inPeakL.store(lInPeak, std::memory_order_relaxed);
+	m_compressorControls.m_inPeakR.store(rInPeak, std::memory_order_relaxed);
 	m_deepestGain.store(deepest, std::memory_order_relaxed);
 
 	return ProcessStatus::ContinueIfNotQuiet;

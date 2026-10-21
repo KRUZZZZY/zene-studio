@@ -25,6 +25,8 @@
 #ifndef COMPRESSOR_CONTROLS_H
 #define COMPRESSOR_CONTROLS_H
 
+#include <atomic>
+
 #include "CompressorControlDialog.h"
 
 #include "EffectControls.h"
@@ -93,10 +95,13 @@ private:
 	IntModel m_stereoLinkModel;
 	FloatModel m_mixModel;
 
-	float m_inPeakL;
-	float m_inPeakR;
-	float m_outPeakL;
-	float m_outPeakR;
+	// cluster new-p9-122: peak meters written on the audio thread
+	// (CompressorEffect::processImpl) and read+cleared by the shared EqFader
+	// on the GUI timer - the sibling of the Eq/Delay handoff defect.
+	std::atomic<float> m_inPeakL;
+	std::atomic<float> m_inPeakR;
+	std::atomic<float> m_outPeakL;
+	std::atomic<float> m_outPeakR;
 
 	friend class gui::CompressorControlDialog;
 	friend class CompressorEffect;
@@ -105,5 +110,10 @@ private:
 
 
 } // namespace lmms
+
+// The peak meters cross the audio/GUI thread boundary (cluster new-p9-122);
+// a non-lock-free atomic would put a lock or syscall on the render thread.
+static_assert(std::atomic<float>::is_always_lock_free,
+	"CompressorControls peak meters are written on the audio thread and must be lock-free");
 
 #endif

@@ -4772,3 +4772,19 @@ tests/src/core/RemotePluginAudioPortsTest.cpp	cluster new-p14-251: adds complete
 include/RemotePluginBase.h	cluster new-p14-251 (API): the bounded path exposes message::argumentView() for the audio-thread handlers, while the existing message::stringArgument() keeps its const std::string& return type so other callers are untouched.
 src/core/RemotePlugin.cpp	cluster new-p14-251 (API): the debug handler copies argumentView(0) into the fixed pending slot; the owning stringArgument() contract is unchanged for every other handler.
 include/RemotePluginBase.h	cluster new-p14-250 follow-up: the owning socket readString() (main-thread whole-message wait for settings/presets/VST chunks) keeps its unbounded size contract; only the socket started-frame parser and the FIFO readString() reject a length that cannot fit before allocating.
+
+# cluster new-p9-122 (2026-10-21): the peak-meter float handoff shared by the Eq, Delay
+# and Compressor dialogs - EqFader read and cleared plain floats on the GUI timer while
+# the audio thread wrote them. Fields are lock-free std::atomic<float>, the audio side
+# publishes with relaxed stores (Eq in/out: a CAS raise), the widget exchanges to zero.
+# Regression: tests/src/plugins/EqPeakHandoffTest.cpp.
+plugins/Eq/EqFader.h	cluster new-p9-122: takes std::atomic<float>* peak pointers and reads+clears with one exchange(0) on the GUI timer
+plugins/Eq/EqControls.h	cluster new-p9-122 (new-p15-58): the 14 peak-meter fields are lock-free std::atomic<float>
+plugins/Eq/EqEffect.cpp	cluster new-p9-122 (new-p17-52): raisePeak CAS on the in/out peaks, relaxed stores on the band peaks
+plugins/Eq/EqControlsDialog.h	cluster new-p9-122: setBand takes the controls atomic peak pointers for the per-band EqFaders
+plugins/Eq/EqControlsDialog.cpp	cluster new-p9-122: passes the atomic peak pointers through setBand and the in/out EqFaders
+plugins/Eq/EqParameterWidget.h	cluster new-p9-122: EqBand peakL/peakR point at the controls atomic peak meters
+plugins/Delay/DelayControls.h	cluster new-p9-122 (new-p16-57): m_outPeakL/R are lock-free std::atomic<float>
+plugins/Delay/DelayEffect.cpp	cluster new-p9-122 (new-p16-57): relaxed atomic stores to the peak meters shared with EqFader
+plugins/Compressor/CompressorControls.h	cluster new-p9-122: the four peak-meter fields are lock-free std::atomic<float> (Eq/Delay sibling)
+plugins/Compressor/Compressor.cpp	cluster new-p9-122: relaxed atomic stores to the peak meters shared with EqFader (Eq/Delay sibling)

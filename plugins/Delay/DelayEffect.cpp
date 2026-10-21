@@ -21,8 +21,10 @@
  * Boston, MA 02110-1301 USA.
  *
  */
-
 #include "DelayEffect.h"
+
+#include <atomic>
+
 #include "Engine.h"
 #include "embed.h"
 #include "Lfo.h"
@@ -142,8 +144,11 @@ ProcessStatus DelayEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		feedbackPtr += feedbackInc;
 	}
 
-	m_delayControls.m_outPeakL = peak.left();
-	m_delayControls.m_outPeakR = peak.right();
+	// cluster new-p9-122 (new-p16-57): publish the block peaks to the GUI's
+	// EqFader as relaxed atomic stores - the old plain assignments raced with
+	// the fader's read-and-clear on the timer.
+	m_delayControls.m_outPeakL.store(peak.left(), std::memory_order_relaxed);
+	m_delayControls.m_outPeakR.store(peak.right(), std::memory_order_relaxed);
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }
