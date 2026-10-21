@@ -68,6 +68,14 @@ audioio::Destination readDestination(const QDomElement& element, const QString& 
 	return audioio::parseDestination(element.attribute(name), routes, &out, nullptr) ? out : audioio::Destination{};
 }
 
+//! A saved 0/1 flag. A malformed value ("abc") does not convert, so it keeps @a fallback rather than reading as 0.
+bool savedFlag(const QDomElement& element, const QString& name, bool fallback)
+{
+	bool valid = false;
+	const int value = element.attribute(name).toInt(&valid);
+	return valid ? value != 0 : fallback;
+}
+
 void saveCueSends(QDomDocument& doc, QDomElement& element, const ChannelHardwareIo& io)
 {
 	for (int k = 0; k < hardwareio::MaxCues; ++k)
@@ -97,7 +105,7 @@ void loadCueSends(const QDomElement& element, ChannelHardwareIo& io)
 		send.level = std::isfinite(sendLevel) ? std::clamp(sendLevel, 0.f, 2.f) : 0.f;
 		const float sendPan = cue.attribute(QStringLiteral("pan")).toFloat();
 		send.pan = std::isfinite(sendPan) ? std::clamp(sendPan, -1.f, 1.f) : 0.f;
-		send.preFader = cue.attribute(QStringLiteral("prefader"), QStringLiteral("1")).toInt() != 0;
+		send.preFader = savedFlag(cue, QStringLiteral("prefader"), true);
 	}
 }
 
@@ -293,7 +301,7 @@ void loadMixer(const QDomElement& mixerElement)
 		const float cueLevel = element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat();
 		cue.level = std::isfinite(cueLevel) ? std::clamp(cueLevel, 0.f, 2.f) : 1.f;  // non-finite: the cuemix's default
 		cue.output = readDestination(element, QStringLiteral("output"));
-		cue.followListen = element.attribute(QStringLiteral("listen"), QStringLiteral("1")).toInt() != 0;
+		cue.followListen = savedFlag(element, QStringLiteral("listen"), true);
 	}
 	s_listenToCue = mixerElement.firstChildElement(QStringLiteral("cuelisten")).attribute(QStringLiteral("target")) == QStringLiteral("cue");
 }
