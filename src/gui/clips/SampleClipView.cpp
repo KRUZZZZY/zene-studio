@@ -207,7 +207,11 @@ const std::vector<int>& SampleClipView::transientTicks()
 	// The analysis - the slow part - runs once per audio and window, not once per paint. The placement (the
 	// clip's rate, tempo and warp map) only re-maps its frames to ticks: a marker edit moves every transient
 	// after it (review L17 #6), and a tempo change no longer analyses the audio again (UX ux06 #31).
-	const SampleWindow window = m_clip->sampleWindow();
+	// The analysed range is the clip's AUDIBLE window: a reversed clip sounds the MIRROR of its window
+	// (Sample::render reverses the whole buffer), so the play direction is part of what was analysed. A
+	// reversal therefore has to analyse the mirror again - the placement key below only re-maps the frames
+	// the cache has, and those are the frames of the range the clip played BEFORE the reversal.
+	const SampleWindow window = m_clip->audibleWindow();
 	const QString audio = QStringLiteral("%1:%2:%3").arg(reinterpret_cast<quintptr>(m_clip->sample().data()))
 		.arg(window.sourceIn).arg(window.sourceOut);
 	if (audio != m_transientAudioKey)
@@ -514,6 +518,12 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 void SampleClipView::reverseSample()
 {
 	m_clip->m_sample.setReversed(!m_clip->m_sample.reversed());
+	// The direction decides WHICH audio the clip plays, so the analysed range moves with it: the
+	// analysis cache is dropped and the next paint analyses the new audible window (the mirror of
+	// the window for a reversed clip). Without this the overlay kept the transients of the range
+	// the clip played before the reversal, and only re-mapped them.
+	m_transientAudioKey.clear();
+	m_transientKey.clear();
 	m_clip->setStartTimeOffset(m_clip->length() - m_clip->startTimeOffset() - m_clip->sampleLength());
 	Engine::getSong()->setModified();
 	update();

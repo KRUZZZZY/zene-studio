@@ -49,6 +49,7 @@
 #include <QToolBar>
 #include <QWheelEvent>
 
+#include "../core/AudioBurstSupport.h"
 #include "ArrangementEdits.h"
 #include "ArrangerEditPreview.h"
 #include "ArrangerLandmarks.h"
@@ -77,6 +78,11 @@
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectMarkers.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
+#include "SampleClipView.h"
+#include "SampleFrame.h"
+#include "SampleTrack.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "TimeLineWidget.h"
@@ -895,6 +901,62 @@ private slots:
 		const ControlResult result = run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 2147483648LL}});
 		QVERIFY(result.ok);
 		QCOMPARE(scrollbar->value(), scrollbar->maximum());
+	}
+
+	/*! ED-150: the transient overlay of a sample clip shows the transients of the audio the clip
+	 *  PLAYS. A reversed clip sounds the MIRROR of its window (Sample::render reverses the whole
+	 *  buffer), so the overlay's analysed range moves with the direction - and the overlay's cache
+	 *  (analysed once per audio and per range) has to move with it: the placement alone only
+	 *  re-maps the frames the cache has, and those are the frames of the range the clip played
+	 *  BEFORE the reversal.
+	 *
+	 *  A trimmed clip makes the difference visible: its window covers the first half of the
+	 *  source, so before the reversal the overlay shows the two bursts of that half and after it
+	 *  the two bursts of the other half, heard backwards. */
+	void aReversedTrimmedClipDrawsTheTransientsOfTheAudioItPlays()
+	{
+		constexpr int BurstTicks[] = {10, 58, 106, 154};
+		const auto data = test::burstAudio(200, {BurstTicks[0], BurstTicks[1], BurstTicks[2], BurstTicks[3]});
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+		// the window covers the first half of the source only
+		const auto framesPerTick = static_cast<f_cnt_t>(Engine::framesPerTick(rate));
+		clip->setSamplePlayLength(100 * framesPerTick);
+		QCoreApplication::processEvents();
+
+		SampleClipView* view = nullptr;
+		for (SampleClipView* candidate : m_editor->findChildren<SampleClipView*>())
+		{
+			if (candidate->getClip() == clip) { view = candidate; }
+		}
+		QVERIFY2(view != nullptr, "no clip view for the sample clip");
+
+		// the overlay analyses the range the clip plays: the window, the first half
+		const std::vector<int> forward = view->transientTicks();
+		QCOMPARE(forward.size(), std::size_t{2});
+		QVERIFY2(std::abs(forward[0] - BurstTicks[0]) <= 2, qPrintable(QStringLiteral("the first transient sits at %1").arg(forward[0])));
+		QVERIFY2(std::abs(forward[1] - BurstTicks[1]) <= 2, qPrintable(QStringLiteral("the second transient sits at %1").arg(forward[1])));
+
+		// the user's own reverse: the clip now plays the MIRROR of its window
+		view->reverseSample();
+		QCoreApplication::processEvents();
+		QVERIFY(clip->sample().reversed());
+
+		// ... so the overlay has to show the transients of the second half, heard backwards: the
+		// burst at 154 ticks is played at 199 - 154, the one at 106 ticks at 199 - 106. The ticks
+		// come in the order the frames were found (the overlay draws one mark per tick, so the
+		// order does not matter - the set does).
+		const std::vector<int> reversed = view->transientTicks();
+		QCOMPARE(reversed.size(), std::size_t{2});
+		const int expected[] = {199 - BurstTicks[3], 199 - BurstTicks[2]};
+		const bool first = std::abs(reversed[0] - expected[0]) <= 2 && std::abs(reversed[1] - expected[1]) <= 2;
+		const bool swapped = std::abs(reversed[0] - expected[1]) <= 2 && std::abs(reversed[1] - expected[0]) <= 2;
+		QVERIFY2(first || swapped, qPrintable(QStringLiteral("the transients sit at %1 and %2, expected %3 and %4")
+			.arg(reversed[0]).arg(reversed[1]).arg(expected[0]).arg(expected[1])));
 	}
 
 private:

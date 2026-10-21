@@ -191,9 +191,11 @@ private slots:
 
 	/*! A trimmed reversed clip sounds the MIRROR of its window, so its
 	 *  transients are the ones of the audio it plays - not the ones of the
-	 *  region the window names, which it never plays. The bursts sit in the
-	 *  second half of the source and the window covers the first half, so a
-	 *  detector that looked at the window found nothing at all. */
+	 *  region the window names, which it never plays. The fixture's bursts sit
+	 *  in BOTH halves and the window covers the first one, so a detector that
+	 *  looked at the window found the two bursts of the half the clip does not
+	 *  play - and their ticks collapse onto the play window's edge, so the
+	 *  quantise kept one of them instead of the two the clip actually plays. */
 	void aTrimmedReversedClipQuantisesTheAudioItPlays()
 	{
 		SampleClip* clip = test::sampleClipOf(clicks(true));
