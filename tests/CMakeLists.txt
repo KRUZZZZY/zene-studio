@@ -1279,6 +1279,7 @@ endif()
 # cluster new-p14-269/271: the Ogg Vorbis decoder's channel handling and the release of its
 # decoder state on every exit (the read-error path included).
 list(APPEND LMMS_TESTS src/core/SampleDecoderOggChannelTest.cpp)
+list(APPEND LMMS_TESTS src/core/SampleDecoderOggStateTest.cpp)
 
 # Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
