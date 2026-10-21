@@ -401,6 +401,14 @@ public:
 	//! The "this point is not in the period" answer of mpeStreamPointOffset().
 	static constexpr f_cnt_t kNoMpeStreamOffset = static_cast<f_cnt_t>( -1 );
 
+#ifdef LMMS_TESTING
+	/*! Test seam: while \a counter is non-null, every stream point the scheduler
+	 *  examines increments it. Null in product use, so the audio path is
+	 *  unchanged there; MpePlaybackTest uses it to prove that a period does not
+	 *  walk the stream's history again. */
+	static void setMpeStreamPointScanCounterForTest( std::size_t* counter );
+#endif
+
 private:
 	//! Q050-016: send one streamed axis value to the instrument (pitch bend,
 	//! channel pressure or CC74) at \a offset frames into the period.

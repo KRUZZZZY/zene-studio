@@ -146,6 +146,20 @@ constexpr auto testHostCanLoadPluginModules() -> bool
 #endif
 }
 
+//! Installs the LMMS_TESTING stream-scan counter for one slot and always
+//! removes it, so a failed assertion cannot leave a dangling counter behind.
+struct MpeStreamScanCounterScope
+{
+	explicit MpeStreamScanCounterScope( std::size_t* counter )
+	{
+		NotePlayHandle::setMpeStreamPointScanCounterForTest( counter );
+	}
+	~MpeStreamScanCounterScope()
+	{
+		NotePlayHandle::setMpeStreamPointScanCounterForTest( nullptr );
+	}
+};
+
 } // namespace
 
 class MpePlaybackTest : public QObject
@@ -512,6 +526,75 @@ private slots:
 			qPrintable( QStringLiteral( "the streamed block is %1x the plain one; the three "
 				"scheduled axes ask for %2x" ).arg( level / plainLevel, 0, 'f', 4 )
 					.arg( wanted, 0, 'f', 4 ) ) );
+	}
+
+	//! new-p20-84 (realtime): a period seeks to the stream points that are in
+	//! its window instead of walking every earlier point again. The counter the
+	//! LMMS_TESTING seam increments is deterministic work, not time: a history
+	//! rescan counts the whole stream once per period, a seek counts each point
+	//! once as the window passes it.
+	void aPeriodSeeksToTheWindowInsteadOfRescanningTheHistory()
+	{
+		Engine::getSong()->tempoModel().setValue( 999 );
+		Engine::updateFramesPerTick();
+		const float framesPerTick = Engine::framesPerTick();
+		QVERIFY2( framesPerTick > 0.f, "no frames per tick" );
+
+		// A full stream, one point per tick, so "the whole stream is history"
+		// is a real length rather than a handful of points.
+		std::vector<MpeExpressionPoint> points;
+		points.reserve( static_cast<std::size_t>( MpeExpressionStream::MaxPoints ) );
+		for( int i = 0; i < MpeExpressionStream::MaxPoints; ++i )
+		{
+			points.push_back( MpeExpressionPoint{ static_cast<tick_t>( i ), i % 127 } );
+		}
+
+		const f_cnt_t period = m_frames;
+		QVERIFY( period > 0 );
+		const tick_t historyTicks = static_cast<tick_t>( MpeExpressionStream::MaxPoints + 8 );
+		const int periodsToPassHistory = static_cast<int>(
+			std::ceil( static_cast<double>( historyTicks ) * framesPerTick / period ) );
+		QVERIFY( periodsToPassHistory > 0 );
+		// Extra periods after the stream is behind the play position: the old
+		// walk still scans every point on each of them.
+		const int periods = periodsToPassHistory + 40;
+		const f_cnt_t frames = static_cast<f_cnt_t>( periods + 4 ) * period;
+
+		Note note( TimePos::fromFrames( frames, framesPerTick ), TimePos( 0 ), kKey );
+		MpeExpressionStream stream;
+		stream.setPitch( points );
+		note.setMpeStream( stream );
+		QVERIFY( note.hasMpeStream() );
+
+		NotePlayHandle handle( m_track, 0, frames, note, nullptr, -1,
+			NotePlayHandle::Origin::MidiClip );
+
+		std::size_t examined = 0;
+		{
+			const MpeStreamScanCounterScope scope( &examined );
+			std::vector<SampleFrame> buffer( m_frames, SampleFrame( 0.f, 0.f ) );
+			for( int i = 0; i < periods; ++i )
+			{
+				handle.play( std::span<SampleFrame>( buffer ) );
+			}
+		}
+
+		// Each point belongs to exactly one half-open window, so a scheduler
+		// that seeks examines the set once; 2x leaves room for a boundary
+		// without ever allowing the per-period rescan.
+		const std::size_t budget =
+			2 * static_cast<std::size_t>( MpeExpressionStream::MaxPoints );
+		std::fprintf( stdout,
+			"MPE_EVIDENCE stream scan periods=%d points=%d examined=%llu budget=%llu\n",
+			periods, MpeExpressionStream::MaxPoints,
+			static_cast<unsigned long long>( examined ),
+			static_cast<unsigned long long>( budget ) );
+		std::fflush( stdout );
+		QVERIFY2( examined <= budget,
+			qPrintable( QStringLiteral( "the scheduler examined %1 stream points over %2 periods; "
+				"at most %3 expected - it is walking the stream's history again" )
+				.arg( static_cast<qulonglong>( examined ) ).arg( periods )
+				.arg( static_cast<qulonglong>( budget ) ) ) );
 	}
 
 	//! Q050-016 round 2 (realtime): acquiring a handle for a streamed note -
