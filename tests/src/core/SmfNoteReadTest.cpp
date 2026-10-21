@@ -26,6 +26,7 @@
  *  file because ClipImportFileTest (the import path the reader serves) is at the 500-line cap every test file
  *  is held to:
  *    - new-p14-314: closing the oldest open note of a pitch must not shuffle the notes queued behind it.
+ *    - new-p16-230: the end-of-track marker must be zero length and the last event of its track.
  */
 
 #include <QtTest>
@@ -114,6 +115,40 @@ private slots:
 		QVERIFY2(shifts <= 2LL * overlap, qPrintable(QStringLiteral(
 			"closing %1 overlapping notes of one pitch moved %2 queue elements; the linear bound is %3")
 			.arg(overlap).arg(shifts).arg(2LL * overlap)));
+	}
+
+	void anEndOfTrackEventMustBeZeroLengthAndTheLastEventOfItsTrack()
+	{
+		// A note behind the end-of-track marker (new-p16-230): the marker ends its track, so an event
+		// past it belongs to no track the file can claim to hold - such a file is refused whole, not
+		// silently read up to its marker.
+		QByteArray afterMarker;
+		afterMarker.append("\x00\x90\x3C\x40", 4);
+		afterMarker.append("\x10\x80\x3C\x00", 4);
+		afterMarker.append("\x00\xFF\x2F\x00", 4);  // end of track
+		afterMarker.append("\x00\x90\x3C\x50", 4);  // a note past the marker
+		const interchange::SmfNoteRead past = interchange::readSmfNotes(smf(afterMarker));
+		QVERIFY2(!past.ok, "a note lying past the end-of-track marker was read");
+		QVERIFY2(!past.error.isEmpty(), "the refusal of a note past the marker names no reason");
+
+		// The marker is a meta event like any other: its length must be zero, so a marker carrying a
+		// payload is malformed, not a marker.
+		QByteArray longMarker;
+		longMarker.append("\x00\x90\x3C\x40", 4);
+		longMarker.append("\x10\x80\x3C\x00", 4);
+		longMarker.append("\x00\xFF\x2F\x01\x00", 5);  // end of track with one payload byte
+		QVERIFY2(!interchange::readSmfNotes(smf(longMarker)).ok, "an end-of-track marker with a payload was read");
+
+		// A well-formed file is unaffected: one note, closed by its marker at the track's end.
+		QByteArray good;
+		good.append("\x00\x90\x3C\x40", 4);
+		good.append("\x30\x80\x3C\x00", 4);  // +48 file ticks
+		good.append("\x00\xFF\x2F\x00", 4);
+		const interchange::SmfNoteRead read = interchange::readSmfNotes(smf(good));
+		QVERIFY2(read.ok, qPrintable(read.error));
+		QCOMPARE(static_cast<int>(read.notes.size()), 1);
+		QCOMPARE(read.notes[0].start, 0LL);
+		QCOMPARE(read.notes[0].length, 24LL);  // 48 file ticks at division 96
 	}
 };
 
