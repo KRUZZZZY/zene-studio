@@ -94,18 +94,23 @@ inline QString addTrack(const QString& type = QStringLiteral("instrument"))
 	return added.ok ? added.result.value(QStringLiteral("track")).toString() : QString();
 }
 
-//! An instrument track with a real instrument on it (plugin.load), or empty
-//! when this build exposes none.
-inline QString addInstrumentTrack()
+//! An instrument track carrying \a device (a dev-<n> id), or empty when the
+//! load fails. The explicit device lets a test drive the two failure paths -
+//! no loadable device at all, and a device plugin.load refuses - without
+//! depending on what this build happens to ship.
+inline QString addInstrumentTrackFor(const QString& device)
 {
 	const QString track = addTrack();
 	if (track.isEmpty()) { return QString(); }
-	const QString device = firstLoadableInstrument();
 	if (device.isEmpty()) { return QString(); }
 	const ControlResult loaded = run(QStringLiteral("plugin.load"),
 		{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
 	return loaded.ok ? track : QString();
 }
+
+//! An instrument track with a real instrument on it (plugin.load), or empty
+//! when this build exposes none.
+inline QString addInstrumentTrack() { return addInstrumentTrackFor(firstLoadableInstrument()); }
 
 //! Every loadable device of \a kind, whatever host it came from (built-in,
 //! LADSPA, LV2): the point of these tests is a REAL device to drive.
