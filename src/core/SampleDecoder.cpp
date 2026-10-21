@@ -69,6 +69,52 @@ static constexpr std::array<Decoder, 3> decoders = {&decodeSampleSF,
 #endif
 	&decodeSampleDS};
 
+#ifdef LMMS_HAVE_OGGVORBIS
+//! The libvorbisfile file-close callback: it closes the QFile and counts the decoder states that
+//! were released (libvorbisfile calls this callback exactly once per released state, ov_clear).
+auto oggCloseCallback(void* stream) -> int
+{
+#ifdef LMMS_TESTING
+	s_oggCloseCallsForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
+	auto file = static_cast<QFile*>(stream);
+	file->close();
+	return 0;
+}
+
+//! The libvorbisfile callbacks both Ogg decoders use: the decoder reads, seeks, tells and closes
+//! the QFile through them.
+auto oggVorbisCallbacks() -> const ov_callbacks&
+{
+	static const auto s_callbacks = ov_callbacks{
+		[](void* buffer, size_t size, size_t count, void* stream) -> size_t {
+			return static_cast<QFile*>(stream)->read(static_cast<char*>(buffer), size * count);
+		},
+		[](void* stream, ogg_int64_t offset, int whence) -> int {
+			auto file = static_cast<QFile*>(stream);
+			if (whence == SEEK_SET) { file->seek(offset); }
+			else if (whence == SEEK_CUR) { file->seek(file->pos() + offset); }
+			else if (whence == SEEK_END) { file->seek(file->size() + offset); }
+			else { return -1; }
+			return 0;
+		},
+		&oggCloseCallback,
+		[](void* stream) -> long { return static_cast<QFile*>(stream)->pos(); }
+	};
+	return s_callbacks;
+}
+
+//! Reads from an Ogg Vorbis file. ov_read_float hands back PLANAR data: output[c][i] is channel
+//! c's i-th frame. The test seam makes the next read report an error, the way a corrupt file does.
+auto oggReadFloat(OggVorbis_File* file, float*** output, std::size_t length) -> long
+{
+#ifdef LMMS_TESTING
+	if (s_failNextOggReadForTesting.exchange(false)) { return -1; }
+#endif
+	return ov_read_float(file, output, length, nullptr);
+}
+#endif // LMMS_HAVE_OGGVORBIS
+
 auto decodeSampleSF(const QString& audioFile) -> std::optional<SampleDecoder::Result>
 {
 	SNDFILE* sndFile = nullptr;
@@ -138,37 +184,7 @@ auto decodeSampleDS(const QString& audioFile) -> std::optional<SampleDecoder::Re
 #ifdef LMMS_HAVE_OGGVORBIS
 auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDecoder::Result>
 {
-	static auto s_read = [](void* buffer, size_t size, size_t count, void* stream) -> size_t {
-		auto file = static_cast<QFile*>(stream);
-		return file->read(static_cast<char*>(buffer), size * count);
-	};
-
-	static auto s_seek = [](void* stream, ogg_int64_t offset, int whence) -> int {
-		auto file = static_cast<QFile*>(stream);
-		if (whence == SEEK_SET) { file->seek(offset); }
-		else if (whence == SEEK_CUR) { file->seek(file->pos() + offset); }
-		else if (whence == SEEK_END) { file->seek(file->size() + offset); }
-		else { return -1; }
-		return 0;
-	};
-
-	static auto s_close = [](void* stream) -> int {
-		auto file = static_cast<QFile*>(stream);
-#ifdef LMMS_TESTING
-		// libvorbisfile calls this callback exactly once per released decoder state (ov_clear),
-		// so the count is the number of decoder states that were released.
-		s_oggCloseCallsForTesting.fetch_add(1, std::memory_order_relaxed);
-#endif
-		file->close();
-		return 0;
-	};
-
-	static auto s_tell = [](void* stream) -> long {
-		auto file = static_cast<QFile*>(stream);
-		return file->pos();
-	};
-
-	static ov_callbacks s_callbacks = {s_read, s_seek, s_close, s_tell};
+	const auto& s_callbacks = oggVorbisCallbacks();
 
 	// TODO: Remove use of QFile
 	auto file = QFile{audioFile};
@@ -191,11 +207,7 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 	auto totalSamplesRead = 0;
 	while (true)
 	{
-		auto samplesRead = ov_read_float(&vorbisFile, &output, numSamples, 0);
-#ifdef LMMS_TESTING
-		// A read error is what a corrupt file produces; the seam drives that path deterministically.
-		if (s_failNextOggReadForTesting.exchange(false)) { samplesRead = -1; }
-#endif
+		auto samplesRead = oggReadFloat(&vorbisFile, &output, static_cast<std::size_t>(numSamples));
 
 		if (samplesRead < 0) { return std::nullopt; }
 		else if (samplesRead == 0) { break; }
@@ -258,23 +270,7 @@ auto boundedSF(const QString& audioFile, double maxSeconds) -> std::optional<Sam
 #ifdef LMMS_HAVE_OGGVORBIS
 auto boundedOggVorbis(const QString& audioFile, double maxSeconds) -> std::optional<SampleDecoder::BoundedResult>
 {
-	static auto s_read = [](void* buffer, size_t size, size_t count, void* stream) -> size_t {
-		return static_cast<QFile*>(stream)->read(static_cast<char*>(buffer), size * count);
-	};
-	static auto s_seek = [](void* stream, ogg_int64_t offset, int whence) -> int {
-		auto file = static_cast<QFile*>(stream);
-		if (whence == SEEK_SET) { file->seek(offset); }
-		else if (whence == SEEK_CUR) { file->seek(file->pos() + offset); }
-		else if (whence == SEEK_END) { file->seek(file->size() + offset); }
-		else { return -1; }
-		return 0;
-	};
-	static auto s_close = [](void* stream) -> int {
-		static_cast<QFile*>(stream)->close();
-		return 0;
-	};
-	static auto s_tell = [](void* stream) -> long { return static_cast<QFile*>(stream)->pos(); };
-	static ov_callbacks s_callbacks = {s_read, s_seek, s_close, s_tell};
+	const auto& s_callbacks = oggVorbisCallbacks();
 
 	auto file = QFile{audioFile};
 	if (!file.open(QIODevice::ReadOnly)) { return std::nullopt; }
@@ -306,7 +302,7 @@ auto boundedOggVorbis(const QString& audioFile, double maxSeconds) -> std::optio
 	{
 		float** output = nullptr;
 		const long want = static_cast<long>(std::min<std::int64_t>(wanted - static_cast<std::int64_t>(result.size()), 4096));
-		const long read = ov_read_float(&vorbisFile, &output, static_cast<int>(want), nullptr);
+		const long read = oggReadFloat(&vorbisFile, &output, static_cast<std::size_t>(want));
 		if (read < 0)
 		{
 			ov_clear(&vorbisFile);
