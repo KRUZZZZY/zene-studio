@@ -2122,6 +2122,46 @@ target_compile_definitions(ReverbSCInitTest PRIVATE
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_revsc_test_malloc>
 )
 
+# ReverbSC's DSP state lifetime: the effect's own sources are compiled into
+# this test, and the soundpipe C files are built with malloc/calloc/free
+# redirected to a shim in the test, so an allocation failure can be injected
+# into one allocation of a known size and every soundpipe free is counted.
+add_executable(ReverbSCPluginStateTest
+	src/plugins/ReverbSCPluginStateTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSC.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSC.h
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControls.h
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/ReverbSCControlDialog.h
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/revsc.c
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/dcblock.c
+)
+add_test(NAME ReverbSCPluginStateTest COMMAND ReverbSCPluginStateTest)
+target_include_directories(ReverbSCPluginStateTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC
+	${CMAKE_BINARY_DIR}/plugins/ReverbSC
+)
+target_static_libraries(ReverbSCPluginStateTest PRIVATE lmmsobjs)
+target_link_libraries(ReverbSCPluginStateTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(ReverbSCPluginStateTest PRIVATE cxx_std_20)
+target_compile_definitions(ReverbSCPluginStateTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=reverbsc
+	$<$<COMPILE_LANGUAGE:C>:malloc=sp_test_malloc>
+	$<$<COMPILE_LANGUAGE:C>:calloc=sp_test_calloc>
+	$<$<COMPILE_LANGUAGE:C>:free=sp_test_free>
+)
+set_target_properties(ReverbSCPluginStateTest PROPERTIES ENABLE_EXPORTS ON)
+set_tests_properties(ReverbSCPluginStateTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+)
+
 # Compile the real AudioFileProcessor waveform view into its regression test.
 # UBSan's float-cast-overflow check makes the old negative-double to f_cnt_t
 # conversion fail deterministically on platforms where that undefined cast
