@@ -212,6 +212,14 @@ public:
 	//! later than this is taken as the answer to the next query of its id (a client that hung for that long).
 	static constexpr std::chrono::seconds StaleQueryExpiry{2};
 
+	//! Tests only: a processing period waits up to \a budget for its client's reply instead of one audio period;
+	//! zero (the default) restores the real budget. For end-to-end tests about what the client says rather than
+	//! about the deadline: a client in another process cannot always answer within one period on a loaded machine.
+	static void setPeriodBudgetForTesting(std::chrono::microseconds budget);
+
+	//! Tests only: override a main-thread query's bounded wait; zero (the default) keeps QueryReplyTimeout.
+	static void setQueryReplyTimeoutForTesting(std::chrono::milliseconds timeout);
+
 	//! Waits up to \a _timeout for the reply to \a _wm, other messages read meanwhile going through processMessage().
 	//! The caller holds the communication lock. @return the reply, or an undefined message on timeout or loss.
 	message waitForReplyWithin( const message & _wm, std::chrono::milliseconds _timeout = QueryReplyTimeout );
@@ -345,6 +353,10 @@ private:
 	//! Frame of a MIDI event that could not be sent yet (see sendQueuedMidiEvents()).
 	std::array<char, 128> m_pendingMidi{};
 	std::size_t m_pendingMidiSize = 0;
+	//! MIDI frames (events and all-notes-off cuts) sent since the last IdStartProcessing; audio thread only. The cap
+	//! is per client period: a period that sent its MIDI but found no room for its request is skipped, and the next
+	//! one must not send another MidiDrainPerPeriod before that same request.
+	std::size_t m_midiSentSinceRequest = 0;
 	//! Channels whose events the full queue refused; each is sent all-notes-off once the queue has drained.
 	MidiChannelOverflow m_midiOverflow;
 	//! Refusals already reported on the main thread (main thread only).

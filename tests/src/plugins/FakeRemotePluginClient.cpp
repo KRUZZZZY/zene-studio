@@ -161,7 +161,8 @@ bool g_orderer = false;
 bool g_ordererCut = false;
 int g_ordererAfterCut = 0;
 
-//! "capper" mode: each period asks for 2 outputs plus one per 128 note-ons received in the period before it.
+//! "capper" mode: each period asks for 2 outputs, plus 1 if the period before it carried 1-128 note-ons and 2 if it
+//! carried more than 128 (the host's per-period cap broken).
 bool g_capper = false;
 int g_capperNoteOns = 0;
 int g_capperLastPeriod = 0;
@@ -453,7 +454,7 @@ auto handleMessage(const Message& message) -> bool
 		}
 		if (g_capper)
 		{
-			const int outputs = 2 + g_capperLastPeriod / 128;
+			const int outputs = 2 + (g_capperLastPeriod > 128 ? 2 : (g_capperLastPeriod > 0 ? 1 : 0));
 			g_capperLastPeriod = g_capperNoteOns;
 			g_capperNoteOns = 0;
 			if (!sendMessage(IdChangeInputOutputCount, {"0", std::to_string(outputs)})) { return false; }

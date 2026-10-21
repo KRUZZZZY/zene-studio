@@ -545,6 +545,11 @@ public:
 	//! so a short write only happens if that check was wrong, and then the stream is marked broken.
 	SendResult sendFrameNonBlocking( const char * _frame, std::size_t _size );
 
+	//! Tests only: a non-blocking send leaves at most \a bytes queued in the socket (as SIOCOUTQ counts them);
+	//! zero, the default, keeps the socket's own limit. Lets a test fill the send buffer on demand. Linux only:
+	//! elsewhere there is no queued-bytes count to compare against.
+	static void setSendRoomForTesting( std::size_t bytes );
+
 	//! Outcome of a receive on the audio thread.
 	enum class ReceiveResult
 	{
