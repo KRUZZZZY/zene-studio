@@ -151,12 +151,9 @@ void LinkAudioStream::process(SampleFrame* frames, f_cnt_t count, sample_rate_t 
 //! undefined behaviour (the size of the frame says nothing about the type of its bytes).
 void LinkAudioStream::sendFrames(SampleFrame* frames, f_cnt_t count) noexcept
 {
-	if (m_txFlushedEpoch.load(std::memory_order_acquire) < m_txRateEpoch)
-	{
-		// The sample rate changed: the I/O thread has not dropped the old-rate frames yet, and
-		// new frames must not be mixed with them.
-		return;
-	}
+	// The sample rate changed: the I/O thread has not dropped the old-rate frames yet, and new
+	// frames must not be mixed with them.
+	if (m_txFlushedEpoch.load(std::memory_order_acquire) < m_txRateEpoch) { return; }
 	std::size_t written = 0;
 	for (f_cnt_t done = 0; done < count;)
 	{
@@ -228,12 +225,9 @@ void LinkAudioStream::onRateChanged(std::uint32_t rate) noexcept
 {
 	const std::uint32_t old = m_rate.load(std::memory_order_relaxed);
 	m_rate.store(rate, std::memory_order_relaxed);
-	if (old != 0 && old != rate)
-	{
-		++m_txRateEpoch;                // a new epoch: the I/O thread drops the old-rate TX frames
-		m_rx.skip(m_rx.fill());         // the old-rate RX frames must not be played at the new rate
-		m_primed = false;               // the jitter buffer starts again, at the new rate
-	}
+	// A new epoch: the I/O thread drops the old-rate TX frames, the old-rate RX frames are
+	// dropped here (they must not be played at the new rate) and the jitter buffer starts again.
+	if (old != 0 && old != rate) { ++m_txRateEpoch; m_rx.skip(m_rx.fill()); m_primed = false; }
 	m_txStamp.store((m_txRateEpoch << 32) | rate, std::memory_order_release);
 }
 
@@ -258,10 +252,7 @@ std::uint32_t LinkAudioStream::txRateForNextFrames() noexcept
 void LinkAudioStream::insertGapSilence(std::size_t frames) noexcept
 {
 	const std::size_t silenced = m_rx.writeSilence(frames);
-	if (silenced < frames)
-	{
-		m_rxOverruns.fetch_add(frames - silenced, std::memory_order_relaxed);
-	}
+	if (silenced < frames) { m_rxOverruns.fetch_add(frames - silenced, std::memory_order_relaxed); }
 }
 
 void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float* samples)

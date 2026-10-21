@@ -1,7 +1,10 @@
 /*
- * LinkAudioStreamTestSupport.h - the Link-active scenario of LinkAudioStreamTest (Q050-024):
- *                                two Link peers stepped through tempo, start and stop, plus the
- *                                multicast-membership and ordering checks. Header-only, test use.
+ * LinkAudioStreamTestSupport.h - the shared helpers of LinkAudioStreamTest (Q050-024): the
+ *                                Link-active scenario (two Link peers stepped through tempo,
+ *                                start and stop, plus the multicast-membership and ordering
+ *                                checks) and the loopback helpers the stream's own regressions
+ *                                use (send a packet, wait for a counted packet, check the rate
+ *                                in the packets a peer received). Header-only, test use.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -27,14 +30,20 @@
 #ifndef LMMS_TEST_LINK_AUDIO_STREAM_TEST_SUPPORT_H
 #define LMMS_TEST_LINK_AUDIO_STREAM_TEST_SUPPORT_H
 
+#include <QElapsedTimer>
+#include <QHostAddress>
 #include <QString>
+#include <QUdpSocket>
+#include <QtTest>
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "AbletonLinkSession.h"
@@ -68,6 +77,78 @@ AudioStreamConfig senderTo(int port)
 	c.peerAddress = "127.0.0.1";
 	c.peerPort = port;
 	return c;
+}
+
+//! One packet of the stream, sent to \a port over a real loopback socket: \a frames, all of
+//! them \a value, stamped with \a sequence and \a rate.
+bool sendAudioPacket(QUdpSocket& socket, quint16 port, std::uint32_t sequence, std::uint32_t rate,
+	std::uint16_t frames, float value)
+{
+	AudioPacketHeader header;
+	header.sequence = sequence;
+	header.sampleRate = rate;
+	header.frames = frames;
+	std::vector<float> samples(static_cast<std::size_t>(frames) * AudioChannels, value);
+	std::vector<std::uint8_t> wire(AudioMaxPacketBytes);
+	const std::size_t bytes = encodeAudioPacket(header, samples.data(), wire.data(), wire.size());
+	if (bytes == 0) { return false; }
+	return socket.writeDatagram(reinterpret_cast<const char*>(wire.data()), bytes, QHostAddress::LocalHost, port)
+		== static_cast<qint64>(bytes);
+}
+
+//! Wait until \a stream has counted \a count packets: the wait is bounded and it waits for a
+//! counter, not for a moment in time.
+bool waitForPackets(const LinkAudioStream& stream, std::uint64_t count, int timeoutMs)
+{
+	QElapsedTimer clock;
+	clock.start();
+	while (stream.report().packetsReceived < count && clock.elapsed() < timeoutMs) { QTest::qWait(1); }
+	return stream.report().packetsReceived >= count;
+}
+
+//! The rate a packet may carry and the value the frames of that rate hold.
+using RateValues = std::vector<std::pair<std::uint32_t, float>>;
+
+//! What the peer received: how many packets, how many of them carried frames of a rate that
+//! was not the rate in their own header, and whether a packet of the new rate arrived.
+struct PeerRateCheck
+{
+	int packets = 0;
+	int mismatched = 0;
+	bool sawNewRate = false;
+};
+
+//! The value the frames of \a rate must have, or -1 for a rate that may not come.
+float expectedValue(const RateValues& values, std::uint32_t rate)
+{
+	for (const auto& value : values) { if (value.first == rate) { return value.second; } }
+	return -1.f;
+}
+
+//! Read the datagrams waiting at \a peer and check each of them: the samples in a packet must
+//! be the frames of the rate in its own header. A packet of the new rate carrying old-rate
+//! samples is a mismatch - the peer would play them at the wrong speed.
+void drainPeerPackets(QUdpSocket& peer, PeerRateCheck& check, const RateValues& values, std::uint32_t newRate)
+{
+	while (peer.hasPendingDatagrams())
+	{
+		QByteArray datagram;
+		datagram.resize(static_cast<int>(peer.pendingDatagramSize()));
+		const qint64 read = peer.readDatagram(datagram.data(), datagram.size());
+		if (read <= 0) { continue; }
+		AudioPacketHeader header;
+		std::vector<float> samples(AudioMaxPacketFrames * AudioChannels, 0.f);
+		if (!decodeAudioPacket(reinterpret_cast<const std::uint8_t*>(datagram.constData()),
+				static_cast<std::size_t>(read), header, samples.data(), samples.size()))
+		{
+			continue;
+		}
+		++check.packets;
+		const float expected = expectedValue(values, header.sampleRate);
+		if (expected < 0.f) { ++check.mismatched; continue; }
+		for (float v : samples) { if (v != expected) { ++check.mismatched; break; } }
+		if (header.sampleRate == newRate) { check.sawNewRate = true; }
+	}
 }
 
 //! A period whose left channel counts frames from \a first (exact in float up to 2^24) and right is its negative.

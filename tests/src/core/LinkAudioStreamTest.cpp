@@ -387,43 +387,24 @@ private slots:
 		QCOMPARE(rx.report().packetsReceived, std::uint64_t{0});
 
 		QUdpSocket sender;
-		std::vector<float> payload(AudioMaxPacketFrames * AudioChannels, 0.25f);
-		std::vector<std::uint8_t> wire(AudioMaxPacketBytes);
-		const auto send = [&](std::uint32_t sequence) {
-			AudioPacketHeader h;
-			h.sequence = sequence;
-			h.sampleRate = Rate;
-			h.frames = static_cast<std::uint16_t>(AudioMaxPacketFrames);
-			const std::size_t bytes = encodeAudioPacket(h, payload.data(), wire.data(), wire.size());
-			if (bytes == 0) { return false; }
-			return sender.writeDatagram(reinterpret_cast<const char*>(wire.data()), bytes,
-				QHostAddress::LocalHost, port) == static_cast<qint64>(bytes);
-		};
-		const auto waitFor = [&](std::uint64_t packets) {
-			QElapsedTimer clock;
-			clock.start();
-			while (rx.report().packetsReceived < packets && clock.elapsed() < 5000) { QTest::qWait(1); }
-			return rx.report().packetsReceived >= packets;
-		};
-
 		// Fill the ring exactly: the first packet, then 56 packets that each skip 8 sequences
 		// (8 * 128 frames of silence plus 128 frames of payload), then one that skips 7 - its
 		// silence takes exactly the rest of the ring and its payload does not fit at all.
-		QVERIFY(send(0));
-		QVERIFY(waitFor(1));
+		QVERIFY(sendAudioPacket(sender, port, 0, Rate, AudioMaxPacketFrames, 0.25f));
+		QVERIFY(waitForPackets(rx, 1, 5000));
 		for (std::uint32_t k = 1; k <= 56; ++k)
 		{
-			QVERIFY(send(9 * k));
-			QVERIFY(waitFor(k + 1));
+			QVERIFY(sendAudioPacket(sender, port, 9 * k, Rate, AudioMaxPacketFrames, 0.25f));
+			QVERIFY(waitForPackets(rx, k + 1, 5000));
 		}
-		QVERIFY(send(512));
-		QVERIFY(waitFor(58));
+		QVERIFY(sendAudioPacket(sender, port, 512, Rate, AudioMaxPacketFrames, 0.25f));
+		QVERIFY(waitForPackets(rx, 58, 5000));
 		const std::uint64_t beforeGap = rx.report().rxOverruns;
 		QCOMPARE(beforeGap, std::uint64_t{128});   // only the payload that did not fit
 
 		// The next packet skips 8 sequences: not one of the 1024 silence frames fits either.
-		QVERIFY(send(521));
-		QVERIFY(waitFor(59));
+		QVERIFY(sendAudioPacket(sender, port, 521, Rate, AudioMaxPacketFrames, 0.25f));
+		QVERIFY(waitForPackets(rx, 59, 5000));
 		QCOMPARE(rx.report().rxOverruns - beforeGap, std::uint64_t{1024 + 128});
 	}
 
@@ -459,23 +440,11 @@ private slots:
 
 		// The peer sends 8 packets (1024 frames) at 48 kHz: they are queued for playback.
 		QUdpSocket sender;
-		std::vector<float> payload(AudioMaxPacketFrames * AudioChannels, 0.5f);
-		std::vector<std::uint8_t> wire(AudioMaxPacketBytes);
 		for (std::uint32_t sequence = 0; sequence < 8; ++sequence)
 		{
-			AudioPacketHeader h;
-			h.sequence = sequence;
-			h.sampleRate = Rate;
-			h.frames = static_cast<std::uint16_t>(AudioMaxPacketFrames);
-			const std::size_t bytes = encodeAudioPacket(h, payload.data(), wire.data(), wire.size());
-			QVERIFY(bytes > 0);
-			QVERIFY(sender.writeDatagram(reinterpret_cast<const char*>(wire.data()), bytes,
-				QHostAddress::LocalHost, port) > 0);
+			QVERIFY(sendAudioPacket(sender, port, sequence, Rate, AudioMaxPacketFrames, 0.5f));
 		}
-		QElapsedTimer clock;
-		clock.start();
-		while (rx.report().packetsReceived < 8 && clock.elapsed() < 5000) { QTest::qWait(1); }
-		QCOMPARE(rx.report().packetsReceived, std::uint64_t{8});
+		QVERIFY(waitForPackets(rx, 8, 5000));
 
 		// The device changes to 44.1 kHz: the queued 48 kHz frames must not be played.
 		std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
@@ -507,47 +476,20 @@ private slots:
 		std::vector<SampleFrame> newFrames(1024, SampleFrame(1.5f, 1.5f));
 		tx.process(newFrames.data(), static_cast<f_cnt_t>(newFrames.size()), 44100);
 
-		int packets = 0;
-		int mismatched = 0;
-		bool sawNewRate = false;
-		const auto drain = [&] {
-			while (peer.hasPendingDatagrams())
-			{
-				QByteArray datagram;
-				datagram.resize(static_cast<int>(peer.pendingDatagramSize()));
-				const qint64 read = peer.readDatagram(datagram.data(), datagram.size());
-				if (read <= 0) { continue; }
-				AudioPacketHeader header;
-				std::vector<float> samples(AudioMaxPacketFrames * AudioChannels, 0.f);
-				if (!decodeAudioPacket(reinterpret_cast<const std::uint8_t*>(datagram.constData()),
-						static_cast<std::size_t>(read), header, samples.data(), samples.size()))
-				{
-					continue;
-				}
-				++packets;
-				const float expected = header.sampleRate == 48000 ? 0.5f
-					: (header.sampleRate == 44100 ? 1.5f : -1.f);
-				if (expected < 0.f) { ++mismatched; continue; }
-				for (float v : samples)
-				{
-					if (v != expected) { ++mismatched; break; }
-				}
-				if (header.sampleRate == 44100) { sawNewRate = true; }
-			}
-		};
-
+		const RateValues values{{48000, 0.5f}, {44100, 1.5f}};
+		PeerRateCheck check;
 		QElapsedTimer clock;
 		clock.start();
-		while (!sawNewRate && clock.elapsed() < 5000)
+		while (!check.sawNewRate && clock.elapsed() < 5000)
 		{
 			tx.process(newFrames.data(), static_cast<f_cnt_t>(newFrames.size()), 44100);
-			drain();
+			drainPeerPackets(peer, check, values, 44100);
 			QTest::qWait(1);
 		}
-		drain();
-		QVERIFY2(packets > 0, "the peer received nothing");
-		QVERIFY2(sawNewRate, "the stream did not come back at the new rate");
-		QCOMPARE(mismatched, 0);
+		drainPeerPackets(peer, check, values, 44100);
+		QVERIFY2(check.packets > 0, "the peer received nothing");
+		QVERIFY2(check.sawNewRate, "the stream did not come back at the new rate");
+		QCOMPARE(check.mismatched, 0);
 	}
 
 	/*! Criterion 1, with Link ACTIVE: two in-process Ableton Link participants whose discovery is
