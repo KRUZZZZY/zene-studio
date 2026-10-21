@@ -24,21 +24,21 @@ committed on its own.
 
 - Affected test family: `ctest -R 'ExprSynth'` → **2 tests run, 2 passed**
   (`ExprSynthTest` = 5 test functions, `ExprSynthAllocationTest` = 3 test functions),
-  `TEST_EXIT=0` (`$LOGS/test-family-final.log`). The CTest names were renamed to
+  `TEST_EXIT=0` (`$LOGS/test-final-r3.log`). The CTest names were renamed to
   `ExprSynthTest` and `ExprSynthAllocationTest` (they now match their source file
   names, and the CMake target names) so that a harness which rebuilds "the test whose
   source changed" really rebuilds them: with the old names (`ExprSynth` /
   `ExprSynthAllocation`) the negative control rebuilt only the `zene` target, ran the
   stale test binaries and saw them pass with the product change reverted.
 - Gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` →
-  **GATE_EXIT=0**, every row PASS (`$LOGS/gate-feature-check.log`). The two ratchets
+  **GATE_EXIT=0**, every row PASS (`$LOGS/gate-feature-check-r2.log`). The two ratchets
   that are red on the train (`bash tests/complexity-gate.sh --check` →
   COMPLEXITY_EXIT=1, `bash tests/file-length-gate.sh --check` → FILELENGTH_EXIT=1)
   list only pre-existing items of other files; no item of this change is among them
   (`$LOGS/gate-complexity.log`, `$LOGS/gate-file-length.log`).
-- Build: `cmake --build build --target ExprSynth ExprSynthAllocationTest xpressive
-  zene` → BUILD_EXIT=0 (the plugin and the application build with the changed
-  headers).
+- Build: `cmake --build build --target ExprSynthTest ExprSynthAllocationTest
+  xpressive zene` → BUILD_EXIT=0 (`$LOGS/build-final-r3.log`): the plugin and the
+  application build with the changed headers.
 
 ## new-p15-63 — Cyclic wave allocation leaks if vector growth fails
 
