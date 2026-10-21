@@ -272,6 +272,19 @@ void GranularPitchShifterRealtimeTest::retiredBuffersAreReclaimedWithoutAnotherU
 
 	QTimer* reclaimTimer = effect->findChild<QTimer*>(
 		QStringLiteral("granularRetiredBufferReclaimTimer"));
+	if (reclaimTimer == nullptr)
+	{
+		// Earlier code used an unnamed zero-interval timer.  Find it only to report
+		// the real defect (a spinning control timer), never to let the test pass.
+		for (QTimer* candidate : effect->findChildren<QTimer*>())
+		{
+			if (candidate->isActive() && candidate->interval() == 0)
+			{
+				reclaimTimer = candidate;
+				break;
+			}
+		}
+	}
 	QVERIFY2(reclaimTimer != nullptr,
 		"no control-thread timer is scheduled to reclaim a retired ring buffer");
 	QVERIFY2(reclaimTimer->isActive(), "the retired-buffer reclamation timer is not running");
