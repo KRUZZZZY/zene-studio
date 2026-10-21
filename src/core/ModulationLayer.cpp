@@ -123,11 +123,38 @@ bool floatAttribute(const QDomElement& element, const QString& name, float fallb
 	return true;
 }
 
+//! @a name as a boolean, or false when it is present and is not "0" or "1" - the
+//! only two values the writer produces. toInt() != 0 read "bad" as false.
+bool boolAttribute(const QDomElement& element, const QString& name, bool fallback, bool* out)
+{
+	if (!hasAttribute(element, name)) { *out = fallback; return true; }
+	bool ok = false;
+	const int value = element.attribute(name).toInt(&ok);
+	if (!ok || (value != 0 && value != 1)) { return false; }
+	*out = value == 1;
+	return true;
+}
+
 //! The source's phase, checked. False when it is present and is not a number: a
 //! phase that read as 0 is a legal phase nobody authored.
 bool readSourcePhase(const QDomElement& element, ModulatorSource* source)
 {
 	return floatAttribute(element, QStringLiteral("phase"), 0.f, &source->phase);
+}
+
+//! The source's flags, checked. False when any present one is not "0" or "1": a
+//! flag that read as off is a modulator that silently drives nothing.
+bool readSourceFlags(const QDomElement& element, ModulatorSource* source)
+{
+	return boolAttribute(element, QStringLiteral("unipolar"), false, &source->unipolar)
+		&& boolAttribute(element, QStringLiteral("active"), true, &source->active)
+		&& boolAttribute(element, QStringLiteral("pervoice"), false, &source->perVoice);
+}
+
+//! The route's per-sample flag, checked. False when it is present and is not "0" or "1".
+bool readRouteFlags(const QDomElement& element, ModulationRoute* route)
+{
+	return boolAttribute(element, QStringLiteral("persample"), false, &route->perSample);
 }
 
 ModulatorSource readSource(const QDomElement& element)
@@ -136,14 +163,11 @@ ModulatorSource readSource(const QDomElement& element)
 	modulationShapeFromName(element.attribute(QStringLiteral("shape"), QStringLiteral("sine")),
 		&source.shape);
 	source.rateHz = static_cast<float>(element.attribute(QStringLiteral("rate")).toDouble());
-	source.unipolar = element.attribute(QStringLiteral("unipolar"), QStringLiteral("0")).toInt() != 0;
-	source.active = element.attribute(QStringLiteral("active"), QStringLiteral("1")).toInt() != 0;
 	const QStringList values = element.attribute(QStringLiteral("steps")).split(QLatin1Char(','), Qt::SkipEmptyParts);
 	source.stepCount = static_cast<int>(std::min<qsizetype>(values.size(), ModulatorSource::MaxSteps));
 	for (int i = 0; i < source.stepCount; ++i) { source.steps[static_cast<std::size_t>(i)] = boundedValue(values[i], -1.f, 0.f); }
 	source.attack = boundedValue(element.attribute(QStringLiteral("attack"), QStringLiteral("0.1")), 0.f, 0.1f);
 	source.triggerTrack = std::max(-1, element.attribute(QStringLiteral("trigger"), QStringLiteral("-1")).toInt());
-	source.perVoice = element.attribute(QStringLiteral("pervoice"), QStringLiteral("0")).toInt() != 0;
 	return source;
 }
 
@@ -155,9 +179,25 @@ ModulationRoute readRoute(const QDomElement& element)
 	route.effect = element.attribute(QStringLiteral("effect")).toInt();
 	route.parameter = element.attribute(QStringLiteral("parameter"));
 	route.depth = boundedValue(element.attribute(QStringLiteral("depth")), -1.f, 0.f);
-	route.perSample = element.attribute(QStringLiteral("persample"), QStringLiteral("0")).toInt() != 0;
 	route.track = std::max(-1, element.attribute(QStringLiteral("track"), QStringLiteral("-1")).toInt());
 	return route;
+}
+
+//! The named routes of one <modulator>, each checked. False when a named route's
+//! flag is present and is not "0" or "1"; \a routes then holds nothing useful.
+bool readRoutes(const QDomElement& node, QList<ModulationRoute>* routes)
+{
+	const QDomNodeList routeNodes = node.elementsByTagName(QStringLiteral("route"));
+	for (int r = 0; r < routeNodes.count(); ++r)
+	{
+		const QDomElement routeElement = routeNodes.at(r).toElement();
+		if (routeElement.isNull()) { continue; }
+		ModulationRoute route = readRoute(routeElement);
+		if (route.parameter.isEmpty()) { continue; }
+		if (!readRouteFlags(routeElement, &route)) { return false; }
+		routes->append(route);
+	}
+	return true;
 }
 
 /*! One <modulator> child. False when its own source does not validate, in which
@@ -167,31 +207,31 @@ ModulationRoute readRoute(const QDomElement& element)
  *  A route is appended only when it names a parameter; a route element with no
  *  'parameter' describes nothing, so it is dropped rather than stored as a route
  *  that can never resolve.
+ *
+ *  A boolean that is present and is not "0" or "1" refuses the block the same
+ *  way, including flags on named routes: each named route is checked before the
+ *  modulator is added, so a corrupt route leaves nothing half-loaded. A route
+ *  without a parameter is still ignored.
  */
 bool loadModulator(const QDomElement& node, ModulationLayer* layer)
 {
 	ModulatorSource source = readSource(node);
-	// A phase that is present and is not a number is a corrupt block, refused
-	// here rather than repaired to a legal value nobody authored.
-	if (!readSourcePhase(node, &source)) { return false; }
+	// A phase or a flag that is present and is not a valid value is a corrupt
+	// block, refused here rather than repaired to a value nobody authored.
+	if (!readSourcePhase(node, &source) || !readSourceFlags(node, &source)) { return false; }
 	QString why;
 	if (!layer->validSource(source, &why)) { return false; }
 	// MX-118: a formula that no longer compiles loads as an empty one (the modulator reads 0).
 	const QString formula = node.attribute(QStringLiteral("formula"));
 	if (!formula.isEmpty()) { compileFormula(formula, &source.formula, nullptr); }
+
+	QList<ModulationRoute> routes;
+	if (!readRoutes(node, &routes)) { return false; }
+
 	const int index = layer->addModulator(node.attribute(QStringLiteral("name")), source);
 	if (index < 0) { return false; }
 	layer->modulator(index)->formula = formula;
-
-	const QDomNodeList routes = node.elementsByTagName(QStringLiteral("route"));
-	for (int r = 0; r < routes.count(); ++r)
-	{
-		const QDomElement routeElement = routes.at(r).toElement();
-		if (routeElement.isNull()) { continue; }
-		const ModulationRoute route = readRoute(routeElement);
-		if (route.parameter.isEmpty()) { continue; }
-		layer->addRoute(index, route);
-	}
+	for (const ModulationRoute& route : routes) { layer->addRoute(index, route); }
 	return true;
 }
 
