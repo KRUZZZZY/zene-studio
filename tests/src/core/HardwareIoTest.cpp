@@ -52,6 +52,7 @@
 #include "AudioIoSetup.h"
 #include "AutomatableModel.h"
 #include "ControlRegistry.h"
+#include "ConfigManager.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "HardwareInsert.h"
@@ -535,6 +536,31 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the route
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the setup
 		QVERIFY(audioio::storedEntry(key) == before);
+	}
+
+	/*! A store that is set but is not a JSON object holds the setups of every device, and it is kept as it is:
+	 *  a write or an undo refuses rather than read it as empty and store that empty object with its one new
+	 *  entry, which would drop every other device's setup. */
+	void aMalformedSetupStoreIsNeverReplaced()
+	{
+		ConfigManager* config = ConfigManager::inst();
+		const QString section = QStringLiteral("audioio");
+		const QString attribute = QStringLiteral("setups");
+		const QString stored = config->value(section, attribute);
+		const QString key = audioio::currentDeviceKey();
+		const QStringList unreadable{QStringLiteral("{\"Other device\": {\"outputs\": {"), QStringLiteral("[1, 2]")};
+		for (const QString& text : unreadable)
+		{
+			config->setValue(section, attribute, text);
+			QString error;
+			const bool written = audioio::writeSetup(key, audioio::setupFor(key, 2), &error);
+			audioio::restoreEntry(key, QJsonObject{});
+			const QString after = config->value(section, attribute);
+			config->setValue(section, attribute, stored);  // put back what the config held
+			QVERIFY2(!written, qPrintable(text));
+			QVERIFY2(!error.isEmpty(), qPrintable(text));
+			QCOMPARE(after, text);
+		}
 	}
 
 	/*! A restart is required whenever the CONFIGURED output count and the RUNNING

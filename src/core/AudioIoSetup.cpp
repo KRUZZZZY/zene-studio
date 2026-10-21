@@ -59,9 +59,25 @@ constexpr DeviceSource kDeviceSources[] = {
 	{"OSS", "audiooss", "device"},
 };
 
+//! The stored entries into @a all. An unset value holds none; a value that is not a JSON object is refused
+//! (false, @a all untouched), so a write never replaces setups it could not read.
+bool readEntries(QJsonObject* all)
+{
+	const QByteArray stored = ConfigManager::inst()->value(kSection, kKey).toUtf8();
+	if (stored.trimmed().isEmpty()) { *all = QJsonObject(); return true; }
+	QJsonParseError parseError;
+	const QJsonDocument document = QJsonDocument::fromJson(stored, &parseError);
+	if (parseError.error != QJsonParseError::NoError || !document.isObject()) { return false; }
+	*all = document.object();
+	return true;
+}
+
+//! The stored entries for reading: none when the value is unreadable (a write refuses instead of using them).
 QJsonObject allEntries()
 {
-	return QJsonDocument::fromJson(ConfigManager::inst()->value(kSection, kKey).toUtf8()).object();
+	QJsonObject all;
+	readEntries(&all);
+	return all;
 }
 
 void storeAll(const QJsonObject& all)
@@ -228,7 +244,8 @@ int requestedOutputs(const QString& key)
 bool writeSetup(const QString& key, const Setup& setup, QString* error)
 {
 	if (!validSide(setup.outputs, error) || !validSide(setup.inputs, error)) { return false; }
-	QJsonObject all = allEntries();
+	QJsonObject all;
+	if (!readEntries(&all)) { return fail(error, QStringLiteral("the saved I/O setups ('%1') are not valid JSON, so nothing was written").arg(kKey)); }
 	all.insert(key, QJsonObject{{QStringLiteral("outputs"), storedSide(setup.outputs)}, {QStringLiteral("inputs"), storedSide(setup.inputs)}});
 	storeAll(all);
 	return true;
@@ -239,12 +256,14 @@ QJsonObject storedEntry(const QString& key)
 	return allEntries().value(key).toObject();
 }
 
-void restoreEntry(const QString& key, const QJsonObject& entry)
+bool restoreEntry(const QString& key, const QJsonObject& entry)
 {
-	QJsonObject all = allEntries();
+	QJsonObject all;
+	if (!readEntries(&all)) { return false; }
 	if (entry.isEmpty()) { all.remove(key); }
 	else { all.insert(key, entry); }
 	storeAll(all);
+	return true;
 }
 
 QJsonObject sideJson(const Side& side, int granted)

@@ -97,9 +97,10 @@ LMMS_EXPORT int requestedOutputs(const QString& key);
 //! Validate @a setup and keep it for @a key (the config file is saved). False, with @a error, when a
 //! bus overlaps another, leaves the channels, has a width other than 1 or 2, or repeats a name.
 LMMS_EXPORT bool writeSetup(const QString& key, const Setup& setup, QString* error);
-//! The raw stored entry for @a key (empty object: nothing stored) and its restore, for undo.
+//! The raw stored entry for @a key (empty object: nothing stored) and its restore, for undo. Both refuse
+//! (restoreEntry returns false) while the stored setups are not valid JSON, rather than replace them.
 LMMS_EXPORT QJsonObject storedEntry(const QString& key);
-LMMS_EXPORT void restoreEntry(const QString& key, const QJsonObject& entry);
+LMMS_EXPORT bool restoreEntry(const QString& key, const QJsonObject& entry);
 
 //! A side as JSON (channels with names, buses with 1-based channel labels) and back. parseSide fills
 //! only what @a json names, on top of @a side.
