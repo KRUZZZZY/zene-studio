@@ -42,7 +42,7 @@ refusal carries the child's own last words, bounded to
   the output directory it writes into and hands the child's tail back.
 - `src/core/ControlCommandsRenderStems.cpp:207-219` - `stemExportFailureMessage()`,
   the refusal with the child's words appended.
-- `src/core/ControlCommandsRenderStems.cpp:397-402` and `:419-421` - the handler
+- `src/core/ControlCommandsRenderStems.cpp:393-399` and `:428-431` - the handler
   uses it.
 
 **The regression test.** `tests/src/core/ControlStemExportTest.cpp` (new,
@@ -142,7 +142,7 @@ after the child succeeded:
   installed, so a failed promotion never leaves a half-written stem behind.
 - `src/core/ControlCommandsRenderStems.cpp:255-278` - `promoteStagedFiles()`:
   the whole set is installed, and the names it installed are reported.
-- `src/core/ControlCommandsRenderStems.cpp:380-417` - the handler renders into
+- `src/core/ControlCommandsRenderStems.cpp:377-413` - the handler renders into
   the staging directory, refuses (with the child's own error) without touching
   the output directory when the child failed, and promotes the set only after
   the child succeeded.
@@ -211,3 +211,31 @@ output directory - no partial stem, no staging directory.
   `QFile::setFileTime()`, which the tree's own tests already use
   (tests/src/core/ControlBounceRenderTest.cpp:492,
   tests/src/core/ProjectRecoveryTest.cpp:79).
+
+## The affected family, and one pre-existing failure that is NOT this batch's
+
+`ctest -R "ControlBounceRenderTest|StemExportTest|ControlRegistryTest|BounceInPlaceTest|ControlRenderJobTest|ControlStemExportTest|ControlStemExportVerb|ControlStemCommands" --output-on-failure`
+(`.../logs/test-family-2.log`) **EXIT=0** - 8 of 8 passed:
+
+| Test | Result |
+| --- | --- |
+| BounceInPlaceTest | Passed (0.10 s) |
+| ControlBounceRenderTest | Passed (2.75 s) - the OTHER child-process render path |
+| ControlRenderJobTest | Passed (8.10 s) |
+| ControlStemExportTest | Passed (2.17 s) - the new regression family |
+| ControlRegistryTest | Passed (1.32 s) |
+| StemExportTest | Passed (2.63 s) - the engine's own stem export |
+| ControlStemExportVerb | Passed (5.08 s) - the END-TO-END transcript against the real binary: the stems land on disk, a RE-export into the same directory still reports the files it rewrote, and a refused export creates nothing |
+| ControlStemCommands | Passed (5.89 s) |
+
+`ControlRenderSurround` fails in this tree, and it failed BEFORE this batch
+(`.../logs/test-family-1.log`): the two failing checks are the CLI's
+refusals that `main.cpp` prints through `usageError()` -> `qCritical()`, and
+this environment's Qt swallows that output - the CLI writes NOTHING to stdout
+or stderr for them (reproduced by hand: `zene render <project> -o
+/tmp/cli-bad.wav --channels 9.1` exits 1 with both streams empty), while the
+third case of the same check, which `main.cpp:1401` prints with a direct
+`fprintf(stderr, ...)`, passes. `src/core/main.cpp` is untouched by this
+batch (the three commits change `src/core/ControlCommandsRenderStems.cpp`, one
+test file, the two scope manifests and this report), and the control surface
+is not on the CLI's path at all.
