@@ -591,6 +591,47 @@ private slots:
 		QVERIFY2(QFileInfo(dir).isDir(), "the failed hand off removed a folder it did not create");
 	}
 
+	//! A destination path that spells a folder the file system resolves elsewhere - a
+	//! symlink followed by a '..' - must be cleaned up where it really is. The folder the
+	//! hand off made is the one to take back; the link and the folders that were there
+	//! before must survive.
+	void aFailedHandOffTakesBackTheFolderItReallyCreated()
+	{
+		const QString base = m_dir.filePath(QStringLiteral("symlinked-destination"));
+		QVERIFY(QDir().mkpath(QDir(base).filePath(QStringLiteral("target/child"))));
+		const QString link = QDir(base).filePath(QStringLiteral("link"));
+		QVERIFY(QFile::link(QDir(base).filePath(QStringLiteral("target/child")), link));
+		QVERIFY(QFileInfo(link).isSymLink());
+
+		// Where the file system really puts such a path: 'link/../probe' is
+		// 'target/probe' once the link is followed - the same call the hand off makes to
+		// create its destination, so this says where the hand off's folder lands.
+		QVERIFY(QDir().mkpath(QDir(base).filePath(QStringLiteral("link/../probe"))));
+		QVERIFY2(QFileInfo(QDir(base).filePath(QStringLiteral("target/probe"))).isDir(),
+			"the file system did not resolve the path through the symlink");
+		QVERIFY2(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("probe"))),
+			"the file system resolved the path lexically");
+
+		// The refusal: a session that cannot be saved, so the hand off fails after it has
+		// made its destination folder.
+		const QString partial = m_dir.filePath(QStringLiteral("partial-3.mmp"));
+		QVERIFY(writeText(partial, songProject(QStringLiteral("    <newsection/>\n"))));
+		loadPartially(partial);
+		QVERIFY(Engine::getSong()->isPartialLoad());
+
+		const ControlResult failed = run(QStringLiteral("project.handoff"),
+			{{QStringLiteral("dir"), QDir(base).filePath(QStringLiteral("link/../made"))}});
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("target/made"))),
+			"the failed hand off left the folder it really created behind");
+		QVERIFY2(!QFileInfo::exists(QDir(base).filePath(QStringLiteral("made"))),
+			"the failed hand off left a folder behind");
+		QVERIFY2(QFileInfo(QDir(base).filePath(QStringLiteral("target/child"))).isDir(),
+			"a folder that was there before was removed");
+		QVERIFY2(QFileInfo(base).isDir(), "a folder that was there before was removed");
+		QVERIFY2(QFileInfo(link).isSymLink(), "the symlink was removed");
+	}
+
 private:
 	QTemporaryDir m_dir;
 };

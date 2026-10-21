@@ -162,20 +162,23 @@ void discardPartialBundle(const QString& file)
 	QDir(dir.filePath(QStringLiteral("media"))).removeRecursively();
 }
 
-//! The folders @a path needs but does not have yet, outermost first: mkpath() makes them
-//! all, so a hand off that fails has to take back the ones it made - a destination that
-//! was there before is not one of them.
-QStringList foldersToCreate(const QString& path)
+//! The folders @a path needs but does not have yet, one component at a time: the prefixes
+//! of the path that are not there now. The file system resolves a symlink and a '..' in
+//! the middle of a path when it creates what is named there, so the folder it creates
+//! lands at one of these positions - 'base/link/../made' creates 'base/target/made' when
+//! 'link' points at 'target/child'. A path cleaned up lexically would name the wrong
+//! folder, and the one that was really made would be left behind.
+QStringList missingFolders(const QString& path)
 {
 	QStringList missing;
-	QString current = QDir::cleanPath(path);
-	while (!current.isEmpty() && current != QLatin1String("/"))
+	QString current = path.startsWith(QLatin1Char('/')) ? QStringLiteral("/") : QString();
+	for (const QString& part : path.split(QLatin1Char('/'), Qt::SkipEmptyParts))
 	{
-		if (QFileInfo::exists(current)) { break; }
-		missing.prepend(current);
-		const QString parent = QFileInfo(current).path();
-		if (parent == current) { break; }
-		current = parent;
+		if (part == QLatin1String(".")) { continue; }  // the same folder, named twice
+		if (current.isEmpty()) { current = part; }
+		else if (current.endsWith(QLatin1Char('/'))) { current += part; }
+		else { current += QLatin1Char('/') + part; }
+		if (!QFileInfo::exists(current)) { missing.append(current); }
 	}
 	return missing;
 }
@@ -243,8 +246,10 @@ ControlResult handoff(const QJsonObject& args)
 	const QString dir = args.value(QStringLiteral("dir")).toString();
 	if (!QDir::isAbsolutePath(dir)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dir' is an absolute folder")); }
 	// The folders this hand off makes are the ones it has to take back if it fails: a
-	// hand off that could not be written leaves nothing of itself behind.
-	const QStringList created = foldersToCreate(dir);
+	// hand off that could not be written leaves nothing of itself behind. They are the
+	// folders the path names that are not there yet - the ones the file system will make
+	// where the path resolves, not where the path spells.
+	const QStringList created = missingFolders(dir);
 	if (!QDir().mkpath(dir))
 	{
 		removeCreatedFolders(created);
