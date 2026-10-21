@@ -54,5 +54,12 @@ the rebuild and `test-4.log` pass.
 - **Portability.** No new API; one `isRelative()` call.
 - **GUI and agent surface.** Unit adds no action or command; the existing
   automation GUI and `automation.*` commands are unchanged.
-- **Pre-submit check.** See the result recorded in the commit that follows this
-  report (`submit-check-*.log`).
+- **Gates / pre-submit.** `submit_check.py` (`submit-check-1.log`) passes every
+  item except "gates (feature_check.py)", which could not run: the script writes its
+  logs to a sibling directory outside this lane's write area (PermissionError, not a
+  gate result). I ran its gates by hand instead: fork-sources, all-sources-reproduce,
+  no-upstream-regression, check-namespace, no-tautology, doc-figures all EXIT=0
+  (`gate-*.log`); `tests/rt-safety-sweep.py --check` EXIT=0 (`rt-sweep-1.log`);
+  complexity and file-length are red on the train on purpose (EXIT=1) but list no
+  item in any file this branch changed (`gate-complexity.log`, `gate-filelen.log`).
+  The GUI/agent WARN lines are not-applicable (no action or command added).
