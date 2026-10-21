@@ -126,6 +126,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/doc-pricing-model-gate.py ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -211,6 +212,7 @@
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/NeuralAmp/tests/compare_rate_test.py ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
+#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-10-10 (new-p10-108): XyPadPairTest now exercises the Delay plug-in's XyPad directly. Its two test-local headers
 #   provide AUTOMOC inputs for the already-configured target without changing the CMake build graph.
@@ -2565,6 +2567,7 @@ tests/src/plugins/EqFilterTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp
 tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/plugins/ExprSynthAllocationTest.cpp
+tests/src/plugins/NeuralAmpHarnessBlockCount.cpp
 tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 # cluster new-p10-336: regression for RNNoise harness short/failed output writes.
 tests/src/plugins/RnnoiseHarnessOutputTest.cpp
