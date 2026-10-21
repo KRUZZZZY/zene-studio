@@ -4804,3 +4804,5 @@ include/TunerTap.h	cluster new-p8-239-port: publish the source and reset generat
 src/core/TunerTap.cpp	cluster new-p8-239-port: reset the tuner ring before the first write in each source generation and refuse stale reads.
 include/PhaseScopeTap.h	cluster new-p8-239-port: publish the mixer channel and ring reset together; LMMS_TESTING seam makes the interleaving deterministic.
 src/core/PhaseScopeTap.cpp	cluster new-p8-239-port: reset the phase-scope ring before the first write in each channel generation.
+include/AutomationClip.h	cluster 5526-port: stores progression and ramp mode in always-lock-free atomics and reads them without taking the clip mutex on the audio thread; public values and serialization remain unchanged, covered by AutomationThinTest.
+src/core/AutomationClip.cpp	cluster 5526-port: explicitly loads and stores the atomic settings in copy, setters, curve evaluation, and serialization; project attribute values remain unchanged, covered by AutomationThinTest.

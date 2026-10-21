@@ -13,6 +13,9 @@
 
 #include <QtTest>
 
+#include <atomic>
+#include <type_traits>
+
 #include "AudioEngine.h"
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
@@ -21,6 +24,20 @@
 #include "TimePos.h"
 
 using namespace lmms;
+
+struct AutomationClipRampSettingsTestAccess
+{
+	static bool usesLockFreeAtomicStorage()
+	{
+		using Clip = lmms::AutomationClip;
+		using ProgressionType = Clip::ProgressionType;
+		using RampSetting = Clip::RampSetting;
+		return std::is_same_v<decltype(Clip::m_progressionType), std::atomic<ProgressionType>>
+			&& std::is_same_v<decltype(Clip::m_rampSetting), std::atomic<RampSetting>>
+			&& std::atomic<ProgressionType>::is_always_lock_free
+			&& std::atomic<RampSetting>::is_always_lock_free;
+	}
+};
 
 class AutomationThinTest : public QObject
 {
@@ -55,6 +72,25 @@ private slots:
 		QCOMPARE(removed, 1);
 		QVERIFY(clip->getTimeMap().contains(50));
 		QVERIFY(!clip->getTimeMap().contains(75));
+	}
+
+	void rampSettingsUseLockFreeAtomicStorage()
+	{
+		QVERIFY(AutomationClipRampSettingsTestAccess::usesLockFreeAtomicStorage());
+
+		auto* track = new AutomationTrack(Engine::getSong());
+		auto* clip = static_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		QVERIFY(!clip->sampleAccurate());
+
+		clip->setProgressionType(AutomationClip::ProgressionType::Linear);
+		QVERIFY(clip->sampleAccurate());
+		clip->setRampSetting(AutomationClip::RampSetting::Off);
+		QVERIFY(!clip->sampleAccurate());
+		clip->setRampSetting(AutomationClip::RampSetting::On);
+		QVERIFY(clip->sampleAccurate());
+		clip->setRampSetting(AutomationClip::RampSetting::Default);
+		clip->setProgressionType(AutomationClip::ProgressionType::Discrete);
+		QVERIFY(!clip->sampleAccurate());
 	}
 };
 
