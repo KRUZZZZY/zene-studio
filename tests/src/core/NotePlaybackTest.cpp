@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstdint>
+#include <cstring>
 #include <barrier>
 #include <cmath>
 #include <new>
@@ -74,8 +75,16 @@ using namespace lmms;
 namespace
 {
 
-thread_local bool countAllocations = false;
-thread_local std::uint64_t allocationCount = 0;
+// volatile: operator new updates these, and the optimiser cannot see that across the test's calls.
+// Without it the flag store and the count read are folded away, and every count reads zero.
+thread_local volatile bool countAllocations = false;
+thread_local volatile std::uint64_t allocationCount = 0;
+
+//! A type whose `new` takes the align_val_t overloads rather than the plain ones.
+struct alignas(64) OverAligned
+{
+	char bytes[64];
+};
 
 std::pair<InstrumentTrack*, Instrument*> createModulatedMonstroTrack()
 {
@@ -275,9 +284,35 @@ QStringList WarningCapture::s_texts;
 
 } // namespace
 
+namespace
+{
+
+//! Over-aligned memory from malloc, with the pointer malloc returned stored just below the aligned address.
+void* allocateAligned(std::size_t size, std::size_t alignment)
+{
+	if (countAllocations) { allocationCount = allocationCount + 1; }
+	const std::size_t align = std::max(alignment, sizeof(void*));
+	void* raw = std::malloc((size != 0 ? size : 1) + align + sizeof(void*));
+	if (raw == nullptr) { throw std::bad_alloc{}; }
+	const auto start = reinterpret_cast<std::uintptr_t>(raw) + sizeof(void*);
+	void* memory = reinterpret_cast<void*>((start + align - 1) & ~(static_cast<std::uintptr_t>(align) - 1));
+	std::memcpy(static_cast<char*>(memory) - sizeof(void*), &raw, sizeof(raw));
+	return memory;
+}
+
+void freeAligned(void* memory) noexcept
+{
+	if (memory == nullptr) { return; }
+	void* raw = nullptr;
+	std::memcpy(&raw, static_cast<char*>(memory) - sizeof(void*), sizeof(raw));
+	std::free(raw);
+}
+
+} // namespace
+
 void* operator new(std::size_t size)
 {
-	if (countAllocations) { ++allocationCount; }
+	if (countAllocations) { allocationCount = allocationCount + 1; }
 	if (void* memory = std::malloc(size != 0 ? size : 1)) { return memory; }
 	throw std::bad_alloc{};
 }
@@ -287,10 +322,24 @@ void* operator new[](std::size_t size)
 	return ::operator new(size);
 }
 
+void* operator new(std::size_t size, std::align_val_t alignment)
+{
+	return allocateAligned(size, static_cast<std::size_t>(alignment));
+}
+
+void* operator new[](std::size_t size, std::align_val_t alignment)
+{
+	return ::operator new(size, alignment);
+}
+
 void operator delete(void* memory) noexcept { std::free(memory); }
 void operator delete[](void* memory) noexcept { std::free(memory); }
 void operator delete(void* memory, std::size_t) noexcept { std::free(memory); }
 void operator delete[](void* memory, std::size_t) noexcept { std::free(memory); }
+void operator delete(void* memory, std::align_val_t) noexcept { freeAligned(memory); }
+void operator delete[](void* memory, std::align_val_t) noexcept { freeAligned(memory); }
+void operator delete(void* memory, std::size_t, std::align_val_t) noexcept { freeAligned(memory); }
+void operator delete[](void* memory, std::size_t, std::align_val_t) noexcept { freeAligned(memory); }
 
 class NotePlaybackTest : public QObject
 {
@@ -397,6 +446,36 @@ private slots:
 		NotePlayHandleManager::release(nph);
 
 		QCOMPARE(static_cast<qulonglong>(allocations), 0ull);
+	}
+
+	void overAlignedAllocationsAreCounted()
+	{
+		allocationCount = 0;
+		countAllocations = true;
+		auto* single = new OverAligned{};
+		auto* array = new OverAligned[2]{};
+		countAllocations = false;
+		const std::uint64_t allocations = allocationCount;
+
+		QVERIFY(reinterpret_cast<std::uintptr_t>(single) % alignof(OverAligned) == 0);
+		QVERIFY(reinterpret_cast<std::uintptr_t>(array) % alignof(OverAligned) == 0);
+		delete[] array;
+		delete single;
+
+		QCOMPARE(static_cast<qulonglong>(allocations), 2ull);
+	}
+
+	void plainAllocationsAreCounted()
+	{
+		// Positive control: a zero from monstroNoteStartDoesNotAllocate only means something if this counts.
+		allocationCount = 0;
+		countAllocations = true;
+		auto* single = new int{0};
+		countAllocations = false;
+		const std::uint64_t allocations = allocationCount;
+		delete single;
+
+		QCOMPARE(static_cast<qulonglong>(allocations), 1ull);
 	}
 
 	void monstroConcurrentVoicesKeepIndependentModulation()
