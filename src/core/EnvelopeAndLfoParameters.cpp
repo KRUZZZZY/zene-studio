@@ -48,8 +48,9 @@ EnvelopeAndLfoParameters::LfoInstances * EnvelopeAndLfoParameters::s_lfoInstance
 
 namespace
 {
-//! The test seam: the publisher calls it while it publishes a snapshot.
+//! The test seams: the publisher calls them while it publishes a snapshot.
 std::function<void()> g_publicationHook;
+std::function<void()> g_publicationStartHook;
 } // namespace
 
 
@@ -581,8 +582,18 @@ void EnvelopeAndLfoParameters::setPublicationHook( PublicationHook _hook )
 
 
 
+void EnvelopeAndLfoParameters::setPublicationStartHook( PublicationHook _hook )
+{
+	g_publicationStartHook = std::move( _hook );
+}
+
+
+
+
 void EnvelopeAndLfoParameters::publishAudioState( std::unique_ptr<AudioState> _state )
 {
+	// the start of the publication: the test seam holds the publisher here.
+	if( g_publicationStartHook ) { g_publicationStartHook(); }
 	m_audioStateSeq.fetch_add( 1, std::memory_order_acq_rel );
 	// the publication point: the test seam holds the publisher here.
 	if( g_publicationHook ) { g_publicationHook(); }

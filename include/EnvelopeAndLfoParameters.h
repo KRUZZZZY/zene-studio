@@ -189,6 +189,11 @@ public:
 	using PublicationHook = std::function<void()>;
 	static void setPublicationHook( PublicationHook _hook );
 
+	/*! TEST SEAM. The publisher calls this hook when a publication starts,
+	 *  before the new snapshot is on its way to the audio path. It is empty in
+	 *  production. */
+	static void setPublicationStartHook( PublicationHook _hook );
+
 	/*! TEST SEAM. How many readers hold a published snapshot right now (the
 	 *  audio path, and the seam above). A test uses it to see whether the
 	 *  audio path claimed the snapshot while the publisher was held. */
