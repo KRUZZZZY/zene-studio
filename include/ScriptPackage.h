@@ -93,6 +93,10 @@ ScriptPackage parseManifest(const QString& source);
  *  loose example scripts beside packages) and a half-copied directory must not
  *  break the listing. Callers that need to explain a skip can use
  *  isValidName() and EntryFileName themselves.
+ *
+ *  A package directory or entry script that resolves outside \a scriptsRoot (a
+ *  symlink out of the root) is skipped too: a package of this root must not
+ *  reach outside it.
  */
 QVector<ScriptPackage> scan(const QString& scriptsRoot);
 
