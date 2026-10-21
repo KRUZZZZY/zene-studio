@@ -316,6 +316,7 @@ void ZynAddSubFxInstrument::loadFile( const QString & _file )
 	const std::string fn = QSTR_TO_STDSTR( _file );
 	if( m_remotePlugin )
 	{
+		testHook();
 		m_remotePlugin->lock();
 		m_remotePlugin->sendMessage( RemotePlugin::message( IdLoadPresetFile ).addString( fn ) );
 		m_remotePlugin->waitForMessage( IdLoadPresetFile );
@@ -323,6 +324,7 @@ void ZynAddSubFxInstrument::loadFile( const QString & _file )
 	}
 	else
 	{
+		testHook();
 		m_pluginMutex.lock();
 		m_localPlugin->loadPreset( fn );
 		m_pluginMutex.unlock();
@@ -350,22 +352,8 @@ auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, Pla
 	-> ProcessStatus
 {
 	// MIDI queued since the last period goes to the synth first, in order. A channel whose events the full queue
-	// refused is cut with all-notes-off at the point of the refusal (see drainMidi()).
-	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
-		[this](const HandoffMidiEvent& queued) -> bool
-		{
-			const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
-			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, 0); }
-			else { m_localPlugin->processMidiEvent(event); }
-			return true;
-		},
-		[this](int channel) -> bool
-		{
-			const MidiEvent allNotesOff(MidiControlChange, static_cast<int8_t>(channel), 123, 0);
-			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
-			else { m_localPlugin->processMidiEvent(allNotesOff); }
-			return true;
-		});
+	// refused is cut with all-notes-off at the point of the refusal (see forwardQueuedMidi()).
+	forwardQueuedMidi();
 
 	if (m_remotePlugin)
 	{
@@ -385,9 +373,39 @@ auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, Pla
 
 
 
+void ZynAddSubFxInstrument::forwardQueuedMidi()
+{
+	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
+		[this](const HandoffMidiEvent& queued) -> bool
+		{
+			const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
+#ifdef LMMS_TESTING
+			m_testLastForwardedOffset = static_cast<int>(queued.offset);
+#endif
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, 0); }
+			else { m_localPlugin->processMidiEvent(event); }
+			return true;
+		},
+		[this](int channel) -> bool
+		{
+			const MidiEvent allNotesOff(MidiControlChange, static_cast<int8_t>(channel), 123, 0);
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
+			else { m_localPlugin->processMidiEvent(allNotesOff); }
+			return true;
+		});
+}
+
+
+
+
 auto ZynAddSubFxInstrument::processLock() -> bool
 {
-	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
+	const bool exporting = Engine::getSong()->isExporting()
+#ifdef LMMS_TESTING
+		|| m_testForceExport
+#endif
+		;
+	return m_pluginMutex.tryLock(exporting ? -1 : 0);
 }
 
 
@@ -430,6 +448,7 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 
 QString ZynAddSubFxInstrument::hostingState() const
 {
+	testHook();
 	if( m_remotePlugin == nullptr )
 	{
 		return QStringLiteral( "in-process" );
@@ -447,7 +466,21 @@ qint64 ZynAddSubFxInstrument::hostingProcessId() const
 	// The client is the instrument's own ZynAddSubFxRemotePlugin; its pid is
 	// the QProcess's (feature row 80). Zero means no client is running - the
 	// in-process synth, or a client that has gone away.
+	testHook();
 	return m_remotePlugin == nullptr ? 0 : m_remotePlugin->hostProcessId();
+}
+
+
+
+
+void ZynAddSubFxInstrument::testHook() const
+{
+#ifdef LMMS_TESTING
+	if( m_testHook )
+	{
+		m_testHook();
+	}
+#endif
 }
 
 
