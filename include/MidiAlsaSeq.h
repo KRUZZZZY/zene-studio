@@ -65,7 +65,14 @@ public:
 	{
 		return m_pollWaitActiveForTesting.load(std::memory_order_acquire);
 	}
+#ifdef LMMS_HAVE_ALSA
+	//! The sequencer mutex, for the test that proves the audio-thread output path
+	//! never takes it. The sequencer worker owns the mutex; a contended mutex on the
+	//! audio thread can stall an audio period, which is how the MIDI clock used to
+	//! reach the device from the audio path.
+	QMutex& seqMutexForTesting() noexcept { return m_seqMutex; }
 #endif
+#endif // LMMS_TESTING
 
 	static QString probeDevice();
 

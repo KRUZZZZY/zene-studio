@@ -1429,6 +1429,11 @@ if(LMMS_HAVE_ALSA)
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
 endif()
 
+# The OSS MIDI output guard needs the optional backend and its API.
+if(LMMS_HAVE_OSS)
+	list(APPEND LMMS_TESTS src/core/MidiOssTest.cpp)
+endif()
+
 # The sndio MIDI output guard needs the optional backend and its API.
 if(LMMS_HAVE_SNDIO)
 	list(APPEND LMMS_TESTS src/core/MidiSndioTest.cpp)
