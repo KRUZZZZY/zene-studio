@@ -27,13 +27,13 @@
 
 #include <QFile>
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <new>
 #include <sstream>
+#include <string>
 
 #include "lmms_math.h"
 
@@ -75,16 +75,19 @@ const int NEXTT = 4;
 
 // Bah, I'll move these into the class once I separate DrumsynthFile from DrumSynth
 // llama
-float envpts[8][3][32];	 // envelope/time-level/point
-float envData[8][6];	 // envelope running status
-int chkOn[8], sliLev[8]; // section on/off and level
-float timestretch;		 // overall time scaling
-short DD[1200], clippoint;
-float DF[1200];
-float phi[1200];
+//
+// The parser state is thread local: a .ds file can be parsed while another thread
+// parses one too, and the render state of one parse must not leak into the other.
+thread_local float envpts[8][3][32];	 // envelope/time-level/point
+thread_local float envData[8][6];	 // envelope running status
+thread_local int chkOn[8], sliLev[8]; // section on/off and level
+thread_local float timestretch;		 // overall time scaling
+thread_local short DD[1200], clippoint;
+thread_local float DF[1200];
+thread_local float phi[1200];
 
-long wavewords, wavemode = 0;
-float mem_t = 1.0f, mem_o = 1.0f, mem_n = 1.0f, mem_b = 1.0f, mem_tune = 1.0f, mem_time = 1.0f;
+thread_local long wavewords, wavemode = 0;
+thread_local float mem_t = 1.0f, mem_o = 1.0f, mem_n = 1.0f, mem_b = 1.0f, mem_tune = 1.0f, mem_time = 1.0f;
 
 int DrumSynth::LongestEnv()
 {
@@ -258,7 +261,10 @@ std::size_t DrumSynth::GetPrivateProfileString(const char* sec,
 	const auto maxlen = std::max(std::size_t{1}, size) - 1; // TODO C++26: Use std::sub_sat(size, 1)
 	stringstream is;
 	bool inSection = false;
-	std::array<char, 200> line = {};
+	// The lines are read into a dynamically sized string: a fixed buffer sets the
+	// stream's failure state on an over-long line, which ends the scan and leaves
+	// the settings behind it at their defaults without any error.
+	std::string line;
 
 	// Use QFile to handle unicode file name on Windows
 	// Previously we used ifstream directly
@@ -278,26 +284,57 @@ std::size_t DrumSynth::GetPrivateProfileString(const char* sec,
 			is.ignore(numeric_limits<streamsize>::max(), '[');
 			if (!is.eof())
 			{
-				is.getline(line.data(), line.size(), ']');
-				if (!strcasecmp(line.data(), sec)) { inSection = true; }
+				std::string section;
+				std::getline(is, section, ']');
+				if (!strcasecmp(section.c_str(), sec)) { inSection = true; }
 			}
 		}
 		else if (!is.eof())
 		{
-			is.getline(line.data(), line.size());
-			if (line[0] == '[') { break; }
+			std::getline(is, line);
+			if (!line.empty() && line[0] == '[') { break; }
 
-			char* k = std::strtok(line.data(), " \t=");
-			char* b = std::strtok(nullptr, "\n\r\0");
-			if (k && !strcasecmp(k, key))
+			// Tokenise without strtok (process-wide state; unsafe across threads).
+			const auto keyStart = line.find_first_not_of(" \t=");
+			std::string keyToken;
+			std::size_t valueStart = std::string::npos;
+			if (keyStart != std::string::npos)
 			{
-				if (b)
+				const auto keyEnd = line.find_first_of(" \t=", keyStart);
+				if (keyEnd == std::string::npos)
 				{
-					// Trim trailing whitespace
-					k = &b[std::strlen(b)];
-					while (k >= b && (*k == ' ' || *k == '\t')) { --k; }
-					k[1] = '\0'; // k == b - 1 when string is empty or all whitespace
-					std::strncpy(buffer, b, maxlen);
+					keyToken = line.substr(keyStart);
+				}
+				else
+				{
+					keyToken = line.substr(keyStart, keyEnd - keyStart);
+					valueStart = keyEnd + 1;
+				}
+			}
+			// Skip leading CR/LF (matching strtok's second delimiter set).
+			while (valueStart != std::string::npos && valueStart < line.size()
+				&& (line[valueStart] == '\n' || line[valueStart] == '\r' || line[valueStart] == '\0'))
+			{
+				++valueStart;
+			}
+			std::string valueToken;
+			if (valueStart != std::string::npos && valueStart < line.size())
+			{
+				const auto valueEnd = line.find_first_of("\n\r", valueStart);
+				if (valueEnd == std::string::npos) { valueToken = line.substr(valueStart); }
+				else { valueToken = line.substr(valueStart, valueEnd - valueStart); }
+			}
+			// Trim trailing whitespace from the value.
+			auto last = valueToken.find_last_not_of(" \t");
+			if (last == std::string::npos) { valueToken.clear(); }
+			else { valueToken.erase(last + 1); }
+
+			if (!keyToken.empty() && !strcasecmp(keyToken.c_str(), key))
+			{
+				if (!valueToken.empty())
+				{
+					std::strncpy(buffer, valueToken.c_str(), maxlen);
+					buffer[maxlen] = '\0';
 				}
 				break;
 			}
