@@ -30,8 +30,10 @@
 
 #include <QJsonArray>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <iterator>
 #include <span>
 #include <cstdlib>
 #include <new>
@@ -78,6 +80,62 @@ namespace
 
 thread_local bool g_trackLargestAllocation = false;
 thread_local std::size_t g_largestAllocation = 0;
+
+//! Read the spectrum the way the GUI reads it. An analyser that publishes a snapshot
+//! hands it out; an analyser without that API leaves the reader with the band array the
+//! audio thread writes. The helper compiles against both, so the regression is a failing
+//! assertion and not a build error.
+template <typename Analyser>
+bool readPublishedSpectrum(Analyser& analyser, std::vector<float>& bands, float& energy, bool* current = nullptr)
+{
+	if constexpr (requires { analyser.copySpectrum(bands.data(), energy); })
+	{
+		const bool isCurrent = analyser.copySpectrum(bands.data(), energy);
+		if (current != nullptr) { *current = isCurrent; }
+		return true;
+	}
+	else
+	{
+		std::copy(std::begin(analyser.m_bands), std::end(analyser.m_bands), bands.begin());
+		energy = analyser.getEnergy();
+		return false;
+	}
+}
+
+//! What a reader that arrives during a publication sees.
+struct PublishRead
+{
+	EqAnalyser* analyser = nullptr;
+	std::vector<float> bands;
+	float energy = 0.f;
+	bool current = true;
+	bool hasSnapshot = false;
+	bool called = false;
+};
+
+//! Take a copy of the spectrum in the middle of a publication.
+void readDuringPublication(void* context, int)
+{
+	auto* read = static_cast<PublishRead*>(context);
+	read->called = true;
+	read->hasSnapshot = readPublishedSpectrum(*read->analyser, read->bands, read->energy, &read->current);
+}
+
+//! Install the publish hook, if the analyser has one. The analyser that publishes a
+//! snapshot can be read while it publishes; an analyser without that API cannot.
+template <typename Analyser>
+bool installPublishHook(Analyser& analyser, PublishRead* read)
+{
+	if constexpr (requires { analyser.setPublishHook(nullptr, nullptr); })
+	{
+		analyser.setPublishHook(&readDuringPublication, read);
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
 
 } // namespace
 
@@ -298,6 +356,64 @@ private slots:
 		analyser.analyze(InterleavedBufferView<const float, 2>{input.data(), frameCount});
 		QVERIFY(std::isfinite(analyser.getEnergy()));
 		QCOMPARE(analyser.getEnergy(), 0.0f);
+	}
+
+	//! The analyser must not drop the samples that do not fit into an FFT window: a block
+	//! that crosses the window boundary keeps its tail for the next window. A stream of N
+	//! frames is therefore analysed in exactly N / window whole windows - the dropped tail
+	//! used to delay every following window, so the analyser ran fewer of them.
+	void theAnalyserKeepsTheSamplesThatDoNotFitIntoTheWindow()
+	{
+		EqAnalyser analyser;
+		constexpr f_cnt_t blockFrames = 300;
+		constexpr int blocks = 41;
+		const std::vector<SampleFrame> block(blockFrames, SampleFrame{0.f, 0.f});
+		int analyses = 0;
+		for (int i = 0; i < blocks; ++i)
+		{
+			// The GUI re-arms the analyser on every refresh, the analyser disarms itself
+			// after the analysis it ran.
+			analyser.setActive(true);
+			analyser.analyze(InterleavedBufferView<const float, 2>{block.data(), blockFrames});
+			if (!analyser.getActive()) { ++analyses; }
+		}
+		const int expected = static_cast<int>(blocks * blockFrames / FFT_BUFFER_SIZE);
+		QCOMPARE(analyses, expected);
+	}
+
+	//! The analyser publishes the finished spectrum and the GUI reads that snapshot: a
+	//! reader that arrives while the analyser publishes must get a whole spectrum, never
+	//! a half written one.
+	void theSpectrumIsPublishedAsAWholeSnapshot()
+	{
+		EqAnalyser analyser;
+		std::vector<float> bands(MAX_BANDS, 0.f);
+		float energy = 0.f;
+		bool current = false;
+
+		constexpr auto frameCount = static_cast<f_cnt_t>(FFT_BUFFER_SIZE);
+		const std::vector<SampleFrame> constant(frameCount, SampleFrame{0.5f, 0.5f});
+		analyser.analyze(InterleavedBufferView<const float, 2>{constant.data(), frameCount});
+		QVERIFY2(readPublishedSpectrum(analyser, bands, energy, &current),
+			"the analyser publishes no snapshot, so the GUI reads the band array the audio thread writes");
+		QVERIFY(current);
+		const std::vector<float> firstSpectrum = bands;
+
+		// The next spectrum is published while a reader takes a copy of it.
+		PublishRead read;
+		read.analyser = &analyser;
+		read.bands.assign(MAX_BANDS, 0.f);
+		installPublishHook(analyser, &read);
+		analyser.setActive(true);
+		const std::vector<SampleFrame> silence(frameCount, SampleFrame{0.f, 0.f});
+		analyser.analyze(InterleavedBufferView<const float, 2>{silence.data(), frameCount});
+		QVERIFY2(read.called, "the analyser did not publish the second spectrum");
+		QVERIFY2(read.hasSnapshot, "the analyser publishes no snapshot");
+		QVERIFY2(!read.current, "a reader that arrived during the publication was served the half written spectrum");
+		QVERIFY2(read.bands == firstSpectrum, "the reader got a mixture of two spectra");
+		QVERIFY(readPublishedSpectrum(analyser, bands, energy, &current));
+		QVERIFY(current);
+		QVERIFY2(bands != firstSpectrum, "the second spectrum was not published");
 	}
 
 	void normalizationRejectsAOneSampleBlock()
