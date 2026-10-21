@@ -527,6 +527,46 @@ private slots:
 		QVERIFY(removedSoftLayer);
 	}
 
+	//! MX-112: channel-mode note clearing also clears the layer routes for those notes.
+	void allNotesOffClearsQueuedLayerRoutes()
+	{
+		auto* owner = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(owner != nullptr);
+		auto& layers = owner->layers();
+		const QString layerXml = layerTemplateXml(owner);
+		QCOMPARE(layers.insertLayer(1, layerXml), 1);
+		QCOMPARE(layers.insertLayer(2, layerXml), 2);
+		constexpr int key = 118;
+		const MidiEvent softOn(MidiNoteOn, 0, key, 40, nullptr, MidiEvent::Source::Internal);
+		const MidiEvent hardOn(MidiNoteOn, 0, key, 100, nullptr, MidiEvent::Source::Internal);
+		const MidiEvent noteOff(MidiNoteOff, 0, key, 0, nullptr, MidiEvent::Source::Internal);
+		const MidiEvent allNotesOff(MidiControlChange, 0, MidiControllerAllNotesOff, 0, nullptr, MidiEvent::Source::Internal);
+		RackZone softZone;
+		softZone.lowKey = softZone.highKey = key;
+		softZone.lowVelocity = softZone.highVelocity = softOn.volume(owner->midiPort()->baseVelocity());
+		softZone.chain = 1;
+		RackZone hardZone = softZone;
+		hardZone.lowVelocity = hardZone.highVelocity = hardOn.volume(owner->midiPort()->baseVelocity());
+		hardZone.chain = 2;
+		QVERIFY(layers.zones().addZone(softZone) >= 0);
+		QVERIFY(layers.zones().addZone(hardZone) >= 0);
+		InstrumentTrack* hardLayer = layers.layer(2);
+		QVERIFY(hardLayer != nullptr);
+
+		owner->processInEvent(softOn);
+		owner->processInEvent(hardOn);
+		owner->processInEvent(allNotesOff);
+		owner->processInEvent(hardOn);
+		owner->processInEvent(noteOff);
+		const bool released = hardLayer->playingNote(key) == nullptr;
+		owner->processInEvent(allNotesOff);
+		const bool removedHardLayer = layers.removeLayer(2);
+		const bool removedSoftLayer = layers.removeLayer(1);
+		QVERIFY2(released, "an old layer route consumed the note-off after all-notes-off");
+		QVERIFY(removedHardLayer);
+		QVERIFY(removedSoftLayer);
+	}
+
 	//! MX-120: from the track's menu and its device card, a modulator made per-voice on the track's notes, bound to a
 	//! parameter of the track's instrument through the list's form, its depth changed and the assignment removed in the
 	//! assignments list (each undone), then made not per-voice again.

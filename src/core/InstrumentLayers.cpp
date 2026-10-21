@@ -69,6 +69,13 @@ public:
 
 bool validKey(int key) { return key >= 0 && key < NumKeys; }
 
+bool clearsLiveNotes(int controller)
+{
+	return controller == MidiControllerAllSoundOff || controller == MidiControllerAllNotesOff
+		|| controller == MidiControllerOmniOn || controller == MidiControllerOmniOff
+		|| controller == MidiControllerMonoOn || controller == MidiControllerPolyOn;
+}
+
 bool consumePending(std::atomic<std::uint32_t>& count)
 {
 	auto pending = count.load(std::memory_order_relaxed);
@@ -578,6 +585,7 @@ void InstrumentLayers::clearLiveRoutes() {
 
 void InstrumentLayers::forwardInEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
 {
+	if (event.type() == MidiControlChange && clearsLiveNotes(event.controllerNumber())) { clearLiveRoutes(); }
 	if (!active()) { return; }
 	sendToLayers(liveLayersFor(event, time, offset), event, time, offset);
 }
