@@ -119,10 +119,10 @@ payload never arrives (no sleep). The allocation probe must see 0.
 | 251 RED | `git apply -R …/revert-251-bounded-dispatch-final.patch; build; ./RemotePluginAudioPortsTest completeDebugFrameDecodesWithoutAllocating` | 0;0;1 | `test-251-direct-red-final.log` |
 | 251 GREEN | `git apply -R …/revert-251-bounded-dispatch-final.patch; build; same test` | 0;0;0 | `test-251-direct-green-final.log` |
 | family | `cd build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure` | 0 | `ctest-family-final6.log` (1/1, 23 functions) |
-| gates (official) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 (sandbox: cannot create `<worktree>-feature-check`; `Permission denied`) | `feature-check-official.log`, `feature-check.log` |
-| gates (identical copy, writable log dir) | `python3 build/qwen-logs/feature_check_local.py <worktree>` | 0 — all 8 rows PASS | `feature-check-local2.log` |
+| gates (official) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 (sandbox: cannot create `<worktree>-feature-check`; `Permission denied`) | `feature-check-official-final2.log`, `feature-check-official.log` |
+| gates (identical copy, writable log dir) | `python3 build/qwen-logs/feature_check_local.py <worktree>` | 0 — all 8 rows PASS | `feature-check-local-final2.log` |
 
-`feature-check-local2.log` rows: fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
+`feature-check-local-final2.log` rows: fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
 check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item in your files),
 file-length PASS (no new item in your files).
 
@@ -197,7 +197,7 @@ file-length PASS (no new item in your files).
   allocation that preceded it.
 
 **6. Official gate note.** The official `feature_check.py` cannot create its sibling log directory in this
-session's sandbox (`feature-check-official.log` records the `PermissionError`). The identical script copy with
+session's sandbox (`feature-check-official-final2.log` records the `PermissionError`). The identical script copy with
 only the log path changed runs the same eight gates in the same worktree and returns EXIT=0, all PASS
-(`feature-check-local2.log`). The official `submit_check.py` run is recorded in `submit-1.log`; its only gate
+(`feature-check-local-final2.log`). The official `submit_check.py` run is recorded in `submit-2.log`; its only gate
 FAIL is the same sandbox path issue, and the local gate run above is the evidence for that row.
