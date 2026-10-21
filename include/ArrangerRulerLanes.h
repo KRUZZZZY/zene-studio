@@ -85,7 +85,7 @@ public:
 	static bool laneDrawn(Lane lane);
 	static void setLaneShown(Lane lane, bool shown);
 
-	//! Read the preference again: the lanes shown, the height they take.
+	//! Read the preference again: the lanes shown, the height they take (a thin strip while none is drawn).
 	void relayout();
 	//! Where @a lane is drawn; empty while it is hidden (a test's view of it).
 	QRect laneRect(Lane lane) const;

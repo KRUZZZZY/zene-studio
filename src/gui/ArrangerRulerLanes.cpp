@@ -62,6 +62,7 @@ namespace
 {
 
 constexpr std::array<int, ArrangerRulerLanes::LaneCount> LaneHeights{16, 16, 20, 18};
+constexpr int ClosedHeight = 8;  //!< the ruler's height with no lane drawn: a strip to right-click for the lanes' menu
 constexpr int ChordPollMs = 250;  //!< how often the chord lane looks at the chord track's revision
 constexpr int MarkerHit = 6;     //!< pixels either side of a marker's line a click still takes
 constexpr int LabelGap = 4;      //!< pixels kept between a label and the next object
@@ -178,8 +179,8 @@ void ArrangerRulerLanes::relayout()
 	int height = 0;
 	for (int i = 0; i < LaneCount; ++i) { height += laneDrawn(static_cast<Lane>(i)) ? LaneHeights[i] : 0; }
 	m_chordsDrawn = laneDrawn(Lane::Chords);
-	setFixedHeight(std::max(height, 0));
-	setVisible(height > 0);
+	// With no lane drawn the ruler stays as a strip: its context menu is the only in-UI way to show a lane again.
+	setFixedHeight(height > 0 ? height : ClosedHeight);
 	update();
 	// The tracks move up or down once the layout settles: the play position line follows them.
 	if (!m_editor.isNull()) { QTimer::singleShot(0, m_editor.data(), &SongEditor::updatePositionLine); }
