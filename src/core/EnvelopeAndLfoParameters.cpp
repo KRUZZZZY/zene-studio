@@ -770,6 +770,19 @@ f_cnt_t EnvelopeAndLfoParameters::getLfoOscillationFrames() const
 
 
 
+void EnvelopeAndLfoParameters::setLfoUserWave( std::shared_ptr<const SampleBuffer> _wave )
+{
+	{
+		QMutexLocker m(&m_paramMutex);
+		m_userWave = _wave ? std::move( _wave ) : SampleBuffer::emptyBuffer();
+		rebuildAudioState();
+	}
+	emit dataChanged();
+}
+
+
+
+
 std::shared_ptr<const SampleBuffer> EnvelopeAndLfoParameters::getLfoUserWave() const
 {
 	const AudioState * const state = acquireAudioState();

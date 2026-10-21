@@ -178,6 +178,12 @@ public:
 	const IntModel& getLfoWaveModel() const { return m_lfoWaveModel; }
 	std::shared_ptr<const SampleBuffer> getLfoUserWave() const;
 
+	/*! Replace the user-defined LFO wave and publish it. The wave travels with
+	 *  the published parameter snapshot, so a replacement takes effect at once
+	 *  - also when the LFO wave shape is already the user-defined one and no
+	 *  model value changes. */
+	void setLfoUserWave( std::shared_ptr<const SampleBuffer> _wave );
+
 	/*! TEST SEAM. holdAudioState() takes the published parameter snapshot exactly
 	 *  as the audio thread takes it while it fills a level, and
 	 *  releaseHeldAudioState() gives it back. A test uses it to stand in for a
