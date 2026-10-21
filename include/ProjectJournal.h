@@ -366,6 +366,15 @@ public:
 		return nullptr;
 	}
 
+	/*! Every journalling object of the session, by id.
+	 *
+	 *  The control thread's automation drain walks it to find the clips that
+	 *  have writes queued for it (cluster 5388) - the journal knows every clip
+	 *  of the session, including the inline automation clip of a note, which
+	 *  is on no track at all. The walk is a control-thread walk and touches no
+	 *  engine state, so it runs without the render guard. */
+	const QHash<jo_id_t, JournallingObject*>& journallingObjects() const { return m_joIDs; }
+
 
 private:
 	using JoIdMap = QHash<jo_id_t, JournallingObject*>;

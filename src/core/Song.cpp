@@ -29,6 +29,7 @@
 #include <QFile>
 #include <QMessageBox>
 #include <QSet>
+#include <QTimer>
 #include <QUuid>
 #include <QThread>
 
@@ -92,13 +93,24 @@ namespace lmms
 static bool s_provenanceAdoptedThisLoad = false;
 static std::atomic<quint64> s_nextDocumentIdentity{0};
 
+#ifdef LMMS_TESTING
+namespace
+{
+void (*s_tempoMapMemoBoundaryHookForTest)(Song*) = nullptr;
+}
+
+void setTempoMapMemoBoundaryHookForTest(void (*hook)(Song*)) noexcept
+{
+	s_tempoMapMemoBoundaryHookForTest = hook;
+}
+#endif
+
 static quint64 nextDocumentIdentity()
 {
 	return s_nextDocumentIdentity.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
 tick_t TimePos::s_ticksPerBar = DefaultTicksPerBar;
-
 
 
 Song::Song() :
@@ -136,6 +148,12 @@ Song::Song() :
 	m_loopRenderRemaining(1),
 	m_oldAutomatedValues()
 {
+	auto* automationWriteTimer = new QTimer(this);
+	automationWriteTimer->setObjectName(QStringLiteral("automationWriteDrainTimer"));
+	automationWriteTimer->setInterval(10);
+	connect(automationWriteTimer, &QTimer::timeout, this, &Song::applyPendingAutomationWrites);
+	automationWriteTimer->start();
+
 	// Frozen takes keep the committed tempo map in step with every publication (control thread, render period
 	// held), so a pass whose pinned read loses to a publication still places the take on the current map.
 	m_tempoMap.setPublishHook( []( void* owner, const TempoMap& map )
@@ -236,8 +254,58 @@ Song::Song() :
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
 }
 
+void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept
+{
+	clip->queuePendingWrite(static_cast<tick_t>(time.getTicks()), value);
+}
 
 
+//! Drops the queued writes of every clip: they belong to a project that is
+//! being replaced and must not reach the project that replaces it.
+void Song::discardPendingAutomationWrites()
+{
+	ProjectJournal* const journal = Engine::projectJournal();
+	if (journal == nullptr) { return; }
+	for (JournallingObject* object : journal->journallingObjects())
+	{
+		auto* clip = dynamic_cast<AutomationClip*>(object);
+		if (clip != nullptr) { clip->discardPendingWrites(); }
+	}
+}
+
+
+
+
+//! The control thread's half of the deferred automation write (cluster 5388).
+//! The render thread queued the writes it wanted in the clips it wrote to;
+//! here they are applied, in the order they were queued.
+void Song::applyPendingAutomationWrites()
+{
+	// Nothing queued: the drain has no work and does not touch the engine.
+	if (AutomationClip::pendingWriteTotal() <= 0) { return; }
+
+	// The clips that have queued writes are found through the project journal,
+	// which knows every clip of the session - the ones on the song's tracks,
+	// the ones on the pattern store's, and the inline automation clip of a
+	// note, which is on no track at all. The walk is a control-thread walk
+	// over the journal's own map, so it runs without the render guard: only
+	// the edits below need the render thread out of the way.
+	ProjectJournal* const journal = Engine::projectJournal();
+	if (journal == nullptr) { return; }
+
+	std::vector<AutomationClip*> clips;
+	for (JournallingObject* object : journal->journallingObjects())
+	{
+		auto* clip = dynamic_cast<AutomationClip*>(object);
+		if (clip != nullptr && clip->pendingWriteCount() != 0) { clips.push_back(clip); }
+	}
+	if (clips.empty()) { return; }
+
+	AudioEngine* const audio = Engine::audioEngine();
+	if (audio == nullptr) { return; }
+	const auto renderLock = audio->requestChangesGuard();
+	for (AutomationClip* clip : clips) { clip->applyPendingWrites(); }
+}
 
 Song::~Song()
 {
@@ -278,6 +346,10 @@ Song* Song::s_automationCacheSong = nullptr;
 
 void Song::forgetAutomatedModel( AutomatableModel* model )
 {
+	AudioEngine* const audio = Engine::audioEngine();
+	const auto renderLock = audio == nullptr
+		? AudioEngine::RequestChangesGuard{}
+		: audio->requestChangesGuard();
 	if( s_automationCacheSong != nullptr )
 	{
 		auto& cache = s_automationCacheSong->m_oldAutomatedValues;
@@ -299,9 +371,10 @@ void Song::masterVolumeChanged()
 
 void Song::setTempo()
 {
-	Engine::audioEngine()->requestChangeInModel();
+	AudioEngine* const audio = Engine::audioEngine();
+	audio->requestChangeInModel();
 	const auto tempo = (bpm_t)m_tempoModel.value();
-	PlayHandleList & playHandles = Engine::audioEngine()->playHandles();
+	PlayHandleList & playHandles = audio->playHandles();
 	for (const auto& playHandle : playHandles)
 	{
 		auto nph = dynamic_cast<NotePlayHandle*>(playHandle);
@@ -312,15 +385,19 @@ void Song::setTempo()
 			nph->unlock();
 		}
 	}
-	Engine::audioEngine()->doneChangeInModel();
-
-	Engine::updateFramesPerTick();
-
 	// With a tempo map in force, the global model is only the tempo of the
-	// region BEFORE the map's first event, so the scalar just recomputed is not
-	// the tempo at the play head. Invalidate the follower's memo so the next
-	// audio block re-applies the mapped tempo (docs/TEMPO-MAP.md section 4).
-	if( m_tempoMap.map().active() ) { m_tempoMapAppliedTempo = -1; }
+	// region BEFORE the map's first event. Reset the follower's memo before
+	// releasing the guard that excludes followTempoMap().
+	if( m_tempoMap.map().active() ) { m_tempoMapAppliedTempo.store(-1, std::memory_order_relaxed); }
+	Engine::updateFramesPerTick();
+	audio->doneChangeInModel();
+
+	#ifdef LMMS_TESTING
+	if( s_tempoMapMemoBoundaryHookForTest != nullptr )
+	{
+		s_tempoMapMemoBoundaryHookForTest( this );
+	}
+	#endif
 
 	m_vstSyncController.setTempo( tempo );
 
@@ -728,7 +805,12 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 				// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
 				// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
 				// and store that so that when playing it back, it scales the value correctly.
-				p->recordValue(relTime, recordedModel->inverseScaledValue(recordedModel->value<float>()));
+				// The write is queued in the clip itself and applied by the
+				// control thread (cluster 5388): the render thread may not
+				// edit the clip's node map, and a queued write is not lost
+				// when the control thread is late.
+				p->queuePendingWrite(relTime.getTicks(),
+					recordedModel->inverseScaledValue(recordedModel->value<float>()));
 
 				noteRecordedModel(recordedModel);
 			}
@@ -1195,6 +1277,9 @@ void Song::stop()
 	m_playMode = PlayMode::None;
 
 	Engine::audioEngine()->doneChangeInModel();
+	// The last points must be applied before a caller can save or replace the
+	// project immediately after Stop.
+	if (!RealtimeScope::isActive()) { applyPendingAutomationWrites(); }
 
 	emit stopped();
 	emit playbackStateChanged();
@@ -1536,6 +1621,10 @@ void Song::clearProject()
 	{
 		stop();
 	}
+	// The writes the render thread queued belong to the project that is being
+	// cleared: they are dropped with it, not carried into the project that
+	// replaces it.
+	discardPendingAutomationWrites();
 
 	// A pending Record press (or an active recording pass) belongs to the
 	// project being cleared - the latch must not survive into the next one
@@ -2270,6 +2359,9 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFor
 			.arg(m_notLoadedSections.join(QStringLiteral(", ")));
 		return false;
 	}
+
+	// Include every queued write in an immediate save made during playback.
+	if (!RealtimeScope::isActive()) { applyPendingAutomationWrites(); }
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	buildProjectDocument( dataFile );

@@ -4823,3 +4823,17 @@ tests/CMakeLists.txt	cluster new-p14-261: registers RemotePluginShmFifoTest as a
 src/core/SessionAudioCells.cpp	new-p15-195: the settings-variants of the audio cells live in their own cache (Clips::variants) beside the loaded source files, and the 256-variant budget counts the variants alone - a project that loaded 256 source clips still gets the warped variant it asks for; the engine-rate change and retire() paths clear both caches; held by tests/src/core/SessionAudioCellPlaybackTest.cpp theVariantLimitCountsVariantsNotLoadedClips.
 tests/src/core/SessionAudioCellPlaybackTest.cpp	new-p15-195: theVariantLimitCountsVariantsNotLoadedClips loads 256 distinct source clips and proves a warped cell still gets its warped (300 frame) clip instead of the unwarped original (600 frames).
 include/Scale.h	cluster new-p14-279: declares the static Interval::centsGiveUsableRatio() so the project validator (Scale.cpp) and the Microtuner scale dialog (MicrotunerConfig.cpp) refuse a cents value whose ratio overflows or underflows the float; no other declaration changed.
+src/core/Song.cpp	cluster 1734: reset the tempo-map memo and update frames-per-tick while the render guard is held.
+tests/src/core/TempoMapTest.cpp	cluster 1734: inject a render period after the legacy tempo scalar update and before memo invalidation; assert that mapped tempo is restored.
+src/core/Song.cpp	cluster 3562: acquire the render-period guard before mutating the automated-model cache.
+tests/src/core/AutomationModesTest.cpp	cluster 3562: assert cache removal acquires the render guard before accessing the cache.
+tests/CMakeLists.txt	cluster 3562: provide the Song.cpp path for the deterministic cache-guard source invariant in AutomationModesTest.
+src/core/Song.cpp	cluster 5388: queue realtime automation points for a guarded control-thread drain and flush before Stop or project save.
+src/core/AutomationClip.cpp	cluster 5388: defer recordValue mutations when called inside RealtimeScope; the render thread enqueues by journal ID and a control-thread drain performs clip edits.
+tests/src/core/AutomationModesTest.cpp	cluster 5388: assert write-mode clip edits occur only after the deterministic control-thread queue drain.
+include/AutomationClip.h	cluster 5388 rework: declares the per-clip pending write store (queuePendingWrite, applyPendingWrites, pendingWriteCount, pendingWriteMerges) that replaces the fixed global queue, so a full store merges the newest write instead of dropping it.
+include/ProjectJournal.h	cluster 5388 rework: publishes journallingObjects(), the session-wide object map the control thread's drain walks to find the clips that have queued writes.
+include/Song.h	cluster 5388 rework: declares Song::applyPendingAutomationWrites(), the control thread's half of the deferred automation write.
+src/core/AutomationClip.cpp	cluster 5388 rework: recordValue queues the write in the clip itself (a packed, atomic per-clip store) instead of a fixed global queue; a full store keeps the newest write and counts the merge; the control thread applies the queued writes.
+src/core/Song.cpp	cluster 5388 rework: the render path queues the write in the clip it writes to, and the control thread's drain applies the queued writes of every clip that has them (found through the project journal) before Stop and before a save.
+tests/src/core/AutomationModesTest.cpp	cluster 5388 rework: assert that a saturated pending store keeps the newest write instead of dropping it.

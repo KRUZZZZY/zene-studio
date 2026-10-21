@@ -801,6 +801,13 @@ private:
 	void processAutomations(const TrackList& tracks, TimePos timeStart, f_cnt_t frames,
 		const AutomationLatency::ReadSnapshot& latencySnapshot);
 	void noteRecordedModel(const AutomatableModel* model);
+	/*! Applies the automation writes the render thread queued in the clips
+	 *  (cluster 5388). Control thread; the render thread may not edit a clip's
+	 *  node map, and a queued write is not lost when the control thread is
+	 *  late - the clip keeps it until it is applied. */
+	void applyPendingAutomationWrites();
+	//! Drops the queued writes of every clip (the project is being replaced).
+	void discardPendingAutomationWrites();
 	void processMetronome(size_t bufferOffset);
 	//! Recompute every frozen track's overlap allowance on the control thread after loop changes.
 	void updateFrozenTakeVoiceCapacities();
