@@ -169,7 +169,10 @@ allows `--build ... --target <t>` only).
 | **4b reapply** | `git apply $LOGS/fix.patch` | 0 |
 | **4b reapply** build+test | `cmake --build build --target NoteNoOpEditUndoStepTest ControlNoteScaleVerbsTest` (`build-13-4b-reapply.log`), the same ctest (`test-9-4b-reapply.log`) | build 0, **ctest 0** (`100% tests passed out of 2`) |
 | final family test | `ctest -R "ControlArmReversibilityTest\|...\|ControlNoteScaleVerbsTest\|NoteNoOpEditUndoStepTest"` (`test-10-family-final.log`) | **0** (`100% tests passed out of 25`) |
+| intermediate commit | the new-p14-41 commit alone: the cluster new-p14-72 hunks reverse-applied (`git apply -R $LOGS/commit2-hunks.patch`), `cmake --build build --target NoteNoOpEditUndoStepTest ControlNoteScaleVerbsTest` (`build-15-intermediate.log`), the same ctest (`test-11-intermediate.log`) | build 0, **ctest 0** - the first commit stands on its own (the scale verbs test is still the baseline one there) |
+| committed tree | `cmake --build build --target zene NoteNoOpEditUndoStepTest ControlNoteScaleVerbsTest ...` (`build-16-final.log`), the family ctest (`test-12-final-committed.log`) | build 0, **ctest 0** (`100% tests passed out of 25`) |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`gate-2-feature-check.log`) | **0** - `RESULT: PASS` (all eight rows PASS) |
+| gates, committed tree | the same command after the two commits (`gate-3-final.log`) | **0** - `RESULT: PASS` (all eight rows PASS) |
 
 Affected family: 25 test binaries executed in the final family run
 (`test-10-family-final.log`), 25 passed, 0 failed. The first family run
