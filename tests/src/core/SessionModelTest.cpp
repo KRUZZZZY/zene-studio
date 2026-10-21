@@ -439,6 +439,67 @@ private slots:
 		}
 	}
 
+	/*! A legacy <session> block holding more valid sub-scenes than SubScene::MaxCount is refused as a whole, like its
+	 *  malformed dimensions. Reading only the first MaxCount rows silently saved a shorter list than the file held.
+	 *  Rows that do not parse are still left out and do not count towards the limit.
+	 */
+	void excessLegacySubScenesAreRefusedNotTruncated()
+	{
+		const auto legacyBlock = []( int valid, int invalid, const QString& marker ) {
+			QString rows;
+			for( int row = 0; row < valid; ++row )
+			{
+				rows += QStringLiteral( "<subscene name=\"row%1\" scene=\"0\" tracks=\"0\"/>" ).arg( row );
+			}
+			for( int row = 0; row < invalid; ++row )
+			{
+				rows += QStringLiteral( "<subscene name=\"bad\" scene=\"x\" tracks=\"0\"/>" );
+			}
+			return QStringLiteral( "<session version=\"1\" tracks=\"1\" scenes=\"1\" marker=\"%1\"><scenes/><clips/>"
+				"<subscenes>%2</subscenes></session>" ).arg( marker, rows );
+		};
+
+		SessionModel model;
+		QDomDocument atLimit;
+		QVERIFY( atLimit.setContent( legacyBlock( SubScene::MaxCount, 0, QStringLiteral( "at-limit" ) ) ) );
+		QVERIFY( model.restoreState( atLimit.documentElement() ) );
+		QCOMPARE( model.subScenes().size(), std::size_t( SubScene::MaxCount ) );
+
+		QDomDocument overLimit;
+		QVERIFY( overLimit.setContent( legacyBlock( SubScene::MaxCount + 1, 0, QStringLiteral( "over-limit" ) ) ) );
+		QVERIFY( !model.restoreState( overLimit.documentElement() ) );
+		QVERIFY( model.subScenes().empty() );
+
+		QDomDocument unreadableRows;
+		QVERIFY( unreadableRows.setContent( legacyBlock( SubScene::MaxCount, 3, QStringLiteral( "unreadable" ) ) ) );
+		QVERIFY( model.restoreState( unreadableRows.documentElement() ) );
+		QCOMPARE( model.subScenes().size(), std::size_t( SubScene::MaxCount ) );
+
+		// Through a project file the refused block is kept verbatim, as the malformed dimensions are, not re-saved shorter.
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const QString source = dir.filePath( QStringLiteral( "legacy-subscenes.mmp" ) );
+		QVERIFY( song->saveProjectFile( source ) );
+		QString project = readFile( source );
+		const int insertion = project.indexOf( QStringLiteral( "</song>" ) );
+		QVERIFY( insertion >= 0 );
+		project.insert( insertion, legacyBlock( SubScene::MaxCount + 1, 0, QStringLiteral( "excess-subscenes" ) ) );
+		QVERIFY( QFile::remove( source ) );
+		QFile file( source );
+		QVERIFY( file.open( QIODevice::WriteOnly ) );
+		QVERIFY( file.write( project.toUtf8() ) == project.toUtf8().size() );
+		file.close();
+
+		song->loadProject( source );
+		const QString saved = dir.filePath( QStringLiteral( "saved-subscenes.mmp" ) );
+		QVERIFY( song->saveProjectFile( saved ) );
+		const QString output = readFile( saved );
+		QCOMPARE( output.count( QStringLiteral( "excess-subscenes" ) ), 1 );
+		QVERIFY( !output.contains( QStringLiteral( "<z:subscenes" ) ) );
+	}
+
 	//! A slot references either a pattern or an audio clip, never both
 	//! (SPEC-zene-studio A1 mutual exclusivity).
 	void slotReferenceIsMutuallyExclusive()
