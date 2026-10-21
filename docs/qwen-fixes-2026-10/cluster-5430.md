@@ -47,8 +47,8 @@ clip-creation assertion; the green runs each executed 1/1 and passed.
 | Restore product patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5430.r2/logs/fix.patch` | 0 | Guard restored. |
 | Final build | `cmake --build build --target zene ArrangeToolsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5430.r2/logs/build-4.log 2>&1` | 0 | Both targets built. |
 | Final green | `ctest -R '^ArrangeToolsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5430.r2/logs/test-4.log 2>&1` (run from `build/tests`) | 0 | 1/1 CTest test passed. |
-| Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5430 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5430.r2/logs/gate-1.log 2>&1` | 0 | PASS; all gates passed, with no new complexity or file-length failures. |
-| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5430 5430` | Pending | Run after committing this report; result will be recorded in a follow-up report commit. |
+| Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5430 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5430.r2/logs/gate-2.log 2>&1` | 0 | PASS; all gates passed, with no new complexity or file-length failures. |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5430 5430 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5430.r2/logs/submit-1.log 2>&1` | 0 | PASS; commits, clean tree, report, changed test, and gates all passed. |
 
 ## Self-check
 
