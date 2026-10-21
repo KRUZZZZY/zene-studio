@@ -38,6 +38,7 @@
 #include "Engine.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
+#include "TimelineSpeech.h"
 
 namespace lmms::markeractions
 {
@@ -214,13 +215,15 @@ int advance(tick_t tick, bool playing)
 	QVector<Marker> crossed;
 	for (const Marker& marker : ProjectMarkers::instance().markers())
 	{
-		if (!marker.action.isEmpty() && marker.tick > last && marker.tick <= tick) { crossed.append(marker); }
+		if (marker.tick > last && marker.tick <= tick && !marker.action.isEmpty()) { crossed.append(marker); }
 	}
+	const tick_t before = last;
 	last = tick;
 	for (const Marker& marker : crossed)
 	{
 		runMarkerAction(marker);
 	}
+	speech::announceCrossedMarkers(before, tick);
 	return static_cast<int>(crossed.size());
 }
 

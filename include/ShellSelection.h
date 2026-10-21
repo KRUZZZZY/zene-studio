@@ -59,9 +59,17 @@ public:
 	//! Select mixer channel @a id (ch-<n>) and no track.
 	void setChannel(const QString& id);
 
+	//! Say the current selection through the shared speech::announceSelection. A change from the
+	//! mouse filter (eventFilter) only queues it for the next loop turn: the pressed widget's
+	//! own press handler still runs after this filter and announces its hint, so speaking now
+	//! would be overwritten. window.select calls this after applying a change, so every GUI path
+	//! that goes through that command speaks exactly once.
+	void announceCurrent();
+
 	//! Follow the pointer: a press on a track header selects that track, a press on a clip
 	//! selects the clip. One application-wide filter that only reads presses; it never
-	//! consumes an event, so every widget still gets its click as before.
+	//! consumes an event, so every widget still gets its click as before. It selects through
+	//! the registered window.select command, the same entry the agent uses.
 	void trackClicks();
 
 protected:
@@ -76,6 +84,10 @@ private:
 	QPointer<Track> m_track;
 	QPointer<Clip> m_clip;
 	QString m_channel;
+	//! True while eventFilter applies a mouse press; announceChange then defers instead.
+	bool m_announceDeferred = false;
+	//! A deferred mouse-path announcement already queued (coalesces rapid presses into one).
+	bool m_announceQueued = false;
 	//! MX-021: the track playing into channel @a channelId when following is on, else nullptr.
 	static Track* followedTrack(const QString& channelId);
 };

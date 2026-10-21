@@ -772,6 +772,7 @@ include/TimeDisplayWidget.h
 include/TimeLineWidget.h
 include/TimePos.h
 include/Timeline.h
+include/TimelineSpeech.h
 include/ToolButton.h
 include/ToolPlugin.h
 include/ToolPluginView.h
@@ -2250,6 +2251,7 @@ src/gui/TakeLanesPanel.cpp
 src/gui/TaskIndicator.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
+src/gui/TimelineSpeech.cpp
 src/gui/ToolPluginView.cpp
 src/gui/ToolWindowMemory.cpp
 src/gui/TrackFolderMenu.cpp
@@ -2933,6 +2935,7 @@ tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
+tests/src/gui/TimelineSpeechTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/TrackRenderMenuTest.cpp

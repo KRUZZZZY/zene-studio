@@ -23,6 +23,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QCoreApplication>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -32,6 +33,7 @@
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
+#include "TimelineSpeech.h"
 
 namespace lmms
 {
@@ -143,6 +145,7 @@ void registerNoteSelect(ControlRegistry& registry)
 		result.insert(QStringLiteral("clip"), clipText);
 		result.insert(QStringLiteral("selected_notes"), selected);
 		result.insert(QStringLiteral("previous_notes"), previous);
+		speech::announceNoteSelection(clip, wanted.size());
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);

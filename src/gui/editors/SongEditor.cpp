@@ -412,11 +412,13 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 	}
 	else if( ke->key() == Qt::Key_Left )
 	{
+		// The arranger's cursor keys are transport.seek, the same command the transport bar,
+		// the ruler and the agent use - so moving the edit cursor speaks its new position.
 		tick_t t = m_song->getPlayPos(Song::PlayMode::Song).getTicks() - TimePos::ticksPerBar();
 		if( t >= 0 )
 		{
-			m_song->setPlayPos( t, Song::PlayMode::Song );
-			if (!m_song->isPlaying()) { m_song->setPlayPos(t, Song::PlayMode::None); }
+			ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
+				{{QStringLiteral("ticks"), static_cast<qint64>(t)}});
 		}
 	}
 	else if( ke->key() == Qt::Key_Right )
@@ -424,14 +426,14 @@ void SongEditor::keyPressEvent( QKeyEvent * ke )
 		tick_t t = m_song->getPlayPos(Song::PlayMode::Song).getTicks() + TimePos::ticksPerBar();
 		if( t < MaxSongLength )
 		{
-			m_song->setPlayPos( t, Song::PlayMode::Song );
-			if (!m_song->isPlaying()) { m_song->setPlayPos(t, Song::PlayMode::None); }
+			ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
+				{{QStringLiteral("ticks"), static_cast<qint64>(t)}});
 		}
 	}
 	else if( ke->key() == Qt::Key_Home )
 	{
-		m_song->setPlayPos( 0, Song::PlayMode::Song );
-		if (!m_song->isPlaying()) { m_song->setPlayPos(0, Song::PlayMode::None); }
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"),
+			{{QStringLiteral("ticks"), 0}});
 	}
 	else if( ke->key() == Qt::Key_Delete || ke->key() == Qt::Key_Backspace )
 	{

@@ -25,13 +25,16 @@
 #include "ShellSelection.h"
 #include "Song.h"
 #include "ConfigManager.h"
+#include "TimelineSpeech.h"
 
 #include <QApplication>
 #include <QEvent>
+#include <QTimer>
 #include <QWidget>
 
 #include "ClipView.h"
 #include "ControlMixerSupport.h"
+#include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "Engine.h"
@@ -102,6 +105,8 @@ void ShellSelection::setTrack(Track* track)
 	m_track = track;
 	m_channel.clear();
 	if (!clipStays) { m_clip = nullptr; }
+	// Q050-080: the registered window.select command says the new selection once; this setter
+	// stays silent so a GUI path that bypasses the command cannot speak a second time.
 	emit changed();
 }
 
@@ -133,27 +138,57 @@ void ShellSelection::trackClicks()
 	installed = true;
 }
 
+void ShellSelection::announceCurrent()
+{
+	// A queued mouse-path message will say the selection as it stands when it runs; speaking
+	// now as well would be the duplicate the shared path exists to prevent.
+	if (m_announceQueued) { return; }
+	if (!m_announceDeferred)
+	{
+		speech::announceSelection(m_clip.data(), m_track.data(), m_channel);
+		return;
+	}
+	m_announceQueued = true;
+	QTimer::singleShot(0, this, [this] {
+		m_announceQueued = false;
+		// The selection as it stands now: rapid presses coalesce into one message, and the
+		// repeat window drops it when it only repeats what is already said.
+		speech::announceSelection(m_clip.data(), m_track.data(), m_channel);
+	});
+}
+
 bool ShellSelection::eventFilter(QObject* watched, QEvent* event)
 {
 	if (event->type() != QEvent::MouseButtonPress || !watched->isWidgetType()) { return false; }
+	m_announceDeferred = true;
 	for (auto* widget = static_cast<QWidget*>(watched); widget != nullptr; widget = widget->parentWidget())
 	{
 		if (auto* clipView = dynamic_cast<ClipView*>(widget))
 		{
-			setClip(clipView->getClip());
+			Clip* clip = clipView->getClip();
+			const ControlResult applied = ControlRegistry::instance()->invoke(
+				QStringLiteral("window.select"), {{QStringLiteral("clip"), control::clipIdOf(clip)}});
+			if (!applied.ok) { setClip(clip); announceCurrent(); }
 			break;
 		}
 		if (auto* trackView = dynamic_cast<TrackView*>(widget))
 		{
-			setTrack(trackView->getTrack());
+			Track* track = trackView->getTrack();
+			const ControlResult applied = ControlRegistry::instance()->invoke(
+				QStringLiteral("window.select"), {{QStringLiteral("track"), control::trackIdOf(track)}});
+			if (!applied.ok) { setTrack(track); announceCurrent(); }
 			break;
 		}
 		if (auto* strip = dynamic_cast<MixerChannelView*>(widget))
 		{
-			setChannel(control::channelIdOf(Engine::mixer()->mixerChannel(strip->channelIndex())));
+			const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(strip->channelIndex()));
+			const ControlResult applied = ControlRegistry::instance()->invoke(
+				QStringLiteral("window.select"), {{QStringLiteral("channel"), channel}});
+			if (!applied.ok) { setChannel(channel); announceCurrent(); }
 			break;
 		}
 	}
+	m_announceDeferred = false;
 	return false;
 }
 

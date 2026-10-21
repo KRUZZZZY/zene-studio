@@ -269,4 +269,12 @@ signals drop the cards *before* a device is deleted, so no control ever paints a
 parameter; a 2 Hz check while the panel is visible catches what sends no signal (a modulator
 added over the socket).
 
+**Spoken selection, position and markers (Q050-080).** `window.select` says the
+chosen clip (name, track, bar/beat span) or the track/channel with the edit
+cursor; `note.select` says the count and the earliest note. `transport.play`,
+`transport.stop` and `transport.seek` say the playhead in the configured time
+format, and `marker.jump` plus playback across a marker say the marker's name.
+All of it is Polite through `view.announcements`: heard with All, silent with
+Errors or Off. Proven by `TimelineSpeechTest`.
+
 Screenshots: `docs/ui-logs/050-visual-overhaul/`.

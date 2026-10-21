@@ -78,6 +78,7 @@ SET(LMMS_SRCS
 	gui/AccessibleAnnouncements.cpp
 	gui/AccessibleCanvas.cpp
 	gui/ArrangerClipKeys.cpp
+	gui/TimelineSpeech.cpp
 	gui/ControlCommandsAccessibleEditing.cpp
 	gui/ItemListPanel.cpp
 	gui/ItemListSurfaceSources.cpp
