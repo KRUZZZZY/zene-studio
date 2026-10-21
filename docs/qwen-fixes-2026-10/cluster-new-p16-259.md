@@ -91,8 +91,16 @@ same content, and the workaround is recorded here.
 | Restore fix (4b GREEN) | `git apply $TMPDIR/new-p16-259.r1/logs/fix.patch` | **0** |
 | Rebuild with fix (4b GREEN) | `env -u MAKEFLAGS CCACHE_DISABLE=1 /usr/bin/cmake --build build --target WasmSandboxTest -j5 > $TMPDIR/new-p16-259.r1/logs/build-wasmsandboxtest-green-2.log 2>&1` | **0** |
 | Build remaining family targets | `env -u MAKEFLAGS CCACHE_DISABLE=1 /usr/bin/cmake --build build --target WasmAbiConformanceTest ControlWasmRenderTest WasmWorkerPoolTest -j5 > $TMPDIR/new-p16-259.r1/logs/build-wasm-family-1.log 2>&1` | **0** |
+| Rebuild `zene` with the final fix | `env -u MAKEFLAGS CCACHE_DISABLE=1 /usr/bin/cmake --build build --target zene -j5 > $TMPDIR/new-p16-259.r1/logs/build-zene-final-1.log 2>&1` | **0** |
+| Final family re-run | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(WasmSandboxTest\|WasmAbiConformanceTest\|ControlWasmRenderTest\|WasmWorkerPoolTest)$' --output-on-failure > $TMPDIR/new-p16-259.r1/logs/test-wasm-family-final-1.log 2>&1` | **0** (4/4 passed) |
 | Feature gates, original script | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > $TMPDIR/new-p16-259.r1/logs/feature-check-original-1.log 2>&1` | **1** (`PermissionError` creating `<worktree>-feature-check`; environment only) |
 | Feature gates, identical logic with log dir redirected | `python3 $TMPDIR/new-p16-259.r1/feature_check_logdir.py <worktree> > $TMPDIR/new-p16-259.r1/logs/feature-check-1.log 2>&1` | **0** (all 8 rows PASS) |
+
+The exact family command, without the table's pipe escaping:
+
+```bash
+cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(WasmSandboxTest|WasmAbiConformanceTest|ControlWasmRenderTest|WasmWorkerPoolTest)$' --output-on-failure > "$TMPDIR/new-p16-259.r1/logs/test-wasm-family-final-1.log" 2>&1
+```
 
 RED detail (`test-wasmsandboxtest-red-1.log`):
 
