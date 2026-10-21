@@ -18,6 +18,8 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QDir>
+#include <QSignalSpy>
 #include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -275,6 +277,94 @@ private slots:
 		QCOMPARE(s.regions(), 7);  // the instrument kept what it had
 		QVERIFY(levelIs(s.levelOf(60, 40), Low));
 		Engine::getSong()->clearErrors();
+	}
+
+	//! Automation moves a setting on the render thread, where nothing may emit a signal: the four models hold their change
+	//! signal back there. The window / socket thread still gets it - from the player's own poll timer - and that is what
+	//! rebuilds the synth for a polyphony change (a setting sfizz fixes when it is built), signal-free on the render side.
+	void automatedSettingsEmitNothingOnTheRenderThread()
+	{
+		const QString track = revtest::addTrack();
+		QVERIFY(run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), track}, {QStringLiteral("device"), deviceId()}}).ok);
+		auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(Engine::getSong()->tracks().back());
+		Instrument* instrument = instrumentTrack->instrument();
+		QVERIFY(QMetaObject::invokeMethod(instrument, "openFile", Q_ARG(QString, m_sfz), Q_ARG(bool, false)));
+
+		AutomatableModel* polyphony = instrument->parameterModel(2);
+		AutomatableModel* volume = instrument->parameterModel(0);
+		QCOMPARE(instrument->parameterName(2), QStringLiteral("Polyphony"));
+		for (const auto& [tick, value] : {std::pair{0, 64.0}, std::pair{24, 32.0}})
+		{
+			QVERIFY(run(QStringLiteral("automation.add_point"), {{QStringLiteral("track"), track}, {QStringLiteral("parameter"), QStringLiteral("inst/2")},
+				{QStringLiteral("ticks"), tick}, {QStringLiteral("value"), value}}).ok);
+		}
+		QVERIFY(run(QStringLiteral("automation.add_point"), {{QStringLiteral("track"), track}, {QStringLiteral("parameter"), QStringLiteral("inst/0")},
+			{QStringLiteral("ticks"), 0}, {QStringLiteral("value"), -3.0}}).ok);
+		QSignalSpy polyphonySignals(polyphony, &AutomatableModel::dataChanged);
+		QSignalSpy volumeSignals(volume, &AutomatableModel::dataChanged);
+		QSignalSpy reloads(instrument, SIGNAL(fileChanged()));
+
+		Song* song = Engine::getSong();
+		song->playSong();
+		song->getTimeline().setTicks(0);
+		for (int i = 0; i < 400 && song->getPlayPos().getTicks() < 48; ++i) { Engine::audioEngine()->renderNextPeriod(); }
+		const float polyphonyNow = polyphony->value<float>();
+		const float volumeNow = volume->value<float>();
+		// Counted before stop(): stopping the transport puts the automated models back to their start values on this (the
+		// main) thread, which is allowed to emit.
+		const int polyphonyEmitted = polyphonySignals.count();
+		const int volumeEmitted = volumeSignals.count();
+		const int reloadsDuringRender = reloads.count();
+		song->stop();
+		QCOMPARE(polyphonyNow, 32.f);
+		QVERIFY2(std::abs(volumeNow + 3.f) < 0.2f, "the volume automation was applied");
+		QCOMPARE(polyphonyEmitted, 0);
+		QCOMPARE(volumeEmitted, 0);
+		QCOMPARE(reloadsDuringRender, 0);
+
+		// The poll timer, on this thread, emits what was held back, and the reload it asks for follows.
+		QTRY_VERIFY_WITH_TIMEOUT(reloads.count() >= 1, 2000);
+		QVERIFY(polyphonySignals.count() >= 1);
+		SfzSession s;
+		s.track = instrumentTrack;
+		s.instrument = instrumentTrack->instrument();
+		QCOMPARE(s.regions(), 7);
+		QVERIFY2(s.levelOf(60, 40) > 0.01f, "the rebuilt synth plays");
+		Engine::getSong()->clearErrors();
+	}
+
+	//! An export loads every sample whole before its render thread starts (so nothing waits for a loader inside the render),
+	//! and the player goes back to streaming once it has finished.
+	void anExportPreloadsWholeSamplesAndThenStreamsAgain()
+	{
+		SfzSession s;
+		QVERIFY(s.start() && s.open(m_sfz));
+		auto frames = [&] { quint32 n = 0; QMetaObject::invokeMethod(s.instrument, "preloadFrames", Q_RETURN_ARG(quint32, n)); return n; };
+		const quint32 streaming = frames();
+		QVERIFY2(streaming > 0 && streaming < 100000, qPrintable(QString::number(streaming)));
+		emit Engine::getSong()->exportPreparing();
+		QCOMPARE(frames(), quint32{1} << 30);
+		QCOMPARE(s.regions(), 7);
+		QVERIFY(levelIs(s.levelOf(60, 40), Low));
+		emit Engine::getSong()->exportFinished();
+		QTRY_COMPARE_WITH_TIMEOUT(frames(), streaming, 2000);
+		QVERIFY(levelIs(s.levelOf(60, 40), Low));
+	}
+
+	//! plugin.open_file takes whatever the platform calls an absolute path - the window passes QFileInfo::absoluteFilePath(),
+	//! which on Windows is C:/dir/x.sfz - and refuses a relative one.
+	void openFileTakesThePlatformsAbsolutePaths()
+	{
+		const QString track = revtest::addTrack();
+		QVERIFY(run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), track}, {QStringLiteral("device"), deviceId()}}).ok);
+		for (const QString& spelled : {QFileInfo(m_sfz).absoluteFilePath(), QDir::toNativeSeparators(m_sfz)})
+		{
+			QVERIFY2(QFileInfo(spelled).isAbsolute(), qPrintable(spelled));
+			const ControlResult opened = run(QStringLiteral("plugin.open_file"), {{QStringLiteral("target"), track}, {QStringLiteral("path"), spelled}});
+			QVERIFY2(opened.ok, qPrintable(spelled + ": " + opened.errorMessage));
+		}
+		const ControlResult relative = run(QStringLiteral("plugin.open_file"), {{QStringLiteral("target"), track}, {QStringLiteral("path"), QStringLiteral("layers.sfz")}});
+		QCOMPARE(relative.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
 	//! browser.load on an .sfz makes a track with the SFZ player holding it - the file browser's Enter.

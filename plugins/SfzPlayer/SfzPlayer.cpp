@@ -16,6 +16,7 @@
 
 #include <QDomElement>
 #include <QFileInfo>
+#include <initializer_list>
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -114,12 +115,51 @@ SfzPlayer::SfzPlayer(InstrumentTrack* track)
 	for (const char* factor : {"1x", "2x", "4x", "8x"}) { m_oversamplingModel.addItem(QString::fromLatin1(factor)); }
 	m_oversamplingModel.setValue(0);
 
-	// Polyphony and oversampling are fixed when a synth is built, so a change builds the loaded file again. The
-	// default connection type queues the rebuild to this object's thread when an automation tick on the render
-	// thread changes them.
+	// Polyphony and oversampling are fixed when a synth is built, so a change builds the loaded file again. An automation
+	// tick changes a model on the render thread, where nothing may emit a signal: all four models hold their change
+	// signal back there (AutomatableModel::setDeferChangeSignalOnRenderThread) and a timer on this object's own thread
+	// emits it, which is what reaches scheduleReload. A change from the socket or the window emits at once.
+	for (AutomatableModel* model : std::initializer_list<AutomatableModel*>{&m_volumeModel, &m_qualityModel, &m_polyphonyModel, &m_oversamplingModel})
+	{
+		model->setDeferChangeSignalOnRenderThread();
+	}
 	connect(&m_polyphonyModel, &Model::dataChanged, this, &SfzPlayer::scheduleReload);
 	connect(&m_oversamplingModel, &Model::dataChanged, this, &SfzPlayer::scheduleReload);
 	connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, &SfzPlayer::scheduleReload);
+	connect(&m_deferredSignalTimer, &QTimer::timeout, this, &SfzPlayer::flushDeferredSignals);
+	m_deferredSignalTimer.start(DeferredSignalPollMs);
+	// An export loads every sample whole before it starts and goes back to streaming when it is done.
+	if (Song* song = Engine::getSong())
+	{
+		connect(song, &Song::exportPreparing, this, &SfzPlayer::exportPreparing, Qt::DirectConnection);
+		connect(song, &Song::exportFinished, this, &SfzPlayer::exportFinished);
+	}
+}
+
+quint32 SfzPlayer::preloadFrames() const
+{
+	const auto guard = m_synth.acquire();
+	return guard ? guard->preloadFrames() : 0;
+}
+
+void SfzPlayer::flushDeferredSignals()
+{
+	for (AutomatableModel* model : std::initializer_list<AutomatableModel*>{&m_volumeModel, &m_qualityModel, &m_polyphonyModel, &m_oversamplingModel})
+	{
+		model->flushDeferredChange();
+	}
+}
+
+void SfzPlayer::exportPreparing()
+{
+	m_exportPreload = true;
+	if (!m_file.isEmpty()) { installSynth(m_file); }
+}
+
+void SfzPlayer::exportFinished()
+{
+	m_exportPreload = false;
+	if (!m_file.isEmpty()) { installSynth(m_file); }
 }
 
 SfzPlayer::~SfzPlayer() = default;
@@ -141,6 +181,7 @@ SfzSynth::Settings SfzPlayer::currentSettings() const
 	settings.polyphony = m_polyphonyModel.value();
 	settings.oversampling = 1 << std::clamp(m_oversamplingModel.value(), 0, 3);
 	settings.quality = m_qualityModel.value();
+	if (m_exportPreload) { settings.preloadFrames = SfzSynth::WholeSamples; }
 	return settings;
 }
 
@@ -260,7 +301,6 @@ void SfzPlayer::configureSynth(SfzSynth& synth) noexcept
 		m_configuredSynth = synth.id();
 		m_appliedVolume = std::nanf("");
 		m_appliedQuality = 0;
-		m_freewheeling = false;
 	}
 
 	const float volume = m_volumeModel.value();
@@ -275,15 +315,6 @@ void SfzPlayer::configureSynth(SfzSynth& synth) noexcept
 	{
 		synth.setSampleQuality(quality);
 		m_appliedQuality = quality;
-	}
-
-	// An export renders faster than real time: sfizz then waits for its workers' sample data instead of
-	// running ahead of it (its freewheeling mode). Live playback never does.
-	const bool exporting = Engine::getSong()->isExporting();
-	if (exporting != m_freewheeling)
-	{
-		synth.setFreewheeling(exporting);
-		m_freewheeling = exporting;
 	}
 }
 

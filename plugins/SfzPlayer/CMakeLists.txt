@@ -176,6 +176,8 @@ TARGET_INCLUDE_DIRECTORIES(sfzplayer_sfizz
 		"${SFIZZ_EXT}/threadpool")
 TARGET_COMPILE_DEFINITIONS(sfzplayer_sfizz PRIVATE
 	SFIZZ_USE_SNDFILE=1
+	# the one change to sfizz's own sources: no waiting and no garbage collection inside the render callback
+	ZENE_SFIZZ_NO_RENDER_THREAD_WAITS=1
 	ST_AUDIO_FILE_USE_SNDFILE=1
 	GHC_FILESYSTEM_FWD
 	# pugixml and kiss_fft are compiled with the settings sfizz gives them upstream

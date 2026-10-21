@@ -260,6 +260,11 @@ void ProjectRenderer::startProcessing()
 		// make slots connected to sampleRateChanged()-signals being called immediately.
 		Engine::audioEngine()->setAudioDevice(m_fileDev, false);
 
+		// Q050-484: tell the instruments on the main thread, before the render thread exists.
+		Song* const song = Engine::getSong();
+		emit song->exportPreparing();
+		connect(this, &QThread::finished, song, &Song::exportFinished, Qt::UniqueConnection);
+
 		start(
 #ifndef LMMS_BUILD_WIN32
 			QThread::HighPriority

@@ -17,6 +17,7 @@
 #include <cstdint>
 
 #include <QString>
+#include <QTimer>
 
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
@@ -57,6 +58,8 @@ public:
 	const QString& file() const { return m_file; }
 	//! Regions in the loaded SFZ; 0 when nothing is loaded.
 	Q_INVOKABLE int regionCount() const { return m_regions.load(std::memory_order_relaxed); }
+	//! Frames of each sample the current synth keeps in memory from the start (control thread; 0 with nothing loaded).
+	Q_INVOKABLE quint32 preloadFrames() const;
 	//! One line for the window: what is loaded, or why the last load failed.
 	const QString& status() const { return m_status; }
 
@@ -85,6 +88,9 @@ private:
 	SfzSynth::Settings currentSettings() const;
 	bool installSynth(const QString& absolutePath);
 	void scheduleReload();
+	void flushDeferredSignals();
+	void exportPreparing();
+	void exportFinished();
 	void renameTrackAfter(const QString& file);
 
 	// render thread
@@ -105,6 +111,9 @@ private:
 	QString m_status;
 	std::atomic<bool> m_reloadQueued{false};
 	bool m_loadingSettings = false;
+	bool m_exportPreload = false;
+	QTimer m_deferredSignalTimer;
+	static constexpr int DeferredSignalPollMs = 100;
 	std::atomic<int> m_regions{0};
 
 	// render thread
@@ -112,7 +121,6 @@ private:
 	std::uint64_t m_configuredSynth = 0;
 	float m_appliedVolume = 0.f;
 	int m_appliedQuality = 0;
-	bool m_freewheeling = false;
 };
 
 } // namespace lmms

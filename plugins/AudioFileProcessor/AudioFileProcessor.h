@@ -117,6 +117,11 @@ private:
 	//! GUI-thread poll entry point (invoked by the view's timer, and by tests):
 	//! emits isPlaying only when the published frame changed since the last poll.
 	Q_INVOKABLE void pollPlayhead();
+public:
+	//! GUI-thread: emit the change signals of the envelope / voice-limit models that an automation tick changed on the
+	//! render thread (where they are held back). pollPlayhead() calls it; a test calls it directly.
+	Q_INVOKABLE void flushDeferredSignals();
+private:
 	std::atomic<f_cnt_t> m_playheadFrame{0};
 	//! GUI-thread-only last emitted value (coalescing).
 	f_cnt_t m_playheadShown{0};

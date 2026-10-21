@@ -37,6 +37,7 @@
 #include "ExportRenderSettings.h"
 
 #include <algorithm>
+#include <initializer_list>
 #include <memory>
 #include <new>
 
@@ -110,6 +111,14 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 	m_interpolationModel.addItem( tr( "Linear" ) );
 	m_interpolationModel.addItem( tr( "Sinc" ) );
 	m_interpolationModel.setValue( 1 );
+
+	// The three envelope / voice models are automatable: an automation tick changes them on the render thread, where no
+	// signal may be emitted. They hold the change signal back there; the window's poll timer (pollPlayhead) emits it so the
+	// knobs follow the automation. Nothing the render path reads depends on the signal - it reads the values.
+	for (AutomatableModel* model : std::initializer_list<AutomatableModel*>{&m_attackModel, &m_releaseModel, &m_voiceLimitModel})
+	{
+		model->setDeferChangeSignalOnRenderThread();
+	}
 
 	pointChanged();
 }
@@ -247,6 +256,16 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 
 
 
+void AudioFileProcessor::flushDeferredSignals()
+{
+	m_attackModel.flushDeferredChange();
+	m_releaseModel.flushDeferredChange();
+	m_voiceLimitModel.flushDeferredChange();
+}
+
+
+
+
 void AudioFileProcessor::publishPlayhead( f_cnt_t _current_frame ) noexcept
 {
 	m_playheadFrame.store( _current_frame, std::memory_order_relaxed );
@@ -254,6 +273,7 @@ void AudioFileProcessor::publishPlayhead( f_cnt_t _current_frame ) noexcept
 
 void AudioFileProcessor::pollPlayhead()
 {
+	flushDeferredSignals();
 	const f_cnt_t current = m_playheadFrame.load( std::memory_order_relaxed );
 	if( current == m_playheadShown ) { return; }
 	m_playheadShown = current;

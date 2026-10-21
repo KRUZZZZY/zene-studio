@@ -255,7 +255,8 @@ ControlResult openFileInInstrument(const QJsonObject& args)
 	ControlResult error;
 	if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error)) { return error; }
 	const QString path = args.value(QStringLiteral("path")).toString();
-	if (!path.startsWith(QLatin1Char('/')) || !QFileInfo(path).isFile())
+	// The platform's own rule for "absolute": /dir/x.sfz, C:\dir\x.sfz, C:/dir/x.sfz or \\server\share\x.sfz.
+	if (!QFileInfo(path).isAbsolute() || !QFileInfo(path).isFile())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'path' must be an absolute path to an existing file"));
 	}

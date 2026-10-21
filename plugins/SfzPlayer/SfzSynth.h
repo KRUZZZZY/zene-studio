@@ -65,10 +65,15 @@ public:
 		int polyphony = 64;
 		int oversampling = 1; //!< 1, 2, 4 or 8
 		int quality = 2;      //!< sfizz sample quality for live playback, 1..10
+		//! Frames of each sample kept in memory from the start; the rest streams from the file on sfizz's workers. An export
+		//! asks for WholeSamples so nothing has to be waited for while it renders faster than real time.
+		std::uint32_t preloadFrames = 8192;
 	};
 
 	//! The most frames one sfizz render call is given; longer periods are rendered in pieces.
 	static constexpr std::size_t ChunkFrames = 1024;
+	//! A preload size no sample reaches (sfizz clamps it to the file's length): the whole sample is read at load time.
+	static constexpr std::uint32_t WholeSamples = 1u << 30;
 
 	explicit SfzSynth(const Settings& settings);
 	~SfzSynth();
@@ -80,6 +85,8 @@ public:
 
 	int regionCount() const;
 	int groupCount() const;
+	//! The frames of each sample sfizz keeps in memory from the start (the rest streams); WholeSamples during an export.
+	std::uint32_t preloadFrames() const;
 	//! Differs for every SfzSynth ever built: the render thread tells a replaced synth from the one it last configured.
 	std::uint64_t id() const noexcept { return m_id; }
 
@@ -90,7 +97,6 @@ public:
 
 	void setVolume(float decibels) noexcept;
 	void setSampleQuality(int quality) noexcept;
-	void setFreewheeling(bool on) noexcept;
 
 private:
 	std::uint64_t m_id;

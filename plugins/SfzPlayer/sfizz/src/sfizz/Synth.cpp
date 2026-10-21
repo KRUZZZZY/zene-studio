@@ -1112,6 +1112,7 @@ void Synth::renderBlock(AudioSpan<float> buffer) noexcept
     FilePool& filePool = impl.resources_.getFilePool();
     BufferPool& bufferPool = impl.resources_.getBufferPool();
 
+#if !defined(ZENE_SFIZZ_NO_RENDER_THREAD_WAITS)
     if (synthConfig.freeWheeling)
         filePool.waitForBackgroundLoading();
 
@@ -1123,6 +1124,11 @@ void Synth::renderBlock(AudioSpan<float> buffer) noexcept
         impl.lastGarbageCollection_ = now;
         filePool.triggerGarbageCollection();
     }
+#endif
+    // Zene Studio (Q050-484): the host defines ZENE_SFIZZ_NO_RENDER_THREAD_WAITS, which removes the two things above from
+    // the render callback - waiting for the background loaders (freewheeling) and the periodic file-pool garbage
+    // collection, which takes a spin mutex and moves sample data. The host never enables freewheeling and loads whole
+    // samples up front for an export instead; see plugins/SfzPlayer/LICENSE-NOTICE.md.
 
     auto tempSpan = bufferPool.getStereoBuffer(numFrames);
     auto tempMixSpan = bufferPool.getStereoBuffer(numFrames);

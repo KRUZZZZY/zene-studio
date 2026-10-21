@@ -19,6 +19,7 @@
 #include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSignalSpy>
 
 #include <cmath>
 #include <memory>
@@ -285,6 +286,12 @@ private slots:
 		QCOMPARE(revtest::run(QStringLiteral("control.undo")).ok, true);
 		QCOMPARE(model(QStringLiteral("Release"))->value<float>(), 3.f);
 
+		// A change from the agent surface (not the render thread) still emits at once.
+		QSignalSpy setSignals(model(QStringLiteral("Release")), &AutomatableModel::dataChanged);
+		QVERIFY(setParam(releaseIndex, 21.0).ok);
+		QCOMPARE(setSignals.count(), 1);
+		QVERIFY(revtest::run(QStringLiteral("control.undo")).ok);
+
 		// Automation: attack 0 ms at tick 0, 60 ms from tick 48 (a new clip holds each value until the next point).
 		for (const auto& [tick, value] : {std::pair{0, 0.0}, std::pair{48, 60.0}})
 		{
@@ -296,14 +303,22 @@ private slots:
 		Song* song = Engine::getSong();
 		song->playSong();
 		song->getTimeline().setTicks(0);
-		int buffers = 0;
-		for (; buffers < 400 && song->getPlayPos().getTicks() < 96; ++buffers)
-		{
-			AutomatableModel::incrementPeriodCounter(); // one render period, as the engine counts them
-			song->processNextBuffer();
-		}
+		// Rendered by the audio engine itself, so the automation tick runs on what the engine knows as its render thread:
+		// no model may emit a change signal there (the three new models hold it back), however many ticks change them.
+		QSignalSpy attackSignals(model(QStringLiteral("Attack")), &AutomatableModel::dataChanged);
+		QSignalSpy releaseSignals(model(QStringLiteral("Release")), &AutomatableModel::dataChanged);
+		QSignalSpy limitSignals(model(QStringLiteral("Voice limit")), &AutomatableModel::dataChanged);
+		for (int buffers = 0; buffers < 400 && song->getPlayPos().getTicks() < 96; ++buffers) { Engine::audioEngine()->renderNextPeriod(); }
 		const int reached = song->getPlayPos().getTicks();
 		const float automated = model(QStringLiteral("Attack"))->value<float>(); // read while playing: stop() rewinds the models
+		QVERIFY2(automated > 0.f, "the automation moved the attack");
+		QCOMPARE(attackSignals.count(), 0);
+		QCOMPARE(releaseSignals.count(), 0);
+		QCOMPARE(limitSignals.count(), 0);
+		QVERIFY(QMetaObject::invokeMethod(m_instrument, "flushDeferredSignals"));  // what the window's poll timer does, on the GUI thread
+		QVERIFY2(attackSignals.count() == 1, "the held-back change is emitted once, off the render thread");
+		QVERIFY(QMetaObject::invokeMethod(m_instrument, "flushDeferredSignals"));
+		QCOMPARE(attackSignals.count(), 1);  // and only once
 		song->stop();
 		QVERIFY2(reached >= 96, "the transport never passed the second automation point");
 		model(QStringLiteral("Attack"))->setValue(automated); // hold the automated value, as a note started mid-clip sees it

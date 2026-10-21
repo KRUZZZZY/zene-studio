@@ -61,6 +61,28 @@ no-tautology, doc-figures, complexity, file-length: all PASS (no new item in my 
 targeted build because `ladspaeffect` is not built there (`the LADSPA host plugin 'ladspaeffect' is not in this build`);
 `ControlDeviceCatalogueTest` needs the Patman module, also not built here.
 
+## Round 2 (review: REWORK) - what changed and the proof
+
+| Blocking point | Fix | Proof (exit) |
+| --- | --- | --- |
+| sfizz garbage collection (spin mutex, moves data) in the render callback | `Synth::renderBlock` no longer runs it under `ZENE_SFIZZ_NO_RENDER_THREAD_WAITS`, always defined by `plugins/SfzPlayer/CMakeLists.txt` (the one change to vendored sfizz, declared in `LICENSE-NOTICE.md` and the Gate 6 ledger). Cost: streamed samples stay in memory until the synth is rebuilt (documented) | `SfzRenderThreadGate` (reads the built library's symbol table: `Synth.cpp.o` must not reference `FilePool::triggerGarbageCollection`): 0; with the define removed and rebuilt: 8; restored: 0 |
+| Export enables freewheeling (waits for loaders in the callback) | the player never enables freewheeling (`setFreewheeling` removed); the same define also removes the wait. An export instead loads whole samples first: `ProjectRenderer::startProcessing` emits new `Song::exportPreparing` on the main thread, the player rebuilds with a whole-sample preload; `Song::exportFinished` (queued from the render thread's end) returns it to streaming | `SfzPlayerTest::anExportPreloadsWholeSamplesAndThenStreamsAgain`: 0 (8192 -> 2^30 -> 8192 frames, plays throughout) |
+| Q050-103 automation emits `dataChanged` on the render thread | `AutomatableModel::setDeferChangeSignalOnRenderThread` / `flushDeferredChange` (opt-in; every other model is unchanged); the three new sampler models hold the signal back on the render thread and the window's poll timer emits it | `SamplerEnvelopeTest::automationDrivesTheEnvelope` now renders with `AudioEngine::renderNextPeriod` and asserts 0 signals on the render thread, 1 after the flush, and that `plugin.param_set` still emits at once: 0; with the deferral disabled: 8; restored: 0 |
+| Q050-484 polyphony/oversampling connected to `scheduleReload` by automation | all four SFZ models defer on the render thread; a 100 ms timer on the player's own thread emits them, which is what asks for the reload | `SfzPlayerTest::automatedSettingsEmitNothingOnTheRenderThread` (automation of Volume and Polyphony applied by the engine's render: 0 signals and 0 reloads there; reload and playback follow): 0; with the deferral disabled: 8; restored: 0 |
+| `plugin.open_file` accepts only `/`-paths | `QFileInfo::isAbsolute()` (platform rule: `C:/x`, `C:\x`, UNC) | `SfzPlayerTest::openFileTakesThePlatformsAbsolutePaths` (absolute and native-separator spellings accepted, relative refused `invalid_args`): 0. Only the Linux spellings could be run here |
+
+Re-run after the changes (one ctest run, exit 0, 18/18): `SamplerEnvelopeTest`, `SamplerVoiceReuseTest`, `SfzPlayerTest`,
+`SfzPlayerRealtimeTest` (0 allocations / 0 frees, streamed reads only off the render thread), `SfzRenderThreadGate`,
+`AudioFileProcessorPlayheadTest`, `AudioFileProcessorWaveViewTest`, `PatcherCanvasTest`, `PatcherCommandsTest`,
+`ReversibilityContractTest`, `DevicePanelTest`, `RackMenuTest`, `EffectRackAddTest`, `AgentSurfaceReportTest`, `ControlRegistryTest`,
+`ControlCommandsSnapshot`, `PluginCompatMatrixGate`, `PluginFormatsDocsGate`. No command was added or changed in round 2 (the
+snapshot is unchanged). Round-2 logs: `.../runs/Q050-484.r2/logs/`.
+
+Honest notes: the existing sampler models (amplify, start, end, loop, ...) and every other automatable model in the product
+still emit their change signal where an automation tick changes them on the render thread; only the seven models these units add
+hold it back. sfizz's `renderBlock` still takes its own try-lock for control calls the player never makes on a live synth. The
+synth hand-over and voice pool remain argued, not measured (no ThreadSanitizer here).
+
 ## Self-check
 
 1. **Each new test fails with the product change reverted and passes restored** - yes, exit codes in the tables above:

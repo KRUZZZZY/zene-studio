@@ -6176,6 +6176,15 @@ if(PYTHON3_EXECUTABLE)
 	add_test(NAME PluginFormatsDocsGateSelfTest
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-formats-docs-gate.py
 			--self-test)
+	# Q050-484: sfizz's render callback runs no file-pool garbage collection (the symbol table of the built library says so).
+	if(TARGET sfzplayer_sfizz AND NOT MSVC)
+		add_custom_target(SfzRenderThreadGateDeps)
+		add_dependencies(SfzRenderThreadGateDeps sfzplayer_sfizz)
+		add_test(NAME SfzRenderThreadGate
+			COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/sfz-render-thread-gate.py $<TARGET_FILE:sfzplayer_sfizz>)
+		set_tests_properties(SfzRenderThreadGate PROPERTIES SKIP_RETURN_CODE 77)
+	endif()
+
 	# Q050-071: the published third-party compatibility page is what was measured - subjects pinned by package and file
 	# hash, one row per subject, four distinct outcomes, third-party rows apart from the in-tree fixtures, the page
 	# rendered from the results byte for byte. File reads only. The self-test is its red control.

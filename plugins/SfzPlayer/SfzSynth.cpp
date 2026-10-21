@@ -38,6 +38,7 @@ SfzSynth::SfzSynth(const Settings& settings)
 	m_synth->setNumVoices(settings.polyphony);
 	m_synth->setOversamplingFactor(settings.oversampling);
 	m_synth->setSampleQuality(sfz::Sfizz::ProcessLive, settings.quality);
+	m_synth->setPreloadSize(settings.preloadFrames);
 }
 
 SfzSynth::~SfzSynth() = default;
@@ -50,6 +51,11 @@ bool SfzSynth::load(const std::string& path)
 int SfzSynth::regionCount() const
 {
 	return m_synth->getNumRegions();
+}
+
+std::uint32_t SfzSynth::preloadFrames() const
+{
+	return m_synth->getPreloadSize();
 }
 
 int SfzSynth::groupCount() const
@@ -91,12 +97,6 @@ void SfzSynth::setVolume(float decibels) noexcept
 void SfzSynth::setSampleQuality(int quality) noexcept
 {
 	m_synth->setSampleQuality(sfz::Sfizz::ProcessLive, quality);
-}
-
-void SfzSynth::setFreewheeling(bool on) noexcept
-{
-	if (on) { m_synth->enableFreeWheeling(); }
-	else { m_synth->disableFreeWheeling(); }
 }
 
 } // namespace lmms

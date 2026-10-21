@@ -3,7 +3,11 @@
 The SFZ Player (`SfzPlayer*.cpp/.h`, `SfzSynth*`, `RtPublished.h`) is Zene Studio code, GPL-2.0-or-later like the rest
 of the program. It plays SFZ instruments with **sfizz 1.2.3** (https://github.com/sfztools/sfizz, BSD-2-Clause),
 vendored under `sfizz/` and built into the module as static libraries on every platform. The sfizz release tarball
-(which carries its dependencies) is the source; nothing was changed in the files that were kept.
+(which carries its dependencies) is the source. **One change** was made to the files that were kept: in
+`sfizz/src/sfizz/Synth.cpp`, `Synth::renderBlock` no longer waits for the background loaders when freewheeling and no
+longer runs the file pool's garbage collection, when the module is built with `ZENE_SFIZZ_NO_RENDER_THREAD_WAITS` (the
+module always is). Both took a lock or waited inside the render callback. Without the collection, a sample that was
+streamed to its end stays in memory until the synth is rebuilt (a reload, an export, a project close).
 
 | Path under `sfizz/` | What | Licence |
 | --- | --- | --- |
