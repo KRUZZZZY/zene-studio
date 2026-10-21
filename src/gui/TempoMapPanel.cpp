@@ -44,6 +44,7 @@
 #include "Engine.h"
 #include "MusicalTime.h"
 #include "Song.h"
+#include "TempoMap.h"
 #include "UnattendedRun.h"
 
 namespace lmms::gui
@@ -66,6 +67,39 @@ QPushButton* commandButton(const QString& label, const char* command, QWidget* p
 
 QString cell(int value) { return value > 0 ? QString::number(value) : QStringLiteral("-"); }
 
+//! The tempo event in force at @a tick: the last one carrying a tempo at or before it.
+const TempoMapEvent* tempoEventAt(const TempoMap& map, int tick)
+{
+	const TempoMapEvent* inForce = nullptr;
+	for (const TempoMapEvent& event : map.all())
+	{
+		if (event.hasTempo && event.tick <= tick) { inForce = &event; }
+	}
+	return inForce;
+}
+
+/*! True when the tempo in force at @a tick is part of a RAMP: the event holding it moves to a later
+ *  tempo event. The map ignores a ramp on the last tempo event (there is nothing to ramp to), so
+ *  that one does not count. */
+bool rampsAt(const TempoMap& map, int tick)
+{
+	const TempoMapEvent* inForce = tempoEventAt(map, tick);
+	if (inForce == nullptr || !inForce->ramp) { return false; }
+	for (const TempoMapEvent& event : map.all())
+	{
+		if (event.hasTempo && event.tick > inForce->tick) { return true; }
+	}
+	return false;
+}
+
+//! True when the row holds a tempo event: a ramp needs a tempo to ramp from (cluster new-p17-187).
+bool rowHasTempo(const QTableWidget* table, int row)
+{
+	if (table == nullptr || row < 0 || row >= table->rowCount()) { return false; }
+	const QTableWidgetItem* item = table->item(row, 0);
+	return item != nullptr && item->data(Qt::UserRole + 1).toBool();
+}
+
 //! The row of the last event that carries a tempo, or -1: a ramp on it has no next tempo to reach and is
 //! ignored (TempoMap.h, TempoMapEvent::ramp).
 int lastTempoRow(const QJsonArray& events)
@@ -80,10 +114,15 @@ int lastTempoRow(const QJsonArray& events)
 //! The bar @a row's event falls in, integrating the map's OWN time-signature events: an event's meter
 //! runs from its own tick to the next, so a 3/4 event shortens every bar after it. Dividing every tick by
 //! one global ticksPerBar ignored the map and showed the wrong bar once the metre changed (cluster 1768).
+//! A metre change BETWEEN bar boundaries starts a bar of its own at the event's tick: the bar it
+//! interrupts ends there and the new metre's bars are counted from the event's tick, not from the old
+//! origin (cluster new-p17-186). An event that carries the metre already in force changes nothing.
 //! @a events must be in ascending tick order, as transport.tempo_map_get returns them.
-int barAt(const QJsonArray& events, int row, int projectTicksPerBar)
+int barAt(const QJsonArray& events, int row, int projectNumerator, int projectDenominator)
 {
-	int perBar = std::max(1, projectTicksPerBar);
+	int numerator = std::max(1, projectNumerator);
+	int denominator = std::max(1, projectDenominator);
+	int perBar = std::max(1, DefaultTicksPerBar * numerator / denominator);
 	int barStart = 0;
 	int bar = 1;
 	for (int i = 0; i <= row; ++i)
@@ -95,11 +134,17 @@ int barAt(const QJsonArray& events, int row, int projectTicksPerBar)
 			barStart += perBar;
 			++bar;
 		}
-		// The meter from THIS tick on; the bar it sits in was measured with the previous one.
-		const int numerator = event.value(QStringLiteral("numerator")).toInt();
-		const int denominator = event.value(QStringLiteral("denominator")).toInt();
-		if (numerator > 0 && denominator > 0)
+		// The meter from THIS tick on; the bar it interrupts was measured with the previous one.
+		const int eventNumerator = event.value(QStringLiteral("numerator")).toInt();
+		const int eventDenominator = event.value(QStringLiteral("denominator")).toInt();
+		if (eventNumerator > 0 && eventDenominator > 0
+			&& (eventNumerator != numerator || eventDenominator != denominator))
 		{
+			// A metre change: the new metre runs from this tick, so the bar it interrupts ends
+			// here and the new metre's bars are counted from here.
+			if (tick > barStart) { barStart = tick; ++bar; }
+			numerator = eventNumerator;
+			denominator = eventDenominator;
 			perBar = std::max(1, DefaultTicksPerBar * numerator / denominator);
 		}
 	}
@@ -149,7 +194,7 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	m_table->setAccessibleName(tr("Tempo map events"));
 
 	auto* add = commandButton(tr("Add at playhead"), "transport.tempo_map_add", this);
-	add->setToolTip(tr("Add an event at the play position with the project's tempo and time signature"));
+	add->setToolTip(tr("Add an event at the play position with the tempo and time signature in force there"));
 	auto* remove = commandButton(tr("Remove"), "transport.tempo_map_remove", this);
 	// ED-050: any event, typed (tick, tempo, metre, ramp), and a ramp to the next event toggled on a row.
 	auto* addForm = commandButton(tr("Add..."), "transport.tempo_map_add", this);
@@ -158,8 +203,11 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	ramp->setToolTip(tr("Switch the selected tempo event between holding and moving gradually to the next tempo event"));
 	// Remove and Ramp act on the selected row, so they are off while there is none (review ux05 #99).
 	const auto followRow = [this, remove, ramp] {
-		remove->setEnabled(m_table->currentRow() >= 0);
-		ramp->setEnabled(m_table->currentRow() >= 0);
+		const int row = m_table->currentRow();
+		remove->setEnabled(row >= 0);
+		// A ramp needs a tempo to ramp from: on a metre-only row the button is off, so the click
+		// cannot do nothing without saying so (cluster new-p17-187).
+		ramp->setEnabled(row >= 0 && rowHasTempo(m_table, row));
 	};
 	connect(m_table, &QTableWidget::currentCellChanged, this, followRow);
 	connect(addForm, &QPushButton::clicked, this, [this] {
@@ -246,19 +294,21 @@ void TempoMapPanel::refresh()
 		.arg(map.value(QStringLiteral("max_events")).toInt())
 		.arg(map.value(QStringLiteral("global_tempo")).toInt()));
 	const QJsonArray events = map.value(QStringLiteral("events")).toArray();
-	const int ticksPerBar = Engine::getSong()->ticksPerBar();
+	const int projectNumerator = Engine::getSong()->getTimeSigModel().getNumerator();
+	const int projectDenominator = Engine::getSong()->getTimeSigModel().getDenominator();
 	const int lastTempo = lastTempoRow(events);
 	m_table->setRowCount(static_cast<int>(events.size()));
 	for (int row = 0; row < events.size(); ++row)
 	{
 		const QJsonObject event = events.at(row).toObject();
 		const bool ramps = event.value(QStringLiteral("ramp")).toBool() && row < lastTempo;
-		const QStringList cells = eventCells(event, barAt(events, row, ticksPerBar), ramps);
+		const QStringList cells = eventCells(event, barAt(events, row, projectNumerator, projectDenominator), ramps);
 		for (int column = 0; column < cells.size(); ++column)
 		{
 			m_table->setItem(row, column, new QTableWidgetItem(cells.at(column)));
 		}
 		m_table->item(row, 0)->setData(Qt::UserRole, event.value(QStringLiteral("tick")).toInt());  // the event's own tick
+		m_table->item(row, 0)->setData(Qt::UserRole + 1, event.value(QStringLiteral("has_tempo")).toBool());  // a ramp needs a tempo
 	}
 }
 
@@ -270,10 +320,21 @@ int TempoMapPanel::rowCount() const
 bool TempoMapPanel::addEvent(int tick, int bpm)
 {
 	Song* song = Engine::getSong();
-	const ControlResult added = run("transport.tempo_map_add", {{QStringLiteral("tick"), tick},
-		{QStringLiteral("bpm"), bpm > 0 ? bpm : song->getTempo()},
-		{QStringLiteral("numerator"), song->getTimeSigModel().getNumerator()},
-		{QStringLiteral("denominator"), song->getTimeSigModel().getDenominator()}});
+	const TempoMap& map = song->tempoMap().map();
+	// What the MAP has in force at the tick: the song's global values can differ from them, and
+	// an event carrying those would overwrite the map's own metre or tempo there (cluster
+	// new-p9-475). Before the map's first event - or with no map in force - the engine answers the
+	// global values, which is what TempoMap::timeSignatureAtTick and tempoAtTick return.
+	const TempoMapTimeSignature globalSignature{song->getTimeSigModel().getNumerator(),
+		song->getTimeSigModel().getDenominator()};
+	const TempoMapTimeSignature signature = map.timeSignatureAtTick(tick, globalSignature);
+	const int tempo = bpm > 0 ? bpm : map.tempoAtTick(tick, song->getTempo());
+	QJsonObject args{{QStringLiteral("tick"), tick}, {QStringLiteral("bpm"), tempo},
+		{QStringLiteral("numerator"), signature.numerator},
+		{QStringLiteral("denominator"), signature.denominator}};
+	// Inside a ramp the tempo moves: the new event keeps the ramp, so the curve is not flattened.
+	if (rampsAt(map, tick)) { args.insert(QStringLiteral("ramp"), true); }
+	const ControlResult added = run("transport.tempo_map_add", args);
 	if (!added.ok) { m_summary->setText(added.errorMessage); return false; }
 	refresh();
 	return true;
@@ -284,7 +345,11 @@ bool TempoMapPanel::toggleRamp(int row)
 	const QJsonArray events = run("transport.tempo_map_get").result.value(QStringLiteral("events")).toArray();
 	if (row < 0 || row >= events.size()) { return false; }
 	const QJsonObject event = events.at(row).toObject();
-	if (!event.value(QStringLiteral("has_tempo")).toBool()) { return false; }
+	if (!event.value(QStringLiteral("has_tempo")).toBool())
+	{
+		m_summary->setText(tr("Ramp to Next needs a tempo event: this row carries only a time signature."));
+		return false;
+	}
 	const bool ramps = !event.value(QStringLiteral("ramp")).toBool();
 	// The last tempo event has no next tempo to ramp to: the map ignores its ramp (review ux05 #97).
 	if (ramps && row >= lastTempoRow(events))

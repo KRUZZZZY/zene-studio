@@ -56,6 +56,16 @@ QJsonObject mapState()
 	return ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_get"), QJsonObject{}).result;
 }
 
+//! The panel's own "Ramp to Next" button: the only one whose label names a ramp.
+QPushButton* rampButton(QWidget* panel)
+{
+	for (QPushButton* button : panel->findChildren<QPushButton*>())
+	{
+		if (button->text().contains(QStringLiteral("Ramp"))) { return button; }
+	}
+	return nullptr;
+}
+
 } // namespace
 
 class TempoMapPanelTest : public QObject
@@ -173,6 +183,80 @@ private slots:
 		QCOMPARE(table->item(0, 0)->text(), QStringLiteral("1"));  // tick 0
 		QCOMPARE(table->item(1, 0)->text(), QStringLiteral("2"));  // tick 192, the 3/4 bar itself
 		QCOMPARE(table->item(2, 0)->text(), QStringLiteral("3"));  // tick 336: bar 2 ended at 192+144
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+	}
+
+	//! BUG 7 (cluster new-p9-475): "Add at playhead" sent the SONG's global time signature (and its
+	//! global tempo) with the new event, so it overwrote what the map had in force at that tick: a
+	//! 3/4 map met a 4/4 song and the add put the song's 4/4 back into the map.
+	void theAddAtPlayheadKeepsTheMappedMetreAndTempo()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 0);
+		// 3/4 at 120 BPM from tick 0 in the map; the song's own metre (4/4) and tempo stay as they are.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 120}, {QStringLiteral("numerator"), 3},
+				{QStringLiteral("denominator"), 4}}).ok);
+		TempoMapPanel panel;
+		// What the "Add at playhead" button does: the event at the play position, with the tempo and
+		// the metre the MAP has in force there (0: the map's own tempo).
+		QVERIFY(panel.addEvent(480, 0));
+		const QJsonArray events = mapState().value(QStringLiteral("events")).toArray();
+		QCOMPARE(events.size(), 2);
+		const QJsonObject added = events.at(1).toObject();
+		QCOMPARE(added.value(QStringLiteral("tick")).toInt(), 480);
+		QCOMPARE(added.value(QStringLiteral("numerator")).toInt(), 3);  // the metre in force, not the song's 4/4
+		QCOMPARE(added.value(QStringLiteral("denominator")).toInt(), 4);
+		QCOMPARE(added.value(QStringLiteral("bpm")).toInt(), 120);  // the tempo in force, not the song's
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+	}
+
+	//! BUG 4 (cluster new-p17-187): the Ramp button was enabled for ANY selected row, but a
+	//! time-signature-only row has no tempo to ramp - the click did nothing and said nothing.
+	void theRampButtonIsOffOnAMetreOnlyRow()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 0);
+		// A metre-only event (no tempo) and a tempo event.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("numerator"), 3},
+				{QStringLiteral("denominator"), 4}}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 192}, {QStringLiteral("bpm"), 120}}).ok);
+		TempoMapPanel panel;
+		auto* table = panel.findChild<QTableWidget*>();
+		auto* ramp = rampButton(&panel);
+		QVERIFY(table != nullptr);
+		QVERIFY(ramp != nullptr);
+		QCOMPARE(panel.rowCount(), 2);
+		table->setCurrentCell(0, 0);  // the metre-only row: nothing to ramp
+		QVERIFY(!ramp->isEnabled());
+		table->setCurrentCell(1, 0);  // the tempo row
+		QVERIFY(ramp->isEnabled());
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+	}
+
+	//! BUG 3 (cluster new-p17-186): a metre change BETWEEN bar boundaries left the bar grid anchored
+	//! to the old origin, so the bars after it were counted from boundaries that do not follow it.
+	void anOffGridMetreChangeStartsItsOwnBar()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 0);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 120}}).ok);
+		// 3/4 from tick 100, in the middle of the first 4/4 bar.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 100}, {QStringLiteral("numerator"), 3},
+				{QStringLiteral("denominator"), 4}}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 250}, {QStringLiteral("bpm"), 100}}).ok);
+		TempoMapPanel panel;
+		panel.refresh();
+		auto* table = panel.findChild<QTableWidget*>();
+		QCOMPARE(panel.rowCount(), 3);
+		QCOMPARE(table->item(0, 0)->text(), QStringLiteral("1"));  // tick 0
+		QCOMPARE(table->item(1, 0)->text(), QStringLiteral("2"));  // tick 100: the 3/4 bar opens here
+		QCOMPARE(table->item(2, 0)->text(), QStringLiteral("3"));  // tick 250: that bar ended at 100+144
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
 	}
 };
