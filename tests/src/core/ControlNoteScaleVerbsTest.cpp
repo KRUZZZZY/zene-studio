@@ -517,6 +517,19 @@ private slots:
 		QCOMPARE(depthAfter, depthBefore);
 	}
 
+	//! A no-op transform must not advertise an undo transaction.
+	void zeroSemitoneTransposeDoesNotAdvertiseAnUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const int before = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		const ControlResult transposed = run(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("semitones"), 0}});
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		const int after = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		QCOMPARE(after, before);
+	}
+
 	//! A zero velocity delta must not leave a clip checkpoint to undo.
 	void zeroVelocityOffsetDoesNotTakeUndoStep()
 	{
@@ -549,6 +562,37 @@ private slots:
 		const int depthAfter = journal->undoDepth();
 		while (journal->undoDepth() > depthBefore) { QVERIFY(run(QStringLiteral("control.undo")).ok); }
 		QCOMPARE(depthAfter, depthBefore);
+	}
+
+	//! A no-op invert must not advertise an undo transaction.
+	void invertNoOpDoesNotAdvertiseAnUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const int before = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		const ControlResult inverted = run(QStringLiteral("note.invert"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(inverted.ok, qPrintable(inverted.errorMessage));
+		QCOMPARE(inverted.result.value(QStringLiteral("inverted")).toInt(), 0);
+		const int after = run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt();
+		QCOMPARE(after, before);
+	}
+
+	//! Invert counts only the notes that actually move.
+	void invertCountsOnlyNotesThatMove()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a fixture");
+		for (int key : {60, 62, 64})
+		{
+			QVERIFY(run(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("key"), key},
+					{QStringLiteral("position"), (key - 60) * 12}, {QStringLiteral("length"), 24}}).ok);
+		}
+		const ControlResult inverted = run(QStringLiteral("note.invert"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(inverted.ok, qPrintable(inverted.errorMessage));
+		QCOMPARE(inverted.result.value(QStringLiteral("inverted")).toInt(), 2);
 	}
 
 	//! W6: the three transforms, each with its inverse exercised for real, plus the
