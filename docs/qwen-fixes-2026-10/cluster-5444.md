@@ -181,7 +181,9 @@ was changed for it.
 * **Gate-checker environment.** The exact `feature_check.py` command cannot write its sibling
   `<worktree>-feature-check` directory in this session (`PermissionError: [Errno 13] Permission
   denied`, exit 1) for the same sandbox reason as the log folder. The equivalent run with only that
-  output directory redirected exits 0 with every gate PASS (table above), and the exact
-  `submit_check.py` agrees on every item it can check: `commits on the branch` PASS, `working tree
-  clean` PASS, `report .../cluster-5444.md` PASS, `tests added or changed` PASS, with only its
-  embedded `gates (feature_check.py)` row FAIL on that same `PermissionError`.
+  output directory redirected exits 0 with every gate PASS (table above). The exact
+  `submit_check.py` reports PASS for `commits on the branch`, `working tree clean`, `report
+  .../cluster-5444.md` and `tests added or changed`, with only its embedded `gates (feature_check.py)`
+  row FAIL on that same `PermissionError`; its equivalent run with the same small output-path
+  redirect exits 0 and prints `RESULT: PASS - submit`
+  (`/tmp/5444-logs/submit-check-equivalent.log`).
