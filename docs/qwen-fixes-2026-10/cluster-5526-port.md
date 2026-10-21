@@ -30,7 +30,7 @@ Both settings are now `std::atomic` and statically required to be always lock-fr
 | Rebuild with the fix restored | `cmake --build build --target zene AutomationThinTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/build-4.log 2>&1; echo EXIT=$?` | 0 |
 | Reversal-proof GREEN regression | `ctest -R '^AutomationThinTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/test-5.log 2>&1; echo EXIT=$?` | 0; 1/1 passed |
 | Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5526-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/gate-7.log 2>&1; echo EXIT=$?` | 0; all eight checks passed |
-| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5526-port 5526-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/gate-6.log 2>&1; echo EXIT=$?` | 0 |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5526-port 5526-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/gate-8.log 2>&1; echo EXIT=$?` | 0 |
 
 ## Self-check
 
