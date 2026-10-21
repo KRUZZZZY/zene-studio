@@ -40,9 +40,11 @@ sample-rate update path still reclaims as well, so the change only adds a second
 The regression is `GranularPitchShifterRealtimeTest::retiredBuffersAreReclaimedWithoutAnotherUpdate`.  It
 loads the 120 s range, renders a block so the previous 5 s ring is retired, finds the named timer, stops it,
 and emits its `timeout` directly (no wall-clock waiting), counting `operator delete` through the allocation
-probe.  It requires one reclaim on the first tick and zero on the second.  This fails without the product
-change and passes with it (see the RED/GREEN table).  The old zero-interval spinning timer is replaced by the
-1 s coarse timer; the test asserts the interval is positive.
+probe.  It requires one reclaim on the first tick and zero on the second.  The old zero-interval spinning
+timer is replaced by the 1 s coarse timer; the test asserts the interval is positive.  If the named seam is
+absent (an older tree), the test looks for an active zero-interval timer only to report the spinning-timer
+defect and still fails the positive-interval assertion; it never accepts such a timer.  With no timer at all
+it fails the "no control-thread timer is scheduled" assertion.  Both fail cases are recorded below.
 
 ### new-p16-72: FALSE-POSITIVE (a saved range cannot index past RangeSeconds)
 
@@ -72,10 +74,12 @@ product change is made for this item.
 | Rebuild with fix | same build command | 0 |
 | Run GREEN | same test command | 0 (5 passed, 0 failed) |
 
-Round-2-only reverse patch (literal `git diff` of the working product files) was also checked:
-`git diff -- plugins/...cpp plugins/...h > fix-round2.patch`, `git apply -R` exit 0, build exit 0,
-test exit 1 at `retiredBuffersAreReclaimedWithoutAnotherUpdate` because the named timer is absent;
-`git apply` restore exit 0, build exit 0, test exit 0.
+Round-2-only reverse patch was also checked from the round-2 base:
+`git diff 2e835c9 -- plugins/...cpp plugins/...h > fix-round2.patch`, `git apply -R` exit 0, build exit 0,
+test exit 1 at `retiredBuffersAreReclaimedWithoutAnotherUpdate` because the unnamed round-1 timer has
+interval 0 (`reclaimTimer->interval() > 0` fails); `git apply` restore exit 0, build exit 0, test exit 0.
+The full job-base patch (`git diff b61e5f965 -- ...`) reverse exits 0, build 0, test 1 because no timer is
+installed at all, and restores to exit 0.
 
 The 2258 scratch RED used `git show b3a4d9d7c^:...` for both product files, build exit 0, test exit 1 with
 `callbackAllocations` 1 vs 0; restoring the current files, build exit 0, test exit 0.
@@ -122,10 +126,10 @@ Product/test commit: `1d29c8b3b`.  This report is committed separately.
 ## Self-check
 
 - Each new test FAILS with the product change reverted: `retiredBuffersAreReclaimedWithoutAnotherUpdate`
-  exits 1 with the full job product patch reversed (no timer) and with the round-2-only patch reversed
-  (named timer absent), and exits 0 restored.  The 2258 handoff test exits 1 with Q050-005 reversed
-  (`callbackAllocations` 1 vs 0) and 0 restored.  new-p16-72 has no product change; its evidence test passes
-  both ways by design.
+  exits 1 with the full job product patch reversed (no timer installed) and with the round-2-only patch
+  reversed (the round-1 unnamed timer has interval 0), and exits 0 restored in both cases.  The 2258 handoff
+  test exits 1 with Q050-005 reversed (`callbackAllocations` 1 vs 0) and 0 restored.  new-p16-72 has no
+  product change; its evidence test passes both ways by design.
 - Determinism: the reclamation test injects the timer's `timeout` signal directly (no sleeps, no wall-clock
   wait) and counts frees through the allocation probe; the 2258 test uses fixed 128-frame blocks, a fixed-rate
   test device and injected sample rates.  The only deadlines are completion bounds for the render thread, and
