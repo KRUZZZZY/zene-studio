@@ -130,6 +130,43 @@ private slots:
 		QCOMPARE(deviceBytes, QByteArray::fromHex("903C7F"));
 		qunsetenv("MIDIDEV");
 	}
+
+	//! A device write that never returns must not hold teardown up, and the descriptor
+	//! must NOT be closed while the writer is still inside that write: the writer owns
+	//! the descriptor for as long as it may write to it, and closes it when it has
+	//! written everything it was given. A teardown that closed the descriptor under the
+	//! stalled writer would let the bytes queued behind it land on a closed - or, worse,
+	//! a reused - descriptor.
+	void stalledWriteTeardownKeepsTheDescriptorUntilTheWriterFinishes()
+	{
+		const QByteArray path = "/tmp/scratchpad/oss-dev.bin";
+		QFile::remove(path);
+		{ QFile f(path); f.open(QIODevice::WriteOnly); f.close(); }
+		qputenv("MIDIDEV", path.constData());
+		resetDevice(true);
+		stallWrites = 1;
+		{
+			// The writer is held inside its first device write while two more bytes
+			// queue behind it. The destructor gives up on the stalled writer after the
+			// teardown grace period and returns; the writer is still inside the write.
+			TestMidiOss midi;
+			midi.sendByte(0x90);
+			QVERIFY(writeStarted.tryAcquire(1, 5000));
+			midi.sendByte(0x3C);
+			midi.sendByte(0x7F);
+		}
+
+		// The descriptor is still the writer's: it was not closed under the stalled write.
+		QCOMPARE(closeCalls, 0);
+
+		// The write returns: the writer delivers the queued bytes and closes the
+		// descriptor itself, exactly once.
+		writeGate.release();
+		QVERIFY(closed.tryAcquire(1, 5000));
+		QCOMPARE(closeCalls, 1);
+		QCOMPARE(closedBytes, QByteArray::fromHex("903C7F"));
+		qunsetenv("MIDIDEV");
+	}
 };
 
 QTEST_APPLESS_MAIN(MidiOssTest)

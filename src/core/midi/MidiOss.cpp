@@ -45,6 +45,10 @@ static constexpr auto writerTeardownGrace = std::chrono::milliseconds( 1000 );
 
 
 //! The writer's share of the output path: the device fd and the read end of the pipe.
+//! The writer OWNS the device descriptor: it closes it when it has written everything it
+//! was given. A teardown that abandons a stalled write therefore cannot close a
+//! descriptor the writer is still using, so a queued byte can never land on a closed -
+//! or, worse, a reused - descriptor.
 struct MidiOss::OutputWriter
 {
 	int fd = -1;
@@ -123,9 +127,16 @@ MidiOss::~MidiOss()
 
 	if( m_output )
 	{
+		// Closing the write end is the end of the queue: the writer writes what is still
+		// queued, then closes the device descriptor it owns.
 		::close( m_outPipe[1] );
 		m_outPipe[1] = -1;
 
+		// A writer blocked inside the device write cannot be stopped from outside without
+		// corrupting the device state, so it is abandoned instead of terminated. It keeps
+		// its own descriptor and closes it when the write returns; nothing here touches it
+		// again, so the bytes queued behind the stalled write are still delivered to the
+		// device they were meant for.
 		if( m_writerDone.wait_for( writerTeardownGrace ) == std::future_status::ready )
 		{
 			m_writer.join();
@@ -134,10 +145,15 @@ MidiOss::~MidiOss()
 		{
 			m_writer.detach();
 		}
-	}
 
-	if( m_fd >= 0 )
+		// The descriptor belongs to the writer from here on: it closes it when it is done
+		// with it. The reader thread above has stopped, so nothing else uses it.
+		m_fd = -1;
+	}
+	else if( m_fd >= 0 )
 	{
+		// No writer ever took the descriptor (the output path was never opened), so it
+		// is closed here.
 		zeneOssDeviceClose( m_fd );
 		m_fd = -1;
 	}
@@ -220,6 +236,9 @@ void MidiOss::runWriter( std::shared_ptr<OutputWriter> out )
 		}
 	}
 	::close( out->readFd );
+	// The writer owns the device descriptor and closes it, and only it. A teardown that
+	// abandoned a stalled write must not close it: the writer may still be writing to it.
+	zeneOssDeviceClose( out->fd );
 	out->finished.set_value();
 }
 
