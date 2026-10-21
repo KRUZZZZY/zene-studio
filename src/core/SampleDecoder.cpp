@@ -113,6 +113,20 @@ auto oggReadFloat(OggVorbis_File* file, float*** output, std::size_t length) -> 
 #endif
 	return ov_read_float(file, output, length, nullptr);
 }
+
+//! Releases libvorbisfile's decoder state when the decoder returns - the error paths too. The
+//! state belongs to ov_open_callbacks(), so every exit after a successful open must release it.
+class OggVorbisFileGuard
+{
+public:
+	explicit OggVorbisFileGuard(OggVorbis_File& file) : m_file(file) {}
+	~OggVorbisFileGuard() { ov_clear(&m_file); }
+	OggVorbisFileGuard(const OggVorbisFileGuard&) = delete;
+	OggVorbisFileGuard& operator=(const OggVorbisFileGuard&) = delete;
+
+private:
+	OggVorbis_File& m_file;
+};
 #endif // LMMS_HAVE_OGGVORBIS
 
 auto decodeSampleSF(const QString& audioFile) -> std::optional<SampleDecoder::Result>
@@ -192,6 +206,8 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 
 	auto vorbisFile = OggVorbis_File{};
 	if (ov_open_callbacks(&file, &vorbisFile, nullptr, 0, s_callbacks) < 0) { return std::nullopt; }
+	// The decoder state belongs to ov_open_callbacks(): the guard releases it on every exit below.
+	const auto stateGuard = OggVorbisFileGuard{vorbisFile};
 
 	const auto vorbisInfo = ov_info(&vorbisFile, -1);
 	if (vorbisInfo == nullptr) { return std::nullopt; }
@@ -223,7 +239,6 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 		}
 	}
 
-	ov_clear(&vorbisFile);
 	return SampleDecoder::Result{std::move(result), static_cast<int>(sampleRate)};
 }
 #endif // LMMS_HAVE_OGGVORBIS
@@ -300,22 +315,16 @@ auto boundedOggVorbis(const QString& audioFile, double maxSeconds) -> std::optio
 
 	auto vorbisFile = OggVorbis_File{};
 	if (ov_open_callbacks(&file, &vorbisFile, nullptr, 0, s_callbacks) < 0) { return std::nullopt; }
+	// The decoder state belongs to ov_open_callbacks(): the guard releases it on every exit below.
+	const auto stateGuard = OggVorbisFileGuard{vorbisFile};
 
 	const auto vorbisInfo = ov_info(&vorbisFile, -1);
-	if (vorbisInfo == nullptr)
-	{
-		ov_clear(&vorbisFile);
-		return std::nullopt;
-	}
+	if (vorbisInfo == nullptr) { return std::nullopt; }
 	const int channels = vorbisInfo->channels;
 	const int rate = static_cast<int>(vorbisInfo->rate);
 	// The Ogg container carries the length (the last page's granule position); ov_pcm_total reads it.
 	const ogg_int64_t total = ov_pcm_total(&vorbisFile, -1);
-	if (total < 0 || channels < 1)
-	{
-		ov_clear(&vorbisFile);
-		return std::nullopt;
-	}
+	if (total < 0 || channels < 1) { return std::nullopt; }
 
 	const auto maxFrames = boundedFrameCount(maxSeconds, static_cast<double>(rate));
 	if (!maxFrames) { return std::nullopt; }
@@ -327,11 +336,7 @@ auto boundedOggVorbis(const QString& audioFile, double maxSeconds) -> std::optio
 		float** output = nullptr;
 		const long want = static_cast<long>(std::min<std::int64_t>(wanted - static_cast<std::int64_t>(result.size()), 4096));
 		const long read = oggReadFloat(&vorbisFile, &output, static_cast<std::size_t>(want));
-		if (read < 0)
-		{
-			ov_clear(&vorbisFile);
-			return std::nullopt;
-		}
+		if (read < 0) { return std::nullopt; }
 		if (read == 0) { break; }
 		for (long i = 0; i < read; ++i)
 		{
@@ -339,7 +344,6 @@ auto boundedOggVorbis(const QString& audioFile, double maxSeconds) -> std::optio
 			result.push_back(SampleFrame{left, channels > 1 ? output[1][i] : left});
 		}
 	}
-	ov_clear(&vorbisFile);
 	return SampleDecoder::BoundedResult{{std::move(result), rate}, static_cast<std::int64_t>(total)};
 }
 #endif // LMMS_HAVE_OGGVORBIS
