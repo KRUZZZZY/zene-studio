@@ -39,6 +39,7 @@
 #include <QSet>
 #include <QVector>
 
+#include "BounceInPlace.h"
 #include "BrowserIndex.h"
 #include "ControlExportPresetSupport.h"
 #include "ControlCommandDef.h"
@@ -109,6 +110,14 @@ ControlResult queueFull()
 
 ControlResult queued(const RenderJob& job, bool start)
 {
+	// The render writes its output over the file it names, so an output that is its own source would replace the
+	// project it renders from with audio: refused before the queue takes it.
+	if (BounceInPlace::namesTheSameFile(job.source, job.out))
+	{
+		if (job.ownsSource) { QFile::remove(job.source); }
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'out' is the project being rendered: a render cannot be written over its own source"));
+	}
 	const int id = queue().add(job);
 	if (id < 0)
 	{

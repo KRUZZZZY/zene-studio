@@ -111,6 +111,8 @@ set(LMMS_TESTS
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
 	src/core/ControlRenderJobTest.cpp
+	# Cluster new-p16-186: a render queued onto its own source project is refused, and the project kept.
+	src/core/RenderSourceGuardTest.cpp
 	src/core/ControlSessionRecordLandTest.cpp
 	src/core/ControlMidiReconnectSharedTest.cpp
 	src/core/ControlPluginBusesTest.cpp

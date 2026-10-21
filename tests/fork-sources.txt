@@ -2685,6 +2685,7 @@ src/core/ControlCommandsRenderBounce.cpp
 src/core/RenderQueueBounce.cpp
 src/core/SessionCheckpoint.cpp
 tests/src/core/ControlRenderJobTest.cpp
+tests/src/core/RenderSourceGuardTest.cpp
 
 # 2026-10-09 (M0 automation cluster 2647 round 2): new full-mixer baseline and worker-teardown guard proof.
 tests/src/core/AutomationPrepassProofTest.cpp
