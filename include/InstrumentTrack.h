@@ -47,6 +47,8 @@
 #include "Plugin.h"
 #include "Track.h"
 
+//! cluster 5186: the modulation-lifetime regression installs a watchable instrument in a track.
+class ModulationAudioViewTest;
 
 namespace lmms
 {
@@ -499,6 +501,9 @@ private:
 	friend class NotePlayHandle;
 	friend class gui::InstrumentTuningView;
 	friend class gui::MidiCCRackView;
+	//! cluster 5186: the regression needs an instrument in the track it can watch from its own
+	//! destructor, so that it can see the modulation target close BEFORE the teardown starts.
+	friend class ::ModulationAudioViewTest;
 
 } ;
 

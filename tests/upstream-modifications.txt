@@ -2767,3 +2767,4 @@ src/core/ModulationLayerPublisher.cpp	cluster 5186: connect instrument aboutToBe
 include/Instrument.h	cluster 5186: add aboutToBeDestroyed signal and Q_OBJECT for teardown coordination.
 src/core/Instrument.cpp	cluster 5186: emit aboutToBeDestroyed in destructor.
 src/tracks/InstrumentTrack.cpp	cluster 5186: emit instrument aboutToBeDestroyed before deletion.
+include/InstrumentTrack.h	cluster 5186: befriends ModulationAudioViewTest, the regression that needs an instrument in the track it can watch from its own destructor (a compile-time seam only; the shipped behaviour is unchanged).
