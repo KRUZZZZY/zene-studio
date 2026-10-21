@@ -116,6 +116,20 @@ int runPartialStartupChild()
 #endif
 }
 
+// Child-process body: a platform that reports zero hardware concurrency must still leave the
+// global pool with a worker, otherwise every enqueued task waits for a future that never comes.
+int runZeroConcurrencyChild()
+{
+	lmms::ThreadPool::s_numWorkers = 0;
+	auto& pool = lmms::ThreadPool::instance();
+	if (pool.numWorkers() < 1) { return 2; }
+
+	std::atomic<bool> ran{false};
+	auto future = pool.enqueue([&ran] { ran.store(true, std::memory_order_release); });
+	future.get();
+	return ran.load(std::memory_order_acquire) ? 0 : 3;
+}
+
 struct RvalueQualifiedCallable
 {
 	auto operator()() && -> int { return 413; }
@@ -253,6 +267,36 @@ private slots:
 		QCOMPARE(child.exitCode(), 0);
 #endif
 	}
+
+	// A pool asked for zero workers must still get one: without a worker the task below would
+	// never run and its future would never become ready.
+	void zeroWorkerRequestStillRunsTasks()
+	{
+		auto pool = std::make_unique<lmms::ThreadPool>(0);
+		QCOMPARE(pool->numWorkers(), std::size_t{1});
+
+		std::atomic<bool> ran{false};
+		auto future = pool->enqueue([&ran] { ran.store(true, std::memory_order_release); });
+		future.get();
+		QVERIFY(ran.load(std::memory_order_acquire));
+	}
+
+	// The global pool is built from the cached hardware concurrency, which the platform may
+	// report as zero. It runs in a child process so the singleton is still unbuilt here.
+	void zeroHardwareConcurrencyStillRunsTasks()
+	{
+		QProcess child;
+		child.start(QCoreApplication::applicationFilePath(), {QStringLiteral("--thread-pool-zero-concurrency-child")});
+		QVERIFY2(child.waitForStarted(5000), qPrintable(child.errorString()));
+		if (!child.waitForFinished(10000))
+		{
+			child.kill();
+			child.waitForFinished(5000);
+			QFAIL("The child did not finish with a zero hardware concurrency count.");
+		}
+		QVERIFY2(child.exitStatus() == QProcess::NormalExit, "The child crashed instead of reporting the worker count.");
+		QCOMPARE(child.exitCode(), 0);
+	}
 };
 
 int main(int argc, char** argv)
@@ -267,6 +311,10 @@ int main(int argc, char** argv)
 	if (argc > 1 && std::strcmp(argv[1], "--thread-pool-failure-child") == 0)
 	{
 		return runPartialStartupChild();
+	}
+	if (argc > 1 && std::strcmp(argv[1], "--thread-pool-zero-concurrency-child") == 0)
+	{
+		return runZeroConcurrencyChild();
 	}
 	ThreadPoolTest test;
 	return QTest::qExec(&test, argc, argv);
