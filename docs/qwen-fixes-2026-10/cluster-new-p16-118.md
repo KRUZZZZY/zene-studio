@@ -144,6 +144,13 @@ named targets). After building `monstro`, `nes` and `tripleoscillator`
    wait, no logging, no signal. No command was added or changed (the
    `ControlCommandsSnapshot` canary is untouched), and no undo step was introduced: the
    encoder is not a command and writes no model state.
+6. **The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so the conditional ask
+   does not apply. The unfixed code is quoted above: `src/core/midi/MidiEventToByteSeq.cpp`
+   wrote `data[1] = ev.controllerNumber();` (masked with `& 0x7F`),
+   `data[2] = ev.controllerValue();`, `data[1] = ev.program();`,
+   `data[1] = ev.channelPressure();` and `data[2] = ev.pitchBend() >> 7;` without a single
+   range check, and the RED run proves those branches produced a converted message
+   (`Actual 3, Expected 0`) where the contract says the event cannot be converted.
 
 ## Files in the cluster commit
 
