@@ -43,11 +43,16 @@
 #ifdef LMMS_HAVE_LV2
 #include <memory>
 
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "Lv2ControlBase.h"
 #include "Lv2Features.h"
 #include "Lv2Manager.h"
 #include "Lv2Evbuf.h"
 #include "Lv2Proc.h"
+#include "PluginFactory.h"
+#include "Song.h"
+#include "Track.h"
 #include <lilv/lilv.h>
 #endif
 
@@ -67,6 +72,10 @@ public:
 
 namespace
 {
+
+//! The URI of the LV2 fixture instrument this build puts on LV2_PATH (the same bundle
+//! the latency test uses): a real LV2 plug-in, so a state restore can be attempted.
+constexpr const char* FixtureUri = "urn:zene:test:lv2-instrument";
 
 //! The first loadable LV2 effect whose State interface saves something, its controls and that state.
 Effect* firstStatefulLv2(EffectChain& chain, Lv2ControlBase** controls, QString* state)
@@ -115,6 +124,11 @@ private slots:
 	{
 #ifdef LMMS_TEST_PLUGIN_DIR
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+#endif
+#ifdef LV2_TEST_INSTRUMENT_DIR
+		// The LV2 fixture instrument is found the way lilv finds any plug-in: on
+		// LV2_PATH, read when the engine starts.
+		qputenv("LV2_PATH", LV2_TEST_INSTRUMENT_DIR);
 #endif
 		Engine::init(true);
 	}
@@ -287,7 +301,81 @@ private slots:
 #endif
 	}
 
+	/*! BUG (cluster new-p17-83): a <lv2state> payload that cannot be restored must be
+	 *  REPORTED. The plug-in stays at its default state, so a load that says nothing
+	 *  loses what the project saved without the user learning about it. The report
+	 *  goes through the project load's error path and names the plug-in, so the user
+	 *  knows WHICH plug-in lost its state. */
+	void aFailedStateRestoreIsReported()
+	{
+#ifndef LMMS_HAVE_LV2
+		QSKIP("this build has no LV2 host");
+#else
+		const PluginFactory::PluginInfo& info = getPluginFactory()->pluginInfo("lv2instrument");
+		if (info.isNull()) { QSKIP("this build has no lv2instrument module"); }
+		Lv2Manager* manager = Engine::getLv2Manager();
+		if (manager == nullptr || manager->getPlugin(QString::fromUtf8(FixtureUri)) == nullptr)
+		{
+			QSKIP("the LV2 fixture instrument is not in this build's LV2 world");
+		}
+
+		// A real LV2 instrument, so the state path under test is the one a project load takes.
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		Plugin::Descriptor::SubPluginFeatures::Key::AttributeMap attributes;
+		attributes.insert(QStringLiteral("uri"), QString::fromUtf8(FixtureUri));
+		Plugin::Descriptor::SubPluginFeatures::Key key(info.descriptor,
+			QStringLiteral("Zene LV2 Test Instrument"), attributes);
+		Instrument* instrument = track->loadInstrument(QStringLiteral("lv2instrument"), &key);
+		QVERIFY(instrument != nullptr);
+		auto* lv2Controls = dynamic_cast<Lv2ControlBase*>(instrument);
+		QVERIFY(lv2Controls != nullptr);
+		QVERIFY(lv2Controls->control(0) != nullptr);
+		// The precondition: the payload the project holds is refused by the processor.
+		QVERIFY(!lv2Controls->control(0)->restoreState(QStringLiteral("this is not a state document")));
+
+		// The state the project holds cannot be parsed.
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("lv2controls"));
+		doc.appendChild(root);
+		QDomElement state = doc.createElement(QStringLiteral("lv2state"));
+		state.setAttribute(QStringLiteral("instance"), 0);
+		state.appendChild(doc.createCDATASection(QStringLiteral("this is not a state document")));
+		root.appendChild(state);
+
+		Engine::getSong()->clearErrors();
+		// The project's own load path: the instrument reads its state back from the element.
+		instrument->restoreState(root);
+
+		const QHash<QString, int>& errors = Engine::getSong()->errors();
+		QVERIFY2(!errors.isEmpty(), "a state that could not be restored is reported");
+		bool namesThePlugin = false;
+		for (auto it = errors.constBegin(); it != errors.constEnd(); ++it)
+		{
+			namesThePlugin = namesThePlugin || it.key().contains(QString::fromUtf8(FixtureUri));
+		}
+		QVERIFY2(namesThePlugin,
+			qPrintable(errors.keys().join(QStringLiteral(" | "))));
+
+		// An element that carries no state at all loses nothing, so it is not
+		// reported: a project that holds one must load as quietly as before.
+		QDomDocument emptyDoc;
+		QDomElement emptyRoot = emptyDoc.createElement(QStringLiteral("lv2controls"));
+		emptyDoc.appendChild(emptyRoot);
+		QDomElement emptyState = emptyDoc.createElement(QStringLiteral("lv2state"));
+		emptyState.setAttribute(QStringLiteral("instance"), 0);
+		emptyRoot.appendChild(emptyState);
+
+		Engine::getSong()->clearErrors();
+		instrument->restoreState(emptyRoot);
+		QVERIFY2(Engine::getSong()->errors().isEmpty(),
+			"an empty state element is not a failed restore");
+#endif
+	}
+
 	void rejectsAnEventWhosePaddingDoesNotFit()
+
 	{
 #ifndef LMMS_HAVE_LV2
 		QSKIP("this build has no LV2 host");

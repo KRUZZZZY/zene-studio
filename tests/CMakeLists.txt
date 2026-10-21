@@ -2956,12 +2956,21 @@ if(LMMS_HAVE_LV2)
 endif()
 # MX-157 (BUGS 11.34): the LV2 instrument fixture - a bundle whose instance reports a latency on its
 # latency port when LV2_TEST_INSTRUMENT_LATENCY is set - is InstrumentLatencyPdcTest's LV2 subject.
-if(LMMS_HAVE_LV2 AND TARGET InstrumentLatencyPdcTest AND TARGET lv2instrument)
+# It is Lv2StateTest's subject too: a real LV2 plug-in is what makes a state restore attempt
+# (and its failure) possible without a plug-in installed on the machine.
+if(LMMS_HAVE_LV2 AND TARGET lv2instrument AND (TARGET InstrumentLatencyPdcTest OR TARGET Lv2StateTest))
 	add_subdirectory(data/lv2-test-instrument)
 	get_filename_component(LMMS_LV2_LATENCY_FIXTURE_DIR "${LMMS_LV2_TEST_INSTRUMENT_BUNDLE}" DIRECTORY)
-	target_compile_definitions(InstrumentLatencyPdcTest PRIVATE
-		LV2_TEST_INSTRUMENT_DIR="${LMMS_LV2_LATENCY_FIXTURE_DIR}")
-	add_dependencies(InstrumentLatencyPdcTest lv2instrument lv2-test-instrument)
+	if(TARGET InstrumentLatencyPdcTest)
+		target_compile_definitions(InstrumentLatencyPdcTest PRIVATE
+			LV2_TEST_INSTRUMENT_DIR="${LMMS_LV2_LATENCY_FIXTURE_DIR}")
+		add_dependencies(InstrumentLatencyPdcTest lv2instrument lv2-test-instrument)
+	endif()
+	if(TARGET Lv2StateTest)
+		target_compile_definitions(Lv2StateTest PRIVATE
+			LV2_TEST_INSTRUMENT_DIR="${LMMS_LV2_LATENCY_FIXTURE_DIR}")
+		add_dependencies(Lv2StateTest lv2instrument lv2-test-instrument)
+	endif()
 endif()
 find_file(PART_C_SF2_FILE NAMES FluidR3_GM.sf2 default-GM.sf2
 	HINTS /usr/share/sounds/sf2 /usr/local/share/sounds/sf2)

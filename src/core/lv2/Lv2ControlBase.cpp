@@ -37,6 +37,7 @@
 #include "lmms_constants.h"
 #include "Lv2Manager.h"
 #include "Lv2Proc.h"
+#include "Song.h"
 
 
 namespace lmms
@@ -49,6 +50,16 @@ const LilvPlugin* pluginForUri(const QString& uri)
 {
 	Lv2Manager* manager = Engine::getLv2Manager();
 	return manager != nullptr ? manager->getPlugin(uri) : nullptr;
+}
+
+//! The identity of an LV2 plug-in in a load report: its URI - the stable name an LV2
+//! plug-in is known by, the same name the catalogue and the project file use.
+QString lv2PluginUri(const LilvPlugin* plugin)
+{
+	if (plugin == nullptr) { return QString(); }
+	const LilvNode* node = lilv_plugin_get_uri(plugin);
+	const char* uri = node != nullptr ? lilv_node_as_uri(node) : nullptr;
+	return uri != nullptr ? QString::fromUtf8(uri) : QString();
 }
 
 } // namespace
@@ -223,9 +234,33 @@ void Lv2ControlBase::loadSettings(const QDomElement &that)
 		const int instance = lv2StateInstanceIndex(element, m_procs.size());
 		if (instance >= 0)
 		{
-			m_procs[static_cast<std::size_t>(instance)]->restoreState(element.text());
+			const QString document = element.text();
+			// An empty element carries no state, so nothing can be lost and nothing
+			// is reported; every other document is restored, and a document the
+			// plug-in refuses is reported.
+			if (!document.isEmpty()
+				&& !m_procs[static_cast<std::size_t>(instance)]->restoreState(document))
+			{
+				// The state is lost: the processor stays at its default. A load that
+				// says nothing about it drops what the project saved in silence
+				// (cluster new-p17-83), so the failure is reported through the
+				// project load's error path, naming the plug-in it belongs to.
+				reportStateRestoreFailure(instance);
+			}
 		}
 	}
+}
+
+
+
+
+void Lv2ControlBase::reportStateRestoreFailure(int instance)
+{
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return; }
+	song->collectError(QObject::tr("LV2 plug-in %1: its state could not be restored (instance %2), "
+		"so the plug-in keeps its default state.")
+		.arg(lv2PluginUri(m_plugin)).arg(instance));
 }
 
 
