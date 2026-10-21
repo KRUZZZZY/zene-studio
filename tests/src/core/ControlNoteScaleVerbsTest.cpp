@@ -839,11 +839,55 @@ private slots:
 		QVERIFY2(again.ok, qPrintable(again.errorMessage));
 		QCOMPARE(again.result.value(QStringLiteral("notes_moved")).toInt(), 0);
 
-		// Two undos: the second snap is its own step (a no-op edit still records one,
-		// and undoing it leaves the first snap's result), then the first snap's step
-		// restores the keys.
+		// ONE undo: the second snap moved nothing, so it took no step of its own
+		// (Luna cluster new-p14-72) and the step under it is still the first snap's -
+		// which restores the keys.
 		REV_UNDO_OR_FAIL();
-		QCOMPARE(noteKey(fixture.clip, 1), 60);
+		QCOMPARE(noteKey(fixture.clip, 1), 61);
+		QCOMPARE(noteKey(fixture.clip, 0), 60);
+		QCOMPARE(noteKey(fixture.clip, 2), 62);
+	}
+
+	//! Luna cluster new-p14-72: a snap that moves NOTHING must take no undo step.
+	//! The empty step it used to push sat ON TOP of the first snap's, so an undo
+	//! after a second snap unwound the no-op - the clip stayed snapped and the real
+	//! edit needed one undo too many.
+	void aSecondSnapOfAClipAlreadyInScaleTakesNoUndoStep()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		// C (in C major), C# (out), D (in).
+		static const int keys[] = {60, 61, 62};
+		for (int index = 0; index < 3; ++index)
+		{
+			QVERIFY2(run(QStringLiteral("note.add"),
+				QJsonObject{{QStringLiteral("clip"), fixture.clip},
+					{QStringLiteral("key"), keys[index]}, {QStringLiteral("position"), index * 24},
+					{QStringLiteral("length"), 24}}).ok, "could not add a fixture note");
+		}
+		QVERIFY(run(QStringLiteral("scale.set"),
+			QJsonObject{{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.root_set"),
+			QJsonObject{{QStringLiteral("root"), 0}}).ok);
+
+		const ControlResult snapped = run(QStringLiteral("scale.snap_notes"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(snapped.ok, qPrintable(snapped.errorMessage));
+		QCOMPARE(snapped.result.value(QStringLiteral("notes_moved")).toInt(), 1);
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depthAfterTheSnap = journal->undoDepth();
+
+		// The clip is in scale now: the second snap moves nothing, so it must leave
+		// the undo stack exactly as it found it.
+		const ControlResult again = run(QStringLiteral("scale.snap_notes"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QCOMPARE(again.result.value(QStringLiteral("notes_moved")).toInt(), 0);
+		QCOMPARE(journal->undoDepth(), depthAfterTheSnap);
+
+		// And the step that IS there is the first snap's: one undo takes the keys back.
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(noteKey(fixture.clip, 1), 61);
 		QCOMPARE(noteKey(fixture.clip, 0), 60);
