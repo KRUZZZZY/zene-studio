@@ -223,7 +223,7 @@ QLineEdit* textEditor(QWidget* parent, const QJsonObject& spec, Kind kind)
 {
 	auto* edit = withKind(new QLineEdit(parent), kind);
 	if (kind == Kind::Text) { constrain(edit, spec); }
-	if (kind == Kind::List) { edit->setPlaceholderText(tr("Values separated by commas (\\ escapes a comma)")); }
+	if (kind == Kind::List) { edit->setPlaceholderText(tr("Values separated by commas (a \\ escapes a comma or a backslash)")); }
 	if (kind == Kind::Json)
 	{
 		edit->setPlaceholderText(schemaType(spec) == QStringLiteral("array") ? QStringLiteral("[ ... ]") : QStringLiteral("{ ... }"));
@@ -343,21 +343,21 @@ bool listMatchesSchema(const QJsonArray& items, const QJsonObject& spec)
 const QLatin1Char ListEscape('\\');
 
 //! The items of a comma list: split on the commas no escape protects, each item's escapes resolved
-//! and its edges trimmed, as an item always was. False when the text ends in a stray escape.
-bool splitListItems(const QString& text, QStringList* items)
+//! and its edges trimmed, as an item always was. A backslash escapes a comma or another backslash
+//! and stands for itself before anything else, so a path like "folder\sample" is that path.
+void splitListItems(const QString& text, QStringList* items)
 {
 	QString item;
-	bool escaped = false;
-	for (const QChar ch : text)
+	for (int i = 0; i < text.size(); ++i)
 	{
-		if (escaped) { item += ch; escaped = false; }
-		else if (ch == ListEscape) { escaped = true; }
+		const QChar ch = text.at(i);
+		const bool escapes = ch == ListEscape && i + 1 < text.size()
+			&& (text.at(i + 1) == QLatin1Char(',') || text.at(i + 1) == ListEscape);
+		if (escapes) { item += text.at(i + 1); ++i; }
 		else if (ch == QLatin1Char(',')) { items->append(item.trimmed()); item.clear(); }
 		else { item += ch; }
 	}
-	if (escaped) { return false; }
 	items->append(item.trimmed());
-	return true;
 }
 
 //! A list's value as the text of its editor: the items separated by commas, a comma inside an item
@@ -393,7 +393,7 @@ bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value, 
 	else
 	{
 		QStringList parts;
-		if (!splitListItems(text, &parts)) { *error = tr("\"%1\" ends with a stray backslash").arg(text); return false; }
+		splitListItems(text, &parts);
 		for (const QString& part : parts)
 		{
 			if (part.isEmpty()) { *error = tr("\"%1\" has an empty item").arg(text); return false; }

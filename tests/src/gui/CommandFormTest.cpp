@@ -552,6 +552,17 @@ private slots:
 		input->setText(QStringLiteral("take\\, 1, rest"));
 		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
 		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("take, 1"), QStringLiteral("rest")}));
+
+		// A backslash that escapes nothing stands for itself: "folder\sample" is that path, not
+		// "foldersample".
+		input->setText(QStringLiteral("folder\\sample, rest"));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+
+		// And the writer escapes a backslash, so the list it writes reads back unchanged.
+		QVERIFY(formfield::writeValue(editor.value, spec, QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QCOMPARE(value.toArray(), (QJsonArray{QStringLiteral("folder\\sample"), QStringLiteral("rest")}));
 	}
 
 	//! 0.5.0 theme 5: an enum offers its values in words (the blank entry says "(Default)"), a list of plain
