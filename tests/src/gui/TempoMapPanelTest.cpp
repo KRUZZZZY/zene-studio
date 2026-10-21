@@ -175,6 +175,16 @@ private slots:
 		QCOMPARE(table->item(2, 0)->text(), QStringLiteral("3"));  // tick 336: bar 2 ended at 192+144
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
 	}
+//! The panel's own "Ramp to Next" button: the only one whose label names a ramp.
+QPushButton* rampButton(QWidget* panel)
+{
+	for (QPushButton* button : panel->findChildren<QPushButton*>())
+	{
+		if (button->text().contains(QStringLiteral("Ramp"))) { return button; }
+	}
+	return nullptr;
+}
+
 	//! BUG 7 (cluster new-p9-475): "Add at playhead" sent the SONG's global time signature (and its
 	//! global tempo) with the new event, so it overwrote what the map had in force at that tick: a
 	//! 3/4 map met a 4/4 song and the add put the song's 4/4 back into the map.
@@ -197,6 +207,31 @@ private slots:
 		QCOMPARE(added.value(QStringLiteral("numerator")).toInt(), 3);  // the metre in force, not the song's 4/4
 		QCOMPARE(added.value(QStringLiteral("denominator")).toInt(), 4);
 		QCOMPARE(added.value(QStringLiteral("bpm")).toInt(), 120);  // the tempo in force, not the song's
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+	}
+
+	//! BUG 4 (cluster new-p17-187): the Ramp button was enabled for ANY selected row, but a
+	//! time-signature-only row has no tempo to ramp - the click did nothing and said nothing.
+	void theRampButtonIsOffOnAMetreOnlyRow()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 0);
+		// A metre-only event (no tempo) and a tempo event.
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("numerator"), 3},
+				{QStringLiteral("denominator"), 4}}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 192}, {QStringLiteral("bpm"), 120}}).ok);
+		TempoMapPanel panel;
+		auto* table = panel.findChild<QTableWidget*>();
+		auto* ramp = rampButton(&panel);
+		QVERIFY(table != nullptr);
+		QVERIFY(ramp != nullptr);
+		QCOMPARE(panel.rowCount(), 2);
+		table->setCurrentCell(0, 0);  // the metre-only row: nothing to ramp
+		QVERIFY(!ramp->isEnabled());
+		table->setCurrentCell(1, 0);  // the tempo row
+		QVERIFY(ramp->isEnabled());
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
 	}
 

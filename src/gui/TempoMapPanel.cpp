@@ -92,6 +92,14 @@ bool rampsAt(const TempoMap& map, int tick)
 	return false;
 }
 
+//! True when the row holds a tempo event: a ramp needs a tempo to ramp from (cluster new-p17-187).
+bool rowHasTempo(const QTableWidget* table, int row)
+{
+	if (table == nullptr || row < 0 || row >= table->rowCount()) { return false; }
+	const QTableWidgetItem* item = table->item(row, 0);
+	return item != nullptr && item->data(Qt::UserRole + 1).toBool();
+}
+
 //! The row of the last event that carries a tempo, or -1: a ramp on it has no next tempo to reach and is
 //! ignored (TempoMap.h, TempoMapEvent::ramp).
 int lastTempoRow(const QJsonArray& events)
@@ -189,7 +197,9 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 	const auto followRow = [this, remove, ramp] {
 		const int row = m_table->currentRow();
 		remove->setEnabled(row >= 0);
-		ramp->setEnabled(row >= 0);
+		// A ramp needs a tempo to ramp from: on a metre-only row the button is off, so the click
+		// cannot do nothing without saying so (cluster new-p17-187).
+		ramp->setEnabled(row >= 0 && rowHasTempo(m_table, row));
 	};
 	connect(m_table, &QTableWidget::currentCellChanged, this, followRow);
 	connect(addForm, &QPushButton::clicked, this, [this] {
