@@ -466,6 +466,11 @@ private:
 
 	NotePlayHandleList m_processHandles;
 
+	//! The clips of the pass playing, in getClipsInRange's order. Its capacity is kept at this track's
+	//! clip count on the control thread (see the clipAdded connection in the constructor), so play()
+	//! never grows it on the audio thread.
+	clipVector m_playClips;
+
 	FloatModel m_volumeModel;
 	FloatModel m_panningModel;
 

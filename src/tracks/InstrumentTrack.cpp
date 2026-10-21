@@ -115,6 +115,12 @@ InstrumentTrack::InstrumentTrack(TrackContainer* tc) :
 	connect(&m_pitchRangeModel, SIGNAL(dataChanged()), this, SLOT(updatePitchRange()), Qt::DirectConnection);
 	connect(&m_mixerChannelModel, SIGNAL(dataChanged()), this, SLOT(updateMixerChannel()), Qt::DirectConnection);
 
+	// Cluster new-p16-89: play() collects the clips of a pass. Reserve that storage on the control
+	// thread as the track's clip list grows, so the audio thread never grows it.
+	connect(this, &Track::clipAdded, this, [this](Clip*) {
+		if (getClips().size() > m_playClips.capacity()) { m_playClips.reserve(getClips().size()); }
+	});
+
 	autoAssignMidiDevice(true);
 }
 
@@ -917,7 +923,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	}
 	const float frames_per_tick = Engine::framesPerTick();
 
-	clipVector clips;
+	clipVector& clips = m_playClips;
+	clips.clear();
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
@@ -978,7 +985,15 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		// A start, a jump or a loop (MidiPlayback), this track's or this clip's unmute (Q050-040).
 		const bool chaseNow = (chase && MidiPlayback::instance().chasingNow()) || trackUnmutedNow || clipUnmutedNow;
 		// 0.5.0 L07: the clip's CC / pitch-bend / aftertouch lanes (InstrumentTrackNotes.cpp).
-		if (!c->controllers().empty()) { playClipControllers(c, cur_start.getTicks(), _offset); }
+		// R3.3: a controller lane follows the same composite as the notes - a take the comp (or an
+		// audition) does not select must not reach the instrument. The clip's own time at this pass
+		// start maps to the song tick playing now.
+		if (!c->controllers().empty()
+			&& (_clip_num >= 0 || compPlays(c, c->startPosition().getTicks()
+				+ c->startTimeOffset().getTicks() + cur_start.getTicks() + passBase)))
+		{
+			playClipControllers(c, cur_start.getTicks(), _offset);
+		}
 
 		// get all notes from the given clip...
 		const NoteVector & notes = c->notes();
@@ -1012,7 +1027,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			// NOTE: a note that starts inside a selected span plays whole. A track
 			// with no composite and no audition skips this entirely.
 			if (_clip_num < 0 && !compPlays(c, c->startPosition().getTicks()
-				+ c->startTimeOffset().getTicks() + currentNote->pos().getTicks()))
+				+ c->startTimeOffset().getTicks() + currentNote->pos().getTicks() + passBase))
 			{
 				++nit;
 				continue;
