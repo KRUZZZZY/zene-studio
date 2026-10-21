@@ -47,9 +47,9 @@ class SharedMemoryData
 {
 public:
 	SharedMemoryData() noexcept;
-	SharedMemoryData(std::string&& key, bool readOnly, bool isArray);
-	SharedMemoryData(std::string&& key, std::size_t size, bool readOnly, bool isArray);
-	SharedMemoryData(std::size_t size, bool readOnly, bool isArray);
+	SharedMemoryData(std::string&& key, bool readOnly, bool isArray, std::size_t alignment = 1);
+	SharedMemoryData(std::string&& key, std::size_t size, bool readOnly, bool isArray, std::size_t alignment = 1);
+	SharedMemoryData(std::size_t size, bool readOnly, bool isArray, std::size_t alignment = 1);
 	~SharedMemoryData();
 
 	SharedMemoryData(SharedMemoryData&& other) noexcept;
@@ -198,6 +198,12 @@ class SharedMemory<T[]>
 	// This is stricter than necessary, but keeps things easy for now
 	static_assert(std::is_trivial_v<T>, "objects held in shared memory must be trivial");
 	static_assert(sizeof(T) > 0);
+	//! The mapping starts on a page boundary (at least 4096 bytes on every
+	//! supported platform), so the array data - which starts at a multiple of
+	//! alignof(T) after the in-band header - can only be aligned for element
+	//! types that do not ask for more alignment than that boundary.
+	static_assert(alignof(T) <= 4096,
+		"shared memory array elements must not require more than 4096 bytes of alignment");
 
 public:
 	SharedMemory() = default;
@@ -208,19 +214,19 @@ public:
 
 	void attach(std::string key)
 	{
-		m_data = detail::SharedMemoryData{std::move(key), std::is_const_v<T>, true};
+		m_data = detail::SharedMemoryData{std::move(key), std::is_const_v<T>, true, alignof(T)};
 		m_resource.reset(m_data.get(), size_bytes());
 	}
 
 	void create(std::string key, std::size_t size)
 	{
-		m_data = detail::SharedMemoryData{std::move(key), checkedSizeBytes(size), std::is_const_v<T>, true};
+		m_data = detail::SharedMemoryData{std::move(key), checkedSizeBytes(size), std::is_const_v<T>, true, alignof(T)};
 		m_resource.reset(m_data.get(), size_bytes());
 	}
 
 	void create(std::size_t size)
 	{
-		m_data = detail::SharedMemoryData{checkedSizeBytes(size), std::is_const_v<T>, true};
+		m_data = detail::SharedMemoryData{checkedSizeBytes(size), std::is_const_v<T>, true, alignof(T)};
 		m_resource.reset(m_data.get(), size_bytes());
 	}
 

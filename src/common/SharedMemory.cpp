@@ -58,6 +58,18 @@ struct Header
 	std::uint64_t size;
 };
 
+//! The offset of the array data from the mapping base: the in-band header
+//! rounded up to the alignment the element type requires. The mapping base is
+//! page aligned (POSIX) or allocation-granularity aligned (Windows), so an
+//! offset that is a multiple of that alignment keeps the elements aligned.
+//! The creator and the attacher must agree on this offset, so it may only
+//! depend on the header size and the element alignment.
+auto arrayDataOffset(std::size_t alignment) noexcept -> std::size_t
+{
+	const auto elementAlignment = alignment > 0 ? alignment : std::size_t{1};
+	return (sizeof(Header) + elementAlignment - 1) / elementAlignment * elementAlignment;
+}
+
 } // namespace
 
 #if _POSIX_SHARED_MEMORY_OBJECTS > 0 || defined(LMMS_BUILD_APPLE)
@@ -89,7 +101,7 @@ using ShmObject = UniqueNullableResource<const char*, nullptr, deleteShmObject>;
 class SharedMemoryImpl
 {
 public:
-	SharedMemoryImpl(const std::string& key, bool readOnly, bool isArray)
+	SharedMemoryImpl(const std::string& key, bool readOnly, bool isArray, std::size_t alignment = 1)
 		: m_key{'/' + key}
 	{
 		const auto openFlags = readOnly ? O_RDONLY : O_RDWR;
@@ -110,7 +122,9 @@ public:
 
 		if (isArray)
 		{
-			if (m_size < sizeof(Header)) {
+			const auto offset = arrayDataOffset(alignment);
+			m_dataOffset = offset;
+			if (m_size < offset) {
 				munmap(m_mapping, m_size);
 				m_mapping = nullptr;
 				throw std::runtime_error{"SharedMemoryImpl: array header exceeds mapped shared memory"};
@@ -118,7 +132,7 @@ public:
 
 			// Array size is stored in-band
 			const auto arraySize = static_cast<Header*>(m_mapping)->size;
-			if (arraySize > m_size - sizeof(Header)) {
+			if (arraySize > m_size - offset) {
 				munmap(m_mapping, m_size);
 				m_mapping = nullptr;
 				throw std::runtime_error{"SharedMemoryImpl: array size exceeds mapped shared memory"};
@@ -127,13 +141,15 @@ public:
 		}
 	}
 
-	SharedMemoryImpl(const std::string& key, std::size_t size, bool readOnly, bool isArray)
+	SharedMemoryImpl(const std::string& key, std::size_t size, bool readOnly, bool isArray, std::size_t alignment = 1)
 		: m_key{'/' + key}
 		, m_size{size}
 	{
 		if (isArray)
 		{
-			m_size += sizeof(Header); // space for the header
+			const auto offset = arrayDataOffset(alignment);
+			m_dataOffset = offset;
+			m_size += offset; // space for the header and alignment padding
 			m_arraySize = size;
 		}
 
@@ -168,7 +184,7 @@ public:
 	auto get() const noexcept -> void*
 	{
 		return m_arraySize > 0
-			? static_cast<char*>(m_mapping) + sizeof(Header)
+			? static_cast<char*>(m_mapping) + m_dataOffset
 			: m_mapping;
 	}
 
@@ -178,6 +194,7 @@ private:
 	std::string m_key;
 	std::size_t m_size = 0;
 	std::size_t m_arraySize = 0; // non-zero if it's an array
+	std::size_t m_dataOffset = 0;
 	void* m_mapping = nullptr;
 	ShmObject m_object;
 };
@@ -209,7 +226,7 @@ using FileView = UniqueNullableResource<void*, nullptr, UnmapViewOfFile>;
 class SharedMemoryImpl
 {
 public:
-	SharedMemoryImpl(const std::string& key, bool readOnly, bool isArray)
+	SharedMemoryImpl(const std::string& key, bool readOnly, bool isArray, std::size_t alignment = 1)
 	{
 		const auto access = readOnly ? FILE_MAP_READ : FILE_MAP_WRITE;
 		m_mapping.reset(OpenFileMappingA(access, false, key.c_str()));
@@ -220,27 +237,29 @@ public:
 
 		if (isArray)
 		{
+			const auto offset = arrayDataOffset(alignment);
+			m_dataOffset = offset;
 			MEMORY_BASIC_INFORMATION mappingInfo{};
 			if (VirtualQuery(m_view.get(), &mappingInfo, sizeof(mappingInfo)) == 0) {
 				throwLastError("SharedMemoryImpl: VirtualQuery() failed");
 			}
-			if (mappingInfo.RegionSize < sizeof(Header)) {
+			if (mappingInfo.RegionSize < offset) {
 				throw std::runtime_error{"SharedMemoryImpl: array header exceeds mapped shared memory"};
 			}
 
 			// Array size is stored in-band
 			const auto arraySize = static_cast<Header*>(static_cast<void*>(m_view.get()))->size;
-			if (arraySize > mappingInfo.RegionSize - sizeof(Header)) {
+			if (arraySize > mappingInfo.RegionSize - offset) {
 				throw std::runtime_error{"SharedMemoryImpl: array size exceeds mapped shared memory"};
 			}
 			m_arraySize = static_cast<std::size_t>(arraySize);
 		}
 	}
 
-	SharedMemoryImpl(const std::string& key, std::size_t size, bool readOnly, bool isArray)
+	SharedMemoryImpl(const std::string& key, std::size_t size, bool readOnly, bool isArray, std::size_t alignment = 1)
 	{
 		const auto [high, low] = isArray
-			? sizeToHighAndLow(size + sizeof(Header))
+			? sizeToHighAndLow(size + arrayDataOffset(alignment))
 			: sizeToHighAndLow(size);
 		m_mapping.reset(CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, high, low, key.c_str()));
 		// This constructor is supposed to create a new shared memory object,
@@ -257,6 +276,7 @@ public:
 
 		if (isArray)
 		{
+			m_dataOffset = arrayDataOffset(alignment);
 			new (static_cast<void*>(m_view.get())) Header(size);
 			m_arraySize = size;
 		}
@@ -268,7 +288,7 @@ public:
 	auto get() const noexcept -> void*
 	{
 		return m_arraySize > 0
-			? static_cast<char*>(static_cast<void*>(m_view.get())) + sizeof(Header)
+			? static_cast<char*>(static_cast<void*>(m_view.get())) + m_dataOffset
 			: m_view.get();
 	}
 
@@ -278,6 +298,7 @@ private:
 	UniqueHandle m_mapping;
 	FileView m_view;
 	std::size_t m_arraySize = 0; // non-zero if it's an array
+	std::size_t m_dataOffset = 0;
 };
 
 #endif
@@ -307,20 +328,20 @@ auto createKey() -> std::string
 
 SharedMemoryData::SharedMemoryData() noexcept = default;
 
-SharedMemoryData::SharedMemoryData(std::string&& key, bool readOnly, bool isArray)
+SharedMemoryData::SharedMemoryData(std::string&& key, bool readOnly, bool isArray, std::size_t alignment)
 	: m_key{std::move(key)}
-	, m_impl{std::make_unique<SharedMemoryImpl>(m_key, readOnly, isArray)}
+	, m_impl{std::make_unique<SharedMemoryImpl>(m_key, readOnly, isArray, alignment)}
 	, m_ptr{m_impl->get()}
 { }
 
-SharedMemoryData::SharedMemoryData(std::string&& key, std::size_t size, bool readOnly, bool isArray)
+SharedMemoryData::SharedMemoryData(std::string&& key, std::size_t size, bool readOnly, bool isArray, std::size_t alignment)
 	: m_key{std::move(key)}
-	, m_impl{std::make_unique<SharedMemoryImpl>(m_key, std::max(size, std::size_t{1}), readOnly, isArray)}
+	, m_impl{std::make_unique<SharedMemoryImpl>(m_key, std::max(size, std::size_t{1}), readOnly, isArray, alignment)}
 	, m_ptr{m_impl->get()}
 { }
 
-SharedMemoryData::SharedMemoryData(std::size_t size, bool readOnly, bool isArray)
-	: SharedMemoryData{createKey(), size, readOnly, isArray}
+SharedMemoryData::SharedMemoryData(std::size_t size, bool readOnly, bool isArray, std::size_t alignment)
+	: SharedMemoryData{createKey(), size, readOnly, isArray, alignment}
 { }
 
 SharedMemoryData::~SharedMemoryData() = default;

@@ -76,6 +76,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -1389,6 +1390,47 @@ private slots:
 
 		// The main thread applies it: its timer runs every 10 ms, so a short event-loop wait is enough.
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{4}, 2000);
+	}
+
+	/*!
+	 * A shared-memory array is aligned for the element type it holds.
+	 *
+	 * The remote plugin contract passes shared arrays between the host and the
+	 * client (the audio block, the VST-sync block). The array data starts
+	 * after the in-band size header, so the data offset has to be a multiple
+	 * of the element alignment: an element type that asks for more alignment
+	 * than the header provides would otherwise be indexed through a
+	 * misaligned pointer, which is undefined behaviour.
+	 *
+	 * The creator and the attacher have to agree on the offset, so both views
+	 * are checked here, together with the data that travels between them.
+	 */
+	void sharedMemoryArrayIsAlignedForItsElementType()
+	{
+		struct alignas(16) AlignedElement
+		{
+			float values[4];
+		};
+
+		using Array = SharedMemory<AlignedElement[]>;
+
+		Array owner;
+		owner.create(4);
+		QVERIFY(owner.get() != nullptr);
+		QVERIFY2(reinterpret_cast<std::uintptr_t>(owner.get()) % alignof(AlignedElement) == 0,
+			"the shared array data is not aligned for its element type");
+
+		Array attached;
+		attached.attach(owner.key());
+		QVERIFY(attached.get() != nullptr);
+		QVERIFY2(reinterpret_cast<std::uintptr_t>(attached.get()) % alignof(AlignedElement) == 0,
+			"the attached shared array data is not aligned for its element type");
+
+		QCOMPARE(owner.size(), std::size_t{4});
+		QCOMPARE(attached.size(), std::size_t{4});
+
+		owner[0].values[0] = 1.25f;
+		QCOMPARE(attached[0].values[0], 1.25f);
 	}
 
 private:
