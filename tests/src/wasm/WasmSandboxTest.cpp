@@ -259,6 +259,9 @@ private slots:
 	// ---- cluster new-p8-250: a reload keeps the latency compensation ----
 	void p7_reloadKeepsLatencyCompensationWhileLoading();
 
+	// ---- cluster 5444: an unload is a completed operation, not a failure ----
+	void p8_emptyPathUnloadReportsSuccess();
+
 private:
 };
 
@@ -1215,6 +1218,50 @@ void WasmSandboxTest::p7_reloadKeepsLatencyCompensationWhileLoading()
 		"after it resolved: effect=%d chain=%d",
 		reportedWhileLoading, cachedWhileLoading, kTrueLatency, kModuleLatency,
 		periodFrames, effect->latencyFrames(), chain.latencyFrames());
+}
+
+// ---------------------------------------------------------------------------
+// Cluster 5444: WasmEffect::loadModule("") unloads the module - a completed
+// operation - but returned false, so WasmEffectControls::loadModule() took the
+// failure branch and set "Failed to load " after the unload had happened.
+//
+// The regression drives the caller the finding names, and then the effect
+// directly with a stale error string: an unload must report success, clear the
+// error and leave the effect in its unloaded state.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p8_emptyPathUnloadReportsSuccess()
+{
+	WasmEffect effect(nullptr, nullptr);
+	QString error;
+	QVERIFY2(effect.loadModule(modulePath("latency"), &error), qPrintable(error));
+	QCOMPARE(effect.worker().declaredLatency(), 64);
+	QVERIFY(effect.isModuleLoaded());
+	QVERIFY(effect.worker().isReady());
+
+	// The caller from the finding: the controls layer treats a false return as
+	// a failed load and records a bogus error.
+	QVERIFY2(effect.controls()->loadModule(QString()),
+		qPrintable(effect.controls()->lastError()));
+	QCOMPARE(effect.controls()->lastError(), QString());
+	QCOMPARE(effect.modulePath(), QString());
+	QCOMPARE(effect.controls()->modulePath(), QString());
+	QVERIFY(!effect.isModuleLoaded());
+	QVERIFY(!effect.worker().isReady());
+	QCOMPARE(effect.latencyFrames(), 0);
+
+	// The effect's own contract: a completed unload returns true and clears
+	// the caller's error string, exactly as a completed load does.
+	error = QStringLiteral("stale error");
+	QVERIFY(effect.loadModule(QString(), &error));
+	QCOMPARE(error, QString());
+
+	// Unloading an already unloaded effect is still a successful operation.
+	QVERIFY(effect.controls()->loadModule(QString()));
+	QCOMPARE(effect.controls()->lastError(), QString());
+
+	qInfo("P8 unload: controls unload returned success, module path empty, "
+		"worker idle, latency 0");
 }
 
 } // namespace lmms::wasm

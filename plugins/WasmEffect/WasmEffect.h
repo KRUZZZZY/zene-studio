@@ -61,9 +61,11 @@ public:
 	//! compiled and instantiated on the worker thread; this blocks until it is
 	//! ready (or failed). Returns false and sets \p error on failure. All or
 	//! nothing since 0.5.0 E22: a module that cannot be hosted leaves the one
-	//! running (and its saved path) untouched. An empty path unloads. Usable on
-	//! an instance in any chain - this is what the dialog's chooser and the
-	//! wasm.device_load command (through the device's settings) both call.
+	//! running (and its saved path) untouched. An empty path unloads the
+	//! running module and is a completed operation: it returns true and clears
+	//! \p error. Usable on an instance in any chain - this is what the dialog's
+	//! chooser and the wasm.device_load command (through the device's settings)
+	//! both call.
 	bool loadModule(const QString& path, QString* error = nullptr);
 
 	bool isModuleLoaded() const { return m_loaded; }
