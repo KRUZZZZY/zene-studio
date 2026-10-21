@@ -443,6 +443,113 @@ private slots:
 			"the size of a frame does not make an array of frames a float array");
 	}
 
+	/*! The engine's sample rate changed (the audio device was switched): the frames queued for
+	 *  playback were captured at the old rate and must not be played at the new one. */
+	void aSampleRateChangeDropsTheOldRateRxFrames()
+	{
+		LinkAudioStream rx;
+		std::string why;
+		QVERIFY2(rx.configure(receiver(20), &why), why.c_str());
+		const quint16 port = static_cast<quint16>(rx.report().boundPort);
+		QVERIFY(port > 0);
+
+		std::vector<SampleFrame> mix(64, SampleFrame(0.f, 0.f));
+		rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), Rate);   // 48 kHz: the engine's rate
+		QCOMPARE(rx.report().sampleRate, std::uint32_t{Rate});
+
+		// The peer sends 8 packets (1024 frames) at 48 kHz: they are queued for playback.
+		QUdpSocket sender;
+		std::vector<float> payload(AudioMaxPacketFrames * AudioChannels, 0.5f);
+		std::vector<std::uint8_t> wire(AudioMaxPacketBytes);
+		for (std::uint32_t sequence = 0; sequence < 8; ++sequence)
+		{
+			AudioPacketHeader h;
+			h.sequence = sequence;
+			h.sampleRate = Rate;
+			h.frames = static_cast<std::uint16_t>(AudioMaxPacketFrames);
+			const std::size_t bytes = encodeAudioPacket(h, payload.data(), wire.data(), wire.size());
+			QVERIFY(bytes > 0);
+			QVERIFY(sender.writeDatagram(reinterpret_cast<const char*>(wire.data()), bytes,
+				QHostAddress::LocalHost, port) > 0);
+		}
+		QElapsedTimer clock;
+		clock.start();
+		while (rx.report().packetsReceived < 8 && clock.elapsed() < 5000) { QTest::qWait(1); }
+		QCOMPARE(rx.report().packetsReceived, std::uint64_t{8});
+
+		// The device changes to 44.1 kHz: the queued 48 kHz frames must not be played.
+		std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
+		rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), 44100);
+		QCOMPARE(rx.report().sampleRate, std::uint32_t{44100});
+		for (const SampleFrame& f : mix)
+		{
+			QCOMPARE(f.left(), 0.f);
+			QCOMPARE(f.right(), 0.f);
+		}
+	}
+
+	/*! The other half of the same change: the frames queued for sending were captured at the old
+	 *  rate and must not go out with the new rate in their header (the peer would play old-rate
+	 *  samples at the new rate). The stream must also keep working at the new rate. */
+	void aSampleRateChangeDoesNotSendOldRateFramesAsNewRate()
+	{
+		QUdpSocket peer;
+		QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+		peer.setSocketOption(QUdpSocket::ReceiveBufferSizeSocketOption, 4 * 1024 * 1024);
+		LinkAudioStream tx;
+		std::string why;
+		QVERIFY2(tx.configure(senderTo(peer.localPort()), &why), why.c_str());
+
+		// 40000 frames of 0.5 at 48 kHz: more than the I/O thread sends in one wake, so some of
+		// them are still queued when the rate changes.
+		std::vector<SampleFrame> oldFrames(40000, SampleFrame(0.5f, 0.5f));
+		tx.process(oldFrames.data(), static_cast<f_cnt_t>(oldFrames.size()), 48000);
+		std::vector<SampleFrame> newFrames(1024, SampleFrame(1.5f, 1.5f));
+		tx.process(newFrames.data(), static_cast<f_cnt_t>(newFrames.size()), 44100);
+
+		int packets = 0;
+		int mismatched = 0;
+		bool sawNewRate = false;
+		const auto drain = [&] {
+			while (peer.hasPendingDatagrams())
+			{
+				QByteArray datagram;
+				datagram.resize(static_cast<int>(peer.pendingDatagramSize()));
+				const qint64 read = peer.readDatagram(datagram.data(), datagram.size());
+				if (read <= 0) { continue; }
+				AudioPacketHeader header;
+				std::vector<float> samples(AudioMaxPacketFrames * AudioChannels, 0.f);
+				if (!decodeAudioPacket(reinterpret_cast<const std::uint8_t*>(datagram.constData()),
+						static_cast<std::size_t>(read), header, samples.data(), samples.size()))
+				{
+					continue;
+				}
+				++packets;
+				const float expected = header.sampleRate == 48000 ? 0.5f
+					: (header.sampleRate == 44100 ? 1.5f : -1.f);
+				if (expected < 0.f) { ++mismatched; continue; }
+				for (float v : samples)
+				{
+					if (v != expected) { ++mismatched; break; }
+				}
+				if (header.sampleRate == 44100) { sawNewRate = true; }
+			}
+		};
+
+		QElapsedTimer clock;
+		clock.start();
+		while (!sawNewRate && clock.elapsed() < 5000)
+		{
+			tx.process(newFrames.data(), static_cast<f_cnt_t>(newFrames.size()), 44100);
+			drain();
+			QTest::qWait(1);
+		}
+		drain();
+		QVERIFY2(packets > 0, "the peer received nothing");
+		QVERIFY2(sawNewRate, "the stream did not come back at the new rate");
+		QCOMPARE(mismatched, 0);
+	}
+
 	/*! Criterion 1, with Link ACTIVE: two in-process Ableton Link participants whose discovery is
 	 *  confined to the loopback interface (AbletonLinkSession::setLoopbackOnly - the scanner seam in
 	 *  src/core/AbletonLinkSession.cpp) share a session while PCM streams over 127.0.0.1. Tempo, start and

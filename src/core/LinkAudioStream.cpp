@@ -140,7 +140,7 @@ AudioStreamReport LinkAudioStream::report() const
 void LinkAudioStream::process(SampleFrame* frames, f_cnt_t count, sample_rate_t sampleRate) noexcept
 {
 	m_periods.fetch_add(1, std::memory_order_relaxed);
-	if (m_rate.load(std::memory_order_relaxed) != sampleRate) { m_rate.store(sampleRate, std::memory_order_relaxed); }
+	if (m_rate.load(std::memory_order_relaxed) != sampleRate) { onRateChanged(sampleRate); }
 
 	if (m_sendOn.load(std::memory_order_relaxed)) { sendFrames(frames, count); }
 	if (m_receiveOn.load(std::memory_order_relaxed)) { receivePeriod(frames, static_cast<std::size_t>(count), sampleRate); }
@@ -151,6 +151,12 @@ void LinkAudioStream::process(SampleFrame* frames, f_cnt_t count, sample_rate_t 
 //! undefined behaviour (the size of the frame says nothing about the type of its bytes).
 void LinkAudioStream::sendFrames(SampleFrame* frames, f_cnt_t count) noexcept
 {
+	if (m_txFlushedEpoch.load(std::memory_order_acquire) < m_txRateEpoch)
+	{
+		// The sample rate changed: the I/O thread has not dropped the old-rate frames yet, and
+		// new frames must not be mixed with them.
+		return;
+	}
 	std::size_t written = 0;
 	for (f_cnt_t done = 0; done < count;)
 	{
@@ -212,6 +218,39 @@ void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sam
 	m_latencyFrames.store(left, std::memory_order_relaxed);
 	raiseMax(m_latencyMaxFrames, left);
 	m_primedReport.store(m_primed, std::memory_order_relaxed);
+}
+
+//! The engine's sample rate changed (the audio device was switched). The frames queued in the
+//! rings were captured at the old rate: the RX frames must not be played at the new one, and
+//! the TX frames must not go out with the new rate in their header - the peer would play
+//! old-rate samples at the new rate. Both rings are flushed before anything new is processed.
+void LinkAudioStream::onRateChanged(std::uint32_t rate) noexcept
+{
+	const std::uint32_t old = m_rate.load(std::memory_order_relaxed);
+	m_rate.store(rate, std::memory_order_relaxed);
+	if (old != 0 && old != rate)
+	{
+		++m_txRateEpoch;                // a new epoch: the I/O thread drops the old-rate TX frames
+		m_rx.skip(m_rx.fill());         // the old-rate RX frames must not be played at the new rate
+		m_primed = false;               // the jitter buffer starts again, at the new rate
+	}
+	m_txStamp.store((m_txRateEpoch << 32) | rate, std::memory_order_release);
+}
+
+//! The rate the next frames go out with. The rate is read before the frames are taken from the
+//! ring, and the epoch it belongs to is flushed first: a packet never carries a rate that is
+//! not the rate of the frames in it.
+std::uint32_t LinkAudioStream::txRateForNextFrames() noexcept
+{
+	const std::uint64_t stamp = m_txStamp.load(std::memory_order_acquire);
+	const std::uint64_t epoch = stamp >> 32;
+	if (epoch != m_seenTxEpoch)
+	{
+		m_tx.skip(m_tx.fill());         // the queued frames belong to the old rate
+		m_seenTxEpoch = epoch;
+		m_txFlushedEpoch.store(epoch, std::memory_order_release);
+	}
+	return static_cast<std::uint32_t>(stamp & 0xffffffffu);
 }
 
 //! The silence that replaces a sequence gap. The frames that do not fit into the RX ring are
@@ -402,11 +441,12 @@ void LinkAudioStream::sendPending()
 	to.sin_port = htons(static_cast<std::uint16_t>(m_peerPort));
 	for (int packets = 0; packets < MaxPacketsPerWake && !m_stop.load(std::memory_order_acquire); ++packets)
 	{
+		const std::uint32_t rate = txRateForNextFrames();
+		if (rate == 0) { return; }   // the engine's rate is not known yet: the frames wait for it
 		const std::size_t available = m_tx.fill();
 		if (available == 0) { return; }
 		const std::size_t n = m_tx.read(m_samples.data(), std::min(available, AudioMaxPacketFrames));
-		const std::uint32_t rate = m_rate.load(std::memory_order_relaxed);
-		if (m_peerAddress == 0 || rate == 0 || n == 0) { continue; }  // nowhere to send: drained and dropped
+		if (m_peerAddress == 0 || n == 0) { continue; }  // nowhere to send: drained and dropped
 		AudioPacketHeader header;
 		header.sequence = m_nextSequence++;
 		header.sampleRate = rate;

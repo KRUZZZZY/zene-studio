@@ -207,6 +207,8 @@ private:
 	void sendPending();
 	void acceptPacket(const AudioPacketHeader& header, const float* samples);
 	void insertGapSilence(std::size_t frames) noexcept;
+	void onRateChanged(std::uint32_t rate) noexcept;
+	std::uint32_t txRateForNextFrames() noexcept;
 
 	static std::atomic<LinkAudioStream*> s_active;   //!< the instance() while it runs
 	static LinkAudioStream* s_engineTapped;          //!< set by instance(), UI thread
@@ -234,16 +236,23 @@ private:
 	// audio-thread private state
 	std::uint64_t m_seenEpoch = 0;
 	bool m_primed = false;
+	std::uint64_t m_txRateEpoch = 0;         //!< bumped when the engine's sample rate changes
 	// shared control (UI writes before s_active is published)
 	std::atomic<bool> m_sendOn{false};
 	std::atomic<bool> m_receiveOn{false};
 	std::atomic<int> m_latencyMs{DefaultAudioLatencyMs};
 	std::atomic<std::uint64_t> m_epoch{0};
 	std::atomic<std::uint32_t> m_rate{0};
+	//! (epoch << 32) | rate: the rate the queued TX frames carry, and the epoch they belong to.
+	//! Both travel together, so a packet is never stamped with a rate that is not its own.
+	std::atomic<std::uint64_t> m_txStamp{0};
+	//! The TX epoch the I/O thread has already flushed (the audio thread waits for it).
+	std::atomic<std::uint64_t> m_txFlushedEpoch{0};
 	// I/O-thread private
 	std::uint32_t m_nextSequence = 0;    //!< next sequence to send
 	bool m_haveRx = false;
 	std::uint32_t m_expectedRx = 0;
+	std::uint64_t m_seenTxEpoch = 0;     //!< the TX epoch the I/O thread has already flushed
 
 	// counters
 	std::atomic<std::uint64_t> m_packetsSent{0}, m_packetsReceived{0}, m_framesSent{0}, m_framesReceived{0};
