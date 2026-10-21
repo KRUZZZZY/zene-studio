@@ -110,21 +110,26 @@ void HardwareInsert::requestPing()
 void HardwareInsert::process(SampleFrame* buffer, f_cnt_t frames, AudioEngine& engine) noexcept
 {
 	if (!m_settings.enabled || m_send.size() < static_cast<std::size_t>(frames)) { return; }
-	const auto state = static_cast<PingState>(m_ping.load(std::memory_order_acquire));
-	if (state == PingState::Requested)
+	const int word = pingWord();
+	const auto state = static_cast<PingState>(word);
+	bool measuring = false;
+	if (state == PingState::Requested && claimPing(word))
 	{
 		// The click, alone on the send: the music stays off it until the click is heard back.
 		std::fill_n(m_send.begin(), frames, SampleFrame{});
 		m_send[0] = SampleFrame(PingLevel, PingLevel);
-		m_pingFrames = 0;
-		m_ping.store(static_cast<int>(PingState::Waiting), std::memory_order_release);
+		measuring = true;
 	}
-	else if (state == PingState::Waiting) { std::fill_n(m_send.begin(), frames, SampleFrame{}); }
+	else if (state == PingState::Waiting)
+	{
+		std::fill_n(m_send.begin(), frames, SampleFrame{});
+		measuring = true;
+	}
 	else { std::copy_n(buffer, frames, m_send.begin()); }
 	m_sent = true;
 	pullReturn(engine, frames);
 	listenForPing(frames, engine.outputSampleRate());
-	writeOutput(buffer, frames, state == PingState::Requested || state == PingState::Waiting);
+	writeOutput(buffer, frames, measuring);
 }
 
 void HardwareInsert::pullReturn(AudioEngine& engine, f_cnt_t frames) noexcept
@@ -164,21 +169,40 @@ void HardwareInsert::pushCaptured(AudioEngine& engine) noexcept
 
 void HardwareInsert::listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept
 {
-	if (m_ping.load(std::memory_order_acquire) != static_cast<int>(PingState::Waiting)) { return; }
+	const int word = pingWord();
+	if (static_cast<PingState>(word) != PingState::Waiting) { return; }
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		if (std::abs(m_return[f][0]) > PingThreshold || std::abs(m_return[f][1]) > PingThreshold)
 		{
-			m_measured.store(m_pingFrames + static_cast<int>(f), Relaxed);
-			m_ping.store(static_cast<int>(PingState::Done), std::memory_order_release);
+			publishPingResult(word, m_pingFrames + static_cast<int>(f));
 			return;
 		}
 	}
 	m_pingFrames += static_cast<int>(frames);
-	if (m_pingFrames > static_cast<int>(rate) * PingTimeoutSeconds)
-	{
-		m_ping.store(static_cast<int>(PingState::Failed), std::memory_order_release);
-	}
+	if (m_pingFrames > static_cast<int>(rate) * PingTimeoutSeconds) { failPing(word); }
+}
+
+bool HardwareInsert::claimPing(int expected) noexcept
+{
+	if (static_cast<PingState>(expected) != PingState::Requested) { return false; }
+	m_pingFrames = 0;
+	m_ping.store(static_cast<int>(PingState::Waiting), std::memory_order_release);
+	return true;
+}
+
+bool HardwareInsert::publishPingResult(int expected, int frames) noexcept
+{
+	if (static_cast<PingState>(expected) != PingState::Waiting) { return false; }
+	m_measured.store(frames, Relaxed);
+	m_ping.store(static_cast<int>(PingState::Done), std::memory_order_release);
+	return true;
+}
+
+void HardwareInsert::failPing(int expected) noexcept
+{
+	if (static_cast<PingState>(expected) != PingState::Waiting) { return; }
+	m_ping.store(static_cast<int>(PingState::Failed), std::memory_order_release);
 }
 
 void HardwareInsert::writeOutput(SampleFrame* buffer, f_cnt_t frames, bool measuring) noexcept

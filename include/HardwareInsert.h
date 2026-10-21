@@ -37,6 +37,11 @@
 class QDomDocument;
 class QDomElement;
 
+#ifdef LMMS_TESTING
+//! The regression test for the ping's state machine (tests/src/core/HardwareIoTest.cpp).
+class HardwareIoTest;
+#endif
+
 namespace lmms
 {
 
@@ -125,6 +130,22 @@ private:
 	void pushCaptured(AudioEngine& engine) noexcept;
 	void listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept;
 	void writeOutput(SampleFrame* buffer, f_cnt_t frames, bool measuring) noexcept;
+
+	/*! The audio thread's moves on the ping state machine. Each of them takes the state the
+	 *  period read (@a expected), so it is the move that was on its way when the interface
+	 *  thread changed the state in between. */
+	//! The period claims the request: the click goes out and the ping waits for its answer.
+	bool claimPing(int expected) noexcept;
+	//! The period hears the click: the ping is done and @a frames is what it measured.
+	bool publishPingResult(int expected, int frames) noexcept;
+	//! The period heard nothing in time: the ping failed.
+	void failPing(int expected) noexcept;
+	//! The ping state a period reads.
+	int pingWord() const noexcept { return m_ping.load(std::memory_order_acquire); }
+
+#ifdef LMMS_TESTING
+	friend class ::HardwareIoTest;
+#endif
 
 	Settings m_settings;
 	std::vector<SampleFrame> m_send;

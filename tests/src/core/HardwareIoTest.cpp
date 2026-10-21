@@ -592,6 +592,39 @@ private slots:
 		QVERIFY(!Engine::mixer()->mixerChannel(1)->m_hardwareIo.insert.enabled());
 	}
 
+	/*! The undo calls the ping off, but a period that had already read the request can still
+	 *  move the ping on afterwards: the ping comes back and the answer it hears lands a
+	 *  measured latency in the project the undo just put back. The ping's state machine must
+	 *  be a compare-and-swap, so a cancel wins against a move that is already on its way.
+	 *
+	 *  The two halves of the race are driven one after the other, without a thread and
+	 *  without a clock: the period reads the state, the interface thread cancels, the period
+	 *  makes its move. */
+	void aCancelledPingIsNotRevivedByAPeriodThatHadReadTheRequest()
+	{
+		HardwareInsert insert;
+
+		// The period read the request; the undo calls the ping off; the period claims the
+		// request anyway: the claim must not bring the ping back.
+		insert.requestPing();
+		const auto requested = insert.pingWord();
+		insert.cancelPing();
+		QVERIFY2(!insert.claimPing(requested), "a period that had read the request put the ping back after the cancel");
+		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
+		QCOMPARE(insert.settings().measured, -1);
+
+		// The click is on its way; the undo calls the ping off; the period hears the click and
+		// publishes what it measured: the answer must not land either.
+		insert.requestPing();
+		QVERIFY(insert.claimPing(insert.pingWord()));
+		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Waiting));
+		const auto waiting = insert.pingWord();
+		insert.cancelPing();
+		QVERIFY2(!insert.publishPingResult(waiting, 1234), "a ping that was called off published its measurement");
+		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
+		QCOMPARE(insert.settings().measured, -1);
+	}
+
 	void everythingSurvivesASaveAndLoad()
 	{
 		Mixer* mixer = Engine::mixer();
