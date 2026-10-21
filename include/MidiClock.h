@@ -38,6 +38,9 @@
 #include "lmms_export.h"
 
 class QTimer;
+#ifdef LMMS_TESTING
+class MidiClockSourceTest;
+#endif
 
 namespace lmms
 {
@@ -167,6 +170,11 @@ public:
 	int lastTimeCode() const noexcept { return m_timeCode.load(); }
 
 private:
+#ifdef LMMS_TESTING
+	// The counter seam: MidiClockSourceTest writes m_messageCounts directly, because no
+	// public path can take a session counter above INT32_MAX in a test.
+	friend class ::MidiClockSourceTest;
+#endif
 	void unlock() noexcept;
 	void accumulate(quint64 timestampNs) noexcept;
 	void measure(quint64 timestampNs) noexcept;
@@ -384,6 +392,11 @@ public:
 	void stopFollowTimer();
 
 private:
+#ifdef LMMS_TESTING
+	// The counter seam: MidiClockSourceTest writes the session counters directly, because
+	// no public path can take one above INT32_MAX in a test.
+	friend class ::MidiClockSourceTest;
+#endif
 	explicit MidiClock();
 	~MidiClock();
 

@@ -34,7 +34,11 @@
  *   9. a real writer thread rewriting the source while a real reader is reading
  *      it (with a handshake that proves the two overlapped) never admits the
  *      port the messages arrive on, even when the two published names are chosen
- *      so a torn read would spell that port exactly.
+ *      so a torn read would spell that port exactly;
+ *  10. the state reply's session counters (`emitted_total`, the per-message counts
+ *      and `slave.ignored`) stay non-negative above INT_MAX (BUG 9, new-p14-173).
+ *      No public path reaches that count in a test, so the counters are written
+ *      through the LMMS_TESTING friend seam and read back as the reply's text.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -55,12 +59,16 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <cstddef>
+#include <limits>
 #include <thread>
 
 #include <QtTest>
 
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
 
@@ -474,6 +482,61 @@ private slots:
 		QCOMPARE(clock->slaveIgnoredCount(), before + static_cast<quint32>(reads));
 		QCOMPARE(clock->tracker().pulseCount(), 0);
 		QVERIFY2(!clock->tracker().locked(), "no portB message may lock the follower");
+	}
+
+	//! BUG 9 (new-p14-173): the state reply cast every session counter to int, so a
+	//! count above INT_MAX came out negative. This writes every slot of each counter
+	//! array (the message-to-slot mapping does not matter when every slot holds the
+	//! same value), reads the reply back as the text a client receives, and puts the
+	//! singleton's counters back before any assertion can return early.
+	void stateCountersAboveInt32MaxAreNotNegative()
+	{
+		constexpr quint32 Big = 3000000000u;
+		static_assert(Big > static_cast<quint32>(std::numeric_limits<int>::max()),
+			"the probe must sit above INT_MAX, where the old cast went negative");
+		MidiClock* clock = MidiClock::instance();
+		const quint32 emittedTotal = clock->m_emittedTotal.load();
+		const quint32 ignoredTotal = clock->m_ignoredTotal.load();
+		std::array<quint32, 7> emittedCounts{};
+		std::array<quint32, 7> messageCounts{};
+		for (std::size_t i = 0; i < emittedCounts.size(); ++i)
+		{
+			emittedCounts[i] = clock->m_emittedCounts[i].load();
+			messageCounts[i] = clock->m_tracker.m_messageCounts[i].load();
+			clock->m_emittedCounts[i].store(Big);
+			clock->m_tracker.m_messageCounts[i].store(Big);
+		}
+		clock->m_emittedTotal.store(Big);
+		clock->m_ignoredTotal.store(Big);
+
+		const QJsonObject state = QJsonDocument::fromJson(
+			QJsonDocument(clock->stateJson()).toJson(QJsonDocument::Compact)).object();
+
+		for (std::size_t i = 0; i < emittedCounts.size(); ++i)
+		{
+			clock->m_emittedCounts[i].store(emittedCounts[i]);
+			clock->m_tracker.m_messageCounts[i].store(messageCounts[i]);
+		}
+		clock->m_emittedTotal.store(emittedTotal);
+		clock->m_ignoredTotal.store(ignoredTotal);
+
+		const QJsonObject master = state.value(QStringLiteral("master")).toObject();
+		QCOMPARE(master.value(QStringLiteral("emitted_total")).toDouble(), static_cast<double>(Big));
+		const QJsonObject emitted = master.value(QStringLiteral("emitted")).toObject();
+		QCOMPARE(emitted.size(), static_cast<qsizetype>(6));
+		for (auto it = emitted.constBegin(); it != emitted.constEnd(); ++it)
+		{
+			QCOMPARE(it.value().toDouble(), static_cast<double>(Big));
+		}
+
+		const QJsonObject slave = state.value(QStringLiteral("slave")).toObject();
+		QCOMPARE(slave.value(QStringLiteral("ignored")).toDouble(), static_cast<double>(Big));
+		const QJsonObject messages = slave.value(QStringLiteral("messages")).toObject();
+		QCOMPARE(messages.size(), static_cast<qsizetype>(6));
+		for (auto it = messages.constBegin(); it != messages.constEnd(); ++it)
+		{
+			QCOMPARE(it.value().toDouble(), static_cast<double>(Big));
+		}
 	}
 };
 
