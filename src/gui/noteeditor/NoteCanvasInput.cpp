@@ -256,8 +256,10 @@ void NoteCanvas::updateCursor(const QPoint& pos)
 
 void NoteCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
+	const QPoint from = m_currentPos;
 	m_currentPos = event->pos();
 	m_mods = event->modifiers();
+	if (m_drag == Drag::Paint) { paintAlong(from, m_currentPos); }
 	if (m_drag == Drag::Draw) { m_drawnAt = event->timestamp(); }
 	commitDrag(m_drag);
 	if (m_auditionKey >= 0) { m_editor->auditionRelease(m_auditionKey); }

@@ -178,7 +178,7 @@ private:
 	void extendPaint(const QPoint& pos);
 	//! The stroke's path from @a from to @a to: every note on it is marked, not only the one at its end.
 	void strokeAlong(const QPoint& from, const QPoint& to);
-	//! The paint stroke's path, walked like strokeAlong's: a cell between two mouse events is painted too.
+	//! The paint stroke from @a from to @a to: every grid cell it crosses is painted, not just those an event lands on.
 	void paintAlong(const QPoint& from, const QPoint& to);
 	void commitPaint();
 	void commitMute();
