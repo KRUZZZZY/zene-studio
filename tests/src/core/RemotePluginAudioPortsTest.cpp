@@ -927,6 +927,38 @@ private slots:
 		QCOMPARE(plugin.process(), true);
 	}
 
+	//! The audio-thread receive of a complete debug frame builds argument views, not strings: decoding
+	//! it allocates nothing and the text is still exactly the wire bytes. No peer or deadline is involved.
+	void completeDebugFrameDecodesWithoutAllocating()
+	{
+		int sockets[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) == 0);
+
+		{
+			TestRemotePluginBase receiver{sockets[0]};
+			const std::string text(1000, 'x');
+			const std::int32_t header[] = {IdDebugMessage, 1, static_cast<std::int32_t>(text.size())};
+			QVERIFY(::write(sockets[1], header, sizeof(header)) == static_cast<ssize_t>(sizeof(header)));
+			QVERIFY(::write(sockets[1], text.data(), text.size()) == static_cast<ssize_t>(text.size()));
+
+			lmms::test::tlCountAllocations = true;
+			lmms::test::resetAllocationCount();
+			RemotePluginBase::message m;
+			const auto result = receiver.receiveFrameBefore(
+				std::chrono::steady_clock::now() + std::chrono::seconds{1}, m, true);
+			const auto allocations = lmms::test::tlAllocationCount;
+			lmms::test::tlCountAllocations = false;
+
+			QVERIFY(result == RemotePluginBase::ReceiveResult::Got);
+			QCOMPARE(m.id, static_cast<int>(IdDebugMessage));
+			QCOMPARE(m.size(), std::size_t{1});
+			QVERIFY(m.stringArgument(0) == std::string_view{text});
+			QCOMPARE(allocations, std::uint64_t{0});
+		}
+
+		::close(sockets[1]);
+	}
+
 	//! A client can send a debug text and then its IdProcessingDone during a period. The audio thread
 	//! reads both, but decoding the text must not allocate: the arguments are views into a preallocated
 	//! frame buffer. The peer writes both frames in one go, so the period really consumes the debug
