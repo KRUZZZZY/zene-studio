@@ -29,10 +29,11 @@ code and a generic sentence ("the stem export failed (exit 1, 0 new file(s) in
 create output directory …" (`src/core/main.cpp:1480`) - was discarded with the
 child's output.
 
-**The fix.** The child's output now goes to two temporary FILES (never to a
-pipe: a pipe fills up and blocks the child, the same reason the whole-project
-render reads a file - `src/core/ControlCommandsProject.cpp:326`), and the
-refusal carries the child's own last words, bounded to
+**The fix.** The child's standard output remains discarded. Its standard error
+now goes to a temporary FILE (never to a pipe: a pipe fills up and blocks the
+child, the same reason the whole-project render reads a file -
+`src/core/ControlCommandsProject.cpp:326`), and the refusal carries its own
+last words, bounded to
 `kStemChildErrorBytes` (2048) at the TAIL:
 
 - `src/core/ControlCommandsRenderStems.cpp:89` - the new bound.
@@ -295,6 +296,22 @@ without the product change and pass with it.
 | StemExportTest | Passed (2.63 s) - the engine's own stem export |
 | ControlStemExportVerb | Passed (5.08 s) - the END-TO-END transcript against the real binary: the stems land on disk, a RE-export into the same directory still reports the files it rewrote, and a refused export creates nothing |
 | ControlStemCommands | Passed (5.89 s) |
+
+### QA follow-up: rollback a failed promotion as a set
+
+The independent review added `aFailedPromotionRestoresEarlierStemsAndKeepsDirectories()`
+to cover a later promotion failing after an earlier stem was installed. The
+original promotion loop could replace that earlier file and move a colliding
+directory into staging, where recursive cleanup deleted it. The handler now
+keeps earlier files aside until every staged file installs, restores the prior
+set on failure, and refuses a directory at a stem path.
+
+| Check | Exact command and result |
+| --- | --- |
+| RED (QA fix reverted) | `cmake --build build --target zene ControlStemExportTest -j 12` **EXIT=0**; from `build/tests`, `ctest -R '^ControlStemExportTest$' --output-on-failure` **EXIT=8** - `aFailedPromotionRestoresEarlierStemsAndKeepsDirectories()` failed because the export returned success. |
+| GREEN (QA fix restored) | `cmake --build build --target zene ControlStemExportTest -j 12` **EXIT=0**; from `build/tests`, `ctest -R '^ControlStemExportTest$' --output-on-failure` **EXIT=0** - 1/1 CTest passed (8 QtTest slots, 0 failed). |
+| Family | `ctest -R 'ControlBounceRenderTest|StemExportTest|ControlRegistryTest|BounceInPlaceTest|ControlRenderJobTest|ControlStemExportTest|ControlStemExportVerb|ControlStemCommands' --output-on-failure` **EXIT=0** - 8/8 passed. |
+| Gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3953` **EXIT=0** - all checks passed; complexity and file-length report no new item. |
 
 `ControlRenderSurround` fails in this tree, and it failed BEFORE this batch
 (`.../logs/test-family-1.log`): the two failing checks are the CLI's

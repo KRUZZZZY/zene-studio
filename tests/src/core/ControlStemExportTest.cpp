@@ -303,6 +303,27 @@ private slots:
 		QCOMPARE(QDir(directory).entryList(QDir::AllEntries | QDir::NoDotAndDotDot),
 			QStringList({QStringLiteral("01_Lead.wav")}));
 	}
+
+	//! A failed promotion must roll back earlier files and preserve a colliding directory.
+	void aFailedPromotionRestoresEarlierStemsAndKeepsDirectories()
+	{
+		seedSession();
+		const QString directory = out(QStringLiteral("stems"));
+		QVERIFY(QDir().mkpath(directory));
+		const QString earlier = QDir(directory).filePath(QStringLiteral("01_Lead.wav"));
+		QVERIFY(writeFile(earlier, QStringLiteral("OLD")));
+		const QString collision = QDir(directory).filePath(QStringLiteral("02_Pad.wav"));
+		QVERIFY(QDir().mkpath(collision));
+		const QString marker = QDir(collision).filePath(QStringLiteral("keep.txt"));
+		QVERIFY(writeFile(marker, QStringLiteral("KEEP")));
+		qputenv("ZENE_FAKE_STEM_FILES", "01_Lead.wav=NEW,02_Pad.wav=PAD");
+
+		const ControlResult failed = exportStems(directory);
+		QVERIFY(!failed.ok);
+		QCOMPARE(contentOf(earlier), QStringLiteral("OLD"));
+		QVERIFY(QFileInfo(collision).isDir());
+		QCOMPARE(contentOf(marker), QStringLiteral("KEEP"));
+	}
 };
 
 int main(int argc, char** argv)

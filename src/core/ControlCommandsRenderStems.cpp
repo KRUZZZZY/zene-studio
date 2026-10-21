@@ -235,27 +235,30 @@ void removeStagingDirectory(const QString& staging)
 	QDir(staging).removeRecursively();
 }
 
-//! Installs one rendered file over \a target. The earlier file is moved ASIDE
-//! first and put back when the new one cannot be installed, so a failed
-//! promotion leaves no half-written stem behind.
+//! Installs one rendered file over \a target, keeping the earlier file aside
+//! until the whole set promotes. A directory at a stem path is a refusal.
 bool installStagedFile(const QString& staged, const QString& target, const QString& staging,
-	QString* error)
+	bool* hadTarget, QString* error)
 {
 	const QString name = QFileInfo(target).fileName();
 	const QString aside = QDir(staging).filePath(QStringLiteral(".zene-aside-") + name);
-	const bool hadTarget = QFile::exists(target);
-	if (hadTarget && !QFile::rename(target, aside))
+	*hadTarget = QFile::exists(target);
+	if (*hadTarget && QFileInfo(target).isDir())
+	{
+		*error = QStringLiteral("the output path for %1 is a directory").arg(name);
+		return false;
+	}
+	if (*hadTarget && !QFile::rename(target, aside))
 	{
 		*error = QStringLiteral("could not move the earlier %1 aside").arg(name);
 		return false;
 	}
 	if (!QFile::rename(staged, target))
 	{
-		if (hadTarget) { QFile::rename(aside, target); }
+		if (*hadTarget) { QFile::rename(aside, target); }
 		*error = QStringLiteral("could not install the rendered %1").arg(name);
 		return false;
 	}
-	if (hadTarget) { QFile::remove(aside); }
 	return true;
 }
 
@@ -265,16 +268,35 @@ bool promoteStagedFiles(const QString& staging, const QString& directory,
 	QStringList* promoted, QString* error)
 {
 	const QFileInfoList entries = QDir(staging).entryInfoList(QDir::Files | QDir::Hidden, QDir::Name);
+	QStringList replaced;
 	for (const QFileInfo& entry : entries)
 	{
 		const QString name = entry.fileName();
 		if (name.startsWith(QLatin1String(".zene-"))) { continue; }  // our own aside file
+		bool hadTarget = false;
 		if (!installStagedFile(entry.absoluteFilePath(), QDir(directory).filePath(name),
-			staging, error))
+			staging, &hadTarget, error))
 		{
+			for (int i = promoted->size() - 1; i >= 0; --i)
+			{
+				const QString& previous = promoted->at(i);
+				const QString target = QDir(directory).filePath(previous);
+				QFile::remove(target);
+				if (replaced.contains(previous))
+				{
+					QFile::rename(QDir(staging).filePath(QStringLiteral(".zene-aside-") + previous),
+						target);
+				}
+			}
+			promoted->clear();
 			return false;
 		}
+		if (hadTarget) { replaced.append(name); }
 		promoted->append(name);
+	}
+	for (const QString& name : replaced)
+	{
+		QFile::remove(QDir(staging).filePath(QStringLiteral(".zene-aside-") + name));
 	}
 	return true;
 }
