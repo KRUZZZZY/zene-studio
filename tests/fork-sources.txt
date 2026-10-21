@@ -2920,3 +2920,11 @@ include/TakeLaneRows.h
 include/TakeWaveform.h
 src/gui/TakeWaveform.cpp
 src/gui/tracks/TakeLaneRows.cpp
+# cluster new-p14-269 (2026-10): the Ogg Vorbis decoder's channel handling regression (fork-NEW).
+tests/src/core/SampleDecoderOggChannelTest.cpp
+# cluster new-p14-271 (2026-10): the fix and verification report for the SampleDecoder's Ogg and bounded-decode defects.
+docs/qwen-fixes-2026-10/cluster-new-p14-271.md
+# cluster new-p14-271 (2026-10): the Ogg Vorbis decoder's decoder-state release regression (fork-NEW).
+tests/src/core/SampleDecoderOggStateTest.cpp
+# cluster new-p14-276 (2026-10): the bounded decoder's decode-limit regression test (fork-NEW).
+tests/src/core/SampleDecoderLimitTest.cpp

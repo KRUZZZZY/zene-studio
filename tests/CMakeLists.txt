@@ -1310,10 +1310,19 @@ set(LMMS_TESTS
 	src/core/ControlSessionRecordLandUndoTest.cpp
 )
 
-# Ogg is optional; this regression compiles against the concrete Ogg writer.
+# Ogg is optional; these regressions require the Ogg decoder and compile against the concrete Ogg writer.
 if(LMMS_HAVE_OGGVORBIS)
-	list(APPEND LMMS_TESTS src/core/AudioFileOggInitTest.cpp)
+	list(APPEND LMMS_TESTS
+		src/core/AudioFileOggInitTest.cpp
+		src/core/SampleDecoderOggChannelTest.cpp
+		src/core/SampleDecoderOggStateTest.cpp
+	)
 endif()
+
+# cluster new-p14-269/271: the Ogg Vorbis decoder's channel handling and the release of its
+# decoder state on every exit (the read-error path included).
+# cluster new-p14-276: the bounded decoder refuses a limit it cannot turn into a frame count.
+list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
 
 # Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
