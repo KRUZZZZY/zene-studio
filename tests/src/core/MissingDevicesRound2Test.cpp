@@ -36,6 +36,7 @@
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
+#include "DummyEffect.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -326,6 +327,45 @@ private slots:
 		QCOMPARE(stripIds(canon(masterEffectOf(second))), stripIds(canonText(m_missingEffectXml)));
 		QCOMPARE(stripIds(canon(rackEffect(second))), stripIds(m_amplifierXml));
 		QCOMPARE(stripIds(canon(postInsertEffect(second))), stripIds(m_amplifierXml));
+	}
+
+	//! Q050-018 cross-document save: an unavailable effect written into a second document is a copy, so the first
+	//! document keeps its effect and the loaded tree keeps its node. Appending the loaded node directly moves it out
+	//! of the first document, which then loses the effect while numofeffects still counts it.
+	void unavailableEffectSurvivesSavingIntoASecondDocument()
+	{
+		const QString missingXml = QStringLiteral(
+			"<effect name=\"p14absent\"><key><attribute name=\"file\" value=\"p14absent.so\"/></key>"
+			"<p14absent><state>QUJD</state></p14absent></effect>");
+		QDomDocument loaded;
+		QVERIFY(loaded.setContent(QStringLiteral("<fxchain numofeffects=\"1\" enabled=\"1\">%1</fxchain>")
+			.arg(missingXml)));
+		const QDomElement loadedRoot = loaded.documentElement();
+		const QDomElement loadedEffect = loadedRoot.firstChildElement(QStringLiteral("effect"));
+		QVERIFY(!loadedEffect.isNull());
+
+		EffectChain chain{nullptr};
+		chain.loadSettings(loadedRoot);
+		QCOMPARE(chain.effects().size(), std::size_t{1});
+		QVERIFY(dynamic_cast<DummyEffect*>(chain.effects().front()) != nullptr);
+
+		QDomDocument first;
+		QDomElement firstRoot = first.createElement(QStringLiteral("fxchain"));
+		first.appendChild(firstRoot);
+		chain.saveSettings(first, firstRoot);
+
+		QDomDocument second;
+		QDomElement secondRoot = second.createElement(QStringLiteral("fxchain"));
+		second.appendChild(secondRoot);
+		chain.saveSettings(second, secondRoot);
+
+		const QString expected = stripIds(canonText(missingXml));
+		QCOMPARE(firstRoot.attribute(QStringLiteral("numofeffects")), QStringLiteral("1"));
+		QCOMPARE(firstRoot.elementsByTagName(QStringLiteral("effect")).size(), 1);
+		QCOMPARE(stripIds(canon(firstRoot.firstChildElement(QStringLiteral("effect")))), expected);
+		QCOMPARE(stripIds(canon(secondRoot.firstChildElement(QStringLiteral("effect")))), expected);
+		QCOMPARE(loadedRoot.elementsByTagName(QStringLiteral("effect")).size(), 1);
+		QVERIFY(loadedEffect.parentNode() == loadedRoot);
 	}
 };
 
