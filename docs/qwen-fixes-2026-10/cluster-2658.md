@@ -17,11 +17,11 @@ test family plus `zene` were rebuilt and run.
 The finding is real: `WasmWorker::stop()` (`src/wasm/WasmWorker.cpp:90`) is the
 control thread, while `m_commands` is produced by the audio thread in
 `submit()` and `m_results` is consumed there in `collect()`. The branch already
-carries the endpoint gate (`src/wasm/WasmWorker.h:190-205`,
-`src/wasm/WasmWorker.cpp:168-215`) that closes both endpoints and waits for
+carries the endpoint gate (`src/wasm/WasmWorker.h:185-190`,
+`src/wasm/WasmWorker.cpp:153-186`) that closes both endpoints and waits for
 pinned audio access before the control thread drains either queue. This round
 closes the remaining hole: `drainOnLane()` stops pushing a result when it sees
-`m_stop` (`WasmWorker.cpp:258-262`), leaving a slot `Done` in neither queue.
+`m_stop` (`WasmWorker.cpp:266-269`), leaving a slot `Done` in neither queue.
 `stop()` now frees **every** slot after the queues are drained
 (`WasmWorker.cpp:125-133`), which is safe there because the endpoints are
 closed, the worker is unregistered and no lane holds the claim.
@@ -40,7 +40,7 @@ race: `WasmWorker::takeLog()` dereferenced `m_sandbox` while a lane could
 replace it in `loadModuleOnLane()` or `stop()` could reset it. The lane now
 moves the sandbox's latest message into the worker-owned `WasmLogBuffer`
 (`transferLogFromLane()`, `src/wasm/WasmWorker.cpp:395-407`, called at
-`WasmWorker.cpp:283-296` and `:363`), and `takeLog()` reads only that snapshot
+`WasmWorker.cpp:286`, `:291` and `:365`), and `takeLog()` reads only that snapshot
 (`src/wasm/WasmWorker.cpp:524-529`). `start()` clears it so a new run does not
 inherit a replaced module's log (`WasmWorker.cpp:57`).
 
