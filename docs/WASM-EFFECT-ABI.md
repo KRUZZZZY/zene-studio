@@ -300,15 +300,23 @@ block (`WasmWorker.cpp:183-184`).
 
 ## 11. Store limits, and where the code differs from the draft spec
 
-Enforced at store creation (`WasmSandbox.cpp:128-131`) from `WasmAbi.h:71-76`:
+Enforced at store creation (`WasmSandbox.cpp:128-131`) from `WasmAbi.h:71-82`:
 
 | Limit | Value |
 |---|---|
+| module file (load) | 64 MiB (`maxModuleBytes`), checked before the file is read |
 | linear memory | 16 MiB (`storeMemoryLimitBytes`) |
 | table elements | 10 000 (`storeTableElementLimit`) |
 | instances | 1 (`storeInstanceLimit`) |
 | tables | 1 (`storeTableLimit`) |
 | memories | 1 (`storeMemoryCountLimit`) |
+
+The module-file limit is separate from the store limits: wasmtime compiles the module image in host
+memory, so the 16 MiB linear-memory cap cannot bound the bytes read from disk. Both
+`WasmSandbox::loadModuleFile` and `WasmSandboxHost::load` go through
+`WasmSandbox::readModuleFile`, which checks the file size before allocating the buffer and reports an
+oversized file as an error. `loadModuleBytes` applies the same cap to a direct caller, and a failed
+read allocation is returned through the error string instead of escaping the loader.
 
 The instance limit of 1 is why a module reload deletes and rebuilds the whole store rather than
 instantiating a second time (`WasmSandbox.cpp:111-133`).

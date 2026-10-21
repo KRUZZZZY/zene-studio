@@ -25,8 +25,6 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
-#include <fstream>
-#include <iterator>
 
 namespace lmms::wasm
 {
@@ -34,25 +32,13 @@ namespace lmms::wasm
 namespace
 {
 
-//! Read the whole of \p path. An unreadable or empty file is an error: both are
-//! module problems the caller reports as a typed refusal, never as a silent pass.
+//! Read the whole of \p path through the same bounded reader the effect path
+//! uses. An unreadable, oversized or empty file is an error: all three are
+//! module problems the caller reports as a typed refusal, never a silent pass.
 bool readWholeFile(const std::string& path, std::vector<std::uint8_t>& out,
 	std::string& error)
 {
-	std::ifstream file(path, std::ios::binary);
-	if (!file)
-	{
-		error = "cannot open module '" + path + "'";
-		return false;
-	}
-	out.assign(std::istreambuf_iterator<char>(file),
-		std::istreambuf_iterator<char>());
-	if (out.empty())
-	{
-		error = "module '" + path + "' is empty";
-		return false;
-	}
-	return true;
+	return WasmSandbox::readModuleFile(path, out, error);
 }
 
 /*! The bytes `loadModuleBytes` wants, for the format `formatOf` named.

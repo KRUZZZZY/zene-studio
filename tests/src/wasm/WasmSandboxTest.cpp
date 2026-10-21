@@ -23,6 +23,7 @@
 #include "WasmEffect.h"
 #include "WasmEffectControls.h"
 #include "WasmSandbox.h"
+#include "WasmSandboxHost.h"
 #include "WasmSpscRingBuffer.h"
 #include "WasmWorker.h"
 
@@ -71,6 +72,13 @@ namespace
 std::atomic<bool> g_countAllocations{false};
 std::atomic<std::uint64_t> g_allocationCount{0};
 
+// Injected allocation failure: while g_failLargeAllocations is set, the first
+// throwing allocation of at least g_failAllocationThreshold bytes fails. The
+// loader must report that as an error, not let std::bad_alloc escape.
+std::atomic<bool> g_failLargeAllocations{false};
+std::atomic<std::size_t> g_failAllocationThreshold{0};
+std::atomic<std::uint64_t> g_failedAllocations{0};
+
 void noteAllocation() noexcept
 {
 	if (g_countAllocations.load(std::memory_order_relaxed))
@@ -78,11 +86,24 @@ void noteAllocation() noexcept
 		g_allocationCount.fetch_add(1, std::memory_order_relaxed);
 	}
 }
+
+bool shouldFailAllocation(std::size_t size)
+{
+	if (!g_failLargeAllocations.load(std::memory_order_relaxed) ||
+		size < g_failAllocationThreshold.load(std::memory_order_relaxed))
+	{
+		return false;
+	}
+	g_failLargeAllocations.store(false, std::memory_order_relaxed);
+	g_failedAllocations.fetch_add(1, std::memory_order_relaxed);
+	return true;
+}
 } // namespace
 
 void* operator new(std::size_t size)
 {
 	noteAllocation();
+	if (shouldFailAllocation(size)) { throw std::bad_alloc(); }
 	if (void* ptr = std::malloc(size)) { return ptr; }
 	throw std::bad_alloc();
 }
@@ -226,6 +247,8 @@ private slots:
 
 	// ---- ABI / loader robustness ----
 	void loaderRejectsGarbageWithoutCrashing();
+	void loaderRejectsModuleFileOverSizeLimit();
+	void loaderReportsAllocationFailure();
 	void dspModuleMustExportLinearMemory();
 	void loaderRunsStartFunctionWithinFuelBudget();
 
@@ -358,6 +381,72 @@ void WasmSandboxTest::loaderRejectsGarbageWithoutCrashing()
 	QVERIFY2(second.loadModuleFile(modulePath("hello").toStdString(), error),
 		qPrintable(QString::fromStdString(error)));
 	QCOMPARE(second.callI32("hello").returnValue, 42);
+}
+
+void WasmSandboxTest::loaderRejectsModuleFileOverSizeLimit()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString path = directory.filePath(QStringLiteral("oversized.wasm"));
+
+	// A sparse file just over the documented 64 MiB cap: creating it costs no
+	// disk, and the loader must refuse it from its size, before reading bytes.
+	constexpr qint64 kModuleSizeLimit = 64 * 1024 * 1024;
+	QFile file(path);
+	QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+	QVERIFY(file.resize(kModuleSizeLimit + 1));
+	file.close();
+	QCOMPARE(QFileInfo(path).size(), kModuleSizeLimit + 1);
+
+	WasmSandbox sandbox;
+	std::string error;
+	QVERIFY(!sandbox.loadModuleFile(path.toStdString(), error));
+	QVERIFY2(error.find("module size limit") != std::string::npos,
+		error.c_str());
+	QVERIFY2(error.find(std::to_string(kModuleSizeLimit)) != std::string::npos,
+		error.c_str());
+	QVERIFY(!sandbox.hasProcess());
+	qInfo("loader refused an oversized module file: %s", error.c_str());
+
+	// The control surface's load path is the sibling of loadModuleFile; it
+	// must share the same cap instead of reading the file itself.
+	const HostLoadOutcome outcome =
+		WasmSandboxHost::instance().load(path.toStdString(), 0);
+	QVERIFY(!outcome.ok);
+	QVERIFY2(outcome.error.find("module size limit") != std::string::npos,
+		outcome.error.c_str());
+	qInfo("wasm.load refused the same file: %s", outcome.error.c_str());
+}
+
+void WasmSandboxTest::loaderReportsAllocationFailure()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString path = directory.filePath(QStringLiteral("large.wasm"));
+
+	// Big enough that the read buffer allocation crosses the injected failure
+	// threshold, and under the size cap so the loader reaches that allocation.
+	constexpr qint64 kBytes = 2 * 1024 * 1024;
+	QFile file(path);
+	QVERIFY2(file.open(QIODevice::WriteOnly), qPrintable(file.errorString()));
+	QVERIFY(file.resize(kBytes));
+	file.close();
+
+	WasmSandbox sandbox;
+	std::string error;
+	g_failedAllocations.store(0);
+	g_failAllocationThreshold.store(1024 * 1024);
+	g_failLargeAllocations.store(true);
+	const bool loaded = sandbox.loadModuleFile(path.toStdString(), error);
+	g_failLargeAllocations.store(false);
+
+	QVERIFY(!loaded);
+	QCOMPARE(g_failedAllocations.load(), std::uint64_t{1});
+	QVERIFY2(error.find("not enough memory") != std::string::npos,
+		error.c_str());
+	QVERIFY(!sandbox.hasProcess());
+	qInfo("loader reported an allocation failure instead of terminating: %s",
+		error.c_str());
 }
 
 void WasmSandboxTest::dspModuleMustExportLinearMemory()
