@@ -95,7 +95,11 @@ bool WasmEffect::loadModule(const QString& path, QString* error)
 		m_preservedLatency.store(0, std::memory_order_relaxed);
 		m_controls->setModulePath(QString());
 		refreshChainLatency();
-		return false;
+		// An unload is a completed operation, not a failed load: the state the
+		// caller asked for is in force. Reporting false here made the controls
+		// layer set "Failed to load " after the module had already stopped.
+		if (error != nullptr) { error->clear(); }
+		return true;
 	}
 
 	// 0.5.0 E22: all or nothing. The module is compiled and instantiated on this thread first, with
