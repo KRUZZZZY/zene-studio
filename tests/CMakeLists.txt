@@ -3219,6 +3219,45 @@ add_dependencies(PluginPortsMigrationTest
 	${PART_C_LADSPA_TARGETS}
 )
 
+# Cluster new-p9-254 / new-p14-134: the LB302 note path must stay
+# realtime-safe. The enqueue failsafe of the instrument (the bounded
+# note-enqueue path that runs on the audio render thread) may neither log nor
+# allocate; it counts the note it drops and a control-thread timer reports
+# the count. The plugin's own sources are compiled into this test binary (the
+# SlicerTZoomTest / Vst3EffectIntegrationTest pattern), so the code under test
+# is the shipped one and the test loads no plugin module: it runs on every
+# platform, with no platform skip.
+add_executable(Lb302NotePathTest
+	src/plugins/Lb302NotePathTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Lb302/Lb302.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Lb302/Lb302.h
+)
+add_test(NAME Lb302NotePathTest COMMAND Lb302NotePathTest)
+set_tests_properties(Lb302NotePathTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(Lb302NotePathTest PRIVATE
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the lb302 plug-in
+	${CMAKE_BINARY_DIR}/plugins/Lb302
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Lb302
+)
+# the test compiles the plug-in sources itself, so the generated export header
+# of the plug-in target has to exist first
+add_dependencies(Lb302NotePathTest lb302)
+target_static_libraries(Lb302NotePathTest PRIVATE lmmsobjs)
+target_compile_features(Lb302NotePathTest PRIVATE cxx_std_20)
+target_link_libraries(Lb302NotePathTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_definitions(Lb302NotePathTest PRIVATE
+	LMMS_TESTING
+	# this binary links the plug-in's code in, it does not import it: the
+	# static branch of the generated export header is the correct one here
+	# (the same reason Vst3EffectIntegrationTest sets it).
+	PLUGIN_STATIC_DEFINE
+	PLUGIN_NAME=lb302
+)
+
 # Regression for cluster new-p10-377: SlicerT waveform zoom clamped only at
 # zero (waveform disappears) and unbounded above. The plugin is built as a
 # module, so its sources are compiled into the test binary like WasmSandboxTest.

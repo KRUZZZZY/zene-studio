@@ -107,6 +107,7 @@ src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::run	the worker run
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::run	the queue's run loop and the ready-list POP: each slot is taken with an atomic exchange and the job runs inline here, both on a worker thread and on the render thread via startAndWaitForJobs (SPEC §3.2 item 1)
 src/core/AudioEngineWorkerThread.cpp	AudioEngineWorkerThread::JobQueue::addJob	the ready-list PUSH: Mixer.cpp:255 and :1729 call it from the audio thread, and this body holds the queue-full refusal branch, which Slice 0 made a counted, allocation-free refusal instead of a qWarning (SPEC §3.2 item 3)
 plugins/Sid/SidInstrument.cpp	SidInstrument::playNoteImpl	called for active SID notes on the render thread; its audio callback must not write synchronously to stdout	rules=stdio-output
+plugins/Lb302/Lb302.cpp	Lb302Synth::playNoteImpl	the LB302 per-note callback on the render thread: it enqueues the note into a bounded ring buffer, and its enqueue failsafe counts a dropped note instead of logging (Qt logging allocates and takes a lock)
 src/core/SamplePlayHandle.cpp	SamplePlayHandle::applyActiveTakeGate	the loop-take render gate: it reads the clip's active-lane mirror and the track's play-all switch through relaxed atomics, then either leaves the block or zeroes it; no model-vector access, allocation or lock
 src/tracks/SampleTrack.cpp	activeTakeForPlayback	the clip scheduler's active-take predicate: scalar clip fields and the atomic lane mirror only; no allocation or lock
 
