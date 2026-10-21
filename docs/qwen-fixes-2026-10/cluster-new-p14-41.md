@@ -226,6 +226,31 @@ not re-anchored and no limit was changed.
   inverse it does not have. The engine counts share their rule with the edits
   (`transposedKey()`, `offsetVolume()`, `nearestInScaleKey()`), so the answer and the edit
   cannot drift.
+- **Sibling commands in the command files this fix touches - each one is consistent with it.**
+  - `scale.snap_notes` - the clip-editing verb of the group, and the one this fix changes
+    (`src/core/ControlCommandsScaleEdit.cpp:108`): it now asks the engine whether the snap
+    would move anything and takes the checkpoint only when it would.
+  - `scale.custom` (`src/core/ControlCommandsNoteHarmony.cpp:183`) and `scale.detect`
+    (`src/core/ControlCommandsNoteMoves.cpp:217`) - readers (contract class `not_mutating`,
+    `src/core/ControlReversibilityTableDevices.cpp:138-139`); they write nothing and take no
+    step. Unaffected.
+  - `scale.define` (`src/core/ControlCommandsNoteHarmony.cpp:134`) - writes the custom
+    scales, and it ALREADY carries the rule this fix applies to the note edits: `if (all ==
+    before) { return ...; }` (`:153`) takes no undo step for a define that changes nothing.
+    It is the same house rule, already in place; untouched.
+  - `scale.get_state` and `scale.list` (`src/core/ControlCommandsScale.cpp:296`, `:325`) -
+    readers; they report the context and the clip's notes and write nothing. Unaffected.
+  - `scale.root_set`, `scale.set` and `scale.from_detected_key`
+    (`src/core/ControlCommandsScale.cpp:219`, `:224`, `:250`) - the scale CONTEXT writers.
+    They record an ACTION step through `control::addUndoStep()` (`:169`), not a MidiClip
+    checkpoint, and they do not edit a clip's notes, so the note-edit gate does not apply to
+    them. They are deliberately left as they are: the two findings name the clip-editing
+    verbs, and the context writers' undo contract (a recorded step that writes the root/scale
+    pair back) is unchanged by this fix. Stated plainly for the record: `scale.set` with the
+    scale it already has still records that step - a different command family with a different
+    mechanism, outside the two reported bugs, and changing it would alter the undo behaviour
+    the existing tests rely on (`tests/src/core/ControlNoteScaleVerbsTest.cpp:775-796`, which
+    sets the same scale twice and then undoes).
 - **Each edit is ONE undo step, and the reversibility class stays honest.** A real edit
   still takes exactly one MidiClip checkpoint and one `control.undo` puts it back
   (`aRealChangeStillTakesExactlyOneUndoStep()`,
@@ -244,7 +269,13 @@ not re-anchored and no limit was changed.
   serialised attribute was touched. `Note::setPos`/`setLength`/`setKey`/`setVolume` are
   unchanged; `NoteTransform::transpose()` and `offsetVelocity()` keep their exact formulas
   (the expressions moved into `transposedKey()`/`offsetVolume()`), so every saved note and
-  every undo step recorded before this change restores to the same state.
+  every undo step recorded before this change restores to the same state. No limit and no
+  bound was added anywhere, so no caller can hit a check that legitimately exceeds it; the
+  only new checks are the tests'. The one behaviour that changed is the one the findings
+  name: an edit that changes nothing no longer leaves an undo step behind, and nothing else
+  about the edit (the notes, the reply's measured fields, the refused cases) moved.
+- **The "ALREADY-FIXED / FALSE-POSITIVE" question does not apply:** both verdicts are FIXED.
+  The baseline code with its file and line is quoted above and measured by the RED run.
 - **Portability (Qt 5.15 / MSVC / macOS):** the new code uses `std::clamp`, `std::lround`,
   `std::any_of` and `QVector` - all already used in these files. No Qt-6-only API, no
   `windows.h` macro, no `std::filesystem`.
