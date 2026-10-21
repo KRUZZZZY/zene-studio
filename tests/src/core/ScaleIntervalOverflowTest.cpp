@@ -184,6 +184,23 @@ private slots:
 		QCOMPARE(scale.getIntervals().front().getRatio(), 1.5f);
 	}
 
+	//! Refusing the only interval must retain the safe unison scale. Otherwise
+	//! Microtuner::keyToFreq would index an empty interval vector when this scale
+	//! is used by an enabled instrument.
+	void aScaleWithOnlyAnUnusableCentsIntervalFallsBackToUnison()
+	{
+		QDomDocument document;
+		QDomElement scaleElement = document.createElement(QStringLiteral("scale"));
+		document.appendChild(scaleElement);
+		scaleElement.appendChild(centsInterval(document, QStringLiteral("200000")));
+
+		Scale scale;
+		scale.loadSettings(scaleElement);
+
+		QCOMPARE(static_cast<int>(scale.getIntervals().size()), 1);
+		QCOMPARE(scale.getIntervals().front().getRatio(), 1.0f);
+	}
+
 	//! Large cents that the float still holds are a legitimate interval and must
 	//! not be caught by the range check: 150000 cents is a ratio of about 4e37.
 	void aLargeStoredCentsIntervalWhoseRatioFitsStillLoads()

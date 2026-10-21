@@ -183,6 +183,9 @@ void Scale::loadSettings(const QDomElement &element)
 		}
 		node = node.nextSibling();
 	}
+	// Keep the constructor's unison fallback when every stored interval is
+	// invalid. Microtuner::keyToFreq assumes a scale has at least one interval.
+	if (m_intervals.empty()) { m_intervals.emplace_back(1, 1); }
 }
 
 

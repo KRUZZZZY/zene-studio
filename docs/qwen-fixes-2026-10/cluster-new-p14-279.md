@@ -77,3 +77,12 @@ Gates. `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` 
 - **Gates:** the wrapper script could not run (write-jail, above). All gates were run directly; all required gates pass; the two ratchets exit 1 with regression lines in files this change does not touch.
 - **Sibling commands in the command files:** the diff touches no `ControlCommands*` file, so no command sibling applies. No control command was added (the commands snapshot is unaffected).
 - **Working tree:** clean after the commit.
+
+## QA review supplement (2026-10-21)
+
+The review found that a scale containing only refused intervals would become empty. With the session tuning table inactive, `NotePlayHandle::updateFrequency` calls `Microtuner::keyToFreq`, which indexes the scale's interval vector. `Scale::loadSettings` now restores its constructor's 1/1 unison fallback when all stored intervals are invalid. The regression `aScaleWithOnlyAnUnusableCentsIntervalFallsBackToUnison` covers this path.
+
+| Step | Command | EXIT |
+|---|---|---|
+| QA rebuild | `cmake --build build --target zene ScaleIntervalOverflowTest SessionTuningTest ControlNoteScaleVerbsTest -j4` | 0 |
+| QA regression | `ctest -R '^(ScaleIntervalOverflowTest\|SessionTuningTest\|ControlNoteScaleVerbsTest)$' --output-on-failure` (from `build/tests`; 3 tests) | 0 |
