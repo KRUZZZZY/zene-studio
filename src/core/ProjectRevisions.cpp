@@ -66,8 +66,11 @@ bool replaceWithStaged(const QString& staged, const QString& to)
 {
 	if (g_failReplacementForTest.load()) { return false; }
 #ifdef Q_OS_WIN
+	// Wide paths: the narrow overload converts through the active ANSI code page, which replaces any
+	// character that page cannot represent, so the rename would address the wrong path or fail.
 	std::error_code ec;
-	std::filesystem::rename(staged.toLocal8Bit().constData(), to.toLocal8Bit().constData(), ec);
+	std::filesystem::rename(std::filesystem::path(staged.toStdWString()),
+		std::filesystem::path(to.toStdWString()), ec);
 	return !ec;
 #else
 	// rename(2) itself, which is what std::filesystem::rename is on POSIX: std::filesystem is unavailable
