@@ -118,6 +118,7 @@ ChordProgressionPanel::ChordProgressionPanel(QWidget* parent) :
 	m_preview = new QLabel(this);
 	m_preview->setWordWrap(true);
 	m_status = new QLabel(this);
+	m_status->setObjectName(QStringLiteral("progressionStatus"));
 	m_status->setWordWrap(true);
 	m_target = new QLabel(this);
 	m_target->setWordWrap(true);
@@ -299,7 +300,12 @@ QString ChordProgressionPanel::targetClip() const
 
 QString ChordProgressionPanel::writeTo(const QString& clipId, const QString& progression)
 {
-	if (clipId.isEmpty()) { return tr("Select a MIDI clip in the arranger first."); }
+	if (clipId.isEmpty())
+	{
+		const QString refusal = tr("Select a MIDI clip in the arranger first.");
+		say(refusal);
+		return refusal;
+	}
 	const ControlResult written = run("chord.progression_generate",
 		{{QStringLiteral("clip"), clipId}, {QStringLiteral("progression"), progression},
 			{QStringLiteral("scale"), scaleName()}, {QStringLiteral("root"), rootPitchClass()},
@@ -313,8 +319,18 @@ QString ChordProgressionPanel::writeTo(const QString& clipId, const QString& pro
 QString ChordProgressionPanel::writeSelected()
 {
 	const int row = m_table->currentRow();
-	if (row < 0 || row >= m_suggestions.size()) { return tr("Select a progression first."); }
-	if (!fitsAt(row)) { return tr("'%1' does not fit %2.").arg(progressionAt(row), scaleName()); }
+	if (row < 0 || row >= m_suggestions.size())
+	{
+		const QString refusal = tr("Select a progression first.");
+		say(refusal);
+		return refusal;
+	}
+	if (!fitsAt(row))
+	{
+		const QString refusal = tr("'%1' does not fit %2.").arg(progressionAt(row), scaleName());
+		say(refusal);
+		return refusal;
+	}
 	return writeTo(targetClip(), progressionAt(row));
 }
 
