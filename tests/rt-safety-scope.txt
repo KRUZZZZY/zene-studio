@@ -31,8 +31,7 @@ src/core/AudioEngine.cpp	AudioEngine::renderStageInstruments	STAGE 1: runs and r
 src/core/AudioEngine.cpp	AudioEngine::renderStageEffects	STAGE 2: processes effects and retires finished play handles on the audio thread
 src/core/AudioEngine.cpp	AudioEngine::renderStageMix	STAGE 3: master mix, master gain and the passive loudness tap, all on the audio thread
 src/core/AudioEngine.cpp	AudioEngine::swapBuffers	called once per period from STAGE 0: swaps the period buffers and drains the capture staging areas
-src/core/AudioEngine.cpp	AudioEngine::drainInputStage	the stereo input staging drain, once per period on the audio thread ("no lock, no allocation" by contract)
-src/core/AudioEngine.cpp	AudioEngine::drainWideInputStage	the N-channel (feature row 64) input staging drain, once per period on the audio thread
+src/core/AudioEngine.cpp	AudioEngine::drainCaptureStages	the capture staging drain, once per period on the audio thread: the N-channel (feature row 64) block and the stereo pair are ONE capture block and are drained together (cluster 3705) ("no lock, no allocation" by contract)
 src/core/Song.cpp	Song::processNextBuffer	the song's per-period scheduling, called from STAGE 0 on the audio thread (transport edges, MIDI clock, Session View launch scheduling)
 src/core/LinkAudioFollower.cpp	LinkAudioFollower::instance	the follower singleton is read by followLinkSession from Song::processNextBuffer once per rendered period; setup constructs it before the audio device starts
 src/core/Mixer.cpp	Mixer::prepareMasterMix	called from STAGE 0: clears the mixer's per-period buffers before the render

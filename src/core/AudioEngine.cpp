@@ -627,21 +627,47 @@ void AudioEngine::refreshRecordingLatency()
 
 
 
-void AudioEngine::drainInputStage() noexcept
+void AudioEngine::drainCaptureStages() noexcept
 {
 	if( m_inputStage == nullptr )
 	{
 		return;
 	}
 
+	// The N-CHANNEL path and the stereo path are TWO REPRESENTATIONS OF THE SAME
+	// CAPTURE BLOCK (cluster 3705). The publisher pushes the wide block first and
+	// the stereo pair second, so a render that landed between the two pushes used
+	// to consume one representation now and the other in the next period: the
+	// recorder took the wide block in one period and fell back to the same stereo
+	// block in the next - the same audio twice, and the stereo bus a whole block
+	// behind the recorders.
+	//
+	// So the two stages are drained AS ONE BLOCK: as many frames as BOTH of them
+	// hold. A block whose stereo pair has not been published yet waits for it
+	// instead of being consumed on its own. A capture path that does not use the
+	// wide path at all (a device that only fills the stereo ring) drains the
+	// stereo ring on its own, exactly as it always did.
+	const auto stereoStaged = m_inputStage->available();
+	const auto wideStaged = m_wideInputStage != nullptr
+		? m_wideInputStage->stagedFrames() : std::size_t{0};
+	const bool wideInUse = m_captureWideInUse.load(std::memory_order_relaxed);
+	const auto paired = wideInUse ? std::min( wideStaged, stereoStaged ) : stereoStaged;
+
 	// Render thread only, and bounded by both the ring and the destination
 	// buffer, so this can neither allocate nor overrun m_inputBuffer.
-	const auto staged = m_inputStage->available();
-	const auto frames = std::min( staged,
+	const auto frames = std::min( paired,
 		static_cast<std::size_t>( m_inputBufferSize[ m_inputBufferRead ] ) );
 	m_inputStage->read( m_inputBuffer[ m_inputBufferRead ], frames );
 	m_inputBufferFrames[ m_inputBufferRead ] = static_cast<f_cnt_t>( frames );
 	if( frames > 0 ) { m_inputStreamStarted.store( true, std::memory_order_relaxed ); }
+
+	// The wide path takes the SAME number of frames, so the two stay one block.
+	// Without the wide path the stage drains on its own, as it always did.
+	if( m_wideInputStage != nullptr )
+	{
+		m_wideInputStage->drain( wideInUse ? static_cast<f_cnt_t>( frames )
+			: static_cast<f_cnt_t>( wideStaged ) );
+	}
 }
 
 
@@ -667,7 +693,7 @@ void AudioEngine::setPunchWindow(bool armed, tick_t begin, tick_t end) noexcept
 
 
 
-void AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
+std::size_t AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
 	const f_cnt_t _frames ) noexcept
 {
 	// The N-CHANNEL sibling of pushInputFrames() (0.3.0, feature row 64). It
@@ -677,22 +703,13 @@ void AudioEngine::pushInputFramesWide( const float* _interleaved, int _channels,
 	// full ring drops the newest frames and counts them.
 	if( m_wideInputStage == nullptr )
 	{
-		return;
+		return 0;
 	}
-	m_wideInputStage->push( _interleaved, _channels, _frames );
-}
-
-
-
-
-void AudioEngine::drainWideInputStage() noexcept
-{
-	// Render thread only: it double-buffers, so a drain never writes the period
-	// a consumer is reading, and it is bounded on both sides.
-	if( m_wideInputStage != nullptr )
-	{
-		m_wideInputStage->drain();
-	}
+	// From here on the capture path publishes BOTH representations of every
+	// block - this one and the stereo pair - so the engine drains the two
+	// stages as one block (cluster 3705).
+	m_captureWideInUse.store( true, std::memory_order_relaxed );
+	return m_wideInputStage->push( _interleaved, _channels, _frames );
 }
 
 
@@ -1016,11 +1033,11 @@ void AudioEngine::swapBuffers()
 	// Done here - once per rendered period, before any play handle reads
 	// inputBuffer() (STAGE 1) or the recorder demuxes it (STAGE 4) - so the
 	// capture thread never touches m_inputBuffer and needs no lock for it.
-	drainInputStage();
-
-	// And the same for the N-CHANNEL path (0.3.0, feature row 64): one drain
-	// per rendered period, on this thread, beside the stereo one above.
-	drainWideInputStage();
+	//
+	// And the N-CHANNEL path (0.3.0, feature row 64) with it: the wide block
+	// and the stereo pair are ONE capture block, so the two stages are drained
+	// together, as one block (cluster 3705).
+	drainCaptureStages();
 
 	std::swap(m_outputBufferRead, m_outputBufferWrite);
 	zeroSampleFrames(m_outputBufferWrite.get(), m_framesPerPeriod);

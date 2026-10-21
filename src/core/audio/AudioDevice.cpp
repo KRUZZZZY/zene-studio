@@ -73,16 +73,36 @@ void AudioDevice::publishCaptured(const float* interleaved, int channels, f_cnt_
 	}
 	// 1. The N-CHANNEL path (feature row 64): every captured channel, so a record route can
 	//    select any of them - channels 2..N-1 included, which the stereo bus cannot carry.
-	engine->pushInputFramesWide(interleaved, channels, frames);
-	// 2. The STEREO bus the rest of the engine reads: the selected pair, clamped to what
-	//    this block carries (a mono device feeds its one channel to both sides).
+	//    It is published FIRST and it LEADS: the stereo pair below is the SECOND
+	//    representation of the SAME capture block, and the engine drains the two
+	//    together (cluster 3705), so a block that reaches only one of the two
+	//    paths is a block the other path is a whole period behind.
+	const std::size_t staged = engine->pushInputFramesWide(interleaved, channels, frames);
+	// 2. The counter record.input_get_state reports. It counts the frames the
+	//    device delivered, whether or not the two paths took them (the drop
+	//    counters say what was lost), so it moves before the return below.
+	AudioInputPath::addCapturedFrames(static_cast<std::uint64_t>(frames));
+	if (staged == 0)
+	{
+		// The wide path refused the block whole - a width it cannot carry, or a
+		// width change while frames of the old width are still staged. Publishing
+		// the stereo pair alone would leave the two paths one block apart: the
+		// recorder would take the wide block in one period and this one in the
+		// next. So the block goes to NEITHER path, and the wide path has counted
+		// it as dropped.
+		return;
+	}
+	// 3. The STEREO bus the rest of the engine reads: the selected pair, clamped to what
+	//    this block carries (a mono device feeds its one channel to both sides). Exactly
+	//    the frames the wide path took, so the two representations are one block.
 	const auto width = static_cast<std::size_t>(channels);
 	const auto left = static_cast<std::size_t>(std::min(m_captureLeft, channels - 1));
 	const auto right = static_cast<std::size_t>(std::min(m_captureRight, channels - 1));
 	const auto piece = static_cast<f_cnt_t>(m_captureBus.size());
-	for (f_cnt_t done = 0; done < frames; done += piece)
+	const auto accepted = static_cast<f_cnt_t>(staged);
+	for (f_cnt_t done = 0; done < accepted; done += piece)
 	{
-		const f_cnt_t count = std::min(piece, frames - done);
+		const f_cnt_t count = std::min(piece, accepted - done);
 		for (f_cnt_t i = 0; i < count; ++i)
 		{
 			const std::size_t frame = static_cast<std::size_t>(done + i) * width;
@@ -90,8 +110,6 @@ void AudioDevice::publishCaptured(const float* interleaved, int channels, f_cnt_
 		}
 		engine->pushInputFrames(m_captureBus.data(), count);
 	}
-	// 3. The counter record.input_get_state reports.
-	AudioInputPath::addCapturedFrames(static_cast<std::uint64_t>(frames));
 }
 
 

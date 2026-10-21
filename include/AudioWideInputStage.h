@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -46,7 +47,7 @@ namespace lmms
  *
  * WHY IT IS A SEPARATE OBJECT AND NOT FOUR MORE MEMBERS ON AudioEngine.
  * AudioEngine already has the stereo input path
- * (AudioEngine::pushInputFrames / drainInputStage / m_inputStage) and that path
+ * (AudioEngine::pushInputFrames / drainCaptureStages / m_inputStage) and that path
  * is stereo BY TYPE: a SampleFrame is two floats. The wide path needs a ring, a
  * pair of pre-allocated destination buffers, a width and a frame count, and
  * putting them on AudioEngine would grow an inherited class that the file-length
@@ -90,8 +91,11 @@ public:
 	std::size_t push(const float* interleaved, int channels, f_cnt_t frames) noexcept;
 
 	//! Render thread: move the staged frames into the read buffer. Idempotent
-	//! when nothing is staged (frames() becomes 0).
-	void drain() noexcept;
+	//! when nothing is staged (frames() becomes 0). At most \a maxFrames of
+	//! them are moved (the default: as many as are staged, bounded by the
+	//! capacity): a drain of fewer frames leaves the rest in the ring, so the
+	//! caller can drain this stage and the stereo stage as ONE capture block.
+	void drain(f_cnt_t maxFrames = std::numeric_limits<f_cnt_t>::max()) noexcept;
 
 	//! Render thread: the most recently drained period.
 	const float* data() const noexcept { return m_buffers[m_read].data(); }
