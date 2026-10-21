@@ -4,7 +4,7 @@ Verdict: FIXED
 
 new-p15-63: FIXED
 new-p14-103: FIXED
-new-p10-127: PENDING
+new-p10-127: FIXED
 
 Three bugs in one file (`plugins/Xpressive/ExprSynth.cpp`), each fixed, tested and
 committed on its own.
@@ -23,7 +23,7 @@ committed on its own.
   pointer was lost — the wave object leaked. The interpolated branch
   (`m_cyclics_interp`) had the same shape.
 - Both cyclic vectors are owned by `ExprFrontData::~ExprFrontData`
-  (`plugins/Xpressive/ExprSynth.cpp:405-419`), which deletes every element it holds; a
+  (`plugins/Xpressive/ExprSynth.cpp:392-404`), which deletes every element it holds; a
   wave that never reached the vector is never deleted by anybody.
 
 ### Fix
@@ -77,7 +77,7 @@ cd build/tests && ctest -R '^ExprSynthAllocation$' --output-on-failure > $LOGS/t
 
 ### Evidence (the bug was real)
 
-- `plugins/Xpressive/ExprSynth.cpp:795-800` (original code, `ExprSynth::renderOutput`):
+- `plugins/Xpressive/ExprSynth.cpp:812-818` (original code, `ExprSynth::renderOutput`):
   `if (is_released && m_note_rel_sample == 0) { m_note_rel_sample = m_note_sample; }`.
   Sample zero is a *valid* release position, but it was also the "not set yet" marker.
   A note that is released before its first render period stores `m_note_sample == 0`,
@@ -85,19 +85,19 @@ cd build/tests && ctest -R '^ExprSynthAllocation$' --output-on-failure > $LOGS/t
   *later* sample count as the release position.
 - The consequence is visible in the audio: `m_note_rel_sec` (the `trel` expression
   variable) is computed from `m_note_sample - m_note_rel_sample` in both render loops
-  (`plugins/Xpressive/ExprSynth.cpp:819` and `:846`), so the release time restarts from
+  (`plugins/Xpressive/ExprSynth.cpp:837` and `:865`), so the release time restarts from
   zero at the next period boundary instead of counting on from the release.
 - The member was initialised to `0` in the constructor
-  (`plugins/Xpressive/ExprSynth.cpp:739-741`) and is only ever written by that one
+  (`plugins/Xpressive/ExprSynth.cpp:742-744`) and is only ever written by that one
   place, so the marker was the single source of the confusion.
 
 ### Fix
 
-- `plugins/Xpressive/ExprSynth.h:111-117`: added `bool m_note_rel_sample_set` next to
+- `plugins/Xpressive/ExprSynth.h:124-126`: added `bool m_note_rel_sample_set` next to
   `m_note_rel_sample`; the release position is now tracked by that flag instead of by
   the value of the position.
-- `plugins/Xpressive/ExprSynth.cpp:739-742`: the flag starts as `false`.
-- `plugins/Xpressive/ExprSynth.cpp:795-802`: the release position is stored once, when
+- `plugins/Xpressive/ExprSynth.cpp:742-744`: the flag starts as `false`.
+- `plugins/Xpressive/ExprSynth.cpp:812-818`: the release position is stored once, when
   the note is released, and the flag marks it as set. Both render loops keep using
   `m_note_rel_sample` unchanged, so a note that is released later, or never released,
   behaves exactly as before.
@@ -141,8 +141,163 @@ cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug2-r
 
 **Verdict: FIXED**
 
-(filled in below)
+### Evidence (the bug was real)
+
+- `plugins/Xpressive/ExprSynth.cpp:44`: `#define WARN_EXPRTK qWarning("ExprTk exception")`.
+- `plugins/Xpressive/ExprSynth.cpp:872-881` (the catch at the end of
+  `ExprSynth::renderOutput`; before the fix it was `catch(...) { WARN_EXPRTK; }`):
+  `catch(...) { WARN_EXPRTK; }`, i.e. a `qWarning` on the audio thread.
+- `ExprSynth::renderOutput` is the per-period render of a playing note: it is called
+  from `Xpressive::playNoteImpl` (`plugins/Xpressive/Xpressive.cpp:244`), which the
+  audio thread runs for every note in every period. `qWarning` formats a message and
+  hands it to the Qt logging handler, which allocates and takes locks — not allowed on
+  the render path.
+- The other `WARN_EXPRTK` uses in this file are on the GUI/compile paths
+  (`ExprFront::compile`, `ExprFront::evaluate`, `ExprFront::add_*`,
+  `ExprFront::add_cyclic_vector`), which run on the main thread, so only the
+  `renderOutput` catch was on the audio thread.
+
+### Fix
+
+- `plugins/Xpressive/ExprSynth.cpp:779-789` (new `ExprSynth::recordRenderError`) and
+  `plugins/Xpressive/ExprSynth.h:136-139`: the render catch records the exception
+  message in a fixed size 128 byte buffer and sets a flag. No allocation, no lock and
+  no logging happen on the audio thread. The first error wins, because a broken
+  expression throws in every period.
+- `plugins/Xpressive/ExprSynth.cpp:872-881`: the catch in `renderOutput` now calls
+  `recordRenderError(error.what())` (and `recordRenderError("unknown expression
+  error")` for a non-`std::exception` throw) instead of logging.
+- `plugins/Xpressive/ExprSynth.h:109-113`: `hasPendingError()` / `pendingError()` let
+  the caller read the recorded error.
+- `plugins/Xpressive/Xpressive.cpp:114-119` (timer), `:252-258` (hand over in
+  `playNoteImpl`), `:261-282` (`recordPendingError` / `reportPendingError`) and
+  `plugins/Xpressive/Xpressive.h:117-120`, `:149-154`:
+  the plugin copies the error the audio thread recorded into its own fixed size buffer
+  (again without allocating) and reports it from the main thread: a `QTimer` in the
+  plugin (created on the main thread, 1 s interval) calls `Xpressive::reportPendingError`,
+  which does the `qWarning`. The buffer is only written while no error is pending, so
+  the main thread can read it before the flag is cleared.
+
+### Regression
+
+`tests/src/plugins/ExprSynthTest.cpp` — new case
+`expressionRenderErrorIsNotLoggedOnTheAudioThread`. It registers an expression
+function that throws `std::runtime_error("boom")` in the expression's symbol table, so
+the expression evaluation throws inside `renderOutput`. A `qInstallMessageHandler`
+captures everything Qt logs while the period is rendered. The test asserts that the
+render path logged nothing, that the error was recorded for a later report and that the
+recorded message carries the exception text. The test is deterministic: the throw comes
+from the expression function itself, there is no timing, sleep or race involved.
+
+### Commands (verbatim, observed EXIT codes)
+
+```
+cmake --build build --target ExprSynth > $LOGS/build-bug3-red.log 2>&1                # BUILD_EXIT=0
+cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug3-red.log 2>&1
+# TEST_EXIT=8  (1 failure: "the render path logged on the audio thread: ExprTk exception")
+cmake --build build --target ExprSynth > $LOGS/build-bug3-green.log 2>&1              # BUILD_EXIT=0
+cd build/tests && ctest -R '^ExprSynth$' --output-on-failure > $LOGS/test-bug3-green.log 2>&1
+# TEST_EXIT=0  (1/1 test passed, 6 test functions)
+cmake --build build --target xpressive zene > $LOGS/build-bug3-plugin.log 2>&1        # BUILD_EXIT=0
+```
 
 ## Self-check
 
-(filled in below)
+### 1. The regression test FAILS with the product change reverted and PASSES with it
+
+| bug | RED (product change reverted) | GREEN (product change in place) |
+|---|---|---|
+| new-p15-63 | `ctest -R '^ExprSynthAllocation$'` → **TEST_REVERT_EXIT=8**, 2 failures: "the wave object leaked when the cyclic vector failed to grow" / "…when the interpolated cyclic vector failed to grow" | `ctest -R '^ExprSynthAllocation$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
+| new-p14-103 | `ctest -R '^ExprSynth$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the release time restarted instead of counting on from the release position" | `ctest -R '^ExprSynth$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
+| new-p10-127 | `ctest -R '^ExprSynth$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the render path logged on the audio thread: ExprTk exception" | `ctest -R '^ExprSynth$'` → **TEST_REAPPLY_EXIT=0**, 1/1 test passed |
+
+The first (pre-fix) runs were `TEST_EXIT=8` for all three regressions, with the same
+assertions failing, and `TEST_EXIT=0` after the fix. The exact commands are quoted in
+each bug's section above; the patches are in `$LOGS/fix.patch`,
+`$LOGS/fix-bug2.patch` and `$LOGS/fix-bug3.patch`.
+
+### 2. The tests are deterministic (no wall-clock timing, no sleeps, no races)
+
+- **new-p15-63** — seam: the test binary replaces the global `operator new`; the new
+  injection counts the allocations after a mark and fails the *n*-th one. The wave
+  object is the first allocation of `add_cyclic_vector` and the vector's first growth
+  the second one, so failing the second allocation makes the `push_back` throw
+  deterministically. The test asserts that the injection really fired
+  (`allocationWasForcedToFail`) and that the wave was really allocated
+  (`waveWasAllocated`) before it asserts the leak, so a mis-targeted injection fails
+  loudly instead of passing. No clock, no thread, no sleep.
+- **new-p14-103** — seam: the note is released with `noteOff(0)` before the first
+  render period, the expression is `trel` (the time since the release) and the frame
+  counter and the sample rate are constants. The two render periods of 64 frames are
+  counted, not timed.
+- **new-p10-127** — seam: an expression function registered in the expression's symbol
+  table throws `std::runtime_error("boom")` when the expression is evaluated, and
+  `qInstallMessageHandler` captures what Qt logs while the period is rendered. The
+  throw comes from the expression itself, not from a race or a timeout.
+
+### 3. The fix is at the cause and complete (every caller and sibling checked)
+
+- **new-p15-63** — both branches of `ExprFront::add_cyclic_vector` are fixed (the
+  plain and the interpolated cyclic vector); the only callers are
+  `ExprSynth::ExprSynth` (`plugins/Xpressive/ExprSynth.cpp:749-751`, three waves) and
+  the wave evaluation in `plugins/Xpressive/Xpressive.cpp` (three waves), all of which
+  go through the same function, so every caller is covered by the one fix. Ownership is
+  unchanged: the cyclic vector owns the wave and `ExprFrontData::~ExprFrontData`
+  (`plugins/Xpressive/ExprSynth.cpp:392-404`) deletes it, so a wave that reached the
+  vector is still freed exactly once.
+- **new-p14-103** — `m_note_rel_sample` is written in exactly one place
+  (`plugins/Xpressive/ExprSynth.cpp:812-818`) and read in the two render loops
+  (`:837` and `:865`); all three now agree on the flag, so the release time is
+  consistent in both render branches. `m_note_sample`, `m_note_rel_sec` and the
+  `rel`/`trel` expression variables keep their meaning.
+- **new-p10-127** — the render catch was the only logging on the audio path; the
+  remaining `WARN_EXPRTK` uses are `ExprFront::compile`, `ExprFront::evaluate`,
+  `ExprFront::add_variable`, `ExprFront::add_constant`, `ExprFront::add_cyclic_vector`
+  and `ExprFront::setIntegrate`, which all run on the main thread (expression editing
+  in the plugin GUI) and were left alone. The error is handed to the plugin, whose
+  main-thread timer reports it, so the report happens off the audio thread.
+
+### 4. No collateral damage
+
+- No project file, save format or plugin setting is touched: the three changes change
+  the ownership of an internal object, one flag and one log statement. Old projects
+  load and render exactly as before — the Xpressive plugin still saves the same
+  expressions and wave tables.
+- No limit, threshold or user-visible check was added, so no caller that legitimately
+  exceeds one can be hit.
+- Outside the three bugs the behaviour is unchanged: a note that is released later (or
+  never) keeps the same release position, a wave that reaches the vector is still
+  deleted exactly once by the vector's owner, and a healthy expression never reaches
+  the catch at all.
+
+### 5. Realtime, undo and commands
+
+- **Realtime**: the audio thread only writes into fixed size buffers
+  (`char[128]`) and sets an atomic flag — no allocation, no free, no mutex, no wait,
+  no logging, no Qt call. The `qWarning` moved out of the render path into the
+  plugin's main-thread timer.
+- **Undo**: none of the three fixes adds a control command, a song mutation or an
+  undoable action, so the undo history is unchanged (one honest step per user action
+  still holds).
+- **Commands**: no command file was touched, so the control command snapshot and its
+  canary are unaffected.
+
+### 6. Portability
+
+Only C++20 standard library features already used in this file (`std::unique_ptr`,
+`std::atomic_bool`, `std::strncpy`) and Qt API that exists in Qt 5.15 as well
+(`QTimer`, `qInstallMessageHandler`). No Qt 6 only API, no `windows.h` macro names and
+no `std::filesystem` were introduced.
+
+### 7. Files committed
+
+- `plugins/Xpressive/ExprSynth.cpp` (bugs new-p15-63, new-p14-103, new-p10-127)
+- `plugins/Xpressive/ExprSynth.h` (bugs new-p14-103, new-p10-127)
+- `plugins/Xpressive/Xpressive.cpp` (bug new-p10-127)
+- `plugins/Xpressive/Xpressive.h` (bug new-p10-127)
+- `tests/src/plugins/ExprSynthAllocationTest.cpp` (bug new-p15-63)
+- `tests/src/plugins/ExprSynthTest.cpp` (bugs new-p14-103, new-p10-127)
+- `tests/upstream-modifications.txt` (the divergence ledger for the changed
+  inherited files)
+- `docs/qwen-fixes-2026-10/cluster-new-p15-63.md` (this report)
+

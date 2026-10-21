@@ -25,6 +25,7 @@
 #ifndef EXPRSYNTH_H
 #define EXPRSYNTH_H
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -105,8 +106,17 @@ public:
 
 	void renderOutput(f_cnt_t frames, SampleFrame* buf );
 
+	//! Whether a render error is waiting to be reported. The audio thread records it
+	//! (it must not log there), the main thread reports it.
+	bool hasPendingError() const { return m_pendingErrorSet.load(std::memory_order_acquire); }
+	//! Message of the render error that is waiting to be reported.
+	const char* pendingError() const { return m_pendingError; }
 
 private:
+	//! Records a render error for a later report. Runs on the audio thread, so it
+	//! must not allocate: the message goes into a fixed size buffer.
+	void recordRenderError(const char* message);
+
 	ExprFront *m_exprO1, *m_exprO2;
 	const WaveSample *m_W1, *m_W2, *m_W3;
 	f_cnt_t m_note_sample;
@@ -123,6 +133,10 @@ private:
 	const FloatModel *m_pan1,*m_pan2;
 	float m_rel_transition;
 	float m_rel_inc;
+	//! Render error waiting to be reported. Fixed size, so that recording it on the
+	//! audio thread never allocates.
+	char m_pendingError[128] = {};
+	std::atomic_bool m_pendingErrorSet{false};
 
 } ;
 

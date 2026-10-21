@@ -25,6 +25,7 @@
 #include "Xpressive.h"
 
 #include <cmath>
+#include <cstring>
 
 #include <QDomElement>
 #include <QPlainTextEdit>
@@ -109,6 +110,13 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 {
 	m_outputExpression[0]="sinew(integrate(f*(1+0.05sinew(12t))))*(2^(-(1.1+A2)*t)*(0.4+0.1(1+A3)+0.4sinew((2.5+2A1)t))^2)";
 	m_outputExpression[1]="expw(integrate(f*atan(500t)*2/pi))*0.5+0.12";
+
+	// The render path runs on the audio thread, where logging is not allowed. A
+	// failing expression is recorded there and reported from the main thread by this
+	// timer.
+	m_errorReportTimer.setInterval(1000);
+	connect(&m_errorReportTimer, &QTimer::timeout, this, &Xpressive::reportPendingError);
+	m_errorReportTimer.start();
 }
 
 void Xpressive::saveSettings(QDomDocument & _doc, QDomElement & _this) {
@@ -242,6 +250,37 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 	const f_cnt_t offset = nph->noteOffset();
 
 	ps->renderOutput(frames, out.data() + offset);
+
+	if (ps->hasPendingError())
+	{
+		// The audio thread does not log, it hands the error to the main thread.
+		recordPendingError(ps->pendingError());
+	}
+}
+
+void Xpressive::recordPendingError(const char* message)
+{
+	// The first error wins: a broken expression fails in every period.
+	if (m_pendingErrorSet.load(std::memory_order_relaxed))
+	{
+		return;
+	}
+	std::strncpy(m_pendingError, message != nullptr ? message : "", sizeof(m_pendingError) - 1);
+	m_pendingError[sizeof(m_pendingError) - 1] = '\0';
+	m_pendingErrorSet.store(true, std::memory_order_release);
+}
+
+void Xpressive::reportPendingError()
+{
+	if (!m_pendingErrorSet.load(std::memory_order_acquire))
+	{
+		return;
+	}
+	// The buffer is only written while no error is pending, so it can be read before
+	// the flag is cleared.
+	const QString message = QString::fromLatin1(m_pendingError);
+	m_pendingErrorSet.store(false, std::memory_order_release);
+	qWarning("Xpressive: %s", qPrintable(message));
 }
 
 void Xpressive::deleteNotePluginData(NotePlayHandle* nph) {

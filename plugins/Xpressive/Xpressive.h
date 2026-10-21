@@ -28,6 +28,9 @@
 
 
 #include <QTextEdit>
+#include <QTimer>
+
+#include <atomic>
 
 #include "AutomatableModel.h"
 #include "Graph.h"
@@ -111,6 +114,10 @@ protected slots:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+	//! Audio thread: records a render error, the main thread reports it.
+	void recordPendingError(const char* message);
+	//! Main thread: reports the render error the audio thread recorded.
+	void reportPendingError();
 
 	graphModel  m_graphO1;
 	graphModel  m_graphO2;
@@ -139,7 +146,13 @@ private:
 	WaveSample m_W1, m_W2, m_W3;
 
 	BoolModel m_exprValid;
-	
+	//! Main thread pump that reports the render errors the audio thread recorded.
+	QTimer m_errorReportTimer;
+	//! Render error waiting to be reported. Fixed size, so that recording it on the
+	//! audio thread never allocates.
+	char m_pendingError[128] = {};
+	std::atomic_bool m_pendingErrorSet{false};
+
 } ;
 
 namespace gui

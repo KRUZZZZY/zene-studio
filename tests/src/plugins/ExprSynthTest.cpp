@@ -8,9 +8,12 @@
  */
 
 #include <QTest>
+#include <QLoggingCategory>
 
 #include <atomic>
 #include <chrono>
+#include <stdexcept>
+#include <string>
 #include <thread>
 
 #include "AudioEngine.h"
@@ -31,6 +34,52 @@
 // Keep the implementation in this translation unit so only this test's view
 // of ExprSynth relaxes access to its frame counter.
 #include "../../../plugins/Xpressive/ExprSynth.cpp"
+
+namespace
+{
+
+QStringList g_capturedMessages;
+
+void captureMessage(QtMsgType type, const QMessageLogContext& context, const QString& message)
+{
+	g_capturedMessages.append(message);
+}
+
+//! An expression function that throws when the expression is evaluated.
+struct ThrowingExpressionFunction : public exprtk::ifunction<float>
+{
+	using exprtk::ifunction<float>::operator();
+
+	ThrowingExpressionFunction() : exprtk::ifunction<float>(1) {}
+
+	float operator()(const float& value) override
+	{
+		throw std::runtime_error("boom");
+	}
+};
+
+//! Reads the render error a synth recorded for a later report. The accessor only
+//! exists after the fix, so this helper keeps the test compilable against the
+//! unfixed product code as well.
+template <typename Synth>
+bool readPendingError(Synth& synth, std::string& message)
+{
+	if constexpr (requires { synth.hasPendingError(); synth.pendingError(); })
+	{
+		if (!synth.hasPendingError())
+		{
+			return false;
+		}
+		message.assign(synth.pendingError());
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+}
 
 namespace lmms
 {
@@ -117,6 +166,52 @@ private slots:
 			"the release time restarted instead of counting on from the release position");
 		QVERIFY2(synth.m_note_rel_sample == 0,
 			"the release position was moved to the start of the second render period");
+	}
+
+	void expressionRenderErrorIsNotLoggedOnTheAudioThread()
+	{
+		// The render path runs on the audio thread. Logging there allocates and can
+		// lock, so a failing expression must not log; the error is recorded and
+		// reported later from the main thread.
+		ThrowingExpressionFunction boom;
+		auto* front = new ExprFront("boom(0)", 8);
+		QVERIFY(front->getData() != nullptr);
+		QVERIFY(front->getData()->m_symbol_table.add_function("boom", boom));
+		auto* front2 = new ExprFront("boom(0)", 8);
+		QVERIFY(front2->getData()->m_symbol_table.add_function("boom", boom));
+
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		Note note(TimePos(1), TimePos(0));
+		NotePlayHandle noteHandle(track, 0, 64, note);
+
+		WaveSample wave(1);
+		wave.setInterpolate(false);
+		FloatModel pan1(0.f, -1.f, 1.f, 0.01f);
+		FloatModel pan2(0.f, -1.f, 1.f, 0.01f);
+		constexpr sample_rate_t sampleRate = 48000;
+		ExprSynth synth(&wave, &wave, &wave, front, front2,
+			&noteHandle, sampleRate, &pan1, &pan2, 10.f);
+		QVERIFY(synth.m_exprO1->isValid());
+		QVERIFY(synth.m_exprO2->isValid());
+
+		g_capturedMessages.clear();
+		qInstallMessageHandler(captureMessage);
+		SampleFrame output[64];
+		synth.renderOutput(64, output);
+		qInstallMessageHandler(nullptr);
+
+		std::string message;
+		const bool hasPendingError = readPendingError(synth, message);
+		const QStringList captured = g_capturedMessages;
+		g_capturedMessages.clear();
+
+		QVERIFY2(captured.isEmpty(),
+			qPrintable("the render path logged on the audio thread: " + captured.join(", ")));
+		QVERIFY2(hasPendingError, "the render error was not recorded for a later report");
+		QVERIFY2(message.find("boom") != std::string::npos,
+			"the recorded render error did not carry the exception message");
 	}
 
 	void waveTableCopyWaitsForRenderPeriod()

@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <cstring>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <random>
@@ -774,6 +776,18 @@ ExprSynth::~ExprSynth()
 	}
 }
 
+void ExprSynth::recordRenderError(const char* message)
+{
+	// The first error wins: a broken expression throws in every period.
+	if (m_pendingErrorSet.load(std::memory_order_relaxed))
+	{
+		return;
+	}
+	std::strncpy(m_pendingError, message != nullptr ? message : "", sizeof(m_pendingError) - 1);
+	m_pendingError[sizeof(m_pendingError) - 1] = '\0';
+	m_pendingErrorSet.store(true, std::memory_order_release);
+}
+
 void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 {
 	try
@@ -855,9 +869,15 @@ void ExprSynth::renderOutput(f_cnt_t frames, SampleFrame* buf)
 		}
 		m_frequency = new_freq;
 	}
-	catch(...)
+	catch (const std::exception& error)
 	{
-		WARN_EXPRTK;
+		// The audio thread must not log: qWarning allocates and can lock. The error
+		// is recorded in a fixed size buffer and reported from the main thread.
+		recordRenderError(error.what());
+	}
+	catch (...)
+	{
+		recordRenderError("unknown expression error");
 	}
 }
 
