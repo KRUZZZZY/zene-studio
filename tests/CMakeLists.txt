@@ -3231,6 +3231,48 @@ target_compile_definitions(SlicerTZoomTest PRIVATE
 )
 set_tests_properties(SlicerTZoomTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# Cluster new-p12-162-port: the Multitap Echo constructor must not read the
+# low-pass entries past the graph length - on the historical line it asked the
+# filter update for twenty taps while the graph fills only the sixteen entries
+# it covers. The plugin sources are compiled into this test binary (the
+# SlicerTZoomTest pattern) so the effect can be constructed in a byte-poisoned
+# buffer: the regression then measures the constructor itself, deterministically
+# and without loading a plugin module at runtime.
+add_executable(MultitapEchoBoundsTest
+	src/plugins/MultitapEchoBoundsTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/MultitapEcho/MultitapEcho.cpp
+	${CMAKE_SOURCE_DIR}/plugins/MultitapEcho/MultitapEchoControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/MultitapEcho/MultitapEchoControlDialog.cpp
+)
+add_test(NAME MultitapEchoBoundsTest COMMAND MultitapEchoBoundsTest)
+# Engine construction needs a Qt platform plugin on a headless machine.
+set_tests_properties(MultitapEchoBoundsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(MultitapEchoBoundsTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/MultitapEcho
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the multitapecho plugin
+	${CMAKE_BINARY_DIR}/plugins/MultitapEcho
+)
+target_static_libraries(MultitapEchoBoundsTest PRIVATE lmmsobjs)
+target_link_libraries(MultitapEchoBoundsTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(MultitapEchoBoundsTest PRIVATE cxx_std_20)
+target_compile_definitions(MultitapEchoBoundsTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=multitapecho
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+# the test compiles the plugin sources itself, so it needs the generated
+# export header of the plugin target to exist first
+if(TARGET multitapecho)
+	add_dependencies(MultitapEchoBoundsTest multitapecho)
+endif()
+
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
 # were published straight onto the model from the control thread while
 # playNoteImpl() read them on the audio thread. The plugin sources are compiled

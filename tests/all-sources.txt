@@ -3017,6 +3017,7 @@ tests/src/plugins/MissingDevicesNoEntryModule.cpp
 tests/src/plugins/MpeConsumerProbe.h
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/NeuralAmpAllocProbeArgumentsTest.cpp
+tests/src/plugins/MultitapEchoBoundsTest.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
 tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 tests/src/plugins/PartialInitFailureLadspa.cpp
