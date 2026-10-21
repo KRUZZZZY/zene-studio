@@ -2706,6 +2706,7 @@ tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
+tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/FakeHostModule.cpp
@@ -2909,3 +2910,12 @@ docs/qwen-fixes-2026-10/cluster-new-p14-279.md
 docs/qwen-fixes-2026-10/cluster-review-2bc56f391.md
 # cluster new-p15-95 (2026-10): the LADSPA global stereo link over a 65536-control plugin (fork-NEW regression test).
 tests/src/plugins/LadspaGlobalLinkTest.cpp
+# cluster Q050-147 (2026-10): punch ruler, take waveform, and touch-comp feature docs and verification report.
+docs/050-features/Q050-123.md
+docs/050-features/Q050-147.md
+docs/050-features/Q050-274.md
+docs/qwen-fixes-2026-10/cluster-Q050-147.md
+include/TakeLaneRows.h
+include/TakeWaveform.h
+src/gui/TakeWaveform.cpp
+src/gui/tracks/TakeLaneRows.cpp

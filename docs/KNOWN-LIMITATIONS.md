@@ -1076,19 +1076,18 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   to 64 MiB per file. `project.relink` and `project.collect_media` accept project documents up to
   256 MiB, matching the existing `DataFile` document-recovery bound; a larger project document is
   refused before either command rewrites it.
-- *(Corrected 2026-09-30.)* **The song editor's transport has Punch in/out (the loop range)**
-  (`src/gui/editors/SongEditor.cpp`, `transport.punch_set` / `punch_clear`), and the capture path DOES consult
-  the gate since R2.4 (`AudioEngine::renderNextPeriod`'s punch window, `PunchWindowTest`). Still missing: a punch
-  ruler with its own handles - the region is the loop markers' range. The bullet below is the earlier record.
-- **Punch in/out is the region and its gate, and there is no interface for it — added 2026-09-13.**
-  A punch region (a tick range that capture is gated to, plus an arm flag) lives on the transport, is written
-  with the project and survives a save/load — drivable through `--control-socket` (`transport.punch_set`,
-  `transport.punch_clear`, `transport.punch_get_state`), and one `control.undo` takes a region back off through
-  the timeline's own checkpoint — but **nothing in `src/gui/` draws a punch ruler, a region handle or a punch
-  toggle, and the capture path does not consult the gate yet**: the region and
-  `Timeline::punchCapturesAt()` are real and proved, and **wiring the audio-side capture gate is deferred** —
-  this build has no capture path to gate (ALSA records nothing and the two-track prototype is fed by tests), so
-  a gate here would be a change no test could exercise. Drivable through the socket, not from the interface.
+- *(Resolved 2026-10-20, Q050-147.)* **The song editor's transport has Punch in/out and its own punch
+  ruler.** The Song Editor's ruler draws the region in a band apart from the loop brace, with a draggable
+  handle at each end; the toolbar's Punch in/out button arms it and disarms it while keeping its bounds, and
+  Clear punch range forgets them (`src/gui/editors/TimeLineWidget.cpp`, `src/gui/editors/SongEditor.cpp`).
+  Arming and dragging never read or write the loop markers, and every edit goes through `transport.punch_set`
+  / `transport.punch_clear`, the same commands an agent uses. The capture path consults the armed gate
+  frame-accurately since R2.4 (`AudioEngine::renderNextPeriod`'s punch window, `PunchWindowTest`,
+  `RecordingLatencyTest`). The bullet below is the superseded record.
+- **Punch in/out was the region and its gate with no interface — added 2026-09-13, superseded 2026-10-20.**
+  This bullet's two claims are historical: the audio-side capture gate IS wired (R2.4) and the interface now
+  has the ruler band, handles and arm/clear controls described above. Kept only so an old review reference
+  finds the correction here.
 - *(Updated 2026-09-30.)* **File ▸ Recover Recordings** is rebuilt from `record.recovery_get_state` each time it
   opens: a count, and per interrupted take (named with its recoverable length) **Place on a New Sample Track** -
   `record.recovery_restore`, then the interface loads the recovered file into a clip at bar 1 of a new sample

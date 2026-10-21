@@ -27,9 +27,12 @@
 
 #include <QJsonArray>
 #include <QKeyEvent>
+#include <QList>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QResizeEvent>
 #include <QSet>
+#include <QTouchEvent>
 
 #include "AccessibleCanvas.h"
 #include "AccessibleWidgets.h"
@@ -39,6 +42,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "MusicalTime.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "TimePos.h"
 #include "Track.h"
@@ -76,6 +80,29 @@ int beatTicks()
 
 Qt::KeyboardModifiers modsOf(const QKeyEvent* event) { return event->modifiers() & ~Qt::KeypadModifier; }
 
+//! The touch point's position in the widget, in both Qt's touch-point spellings (5.15 and 6).
+QPoint touchPos(const QWidget* widget,
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	const QEventPoint& point
+#else
+	const QTouchEvent::TouchPoint& point
+#endif
+)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return widget->mapFromGlobal(point.globalPosition().toPoint());
+#else
+	return widget->mapFromGlobal(point.screenPos().toPoint());
+#endif
+}
+
+//! QTouchEvent exposed touchPoints() through Qt 5.15; Qt 6 moved the list to points().
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+const QList<QEventPoint>& touchPoints(const QTouchEvent* event) { return event->points(); }
+#else
+const QList<QTouchEvent::TouchPoint>& touchPoints(const QTouchEvent* event) { return event->touchPoints(); }
+#endif
+
 } // namespace
 
 CompSwipeStrip::CompSwipeStrip(const QString& trackId, QWidget* parent) :
@@ -90,6 +117,9 @@ CompSwipeStrip::CompSwipeStrip(const QString& trackId, QWidget* parent) :
 		"range; Enter comps the range, or the segment under the cursor, to the lane; C cycles the take there; Ctrl+Shift+L "
 		"lists the segments to edit them."));
 	setAttribute(Qt::WA_Hover);  // theme 23: the hover cue
+	// 0.5.0 L03 (Q050-274): the strip is a touch surface; accepting the touch sequence is also
+	// what keeps Qt from synthesising a mouse press for the same finger.
+	setAttribute(Qt::WA_AcceptTouchEvents, true);
 	a11y::describeCanvas(this, QAccessible::Canvas, [this] { return accessibleValue(); });
 }
 
@@ -104,16 +134,33 @@ void CompSwipeStrip::setState(const QJsonObject& state)
 		const QJsonObject s = value.toObject();
 		m_segments.push_back({s.value(QStringLiteral("begin")).toInt(), s.value(QStringLiteral("end")).toInt(), s.value(QStringLiteral("lane")).toInt()});
 	}
-	// The span drawn: the comp's, else the takes' (a fresh lane set has no comp yet, and its takes
-	// need not start at bar 1), else four bars from the start.
+	// The span drawn: the comp's AND the takes' union - a comp may cover only part of a lane set,
+	// and the takes outside it still have to be shown - else the takes' span, else four bars from
+	// the start.
 	m_begin = composite.value(QStringLiteral("begin")).toInt();
 	m_end = composite.value(QStringLiteral("end")).toInt();
-	if (m_end <= m_begin && (!takeSpan(m_trackId, m_lanes, &m_begin, &m_end) || m_end <= m_begin))
+	int takeBegin = 0;
+	int takeEnd = 0;
+	if (takeSpan(m_trackId, m_lanes, &takeBegin, &takeEnd) && takeEnd > takeBegin)
+	{
+		if (m_end <= m_begin)
+		{
+			m_begin = takeBegin;
+			m_end = takeEnd;
+		}
+		else
+		{
+			m_begin = std::min(m_begin, takeBegin);
+			m_end = std::max(m_end, takeEnd);
+		}
+	}
+	if (m_end <= m_begin)
 	{
 		m_begin = 0;
 		m_end = 4 * TimePos::ticksPerBar();
 	}
 	setMinimumHeight(RowHeight * std::max<int>(1, static_cast<int>(m_lanes.size())));
+	rebuildTakes();
 	m_keyRow = std::clamp(m_keyRow, 0, std::max(0, static_cast<int>(m_lanes.size()) - 1));
 	if (m_keyTick < m_begin || m_keyTick >= m_end) { m_keyTick = m_begin; }
 	updateGeometry();
@@ -142,6 +189,21 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 {
 	QPainter p(this);
 	p.fillRect(rect(), palette().base());
+
+	// 0.5.0 L03 (Q050-123): each take's own waveform in its lane, at its own place on the strip's
+	// span. The active comp segments are drawn OVER the waveforms, translucent, so a musician sees
+	// both which take supplies a segment and the audio it was chosen for.
+	for (const TakeBand& band : m_takeBands)
+	{
+		const QRect visible = band.rect.intersected(rect());
+		if (visible.isEmpty()) { continue; }
+		p.fillRect(visible, QColor(70, 96, 122, 110));
+		if (const auto* sample = dynamic_cast<const SampleClip*>(band.clip.data()); sample != nullptr)
+		{
+			m_waves.paint(p, *sample, band.rect, visible, palette().text().color());
+		}
+	}
+
 	for (std::size_t row = 0; row < m_lanes.size(); ++row)
 	{
 		const int y = static_cast<int>(row) * RowHeight;
@@ -150,7 +212,13 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 		for (const Segment& segment : m_segments)
 		{
 			if (segment.lane != m_lanes[row]) { continue; }
-			p.fillRect(QRect(xOf(segment.begin), y + 2, xOf(segment.end) - xOf(segment.begin), RowHeight - 4), palette().highlight());
+			const QRect segmentRect(xOf(segment.begin), y + 2, xOf(segment.end) - xOf(segment.begin), RowHeight - 4);
+			QColor highlight = palette().highlight().color();
+			highlight.setAlpha(90);
+			p.fillRect(segmentRect, highlight);
+			p.setPen(palette().highlight().color());
+			p.setBrush(Qt::NoBrush);
+			p.drawRect(segmentRect.adjusted(0, 0, -1, -1));
 		}
 		if (m_dragLane == m_lanes[row])
 		{
@@ -168,6 +236,35 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 int CompSwipeStrip::xOf(int tick) const
 {
 	return static_cast<int>(static_cast<double>(tick - m_begin) / std::max(1, m_end - m_begin) * width());
+}
+
+void CompSwipeStrip::rebuildTakes()
+{
+	m_takeBands.clear();
+	ControlResult error;
+	m_track = control::resolveTrack(m_trackId, &error);
+	if (m_track == nullptr)
+	{
+		m_track = nullptr;
+		return;
+	}
+	for (Clip* clip : m_track->getClips())
+	{
+		if (clip == nullptr) { continue; }
+		const auto row = std::find(m_lanes.begin(), m_lanes.end(), clip->laneIndex());
+		if (row == m_lanes.end()) { continue; }
+		const int y = static_cast<int>(std::distance(m_lanes.begin(), row)) * RowHeight;
+		const int left = xOf(clip->startPosition().getTicks());
+		const int right = std::max(left + 1, xOf(clip->endPosition().getTicks()));
+		m_takeBands.push_back({clip->laneIndex(), clip->startPosition().getTicks(), clip->endPosition().getTicks(),
+			QRect(left, y + 2, right - left, RowHeight - 4), QPointer<Clip>(clip)});
+	}
+}
+
+void CompSwipeStrip::resizeEvent(QResizeEvent* event)
+{
+	QWidget::resizeEvent(event);
+	rebuildTakes();
 }
 
 void CompSwipeStrip::paintKeyCursor(QPainter& p) const
@@ -221,6 +318,17 @@ bool CompSwipeStrip::handlesKey(const QKeyEvent* event) const
 
 bool CompSwipeStrip::event(QEvent* event)
 {
+	// 0.5.0 L03 (Q050-274): one finger swipes a range, the same gesture as a mouse drag.
+	switch (event->type())
+	{
+		case QEvent::TouchBegin:
+		case QEvent::TouchUpdate:
+		case QEvent::TouchEnd:
+		case QEvent::TouchCancel:
+			return touchEvent(event);
+		default:
+			break;
+	}
 	// The strip's keys are its own while it has the focus (the arrows and C are not window shortcuts here).
 	if (event->type() == QEvent::ShortcutOverride && handlesKey(static_cast<QKeyEvent*>(event)))
 	{
@@ -228,6 +336,81 @@ bool CompSwipeStrip::event(QEvent* event)
 		return true;
 	}
 	return QWidget::event(event);
+}
+
+bool CompSwipeStrip::touchEvent(QEvent* genericEvent)
+{
+	auto* event = static_cast<QTouchEvent*>(genericEvent);
+	if (event->type() == QEvent::TouchCancel)
+	{
+		cancelTouch();
+		event->accept();
+		return true;
+	}
+	if (event->type() == QEvent::TouchBegin) { return beginTouch(event); }
+	return followTouch(event);
+}
+
+void CompSwipeStrip::cancelTouch()
+{
+	m_touchActive = false;
+	m_touchId = -1;
+	m_dragLane = -1;
+	update();
+}
+
+bool CompSwipeStrip::beginTouch(QTouchEvent* event)
+{
+	if (m_touchActive) { event->accept(); return true; }
+	for (const auto& point : touchPoints(event))
+	{
+		const QPoint pos = touchPos(this, point);
+		const int lane = laneAt(pos.y());
+		if (static_cast<int>(point.state()) != static_cast<int>(Qt::TouchPointPressed) || lane < 0) { continue; }
+		m_touchActive = true;
+		m_touchId = point.id();
+		m_dragLane = lane;
+		m_dragFrom = m_dragTo = tickAt(pos.x());
+		update();
+		event->accept();
+		return true;
+	}
+	return false;
+}
+
+bool CompSwipeStrip::followTouch(QTouchEvent* event)
+{
+	if (!m_touchActive) { return false; }
+	for (const auto& point : touchPoints(event))
+	{
+		if (point.id() != m_touchId) { continue; }
+		const QPoint pos = touchPos(this, point);
+		const bool released = event->type() == QEvent::TouchEnd
+			|| static_cast<int>(point.state()) == static_cast<int>(Qt::TouchPointReleased);
+		if (!released)
+		{
+			m_dragTo = tickAt(pos.x());
+			update();
+		}
+		else
+		{
+			const int lane = m_dragLane;
+			m_dragTo = tickAt(pos.x());
+			const int to = m_dragTo;
+			const int from = m_dragFrom;
+			m_touchActive = false;
+			m_touchId = -1;
+			m_dragLane = -1;
+			commitDrag(lane, from, to);
+		}
+		event->accept();
+		return true;
+	}
+	// A TouchEnd whose released point was not in the list still ends the gesture: leaving the
+	// strip "active" would swallow the next finger's begin.
+	if (event->type() == QEvent::TouchEnd) { cancelTouch(); }
+	event->accept();
+	return true;
 }
 
 bool CompSwipeStrip::moveKey(const QKeyEvent* event)
@@ -308,6 +491,7 @@ void CompSwipeStrip::cycleAtCursor()
 
 void CompSwipeStrip::mousePressEvent(QMouseEvent* event)
 {
+	if (m_touchActive) { event->ignore(); return; }
 	m_dragLane = event->button() == Qt::LeftButton ? laneAt(event->pos().y()) : -1;
 	m_dragFrom = m_dragTo = tickAt(event->pos().x());
 	update();
@@ -322,14 +506,21 @@ void CompSwipeStrip::mouseMoveEvent(QMouseEvent* event)
 
 void CompSwipeStrip::mouseReleaseEvent(QMouseEvent* event)
 {
+	// A synthesised mouse release after a touch sequence must not commit the same gesture twice.
+	if (m_touchActive) { event->ignore(); return; }
 	if (m_dragLane < 0) { return; }
 	m_dragTo = tickAt(event->pos().x());
-	const int begin = std::min(m_dragFrom, m_dragTo);
-	const int end = std::max(m_dragFrom, m_dragTo);
 	const int lane = m_dragLane;
 	m_dragLane = -1;
+	commitDrag(lane, m_dragFrom, m_dragTo);
+}
+
+void CompSwipeStrip::commitDrag(const int lane, const int from, const int to)
+{
+	const int begin = std::min(from, to);
+	const int end = std::max(from, to);
 	update();
-	if (end <= begin) { return; }
+	if (end <= begin || lane < 0) { return; }
 	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("comp.select"),
 		{{QStringLiteral("track"), m_trackId}, {QStringLiteral("begin"), begin}, {QStringLiteral("end"), end}, {QStringLiteral("lane"), lane}});
 	// Theme 7: the range in the time format (bars|beats by default), not raw ticks.

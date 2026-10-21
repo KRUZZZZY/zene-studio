@@ -130,6 +130,7 @@ SET(LMMS_SRCS
 	gui/ShortcutsPage.cpp
 	gui/StartHub.cpp
 	gui/TakeLanesPanel.cpp
+	gui/TakeWaveform.cpp
 	gui/ModulatorPanel.cpp
 	gui/TempoMapPanel.cpp
 	gui/ChordProgressionPanel.cpp
@@ -334,6 +335,7 @@ SET(LMMS_SRCS
 	gui/tracks/AutomationTrackView.cpp
 	gui/tracks/FadeButton.cpp
 	gui/tracks/FolderSummaryLane.cpp
+	gui/tracks/TakeLaneRows.cpp
 	gui/tracks/InstrumentTrackView.cpp
 	gui/tracks/PatternTrackView.cpp
 	gui/tracks/SampleTrackView.cpp

@@ -111,6 +111,14 @@ public:
 	inline int const & getLoopRectangleVerticalPadding() const { return m_loopRectangleVerticalPadding; }
 	inline void setLoopRectangleVerticalPadding(int const & loopRectangleVerticalPadding) { m_loopRectangleVerticalPadding = loopRectangleVerticalPadding; }
 
+	//! 0.5.0 L03 (Q050-147): the punch range has its own band under the loop brace. These are the
+	//! rectangles the paint uses and a test clicks: the band, and the two handles at its ends.
+	//! Empty when the timeline has no non-empty punch range.
+	bool hasPunchRange() const;
+	QRect punchBandRect() const;
+	QRect punchBeginHandleRect() const;
+	QRect punchEndHandleRect() const;
+
 	auto mouseHotspotSelLeft() const -> QSize
 	{
 		const auto point = m_cursorSelectLeft.hotSpot();
@@ -190,12 +198,22 @@ private:
 		MoveLoopBegin,
 		MoveLoopEnd,
 		MoveLoop,
+		MovePunchBegin,
+		MovePunchEnd,
+		MovePunch,
 		SelectSongClip,
 	};
 
 	auto getClickedTime(int xPosition) const -> TimePos;
 	auto getLoopAction(QMouseEvent* event) const -> Action;
+	//! 0.5.0 L03 (Q050-147): a press in the punch band grabs a handle (or the whole range).
+	auto getPunchAction(QMouseEvent* event) const -> Action;
 	auto actionCursor(Action action) const -> QCursor;
+	//! 0.5.0 L03 (Q050-147): a completed punch drag is ONE transport.punch_set (one undo step):
+	//! the preview wrote the timeline directly, so this puts the old range back and lets the
+	//! command checkpoint it before applying the new one.
+	void commitPunchDrag();
+	void invokePunchSet(tick_t begin, tick_t end, bool enabled);
 
 	QPixmap m_posMarkerPixmap = embed::getIconPixmap("playpos_marker");
 	QPixmap m_recordingPosMarkerPixmap = embed::getIconPixmap("recording_playpos_marker");
@@ -233,6 +251,13 @@ private:
 	// position allows for unquantized drag but fails when toggling quantization.
 	std::array<TimePos, 2> m_oldLoopPos;
 	TimePos m_dragStartPos;
+
+	//! 0.5.0 L03 (Q050-147): the punch drag's start, the range it began with, and whether the
+	//! pointer actually moved it (a click on a handle is not an edit and records no undo step).
+	tick_t m_punchDragStart = 0;
+	tick_t m_oldPunchBegin = 0;
+	tick_t m_oldPunchEnd = 0;
+	bool m_punchDragged = false;
 
 	bool m_isRecording = false;
 	bool m_isPlayheadVisible = true;

@@ -75,6 +75,8 @@ public:
 	QCheckBox* playAllTakesBox() const { return m_playAllTakes; }
 	QString compositeText() const;
 	QString statusText() const;
+	//! 0.5.0 L03 (Q050-123): the strip is where the takes' waveforms are; a test reads it.
+	CompSwipeStrip* strip() const { return m_strip; }
 
 private:
 	QToolButton* makeButton(const QString& command, const QString& text);

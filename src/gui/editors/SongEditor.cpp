@@ -33,6 +33,7 @@
 #include "ItemList.h"
 #include "ShellChrome.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include <QAction>
@@ -873,21 +874,35 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	m_recordAccompanyAction->setToolTip(tr("Record samples from Audio-device while playing song or pattern track"));
 	m_stopAction->setToolTip(tr( "Stop song (Space)" ));
 
-	// M3 item 9: punch in/out on the transport, through the registry (R2.4's audio gate).
-	// On: the punch region is the loop markers' range, as Live's punch uses the loop brace;
-	// off: the region is cleared. A refused call puts the button back and says why.
-	m_punchAction = new QAction(embed::getIconPixmap("record"), tr("Punch in/out (the loop range)"), this);
+	// 0.5.0 L03 (Q050-147): the punch range is the transport's OWN range. Arming it writes
+	// transport.punch_set and never reads the loop markers; disarming writes the same bounds
+	// with enabled:false, so another pass can arm them again. Clearing is a separate action.
+	// Both are the registered commands, so the button and an agent make the same edit.
+	m_punchAction = new QAction(embed::getIconPixmap("record"), tr("Punch in/out"), this);
+	m_punchAction->setObjectName(QStringLiteral("punchAction"));
 	m_punchAction->setCheckable(true);
 	m_punchAction->setProperty("controlCommand", QStringLiteral("transport.punch_set"));
-	m_punchAction->setToolTip(tr("Punch in/out: record only between the loop markers"));
+	m_punchAction->setToolTip(tr("Punch in/out: record only inside the punch range (drag its handles in the ruler)"));
 	connect(m_punchAction, &QAction::toggled, this, [this](bool on) {
-		const Timeline& timeline = m_editor->m_song->getTimeline(Song::PlayMode::Song);
-		const ControlResult result = on
-			? ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_set"),
-				{{QStringLiteral("start"), static_cast<int>(timeline.loopBegin().getTicks())},
-					{QStringLiteral("end"), static_cast<int>(timeline.loopEnd().getTicks())},
-					{QStringLiteral("enabled"), true}})
-			: ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_clear"), {});
+		Timeline& timeline = m_editor->m_song->getTimeline(Song::PlayMode::Song);
+		tick_t begin = timeline.punchBegin();
+		tick_t end = timeline.punchEnd();
+		if (on && end <= begin)
+		{
+			// No range yet: seed it at the play position, NOT at the loop brace. The two ranges
+			// are independent from the first edit, which is what this unit exists for.
+			begin = std::clamp<tick_t>(m_editor->m_song->getPlayPos(Song::PlayMode::Song).getTicks(), 0, MaxSongLength - 1);
+			end = std::min<tick_t>(MaxSongLength, begin + TimePos::ticksPerBar());
+		}
+		if (!on && end <= begin)
+		{
+			// Nothing to disarm: the action is simply unchecked.
+			return;
+		}
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_set"),
+			{{QStringLiteral("start"), static_cast<int>(begin)},
+				{QStringLiteral("end"), static_cast<int>(end)},
+				{QStringLiteral("enabled"), on}});
 		if (!result.ok)
 		{
 			const QSignalBlocker block(m_punchAction);
@@ -897,6 +912,20 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	});
 	m_toolBar->addAction(m_punchAction);
 	m_toolBar->widgetForAction(m_punchAction)->setObjectName("punchButton");
+
+	m_punchClearAction = new QAction(tr("Clear punch range"), this);
+	m_punchClearAction->setObjectName(QStringLiteral("punchClearAction"));
+	m_punchClearAction->setProperty("controlCommand", QStringLiteral("transport.punch_clear"));
+	m_punchClearAction->setToolTip(tr("Forget the punch range and disarm it"));
+	connect(m_punchClearAction, &QAction::triggered, this, [this] {
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_clear"), {});
+		if (!result.ok) { m_punchClearAction->setToolTip(result.errorMessage); }
+	});
+	m_toolBar->addAction(m_punchClearAction);
+
+	connect(&m_editor->m_song->getTimeline(Song::PlayMode::Song), &Timeline::punchChanged,
+		this, &SongEditorWindow::syncPunchUi);
+	syncPunchUi();
 
 	// Session sync (link.set_enabled), with its peers and tempo on the button.
 	m_toolBar->addAction(makeSessionSyncAction(this));
@@ -1123,11 +1152,26 @@ void SongEditorWindow::lostFocus()
 
 
 
+void SongEditorWindow::syncPunchUi()
+{
+	if (m_punchAction == nullptr) { return; }
+	Timeline& timeline = m_editor->m_song->getTimeline(Song::PlayMode::Song);
+	const QSignalBlocker block(m_punchAction);
+	m_punchAction->setChecked(timeline.punchEnabled());
+	m_punchAction->setToolTip(timeline.punchEnd() > timeline.punchBegin()
+		? tr("Punch in/out: record only inside %1 to %2 (drag its handles in the ruler)")
+			.arg(timeline.punchBegin()).arg(timeline.punchEnd())
+		: tr("Punch in/out: arm a range at the play position (or drag its handles in the ruler)"));
+	if (m_punchClearAction != nullptr) { m_punchClearAction->setEnabled(timeline.shouldPersistPunch()); }
+}
+
+
 void SongEditorWindow::adjustUiAfterProjectLoad()
 {
 	// The arranger is a shell panel, always on screen in the Arrange view; a project load
 	// does not switch the user's view.
 	m_editor->scrolled(0);
+	syncPunchUi();
 }
 
 
