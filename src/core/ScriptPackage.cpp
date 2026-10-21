@@ -24,6 +24,7 @@
 
 #include "ScriptPackage.h"
 
+#include <QByteArray>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -41,8 +42,6 @@ namespace
 {
 
 //! `--! lmms-package <name> [<version>]` anywhere in the first 4 KB.
-//! The same 4 KB window ScriptEngine::parseVersionHeader() reads, so a manifest
-//! that is too far down the file is missed by both, consistently.
 const QRegularExpression& manifestExpression()
 {
 	static const QRegularExpression expression(
@@ -51,11 +50,61 @@ const QRegularExpression& manifestExpression()
 	return expression;
 }
 
+//! The manifest window: the first 4 KB of the entry script. Counted in BYTES,
+//! because 4 KB is a size of the file, not a number of characters: a manifest
+//! that starts past byte 4096 is outside the window however few characters it
+//! takes to get there.
 constexpr int ManifestScanBytes = 4096;
+
+/*! The window of \a bytes the manifest may live in.
+ *
+ *  \a sourceContinues says whether the source has more bytes behind \a bytes.
+ *  When it does, the window is cut back to the last COMPLETE line: a line the
+ *  window cuts through is not a declaration, and matching half of one would
+ *  report a truncated name or version.
+ */
+QByteArray manifestWindow(QByteArray bytes, bool sourceContinues)
+{
+	if (bytes.size() > ManifestScanBytes)
+	{
+		bytes.truncate(ManifestScanBytes);
+		sourceContinues = true;
+	}
+	if (!sourceContinues)
+	{
+		return bytes;
+	}
+	const int lastNewline = bytes.lastIndexOf('\n');
+	return bytes.left(lastNewline + 1);
+}
 
 //! Bytes read from package entry scripts. A test seam (see
 //! entryScriptBytesReadForTesting()), not part of the package format.
 std::atomic<qint64> s_entryScriptBytesRead{0};
+
+/*! \brief Parse a manifest out of the raw bytes of an entry script.
+ *
+ *  \a sourceContinues says whether more of the file follows \a bytes; the
+ *  window is then cut back to the last complete line.
+ */
+ScriptPackage parseManifestBytes(const QByteArray& bytes, bool sourceContinues)
+{
+	ScriptPackage package;
+	const QRegularExpressionMatch match =
+		manifestExpression().match(QString::fromUtf8(manifestWindow(bytes, sourceContinues)));
+	if (!match.hasMatch())
+	{
+		return package;
+	}
+	const QString declaredName = match.captured(1);
+	if (!isValidName(declaredName))
+	{
+		return package;
+	}
+	package.name = declaredName;
+	package.version = match.captured(2);
+	return package;
+}
 
 } // namespace
 
@@ -72,20 +121,10 @@ bool isValidName(const QString& name)
 
 ScriptPackage parseManifest(const QString& source)
 {
-	ScriptPackage package;
-	const QRegularExpressionMatch match = manifestExpression().match(source.left(ManifestScanBytes));
-	if (!match.hasMatch())
-	{
-		return package;
-	}
-	const QString declaredName = match.captured(1);
-	if (!isValidName(declaredName))
-	{
-		return package;
-	}
-	package.name = declaredName;
-	package.version = match.captured(2);
-	return package;
+	// The limit is a limit on the BYTES of the source, so it is enforced on
+	// the encoded bytes, before the text is decoded.
+	const QByteArray bytes = source.toUtf8();
+	return parseManifestBytes(bytes, bytes.size() > ManifestScanBytes);
 }
 
 QVector<ScriptPackage> scan(const QString& scriptsRoot)
@@ -128,8 +167,9 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 			// whole would make listing cost memory proportional to the file.
 			const QByteArray head = file.read(ManifestScanBytes);
 			s_entryScriptBytesRead.fetch_add(head.size(), std::memory_order_relaxed);
-			const ScriptPackage declared = parseManifest(QString::fromUtf8(head));
+			const bool continues = file.size() > head.size();
 			file.close();
+			const ScriptPackage declared = parseManifestBytes(head, continues);
 			if (declared.name == package.name)
 			{
 				package.version = declared.version;

@@ -482,6 +482,53 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 			qPrintable(QStringLiteral("discovery read %1 bytes of a 4 MB entry script").arg(read)));
 	}
 
+	//! The manifest window is 4 KB of BYTES, not 4096 characters: a manifest
+	//! that starts past byte 4096 is outside the window, however few characters
+	//! it takes to get there.
+	void manifestWindowIsMeasuredInBytes()
+	{
+		using namespace lmms;
+		// 3000 two-byte characters: 6000 bytes of source, but only 3000
+		// characters - the manifest below sits past byte 4096 and inside
+		// character 4096.
+		const QString far = QString(3000, QChar(0x00E9))
+			+ QStringLiteral("\n--! lmms-package my-fx 1.2.3\n");
+		const ScriptPackage parsed = ScriptPackages::parseManifest(far);
+		QVERIFY2(parsed.name.isEmpty(),
+			"the manifest window is 4096 bytes, not 4096 characters");
+		QVERIFY(parsed.version.isEmpty());
+
+		// The same manifest inside the byte window is still found: the limit
+		// must not swallow a declaration that is there.
+		const QString near = QString(1000, QChar(0x00E9))
+			+ QStringLiteral("\n--! lmms-package my-fx 1.2.3\n");
+		QCOMPARE(ScriptPackages::parseManifest(near).name, QStringLiteral("my-fx"));
+		QCOMPARE(ScriptPackages::parseManifest(near).version, QStringLiteral("1.2.3"));
+
+		// Discovery agrees: a package whose manifest is past the byte window
+		// is listed, with no version.
+		QTemporaryDir root;
+		QVERIFY(root.isValid());
+		QDir rootDir(root.path());
+		QVERIFY(rootDir.mkpath(QStringLiteral("my-fx")));
+		writeScript(rootDir.absoluteFilePath(QStringLiteral("my-fx/package.lua")), near);
+		const QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
+		QCOMPARE(static_cast<int>(packages.size()), 1);
+		QCOMPARE(packages[0].name, QStringLiteral("my-fx"));
+		QCOMPARE(packages[0].version, QStringLiteral("1.2.3"));
+
+		QTemporaryDir farRoot;
+		QVERIFY(farRoot.isValid());
+		QDir farRootDir(farRoot.path());
+		QVERIFY(farRootDir.mkpath(QStringLiteral("my-fx")));
+		writeScript(farRootDir.absoluteFilePath(QStringLiteral("my-fx/package.lua")), far);
+		const QVector<ScriptPackage> farPackages = ScriptPackages::scan(farRoot.path());
+		QCOMPARE(static_cast<int>(farPackages.size()), 1);
+		QCOMPARE(farPackages[0].name, QStringLiteral("my-fx"));
+		QVERIFY2(farPackages[0].version.isEmpty(),
+			"a manifest past byte 4096 is outside the window");
+	}
+
 	//! A DIRECTORY named package.lua is not a package: the entry must be a file
 	//! a script can be loaded from, and QFileInfo::exists() is true for the
 	//! directory too, so the scanner listed a package whose entry cannot be run.

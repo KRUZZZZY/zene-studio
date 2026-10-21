@@ -80,6 +80,9 @@ bool isValidName(const QString& name);
  *  script, or any file). Empty when absent or malformed. \a version may be
  *  empty in the header itself; that is reported as an empty version, not as an
  *  error.
+ *
+ *  The declaration must lie wholly within the first 4 KB of the source, counted
+ *  in BYTES: the window is a size of the file, not a number of characters.
  */
 ScriptPackage parseManifest(const QString& source);
 
