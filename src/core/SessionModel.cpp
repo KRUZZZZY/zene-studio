@@ -59,6 +59,26 @@ LaunchQuantisation restoreGlobalLaunchQuantisation( const QDomElement& element )
 }
 
 
+//! Reads the grid size a <session> block declares. An attribute that does not parse, or is over its clamp, refuses the block.
+bool restoreGridSize( const QDomElement& element, int& tracks, int& scenes )
+{
+	bool ok = false;
+	tracks = element.attribute( QStringLiteral( "tracks" ),
+		QStringLiteral( "0" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( tracks ) > static_cast<unsigned>( MaxTracks ) )
+	{
+		return false;
+	}
+	scenes = element.attribute( QStringLiteral( "scenes" ),
+		QStringLiteral( "0" ) ).toInt( &ok );
+	if( !ok || static_cast<unsigned>( scenes ) > static_cast<unsigned>( MaxScenes ) )
+	{
+		return false;
+	}
+	return true;
+}
+
+
 //! Restores every <scene> child of a <session> block.
 bool restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
 {
@@ -408,16 +428,9 @@ bool SessionModel::restoreState( const QDomElement& element )
 		return false;
 	}
 
-	bool ok = false;
-	const int tracks = element.attribute( QStringLiteral( "tracks" ),
-		QStringLiteral( "0" ) ).toInt( &ok );
-	if( !ok || static_cast<unsigned>( tracks ) > static_cast<unsigned>( MaxTracks ) )
-	{
-		return false;
-	}
-	const int scenes = element.attribute( QStringLiteral( "scenes" ),
-		QStringLiteral( "0" ) ).toInt( &ok );
-	if( !ok || static_cast<unsigned>( scenes ) > static_cast<unsigned>( MaxScenes ) )
+	int tracks = 0;
+	int scenes = 0;
+	if( !restoreGridSize( element, tracks, scenes ) )
 	{
 		return false;
 	}
