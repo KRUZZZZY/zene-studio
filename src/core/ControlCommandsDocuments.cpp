@@ -35,6 +35,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QStandardPaths>
+#include <QTemporaryFile>
 
 #include "ConfigManager.h"
 #include "ControlArrangingCommands.h"
@@ -46,8 +47,10 @@
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
+#include "DataFile.h"
 #include "ProjectInfo.h"
 #include "ProjectJournal.h"
+#include "ProvenanceSection.h"
 #include "ReferenceProject.h"
 #include "Song.h"
 
@@ -151,19 +154,104 @@ QString recipeTemplatePath(const Recipe& recipe)
 	return QDir(dir).filePath(QLatin1String(recipe.type) + QStringLiteral(".mpt"));
 }
 
-//! A new document from @a recipe: built on a new project, written as a template, opened as one.
+//! Check the cache destination before project.new can discard the current session.
+bool recipeTemplateWritable(const QString& path)
+{
+	const QFileInfo destination(path);
+	if (destination.exists() && (!destination.isFile() || !destination.isWritable())) { return false; }
+	const QString dir = destination.absolutePath();
+	if (!QDir().mkpath(dir)) { return false; }
+	QTemporaryFile probe(QDir(dir).filePath(QStringLiteral(".zene-template-XXXXXX")));
+	if (!probe.open()) { return false; }
+	const bool written = probe.write("zene") == 4 && probe.flush();
+	probe.close();
+	return written && probe.remove();
+}
+
+//! Reload the session saved before a built-in recipe was tried: its file, modified flag, document type and,
+//! because the restore is an undo-snapshot restore (Song::restoreUndoSnapshot), the undo/redo steps around it
+//! and the append-only provenance log. The content and the history are one document again, not just the file.
+ControlResult restoreSession(Song& song, const QByteArray& snapshot, const QString& previousFile,
+	const QStringList& skippedSections, bool previousModified)
+{
+	if (!song.restoreUndoSnapshot(snapshot, previousFile, skippedSections))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the original session could not be restored"));
+	}
+	// The restore marks the session modified; put the flag back the way it was (the same two-step
+	// Song::noteProjectSaved performs for a save, here for a rollback).
+	song.noteProjectSaved(previousFile);
+	if (previousModified) { song.setModified(); }
+	return ControlResult::success();
+}
+
+//! @a failed as it stands once the original session is back; otherwise @a failed with the restore failure added.
+ControlResult restoredOr(const ControlResult& failed, const ControlResult& restored)
+{
+	if (restored.ok) { return failed; }
+	return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1; the original session could not be restored: %2")
+		.arg(failed.errorMessage, restored.errorMessage));
+}
+
+//! A new document from @a recipe: built on a new project, written as a template, opened as one. The session it
+//! replaces is captured first as an undo snapshot and put back if any step fails, so a failed creation leaves
+//! that session - its content, its undo/redo history and its provenance - the way it found it.
 ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 {
-	ControlResult made = run(QStringLiteral("project.new"));
-	if (!made.ok) { return made; }
-	*missing = buildRecipe(recipe);
 	const QString path = recipeTemplatePath(recipe);
-	if (!Engine::getSong()->saveProjectFile(path))
+	const ControlResult writeFailed = ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("the %1 template could not be written to %2").arg(QLatin1String(recipe.type), path));
+	if (!recipeTemplateWritable(path)) { return writeFailed; }
+
+	Song* const song = Engine::getSong();
+	const QString previousFile = song->projectFileName();
+	const bool previousModified = song->isModified();
+	const QString previousType = ProjectInfo::instance().documentType();
+	QStringList skippedSections;
+	const std::shared_ptr<const QByteArray> snapshot = song->captureUndoSnapshot(&skippedSections);
+	if (!snapshot)
 	{
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the %1 template could not be written to %2")
-			.arg(QLatin1String(recipe.type), path));
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the current session could not be preserved before creating a %1 document")
+				.arg(QLatin1String(recipe.type)));
 	}
-	return run(QStringLiteral("project.new"), {{QStringLiteral("template"), path}});
+	// The undo/redo stacks a project load clears (Song::clearProject -> clearJournal). Held here and put
+	// back with the restore, so a rollback gives the history back rather than an empty one.
+	ProjectJournal::DetachedHistory history = Engine::projectJournal()->detachHistory();
+	// Provenance is append-only and document-scoped: project.new replaces the session and records its own
+	// change, so restoreUndoSnapshot (which keeps the log current at restore time) would carry the new
+	// document's log back instead of this session's. Capture this session's log now and put it back on
+	// rollback.
+	DataFile originalLogCarrier(DataFile::Type::SongProject);
+	provenance::writeTo(originalLogCarrier);
+	QDomDocument originalLogDocument;
+	QDomElement originalLog = originalLogCarrier.content().firstChildElement(provenance::nodeName());
+	if (!originalLog.isNull())
+	{
+		originalLog = originalLogDocument.importNode(originalLog, true).toElement();
+		originalLogDocument.appendChild(originalLog);
+	}
+	const auto restorePrevious = [&]()
+	{
+		const ControlResult restored = restoreSession(*song, *snapshot, previousFile, skippedSections, previousModified);
+		if (restored.ok)
+		{
+			ProjectInfo::instance().setDocumentType(previousType);
+			Engine::projectJournal()->reattachHistory(std::move(history));
+			// restoreUndoSnapshot kept the log current at restore time; replace it with the original one.
+			provenance::Section::instance().clear();
+			if (!originalLog.isNull()) { provenance::Section::instance().load(originalLog); }
+		}
+		return restored;
+	};
+
+	ControlResult made = run(QStringLiteral("project.new"));
+	if (!made.ok) { return restoredOr(made, restorePrevious()); }
+	*missing = buildRecipe(recipe);
+	if (!song->saveProjectFile(path)) { return restoredOr(writeFailed, restorePrevious()); }
+	const ControlResult opened = run(QStringLiteral("project.new"), {{QStringLiteral("template"), path}});
+	return opened.ok ? opened : restoredOr(opened, restorePrevious());
 }
 
 ControlResult newDocument(const QJsonObject& args)

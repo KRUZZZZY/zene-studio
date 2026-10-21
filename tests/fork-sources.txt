@@ -2315,6 +2315,7 @@ tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlPluginBusesTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
 tests/src/core/ControlRegistryTest.cpp
+tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
