@@ -25,7 +25,10 @@
 #ifndef LMMS_ENVELOPE_AND_LFO_PARAMETERS_H
 #define LMMS_ENVELOPE_AND_LFO_PARAMETERS_H
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "JournallingObject.h"
 #include "AutomatableModel.h"
@@ -46,6 +49,30 @@ class EnvelopeAndLfoView;
 class LMMS_EXPORT EnvelopeAndLfoParameters : public Model, public JournallingObject
 {
 	Q_OBJECT
+private:
+	/*! The parameter snapshot the audio path reads.
+	 *
+	 *  A snapshot is immutable once it is published. The writer (the parameter
+	 *  side: the GUI, the command handlers, project loading) builds one under
+	 *  m_paramMutex and hands it to the audio thread through an atomic pointer;
+	 *  the audio thread holds it for the length of one fillLevel() call and
+	 *  never takes a lock, never waits and never allocates. A published
+	 *  snapshot is retired, not freed, while a reader may still hold it. */
+	struct AudioState
+	{
+		f_cnt_t pahdFrames = 0;
+		f_cnt_t rFrames = 0;
+		float sustainLevel = 0.f;
+		std::vector<sample_t> pahdEnv;
+		std::vector<sample_t> rEnv;
+
+		f_cnt_t lfoPredelayFrames = 0;
+		f_cnt_t lfoAttackFrames = 0;
+		f_cnt_t lfoOscillationFrames = 1;
+		float lfoAmount = 0.f;
+		bool lfoAmountIsZero = true;
+	};
+
 public:
 	class LfoInstances
 	{
@@ -103,7 +130,7 @@ public:
 
 	inline bool isUsed() const
 	{
-		return m_used;
+		return m_used.load(std::memory_order_relaxed);
 	}
 
 
@@ -114,15 +141,9 @@ public:
 		return "el";
 	}
 
-	inline f_cnt_t PAHD_Frames() const
-	{
-		return m_pahdFrames;
-	}
+	f_cnt_t PAHD_Frames() const;
 
-	inline f_cnt_t releaseFrames() const
-	{
-		return m_rFrames;
-	}
+	f_cnt_t releaseFrames() const;
 
 	// Envelope
 	const FloatModel& getPredelayModel() const { return m_predelayModel; }
@@ -136,29 +157,41 @@ public:
 
 
 	// LFO
-	inline f_cnt_t getLfoPredelayFrames() const { return m_lfoPredelayFrames; }
-	inline f_cnt_t getLfoAttackFrames() const { return m_lfoAttackFrames; }
-	inline f_cnt_t getLfoOscillationFrames() const { return m_lfoOscillationFrames; }
+	f_cnt_t getLfoPredelayFrames() const;
+	f_cnt_t getLfoAttackFrames() const;
+	f_cnt_t getLfoOscillationFrames() const;
 
 	const FloatModel& getLfoAmountModel() const { return m_lfoAmountModel; }
 	FloatModel& getLfoAmountModel() { return m_lfoAmountModel; }
 	const TempoSyncKnobModel& getLfoSpeedModel() const { return m_lfoSpeedModel; }
 	const BoolModel& getX100Model() const { return m_x100Model; }
 	const IntModel& getLfoWaveModel() const { return m_lfoWaveModel; }
-	std::shared_ptr<const SampleBuffer> getLfoUserWave() const { return m_userWave; }
+	std::shared_ptr<const SampleBuffer> getLfoUserWave() const;
+
+	/*! TEST SEAM. holdAudioState() takes the published parameter snapshot exactly
+	 *  as the audio thread takes it while it fills a level, and
+	 *  releaseHeldAudioState() gives it back. A test uses it to stand in for a
+	 *  running audio path: while a snapshot is held, the parameters it carries
+	 *  must not be freed underneath the holder. A production path never calls
+	 *  them. */
+	bool holdAudioState();
+	void releaseHeldAudioState();
 
 public slots:
 	void updateSampleVars();
 
 
 protected:
-	void fillLfoLevel( float * _buf, f_cnt_t _frame, const f_cnt_t _frames );
+	void fillLfoLevel( float * _buf, f_cnt_t _frame, const f_cnt_t _frames,
+						const AudioState & _state );
 
 
 private:
 	static LfoInstances * s_lfoInstances;
-	bool m_used;
+	std::atomic<bool> m_used;
 
+	//! The writer's lock. It serialises the parameter side; the audio path
+	//! never takes it.
 	QMutex m_paramMutex;
 
 	FloatModel m_predelayModel;
@@ -169,16 +202,7 @@ private:
 	FloatModel m_releaseModel;
 	FloatModel m_amountModel;
 
-	float  m_sustainLevel;
-	float  m_amount;
 	float  m_valueForZeroAmount;
-	float  m_amountAdd;
-	f_cnt_t m_pahdFrames;
-	f_cnt_t m_rFrames;
-	sample_t * m_pahdEnv;
-	sample_t * m_rEnv;
-	f_cnt_t m_pahdBufSize;
-	f_cnt_t m_rBufSize;
 
 
 	FloatModel m_lfoPredelayModel;
@@ -191,22 +215,44 @@ private:
 	BoolModel m_controlEnvAmountModel;
 
 
-	f_cnt_t m_lfoPredelayFrames;
-	f_cnt_t m_lfoAttackFrames;
-	f_cnt_t m_lfoOscillationFrames;
-	f_cnt_t m_lfoFrame;
-	float m_lfoAmount;
-	bool m_lfoAmountIsZero;
+	std::atomic<f_cnt_t> m_lfoFrame;
 	sample_t * m_lfoShapeData;
 	sample_t m_random {};
 	bool m_randomInitialized { false };
-	bool m_bad_lfoShapeData;
+	std::atomic<bool> m_bad_lfoShapeData;
 	std::shared_ptr<const SampleBuffer> m_userWave = SampleBuffer::emptyBuffer();
+
+	//! The published snapshot: the audio path's view of the parameters.
+	std::atomic<AudioState*> m_audioState;
+	//! The publication counter. It is odd while a snapshot is being published,
+	//! so a reader that catches the switch retries instead of reading a
+	//! half-published snapshot.
+	std::atomic<std::uint64_t> m_audioStateSeq;
+	//! How many readers hold a published snapshot (the audio thread, and the
+	//! test seam above). A snapshot is freed only when this is zero.
+	mutable std::atomic<int> m_audioStateReaders;
+	//! The published snapshots that may still be held by a reader.
+	std::vector<AudioState*> m_retiredAudioStates;
+	//! The envelope buffers of retired snapshots, kept for the next
+	//! publication so that a parameter change does not allocate every time.
+	std::vector<std::vector<sample_t>> m_envBufferPool;
+	//! The snapshot the test seam holds.
+	const AudioState* m_heldAudioState;
 
 	constexpr static auto NumLfoShapes = static_cast<std::size_t>(LfoShape::Count);
 
-	sample_t lfoShapeSample( f_cnt_t _frame_offset );
-	void updateLfoShapeData();
+	sample_t lfoShapeSample( f_cnt_t _frame_offset, const AudioState & _state );
+	void updateLfoShapeData( const AudioState & _state );
+
+	//! The audio path's snapshot: no lock, no wait, no allocation.
+	const AudioState* acquireAudioState() const noexcept;
+	void releaseAudioState() const noexcept;
+
+	//! The writer's side: build a snapshot from the models and publish it.
+	void rebuildAudioState();
+	void publishAudioState( std::unique_ptr<AudioState> _state );
+	void reclaimRetiredAudioStates();
+	std::vector<sample_t> takeEnvBuffer( std::size_t _samples );
 
 
 	friend class gui::EnvelopeAndLfoView;
