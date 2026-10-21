@@ -1110,7 +1110,7 @@ bool RemotePlugin::processMessage( const message & _m )
 				// second message while one is pending is dropped.
 				if (!m_pendingDebug)
 				{
-					const auto& text = _m.stringArgument(0);
+					const auto text = _m.argumentView(0);
 					m_pendingDebugLength = std::min(text.size(), m_pendingDebugText.size() - 1);
 					std::copy_n(text.data(), m_pendingDebugLength, m_pendingDebugText.data());
 					m_pendingDebug = true;

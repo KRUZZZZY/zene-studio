@@ -477,20 +477,26 @@ public:
 			return *this;
 		}
 
-		inline std::string getString( int _p = 0 ) const
+		//! Argument \a _p by reference. getString() returns a copy, which allocates on the audio thread.
+		inline const std::string & stringArgument( int _p = 0 ) const
 		{
-			return std::string{ stringArgument( _p ) };
+			return data[_p];
 		}
 
-		//! Argument \a _p by view. getString() returns a copy, which allocates on the audio thread.
+		//! Argument \a _p as a view. getString() returns a copy, which allocates on the audio thread.
 		//! In bounded mode (a message received by the audio thread, see receiveFrameBefore()) the view
 		//! points into the receiver's frame buffer and is valid only until that receiver receives again.
-		inline std::string_view stringArgument( int _p = 0 ) const
+		inline std::string_view argumentView( int _p = 0 ) const
 		{
 			if( !m_bounded ) { return data[_p]; }
 			std::size_t length = 0;
 			const char * arg = boundedArgument( _p, length );
 			return arg ? std::string_view{ arg, length } : std::string_view{};
+		}
+
+		inline std::string getString( int _p = 0 ) const
+		{
+			return std::string{ argumentView( _p ) };
 		}
 
 #ifndef BUILD_REMOTE_PLUGIN_CLIENT
@@ -503,7 +509,7 @@ public:
 		inline int getInt( int _p = 0 ) const
 		{
 			if( !m_bounded ) { return atoi( data[_p].c_str() ); }
-			const auto arg = stringArgument( _p );
+			const auto arg = argumentView( _p );
 			if( arg.empty() ) { return 0; }
 			int value = 0;
 			std::from_chars( arg.data(), arg.data() + arg.size(), value );
@@ -513,7 +519,7 @@ public:
 		inline float getFloat( int _p ) const
 		{
 			if( !m_bounded ) { return (float) atof( data[_p].c_str() ); }
-			const auto arg = stringArgument( _p );
+			const auto arg = argumentView( _p );
 			if( arg.empty() ) { return 0.0f; }
 			char buf[64];
 			const auto length = std::min<std::size_t>( arg.size(), sizeof( buf ) - 1 );

@@ -26,8 +26,9 @@ work (`IdDebugMessage`, `IdChangeInputOutputCount`). With a 1000-byte debug text
 
 **Fix:** `receiveFrameBefore(deadline, out, bounded=true)` now reads the complete wire frame into a
 once-allocated `m_frameScratch` (sized in the constructor, src/common/RemotePluginBase.cpp:67-73) and
-`parseBoundedFrame()` (src/common/RemotePluginBase.cpp:350) makes `message::stringArgument()` a
-`std::string_view` into it (include/RemotePluginBase.h:486-560). `getInt()` parses the view with
+`parseBoundedFrame()` (src/common/RemotePluginBase.cpp:350) makes `message::argumentView()` a
+`std::string_view` into it (include/RemotePluginBase.h:478-500); the existing `stringArgument()` keeps its
+owning `const std::string &` contract. `getInt()` parses the view with
 `std::from_chars`, and `size()` reports the wire count. Socket
 (`receiveBoundedSocketFrame`, src/common/RemotePluginBase.cpp:451) and shared-memory
 (`readFrameLockedBounded`, src/common/RemotePluginBase.cpp:547) both use the same parser. The caller asks for
@@ -173,8 +174,9 @@ file-length PASS (no new item in your files).
 - Bounded decode siblings: socket `receiveBoundedSocketFrame()` and shared-memory `readFrameLockedBounded()`
   both funnel through `parseBoundedFrame()`; `receiveMessage()`/`readFrameLocked()` remain the owning path for
   the main thread.
-- Message accessors: `getString`/`getQString` still return owned values, `stringArgument` returns a view,
-  `getInt`/`getFloat`/`size` handle both modes. The only `stringArgument` caller in product code
+- Message accessors: `getString`/`getQString` still return owned values; `argumentView` returns a view for
+  the bounded path while `stringArgument` keeps its owning-reference contract; `getInt`/`getFloat`/`size`
+  handle both modes. The only view consumer in product code
   (`RemotePlugin.cpp:1111`) consumes the view immediately by copying into the fixed pending-debug slot.
 
 **4. No collateral damage: old projects and saved data load as before; no limit hits other callers.**
@@ -187,7 +189,7 @@ file-length PASS (no new item in your files).
 
 **5. Nothing added runs on the audio thread and allocates, frees, locks, waits, does I/O or emits a signal.**
 - The bounded receive allocates nothing: the frame buffer is allocated once in the constructor; parsing walks
-  length prefixes in place; `getInt` uses `std::from_chars`; `stringArgument` is a view.
+  length prefixes in place; `getInt` uses `std::from_chars`; `argumentView` is a view.
 - The socket bounded receive takes the existing `m_receiveMutex` (already taken by `receiveMessage()` on this
   path) and reads only a frame the peek has already found complete, so it does not wait for new bytes. The FIFO
   bounded receive runs under the existing FIFO data lock taken by `receiveFrameBefore()` and reads a signalled
