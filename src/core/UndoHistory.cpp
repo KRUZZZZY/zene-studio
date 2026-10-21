@@ -85,6 +85,19 @@ bool stepDamaged(const QDomElement& step, const QByteArray& bytes)
 		|| step.attribute(QStringLiteral("sha256")) != sha256Of(bytes);
 }
 
+//! The steps a history section really carries: its <z:undostep> elements, one
+//! for each step the section says it holds.
+int stepCount(const QDomElement& section)
+{
+	int count = 0;
+	for (QDomElement step = section.firstChildElement(StepName); !step.isNull();
+		step = step.nextSiblingElement(StepName))
+	{
+		++count;
+	}
+	return count;
+}
+
 bool outsideFingerprint(const QString& name)
 {
 	return name == UndoHistory::instance().elementName() || name == provenance::nodeName()
@@ -371,7 +384,21 @@ void UndoHistory::load(const QDomElement& element)
 		return;
 	}
 	m_setting = setting;
-	if (element.firstChildElement(StepName).isNull()) { return; }
+	// The declared count is checked against the steps the section really has,
+	// BEFORE anything is loaded: a history that declares more steps than it
+	// carries is INCOMPLETE, and loading what is left would undo across the
+	// edit the missing step belonged to. A history that declares no steps is
+	// not incomplete - it is a history with nothing in it, and it loads as
+	// nothing (found, no steps, no reason to discard it).
+	const bool hasDeclared = element.hasAttribute(QStringLiteral("steps"));
+	const int declared = hasDeclared ? element.attribute(QStringLiteral("steps")).toInt() : 0;
+	const int present = stepCount(element);
+	if (hasDeclared && present != declared)
+	{
+		m_load.discarded = QStringLiteral("undo history declares %1 step(s) but contains %2").arg(declared).arg(present);
+		return;
+	}
+	if (present == 0) { return; }
 	if (element.attribute(QStringLiteral("fingerprint")) != m_loadFingerprint)
 	{
 		m_load.discarded = QStringLiteral("the project was changed after its undo history was saved "
@@ -384,9 +411,8 @@ void UndoHistory::load(const QDomElement& element)
 void UndoHistory::loadSteps(const QDomElement& section)
 {
 	// Validated whole before anything is pushed: a history is contiguous, so one
-	// bad step makes the steps below it unreachable anyway.
-	const bool hasDeclared = section.hasAttribute(QStringLiteral("steps"));
-	const int declared = hasDeclared ? section.attribute(QStringLiteral("steps")).toInt() : 0;
+	// bad step makes the steps below it unreachable anyway. The declared count
+	// was already checked against the section's step elements (load()).
 	QVector<ProjectJournal::Snapshot> snapshots;
 	for (QDomElement step = section.firstChildElement(); !step.isNull(); step = step.nextSiblingElement())
 	{
@@ -397,11 +423,6 @@ void UndoHistory::loadSteps(const QDomElement& section)
 			return;
 		}
 		snapshots.append(std::make_shared<const QByteArray>(bytes));
-	}
-	if (hasDeclared && snapshots.size() != declared)
-	{
-		m_load.discarded = QStringLiteral("undo history declares %1 step(s) but contains %2").arg(declared).arg(snapshots.size());
-		return;
 	}
 	ProjectJournal* journal = Engine::projectJournal();
 	if (journal == nullptr) { return; }

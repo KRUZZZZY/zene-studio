@@ -2514,7 +2514,9 @@ tests/src/core/TrackFolderNoChannelTestSupport.h
 tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
+tests/src/core/UndoHistoryOptionsTest.cpp
 tests/src/core/UndoHistoryPersistenceTest.cpp
+tests/src/core/UndoHistoryTestSupport.h
 tests/src/core/UndoHonestyStateTest.cpp
 tests/src/core/UndoHonestyTest.cpp
 tests/src/core/UnmuteChaseTest.cpp

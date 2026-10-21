@@ -633,6 +633,11 @@ set(LMMS_TESTS
 	# round trip through the control surface, checking every undo against the
 	# document before the edit (ids, automation links, plug-in data, sample refs).
 	src/core/UndoHistoryPersistenceTest.cpp
+	# WF-033: the undo history's OWN options - the opt-in, the step and byte caps
+	# and what turning persistence off costs. The format half (what a load accepts
+	# and discards) stays in UndoHistoryPersistenceTest.cpp; the fixtures both
+	# halves build are in tests/src/core/UndoHistoryTestSupport.h.
+	src/core/UndoHistoryOptionsTest.cpp
 	# Q050-044: project.open over an unsaved session and script.run each leave ONE
 	# undo step that restores the whole project, and refuse when it would not fit the budget.
 	src/core/SessionCheckpointTest.cpp
@@ -1847,7 +1852,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# WF-033: the restored history must bring back a real instrument's own state.
 		OR LMMS_TEST_NAME STREQUAL "MissingDevicesPreserveTest"
 		OR LMMS_TEST_NAME STREQUAL "MissingDevicesRound2Test"
-		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest"
+		# WF-033: the options half of the undo-history proof needs the same real
+		# instrument (its baseline loads one) as the format half.
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2397,6 +2405,11 @@ set_tests_properties(UndoBoundsTest PROPERTIES
 # UndoHistoryPersistenceTest (WF-033) builds a full Engine with a real
 # instrument and drives project.save / project.open / control.undo.
 set_tests_properties(UndoHistoryPersistenceTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+	TIMEOUT 300)
+# UndoHistoryOptionsTest (WF-033) builds the same baseline (a real instrument)
+# and drives project.save / project.open / control.undo.
+set_tests_properties(UndoHistoryOptionsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
 # SessionCheckpointTest (Q050-044) builds a full Engine and drives script.run,
