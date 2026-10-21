@@ -136,18 +136,25 @@ HostLoadOutcome WasmSandboxHost::load(const std::string& path,
 	std::vector<std::uint8_t> bytes;
 	if (!decodeModule(path, outcome.format, bytes, outcome.error)) { return outcome; }
 
+	const std::uint64_t budget =
+		fuelBudget == 0 ? abi::defaultFuelBudget : fuelBudget;
+
 	// Compile and instantiate into a FRESH sandbox FIRST: a module that fails to
 	// load must leave the running one alone. `wasm.load` is therefore atomic,
 	// and the inverse a failed call never consumed stays the truth.
 	auto candidate = std::make_unique<WasmSandbox>();
+	// The requested budget must be in force BEFORE the module is instantiated:
+	// instantiation runs the module's start function, and the sandbox primes
+	// the store with the CONFIGURED budget for exactly that reason
+	// (WasmSandbox::Impl::primeFuelBudget, src/wasm/WasmSandbox.cpp:271-279).
+	// Setting it afterwards left the start function running under the default
+	// budget, so a caller that asked for a small one was not confined at all.
+	candidate->setFuelBudget(budget);
 	if (!candidate->loadModuleBytes(bytes.data(), bytes.size(), outcome.error))
 	{
 		return outcome;
 	}
 
-	const std::uint64_t budget =
-		fuelBudget == 0 ? abi::defaultFuelBudget : fuelBudget;
-	candidate->setFuelBudget(budget);
 	m_sandbox = std::move(candidate);
 	m_path = path;
 	m_format = outcome.format;
