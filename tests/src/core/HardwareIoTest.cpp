@@ -394,6 +394,36 @@ private slots:
 		QCOMPARE(insert.latencyFrames(), 0);
 	}
 
+	void unparsableSavedLevelsUseTheirDefaults()
+	{
+		// Qt's toFloat() returns 0 for "abc" and 0 is finite, so only the success flag can tell it apart.
+		bool parsed = true;
+		QDomDocument doc;
+		QDomElement channel = doc.createElement(QStringLiteral("channel"));
+		doc.appendChild(channel);
+		QDomElement element = doc.createElement(QStringLiteral("hardwareinsert"));
+		element.setAttribute(QStringLiteral("on"), 1);
+		element.setAttribute(QStringLiteral("mix"), QStringLiteral("abc"));
+		channel.appendChild(element);
+		QVERIFY(element.attribute(QStringLiteral("mix")).toFloat(&parsed) == 0.f);
+		QVERIFY(!parsed);
+
+		HardwareInsert insert;
+		insert.load(channel, 64);
+		QCOMPARE(insert.settings().mix, 1.f);  // the insert's default: fully wet, not fully dry
+
+		QDomDocument mixDoc;
+		QDomElement mixerElement = mixDoc.createElement(QStringLiteral("mixer"));
+		mixDoc.appendChild(mixerElement);
+		QDomElement cuemix = mixDoc.createElement(QStringLiteral("cuemix"));
+		cuemix.setAttribute(QStringLiteral("index"), 0);
+		cuemix.setAttribute(QStringLiteral("level"), QStringLiteral("abc"));
+		mixerElement.appendChild(cuemix);
+		hardwareio::loadMixer(mixerElement);
+		QCOMPARE(hardwareio::cueMaster(0).level, 1.f);  // the cuemix's default level: not silent
+		hardwareio::resetMixer();
+	}
+
 	void disablingAnInsertCancelsAnInProgressPing()
 	{
 		AudioEngine* engine = Engine::audioEngine();

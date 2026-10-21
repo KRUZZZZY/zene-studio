@@ -224,8 +224,9 @@ void HardwareInsert::load(const QDomElement& channelElement, f_cnt_t frames)
 		loaded.enabled = element.attribute(QStringLiteral("on")).toInt() != 0;
 		loaded.send = destinationAttribute(element, "send", loaded.send);
 		loaded.ret = destinationAttribute(element, "return", loaded.ret);
-		const float mix = element.attribute(QStringLiteral("mix"), QStringLiteral("1")).toFloat();
-		loaded.mix = std::isfinite(mix) ? std::clamp(mix, 0.f, 1.f) : Settings{}.mix;
+		bool mixOk = false;
+		const float mix = element.attribute(QStringLiteral("mix"), QStringLiteral("1")).toFloat(&mixOk);
+		loaded.mix = mixOk && std::isfinite(mix) ? std::clamp(mix, 0.f, 1.f) : Settings{}.mix;  // unparsable or non-finite: the default
 		bool latencyOk = false;
 		const int latency = element.attribute(QStringLiteral("latency"), QStringLiteral("-1")).toInt(&latencyOk);
 		if (latencyOk) { loaded.latencyOverride = latency; }
