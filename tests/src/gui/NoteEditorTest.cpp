@@ -445,6 +445,73 @@ private slots:
 
 	// --- 0.5.0 L07 ------------------------------------------------------------------------
 
+	//! Q050-064: opening a clip fits its used pitch range with a margin, and a wide range falls back to
+	//! the smallest readable row centred on it; a second clip never keeps the first one's view.
+	void openingClipsFitsTheirPitchRangeAndZoom()
+	{
+		MidiClip* narrow = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(narrow != nullptr);
+		narrow->addNote(Note(TimePos(48), TimePos(0), 60, 100), false);
+		narrow->addNote(Note(TimePos(48), TimePos(48), 64, 100), false);
+		narrow->rearrangeAllNotes();
+		narrow->changeLength(TimePos(192));
+		m_editor->setClip(narrow);
+		const QJsonObject close = m_editor->describe();
+		const int closeTop = close.value(QStringLiteral("top_key")).toInt();
+		const int closeBottom = close.value(QStringLiteral("bottom_key")).toInt();
+		QVERIFY2(closeTop >= 64 && closeBottom <= 60, "both used pitches are visible");
+		QVERIFY2(closeTop > 64 || closeBottom < 60, "with a margin above or below, not at the edge");
+		QVERIFY2(close.value(QStringLiteral("row_height")).toInt() > 14, "a narrow range gets taller rows");
+		QVERIFY2(close.value(QStringLiteral("visible_rows")).toInt() >= 4, "the fitted range fills the view");
+
+		MidiClip* wide = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(wide != nullptr);
+		wide->addNote(Note(TimePos(48), TimePos(0), 20, 100), false);
+		wide->addNote(Note(TimePos(48), TimePos(0), 110, 100), false);
+		wide->rearrangeAllNotes();
+		wide->changeLength(TimePos(768));
+		m_editor->setClip(wide);
+		const QJsonObject far = m_editor->describe();
+		const int farTop = far.value(QStringLiteral("top_key")).toInt();
+		const int farBottom = far.value(QStringLiteral("bottom_key")).toInt();
+		QVERIFY2(far.value(QStringLiteral("zoom")).toDouble() < close.value(QStringLiteral("zoom")).toDouble(),
+			"the longer clip is zoomed further out horizontally");
+		QVERIFY2(far.value(QStringLiteral("row_height")).toInt() == 6, "a range too wide for the view falls back to the smallest row");
+		QVERIFY2(farTop >= 65 && farBottom <= 65, "the fallback is centred on the used range, not left where the last clip was");
+		QVERIFY2(farTop < 110 && farBottom > 20, "and shows a useful part of it");
+		QVERIFY2(far.value(QStringLiteral("visible_rows")).toInt() >= 30, "with more rows than a stale narrow view would show");
+
+		// In Used fold the two pitches are adjacent visible rows even though their MIDI keys are far apart.
+		m_editor->setFold(NoteFold::Used);
+		m_editor->setClip(wide);
+		const QJsonObject folded = m_editor->describe();
+		QCOMPARE(folded.value(QStringLiteral("rows")).toInt(), 2);
+		QVERIFY2(folded.value(QStringLiteral("row_height")).toInt() > 14,
+			"fit uses the two displayed rows, not the hidden pitches between them");
+		QCOMPARE(folded.value(QStringLiteral("visible_rows")).toInt(), 2);
+
+		m_editor->setFold(NoteFold::None);
+		m_editor->setClip(m_clip);
+		delete wide;
+		delete narrow;
+	}
+
+	void openingAnEmptyClipFallsBackToTheDefaultKey()
+	{
+		MidiClip* empty = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(empty != nullptr);
+		empty->changeLength(TimePos(192));
+		m_editor->setClip(empty);
+		const QJsonObject state = m_editor->describe();
+		const int top = state.value(QStringLiteral("top_key")).toInt();
+		const int bottom = state.value(QStringLiteral("bottom_key")).toInt();
+		QCOMPARE(state.value(QStringLiteral("row_height")).toInt(), 14);
+		QVERIFY2(top > DefaultKey && bottom < DefaultKey, "the default key sits in the middle of a normal view");
+		QVERIFY(state.value(QStringLiteral("zoom")).toDouble() > 0.0);
+		m_editor->setClip(m_clip);
+		delete empty;
+	}
+
 	void thePaintToolLaysANoteOnEveryCellItCrossesAsOneEdit()
 	{
 		m_editor->setTool(NoteTool::Paint);

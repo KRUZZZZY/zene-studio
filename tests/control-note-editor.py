@@ -14,7 +14,9 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
   4. a batch with one bad entry changes nothing (validated before anything is written);
   5. the MPE lanes write through `note.expression_set`, and the chance lane through note.edit;
   6. `window.screenshot` renders the Edit view with the editor in the centre;
-  7. (0.5.0 L07) note.add_many adds a batch as one undo step and note.list answers every note;
+  7. (0.5.0 L07) opening clips with narrow and wide note ranges gives each a useful default
+     zoom and visible row range, and window.get_state reports the same tool and view as the
+     window.note_editor_set reply; note.add_many adds a batch as one undo step and note.list answers every note;
      note.scale, note.ratchet and note.transform_where change exactly the notes they name;
      groove.quantize takes 'swing'; key_names.* name a track's keys (one undo restores);
      window.note_editor_set drives the paint tool, the drum view, the colour mode and
@@ -57,6 +59,78 @@ def check_open(session, recorder, clip):
     detail = [p for p in state.get("panels") or [] if p.get("id") == "detail"]
     recorder.check("the note editor panel is on screen", bool(detail) and detail[0].get("visible") is True,
                    "detail=%r" % detail)
+
+
+def range_clip(session, name, keys, length):
+    """A fresh clip with @p keys at 48-tick steps, resized to @p length."""
+    _, clip = new_clip(session, name)
+    notes = [{"key": key, "position": i * 48, "length": 48} for i, key in enumerate(keys)]
+    session.result("note.add_many", {"clip": clip, "notes": notes})
+    session.result("clip.resize", {"clip": clip, "length": length})
+    return clip
+
+
+def used_pitches_in_view(state, low, high):
+    return state.get("top_key", -1) >= high and state.get("bottom_key", 128) <= low
+
+
+def a_margin_around(state, low, high):
+    return state.get("top_key", -1) > high or state.get("bottom_key", 128) < low
+
+
+def same_view(state, reply):
+    fields = ("clip", "tool", "zoom", "row_height", "top_key", "bottom_key", "visible_rows")
+    return all(state.get(field) == reply.get(field) for field in fields)
+
+
+def narrow_fit_ok(state):
+    return used_pitches_in_view(state, 60, 64) and a_margin_around(state, 60, 64)
+
+
+def narrow_state_ok(state, clip, reply):
+    return state.get("clip") == clip and state.get("tool") == "draw" and same_view(state, reply)
+
+
+def centred_on(state, key):
+    return state.get("top_key", -1) >= key and state.get("bottom_key", 128) <= key
+
+
+def wide_fit_ok(far, close):
+    return (far.get("row_height", 40) < close.get("row_height", 0)
+            and centred_on(far, 63)
+            and far.get("visible_rows", 0) > close.get("visible_rows", 0))
+
+
+def wide_zoom_ok(far, close, state):
+    return (far.get("zoom") or 0) < (close.get("zoom") or 0) and same_view(state, far)
+
+
+def sliced_state_ok(state, far):
+    return (state.get("tool") == "slice" and state.get("zoom") == far.get("zoom")
+            and state.get("top_key") == far.get("top_key"))
+
+
+def check_clip_fit(session, recorder):
+    narrow = range_clip(session, "Narrow range", (60, 64), 192)
+    close = session.result("window.note_editor_set", {"clip": narrow, "tool": "draw"})
+    close_state = session.result("window.get_state").get("note_editor") or {}
+    recorder.check("opening a narrow clip fits its used pitches with a margin", narrow_fit_ok(close),
+                   "reply=%r" % close)
+    recorder.check("window.get_state reports the same opened clip and Draw tool",
+                   narrow_state_ok(close_state, narrow, close), "state=%r reply=%r" % (close_state, close))
+
+    wide = range_clip(session, "Wide range", (0, 127), 768)
+    far = session.result("window.note_editor_set", {"clip": wide})
+    far_state = session.result("window.get_state").get("note_editor") or {}
+    recorder.check("a wide clip opens centred on its range with rows smaller than the narrow clip's",
+                   wide_fit_ok(far, close), "far=%r close=%r" % (far, close))
+    recorder.check("a longer clip gets a further-out default zoom, and get_state follows it",
+                   wide_zoom_ok(far, close, far_state), "state=%r reply=%r" % (far_state, far))
+    session.result("window.note_editor_set", {"tool": "slice"})
+    sliced = session.result("window.get_state").get("note_editor") or {}
+    recorder.check("the active tool is what window.get_state reports", sliced_state_ok(sliced, far),
+                   "state=%r far=%r" % (sliced, far))
+    session.result("window.note_editor_set", {"tool": "draw"})
 
 
 def check_view(session, recorder):
@@ -257,6 +331,7 @@ def main(argv):
         clip, notes = make_clip(session)
         check_open(session, recorder, clip)
         check_view(session, recorder)
+        check_clip_fit(session, recorder)
         check_batch(session, recorder, clip, notes)
         check_atomic(session, recorder, clip, notes)
         check_lanes(session, recorder, clip, notes)

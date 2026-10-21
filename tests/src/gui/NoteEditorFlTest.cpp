@@ -30,6 +30,7 @@
 
 #include <QtTest>
 
+#include <QAction>
 #include <QCheckBox>
 #include <QJsonArray>
 #include <QSpinBox>
@@ -312,6 +313,74 @@ private slots:
 		QVERIFY(m_editor->findChild<NotePropertiesDialog*>(QStringLiteral("noteProperties")) == nullptr);
 	}
 
+	//! L07 Q050-064: the Draw tool previews the note under the idle pointer, and a draw drag adjusts
+	//! its pitch - the preview, the auditioned key and the committed note all on the row it ends on.
+	void aDrawPreviewsAndAdjustsPitchUnderThePointer()
+	{
+		m_editor->setTool(NoteTool::Draw);
+		NoteCanvas* canvas = m_editor->canvas();
+		const QPoint hover = point(400, 66);
+		const QImage idle = canvas->grab().toImage();
+		QTest::mouseMove(canvas, hover);
+		const QImage previewed = canvas->grab().toImage();
+		const QRect hoverRect = canvas->rectFor(66, 396, 408);
+		QVERIFY2(!hoverRect.isEmpty(), "the preview row is on screen");
+		QVERIFY2(previewed.pixelColor(hoverRect.center()) != idle.pixelColor(hoverRect.center()),
+			"the idle pointer shows a note preview");
+
+		Piano* piano = m_track->pianoModel();
+		QVERIFY(piano != nullptr);
+		const QPoint to = point(400, 64);
+		QTest::mousePress(canvas, Qt::LeftButton, Qt::NoModifier, hover);
+		QVERIFY2(piano->isKeyPressed(66), "the press auditions the row it starts on");
+		QTest::mouseMove(canvas, to);
+		QVERIFY2(!piano->isKeyPressed(66), "the old pitch stops when the draw moves");
+		QVERIFY2(piano->isKeyPressed(64), "the new pitch is auditioned");
+		const QImage adjusted = canvas->grab().toImage();
+		const QRect adjustedRect = canvas->rectFor(64, 396, 408);
+		QVERIFY2(adjusted.pixelColor(adjustedRect.center()) != idle.pixelColor(adjustedRect.center()),
+			"the preview follows the adjusted pitch");
+		QTest::mouseRelease(canvas, Qt::LeftButton, Qt::NoModifier, to);
+		QVERIFY2(noteAt(m_clip, 396, 64) != nullptr, "one note lands on the pitch the draw ended on");
+		QVERIFY2(noteAt(m_clip, 396, 66) == nullptr, "not on the press pitch");
+		QVERIFY(!piano->isKeyPressed(64));
+		const QImage released = canvas->grab().toImage();
+		QTest::mouseMove(canvas, QPoint(to.x() + 1, to.y()));
+		const QImage settled = canvas->grab().toImage();
+		QCOMPARE(released.pixelColor(hoverRect.center()), settled.pixelColor(hoverRect.center()));
+		QCOMPARE(m_clip->notes().size(), std::size_t{4});
+		QVERIFY(undo());
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
+	//! L07 Q050-064: each tool shows its own cursor at once (a toolbar action, no pointer move), and the
+	//! gesture leaves that tool's cursor in place.
+	void theToolsCursorsFollowTheToolbarAndSurviveAGesture()
+	{
+		struct Expected { NoteTool tool; Qt::CursorShape cursor; };
+		const Expected expected[] = {{NoteTool::Draw, Qt::CrossCursor}, {NoteTool::Erase, Qt::ForbiddenCursor},
+			{NoteTool::Slice, Qt::SplitHCursor}, {NoteTool::Audition, Qt::PointingHandCursor}};
+		for (const Expected& e : expected)
+		{
+			QAction* action = toolAction(e.tool);
+			QVERIFY2(action != nullptr, "the toolbar offers every tool");
+			action->trigger();
+			QCOMPARE(m_editor->state().tool, e.tool);
+			QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(e.cursor));
+			// End the gesture past the note its start would draw: the release then lands on an empty row,
+			// where the tool's own cursor - not the resize handle's - is the next action.
+			QTest::mousePress(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(400, 66));
+			QTest::mouseMove(m_editor->canvas(), point(602, 66));
+			QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(602, 66));
+			QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(e.cursor));
+		}
+		// The keyboard path (D) updates it too, without another mouse move.
+		QTest::keyClick(m_editor, Qt::Key_D);
+		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::ForbiddenCursor));
+		QTest::keyClick(m_editor, Qt::Key_P);
+		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::CrossCursor));
+	}
+
 	void theClipboardKeysCopyPasteDuplicateAndDelete()
 	{
 		select({noteAt(m_clip, 192, 62)});
@@ -333,6 +402,19 @@ private slots:
 	}
 
 private:
+	QAction* toolAction(NoteTool tool) const
+	{
+		for (QAction* action : m_editor->findChildren<QAction*>())
+		{
+			if (action->isCheckable() && action->data().toInt() == static_cast<int>(tool)
+				&& action->property("controlCommand").toString() == QStringLiteral("window.note_editor_set"))
+			{
+				return action;
+			}
+		}
+		return nullptr;
+	}
+
 	QPoint point(int tick, int key) const
 	{
 		const NoteGrid& g = m_editor->state().grid;

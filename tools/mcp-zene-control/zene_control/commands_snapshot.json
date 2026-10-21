@@ -34986,6 +34986,11 @@
           "audio_behind": {
             "type": "string"
           },
+          "bottom_key": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
           "clip": {
             "type": "string"
           },
@@ -35022,6 +35027,11 @@
             "minimum": 1,
             "type": "integer"
           },
+          "row_height": {
+            "maximum": 40,
+            "minimum": 6,
+            "type": "integer"
+          },
           "rows": {
             "maximum": 128,
             "minimum": 0,
@@ -35051,6 +35061,11 @@
           },
           "visible_notes": {
             "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "visible_rows": {
+            "maximum": 128,
             "minimum": 0,
             "type": "integer"
           },

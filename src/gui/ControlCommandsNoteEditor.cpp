@@ -207,7 +207,10 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("new_length"), integerProperty(0, 192 * 16)}, {QStringLiteral("new_velocity"), integerProperty(1, 200)},
 		{QStringLiteral("audio_behind"), stringProperty()},
 		{QStringLiteral("scroll_ticks"), numberProperty()}, {QStringLiteral("scroll_y"), integerProperty(0, 1 << 20)},
-		{QStringLiteral("top_key"), integerProperty(-1, 127)}, {QStringLiteral("visible_notes"), integerProperty(0, 1919808)},
+		{QStringLiteral("row_height"), integerProperty(6, 40)},
+		{QStringLiteral("top_key"), integerProperty(-1, 127)}, {QStringLiteral("bottom_key"), integerProperty(-1, 127)},
+		{QStringLiteral("visible_rows"), integerProperty(0, 128)},
+		{QStringLiteral("visible_notes"), integerProperty(0, 1919808)},
 	});
 	cmd.handler = noteEditorSet;
 	registry.registerCommand(cmd);

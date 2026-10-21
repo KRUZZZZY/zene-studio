@@ -61,6 +61,16 @@ namespace lmms::gui
 namespace
 {
 
+//! The rows of the grid at least partly on screen, for describe()'s visible row range.
+int visibleRows(const NoteGrid& grid)
+{
+	if (grid.rowCount() <= 0) { return 0; }
+	const int rowHeight = std::max(1, grid.rowHeight());
+	const int first = grid.scrollY() / rowHeight;
+	const int last = std::min(grid.rowCount() - 1, (grid.scrollY() + std::max(1, grid.viewportHeight()) - 1) / rowHeight);
+	return std::max(0, last - first + 1);
+}
+
 //! The header's title: the clip's name, elided in the middle to the label's width, with the
 //! whole name and its track in the tooltip.
 void showClipTitle(QLabel* label, const MidiClip* clip)
@@ -280,6 +290,7 @@ void NoteEditor::setTool(NoteTool tool)
 	{
 		if (action->data().toInt() == static_cast<int>(tool)) { action->setChecked(true); }
 	}
+	if (m_canvas != nullptr) { m_canvas->refreshCursor(); }  // at once, without waiting for the pointer to move
 	emit stateChanged();
 }
 
@@ -369,17 +380,48 @@ void NoteEditor::setZoom(double pixelsPerTick)
 void NoteEditor::zoomToFit()
 {
 	if (m_state.clip == nullptr) { return; }
+	NoteGrid& grid = m_state.grid;
+	grid.setViewport(std::max(1, m_canvas->width()), std::max(1, m_canvas->height()));
+	// Horizontal: the clip's length fills the note area (a short clip still gets a bar's room).
 	const int length = std::max<int>(DefaultTicksPerBar, m_state.clip->length().getTicks());
-	m_state.grid.setPixelsPerTick(std::max(1, m_canvas->width() - 16) / static_cast<double>(length));
-	m_state.grid.setScrollTicks(0);
+	grid.setPixelsPerTick(std::max(1, m_canvas->width() - 16) / static_cast<double>(length));
+	grid.setScrollTicks(0);
+	// Vertical: fit the used pitch range with a margin when it fits. A row height between the grid's
+	// minimum and 32 px keeps a narrow clip legible without turning a one-note clip into one huge row.
 	int lowest = 127;
-	int highest = 0;
+	int highest = -1;
 	for (const Note* note : m_state.clip->notes())
 	{
 		lowest = std::min(lowest, note->key());
 		highest = std::max(highest, note->key());
 	}
-	m_state.grid.centreOnKey(lowest <= highest ? (lowest + highest) / 2 : DefaultKey);
+	const int height = m_canvas->height();
+	if (height >= 60)
+	{
+		constexpr int minRowHeight = 6;  // NoteGrid::setRowHeight's own floor
+		constexpr int maxFitRowHeight = 32;
+		constexpr int emptyClipRowHeight = 14;
+		if (highest < lowest)
+		{
+			// An empty clip has no range to fit: the default key in a normal row height, never stale.
+			grid.setRowHeight(emptyClipRowHeight);
+			grid.centreOnKey(DefaultKey);
+		}
+		else
+		{
+			// A folded grid collapses unused pitches; fit the rows the musician can actually see.
+			const int lowRow = grid.rowOfKey(lowest);
+			const int highRow = grid.rowOfKey(highest);
+			const int rows = lowRow >= 0 && highRow >= 0
+				? std::max(lowRow, highRow) - std::min(lowRow, highRow) + 1 : highest - lowest + 1;
+			const int margin = std::clamp((rows + 3) / 8, 1, 6);
+			const int wanted = height / (rows + 2 * margin);
+			// A range too wide for the minimum row height is the fallback: the smallest readable row,
+			// centred on the range, so as many of its pitches as possible are visible.
+			grid.setRowHeight(wanted >= minRowHeight ? std::clamp(wanted, minRowHeight, maxFitRowHeight) : minRowHeight);
+			grid.centreOnKey((lowest + highest) / 2);
+		}
+	}
 	emit stateChanged();
 }
 
@@ -458,7 +500,10 @@ QJsonObject NoteEditor::describe() const
 		{QStringLiteral("zoom"), g.pixelsPerTick()},
 		{QStringLiteral("scroll_ticks"), g.scrollTicks()},
 		{QStringLiteral("scroll_y"), g.scrollY()},
+		{QStringLiteral("row_height"), g.rowHeight()},
 		{QStringLiteral("top_key"), g.keyAtY(0)},
+		{QStringLiteral("bottom_key"), g.keyAtY(std::max(0, g.viewportHeight() - 1))},
+		{QStringLiteral("visible_rows"), visibleRows(g)},
 		{QStringLiteral("visible_notes"), m_canvas->visibleRange().second - m_canvas->visibleRange().first},
 	};
 }
