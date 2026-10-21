@@ -121,7 +121,7 @@ This is an environment restriction, not a skipped log.
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-2258.md`
 
-Product/test commit: `1d29c8b3b`.  This report is committed separately.
+Product/test commits: `1d29c8b3b` (product, registration and first test), `284740ac6` (final timer-lookup test).  Report commits: `acd1b6aa5`, `56bbcc807`, `15eaf0766`.
 
 ## Self-check
 
