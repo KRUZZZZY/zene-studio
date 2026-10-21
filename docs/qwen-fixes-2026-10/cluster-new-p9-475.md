@@ -193,3 +193,5 @@ Files committed (one commit per bug, each naming its cluster):
   - `src/gui/TempoMapPanel.cpp`, `tests/src/gui/TempoMapPanelTest.cpp`
 - `30bc514a8` fix(tempo-map-panel): an off-grid metre change starts its own bar (cluster new-p17-186)
   - `src/gui/TempoMapPanel.cpp`, `tests/src/gui/TempoMapPanelTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p9-475.md`
+- the documentation commits that follow the three fixes carry this report's final
+  numbers and its Self-check answers (no product or test file is touched by them)
