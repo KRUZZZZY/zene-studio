@@ -79,13 +79,17 @@ Gates:
 - **Realtime**: `masterSet` is a control-thread handler, not an audio-path function. The guard adds no allocation beyond the reply object the existing success path already builds. No locks, I/O or signals added.
 - **Undo honesty**: an unchanged call records no step; a changed call records exactly one (unchanged code path).
 - **Reversibility class**: still `true_inverse` (`ControlReversibilityTableMts.cpp:111`). Only the explanatory row text changed.
-- **Sibling commands in the command files touched** (from the completion checker): the `mts.*` group, as listed above.
+- **Sibling commands in the command files touched** (the completion checker's list, each one checked):
+  - `mts.master_set`: the fixed command.
+  - `mts.get_state`: read-only (not mutating), so no undo step and nothing to change.
+  - `mts.load_scale`, `mts.load_keymap`, `mts.set_tuning`, `mts.set_note`, `mts.reset`: all mutate through `tableMutation` (`ControlCommandsMts.cpp:127-149`), which records a step unconditionally. Consistent with the fix only in the sense that they are unchanged here. An unchanged-table write there still records a no-op step by reading. **Not changed** (see Known gaps 4). Not verified by a test.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence**: not applicable (verdict is FIXED). The no-step contract that the fix relies on is `docs/A16-REVERSIBILITY.md:111-112` and the sibling early returns cited above.
 - **Qt portability**: no new Qt API.
 - **Registration**: no new source or test file, so `tests/fork-sources.txt`, `tests/upstream-modifications.txt` and `tests/CMakeLists.txt` are unchanged.
 
 ## Known gaps
 
-1. `feature_check.py` cannot run as shipped from this sandbox (the sibling-folder `PermissionError` above). The table in this report comes from a copy with only the log folder redirected. `submit_check.py` runs the shipped script itself, so its "gates" row will show the same `PermissionError` FAIL. That is an environment limit, not a gate result.
+1. `feature_check.py` cannot run as shipped from this sandbox (the sibling-folder `PermissionError` above). The table in this report comes from a copy with only the log folder redirected. `submit_check.py` runs the shipped script itself. Observed: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-20-port` EXIT 1 (`submit-check-1.log`). PASS: commits on the branch, working tree clean, report present, tests added or changed. The only FAIL is `gates (feature_check.py)`, from the same sandbox `PermissionError`. Gate results above come from the log-folder copy, which exits 0. That is an environment limit, not a gate result.
 2. The newest line `050/m0-train-10` was not built or run here. Its SessionTuningTest failure is inferred from the code (see above).
 3. `docs/A16-REVERSIBILITY.md:219` still states the one-record-per-call rule without the no-change exception. Not edited.
 4. The sibling `mts.*` no-op steps (above) are unfixed.
