@@ -547,25 +547,29 @@ void AutomationClip::queuePendingWrite(tick_t tick, float value) noexcept
 	const auto count = m_pendingWriteCount.load(std::memory_order_relaxed);
 	const auto applied = m_pendingWriteApplied.load(std::memory_order_acquire);
 
-	// The session-wide count goes up BEFORE the write is published, so it never
-	// reads lower than the number of writes that are still waiting: the drain
-	// reads it to learn whether it has anything to do at all.
-	s_pendingWriteTotal.fetch_add(1, std::memory_order_relaxed);
-
 	if (count - applied >= PendingWriteCapacity)
 	{
 		// The clip's store is full. The newest write wins: it is the value the
 		// control is at right now, and a curve that ends at the value the user
 		// last dialled is worth more than the intermediate point it replaces.
-		if (m_pendingLatestSet.load(std::memory_order_relaxed))
+		const bool replacingLatest = m_pendingLatestSet.load(std::memory_order_relaxed);
+		if (replacingLatest)
 		{
 			m_pendingWriteMerges.fetch_add(1, std::memory_order_relaxed);
+		}
+		else
+		{
+			// Count pending writes, not arrivals that overwrite an already queued
+			// latest value; the drain decrements this once for this slot.
+			s_pendingWriteTotal.fetch_add(1, std::memory_order_relaxed);
 		}
 		m_pendingLatest.store(packed, std::memory_order_relaxed);
 		m_pendingLatestSet.store(true, std::memory_order_release);
 		return;
 	}
 
+	// Publish the count before the write so the control thread cannot miss work.
+	s_pendingWriteTotal.fetch_add(1, std::memory_order_relaxed);
 	m_pendingWrites[count % PendingWriteCapacity].store(packed, std::memory_order_relaxed);
 	m_pendingWriteCount.store(count + 1, std::memory_order_release);
 }

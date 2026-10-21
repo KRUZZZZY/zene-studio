@@ -806,6 +806,7 @@ private slots:
 	{
 		auto* song = Engine::getSong();
 		Rig rig(song);
+		const auto pendingBefore = AutomationClip::pendingWriteTotal();
 
 		const int writes = 300000;
 		float newest = 0.f;
@@ -819,6 +820,7 @@ private slots:
 		}
 
 		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(AutomationClip::pendingWriteTotal(), pendingBefore);
 
 		// The newest write is on the clip. Every write went to the same tick,
 		// so the clip holds one node - and its value is the newest write's.
