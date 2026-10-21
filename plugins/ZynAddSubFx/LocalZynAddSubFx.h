@@ -26,8 +26,11 @@
 #define LOCAL_ZYNADDSUBFX_H
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 
 #include "AudioBufferView.h"
+#include "LmmsTypes.h"
 #include "Note.h"
 
 class Master;
@@ -60,9 +63,17 @@ public:
 
 	void setPitchWheelBendRange( int semitones );
 
-	void processMidiEvent( const MidiEvent& event );
+	//! The event is applied at `offset` frames into the period that is rendered next.
+	//! An offset of 0 applies the event at once, the way the callers that have no
+	//! position for it use it.
+	void processMidiEvent( const MidiEvent& event, f_cnt_t offset = 0 );
 
 	void process(PlanarBufferView<float, 2> out);
+
+	//! The granularity Zyn renders in: the synth computes its voices in blocks of this
+	//! many frames. A block that is smaller than the period is what lets a scheduled
+	//! MIDI event take effect inside the period it was scheduled for.
+	static constexpr int SynthBlockSize = 64;
 
 	inline Master * master()
 	{

@@ -135,9 +135,11 @@ public:
 	}
 
 	// all functions are called while m_master->mutex is held
-	void processMidiEvent( const MidiEvent& event, const f_cnt_t /* _offset */ ) override
+	void processMidiEvent( const MidiEvent& event, const f_cnt_t _offset ) override
 	{
-		LocalZynAddSubFx::processMidiEvent( event );
+		// The offset is the frame the event was scheduled at inside the period the
+		// client is about to render; it is handed to the synth with the event.
+		LocalZynAddSubFx::processMidiEvent( event, _offset );
 	}
 
 

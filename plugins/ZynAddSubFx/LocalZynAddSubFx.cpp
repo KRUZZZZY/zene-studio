@@ -224,7 +224,7 @@ void LocalZynAddSubFx::setPitchWheelBendRange( int semitones )
 
 
 
-void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event )
+void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event, f_cnt_t /* offset */ )
 {
 	switch( event.type() )
 	{

@@ -391,7 +391,7 @@ void ZynAddSubFxInstrument::forwardQueuedMidi()
 			// period. The in-process synth has no sub-period placement: its API takes the
 			// event, not a position, so it applies it at the start of the period it renders.
 			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, queued.offset); }
-			else { m_localPlugin->processMidiEvent(event); }
+			else { m_localPlugin->processMidiEvent(event, queued.offset); }
 			return true;
 		},
 		[this](int channel) -> bool

@@ -2772,3 +2772,6 @@ tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster new-p16-276: the regress
 plugins/ZynAddSubFx/ZynAddSubFx.cpp	cluster 908 review round 2: the audio path's lock wait is a named policy (audioLockWaitMs()) and the export path is a seam (renderIsExporting()), so the regression can ask for the wait the audio path allows itself instead of measuring a thread.
 plugins/ZynAddSubFx/ZynAddSubFx.h	cluster 908 review round 2: declares renderIsExporting() and audioLockWaitMs(), the seam the deterministic lock regression drives; the m_testForceExport seam is gone.
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster 908 review round 2: the lock regression asks the instrument for the wait it allows itself in the export path - no thread, no semaphore, no timeout.
+plugins/ZynAddSubFx/LocalZynAddSubFx.h	cluster new-p16-276 review round 2: processMidiEvent() takes the frame the event was scheduled at, and SynthBlockSize names the granularity Zyn renders in.
+plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	cluster new-p16-276 review round 2: processMidiEvent() takes the scheduled frame (the plumbing; the scheduling lands with the fix).
+plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	cluster new-p16-276 review round 2: the client hands the scheduled frame to the synth instead of dropping it.

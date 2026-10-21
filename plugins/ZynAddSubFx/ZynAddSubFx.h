@@ -145,9 +145,10 @@ private slots:
 	void updateResBandwidth();
 
 
-private:
+protected:
 	auto processImpl(PlanarBufferView<const float, 0> in, PlanarBufferView<float, 2> out) -> ProcessStatus override;
 
+private:
 	void initPlugin();
 	void sendControlChange( MidiControllers midiCtl, float value );
 
