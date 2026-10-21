@@ -82,7 +82,9 @@ recorded here.
 | 14 | `cd build/tests && ./InputMonitorTest` (restored) | 0 | `0 candidate track scans`, `9 passed`, `test-4b-restored-slots.log` |
 | 15 | `cmake --build build --target ArrangingSpacerReferenceTest ArrangingCatchUpTest SessionAudioCellPlaybackTest -j12` | 0 | `build-6-family.log` |
 | 16 | `cd build/tests && ctest -R '^(InputMonitorTest|ArrangingSpacerReferenceTest|ArrangingCatchUpTest|SessionAudioCellPlaybackTest)$' --output-on-failure` | **8** | 3/4 pass; `ArrangingCatchUpTest` fails only its `queuedInstrumentHandlesAreRemovedBeforeTheirTrackCanDie` slot because no built-in plug-in binary exists (`tripleoscillator` loads as `dummyinstrument`); `test-5-family.log` |
-| 17 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** | direct run cannot write `<worktree-parent>/<name>-feature-check/` (`PermissionError`, `fork-sources.log`); re-run on a `/tmp` git worktree of the committed HEAD, table below |
+| 17 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** | direct run cannot write `<worktree-parent>/<name>-feature-check/` (`PermissionError`, `fork-sources.log`); the same module re-run with only its log destination redirected to `/tmp` (gate code and thresholds untouched): every row PASS, `RESULT: PASS`, `gate-1-feature-check.log` |
+| 18 | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-77` | **1** | only the gates row fails, with the same `PermissionError`; report/tests/clean-tree rows PASS (`submit-check-direct.log`) |
+| 19 | the same submit check with the feature-check log destination redirected | 0 | `RESULT: PASS - submit`, all rows PASS (`submit-check-wrapped.log`) |
 
 Affected-family detail from #16: `InputMonitorTest` Passed, `ArrangingSpacerReferenceTest`
 Passed, `SessionAudioCellPlaybackTest` Passed, `ArrangingCatchUpTest` 12 passed / 1
