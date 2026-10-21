@@ -30,6 +30,7 @@
 #include <QJsonArray>
 #include <QString>
 
+#include "ControlRegistry.h"
 #include "lmms_export.h"
 
 class QJsonObject;
@@ -47,14 +48,19 @@ namespace lmms::gui
 LMMS_EXPORT QMenu* addRecordingRecoveryMenu(QMenu* menu);
 
 //! What the startup offer did.
-enum class StartupRecoveryChoice { NothingToOffer, Place, Later };
+enum class StartupRecoveryChoice { NothingToOffer, Place, Later, QueryFailed };
 
-//! The interrupted takes record.recovery_get_state reports (empty when none, or when the command fails).
-LMMS_EXPORT QJsonArray interruptedTakes();
+/*! The reply of record.recovery_get_state: \a takes receives the interrupted takes the command
+ *  lists (empty when there are none). A FAILED query leaves \a takes empty and returns the typed
+ *  failure - an empty list from a failed query means the takes are UNKNOWN, not absent. */
+LMMS_EXPORT ControlResult interruptedTakes(QJsonArray* takes);
 
 /*! Q050-046: the startup offer. Asks \a ask (default: a message box) ONLY when record.recovery_get_state
  *  reports an interrupted take; an unattended run never gets a dialog (stderr line, journals left).
- *  Choosing Place runs record.recovery_place for every take, each one undo step. */
+ *  Choosing Place runs record.recovery_place for every take, each one undo step.
+ *  A FAILED query is never "nothing to offer": the failure is reported (always logged, and shown to
+ *  a human unless it is the transient 'the model is not addressable yet' refusal) and the offer
+ *  returns StartupRecoveryChoice::QueryFailed - the takes are unknown, not absent. */
 LMMS_EXPORT StartupRecoveryChoice offerRecordingRecovery(QWidget* parent,
 	const std::function<StartupRecoveryChoice(const QJsonArray&)>& ask);
 

@@ -49,6 +49,19 @@ void report(const QString& command, const ControlResult& result)
 	else { QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Recover Recordings"), result.errorMessage); }
 }
 
+/*! A FAILED recovery query: the interrupted takes are UNKNOWN, not absent, so the failure is
+ *  reported instead of being swallowed. It is always logged; a human is shown it too, unless the
+ *  refusal is the transient "the model is not addressable yet" one (busy) - that is a start-up
+ *  state that clears itself, and File > Recover Recordings shows the same failure when it opens. */
+void reportQueryFailure(const ControlResult& state)
+{
+	qWarning("record.recovery_get_state failed: %s - the interrupted recordings could not be listed",
+		qPrintable(state.errorMessage));
+	if (state.errorKind == ControlErrorKind::Busy || isUnattendedRun()) { return; }
+	QMessageBox::warning(QApplication::activeWindow(), QMenu::tr("Recover Recordings"),
+		QMenu::tr("Interrupted recordings could not be checked:\n%1").arg(state.errorMessage));
+}
+
 //! record.recovery_place for \a path: the one command the menu, the startup offer and the agent surface share.
 bool placeTake(const QString& path)
 {
@@ -85,8 +98,8 @@ void rebuild(QMenu* menu)
 		if (action->menu() != nullptr && action->menu()->parent() == menu) { action->menu()->deleteLater(); }
 		else if (action->parent() == menu) { action->deleteLater(); }
 	}
-	const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("record.recovery_get_state"), QJsonObject{});
-	const QJsonArray takes = state.result.value(QStringLiteral("takes")).toArray();
+	QJsonArray takes;
+	const ControlResult state = interruptedTakes(&takes);
 	QAction* line = menu->addAction(!state.ok ? state.errorMessage
 		: takes.isEmpty() ? QMenu::tr("No interrupted recording")
 		: QMenu::tr("%n interrupted recording(s)", nullptr, static_cast<int>(takes.size())));
@@ -121,15 +134,24 @@ QString recoveredTakeText(const QJsonObject& take)
 	return rate > 0 ? QMenu::tr("%1 (%2 s recoverable)").arg(name).arg(frames / rate, 0, 'f', 1) : name;
 }
 
-QJsonArray interruptedTakes()
+ControlResult interruptedTakes(QJsonArray* takes)
 {
 	const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("record.recovery_get_state"), QJsonObject{});
-	return state.ok ? state.result.value(QStringLiteral("takes")).toArray() : QJsonArray{};
+	if (takes != nullptr) { *takes = state.ok ? state.result.value(QStringLiteral("takes")).toArray() : QJsonArray{}; }
+	return state;
 }
 
 StartupRecoveryChoice offerRecordingRecovery(QWidget* parent, const std::function<StartupRecoveryChoice(const QJsonArray&)>& ask)
 {
-	const QJsonArray takes = interruptedTakes();
+	QJsonArray takes;
+	const ControlResult state = interruptedTakes(&takes);
+	if (!state.ok)
+	{
+		// The query FAILED: the takes are unknown, not absent. Skipping the offer in silence
+		// would hide recordings the user is waiting for, so the failure is reported instead.
+		reportQueryFailure(state);
+		return StartupRecoveryChoice::QueryFailed;
+	}
 	if (takes.isEmpty()) { return StartupRecoveryChoice::NothingToOffer; }
 	if (!ask && isUnattendedRun())
 	{
