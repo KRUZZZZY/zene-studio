@@ -54,6 +54,12 @@ extern thread_local std::uint64_t tlAllocationCount;
 //! thread while tlCountAllocations was true - the realtime rule forbids a free
 //! on the audio thread as much as an allocation (Q050-016 round 3 added it).
 extern thread_local std::uint64_t tlFreeCount;
+//! When true, track new[] blocks on this thread to detect scalar delete on one.
+extern thread_local bool tlTrackArrayBlocks;
+//! Scalar delete calls on blocks allocated with new[] while tracking was armed.
+extern thread_local std::uint64_t tlMismatchedArrayReleases;
+//! new[] blocks that could not be tracked because the fixed-size table filled.
+extern thread_local std::uint64_t tlUntrackedArrayBlocks;
 
 inline void noteAllocation() noexcept
 {
@@ -70,6 +76,11 @@ inline void resetAllocationCount() noexcept
 {
 	tlAllocationCount = 0;
 	tlFreeCount = 0;
+}
+
+inline void resetMismatchedArrayReleases() noexcept
+{
+	tlMismatchedArrayReleases = 0;
 }
 
 } // namespace lmms::test

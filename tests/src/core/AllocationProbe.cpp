@@ -40,6 +40,46 @@ namespace lmms::test
 thread_local bool tlCountAllocations = false;
 thread_local std::uint64_t tlAllocationCount = 0;
 thread_local std::uint64_t tlFreeCount = 0;
+thread_local bool tlTrackArrayBlocks = false;
+thread_local std::uint64_t tlMismatchedArrayReleases = 0;
+thread_local std::uint64_t tlUntrackedArrayBlocks = 0;
+
+namespace
+{
+
+//! Fixed storage keeps the allocation probe from recursively allocating.
+constexpr std::size_t kMaxTrackedArrayBlocks = 32;
+thread_local void* tlTrackedArrayBlocks[kMaxTrackedArrayBlocks] = {};
+thread_local std::size_t tlTrackedArrayBlockCount = 0;
+
+void trackArrayBlock(void* ptr) noexcept
+{
+	if (!tlTrackArrayBlocks || ptr == nullptr) { return; }
+	if (tlTrackedArrayBlockCount < kMaxTrackedArrayBlocks)
+	{
+		tlTrackedArrayBlocks[tlTrackedArrayBlockCount++] = ptr;
+	}
+	else
+	{
+		++tlUntrackedArrayBlocks;
+	}
+}
+
+//! Removes a watched block, even when tracking has since been disarmed.
+bool untrackArrayBlock(void* ptr) noexcept
+{
+	for (std::size_t i = 0; i < tlTrackedArrayBlockCount; ++i)
+	{
+		if (tlTrackedArrayBlocks[i] == ptr)
+		{
+			tlTrackedArrayBlocks[i] = tlTrackedArrayBlocks[--tlTrackedArrayBlockCount];
+			return true;
+		}
+	}
+	return false;
+}
+
+} // namespace
 
 } // namespace lmms::test
 
@@ -58,7 +98,9 @@ void* operator new(std::size_t size)
 
 void* operator new[](std::size_t size)
 {
-	return ::operator new(size);
+	void* ptr = ::operator new(size);
+	lmms::test::trackArrayBlock(ptr);
+	return ptr;
 }
 
 void* operator new(std::size_t size, const std::nothrow_t&) noexcept
@@ -69,7 +111,9 @@ void* operator new(std::size_t size, const std::nothrow_t&) noexcept
 
 void* operator new[](std::size_t size, const std::nothrow_t& tag) noexcept
 {
-	return ::operator new(size, tag);
+	void* ptr = ::operator new(size, tag);
+	lmms::test::trackArrayBlock(ptr);
+	return ptr;
 }
 
 void* operator new(std::size_t size, std::align_val_t align)
@@ -90,7 +134,9 @@ void* operator new(std::size_t size, std::align_val_t align)
 
 void* operator new[](std::size_t size, std::align_val_t align)
 {
-	return ::operator new(size, align);
+	void* ptr = ::operator new(size, align);
+	lmms::test::trackArrayBlock(ptr);
+	return ptr;
 }
 
 void* operator new(std::size_t size, std::align_val_t align, const std::nothrow_t&) noexcept
@@ -101,23 +147,45 @@ void* operator new(std::size_t size, std::align_val_t align, const std::nothrow_
 
 void* operator new[](std::size_t size, std::align_val_t align, const std::nothrow_t& tag) noexcept
 {
-	return ::operator new(size, align, tag);
+	void* ptr = ::operator new(size, align, tag);
+	lmms::test::trackArrayBlock(ptr);
+	return ptr;
 }
 
 // Every deallocation form ends in one of the two counted base forms below, so
 // a free anywhere in the program - library code included - is counted once.
 void operator delete(void* ptr) noexcept
 {
+	if (lmms::test::untrackArrayBlock(ptr) && lmms::test::tlTrackArrayBlocks)
+	{
+		++lmms::test::tlMismatchedArrayReleases;
+	}
 	lmms::test::noteFree(ptr);
 	std::free(ptr);
 }
-void operator delete[](void* ptr) noexcept { ::operator delete(ptr); }
+void operator delete[](void* ptr) noexcept
+{
+	lmms::test::untrackArrayBlock(ptr);
+	::operator delete(ptr);
+}
 void operator delete(void* ptr, std::size_t) noexcept { ::operator delete(ptr); }
-void operator delete[](void* ptr, std::size_t) noexcept { ::operator delete(ptr); }
+void operator delete[](void* ptr, std::size_t) noexcept
+{
+	lmms::test::untrackArrayBlock(ptr);
+	::operator delete(ptr);
+}
 void operator delete(void* ptr, const std::nothrow_t&) noexcept { ::operator delete(ptr); }
-void operator delete[](void* ptr, const std::nothrow_t&) noexcept { ::operator delete(ptr); }
+void operator delete[](void* ptr, const std::nothrow_t&) noexcept
+{
+	lmms::test::untrackArrayBlock(ptr);
+	::operator delete(ptr);
+}
 void operator delete(void* ptr, std::align_val_t) noexcept
 {
+	if (lmms::test::untrackArrayBlock(ptr) && lmms::test::tlTrackArrayBlocks)
+	{
+		++lmms::test::tlMismatchedArrayReleases;
+	}
 	lmms::test::noteFree(ptr);
 #ifdef _WIN32
 	// _aligned_malloc memory must go back through _aligned_free.
@@ -126,14 +194,23 @@ void operator delete(void* ptr, std::align_val_t) noexcept
 	std::free(ptr);
 #endif
 }
-void operator delete[](void* ptr, std::align_val_t align) noexcept { ::operator delete(ptr, align); }
+void operator delete[](void* ptr, std::align_val_t align) noexcept
+{
+	lmms::test::untrackArrayBlock(ptr);
+	::operator delete(ptr, align);
+}
 void operator delete(void* ptr, std::size_t, std::align_val_t align) noexcept { ::operator delete(ptr, align); }
-void operator delete[](void* ptr, std::size_t, std::align_val_t align) noexcept { ::operator delete(ptr, align); }
+void operator delete[](void* ptr, std::size_t, std::align_val_t align) noexcept
+{
+	lmms::test::untrackArrayBlock(ptr);
+	::operator delete(ptr, align);
+}
 void operator delete(void* ptr, std::align_val_t align, const std::nothrow_t&) noexcept
 {
 	::operator delete(ptr, align);
 }
 void operator delete[](void* ptr, std::align_val_t align, const std::nothrow_t&) noexcept
 {
+	lmms::test::untrackArrayBlock(ptr);
 	::operator delete(ptr, align);
 }
