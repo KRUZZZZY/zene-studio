@@ -4166,6 +4166,9 @@ void PianoRoll::wheelEvent(QWheelEvent * we )
 
 		if( nv.size() > 0 )
 		{
+			// One step for this wheel event: the notes it changes are the edit, and without
+			// this checkpoint Undo skipped the wheel change and reverted an older step.
+			m_midiClip->addJournalCheckPoint();
 			const int step = (we->angleDelta().y() > 0 ? 1 : -1) * (we->inverted() ? -1 : 1);
 
 			if( m_noteEditMode == NoteEditMode::Volume )
@@ -4487,6 +4490,7 @@ void PianoRoll::stop()
 	// transport stops will never send its key-up to a live pass, and a start left in the list would
 	// sit in front of the next pass's - pairing that pass's release with this one's start.
 	m_recordingNotes.clear();
+	m_recordingNoteIds.clear();
 	m_scrollBack = m_timeLine->autoScroll() != TimeLineWidget::AutoScrollState::Disabled;
 
 	auto* songEditor = GuiApplication::instance()->songEditor()->m_editor;
@@ -4526,6 +4530,9 @@ void PianoRoll::startRecordNote(const Note & n )
 			if( n1.pos() >= 0 )
 			{
 				m_recordingNotes << n1;
+				// 5214: the live handle's stable Note::id(), so its own release finds this
+				// start even when another pending start carries the same pitch.
+				m_recordingNoteIds << n.id();
 			}
 		}
 		else if (m_stepRecorder.isRecording())
@@ -4549,42 +4556,67 @@ void PianoRoll::finishRecordNote(const Note & n )
 					Engine::getSong()->playMode() ==
 						Song::PlayMode::MidiClip ) )
 		{
-			for( QList<Note>::Iterator it = m_recordingNotes.begin();
-						it != m_recordingNotes.end(); ++it )
+			// 5214: pair the release with the pending start of its OWN handle. The live
+			// midiNoteOn / midiNoteOff signals both carry the same NotePlayHandle, whose
+			// Note::id() is stable for its lifetime; two MPE notes of one pitch on different
+			// member channels therefore stay distinct. The key fallback keeps the older
+			// behaviour for a caller that hands in two separate Note objects.
+			int match = -1;
+			for( int i = 0; i < m_recordingNotes.size(); ++i )
 			{
-				if( it->key() == n.key() )
+				if( i < m_recordingNoteIds.size() && m_recordingNoteIds[i] == n.id() )
 				{
-					Note n1(n.length(), it->pos(),
-							it->key(), it->getVolume(),
-							it->getPanning(), n.detuning());
-
-					// MPE (task #601): n is the live note handle, so it carries
-					// the expression captured on this note's own MIDI channel
-					// while it was held - record it with the note.
-					if( n.hasMpeExpression() )
-					{
-						n1.setMpeExpression( n.mpeExpression() );
-					}
-
-					// 0.5.0 Q050-039: n is the live note handle, and an MPE
-					// note-off stamped its release velocity on it
-					// (InstrumentTrack::trackMpeInputEvent), so record that too.
-					if( n.releaseVelocity() >= 0 )
-					{
-						n1.setReleaseVelocity( n.releaseVelocity() );
-					}
-
-					if (m_doAutoQuantization)
-					{
-						n1.quantizeLength(quantization());
-						n1.quantizePos(quantization());
-					}
-					n1.setLength(std::max(n1.length(), TimePos(1)));
-					replaceOverlapped(n1);  // 0.5.0 L03: replace mode
-					m_midiClip->addNote(n1, false);
-					update();
-					m_recordingNotes.erase( it );
+					match = i;
 					break;
+				}
+			}
+			if( match < 0 )
+			{
+				for( int i = 0; i < m_recordingNotes.size(); ++i )
+				{
+					if( m_recordingNotes[i].key() == n.key() )
+					{
+						match = i;
+						break;
+					}
+				}
+			}
+			if( match >= 0 )
+			{
+				const Note& pending = m_recordingNotes[match];
+				Note n1(n.length(), pending.pos(),
+						pending.key(), pending.getVolume(),
+						pending.getPanning(), n.detuning());
+
+				// MPE (task #601): n is the live note handle, so it carries
+				// the expression captured on this note's own MIDI channel
+				// while it was held - record it with the note.
+				if( n.hasMpeExpression() )
+				{
+					n1.setMpeExpression( n.mpeExpression() );
+				}
+
+				// 0.5.0 Q050-039: n is the live note handle, and an MPE
+				// note-off stamped its release velocity on it
+				// (InstrumentTrack::trackMpeInputEvent), so record that too.
+				if( n.releaseVelocity() >= 0 )
+				{
+					n1.setReleaseVelocity( n.releaseVelocity() );
+				}
+
+				if (m_doAutoQuantization)
+				{
+					n1.quantizeLength(quantization());
+					n1.quantizePos(quantization());
+				}
+				n1.setLength(std::max(n1.length(), TimePos(1)));
+				replaceOverlapped(n1);  // 0.5.0 L03: replace mode
+				m_midiClip->addNote(n1, false);
+				update();
+				m_recordingNotes.removeAt(match);
+				if( match < m_recordingNoteIds.size() )
+				{
+					m_recordingNoteIds.removeAt(match);
 				}
 			}
 		}
