@@ -233,3 +233,18 @@ this cluster contributes no code change.
   fails in this environment (a huge allocation succeeds because Linux overcommits).
   It fails identically with the product patch reverted (`logs/test-5-pristine-budget.log`,
   exit 8) and with the patch applied, so it is not a regression of this lane.
+- **File-length scope, stated honestly.** The ENFORCED scope (fork + tools) is green
+  for every file this lane touched: `bash tests/file-length-gate.sh --check` exits 1
+  on this train, but every one of its 15 regressions is in a file this lane did not
+  touch (`logs/gate-4-filelength-fork.log`); none of them is `include/ScriptEngine.h`,
+  `src/core/ScriptEngine.cpp` or `tests/src/core/ScriptEngineTest.cpp`.
+  `src/core/ScriptEngine.cpp` is measured at 646 code lines against its grandfathered
+  662, so the ratchet moves in the right direction. The NOT-enforced whole-tree scope
+  (`--scope all`, red on the train with pre-existing regressions such as
+  `include/BasicFilters.h` and `include/Song.h`) also reports
+  `tests/src/core/ScriptEngineTest.cpp` as "new file over 500 lines": that file was
+  already over the limit at the base of this lane (533 code lines, with no baseline
+  entry, so the same line was already reported before this lane started) and the two
+  regressions added 68 code lines to it. The regressions stay in the file that
+  already covers this area, as the lane brief asks; the whole-tree scope was already
+  red for that file and no baseline was re-anchored here.
