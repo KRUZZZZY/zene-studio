@@ -201,10 +201,14 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 	const auto numSamples = ov_pcm_total(&vorbisFile, -1);
 	if (numSamples < 0) { return std::nullopt; }
 
-	auto buffer = std::vector<float>(numSamples);
 	auto output = static_cast<float**>(nullptr);
 
-	auto totalSamplesRead = 0;
+	// ov_read_float hands back PLANAR data: output[c][i] is channel c's i-th frame. The frames
+	// are built from the channels themselves - copying one channel and indexing it as if it were
+	// interleaved lost half of a stereo file and took the right channel from the next left frame.
+	auto result = std::vector<SampleFrame>();
+	result.reserve(static_cast<std::size_t>(numSamples));
+
 	while (true)
 	{
 		auto samplesRead = oggReadFloat(&vorbisFile, &output, static_cast<std::size_t>(numSamples));
@@ -212,15 +216,11 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 		if (samplesRead < 0) { return std::nullopt; }
 		else if (samplesRead == 0) { break; }
 
-		std::copy_n(*output, samplesRead, buffer.begin() + totalSamplesRead);
-		totalSamplesRead += samplesRead;
-	}
-
-	auto result = std::vector<SampleFrame>(totalSamplesRead / numChannels);
-	for (auto i = std::size_t{0}; i < result.size(); ++i)
-	{
-		if (numChannels == 1) { result[i] = {buffer[i], buffer[i]}; }
-		else if (numChannels > 1) { result[i] = {buffer[i * numChannels], buffer[i * numChannels + 1]}; }
+		for (long i = 0; i < samplesRead; ++i)
+		{
+			const auto left = output[0][i];
+			result.push_back(SampleFrame{left, numChannels > 1 ? output[1][i] : left});
+		}
 	}
 
 	ov_clear(&vorbisFile);
