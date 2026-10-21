@@ -67,6 +67,7 @@ not the logger's. Builds also needed
 | affected-family build | `cmake --build build --parallel 4 --target zene ChordTrackTest ChordDetectTest ChordProgressionTest ControlChordCommandsTest ControlChordWriteTest` | 0 | `build-6-family.log` |
 | affected-family tests | `cd build/tests && ctest -R '^(ChordTrackTest\|ChordDetectTest\|ChordProgressionTest\|ControlChordCommandsTest\|ControlChordWriteTest)$' --output-on-failure` | **0** (5/5 passed) | `test-5-family.log` |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** (all rows PASS) | `feature-1.log` |
+| completion check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p16-317` | **0** (RESULT: PASS) | `submit-1.log` |
 
 The RED assertion was exactly the bug:
 
@@ -105,3 +106,8 @@ directly and is untouched; every valid `toXml()` snapshot restores exactly as
 before (the round-trip test still passes). Only a failed `fromXml()` changes:
 it now leaves the live track alone instead of emptying it. The five chord-family
 tests pass (5/5), and the gate table is all PASS.
+* **If the verdict were ALREADY-FIXED or FALSE-POSITIVE:** not applicable. The
+verdict is FIXED: the pre-fix RED run reproduced the actual data loss
+(`test-1-red.log` and `test-3-red.log`, exit 8), and the code evidence is the
+unconditional pre-parse `clear()` at `src/core/ChordTrack.cpp:471-481` before
+the fix.
