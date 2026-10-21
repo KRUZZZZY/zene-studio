@@ -231,7 +231,17 @@ void registerChainRename(ControlRegistry& registry)
 		if (toPath != preset.path && QFileInfo::exists(toPath)) { return occupiedRefusal(to); }
 
 		const QString from = preset.path;
-		if (toPath != from && !QFile::rename(from, toPath))
+		if (toPath == from)
+		{
+			QJsonObject result;
+			result.insert(QStringLiteral("name"), preset.name);
+			result.insert(QStringLiteral("renamed_to"), to);
+			result.insert(QStringLiteral("path"), from);
+			result.insert(QStringLiteral("device_count"), preset.devices.size());
+			result.insert(QStringLiteral("dir"), controlChainPresetDir());
+			return ControlResult::success(result);
+		}
+		if (!QFile::rename(from, toPath))
 		{
 			return ControlResult::failure(ControlErrorKind::Refused,
 				QStringLiteral("could not rename %1 to %2; the store is unchanged")
