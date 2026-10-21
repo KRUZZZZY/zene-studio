@@ -555,6 +555,10 @@ local mixer = zene.mixer()
 local channel = mixer:addChannel()
 local id = channel:id()
 zene.command("mixer.remove_channel", {channel = id})
+if channel:isValid() then
+    print("stale channel view remained valid")
+    return
+end
 print("valid=" .. tostring(channel:isValid())
     .. " gain=" .. channel:gain()
     .. " muted=" .. tostring(channel:muted())
