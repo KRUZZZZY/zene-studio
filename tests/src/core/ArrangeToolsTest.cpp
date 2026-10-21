@@ -139,6 +139,11 @@ public:
 	bool createRanInsideGuard() const { return m_createRanInsideGuard; }
 	//! True when the change mutex was held while the replacement clip was restored.
 	bool restoreRanInsideGuard() const { return m_lastClip != nullptr && m_lastClip->restoreRanInsideGuard(); }
+	void resetGuardObservations()
+	{
+		m_lastClip = nullptr;
+		m_createRanInsideGuard = false;
+	}
 
 private:
 	ChangeMutexProbe m_probe;
@@ -223,6 +228,38 @@ private slots:
 		QVERIFY2(track->restoreRanInsideGuard(),
 			"the track version replaced its clips outside the audio guard: the change mutex was free while the replacement clip was restored");
 		QCOMPARE(track->numOfClips(), 1);
+	}
+
+	void undoAndRedoOfTrackVersionSwitchKeepModelGuardThroughClipRestore()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		const auto restartDevice = qScopeGuard([] { Engine::audioEngine()->audioDev()->startProcessing(); });
+		QVERIFY2(!changeMutexIsHeld(), "the change mutex was held before the version switch");
+
+		auto track = std::make_unique<GuardProbeSampleTrack>(Engine::getSong(), [this] { return changeMutexIsHeld(); });
+		const QString id = control::trackIdOf(track.get());
+		track->createClip(TimePos(0))->setName(QStringLiteral("version A"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		track->deleteClips();
+		track->createClip(TimePos(192))->setName(QStringLiteral("version B"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_switch"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+
+		track->resetGuardObservations();
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(track->createRanInsideGuard(),
+			"undo restored the track-version clips outside the audio guard while creating a clip");
+		QVERIFY2(track->restoreRanInsideGuard(),
+			"undo restored the track-version clips outside the audio guard while restoring a clip");
+		QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("B"));
+
+		track->resetGuardObservations();
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY2(track->createRanInsideGuard(),
+			"redo restored the track-version clips outside the audio guard while creating a clip");
+		QVERIFY2(track->restoreRanInsideGuard(),
+			"redo restored the track-version clips outside the audio guard while restoring a clip");
+		QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("A"));
 	}
 
 	void savingAnotherVersionPreservesEditsToTheActiveVersion()

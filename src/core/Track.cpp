@@ -770,10 +770,11 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 			m_revisionContentHash);
 	}
 
-	{
-		auto guard = Engine::audioEngine()->requestChangesGuard();
-		deleteClips();
-	}
+	// ProjectJournal restores a live Track through this path without the outer
+	// project-load lock. Keep clip deletion, reconstruction, and post-load clip
+	// adjustments out of audio traversal; project loading can nest this guard.
+	auto guard = Engine::audioEngine()->requestChangesGuard();
+	deleteClips();
 
 	// Reset-on-absence for the take lanes: a track element with no <takelanes>
 	// child empties the model rather than inheriting whatever it held before
