@@ -776,8 +776,11 @@ private:
 	//! loadSettings() applies persisted feedback flags without auto-classifying routes.
 	bool m_loadingSettings = false;
 
-	// make sure we have at least num channels
-	void allocateChannelsTo(int num);
+	// make sure we have at least num channels. describedChannels is the number
+	// of channels the project file being loaded describes: a project-driven
+	// index outside it is refused, so a file can never ask for more channels
+	// than it holds.
+	void allocateChannelsTo(int num, int describedChannels);
 	bool shouldAutoFlagFeedbackRoute(MixerChannel* from, MixerChannel* to);
 
 	//! PDC (#605): recompute inLat/outLat for every channel and publish the
