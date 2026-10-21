@@ -1,6 +1,6 @@
 # Cluster new-p17-133: revision rotation on Windows with non-ASCII paths
 
-**Verdict: BLOCKED** — the defect is real and the one-line fix is in, but the RED→GREEN regression proof cannot run on this Linux host. The defective statement is inside `#ifdef Q_OS_WIN`, and there is no Windows toolchain here to build or run it.
+**Verdict: BLOCKED** — the defect is real and the one-line fix plus a Windows-only regression test are committed. The RED→GREEN proof cannot run on this Linux host: the defect and the test are both inside `#ifdef Q_OS_WIN`, and there is no Windows toolchain here to build or run them. The Windows run that closes this is described under "Regression proof".
 
 ## Finding
 
@@ -8,28 +8,50 @@ Luna's report: on Windows, `replaceWithStaged` converts the staged and destinati
 
 ## Evidence (before the fix)
 
-- `src/core/ProjectRevisions.cpp:68-71` (historical line 68 → 70 in the tree at this commit): the Windows branch was `std::filesystem::rename(staged.toLocal8Bit().constData(), to.toLocal8Bit().constData(), ec);`. This is the only narrow-path conversion in the revision code. `rg toLocal8Bit` over `ProjectRevisions.cpp`, `ControlCommandsRevisions.cpp`, `ControlReversibilityTableRevisions.cpp` and `RevisionTimeline*.cpp` returns nothing else.
-- Both callers of `replaceWithStaged` take the fix together: `copyRevision` (`:124-126`, reached from the rotation shift at `:200` and the rotation at `:269`) and the project replacement at `:393-395`.
+- `src/core/ProjectRevisions.cpp:68-71` (the finding's line 68 is `#ifdef Q_OS_WIN`; the rename was line 70): the Windows branch was `std::filesystem::rename(staged.toLocal8Bit().constData(), to.toLocal8Bit().constData(), ec);`. `grep -c toLocal8Bit` over `ProjectRevisions.cpp`, `ControlCommandsRevisions.cpp`, `ControlReversibilityTableRevisions.cpp`, `RevisionTimelineCompare.cpp`, `RevisionTimeline.cpp` and `RevisionTimelineGit.cpp` finds no other use.
+- Both callers of `replaceWithStaged` take the fix together: `copyRevision` (`:124-126`, reached from the rotation shift in `shiftRevisionsUp` at `:200` and from `rotateProjectRevision` at `:269`) and the project replacement in `replaceProjectWithStaged` (`:386`, call at `:395`).
 - The POSIX branch (`:75-78`) uses `QFile::encodeName` with `std::rename`, which is correct and unchanged.
 - The repo's existing wide-path idiom: `src/core/DataFile.cpp:160-161` and `src/core/BounceInPlace.cpp:195` both build `std::filesystem::path(x.toStdWString())`. The fix uses the same idiom.
 
 ## Fix
 
-`src/core/ProjectRevisions.cpp:68-74` (Windows branch only): the rename now receives `std::filesystem::path(staged.toStdWString())` and `std::filesystem::path(to.toStdWString())`, with a short comment on why the narrow overload is wrong. The POSIX branch, the test seam, the staging and the error handling are untouched.
+`src/core/ProjectRevisions.cpp:68-74` (Windows branch only): the rename now receives `std::filesystem::path(staged.toStdWString())` and `std::filesystem::path(to.toStdWString())`, with a comment on why the narrow overload is wrong. The POSIX branch, the test seam, the staging and the error handling are untouched.
+
+## Regression test
+
+`tests/src/core/ProjectRevisionRestoreStagingTest.cpp`, new slot `rotationAndRestoreUseUnicodePathOutsideAnsiCodePage`, compiled only under `#ifdef Q_OS_WIN` (the same guard `RevisionTimelineTest.cpp:982` uses), so the Linux test set is unchanged.
+
+What it does, with real files in the fixture's `QTemporaryDir`:
+
+1. Creates a directory named `proj-` plus U+1F3B5 (a musical-note emoji, which no ANSI code page holds) and a project `song.mmp` in it.
+2. Writes a document, calls `rotateProjectRevision` once and expects a count of 1, `refused == false`, and revision 0 holding the bytes. This runs the copy-to-revision-0 rename.
+3. Writes a second document, rotates again and expects a count of 2, revision 0 holding the new bytes and revision 1 holding the first. This runs the shift rename and the replacing rename.
+4. Writes a third document and calls `restoreProjectRevision(project, 1)`; the live file must then hold the first document. This runs the project replacement rename.
+
+Skip condition: if `QString::fromLocal8Bit(name.toLocal8Bit()) == name`, the active code page holds the name (UTF-8 does), the defect cannot occur, and the test calls `QSKIP`.
+
+**Mechanism, pre-fix, on a code page without the emoji (for example CP1252):** `toLocal8Bit()` turns the name into `proj-?`, the rename targets a directory that does not exist, `copyRevision` fails, and `rotateProjectRevision` returns `refused == true`, so the `QVERIFY2(!refused, …)` at step 2 fails. **Post-fix:** wide paths name the real directory and every step passes. Both are reasoning from the code, not a Windows run.
+
+Determinism: no clock, sleep, random value, thread or injected seam. The name is a fixed literal and the skip is a deterministic property of the code page.
 
 ## Commands and results
 
-| Step | Command (run from the worktree or `build/tests` as noted) | EXIT |
+| Step | Command (from the worktree, or `build/tests` for ctest) | EXIT |
 | --- | --- | --- |
-| Baseline build, first try | `cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest -j4 > …/build-1-baseline.log 2>&1` | 2 (ccache could not write to `/run/user/1000/ccache-tmp`; not a code error) |
-| Baseline build, retry | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p17 cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest -j4 > …/build-2-baseline.log 2>&1` | 0 |
-| Baseline tests (unmodified code) | `cd build/tests && ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > …/test-1-baseline.log 2>&1` | 0 (2/2 passed: #184 RevisionTimelineTest, #185 ProjectRevisionRestoreStagingTest) |
-| Standalone syntax check of the Windows-branch statement | `g++ -std=c++20 -fsyntax-only $(pkg-config --cflags Qt6Core) win_branch_check.cpp > …/syntax-1.log 2>&1` (file in `/tmp`, same statement as the fix) | 0 |
-| Fixed build | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p17 cmake --build build --target zene ProjectRevisionRestoreStagingTest RevisionTimelineTest -j4 > …/build-3-fixed.log 2>&1` | 0 |
-| Fixed tests | `cd build/tests && ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > …/test-2-fixed.log 2>&1` | 0 (2/2 passed) |
-| Gates | `python3 feature_check.py <worktree>` exited with `PermissionError` (it creates `<worktree>-feature-check/` beside the worktree, outside the write-jail; no table produced). Re-run through a `/tmp` wrapper that loads the script unchanged and reuses its `SIMPLE`/`RATCHET` lists and comparison, with logs in the run folder: `python3 -I /tmp/p17-syntax/gate_wrap.py <worktree> > …/gates-table-1.log 2>&1` | 0 (RESULT: PASS) |
+| Baseline build, first try | `cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest -j4 > …r1/logs/build-1-baseline.log 2>&1` | 2 (ccache could not write to `/run/user/1000/ccache-tmp`; not a code error) |
+| Baseline build, retry | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p17 cmake --build build --target ProjectRevisionRestoreStagingTest RevisionTimelineTest -j4 > …r1/logs/build-2-baseline.log 2>&1` | 0 |
+| Baseline tests (unmodified code) | `cd build/tests && ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > …r1/logs/test-1-baseline.log 2>&1` | 0 (2/2 passed) |
+| Standalone syntax check of the fix statement | `g++ -std=c++20 -fsyntax-only $(pkg-config --cflags Qt6Core) win_branch_check.cpp` (file in `/tmp`) | 0 |
+| Fixed build, round 1 | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p17 cmake --build build --target zene ProjectRevisionRestoreStagingTest RevisionTimelineTest -j4 > …r1/logs/build-3-fixed.log 2>&1` | 0 |
+| Fixed tests, round 1 | `cd build/tests && ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > …r1/logs/test-2-fixed.log 2>&1` | 0 (2/2 passed) |
+| Windows-branch syntax, real headers, `-DQ_OS_WIN` | `c++ <flags from build/compile_commands.json> -DQ_OS_WIN -fsyntax-only <file>` for the test file and for `ProjectRevisions.cpp` | 1 both: Qt's own headers fail under a forced `Q_OS_WIN` on Linux (`qwindowdefs_win.h`, then `qassert.h`); not our code |
+| Windows-branch syntax, guard rewritten | the same flags, on copies in `/tmp/p17-syntax/xform/` where only `#ifdef Q_OS_WIN` is changed to `#if 1` (`…r2/logs/syntax-xform-test.log`, `…/syntax-xform-product.log`) | 0 both, 0 errors |
+| Build with the new test, round 2 | `CCACHE_TEMPDIR=/tmp/ccache-tmp-p17 cmake --build build --target zene ProjectRevisionRestoreStagingTest RevisionTimelineTest -j4 > …r2/logs/build-4-test-edit.log 2>&1` | 0 |
+| Tests after the test edit | `cd build/tests && ctest -R '^(ProjectRevisionRestoreStagingTest\|RevisionTimelineTest)$' --output-on-failure > …r2/logs/test-3-after-test-edit.log 2>&1` | 0 (2/2 passed: #184 RevisionTimelineTest, #185 ProjectRevisionRestoreStagingTest) |
+| Gates, direct `feature_check.py` | `python3 feature_check.py <worktree>` | 1: `PermissionError` creating `…r2/logs` beside the worktree (`…r2/logs/gates-direct-r2.log`); no table |
+| Gates, via `/tmp` wrapper | `python3 -I /tmp/p17-syntax/gate_wrap.py <worktree> > …r2/logs/gates-table-r2.log 2>&1` (loads the script unchanged, reuses its `SIMPLE`/`RATCHET` lists and comparison, logs to the run folder) | 0, RESULT PASS |
 
-Gate table from the wrapper:
+Gate table (`gates-table-r2.log`):
 
 ```
   PASS  fork-sources            exit 0
@@ -43,15 +65,22 @@ Gate table from the wrapper:
 RESULT: PASS
 ```
 
-## Regression proof — not obtained here
+Affected family: 2 of 2 tests executed and passed on Linux. The Windows-only test is not in that count on Linux.
 
-- **RED (must fail before the fix): not run.** The defective statement compiles only when `Q_OS_WIN` is defined. This host has no `x86_64-w64-mingw32-g++`; `wine` is installed but cannot build the product. A Linux test cannot fail on this defect, because the POSIX branch was already correct.
-- **Step 4b (revert, fail, reapply, pass): not run.** On Linux the revert would change nothing the tests exercise. The baseline run (`test-1-baseline`, EXIT 0) and the fixed run (`test-2-fixed`, EXIT 0) show that Linux behaviour is unchanged. That is evidence of no collateral damage, not proof that the fix works.
-- **No test was added.** A Linux test that passes both before and after would not be regression proof. A Windows-only test could not be compiled or run here, so I did not commit one: an uncompiled test in the Windows CI matrix could break that build.
+## Regression proof — still open, needs a Windows run
 
-### What a Windows lane should add to close this
+- **RED (must fail with the fix reverted): not run here.** The defect and the test both compile only under `Q_OS_WIN`. This host has no Windows cross-compiler; `wine` is installed but cannot build the product.
+- **Step 4b (revert, fail, reapply, pass): not run here.** On Linux, a revert of the Windows branch changes nothing the tests execute.
+- The Linux runs above (`test-1-baseline` EXIT 0, `test-3-after-test-edit` EXIT 0) show that Linux behaviour is unchanged. They do not show the fix works.
 
-In `tests/src/core/ProjectRevisionRestoreStagingTest.cpp`, under `#ifdef Q_OS_WIN`: create a project in a directory whose name holds characters outside the test machine's ANSI code page (for example Cyrillic or CJK under a Western code page), call `rotateProjectRevision` on it, and assert that the `.rev0` file appears with the project's bytes. Pre-fix on that machine the rename should fail or hit the wrong path; post-fix it should pass. Record the RED and GREEN EXIT codes from that Windows run. The code page matters: under a UTF-8 ANSI code page the bug may not reproduce.
+A Windows lane closes this with these steps, using the repo's own procedure:
+
+1. `git diff -- src/core/ProjectRevisions.cpp > …/fix.patch && git apply -R …/fix.patch` (product file only; the test stays).
+2. `cmake --build build --target ProjectRevisionRestoreStagingTest -j4 > …/build-red.log 2>&1; echo EXIT=$?`
+3. `cd build/tests && ctest -R '^ProjectRevisionRestoreStagingTest$' --output-on-failure > …/test-red.log 2>&1; echo EXIT=$?` — expected: the new test fails at the `!refused` check in step 2 of the test. Record the EXIT and the failing assertion.
+4. `git apply …/fix.patch`, rebuild, and run the same ctest. Expected: pass, with the test executed (not skipped). Record the EXIT.
+
+If the test skips on the Windows machine, the code page holds U+1F3B5 and the defect cannot occur there; use a machine on a single-byte or DBCS ANSI code page.
 
 ## Out of scope, not verified
 
@@ -59,15 +88,12 @@ The same narrow-path pattern (`toLocal8Bit()` passed to a path-taking API) appea
 
 ## Self-check
 
-`submit_check.py <worktree> new-p17-133` (log: `…/logs/submit-check-1.log`, EXIT 1, RESULT FAIL, 2 items):
+Pre-submit check run 1 (`submit-check-1.log`, round 1): PASS commits, PASS clean tree, PASS report, FAIL tests added or changed, FAIL gates (the `PermissionError` above, not a gate failure). Round 2 added the test; the pre-submit check for round 2 is the authority for the status row.
 
-- PASS commits on the branch (`fa5bd3f91`). PASS working tree clean. PASS report present.
-- **FAIL tests added or changed.** Correct: no test was added or changed. The reason is in "Regression proof" above; an untested Windows-only test in the Windows CI matrix was judged riskier than the gap.
-- **FAIL gates (feature_check.py).** Not a gate failure. `feature_check.py` exits 1 with `PermissionError` creating `zene-qwen-new-p17-133-feature-check/` beside the worktree, outside the write-jail (`…/gates-table-2-direct.log`). The same gate commands, run through the `/tmp` wrapper with logs in the run folder, all pass (`gates-table-1.log`, EXIT 0, RESULT PASS). The script's log location needs to be writable, or configurable, in this sandbox; I did not edit the shared script.
-- ? **Regression test fails with the fix reverted and passes with it:** not answered by evidence. There is no test, and the RED/GREEN run needs a Windows build. Step 4b was not run: on Linux a revert changes nothing the tests exercise. The two Linux runs above (`test-1-baseline` EXIT 0 and `test-2-fixed` EXIT 0) show unchanged Linux behaviour, which is not proof of the fix.
-- ? **Deterministic:** no new test. The two existing families (`ProjectRevisionRestoreStagingTest`, `RevisionTimelineTest`) pass before and after; I added no sleeps, timing or races.
-- ? **Fix at the cause and complete:** the defective conversion is the only narrow-path call in the revision sources (`grep -c toLocal8Bit` over `ProjectRevisions.cpp`, `ControlCommandsRevisions.cpp`, `ControlReversibilityTableRevisions.cpp`, `RevisionTimeline*.cpp`: 0 in each after the fix; the one hit before was `:70`). Both `replaceWithStaged` callers are covered: `copyRevision` (`:124-126`, reached from `shiftRevisionsUp` `:200` and `rotateProjectRevision` `:269`) and the project replacement (`:393-395`). The POSIX branch (`:75-78`) was already correct and is unchanged.
-- ? **No collateral damage:** the only change is inside `#ifdef Q_OS_WIN`. The Linux build and both families are unchanged (above). No file format, limit or check changed, so old projects and saved data load exactly as before. On Windows, ASCII names address the same files as before; only names that the ANSI code page cannot represent change behaviour.
+- ? **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Not answered by a run here. The test is Windows-only, and this host cannot build or run Windows code. The Linux evidence is `test-1-baseline` EXIT 0 and `test-3-after-test-edit` EXIT 0, which show no change on Linux. The RED and GREEN EXIT codes need the Windows run in "Regression proof", steps 2-4. The mechanism for why RED should fail is in "Regression test" above.
+- ? **The test is deterministic.** It uses no wall clock, sleep, random value, thread or injected seam. Its inputs are a fixed directory name, a fixed project name and fixed document bytes, and it operates on real files in `QTemporaryDir`. The only environmental variable is the active ANSI code page, which decides the skip: skip is decided before any file is touched.
+- ? **The fix is at the cause and complete.** The defect is the narrow-path conversion in `replaceWithStaged`, and it is the only one in the revision sources (see Evidence). Both callers are consistent with the fix: `copyRevision` (`:124-126`, reached from `shiftRevisionsUp` `:200` and `rotateProjectRevision` `:269`) and the project replacement (`:393-395`). The test covers all three paths: the copy into revision 0, the shift plus replacement, and the restore replacement. The other revision-file operations (`QFile::remove`, `QDir::entryList`, `QTemporaryFile`, `QFile::setPermissions`) take `QString` through Qt and are Unicode-safe on Windows.
+- ? **No collateral damage.** The product change is inside `#ifdef Q_OS_WIN`; the POSIX branch is unchanged, and `test-1-baseline` and `test-3-after-test-edit` both pass with EXIT 0. The test is also inside `#ifdef Q_OS_WIN`, so Linux test behaviour is unchanged. No file format, saved-data layout, limit or check changed, so old projects and saved data load exactly as before. Windows ASCII names address the same files as before. Only names the ANSI code page cannot represent change behaviour, and those were failing before.
 - Verdict is BLOCKED, not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" citation is needed.
 
-**Status:** the defect is real and the fix is committed. The regression test and the RED/GREEN proof are still open. They need a Windows lane to add the test described above and run it on a Windows build, where the RED run should fail before the fix and pass after.
+**Status:** the defect is real. The fix and a Windows-only regression test are committed. The RED→GREEN proof is open and needs one Windows run.
