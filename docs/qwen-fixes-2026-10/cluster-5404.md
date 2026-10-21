@@ -121,6 +121,24 @@ Gates (`feature-check-2.log`):
 RESULT: PASS
 ```
 
+The same gate command was run again after the commit (`feature-check-3-final.log`,
+3 changed files) and returned `EXIT=0` with every row `PASS`.
+
+Pre-submit completion check (`submit-check-1.log`):
+
+```
+$ PYTHONPATH=/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/pyredirect-5404 \
+    python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py \
+    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5404 5404
+EXIT=0
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-5404.md
+  PASS  tests added or changed - tests/src/core/TelemetryTest.cpp
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
 The first build attempt (`build-1-red.log`) exited `2` before compiling any code
 because the sandbox's shared ccache temporary directory
 `/run/user/1000/ccache-tmp` was not writable; rerunning with
