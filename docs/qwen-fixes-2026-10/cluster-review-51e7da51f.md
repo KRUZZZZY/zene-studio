@@ -11,7 +11,7 @@ The three findings are assessed separately below. Commands ran in this worktree;
 
 `src/core/ControlStructuralSupport.cpp:357-390` now unregisters any models published before a later failure, discards the unattached effect, records a structural restore failure, and returns false before `appendEffect()`. Both callers propagate that result: `recreateEffectFromState()` returns null at `:404`, and the removal undo closure clears its result and returns at `:590`.
 
-The plugin-backed journal regression is `ScriptDawRemovalUndoTest::aScriptsRemovedEffectIsUndoneByItsOwnStep` (`tests/src/core/ScriptDawRemovalUndoTest.cpp:109`). Removing the journal integration with `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-journal.patch` made that test fail (EXIT=1, `red-journal-2.log`, 0 skipped); restoring the patch made it pass (EXIT=0, `green-journal-3.log`, 0 skipped). The test checks the device returns on its own undo and is removed again by redo.
+The plugin-backed journal regression is `ScriptDawRemovalUndoTest::aScriptsRemovedEffectIsUndoneByItsOwnStep` (`tests/src/core/ScriptDawRemovalUndoTest.cpp:109`). RED: `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-journal.patch` (EXIT=0), then from `build/tests` `QT_QPA_PLATFORM=offscreen ./ScriptDawRemovalUndoTest aScriptsRemovedEffectIsUndoneByItsOwnStep` (EXIT=1, `red-journal-2.log`, 0 skipped). GREEN: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-journal.patch` (EXIT=0), then the same test command (EXIT=0, `green-journal-3.log`, 0 skipped). The test checks the device returns on its own undo and is removed again by redo.
 
 The registration-failure RED/GREEN proof uses the real loadable amplifier and an injected failure at registration:
 
@@ -27,14 +27,14 @@ The audio-change-lock regression is `aRecordedDeviceIsBuiltWithoutTheAudioChange
 
 **Decision: ALREADY-FIXED.** `LuaMixerChannel` stores the stable channel id and resolves it against live mixer channels for every access (`src/core/ScriptDawBindings.cpp:467-477`); `gain()`, `setGain()`, and `isValid()` use that resolution. The corresponding device wrapper resolves stable channel/device ids (`src/core/ScriptDawEffects.cpp`), and `LuaTrack` uses `QPointer` (`include/ScriptBindings.h:231`). The requested removed-channel script path is covered by `aRemovedChannelsViewIsInert` (`tests/src/core/ScriptDawBindingTest.cpp:546`); the added guard fails safely before a stale raw pointer could be dereferenced.
 
-The negative control applied the pre-fix raw-pointer behavior with `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-1663.patch` reversed: from `build/tests`, `QT_QPA_PLATFORM=offscreen ./ScriptDawBindingTest aRemovedChannelsViewIsInert` failed (EXIT=1, `red-1663-1.log`: the removed view remained valid). Restoring the branch implementation and running the same command passed (EXIT=0, `green-1663-2.log`, 0 skipped). The channel-id fix predates this round (`e228edf8b`); this round made the negative test detect the stale view without touching freed memory.
+RED: `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-1663.patch` (EXIT=0), then from `build/tests` `QT_QPA_PLATFORM=offscreen ./ScriptDawBindingTest aRemovedChannelsViewIsInert` (EXIT=1, `red-1663-1.log`: the removed view remained valid). GREEN: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-1663.patch` (EXIT=0), then the same test command (EXIT=0, `green-1663-2.log`, 0 skipped). The channel-id fix predates this round (`e228edf8b`); this round made the negative test detect the stale view without touching freed memory.
 
 ## new-p12-245 — Lua view-pool growth
 
 **Decision: ALREADY-FIXED.** `ViewPool::add()` reuses its wrapper by stable identity in `src/core/ScriptDawBindings.cpp:100-127`; `beginRun()` clears the three pools at `:242-246`. The test `aRepeatedChannelReadDoesNotGrowTheViewPool` (`tests/src/core/ScriptDawBindingTest.cpp:588`) compares one read with 500 reads and expects the pool size to stay constant. The fix is on this branch in `52f3e5bf8`.
 
-- RED: reverse `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-new-p12.patch`; from `build/tests`, run `QT_QPA_PLATFORM=offscreen ./ScriptDawBindingTest aRepeatedChannelReadDoesNotGrowTheViewPool` (EXIT=1, `red-new-p12-1.log`: 500 wrappers versus 1, 0 skipped).
-- GREEN: reapply the patch and run the same command (EXIT=0, `green-new-p12-2.log`, 0 skipped).
+- RED: `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-new-p12.patch` (EXIT=0); from `build/tests`, run `QT_QPA_PLATFORM=offscreen ./ScriptDawBindingTest aRepeatedChannelReadDoesNotGrowTheViewPool` (EXIT=1, `red-new-p12-1.log`: 500 wrappers versus 1, 0 skipped).
+- GREEN: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/review-51e7da51f.r2/logs/fix-new-p12.patch` (EXIT=0); run the same command (EXIT=0, `green-new-p12-2.log`, 0 skipped).
 
 ## Verification
 
