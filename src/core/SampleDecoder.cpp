@@ -232,6 +232,23 @@ auto decodeSampleOggVorbis(const QString& audioFile) -> std::optional<SampleDeco
 
 constexpr sf_count_t SkipChunkFrames = 1 << 16;
 
+//! The largest number of frames the bounded decoder decodes for one window (2^32 frames is about
+//! 27 hours at 44.1 kHz). A window beyond it is refused rather than converted into a frame count
+//! that does not fit.
+constexpr std::int64_t MaxBoundedFrames = std::int64_t{1} << 32;
+
+//! Converts a decode window into a frame count. A limit that is not finite, and a window whose
+//! frame count is out of the supported range, are refused: converting a floating-point value to an
+//! integer is only defined for a value in range, and the window is allocated from that number.
+auto boundedFrameCount(double maxSeconds, double sampleRate) -> std::optional<std::int64_t>
+{
+	if (!(maxSeconds > 0.0) || !std::isfinite(maxSeconds)) { return std::nullopt; }
+	if (!std::isfinite(sampleRate) || sampleRate < 0.0) { return std::nullopt; }
+	const auto frames = std::ceil(maxSeconds * sampleRate);
+	if (!std::isfinite(frames) || frames > static_cast<double>(MaxBoundedFrames)) { return std::nullopt; }
+	return static_cast<std::int64_t>(frames);
+}
+
 auto boundedSF(const QString& audioFile, double maxSeconds) -> std::optional<SampleDecoder::BoundedResult>
 {
 	auto sfInfo = SF_INFO{};
@@ -242,8 +259,14 @@ auto boundedSF(const QString& audioFile, double maxSeconds) -> std::optional<Sam
 	if (sf_error(sndFile) != 0) { return std::nullopt; }
 
 	const int channels = sfInfo.channels;
-	const auto maxFrames = static_cast<std::int64_t>(std::ceil(maxSeconds * sfInfo.samplerate));
-	const std::int64_t wanted = sfInfo.frames > 0 ? std::min<std::int64_t>(sfInfo.frames, maxFrames) : maxFrames;
+	const auto maxFrames = boundedFrameCount(maxSeconds, static_cast<double>(sfInfo.samplerate));
+	if (!maxFrames)
+	{
+		sf_close(sndFile);
+		file.close();
+		return std::nullopt;
+	}
+	const std::int64_t wanted = sfInfo.frames > 0 ? std::min<std::int64_t>(sfInfo.frames, *maxFrames) : *maxFrames;
 	auto buf = std::vector<sample_t>(static_cast<std::size_t>(std::max(channels, 1)) * static_cast<std::size_t>(wanted));
 	const sf_count_t got = channels > 0 ? sf_readf_float(sndFile, buf.data(), wanted) : 0;
 
@@ -294,8 +317,9 @@ auto boundedOggVorbis(const QString& audioFile, double maxSeconds) -> std::optio
 		return std::nullopt;
 	}
 
-	const auto maxFrames = static_cast<std::int64_t>(std::ceil(maxSeconds * rate));
-	const std::int64_t wanted = std::min<std::int64_t>(total, maxFrames);
+	const auto maxFrames = boundedFrameCount(maxSeconds, static_cast<double>(rate));
+	if (!maxFrames) { return std::nullopt; }
+	const std::int64_t wanted = std::min<std::int64_t>(total, *maxFrames);
 	auto result = std::vector<SampleFrame>();
 	result.reserve(static_cast<std::size_t>(wanted));
 	while (static_cast<std::int64_t>(result.size()) < wanted)
@@ -376,7 +400,9 @@ auto SampleDecoder::decodeLimited(const QString& audioFile, double maxSeconds) -
 #ifdef LMMS_TESTING
 	s_limitedDecodeCallsForTesting.fetch_add(1, std::memory_order_relaxed);
 #endif
-	if (!(maxSeconds > 0.0)) { return std::nullopt; }
+	// A window that is not a frame count (not finite, or out of the supported range) is refused
+	// here: it is not a length the decoder can turn into frames.
+	if (!(maxSeconds > 0.0) || !std::isfinite(maxSeconds)) { return std::nullopt; }
 	if (auto r = boundedSF(audioFile, maxSeconds)) { return r; }
 #ifdef LMMS_HAVE_OGGVORBIS
 	if (auto r = boundedOggVorbis(audioFile, maxSeconds)) { return r; }
@@ -385,10 +411,11 @@ auto SampleDecoder::decodeLimited(const QString& audioFile, double maxSeconds) -
 	auto whole = decodeSampleDS(audioFile);
 	if (!whole) { return std::nullopt; }
 	const auto total = static_cast<std::int64_t>(whole->data.size());
-	const auto maxFrames = static_cast<std::int64_t>(std::ceil(maxSeconds * whole->sampleRate));
-	if (total > maxFrames)
+	const auto maxFrames = boundedFrameCount(maxSeconds, static_cast<double>(whole->sampleRate));
+	if (!maxFrames) { return std::nullopt; }
+	if (total > *maxFrames)
 	{
-		whole->data.resize(static_cast<std::size_t>(maxFrames));
+		whole->data.resize(static_cast<std::size_t>(*maxFrames));
 		whole->data.shrink_to_fit();
 	}
 	return BoundedResult{std::move(*whole), total};

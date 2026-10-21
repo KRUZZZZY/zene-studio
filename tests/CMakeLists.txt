@@ -1280,6 +1280,8 @@ endif()
 # decoder state on every exit (the read-error path included).
 list(APPEND LMMS_TESTS src/core/SampleDecoderOggChannelTest.cpp)
 list(APPEND LMMS_TESTS src/core/SampleDecoderOggStateTest.cpp)
+# cluster new-p14-276: the bounded decoder refuses a limit it cannot turn into a frame count.
+list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
 
 # Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
