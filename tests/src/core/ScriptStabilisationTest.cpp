@@ -43,6 +43,7 @@
 #include <QFile>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QProcess>
 #include <QTemporaryDir>
 
 #include "Engine.h"
@@ -121,6 +122,20 @@ void writeScript(const QString& path, const QString& source)
 	QVERIFY2(file.open(QIODevice::WriteOnly | QIODevice::Truncate), qPrintable(path));
 	file.write(source.toUtf8());
 	file.close();
+}
+
+bool createDirectoryLink(const QString& target, const QString& link)
+{
+#ifdef _WIN32
+	const QString command = QStringLiteral("mklink /J \"%1\" \"%2\"")
+			.arg(QDir::toNativeSeparators(link), QDir::toNativeSeparators(target));
+	QProcess process;
+	process.start(QStringLiteral("cmd.exe"), {QStringLiteral("/d"), QStringLiteral("/c"), command});
+	return process.waitForStarted() && process.waitForFinished(30000)
+			&& process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+#else
+	return QFile::link(target, link);
+#endif
 }
 
 } // namespace
@@ -534,9 +549,6 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 	//! outside the root.
 	void packageDiscoveryStaysInsideTheScriptsRoot()
 	{
-#ifdef _WIN32
-		QSKIP("symlink creation needs privileges on Windows");
-#else
 		using namespace lmms;
 		QTemporaryDir root;
 		QTemporaryDir outside;
@@ -556,13 +568,17 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 		writeScript(outsideDir.absoluteFilePath(QStringLiteral("evil/package.lua")),
 			QStringLiteral("--! lmms-api %1\n--! lmms-package evil 9.9\n")
 				.arg(QString::fromLatin1(kExpectedApiVersion)));
-		QVERIFY(QFile::link(outsideDir.absoluteFilePath(QStringLiteral("evil")),
+		QVERIFY(createDirectoryLink(outsideDir.absoluteFilePath(QStringLiteral("evil")),
 			rootDir.absoluteFilePath(QStringLiteral("evil"))));
 
 		// An entry script that is a symlink out of the root: refused as well.
+		// File symlinks need privileges on Windows; the directory-link cases
+		// above and below still cover root containment there.
+	#ifndef _WIN32
 		QVERIFY(rootDir.mkpath(QStringLiteral("leak")));
 		QVERIFY(QFile::link(outsideDir.absoluteFilePath(QStringLiteral("evil/package.lua")),
 			rootDir.absoluteFilePath(QStringLiteral("leak/package.lua"))));
+	#endif
 
 		QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
 		QCOMPARE(static_cast<int>(packages.size()), 1);
@@ -570,13 +586,12 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 
 		// A symlink that stays INSIDE the root is still a package: only the
 		// escapes are refused.
-		QVERIFY(QFile::link(rootDir.absoluteFilePath(QStringLiteral("arp")),
+		QVERIFY(createDirectoryLink(rootDir.absoluteFilePath(QStringLiteral("arp")),
 			rootDir.absoluteFilePath(QStringLiteral("alias"))));
 		packages = ScriptPackages::scan(root.path());
 		QCOMPARE(static_cast<int>(packages.size()), 2);
 		QCOMPARE(packages[0].name, QStringLiteral("alias"));
 		QCOMPARE(packages[1].name, QStringLiteral("arp"));
-#endif
 	}
 
 	//! A DIRECTORY named package.lua is not a package: the entry must be a file

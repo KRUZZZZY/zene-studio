@@ -24,6 +24,10 @@
 
 #include "ScriptPackage.h"
 
+#ifdef _WIN32
+#include "ScriptImportWindows.h"
+#endif
+
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
@@ -103,6 +107,18 @@ bool isInsideRoot(const QString& canonicalPath, const QString& canonicalRoot)
 	return canonicalPath.startsWith(prefix);
 }
 
+bool packageDirectoryIsInsideRoot(const QString& directory, const QString& rootPath,
+								const QString& canonicalRoot)
+{
+#ifdef _WIN32
+	return isInsideRoot(QFileInfo(directory).canonicalFilePath(), canonicalRoot)
+			&& scriptimportwindows::directoryIsUnderRoot(directory, rootPath);
+#else
+	Q_UNUSED(rootPath);
+	return isInsideRoot(QFileInfo(directory).canonicalFilePath(), canonicalRoot);
+#endif
+}
+
 //! Bytes read from package entry scripts. A test seam (see
 //! entryScriptBytesReadForTesting()), not part of the package format.
 std::atomic<qint64> s_entryScriptBytesRead{0};
@@ -173,7 +189,7 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 			continue;
 		}
 		const QString directory = root.absoluteFilePath(entry);
-		if (!isInsideRoot(QFileInfo(directory).canonicalFilePath(), canonicalRoot))
+		if (!packageDirectoryIsInsideRoot(directory, root.absolutePath(), canonicalRoot))
 		{
 			continue;
 		}

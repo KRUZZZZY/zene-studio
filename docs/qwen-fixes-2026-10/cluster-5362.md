@@ -40,8 +40,11 @@ without its fix.
 - **Fix** (`src/core/ScriptPackage.cpp:167,176,187`): the scripts root is
   canonicalised once (`canonicalRoot`), and the canonical path of the package
   directory and of the entry script must lie under it (`isInsideRoot()`,
-  `src/core/ScriptPackage.cpp:88`). A candidate that escapes is **skipped**,
-  like any other unusable directory — discovery never breaks a listing.
+  `src/core/ScriptPackage.cpp:88`). On Windows the package directory is also
+  checked through open handles (`src/core/ScriptImportWindows.h`), which catches
+  junctions whose canonical path text can still look rooted. A candidate that
+  escapes is **skipped**, like any other unusable directory — discovery never
+  breaks a listing.
 - **Contract already established in this codebase:** the Lua import sandbox
   refuses the same escape (`src/core/ScriptImport.cpp:280` canonicalises the
   root, `src/core/ScriptImport.cpp:334` refuses a module that resolves outside
@@ -50,9 +53,10 @@ without its fix.
 - **Test** — `tests/src/core/ScriptStabilisationTest.cpp:535`
   `packageDiscoveryStaysInsideTheScriptsRoot()`: a package directory that is a
   symlink out of the root, an entry script that is a symlink out of the root,
-  and a symlink that stays inside the root (still listed). The symlink test is
-  skipped on Windows (symlink creation needs privileges), as
-  `tests/src/core/ScriptImportTest.cpp:266` does.
+  and a symlink that stays inside the root (still listed). Linux uses symlinks;
+  Windows uses directory junctions created with `mklink /J`, so the test runs
+  on both. The file-symlink subcase is Linux-only because Windows requires
+  symlink privileges.
 - **Evidence:** RED — `FAIL! packageDiscoveryStaysInsideTheScriptsRoot()
   Compared values are not the same` (the escaping package was listed). GREEN —
   `100% tests passed out of 1`.
@@ -187,6 +191,8 @@ The same command was run again after the documentation wording was added
 
 - `src/core/ScriptPackage.cpp` — the three fixes (bounded read, byte window,
   canonical-root containment) and the byte counter seam.
+- `src/core/ScriptImportWindows.h` — the QA follow-up checks Windows package
+  directories by final paths from open handles, covering junction escapes.
 - `include/ScriptPackage.h` — `entryScriptBytesReadForTesting()` (test seam),
   the byte-window wording of `parseManifest()` and the skip rule in the
   `scan()` documentation.
