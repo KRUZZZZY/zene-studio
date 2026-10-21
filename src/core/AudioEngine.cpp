@@ -290,6 +290,10 @@ void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
 
 static thread_local bool s_renderingThread = false;
 
+#ifdef LMMS_TESTING
+thread_local int AudioEngine::s_changeInModelDepth = 0;
+#endif
+
 AudioEngine::AudioEngine(bool renderOnly)
 	: m_renderOnly(renderOnly)
 	, m_framesPerAudioBuffer(std::clamp(
@@ -1402,11 +1406,17 @@ void AudioEngine::requestChangeInModel()
 {
 	if (s_renderingThread) { return; }
 	m_changeMutex.lock();
+#ifdef LMMS_TESTING
+	++s_changeInModelDepth;
+#endif
 }
 
 void AudioEngine::doneChangeInModel()
 {
 	if (s_renderingThread) { return; }
+#ifdef LMMS_TESTING
+	--s_changeInModelDepth;
+#endif
 	m_changeMutex.unlock();
 }
 

@@ -46,6 +46,15 @@ namespace lmms
 {
 
 
+#ifdef LMMS_TESTING
+void (*EffectChain::s_loadSettingsProbe)() = nullptr;
+
+void EffectChain::setLoadSettingsProbe(void (*probe)())
+{
+	s_loadSettingsProbe = probe;
+}
+#endif
+
 
 EffectChain::EffectChain( Model * _parent ) :
 	Model( _parent ),
@@ -156,9 +165,19 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void EffectChain::loadSettings( const QDomElement & _this )
 {
+	// new-p14-98 (cluster 5051 root cause): loading a chain is a topology edit,
+	// not a settings read. Hold the same model-change guard every other edit
+	// takes across clear(), the effect-list rebuild and the graph rebuild, so a
+	// render period cannot start between the old chain being destroyed and the
+	// restored list/graph being published. The guard is recursive, so the
+	// request/done pair inside clear() nests inside this one.
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+
 	clear();
 
-	// TODO This method should probably also lock the audio engine
+#ifdef LMMS_TESTING
+	if (s_loadSettingsProbe != nullptr) { s_loadSettingsProbe(); }
+#endif
 
 	m_enabledModel.loadSettings( _this, "enabled" );
 
