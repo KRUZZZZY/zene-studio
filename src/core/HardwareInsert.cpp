@@ -38,7 +38,9 @@ namespace lmms
 namespace
 {
 
-constexpr auto Relaxed = std::memory_order_relaxed;
+//! The ping's state machine lives in one word: the audio thread must never take a lock for it.
+static_assert(std::atomic<std::int64_t>::is_always_lock_free,
+	"the ping's state machine must be a lock-free atomic");
 
 //! Channel @a channel of a frame of @a width interleaved channels, 0 when the block does not carry it.
 float wideSample(const float* frame, int width, int channel)
@@ -77,7 +79,7 @@ void HardwareInsert::prepare(f_cnt_t frames)
 HardwareInsert::Settings HardwareInsert::settings() const
 {
 	Settings out = m_settings;
-	out.measured = m_measured.load(Relaxed);
+	out.measured = measuredFrames();
 	return out;
 }
 
@@ -92,26 +94,64 @@ void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 		m_ringFill = 0;
 	}
 	m_settings = settings;
-	if (!settings.enabled) { m_ping.store(static_cast<int>(PingState::Idle), std::memory_order_release); }
-	m_measured.store(settings.measured, Relaxed);
+	if (!settings.enabled) { movePingTo(PingState::Idle); }
+	setMeasured(settings.measured);
 }
 
 int HardwareInsert::latencyFrames() const
 {
 	if (!m_settings.enabled) { return 0; }
-	return m_settings.latencyOverride >= 0 ? m_settings.latencyOverride : std::max(0, m_measured.load(Relaxed));
+	return m_settings.latencyOverride >= 0 ? m_settings.latencyOverride : std::max(0, measuredFrames());
 }
 
 void HardwareInsert::requestPing()
 {
-	m_ping.store(static_cast<int>(PingState::Requested), std::memory_order_release);
+	movePingTo(PingState::Requested);
+}
+
+void HardwareInsert::cancelPing()
+{
+	movePingTo(PingState::Idle);
+}
+
+void HardwareInsert::movePingTo(PingState state) noexcept
+{
+	// A compare-and-swap, so this move wins against a period that is already on its way: a
+	// period that had read the request cannot put the ping back behind the cancel, and a ping
+	// that is called off keeps the figure it had. The audio thread moves the ping on twice a
+	// period at most, so the bounded loop cannot spin.
+	PingWord word = m_ping.load(std::memory_order_acquire);
+	for (int attempt = 0; attempt < 8; ++attempt)
+	{
+		PingWord expected = word;
+		if (m_ping.compare_exchange_strong(expected, packPing(measuredOf(word), state),
+				std::memory_order_acq_rel, std::memory_order_acquire))
+		{ return; }
+		word = expected;
+	}
+}
+
+void HardwareInsert::setMeasured(int measured) noexcept
+{
+	// The figure is part of the state machine's word: the state is kept, the figure is
+	// replaced. A period that publishes its own figure at the same time wins - the next
+	// setSettings carries it on.
+	PingWord word = m_ping.load(std::memory_order_acquire);
+	for (int attempt = 0; attempt < 8; ++attempt)
+	{
+		PingWord expected = word;
+		if (m_ping.compare_exchange_strong(expected, packPing(measured, pingStateOf(word)),
+				std::memory_order_acq_rel, std::memory_order_acquire))
+		{ return; }
+		word = expected;
+	}
 }
 
 void HardwareInsert::process(SampleFrame* buffer, f_cnt_t frames, AudioEngine& engine) noexcept
 {
 	if (!m_settings.enabled || m_send.size() < static_cast<std::size_t>(frames)) { return; }
-	const int word = pingWord();
-	const auto state = static_cast<PingState>(word);
+	const PingWord word = pingWord();
+	const auto state = pingStateOf(word);
 	bool measuring = false;
 	if (state == PingState::Requested && claimPing(word))
 	{
@@ -169,8 +209,8 @@ void HardwareInsert::pushCaptured(AudioEngine& engine) noexcept
 
 void HardwareInsert::listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept
 {
-	const int word = pingWord();
-	if (static_cast<PingState>(word) != PingState::Waiting) { return; }
+	const PingWord word = pingWord();
+	if (pingStateOf(word) != PingState::Waiting) { return; }
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		if (std::abs(m_return[f][0]) > PingThreshold || std::abs(m_return[f][1]) > PingThreshold)
@@ -183,26 +223,56 @@ void HardwareInsert::listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept
 	if (m_pingFrames > static_cast<int>(rate) * PingTimeoutSeconds) { failPing(word); }
 }
 
-bool HardwareInsert::claimPing(int expected) noexcept
+bool HardwareInsert::claimPing(PingWord expected) noexcept
 {
-	if (static_cast<PingState>(expected) != PingState::Requested) { return false; }
-	m_pingFrames = 0;
-	m_ping.store(static_cast<int>(PingState::Waiting), std::memory_order_release);
-	return true;
+	// The claim goes through only when the word is still the one the period read: a ping that
+	// was called off (or replaced) in the meantime stays as it is, and no click goes out.
+	PingWord word = expected;
+	for (int attempt = 0; attempt < 2; ++attempt)
+	{
+		if (pingStateOf(word) != PingState::Requested) { return false; }
+		PingWord current = word;
+		if (m_ping.compare_exchange_strong(current, packPing(measuredOf(word), PingState::Waiting),
+				std::memory_order_acq_rel, std::memory_order_acquire))
+		{
+			m_pingFrames = 0;
+			return true;
+		}
+		word = current;  // the failed swap wrote the word as it is now back
+	}
+	return false;
 }
 
-bool HardwareInsert::publishPingResult(int expected, int frames) noexcept
+bool HardwareInsert::publishPingResult(PingWord expected, int frames) noexcept
 {
-	if (static_cast<PingState>(expected) != PingState::Waiting) { return false; }
-	m_measured.store(frames, Relaxed);
-	m_ping.store(static_cast<int>(PingState::Done), std::memory_order_release);
-	return true;
+	// The figure and the state are published together, so a ping that was called off in the
+	// meantime keeps its answer to itself: the undo's project keeps the figure it had.
+	PingWord word = expected;
+	for (int attempt = 0; attempt < 2; ++attempt)
+	{
+		if (pingStateOf(word) != PingState::Waiting) { return false; }
+		PingWord current = word;
+		if (m_ping.compare_exchange_strong(current, packPing(frames, PingState::Done),
+				std::memory_order_acq_rel, std::memory_order_acquire))
+		{ return true; }
+		word = current;
+	}
+	return false;
 }
 
-void HardwareInsert::failPing(int expected) noexcept
+void HardwareInsert::failPing(PingWord expected) noexcept
 {
-	if (static_cast<PingState>(expected) != PingState::Waiting) { return; }
-	m_ping.store(static_cast<int>(PingState::Failed), std::memory_order_release);
+	// The ping heard nothing in time: it failed, the figure it had is untouched.
+	PingWord word = expected;
+	for (int attempt = 0; attempt < 2; ++attempt)
+	{
+		if (pingStateOf(word) != PingState::Waiting) { return; }
+		PingWord current = word;
+		if (m_ping.compare_exchange_strong(current, packPing(measuredOf(word), PingState::Failed),
+				std::memory_order_acq_rel, std::memory_order_acquire))
+		{ return; }
+		word = current;
+	}
 }
 
 void HardwareInsert::writeOutput(SampleFrame* buffer, f_cnt_t frames, bool measuring) noexcept
@@ -258,7 +328,7 @@ void HardwareInsert::load(const QDomElement& channelElement, f_cnt_t frames)
 		if (measuredOk) { loaded.measured = measured; }
 	}
 	setSettings(loaded, frames);
-	m_ping.store(static_cast<int>(PingState::Idle), Relaxed);
+	movePingTo(PingState::Idle);
 }
 
 } // namespace lmms
