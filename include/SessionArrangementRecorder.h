@@ -168,7 +168,7 @@ public:
 		// push starts after the disarm and will see false". The producer never
 		// waits on the consumer.
 		m_producerInFlight.fetch_add( 1, std::memory_order_seq_cst );
-		if( !armed() )
+		if( !shouldRecord( event ) )
 		{
 			m_producerInFlight.fetch_sub( 1, std::memory_order_seq_cst );
 			return false;
@@ -250,6 +250,44 @@ public:
 
 private:
 	static constexpr std::size_t storageSize = Capacity + 1;
+
+	/*! Whether this event belongs in the ring. A START is taped only while the
+	 *  tap is armed: a disarmed tap records nothing NEW. A STOP is taped while
+	 *  the tap is armed, and also while it is DISARMED when it closes a span the
+	 *  ring already carries. That last rule is what keeps a disarm from
+	 *  stranding a recorded start: an open start is what a land pass refuses,
+	 *  and it refuses without consuming, so dropping the closing stop would
+	 *  leave the performance unlandable for good. */
+	bool shouldRecord( const Event& event ) const noexcept
+	{
+		if( armed() )
+		{
+			return true;
+		}
+		return !event.started && closesRecordedStart( event.track, event.scene );
+	}
+
+	/*! True when the ring already carries a start for this cell with no stop
+	 *  yet. Audio thread, but only for a STOP while disarmed: one bounded pass
+	 *  over the ring's own events, no allocation and no second state to keep in
+	 *  step. For a single cell a start opens and a stop closes the oldest open
+	 *  one, exactly as landPairEvents() pairs them; an unmatched stop closes
+	 *  nothing and does not go negative. */
+	bool closesRecordedStart( int track, int scene ) const noexcept
+	{
+		const std::size_t read = m_read.load( std::memory_order_acquire );
+		const std::size_t write = m_write.load( std::memory_order_acquire );
+		const std::size_t count = write >= read ? write - read : storageSize - read + write;
+		int open = 0;
+		for( std::size_t i = 0; i < count; ++i )
+		{
+			const Event& event = m_data[( read + i ) % storageSize];
+			if( event.track != track || event.scene != scene ) { continue; }
+			if( event.started ) { ++open; }
+			else if( open > 0 ) { --open; }
+		}
+		return open > 0;
+	}
 
 	/*! Model thread: wait out a producer that is between its armed read and its
 	 *  publish. This is the disarm handshake - and it is the CONSUMER that
