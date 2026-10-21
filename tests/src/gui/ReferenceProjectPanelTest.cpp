@@ -90,7 +90,8 @@ QString pathLabelText(QWidget* panel)
 	for (QLabel* label : panel->findChildren<QLabel*>())
 	{
 		if (label->text().startsWith(QStringLiteral("No reference")) || label->text().contains(QStringLiteral(".mmp"))
-			|| label->text().startsWith(QStringLiteral("Select"))) { return label->text(); }
+			|| label->text().startsWith(QStringLiteral("Select"))
+			|| label->text().startsWith(QStringLiteral("The reference project could not be read"))) { return label->text(); }
 	}
 	return {};
 }
@@ -321,6 +322,28 @@ private slots:
 		source.close();
 		panel->refresh();
 		QVERIFY2(pathLabelText(panel).contains(QStringLiteral("changed on disk since it was opened")), qPrintable(pathLabelText(panel)));
+	}
+
+	void aFailedStateQuerySaysSoAndKeepsTheLastTree()
+	{
+		ReferenceProjectPanel* panel = openReference();
+		QVERIFY(itemNamed(panel->tree(), QStringLiteral("Lead")) != nullptr);
+
+		// The registry refuses every command that needs the engine until the model is up (ControlRegistry.cpp:283-291),
+		// the same typed failure a refused reference.get_state hands the panel: no time or race in the test.
+		ControlRegistry::setReady(false);
+		panel->refresh();
+		ControlRegistry::setReady(true);
+
+		const QString shown = pathLabelText(panel);
+		QVERIFY2(shown.startsWith(QStringLiteral("The reference project could not be read:")), qPrintable(shown));
+		QVERIFY2(!shown.contains(QStringLiteral("No reference project is open")), qPrintable(shown));
+		// The last read stays: a failed query is not a closed reference.
+		QVERIFY(itemNamed(panel->tree(), QStringLiteral("Lead")) != nullptr);
+
+		// The next good query recovers the usual view.
+		panel->refresh();
+		QVERIFY2(pathLabelText(panel).contains(QStringLiteral("source.mmp")), qPrintable(pathLabelText(panel)));
 	}
 
 private:
