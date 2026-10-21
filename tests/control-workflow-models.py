@@ -70,10 +70,13 @@ ROUTING_NEEDLES = (
 )
 
 TOUR_NEEDLES = (
-    "PatternStore pattern",
+    "kick-and-snare PatternStore pattern",
+    "bar 1",
     "PatternTrack",
     "PatternClip placeholder",
-    "MIDI clip",
+    "one-bar MIDI fill",
+    "bar 9",
+    "kick.wav",
     "launcher cell",
     "no mixer channel of its own",
     'Inspector\'s "To ..." channel',
