@@ -146,6 +146,8 @@ struct TrackWalk
 	long long tick = 0;
 	int running = 0;
 	bool ended = false;
+	std::size_t openCount = 0;  //!< how many notes are still open here; they count against the note cap
+	bool noteCapHit = false;    //!< an open would pass the cap; the track is refused, never truncated
 	std::map<int, std::deque<QueuedNote>> open;  //!< (channel * 128 + key) -> notes not yet closed, oldest first
 	std::vector<SmfNote>* out = nullptr;
 
@@ -167,6 +169,7 @@ struct TrackWalk
 			for (const QueuedNote& queued : entry.second) { close(queued.note); }
 		}
 		open.clear();
+		openCount = 0;
 	}
 };
 
@@ -176,17 +179,24 @@ void noteMessage(int status, int key, int velocity, TrackWalk* walk)
 	std::deque<QueuedNote>& queue = walk->open[(status & 0x0F) * 128 + key];
 	if ((status & 0xF0) == 0x90 && velocity > 0)
 	{
+		if (walk->out->size() + walk->openCount >= static_cast<std::size_t>(SmfNoteMaxCount))
+		{
+			walk->noteCapHit = true;  // a still-open note counts against the cap like a closed one
+			return;
+		}
 		SmfNote note;
 		note.start = walk->lmmsTicks(walk->tick);
 		note.key = key;
 		note.velocity = velocity;
 		note.channel = status & 0x0F;
 		queue.emplace_back(note);
+		++walk->openCount;
 	}
 	else if (!queue.empty())  // a note-off with no note is ignored
 	{
 		walk->close(queue.front().note);
 		queue.pop_front();  // the notes queued behind the closed one must not be moved (new-p14-314)
+		--walk->openCount;
 	}
 }
 
@@ -237,7 +247,11 @@ bool trackEvent(Cursor& cursor, TrackWalk* walk)
 	return channelEvent(cursor, status, walk);
 }
 
-bool readTrack(const QByteArray& bytes, int from, int to, int division, std::vector<SmfNote>* out)
+//! How one track was read: to its end, malformed, or past the note cap - the cap is enforced while the
+//! events are read (a still-open note counts like a closed one), so nothing past the cap is materialised.
+enum class TrackResult { Read, Malformed, OverCap };
+
+TrackResult readTrack(const QByteArray& bytes, int from, int to, int division, std::vector<SmfNote>* out)
 {
 	Cursor cursor(bytes, from, to);
 	TrackWalk walk;
@@ -245,11 +259,13 @@ bool readTrack(const QByteArray& bytes, int from, int to, int division, std::vec
 	walk.out = out;
 	while (!cursor.atEnd() && !walk.ended)
 	{
-		if (!trackEvent(cursor, &walk)) { return false; }
-		if (out->size() > static_cast<std::size_t>(SmfNoteMaxCount)) { return false; }
+		if (!trackEvent(cursor, &walk)) { return TrackResult::Malformed; }
+		if (walk.noteCapHit) { return TrackResult::OverCap; }
+		if (out->size() > static_cast<std::size_t>(SmfNoteMaxCount)) { return TrackResult::OverCap; }
 	}
 	walk.closeAll();  // a note never closed ends where its track does
-	return out->size() <= static_cast<std::size_t>(SmfNoteMaxCount);  // counted after the unclosed ones are closed
+	return out->size() <= static_cast<std::size_t>(SmfNoteMaxCount)  // counted after the unclosed ones are closed
+		? TrackResult::Read : TrackResult::OverCap;
 }
 
 bool failWith(SmfNoteRead* read, const QString& message)
@@ -295,9 +311,11 @@ bool readChunks(const QByteArray& bytes, SmfNoteRead* read)
 		if (body + length > bytes.size()) { return failWith(read, QStringLiteral("the MIDI file is truncated inside a chunk")); }
 		if (bytes.mid(static_cast<int>(at), 4) == QByteArrayLiteral("MTrk"))
 		{
-			if (!readTrack(bytes, static_cast<int>(body), static_cast<int>(body + length), read->division, &read->notes))
+			const TrackResult result = readTrack(
+				bytes, static_cast<int>(body), static_cast<int>(body + length), read->division, &read->notes);
+			if (result != TrackResult::Read)
 			{
-				return failWith(read, read->notes.size() > static_cast<std::size_t>(SmfNoteMaxCount)
+				return failWith(read, result == TrackResult::OverCap
 					? QStringLiteral("the MIDI file holds more than %1 notes").arg(SmfNoteMaxCount)
 					: QStringLiteral("track %1 of the MIDI file is malformed").arg(tracksRead + 1));
 			}
