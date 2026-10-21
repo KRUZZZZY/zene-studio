@@ -115,21 +115,31 @@ public:
 
 	~RemotePlugin() override;
 
+	//! Whether the client process is running. The QProcess itself lives in the watcher
+	//! thread (init() moves it there), and the audio thread reads this (process()), so
+	//! the state is cached in an atomic the process lifecycle updates - reading
+	//! QProcess::state() from the audio thread would be an unsynchronized read of
+	//! another thread's QObject.
 	inline bool isRunning()
 	{
 #ifdef DEBUG_REMOTE_PLUGIN
 		return true;
 #else
-		return m_process.state() != QProcess::NotRunning;
+		return m_clientRunning.load(std::memory_order_acquire);
 #endif // DEBUG_REMOTE_PLUGIN
 	}
 
 	bool init( const QString &pluginExecutable, bool waitForInitDoneMsg, QStringList extraArgs = {} );
 
+	//! Waits for the client's IdHostInfoGotten. A failure recorded while the wait is
+	//! running - a retired message id, a message with too few arguments - stays: the
+	//! wait's own result must not erase it, exactly as waitForInitDone() does. The
+	//! verdict of a protocol mismatch is what keeps the host from rendering the wrong
+	//! audio, so it has to be sticky.
 	inline void waitForHostInfoGotten()
 	{
-		m_failed = waitForMessage( IdHostInfoGotten ).id
-							!= IdHostInfoGotten;
+		const bool gotHostInfo = waitForMessage( IdHostInfoGotten ).id == IdHostInfoGotten;
+		m_failed = m_failed || !gotHostInfo;
 	}
 
 	//! Waits for the remote client's IdInitDone. On success the audio ports are
@@ -187,13 +197,12 @@ public:
 	//! MIDI events refused because the hand-off queue was full, since construction.
 	std::uint64_t midiEventsDropped() const { return m_midiOverflow.recorded(); }
 
-	void updateSampleRate( sample_rate_t _sr )
-	{
-		lock();
-		sendMessage( message( IdSampleRateInformation ).addInt( _sr ) );
-		waitForReplyWithin( message( IdInformationUpdated ) );
-		unlock();
-	}
+	//! Tells the client which sample rate to run at. The client acknowledges the new
+	//! rate with IdInformationUpdated; a client that does not acknowledge it is still
+	//! running at the old one, and the two sides would render at different rates -
+	//! so the plugin is failed instead of carrying on with a rate the client never
+	//! took. Main thread: a rate change is a main-thread event.
+	void updateSampleRate( sample_rate_t _sr );
 
 
 	virtual void toggleUI()
@@ -299,6 +308,13 @@ protected:
 private:
 	QProcess m_process;
 	ProcessWatcher m_watcher;
+
+	//! Whether the client process is running. The QProcess lives in the watcher thread
+	//! (init() moves it there) and the audio thread reads isRunning(), so the state is
+	//! cached here instead of being read from the QProcess across those threads. It is
+	//! set where the process is started (ProcessWatcher::run()) and cleared by the
+	//! process lifecycle (processFinished(), processErrored()).
+	std::atomic<bool> m_clientRunning{false};
 
 	//! The last channel-count request processMessage refused, and whether one is waiting to be reported.
 	//! Atomics, so the audio thread records them without allocating or locking.
@@ -464,6 +480,13 @@ private:
 #endif // not SYNC_WITH_SHM_FIFO
 
 	friend class ProcessWatcher;
+
+#ifdef LMMS_TESTING
+	//! Test seam for the regression that pins the cached running state (cluster
+	//! new-p15-172): the test reads and steers m_clientRunning to prove that
+	//! isRunning() answers from the cache and not from the QProcess.
+	friend class ::RemotePluginAudioPortsTest;
+#endif
 
 
 private slots:

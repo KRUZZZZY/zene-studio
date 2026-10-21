@@ -1433,6 +1433,105 @@ private slots:
 		QCOMPARE(attached[0].values[0], 1.25f);
 	}
 
+	/*!
+	 * A protocol failure recorded while the host waits for the client's host info
+	 * must survive that wait.
+	 *
+	 * The client announces its channel counts with the retired id and only then
+	 * sends the IdHostInfoGotten the VST handshake waits for. The host refuses the
+	 * retired id and fails the plugin - and that verdict must not be erased by the
+	 * wait for the host info, which used to assign the wait's own result to the
+	 * failure flag. (waitForInitDone() has always preserved it; this is the same
+	 * contract on the sibling path.)
+	 */
+	void hostInfoWaitKeepsAnEarlierProtocolFailure()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the host-info wait is "
+				"UNEXERCISED by this run");
+		}
+
+		const QFileInfo info{client};
+		ScopedPluginDir pluginDir{info.absolutePath()};
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The client connects and sends its handshake; the host's init() asks for
+		// the client's host info (IdSyncKey), which the stand-in answers with a
+		// retired message id first.
+		QVERIFY2(!plugin.init(info.fileName(), false, {QStringLiteral("badhostinfo")}),
+			"could not start the fake client");
+
+		m_recorder->clear();
+		plugin.waitForHostInfoGotten();
+
+		// The refusal was reported ...
+		QVERIFY2(m_recorder->text().contains(QStringLiteral("removed message id")),
+			qPrintable(m_recorder->text()));
+		// ... and the failure it recorded survived the wait for the host info.
+		QVERIFY2(plugin.failed(), "the protocol failure was erased by the host-info wait");
+	}
+
+	/*!
+	 * A sample-rate update the client does not acknowledge must not be treated as
+	 * successful.
+	 *
+	 * The host tells the client which rate to run at, and the client acknowledges it
+	 * with IdInformationUpdated. A client that does not acknowledge it is still
+	 * running at the old rate while this host renders at the new one, so the two
+	 * sides disagree about the rate - the silent wrong audio the acknowledgement
+	 * exists to prevent. The plugin must be failed instead of carrying on.
+	 */
+	void unansweredSampleRateUpdateFailsThePlugin()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the sample-rate "
+				"acknowledgement is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("deafsamplerate")}),
+			"could not start/connect the deaf fake client");
+		QVERIFY(!plugin.failed());
+
+		plugin.updateSampleRate(Engine::audioEngine()->outputSampleRate());
+
+		QVERIFY2(plugin.failed(), "an unacknowledged sample-rate update was treated as successful");
+	}
+
+	/*!
+	 * The positive control for the check above: a client that acknowledges the new
+	 * rate is not failed.
+	 *
+	 * The stand-in client answers IdSampleRateInformation with IdInformationUpdated,
+	 * exactly like the real client does, so the plugin keeps running at the rate the
+	 * host told it to use.
+	 */
+	void acknowledgedSampleRateUpdateKeepsThePlugin()
+	{
+		const auto client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the sample-rate "
+				"acknowledgement is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		QVERIFY2(startClient(plugin, client),
+			"could not start/connect the fake client");
+		QVERIFY(!plugin.failed());
+
+		plugin.updateSampleRate(Engine::audioEngine()->outputSampleRate());
+
+		QVERIFY2(!plugin.failed(), "an acknowledged sample-rate update failed the plugin");
+	}
+
 private:
 	std::unique_ptr<MessageRecorder> m_recorder;
 };

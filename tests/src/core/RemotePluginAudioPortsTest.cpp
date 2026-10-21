@@ -280,6 +280,46 @@ class RemotePluginAudioPortsTest : public QObject
 	struct WatcherQuitFlagIsAtomic<T, std::void_t<decltype(T::m_quit)>>
 		: std::is_same<decltype(T::m_quit), std::atomic<bool>> {};
 
+	//! Test seam for the cached running state of a remote plugin (cluster
+	//! new-p15-172). The QProcess lives in the watcher thread (init() moves it
+	//! there) and the audio thread reads isRunning(), so the running state is
+	//! cached in an atomic the process lifecycle updates. Detection fails closed:
+	//! without the LMMS_TESTING friend seam - i.e. in the unfixed tree, where
+	//! isRunning() reads the QProcess - the cache cannot be steered, so the
+	//! regression fails at run time instead of failing to compile.
+	template<typename T, typename = void>
+	struct CachedRunningState
+	{
+		//! @return false: there is no cached running state to steer.
+		static bool steer(T&, bool) { return false; }
+		//! @return false: the QProcess is not reachable from here.
+		static bool processRunning(T&) { return false; }
+		//! @return false: the process lifecycle cannot be driven from here.
+		static bool finishProcess(T&) { return false; }
+	};
+	template<typename T>
+	struct CachedRunningState<T, std::void_t<decltype(T::m_clientRunning)>>
+	{
+		//! Sets the cached running state, i.e. what the audio thread reads.
+		static bool steer(T& _plugin, bool _running)
+		{
+			_plugin.m_clientRunning.store(_running, std::memory_order_release);
+			return true;
+		}
+		//! The QProcess' own state: what isRunning() used to read from the audio thread.
+		static bool processRunning(T& _plugin)
+		{
+			return _plugin.m_process.state() != QProcess::NotRunning;
+		}
+		//! Emits the QProcess' finished() signal, i.e. what a client that goes away
+		//! does. The host's processFinished() slot is connected to it directly.
+		static bool finishProcess(T& _plugin)
+		{
+			emit _plugin.m_process.finished(0, QProcess::NormalExit);
+			return true;
+		}
+	};
+
 private slots:
 	void initTestCase()
 	{
@@ -300,6 +340,65 @@ private slots:
 	void processWatcherQuitFlagIsAtomic()
 	{
 		QVERIFY(( WatcherQuitFlagIsAtomic<ProcessWatcher>::value ));
+	}
+
+	//! The audio thread must not read the QProcess' state.
+	//!
+	//! `init()` moves the QProcess into the watcher thread, and `process()` reads
+	//! `isRunning()` on the audio thread: `QProcess::state()` is a plain member of
+	//! a QObject that lives in another thread, and reading it from the audio thread
+	//! is neither synchronized nor allowed. The running state is therefore cached in
+	//! an atomic the process lifecycle updates, and `isRunning()` answers from that
+	//! cache.
+	//!
+	//! What is pinned here: `isRunning()` follows the cache, not the QProcess. The
+	//! QProcess was never started in this test, so its own state is "not running" -
+	//! a QProcess read would answer "not running" even with the cache saying
+	//! "running". The seam is the LMMS_TESTING friend declaration in
+	//! include/RemotePlugin.h; without it the probe cannot steer the cache and this
+	//! test fails at run time (it does not fail to compile).
+	void runningStateIsCachedNotReadFromTheProcess()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The cache is what isRunning() answers: it can be steered at all.
+		QVERIFY2(CachedRunningState<RemotePlugin>::steer(plugin, true),
+			"the remote plugin does not cache its running state - isRunning() reads the QProcess");
+
+		// The QProcess' own state disagrees with the cache: it was never started.
+		QVERIFY(!CachedRunningState<RemotePlugin>::processRunning(plugin));
+
+		// The cache wins: the client counts as running although the QProcess does not.
+		QVERIFY(plugin.isRunning());
+
+		// ... and the other way round: the client counts as gone although the
+		// QProcess' state was never touched.
+		QVERIFY(CachedRunningState<RemotePlugin>::steer(plugin, false));
+		QVERIFY(!plugin.isRunning());
+	}
+
+	//! The cached running state follows the client's lifecycle.
+	//!
+	//! The cache is what the audio thread reads, so it has to follow the client: a
+	//! client that is there must be asked for periods, and a client that is gone
+	//! must not be. The QProcess emits finished() when the client goes away, and
+	//! the host's processFinished() slot - connected to it directly - is what
+	//! clears the cached state. The signal is emitted here (no client is started
+	//! in this test) to drive the same code path a real exit takes, without a
+	//! process and without waiting for one.
+	void cachedRunningStateFollowsTheProcessLifecycle()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The client is there: the cached state says so.
+		QVERIFY(CachedRunningState<RemotePlugin>::steer(plugin, true));
+		QVERIFY(plugin.isRunning());
+
+		// The client goes away: the lifecycle signal clears the cached state.
+		QVERIFY(CachedRunningState<RemotePlugin>::finishProcess(plugin));
+		QVERIFY(!plugin.isRunning());
 	}
 
 	//! RemotePlugin's ctor attaches its buffers to the ports and its dtor

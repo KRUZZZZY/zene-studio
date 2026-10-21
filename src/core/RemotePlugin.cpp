@@ -97,6 +97,12 @@ ProcessWatcher::ProcessWatcher( RemotePlugin * _p ) :
 void ProcessWatcher::run()
 {
 	auto& process = m_plugin->m_process;
+	// The client is started here, on the thread that owns the QProcess. The running
+	// state is cached for the readers that must not touch the QProcess (the audio
+	// thread's isRunning()), and this is the point where the client comes to life:
+	// it is set before the process is started, so it is true as soon as the client
+	// can be seen at all.
+	m_plugin->m_clientRunning.store(true, std::memory_order_release);
 	process.start(m_plugin->m_exec, m_plugin->m_args);
 
 #ifdef LMMS_BUILD_WIN32
@@ -264,6 +270,9 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 		m_uiVisible = -1;
 		m_pendingMidiSize = 0;
 		m_connectionLost = false;
+		// The new client has not started yet: the old one's running state must not
+		// carry over (ProcessWatcher::run() sets it when the client is started).
+		m_clientRunning.store(false, std::memory_order_release);
 	}
 	QString exec = QFileInfo(QDir("plugins:"), pluginExecutable).absoluteFilePath();
 
@@ -816,6 +825,24 @@ void RemotePlugin::showUI()
 	unlock();
 }
 
+void RemotePlugin::updateSampleRate( sample_rate_t _sr )
+{
+	lock();
+	sendMessage( message( IdSampleRateInformation ).addInt( _sr ) );
+	// The client acknowledges the new rate with IdInformationUpdated. A client that
+	// does not acknowledge it is still running at the old rate while this host
+	// renders at the new one - the two sides would disagree about the rate, which
+	// is the silent wrong audio the acknowledgement exists to prevent. The plugin is
+	// failed instead of carrying on with a rate the client never took.
+	const message reply = waitForReplyWithin( message( IdInformationUpdated ) );
+	if( reply.id != IdInformationUpdated )
+	{
+		qCritical() << "RemotePlugin: the remote client did not acknowledge the new sample rate; the plugin is failed";
+		m_failed = true;
+	}
+	unlock();
+}
+
 void RemotePlugin::hideUI()
 {
 	lock();
@@ -957,6 +984,9 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 void RemotePlugin::processFinished( int exitCode,
 						QProcess::ExitStatus exitStatus )
 {
+	// The client is gone: the cached running state (see isRunning()) follows it, so
+	// the audio thread stops asking for periods from a client that is not there.
+	m_clientRunning.store(false, std::memory_order_release);
 	reportRefusedChannelCounts();
 	if ( exitStatus == QProcess::CrashExit )
 	{
@@ -994,6 +1024,9 @@ void RemotePlugin::processFinished( int exitCode,
 
 void RemotePlugin::processErrored( QProcess::ProcessError err )
 {
+	// A process that could not be started is not running, and no finished() follows a
+	// failure to start - so the cached running state (see isRunning()) is cleared here.
+	if (err == QProcess::FailedToStart) { m_clientRunning.store(false, std::memory_order_release); }
 	qCritical() << "Process error: " << err;
 }
 
