@@ -2852,3 +2852,7 @@ docs/qwen-fixes-2026-10/cluster-5451.md
 tests/src/plugins/OrganicParamRaceTest.cpp
 # cluster new-p16-152: a note without oscillators is silent instead of dereferencing the null oscillator chain (fork-NEW regression test).
 tests/src/plugins/OrganicZeroOscTest.cpp
+# cluster new-p15-300 (2026-10): the compressor's visualizer state is published, not shared - regression test (fork-NEW).
+tests/src/plugins/CompressorVisualizerTest.cpp
+# cluster new-p15-300 (2026-10): fix and verification report for the compressor visualizer state race (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p15-300.md

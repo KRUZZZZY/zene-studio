@@ -84,6 +84,10 @@
 # of every MIDI channel, and the note path publishes into the hand-off queue instead of taking
 # the plug-in mutex) - is now a tracked source, so the recipe derives it and the entry list
 # below lists it.
+# 2026-10-20 (cluster new-p15-300): tests/src/plugins/CompressorVisualizerTest.cpp - the
+# fork-NEW regression for the compressor's visualizer state being published instead of
+# shared - is now a tracked source, so the recipe derives it and the entry list below
+# lists it.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -3024,6 +3028,7 @@ tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
 tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
+tests/src/plugins/CompressorVisualizerTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
 tests/src/plugins/DelayLfoAutomationTest.cpp
 tests/src/plugins/EqFilterTest.cpp
