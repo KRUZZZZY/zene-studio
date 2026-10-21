@@ -118,9 +118,11 @@ int lastTempoRow(const QJsonArray& events)
 //! interrupts ends there and the new metre's bars are counted from the event's tick, not from the old
 //! origin (cluster new-p17-186). An event that carries the metre already in force changes nothing.
 //! @a events must be in ascending tick order, as transport.tempo_map_get returns them.
-int barAt(const QJsonArray& events, int row, int projectTicksPerBar)
+int barAt(const QJsonArray& events, int row, int projectNumerator, int projectDenominator)
 {
-	int perBar = std::max(1, projectTicksPerBar);
+	int numerator = std::max(1, projectNumerator);
+	int denominator = std::max(1, projectDenominator);
+	int perBar = std::max(1, DefaultTicksPerBar * numerator / denominator);
 	int barStart = 0;
 	int bar = 1;
 	for (int i = 0; i <= row; ++i)
@@ -132,11 +134,17 @@ int barAt(const QJsonArray& events, int row, int projectTicksPerBar)
 			barStart += perBar;
 			++bar;
 		}
-		// The meter from THIS tick on; the bar it sits in was measured with the previous one.
-		const int numerator = event.value(QStringLiteral("numerator")).toInt();
-		const int denominator = event.value(QStringLiteral("denominator")).toInt();
-		if (numerator > 0 && denominator > 0)
+		// The meter from THIS tick on; the bar it interrupts was measured with the previous one.
+		const int eventNumerator = event.value(QStringLiteral("numerator")).toInt();
+		const int eventDenominator = event.value(QStringLiteral("denominator")).toInt();
+		if (eventNumerator > 0 && eventDenominator > 0
+			&& (eventNumerator != numerator || eventDenominator != denominator))
 		{
+			// A metre change: the new metre runs from this tick, so the bar it interrupts ends
+			// here and the new metre's bars are counted from here.
+			if (tick > barStart) { barStart = tick; ++bar; }
+			numerator = eventNumerator;
+			denominator = eventDenominator;
 			perBar = std::max(1, DefaultTicksPerBar * numerator / denominator);
 		}
 	}
@@ -286,14 +294,15 @@ void TempoMapPanel::refresh()
 		.arg(map.value(QStringLiteral("max_events")).toInt())
 		.arg(map.value(QStringLiteral("global_tempo")).toInt()));
 	const QJsonArray events = map.value(QStringLiteral("events")).toArray();
-	const int ticksPerBar = Engine::getSong()->ticksPerBar();
+	const int projectNumerator = Engine::getSong()->getTimeSigModel().getNumerator();
+	const int projectDenominator = Engine::getSong()->getTimeSigModel().getDenominator();
 	const int lastTempo = lastTempoRow(events);
 	m_table->setRowCount(static_cast<int>(events.size()));
 	for (int row = 0; row < events.size(); ++row)
 	{
 		const QJsonObject event = events.at(row).toObject();
 		const bool ramps = event.value(QStringLiteral("ramp")).toBool() && row < lastTempo;
-		const QStringList cells = eventCells(event, barAt(events, row, ticksPerBar), ramps);
+		const QStringList cells = eventCells(event, barAt(events, row, projectNumerator, projectDenominator), ramps);
 		for (int column = 0; column < cells.size(); ++column)
 		{
 			m_table->setItem(row, column, new QTableWidgetItem(cells.at(column)));
