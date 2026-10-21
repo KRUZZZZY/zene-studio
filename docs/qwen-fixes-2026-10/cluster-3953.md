@@ -304,6 +304,6 @@ or stderr for them (reproduced by hand: `zene render <project> -o
 /tmp/cli-bad.wav --channels 9.1` exits 1 with both streams empty), while the
 third case of the same check, which `main.cpp:1401` prints with a direct
 `fprintf(stderr, ...)`, passes. `src/core/main.cpp` is untouched by this
-batch (the three commits change `src/core/ControlCommandsRenderStems.cpp`, one
-test file, the two scope manifests and this report), and the control surface
-is not on the CLI's path at all.
+batch (the commits touch `src/core/ControlCommandsRenderStems.cpp`, the new
+test file, `tests/CMakeLists.txt`, the two scope manifests and this report),
+and the control surface is not on the CLI's path at all.
