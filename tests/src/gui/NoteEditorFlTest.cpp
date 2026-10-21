@@ -344,6 +344,10 @@ private slots:
 		QVERIFY2(noteAt(m_clip, 396, 64) != nullptr, "one note lands on the pitch the draw ended on");
 		QVERIFY2(noteAt(m_clip, 396, 66) == nullptr, "not on the press pitch");
 		QVERIFY(!piano->isKeyPressed(64));
+		const QImage released = canvas->grab().toImage();
+		QTest::mouseMove(canvas, QPoint(to.x() + 1, to.y()));
+		const QImage settled = canvas->grab().toImage();
+		QCOMPARE(released.pixelColor(hoverRect.center()), settled.pixelColor(hoverRect.center()));
 		QCOMPARE(m_clip->notes().size(), std::size_t{4});
 		QVERIFY(undo());
 		QCOMPARE(m_clip->notes().size(), std::size_t{3});

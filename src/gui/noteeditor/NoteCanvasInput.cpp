@@ -324,6 +324,8 @@ void NoteCanvas::mouseReleaseEvent(QMouseEvent* event)
 	m_auditionKey = -1;
 	m_drag = Drag::None;
 	m_anchorId = -1;
+	m_hoverPos = event->pos();
+	m_hovering = rect().contains(event->pos());
 	updateCursor(event->pos());  // the tool's cursor stays after the gesture, wherever it ended
 	update();
 }
