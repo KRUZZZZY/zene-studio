@@ -55,6 +55,7 @@ bool WasmWorker::start(const std::string& modulePath, std::string& error,
 	int timeoutMs)
 {
 	stop();
+	m_logs.clear();
 	m_modulePath = modulePath;
 	m_stop.store(false, std::memory_order_release);
 	m_state.store(State::Loading, std::memory_order_release);
@@ -116,6 +117,15 @@ void WasmWorker::stop()
 	while (m_results.pop(index))
 	{
 		m_slots[index].state.store(SlotState::Free, std::memory_order_release);
+	}
+	// A lane can stop between marking a slot Done and pushing its result (the
+	// push loop gives up when m_stop is set), so that slot is in neither queue.
+	// The audio endpoints are closed and no lane holds the claim here: free
+	// every slot, not just the queued ones, or a restart inherits them.
+	for (Slot& slot : m_slots)
+	{
+		slot.state.store(SlotState::Free, std::memory_order_release);
+		slot.frames = 0;
 	}
 	m_sandbox.reset();
 	m_declaredChannels.store(1, std::memory_order_relaxed);
@@ -273,10 +283,12 @@ bool WasmWorker::loadModuleOnLane()
 	std::string error;
 	if (!m_sandbox->loadModuleFile(m_modulePath, error))
 	{
+		transferLogFromLane();
 		m_lastError = error;
 		m_state.store(State::Failed, std::memory_order_release);
 		return false;
 	}
+	transferLogFromLane();
 	if (!m_sandbox->hasProcess())
 	{
 		m_lastError = "module does not export " + std::string(abi::processExport)
@@ -350,6 +362,8 @@ void WasmWorker::processSlot(Slot& slot, float sampleRate)
 		}
 	}
 
+	transferLogFromLane();
+
 	if (!result.ok())
 	{
 		// Crash isolation: a trapping module is quarantined and the host keeps
@@ -376,6 +390,19 @@ void WasmWorker::passthrough(Slot& slot)
 {
 	std::memcpy(slot.out.data(), slot.in.data(),
 		slot.frames * sizeof(SampleFrame));
+}
+
+void WasmWorker::transferLogFromLane()
+{
+	if (!m_sandbox)
+	{
+		return;
+	}
+	const std::string log = m_sandbox->takeLog();
+	if (!log.empty())
+	{
+		m_logs.append(reinterpret_cast<const std::uint8_t*>(log.data()), log.size());
+	}
 }
 
 bool WasmWorker::reinstantiate(float sampleRate)
@@ -496,11 +523,9 @@ void WasmWorker::setTransportState(std::int32_t transportState)
 
 std::string WasmWorker::takeLog()
 {
-	if (!m_sandbox)
-	{
-		return {};
-	}
-	return m_sandbox->takeLog();
+	// The lane owns the sandbox and moves its latest message into m_logs; this
+	// reader never touches m_sandbox, which stop()/reload may replace.
+	return m_logs.take();
 }
 
 bool WasmWorker::waitForIdle(int timeoutMs)
