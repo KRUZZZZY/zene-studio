@@ -50,7 +50,8 @@ Build and test output is in
 | Final rebuild | `cmake --build build --target zene DeviceDspTest PluginPortsMigrationTest dynamicsprocessor partc_ref_dynamicsprocessor frequencyshifter -j4` | worktree root | 0 (`build-4.log`) |
 | **Restored GREEN** | `ctest -R '^DeviceDspTest$' --output-on-failure` | `build/tests` | 0; 1/1 registered CTest tests passed (`test-6.log`) |
 | RMS sibling user | `ctest -R '^PluginPortsMigrationTest$' --output-on-failure` | `build/tests` | 8 (`test-5.log` with product patch reversed; `test-7.log` restored); 66 passed, 1 failed, 2 skipped. The sole failure is `nonRealtimeLadspaEffectsAreInvalid`: its SWH Decimator fixture is absent in both product states. The RMS copy regression passed. |
-| Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-390-port-port-port` | worktree root | 0, PASS (`gate-1.log`) |
+| Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-390-port-port-port` | worktree root | 0, PASS (`gate-3.log`) |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-390-port-port-port new-p9-390-port-port-port` | worktree root | 0, PASS (`submit-1.log`) |
 
 The selected CTest family contains one registered test (`DeviceDspTest`), and
 it passes with the fix. The neighboring RMS user was also run: its single
