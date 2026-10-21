@@ -73,33 +73,30 @@ using namespace lmms;
 namespace
 {
 
-//! The stand-in for `zene exportstems <project> -o <dir> ...`.
-int fakeStemExport(int argc, char** argv)
+//! The directory the command line asks the child to write into.
+QString outputDirectoryOf(int argc, char** argv)
 {
-	QString out;
 	for (int i = 1; i < argc; ++i)
 	{
 		const QString argument = QString::fromLocal8Bit(argv[i]);
-		if ((argument == QStringLiteral("-o") || argument == QStringLiteral("--output"))
-			&& i + 1 < argc)
-		{
-			out = QString::fromLocal8Bit(argv[++i]);
-		}
+		const bool namesTheOutput = argument == QStringLiteral("-o")
+			|| argument == QStringLiteral("--output");
+		if (namesTheOutput && i + 1 < argc) { return QString::fromLocal8Bit(argv[i + 1]); }
 	}
-	if (out.isEmpty()) { return 2; }
-	// The shipped CLI creates the directory it was given (src/core/main.cpp:1476).
-	if (!QDir().mkpath(out)) { return 3; }
+	return QString();
+}
 
-	const qint64 stamp = qEnvironmentVariable("ZENE_FAKE_STEM_MTIME_MS").toLongLong();
+//! Writes the "name=content" pairs into \a directory, stamping each file
+//! with \a stamp when one is given.
+bool writeStemFiles(const QString& directory, const QStringList& pairs, qint64 stamp)
+{
 	const QDateTime when = QDateTime::fromMSecsSinceEpoch(stamp);
-	const QStringList pairs = qEnvironmentVariable("ZENE_FAKE_STEM_FILES")
-		.split(QLatin1Char(','), Qt::SkipEmptyParts);
 	for (const QString& pair : pairs)
 	{
 		const int split = pair.indexOf(QLatin1Char('='));
 		if (split <= 0) { continue; }
-		QFile file(QDir(out).filePath(pair.left(split)));
-		if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return 3; }
+		QFile file(QDir(directory).filePath(pair.left(split)));
+		if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
 		file.write(pair.mid(split + 1).toUtf8());
 		file.flush();
 		// On an OPEN file: setFileTime() acts on the descriptor, so a closed
@@ -108,6 +105,20 @@ int fakeStemExport(int argc, char** argv)
 		if (stamp > 0) { file.setFileTime(when, QFileDevice::FileModificationTime); }
 		file.close();
 	}
+	return true;
+}
+
+//! The stand-in for `zene exportstems <project> -o <dir> ...`.
+int fakeStemExport(int argc, char** argv)
+{
+	const QString out = outputDirectoryOf(argc, argv);
+	if (out.isEmpty()) { return 2; }
+	// The shipped CLI creates the directory it was given (src/core/main.cpp:1476).
+	if (!QDir().mkpath(out)) { return 3; }
+	const qint64 stamp = qEnvironmentVariable("ZENE_FAKE_STEM_MTIME_MS").toLongLong();
+	const QStringList pairs = qEnvironmentVariable("ZENE_FAKE_STEM_FILES")
+		.split(QLatin1Char(','), Qt::SkipEmptyParts);
+	if (!writeStemFiles(out, pairs, stamp)) { return 3; }
 
 	const QString error = qEnvironmentVariable("ZENE_FAKE_STEM_STDERR");
 	if (!error.isEmpty())
@@ -190,6 +201,10 @@ private slots:
 		qunsetenv("ZENE_FAKE_STEM_STDERR");
 		qunsetenv("ZENE_FAKE_STEM_EXIT");
 		Engine::getSong()->clearProject();
+		// A fresh output directory for every test: the verb writes into a
+		// directory the CALLER names, so no test may see another's stems.
+		QDir(m_dir.path()).removeRecursively();
+		QVERIFY(QDir().mkpath(m_dir.path()));
 	}
 
 	//! The happy path: the stems the child wrote are the stems the reply names.
@@ -247,6 +262,27 @@ private slots:
 			qPrintable(QStringLiteral("reported %1").arg(stems.join(QLatin1Char(',')))));
 		// The rewritten stem holds the NEW content, not the earlier one.
 		QCOMPARE(contentOf(earlier), QStringLiteral("NEW"));
+	}
+
+	//! Cluster 1234: a failed render leaves the caller's earlier stems alone.
+	void aFailedRenderLeavesTheOutputDirectoryAlone()
+	{
+		seedSession();
+		const QString directory = out(QStringLiteral("stems"));
+		QVERIFY(QDir().mkpath(directory));
+		const QString earlier = QDir(directory).filePath(QStringLiteral("01_Lead.wav"));
+		QVERIFY(writeFile(earlier, QStringLiteral("OLD")));
+		// The child writes a stem and then fails: half an export.
+		qputenv("ZENE_FAKE_STEM_FILES", "01_Lead.wav=PARTIAL");
+		qputenv("ZENE_FAKE_STEM_EXIT", "3");
+
+		const ControlResult failed = exportStems(directory);
+		QVERIFY(!failed.ok);
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		// The earlier stem is untouched, and nothing else is left behind.
+		QCOMPARE(contentOf(earlier), QStringLiteral("OLD"));
+		QCOMPARE(QDir(directory).entryList(QDir::AllEntries | QDir::NoDotAndDotDot),
+			QStringList({QStringLiteral("01_Lead.wav")}));
 	}
 };
 
