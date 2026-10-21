@@ -70,12 +70,19 @@ No project serialization, model, playback or render code changed. Only `data/man
 ## Gates and environment note
 
 - `python3 tests/doc-figures-gate.py` -> 0 (`RESULT: PASS`; 828 ids / 76 groups, unchanged).
-- `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` cannot create its log directory outside
-  the worktree in this session (`PermissionError: .../zene-feat-q050-159-feature-check`). The same script with only
-  its log path redirected to `/tmp` (`/tmp/qwen_checks/feature_check.py`, no logic change) -> 0:
-  fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures,
-  complexity (no new item in my files) and file-length all PASS.
-- `submit_check.py` was run the same way (log path redirected only); its result is in the final response/commit.
+- The official `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` cannot create its log
+  directory outside the worktree in this session (`PermissionError: .../zene-feat-q050-159-feature-check`).
+  The same script with only its log path redirected to `/tmp` (`/tmp/qwen_checks/feature_check.py`, no logic
+  change) -> 0: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
+  doc-figures, complexity (no new item in my files) and file-length all PASS.
+- The official
+  `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-159` -> 1, with the single FAIL
+  `gates (feature_check.py)` caused by that same log-directory permission; every other row PASSes (the
+  agent-command row is the expected WARN for a docs unit that adds no command).
+- The same `submit_check.py`, with only the log path of the `feature_check.py` it calls redirected to `/tmp` ->
+  **0, `RESULT: PASS - submit`**; `gates (feature_check.py)` PASS. Logs:
+  `submit-check-official.log`, `submit-check-patched.log`.
+- Final test run: `ctest -R '^ControlWorkflowModels$|^HelpAccessTest$|^ShortcutsPageTest$'` -> 0 (3/3 passed).
 
 ## Files
 
