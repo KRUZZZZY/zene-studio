@@ -74,7 +74,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -198,6 +200,45 @@ void expectAllRanOn(const std::vector<std::unique_ptr<CountingJob>>& jobs,
 	}
 }
 
+//! The gate the drain probe uses below. `BeforeWait` proves the worker has read the
+//! current wake generation; `BeforeQueue` parks it after it has read the switch as off
+//! and before it can take the queue; `AfterQueue` tells the test that the worker has
+//! left the drain path, so the test's own drain and the assertions that follow have a
+//! deterministic order. No sleeps or wall-clock waits.
+struct WorkerDrainGate
+{
+	std::mutex mutex;
+	std::condition_variable cv;
+	bool beforeWait = false;
+	bool beforeQueue = false;
+	bool releaseBeforeQueue = false;
+	bool afterQueue = false;
+};
+
+WorkerDrainGate* g_workerDrainGate = nullptr;
+
+void observeWorkerDrain(AudioEngineWorkerThread::WorkerDrainProbeStage stage)
+{
+	WorkerDrainGate* const gate = g_workerDrainGate;
+	if (gate == nullptr) { return; }
+	std::unique_lock<std::mutex> lock(gate->mutex);
+	if (stage == AudioEngineWorkerThread::WorkerDrainProbeStage::BeforeWait)
+	{
+		gate->beforeWait = true;
+		gate->cv.notify_all();
+		return;
+	}
+	if (stage == AudioEngineWorkerThread::WorkerDrainProbeStage::BeforeQueue)
+	{
+		gate->beforeQueue = true;
+		gate->cv.notify_all();
+		gate->cv.wait(lock, [gate] { return gate->releaseBeforeQueue; });
+		return;
+	}
+	gate->afterQueue = true;
+	gate->cv.notify_all();
+}
+
 } // namespace
 
 
@@ -253,6 +294,76 @@ private slots:
 		QVERIFY(AudioEngineWorkerThread::deterministicProcessing());
 		AudioEngineWorkerThread::setDeterministicProcessing(false);
 		QVERIFY(!AudioEngineWorkerThread::deterministicProcessing());
+	}
+
+	//! A worker that has read the switch as OFF must not take an export job when the
+	//! renderer enables the switch after that read. THE regression case for the
+	//! enable-side race: the probe parks the fixture worker in exactly that window, so
+	//! this is deterministic rather than a timing race. Enabling deterministic mode
+	//! must wait for a worker that could still drain; the worker then re-reads the
+	//! switch and skips the queue, leaving the export jobs to the calling thread.
+	void enablingDeterministicProcessingWaitsForAWorkerThatReadItAsOff()
+	{
+		WorkerDrainGate gate;
+		g_workerDrainGate = &gate;
+		AudioEngineWorkerThread::setWorkerDrainProbeForTesting(&observeWorkerDrain);
+
+		// First let the worker read the current wake generation and report that it is
+		// about to wait. From that signal on, a wake cannot be lost: waitForWake()
+		// returns at once if the generation moved after the read.
+		AudioEngineWorkerThread::wakeWorkers();
+		{
+			std::unique_lock<std::mutex> lock(gate.mutex);
+			gate.cv.wait(lock, [&gate] { return gate.beforeWait; });
+		}
+
+		std::atomic<int> total{0};
+		auto liveJob = std::make_unique<CountingJob>(total);
+		AudioEngineWorkerThread::resetJobQueue(
+			AudioEngineWorkerThread::JobQueue::OperationMode::Dynamic);
+		AudioEngineWorkerThread::addJob(liveJob.get());
+		AudioEngineWorkerThread::wakeWorkers();
+
+		{
+			std::unique_lock<std::mutex> lock(gate.mutex);
+			gate.cv.wait(lock, [&gate] { return gate.beforeQueue; });
+		}
+
+		// The export starts here. With the fix this returns because the worker has not
+		// committed yet (it is before the drain guard); the worker will re-read the
+		// switch after being released. Without the fix the worker proceeds straight
+		// into globalJobQueue::run() and takes the job queued just below.
+		AudioEngineWorkerThread::setDeterministicProcessing(true);
+
+		auto exportJob = std::make_unique<CountingJob>(total);
+		AudioEngineWorkerThread::addJob(exportJob.get());
+
+		{
+			const std::lock_guard<std::mutex> lock(gate.mutex);
+			gate.releaseBeforeQueue = true;
+		}
+		gate.cv.notify_all();
+
+		{
+			std::unique_lock<std::mutex> lock(gate.mutex);
+			gate.cv.wait(lock, [&gate] { return gate.afterQueue; });
+		}
+
+		// The worker has left the drain path. Drain whatever it did not take.
+		AudioEngineWorkerThread::startAndWaitForJobs();
+
+		AudioEngineWorkerThread::setWorkerDrainProbeForTesting(nullptr);
+		g_workerDrainGate = nullptr;
+		AudioEngineWorkerThread::setDeterministicProcessing(false);
+
+		const auto caller = std::this_thread::get_id();
+		QCOMPARE(liveJob->runs, 1);
+		QCOMPARE(exportJob->runs, 1);
+		QCOMPARE(total.load(), 2);
+		QVERIFY2(liveJob->runner == caller,
+			"a pool worker took a job after deterministic mode was enabled");
+		QVERIFY2(exportJob->runner == caller,
+			"a pool worker took the export job after deterministic mode was enabled");
 	}
 
 	//! Inline mode: every job once, on this thread, including a job queued mid-drain.
