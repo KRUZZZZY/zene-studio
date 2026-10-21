@@ -300,12 +300,12 @@ private slots:
 		QVERIFY(stopButton != nullptr);
 
 		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), Bar}}).ok);
-		playButton->click();
+		QTest::mouseClick(playButton, Qt::LeftButton);
 		QVERIFY(Engine::getSong()->isPlaying());
 		QVERIFY2(announced().contains(QStringLiteral("Playing")), qPrintable(announced()));
 		QVERIFY2(announced().contains(speech::positionSpeech(Bar)), qPrintable(announced()));
 
-		stopButton->click();
+		QTest::mouseClick(stopButton, Qt::LeftButton);
 		QVERIFY(!Engine::getSong()->isPlaying());
 		QVERIFY2(announced().contains(QStringLiteral("Stopped")), qPrintable(announced()));
 		QVERIFY2(announced().contains(speech::positionSpeech(Engine::getSong()->getPlayPos().getTicks())),
