@@ -30,7 +30,7 @@ Both settings are now `std::atomic` and statically required to be always lock-fr
 | Rebuild with the fix restored | `cmake --build build --target zene AutomationThinTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/build-4.log 2>&1; echo EXIT=$?` | 0 |
 | Reversal-proof GREEN regression | `ctest -R '^AutomationThinTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/test-5.log 2>&1; echo EXIT=$?` | 0; 1/1 passed |
 | Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5526-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/gate-2.log 2>&1; echo EXIT=$?` | 0; all eight checks passed |
-| Completion check | Pending commit and execution. | Pending |
+| Initial completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5526-port 5526-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5526-port.r1/logs/gate-4.log 2>&1; echo EXIT=$?` | 0; it requested explicit regression exit-code evidence, answered below |
 
 ## Self-check
 
@@ -39,5 +39,6 @@ Both settings are now `std::atomic` and statically required to be always lock-fr
 - Saved project values are unchanged: the default remains `Default`, and serialization still writes the existing `sample_accurate` values only for an explicit setting. No command or undo behavior was added.
 - `AutomationThinTest.cpp` was already registered in `tests/fork-sources.txt:2278`. The inherited header and source changes are recorded in `tests/upstream-modifications.txt:2765-2766` with cluster 5526-port reasons.
 - The test uses sequential calls and compile-time type introspection; there are no timing assumptions or test races.
+- Regression reversal proof: `test-1.log` is EXIT=8 on the original fields; after `git apply -R`, `build-3.log` is EXIT=0 and `test-4.log` is EXIT=8 on the same assertion; after reapplying the patch, `build-4.log` is EXIT=0 and `test-5.log` is EXIT=0. The green family run `test-3.log` is EXIT=0 with 3/3 tests passed.
 - The explicit commit files are `include/AutomationClip.h`, `src/core/AutomationClip.cpp`, `tests/src/core/AutomationThinTest.cpp`, `tests/upstream-modifications.txt`, and `docs/qwen-fixes-2026-10/cluster-5526-port.md`.
 - The repository-wide include scan found two additional product consumers outside `src/`; their `midiimport` and `ladspaeffect` targets were rebuilt in addition to `zene` and the 20 test targets.
