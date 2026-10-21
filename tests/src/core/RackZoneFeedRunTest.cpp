@@ -33,6 +33,9 @@
 
 #include <vector>
 
+#include <QDomDocument>
+#include <QDomElement>
+
 #include "BufferManager.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -247,6 +250,60 @@ private slots:
 		m_track->silenceAllNotes();
 		rack.zoneInputs().endPeriod();
 		rack.zoneInputs().endPeriod();
+	}
+
+	//! MX-112: the newest note sounds at the per-key route limit, and the stolen route's off stays paired.
+	void liveSameKeyRouteCapacityStillForwardsTheNextZone()
+	{
+		auto& layers = m_track->layers();
+		QDomDocument ownerDoc;
+		QDomElement parent = ownerDoc.createElement(QStringLiteral("trackcontainer"));
+		ownerDoc.appendChild(parent);
+		const QDomElement state = m_track->saveState(ownerDoc, parent);
+		QDomDocument layerDoc;
+		layerDoc.appendChild(layerDoc.importNode(state, true));
+		const QString layerXml = layerDoc.toString(-1);
+		QCOMPARE(layers.insertLayer(1, layerXml), 1);
+		QCOMPARE(layers.insertLayer(2, layerXml), 2);
+		constexpr int key = 117;
+		const MidiEvent softOn(MidiNoteOn, 0, key, 40, nullptr, MidiEvent::Source::Internal);
+		const MidiEvent hardOn(MidiNoteOn, 0, key, 100, nullptr, MidiEvent::Source::Internal);
+		const MidiEvent noteOff(MidiNoteOff, 0, key, 0, nullptr, MidiEvent::Source::Internal);
+		RackZone softZone = zoneOver(key, key, 1);
+		softZone.lowVelocity = softZone.highVelocity = softOn.volume(m_track->midiPort()->baseVelocity());
+		RackZone hardZone = softZone;
+		hardZone.lowVelocity = hardZone.highVelocity = hardOn.volume(m_track->midiPort()->baseVelocity());
+		hardZone.chain = 2;
+		QVERIFY(layers.zones().addZone(softZone) >= 0);
+		QVERIFY(layers.zones().addZone(hardZone) >= 0);
+		InstrumentTrack* softLayer = layers.layer(1);
+		InstrumentTrack* hardLayer = layers.layer(2);
+		QVERIFY(softLayer != nullptr);
+		QVERIFY(hardLayer != nullptr);
+
+		constexpr int capacity = 128;
+		for (int i = 0; i < capacity; ++i) { m_track->processInEvent(softOn); }
+		m_track->processInEvent(hardOn);
+		const bool hardStartedAtCapacity = hardLayer->playingNote(key) != nullptr;
+		for (int i = 0; i < capacity; ++i) { m_track->processInEvent(noteOff); }
+		const bool hardSurvivedStolenRouteOffs = hardLayer->playingNote(key) != nullptr;
+		m_track->processInEvent(noteOff);
+		const bool hardReleasedOnItsOff = hardLayer->playingNote(key) == nullptr;
+		m_track->processInEvent(softOn);
+		const bool routeRecoveredAfterOverflow = softLayer->playingNote(key) != nullptr;
+		m_track->processInEvent(noteOff);
+		const bool recoveredRouteReleased = softLayer->playingNote(key) == nullptr;
+		if (softLayer->playingNote(key) != nullptr) { softLayer->processInEvent(noteOff); }
+		if (hardLayer->playingNote(key) != nullptr) { hardLayer->processInEvent(noteOff); }
+		const bool removedHardLayer = layers.removeLayer(2);
+		const bool removedSoftLayer = layers.removeLayer(1);
+		QVERIFY(hardStartedAtCapacity);
+		QVERIFY(hardSurvivedStolenRouteOffs);
+		QVERIFY(hardReleasedOnItsOff);
+		QVERIFY(routeRecoveredAfterOverflow);
+		QVERIFY(recoveredRouteReleased);
+		QVERIFY(removedHardLayer);
+		QVERIFY(removedSoftLayer);
 	}
 };
 
