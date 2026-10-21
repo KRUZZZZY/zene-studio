@@ -1,6 +1,6 @@
 # cluster new-p9-122 — audio/GUI peak-meter float handoff races through EqFader
 
-Four bug reports, one root cause. Verdicts, one line per report:
+Verdict: FIXED (four bug reports, one root cause — one shared fix, one line per report below)
 
 - new-p9-122: **FIXED** — `EqFader` (the peak-meter fader shared by the Eq, Delay
   and Compressor dialogs) took raw `float*` to plugin fields; its GUI-timer slot
@@ -152,3 +152,52 @@ this targeted-build lane tree; `cmake --build build --target decimator_1202`
 - `tests/reference/**` is frozen migration evidence (ORIGIN.tsv blobs) — not
   touched; the reference modules carry their own plain-float EqFader copy.
 - LOG FOLDER: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-122.r1/logs`
+
+## Self-check
+
+- **The regression test FAILS with the product change reverted and PASSES with
+  it (exit codes).** Yes. Unfixed code: `ctest -R '^EqPeakHandoffTest$'` →
+  **EXIT=8**, all four slots FAIL (log `test-red-unfixed.log`). Reverse-patch
+  proof on the committed fix: `git apply -R fix.patch`, rebuild →
+  **EXIT=8**, same four failures (`test-rev-red.log`); `git apply fix.patch`,
+  rebuild → **EXIT=0** (`test-final-green.log`). The test compiles on both
+  versions (the template helper's plain-float branch is only reached at
+  runtime), so the proof isolates the test from the build.
+- **The test is deterministic: no wall-clock timing, sleeps or races.** It
+  checks compile-time field types (`std::is_same_v<decltype(EqControls::
+  m_inPeakL), std::atomic<float>>` and 15 more), source text of the three
+  product files read from disk (`readSource("../../plugins/...")`, the
+  Vst3HostTest pattern — seam: the on-disk sources the binary is built from),
+  and the exchange handoff on a real `DelayEffect`'s fields driven by explicit
+  values (store 0.5, exchange must return 0.5 and leave 0; store 0.125,
+  exchange must return 0.125). No threads, no timers, no sleeps.
+- **The fix is at the cause and complete: every caller and sibling was checked
+  and stays consistent.** The one cause is the raw-float EqFader handoff.
+  Callers: EqControlsDialog (in/out faders + per-band faders via
+  `EqParameterWidget::EqBand` pointers), DelayControlsDialog,
+  CompressorControlDialog — all now pass atomic pointers through the changed
+  `EqFader`/`setBand` signatures (grep: no other construction site).
+  Readers/writers: only `EqEffect::processImpl`/`setBandPeaks`,
+  `DelayEffect::processImpl`, `CompressorEffect::processImpl` (writes) and
+  `EqFader::updateVuMeters` (read+clear) touch the fields — all converted;
+  the ctor inits (`EqControls.cpp`, `DelayControls.cpp`) compile as atomic
+  stores. Sibling: Compressor had the identical defect (same widget) and is
+  fixed in the same change. Peak fields are never serialized
+  (`saveSettings`/`loadSettings` do not mention them), so nothing else reads
+  them. Family tests (EqFilterTest, EqCurveTest, PluginPortsMigrationTest —
+  renders eq/delay/compressor against the frozen references — DelayControlsTest,
+  DelayLfoAutomationTest) all PASS, exit 0.
+- **No collateral damage: old projects and saved data still load as before.**
+  The peak fields are runtime meters only — `EqControls::saveSettings/
+  loadSettings` never touch them (verified by grep over the save/load
+  functions), so project files are unchanged and old projects load and render
+  identically (PluginPortsMigrationTest renders the migrated eq/delay/
+  compressor equal to the frozen references). No limit or check was added that
+  any caller could exceed: the only additions are atomics, a lock-free CAS
+  raise and relaxed stores — `static_assert(is_always_lock_free)` compiles on
+  every platform this project supports or the build fails loudly, and no
+  runtime bound was introduced anywhere.
+- **If the verdict were ALREADY-FIXED or FALSE-POSITIVE:** not applicable —
+  the verdict is FIXED; the original code's race is evidenced in the Finding
+  table above (`EqFader.h:71-84` read-then-clear on plain floats written by
+  `EqEffect.cpp:180` et al. on the audio thread).
