@@ -173,11 +173,20 @@ void ReferenceProjectPanel::refreshIfOpen()
 
 void ReferenceProjectPanel::refresh()
 {
-	const QJsonObject state = ControlRegistry::instance()->invoke(QStringLiteral("reference.get_state"), {}).result;
-	const bool open = state.value(QStringLiteral("open")).toBool();
-	m_path->setText(open ? state.value(QStringLiteral("path")).toString() + (state.value(QStringLiteral("stale")).toBool()
+	const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("reference.get_state"), {});
+	if (!state.ok)
+	{
+		// A refused or failed query is not a closed reference: say what failed and keep the last tree read
+		// (as MixerRoutingMatrix does), rather than presenting an empty tree as "no reference is open".
+		m_path->setText(tr("The reference project could not be read: %1").arg(state.errorMessage));
+		fillTargets();
+		return;
+	}
+	const QJsonObject& listing = state.result;
+	const bool open = listing.value(QStringLiteral("open")).toBool();
+	m_path->setText(open ? listing.value(QStringLiteral("path")).toString() + (listing.value(QStringLiteral("stale")).toBool()
 		? tr(" (changed on disk since it was opened)") : QString()) : tr("No reference project is open."));
-	buildTree(state);
+	buildTree(listing);
 	fillTargets();
 }
 
