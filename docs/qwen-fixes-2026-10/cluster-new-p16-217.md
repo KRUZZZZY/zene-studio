@@ -58,3 +58,23 @@ The official `feature_check.py` cannot create its log folder outside the worktre
 - `src/core/SessionModel.cpp`
 - `tests/src/core/SessionModelTest.cpp`
 - `docs/qwen-fixes-2026-10/cluster-new-p16-217.md`
+
+## Self-check
+
+Verdict is FIXED, so the ALREADY-FIXED / FALSE-POSITIVE item does not apply.
+
+**1. Regression test fails with the product change reverted and passes with it.** Commands and exits are in the evidence table above: RED before the fix **EXIT=8** (`test-1-red.log`), reverted-fix proof **EXIT=8** (`test-3-reverted.log`), GREEN with the fix **EXIT=0** (`test-2-green.log`, `test-4-reapplied.log`). The failing assertion is the same in both RED runs: `SessionModelTest.cpp(470)`, `restoreState` returned `true` for 257 valid rows.
+
+**2. Deterministic.** The test builds its XML from string literals and integer loop counters (`SessionModelTest.cpp:448-462`). It calls no clock, sleep, timer or thread, and its only I/O is a `QTemporaryDir` project file written and read back synchronously (`:478-500`). The control-command path and the undo payload are not involved.
+
+**3. Fix at the cause, callers and siblings checked.**
+- Cause: `restoreSubScenes` ended its loop at `MaxCount` (`SessionModel.cpp:96-108`).
+- Callers: `rg -n restoreSubScenes src tests` finds one call, `SessionModel.cpp:437`, which now handles the `false` return (`clear()` and `return false`, as the scene and clip failures do at `:429-434`).
+- Siblings: the shipped `<z:subscenes>` reader already refuses the 257th row (`SessionSubScenes.cpp:64-65`, `:125-128`), so the two readers now agree. The control create command refuses at 256 (`ControlCommandsSessionSubScenes.cpp:91-93`), and every undo payload is written from the model, so it stays within 256.
+
+**4. No collateral damage.**
+- Blocks with 256 or fewer valid rows load exactly as before. The test covers the boundary (`:464-466`) and the case of 256 valid plus unreadable rows (`:473-476`). The unreadable-row rule (skipped, not counted) is unchanged.
+- The one changed behaviour is a legacy `<session>` block with more than 256 valid rows. It is refused as a whole and kept verbatim, not loaded shorter (see "Behaviour change to review" above). No caller in the codebase legitimately produces such a block: the create command refuses at 256 and the `<z:subscenes>` reader refuses past it.
+- Same-family tests, fix applied: `SessionSubSceneTest` 8/8, `SessionGridRecordTest` 6/6, `SessionAudioRecordTest` 5/5, `SessionModelTest` 13/13 (exit 0).
+
+**Gates item (submit_check "gates (feature_check.py)").** This item still shows FAIL, and the cause is the environment, not the code. `feature_check.py` exits 1 before running any gate: `PermissionError` at `feature_check.py:71` (`logs.mkdir`), because it writes its logs to the sibling folder `zene-qwen-new-p16-217-feature-check`, outside the worktree and outside my write-jail. I did not create that folder and did not change the gate. The same gate commands, run through `/tmp/fc-new-p16-217/gate_runner.py` (same module, logs in the LOG folder), all pass: `RESULT: PASS`, exit 0 (`gate-2-feature-check.log`, logs in `gates-1/`). The owner or the fix loop needs to run `feature_check.py` where it can create its log folder to get the official table.
