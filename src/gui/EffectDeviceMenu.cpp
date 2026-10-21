@@ -111,7 +111,7 @@ CommandCall deviceCall(const char* id, const QJsonObject& fixed, bool ask, const
 //! (MX-113), the delta (MX-080), compatibility and editor options (MX-099 / MX-094), a convolution
 //! reverb's impulse (MX-152). These commands name a device by
 //! 'target' and its fx-<n> alone - a rack chain's device is found on its channel by its id.
-void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, const QJsonObject& device)
+void addParameterEntries(QMenu* menu, const QPointer<QWidget>& parent, const Effect* effect, const QJsonObject& device)
 {
 	const QJsonObject self{{QStringLiteral("target"), device.value(QStringLiteral("target"))},
 		{QStringLiteral("plugin"), device.value(QStringLiteral("plugin"))}};
@@ -119,31 +119,31 @@ void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, con
 	entry(parameters, QObject::tr("Find Parameter..."), "plugin.param_search", [parent, self] {
 		CommandCall find = deviceCall("plugin.param_search", {{QStringLiteral("target"), self.value(QStringLiteral("target"))}}, true);
 		find.showResult = true;
-		runCommand(parent, find);
+		runCommand(parent.data(), find);
 	});
 	entry(parameters, QObject::tr("Rename Parameter..."), "plugin.param_rename", [parent, self] {
-		runCommand(parent, deviceCall("plugin.param_rename", self, true));
+		runCommand(parent.data(), deviceCall("plugin.param_rename", self, true));
 	});
-	entry(parameters, QObject::tr("Randomise"), "plugin.randomise", [parent, self] { runCommand(parent, deviceCall("plugin.randomise", self, false)); });
+	entry(parameters, QObject::tr("Randomise"), "plugin.randomise", [parent, self] { runCommand(parent.data(), deviceCall("plugin.randomise", self, false)); });
 	entry(parameters, QObject::tr("Randomise by..."), "plugin.randomise", [parent, self] {
-		runCommand(parent, deviceCall("plugin.randomise", self, true, {{QStringLiteral("amount"), 0.25}}));
+		runCommand(parent.data(), deviceCall("plugin.randomise", self, true, {{QStringLiteral("amount"), 0.25}}));
 	});
 	const bool folded = effect->deviceOptions().folded;
 	entry(menu, folded ? QObject::tr("Unfold") : QObject::tr("Fold"), "plugin.fold", [parent, self, folded] {
 		QJsonObject args = self;
 		args.insert(QStringLiteral("folded"), !folded);
-		runCommand(parent, deviceCall("plugin.fold", args, false));
+		runCommand(parent.data(), deviceCall("plugin.fold", args, false));
 	});
 	const bool listening = effect->deltaTap().enabled();
 	QAction* delta = entry(menu, QObject::tr("Hear Only What It Changes"), "plugin.delta", [parent, self, listening] {
 		QJsonObject args = self;
 		args.insert(QStringLiteral("on"), !listening);
-		runCommand(parent, deviceCall("plugin.delta", args, false));
+		runCommand(parent.data(), deviceCall("plugin.delta", args, false));
 	});
 	delta->setCheckable(true);
 	delta->setChecked(listening);
 	entry(menu, QObject::tr("Compatibility and Editor..."), "plugin.options", [parent, self] {
-		runCommand(parent, deviceCall("plugin.options", self, true));
+		runCommand(parent.data(), deviceCall("plugin.options", self, true));
 	});
 	// MX-156: a Recorder records what passes it and lands its last take on a track.
 	if (const TakeRecorder* recorder = TakeRecorder::of(effect))
@@ -153,10 +153,10 @@ void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, con
 			[parent, self, recording] {
 				QJsonObject args = self;
 				args.insert(QStringLiteral("on"), !recording);
-				runCommand(parent, deviceCall("plugin.record", args, false));
+				runCommand(parent.data(), deviceCall("plugin.record", args, false));
 			});
 		QAction* land = entry(menu, QObject::tr("Put the Last Take on a New Track"), "plugin.recorder_land", [parent, self] {
-			runCommand(parent, deviceCall("plugin.recorder_land", self, false));
+			runCommand(parent.data(), deviceCall("plugin.recorder_land", self, false));
 		});
 		// Only offered once there is a finished take on disk (plugin.recorder_land refuses otherwise).
 		land->setEnabled(!recording && !recorder->lastTake().isEmpty() && QFileInfo::exists(recorder->lastTake()));
@@ -165,7 +165,7 @@ void addParameterEntries(QMenu* menu, QWidget* parent, const Effect* effect, con
 	if (QString::fromUtf8(effect->descriptor()->name) == QLatin1String("convolutionreverb"))
 	{
 		entry(menu, QObject::tr("Load Impulse Response..."), "plugin.impulse_load", [parent, self] {
-			runCommand(parent, deviceCall("plugin.impulse_load", self, true));
+			runCommand(parent.data(), deviceCall("plugin.impulse_load", self, true));
 		});
 	}
 }
@@ -209,13 +209,16 @@ QJsonObject deviceAddress(const Effect* effect)
 
 void addReplaceEntry(QMenu* menu, const QJsonObject& device)
 {
-	QWidget* parent = menu->parentWidget();
-	entry(menu, QObject::tr("Replace With..."), "plugin.replace", [parent, device] { replaceWith(parent, device); });
+	// The host is guarded: the menu may outlive the widget it belongs to (the card lets go of it
+	// before it runs), so an entry triggered after that widget is gone runs its command with no
+	// anchor instead of a dead widget.
+	const QPointer<QWidget> parent = menu->parentWidget();
+	entry(menu, QObject::tr("Replace With..."), "plugin.replace", [parent, device] { replaceWith(parent.data(), device); });
 }
 
 void addAbMenu(QMenu* menu, const QJsonObject& device)
 {
-	QWidget* parent = menu->parentWidget();
+	const QPointer<QWidget> parent = menu->parentWidget();
 	QMenu* ab = menu->addMenu(QObject::tr("A/B"));
 	const auto abCall = [device](const QString& action, const QString& slot) {
 		QJsonObject args = device;
@@ -228,12 +231,12 @@ void addAbMenu(QMenu* menu, const QJsonObject& device)
 			std::tuple{QObject::tr("Toggle A/B"), QStringLiteral("toggle"), QString()}})
 	{
 		const CommandCall call = abCall(action, slot);
-		entry(ab, text, "plugin.ab", [parent, call] { runCommand(parent, call); });
+		entry(ab, text, "plugin.ab", [parent, call] { runCommand(parent.data(), call); });
 	}
 	entry(ab, QObject::tr("Blend A and B..."), "plugin.blend", [parent, device] {
 		const QJsonObject self{{QStringLiteral("target"), device.value(QStringLiteral("target"))},
 			{QStringLiteral("plugin"), device.value(QStringLiteral("plugin"))}};
-		runCommand(parent, deviceCall("plugin.blend", self, true, {{QStringLiteral("amount"), 0.5}}));
+		runCommand(parent.data(), deviceCall("plugin.blend", self, true, {{QStringLiteral("amount"), 0.5}}));
 	});
 }
 
@@ -243,36 +246,36 @@ void addInsertAndCopyEntries(QMenu* menu, Effect* effect, bool withReplace)
 	if (device.isEmpty()) { return; }
 	QJsonObject self = device;
 	self.remove(QStringLiteral("plugin"));
-	QWidget* parent = menu->parentWidget();
+	const QPointer<QWidget> parent = menu->parentWidget();
 	entry(menu, QObject::tr("Insert Effect Before..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
-		insertBeside(parent, guarded, false);
+		insertBeside(parent.data(), guarded, false);
 	});
 	entry(menu, QObject::tr("Insert Effect After..."), "plugin.load", [parent, guarded = QPointer<Effect>(effect)] {
-		insertBeside(parent, guarded, true);
+		insertBeside(parent.data(), guarded, true);
 	});
 	if (withReplace) { addReplaceEntry(menu, device); }
 	entry(menu, QObject::tr("Copy to Channels..."), "plugin.copy", [parent, device] {
-		copyTo(parent, device, "plugin.copy", QObject::tr("Copy the device to"));
+		copyTo(parent.data(), device, "plugin.copy", QObject::tr("Copy the device to"));
 	});
 	entry(menu, QObject::tr("Copy Chain to Channels..."), "chain.copy", [parent, self] {
-		copyTo(parent, self, "chain.copy", QObject::tr("Copy the chain to"));
+		copyTo(parent.data(), self, "chain.copy", QObject::tr("Copy the chain to"));
 	});
 }
 
 void addParameterMenus(QMenu* menu, Effect* effect)
 {
 	const QJsonObject device = deviceAddress(effect);
-	if (!device.isEmpty()) { addParameterEntries(menu, menu->parentWidget(), effect, device); }
+	if (!device.isEmpty()) { addParameterEntries(menu, QPointer<QWidget>(menu->parentWidget()), effect, device); }
 }
 
 void addEffectDeviceMenus(QMenu* menu, Effect* effect)
 {
 	const QJsonObject device = deviceAddress(effect);
 	if (device.isEmpty()) { return; }
-	QWidget* parent = menu->parentWidget();
+	const QPointer<QWidget> parent = menu->parentWidget();
 	addInsertAndCopyEntries(menu, effect, true);
 	entry(menu, QObject::tr("Presets..."), "plugin.preset_list", [parent, device] {  // L11 (WF-025)
-		showCommandList(parent, CommandLists::devicePresets(device));
+		showCommandList(parent.data(), CommandLists::devicePresets(device));
 	});
 	addAbMenu(menu, device);
 	addParameterEntries(menu, parent, effect, device);

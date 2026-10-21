@@ -66,13 +66,15 @@ void addEditorEntry(QMenu* menu, DeviceCard* card)
 
 void addPresetMenu(QMenu* menu, const QJsonObject& device)
 {
-	QWidget* parent = menu->parentWidget();
+	// The host is guarded: the menu outlives the card (it is let go of before it runs), so an entry
+	// triggered after the card is gone runs its command with no anchor instead of a dead widget.
+	const QPointer<QWidget> parent = menu->parentWidget();
 	QMenu* presets = menu->addMenu(DeviceCard::tr("Presets"));
 	addCommandEntry(presets, DeviceCard::tr("Load Preset..."), "plugin.preset_list", [parent, device] {
-		showCommandList(parent, CommandLists::devicePresets(device));
+		showCommandList(parent.data(), CommandLists::devicePresets(device));
 	});
 	addCommandEntry(presets, DeviceCard::tr("Save Preset As..."), "plugin.preset_save", [parent, fixed = self(device)] {
-		dispatch(parent, QStringLiteral("plugin.preset_save"), fixed, true);  // the form asks for the name
+		dispatch(parent.data(), QStringLiteral("plugin.preset_save"), fixed, true);  // the form asks for the name
 	});
 }
 
@@ -82,12 +84,12 @@ void addMoveEntries(QMenu* menu, const Effect* effect, const QJsonObject& device
 	const std::vector<Effect*>& effects = effect->effectChain()->effects();
 	const int slot = static_cast<int>(std::find(effects.begin(), effects.end(), effect) - effects.begin());
 	const int last = static_cast<int>(effects.size()) - 1;
-	QWidget* parent = menu->parentWidget();
+	const QPointer<QWidget> parent = menu->parentWidget();
 	for (const auto& [text, to] : {std::pair{DeviceCard::tr("Move Left"), slot - 1}, std::pair{DeviceCard::tr("Move Right"), slot + 1}})
 	{
 		QJsonObject args = device;
 		args.insert(QStringLiteral("position"), to);
-		QAction* move = addCommandEntry(menu, text, "plugin.move", [parent, args] { dispatch(parent, QStringLiteral("plugin.move"), args); });
+		QAction* move = addCommandEntry(menu, text, "plugin.move", [parent, args] { dispatch(parent.data(), QStringLiteral("plugin.move"), args); });
 		move->setEnabled(to >= 0 && to <= last);
 	}
 }
@@ -97,12 +99,12 @@ void addEffectActions(QMenu* menu, DeviceCard* card)
 	Effect* effect = card->spec().effect;
 	const QJsonObject device = deviceAddress(effect);
 	if (device.isEmpty()) { return; }
-	QWidget* parent = menu->parentWidget();
+	const QPointer<QWidget> parent = menu->parentWidget();
 	const bool bypassed = !effect->isEnabled();
 	QAction* bypass = addCommandEntry(menu, DeviceCard::tr("Bypass"), "plugin.bypass", [parent, device, bypassed] {
 		QJsonObject args = self(device);
 		args.insert(QStringLiteral("bypass"), !bypassed);
-		dispatch(parent, QStringLiteral("plugin.bypass"), args);
+		dispatch(parent.data(), QStringLiteral("plugin.bypass"), args);
 	});
 	bypass->setCheckable(true);
 	bypass->setChecked(bypassed);  // a check mark AND the card's state line say it: not colour alone
@@ -112,7 +114,7 @@ void addEffectActions(QMenu* menu, DeviceCard* card)
 	addReplaceEntry(menu, device);
 	addMoveEntries(menu, effect, device);
 	addCommandEntry(menu, DeviceCard::tr("Remove"), "plugin.unload", [parent, fixed = self(device)] {
-		dispatch(parent, QStringLiteral("plugin.unload"), fixed);
+		dispatch(parent.data(), QStringLiteral("plugin.unload"), fixed);
 	});
 	menu->addSeparator();
 	addInsertAndCopyEntries(menu, effect, false);
@@ -123,14 +125,14 @@ void addEffectActions(QMenu* menu, DeviceCard* card)
 void addInstrumentActions(QMenu* menu, DeviceCard* card)
 {
 	const QJsonObject device{{QStringLiteral("target"), card->spec().target}, {QStringLiteral("plugin"), QStringLiteral("inst")}};
-	QWidget* parent = menu->parentWidget();
+	const QPointer<QWidget> parent = menu->parentWidget();
 	addEditorEntry(menu, card);
 	addPresetMenu(menu, device);
 	addCommandEntry(menu, DeviceCard::tr("Replace Instrument..."), "plugin.load", [parent, target = card->spec().target] {
-		const QString chosen = DevicePicker::pick(parent, DevicePicker::Kind::Instrument, DeviceCard::tr("Replace the instrument with"));
+		const QString chosen = DevicePicker::pick(parent.data(), DevicePicker::Kind::Instrument, DeviceCard::tr("Replace the instrument with"));
 		if (!chosen.isEmpty())
 		{
-			dispatch(parent, QStringLiteral("plugin.load"), {{QStringLiteral("target"), target}, {QStringLiteral("device"), chosen}});
+			dispatch(parent.data(), QStringLiteral("plugin.load"), {{QStringLiteral("target"), target}, {QStringLiteral("device"), chosen}});
 		}
 	});
 	menu->addSeparator();

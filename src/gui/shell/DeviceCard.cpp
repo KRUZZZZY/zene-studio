@@ -359,9 +359,13 @@ QWidget* DeviceCard::buildParameters(const QList<AutomatableModel*>& parameters)
 void DeviceCard::contextMenuEvent(QContextMenuEvent* event)
 {
 	// Theme 12: the card's one action menu - the same entries, in the same order, as its Actions button.
+	// The menu is built as the card's child, so its entries name the card as the widget their dialogs
+	// belong to, and it is let go of before it runs: one of the entries (Remove) retires the card, and a
+	// card deleted while this menu's own event loop runs would take the menu - a stack object - with it.
 	QMenu menu(this);
 	fillDeviceActionMenu(&menu, this);
 	if (menu.isEmpty()) { QFrame::contextMenuEvent(event); return; }
+	menu.setParent(nullptr);
 	menu.exec(event->globalPos());
 }
 

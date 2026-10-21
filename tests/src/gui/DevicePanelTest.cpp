@@ -48,12 +48,15 @@
 #include <cmath>
 #include <memory>
 
+#include <QApplication>
+#include <QContextMenuEvent>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
 #include <QMenu>
+#include <QTimer>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
@@ -131,6 +134,17 @@ bool allDeclareRegisteredCommands(QMenu* menu, QString* stray)
 		if (!ControlRegistry::instance()->hasCommand(id)) { *stray = action->text() + QStringLiteral(" -> ") + id; return false; }
 	}
 	return true;
+}
+
+//! The menu a right-click opened: the visible QMenu among the application's widgets (the offscreen
+//! platform has no active popup widget, so the menu is found by what it shows).
+QMenu* visibleMenu()
+{
+	for (QWidget* widget : QApplication::allWidgets())
+	{
+		if (auto* menu = qobject_cast<QMenu*>(widget); menu != nullptr && menu->isVisible()) { return menu; }
+	}
+	return nullptr;
 }
 
 } // namespace
@@ -644,6 +658,75 @@ private slots:
 		QCOMPARE(control::effectIdOf(mixerChannel->m_fxChain.effects().back()), first);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(control::effectIdOf(mixerChannel->m_fxChain.effects().front()), first);
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p9-104: the card's right-click menu is a stack object, and one of its own entries (Remove)
+	 *  retires the card - so the menu must not be the card's child: a card deleted while the menu's event
+	 *  loop runs would take the stack menu with it and the menu's destructor would run twice. */
+	void theContextMenuIsNotTheCardsChild()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		if (loadAnEffect(channel).isEmpty()) { QSKIP("this host loads no effect module"); }
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
+		QVERIFY(card != nullptr);
+
+		// The menu the right-click opens, and the widget it belongs to.
+		bool opened = false;
+		QWidget* host = nullptr;
+		QTimer::singleShot(0, card, [&opened, &host] {
+			if (QMenu* menu = visibleMenu())
+			{
+				opened = true;
+				host = menu->parentWidget();
+				menu->close();
+			}
+		});
+		QContextMenuEvent event(QContextMenuEvent::Mouse, card->rect().center(), card->mapToGlobal(card->rect().center()));
+		QCoreApplication::sendEvent(card, &event);
+		QVERIFY2(opened, "the card's right-click did not open its action menu");
+		QVERIFY2(host != card, "the action menu is a child of the card: a card retired by the menu's own Remove entry takes the stack menu with it");
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! BUG new-p9-104: removing the device from the card's own menu retires the card while the menu's event
+	 *  loop still runs - the card must not take the stack menu with it (the menu would be destroyed twice). */
+	void removingADeviceFromItsOwnMenuDoesNotDestroyTheMenu()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		if (loadAnEffect(channel).isEmpty()) { QSKIP("this host loads no effect module"); }
+		DevicePanel panel;
+		panel.resize(1200, 300);
+		panel.show();
+		ShellSelection::instance()->setChannel(channel);
+		panel.rebuild();
+		QCoreApplication::processEvents();
+		DeviceCard* card = shownChildren<DeviceCard>(&panel).first();
+		QVERIFY(card != nullptr);
+		const QPointer<DeviceCard> retired = card;
+
+		QWidget* host = nullptr;
+		QTimer::singleShot(0, card, [&host] {
+			QMenu* menu = visibleMenu();
+			if (menu == nullptr) { return; }
+			host = menu->parentWidget();
+			if (QAction* remove = menuAction(menu, {QStringLiteral("Remove")})) { remove->trigger(); }
+			menu->close();
+		});
+		QContextMenuEvent event(QContextMenuEvent::Mouse, card->rect().center(), card->mapToGlobal(card->rect().center()));
+		QCoreApplication::sendEvent(card, &event);
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY2(host != card, "the action menu is a child of the card: the card the menu removes takes the stack menu with it");
+		QVERIFY2(retired.isNull(), "the card of the removed device is still there");
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 
