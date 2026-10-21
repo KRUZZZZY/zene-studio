@@ -416,6 +416,12 @@ DataFile::DataFile( Type type ) :
 	root.setAttribute("creatorplatformtype", QSysInfo::productType());
 	appendChild( root );
 
+	// A document this build creates is at the current version, and its root
+	// declares the type it carries: the "version and type AS THE FILE HAD
+	// THEM" a fingerprint measures are these.
+	m_originalFileVersion = static_cast<int>(m_fileVersion);
+	m_originalType = typeName( type );
+
 	m_head = createElement( "head" );
 	root.appendChild( m_head );
 
@@ -2578,6 +2584,12 @@ void DataFile::upgrade_fixBassLoopsTypo()
 
 void DataFile::upgrade()
 {
+	// The file's own version was behind: this load CHANGES the document's
+	// format (the root is rewritten below, and the upgrade routines touch
+	// what they touch). A fingerprint over the file must know that - the
+	// sections are no longer the ones the file carries.
+	m_sourceFormatChanged = true;
+
 	// Runs all necessary upgrade methods
 	std::size_t max = std::min(static_cast<std::size_t>(m_fileVersion), UPGRADE_METHODS.size());
 	std::for_each( UPGRADE_METHODS.begin() + max, UPGRADE_METHODS.end(),
@@ -2769,6 +2781,14 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile,
 		m_fileVersion = root.attribute( "version" ).toUInt( &success );
 		if( !success ) qWarning("File Version conversion failure.");
 	}
+
+	// The root's format attributes AS THE FILE HAD THEM, taken before any
+	// upgrade rewrites the root below: the version a reader of the file sees is
+	// this one, and it is what a fingerprint over the file must measure - a
+	// file whose root version was changed under it must not be taken for the
+	// project it was saved from.
+	m_originalFileVersion = static_cast<int>(m_fileVersion);
+	m_originalType = root.attribute( "type" );
 
 	if (root.hasAttribute("creatorversion"))
 	{
