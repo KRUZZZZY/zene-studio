@@ -73,7 +73,10 @@ the `cmake` shim (`bunny-guard`) refuses all configure commands. To still run a 
 `plugins/WasmEffect` sources, the five `src/wasm` sources and `src/core/ControlWasmSupport.cpp`
 against the existing `build/src/CMakeFiles/lmmsobjs.dir` objects and the available wasmtime C API.
 The test source and its registration in the `WASM` branch of `tests/CMakeLists.txt` are the same
-files a normally configured `WasmSandboxTest` ctest target builds.
+files a normally configured `WasmSandboxTest` ctest target builds. The run took the `.wasm` fixtures
+and p5's `libwasm_effect.so` from an existing wasm-enabled build tree (the fixtures are assembled
+from the same `modules/wasm` sources); p5 only checks PluginFactory discovery and does not exercise
+the unload path.
 
 The log folder named in the brief is read-only in this session's sandbox:
 `touch /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5444.r1/logs/probe.log` returns
