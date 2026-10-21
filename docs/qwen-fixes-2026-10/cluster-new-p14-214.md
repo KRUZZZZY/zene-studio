@@ -30,9 +30,9 @@ expected `1` (`build/qwen-logs-214/test-3-red.log`, EXIT=8). With the fix it pas
 
 `include/PianoRoll.h:413` adds `m_recordingNoteIds`, parallel to `m_recordingNotes`.
 `src/gui/editors/PianoRoll.cpp:4535` records the live handle's stable `Note::id()` with each pending
-start; `finishRecordNote()` at `:4567` matches the release to that identity first (key fallback only
-for callers that hand in two separate `Note` objects, preserving the old contract). `stop()` at
-`:4493` clears both lists.
+start; `finishRecordNote()` at `:4565` consumes only the pending start with that same identity.
+An unmatched release is ignored, so it cannot consume another same-pitch start. `stop()` at `:4492`
+clears both lists.
 
 Regression: `tests/src/gui/PianoRollRecordTest.cpp:186`
 (`overlappingStartsOfOnePitchKeepTheirOwnRelease`). Two starts of the same pitch overlap; their
@@ -41,6 +41,21 @@ the later start length 96. Key-only pairing swaps them (96 / 240), which is the 
 
 Without the fix: `test-3-red.log` EXIT=8, actual 96 expected 240 at the first assertion.
 With the fix: `test-6-restored.log` EXIT=0.
+
+QA follow-up: the original key fallback was still wrong when punch-in rejected a note-on but another
+same-pitch handle had a pending start. The new regression
+`tests/src/gui/PianoRollRecordTest.cpp:233`
+(`releaseForPunchRejectedStartDoesNotConsumeSamePitchStart`) proves the release is ignored and the
+inside-window note keeps its own length. Before removing the fallback, this test failed at the
+expected note count (actual 1, expected 0; `build/qa-review-214/ctest-fallback-red.log`, EXIT=8).
+The direct-signal fixtures now use the same `Note` object for on/off, matching the real
+`NotePlayHandle` identity. Commands and exits:
+
+- RED with fallback present: `cmake --build build --target PianoRollRecordTest -j12 > build/qa-review-214/build-fallback-red.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=0; from `build/tests`, `ctest -R '^PianoRollRecordTest$' --output-on-failure > ../qa-review-214/ctest-fallback-red.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=8.
+- GREEN with strict identity: `cmake --build build --target zene PianoRollRecordTest -j12 > build/qa-review-214/build-strict-identity.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=0; from `build/tests`, `ctest -R '^PianoRollRecordTest$' --output-on-failure > ../qa-review-214/ctest-strict-identity-green.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=0.
+- Isolated RED proof: `git diff -- src/gui/editors/PianoRoll.cpp > build/qa-review-214/5214-strict-identity.patch; rc=$?; echo EXIT=$rc` -> EXIT=0; `git apply -R build/qa-review-214/5214-strict-identity.patch; rc=$?; echo EXIT=$rc` -> EXIT=0; `cmake --build build --target zene PianoRollRecordTest -j12 > build/qa-review-214/build-strict-reversed.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=0; from `build/tests`, `ctest -R '^PianoRollRecordTest$' --output-on-failure > ../qa-review-214/ctest-strict-reversed-red.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=8 at the same assertion; `git apply build/qa-review-214/5214-strict-identity.patch; rc=$?; echo EXIT=$rc` -> EXIT=0.
+- Restored build: `cmake --build build --target zene PianoRollRecordTest PianoRollBenchmarkTest AccessibilityWalkTest -j12 > build/qa-review-214/build-final-restored.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=0; from `build/tests`, `ctest -R '^(PianoRollRecordTest|PianoRollBenchmarkTest|AccessibilityWalkTest)$' --output-on-failure > ../qa-review-214/ctest-final-family.log 2>&1; rc=$?; echo EXIT=$rc` -> EXIT=0, 3/3 CTest targets.
+- Final gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-214` -> EXIT=0; all rows PASS and no new complexity or file-length item.
 
 ## new-p14-215: ALREADY-FIXED
 
@@ -119,9 +134,9 @@ cd build/tests && ctest -R '^PianoRollRecordTest$' --output-on-failure > ../qwen
    zero-delay event-loop callback after the dialog is up.
 3. **Cause and completeness.** Wheel: every mutation in `wheelEvent()` is behind the one new
    checkpoint, for both volume and panning modes. Recording: every pending start now carries its
-   handle id, every release removal removes the matching id, `stop()` clears both lists, and a
-   key-only fallback keeps the previous contract for separate `Note` objects. `enterValue()`'s
-   only caller was checked: `mouseDoubleClickEvent()` -> real press at `:1829` checkpoints first.
+   handle id, a release consumes only its matching id, unmatched releases are ignored, and `stop()`
+   clears both lists. `enterValue()`'s only caller was checked: `mouseDoubleClickEvent()` -> real
+   press at `:1829` checkpoints first.
 4. **No collateral damage.** No serialization format, project-load path or command surface changed.
    The recording fix only replaces which pending start a release consumes; a note-on/off pair from
    one handle behaves as before, and projects load/save exactly as before.

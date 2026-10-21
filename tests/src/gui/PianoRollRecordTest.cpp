@@ -61,6 +61,7 @@
 #include "ProjectJournal.h"
 #include "Song.h"
 #include "Track.h"
+#include "Timeline.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -131,7 +132,8 @@ private slots:
 		QVERIFY(m_window->isRecording());
 		QVERIFY(Engine::getSong()->isPlaying());
 		Engine::getSong()->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOn(Note(TimePos(0), TimePos(0), Pitch));
+		Note abandoned(TimePos(0), TimePos(0), Pitch);
+		Q_EMIT instrument->midiNoteOn(abandoned);
 		QCOMPARE(static_cast<int>(m_clip->notes().size()), 0);
 
 		m_window->stop();
@@ -142,9 +144,11 @@ private slots:
 		m_window->record();
 		QVERIFY(m_window->isRecording());
 		Engine::getSong()->setPlayPos(SecondPassStart, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOn(Note(TimePos(0), TimePos(0), Pitch));
+		Note secondPass(TimePos(0), TimePos(0), Pitch);
+		Q_EMIT instrument->midiNoteOn(secondPass);
 		Engine::getSong()->setPlayPos(SecondPassStart + 96, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOff(Note(TimePos(96), TimePos(0), Pitch));
+		secondPass.setLength(TimePos(96));
+		Q_EMIT instrument->midiNoteOff(secondPass);
 
 		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
 		// Exactly the second pass's note: it starts where that pass's key-down was, and lasts until its
@@ -166,14 +170,15 @@ private slots:
 		QVERIFY(Engine::getSong()->isPlaying());
 		Engine::getSong()->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
 
-		Q_EMIT instrument->midiNoteOn(Note(TimePos(0), TimePos(0), Pitch));
+		Note liveNote(TimePos(0), TimePos(0), Pitch);
+		Q_EMIT instrument->midiNoteOn(liveNote);
 
 		// The key-up as the MPE input path hands it to the roll: the note-off
 		// velocity rides on the note (InstrumentTrack::trackMpeInputEvent).
-		Note release(TimePos(96), TimePos(0), Pitch);
-		release.setReleaseVelocity(96);
+		liveNote.setLength(TimePos(96));
+		liveNote.setReleaseVelocity(96);
 		Engine::getSong()->setPlayPos(FirstPassStart + 96, Song::PlayMode::MidiClip);
-		Q_EMIT instrument->midiNoteOff(release);
+		Q_EMIT instrument->midiNoteOff(liveNote);
 
 		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
 		QCOMPARE(m_clip->notes().front()->releaseVelocity(), 96);
@@ -221,6 +226,40 @@ private slots:
 		// Key-only pairing gives these the swapped lengths (96 / 240).
 		QCOMPARE(static_cast<int>(atZero->length()), 240);
 		QCOMPARE(static_cast<int>(at96->length()), 96);
+	}
+
+	//! A note-on outside an armed punch window has no pending start. Its later key-up must not
+	//! fall back to pitch and consume another same-pitch handle that started inside the window.
+	void releaseForPunchRejectedStartDoesNotConsumeSamePitchStart()
+	{
+		auto* instrument = dynamic_cast<InstrumentTrack*>(m_track);
+		auto* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::MidiClip);
+		timeline.setPunchRange(SecondPassStart, SecondPassStart + 480);
+		timeline.setPunchEnabled(true);
+
+		m_window->record();
+		QVERIFY(m_window->isRecording());
+		QVERIFY(song->isPlaying());
+
+		Note outside(TimePos(0), TimePos(0), Pitch);
+		Note inside(TimePos(0), TimePos(0), Pitch);
+		song->setPlayPos(FirstPassStart, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOn(outside); // excluded by punch-in
+		song->setPlayPos(SecondPassStart, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOn(inside); // pending, with the same pitch
+
+		outside.setLength(TimePos(192));
+		song->setPlayPos(SecondPassStart + 96, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOff(outside);
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 0);
+
+		inside.setLength(TimePos(144));
+		song->setPlayPos(SecondPassStart + 144, Song::PlayMode::MidiClip);
+		Q_EMIT instrument->midiNoteOff(inside);
+		QCOMPARE(static_cast<int>(m_clip->notes().size()), 1);
+		QCOMPARE(static_cast<int>(m_clip->notes().front()->pos()), static_cast<int>(SecondPassStart));
+		QCOMPARE(static_cast<int>(m_clip->notes().front()->length()), 144);
 	}
 
 	//! A wheel edit of the note volume is one journal step: Undo puts the volume back instead

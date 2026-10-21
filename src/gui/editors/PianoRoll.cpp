@@ -4559,8 +4559,8 @@ void PianoRoll::finishRecordNote(const Note & n )
 			// 5214: pair the release with the pending start of its OWN handle. The live
 			// midiNoteOn / midiNoteOff signals both carry the same NotePlayHandle, whose
 			// Note::id() is stable for its lifetime; two MPE notes of one pitch on different
-			// member channels therefore stay distinct. The key fallback keeps the older
-			// behaviour for a caller that hands in two separate Note objects.
+			// member channels therefore stay distinct. An unmatched release has no recorded
+			// start (for example, punch-in rejected its note-on) and must not consume a sibling.
 			int match = -1;
 			for( int i = 0; i < m_recordingNotes.size(); ++i )
 			{
@@ -4568,17 +4568,6 @@ void PianoRoll::finishRecordNote(const Note & n )
 				{
 					match = i;
 					break;
-				}
-			}
-			if( match < 0 )
-			{
-				for( int i = 0; i < m_recordingNotes.size(); ++i )
-				{
-					if( m_recordingNotes[i].key() == n.key() )
-					{
-						match = i;
-						break;
-					}
 				}
 			}
 			if( match >= 0 )
