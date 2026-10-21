@@ -126,6 +126,14 @@ QString contentOf(const QString& path)
 	return QString::fromUtf8(file.readAll());
 }
 
+//! Writes \a content into \a path, as a stem file of an earlier export.
+bool writeFile(const QString& path, const QString& content)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { return false; }
+	return file.write(content.toUtf8()) == content.toUtf8().size();
+}
+
 } // namespace
 
 class ControlStemExportTest : public QObject
@@ -213,6 +221,32 @@ private slots:
 		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
 		QVERIFY2(failed.errorMessage.contains(QStringLiteral("fake-child: could not open the output directory")),
 			qPrintable(failed.errorMessage));
+	}
+
+	//! Cluster 4875: a rewrite is reported even when the clock did not move.
+	void aRewriteIsReportedEvenWhenTheStampDoesNotMove()
+	{
+		seedSession();
+		const QString directory = out(QStringLiteral("stems"));
+		QVERIFY(QDir().mkpath(directory));
+		// An earlier export's stem. The rewrite below lands on the SAME
+		// modification time, the way a filesystem whose clock does not move
+		// between two writes makes it land - injected, never waited for.
+		const QString earlier = QDir(directory).filePath(QStringLiteral("01_Lead.wav"));
+		QVERIFY(writeFile(earlier, QStringLiteral("OLD")));
+		const QDateTime stamp = QFileInfo(earlier).lastModified();
+		qputenv("ZENE_FAKE_STEM_MTIME_MS", QByteArray::number(stamp.toMSecsSinceEpoch()));
+		qputenv("ZENE_FAKE_STEM_FILES", "01_Lead.wav=NEW,02_Pad.wav=PAD");
+
+		const ControlResult exported = exportStems(directory);
+		QVERIFY2(exported.ok, qPrintable(exported.errorMessage));
+		const QStringList stems = reportedStems(exported);
+		QVERIFY2(stems.contains(QStringLiteral("01_Lead.wav")),
+			qPrintable(QStringLiteral("reported %1").arg(stems.join(QLatin1Char(',')))));
+		QVERIFY2(stems.contains(QStringLiteral("02_Pad.wav")),
+			qPrintable(QStringLiteral("reported %1").arg(stems.join(QLatin1Char(',')))));
+		// The rewritten stem holds the NEW content, not the earlier one.
+		QCOMPARE(contentOf(earlier), QStringLiteral("NEW"));
 	}
 };
 

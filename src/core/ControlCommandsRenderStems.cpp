@@ -53,6 +53,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <QCryptographicHash>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -233,15 +234,41 @@ QString stemExportFailureMessage(int exitCode, int stemCount, const QString& dir
 	return message;
 }
 
-//! The directory's direct child files, by name -> last modified, so two listings
-//! can be diffed by CONTENT and not only by name.
-QHash<QString, QDateTime> listingOf(const QString& directory)
+//! One file in an export directory: its CONTENT digest and its stamp.
+struct StemFileState
 {
-	QHash<QString, QDateTime> out;
+	QString digest;      //!< the SHA-256 of the file's content, hex.
+	QDateTime modified;  //!< the stamp - a SECONDARY signal only (see writtenStems).
+};
+
+//! The SHA-256 of a file's content, hex; empty when it cannot be read. The
+//! file is hashed in CHUNKS, so a long stem is never held in memory whole.
+QString digestOfFile(const QString& path)
+{
+	QCryptographicHash hash(QCryptographicHash::Sha256);
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return QString(); }
+	while (!file.atEnd())
+	{
+		const QByteArray chunk = file.read(64 * 1024);
+		if (chunk.isEmpty()) { break; }
+		hash.addData(chunk);
+	}
+	return QString::fromLatin1(hash.result().toHex());
+}
+
+//! The directory's direct child files, by name -> state, so two listings can
+//! be diffed by CONTENT and not only by name.
+QHash<QString, StemFileState> listingOf(const QString& directory)
+{
+	QHash<QString, StemFileState> out;
 	const QFileInfoList entries = QDir(directory).entryInfoList(QDir::Files, QDir::Name);
 	for (const QFileInfo& entry : entries)
 	{
-		out.insert(entry.fileName(), entry.lastModified());
+		StemFileState state;
+		state.digest = digestOfFile(entry.absoluteFilePath());
+		state.modified = entry.lastModified();
+		out.insert(entry.fileName(), state);
 	}
 	return out;
 }
@@ -253,16 +280,25 @@ QHash<QString, QDateTime> listingOf(const QString& directory)
  *  files would be a lie the socket cannot catch - while a RE-export into the same
  *  directory overwrites the same names, and a name-only diff would then report
  *  nothing and this command would refuse a render it had actually performed.
+ *
+ *  THE CONTENT IS THE SIGNAL, and the stamp is only a secondary one. A file
+ *  whose BYTES changed is one the run rewrote, whatever the filesystem's clock
+ *  did with the modification time: a rewrite that lands inside the same clock
+ *  tick leaves the stamp where it was, and a stamp comparison then reports
+ *  nothing at all - the export refuses a render it had performed, with "0 new
+ *  file(s)" in the refusal. The stamp stays, because a rewrite of byte-identical
+ *  content leaves no trace in the content either, and that rewrite is a write.
  */
-QJsonArray writtenStems(const QHash<QString, QDateTime>& before,
-	const QHash<QString, QDateTime>& after)
+QJsonArray writtenStems(const QHash<QString, StemFileState>& before,
+	const QHash<QString, StemFileState>& after)
 {
 	QStringList names = after.keys();
 	names.sort();
 	QJsonArray stems;
 	for (const QString& name : names)
 	{
-		if (!before.contains(name) || before.value(name) != after.value(name))
+		if (!before.contains(name) || before.value(name).digest != after.value(name).digest
+			|| before.value(name).modified != after.value(name).modified)
 		{
 			stems.append(name);
 		}
@@ -298,13 +334,13 @@ ControlResult stemExportSession(const QJsonObject& args)
 	// The CLI creates the directory itself (QDir().mkpath, src/core/main.cpp:1012), so
 	// a listing taken before the run is simply empty for a directory that does not
 	// exist yet - which is the right baseline for the delta.
-	const QHash<QString, QDateTime> before = listingOf(request.directory);
+	const QHash<QString, StemFileState> before = listingOf(request.directory);
 	int exitCode = -1;
 	QString errorTail;
 	const bool finished = runCliStemExport(tempProject, request, request.directory, &exitCode, &errorTail);
 	QFile::remove(tempProject);
 
-	const QHash<QString, QDateTime> after = listingOf(request.directory);
+	const QHash<QString, StemFileState> after = listingOf(request.directory);
 	const QJsonArray stems = writtenStems(before, after);
 	if (!finished || exitCode != 0 || stems.isEmpty())
 	{
