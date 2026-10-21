@@ -2200,7 +2200,7 @@ void anEmptyApplicationNameIsRefusedByTheWriter()
 		int restoreMaskResult = 0;
 #ifdef _MSC_VER
 		int previous = 0;
-		maskResult = _umask_s(_S_IWRITE, &previous);
+		maskResult = _umask_s(_S_IREAD, &previous);
 #else
 		const mode_t previous = umask(0466);
 #endif
