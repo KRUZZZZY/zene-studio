@@ -10,11 +10,6 @@
  * License as published by the Free Software Foundation; either
  * version 2 of the License, or (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- * General Public License for more details.
- *
  * You should have received a copy of the GNU General Public
  * License along with this program (see COPYING); if not, write to the
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
@@ -29,8 +24,12 @@
 
 #ifdef LMMS_HAVE_OSS
 
+#include <atomic>
+#include <future>
+#include <memory>
+#include <thread>
+
 #include <QThread>
-#include <QFile>
 
 #include "MidiClient.h"
 
@@ -66,10 +65,17 @@ protected:
 
 
 private:
-	QFile m_midiDev;
+	struct OutputWriter;
+	static void runWriter( std::shared_ptr<OutputWriter> out );
 
-	volatile bool m_quit;
+	static bool openOutputPipe( int fds[2] );
 
+	int m_fd;
+	std::atomic<bool> m_quit;
+	int m_outPipe[2];
+	std::shared_ptr<OutputWriter> m_output;
+	std::thread m_writer;
+	std::future<void> m_writerDone;
 } ;
 
 
