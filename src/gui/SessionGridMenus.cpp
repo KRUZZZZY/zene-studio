@@ -83,6 +83,10 @@ void addSongStep(QMenu* menu, const QString& label, const QString& to)
 	step->setProperty("controlCommand", QStringLiteral("session.setlist_go"));
 	step->setEnabled(ControlRegistry::instance()->hasCommand(QStringLiteral("session.setlist_go")));
 	QObject::connect(step, &QAction::triggered, menu, [menu, to] {
+		// The same end-of-set check PerformView::stepSong makes before it asks: past either end there is nothing to open.
+		const QJsonObject setlist = ControlRegistry::instance()->invoke(QStringLiteral("session.setlist")).result;
+		const int target = setlist.value(QStringLiteral("index")).toInt(-1) + (to == QLatin1String("previous") ? -1 : 1);
+		if (target < 0 || target >= setlist.value(QStringLiteral("items")).toArray().size()) { return; }
 		MainWindow* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
 		if (window != nullptr && !window->mayChangeProject(true)) { return; }
 		// Parented past every QMenu, as addCommandAction does: a message must outlive the menu.
