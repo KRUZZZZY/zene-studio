@@ -71,7 +71,9 @@ GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Desc
 	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this,
 		[this] { sampleRateNeedsUpdate(); }, Qt::QueuedConnection);
 	m_reclaimTimer = new QTimer(this);
-	m_reclaimTimer->setInterval(0);
+	m_reclaimTimer->setObjectName(QStringLiteral("granularRetiredBufferReclaimTimer"));
+	m_reclaimTimer->setTimerType(Qt::VeryCoarseTimer);
+	m_reclaimTimer->setInterval(1000);
 	QObject::connect(m_reclaimTimer, &QTimer::timeout, this, [this] {
 		reclaimRetiredBuffersIfPending();
 	});
@@ -285,8 +287,7 @@ void GranularPitchShifterEffect::sampleRateNeedsUpdate()
 	reclaimRetiredBuffers();
 
 	auto prepared = std::make_unique<PreparedBuffers>();
-	const int range = std::clamp(m_granularpitchshifterControls.m_rangeModel.value(), 0,
-		static_cast<int>(std::size(RangeSeconds)) - 1);
+	const int range = m_granularpitchshifterControls.m_rangeModel.value();
 	const float ringBufLength = RangeSeconds[range];
 	prepared->sampleRate = Engine::audioEngine()->outputSampleRate();
 	prepared->nyquist = prepared->sampleRate / 2;
