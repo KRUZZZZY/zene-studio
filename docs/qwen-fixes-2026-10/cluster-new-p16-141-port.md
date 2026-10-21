@@ -200,6 +200,48 @@ The registration gate for this change (`no-upstream-regression`) PASSED in both 
 
 ## Self-check
 
+Each ASK item of the submit check, answered:
+
+- **Does the regression FAIL with the product change reverted and PASS with it?**
+  Yes. RED: `git apply -R .../logs/fix.patch` then
+  `cd build/tests && ctest -R '^(NoteTransformTest|NotePlaybackTest|PianoRollBenchmarkTest)$' --output-on-failure`
+  -> exit **8**, `NoteTransformTest::quantizeKeepsTickPrecisionPastTheFloatMantissa` fails
+  with `Actual 16777216 / Expected 16777217` (`test-revert-1.log`).
+  GREEN: `git apply .../logs/fix.patch` then the same ctest -> `NoteTransformTest` PASSES
+  (`test-reapply-1.log`, `test-final-1.log` exit 0).
+- **Is the test deterministic (no wall-clock timing, sleeps or races)?**
+  Yes. It injects plain integer tick values - `16777217` (2^24 + 1) and
+  `std::numeric_limits<tick_t>::max()` - into `Note::quantized()` and
+  `Note::quantizePos()` and compares the returned tick values. No clock, no sleep, no
+  thread, no seam and no shared state is involved; the same input always yields the same
+  output.
+- **Is the fix at the cause and complete (every caller and sibling checked)?**
+  Yes. The cause is the float conversion inside `Note::quantized()`; the fix removes it.
+  Every caller of that one function was checked and stays consistent:
+  `src/core/Note.cpp:505` (`quantizeLength`), `src/core/Note.cpp:521` (`quantizePos`),
+  `src/core/AutomationClip.cpp:322/378/676`,
+  `src/gui/editors/AutomationEditor.cpp:311/312/582`,
+  `src/gui/editors/PianoRoll.cpp:2882/2898/2904/3304/4935`. The siblings that look alike
+  but are not the same contract were deliberately left alone:
+  `TimePos::quantize( float bars, bool )` (`include/TimePos.h`, quantises in bars) and
+  `NoteTransform::quantizePositions()` (`src/core/NoteTransform.cpp:215`, its own integer
+  Floor/Ceil/Nearest logic, never on the float path).
+- **No collateral damage?**
+  Yes. Nothing about the file format changed - no attribute is written or read, no saved
+  data moves, and an old project loads exactly as before. The added saturation is a clamp
+  on the *result* of the snapping only, and it is the type's own limit (`tick_t` is
+  `std::int32_t`, `include/LmmsTypes.h:35`), so it can only be reached by a value that the
+  old code already left the type's range for; every caller that legitimately exceeds
+  nothing is affected, because no caller passes a tick outside `tick_t` (the value is read
+  from a `TimePos`). Below 2^24 the new arithmetic returns exactly what the float path
+  returned.
+- **ALREADY-FIXED / FALSE-POSITIVE?**
+  Not applicable - the verdict is FIXED. The buggy float body was present in this tree
+  before the change (`src/core/Note.cpp:482`, shown in the Evidence section) and the RED
+  run failed on it.
+
+Additional checks:
+
 - **Is the finding real on this branch?** Yes - the float body of `Note::quantized()` was
   present at `src/core/Note.cpp:482` before this change and the RED run failed with the
   exact value from the finding (`16777216` instead of `16777217`).
