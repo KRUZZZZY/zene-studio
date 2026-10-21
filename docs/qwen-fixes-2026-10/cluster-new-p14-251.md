@@ -35,29 +35,26 @@ owning `const std::string &` contract. `getInt()` parses the view with
 the bounded form at src/core/RemotePlugin.cpp:631. The main-thread receive path is unchanged (owning messages).
 
 **RED (runtime, bounded dispatch reverted):**
-`git diff -- src/common/RemotePluginBase.cpp > build/qwen-logs/new-p14-251.r1/revert-251-bounded-dispatch.patch`
-EXIT=0; `git apply -R …/revert-251-bounded-dispatch.patch` EXIT=0;
+`git diff -- src/common/RemotePluginBase.cpp > build/qwen-logs/new-p14-251.r1/revert-251-bounded-dispatch-final.patch`
+EXIT=0; `git apply -R …/revert-251-bounded-dispatch-final.patch` EXIT=0;
 `cmake --build build --target RemotePluginAudioPortsTest -j4` EXIT=0;
 `./RemotePluginAudioPortsTest completeDebugFrameDecodesWithoutAllocating` EXIT=1 — `Actual (allocations): 6`,
-`Expected: 0` (`test-251-direct-red.log`).
-Full product reverse (`fix-251-final.patch`, reverse of commit 651d8b41e product files) is EXIT=0 and makes the
-test fail at run time for the peer path: `./RemotePluginAudioPortsTest
-debugMessageDuringPeriodDoesNotAllocate` EXIT=1 — allocations 6 (`test-251-red-final.log`). Reversing the whole
-API also removes the bounded parameter, so the direct test then does not compile; the dispatch revert above is
-the runtime proof that the assertion catches the allocation.
+`Expected: 0` (`test-251-direct-red-final.log`).
+The complete 251 product patch was also reversed earlier (`fix-251-final.patch`, product files of commit
+651d8b41e) EXIT=0; the peer path then failed at run time with allocations 6 (`test-251-red-final.log`).
+Reversing the whole API removes the bounded parameter, so after that API-wide reverse the direct test no longer
+compiles; the dispatch revert above is the final runtime proof that the assertion catches the allocation.
 
 **GREEN:**
-`git apply …/revert-251-bounded-dispatch.patch` EXIT=0; build EXIT=0;
+`git apply -R …/revert-251-bounded-dispatch-final.patch` EXIT=0; build EXIT=0;
 `./RemotePluginAudioPortsTest completeDebugFrameDecodesWithoutAllocating` EXIT=0
-(`test-251-direct-green-restored.log`); restore of `fix-251-final.patch` EXIT=0; build EXIT=0;
-`./RemotePluginAudioPortsTest debugMessageDuringPeriodDoesNotAllocate` EXIT=0
-(`test-251-green-final.log`).
+(`test-251-direct-green-final.log`); the peer path also passes in the full-family run.
 
 **Tests:** `completeDebugFrameDecodesWithoutAllocating()` (socketpair, complete 1000-byte debug frame
 pre-written, allocation probe, no peer/clock) and `debugMessageDuringPeriodDoesNotAllocate()` (fake client
 sends debug text + `IdProcessingDone` in one write; period must allocate nothing). Full family:
 `cd build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure` EXIT=0,
-1/1 executable, 23 QtTest functions (`ctest-family-final6.log`, `test-functions-final.log`).
+1/1 executable, 23 QtTest functions (`ctest-family-final8.log`, `test-functions-final.log`).
 
 ## new-p16-190 — a 100 ms query could block for two seconds
 
@@ -119,8 +116,8 @@ payload never arrives (no sleep). The allocation probe must see 0.
 | 190 GREEN | `git apply …/fix-190-revert-cap.patch; build; same test` | 0;0;0 | `test-190-green-restored.log` |
 | 250 RED | `git apply -R …/fix-250.patch; build; ./RemotePluginAudioPortsTest oversizedStartedFrameLengthIsRefusedBeforeAllocating` | 0;0;1 | `test-250-red-reverse.log` |
 | 250 GREEN | `git apply …/fix-250.patch; build; same test` | 0;0;0 | `test-250-green-restored.log` |
-| 251 RED | `git apply -R …/revert-251-bounded-dispatch.patch; build; ./RemotePluginAudioPortsTest completeDebugFrameDecodesWithoutAllocating` | 0;0;1 | `test-251-direct-red.log` |
-| 251 GREEN | `git apply …/revert-251-bounded-dispatch.patch; build; same test` | 0;0;0 | `test-251-direct-green-restored.log` |
+| 251 RED | `git apply -R …/revert-251-bounded-dispatch-final.patch; build; ./RemotePluginAudioPortsTest completeDebugFrameDecodesWithoutAllocating` | 0;0;1 | `test-251-direct-red-final.log` |
+| 251 GREEN | `git apply -R …/revert-251-bounded-dispatch-final.patch; build; same test` | 0;0;0 | `test-251-direct-green-final.log` |
 | family | `cd build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure` | 0 | `ctest-family-final6.log` (1/1, 23 functions) |
 | gates (official) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 (sandbox: cannot create `<worktree>-feature-check`; `Permission denied`) | `feature-check-official.log`, `feature-check.log` |
 | gates (identical copy, writable log dir) | `python3 build/qwen-logs/feature_check_local.py <worktree>` | 0 — all 8 rows PASS | `feature-check-local2.log` |
@@ -142,6 +139,9 @@ file-length PASS (no new item in your files).
   `tests/upstream-modifications.txt`
 - `e6de14ae6` new-p14-251 direct regression: `tests/src/core/RemotePluginAudioPortsTest.cpp`,
   `tests/upstream-modifications.txt`
+- `451db1c44` new-p14-251 API: `include/RemotePluginBase.h`, `src/core/RemotePlugin.cpp`, report,
+  `tests/upstream-modifications.txt`
+- `02d242368` new-p14-251 direct test uses `argumentView`: `tests/src/core/RemotePluginAudioPortsTest.cpp`
 - this report: `docs/qwen-fixes-2026-10/cluster-new-p14-251.md`
 
 ## Self-check
@@ -150,8 +150,8 @@ file-length PASS (no new item in your files).
 - new-p16-190: RED EXIT=1 (`test-190-red.log`), GREEN EXIT=0 (`test-190-green-restored.log`).
 - new-p14-250: RED EXIT=1 (`test-250-red-reverse.log`, allocations 1), GREEN EXIT=0
   (`test-250-green-restored.log`).
-- new-p14-251: RED EXIT=1 (`test-251-direct-red.log`, allocations 6), GREEN EXIT=0
-  (`test-251-direct-green-restored.log`); the full-frame peer variant is also RED EXIT=1
+- new-p14-251: RED EXIT=1 (`test-251-direct-red-final.log`, allocations 6), GREEN EXIT=0
+  (`test-251-direct-green-final.log`); the full-frame peer variant is also RED EXIT=1
   (`test-251-red-final.log`) and GREEN EXIT=0 (`test-251-green-final.log`).
 
 **2. The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values).**
