@@ -1,6 +1,8 @@
-Verdict: **FIXED** - cluster new-p15-20-port: `mts.master_set` records an undo step for an unchanged flag
+Verdict: **ALREADY-FIXED** on the port target `050/m0-train-10` (tip `0a8842d39`) - cluster new-p15-20-port: `mts.master_set` records an undo step for an unchanged flag
 
-Branch `bugs/qwen-new-p15-20-port` (base `b61e5f965`, the train-9 snapshot this worktree was cut from). The finding is REAL on this branch. The fix is the same guard the newest line already carries, and the port re-applies it by hand.
+The port target is `050/m0-train-10`. It already contains the guard (`src/core/ControlCommandsMts.cpp:333`), so no port patch is submitted for it. The evidence is in "Port target result" below.
+
+Branch `bugs/qwen-new-p15-20-port` is based on train-9 (`b61e5f965`), not on the target. Its two commits (`9a23087ec` fix, `d4c414eab` self-check) carry the same guard and are a valid train-9 fix, but they are not the port. The finding is REAL on that train-9 base (the section "Change on this branch" describes it).
 
 ## What the finding says and what the code does
 
@@ -18,14 +20,26 @@ The A16 contract allows this. `docs/A16-REVERSIBILITY.md:111-112` says that when
 
 Commit `10e4d5fd1` (on the accepted `bugs/qwen-new-p15-20` line) called the finding FALSE-POSITIVE. It relied on the A16 line above and on `SessionTuningTest.cpp:1337`, which pinned one step for an idempotent disarm. That reasoning missed the per-call exceptions and the sibling rule. The test that pinned the step is the one this fix changes.
 
-## The newest line already carries this fix
+## Port target result: ALREADY-FIXED on `050/m0-train-10`
 
-- `050/m0-train-10` (tip `0a8842d39`) is 643 commits ahead of this branch's HEAD `b61e5f965`. This worktree is therefore not "a fresh branch off the newest line"; it is older.
-- On the newest line, `src/core/ControlCommandsMts.cpp` has the same early return after `setMtsMaster` (`git show 050/m0-train-10:src/core/ControlCommandsMts.cpp`, lines 329-334). That guard arrived with `539461020` (`fix(new-p14-35)`). `SessionTuningTest.cpp` on that line expects depth unchanged for an idempotent disarm.
-- Accepted commit `81fa5d5de` (this cluster) added `masterSetEachUnchangedCallIsItsOwnUndoStep`, which requires two identical calls to add two steps. That assertion contradicts the guard. This is the likely reason the port failed on train-10. I did not build or run the newest line here (it is not checked out in this worktree), so that cause is inferred from the code, not reproduced.
-- `TimelineSpeechTest` is not a test source on this branch (`rg -l TimelineSpeech tests src` finds only docs and include files). I did not investigate it.
+Checked by reading the target with `git show`, `git grep` and `git merge-base`. Nothing was checked out, switched or written.
 
-## Change in this commit
+| Check | Command | Result |
+|---|---|---|
+| Ancestry | `git merge-base --is-ancestor 050/m0-train-10 HEAD` (this branch) | EXIT 1: this branch is not on the target |
+| Merge base | `git merge-base HEAD 050/m0-train-10` | `b61e5f9658c2f55b74ee8137de37292ebe2cc8a0` (train-9) |
+| Guard | `git show 050/m0-train-10:src/core/ControlCommandsMts.cpp` | line 333: `if (enabled == wasEnabled) { return ControlResult::success(fullState()); }`, placed after `setMtsMaster` (line 325) and before `control::addUndoStep` (line 336) |
+| Idempotent disarm test | `git show 050/m0-train-10:tests/src/core/SessionTuningTest.cpp` | lines 1339-1345 (library-absent branch): a disarm of a never-armed master, then `QCOMPARE(undoDepth(), depthBefore)` at line 1345 (no step) |
+| Repeated-disarm test | same file | lines 1312-1320 (library-present branch): a repeated disarm, then `REV_UNDO_OR_FAIL()` brings the master back |
+| Reversibility row | `git show 050/m0-train-10:src/core/ControlReversibilityTableMts.cpp` | row text still reads "pushes one addUndoStep pair" (this branch's doc-text edit is not on the target). Text only, no behaviour |
+| TimelineSpeech | `git grep -l TimelineSpeech 050/m0-train-10 -- tests src` | no matches (no such test source on the target) |
+| Round-1 failing test | `git grep -n masterSetEachUnchangedCallIsItsOwnUndoStep 050/m0-train-10` | no matches: reverted by `d5a6b6881` |
+
+So the round-1 cause I had proposed for the train-10 failure is not on the target: the test that asserted two steps was reverted there, and the target's own test expects the guard's behaviour. The failure the brief cites on train-10 is therefore **not explained by the code I can see**, and I did not reproduce it.
+
+**Not built or run.** Building the target would need a second full tree configured and compiled in `/tmp`, which this job did not do. The ALREADY-FIXED verdict rests on the static evidence above. What would settle it: build `050/m0-train-10` (`cmake --build <target-build> --target zene SessionTuningTest -j4`), run `ctest -R SessionTuningTest` from its `build/tests`, and check that `TimelineSpeechTest` is a real test name there (it is not a source on the target).
+
+## Change on this branch (train-9 base, not the port)
 
 1. `src/core/ControlCommandsMts.cpp:329-333`: after `setMtsMaster` succeeds (so a refusal, and a repeated arm's re-registration, still behave as before), `if (enabled == wasEnabled) { return ControlResult::success(fullState()); }`. No undo step and no `__transaction`. A changed flag still records exactly one step.
 2. `src/core/ControlReversibilityTableMts.cpp:115-116`: the `mts.master_set` row text now says a call that leaves the flag as it is pushes no step. The text is not in `commands_snapshot.json` or any doc (checked with `rg`), so the canary is unaffected.
@@ -68,6 +82,20 @@ Gates:
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (as shipped) | 1 | `PermissionError` creating `<worktree>-feature-check`, a sibling folder outside the write-jail (`gates-1.log`). The script has no log-folder override. |
 | `python3 /tmp/zene-fc-p15/feature_check_logdir.py <worktree>` (copy of the same script; only `ROOT` and the log folder changed, to the LOG FOLDER) | 0 | `RESULT: PASS`: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures all exit 0; complexity and file-length "no new item in your files" (`gates-3-final-tree.log`, per-gate logs in `logs/gates/`). |
 
+## Round 2 re-run on this branch (train-9 base)
+
+Run after the review asked for the port to be re-verified on `050/m0-train-10`. The branch itself was rebuilt and re-tested unchanged. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p15-20-port.r2/logs/` (the round-1 logs were in `.../new-p15-20-port.r1/logs/`).
+
+| # | Command | EXIT | Result |
+|---|---|---|---|
+| build-1 | `env -u MAKEFLAGS -u MFLAGS CCACHE_TEMPDIR=/tmp/ccache-tmp-p15 cmake --build build --target zene SessionTuningTest -j4` | 0 | `build-1.log` |
+| test-1 | `cd build/tests && ctest -R SessionTuningTest --output-on-failure` | 0 | `100% tests passed out of 1` (`test-1.log`) |
+| test-2 | `cd build/tests && ctest -R SessionTuningTest -V` | 0 | `Totals: 25 passed, 0 failed, 0 skipped` (`test-2-verbose.log`) |
+| gates-1 | `python3 /tmp/zene-fc-p15/feature_check_r2.py <worktree>` (copy of `feature_check.py`; only `ROOT` and the log folder changed) | 0 | `RESULT: PASS`, 8/8 rows (`gates-1.log`; per-gate logs in `logs/gates/`) |
+| gates-2 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (shipped) | 1 | `PermissionError` creating `<worktree>-feature-check` outside the write-jail (`gates-2-shipped.log`) |
+
+The round-1 RED/GREEN and 4b evidence (exit 8, then 0) is in the Evidence table above and still applies to the branch's fix commits.
+
 ## Self-check
 
 - **Each new test FAILS with the product change reverted and PASSES with it.** Yes: 4b-c exit 8, 4b-f exit 0 (`fix.patch` reverts only `ControlCommandsMts.cpp`). Caveat: the repeated-disarm test stops at its depth assertion (`:1361`) before its undo-restores-table assertion (`:1369`), so the undo assertion itself was not separately observed failing. The depth failure is the user-visible symptom (a no-op sits on the undo stack).
@@ -83,13 +111,13 @@ Gates:
   - `mts.master_set`: the fixed command.
   - `mts.get_state`: read-only (not mutating), so no undo step and nothing to change.
   - `mts.load_scale`, `mts.load_keymap`, `mts.set_tuning`, `mts.set_note`, `mts.reset`: all mutate through `tableMutation` (`ControlCommandsMts.cpp:127-149`), which records a step unconditionally. Consistent with the fix only in the sense that they are unchanged here. An unchanged-table write there still records a no-op step by reading. **Not changed** (see Known gaps 4). Not verified by a test.
-- **ALREADY-FIXED / FALSE-POSITIVE evidence**: not applicable (verdict is FIXED). The no-step contract that the fix relies on is `docs/A16-REVERSIBILITY.md:111-112` and the sibling early returns cited above.
+- **ALREADY-FIXED evidence (the verdict)**: the guard is at `050/m0-train-10:src/core/ControlCommandsMts.cpp:333`, and the target's idempotent-disarm test expects no step at `050/m0-train-10:tests/src/core/SessionTuningTest.cpp:1345`. The no-step contract it relies on is `docs/A16-REVERSIBILITY.md:111-112` and the sibling early returns cited above.
 - **Qt portability**: no new Qt API.
 - **Registration**: no new source or test file, so `tests/fork-sources.txt`, `tests/upstream-modifications.txt` and `tests/CMakeLists.txt` are unchanged.
 
 ## Known gaps
 
 1. `feature_check.py` cannot run as shipped from this sandbox (the sibling-folder `PermissionError` above). The table in this report comes from a copy with only the log folder redirected. `submit_check.py` runs the shipped script itself. Observed: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-20-port` EXIT 1 (`submit-check-1.log`). PASS: commits on the branch, working tree clean, report present, tests added or changed. The only FAIL is `gates (feature_check.py)`, from the same sandbox `PermissionError`. Gate results above come from the log-folder copy, which exits 0. That is an environment limit, not a gate result.
-2. The newest line `050/m0-train-10` was not built or run here. Its SessionTuningTest failure is inferred from the code (see above).
+2. The port target `050/m0-train-10` was verified by reading only. It was not built or run here, so the train-10 failure cited in the brief is not reproduced (see "Port target result").
 3. `docs/A16-REVERSIBILITY.md:219` still states the one-record-per-call rule without the no-change exception. Not edited.
 4. The sibling `mts.*` no-op steps (above) are unfixed.
