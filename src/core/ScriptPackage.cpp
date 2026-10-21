@@ -78,6 +78,31 @@ QByteArray manifestWindow(QByteArray bytes, bool sourceContinues)
 	return bytes.left(lastNewline + 1);
 }
 
+/*! Is the canonical path \a canonicalPath inside the scripts root?
+ *
+ *  \a canonicalRoot is the canonical path of the scripts root. A package must
+ *  not escape the root through a symlink: a package directory outside the root
+ *  would make the package's imports load from outside it. A path that could
+ *  not be canonicalised (it does not exist) is not inside the root.
+ */
+bool isInsideRoot(const QString& canonicalPath, const QString& canonicalRoot)
+{
+	if (canonicalPath.isEmpty() || canonicalRoot.isEmpty())
+	{
+		return false;
+	}
+	if (canonicalPath == canonicalRoot)
+	{
+		return true;
+	}
+	QString prefix = canonicalRoot;
+	if (!prefix.endsWith(QLatin1Char('/')))
+	{
+		prefix += QLatin1Char('/');
+	}
+	return canonicalPath.startsWith(prefix);
+}
+
 //! Bytes read from package entry scripts. A test seam (see
 //! entryScriptBytesReadForTesting()), not part of the package format.
 std::atomic<qint64> s_entryScriptBytesRead{0};
@@ -136,6 +161,10 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 	}
 
 	const QDir root(scriptsRoot);
+	// The root is canonicalised once, and every candidate is compared against
+	// the real root: a package directory or entry script that is a symlink
+	// out of the root is not a package of this root.
+	const QString canonicalRoot = QFileInfo(root.absolutePath()).canonicalFilePath();
 	const QStringList entries = root.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
 	for (const QString& entry : entries)
 	{
@@ -144,9 +173,18 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 			continue;
 		}
 		const QString directory = root.absoluteFilePath(entry);
+		if (!isInsideRoot(QFileInfo(directory).canonicalFilePath(), canonicalRoot))
+		{
+			continue;
+		}
 		const QString entryPath = QDir(directory).absoluteFilePath(
 				QString::fromLatin1(EntryFileName));
-		if (!QFileInfo(entryPath).isFile())
+		const QFileInfo entryInfo(entryPath);
+		if (!entryInfo.isFile())
+		{
+			continue;
+		}
+		if (!isInsideRoot(entryInfo.canonicalFilePath(), canonicalRoot))
 		{
 			continue;
 		}

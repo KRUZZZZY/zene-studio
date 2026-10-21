@@ -529,6 +529,56 @@ assert(string.match(lmms.version(), '^%3%.%4$') ~= nil, 'version is not major.mi
 			"a manifest past byte 4096 is outside the window");
 	}
 
+	//! Discovery stays INSIDE the scripts root: a package directory that is a
+	//! symlink to somewhere else would make the package's imports load from
+	//! outside the root.
+	void packageDiscoveryStaysInsideTheScriptsRoot()
+	{
+#ifdef _WIN32
+		QSKIP("symlink creation needs privileges on Windows");
+#else
+		using namespace lmms;
+		QTemporaryDir root;
+		QTemporaryDir outside;
+		QVERIFY(root.isValid());
+		QVERIFY(outside.isValid());
+		QDir rootDir(root.path());
+		QDir outsideDir(outside.path());
+
+		// A package inside the root: it must still be found.
+		QVERIFY(rootDir.mkpath(QStringLiteral("arp")));
+		writeScript(rootDir.absoluteFilePath(QStringLiteral("arp/package.lua")),
+			QStringLiteral("--! lmms-api %1\n--! lmms-package arp 1.0\n")
+				.arg(QString::fromLatin1(kExpectedApiVersion)));
+
+		// A package outside the root, and a symlink to it inside the root.
+		QVERIFY(outsideDir.mkpath(QStringLiteral("evil")));
+		writeScript(outsideDir.absoluteFilePath(QStringLiteral("evil/package.lua")),
+			QStringLiteral("--! lmms-api %1\n--! lmms-package evil 9.9\n")
+				.arg(QString::fromLatin1(kExpectedApiVersion)));
+		QVERIFY(QFile::link(outsideDir.absoluteFilePath(QStringLiteral("evil")),
+			rootDir.absoluteFilePath(QStringLiteral("evil"))));
+
+		// An entry script that is a symlink out of the root: refused as well.
+		QVERIFY(rootDir.mkpath(QStringLiteral("leak")));
+		QVERIFY(QFile::link(outsideDir.absoluteFilePath(QStringLiteral("evil/package.lua")),
+			rootDir.absoluteFilePath(QStringLiteral("leak/package.lua"))));
+
+		QVector<ScriptPackage> packages = ScriptPackages::scan(root.path());
+		QCOMPARE(static_cast<int>(packages.size()), 1);
+		QCOMPARE(packages[0].name, QStringLiteral("arp"));
+
+		// A symlink that stays INSIDE the root is still a package: only the
+		// escapes are refused.
+		QVERIFY(QFile::link(rootDir.absoluteFilePath(QStringLiteral("arp")),
+			rootDir.absoluteFilePath(QStringLiteral("alias"))));
+		packages = ScriptPackages::scan(root.path());
+		QCOMPARE(static_cast<int>(packages.size()), 2);
+		QCOMPARE(packages[0].name, QStringLiteral("alias"));
+		QCOMPARE(packages[1].name, QStringLiteral("arp"));
+#endif
+	}
+
 	//! A DIRECTORY named package.lua is not a package: the entry must be a file
 	//! a script can be loaded from, and QFileInfo::exists() is true for the
 	//! directory too, so the scanner listed a package whose entry cannot be run.
