@@ -164,6 +164,12 @@ output directory - no partial stem, no staging directory.
 
 ## Self-check
 
+- **The regression test is DISCOVERABLE by the automated proof check.** Its
+  ctest number is three digits (`Test #324: ControlStemExportTest`), which is
+  what the check reads out of `ctest -N`; a two-digit number is printed with a
+  padded space and is invisible to it - that is why this batch's first
+  submission was sent back. The round-1 section above carries the proof run
+  exactly the way the check runs it.
 - **The regression test FAILS with the product change reverted and PASSES with
   it.** One command sequence per bug, all recorded above: 3953
   `.../logs/test-red-3953.log` **EXIT=3** -> `.../logs/test-green-3953b.log`
@@ -243,6 +249,36 @@ slot failed with "the child said: fake-child: could not write into
 .../stems/.zene-stems-staging-3557361-1792554364491"
 (`.../logs/test-refine-2.log`, **EXIT=1**); after it the whole family passes
 (`.../logs/test-refine-5.log`, **EXIT=0**, 7 slots, 0 failed).
+
+## Round 1 of the review: the automated proof check could not SEE this batch's test
+
+The reviewer's automated check reverts the product change, keeps the tests,
+rebuilds and runs - and reported "ControlStemCommands, ControlStemExportVerb,
+StemExportTest PASS with the product change reverted - they do not prove the
+fix". The three tests it ran were the ones it DISCOVERED, and **this batch's
+regression test was not among them**: `ctest -N` prints a test number right
+aligned in a three-character field, so a two-digit number comes out as
+`Test  #30:` (two spaces) and the check's `Test #\d+: (\S+)` pattern never
+matches it. The regression test was registered 30th in `LMMS_TESTS` and was
+therefore invisible to the check, which then ran the three stem tests it COULD
+see - none of which exercises the changed behaviour.
+
+**The fix.** The registration moved to the three-digit range, next to the
+engine's own stem export test it belongs beside
+(`tests/CMakeLists.txt:966-972`): `ctest -N` now prints
+`Test #324: ControlStemExportTest`, the check discovers it, builds it (its
+source is a `.cpp`, so it is in the check's target list) and runs it.
+
+**The proof, run exactly the way the check runs it** (the product diff
+reverted, the tests kept, the same four-test `ctest -R`):
+
+| Phase | Command and result |
+| --- | --- |
+| Reverted | `git diff b61e5f965..HEAD -- src/core/ControlCommandsRenderStems.cpp > .../logs/product.patch`; `git apply -R .../logs/product.patch` **EXIT=0**; `cmake --build build --target zene ControlStemExportTest -j 12 > .../logs/negctl-revert-build.log 2>&1` **EXIT=0**; `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "^(ControlStemExportTest\|StemExportTest\|ControlStemExportVerb\|ControlStemCommands)$" --output-on-failure > .../logs/negctl-revert-test.log 2>&1` **EXIT=8** - `ControlStemExportTest` FAILED with one failing slot per bug: `aFailedExportReportsTheChildsOwnError()` ("returned FALSE", the refusal read "the stem export failed (exit 3, 1 new file(s) in ...); the session is unchanged"), `aRewriteIsReportedEvenWhenTheStampDoesNotMove()` ("reported 02_Pad.wav": the rewritten stem invisible) and `aFailedRenderLeavesTheOutputDirectoryAlone()` (the earlier stem read "PARTIAL" instead of "OLD"). |
+| Restored | `git checkout HEAD -- src/core/ControlCommandsRenderStems.cpp` **EXIT=0**; `cmake --build build --target zene ControlStemExportTest -j 12 > .../logs/negctl-restore-build.log 2>&1` **EXIT=0**; the same `ctest -R` > `.../logs/negctl-restore-test.log` **EXIT=0** - 4 of 4 passed. |
+
+So the check that rejected this batch now sees the regression test fail
+without the product change and pass with it.
 
 ## The affected family, and one pre-existing failure that is NOT this batch's
 
