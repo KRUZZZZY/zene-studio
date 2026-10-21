@@ -110,6 +110,16 @@ QJsonObject channelState(const QString& command, const QString& channel)
 	return channels.isEmpty() ? QJsonObject() : channels.at(0).toObject();
 }
 
+//! mixer.get_state's entry for @a channel (the command reads every channel, so find it by id).
+QJsonObject getState(const QString& channel)
+{
+	for (const QJsonValue& value : run(QStringLiteral("mixer.get_state")).result.value(QStringLiteral("channels")).toArray())
+	{
+		if (value.toObject().value(QStringLiteral("id")).toString() == channel) { return value.toObject(); }
+	}
+	return {};
+}
+
 //! The pixel of @a pad's grab at the room coordinates (x right, y front, both -1..1), the room being the square
 //! SurroundPanner draws: the pad's smaller side less 56, centred.
 QColor padPixelAtRoom(QWidget* pad, double x, double y)
@@ -382,6 +392,30 @@ private slots:
 		QCOMPARE(channelState(QStringLiteral("mixer.surround_get"), m_ch[2]).value(QStringLiteral("format")).toString(), QStringLiteral("5.1"));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(channelState(QStringLiteral("mixer.surround_get"), m_ch[2]).value(QStringLiteral("format")).toString(), QStringLiteral("stereo"));
+
+		// The same schema-backed menu offers the mono and discrete layouts, and the readback reports how
+		// many channels each has and how they are addressed.
+		QAction* mono = menuAction(&menu, {QStringLiteral("Surround"), QStringLiteral("Format"), QStringLiteral("mono")});
+		QVERIFY(mono != nullptr);
+		mono->trigger();
+		QJsonObject read = getState(m_ch[2]);
+		QCOMPARE(read.value(QStringLiteral("format")).toString(), QStringLiteral("mono"));
+		QCOMPARE(read.value(QStringLiteral("channels")).toInt(), 1);
+		QCOMPARE(read.value(QStringLiteral("channel_roles")).toArray().size(), 1);
+		QCOMPARE(read.value(QStringLiteral("channel_roles")).toArray().at(0).toString(), QStringLiteral("M"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+
+		QAction* discrete = menuAction(&menu, {QStringLiteral("Surround"), QStringLiteral("Format"), QStringLiteral("discrete-5")});
+		QVERIFY(discrete != nullptr);
+		discrete->trigger();
+		read = getState(m_ch[2]);
+		QCOMPARE(read.value(QStringLiteral("format")).toString(), QStringLiteral("discrete-5"));
+		QCOMPARE(read.value(QStringLiteral("channels")).toInt(), 5);
+		QVERIFY(read.value(QStringLiteral("discrete")).toBool());
+		QVERIFY(read.value(QStringLiteral("speakers")).toArray().isEmpty());
+		QCOMPARE(read.value(QStringLiteral("channel_roles")).toArray().size(), 5);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(getState(m_ch[2]).value(QStringLiteral("format")).toString(), QString());
 
 		QAction* panner = menuAction(&menu, {QStringLiteral("Surround"), QStringLiteral("Surround Panner...")});
 		QVERIFY(panner != nullptr);

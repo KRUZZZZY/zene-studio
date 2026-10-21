@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-19T15:18:20Z",
+  "captured_at": "2026-10-21T04:15:04Z",
   "commands": [
     {
       "args_schema": {
@@ -12850,7 +12850,15 @@
               "lcr",
               "quad",
               "5.1",
-              "7.1"
+              "7.1",
+              "mono",
+              "discrete-2",
+              "discrete-3",
+              "discrete-4",
+              "discrete-5",
+              "discrete-6",
+              "discrete-7",
+              "discrete-8"
             ],
             "type": "string"
           }
@@ -12861,7 +12869,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a channel's speaker format: 'stereo' (the default), 'lcr', 'quad', '5.1' or '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs). A surround channel keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - it is downmixed (mixer.downmix_options); its hardware output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. Saved with the project; one undo step.",
+      "description": "Set a channel's speaker format: 'stereo' (the default), 'lcr', 'quad', '5.1', '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs), 'mono' (one M role), or a role-less discrete layout 'discrete-2' .. 'discrete-8'. A surround channel keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - a named layout is downmixed (mixer.downmix_options), while a discrete channel i goes to output i with no speaker folding or reordering. Its hardware output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. mixer.get_state names the format, its channel count and the channel roles (empty speakers, indices 1..N, for discrete). Saved with the project - the count is part of the format name; one undo step.",
       "group": "mixer",
       "id": "mixer.channel_format",
       "mutating": true,
@@ -14128,7 +14136,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every channel's speaker format, speakers, surround panner, the surround channels it sends into and, for a surround channel, the outputs it plays on ('ok') or that it is downmixed ('downmix'), with the downmix options ('channel' for one). Read only.",
+      "description": "Every channel's speaker format, its channel count and roles (one 'M' for mono; empty speakers and indices 1..N for a discrete layout), surround panner, the surround channels it sends into and, for a surround channel, the outputs it plays on ('ok') or that it is downmixed ('downmix'), with the downmix options ('channel' for one). Read only.",
       "group": "mixer",
       "id": "mixer.surround_get",
       "mutating": false,
@@ -35514,11 +35522,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-166/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-aedsu8rh/zene.sock",
-    "version": "0.4.0-alpha.3221+ba3b2d9"
+    "source_socket": "/tmp/zctl-run-jng3kp1z/zene.sock",
+    "version": "0.4.0-alpha.3222+2da2ed3"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

@@ -56,7 +56,10 @@ class SampleFrame;
  *  gain, its pan as a balance on each left/right pair, its fader and mute.
  *
  *  - Formats: stereo (the default), LCR, quad, 5.1, 7.1, in the WAVE channel order
- *    (L R C LFE Ls Rs; 7.1: L R C LFE Lrs Rrs Ls Rs).
+ *    (L R C LFE Ls Rs; 7.1: L R C LFE Lrs Rrs Ls Rs), mono (one M role) and discrete-2..discrete-8,
+ *    whose channels have no speaker roles: channel i is routed to output i by index, never folded or
+ *    reordered by speaker. A discrete channel name carries its count ("discrete-5"), so a save and a
+ *    load keep both the layout and how many channels it has.
  *  - The panner: a stereo channel sending into a surround channel can pan to a point of the room (x, y in
  *    -1..1, front is y = 1) with an LFE send and a spread, in place of its stereo pan. Constant-power
  *    pairwise panning between the two speakers either side of the point's direction; the spread, and a
@@ -91,14 +94,27 @@ enum class Format : int
 	Lcr,
 	Quad,
 	Surround51,
-	Surround71
+	Surround71,
+	Mono,
+	Discrete2,
+	Discrete3,
+	Discrete4,
+	Discrete5,
+	Discrete6,
+	Discrete7,
+	Discrete8
 };
-constexpr int FormatCount = 5;
+constexpr int FormatCount = 13;
+
+//! The discrete layouts' count range: Mono is the one-channel layout, Discrete2..Discrete8 the rest.
+constexpr int MinDiscreteChannels = 2;
+constexpr int MaxDiscreteChannels = MaxChannels;
 
 //! Where a speaker sits: its role (what a downmix knows it by) and its point in the panner's square room.
+//! M is mono's single role; None is a role-less discrete channel.
 enum class Role : int
 {
-	L, R, C, Lfe, Ls, Rs, Lrs, Rrs
+	L, R, C, Lfe, Ls, Rs, Lrs, Rrs, M, None
 };
 
 //! A channel's panner, as a sender into a surround channel.
@@ -133,9 +149,18 @@ LMMS_EXPORT int channelOf(Format format, Role role);
 LMMS_EXPORT QString formatName(Format format);
 LMMS_EXPORT bool formatFromName(const QString& name, Format* format);
 LMMS_EXPORT QStringList formatNames();
-//! "L", "R", "C", "LFE", "Ls", ...: @a format's speakers in channel order.
+//! Whether @a format is one of the role-less discrete layouts (Discrete2..Discrete8).
+LMMS_EXPORT bool isDiscrete(Format format);
+//! @a format's discrete channel count (2..8), or -1 when it is not discrete.
+LMMS_EXPORT int discreteChannels(Format format);
+//! The discrete layout with @a channels (2..8), or Stereo when the count is outside the range.
+LMMS_EXPORT Format discreteFormat(int channels);
+//! "L", "R", "C", "LFE", "Ls", ...: @a format's speakers in channel order. Empty for a discrete layout:
+//! its channels have no speaker roles.
 LMMS_EXPORT QStringList speakerNames(Format format);
-//! A speaker's point in the panner's room (the LFE has none: 0, 0).
+//! The channel-address labels a reader gets: speaker names, "M" for mono, or "1".."N" for discrete.
+LMMS_EXPORT QStringList channelLabels(Format format);
+//! A speaker's point in the panner's room (the LFE has none: 0, 0; a discrete channel has no position).
 LMMS_EXPORT void speakerPoint(Format format, int channel, float* x, float* y);
 
 //! The panner's gains for @a pan over @a format's channels (unit power over the speakers, plus the LFE send).

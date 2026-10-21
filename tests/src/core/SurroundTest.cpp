@@ -168,6 +168,34 @@ bool format(int channel, const char* name)
 	return ok(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), ch(channel)}, {QStringLiteral("format"), QString::fromLatin1(name)}});
 }
 
+//! mixer.get_state's entry for @a id: its format, count and roles are what a reader sees.
+QJsonObject mixerState(const QString& id)
+{
+	for (const QJsonValue& value : run(QStringLiteral("mixer.get_state")).result.value(QStringLiteral("channels")).toArray())
+	{
+		if (value.toObject().value(QStringLiteral("id")).toString() == id) { return value.toObject(); }
+	}
+	return {};
+}
+
+//! mixer.surround_get's entry for @a id: the specialized read stays in step with mixer.get_state.
+QJsonObject surroundState(const QString& id)
+{
+	for (const QJsonValue& value : run(QStringLiteral("mixer.surround_get")).result.value(QStringLiteral("channels")).toArray())
+	{
+		if (value.toObject().value(QStringLiteral("channel")).toString() == id) { return value.toObject(); }
+	}
+	return {};
+}
+
+//! The role/index labels an entry publishes.
+QStringList roleLabels(const QJsonObject& state)
+{
+	QStringList labels;
+	for (const QJsonValue& value : state.value(QStringLiteral("channel_roles")).toArray()) { labels << value.toString(); }
+	return labels;
+}
+
 } // namespace
 
 class SurroundTest : public QObject
@@ -226,6 +254,108 @@ private slots:
 		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
 		QVERIFY(!mixer->mixerChannel(2)->m_surround.pan().enabled);
 		QVERIFY(sameOutput(period(mixer), before));
+	}
+
+	void monoAndDiscreteFormatsReadBack()
+	{
+		Mixer* mixer = Engine::mixer();
+		// Mono: one M role, one channel, reported by both reads.
+		QVERIFY(format(1, "mono"));
+		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Mono);
+		QJsonObject state = mixerState(ch(1));
+		QCOMPARE(state.value(QStringLiteral("format")).toString(), QStringLiteral("mono"));
+		QCOMPARE(state.value(QStringLiteral("channels")).toInt(), 1);
+		QCOMPARE(roleLabels(state), QStringList{QStringLiteral("M")});
+		QJsonObject specialized = surroundState(ch(1));
+		QCOMPARE(specialized.value(QStringLiteral("format")).toString(), QStringLiteral("mono"));
+		QCOMPARE(specialized.value(QStringLiteral("channels")).toInt(), 1);
+		QCOMPARE(roleLabels(specialized), QStringList{QStringLiteral("M")});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one step: stereo again
+		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
+		QVERIFY(!mixerState(ch(1)).contains(QStringLiteral("format")));  // a stereo channel reads as it always did
+
+		// Every discrete count: N channels, no speaker roles, indexed 1..N, and one undo step each.
+		for (int channels = surround::MinDiscreteChannels; channels <= surround::MaxDiscreteChannels; ++channels)
+		{
+			const QString name = QStringLiteral("discrete-%1").arg(channels);
+			const ControlResult reply = run(QStringLiteral("mixer.channel_format"),
+				{{QStringLiteral("channel"), ch(1)}, {QStringLiteral("format"), name}});
+			QVERIFY2(reply.ok, qPrintable(name + QStringLiteral(": ") + reply.errorMessage));
+			QCOMPARE(reply.result.value(QStringLiteral("format")).toString(), name);
+
+			state = mixerState(ch(1));
+			QCOMPARE(state.value(QStringLiteral("format")).toString(), name);
+			QCOMPARE(state.value(QStringLiteral("channels")).toInt(), channels);
+			QVERIFY(state.value(QStringLiteral("discrete")).toBool());
+			QVERIFY2(state.value(QStringLiteral("speakers")).toArray().isEmpty(), "a discrete layout has speaker roles");
+			const QStringList labels = roleLabels(state);
+			QCOMPARE(labels.size(), channels);
+			for (int c = 0; c < channels; ++c) { QCOMPARE(labels.at(c), QString::number(c + 1)); }
+
+			QVERIFY(run(QStringLiteral("control.undo")).ok);
+			QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
+		}
+
+		// The command schema advertises the canonical names; the parser also takes the aliases a
+		// hand-edited project may spell.
+		surround::Format parsed = surround::Format::Stereo;
+		QVERIFY(surround::formatFromName(QStringLiteral("discrete5"), &parsed) && parsed == surround::Format::Discrete5);
+		QVERIFY(surround::formatFromName(QStringLiteral("discrete 7"), &parsed) && parsed == surround::Format::Discrete7);
+		QVERIFY(!surround::formatFromName(QStringLiteral("discrete-1"), &parsed));
+		QVERIFY(!surround::formatFromName(QStringLiteral("discrete-9"), &parsed));
+		QCOMPARE(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), ch(1)}, {QStringLiteral("format"), QStringLiteral("discrete-9")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
+	}
+
+	void discreteChannelsReachTheirOwnOutputs()
+	{
+		Mixer* mixer = Engine::mixer();
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		HardwareOutputBus outputs;
+		outputs.init(frames);
+		MixerChannel* channel = mixer->mixerChannel(3);
+		channel->m_volumeModel.setValue(1.f);
+		channel->m_panModel.setValue(0.f);
+		for (int channels = surround::MinDiscreteChannels; channels <= surround::MaxDiscreteChannels; ++channels)
+		{
+			const QString name = QStringLiteral("discrete-%1").arg(channels);
+			QVERIFY2(ok(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), ch(3)}, {QStringLiteral("format"), name}}), qPrintable(name));
+			ChannelSurround& side = channel->m_surround;
+			std::vector<SampleFrame> pair(frames, SampleFrame(0.f, 0.f));
+			for (int c = 0; c < channels; ++c)
+			{
+				const float level = 0.1f * static_cast<float>(c + 1);
+				if (c < 2) { for (f_cnt_t f = 0; f < frames; ++f) { pair[f][c] = level; } }
+				else { for (f_cnt_t f = 0; f < frames; ++f) { side.plane(c)[f] = level; } }
+			}
+			side.markWritten();
+			outputs.swap();  // a clean write side
+			surround::directOut(outputs, *channel, 0, 2, pair.data(), frames);
+			outputs.add(0, 2, pair.data(), frames);
+			outputs.swap();
+			// Output i carries channel i and nothing else: no speaker reordering, folding or leakage.
+			for (int c = 0; c < surround::MaxChannels; ++c)
+			{
+				const float expected = c < channels ? 0.1f * static_cast<float>(c + 1) : 0.f;
+				for (f_cnt_t f = 0; f < frames; ++f)
+				{
+					const float seen = outputs.sample(c, f, SampleFrame{});
+					QVERIFY2(std::abs(seen - expected) < 1e-5f, qPrintable(QStringLiteral("%1 channel %2 frame %3: %4, expected %5")
+						.arg(name).arg(c).arg(f).arg(seen).arg(expected)));
+				}
+			}
+			side.clearPeriod();
+		}
+		// The matrices agree: discrete is channel-for-channel, never speaker-folded.
+		const surround::Matrix& toNamed = surround::matrix(surround::Format::Discrete6, surround::Format::Surround51);
+		QCOMPARE(toNamed[0][0], 1.f);
+		QCOMPARE(toNamed[4][4], 1.f);
+		QCOMPARE(toNamed[4][2], 0.f);  // channel 2 does not become a surround speaker
+		const surround::Matrix& toMono = surround::matrix(surround::Format::Discrete8, surround::Format::Mono);
+		QCOMPARE(toMono[0][0], 1.f);
+		QCOMPARE(toMono[0][1], 0.f);  // discrete is index-addressed, not summed
+		channel->m_surround.reset();
 	}
 
 	void aPannedChannelLandsOnItsSpeakers()
@@ -406,6 +536,43 @@ private slots:
 		QCOMPARE(mixer->mixerChannel(3)->m_surround.format(), surround::Format::Surround71);
 		QCOMPARE(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), ch(3)}, {QStringLiteral("format"), QStringLiteral("9.1")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+		mixer->clear();
+	}
+
+	void monoAndDiscreteLayoutsSurviveASaveAndLoad()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		while (mixer->numChannels() <= 1) { mixer->createChannel(); }
+		const QStringList names{QStringLiteral("mono"), QStringLiteral("discrete-2"), QStringLiteral("discrete-3"),
+			QStringLiteral("discrete-4"), QStringLiteral("discrete-5"), QStringLiteral("discrete-6"),
+			QStringLiteral("discrete-7"), QStringLiteral("discrete-8")};
+		for (const QString& name : names)
+		{
+			const QString id = control::channelIdOf(mixer->mixerChannel(1));
+			QVERIFY2(ok(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), id}, {QStringLiteral("format"), name}}), qPrintable(name));
+			surround::Format expected = surround::Format::Stereo;
+			QVERIFY(surround::formatFromName(name, &expected));
+			const int channels = surround::channelCount(expected);
+
+			QDomDocument doc;
+			QDomElement element = doc.createElement(QStringLiteral("mixer"));
+			doc.appendChild(element);
+			mixer->saveSettings(doc, element);
+			QVERIFY2(doc.toString().contains(QStringLiteral("format=\"%1\"").arg(name)), qPrintable(name + QStringLiteral(" was not written")));
+
+			mixer->clear();
+			mixer->loadSettings(element);
+			MixerChannel* loaded = mixer->mixerChannel(1);
+			QCOMPARE(loaded->m_surround.format(), expected);
+			QCOMPARE(surround::formatName(loaded->m_surround.format()), name);
+			QCOMPARE(surround::channelCount(loaded->m_surround.format()), channels);
+			QJsonObject state = mixerState(control::channelIdOf(loaded));
+			QCOMPARE(state.value(QStringLiteral("format")).toString(), name);
+			QCOMPARE(state.value(QStringLiteral("channels")).toInt(), channels);
+			QCOMPARE(roleLabels(state).size(), channels);
+		}
+
 		mixer->clear();
 	}
 

@@ -56,6 +56,8 @@ struct Layout
 
 //! The formats in the WAVE channel order, each speaker at its point of the panner's square room: the
 //! front pair at the front corners, the surrounds at the back corners (7.1: its side pair at the sides).
+//! Mono has one M role. A discrete layout's channels carry Role::None: they have no speaker position
+//! and are addressed by index alone, so the downmix maps channel i to channel i.
 const std::array<Layout, FormatCount> kLayouts{{
 	{2, {{{Role::L, -1.f, 1.f}, {Role::R, 1.f, 1.f}}}, "stereo"},
 	{3, {{{Role::L, -1.f, 1.f}, {Role::R, 1.f, 1.f}, {Role::C, 0.f, 1.f}}}, "lcr"},
@@ -64,9 +66,21 @@ const std::array<Layout, FormatCount> kLayouts{{
 		{Role::Rs, 1.f, -1.f}}}, "5.1"},
 	{8, {{{Role::L, -1.f, 1.f}, {Role::R, 1.f, 1.f}, {Role::C, 0.f, 1.f}, {Role::Lfe, 0.f, 0.f}, {Role::Lrs, -1.f, -1.f},
 		{Role::Rrs, 1.f, -1.f}, {Role::Ls, -1.f, 0.f}, {Role::Rs, 1.f, 0.f}}}, "7.1"},
+	{1, {{{Role::M, 0.f, 1.f}}}, "mono"},
+	{2, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-2"},
+	{3, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-3"},
+	{4, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-4"},
+	{5, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
+		{Role::None, 0.f, 1.f}}}, "discrete-5"},
+	{6, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
+		{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-6"},
+	{7, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
+		{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-7"},
+	{8, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
+		{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-8"},
 }};
 
-const std::array<const char*, MaxChannels> kRoleNames{"L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs"};
+const std::array<const char*, 10> kRoleNames{"L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs", "M", ""};
 
 constexpr float TwoPi = 2.f * std::numbers::pi_v<float>;
 constexpr float HalfPi = 0.5f * std::numbers::pi_v<float>;
@@ -176,7 +190,8 @@ int foldsOf(Role role, const DownmixOptions& options, std::array<Fold, 2>& out)
 	case Role::Rs: out[0] = {Role::R, options.surround}; return 1;
 	case Role::Lrs: out[0] = {Role::Ls, 1.f}; return 1;
 	case Role::Rrs: out[0] = {Role::Rs, 1.f}; return 1;
-	default: return 0;
+	case Role::M: out = {{{Role::L, 0.70710678f}, {Role::R, 0.70710678f}}}; return 2;  // a mono bus into a speaker layout
+	default: return 0;  // None: a discrete channel has no role to fold by
 	}
 }
 
@@ -197,9 +212,52 @@ void addRole(Matrix& m, Format to, int from, Role role, float gain, const Downmi
 	}
 }
 
-Matrix buildMatrix(Format from, Format to, const DownmixOptions& options)
+//! A role-less discrete layout: its channel i is channel i of the receiver, nothing else.
+bool discrete(Format format)
+{
+	return format >= Format::Discrete2 && format <= Format::Discrete8;
+}
+
+//! A discrete layout is addressed by index, not by speaker role: channel i goes to channel i, and a
+//! channel the receiver does not have is dropped rather than folded into a speaker it never named.
+Matrix discreteMatrix(Format from, Format to)
 {
 	Matrix m{};
+	const int count = std::min(channelCount(from), channelCount(to));
+	for (int c = 0; c < count; ++c) { m[static_cast<std::size_t>(c)][static_cast<std::size_t>(c)] = 1.f; }
+	return m;
+}
+
+//! Every named speaker into the one M channel at equal power, the LFE dropped (as ITU-R BS.775 does for
+//! a fold the receiver has no use for).
+Matrix namedIntoMono(Format from)
+{
+	Matrix m{};
+	int speakers = 0;
+	for (int c = 0; c < channelCount(from); ++c)
+	{
+		if (roleOf(from, c) != Role::Lfe) { ++speakers; }
+	}
+	const float gain = speakers > 0 ? 1.f / std::sqrt(static_cast<float>(speakers)) : 0.f;
+	for (int c = 0; c < channelCount(from); ++c)
+	{
+		if (roleOf(from, c) != Role::Lfe) { m[0][static_cast<std::size_t>(c)] = gain; }
+	}
+	return m;
+}
+
+Matrix buildMatrix(Format from, Format to, const DownmixOptions& options)
+{
+	if (discrete(from) || discrete(to)) { return discreteMatrix(from, to); }
+	Matrix m{};
+	if (from == Format::Mono)
+	{
+		// Mono's M role into a named layout: the front pair at -3 dB (foldsOf), which is what a mono
+		// source playing on a stereo master sounds like.
+		addRole(m, to, 0, Role::M, 1.f, options, 0);
+		return m;
+	}
+	if (to == Format::Mono) { return namedIntoMono(from); }
 	for (int c = 0; c < channelCount(from); ++c) { addRole(m, to, c, roleOf(from, c), 1.f, options, 0); }
 	return m;
 }
@@ -237,6 +295,22 @@ int channelCount(Format format)
 	return layoutOf(format).count;
 }
 
+bool isDiscrete(Format format)
+{
+	return discrete(format);
+}
+
+int discreteChannels(Format format)
+{
+	return isDiscrete(format) ? channelCount(format) : -1;
+}
+
+Format discreteFormat(int channels)
+{
+	if (channels < MinDiscreteChannels || channels > MaxDiscreteChannels) { return Format::Stereo; }
+	return static_cast<Format>(static_cast<int>(Format::Discrete2) + channels - MinDiscreteChannels);
+}
+
 Role roleOf(Format format, int channel)
 {
 	const Layout& layout = layoutOf(format);
@@ -245,6 +319,7 @@ Role roleOf(Format format, int channel)
 
 int channelOf(Format format, Role role)
 {
+	if (isDiscrete(format)) { return -1; }  // a discrete channel has no role to look up
 	const Layout& layout = layoutOf(format);
 	for (int c = 0; c < layout.count; ++c)
 	{
@@ -261,13 +336,28 @@ QString formatName(Format format)
 bool formatFromName(const QString& name, Format* format)
 {
 	if (!format) { return false; }
+	const QString wanted = name.trimmed();
 	for (int k = 0; k < FormatCount; ++k)
 	{
-		if (name.compare(QString::fromLatin1(kLayouts[static_cast<std::size_t>(k)].name), Qt::CaseInsensitive) != 0) { continue; }
+		if (wanted.compare(QString::fromLatin1(kLayouts[static_cast<std::size_t>(k)].name), Qt::CaseInsensitive) != 0) { continue; }
 		*format = static_cast<Format>(k);
 		return true;
 	}
-	return false;
+	// The count is part of the name; take the forms a hand-written project or a script may use
+	// ("discrete-5", "discrete5", "discrete 5") and nothing outside the 2..8 range.
+	QString rest = wanted.toLower();
+	if (!rest.startsWith(QLatin1String("discrete"))) { return false; }
+	rest = rest.mid(8).trimmed();
+	rest.remove(QLatin1Char('-'));
+	rest.remove(QLatin1Char('_'));
+	rest.remove(QLatin1Char(' '));
+	bool ok = false;
+	const int channels = rest.toInt(&ok);
+	if (!ok) { return false; }
+	const Format found = discreteFormat(channels);
+	if (found == Format::Stereo) { return false; }
+	*format = found;
+	return true;
 }
 
 QStringList formatNames()
@@ -280,8 +370,21 @@ QStringList formatNames()
 QStringList speakerNames(Format format)
 {
 	QStringList names;
+	// A discrete layout has no speaker roles at all: its channels are addressed by index (channelLabels).
+	if (isDiscrete(format)) { return names; }
 	for (int c = 0; c < channelCount(format); ++c) { names.append(QString::fromLatin1(kRoleNames[static_cast<std::size_t>(roleOf(format, c))])); }
 	return names;
+}
+
+QStringList channelLabels(Format format)
+{
+	QStringList names;
+	if (isDiscrete(format))
+	{
+		for (int c = 0; c < channelCount(format); ++c) { names.append(QString::number(c + 1)); }
+		return names;
+	}
+	return speakerNames(format);
 }
 
 void speakerPoint(Format format, int channel, float* x, float* y)
