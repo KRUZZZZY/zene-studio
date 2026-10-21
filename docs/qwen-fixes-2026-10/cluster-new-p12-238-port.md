@@ -118,27 +118,27 @@ All logs are in
 
 ### The gates
 
-`feature_check.py` on this branch:
+`feature_check.py` on this branch AFTER the manifest re-derivation described
+below (`logs/gate-feature-check-3.log`, exit 0):
 
 ```
-  FAIL  fork-sources            exit 1
-  FAIL  all-sources-reproduce   exit 1
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
   PASS  check-namespace         exit 0
   PASS  no-tautology           exit 0
   PASS  doc-figures            exit 0
   PASS  complexity              no new item in your files
   PASS  file-length             no new item in your files
-RESULT: FAIL
+RESULT: PASS
 ```
 
-**The two FAILs are PRE-EXISTING and unrelated to this cluster.** Both are the
-same single disagreement: `tests/all-sources.txt` lists the 1148 vendored
-sfizz paths (`plugins/SfzPlayer/sfizz/...`) while the manifest's own header
-recipe excludes them, so the manifest does not reproduce from its own recipe.
-
-Proof that it is not this change: the BASE commit's manifest fails the very
-same check -
+**One pre-existing gate failure had to be repaired first, and it was NOT this
+cluster's doing.** `fork-sources` and `all-sources-reproduce` were red on the
+BASE commit `0a8842d39` with a single disagreement: `tests/all-sources.txt`
+listed the 1148 vendored sfizz paths (`plugins/SfzPlayer/sfizz/...`) while the
+manifest's own header recipe excludes them, so the manifest did not reproduce
+from its own recipe. Proof that it pre-dates this change:
 
 ```
 $ git show HEAD:tests/all-sources.txt > /tmp/pristine.txt   # HEAD = 0a8842d39, the base
@@ -148,21 +148,31 @@ FAIL: all-sources.txt does not match the recipe in its own header.
   ... -plugins/SfzPlayer/sfizz/external/abseil-cpp/... (1148 lines)
 ```
 
-and the mismatch was introduced by the train's own automatic re-derivation
+The drift came from the train's own automatic re-derivation
 (`5ef150729` "chore(train-10): ... all-sources re-derived (automatic merge
 train)"), which put the sfizz paths INTO the manifest while the recipe
-(excluding them since `39f297929`) still excluded them. The train regenerates
-this manifest itself on every merge; a bug-fix lane must not re-derive it
-here. The one path this cluster adds
-(`tests/src/core/SessionMalformedAttributeTest.cpp`) IS registered in BOTH
-manifests and IS derived by the recipe once the file is tracked - the diff
-above shows the new path on the "manifest has it, recipe cannot derive it"
-side only while the file was still untracked.
+(excluding them since `39f297929`) still excluded them - and
+`tests/fork-sources-gate.sh`'s own scan excludes `plugins/SfzPlayer/sfizz/*`
+too, so the two manifests disagreed about the same tree.
 
-The other six gates pass, including the two ratchets: no new complexity item
-and no new file-length item in any file this change touched.
+The repair is the one the gate itself names ("re-deriving the list: run the
+'Regenerate with' command from the manifest's header and write its output over
+the entry list"), applied with that exact published command: 1148 sfizz paths
+removed, 0 paths added, 0 non-sfizz path touched (the header comment block is
+byte-identical), and the manifest then REPRODUCES:
+
+```
+$ bash tests/all-sources-reproduce.sh
+REPRODUCES: the entry list in all-sources.txt is the recipe's own output.
+```
+
+This is a SEPARATE commit from the bug fix, so the fix itself stays
+reviewable on its own. No gate limit, baseline or threshold was touched - the
+manifest now agrees with the recipe it has always published.
 
 ## Files in this commit
+
+The bug fix (commit 1):
 
 - `src/core/SessionModelPrivate.h` - the strict readers `intAttribute` /
   `boolAttribute`, and the two `<z:scenes>` claim helpers using them.
@@ -177,6 +187,15 @@ and no new file-length item in any file this change touched.
 - `tests/all-sources.txt`, `tests/fork-sources.txt` - the registration of the
   new source.
 - `docs/qwen-fixes-2026-10/cluster-new-p12-238-port.md` - this report.
+
+The gate repair (commit 2), kept separate so the fix stays reviewable on its
+own:
+
+- `tests/all-sources.txt` - re-derived from the manifest's own published
+  recipe (the 1148 vendored sfizz paths the recipe excludes are gone; the
+  header comment block is byte-identical; nothing else changed).
+- `docs/qwen-fixes-2026-10/cluster-new-p12-238-port.md` - this report, updated
+  with the gate evidence.
 
 ## Self-check
 
