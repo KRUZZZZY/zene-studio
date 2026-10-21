@@ -169,8 +169,7 @@ private slots:
 		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
 		InstrumentTrack* track = trackOf(m_track);
 		QVERIFY(track != nullptr);
-		const ControlResult added = run(QStringLiteral("rack.layer_add"),
-			{{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		const ControlResult added = run(QStringLiteral("rack.layer_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
 
 		constexpr int key = 117;
@@ -206,6 +205,30 @@ private slots:
 		QVERIFY(!secondMixedOff);
 	}
 
+	//! MX-112: the oldest live route stays first when its sequence is more than half a ring behind the next one.
+	void liveRouteOrderingStaysFifoAcrossTheSequenceWrap() {
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto& layers = track->layers();
+		constexpr int key = 121;
+		constexpr std::uint32_t sequenceMask = (1u << 21) - 1, half = 1u << 20, active = 2u << 30;
+		std::uint32_t first = 0, second = 0;
+		const auto takeOldest = [&](auto& routes, auto& rack) {
+			if constexpr (requires { routes.entries; routes.nextSequence; }) {
+				for (auto& entry : routes.entries) { entry.store(0); }
+				routes.nextSequence.store(half + 1); routes.overflowNotes.store(0);
+				routes.entries[0].store(active | (sequenceMask << 9) | 1u); routes.entries[1].store(active | (half << 9) | 2u);
+				first = rack.takeOldestLiveLayers(key); second = rack.takeOldestLiveLayers(key);
+			} else {
+				// The unfixed product has only one mask per key, so its second note-on overwrites the first.
+				routes.store(2u, std::memory_order_relaxed); first = routes.exchange(0u, std::memory_order_relaxed);
+			}
+		};
+		takeOldest(layers.m_liveLayers[key], layers);
+		QCOMPARE(first, 1u);
+		QCOMPARE(second, 2u);
+	}
+
 	//! MX-112: a clip note's duration routes note-off to the base instrument for accepted notes only.
 	void overlappingClipNotesKeepTheirOwnBaseNoteOffRouting()
 	{
@@ -214,8 +237,7 @@ private slots:
 		QVERIFY(track != nullptr);
 		QVERIFY(track->instrument() != nullptr);
 		BaseInstrumentDeliveryProbe baseDelivery(track);
-		const ControlResult added = run(QStringLiteral("rack.layer_add"),
-			{{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		const ControlResult added = run(QStringLiteral("rack.layer_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
 
 		constexpr int key = 117;
@@ -273,8 +295,7 @@ private slots:
 	void layersAddZoneRemoveUndoReload()
 	{
 		if (m_track.isEmpty() || m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
-		const ControlResult added = run(QStringLiteral("rack.layer_add"),
-			{{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
+		const ControlResult added = run(QStringLiteral("rack.layer_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("device"), m_device}});
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
 		QCOMPARE(added.result.value(QStringLiteral("layer")).toString(), QStringLiteral("layer-1"));
 		QCOMPARE(layerCount(m_track), 1);
@@ -283,36 +304,29 @@ private slots:
 		QVERIFY(track != nullptr);
 		QVERIFY(track->layers().basePlays(80, 100));  // no zone of its own: the track's instrument plays everything
 
-		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 0},
-			{QStringLiteral("high_key"), 59}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 0}, {QStringLiteral("high_key"), 59}}).ok);
 		QVERIFY(!track->layers().basePlays(80, 100));
 		QVERIFY(track->layers().basePlays(40, 100));
-		QVERIFY(!run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-5")}}).ok);  // no such layer: refused, typed
+		QVERIFY(!run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-5")}}).ok);  // no such layer: refused, typed
 
-		const ControlResult parameters = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("plugin"), QStringLiteral("layer-1")}, {QStringLiteral("index"), 0}});
+		const ControlResult parameters = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), m_track}, {QStringLiteral("plugin"), QStringLiteral("layer-1")}, {QStringLiteral("index"), 0}});
 		QVERIFY2(parameters.ok || parameters.errorKind == ControlErrorKind::NotFound, qPrintable(parameters.errorMessage));
 
 		saveAndReload(track);
 		QCOMPARE(layerCount(m_track), 1);
 		QCOMPARE(layerZoneCount(m_track), 2);
 
-		QVERIFY(run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-1")}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-1")}}).ok);
 		QCOMPARE(layerCount(m_track), 0);
 		QCOMPARE(layerZoneCount(m_track), 1);  // layer-1's zone went with it; layer-0's stays
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(layerCount(m_track), 1);
 		QCOMPARE(layerZoneCount(m_track), 2);
-		QVERIFY(!run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-0")}}).ok);  // the track's own instrument stays
+		QVERIFY(!run(QStringLiteral("rack.layer_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}}).ok);  // the track's own instrument stays
 
 		// rack.layer_zone_remove: dropping layer-0's own zone (zone-1, keys 0..59) gives the track's
 		// instrument the whole keyboard back; control.undo re-inserts the zone at its index.
-		const ControlResult removed = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("zone"), QStringLiteral("zone-1")}});
+		const ControlResult removed = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), QStringLiteral("zone-1")}});
 		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
 		QCOMPARE(removed.result.value(QStringLiteral("removed")).toString(), QStringLiteral("zone-1"));
 		QCOMPARE(layerZoneCount(m_track), 1);
@@ -322,8 +336,7 @@ private slots:
 		QCOMPARE(layerZoneCount(m_track), 2);
 		QVERIFY(!track->layers().basePlays(80, 100));
 		QVERIFY(track->layers().basePlays(40, 100));
-		const ControlResult missing = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("zone"), QStringLiteral("zone-9")}});
+		const ControlResult missing = run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), QStringLiteral("zone-9")}});
 		QVERIFY(!missing.ok);
 		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
 	}
@@ -335,13 +348,9 @@ private slots:
 	{
 		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
 		const int zonesBefore = layerZoneCount(m_track);
-		QVERIFY2(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70},
-			{QStringLiteral("high_key"), 107}, {QStringLiteral("low_velocity"), 30},
-			{QStringLiteral("high_velocity"), 150}}).ok, "rack.layer_zone_add refused");
+		QVERIFY2(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70}, {QStringLiteral("high_key"), 107}, {QStringLiteral("low_velocity"), 30}, {QStringLiteral("high_velocity"), 150}}).ok, "rack.layer_zone_add refused");
 		const QString zone = QStringLiteral("zone-%1").arg(zonesBefore);
-		QVERIFY2(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("zone"), zone}}).ok, "rack.layer_zone_remove refused");
+		QVERIFY2(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), zone}}).ok, "rack.layer_zone_remove refused");
 		QCOMPARE(layerZoneCount(m_track), zonesBefore);
 
 		// Luna 5747: the advertised inverse is the exact recorded checkpoint, control.undo, which
@@ -363,17 +372,10 @@ private slots:
 	{
 		if (m_track.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
 		const int zonesBefore = layerZoneCount(m_track);
-		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 60},
-			{QStringLiteral("high_key"), 100}, {QStringLiteral("low_velocity"), 1},
-			{QStringLiteral("high_velocity"), 200}}).ok);
-		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70},
-			{QStringLiteral("high_key"), 80}, {QStringLiteral("low_velocity"), 1},
-			{QStringLiteral("high_velocity"), 200}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 60}, {QStringLiteral("high_key"), 100}, {QStringLiteral("low_velocity"), 1}, {QStringLiteral("high_velocity"), 200}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_add"), {{QStringLiteral("target"), m_track}, {QStringLiteral("layer"), QStringLiteral("layer-0")}, {QStringLiteral("low_key"), 70}, {QStringLiteral("high_key"), 80}, {QStringLiteral("low_velocity"), 1}, {QStringLiteral("high_velocity"), 200}}).ok);
 		const QString first = QStringLiteral("zone-%1").arg(zonesBefore);
-		QVERIFY(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track},
-			{QStringLiteral("zone"), first}}).ok);
+		QVERIFY(run(QStringLiteral("rack.layer_zone_remove"), {{QStringLiteral("target"), m_track}, {QStringLiteral("zone"), first}}).ok);
 		QCOMPARE(layerZoneCount(m_track), zonesBefore + 1);
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(layerZoneCount(m_track), zonesBefore + 2);

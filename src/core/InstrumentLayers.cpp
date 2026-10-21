@@ -96,6 +96,18 @@ std::uint32_t insertBit(std::uint32_t mask, int inserted)
 	return below | ((mask & ~((1u << inserted) - 1u)) << 1);
 }
 
+constexpr std::uint32_t LiveRouteStateShift = 30, LiveRouteLayerMask = (1u << (InstrumentLayers::MaxLayers + 1)) - 1u;
+constexpr std::uint32_t LiveRouteSequenceShift = InstrumentLayers::MaxLayers + 1;
+constexpr std::uint32_t LiveRouteSequenceMask = (1u << (LiveRouteStateShift - LiveRouteSequenceShift)) - 1u;
+constexpr std::uint32_t LiveRouteStateMask = 3u << LiveRouteStateShift, LiveRouteWriting = 1u << LiveRouteStateShift;
+constexpr std::uint32_t LiveRouteActive = 2u << LiveRouteStateShift, LiveRouteReading = 3u << LiveRouteStateShift;
+constexpr std::uint32_t NoLiveRoute = LiveRouteLayerMask + 1u;
+
+std::uint32_t liveRouteSequence(std::uint32_t route) { return (route >> LiveRouteSequenceShift) & LiveRouteSequenceMask; }
+
+//! Active routes are at most 128 notes old, so their modular age is exact across sequence wrap.
+std::uint32_t liveRouteAge(std::uint32_t route, std::uint32_t nextSequence) { return (nextSequence - liveRouteSequence(route)) & LiveRouteSequenceMask; }
+
 //! 0.5.0 F2 interface: a layer's mix as attributes of its element (only what differs from the default). The
 //! names carry a prefix because a layer's own <track> element already has a "muted" of its own.
 void writeMix(QDomElement& element, const InstrumentLayers::Mix& mix)
@@ -191,7 +203,7 @@ void InstrumentLayers::adopt(InstrumentTrack* track, int index)
 		m_slots[at].store(m_slots[at - 1].load(std::memory_order_relaxed), std::memory_order_release);
 	}
 	m_slots[static_cast<std::size_t>(index - 1)].store(track, std::memory_order_release);
-	for (auto& live : m_liveLayers) { live.store(insertBit(live.load(std::memory_order_relaxed), index), std::memory_order_relaxed); }
+	insertLiveLayer(index);
 	followMixerChannel(m_owner->mixerChannelModel()->value());
 }
 
@@ -252,7 +264,7 @@ auto InstrumentLayers::removeLayer(int index) -> bool
 			m_slots[at].store(slot + 1 < MaxLayers ? m_slots[at + 1].load(std::memory_order_relaxed) : nullptr,
 				std::memory_order_release);
 		}
-		for (auto& live : m_liveLayers) { live.store(dropBit(live.load(std::memory_order_relaxed), index), std::memory_order_relaxed); }
+		dropLiveLayer(index);
 		dropMix(index);
 		delete track;
 		publishMix();
@@ -281,7 +293,7 @@ void InstrumentLayers::clear()
 	while (layerCount() > 0) { removeLayer(layerCount()); }
 	m_zones.clear();
 	m_mix.fill(Mix{});  // not published: the owner may be going away (loadSettings publishes)
-	for (auto& live : m_liveLayers) { live.store(0, std::memory_order_relaxed); }
+	clearLiveRoutes();
 	for (auto& accepted : m_baseAccepted) { accepted.store(0, std::memory_order_relaxed); }
 	for (auto& skipped : m_baseSkipped) { skipped.store(0, std::memory_order_relaxed); }
 }
@@ -471,25 +483,103 @@ void InstrumentLayers::sendToLayers(std::uint32_t layers, const MidiEvent& event
 	}
 }
 
-auto InstrumentLayers::liveLayersFor(const MidiEvent& event) -> std::uint32_t
+auto InstrumentLayers::liveLayersFor(const MidiEvent& event, const TimePos& time, f_cnt_t offset) -> std::uint32_t
 {
-	const bool noteOn = event.type() == MidiNoteOn && event.velocity() > 0;
-	const bool keyed = event.type() == MidiNoteOff || event.type() == MidiNoteOn || event.type() == MidiKeyPressure;
+	const bool noteOn = event.type() == MidiNoteOn && event.velocity() > 0, keyed = event.type() == MidiNoteOff || event.type() == MidiNoteOn || event.type() == MidiKeyPressure;
 	if (!keyed) { return ~1u; }  // a channel-wide message (bend, sustain, a controller) reaches every layer
 	const int key = event.key();
 	if (!validKey(key)) { return 0; }
-	auto& live = m_liveLayers[static_cast<std::size_t>(key)];
-	if (!noteOn) { return event.type() == MidiKeyPressure ? live.load(std::memory_order_relaxed) : live.exchange(0, std::memory_order_relaxed); }
-	// A note-on: every layer a zone names, remembered for the note-off.
+	if (!noteOn)
+	{
+		if (event.type() == MidiKeyPressure) { return activeLiveLayers(key); }
+		if (consumePending(m_liveLayers[static_cast<std::size_t>(key)].overflowNotes)) { return 0u; }
+		const std::uint32_t layers = takeOldestLiveLayers(key); return layers == NoLiveRoute ? 0u : layers;
+	}
+	// Remember even an empty route so a later off cannot consume another note's zone.
 	const std::uint32_t layers = layerMask(key, event.volume(m_owner->midiPort()->baseVelocity())) & ~1u;
-	live.store(layers, std::memory_order_relaxed);
+	return admitLiveNoteOn(key, layers, event, time, offset);
+}
+
+auto InstrumentLayers::admitLiveNoteOn(int key, std::uint32_t layers, const MidiEvent& event,
+	const TimePos& time, f_cnt_t offset) -> std::uint32_t
+{
+	while (!rememberLiveLayers(key, layers))
+	{
+		const std::uint32_t stolen = takeOldestLiveLayers(key);
+		if (stolen != NoLiveRoute) { sendToLayers(stolen, MidiEvent(MidiNoteOff, event.channel(), key, 0, event.sourcePort(), event.source()), time, offset);
+			m_liveLayers[static_cast<std::size_t>(key)].overflowNotes.fetch_add(1, std::memory_order_relaxed); }
+	}
 	return layers;
+}
+
+auto InstrumentLayers::rememberLiveLayers(int key, std::uint32_t layers) -> bool
+{
+	LiveKeyRoutes& routes = m_liveLayers[static_cast<std::size_t>(key)];
+	for (std::atomic<std::uint32_t>& entry : routes.entries)
+	{
+		std::uint32_t expected = 0;
+		if (!entry.compare_exchange_strong(expected, LiveRouteWriting, std::memory_order_acquire, std::memory_order_relaxed)) { continue; }
+		const std::uint32_t sequence = routes.nextSequence.fetch_add(1, std::memory_order_relaxed) & LiveRouteSequenceMask;
+		entry.store(LiveRouteActive | (sequence << LiveRouteSequenceShift) | (layers & LiveRouteLayerMask), std::memory_order_release); return true;
+	}
+	return false;
+}
+
+auto InstrumentLayers::takeOldestLiveLayers(int key) -> std::uint32_t
+{
+	LiveKeyRoutes& routes = m_liveLayers[static_cast<std::size_t>(key)];
+	for (;;)
+	{
+		std::array<std::atomic<std::uint32_t>*, MaxActiveLiveNotesPerKey> entries{}; std::array<std::uint32_t, MaxActiveLiveNotesPerKey> found{};
+		std::size_t count = 0;
+		for (std::atomic<std::uint32_t>& entry : routes.entries)
+		{
+			const std::uint32_t route = entry.load(std::memory_order_acquire);
+			if ((route & LiveRouteStateMask) == LiveRouteActive) { entries[count] = &entry; found[count++] = route; }
+		}
+		if (count == 0) { return NoLiveRoute; }
+		const std::uint32_t nextSequence = routes.nextSequence.load(std::memory_order_relaxed); std::size_t oldest = 0;
+		for (std::size_t i = 1; i < count; ++i) { if (liveRouteAge(found[i], nextSequence) > liveRouteAge(found[oldest], nextSequence)) { oldest = i; } }
+		std::uint32_t expected = found[oldest];
+		if (!entries[oldest]->compare_exchange_strong(expected, (expected & ~LiveRouteStateMask) | LiveRouteReading,
+			std::memory_order_acquire, std::memory_order_relaxed)) { continue; }
+		entries[oldest]->store(0, std::memory_order_release); return expected & LiveRouteLayerMask;
+	}
+}
+
+auto InstrumentLayers::activeLiveLayers(int key) const -> std::uint32_t
+{
+	std::uint32_t layers = 0;
+	for (const std::atomic<std::uint32_t>& entry : m_liveLayers[static_cast<std::size_t>(key)].entries) { const std::uint32_t route = entry.load(std::memory_order_acquire);
+		if ((route & LiveRouteStateMask) == LiveRouteActive) { layers |= route & LiveRouteLayerMask; } }
+	return layers;
+}
+
+void InstrumentLayers::insertLiveLayer(int index) {
+	for (LiveKeyRoutes& routes : m_liveLayers) for (std::atomic<std::uint32_t>& entry : routes.entries) {
+		auto route = entry.load(std::memory_order_relaxed);
+		while ((route & LiveRouteStateMask) == LiveRouteActive) { const std::uint32_t layers = route & LiveRouteLayerMask, updated = (route & ~LiveRouteLayerMask) | insertBit(layers, index);
+			if (entry.compare_exchange_weak(route, updated, std::memory_order_relaxed)) { break; } }
+	}
+}
+
+void InstrumentLayers::dropLiveLayer(int index) {
+	for (LiveKeyRoutes& routes : m_liveLayers) for (std::atomic<std::uint32_t>& entry : routes.entries) {
+		auto route = entry.load(std::memory_order_relaxed);
+		while ((route & LiveRouteStateMask) == LiveRouteActive) { const std::uint32_t layers = route & LiveRouteLayerMask, updated = (route & ~LiveRouteLayerMask) | dropBit(layers, index);
+			if (entry.compare_exchange_weak(route, updated, std::memory_order_relaxed)) { break; } }
+	}
+}
+
+void InstrumentLayers::clearLiveRoutes() {
+	for (LiveKeyRoutes& routes : m_liveLayers) { for (std::atomic<std::uint32_t>& entry : routes.entries) { entry.store(0, std::memory_order_relaxed); }
+		routes.overflowNotes.store(0, std::memory_order_relaxed); }
 }
 
 void InstrumentLayers::forwardInEvent(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
 {
 	if (!active()) { return; }
-	sendToLayers(liveLayersFor(event), event, time, offset);
+	sendToLayers(liveLayersFor(event, time, offset), event, time, offset);
 }
 
 } // namespace lmms

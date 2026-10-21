@@ -81,6 +81,8 @@ class TrackContainer;
  * model-change guard. The note paths read fixed atomics and the zone list; they allocate nothing beyond
  * what starting a note on a track already does (NotePlayHandleManager's pool, the engine's lock-free
  * play-handle list).
+ * Live layer routing retains at most 128 unmatched note-on routes per key. At that limit the oldest route
+ * is stolen and its own note-off is swallowed, so a new note-on is never dropped and the FIFO stays bounded.
  */
 class LMMS_EXPORT InstrumentLayers
 {
@@ -174,10 +176,23 @@ private:
 	//! m_mix with layer @a index's entry dropped (the later ones move down) or made room for (moved up).
 	void dropMix(int index);
 	void makeRoomForMix(int index, const Mix& mix);
-	//! The layers a live @a event goes to: a note-on's zones (remembered per key), the layers its note-on
-	//! reached for a note-off or key pressure, every layer for a channel-wide message.
-	auto liveLayersFor(const MidiEvent& event) -> std::uint32_t;
+	//! A live event uses a bounded per-key FIFO, or every layer for a channel-wide message.
+	auto liveLayersFor(const MidiEvent& event, const TimePos& time, f_cnt_t offset) -> std::uint32_t;
+	auto admitLiveNoteOn(int key, std::uint32_t layers, const MidiEvent& event, const TimePos& time, f_cnt_t offset) -> std::uint32_t;
+	auto rememberLiveLayers(int key, std::uint32_t layers) -> bool;
+	auto takeOldestLiveLayers(int key) -> std::uint32_t;
+	auto activeLiveLayers(int key) const -> std::uint32_t;
+	void insertLiveLayer(int index);
+	void dropLiveLayer(int index);
+	void clearLiveRoutes();
 	void sendToLayers(std::uint32_t layers, const MidiEvent& event, const TimePos& time, f_cnt_t offset);
+	static constexpr std::size_t MaxActiveLiveNotesPerKey = 128;
+	struct LiveKeyRoutes
+	{
+		std::array<std::atomic<std::uint32_t>, MaxActiveLiveNotesPerKey> entries{};
+		std::atomic<std::uint32_t> nextSequence{0};
+		std::atomic<std::uint32_t> overflowNotes{0};
+	};
 
 	InstrumentTrack* m_owner;
 	std::unique_ptr<TrackContainer> m_container;
@@ -185,8 +200,8 @@ private:
 	RackZones m_zones;
 	//! Control thread only: each layer's mix, by layer index (0 = the track's own instrument).
 	std::array<Mix, MaxLayers + 1> m_mix{};
-	//! Per key: the layers a live note-on was passed to (bit k = layer k), for its note-off.
-	std::array<std::atomic<std::uint32_t>, NumKeys> m_liveLayers{};
+	//! Per key: the ordered layer masks of overlapping live note-ons (bit k = layer k).
+	std::array<LiveKeyRoutes, NumKeys> m_liveLayers{};
 	//! Per key: accepted and skipped base-instrument note-ons, so overlapping notes keep their note-offs paired.
 	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseAccepted{};
 	std::array<std::atomic<std::uint32_t>, NumKeys> m_baseSkipped{};

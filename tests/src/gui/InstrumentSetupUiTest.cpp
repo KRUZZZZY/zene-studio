@@ -49,6 +49,7 @@
 #include "AudioBusHandle.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "BufferManager.h"
 #include "CommandForm.h"
 #include "CommandListDialog.h"
 #include "CommandLists.h"
@@ -478,6 +479,52 @@ private slots:
 
 		parent->processInEvent(MidiEvent(MidiNoteOff, 0, 60, 0, nullptr, MidiEvent::Source::Internal));
 		QVERIFY2(heldNote->isReleased(), "the held note's release missed its original layer after undo");
+	}
+
+	//! MX-112: overlapping live same-key notes keep each velocity-selected layer route until its note-off.
+	void overlappingLiveSameKeyNotesKeepTheirLayerNoteOffRoutes()
+	{
+		auto* owner = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(owner != nullptr);
+		auto& layers = owner->layers();
+		const QString layerXml = layerTemplateXml(owner);
+		QCOMPARE(layers.insertLayer(1, layerXml), 1);
+		QCOMPARE(layers.insertLayer(2, layerXml), 2);
+		constexpr int key = 118;
+		const MidiEvent softOn(MidiNoteOn, 0, key, 40, nullptr, MidiEvent::Source::Internal);
+		const MidiEvent hardOn(MidiNoteOn, 0, key, 100, nullptr, MidiEvent::Source::Internal);
+		const MidiEvent noteOff(MidiNoteOff, 0, key, 0, nullptr, MidiEvent::Source::Internal);
+		RackZone softZone;
+		softZone.lowKey = softZone.highKey = key;
+		softZone.lowVelocity = softZone.highVelocity = softOn.volume(owner->midiPort()->baseVelocity());
+		softZone.chain = 1;
+		RackZone hardZone = softZone;
+		hardZone.lowVelocity = hardZone.highVelocity = hardOn.volume(owner->midiPort()->baseVelocity());
+		hardZone.chain = 2;
+		QVERIFY(layers.zones().addZone(softZone) >= 0);
+		QVERIFY(layers.zones().addZone(hardZone) >= 0);
+		InstrumentTrack* softLayer = layers.layer(1);
+		InstrumentTrack* hardLayer = layers.layer(2);
+		QVERIFY(softLayer != nullptr);
+		QVERIFY(hardLayer != nullptr);
+		BufferManager::init(Engine::audioEngine()->framesPerPeriod());
+		owner->processInEvent(softOn);
+		owner->processInEvent(hardOn);
+		const bool bothLayersStarted = softLayer->playingNote(key) != nullptr && hardLayer->playingNote(key) != nullptr;
+		owner->processInEvent(noteOff);
+		const bool firstOffReleasedSoftOnly = softLayer->playingNote(key) == nullptr && hardLayer->playingNote(key) != nullptr;
+		owner->processInEvent(noteOff);
+		const bool secondOffReleasedHard = hardLayer->playingNote(key) == nullptr;
+		owner->processInEvent(noteOff);
+		if (softLayer->playingNote(key) != nullptr) { softLayer->processInEvent(noteOff); }
+		if (hardLayer->playingNote(key) != nullptr) { hardLayer->processInEvent(noteOff); }
+		const bool removedHardLayer = layers.removeLayer(2);
+		const bool removedSoftLayer = layers.removeLayer(1);
+		QVERIFY(bothLayersStarted);
+		QVERIFY(firstOffReleasedSoftOnly);
+		QVERIFY(secondOffReleasedHard);
+		QVERIFY(removedHardLayer);
+		QVERIFY(removedSoftLayer);
 	}
 
 	//! MX-120: from the track's menu and its device card, a modulator made per-voice on the track's notes, bound to a
