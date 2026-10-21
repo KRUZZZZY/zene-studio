@@ -6563,7 +6563,8 @@ endif()
 # 0.5.0 F6 (WF-050/WF-052): two real instances on 127.0.0.1 - host, a local invite, join, edits both
 # ways, an undo re-sync and a refused viewer. Exits 77 (skipped) where the TLS-PSK backend is missing.
 target_compile_definitions(CollabTransportTest PRIVATE
-	COLLAB_HOST_SOURCE_PATH="${CMAKE_SOURCE_DIR}/src/core/CollabHost.cpp")
+	COLLAB_HOST_SOURCE_PATH="${CMAKE_SOURCE_DIR}/src/core/CollabHost.cpp"
+	COLLAB_SESSION_SYNC_SOURCE_PATH="${CMAKE_SOURCE_DIR}/src/core/CollabSessionSync.cpp")
 if(PYTHON3_EXECUTABLE AND ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPolicyTest CollabTransportTest PortMappingCodecTest PortMappingOrchestratorTest UpnpMapperFakeRouterTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

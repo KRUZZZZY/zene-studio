@@ -320,7 +320,6 @@ void CollabHost::onMessage(int peerId, const QJsonObject& message, const QByteAr
 	const QString type = message.value(QStringLiteral("type")).toString();
 	if (type == QLatin1String("hello")) { rename(*it, message); return; }
 	if (type == QLatin1String("resync")) { resyncPeer(*it); return; }
-	if (line.trimmed().isEmpty()) { return; }
 	// Everything else is a request in the control-socket shape; the handler answers malformed ones itself.
 	// Requests wait while a nested event loop runs (a dialog, a handler that waits), so a peer's command never
 	// runs inside another command; the per-peer order is kept because one queue holds them all.
@@ -371,9 +370,21 @@ QByteArray CollabHost::snapshotFrame(QString* error)
 		if (error->isEmpty()) { *error = QStringLiteral("the host could not write its project"); }
 		return QByteArray();
 	}
-	const QByteArray frame = frameOf({{QStringLiteral("type"), QStringLiteral("snapshot")},
+	// Reject before base64-encoding: the frame carries the project base64-encoded, so an oversized project
+	// cannot fit even before paying for the (large) allocation.
+	const qsizetype base64Size = ((project.size() + 2) / 3) * 4;
+	QJsonObject frameObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
 		{QStringLiteral("seq"), static_cast<double>(m_seq)}, {QStringLiteral("bytes"), static_cast<int>(project.size())},
-		{QStringLiteral("data"), QString::fromLatin1(project.toBase64())}});
+		{QStringLiteral("data"), QString()}};
+	const QByteArray frameHeader = frameOf(frameObject);
+	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(project.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
+	frameObject.insert(QStringLiteral("data"), QString::fromLatin1(project.toBase64()));
+	const QByteArray frame = frameOf(frameObject);
 	if (frame.size() >= MaxHostLineBytes)
 	{
 		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
@@ -395,8 +406,15 @@ void CollabHost::broadcastSnapshot(const QString& reason)
 	QString error;
 	const QByteArray frame = snapshotFrame(&error);
 	if (frame.isEmpty()) { emit notice(QStringLiteral("could not re-sync the peers: %1").arg(error)); return; }
-	sendToProjectPeers(frame);
-	emit notice(QStringLiteral("peers re-synced (%1)").arg(reason));
+	const int recipients = sendToProjectPeers(frame);
+	if (recipients == 0)
+	{
+		emit notice(QStringLiteral("no project peers to re-sync (%1)").arg(reason));
+	}
+	else
+	{
+		emit notice(QStringLiteral("peers re-synced (%1): %2 recipient(s)").arg(reason).arg(recipients));
+	}
 }
 
 void CollabHost::broadcastCommand(const QString& command, const QJsonObject& args, const QString& origin)
@@ -406,14 +424,16 @@ void CollabHost::broadcastCommand(const QString& command, const QJsonObject& arg
 		{QStringLiteral("cmd"), command}, {QStringLiteral("args"), args}, {QStringLiteral("origin"), origin}}));
 }
 
-void CollabHost::sendToProjectPeers(const QByteArray& line)
+int CollabHost::sendToProjectPeers(const QByteArray& line)
 {
+	int recipients = 0;
 	const QList<int> peerIds = m_peers.keys();
 	for (int peerId : peerIds)
 	{
 		auto it = m_peers.find(peerId);
-		if (it != m_peers.end() && holdsProject(*it)) { it->link->sendLine(line); }
+		if (it != m_peers.end() && holdsProject(*it)) { it->link->sendLine(line); ++recipients; }
 	}
+	return recipients;
 }
 
 QJsonArray CollabHost::peersJson() const

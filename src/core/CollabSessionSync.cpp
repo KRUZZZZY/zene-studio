@@ -37,6 +37,7 @@
 #include "CollabClient.h"
 #include "CollabCommandTap.h"
 #include "CollabHost.h"
+#include "CollabLink.h"
 #include "ConfigManager.h"
 #include "ControlServer.h"
 #include "Engine.h"
@@ -135,7 +136,19 @@ void CollabSession::observe(const QString& id, const QJsonObject& args, bool mut
 
 QByteArray CollabSession::handlePeerRequest(const QByteArray& line, CollabRole role, const QString& origin)
 {
-	const QJsonDocument document = QJsonDocument::fromJson(line.trimmed());
+	const QByteArray trimmed = line.trimmed();
+	if (trimmed.isEmpty())
+	{
+		QJsonParseError parseError;
+		QJsonDocument::fromJson(trimmed, &parseError);
+		const QString message = parseError.errorString().isEmpty()
+			? QStringLiteral("malformed JSON request")
+			: QStringLiteral("malformed JSON request: %1").arg(parseError.errorString());
+		return QJsonDocument(QJsonObject{{QStringLiteral("id"), -1}, {QStringLiteral("ok"), false},
+			{QStringLiteral("error"), QJsonObject{{QStringLiteral("kind"), controlErrorKindName(ControlErrorKind::InvalidArgs)},
+				{QStringLiteral("message"), message}}}}).toJson(QJsonDocument::Compact);
+	}
+	const QJsonDocument document = QJsonDocument::fromJson(trimmed);
 	// A line that is not a request object is answered by the dispatcher's own typed refusal.
 	if (!document.isObject()) { return m_dispatcher->dispatchLine(line); }
 	const QJsonObject request = document.object();
@@ -164,7 +177,21 @@ QByteArray CollabSession::writeSnapshot(QString* error) const
 		return QByteArray();
 	}
 	QFile file(path);
-	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+	if (!file.open(QIODevice::ReadOnly)) { *error = QStringLiteral("the project could not be written"); return QByteArray(); }
+	// Refuse before reading the whole file into memory: the snapshot is base64-framed, so an oversized
+	// project cannot fit the host's line limit anyway.
+	const qint64 base64Size = ((file.size() + 2) / 3) * 4;
+	const QByteArray frameHeader = QJsonDocument(QJsonObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
+		{QStringLiteral("seq"), static_cast<double>(m_host->sequence())},
+		{QStringLiteral("bytes"), static_cast<int>(file.size())}, {QStringLiteral("data"), QString()}})
+		.toJson(QJsonDocument::Compact);
+	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(file.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
+	return file.readAll();
 }
 
 bool CollabSession::applySnapshot(const QByteArray& project, QString* error)

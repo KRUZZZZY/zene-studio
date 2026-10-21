@@ -84,6 +84,11 @@ struct CollabClientTestAccess
 	{
 		return client.m_inflight.contains(id);
 	}
+
+	static CollabLink* link(CollabClient& client)
+	{
+		return client.m_link;
+	}
 };
 
 } // namespace lmms::collab
@@ -536,7 +541,7 @@ private slots:
 		QVERIFY2(hostSource.open(QIODevice::ReadOnly | QIODevice::Text),
 			qPrintable(hostSource.errorString()));
 		const QString source = QString::fromUtf8(hostSource.readAll());
-		const qsizetype start = source.indexOf(QStringLiteral("void CollabHost::sendToProjectPeers("));
+		const qsizetype start = source.indexOf(QStringLiteral("int CollabHost::sendToProjectPeers("));
 		QVERIFY(start >= 0);
 		const qsizetype end = source.indexOf(QStringLiteral("\n}"), start);
 		QVERIFY(end > start);
@@ -765,6 +770,107 @@ private slots:
 		QCOMPARE(m_got.snapshots.at(3), changed);
 	}
 
+	//! A re-sync with no project-holding peers reports that, instead of claiming success.
+	void broadcastSnapshotReportsRecipients()
+	{
+		QSignalSpy notices(m_host.get(), &CollabHost::notice);
+		m_host->broadcastSnapshot(QStringLiteral("none"));
+		QTRY_VERIFY(!notices.isEmpty());
+		QVERIFY2(notices.last().at(0).toString().contains(QStringLiteral("no project peers")),
+			qPrintable(notices.last().at(0).toString()));
+
+		CollabClient client;
+		wire(client);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Solo"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+		notices.clear();
+		m_host->broadcastSnapshot(QStringLiteral("one"));
+		QTRY_VERIFY(!notices.isEmpty());
+		QVERIFY2(notices.last().at(0).toString().contains(QStringLiteral("1 recipient(s)")),
+			qPrintable(notices.last().at(0).toString()));
+	}
+
+	//! A blank collaboration line is answered with the malformed-wire id:-1 reply.
+	void blankCollaborationLineReceivesMalformedReply()
+	{
+		CollabClient client;
+		wire(client);
+		client.join(inviteFor(CollabRole::Editor, m_editorKey), QStringLiteral("Blank"));
+		QTRY_VERIFY_WITH_TIMEOUT(joined(client), 10000);
+
+		m_host->setRequestHandler([this](const QByteArray& line, CollabRole role, const QString&) {
+			m_got.requests.append(line);
+			if (line.trimmed().isEmpty())
+			{
+				return QJsonDocument(QJsonObject{{QStringLiteral("id"), -1}, {QStringLiteral("ok"), false},
+					{QStringLiteral("error"), QJsonObject{{QStringLiteral("kind"), QStringLiteral("invalid_args")},
+						{QStringLiteral("message"), QStringLiteral("malformed JSON request")}}}}).toJson(QJsonDocument::Compact);
+			}
+			const int id = QJsonDocument::fromJson(line).object().value(QStringLiteral("id")).toInt();
+			return QJsonDocument(QJsonObject{{QStringLiteral("id"), id}, {QStringLiteral("ok"), true},
+				{QStringLiteral("result"), QJsonObject{}}}).toJson(QJsonDocument::Compact);
+		});
+
+		QSignalSpy replies(&client, &CollabClient::replied);
+		CollabClientTestAccess::link(client)->sendLine(QByteArray());
+		QTRY_COMPARE_WITH_TIMEOUT(replies.size(), 1, 5000);
+		QCOMPARE(replies.first().at(0).toInt(), -1);
+		QVERIFY(!replies.first().at(1).toBool());
+		QVERIFY(m_got.requests.contains(QByteArray()));
+	}
+
+	//! An oversized snapshot is refused before it is base64-encoded into a frame.
+	void oversizedSnapshotIsRefusedBeforeEncoding()
+	{
+		m_host->setSnapshotProvider([](QString*) { return QByteArray(MaxHostLineBytes + 1, 'x'); });
+		QSignalSpy notices(m_host.get(), &CollabHost::notice);
+		m_host->broadcastSnapshot(QStringLiteral("huge"));
+		QTRY_VERIFY(!notices.isEmpty());
+		QVERIFY2(notices.last().at(0).toString().contains(QStringLiteral("too large")),
+			qPrintable(notices.last().at(0).toString()));
+	}
+
+	//! The early size check must preserve a project whose exact snapshot frame is below the wire limit.
+	void snapshotFrameAcceptsPayloadThatFits()
+	{
+		// With sequence 0, this payload produces a frame two bytes below MaxHostLineBytes.
+		m_host->setSnapshotProvider([](QString*) { return QByteArray(50'331'606, 'x'); });
+		QSignalSpy notices(m_host.get(), &CollabHost::notice);
+		m_host->broadcastSnapshot(QStringLiteral("boundary"));
+		QCOMPARE(notices.size(), 1);
+		QVERIFY2(notices.last().at(0).toString().contains(QStringLiteral("no project peers")),
+			qPrintable(notices.last().at(0).toString()));
+	}
+
+	//! The size check must precede the base64 encoding in the host source.
+	void snapshotSizeCheckPrecedesEncodingInSource()
+	{
+		QFile hostSource(QStringLiteral(COLLAB_HOST_SOURCE_PATH));
+		QVERIFY2(hostSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(hostSource.errorString()));
+		const QString source = QString::fromUtf8(hostSource.readAll());
+		const qsizetype check = source.indexOf(QStringLiteral("base64Size + frameHeader.size() >= MaxHostLineBytes"));
+		const qsizetype encode = source.indexOf(QStringLiteral("project.toBase64()"));
+		QVERIFY2(check >= 0, "early size check missing");
+		QVERIFY2(encode > check, "encoding precedes the size check");
+
+		QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+		const QString sessionSync = QString::fromUtf8(sessionSyncSource.readAll());
+		const qsizetype fileCheck = sessionSync.indexOf(QStringLiteral("base64Size + frameHeader.size() >= MaxHostLineBytes"));
+		const qsizetype readAll = sessionSync.indexOf(QStringLiteral("return file.readAll();"));
+		QVERIFY2(fileCheck >= 0, "temporary file size check missing");
+		QVERIFY2(readAll > fileCheck, "temporary file is read before the size check");
+	}
+
+	//! Blank lines must not be dropped before the request handler in the host source.
+	void blankLinesAreDispatchedInSource()
+	{
+		QFile hostSource(QStringLiteral(COLLAB_HOST_SOURCE_PATH));
+		QVERIFY2(hostSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(hostSource.errorString()));
+		const QString source = QString::fromUtf8(hostSource.readAll());
+		QVERIFY2(!source.contains(QStringLiteral("if (line.trimmed().isEmpty()) { return; }")),
+			"blank lines are still dropped before dispatch");
+	}
 	//! An untracked edit seen during the peer's resync throttle is retried after the interval.
 	void throttledUntrackedEditIsRetried()
 	{

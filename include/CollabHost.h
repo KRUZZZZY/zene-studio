@@ -155,7 +155,7 @@ private:
 	void resyncPeer(Peer& peer);
 	bool sendSnapshot(Peer& peer, const QByteArray& frame);
 	QByteArray snapshotFrame(QString* error);
-	void sendToProjectPeers(const QByteArray& line);
+	int sendToProjectPeers(const QByteArray& line);
 	void broadcastPeers();
 	static bool holdsProject(const Peer& peer) { return peer.role != CollabRole::Remote; }
 
