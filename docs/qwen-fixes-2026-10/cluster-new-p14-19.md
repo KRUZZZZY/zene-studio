@@ -87,7 +87,7 @@ cd build/tests && ./UndoHonestyStateTest aKeyNameEditThatChangesNothingRecordsNo
 | Build restored | Same build target, output `<LOGS>/build-6-prove-green.log` — **EXIT=0** |
 | GREEN proof (fix restored) | Same test command, output `<LOGS>/test-5-prove-green.log` — **EXIT=0** |
 | Gate table | `PYTHONPATH=<LOGS> python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > <LOGS>/feature-check-1.log 2>&1; echo EXIT=$?` — **EXIT=0**, all 8 rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length). Re-run with the report present (`> <LOGS>/feature-check-2.log 2>&1`) — **EXIT=0**, same 8/8 PASS |
-| Submit check | Run after the commit; result recorded in the session log and self-check below. |
+| Submit check | `PYTHONPATH=<LOGS> python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p14-19 > <LOGS>/submit-check-1.log 2>&1; echo EXIT=$?` — **EXIT=0**, all mechanical rows PASS, `RESULT: PASS - submit` |
 
 `<LOGS>` is
 `/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/new-p14-19-logs`.
