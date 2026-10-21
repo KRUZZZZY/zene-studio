@@ -507,6 +507,29 @@ private slots:
 		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "comma list ignored its maximum item count");
 	}
 
+	//! A comma list with an empty item is malformed input, not a shorter list: it is refused, so the
+	//! user hears about it instead of the command running with values they never typed.
+	void commaListsRefuseEmptyItems()
+	{
+		const QJsonObject spec = boundedIntegerList();
+		QWidget parent;
+		const formfield::Editor editor = formfield::makeEditor(&parent, QStringLiteral("formtest.list"), QStringLiteral("values"), spec, true);
+		auto* input = qobject_cast<QLineEdit*>(editor.value);
+		QVERIFY(input != nullptr);
+		QJsonValue value;
+		QString error;
+
+		input->setText(QStringLiteral("1,,2"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "a comma list with an empty item was read as a shorter list");
+		QVERIFY2(error.contains(QStringLiteral("empty")), qPrintable(error));
+		input->setText(QStringLiteral("1, 2,"));
+		QVERIFY2(!formfield::readValue(editor.value, spec, &value, &error), "a comma list ending in a comma was read as a shorter list");
+		// A blank field is no list at all: it stays empty, and the command's own default is used.
+		input->setText(QString());
+		QVERIFY2(formfield::readValue(editor.value, spec, &value, &error), qPrintable(error));
+		QVERIFY(value.isUndefined());
+	}
+
 	//! 0.5.0 theme 5: an enum offers its values in words (the blank entry says "(Default)"), a list of plain
 	//! values is typed as "a, b", and raw JSON waits under Advanced.
 	void choicesListsAndRawJsonHaveTheirPlaces()

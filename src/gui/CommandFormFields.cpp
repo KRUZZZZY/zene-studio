@@ -340,7 +340,8 @@ bool listMatchesSchema(const QJsonArray& items, const QJsonObject& spec)
 }
 
 //! "a, b, c" as a list of the items' type; a list typed as JSON ("[...]") is read as JSON.
-bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value)
+//! An empty item is refused, with the reason in @a error: malformed input is not a shorter list.
+bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value, QString* error)
 {
 	QJsonArray items;
 	if (text.startsWith(QLatin1Char('[')))
@@ -352,9 +353,14 @@ bool parseList(const QString& text, const QJsonObject& spec, QJsonValue* value)
 	{
 		for (const QString& part : text.split(QLatin1Char(',')))
 		{
+			const QString entry = part.trimmed();
+			if (entry.isEmpty())
+			{
+				*error = tr("\"%1\" has an empty item").arg(text);
+				return false;
+			}
 			QJsonValue item;
-			if (part.trimmed().isEmpty()) { continue; }
-			if (!parseScalar(part.trimmed(), itemType(spec), &item)) { return false; }
+			if (!parseScalar(entry, itemType(spec), &item)) { return false; }
 			items.append(item);
 		}
 	}
@@ -405,9 +411,12 @@ bool readText(const QWidget* editor, const QString& text, const QJsonObject& spe
 	case Kind::Pick: *value = pickedValue(static_cast<const QComboBox*>(editor), text); return true;
 	case Kind::Keys: *value = text; return true;
 	case Kind::List:
-		if (parseList(text, spec, value)) { return true; }
-		*error = tr("\"%1\" is not a list of values separated by commas").arg(text);
+	{
+		QString reason;
+		if (parseList(text, spec, value, &reason)) { return true; }
+		*error = reason.isEmpty() ? tr("\"%1\" is not a list of values separated by commas").arg(text) : reason;
 		return false;
+	}
 	case Kind::Json:
 		if (parseJson(text, schemaType(spec), value)) { return true; }
 		*error = typeError(text, schemaType(spec));
