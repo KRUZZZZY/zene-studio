@@ -70,3 +70,23 @@ RESULT: PASS
 | Affected family tests executed | **6** (5 pass; `ControlFreezeCommandsTranscript` fails pre-existing, EXIT 8 on original code too) |
 | Gate exit | **0** (`RESULT: PASS`) |
 | Build exits | all 0 after the first ccache-permission failure (build-1.log, EXIT=2, not a code error) |
+
+## Self-check
+
+Verdict is FIXED. Nothing is claimed as ALREADY-FIXED or FALSE-POSITIVE.
+
+1. **Regression fails with the product change reverted and passes with it.** RED: `test-1.log`, EXIT 8, `'!loadedClips.front()->isMuted()' returned FALSE`. GREEN: `test-2.log`, EXIT 0. Patch toggle (step 4b): reverse `fix.patch` (EXIT 0), rebuild (`build-4.log`, EXIT 0), run `test-3.log` EXIT 8; re-apply (EXIT 0), rebuild (`build-5.log`, EXIT 0), run `test-4.log` EXIT 0.
+2. **Deterministic.** The test runs synchronously on the control thread. It has no sleeps, timers, threads or wall-clock reads. Its inputs are fixed: a 440 Hz tone from `taketest::writeToneWav`, one clip whose start and length are read back from the model, a project saved with `saveProjectFile`, one attribute rewritten in the XML, then `loadProject`. No injection seam is needed.
+3. **Fix at the cause, siblings checked.**
+   - The only caller of `loadFrozenTake()` is `loadTrack()` (`src/core/Track.cpp:769`; the grep over `src/` shows no other call).
+   - The existing recovery at `src/core/Track.cpp:888-891` now calls the same helper, `unmuteFrozenClips()` (`src/core/Track.cpp:246`), so the two unmute paths cannot diverge.
+   - `unfreeze()` (`src/core/Track.cpp:~1282-1300`), `freezeTo()` (`~1235-1279`) and `clearFrozenTake()` are unchanged.
+   - The `presetMode` return (`src/core/Track.cpp:776`) comes before the new block, so a preset load never touches existing clips.
+   - `include/Track.h` is unchanged, so no other translation unit needed a rebuild.
+   - `WriteRefusalGateTest`, which lists `clearFrozenTake,loadFrozenTake` as the writers of the frozen record, passes: `build-11.log` EXIT 0, `test-9.log` EXIT 0, 1 of 1.
+4. **No collateral damage.**
+   - The new block runs only when `frozenAudio` names a file and no take was installed, which is exactly the tick-rejection case. Projects with no frozen take are unaffected.
+   - A take that was installed, including one whose file is missing or undecodable, takes the existing path, which is unchanged.
+   - No limit or check was added.
+   - Known edge, same identity rule as the existing code: `frozenMuted` matches clips by `(start, length)`. A clip the user muted at exactly the position and length of a rejected take's record would also be unmuted on load. Unfreeze and the existing recovery already match on the same key, and changing that key would be a separate behaviour change.
+5. **Gate row in `submit_check` (FAIL) is an environment limit, not a gate result.** `submit_check.py` runs the shared `feature_check.py` on the worktree. That script writes its logs to `<worktree>/../<name>-feature-check`, which is outside this write-jail, so it fails on `mkdir` (`gates-1.log`, `PermissionError`, EXIT 1). The same gate code, with only the log directory relocated, passes: `gates-2.log` and `gates-3.log`, `RESULT: PASS`, EXIT 0. The gate itself is not edited. Whoever runs the loop outside the jail should see this row pass; if it does not, `gates-2.log` is the evidence to check.
