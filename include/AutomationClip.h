@@ -27,6 +27,7 @@
 #ifndef LMMS_AUTOMATION_CLIP_H
 #define LMMS_AUTOMATION_CLIP_H
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -73,7 +74,7 @@ public:
 	using TimemapIterator = timeMap::const_iterator;
 
 	AutomationClip( AutomationTrack * _auto_track );
-	~AutomationClip() override = default;
+	~AutomationClip() override;
 
 	bool addObject( AutomatableModel * _obj, bool _search_dup = true );
 	bool removeObject( AutomatableModel * _obj );
@@ -126,6 +127,49 @@ public:
 	void resetTangents(const int tick0, const int tick1);
 
 	void recordValue(TimePos time, float value);
+
+	/*! The pending writes the render thread hands to the control thread
+	 *  (cluster 5388).
+	 *
+	 *  Writing an automation point edits the clip's node map, and that edits
+	 *  allocate - so the render thread may not do it. The render thread queues
+	 *  the write here instead, and the control thread applies it (see
+	 *  Song::applyPendingAutomationWrites()).
+	 *
+	 *  The storage lives in the clip, so one clip's backlog can never take
+	 *  another clip's place, and the room a write needs grows with the project
+	 *  instead of with a fixed constant. A write that does not fit is NOT
+	 *  dropped: it takes the place of the clip's newest pending write, so the
+	 *  value the control is at when the store fills is the one that survives.
+	 *  The write it replaced is counted (pendingWriteMerges()), never dropped
+	 *  silently. */
+	static constexpr std::size_t PendingWriteCapacity = 64;
+
+	//! Queues one write for the control thread. Render thread; never allocates.
+	void queuePendingWrite(tick_t tick, float value) noexcept;
+
+	//! Applies the queued writes, oldest first. Control thread. Returns how many it applied.
+	std::size_t applyPendingWrites();
+
+	//! How many writes this clip has queued and not applied yet.
+	std::size_t pendingWriteCount() const noexcept;
+
+	//! Drops the queued writes (control thread): they belong to a project that
+	//! is being replaced, and must not reach the project that replaces it.
+	void discardPendingWrites();
+
+	//! How many queued writes were merged away because the clip's store was full.
+	std::uint64_t pendingWriteMerges() const noexcept
+	{
+		return m_pendingWriteMerges.load(std::memory_order_relaxed);
+	}
+
+	//! How many writes are queued in every clip of the session. The control
+	//! thread's drain reads it to learn whether it has anything to do at all.
+	static std::int64_t pendingWriteTotal() noexcept
+	{
+		return s_pendingWriteTotal.load(std::memory_order_relaxed);
+	}
 
 	TimePos setDragValue( const TimePos & time,
 				const float value,
@@ -350,6 +394,24 @@ private:
 
 	bool m_isRecording;
 	float m_lastRecordedValue;
+
+	//! The writes the render thread queued for the control thread (cluster
+	//! 5388). Each slot holds one packed write (the tick in the high half, the
+	//! value's bits in the low half), so the writer and the reader can never
+	//! see half of one write and half of another. */
+	std::array<std::atomic<std::uint64_t>, PendingWriteCapacity> m_pendingWrites{};
+	//! The newest write, kept for the clip while the slots above are full.
+	std::atomic<std::uint64_t> m_pendingLatest{ 0 };
+	std::atomic<bool> m_pendingLatestSet{ false };
+	//! How many writes were published to the slots above, and how many of them
+	//! the control thread has applied.
+	std::atomic<std::uint64_t> m_pendingWriteCount{ 0 };
+	std::atomic<std::uint64_t> m_pendingWriteApplied{ 0 };
+	//! How many queued writes were merged away because the clip's store was full.
+	std::atomic<std::uint64_t> m_pendingWriteMerges{ 0 };
+
+	//! How many writes are queued in every clip of the session.
+	static std::atomic<std::int64_t> s_pendingWriteTotal;
 
 	static int s_quantization;
 

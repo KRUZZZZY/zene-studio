@@ -24,6 +24,7 @@
  *
  */
 
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -54,6 +55,33 @@ void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float v
 int AutomationClip::s_quantization = 1;
 const float AutomationClip::DEFAULT_MIN_VALUE = 0;
 const float AutomationClip::DEFAULT_MAX_VALUE = 1;
+
+std::atomic<std::int64_t> AutomationClip::s_pendingWriteTotal{ 0 };
+
+
+namespace
+{
+
+/*! One pending write, packed into a single 64-bit word: the tick in the high
+ *  half, the value's bit pattern in the low half. A tick is a tick_t (32 bits)
+ *  and a value is a float (32 bits), so both fit exactly - and because the
+ *  whole write is one atomic word, the render thread that stores it and the
+ *  control thread that reads it can never see half of one write and half of
+ *  another. */
+std::uint64_t packPendingWrite(tick_t tick, float value)
+{
+	return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(tick)) << 32)
+		| static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(value));
+}
+
+std::pair<tick_t, float> unpackPendingWrite(std::uint64_t packed)
+{
+	const auto tick = static_cast<tick_t>(static_cast<std::int32_t>(packed >> 32));
+	const auto value = std::bit_cast<float>(static_cast<std::uint32_t>(packed));
+	return { tick, value };
+}
+
+} // namespace
 
 
 AutomationClip::AutomationClip( AutomationTrack * _auto_track ) :
@@ -503,6 +531,112 @@ void AutomationClip::recordValue(TimePos time, float value)
 	{
 		removeNode(time - startTimeOffset());
 	}
+}
+
+
+
+
+//! The writes the render thread queues for the control thread (cluster 5388).
+//! See the header for the contract: the render thread never allocates and never
+//! blocks, and a write is never dropped because the store is full - it takes
+//! the place of the clip's newest pending write instead, and the write it
+//! replaced is counted.
+void AutomationClip::queuePendingWrite(tick_t tick, float value) noexcept
+{
+	const auto packed = packPendingWrite(tick, value);
+	const auto count = m_pendingWriteCount.load(std::memory_order_relaxed);
+	const auto applied = m_pendingWriteApplied.load(std::memory_order_acquire);
+
+	// The session-wide count goes up BEFORE the write is published, so it never
+	// reads lower than the number of writes that are still waiting: the drain
+	// reads it to learn whether it has anything to do at all.
+	s_pendingWriteTotal.fetch_add(1, std::memory_order_relaxed);
+
+	if (count - applied >= PendingWriteCapacity)
+	{
+		// The clip's store is full. The newest write wins: it is the value the
+		// control is at right now, and a curve that ends at the value the user
+		// last dialled is worth more than the intermediate point it replaces.
+		if (m_pendingLatestSet.load(std::memory_order_relaxed))
+		{
+			m_pendingWriteMerges.fetch_add(1, std::memory_order_relaxed);
+		}
+		m_pendingLatest.store(packed, std::memory_order_relaxed);
+		m_pendingLatestSet.store(true, std::memory_order_release);
+		return;
+	}
+
+	m_pendingWrites[count % PendingWriteCapacity].store(packed, std::memory_order_relaxed);
+	m_pendingWriteCount.store(count + 1, std::memory_order_release);
+}
+
+
+
+
+std::size_t AutomationClip::applyPendingWrites()
+{
+	std::size_t applied = 0;
+	const auto count = m_pendingWriteCount.load(std::memory_order_acquire);
+	auto index = m_pendingWriteApplied.load(std::memory_order_relaxed);
+
+	while (index < count)
+	{
+		const auto write = unpackPendingWrite(m_pendingWrites[index % PendingWriteCapacity]
+			.load(std::memory_order_acquire));
+		// Applied before the index is published: a write is applied at least
+		// once, never lost because the control thread was interrupted.
+		recordValue(TimePos(write.first), write.second);
+		++index;
+		m_pendingWriteApplied.store(index, std::memory_order_release);
+		++applied;
+		s_pendingWriteTotal.fetch_sub(1, std::memory_order_relaxed);
+	}
+
+	// The newest write, kept while the store was full. It is newer than every
+	// write applied above, so it goes last.
+	if (m_pendingLatestSet.exchange(false, std::memory_order_acq_rel))
+	{
+		const auto write = unpackPendingWrite(m_pendingLatest.load(std::memory_order_relaxed));
+		recordValue(TimePos(write.first), write.second);
+		++applied;
+		s_pendingWriteTotal.fetch_sub(1, std::memory_order_relaxed);
+	}
+
+	return applied;
+}
+
+
+
+
+std::size_t AutomationClip::pendingWriteCount() const noexcept
+{
+	const auto count = m_pendingWriteCount.load(std::memory_order_acquire);
+	const auto applied = m_pendingWriteApplied.load(std::memory_order_acquire);
+	const auto queued = count > applied ? count - applied : 0;
+	return queued + (m_pendingLatestSet.load(std::memory_order_acquire) ? 1 : 0);
+}
+
+
+
+
+void AutomationClip::discardPendingWrites()
+{
+	const auto dropped = pendingWriteCount();
+	const auto applied = m_pendingWriteApplied.load(std::memory_order_acquire);
+	m_pendingWriteCount.store(applied, std::memory_order_release);
+	m_pendingLatestSet.store(false, std::memory_order_release);
+	s_pendingWriteTotal.fetch_sub(static_cast<std::int64_t>(dropped), std::memory_order_relaxed);
+}
+
+
+
+
+AutomationClip::~AutomationClip()
+{
+	// The writes this clip had queued die with it. The session-wide count of
+	// queued writes follows, or the control thread's drain would keep looking
+	// for work that no longer exists.
+	s_pendingWriteTotal.fetch_sub(pendingWriteCount(), std::memory_order_relaxed);
 }
 
 

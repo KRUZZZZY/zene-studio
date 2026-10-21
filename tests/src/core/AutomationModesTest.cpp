@@ -59,6 +59,7 @@
 #include "AutomationTrack.h"
 #include "Engine.h"
 #include "ProjectJournal.h"
+#include "RealtimeScope.h"
 #include "Song.h"
 #include "TimePos.h"
 
@@ -783,6 +784,47 @@ private slots:
 		for (int i = 0; i < 6; ++i) { song->processNextBuffer(); }
 
 		QCOMPARE(timeMapBits(rig.clip), afterTouch);
+	}
+
+	//! A saturated pending store must not lose the newest write (cluster 5388).
+	//!
+	//! The render thread may not edit a clip's node map - that edit allocates -
+	//! so it queues the write in the clip and the control thread applies it. The
+	//! queue can fill up: the control thread was late, or a great many writes
+	//! arrived. A full store must NOT drop the write that arrives: it takes the
+	//! place of the clip's newest pending write, so the value the control is at
+	//! when the store fills is the one that survives, and the write it replaced
+	//! is counted rather than dropped silently.
+	//!
+	//! The writes go in through the product's own path - AutomationClip::
+	//! recordValue() inside a realtime scope queues instead of editing - and
+	//! come out through the control thread's drain, so the test exercises the
+	//! real queue and not a stand-in for it. The count is larger than any fixed
+	//! queue the product has ever had, so the store is saturated in every
+	//! build: the assertion is about the newest write, not about a capacity.
+	void testSaturatedPendingWritesKeepTheNewestValue()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+
+		const int writes = 300000;
+		float newest = 0.f;
+		{
+			RealtimeScope scope;
+			for (int i = 0; i < writes; ++i)
+			{
+				newest = static_cast<float>(i) / static_cast<float>(writes);
+				rig.clip.recordValue(TimePos(0), newest);
+			}
+		}
+
+		QVERIFY(drainAutomationWrites(song));
+
+		// The newest write is on the clip. Every write went to the same tick,
+		// so the clip holds one node - and its value is the newest write's.
+		QCOMPARE(static_cast<int>(rig.clip.getTimeMap().size()), 1);
+		QVERIFY(rig.clip.getTimeMap().contains(0));
+		QCOMPARE(rig.clip.getTimeMap()[0].getInValue(), newest);
 	}
 
 	//! The trim offset is an offset on top of the written automation, applied

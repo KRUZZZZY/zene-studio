@@ -2634,3 +2634,9 @@ tests/CMakeLists.txt	cluster 3562: provide the Song.cpp path for the determinist
 src/core/Song.cpp	cluster 5388: queue realtime automation points for a guarded control-thread drain and flush before Stop or project save.
 src/core/AutomationClip.cpp	cluster 5388: defer recordValue mutations when called inside RealtimeScope; the render thread enqueues by journal ID and a control-thread drain performs clip edits.
 tests/src/core/AutomationModesTest.cpp	cluster 5388: assert write-mode clip edits occur only after the deterministic control-thread queue drain.
+include/AutomationClip.h	cluster 5388 rework: declares the per-clip pending write store (queuePendingWrite, applyPendingWrites, pendingWriteCount, pendingWriteMerges) that replaces the fixed global queue, so a full store merges the newest write instead of dropping it.
+include/ProjectJournal.h	cluster 5388 rework: publishes journallingObjects(), the session-wide object map the control thread's drain walks to find the clips that have queued writes.
+include/Song.h	cluster 5388 rework: declares Song::applyPendingAutomationWrites(), the control thread's half of the deferred automation write.
+src/core/AutomationClip.cpp	cluster 5388 rework: recordValue queues the write in the clip itself (a packed, atomic per-clip store) instead of a fixed global queue; a full store keeps the newest write and counts the merge; the control thread applies the queued writes.
+src/core/Song.cpp	cluster 5388 rework: the render path queues the write in the clip it writes to, and the control thread's drain applies the queued writes of every clip that has them (found through the project journal) before Stop and before a save.
+tests/src/core/AutomationModesTest.cpp	cluster 5388 rework: assert that a saturated pending store keeps the newest write instead of dropping it.

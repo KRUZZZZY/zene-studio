@@ -112,11 +112,6 @@ static quint64 nextDocumentIdentity()
 
 tick_t TimePos::s_ticksPerBar = DefaultTicksPerBar;
 
-namespace
-{
-void drainPendingAutomationWrites();
-}
-
 
 Song::Song() :
 	TrackContainer(),
@@ -156,7 +151,7 @@ Song::Song() :
 	auto* automationWriteTimer = new QTimer(this);
 	automationWriteTimer->setObjectName(QStringLiteral("automationWriteDrainTimer"));
 	automationWriteTimer->setInterval(10);
-	connect(automationWriteTimer, &QTimer::timeout, this, &drainPendingAutomationWrites);
+	connect(automationWriteTimer, &QTimer::timeout, this, &Song::applyPendingAutomationWrites);
 	automationWriteTimer->start();
 
 	// Frozen takes keep the committed tempo map in step with every publication (control thread, render period
@@ -259,86 +254,59 @@ Song::Song() :
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
 }
 
-namespace
-{
-
-struct PendingAutomationWrite
-{
-	jo_id_t clipId;
-	tick_t tick;
-	float value;
-};
-
-struct PendingAutomationWriteQueue
-{
-	// Keep sixteen complete render periods queued while the control timer is delayed.
-	static constexpr std::size_t Capacity = AutomationRenderScratch::RenderCapacity * 16;
-	static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
-
-	std::array<PendingAutomationWrite, Capacity> entries{};
-	std::atomic<std::uint32_t> readIndex{0};
-	std::atomic<std::uint32_t> writeIndex{0};
-	std::atomic<std::uint32_t> overflows{0};
-
-	void push(jo_id_t clipId, tick_t tick, float value) noexcept
-	{
-		const auto write = writeIndex.load(std::memory_order_relaxed);
-		const auto read = readIndex.load(std::memory_order_acquire);
-		if (write - read >= Capacity)
-		{
-			overflows.fetch_add(1, std::memory_order_relaxed);
-			return;
-		}
-		entries[write % Capacity] = {clipId, tick, value};
-		writeIndex.store(write + 1, std::memory_order_release);
-	}
-
-	void discardPending() noexcept
-	{
-		readIndex.store(writeIndex.load(std::memory_order_acquire), std::memory_order_release);
-	}
-
-	void drain()
-	{
-		if (readIndex.load(std::memory_order_relaxed) == writeIndex.load(std::memory_order_acquire)) { return; }
-
-		AudioEngine* const audio = Engine::audioEngine();
-		if (audio == nullptr) { discardPending(); return; }
-		const auto renderLock = audio->requestChangesGuard();
-		const auto available = writeIndex.load(std::memory_order_acquire);
-		auto read = readIndex.load(std::memory_order_relaxed);
-		if (read == available) { return; }
-
-		ProjectJournal* const journal = Engine::projectJournal();
-		while (read != available)
-		{
-			const PendingAutomationWrite write = entries[read % Capacity];
-			++read;
-			readIndex.store(read, std::memory_order_release);
-			if (journal == nullptr) { continue; }
-			auto* clip = dynamic_cast<AutomationClip*>(journal->journallingObject(write.clipId));
-			if (clip != nullptr) { clip->recordValue(TimePos(write.tick), write.value); }
-		}
-	}
-};
-
-PendingAutomationWriteQueue s_pendingAutomationWrites;
-
-void drainPendingAutomationWrites()
-{
-	s_pendingAutomationWrites.drain();
-}
-
-} // namespace
-
 void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept
 {
-	s_pendingAutomationWrites.push(static_cast<JournallingObject*>(clip)->id(), time.getTicks(), value);
+	clip->queuePendingWrite(static_cast<tick_t>(time.getTicks()), value);
+}
+
+
+//! The control thread's half of the deferred automation write (cluster 5388).
+//! The render thread queued the writes it wanted in the clips it wrote to;
+//! here they are applied, in the order they were queued.
+void Song::discardPendingAutomationWrites()
+{
+	ProjectJournal* const journal = Engine::projectJournal();
+	if (journal == nullptr) { return; }
+	for (JournallingObject* object : journal->journallingObjects())
+	{
+		auto* clip = dynamic_cast<AutomationClip*>(object);
+		if (clip != nullptr) { clip->discardPendingWrites(); }
+	}
+}
+
+
+
+
+void Song::applyPendingAutomationWrites()
+{
+	// Nothing queued: the drain has no work and does not touch the engine.
+	if (AutomationClip::pendingWriteTotal() <= 0) { return; }
+
+	// The clips that have queued writes are found through the project journal,
+	// which knows every clip of the session - the ones on the song's tracks,
+	// the ones on the pattern store's, and the inline automation clip of a
+	// note, which is on no track at all. The walk is a control-thread walk
+	// over the journal's own map, so it runs without the render guard: only
+	// the edits below need the render thread out of the way.
+	ProjectJournal* const journal = Engine::projectJournal();
+	if (journal == nullptr) { return; }
+
+	std::vector<AutomationClip*> clips;
+	for (JournallingObject* object : journal->journallingObjects())
+	{
+		auto* clip = dynamic_cast<AutomationClip*>(object);
+		if (clip != nullptr && clip->pendingWriteCount() != 0) { clips.push_back(clip); }
+	}
+	if (clips.empty()) { return; }
+
+	AudioEngine* const audio = Engine::audioEngine();
+	if (audio == nullptr) { return; }
+	const auto renderLock = audio->requestChangesGuard();
+	for (AutomationClip* clip : clips) { clip->applyPendingWrites(); }
 }
 
 Song::~Song()
 {
-	s_pendingAutomationWrites.discardPending();
 	// From this line on, a model that is destroyed cannot report into the
 	// automation cache any more. It has to happen here, in the destructor body,
 	// because the song's own models (m_tempoModel and friends, the metronome's)
@@ -831,7 +799,11 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 				// you can see that the true values are stored by their inverse scaled value....which is wrong, since they weren't scaled in the first place...?
 				// Anyhow, in the meantime before we redo the automation system, when recording automations, we have to get the inverseScaledValue
 				// and store that so that when playing it back, it scales the value correctly.
-				s_pendingAutomationWrites.push(static_cast<JournallingObject*>(p)->id(), relTime.getTicks(),
+				// The write is queued in the clip itself and applied by the
+				// control thread (cluster 5388): the render thread may not
+				// edit the clip's node map, and a queued write is not lost
+				// when the control thread is late.
+				p->queuePendingWrite(relTime.getTicks(),
 					recordedModel->inverseScaledValue(recordedModel->value<float>()));
 
 				noteRecordedModel(recordedModel);
@@ -1301,7 +1273,7 @@ void Song::stop()
 	Engine::audioEngine()->doneChangeInModel();
 	// The last points must be applied before a caller can save or replace the
 	// project immediately after Stop.
-	if (!RealtimeScope::isActive()) { s_pendingAutomationWrites.drain(); }
+	if (!RealtimeScope::isActive()) { applyPendingAutomationWrites(); }
 
 	emit stopped();
 	emit playbackStateChanged();
@@ -1634,7 +1606,10 @@ void Song::clearProject()
 	{
 		stop();
 	}
-	s_pendingAutomationWrites.discardPending();
+	// The writes the render thread queued belong to the project that is being
+	// cleared: they are dropped with it, not carried into the project that
+	// replaces it.
+	discardPendingAutomationWrites();
 
 	// A pending Record press (or an active recording pass) belongs to the
 	// project being cleared - the latch must not survive into the next one
@@ -2371,7 +2346,7 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFor
 	}
 
 	// Include every queued write in an immediate save made during playback.
-	if (!RealtimeScope::isActive()) { s_pendingAutomationWrites.drain(); }
+	if (!RealtimeScope::isActive()) { applyPendingAutomationWrites(); }
 
 	DataFile dataFile( DataFile::Type::SongProject );
 	buildProjectDocument( dataFile );
