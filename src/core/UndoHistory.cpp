@@ -59,8 +59,11 @@ QString sha256Of(const QByteArray& bytes)
 }
 
 //! The writer's own prune (DataFile::cleanMetaNodes), on a detached copy.
-void stripMetadataNodes(QDomElement element)
+//! Returns false when \a element itself carries metadata="1", i.e. the writer
+//! would drop the whole section - so the caller must not measure it.
+bool stripMetadataNodes(QDomElement element)
 {
+	if (element.attribute(QStringLiteral("metadata")).toInt()) { return false; }
 	QDomNode node = element.firstChild();
 	while (!node.isNull())
 	{
@@ -68,10 +71,18 @@ void stripMetadataNodes(QDomElement element)
 		if (node.isElement())
 		{
 			if (node.toElement().attribute(QStringLiteral("metadata")).toInt()) { element.removeChild(node); }
-			else { stripMetadataNodes(node.toElement()); }
+			else if (!stripMetadataNodes(node.toElement())) { element.removeChild(node); }
 		}
 		node = next;
 	}
+	return true;
+}
+
+bool stepDamaged(const QDomElement& step, const QByteArray& bytes)
+{
+	return step.tagName() != StepName || bytes.isEmpty()
+		|| step.attribute(QStringLiteral("bytes")).toLongLong() != bytes.size()
+		|| step.attribute(QStringLiteral("sha256")) != sha256Of(bytes);
 }
 
 bool outsideFingerprint(const QString& name)
@@ -219,12 +230,16 @@ QString UndoHistory::fingerprint(const QDomDocument& document, bool stripMetadat
 {
 	const QDomElement root = document.documentElement();
 	QCryptographicHash hash(QCryptographicHash::Sha256);
+	hash.addData(root.attribute(QStringLiteral("version")).toUtf8());
+	hash.addData(QByteArrayLiteral(" "));
+	hash.addData(root.attribute(QStringLiteral("type")).toUtf8());
+	hash.addData(QByteArrayLiteral("\n"));
 	const auto add = [&hash, stripMetadata](const QDomElement& element) {
 		QDomElement measured = element;
 		if (stripMetadata)
 		{
 			measured = element.cloneNode(true).toElement();
-			stripMetadataNodes(measured);
+			if (!stripMetadataNodes(measured)) { return; }
 		}
 		hash.addData(element.tagName().toUtf8());
 		hash.addData(QByteArrayLiteral(" "));
@@ -370,18 +385,23 @@ void UndoHistory::loadSteps(const QDomElement& section)
 {
 	// Validated whole before anything is pushed: a history is contiguous, so one
 	// bad step makes the steps below it unreachable anyway.
+	const bool hasDeclared = section.hasAttribute(QStringLiteral("steps"));
+	const int declared = hasDeclared ? section.attribute(QStringLiteral("steps")).toInt() : 0;
 	QVector<ProjectJournal::Snapshot> snapshots;
 	for (QDomElement step = section.firstChildElement(); !step.isNull(); step = step.nextSiblingElement())
 	{
 		const QByteArray bytes = QByteArray::fromBase64(step.text().toLatin1());
-		if (step.tagName() != StepName || bytes.isEmpty()
-			|| step.attribute(QStringLiteral("bytes")).toLongLong() != bytes.size()
-			|| step.attribute(QStringLiteral("sha256")) != sha256Of(bytes))
+		if (stepDamaged(step, bytes))
 		{
 			m_load.discarded = QStringLiteral("undo step %1 of the saved history is damaged").arg(snapshots.size());
 			return;
 		}
 		snapshots.append(std::make_shared<const QByteArray>(bytes));
+	}
+	if (hasDeclared && snapshots.size() != declared)
+	{
+		m_load.discarded = QStringLiteral("undo history declares %1 step(s) but contains %2").arg(declared).arg(snapshots.size());
+		return;
 	}
 	ProjectJournal* journal = Engine::projectJournal();
 	if (journal == nullptr) { return; }

@@ -61,6 +61,7 @@
 #include <QTextStream>
 
 #include "AutomationClip.h"
+#include "UndoHistory.h"
 #include "AutomationTrack.h"
 #include "ConfigManager.h"
 #include "ControlAutomationSupport.h"
@@ -513,6 +514,65 @@ private slots:
 		const QString resaved = path(QStringLiteral("stale-resaved.mmp"));
 		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), resaved}}).ok);
 		QCOMPARE(textOf(resaved).count(QStringLiteral("<z:undostep")), 0);
+	}
+
+	void anIncompleteSavedHistoryIsDiscarded()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+		const QString file = path(QStringLiteral("incomplete.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+
+		QDomDocument document;
+		{
+			QFile in(file);
+			QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+		}
+		QDomElement history = document.documentElement().firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("z:undohistory"));
+		QVERIFY(!history.isNull());
+		QDomElement step = history.firstChildElement(QStringLiteral("z:undostep"));
+		QVERIFY(!step.isNull());
+		history.removeChild(step);
+		// declared count left unchanged on purpose
+		const QString broken = path(QStringLiteral("incomplete-broken.mmp"));
+		{
+			QFile out(broken);
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QTextStream stream(&out);
+			document.save(stream, 1);
+		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), broken}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool()
+			&& load.value(QStringLiteral("loaded_steps")).toInt() == 0
+			&& !load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
+	void aTopLevelMetadataSectionDoesNotStaleTheFingerprint()
+	{
+		QDomDocument withMeta;
+		QVERIFY(withMeta.setContent(QStringLiteral(
+			"<zene-project version=\"1\" type=\"SongProject\"><head/><song><track metadata=\"1\" name=\"x\"/></song></zene-project>")));
+		QDomDocument pruned;
+		QVERIFY(pruned.setContent(QStringLiteral(
+			"<zene-project version=\"1\" type=\"SongProject\"><head/><song/></zene-project>")));
+		QCOMPARE(UndoHistory::fingerprint(withMeta, true), UndoHistory::fingerprint(pruned, false));
+	}
+
+	void aChangedRootVersionChangesTheFingerprint()
+	{
+		QDomDocument v1;
+		QVERIFY(v1.setContent(QStringLiteral(
+			"<zene-project version=\"1\" type=\"SongProject\"><head/><song><track name=\"x\"/></song></zene-project>")));
+		QDomDocument v2;
+		QVERIFY(v2.setContent(QStringLiteral(
+			"<zene-project version=\"2\" type=\"SongProject\"><head/><song><track name=\"x\"/></song></zene-project>")));
+		QVERIFY(UndoHistory::fingerprint(v1, false) != UndoHistory::fingerprint(v2, false));
 	}
 
 	void theCapsDropTheOldestAndAnOversizeStepIsReported()
