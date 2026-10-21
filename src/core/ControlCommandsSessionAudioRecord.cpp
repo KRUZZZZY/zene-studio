@@ -262,6 +262,14 @@ ControlResult landSlot(const QJsonObject& args)
 			.arg(stateName(recorder.state())));
 	}
 	if (!gridContains(*model, recorder.track(), recorder.scene(), &error)) { return error; }
+	if (!model->slot(recorder.track(), recorder.scene()).isEmpty())
+	{
+		// Checked before writeAndLand: takeFinished() gives the take away, so a refusal after it would lose the take.
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cell (track %1, scene %2) holds a clip now: it was "
+			"filled while the take recorded, and landing would overwrite it. Nothing was landed and the take stays in hand: clear "
+			"the cell (session.clear_slot) and land again, or drop the take (session.record_slot 'cancel': true)")
+			.arg(recorder.track()).arg(recorder.scene()));
+	}
 	const QString path = takePathOf(args, &error);
 	if (path.isEmpty()) { return error; }
 	const QString name = args.value(QStringLiteral("name")).toString(QFileInfo(path).completeBaseName());
