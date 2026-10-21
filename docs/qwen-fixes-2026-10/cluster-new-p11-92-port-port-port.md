@@ -101,18 +101,31 @@ Two new cases in `tests/src/core/DrumSynthTest.cpp` (the file that already cover
 
 | Gate | Command | Exit | Result |
 |---|---|---|---|
-| all gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** | `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity` and `file-length` **PASS**; `fork-sources` and `all-sources-reproduce` **FAIL — pre-existing, not from this change** (proved below) |
+| all gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `PASS` on every row: `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length` |
 | divergence ledger | `bash tests/no-upstream-regression-gate.sh` | **0** | `PASS: every change to upstream-inherited code ... is declared` |
-| pre-submit | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p11-92-port-port-port` | see below | — |
+| pre-submit | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p11-92-port-port-port` | **0** | `RESULT: PASS - submit` |
 
-**The two red gates are red on the base of this branch, without my change.** With my three files restored to the
-branch base (`git show HEAD:<file>`, working tree clean), `bash tests/fork-sources-gate.sh` exits **1** with the
-same message (`all-sources.txt does not match the recipe in its own header`). The whole diff between the manifest
-and the recipe is 36 lines, every one of them a vendored `plugins/SfzPlayer/sfizz/...` path — none of them mine.
-The gate compares `tests/all-sources.txt` with the recipe in its own header; my change adds, removes and renames no
-file, so it cannot influence that comparison.
+**Two of the gates were red on the branch base, before any change of this cluster — and one of them was not
+mine to leave red.** `bash tests/fork-sources-gate.sh` (Gate 9) runs `tests/all-sources-reproduce.sh`, and the
+whole-tree manifest `tests/all-sources.txt` no longer equalled the output of the recipe in its own header:
+the train-10 snapshot commit `5ef150729` ("all-sources re-derived") wrote **1148 vendored
+`plugins/SfzPlayer/sfizz/**` entries** into the entry list, while the header's recipe — added with the sfizz
+feature in `39f297929` — excludes that vendored tree on purpose ("Vendored third-party trees are excluded on
+purpose - they are not this repo's code and no gate here rewrites them"). Proof that it was pre-existing: with my
+three files restored to the branch base (working tree clean), the gate exits **1** with the same message, and the
+whole manifest/recipe diff is those 1148 sfizz paths and nothing else.
 
-`complexity` and `file-length` pass: the new functions have CCN ≤ 10, and
+The second commit of this branch therefore re-derives the entry list with the recipe from the manifest's own
+header — the only difference is the removal of the 1148 vendored sfizz entries. No baseline entry
+(`tests/file-length-baseline*.tsv`, `tests/complexity-baseline*.tsv`) names any of them, so no ratchet is
+re-anchored, and Gate 9's other checks (every tracked source registered, no stale entry) still pass:
+`1958 fork-sources entry(ies), 1214 all-sources (whole-tree), 48 tools-sources, 0 stale entry(ies)`.
+
+The whole-tree (`--scope all`) ratchets are red on this train for unrelated reasons (`tests/src/wasm/WasmWorkerPoolTest.cpp`,
+`thirdparty/mts-esp/libMTSClient.cpp`, `include/RemotePluginBase.h` …) — they are red with the base manifest as
+well and are not part of the `feature_check.py` command, which measures the fork scope.
+
+`complexity` and `file-length` pass in the fork scope: the new functions have CCN ≤ 10, and
 `tests/src/core/DrumSynthTest.cpp` measures 440 code lines (limit 500) after the port.
 
 ## Self-check
@@ -194,4 +207,13 @@ RED/GREEN table above. The branch did **not** already contain the fix — the ba
 * `tests/src/core/DrumSynthTest.cpp` — `extern thread_local` declarations (the port's blocker) and the two
   deterministic regression cases
 * `tests/upstream-modifications.txt` — the declared divergence of `src/core/DrumSynth.cpp`
+* `tests/all-sources.txt` — the whole-tree scope manifest re-derived from its own header recipe, so Gate 9 and
+  the recipe check are green again (pre-existing train-level defect, separate commit)
 * `docs/qwen-fixes-2026-10/cluster-new-p11-92-port-port-port.md` — this report
+
+Two commits, both on `bugs/qwen-new-p11-92-port-port-port`:
+
+1. `fix: long DrumSynth lines and thread-safe parsing (cluster new-p11-92-port-port-port)` — the fix, the
+   regression tests and this report.
+2. `chore: re-derive tests/all-sources.txt from its own header recipe (cluster new-p11-92-port-port-port)` — the
+   gate repair described above.
