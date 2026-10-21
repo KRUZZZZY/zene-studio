@@ -30,10 +30,14 @@
 #include <QtTest>
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QMenu>
 #include <QTemporaryDir>
 
+#include <vector>
+
 #include "ConfigManager.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControllerConnection.h"
 #include "ControllerTemplateMenu.h"
@@ -83,6 +87,7 @@ private slots:
 	void cleanupTestCase()
 	{
 		setControllerTemplatePrompt({});
+		setControllerTemplateNotifier({});
 		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
@@ -111,6 +116,61 @@ private slots:
 		}
 		QVERIFY(drop != nullptr);
 		drop->trigger();
+		QCOMPARE(listed().value(QStringLiteral("count")).toInt(), 0);
+	}
+
+	//! A command the menu runs that REFUSES must be explained: the menu closes either
+	//! way, so a silent refusal is a lost error.
+	void aRefusedSaveIsReported()
+	{
+		QStringList reports;
+		setControllerTemplateNotifier([&reports](const QString& title, const QString& text) {
+			reports << title + QStringLiteral(": ") + text;
+		});
+		setControllerTemplatePrompt([] { return std::optional<QString>(QStringLiteral("bad/name")); });
+		QMenu menu;
+		populateControllerTemplateMenu(&menu);
+		starting(menu, QMenu::tr("Save current mappings as..."))->trigger();
+		QVERIFY2(!reports.isEmpty(), "the refused save was reported to nobody");
+		QVERIFY2(reports.first().contains(QStringLiteral("bad/name")),
+			qPrintable(reports.join(QStringLiteral(" | "))));
+	}
+
+	//! A template that applies only PARTLY must be reported too: the bindings whose
+	//! target is not in this project are skipped, and the user has to be told which.
+	void aPartlyAppliedTemplateIsReported()
+	{
+		// One track, one MIDI-bound control: the template's target is that model,
+		// and no other model answers to the same name.
+		const std::vector<Track*> doomed = Engine::getSong()->tracks();
+		for (Track* track : doomed) { control::removeTrack(track); }
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		track->volumeModel()->setControllerConnection(new ControllerConnection(new MidiController(Engine::getSong())));
+
+		setControllerTemplatePrompt([] { return std::optional<QString>(QStringLiteral("Ghost")); });
+		QMenu menu;
+		populateControllerTemplateMenu(&menu);
+		starting(menu, QMenu::tr("Save current mappings as..."))->trigger();
+		QCOMPARE(listed().value(QStringLiteral("count")).toInt(), 1);
+
+		// The track goes away: the saved target cannot be resolved any more, so
+		// applying the template binds nothing and skips that binding.
+		control::removeTrack(track);
+
+		QStringList reports;
+		setControllerTemplateNotifier([&reports](const QString& title, const QString& text) {
+			reports << title + QStringLiteral(": ") + text;
+		});
+		populateControllerTemplateMenu(&menu);
+		QAction* apply = starting(menu, QStringLiteral("Ghost ("));
+		QVERIFY2(apply != nullptr, "the saved template is not listed");
+		apply->trigger();
+		QVERIFY2(!reports.isEmpty(), "the partly applied template was reported to nobody");
+		QVERIFY2(reports.first().contains(QStringLiteral("skipped")),
+			qPrintable(reports.join(QStringLiteral(" | "))));
+
+		ControlRegistry::instance()->invoke(QStringLiteral("controller.template_delete"),
+			QJsonObject{{QStringLiteral("name"), QStringLiteral("Ghost")}});
 		QCOMPARE(listed().value(QStringLiteral("count")).toInt(), 0);
 	}
 

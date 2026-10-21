@@ -45,6 +45,12 @@ ControllerTemplatePrompt& prompt()
 	return s_prompt;
 }
 
+ControllerTemplateNotifier& notifier()
+{
+	static ControllerTemplateNotifier s_notifier;
+	return s_notifier;
+}
+
 std::optional<QString> askForName()
 {
 	if (prompt()) { return prompt()(); }
@@ -64,6 +70,11 @@ void run(const char* command, const QString& name)
 void setControllerTemplatePrompt(ControllerTemplatePrompt replacement)
 {
 	prompt() = std::move(replacement);
+}
+
+void setControllerTemplateNotifier(ControllerTemplateNotifier replacement)
+{
+	notifier() = std::move(replacement);
 }
 
 void populateControllerTemplateMenu(QMenu* menu)
