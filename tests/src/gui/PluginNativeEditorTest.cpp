@@ -122,6 +122,13 @@ Track* newTrack()
 	return track;
 }
 
+//! While alive the engine is not addressable, so every command is refused (and the refusal is the test's subject).
+struct EngineNotReady
+{
+	EngineNotReady() { ControlRegistry::setReady(false); }
+	~EngineNotReady() { ControlRegistry::setReady(true); }
+};
+
 } // namespace
 
 class PluginNativeEditorTest : public QObject
@@ -274,6 +281,41 @@ private slots:
 		{
 			if (qobject_cast<CommandForm*>(widget) != nullptr || qobject_cast<CommandListDialog*>(widget) != nullptr) { widget->close(); }
 		}
+		editor.close();
+	}
+
+	void aRefusedHeaderCommandSaysWhy()
+	{
+		Effect* effect = amplifier();
+		if (effect == nullptr) { QSKIP("this host loads no effect module"); }
+		Calls calls;
+		PluginNativeEditor editor;
+		QString error;
+		PluginEditorOwner owner;
+		owner.effect = effect;
+		QVERIFY(editor.open(hooksFor(&calls, 300, 150), QStringLiteral("Refusal editor"), &error, owner));
+		QWidget* window = editorWindow(QStringLiteral("Refusal editor"));
+		QWidget* header = window->findChild<QWidget*>(QStringLiteral("pluginHostHeader"));
+		QVERIFY(header != nullptr);
+		QLabel* reason = header->findChild<QLabel*>(QStringLiteral("pluginHostReason"));
+		QVERIFY(reason != nullptr && !reason->isVisible());
+		QToolButton* bypass = buttonTexted(window, QStringLiteral("Bypass"));
+		QVERIFY(bypass != nullptr);
+		{
+			const EngineNotReady notReady;
+			// A refused Store A shows its reason in the header, as the editor button's refusal does.
+			buttonTexted(window, QStringLiteral("Store A"))->click();
+			QVERIFY2(reason->isVisible(), "the store refusal was swallowed");
+			QVERIFY2(!reason->text().isEmpty(), "the store refusal has no text");
+			// A refused bypass puts the button back and says why.
+			bypass->click();
+			QVERIFY(!bypass->isChecked());
+			QVERIFY(effect->isEnabled());
+			QVERIFY2(reason->isVisible() && !reason->text().isEmpty(), "the bypass refusal was swallowed");
+		}
+		// The next command that runs clears the reason.
+		buttonTexted(window, QStringLiteral("Store A"))->click();
+		QVERIFY(!reason->isVisible());
 		editor.close();
 	}
 
