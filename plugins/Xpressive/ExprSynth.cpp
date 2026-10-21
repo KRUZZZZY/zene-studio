@@ -29,6 +29,7 @@
 #include <vector>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <random>
 #include <numbers>
 
@@ -650,15 +651,21 @@ bool ExprFront::add_cyclic_vector(const char* name, const float* data, size_t le
 	{
 		if (interp)
 		{
-			auto wvf = new WaveValueFunctionInterpolate<float>(data, length);
-			m_data->m_cyclics_interp.push_back(wvf);
-			return m_data->m_symbol_table.add_function(name, *wvf);
+			// The wave object is owned by the cyclic vector. The unique_ptr holds it
+			// until the vector took it, so a failing push_back cannot leak it.
+			auto wvf = std::make_unique<WaveValueFunctionInterpolate<float>>(data, length);
+			auto* const wave = wvf.get();
+			m_data->m_cyclics_interp.push_back(wave);
+			wvf.release();
+			return m_data->m_symbol_table.add_function(name, *wave);
 		}
 		else
 		{
-			auto wvf = new WaveValueFunction<float>(data, length);
-			m_data->m_cyclics.push_back(wvf);
-			return m_data->m_symbol_table.add_function(name, *wvf);
+			auto wvf = std::make_unique<WaveValueFunction<float>>(data, length);
+			auto* const wave = wvf.get();
+			m_data->m_cyclics.push_back(wave);
+			wvf.release();
+			return m_data->m_symbol_table.add_function(name, *wave);
 		}
 	}
 	catch(...)
