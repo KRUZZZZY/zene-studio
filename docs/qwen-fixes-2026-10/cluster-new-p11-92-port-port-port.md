@@ -69,8 +69,9 @@ Two new cases in `tests/src/core/DrumSynthTest.cpp` (the file that already cover
 
 * `longLinesDoNotStopProfileParsing` — renders a `.ds` file with an over-long line **in front of** and **between**
   the settings and compares the complete rendered sample vectors with the same file without the long line.
-* `concurrentParsesMatchSingleThreadedParses` — parses two fixtures with different settings in two threads at the
-  same time and compares every rendered sample with the single-threaded reference. The test binary carries a
+* `concurrentParsesMatchSingleThreadedParses` — renders two fixtures with different settings serially for
+  reference, then in two threads. It checks each concurrent render's frame count against its reference and
+  compares each thread's plain and long-line sample vectors. The test binary carries a
   stand-in for the C library's `strtok()` that keeps the process-wide pointer and adds a **rendezvous** at the
   tokenisation boundary (a condition variable released by the second arrival — no timeout, no sleep, no wall
   clock), so the interleaving the pre-fix parser was exposed to happens at a known point instead of at a random
