@@ -2848,3 +2848,7 @@ docs/qwen-fixes-2026-10/cluster-409.md
 tests/src/plugins/VestigeMidiHandoffTest.cpp
 # cluster new-p14-358 / 5451 (2026-10): the VeSTige VST host MIDI path fix and verification report (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-5451.md
+# cluster new-p9-332: the Organic plugin's oscillator parameters are published by the control thread and adopted by the audio thread (fork-NEW regression test).
+tests/src/plugins/OrganicParamRaceTest.cpp
+# cluster new-p16-152: a note without oscillators is silent instead of dereferencing the null oscillator chain (fork-NEW regression test).
+tests/src/plugins/OrganicZeroOscTest.cpp
