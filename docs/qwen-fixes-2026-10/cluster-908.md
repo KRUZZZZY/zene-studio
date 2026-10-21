@@ -225,7 +225,7 @@ stated. The tree was at `b61e5f965` (clean) before the first commit.
 | `6f76a837f` | `test(zyn): the audio path's lock wait is asked, not measured (cluster 908)` - round 2 |
 | `0169a0395` | `refactor(zyn): the scheduled frame reaches the synth (cluster new-p16-276)` - round 2, the plumbing |
 | `9a2ebd589` | `fix(zyn): a scheduled MIDI event is applied at its frame (cluster new-p16-276)` - round 2 |
-| `f4a2b0d3c` | `docs(cluster 908)`: this report, round 2 |
+| `fed7f79d5` | `docs(cluster 908)`: this report, round 2 |
 
 ## Self-check
 
