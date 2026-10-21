@@ -121,11 +121,14 @@ QVector<ScriptPackage> scan(const QString& scriptsRoot)
 		// name that disagrees with the directory is ignored rather than
 		// trusted, because the directory is what a host lists and runs.
 		QFile file(entryPath);
-		if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+		if (file.open(QIODevice::ReadOnly))
 		{
-			const QByteArray source = file.readAll();
-			s_entryScriptBytesRead.fetch_add(source.size(), std::memory_order_relaxed);
-			const ScriptPackage declared = parseManifest(QString::fromUtf8(source));
+			// Only the manifest window is read: the manifest lives in the first
+			// 4 KB, and an entry script may be arbitrarily large, so reading it
+			// whole would make listing cost memory proportional to the file.
+			const QByteArray head = file.read(ManifestScanBytes);
+			s_entryScriptBytesRead.fetch_add(head.size(), std::memory_order_relaxed);
+			const ScriptPackage declared = parseManifest(QString::fromUtf8(head));
 			file.close();
 			if (declared.name == package.name)
 			{
