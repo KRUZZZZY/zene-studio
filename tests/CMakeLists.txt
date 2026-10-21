@@ -811,6 +811,8 @@ set(LMMS_TESTS
 	src/core/NoteToolsTest.cpp
 	# 0.5.0 L07 (W3): repeats, recurrence, articulations, chase, swing, the MIDI offset, lyrics and groups.
 	src/core/NotePlaybackTest.cpp
+	# cluster new-p11-38-port: the reversibility record the note commands leave behind.
+	src/core/NoteCommandTransactionsTest.cpp
 	# 0.5.0 Q050-040 (L07): a note under the playhead starts when its track or clip is unmuted.
 	src/core/UnmuteChaseTest.cpp
 	# 0.5.0 L07 (Q050-015): what each articulation sends before its note, and the map's edits moving the notes with them.
@@ -1841,6 +1843,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "RealtimeSnapshotTest"
 		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
+		# cluster new-p11-38-port: the note-command transaction test loads a real instrument too.
+		OR LMMS_TEST_NAME STREQUAL "NoteCommandTransactionsTest"
 		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest"
@@ -1911,6 +1915,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Cluster new-p17-205: the Watsyn save/load regression needs the watsyn module built first.
 	if(LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest")
 		add_dependencies(${LMMS_TEST_NAME} watsyn)
+	endif()
+
+	# cluster new-p11-38-port: the note-command transaction test puts a real instrument on its
+	# track, so the module has to be built beside the test binary.
+	if(LMMS_TEST_NAME STREQUAL "NoteCommandTransactionsTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 
 	# Q050-020: the MIDI export test loads the midiexport module through the plug-in factory.

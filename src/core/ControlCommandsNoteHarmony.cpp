@@ -34,6 +34,7 @@
 #include "ChordVocabulary.h"
 #include "ControlCommandsNoteShared.h"
 #include "ControlCommandDef.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
@@ -102,6 +103,18 @@ ControlResult followChords(const QJsonObject& args)
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.follow_chords"), {{QStringLiteral("moved"), static_cast<int>(moves.size())}}));
 }
 
+//! The track of @a ref and the clip's start position before the quantize moves it: the before-state
+//! the reversibility record names. Each clip is captured once, in the order it was named.
+void captureQuantizeBefore(const ClipRef& ref, QVector<JournallingObject*>* tracks, QVector<Clip*>* captured,
+	QJsonArray* beforeClips)
+{
+	if (!tracks->contains(ref.track)) { tracks->append(ref.track); }
+	if (captured->contains(ref.clip)) { return; }
+	beforeClips->append(QJsonObject{{QStringLiteral("clip"), clipId(ref.id)},
+		{QStringLiteral("start"), ref.clip->startPosition().getTicks()}});
+	captured->append(ref.clip);
+}
+
 ControlResult quantizeClips(const QJsonObject& args)
 {
 	const tick_t grid = std::max(1, args.value(QStringLiteral("grid")).toInt(TimePos::ticksPerBar()));
@@ -116,9 +129,11 @@ ControlResult quantizeClips(const QJsonObject& args)
 	if (refs.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name the 'clips'")); }
 	const auto snapped = [grid](const ClipRef& ref) { return (ref.clip->startPosition().getTicks() + grid / 2) / grid * grid; };
 	QVector<JournallingObject*> tracks;
+	QVector<Clip*> captured;
+	QJsonArray beforeClips;
 	for (const ClipRef& ref : refs)
 	{
-		if (snapped(ref) != ref.clip->startPosition().getTicks() && !tracks.contains(ref.track)) { tracks.append(ref.track); }
+		if (snapped(ref) != ref.clip->startPosition().getTicks()) { captureQuantizeBefore(ref, &tracks, &captured, &beforeClips); }
 	}
 	if (tracks.isEmpty()) { return ControlResult::success({{QStringLiteral("moved"), 0}, {QStringLiteral("grid"), static_cast<int>(grid)}}); }
 	addUndoStep(tracks);
@@ -128,7 +143,11 @@ ControlResult quantizeClips(const QJsonObject& args)
 		if (snapped(ref) != ref.clip->startPosition().getTicks()) { ref.clip->movePosition(TimePos(snapped(ref))); ++moved; }
 	}
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("moved"), moved}, {QStringLiteral("grid"), static_cast<int>(grid)}});
+	QJsonObject result{{QStringLiteral("moved"), moved}, {QStringLiteral("grid"), static_cast<int>(grid)}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("clips"), beforeClips}},
+		QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Track journal checkpoints: control.undo restores each clip's original start position")));
+	return ControlResult::success(result);
 }
 
 ControlResult defineScale(const QJsonObject& args)
@@ -153,7 +172,11 @@ ControlResult defineScale(const QJsonObject& args)
 	if (all == before) { return ControlResult::success({{QStringLiteral("scales"), all}}); }
 	setCustomScales(all);
 	addUndoStep([before]() { setCustomScales(before); }, [all]() { setCustomScales(all); });
-	return ControlResult::success({{QStringLiteral("scales"), all}});
+	QJsonObject result{{QStringLiteral("scales"), all}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("scales"), before}},
+		QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("Action checkpoint: control.undo writes the previous custom scales back to the config file")));
+	return ControlResult::success(result);
 }
 
 ControlResult listCustom(const QJsonObject&) { return ControlResult::success({{QStringLiteral("scales"), customScales()}}); }
