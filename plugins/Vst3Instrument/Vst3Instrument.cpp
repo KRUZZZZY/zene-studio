@@ -291,16 +291,44 @@ void Vst3Instrument::modulateNote(std::int64_t target, int channel, int key, flo
 	m_plugin.pushMidiEvent(midi);
 }
 
+auto Vst3Instrument::mayPrepareAgain() const -> bool
+{
+	auto* engine = Engine::audioEngine();
+	if (engine == nullptr) { return true; }
+	const PrepareConfig current{engine->outputSampleRate(), engine->framesPerPeriod()};
+	// A configuration the plug-in has not been asked for yet is tried at once:
+	// that is the sample-rate change the re-prepare exists for.
+	if (current != m_attemptedConfig) { return true; }
+	return m_attemptCount < MaxPrepareAttempts;
+}
+
 void Vst3Instrument::reprepare()
 {
 	m_processGate.beginReconfigure();
 	if (auto* engine = Engine::audioEngine())
 	{
-		QString error;
-		if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
-				&error))
+		const PrepareConfig config{engine->outputSampleRate(), engine->framesPerPeriod()};
+		if (config != m_attemptedConfig)
 		{
+			// A new configuration: its retry budget starts here.
+			m_attemptedConfig = config;
+			m_attemptCount = 0;
+		}
+		++m_attemptCount;
+		QString error;
+		if (!m_plugin.prepare(config.sampleRate, static_cast<int>(config.framesPerPeriod), &error))
+		{
+			// A plug-in that refuses this configuration is not asked again and
+			// again for it: the request stays pending, but the next attempt
+			// waits for a different sample rate or block size
+			// (mayPrepareAgain()), so the failure is not repeated on every
+			// poll tick.
 			qWarning() << "VST3: re-prepare failed:" << error;
+		}
+		else
+		{
+			// The configuration works again: the budget is refreshed.
+			m_attemptCount = 0;
 		}
 	}
 	m_needsReprepare.store(false, std::memory_order_relaxed);
@@ -515,7 +543,7 @@ void Vst3Instrument::poll()
 {
 	if (!m_plugin.isLoaded()) { return; }
 
-	if (needsReprepare())
+	if (needsReprepare() && mayPrepareAgain())
 	{
 		reprepare();
 	}

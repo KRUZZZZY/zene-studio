@@ -167,6 +167,68 @@ public:
 	}
 };
 
+//! The host's message handler while ScopedWarningCounter is installed.
+QtMessageHandler g_previousHandler = nullptr;
+//! How many "re-prepare failed" warnings the host has printed.
+int g_reprepareWarnings = 0;
+
+//! Counts the host's failed re-prepare warnings and passes every other
+//! message on, so a failure elsewhere in the test is still reported.
+void countReprepareWarnings(QtMsgType type, const QMessageLogContext& context, const QString& message)
+{
+	if (message.contains(QStringLiteral("re-prepare failed")))
+	{
+		++g_reprepareWarnings;
+		return;
+	}
+	if (g_previousHandler != nullptr) { g_previousHandler(type, context, message); }
+}
+
+//! Counts the host's failed re-prepare warnings for the lifetime of the scope.
+class ScopedWarningCounter
+{
+public:
+	ScopedWarningCounter()
+	{
+		g_reprepareWarnings = 0;
+		g_previousHandler = qInstallMessageHandler(countReprepareWarnings);
+	}
+
+	~ScopedWarningCounter()
+	{
+		qInstallMessageHandler(g_previousHandler);
+		g_previousHandler = nullptr;
+	}
+
+	auto count() const -> int { return g_reprepareWarnings; }
+
+private:
+	QtMessageHandler m_previous = nullptr;
+};
+
+//! Sets an environment variable for the lifetime of the scope and puts the
+//! previous value back (the fixture reads it while it prepares).
+class ScopedEnv
+{
+public:
+	ScopedEnv(const char* name, const char* value) :
+		m_name(name),
+		m_previous(qgetenv(name))
+	{
+		qputenv(name, value);
+	}
+
+	~ScopedEnv()
+	{
+		if (m_previous.isNull()) { qunsetenv(m_name.constData()); }
+		else { qputenv(m_name.constData(), m_previous); }
+	}
+
+private:
+	QByteArray m_name;
+	QByteArray m_previous;
+};
+
 } // namespace
 
 class Vst3InstrumentIntegrationTest : public QObject
@@ -181,6 +243,7 @@ private slots:
 	void testUnpreparedInstrumentClearsAudioPortsOutput();
 	void testAMidiClipDrivesAudioWithSampleAccuracy();
 	void testAnUnpreparedInstrumentClearsItsOutput();
+	void testAFailedReprepareIsNotRetriedForEver();
 	void testDistinctInputGivesDistinctOutput();
 	void testTheLevelParameterReachesTheInstrument();
 	void testStateSurvivesTheProjectFile();
@@ -450,6 +513,42 @@ void Vst3InstrumentIntegrationTest::testAnUnpreparedInstrumentClearsItsOutput()
 	QVERIFY(std::all_of(output.begin(), output.end(), [](const SampleFrame& frame) {
 		return frame.left() == 0.0f && frame.right() == 0.0f;
 	}));
+}
+
+void Vst3InstrumentIntegrationTest::testAFailedReprepareIsNotRetriedForEver()
+{
+	auto track = makeTrack();
+	auto* instrument = static_cast<Vst3Instrument*>(makeInstrument(track.get()));
+	QVERIFY(instrument != nullptr);
+	QVERIFY(instrument->vst3Plugin()->isPrepared());
+
+	// The plug-in is loaded, but from now on it REFUSES to be set up: the
+	// "unsupported sample rate" case. Every prepare the host attempts fails.
+	ScopedEnv failPrepare("VST3_TEST_INSTRUMENT_FAIL_PREPARE", "1");
+	ScopedWarningCounter warnings;
+
+	instrument->vst3Plugin()->release();
+	QVERIFY(!instrument->vst3Plugin()->isPrepared());
+
+	// One audio block per cycle: the unprepared plug-in makes the audio thread
+	// record the re-prepare request, and the GUI thread's poll() services it.
+	// poll() is called directly (not by its 100 ms timer), so the test is
+	// deterministic: no waiting, no sleeping, no race with the timer.
+	constexpr int Cycles = 8;
+	std::vector<SampleFrame> output(BlockFrames, SampleFrame{0.0f, 0.0f});
+	for (int cycle = 0; cycle < Cycles; ++cycle)
+	{
+		instrument->play(std::span<SampleFrame>{output});
+		QVERIFY(instrument->needsReprepare());
+		QVERIFY(QMetaObject::invokeMethod(instrument, "poll", Qt::DirectConnection));
+	}
+
+	// The host must not set the plug-in up again and again for the SAME
+	// configuration: the failure is reported a few times, not once per poll.
+	// Without a retry policy every cycle warns again (one warning per poll).
+	QVERIFY2(warnings.count() > 0, "the failed re-prepare was not reported at all");
+	QVERIFY2(warnings.count() < Cycles,
+		"the failed re-prepare was retried on every poll: the request is never given up");
 }
 
 void Vst3InstrumentIntegrationTest::testDistinctInputGivesDistinctOutput()

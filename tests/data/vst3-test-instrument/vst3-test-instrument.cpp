@@ -46,6 +46,13 @@
  *   restartComponent(kLatencyChanged). An instance created without the variable
  *   is exactly the fixture it always was. (Reading the environment in process()
  *   is a test-fixture shortcut, not something a real plug-in would do there.)
+ * - FAILED PREPARE: while the environment variable
+ *   VST3_TEST_INSTRUMENT_FAIL_PREPARE is set, setupProcessing() refuses the
+ *   setup. That is the subject of the host's failed-prepare path: the host
+ *   turns it into a failed prepare() and a warning, and a host that has no
+ *   retry policy asks again on every poll tick. The variable is read per
+ *   setupProcessing() call, so a test can switch it on and off around the
+ *   moment it needs.
  */
 
 #include <cstdlib>
@@ -97,6 +104,9 @@ static const int32 kNumKeys = 128;
 // The largest latency a latent instance takes, and the size of its delay rings.
 static const int32 kMaxLatency = 16384;
 static const char* const kLatencyEnv = "VST3_TEST_INSTRUMENT_LATENCY";
+// The environment that makes this fixture REFUSE to be prepared (setupProcessing
+// fails), so a host can be shown a plug-in whose preparation keeps failing.
+static const char* const kFailPrepareEnv = "VST3_TEST_INSTRUMENT_FAIL_PREPARE";
 
 // The count the environment names now, one short of the ring (a whole-ring delay would read the frame just
 // written).
@@ -138,6 +148,7 @@ public:
 	                                       SpeakerArrangement* outputs,
 	                                       int32 numOuts) SMTG_OVERRIDE;
 	tresult PLUGIN_API canProcessSampleSize (int32 symbolicSampleSize) SMTG_OVERRIDE;
+	tresult PLUGIN_API setupProcessing (ProcessSetup& setup) SMTG_OVERRIDE;
 	tresult PLUGIN_API setProcessing (TBool state) SMTG_OVERRIDE;
 	tresult PLUGIN_API process (ProcessData& data) SMTG_OVERRIDE;
 	uint32 PLUGIN_API getLatencySamples () SMTG_OVERRIDE { return static_cast<uint32> (mLatency); }
@@ -319,6 +330,20 @@ tresult PLUGIN_API TestInstrument::setBusArrangements (SpeakerArrangement* input
 tresult PLUGIN_API TestInstrument::canProcessSampleSize (int32 symbolicSampleSize)
 {
 	return symbolicSampleSize == kSample32 ? kResultTrue : kResultFalse;
+}
+
+//------------------------------------------------------------------------
+tresult PLUGIN_API TestInstrument::setupProcessing (ProcessSetup& setup)
+{
+	// A plug-in that REFUSES to be set up: the environment names it. This is
+	// the subject of the host's failed-prepare path (Vst3Instrument's re-prepare
+	// retry policy), so it has to be a real setupProcessing() failure - the
+	// host turns it into a failed prepare() and a warning.
+	if (std::getenv (kFailPrepareEnv) != nullptr)
+	{
+		return kResultFalse;
+	}
+	return SingleComponentEffect::setupProcessing (setup);
 }
 
 //------------------------------------------------------------------------
