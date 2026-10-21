@@ -70,7 +70,7 @@ private:
 	//! round-robin, velocity and key-switch cases then compare against - a level is its sample's, in units of Low.
 	float m_unit = 0.f;
 
-	bool near(float level, float expected) const { return std::abs(level / m_unit - expected) < 0.04f; }
+	bool levelIs(float level, float expected) const { return std::abs(level / m_unit - expected) < 0.04f; }
 
 private slots:
 	void initTestCase()
@@ -119,8 +119,8 @@ private slots:
 		const float softEdge = s.levelOf(60, 63);
 		const float loudEdge = s.levelOf(60, 64);
 		const float loud = s.levelOf(60, 120);
-		QVERIFY2(near(soft, Low) && near(softEdge, Low), qPrintable(QStringLiteral("soft %1 / %2").arg(soft).arg(softEdge)));
-		QVERIFY2(near(loudEdge, Mid) && near(loud, Mid), qPrintable(QStringLiteral("loud %1 / %2").arg(loudEdge).arg(loud)));
+		QVERIFY2(levelIs(soft, Low) && levelIs(softEdge, Low), qPrintable(QStringLiteral("soft %1 / %2").arg(soft).arg(softEdge)));
+		QVERIFY2(levelIs(loudEdge, Mid) && levelIs(loud, Mid), qPrintable(QStringLiteral("loud %1 / %2").arg(loudEdge).arg(loud)));
 	}
 
 	//! Repeated notes of one key walk the round-robin sequence low, mid, high and then start over.
@@ -132,7 +132,7 @@ private slots:
 		for (const float level : expected)
 		{
 			const float got = s.levelOf(62, 90);
-			QVERIFY2(near(got, level), qPrintable(QStringLiteral("round robin sounded %1, expected %2").arg(got).arg(level)));
+			QVERIFY2(levelIs(got, level), qPrintable(QStringLiteral("round robin sounded %1, expected %2").arg(got).arg(level)));
 		}
 	}
 
@@ -141,15 +141,15 @@ private slots:
 	{
 		SfzSession s;
 		QVERIFY(s.start() && s.open(m_sfz));
-		QVERIFY2(near(s.levelOf(64, 90), Low), "the default key switch plays the low sample");
+		QVERIFY2(levelIs(s.levelOf(64, 90), Low), "the default key switch plays the low sample");
 		s.noteOn(37, 90);
 		s.render(1);
 		s.noteOff(37);
-		QVERIFY2(near(s.levelOf(64, 90), High), "after key switch 37 key 64 plays the high sample");
+		QVERIFY2(levelIs(s.levelOf(64, 90), High), "after key switch 37 key 64 plays the high sample");
 		s.noteOn(36, 90);
 		s.render(1);
 		s.noteOff(36);
-		QVERIFY2(near(s.levelOf(64, 90), Low), "key switch 36 restores the low sample");
+		QVERIFY2(levelIs(s.levelOf(64, 90), Low), "key switch 36 restores the low sample");
 	}
 
 	//! A note starts at the frame its event names inside the period, not at the period's start.
@@ -254,11 +254,11 @@ private slots:
 		QCOMPARE(s.regions(), 7);
 		QVERIFY(run(QStringLiteral("plugin.open_file"), {{QStringLiteral("target"), track}, {QStringLiteral("path"), other}}).ok);
 		QCOMPARE(s.regions(), 1);
-		QVERIFY(near(s.levelOf(60, 40), High));
+		QVERIFY(levelIs(s.levelOf(60, 40), High));
 
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one step
 		QCOMPARE(s.regions(), 7);
-		QVERIFY(near(s.levelOf(60, 40), Low));
+		QVERIFY(levelIs(s.levelOf(60, 40), Low));
 
 		const QString text = m_dir.filePath(QStringLiteral("notes.txt"));
 		{ QFile f(text); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("x"); }
@@ -267,7 +267,7 @@ private slots:
 		{ QFile f(broken); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("// no regions in here\n<global> volume=0\n"); }
 		QVERIFY(!run(QStringLiteral("plugin.open_file"), {{QStringLiteral("target"), track}, {QStringLiteral("path"), broken}}).ok);
 		QCOMPARE(s.regions(), 7);  // the instrument kept what it had
-		QVERIFY(near(s.levelOf(60, 40), Low));
+		QVERIFY(levelIs(s.levelOf(60, 40), Low));
 		Engine::getSong()->clearErrors();
 	}
 
@@ -317,7 +317,7 @@ private slots:
 		QVERIFY2(button != nullptr, "the window has an Open button");
 		button->click();
 		QCOMPARE(s.regions(), 7);
-		QVERIFY(near(s.levelOf(60, 40), Low));
+		QVERIFY(levelIs(s.levelOf(60, 40), Low));
 		QVERIFY2(!run(QStringLiteral("control.undo")).errorMessage.contains(QStringLiteral("nothing")), "the click left one undo step");
 		QCOMPARE(s.regions(), 0);
 

@@ -321,7 +321,7 @@ void PatcherCanvas::mousePressEvent(QMouseEvent* event)
 {
 	if (event->button() != Qt::LeftButton) { return; }
 	setFocus();
-	m_pressed = m_cursor = event->localPos();
+	m_pressed = m_cursor = QPointF(event->pos());
 	m_drag = Drag::None;
 	int port = 0;
 	if (const int source = outputPortAt(m_pressed, &port); source >= 0)
@@ -346,7 +346,7 @@ void PatcherCanvas::mousePressEvent(QMouseEvent* event)
 
 void PatcherCanvas::mouseMoveEvent(QMouseEvent* event)
 {
-	m_cursor = event->localPos();
+	m_cursor = QPointF(event->pos());
 	if (m_drag != Drag::None) { update(); }
 }
 
@@ -375,8 +375,8 @@ void PatcherCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
 	const Drag drag = m_drag;
 	m_drag = Drag::None;
-	if (event->button() == Qt::LeftButton && drag == Drag::Cable) { finishCable(event->localPos()); }
-	else if (event->button() == Qt::LeftButton && drag == Drag::Node) { finishNodeDrag(event->localPos()); }
+	if (event->button() == Qt::LeftButton && drag == Drag::Cable) { finishCable(QPointF(event->pos())); }
+	else if (event->button() == Qt::LeftButton && drag == Drag::Node) { finishNodeDrag(QPointF(event->pos())); }
 	update();
 }
 

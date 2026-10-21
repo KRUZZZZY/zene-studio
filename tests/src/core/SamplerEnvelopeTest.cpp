@@ -222,7 +222,7 @@ private slots:
 
 		const auto wheelUp = [](QWidget* w) {
 			const QPointF at(w->width() / 2.0, w->height() / 2.0);
-			QWheelEvent event(at, w->mapToGlobal(at), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
+			QWheelEvent event(at, w->mapToGlobal(at.toPoint()), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
 				Qt::NoScrollPhase, false);
 			QApplication::sendEvent(w, &event);
 		};
@@ -249,7 +249,7 @@ private slots:
 		QVERIFY2(box != nullptr, "the voice limit has a box in the window");
 		const float limit = model(QStringLiteral("Voice limit"))->value<float>();
 		QVERIFY(limit > 1.f);
-		QWheelEvent down(QPointF(4, 4), box->mapToGlobal(QPointF(4, 4)), QPoint(), QPoint(0, -120), Qt::NoButton,
+		QWheelEvent down(QPointF(4, 4), box->mapToGlobal(QPoint(4, 4)), QPoint(), QPoint(0, -120), Qt::NoButton,
 			Qt::NoModifier, Qt::NoScrollPhase, false);
 		QApplication::sendEvent(box, &down);
 		QVERIFY2(model(QStringLiteral("Voice limit"))->value<float>() < limit, "the box lowered the voice limit");
