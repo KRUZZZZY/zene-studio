@@ -59,8 +59,8 @@ void EnvelopeAndLfoParameters::LfoInstances::trigger()
 	QMutexLocker m( &m_lfoListMutex );
 	for (const auto& lfo : m_lfos)
 	{
+		// the LFO phase moved, so the shape cache of that LFO is stale
 		lfo->m_lfoFrame += Engine::audioEngine()->framesPerPeriod();
-		lfo->m_bad_lfoShapeData = true;
 	}
 }
 
@@ -73,7 +73,6 @@ void EnvelopeAndLfoParameters::LfoInstances::reset()
 	for (const auto& lfo : m_lfos)
 	{
 		lfo->m_lfoFrame = 0;
-		lfo->m_bad_lfoShapeData = true;
 	}
 }
 
@@ -122,9 +121,10 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 	m_controlEnvAmountModel( false, this, tr( "Modulate env amount" ) ),
 	m_lfoFrame( 0 ),
 	m_lfoShapeData(nullptr),
-	m_bad_lfoShapeData( false ),
+	m_lfoShapeDataVersion( 0 ),
+	m_lfoShapeDataFrame( 0 ),
 	m_audioState( new AudioState() ),
-	m_audioStateSeq( 0 ),
+	m_publicationCounter( 0 ),
 	m_audioStateReaders( 0 ),
 	m_heldAudioState( nullptr )
 {
@@ -219,11 +219,11 @@ EnvelopeAndLfoParameters::~EnvelopeAndLfoParameters()
 
 
 inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset,
-							const AudioState & _state )
+							const AudioState & _state,
+							f_cnt_t _lfoFrame )
 {
 	const f_cnt_t oscillationFrames = _state.lfoOscillationFrames;
-	f_cnt_t frame = ( m_lfoFrame.load(std::memory_order_relaxed) +
-					_frame_offset ) % oscillationFrames;
+	f_cnt_t frame = ( _lfoFrame + _frame_offset ) % oscillationFrames;
 	const float phase = frame / static_cast<float>( oscillationFrames );
 	sample_t shape_sample;
 	switch( static_cast<LfoShape>(m_lfoWaveModel.value())  )
@@ -264,11 +264,16 @@ inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset,
 void EnvelopeAndLfoParameters::updateLfoShapeData( const AudioState & _state )
 {
 	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	const f_cnt_t lfoFrame = m_lfoFrame.load(std::memory_order_relaxed);
 	for( f_cnt_t offset = 0; offset < frames; ++offset )
 	{
-		m_lfoShapeData[offset] = lfoShapeSample( offset, _state );
+		m_lfoShapeData[offset] = lfoShapeSample( offset, _state, lfoFrame );
 	}
-	m_bad_lfoShapeData.store( false, std::memory_order_release );
+	// The cache belongs to this snapshot and to this phase. Publishing the key
+	// after the data cannot make a cache that was built from another snapshot
+	// look current.
+	m_lfoShapeDataVersion.store( _state.version, std::memory_order_release );
+	m_lfoShapeDataFrame.store( lfoFrame, std::memory_order_release );
 }
 
 
@@ -299,7 +304,12 @@ inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 	}
 	_frame -= _state.lfoPredelayFrames;
 
-	if( m_bad_lfoShapeData.load(std::memory_order_acquire) )
+	// The cached shape data is used only for the snapshot it was built from
+	// and for the phase it was built at: a snapshot that was published while
+	// this one was held cannot be answered with this cache.
+	if( m_lfoShapeDataVersion.load(std::memory_order_acquire) != _state.version ||
+		m_lfoShapeDataFrame.load(std::memory_order_acquire) !=
+			m_lfoFrame.load(std::memory_order_relaxed) )
 	{
 		updateLfoShapeData( _state );
 	}
@@ -563,8 +573,6 @@ void EnvelopeAndLfoParameters::rebuildAudioState()
 	// reader may still be sampling it.
 	state->userWave = m_userWave;
 
-	m_bad_lfoShapeData.store( true, std::memory_order_release );
-
 	publishAudioState( std::move(state) );
 }
 
@@ -592,14 +600,13 @@ void EnvelopeAndLfoParameters::setPublicationStartHook( PublicationHook _hook )
 
 void EnvelopeAndLfoParameters::publishAudioState( std::unique_ptr<AudioState> _state )
 {
+	_state->version = m_publicationCounter.fetch_add( 1, std::memory_order_relaxed ) + 1;
 	// the start of the publication: the test seam holds the publisher here.
 	if( g_publicationStartHook ) { g_publicationStartHook(); }
-	m_audioStateSeq.fetch_add( 1, std::memory_order_acq_rel );
 	// the publication point: the test seam holds the publisher here.
 	if( g_publicationHook ) { g_publicationHook(); }
 	AudioState * const old = m_audioState.exchange( _state.release(),
-								std::memory_order_acq_rel );
-	m_audioStateSeq.fetch_add( 1, std::memory_order_release );
+								std::memory_order_seq_cst );
 
 	if( old != nullptr )
 	{
@@ -614,6 +621,9 @@ void EnvelopeAndLfoParameters::publishAudioState( std::unique_ptr<AudioState> _s
 // A retired snapshot is freed only when no reader may still hold it.
 void EnvelopeAndLfoParameters::reclaimRetiredAudioStates()
 {
+	// A retired snapshot is freed only when no reader holds one. The check
+	// follows the publication in the total order of the atomics, so a reader
+	// that claims a snapshot either holds the new one or is counted here.
 	if( m_audioStateReaders.load(std::memory_order_seq_cst) != 0 )
 	{
 		return;
@@ -657,20 +667,13 @@ std::vector<sample_t> EnvelopeAndLfoParameters::takeEnvBuffer( std::size_t _samp
 // the writer from freeing a snapshot that is still in use.
 const EnvelopeAndLfoParameters::AudioState* EnvelopeAndLfoParameters::acquireAudioState() const noexcept
 {
-	for( ;; )
-	{
-		const std::uint64_t seq1 = m_audioStateSeq.load(std::memory_order_acquire);
-		if( seq1 & 1 ) { continue; } // a snapshot is being published
-		AudioState * const state = m_audioState.load(std::memory_order_acquire);
-		const std::uint64_t seq2 = m_audioStateSeq.load(std::memory_order_acquire);
-		if( seq1 != seq2 ) { continue; } // the snapshot changed: take the new one
-		m_audioStateReaders.fetch_add( 1, std::memory_order_seq_cst );
-		if( m_audioStateSeq.load(std::memory_order_acquire) == seq2 )
-		{
-			return state;
-		}
-		m_audioStateReaders.fetch_sub( 1, std::memory_order_seq_cst );
-	}
+	// The claim of the published snapshot is a fixed number of atomic
+	// operations: it never waits for the publisher, it never retries and it
+	// never allocates. The reader count is raised before the snapshot is read,
+	// so the publisher cannot free a snapshot that this reader is about to
+	// use: it either sees the count, or this reader reads the new snapshot.
+	m_audioStateReaders.fetch_add( 1, std::memory_order_seq_cst );
+	return m_audioState.load( std::memory_order_seq_cst );
 }
 
 

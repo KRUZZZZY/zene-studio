@@ -61,6 +61,10 @@ private:
 	 *  snapshot is retired, not freed, while a reader may still hold it. */
 	struct AudioState
 	{
+		//! The publication number of this snapshot. It changes with every
+		//! publication, so a cache built from an older snapshot is stale.
+		std::uint64_t version = 0;
+
 		f_cnt_t pahdFrames = 0;
 		f_cnt_t rFrames = 0;
 		float sustainLevel = 0.f;
@@ -242,17 +246,21 @@ private:
 
 	std::atomic<f_cnt_t> m_lfoFrame;
 	sample_t * m_lfoShapeData;
+	//! The snapshot version the cached LFO shape data was built from, and the
+	//! LFO frame it was built at. The cache is valid only for that pair, so a
+	//! snapshot that is published (or a phase that moves) cannot be answered
+	//! with a cache that was built from another one.
+	std::atomic<std::uint64_t> m_lfoShapeDataVersion;
+	std::atomic<f_cnt_t> m_lfoShapeDataFrame;
 	sample_t m_random {};
 	bool m_randomInitialized { false };
-	std::atomic<bool> m_bad_lfoShapeData;
 	std::shared_ptr<const SampleBuffer> m_userWave = SampleBuffer::emptyBuffer();
 
 	//! The published snapshot: the audio path's view of the parameters.
 	std::atomic<AudioState*> m_audioState;
-	//! The publication counter. It is odd while a snapshot is being published,
-	//! so a reader that catches the switch retries instead of reading a
-	//! half-published snapshot.
-	std::atomic<std::uint64_t> m_audioStateSeq;
+	//! The number of publications so far. It numbers the snapshots, so a cache
+	//! built from one of them can be recognised as stale.
+	std::atomic<std::uint64_t> m_publicationCounter;
 	//! How many readers hold a published snapshot (the audio thread, and the
 	//! test seam above). A snapshot is freed only when this is zero.
 	mutable std::atomic<int> m_audioStateReaders;
@@ -266,7 +274,8 @@ private:
 
 	constexpr static auto NumLfoShapes = static_cast<std::size_t>(LfoShape::Count);
 
-	sample_t lfoShapeSample( f_cnt_t _frame_offset, const AudioState & _state );
+	sample_t lfoShapeSample( f_cnt_t _frame_offset, const AudioState & _state,
+							f_cnt_t _lfoFrame );
 	void updateLfoShapeData( const AudioState & _state );
 
 	//! The audio path's snapshot: no lock, no wait, no allocation.

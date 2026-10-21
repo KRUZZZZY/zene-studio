@@ -28,7 +28,9 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <atomic>
 #include <limits>
+#include <thread>
 #include <vector>
 
 #include "Engine.h"
@@ -110,6 +112,96 @@ private slots:
 
 		loadSettings(parameters, true);
 		QVERIFY(parameters.getLfoUserWave() == SampleBuffer::emptyBuffer());
+	}
+
+	/*! The audio path must not wait for the publisher. The publisher is held
+	 *  at the publication point (the test seam setPublicationHook()) while the
+	 *  audio path claims the published snapshot: the claim must go through
+	 *  without the publisher's help. */
+	void theAudioPathDoesNotWaitForAPublisher()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		std::atomic<bool> publisherHeld{false};
+		std::atomic<bool> readerEntered{false};
+		std::atomic<bool> readerDone{false};
+		std::atomic<bool> claimedWhileHeld{false};
+
+		EnvelopeAndLfoParameters::setPublicationHook([&]() {
+			publisherHeld.store(true, std::memory_order_release);
+			// wait for the audio path to reach the claim
+			while (!readerEntered.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+			// the claim must happen while the publisher is held
+			for (int i = 0; i < 1000000; ++i)
+			{
+				if (parameters.audioStateReaders() > 0)
+				{
+					claimedWhileHeld.store(true, std::memory_order_release);
+					break;
+				}
+				if ((i % 64) == 0) { std::this_thread::yield(); }
+			}
+		});
+
+		// the publisher: a publication that is held at the publication point
+		std::thread publisher([&]() { parameters.updateSampleVars(); });
+		// the audio path: it claims the published snapshot and holds it
+		std::thread reader([&]() {
+			while (!publisherHeld.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+			readerEntered.store(true, std::memory_order_release);
+			parameters.holdAudioState();
+			readerDone.store(true, std::memory_order_release);
+		});
+
+		publisher.join();
+		reader.join();
+		EnvelopeAndLfoParameters::setPublicationHook(nullptr);
+		parameters.releaseHeldAudioState();
+
+		QVERIFY(readerDone.load(std::memory_order_acquire));
+		QVERIFY2(claimedWhileHeld.load(std::memory_order_acquire),
+			"the audio path did not claim the published snapshot while the "
+			"publisher was held: it waited for the publisher");
+	}
+
+	/*! The LFO shape cache must not be answered with data that was built from
+	 *  an older snapshot: a publication that happens while a reader holds the
+	 *  previous snapshot must not be lost by that reader's rebuild. */
+	void theLfoShapeCacheIsNotStaleAfterAPublication()
+	{
+		EnvelopeAndLfoParameters parameters(0.0f, nullptr);
+		const int userWave =
+			static_cast<int>(EnvelopeAndLfoParameters::LfoShape::UserDefinedWave);
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+
+		loadSettings(parameters, true, m_wavePath, userWave);
+		parameters.getLfoAmountModel().setValue(1.0f);
+
+		// the audio path renders the first wave
+		std::vector<float> first(frames);
+		parameters.fillLevel(first.data(), 0, std::numeric_limits<f_cnt_t>::max(), frames);
+
+		// The writer publishes another wave. While the publication starts, the
+		// audio path fills a level: it holds the previous snapshot, and the
+		// publication must not be lost by what that reader does with the shape
+		// cache.
+		std::vector<float> during(frames);
+		EnvelopeAndLfoParameters::setPublicationStartHook([&]() {
+			std::thread reader([&]() {
+				parameters.fillLevel(during.data(), 0, std::numeric_limits<f_cnt_t>::max(), frames);
+			});
+			reader.join();
+		});
+		loadSettings(parameters, true, m_otherWavePath, userWave);
+		EnvelopeAndLfoParameters::setPublicationStartHook(nullptr);
+		// the load reset the LFO amount, so the LFO contributes to the level
+		parameters.getLfoAmountModel().setValue(1.0f);
+
+		// the audio path must render the new wave now, not a shape cache that
+		// was built from the previous snapshot
+		std::vector<float> after(frames);
+		parameters.fillLevel(after.data(), 0, std::numeric_limits<f_cnt_t>::max(), frames);
+
+		QVERIFY(after != first);
 	}
 
 	/*! The wave the audio path samples must not be freed by a wave that
