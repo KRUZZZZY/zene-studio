@@ -150,7 +150,8 @@ namespace
 //! The clips of the open project by file, and the ones of the project closed last (retire()).
 struct Clips
 {
-	std::map<QString, std::shared_ptr<const SampleBuffer>> held;
+	std::map<QString, std::shared_ptr<const SampleBuffer>> held;  //!< the source files, by path
+	std::map<QString, std::shared_ptr<const SampleBuffer>> variants;  //!< the settings-variants, by path and settings
 	std::vector<std::shared_ptr<const SampleBuffer>> retired;
 	std::vector<QPointer<Track>> handled;  //!< tracks that have a SessionCellPlayHandle
 	int cachedRate = 0;  //!< the engine rate held clips were resampled for; 0 before first load
@@ -183,7 +184,9 @@ const SampleBuffer* load(const QString& source)
 	if (all.cachedRate != 0 && all.cachedRate != rate)
 	{
 		for (auto& entry : all.held) { all.retired.push_back(std::move(entry.second)); }
+		for (auto& entry : all.variants) { all.retired.push_back(std::move(entry.second)); }
 		all.held.clear();
+		all.variants.clear();
 	}
 	all.cachedRate = rate;
 	const auto found = all.held.find(source);
@@ -196,7 +199,8 @@ const SampleBuffer* load(const QString& source)
 }
 
 //! The most settings-variants of clips one project may hold (every tempo a warped cell was launched at is one);
-//! past it the newest variant is not made and the cell plays its file as it is.
+//! past it the newest variant is not made and the cell plays its file as it is. The source files a project loads
+//! are not settings-variants: they do not use this budget.
 constexpr std::size_t MaxHeldVariants = 256;
 
 //! @a source with @a params applied, made once per setting (the key holds the settings) and held like the file.
@@ -205,13 +209,13 @@ const SampleBuffer* variant(const QString& source, const SampleBuffer* original,
 	if (params.isIdentity()) { return original; }
 	Clips& all = clips();
 	const QString key = QStringLiteral("%1|w%2|p%3").arg(source).arg(params.warpSpeed, 0, 'g', 12).arg(params.pitchRatio, 0, 'g', 12);
-	const auto found = all.held.find(key);
-	if (found != all.held.end()) { return found->second.get(); }
-	if (all.held.size() >= MaxHeldVariants) { return original; }
+	const auto found = all.variants.find(key);
+	if (found != all.variants.end()) { return found->second.get(); }
+	if (all.variants.size() >= MaxHeldVariants) { return original; }
 	std::vector<SampleFrame> frames = bakeClip(original->data(), original->size(), params);
 	if (frames.empty()) { return original; }
 	auto clip = std::make_shared<const SampleBuffer>(std::move(frames), static_cast<int>(original->sampleRate()));
-	all.held.emplace(key, clip);
+	all.variants.emplace(key, clip);
 	return clip.get();
 }
 
@@ -264,13 +268,15 @@ void retire() noexcept
 	Clips& all = clips();
 	all.retired.clear();
 	for (auto& entry : all.held) { all.retired.push_back(std::move(entry.second)); }
+	for (auto& entry : all.variants) { all.retired.push_back(std::move(entry.second)); }
 	all.held.clear();
+	all.variants.clear();
 	all.cachedRate = 0;
 }
 
 int heldClips() noexcept
 {
-	return static_cast<int>(clips().held.size());
+	return static_cast<int>(clips().held.size() + clips().variants.size());
 }
 
 } // namespace sessionaudio
