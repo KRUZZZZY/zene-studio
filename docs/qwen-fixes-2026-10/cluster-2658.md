@@ -179,3 +179,11 @@ RESULT: PASS (fork-sources, all-sources-reproduce, no-upstream-regression,
 * **Old projects/new data.** Nothing in the save format, plugin format or
   command surface changed; `zene` rebuilt cleanly.
 * **Portability.** C++20 only, no new Qt API, no platform-specific header.
+* **Pre-submit check.** `python3 .../submit_check.py <worktree> 2658` returns
+  `RESULT: PASS - submit` (all mechanical items PASS) when run on a clean
+  git-worktree copy of this commit, which gives the check a writable parent
+  for `feature_check.py`'s log directory. On the lane's own path that one item
+  fails only because the host sandbox denies creating
+  `<worktree>-feature-check/` beside the worktree (`PermissionError`); the gate
+  table itself is the PASS run quoted above.
+
