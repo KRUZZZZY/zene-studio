@@ -62,6 +62,13 @@ QByteArray hex(const char* text)
 	return QByteArray::fromHex(text);
 }
 
+QByteArray be32(quint32 value)
+{
+	QByteArray bytes(4, '\0');
+	for (int i = 0; i < 4; ++i) { bytes[3 - i] = static_cast<char>((value >> (8 * i)) & 0xff); }
+	return bytes;
+}
+
 //! How the fake gateway answers.
 enum class Gateway
 {
@@ -105,6 +112,7 @@ private:
 	bool m_hold = false;  //!< when set, the gateway stores replies instead of sending them
 	QList<HeldReply> m_held;
 	QList<QByteArray> m_requests;
+	quint32 m_grantedLifetime = 7200;
 
 	void answer()
 	{
@@ -140,7 +148,7 @@ private:
 		QByteArray externalBytes;
 		externalBytes.append(static_cast<char>(external >> 8));
 		externalBytes.append(static_cast<char>(external & 0xff));
-		return hex("00820000000003e8") + request.mid(4, 2) + externalBytes + hex("00001c20");
+		return hex("00820000000003e8") + request.mid(4, 2) + externalBytes + be32(m_grantedLifetime);
 	}
 
 	static QByteArray pcpSuccess(const QByteArray& request)
@@ -174,7 +182,7 @@ private slots:
 		connect(&m_gateway, &QUdpSocket::readyRead, this, &PortMappingCodecTest::answer);
 	}
 
-	void init() { m_requests.clear(); m_held.clear(); m_hold = false; }
+	void init() { m_requests.clear(); m_held.clear(); m_hold = false; m_grantedLifetime = 7200; }
 
 	//! Byte-exact NAT-PMP requests (RFC 6886 3.2 / 3.3) and a decoded mapping response.
 	void natPmpEncodeDecode()
@@ -285,41 +293,197 @@ private slots:
 		PmpMapper mapper;
 		mapper.setServer(QHostAddress(QHostAddress::LocalHost), m_gateway.localPort());
 		mapper.setClientAddress(QHostAddress(QStringLiteral("192.168.1.20")));
-		mapper.setRetrySchedule({100, 100});
+		mapper.setRetrySchedule({60000});
 		QSignalSpy finished(&mapper, &PmpMapper::finished);
 		auto* originalSocket = mapper.findChild<QUdpSocket*>();
 		QVERIFY(originalSocket);
 		bool originalSocketDestroyed = false;
 		connect(originalSocket, &QObject::destroyed, this, [&originalSocketDestroyed] { originalSocketDestroyed = true; });
 		mapper.map(41740, 41740, 7200);  // attempt 1: PCP request, its reply held back
-		finished.wait(10);  // let the queued request reach the gateway
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 1, 5000);
 		QCOMPARE(m_held.size(), 1);
 		releaseReply(0);  // "unsupported version" -> PmpAddress; the address request is held
-		finished.wait(10);
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 1, 5000);
 		releaseReply(0);  // the address reply -> PmpMap; the map reply for 41740 is held
-		finished.wait(10);
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 1, 5000);
 		mapper.map(41740, 41740, 7200);  // restart with identical parameters while attempt 1 waits for its map reply
-		finished.wait(10);
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 2, 5000);
 		QVERIFY(originalSocketDestroyed);  // restart replaces the bound endpoint instead of reusing its socket
 		QCOMPARE(m_held.size(), 2);  // the stale map reply plus attempt 2's pmpOnly
 		const HeldReply staleMap = m_held.at(0);
 		const HeldReply freshPcp = m_held.at(1);
 		QVERIFY(staleMap.target != freshPcp.target || staleMap.port != freshPcp.port);
 		releaseReply(1);  // attempt 2's "unsupported version" -> PmpAddress
-		finished.wait(10);
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 2, 5000);
 		releaseReply(1);  // attempt 2's address reply -> PmpMap
-		finished.wait(10);
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 2, 5000);
+		QUdpSocket staleEndpoint;
+		QVERIFY(staleEndpoint.bind(staleMap.target, staleMap.port));
+		QSignalSpy staleReplyDelivered(&staleEndpoint, &QUdpSocket::readyRead);
 		releaseReply(0);  // the stale map reply arrives first
-		finished.wait(10);
+		QTRY_COMPARE_WITH_TIMEOUT(staleReplyDelivered.count(), 1, 5000);
 		QCOMPARE(finished.count(), 0);  // stale reply must not finish the identical new mapping
 		releaseReply(0);  // attempt 2's own map reply
-		finished.wait(10);
+		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
 		m_hold = false;
-		QCOMPARE(finished.count(), 1);
 		const MappingResult result = finished.first().first().value<MappingResult>();
 		QVERIFY(result.ok);
 		QCOMPARE(result.method, QStringLiteral("nat-pmp"));
 		QCOMPARE(result.externalPort, quint16(40000));
+	}
+
+	//! stop() then start() again: attempt 1's "unsupported version" answer, released late, must not move attempt 2 to
+	//! NAT-PMP. Its replies carry no transaction id, so attempt 2 needs an endpoint that attempt 1's answers cannot reach.
+	void staleAnswerAfterStopAndRestartCannotPoisonTheNewAttempt()
+	{
+		m_mode = Gateway::Pcp;
+		m_hold = true;
+		PmpMapper mapper;
+		mapper.setServer(QHostAddress(QHostAddress::LocalHost), m_gateway.localPort());
+		mapper.setClientAddress(QHostAddress(QStringLiteral("192.168.1.20")));
+		mapper.setRetrySchedule({60000});
+		QSignalSpy finished(&mapper, &PmpMapper::finished);
+		mapper.map(41740, 41740, 7200);  // attempt 1: its PCP request is out, and the gateway holds the answer
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 1, 5000);
+		const quint16 canceledEndpoint = mapper.findChild<QUdpSocket*>()->localPort();
+		mapper.unmap();  // stop() with nothing mapped: the pending PCP attempt is expired best-effort
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 2, 5000);
+		m_held.clear();
+		mapper.map(41740, 41740, 7200);  // restart with unmap() already done: attempt 2's PCP request, answer held
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 1, 5000);
+		QVERIFY(mapper.findChild<QUdpSocket*>()->localPort() != canceledEndpoint);
+		QUdpSocket staleEndpoint;
+		QVERIFY(staleEndpoint.bind(QHostAddress(QHostAddress::LocalHost), canceledEndpoint));
+		QSignalSpy staleReplyDelivered(&staleEndpoint, &QUdpSocket::readyRead);
+		// The "unsupported version" answer that attempt 1 was waiting for arrives now, aimed at its endpoint.
+		m_gateway.writeDatagram(hex("00810001000003e8"), QHostAddress(QHostAddress::LocalHost), canceledEndpoint);
+		QTRY_COMPARE_WITH_TIMEOUT(staleReplyDelivered.count(), 1, 5000);
+		int addressRequests = 0;
+		for (const QByteArray& request : m_requests) { addressRequests += request.size() == 2 ? 1 : 0; }
+		QCOMPARE(addressRequests, 0);  // no NAT-PMP address request: attempt 2 is still waiting for its PCP answer
+		QCOMPARE(finished.count(), 0);
+		m_hold = false;
+		releaseReply(0);  // attempt 2's own PCP answer
+		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+		const MappingResult result = finished.first().first().value<MappingResult>();
+		QVERIFY2(result.ok, qPrintable(result.message));
+		QCOMPARE(result.method, QStringLiteral("pcp"));
+	}
+
+	//! A PCP answer that arrives after unmap() belongs to the canceled attempt: it must not complete the mapper.
+	void pmpIgnoresLatePcpReplyAfterUnmap()
+	{
+		m_mode = Gateway::Pcp;
+		m_hold = true;
+		PmpMapper mapper;
+		mapper.setServer(QHostAddress(QHostAddress::LocalHost), m_gateway.localPort());
+		mapper.setClientAddress(QHostAddress(QStringLiteral("192.168.1.20")));
+		mapper.setRetrySchedule({60000});
+		QSignalSpy finished(&mapper, &PmpMapper::finished);
+		mapper.map(41740, 41740, 7200);
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 1, 5000);  // the PCP request reached the gateway; its success is held back
+		mapper.unmap();
+		// Wait for the fake gateway's readyRead handler to consume the cleanup packet before inspecting it.
+		QTRY_COMPARE_WITH_TIMEOUT(m_requests.size(), 2, 5000);
+		// PCP was pending, so the cleanup is PCP MAP with lifetime zero; no NAT-PMP deletion was sent.
+		const QByteArray cleanup = m_requests.at(1);
+		QCOMPARE(cleanup.size(), 60);
+		QCOMPARE(cleanup.left(2), hex("0201"));
+		QCOMPARE(cleanup.mid(4, 4), be32(0));
+		for (const QByteArray& request : m_requests)
+		{
+			QVERIFY(request.at(0) == 2);
+			QVERIFY(request.size() < 2 || request.at(1) != 2);  // no NAT-PMP TCP MAP deletion was sent
+		}
+		auto* socket = mapper.findChild<QUdpSocket*>();
+		QVERIFY(socket);
+		QSignalSpy replyConsumed(socket, &QUdpSocket::readyRead);
+		releaseReply(0);  // the router's answer to the request that unmap() canceled
+		QTRY_COMPARE_WITH_TIMEOUT(replyConsumed.count(), 1, 5000);
+		m_hold = false;
+		QCOMPARE(finished.count(), 0);
+	}
+
+	//! stop() while the PCP request is out: the router's late answer must neither report a success nor plan a renewal.
+	void stopCancelsAPendingPortMapping()
+	{
+		m_mode = Gateway::Pcp;
+		m_hold = true;
+		PortMapping::TestEndpoints endpoints;
+		endpoints.gateway = QHostAddress(QHostAddress::LocalHost);
+		endpoints.gatewayPort = m_gateway.localPort();
+		endpoints.local = QHostAddress(QStringLiteral("192.168.1.20"));
+		endpoints.upnpSearch = QHostAddress(QHostAddress::LocalHost);
+		endpoints.upnpSearchPort = m_gateway.localPort();
+		PortMapping mapping;
+		mapping.setTestEndpoints(endpoints);
+		mapping.findChild<PmpMapper*>()->setRetrySchedule({60000});
+		QSignalSpy finished(&mapping, &PortMapping::finished);
+		mapping.start(41740);
+		QTRY_COMPARE_WITH_TIMEOUT(m_held.size(), 1, 5000);  // the PCP request reached the gateway; its success is held back
+		QVERIFY(mapping.busy());
+		mapping.stop();
+		QTRY_COMPARE_WITH_TIMEOUT(m_requests.size(), 2, 5000);
+		auto* socket = mapping.findChild<PmpMapper*>()->findChild<QUdpSocket*>();
+		QVERIFY(socket);
+		QSignalSpy replyConsumed(socket, &QUdpSocket::readyRead);
+		releaseReply(0);  // the router answers after stop()
+		QTRY_COMPARE_WITH_TIMEOUT(replyConsumed.count(), 1, 5000);
+		m_hold = false;
+		QCOMPARE(finished.count(), 0);
+		QVERIFY(!mapping.busy());
+		QVERIFY(!mapping.result().ok);
+		QVERIFY(!mapping.m_renew->isActive());
+	}
+
+	//! unmap() cancels a UPnP search: its timeout must not report a failure after the mapping was stopped.
+	void upnpUnmapCancelsSearchTimeout()
+	{
+		QUdpSocket silentRouter;  // hears the M-SEARCH and never answers it
+		QVERIFY(silentRouter.bind(QHostAddress(QHostAddress::LocalHost), 0));
+		UpnpMapper mapper;
+		mapper.setSearchEndpoint(QHostAddress(QHostAddress::LocalHost), silentRouter.localPort(), true);
+		QSignalSpy finished(&mapper, &UpnpMapper::finished);
+		mapper.map(41740, 41740, 3600, QHostAddress(QStringLiteral("192.168.1.20")));
+		QVERIFY(UpnpMapperTestAccess::searching(mapper));
+		mapper.unmap();
+		QVERIFY(!mapper.findChild<QTimer*>()->isActive());
+		QCOMPARE(finished.count(), 0);
+	}
+
+	//! A success renews at half the granted lifetime, and the renewal's completion must be processed
+	//! too: the renew timer re-arms and the lease keeps extending instead of expiring after one hop.
+	void renewalKeepsLeaseRenewing()
+	{
+		m_mode = Gateway::PmpOnly;
+		m_grantedLifetime = 7200;
+		PortMapping::TestEndpoints endpoints;
+		endpoints.gateway = QHostAddress(QHostAddress::LocalHost);
+		endpoints.gatewayPort = m_gateway.localPort();
+		endpoints.local = QHostAddress(QStringLiteral("192.168.1.20"));
+		endpoints.upnpSearch = QHostAddress(QHostAddress::LocalHost);
+		endpoints.upnpSearchPort = m_gateway.localPort();
+		PortMapping mapping;
+		mapping.setTestEndpoints(endpoints);
+		QSignalSpy finished(&mapping, &PortMapping::finished);
+		mapping.start(41740);
+		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 1, 5000);
+		auto* renew = mapping.m_renew;
+		QVERIFY(renew && renew->isActive());  // renew timer armed, but the test never waits for its real-time timeout
+		QCOMPARE(renew->interval(), 3600 * 1000);
+		renew->stop();
+		mapping.renew();
+		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 2, 5000);
+		renew->stop();
+		mapping.renew();
+		QTRY_COMPARE_WITH_TIMEOUT(finished.count(), 3, 5000);
+		for (int i = 0; i < finished.size(); ++i)
+		{
+			const MappingResult renewed = finished[i].first().value<MappingResult>();
+			QVERIFY(renewed.ok);
+			QCOMPARE(renewed.method, QStringLiteral("nat-pmp"));
+			QCOMPARE(renewed.externalPort, quint16(40000));
+		}
 	}
 
 	void gatewayFromRecordedRouteTable()

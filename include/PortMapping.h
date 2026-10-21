@@ -75,7 +75,8 @@ public:
 	void setRetrySchedule(const QList<int>& delaysMs) { m_schedule = delaysMs; }
 
 	void map(quint16 internalPort, quint16 externalPort, quint32 lifetime);
-	//! Best effort: sends the delete for whichever protocol mapped, once, and does not wait.
+	//! Cancels a pending attempt (its late answers are ignored), then, best effort, sends the delete for whichever
+	//! protocol mapped or may have mapped, once, and does not wait.
 	void unmap();
 
 signals:
@@ -153,6 +154,8 @@ private:
 	quint32 m_requestedLease = 0;  //!< the lease map() was asked for; used when the router is found later
 	bool m_searching = false;
 	bool m_mapped = false;
+	bool m_active = false;  //!< true from map() until unmap(): the newest attempt owns the router's entry for its port
+	quint64 m_generation = 0;  //!< bumped by map() and unmap(); a callback from an older generation is ignored
 	MappingResult m_result;
 };
 
@@ -214,6 +217,7 @@ private:
 	bool m_hasTestEndpoints = false;
 	quint16 m_internal = 0;
 	bool m_busy = false;
+	bool m_stopped = false;  //!< true once stop() ran, until start() begins a fresh attempt
 	QString m_pmpFailure;
 	MappingResult m_result;
 };

@@ -67,6 +67,19 @@ QString replyError(QNetworkReply* reply, const QByteArray& body)
 	return reply->errorString();
 }
 
+
+void sendDeleteMapping(QNetworkAccessManager* http, const IgdService& service, quint16 externalPort)
+{
+	QNetworkRequest request(service.controlUrl);
+	request.setTransferTimeout(HttpTimeoutMs);
+	request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("text/xml; charset=\"utf-8\""));
+	request.setRawHeader("SOAPAction", QStringLiteral("\"%1#DeletePortMapping\"").arg(service.serviceType).toLatin1());
+	QNetworkReply* reply = http->post(request, soapEnvelope(QStringLiteral("DeletePortMapping"), service.serviceType,
+		{{QStringLiteral("NewRemoteHost"), QString()}, {QStringLiteral("NewExternalPort"), QString::number(externalPort)},
+			{QStringLiteral("NewProtocol"), QStringLiteral("TCP")}}));
+	QObject::connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+}
+
 } // namespace
 
 UpnpMapper::UpnpMapper(QObject* parent) :
@@ -86,6 +99,8 @@ UpnpMapper::~UpnpMapper() = default;
 
 void UpnpMapper::map(quint16 internalPort, quint16 externalPort, quint32 lease, const QHostAddress& local)
 {
+	++m_generation;
+	m_active = true;
 	m_internal = internalPort;
 	m_external = externalPort;
 	m_requestedLease = lease;
@@ -134,11 +149,15 @@ void UpnpMapper::onSearchTimeout()
 
 void UpnpMapper::fetchDescription(const QUrl& location)
 {
+	const quint64 generation = m_generation;
 	QNetworkRequest request(location);
 	request.setTransferTimeout(HttpTimeoutMs);
 	request.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::ManualRedirectPolicy);
 	QNetworkReply* reply = m_http->get(request);
-	connect(reply, &QNetworkReply::finished, this, [this, reply, location] { onDescription(reply, location); });
+	connect(reply, &QNetworkReply::finished, this, [this, reply, location, generation] {
+		if (generation != m_generation) { reply->deleteLater(); return; }
+		onDescription(reply, location);
+	});
 }
 
 void UpnpMapper::onDescription(QNetworkReply* reply, const QUrl& location)
@@ -171,13 +190,30 @@ QNetworkReply* UpnpMapper::soap(const QString& action, const SoapArgs& args)
 
 void UpnpMapper::addMapping(quint32 lease)
 {
+	const quint64 generation = m_generation;
+	const IgdService service = m_service;
+	const quint16 externalPort = m_external;
 	QNetworkReply* reply = soap(QStringLiteral("AddPortMapping"), {{QStringLiteral("NewRemoteHost"), QString()},
 		{QStringLiteral("NewExternalPort"), QString::number(m_external)}, {QStringLiteral("NewProtocol"), QStringLiteral("TCP")},
 		{QStringLiteral("NewInternalPort"), QString::number(m_internal)},
 		{QStringLiteral("NewInternalClient"), m_local.toString()}, {QStringLiteral("NewEnabled"), QStringLiteral("1")},
 		{QStringLiteral("NewPortMappingDescription"), QStringLiteral("Zene Studio collaboration")},
 		{QStringLiteral("NewLeaseDuration"), QString::number(lease)}});
-	connect(reply, &QNetworkReply::finished, this, [this, reply, lease] { onAdded(reply, lease); });
+	connect(reply, &QNetworkReply::finished, this, [this, reply, lease, generation, service, externalPort] {
+		if (generation != m_generation)
+		{
+			if (m_active && externalPort == m_external)
+			{
+				if (reply->error() == QNetworkReply::NoError) { m_mapped = true; }
+				reply->deleteLater();
+				return;
+			}
+			reply->deleteLater();
+			sendDeleteMapping(m_http, service, externalPort);
+			return;
+		}
+		onAdded(reply, lease);
+	});
 }
 
 void UpnpMapper::onAdded(QNetworkReply* reply, quint32 lease)
@@ -197,7 +233,11 @@ void UpnpMapper::onAdded(QNetworkReply* reply, quint32 lease)
 	m_result.externalPort = m_external;
 	m_result.lifetime = lease;
 	QNetworkReply* address = soap(QStringLiteral("GetExternalIPAddress"), {});
-	connect(address, &QNetworkReply::finished, this, [this, address] { onExternalAddress(address); });
+	const quint64 generation = m_generation;
+	connect(address, &QNetworkReply::finished, this, [this, address, generation] {
+		if (generation != m_generation) { address->deleteLater(); return; }
+		onExternalAddress(address);
+	});
 }
 
 void UpnpMapper::onExternalAddress(QNetworkReply* reply)
@@ -211,11 +251,13 @@ void UpnpMapper::onExternalAddress(QNetworkReply* reply)
 
 void UpnpMapper::unmap()
 {
+	++m_generation;
+	m_active = false;
+	m_searching = false;
+	m_searchTimer->stop();
 	if (!m_mapped) { return; }
 	m_mapped = false;
-	QNetworkReply* reply = soap(QStringLiteral("DeletePortMapping"), {{QStringLiteral("NewRemoteHost"), QString()},
-		{QStringLiteral("NewExternalPort"), QString::number(m_external)}, {QStringLiteral("NewProtocol"), QStringLiteral("TCP")}});
-	connect(reply, &QNetworkReply::finished, reply, &QObject::deleteLater);
+	sendDeleteMapping(m_http, m_service, m_external);
 }
 
 void UpnpMapper::finish(bool ok, const QString& message)
