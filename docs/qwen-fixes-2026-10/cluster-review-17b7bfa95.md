@@ -360,10 +360,151 @@ CTEST_EXIT=0
 
 ---
 
+---
+
+## Round 2 (reviewer r1) — the GUI path: the overlay's analysis cache
+
+### The blocking finding
+
+> Reversing a trimmed clip repaints its transient overlay using cached frames from the
+> prior direction. `SampleClipView`'s analysis cache key includes the buffer and authored
+> window but omits playback direction; the later placement key includes direction and only
+> remaps those stale frames. `reverseSample()` toggles direction and repaints without
+> invalidating the analysis cache.
+
+### Verdict: REAL — fixed
+
+The quantise fix of round 1 made the CORE detector look at the clip's audible range, but
+the GUI's overlay keeps its own cache of the analysed frames, keyed by the AUTHORED
+window. Reversing a trimmed clip therefore left the overlay with the frames of the range
+the clip played before the reversal, and the placement (which does know the direction)
+mapped those stale frames onto the reversed clip, where they all collapse onto the play
+window's edge: the overlay showed one marker at the window's end instead of the
+transients of the audio the clip plays.
+
+### Evidence (file:line)
+
+- `src/gui/clips/SampleClipView.cpp:205` `SampleClipView::transientTicks()` — the
+  analysis (the slow part) is cached per audio and per range
+  (`m_transientAudioKey`), and the range was keyed by `m_clip->sampleWindow()`, the
+  AUTHORED window; the direction entered only the later placement key
+  (`m_transientKey`), which re-maps the frames the cache has.
+- `src/gui/clips/SampleClipView.cpp:514` `SampleClipView::reverseSample()` — toggles the
+  direction and repaints, without invalidating the analysis cache.
+- `src/core/SampleClip.cpp:778` `SampleClip::audibleWindow()` — the range the clip
+  actually sounds: the window for a forward source, the window's MIRROR for a reversed
+  one.
+- Regression: `tests/src/gui/ArrangerTimelineTest.cpp`
+  `aReversedTrimmedClipDrawsTheTransientsOfTheAudioItPlays()`.
+
+### Fix
+
+- `src/gui/clips/SampleClipView.cpp` — the analysed range is the clip's AUDIBLE window,
+  so the cache key follows it (a direction change moves the range, so the frames are
+  analysed again):
+
+```cpp
+	const SampleWindow window = m_clip->audibleWindow();
+	const QString audio = QStringLiteral("%1:%2:%3").arg(reinterpret_cast<quintptr>(m_clip->sample().data()))
+		.arg(window.sourceIn).arg(window.sourceOut);
+```
+
+- `src/gui/clips/SampleClipView.cpp` — and the direction toggle drops the cache
+  outright, because the direction decides which audio the clip plays:
+
+```cpp
+void SampleClipView::reverseSample()
+{
+	m_clip->m_sample.setReversed(!m_clip->m_sample.reversed());
+	// The direction decides WHICH audio the clip plays, so the analysed range moves with it: ...
+	m_transientAudioKey.clear();
+	m_transientKey.clear();
+	m_clip->setStartTimeOffset(m_clip->length() - m_clip->startTimeOffset() - m_clip->sampleLength());
+	...
+```
+
+- `include/SampleClipView.h` — `transientTicks()` moves from the private section to the
+  public one, so the overlay's cache invalidation can be regression-tested. It is the
+  same method the paint path calls; no behaviour change.
+
+The regression lives in `tests/src/gui/ArrangerTimelineTest.cpp` — the arranger's
+timeline is where the clip view and its overlay are drawn, and that test file already
+carries the GUI application. (A dedicated new test file was written first and dropped:
+the lane's cmake shim refuses to configure, so a newly registered test target cannot be
+built or run in this lane — the regression therefore went into an already registered
+GUI test.)
+
+### Commands and exit codes
+
+```
+$ cmake --build build --target ArrangerTimelineTest WarpQuantizeTest SampleClipWindowTest -j 20 > logs/build-24-round2.log 2>&1
+BUILD_EXIT=0
+$ cd build/tests && ctest -R '^(ArrangerTimelineTest|WarpQuantizeTest|SampleClipWindowTest)$' --output-on-failure > logs/test-24-round2-green.log 2>&1
+CTEST_EXIT=0
+100% tests passed out of 3
+```
+
+Test-proof of the bug (the product change reverted, then restored):
+
+```
+$ git diff -- src/gui/clips/SampleClipView.cpp > logs/fix-review-17b7bfa95-gui.patch && git apply -R logs/fix-review-17b7bfa95-gui.patch
+REVERTED=OK
+$ cmake --build build --target ArrangerTimelineTest -j 20 > logs/build-25-round2-red.log 2>&1
+BUILD_EXIT=0
+$ cd build/tests && ctest -R '^ArrangerTimelineTest$' --output-on-failure > logs/test-25-round2-red.log 2>&1
+CTEST_EXIT=8
+```
+
+```
+FAIL!  : ArrangerTimelineTest::aReversedTrimmedClipDrawsTheTransientsOfTheAudioItPlays() 'first || swapped' returned FALSE. (the transients sit at 99 and 99, expected 45 and 93)
+   Loc: [../../tests/src/gui/ArrangerTimelineTest.cpp(958)]
+Totals: 32 passed, 1 failed, 0 skipped, 0 blacklisted, 6643ms
+```
+
+```
+$ cd ../.. && git apply logs/fix-review-17b7bfa95-gui.patch
+REAPPLIED=OK
+$ cmake --build build --target ArrangerTimelineTest -j 20 > logs/build-26-round2-green2.log 2>&1
+BUILD_EXIT=0
+$ cd build/tests && ctest -R '^ArrangerTimelineTest$' --output-on-failure > logs/test-26-round2-green2.log 2>&1
+CTEST_EXIT=0
+100% tests passed out of 1
+```
+
+The non-blocking note of the review is acted on as well: the trimmed reversed quantise
+test's comment said the authored first-half window "contains no bursts", which is not
+true of the fixture (`clicks(true)` puts bursts in BOTH halves). The comment now says
+what actually happens — the detector that looked at the window found the two bursts of
+the half the reversed clip never plays, and their ticks collapse onto the play window's
+edge, so the quantise kept one of them instead of the two the clip plays.
+
+### The affected family, after the round-2 change
+
+```
+$ cmake --build build --target zene SampleClipWindowTest WarpQuantizeTest SampleClipWarpTest ClipSerialisationTest ArrangeToolsTest AudioEditingTest SampleClipWarpModeMenuTest ArrangerTimelineTest SampleClipStretchTest SampleClipRubberBandTest ClipWarpPersistenceTest ClipConsolidateTest AudioAnalysisTest AudioAutomationToolsTest ControlWarpCommandsTest WriteRefusalGateTest AudioClipLoopTest ControlTempoMapCommandsTest TapTempoTest -j 20 > logs/build-27-round2-family.log 2>&1
+BUILD_EXIT=0
+$ cd build/tests && ctest -R '^(ArrangerTimelineTest|SampleClipWindowTest|WarpQuantizeTest|SampleClipWarpTest|ClipSerialisationTest|ArrangeToolsTest|AudioEditingTest|SampleClipWarpModeMenuTest|SampleClipStretchTest|SampleClipRubberBandTest|ClipWarpPersistenceTest|ClipConsolidateTest|AudioAnalysisTest|AudioAutomationToolsTest|ControlWarpCommandsTest|WriteRefusalGateTest|AudioClipLoopTest|ControlTempoMapCommandsTest|TapTempoTest)$' --output-on-failure > logs/test-28-round2-family.log 2>&1
+CTEST_EXIT=0
+100% tests passed out of 19
+```
+
+The reviewer's focused list — `SampleClipWindowTest`, `WarpQuantizeTest`,
+`SampleClipWarpTest`, `ClipSerialisationTest`, `ArrangeToolsTest`, `AudioEditingTest`,
+`SampleClipWarpModeMenuTest` — is inside that run, together with the GUI regression.
+
+---
+
 ## Gates
 
 ```
 $ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-feature-check-1.log 2>&1
+FEATURE_CHECK_EXIT=0
+```
+
+and again after the round-2 change:
+
+```
+$ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-feature-check-2.log 2>&1
 FEATURE_CHECK_EXIT=0
 ```
 
@@ -403,6 +544,10 @@ No gate limit and no baseline was re-anchored.
   `tests/src/core/WarpQuantizeTest.cpp`,
   `tests/src/tracks/SampleClipWindowTest.cpp`, `tests/upstream-modifications.txt`
   (cluster review-17b7bfa95)
+- `beb00b6a4` — `include/SampleClipView.h`, `src/gui/clips/SampleClipView.cpp`,
+  `tests/src/gui/ArrangerTimelineTest.cpp`, `tests/src/core/WarpQuantizeTest.cpp`,
+  `tests/upstream-modifications.txt` (cluster review-17b7bfa95, round 2: the GUI
+  overlay's analysis cache)
 - this report
 
 `git status` is clean.
@@ -537,7 +682,32 @@ The new code uses `<algorithm>`, `<utility>`, `<vector>`, `<array>` and
 `std::sort`/`std::pair`/`std::span`, all of which the project already uses
 (`std::span` is already in the test file), and the project is C++20.
 
-**7. "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+
+**7. Round 2 — the GUI path (the reviewer's blocking finding).**
+
+- The regression test FAILS with the product change reverted and PASSES with it:
+  `ctest -R '^ArrangerTimelineTest$'` → EXIT 8 with
+  `the transients sit at 99 and 99, expected 45 and 93` (the stale forward frames
+  clamped onto the play window's edge) and EXIT 0 with the fix restored.
+- The test is deterministic: the bursts are the fixture's (`test::burstAudio`, fixed
+  samples), the clip's window is authored by the test, the reversal is the GUI's own
+  `reverseSample()` slot, and the assertion reads the overlay's own tick list. No
+  clock, no sleep, no rendering, no thread.
+- The fix is at the cause: the overlay's analysis cache is keyed by the ANALYSED
+  RANGE, and the analysed range is the clip's audible window, so the direction is part
+  of the key; `reverseSample()` drops the cache as well. The overlay's other caller is
+  the paint path (`src/gui/clips/SampleClipView.cpp:456`, `paintTransients(p,
+  transientTicks(), ...)`), which draws one mark per tick — the order of the ticks does
+  not matter to it, which is why the regression asserts the SET of the two ticks.
+- No collateral damage: for a forward clip the audible range IS the window, so the key
+  and the analysed frames are exactly the ones of round 1; an untrimmed reversed clip
+  analyses the whole source either way, so nothing moves.
+- Realtime: the overlay is painted on the GUI thread, not the audio thread; the change
+  adds no allocation to the paint path (the analysis is the slow part that was already
+  cached) and no new signal, lock or command. The GUI's reverse journals no undo step
+  of its own, before and after the change.
+
+**8. "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
 the intended contract that shows it."**
 
 Not applicable: all three verdicts in this batch are FIXED, and each one carries
@@ -547,3 +717,8 @@ asymmetric-trim mirror) are named as such in that section, with the commit that
 fixed them (`09674ea8a`) and the code that carries the fix
 (`src/core/SampleClip.cpp:809` `SampleClip::timelinePosAt()` and its regression
 `SampleClipWindowTest::aReversedImpulseSoundsWhereItsTransientPlaces()`).
+---
+
+new-p16-205: FIXED
+new-p17-158: FIXED
+review-17b7bfa95: FIXED
