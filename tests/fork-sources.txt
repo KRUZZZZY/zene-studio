@@ -2128,6 +2128,7 @@ tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py
+tests/control-workflow-models.py
 tests/control_detect_fixtures.py
 tests/control_instance_diagnosis.py
 tests/control_pipe_client.py

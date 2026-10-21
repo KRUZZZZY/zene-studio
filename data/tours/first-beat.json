@@ -10,6 +10,8 @@
 		{"target": "header_play", "title": "Play it",
 		 "text": "Space starts and stops the song. The header shows the position, tempo and loudness."},
 		{"target": "shellPanel_inspector", "panel": "inspector", "title": "The Inspector",
-		 "text": "Whatever you select - a track, a clip or a mixer channel - shows its settings here. Its More button lists everything you can do to it."}
+		 "text": "Whatever you select - a track, a clip or a mixer channel - shows its settings here. Its More button lists everything you can do to it."},
+		{"target": "shellPanel_inspector", "panel": "inspector", "title": "Patterns, clips and cells",
+		 "text": "Three ways to place music: a PatternStore pattern is reusable content, referenced by a PatternTrack whose empty PatternClip placeholder sits on the timeline; a MIDI clip holds its own notes at its position on an instrument track; a launcher cell references a pattern or an audio file and launches on the bar. A PatternTrack placeholder has no mixer channel of its own - the pattern's PatternStore tracks make its sound. Select the sample track and read the Inspector's \"To ...\" channel, then open Mix > Routing; an agent reads the same assignment with track.overview and mixer.get_state."}
 	]
 }

@@ -58,9 +58,9 @@ struct Task
 	const char* groups;
 };
 
-const std::array<Task, 11>& tasks()
+const std::array<Task, 12>& tasks()
 {
-	static const std::array<Task, 11> list{{
+	static const std::array<Task, 12> list{{
 		{"window", QT_TRANSLATE_NOOP("HelpTasks", "The window"), "header browser inspector panel view zoom", "window view"},
 		{"arrange", QT_TRANSLATE_NOOP("HelpTasks", "Arranging"), "arranger playlist timeline clip track automation marker "
 			"loop tempo transport", "arrangement clip track automation range section selection marker location warp video "
@@ -75,6 +75,8 @@ const std::array<Task, 11>& tasks()
 			"keyboard", "record comp audio midi tuner"},
 		{"launch", QT_TRANSLATE_NOOP("HelpTasks", "The launcher"), "session clip launch scene live performance link sync",
 			"session livecode link clock"},
+		{"workflows", QT_TRANSLATE_NOOP("HelpTasks", "Patterns, clips and cells"), "pattern patternstore patterntrack "
+			"patternclip midi clip launcher cell scene session mixer channel routing arrange", ""},
 		{"projects", QT_TRANSLATE_NOOP("HelpTasks", "Projects"), "save open file export render bounce import revisions "
 			"collaborate", "project revisions dawproject interchange render export browser collab"},
 		{"agents", QT_TRANSLATE_NOOP("HelpTasks", "Scripts, agents and controllers"), "script lua agent socket mcp "
@@ -96,7 +98,9 @@ const QHash<QString, QString>& groupTopics()
 		{
 			for (const QString& group : QString::fromLatin1(task.groups).split(QLatin1Char(' ')))
 			{
-				out.insert(group, QLatin1String(task.topic));
+				// A section that introduces a model but owns no commands has no
+				// command group; it must not claim the empty one.
+				if (!group.isEmpty()) { out.insert(group, QLatin1String(task.topic)); }
 			}
 		}
 		return out;

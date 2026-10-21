@@ -100,6 +100,17 @@ private slots:
 			const QString heading = QStringLiteral("<h2 id=\"%1\">%2</h2>").arg(topic, help::topicTitle(topic));
 			QVERIFY2(html.contains(heading), qPrintable(heading));
 		}
+		// ... and the other way: every top-level manual section is a task app.help can open,
+		// in the manual's order (Q050-159 adds the patterns / clips / cells section).
+		QStringList manualTopics;
+		for (int at = html.indexOf(QStringLiteral("<h2 id=\"")); at >= 0;
+			at = html.indexOf(QStringLiteral("<h2 id=\""), at + 1))
+		{
+			const int first = at + 8;  // just past <h2 id="
+			manualTopics << html.mid(first, html.indexOf(QLatin1Char('"'), first) - first);
+			at = first;
+		}
+		QCOMPARE(manualTopics, help::topics());
 		HelpCenter* centre = HelpCenter::showHelp(QString(), true);
 		centre->filterReference(QStringLiteral("mixing"));
 		const QString text = centre->referenceText();
