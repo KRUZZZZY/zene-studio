@@ -30,12 +30,14 @@ The first test launch was only a setup failure: the SlicerT module had not been 
 
 ## Gates
 
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4467-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4467-port.r1/logs/08-feature-check-pre-report.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` returned EXIT=0. The table was all PASS: `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity` (no new item), and `file-length` (no new item). The output is in `08-feature-check-pre-report.log`.
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4467-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4467-port.r1/logs/08-feature-check-pre-report.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` returned EXIT=0. The final pre-commit run used `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4467-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4467-port.r1/logs/10-feature-check-final-before-commit.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` and also returned EXIT=0. Both tables were all PASS: `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity` (no new item), and `file-length` (no new item).
+
+The pre-commit completion check `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4467-port 4467-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4467-port.r1/logs/09-submit-precommit.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` returned EXIT=1 because the test and report were not yet committed. After commit, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4467-port 4467-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4467-port.r1/logs/11-submit-after-commit.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` returned EXIT=0 with `RESULT: PASS - submit`.
 
 | Gate | EXIT |
 | --- | ---: |
 | `feature_check.py` | 0 |
-| `submit_check.py` | pending |
+| `submit_check.py` | 0 |
 
 ## Self-check
 
@@ -45,7 +47,7 @@ The first test launch was only a setup failure: the SlicerT module had not been 
 - Compatibility: this port changes no sample format, project serialization, undo path, or control command. The 128-slot bound and its overflow behavior are already in the newest train; this port adds no limit or check.
 - ALREADY-FIXED evidence: current source uses the preconstructed slot array and allocation-free claim/reset paths at `plugins/SlicerT/SlicerT.h:73-81`, `plugins/SlicerT/SlicerT.cpp:79-91,132-145,172-185`, and `include/Sample.h:62-69`.
 - Registration: this changes an existing forked test file, already present in `tests/fork-sources.txt` and registered in `tests/CMakeLists.txt`; no new file is unregistered.
-- Completion check: `submit_check.py` will be rerun after the commit; the earlier pre-commit check returned EXIT=1 only because the test and report were uncommitted.
+- Completion check: the post-commit `submit_check.py` run returned EXIT=0 and `RESULT: PASS - submit`. Its five `?` prompts are addressed by the regression reversal, determinism, caller/sibling, compatibility, and ALREADY-FIXED evidence above.
 
 ## Files in this port commit
 
