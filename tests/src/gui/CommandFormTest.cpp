@@ -221,6 +221,40 @@ private slots:
 		QCOMPARE(args.value(QStringLiteral("items")).toArray(), (QJsonArray{1, 2}));
 	}
 
+	//! A number written with setField() comes back as the number given, not rounded to six digits.
+	void aNumberWrittenToAFieldIsReadBackUnrounded()
+	{
+		CommandForm form(echo({{QStringLiteral("track"), QStringLiteral("trk-1")}}));
+		QVERIFY(form.setField(QStringLiteral("name"), QStringLiteral("x")));  // required by the schema
+		QVERIFY(form.setField(QStringLiteral("ratio"), 0.123456789));
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("ratio")).toDouble(), 0.123456789);
+	}
+
+	//! A form default is written through the same formatter, so it is not rounded either.
+	void aNumberDefaultIsSentUnrounded()
+	{
+		CommandCall call = echo({{QStringLiteral("track"), QStringLiteral("trk-1")}});
+		call.defaults.insert(QStringLiteral("name"), QStringLiteral("x"));  // required by the schema
+		call.defaults.insert(QStringLiteral("ratio"), 0.123456789);
+		CommandForm form(call);
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form.collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("ratio")).toDouble(), 0.123456789);
+	}
+
+	//! The text a number reads as stays short: the fix keeps the digits a number needs and no more.
+	void aNumberReadsAsItsShortestExactText()
+	{
+		QCOMPARE(valueText(QJsonValue(0.5)), QStringLiteral("0.5"));
+		QCOMPARE(valueText(QJsonValue(1234567.0)), QStringLiteral("1234567"));
+		QCOMPARE(valueText(QJsonValue(0.1)), QStringLiteral("0.1"));
+		QCOMPARE(valueText(QJsonValue(0.123456789)), QStringLiteral("0.123456789"));
+	}
+
 	//! setField()'s contract: false when the value does not fit the field's type, so a caller never
 	//! takes "accepted" for "this field now holds your value" when it holds the wrong thing.
 	void aValueOfTheWrongTypeIsRefusedByTheFieldItDoesNotFit()
