@@ -300,6 +300,29 @@ private slots:
 		QCOMPARE(analyser.getEnergy(), 0.0f);
 	}
 
+	//! The analyser must not drop the samples that do not fit into an FFT window: a block
+	//! that crosses the window boundary keeps its tail for the next window. A stream of N
+	//! frames is therefore analysed in exactly N / window whole windows - the dropped tail
+	//! used to delay every following window, so the analyser ran fewer of them.
+	void theAnalyserKeepsTheSamplesThatDoNotFitIntoTheWindow()
+	{
+		EqAnalyser analyser;
+		constexpr f_cnt_t blockFrames = 300;
+		constexpr int blocks = 41;
+		const std::vector<SampleFrame> block(blockFrames, SampleFrame{0.f, 0.f});
+		int analyses = 0;
+		for (int i = 0; i < blocks; ++i)
+		{
+			// The GUI re-arms the analyser on every refresh, the analyser disarms itself
+			// after the analysis it ran.
+			analyser.setActive(true);
+			analyser.analyze(InterleavedBufferView<const float, 2>{block.data(), blockFrames});
+			if (!analyser.getActive()) { ++analyses; }
+		}
+		const int expected = static_cast<int>(blocks * blockFrames / FFT_BUFFER_SIZE);
+		QCOMPARE(analyses, expected);
+	}
+
 	void normalizationRejectsAOneSampleBlock()
 	{
 		const std::vector<float> spectrum{1.0f};

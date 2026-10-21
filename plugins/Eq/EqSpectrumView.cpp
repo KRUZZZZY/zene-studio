@@ -38,7 +38,7 @@ namespace lmms
 
 
 EqAnalyser::EqAnalyser() :
-	m_framesFilledUp ( 0 ),
+	m_pendingFrames ( 0 ),
 	m_energy ( 0 ),
 	m_sampleRate ( 1 ),
 	m_active ( true )
@@ -84,22 +84,37 @@ void EqAnalyser::analyze(InterleavedBufferView<const float, 2> buf)
 		m_inProgress=true;
 		const int FFT_BUFFER_SIZE = 2048;
 		f_cnt_t f = 0;
+		int staged = m_pendingFrames;
 		if (buf.frames() > FFT_BUFFER_SIZE)
 		{
-			m_framesFilledUp = 0;
+			// A block longer than the window: only its last window is analysed.
+			staged = 0;
+			m_pendingFrames = 0;
 			f = buf.frames() - FFT_BUFFER_SIZE;
 		}
-		// merge channels
-		for (; f < buf.frames(); ++f)
+		// merge channels into the window; the frames that do not fit into it are kept
+		// for the next window instead of being dropped
+		for (; f < buf.frames() && staged < FFT_BUFFER_SIZE; ++f)
 		{
-			m_buffer[m_framesFilledUp] = (buf[f][0] + buf[f][1]) * 0.5f;
-			++m_framesFilledUp;
+			m_pending[staged++] = (buf[f][0] + buf[f][1]) * 0.5f;
 		}
 
-		if( m_framesFilledUp < FFT_BUFFER_SIZE )
+		if( staged < FFT_BUFFER_SIZE )
 		{
+			m_pendingFrames = staged;
 			m_inProgress = false;
 			return;
+		}
+
+		// the window is full: it goes to the FFT, the rest of the block stays pending
+		for( int i = 0; i < FFT_BUFFER_SIZE; i++ )
+		{
+			m_buffer[i] = m_pending[i];
+		}
+		m_pendingFrames = 0;
+		for (; f < buf.frames(); ++f)
+		{
+			m_pending[m_pendingFrames++] = (buf[f][0] + buf[f][1]) * 0.5f;
 		}
 
 		m_sampleRate = Engine::audioEngine()->outputSampleRate();
@@ -123,7 +138,6 @@ void EqAnalyser::analyze(InterleavedBufferView<const float, 2> buf)
 		m_energy = mergedBufferMaximum == 0.0f ? 0.0f
 			: maximum( m_bands, MAX_BANDS ) / mergedBufferMaximum;
 
-		m_framesFilledUp = 0;
 		m_inProgress = false;
 		m_active = false;
 	}
@@ -174,7 +188,7 @@ bool EqAnalyser::getInProgress()
 
 void EqAnalyser::clear()
 {
-	m_framesFilledUp = 0;
+	m_pendingFrames = 0;
 	m_energy = 0;
 	memset( m_buffer, 0, sizeof( m_buffer ) );
 	memset( m_bands, 0, sizeof( m_bands ) );

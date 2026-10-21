@@ -59,7 +59,10 @@ private:
 	fftwf_complex * m_specBuf;
 	float m_absSpecBuf[FFT_BUFFER_SIZE+1];
 	float m_buffer[FFT_BUFFER_SIZE*2];
-	int m_framesFilledUp;
+	//! The merged samples of the frames that did not fit into the last FFT window. They
+	//! start the next one, so a block that crosses the window boundary loses nothing.
+	float m_pending[FFT_BUFFER_SIZE];
+	int m_pendingFrames;
 	float m_energy;
 	int m_sampleRate;
 	bool m_active;
