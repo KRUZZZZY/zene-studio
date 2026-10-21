@@ -228,6 +228,7 @@ private slots:
 		QVERIFY2(track->restoreRanInsideGuard(),
 			"the track version replaced its clips outside the audio guard: the change mutex was free while the replacement clip was restored");
 		QCOMPARE(track->numOfClips(), 1);
+		QVERIFY2(!changeMutexIsHeld(), "the audio change mutex remained held after track-version replacement");
 	}
 
 	void undoAndRedoOfTrackVersionSwitchKeepModelGuardThroughClipRestore()
