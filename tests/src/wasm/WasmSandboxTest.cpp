@@ -259,6 +259,9 @@ private slots:
 	// ---- cluster new-p8-250: a reload keeps the latency compensation ----
 	void p7_reloadKeepsLatencyCompensationWhileLoading();
 
+	// ---- cluster new-p14-379: a refused module load says why ----
+	void p8_failedModuleLoadIsReportedInTheStatusText();
+
 private:
 };
 
@@ -1215,6 +1218,75 @@ void WasmSandboxTest::p7_reloadKeepsLatencyCompensationWhileLoading()
 		"after it resolved: effect=%d chain=%d",
 		reportedWhileLoading, cachedWhileLoading, kTrueLatency, kModuleLatency,
 		periodFrames, effect->latencyFrames(), chain.latencyFrames());
+}
+
+// ---------------------------------------------------------------------------
+// cluster new-p14-379: a refused module load says why
+//
+// The controls model keeps the reason of a failed load in m_error, but the
+// status line the dialog shows was built from the worker's state alone: after
+// a refused load the user saw "no module loaded" (or "ready", for the module
+// that kept running) and never learned why the module they picked was
+// refused. The reason must appear in the status text, and a later successful
+// load must clear it again.
+//
+// The failure is produced by a file that is not a wasm module at all, so the
+// load is refused by the host's own checks: no timing, no thread and no race
+// is involved.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p8_failedModuleLoadIsReportedInTheStatusText()
+{
+	QTemporaryDir dir;
+	QVERIFY(dir.isValid());
+	const QString broken = dir.filePath("not-a-module.wasm");
+	QFile brokenFile(broken);
+	QVERIFY(brokenFile.open(QIODevice::WriteOnly));
+	brokenFile.write("this is not a wasm module");
+	brokenFile.close();
+
+	// Nothing loaded yet: the status line has to carry the reason.
+	WasmEffect empty(nullptr, nullptr);
+	auto* emptyControls = empty.controls();
+	QVERIFY(!emptyControls->loadModule(broken));
+	const QString emptyError = emptyControls->lastError();
+	QVERIFY2(!emptyError.isEmpty(), "a refused load must record why it was refused");
+	const QString emptyStatus = emptyControls->statusText();
+	QVERIFY2(emptyStatus.contains(emptyError),
+		qPrintable("the status line hides the load failure: \"" + emptyStatus
+			+ "\" does not contain \"" + emptyError + "\""));
+
+	// A module is running: the refused load leaves it running (all or
+	// nothing), and the status line has to say both - the module still runs
+	// AND the new one was refused.
+	WasmEffect running(nullptr, nullptr);
+	auto* runningControls = running.controls();
+	QVERIFY2(runningControls->loadModule(modulePath("gain")), "the gain module must load");
+	QVERIFY(runningControls->lastError().isEmpty());
+	QCOMPARE(runningControls->statusText().contains("ready"), true);
+	QVERIFY(!runningControls->loadModule(broken));
+	QCOMPARE(running.modulePath(), modulePath("gain"));
+	const QString runningError = runningControls->lastError();
+	QVERIFY(!runningError.isEmpty());
+	const QString runningStatus = runningControls->statusText();
+	QVERIFY2(runningStatus.contains(runningError),
+		qPrintable("the status line hides the load failure: \"" + runningStatus
+			+ "\" does not contain \"" + runningError + "\""));
+	QVERIFY2(runningStatus.contains("ready"),
+		qPrintable("the status line must still report the module that runs: \""
+			+ runningStatus + "\""));
+
+	// A load that succeeds clears the reason again.
+	QVERIFY2(runningControls->loadModule(modulePath("gain")), "the gain module must load");
+	QVERIFY(runningControls->lastError().isEmpty());
+	QVERIFY2(!runningControls->statusText().contains(runningError),
+		qPrintable("the status line still shows the old failure: \""
+			+ runningControls->statusText() + "\""));
+
+	qInfo("P8 refused load: empty -> \"%s\"; with a module running -> \"%s\"; "
+		"after a successful load -> \"%s\"",
+		qPrintable(emptyStatus), qPrintable(runningStatus),
+		qPrintable(runningControls->statusText()));
 }
 
 } // namespace lmms::wasm
