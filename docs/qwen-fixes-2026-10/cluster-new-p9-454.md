@@ -95,6 +95,17 @@ Files committed: `include/MidiHandoffQueue.h`,
   slots exceed FluidSynth's default polyphony (64), and the 256-event queue is
   drained every period; a refused event leaves the note silent for that period
   rather than allocating.
+- Gates and pre-submit check: `python3 submit_check.py <worktree> new-p9-454`
+  reports PASS for commits, clean tree, report, tests and test registration.
+  Its only FAIL is the `feature_check.py` gate row, because that installed
+  script tries to `mkdir` a sibling log directory
+  (`<worktree>-feature-check`) outside this sandbox and gets `PermissionError`.
+  The gate logic itself passes: the same script with only its log path
+  redirected gave RESULT PASS, EXIT=0, and the individual gate commands are
+  EXIT=0 (see above). This is a sandbox-path limitation, not a code or gate
+  failure; no gate limit or baseline was changed.
+- Test registration: `tests/src/plugins/Sf2PlayerRealtimeTest.cpp` is added to
+  `LMMS_TESTS` in `tests/CMakeLists.txt` (the new-test check passes).
 - Verdict: both findings are REAL and FIXED; neither is ALREADY-FIXED or
   FALSE-POSITIVE. The 453 QA DISPUTE asked for a real-time hand-off, SF2 in
   the RT-safety scope, RED/GREEN proof and corrected evidence; those are the
