@@ -57,9 +57,15 @@
 
 #include <QtTest>
 
+#include <array>
+#include <cmath>
+#include <vector>
+
+#include "AudioBufferView.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "LocalZynAddSubFx.h"
 #include "MidiEvent.h"
 #include "Song.h"
 #include "ZynAddSubFx.h"
@@ -77,6 +83,7 @@ public:
 
 	using ZynAddSubFxInstrument::audioLockWaitMs;
 	using ZynAddSubFxInstrument::forwardQueuedMidi;
+	using ZynAddSubFxInstrument::processImpl;
 	using ZynAddSubFxInstrument::m_midiHandoff;
 	using ZynAddSubFxInstrument::m_pluginMutex;
 	using ZynAddSubFxInstrument::processLock;
@@ -240,6 +247,73 @@ private slots:
 
 		instrument.forwardQueuedMidi();
 		QCOMPARE(instrument.m_testLastForwardedOffset, 42);
+	}
+
+	//! Renders one period through the instrument and returns the two planes.
+	static auto renderPeriod(TestInstrument& instrument, f_cnt_t frames)
+		-> std::array<std::vector<float>, 2>
+	{
+		std::array<std::vector<float>, 2> planes{std::vector<float>(frames), std::vector<float>(frames)};
+		float* data[2] = {planes[0].data(), planes[1].data()};
+		instrument.processImpl(PlanarBufferView<const float, 0>{nullptr, 0},
+			PlanarBufferView<float, 2>{data, frames});
+		return planes;
+	}
+
+	//! Whether the two renders carry the same samples in [from, to).
+	static auto sameSamples(const std::array<std::vector<float>, 2>& a,
+		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to) -> bool
+	{
+		for (ch_cnt_t channel = 0; channel < 2; ++channel)
+		{
+			for (f_cnt_t frame = from; frame < to; ++frame)
+			{
+				if (std::fabs(a[channel][frame] - b[channel][frame]) > 1e-9f) { return false; }
+			}
+		}
+		return true;
+	}
+
+	//! Whether the two renders differ somewhere in [from, to).
+	static auto anyDifferent(const std::array<std::vector<float>, 2>& a,
+		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to) -> bool
+	{
+		for (ch_cnt_t channel = 0; channel < 2; ++channel)
+		{
+			for (f_cnt_t frame = from; frame < to; ++frame)
+			{
+				if (std::fabs(a[channel][frame] - b[channel][frame]) > 1e-6f) { return true; }
+			}
+		}
+		return false;
+	}
+
+	//! The scheduled frame decides where in the period the note starts.
+	void theScheduledFrameDecidesWhereTheNoteStarts()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+
+		// The period without the note: the reference the note is compared against.
+		const auto reference = renderPeriod(instrument, frames);
+
+		// The note, scheduled 100 frames into the next period.
+		const MidiEvent noteOn{MidiNoteOn, 0, 60, 100};
+		QVERIFY(instrument.handleMidiEvent(noteOn, TimePos(), 100));
+		const auto withNote = renderPeriod(instrument, frames);
+
+		// Zyn renders in blocks, so the note starts at the first block boundary at or
+		// after the frame it was scheduled at - and not before it.
+		const auto block = static_cast<f_cnt_t>(LocalZynAddSubFx::SynthBlockSize);
+		const auto onset = ((100 + block - 1) / block) * block;
+		QVERIFY(onset > 0 && onset < frames);
+
+		QVERIFY2(sameSamples(reference, withNote, 0, onset),
+			"the note started before the block boundary at or after its scheduled frame");
+		QVERIFY2(anyDifferent(reference, withNote, onset, frames),
+			"the note never sounded: the scheduled frame was not applied at all");
 	}
 
 private:

@@ -2775,3 +2775,6 @@ tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster 908 review round 2: the 
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	cluster new-p16-276 review round 2: processMidiEvent() takes the frame the event was scheduled at, and SynthBlockSize names the granularity Zyn renders in.
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	cluster new-p16-276 review round 2: processMidiEvent() takes the scheduled frame (the plumbing; the scheduling lands with the fix).
 plugins/ZynAddSubFx/RemoteZynAddSubFx.cpp	cluster new-p16-276 review round 2: the client hands the scheduled frame to the synth instead of dropping it.
+plugins/ZynAddSubFx/LocalZynAddSubFx.h	cluster new-p16-276 review round 2: the scheduled events (their frame, their place in the period) and the transport size are members of the synth, so queueing an event allocates nothing.
+plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	cluster new-p16-276 review round 2: a scheduled MIDI event is applied while the period is rendered, at the frame it was scheduled for, and Zyn renders in blocks of SynthBlockSize so the event's voice starts at the first block boundary at or after that frame.
+tests/src/plugins/ZynAddSubFxInstrumentTest.cpp	cluster new-p16-276 review round 2: the regression that observes where the note starts - in the rendered audio, not in the queued event.
