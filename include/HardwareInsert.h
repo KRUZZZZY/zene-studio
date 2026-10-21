@@ -26,6 +26,8 @@
 #define LMMS_HARDWARE_INSERT_H
 
 #include <atomic>
+#include <bit>
+#include <cstdint>
 #include <vector>
 
 #include "AudioIoSetup.h"
@@ -36,6 +38,11 @@
 
 class QDomDocument;
 class QDomElement;
+
+#ifdef LMMS_TESTING
+//! The regression test for the ping's state machine (tests/src/core/HardwareIoTest.cpp).
+class HardwareIoTest;
+#endif
 
 namespace lmms
 {
@@ -101,10 +108,12 @@ public:
 
 	/*! Interface thread: call off a ping - a measurement nobody is waiting for any more.
 	 *  The click may already be on its way, so this only means the answer is dropped:
-	 *  a ping the user undid must not land a measured latency afterwards. */
-	void cancelPing() { m_ping.store(static_cast<int>(PingState::Idle), std::memory_order_release); }
+	 *  a ping the user undid must not land a measured latency afterwards. The state machine is
+	 *  a compare-and-swap, so a period that had already read the request cannot put the ping
+	 *  back behind this cancel. */
+	void cancelPing();
 
-	PingState pingState() const { return static_cast<PingState>(m_ping.load(std::memory_order_acquire)); }
+	PingState pingState() const { return pingStateOf(m_ping.load(std::memory_order_acquire)); }
 
 	/*! The channel's worker: send @a buffer's period, take the return, and write the insert's output
 	 *  (the delayed dry signal and the return, by 'mix') back into @a buffer. Nothing while disabled or
@@ -126,6 +135,53 @@ private:
 	void listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept;
 	void writeOutput(SampleFrame* buffer, f_cnt_t frames, bool measuring) noexcept;
 
+	/*! The ping's state machine, in one atomic word: the state in the low bits, the frames the
+	 *  last ping measured above them. One word, so a state change and the figure it carries are
+	 *  published together - a cancel cannot be overwritten by a move that was already on its
+	 *  way, and a ping nobody waits for any more cannot publish its figure. */
+	using PingWord = std::int64_t;
+	static constexpr int PingStateBits = 3;
+	static constexpr PingWord PingStateMask = (PingWord{1} << PingStateBits) - 1;
+	static_assert(sizeof(int) == sizeof(std::uint32_t), "hardware insert measurements use 32-bit ints");
+
+	static PingWord packPing(int measured, PingState state) noexcept
+	{
+		const auto measuredBits = std::bit_cast<std::uint32_t>(measured);
+		return static_cast<PingWord>((static_cast<std::uint64_t>(measuredBits) << PingStateBits)
+			| static_cast<std::uint64_t>(state));
+	}
+	static PingState pingStateOf(PingWord word) noexcept
+	{
+		return static_cast<PingState>(word & PingStateMask);
+	}
+	static int measuredOf(PingWord word) noexcept
+	{
+		const auto measuredBits = static_cast<std::uint32_t>(static_cast<std::uint64_t>(word) >> PingStateBits);
+		return std::bit_cast<int>(measuredBits);
+	}
+
+	/*! The audio thread's moves on the ping state machine. Each of them takes the word the
+	 *  period read (@a expected), so it is the move that was on its way when the interface
+	 *  thread changed the word in between. */
+	//! The period claims the request: the click goes out and the ping waits for its answer.
+	bool claimPing(PingWord expected) noexcept;
+	//! The period hears the click: the ping is done and @a frames is what it measured.
+	bool publishPingResult(PingWord expected, int frames) noexcept;
+	//! The period heard nothing in time: the ping failed.
+	void failPing(PingWord expected) noexcept;
+	//! The interface thread: move the ping to @a state, keeping the figure.
+	void movePingTo(PingState state) noexcept;
+	//! The interface thread: the figure the insert reports (@a measured; negative: never measured).
+	void setMeasured(int measured) noexcept;
+	//! The frames the last ping measured (negative: never measured).
+	int measuredFrames() const { return measuredOf(m_ping.load(std::memory_order_acquire)); }
+	//! The ping's word a period reads.
+	PingWord pingWord() const noexcept { return m_ping.load(std::memory_order_acquire); }
+
+#ifdef LMMS_TESTING
+	friend class ::HardwareIoTest;
+#endif
+
 	Settings m_settings;
 	std::vector<SampleFrame> m_send;
 	std::vector<SampleFrame> m_return;
@@ -134,8 +190,8 @@ private:
 	std::size_t m_ringFill = 0;
 	LatencyCompensation m_dry;
 	bool m_sent = false;
-	std::atomic<int> m_ping{static_cast<int>(PingState::Idle)};
-	std::atomic<int> m_measured{-1};  //!< the audio thread's result, folded into the settings by the interface
+	//! The ping's state and the figure it measured, in one word.
+	std::atomic<PingWord> m_ping{packPing(-1, PingState::Idle)};
 	int m_pingFrames = 0;
 };
 
