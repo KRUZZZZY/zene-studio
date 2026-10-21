@@ -155,6 +155,11 @@ private:
 	//! fulfill LMMS' requirement of having stereo input and output
 	std::vector<std::unique_ptr<Lv2Proc>> m_procs;
 
+	//! Reports a state that could not be restored through the project load's error
+	//! path (cluster new-p17-83): the processor keeps its default state, so the loss
+	//! must reach the user instead of passing in silence.
+	void reportStateRestoreFailure(int instance);
+
 	bool m_hasGUI = false;
 	unsigned m_channelsPerProc;
 
