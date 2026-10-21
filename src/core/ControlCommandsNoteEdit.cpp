@@ -9,7 +9,8 @@
  * fixed amount, not a note to a key). note.edit is the batch: every edit is validated before
  * anything is written (a batch with one bad entry changes nothing), then ONE MidiClip
  * checkpoint is taken and every edit applied, and the inverse is the same verb with each
- * note's previous values.
+ * note's previous values. A batch that would leave every note as it is takes no checkpoint
+ * and records no undo step.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -290,10 +291,10 @@ QJsonObject previousValues(const Note* note, const QJsonObject& values)
 	return before;
 }
 
-//! The W3 fields of one edit (repeats, recurrence, articulation, group); a mask is cut to its pattern.
-void applyConditions(Note* note, const QJsonObject& v)
+//! The conditions @a c has once the W3 fields of one edit (repeats, recurrence, articulation, group)
+//! are applied; a mask is cut to its pattern.
+NoteConditions conditionsAfter(NoteConditions c, const QJsonObject& v)
 {
-	NoteConditions c = note->conditions();
 	const auto take = [&v](const char* name, int* field) {
 		if (v.contains(QLatin1String(name))) { *field = v.value(QLatin1String(name)).toInt(); }
 	};
@@ -303,7 +304,12 @@ void applyConditions(Note* note, const QJsonObject& v)
 	take("articulation", &c.articulation);
 	take("group", &c.group);
 	c.recurMask = c.recurLength > 0 ? c.recurMask & ((1 << c.recurLength) - 1) : 0;
-	note->setConditions(c);
+	return c;
+}
+
+void applyConditions(Note* note, const QJsonObject& v)
+{
+	note->setConditions(conditionsAfter(note->conditions(), v));
 }
 
 //! The FL model's properties-box fields: slide, and the MPE timbre and pressure (Mod X / Mod Y).
@@ -331,6 +337,88 @@ void applyEdit(Note* note, const QJsonObject& v)
 	applyFlModel(note, v);
 }
 
+//! The state of one note as far as a batch can change it: what applyEdit writes, read back from the note.
+struct NoteState
+{
+	tick_t position;
+	int key;
+	tick_t length;
+	volume_t volume;
+	panning_t panning;
+	float probability;
+	bool muted;
+	int releaseVelocity;
+	float velocityJitter;
+	bool slide;
+	int timbre;
+	int pressure;
+	bool mpeCaptured;  //!< a timbre or pressure write captures the note's expression, even at 0
+	NoteConditions conditions;
+
+	bool operator==(const NoteState&) const = default;
+};
+
+NoteState stateOf(const Note* note)
+{
+	return NoteState{note->pos().getTicks(), note->key(), note->length().getTicks(), note->getVolume(),
+		note->getPanning(), note->probability(), note->muted(), note->releaseVelocity(),
+		note->velocityJitter(), note->slide(), note->mpeTimbre(), note->mpePressure(),
+		note->hasMpeExpression(), note->conditions()};
+}
+
+//! What applyEdit writes for the core fields of @a v, on a copy. The casts are applyEdit's own, and the
+//! values are validated before, so the setters' clamps never move one.
+void applyCoreTo(NoteState* s, const QJsonObject& v)
+{
+	const auto has = [&v](const char* name) { return v.contains(QLatin1String(name)); };
+	const auto num = [&v](const char* name) { return v.value(QLatin1String(name)).toDouble(); };
+	if (has("position")) { s->position = static_cast<tick_t>(num("position")); }
+	if (has("key")) { s->key = static_cast<int>(num("key")); }
+	if (has("length")) { s->length = static_cast<tick_t>(num("length")); }
+	if (has("velocity")) { s->volume = static_cast<volume_t>(num("velocity")); }
+	if (has("pan")) { s->panning = static_cast<panning_t>(num("pan")); }
+	if (has("probability")) { s->probability = static_cast<float>(num("probability")); }
+	if (has("muted")) { s->muted = num("muted") != 0; }
+	if (has("release_velocity")) { s->releaseVelocity = static_cast<int>(num("release_velocity")); }
+	if (has("velocity_spread")) { s->velocityJitter = static_cast<float>(num("velocity_spread")); }
+}
+
+//! What applyFlModel writes for the FL model's fields of @a v, on a copy.
+void applyFlModelTo(NoteState* s, const QJsonObject& v)
+{
+	if (v.contains(QStringLiteral("slide"))) { s->slide = v.value(QStringLiteral("slide")).toInt() != 0; }
+	if (v.contains(QStringLiteral("timbre")))
+	{
+		s->timbre = v.value(QStringLiteral("timbre")).toInt();
+		s->mpeCaptured = true;
+	}
+	if (v.contains(QStringLiteral("pressure")))
+	{
+		s->pressure = v.value(QStringLiteral("pressure")).toInt();
+		s->mpeCaptured = true;
+	}
+}
+
+//! Whether the batch leaves some note as it was. Each note's state is carried through the batch's entries in
+//! order, so a value set and then set back inside one batch counts as no change, as it does on the note.
+bool editChangesAnyNote(const std::vector<Edit>& edits)
+{
+	std::unordered_map<const Note*, NoteState> after;
+	for (const Edit& edit : edits)
+	{
+		auto it = after.find(edit.note);
+		if (it == after.end()) { it = after.emplace(edit.note, stateOf(edit.note)).first; }
+		applyCoreTo(&it->second, edit.values);
+		it->second.conditions = conditionsAfter(it->second.conditions, edit.values);
+		applyFlModelTo(&it->second, edit.values);
+	}
+	for (const auto& [note, state] : after)
+	{
+		if (!(state == stateOf(note))) { return true; }
+	}
+	return false;
+}
+
 ControlResult editNotes(const QJsonObject& args)
 {
 	ControlResult error;
@@ -339,6 +427,13 @@ ControlResult editNotes(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	std::vector<Edit> edits;
 	if (!resolveEdits(clip, args.value(QStringLiteral("edits")).toArray(), &edits, &error)) { return error; }
+	// BUG 12 (cluster new-p15-22): a batch that leaves every note as it is takes no checkpoint, so it leaves no undo
+	// step for control.undo to consume. Its reply reports that: edited 0, no notes, and no transaction.
+	if (!editChangesAnyNote(edits))
+	{
+		return ControlResult::success(QJsonObject{{QStringLiteral("clip"), clipId(ref.id)},
+			{QStringLiteral("edited"), 0}, {QStringLiteral("notes"), QJsonArray{}}});
+	}
 
 	QJsonArray inverseEdits;
 	QJsonArray ids;
