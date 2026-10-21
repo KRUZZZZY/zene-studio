@@ -153,7 +153,10 @@ stated. The tree was at `b61e5f965` (clean) before the first commit.
 | Affected-family run (after all three fixes) | From `build/tests`: `ctest -R 'Zyn\|OutOfProcess\|MidiHandoff' --output-on-failure` | 8 | `test-family-5.log`; **6 of 7** CTest suites passed: `MidiHandoffQueueTest`, `ZynSeparateProcessTest`, `ZynNoteOffTest`, `ZynAddSubFxInstrumentTest` and two out-of-process suites passed; the one failure is `CarlaMidiHandoffTest`, a pre-existing flake in Carla's own timing assertion (see the note below) |
 | Pre-existing flake, measured | From `build/tests`: `ctest -R '^CarlaMidiHandoffTest$'` three times | 8, 8, 0 | the same suite fails 2 runs out of 3 with `processing did not overlap MIDI producer activity`; it is Carla's own wall-clock assertion and this branch does not touch `plugins/CarlaBase/` at all (`git diff --name-only b61e5f965..HEAD`) |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-908` | **0** | `feature-check-1.log`; `RESULT: PASS` - fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length all PASS |
-| Gates (second run, after the report) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-908` | 0 | `feature-check-2.log` |
+| Gates (second run, after the report) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-908` | 0 | `feature-check-2.log`; `RESULT: PASS` |
+| Production build (the branch's binary) | `cmake --build build --target zene -j20` | 0 | `build-zene-final.log`; no `error:` in the log |
+| Gates (third run, final tree) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-908` | 0 | `feature-check-3.log`; `RESULT: PASS` |
+| Pre-submit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-908 908` | 0 | `submit-check-1.log`; `RESULT: PASS - submit` (every ASK item is answered in the Self-check section below) |
 
 ### Files committed
 
@@ -231,3 +234,14 @@ stated. The tree was at `b61e5f965` (clean) before the first commit.
    touched: the diff contains no `ControlCommands*` file and no new command id
    (`git diff --name-only b61e5f965..HEAD` lists seven files, none of them a
    command file), so the control-surface snapshot is untouched.
+8. **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+   the intended contract that shows it.** No verdict here is ALREADY-FIXED or
+   FALSE-POSITIVE, so there is nothing to cite in that shape: all three defects
+   are REAL and each one is reproduced by a case that fails on the pre-fix tree
+   (`test-red-908-proof.log`, `test-red-545.log`, `test-red-276.log`, exit 8
+   each) and passes on the fixed tree (exit 0 each). The one part of the 908
+   finding that was already fixed on this branch - `handleMidiEvent()` taking
+   the plugin mutex with a blocking lock - was fixed by the earlier commit
+   `f3953cc8e` ("Vestige, Carla and ZynAddSubFx queue MIDI instead of locking
+   for it"), and the remaining part (the audio path's own lock attempt) is what
+   this branch fixes.
