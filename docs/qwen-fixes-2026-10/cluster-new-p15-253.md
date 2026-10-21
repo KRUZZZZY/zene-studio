@@ -236,3 +236,27 @@ report commits; no gate rewrote a file.
 - **Undo / commands.** No control command was added, no command id changed, so the
   `ControlCommandsSnapshot` canary is untouched. The fix changes no undo step: a bus is not an
   undoable model object, and its registration was never an undo step.
+- **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
+  contract that shows it."** Not applicable: both verdicts are FIXED (the defect was in the
+  tree, the code is cited above, and the tests fail without the change). The contract that the
+  fix keeps is the comment at `src/core/AudioBusHandle.cpp:93-95`: a standalone sample bus may
+  be created on the audio path.
+
+## Submit check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-253` → **EXIT 0**
+(log: submit-check-1.log):
+
+```
+PRE-SUBMIT CHECK for new-p15-253
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p15-253.md
+  PASS  tests added or changed - tests/src/core/AudioBusHandleTest.cpp
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The five ASK items are answered in the Self-check section above, each with its evidence
+(the RED/GREEN exit codes, the deterministic seam, the caller and sibling check, the
+collateral-damage argument, and the not-applicable note for the verdict-specific item).
