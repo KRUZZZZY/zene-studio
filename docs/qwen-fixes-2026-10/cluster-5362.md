@@ -267,7 +267,12 @@ Commits (branch `bugs/qwen-5362`):
    (the `zene` target was rebuilt anyway). The sibling path into the same
    function — `parseManifest()`'s public `QString` overload — was given the
    same byte semantics as `scan()`, so the two cannot disagree.
-9. **"No collateral damage: a limit or check you add must not hit other
+9. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code
+   (file:line) or the intended contract that shows it."** — Not applicable: all
+   three verdicts are FIXED, and the code that showed each bug real is cited
+   per bug above (`src/core/ScriptPackage.cpp:121`, `:95`, `:71` historical
+   lines, and the current lines each fix touches).
+10. **"No collateral damage: a limit or check you add must not hit other
    callers that legitimately exceed it."** — The 4096-byte limit applies only
    to the manifest window (the documented 4 KB); it is not applied to the
    script *body*, which the engine still reads whole
