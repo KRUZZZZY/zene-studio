@@ -103,12 +103,13 @@ const ReversibilityRow kActionRows[] = {
 	// in ControlReversibilityTable.cpp, so the two are still ONE table.
 	// =====================================================================
 
-	R("transport.seek", RC::TrueInverse, true,
+	RC("transport.seek", RC::TrueInverse, true,
 		"the play head is engine state, not project state, and is not a "
 		"JournallingObject - so no object checkpoint exists for it",
 		"action checkpoint: the recorded undo step calls Song::setPlayPos with "
 		"the tick the transaction's before-state holds",
-		""),
+		"",
+		"gesture"),
 	// Rows restored from ControlReversibilityTableTrueInverse.cpp, which this
 	// structure retires: 030/w15-tempo-map branched before that split and wrote
 	// its tempo-map rows into the old file, so the merge that took the split

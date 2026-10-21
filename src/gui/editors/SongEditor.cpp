@@ -1073,10 +1073,13 @@ void SongEditorWindow::play()
 	emit playTriggered();
 	if( Engine::getSong()->playMode() != Song::PlayMode::Song )
 	{
-		Engine::getSong()->playSong();
+		// The Play button and Space start are the registered transport.play command, so
+		// the position they start from is announced through the same path as the agent's.
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.play"));
 	}
 	else
 	{
+		// A paused song resumes rather than restarting; the command has no pause verb.
 		Engine::getSong()->togglePause();
 	}
 }
@@ -1104,7 +1107,9 @@ void SongEditorWindow::recordAccompany()
 
 void SongEditorWindow::stop()
 {
-	m_editor->m_song->stop();
+	// The Stop button and Space stop are the registered transport.stop command, so the
+	// stopped position is announced once through the shared path.
+	ControlRegistry::instance()->invoke(QStringLiteral("transport.stop"));
 	getGUI()->pianoRoll()->stopRecording();
 	m_editor->m_timeLine->setRecording(false);
 	m_editor->m_positionLine->setRecording(false);

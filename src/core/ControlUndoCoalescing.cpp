@@ -103,12 +103,14 @@ QString coalescingKey(const QString& commandId, const QJsonObject& args)
 	QString key = commandId;
 	// The declaration is "clip", or "target,plugin,name,index" for a parameter:
 	// the VALUES of those arguments, in the declared order, name the target. An
-	// argument a call did not supply contributes an empty field, which keeps the
-	// field positions stable ("ch-1::0" and "ch-1::1" are two parameters).
+	// argument a call did not supply is NOT a target: an ordinary transport.seek
+	// with no drag token must open its own step rather than coalesce with the
+	// previous seek on an empty key.
 	for (const QString& raw : entry->coalesceTarget.split(QLatin1Char(',')))
 	{
 		const QString name = raw.trimmed();
 		if (name.isEmpty()) { continue; }
+		if (!args.contains(name)) { return QString(); }
 		key += QLatin1Char(':');
 		const QJsonValue value = args.value(name);
 		key += value.isString() ? value.toString() : QString::number(value.toDouble());

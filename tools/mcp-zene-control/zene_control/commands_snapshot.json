@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-21T05:32:57Z",
+  "captured_at": "2026-10-21T10:18:15Z",
   "commands": [
     {
       "args_schema": {
@@ -31203,6 +31203,9 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "gesture": {
+            "type": "string"
+          },
           "ticks": {
             "maximum": 2147483647,
             "minimum": 0,
@@ -31214,7 +31217,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the play head to an absolute position in ticks.",
+      "description": "Move the play head to an absolute position in ticks. An optional `gesture` names one drag: consecutive seeks carrying the same value coalesce into one undo step.",
       "group": "transport",
       "id": "transport.seek",
       "mutating": true,
@@ -35517,7 +35520,7 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-080/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-iorfii8e/zene.sock",
+    "source_socket": "/tmp/zctl-run-_cqrpf5v/zene.sock",
     "version": "0.4.0-alpha.3222+2da2ed3"
   },
   "kind": "zene-control-command-list",

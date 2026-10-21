@@ -29,8 +29,11 @@
 
 #include <QtTest>
 
+#include <algorithm>
+
 #include <QMouseEvent>
 #include <QTemporaryDir>
+#include <QToolButton>
 
 #include "AccessibleWidgets.h"
 #include "ClipView.h"
@@ -46,10 +49,12 @@
 #include "MusicalTime.h"
 #include "Note.h"
 #include "PianoRoll.h"
+#include "ProjectJournal.h"
 #include "ProjectMarkers.h"
 #include "ShellSelection.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "TimeLineWidget.h"
 #include "TimelineSpeech.h"
 #include "Track.h"
 #include "TrackView.h"
@@ -255,7 +260,69 @@ private slots:
 		QVERIFY2(announced().contains(speech::positionSpeech(0)), qPrintable(announced()));
 	}
 
-	void transportStartStopLocateScrubAnnouncesConfiguredPosition()
+	void arrangerScrubGestureAnnouncesConfiguredPosition()
+	{
+		// Q050-080 rework: a real drag of the arranger playhead (not a command call) scrubs
+		// through transport.seek and speaks the configured position. The whole gesture is
+		// ONE undo step and Ctrl+Z returns to where it started.
+		TimeLineWidget* line = getGUI()->songEditor()->m_editor->timeLine();
+		QVERIFY(line != nullptr);
+		auto* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		const int depth = journal->undoDepth();
+		const int y = std::max(1, line->height() / 2);
+		const QPoint start(line->markerX(TimePos(0)), y);
+		const QPoint middle(line->markerX(TimePos(Bar)), y);
+		const QPoint end(line->markerX(TimePos(2 * Bar)), y);
+		QTest::mousePress(line, Qt::LeftButton, Qt::NoModifier, start);
+		QTest::mouseMove(line, middle);
+		QTest::mouseMove(line, end);
+		QTest::mouseRelease(line, Qt::LeftButton, Qt::NoModifier, end);
+		QCoreApplication::processEvents();
+
+		QCOMPARE(Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks(), 2 * Bar);
+		QVERIFY2(announced().contains(QStringLiteral("Playhead")), qPrintable(announced()));
+		QVERIFY2(announced().contains(speech::positionSpeech(2 * Bar)), qPrintable(announced()));
+		QCOMPARE(journal->undoDepth(), depth + 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks(), 0);
+	}
+
+	void guiTransportControlsAnnouncePosition()
+	{
+		// The mounted arranger's own Play/Stop buttons and Space keys run the registered
+		// transport commands, not Song directly, so their position is announced once.
+		auto* window = getGUI()->songEditor();
+		QVERIFY(window != nullptr);
+		auto* playButton = window->findChild<QToolButton*>(QStringLiteral("playButton"));
+		auto* stopButton = window->findChild<QToolButton*>(QStringLiteral("stopButton"));
+		QVERIFY(playButton != nullptr);
+		QVERIFY(stopButton != nullptr);
+
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), Bar}}).ok);
+		playButton->click();
+		QVERIFY(Engine::getSong()->isPlaying());
+		QVERIFY2(announced().contains(QStringLiteral("Playing")), qPrintable(announced()));
+		QVERIFY2(announced().contains(speech::positionSpeech(Bar)), qPrintable(announced()));
+
+		stopButton->click();
+		QVERIFY(!Engine::getSong()->isPlaying());
+		QVERIFY2(announced().contains(QStringLiteral("Stopped")), qPrintable(announced()));
+		QVERIFY2(announced().contains(speech::positionSpeech(Engine::getSong()->getPlayPos().getTicks())),
+			qPrintable(announced()));
+
+		QTest::keyClick(window, Qt::Key_Space);
+		QVERIFY(Engine::getSong()->isPlaying());
+		QVERIFY2(announced().contains(QStringLiteral("Playing")), qPrintable(announced()));
+		QVERIFY2(announced().contains(speech::positionSpeech(Engine::getSong()->getPlayPos().getTicks())),
+			qPrintable(announced()));
+
+		QTest::keyClick(window, Qt::Key_Space);
+		QVERIFY(!Engine::getSong()->isPlaying());
+		QVERIFY2(announced().contains(QStringLiteral("Stopped")), qPrintable(announced()));
+	}
+
+	void transportStartStopLocateAnnouncesConfiguredPosition()
 	{
 		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 0}}).ok);
 		QVERIFY(announced().contains(speech::positionSpeech(0)));

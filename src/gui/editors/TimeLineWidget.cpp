@@ -34,6 +34,7 @@
 #include <QToolBar>
 
 #include "ConfigManager.h"
+#include "ControlRegistry.h"
 #include "DeprecationHelper.h"
 #include "embed.h"
 #include "KeyboardShortcuts.h"
@@ -310,6 +311,14 @@ void TimeLineWidget::mousePressEvent(QMouseEvent* event)
 	else if (event->button() == Qt::LeftButton && !ctrl) // move playhead
 	{
 		m_action = Action::MovePositionMarker;
+		// The arranger's own timeline is the song transport: a drag is one gesture, every
+		// seek it sends names it, so the moves coalesce into one undo step.
+		m_seekGesture.clear();
+		if (m_timeline == &Engine::getSong()->getTimeline(Song::PlayMode::Song))
+		{
+			m_seekGesture = QStringLiteral("arranger-%1-%2")
+				.arg(reinterpret_cast<quintptr>(this)).arg(++m_seekGestureSerial);
+		}
 	}
 
 	if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd)
@@ -337,6 +346,17 @@ void TimeLineWidget::mouseMoveEvent( QMouseEvent* event )
 	switch( m_action )
 	{
 		case Action::MovePositionMarker:
+			if (m_timeline == &Engine::getSong()->getTimeline(Song::PlayMode::Song))
+			{
+				// The arranger's scrub is the registered transport.seek, so every dragged position
+				// is spoken in the configured format. The gesture token keeps the whole drag to
+				// one undo step (ControlRegistry's coalescing rule); before the engine is ready
+				// the direct move below is the old behaviour.
+				QJsonObject args{{QStringLiteral("ticks"), static_cast<qint64>(timeAtCursor.getTicks())}};
+				if (!m_seekGesture.isEmpty()) { args.insert(QStringLiteral("gesture"), m_seekGesture); }
+				const ControlResult moved = ControlRegistry::instance()->invoke(QStringLiteral("transport.seek"), args);
+				if (moved.ok) { update(); break; }
+			}
 			m_timeline->setTicks(timeAtCursor.getTicks());
 			if (!( Engine::getSong()->isPlaying()))
 			{
@@ -411,6 +431,7 @@ void TimeLineWidget::mouseReleaseEvent( QMouseEvent* event )
 	m_hint = nullptr;
 	if ( m_action == Action::SelectSongClip ) { emit selectionFinished(); }
 	m_action = Action::NoAction;
+	m_seekGesture.clear();
 }
 
 void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)

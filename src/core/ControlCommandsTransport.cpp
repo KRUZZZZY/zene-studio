@@ -223,9 +223,12 @@ void registerTransportCommands(ControlRegistry& registry)
 		cmd.id = QStringLiteral("transport.seek");
 		cmd.group = QStringLiteral("transport");
 		cmd.verb = QStringLiteral("seek");
-		cmd.description = QStringLiteral("Move the play head to an absolute position in ticks.");
+		cmd.description = QStringLiteral("Move the play head to an absolute position in ticks. An optional `gesture` "
+			"names one drag: consecutive seeks carrying the same value coalesce into one undo step.");
 		cmd.argsSchema = objectSchema(
-			{{QStringLiteral("ticks"), integerProperty(0, 0x7fffffff)}}, {QStringLiteral("ticks")});
+			{{QStringLiteral("ticks"), integerProperty(0, 0x7fffffff)},
+				{QStringLiteral("gesture"), stringProperty()}},
+			{QStringLiteral("ticks")});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("position_ticks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
 		});
