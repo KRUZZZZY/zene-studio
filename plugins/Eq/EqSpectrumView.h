@@ -26,6 +26,8 @@
 #include <QPainterPath>
 #include <QWidget>
 
+#include <atomic>
+
 #include "AudioBufferView.h"
 #include "fft_helpers.h"
 #include "LmmsTypes.h"
@@ -42,11 +44,20 @@ public:
 	EqAnalyser();
 	virtual ~EqAnalyser();
 
+	//! The band magnitudes of the last analysis. The audio thread writes them, so a
+	//! reader on another thread must use copySpectrum() instead of reading them here.
 	float m_bands[MAX_BANDS];
-	bool getInProgress();
+	bool getInProgress() const;
 	void clear();
 
 	void analyze(InterleavedBufferView<const float, 2> buf);
+
+	//! Copy the published spectrum into the caller's buffers: @a bands receives the
+	//! MAX_BANDS band magnitudes, @a energy the energy they were measured with. The copy
+	//! is always a whole spectrum: while the analyser publishes the next one, the last
+	//! published spectrum is handed out instead of a half written one. The return value
+	//! says whether the copy is the spectrum that is published now.
+	bool copySpectrum(float* bands, float& energy) const;
 
 	float getEnergy() const;
 	int getSampleRate() const;
@@ -54,7 +65,15 @@ public:
 
 	void setActive(bool active);
 
+	//! Test seam: called while the analyser publishes its spectrum, so a test can read
+	//! the spectrum in the middle of the update. It is never set in production.
+	using PublishHook = void (*)(void* context, int bandsPublished);
+	void setPublishHook(PublishHook hook, void* context);
+
 private:
+	//! Hand the finished spectrum over to the reader (the GUI).
+	void publish();
+
 	fftwf_plan m_fftPlan;
 	fftwf_complex * m_specBuf;
 	float m_absSpecBuf[FFT_BUFFER_SIZE+1];
@@ -63,11 +82,23 @@ private:
 	//! start the next one, so a block that crosses the window boundary loses nothing.
 	float m_pending[FFT_BUFFER_SIZE];
 	int m_pendingFrames;
-	float m_energy;
-	int m_sampleRate;
-	bool m_active;
-	bool m_inProgress;
+	std::atomic<float> m_energy;
+	std::atomic<int> m_sampleRate;
+	std::atomic<bool> m_active;
+	std::atomic<bool> m_inProgress;
 	float m_fftWindow[FFT_BUFFER_SIZE];
+	//! The published spectrum. Every band is an atomic, so a reader never races the
+	//! audio thread on a plain float, and the sequence number tells the reader whether
+	//! the copy it took is a whole spectrum or a half written one.
+	std::atomic<float> m_publishedBands[MAX_BANDS];
+	std::atomic<float> m_publishedEnergy;
+	std::atomic<unsigned int> m_publishSequence;
+	//! The last whole spectrum a reader copied, handed out again when a publication is
+	//! in flight.
+	mutable float m_lastSpectrum[MAX_BANDS]{};
+	mutable float m_lastEnergy{0.f};
+	PublishHook m_publishHook;
+	void* m_publishHookContext;
 };
 
 
@@ -100,6 +131,8 @@ private:
 	int m_skipBands;
 	bool m_periodicalUpdate;
 	QList<float> m_bandHeight;
+	//! The spectrum of the analyser, copied as a whole snapshot before it is painted.
+	QList<float> m_spectrumBands;
 
 	float bandToFreq ( int index );
 };
