@@ -68,7 +68,7 @@ Standard MIDI File.</p>
 and writes can be limited to the punch region. A control's trim offsets its automation without changing the curve.</p>
 
 <h2 id="notes">Editing notes</h2>
-<p>Double-click a MIDI clip to open it in the note editor. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties; Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
+<p>Double-click a MIDI clip to open it in the note editor. Opening a clip fits its length to the view and its used pitches with a little room; a very wide range stays centred at the smallest readable row, and an empty clip opens around C5. With Draw, a translucent note previews the click under the pointer, and dragging up or down while drawing moves the preview, the audition and the note to that pitch. The note area's cursor names the next action (draw, erase, slice or play), and choosing a tool from the toolbar or its letter shows it at once. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties; Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
 below edit velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity spread and repeats, and the
 clip's controller curves. The Notes menu quantises, transposes,
 scales, strums and transforms; Pitch Curve draws a bend on each note. Notes &gt; Tools inverts, arpeggiates, flams,
@@ -201,7 +201,7 @@ and you are asked first.</p>
 (shortcuts, workflows, scripts, crash reporting, telemetry). The socket accepts connections only from your own user account (it is created readable and writable
 by you alone); anything connected to it can do whatever the menus can - save, render, delete - so connect only programs
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
-Control surface, or any parameter through MIDI learn.</p>
+Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
 
 <h2 id="customise">Customising and the Window menu</h2>
 <p>Project tools &gt; Customise &gt; Theme chooses (from the next start) the palette (dark, high contrast or light) the interface zoom and accessible mode, and edits the theme's colours one by one - export a theme to share it, import one,

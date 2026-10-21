@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-15T08:30:27Z",
+  "captured_at": "2026-10-21T13:58:26Z",
   "commands": [
     {
       "args_schema": {
@@ -34216,6 +34216,11 @@
           "audio_behind": {
             "type": "string"
           },
+          "bottom_key": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
           "clip": {
             "type": "string"
           },
@@ -34252,6 +34257,11 @@
             "minimum": 1,
             "type": "integer"
           },
+          "row_height": {
+            "maximum": 40,
+            "minimum": 6,
+            "type": "integer"
+          },
           "rows": {
             "maximum": 128,
             "minimum": 0,
@@ -34281,6 +34291,11 @@
           },
           "visible_notes": {
             "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "visible_rows": {
+            "maximum": 128,
             "minimum": 0,
             "type": "integer"
           },
@@ -35149,8 +35164,14 @@
   ],
   "count": 828,
   "instance": {
+    "binary": null,
+    "binary_bytes": null,
+    "binary_sha256": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-064/tools/zene-pa-agentctl",
+    "lane_head": null,
     "proto": 1,
-    "source_file": "/tmp/claude-1000/-home-kruzzzzy-Documents-AI-KOS-PROJECT-projects-zene-studio-program/cff463a0-1326-44da-8393-bec3a1847916/scratchpad/train5/commands-release.json"
+    "source_socket": "/tmp/zctl-run-tf4md2bq/zene.sock",
+    "version": "0.4.0-alpha.2723+de5a85a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
