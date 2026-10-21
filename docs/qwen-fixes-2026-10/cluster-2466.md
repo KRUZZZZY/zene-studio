@@ -42,7 +42,8 @@ note at the end).
 | Restored-fix proof | `git apply LOGS/fix.patch; echo EXIT=$?` **EXIT=0**; rebuild `> LOGS/build-4-restored.log` **EXIT=0**; ctest `> LOGS/test-4-restored.log` **EXIT=0**, 1/1 passed. |
 | Affected family | `cmake --build build --target AutomationModeMenuTest DeviceOrganiserTest -j20 > LOGS/build-5-family.log` **EXIT=0**; `ctest -R '^(InstrumentLayerZonePublishTest|AutomationModeMenuTest|DeviceOrganiserTest)$' --output-on-failure > LOGS/test-5-family.log` **EXIT=0**, 3/3 targets passed. |
 | Header dependents | All 39 test targets whose sources include `ReversibilityTestSupport.h` rebuilt: `cmake --build build --target <39 targets> -j20 > LOGS/build-7-all-includers.log` **EXIT=0**. |
-| Gates (feature_check) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/gate-1.log 2>&1; echo EXIT=$?` **EXIT=0**; 8/8 rows PASS (`complexity` and `file-length`: "no new item in your files"). |
+| Gates (feature_check) | `PYTHONPATH=/tmp/pyshim python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/gate-2-exact-tool.log 2>&1; echo EXIT=$?` **EXIT=0**; 8/8 rows PASS (`complexity` and `file-length`: "no new item in your files"). The byte-identical tool was run; the session-local `sitecustomize` shim only redirects the unwritable `*-feature-check` log directory to `/tmp`, leaving every gate command, limit and baseline untouched. |
+| Completion check | `PYTHONPATH=/tmp/pyshim python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 2466 > LOGS/submit-check-1.log 2>&1; echo EXIT=$?` **EXIT=0**, `RESULT: PASS - submit` (all rows PASS). |
 | Raw complexity ratchet | `bash tests/complexity-gate.sh --check > LOGS/gate-complexity.log 2>&1; echo EXIT=$?` **EXIT=1** - pre-existing train regressions only (e.g. `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`); no line names either file changed here. |
 | Raw file-length ratchet | `bash tests/file-length-gate.sh --check > LOGS/gate-file-length.log 2>&1; echo EXIT=$?` **EXIT=1** - pre-existing train regressions only; no line names either file changed here (`ReversibilityTestSupport.h` is 448 lines, `InstrumentLayerZonePublishTest.cpp` 133). |
 
@@ -85,13 +86,14 @@ ctest -R '^(InstrumentLayerZonePublishTest|AutomationModeMenuTest|DeviceOrganise
 The prescribed log directory
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2466.r1/logs` is not writable
 in this session: `touch .../logs/probe` returns `Permission denied`, and the
-prescribed `feature_check.py` invocation fails inside `logs.mkdir(...)` with
+unshimmed `feature_check.py` invocation fails inside `logs.mkdir(...)` with
 `PermissionError: [Errno 13] ... zene-qwen-2466-feature-check` (captured in
 `LOGS/gate-original-attempt.log`, **EXIT=1**). The numbered build/test/gate logs
-are therefore in `/home/kruzzzzy/.cache/zene-bunny-fix/2466.r1/logs/`, and the gate
-table above was produced by the unchanged gate logic with only `ROOT` and the
-unwritable log destination redirected (diff of that two-line change is in
-`LOGS/gate-1.log`'s command output). No gate limit, baseline or check was altered.
+are therefore in `/home/kruzzzzy/.cache/zene-bunny-fix/2466.r1/logs/`. The gate
+table above comes from the real, unmodified tool run with a session-local
+`sitecustomize` shim that redirects only the `*-feature-check` log-path writes to
+`/tmp`; it does not alter `feature_check.py`, its gate commands, limits or
+baselines. No gate limit, baseline or check was altered.
 
 ## Self-check
 
