@@ -100,3 +100,39 @@ command was added, so the `ControlCommandsSnapshot` canary is not affected.
   tests src include`); both were rebuilt and run.
 - No GUI or realtime path changed (the change is config I/O on the control thread), so no GUI or audio-thread check
   applies.
+
+## Self-check
+
+- **Regression fails with the fix reverted and passes with it.** Yes. Reverted (`git apply -R`, rebuilt, run):
+  `test-4-proof-unfixed.log`, ctest EXIT=8, `FAIL! : HardwareIoTest::aMalformedSetupStoreIsNeverReplaced()
+  '!written' returned FALSE`. Reapplied (`git apply`, rebuilt, run): `test-5-proof-fixed.log`, EXIT=0, "100% tests
+  passed out of 2" (HardwareIoTest and ImportTrackIoTest).
+- **Deterministic.** Yes. The test has no clock, sleep or thread. Its seam is `ConfigManager::setValue` /
+  `value` on the in-memory settings for `audioio/setups`, which are never saved to disk. It sets the two bad values,
+  calls the two writers, and restores the original value before asserting.
+- **Fix at the cause; callers and siblings checked.** The cause is `allEntries()` turning an unparsable value into `{}`
+  and the writers storing that. The writers now go through `readEntries`, which refuses. Callers of `writeSetup`:
+  only `ioSetup` (`src/core/ControlCommandsHardwareIo.cpp:138`), which already turns false into `InvalidArgs` with no
+  undo step. Callers of `restoreEntry`: the two undo lambdas (`ControlCommandsHardwareIo.cpp:140`) and
+  `tests/src/core/ImportTrackIoTest.cpp:142`; all ignore the return value, so they compile and behave as before for a
+  valid store. Read-only siblings (`setupFor` `:211`, `requestedOutputs` `:222`, `storedEntry` `:237`) keep the tolerant
+  `allEntries`, unchanged in behaviour.
+- **No collateral damage.** An unset or whitespace-only value still reads as no entries (`readEntries`, `:64-68`,
+  same as before). A valid JSON object reads and writes exactly as before. The only changed case is a set value that
+  is not a JSON object: it was overwritten, and now the write or restore is refused and nothing is written. No
+  limit or check was added. `requestedOutputs` runs at backend open (`src/core/audio/AudioAlsa.cpp:86`,
+  `AudioJack.cpp:200`), not per period, and it now uses the same parse with a stack-local `QJsonParseError`, so it
+  adds no per-period allocation.
+- **Verdict is FIXED,** so the ALREADY-FIXED / FALSE-POSITIVE evidence item does not apply.
+
+## Gate status (honest note)
+
+- `feature_check.py` **as written** could not run in this lane: it exits 1 with `PermissionError` because it creates
+  `<worktree>-feature-check` beside the worktree, outside the write-jail (`gates-1.log`). That is why `submit_check`
+  shows the "gates" row as FAIL. This is an environment limit, not a gate result, and I did not edit the shared script
+  or write outside the jail to get around it.
+- The same gate logic, run from `runs/new-p16-291.r1/gate_driver.py` with the logs in the lane folder, passed: fork-sources,
+  all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity (no new item in
+  these files), file-length (no new item in these files); `RESULT: PASS`, EXIT=0 (`gates-2.log`).
+- The gate-baseline cache for the branch base (`gate-baselines/b61e5f965….json`) was already present, so the driver
+  only read it.
