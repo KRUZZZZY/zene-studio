@@ -75,6 +75,10 @@
 # helpers live in their own header (tests/src/core/MountNamespaceTestSupport.h), a fork-NEW test
 # helper like the other TestSupport.h files. It is registered in tests/fork-sources.txt as well.
 
+# 2026-10-20 (cluster 409): the fork-NEW sources of the ConvolutionReverb plugin's FFTW
+# scope (plugins/ConvolutionReverb/ConvolutionFftw.h and .cpp) and its regression test
+# (tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp) are tracked sources, so the recipe
+# derives them and the entry list below lists them.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -928,6 +932,8 @@ plugins/Compressor/CompressorControls.h
 plugins/Compressor/CompressorKeyFilter.h
 plugins/Console/Console.cpp
 plugins/Console/Console.h
+plugins/ConvolutionReverb/ConvolutionFftw.cpp
+plugins/ConvolutionReverb/ConvolutionFftw.h
 plugins/ConvolutionReverb/ConvolutionKernel.cpp
 plugins/ConvolutionReverb/ConvolutionKernel.h
 plugins/ConvolutionReverb/ConvolutionReverb.cpp
@@ -3012,6 +3018,7 @@ tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
+tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
 tests/src/plugins/DelayLfoAutomationTest.cpp
 tests/src/plugins/EqFilterTest.cpp

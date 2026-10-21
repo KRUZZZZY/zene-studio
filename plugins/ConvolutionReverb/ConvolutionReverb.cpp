@@ -169,7 +169,8 @@ void ConvolutionReverbEffect::install(std::unique_ptr<ConvolutionKernel> kernel)
 {
 	m_tail.store(kernel->length() + ConvolutionKernel::Partition, std::memory_order_relaxed);
 	// The swap is the only edit the audio thread can see: under the model-change guard, a block
-	// boundary; the old kernel is freed here, on the control thread, after the guard.
+	// boundary; the old kernel is freed here, on the control thread, after the guard - its FFTW
+	// plans die in the scope that quiesces the audio thread (ConvolutionKernel's destructor).
 	Engine::audioEngine()->requestChangeInModel();
 	m_kernel.swap(kernel);
 	Engine::audioEngine()->doneChangeInModel();

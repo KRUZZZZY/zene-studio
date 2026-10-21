@@ -1193,6 +1193,8 @@ plugins/ClapInstrument/ClapInstrumentView.h
 plugins/Compressor/CompressorKeyFilter.h
 plugins/Console/Console.cpp
 plugins/Console/Console.h
+plugins/ConvolutionReverb/ConvolutionFftw.cpp
+plugins/ConvolutionReverb/ConvolutionFftw.h
 plugins/ConvolutionReverb/ConvolutionKernel.cpp
 plugins/ConvolutionReverb/ConvolutionKernel.h
 plugins/ConvolutionReverb/ConvolutionReverb.cpp
@@ -2836,3 +2838,9 @@ docs/qwen-fixes-2026-10/cluster-new-p12-162-port-port.md
 # cluster new-p12-44-port-port (2026-10): the landing pass checkpoints one track once - report for the fix ported onto the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p12-44-port-port.md
 tests/src/plugins/Lb302NotePathTest.cpp
+# cluster 409 (2026-10): FFTW's planner API may not run while the audio thread executes a plan;
+# the convolution kernel's plans live in a scope that takes the engine's model-change guard
+# (the fork-NEW product sources are listed in the sorted block above; the regression test and
+# the report are named here).
+tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
+docs/qwen-fixes-2026-10/cluster-409.md
