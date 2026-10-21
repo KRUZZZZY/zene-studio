@@ -66,12 +66,13 @@ bool writeWaveFile(const QString& path, bool rising = true)
 }
 
 void loadSettings(EnvelopeAndLfoParameters& parameters, bool hasWaveAttribute, const QString& path = {},
-			  int lfoWaveShape = -1)
+			  int lfoWaveShape = -1, float lfoAmount = -1.0f)
 {
 	QDomDocument document;
 	QDomElement settings = document.createElement(QStringLiteral("elvol"));
 	if (hasWaveAttribute) { settings.setAttribute(QStringLiteral("userwavefile"), path); }
 	if (lfoWaveShape >= 0) { settings.setAttribute(QStringLiteral("lshp"), QString::number(lfoWaveShape)); }
+	if (lfoAmount >= 0.0f) { settings.setAttribute(QStringLiteral("lamt"), QString::number(lfoAmount)); }
 	parameters.loadSettings(settings);
 }
 
@@ -173,8 +174,9 @@ private slots:
 			static_cast<int>(EnvelopeAndLfoParameters::LfoShape::UserDefinedWave);
 		const auto frames = Engine::audioEngine()->framesPerPeriod();
 
-		loadSettings(parameters, true, m_wavePath, userWave);
-		parameters.getLfoAmountModel().setValue(1.0f);
+		// the amount is loaded, not set afterwards: setting it would publish
+		// again and hide the publication this test is about
+		loadSettings(parameters, true, m_wavePath, userWave, 1.0f);
 
 		// the audio path renders the first wave
 		std::vector<float> first(frames);
@@ -191,10 +193,8 @@ private slots:
 			});
 			reader.join();
 		});
-		loadSettings(parameters, true, m_otherWavePath, userWave);
+		loadSettings(parameters, true, m_otherWavePath, userWave, 1.0f);
 		EnvelopeAndLfoParameters::setPublicationStartHook(nullptr);
-		// the load reset the LFO amount, so the LFO contributes to the level
-		parameters.getLfoAmountModel().setValue(1.0f);
 
 		// the audio path must render the new wave now, not a shape cache that
 		// was built from the previous snapshot
