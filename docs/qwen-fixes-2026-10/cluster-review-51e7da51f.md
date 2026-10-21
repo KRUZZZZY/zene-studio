@@ -41,7 +41,8 @@ The negative control applied the pre-fix raw-pointer behavior with `/home/kruzzz
 - `cmake --build build --target zene -j12` — EXIT=0 (`build-32.log`); this rebuilt dependents of the changed `AudioEngine.h`.
 - `cmake --build build/tests --target ScriptDawBindingTest ScriptDawEffectsTest ScriptDawRemovalUndoTest ScriptDawModelRegistrationTest -j12` — EXIT=0 (`build-37.log`). `ScriptDawModelRegistrationTest` was rebuilt after its final edit with `cmake --build build/tests --target ScriptDawModelRegistrationTest -j12` — EXIT=0 (`build-43.log`).
 - `ctest -R '^(ScriptDawBindingTest|ScriptDawEffectsTest|ScriptDawRemovalUndoTest|ScriptDawModelRegistrationTest|LuaApiSurface)$' --output-on-failure` from `build/tests` — EXIT=0 (`test-5.log`), 5/5 passed. `ScriptDawEffectsTest` also ran directly — EXIT=0, 8 passed, 0 skipped (`green-effects-final.log`).
-- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-review-51e7da51f` — EXIT=0 (`gate-4.log`): all gates PASS, including complexity and file length.
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-review-51e7da51f` — EXIT=0 (`gate-final-1.log`): all gates PASS, including complexity and file length.
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-review-51e7da51f review-51e7da51f` — EXIT=0 (`submit-final-1.log`): clean worktree, verdicts, tests, registration, and gates PASS; all five requested self-check answers are included here.
 
 A combined build command that incorrectly named `LuaApiSurface` as a build target exited 2 (`build-36.log`: “No rule to make target”). The corrected build above passed; `LuaApiSurface` is included in the passing ctest run.
 
