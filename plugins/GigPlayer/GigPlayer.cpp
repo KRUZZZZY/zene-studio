@@ -424,10 +424,12 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 		{
 			// Delete if the ADSR for a sample is complete for normal
 			// notes, or if a release sample, then if we've reached
-			// the end of the sample
+			// the end of the sample. The position counts frames already
+			// read, so every frame must be rendered before the sample is
+			// removed; a one-frame release sample starts at position zero.
 			if( sample->sample == nullptr || sample->adsr.done() ||
 				( it->isRelease == true &&
-				  sample->pos >= sample->sample->SamplesTotal - 1 ) )
+				  sample->pos >= sample->sample->SamplesTotal ) )
 			{
 				sample = it->samples.erase( sample );
 

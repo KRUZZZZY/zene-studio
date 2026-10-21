@@ -6,7 +6,8 @@
  * 44100 Hz) and two adjacent key regions: the first has a release-trigger
  * dimension whose zones point at those samples; the second has no dimensions
  * and does not cover the test key. Passing --keyboard creates a two-zone
- * keyboard-dimension fixture, and --pingpong / --single-frame-loop create
+ * keyboard-dimension fixture, --one-frame-release creates a silent note with
+ * a single non-zero release frame, and --pingpong / --single-frame-loop create
  * directional loop fixtures used by the regression tests.
  * Built with:
  *   g++ -std=c++17 make_gig.cpp -o make_gig $(pkg-config --cflags --libs gig)
@@ -26,6 +27,7 @@
 static const uint32_t SR      = 44100;  // sample rate of the generated sample
 static const uint32_t SECONDS = 2;
 static const double   FREQ    = 440.0;
+static const int16_t RELEASE_FRAME = 16384;
 
 static void configureSample(gig::Sample* sample, const std::string& name)
 {
@@ -47,6 +49,7 @@ int main(int argc, char** argv)
     bool keyboardDimension = false;
     bool singleFrameLoop = false;
     bool pingPong = false;
+    bool oneFrameRelease = false;
     std::string out;
     for (int i = 1; i < argc; ++i)
     {
@@ -54,20 +57,23 @@ int main(int argc, char** argv)
         if (arg == "--keyboard") keyboardDimension = true;
         else if (arg == "--pingpong") pingPong = true;
         else if (arg == "--single-frame-loop") { singleFrameLoop = true; pingPong = true; }
+        else if (arg == "--one-frame-release") oneFrameRelease = true;
         else if (out.empty()) out = arg;
     }
     if (keyboardDimension) pingPong = false;
+    if (oneFrameRelease) { pingPong = false; keyboardDimension = false; }
     const bool releaseTrigger = !pingPong && !keyboardDimension;
     if (out.empty())
     {
         if (keyboardDimension) out = "keyboard-dimension.gig";
         else if (singleFrameLoop) out = "single-frame-loop.gig";
         else if (pingPong) out = "pingpong.gig";
+        else if (oneFrameRelease) out = "one-frame-release.gig";
         else out = "sine440.gig";
     }
     constexpr uint32_t LoopStart = 64;
     const uint32_t loopLength = singleFrameLoop ? 1 : 64;
-    const uint32_t N = pingPong ? SR / 4 : SR * SECONDS;
+    const uint32_t N = oneFrameRelease ? SR : (pingPong ? SR / 4 : SR * SECONDS);
 
     try
     {
@@ -76,15 +82,18 @@ int main(int argc, char** argv)
         f->pInfo->Name      = pingPong ? "GigProof PingPong" : (keyboardDimension ? "GigProof KeyboardDimension" : "GigProof Sine440");
         f->pInfo->Artists   = "gigproof";
         f->pInfo->Software  = std::string("libgig ") + gig::libraryVersion();
-        f->pInfo->Comments  = pingPong
-            ? "Bidirectional loop fixture for LMMS GigPlayer verification"
-            : (keyboardDimension ? "Keyboard dimension regression fixture for LMMS GigPlayer verification"
-                                 : "GigPlayer release-trigger regression fixture");
+        f->pInfo->Comments  = oneFrameRelease
+            ? "GigPlayer regression: silent note and one-frame release trigger"
+            : (pingPong
+                ? "Bidirectional loop fixture for LMMS GigPlayer verification"
+                : (keyboardDimension ? "Keyboard dimension regression fixture for LMMS GigPlayer verification"
+                                     : "GigPlayer release-trigger regression fixture"));
         f->pInfo->Copyright = "public domain test tone";
 
         // ---------------------------------------------------------------- sample
         gig::Sample* s = f->AddSample();
-        configureSample(s, pingPong ? "pingpong_loop" : (keyboardDimension ? "zone0_sine440" : "sine440_2s"));
+        configureSample(s, pingPong ? "pingpong_loop" : (keyboardDimension ? "zone0_sine440"
+                             : (oneFrameRelease ? "silent_note_1s" : "sine440_2s")));
         gig::Sample* silentSample = nullptr;
         if (keyboardDimension)
         {
@@ -96,7 +105,7 @@ int main(int argc, char** argv)
         if (releaseTrigger)
         {
             releaseSample = f->AddSample();
-            configureSample(releaseSample, "release_probe_2s");
+            configureSample(releaseSample, oneFrameRelease ? "release_1frame" : "release_probe_2s");
         }
 
         std::vector<int16_t> pcm(N);
@@ -128,7 +137,7 @@ int main(int argc, char** argv)
                 pcm[LoopStart + loopLength] = -25000;
             }
         }
-        else
+        else if (!oneFrameRelease)
         {
             const uint32_t fadeIn  = SR / 200;  // 5 ms
             const uint32_t fadeOut = SR / 20;   // 50 ms
@@ -144,6 +153,10 @@ int main(int argc, char** argv)
             {
                 releasePcm.assign(N, 8192);
             }
+        }
+        else
+        {
+            releasePcm.assign(1, RELEASE_FRAME);
         }
 
         // ------------------------------------------------------------ instrument
@@ -182,7 +195,7 @@ int main(int argc, char** argv)
                 dr->pSample     = releaseZone == 0 ? s : releaseSample;
                 dr->UnityNote   = 60;
                 dr->FineTune    = 0;
-                dr->PitchTrack  = true;
+                dr->PitchTrack  = oneFrameRelease && releaseZone == 1 ? false : true;
                 dr->SampleLoops = 0;
                 if (releaseZone == 1)
                 {
@@ -245,7 +258,7 @@ int main(int argc, char** argv)
         }
         if (releaseSample != nullptr)
         {
-            releaseSample->Resize(N);
+            releaseSample->Resize(oneFrameRelease ? 1 : N);
         }
         f->Save(out);   // write file skeleton, reserve sample data space
 
@@ -273,11 +286,12 @@ int main(int argc, char** argv)
         if (releaseSample != nullptr)
         {
             releaseSample->SetPos(0);
-            const gig::file_offset_t releaseWritten = releaseSample->Write(releasePcm.data(), N);
-            if (releaseWritten != gig::file_offset_t(N))
+            const auto releaseFrames = static_cast<uint32_t>(releasePcm.size());
+            const gig::file_offset_t releaseWritten = releaseSample->Write(releasePcm.data(), releaseFrames);
+            if (releaseWritten != gig::file_offset_t(releaseFrames))
             {
                 fprintf(stderr, "ERROR: wrote %lld of %u release sample points\n",
-                        (long long) releaseWritten, (unsigned) N);
+                        (long long) releaseWritten, (unsigned) releaseFrames);
                 return 1;
             }
         }
