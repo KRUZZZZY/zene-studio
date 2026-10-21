@@ -210,7 +210,11 @@ bool skippedEvent(Cursor& cursor, int status, TrackWalk* walk)
 	long long length = 0;
 	if (status == 0xFF && !cursor.u8(&type)) { return false; }
 	if (!cursor.vlq(&length) || !cursor.skip(length)) { return false; }
-	if (status == 0xFF && type == 0x2F) { walk->ended = true; }
+	if (status == 0xFF && type == 0x2F)  // SMF 1.0: the end-of-track marker carries no payload and is the track's last event
+	{
+		if (length != 0 || !cursor.atEnd()) { return false; }
+		walk->ended = true;
+	}
 	walk->running = 0;
 	return true;
 }
