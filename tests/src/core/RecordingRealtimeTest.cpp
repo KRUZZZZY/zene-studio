@@ -31,6 +31,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <span>
 #include <thread>
 #include <vector>
 #include <utility>
@@ -107,6 +108,21 @@ private:
 			std::this_thread::sleep_for(std::chrono::milliseconds(3));
 			// Lets the main-thread reaper run between periods, as the event loop does in the app.
 			if (processEvents) { QCoreApplication::processEvents(); }
+		}
+	}
+
+	//! Feed captured input to a handle directly with one render per period, without transport timing.
+	void feedInputToHandle(lmms::SampleRecordHandle* handle, int periods)
+	{
+		auto* engine = lmms::Engine::audioEngine();
+		const f_cnt_t fpp = engine->framesPerPeriod();
+		std::vector<SampleFrame> block(static_cast<std::size_t>(fpp), SampleFrame(0.5f, 0.5f));
+		std::span<SampleFrame> emptyBuffer;
+		for (int i = 0; i < periods; ++i)
+		{
+			engine->pushInputFrames(block.data(), fpp);
+			engine->renderNextPeriod();
+			handle->play(emptyBuffer);
 		}
 	}
 
@@ -388,6 +404,36 @@ private slots:
 		delete track;
 	}
 
+	//! A claimed take is installed by the main-thread reaper, never by handle destruction.
+	void claimedTakeCompletionIsDeferredToTheReaper()
+	{
+		lmms::SampleRecordHandle::pumpTakes();
+		lmms::Engine::getSong()->stop();
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<SampleFrame> original(8, SampleFrame(0.25f, 0.25f));
+		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(original,
+			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		clip->setRecord(true);
+		auto* handle = clip->claimRecordHandle();
+		QVERIFY(handle != nullptr);
+		feedInputToHandle(handle, 40);
+		const auto beforeSize = clip->sample().sampleSize();
+		QSignalSpy changed(clip, &lmms::SampleClip::sampleChanged);
+
+		delete handle;
+		const bool untouchedByDestructor = clip->isRecord() && clip->sample().sampleSize() == beforeSize
+			&& changed.isEmpty();
+		lmms::SampleRecordHandle::reapRetiredTakes();
+		const bool installedByReaper = !clip->isRecord();
+		delete track;
+
+		QVERIFY2(untouchedByDestructor,
+			"destroying a claimed take changed clip state or emitted sampleChanged before reaping");
+		QVERIFY2(installedByReaper, "the main-thread reaper did not install the completed take");
+	}
+
 	//! Arming a clip prepares its take on the main thread, so the audio thread
 	//! only claims it: the claim allocates nothing.
 	void armedClipClaimsItsPreparedTakeWithoutAllocation()
@@ -657,6 +703,43 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(lmms::SampleRecordHandle::queueOverflows() - before), static_cast<qulonglong>(1));
 		QTest::qWait(50);  // the queued takes are discarded: none was claimed
 		delete track;
+	}
+
+	//! A claimed take beyond the primary queue capacity still reaches its clip on reaping.
+	void fullRetiredTakeQueueStillInstallsClaimedTake()
+	{
+		lmms::SampleRecordHandle::pumpTakes();
+		auto* track = new lmms::SampleTrack(lmms::Engine::getSong());
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		auto* fillerClip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(fillerClip != nullptr);
+		std::vector<SampleFrame> original(8, SampleFrame(0.25f, 0.25f));
+		clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(original,
+			static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		lmms::Engine::getSong()->stop();
+		clip->setRecord(true);
+		auto* claimed = clip->claimRecordHandle();
+		QVERIFY(claimed != nullptr);
+		feedInputToHandle(claimed, 40);
+		const auto overflowsBefore = lmms::SampleRecordHandle::queueOverflows();
+
+		// Do not pump during this loop: the retired-take ring has 256 slots.
+		for (int i = 0; i < 256; ++i)
+		{
+			auto* unclaimed = new lmms::SampleRecordHandle(fillerClip);
+			delete unclaimed;
+		}
+		delete claimed;
+		const auto overflowCount = lmms::SampleRecordHandle::queueOverflows() - overflowsBefore;
+
+		lmms::SampleRecordHandle::reapRetiredTakes();
+		const bool installed = !clip->isRecord() && clip->sample().sampleSize() > original.size();
+		delete track;
+		lmms::SampleRecordHandle::pumpTakes();
+
+		QCOMPARE(static_cast<qulonglong>(overflowCount), static_cast<qulonglong>(1));
+		QVERIFY2(installed, "the claimed take that exceeded the 256-slot queue was lost");
 	}
 
 	//! A pass that starts more clips than the per-pass cap defers the rest, and counts them.

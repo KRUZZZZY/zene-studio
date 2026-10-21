@@ -2626,3 +2626,6 @@ src/core/ControlCommandsSettings.cpp	new-p12-46-port: audio.device_set advertise
 tests/control-no-audio-device.py	new-p12-46-port: replay the empty-prior-value audio.device_set inverse and verify it restores the empty config value.
 include/MidiSndio.h	cluster new-p12-126-port: the sndio MIDI shutdown flag is declared std::atomic<bool> instead of volatile bool, so the reader thread's poll and the destructor's store are not a data race; covered by MidiSndioTest::quitFlagIsAtomic.
 tests/src/core/SmfInterchangeTest.cpp	new-p11-21 (2026-10-12): adds a regression assertion that smf_read marks an out-of-range conductor map unimportable and reports the same validation reason used by smf_import.
+include/SampleRecordHandle.h	new-p12-217: documents queueOverflows() as diversion to the lossless overflow handoff, not a leaked take.
+src/core/SampleRecordHandle.cpp	new-p12-217: links queue-full retired takes through their existing PendingRecordTake object into a lock-free intrusive handoff, then reaps it on the main thread; covered by RecordingRealtimeTest::fullRetiredTakeQueueStillInstallsClaimedTake.
+tests/src/core/RecordingRealtimeTest.cpp	cluster 5308: verifies handle destruction leaves clip state and signals untouched until the main-thread reaper; new-p12-217: fills all 256 primary slots and verifies the claimed overflow take is installed.

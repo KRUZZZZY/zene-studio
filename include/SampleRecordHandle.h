@@ -86,8 +86,8 @@ public:
 	static std::uint64_t framesPaddedTotal() noexcept;
 	//! Recording takes that found no prepared handle when the transport started them.
 	static std::uint64_t unpreparedTakes() noexcept;
-	//! Takes whose handle could not be queued for the main thread (the queue was full); the take
-	//! is leaked and its clip stays armed.
+	//! Takes diverted to the intrusive fallback because the primary queue was full; all are still
+	//! reaped on the main thread.
 	static std::uint64_t queueOverflows() noexcept;
 	//! Takes the main thread has reaped (finished and handed back) so far.
 	static std::uint64_t takesReaped() noexcept;
