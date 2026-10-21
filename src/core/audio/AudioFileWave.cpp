@@ -228,6 +228,9 @@ bool AudioFileWave::setChannelMap()
 	if (channels() <= DEFAULT_CHANNELS) { return true; }
 	const surround::Format format = surroundexport::formatForChannels(channels());
 	if (format == surround::Format::Stereo) { return false; }
+	// A discrete layout has no speaker mask: WAVEX writes dwChannelMask 0 itself, and libsndfile
+	// refuses an all-INVALID map, so leave its default in place rather than failing the export.
+	if (surround::isDiscrete(format)) { return true; }
 	// Before any audio: libsndfile writes the mask into the header it has not written yet.
 	auto map = surroundexport::sndfileChannelMap(format);
 	return sf_command(m_sf, SFC_SET_CHANNEL_MAP_INFO, map.data(),

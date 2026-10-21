@@ -268,6 +268,22 @@ private slots:
 		QVERIFY(masterFormat("5.1"));
 	}
 
+	void aDiscreteMasterWritesItsChannelCountWithoutSpeakerMask()
+	{
+		QVERIFY(masterFormat("discrete-5"));
+		const QString out = path(QStringLiteral("discrete5.wav"));
+		render(surroundSettings(Depth::Depth16Bit), Format::Wave, out);
+		const Header h = readHeader(out);
+		QCOMPARE(h.tag, 0xFFFE);
+		QCOMPARE(h.channels, 5);
+		QCOMPARE(h.mask, quint32(0));  // no speaker positions
+		int channels = 0;
+		const std::vector<float> samples = readSamples(out, &channels);
+		QCOMPARE(channels, 5);
+		QVERIFY(!samples.empty());
+		QVERIFY(masterFormat("5.1"));
+	}
+
 	void invalidCombinationsAreRefused()
 	{
 		const bool wave = true;
