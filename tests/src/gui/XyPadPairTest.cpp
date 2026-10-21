@@ -75,6 +75,12 @@ double macroValue(const QString& channel, const QString& macro)
 	return -1.0;
 }
 
+//! Map a pad value to its pointer pixel on a pad with a known size.
+QPoint pixelsOf(QPointF point, const QSize& size)
+{
+	return {qRound(point.x() * (size.width() - 1)), qRound((1.0 - point.y()) * (size.height() - 1))};
+}
+
 //! The sub-pixel centre of the dot along one axis, from the antialiasing coverage of every pixel
 //! (the dot is the accent painted over the pad's control fill, so each pixel's distance from the
 //! accent IS its coverage). Sub-pixel, because a whole-pixel box cannot see a one-pixel offset.
@@ -266,7 +272,7 @@ private slots:
 		QLabel* status = statusOf(dialog);
 		QVERIFY(area != nullptr && area->moved && status != nullptr);
 		QCOMPARE(area->property("controlCommand").toString(), QStringLiteral("rack.macro_set_pair"));
-		for (const QPointF point : {QPointF(0.2, 0.8), QPointF(0.25, 0.85), QPointF(0.3, 0.9)}) { area->moved(point); }
+		for (const QPointF point : {QPointF(0.2, 0.8), QPointF(0.25, 0.85), QPointF(0.3, 0.9)}) { area->moved(point, XyPadArea::BothAxes); }
 		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - 0.3) < 1e-4);
 		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.9) < 1e-4);
 		QVERIFY(status->text().isEmpty());
@@ -292,7 +298,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("rack.macro_remove"), {{QStringLiteral("channel"), channel}, {QStringLiteral("macro"), QStringLiteral("macro-1")}}).ok);
 		QCOMPARE(axes.at(0)->currentText(), QStringLiteral("Cutoff"));
 		QCOMPARE(axes.at(1)->currentText(), QStringLiteral("Cutoff"));
-		area->moved(QPointF(0.7, 0.7));
+		area->moved(QPointF(0.7, 0.7), XyPadArea::BothAxes);
 		QVERIFY(status->text().isEmpty());
 		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - 0.7) < 1e-4);
 
@@ -301,8 +307,156 @@ private slots:
 		QVERIFY(!area->isEnabled());
 		QCOMPARE(axes.at(0)->count(), 0);
 		QCOMPARE(axes.at(1)->count(), 0);
-		area->moved(QPointF(0.2, 0.2));
+		area->moved(QPointF(0.2, 0.2), XyPadArea::BothAxes);
 		QVERIFY2(status->text().startsWith(QStringLiteral("Not set")), qPrintable(status->text()));
+	}
+
+	void horizontalPointerMovePreservesAnExternalChangeToY()
+	{
+		while (Engine::mixer()->numChannels() <= 8) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(8));
+		for (const char* name : {"Cutoff", "Drive"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
+		}
+		for (const char* macro : {"macro-0", "macro-1"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+				{QStringLiteral("macro"), QLatin1String(macro)}, {QStringLiteral("value"), 0.5}}).ok);
+		}
+
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		QVERIFY(area != nullptr);
+		dialog.show();
+		QCoreApplication::processEvents();
+		area->resize(201, 201);
+		const QPointF displayed = area->point();
+		const double externalY = displayed.y() < 0.75 ? 0.75 : 0.25;
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), externalY}}).ok);
+
+		const QPoint at = pixelsOf(QPointF(0.25, displayed.y()), area->size());
+		QTest::mousePress(area, Qt::LeftButton, Qt::NoModifier, at);
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - 0.25) < 1e-4);
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - externalY) < 1e-4);
+		QTest::mouseRelease(area, Qt::LeftButton, Qt::NoModifier, at);
+	}
+
+	void repeatedHorizontalPointerMovesPreserveAnExternalChangeToY()
+	{
+		while (Engine::mixer()->numChannels() <= 9) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(9));
+		for (const char* name : {"Cutoff", "Drive"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
+		}
+		for (const char* macro : {"macro-0", "macro-1"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+				{QStringLiteral("macro"), QLatin1String(macro)}, {QStringLiteral("value"), 0.5}}).ok);
+		}
+
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		QVERIFY(area != nullptr);
+		dialog.show();
+		QCoreApplication::processEvents();
+		area->resize(201, 201);
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), 0.75}}).ok);
+
+		QTest::mousePress(area, Qt::LeftButton, Qt::NoModifier, pixelsOf(QPointF(0.25, 0.5), area->size()));
+		QTest::mouseMove(area, pixelsOf(QPointF(0.35, 0.5), area->size()));
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - 0.35) < 1e-4);
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.75) < 1e-4);
+		QTest::mouseRelease(area, Qt::LeftButton, Qt::NoModifier, pixelsOf(QPointF(0.35, 0.5), area->size()));
+	}
+
+	void keyboardMovesPreserveRepeatedExternalChangesToUntouchedAxis()
+	{
+		while (Engine::mixer()->numChannels() <= 10) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(10));
+		for (const char* name : {"Cutoff", "Drive"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
+		}
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-0")}, {QStringLiteral("value"), 0.2}}).ok);
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), 0.3}}).ok);
+
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		QVERIFY(area != nullptr);
+		dialog.show();
+		QCoreApplication::processEvents();
+		area->setFocus();
+		QVERIFY(area->hasFocus());
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), 0.75}}).ok);
+
+		QTest::keyClick(area, Qt::Key_Right);
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.75) < 1e-4);
+		QVERIFY(std::abs(area->point().y() - 0.75) < 1e-4);
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), 0.35}}).ok);
+		QTest::keyClick(area, Qt::Key_Right);
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.35) < 1e-4);
+		QVERIFY(std::abs(area->point().y() - 0.35) < 1e-4);
+	}
+
+	void aKeyStillMovesItsAxisAfterAPointerMove()
+	{
+		while (Engine::mixer()->numChannels() <= 11) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(11));
+		for (const char* name : {"Cutoff", "Drive"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
+		}
+
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		QVERIFY(area != nullptr);
+		dialog.show();
+		QCoreApplication::processEvents();
+		area->resize(201, 201);
+		area->setFocus();
+		QTest::mousePress(area, Qt::LeftButton, Qt::NoModifier, pixelsOf(QPointF(0.5, 0.74), area->size()));
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.74) < 1e-4);
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), 0.75}}).ok);
+		QTest::mouseMove(area, pixelsOf(QPointF(0.25, 0.74), area->size()));
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.75) < 1e-4);
+		QTest::keyClick(area, Qt::Key_Down);
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.74) < 1e-4);
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-0")) - 0.25) < 1e-4);
+		QTest::mouseRelease(area, Qt::LeftButton, Qt::NoModifier, pixelsOf(QPointF(0.25, 0.74), area->size()));
+	}
+
+	void clickingTheDisplayedPointerAxisDoesNotOverwriteAnExternalChange()
+	{
+		while (Engine::mixer()->numChannels() <= 12) { Engine::mixer()->createChannel(); }
+		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(12));
+		for (const char* name : {"Cutoff", "Drive"})
+		{
+			QVERIFY(run(QStringLiteral("rack.macro_add"), {{QStringLiteral("channel"), channel}, {QStringLiteral("name"), QLatin1String(name)}}).ok);
+		}
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), 0.74}}).ok);
+
+		XyPadDialog dialog(channel);
+		auto* area = dialog.area();
+		QVERIFY(area != nullptr);
+		dialog.show();
+		QCoreApplication::processEvents();
+		area->resize(201, 201);
+		QVERIFY(run(QStringLiteral("rack.macro_set"), {{QStringLiteral("channel"), channel},
+			{QStringLiteral("macro"), QStringLiteral("macro-1")}, {QStringLiteral("value"), 0.75}}).ok);
+
+		QTest::mousePress(area, Qt::LeftButton, Qt::NoModifier, pixelsOf(QPointF(0.25, 0.74), area->size()));
+		QVERIFY(std::abs(macroValue(channel, QStringLiteral("macro-1")) - 0.75) < 1e-4);
+		QTest::mouseRelease(area, Qt::LeftButton, Qt::NoModifier, pixelsOf(QPointF(0.25, 0.74), area->size()));
 	}
 
 	//! Cluster 5481: the dot is drawn at point * width() / height(), while the pointer maps a
@@ -373,7 +527,7 @@ private slots:
 		area->setAxisNames(QStringLiteral("Width"), QStringLiteral("Colour"));
 		QCOMPARE(area->accessibleValue(), QStringLiteral("X Width 25 %, Y Colour 75 %"));
 		QPointF reported;
-		area->moved = [&reported](QPointF point) { reported = point; };
+		area->moved = [&reported](QPointF point, unsigned) { reported = point; };
 		area->setPoint(QPointF(0.5, 0.5));
 		QTest::keyClick(area, Qt::Key_Right);
 		QVERIFY2(std::abs(reported.x() - 0.51) < 1e-6, "a key press did not report the new place");

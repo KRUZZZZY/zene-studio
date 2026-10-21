@@ -48,13 +48,16 @@ class LMMS_EXPORT XyPadArea : public QWidget
 {
 	Q_OBJECT
 public:
+	//! The axes a move changed: a pointer can move both, while a key moves one.
+	enum Axis : unsigned { NoAxis = 0, XAxis = 1, YAxis = 2, BothAxes = XAxis | YAxis };
 	explicit XyPadArea(QWidget* parent = nullptr);
 	void setPoint(QPointF point);
 	QPointF point() const { return m_point; }
 	//! The names the value is read with ("Cutoff", "Drive").
 	void setAxisNames(const QString& x, const QString& y);
 	QString accessibleValue() const;
-	std::function<void(QPointF)> moved;
+	//! The dot moved: its new place and the axes that move changed.
+	std::function<void(QPointF, unsigned)> moved;
 	QSize sizeHint() const override { return {220, 220}; }
 
 protected:
@@ -62,13 +65,21 @@ protected:
 	void paintEvent(QPaintEvent* event) override;
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
+	void mouseReleaseEvent(QMouseEvent* event) override;
 	void keyPressEvent(QKeyEvent* event) override;
 
 private:
-	void moveTo(const QPoint& at);
+	void moveTo(const QPoint& at, bool startOfDrag);
 	//! The place a key moves the dot to, or the current one for a key the pad does not use.
 	QPointF keyed(const QKeyEvent* event) const;
+	//! The axis a supported key moves, or NoAxis when another key or modifier is used.
+	unsigned keyAxis(const QKeyEvent* event) const;
+	//! The axes whose pointer pixel changed from @a from to @a next.
+	unsigned changedAxes(QPointF next, QPointF from) const;
 	QPointF m_point{0.5, 0.5};
+	//! The previous pointer place in a drag, independent of the dot following external macro values.
+	QPointF m_pointer{0.0, 0.0};
+	bool m_dragging = false;
 	QString m_xName;
 	QString m_yName;
 };
@@ -104,7 +115,7 @@ private:
 	void fillMacros();
 	//! The dot at the chosen macros' current values, and the pad's tooltip for the choice.
 	void syncPoint();
-	void send(QPointF point);
+	void send(QPointF point, unsigned axes);
 	QString m_channel;
 	QComboBox* m_x;
 	QComboBox* m_y;
