@@ -59,6 +59,7 @@ struct Bus
 	QString name;
 	int start = 0;
 	int width = 2;
+	bool operator==(const Bus&) const = default;
 };
 
 //! One direction of the interface.
@@ -67,12 +68,14 @@ struct Side
 	int channels = 2;          //!< outputs: how many to open (the backend may grant fewer); inputs: the capture plan's
 	QStringList names;         //!< one per channel
 	std::vector<Bus> buses;    //!< non-overlapping, inside [0, channels)
+	bool operator==(const Side&) const = default;
 };
 
 struct Setup
 {
 	Side outputs;
 	Side inputs;
+	bool operator==(const Setup&) const = default;
 };
 
 //! Where something is routed on the outputs: first channel (negative: nowhere) and width (1 or 2).

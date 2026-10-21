@@ -57,6 +57,7 @@
 #include "HardwareInsert.h"
 #include "HardwareIo.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
 #include "MixerListen.h"
 #include "SampleFrame.h"
 
@@ -590,6 +591,27 @@ private slots:
 
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the insert itself
 		QVERIFY(!Engine::mixer()->mixerChannel(1)->m_hardwareIo.insert.enabled());
+	}
+
+	void anEmptyIoSetupAddsNoUndoStep()
+	{
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		QVERIFY(ok(QStringLiteral("audio.io_setup"), QJsonObject{}));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+	}
+
+	void settingHardwareOutputToItsCurrentRouteAddsNoUndoStep()
+	{
+		const QString id = ch(1);
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), id}, {QStringLiteral("output"), QStringLiteral("default")}}));
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), id}, {QStringLiteral("output"), QStringLiteral("default")}}));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), id}, {QStringLiteral("output"), QStringLiteral("3/4")}}));
+		const int depthBefore2 = Engine::projectJournal()->undoDepth();
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), id}, {QStringLiteral("output"), QStringLiteral("3/4")}}));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore2);
 	}
 
 	void everythingSurvivesASaveAndLoad()
