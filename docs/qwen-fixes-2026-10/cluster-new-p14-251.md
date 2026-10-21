@@ -54,7 +54,7 @@ compiles; the dispatch revert above is the final runtime proof that the assertio
 pre-written, allocation probe, no peer/clock) and `debugMessageDuringPeriodDoesNotAllocate()` (fake client
 sends debug text + `IdProcessingDone` in one write; period must allocate nothing). Full family:
 `cd build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure` EXIT=0,
-1/1 executable, 23 QtTest functions (`ctest-family-final8.log`, `test-functions-final.log`).
+1/1 executable, 23 QtTest functions (`ctest-family-final9.log`, `test-functions-final.log`).
 
 ## new-p16-190 — a 100 ms query could block for two seconds
 
@@ -84,24 +84,25 @@ No sleep, no wall-clock assertion.
 ## new-p14-250 — a started frame could allocate gigabytes before timing out
 
 **Verdict: FIXED (REAL).** `receiveStartedFrame()` checked `length < 0` but not the remaining frame capacity
-before `std::string arg(length)` (src/common/RemotePluginBase.cpp:392-410 before the fix). The socket and FIFO
-`readString()` also resized before checking that the bytes existed (include/RemotePluginBase.h:226-237 and
-640-651 before the fix).
+before `std::string arg(length)` (src/common/RemotePluginBase.cpp:392-410 before the fix). The FIFO
+`readString()` also resized before checking that the bytes existed (include/RemotePluginBase.h:226-237 before
+the fix).
 
 **Fix:** `receiveStartedFrame()` tracks the bytes already consumed and rejects an argument that cannot fit in
-the remaining peek-window frame before allocating (src/common/RemotePluginBase.cpp:424-438). The socket
-`readString()` refuses a length above `PeekWindowBytes` before resizing (include/RemotePluginBase.h:719-730),
-and `shmFifo::readString()` checks the signalled FIFO's remaining bytes under its data lock before resizing
-(include/RemotePluginBase.h:226-252). Lengths that fit are decoded exactly as before.
+the remaining peek-window frame before allocating (src/common/RemotePluginBase.cpp:424-438), and
+`shmFifo::readString()` checks the signalled FIFO's remaining bytes under its data lock before resizing
+(include/RemotePluginBase.h:226-252). Lengths that fit are decoded exactly as before. The owning socket
+`readString()` (the main thread's whole-message wait for settings, presets and VST chunks) is deliberately not
+capped by the audio thread's peek window, so a legitimate large chunk still loads.
 
-**RED:** `git diff HEAD^ HEAD -- include/RemotePluginBase.h src/common/RemotePluginBase.cpp >
-build/qwen-logs/new-p14-251.r1/fix-250.patch`; `git apply -R …/fix-250.patch` EXIT=0; build EXIT=0;
+**RED:** `git diff -- src/common/RemotePluginBase.cpp > build/qwen-logs/new-p14-251.r1/revert-250-budget-final.patch`
+(after temporarily disabling only the remaining-capacity check); `git apply -R …` EXIT=0; build EXIT=0;
 `./RemotePluginAudioPortsTest oversizedStartedFrameLengthIsRefusedBeforeAllocating` EXIT=1 —
-`Actual (allocations): 1`, `Expected: 0` (`test-250-red-reverse.log`).
+`Actual (allocations): 1`, `Expected: 0` (`test-250-red-final2.log`).
 
-**GREEN:** `git apply …/fix-250.patch` EXIT=0; build EXIT=0; same test EXIT=0
-(`test-250-green-restored.log`); the pre-existing count-limit regression also passes
-(`oversizedArgumentCountInvalidatesRemoteMessage`, same run).
+**GREEN:** `git apply -R …/revert-250-budget-final.patch` EXIT=0; build EXIT=0; same test EXIT=0
+(`test-250-green-final2.log`); the pre-existing count-limit regression also passes
+(`oversizedArgumentCountInvalidatesRemoteMessage`, `ctest-family-final9.log`).
 
 **Test:** `oversizedStartedFrameLengthIsRefusedBeforeAllocating()` injects the 8 MiB argument length only after
 the peek has seen the 8-byte header, so the old path really reaches the allocation; progress is 0 and the
@@ -114,8 +115,8 @@ payload never arrives (no sleep). The allocation probe must see 0.
 | build (190 fix) | `cmake --build build --target RemotePluginAudioPortsTest -j4` | 0 | `build-190-green.log` |
 | 190 RED | `git apply -R …/fix-190-revert-cap.patch; build; ./RemotePluginAudioPortsTest startedFrameWaitIsCappedByTheQueryDeadline` | 0;0;1 | `test-190-red.log` |
 | 190 GREEN | `git apply …/fix-190-revert-cap.patch; build; same test` | 0;0;0 | `test-190-green-restored.log` |
-| 250 RED | `git apply -R …/fix-250.patch; build; ./RemotePluginAudioPortsTest oversizedStartedFrameLengthIsRefusedBeforeAllocating` | 0;0;1 | `test-250-red-reverse.log` |
-| 250 GREEN | `git apply …/fix-250.patch; build; same test` | 0;0;0 | `test-250-green-restored.log` |
+| 250 RED | `git apply -R …/revert-250-budget-final.patch; build; ./RemotePluginAudioPortsTest oversizedStartedFrameLengthIsRefusedBeforeAllocating` | 0;0;1 | `test-250-red-final2.log` |
+| 250 GREEN | `git apply -R …/revert-250-budget-final.patch; build; same test` | 0;0;0 | `test-250-green-final2.log` |
 | 251 RED | `git apply -R …/revert-251-bounded-dispatch-final.patch; build; ./RemotePluginAudioPortsTest completeDebugFrameDecodesWithoutAllocating` | 0;0;1 | `test-251-direct-red-final.log` |
 | 251 GREEN | `git apply -R …/revert-251-bounded-dispatch-final.patch; build; same test` | 0;0;0 | `test-251-direct-green-final.log` |
 | family | `cd build/tests && ctest -R '^RemotePluginAudioPortsTest$' --output-on-failure` | 0 | `ctest-family-final6.log` (1/1, 23 functions) |
@@ -139,6 +140,8 @@ file-length PASS (no new item in your files).
   `tests/upstream-modifications.txt`
 - `e6de14ae6` new-p14-251 direct regression: `tests/src/core/RemotePluginAudioPortsTest.cpp`,
   `tests/upstream-modifications.txt`
+- new-p14-250 follow-up: `include/RemotePluginBase.h` (the owning socket `readString()` is not capped
+  by the audio peek window), report, `tests/upstream-modifications.txt`
 - `451db1c44` new-p14-251 API: `include/RemotePluginBase.h`, `src/core/RemotePlugin.cpp`, report,
   `tests/upstream-modifications.txt`
 - `02d242368` new-p14-251 direct test uses `argumentView`: `tests/src/core/RemotePluginAudioPortsTest.cpp`
@@ -148,8 +151,8 @@ file-length PASS (no new item in your files).
 
 **1. Regression test FAILS with the product change reverted and PASSES with it (exit codes).**
 - new-p16-190: RED EXIT=1 (`test-190-red.log`), GREEN EXIT=0 (`test-190-green-restored.log`).
-- new-p14-250: RED EXIT=1 (`test-250-red-reverse.log`, allocations 1), GREEN EXIT=0
-  (`test-250-green-restored.log`).
+- new-p14-250: RED EXIT=1 (`test-250-red-final2.log`, allocations 1), GREEN EXIT=0
+  (`test-250-green-final2.log`).
 - new-p14-251: RED EXIT=1 (`test-251-direct-red-final.log`, allocations 6), GREEN EXIT=0
   (`test-251-direct-green-final.log`); the full-frame peer variant is also RED EXIT=1
   (`test-251-red-final.log`) and GREEN EXIT=0 (`test-251-green-final.log`).
@@ -169,8 +172,10 @@ file-length PASS (no new item in your files).
 - `receiveFrameBefore` callers: `RemotePlugin::collectProcessingReplies()` (audio, now bounded) and
   `RemotePlugin::pumpBeforeBuffer()` (main thread, owning path unchanged).
 - `receiveStartedFrame` caller: only `receiveWithin()`; it now passes the deadline.
-- `readString()` siblings: socket `RemotePluginBase::readString()` and `shmFifo::readString()` both bound the
-  length before resizing.
+- `readString()` siblings: `shmFifo::readString()` bounds the length before resizing; the socket owning
+  `readString()` is the main-thread whole-message path and is intentionally left uncapped by the audio peek
+  window, so large VST chunks still load. The socket started-frame parser (the finding's socket half) bounds
+  before allocating.
 - Bounded decode siblings: socket `receiveBoundedSocketFrame()` and shared-memory `readFrameLockedBounded()`
   both funnel through `parseBoundedFrame()`; `receiveMessage()`/`readFrameLocked()` remain the owning path for
   the main thread.

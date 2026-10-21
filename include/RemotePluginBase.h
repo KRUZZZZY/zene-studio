@@ -726,15 +726,15 @@ public:
 	{
 		std::string ret;
 		const int len = readInt();
-		// The socket peer's length is untrusted. This transport accepts a frame only while it fits in the
-		// peek window, so a longer argument is refused before it is allocated.
-		if (len < 0 || static_cast<std::size_t>(len) > PeekWindowBytes)
+		if (len < 0)
 		{
 			invalidate();
 			return ret;
 		}
 		if (len > 0)
 		{
+			// This owning path is the main thread's wait for a whole message (settings, presets, chunks),
+			// which may legitimately be larger than the audio thread's peek window; it is not bounded here.
 			ret.resize(static_cast<std::size_t>(len));
 			read(ret.data(), len);
 		}
