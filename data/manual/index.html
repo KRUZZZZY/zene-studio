@@ -26,8 +26,8 @@ Undo History); actions outside it - files written to disk, messages sent to hard
 control for its full description. Help &gt; Command Reference lists every command with its arguments, and the Command Palette finds any menu item or command by name: Enter runs it, or opens its settings when it has any, Shift+Enter runs it with its defaults, and a command that cannot be undone is marked; Help &gt; Keyboard
 Shortcuts lists every shortcut, and Project tools &gt; Customise &gt; Keyboard Shortcuts changes them.</p>
 <nav><a href="#window">The window</a> <a href="#arrange">Arranging</a> <a href="#notes">Notes</a> <a href="#mix">Mixing</a>
-<a href="#devices">Devices</a> <a href="#record">Recording</a> <a href="#launch">Launcher</a> <a href="#projects">Projects</a>
-<a href="#agents">Scripts and agents</a> <a href="#customise">Customising</a> <a href="#access">Access</a></nav>
+<a href="#devices">Devices</a> <a href="#record">Recording</a> <a href="#launch">Launcher</a> <a href="#workflows">Patterns and cells</a>
+<a href="#projects">Projects</a> <a href="#agents">Scripts and agents</a> <a href="#customise">Customising</a> <a href="#access">Access</a></nav>
 
 <h2 id="window">The window</h2>
 <ul>
@@ -243,6 +243,37 @@ session's beat grid: started on its own, it waits for the session's next bar (th
 Sync &gt; Quantum changes it). With Project &gt; Sync &gt; Share Start and Stop on, play and stop in any app that shares
 them start and stop the others. The button shows how many apps are connected and the session tempo; link.get_state
 has the rest.</p>
+
+<h2 id="workflows">Patterns, clips and cells</h2>
+<p>Zene has three ways to place music, and they store different things. A <b>pattern</b> is a reusable grid of
+notes in the PatternStore, shown one pattern column at a time in the Pattern Editor. A <b>PatternTrack</b> in the
+arrangement references a pattern; its <b>PatternClip</b> is an empty placeholder that says where on the timeline
+that pattern plays. The placeholder has no instrument and no mixer channel of its own - the instrument tracks
+inside the PatternStore make the pattern's sound. A <b>MIDI clip</b> is different: it is placed directly on an
+instrument track and its notes live in the clip at that position, not in a pattern. A <b>launcher cell</b> is not
+on the timeline at all: it references a pattern or an audio file and launches on the session's next bar (or its
+own quantisation). A MIDI cell plays its referenced pattern through the PatternStore tracks; an audio cell on a
+sample track's column plays through that track's devices, fader, pan and mixer channel.</p>
+<p>For example, put a recurring kick-and-snare groove in PatternStore pattern 0 - the Pattern Editor's first
+pattern column - and place the PatternTrack that references it, with its empty PatternClip placeholder, at bar 1.
+The groove can repeat for the whole song without copying a note. Add a one-bar MIDI fill directly to an
+instrument track at bar 9; its notes live only in that clip at that position. Then launch <code>kick.wav</code>
+from an audio cell in the sample track's launcher column. The first is reusable content, the second is
+positioned content, and the third is a launchable reference with its own launch timing.</p>
+<p><b>Following the signal to the mixer.</b> Select the sample track and read the Inspector's
+&quot;To ...&quot; field; the track header shows the same channel number. Mix view's Routing page
+(Mix &gt; Routing) names where every strip's signal comes from and where it goes, with each send's amount and
+the hardware output. An agent reads the same assignment with <code>track.overview</code>: the track's
+<code>channel</code> is a <code>ch-&lt;n&gt;</code> id, and the matching entry in <code>mixer.get_state</code>
+has that <code>id</code> and its <code>name</code>. <code>track.set_mixer_channel</code> changes the assignment,
+exactly as the Inspector's menu does, as one undo step.</p>
+<p>A PatternTrack placeholder never appears as a channel owner: <code>track.overview</code> and
+<code>track.set_mixer_channel</code> address the song's own instrument and sample tracks. The PatternStore's
+instrument tracks make the pattern's sound, each with its own mixer channel set in the Pattern Editor, and a MIDI
+launcher cell follows those PatternStore tracks - not an instrument that happens to sit on its launcher column.
+For the rest of the model, <code>arrangement.get_state</code> lists the song tracks and their clips,
+<code>session.pattern_list</code> names the patterns a MIDI cell can play, <code>session.get_state</code> shows
+the cells and their launch settings, and <code>session.set_slot</code> fills one.</p>
 
 <h2 id="projects">Projects</h2>
 <p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every

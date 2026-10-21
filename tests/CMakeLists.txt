@@ -4674,6 +4674,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-159: the manual's Patterns, clips and cells section and its first-beat tour step,
+	# then the example's sample track traced to its mixer channel over the socket with the
+	# command names the section gives (track.overview, mixer.get_state, track.set_mixer_channel).
+	add_test(NAME ControlWorkflowModels
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-workflow-models.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlWorkflowModels PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The 0.5.0 L13 customisation surface: shortcuts, layouts, floating panels, the header,
 	# macros, arranger zoom/fit/tool and the pattern list - over the socket, on a throwaway config.
 	add_test(NAME ControlCustomisation
