@@ -449,6 +449,37 @@ private slots:
 		QCOMPARE(store->tracks().back()->numOfClips(), 1);  // one pattern clip, not one from the redo and one from the restore
 	}
 
+	//! A malformed track-copy payload is refused before the Pattern Editor creates its first pattern track.
+	void aTrackDropWithANonTrackElementIsRefusedInThePatternEditor()
+	{
+		PatternEditor* patternView = getGUI()->patternEditor()->m_editor;
+		PatternStore* store = Engine::patternStore();
+		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		const int depth = Engine::projectJournal()->undoDepth();
+		const int patterns = store->numOfPatterns();
+
+		DataFile malformed(DataFile::Type::DragNDropData);
+		QDomElement element = malformed.createElement(QStringLiteral("notatrack"));
+		element.setAttribute(QStringLiteral("type"), static_cast<int>(Track::Type::Instrument));
+		malformed.content().appendChild(element);
+		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(QStringLiteral("track_0"), malformed.toString()));
+		const QPoint point(10, 10);
+
+		QDragEnterEvent enter(point, Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		QCoreApplication::sendEvent(patternView, &enter);
+		QVERIFY(enter.isAccepted());
+		QDropEvent drop(QPointF(point), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::ControlModifier);
+		drop.setAccepted(false);
+		QCoreApplication::sendEvent(patternView, &drop);
+
+		QVERIFY(!drop.isAccepted());
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
+		QCOMPARE(store->numOfPatterns(), patterns);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth);
+	}
+
 	void aDragWithNoFileIsNotTaken()
 	{
 		TrackContentWidget* lane = viewOf(m_instrument)->getTrackContentWidget();
