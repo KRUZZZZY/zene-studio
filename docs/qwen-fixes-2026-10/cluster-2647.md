@@ -1,3 +1,5 @@
+ALREADY-FIXED
+
 # Cluster 2647: reading the automation ramp took the value-buffer mutex (batch: 2647, 5524, new-p15-273)
 
 Verdict: FIXED (2647: ALREADY-FIXED, 5524: FIXED, new-p15-273: FIXED)
@@ -21,22 +23,24 @@ Same-file batch in `src/core/AutomatableModel.cpp`. One commit per bug:
 > git-ignored `build/2647-logs/` inside the worktree, and the gate commands were run directly
 > (see "Gates"). The compile/test commands and exit codes in the tables are the exact ones that
 > ran; the command text names `build/2647-logs/NN-*.log` because that is where the output is.
+> The independent QA review's numbered logs are in
+> `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2647.r3/logs`.
 
 ## 2647: ALREADY-FIXED
 
 The finding says `valueBuffer()` acquires `m_valueBufferMutex` before the new ramp check
 (historically `src/core/AutomatableModel.cpp:540`). On this branch that is no longer true:
 
-- `src/core/AutomatableModel.cpp:752-777` - `valueBuffer()` takes **no mutex at all**. The
+- `src/core/AutomatableModel.cpp:758-793` - `valueBuffer()` takes **no mutex at all**. The
   guarded, control-side query and the realtime branch are both lock-free; the realtime branch
   only reads the period stamp and the prepared cache.
-- `src/core/AutomatableModel.cpp:884-919` - the ramp itself is read in
+- `src/core/AutomatableModel.cpp:878-919` - the ramp itself is read in
   `prepareValueBufferForRender()` (`m_automationRampPeriod == s_periodCounter`,
-  line 885), which the serial render prepass (`AudioEngine::renderStageNoteSetup()`,
-  `src/core/AudioEngine.cpp:874`) and the render-owner's own `valueBuffer()` call own. There is
+  line 900), which the serial render prepass (`AudioEngine::renderStageNoteSetup()`,
+  `src/core/AudioEngine.cpp:863`) and the render-owner's own `valueBuffer()` call own. There is
   no `QMutexLocker` and no `.lock()` anywhere in `AutomatableModel.cpp`
   (`rg -n 'QMutexLocker|\.lock\(\)|tryLock' src/core/AutomatableModel.cpp` is empty).
-- `include/AutomatableModel.h:663-664` - the mutex survives only as a **test sentinel**
+- `include/AutomatableModel.h:670-671` - the mutex survives only as a **test sentinel**
   ("Legacy lock retained as a test sentinel; product code no longer acquires it").
 
 This was landed by the earlier commits on the branch (`c28751cef` "prepare model buffers before
@@ -50,12 +54,11 @@ Evidence it is fixed, and that the tests can see a regression:
   `valueBuffer()` makes three of them fail (exit 8) - `theSidechainAmountReadTakesNoLock`,
   `mixerFaderBufferLookupDoesNotWaitOnCacheLock` and
   `pluginParameterBufferLookupDoesNotWaitOrAllocate`; restored, they pass (exit 0).
-- A round-1 attempt added an `LMMS_TESTING` ramp-read probe seam so a new test could ask the
-  sentinel with `tryLock(0)` after the ramp read. **That seam was removed in round 2**: it made
-  the automated negative control a false witness (reverting the product diff removed the seam and
-  broke the build, and 2647's fix is in the base commit anyway, so there is no 2647 product diff
-  for the control to revert). The seam never shipped in a passing state and is gone from both
-  `include/AutomatableModel.h` and `src/core/AutomatableModel.cpp`.
+- Round 1 added an `LMMS_TESTING` ramp-read probe seam so a test could ask the sentinel with
+  `tryLock(0)` immediately after the ramp read. Round 2 removed the seam and test after discovering
+  that the automated negative-control parser skipped `AutomatableModelTest` (#19). The independent
+  QA review restored the deterministic probe and test; its exact RED/GREEN commands are recorded
+  in the QA review addendum below.
 
 | Stage | Command | Exit | Evidence |
 | --- | --- | ---: | --- |
@@ -111,7 +114,7 @@ deterministic: it writes DOM elements directly and calls the load entry points; 
 
 `setControllerConnection()` (pre-fix `src/core/AutomatableModel.cpp:639-651`) assigned
 `m_controllerConnection = c` without touching the old value: the old connection was leaked, its
-`valueChanged()` was still wired to `dataChanged`, and its `destroyed()` -> 
+`valueChanged()` was still wired to `dataChanged`, and its `destroyed()` ->
 `unlinkControllerConnection()` handler stayed connected. When it was later destroyed,
 `unlinkControllerConnection()` cleared whatever connection the model held then - the NEW one -
 and disconnected its signals.
@@ -172,14 +175,12 @@ separate causes, both fixed here:
    * Both are ordinary public-API tests (`loadSettings`/`setInitValue`, `setControllerConnection`),
      so with the product change reverted they **fail at run time**, not at compile time.
 
-2. **The 2647 seam made a false witness.** The round-1 attempt added an `LMMS_TESTING` probe call
-   to `valueBuffer()`; reverting the product diff then removed the seam and broke the *build*, so
-   the pair of tests "passed" only because the low-index test was skipped entirely. That seam is
-   gone. 2647's fix (`c28751cef`, "prepare model buffers before worker jobs") is already in the
-   base commit `07d6d02bd`, so this branch has **no 2647 product change for the negative control
-   to revert** - which is exactly what ALREADY-FIXED means here. The lock-free property stays
-   covered by the existing `PhaseDSidechainTest` probes, which were re-proved to fail (rc 8) when
-   the lock is reinstated (`build/2647-logs/22-test-2647-mutation-existing-probes.log`).
+2. **The first 2647 test seam made a false witness.** Reverting the product diff removed that
+   seam and broke the build, so the old negative control skipped the low-index test. Round 2
+   removed the seam and the test. The submitted tip did have no 2647 product change to revert:
+   the lock-free implementation (`c28751cef`, "prepare model buffers before worker jobs") is
+   already in base `07d6d02bd`. The QA review restored a deterministic test seam and regression
+   in `AutomatableModelTest`; it fails when the historical lock is reinstated (see the addendum).
 
 The harness's own function, run against this tree, now reports:
 
@@ -248,7 +249,8 @@ the bug fixes; it changes no product code, test or gate limit.
 - `src/gui/AutomatableModelView.cpp` - the double-free fix that follows from the new ownership.
 - `tests/src/core/RackMacrosTest.cpp` - the 5524 regression (round-2 home).
 - `tests/src/core/MidiLearnTest.cpp` - the new-p15-273 regression (round-2 home).
-- `tests/src/core/AutomatableModelTest.cpp` - reverted to the base after the regressions moved.
+- `tests/src/core/AutomatableModelTest.cpp` - the QA review restores the deterministic 2647
+  ramp-read regression after round 2 removed it with the other tests.
 - `tests/src/core/AutomationPrepassProofTest.cpp` - teardown follows the new ownership.
 - `tests/all-sources.txt` - the train-state manifest repair (separate commit `14e19eb4d`).
 - `tests/upstream-modifications.txt` - ledger entries for every inherited product file above,
@@ -263,16 +265,15 @@ the bug fixes; it changes no product code, test or gate limit.
   restored, rebuild exit 0, `ctest` exit **0**. Round 2 re-proved both through the harness's own
   `negctl.prove`: **reverted rc 8, restored rc 0, tree clean**
   (`build/2647-logs/77-negctl-final.log`), with each failure naming its own regression assertion.
-  2647 is ALREADY-FIXED, so the equivalent is a mutation that reinstates the historical lock at
-  the top of `valueBuffer()`: rebuild exit 0, `ctest` exit **8**, restored build exit 0,
-  `ctest` exit **0** (tables above; logs `06/07/08/09`, `14/15/16/17`, `21/22/33/34`).
+  2647 is ALREADY-FIXED in the branch base; the restored deterministic test fails after a
+  temporary historical `QMutexLocker` is inserted at `valueBuffer()` (build exit 0, CTest exit 8,
+  `logs/93`-`94`) and passes after that line is removed (build exit 0, CTest exit 0, `logs/95`-`96`).
 - **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected
   values it uses).** 5524: DOM elements built in the test are fed to `loadSettings()` directly -
   no clock, no thread. new-p15-273: two `QPointer`-watched connections and one deliberately
   connected "stranger" are created and destroyed on the test thread - no clock, no thread. 2647:
-  the standing `PhaseDSidechainTest` probes hold the legacy sentinel from another thread only to
-  prove the read does **not** wait on it; the round-1 `tryLock(0)` sentinel probe was removed
-  with its seam and never shipped in a passing state.
+  the test-only callback asks the legacy mutex with `tryLock(0)` immediately after a ramp read -
+  synchronous, no other thread and no timeout.
 - **The fix is at the cause and complete: every caller and sibling of what you changed was
   checked and stays consistent.** 5524: all four load-time writes (automation-compat `setValue`,
   element `setValue`, `setInitValue`, `reset`) run inside the load scope, and `setInitValue()`
@@ -304,12 +305,30 @@ the bug fixes; it changes no product code, test or gate limit.
   (`build/2647-logs/79-feature-check-final.log`), and every question it ASKs is answered by
   the bullets in this section.
 - **2647 is ALREADY-FIXED - cite the code (file:line) or the intended contract that shows it.**
-  `src/core/AutomatableModel.cpp:752-777` (`valueBuffer()` has no mutex and no lock call),
-  `src/core/AutomatableModel.cpp:884-919` (the ramp is read in the lock-free prepass function,
-  line 885), `include/AutomatableModel.h:663-664` (the mutex is documented as a test sentinel
+  `src/core/AutomatableModel.cpp:758-793` (`valueBuffer()` has no product mutex acquisition),
+  `src/core/AutomatableModel.cpp:878-919` (the ramp is read in the serial prepass, and the
+  `LMMS_TESTING` probe after line 910 only enables a try-lock assertion),
+  `include/AutomatableModel.h:670-671` (the mutex is documented as a test sentinel
   that product code no longer acquires), `rg -n 'QMutexLocker|\.lock\(\)|tryLock'
   src/core/AutomatableModel.cpp` -> no match. Introduced by ancestors `c28751cef` and
   `8c837f075` (both in the base commit). The standing `PhaseDSidechainTest` lock probes fail
   when that lock is reinstated, so the property cannot silently regress.
 
 2647: ALREADY-FIXED
+
+## QA review addendum (2026-10-22)
+
+The review restored the deterministic 2647 regression that round 2 had removed, along with its
+`LMMS_TESTING`-only seam. The production lock-free implementation was already present in the base;
+the temporary `QMutexLocker` below was a negative-control mutation only.
+
+| Check | Command | Exit | Evidence |
+| --- | --- | ---: | --- |
+| RED build with historical lock | `cmake --build build --target zene AutomatableModelTest -j12` | 0 | `logs/93-build-2647-lock-red.log` |
+| RED regression | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `logs/94-red-2647-deterministic.log`; `readingTheAutomationRampTakesNoMutex` failed because the probe saw the mutex held |
+| Negative-control rebuild with 5524 and connection hunks reversed | `cmake --build build --target zene AutomatableModelTest MidiLearnTest RackMacrosTest AutomationPrepassProofTest PhaseDSidechainTest -j12` | 0 | `logs/85-build-reverted-5524-p15.log` |
+| Restored build | `cmake --build build --target zene AutomatableModelTest MidiLearnTest RackMacrosTest AutomationPrepassProofTest PhaseDSidechainTest -j12` | 0 | `logs/95-build-final-reviewed-tree.log` |
+| Final focused family | `ctest -R '^(AutomatableModelTest|RackMacrosTest|MidiLearnTest|AutomationPrepassProofTest|PhaseDSidechainTest)$' --output-on-failure` | 0 | `logs/96-green-family-final.log`; 5/5 passed |
+| 5524 RED | `ctest -R '^RackMacrosTest$' --output-on-failure` with 5524 product hunks reversed | 8 | `logs/86-red-5524.log`; `aLoadDoesNotClaimTheLastTouchedModel` failed |
+| new-p15-273 RED | `ctest -R '^MidiLearnTest$' --output-on-failure` with connection replacement product hunks reversed | 8 | `logs/87-red-p15-273.log`; `replacingTheControllerConnectionGivesUpTheOldOne` failed |
+| feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-2647` | 0 | `logs/99-qa-feature-check-final-tree.log`; all 8 gates PASS |

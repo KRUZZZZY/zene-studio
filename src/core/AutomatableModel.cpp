@@ -55,6 +55,12 @@ static_assert(std::atomic<bool>::is_always_lock_free,
 //! above zero, a model created here is not registered with the audio engine.
 thread_local unsigned s_deferredRegistrations = 0;
 
+#ifdef LMMS_TESTING
+//! The ramp-read probe (see the header). Test builds only, and a plain pointer
+//! test - it allocates nothing, locks nothing and is never set in the product.
+void (*s_valueBufferRampReadProbeForTest)(AutomatableModel*) = nullptr;
+#endif
+
 AudioEngine::RequestChangesGuard modelChangeGuard(const AutomatableModel* model)
 {
 	AudioEngine* const engine = Engine::audioEngine();
@@ -740,6 +746,15 @@ float AutomatableModel::controllerValue( int frameOffset ) const
 	return v;
 }
 
+#ifdef LMMS_TESTING
+void AutomatableModel::setValueBufferRampReadProbeForTest(void (*probe)(AutomatableModel*))
+{
+	s_valueBufferRampReadProbeForTest = probe;
+}
+#endif
+
+
+
 ValueBuffer * AutomatableModel::valueBuffer()
 {
 	AudioEngine* const engine = Engine::audioEngine();
@@ -894,6 +909,12 @@ void AutomatableModel::prepareValueBufferForRender(bool skipLinkedControllerLook
 		m_oldValue = m_renderValue;
 		m_lastUpdatedPeriod = s_periodCounter;
 		m_hasSampleExactData = true;
+#ifdef LMMS_TESTING
+		// Test seam: the ramp has just been read. A regression asks the legacy
+		// value-buffer mutex here; a read that holds it across the ramp is the
+		// render-thread wait cluster 2647 is about.
+		if (s_valueBufferRampReadProbeForTest != nullptr) { s_valueBufferRampReadProbeForTest(this); }
+#endif
 		return;
 	}
 
