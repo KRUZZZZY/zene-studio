@@ -235,3 +235,101 @@ second, a print every five), the line text and the guard against a zero count ar
 Nothing new runs on the audio thread: no allocation, free, lock, wait, I/O or signal - the
 collector's allocation happens in the plugin constructor. No control command, undo step or
 saved-data format is involved.
+
+## Self-check
+
+Answers to every ASK item from `submit_check.py`.
+
+**? The regression test FAILS with your product change reverted and PASSES with it (exit codes).**
+
+The exact sequence, run and recorded (logs in `build/qwen-logs/new-p14-389-port-port.r1/`):
+
+1. `git diff -- plugins/SpectrumAnalyzer/Analyzer.h plugins/SpectrumAnalyzer/Analyzer.cpp > .../fix.patch` -> `EXIT=0` (211 lines).
+2. `git apply -R .../fix.patch` -> `EXIT=0` (product code back to baseline).
+3. `cmake --build build --target zene AudioPluginTest -j 20` -> `EXIT=0` (`build-reverted-red.log`).
+4. `cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure` -> **`EXIT=8`**, "23 passed, 3 failed"; the three failures are exactly
+   `analyzerTimingSnapshotStaysCoherent` ("Analyzer has no coherent timing snapshot collector"),
+   `analyzerTimingSurvivesNoCallbackAfterRequest` (same) and
+   `analyzerTimingReportUsesOneCoherentSnapshot` ("Analyzer resets the count, the sum and the peak with separate exchanges")
+   (`test-reverted-red.log`).
+5. `git apply .../fix.patch` -> `EXIT=0`.
+6. `cmake --build build --target zene AudioPluginTest -j 20` -> `EXIT=0` (`build-restored-green.log`).
+7. `cd build/tests && ctest -R '^AudioPluginTest$' --output-on-failure` -> **`EXIT=0`**, 1/1 test passed
+   (`test-restored-green.log`); `./AudioPluginTest` prints 26 passed, 0 failed, and the three slots PASS.
+
+The same RED (`EXIT=8`) was recorded before any fix was written (`test-red-baseline2.log`).
+
+**? The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses).**
+
+`Analyzer::TimingCollector` is the seam. The probes instantiate it and inject the duration of
+every callback as a plain `std::uint64_t` (`collector.record(100); collector.record(300); ...`),
+then call `request()`/`take()` on one thread. There is no clock read (`std::chrono` is not
+called), no `sleep`, no thread, no timer and no race: the values and the interval boundaries
+are fixed data, and the expected count/sum/peak of each interval are hand-computed
+(`2/400/300`, `1/50/50`, `3/270/110`, `1/10/10`). The third test reads the product source and
+asserts the exchange sequence is gone; that is a source contract, not a timing measurement.
+
+**? The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent.**
+
+- `reportAudioTiming()` is the only reader: it is the only caller of `m_timing.request()` /
+  `m_timing.take()` and is reached only from the `QTimer` lambda in the constructor
+  (`Analyzer.cpp:74-78`).
+- `processImpl()` is the only writer: `m_timing.record()` replaced the three
+  `fetch_add`/CAS operations (`Analyzer.cpp:105-109`).
+- The removed members `m_dump_count` / `m_sum_execution_ns` / `m_max_execution_ns` have no
+  other user in the tree; the same-named `SaProcessor` members are a different per-second CPU
+  report and are untouched (`plugins/SpectrumAnalyzer/SaProcessor.h:163-165`).
+- The constructor guard that listed the removed counters was adapted to the SA_DEBUG scalars
+  the header still declares (`tests/src/plugins/AudioPluginTest.cpp:968-1006`), so it keeps
+  guarding `m_last_dump_time` and still fails if a member that exists is left uninitialized.
+- `tests/reference/SpectrumAnalyzer/Analyzer.{h,cpp}` is the frozen pre-migration copy of the
+  behaviour-preservation harness, not the shipped plugin; it is unchanged and
+  `PluginPortsMigrationTest` passes (73 passed, 0 failed).
+- The wider type is consistent: count is `std::uint64_t` through `record()`, `Snapshot` and
+  the printed division (`static_cast<double>(snapshot.sumNs) / 1.0e6 / snapshot.count`), so no
+  narrowing remains. The three exchange calls produced `int` for the count, which is gone.
+
+**? No collateral damage: old projects and saved data still load as before, and any limit or check you added does not hit other callers that legitimately exceed it.**
+
+The change is entirely inside `#ifdef SA_DEBUG` (no CMake file in this tree defines it) and
+touches no serialization, no settings key and no control command, so old projects and saved
+data load exactly as before; a release build is byte-for-byte the same code path. The only
+limit is the collector's 16384-slot ring, which is a debug-only report buffer: at the fastest
+supported sample rate the audio thread runs 750 times per second, so a five-second interval
+needs 3750 slots (2.3x headroom), and a full queue drops the measurement (counted in
+`Snapshot::dropped`) instead of overwriting one that is still waiting - it cannot feed a mixed
+report to any caller. No other caller uses it.
+
+**? If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.**
+
+Not applicable: the verdict is FIXED and the defect was present on this branch before the
+change (`plugins/SpectrumAnalyzer/Analyzer.cpp:127-129` pre-fix, the three separate
+`exchange(0)` calls; the counters at `plugins/SpectrumAnalyzer/Analyzer.h:201-203` pre-fix).
+
+### Gates in this session
+
+`submit_check.py` runs `feature_check.py` as a subprocess; that script creates
+`<worktree>/../<name>-feature-check/` and this session cannot write the worktree's parent or
+the harness log folder (`EXIT=1`, `PermissionError`). The unmodified `feature_check.py` was
+run through `build/qwen-logs/run_feature_check_redirected.py`, which redirects only where its
+log files land (into the worktree's ignored `build/qwen-logs/`); the gate commands, the
+worktree and the gate logic are untouched. Its table:
+
+```
+feature-check zene-qwen-new-p14-389-port-port (base 07d6d02bd, 5 changed files)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
+
+`EXIT=0`. Run by hand in this worktree, each gate's own exit code agrees: fork-sources 0,
+all-sources-reproduce 0, no-upstream-regression 0, check-namespace 0, no-tautology 0,
+doc-figures 0; complexity and file-length exit 1 with no regression line in a file this
+change touched (checked against the cached base listings for `07d6d02bd`, 0 new items in my
+files for both).
