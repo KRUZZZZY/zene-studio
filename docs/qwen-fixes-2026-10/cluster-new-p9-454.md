@@ -273,6 +273,14 @@ branch does not touch that path.
   sweep over the declared audio paths passes (EXIT=0), and the new function is
   declared in the scope file. Undo stays one honest step (nothing about undo
   or the command surface changed), and no new control command was added.
+- **The ALREADY-FIXED / FALSE-POSITIVE question does not apply to this
+  round.** The verdict is FIXED, and the code that shows the bug was there
+  before this round is the `m_noteEvents.push( event )` whose result was
+  thrown away in `deleteNotePluginData()`
+  (`plugins/Sf2Player/Sf2Player.cpp:1445` as the round-5 review quoted it),
+  followed by `releasePluginDataSlot( slot )` on the next lines. The RED run
+  (`test-red-1.log`) and the reversal (`test-revert-2.log`) both show the
+  note staying counted with that code in place.
 - **Verdict.** The round-5 blocking finding (a teardown note-off lost when the
   bounded event queue was full) is REAL and is FIXED: the refusal is now
   handled by a bounded, allocation-free, lock-free fallback that guarantees
