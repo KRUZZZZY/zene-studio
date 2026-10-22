@@ -128,6 +128,43 @@ bool stopWorker(AudioEngineWorkerThread& worker)
 	return worker.wait(5000) && !worker.isRunning();
 }
 
+//! The worker drain probe's gate: `BeforeWait` proves the worker has read the current wake
+//! generation (so the wake that follows cannot be lost), and `BeforeQueue` parks it after it
+//! has decided to drain - the windows RenderJobQueueTest established.
+struct WorkerDrainGate
+{
+	std::mutex mutex;
+	std::condition_variable cv;
+	bool beforeWait = false;
+	bool beforeQueue = false;
+	bool releaseBeforeQueue = false;
+	bool afterQueue = false;
+};
+
+WorkerDrainGate* g_workerDrainGate = nullptr;
+
+void observeWorkerDrain(AudioEngineWorkerThread::WorkerDrainProbeStage stage)
+{
+	WorkerDrainGate* const gate = g_workerDrainGate;
+	if (gate == nullptr) { return; }
+	std::unique_lock<std::mutex> lock(gate->mutex);
+	if (stage == AudioEngineWorkerThread::WorkerDrainProbeStage::BeforeWait)
+	{
+		gate->beforeWait = true;
+		gate->cv.notify_all();
+		return;
+	}
+	if (stage == AudioEngineWorkerThread::WorkerDrainProbeStage::BeforeQueue)
+	{
+		gate->beforeQueue = true;
+		gate->cv.notify_all();
+		gate->cv.wait(lock, [gate] { return gate->releaseBeforeQueue; });
+		return;
+	}
+	gate->afterQueue = true;
+	gate->cv.notify_all();
+}
+
 //! The wake's worst case: the OLD Apple-below-11 shape, kept here ONLY so the probes can be
 //! shown to catch it. It is never product code; the test calls it directly.
 void oldCondvarWake()
@@ -208,40 +245,50 @@ auto countMutexLocks(Body&& body) -> std::pair<std::uint64_t, bool>
 
 //! Blanks // and /* */ comments and string/char literals, keeping the line structure. The
 //! source scan is about code: a comment that says "no mutex here" must not be a hit, and a
-//! comment that mentions `new` must not hide one.
+//! comment that mentions `new` must not hide one. Each helper returns the index to continue
+//! at, so the loop below has one decision per iteration.
+std::size_t blankLineComment(std::string& text, std::size_t i)
+{
+	while (i < text.size() && text[i] != '\n') { text[i++] = ' '; }
+	return i;
+}
+
+std::size_t blankBlockComment(std::string& text, std::size_t i)
+{
+	i += 2;
+	while (i + 1 < text.size() && !(text[i] == '*' && text[i + 1] == '/'))
+	{
+		if (text[i] != '\n') { text[i] = ' '; }
+		++i;
+	}
+	if (i < text.size()) { text[i] = ' '; }
+	if (i + 1 < text.size()) { text[i + 1] = ' '; }
+	return i + 1;
+}
+
+std::size_t blankLiteral(std::string& text, std::size_t i)
+{
+	const char quote = text[i++];
+	while (i < text.size() && text[i] != quote)
+	{
+		if (text[i] == '\\') { text[i++] = ' '; }
+		if (i < text.size()) { if (text[i] != '\n') { text[i] = ' '; } ++i; }
+	}
+	if (i < text.size()) { text[i] = ' '; }
+	return i;
+}
+
 std::string stripCommentsAndLiterals(const std::string& text)
 {
 	std::string out = text;
 	for (std::size_t i = 0; i < out.size(); ++i)
 	{
-		if (out[i] == '/' && i + 1 < out.size() && out[i + 1] == '/')
-		{
-			while (i < out.size() && out[i] != '\n') { out[i++] = ' '; }
-			if (i < out.size()) { out[i] = '\n'; }
-		}
-		else if (out[i] == '/' && i + 1 < out.size() && out[i + 1] == '*')
-		{
-			out[i++] = ' ';
-			out[i++] = ' ';
-			while (i + 1 < out.size() && !(out[i] == '*' && out[i + 1] == '/'))
-			{
-				if (out[i] != '\n') { out[i] = ' '; }
-				++i;
-			}
-			out[i] = ' ';
-			if (i + 1 < out.size()) { out[i + 1] = ' '; }
-		}
-		else if (out[i] == '"' || out[i] == '\'')
-		{
-			const char quote = out[i];
-			out[i++] = ' ';
-			while (i < out.size() && out[i] != quote)
-			{
-				if (out[i] == '\\') { out[i++] = ' '; }
-				if (i < out.size()) { if (out[i] != '\n') { out[i] = ' '; } ++i; }
-			}
-			if (i < out.size()) { out[i] = ' '; }
-		}
+		const bool lineComment = out[i] == '/' && i + 1 < out.size() && out[i + 1] == '/';
+		const bool blockComment = out[i] == '/' && i + 1 < out.size() && out[i + 1] == '*';
+		const bool literal = out[i] == '"' || out[i] == '\'';
+		if (lineComment) { i = blankLineComment(out, i); }
+		else if (blockComment) { i = blankBlockComment(out, i); }
+		else if (literal) { i = blankLiteral(out, i); }
 	}
 	return out;
 }
@@ -381,10 +428,61 @@ private slots:
 		}
 	}
 
-	//! AC2: repeated worker wakeups complete with no deadlock and no missed period. Real
-	//! pool workers are woken once per simulated render period; every job queued in a period
-	//! must run exactly once, and at least one job must actually have been taken by a worker
-	//! (otherwise the case would only prove the inline drain works).
+	//! AC2, the pool half, deterministic: a job queued before the wake is taken by a worker,
+	//! proven through the drain probe rather than by racing the caller. The probe parks the
+	//! worker in the two windows that make it a fact: `BeforeWait` (it has read the generation,
+	//! so the wake that follows cannot be lost) and `BeforeQueue` (it has decided to drain).
+	//! The calling thread never drains here, so the only possible runner is the worker.
+	void aWokenWorkerTakesTheQueuedPeriodJob()
+	{
+		auto worker = std::make_unique<AudioEngineWorkerThread>(nullptr);
+		worker->start();
+
+		WorkerDrainGate gate;
+		g_workerDrainGate = &gate;
+		AudioEngineWorkerThread::setWorkerDrainProbeForTesting(&observeWorkerDrain);
+
+		// Let the worker read the current generation and report that it is about to wait.
+		AudioEngineWorkerThread::wakeWorkers();
+		{
+			std::unique_lock<std::mutex> lock(gate.mutex);
+			gate.cv.wait(lock, [&gate] { return gate.beforeWait; });
+		}
+
+		std::atomic<int> total{0};
+		auto job = std::make_unique<RecordingJob>(total);
+		std::vector<ThreadableJob*> pointers{job.get()};
+		AudioEngineWorkerThread::fillJobQueue(pointers);
+
+		// The period's wake: the worker must come back and take the job.
+		AudioEngineWorkerThread::wakeWorkers();
+		{
+			std::unique_lock<std::mutex> lock(gate.mutex);
+			gate.cv.wait(lock, [&gate] { return gate.beforeQueue; });
+			gate.releaseBeforeQueue = true;
+		}
+		gate.cv.notify_all();
+		{
+			std::unique_lock<std::mutex> lock(gate.mutex);
+			gate.cv.wait(lock, [&gate] { return gate.afterQueue; });
+		}
+
+		AudioEngineWorkerThread::setWorkerDrainProbeForTesting(nullptr);
+		g_workerDrainGate = nullptr;
+
+		const bool joined = stopWorker(*worker);
+		if (!joined) { worker.release(); }
+
+		QVERIFY2(joined, "the test's own worker thread did not stop");
+		QCOMPARE(job->runs, 1);
+		QCOMPARE(total.load(), 1);
+		QVERIFY2(job->runner != std::this_thread::get_id(),
+			"the queued period job ran on the caller: the wake never reached a worker");
+	}
+
+	//! AC2, the repeated half: every period's jobs are delivered exactly once across many
+	//! wakeups, and every wake is posted. A repeated wake that was lost, or a period whose
+	//! jobs never ran, shows up here as a count that is off rather than as a hang.
 	void repeatedWakeupsDeliverEveryPeriodWithoutDeadlock()
 	{
 		constexpr int kPeriods = 240;
@@ -401,8 +499,6 @@ private slots:
 		lmms::workerwake::resetNotifyCountForTesting();
 
 		std::atomic<int> total{0};
-		std::atomic<int> onWorker{0};
-		const auto mainThread = std::this_thread::get_id();
 		bool everyJobRanOnce = true;
 
 		for (int period = 0; period < kPeriods; ++period)
@@ -421,7 +517,6 @@ private slots:
 			for (const auto& job : jobs)
 			{
 				everyJobRanOnce = everyJobRanOnce && job->runs == 1;
-				if (job->runner != mainThread) { onWorker.fetch_add(1, std::memory_order_relaxed); }
 			}
 			if (!everyJobRanOnce) { break; }
 		}
@@ -441,9 +536,8 @@ private slots:
 		QVERIFY2(stranded == 0, "a pool worker did not stop within the join budget");
 		QVERIFY2(everyJobRanOnce, "a queued period job did not run exactly once");
 		QCOMPARE(total.load(), kPeriods * kJobsPerPeriod);
+		// Exactly one post per period: a period that woke nobody (a lost wake) would be short.
 		QCOMPARE(posts, std::uint64_t{kPeriods});
-		QVERIFY2(onWorker.load() > 0,
-			"no job was taken by a pool worker: the case never exercised the wake it measures");
 	}
 
 	//! AC2, shutdown half: a worker parked in the wait is released by quit() even when a
