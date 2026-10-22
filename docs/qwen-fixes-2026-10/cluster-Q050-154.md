@@ -46,7 +46,7 @@ same `livecode.*` commands an agent uses.
 Commands and exit codes (run from `build/tests` unless noted):
 
 ```
-ctest -R '^LivecodePanelTest$' --output-on-failure                          EXIT=0 (1/1)
+ctest -R '^LivecodePanelTest$' --output-on-failure                          EXIT=0 (1/1; 7 cases + init/cleanup)
 ctest -R '^ControlLivecodeCommands$' --output-on-failure                    EXIT=0 (1/1)
 ctest -R '^ReversibilityContractTest$' --output-on-failure                  EXIT=0 (1/1)
 ctest -R '^ControlRegistryTest$|^ScriptClockTest$|^ScriptBudgetActionTest$' EXIT=0 (3/3)
@@ -66,11 +66,11 @@ python3 (patched-feature_check wrapper) feature_check.py .                  EXIT
 
 Red/green, product hunks reversed and rebuilt: `src/core/ControlCommandsLivecode.cpp`, `src/gui/ControlCommandsShell.cpp`,
 `src/gui/MainWindow.cpp` and `src/gui/shell/ShellToolsMenu.cpp` restored to base `dbb15dded`; `zene` and
-`LivecodePanelTest` rebuilt. `LivecodePanelTest` then fails 6 of 7 cases (window.livecode absent; `livecode.get_source`
-answers `not_found`, so every readback is empty) and `control-livecode-commands.py` fails its four new readback /
-replacement checks. Restoring and rebuilding: both PASS. Logs in `/tmp/Q050-154-logs/`:
-`red-build.log`, `red-test-panel.log`, `red-test-transcript.log`, `test-10-panel-green.log`,
-`test-12-transcript-green.log`, `test-18-panel.log`.
+`LivecodePanelTest` rebuilt. `LivecodePanelTest` then reports **EXIT=8** with 5 FAIL cases (`window.livecode` absent;
+`livecode.get_source` answers `not_found`, so every readback is empty) and `ControlLivecodeCommands` reports **EXIT=8**
+with its four new readback / replacement checks FAILED. Restoring and rebuilding: both **EXIT=0**. Logs in
+`/tmp/Q050-154-logs/`: `red2-build.log`, `red2-test-panel.log`, `red2-test-transcript.log`,
+`test-22-panel-green.log`, `test-23-transcript-green.log`.
 
 ## New commands and reversibility
 
@@ -106,12 +106,12 @@ Answers to every `submit_check.py` ASK item, with evidence.
 **? Each new test FAILS with your product change reverted, then PASSES restored.**
 Yes. Reverted `ControlCommandsLivecode.cpp`, `ControlCommandsShell.cpp`, `MainWindow.cpp`, `ShellToolsMenu.cpp` to
 `dbb15dded` (keeping the tests), rebuilt `zene` + `LivecodePanelTest`:
-- `ctest -R '^LivecodePanelTest$'` -> **EXIT=8** (6 of 7 cases FAIL: window.livecode absent; get_source not_found so
-  scheduleState() is `""`). Log `red-test-panel.log`.
-- `python3 control-livecode-commands.py ../build/zene ...` -> **EXIT=1** (the four new checks FAIL with
-  `no command 'livecode.get_source'`). Log `red-test-transcript.log`.
-Restored the four files, rebuilt: `ctest -R '^LivecodePanelTest$'` -> **EXIT=0** (`test-10-panel-green.log`,
-`test-18-panel.log`); `ctest -R '^ControlLivecodeCommands$'` -> **EXIT=0** (`test-12-transcript-green.log`).
+- `ctest -R '^LivecodePanelTest$'` -> **EXIT=8**, 5 of the 7 cases FAIL (window.livecode absent; get_source not_found
+  so every readback is `""`). Log `red2-test-panel.log`.
+- `ctest -R '^ControlLivecodeCommands$'` -> **EXIT=8** (the four new checks FAIL with
+  `no command 'livecode.get_source'`). Log `red2-test-transcript.log`.
+Restored the four files, rebuilt: `ctest -R '^LivecodePanelTest$'` -> **EXIT=0** (`test-22-panel-green.log`);
+`ctest -R '^ControlLivecodeCommands$'` -> **EXIT=0** (`test-23-transcript-green.log`).
 
 **? Every acceptance criterion is proven by a test you ran yourself (name the test and its exit code per criterion).**
 Yes - see the acceptance table above; every row names the test and the exit code seen (all 0). The GUI criterion is
