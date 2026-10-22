@@ -274,6 +274,74 @@ private slots:
 		QCOMPARE(clip->sampleFile(), replacement);
 	}
 
+	/*! Cluster new-p14-262 BUG 6: the samplefile drop branch replaces the clip's source through
+	 *  SampleClip::setSampleFile - which, unlike setSampleBuffer, marks nothing. The drop is a
+	 *  user edit, so the song must come out modified: close would otherwise not prompt and the
+	 *  new source could be lost. Loading stays quiet because SampleClip::loadSettings reaches
+	 *  the same setter. */
+	void droppingASampleFileMarksTheSongModified()
+	{
+		Track* sampleTrack = Track::create(Track::Type::Sample, Engine::getSong());
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
+		QCoreApplication::processEvents();
+		QVERIFY(run(QStringLiteral("clip.add"), {{QStringLiteral("track"), control::trackIdOf(sampleTrack)}, {QStringLiteral("position"), 0}}).ok);
+		QCoreApplication::processEvents();
+
+		auto* clip = dynamic_cast<SampleClip*>(sampleTrack->getClip(0));
+		QVERIFY(clip != nullptr);
+		SampleClipView* view = viewOf(clip);
+		QVERIFY(view != nullptr);
+		// The track's own construction names it, which marks the song; a successful save is the
+		// product's way back to clean, so the drop below is the only dirtying change under test.
+		Engine::getSong()->noteProjectSaved(m_home.filePath(QStringLiteral("clean.mmpz")));
+		QVERIFY2(!Engine::getSong()->isModified(), "the test setup left the song modified");
+
+		const QString replacement = file(QStringLiteral("kick.wav"));
+		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(QStringLiteral("samplefile"), replacement));
+		QDragEnterEvent enter(QPoint(4, 4), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+		enter.setAccepted(false);
+		QCoreApplication::sendEvent(view, &enter);
+		QVERIFY(enter.isAccepted());
+
+		QDropEvent drop(QPointF(4, 4), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+		drop.setAccepted(false);
+		QCoreApplication::sendEvent(view, &drop);
+		QVERIFY(drop.isAccepted());
+		QCOMPARE(clip->sampleFile(), replacement);
+		QVERIFY2(Engine::getSong()->isModified(),
+			"a dropped sample file left the song unmodified: closing would not prompt and the new source could be lost");
+	}
+
+	/*! The other side of BUG 6: the SAME setter the drop calls is also where a project load
+	 *  restores a clip's source (SampleClip::loadSettings). Marking the song inside
+	 *  SampleClip::setSampleFile would dirty every project the moment it was opened, so the
+	 *  mark belongs on the user-edit path and a restore must stay quiet. This is the regression
+	 *  that fails if someone "simplifies" the fix into the setter. */
+	void restoringASampleFileDoesNotMarkTheSongModified()
+	{
+		Track* sampleTrack = Track::create(Track::Type::Sample, Engine::getSong());
+		QVERIFY(run(QStringLiteral("clip.add"), {{QStringLiteral("track"), control::trackIdOf(sampleTrack)}, {QStringLiteral("position"), 0}}).ok);
+		QCoreApplication::processEvents();
+		auto* clip = dynamic_cast<SampleClip*>(sampleTrack->getClip(0));
+		QVERIFY(clip != nullptr);
+		clip->setSampleFile(file(QStringLiteral("kick.wav")));
+		QCOMPARE(clip->sampleFile(), file(QStringLiteral("kick.wav")));
+
+		// What a save writes for this clip, and what a load reads back from it.
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("clipcontainer"));
+		doc.appendChild(parent);
+		const QDomElement element = clip->saveState(doc, parent);
+		QVERIFY(!element.attribute(QStringLiteral("src")).isEmpty());
+
+		Engine::getSong()->noteProjectSaved(m_home.filePath(QStringLiteral("clean.mmpz")));
+		QVERIFY2(!Engine::getSong()->isModified(), "the test setup left the song modified");
+		clip->restoreState(element);
+		QVERIFY2(!Engine::getSong()->isModified(),
+			"restoring a clip through SampleClip::loadSettings dirtied the project it was loaded from");
+	}
+
 	//! The StringPair value of a key that is not a browser file - embedded data, a serialized clip - is never a URL.
 	void aDragThatIsNotABrowserFileCarriesNoUrl()
 	{
@@ -409,6 +477,16 @@ private slots:
 	}
 
 private:
+	//! The live view of @a clip in the song editor, or nullptr when it has none.
+	SampleClipView* viewOf(Clip* clip)
+	{
+		for (SampleClipView* candidate : m_editor->findChildren<SampleClipView*>())
+		{
+			if (candidate->getClip() == clip) { return candidate; }
+		}
+		return nullptr;
+	}
+
 	QTemporaryDir m_home;
 	QTemporaryDir m_files;
 	SongEditor* m_editor = nullptr;
