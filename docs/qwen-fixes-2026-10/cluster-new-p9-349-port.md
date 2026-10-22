@@ -108,7 +108,7 @@ same sandbox that denies writes outside the worktree and `/tmp`; see Notes).
 | Restore patch | `git apply .../fix.patch` | 0 |
 | Build, restored | `CCACHE_TEMPDIR=/tmp/ccache-tmp cmake --build build --target PatmanLoadTest AudioPluginTest patman zene -j20 > .../build-5.log 2>&1` | 0 |
 | GREEN, restored | `cd build/tests && ctest -R '^(PatmanLoadTest\|AudioPluginTest)$' --output-on-failure > .../test-green-2.log 2>&1` | 0 |
-| Affected family | `cd build/tests && ctest -R '^(PatmanLoadTest\|AudioPluginTest\|ControlDeviceCatalogueTest)$' --output-on-failure > .../test-family-2.log 2>&1` | 0 (3/3) |
+| Affected family | `cd build/tests && ctest -R '^(PatmanLoadTest\|AudioPluginTest\|ControlDeviceCatalogueTest)$' --output-on-failure > .../test-final.log 2>&1` | 0 (3/3) |
 | QtTest function counts | `cd build/tests && ctest -R '^(PatmanLoadTest\|AudioPluginTest)$' -V --output-on-failure > .../test-family-verbose.log 2>&1` | 0 — `PatmanLoadTest`: 4 passed, 0 failed; `AudioPluginTest`: 24 passed, 0 failed |
 | Gates | `PYTHONPATH=/tmp/qwen-gate-shim python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../gate-2.log 2>&1` | 0 — all 8 rows PASS |
 | Completion check | `PYTHONPATH=/tmp/qwen-gate-shim python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-349-port > .../submit-1.log 2>&1` | 0 — `RESULT: PASS - submit` |
