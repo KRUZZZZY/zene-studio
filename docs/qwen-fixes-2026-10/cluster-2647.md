@@ -100,8 +100,8 @@ untouched; a person's (or command's) write still claims the store.
 | **round 2: harness-visible home** | | | |
 | GREEN build | `cmake --build build --target RackMacrosTest -j$(nproc)` | 0 | `build/2647-logs/66-build-rackmacros.log` |
 | GREEN test | `ctest -R '^RackMacrosTest$' --output-on-failure` | 0 | `build/2647-logs/67-test-rackmacros-green.log`; 1/1 passed |
-| RED proof (harness negative control, product change reverted) | `negctl.prove(...)` - rebuild + `ctest -R '^(...)$'` | 8 | `build/2647-logs/70-negctl-sim.log`; `RackMacrosTest::aLoadDoesNotClaimTheLastTouchedModel` failed: "Compared values are not the same" |
-| GREEN proof (restored) | same run, product change restored | 0 | `build/2647-logs/70-negctl-sim.log`; `restored_rc: 0`, `tree_clean: True` |
+| RED proof (harness negative control, product change reverted) | `negctl.prove(...)` - rebuild + `ctest -R '^(...)$'` | 8 | `build/2647-logs/77-negctl-final.log`; `RackMacrosTest::aLoadDoesNotClaimTheLastTouchedModel` failed: "Compared values are not the same" |
+| GREEN proof (restored) | same run, product change restored | 0 | `build/2647-logs/77-negctl-final.log`; `restored_rc: 0`, `tree_clean: True` |
 
 The regression covers the attribute form, the element form and the empty/reset form of a load,
 plus `setInitValue()`, and ends by proving a person's write still claims the store. It is
@@ -143,8 +143,8 @@ Fix:
 | **round 2: harness-visible home** | | | |
 | GREEN build | `cmake --build build --target MidiLearnTest -j$(nproc)` | 0 | `build/2647-logs/68-build-midilearn.log` |
 | GREEN test | `ctest -R '^MidiLearnTest$' --output-on-failure` | 0 | `build/2647-logs/69-test-midilearn-green.log`; 1/1 passed |
-| RED proof (harness negative control, product change reverted) | `negctl.prove(...)` - rebuild + `ctest -R '^(...)$'` | 8 | `build/2647-logs/70-negctl-sim.log`; `MidiLearnTest::replacingTheControllerConnectionGivesUpTheOldOne` failed: "'watchedFirst.isNull()' returned FALSE" |
-| GREEN proof (restored) | same run, product change restored | 0 | `build/2647-logs/70-negctl-sim.log`; `restored_rc: 0`, `tree_clean: True` |
+| RED proof (harness negative control, product change reverted) | `negctl.prove(...)` - rebuild + `ctest -R '^(...)$'` | 8 | `build/2647-logs/77-negctl-final.log`; `MidiLearnTest::replacingTheControllerConnectionGivesUpTheOldOne` failed: "'watchedFirst.isNull()' returned FALSE" |
+| GREEN proof (restored) | same run, product change restored | 0 | `build/2647-logs/77-negctl-final.log`; `restored_rc: 0`, `tree_clean: True` |
 
 The regression is deterministic: it creates two `ControllerConnection`s, swaps them, and also
 connects a third to the model's `unlinkControllerConnection()` slot and deletes it, checking with
@@ -190,7 +190,7 @@ The harness's own function, run against this tree, now reports:
 ```
 
 and the reverted run names each regression's own assertion
-(`build/2647-logs/70-negctl-sim.log`, copy in `/tmp/negctl-sim/negctl/`):
+(`build/2647-logs/77-negctl-final.log`, copy in `/tmp/negctl-sim/negctl/`):
 
 ```
 FAIL!  : MidiLearnTest::replacingTheControllerConnectionGivesUpTheOldOne()
@@ -200,10 +200,10 @@ FAIL!  : RackMacrosTest::aLoadDoesNotClaimTheLastTouchedModel() Compared values 
 
 | Stage | Command | Exit | Evidence |
 | --- | --- | ---: | --- |
-| harness negative control (its own `negctl.prove`) | `python3 -c "import negctl; print(negctl.prove(wt, base, run_dir, report))"` | 0 | `build/2647-logs/70-negctl-sim.log`; `ok: True`, reverted rc 8, restored rc 0, tree clean |
+| harness negative control (its own `negctl.prove`) | `python3 -c "import negctl; print(negctl.prove(wt, base, run_dir, report))"` | 0 | `build/2647-logs/77-negctl-final.log`; `ok: True`, reverted rc 8, restored rc 0, tree clean |
 | GREEN build | `cmake --build build --target zene RackMacrosTest MidiLearnTest AutomationPrepassProofTest PhaseDSidechainTest -j$(nproc)` | 0 | `build/2647-logs/71-build-final-round2.log` |
 | GREEN family | `ctest -R '^(RackMacrosTest\|MidiLearnTest\|AutomationPrepassProofTest\|PhaseDSidechainTest\|AutomatableModelTest)$' --output-on-failure` | 0 | `build/2647-logs/72-test-final-round2.log`; 5/5 passed |
-| full gate suite | `feature_check.py` (log dir redirected, see Gates) | 0 | `build/2647-logs/73-feature-check-round2.log`; `RESULT: PASS`, 8/8 |
+| full gate suite | `feature_check.py` (log dir redirected, see Gates) | 0 | `build/2647-logs/79-feature-check-final.log`; `RESULT: PASS`, 8/8 |
 | RT safety sweep | `python3 tests/rt-safety-sweep.py --check` | 0 | `build/2647-logs/74-rt-sweep-round2.log`; PASS |
 
 ## Gates
@@ -227,7 +227,7 @@ Both forms agree:
 | doc-figures | 0 | `build/2647-logs/gate-doc-figures.log` |
 | complexity | 0 | `build/2647-logs/gate-complexity.log` - "no new item in your files" |
 | file-length | 0 | `build/2647-logs/gate-file-length.log` - "no new item in your files" |
-| full `feature_check.py` (redirected log dir) | 0 | `build/2647-logs/73-feature-check-round2.log` - `RESULT: PASS`, all eight rows PASS |
+| full `feature_check.py` (redirected log dir) | 0 | `build/2647-logs/79-feature-check-final.log` - `RESULT: PASS`, all eight rows PASS |
 | RT safety sweep | 0 | `build/2647-logs/74-rt-sweep-round2.log` - PASS; the only product-side symbols this branch touches are the 5524 load/init scopes and the new-p15-273 connection setter, none of them a declared audio-thread body |
 
 **The two manifest gates were red on the train before this branch.** `tests/all-sources.txt`
@@ -262,7 +262,7 @@ the bug fixes; it changes no product code, test or gate limit.
   rebuild exit 0, `ctest` exit **0**. new-p15-273: reversed, rebuild exit 0, `ctest` exit **8**;
   restored, rebuild exit 0, `ctest` exit **0**. Round 2 re-proved both through the harness's own
   `negctl.prove`: **reverted rc 8, restored rc 0, tree clean**
-  (`build/2647-logs/70-negctl-sim.log`), with each failure naming its own regression assertion.
+  (`build/2647-logs/77-negctl-final.log`), with each failure naming its own regression assertion.
   2647 is ALREADY-FIXED, so the equivalent is a mutation that reinstates the historical lock at
   the top of `valueBuffer()`: rebuild exit 0, `ctest` exit **8**, restored build exit 0,
   `ctest` exit **0** (tables above; logs `06/07/08/09`, `14/15/16/17`, `21/22/33/34`).
@@ -301,7 +301,7 @@ the bug fixes; it changes no product code, test or gate limit.
   is "gates (feature_check.py)", and that is the sandbox `EACCES` on
   `<worktree>-feature-check/` described above, not a gate result. Run with only that directory
   redirected, `feature_check.py` exits 0 with all eight rows PASS
-  (`build/2647-logs/73-feature-check-round2.log`), and every question it ASKs is answered by
+  (`build/2647-logs/79-feature-check-final.log`), and every question it ASKs is answered by
   the bullets in this section.
 - **2647 is ALREADY-FIXED - cite the code (file:line) or the intended contract that shows it.**
   `src/core/AutomatableModel.cpp:752-777` (`valueBuffer()` has no mutex and no lock call),
