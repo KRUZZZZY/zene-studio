@@ -386,6 +386,27 @@ private slots:
 		QCOMPARE( empty.length().getTicks(), 0 );
 	}
 
+	//! BUG new-p16-141: a float cannot represent every tick above 2^24, so a
+	//! grid of 1 used to move 16,777,217 down to 16,777,216, and near the
+	//! tick_t limit the float-to-int conversion left the type's range.
+	void quantizeKeepsTickPrecisionPastTheFloatMantissa()
+	{
+		const tick_t aboveMantissa = 16777217; // 2^24 + 1
+		QCOMPARE( Note::quantized( TimePos( aboveMantissa ), 1 ).getTicks(), aboveMantissa );
+		QCOMPARE( Note::quantized( TimePos( aboveMantissa ), 2 ).getTicks(), 16777218 );
+
+		// The same value through the note's own quantise path.
+		Note note( TimePos( 48 ), TimePos( aboveMantissa ), 60 );
+		note.quantizePos( 1 );
+		QCOMPARE( note.pos().getTicks(), aboveMantissa );
+
+		// A round-up that leaves tick_t saturates instead of converting an
+		// out-of-range float back to int.
+		const tick_t maximum = std::numeric_limits<tick_t>::max();
+		QCOMPARE( Note::quantized( TimePos( maximum ), 1 ).getTicks(), maximum );
+		QCOMPARE( Note::quantized( TimePos( maximum ), 2 ).getTicks(), maximum );
+	}
+
 	//! quantizeNotes() - the options form the groove menu and groove.quantize use - by every mode,
 	//! and its velocity humanise: bounded, clamped, reproducible from the seed (gate 2, hosted run
 	//! 36747963198: the Floor/Ceil targets and the velocity draw entered uncovered).

@@ -94,6 +94,9 @@
 # 2026-10-21 (cluster new-p14-41): tests/src/core/NoteNoOpEditUndoStepTest.cpp - the
 # fork-NEW regression for the no-op rule of the note edits (a note edit that changes
 # nothing takes no undo step) - is now a tracked source, so the recipe derives it.
+# 2026-10-21 (cluster new-p16-141-port): the entry list below is re-derived from the recipe in this
+# header (the vendored sfizz tree the recipe excludes was still listed here, so the manifest no
+# longer reproduced from its own recipe and Gate 9 was red for every lane).
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
