@@ -1159,6 +1159,8 @@ set(LMMS_TESTS
 	src/gui/MpeInputActionTest.cpp
 	# Edit > Tempo Map: every edit through a transport.tempo_map_* command.
 	src/gui/TempoMapPanelTest.cpp
+	# Q050-154: Edit > Live Code - schedule, cancel, load and undo through livecode.*.
+	src/gui/LivecodePanelTest.cpp
 	# Track > Articulations: the editor leaves the map track.articulations_set leaves; one undo step per edit.
 	src/gui/ArticulationMapEditorTest.cpp
 	# The file browser's Tags menu (browser.tag.add / browser.tag.remove), over a throwaway store.
@@ -2919,6 +2921,7 @@ set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLeve
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(LivecodePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArticulationMapEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserDragUrlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

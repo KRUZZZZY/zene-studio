@@ -307,6 +307,23 @@ by you alone); anything connected to it can do whatever the menus can - save, re
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
 
+<p><b>Live code (Edit &gt; Live Code).</b> The panel edits a Lua script and schedules it on the
+transport: <i>Every bar</i>, <i>Every beat</i> or <i>Transport play/stop</i>, under an id of your choosing (an id that
+already exists is replaced in place, one slot). Schedule compiles the buffer first - a script that does not compile is
+refused in the panel, with the parser's message, and the version that was already scheduled keeps running. Cancel Schedule
+takes the selected schedule off the clock and Undo (one step) rearms it with the script it held; Undo after a replacement
+puts the previous script's text, hook and budget back - a schedule's fire and error counters are runtime history and are
+not rewound. Load Source reads the selected schedule's captured script back into the editor (the same
+<code>livecode.get_source</code> command an agent calls), so a schedule an agent made can be edited here. The table shows
+each schedule's id, hook, instruction budget, source bytes, fire/error/over-budget counts, last fire position and last
+failure. Every fire gets a <b>fresh Lua state</b>, so Lua globals and closures do not persist between bars: keep state in
+the project (tracks, clips, values), not in the script. A source is capped at 65,536 bytes, the clock holds at most 64
+schedules, and the transport is observed every 25 ms, so a fire lands up to one poll after its boundary rather than
+sample-accurately; more than four crossings in one observation are coalesced rather than fired late, and a seek or meter
+change re-anchors the grid. Each fire is bounded by its instruction budget (0 inherits the engine's 5,000,000) and Lua
+memory per run by File &gt; Script Memory Budget (64 MiB by default, 512 KiB to 1 GiB). Schedules live in this process
+only - they are not saved in the project and do not come back after a restart - and they never run on the audio thread.</p>
+
 <h2 id="customise">Customising and the Window menu</h2>
 <p>Project tools &gt; Customise &gt; Theme chooses (from the next start) the palette (dark, high contrast or light) the interface zoom and accessible mode, and edits the theme's colours one by one - export a theme to share it, import one,
 or reset to the palette's own. Window &gt; Layouts (also Customise &gt; Window Layouts) saves the panels' arrangement under a name and brings it back; it says what a layout keeps (the view, the open, pinned and floating panels and their sizes - not the zoom, the scroll or the selection). Save never overwrites a name in use; Replace asks first. A project can remember a layout of its own, put back when it opens; your own layout comes back when you open a project without one, or start a new one; the Workflows menu (and Customise &gt; Workflows...) records a run of commands and plays it again, shared by every project or kept with each (Keep Workflows). Drag a panel's header out of the window to float it - on another monitor if you like - and drag it back onto its place, or press Dock, to return it (Ctrl+Shift+F floats or docks the focused panel). Customise &gt; Settings finds any setting by a word, backs all of them up to a file and

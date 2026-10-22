@@ -253,6 +253,41 @@ ControlResult livecodeGetState()
 	return ControlResult::success(ScriptClock::instance().stateJson());
 }
 
+/*! livecode.get_source - the source text under one schedule id, and the
+ *  definition it belongs to.
+ *
+ * Why it is a command of its own rather than another field of get_state: a
+ * full registry read would carry up to MaxScheduleCount x SourceByteCap bytes
+ * (64 x 64 KiB = 4 MiB) on every poll, while the panel and an agent read one
+ * definition at a time. stateJson() therefore stays the counter/status read,
+ * and this is the deliberate source-readback path: the text returned here is
+ * exactly what the clock evaluates, so the panel can load an agent-made
+ * schedule into the editor and a test can prove an undo restored the previous
+ * definition byte for byte instead of only that the id still exists.
+ */
+ControlResult livecodeGetSource(const QJsonObject& args)
+{
+	const QString id = args.value(QStringLiteral("id")).toString();
+	if (id.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the schedule 'id' is required and must not be empty"));
+	}
+	const QJsonObject definition = ScriptClock::instance().scheduleState(id);
+	if (definition.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no scheduled script '%1'").arg(id));
+	}
+	QJsonObject out;
+	out.insert(QStringLiteral("id"), definition.value(QStringLiteral("id")));
+	out.insert(QStringLiteral("source"), definition.value(QStringLiteral("source")));
+	out.insert(QStringLiteral("source_bytes"), definition.value(QStringLiteral("source_bytes")));
+	out.insert(QStringLiteral("hook"), definition.value(QStringLiteral("hook")));
+	out.insert(QStringLiteral("budget"), definition.value(QStringLiteral("budget")));
+	return ControlResult::success(out);
+}
+
 } // namespace
 
 void registerLivecodeCommands(ControlRegistry& registry)
@@ -348,6 +383,35 @@ void registerLivecodeCommands(ControlRegistry& registry)
 				QStringLiteral("object")}}},
 		});
 		cmd.handler = [](const QJsonObject&) { return livecodeGetState(); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("livecode.get_source");
+		cmd.group = QStringLiteral("livecode");
+		cmd.verb = QStringLiteral("get_source");
+		cmd.description = QStringLiteral("One schedule's definition as text: 'id', 'source' (the "
+			"Lua exactly as livecode.schedule captured it, which is what every fire evaluates), "
+			"'source_bytes', 'hook' and 'budget'. get_state reports source BYTES only so a poll "
+			"never carries every scheduled definition; this is the deliberate source-readback "
+			"path a panel uses to load an agent-made schedule into its editor, and what proves "
+			"control.undo restored a previous definition rather than just the id. Reads only; "
+			"typed not_found when no schedule carries the id.");
+		cmd.mutating = false;
+		cmd.argsSchema = control::objectSchema({
+			{QStringLiteral("id"), control::stringProperty()},
+		}, {QStringLiteral("id")});
+		cmd.resultSchema = control::objectSchema({
+			{QStringLiteral("id"), control::stringProperty()},
+			{QStringLiteral("source"), control::stringProperty()},
+			{QStringLiteral("source_bytes"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("hook"), control::enumProperty({QStringLiteral("bar"),
+				QStringLiteral("beat"), QStringLiteral("transport")})},
+			{QStringLiteral("budget"), control::integerProperty(0, 0x7fffffff)},
+		});
+		cmd.handler = [](const QJsonObject& args) { return livecodeGetSource(args); };
 		registry.registerCommand(cmd);
 	}
 }
