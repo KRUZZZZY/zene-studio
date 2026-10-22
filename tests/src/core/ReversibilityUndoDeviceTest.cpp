@@ -387,6 +387,167 @@ private slots:
 	}
 
 
+	/*! Luna cluster new-p14-82: a removal whose document is NOT a device document
+	 *  must not be recorded as an inverse.
+	 *
+	 *  journalRemovalDocument() checked only that the document was non-empty and
+	 *  under the size cap, so a caller that passed MALFORMED XML got "true" - the
+	 *  helper claimed an inverse it could not replay. The undo then had no device
+	 *  to rebuild, and the removal looked reversible while it was not. The
+	 *  validator now holds the document to the rules the restore itself applies.
+	 *
+	 *  The device's OWN document is still recorded: a check that refuses more than
+	 *  the broken documents would break every real removal.
+	 */
+	void aRemovalWithAnUnusableDocumentIsNotRecorded()
+	{
+		const QString device = firstLoadableEffect();
+		if (device.isEmpty()) { QSKIP("this build exposes no loadable built-in effect"); }
+		const QString track = addTrack();
+		QVERIFY(!track.isEmpty());
+		ControlTarget target; ControlResult error;
+		QVERIFY2(resolveControlTarget(track, &target, &error), qPrintable(error.errorMessage));
+		const ControlResult loaded = run(QStringLiteral("plugin.load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		const QString fx = loaded.result.value(QStringLiteral("id")).toString();
+		Effect* live = resolveControlEffect(target, fx, &error);
+		QVERIFY2(live != nullptr, qPrintable(error.errorMessage));
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+
+		// (1) Not XML at all.
+		QVERIFY2(!control::journalRemovalDocument(target.chain, live, 0,
+			QStringLiteral("<zenepluginstate version=\"1\" plugin=\"amplifier\">")),
+			"a document that does not parse was recorded as an inverse (new-p14-82)");
+		// (2) XML, but not a device document.
+		QVERIFY2(!control::journalRemovalDocument(target.chain, live, 0,
+			QStringLiteral("<song><track/></song>")),
+			"a document that is not a device document was recorded as an inverse (new-p14-82)");
+		// (3) A device document that names no plugin: nothing to rebuild.
+		QVERIFY2(!control::journalRemovalDocument(target.chain, live, 0,
+			QStringLiteral("<zenepluginstate version=\"1\"><effect/></zenepluginstate>")),
+			"a device document that names no plugin was recorded as an inverse (new-p14-82)");
+		// (4) A well-formed envelope with NO device body: the restore loads the
+		// settings from the effect's own element, so a document without it names
+		// no device at all.
+		const QString missingBody = QStringLiteral("<zenepluginstate version=\"1\" plugin=\"%1\"/>")
+			.arg(QString::fromUtf8(live->descriptor()->name));
+		const bool missingBodyRecorded = control::journalRemovalDocument(target.chain, live, 0, missingBody);
+		if (missingBodyRecorded)
+		{
+			Engine::projectJournal()->undo();
+			(void)control::takeStructuralRestoreFailure();
+		}
+		QVERIFY2(!missingBodyRecorded,
+			"a device envelope with no restorable body was recorded as an inverse (new-p14-82)");
+		// (5) A document whose HOSTED identity is not the removed device's: the
+		// restore rebuilds the device and then compares the document's hosted_id
+		// with the key it was given - a snapshot of ANOTHER device cannot restore
+		// this one.
+		QDomDocument mismatchedHostedDocument;
+		QVERIFY(mismatchedHostedDocument.setContent(controlEffectStateXml(live)));
+		mismatchedHostedDocument.documentElement().setAttribute(QStringLiteral("hosted_id"),
+			live->key().attributes.value(QStringLiteral("plugin")) + QStringLiteral("-wrong"));
+		const bool mismatchedHostedRecorded = control::journalRemovalDocument(target.chain, live, 0,
+			mismatchedHostedDocument.toString());
+		if (mismatchedHostedRecorded)
+		{
+			Engine::projectJournal()->undo();
+			(void)control::takeStructuralRestoreFailure();
+		}
+		QVERIFY2(!mismatchedHostedRecorded,
+			"a snapshot for a different hosted device was recorded as an inverse (new-p14-82)");
+		// (6) A document that names ANOTHER plugin: the undo would rebuild that
+		// other plugin in this chain.
+		const QString otherPlugin = QStringLiteral("<zenepluginstate version=\"1\" plugin=\"not-this-device\">"
+			"<effect/></zenepluginstate>");
+		QVERIFY2(!control::journalRemovalDocument(target.chain, live, 0, otherPlugin),
+			"a document for another device was recorded as an inverse (new-p14-82)");
+		// None of them left a step behind.
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+
+		// (7) The device's own document is still recorded - the check refuses the
+		// broken documents only.
+		QVERIFY2(control::journalRemovalDocument(target.chain, live, 0,
+			controlEffectStateXml(live)),
+			"the device's own document was refused (new-p14-82): every real removal "
+			"would lose its inverse");
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+		// The recorded step is dropped again, and the device its undo rebuilt is
+		// taken out of the chain with it.
+		Engine::projectJournal()->undo();
+		const std::vector<Effect*> effects = target.chain->effects();
+		if (effects.size() > 1)
+		{
+			Effect* rebuilt = effects.back();
+			target.chain->removeEffect(rebuilt);
+			rebuilt->deleteLater();
+		}
+	}
+
+	/*! Luna cluster new-p16-50: the restore must read the WRAPPER'S host key, not
+	 *  a <key> element the plugin's own saved state carries.
+	 *
+	 *  deviceKeyFromState() searched the whole document with elementsByTagName()
+	 *  and took the FIRST <key> it found. A plugin whose own state carries a
+	 *  <key> of its own - in front of the wrapper's key, which
+	 *  controlEffectStateXml() appends LAST - had that one read as the host key:
+	 *  the undo then rebuilt the wrong sub-plugin variant, or none at all.
+	 *
+	 *  The document below is a live device's own document with two keys in it:
+	 *  the wrapper's own key (appended last, the way the writer writes it) and a
+	 *  decoy nested in the plugin's own state, in front of it. The restore must
+	 *  use the wrapper's key - and it says which one it used through the device
+	 *  it rebuilt: that device's key is the one the document's hosted_id names.
+	 */
+	void theRestoreReadsTheWrappersHostKeyAndNotThePluginsNestedOne()
+	{
+		const QString device = firstLoadableEffect();
+		if (device.isEmpty()) { QSKIP("this build exposes no loadable built-in effect"); }
+		const QString track = addTrack();
+		QVERIFY(!track.isEmpty());
+		ControlTarget target; ControlResult error;
+		QVERIFY2(resolveControlTarget(track, &target, &error), qPrintable(error.errorMessage));
+		const ControlResult loaded = run(QStringLiteral("plugin.load"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("device"), device}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		const QString fx = loaded.result.value(QStringLiteral("id")).toString();
+		Effect* live = resolveControlEffect(target, fx, &error);
+		QVERIFY2(live != nullptr, qPrintable(error.errorMessage));
+
+		QDomDocument document;
+		QVERIFY(document.setContent(controlEffectStateXml(live)));
+		QDomElement root = document.documentElement();
+		QDomElement body = root.firstChildElement(live->nodeName());
+		QVERIFY2(!body.isNull(), "the captured device document carries no body");
+
+		// The DECOY: a key of the plugin's own state, in front of the wrapper's.
+		QDomElement decoy = document.createElement(QStringLiteral("key"));
+		QDomElement decoyAttribute = document.createElement(QStringLiteral("attribute"));
+		decoyAttribute.setAttribute(QStringLiteral("name"), QStringLiteral("plugin"));
+		decoyAttribute.setAttribute(QStringLiteral("value"), QStringLiteral("decoy"));
+		decoy.appendChild(decoyAttribute);
+		QDomElement nested = document.createElement(QStringLiteral("pluginstate"));
+		nested.appendChild(decoy);
+		body.insertBefore(nested, body.firstChild());
+
+		// The WRAPPER's own key, appended last - the shape the writer writes.
+		QDomElement wrapperKey = document.createElement(QStringLiteral("key"));
+		QDomElement wrapperAttribute = document.createElement(QStringLiteral("attribute"));
+		wrapperAttribute.setAttribute(QStringLiteral("name"), QStringLiteral("plugin"));
+		wrapperAttribute.setAttribute(QStringLiteral("value"), QStringLiteral("real"));
+		wrapperKey.appendChild(wrapperAttribute);
+		body.appendChild(wrapperKey);
+		root.setAttribute(QStringLiteral("hosted_id"), QStringLiteral("real"));
+
+		Effect* restored = control::instantiateRecordedDevice(target.chain, document.toString());
+		QVERIFY2(restored != nullptr, "the restore refused a document that names a device, "
+			"because it read the plugin's nested <key> as the host key (new-p16-50)");
+		if (restored == nullptr) { return; }
+		QCOMPARE(restored->key().attributes.value(QStringLiteral("plugin")), QStringLiteral("real"));
+		restored->deleteLater();
+	}
+
 	//! An over-limit unload must not advertise truncated XML as a restorable snapshot.
 	void unloadOverLimitSnapshotIsNotPresentedAsRestorableXml()
 	{

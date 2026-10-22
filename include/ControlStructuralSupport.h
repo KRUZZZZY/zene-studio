@@ -109,10 +109,11 @@ LMMS_EXPORT bool moveTrackToIndex(Track* track, int index);
  *  Track::create(element, container) the project loader uses, at the index it
  *  was removed from.
  *
- *  False when nothing could be recorded (no journal, or a track too large to
- *  capture); the caller then reports the deletion as NOT reversible instead of
- *  claiming it can be undone, because a caller that undoes a step that was
- *  never recorded would take back the WRONG edit.
+ *  False when nothing could be recorded (no journal, a journal that is not
+ *  journalling, or a track too large to capture); the caller then reports the
+ *  deletion as NOT reversible instead of claiming it can be undone, because a
+ *  caller that undoes a step that was never recorded would take back the WRONG
+ *  edit.
  */
 LMMS_EXPORT bool journalTrackRemoval(Track* track);
 
@@ -125,7 +126,8 @@ LMMS_EXPORT bool journalTrackRemoval(Track* track);
  *  gone - and it costs one Ctrl+Z, not one per track (Q050-022).
  *
  *  Falls back to journalTrackRemoval() when \a owner has no lanes. False when
- *  nothing could be recorded (no journal, or any captured track too large).
+ *  nothing could be recorded (no journal, a journal that is not journalling, or
+ *  any captured track too large).
  */
 LMMS_EXPORT bool journalTrackRemovalWithLanes(Track* owner);
 
@@ -134,6 +136,9 @@ LMMS_EXPORT bool journalTrackRemovalWithLanes(Track* owner);
  *  \a fromIndex and whose redo sends it forward again. The order of a container
  *  is not a serialized property of any track, so there is no object checkpoint
  *  for it - the recorded pair IS the mechanism.
+ *
+ *  False when no step was recorded (no journal, or a journal that is not
+ *  journalling): a reorder nobody recorded has no inverse.
  */
 LMMS_EXPORT bool journalTrackMove(Track* track, int fromIndex, int toIndex);
 
@@ -141,7 +146,8 @@ LMMS_EXPORT bool journalTrackMove(Track* track, int fromIndex, int toIndex);
  *  \a chain): the device's state document is captured, and ONE structural step
  *  is pushed whose undo RE-INSTANTIATES the same device through the chain's own
  *  instantiate path and puts the captured settings back, at the index it was
- *  removed from. False when the state could not be captured.
+ *  removed from. False when the state could not be captured, when the captured
+ *  document cannot rebuild this device, or when the journal refuses the step.
  */
 LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index);
 
@@ -149,6 +155,10 @@ LMMS_EXPORT bool journalEffectRemoval(EffectChain* chain, Effect* effect, int in
  *  undo rebuilds the device from \a xml, and the step is recorded only when
  *  \a xml is a usable document. journalEffectRemoval passes the device's own
  *  document; a caller that passes another one records exactly that document.
+ *  A usable document must PARSE, its root must be the <zenepluginstate> element,
+ *  it must name a plugin, carry the removed device's own state element and
+ *  hosted identity, and its wrapper key must be the device's - because a
+ *  document that fails this cannot be turned back into that device (new-p14-82).
  */
 LMMS_EXPORT bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const QString& xml);
 

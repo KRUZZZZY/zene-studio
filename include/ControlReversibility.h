@@ -500,8 +500,15 @@ LMMS_EXPORT void addUndoStep(const QVector<JournallingObject*>& journallingObjec
  *
  *  \a payloadBytes may be 0 for a structural step with no document (a reorder:
  *  the state is the container's order, not a serialized value).
+ *
+ *  FALSE when no step was recorded - no journal at all, or a journal that is
+ *  not journalling (ProjectJournal::addJournalStructure() refuses a step in
+ *  both cases). The caller MUST take that answer for what it is: a step that
+ *  was never pushed is not an inverse, and a caller that reports one anyway
+ *  tells its own caller that the edit can be undone when the next undo would
+ *  take back an OLDER edit instead.
  */
-LMMS_EXPORT void addStructuralUndoStep(std::function<void()> undo,
+LMMS_EXPORT bool addStructuralUndoStep(std::function<void()> undo,
 	std::function<void()> redo, qint64 payloadBytes);
 
 /*! Records that a recorded ACTION step ran but could not finish its work, for

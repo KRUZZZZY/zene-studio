@@ -32,6 +32,7 @@
 #include <QStringList>
 
 #include <algorithm>
+#include <memory>
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -482,7 +483,36 @@ private slots:
 		document.documentElement().removeChild(body);
 
 		journal->clearJournal();
-		QVERIFY(control::journalRemovalDocument(chain, first, 0, document.toString()));
+		// This case starts from an ALREADY-RECORDED step whose document the
+		// restore refuses. journalRemovalDocument() refuses such a document
+		// itself since new-p14-82, so the deliberately invalid entry is written
+		// through the LOWER-LEVEL structural writer instead - the journal entry
+		// this case is about is the one that is already there.
+		const QString state = document.toString();
+		auto made = std::make_shared<Effect*>(nullptr);
+		QVERIFY(control::addStructuralUndoStep(
+			[chain, journal, state, made]() {
+				const bool wasJournalling = journal->isJournalling();
+				journal->setJournalling(false);
+				const auto restore = qScopeGuard([journal, wasJournalling]() {
+					journal->setJournalling(wasJournalling);
+				});
+				*made = control::recreateEffectFromState(chain, state, 0);
+			},
+			[chain, journal, made]() {
+				const bool wasJournalling = journal->isJournalling();
+				journal->setJournalling(false);
+				const auto restore = qScopeGuard([journal, wasJournalling]() {
+					journal->setJournalling(wasJournalling);
+				});
+				if (*made != nullptr)
+				{
+					chain->removeEffect(*made);
+					(*made)->deleteLater();
+					*made = nullptr;
+				}
+			},
+			state.size()));
 		control::detachEffect(chain, first);
 		first->deleteLater();
 		QCOMPARE(static_cast<int>(chain->effects().size()), 1);

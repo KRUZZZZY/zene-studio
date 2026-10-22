@@ -156,6 +156,41 @@ QString captureTrack(const Track* track)
 	return xml;
 }
 
+/*! True when \a xml is a device document that can rebuild \a effect: it parses,
+ * its root is the state root element, it names THAT effect's plugin, it carries
+ * the effect's own state element, and its hosted identity is the effect's.
+ *
+ * A document that fails this cannot be turned back into the removed device, so
+ * it is not an inverse: recording it would let the caller report a removal as
+ * reversible while the undo had nothing to rebuild (new-p14-82). These are the
+ * rules the restore itself applies (instantiateRecordedDevice and
+ * controlRestoreEffectState), moved to the moment the inverse is recorded,
+ * where the caller can still hear about it - so a document refused here is
+ * exactly a document the undo would have refused.
+ */
+bool deviceDocumentIsUsable(const QString& xml, const Effect* effect)
+{
+	if (effect == nullptr) { return false; }
+	QDomDocument document;
+	if (!document.setContent(xml)) { return false; }
+	const QDomElement root = document.documentElement();
+	if (root.tagName() != StateRootElement) { return false; }
+	// The document must describe THIS device: its plugin, its own state element
+	// (the one the restore loads the settings from) and its hosted identity.
+	if (root.attribute(QStringLiteral("plugin")) != QString::fromUtf8(effect->descriptor()->name)) { return false; }
+	if (root.firstChildElement(effect->nodeName()).isNull()) { return false; }
+	const auto& expected = effect->key().attributes;
+	const QDomElement body = root.firstChildElement();
+	const QDomElement keyElement = body.lastChildElement(KeyElement);
+	const Plugin::Descriptor::SubPluginFeatures::Key documentKey = keyElement.isNull()
+		? Plugin::Descriptor::SubPluginFeatures::Key()
+		: Plugin::Descriptor::SubPluginFeatures::Key(keyElement);
+	if (documentKey.attributes != expected) { return false; }
+	const QString hostedId = root.attribute(QStringLiteral("hosted_id"));
+	if (!hostedId.isEmpty() && hostedId != expected.value(QStringLiteral("plugin"))) { return false; }
+	return root.attribute(QStringLiteral("hosted_uri")) == expected.value(QStringLiteral("uri"));
+}
+
 } // namespace
 
 bool structuralReplayInProgress() { return g_structuralReplay; }
@@ -205,7 +240,7 @@ bool journalTrackMove(Track* track, int fromIndex, int toIndex)
 
 	// By id, never by pointer: a later removal and its undo rebuild the track as a new object (review W3-batchB #1).
 	const int id = track->id();
-	addStructuralUndoStep(
+	return addStructuralUndoStep(
 		[id, fromIndex]() {
 			if (Track* live = trackWithId(id)) { moveTrackToIndex(live, fromIndex); }
 		},
@@ -213,7 +248,6 @@ bool journalTrackMove(Track* track, int fromIndex, int toIndex)
 			if (Track* live = trackWithId(id)) { moveTrackToIndex(live, toIndex); }
 		},
 		0);
-	return true;
 }
 
 bool journalTrackRemoval(Track* track)
@@ -231,7 +265,7 @@ bool journalTrackRemoval(Track* track)
 
 	// The restored track's id, not its pointer (review W3-batchB #1): the redo finds it by id when it runs.
 	auto id = std::make_shared<int>(-1);
-	addStructuralUndoStep(
+	return addStructuralUndoStep(
 		[song, xml, index, id]() {
 			Track* restored = restoreTrackFromXml(xml, song);
 			*id = restored != nullptr ? restored->id() : -1;
@@ -256,7 +290,6 @@ bool journalTrackRemoval(Track* track)
 			*id = -1;
 		},
 		xml.size());
-	return true;
 }
 
 namespace
@@ -325,11 +358,27 @@ bool journalTrackRemovalWithLanes(Track* owner)
 
 	int bytes = 0;
 	for (const GroupCapture& capture : captures) { bytes += capture.xml.size(); }
-	addStructuralUndoStep(
+	return addStructuralUndoStep(
 		[song, captures]() { restoreGroup(song, captures); },
 		[captures]() { removeGroup(captures); },
 		bytes);
-	return true;
+}
+
+//! The wrapper's OWN host-key element: the <key> controlEffectStateXml() appends
+//! to the device's state element - a DIRECT child of that element, and the last
+//! one, because the wrapper appends it AFTER the plugin's own state was written.
+//!
+//! elementsByTagName() searched every descendant of the document and took the
+//! FIRST <key> it found, so a plugin whose own saved state carries a <key> of
+//! its own - in front of the wrapper's - had that one read as the host key
+//! (new-p16-50): the undo then rebuilt the wrong sub-plugin variant, or none at
+//! all. The wrapper's key is the only one that is a direct child of the state
+//! element, so it is the only one read here.
+QDomElement wrapperHostKeyElement(const QDomElement& root)
+{
+	const QDomElement body = root.firstChildElement();
+	if (body.isNull()) { return QDomElement(); }
+	return body.lastChildElement(KeyElement);
 }
 
 //! The sub-plugin key a captured device document carries, if any.
@@ -342,9 +391,9 @@ bool journalTrackRemovalWithLanes(Track* owner)
 bool deviceKeyFromState(const QDomElement& root,
 	Plugin::Descriptor::SubPluginFeatures::Key* key)
 {
-	const QDomNodeList keys = root.elementsByTagName(KeyElement);
-	if (keys.isEmpty() || !keys.item(0).isElement()) { return false; }
-	*key = Plugin::Descriptor::SubPluginFeatures::Key(keys.item(0).toElement());
+	const QDomElement element = wrapperHostKeyElement(root);
+	if (element.isNull()) { return false; }
+	*key = Plugin::Descriptor::SubPluginFeatures::Key(element);
 	return !key->attributes.isEmpty();
 }
 
@@ -618,6 +667,30 @@ void detachEffect(EffectChain* chain, Effect* effect)
 namespace
 {
 std::atomic<bool> g_removalCaptureFails{false};  // the test seam: setRemovalCaptureFailsForTest()
+
+/*! Whether \a xml can serve as the inverse of removing \a effect from \a chain:
+ * the arguments are usable, the document is inside the snapshot bound, the test
+ * seam is not forcing a capture failure, and the document is one the restore
+ * can rebuild THIS device from (deviceDocumentIsUsable, new-p14-82).
+ *
+ * One predicate rather than a new branch in the recorder: journalRemovalDocument
+ * already sat at the CCN target, and a new-p14-82 refusal must not push it over
+ * it. Every refusal here is the recorder's own, in one place.
+ */
+bool removalDocumentRecordable(EffectChain* chain, Effect* effect, int index, const QString& xml)
+{
+	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
+	// Bounded like every other captured document: an unbounded payload on a
+	// stack with a declared byte budget is a bound that does not hold. A device
+	// whose state document is over the cap refuses the inverse; the command then
+	// reports state unavailable with no usable snapshot instead of claiming a
+	// snapshot or reversibility it did not record.
+	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit || g_removalCaptureFails.load()) { return false; }
+	// A document the restore path cannot use is not an inverse either (new-p14-82):
+	// the step would claim to rebuild a device it has no document for, and the
+	// caller would report a removal as reversible while it is not.
+	return deviceDocumentIsUsable(xml, effect);
+}
 } // namespace
 
 void setRemovalCaptureFailsForTest(bool fails) { g_removalCaptureFails.store(fails); }
@@ -630,13 +703,7 @@ bool journalEffectRemoval(EffectChain* chain, Effect* effect, int index)
 
 bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const QString& xml)
 {
-	if (chain == nullptr || effect == nullptr || index < 0) { return false; }
-	// Bounded like every other captured document: an unbounded payload on a
-	// stack with a declared byte budget is a bound that does not hold. A device
-	// whose state document is over the cap refuses the inverse; the command then
-	// reports state unavailable with no usable snapshot instead of claiming a
-	// snapshot or reversibility it did not record.
-	if (xml.isEmpty() || xml.size() > StructuralSnapshotLimit || g_removalCaptureFails.load()) { return false; }
+	if (!removalDocumentRecordable(chain, effect, index, xml)) { return false; }
 
 	// No pointer is kept (see journalEffectLoad in the header): the chain by its owner's address, the device by its slot.
 	// The enabled flag is part of the record: appending the device switches the
@@ -647,7 +714,7 @@ bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const
 	const auto chainOf = recordedChainFinder(chain);
 	const QString plugin = pluginNameOf(effect);
 	auto made = std::make_shared<QPointer<Effect>>();
-	addStructuralUndoStep(
+	return addStructuralUndoStep(
 		[chainOf, xml, index, made, wasEnabled]() {
 			JournalPause quiet;
 			EffectChain* live = chainOf();
@@ -670,7 +737,6 @@ bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const
 			removeBuiltDevice(chainOf(), *made, index, plugin);
 		},
 		xml.size());
-	return true;
 }
 
 void journalEffectLoad(EffectChain* chain, Effect* effect, const ControlDeviceEntry& entry, int slot)

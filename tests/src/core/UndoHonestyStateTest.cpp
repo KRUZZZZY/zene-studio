@@ -35,6 +35,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
+#include "ControlDeviceMoves.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -327,6 +328,153 @@ private slots:
 		QVERIFY(TrackKeyNames::instance().name(track->id(), 24).isEmpty());
 
 		QVERIFY(run(QStringLiteral("control.set_undo_coalescing"), {{QStringLiteral("window_ms"), coalesceWindow}}).ok);
+	}
+
+	//! Luna cluster new-p14-81: a removal whose inverse was NOT recorded must not
+	//! be reported as reversible.
+	//!
+	//! journalTrackRemoval() answered "true" as soon as it had CAPTURED the
+	//! track's XML - whether or not the structural step was actually pushed. A
+	//! journal that is not journalling (or no journal at all) records nothing:
+	//! ProjectJournal::addJournalStructure() refuses the step. The helper then
+	//! claimed success, and track.remove - which takes that claim for its
+	//! transaction's `reversible` - answered "reversible: true" over a deletion
+	//! no undo could reverse. The next undo would then take back an OLDER edit.
+	//!
+	//! The seam is the engine's own journalling flag: the same switch the
+	//! product's JournalPause uses to keep an undo from recording a checkpoint
+	//! of its own. No clock, no sleep, no race.
+	void aRemovalThatRecordedNoStepIsNotReportedAsReversible()
+	{
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		QVERIFY(journal->isJournalling());
+
+		// (0) The helper's OWN answer, before any command is involved: a refused
+		// step is not an inverse, and the helper must say so.
+		const QString direct = revtest::addTrack();
+		QVERIFY(!direct.isEmpty());
+		Track* directTrack = Engine::getSong()->tracks().back();
+		QVERIFY(directTrack != nullptr);
+		journal->setJournalling(false);
+		const bool directRecorded = control::journalTrackRemoval(directTrack);
+		journal->setJournalling(true);
+		QVERIFY2(!directRecorded,
+			"journalTrackRemoval claimed an inverse although no structural step was recorded (new-p14-81)");
+
+		// (1) The journal records nothing: the removal is real, but it has no inverse.
+		journal->setJournalling(false);
+		const ControlResult removed = run(QStringLiteral("track.remove"), {{QStringLiteral("track"), direct}});
+		journal->setJournalling(true);
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QVERIFY(!revtest::hasTrack(direct));
+		const QJsonObject record = revtest::stateOf(QStringLiteral("track.remove"));
+		QVERIFY2(!record.isEmpty(), "the removal recorded no transaction at all");
+		QVERIFY2(!record.value(QStringLiteral("reversible")).toBool(),
+			"the removal was reported as reversible although no undo step was recorded "
+			"(new-p14-81): the next undo would take back an OLDER edit");
+
+		// (2) The very same removal, with the journal recording again, is reversible.
+		const QString other = revtest::addTrack();
+		QVERIFY(!other.isEmpty());
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), other}}).ok);
+		const QJsonObject recorded = revtest::stateOf(QStringLiteral("track.remove"));
+		QCOMPARE(recorded.value(QStringLiteral("reversible")).toBool(), true);
+	}
+
+	/*! A SIBLING structural helper must pass a refused step on instead of claiming it
+	 *  was recorded: journalChainRemoval() (rack.remove_chain) is the same writer as
+	 *  journalTrackRemoval(), and a chain removal the journal refused to record has
+	 *  no inverse either (new-p14-81).
+	 *
+	 *  Two things are proved here, and both must fail without the helper's fix:
+	 *  the helper's own answer (it returns false when the step was refused), and
+	 *  the RECORD the command leaves behind (it must not claim a recorded undo
+	 *  step - a record that says otherwise is the lie the finding is about).
+	 */
+	void aRackRemovalThatRecordedNoStepIsNotReportedAsReversible()
+	{
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		QVERIFY(journal->isJournalling());
+		journal->clearJournal();
+
+		MixerChannel* channel = Engine::mixer()->mixerChannel(4);
+		const QString channelId = control::channelIdOf(channel);
+		const ControlResult added = run(QStringLiteral("rack.add_chain"),
+			{{QStringLiteral("channel"), channelId}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const int chain = added.result.value(QStringLiteral("chain")).toInt();
+		QVERIFY(chain >= 1);
+		const int selectedBefore = channel->m_rack.selectedChain();
+
+		// (1) The helper's own answer: the paused journal refuses its structural
+		// step, so there is no inverse to report.
+		journal->setJournalling(false);
+		const bool recorded = control::journalChainRemoval(channelId, chain, {}, selectedBefore);
+		journal->setJournalling(true);
+		QVERIFY2(!recorded,
+			"journalChainRemoval claimed an inverse although no structural step was "
+			"recorded (new-p14-81)");
+
+		// (2) The record the command leaves: the removal is real, but nothing was
+		// recorded for it, so the record must not claim a recorded undo step.
+		journal->setJournalling(false);
+		const ControlResult removed = run(QStringLiteral("rack.remove_chain"),
+			{{QStringLiteral("channel"), channelId}, {QStringLiteral("chain"), chain}});
+		journal->setJournalling(true);
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QCOMPARE(channel->m_rack.chainCount(), chain);
+		const QJsonObject record = revtest::stateOf(QStringLiteral("rack.remove_chain"));
+		QVERIFY2(!record.isEmpty(), "rack.remove_chain recorded no transaction at all");
+		QVERIFY2(!record.value(QStringLiteral("reversible")).toBool(),
+			"rack.remove_chain claimed an inverse although no structural step was recorded "
+			"(new-p14-81)");
+		const QString mechanism = record.value(QStringLiteral("mechanism")).toString();
+		QVERIFY2(!mechanism.contains(QStringLiteral("the recorded undo step")),
+			qPrintable(QStringLiteral("rack.remove_chain's record claimed a recorded undo step "
+				"although the journal recorded none (new-p14-81): ") + mechanism));
+
+		// Drop the add-chain step: its chain was deliberately removed without an inverse.
+		journal->clearJournal();
+	}
+
+	/*! An explicit JOURNAL inverse is not reversible when its command left no step.
+	 *
+	 *  The registry used to take the handler's claim at its word: a command that
+	 *  declared a journal inverse and recorded nothing was still reported as
+	 *  reversible, so the record said "this can be undone" over an edit no undo
+	 *  could reach (new-p14-81). A PAIRED COMMAND inverse and a DEFERRED journal
+	 *  step need no step of their own and keep their claim.
+	 */
+	void aJournalInverseWithoutARecordedStepIsNotReportedAsReversible()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		QVERIFY(registry != nullptr);
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("test.claims_unrecorded_journal_inverse");
+		cmd.group = QStringLiteral("test");
+		cmd.verb = QStringLiteral("claims_unrecorded_journal_inverse");
+		cmd.mutating = true;
+		cmd.handler = [](const QJsonObject&) {
+			return ControlResult::success({{QStringLiteral("__transaction"), control::transactionPayload({},
+				QStringLiteral("control.undo"), {}, true, QStringLiteral("test journal inverse"))}});
+		};
+		registry->registerCommand(cmd);
+
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->setJournalling(false);
+		const ControlResult invoked = registry->invoke(cmd.id, {});
+		journal->setJournalling(true);
+		QVERIFY2(invoked.ok, qPrintable(invoked.errorMessage));
+		const ControlRegistry::Transaction* record = registry->lastTransaction();
+		QVERIFY(record != nullptr);
+		QCOMPARE(record->command, cmd.id);
+		QCOMPARE(record->step, quint64(0));
+		QVERIFY2(!record->reversible,
+			"the registry reported a journal inverse as reversible although this call "
+			"recorded no journal step (new-p14-81)");
 	}
 
 	//! An unrecorded journal step above a command is undone without borrowing that command's name.

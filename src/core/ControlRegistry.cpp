@@ -632,6 +632,23 @@ void ControlRegistry::recordTransactionOf(const QString& commandId, ControlResul
 	tx.reversible = recorded.value(QStringLiteral("reversible")).toBool(false);
 	tx.mechanism = recorded.value(QStringLiteral("mechanism")).toString();
 	tx.step = step;
+	// A JOURNAL inverse with no recorded step cannot be undone: unwinding the
+	// journal now would take back an OLDER edit than the one asked about. The
+	// handler's claim is downgraded here, so the RECORD says what is true
+	// (new-p14-81): a command that claims an inverse and recorded none must not
+	// be reported as reversible.
+	//
+	// Two kinds of inverse need no step of their own and keep the claim: the
+	// PAIRED COMMAND (control.undo dispatches it) and the DEFERRED journal step
+	// (mastering.run records its step after it answered).
+	const QString applies = tx.inverse.value(QStringLiteral("applies")).toString(QStringLiteral("journal"));
+	if (tx.reversible && step == 0
+		&& applies != QLatin1String("command") && applies != QLatin1String("journal_later"))
+	{
+		tx.reversible = false;
+		tx.mechanism.prepend(QStringLiteral("no journal step was recorded for this inverse, so unwinding the "
+			"journal now would take back an OLDER edit than the one asked for; "));
+	}
 	stampContract(commandId, &tx);
 	recordTransaction(tx);
 	provenance::recordChange(commandId, tx.before, result->result);
