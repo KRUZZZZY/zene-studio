@@ -78,6 +78,30 @@ private slots:
 
 	void cleanupTestCase() { racktest::teardownRackFixture(); }
 
+	//! Cluster 2466: an instrument fixture that cannot finish must leave no
+	//! track in the shared engine. The two failure paths are driven explicitly
+	//! so the test does not depend on what this build ships, and they live in
+	//! SEPARATE slots: one failing QVERIFY used to return from the slot and
+	//! leave the other path without its own evidence.
+	//!
+	//! Failure path 1 - no loadable device at all: nothing to load, so no
+	//! track may be created.
+	void noDeviceInstrumentSetupLeavesNoTrack()
+	{
+		const int before = revtest::trackCount();
+		QVERIFY(revtest::addInstrumentTrackFor(QString()).isEmpty());
+		QCOMPARE(revtest::trackCount(), before);
+	}
+
+	//! Failure path 2 - a device id plugin.load refuses: the track was created
+	//! and the load failed, so the track must be taken back.
+	void refusedDeviceLoadLeavesNoTrack()
+	{
+		const int before = revtest::trackCount();
+		QVERIFY(revtest::addInstrumentTrackFor(QStringLiteral("dev-999999")).isEmpty());
+		QCOMPARE(revtest::trackCount(), before);
+	}
+
 	//! A layer insert or removal publishes its zone renumbering and its layer slot as one edit: a change
 	//! observed between the two would route a zone to a layer slot that does not hold its track yet.
 	void layerZoneEditsPublishWithTheirSlots()
