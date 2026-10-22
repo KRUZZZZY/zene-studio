@@ -145,10 +145,9 @@ public:
 
 	private:
 		//! Number of measurements the queue holds. It is a power of two, so
-		//! the index wraps with a mask. At the fastest supported sample rate
-		//! the audio thread runs 750 times per second, so a report every five
-		//! seconds needs 3750 of them.
-		static constexpr std::uint64_t kCapacity = 16384;
+		//! the index wraps with a mask. At 192 kHz with 32-frame periods the
+		//! audio thread runs 6000 times per second; this holds over ten seconds.
+		static constexpr std::uint64_t kCapacity = 65536;
 
 		// The measurements; written by the audio thread, read by the GUI thread.
 		std::unique_ptr<std::atomic<std::uint64_t>[]> m_samples;

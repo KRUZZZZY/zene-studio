@@ -48,7 +48,7 @@ wrong exactly as reported.
 single-producer queue of *measurements*, not of three separately resettable counters:
 
 - `record(executionNs)` (`Analyzer.h:97-114`, audio thread) stores one measurement per
-  callback into a fixed ring of 16384 slots and publishes the new end of the queue with one
+  callback into a fixed ring of 65536 slots and publishes the new end of the queue with one
   release store. It never allocates, never locks, never waits and never logs. When the queue
   is full - the GUI thread has not consumed it for a very long time - the measurement is
   dropped and counted, so a report can never mix two callbacks.
@@ -75,7 +75,7 @@ The audio thread's part is a handful of atomic operations (`Analyzer.cpp:105-109
 `m_timing.record(execution_ns)`): one relaxed load of the write index, one acquire load of
 the read index, one relaxed store of the measurement and one release store of the write
 index. `std::atomic<std::uint64_t>` is asserted to be lock-free (`Analyzer.h:164-165`). The
-16384 slots are allocated once in the collector's constructor (`Analyzer.h:95`), which runs
+65536 slots are allocated once in the collector's constructor (`Analyzer.h:95`), which runs
 on the thread that creates the plugin - never on the audio thread.
 
 ### Callers and siblings checked
@@ -104,7 +104,7 @@ on the thread that creates the plugin - never on the audio thread.
 
 ## The regressions
 
-All three live in `tests/src/plugins/AudioPluginTest.cpp` (the only ctest of this family -
+All four live in `tests/src/plugins/AudioPluginTest.cpp` (the only ctest of this family -
 `ctest -N` shows no `^Analyzer$` and no `^SaControls$` test in this tree):
 
 - `analyzerTimingSnapshotStaysCoherent` (`AudioPluginTest.cpp:1008`, probe at `:212`) drives
@@ -120,6 +120,9 @@ All three live in `tests/src/plugins/AudioPluginTest.cpp` (the only ctest of thi
   contract: the reporter may not use separate `.exchange(0` counter resets, the audio
   callback must call `m_timing.record(`, and the reporter must close one interval
   (`m_timing.request(`) and take that interval (`m_timing.take(`).
+- `analyzerTimingCollectorCoversMaximumSixSecondReportInterval` checks that the bounded ring
+  retains all 36000 measurements produced by six seconds at the supported 192 kHz / 32-frame
+  maximum callback rate.
 
 The probes inject every measurement; there is no clock, no sleep, no thread and no race.
 The `TimingCollector` is looked up through the `Analyzer` type with a `requires` guard, so
@@ -293,12 +296,12 @@ asserts the exchange sequence is gone; that is a source contract, not a timing m
 
 The change is entirely inside `#ifdef SA_DEBUG` (no CMake file in this tree defines it) and
 touches no serialization, no settings key and no control command, so old projects and saved
-data load exactly as before; a release build is byte-for-byte the same code path. The only
-limit is the collector's 16384-slot ring, which is a debug-only report buffer: at the fastest
-supported sample rate the audio thread runs 750 times per second, so a five-second interval
-needs 3750 slots (2.3x headroom), and a full queue drops the measurement (counted in
-`Snapshot::dropped`) instead of overwriting one that is still waiting - it cannot feed a mixed
-report to any caller. No other caller uses it.
+data load exactly as before; a release build is byte-for-byte the same code path. The
+collector's 65536-slot ring is debug-only. At the supported maximum of 192 kHz with 32-frame
+periods, the audio thread runs 6000 times per second; a six-second report interval needs
+36000 slots, and the added regression covers that case. A GUI stall long enough to fill the
+ring still drops and counts measurements instead of overwriting entries awaiting a report.
+No other caller uses the collector.
 
 **? If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it.**
 
@@ -356,3 +359,18 @@ RESULT: PASS - submit
 `EXIT=0` (`submit-check-redirected.log`). Without the wrapper the same command exits 1 with
 `PermissionError` on that log directory and the gates row FAILs - an environment limit, not a
 gate failure.
+
+## QA review follow-up (2026-10-23)
+
+The independent review found that the original 16384-slot ring held only 16383 measurements,
+while the engine supports 192 kHz and 32-frame periods (6000 callbacks/second). A normal
+six-second interval can therefore contain 36000 measurements and overflow the original
+capacity. `Analyzer.h` now uses 65536 slots, and
+`analyzerTimingCollectorCoversMaximumSixSecondReportInterval` checks that all 36000 samples
+are present with no drops. The test change is recorded in `tests/upstream-modifications.txt`.
+
+Verification after this correction:
+
+- `cmake --build build --target zene AudioPluginTest opulenz PluginPortsMigrationTest -j12` — EXIT=0.
+- `ctest -R '^(AudioPluginTest|PluginPortsMigrationTest|OpulenZ)$' --output-on-failure` from `build/tests` — EXIT=0, 3/3 CTests passed.
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-389-port-port` — EXIT=0, all rows passed.

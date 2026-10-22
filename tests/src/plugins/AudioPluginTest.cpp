@@ -424,6 +424,7 @@ private slots:
 	void analyzerTimingSnapshotStaysCoherent();
 	void analyzerTimingSurvivesNoCallbackAfterRequest();
 	void analyzerTimingReportUsesOneCoherentSnapshot();
+	void analyzerTimingCollectorCoversMaximumSixSecondReportInterval();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -1045,6 +1046,29 @@ void AudioPluginTest::analyzerTimingReportUsesOneCoherentSnapshot()
 	QVERIFY2(text.contains(QStringLiteral("m_timing.request("))
 		&& text.contains(QStringLiteral("m_timing.take(")),
 		"the GUI reporter must close one interval and take that interval's measurements");
+}
+
+void AudioPluginTest::analyzerTimingCollectorCoversMaximumSixSecondReportInterval()
+{
+	// The engine supports 192 kHz and 32-frame periods: 6000 callbacks/second.
+	// The GUI timer checks once a second and reports after five seconds, so a
+	// six-second interval at that supported rate contains 36000 measurements.
+	using Collector = Analyzer::TimingCollector;
+	Collector collector;
+	Collector::Snapshot snapshot;
+	constexpr std::uint64_t callbacks = 36000;
+	std::uint64_t expectedSum = 0;
+	for (std::uint64_t i = 1; i <= callbacks; ++i)
+	{
+		expectedSum += i;
+		collector.record(i);
+	}
+	collector.request();
+	QVERIFY(collector.take(snapshot));
+	QCOMPARE(snapshot.count, callbacks);
+	QCOMPARE(snapshot.sumNs, expectedSum);
+	QCOMPARE(snapshot.maxNs, callbacks);
+	QVERIFY(snapshot.dropped == 0);
 }
 
 QTEST_MAIN(AudioPluginTest)
