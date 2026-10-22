@@ -121,9 +121,26 @@ All logs are new numbered files in
   no-upstream-regression PASS, check-namespace PASS, no-tautology PASS,
   doc-figures PASS, complexity PASS ("no new item in your files"), file-length
   PASS ("no new item in your files"), RESULT PASS
-  (`feature-check-r5-3.log`).
+  (`feature-check-r5-4.log`).
 - Build: `cmake --build build --target zene sf2player Sf2PlayerRealtimeTest`
-  EXIT=0 (`build-final-1.log`).
+  EXIT=0 (`build-final-1.log`, `build-final-2.log`).
+- `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-454`
+  EXIT=0 - "RESULT: PASS - submit" (`submit-check-2.log`).
+
+### A note on the flaky RemotePluginClientE2ETest
+
+`RemotePluginClientE2ETest` is flaky in this environment and says nothing about
+this change: it passed in the focused run above (11.92 s) and failed in a
+later run of the same binaries, then passed again on the next run with no code
+change in between (`remoteplugin-flake-note.log`: run 1 "100% tests passed out
+of 1" in 15.59 s, run 2 "0% tests passed out of 1" in 25.77 s). The failing
+cases are `messageNearTheOneMegabyteWindowDoesNotFailThePlugin` ("Compared
+values are not the same", `tests/src/core/RemotePluginClientE2ETest.cpp:913`)
+and `bufferResizeWaitsForRenderingToFinish` ("'elapsed >=
+std::chrono::milliseconds{250}' returned FALSE", `:1209`) - a large-message
+chunking case and a wall-clock case. This branch does not touch that path:
+`git diff --name-only ded355440 HEAD` lists only the SF2 player, its test, the
+test registration and the documentation.
 
 ## Self-check
 
