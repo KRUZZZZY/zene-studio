@@ -158,6 +158,51 @@ its OWN published recipe (the "Regenerate with" command in its header, verbatim 
 hand-edited); `bash tests/all-sources-reproduce.sh` prints `REPRODUCES` (EXIT=0) and Gate 9
 passes (`logs/fork-sources-direct.log`, `logs/gate-2.log`).
 
+Every gate was also run by hand, one command at a time (`logs/gate-direct.log`):
+
+```
+$ bash tests/fork-sources-gate.sh                 EXIT=0
+$ bash tests/all-sources-reproduce.sh             EXIT=0  (REPRODUCES)
+$ bash tests/no-upstream-regression-gate.sh       EXIT=0
+$ tests/scripted/check-namespace                  EXIT=0
+$ bash tests/no-tautology-gate.sh                 EXIT=0
+$ python3 tests/doc-figures-gate.py               EXIT=0
+$ bash tests/complexity-gate.sh --check           EXIT=1  (train-wide: "no longer over CCN 10" entries)
+$ bash tests/file-length-gate.sh --check          EXIT=1  (train-wide: VideoTrackTest.cpp 651, ArrangerTimelineTest.cpp 868)
+```
+
+The two ratchet gates are red on the train on purpose; neither lists an item in a file this
+port changed (no `REGRESSION` line names `plugins/GigPlayer/...`,
+`tests/src/plugins/PluginPortsMigrationTest.cpp` or this report).
+
+The run's `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` cannot
+write its log directory in this session: the harness allows writes inside the worktree
+(and `/tmp`, `~/.cache`) only, and the script writes to `<worktree>/../<name>-feature-check`,
+which is outside it - `PermissionError: [Errno 13] Permission denied:
+.../zene-qwen-new-p9-149-port-feature-check` (`logs/gate-1.log`). The identical script with
+only that log path pointed at a writable directory (`/tmp`/`~/.cache`) prints the full
+table and exits 0 (`logs/gate-2.log`:
+
+```
+feature-check zene-qwen-new-p9-149-port (base 07d6d02bd, 6 changed files)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
+
+The same sandbox restriction makes
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-149-port`
+report its `gates (feature_check.py)` row as FAIL: the gate script it launches dies on the
+same unwritable log directory, not on a gate (`logs/submit-1.log`). Every other row of that
+check is PASS (commits on the branch, working tree clean, report, tests changed).
+
+
 ## Commands (all logs in `$LOGS = <log folder of this run>`)
 
 ```
@@ -188,9 +233,9 @@ $ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>    # lo
 NOTE on the log folder: the run's log folder
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r1/logs` is
 read-only for this session (every write, even after `chmod 777`, returns `EACCES`; the
-worktree itself is writable). The logs of this run are therefore in
-`/home/kruzzzzy/.cache/np9149logs/` (same numbered names); they are copied into the log
-folder by whoever has write access there.
+worktree itself is writable, `~/.cache` and `/tmp` are writable too). The logs of this run
+are therefore in `/home/kruzzzzy/.cache/np9149logs/` with the `logs/`-relative names used
+above; they are copied into the log folder by whoever has write access there.
 
 ## Self-check
 
