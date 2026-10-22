@@ -259,6 +259,17 @@ int targetSize()
 	return std::max(size::target, static_cast<int>(std::lround(size::target * targetFactor())));
 }
 
+bool touchWorkspace()
+{
+	static const bool on = appearance::workspaceIsTouch(appearance::startedWith().workspace);  // read once
+	return on;
+}
+
+int tapTargetSize()
+{
+	return touchWorkspace() ? std::max(targetSize(), appearance::touchTargetSide) : targetSize();
+}
+
 QString accessibleModeRules()
 {
 	// The base rules colour a focused control's border with @focusRing; three pixels make that ring strong, and

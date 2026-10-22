@@ -47,12 +47,17 @@ namespace lmms::appearance
  *    (no animated menus, tooltips, docks or scrolling). It replaces the W3 layout-density presets: the config
  *    keeps it in ui/density, where "accessible" is on and "standard" off, and the old values comfortable and
  *    touch still read as on.
+ *  - 'workspace' (0.5.0 L14, Q050-235): standard, or touch - the touch workspace holds the launcher's cells,
+ *    scene buttons and stop buttons to at least touchTargetSide (44) Qt logical pixels at 100% zoom. It is a
+ *    preference of its own: it changes no palette, motion or density, so the old 'density: "touch"' keeps meaning
+ *    accessible mode exactly as before. It is kept in ui/workspace and, like the rest, applies from the next start.
  *  Each applies from the next start. */
 struct Options
 {
 	double scale = 1.0;
 	QString palette = QStringLiteral("dark");
 	bool accessible = false;
+	QString workspace = QStringLiteral("standard");
 
 	bool operator==(const Options&) const = default;
 };
@@ -60,7 +65,14 @@ struct Options
 //! How much larger accessible mode's click targets and control paddings are than standard's (24 -> 32 px).
 constexpr double accessibleTargetFactor = 1.35;
 
+//! The side a touch workspace's named tap targets are held to, in Qt logical pixels (WCAG 2.5.5's 44 x 44).
+constexpr int touchTargetSide = 44;
+
 LMMS_EXPORT const QStringList& paletteNames();
+//! The workspaces window.appearance offers: standard (the default) and touch.
+LMMS_EXPORT const QStringList& workspaceNames();
+//! Whether @a name is the touch workspace.
+LMMS_EXPORT bool workspaceIsTouch(const QString& name);
 //! The layout-density values window.appearance still accepts from before accessible mode: standard (off),
 //! comfortable and touch (both on).
 LMMS_EXPORT const QStringList& densityNames();
@@ -71,8 +83,9 @@ LMMS_EXPORT QString effectivePalette(const Options& options);
 LMMS_EXPORT Options options();
 //! False when the scale file main() reads could not be written (the config values are set either way).
 LMMS_EXPORT bool setOptions(const Options& next);
-//! {scale, palette, accessible, applies, restart_required, applies_note, restart_pending}, plus the two old fields:
-//! font_scale (always 1 - text follows the zoom) and density (comfortable in accessible mode, standard otherwise).
+//! {scale, palette, accessible, workspace, applies, restart_required, applies_note, restart_pending}, plus the two
+//! old fields: font_scale (always 1 - text follows the zoom) and density (comfortable in accessible mode, standard
+//! otherwise).
 LMMS_EXPORT QJsonObject toJson(const Options& options);
 
 /*! 0.5.0 UX decision (theme 20): every change to how the interface looks says when it takes effect. Each one - the

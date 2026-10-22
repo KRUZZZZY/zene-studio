@@ -83,7 +83,7 @@ SessionGridView::SessionGridView(QWidget* parent) :
 	m_undoReplace->setText(tr("Undo Replace"));
 	m_undoReplace->setAccessibleName(tr("Undo the replacing drop"));
 	m_undoReplace->setProperty("controlCommand", QStringLiteral("control.undo"));
-	m_undoReplace->setMinimumHeight(tokens::targetSize());
+	m_undoReplace->setMinimumHeight(tokens::tapTargetSize());
 	m_undoReplace->hide();
 	connect(m_undoReplace, &QToolButton::clicked, this, &SessionGridView::undoReplace);
 	statusRow->addWidget(m_undoReplace);
@@ -119,7 +119,10 @@ QToolButton* SessionGridView::makeButton(const QString& command)
 	auto* button = new QToolButton(this);
 	button->setProperty("controlCommand", command);
 	button->setFocusPolicy(Qt::StrongFocus);
-	button->setMinimumSize(CellWidth, tokens::targetSize() + tokens::space::xxs);  // 72 x 26, larger in accessible mode
+	// 0.5.0 L14 (Q050-235): the real hit rectangle, not only the artwork - 72 x 26 normally, at least 72 x 44 in
+	// the touch workspace, and larger again in accessible mode.
+	const int height = std::max(tokens::targetSize() + tokens::space::xxs, tokens::tapTargetSize());
+	button->setMinimumSize(std::max(CellWidth, height), height);
 	button->installEventFilter(this);
 	button->setContextMenuPolicy(Qt::CustomContextMenu);
 	connect(button, &QWidget::customContextMenuRequested, this,

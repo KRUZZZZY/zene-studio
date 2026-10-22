@@ -327,6 +327,29 @@ private slots:
 		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("density"), QStringLiteral("standard"));
 	}
 
+	//! 0.5.0 L14 (Q050-235): the workspace is an appearance field of its own - selectable and readable through
+	//! window.appearance, one undo step back, stored in user configuration, and never implied by a density value.
+	void theWorkspaceIsAnAppearanceFieldOfItsOwn()
+	{
+		QCOMPARE(appearance::options().workspace, QStringLiteral("standard"));  // an absent setting is the default
+		const ControlResult set = run(QStringLiteral("window.appearance"), {{QStringLiteral("workspace"), QStringLiteral("touch")}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("workspace")).toString(), QStringLiteral("touch"));
+		QCOMPARE(appearance::options().workspace, QStringLiteral("touch"));
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("workspace")), QStringLiteral("touch"));
+		QVERIFY(set.result.value(QStringLiteral("restart_pending")).toBool());  // drawn from the next start
+		QVERIFY(!set.result.value(QStringLiteral("accessible")).toBool());  // a workspace, not accessible mode
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(appearance::options().workspace, QStringLiteral("standard"));
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("workspace")), QStringLiteral("standard"));
+		// A value outside the list is refused typed, and an unreadable stored value falls back to the default.
+		QCOMPARE(run(QStringLiteral("window.appearance"), {{QStringLiteral("workspace"), QStringLiteral("tablet")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("workspace"), QStringLiteral("sideways"));
+		QCOMPARE(appearance::options().workspace, QStringLiteral("standard"));
+		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("workspace"), QStringLiteral("standard"));
+	}
+
 	//! One global zoom is the sizing model: the old text-size field asks for the zoom, and reads back as 1.
 	void theTextSizeFieldSetsTheOneZoom()
 	{

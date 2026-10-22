@@ -70,6 +70,17 @@ const QStringList& densityNames()
 	return names;
 }
 
+const QStringList& workspaceNames()
+{
+	static const QStringList names{QStringLiteral("standard"), QStringLiteral("touch")};
+	return names;
+}
+
+bool workspaceIsTouch(const QString& name)
+{
+	return name == QLatin1String("touch");
+}
+
 bool densityIsAccessible(const QString& name)
 {
 	return name == QLatin1String("accessible") || name == QLatin1String("comfortable") || name == QLatin1String("touch");
@@ -87,6 +98,9 @@ Options options()
 	const QString palette = ConfigManager::inst()->value(kSection, QStringLiteral("palette"), QStringLiteral("dark"));
 	out.palette = paletteNames().contains(palette) ? palette : QStringLiteral("dark");
 	out.accessible = densityIsAccessible(ConfigManager::inst()->value(kSection, QStringLiteral("density")));
+	// An absent setting is standard: a config from before this preference opens exactly as it did.
+	const QString workspace = ConfigManager::inst()->value(kSection, QStringLiteral("workspace"), QStringLiteral("standard"));
+	out.workspace = workspaceNames().contains(workspace) ? workspace : QStringLiteral("standard");
 	return out;
 }
 
@@ -99,6 +113,11 @@ bool setOptions(const Options& next)
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("palette"), next.palette);
 	ConfigManager::inst()->setValue(kSection, QStringLiteral("density"),
 		next.accessible ? QStringLiteral("accessible") : QStringLiteral("standard"));
+	ConfigManager::inst()->setValue(kSection, QStringLiteral("workspace"),
+		workspaceNames().contains(next.workspace) ? next.workspace : QStringLiteral("standard"));
+	// Written now, as the other preference writers do (settings.set), so a crash cannot forget a choice
+	// the person was told was saved.
+	ConfigManager::inst()->saveConfigFile();
 	return syncScaleFile();
 }
 
@@ -131,6 +150,7 @@ const Options& startedWith()
 QJsonObject toJson(const Options& o)
 {
 	QJsonObject out{{QStringLiteral("scale"), o.scale}, {QStringLiteral("palette"), o.palette}, {QStringLiteral("accessible"), o.accessible},
+		{QStringLiteral("workspace"), o.workspace},
 		{QStringLiteral("font_scale"), 1.0}, {QStringLiteral("density"), o.accessible ? QStringLiteral("comfortable") : QStringLiteral("standard")},
 		{QStringLiteral("restart_pending"), !(o == startedWith())}};
 	const QJsonObject timing = applyTiming();

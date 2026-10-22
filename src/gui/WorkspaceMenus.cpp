@@ -178,6 +178,8 @@ void populateCustomiseExtras(QMenu* menu)
 	// Theme 20: a section heading, not an entry - it runs nothing, so it declares no command.
 	theme->addSection(QObject::tr("Changes apply at the next start"));
 	choices(theme, QObject::tr("Palette"), QStringLiteral("window.appearance"), QStringLiteral("palette"));
+	// 0.5.0 L14 (Q050-235): the touch workspace - larger launcher targets - chosen beside the palette; one command.
+	choices(theme, QObject::tr("Workspace"), QStringLiteral("window.appearance"), QStringLiteral("workspace"));
 	// 0.5.0 UX decision (theme 23): one global zoom sizes everything; accessible mode replaces the density presets.
 	QMenu* zoom = theme->addMenu(QObject::tr("Interface Zoom"));
 	for (const int percent : {75, 100, 125, 150, 175, 200})
