@@ -31,7 +31,6 @@
 #include <cstring>
 #include <exception>
 #include <limits>
-#include <memory>
 #include <random>
 #include <numbers>
 
@@ -653,20 +652,21 @@ bool ExprFront::add_cyclic_vector(const char* name, const float* data, size_t le
 	{
 		if (interp)
 		{
-			// The wave object is owned by the cyclic vector. The unique_ptr holds it
-			// until the vector took it, so a failing push_back cannot leak it.
-			auto wvf = std::make_unique<WaveValueFunctionInterpolate<float>>(data, length);
-			auto* const wave = wvf.get();
+			// The cyclic vector owns the wave object. Its capacity is secured
+			// before the wave is created, so the insertion cannot fail: a wave that
+			// exists is always owned by the vector, and the failing path neither
+			// leaks a wave nor frees one on the calling thread (the plugin builds
+			// the expression front on the audio thread).
+			m_data->m_cyclics_interp.reserve(m_data->m_cyclics_interp.size() + 1);
+			auto* const wave = new WaveValueFunctionInterpolate<float>(data, length);
 			m_data->m_cyclics_interp.push_back(wave);
-			wvf.release();
 			return m_data->m_symbol_table.add_function(name, *wave);
 		}
 		else
 		{
-			auto wvf = std::make_unique<WaveValueFunction<float>>(data, length);
-			auto* const wave = wvf.get();
+			m_data->m_cyclics.reserve(m_data->m_cyclics.size() + 1);
+			auto* const wave = new WaveValueFunction<float>(data, length);
 			m_data->m_cyclics.push_back(wave);
-			wvf.release();
 			return m_data->m_symbol_table.add_function(name, *wave);
 		}
 	}
