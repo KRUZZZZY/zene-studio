@@ -20,7 +20,7 @@ committed on its own.
 | RED exit code (whole product change reverted) | 8 | 8 | 8 |
 | GREEN exit code (whole product change restored) | 0 | 0 | 0 |
 | test file | `tests/src/plugins/ExprSynthAllocationTest.cpp` | `tests/src/plugins/ExprSynthTest.cpp` | `tests/src/plugins/ExprSynthTest.cpp` |
-| new test cases | 2 | 1 | 1 |
+| new test cases | 2 (`failedCyclicVectorGrowthLeavesNoWaveBehind` and its interpolated twin) | 1 | 1 |
 
 - Affected test family: `ctest -R 'ExprSynth'` → **2 tests run, 2 passed**
   (`ExprSynthTest` = 5 test functions, `ExprSynthAllocationTest` = 3 test functions),
@@ -46,52 +46,101 @@ committed on its own.
 
 ### Evidence (the bug was real)
 
-- `plugins/Xpressive/ExprSynth.cpp:643-676` (`ExprFront::add_cyclic_vector`), original
+- `plugins/Xpressive/ExprSynth.cpp:644-679` (`ExprFront::add_cyclic_vector`), original
   code: `auto wvf = new WaveValueFunction<float>(data, length);` followed by
   `m_data->m_cyclics.push_back(wvf);`. The wave object was owned by nobody between the
   `new` and the `push_back`; when the vector had to grow, `push_back` could throw
-  `std::bad_alloc`, the `catch(...)` at `ExprSynth.cpp:671` swallowed it and the raw
+  `std::bad_alloc`, the `catch(...)` at `ExprSynth.cpp:673` swallowed it and the raw
   pointer was lost — the wave object leaked. The interpolated branch
   (`m_cyclics_interp`) had the same shape.
 - Both cyclic vectors are owned by `ExprFrontData::~ExprFrontData`
-  (`plugins/Xpressive/ExprSynth.cpp:392-404`), which deletes every element it holds; a
+  (`plugins/Xpressive/ExprSynth.cpp:391-403`), which deletes every element it holds; a
   wave that never reached the vector is never deleted by anybody.
+- The call is reachable from the audio thread: `Xpressive::playNoteImpl`
+  (`plugins/Xpressive/Xpressive.cpp:216-245`) builds the `ExprSynth` of a note there
+  and the `ExprSynth` constructor calls `add_cyclic_vector` for the three wave tables
+  (`plugins/Xpressive/ExprSynth.cpp:748-751`). A fix that cleans up on that path must
+  not free there.
 
 ### Fix
 
-`plugins/Xpressive/ExprSynth.cpp:650-670`: the wave is created in a
-`std::make_unique` and only released to the vector after the `push_back` returned, so
-a throwing `push_back` frees the wave instead of losing it. `add_function` is called
-with the vector-owned pointer, and a throwing `add_function` keeps the wave in the
-vector, where the destructor frees it (unchanged ownership rules).
+`plugins/Xpressive/ExprSynth.cpp:652-671`: the cyclic vector's **capacity is secured
+before the wave object is created**:
+
+```cpp
+m_data->m_cyclics.reserve(m_data->m_cyclics.size() + 1);
+auto* const wave = new WaveValueFunction<float>(data, length);
+m_data->m_cyclics.push_back(wave);
+```
+
+The insertion can no longer fail: the `reserve` happens first, so `push_back` neither
+allocates nor throws (the element is a raw pointer, copied without throwing), and
+`add_function` keeps the wave in the vector, where the destructor frees it (unchanged
+ownership rules). So the failing path has two outcomes and neither of them touches the
+wave: the `reserve` throws before the wave exists (nothing to leak, nothing to free),
+and a failure of the wave's own `new` frees nothing either.
+
+This ordering is also what keeps the audio thread clean: `Xpressive::playNoteImpl`
+(`plugins/Xpressive/Xpressive.cpp:212-245`) builds the `ExprFront` and the `ExprSynth`
+of a note on the audio thread, and the `ExprSynth` constructor calls
+`add_cyclic_vector` (`plugins/Xpressive/ExprSynth.cpp:751-754`). The first round of
+this fix held the wave in a `std::unique_ptr` across the `push_back`, which freed the
+wave on the audio thread when the growth failed — rejected by the round 2 review
+because a free is not allowed on the render path. With the capacity secured up front
+the failing path frees nothing at all.
 
 ### Regression
 
 `tests/src/plugins/ExprSynthAllocationTest.cpp` — two new cases
-(`failedCyclicVectorGrowthDoesNotLeakTheWave`,
-`failedInterpolatedCyclicVectorGrowthDoesNotLeakTheWave`). The test binary replaces the
-global `operator new`; the new injection counts allocations and fails the *second* one
-after a mark, which is the cyclic vector's first growth (the wave object itself is the
-first allocation). The wave pointer is watched, and the case fails when it is not
-deleted.
+(`failedCyclicVectorGrowthLeavesNoWaveBehind`,
+`failedInterpolatedCyclicVectorGrowthLeavesNoWaveBehind`). The test binary replaces the
+global `operator new`; the injection fails the allocation of the cyclic vector's
+buffer (one pointer, `sizeof(void*)` bytes) and records every allocation of the call
+until that failure. The case then pins two properties:
+
+- **no free on the calling thread** — no allocation of the call may be freed while the
+  call is running (this is what the round 2 review rejected);
+- **no leak** — when the expression front is gone, every allocation of the call must
+  have been freed with it, otherwise a wave was lost.
+
+The test is deterministic: the injection is an allocation size, not a timing.
 
 ### Commands (verbatim, observed EXIT codes)
 
 LOGS = /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p15-63.r1/logs
 
-The revert is this bug's own product hunk: `$LOGS/fix-bug1-r3.patch` puts the `new` +
-`push_back` pair of `add_cyclic_vector` back in place of the `std::unique_ptr`.
+The fix in place:
 
 ```
-git apply $LOGS/fix-bug1-r3.patch                                                          # REVERT_EXIT=0
-cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r3-revert.log 2>&1    # BUILD_REVERT_EXIT=0
-cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r3-revert.log 2>&1
-# TEST_REVERT_EXIT=8  (2 failures: "the wave object leaked when the cyclic vector failed to grow"
-#                       and the same for the interpolated branch)
-git apply -R $LOGS/fix-bug1-r3.patch                                                        # RESTORE_EXIT=0
-cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r3-reapply.log 2>&1  # BUILD_REAPPLY_EXIT=0
-cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r3-reapply.log 2>&1
-# TEST_REAPPLY_EXIT=0  (1/1 test passed)
+cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r5.log 2>&1    # BUILD_EXIT=0
+cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r5-green.log 2>&1
+# TEST_EXIT=0  (1/1 test passed)
+```
+
+RED/GREEN proof against the two rejected variants — the `std::unique_ptr` fix of the
+first round (which frees the wave on the calling thread) and the original code (which
+loses the wave). The patches are `$LOGS/fix-bug1-r5-rejected-uniqueptr.patch` and
+`$LOGS/fix-bug1-r5-upstream-leak.patch`; the run is `/tmp/proof_bug1_r5.sh`, summary
+`$LOGS/proof-summary-r5.log`:
+
+```
+git apply $LOGS/fix-bug1-r5-rejected-uniqueptr.patch                          # APPLY_EXIT=0
+cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r5-rejected-uniqueptr.log 2>&1  # BUILD_EXIT=0
+cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r5-rejected-uniqueptr.log 2>&1
+# TEST_EXIT=8  (2 failures: "the failing path freed memory on the calling thread")
+git apply -R $LOGS/fix-bug1-r5-rejected-uniqueptr.patch                        # RESTORE_EXIT=0
+cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r5-rejected-uniqueptr-restore.log 2>&1  # BUILD_RESTORE_EXIT=0
+cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r5-rejected-uniqueptr-restore.log 2>&1
+# TEST_RESTORE_EXIT=0  (1/1 test passed)
+
+git apply $LOGS/fix-bug1-r5-upstream-leak.patch                                # APPLY_EXIT=0
+cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r5-upstream-leak.log 2>&1  # BUILD_EXIT=0
+cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r5-upstream-leak.log 2>&1
+# TEST_EXIT=8  (2 failures: "a wave object leaked when the cyclic vector failed to grow")
+git apply -R $LOGS/fix-bug1-r5-upstream-leak.patch                              # RESTORE_EXIT=0
+cmake --build build --target ExprSynthAllocationTest > $LOGS/build-bug1-r5-upstream-leak-restore.log 2>&1  # BUILD_RESTORE_EXIT=0
+cd build/tests && ctest -R '^ExprSynthAllocationTest$' --output-on-failure > $LOGS/test-bug1-r5-upstream-leak-restore.log 2>&1
+# TEST_RESTORE_EXIT=0  (1/1 test passed)
 ```
 
 ## new-p14-103 — Sample zero doubles as the "release position not set" marker
@@ -227,15 +276,17 @@ cmake --build build --target xpressive zene > $LOGS/build-bug3-plugin.log 2>&1  
 
 | bug | RED (bug's own product hunk reverted) | GREEN (fix in place) | RED (whole product change reverted) | GREEN (restored) |
 |---|---|---|---|---|
-| new-p15-63 | `ctest -R '^ExprSynthAllocationTest$'` → **TEST_REVERT_EXIT=8**, 2 failures: "the wave object leaked when the cyclic vector failed to grow" / "…when the interpolated cyclic vector failed to grow" | → **TEST_REAPPLY_EXIT=0**, 1/1 passed | → **reverted_rc=8** (negctl) | → **restored_rc=0** (negctl) |
+| new-p15-63 | against the original code → **TEST_EXIT=8**, 2 failures: "a wave object leaked when the cyclic vector failed to grow" / "…when the interpolated cyclic vector failed to grow"; against the rejected `std::unique_ptr` variant → **TEST_EXIT=8**, 2 failures: "the failing path freed memory on the calling thread" | → **TEST_EXIT=0**, 1/1 passed | → **reverted_rc=8** (negctl) | → **restored_rc=0** (negctl) |
 | new-p14-103 | `ctest -R '^ExprSynthTest$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the release time restarted instead of counting on from the release position" | → **TEST_REAPPLY_EXIT=0**, 1/1 passed | → **reverted_rc=8** (negctl) | → **restored_rc=0** (negctl) |
 | new-p10-127 | `ctest -R '^ExprSynthTest$'` → **TEST_REVERT_EXIT=8**, 1 failure: "the render path logged on the audio thread: ExprTk exception" | → **TEST_REAPPLY_EXIT=0**, 1/1 passed | → **reverted_rc=8** (negctl) | → **restored_rc=0** (negctl) |
 
-The per-bug proof reverts this bug's own product hunk (the patch is in the log folder,
-`$LOGS/fix-bug1-r3.patch`, `$LOGS/fix-bug2-r3.patch`, `$LOGS/fix-bug3-r3.patch`),
-rebuilds the test target, runs the test, restores the hunk, rebuilds and runs again;
-the summary of that run is `$LOGS/proof-summary-r3.log`. The whole-product-change
-proof is the lane's own negative control, described below.
+The per-bug proof reverts this bug's own product hunk (the patches are in the log
+folder: `$LOGS/fix-bug1-r5-rejected-uniqueptr.patch` and
+`$LOGS/fix-bug1-r5-upstream-leak.patch` for new-p15-63, `$LOGS/fix-bug2-r3.patch` for
+new-p14-103 and `$LOGS/fix-bug3-r3.patch` for new-p10-127), rebuilds the test target,
+runs the test, restores the hunk, rebuilds and runs again; the summaries of those runs
+are `$LOGS/proof-summary-r5.log` and `$LOGS/proof-summary-r3.log`. The
+whole-product-change proof is the lane's own negative control, described below.
 
 The first (pre-fix) runs were `TEST_EXIT=8` for all three regressions, with the same
 assertions failing, and `TEST_EXIT=0` after the fix.
@@ -297,12 +348,15 @@ file names, so the reverted product is compiled into the test binaries.
 
 - **new-p15-63** — both branches of `ExprFront::add_cyclic_vector` are fixed (the
   plain and the interpolated cyclic vector); the only callers are
-  `ExprSynth::ExprSynth` (`plugins/Xpressive/ExprSynth.cpp:749-751`, three waves) and
+  `ExprSynth::ExprSynth` (`plugins/Xpressive/ExprSynth.cpp:748-751`, three waves) and
   the wave evaluation in `plugins/Xpressive/Xpressive.cpp` (three waves), all of which
   go through the same function, so every caller is covered by the one fix. Ownership is
   unchanged: the cyclic vector owns the wave and `ExprFrontData::~ExprFrontData`
-  (`plugins/Xpressive/ExprSynth.cpp:392-404`) deletes it, so a wave that reached the
-  vector is still freed exactly once.
+  (`plugins/Xpressive/ExprSynth.cpp:391-403`) deletes it, so a wave that reached the
+  vector is still freed exactly once. The audio path was checked as well: the call is
+  reachable from `Xpressive::playNoteImpl` on the render thread, so the fix puts the
+  capacity in place before the wave exists and the failing path frees nothing (the
+  regression asserts exactly that).
 - **new-p14-103** — `m_note_rel_sample` is written in exactly one place
   (`plugins/Xpressive/ExprSynth.cpp:812-818`) and read in the two render loops
   (`:837` and `:865`); all three now agree on the flag, so the release time is
@@ -333,7 +387,9 @@ file names, so the reverted product is compiled into the test binaries.
 - **Realtime**: the audio thread only writes into fixed size buffers
   (`char[128]`) and sets an atomic flag — no allocation, no free, no mutex, no wait,
   no logging, no Qt call. The `qWarning` moved out of the render path into the
-  plugin's main-thread timer.
+  plugin's main-thread timer. The cyclic wave fix adds no free on the render path
+  either: the capacity is secured before the wave object exists, so the failing path
+  frees nothing (asserted by `ExprSynthAllocationTest`).
 - **Undo**: none of the three fixes adds a control command, a song mutation or an
   undoable action, so the undo history is unchanged (one honest step per user action
   still holds).
@@ -350,6 +406,8 @@ no `std::filesystem` were introduced.
 ### 7. Files committed
 
 - `plugins/Xpressive/ExprSynth.cpp` (bugs new-p15-63, new-p14-103, new-p10-127)
+- `tests/CMakeLists.txt` (the Xpressive regression targets and their CTest names match
+  their source file names)
 - `plugins/Xpressive/ExprSynth.h` (bugs new-p14-103, new-p10-127)
 - `plugins/Xpressive/Xpressive.cpp` (bug new-p10-127)
 - `plugins/Xpressive/Xpressive.h` (bug new-p10-127)
@@ -360,4 +418,3 @@ no `std::filesystem` were introduced.
 - `tests/upstream-modifications.txt` (the divergence ledger for the changed
   inherited files)
 - `docs/qwen-fixes-2026-10/cluster-new-p15-63.md` (this report)
-
