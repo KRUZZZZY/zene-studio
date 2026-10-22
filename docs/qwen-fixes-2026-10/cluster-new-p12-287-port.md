@@ -57,27 +57,61 @@ behaviour, and it repairs the train-level scope-manifest red that blocked the ga
   keeps both rows with the attributes they were read with (no `type` added,
   `type="oops"` kept) and their children (`marker="missing"`, `marker="oops"`).
 
-## RED / GREEN proof (the existing regression catches the bug)
+## RED / GREEN proof (the regression catches the bug)
 
 The branch's own fix is committed, so the RED proof reverts THAT hunk (the same
 `git diff` / `git apply -R` / `git apply` round trip the job prescribes), not a new
 one.
 
+### The ported regression (this commit's own test)
+
+`tests/src/core/UnclaimedTrackTypeTest.cpp:307`
+`aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack()` - the case
+the ORIGINAL report gave, ported by hand from `2e42fdba6` (the merge conflict that
+stopped that commit was in `src/core/Track.cpp`; the test file merged cleanly and is
+applied here verbatim in shape). Its fixture is the original's: a row with no `type`,
+a row with `type="bad"`, and a second readable row AFTER them, between the
+fixture's own track and that one. It asserts:
+
+- the container holds exactly the 2 READABLE rows (`trackCount(song) == 2`);
+- no track is named `no-type` or `bad-type`;
+- both unreadable rows are KEPT (`unclaimedChildren().size() == 2`) and the load
+  report names both (`/song/trackcontainer/track[2]`, `track[3]` - the index counts
+  the re-emitted position, after the two claimed tracks);
+- a load -> save round trip keeps both rows with the attributes they were read
+  with (no `type` added, `type="bad"` kept).
+
+| step | command | exit |
+|------|---------|------|
+| GREEN (fix in place) | `cmake --build build --target UnclaimedTrackTypeTest -j 8` then `./UnclaimedTrackTypeTest aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack` from `build/tests` | build 0, test **0** (`Totals: 3 passed, 0 failed`) |
+| revert the type check | the `type` read in `src/core/Track.cpp` put back to `static_cast<Type>( element.attribute( "type" ).toInt() )`, then `git diff -- src/core/Track.cpp > <logs>/fix.patch` | diff 0 |
+| rebuild (RED) | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | **0** |
+| RED | `./UnclaimedTrackTypeTest aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack` | **1** - `Actual (trackCount( song )): 4 / Expected (2) : 2`; `Totals: 2 passed, 1 failed` |
+| restore the fix | `git apply -R <logs>/fix.patch` | **0** |
+| rebuild (GREEN) | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | **0** |
+| GREEN | `./UnclaimedTrackTypeTest aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack` | **0** (`Totals: 3 passed, 0 failed`) |
+
+The RED failure is the finding's own symptom, with the numbers the original
+commit's report recorded: **4 tracks where the fixture holds 2** - both unreadable
+rows FABRICATED as instrument tracks.
+
+### The branch's own regression (the sibling slot)
+
+`UnclaimedTrackTypeTest::malformedTrackTypesArePreservedNotCoerced` (added upstream
+by `edc9fac6f`) fails the same way when the type check is reverted:
+
+| step | command | exit |
+|------|---------|------|
+| RED | `./UnclaimedTrackTypeTest malformedTrackTypesArePreservedNotCoerced` | **1** - `Actual (trackCount( song )): 3 / Expected (1) : 1` |
+| GREEN | same command, fix restored | **0** (`Totals: 3 passed, 0 failed`) |
+
+### The whole affected family and the gates
+
 | step | command | exit |
 |------|---------|------|
 | baseline (fix in place) | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` then `ctest -R '^UnclaimedTrackTypeTest$'` from `build/tests` | build 0, test **0** (1/1) |
-| revert the type check | `git diff -- src/core/Track.cpp > <logs>/fix.patch` then the file edited back to `static_cast<Type>( element.attribute( "type" ).toInt() )` | diff 0 |
-| rebuild (RED) | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | **0** |
-| RED | `./UnclaimedTrackTypeTest malformedTrackTypesArePreservedNotCoerced` from `build/tests` | **1** - `Actual (trackCount( song )): 3 / Expected (1) : 1`; `Totals: 2 passed, 1 failed` |
-| restore the fix | `git apply -R <logs>/fix.patch` | **0** |
-| rebuild (GREEN) | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | **0** |
-| GREEN | `./UnclaimedTrackTypeTest malformedTrackTypesArePreservedNotCoerced` from `build/tests` | **0** - `Totals: 3 passed, 0 failed` |
 | family | `ctest -R '^(UnclaimedTrackTypeTest\|UnclaimedElementsTest\|TrackFolderTest\|LegacyPatternUpgradeTest\|TrackViewDeferredLifetimeTest\|InputMonitorTest\|LanesUpconvertTest)$'` from `build/tests` | **0** (7/7 tests) |
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** (all eight gates PASS) |
-
-The RED failure is the finding's own symptom: with the type check reverted, the two
-unreadable rows are FABRICATED as instrument tracks (3 tracks where the fixture holds
-1) - exactly what the finding reports.
 
 ## What this commit changes
 
@@ -87,10 +121,14 @@ unreadable rows are FABRICATED as instrument tracks (3 tracks where the fixture 
    type that does not convert) is refused there instead of reading as 0 (an
    Instrument track). The old text stated the opposite of what the code does since
    `edc9fac6f`. No behaviour change; the helper and the loader are untouched.
-2. `tests/upstream-modifications.txt` - the registration row for the changed
+2. `tests/src/core/UnclaimedTrackTypeTest.cpp` - the ported regression
+   `aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack()` (the
+   original's fixture and assertions, applied by hand from `2e42fdba6`) plus the
+   `#include "Track.h"` it needs. No existing slot was touched or weakened.
+3. `tests/upstream-modifications.txt` - the registration row for the changed
    inherited file.
-3. `tests/all-sources.txt` - the train-level scope-manifest repair, described below.
-4. This report.
+4. `tests/all-sources.txt` - the train-level scope-manifest repair, described below.
+5. This report.
 
 ### The scope-manifest repair (why it is in this commit)
 
@@ -143,7 +181,7 @@ gates turn green.
 
 ## Self-check
 
-- `feature_check.py`: **exit 0** after the change (`gate-feature-check-3.log`):
+- `feature_check.py`: **exit 0** after the change (`gate-feature-check-4.log`):
   `fork-sources` PASS, `all-sources-reproduce` PASS, `no-upstream-regression` PASS,
   `check-namespace` PASS, `no-tautology` PASS, `doc-figures` PASS, `complexity`
   "no new item in your files", `file-length` "no new item in your files",
@@ -151,11 +189,14 @@ gates turn green.
   **exit 1** with `fork-sources` and `all-sources-reproduce` FAIL
   (`gate-feature-check-1.log`), both red at the branch base.
 - `submit_check.py`: run after the commit; the result is recorded in this section.
-- New test files: none. The regression that holds this line is the branch's own
-  `tests/src/core/UnclaimedTrackTypeTest.cpp::malformedTrackTypesArePreservedNotCoerced`,
-  proved RED above by reverting the fix and GREEN with it in place. No test was
-  weakened, and no gate or baseline was re-anchored.
+- New test files: none. The regression this commit adds is a slot in the existing
+  `tests/src/core/UnclaimedTrackTypeTest.cpp` (the file is already registered in
+  `tests/fork-sources.txt` and in `tests/CMakeLists.txt`); it is proved RED above by
+  reverting the fix (4 tracks where the fixture holds 2) and GREEN with the fix in
+  place. The branch's own sibling slot fails the same way. No test was weakened, and
+  no gate or baseline was re-anchored.
 - Files committed: `src/core/TrackContainer.cpp` (comment only),
+  `tests/src/core/UnclaimedTrackTypeTest.cpp` (the ported regression),
   `tests/upstream-modifications.txt` (registration), `tests/all-sources.txt`
-  (train-level scope-manifest re-derivation), `docs/qwen-fixes-2026-10/cluster-new-p12-287-port.md`
-  (this report).
+  (train-level scope-manifest re-derivation),
+  `docs/qwen-fixes-2026-10/cluster-new-p12-287-port.md` (this report).
