@@ -372,8 +372,8 @@ void LivecodePanel::refresh()
 		const QStringList cells{
 			schedule.value(QStringLiteral("id")).toString(),
 			schedule.value(QStringLiteral("hook")).toString(),
-			schedule.value(QStringLiteral("budget")).toString(),
-			schedule.value(QStringLiteral("source_bytes")).toString(),
+			number(schedule.value(QStringLiteral("budget")).toVariant().toLongLong()),
+			number(schedule.value(QStringLiteral("source_bytes")).toVariant().toLongLong()),
 			number(schedule.value(QStringLiteral("fires")).toVariant().toLongLong()),
 			number(schedule.value(QStringLiteral("errors")).toVariant().toLongLong()),
 			number(schedule.value(QStringLiteral("budget_exceeded")).toVariant().toLongLong()),

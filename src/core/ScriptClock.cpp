@@ -360,7 +360,13 @@ QJsonObject ScriptClock::scheduleState(const QString& id) const
 
 QString ScriptClock::newScheduleId()
 {
-	return QStringLiteral("lc-%1").arg(m_nextId++);
+	QString id;
+	do
+	{
+		id = QStringLiteral("lc-%1").arg(m_nextId++);
+	}
+	while (hasSchedule(id));
+	return id;
 }
 
 void ScriptClock::runEntry(ScriptSchedule& entry, int count, qint64 pos)

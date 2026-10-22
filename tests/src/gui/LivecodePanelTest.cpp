@@ -179,6 +179,33 @@ private slots:
 		for (LivecodePanel* open : window->findChildren<LivecodePanel*>()) { open->close(); }
 	}
 
+	//! A blank id means a NEW generated slot, even if a caller used its next lc-<n> id explicitly.
+	void aBlankIdSkipsAnExistingGeneratedId()
+	{
+		const QString occupied = QStringLiteral("lc-1");
+		const QString original = QStringLiteral("return 'keep this script'\n");
+		QVERIFY(run(QStringLiteral("livecode.schedule"), {{QStringLiteral("id"), occupied},
+			{QStringLiteral("source"), original}}).ok);
+
+		LivecodePanel panel;
+		panel.setScheduleId(QString());
+		panel.setSource(QStringLiteral("return 'new generated script'\n"));
+		QTest::mouseClick(buttonFor(panel, "livecode.schedule"), Qt::LeftButton);
+		const QString generated = panel.scheduleId();
+		const QString keptSource = scheduleState(occupied).value(QStringLiteral("source")).toString();
+		const QString generatedSource = scheduleState(generated).value(QStringLiteral("source")).toString();
+
+		// Keep the clock clean whether the regression is red (the ids collided) or green.
+		run(QStringLiteral("livecode.unschedule"), {{QStringLiteral("id"), occupied}});
+		if (generated != occupied)
+		{
+			run(QStringLiteral("livecode.unschedule"), {{QStringLiteral("id"), generated}});
+		}
+		QVERIFY2(generated != occupied, qPrintable(generated));
+		QCOMPARE(keptSource, original);
+		QCOMPARE(generatedSource, QStringLiteral("return 'new generated script'\n"));
+	}
+
 	//! The panel schedules through livecode.schedule and cancels through livecode.unschedule by
 	//! clicking its own buttons; one Undo (the panel's Undo button) re-arms the cancelled script.
 	void thePanelSchedulesAndCancelsThroughTheCommands()
@@ -199,6 +226,11 @@ private slots:
 		QCOMPARE(entry.value(QStringLiteral("budget")).toInt(), 4000);
 		QCOMPARE(entry.value(QStringLiteral("source_bytes")).toInt(),
 			QStringLiteral("zene.log():info('panel-a')\n").toUtf8().size());
+		QTableWidget* table = panel.findChild<QTableWidget*>(QStringLiteral("livecode_schedules"));
+		QVERIFY(table != nullptr);
+		QCOMPARE(table->item(0, 2)->text(), QStringLiteral("4000"));
+		QCOMPARE(table->item(0, 3)->text(), QString::number(
+			QStringLiteral("zene.log():info('panel-a')\n").toUtf8().size()));
 
 		QPushButton* cancelButton = buttonFor(panel, "livecode.unschedule");
 		QVERIFY(cancelButton != nullptr);
