@@ -81,6 +81,12 @@ set(LMMS_TESTS
 	# processImpl() reads it on the audio thread while the GUI writes it.
 	src/core/EffectControlsVisibilityTest.cpp
 	src/core/AutomationModesTest.cpp
+	# Q050-037: the pre-first-point contract of an automation clip - times
+	# before the first node read the authored parameter's initial value (or an
+	# explicit point at the clip's start) rather than zero, on the map read AND
+	# on the ramp Song::buildAutomationRamps publishes, deterministically across
+	# a start/stop/return and through a whole-project save/reload.
+	src/core/AutomationPreFirstValueTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
 	# real blocks through Song::processNextBuffer() and measures the per-sample
 	# buffer the audio path reads against the clip's own curve, frame by frame -
@@ -2708,6 +2714,11 @@ set_tests_properties(ModulationLayerValueTest ModulationLayerTest ModulationAudi
 # Song::processNextBuffer() and drives the automation.* group through the
 # registry, so it needs the same headless Qt platform.
 set_tests_properties(SampleAccurateAutomationTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# AutomationPreFirstValueTest (Q050-037) builds a full Engine, drives the
+# render periods itself and saves/reloads a project, so it needs the headless
+# Qt platform for the same reason.
+set_tests_properties(AutomationPreFirstValueTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts
