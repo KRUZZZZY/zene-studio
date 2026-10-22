@@ -48,6 +48,9 @@ namespace
 constexpr int HistoryDepth = 32;
 constexpr double WheelNotch = 120.0;  //!< QWheelEvent's angleDelta for one mouse notch
 QVector<int> s_history;  //!< earlier zoom model values, newest last (UI thread only)
+QVector<int> s_rewalked;  //!< zoom model values a back step left behind, newest last: a forward step's (UI thread)
+bool s_toggleValid = false;  //!< whether a toggle extent is known (UI thread only)
+int s_toggleValue = 0;  //!< the extent the current zoom last left, the zoom toggle swaps to (UI thread only)
 
 //! The wheel gesture under way (UI thread only): the part of a step not yet zoomed, and whether it is remembered.
 struct WheelGesture
@@ -57,6 +60,24 @@ struct WheelGesture
 	bool remembered = false;
 };
 WheelGesture s_wheel;
+
+//! Keep the two histories at the depth cap, oldest entry first out.
+void trim()
+{
+	while (s_history.size() > HistoryDepth) { s_history.removeFirst(); }
+	while (s_rewalked.size() > HistoryDepth) { s_rewalked.removeFirst(); }
+}
+
+//! Zooms before the same value are useless history (go back would answer the value the view is at).
+bool tautology(int value) { return !s_history.isEmpty() && s_history.last() == value; }
+
+//! Queue @a value as an extent to go back to (walk only: no forward break, as remember does).
+void pushPast(int value)
+{
+	if (tautology(value)) { return; }
+	s_history.append(value);
+	trim();
+}
 
 } // namespace
 
@@ -161,9 +182,12 @@ void wheelZoom(SongEditor* editor, int delta, bool fine, tick_t anchor)
 
 void remember(int value)
 {
-	if (!s_history.isEmpty() && s_history.last() == value) { return; }
+	s_rewalked.clear();  // a new zoom breaks forward
+	s_toggleValid = true;
+	s_toggleValue = value;  // the extent left behind
+	if (tautology(value)) { return; }
 	s_history.append(value);
-	if (s_history.size() > HistoryDepth) { s_history.removeFirst(); }
+	trim();
 }
 
 void finishPinch(int startValue, int currentValue, Qt::GestureState state)
@@ -175,13 +199,50 @@ bool takeEarlier(int current, int* earlier)
 {
 	if (s_history.isEmpty()) { return false; }
 	*earlier = s_history.takeLast();
-	s_history.append(current);  // so going back twice toggles between two zooms
+	s_rewalked.append(current);  // so arrangement.zoom_forward can come back to it
+	trim();
+	s_toggleValid = true;
+	s_toggleValue = current;  // the extent this step left behind is what the toggle swaps to
 	return true;
 }
 
-int historySize()
+bool takeNext(int current, int* next)
 {
-	return static_cast<int>(s_history.size());
+	if (s_rewalked.isEmpty()) { return false; }
+	*next = s_rewalked.takeLast();
+	pushPast(current);
+	s_toggleValid = true;
+	s_toggleValue = current;
+	return true;
 }
+
+bool takeToggle(int current, int* extent)
+{
+	if (!s_toggleValid || s_toggleValue == current) { return false; }
+	*extent = s_toggleValue;
+	// The swap is a zoom like any other, so the walk must agree with where it lands (the round-1
+	// review: a stale entry made Back succeed without changing the zoom). The extent swapped to sits
+	// on top of one of the stacks - it is the extent the last zoom or walk step left - so it comes
+	// off there (the view is at it now), and the extent left behind queues in its place, so Back and
+	// Forward keep stepping over real changes only.
+	const int left = current;
+	if (!s_history.isEmpty() && s_history.last() == *extent)
+	{
+		s_history.removeLast();
+		s_rewalked.append(left);  // so arrangement.zoom_forward can return over the swap
+	}
+	else if (!s_rewalked.isEmpty() && s_rewalked.last() == *extent)
+	{
+		s_rewalked.removeLast();
+		pushPast(left);  // so arrangement.zoom_back can return over the swap
+	}
+	trim();
+	s_toggleValue = left;  // the extent this swap left behind: pressing it again swaps back
+	return true;
+}
+
+int historySize() { return static_cast<int>(s_history.size()); }
+
+int forwardSize() { return static_cast<int>(s_rewalked.size()); }
 
 } // namespace lmms::gui::arrangerzoom

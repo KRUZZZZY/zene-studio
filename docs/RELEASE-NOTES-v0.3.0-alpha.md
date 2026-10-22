@@ -1043,6 +1043,11 @@ wasm's option row, exactly.
 
 **M0 merge train 9** (`050/m0-train-9`, 2026-10-20, automatic): `ReversibilityContractTest` on the merged tree measures `rows=849 true_inverse=422 snapshot=42 irreversible=24 not_mutating=361`.
 
+Then Q050-176 (2026-10-16) re-did the arranger's zoom walk as real back / forward instead of the
+one-entry swap, adding two `not_mutating` rows - `arrangement.zoom_forward` and `arrangement.zoom_toggle` -
+which move the figure to `rows=839 true_inverse=417 snapshot=42 irreversible=22 not_mutating=358`
+(`DECLARED rows=839`).
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=852 true_inverse=423 snapshot=42 irreversible=24 not_mutating=363
      configuration: telemetry.status wasm.load session.get_state stem.get_state

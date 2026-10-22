@@ -73,6 +73,8 @@ QMenu* installNavigateMenu(QMenuBar* bar)
 	run(QObject::tr("Zoom In"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
 	run(QObject::tr("Zoom Out"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -4}});
 	run(QObject::tr("Zoom Back"), QStringLiteral("arrangement.zoom_back"), {});
+	run(QObject::tr("Zoom Forward"), QStringLiteral("arrangement.zoom_forward"), {});
+	run(QObject::tr("Zoom Toggle"), QStringLiteral("arrangement.zoom_toggle"), {});
 	menu->addSeparator();
 	run(QObject::tr("Fit Song"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("song")}});
 	run(QObject::tr("Fit Loop"), QStringLiteral("arrangement.zoom"), {{QStringLiteral("fit"), QStringLiteral("loop")}});

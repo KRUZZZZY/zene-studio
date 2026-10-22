@@ -332,13 +332,49 @@ def check_workflow_scope(session, recorder):
 
 
 def check_arranger_view(session, recorder):
-    zoomed = session.result("arrangement.zoom", {"pixels_per_bar": 64})
-    stepped = session.result("arrangement.zoom", {"step": 6})
+    first = session.result("arrangement.zoom", {"pixels_per_bar": 32})
+    second = session.result("arrangement.zoom", {"pixels_per_bar": 96})
+    third = session.result("arrangement.zoom", {"pixels_per_bar": 200})
+    three = len({first.get("zoom"), second.get("zoom"), third.get("zoom")}) == 3
     back = session.result("arrangement.zoom_back")
-    again = session.result("arrangement.zoom_back")
-    recorder.check("zoom_back goes back, and twice toggles",
-                   back.get("zoom") == zoomed.get("zoom") and again.get("zoom") == stepped.get("zoom"),
-                   "zoomed=%r stepped=%r back=%r again=%r" % (zoomed, stepped, back, again))
+    forward = session.result("arrangement.zoom_forward")
+    back_again = session.result("arrangement.zoom_back")
+    earlier = session.result("arrangement.zoom_back")
+    to_flip = session.result("arrangement.zoom_toggle")
+    flipped_back = session.result("arrangement.zoom_toggle")
+    recorder.check("zoom back and forward walk three prior extents in order, and the toggle swaps with the extent "
+                   "the zoom last left",
+                   three and back.get("zoom") == second.get("zoom") and forward.get("zoom") == third.get("zoom")
+                   and back_again.get("zoom") == second.get("zoom") and earlier.get("zoom") == first.get("zoom")
+                   and to_flip.get("zoom") == second.get("zoom") and flipped_back.get("zoom") == first.get("zoom")
+                   and back.get("forward") == 1 and forward.get("forward") == 0,
+                   "first=%r second=%r third=%r back=%r forward=%r again=%r earlier=%r flip=%r back=%r"
+                   % (first, second, third, back, forward, back_again, earlier, to_flip, flipped_back))
+    drained = 0
+    while kind(session.call("arrangement.zoom_back")) is None and drained < 64:  # the walk's cap is 32
+        drained += 1
+    recorder.check("the back walk drains within its bound", drained < 64, "drained=%d" % drained)
+    settled = session.result("arrangement.zoom", {"pixels_per_bar": 160})
+    left_behind = settled.get("previous_zoom")  # what the fresh zoom left: the toggle's swap target
+    swapped = session.result("arrangement.zoom_toggle")
+    back_after = session.call("arrangement.zoom_back")
+    forward_after = session.result("arrangement.zoom_forward")
+    recorder.check("after the toggle, Back is refused where it would only repeat the zoom, and Forward "
+                   "walks the extent the swap left",
+                   swapped.get("zoom") == left_behind and kind(back_after) == "not_found"
+                   and forward_after.get("zoom") == settled.get("zoom"),
+                   "settled=%r swapped=%r back=%r forward=%r" % (settled, swapped, back_after, forward_after))
+    drained = 0
+    while kind(session.call("arrangement.zoom_back")) is None and drained < 64:  # what they left behind
+        drained += 1
+    recorder.check("the walk drains again after the swap and the forward step", drained < 64,
+                   "drained=%d" % drained)
+    no_back = session.call("arrangement.zoom_back")
+    fresh = session.call("arrangement.zoom", {"step": 3})
+    no_forward = session.call("arrangement.zoom_forward")
+    recorder.check("a zoom cut the forward walk off, and a drained back walk is refused",
+                   fresh.get("ok") and kind(no_back) == "not_found" and kind(no_forward) == "not_found",
+                   "no_back=%r fresh=%r no_forward=%r" % (no_back, fresh, no_forward))
     fit = session.call("arrangement.zoom", {"fit": "song"})
     recorder.check("fit song answers a zoom", fit.get("ok") and (fit.get("result") or {}).get("pixels_per_bar", 0) > 0,
                    "reply=%r" % fit)
