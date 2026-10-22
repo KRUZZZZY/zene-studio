@@ -1048,8 +1048,10 @@ one-entry swap, adding two `not_mutating` rows - `arrangement.zoom_forward` and 
 which move the figure to `rows=839 true_inverse=417 snapshot=42 irreversible=22 not_mutating=358`
 (`DECLARED rows=839`).
 
+**M0 merge train 12** (`050/m0-train-12`, 2026-10-22, automatic): `ReversibilityContractTest` on the merged tree measures `rows=854 true_inverse=423 snapshot=42 irreversible=24 not_mutating=365`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=852 true_inverse=423 snapshot=42 irreversible=24 not_mutating=363
+     measured: rows=854 true_inverse=423 snapshot=42 irreversible=24 not_mutating=365
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

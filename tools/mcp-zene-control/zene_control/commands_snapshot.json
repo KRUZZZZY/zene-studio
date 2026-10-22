@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-22T04:46:52Z",
+  "captured_at": "2026-10-22T07:56:46Z",
   "commands": [
     {
       "args_schema": {
@@ -36114,23 +36114,23 @@
       }
     }
   ],
-  "count": 843,
+  "count": 845,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-154/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-9v86afd5/zene.sock",
-    "version": "0.4.0-alpha.4298+dbb15dd"
+    "source_socket": "/tmp/zctl-run-i8ppv2ui/zene.sock",
+    "version": "0.4.0-alpha.4410+168b6b9"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 843,
-    "ids_sha256": "f65236a8971f3f7058bc2d50529634d4bc4ca573e5f48bed865908e9b9d518c9"
+    "id_count": 845,
+    "ids_sha256": "b188ec2174cb685cf249ac38796a2933595084401b662fc952b0489b2b7e258a"
   }
 }
