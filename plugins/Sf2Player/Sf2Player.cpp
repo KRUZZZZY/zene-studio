@@ -26,6 +26,7 @@
 #include "Sf2Player.h"
 
 #include <algorithm>
+#include <cstring>
 #include <fluidsynth.h>
 #include <limits>
 #include <utility>
@@ -84,6 +85,87 @@ Plugin::Descriptor PLUGIN_EXPORT sf2player_plugin_descriptor =
 
 // FluidVoice and Sf2PluginData live in the header: the instrument's per-note
 // state is part of its interface to the note stage and the render stage.
+
+
+namespace
+{
+
+//! One in-memory file the FluidSynth soundfont loader reads from.
+struct Sf2MemoryFile
+{
+	//! The font's bytes. The loader's callbacks carry no user data of their
+	//! own, so the file keeps the bytes alive while it is open.
+	std::shared_ptr<const QByteArray> data;
+	//! The read position in the bytes.
+	qint64 position = 0;
+};
+
+//! The font the calling thread is loading right now.
+//!
+//! FluidSynth's loader callbacks have no user data, so the bytes they read
+//! are handed over through this pointer. The load runs on the thread that
+//! called fluid_synth_sfload() and it is over when that call returns.
+thread_local std::shared_ptr<const QByteArray> s_loadingFont;
+
+//! The name the in-memory font is loaded under. The default FluidSynth loader
+//! never finds a file with that name, so the font is never loaded twice.
+constexpr const char* s_memoryFontName = "zene-sf2-memory-font";
+
+
+//! Opens the in-memory font. The name is ignored: the bytes are the ones the
+//! loading thread handed over.
+void* sf2MemoryOpen( const char* name )
+{
+	Q_UNUSED( name );
+	if( s_loadingFont == nullptr ) { return nullptr; }
+	return new Sf2MemoryFile{ s_loadingFont, 0 };
+}
+
+
+//! Reads \a count bytes. A short read is a failure, as FluidSynth expects it.
+int sf2MemoryRead( void* buffer, fluid_long_long_t count, void* handle )
+{
+	auto* file = static_cast<Sf2MemoryFile*>( handle );
+	if( count < 0 || file->position + count > file->data->size() ) { return FLUID_FAILED; }
+	std::memcpy( buffer, file->data->constData() + file->position,
+		static_cast<std::size_t>( count ) );
+	file->position += count;
+	return FLUID_OK;
+}
+
+
+//! Moves the read position.
+int sf2MemorySeek( void* handle, fluid_long_long_t offset, int origin )
+{
+	auto* file = static_cast<Sf2MemoryFile*>( handle );
+	qint64 base = 0;
+	if( origin == SEEK_SET ) { base = 0; }
+	else if( origin == SEEK_CUR ) { base = file->position; }
+	else if( origin == SEEK_END ) { base = file->data->size(); }
+	else { return FLUID_FAILED; }
+
+	const qint64 target = base + offset;
+	if( target < 0 || target > file->data->size() ) { return FLUID_FAILED; }
+	file->position = target;
+	return FLUID_OK;
+}
+
+
+//! The read position.
+fluid_long_long_t sf2MemoryTell( void* handle )
+{
+	return static_cast<fluid_long_long_t>( static_cast<Sf2MemoryFile*>( handle )->position );
+}
+
+
+//! Closes the file.
+int sf2MemoryClose( void* handle )
+{
+	delete static_cast<Sf2MemoryFile*>( handle );
+	return FLUID_OK;
+}
+
+} // namespace
 
 
 
@@ -342,6 +424,16 @@ Sf2OwnedSynth Sf2Instrument::createSynth( sample_rate_t outputRate )
 		return owned;
 	}
 
+	// The soundfont is loaded from the instrument's own copy of the file, so a
+	// synth can be built even when the file behind the font is gone. The
+	// loader reads that copy, and every synth gets a loader of its own: the
+	// synth frees its loaders with itself.
+	auto* loader = new_fluid_defsfloader( owned.settings );
+	if( loader == nullptr ) { return owned; }
+	fluid_sfloader_set_callbacks( loader, sf2MemoryOpen, sf2MemoryRead,
+		sf2MemorySeek, sf2MemoryTell, sf2MemoryClose );
+	fluid_synth_add_sfloader( owned.synth, loader );
+
 	double synthRate = 0;
 	fluid_settings_getnum( owned.settings, "synth.sample-rate", &synthRate );
 	if( static_cast<sample_rate_t>( synthRate ) != outputRate )
@@ -460,9 +552,9 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 	const QString absolutePath = PathUtil::toAbsolute( _sf2File );
 	const QByteArray nativePath = QFile::encodeName( absolutePath );
 
-	// The soundfont is loaded into the holder, which keeps it alive: a synth
-	// that plays it can be replaced without reading the file again, so a
-	// reload still works when the file behind it is gone.
+	// The soundfont is read into the instrument's own copy, which keeps it
+	// alive: a synth that plays it can be replaced without reading the file
+	// again, so a reload still works when the file behind it is gone.
 	if( !loadFont( nativePath ) )
 	{
 		collectErrorForUI( Sf2Instrument::tr( "A soundfont %1 could not be loaded." )
@@ -524,34 +616,32 @@ bool Sf2Instrument::loadFont( const QByteArray& nativePath )
 {
 	if( !fluid_is_soundfont( nativePath.constData() ) ) { return false; }
 
-	// The holder keeps the font object alive while the synths that play it come
-	// and go. It never renders.
-	if( m_fontHolder == nullptr )
-	{
-		auto holder = createSynth( Engine::audioEngine()->outputSampleRate() );
-		if( holder.synth == nullptr ) { return false; }
-		m_fontHolder = holder.synth;
-	}
+	// The instrument keeps its own copy of the font's bytes: every synth that
+	// plays the font parses that copy into a font instance of its own, so a
+	// reload still works when the file behind the font is gone.
+	QFile file( nativePath );
+	if( !file.open( QIODevice::ReadOnly ) ) { return false; }
+	const auto data = file.readAll();
+	if( data.isEmpty() ) { return false; }
 
-	// Drop the font that is loaded, if any: the holder keeps exactly one.
-	if( m_font != nullptr )
-	{
-		fluid_synth_remove_sfont( m_fontHolder, m_font );
-		m_font = nullptr;
-	}
-
-	const int fontId = fluid_synth_sfload( m_fontHolder, nativePath.constData(), true );
-	if( fontId < 0 ) { return false; }
-	m_font = fluid_synth_get_sfont_by_id( m_fontHolder, fontId );
-	return m_font != nullptr;
+	m_fontData = std::make_shared<const QByteArray>( std::move( data ) );
+	return true;
 }
 
 
 
 int Sf2Instrument::addFontTo( fluid_synth_t* synth )
 {
-	if( synth == nullptr || m_font == nullptr ) { return -1; }
-	return fluid_synth_add_sfont( synth, m_font );
+	if( synth == nullptr || m_fontData == nullptr ) { return -1; }
+
+	// The synth loads the font from the instrument's own copy of the file.
+	// FluidSynth hands the ownership of a font to the synth it is added to and
+	// frees the font with that synth, so the same font must never be added to
+	// two synths: every synth parses the copy into a font of its own.
+	s_loadingFont = m_fontData;
+	const int fontId = fluid_synth_sfload( synth, s_memoryFontName, 1 );
+	s_loadingFont = nullptr;
+	return fontId;
 }
 
 
@@ -714,13 +804,13 @@ void Sf2Instrument::reloadSynth()
 	const auto internalSampleRate = static_cast<sample_rate_t>( tempRate );
 
 	// The candidate plays the font that is already loaded: the reload must work
-	// even when the file behind the font is gone, and the font object outlives
-	// the synth that plays it.
+	// even when the file behind the font is gone, and the candidate parses the
+	// instrument's own copy of the font into a font instance of its own.
 	const int fontId = addFontTo( candidate.synth );
-	if( fontId < 0 && m_font != nullptr )
+	if( fontId < 0 && m_fontData != nullptr )
 	{
-		// The font could not be handed over: keep the synth that still plays
-		// it, so the playback and the preset list survive the reload.
+		// The font could not be loaded: keep the synth that still plays it, so
+		// the playback and the preset list survive the reload.
 		destroySynth( candidate.synth );
 		return;
 	}
@@ -1658,9 +1748,9 @@ void Sf2InstrumentView::showPatchDialog()
 {
 	auto k = castModel<Sf2Instrument>();
 
-	// The dialog enumerates (and previews) a private synth loaded from the same
-	// file, never the synth the render thread is playing. It has a settings
-	// object of its own, like every other synth.
+	// The dialog enumerates (and previews) a private synth loaded from the
+	// instrument's own copy of the file, never the synth the render thread is
+	// playing. It has a settings object of its own, like every other synth.
 	auto dialogSynth = k->createPatchDialogSynth();
 	if( dialogSynth.synth == nullptr ) { return; }
 

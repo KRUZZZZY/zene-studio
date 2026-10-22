@@ -32,6 +32,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <fluidsynth.h>
+#include <memory>
+#include <QByteArray>
 #include <QString>
 #include <mutex>
 #include <samplerate.h>
@@ -303,12 +305,10 @@ private:
 	//! The render thread borrows one of them; the UI thread deletes them all.
 	std::vector<Sf2OwnedSynth> m_ownedSynths;
 
-	//! A synth that only holds the loaded soundfont. The font object outlives
-	//! the synth that plays it, so a reload can build a new synth with the
-	//! same font even when the file behind it is gone.
-	fluid_synth_t* m_fontHolder = nullptr;
-	//! The loaded soundfont, shared by the holder and the playing synths.
-	fluid_sfont_t* m_font = nullptr;
+	//! A synth that only holds the loaded soundfont is gone: every synth that
+	//! plays the font parses the instrument's own copy of it into a font
+	//! instance of its own.
+	std::shared_ptr<const QByteArray> m_fontData;
 
 	//! Synthesis parameters the UI requests. The render thread applies them;
 	//! the UI never calls into the synth the render thread is using.
@@ -449,9 +449,9 @@ private:
 	void destroySynth(fluid_synth_t* synth) noexcept;
 	//! UI thread: publish a fully configured synth to the render thread.
 	auto publishSynth(fluid_synth_t* synth, int fontId, sample_rate_t sampleRate) -> bool;
-	//! UI thread: load the soundfont into the holder that keeps it alive.
+	//! UI thread: read the soundfont into the instrument's own copy of it.
 	auto loadFont(const QByteArray& nativePath) -> bool;
-	//! UI thread: hand the loaded soundfont to a synth.
+	//! UI thread: load the soundfont into a synth, as a font of its own.
 	auto addFontTo(fluid_synth_t* synth) -> int;
 	//! UI thread: delete synths the render thread has finished with.
 	void drainRetiredSynths();

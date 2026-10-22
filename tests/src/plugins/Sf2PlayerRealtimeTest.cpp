@@ -108,6 +108,12 @@ struct Sf2Fixture
 		return reinterpret_cast<fluid_synth_t*>(address);
 	}
 
+	//! The SoundFont the synth plays, read through FluidSynth's own API.
+	auto font() const -> fluid_sfont_t*
+	{
+		return synth() != nullptr ? fluid_synth_get_sfont( synth(), 0 ) : nullptr;
+	}
+
 	//! The plugin's own model with that display name.
 	template<typename T> auto findModel(const char* name) const -> T*
 	{
@@ -226,6 +232,7 @@ private slots:
 	void renderSurvivesAPendingReload();
 	void playsWithARealSoundFont();
 	void reloadKeepsTheSoundFontWhenTheFileIsGone();
+	void everySynthHasItsOwnSoundFont();
 	void theTuningOffsetMatchesFluidSynthsKeyTuning();
 };
 
@@ -599,6 +606,50 @@ void Sf2PlayerRealtimeTest::reloadKeepsTheSoundFontWhenTheFileIsGone()
 	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "getCurrentPatchName",
 		Qt::DirectConnection, Q_RETURN_ARG(QString, patchName)));
 	QVERIFY2(!patchName.isEmpty(), "the preset list was cleared by the reload");
+}
+
+void Sf2PlayerRealtimeTest::everySynthHasItsOwnSoundFont()
+{
+	if (!QFile::exists(QString::fromUtf8(SF2_TEST_SOUNDFONT))) { QSKIP("this tree has no SoundFont to play"); }
+
+	Sf2Fixture fixture;
+	if (!fixture.create()) { QSKIP("this build has no SF2 player module (no FluidSynth)"); }
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{buffer};
+
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "openFile", Qt::DirectConnection,
+		Q_ARG(QString, QString::fromUtf8(SF2_TEST_SOUNDFONT))));
+	fixture.instrument->play(span);
+
+	// The font the first synth plays.
+	auto* firstFont = fixture.font();
+	QVERIFY2(firstFont != nullptr, "the player loaded no soundfont");
+
+	// A reload builds a second synth while the first one is still alive: both
+	// play the font at the same time.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "reloadSynth", Qt::DirectConnection));
+	fixture.instrument->play(span);
+	auto* secondFont = fixture.font();
+	QVERIFY2(secondFont != nullptr, "the reloaded synth plays no soundfont");
+
+	// FluidSynth hands the ownership of a font to the synth it is added to and
+	// frees the font with that synth. Two synths that share one font object
+	// free it twice, so every synth needs a font instance of its own.
+	QVERIFY2(secondFont != firstFont,
+		"the two synths share one SoundFont object: deleting one of them leaves the other with a freed font");
+
+	// The retired synth is deleted with the instrument, and the font keeps playing.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "updatePatch", Qt::DirectConnection));
+	fixture.instrument->play(span);
+	QVERIFY2(fixture.playedFrequency(span, 60) > 40., "the reloaded synth does not play the font");
+
+	QString patchName;
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "getCurrentPatchName",
+		Qt::DirectConnection, Q_RETURN_ARG(QString, patchName)));
+	QVERIFY2(!patchName.isEmpty(), "the preset list was cleared by the reload");
+	// The instrument is destroyed here, and the retired synth goes with it.
 }
 
 void Sf2PlayerRealtimeTest::theTuningOffsetMatchesFluidSynthsKeyTuning()
