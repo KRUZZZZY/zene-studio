@@ -106,15 +106,53 @@ bool waitForPackets(const LinkAudioStream& stream, std::uint64_t count, int time
 	return stream.report().packetsReceived >= count;
 }
 
+//! Wait until the I/O thread has reached the sending hold \a count times: the frames of the TX
+//! ring stay queued until the hold is released, so a test can change the sample rate while
+//! old-rate frames are certainly still waiting.
+bool waitForSendHolds(std::uint64_t count, int timeoutMs)
+{
+	QElapsedTimer clock;
+	clock.start();
+	while (LinkAudioStreamSeam::sendHolds() < count && clock.elapsed() < timeoutMs) { QTest::qWait(1); }
+	return LinkAudioStreamSeam::sendHolds() >= count;
+}
+
+//! Wait until the I/O thread has reached the publishing hold \a count times: the packet it
+//! validated is not published until the hold is released, so a test can change the sample
+//! rate in the window between the validation and the publication.
+bool waitForPublishHolds(std::uint64_t count, int timeoutMs)
+{
+	QElapsedTimer clock;
+	clock.start();
+	while (LinkAudioStreamSeam::publishHolds() < count && clock.elapsed() < timeoutMs) { QTest::qWait(1); }
+	return LinkAudioStreamSeam::publishHolds() >= count;
+}
+
+//! Wait until the I/O thread has dealt with a packet: either it counted it or it rejected it
+//! as a packet at another rate. The wait is for the counter, not for a moment in time.
+bool waitForPacketHandled(const LinkAudioStream& stream, int timeoutMs)
+{
+	QElapsedTimer clock;
+	clock.start();
+	while (stream.report().packetsReceived < 1 && stream.report().rateMismatches < 1
+		&& clock.elapsed() < timeoutMs)
+	{
+		QTest::qWait(1);
+	}
+	return stream.report().packetsReceived >= 1 || stream.report().rateMismatches >= 1;
+}
+
 //! The rate a packet may carry and the value the frames of that rate hold.
 using RateValues = std::vector<std::pair<std::uint32_t, float>>;
 
 //! What the peer received: how many packets, how many of them carried frames of a rate that
-//! was not the rate in their own header, and whether a packet of the new rate arrived.
+//! was not the rate in their own header, how many of them carried the old rate, and whether a
+//! packet of the new rate arrived.
 struct PeerRateCheck
 {
 	int packets = 0;
 	int mismatched = 0;
+	int staleRatePackets = 0;
 	bool sawNewRate = false;
 };
 
@@ -148,6 +186,7 @@ void drainPeerPackets(QUdpSocket& peer, PeerRateCheck& check, const RateValues& 
 		if (expected < 0.f) { ++check.mismatched; continue; }
 		for (float v : samples) { if (v != expected) { ++check.mismatched; break; } }
 		if (header.sampleRate == newRate) { check.sawNewRate = true; }
+		else { ++check.staleRatePackets; }
 	}
 }
 

@@ -73,6 +73,49 @@ void raiseMax(std::atomic<std::size_t>& slot, std::size_t value)
 
 } // namespace
 
+// ---- LinkAudioStreamSeam -------------------------------------------------
+
+std::atomic<bool> LinkAudioStreamSeam::s_sendHold{false};
+std::atomic<bool> LinkAudioStreamSeam::s_publishHold{false};
+std::atomic<std::uint64_t> LinkAudioStreamSeam::s_sendHolds{0};
+std::atomic<std::uint64_t> LinkAudioStreamSeam::s_publishHolds{0};
+std::mutex LinkAudioStreamSeam::s_mutex;
+std::condition_variable LinkAudioStreamSeam::s_cond;
+
+void LinkAudioStreamSeam::setSendHold(bool on)
+{
+	{
+		const std::lock_guard<std::mutex> lock(s_mutex);
+		s_sendHold.store(on, std::memory_order_relaxed);
+	}
+	s_cond.notify_all();
+}
+
+void LinkAudioStreamSeam::setPublishHold(bool on)
+{
+	{
+		const std::lock_guard<std::mutex> lock(s_mutex);
+		s_publishHold.store(on, std::memory_order_relaxed);
+	}
+	s_cond.notify_all();
+}
+
+std::uint64_t LinkAudioStreamSeam::sendHolds() { return s_sendHolds.load(std::memory_order_relaxed); }
+std::uint64_t LinkAudioStreamSeam::publishHolds() { return s_publishHolds.load(std::memory_order_relaxed); }
+
+//! The I/O thread waits while the hold is on. The counter tells the test that the thread has
+//! reached the hold, so the test knows that the I/O thread will not pass it until it lets go.
+void LinkAudioStreamSeam::waitAt(std::atomic<bool>& hold, std::atomic<std::uint64_t>& counter)
+{
+	if (!hold.load(std::memory_order_relaxed)) { return; }   // production: no lock, no wait
+	std::unique_lock<std::mutex> lock(s_mutex);
+	counter.fetch_add(1, std::memory_order_relaxed);
+	s_cond.wait(lock, [&hold] { return !hold.load(std::memory_order_relaxed); });
+}
+
+void LinkAudioStreamSeam::waitAtSendHold() { waitAt(s_sendHold, s_sendHolds); }
+void LinkAudioStreamSeam::waitAtPublishHold() { waitAt(s_publishHold, s_publishHolds); }
+
 // ---- LinkAudioStream ----------------------------------------------------
 
 std::atomic<LinkAudioStream*> LinkAudioStream::s_active{nullptr};
@@ -263,6 +306,9 @@ void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float*
 		m_rateMismatch.fetch_add(1, std::memory_order_relaxed);
 		return;
 	}
+	// The window between the validation of a packet and its publication: a sample rate
+	// change happens here, and the packet then carries the old rate.
+	LinkAudioStreamSeam::waitAtPublishHold();
 	std::int32_t distance = 0;
 	if (m_haveRx)
 	{
@@ -426,6 +472,9 @@ void LinkAudioStream::receiveDatagrams()
 
 void LinkAudioStream::sendPending()
 {
+	// The window in which the frames of the TX ring stay queued: a test can hold the I/O
+	// thread here, so that a sample rate change happens while old-rate frames are waiting.
+	LinkAudioStreamSeam::waitAtSendHold();
 	sockaddr_in to{};
 	to.sin_family = AF_INET;
 	to.sin_addr.s_addr = htonl(m_peerAddress);
