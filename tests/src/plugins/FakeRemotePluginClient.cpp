@@ -129,6 +129,13 @@ bool g_bigdebug = false;
 bool g_bigdebugUsed = false;
 constexpr std::size_t BigDebugBytes = 900000;
 
+//! "debug" mode: every IdStartProcessing is answered with a debug text (DebugTextBytes long, starting with
+//! DebugMarker) and a sample-rate request before the reply, so the host parses a client message that carries
+//! an argument while it waits for the period's reply - on the audio thread - and has to answer it there too.
+bool g_debug = false;
+constexpr std::size_t DebugTextBytes = 200;
+constexpr const char* DebugMarker = "zene-remote-debug-marker";
+
 //! "deafquery" mode: the client never answers IdIsUIVisible, as a hung editor would not.
 bool g_deafQuery = false;
 
@@ -477,6 +484,19 @@ auto handleMessage(const Message& message) -> bool
 			if (!sendMessage(IdProcessingDone, {})) { return false; }
 			break;
 		}
+		if (g_debug)
+		{
+			// The debug text and the sample-rate request arrive while the host waits for the period's
+			// reply, so the host reads them on its audio thread.
+			std::string text(DebugMarker);
+			text.append(DebugTextBytes, 'd');
+			if (!writeInt32(IdDebugMessageWire) || !writeInt32(1)
+				|| !writeInt32(static_cast<std::int32_t>(text.size()))) { return false; }
+			if (!writeAll(text.data(), text.size())) { return false; }
+			if (!sendMessage(IdSampleRateInformation, {})) { return false; }
+			if (!sendMessage(IdProcessingDone, {})) { return false; }
+			break;
+		}
 		if (g_orderer)
 		{
 			const int outputs = g_ordererCut ? (g_ordererAfterCut > 0 ? 3 : 2) : 2;
@@ -642,7 +662,7 @@ int main(int argc, char** argv)
 {
 	if (argc < 2)
 	{
-		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery|badhostinfo|deafsamplerate]\n");
+		std::fprintf(stderr, "usage: FakeRemotePluginClient <socket-path> [modern|stale|stall|recount|midi|late|midframe|silencer|bigdebug|debug|orderer|capper|deafquery|halfhandshake|latequery|garbage|dropquery|emptyquery|badhostinfo|deafsamplerate]\n");
 		return 1;
 	}
 	const std::string mode = argc > 2 ? argv[2] : "modern";
@@ -654,6 +674,7 @@ int main(int argc, char** argv)
 	g_midframe = mode == "midframe";
 	g_silencer = mode == "silencer";
 	g_bigdebug = mode == "bigdebug";
+	g_debug = mode == "debug";
 	g_orderer = mode == "orderer";
 	g_capper = mode == "capper";
 	g_deafQuery = mode == "deafquery";
@@ -665,8 +686,8 @@ int main(int argc, char** argv)
 	g_garbage = mode == "garbage";
 	g_halfHandshake = mode == "halfhandshake";
 	static const char* const knownModes[] = {"modern", "stale", "stall", "recount", "midi", "late", "midframe",
-		"silencer", "bigdebug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage", "dropquery",
-		"emptyquery", "badhostinfo", "deafsamplerate"};
+		"silencer", "bigdebug", "debug", "orderer", "capper", "deafquery", "halfhandshake", "latequery", "garbage",
+		"dropquery", "emptyquery", "badhostinfo", "deafsamplerate"};
 	if (std::find_if(std::begin(knownModes), std::end(knownModes),
 			[&mode](const char* known) { return mode == known; }) == std::end(knownModes))
 	{
