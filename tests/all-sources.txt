@@ -430,6 +430,7 @@ include/LinkedClipEdits.h
 include/LinkedModelGroupViews.h
 include/LinkedModelGroups.h
 include/ListTable.h
+include/LivecodePanel.h
 include/LmmsCommonMacros.h
 include/LmmsPalette.h
 include/LmmsPolyfill.h
@@ -2222,6 +2223,7 @@ src/gui/LfoControllerDialog.cpp
 src/gui/LibraryCommandMenus.cpp
 src/gui/LinkedModelGroupViews.cpp
 src/gui/ListTable.cpp
+src/gui/LivecodePanel.cpp
 src/gui/LmmsPalette.cpp
 src/gui/LmmsStyle.cpp
 src/gui/Lv2ViewBase.cpp
@@ -2963,6 +2965,7 @@ tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LfoGraphTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp
+tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
