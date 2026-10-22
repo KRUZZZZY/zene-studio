@@ -11,12 +11,12 @@ form is **Project tools ▸ Sync ▸ Follow MIDI Clock...**, NOT an Edit-menu fi
 
 | Criterion | Command / test | What I saw | EXIT |
 |---|---|---|---|
-| `KNOWN-LIMITATIONS.md` describes the Edit ▸ MIDI Clock forms for selecting a port and drift bound and removes the stale socket-only claim | `ctest -R '^MidiClockDocsGate$' --output-on-failure` from `build/tests` (`test-docs-2.log`) | Passed. The MIDI-clock region names **Edit ▸ MIDI Clock ▸ Clock Source**, **Project tools ▸ Sync ▸ Follow MIDI Clock...**, `source_port`, `drift_bound_ms`, `0`/`100`/`MaxDriftBoundMs`, `clock.get_state` and undo; and the three old sentences are asserted absent | 0 |
+| `KNOWN-LIMITATIONS.md` describes the Edit ▸ MIDI Clock forms for selecting a port and drift bound and removes the stale socket-only claim | `ctest -R '^MidiClockDocsGate$' --output-on-failure` from `build/tests` (`test-docs-3.log`) | Passed. The MIDI-clock region names **Edit ▸ MIDI Clock ▸ Clock Source**, **Project tools ▸ Sync ▸ Follow MIDI Clock...**, `source_port`, `drift_bound_ms`, `0`/`100`/`MaxDriftBoundMs`, `clock.get_state` and undo; and the three old sentences are asserted absent | 0 |
 | A documentation search finds no remaining statement that MIDI Clock source-port or drift-bound selection is socket-only | same ctest, its sweep of every tracked `.md`/`.html` | Passed, zero unmarked hits. Historical hits are accepted only on a dated superseded/pre-menu marker; a bare "still socket-only" is never excused. Reverting the four docs makes the same sweep name four unmarked claims (below) | 0 |
-| The documented Sync route is a real GUI path reaching the engine (Definition of done 2) | `ctest -R '^LibraryMenusTest$' --output-on-failure` from `build/tests` (`test-docs-2.log`) | `theSyncMenuOpensTheFollowClockForm` triggers the menu action, gets a `CommandForm` with `source_port`/`drift_bound_ms`/`enabled`, sets `source_port` = "128:0 Sequencer:Ableton Push" and `drift_bound_ms` = 40, accepts, and `clock.get_state` reports both back; one `control.undo` then reports source `""` and bound `10.0` (`MidiClock::DefaultDriftBoundMs`). 17 passed / 0 failed | 0 |
+| The documented Sync route is a real GUI path reaching the engine (Definition of done 2) | `ctest -R '^LibraryMenusTest$' --output-on-failure` from `build/tests` (`test-docs-3.log`) | `theSyncMenuOpensTheFollowClockForm` triggers the menu action, gets a `CommandForm` with `source_port`/`drift_bound_ms`/`enabled`, sets `source_port` = "128:0 Sequencer:Ableton Push" and `drift_bound_ms` = 40, accepts, and `clock.get_state` reports both back; one `control.undo` then reports source `""` and bound `10.0` (`MidiClock::DefaultDriftBoundMs`). 17 passed / 0 failed | 0 |
 | The gate is a real red/green control (not tautological) | the four docs restored to the base commit's text, then `python3 tests/midi-clock-docs-gate.py`; then restore and rerun | Reverted: **19 FAIL lines** / EXIT 1, naming "Choosing the port and the drift bound is still socket-only", "MIDI clock is the engine and the socket, and there is no interface for it", "nothing in `src/gui/` offers a clock port selector", the 0.3.0-alpha "not from the interface" bullet, the missing region and the missing manual paragraph. Restored: `RESULT: PASS`, 0 FAIL | 1 then 0 |
-| The gate's own four mutations fail it | `ctest -R '^MidiClockDocsGateSelfTest$'` (`test-docs-2.log`) / `python3 tests/midi-clock-docs-gate.py --self-test` | `SELF-TEST PASS`: stale sentence back, Sync route dropped, snapshot bound widened to 1000, manual paragraph gone - each exit 1 naming the lost claim | 0 |
-| Existing clock GUI test stays green | `ctest -R '^(MidiClockDocsGate|MidiClockDocsGateSelfTest|LibraryMenusTest|MidiClockMenuTest)$'` from `build/tests` (`test-docs-2.log`) | 4/4 passed, 0 failed | 0 |
+| The gate's own four mutations fail it | `ctest -R '^MidiClockDocsGateSelfTest$'` (`test-docs-3.log`) / `python3 tests/midi-clock-docs-gate.py --self-test` | `SELF-TEST PASS`: stale sentence back, Sync route dropped, snapshot bound widened to 1000, manual paragraph gone - each exit 1 naming the lost claim | 0 |
+| Existing clock GUI test stays green | `ctest -R '^(MidiClockDocsGate|MidiClockDocsGateSelfTest|LibraryMenusTest|MidiClockMenuTest)$'` from `build/tests` (`test-docs-3.log`) | 4/4 passed, 0 failed | 0 |
 | Build | `cmake --build build --target zene LibraryMenusTest MidiClockMenuTest -- -j4` (`build-2.log`, `build-3.log`) | linked clean | 0 |
 | Gate 1 / 9 registration and scope | `bash tests/fork-sources-gate.sh` | "every tracked source in scope is registered (1839 fork-NEW, 1212 inherited, 48 tooling), 0 stale"; `all-sources.txt` REPRODUCES | 0 |
 | Gate 6 upstream divergence | `bash tests/no-upstream-regression-gate.sh` | "1523 changed path(s) declared; ledger holds 2318 entries" | 0 |
@@ -29,8 +29,9 @@ form is **Project tools ▸ Sync ▸ Follow MIDI Clock...**, NOT an Edit-menu fi
 Logs. The requested log directory `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-308.r1/logs`
 is **not writable** in this session (mkdir/touch both return EACCES although the directory is owned by the
 user; the parent `.../Q050-308.r1` is equally refused), so the same numbered logs were written to
-`/home/kruzzzzy/.cache/zene-q050-308-logs/` (`build-1..3.log`, `test-docs-1.log`, `test-docs-2.log`,
-`gate-reverted.log`, `data/figures/gates logs`). No claim above depends on a path I could not write.
+`/home/kruzzzzy/.cache/zene-q050-308-logs/` (`build-1..3.log`, `test-docs-1..3.log`,
+`gate-reverted.log`, `doc-figures.log`, `complexity.log`, `filelen.log`, `no-tautology.log`,
+`namespace.log`, `upstream.log`). No claim above depends on a path I could not write.
 
 What changed: `docs/KNOWN-LIMITATIONS.md` (Edit-menu bullet corrected; a new bullet documents the Sync
 `clock.slave_set` form and its 0-100 ms integer bound; a dated correction bullet covers the old
@@ -47,7 +48,7 @@ two ctest registrations and `tests/fork-sources.txt` entry, the new
   exit code?), then PASSES restored.** The product change here is documentation, so the "non-test hunks"
   are the four doc edits (the gate and the GUI test are the tests). `git show <base>:<path>` over those
   four files (that is, the pre-change text), then `python3 tests/midi-clock-docs-gate.py` -> **EXIT 1, 19 FAIL lines** naming the stale
-  sentences and the lost routes (`gate-reverted.log`). Restoring the four files -> **EXIT 0**
+  sentences and the lost routes (`gate-reverted.log` (the four docs at the base commit)). Restoring the four files -> **EXIT 0**
   (`RESULT: PASS`). The GUI test is unaffected by the docs revert (it tests the product's menu path,
   which is unchanged); the gate is the acceptance proof for this docs unit, and it is red without the
   change.
