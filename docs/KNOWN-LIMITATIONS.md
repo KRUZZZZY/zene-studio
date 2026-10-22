@@ -473,10 +473,11 @@ library to work.
 - *(Added 2026-10, Q050-125.)* **Clip gain, the gain envelope and polarity are now dragged on the waveform.**
   A sample clip draws its gain as a dashed line with a square handle on its left edge: drag the handle up or
   down and the clip's level follows the pointer, the drawn waveform growing or shrinking with it, and the
-  release is one `clip.set_gain` step. Alt-click the waveform to add a gain-envelope point at the pointer and
-  drag it in time and level (a plain press on a point moves it; points may be dragged past each other and are
-  re-sorted, which is the order `clip.gain_envelope_set` requires). The Gain and fades submenu adds **Invert
-  polarity** (`clip.set_polarity`), which flips the clip's rendered sign and mirrors its drawn waveform while
+  release is one `clip.set_gain` step. Press the drawn level curve to add a gain-envelope point at the pointer
+  and drag it in time and level (a plain press on a point moves it; points may be dragged past each other and are
+  re-sorted, which is the order `clip.gain_envelope_set` requires). Alt and Ctrl keep their arranger meanings;
+  the Smart tool's upper-half range gesture takes priority over the gain targets. The Gain and fades submenu
+  adds **Invert polarity** (`clip.set_polarity`), which flips the clip's rendered sign and mirrors its drawn waveform while
   the SOURCE sample keeps every sample: the inversion is a signed stage on the clip's gain, written as `invert`
   only when set, so an older project loads non-inverted and renders bit for bit as before. The drawn amplitude
   is `clipGainCurveAt` (the one definition the audio path and the automation editor's ghost already share)

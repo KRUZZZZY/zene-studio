@@ -27,8 +27,8 @@
  *  real application, and each check reads the MODEL back (and the drawn image), never the handler:
  *  1. A drag of the clip-gain handle sets `clip.set_gain` - one undo step - and moving it down lowers
  *     the gain; the DRAWN waveform follows the gain curve (a boosted clip paints taller).
- *  2. A click on the waveform with Alt held adds an envelope point at the press (`clip.gain_envelope_set`),
- *     and dragging an existing point moves it; both are one undo step each, and the drawn image changes.
+ *  2. A plain press on the drawn gain curve adds an envelope point at the press (`clip.gain_envelope_set`),
+ *     and dragging an existing point moves it; both are one undo step each and the model reads back.
  *  3. The context menu's Invert polarity item flips the clip's polarity through `clip.set_polarity` and
  *     the drawn waveform mirrors around zero; the item is checked while the clip is inverted.
  *  4. A locked clip takes none of the three gestures.
@@ -44,6 +44,7 @@
 #include <QTemporaryDir>
 
 #include "ArrangerOverlays.h"
+#include "ArrangementEdits.h"
 #include "ClipEdits.h"
 #include "ClipEditsMenu.h"
 #include "ControlRegistry.h"
@@ -184,6 +185,11 @@ private slots:
 	void init()
 	{
 		Engine::getSong()->clearProject();
+		if (auto* overlay = getGUI()->songEditor()->m_editor->findChild<ArrangerRangeOverlay*>())
+		{
+			overlay->setTool(ArrangerRangeOverlay::Tool::None);
+		}
+		ArrangerRange::instance().clear();
 		m_track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
 		QVERIFY(m_track != nullptr);
 		// A clip wide enough to drag in: a whole bar at a readable zoom.
@@ -292,6 +298,32 @@ private slots:
 		QCOMPARE(m_clip->clipEdits().envelope[0].tick, addedTick);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);
+	}
+
+	//! The Smart tool's upper-half range press must win when it lands on the new gain-curve target.
+	void smartToolKeepsItsUpperHalfRangeGestureAtTheGainCurve()
+	{
+		auto* overlay = getGUI()->songEditor()->m_editor->findChild<ArrangerRangeOverlay*>();
+		QVERIFY(overlay != nullptr);
+		ArrangerRange::instance().clear();
+		overlay->setTool(ArrangerRangeOverlay::Tool::Smart);
+
+		const ClipOverlayFrame frame = frameOf(m_view);
+		const QPoint from(frame.xOrigin + frame.width / 2, lineY(frame, 0.f));
+		QVERIFY2(from.y() < m_view->height() / 2, "the test press is not in the Smart tool's upper half");
+		QVERIFY2(gainCurveAt(m_clip->clipEdits(), frame, from), "the test press is not on the gain curve");
+		const QPoint inOverlay = overlay->mapFromGlobal(m_view->mapToGlobal(from));
+		const QPoint to = inOverlay + QPoint(64, 0);
+
+		QTest::mousePress(m_view, Qt::LeftButton, Qt::NoModifier, from);
+		QCOMPARE(QWidget::mouseGrabber(), overlay);
+		QTest::mouseMove(overlay, to);
+		QTest::mouseRelease(overlay, Qt::LeftButton, Qt::NoModifier, to);
+
+		QVERIFY2(ArrangerRange::instance().active(), "the curve press added a point instead of drawing the Smart range");
+		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);
+		overlay->setTool(ArrangerRangeOverlay::Tool::None);
+		ArrangerRange::instance().clear();
 	}
 
 	//! A press in the MIDDLE of an existing envelope must drag the point it just added, not the point

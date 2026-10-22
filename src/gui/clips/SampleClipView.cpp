@@ -44,6 +44,7 @@
 #include "GuiApplication.h"
 #include "MainWindow.h"
 #include "AutomationEditor.h"
+#include "ArrangerOverlays.h"
 #include "embed.h"
 #include "PathUtil.h"
 #include "lmmsconfig.h"
@@ -387,7 +388,7 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 	{
 		ClipView::mouseMoveEvent(me);
 		// Over a fade handle the pointer shows that it drags sideways, as over a resize edge (UX ux06 #27);
-		// over the clip-gain handle (or a point, with Alt held) it shows that it drags a level.
+		// over the clip-gain handle or an envelope point it shows that it drags a level.
 		if (!me->buttons())
 		{
 			if (fadeHandleUnder(me->pos()) != FadeHandle::None) { setCursor(Qt::SizeHorCursor); }
@@ -415,6 +416,15 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 void SampleClipView::mousePressEvent( QMouseEvent * _me )
 {
 	if (startFadeDrag(_me)) { return; }
+	// The Smart tool already owns a left press in a clip's upper half for range selection. Let its
+	// hand-off run before the new gain handle and envelope targets can consume that same press.
+	auto* overlay = m_trackView->trackContainerView()->findChild<ArrangerRangeOverlay*>();
+	if (overlay != nullptr && overlay->tool() == ArrangerRangeOverlay::Tool::Smart
+		&& _me->button() == Qt::LeftButton && _me->pos().y() < height() / 2)
+	{
+		ClipView::mousePressEvent(_me);
+		return;
+	}
 	// A press on an existing point or on the clip-gain handle takes that gesture FIRST: the handle sits
 	// on the level line, so the curve's own add gesture must not win over it.
 	if (startGainDrag(_me)) { return; }
