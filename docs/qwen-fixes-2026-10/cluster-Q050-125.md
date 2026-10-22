@@ -159,12 +159,18 @@ Additional evidence:
   through the live arranger in a real `GuiApplication` (`guitest::startGui`), reading the model and the
   rendered `QImage` back; the menu case builds the real Gain and fades menu and triggers the real checkable
   action.
-- **Gates.** A patched copy of the stock script (its `wt.parent` log dir cannot be created under this
-  sandbox's file policy) reports `feature-check ... RESULT: PASS`: fork-sources 0, all-sources-reproduce 0,
-  no-upstream-regression 0, check-namespace 0, no-tautology 0, doc-figures 0 (846 ids / 76 groups),
-  complexity "no new item in your files", file-length "no new item in your files". The stock
-  `feature_check.py`/`submit_check.py` fail on the log-directory `mkdir` alone (EACCES under this session's
-  policy), not on a gate.
+- **Gates.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exits **1** in this
+  session with `PermissionError: [Errno 13] Permission denied:
+  '.../zene-feat-q050-125-feature-check'` from `logs.mkdir(...)` - the script writes its per-gate logs to a
+  directory beside the worktree, and this session's file policy denies every write outside the worktree
+  (the repo parent, `$HOME`, `research/` and the run-log dir all return EACCES; `/tmp` and `$TMPDIR` are
+  writable). That is a harness-path failure before any gate runs, not a gate result. An otherwise identical
+  copy with only `logs` redirected to `/tmp/Q050-125/feature-check` and the cached baselines path unchanged
+  reports `feature-check ... RESULT: PASS`: fork-sources exit 0, all-sources-reproduce exit 0,
+  no-upstream-regression exit 0, check-namespace exit 0, no-tautology exit 0, doc-figures exit 0 (846 ids /
+  76 groups), complexity "no new item in your files", file-length "no new item in your files"
+  (**EXIT 0**). `submit_check.py` therefore shows `FAIL gates (feature_check.py)` with no gate named; every
+  other row of its table is PASS.
 - **`tests/all-sources.txt`** was stale for the two new test files (they were registered in
   `tests/fork-sources.txt` but missing from the whole-tree manifest); re-derived from its own header recipe,
   which also cleared the stale `plugins/SfzPlayer/sfizz/` entries, and `all-sources-reproduce.sh` now prints
