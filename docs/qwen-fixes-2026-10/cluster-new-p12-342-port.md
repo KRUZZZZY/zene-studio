@@ -75,6 +75,13 @@ pre-dates the port and is untouched by it:
   `diff <(git show dbb15dded:tests/all-sources.txt | grep -vE '^[[:space:]]*(#|$)') <(the recipe's
   own command) > logs/all-sources-base-diff.log` - **EXIT=1** with exactly **1148** differing
   lines, and **not one** of them outside `plugins/SfzPlayer/sfizz/`.
+- Measured first-hand: the manifest carries **4193** entries, the recipe derives **3045**; the
+  recipe derives **nothing** the manifest lacks, and the manifest's extra **1148** entries are all
+  vendored `plugins/SfzPlayer/sfizz/external/**` paths - the tree the manifest's own header calls
+  vendored and excluded on purpose.
+- The previous train snapshot's manifest matched the recipe (0 differences of that kind), so the
+  row turned red with the train-11 snapshot `dbb15dded` - the base of this branch - and not with
+  this port.
 - The two gates' own logs (`zene-qwen-new-p12-342-port-feature-check/fork-sources.log`,
   `.../all-sources-reproduce.log`) contain no other failure: no unregistered tracked source, no
   registered path missing, no new item in this change's files.
@@ -112,7 +119,11 @@ this change.
 - **The gates**: `feature_check.py` - **EXIT=1**; six gates PASS (including `complexity` and
   `file-length`, both "no new item in your files") and the two that fail fail on a pre-existing
   `tests/all-sources.txt` mismatch that is identical at the base commit - the proof is in the
-  section above. No gate was re-anchored and no manifest was edited.
+  section above. This port adds no file and changes no manifest: `git diff --name-only dbb15dded`
+  lists exactly `docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md`,
+  `include/BrowserSearchView.h`, `src/gui/BrowserSearchView.cpp`, `tests/fork-sources.txt` and
+  `tests/src/gui/LibraryMenusTest.cpp`. No gate was re-anchored, no baseline moved and no
+  manifest was edited.
 - **No collateral damage**: no command, save file, project format or setting changed; old projects
   and saved data load exactly as before. No limit or check was added, so no other caller can hit
   one. The only visible change is that the scan's progress and its final message now appear on a
