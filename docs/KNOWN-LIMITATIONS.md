@@ -262,7 +262,7 @@ library to work.
   uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). *(Corrected 2026-10-09, Q050-003.)*
   Output buses past the main one are routable (MX-114: `Vst3Instrument::enableOutputBus`,
   `plugins/Vst3Instrument/Vst3Instrument.cpp:239`; see "F2, instruments") and the instrument reports its
-  latency to delay compensation (MX-157, `:262`; see "Hosted instrument latency"); the in-tree VST3 fixture has
+  latency to delay compensation (MX-157, `:262`; see "Hosted instrument latency"; the native CLAP, VST3 and LV2 instrument hosts report, built-in instruments are 0, and the out-of-process, VST2 (Vestige) and Carla paths report nothing to it - corrected 2026-10-19, Q050-169); the in-tree VST3 fixture has
   one output bus, so the routing of a real multi-output VST3 plug-in is unproven (`plugin.output_*` is measured
   against the stand-in `buses_test_instrument`, `Vst3BusMapTest::testOutputBusesKeepInactiveOnes` covers the bus
   map). There is still no read of the plug-in's own preset (program) lists and no out-of-process hosting. **CLAP instrument
@@ -1225,17 +1225,26 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   - An instrument latency above the delay lines' capacity (`LatencyCompensation::MaxFrames`, 16384
     frames) is clamped like a chain's, and the published total says so, but no warning is logged for an
     instrument (the once-only warning lives in `EffectChain::refreshLatency`, which an instrument is not
-    part of).
-  - Only the native CLAP, VST3 and LV2 instrument hosts report. Built-in instruments report 0 (none is
-    latent); the out-of-process, VST2 (Vestige) and Carla paths report nothing.
+    part of). *(Measured 2026-10-19, Q050-169: `InstrumentLatencyPdcTest::instrumentLatencyAboveTheCapacityIsClampedAndDiagnosed`
+    reports 17000 frames, sees the reference delayed by only 16384 and `pdc.report`'s `delay_line_clamped`
+    set, with no capacity warning.)*
+  - Only the native CLAP, VST3 and LV2 instrument hosts report, so those three are the supported
+    instrument hosts for delay compensation. Built-in instruments report 0 (none is latent). The
+    out-of-process, VST2 (Vestige) and Carla paths are unsupported for delay compensation, not for
+    hosting: they host and play, but report no instrument latency to PDC, so nothing is
+    compensated for them.
   - Automation compensation (`AutomationLatency`) does not count an instrument's latency: an automated
     parameter of a latent instrument, or of an effect on its track's own chain, changes `latency` frames
-    early against that instrument's audio.
+    early against that instrument's audio. *(Measured 2026-10-19, Q050-169:
+    `InstrumentLatencyPdcTest::automationCompensationDoesNotCountTheInstrumentsLatency` stamps both such
+    clips at 0 while the channel the instrument feeds stamps at the full latency.)*
   - A channel fed by a latent instrument has a non-zero alignment point, so its rack's key zones do not
     route notes (`RackZoneFeed` routes only through a channel aligned at 0) - the existing zone rule, now
     met by latent instruments too.
   - Live playing through a latent instrument is late by its latency plus the alignment; nothing bypasses
-    an instrument the way the low-latency mode bypasses latent effects.
+    an instrument the way the low-latency mode bypasses latent effects. *(Measured 2026-10-19, Q050-169:
+    `InstrumentLatencyPdcTest::lowLatencyModeDoesNotBypassALatentInstrument` arms `transport.low_latency`,
+    sees a latent EFFECT stopped and the latent INSTRUMENT's reference still delayed by its latency.)*
 - *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
   add and the point its input is aligned to, in frames and ms, and on the master the compensated total
   (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not

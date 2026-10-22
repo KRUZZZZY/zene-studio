@@ -4297,10 +4297,16 @@ if(TARGET lmms_clap)
 		add_dependencies(InstrumentLayersCommandsTest clap-test-instrument)
 	endif()
 	# MX-157: the CLAP fixture's latent mode (CLAP_TEST_INSTRUMENT_LATENCY) is the CLAP subject.
+	# The host module is guarded separately (WANT_CLAP=OFF or missing headers remove it), but when
+	# it exists the dependency must name it too: a targeted build of the test otherwise builds the
+	# fixture alone and the CLAP cases skip with "this build has no clapinstrument module".
 	if(TARGET clap-test-instrument AND TARGET InstrumentLatencyPdcTest)
 		target_compile_definitions(InstrumentLatencyPdcTest PRIVATE
 			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
 		add_dependencies(InstrumentLatencyPdcTest clap-test-instrument)
+		if(TARGET clapinstrument)
+			add_dependencies(InstrumentLatencyPdcTest clapinstrument)
+		endif()
 	endif()
 	# The F2 interface's output-bus surface drives the same multi-output class.
 	if(TARGET clap-test-instrument AND TARGET InstrumentSetupUiTest)
