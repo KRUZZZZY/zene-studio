@@ -53,6 +53,18 @@ its checks with its log path pointed at `/tmp` (`/tmp/feature_check_run.py`; the
 
 ## Self-check
 
+- **Runner environment (two non-code observations).** `submit_check.py` reports one FAIL,
+  “gates (feature_check.py)”, because `feature_check.py` hardcodes its log directory to
+  `<worktree>/../<name>-feature-check` and **this sandbox refuses every write in the worktree's
+  parent** (`…/zene-studio-program`): `touch` and `mkdir` there fail with EACCES even after a
+  successful `chmod`, while the lane worktree, `/tmp`, `~/.cache` and `.git` directories stay
+  writable. The script itself is unmodified and all eight gate rows PASS when run against this
+  worktree with only that log path redirected to `/tmp` (`/tmp/feature_check_run.py`, exit 0,
+  `logs/feature-check-correct.log`). Its “canary figures (README)” WARN is a false positive of the
+  added-line regex: the snapshot re-serialised and its `+` lines mention existing ids such as
+  `control.undo`, but no id was added or removed (845 ids / 76 groups before and after,
+  `doc-figures-gate.py` exit 0, README's canary unchanged).
+
 - **Each new test FAILS with the product change reverted, then PASSES restored.** Reverted the
   product hunks to the base while keeping the new API so the tests compile and *neutralising every
   behaviour* (reversible patch `logs/red-mutilation.patch`: `ui/workspace` never read or written,
@@ -64,7 +76,9 @@ its checks with its log path pointed at `/tmp` (`/tmp/feature_check_run.py`; the
   API entirely does not compile the new tests — recorded in `logs/red-build.log` exit 2 — so the
   behavioural replay above is the honest red proof.)
 - **Every acceptance criterion is proven by a test I ran.** The table names the test and exit code
-  for each; all runs are under `/tmp/Q050-235.1.r1/logs/` and copied in the run tree.
+  for each; every log is under `/tmp/Q050-235.1.r1/logs/` (the harness's run directory
+  `~/.local/share/zene-bunny-fix/qwen/runs/Q050-235.1.r1/logs` refuses writes from this sandbox, like
+  the worktree's parent, so the logs live in `/tmp` and are named exactly).
 - **One undo step, honest reversibility class.** `appearanceCommand` compares all four fields,
   writes once through `Appearance::setOptions`, and records a single `addUndoStep(before -> after)`;
   `WorkspaceAccessTest` asserts exactly one `control.undo` restores the prior workspace, and
