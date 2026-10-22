@@ -110,13 +110,13 @@ is written 0.0f - the test fails on both counts.
   the seam or injected values it uses). A: Deterministic. The note time is
   injected (`setBlockSeconds(10.0)` + `noteStarted(11)`), the read time is a
   literal (12.75), and the pin/wait interleaving is ordered by
-  `std::binary_semaphore` handoff plus the writer-pin API: the worker holds
-  `beginTargetWrite(0, token)` and observes `targetAlive(0, token)` flip
-  false (the closing bit is set before the wait), which proves the edit is
-  inside its writer wait - and the edit cannot leave that wait until the
-  worker releases the pin, so the observation window cannot race. The 2s
-  `try_acquire_for` is only a hang watchdog on the setup handoff, not part
-  of the logic. No sleeps, no wall-clock assertions.
+  `std::binary_semaphore` handoff plus the writer-pin API: the worker signals
+  whether `beginTargetWrite(0, token)` succeeded, then holds that pin and
+  observes `targetAlive(0, token)` flip false (the closing bit is set before
+  the wait). This proves the edit is inside its writer wait, and the edit
+  cannot leave that wait until the worker releases the pin, so the observation
+  window cannot race. Both pin-attempt paths signal the handoff; there is no
+  timeout, sleep, or wall-clock assertion.
 - Q: The fix is at the cause and complete: every caller and sibling of what
   you changed was checked and stays consistent. A: `publishTriggers()` has
   exactly one caller (`edit()`, include/ModulationLayer.h:380; the only other
@@ -145,3 +145,8 @@ is written 0.0f - the test fails on both counts.
   commit (16 atomic slots + the fixed voice-pool walk) - still bounded,
   still wait-free; writer waits remain on the control thread.
 - Gates: feature_check.py EXIT=0, all rows PASS (logs/12-feature-check.log).
+- QA review round 2: removed the timed semaphore watchdog from the trigger-phase
+  regression; setup now signals pin success or failure without a wall-clock
+  timeout. The focused build and test were rerun successfully (`qa-review/01-build.log`,
+  `qa-review/02-test.log`); the feature gate was rerun after this correction
+  (`qa-review/03-feature-check.log`, EXIT=0; all rows PASS).

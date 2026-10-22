@@ -434,9 +434,10 @@ private slots:
 		std::atomic<int> entriesWhileWaiting{-1};
 
 		std::thread audio([&] {
-			if (!publisher.beginTargetWrite(0, token)) { return; }
-			pinTaken.store(true, std::memory_order_release);
+			const bool tookPin = publisher.beginTargetWrite(0, token);
+			pinTaken.store(tookPin, std::memory_order_release);
 			pinned.release();
+			if (!tookPin) { return; }
 			// The control thread closes the slot before it waits for this pin,
 			// and it cannot finish that wait until this thread releases the
 			// pin. So the moment the slot reads closed is inside the wait, and
@@ -454,7 +455,11 @@ private slots:
 		});
 
 		pinned.acquire();
-		QVERIFY(pinTaken.load(std::memory_order_acquire));
+		if (!pinTaken.load(std::memory_order_acquire))
+		{
+			audio.join();
+			QVERIFY2(false, "the audio write did not pin slot 0");
+		}
 		// The edit rebinds the target: publishView() closes the slot and waits
 		// for the writer to release its pin.
 		publisher.edit([&model](ModulationLayer&, ModulationRuntime& runtime) {
@@ -519,13 +524,16 @@ private slots:
 		QCOMPARE(publisher.sinceTrigger(0, 11, 12.75), 2.75);
 
 		std::binary_semaphore pinned{0};
+		std::atomic<bool> pinTaken{false};
 		std::atomic<bool> oldViewDuringWait{false};
 		double phaseDuringWait = -2.0;
 		float valueDuringWait = 0.0f;
 
 		std::thread audio([&] {
-			if (!publisher.beginTargetWrite(0, slot0Token)) { return; }
+			const bool tookPin = publisher.beginTargetWrite(0, slot0Token);
+			pinTaken.store(tookPin, std::memory_order_release);
 			pinned.release();
+			if (!tookPin) { return; }
 			const RealtimeScope realtime;
 			// publishView() closes slot 0 BEFORE it waits for this pin, so the
 			// moment the slot reads closed the edit is inside that wait - and
@@ -542,7 +550,8 @@ private slots:
 			publisher.endTargetWrite(0);
 		});
 
-		if (!pinned.try_acquire_for(std::chrono::seconds(2)))
+		pinned.acquire();
+		if (!pinTaken.load(std::memory_order_acquire))
 		{
 			audio.join();
 			QVERIFY2(false, "the audio write did not pin slot 0");
