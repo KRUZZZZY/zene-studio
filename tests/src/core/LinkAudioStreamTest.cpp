@@ -418,7 +418,7 @@ private slots:
 		QFile source(QStringLiteral(ZENE_SOURCE_DIR "/src/core/LinkAudioStream.cpp"));
 		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.fileName()));
 		const QString text = QString::fromUtf8(source.readAll());
-		QVERIFY2(!text.contains(QRegularExpression("reinterpret_cast\\s*<\\s*float\\s*\\*")),
+		QVERIFY2(!text.contains(QRegularExpression("reinterpret_cast\\s*<\\s*(const\\s+)?float\\s*\\*")),
 			"the stream must not read a SampleFrame array through a float*");
 		QVERIFY2(!text.contains("sizeof(SampleFrame)"),
 			"the size of a frame does not make an array of frames a float array");
