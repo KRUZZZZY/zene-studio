@@ -1012,12 +1012,17 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   it on the audio thread; the audio-thread capture path still makes zero allocations
   (`captureStaysAllocationFreeWhileTheWriterCommits`, the AllocationProbe pattern). The old window was not
   re-measured on the new test; its figure is the one-second interval the code carried.
-- *(Updated 2026-09-30.)* **Edit ▸ MIDI Clock** switches the master (**Send Clock**, `clock.master_set`) and
-  the slave (**Follow External Clock**, and **Follow Its Tempo** while it follows, `clock.slave_set`), and a
-  line under them re-reads `clock.get_state` each time the submenu opens - not sending/sending, not
-  following, following with no lock, or locked at the measured BPM; a refused switch (a master with no MIDI
-  client to send through) stays unchecked and the line names the refusal (`MidiClockMenuTest`). Choosing the
-  port and the drift bound is still socket-only. The bullet below is the pre-menu record.
+- *(Updated 2026-09-30; corrected 2026-10-20, Q050-308.)* **Edit ▸ MIDI Clock** switches the master
+  (**Send Clock**, `clock.master_set`) and the slave (**Follow External Clock**, and **Follow Its Tempo**
+  while it follows, `clock.slave_set`), and a line under them re-reads `clock.get_state` each time the
+  submenu opens - not sending/sending, not following, following with no lock, or locked at the measured BPM;
+  a refused switch (a master with no MIDI client to send through) stays unchecked and the line names the
+  refusal (`MidiClockMenuTest`). The SOURCE PORT is chosen from this menu as well: **Edit ▸ MIDI Clock ▸
+  Clock Source** offers **Any Input** plus one entry per readable client port, which is `midi.device_list`'s
+  own vocabulary (the next bullet states that picker's bounds). The DRIFT BOUND is not an Edit-menu field:
+  it is one argument of the same `clock.slave_set` command, and its form is **Project tools ▸ Sync ▸ Follow
+  MIDI Clock...** (the bullet after the next one). Neither the port nor the bound is socket-only. The bullet
+  below is the pre-menu record.
 - *(Added 2026-10-16, Q050-026.)* **Edit ▸ MIDI Clock ▸ Clock Source** chooses which input drives the follower,
   through the same `clock.slave_set` the socket uses: **Any Input** plus one entry per readable client port as
   `midi.device_list` spells them, rebuilt each time the submenu opens so a plugged-in device is offered; picking
@@ -1038,16 +1043,37 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the raw parser (ALSA Raw-MIDI, JACK, OSS, sndio): on Windows (WinMM) and macOS (CoreMIDI) clients the engine
   builds note/control events only, so an incoming clock is not seen there and a chosen source is not what keeps
   it unseen.
-- **MIDI clock is the engine and the socket, and there is no interface for it — added 2026-09-13.** The DAW runs
+- *(Added 2026-10-20, Q050-308.)* **Project tools ▸ Sync ▸ Follow MIDI Clock...** opens the `clock.slave_set`
+  **form** - the same registered command an agent calls over `--control-socket` or MCP, so one implementation
+  serves the menu, the form and the socket. Its fields are **enabled** and **follow_tempo** as switches,
+  **source_port** as one of the same readable-port names (blank keeps the current choice; **Any Input** is the
+  explicit empty one), and **drift_bound_ms** as an integer in whole milliseconds from **0** to **100**
+  (`MidiClockTracker::MaxDriftBoundMs`) - how far one pulse interval may stray from the window's mean and still
+  count as locked. `clock.get_state` reads both back as `slave.source_port` and `slave.drift_bound_ms`, so the
+  form, the Edit menu's picker and an agent see the same numbers. One call is **one recorded undo step**:
+  `clock.slave_set`'s class is `snapshot`, and the step restores the mode, the tempo-follow flag, the source
+  and the drift bound (the tempo a FOLLOWING slave writes is a trajectory the inverse does not claim).
+  Proofs: the Sync form route is `LibraryMenusTest::theSyncMenuOpensTheFollowClockForm`, the Edit-menu picker
+  is `MidiClockMenuTest::theSourceSubmenuDrivesTheSameCommand`, and the fields, their bound and the read-back
+  are `ControlClockCommands` (`clock.slave_set` accepts `source_port` and the bounded integer
+  `drift_bound_ms`; a bound outside 0-100 or a source name longer than the engine can hold is a typed
+  refusal). The drift-bound field is NOT in the Edit menu; only this form and the command carry it.
+- *(Corrected 2026-10-20, Q050-308.)* **The clock has an interface now: Edit ▸ MIDI Clock and Project
+  tools ▸ Sync.** The bullet below is the 2026-09-13 record of the engine-only release, kept for its bounds
+  (the backend coverage, the tempo-error bound, MTC's absence) and NOT as a current claim about the
+  interface: `src/gui/MidiClockMenu.cpp` (attached by `MainWindow.cpp`) offers **Send Clock**, **Follow
+  External Clock**, **Follow Its Tempo**, **Clock Source** and a lock line, and Project tools ▸ Sync ▸
+  **Send MIDI Clock...** / **Follow MIDI Clock...** open the registry forms for the same two commands.
+  Drivable from the interface AND through `--control-socket`/MCP, over the same registered commands.
+- **MIDI clock is the engine AND the socket — added 2026-09-13, engine half.** The DAW runs
   as a MIDI clock **master** (24 pulses to the quarter note, START/STOP/CONTINUE and a Song Position Pointer on
   the transport's own edges, emitted from the audio thread through the engine's existing MIDI output) and as a
   clock **slave** (it follows an incoming clock, measures its tempo over one quarter note of pulses, and writes
   that tempo to the song when told to follow) — drivable through `--control-socket` (`clock.get_state`,
   `clock.master_set`, `clock.slave_set`), with a registered ctest driving the real binary over the socket and a
-  registered QTest proving the rate arithmetic — but **nothing in `src/gui/` offers a clock port selector, an
-  external-sync toggle or a lock indicator**: `grep -rniI 'MidiClock' src/gui/` returns **0** hits against
-  **36** for `MidiLearn` in the same directory, so the clock is drivable through the socket and not from the
-  interface. The bound is stated rather than implied:
+  registered QTest proving the rate arithmetic. The interface half landed later (see the two bullets above:
+  Edit ▸ MIDI Clock, and Project tools ▸ Sync for the forms); what this bullet records is the engine, and the
+  bounds below are still the current ones. The bound is stated rather than implied:
   **the bytes reach a MIDI device only where a real backend is open** — a headless run reports what the engine
   PRODUCED (the message counters and the bounded monitor `clock.get_state` returns, asserted by
   `tests/control-clock-commands.py`), NOT what an external instrument received, which no test on a box with no
@@ -1060,8 +1086,8 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   the user's, and a MIDI thread moving it is a behavioural change this lane did not take), and the follower's
   measured tempo is accurate to **at most `tempo × 2 × 5 ms / window`** — the engine reports that number as
   `slave.tempo_error_bound_bpm` — because a pulse is timestamped when the MIDI client's reader thread observes it,
-  and the tree's ALSA Raw reader polls after a 5 ms sleep (`src/core/midi/MidiAlsaRaw.cpp`). Drivable through the
-  socket, not from the interface.
+  and the tree's ALSA Raw reader polls after a 5 ms sleep (`src/core/midi/MidiAlsaRaw.cpp`). Both halves are
+  drivable from the interface and through the socket, over the same registered commands.
 
 - *(Corrected 2026-09-30.)* **Edit ▸ Arm MIDI Capture and Capture MIDI** (`src/gui/MainWindow.cpp`,
   `midi.retro_capture_arm` / `midi.retro_capture_to_clip`; Ctrl+Shift+C captures onto the monitored track, R5.4)

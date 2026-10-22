@@ -5931,6 +5931,21 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/doc-figures-gate.py)
 endif()
 
+# Q050-308 (R-workflow-117): the MIDI Clock docs must describe BOTH routes to source_port and
+# drift_bound_ms - Edit > MIDI Clock > Clock Source, and Project tools > Sync > Follow MIDI Clock...
+# (the clock.slave_set form) - and no current page may still call either field socket-only. The gate
+# reads the two GUI files, the schema, the committed snapshot and the docs/manual; file reads only, so
+# it needs no binary. MidiClockDocsGateSelfTest is the gate's own red/green control: the stale
+# sentence back, the Sync route dropped, a drift bound that disagrees with the schema, or a manual
+# that stopped naming the form must each fail the gate.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME MidiClockDocsGate
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/midi-clock-docs-gate.py)
+	add_test(NAME MidiClockDocsGateSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/midi-clock-docs-gate.py
+			--self-test)
+endif()
+
 # Q050-014 (R-instruments-11 / -26 / R-ui-19): the docs must keep format LOADING apart from tested
 # third-party compatibility (a Kontakt library is the external, unverified case) and must name the
 # Plug-in Modules list as the GUI location for per-file scan status and quarantine controls. The gate
