@@ -26,6 +26,7 @@
 #include "Sf2Player.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <fluidsynth.h>
 #include <limits>

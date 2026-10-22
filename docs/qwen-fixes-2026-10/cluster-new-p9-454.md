@@ -175,7 +175,11 @@ All logs are new numbered files in
 - **Verdict.** The round-4 blocking finding (a `fluid_sfont_t` shared between
   the holder and the candidate synths) is REAL and is FIXED: no font object is
   shared any more, every synth owns a font instance, and the regression that
-  proves it fails without the fix. The original finding of the cluster (a
+  proves it fails without the fix. The verdict for this cluster is therefore
+  FIXED, not ALREADY-FIXED and not FALSE-POSITIVE: the code in this branch
+  before this round did share one `fluid_sfont_t` between two live synths
+  (`addFontTo()` handed the holder's pointer to every candidate), which is
+  what the RED run above shows. The original finding of the cluster (a
   `QVector` that could allocate on the audio path) was fixed in the earlier
   rounds of this branch and stays fixed.
 
