@@ -291,8 +291,8 @@ does not touch that path.
   or the command surface changed), and no new control command was added.
 - **The ALREADY-FIXED / FALSE-POSITIVE question does not apply to this
   round.** The verdict is FIXED, and the code that shows the bug was there
-  before this round is the `m_noteEvents.push( event )` whose result was
-  thrown away in `deleteNotePluginData()`
+  before the fix commit `4094d8d43`: the `m_noteEvents.push( event )` whose
+  result was thrown away in `deleteNotePluginData()`
   (`plugins/Sf2Player/Sf2Player.cpp:1445` as the round-5 review quoted it),
   followed by `releasePluginDataSlot( slot )` on the next lines. The RED run
   (`test-red.log`) shows the note staying counted with that code in place.
@@ -301,12 +301,12 @@ does not touch that path.
   handled by a bounded, allocation-free, lock-free fallback that guarantees
   the started note is stopped, and the regression that proves it fails without
   the fix. The verdict for this cluster is therefore FIXED, not ALREADY-FIXED
-  and not FALSE-POSITIVE: the code in this branch before this round ignored
-  the result of `m_noteEvents.push()` (`plugins/Sf2Player/Sf2Player.cpp:1445`
-  before this change) and released the slot right after, which is exactly what
-  the RED run above shows. The original finding of the cluster (a `QVector`
-  that could allocate on the audio path) was fixed in the earlier rounds of
-  this branch and stays fixed.
+  and not FALSE-POSITIVE: the code in this branch before the fix commit
+  `4094d8d43` ignored the result of `m_noteEvents.push()`
+  (`plugins/Sf2Player/Sf2Player.cpp:1445` before that change) and released
+  the slot right after, which is exactly what the RED run above shows. The
+  original finding of the cluster (a `QVector` that could allocate on the
+  audio path) was fixed in the earlier rounds of this branch and stays fixed.
 
 Files committed for the cluster: `plugins/Sf2Player/Sf2Player.cpp`,
 `plugins/Sf2Player/Sf2Player.h` (the fix, commit `4094d8d43`),
