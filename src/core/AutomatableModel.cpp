@@ -73,6 +73,41 @@ AudioEngine::RequestChangesGuard modelChangeGuard(const AutomatableModel* model)
 	return engine != nullptr && RealtimeScope::isActive() && !engine->isRenderThread();
 }
 
+//! True while the project is being loaded: every value the loader writes into a
+//! model is a LOAD, not a person (or a command) changing the control.
+bool projectIsLoading() noexcept
+{
+	Song* const song = Engine::getSong();
+	return song != nullptr && song->isLoadingProject();
+}
+
+//! True while the value write that follows is an INITIALIZATION or a LOAD -
+//! setInitValue() or the loader - and not a person (or a command) changing the
+//! control. Such a write must not become the "last touched" model (ED-191): a
+//! project load writes every model it reads, so the store would otherwise name
+//! whichever model was loaded last. Atomic, because the automation last-touched
+//! store is a process-wide atomically read value and a load can overlap a render.
+std::atomic<bool> g_writingInitValue{false};
+
+//! Scoped "the write that follows is not a user touch" flag. Nested scopes (a
+//! controller's models load inside its own load) restore the previous value.
+class InitValueScope
+{
+public:
+	explicit InitValueScope(std::atomic<bool>& flag) :
+		m_flag(flag),
+		m_previous(flag.exchange(true, std::memory_order_acq_rel))
+	{
+	}
+	~InitValueScope() { m_flag.store(m_previous, std::memory_order_release); }
+	InitValueScope(const InitValueScope&) = delete;
+	InitValueScope& operator=(const InitValueScope&) = delete;
+
+private:
+	std::atomic<bool>& m_flag;
+	bool m_previous;
+};
+
 } // namespace
 
 long AutomatableModel::s_periodCounter = 0;
@@ -286,6 +321,14 @@ void AutomatableModel::saveSettings( QDomDocument& doc, QDomElement& element, co
 
 void AutomatableModel::loadSettings( const QDomElement& element, const QString& name )
 {
+	// A load is not a person (or a command) changing the control: the value
+	// comes from the project file. Every write below (the automation clip
+	// compat path, the element path, reset() and setInitValue()) must therefore
+	// not become the "last touched" model (ED-191) - otherwise loading a project
+	// names whichever model was loaded last as the one a person had changed.
+	// The rollback restores the flag on every path out, the early return
+	// included.
+	const InitValueScope initScope(g_writingInitValue);
 	// compat code
 	QDomNode node = element.namedItem( AutomationClip::classNodeName() );
 	if( node.isElement() )
@@ -423,7 +466,15 @@ void AutomatableModel::setValue(const float value, const bool isAutomated, const
 	if (!isAutomated)
 	{
 		if (journal) { addJournalCheckPoint(); }
-		s_lastTouched.store(id(), std::memory_order_relaxed);
+		// Only a change a person (or a command acting for one) made is
+		// remembered as the last touched model. An initialization or a value
+		// that came out of a project file is not one: loading a project must
+		// not make the model that happened to be loaded last the control
+		// automation.last_touched names.
+		if (!g_writingInitValue.load(std::memory_order_acquire) && !projectIsLoading())
+		{
+			s_lastTouched.store(id(), std::memory_order_relaxed);
+		}
 	}
 
 	// set value for this and the other linked models
@@ -965,6 +1016,12 @@ void AutomatableModel::setInitValue( const float value )
 	auto changeGuard = modelChangeGuard(this);
 	m_initValue = fittedValue( value );
 	bool journalling = testAndSetJournalling( false );
+	// An INIT value is not a person (or a command) changing the control: it is
+	// the value the model starts (or restarts) with. The write must not become
+	// the "last touched" model (ED-191) - a project load runs this for every
+	// model it reads, so the store would otherwise name whichever model was
+	// loaded last. The rollback restores the flag on every path out.
+	const InitValueScope initScope(g_writingInitValue);
 	setValue( value );
 	m_oldValue = m_value;
 	publishValuePair(m_value, m_value);

@@ -24,12 +24,21 @@
 
 
 #include <QtTest>
+#include <QDomDocument>
+#include <QDomElement>
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "Engine.h"
 #include "LadspaBase.h"
 #include "LadspaControl.h"
 #include "TempoSyncKnobModel.h"
+
+namespace
+{
+//! QCOMPARE cannot take `model.value<float>()`: the macro parses the angle
+//! brackets as relational operators (ModulationAudioViewTest says the same).
+float valueOf(const lmms::AutomatableModel& model) { return model.value<float>(); }
+} // namespace
 
 class AutomatableModelTest : public QObject
 {
@@ -152,6 +161,57 @@ private slots: // tests
 		QVERIFY(m2.value() == m3.value());
 		QVERIFY(!m3.value());
 		QVERIFY(m1.countLinks() == 2);
+	}
+
+	//! ED-191 / cluster 5524: the "last touched" model is the one a PERSON (or
+	//! a command) changed - not the one a project load, or a model's initial
+	//! value, happened to write last. Every write a load makes goes through
+	//! loadSettings()/setInitValue() (the attribute form, the element form and
+	//! the automation-compat path), so both entry points are covered here.
+	void initializationAndLoadingAreNotTouches()
+	{
+		using namespace lmms;
+
+		FloatModel edited(0.f, 0.f, 100.f, 1.f);
+		FloatModel loaded(0.f, 0.f, 100.f, 1.f);
+
+		// A person changes a control: that is the last touched one.
+		edited.setValue(5.f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited.id());
+
+		// A model's initial value is the state it is BUILT with, not an edit.
+		FloatModel initialised(0.f, 0.f, 100.f, 1.f);
+		initialised.setInitValue(42.f);
+		QCOMPARE(valueOf(initialised), 42.f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited.id());
+
+		// The project file writes a value into another model (the attribute
+		// form - the shape every non-automated control is saved in).
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("control"));
+		doc.appendChild(element);
+		element.setAttribute(QStringLiteral("value"), QStringLiteral("42"));
+		loaded.loadSettings(element, QStringLiteral("value"));
+		QCOMPARE(valueOf(loaded), 42.f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited.id());
+
+		// The element form (a model saved as <value value="..."/>).
+		QDomElement child = doc.createElement(QStringLiteral("value"));
+		child.setAttribute(QStringLiteral("id"), QString::number(loaded.id()));
+		child.setAttribute(QStringLiteral("value"), QStringLiteral("77"));
+		element.appendChild(child);
+		loaded.loadSettings(element, QStringLiteral("value"));
+		QCOMPARE(valueOf(loaded), 77.f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited.id());
+
+		// A load that finds no stored value resets the model; that is still a
+		// load, not an edit.
+		loaded.loadSettings(doc.createElement(QStringLiteral("empty")), QStringLiteral("value"));
+		QCOMPARE(AutomatableModel::lastTouched(), edited.id());
+
+		// A person changes the loaded model: NOW it is the last touched one.
+		loaded.setValue(11.f);
+		QCOMPARE(AutomatableModel::lastTouched(), loaded.id());
 	}
 
 	void customMeterChangeUpdatesSyncOnceAfterReenteringCustom()
