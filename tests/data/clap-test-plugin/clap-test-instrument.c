@@ -65,8 +65,12 @@
 #define TEST_INSTRUMENT_MULTIOUT_NAME "LMMS CLAP Test Instrument (multi-out)"
 /* The Aux port's level, relative to the main port's. */
 #define TEST_INSTRUMENT_AUX_SCALE 0.5
-/* The largest latency a latent instance takes, and the size of its delay ring. */
-#define TEST_INSTRUMENT_MAX_LATENCY 16384u
+/* The largest latency a latent instance takes, and the size of its delay ring.
+ * 32768 since 2026-10-19 (Q050-169): the over-capacity case the limitations page documents
+ * (a latency above LatencyCompensation::MaxFrames, 16384) needs a fixture that can really
+ * report one, so the clamp can be measured rather than asserted. The ring is allocated only
+ * for a latent instance, so the extra 64 KB is per latent fixture, not per module. */
+#define TEST_INSTRUMENT_MAX_LATENCY 32768u
 #define TEST_INSTRUMENT_LATENCY_ENV "CLAP_TEST_INSTRUMENT_LATENCY"
 /* CLAP_TEST_INSTRUMENT_LAYOUT: set (to any value) and the single-output class reports a
    SECOND stereo output port, i.e. its audio-port layout changes while the host runs. During
