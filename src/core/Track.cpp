@@ -523,18 +523,52 @@ Track * Track::create( Type tt, TrackContainer * tc )
  *
  *  \param element The QDomElement containing the type of track to create
  *  \param tc The track container to attach to
+ *
+ *  TWO rules are checked here, at the ONE place an element is turned into a
+ *  track, so that EVERY caller of this factory gets the same answer:
+ *
+ *   - The element must BE a track element. The name is the tag
+ *     `Track::saveTrack` sets on every track's own element (it renames the
+ *     element it is given to "track"), and it is the same literal
+ *     Song::loadProject's pre-count walk compares against. The LOADER carried
+ *     that test in its own claim helper (src/core/TrackContainer.cpp); every
+ *     OTHER caller - the capture/restore path (control::restoreTrackFromXml),
+ *     the clone path, the drag-and-drop path, the track transplant - hands
+ *     this factory whatever element it has, and an element that is NOT a
+ *     <track> was fabricated into an Instrument track: 0 is Type::Instrument,
+ *     so an element with a `type` of its own became a track nobody wrote.
+ *     `control::restoreTrackFromXml` PROMISES nullptr "when the XML ... names
+ *     no track element" (include/ControlEdit.h) - this is where that promise
+ *     is kept.
+ *   - The `type` must be one this build can name. It is read with a CHECKED
+ *     QVariant::toInt(): a missing attribute and a value that does not convert
+ *     both read as 0 WITHOUT the check, and 0 IS Type::Instrument - so a
+ *     <track> with no `type` (or with `type="bad"`) used to be fabricated into
+ *     an INSTRUMENT track, with its own children read as clips (cluster
+ *     new-p12-287). A type outside the recognised range is refused for the
+ *     same reason.
+ *
+ *  A refusal answers nullptr - the same answer a type this build has no class
+ *  for gives - so the caller keeps the element verbatim instead of modelling a
+ *  track nobody wrote (SPEC-ARCH-4 1.6.2).
  */
 Track * Track::create( const QDomElement & element, TrackContainer * tc )
 {
-	Engine::audioEngine()->requestChangeInModel();
+	if( element.nodeName() != QStringLiteral( "track" ) )
+	{
+		return nullptr;
+	}
 
 	bool typeOk = false;
 	const int typeValue = element.attribute( "type" ).toInt( &typeOk );
-	Track* t = nullptr;
-	if ( typeOk && typeValue >= 0 && typeValue < static_cast<int>( Type::Count ) )
+	if( !typeOk || typeValue < 0 || typeValue >= static_cast<int>( Type::Count ) )
 	{
-		t = create( static_cast<Type>( typeValue ), tc );
+		return nullptr;
 	}
+
+	Engine::audioEngine()->requestChangeInModel();
+
+	Track* t = create( static_cast<Type>( typeValue ), tc );
 	if( t != nullptr )
 	{
 		t->restoreState( element );

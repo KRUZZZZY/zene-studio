@@ -41,6 +41,7 @@
 #include <QTextStream>
 #include <QVector>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "DataFile.h"
 #include "Engine.h"
@@ -382,6 +383,50 @@ private slots:
 		QVERIFY2( !badType.isNull(),
 			"a track with a malformed type attribute was dropped by a load -> save round trip" );
 		QCOMPARE( badType.attribute( QStringLiteral( "type" ) ), QStringLiteral( "bad" ) );
+	}
+
+	//! The NAME rule, at the cause. The loader's claim helper carries a name
+	//! test of its own, but the FACTORY did not: every other caller hands it
+	//! whatever element it has, and an element that is not a <track> was
+	//! fabricated into an INSTRUMENT track - 0 is Type::Instrument, so an
+	//! element with a `type` of its own became a track nobody wrote. That is
+	//! the same trap the type check closes, one rule short.
+	//!
+	//! The capture/restore path is where it shows: `control::restoreTrackFromXml`
+	//! PROMISES nullptr "when the XML does not parse or names no track element"
+	//! (include/ControlEdit.h), and the promise was not kept - a snapshot whose
+	//! element is not a <track> became a real instrument track in the song.
+	//!
+	//! Deterministic: a literal snapshot string, no clock, no sleep, no race.
+	void aTrackIsNotFabricatedFromAnElementThatIsNotATrack()
+	{
+		Song* const song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch( false );
+
+		const int before = trackCount( song );
+
+		// The element carries a `type` this build CAN build, so the TYPE rule
+		// accepts it - only the NAME rule can refuse it. Without the name rule
+		// the factory reads type=0 and builds an Instrument track out of it.
+		const QString snapshot = QStringLiteral(
+			"<zene-track-snapshot>\n"
+			"  <notatrack type=\"0\" name=\"fabricated\">\n"
+			"    <instrumenttrack/>\n"
+			"  </notatrack>\n"
+			"</zene-track-snapshot>\n" );
+
+		QVERIFY2( control::restoreTrackFromXml( snapshot, song ) == nullptr,
+			"an element that is not a <track> was fabricated into an instrument track" );
+
+		// And nothing was added to the song: the refusal is a refusal, not a
+		// track that is created and then hidden.
+		QCOMPARE( trackCount( song ), before );
+		for( const Track* track : song->tracks() )
+		{
+			QVERIFY2( track->name() != QLatin1String( "fabricated" ),
+				"a track was built from an element that is not a <track>" );
+		}
 	}
 
 	//! The sibling hole, and the reason the claim test is not simply "did the
