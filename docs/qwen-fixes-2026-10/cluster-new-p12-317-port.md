@@ -222,6 +222,10 @@ This follows the precedents `1a3e91e36` / `a71fcd6f1` for the same drift.
   render above and by `SessionPlaybackRenderTest` / `SessionSchedulerRenderTest` /
   `AudioClipLoopTest` / `ClipFadesRenderTest` / `ClipOffsetFadeTest` in the family
   run (18/18 pass).
+* **Verdict `ALREADY-FIXED`/`FALSE-POSITIVE` evidence.** Not applicable — the verdict
+  is FIXED, and the REAL section above shows the base code (`AudioFileWave.cpp:193,222`,
+  `:268-278`, `AudioFileDevice.h:52`, `ProjectRenderer.cpp:305-316`,
+  `RenderManager.cpp:65`) discarding every write/close result on this branch.
 * **Qt 5.15 / MSVC / macOS portability.** Uses `QFile`, `QFileInfo` and
   `std::atomic` only - no Qt-6-only API, no `windows.h` macro names, no
   `std::filesystem`. The RLIMIT-based test is guarded by `#ifdef Q_OS_UNIX`, so it
@@ -256,3 +260,7 @@ docs/qwen-fixes-2026-10/cluster-new-p12-317-port.md
 
 `tests/upstream-modifications.txt` declares every inherited file above (the new
 test is in `tests/fork-sources.txt` and `tests/all-sources.txt`).
+
+`submit_check.py <worktree> new-p12-317-port` — RESULT: PASS - submit (EXIT=0,
+`submit-1.log`); `feature_check.py` after the commit — RESULT: PASS, 8/8 rows
+(EXIT=0, `gate-final.log`).
