@@ -218,3 +218,5 @@ Additional evidence:
 - **`ControlSocketIntegration`** failed only because the plugin modules it loads were not built in this
   checkout; after `cmake --build build --target amplifier bassbooster tripleoscillator audiofileprocessor
   ladspaeffect lv2effect lv2instrument` (**EXIT 0**) it passes (**EXIT 0**). No product change caused it.
+
+IMPLEMENTED
