@@ -286,3 +286,27 @@ above; they are copied into the log folder by whoever has write access there.
   `tests/upstream-modifications.txt` (the branch's registrations for the two product files,
   the test and the scope lines), `tests/all-sources.txt` (repaired with its own recipe) and
   this report.
+
+## Completion check (submit_check.py) and its one FAIL
+
+```
+$ python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-149-port
+                                                                  # logs/submit-1.log EXIT=1
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p9-149-port.md
+  PASS  tests added or changed - tests/src/plugins/PluginPortsMigrationTest.cpp
+  FAIL  gates (feature_check.py)
+RESULT: FAIL - 1 item(s) to fix before submitting
+```
+
+The one FAIL is the sandbox, not a gate: `feature_check.py` writes its per-gate logs to
+`<worktree>/../<name>-feature-check`, and that path is outside this session's writable set,
+so the script aborts with `PermissionError` before running a single gate. With only that log
+path redirected to a writable directory the very same script runs all eight gates and prints
+`RESULT: PASS` (`logs/gate-2.log`, EXIT=0, table above), and each gate also exits 0 when run
+by hand (`logs/gate-direct.log`: fork-sources 0, all-sources-reproduce 0,
+no-upstream-regression 0, check-namespace 0, no-tautology 0, doc-figures 0). The two
+ratchet rows are red train-wide and list no item in a file this port changed. The five ASK
+items are answered above in "Self-check"; no ALREADY-FIXED/FALSE-POSITIVE answer applies
+because the verdict is FIXED.
