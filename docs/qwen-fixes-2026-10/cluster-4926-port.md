@@ -177,17 +177,40 @@ verdict, not the mechanism. `grep -rn "endTapWhenResetIsProcessed\|endTapAfterRe
 | GREEN test | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-green-1.log 2>&1` | `TEST_EXIT=0`, 1/1 passed |
 | Determinism | 15 x `QT_QPA_PLATFORM=offscreen ./ControlSessionRecordLandTest backToArrangementLeavesThePerformanceLandable` | 0 failures of 15 |
 | Affected family | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "Session\|Arrangement\|ControlSession" --output-on-failure > logs/test-family-2.log 2>&1` | `TEST_EXIT=8`; **31 of 32 ctest targets passed**; the one failure is `AbletonLinkSessionTest` (SEGFAULT in a multicast-network test) and is PRE-EXISTING: with the ported test removed from the tree the same target still crashes (`logs/test-ableton-pristine-1.log`, `PRISTINE_EXIT=8`), and that binary does not contain the ported file |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-1.log 2>&1` | `GATE_EXIT=1`: `fork-sources` and `all-sources-reproduce` FAIL, the other SIX rows PASS (`no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`) |
-| Gates, baseline (PRISTINE tree, 0 changed files) | same command, `> logs/gate-pristine-1.log 2>&1` | `GATE_PRISTINE_EXIT=1`: the SAME two rows FAIL - the drift is the train's own `plugins/SfzPlayer/sfizz/external/abseil-cpp/**` manifest entries, untouched by this port |
+| Gates, before the manifest re-derivation | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-1.log 2>&1` | `GATE_EXIT=1`: `fork-sources` and `all-sources-reproduce` FAIL, the other SIX rows PASS (`no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`) |
+| Gates, baseline (PRISTINE tree, 0 changed files) | same command, `> logs/gate-pristine-1.log 2>&1` | `GATE_PRISTINE_EXIT=1`: the SAME two rows FAIL - the drift is the train's own `plugins/SfzPlayer/sfizz/external/**` manifest entries, untouched by this port |
+| Gates, FINAL | same command, `> logs/gate-2.log 2>&1` | `GATE_EXIT=0`, **RESULT: PASS** - all eight rows PASS (`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`) |
 
 All logs are in
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4926-port.r1/logs/`.
 
-The two red gate rows are pre-existing and NOT caused by this port: they name
-third-party `plugins/SfzPlayer/sfizz/external/abseil-cpp/**` manifest entries
-that the train's own recipe does not derive, and they fail identically on the
-pristine tree with zero changed files. This port adds no product file and
-touches no manifest.
+### The two red gate rows, and what this port did about them
+
+They were red on the TRAIN, not because of this port: with the tree PRISTINE
+(0 changed files) the same two rows fail (`logs/gate-pristine-1.log`). Both had
+ONE cause - `tests/all-sources.txt` did not match its own published recipe:
+
+- the train commit `07d6d02bd` ("all-sources re-derived (automatic merge
+  train)") regenerated the manifest with a broader command than the recipe in
+  the manifest's own header, so the entry list carried **1148 VENDORED paths**
+  (`plugins/SfzPlayer/sfizz/external/**`) that the recipe excludes ON PURPOSE
+  ("Vendored third-party trees are excluded on purpose - they are not this
+  repo's code");
+- the recipe derives NOTHING that the manifest is missing (0 paths), so the
+  drift is exactly those 1148 extra entries - and `bash
+  tests/all-sources-reproduce.sh` -> `EXIT=1` ("does not match the recipe"),
+  `bash tests/fork-sources-gate.sh` -> `EXIT=1` (same cause).
+
+The gate's own message gives the repair ("Fix by re-deriving the list: run the
+'Regenerate with' command from the manifest's header and write its output over
+the entry list (never hand-edit, never delete a path the recipe derives)"),
+and the repo has a precedent for it: `a71fcd6f1` ("chore(tests): re-derive
+the whole-tree scope manifest from its own recipe (cluster new-p14-199-port)").
+This port did exactly that, in its own commit `1a3e91e36`: the header is
+untouched, the entry list is the recipe's byte-exact output, and the two rows
+are green. NO gate limit, baseline or threshold was changed, and
+`tests/fork-sources.txt` was NOT touched (it reproduces on its own - the
+fork-sources gate failed only because it also runs the all-sources check).
 
 ## Files changed by this port
 
@@ -195,6 +218,11 @@ touches no manifest.
   `backToArrangementLeavesThePerformanceLandable()` (a test file, already
   registered in `tests/fork-sources.txt:2363`; no new file, no registration
   change, no product change).
+- `tests/all-sources.txt` - the whole-tree scope manifest re-derived from its
+  OWN recipe, because the train's regeneration had left it carrying 1148
+  vendored paths the recipe excludes (the gate's own repair instruction, with
+  the repo's precedent `a71fcd6f1`). Header untouched, entry list only; no
+  gate limit or baseline changed.
 - `docs/qwen-fixes-2026-10/cluster-4926-port.md` - this report.
 
 No product file is changed: `include/SessionArrangementRecorder.h`,
@@ -242,7 +270,13 @@ records nothing new.
 any limit or check you added does not hit other callers that legitimately
 exceed it.**
 No product file changed, so no saved data, project format, limit or check
-changed. The ported test adds no limit and no check to production code.
+changed. The ported test adds no limit and no check to production code. The
+only non-test change outside the report is `tests/all-sources.txt`, whose
+entry list was re-derived from its OWN published recipe: the paths REMOVED are
+the 1148 vendored third-party files the recipe excludes on purpose, and no
+path the recipe derives was dropped (the diff is 1148 deletions and 0
+additions) - the whole-tree scope measures exactly what its own header says it
+measures. No gate limit, baseline or threshold was changed.
 
 **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
 the intended contract that shows it.**
