@@ -252,6 +252,20 @@ elseif(TARGET_UARCH STREQUAL "native")
 endif()
 
 IF(LMMS_BUILD_APPLE)
+	# The supported macOS floor (README, "macOS Intel and Apple Silicon"). It is Qt 5.15's own
+	# minimum deployment target, and it is above the oldest target the worker wake's __ulock
+	# calls are available on (10.12), so every supported build can use that path. CI's
+	# macos-env.sh derives MACOSX_DEPLOYMENT_TARGET from a dependency binary and today yields
+	# 11.0+ on the hosted runners; that is above this floor and is supported. Warn rather than
+	# fail, so a third-party packager building below it still gets a build and one clear line
+	# saying what the project supports.
+	SET(ZENE_MACOS_MINIMUM "10.13")
+	IF(DEFINED MACOSX_DEPLOYMENT_TARGET AND MACOSX_DEPLOYMENT_TARGET VERSION_LESS ZENE_MACOS_MINIMUM)
+		MESSAGE(WARNING
+			"MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} is below Zene Studio's "
+			"supported macOS minimum ${ZENE_MACOS_MINIMUM}; the build may fail or crash there.")
+	ENDIF()
+	MESSAGE(STATUS "macOS deployment floor: ${ZENE_MACOS_MINIMUM} (target: ${MACOSX_DEPLOYMENT_TARGET})")
 	# Fix linking on 10.14+. See issue #4762 on github
 	LINK_DIRECTORIES("${APPLE_PREFIX}/lib")
 	SET(WANT_SOUNDIO OFF)
