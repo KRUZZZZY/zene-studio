@@ -279,8 +279,7 @@ bool AudioFileWave::writeInterleaved(float* samples, const f_cnt_t frames)
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		m_interleaved16[i] = shaped ? m_noiseShaper.quantise16(samples[i], static_cast<int>(i % channels()))
-			: (ditherBits > 0 ? static_cast<int_sample_t>(sampleRoundedToS16(samples[i]))
-				: static_cast<int_sample_t>(AudioEngine::clip(samples[i]) * OUTPUT_SAMPLE_MULTIPLIER));
+			: static_cast<int_sample_t>(AudioEngine::clip(samples[i]) * OUTPUT_SAMPLE_MULTIPLIER);
 	}
 	const sf_count_t written = sf_writef_short(m_sf, m_interleaved16.data(), static_cast<sf_count_t>(frames));
 	m_framesWritten += written;
@@ -292,7 +291,7 @@ bool AudioFileWave::writeInterleaved(float* samples, const f_cnt_t frames)
 
 
 
-sf_count_t AudioFileWave::expectedFileSize() const
+sf_count_t AudioFileWave::expectedDataBytes() const
 {
 	sf_count_t bytesPerSample = 2;
 	switch (getOutputSettings().getBitDepth())
@@ -302,7 +301,64 @@ sf_count_t AudioFileWave::expectedFileSize() const
 	case OutputSettings::BitDepth::Depth16Bit:
 	default: break;
 	}
-	return 44 + m_framesWritten * channels() * bytesPerSample;
+	return m_framesWritten * channels() * bytesPerSample;
+}
+
+
+namespace
+{
+
+//! Little-endian u32 at @a at, the field order every RIFF chunk uses.
+quint32 riffU32(const QByteArray& bytes, int at)
+{
+	return static_cast<quint32>(static_cast<unsigned char>(bytes.at(at)))
+		| (static_cast<quint32>(static_cast<unsigned char>(bytes.at(at + 1))) << 8)
+		| (static_cast<quint32>(static_cast<unsigned char>(bytes.at(at + 2))) << 16)
+		| (static_cast<quint32>(static_cast<unsigned char>(bytes.at(at + 3))) << 24);
+}
+
+} // namespace
+
+
+bool AudioFileWave::headerHoldsEveryFrame(sf_count_t expectedData) const
+{
+	QFile file(outputFile());
+	if (!file.open(QIODevice::ReadOnly)) { return false; }
+	const QByteArray head = file.read(12);
+	if (head.size() < 12 || head.left(4) != "RIFF" || head.mid(8, 4) != "WAVE") { return false; }
+	const quint32 riffSize = riffU32(head, 4);
+
+	// Walk the chunk list to the data chunk, the way a reader does. The RIFF size and the data
+	// chunk's own size are exactly the two fields sf_close() rewrites in place; a partial rewrite
+	// leaves either stale while the file's LENGTH is untouched, so the fields - not the size - are
+	// the evidence. Bounded: a real WAV has a handful of chunks before data.
+	quint32 dataOffset = 0;
+	quint32 dataSize = 0;
+	bool sawData = false;
+	qint64 at = 12;
+	for (int chunks = 0; chunks < 64; ++chunks)
+	{
+		if (!file.seek(at)) { break; }
+		const QByteArray chunk = file.read(8);
+		if (chunk.size() < 8) { break; }
+		const quint32 size = riffU32(chunk, 4);
+		if (chunk.left(4) == "data")
+		{
+			dataOffset = static_cast<quint32>(at);
+			dataSize = size;
+			sawData = true;
+			break;
+		}
+		if (size == 0) { break; }  // a chunk list a reader would reject: nothing to prove
+		at += 8 + static_cast<qint64>(size) + static_cast<qint64>(size & 1u);
+	}
+	if (!sawData) { return false; }
+
+	// The data chunk's size must account for every frame the writes reported; a stale field is short.
+	if (static_cast<sf_count_t>(dataSize) < expectedData) { return false; }
+	// And the RIFF field must cover the data chunk header plus its payload.
+	const quint64 riffNeeds = static_cast<quint64>(dataOffset) + 8u + static_cast<quint64>(expectedData);
+	return static_cast<quint64>(riffSize) + 8u >= riffNeeds;
 }
 
 
@@ -312,23 +368,23 @@ bool AudioFileWave::finishEncoding()
 	// the file was left in, and touch nothing - the file, when it was broken, is already gone.
 	if (!m_sf) { return !m_writeError; }
 
-	const sf_count_t expected = expectedFileSize();
+	const sf_count_t expectedData = expectedDataBytes();
 	if (sf_close( m_sf ) != 0)
 	{
 		m_writeError = true;
 	}
 	m_sf = nullptr;
-	if (m_zeroChannelMask)
+	if (m_zeroChannelMask && !writeZeroChannelMask())
 	{
-		closeOutputFile();  // release the writer's handle before reopening the file to patch its header
-		writeZeroChannelMask();
+		// The speaker-mask patch is part of finalising a discrete WAVEX file: a patch that did not
+		// land leaves a header a reader would take for a layout the export never wrote.
+		m_writeError = true;
 	}
 
-	// sf_close() reports success even for a header it could not write completely
-	// (psf_fwrite() counts a partial write as a whole one), so the close's own
-	// result is not the whole report: a file that does not hold the frames the
-	// writes reported is not a finished export either.
-	if (QFileInfo(outputFile()).size() < expected)
+	// sf_close() reports success even for a header it could not rewrite completely
+	// (psf_fwrite() counts a partial write as a whole one), and such a partial rewrite does not
+	// change the file's length, so the header's own fields - not its size - are the evidence.
+	if (!headerHoldsEveryFrame(expectedData))
 	{
 		m_writeError = true;
 	}
@@ -341,15 +397,20 @@ bool AudioFileWave::finishEncoding()
 	return true;
 }
 
-void AudioFileWave::writeZeroChannelMask()
+bool AudioFileWave::writeZeroChannelMask()
 {
 	QFile file(outputFile());
-	if (!file.open(QIODevice::ReadWrite)) { return; }
+	if (!file.open(QIODevice::ReadWrite)) { return false; }
 	const QByteArray header = file.read(4096);
 	const int fmt = header.indexOf("fmt ");
 	// fmt chunk data begins at fmt + 8; dwChannelMask is field 20 of WAVE_FORMAT_EXTENSIBLE's fmt data.
-	if (fmt < 0 || fmt + 32 > header.size()) { return; }
-	if (file.seek(fmt + 28)) { file.write(QByteArray(4, '\0')); file.flush(); }
+	if (fmt < 0 || fmt + 32 > header.size()) { return false; }
+	if (!file.seek(fmt + 28)) { return false; }
+	// QFile buffers, so write() alone is not evidence: a short write that QFile accepts into its
+	// buffer only fails at flush(). Both results are the answer.
+	const QByteArray zero(4, '\0');
+	if (file.write(zero) != zero.size()) { return false; }
+	return file.flush();
 }
 
 } // namespace lmms

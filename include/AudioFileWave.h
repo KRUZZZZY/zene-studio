@@ -68,21 +68,24 @@ private:
 	bool setChannelMap();
 
 public:
-	/*! Finalises the file: closes the libsndfile handle and reports whether the file was written
-	 *  completely. A file that was not is REMOVED here, so a failed export leaves nothing behind
-	 *  to be mistaken for a render. Idempotent: a render already called it, the destructor calls
-	 *  it again. */
+	/*! Finalises the file: closes the libsndfile handle, patches a discrete layout's channel mask
+	 *  and reports whether the file was written completely. A file that was not is REMOVED here,
+	 *  so a failed export leaves nothing behind to be mistaken for a render. Idempotent: a render
+	 *  already called it, the destructor calls it again. */
 	bool finishEncoding() override;
 
 private:
-	/*! The bytes this file must hold once closed: the WAV header libsndfile writes (44 at the
-	 *  least) plus every frame a write reported as written. sf_close() is not enough on its own -
-	 *  it returns success for a header it could not write, because psf_fwrite() counts a partial
-	 *  write as a whole one - so the file itself is the evidence that the close worked. */
-	sf_count_t expectedFileSize() const;
+	//! The bytes of sample data the frames written so far must occupy in the file.
+	sf_count_t expectedDataBytes() const;
+	/*! True when the finished WAV's own header accounts for every frame the writes reported.
+	 *  sf_close() rewrites the RIFF and data-chunk sizes in place, and it reports success even
+	 *  when that rewrite only partly landed: the file's LENGTH is unchanged then (the old bytes
+	 *  are still there), so a size-only check cannot see it. The header fields themselves can. */
+	bool headerHoldsEveryFrame(sf_count_t expectedData) const;
 	//! A discrete layout has no speaker positions; libsndfile writes its count default mask, so zero it
 	//! after the samples are flushed (WAVEX's dwChannelMask 0 is what "no speaker positions" means).
-	void writeZeroChannelMask();
+	//! False when the field could not be written: that is a broken header, not a finished export.
+	bool writeZeroChannelMask();
 
 private:
 	SF_INFO m_si;

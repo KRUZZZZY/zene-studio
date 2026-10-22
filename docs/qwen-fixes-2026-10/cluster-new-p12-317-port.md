@@ -4,12 +4,13 @@ FIXED
 
 `new-p12-317-port: FIXED`
 
-This is a PORT job. The fix was accepted as `bugs/qwen-new-p12-317` but the train
-refused it: it conflicted with the newer line in `include/AudioFileWave.h` and
-`src/core/audio/AudioFileWave.cpp` (the Q050-166 discrete-speaker-mask work).
-The fix was re-applied by hand here, reading each commit with `git show`, not by
-merge/cherry-pick/rebase. The newest line did **not** already fix the bug — see
-the verdict evidence below.
+This is a PORT job, reworked once after review round 1. The fix was accepted as
+`bugs/qwen-new-p12-317` but the train refused it: it conflicted with the newer
+line in `include/AudioFileWave.h` and `src/core/audio/AudioFileWave.cpp` (the
+Q050-166 discrete-speaker-mask work). It was re-applied by hand here, reading
+each commit with `git show` — not by merge/cherry-pick/rebase. The newest line
+did **not** already fix the bug. Round 1 of the review asked for five changes;
+all five are addressed below.
 
 ## Verdict evidence (REAL, at the fork base `07d6d02bd`)
 
@@ -17,94 +18,121 @@ At the base the WAV export threw away every failure signal:
 
 * `src/core/audio/AudioFileWave.cpp:193,222` — `sf_writef_float()` /
   `sf_writef_short()` were called as statements; their `sf_count_t` return value
-  (the frames actually written) was discarded. No record of a short write existed
-  anywhere on the device.
+  (the frames actually written) was discarded.
 * `src/core/audio/AudioFileWave.cpp:268-278` — `finishEncoding()` called
   `sf_close()` and discarded its result; it was `void` and private, called only
   from the destructor (`:113`), so no caller could ever see a failed close.
 * `include/AudioFileDevice.h:52` — `virtual void writeBuffer(...) = 0;` — the
-  base contract itself was "fire and forget", so `ProjectRenderer` had nothing to
-  check even if it wanted to.
-* `src/core/ProjectRenderer.cpp:305-316` — `run()` called
-  `m_fileDev->writeBuffer(...)` / `writeSurround(...)` and never looked at the
-  result; it went straight on to `reportLoudness()` and normal completion.
-* `src/core/RenderManager.cpp:65` — `renderNextTrack()` did
-  `m_activeRenderer.reset()` with no verdict read first; `include/RenderManager.h`
-  had no failure result to forward. A disk that refused every byte still produced
-  a "finished" export in the CLI and the dialog.
+  base contract itself was "fire and forget".
+* `src/core/ProjectRenderer.cpp:305-316` — `run()` never looked at the result of
+  `writeBuffer()` / `writeSurround()`, and went straight on to normal completion.
+* `src/core/RenderManager.cpp:65` — `renderNextTrack()` reset the renderer with no
+  verdict read; `include/RenderManager.h` had no failure result to forward.
 * Siblings had the same hole: `AudioFileFlac.cpp:112,124` (short
-  `sf_writef_float/short`, discarded `sf_close`), `AudioFileOgg.cpp:152`
-  (encoded page `writeData()` result discarded), `AudioFileMP3.cpp:78,90` (LAME
-  frame and flush-tail `writeData()` discarded).
-
-The newest line (Q050-166: `setChannelMap()`, `m_zeroChannelMask`,
-`writeZeroChannelMask()`, `surroundexport::masterFormat()`) does not touch any of
-this: `writeBuffer` still returned `void`, the libsndfile results were still
-discarded, and `finishEncoding()` at base is still the silent
-`sf_close(); m_sf = nullptr;` plus the mask patch. So this is not ALREADY-FIXED.
+  `sf_writef_float/short`, discarded `sf_close`), `AudioFileOgg.cpp:85,152`
+  (header pages and page writes whose results were dropped; `writeData()` answers
+  with the byte count, so a short positive write looked like success),
+  `AudioFileMP3.cpp:78,90` (LAME frame and flush tail dropped), and both OGG and
+  MP3 flushed only from their destructors — after the render's verdict.
 
 ## What changed (ported by hand, reconciled with Q050-166)
 
-* `include/AudioFileDevice.h` — the base owns the verdict:
-  `virtual bool writeBuffer(...)` (was `void`), `virtual bool finishEncoding()`,
-  `virtual bool hasWriteError() const`, protected `recordWriteError()` /
-  `m_writeError`, and `removeOutputFile()` (closes the handle, then removes the
-  file). Every encoder now answers one question.
-* `src/core/audio/AudioFileWave.cpp` + `include/AudioFileWave.h` — every write is
-  compared with the frame count it was given, counted in `m_framesWritten`, and
-  recorded (`:195-200`, `:228-233`, `:272-289`). `writeBuffer()` returns the
-  period's result. `finishEncoding()` is now the public base override (`:309`):
-  it checks `sf_close()`, **reads the closed file back** against
-  `expectedFileSize()` (`:331`), because libsndfile 1.2.x `psf_fwrite()` counts a
-  partial header write as a whole one and `sf_close()` returns 0 for a file whose
-  final header never landed, and it removes an incomplete file (`:338`).
-  Idempotent, so the render's call and the destructor's second call are both
-  safe. The Q050-166 discrete-mask patch is preserved and still runs after the
-  close, before the completeness check.
-* `src/core/ProjectRenderer.cpp` + `include/ProjectRenderer.h` — `run()` checks
-  every period (`:311-321`), stops at the first failed write, finalises
-  explicitly before anything reads the result (`:343`), stores the verdict in an
-  `std::atomic` read after `finished()` (`:344`), and removes the incomplete file
-  (the abort path already did). `writeSurround()` returns its write result.
-* `src/core/RenderManager.cpp` + `include/RenderManager.h` — the manager takes
-  the finished renderer's verdict **before** `reset()` destroys it
-  (`RenderManager.cpp:69`), sticky across the queued renders of one export.
+* `include/AudioFileDevice.h` — the base owns the verdict: `virtual bool
+  writeBuffer(...)`, `virtual bool finishEncoding()`, `virtual bool
+  hasWriteError()`, `recordWriteError()` / `m_writeError`, `removeOutputFile()`,
+  and (rework) `flushOutputFile()`. `writeData()` answers with the bytes QFile
+  *accepted*; QFile buffers, so a full disk can refuse them only at the flush —
+  every finalisation now ends with that check.
+* `src/core/audio/AudioFileWave.cpp` + header — every write is compared with the
+  frame count it was given and counted (`:195-200`, `:228-233`, `:272-289`).
+  `finishEncoding()` (`:363`) checks `sf_close()`, then (rework) verifies the
+  **finished file's own header fields** via `headerHoldsEveryFrame()` (`:323`):
+  `sf_close()` rewrites the RIFF and data-chunk sizes *in place*, and a partial
+  rewrite leaves those fields stale while the file's LENGTH is unchanged — a
+  size-only check calls that a success. The discrete-layout mask patch
+  (`writeZeroChannelMask()`, `:400`) now returns whether `QFile::write()` **and**
+  `flush()` succeeded, and a failure is a failed export. An incomplete file is
+  removed. Idempotent, and the Q050-166 mask patch is preserved and still runs
+  after the close.
+* `src/core/audio/AudioFileOgg.cpp` + header (rework) — the constructor checks
+  the three header pages (`:83-101`), and when they do not land it marks the
+  device unsuccessful and removes the file; `writePage()` (`:170`) requires the
+  **whole** page (`writeData() == length`), so a short positive write fails; and
+  the stream tail is flushed by `finishEncoding()` (`:180`) — called by the
+  renderer before it reads the result — instead of only by the destructor.
+* `src/core/audio/AudioFileMP3.cpp` + header (rework) — `finishEncoding()`
+  (`:87`) flushes the LAME tail (`m_flushed` makes the destructor's second call a
+  no-op) and flushes the buffered file, so a failed final flush is part of the
+  export result.
+* `src/core/audio/AudioFileFlac.cpp` (rework) — a short `sf_writef_*`, a failed
+  `sf_close()` and a failed final flush are all recorded.
+* `src/core/ProjectRenderer.cpp` + header — `run()` checks every period
+  (`:311-321`), stops at the first failed write, finalises explicitly before
+  anything reads the result (`:343`), stores the verdict in an `std::atomic`
+  (`:344`) and removes the incomplete file. `writeSurround()` returns its result.
+* `src/core/RenderManager.cpp` + header — the manager takes the finished
+  renderer's verdict **before** `reset()` destroys it (`:69`), sticky across the
+  queued renders of one export.
 * `src/core/main.cpp:1494` — the headless render exits non-zero and says why.
 * `src/gui/modals/ExportProjectDialog.cpp:560` — the dialog reports the failure
   instead of closing as if the export had finished. No new control command.
-* Siblings made equally honest: `AudioFileFlac.cpp:116,126,140` (short write and
-  failed close), `AudioFileOgg.cpp:157` (page that did not reach the file),
-  `AudioFileMP3.cpp:81,98` (LAME frame and flush tail).
-* `new-p14-404` (carried with this cluster): the interleaved 16-bit dithered
-  staging now uses the same round-to-nearest quantiser (`sampleRoundedToS16`) as
-  the stereo `writeBuffer()` path; the un-dithered branch is unchanged.
+
+**Out of scope, removed (review item 5).** The round-1 change also carried
+new-p14-404's interleaved 16-bit dither rounding (the `sampleRoundedToS16`
+branch in `AudioFileWave::writeInterleaved`, and
+`ExportWavDitherTest::interleaved16BitDitherIsRoundedNotTruncated`). That is a
+different issue with a different finding, and it is **not in this change**: the
+interleaved 16-bit quantiser is byte-for-byte the base behaviour again
+(`AudioFileWave.cpp:282-283` is the original single
+`AudioEngine::clip(...) * OUTPUT_SAMPLE_MULTIPLIER` expression), and the p14 test
+is gone from `ExportWavDitherTest.cpp`. It stays with `bugs/qwen-new-p14-404`
+for its own scoped change.
 
 ## Regression tests (deterministic; no sleeps, timing or races)
 
-* `tests/src/core/ExportWavWriteErrorTest.cpp` (new, 374 lines, registered in
-  `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`) —
-  three cases:
-  * `aShortWriteIsReportedAndLeavesNoFileBehind` — the process's file-size cap
-    (`RLIMIT_FSIZE`, with `SIGXFSZ` ignored) is set to the size of the WAV header
-    the device just wrote, so the audio write cannot fit: a real short write.
-  * `aFailedFinalisationIsReportedAndLeavesNoFileBehind` — the file is emptied
-    and the cap set to 16 bytes, so the final header write fails: the close
-    "succeeds" and libsndfile still reports success, which is exactly the case the
-    read-back catches.
-  * `aFailedRenderIsReportedByRenderManagerAndLeavesNoFileBehind` — a real
-    one-second song rendered through `RenderManager` (the object the CLI and the
-    dialog both hold) under a 4096-byte cap; asserts the manager reports the
-    failure and no broken file is left.
-  * `aSuccessfulExportKeepsItsFileAndReportsNoError` — the fix must not turn a
-    good export into a failed one.
-* `tests/src/core/ExportWavDitherTest.cpp` — `aShortWavWriteIsReported` (the same
-  short write at the device level, the finding's own file) and
-  `interleaved16BitDitherIsRoundedNotTruncated` (new-p14-404).
-* The injected seam is the file-size cap plus an ignored `SIGXFSZ`, restored
-  inside the test; there is no wall-clock input. The new-API calls sit behind
-  `std::void_t` detection templates (`WriteBufferReports`, `HasWriteError`), so
-  the same test binary compiles against the tree **without** the fix and fails on
-  its assertions, not on the compiler.
+`tests/src/core/ExportWavWriteErrorTest.cpp` (new, 583 lines, registered in
+`tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`):
+
+* `aFailedHeaderRewriteOnAFullLengthFileIsReported` (rework) — the injected
+  `RLIMIT_FSIZE` cap stops at the **data chunk's size field**, so the in-place
+  header rewrite is refused while every audio byte is already on disk: the file
+  length does not change, and the test asserts that explicitly before asserting
+  the failure is reported and the file removed. This is exactly the case the
+  round-1 size-only check missed.
+* `aFailedDiscreteChannelMaskPatchIsReported` (rework) — a discrete-6 master
+  (the layout `writeZeroChannelMask()` serves) is written, then the file is made
+  read-only so the patch's **reopen** is refused while the already-open writer
+  handle still closes and the file stays readable for the header check. The test
+  first proves the injection really fails (`QSKIP` if the process can write
+  through a read-only file), then asserts the patch's failure is reported and
+  the file removed. `SurroundExportTest::aDiscreteMasterWritesItsChannelCount
+  WithoutSpeakerMask` covers the healthy path (six discrete layouts, real mask 0).
+* `aFailedSiblingFinalFlushIsReported` (rework) — an OGG and an MP3 device are
+  written and then finalised under a cap at the file's current length, so the
+  final flush has no room; asserts `finishEncoding()` says the file is
+  incomplete, for both encoders. This is the call `run()` makes before it reads
+  the verdict, so the destructor-after-verdict hole is closed by construction.
+* `aShortWriteIsReportedAndLeavesNoFileBehind` — the cap is the WAV header's
+  size, so the audio write cannot fit: a real short write.
+* `aFailedFinalisationIsReportedAndLeavesNoFileBehind` — the file is emptied and
+  the cap set to 16 bytes, so the final header write fails.
+* `aFailedRenderIsReportedByRenderManagerAndLeavesNoFileBehind` — a real
+  one-second song rendered through `RenderManager` (the object the CLI and the
+  dialog both hold) under a 4096-byte cap; the manager reports the failure and no
+  broken file is left.
+* `aSuccessfulExportKeepsItsFileAndReportsNoError` — a good export stays good.
+
+`tests/src/core/ExportWavDitherTest.cpp` — `aShortWavWriteIsReported` (the same
+short write at the device level, the finding's own file). The p14 case was
+removed (out of scope).
+
+The seam is the process file-size cap (`RLIMIT_FSIZE`) with `SIGXFSZ` ignored,
+plus a read-only file for the mask patch; both are restored inside the test and
+need no wall clock. The new-API calls go through `std::void_t` detection
+templates (`WriteBufferReports`, `HasWriteError`, `HasFinishEncoding`), and the
+finalisation assertion is `finalisationReportedFailure()` — true only when the
+device *says* the file is incomplete, so the tree without the fix fails on its
+assertion instead of passing because the API was absent.
 
 ## RED / GREEN (commands and exit codes, copied from the runs)
 
@@ -112,59 +140,75 @@ Log-folder note: the brief's directory
 (`~/.local/share/zene-bunny-fix/qwen/runs/new-p12-317-port.r1/logs`) and the
 worktree's parent are read-only for this session (`touch` → `Permission denied`
 as their owner), so the identical logs were written to `build/fix-logs/` inside
-the worktree (gitignored). The gate scripts were run through an unmodified copy
-whose only change is the log path (`feature_check.py` → `build/fix-logs/gate-logs`);
+the worktree (gitignored). The gate scripts ran through an unmodified copy whose
+only change is the log path (`feature_check.py` → `build/fix-logs/gate-logs`);
 the gate commands, their limits and `gate-baselines/` are the real ones.
 
-RED (fixed product patch reversed — `git apply -R build/fix-logs/fix.patch`,
-EXIT 0 —, the tests still build and fail at runtime):
+**4b RED — every product change since the fork base reversed** (`git diff
+07d6d02bd -- <product files> > fix-base.patch`, `git apply -R`, EXIT 0), the
+tests still build (EXIT 0) and fail at runtime:
 
 ```
-cmake --build build --target ExportWavDitherTest ExportWavWriteErrorTest   # EXIT=0 (build-red-1.log)
-cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest)$' --output-on-failure   # EXIT=8 (test-red-1.log)
-FAIL!  : ExportWavDitherTest::interleaved16BitDitherIsRoundedNotTruncated() 'nonZero * 8 > read.size()' returned FALSE. (interleaved 16-bit dither left 4096 of 4096 samples at exact zero - truncated away)
+cmake --build build --target ExportWavWriteErrorTest ExportWavDitherTest   # EXIT=0 (build-red-final.log)
+cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest)$' --output-on-failure   # EXIT=8 (test-red-final.log)
 FAIL!  : ExportWavDitherTest::aShortWavWriteIsReported() '!writeOk' returned FALSE. ()
+FAIL!  : ExportWavWriteErrorTest::aFailedHeaderRewriteOnAFullLengthFileIsReported() 'reportedFailure' returned FALSE. (a WAV whose final header rewrite failed was reported as a success)
+FAIL!  : ExportWavWriteErrorTest::aFailedDiscreteChannelMaskPatchIsReported() 'reportedFailure' returned FALSE. (a WAVEX file whose channel-mask patch failed was reported as a success)
 FAIL!  : ExportWavWriteErrorTest::aShortWriteIsReportedAndLeavesNoFileBehind() '!QFile::exists(path)' returned FALSE. (a WAV write that did not reach the file left its broken export behind)
 FAIL!  : ExportWavWriteErrorTest::aFailedFinalisationIsReportedAndLeavesNoFileBehind() '!QFile::exists(path)' returned FALSE. (a WAV file that was closed without its final header was left behind)
+FAIL!  : ExportWavWriteErrorTest::aFailedSiblingFinalFlushIsReported() 'reportedFailure' returned FALSE. (tail.ogg's final flush did not reach the file but was reported as a success)
 FAIL!  : ExportWavWriteErrorTest::aFailedRenderIsReportedByRenderManagerAndLeavesNoFileBehind() 'reported' returned FALSE. (a render whose WAV writes failed was reported as a finished export)
 0% tests passed, 2 tests failed out of 2
 ```
 
-4b RED — the whole product patch reversed a second time
-(`git apply -R build/fix-logs/fix.patch`, EXIT 0), rebuilt and rerun:
+RED per rework item, each with only that fix reverted and the rest left in place:
 
 ```
-cmake --build build --target ExportWavDitherTest ExportWavWriteErrorTest   # EXIT=0 (build-red-2.log)
-cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest)$' --output-on-failure   # EXIT=8 (test-red-2.log)
-0% tests passed, 2 tests failed out of 2
-five failing assertions, the same five as above
+# header-rewrite check only (AudioFileWave.cpp/header reverted, EXIT 0)
+cmake --build build --target ExportWavWriteErrorTest                          # EXIT=0 (build-rework-red-wave.log)
+./build/tests/ExportWavWriteErrorTest                                         # EXIT=1 (test-rework-red-wave.log)
+FAIL!  : aFailedHeaderRewriteOnAFullLengthFileIsReported() '!finalised' returned FALSE. (a WAV whose final header rewrite failed was reported as a success)
+
+# channel-mask patch propagation only (EXIT 0)
+cmake --build build --target ExportWavWriteErrorTest                          # EXIT=0 (build-rework-red-mask2.log)
+./build/tests/ExportWavWriteErrorTest                                         # EXIT=1 (test-rework-red-mask2.log)
+FAIL!  : aFailedDiscreteChannelMaskPatchIsReported() '!finalised' returned FALSE. (a WAVEX file whose channel-mask patch failed was reported as a success)
+
+# OGG/MP3 flush left in the destructor (EXIT 0)
+cmake --build build --target ExportWavWriteErrorTest                          # EXIT=0 (build-rework-red-sib2.log)
+./build/tests/ExportWavWriteErrorTest                                         # EXIT=1 (test-rework-red-sib2.log)
+FAIL!  : aFailedSiblingFinalFlushIsReported() '!finalised' returned FALSE. (tail.ogg's final flush did not reach the file but was reported as a success)
 ```
 
-4b GREEN — the patch applied again (`git apply build/fix-logs/fix.patch`, EXIT 0):
+**GREEN — the patch applied again** (`git apply fix-base.patch`, EXIT 0):
 
 ```
-cmake --build build --target zene ExportWavDitherTest ExportWavWriteErrorTest   # EXIT=0 (build-green-2.log)
-cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest)$' --output-on-failure   # EXIT=0 (test-green-2.log)
+cmake --build build --target zene ExportWavWriteErrorTest ExportWavDitherTest   # EXIT=0 (build-green-final.log)
+cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest)$' --output-on-failure   # EXIT=0 (test-green-final.log)
 100% tests passed out of 2
 ```
 
-Affected family (18 tests built, 18 passed, EXIT=0, `test-family-2.log`):
+The write-error binary's own per-case run (`test-rework-7.log`):
+
+```
+PASS   : aSuccessfulExportKeepsItsFileAndReportsNoError()
+PASS   : aFailedHeaderRewriteOnAFullLengthFileIsReported()
+PASS   : aFailedDiscreteChannelMaskPatchIsReported()
+PASS   : aShortWriteIsReportedAndLeavesNoFileBehind()
+PASS   : aFailedFinalisationIsReportedAndLeavesNoFileBehind()
+PASS   : aFailedSiblingFinalFlushIsReported()
+PASS   : aFailedRenderIsReportedByRenderManagerAndLeavesNoFileBehind()
+Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted
+```
+
+Affected family (18 tests built, 18 passed, EXIT=0, `test-family-final.log`):
 
 ```
 cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest|ExportDitherTest|ExportNoiseShaperTest|ExportQualityControlsTest|AudioFileOggInitTest|RenderSoftwareTag|StemExportTest|SurroundExportTest|ControlRenderJobTest|MasteringTest|ClipOffsetFadeTest|ClipFadesRenderTest|AudioClipLoopTest|SessionPlaybackRenderTest|SessionSchedulerRenderTest|LoudnessReportTest|LufsMeterTest)$' --output-on-failure
 100% tests passed out of 18
 ```
 
-Live user-visible path (`zene render`, a real project, `ulimit -f 2`):
-
-```
-zene render data/projects/tutorials/editing_note_volumes.mmp -o /tmp/cliprobe/out.wav   # EXIT=1 (cli-capped.log)
-render: the output could not be written completely; the incomplete file was removed
-file removed
-zene render … -o /tmp/cliprobe/ok.wav (no cap)                                          # EXIT=0, 2720864-byte wav (cli-healthy.log)
-```
-
-Gates — all eight rows PASS, EXIT=0 (`gate-2.log`):
+Gates — all eight rows PASS, EXIT=0 (`gate-final-2.log`):
 
 ```
 python3 <unmodified feature_check.py with only the log dir redirected> $PWD
@@ -174,7 +218,7 @@ RESULT: PASS
 ```
 
 `tests/all-sources.txt` also had to be re-derived from its own published recipe:
-the train commit `07d6d02bd` regenerated it with a broader command and it carried
+train commit `07d6d02bd` regenerated it with a broader command and it carried
 1148 vendored `plugins/SfzPlayer/sfizz/external/**` paths the recipe excludes on
 purpose, so `fork-sources` and `all-sources-reproduce` were already red on the
 pristine tree (proved with the manifest reverted: `allsrc-base.log`, EXIT=1, the
@@ -185,51 +229,53 @@ This follows the precedents `1a3e91e36` / `a71fcd6f1` for the same drift.
 ## Self-check
 
 * **The regression test FAILS with the product change reverted and PASSES with
-  it (exit codes).** RED `test-red-2.log` EXIT=8 (5 failed assertions), GREEN
-  `test-green-2.log` EXIT=0, 2/2. Builds were EXIT=0 in both states, so the RED is
-  a runtime failure, not a compile error.
+  it (exit codes).** The full reversal: build EXIT=0, ctest EXIT=8, 7 failing
+  assertions (`test-red-final.log`); each rework item reverted alone also fails
+  its own new case (the three per-item logs above); restored: build EXIT=0,
+  ctest EXIT=0, 2/2, 9/9 cases (`test-green-final.log`). The RED is a runtime
+  failure, not a compile error.
 * **The test is deterministic: no wall-clock timing, sleeps or races.** The seam
-  is the process file-size cap (`RLIMIT_FSIZE`) with `SIGXFSZ` set to `SIG_IGN`,
-  restored inside the test; the failure is a real `EFBIG`/short write, decided by
-  the kernel synchronously. No sleeps, no threads of the test's own, no timing
-  thresholds. The render case drives `RenderManager` and quits on its `finished()`
-  signal through a `QEventLoop`, not on a timer.
+  is the process file-size cap (`RLIMIT_FSIZE`) with `SIGXFSZ` set to `SIG_IGN`
+  (a real `EFBIG`/short write, decided by the kernel synchronously), plus one
+  read-only file whose reopen is refused for the mask patch — with a precondition
+  that skips (never silently passes) where the process can write through it. No
+  sleeps, no threads of the test's own, no timing thresholds; the render case
+  quits on `RenderManager::finished()` through a `QEventLoop`, not on a timer.
 * **The fix is at the cause and complete: every caller and sibling checked.** The
   only `writeBuffer()` caller is `ProjectRenderer::run()`
-  (`src/core/ProjectRenderer.cpp:311-315`); the only `finishEncoding()` callers
-  are the two WAV/FLAC destructors and the new render call. All four
-  `AudioFileDevice` subclasses (WAV, FLAC, OGG, MP3) now return a result, record a
-  failure, and expose it through the one base flag; the base's default
-  `finishEncoding()` is a no-op success for any future encoder that has nothing to
-  close. The wider type the verdict flows into (`std::atomic<bool>` on the
-  renderer, `bool` on the manager) was checked for the cross-thread reads.
-* **No collateral damage.** A healthy render takes the same write path as before
-  and is byte-identical (the family's `ExportDitherTest` / `ExportWavDitherTest`
-  byte-level assertions and `RenderSoftwareTag` all pass); the completeness check
-  only fires when the file is smaller than what libsndfile reported writing, so a
-  legitimate file cannot trip it; no saved-data format changed; old projects load
-  and render as before (`cli-healthy.log`).
-* **Undo and commands.** This is not an undoable edit and touches no
-  `ControlCommands*` file, so no command, reversibility class or
-  `commands_snapshot.json` canary moved. No new control command was added.
+  (`src/core/ProjectRenderer.cpp:311-315`); `finishEncoding()` is called by the
+  render before it reads the verdict and (idempotently) by each destructor. All
+  four `AudioFileDevice` subclasses return a result, record a failure and expose
+  it through the one base flag; OGG and MP3 no longer do their real finalisation
+  only in a destructor. `writeData()`'s buffered contract is handled by
+  `flushOutputFile()` in every finalisation.
+* **No collateral damage.** A healthy render takes the same write path and is
+  byte-identical: `ExportDitherTest` (byte-level off-by-default assertions),
+  `ExportWavDitherTest`, `RenderSoftwareTag` and the six-layout
+  `SurroundExportTest::aDiscreteMasterWritesItsChannelCountWithoutSpeakerMask`
+  all pass in the family run. The header check fails only when a size field is
+  smaller than the frames libsndfile reported writing, so a legitimate file
+  cannot trip it; no saved-data format changed.
+* **Undo and commands.** Not an undoable edit; no `ControlCommands*` file is
+  touched, so no command, reversibility class or `commands_snapshot.json` canary
+  moved. No new control command was added.
 * **Realtime.** The changed code runs on the offline render thread
-  (`ProjectRenderer::run()`), on the file device it drives, and in the destructor
-  / finalisation path - never in `process()`/`play()` or a mixer callback on the
-  audio thread. The one allocation-shaped addition is `QFileInfo(...).size()` in
-  `finishEncoding()`, which runs once after the render loop, not per period;
-  `writeBuffer()` adds only a counter and a comparison.
-* **Old projects still load and render as before.** Proven by the healthy CLI
-  render above and by `SessionPlaybackRenderTest` / `SessionSchedulerRenderTest` /
-  `AudioClipLoopTest` / `ClipFadesRenderTest` / `ClipOffsetFadeTest` in the family
-  run (18/18 pass).
-* **Verdict `ALREADY-FIXED`/`FALSE-POSITIVE` evidence.** Not applicable — the verdict
-  is FIXED, and the REAL section above shows the base code (`AudioFileWave.cpp:193,222`,
-  `:268-278`, `AudioFileDevice.h:52`, `ProjectRenderer.cpp:305-316`,
-  `RenderManager.cpp:65`) discarding every write/close result on this branch.
-* **Qt 5.15 / MSVC / macOS portability.** Uses `QFile`, `QFileInfo` and
+  (`ProjectRenderer::run()`), on the file device it drives, and in finalisation —
+  never in `process()`/`play()` or a mixer callback. `writeBuffer()` adds a
+  counter and a comparison; `finishEncoding()`'s file reads and flushes run once
+  after the loop, not per period.
+* **Old projects still load and render as before.** The family's
+  `SessionPlaybackRenderTest` / `SessionSchedulerRenderTest` / `AudioClipLoopTest`
+  / `ClipFadesRenderTest` / `ClipOffsetFadeTest` pass (18/18), and the healthy
+  `zene render` probe (round 1, `cli-healthy.log`) wrote a 2720864-byte WAV with
+  exit 0.
+* **Verdict `ALREADY-FIXED`/`FALSE-POSITIVE` evidence.** Not applicable — the
+  verdict is FIXED; the REAL section shows the base code discarding every
+  write/close result.
+* **Qt 5.15 / MSVC / macOS portability.** `QFile`, `QFileInfo`, `QtEndian`,
   `std::atomic` only - no Qt-6-only API, no `windows.h` macro names, no
-  `std::filesystem`. The RLIMIT-based test is guarded by `#ifdef Q_OS_UNIX`, so it
-  compiles (and skips those cases) on Windows.
+  `std::filesystem`. The RLIMIT cases and the file permissions are guarded by
+  `#ifdef Q_OS_UNIX`.
 
 ## Files committed
 
@@ -261,6 +307,4 @@ docs/qwen-fixes-2026-10/cluster-new-p12-317-port.md
 `tests/upstream-modifications.txt` declares every inherited file above (the new
 test is in `tests/fork-sources.txt` and `tests/all-sources.txt`).
 
-`submit_check.py <worktree> new-p12-317-port` — RESULT: PASS - submit (EXIT=0,
-`submit-1.log`); `feature_check.py` after the commit — RESULT: PASS, 8/8 rows
-(EXIT=0, `gate-final.log`).
+FIXED

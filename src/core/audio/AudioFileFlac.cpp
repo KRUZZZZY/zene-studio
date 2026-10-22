@@ -139,6 +139,7 @@ bool AudioFileFlac::finishEncoding()
 	sf_write_sync(m_sf);
 	if (sf_close(m_sf) != 0) { recordWriteError(); }
 	m_sf = nullptr;
+	if (!flushOutputFile()) { return false; }
 	return !hasWriteError();
 }
 

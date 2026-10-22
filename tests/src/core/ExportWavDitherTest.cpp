@@ -391,40 +391,6 @@ private slots:
 		ExportRenderSettings::reset();
 	}
 
-	//! BUG 8 (new-p14-404): the surround/interleaved 16-bit path must round, not truncate, so
-	//! the dither survives at digital silence the way the stereo writeBuffer path does.
-	void interleaved16BitDitherIsRoundedNotTruncated()
-	{
-		const std::size_t frames = 2048;
-		OutputSettings settings(44100, 160, OutputSettings::BitDepth::Depth16Bit,
-			OutputSettings::StereoMode::Stereo);
-		settings.setDither(true);
-		ExportRenderSettings::setDither(true);
-		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("interleaved-dither.wav"));
-		bool successful = false;
-		std::unique_ptr<AudioFileDevice> device(
-			AudioFileWave::getInst(path, settings, DEFAULT_CHANNELS, Engine::audioEngine(), successful));
-		QVERIFY(successful);
-		std::vector<float> samples(frames * DEFAULT_CHANNELS, 0.0f);
-		QVERIFY(device->writeInterleaved(samples.data(), static_cast<f_cnt_t>(frames)));
-		ExportRenderSettings::reset();
-
-		int channels = 0;
-		const std::vector<std::int16_t> read = readWavS16(path, &channels);
-		QCOMPARE(channels, DEFAULT_CHANNELS);
-		std::size_t nonZero = 0;
-		int maxAbs = 0;
-		for (std::int16_t value : read)
-		{
-			if (value != 0) { ++nonZero; }
-			maxAbs = std::max(maxAbs, std::abs(static_cast<int>(value)));
-		}
-		QVERIFY2(nonZero * 8 > read.size(), qPrintable(QStringLiteral(
-			"interleaved 16-bit dither left %1 of %2 samples at exact zero - truncated away")
-			.arg(read.size() - nonZero).arg(read.size())));
-		QVERIFY2(maxAbs <= 1, "a dithered zero sample quantised beyond 1 count");
-	}
-
 #ifdef Q_OS_UNIX
 	//! BUG 14 (new-p12-317): a short write is reported instead of being ignored.
 	void aShortWavWriteIsReported()

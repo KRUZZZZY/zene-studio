@@ -84,8 +84,20 @@ bool AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 	return true;
 }
 
+bool AudioFileMP3::finishEncoding()
+{
+	// The tail is written here, not only in the destructor: run() calls this before it reads the
+	// verdict, so a failed final flush reaches the export result. Idempotent.
+	flushRemainingBuffers();
+	if (!flushOutputFile()) { return false; }
+	return !hasWriteError();
+}
+
 void AudioFileMP3::flushRemainingBuffers()
 {
+	if (m_flushed) { return; }
+	m_flushed = true;
+
 	// The documentation states that flush should have at least 7200 bytes. So let's be generous.
 	std::vector<unsigned char> encodingBuffer(7200 * 4);
 

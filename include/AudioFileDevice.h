@@ -78,6 +78,18 @@ protected:
 
 	int writeData( const void* data, int len );
 
+	/*! Pushes whatever writeData() buffered in the QFile down to the operating system and reports
+	 *  whether that worked. writeData() answers with the bytes QFile ACCEPTED, and QFile buffers, so
+	 *  a disk that is full can refuse the bytes only at the flush: without this call a short write
+	 *  would look like a complete one. Every encoder's finishEncoding() ends with it. */
+	bool flushOutputFile()
+	{
+		if (!m_outputFile.isOpen()) { return true; }
+		if (m_outputFile.flush()) { return true; }
+		recordWriteError();
+		return false;
+	}
+
 	/*! What a file that could not be written completely leaves behind: nothing.
 	 *  The handle is closed first, so the removal also works where a file that is still open
 	 *  cannot be deleted. */

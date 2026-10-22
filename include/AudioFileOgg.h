@@ -56,8 +56,18 @@ public:
 		return new AudioFileOgg( outputSettings, channels, successful, outputFilename, audioEngine );
 	}
 
+public:
+	/*! Flushes the tail of the stream and reports whether the whole OGG was written: false when a
+	 *  page (the final one included) or the close failed. The render calls this before it reads the
+	 *  result; the destructor calls it again, which is then a no-op. */
+	bool finishEncoding() override;
+
 private:
 	bool writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames) override;
+	//! Stores the current page in full; false (and the device flagged) when part of it did not land.
+	bool writePage();
+	//! True once finishEncoding() has flushed the tail, so the destructor cannot flush twice.
+	bool m_finished = false;
 	vorbis_info m_vi;
 	vorbis_dsp_state m_vds;
 	vorbis_comment m_vc;
