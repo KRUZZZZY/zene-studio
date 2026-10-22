@@ -24,6 +24,17 @@ row, which cannot run in this sandbox for the two reasons just named — and thr
 GUI/agent files, which do not apply: this unit adds no user-facing action (see the
 reversibility answer below).
 
+That row is nevertheless **measured**: the same committed `feature_check.py` logic, run with
+its base-listing cache pre-seeded from the `git archive 07d6d02bd` measurements (the step the
+script would have done with `git worktree add`), exits **0** with every row PASS —
+`feature-check-5.log`:
+
+```
+PASS fork-sources / all-sources-reproduce / no-upstream-regression / check-namespace /
+     no-tautology / doc-figures; complexity and file-length: no new item in your files
+RESULT: PASS
+```
+
 ## What changed
 
 - **`include/AudioWorkerWake.h` + `src/core/AudioWorkerWake.cpp` (new).** The platform half
