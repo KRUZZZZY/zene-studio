@@ -293,6 +293,8 @@ void ProjectRenderer::run()
 	// Now start processing
 	Engine::audioEngine()->startProcessing();
 
+	bool writeFailed = false;
+
 	// Continually track and emit progress percentage to listeners.
 	while (!Engine::getSong()->isExportDone() && !m_abort)
 	{
@@ -306,13 +308,16 @@ void ProjectRenderer::run()
 			m_loudnessReport->addBlock(buffer.data(), static_cast<f_cnt_t>(buffer.size()));
 		}
 
-		if( m_channels > DEFAULT_CHANNELS )
+		const bool written = m_channels > DEFAULT_CHANNELS
+			? writeSurround(buffer.data(), static_cast<f_cnt_t>(buffer.size()))
+			: m_fileDev->writeBuffer(buffer.data(), buffer.size());
+		if (!written)
 		{
-			writeSurround(buffer.data(), static_cast<f_cnt_t>(buffer.size()));
-		}
-		else
-		{
-			m_fileDev->writeBuffer(buffer.data(), buffer.size());
+			// These bytes did not reach the file (a full disk, an unwritable path): no
+			// amount of further rendering would fix that, so the render ends here and the
+			// file is reported as failed - and removed - below, the way an abort is.
+			writeFailed = true;
+			break;
 		}
 
 		const int nprog = Engine::getSong()->getExportProgress();
@@ -331,9 +336,17 @@ void ProjectRenderer::run()
 
 	perfLog.end();
 
-	// If the user aborted export-process, the file has to be deleted.
+	// Finalise here, on this thread, before anything reads the result: a close that
+	// failed - or a header libsndfile could not write - makes the export a failed one,
+	// not a finished one. (The file device's destructor would call this again later;
+	// it is idempotent, and the verdict has already been taken over by writeFailed.)
+	if (!m_fileDev->finishEncoding() || m_fileDev->hasWriteError()) { writeFailed = true; }
+	m_writeFailed.store(writeFailed, std::memory_order_relaxed);
+
+	// A file the export could not write completely has to be deleted: what is left
+	// on disk would be a headerless or truncated file that looks like a render.
 	const QString f = m_fileDev->outputFile();
-	if( m_abort )
+	if( m_abort || writeFailed )
 	{
 		QFile( f ).remove();
 	}
@@ -346,7 +359,7 @@ void ProjectRenderer::run()
 
 
 
-void ProjectRenderer::writeSurround( const SampleFrame* pair, f_cnt_t frames )
+bool ProjectRenderer::writeSurround( const SampleFrame* pair, f_cnt_t frames )
 {
 	const auto width = static_cast<std::size_t>(m_channels);
 	frames = std::min(frames, static_cast<f_cnt_t>(m_interleaved.size() / width));
@@ -360,7 +373,7 @@ void ProjectRenderer::writeSurround( const SampleFrame* pair, f_cnt_t frames )
 		const float* side = surroundexport::readPlane(c);
 		for( f_cnt_t f = 0; f < frames; ++f ) { m_interleaved[f * width + c] = side[f]; }
 	}
-	m_fileDev->writeInterleaved(m_interleaved.data(), frames);
+	return m_fileDev->writeInterleaved(m_interleaved.data(), frames);
 }
 
 

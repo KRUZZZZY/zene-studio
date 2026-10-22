@@ -554,6 +554,18 @@ void ExportProjectDialog::updateTitleBar(int prog)
 
 void ExportProjectDialog::onRenderFinished()
 {
+	// A render whose output could not be written is not a finished export: the renderer
+	// removed the broken file (nothing was left to be mistaken for a render), and the
+	// dialog must say so rather than close as if everything had worked.
+	if (m_renderManager && m_renderManager->hasWriteError())
+	{
+		QMessageBox::warning(this, tr("Export failed"),
+			tr("The export could not be written completely, so the incomplete file was removed.\n"
+			   "Check the destination for free space and write permissions, then export again."));
+		accept();
+		return;
+	}
+
 	const QString report = m_renderManager ? m_renderManager->loudnessReportText() : QString();
 	if (report.isEmpty())
 	{

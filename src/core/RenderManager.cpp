@@ -64,6 +64,9 @@ void RenderManager::abortProcessing()
 // Called to render each new track when rendering tracks individually.
 void RenderManager::renderNextTrack()
 {
+	// The finished renderer's verdict has to be taken HERE, before the reset below
+	// destroys it: ProjectRenderer reports the write/close failure in hasWriteError().
+	if (m_activeRenderer && m_activeRenderer->hasWriteError()) { m_writeFailed = true; }
 	m_activeRenderer.reset();
 
 	if (m_tracksToRender.empty())

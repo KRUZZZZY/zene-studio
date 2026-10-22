@@ -98,6 +98,15 @@ public:
 	/// none was requested.
 	QString loudnessReportError() const { return m_loudnessReportError; }
 
+	/*! True when a render this manager ran ended with an output file that could not be written
+	 *  completely (a write or the close failed) - the file was then removed. Read after finished();
+	 *  sticky across the queued renders of one export, so one broken stem is not lost to the next.
+	 *  A renderer still running (or waiting to be reaped after an abort) answers for itself. */
+	bool hasWriteError() const
+	{
+		return m_writeFailed || (m_activeRenderer && m_activeRenderer->hasWriteError());
+	}
+
 signals:
 	void progressChanged( int );
 	void finished();
@@ -126,6 +135,8 @@ private:
 	QString m_loudnessReportError;
 
 	std::unique_ptr<ProjectRenderer> m_activeRenderer;
+	//! Set in renderNextTrack() when a finished renderer reports hasWriteError().
+	bool m_writeFailed = false;
 
 	std::vector<Track*> m_tracksToRender;
 	std::vector<Track*> m_unmuted;

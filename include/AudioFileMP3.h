@@ -58,7 +58,7 @@ public:
 	}
 
 protected:
-	void writeBuffer(const SampleFrame* /* _buf*/, const f_cnt_t /*_frames*/) override;
+	bool writeBuffer(const SampleFrame* /* _buf*/, const f_cnt_t /*_frames*/) override;
 
 private:
 	void flushRemainingBuffers();

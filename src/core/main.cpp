@@ -1483,6 +1483,20 @@ int main( int argc, char * * argv )
 
 			// create renderer
 			auto r = new RenderManager(os, eff, renderOut);
+			// A render whose output could not be written completely (a full disk, an
+			// unwritable path - the renderer removed the broken file) is a FAILED
+			// render: the CLI's exit code is how a script watching this process sees
+			// it. Connected before the quit() below, so the verdict is recorded
+			// while the event loop is still running.
+			QObject::connect( r, &RenderManager::finished, QCoreApplication::instance(),
+				[r, &headlessExitCode]()
+				{
+					if( r->hasWriteError() )
+					{
+						fprintf( stderr, "render: the output could not be written completely; the incomplete file was removed\n" );
+						headlessExitCode = EXIT_FAILURE;
+					}
+				} );
 			QCoreApplication::instance()->connect( r,
 					SIGNAL(finished()), SLOT(quit()));
 

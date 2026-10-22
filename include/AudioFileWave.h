@@ -60,13 +60,26 @@ public:
 
 
 private:
-	void writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames) override;
+	bool writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames) override;
 	bool writeInterleaved(float* samples, const f_cnt_t frames) override;
 
 	bool startEncoding();
 	//! 0.5.0 F7: a file of more than two channels is WAVE_FORMAT_EXTENSIBLE with the speakers' mask.
 	bool setChannelMap();
-	void finishEncoding();
+
+public:
+	/*! Finalises the file: closes the libsndfile handle and reports whether the file was written
+	 *  completely. A file that was not is REMOVED here, so a failed export leaves nothing behind
+	 *  to be mistaken for a render. Idempotent: a render already called it, the destructor calls
+	 *  it again. */
+	bool finishEncoding() override;
+
+private:
+	/*! The bytes this file must hold once closed: the WAV header libsndfile writes (44 at the
+	 *  least) plus every frame a write reported as written. sf_close() is not enough on its own -
+	 *  it returns success for a header it could not write, because psf_fwrite() counts a partial
+	 *  write as a whole one - so the file itself is the evidence that the close worked. */
+	sf_count_t expectedFileSize() const;
 	//! A discrete layout has no speaker positions; libsndfile writes its count default mask, so zero it
 	//! after the samples are flushed (WAVEX's dwChannelMask 0 is what "no speaker positions" means).
 	void writeZeroChannelMask();
@@ -74,6 +87,8 @@ private:
 private:
 	SF_INFO m_si;
 	SNDFILE * m_sf;
+	//! Frames libsndfile reported as written: what the close has to leave in the file.
+	sf_count_t m_framesWritten = 0;
 	bool m_zeroChannelMask = false;
 	//! TPDF dither for the integer depths (include/ExportDither.h). Off unless
 	//! OutputSettings::dither() is on; seeded from a constant so a dithered

@@ -55,11 +55,11 @@ AudioFileMP3::~AudioFileMP3()
 	tearDownEncoder();
 }
 
-void AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
+bool AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 {
 	if (_frames < 1)
 	{
-		return;
+		return true;
 	}
 
 	std::vector<float> interleavedDataBuffer(_frames * 2);
@@ -75,7 +75,13 @@ void AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 	int bytesWritten = lame_encode_buffer_interleaved_ieee_float(m_lame, &interleavedDataBuffer[0], _frames, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
 	assert (bytesWritten >= 0);
 
-	writeData(&encodingBuffer[0], bytesWritten);
+	if (writeData(&encodingBuffer[0], bytesWritten) != bytesWritten)
+	{
+		// The encoded frame did not reach the file: the export is broken.
+		recordWriteError();
+		return false;
+	}
+	return true;
 }
 
 void AudioFileMP3::flushRemainingBuffers()
@@ -86,7 +92,11 @@ void AudioFileMP3::flushRemainingBuffers()
 	int bytesWritten = lame_encode_flush(m_lame, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
 	assert (bytesWritten >= 0);
 
-	writeData(&encodingBuffer[0], bytesWritten);
+	if (writeData(&encodingBuffer[0], bytesWritten) != bytesWritten)
+	{
+		// The tail of the stream did not reach the file: the export is incomplete.
+		recordWriteError();
+	}
 }
 
 MPEG_mode mapToMPEG_mode(OutputSettings::StereoMode stereoMode)

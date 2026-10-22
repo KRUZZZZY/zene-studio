@@ -91,7 +91,7 @@ bool AudioFileFlac::startEncoding()
 	return true;
 }
 
-void AudioFileFlac::writeBuffer(const SampleFrame* _ab, f_cnt_t const frames)
+bool AudioFileFlac::writeBuffer(const SampleFrame* _ab, f_cnt_t const frames)
 {
 	OutputSettings::BitDepth depth = getOutputSettings().getBitDepth();
 	float clipvalue = std::nextafterf( -1.0f, 0.0f );
@@ -109,25 +109,37 @@ void AudioFileFlac::writeBuffer(const SampleFrame* _ab, f_cnt_t const frames)
 				buf[frame*channels() + channel] = std::max(clipvalue, _ab[frame][channel]);
 			}
 		}
-		sf_writef_float(m_sf, static_cast<float*>(buf.data()), frames);
+		if (sf_writef_float(m_sf, static_cast<float*>(buf.data()), frames) != static_cast<sf_count_t>(frames))
+		{
+			// The encoder took fewer frames than it was given: the file does not hold
+			// this period, so the export is already broken.
+			recordWriteError();
+			return false;
+		}
 	}
 	else // integer PCM encoding
 	{
 		auto buf = std::vector<int_sample_t>(frames * channels());
 		convertToS16(_ab, frames, buf.data(), !isLittleEndian());
-		sf_writef_short(m_sf, static_cast<short*>(buf.data()), frames);
+		if (sf_writef_short(m_sf, static_cast<short*>(buf.data()), frames) != static_cast<sf_count_t>(frames))
+		{
+			recordWriteError();
+			return false;
+		}
 	}
 
+	return true;
 }
 
 
-void AudioFileFlac::finishEncoding()
+bool AudioFileFlac::finishEncoding()
 {
-	if (m_sf)
-	{
-		sf_write_sync(m_sf);
-		sf_close(m_sf);
-	}
+	if (!m_sf) { return true; }
+
+	sf_write_sync(m_sf);
+	if (sf_close(m_sf) != 0) { recordWriteError(); }
+	m_sf = nullptr;
+	return !hasWriteError();
 }
 
 } // namespace lmms

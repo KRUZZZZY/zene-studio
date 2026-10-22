@@ -110,7 +110,7 @@ AudioFileOgg::~AudioFileOgg()
 	if (m_vorbisInfoInitialized) { vorbis_info_clear(&m_vi); }
 }
 
-void AudioFileOgg::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
+bool AudioFileOgg::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 {
 	if (_frames == 0)
 	{
@@ -149,11 +149,18 @@ void AudioFileOgg::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 			do
 			{
 				if (ogg_stream_pageout(&m_oss, &m_page) == 0) { break; }
-				writeData(m_page.header, m_page.header_len);
-				writeData(m_page.body, m_page.body_len);
+				if (writeData(m_page.header, m_page.header_len) < 0
+					|| writeData(m_page.body, m_page.body_len) < 0)
+				{
+					// The encoded page did not reach the file: report it rather than
+					// leave a truncated OGG the export would call finished.
+					recordWriteError();
+					return false;
+				}
 			} while (!ogg_page_eos(&m_page));
 		}
 	}
+	return true;
 }
 
 } // namespace lmms

@@ -28,6 +28,8 @@
 #include "AudioEngine.h"
 #include "SurroundExport.h"
 
+#include <QFileInfo>
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
@@ -165,10 +167,12 @@ bool AudioFileWave::startEncoding()
 	return true;
 }
 
-void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
+bool AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 {
 	OutputSettings::BitDepth bitDepth = getOutputSettings().getBitDepth();
 	const int ditherBits = ditherBitsFor(bitDepth, getOutputSettings().dither());
+
+	bool ok = true;
 
 	if( bitDepth == OutputSettings::BitDepth::Depth32Bit || bitDepth == OutputSettings::BitDepth::Depth24Bit )
 	{
@@ -188,7 +192,13 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 		{
 			m_dither.ditherInterleaved(buf, static_cast<std::size_t>(_frames) * channels(), ditherBits);
 		}
-		sf_writef_float( m_sf, buf, _frames );
+		const sf_count_t written = sf_writef_float( m_sf, buf, _frames );
+		m_framesWritten += written;
+		if (written != static_cast<sf_count_t>(_frames))
+		{
+			m_writeError = true;
+			ok = false;
+		}
 		delete[] buf;
 	}
 	else
@@ -215,9 +225,17 @@ void AudioFileWave::writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames)
 			convertToS16(_ab, _frames, buf, !isLittleEndian());
 		}
 
-		sf_writef_short( m_sf, buf, _frames );
+		const sf_count_t written = sf_writef_short( m_sf, buf, _frames );
+		m_framesWritten += written;
+		if (written != static_cast<sf_count_t>(_frames))
+		{
+			m_writeError = true;
+			ok = false;
+		}
 		delete[] buf;
 	}
+
+	return ok;
 }
 
 
@@ -251,32 +269,76 @@ bool AudioFileWave::writeInterleaved(float* samples, const f_cnt_t frames)
 	if (ditherBits > 0 && !shaped) { m_dither.ditherInterleaved(samples, count, ditherBits); }
 	if (bitDepth == OutputSettings::BitDepth::Depth32Bit || bitDepth == OutputSettings::BitDepth::Depth24Bit)
 	{
-		return sf_writef_float(m_sf, samples, static_cast<sf_count_t>(frames)) == static_cast<sf_count_t>(frames);
+		const sf_count_t written = sf_writef_float(m_sf, samples, static_cast<sf_count_t>(frames));
+		m_framesWritten += written;
+		const bool ok = written == static_cast<sf_count_t>(frames);
+		if (!ok) { m_writeError = true; }
+		return ok;
 	}
 	m_interleaved16.resize(count);
 	for (std::size_t i = 0; i < count; ++i)
 	{
 		m_interleaved16[i] = shaped ? m_noiseShaper.quantise16(samples[i], static_cast<int>(i % channels()))
-			: static_cast<int_sample_t>(AudioEngine::clip(samples[i]) * OUTPUT_SAMPLE_MULTIPLIER);
+			: (ditherBits > 0 ? static_cast<int_sample_t>(sampleRoundedToS16(samples[i]))
+				: static_cast<int_sample_t>(AudioEngine::clip(samples[i]) * OUTPUT_SAMPLE_MULTIPLIER));
 	}
-	return sf_writef_short(m_sf, m_interleaved16.data(), static_cast<sf_count_t>(frames)) == static_cast<sf_count_t>(frames);
+	const sf_count_t written = sf_writef_short(m_sf, m_interleaved16.data(), static_cast<sf_count_t>(frames));
+	m_framesWritten += written;
+	const bool ok = written == static_cast<sf_count_t>(frames);
+	if (!ok) { m_writeError = true; }
+	return ok;
 }
 
 
 
 
-void AudioFileWave::finishEncoding()
+sf_count_t AudioFileWave::expectedFileSize() const
 {
-	if( m_sf )
+	sf_count_t bytesPerSample = 2;
+	switch (getOutputSettings().getBitDepth())
 	{
-		sf_close( m_sf );
-		m_sf = nullptr;
+	case OutputSettings::BitDepth::Depth24Bit: bytesPerSample = 3; break;
+	case OutputSettings::BitDepth::Depth32Bit: bytesPerSample = 4; break;
+	case OutputSettings::BitDepth::Depth16Bit:
+	default: break;
 	}
+	return 44 + m_framesWritten * channels() * bytesPerSample;
+}
+
+
+bool AudioFileWave::finishEncoding()
+{
+	// Already finalised (a render called this, the destructor calls it again): report the state
+	// the file was left in, and touch nothing - the file, when it was broken, is already gone.
+	if (!m_sf) { return !m_writeError; }
+
+	const sf_count_t expected = expectedFileSize();
+	if (sf_close( m_sf ) != 0)
+	{
+		m_writeError = true;
+	}
+	m_sf = nullptr;
 	if (m_zeroChannelMask)
 	{
 		closeOutputFile();  // release the writer's handle before reopening the file to patch its header
 		writeZeroChannelMask();
 	}
+
+	// sf_close() reports success even for a header it could not write completely
+	// (psf_fwrite() counts a partial write as a whole one), so the close's own
+	// result is not the whole report: a file that does not hold the frames the
+	// writes reported is not a finished export either.
+	if (QFileInfo(outputFile()).size() < expected)
+	{
+		m_writeError = true;
+	}
+
+	if (m_writeError)
+	{
+		removeOutputFile();
+		return false;
+	}
+	return true;
 }
 
 void AudioFileWave::writeZeroChannelMask()

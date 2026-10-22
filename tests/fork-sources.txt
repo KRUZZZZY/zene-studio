@@ -2388,6 +2388,8 @@ tests/src/core/DrumSynthTest.cpp
 tests/src/core/DrumSynthLevelTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
+# cluster new-p12-317: WAV export write/close failure reporting (device, render, RenderManager).
+tests/src/core/ExportWavWriteErrorTest.cpp
 tests/src/core/FreezeRegionRepairTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp
