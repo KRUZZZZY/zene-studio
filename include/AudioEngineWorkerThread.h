@@ -197,10 +197,12 @@ private:
 	static int s_inlineRenderSlot;
 	//! This worker's stable render slot, set by AudioEngine at construction.
 	int m_renderSlot = -1;
-	//! The wake (R7.2, BUGS_FOUND 11.22 a): startAndWaitForJobs() and quit() bump it and
-	//! notify; a worker waits for it to move. Replaces a QWaitCondition, whose wakeAll() took a
-	//! mutex on the render thread every period. A wait on a value that has already moved returns
-	//! at once, so no wake can be lost between reading m_quit and sleeping.
+	//! The wake (R7.2, BUGS_FOUND 11.22 a; Q050-167): startAndWaitForJobs() and quit() bump it
+	//! and notify; a worker waits for it to move. A wait on a value that has already moved
+	//! returns at once, so no wake can be lost between reading m_quit and sleeping. The wait
+	//! and the post are on the value itself (AudioWorkerWake): __ulock on Apple, FUTEX on
+	//! Linux, std::atomic::wait elsewhere - so neither a mutex nor an allocation is on the
+	//! render-side notification path (the old Apple-below-11 path had both).
 	static std::atomic<std::uint32_t> s_wakeGeneration;
 	static QList<AudioEngineWorkerThread *> workerThreads;
 

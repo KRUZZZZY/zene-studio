@@ -27,13 +27,12 @@
 #include <QDebug>
 
 #include <atomic>
-#include <condition_variable>
 #include <cstdint>
-#include <mutex>
 #include <thread>
 
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
+#include "AudioWorkerWake.h"
 #include "Hardware.h"
 #include "RealtimeScope.h"
 #include "ThreadableJob.h"
@@ -235,52 +234,25 @@ void AudioEngineWorkerThread::quit()
 namespace
 {
 
-// libc++ marks std::atomic::wait / notify_all unavailable below macOS 11 (hosted run
-// 36802800273, macos-x86_64: "'notify_all' is unavailable: introduced in macOS 11.0"). There the
-// wake is a mutex and a condition variable - with the generation checked and the wait entered
-// under the mutex the notifier takes, so a wake still cannot be lost. Everywhere else it is the
-// atomic's own futex / wait-on-address, which takes no lock (BUGS_FOUND 11.22 a).
-#if defined(__APPLE__) && defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) \
-	&& __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 110000
-#define LMMS_WORKER_WAKE_CONDVAR 1
-// Built once and never destroyed, as the QWaitCondition it replaces was: a worker can still be
-// parked in wait() when the process exits, and a static mutex / condition variable torn down under it
-// makes libc++ abort - hosted macos-x86_64 (run 36829602079) ended ControlChainPresets with code -6
-// after control.quit.
-std::mutex& wakeMutex()
-{
-	static auto* mutex = new std::mutex;
-	return *mutex;
-}
-std::condition_variable& wakeCond()
-{
-	static auto* cond = new std::condition_variable;
-	return *cond;
-}
-#endif
+// The wake used to be a mutex and a condition variable on Apple deployment targets below
+// macOS 11 (libc++ marks std::atomic::wait unavailable there), and that mutex was taken on
+// the render thread every period, with a lazy `new` of both objects on its first call.
+// AudioWorkerWake now posts and waits on the generation word itself on Apple and Linux:
+// __ulock_wake / __ulock_wait on Apple (available since macOS 10.12, below the 10.13 floor),
+// FUTEX_WAKE / FUTEX_WAIT on Linux. Neither side allocates or locks, and the value - not the
+// post - is the signal, so a wake cannot be lost. See include/AudioWorkerWake.h.
 
 } // namespace
 
 void AudioEngineWorkerThread::notifyWorkers()
 {
-#ifdef LMMS_WORKER_WAKE_CONDVAR
-	const std::lock_guard<std::mutex> lock(wakeMutex());
-	wakeCond().notify_all();
-#else
-	// FUTEX_WAKE does not block; RealtimeSanitizer flags it only as a syscall (RealtimeExemption).
-	const RealtimeExemption wakeCannotBlock;
-	s_wakeGeneration.notify_all();
-#endif
+	// A pure post: no mutex, no allocation, and it does not wait for a woken worker.
+	workerwake::notify(s_wakeGeneration);
 }
 
 void AudioEngineWorkerThread::waitForWake(std::uint32_t seen)
 {
-#ifdef LMMS_WORKER_WAKE_CONDVAR
-	std::unique_lock<std::mutex> lock(wakeMutex());
-	wakeCond().wait(lock, [seen] { return s_wakeGeneration.load(std::memory_order_acquire) != seen; });
-#else
-	s_wakeGeneration.wait(seen, std::memory_order_acquire);
-#endif
+	workerwake::wait(s_wakeGeneration, seen);
 }
 
 void AudioEngineWorkerThread::wakeWorkers()
