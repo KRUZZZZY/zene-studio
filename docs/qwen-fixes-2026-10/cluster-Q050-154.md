@@ -150,8 +150,12 @@ above, BUILD=0).
   therefore under `/tmp/Q050-154-logs/`, named as the brief asks (`build-N.log`, `test-N-*.log`, gate logs).
 - `cmake -S . -B build` is refused by the lane guard, and the tree was already configured; adding a test target needed
   the build-system regeneration that the normal `cmake --build build --target zene` triggers, which was run instead.
-- `feature_check.py` writes its logs next to the worktree, which is not writable here; the same script was run with only
-  its log/output paths redirected to `/tmp` (all eight gate rows PASS, EXIT=0).
+- `feature_check.py` writes its logs to `<worktree>-feature-check` next to the worktree, and this session's sandbox
+  refuses every create outside the worktree and `/tmp` (`PermissionError` on that path, and on `$HOME` and the projects
+  parent directory generally). `submit_check.py` therefore reports its `gates (feature_check.py)` row as FAIL: the
+  script aborts on the `mkdir`, before it runs a gate. The same script, run with only its log/output paths redirected
+  to `/tmp`, passes all eight rows (EXIT=0, `feature-check-3.log`). Inside the sandbox this row cannot be made green
+  any other way; outside it the identical command runs unchanged.
 - Local TSan does not run on this box (per the brief); the design keeps every new read on the control thread and adds
   nothing to any render path.
 - `tests/all-sources.txt` was re-derived from its own header recipe (as the manifest says to do): the entry list had
