@@ -507,6 +507,80 @@ private slots:
 		QVERIFY(model.in().enabled(0, 0));
 	}
 
+	/**
+	 * Cluster 23: the pin matrices, their used-channel caches and the direct-routing
+	 * decision are read by the render thread, which owns the engine's model-change
+	 * guard for a whole period. A routing edit that does not take that guard can be
+	 * read half way through by the render thread: the pins are a packed
+	 * std::vector<bool>, so the renderer can read a torn word and route the wrong
+	 * channel, not merely a stale one.
+	 *
+	 * The seam: `AudioEngine::isChangeInModelHeld()` (compiled only with LMMS_TESTING)
+	 * reports whether the CALLING thread holds the engine's model-change guard. Each
+	 * edit emits its model signal from inside the edit, so a direct-connected slot
+	 * reads the guard while the edit is still running. No threads, no sleeps, no wall
+	 * clock, no race.
+	 */
+	void routingEditsHoldTheEngineChangeGuard()
+	{
+		QVERIFY2(Engine::audioEngine() != nullptr,
+			"the test needs an audio engine, because the guard it proves is the engine's");
+
+		TestAudioPortsModel model{2, 2, false};
+		int guardAtSignal = -1;
+		connect(&model, &Model::dataChanged, &model,
+			[&guardAtSignal] { guardAtSignal = Engine::audioEngine()->isChangeInModelHeld() ? 1 : 0; },
+			Qt::DirectConnection);
+		connect(&model, &Model::propertiesChanged, &model,
+			[&guardAtSignal] { guardAtSignal = Engine::audioEngine()->isChangeInModelHeld() ? 1 : 0; },
+			Qt::DirectConnection);
+
+		// The reported function: Matrix::setPin(), the write the pin connector makes.
+		guardAtSignal = -1;
+		model.in().setPin(0, 1, true);
+		QVERIFY2(guardAtSignal == 1,
+			"Matrix::setPin() changed the routing outside the engine model-change guard, so the "
+			"render thread can read the matrix while it is rewritten");
+
+		// The edit still does its work: the guard must not swallow the edit.
+		QVERIFY(model.in().enabled(0, 1));
+		// ...and the routing caches are refreshed with it: the extra pin rules the direct
+		// routing of this processor out, so the cached decision must be gone.
+		QVERIFY(!model.directRouting().has_value());
+
+		// The siblings of the same state are held to the same rule.
+		guardAtSignal = -1;
+		model.setTrackChannelCount(DEFAULT_CHANNELS + 2);
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::setTrackChannelCount() changed the routing outside the engine "
+			"model-change guard");
+
+		guardAtSignal = -1;
+		model.setChannelCounts(4, 2);
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::setChannelCounts() changed the routing outside the engine "
+			"model-change guard");
+
+		guardAtSignal = -1;
+		model.setAllChannelCounts(DEFAULT_CHANNELS, 2, 2);
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::setAllChannelCounts() changed the routing outside the engine "
+			"model-change guard");
+
+		// The project loader writes the same state.
+		guardAtSignal = -1;
+		QDomDocument doc;
+		QVERIFY(doc.setContent(QStringLiteral(
+			"<audioengine><pins inputs=\"2\" outputs=\"2\">"
+			"<in_matrix c1_1=\"true\"/><out_matrix c1_1=\"true\"/>"
+			"</pins></audioengine>")));
+		model.loadSettings(doc.documentElement());
+		QVERIFY2(guardAtSignal == 1,
+			"AudioPortsModel::loadSettings() changed the routing outside the engine model-change "
+			"guard");
+		QVERIFY(model.in().enabled(0, 0));
+	}
+
 	//! Regression: a rejected zero-port project must not erase the model's existing
 	//! connections. `setChannelCounts(0, 0)` refuses the counts ("At least one port
 	//! count must be non-zero"), but the loader used to fall through to both

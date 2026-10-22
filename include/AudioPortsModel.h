@@ -104,11 +104,12 @@ public:
 		 * Meant for setting multiple pins in one batch efficiently.
 		 *
 		 * Remember to update the cache and emit the dataChanged signal afterwards!
+		 *
+		 * Cluster 23: the batch takes the same engine model-change guard a single
+		 * `setPin()` takes, so a batch cannot land on the render thread's routing
+		 * read half way through either.
 		 */
-		void setPinBatch(ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool value)
-		{
-			m_pins[trackChannel][processorChannel] = value;
-		}
+		void setPinBatch(ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool value);
 
 		auto isOutput() const -> bool { return m_isOutput; }
 
@@ -255,6 +256,45 @@ public:
 	 * pair currently routed to/from the processor.
 	 */
 	auto directRouting() const -> std::optional<ch_cnt_t> { return m_directRouting; }
+
+	/**
+	 * Cluster 23: the scope in which a device is built outside every chain.
+	 *
+	 * The render thread only runs the devices a chain holds, so the routing state of
+	 * a device that is still being built cannot be read while it is written: the
+	 * engine's model-change guard is not needed for such a build. Taking it anyway
+	 * would break a product contract: the recorded-device build (the undo of a device
+	 * removal) must complete even while another thread owns the audio change lock,
+	 * because the device it builds is in no chain and the render thread never runs it.
+	 *
+	 * Only the audio-ports models that are CREATED inside the scope are exempt from
+	 * the guard, and only while the scope is alive: every other routing edit, on this
+	 * thread or on another, still takes the guard, and so does every edit of a model
+	 * that was created before the scope - such a model can already be in a chain.
+	 */
+	class DetachedBuildScope
+	{
+	public:
+		DetachedBuildScope() noexcept;
+		~DetachedBuildScope() noexcept;
+		DetachedBuildScope(const DetachedBuildScope&) = delete;
+		DetachedBuildScope& operator=(const DetachedBuildScope&) = delete;
+
+		//! Whether the given model's routing edits may skip the engine's change guard.
+		static auto exempts(const AudioPortsModel* model) noexcept -> bool;
+
+		/**
+		 * Cluster 23: registers a model that is created while a detached build runs.
+		 * Called by the AudioPortsModel constructor, before the model edits its own
+		 * routing state.
+		 */
+		static void registerCreated(AudioPortsModel* model) noexcept;
+
+	private:
+		void add(AudioPortsModel* model) { m_models.push_back(model); }
+
+		std::vector<AudioPortsModel*> m_models;
+	};
 
 #ifdef LMMS_TESTING
 	friend class ::AudioPortsTest;

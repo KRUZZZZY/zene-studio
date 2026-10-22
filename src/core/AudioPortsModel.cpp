@@ -34,9 +34,90 @@
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "PinConnector.h"
+#include "RealtimeScope.h"
 
 namespace lmms
 {
+
+namespace
+{
+
+/**
+ * Cluster 23: the pin matrices, their used-channel caches and the direct-routing
+ * decision are read by the render thread from `AudioPorts::Router::process()`,
+ * which runs inside the render period that owns the engine's model-change guard.
+ * Every edit of that state takes the same guard, so an edit waits for the current
+ * period to end and the next period observes the whole new routing, never a
+ * half-written matrix. The guard is recursive: an edit that already runs under it
+ * (a command handler, project load, a plug-in asking for new channel counts)
+ * takes no second lock. A missing engine (a model built before Engine::init, the
+ * unit tests) simply has no render thread to synchronise with, and an edit made
+ * inside a realtime scope (the render thread itself, a render worker) is already
+ * on the side that owns the guard, so it takes no lock - the same rule
+ * `AutomatableModel`'s `modelChangeGuard()` follows.
+ *
+ * The one exception is a model that is being built outside every chain: the render
+ * thread cannot read the routing of a device no chain holds, and the recorded-device
+ * build must complete even while another thread owns the audio change lock. The
+ * `DetachedBuildScope` marks exactly those models.
+ */
+auto takeRoutingEditGuard(const AudioPortsModel* model) -> AudioEngine::RequestChangesGuard
+{
+	auto* const engine = Engine::audioEngine();
+	if (engine == nullptr || RealtimeScope::isActive()) { return AudioEngine::RequestChangesGuard{}; }
+	if (AudioPortsModel::DetachedBuildScope::exempts(model)) { return AudioEngine::RequestChangesGuard{}; }
+	return engine->requestChangesGuard();
+}
+
+/**
+ * Cluster 23: the detached builds that are running on this thread. A scope is pushed
+ * when a device is built outside every chain and popped when the build is done; the
+ * models that are created while a scope is alive belong to that build.
+ */
+auto detachedBuildScopes() -> std::vector<AudioPortsModel::DetachedBuildScope*>&
+{
+	static thread_local std::vector<AudioPortsModel::DetachedBuildScope*> scopes;
+	return scopes;
+}
+
+} // namespace
+
+AudioPortsModel::DetachedBuildScope::DetachedBuildScope() noexcept
+{
+	detachedBuildScopes().push_back(this);
+}
+
+AudioPortsModel::DetachedBuildScope::~DetachedBuildScope() noexcept
+{
+	auto& scopes = detachedBuildScopes();
+	for (auto it = scopes.rbegin(); it != scopes.rend(); ++it)
+	{
+		if (*it == this)
+		{
+			scopes.erase(std::next(it).base());
+			break;
+		}
+	}
+}
+
+void AudioPortsModel::DetachedBuildScope::registerCreated(AudioPortsModel* model) noexcept
+{
+	for (auto* const scope : detachedBuildScopes())
+	{
+		scope->add(model);
+	}
+}
+
+auto AudioPortsModel::DetachedBuildScope::exempts(const AudioPortsModel* model) noexcept -> bool
+{
+	if (model == nullptr) { return false; }
+	for (const auto* const scope : detachedBuildScopes())
+	{
+		const auto& models = scope->m_models;
+		if (std::find(models.begin(), models.end(), model) != models.end()) { return true; }
+	}
+	return false;
+}
 
 AudioPortsModel::AudioPortsModel(bool isInstrument, Model* parent)
 	: AudioPortsModel{DynamicChannelCount, DynamicChannelCount, isInstrument, parent}
@@ -47,6 +128,11 @@ AudioPortsModel::AudioPortsModel(ch_cnt_t channelCountIn, ch_cnt_t channelCountO
 	: Model{parent}
 	, m_isInstrument{isInstrument}
 {
+	// Cluster 23: a model that is built inside a detached build (a device that is in
+	// no chain) is invisible to the render thread, so its own routing edits need no
+	// engine change guard. The registration happens before the first edit below.
+	DetachedBuildScope::registerCreated(this);
+
 	setTrackChannelCountImpl(DEFAULT_CHANNELS);
 
 	// Set channel counts using silent==true because virtual methods like `bufferPropertiesChanging`
@@ -64,6 +150,7 @@ AudioPortsModel::AudioPortsModel(ch_cnt_t channelCountIn, ch_cnt_t channelCountO
 
 void AudioPortsModel::setAllChannelCounts(ch_cnt_t trackChannels, ch_cnt_t inCount, ch_cnt_t outCount)
 {
+	const auto routingEdit = takeRoutingEditGuard(this);
 	const auto oldTrackChannelCount = m_totalTrackChannels;
 	const auto oldInCount = m_in.channelCount();
 	const auto oldOutCount = m_out.channelCount();
@@ -106,6 +193,7 @@ void AudioPortsModel::setAllChannelCounts(ch_cnt_t trackChannels, ch_cnt_t inCou
 
 void AudioPortsModel::setTrackChannelCount(ch_cnt_t count)
 {
+	const auto routingEdit = takeRoutingEditGuard(this);
 	const auto oldTrackChannelCount = m_totalTrackChannels;
 
 	if (!setTrackChannelCountImpl(count)) { return; }
@@ -123,6 +211,7 @@ void AudioPortsModel::setTrackChannelCount(ch_cnt_t count)
 
 void AudioPortsModel::setChannelCounts(ch_cnt_t inCount, ch_cnt_t outCount)
 {
+	const auto routingEdit = takeRoutingEditGuard(this);
 	const auto oldInCount = m_in.channelCount();
 	const auto oldOutCount = m_out.channelCount();
 
@@ -225,6 +314,7 @@ void AudioPortsModel::saveSettings(QDomDocument& doc, QDomElement& elem)
 
 void AudioPortsModel::loadSettings(const QDomElement& elem)
 {
+	const auto routingEdit = takeRoutingEditGuard(this);
 	const auto pins = elem.firstChildElement(nodeName());
 	if (pins.isNull()) { return; }
 
@@ -380,6 +470,7 @@ auto AudioPortsModel::Matrix::channelName(ch_cnt_t channel) const -> QString
 
 void AudioPortsModel::Matrix::setPin(ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool value)
 {
+	const auto routingEdit = takeRoutingEditGuard(m_parent);
 	const bool oldValue = m_pins[trackChannel][processorChannel];
 	m_pins[trackChannel][processorChannel] = value;
 
@@ -394,8 +485,15 @@ void AudioPortsModel::Matrix::setPin(ch_cnt_t trackChannel, ch_cnt_t processorCh
 	}
 }
 
+void AudioPortsModel::Matrix::setPinBatch(ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool value)
+{
+	const auto routingEdit = takeRoutingEditGuard(m_parent);
+	m_pins[trackChannel][processorChannel] = value;
+}
+
 void AudioPortsModel::Matrix::setTrackChannelCount(ch_cnt_t count)
 {
+	const auto routingEdit = takeRoutingEditGuard(m_parent);
 	const auto oldSize = static_cast<ch_cnt_t>(m_pins.size());
 	m_pins.resize(count);
 
@@ -416,6 +514,7 @@ void AudioPortsModel::Matrix::setTrackChannelCount(ch_cnt_t count)
 
 void AudioPortsModel::Matrix::setChannelCount(ch_cnt_t count)
 {
+	const auto routingEdit = takeRoutingEditGuard(m_parent);
 	const bool initialSetup = m_channelCount == 0;
 
 	m_usedChannels.resize(count);
@@ -539,6 +638,7 @@ void AudioPortsModel::Matrix::saveSettings(QDomDocument& doc, QDomElement& elem)
 
 void AudioPortsModel::Matrix::loadSettings(const QDomElement& elem)
 {
+	const auto routingEdit = takeRoutingEditGuard(m_parent);
 	assert(m_channelCount == (trackChannelCount() > 0 ? static_cast<ch_cnt_t>(m_pins[0].size()) : 0));
 
 	// Initialize all pins to OFF
