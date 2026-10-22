@@ -71,26 +71,51 @@ by any other route (a manual disarm, `session.arrangement_record_arm` with
 
 `tests/src/core/ControlSessionRecordLandTest.cpp` -
 `backToArrangementLeavesThePerformanceLandable()`: the branch's final version
-(the PAIR-asserting one from `80dc660b2`), ported as-is.
+(the PAIR-asserting one from `80dc660b2`), ported as-is, with the deterministic
+fixture correction made in QA (below).
 
 It drives the real command and the real scheduler, with no wall-clock timing:
-the clock is injected (`ctx.positionTicks`), the audio thread's periods are
-driven by hand (`scheduler.processAudio(ctx, 16)`), and the ring is read
-through the recorder's own snapshot.
+`initTestCase()` stops the `AudioDummy` render thread that `Engine::init(true)`
+starts, the clock is injected (`ctx.positionTicks`), the test drives each
+period itself (`scheduler.processAudio(ctx, 16)`), and the ring is read through
+the recorder's own snapshot.
 
 1. launch a cell (`requestLaunch`) and run one period: the launch is taped and
    the cell is still playing;
 2. run a second period at tick 96, so the performance is a span;
 3. run `session.back_to_arrangement` through the registry;
-4. run one more period: that is the audio thread carrying out the reset, and
-   the stop of the launch it ends is taped with it;
+4. drive one more period: the scheduler carries out the reset, and the stop of
+   the launch it ends is taped with it;
 5. the tap must be over (`recorder().armed()` is false);
 6. the ring must hold the PAIR - one start, one stop - and the land pass must
    succeed and write one clip.
 
-The tick is deliberately NOT asserted (the engine's own audio thread can carry
-the launch or the reset out on its free-running clock on a loaded host); what
-the defect broke was the PAIR, not a tick.
+The tick is deliberately NOT asserted, because the finding concerns the
+MISSING stop, not its exact tick; what the defect broke was the PAIR.
+
+### The QA correction: one producer on the scheduler
+
+QA found a real defect in the first submission of this regression: it drove
+`SessionScheduler::processAudio()` BY HAND while `Engine::init(true)` had
+started the `AudioDummy` render thread, and that thread reaches the SAME
+scheduler (`src/core/Engine.cpp:90` starts processing, `include/AudioDummy.h:102-114`
+renders the periods, `src/core/Song.cpp:474` calls the scheduler). Two producers
+on one scheduler means the events land on whichever thread got there first -
+nondeterministic.
+
+The fixture now stops the dummy device before any test drives the scheduler:
+
+```cpp
+Engine::init(true);
+Engine::audioEngine()->audioDev()->stopProcessing(); // This test drives scheduler periods explicitly.
+```
+
+That is the repo's own idiom for a test that drives the periods itself (see
+`tests/src/core/ArrangeToolsTest.cpp:216`,
+`tests/src/core/AudioBusPlayHandleQueueTest.cpp:158`,
+`tests/src/core/AudioClipLoopTest.cpp:128`). With the dummy thread stopped,
+the test's periods are the ONLY ones the scheduler sees, so the regression is
+serial and deterministic - and the tick it does not assert no longer matters.
 
 ### RED: the defect, re-created on this line
 
@@ -102,9 +127,9 @@ back to the pre-`1c0554dc6` form (`if( !armed() )` instead of
 was in:
 
 ```text
-cmake --build build --target ControlSessionRecordLandTest -j$(nproc) > logs/build-red-1.log 2>&1; echo BUILD_EXIT=$?
+cmake --build build --target zene ControlSessionRecordLandTest -j$(nproc) > logs/build-r2-red.log 2>&1; echo BUILD_EXIT=$?
    -> BUILD_EXIT=0
-QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-red-1.log 2>&1; echo TEST_EXIT=$?
+QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-r2-red.log 2>&1; echo TEST_EXIT=$?
    -> TEST_EXIT=8
 ```
 
@@ -114,7 +139,7 @@ with exactly the reported symptom in the log:
 FAIL!  : ControlSessionRecordLandTest::backToArrangementLeavesThePerformanceLandable() Compared values are not the same
    Actual   (count)         : 1
    Expected (std::size_t{2}): 2
-   Loc: [../../tests/src/core/ControlSessionRecordLandTest.cpp(439)]
+   Loc: [../../tests/src/core/ControlSessionRecordLandTest.cpp(448)]
 FAIL!  : ControlSessionRecordLandTest::aDisarmedTapStillLandsThePerformanceItRecorded() 'recorder().recordStop( 0, 0, 192 )' returned FALSE. ()
 ```
 
@@ -124,24 +149,32 @@ same rule, which fails with the rule removed: the two are the same defect.
 
 ### GREEN: the tree as it stands
 
-The mechanism was restored (`cp /tmp/rec_hdr_backup.h include/SessionArrangementRecorder.h`,
+The mechanism was restored (`cp /tmp/rec_hdr_r2_backup.h include/SessionArrangementRecorder.h`,
 `git diff` clean for the header) and rebuilt:
 
 ```text
-cmake --build build --target ControlSessionRecordLandTest zene -j$(nproc) > logs/build-green-1.log 2>&1; echo BUILD_EXIT=$?
+cmake --build build --target zene ControlSessionRecordLandTest -j$(nproc) > logs/build-r2-green.log 2>&1; echo BUILD_EXIT=$?
    -> BUILD_EXIT=0
-QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-green-1.log 2>&1; echo TEST_EXIT=$?
-   -> TEST_EXIT=0   (1/1 passed)
+QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest|SessionSchedulerTest|SessionFollowTest|SessionArrangementRecordTest" --output-on-failure > logs/test-r2-green.log 2>&1; echo TEST_EXIT=$?
+   -> TEST_EXIT=0   (4/4 passed)
 ```
 
 ### Determinism
 
-The ported case was run 15 times in a row, on its own:
+After the QA fixture correction (the dummy render thread stopped), the ported
+case was run 15 times in a row, on its own:
 
 ```text
 for i in $(seq 1 15); do QT_QPA_PLATFORM=offscreen ./ControlSessionRecordLandTest \
     backToArrangementLeavesThePerformanceLandable; done
    -> LOOP_FAILS=0 of 15
+```
+
+and the four related session tests together:
+
+```text
+QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest|SessionSchedulerTest|SessionFollowTest|SessionArrangementRecordTest" --output-on-failure > logs/test-r2-2.log 2>&1
+   -> TEST_EXIT=0, 4/4 passed
 ```
 
 ## What was NOT ported, and why
@@ -171,12 +204,15 @@ verdict, not the mechanism. `grep -rn "endTapWhenResetIsProcessed\|endTapAfterRe
 | --- | --- | --- |
 | Baseline (unmodified tree) | `cmake --build build --target ControlSessionRecordLandTest -j$(nproc) > logs/build-1.log 2>&1` | `BUILD_EXIT=0` |
 | Baseline test | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-1.log 2>&1` | `TEST_EXIT=0`, 1/1 passed (the ported test is GREEN with NO product change) |
-| RED (the newest line's closing-stop rule removed) | `cmake --build build --target ControlSessionRecordLandTest -j$(nproc) > logs/build-red-1.log 2>&1` | `BUILD_EXIT=0` |
-| RED test | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-red-1.log 2>&1` | `TEST_EXIT=8`, 2 failures, ring holds 1 event (the start alone) |
-| GREEN (mechanism restored) | `cmake --build build --target ControlSessionRecordLandTest zene -j$(nproc) > logs/build-green-1.log 2>&1` | `BUILD_EXIT=0` |
-| GREEN test | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-green-1.log 2>&1` | `TEST_EXIT=0`, 1/1 passed |
-| Determinism | 15 x `QT_QPA_PLATFORM=offscreen ./ControlSessionRecordLandTest backToArrangementLeavesThePerformanceLandable` | 0 failures of 15 |
-| Affected family | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "Session\|Arrangement\|ControlSession" --output-on-failure > logs/test-family-2.log 2>&1` | `TEST_EXIT=8`; **31 of 32 ctest targets passed**; the one failure is `AbletonLinkSessionTest` (SEGFAULT in a multicast-network test) and is PRE-EXISTING: with the ported test removed from the tree the same target still crashes (`logs/test-ableton-pristine-1.log`, `PRISTINE_EXIT=8`), and that binary does not contain the ported file |
+| Round 2 build (fixture corrected) | `cmake --build build --target zene ControlSessionRecordLandTest -j$(nproc) > logs/build-r2-1.log 2>&1` | `BUILD_EXIT=0` |
+| Round 2 focused test | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-r2-1.log 2>&1` | `TEST_EXIT=0`, 1/1 passed |
+| Round 2 related tests | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest\|SessionSchedulerTest\|SessionFollowTest\|SessionArrangementRecordTest" --output-on-failure > logs/test-r2-2.log 2>&1` | `TEST_EXIT=0`, **4/4 passed** |
+| RED (the newest line's closing-stop rule removed) | `cmake --build build --target zene ControlSessionRecordLandTest -j$(nproc) > logs/build-r2-red.log 2>&1` | `BUILD_EXIT=0` |
+| RED test | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest" --output-on-failure > logs/test-r2-red.log 2>&1` | `TEST_EXIT=8`, 2 failures, ring holds 1 event (the start alone) |
+| GREEN (mechanism restored) | `cmake --build build --target zene ControlSessionRecordLandTest -j$(nproc) > logs/build-r2-green.log 2>&1` | `BUILD_EXIT=0` |
+| GREEN test | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "ControlSessionRecordLandTest\|SessionSchedulerTest\|SessionFollowTest\|SessionArrangementRecordTest" --output-on-failure > logs/test-r2-green.log 2>&1` | `TEST_EXIT=0`, 4/4 passed |
+| Determinism (after the fixture correction) | 15 x `QT_QPA_PLATFORM=offscreen ./ControlSessionRecordLandTest backToArrangementLeavesThePerformanceLandable` | 0 failures of 15 |
+| Affected family | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R "Session\|Arrangement\|ControlSession" --output-on-failure > logs/test-r2-family.log 2>&1` | `TEST_EXIT=8`; **31 of 32 ctest targets passed**; the one failure is `AbletonLinkSessionTest` (SEGFAULT in a multicast-network test) and is PRE-EXISTING: with the ported test removed from the tree the same target still crashes (`logs/test-ableton-pristine-1.log`, `PRISTINE_EXIT=8`), and that binary does not contain the ported file |
 | Gates, before the manifest re-derivation | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gate-1.log 2>&1` | `GATE_EXIT=1`: `fork-sources` and `all-sources-reproduce` FAIL, the other SIX rows PASS (`no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`) |
 | Gates, baseline (PRISTINE tree, 0 changed files) | same command, `> logs/gate-pristine-1.log 2>&1` | `GATE_PRISTINE_EXIT=1`: the SAME two rows FAIL - the drift is the train's own `plugins/SfzPlayer/sfizz/external/**` manifest entries, untouched by this port |
 | Gates, FINAL | same command, `> logs/gate-2.log 2>&1` | `GATE_EXIT=0`, **RESULT: PASS** - all eight rows PASS (`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`) |
@@ -215,7 +251,9 @@ fork-sources gate failed only because it also runs the all-sources check).
 ## Files changed by this port
 
 - `tests/src/core/ControlSessionRecordLandTest.cpp` - the ported regression
-  `backToArrangementLeavesThePerformanceLandable()` (a test file, already
+  `backToArrangementLeavesThePerformanceLandable()` and the QA fixture
+  correction (the `AudioDummy` render thread stopped in `initTestCase()`, so
+  the test is the scheduler's only producer) (a test file, already
   registered in `tests/fork-sources.txt:2363`; no new file, no registration
   change, no product change).
 - `tests/all-sources.txt` - the whole-tree scope manifest re-derived from its
@@ -245,14 +283,18 @@ Both logs are quoted above.
 **The test is deterministic: no wall-clock timing, sleeps or races (name the
 seam or injected values it uses).**
 The clock is INJECTED (`ctx.positionTicks`, `ctx.ticksPerBar`,
-`ctx.framesPerTick`, `ctx.transportRunning`); the audio thread's periods are
-driven BY HAND (`scheduler.processAudio(ctx, 16)`), so the reset is carried out
-at a clock this test chooses; the ring is read through the recorder's own
-`snapshot()`; there is no sleep, no timer and no thread in the test. The tick
-is not asserted at all (the branch's final form, `80dc660b2`), because the
-engine's own audio thread may carry the launch or the reset out on its
-free-running clock; what the defect broke was the PAIR, and that is what the
-test counts. 15 consecutive runs: 0 failures.
+`ctx.framesPerTick`, `ctx.transportRunning`). The ONE concurrency hazard is
+removed in the fixture: `initTestCase()` stops the `AudioDummy` render thread
+that `Engine::init(true)` starts, because that thread reaches the SAME
+scheduler (`src/core/Engine.cpp:90`, `include/AudioDummy.h:102-114`,
+`src/core/Song.cpp:474`) and would make the test's own periods a SECOND
+producer - that was the one blocking finding of the round-1 QA review. With
+the dummy thread stopped, the test's periods are the only ones the scheduler
+sees, so the reset is carried out serially at the injected clock. The ring is
+read through its own `snapshot()`; there is no sleep, no timer and no
+concurrent scheduler producer. The test counts the pair, which is the failure
+mode; the tick it deliberately does not assert no longer matters. After the
+fixture correction: 15 consecutive runs, 0 failures.
 
 **The fix is at the cause and complete: every caller and sibling of what you
 changed was checked and stays consistent.**

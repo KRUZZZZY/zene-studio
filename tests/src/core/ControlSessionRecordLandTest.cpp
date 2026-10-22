@@ -40,6 +40,8 @@
 #include <tuple>
 #include <vector>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "BrowserTestSupport.h"
 #include "Clip.h"
 #include "ControlRegistry.h"
@@ -95,6 +97,15 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		// Engine::init(true) starts the AudioDummy render thread, and that
+		// thread reaches the same session scheduler (Song::processNextBuffer ->
+		// SessionScheduler::processAudio). A test that drives the scheduler's
+		// periods ITSELF would then have two producers on it, and the events
+		// would land on whichever thread got there first. The dummy device is
+		// stopped here - the repo's own idiom (see ArrangeToolsTest,
+		// AudioBusPlayHandleQueueTest) - so the periods below are the ONLY
+		// ones the scheduler sees, and the regression is deterministic.
+		Engine::audioEngine()->audioDev()->stopProcessing();
 		ControlRegistry::setReady(true);
 		m_song = Engine::getSong();
 		QVERIFY(m_dir.isValid());
@@ -395,14 +406,12 @@ private slots:
 	//! first lost those stops, every launch stayed open in the ring, and the
 	//! land pass refused for lack of a stop.
 	//!
-	//! THE TICK IS NOT ASSERTED, and that is deliberate: the engine's own audio
-	//! thread drives the song's session scheduler every period, so on a loaded
-	//! host it can carry out the launch or the reset before this test's own
-	//! period does, and the events then land on ITS clock rather than on the
-	//! injected one. What the bug broke is not a tick but a PAIR: the stop was
-	//! never taped at all. So the test counts the starts and the stops, and it
-	//! asks the land pass whether the performance is landable - both of which
-	//! are the same whichever thread carried the reset out.
+	//! THE DUMMY RENDER THREAD IS STOPPED by initTestCase(), so the periods
+	//! below drive the scheduler SERIALLY: this test is the only producer on
+	//! it, and the events land on the injected clock. The tick is not asserted
+	//! because the finding concerns the MISSING stop, not its exact tick: the
+	//! test counts the start/stop pair and asks the land pass whether the
+	//! performance is landable.
 	void backToArrangementLeavesThePerformanceLandable()
 	{
 		SessionScheduler& scheduler = m_song->sessionScheduler();
@@ -425,8 +434,8 @@ private slots:
 		QVERIFY2(handed.ok, qPrintable(handed.errorMessage));
 		QVERIFY(handed.result.value(QStringLiteral("handed_back")).toBool());
 
-		// The audio thread's next period carries out the reset the switch asked
-		// for: the stop of the launch it ends is taped with it.
+		// Drive the next audio period: it carries out the reset the switch asked
+		// for, and the stop of the launch it ends is taped with it.
 		scheduler.processAudio(ctx, 16);
 
 		// The tap ends with the performance - after its last events, not before.
