@@ -84,7 +84,14 @@ without the fix:
    real pointer movement (and a drag that returns to the stored value writes nothing). Negative control
    (`moved` forced true, `build EXIT 0`): `ctest -R ClipWaveformEditTest` -> **EXIT 8**
    (`depth() -> 2`, expected 1). Restored -> **EXIT 0**.
-4. **The added point's post-sort index was ambiguous when two points share a tick.** It was found by matching
+4. **The drawn gain was sampled through a PIXEL, not a tick.** `gainAtPixel` converted a view x back to a
+   tick through `overlayFrame(0)` - the unpainted origin - so a partial repaint (the pixmap origin is not 0
+   then) shaded the waveform with another tick's gain, and a clip whose audio starts after its own start got
+   the wrong part of the curve. Fix: `gui::drawnGainAt` maps the normalised position across the drawn audio
+   straight to a clip-relative tick (start offset included) and applies the same `clipGainCurveAt` the render
+   does. New case `ClipPolarityTest::theDrawnCurveIsIndependentOfTheRepaintedPixelRange`; negative control
+   (offset dropped, `build EXIT 0`): `ctest -R ClipPolarityTest` -> **EXIT 8**. Restored -> **EXIT 0**.
+5. **The added point's post-sort index was ambiguous when two points share a tick.** It was found by matching
    `(tick, gain_db)`, which answers the FIRST equal point, so a point dragged onto an identical neighbour moved
    the neighbour. Fix: derive the position from tick order plus the stable sort's original-order rule, before
    the sort. Negative control (old value match restored, `build EXIT 0`):
@@ -114,9 +121,10 @@ Answered in the order `submit_check.py` asks ("?" items), with the commands and 
    - drawn-gain-alone reversed (`SampleThumbnail.cpp` `columnGain = 1.0f`), everything else kept:
      `ctest -R 'ClipWaveformEditTest|ClipPolarityTest'` -> **EXIT 8**
      (`louderTop < plainTop` FALSE, `the polarity flip did not repaint the waveform`); restored -> **EXIT 0**.
-   - the four defects of this session, each with its own reversal (see "Re-verified in this session (r1)"):
+   - the five defects of this session, each with its own reversal (see "Re-verified in this session (r1)"):
      old handle placement -> **EXIT 8**; old pre-sort point index -> **EXIT 8**; `moved` forced true ->
-     **EXIT 8**; old value-match index with two identical points -> **EXIT 8**; each restored -> **EXIT 0**.
+     **EXIT 8**; old value-match index with two identical points -> **EXIT 8**; drawn gain without the start
+     offset -> **EXIT 8**; each restored -> **EXIT 0**.
 2. **Every acceptance criterion is proven by a test I ran**, per criterion and with its exit in the acceptance
    table above (all 0): gain drag + envelope add/move + drawn waveform follows (`ClipWaveformEditTest`),
    polarity render and source untouched (`ClipPolarityTest`), the menu display half
