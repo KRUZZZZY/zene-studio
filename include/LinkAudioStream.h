@@ -240,6 +240,7 @@ private:
 	void receiveDatagrams();
 	void sendPending();
 	void acceptPacket(const AudioPacketHeader& header, const float* samples);
+	bool acceptSequence(const AudioPacketHeader& header) noexcept;
 	void insertGapSilence(std::size_t frames) noexcept;
 	void onRateChanged(std::uint32_t rate) noexcept;
 	std::uint32_t txRateForNextFrames() noexcept;

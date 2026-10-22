@@ -1720,6 +1720,7 @@ src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
 src/core/LinkAudioCodec.cpp
 src/core/LinkAudioFollower.cpp
+src/core/LinkAudioSocket.cpp
 src/core/LinkAudioStream.cpp
 src/core/LinkPhaseLock.cpp
 src/core/LinkSync.cpp

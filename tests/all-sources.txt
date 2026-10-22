@@ -70,6 +70,11 @@
 # 2026-10-20 (cluster new-p12-53-port): tests/src/core/NoteSelectionIdentityTest.cpp - the
 # fork-NEW regression for the control selection store keeping the selected notes' ids - is
 # now a tracked source, so the recipe derives it and the entry list below lists it.
+
+# 2026-10-22 (cluster new-p14-145): src/core/LinkAudioSocket.cpp - the socket half of the
+# link audio stream, split out of src/core/LinkAudioStream.cpp so that both stay inside the
+# 500 line limit of the file-length gate - is a tracked source, so the recipe derives it and
+# the entry list below lists it.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -1825,6 +1830,7 @@ src/core/LaunchBindings.cpp
 src/core/LfoController.cpp
 src/core/LinkAudioCodec.cpp
 src/core/LinkAudioFollower.cpp
+src/core/LinkAudioSocket.cpp
 src/core/LinkAudioStream.cpp
 src/core/LinkPhaseLock.cpp
 src/core/LinkSync.cpp
