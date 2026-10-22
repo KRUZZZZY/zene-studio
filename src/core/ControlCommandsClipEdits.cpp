@@ -389,7 +389,9 @@ void registerClipSetPolarity(ControlRegistry& registry)
 		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
 		{QStringLiteral("fade_in"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_in_offset"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_out"), control::integerProperty(0, MaxSongLength)},
+		{QStringLiteral("fade_out_offset"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("fade_in_shape"), control::stringProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
 	});

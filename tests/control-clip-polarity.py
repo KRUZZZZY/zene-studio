@@ -62,9 +62,14 @@ def check_envelope(session, recorder, clip):
 
 
 def check_polarity(session, recorder, clip):
+    # The polarity reply shares the edit-state shape. Offset fades are optional there, but when set
+    # they are part of the reply and must be declared in clip.set_polarity's closed result schema.
+    session.result("clip.set_fade", {"clip": clip, "fade_in": 24, "fade_out": 24,
+                                      "fade_in_offset": 144, "fade_out_offset": 48})
     reply = session.result("clip.set_polarity", {"clip": clip, "inverted": True})
     recorder.check("clip.set_polarity inverts the clip and reads it back",
-                   reply.get("inverted") is True, "reply=%r" % reply)
+                   reply.get("inverted") is True and reply.get("fade_in_offset") == 144
+                   and reply.get("fade_out_offset") == 48, "reply=%r" % reply)
     state = session.result("arrangement.get_state")
     listed = [c for c in state.get("clips") or [] if c.get("id") == clip]
     recorder.check("arrangement.get_state reports inverted",
