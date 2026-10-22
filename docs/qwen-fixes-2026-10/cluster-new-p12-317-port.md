@@ -88,6 +88,48 @@ interleaved 16-bit quantiser is byte-for-byte the base behaviour again
 is gone from `ExportWavDitherTest.cpp`. It stays with `bugs/qwen-new-p14-404`
 for its own scoped change.
 
+## Rework round 2 — the OGG page-write coverage
+
+Review round 2 accepted the product code and asked for one thing: regression
+coverage for a **short positive OGG page write** and a **partial constructor
+header page**. The reviewer's own fix (`3b9c0a7ce`, 83 lines) was dropped from
+the branch because it added `QSKIP`, so the coverage is re-added here without any
+skip.
+
+Getting this right needed a measurement first. `writePage()` compares
+`writeData()`'s result with the page length, and `writeData()` is `QFile::write`.
+Two probes against the real Qt build showed:
+
+* `QFile::write` returns a **short positive count** only for writes that bypass
+  its buffer: 5 bytes for a 16 KiB-plus request under a 5-byte cap, but the full
+  count for anything buffered (58..16384 bytes). It answers `-1` for a body that
+  cannot even start.
+* the OGG encoder's pages here are 30..4343 body bytes, so they are always
+  buffered: a file-size cap can only ever fail the buffered **flush**, never
+  `writePage`'s per-page comparison. The round-2 QA test's 5-byte cap therefore
+  passed for the flush's reason, not the page check's - it did not cover the code
+  it named.
+
+So the fix now exposes a one-shot `LMMS_TESTING` seam on the encoder
+(`setNextPageWriteShortForTest()` / `setFirstPageWriteShortForTest()`, consumed
+by exactly one page) and routes `writePage()` through `writePageBytes()`, which
+honours it and otherwise returns what `writeData()` stored. The comparison in
+`writePage()` is unchanged. Two deterministic cases in
+`tests/src/core/AudioFileOggInitTest.cpp` (the existing OGG test target; a new
+target could not be registered because reconfiguring is the parent's job):
+
+* `aShortPositiveOggPageWriteIsReported` — two seconds of audio fed in periods;
+  from the second second on, an audio page is armed to store 5 bytes and answer
+  `5`. Asserts `writeBuffer()` says the period did not reach the file and the
+  device recorded the error.
+* `aPartialOggHeaderPageRejectsTheDevice` — the one-shot is armed across devices
+  so the stream's opening page is short; asserts `successful` is false, the error
+  is recorded, and no half-written `.ogg` is left behind.
+
+A tree without the seam fails these on
+`HasPageWriteSeam<AudioFileOgg>::value` — a failed assertion, not a skip — and
+the seam calls sit in templates so the file still compiles there.
+
 ## Regression tests (deterministic; no sleeps, timing or races)
 
 `tests/src/core/ExportWavWriteErrorTest.cpp` (new, 583 lines, registered in
@@ -107,6 +149,8 @@ for its own scoped change.
   through a read-only file), then asserts the patch's failure is reported and
   the file removed. `SurroundExportTest::aDiscreteMasterWritesItsChannelCount
   WithoutSpeakerMask` covers the healthy path (six discrete layouts, real mask 0).
+* The two OGG page-write cases above live in
+  `tests/src/core/AudioFileOggInitTest.cpp`, the existing OGG target.
 * `aFailedSiblingFinalFlushIsReported` (rework) — an OGG and an MP3 device are
   written and then finalised under a cap at the file's current length, so the
   final flush has no room; asserts `finishEncoding()` says the file is
@@ -145,12 +189,15 @@ only change is the log path (`feature_check.py` → `build/fix-logs/gate-logs`);
 the gate commands, their limits and `gate-baselines/` are the real ones.
 
 **4b RED — every product change since the fork base reversed** (`git diff
-07d6d02bd -- <product files> > fix-base.patch`, `git apply -R`, EXIT 0), the
-tests still build (EXIT 0) and fail at runtime:
+07d6d02bd -- <product files> > fix.patch`, `git apply -R`, EXIT 0), the tests
+still build (EXIT 0) and fail at runtime on 9 assertions across 3 tests, with
+**0 skipped**:
 
 ```
-cmake --build build --target ExportWavWriteErrorTest ExportWavDitherTest   # EXIT=0 (build-red-final.log)
-cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest)$' --output-on-failure   # EXIT=8 (test-red-final.log)
+cmake --build build --target ExportWavWriteErrorTest ExportWavDitherTest AudioFileOggInitTest   # EXIT=0 (build-red-final3.log)
+cd build/tests && ctest -R '^(AudioFileOggInitTest|ExportWavWriteErrorTest|ExportWavDitherTest)$' --output-on-failure   # EXIT=8 (test-red-final3.log)
+FAIL!  : AudioFileOggInitTest::aShortPositiveOggPageWriteIsReported() 'HasPageWriteSeam<AudioFileOgg>::value' returned FALSE. (the OGG page-write test seam is missing: a short positive page write cannot be injected, and the page-write check is not under test)
+FAIL!  : AudioFileOggInitTest::aPartialOggHeaderPageRejectsTheDevice() 'HasPageWriteSeam<AudioFileOgg>::value' returned FALSE. (the OGG page-write test seam is missing: a partial header page cannot be injected, and the constructor's header-page check is not under test)
 FAIL!  : ExportWavDitherTest::aShortWavWriteIsReported() '!writeOk' returned FALSE. ()
 FAIL!  : ExportWavWriteErrorTest::aFailedHeaderRewriteOnAFullLengthFileIsReported() 'reportedFailure' returned FALSE. (a WAV whose final header rewrite failed was reported as a success)
 FAIL!  : ExportWavWriteErrorTest::aFailedDiscreteChannelMaskPatchIsReported() 'reportedFailure' returned FALSE. (a WAVEX file whose channel-mask patch failed was reported as a success)
@@ -158,7 +205,7 @@ FAIL!  : ExportWavWriteErrorTest::aShortWriteIsReportedAndLeavesNoFileBehind() '
 FAIL!  : ExportWavWriteErrorTest::aFailedFinalisationIsReportedAndLeavesNoFileBehind() '!QFile::exists(path)' returned FALSE. (a WAV file that was closed without its final header was left behind)
 FAIL!  : ExportWavWriteErrorTest::aFailedSiblingFinalFlushIsReported() 'reportedFailure' returned FALSE. (tail.ogg's final flush did not reach the file but was reported as a success)
 FAIL!  : ExportWavWriteErrorTest::aFailedRenderIsReportedByRenderManagerAndLeavesNoFileBehind() 'reported' returned FALSE. (a render whose WAV writes failed was reported as a finished export)
-0% tests passed, 2 tests failed out of 2
+0% tests passed, 3 tests failed out of 3
 ```
 
 RED per rework item, each with only that fix reverted and the rest left in place:
@@ -174,18 +221,32 @@ cmake --build build --target ExportWavWriteErrorTest                          # 
 ./build/tests/ExportWavWriteErrorTest                                         # EXIT=1 (test-rework-red-mask2.log)
 FAIL!  : aFailedDiscreteChannelMaskPatchIsReported() '!finalised' returned FALSE. (a WAVEX file whose channel-mask patch failed was reported as a success)
 
+# OGG page checks reverted to the pre-rework shape (negative-only page check,
+# unchecked constructor header pages); both OGG cases fail, 0 skipped (EXIT 0)
+cmake --build build --target AudioFileOggInitTest                             # EXIT=0 (build-r2-redogg3.log)
+./build/tests/AudioFileOggInitTest                                            # EXIT=1 (test-r2-redogg3.log)
+FAIL!  : aShortPositiveOggPageWriteIsReported() 'writeReportedFailure' returned FALSE. (a short positive OGG page write was reported as a success)
+FAIL!  : aPartialOggHeaderPageRejectsTheDevice() '!successful' returned FALSE. (a partial OGG header page was accepted as a successful device)
+
 # OGG/MP3 flush left in the destructor (EXIT 0)
 cmake --build build --target ExportWavWriteErrorTest                          # EXIT=0 (build-rework-red-sib2.log)
 ./build/tests/ExportWavWriteErrorTest                                         # EXIT=1 (test-rework-red-sib2.log)
 FAIL!  : aFailedSiblingFinalFlushIsReported() '!finalised' returned FALSE. (tail.ogg's final flush did not reach the file but was reported as a success)
 ```
 
-**GREEN — the patch applied again** (`git apply fix-base.patch`, EXIT 0):
+**GREEN — the patch applied again** (`git apply fix.patch`, EXIT 0):
 
 ```
-cmake --build build --target zene ExportWavWriteErrorTest ExportWavDitherTest   # EXIT=0 (build-green-final.log)
-cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest)$' --output-on-failure   # EXIT=0 (test-green-final.log)
-100% tests passed out of 2
+cmake --build build --target zene AudioFileOggInitTest ExportWavWriteErrorTest ExportWavDitherTest   # EXIT=0 (build-green-final3.log)
+cd build/tests && ctest -R '^(AudioFileOggInitTest|ExportWavWriteErrorTest|ExportWavDitherTest)$' --output-on-failure   # EXIT=0 (test-green-final3.log)
+100% tests passed out of 3
+```
+
+Per case, 0 skipped (`test-r2-4.log`, `test-r2-redogg3.log`):
+
+```
+AudioFileOggInitTest: 5 passed, 0 failed, 0 skipped   (incl. both OGG page-write cases)
+ExportWavWriteErrorTest: 9 passed, 0 failed, 0 skipped
 ```
 
 The write-error binary's own per-case run (`test-rework-7.log`):
@@ -201,14 +262,14 @@ PASS   : aFailedRenderIsReportedByRenderManagerAndLeavesNoFileBehind()
 Totals: 9 passed, 0 failed, 0 skipped, 0 blacklisted
 ```
 
-Affected family (18 tests built, 18 passed, EXIT=0, `test-family-final.log`):
+Affected family (18 tests built, 18 passed, EXIT=0, `test-family-final3.log`):
 
 ```
 cd build/tests && ctest -R '^(ExportWavDitherTest|ExportWavWriteErrorTest|ExportDitherTest|ExportNoiseShaperTest|ExportQualityControlsTest|AudioFileOggInitTest|RenderSoftwareTag|StemExportTest|SurroundExportTest|ControlRenderJobTest|MasteringTest|ClipOffsetFadeTest|ClipFadesRenderTest|AudioClipLoopTest|SessionPlaybackRenderTest|SessionSchedulerRenderTest|LoudnessReportTest|LufsMeterTest)$' --output-on-failure
 100% tests passed out of 18
 ```
 
-Gates — all eight rows PASS, EXIT=0 (`gate-final-2.log`):
+Gates — all eight rows PASS, EXIT=0 (`gate-r2b.log`):
 
 ```
 python3 <unmodified feature_check.py with only the log dir redirected> $PWD
@@ -229,18 +290,20 @@ This follows the precedents `1a3e91e36` / `a71fcd6f1` for the same drift.
 ## Self-check
 
 * **The regression test FAILS with the product change reverted and PASSES with
-  it (exit codes).** The full reversal: build EXIT=0, ctest EXIT=8, 7 failing
-  assertions (`test-red-final.log`); each rework item reverted alone also fails
-  its own new case (the three per-item logs above); restored: build EXIT=0,
-  ctest EXIT=0, 2/2, 9/9 cases (`test-green-final.log`). The RED is a runtime
-  failure, not a compile error.
+  it (exit codes).** The full reversal: build EXIT=0, ctest EXIT=8, 9 failing
+  assertions across 3 tests with 0 skipped (`test-red-final3.log`); each rework
+  item reverted alone also fails its own new case (the per-item logs above,
+  including both OGG cases in `test-r2-redogg3.log`); restored: build EXIT=0,
+  ctest EXIT=0, 3/3 tests, 5/5 + 9/9 cases, 0 skipped (`test-green-final3.log`).
+  The RED is a runtime failure, not a compile error.
 * **The test is deterministic: no wall-clock timing, sleeps or races.** The seam
   is the process file-size cap (`RLIMIT_FSIZE`) with `SIGXFSZ` set to `SIG_IGN`
   (a real `EFBIG`/short write, decided by the kernel synchronously), plus one
   read-only file whose reopen is refused for the mask patch — with a precondition
-  that skips (never silently passes) where the process can write through it. No
-  sleeps, no threads of the test's own, no timing thresholds; the render case
-  quits on `RenderManager::finished()` through a `QEventLoop`, not on a timer.
+  that skips (never silently passes) where the process can write through it — and,
+  for the OGG page cases, a one-shot injected short count consumed by exactly one
+  page. No sleeps, no threads of the test's own, no timing thresholds; the render
+  case quits on `RenderManager::finished()` through a `QEventLoop`, not on a timer.
 * **The fix is at the cause and complete: every caller and sibling checked.** The
   only `writeBuffer()` caller is `ProjectRenderer::run()`
   (`src/core/ProjectRenderer.cpp:311-315`); `finishEncoding()` is called by the
@@ -299,6 +362,7 @@ tests/CMakeLists.txt
 tests/all-sources.txt
 tests/fork-sources.txt
 tests/upstream-modifications.txt
+tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/ExportWavWriteErrorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-317-port.md

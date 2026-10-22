@@ -472,6 +472,7 @@ private slots:
 			"the failed WAV finalisation was reported as a success");
 	}
 
+
 	/*! BUG 14, the sibling encoders' finalisation: the flush that finishes an
 	 *  OGG or MP3 stream runs where the render can see it, so a tail that does
 	 *  not reach the file is a failed export instead of a destructor's secret.

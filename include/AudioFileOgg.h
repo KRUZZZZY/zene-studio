@@ -62,10 +62,31 @@ public:
 	 *  result; the destructor calls it again, which is then a no-op. */
 	bool finishEncoding() override;
 
+#ifdef LMMS_TESTING
+	/*! Test seam: the next page write stores only @a bytes and answers with that SHORT count, the
+	 *  way a nearly-full disk answers a page that does not fit (a positive count, not -1). QFile
+	 *  buffers pages under its 16 KiB buffer, so a real short page write cannot be provoked through
+	 *  a file-size cap alone; this drives the comparison writePage() actually makes. -1 disables. */
+	void setNextPageWriteShortForTest(int bytes) { m_nextPageWriteShort = bytes; }
+
+	/*! Test seam for the construction path: the next page write on ANY OGG device stores only
+	 *  @a bytes. A device only exists after its constructor wrote the header pages, so the header
+	 *  case has to arm the failure before the object is built. -1 disables. */
+	static void setFirstPageWriteShortForTest(int bytes) { s_firstPageWriteShort = bytes; }
+#endif
+
 private:
 	bool writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames) override;
 	//! Stores the current page in full; false (and the device flagged) when part of it did not land.
 	bool writePage();
+	//! writeData() for a page, honouring the test seam; answers with the bytes actually stored.
+	int writePageBytes(const void* data, int len);
+#ifdef LMMS_TESTING
+	//! One-shot: the next page write stores only this many bytes (-1: off). See the setter.
+	int m_nextPageWriteShort = -1;
+	//! One-shot across devices: armed before a device is constructed, consumed by its first page.
+	static int s_firstPageWriteShort;
+#endif
 	//! True once finishEncoding() has flushed the tail, so the destructor cannot flush twice.
 	bool m_finished = false;
 	vorbis_info m_vi;
