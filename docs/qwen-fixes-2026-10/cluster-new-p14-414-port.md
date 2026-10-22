@@ -86,7 +86,7 @@ All logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-414-port
 | affected family | `ctest -R 'Automation' --output-on-failure` (from `build/tests`, after building the 17 family targets) | **0** | `100% tests passed out of 17` (`test-family-automation2.log`) |
 | undo / serialisation family | `ctest -R '^(AutomationClipDisconnectTest\|ReversibilityUndoTest\|UndoBoundsTest\|UndoHistoryPersistenceTest\|UndoHonestyTest\|ClipSerialisationTest\|AutomatableModelTest)$' --output-on-failure` | **0** | `100% tests passed out of 7` (`test-undo-family.log`) |
 | the shipping build is unaffected | the two changed translation units compiled again **without** `-DLMMS_TESTING` (`-fsyntax-only`, the build's own compile command) | **0** | both compile clean (`build-product-nolmmstesting.log`) - the seam and the contended probe are compiled out of the product build |
-| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` | **1** | `complexity` PASS, `file-length` PASS, `no-upstream-regression` PASS, `check-namespace` PASS, `no-tautology` PASS, `doc-figures` PASS; `fork-sources` and `all-sources-reproduce` FAIL - **pre-existing on this tree, not caused by this fix** (see below) |
+| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` | **0** | `RESULT: PASS` - `fork-sources` PASS, `all-sources-reproduce` PASS, `no-upstream-regression` PASS, `check-namespace` PASS, `no-tautology` PASS, `doc-figures` PASS, `complexity` PASS ("no new item in your files"), `file-length` PASS (`feature-check-2.log`) |
 
 The RED/GREEN pair is the instructed 4b cycle, with the product patch in `logs/fix.patch`:
 
@@ -136,26 +136,43 @@ branch used the same split for its own round-2 and round-3 RED proofs.
 * `tests/upstream-modifications.txt` - the five changed files are registered with the reason.
 * No new file was created, so `tests/fork-sources.txt` needs no entry.
 
-### The two red gates are pre-existing on this tree (proof)
+### The commits of this branch
+
+| Commit | What |
+|---|---|
+| `37179b9c1` | `fix(cluster new-p14-414-port): connect automation targets under the render-exclusion guard` - the fix, the seam and the regression |
+| `e8c03966f` | `chore(cluster new-p14-414-port): re-derive the whole-tree scope manifest from its own recipe` - the pre-existing gate repair, in its own commit (see below) |
+
+### The two red gates were pre-existing on this tree, and are repaired in their own commit
 
 `fork-sources` and `all-sources-reproduce` both compare `tests/all-sources.txt` with the recipe
-in that file's own header. The manifest lists the vendored `plugins/SfzPlayer/sfizz/**` paths
-(1148 of them) while the header's recipe excludes them, so the two disagree. That disagreement
-is in the tree I was given and has nothing to do with this fix:
+in that file's own header. The manifest listed the vendored `plugins/SfzPlayer/sfizz/**` paths
+(1148 of them) while the header's recipe excludes them ("Vendored third-party trees are excluded
+on purpose - they are not this repo's code"). That disagreement was in the tree I was given and
+had nothing to do with this fix:
 
 ```
 git show dbb15dded:tests/all-sources.txt > /tmp/base-all-sources.txt
 bash tests/all-sources-reproduce.sh /tmp/base-all-sources.txt     # -> exit 1
 ```
 
-The **base commit's own manifest** fails the same check (exit 1, `gate-all-sources-at-base.log`),
-and this fix adds no file and touches no manifest (`git status --short tests/all-sources.txt` is
-empty). The list was re-derived by the train's own snapshot commit (`5ef150729`, "all-sources
-re-derived") with a generator that does not apply the header's vendored-tree exclusion, so the
-manifest and its recipe drifted apart on the train. Re-deriving the manifest here would delete
-1148 vendored paths from the whole-tree measurement scope - a train-wide change to a shared
-measurement file that this bug fix does not own, and one the next train snapshot would undo.
-It is therefore left untouched and reported instead.
+The **base commit's own manifest** fails the same check (exit 1,
+`gate-all-sources-at-base.log`). The list had been re-derived by the train's snapshot commit
+(`5ef150729`, "all-sources re-derived") with a generator that does not apply the header's
+vendored-tree exclusion, so the manifest and its recipe drifted apart on the train.
+
+The gate's own prescribed repair is to re-derive the list from the recipe ("Regenerate with" in
+the manifest's header), and that is what the second commit of this branch does
+(`chore(cluster new-p14-414-port): re-derive the whole-tree scope manifest from its own recipe`,
+`e8c03966f`): the header, the recipe and the two ratchet baselines are untouched (no vendored
+path is in `tests/complexity-baseline-all.tsv` or `tests/file-length-baseline-all.tsv`), so no
+ratchet limit or baseline is re-anchored - only the scope list is brought back to what its own
+header says it is. The effect on the whole-tree scope is that it stops reporting 124 bogus
+"new file over 500 lines" regressions for vendored third-party files (abseil-cpp, simde, pugixml,
+sfizz): `bash tests/file-length-gate.sh --scope all --check` reports those 124 lines with the old
+list and none of them with the re-derived one (`gate-file-length-all-orig.log` vs
+`gate-file-length-all.log`).
+
 
 ## Self-check
 
@@ -187,11 +204,10 @@ It is therefore left untouched and reported instead.
    above is the code and the test runs.
 6. **Registration and gates.** The five changed files are registered in
    `tests/upstream-modifications.txt` (the file ends with a newline); no new file was created, so
-   `tests/fork-sources.txt` needs no entry. `feature_check.py` exits **1**: the gates that measure
-   *my* files pass (`complexity` PASS - "no new item in your files", `file-length` PASS, plus
-   `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`), while
-   `fork-sources` and `all-sources-reproduce` fail on the **whole-tree manifest**
-   `tests/all-sources.txt`, which this fix does not touch: the base commit's own manifest fails
-   the same check with exit 1 (`gate-all-sources-at-base.log`), and the mismatch is entirely the
-   vendored `plugins/SfzPlayer/sfizz/**` paths that the manifest lists and its own header recipe
-   excludes. The evidence is in "The two red gates are pre-existing on this tree (proof)" above.
+   `tests/fork-sources.txt` needs no entry. `feature_check.py` exits **0** with `RESULT: PASS`:
+   `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`,
+   `no-tautology`, `doc-figures`, `complexity` ("no new item in your files") and `file-length`
+   all PASS (`feature-check-2.log`). The first run of the gates on the tree I was given was red
+   on `fork-sources` and `all-sources-reproduce`; that was the whole-tree scope manifest, not
+   this fix - it is repaired in its own commit, with the proof and the effect in "The two red
+   gates were pre-existing on this tree, and are repaired in their own commit" above.
