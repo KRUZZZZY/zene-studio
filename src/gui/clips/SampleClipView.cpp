@@ -342,17 +342,15 @@ void SampleClipView::finishGainDrag()
 		{{QStringLiteral("clip"), control::clipIdOf(m_clip)}, {QStringLiteral("points"), points}});
 }
 
-float SampleClipView::gainAtPixel(int x)
+float SampleClipView::gainAtNormalised(float t)
 {
-	// The effective multiplier the waveform is drawn with at @a x: the drawn edits' curve - clip gain,
-	// envelope and fades - times the polarity sign, both of which the AUDIO applies. The pixel is
-	// converted back to a tick from the clip's start, so the drawing and the render agree.
-	const ClipOverlayFrame frame = overlayFrame(0);
-	const tick_t length = std::max<tick_t>(1, m_clip->length().getTicks());
-	const double tick = std::clamp(static_cast<double>(x - frame.xOrigin) / std::max(0.001f, frame.pixelsPerTick),
-		0.0, static_cast<double>(length));
+	// The effective multiplier the waveform is drawn with at @a t: the drawn edits' curve - clip gain,
+	// envelope and fades - times the polarity sign, both of which the AUDIO applies. The mapping is in
+	// TICKS from the clip's start (the axis the envelope overlay and clip.gain_envelope_set use), so the
+	// drawn amplitude does not depend on which part of the view a repaint happened to cover.
 	const ClipEdits edits = shownEdits();
-	return clipGainCurveAt(edits, length, tick) * edits.polaritySign();
+	return gui::drawnGainAt(edits, m_clip->length().getTicks(), m_clip->startTimeOffset().getTicks(),
+		m_clip->sampleLength().getTicks(), t);
 }
 
 void SampleClipView::mouseMoveEvent(QMouseEvent* me)
@@ -610,10 +608,7 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 			.reversed = sample.reversed(),
 			// Q050-125: the drawn amplitude follows the effective gain (clip gain, envelope, fades)
 			// and the polarity sign, so the waveform shows the level the clip renders at.
-			.gainAt = [this, sampleRextX, sampleLength](float t) {
-				const int x = sampleRextX + static_cast<int>(t * sampleLength);
-				return gainAtPixel(x);
-			}
+			.gainAt = [this](float t) { return gainAtNormalised(t); }
 		};
 
 		m_sampleThumbnail.visualize(param, p);

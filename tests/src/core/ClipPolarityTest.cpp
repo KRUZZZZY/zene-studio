@@ -52,6 +52,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "SampleBuffer.h"
+#include "SampleClipOverlays.h"
 #include "SampleClip.h"
 #include "SampleFrame.h"
 #include "SamplePlayHandle.h"
@@ -314,6 +315,37 @@ private slots:
 				qPrintable(QStringLiteral("frame %1 (tick %2) renders %3; the drawn curve predicts %4")
 					.arg(i).arg(tick).arg(shaped[i].left()).arg(expected)));
 		}
+	}
+
+	//! The waveform's per-column gain is a function of the TICK, not of a pixel: a partial repaint (the
+	//! view's pixmap x origin is not 0) and a clip whose audio starts after its own start must both draw
+	//! the curve the render applies. `drawnGainAt` is the one function the view hands the thumbnail.
+	void theDrawnCurveIsIndependentOfTheRepaintedPixelRange()
+	{
+		const int ticks = 192;
+		ClipEdits edits;
+		edits.gain = gainDbToLinear(-6.f);
+		edits.envelope[0] = {0, 0.f};
+		edits.envelope[1] = {ticks / 2, -12.f};
+		edits.envelope[2] = {ticks, 0.f};
+		edits.envelopeCount = 3;
+		// t=0.25 across the drawn audio must be the curve at tick 48 - whatever the view's pixel origin.
+		QVERIFY(std::abs(gui::drawnGainAt(edits, ticks, 0, ticks, 0.25f)
+			- clipGainCurveAt(edits, ticks, ticks * 0.25)) < 1e-6f);
+		QVERIFY(std::abs(gui::drawnGainAt(edits, ticks, 0, ticks, 0.5f)
+			- clipGainCurveAt(edits, ticks, ticks * 0.5)) < 1e-6f);
+		// A clip whose audio starts 48 ticks into it: t=0 is tick 48, not tick 0, so the source tick is
+		// what the curve is asked for at both ends of the drawn audio.
+		QVERIFY(std::abs(gui::drawnGainAt(edits, ticks, 48, ticks - 48, 0.0f)
+			- clipGainCurveAt(edits, ticks, 48)) < 1e-6f);
+		QVERIFY(std::abs(gui::drawnGainAt(edits, ticks, 48, ticks - 48, 1.0f)
+			- clipGainCurveAt(edits, ticks, ticks)) < 1e-6f);
+		// Polarity and the clip gain ride the same multiplier, and t is clamped to the audio.
+		ClipEdits inverted = edits;
+		inverted.polarityInverted = true;
+		QVERIFY(std::abs(gui::drawnGainAt(inverted, ticks, 0, ticks, 0.25f)
+			+ gui::drawnGainAt(edits, ticks, 0, ticks, 0.25f)) < 1e-6f);
+		QCOMPARE(gui::drawnGainAt(edits, ticks, 0, ticks, 2.0f), gui::drawnGainAt(edits, ticks, 0, ticks, 1.0f));
 	}
 };
 

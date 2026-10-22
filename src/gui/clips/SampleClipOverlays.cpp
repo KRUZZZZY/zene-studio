@@ -241,6 +241,19 @@ bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTick
 
 int gainPointCount(const ClipEdits& edits) { return edits.envelopeCount; }
 
+float drawnGainAt(const ClipEdits& edits, tick_t lengthTicks, tick_t startOffsetTicks, tick_t sampleTicks, float t)
+{
+	// The drawn audio runs from the clip's audible start (its trim/offset) for sampleTicks; @a t is the
+	// position across that audio. The command's ticks are measured from the START OF THE CLIP (what the
+	// envelope overlay and `clip.gain_envelope_set` use), and the render applies the curve at the same
+	// clip-relative tick, so the offset is added here - in ticks, never through a pixel.
+	const tick_t length = std::max<tick_t>(1, lengthTicks);
+	const tick_t span = std::max<tick_t>(1, sampleTicks);
+	const double tick = static_cast<double>(startOffsetTicks)
+		+ std::clamp(static_cast<double>(t), 0.0, 1.0) * static_cast<double>(span);
+	return clipGainCurveAt(edits, length, std::min(tick, static_cast<double>(length))) * edits.polaritySign();
+}
+
 void paintFades(QPainter& p, const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame, const QColor& colour)
 {
 	p.setRenderHint(QPainter::Antialiasing, true);

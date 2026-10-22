@@ -110,8 +110,8 @@ private:
 	bool startGainDrag(QMouseEvent* me);
 	//! Q050-125: what the gain/handle drag in progress would write, and the command that writes it.
 	void finishGainDrag();
-	//! Q050-125: the waveform's gain multiplier at @a x, for the drawn amplitude.
-	float gainAtPixel(int x);
+	//! Q050-125: the waveform's gain multiplier at @a t (0..1 across the drawn audio), for the amplitude.
+	float gainAtNormalised(float t);
 	// ED-150: the transients drawn when arrangement.modes show_transients is on, analysed once per audio
 	// and per analysed range (m_transientFrames) and placed as ticks again when the clip's timing changes.
 	std::vector<f_cnt_t> m_transientFrames;

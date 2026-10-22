@@ -93,6 +93,14 @@ LMMS_EXPORT bool withGainPoint(ClipEdits* edits, int index, int tick, float db, 
 /*! Q050-125: how many points @a edits has and the tick/dB of one - the read side a drag saves. */
 LMMS_EXPORT int gainPointCount(const ClipEdits& edits);
 
+/*! Q050-125: the effective gain the waveform is DRAWN with at @a t, the normalised position across
+ *  the drawn audio (0 at the clip's first audible tick, 1 at its last): the same `clipGainCurveAt`
+ *  the audio path applies, times the polarity sign. @a startOffsetTicks is where the audio begins
+ *  inside the clip (a trimmed/offset clip), so an envelope point at a tick lands on the drawn audio
+ *  at the same tick the render uses. The mapping is in TICKS, never through a pixel, so it does not
+ *  depend on which part of the view happens to be repainted. Allocation-free. */
+LMMS_EXPORT float drawnGainAt(const ClipEdits& edits, tick_t lengthTicks, tick_t startOffsetTicks, tick_t sampleTicks, float t);
+
 /*! ED-173 (0.5.0 L05): the fade-in and fade-out drawn as their curves (fadeShapeGain) over a
  *  shaded region, and the two handles at the top edge that drag them. */
 LMMS_EXPORT void paintFades(QPainter& p, const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame, const QColor& colour);
