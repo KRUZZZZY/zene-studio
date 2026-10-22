@@ -119,7 +119,8 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 		SLOT(setAutomationGhost())
 	);
 
-	// Clip gain, fade lengths and the fade shape (clip.set_gain / clip.set_fade).
+	// Clip gain, the gain envelope, the polarity, fade lengths and the fade shape
+	// (clip.set_gain / clip.gain_envelope_set / clip.set_polarity / clip.set_fade).
 	addClipEditsMenu(cm, m_clip);
 	// The warp mode the clip renders its rate changes with (warp.stretch).
 	addClipWarpModeMenu(cm, m_clip);
@@ -242,6 +243,7 @@ const std::vector<int>& SampleClipView::transientTicks()
 
 ClipEdits SampleClipView::shownEdits() const
 {
+	if (m_gainDrag != GainDrag::None) { return m_dragEdits; }
 	ClipEdits edits = m_clip->clipEdits();
 	if (m_fadeDrag == FadeHandle::In) { edits.fadeInTicks = m_fadeDragTicks; }
 	if (m_fadeDrag == FadeHandle::Out) { edits.fadeOutTicks = m_fadeDragTicks; }
@@ -266,13 +268,121 @@ bool SampleClipView::startFadeDrag(QMouseEvent* me)
 	return true;
 }
 
+bool SampleClipView::startGainDrag(QMouseEvent* me)
+{
+	// Q050-125: the same plain-press rule as a fade handle - a locked clip takes neither (the command
+	// would refuse it), and a modified press keeps its inherited meaning (copy, unquantized, range).
+	if (me->button() != Qt::LeftButton || me->modifiers() != Qt::NoModifier) { return false; }
+	if (EditLocks::instance().locks(m_clip)) { return false; }
+	const ClipEdits edits = withValidOffsetFades(m_clip->clipEdits(), m_clip->length().getTicks());
+	const ClipOverlayFrame frame = overlayFrame(0);
+	m_dragEdits = edits;
+	const bool onHandle = clipGainHandleAt(edits, frame, me->pos());
+	const int point = onHandle ? -1 : gainPointAt(edits, frame, me->pos());
+	if (!onHandle && point < 0) { return false; }
+	if (onHandle)
+	{
+		m_gainDrag = GainDrag::Handle;
+		m_gainDragStartDb = gainLinearToDb(edits.gain);
+		m_gainDragPressY = me->pos().y();
+	}
+	else
+	{
+		// A point drag also starts an ADD (a press on empty waveform where no point is, but inside the
+		// clip's body, is deliberately not one: that is still the clip's move gesture). To add a point
+		// the user Alt-clicks; to move one, plain-drags it.
+		m_gainDrag = GainDrag::Point;
+		m_gainDragPoint = point;
+		m_gainDragStartDb = edits.envelope[point].gainDb;
+	}
+	return true;
+}
+
+void SampleClipView::finishGainDrag()
+{
+	if (m_gainDrag == GainDrag::None) { return; }
+	const GainDrag kind = m_gainDrag;
+	const ClipEdits after = m_dragEdits;
+	m_gainDrag = GainDrag::None;
+	m_gainDragPoint = -1;
+	setNeedsUpdate(true);
+	update();
+	if (kind == GainDrag::Handle)
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("clip.set_gain"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("gain_db"), static_cast<double>(gainLinearToDb(after.gain))}});
+		return;
+	}
+	QJsonArray points;
+	for (int i = 0; i < gainPointCount(after); ++i)
+	{
+		points.append(QJsonObject{{QStringLiteral("tick"), after.envelope[i].tick},
+			{QStringLiteral("gain_db"), static_cast<double>(after.envelope[i].gainDb)}});
+	}
+	// The envelope command replaces the WHOLE list, which is what the drag previewed: `point` (the
+	// index the gesture started on) is not part of the wire format, so the sorted list is the edit.
+	ControlRegistry::instance()->invoke(QStringLiteral("clip.gain_envelope_set"),
+		{{QStringLiteral("clip"), control::clipIdOf(m_clip)}, {QStringLiteral("points"), points}});
+}
+
+float SampleClipView::gainAtPixel(int x)
+{
+	// The effective multiplier the waveform is drawn with at @a x: the drawn edits' curve - clip gain,
+	// envelope and fades - times the polarity sign, both of which the AUDIO applies. The pixel is
+	// converted back to a tick from the clip's start, so the drawing and the render agree.
+	const ClipOverlayFrame frame = overlayFrame(0);
+	const tick_t length = std::max<tick_t>(1, m_clip->length().getTicks());
+	const double tick = std::clamp(static_cast<double>(x - frame.xOrigin) / std::max(0.001f, frame.pixelsPerTick),
+		0.0, static_cast<double>(length));
+	const ClipEdits edits = shownEdits();
+	return clipGainCurveAt(edits, length, tick) * edits.polaritySign();
+}
+
 void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 {
+	if (m_gainDrag != GainDrag::None)
+	{
+		const ClipOverlayFrame frame = overlayFrame(0);
+		if (m_gainDrag == GainDrag::Handle)
+		{
+			// The handle follows the pointer: its level moves by the drag's own distance from the press,
+			// not by where on the line the press landed.
+			const float db = clipGainDraggedDb(m_gainDragStartDb, me->pos().y() - m_gainDragPressY, frame);
+			m_dragEdits.gain = gainDbToLinear(std::clamp(db, -60.f, 24.f));
+		}
+		else
+		{
+			// A point moves in both axes: its tick from the pointer's x, its gain from the pointer's y -
+			// the envelope's own -60..+24 scale, so the drawn dot sits under the pointer.
+			const int clipTicks = m_clip->length().getTicks();
+			const int tick = std::clamp(gainTickAtX(me->pos().x(), frame), 0, clipTicks);
+			const float db = gainDbAtY(me->pos().y(), frame);
+			if (!withGainPoint(&m_dragEdits, m_gainDragPoint, tick, db, clipTicks))
+			{
+				// Out of range or full: the drag keeps showing the last accepted position.
+				return;
+			}
+			// withGainPoint re-sorted the envelope, so track the point by its new index.
+			for (int i = 0; i < m_dragEdits.envelopeCount; ++i)
+			{
+				if (m_dragEdits.envelope[i].tick == tick && m_dragEdits.envelope[i].gainDb == db) { m_gainDragPoint = i; break; }
+			}
+		}
+		setNeedsUpdate(true);
+		update();
+		return;
+	}
 	if (m_fadeDrag == FadeHandle::None)
 	{
 		ClipView::mouseMoveEvent(me);
-		// Over a fade handle the pointer shows that it drags sideways, as over a resize edge (UX ux06 #27).
-		if (!me->buttons() && fadeHandleUnder(me->pos()) != FadeHandle::None) { setCursor(Qt::SizeHorCursor); }
+		// Over a fade handle the pointer shows that it drags sideways, as over a resize edge (UX ux06 #27);
+		// over the clip-gain handle (or a point, with Alt held) it shows that it drags a level.
+		if (!me->buttons())
+		{
+			if (fadeHandleUnder(me->pos()) != FadeHandle::None) { setCursor(Qt::SizeHorCursor); }
+			else if (!EditLocks::instance().locks(m_clip)) { setCursor(clipGainHandleAt(shownEdits(), overlayFrame(0), me->pos()) ? Qt::SizeVerCursor
+				: Qt::PointingHandCursor); }
+		}
 		return;
 	}
 	// fade_in + fade_out must fit in the clip (clip.set_fade refuses more), so a fade stops where the other begins.
@@ -291,6 +401,27 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 void SampleClipView::mousePressEvent( QMouseEvent * _me )
 {
 	if (startFadeDrag(_me)) { return; }
+	// Q050-125: Alt+click on the waveform adds an envelope point there (and starts dragging it); a plain
+	// press on a point or on the clip-gain handle takes that. A plain press anywhere else is still the
+	// clip's move gesture, which is why this runs after the fade handles and before ClipView's press.
+	if (_me->button() == Qt::LeftButton && _me->modifiers() == Qt::AltModifier && !EditLocks::instance().locks(m_clip))
+	{
+		const ClipOverlayFrame frame = overlayFrame(0);
+		const ClipEdits edits = withValidOffsetFades(m_clip->clipEdits(), m_clip->length().getTicks());
+		const int tick = std::clamp(gainTickAtX(_me->pos().x(), frame), 0, m_clip->length().getTicks());
+		const float db = gainDbAtY(_me->pos().y(), frame);
+		m_dragEdits = edits;
+		if (withGainPoint(&m_dragEdits, gainPointCount(edits), tick, db, m_clip->length().getTicks()))
+		{
+			m_gainDrag = GainDrag::Point;
+			m_gainDragPoint = gainPointCount(edits);
+			m_gainDragStartDb = db;
+			setNeedsUpdate(true);
+			update();
+			return;
+		}
+	}
+	if (startGainDrag(_me)) { return; }
 	if( _me->button() == Qt::LeftButton &&
 		_me->modifiers() & Qt::ControlModifier &&
 		_me->modifiers() & Qt::ShiftModifier )
@@ -316,6 +447,11 @@ void SampleClipView::mousePressEvent( QMouseEvent * _me )
 
 void SampleClipView::mouseReleaseEvent(QMouseEvent *_me)
 {
+	if (m_gainDrag != GainDrag::None)
+	{
+		finishGainDrag();
+		return;
+	}
 	if (m_fadeDrag != FadeHandle::None)
 	{
 		const QString key = m_fadeDrag == FadeHandle::In ? QStringLiteral("fade_in") : QStringLiteral("fade_out");
@@ -448,13 +584,20 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 			.sampleRect = QRect(sampleRextX, spacing, sampleLength, height() - spacing),
 			.viewportRect = viewPortRect,
 			.amplification = sample.amplification(),
-			.reversed = sample.reversed()
+			.reversed = sample.reversed(),
+			// Q050-125: the drawn amplitude follows the effective gain (clip gain, envelope, fades)
+			// and the polarity sign, so the waveform shows the level the clip renders at.
+			.gainAt = [this, sampleRextX, sampleLength](float t) {
+				const int x = sampleRextX + static_cast<int>(t * sampleLength);
+				return gainAtPixel(x);
+			}
 		};
 
 		m_sampleThumbnail.visualize(param, p);
 	}
-	// The gain envelope, the fades and their handles (SampleClipOverlays.cpp).
+	// The gain envelope, the clip-gain line and handle, the fades and their handles (SampleClipOverlays.cpp).
 	const ClipOverlayFrame frame = overlayFrame(static_cast<int>(-m_paintPixmapXPosition));
+	paintClipGain(p, shownEdits(), frame, textColor());  // Q050-125: the level line and its drag handle
 	paintGainEnvelope(p, shownEdits(), frame, textColor());
 	paintFades(p, shownEdits(), m_clip->length().getTicks(), frame, textColor());
 	if (arrangement::modes().showTransients) { paintTransients(p, transientTicks(), frame, textColor()); }

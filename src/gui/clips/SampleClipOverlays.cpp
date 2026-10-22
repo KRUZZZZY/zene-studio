@@ -41,8 +41,23 @@ constexpr int HandleReach = 6;  //!< how far from a handle a press still takes i
 //! A fade of length zero shows its handle this far inside the clip, clear of the edge's resize grip
 //! (review L05-L09-L08-1 #6: on the edge it took the corner press the inherited resize and move need).
 constexpr int ZeroFadeInset = 10;
+//! Q050-125: the dB range the envelope and the gain line share, and the smallest/largest dB a point or
+//! handle can be set to - the same -60..+24 `clip.gain_envelope_set` and `clip.set_gain` accept.
+constexpr float GainScaleBottomDb = -60.f;
+constexpr float GainScaleSpanDb = 84.f;
+//! Q050-125: the clip-gain handle is held this far inside the clip's left edge, clear of the resize grip.
+constexpr int GainHandleInset = 10;
+//! Q050-125: a click this close to an envelope point takes it, and this close to the gain handle takes that.
+constexpr int PointReach = 5;
+constexpr int GainHandleReach = 6;
 
 int xOfTick(const ClipOverlayFrame& frame, int tick) { return frame.xOrigin + static_cast<int>(tick * frame.pixelsPerTick); }
+
+//! Q050-125: the one dB-to-pixel mapping the envelope line and the gain handle share.
+int yOfDb(const ClipOverlayFrame& frame, float db)
+{
+	return frame.top + static_cast<int>((1.f - (db - GainScaleBottomDb) / GainScaleSpanDb) * frame.height);
+}
 
 int fadeInX(const ClipEdits& edits, const ClipOverlayFrame& frame) { return xOfTick(frame, edits.fadeInOffsetTicks + edits.fadeInTicks); }
 
@@ -87,7 +102,7 @@ void paintRamp(QPainter& p, FadeShape shape, int x0, int x1, bool rising, const 
 void paintGainEnvelope(QPainter& p, const ClipEdits& edits, const ClipOverlayFrame& frame, const QColor& colour)
 {
 	if (!edits.hasEnvelope()) { return; }
-	const auto yOf = [&frame](float db) { return frame.top + static_cast<int>((1.f - (db + 60.f) / 84.f) * frame.height); };
+	const auto yOf = [&frame](float db) { return yOfDb(frame, db); };
 	QPolygon line;
 	line << QPoint(frame.xOrigin, yOf(edits.envelope[0].gainDb));
 	for (int i = 0; i < edits.envelopeCount; ++i) { line << QPoint(xOfTick(frame, edits.envelope[i].tick), yOf(edits.envelope[i].gainDb)); }
@@ -102,6 +117,100 @@ void paintGainEnvelope(QPainter& p, const ClipEdits& edits, const ClipOverlayFra
 	}
 	p.setBrush(Qt::NoBrush);
 }
+
+int clipGainHandleY(const ClipEdits& edits, const ClipOverlayFrame& frame)
+{
+	// The handle's centre, held at least half a handle inside the clip so a boosted clip's handle is
+	// grabbable even though its gain's own pixel would be above the clip's top edge.
+	const int half = HandleSize / 2;
+	return std::clamp(yOfDb(frame, gainLinearToDb(edits.gain)), frame.top + half, frame.top + frame.height - half);
+}
+
+void paintClipGain(QPainter& p, const ClipEdits& edits, const ClipOverlayFrame& frame, const QColor& colour)
+{
+	// The dashed level line across the waveform, at the clip's own gain. The envelope and the fades are
+	// drawn apart from it: this line says what the CLIP GAIN alone is, which is the value its handle edits.
+	const int y = clipGainHandleY(edits, frame);
+	QColor line = colour;
+	line.setAlpha(160);
+	p.setRenderHint(QPainter::Antialiasing, false);
+	p.setPen(QPen(line, 1, Qt::DotLine));
+	p.drawLine(frame.xOrigin, y, frame.xOrigin + frame.width, y);
+	// The handle: a small square at the clip's left edge, the thing a drag takes.
+	const int x = frame.xOrigin + GainHandleInset;
+	p.setPen(QPen(colour, 1));
+	p.setBrush(colour);
+	p.drawRect(x - HandleSize / 2, y - HandleSize / 2, HandleSize, HandleSize);
+	p.setBrush(Qt::NoBrush);
+}
+
+bool clipGainHandleAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPoint& pos)
+{
+	const int x = frame.xOrigin + GainHandleInset;
+	return std::abs(pos.x() - x) <= GainHandleReach
+		&& std::abs(pos.y() - clipGainHandleY(edits, frame)) <= GainHandleReach;
+}
+
+float gainDbAtY(int y, const ClipOverlayFrame& frame)
+{
+	if (frame.height <= 0) { return 0.f; }
+	const double t = std::clamp(static_cast<double>(y - frame.top) / frame.height, 0.0, 1.0);
+	return std::clamp(static_cast<float>(GainScaleBottomDb + (1.0 - t) * GainScaleSpanDb),
+		MinGainPointDb, MaxGainPointDb);
+}
+
+int gainTickAtX(int x, const ClipOverlayFrame& frame)
+{
+	if (frame.pixelsPerTick <= 0.f) { return 0; }
+	return static_cast<int>(std::lround((x - frame.xOrigin) / frame.pixelsPerTick));
+}
+
+int gainPointAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPoint& pos)
+{
+	for (int i = 0; i < edits.envelopeCount; ++i)
+	{
+		const QPoint at(xOfTick(frame, edits.envelope[i].tick), yOfDb(frame, edits.envelope[i].gainDb));
+		if (std::abs(pos.x() - at.x()) <= PointReach && std::abs(pos.y() - at.y()) <= PointReach) { return i; }
+	}
+	return -1;
+}
+
+float clipGainDraggedDb(float startDb, int dy, const ClipOverlayFrame& frame)
+{
+	// The whole range over the clip's own height, so a one-pixel nudge is the same fraction of the
+	// range however tall the clip is; the envelope's dB-per-pixel is the mapping clipGainDraggedDb uses.
+	const double perPixel = frame.height > 0 ? GainScaleSpanDb / frame.height : GainScaleSpanDb;
+	return std::clamp(static_cast<float>(startDb - dy * perPixel), MinGainPointDb, MaxGainPointDb);
+}
+
+namespace
+{
+
+//! Whether @a edits can take a point at @a index/`tick`/`db` at all - the three rules
+//! `clip.gain_envelope_set` enforces, so a drag previews only what the command would accept.
+bool gainPointAllowed(const ClipEdits& edits, int index, int tick, float db, int clipTicks)
+{
+	if (index < 0 || index > edits.envelopeCount) { return false; }
+	if (index == edits.envelopeCount && edits.envelopeCount >= MaxGainPoints) { return false; }
+	return tick >= 0 && tick <= clipTicks && db >= MinGainPointDb && db <= MaxGainPointDb;
+}
+
+} // namespace
+
+bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTicks)
+{
+	if (edits == nullptr || !gainPointAllowed(*edits, index, tick, db, clipTicks)) { return false; }
+
+	// Move the point (or add one), then re-sort: `clip.gain_envelope_set` requires tick order and the
+	// envelope's evaluation is a linear walk, so a point dragged past its neighbour must take its place.
+	if (index == edits->envelopeCount) { edits->envelope[edits->envelopeCount++] = GainPoint{tick, db}; }
+	else { edits->envelope[index] = GainPoint{tick, db}; }
+	std::stable_sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
+		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
+	return true;
+}
+
+int gainPointCount(const ClipEdits& edits) { return edits.envelopeCount; }
 
 void paintFades(QPainter& p, const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame, const QColor& colour)
 {

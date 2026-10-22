@@ -210,6 +210,18 @@ void addClipEditsMenu(QMenu* menu, Clip* clip)
 	addFadeMenu(sub, clip, QMenu::tr("Fade in"), QStringLiteral("fade_in"), edits.fadeInTicks);
 	addFadeMenu(sub, clip, QMenu::tr("Fade out"), QStringLiteral("fade_out"), edits.fadeOutTicks);
 
+	// Q050-125: the polarity, in the same submenu as the gain it scales. The item is checkable and
+	// drives clip.set_polarity - the same registered command the agent surface takes.
+	sub->addSeparator();
+	QAction* polarity = sub->addAction(QMenu::tr("Invert polarity"));
+	polarity->setCheckable(true);
+	polarity->setChecked(edits.hasPolarity());
+	polarity->setData(QStringLiteral("clip.set_polarity"));
+	polarity->setToolTip(QMenu::tr("Render the clip with its sign flipped; the source sample keeps its samples"));
+	QObject::connect(polarity, &QAction::triggered, sub, [clip](bool on) {
+		run(clip, QStringLiteral("clip.set_polarity"), {{QStringLiteral("inverted"), on}});
+	});
+
 	QMenu* shape = sub->addMenu(QMenu::tr("Fade shape"));
 	auto* group = new QActionGroup(shape);
 	const std::pair<QString, FadeShape> shapes[] = {{QMenu::tr("Linear"), FadeShape::Linear},

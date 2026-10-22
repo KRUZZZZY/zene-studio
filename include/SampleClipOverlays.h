@@ -60,6 +60,37 @@ enum class FadeHandle
  *  bottom to the top, held flat before the first point and after the last. */
 LMMS_EXPORT void paintGainEnvelope(QPainter& p, const ClipEdits& edits, const ClipOverlayFrame& frame, const QColor& colour);
 
+/*! Q050-125: the clip's gain as a dashed level line across the waveform plus the square handle at
+ *  its left edge that drags it (`clip.set_gain` on release). The line is drawn at the gain's own dB
+ *  on the envelope's scale; the handle is held inside the clip so a boosted clip's handle stays
+ *  grabbable below the fade handles. */
+LMMS_EXPORT void paintClipGain(QPainter& p, const ClipEdits& edits, const ClipOverlayFrame& frame, const QColor& colour);
+
+//! Q050-125: where paintClipGain draws the handle, and whether @a pos takes it (a few pixels around).
+LMMS_EXPORT int clipGainHandleY(const ClipEdits& edits, const ClipOverlayFrame& frame);
+LMMS_EXPORT bool clipGainHandleAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPoint& pos);
+
+/*! Q050-125: the dB a gain-handle drag by @a dy pixels sets, from @a startDb - the whole -60..+24
+ *  range over the clip's height, so the gesture is the same however tall the clip is. */
+LMMS_EXPORT float clipGainDraggedDb(float startDb, int dy, const ClipOverlayFrame& frame);
+
+/*! Q050-125: the dB of pixel @a y on the envelope's -60..+24 scale (the inverse of the mapping
+ *  paintGainEnvelope draws with), and the tick of pixel @a x inside the clip. Both clamped. */
+LMMS_EXPORT float gainDbAtY(int y, const ClipOverlayFrame& frame);
+LMMS_EXPORT int gainTickAtX(int x, const ClipOverlayFrame& frame);
+
+//! Q050-125: the envelope point within a few pixels of @a pos (-1 when none).
+LMMS_EXPORT int gainPointAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPoint& pos);
+
+/*! Q050-125: @a edits with point @a index moved/added to @a tick and @a db, re-sorted into tick order
+ *  (an existing point on the same tick is replaced). False - @a edits untouched - for an index outside
+ *  the envelope, an add past MaxGainPoints, or a value outside the clip/range: `clip.gain_envelope_set`
+ *  would refuse exactly those, so the GUI must not preview them either. */
+LMMS_EXPORT bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTicks);
+
+/*! Q050-125: how many points @a edits has and the tick/dB of one - the read side a drag saves. */
+LMMS_EXPORT int gainPointCount(const ClipEdits& edits);
+
 /*! ED-173 (0.5.0 L05): the fade-in and fade-out drawn as their curves (fadeShapeGain) over a
  *  shaded region, and the two handles at the top edge that drag them. */
 LMMS_EXPORT void paintFades(QPainter& p, const ClipEdits& edits, int clipTicks, const ClipOverlayFrame& frame, const QColor& colour);
