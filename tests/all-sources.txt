@@ -2837,6 +2837,7 @@ tests/src/core/SessionCheckpointBudgetTest.cpp
 tests/src/core/SessionCheckpointTest.cpp
 tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/SessionFollowTest.cpp
+tests/src/core/SessionMalformedAttributeTest.cpp
 tests/src/core/SessionModelTest.cpp
 tests/src/core/SessionPerformTest.cpp
 tests/src/core/SessionPlaybackRenderTest.cpp

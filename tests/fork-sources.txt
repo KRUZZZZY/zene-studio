@@ -2942,3 +2942,7 @@ docs/qwen-fixes-2026-10/cluster-new-p14-271.md
 tests/src/core/SampleDecoderOggStateTest.cpp
 # cluster new-p14-276 (2026-10): the bounded decoder's decode-limit regression test (fork-NEW).
 tests/src/core/SampleDecoderLimitTest.cpp
+# cluster new-p12-238-port (2026-10): a malformed session attribute must not become a
+# valid target - the Follow Action jump target, the legacy scene index and the
+# legacy clip coordinate (fork-NEW regression source).
+tests/src/core/SessionMalformedAttributeTest.cpp

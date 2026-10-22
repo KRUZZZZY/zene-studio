@@ -1445,6 +1445,11 @@ ENDIF()
 	# the stored chain, a cell address needs both coordinates - and the session
 	# model edit that marks the project unsaved.
 	src/core/SessionCommandArgsTest.cpp
+	# A MALFORMED session attribute must not become a valid target: a jump
+	# target, a legacy scene index and a legacy clip coordinate that cannot be
+	# converted are refused instead of silently addressing scene 0 / track 0,
+	# with the well-formed documents beside them as the control.
+	src/core/SessionMalformedAttributeTest.cpp
 	# Cluster new-p9-414-port: the persisted ratio of a scale interval must not
 	# wrap when it is narrowed into the interval's 32-bit members (a stored
 	# 4294967298/1 used to load as 2/1). Its own file, not the scale family's,

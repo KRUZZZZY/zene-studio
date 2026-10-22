@@ -79,15 +79,18 @@ bool restoreGridSize( const QDomElement& element, int& tracks, int& scenes )
 }
 
 
-//! Restores every <scene> child of a <session> block.
+//! Restores every <scene> child of a <session> block. A row whose index is
+//! not a number is REFUSED like an out-of-grid one: QString::toInt() answers
+//! 0 for a value it cannot convert, and 0 is a valid row - so an unreadable
+//! index would have put the row's data on the FIRST scene.
 bool restoreScenes( const QDomElement& scenesElement, std::vector<Scene>& scenes )
 {
 	for( QDomElement sceneElement = scenesElement.firstChildElement( QStringLiteral( "scene" ) );
 		!sceneElement.isNull();
 		sceneElement = sceneElement.nextSiblingElement( QStringLiteral( "scene" ) ) )
 	{
-		const int index = sceneElement.attribute( QStringLiteral( "index" ),
-			QStringLiteral( "-1" ) ).toInt();
+		int index = -1;
+		if( !intAttribute( sceneElement, QStringLiteral( "index" ), index ) ) { return false; }
 		if( index < 0 || index >= static_cast<int>( scenes.size() ) ) { return false; }
 		scenes[static_cast<std::size_t>( index )].restoreState( sceneElement );
 	}
@@ -130,17 +133,20 @@ bool restoreSubScenes( const QDomElement& session, std::vector<SubScene>& subSce
 
 
 //! Restores every <clip> child of a <session> block. Slots pointing outside
-//! the grid are dropped (the block is malformed or truncated).
+//! the grid are dropped (the block is malformed or truncated), and so are
+//! coordinates that are not numbers at all: QString::toInt() answers 0 for a
+//! value it cannot convert, and 0 is a valid track and a valid scene - an
+//! unreadable coordinate would have restored the clip over the FIRST cell.
 bool restoreClips( const QDomElement& clipsElement, SessionModel& model )
 {
 	for( QDomElement clipElement = clipsElement.firstChildElement( QStringLiteral( "clip" ) );
 		!clipElement.isNull();
 		clipElement = clipElement.nextSiblingElement( QStringLiteral( "clip" ) ) )
 	{
-		const int track = clipElement.attribute( QStringLiteral( "track" ),
-			QStringLiteral( "-1" ) ).toInt();
-		const int scene = clipElement.attribute( QStringLiteral( "scene" ),
-			QStringLiteral( "-1" ) ).toInt();
+		int track = -1;
+		if( !intAttribute( clipElement, QStringLiteral( "track" ), track ) ) { return false; }
+		int scene = -1;
+		if( !intAttribute( clipElement, QStringLiteral( "scene" ), scene ) ) { return false; }
 		if( track < 0 || track >= model.trackCount() || scene < 0 || scene >= model.sceneCount() )
 		{
 			return false;
