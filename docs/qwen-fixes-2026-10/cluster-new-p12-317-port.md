@@ -307,4 +307,8 @@ docs/qwen-fixes-2026-10/cluster-new-p12-317-port.md
 `tests/upstream-modifications.txt` declares every inherited file above (the new
 test is in `tests/fork-sources.txt` and `tests/all-sources.txt`).
 
+Post-commit checks: `feature_check.py` — RESULT: PASS, 8/8 rows (EXIT=0,
+`gate-post-commit.log`); `submit_check.py <worktree> new-p12-317-port` —
+RESULT: PASS - submit (EXIT=0, `submit-rework.log`); `git status --short` empty.
+
 FIXED
