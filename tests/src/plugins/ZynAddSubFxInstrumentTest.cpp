@@ -274,27 +274,30 @@ private slots:
 		return true;
 	}
 
-	//! Whether the two renders differ somewhere in [from, to).
-	static auto anyDifferent(const std::array<std::vector<float>, 2>& a,
-		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to) -> bool
+	//! The first frame in [from, to) at which the two renders differ, or `to` when they
+	//! do not differ at all.
+	static auto firstDifference(const std::array<std::vector<float>, 2>& a,
+		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to) -> f_cnt_t
 	{
-		for (ch_cnt_t channel = 0; channel < 2; ++channel)
+		for (f_cnt_t frame = from; frame < to; ++frame)
 		{
-			for (f_cnt_t frame = from; frame < to; ++frame)
+			for (ch_cnt_t channel = 0; channel < 2; ++channel)
 			{
-				if (std::fabs(a[channel][frame] - b[channel][frame]) > 1e-6f) { return true; }
+				if (std::fabs(a[channel][frame] - b[channel][frame]) > 1e-6f) { return frame; }
 			}
 		}
-		return false;
+		return to;
 	}
 
-	//! The scheduled frame decides where in the period the note starts.
+	//! The scheduled frame decides where in the period the note starts: it starts in the
+	//! first block at or after that frame, and not before it.
 	void theScheduledFrameDecidesWhereTheNoteStarts()
 	{
 		InstrumentTrack track{Engine::getSong()};
 		TestInstrument instrument{&track};
 
 		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		const auto block = static_cast<f_cnt_t>(LocalZynAddSubFx::SynthBlockSize);
 
 		// The period without the note: the reference the note is compared against.
 		const auto reference = renderPeriod(instrument, frames);
@@ -306,14 +309,40 @@ private slots:
 
 		// Zyn renders in blocks, so the note starts at the first block boundary at or
 		// after the frame it was scheduled at - and not before it.
-		const auto block = static_cast<f_cnt_t>(LocalZynAddSubFx::SynthBlockSize);
 		const auto onset = ((100 + block - 1) / block) * block;
 		QVERIFY(onset > 0 && onset < frames);
 
 		QVERIFY2(sameSamples(reference, withNote, 0, onset),
 			"the note started before the block boundary at or after its scheduled frame");
-		QVERIFY2(anyDifferent(reference, withNote, onset, frames),
-			"the note never sounded: the scheduled frame was not applied at all");
+		const auto first = firstDifference(reference, withNote, 0, frames);
+		QVERIFY2(first < onset + block,
+			"the note started later than the first block at or after its scheduled frame");
+	}
+
+	//! A note scheduled exactly on a block boundary starts in THAT block: Zyn generates
+	//! the block that starts at a boundary when the render reaches the boundary, so an
+	//! event that sits on one has to be applied before the render gets there.
+	void theScheduledFrameOnABlockBoundaryStartsInThatBlock()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		const auto block = static_cast<f_cnt_t>(LocalZynAddSubFx::SynthBlockSize);
+
+		const auto reference = renderPeriod(instrument, frames);
+
+		// The note, scheduled exactly on the boundary of the first block.
+		const MidiEvent noteOn{MidiNoteOn, 0, 60, 100};
+		QVERIFY(instrument.handleMidiEvent(noteOn, TimePos(), block));
+		const auto withNote = renderPeriod(instrument, frames);
+
+		// The note starts in the block that begins at the scheduled frame.
+		QVERIFY2(sameSamples(reference, withNote, 0, block),
+			"the note started before the block it was scheduled on");
+		const auto first = firstDifference(reference, withNote, 0, frames);
+		QVERIFY2(first < block + block,
+			"the note started in the block after the one it was scheduled on");
 	}
 
 private:
