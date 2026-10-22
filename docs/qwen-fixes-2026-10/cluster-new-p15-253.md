@@ -251,6 +251,25 @@ this report commits; no gate rewrote a file.
   intended contract that shows it."** Not applicable: the verdict is FIXED. The defect
   was in the tree, the code is cited above, and the tests fail without the change.
 
+## Submit check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-253` -> **EXIT 0**
+(log: submit-check-1.log):
+
+```
+PRE-SUBMIT CHECK for new-p15-253
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p15-253.md
+  PASS  tests added or changed - tests/src/core/AudioBusHandleTest.cpp
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The five ASK items are answered in the Self-check section above, each with its evidence
+(the RED/GREEN exit codes, the deterministic seam, the caller and sibling check, the
+collateral-damage argument, and the not-applicable note for the verdict-specific item).
+
 ### The contract this fix keeps
 
 `src/core/AudioBusHandle.cpp:93-95` states the contract the round-2 fix had to keep: a
