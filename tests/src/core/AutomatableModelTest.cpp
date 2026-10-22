@@ -26,10 +26,14 @@
 #include <QtTest>
 #include <QDomDocument>
 #include <QDomElement>
+#include <QMutex>
 #include <QPointer>
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
 #include "ControllerConnection.h"
+#include "AudioEngine.h"
+#include "AutomationRamp.h"
+#include "RealtimeScope.h"
 #include "Engine.h"
 #include "LadspaBase.h"
 #include "LadspaControl.h"
@@ -40,6 +44,7 @@ namespace
 //! QCOMPARE cannot take `model.value<float>()`: the macro parses the angle
 //! brackets as relational operators (ModulationAudioViewTest says the same).
 float valueOf(const lmms::AutomatableModel& model) { return model.value<float>(); }
+
 } // namespace
 
 class AutomatableModelTest : public QObject
@@ -48,6 +53,22 @@ class AutomatableModelTest : public QObject
 public:
 	bool m1Changed, m2Changed;
 	void resetChanged() { m1Changed = m2Changed = false; }
+
+	//! Cluster 2647's probe: the model calls it immediately after the published
+	//! automation ramp has been read into the period buffer, and it asks the
+	//! legacy value-buffer mutex with tryLock(0). tryLock(0) never blocks, so the
+	//! answer is "was the mutex held across the ramp read" - deterministic, no
+	//! thread and no clock. It is a member so the model's test-only friend
+	//! declaration covers it.
+	static bool s_rampReadLockHeld;
+	static int s_rampReadProbeCalls;
+	static void probeRampRead(lmms::AutomatableModel* model)
+	{
+		QMutex& mutex = model->m_valueBufferMutex;
+		s_rampReadLockHeld = !mutex.tryLock(0);
+		if (!s_rampReadLockHeld) { mutex.unlock(); }
+		++s_rampReadProbeCalls;
+	}
 
 private slots: // helper slots
 	void onM1Changed() { m1Changed = true; }
@@ -261,6 +282,60 @@ private slots: // tests
 		}
 	}
 
+	//! Cluster 2647: reading the published automation ramp - the audio thread's
+	//! path that fills the model's per-sample buffer - must not take the legacy
+	//! value-buffer mutex. Deterministic: the model calls the probe right after
+	//! it has read the ramp, and QMutex::tryLock(0) never blocks, so the answer
+	//! is "was the mutex held across that read", not a race with another thread.
+	void readingTheAutomationRampTakesNoMutex()
+	{
+		using namespace lmms;
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+
+		// The prepass entry point the render owner uses, driven directly: the
+		// published ramp is read into the period buffer here.
+		FloatModel prepared(0.f, 0.f, 1.f, 0.001f);
+		QVERIFY(prepared.isRegisteredWithAudioEngine());
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.f));
+		QVERIFY(ramp.addKnot(frames - 1, 1.f));
+		prepared.publishAutomationRamp(ramp);
+		QVERIFY2(prepared.automationRamp() != nullptr,
+			"the ramp was not published for the current period");
+
+		s_rampReadLockHeld = false;
+		s_rampReadProbeCalls = 0;
+		AutomatableModel::setValueBufferRampReadProbeForTest(&AutomatableModelTest::probeRampRead);
+		prepared.prepareValueBufferForRender();
+		AutomatableModel::setValueBufferRampReadProbeForTest(nullptr);
+
+		QCOMPARE(s_rampReadProbeCalls, 1);
+		QVERIFY2(!s_rampReadLockHeld,
+			"reading the automation ramp took the model's value-buffer mutex (cluster 2647)");
+
+		const ValueBuffer* const buffer = prepared.valueBuffer();
+		QVERIFY2(buffer != nullptr, "the published ramp produced no sample-exact buffer");
+		QCOMPARE(buffer->length(), frames);
+		QVERIFY2(buffer->values()[0] < 0.001f, "the buffer does not start at the ramp's first knot");
+		QVERIFY2(buffer->values()[frames - 1] > 0.999f, "the buffer does not end at the ramp's last knot");
+
+		// The same probe on the ordinary valueBuffer() query (the historic
+		// control-side shape): the read the caller gets may not hold the mutex
+		// across the ramp either.
+		FloatModel queried(0.f, 0.f, 1.f, 0.001f);
+		queried.publishAutomationRamp(ramp);
+		s_rampReadLockHeld = false;
+		s_rampReadProbeCalls = 0;
+		AutomatableModel::setValueBufferRampReadProbeForTest(&AutomatableModelTest::probeRampRead);
+		ValueBuffer* const viaQuery = queried.valueBuffer();
+		AutomatableModel::setValueBufferRampReadProbeForTest(nullptr);
+		QCOMPARE(s_rampReadProbeCalls, 1);
+		QVERIFY2(!s_rampReadLockHeld,
+			"valueBuffer() held the model's value-buffer mutex across the ramp read (cluster 2647)");
+		QVERIFY2(viaQuery != nullptr, "valueBuffer() produced no sample-exact buffer for a published ramp");
+	}
+
 	void customMeterChangeUpdatesSyncOnceAfterReenteringCustom()
 	{
 		using namespace lmms;
@@ -279,6 +354,9 @@ private slots: // tests
 		QCOMPARE(updateCount, 4);
 	}
 };
+
+bool AutomatableModelTest::s_rampReadLockHeld = false;
+int AutomatableModelTest::s_rampReadProbeCalls = 0;
 
 QTEST_GUILESS_MAIN(AutomatableModelTest)
 #include "AutomatableModelTest.moc"
