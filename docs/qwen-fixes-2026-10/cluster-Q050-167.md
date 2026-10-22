@@ -84,8 +84,8 @@ test, the manifests and the docs stayed. Rebuilt the same target and ran the sam
 
 | State | Build | `ctest -R '^AudioWorkerWakeTest$'` | Failing slots |
 |---|---:|---:|---|
-| Product hunks reverted | 0 | **8** | `theRenderSideWakeAllocatesNothingAndTakesNoMutex` (notify counter 0 vs 512: the shipping call no longer reaches the primitive), `theWakePathNamesNoLockOrAllocationInItsSource` (reverted `notifyWorkers()` names `mutex`), `repeatedWakeupsDeliverEveryPeriodWithoutDeadlock` (0 posts) |
-| Product restored | 0 | **0** | none — 9 passed |
+| Product files at `07d6d02bd` | 0 | **8** | `theRenderSideWakeAllocatesNothingAndTakesNoMutex` (notify counter 0 vs 512: the shipping call no longer reaches the primitive), `theWakePathNamesNoLockOrAllocationInItsSource` (reverted `notifyWorkers()` names `mutex`), `repeatedWakeupsDeliverEveryPeriodWithoutDeadlock` (0 posts) |
+| Product restored (final) | 0 | **0** | none — 9 passed |
 
 The reverted build **compiled** (the reverted worker simply stopped calling the new
 primitive), so the failure is behavioural rather than a compile error.
@@ -127,11 +127,13 @@ That is a compile check of the Apple *source path*, not an Apple build or run.
 ## Self-check
 
 **? Each new test FAILS with your product change reverted (reverse the non-test hunks, rebuild, run: exit code?), then PASSES restored.**
-Reverted the two product files from `HEAD` with the test and manifests kept:
-`cmake --build build --target AudioWorkerWakeTest` → **0**, then
-`ctest -R '^AudioWorkerWakeTest$'` → **8** (3 slots red, quoted in the table above).
-Restored the same two files, rebuilt → **0**, ctest → **0** (9 passed). Logs:
-`build-reverted-2.log`, `test-reverted-2.log`, `build-restored-2.log`, `test-restored-2.log`.
+Restored the two product files from the **base** update (`git show 07d6d02bd:...`) with the
+test, manifests and docs kept — `git checkout HEAD --` would have restored the fix itself, so
+the base revision is the honest revert: `cmake --build build --target AudioWorkerWakeTest` →
+**0**, then `ctest -R '^AudioWorkerWakeTest$'` → **8** (3 slots red, quoted above). Restored
+the final files, rebuilt → **0**, ctest → **0** (9 passed). Logs:
+`build-reverted-final.log`, `test-reverted-final.log`, `build-restored-final.log`,
+`test-restored-final.log`; `git status` clean after the restore.
 
 **? Every acceptance criterion is proven by a test you ran yourself (name the test and its exit code per criterion).**
 AC1: `AudioWorkerWakeTest::theCompiledWakeIsTheLegacyWaitOnAddressPrimitive`,
