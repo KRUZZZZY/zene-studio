@@ -316,6 +316,132 @@ bool isOrdered(const std::vector<float>& heard, std::size_t minimum)
 	return audible >= minimum;
 }
 
+// ---- the sample rate change scenarios ------------------------------------------------
+// The three scenarios live here, and the test class calls them: the test file would grow
+// past the 500 line limit of the file-length gate otherwise.
+
+void checkRateChangeDropsTheOldRateRxFrames()
+{
+	LinkAudioStream rx;
+	std::string why;
+	QVERIFY2(rx.configure(receiver(20), &why), why.c_str());
+	const quint16 port = static_cast<quint16>(rx.report().boundPort);
+	QVERIFY(port > 0);
+
+	std::vector<SampleFrame> mix(64, SampleFrame(0.f, 0.f));
+	rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), Rate);   // 48 kHz: the engine's rate
+	QCOMPARE(rx.report().sampleRate, std::uint32_t{Rate});
+
+	// The peer sends 8 packets (1024 frames) at 48 kHz: they are queued for playback.
+	QUdpSocket sender;
+	for (std::uint32_t sequence = 0; sequence < 8; ++sequence)
+	{
+		QVERIFY(sendAudioPacket(sender, port, sequence, Rate, AudioMaxPacketFrames, 0.5f));
+	}
+	QVERIFY(waitForPackets(rx, 8, 5000));
+
+	// The device changes to 44.1 kHz: the queued 48 kHz frames must not be played.
+	std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
+	rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), 44100);
+	QCOMPARE(rx.report().sampleRate, std::uint32_t{44100});
+	for (const SampleFrame& f : mix)
+	{
+		QCOMPARE(f.left(), 0.f);
+		QCOMPARE(f.right(), 0.f);
+	}
+}
+
+
+void checkRateChangeDoesNotSendOldRateFramesAsNewRate()
+{
+	QUdpSocket peer;
+	QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+	peer.setSocketOption(QUdpSocket::ReceiveBufferSizeSocketOption, 4 * 1024 * 1024);
+	LinkAudioStream tx;
+	std::string why;
+	QVERIFY2(tx.configure(senderTo(peer.localPort()), &why), why.c_str());
+
+	// Hold the I/O thread before it sends: the frames of the TX ring stay queued.
+	LinkAudioStreamSeam::setSendHold(true);
+	struct Restore { ~Restore() { LinkAudioStreamSeam::setSendHold(false); } } restore;
+	QVERIFY2(waitForSendHolds(1, 5000), "the I/O thread never reached the sending hold");
+
+	// 40000 frames of 0.5 at 48 kHz: they are queued (the I/O thread is held).
+	std::vector<SampleFrame> oldFrames(40000, SampleFrame(0.5f, 0.5f));
+	tx.process(oldFrames.data(), static_cast<f_cnt_t>(oldFrames.size()), 48000);
+	QCOMPARE(tx.report().framesSent, std::uint64_t{0});
+
+	// The device changes to 44.1 kHz while the old-rate frames are still queued.
+	std::vector<SampleFrame> newFrames(1024, SampleFrame(1.5f, 1.5f));
+	tx.process(newFrames.data(), static_cast<f_cnt_t>(newFrames.size()), 44100);
+	LinkAudioStreamSeam::setSendHold(false);
+
+	// Everything the peer gets from now on must carry the new rate and the new samples.
+	const RateValues values{{48000, 0.5f}, {44100, 1.5f}};
+	PeerRateCheck check;
+	QElapsedTimer clock;
+	clock.start();
+	while (!check.sawNewRate && clock.elapsed() < 5000)
+	{
+		tx.process(newFrames.data(), static_cast<f_cnt_t>(newFrames.size()), 44100);
+		drainPeerPackets(peer, check, values, 44100);
+		QTest::qWait(1);
+	}
+	drainPeerPackets(peer, check, values, 44100);
+	QVERIFY2(check.packets > 0, "the peer received nothing");
+	QVERIFY2(check.sawNewRate, "the stream did not come back at the new rate");
+	QCOMPARE(check.mismatched, 0);
+	QCOMPARE(check.staleRatePackets, 0);
+}
+
+
+void checkOldRatePacketIsNotPlayedAtTheNewRate()
+{
+	LinkAudioStream rx;
+	std::string why;
+	QVERIFY2(rx.configure(receiver(5), &why), why.c_str());
+	const quint16 port = static_cast<quint16>(rx.report().boundPort);
+	QVERIFY(port > 0);
+
+	// The rates are low on purpose: the 128 frames of one packet must be more than the
+	// jitter buffer's target (5 ms), so that the stale audio would really be played.
+	const std::uint32_t oldRate = 16000;
+	const std::uint32_t newRate = 22050;
+	std::vector<SampleFrame> mix(8, SampleFrame(0.f, 0.f));
+	rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), oldRate);
+	QCOMPARE(rx.report().sampleRate, std::uint32_t{oldRate});
+
+	// Hold the I/O thread after it validated a packet, before it publishes it.
+	LinkAudioStreamSeam::setPublishHold(true);
+	struct Restore { ~Restore() { LinkAudioStreamSeam::setPublishHold(false); } } restore;
+
+	QUdpSocket sender;
+	QVERIFY(sendAudioPacket(sender, port, 0, oldRate, AudioMaxPacketFrames, 0.5f));
+	QVERIFY2(waitForPublishHolds(1, 5000), "the I/O thread never held the packet");
+
+	// The device changes to the new rate while the old-rate packet is in flight.
+	rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), newRate);
+	QCOMPARE(rx.report().sampleRate, std::uint32_t{newRate});
+	LinkAudioStreamSeam::setPublishHold(false);
+
+	// The I/O thread has dealt with the packet: it either counted it or rejected it as a
+	// packet at another rate.
+	QVERIFY2(waitForPacketHandled(rx, 5000), "the I/O thread never dealt with the packet");
+
+	// The old-rate audio must never reach the mix.
+	for (int period = 0; period < 32; ++period)
+	{
+		std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
+		rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), newRate);
+		for (const SampleFrame& f : mix)
+		{
+			QCOMPARE(f.left(), 0.f);
+			QCOMPARE(f.right(), 0.f);
+		}
+	}
+}
+
+
 
 } // namespace lmms::test::linkaudio
 
