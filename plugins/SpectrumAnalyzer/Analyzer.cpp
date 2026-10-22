@@ -66,9 +66,6 @@ Analyzer::Analyzer(Model *parent, const Plugin::Descriptor::SubPluginFeatures::K
 	m_inputBuffer(4 * m_maxBufferSize)
 	#ifdef SA_DEBUG
 	, m_last_dump_time(std::chrono::steady_clock::now())
-	, m_dump_count(0)
-	, m_sum_execution_ns(0)
-	, m_max_execution_ns(0)
 	#endif
 {
 	m_processorThread.start();
@@ -103,35 +100,38 @@ ProcessStatus Analyzer::processImpl(InterleavedBufferView<float, 2> in)
 		m_inputBuffer.write(reinterpret_cast<SampleFrame*>(in.data()), in.frames(), true);
 	}
 	#ifdef SA_DEBUG
-		// Atomics only: reportAudioTiming() prints the totals on the GUI thread.
+		// Lock-free only: the collector hands the measurements to the GUI
+		// thread, which sums them up itself, so reportAudioTiming() never
+		// prints on this thread.
 		const auto execution_ns = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
 			std::chrono::steady_clock::now() - audio_time).count());
-		m_dump_count.fetch_add(1, std::memory_order_relaxed);
-		m_sum_execution_ns.fetch_add(execution_ns, std::memory_order_relaxed);
-		auto peak = m_max_execution_ns.load(std::memory_order_relaxed);
-		while (execution_ns > peak
-			&& !m_max_execution_ns.compare_exchange_weak(peak, execution_ns, std::memory_order_relaxed)) {}
+		m_timing.record(execution_ns);
 	#endif
 
 	return ProcessStatus::Continue;
 }
 
 #ifdef SA_DEBUG
-// Runs on the GUI thread once a second and prints every 5 seconds. A callback that
-// lands between the exchanges below is counted in the next report.
+// Runs on the GUI thread once a second and prints every 5 seconds. The GUI
+// thread closes the interval that ends now and takes the measurements of that
+// interval, so the count, the sum and the peak of one report always describe
+// the same callbacks: a callback that lands after the request belongs to the
+// next interval. The measurements are read by the GUI thread itself, so the
+// accumulated timings of an interval are reported even when no callback
+// follows the request.
 void Analyzer::reportAudioTiming()
 {
 	const auto now = std::chrono::steady_clock::now();
 	if (!isStatsIntervalElapsed(now, m_last_dump_time)) {return;}
-
-	const int count = m_dump_count.exchange(0, std::memory_order_relaxed);
-	const auto sum_ns = m_sum_execution_ns.exchange(0, std::memory_order_relaxed);
-	const auto max_ns = m_max_execution_ns.exchange(0, std::memory_order_relaxed);
 	m_last_dump_time = now;
-	if (count > 0)
+
+	// Close the interval that ends now and take its totals.
+	m_timing.request();
+	TimingCollector::Snapshot snapshot;
+	if (m_timing.take(snapshot) && snapshot.count > 0)
 	{
-		std::cout << "Analyzer audio thread: " << static_cast<double>(sum_ns) / 1.0e6 / count << " ms avg / "
-			<< static_cast<double>(max_ns) / 1.0e6 << " ms peak." << std::endl;
+		std::cout << "Analyzer audio thread: " << static_cast<double>(snapshot.sumNs) / 1.0e6 / snapshot.count << " ms avg / "
+			<< static_cast<double>(snapshot.maxNs) / 1.0e6 << " ms peak." << std::endl;
 	}
 }
 #endif
