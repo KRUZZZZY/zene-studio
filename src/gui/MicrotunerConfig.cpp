@@ -514,28 +514,25 @@ bool MicrotunerConfig::loadScaleFromFile()
  */
 bool MicrotunerConfig::loadScaleFile(const QString& fileName, QString* error)
 {
-	QFile file(fileName);
-	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	QString name;
+	QStringList intervals;
+	QString reason;
+	if (!SessionTuning::parseScaleFile(fileName, &name, &intervals, &reason))
 	{
-		if (error != nullptr) {*error = tr("Unable to open selected file.");}
+		// A file that describes no scale - no name, no degree count, a
+		// non-positive count, or fewer interval lines than it declared - is
+		// refused HERE, before the form is touched: the old path cleared the
+		// form and handed applyScale() an empty interval list, which built
+		// the 1/1 interval the apply code always starts with and installed a
+		// scale in which every key has the same pitch. The core reads the
+		// file with the same rules the mts.load_scale command applies, so
+		// both refuse exactly the same files.
+		if (error != nullptr) {*error = reason;}
 		return false;
 	}
-	QTextStream stream(&file);
-	int i = -2, limit = 0;
-
-	m_scaleNameEdit->setText("");
+	m_scaleNameEdit->setText(name);
 	m_scaleTextEdit->clear();
-	while (!stream.atEnd() && i < limit)
-	{
-		QString line = stream.readLine();
-		if (line != "" && line[0] == '!') {continue;}					// comment
-		switch(i) {
-			case -2:	m_scaleNameEdit->setText(line); break;			// first non-comment line = name or description
-			case -1:	limit = line.toInt(); break;					// second non-comment line = degree count
-			default:	m_scaleTextEdit->appendPlainText(line); break;	// all other lines = interval definitions
-		}
-		i++;
-	}
+	for (const QString& line : intervals) {m_scaleTextEdit->appendPlainText(line);}
 
 	return applyScale();
 }

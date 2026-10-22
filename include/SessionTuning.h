@@ -65,6 +65,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 
 #include "Note.h"
 
@@ -132,6 +133,19 @@ public:
 	//! the table from it with the CURRENT keymap, and ACTIVATE the session
 	//! table. false + \a error (typed, nothing written) on any refusal.
 	bool loadScaleFile(const QString& path, QString* error);
+	/*! Read an .scl file into its name and its interval lines - the SAME rules
+	 *  the loader above applies: a comment line starts with '!', a blank line
+	 *  is skipped, the first line names the scale, the second declares how many
+	 *  degrees follow, and the file must carry exactly that many interval
+	 *  lines. A file that describes no scale - no name, no degree count, a
+	 *  non-positive count, or fewer interval lines than it declared - is
+	 *  REFUSED with \a error and nothing is written.
+	 *
+	 *  The Microtuner dialog's own .scl path (src/gui/MicrotunerConfig.cpp)
+	 *  reads its file with this function, so the dialog and the mts.load_scale
+	 *  command accept and refuse exactly the same files. */
+	static bool parseScaleFile(const QString& path, QString* name, QStringList* intervals,
+		QString* error);
 	//! Parse a .kbm file the way the dialog does and rebuild the table's
 	//! content with it. Does NOT change the active flag - content only.
 	bool loadKeymapFile(const QString& path, QString* error);

@@ -329,6 +329,33 @@ std::shared_ptr<Keymap> keymapOf(const QStringList& fields, const QString& descr
 
 } // namespace
 
+bool SessionTuning::parseScaleFile(const QString& path, QString* name, QStringList* intervals,
+	QString* error)
+{
+	// The file is read here, not by the caller, so that the dialog and the
+	// command below it read the same bytes with the same rules. A file that
+	// does not describe a scale is refused BEFORE the caller has touched the
+	// Song or the session table with it.
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		failWith(error, QStringLiteral("cannot read the scale file '%1'").arg(path));
+		return false;
+	}
+	QTextStream stream(&file);
+	QString scaleName;
+	QStringList scaleLines;
+	QString reason;
+	if (!readScaleLines(stream, &scaleName, &scaleLines, &reason))
+	{
+		failWith(error, reason);
+		return false;
+	}
+	if (name != nullptr) {*name = scaleName;}
+	if (intervals != nullptr) {*intervals = scaleLines;}
+	return true;
+}
+
 bool SessionTuning::loadScaleFile(const QString& path, QString* error)
 {
 	if (path.size() > MaxSourceLength)
