@@ -2540,6 +2540,7 @@ tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
+tests/src/core/ControlNoteNoOpUndoTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlPluginBusesTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
