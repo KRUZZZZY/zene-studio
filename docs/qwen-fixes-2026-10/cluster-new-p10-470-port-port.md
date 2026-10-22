@@ -150,22 +150,48 @@ its own committed recipe.
 
 ## Self-check
 
-- *Each new test FAILS with your product change reverted, then PASSES restored: yes.* The
-  counterfactual (the finding's claim: constructor does not initialize the debug members) was
-  applied to `plugins/SpectrumAnalyzer/Analyzer.cpp` (uncommitted), rebuilt, run:
-  ctest exit 8, assertion "the Analyzer constructor does not initialize m_last_dump_time"
-  (test-5-red.log). Reversed with `git apply -R fix.patch`, rebuilt, run: ctest exit 0,
-  23/23 functions pass (test-6-green.log, test-7-green-direct.log).
-- *The regression test FAILS with the product change reverted and PASSES with it: yes.* Exit
-  codes as above: RED 8, GREEN 0. The check is deterministic source-text matching of the
-  constructor's initializer list against the four current member names; it contains no clock
-  reads, sleeps or races.
-- *Nothing new on the audio thread:* the change is test-only; no product file differs from
-  HEAD (`git diff --stat -- plugins src include` empty).
-- *Old projects / saved data / undo / commands:* untouched - no product, serializer, control
-  or command change.
-- *Realtime contract:* unchanged; the SA_DEBUG members stay lock-free atomics plus a
-  steady-clock time point read only on the GUI thread.
-- *Registration:* no new file; `tests/src/plugins/AudioPluginTest.cpp` is already a tracked,
-  registered source; the only manifest touched is `tests/all-sources.txt`, regenerated from
-  its own recipe.
+- *The regression test FAILS with your product change reverted and PASSES with it (exit
+  codes): yes.* The counterfactual (the finding's claim: constructor does not initialize the
+  debug members) was applied to `plugins/SpectrumAnalyzer/Analyzer.cpp` (uncommitted),
+  rebuilt, run: ctest exit 8, assertion "the Analyzer constructor does not initialize
+  m_last_dump_time" (test-5-red.log). Reversed with `git apply -R fix.patch`, rebuilt, run:
+  ctest exit 0, 23/23 functions pass (test-6-green.log, test-7-green-direct.log).
+- *The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
+  injected values it uses): yes.* The guard's seam is the same one the adjacent
+  `analyzerDebugTimerKeepsStdoutOffAudioThread()` already uses in this host: it opens the
+  product source `plugins/SpectrumAnalyzer/Analyzer.cpp` (located from `__FILE__`) and text-
+  matches the constructor's initializer list against the four member names. No clock is read,
+  no value is injected, no thread runs, nothing sleeps - the result depends only on the bytes
+  of the source file.
+- *The fix is at the cause and complete: every caller and sibling of what you changed was
+  checked and stays consistent: yes.* No production file changed (`git diff HEAD~1 -- plugins
+  src include` is empty), so there is no product caller to re-verify; the siblings of the
+  debug state were checked and are consistent: the three atomic counters keep both their
+  declaration initializers (`Analyzer.h:98-100`) and the constructor's
+  (`Analyzer.cpp:69-71`), `m_last_dump_time`'s only reader is the GUI-thread reporter
+  (`Analyzer.cpp:125`), and the guard's member-name list was checked against the current
+  `Analyzer.cpp` constructor, which is exactly the check the previous port got wrong. The
+  sibling class `SaProcessor` has its own, separate `SA_DEBUG` `m_last_dump_time`
+  (`SaProcessor.h:162`, read at `SaProcessor.cpp:155`) that this branch's constructor does not
+  name - that is a distinct defect outside this finding's scope (the finding's file:line is
+  `plugins/SpectrumAnalyzer/Analyzer.h:78`, the Analyzer class), and the original port
+  deliberately left it for a follow-up cluster; this cluster does the same and reports it
+  here so it is not lost.
+- *No collateral damage: old projects and saved data still load as before, and any limit or
+  check you added does not hit other callers that legitimately exceed it: yes.* The change is
+  test-only - no serializer, loader, limit or product check was added or altered, so project
+  loading and saved data behave byte-identically. The only non-test edit,
+  `tests/all-sources.txt`, is a gate measurement manifest: it now lists exactly the 3045
+  paths its own committed recipe derives (verified with the header's verify diff, which
+  prints `REPRODUCES`), contains no product behaviour, and no runtime caller reads it.
+- *If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
+  contract that shows it: yes.* `plugins/SpectrumAnalyzer/Analyzer.cpp:67-72` - the
+  constructor's initializer list names `m_last_dump_time(std::chrono::steady_clock::now())`,
+  `m_dump_count(0)`, `m_sum_execution_ns(0)`, `m_max_execution_ns(0)`; commit `13d8b4604`
+  (cluster new-p10-471) introduced it and is an ancestor of the base (`git merge-base
+  --is-ancestor 13d8b4604 dbb15dded` exits 0). The finding's second clause - the audio
+  callback reads the timer - is also contradicted by the code: `processImpl()`
+  (`Analyzer.cpp:91-117`) never touches `m_last_dump_time`; its only reads are
+  `Analyzer.cpp:125` and the reset at `Analyzer.cpp:130`, both inside the GUI-thread
+  `reportAudioTiming()` connected to `m_reportTimer` at `Analyzer.cpp:77-78`.
+
