@@ -41,6 +41,21 @@ description changed), and `tests/doc-figures-gate.py` passes (exit 0).
 
 None to the project format. The workspace is a user preference in `<config>/ui/workspace`.
 
+## A required gate repair, alongside the feature
+
+`tests/all-sources.txt` at this branch's base (`07d6d02bd`) listed 1148 vendored
+`plugins/SfzPlayer/sfizz/**` paths that its own published recipe excludes on purpose, so
+`all-sources-reproduce` (and therefore `feature_check.py`) was red on the untouched base before
+any change of mine - reproduced with `git stash`-free pristine runs, exit 1 on both the branch and
+the canonical `zene-cachyos` checkout at the same commit. The manifest header prescribes exactly
+one repair ("run the 'Regenerate with' command ... write its output over the entry list"), and the
+same repair was already made on the train separately as `14e19eb4d`. Applying the recipe here is
+what makes the gate green; the delta is **0 additions and 1148 removals, every one under the
+header's excluded vendored tree**, none of them in `tests/fork-sources.txt`, and no ratchet
+baseline ever held one. The new test source (`tests/src/gui/TouchWorkspaceTest.cpp`) is in the
+re-derived list. This is recorded here because the reviewer will see the large deletion in the
+feature commit.
+
 ## Gates (exit codes)
 
 All eight rows of `feature_check.py` PASS: fork-sources 0, all-sources-reproduce 0,
@@ -91,6 +106,10 @@ its checks with its log path pointed at `/tmp` (`/tmp/feature_check_run.py`; the
   and the reversibility table. No render, `processImpl`, `play`, audio buffer, lock, wait or signal
   on any audio path. `ConfigManager::saveConfigFile()` is a GUI/command-thread file write; nothing
   on the audio thread calls `appearance::setOptions` or `tokens::touchWorkspace()`.
+  The `submit_check.py` audio-path heuristic matched on the word `processImpl` **in this report's
+  own prose**, not in a changed source file: `git diff <base>..HEAD | grep -nE 'processImpl|playImpl|
+  renderPeriod|processAudioBuffer|AudioEngine::'` finds that single documentation line and nothing
+  else, so no audio-path function is touched at all.
 - **Old projects load and render exactly as before; new data round-trips.** No project-format or
   save/load file changed; the preference is `<config>/ui/workspace`, absent means `standard`. The
   launcher's standard size is byte-for-byte the previous 72 × 26, so existing layouts are unchanged.
