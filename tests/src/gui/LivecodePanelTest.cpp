@@ -214,6 +214,22 @@ private slots:
 			QStringLiteral("zene.log():info('panel-a')\n"));
 	}
 
+	//! Scheduling with no id lets the clock choose lc-<n>, and the panel then names that id in its
+	//! box so the next Cancel addresses the schedule it just made rather than an empty field.
+	void aGeneratedIdIsReportedBackAndCancellable()
+	{
+		LivecodePanel panel;
+		panel.setScheduleId(QString());
+		panel.setHook(QStringLiteral("transport"));
+		panel.setSource(QStringLiteral("return 'generated'\n"));
+		QTest::mouseClick(buttonFor(panel, "livecode.schedule"), Qt::LeftButton);
+		const QString generated = panel.scheduleId();
+		QVERIFY2(generated.startsWith(QStringLiteral("lc-")), qPrintable(generated));
+		QVERIFY2(!scheduleEntry(generated).isEmpty(), qPrintable(generated));
+		QTest::mouseClick(buttonFor(panel, "livecode.unschedule"), Qt::LeftButton);
+		QVERIFY2(scheduleEntry(generated).isEmpty(), qPrintable(panel.statusText()));
+	}
+
 	//! A source that does not compile is refused by the command, shown in the panel, and the
 	//! schedule that was active keeps firing the script it already had.
 	void aCompileErrorKeepsTheActiveSchedule()

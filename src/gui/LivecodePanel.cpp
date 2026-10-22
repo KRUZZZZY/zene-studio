@@ -152,7 +152,7 @@ LivecodePanel::LivecodePanel(QWidget* parent) :
 	m_table->horizontalHeader()->setStretchLastSection(true);
 
 	connect(m_table, &QTableWidget::currentCellChanged, this, [this](int row, int, int, int) {
-		if (row < 0) { return; }
+		if (row < 0 || !m_id->text().trimmed().isEmpty()) { return; }
 		const QTableWidgetItem* item = m_table->item(row, 0);
 		if (item != nullptr) { m_id->setText(item->text()); }
 	});
@@ -247,18 +247,22 @@ QString LivecodePanel::schedule()
 		{QStringLiteral("budget"), m_budget->value()}};
 	const QString id = scheduleId();
 	if (!id.isEmpty()) { args.insert(QStringLiteral("id"), id); }
-	bool ok = false;
-	const QString refusal = runAndReport("livecode.schedule", args, &ok);
-	if (!ok)
+	const ControlResult result = run("livecode.schedule", args);
+	if (!result.ok)
 	{
 		// The command refused before the clock moved: whatever was scheduled under this id is
 		// STILL the schedule that fires. Keep its row and the editor buffer on screen.
+		m_status->setText(tr("livecode.schedule refused: %1").arg(result.errorMessage));
 		m_source->setFocus();
-		return refusal;
+		return result.errorMessage;
 	}
+	// The command answers the id it armed, including a generated one: name it in the box so
+	// Cancel / Load / Undo address the schedule that was just made, not an empty field.
+	const QString armed = result.result.value(QStringLiteral("id")).toString();
+	m_id->setText(armed);
 	refresh();
 	m_status->setText(tr("Scheduled '%1' on the %2 hook - it runs on its own from now on")
-		.arg(scheduleId().isEmpty() ? tr("a new id") : scheduleId(), m_hook->currentText()));
+		.arg(armed, m_hook->currentText()));
 	return QString();
 }
 
