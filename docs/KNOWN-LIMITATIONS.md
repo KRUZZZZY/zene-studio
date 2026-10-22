@@ -470,7 +470,24 @@ library to work.
   *(Updated 2026-10-07, 0.5.0 ED-176.)* Crossfades are no longer socket-only: an audio clip that another clip
   overlaps offers **Crossfade Editor...** (both sides' lengths and shapes, drawn, applied through `clip.crossfade`
   as one undo step; `CrossfadeEditorTest`). See "0.5.0 audio clips" at the end of this page for what it leaves out.
-- **No clip fade, crossfade or clip-gain gestures.** The clip model is in (an authored window that survives
+- *(Added 2026-10, Q050-125.)* **Clip gain, the gain envelope and polarity are now dragged on the waveform.**
+  A sample clip draws its gain as a dashed line with a square handle on its left edge: drag the handle up or
+  down and the clip's level follows the pointer, the drawn waveform growing or shrinking with it, and the
+  release is one `clip.set_gain` step. Alt-click the waveform to add a gain-envelope point at the pointer and
+  drag it in time and level (a plain press on a point moves it; points may be dragged past each other and are
+  re-sorted, which is the order `clip.gain_envelope_set` requires). The Gain and fades submenu adds **Invert
+  polarity** (`clip.set_polarity`), which flips the clip's rendered sign and mirrors its drawn waveform while
+  the SOURCE sample keeps every sample: the inversion is a signed stage on the clip's gain, written as `invert`
+  only when set, so an older project loads non-inverted and renders bit for bit as before. The drawn amplitude
+  is `clipGainCurveAt` (the one definition the audio path and the automation editor's ghost already share)
+  times the polarity sign, sampled per drawn column. Proved by `ClipWaveformEditTest` (real mouse gestures on
+  the real view, with the drawn image compared) and `ClipPolarityTest` / `ControlClipPolarity` (the render's
+  sign, the source untouched, the commands and the file). What is still absent: a per-point delete gesture
+  (remove points through the command), clip-filter and range-selection tools, destructive sample editing, MIDI
+  clip edits and mixer-channel polarity.
+- **No clip fade, crossfade or clip-gain gestures.** *(Stale in part: fade handles and the Crossfade Editor
+  arrived in 0.5.0 L05 - ED-173/ED-176 - and the clip-gain handle, the envelope points and the waveform
+  display in Q050-125, the bullet above. Kept as the record of what was absent on 2026-09-13.)* The clip model is in (an authored window that survives
   playback and is saved with the project) and so, since 2026-09-13, is the fade/gain model — but there are
   **no trim, slip, fade, crossfade or clip-gain tools** in the interface, and **fades, crossfades and clip gain
   are drivable through the socket, not from the interface**.
