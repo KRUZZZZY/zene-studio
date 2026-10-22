@@ -25,9 +25,11 @@ WHAT IT CHECKS (file reads only; no network, no instance, no build):
      no longer says "Choosing the port and the drift bound is still socket-only" or "nothing in src/gui/
      offers a clock port selector".
   4. `data/manual/index.html` names both routes and the drift bound.
-  5. A documentation sweep over every tracked .md/.html (dated logs and reports excluded) finds no
-     UNMARKED statement that MIDI Clock source-port or drift-bound selection is socket-only: a hit is
-     allowed only inside a record that says it is superseded/historical and carries a date.
+  5. A documentation sweep over every tracked .md/.html (dated lane records, reviews and run logs
+     excluded: docs/bunny-fixes-2026-10-05/, docs/qwen-fixes-2026-10/, docs/050-features/ and *-logs/)
+     finds no UNMARKED statement that MIDI Clock source-port or drift-bound selection is socket-only: a
+     hit is allowed only inside a current page's unit that says it is superseded/historical and carries
+     a date, and a bare "still socket-only" is never excused because "still" asserts the present.
 
 `--self-test` is the gate's own red/green control: it copies every input into a throwaway root and proves
 the gate fails (exit 1, naming the lost claim) when the stale sentence returns, when the Sync form route
@@ -85,8 +87,12 @@ RECORD = re.compile(r"\b(superseded|pre-menu record|historical|record of|the rec
                     r"|\b20\d\d-\d\d-\d\d\b[^.]{0,160}\b(superseded|pre-menu record|historical|record of)\b",
                     re.I)
 
-# Trees that hold dated run logs, reviews and reports rather than documentation claims.
-EXCLUDED_DIRS = ("docs/bunny-fixes-2026-10-05/", "docs/qwen-fixes-2026-10/")
+# Trees that hold dated lane records, reviews and run logs rather than current documentation claims. A
+# unit feature record (docs/050-features/) necessarily QUOTES the sentence it removed - Q050-308's own
+# record cites three of them - so it is a record of the fix, like the other two trees, not a page a
+# reader takes as the current state. The current-facing pages (KNOWN-LIMITATIONS.md, the manual,
+# FEATURE-LIST-0.3.0.md, the release notes) stay in the sweep.
+EXCLUDED_DIRS = ("docs/bunny-fixes-2026-10-05/", "docs/qwen-fixes-2026-10/", "docs/050-features/")
 EXCLUDED_SUFFIX = ("-logs/", "logs/")
 
 
