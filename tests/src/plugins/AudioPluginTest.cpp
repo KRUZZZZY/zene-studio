@@ -61,6 +61,7 @@
 #include <chrono>
 #include <memory>
 #include <new>
+#include <thread>
 #include <type_traits>
 #include <vector>
 
@@ -161,7 +162,10 @@ void writeLittleEndian32(QByteArray& data, qsizetype offset, std::uint32_t value
 	}
 }
 
-auto makeSingleSamplePatch() -> QByteArray
+//! A valid one-sample GF1 patch whose single sample is tuned to
+//! `rootFrequency` (in milli-hertz), so two patches can be told apart by the
+//! frequency of the sample they publish.
+auto makeSingleSamplePatch(std::uint32_t rootFrequency = 440000) -> QByteArray
 {
 	constexpr qsizetype SampleFrames = 4;
 	auto patch = QByteArray(PatchHeaderSize + PatchSampleHeaderSize + SampleFrames, '\0');
@@ -172,7 +176,7 @@ auto makeSingleSamplePatch() -> QByteArray
 	writeLittleEndian32(patch, sample + 8, SampleFrames);
 	writeLittleEndian32(patch, sample + 16, SampleFrames);
 	writeLittleEndian16(patch, sample + 20, 22050);
-	writeLittleEndian32(patch, sample + 30, 440000);
+	writeLittleEndian32(patch, sample + 30, rootFrequency);
 	const int sampleAt = static_cast<int>(PatchHeaderSize + PatchSampleHeaderSize);  // Qt 5 QByteArray::operator[] takes int/uint
 	patch[sampleAt] = 32;
 	patch[sampleAt + 1] = -32;
@@ -246,6 +250,7 @@ private slots:
 	void legacyAudioBufferPathRoutesInPlacePorts();
 	void neuralAmpRejectsModelsTrainedAtAnotherSampleRate();
 	void clearingPatmanPatchReleasesItsSampleBank();
+	void patmanPatchLoadWaitsForTheRenderPeriod();
 	void subMillisecondTapIntervalDoesNotProduceInfiniteTempo();
 	void namHarnessRejectsNegativeWarmup();
 	void emptyNonInterpolatedCyclicVectorIsRejected();
@@ -659,6 +664,86 @@ void AudioPluginTest::clearingPatmanPatchReleasesItsSampleBank()
 	QVERIFY(instrument->m_patchFile.isEmpty());
 	QVERIFY(instrument->m_patchSamples.isEmpty());
 	QVERIFY(loadedSample.expired());
+}
+
+//! The audio thread picks its sample out of the patch bank while it renders
+//! (playNoteImpl -> selectSample) and the render thread owns the engine's
+//! model state for a whole render period: replacing the patch must not land
+//! in the middle of a render period, or the audio thread selects out of a
+//! bank that is being mutated underneath it.
+void AudioPluginTest::patmanPatchLoadWaitsForTheRenderPeriod()
+{
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+
+	const QString firstPatch = directory.filePath(QStringLiteral("first.pat"));
+	const QString secondPatch = directory.filePath(QStringLiteral("second.pat"));
+	const auto writePatch = [&directory](const QString& name, std::uint32_t rootFrequency)
+	{
+		const QString path = directory.filePath(name);
+		QFile file(path);
+		if (!file.open(QIODevice::WriteOnly)) { return QString{}; }
+		const QByteArray patch = makeSingleSamplePatch(rootFrequency);
+		if (file.write(patch) != static_cast<qint64>(patch.size())) { return QString{}; }
+		file.close();
+		return path;
+	};
+	QVERIFY(!writePatch(QStringLiteral("first.pat"), 440000).isEmpty());
+	QVERIFY(!writePatch(QStringLiteral("second.pat"), 220000).isEmpty());
+
+	const QString pluginPath = QDir(QFileInfo(QStringLiteral(SYNTHETIC_PLUGIN_PATH)).absolutePath())
+		.absoluteFilePath(QStringLiteral("../plugins/patman"));
+	QLibrary patmanLibrary(pluginPath);
+	patmanLibrary.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(patmanLibrary.load(), qPrintable(patmanLibrary.errorString()));
+	const auto patmanMain = reinterpret_cast<MainFn>(patmanLibrary.resolve("lmms_plugin_main"));
+	QVERIFY2(patmanMain != nullptr, qPrintable(patmanLibrary.errorString()));
+	auto plugin = std::unique_ptr<Plugin>{patmanMain(nullptr, nullptr)};
+	QVERIFY(plugin != nullptr);
+	auto* instrument = static_cast<PatmanInstrument*>(plugin.get());
+
+	QVERIFY(QMetaObject::invokeMethod(instrument, "setFile", Qt::DirectConnection,
+		Q_ARG(QString, firstPatch), Q_ARG(bool, false)));
+	QCOMPARE(instrument->m_patchSamples.size(), 1);
+	QCOMPARE(instrument->m_patchSamples.constFirst()->frequency(), 440.0f);
+
+	AudioEngine* const engine = Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+
+	// The render thread holds the engine's model-change mutex for a whole
+	// render period (AudioEngine::renderNextPeriod): the patch state the
+	// audio thread reads must not change while it owns it.
+	engine->requestChangeInModel();
+
+	std::atomic<bool> finished{false};
+	std::thread loader([&instrument, &secondPatch, &finished] {
+		QMetaObject::invokeMethod(instrument, "setFile", Qt::DirectConnection,
+			Q_ARG(QString, secondPatch), Q_ARG(bool, false));
+		finished.store(true, std::memory_order_release);
+	});
+
+	// The outcome is an ordering of events, not a duration. While the render
+	// period owns the model state, the load either reaches the model-change
+	// guard and waits there (a control thread parked inside
+	// AudioEngine::requestChangeInModel, counted by modelChangeWaiters()), or
+	// it completes without ever waiting. Whichever happens first decides; a
+	// load that reaches neither state leaves the loop - and the test - hung,
+	// which a timeout reports as a failure, never as a pass.
+	while (!finished.load(std::memory_order_acquire) &&
+			engine->modelChangeWaiters() == 0)
+	{
+		std::this_thread::yield();
+	}
+	const bool completedWhileRenderPeriodOwned = finished.load(std::memory_order_acquire);
+
+	engine->doneChangeInModel();
+	loader.join();
+
+	QVERIFY2(!completedWhileRenderPeriodOwned,
+		"the patch was replaced while the render period owned the model state");
+	// The deferred load still lands once the render period is over.
+	QCOMPARE(instrument->m_patchSamples.size(), 1);
+	QCOMPARE(instrument->m_patchSamples.constFirst()->frequency(), 220.0f);
 }
 
 //! TapTempo must reject intervals that truncate to zero milliseconds.

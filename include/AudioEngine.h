@@ -554,6 +554,16 @@ public:
 		return RequestChangesGuard{this};
 	}
 
+	//! @returns how many control threads are parked inside
+	//! requestChangeInModel(), waiting for the render period's model
+	//! ownership. A test seam: it lets a test observe that another control
+	//! thread reached the model-change guard, so a concurrency regression can
+	//! decide on an ordering of events instead of a clock deadline.
+	int modelChangeWaiters() const
+	{
+		return m_modelChangeWaiters.load(std::memory_order_relaxed);
+	}
+
 #ifdef LMMS_TESTING
 	//! Test seam: whether the CALLING thread currently holds the change-in-model
 	//! guard through requestChangeInModel(). A test uses it to prove a topology
@@ -791,6 +801,7 @@ private:
 	std::atomic<bool> m_overloadShedding{true};
 
 	std::recursive_mutex m_changeMutex;
+	std::atomic<int> m_modelChangeWaiters{0};
 #ifdef LMMS_TESTING
 	//! Nesting depth of requestChangeInModel() on the calling thread (the guard
 	//! is recursive). Only read by isChangeInModelHeld() in tests.
