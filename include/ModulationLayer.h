@@ -331,11 +331,11 @@ inline float modulatedValue(const ModulatorSource& source, float base, float dep
  *  and re-checks the version, retrying while a write is in progress but never
  *  blocking.
  *
- *  The write window holds the view swap and nothing else. The publication work
- *  - including the wait for the audio writes that pinned a target an edit
- *  rebinds - happens before it, so a reader never retries for as long as an
- *  edit takes: the retry would be bounded by the writer, not by the audio
- *  thread.
+ *  The write window holds the view swap and the trigger state that belongs to
+ *  that view, and nothing else. The publication work - including the wait for
+ *  the audio writes that pinned a target an edit rebinds - happens before it,
+ *  so a reader never retries for as long as an edit takes: the retry would be
+ *  bounded by the writer, not by the audio thread.
  */
 class LMMS_EXPORT ModulationLayerPublisher
 {
@@ -353,12 +353,16 @@ public:
 	 *  false.
 	 *
 	 *  The mutation and the publication work happen OUTSIDE the reader-visible
-	 *  write window: only the view swap itself is inside it. An edit can wait
-	 *  for the audio writes that pinned a target it rebinds, and that wait
-	 *  belongs to the writer and the edit - a reader that retried for the whole
-	 *  edit would spin for as long as the edit takes, which the audio thread
-	 *  cannot bound. The hand-off is bounded: one fixed-size view copy inside
-	 *  the window. */
+	 *  write window: only the view swap and its paired trigger state are inside
+	 *  it. An edit can wait for the audio writes that pinned a target it
+	 *  rebinds, and that wait belongs to the writer and the edit - a reader
+	 *  that retried for the whole edit would spin for as long as the edit
+	 *  takes, which the audio thread cannot bound. The hand-off is bounded:
+	 *  fixed-size copies inside the window. The trigger timing an edit resets
+	 *  (a modulator that starts following another track waits for its first
+	 *  note again) commits HERE, with the view it belongs to: published before
+	 *  the writer wait it would reset the phase of the still-published OLD
+	 *  view, which can keep writing a still-open slot throughout that wait. */
 	template <typename Fn>
 	bool edit(Fn&& fn)
 	{
@@ -366,11 +370,14 @@ public:
 		ModulationAudioView staged;
 		publishView(staged);
 		// The write window: the odd version says "a write is in progress", the
-		// even one says "the view below is the published one". Nothing else
-		// happens inside it - a reader that retries does so for the length of
-		// one fixed-size copy, never for the length of an edit.
+		// even one says "the view below is the published one". The view swap
+		// and the trigger state it carries land together, both fixed-size - a
+		// reader that retries does so for the length of these copies, never
+		// for the length of an edit.
 		m_version.fetch_add(1, std::memory_order_acq_rel);
 		m_view = staged;
+		m_hasLayer.store(m_layer.shouldPersist(), std::memory_order_release);
+		publishTriggers();
 		m_version.fetch_add(1, std::memory_order_acq_rel);
 		return changed;
 	}
@@ -480,9 +487,13 @@ private:
 		std::uint32_t token);
 	//! Rebuilds the staged view and the liveness watches from m_runtime (control
 	//! thread, OUTSIDE the reader-visible write window: the writer quiescence
-	//! this waits for belongs to the edit, not to the audio thread).
+	//! this waits for belongs to the edit, not to the audio thread). Touches no
+	//! reader-visible state - the view and its trigger state commit together in
+	//! edit().
 	void publishView(ModulationAudioView& staged);
-	//! MX-121: each modulator's trigger track from m_runtime (control thread, from publishView()).
+	//! MX-121: each modulator's trigger track from m_runtime (control thread,
+	//! from edit(), INSIDE the reader-visible write window so the timing an
+	//! edit resets stays paired with the view it belongs to).
 	void publishTriggers();
 
 	ModulationLayer m_layer{};

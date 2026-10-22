@@ -36,7 +36,11 @@
 //!  * the view path writes exactly what the control-side runtime path writes;
 //!  * hasLayer() follows the authored layer, so the audio thread's
 //!    pay-nothing test no longer reads the control-only layer;
-//!  * a block through the view allocates nothing.
+//!  * a block through the view allocates nothing;
+//!  * an edit that waits for an active writer neither spins snapshot()
+//!    (the reader-visible version stays even during the wait) nor resets
+//!    the still-published old view's trigger phase (the paired trigger
+//!    state commits with the view, inside the bounded hand-off).
 
 #include <QtTest>
 
@@ -474,6 +478,86 @@ private slots:
 			"the reader-visible version was odd while the edit waited for an active "
 			"writer: the audio thread's snapshot() spins for as long as the edit takes");
 		QCOMPARE(entriesWhileWaiting.load(std::memory_order_acquire), 1);
+	}
+
+	/*! The paired half of the hand-off: while an edit waits for the pin held
+	 *  on slot 0, the still-published OLD view can write a later, still-open
+	 *  slot. The prior trigger timing must stay paired with that old view for
+	 *  the WHOLE writer wait - the reset that belongs to the staged view may
+	 *  only land together with the view itself, inside the bounded commit. */
+	void anEditWaitingForAnActiveWriterKeepsTheOldViewsTriggerPhase()
+	{
+		ModulationLayerPublisher publisher;
+		FloatModel pinnedSlotModel(0.0f, -100.0f, 100.0f, 0.01f);
+		FloatModel laterSlotModel(0.0f, -100.0f, 100.0f, 0.01f);
+		const auto publishTracked = [&](int triggerTrack) {
+			publisher.edit([&](ModulationLayer&, ModulationRuntime& runtime) {
+				runtime = ModulationRuntime{};
+				ModulationRuntime::Entry entry;
+				entry.modulator = 0;
+				entry.depth = 0.25f;
+				entry.base = 0.0f;
+				entry.minimum = -100.0f;
+				entry.maximum = 100.0f;
+				entry.model = &pinnedSlotModel;
+				runtime.entries[0] = entry;
+				entry.model = &laterSlotModel;
+				runtime.entries[1] = entry;
+				runtime.entryCount = 2;
+				runtime.sources[0] = sine();
+				runtime.sources[0].triggerTrack = triggerTrack;
+				runtime.sourceCount = 1;
+				return true;
+			});
+		};
+		publishTracked(11);
+		publisher.setBlockSeconds(10.0);
+		publisher.noteStarted(11);
+		const ModulationAudioView oldView = publisher.snapshot();
+		QCOMPARE(oldView.entryCount, 2);
+		const std::uint32_t slot0Token = oldView.entries[0].token;
+		QCOMPARE(publisher.sinceTrigger(0, 11, 12.75), 2.75);
+
+		std::binary_semaphore pinned{0};
+		std::atomic<bool> oldViewDuringWait{false};
+		double phaseDuringWait = -2.0;
+		float valueDuringWait = 0.0f;
+
+		std::thread audio([&] {
+			if (!publisher.beginTargetWrite(0, slot0Token)) { return; }
+			pinned.release();
+			const RealtimeScope realtime;
+			// publishView() closes slot 0 BEFORE it waits for this pin, so the
+			// moment the slot reads closed the edit is inside that wait - and
+			// it cannot leave the wait until this thread releases the pin.
+			while (publisher.targetAlive(0, slot0Token)) { std::this_thread::yield(); }
+			const ModulationAudioView duringWait = publisher.snapshot();
+			oldViewDuringWait.store(duringWait.entryCount == 2
+				&& duringWait.sources[0].triggerTrack == 11, std::memory_order_release);
+			phaseDuringWait = publisher.sinceTrigger(0, duringWait.sources[0].triggerTrack, 12.75);
+			// Slot 1 is a LATER slot the edit has not reached yet: still open,
+			// so this write through the old view really lands.
+			applyModulationBlock(publisher, duringWait, 12.75);
+			valueDuringWait = valueOf(laterSlotModel);
+			publisher.endTargetWrite(0);
+		});
+
+		if (!pinned.try_acquire_for(std::chrono::seconds(2)))
+		{
+			audio.join();
+			QVERIFY2(false, "the audio write did not pin slot 0");
+		}
+		publishTracked(33);  // rebinds the modulator's trigger track
+		audio.join();
+
+		QVERIFY2(oldViewDuringWait.load(std::memory_order_acquire),
+			"the writer wait must leave the OLD view published");
+		QCOMPARE(phaseDuringWait, 2.75);
+		// 12.75 - 10.0 = 2.75 s into the cycle: the sine at 0.75 of its period
+		// is -1, so the still-open later slot is written -50; the reset timing
+		// the staged view brings would restart the old view's cycle at 0.
+		QCOMPARE(valueDuringWait,
+			modulatedValue(oldView.sources[0], 0.0f, 0.25f, -100.0f, 100.0f, 2.75));
 	}
 
 	void theViewWritesWhatTheRuntimeWrites()
