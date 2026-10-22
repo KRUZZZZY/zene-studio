@@ -121,26 +121,41 @@ void paintGainEnvelope(QPainter& p, const ClipEdits& edits, const ClipOverlayFra
 int clipGainHandleY(const ClipEdits& edits, const ClipOverlayFrame& frame)
 {
 	// The handle's centre, held at least half a handle inside the clip so a boosted clip's handle is
-	// grabbable even though its gain's own pixel would be above the clip's top edge.
+	// grabbable even though its gain's own pixel would be above the clip's top edge. It is also held
+	// BELOW the fade handles' strip: the zero-length fade-in handle sits at this same x, so a gain
+	// handle drawn in that strip could never be grabbed where it is painted (the fade drag takes the
+	// press first). On a clip too short for both bands, staying inside the clip wins.
 	const int half = HandleSize / 2;
-	return std::clamp(yOfDb(frame, gainLinearToDb(edits.gain)), frame.top + half, frame.top + frame.height - half);
+	const int fadeBand = frame.top + HandleSize + HandleReach + 1;
+	const int lowest = frame.top + frame.height - half;
+	return std::clamp(yOfDb(frame, gainLinearToDb(edits.gain)), std::min(fadeBand, lowest), lowest);
 }
 
 void paintClipGain(QPainter& p, const ClipEdits& edits, const ClipOverlayFrame& frame, const QColor& colour)
 {
 	// The dashed level line across the waveform, at the clip's own gain. The envelope and the fades are
 	// drawn apart from it: this line says what the CLIP GAIN alone is, which is the value its handle edits.
-	const int y = clipGainHandleY(edits, frame);
+	// The level's own pixel, held inside the clip: what the handle means, even when the handle itself
+	// is held away from it (a boosted clip, or the fade handles' strip below).
+	const int lineY = std::clamp(yOfDb(frame, gainLinearToDb(edits.gain)), frame.top, frame.top + frame.height);
+	const int handleY = clipGainHandleY(edits, frame);
+	const int x = frame.xOrigin + GainHandleInset;
 	QColor line = colour;
 	line.setAlpha(160);
 	p.setRenderHint(QPainter::Antialiasing, false);
 	p.setPen(QPen(line, 1, Qt::DotLine));
-	p.drawLine(frame.xOrigin, y, frame.xOrigin + frame.width, y);
-	// The handle: a small square at the clip's left edge, the thing a drag takes.
-	const int x = frame.xOrigin + GainHandleInset;
+	p.drawLine(frame.xOrigin, lineY, frame.xOrigin + frame.width, lineY);
+	// The handle: a small square at the clip's left edge, the thing a drag takes. When it is held away
+	// from its own line (a boosted clip, or the fade handles' strip) a short tick keeps the two tied
+	// together, so the handle still says which level it edits.
+	if (handleY != lineY)
+	{
+		p.setPen(QPen(line, 1));
+		p.drawLine(x, std::min(lineY, handleY), x, std::max(lineY, handleY));
+	}
 	p.setPen(QPen(colour, 1));
 	p.setBrush(colour);
-	p.drawRect(x - HandleSize / 2, y - HandleSize / 2, HandleSize, HandleSize);
+	p.drawRect(x - HandleSize / 2, handleY - HandleSize / 2, HandleSize, HandleSize);
 	p.setBrush(Qt::NoBrush);
 }
 
@@ -197,7 +212,7 @@ bool gainPointAllowed(const ClipEdits& edits, int index, int tick, float db, int
 
 } // namespace
 
-bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTicks)
+bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTicks, int* writtenIndex)
 {
 	if (edits == nullptr || !gainPointAllowed(*edits, index, tick, db, clipTicks)) { return false; }
 
@@ -207,6 +222,16 @@ bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTick
 	else { edits->envelope[index] = GainPoint{tick, db}; }
 	std::stable_sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
 		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
+	if (writtenIndex != nullptr)
+	{
+		// The point we wrote can be found by its identity after the sort: the index it was written at
+		// holds exactly (tick, db), and two points on one tick are the caller's own replacing rule.
+		*writtenIndex = index;
+		for (int i = 0; i < edits->envelopeCount; ++i)
+		{
+			if (edits->envelope[i].tick == tick && edits->envelope[i].gainDb == db) { *writtenIndex = i; break; }
+		}
+	}
 	return true;
 }
 

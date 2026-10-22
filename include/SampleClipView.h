@@ -92,8 +92,12 @@ private:
 	GainDrag m_gainDrag = GainDrag::None;
 	int m_gainDragPoint = -1;
 	float m_gainDragStartDb = 0.f;
-	//! The press's y in the clip's coordinates: the handle's drag level is measured from here.
-	int m_gainDragPressY = 0;
+	//! The press's own position: the handle's drag level is measured from its y, and a pointer that
+	//! never leaves it has not moved the edit (a hover move at the same pixel is not a drag).
+	QPoint m_gainDragPress{};
+	//! True once the pointer has actually MOVED during the drag: a press/release without a move must
+	//! write nothing, or its no-op checkpoint would shadow the edit before it.
+	bool m_gainDragMoved = false;
 	ClipEdits m_dragEdits;
 	float pixelsPerTickNow();
 	ClipOverlayFrame overlayFrame(int xOrigin);

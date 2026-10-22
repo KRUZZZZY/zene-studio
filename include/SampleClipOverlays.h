@@ -85,8 +85,10 @@ LMMS_EXPORT int gainPointAt(const ClipEdits& edits, const ClipOverlayFrame& fram
 /*! Q050-125: @a edits with point @a index moved/added to @a tick and @a db, re-sorted into tick order
  *  (an existing point on the same tick is replaced). False - @a edits untouched - for an index outside
  *  the envelope, an add past MaxGainPoints, or a value outside the clip/range: `clip.gain_envelope_set`
- *  would refuse exactly those, so the GUI must not preview them either. */
-LMMS_EXPORT bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTicks);
+ *  would refuse exactly those, so the GUI must not preview them either. @a writtenIndex, when given, is
+ *  the point's index AFTER the re-sort, so a caller dragging an added or moved point keeps hold of it
+ *  when it takes its neighbour's place. */
+LMMS_EXPORT bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTicks, int* writtenIndex = nullptr);
 
 /*! Q050-125: how many points @a edits has and the tick/dB of one - the read side a drag saves. */
 LMMS_EXPORT int gainPointCount(const ClipEdits& edits);

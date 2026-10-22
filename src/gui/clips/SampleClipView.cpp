@@ -277,6 +277,7 @@ bool SampleClipView::startGainDrag(QMouseEvent* me)
 	const ClipEdits edits = withValidOffsetFades(m_clip->clipEdits(), m_clip->length().getTicks());
 	const ClipOverlayFrame frame = overlayFrame(0);
 	m_dragEdits = edits;
+	m_gainDragMoved = false;
 	const bool onHandle = clipGainHandleAt(edits, frame, me->pos());
 	const int point = onHandle ? -1 : gainPointAt(edits, frame, me->pos());
 	if (!onHandle && point < 0) { return false; }
@@ -284,7 +285,7 @@ bool SampleClipView::startGainDrag(QMouseEvent* me)
 	{
 		m_gainDrag = GainDrag::Handle;
 		m_gainDragStartDb = gainLinearToDb(edits.gain);
-		m_gainDragPressY = me->pos().y();
+		m_gainDragPress = me->pos();
 	}
 	else
 	{
@@ -294,6 +295,7 @@ bool SampleClipView::startGainDrag(QMouseEvent* me)
 		m_gainDrag = GainDrag::Point;
 		m_gainDragPoint = point;
 		m_gainDragStartDb = edits.envelope[point].gainDb;
+		m_gainDragPress = me->pos();
 	}
 	return true;
 }
@@ -307,11 +309,26 @@ void SampleClipView::finishGainDrag()
 	m_gainDragPoint = -1;
 	setNeedsUpdate(true);
 	update();
+	// A gesture that did not change the stored value sends no command: a checkpoint that changes
+	// nothing would shadow the edit before it, so the user's next undo would appear to do nothing.
+	// Two cases both count as "no change": the pointer never moved (only its movement is a drag - the
+	// pixel under a stationary press need not be the point's exact stored dB), and a drag that came
+	// back to where it started. A pure add always changes the point count.
+	const bool moved = m_gainDragMoved;
+	m_gainDragMoved = false;
 	if (kind == GainDrag::Handle)
 	{
+		if (!moved || after.gain == m_clip->clipEdits().gain) { return; }
 		ControlRegistry::instance()->invoke(QStringLiteral("clip.set_gain"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
 			{QStringLiteral("gain_db"), static_cast<double>(gainLinearToDb(after.gain))}});
 		return;
+	}
+	{
+		const ClipEdits& current = m_clip->clipEdits();
+		const bool same = after.envelopeCount == current.envelopeCount
+			&& std::equal(after.envelope.begin(), after.envelope.begin() + after.envelopeCount, current.envelope.begin(),
+				[](const GainPoint& a, const GainPoint& b) { return a.tick == b.tick && a.gainDb == b.gainDb; });
+		if (!moved || same) { return; }
 	}
 	QJsonArray points;
 	for (int i = 0; i < gainPointCount(after); ++i)
@@ -342,12 +359,14 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 {
 	if (m_gainDrag != GainDrag::None)
 	{
+		// A hover move that lands on the press pixel (Qt delivers one on some platforms) is not a drag.
+		m_gainDragMoved = m_gainDragMoved || me->pos() != m_gainDragPress;
 		const ClipOverlayFrame frame = overlayFrame(0);
 		if (m_gainDrag == GainDrag::Handle)
 		{
 			// The handle follows the pointer: its level moves by the drag's own distance from the press,
 			// not by where on the line the press landed.
-			const float db = clipGainDraggedDb(m_gainDragStartDb, me->pos().y() - m_gainDragPressY, frame);
+			const float db = clipGainDraggedDb(m_gainDragStartDb, me->pos().y() - m_gainDragPress.y(), frame);
 			m_dragEdits.gain = gainDbToLinear(std::clamp(db, -60.f, 24.f));
 		}
 		else
@@ -357,15 +376,10 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 			const int clipTicks = m_clip->length().getTicks();
 			const int tick = std::clamp(gainTickAtX(me->pos().x(), frame), 0, clipTicks);
 			const float db = gainDbAtY(me->pos().y(), frame);
-			if (!withGainPoint(&m_dragEdits, m_gainDragPoint, tick, db, clipTicks))
+			if (!withGainPoint(&m_dragEdits, m_gainDragPoint, tick, db, clipTicks, &m_gainDragPoint))
 			{
 				// Out of range or full: the drag keeps showing the last accepted position.
 				return;
-			}
-			// withGainPoint re-sorted the envelope, so track the point by its new index.
-			for (int i = 0; i < m_dragEdits.envelopeCount; ++i)
-			{
-				if (m_dragEdits.envelope[i].tick == tick && m_dragEdits.envelope[i].gainDb == db) { m_gainDragPoint = i; break; }
 			}
 		}
 		setNeedsUpdate(true);
@@ -380,8 +394,11 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 		if (!me->buttons())
 		{
 			if (fadeHandleUnder(me->pos()) != FadeHandle::None) { setCursor(Qt::SizeHorCursor); }
-			else if (!EditLocks::instance().locks(m_clip)) { setCursor(clipGainHandleAt(shownEdits(), overlayFrame(0), me->pos()) ? Qt::SizeVerCursor
-				: Qt::PointingHandCursor); }
+			else if (!EditLocks::instance().locks(m_clip) && clipGainHandleAt(shownEdits(), overlayFrame(0), me->pos()))
+			{
+				setCursor(Qt::SizeVerCursor);
+			}
+			// Anywhere else the clip keeps the cursor it already had (the inherited move cursor).
 		}
 		return;
 	}
@@ -411,10 +428,16 @@ void SampleClipView::mousePressEvent( QMouseEvent * _me )
 		const int tick = std::clamp(gainTickAtX(_me->pos().x(), frame), 0, m_clip->length().getTicks());
 		const float db = gainDbAtY(_me->pos().y(), frame);
 		m_dragEdits = edits;
-		if (withGainPoint(&m_dragEdits, gainPointCount(edits), tick, db, m_clip->length().getTicks()))
+		m_gainDragPress = _me->pos();
+		// The Alt-click ADD is itself the edit: releasing without moving still writes the point.
+		m_gainDragMoved = true;
+		int written = -1;
+		if (withGainPoint(&m_dragEdits, gainPointCount(edits), tick, db, m_clip->length().getTicks(), &written))
 		{
 			m_gainDrag = GainDrag::Point;
-			m_gainDragPoint = gainPointCount(edits);
+			// The point's index AFTER the sort, not the end it was appended at: an Alt-click in the
+			// middle of an existing envelope must drag the point it just added, not another one.
+			m_gainDragPoint = written;
 			m_gainDragStartDb = db;
 			setNeedsUpdate(true);
 			update();
