@@ -769,6 +769,37 @@ private slots:
 	 hardwareio::resetMixer();
 	}
 
+	/*! A saved route that does not parse leaves the default in force (cluster new-p14-120-port):
+	 *  a hand-edited project can carry output="3/5" (a pair that is not two consecutive channels),
+	 *  and the master must not be silenced by it - it keeps its default route, the outputs 1/2.
+	 *  An explicit "none" does parse: it is the user's own route nowhere, and it stays. */
+	void malformedOutputKeepsTheDefaultRoute()
+	{
+		QDomDocument doc;
+		QDomElement channelElement = doc.createElement(QStringLiteral("mixerchannel"));
+		doc.appendChild(channelElement);
+		QDomElement element = doc.createElement(QStringLiteral("hardwareio"));
+		element.setAttribute(QStringLiteral("output"), QStringLiteral("3/5"));
+		channelElement.appendChild(element);
+
+		ChannelHardwareIo io;
+		io.load(channelElement, Engine::audioEngine()->framesPerPeriod());
+		QVERIFY2(!io.outputSet, "a route that does not parse must not replace the default");
+		QVERIFY2(io.effectiveOutput(true) == (audioio::Destination{0, 2}),
+			"the master must keep its default route (the outputs 1/2)");
+
+		QDomElement noneChannel = doc.createElement(QStringLiteral("mixerchannel"));
+		doc.appendChild(noneChannel);
+		QDomElement noneElement = doc.createElement(QStringLiteral("hardwareio"));
+		noneElement.setAttribute(QStringLiteral("output"), QStringLiteral("none"));
+		noneChannel.appendChild(noneElement);
+
+		ChannelHardwareIo none;
+		none.load(noneChannel, Engine::audioEngine()->framesPerPeriod());
+		QVERIFY(none.outputSet);
+		QVERIFY(none.effectiveOutput(true).none());
+	}
+
 	void channelCueLoadsRequireExplicitIndices()
 	{
 		bool ignored = true;
