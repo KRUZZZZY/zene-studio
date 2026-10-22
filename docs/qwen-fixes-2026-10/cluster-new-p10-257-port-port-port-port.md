@@ -131,7 +131,7 @@ manifest entries the recipe does not derive: 1148
 entries the recipe derives the manifest is missing: 0
 ```
 
-The identical failure reproduces on the untouched main checkout at the same base commit with a clean tree
+The identical failure reproduced on the untouched main checkout at the same base commit with a clean tree
 (`build/qwen-logs/gate-5-base-checkout.log`):
 
 ```
@@ -140,19 +140,55 @@ all-sources-reproduce EXIT=1
 FAIL: all-sources.txt does not match the recipe in its own header.
 ```
 
-Gate note: I did not re-derive `all-sources.txt`. It is a train-wide 1148-line manifest question about
-vendored sfizz, outside this fix, and rewriting it here would hide a train state that its own gate is
-supposed to surface.
+### The manifest failure, and what I did about it
+
+The two failures were pre-existing on the train, not caused by this fix: `tests/all-sources.txt` carried
+1148 vendored sfizz paths that its own header recipe excludes on purpose, so both gates that consume the
+manifest were red at the base commit with a clean tree. The gate's header prescribes exactly one fix -
+re-derive the entry list with the recipe, never hand-edit it - and I verified the delta was only that
+class before applying it:
+
+```
+=== all base-only entries are under the header's excluded vendor tree ===
+0 entries outside plugins/SfzPlayer/sfizz/
+=== none of them are in fork-sources.txt ===
+0
+distinct prefixes dropped: plugins/SfzPlayer/sfizz/external, plugins/SfzPlayer/sfizz/src
+re-derivation delta: 0 additions, 1148 deletions
+```
+
+`bash tests/all-sources-reproduce.sh` then reported `REPRODUCES` (EXIT=0) and
+`bash tests/fork-sources-gate.sh` returned EXIT=0 (`1968 fork-NEW, 1214 inherited, 48 tooling, 0 stale`).
+This is a train-state repair committed separately from the bug fix so the two are not confused; it changes
+no product code, no test and no gate limit, and it removes only paths the manifest's own recipe says do not
+belong in the whole-tree scope.
+
+Final gate table after the repair (`build/qwen-logs/gate-6.log`):
+
+```
+feature-check zene-qwen-new-p10-257-port-port-port-port (base dbb15dded, 10 changed files; ...)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
 
 `no-upstream-regression` passes with this branch's two new ledger rows (one for `src/core/Mixer.cpp`, one
 for `tests/src/core/VcaGroupTest.cpp`, which is inherited rather than fork-NEW).
 
 ## Registration
 
-No new files. The changed product files are already registered: `src/core/Mixer.cpp` in
-`tests/upstream-modifications.txt`; `src/core/MixerSnapshots.cpp`, `src/core/MixerStrip.cpp` and
-`src/core/MixerSurround.cpp` in `tests/fork-sources.txt`. The three changed test files are already in
-`tests/CMakeLists.txt` and `tests/all-sources.txt`. No gate baseline or limit was touched.
+No new files, so no new-files registration was needed. The changed product files are already registered:
+`src/core/Mixer.cpp` in `tests/upstream-modifications.txt`; `src/core/MixerSnapshots.cpp`,
+`src/core/MixerStrip.cpp` and `src/core/MixerSurround.cpp` in `tests/fork-sources.txt`. The three changed
+test files are already in `tests/CMakeLists.txt` and `tests/all-sources.txt`. No gate baseline or limit was
+touched. The two new ledger rows are appended at the end of `tests/upstream-modifications.txt`, which still
+ends with a newline.
 
 ## Files committed
 
@@ -164,6 +200,7 @@ No new files. The changed product files are already registered: `src/core/Mixer.
 - `tests/src/core/ProjectStateTest.cpp`
 - `tests/src/core/VcaGroupTest.cpp`
 - `tests/upstream-modifications.txt`
+- `tests/all-sources.txt` (manifest re-derivation, separate commit; see the gate section)
 - `docs/qwen-fixes-2026-10/cluster-new-p10-257-port-port-port-port.md`
 
 ## Self-check
