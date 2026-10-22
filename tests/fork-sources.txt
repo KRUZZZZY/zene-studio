@@ -2946,3 +2946,7 @@ tests/src/core/SampleDecoderLimitTest.cpp
 # valid target - the Follow Action jump target, the legacy scene index and the
 # legacy clip coordinate (fork-NEW regression source).
 tests/src/core/SessionMalformedAttributeTest.cpp
+# cluster new-p14-38 (2026-10): the no-op note transforms must not advertise an undo -
+# a call that changed nothing records no transaction, so the journal's top is still the
+# last REAL edit. This fork-NEW regression source is the proof of that rule.
+tests/src/core/ControlNoteNoOpUndoTest.cpp

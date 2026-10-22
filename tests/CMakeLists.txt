@@ -1331,6 +1331,10 @@ set(LMMS_TESTS
 	# the number is three digits, so the mechanical proof can see this regression. The test's own
 	# header says the same thing.
 	src/core/ControlSessionRecordLandUndoTest.cpp
+	# cluster new-p14-38: the no-op note transforms must not advertise an undo -
+	# a call that changed nothing records no transaction, so the journal's top is
+	# still the last REAL edit. Its own target, so the proof is one suite.
+	src/core/ControlNoteNoOpUndoTest.cpp
 )
 
 # Ogg is optional; these regressions require the Ogg decoder and compile against the concrete Ogg writer.

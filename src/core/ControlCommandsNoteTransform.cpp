@@ -249,9 +249,12 @@ ControlResult transpose(const QJsonObject& args)
 	arguments.insert(QStringLiteral("notes_changed"), changed);
 	QJsonObject result = transformResult(ref, *clip, scope, static_cast<int>(notes.size()),
 		arguments);
-	result.insert(QStringLiteral("__transaction"),
-		transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
-			arguments));
+	if (changes)
+	{
+		result.insert(QStringLiteral("__transaction"),
+			transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
+				arguments));
+	}
 	return ControlResult::success(result);
 }
 
@@ -290,9 +293,12 @@ ControlResult velocityOffset(const QJsonObject& args)
 	arguments.insert(QStringLiteral("notes_changed"), changed);
 	QJsonObject result = transformResult(ref, *clip, scope, static_cast<int>(notes.size()),
 		arguments);
-	result.insert(QStringLiteral("__transaction"),
-		transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
-			arguments));
+	if (changes)
+	{
+		result.insert(QStringLiteral("__transaction"),
+			transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
+				arguments));
+	}
 	return ControlResult::success(result);
 }
 
@@ -329,9 +335,12 @@ ControlResult velocityScale(const QJsonObject& args)
 	arguments.insert(QStringLiteral("notes_changed"), changed);
 	QJsonObject result = transformResult(ref, *clip, scope, static_cast<int>(notes.size()),
 		arguments);
-	result.insert(QStringLiteral("__transaction"),
-		transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
-			arguments));
+	if (changes)
+	{
+		result.insert(QStringLiteral("__transaction"),
+			transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
+				arguments));
+	}
 	return ControlResult::success(result);
 }
 
