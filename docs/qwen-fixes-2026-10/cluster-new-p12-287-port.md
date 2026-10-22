@@ -145,6 +145,22 @@ The product diff is `src/core/Track.cpp` alone; the test file is NOT reverted.
 The RED failure is the trap itself: with the name rule reverted, an element that is
 not a `<track>` becomes a REAL instrument track in the song.
 
+### The branch-wide negative control (what the completion check runs)
+
+The whole product diff of the branch - `git diff dbb15dded..HEAD -- src/` - is
+reverted, the tests are NOT, and the suite is rebuilt and run:
+
+| step | command | exit |
+|------|---------|------|
+| record the product diff | `git diff dbb15dded..HEAD -- src/ > <logs>/negctl-product.patch` | **0** |
+| revert it | `git apply -R <logs>/negctl-product.patch` | **0** |
+| rebuild | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | **0** |
+| RED | `ctest -R '^UnclaimedTrackTypeTest$' --output-on-failure` from `build/tests` | **8** - `FAIL! : UnclaimedTrackTypeTest::aTrackIsNotFabricatedFromAnElementThatIsNotATrack() 'control::restoreTrackFromXml( snapshot, song ) == nullptr' returned FALSE. (an element that is not a <track> was fabricated into an instrument track)`; `Totals: 8 passed, 1 failed` |
+| restore it | `git apply <logs>/negctl-product.patch` | **0** |
+| rebuild | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | **0** |
+| GREEN | `ctest -R '^UnclaimedTrackTypeTest$' --output-on-failure` from `build/tests` | **0** (1/1) |
+| family (restored state) | `ctest -R '^(UnclaimedTrackTypeTest\|UnclaimedElementsTest\|TrackFolderTest\|LegacyPatternUpgradeTest\|TrackViewDeferredLifetimeTest\|InputMonitorTest\|LanesUpconvertTest\|ImportTrackIoTest\|ProjectToolsTest\|ArrangeToolsTest)$'` | **0** (10/10) |
+
 ### The reported defect (the type rule) - the branch's own fix, reverted
 
 `edc9fac6f`'s check is committed on the branch, so the RED proof reverts THAT hunk.
@@ -242,10 +258,11 @@ gates turn green.
   manifest re-derivation the same command was **exit 1** with `fork-sources` and
   `all-sources-reproduce` FAIL (`gate-feature-check-1.log`), both red at the branch
   base.
-- `submit_check.py`: **exit 0** (`submit-3.log` and `submit-4.log`): "RESULT: PASS -
-  submit" - commits on the branch PASS, working tree clean PASS, report PASS, tests
-  added or changed PASS (`tests/src/core/UnclaimedTrackTypeTest.cpp`), gates PASS.
-  Its five ASK items are answered here, one by one.
+- `submit_check.py`: **exit 0** (`submit-3.log`, `submit-4.log`, `submit-5.log`):
+  "RESULT: PASS - submit" - commits on the branch PASS, working tree clean PASS,
+  report PASS, tests added or changed PASS
+  (`tests/src/core/UnclaimedTrackTypeTest.cpp`), gates PASS. Its five ASK items are
+  answered here, one by one.
 
 ### The ASK items, answered with evidence
 
