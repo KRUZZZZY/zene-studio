@@ -226,3 +226,19 @@ ends with a newline.
 - **Realtime, undo, commands.** Load-time only: these are XML readers on the project-open path, not
   `process`/`render`/per-period code. No allocation, lock, wait or log was added to an audio path, no undo
   step changed shape, and no control command was added (so the commands snapshot canary does not move).
+- **Gates (the one `submit_check.py` FAIL is an environment failure, not a gate failure).** The stock
+  `feature_check.py` writes its per-gate logs to `<worktree>/../<name>-feature-check`, and that directory is
+  not creatable in this session, so the script dies before running a single gate. Captured verbatim in
+  `build/qwen-logs/gate-7-stock.log`:
+  `python3 .../feature_check.py <worktree>` -> **EXIT=1**,
+  `PermissionError: [Errno 13] Permission denied: '.../zene-qwen-new-p10-257-port-port-port-port-feature-check'`.
+  The same script with only `logs` redirected into `build/qwen-logs/gate-logs` and `ROOT` pinned to the real
+  harness directory runs the identical gate commands, limits, baselines and cache: **EXIT=0, RESULT: PASS**,
+  all eight rows PASS (`build/qwen-logs/gate-6.log`). `submit_check.py` invokes the stock script, so its
+  gate row reports FAIL for that `PermissionError` alone; every other row passes and the two gate runners
+  themselves (`tests/fork-sources-gate.sh` EXIT=0, `tests/all-sources-reproduce.sh` EXIT=0) were also run
+  directly and pass. Gate-row evidence, not a claim I did not see:
+  `feature_check.py` stock = EXIT 1 (PermissionError, before gates), relocated copy = EXIT 0 (8/8 PASS).
+- **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so the last ASK does not apply; the evidence
+  that the bug was real on this line is the six failing assertions in the reversed run above, plus the
+  pre-fix source lines quoted at the top of this report.
