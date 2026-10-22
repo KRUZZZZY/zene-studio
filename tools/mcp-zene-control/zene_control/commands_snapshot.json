@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-21T20:31:42Z",
+  "captured_at": "2026-10-22T05:20:03Z",
   "commands": [
     {
       "args_schema": {
@@ -674,7 +674,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps (negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the selection (the time range, else the selected clips) across its width (scrolled to its start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): 'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view (its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks. Interface state.",
+      "description": "Zoom the arranger: to 'pixels_per_bar', by 'step' zoom steps (negative zooms out), to the span 'start'..'end' (the zoom tool's drag), or to 'fit' the song, the loop or the selection (the time range, else the selected clips) across its width (scrolled to its start). A 'pixels_per_bar' or 'step' zoom keeps one tick where it is on screen ('anchor' in the answer): 'anchor_tick' (a pointer gesture passes the tick under the pointer), else 'anchor' - selection, playhead, view (its middle), start (its left edge) or auto (the default: the selection, else the playhead when it is on screen, else the middle). The previous zoom joins the history arrangement.zoom_back walks back over. Interface state.",
       "group": "arrangement",
       "id": "arrangement.zoom",
       "mutating": false,
@@ -683,6 +683,9 @@
         "additionalProperties": false,
         "properties": {
           "anchor": {
+            "type": "integer"
+          },
+          "forward": {
             "type": "integer"
           },
           "history": {
@@ -709,7 +712,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Go back to the previous zoom. It swaps the current zoom with the last one, so going back twice toggles between two zooms; the selection, else the playhead on screen, stays where it is. Refused when there is no earlier zoom.",
+      "description": "Go back one step in the zoom history, to an earlier extent - the same way the browser goes back, to walk back over several prior extents. A new arrangement.zoom cuts what can be walked forward off; the selection, else the playhead on screen, stays where it is. Refused when there is nothing earlier.",
       "group": "arrangement",
       "id": "arrangement.zoom_back",
       "mutating": false,
@@ -718,6 +721,85 @@
         "additionalProperties": false,
         "properties": {
           "anchor": {
+            "type": "integer"
+          },
+          "forward": {
+            "type": "integer"
+          },
+          "history": {
+            "type": "integer"
+          },
+          "pixels_per_bar": {
+            "type": "number"
+          },
+          "previous_zoom": {
+            "type": "integer"
+          },
+          "zoom": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Go forward one step in the zoom history, back over what arrangement.zoom_back went past (the way the browser goes forward). The selection, else the playhead on screen, stays where it is. Refused when there is nothing later.",
+      "group": "arrangement",
+      "id": "arrangement.zoom_forward",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "integer"
+          },
+          "forward": {
+            "type": "integer"
+          },
+          "history": {
+            "type": "integer"
+          },
+          "pixels_per_bar": {
+            "type": "number"
+          },
+          "previous_zoom": {
+            "type": "integer"
+          },
+          "zoom": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Swap the arranger's zoom with the extent it last left (the zoom before this one, or the extent a back or forward step left behind), so pressing the toggle twice returns to where you were. The selection, else the playhead on screen, stays where it is. Refused before any second extent is known.",
+      "group": "arrangement",
+      "id": "arrangement.zoom_toggle",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "type": "integer"
+          },
+          "forward": {
             "type": "integer"
           },
           "history": {
@@ -35958,23 +36040,23 @@
       }
     }
   ],
-  "count": 841,
+  "count": 843,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-port10/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-0mufc5az/zene.sock",
-    "version": "0.4.0-alpha.4297+3c504fd"
+    "source_socket": "/tmp/zctl-run-540i5dqc/zene.sock",
+    "version": "0.4.0-alpha.4305+cb69d29"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 841,
-    "ids_sha256": "c7a36e0fba4ca3a75aa66588cd9c0a8a0120bd932cc916f0155f62e037aea42d"
+    "id_count": 843,
+    "ids_sha256": "254640598ec24b3101dc95be0df0850cb6fe25a5e6cd70985e014be81ea2436c"
   }
 }
