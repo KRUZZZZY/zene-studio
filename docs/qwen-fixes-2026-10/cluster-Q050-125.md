@@ -2,9 +2,11 @@ IMPLEMENTED
 
 Q050-125 - Edit clip gain, envelope and polarity on the waveform (L05 audio editing). A sample clip's gain is
 now a handle on its waveform: drag it and the level follows the pointer, the drawn waveform growing or shrinking
-with it, and the release is one `clip.set_gain` step. Alt-click the waveform to add a gain-envelope point and
-drag it in time and level (a plain press on a point moves it; points dragged past each other are re-sorted,
-which is the order `clip.gain_envelope_set` requires). The Gain and fades submenu adds **Invert polarity**
+with it, and the release is one `clip.set_gain` step. Press the drawn level line (the dashed gain line, or
+the envelope once it has points) to add a gain-envelope point and drag it in time and level (a plain press on a
+point moves it; points dragged past each other are re-sorted, which is the order `clip.gain_envelope_set`
+requires). The add gesture takes NO modifier, so Alt and Ctrl keep their arranger meanings on a clip
+(unsnapped move/resize, and copy on macOS). The Gain and fades submenu adds **Invert polarity**
 (`clip.set_polarity`), which flips the clip's rendered sign and mirrors its drawn waveform while the SOURCE
 sample keeps every sample. The drawn amplitude is `clipGainCurveAt` (the one definition the audio path and the
 automation editor's ghost already share) times the polarity sign, sampled per drawn column, so the waveform
@@ -14,7 +16,7 @@ Acceptance (commands as run from `build/tests`; exit codes are the ctest exits):
 
 | Criterion | Command | EXIT |
 | --- | --- | --- |
-| Drag the clip gain handle and add/move envelope points directly on the waveform; verify the drawn waveform follows the gain curve | `ctest -R ClipWaveformEditTest --output-on-failure` (QtTest `draggingTheGainHandleSetsTheGainAndTheWaveformFollows`, `envelopePointsAreAddedAndMovedOnTheWaveform`, `anAddedPointDraggedPastItsNeighbourTakesTheRightPoint`, `theGestureGeometryIsExact`: real mouse press/move/release on the real `SampleClipView` in a real `GuiApplication`, the press at the handle's OWN drawn centre; the gain rises above unity and the drawn band's top moves UP, one `control.undo` restores 1.0, a downward drag cuts it and the band moves down; Alt-click adds a point at the pressed tick, a plain drag moves it to a quarter of the clip, one undo each; an Alt-added point dragged past the first point moves the ADDED point, not the tail; the fade hit test does not take the handle's own centre) | 0 |
+| Drag the clip gain handle and add/move envelope points directly on the waveform; verify the drawn waveform follows the gain curve | `ctest -R ClipWaveformEditTest --output-on-failure` (QtTest `draggingTheGainHandleSetsTheGainAndTheWaveformFollows`, `envelopePointsAreAddedAndMovedOnTheWaveform`, `anAddedPointDraggedPastItsNeighbourTakesTheRightPoint`, `theGestureGeometryIsExact`: real mouse press/move/release on the real `SampleClipView` in a real `GuiApplication`, the press at the handle's OWN drawn centre; the gain rises above unity and the drawn band's top moves UP, one `control.undo` restores 1.0, a downward drag cuts it and the band moves down; a curve press adds a point at the pressed tick, a plain drag moves it to a quarter of the clip, one undo each; a curve-added point dragged past the first point moves the ADDED point, not the tail; the fade hit test does not take the handle's own centre; and an Alt-drag on the clip body still moves the clip and adds no point) | 0 |
 | " (the drawn curve is the rendered multiplier) | `ctest -R ClipPolarityTest --output-on-failure` (`theDrawnCurveIsTheRenderedMultiplier`:  the curve the view samples compared at 100+ frames with what the production play handle rendered for a clip with -6 dB gain, a 3-point envelope and inverted polarity; every sampled frame is the unedited render times the drawn curve within 2e-3) | 0 |
 | Invert one clip's polarity and verify its rendered waveform changes sign without changing the source sample | `ctest -R ClipPolarityTest --output-on-failure` (`invertingOneClipFlipsItsRenderAndLeavesTheSourceAlone`: two clips share one source buffer; inverting one renders every frame as its exact negative, the OTHER clip renders identically, and the shared buffer's samples are unchanged sample for sample) | 0 |
 | " (the display half) | `ctest -R ClipWaveformEditTest --output-on-failure` (`thePolarityMenuItemFlipsTheClipThroughTheCommand`: the real Gain and fades menu's checkable Invert polarity item triggers `clip.set_polarity`; the clip reports inverted, the view repaints a different image, the item is checked on the next menu build, one undo restores it) | 0 |
@@ -104,6 +106,24 @@ The wider set re-run after the fixes (from `build/tests`):
 ctest -R 'ClipPolarityTest|ClipWaveformEditTest|ControlClipPolarity|ClipEditsTest|ClipFadesRenderTest|ClipGainEnvelopeTest|ClipEditsMenuTest|LinkedClipEditsTest|ReversibilityContractTest|ControlRegistryTest|ControlCommandsSnapshot|AudioEditingTest|NoteBackgroundAudioTest|ControlSocketIntegration|ControlResultSchemaTest' --output-on-failure
   -> EXIT 0 (15/15)
 ```
+
+### Review r1 - the Alt gesture conflict
+
+The only blocking finding: an Alt+left press on a sample clip that could take another point was consumed by
+the envelope-add path, so the arranger's Alt-drag (unsnapped move/resize on Linux, plus copy on macOS where
+Alt is `KBD_COPY_MODIFIER`) never ran.
+
+Resolved by moving the add gesture off Alt entirely: a plain (unmodified) press ON the drawn level curve - the
+dashed clip-gain line when the envelope is empty, the envelope polyline once it has points - adds the point and
+starts the drag (`gainCurveAt`). It is a visible target like the fade and gain handles, so no modifier is taken
+from the arranger, and the existing point-drag, post-sort-index, undo and no-op tests were adapted to it
+without dropping an assertion. Alt and Ctrl now reach `ClipView` untouched.
+
+The regression test `ClipWaveformEditTest::altDragStillMovesTheClipAndAddsNoPoint` drives a real `SampleClipView`:
+with room for points and the press ON the curve, an Alt-drag moves the clip (`startPosition` advances) and adds
+no point. Negative control (the old Alt-add binding restored, `build EXIT 0`):
+`./ClipWaveformEditTest altDragStillMovesTheClipAndAddsNoPoint` -> **FAIL** (`the Alt-drag added an envelope
+point (2 -> 3)`); with the new binding **EXIT 0**. The full reworked case set is 10/10.
 
 ## Self-check
 
