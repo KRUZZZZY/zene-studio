@@ -71,6 +71,7 @@ plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::noteOff	the render thread stops a
 plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::renderFrames	the render thread writes FluidSynth output into the period buffer it owns, with no lock (cluster new-p9-453)	rules=alloc-new,grow-container,lock-call,lock-guard
 plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::deleteNotePluginData	called when an SF2 note ends; it queues a pitch-only note-off and returns the preallocated slot, with no allocation or lock (cluster new-p9-454)	rules=alloc-new,lock-call
 plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::releasePluginDataSlot	returns a preallocated note slot to the pool with one atomic update
+plugins/Sf2Player/Sf2Player.cpp	Sf2Instrument::applyPendingTeardownNoteOffs	the render thread applies the teardown note-offs the bounded note event queue refused; the counters have a fixed size, so the path neither allocates nor takes a lock (cluster new-p9-454)	rules=alloc-new,grow-container,lock-call,lock-guard
 include/Sample.h	Sample::PlaybackState::reset	resets a reused SlicerT resampler state in place when the render owner releases a note slot
 src/core/AudioEngine.cpp	AudioEngine::acquirePooledSampleVoice	bounded claim and arm of a preconstructed metronome/frozen-take voice on the render path
 src/core/AudioEngine.cpp	AudioEngine::SampleVoicePool::acquire	bounded ready-queue pop and render-side SamplePlayHandle re-arm

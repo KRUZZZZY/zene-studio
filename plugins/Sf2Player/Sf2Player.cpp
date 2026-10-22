@@ -1288,6 +1288,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 	if( m_synth == nullptr )
 	{
 		std::fill_n( out.data(), out.size(), SampleFrame{} );
+		applyPendingTeardownNoteOffs();
 		return;
 	}
 	applyControls();
@@ -1322,6 +1323,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 	if( m_pendingEventCount == 0 )
 	{
 		renderFrames(out.size(), out.data());
+		applyPendingTeardownNoteOffs();
 		return;
 	}
 
@@ -1398,6 +1400,11 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 	{
 		renderFrames(out.size() - currentFrame, out.data() + currentFrame);
 	}
+
+	// The teardown note-offs the bounded queue refused are applied at the end
+	// of the period, like the ones it did take: a note-on of the same pitch in
+	// this period is not cut by them.
+	applyPendingTeardownNoteOffs();
 }
 
 
@@ -1411,6 +1418,30 @@ void Sf2Instrument::removePendingEvent(std::size_t index) noexcept
 		m_pendingEvents[i] = m_pendingEvents[i + 1];
 	}
 	--m_pendingEventCount;
+}
+
+
+
+
+void Sf2Instrument::applyPendingTeardownNoteOffs() noexcept
+{
+	// The flag is cleared before the counters are read. A teardown that is
+	// added while this runs sets the flag again, and the next period takes it.
+	if( !m_pendingTeardownDirty.exchange( false, std::memory_order_acq_rel ) ) { return; }
+
+	for( int pitch = 0; pitch < 128; ++pitch )
+	{
+		const int pending = m_pendingTeardownNotes[ pitch ].exchange( 0, std::memory_order_acq_rel );
+		if( pending <= 0 ) { continue; }
+		// The same count the note-off event would have taken: the note is no
+		// longer running, and the synth stops the voice when the last note of
+		// the pitch is gone.
+		const int notes = m_notesRunning[ pitch ].fetch_sub( pending, std::memory_order_relaxed ) - pending;
+		if( notes <= 0 && m_synth != nullptr )
+		{
+			fluid_synth_noteoff( m_synth, m_channel, pitch );
+		}
+	}
 }
 
 
@@ -1476,7 +1507,19 @@ void Sf2Instrument::deleteNotePluginData( NotePlayHandle * _n )
 		event.midiNote = pluginData->midiNote;
 		event.isNew = false;
 		event.standalone = true;
-		m_noteEvents.push( event );
+		if( !m_noteEvents.push( event ) )
+		{
+			// The bounded queue was full and refused the note-off. Dropping it
+			// would leave the voice sounding and the note counted for ever,
+			// so the pitch's teardown counter takes it instead: the render
+			// stage applies the count, and a started note always stops. The
+			// counter has a fixed size, so this path neither allocates nor
+			// waits for anything.
+			m_pendingTeardownNotes[ pluginData->midiNote ].fetch_add( 1, std::memory_order_relaxed );
+			// The flag is set after the counter, so the render stage that sees
+			// the flag also sees the count.
+			m_pendingTeardownDirty.store( true, std::memory_order_release );
+		}
 	}
 
 	// Give the slot back to the pool. A note event that is still queued for

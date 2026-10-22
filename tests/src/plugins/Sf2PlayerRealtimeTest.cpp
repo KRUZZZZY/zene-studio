@@ -46,15 +46,17 @@
 #include "SampleFrame.h"
 #include "Song.h"
 
+#include "Sf2PlayerFixture.h"
+
 namespace
 {
+
+using sf2test::fundamentalFrequency;
+using sf2test::Sf2Fixture;
 
 //! Allocations counted while `counting` is true.
 std::atomic_bool counting{false};
 std::atomic<std::uint64_t> allocationCount{0};
-
-//! The frequency of the strongest period of the signal.
-auto fundamentalFrequency(const std::vector<float>& signal, double sampleRate) -> double;
 
 //! Renders a note on a synth and returns the frequency of the tone.
 auto synthFrequency(fluid_synth_t* synth, int key, double sampleRate) -> double
@@ -70,138 +72,6 @@ auto synthFrequency(fluid_synth_t* synth, int key, double sampleRate) -> double
 	}
 	fluid_synth_noteoff(synth, 0, key);
 	return fundamentalFrequency(mono, sampleRate);
-}
-
-//! The SF2 module and an instrument of its own.
-struct Sf2Fixture
-{
-	QLibrary library{QString::fromUtf8(SF2PLAYER_MODULE)};
-	std::unique_ptr<lmms::InstrumentTrack> track;
-	std::unique_ptr<lmms::Instrument> instrument;
-
-	//! Loads the module and creates the instrument.
-	//! @return false when this build has no SF2 player module.
-	bool create()
-	{
-		if (QString::fromUtf8(SF2PLAYER_MODULE).isEmpty()) { return false; }
-		library.setLoadHints(QLibrary::PreventUnloadHint);
-		if (!library.load()) { return false; }
-
-		auto entry = reinterpret_cast<lmms::Plugin* (*)(lmms::Model*, void*)>(
-			library.resolve("lmms_plugin_main"));
-		if (entry == nullptr) { return false; }
-
-		track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
-		instrument.reset(static_cast<lmms::Instrument*>(entry(track.get(), nullptr)));
-		return instrument != nullptr;
-	}
-
-	//! The FluidSynth synth the player uses.
-	auto synth() const -> fluid_synth_t*
-	{
-		quintptr address = 0;
-		if (!QMetaObject::invokeMethod(instrument.get(), "currentSynthAddress",
-				Qt::DirectConnection, Q_RETURN_ARG(quintptr, address)))
-		{
-			return nullptr;
-		}
-		return reinterpret_cast<fluid_synth_t*>(address);
-	}
-
-	//! The SoundFont the synth plays, read through FluidSynth's own API.
-	auto font() const -> fluid_sfont_t*
-	{
-		return synth() != nullptr ? fluid_synth_get_sfont( synth(), 0 ) : nullptr;
-	}
-
-	//! The plugin's own model with that display name.
-	template<typename T> auto findModel(const char* name) const -> T*
-	{
-		const auto models = instrument->findChildren<T*>();
-		for (auto* model : models)
-		{
-			if (model->displayName() == QString::fromUtf8(name)) { return model; }
-		}
-		return nullptr;
-	}
-
-	//! The number of notes the player counts as running.
-	auto runningNotes() const -> int
-	{
-		int running = 0;
-		if (!QMetaObject::invokeMethod(instrument.get(), "runningNotesForTest",
-				Qt::DirectConnection, Q_RETURN_ARG(int, running)))
-		{
-			return -1;
-		}
-		return running;
-	}
-
-	//! Fills the player's bounded note event queue, so that the next event it
-	//! publishes is refused.
-	auto fillNoteEventQueue() const -> int
-	{
-		int queued = 0;
-		if (!QMetaObject::invokeMethod(instrument.get(), "fillNoteEventQueueForTest",
-				Qt::DirectConnection, Q_RETURN_ARG(int, queued)))
-		{
-			return -1;
-		}
-		return queued;
-	}
-
-	//! Plays a note and returns the frequency of the tone in the rendered audio.
-	auto playedFrequency(std::span<lmms::SampleFrame> span, int key) const -> double
-	{
-		const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
-		// The note lasts for the whole measurement, so the tone is there all
-		// the time.
-		const auto noteFrames = static_cast<lmms::f_cnt_t>(frames * 32);
-		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(noteFrames)},
-			lmms::TimePos{0}, key};
-		lmms::NotePlayHandle handle{track.get(), 0, noteFrames, note, nullptr, -1,
-			lmms::NotePlayHandle::Origin::MidiClip};
-
-		std::vector<float> mono;
-		for (int period = 0; period < 32; ++period)
-		{
-			instrument->playNote(&handle, span);
-			instrument->play(span);
-			for (const auto& frame : span) { mono.push_back(frame[0]); }
-		}
-		return fundamentalFrequency(mono, lmms::Engine::audioEngine()->outputSampleRate());
-	}
-};
-
-
-//! The frequency of the strongest period of the signal, found with an
-//! autocorrelation. Deterministic: no timing, no randomness.
-auto fundamentalFrequency(const std::vector<float>& signal, double sampleRate) -> double
-{
-	if (signal.size() < 4096) { return 0.; }
-
-	// The search starts above the shortest lags: a tone that is mixed with
-	// noise correlates with itself at every short lag.
-	double best = 0.;
-	std::size_t bestLag = 0;
-	const std::size_t maxLag = std::min<std::size_t>(4000, signal.size() / 2);
-	for (std::size_t lag = 20; lag < maxLag; ++lag)
-	{
-		double sum = 0.;
-		double energyA = 0.;
-		double energyB = 0.;
-		for (std::size_t i = 0; i + lag < signal.size(); ++i)
-		{
-			sum += static_cast<double>(signal[i]) * signal[i + lag];
-			energyA += static_cast<double>(signal[i]) * signal[i];
-			energyB += static_cast<double>(signal[i + lag]) * signal[i + lag];
-		}
-		if (energyA <= 0. || energyB <= 0.) { continue; }
-		const double correlation = sum / std::sqrt(energyA * energyB);
-		if (correlation > best) { best = correlation; bestLag = lag; }
-	}
-	if (bestLag == 0 || best < 0.5) { return 0.; }
-	return sampleRate / static_cast<double>(bestLag);
 }
 
 } // namespace
@@ -776,7 +646,9 @@ void Sf2PlayerRealtimeTest::aStartedNoteIsStoppedWhenTheEventQueueIsFull()
 	QVERIFY2(queued > 0, "the player's note event queue could not be filled");
 
 	// The note is destroyed while its note-off is still nowhere: the player
-	// has to stop the voice it started.
+	// has to stop the voice it started. The instrument track does this when
+	// the note handle is destroyed; the test drives the player's own teardown.
+	fixture.instrument->deleteNotePluginData(handle);
 	lmms::NotePlayHandleManager::release(handle);
 
 	// The render stage applies the note-off it could not queue.
