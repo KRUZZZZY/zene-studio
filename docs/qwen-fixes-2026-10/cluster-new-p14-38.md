@@ -27,10 +27,10 @@ Shared cause, fixed in the place all of them go through:
 
 The rule the fix implements: a call that changed nothing must leave no journal step AND
 advertise no reversible transaction, because the advertised inverse (`control.undo`) would
-otherwise undo the PREVIOUS edit. It is the same rule the sibling note verbs already
-follow - `note.arpeggiate` (ControlCommandsNoteTools.cpp:151), `note.flam` (:203),
-`note.repeat` (:286) and `note.rotate` (:313) all return a plain success before their
-checkpoint when nothing changes.
+otherwise undo the PREVIOUS edit. The sibling no-work paths `note.flam`
+(ControlCommandsNoteTools.cpp:203) and `note.rotate` (:313) already return before their
+checkpoints when they have nothing to add or rotate. `note.arpeggiate` (:151) replaces
+notes, and `note.repeat` (:286) adds copies, so their checkpoints remain unconditional.
 
 ## The regression test: tests/src/core/ControlNoteNoOpUndoTest.cpp (fork-NEW, ctest #475)
 
@@ -149,9 +149,9 @@ Logs (this run): `logs/build-5-newtest.log`, `logs/build-6-newtest.log`, `logs/b
   fixed in the handlers themselves: `note.invert` and `note.transpose_in_key` in
   src/core/ControlCommandsNoteTools.cpp, and `note.transpose`, `note.velocity_offset`,
   `note.velocity_scale` in src/core/ControlCommandsNoteTransform.cpp. Those five are every
-  conditional-checkpoint transform in this area; the sibling note edits that already return
-  before their checkpoint (arpeggiate, flam, repeat, rotate) keep that behaviour, and their
-  existing regressions still pass.
+  conditional-checkpoint transform in this area; the sibling no-work paths (`flam` and
+  `rotate`) retain their early returns, while `arpeggiate` and `repeat` retain their
+  unconditional checkpoints because they replace notes or add copies.
 - No collateral damage? NONE - only a call that changed NOTHING takes a different path. A
   transform that moves a note still checkpoints, still advertises its transaction and still
   undoes in one step (proved by the positive control in the new suite and by the existing
