@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <fluidsynth.h>
+#include <QFile>
 #include <QLibrary>
 #include <QtTest>
 
@@ -138,6 +139,47 @@ private slots:
 	void everySynthHasItsOwnSettings();
 	void moreNotesThanTheOldPoolGetSlots();
 	void renderSurvivesAPendingReload();
+	void playsWithARealSoundFont();
+};
+
+void Sf2PlayerRealtimeTest::playsWithARealSoundFont()
+{
+	if (!QFile::exists(QString::fromUtf8(SF2_TEST_SOUNDFONT)))
+	{
+		QSKIP("this tree has no SoundFont to play");
+	}
+
+	Sf2Fixture fixture;
+	if (!fixture.create())
+	{
+		QSKIP("this build has no SF2 player module (no FluidSynth)");
+	}
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{buffer};
+
+	// The player loads the soundfont off the audio thread and publishes the
+	// synth it built.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "openFile", Qt::DirectConnection,
+		Q_ARG(QString, QString::fromUtf8(SF2_TEST_SOUNDFONT))));
+
+	fixture.instrument->play(span);
+
+	const lmms::Note note{lmms::TimePos{0}, lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{fixture.track.get(), 0, frames, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	for (int i = 0; i < 20; ++i)
+	{
+		fixture.instrument->playNote(&handle, span);
+		fixture.instrument->play(span);
+	}
+	double peak = 0;
+	for (const auto& frame : buffer)
+	{
+		peak = std::max(peak, std::abs(static_cast<double>(frame[0])));
+	}
+	QVERIFY2(peak > 0.0001, "the player made no sound with a real soundfont");
 };
 
 void Sf2PlayerRealtimeTest::initTestCase()

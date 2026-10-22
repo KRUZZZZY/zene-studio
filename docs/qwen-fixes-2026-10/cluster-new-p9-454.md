@@ -67,7 +67,11 @@ temperament, 100 cents per key, not an all-zero table),
 `newSynthStartsWithTheRequestedEffectState` (the new synth's settings have the
 effects off), `everySynthHasItsOwnSettings` (two synths never share a settings
 object) and `moreNotesThanTheOldPoolGetSlots` (200 simultaneous notes all get
-a plugin data slot). `notePathAllocatesNothing` and
+a plugin data slot). `playsWithARealSoundFont` is the collateral-damage guard:
+it loads the SoundFont that ships with the tree, plays a note through the
+player and checks that the rendered period is not silent (it is not a bug
+regression - it passes before and after - but it proves that the rewritten
+synth life cycle still makes sound). `notePathAllocatesNothing` and
 `renderSurvivesAPendingReload` from round 2 are kept.
 
 ## Evidence
@@ -88,7 +92,8 @@ All logs are new numbered files in
   "72 of 200 notes did not get a plugin data slot".
 - `git apply logs/fix.patch` EXIT=0; the same build EXIT=0;
   `cd build/tests && QT_QPA_PLATFORM=offscreen ./Sf2PlayerRealtimeTest` EXIT=0,
-  `Totals: 9 passed, 0 failed` (`test-green-final.log`).
+  `Totals: 9 passed, 0 failed` (`test-green-final.log`); with the end-to-end
+case added: `Totals: 10 passed, 0 failed` (`test-e2e.log`).
 
 ### One reversal per defect (each defect re-introduced on its own, the seam kept)
 
@@ -127,6 +132,11 @@ All logs are new numbered files in
   PASS ("no new item in your files"), RESULT PASS (`feature-check-1.log`).
 - Build: `cmake --build build --target sf2player Sf2PlayerRealtimeTest zene -j12`
   EXIT=0 (`build-green-final.log`).
+- End-to-end sound: `playsWithARealSoundFont` loads
+  `plugins/LadspaEffect/calf/veal/sf2/Hum.sf2` through the player, plays a note
+  and finds a peak of 0.42 in the rendered period (`test-e2e.log`), so the
+  rewritten synth life cycle (own settings, font load, program selection,
+  note-on, rendering with the requested effect state) still makes sound.
 
 ## Self-check
 

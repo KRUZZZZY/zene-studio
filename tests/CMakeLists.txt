@@ -1438,6 +1438,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			# The test inspects the synth the player owns (its tuning and the
 			# settings it was built with), so it links FluidSynth itself.
 			target_link_libraries(${LMMS_TEST_NAME} PRIVATE fluidsynth)
+			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+				SF2_TEST_SOUNDFONT="${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/calf/veal/sf2/Hum.sf2")
 		else()
 			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE SF2PLAYER_MODULE="")
 		endif()
