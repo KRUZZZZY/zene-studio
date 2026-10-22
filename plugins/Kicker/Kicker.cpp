@@ -27,6 +27,9 @@
 
 #include <QDomElement>
 
+#include <cstddef>
+#include <memory>
+
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -164,7 +167,12 @@ void KickerInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> 
 
 	if (!nph->m_pluginData)
 	{
-		nph->m_pluginData = new SweepOsc(
+		// The per-note oscillator lives in the note handle's own preallocated
+		// storage: the audio thread must not allocate for a note start.
+		static_assert(sizeof(SweepOsc) <= NotePlayHandle::PluginDataStorageSize);
+		static_assert(alignof(SweepOsc) <= alignof(std::max_align_t));
+		nph->m_pluginData = std::construct_at(
+					static_cast<SweepOsc*>(nph->pluginDataStorage()),
 					DistFX( m_distModel.value(),
 							m_gainModel.value() ),
 					m_startNoteModel.value() ? nph->frequency() : m_startFreqModel.value(),
@@ -212,7 +220,10 @@ void KickerInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> 
 
 void KickerInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	delete static_cast<SweepOsc *>( _n->m_pluginData );
+	if (_n->m_pluginData != nullptr)
+	{
+		std::destroy_at( static_cast<SweepOsc *>( _n->m_pluginData ) );
+	}
 }
 
 

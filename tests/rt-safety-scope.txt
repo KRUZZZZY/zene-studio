@@ -157,3 +157,5 @@ plugins/Vestige/Vestige.cpp	VestigeInstrument::processImpl	VeSTige's per-period 
 # COPY with only its pre-first prefix overridden (AutomationRamp::setValueBefore).
 src/core/Song.cpp	Song::buildAutomationRamps	the per-block sample-accurate publish: fixed-capacity stack ramps, a bounded per-target prefix override, no allocation and no lock beyond the clip's own existing one
 src/core/TrackContainer.cpp	TrackContainer::collectAutomatedValues	the per-tick automation read: bounded scratch writes plus per-target scalar initial-value reads; the clip lock stays in valueAt() and is taken once per clip as before
+plugins/Kicker/Kicker.cpp	KickerInstrument::playNoteImpl	per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
+plugins/Kicker/Kicker.cpp	KickerInstrument::deleteNotePluginData	called when a Kicker note ends, on the thread that released the note handle: destroys the note state in place
