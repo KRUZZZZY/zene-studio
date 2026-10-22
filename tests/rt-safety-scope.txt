@@ -159,3 +159,5 @@ src/core/Song.cpp	Song::buildAutomationRamps	the per-block sample-accurate publi
 src/core/TrackContainer.cpp	TrackContainer::collectAutomatedValues	the per-tick automation read: bounded scratch writes plus per-target scalar initial-value reads; the clip lock stays in valueAt() and is taken once per clip as before
 plugins/Kicker/Kicker.cpp	KickerInstrument::playNoteImpl	per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
 plugins/Kicker/Kicker.cpp	KickerInstrument::deleteNotePluginData	called when a Kicker note ends, on the thread that released the note handle: destroys the note state in place
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::playImpl	the GIG player's audio callback renders the playing notes once per period: it must not lock, allocate or grow a container while the audio thread is inside it
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::playNoteImpl	the GIG player's note-on runs on the audio thread: the note storage it hands out must already exist, so that the callback neither allocates nor locks

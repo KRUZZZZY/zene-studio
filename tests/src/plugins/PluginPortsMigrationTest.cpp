@@ -67,6 +67,9 @@
 
 #include <QByteArray>
 #include <QFile>
+#ifdef Q_OS_UNIX
+#include <dlfcn.h>
+#endif
 #include <QDomDocument>
 #include <QDir>
 #include <QDomDocument>
@@ -94,6 +97,8 @@
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QTreeWidget>
+#include <QWaitCondition>
+#include <QDeadlineTimer>
 #include <QtTest>
 #include <type_traits>
 
@@ -249,6 +254,128 @@ void operator delete[](void* allocation, std::size_t) noexcept
 	array_allocation_probe::deallocation(allocation);
 	::operator delete(allocation);
 }
+
+// ---------------------------------------------------------------------------
+// The heap traffic of the rendering thread.
+//
+// The operator new above does NOT see the growth of a Qt container: Qt
+// allocates the storage of a QList through malloc, inside QtCore, and that
+// allocation never reaches the replaced operator new. The C allocator is
+// replaced here as well, so that the growth of a container on the audio path
+// is counted too.
+// ---------------------------------------------------------------------------
+namespace
+{
+
+struct HeapWatch
+{
+	inline static thread_local bool active = false;
+	inline static thread_local std::size_t allocations = 0;
+	inline static thread_local std::size_t deallocations = 0;
+
+	static void begin() noexcept
+	{
+		allocations = 0;
+		deallocations = 0;
+		active = true;
+	}
+
+	static void end() noexcept { active = false; }
+
+	static void allocated() noexcept { if (active) { ++allocations; } }
+	static void deallocated() noexcept { if (active) { ++deallocations; } }
+};
+
+} // namespace
+
+#ifdef Q_OS_UNIX
+
+namespace
+{
+
+using MallocFn = void* (*)(std::size_t);
+using CallocFn = void* (*)(std::size_t, std::size_t);
+using ReallocFn = void* (*)(void*, std::size_t);
+using FreeFn = void (*)(void*);
+
+MallocFn g_malloc = nullptr;
+CallocFn g_calloc = nullptr;
+ReallocFn g_realloc = nullptr;
+FreeFn g_free = nullptr;
+
+// The allocations that happen while the real allocator is looked up are
+// served from this static arena, so that the lookup cannot recurse.
+constexpr std::size_t ArenaSize = 256 * 1024;
+alignas(16) char g_arena[ArenaSize];
+std::size_t g_arenaUsed = 0;
+bool g_resolving = false;
+
+void* arenaAlloc(std::size_t size)
+{
+	const std::size_t aligned = (size + 15u) & ~static_cast<std::size_t>(15u);
+	if (g_arenaUsed + aligned > ArenaSize) { return nullptr; }
+	void* const pointer = g_arena + g_arenaUsed;
+	g_arenaUsed += aligned;
+	return pointer;
+}
+
+bool isArenaPointer(const void* pointer)
+{
+	return pointer >= g_arena && pointer < g_arena + ArenaSize;
+}
+
+void resolveAllocators()
+{
+	if (g_resolving) { return; }
+	g_resolving = true;
+	g_malloc = reinterpret_cast<MallocFn>(dlsym(RTLD_NEXT, "malloc"));
+	g_calloc = reinterpret_cast<CallocFn>(dlsym(RTLD_NEXT, "calloc"));
+	g_realloc = reinterpret_cast<ReallocFn>(dlsym(RTLD_NEXT, "realloc"));
+	g_free = reinterpret_cast<FreeFn>(dlsym(RTLD_NEXT, "free"));
+	g_resolving = false;
+}
+
+} // namespace
+
+extern "C" void* malloc(std::size_t size)
+{
+	if (g_resolving) { return arenaAlloc(size); }
+	if (g_malloc == nullptr) { resolveAllocators(); }
+	HeapWatch::allocated();
+	return g_malloc(size);
+}
+
+extern "C" void* calloc(std::size_t count, std::size_t size)
+{
+	if (g_resolving) { return arenaAlloc(count * size); }
+	if (g_calloc == nullptr) { resolveAllocators(); }
+	HeapWatch::allocated();
+	return g_calloc(count, size);
+}
+
+extern "C" void* realloc(void* pointer, std::size_t size)
+{
+	if (g_resolving) { return arenaAlloc(size); }
+	if (g_realloc == nullptr) { resolveAllocators(); }
+	if (isArenaPointer(pointer))
+	{
+		void* const fresh = g_malloc(size);
+		std::memcpy(fresh, pointer, size);
+		return fresh;
+	}
+	HeapWatch::allocated();
+	return g_realloc(pointer, size);
+}
+
+extern "C" void free(void* pointer)
+{
+	if (pointer == nullptr || isArenaPointer(pointer)) { return; }
+	HeapWatch::deallocated();
+	if (g_free == nullptr) { resolveAllocators(); }
+	g_free(pointer);
+}
+
+#endif // Q_OS_UNIX
 // The audio-path lock regression drives the effect's own private processLock()/
 // processUnlock(). A non-recursive QMutex cannot be acquired twice by the same
 // thread, so a second successful claim is the deterministic evidence that the
@@ -924,6 +1051,10 @@ private slots:
 	void gigplayerBidirectionalLoopReflectsAtExclusiveEnd();
 	void gigplayerSingleFrameLoopRepeatsFrame();
 	void gigplayerNoProgressFallbackKeepsEarlierSamples();
+	void gigplayerAudioPathDoesNotAllocate();
+	void gigplayer24BitSamplePlaysAtFullScale();
+	void gigplayerCallbackDoesNotWaitForAFileLoad();
+	void gigplayerKeepsEveryOverlappingNote();
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
@@ -1955,7 +2086,7 @@ void PluginPortsMigrationTest::migratedPluginsPreserveBehaviour()
 		render.name = QString::fromUtf8(m.plugin);
 		// Plugins whose first note period and its cleanup must not touch the heap.
 		const bool realtimeChecked = m.plugin == std::string{"freeboy"} || m.plugin == std::string{"tripleoscillator"} || m.plugin == std::string{"malletsstk"}
-			|| m.plugin == std::string{"kicker"};
+			|| m.plugin == std::string{"kicker"} || m.plugin == std::string{"gigplayer"};
 		partc::RealtimeAllocationCounts realtimeCounts;
 		render.samples = partc::renderInstrumentInFreshThread(*inst, frames, lmms::DefaultKey,
 			realtimeChecked ? &realtimeCounts : nullptr);
@@ -2595,6 +2726,665 @@ void PluginPortsMigrationTest::gigplayerBidirectionalLoopReflectsAtExclusiveEnd(
 			.arg(reflected, 0, 'g', 6).arg(firstPassSample, 0, 'g', 6)));
 #endif
 }
+
+// ---------------------------------------------------------------------------
+// The GIG player's audio path (cluster new-p9-149, new-p9-150, new-p15-71).
+// ---------------------------------------------------------------------------
+namespace
+{
+
+//! Renders one held note and returns the peak of the rendered signal.
+auto renderGigPeak(lmms::Instrument& instrument, int key, int periods) -> float
+{
+	using namespace lmms;
+
+	const auto frames = Engine::audioEngine()->framesPerPeriod();
+	InstrumentTrack* track = instrument.instrumentTrack();
+
+	const Note note{TimePos{static_cast<tick_t>(frames * periods)}, TimePos{0}, key};
+	NotePlayHandle handle{track, 0, frames * periods, note, nullptr, -1,
+		NotePlayHandle::Origin::MidiClip};
+
+	if (instrument.isSingleStreamed())
+	{
+		instrument.handleMidiEvent(
+			MidiEvent{MidiNoteOn, 0, static_cast<std::int16_t>(key), 100}, TimePos{0}, 0);
+	}
+
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+	float peak = 0.0f;
+
+	for (int period = 0; period < periods; ++period)
+	{
+		std::fill(data.begin(), data.end(), SampleFrame{0.0f, 0.0f});
+		const std::span<SampleFrame> span{data};
+
+		instrument.playNote(&handle, span);
+		if (instrument.isSingleStreamed()) { instrument.play(span); }
+
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			peak = std::max(peak, std::fabs(data[frame].left()));
+			peak = std::max(peak, std::fabs(data[frame].right()));
+		}
+	}
+
+	return peak;
+}
+
+
+//! Renders one new note per period and counts the heap traffic of the render.
+auto renderGigNotesCountingHeap(lmms::Instrument& instrument, int key, int notes)
+	-> std::pair<std::size_t, std::size_t>
+{
+	using namespace lmms;
+
+	const auto frames = Engine::audioEngine()->framesPerPeriod();
+	InstrumentTrack* track = instrument.instrumentTrack();
+
+	const Note note{TimePos{static_cast<tick_t>(frames * notes)}, TimePos{0}, key};
+	std::vector<NotePlayHandle*> handles;
+	for (int i = 0; i < notes; ++i)
+	{
+		handles.push_back(NotePlayHandleManager::acquire(track, 0, frames * notes, note));
+	}
+
+	if (instrument.isSingleStreamed())
+	{
+		instrument.handleMidiEvent(
+			MidiEvent{MidiNoteOn, 0, static_cast<std::int16_t>(key), 100}, TimePos{0}, 0);
+	}
+
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+
+	for (int i = 0; i < notes; ++i)
+	{
+		std::fill(data.begin(), data.end(), SampleFrame{0.0f, 0.0f});
+		const std::span<SampleFrame> span{data};
+
+		// The first note warms libgig's sample cache up; the measurement
+		// starts with the second note, so that the cache is not counted.
+		const bool measure = (i > 0);
+		if (measure) { HeapWatch::begin(); }
+		instrument.playNote(handles[static_cast<std::size_t>(i)], span);
+		if (instrument.isSingleStreamed()) { instrument.play(span); }
+		if (measure) { HeapWatch::end(); }
+	}
+
+	for (auto* handle : handles)
+	{
+		NotePlayHandleManager::release(handle);
+	}
+
+	return {HeapWatch::allocations, HeapWatch::deallocations};
+}
+
+
+//! Starts the given number of notes in one period and renders them.
+auto renderGigNotes(lmms::Instrument& instrument, int key, int notes) -> float
+{
+	using namespace lmms;
+
+	constexpr int Periods = 64;
+	const auto frames = Engine::audioEngine()->framesPerPeriod();
+	InstrumentTrack* track = instrument.instrumentTrack();
+
+	const Note note{TimePos{static_cast<tick_t>(frames * Periods)}, TimePos{0}, key};
+	std::vector<NotePlayHandle*> handles;
+	for (int i = 0; i < notes; ++i)
+	{
+		handles.push_back(NotePlayHandleManager::acquire(track, 0, frames * Periods, note));
+	}
+
+	instrument.handleMidiEvent(
+		MidiEvent{MidiNoteOn, 0, static_cast<std::int16_t>(key), 100}, TimePos{0}, 0);
+
+	std::vector<SampleFrame> data(static_cast<std::size_t>(frames));
+	float peak = 0.0f;
+
+	for (int period = 0; period < Periods; ++period)
+	{
+		std::fill(data.begin(), data.end(), SampleFrame{0.0f, 0.0f});
+		const std::span<SampleFrame> span{data};
+
+		for (auto* handle : handles) { instrument.playNote(handle, span); }
+		instrument.play(span);
+
+		for (f_cnt_t frame = 0; frame < frames; ++frame)
+		{
+			peak = std::max(peak, std::fabs(data[frame].left()));
+			peak = std::max(peak, std::fabs(data[frame].right()));
+		}
+	}
+
+	for (auto* handle : handles) { NotePlayHandleManager::release(handle); }
+
+	return peak;
+}
+
+
+//! Renders the given number of notes and reports the peak of the render.
+//!
+//! The render runs in a worker thread with a watchdog: an index that wraps
+//! inside the audio callback keeps the callback from ever coming back, and
+//! that has to show up as a failed case and not as a hanging test.
+auto renderGigNotesWithWatchdog(lmms::Instrument& instrument, int key, int notes,
+		float& peak) -> bool
+{
+	QMutex mutex;
+	QWaitCondition condition;
+	bool done = false;
+
+	std::thread worker{[&] {
+		const float rendered = renderGigNotes(instrument, key, notes);
+		QMutexLocker locker(&mutex);
+		peak = rendered;
+		done = true;
+		condition.wakeAll();
+	}};
+
+	bool finished = false;
+	{
+		QMutexLocker locker(&mutex);
+		QDeadlineTimer deadline{ 30000 };
+		while (!done && !deadline.hasExpired())
+		{
+			condition.wait(&mutex, 100);
+		}
+		finished = done;
+	}
+
+	if (!finished)
+	{
+		// The render does not come back. The worker cannot be joined, so it is
+		// detached: the case fails and the test binary ends.
+		worker.detach();
+		return false;
+	}
+
+	worker.join();
+	return true;
+}
+
+
+//! The synchronisation between the test and the thread that opens a GIG file.
+struct GigLoadSync
+{
+	QMutex mutex;
+	QWaitCondition condition;
+	bool loaderPaused = false;
+	bool loaderReleased = false;
+	bool renderDone = false;
+	float renderPeak = 0.0f;
+};
+
+
+//! The hook that pauses the file preparation until the test lets it continue.
+void pauseGigFileLoad(void* context)
+{
+	auto* sync = static_cast<GigLoadSync*>(context);
+	QMutexLocker locker(&sync->mutex);
+	sync->loaderPaused = true;
+	sync->condition.wakeAll();
+
+	// The deadline only breaks a deadlock: a callback that waits for the
+	// loader would keep the loader waiting for ever.
+	QDeadlineTimer deadline{ 10000 };
+	while (!sync->loaderReleased && !deadline.hasExpired())
+	{
+		sync->condition.wait(&sync->mutex, 100);
+	}
+}
+
+
+auto readLittleEndian32(const char* data) -> std::uint32_t
+{
+	return static_cast<std::uint32_t>(static_cast<unsigned char>(data[0]))
+		| (static_cast<std::uint32_t>(static_cast<unsigned char>(data[1])) << 8)
+		| (static_cast<std::uint32_t>(static_cast<unsigned char>(data[2])) << 16)
+		| (static_cast<std::uint32_t>(static_cast<unsigned char>(data[3])) << 24);
+}
+
+void writeLittleEndian32(char* data, std::uint32_t value)
+{
+	data[0] = static_cast<char>(value & 0xFF);
+	data[1] = static_cast<char>((value >> 8) & 0xFF);
+	data[2] = static_cast<char>((value >> 16) & 0xFF);
+	data[3] = static_cast<char>((value >> 24) & 0xFF);
+}
+
+struct WaveChunks
+{
+	std::size_t format = 0;
+	std::size_t data = 0;
+	std::size_t dataSize = 0;
+};
+
+
+//! Finds the format and the data chunk of the sample inside a wave list.
+auto findWaveChunksInList(const std::vector<char>& file, std::size_t begin, std::size_t end,
+	WaveChunks& chunks) -> bool
+{
+	std::size_t inner = begin;
+	while (inner + 8 <= end)
+	{
+		const char* const chunkId = file.data() + inner;
+		const std::uint32_t chunkSize = readLittleEndian32(file.data() + inner + 4);
+		if (std::memcmp(chunkId, "fmt ", 4) == 0) { chunks.format = inner + 8; }
+		else if (std::memcmp(chunkId, "data", 4) == 0)
+		{
+			chunks.data = inner + 8;
+			chunks.dataSize = chunkSize;
+		}
+		inner += 8 + chunkSize + (chunkSize & 1u);
+	}
+
+	return chunks.format != 0 && chunks.data != 0;
+}
+
+
+//! Finds the wave list of the file and the chunks of its sample.
+auto findWaveChunks(const std::vector<char>& file, std::size_t begin, std::size_t end,
+	WaveChunks& chunks) -> bool
+{
+	std::size_t offset = begin;
+	while (offset + 8 <= end)
+	{
+		const char* const id = file.data() + offset;
+		const std::uint32_t size = readLittleEndian32(file.data() + offset + 4);
+		const std::size_t body = offset + 8;
+
+		const bool isContainer = std::memcmp(id, "LIST", 4) == 0
+			|| std::memcmp(id, "RIFF", 4) == 0;
+		if (isContainer && body + 4 <= end)
+		{
+			if (std::memcmp(file.data() + body, "wave", 4) == 0)
+			{
+				return findWaveChunksInList(file, body + 4, body + size, chunks);
+			}
+
+			if (findWaveChunks(file, body + 4, body + size, chunks)) { return true; }
+		}
+
+		offset = body + size + (size & 1u);
+	}
+
+	return false;
+}
+
+
+/*!
+ * Writes a GIG file whose sample is the positive full-scale value in every
+ * frame, with the given bit depth.
+ *
+ * The tracked fixture is a valid 16-bit GIG file. A 24-bit file with the same
+ * structure differs in the sample's format chunk and in the sample data
+ * itself: the three bytes of a 24-bit frame replace the two bytes of a
+ * 16-bit frame. The file is patched in place, so its size - and with it every
+ * offset in it - stays the same.
+ */
+auto writeFullScaleGig(const QString& source, const QString& target, int bitDepth) -> bool
+{
+	const std::size_t frameSize = bitDepth == 24 ? 3 : 2;
+
+	QFile input{source};
+	if (!input.open(QIODevice::ReadOnly)) { return false; }
+	const auto bytes = input.readAll();
+	input.close();
+
+	std::vector<char> file(bytes.begin(), bytes.end());
+
+	WaveChunks chunks;
+	if (!findWaveChunks(file, 0, file.size(), chunks)) { return false; }
+	if (chunks.dataSize % frameSize != 0) { return false; }
+
+	// The format chunk: the block align and the average byte rate that go
+	// with the bit depth.
+	char* const format = file.data() + chunks.format;
+	writeLittleEndian32(format + 8, 44100u * static_cast<std::uint32_t>(frameSize));
+	format[12] = static_cast<char>(frameSize);
+	format[13] = 0;
+	format[14] = static_cast<char>(bitDepth);
+	format[15] = 0;
+
+	// The sample data: every frame is the full-scale maximum of the bit
+	// depth, written little endian.
+	char* const data = file.data() + chunks.data;
+	for (std::size_t frame = 0; frame < chunks.dataSize / frameSize; ++frame)
+	{
+		if (frameSize == 3)
+		{
+			data[3 * frame + 0] = static_cast<char>(0xFF);
+			data[3 * frame + 1] = static_cast<char>(0xFF);
+			data[3 * frame + 2] = static_cast<char>(0x7F);
+		}
+		else
+		{
+			data[2 * frame + 0] = static_cast<char>(0xFF);
+			data[2 * frame + 1] = static_cast<char>(0x7F);
+		}
+	}
+
+	QFile output{target};
+	if (!output.open(QIODevice::WriteOnly)) { return false; }
+	const bool written = output.write(file.data(), static_cast<qint64>(file.size()))
+		== static_cast<qint64>(file.size());
+	output.close();
+	return written;
+}
+
+} // namespace
+
+
+//! The audio path of the GIG player must not touch the heap: every note is
+//! started and rendered, and neither the note storage nor the sample storage
+//! may grow while the audio thread is inside them.
+void PluginPortsMigrationTest::gigplayerAudioPathDoesNotAllocate()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+#ifdef Q_OS_UNIX
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("gigplayer");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "gigplayer");
+
+	constexpr int Notes = 8;
+	const auto counts = renderGigNotesCountingHeap(*instrument, lmms::DefaultKey, Notes);
+	delete instrument;
+
+	QVERIFY2(counts.first == 0,
+		qPrintable(QString{"the audio path allocated %1 times while %2 notes were played"}
+			.arg(static_cast<qulonglong>(counts.first)).arg(Notes)));
+	QVERIFY2(counts.second == 0,
+		qPrintable(QString{"the audio path freed %1 times while %2 notes were played"}
+			.arg(static_cast<qulonglong>(counts.second)).arg(Notes)));
+#else
+	QSKIP("The allocator hook of this test needs a POSIX allocator");
+#endif
+#endif
+}
+
+
+//! The audio callback must not wait for a GIG file that is being prepared.
+//!
+//! The thread that opens the file stops inside the file preparation, at the
+//! point where the old code held its mutex. The audio thread renders in the
+//! meantime and has to finish: a callback that waits for the loader would
+//! never come back while the preparation is paused.
+void PluginPortsMigrationTest::gigplayerCallbackDoesNotWaitForAFileLoad()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("gigplayer");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "gigplayer");
+
+	const QString other = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/pingpong.gig"));
+	QVERIFY(QFile::exists(other));
+
+	using HookSetter = void (*)(void (*)(void*), void*);
+	const auto setHook = reinterpret_cast<HookSetter>(
+		lib->resolve("lmms_gigplayer_set_file_load_hook"));
+	QVERIFY2(setHook != nullptr, "the GIG player does not export its file load hook");
+
+	GigLoadSync sync;
+	setHook(pauseGigFileLoad, &sync);
+
+	// The thread that opens the other GIG file. It stops inside the file
+	// preparation, with the hook waiting.
+	std::thread loader{[&] {
+		QMetaObject::invokeMethod(instrument, "openFile", Qt::DirectConnection,
+			Q_ARG(QString, other), Q_ARG(bool, false));
+	}};
+
+	{
+		QMutexLocker locker(&sync.mutex);
+		QDeadlineTimer deadline{ 10000 };
+		while (!sync.loaderPaused && !deadline.hasExpired())
+		{
+			sync.condition.wait(&sync.mutex, 100);
+		}
+		QVERIFY2(sync.loaderPaused, "the file preparation was never reached");
+	}
+
+	// The audio thread renders while the file is prepared.
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	std::thread renderer{[&] {
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 64)},
+			lmms::TimePos{}, lmms::DefaultKey};
+		auto* handle = lmms::NotePlayHandleManager::acquire(track.get(), 0, frames * 64, note);
+
+		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+		const std::span<lmms::SampleFrame> span{data};
+		instrument->handleMidiEvent(
+			lmms::MidiEvent{lmms::MidiNoteOn, 0, lmms::DefaultKey, 100}, lmms::TimePos{}, 0);
+		instrument->playNote(handle, span);
+		instrument->play(span);
+
+		float peak = 0.0f;
+		for (const auto& frame : data)
+		{
+			peak = std::max(peak, std::fabs(frame.left()));
+			peak = std::max(peak, std::fabs(frame.right()));
+		}
+
+		{
+			QMutexLocker locker(&sync.mutex);
+			sync.renderPeak = peak;
+			sync.renderDone = true;
+			sync.condition.wakeAll();
+		}
+		lmms::NotePlayHandleManager::release(handle);
+	}};
+
+	bool renderFinished = false;
+	float renderPeak = 0.0f;
+	{
+		QMutexLocker locker(&sync.mutex);
+		QDeadlineTimer deadline{ 10000 };
+		while (!sync.renderDone && !deadline.hasExpired())
+		{
+			sync.condition.wait(&sync.mutex, 100);
+		}
+		renderFinished = sync.renderDone;
+		renderPeak = sync.renderPeak;
+	}
+
+	// Let the loader continue, whatever the callback did.
+	{
+		QMutexLocker locker(&sync.mutex);
+		sync.loaderReleased = true;
+		sync.condition.wakeAll();
+	}
+	loader.join();
+	renderer.join();
+	setHook(nullptr, nullptr);
+
+	QVERIFY2(renderFinished,
+		"the audio callback waited for the GIG file that was being loaded");
+	QVERIFY2(renderPeak > 1e-4f,
+		"the audio callback rendered silence while the file was being loaded");
+
+	delete instrument;
+#endif
+}
+
+
+//! Overlapping notes must all be played: the note pool is large enough for
+//! the notes a project can hold at the same time, and a note that does not
+//! fit is not accepted at all, so that it never stays half registered.
+void PluginPortsMigrationTest::gigplayerKeepsEveryOverlappingNote()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	const auto renderWithNotes = [&](int notes, float& peak) -> bool {
+		partc::prepareInstrumentEnvironment("gigplayer");
+		auto* track = new lmms::InstrumentTrack(lmms::Engine::getSong());
+		auto* instrument = static_cast<lmms::Instrument*>(entry(track, nullptr));
+		if (instrument == nullptr) { return false; }
+		partc::applyInstrumentTestSettings(*instrument, "gigplayer");
+
+		const bool finished = renderGigNotesWithWatchdog(*instrument, lmms::DefaultKey, notes, peak);
+		if (finished)
+		{
+			delete instrument;
+			delete track;
+		}
+		// A render that does not come back keeps the instrument and its track
+		// alive: the worker is still inside them.
+		return finished;
+	};
+
+	float single = 0.0f;
+	float many = 0.0f;
+	float more = 0.0f;
+	float last = 0.0f;
+	float oneMore = 0.0f;
+
+	QVERIFY2(renderWithNotes(1, single), "the render of one note did not finish");
+	QVERIFY2(renderWithNotes(128, many), "the render of 128 notes did not finish");
+	QVERIFY2(renderWithNotes(129, more), "the render of 129 notes did not finish");
+	// 256 notes are the point where an 8 bit index into the note order wraps:
+	// the render has to come back and the 256th note has to be audible.
+	QVERIFY2(renderWithNotes(255, last), "the render of 255 notes did not finish");
+	QVERIFY2(renderWithNotes(256, oneMore), "the render of 256 notes did not finish");
+
+	QVERIFY2(single > 1e-4f, "a single note rendered silence");
+	QVERIFY2(more > many,
+		qPrintable(QString{"the 129th overlapping note was dropped: %1 notes reached %2, "
+			"129 notes reached %3"}
+			.arg(128).arg(many, 0, 'g', 6).arg(more, 0, 'g', 6)));
+	QVERIFY2(more - many > 0.5f * single,
+		qPrintable(QString{"the 129th overlapping note was not audible: %1 notes reached %2, "
+			"129 notes reached %3"}
+			.arg(128).arg(many, 0, 'g', 6).arg(more, 0, 'g', 6)));
+	QVERIFY2(oneMore > last,
+		qPrintable(QString{"the 256th overlapping note was dropped: %1 notes reached %2, "
+			"256 notes reached %3"}
+			.arg(255).arg(last, 0, 'g', 6).arg(oneMore, 0, 'g', 6)));
+	QVERIFY2(oneMore - last > 0.5f * single,
+		qPrintable(QString{"the 256th overlapping note was not audible: %1 notes reached %2, "
+			"256 notes reached %3"}
+			.arg(255).arg(last, 0, 'g', 6).arg(oneMore, 0, 'g', 6)));
+#endif
+}
+
+
+//! A full-scale 24-bit sample has to play at the full scale of the output.
+//!
+//! Both bit depths normalise a full-scale sample to the digital full scale:
+//! the 16-bit path divides by 0x8000 (BUG-8), the 24-bit path shifts the value
+//! left by eight and divides it by 0x80000000. The two full-scale fixtures
+//! therefore render at the same level. A 24-bit sample that divided by
+//! 0x100000000 would play at half of the expected level, i.e. at half the
+//! level of the 16-bit fixture.
+void PluginPortsMigrationTest::gigplayer24BitSamplePlaysAtFullScale()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	partc::prepareInstrumentEnvironment("gigplayer");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString fixture16 = directory.filePath(QStringLiteral("fullscale16.gig"));
+	const QString fixture24 = directory.filePath(QStringLiteral("fullscale24.gig"));
+	QVERIFY2(writeFullScaleGig(QString::fromUtf8(PART_C_GIG_FILE), fixture16, 16),
+		"the 16-bit test fixture could not be written");
+	QVERIFY2(writeFullScaleGig(QString::fromUtf8(PART_C_GIG_FILE), fixture24, 24),
+		"the 24-bit test fixture could not be written");
+
+	const auto renderFixture = [&](const QString& path) {
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("instrument"));
+		QDomElement saved = instrument->saveState(doc, root);
+		saved.setAttribute(QStringLiteral("src"), path);
+		saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+		saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+		instrument->restoreState(saved);
+		return renderGigPeak(*instrument, lmms::DefaultKey, 64);
+	};
+
+	const float peak16 = renderFixture(fixture16);
+	const float peak24 = renderFixture(fixture24);
+	delete instrument;
+
+	QVERIFY2(peak16 > 0.05f,
+		qPrintable(QString{"the full-scale 16-bit fixture rendered at %1, which is silence"}
+			.arg(peak16, 0, 'g', 6)));
+
+	const float ratio = peak24 / peak16;
+	QVERIFY2(ratio > 0.9f,
+		qPrintable(QString{"a full-scale 24-bit sample played at %1, which is half the "
+			"level of the full-scale 16-bit sample (%2)"}
+			.arg(peak24, 0, 'g', 6).arg(peak16, 0, 'g', 6)));
+	QVERIFY2(ratio < 1.1f,
+		qPrintable(QString{"a full-scale 24-bit sample played at %1, which is not the "
+			"level of the full-scale 16-bit sample (%2)"}
+			.arg(peak24, 0, 'g', 6).arg(peak16, 0, 'g', 6)));
+#endif
+}
+
 
 void PluginPortsMigrationTest::gigplayerSingleFrameLoopRepeatsFrame()
 {
