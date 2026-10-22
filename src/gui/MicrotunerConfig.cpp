@@ -496,10 +496,28 @@ bool MicrotunerConfig::loadScaleFromFile()
 {
 	QString fileName = FileDialog::getOpenFileName(this, tr("Open scale"), "", tr("Scala scale definition (*.scl)"));
 	if (fileName == "") {return false;}
+	QString error;
+	if (!loadScaleFile(fileName, &error))
+	{
+		if (!error.isEmpty()) {QMessageBox::critical(this, tr("Scale load failure"), error);}
+		return false;
+	}
+	return true;
+}
+
+
+/**
+ * \brief Parse an .scl file and apply the loaded scale if it is valid
+ * \param fileName the .scl file to read
+ * \param error the reason the file was refused, if it was
+ * \return true if the scale was applied, false if problems were detected
+ */
+bool MicrotunerConfig::loadScaleFile(const QString& fileName, QString* error)
+{
 	QFile file(fileName);
 	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
 	{
-		QMessageBox::critical(this, tr("Scale load failure"), tr("Unable to open selected file."));
+		if (error != nullptr) {*error = tr("Unable to open selected file.");}
 		return false;
 	}
 	QTextStream stream(&file);

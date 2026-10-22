@@ -59,6 +59,13 @@ public slots:
 	void updateScaleForm();
 	void updateKeymapForm();
 
+	/*! Load an .scl file into the scale form and apply it. \a fileName is the file the
+	 *  picker chose - the picker itself is the slot's business, so this one can be
+	 *  called without it. false + \a error when the file was refused; \a error is empty
+	 *  when the refusal was already reported to the user (by the form's own
+	 *  validation). */
+	bool loadScaleFile(const QString& fileName, QString* error = nullptr);
+
 private slots:
 	bool loadScaleFromFile();
 	bool loadKeymapFromFile();
