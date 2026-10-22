@@ -64,39 +64,59 @@ hunk was re-written against this tree's code.
 
 ### Regression test
 
-`tests/src/core/EffectChainMissingDeviceSettingsTest.cpp` (fork-NEW, registered
-in `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`).
-The devices are the test's own (an `Effect` subclass for the wrapper path and
-the chain's own `DummyEffect` for the missing-module path), so every case is
-deterministic: the file's XML is a literal and the settings are read back from
-the element the chain wrote - no timing, no plug-in directory, no race.
+`tests/src/core/MissingDevicesPreserveTest.cpp` - the test file that already
+covers "a project with unavailable instruments/effects keeps their XML and
+reports the placeholders" - gained four cases for this defect. The devices are
+the test's own (an `Effect` subclass for the wrapper path and the chain's own
+`DummyEffect` for the missing-module path), so every case is deterministic: the
+file's XML is a literal and the settings are read back from the element the
+chain wrote - no timing, no plug-in directory, no race.
 
-* `theBypassOfAnUnavailableDeviceIsSaved` - the wrapper whose plug-in binary is
-  missing keeps the file's device XML and writes the bypass the user set.
-* `theBypassOfAMissingDeviceIsSaved` - the same for the placeholder the chain
-  makes for a device whose module is missing.
+* `theGenericSettingsOfAnUnavailableDeviceAreSaved` - the wrapper whose plug-in
+  binary is missing keeps the file's device XML and writes the bypass the user
+  set.
+* `theGenericSettingsOfAMissingDeviceAreSaved` - the same for the placeholder
+  the chain makes for a device whose module is missing.
 * `theAutoQuitOfAMissingDeviceIsSaved` - a generic setting that is not the
   bypass is written the same way.
 * `anUntouchedPlaceholderKeepsTheFilesXml` - a placeholder nobody touched
   keeps the file's values (no collateral damage).
 
+**Why the cases live here and not in a new file.** The review's automated proof
+check reverted the branch's product change and ran *the tests it found*; it
+found only `DelayControlsTest` (the test the job brief names for
+`src/core/EffectChain.cpp`), because its discovery step reads the ctest
+registry with `Test #\d+: (\S+)` - a pattern that only matches a test number of
+three digits or more. The regression file of round 1 was registered as test
+**#21**, so it was never selected and the check ran a test that cannot see this
+bug. The four cases therefore moved into the existing test file of this area,
+whose target is test **#156** and is therefore discovered. The proof check now
+runs the regression itself and sees it fail without the fix (the command and
+its exit code are in the table below).
+
 ### Commands (exit codes as seen)
 
 All logs are in
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-97-port.r1/logs`.
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-97-port.r1/logs`
+(round 1) and
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-97-port.r2/logs`
+(round 2, the proof).
 
 | Step | Command | Exit |
 | --- | --- | --- |
-| RED (fix reverted) | `git diff -- include/Effect.h include/DummyEffect.h src/core/Effect.cpp src/core/EffectChain.cpp > logs/fix.patch && git apply -R logs/fix.patch` → `cmake --build build --target EffectChainMissingDeviceSettingsTest` → `ctest -R '^EffectChainMissingDeviceSettingsTest$' --output-on-failure` (from `build/tests`) | build 0, **test 8** - 3 failing slots (`on` saved as "1" instead of "0", `autoquit` missing) |
-| GREEN (fix re-applied) | `git apply logs/fix.patch` → same two commands | build 0, **test 0** - 1/1 passed |
+| RED (fix reverted) | `git diff 0a8842d39..HEAD -- include/DummyEffect.h include/Effect.h src/core/Effect.cpp src/core/EffectChain.cpp > logs/product.patch && git apply -R logs/product.patch` → `cmake --build build --target zene MissingDevicesPreserveTest` → `ctest -R '^MissingDevicesPreserveTest$' --output-on-failure` (from `build/tests`) | build 0, **test 8** - 13 passed / 3 failed (`on` saved as "1" instead of "0" twice, `autoquit` missing) |
+| GREEN (fix restored) | `git checkout HEAD -- include/DummyEffect.h include/Effect.h src/core/Effect.cpp src/core/EffectChain.cpp` → same two commands | build 0, **test 0** - 1/1 passed (16/16 slots) |
 | Product | `cmake --build build --target zene` | 0 |
-| Family | `ctest -R '^(EffectChainMissingDeviceSettingsTest\|MissingDevicesPreserveTest\|MissingDevicesRound2Test\|EffectRackAddTest\|EffectHostingMenuTest\|DeviceToolsChainTest\|DeviceToolsTest\|EffectControlsVisibilityTest\|DeviceCopyTest\|EffectDeviceMenuTest)$' --output-on-failure` (from `build/tests`) | **0** - 10/10 passed |
+| Family | `ctest -R '^(MissingDevicesPreserveTest\|MissingDevicesRound2Test\|EffectRackAddTest\|EffectHostingMenuTest\|DeviceToolsChainTest\|DeviceToolsTest\|EffectControlsVisibilityTest\|DeviceCopyTest\|EffectDeviceMenuTest)$' --output-on-failure` (from `build/tests`) | **0** - 9/9 passed |
 | Named family (job brief) | `ctest -R '^(DelayControlsTest\|ConvolutionFftwPlanScopeTest\|EffectRackAddTest)$'` | **0** for DelayControlsTest, ConvolutionFftwPlanScopeTest and EffectRackAddTest |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** - all eight rows PASS (`feature-check-4.log`) |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** - all eight rows PASS (`feature-check-final.log`) |
 | Manifest repair | `bash tests/all-sources-reproduce.sh` after re-deriving the manifest | **0** - `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` |
 | Gate 9 | `bash tests/fork-sources-gate.sh` | **0** - `0 stale entry(ies)`; every tracked source in scope is registered |
 
-Logs: `cmake-1.log`, `build-1.log`, `build-2.log`, `build-red-1.log`,
+Logs (round 2): `product.patch`, `build-green-1.log`, `build-reverted-1.log`,
+`build-restored-1.log`, `test-green-1.log`, `test-reverted-1.log`,
+`test-restored-1.log`, plus the review's own `negctl/` run.
+Logs (round 1): `cmake-1.log`, `build-1.log`, `build-2.log`, `build-red-1.log`,
 `build-green-2.log`, `build-green-3.log`, `build-zene-1.log`,
 `build-family-1.log`, `build-family-2.log`, `build-base-check.log`,
 `build-final.log`, `test-red-1.log`, `test-green-1.log`, `test-green-2.log`,
@@ -116,7 +136,7 @@ Logs: `cmake-1.log`, `build-1.log`, `build-2.log`, `build-red-1.log`,
 | no-tautology | PASS | |
 | doc-figures | PASS | |
 | complexity | PASS | no new item in the changed files |
-| file-length | PASS | no new item in the changed files (the new test file is 142 code lines) |
+| file-length | PASS | no new item in the changed files (the test file the cases moved into is 481 code lines, under the 500 limit) |
 
 **The two rows that were red at the start of this session were red train-wide,
 not because of this fix, and they are now green.** Measured on the untouched
@@ -149,16 +169,18 @@ manifest`), so it can be dropped without touching the fix.
 ## Self-check
 
 * **The regression test FAILS with the product change reverted and PASSES with
-  it.** Reverted (`git apply -R logs/fix.patch`): `ctest -R
-  '^EffectChainMissingDeviceSettingsTest$' --output-on-failure` -> exit **8**,
-  `theBypassOfAnUnavailableDeviceIsSaved`, `theBypassOfAMissingDeviceIsSaved`
-  and `theAutoQuitOfAMissingDeviceIsSaved` fail:
-  `Actual (saved.attribute("on")): "1" / Expected: "0"` at
-  `tests/src/core/EffectChainMissingDeviceSettingsTest.cpp:155` and `:182`, and
-  `Actual (saved.attribute("autoquit")): "" / Expected: "42"` at `:203`.
-  Restored (`git apply logs/fix.patch`): the same command -> exit **0**, 1/1
-  passed. The test was run in both states from the same source tree; the test
-  file itself was never changed between the two runs.
+  it.** Reverted (`git apply -R logs/product.patch`, i.e. the branch's own
+  product diff against the base, exactly what the review's proof check does):
+  `ctest -R '^MissingDevicesPreserveTest$' --output-on-failure` -> exit **8**,
+  `theGenericSettingsOfAnUnavailableDeviceAreSaved`,
+  `theGenericSettingsOfAMissingDeviceAreSaved` and
+  `theAutoQuitOfAMissingDeviceIsSaved` fail
+  (`Actual (saved.attribute("on")): "1" / Expected: "0"` twice and
+  `Actual (saved.attribute("autoquit")): "" / Expected: "42"`), while the 13
+  pre-existing cases of that file still pass - the failure is the defect, not a
+  broken fixture. Restored (`git checkout HEAD -- <product files>`): the same
+  command -> exit **0**, 16/16 slots passed. The test file itself was never
+  changed between the two runs; only the product files were.
 * **The test is deterministic.** It builds the file's XML from a literal string,
   drives the chain through its public API (`appendEffect`, `setEnabled`,
   `autoQuitModel()->setValue`) and reads the saved element back. No clock, no
@@ -208,10 +230,15 @@ manifest`), so it can be dropped without touching the fix.
   caused by this fix.
 * **Files committed with the fix.** `include/Effect.h`, `include/DummyEffect.h`,
   `src/core/Effect.cpp`, `src/core/EffectChain.cpp`,
-  `tests/src/core/EffectChainMissingDeviceSettingsTest.cpp` (new),
-  `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`,
+  `tests/src/core/MissingDevicesPreserveTest.cpp` (the four regression cases),
   `tests/upstream-modifications.txt`,
   `docs/qwen-fixes-2026-10/cluster-new-p14-97-port.md` (new).
+* **The round-1 test file is gone.** `tests/src/core/EffectChainMissingDeviceSettingsTest.cpp`
+  and its registrations in `tests/CMakeLists.txt`, `tests/all-sources.txt` and
+  `tests/fork-sources.txt` are removed: its four cases moved into
+  `tests/src/core/MissingDevicesPreserveTest.cpp`, so the proof check discovers
+  them. No test was weakened - the same four cases run, in the same form, in
+  the same file that already covers this area.
 * **The manifest repair is committed on its own.** `tests/all-sources.txt` (the
   re-derived entry list) is in its own commit,
   `chore(tests): re-derive the whole-tree source manifest`, so it can be

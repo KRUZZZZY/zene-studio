@@ -2625,7 +2625,6 @@ tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/DrumSynthLevelTest.cpp
 tests/src/core/DrumSynthTest.cpp
 tests/src/core/DummyPacingTest.cpp
-tests/src/core/EffectChainMissingDeviceSettingsTest.cpp
 tests/src/core/EffectControlsVisibilityTest.cpp
 tests/src/core/EngineRenderBenchmarkTest.cpp
 tests/src/core/EnvelopeAndLfoParametersTest.cpp

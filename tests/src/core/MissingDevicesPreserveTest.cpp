@@ -49,7 +49,9 @@
 #include "InstrumentTrack.h"
 #include "MissingDevices.h"
 #include "MissingDevicesNotice.h"
+#include "Plugin.h"
 #include "PluginFactory.h"
+#include "SampleFrame.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -106,6 +108,57 @@ InstrumentTrack* firstInstrumentTrack()
 		if (auto* it = dynamic_cast<InstrumentTrack*>(t)) { return it; }
 	}
 	return nullptr;
+}
+
+//! A device whose plug-in binary is missing: the wrapper a hosted plug-in
+//! leaves behind, with the file's own XML kept beside it.
+class UnavailableTestEffect : public Effect
+{
+public:
+	UnavailableTestEffect(Model* parent) :
+		Effect{&s_descriptor, parent, nullptr},
+		m_controls(this)
+	{
+	}
+
+	EffectControls* controls() override { return &m_controls; }
+
+	QString unavailableReason() const override
+	{
+		return QStringLiteral("the plug-in binary is not available");
+	}
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Sleep; }
+
+private:
+	DummyEffectControls m_controls;
+
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor UnavailableTestEffect::s_descriptor
+{
+	"unavailabletesteffect",
+	"Unavailable test effect",
+	"A device whose plug-in binary is missing",
+	"LMMS",
+	0x0100,
+	Plugin::Type::Effect,
+	nullptr,
+	nullptr,
+	nullptr
+};
+
+//! The XML a file held for a device whose plug-in is missing.
+QDomElement preservedDeviceXml(QDomDocument& file)
+{
+	if (!file.setContent(QStringLiteral(
+			"<effect name=\"ghost\" wet=\"1\" on=\"1\"><ghost><state>QUJD</state></ghost></effect>")))
+	{
+		return QDomElement();
+	}
+	return file.documentElement();
 }
 
 } // namespace
@@ -452,6 +505,106 @@ private slots:
 		QCOMPARE(text.count("could not be loaded"), 1);
 		box->close();
 		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+	}
+
+	//! new-p14-97: the bypass the user set on a device whose plug-in binary is
+	//! missing is saved with the file's own XML, not dropped by it.
+	void theGenericSettingsOfAnUnavailableDeviceAreSaved()
+	{
+		EffectChain chain{nullptr};
+		auto* device = new UnavailableTestEffect(&chain);
+		chain.appendEffect(device);
+
+		QDomDocument file;
+		device->setPreservedPluginData(preservedDeviceXml(file));
+		// the user bypasses the placeholder while the plug-in is missing
+		device->setEnabled(false);
+
+		QDomDocument doc;
+		QDomElement chainElement = doc.createElement(QStringLiteral("fxchain"));
+		chain.saveSettings(doc, chainElement);
+
+		const QDomElement saved = chainElement.firstChildElement(QStringLiteral("effect"));
+		QVERIFY2(!saved.isNull(), "the chain saved no effect element");
+		// the device's own XML is kept ...
+		QCOMPARE(saved.firstChildElement(QStringLiteral("ghost"))
+				.firstChildElement(QStringLiteral("state")).text(),
+			QStringLiteral("QUJD"));
+		// ... and the generic settings the user changed are written with it
+		QCOMPARE(saved.attribute(QStringLiteral("on")), QStringLiteral("0"));
+	}
+
+	//! The same for the placeholder the chain makes for a device whose module
+	//! is missing: the file's XML is kept as it was, and the bypass the user
+	//! set on the placeholder is saved with it.
+	void theGenericSettingsOfAMissingDeviceAreSaved()
+	{
+		EffectChain chain{nullptr};
+		QDomDocument file;
+		auto* placeholder = new DummyEffect(&chain, preservedDeviceXml(file));
+		chain.appendEffect(placeholder);
+		// the user bypasses the placeholder
+		placeholder->setEnabled(false);
+
+		QDomDocument doc;
+		QDomElement chainElement = doc.createElement(QStringLiteral("fxchain"));
+		chain.saveSettings(doc, chainElement);
+
+		const QDomElement saved = chainElement.firstChildElement(QStringLiteral("effect"));
+		QVERIFY2(!saved.isNull(), "the chain saved no effect element");
+		// the device's own XML is kept ...
+		QCOMPARE(saved.firstChildElement(QStringLiteral("ghost"))
+				.firstChildElement(QStringLiteral("state")).text(),
+			QStringLiteral("QUJD"));
+		// ... and the generic settings the user changed are written with it
+		QCOMPARE(saved.attribute(QStringLiteral("on")), QStringLiteral("0"));
+	}
+
+	//! A generic setting that is not the bypass is written the same way: the
+	//! auto-quit knob the user turned on the placeholder survives the save.
+	void theAutoQuitOfAMissingDeviceIsSaved()
+	{
+		EffectChain chain{nullptr};
+		QDomDocument file;
+		auto* placeholder = new DummyEffect(&chain, preservedDeviceXml(file));
+		chain.appendEffect(placeholder);
+		// the user sets the placeholder's auto-quit knob
+		placeholder->autoQuitModel()->setValue(42);
+
+		QDomDocument doc;
+		QDomElement chainElement = doc.createElement(QStringLiteral("fxchain"));
+		chain.saveSettings(doc, chainElement);
+
+		const QDomElement saved = chainElement.firstChildElement(QStringLiteral("effect"));
+		QVERIFY2(!saved.isNull(), "the chain saved no effect element");
+		QCOMPARE(saved.attribute(QStringLiteral("autoquit")), QStringLiteral("42"));
+		// the device's own XML is still kept
+		QCOMPARE(saved.firstChildElement(QStringLiteral("ghost"))
+				.firstChildElement(QStringLiteral("state")).text(),
+			QStringLiteral("QUJD"));
+	}
+
+	//! A placeholder nobody touched keeps the file's bytes exactly: the generic
+	//! settings it holds are the ones the file said, so nothing is written over
+	//! them.
+	void anUntouchedPlaceholderKeepsTheFilesXml()
+	{
+		EffectChain chain{nullptr};
+		QDomDocument file;
+		auto* placeholder = new DummyEffect(&chain, preservedDeviceXml(file));
+		chain.appendEffect(placeholder);
+
+		QDomDocument doc;
+		QDomElement chainElement = doc.createElement(QStringLiteral("fxchain"));
+		chain.saveSettings(doc, chainElement);
+
+		const QDomElement saved = chainElement.firstChildElement(QStringLiteral("effect"));
+		QVERIFY(!saved.isNull());
+		QCOMPARE(saved.attribute(QStringLiteral("on")), QStringLiteral("1"));
+		QCOMPARE(saved.attribute(QStringLiteral("wet")), QStringLiteral("1"));
+		QCOMPARE(saved.firstChildElement(QStringLiteral("ghost"))
+				.firstChildElement(QStringLiteral("state")).text(),
+			QStringLiteral("QUJD"));
 	}
 };
 
