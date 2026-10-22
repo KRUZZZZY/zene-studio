@@ -38,11 +38,12 @@ refactored away (`gainPointAllowed` split out) and no longer appears.
 
 ## Negative control
 
-Every non-test hunk was reverted while the new tests were kept (`git checkout --` on the 16 product files,
-then behaviour reversals in `SamplePlayHandle.cpp` sign, `ClipPreFades.cpp` sign, `ControlEditSupport.cpp`
-state key, `SampleThumbnail.cpp` column gain, `SampleClipView.cpp` drag write and `ControlCommandsClipEdits.cpp`
-handler write, so the tree still compiled), rebuilt (`cmake --build build --target zene ClipPolarityTest
-ClipWaveformEditTest`, build EXIT 0), and run:
+Every non-test hunk was reverted while the new tests were kept. A whole-file revert of all 16 product files
+does not compile the new tests (`ClipEdits` loses `polarityInverted`/`hasPolarity`), so the reversal keeps the
+model/API and reverses the BEHAVIOUR: the polarity sign in `SamplePlayHandle.cpp` and `ClipPreFades.cpp`, the
+`inverted` state key in `ControlEditSupport.cpp`, the drawn column gain in `SampleThumbnail.cpp`, the drag
+write in `SampleClipView.cpp` and the handler write in `ControlCommandsClipEdits.cpp`. Rebuilt
+(`cmake --build build --target zene ClipPolarityTest ClipWaveformEditTest`, build EXIT 0) and run:
 
 ```
 ctest -R "ClipPolarityTest|ClipWaveformEditTest|ControlClipPolarity" --output-on-failure   -> EXIT 8
