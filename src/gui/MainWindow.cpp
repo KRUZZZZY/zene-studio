@@ -403,6 +403,9 @@ void MainWindow::finalize()
 		this, [](){ dispatchShellCommand(QStringLiteral("window.modulators")); }), "window.modulators");
 	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Progression..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.progression")); }), "window.progression");
+	// Q050-154: the live-code panel - the socket-only livecode.* group from the interface.
+	declares(edit_menu->addAction(embed::getIconPixmap("tool"), tr("Live Code..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.livecode")); }), "window.livecode");
 	declares(edit_menu->addAction(embed::getIconPixmap("edit_undo"), tr("Undo History..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.undo_history")); }), "window.undo_history");
 	declares(edit_menu->addAction(embed::getIconPixmap("setup_general"), tr("Collaborate..."),

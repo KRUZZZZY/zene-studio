@@ -45,6 +45,7 @@
 #include "ConfigManager.h"
 #include "ShortcutsPage.h"
 #include "StartHub.h"
+#include "LivecodePanel.h"
 #include "ModulatorPanel.h"
 #include "TempoMapPanel.h"
 #include "UndoHistoryPanel.h"
@@ -287,6 +288,33 @@ void registerTempoMapPanel(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+void registerLivecodePanel(ControlRegistry& registry)
+{
+	ControlCommand cmd = command("window", "livecode");
+	cmd.description = QStringLiteral("Open Edit > Live Code (non-modally): the source editor and the "
+		"id/hook/budget a scheduled Lua script is made with, Schedule and Cancel Schedule running "
+		"livecode.schedule / livecode.unschedule, Load Source reading livecode.get_source, and the "
+		"schedule table from livecode.get_state (id, hook, budget, bytes, fire and error counts, "
+		"last failure). A compile refusal is shown in the panel and leaves the schedule that was "
+		"active in place; Undo runs control.undo, which restores a replaced script or rearms a "
+		"cancelled one. The panel's help text states the Lua-state, source, count, poll and memory "
+		"bounds. `schedules` is how many schedules it lists.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()},
+		{QStringLiteral("schedules"), integerProperty()}});
+	cmd.handler = [](const QJsonObject&) {
+		gui::MainWindow* window = mainWindow();
+		if (window == nullptr) { return noInterface(QStringLiteral("window.livecode")); }
+		auto* panel = new gui::LivecodePanel(window);
+		panel->setAttribute(Qt::WA_DeleteOnClose);
+		panel->setModal(false);
+		panel->show();
+		return ControlResult::success(QJsonObject{{QStringLiteral("shown"), true},
+			{QStringLiteral("schedules"), panel->scheduleCount()}});
+	};
+	registry.registerCommand(cmd);
+}
+
 void registerModulatorPanel(ControlRegistry& registry)
 {
 	ControlCommand cmd = command("window", "modulators");
@@ -465,6 +493,7 @@ void registerShellCommands(ControlRegistry& registry)
 	registerShortcuts(registry);
 	registerUndoHistory(registry);
 	registerTempoMapPanel(registry);
+	registerLivecodePanel(registry);
 	registerModulatorPanel(registry);
 	registerProgressionPanel(registry);
 	registerStartHub(registry);

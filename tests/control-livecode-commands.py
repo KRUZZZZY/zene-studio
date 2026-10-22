@@ -43,7 +43,12 @@ The checks, in order:
                                   control.undo removes a schedule or rearms
                                   one that was taken off;
   8. livecode.schedule (replace)  the LIVE EDIT: re-scheduling the same id
-                                  replaces its script in place, one slot.
+                                  replaces its script in place, one slot;
+  9. livecode.get_source          the source-readback path (get_state carries
+     + control.undo (replace)     source BYTES only), and the proof that ONE
+                                  control.undo after a replacement restores the
+                                  PREVIOUS definition byte for byte - source,
+                                  hook and budget - not merely the id.
 
 Started through the shared harness (tests/control_socket_harness.py), so this
 file adds no second launch path. Usage: QT_QPA_PLATFORM=offscreen python3
@@ -419,11 +424,73 @@ def check_undo_rearms_an_unschedule(session, recorder):
                    "undone=%r entry=%r" % (undone.get("undone_command"), rearmed))
 
 
+def check_source_readback(session, recorder):
+    """livecode.get_source: the exact definition, and typed refusals that read nothing."""
+    source = "return 'read-back'  -- é\n"
+    session.result("livecode.schedule",
+                   {"id": "lc-src", "hook": "transport", "budget": 4242, "source": source})
+    read = session.result("livecode.get_source", {"id": "lc-src"})
+    recorder.check("livecode.get_source returns the source EXACTLY as scheduled",
+                   read.get("source") == source
+                   and read.get("source_bytes") == len(source.encode("utf-8"))
+                   and read.get("hook") == "transport" and read.get("budget") == 4242,
+                   "read=%r expected=%r" % (read, source))
+    # get_state still carries source BYTES, not text: the two reads are deliberately different.
+    entry = schedule_entry(clock_state(session), "lc-src")
+    recorder.check("livecode.get_state still reports bytes and no source text",
+                   entry.get("source_bytes") == len(source.encode("utf-8"))
+                   and "source" not in entry,
+                   "entry=%r" % entry)
+    missing = session.typed_error("livecode.get_source", {"id": "lc-nope"})
+    empty = session.typed_error("livecode.get_source", {"id": ""})
+    recorder.check("get_source of an unknown id is not_found, of an empty id invalid_args",
+                   missing.get("kind") == "not_found" and empty.get("kind") == "invalid_args",
+                   "missing=%r empty=%r" % (missing, empty))
+
+
+def check_undo_restores_a_replaced_script(session, recorder):
+    """ONE control.undo after a replacement brings the PREVIOUS definition back.
+
+    get_state reports source_bytes only, so the proof is the readback: A is
+    scheduled, B replaces it under the same id, one control.undo runs, and
+    livecode.get_source must then return A's text, hook and budget exactly.
+    A's source is a different length from B's, so a stale id with the wrong
+    script cannot pass by accident either.
+    """
+    source_a = "return 'A'"
+    source_b = "return 'B-replacement' -- longer"
+    session.result("livecode.schedule",
+                   {"id": "lc-replace", "hook": "bar", "budget": 0, "source": source_a})
+    replaced = session.result("livecode.schedule",
+                              {"id": "lc-replace", "hook": "beat", "budget": 7000,
+                               "source": source_b})
+    while_held = session.result("livecode.get_source", {"id": "lc-replace"})
+    undone = session.result("control.undo")
+    restored = session.result("livecode.get_source", {"id": "lc-replace"})
+    recorder.check("the replacement took: the slot holds B's text, hook and budget",
+                   replaced.get("replaced") is True
+                   and while_held.get("source") == source_b
+                   and while_held.get("hook") == "beat" and while_held.get("budget") == 7000,
+                   "replaced=%r held=%r" % (replaced.get("replaced"), while_held))
+    recorder.check("ONE control.undo after a replacement restores A byte for byte",
+                   undone.get("undone_command") == "livecode.schedule"
+                   and restored.get("source") == source_a
+                   and restored.get("source_bytes") == len(source_a.encode("utf-8"))
+                   and restored.get("hook") == "bar" and restored.get("budget") == 0,
+                   "undone=%r restored=%r" % (undone.get("undone_command"), restored))
+    # The restored definition is what FIRES from now on: the id is still one slot.
+    ids = [one.get("id") for one in schedule_shape(clock_state(session))]
+    recorder.check("the restored script is still exactly one schedule under the id",
+                   ids.count("lc-replace") == 1, "ids=%r" % ids)
+
+
 def check_transactions_and_undo(session, recorder):
     """The A16 classes, the read's absence from the log, and BOTH inverses."""
     check_livecode_records(session, recorder)
     check_undo_new_schedule(session, recorder)
     check_undo_rearms_an_unschedule(session, recorder)
+    check_source_readback(session, recorder)
+    check_undo_restores_a_replaced_script(session, recorder)
 
 
 def check_live_edit_replaces_in_place(session, recorder):

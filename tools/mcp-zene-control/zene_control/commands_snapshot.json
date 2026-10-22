@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-21T20:31:42Z",
+  "captured_at": "2026-10-22T04:46:52Z",
   "commands": [
     {
       "args_schema": {
@@ -11706,6 +11706,54 @@
           },
           "transport": {
             "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "description": "One schedule's definition as text: 'id', 'source' (the Lua exactly as livecode.schedule captured it, which is what every fire evaluates), 'source_bytes', 'hook' and 'budget'. get_state reports source BYTES only so a poll never carries every scheduled definition; this is the deliberate source-readback path a panel uses to load an agent-made schedule into its editor, and what proves control.undo restored a previous definition rather than just the id. Reads only; typed not_found when no schedule carries the id.",
+      "group": "livecode",
+      "id": "livecode.get_source",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "budget": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hook": {
+            "enum": [
+              "bar",
+              "beat",
+              "transport"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "source_bytes": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -34644,6 +34692,32 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open Edit > Live Code (non-modally): the source editor and the id/hook/budget a scheduled Lua script is made with, Schedule and Cancel Schedule running livecode.schedule / livecode.unschedule, Load Source reading livecode.get_source, and the schedule table from livecode.get_state (id, hook, budget, bytes, fire and error counts, last failure). A compile refusal is shown in the panel and leaves the schedule that was active in place; Undo runs control.undo, which restores a replaced script or rearms a cancelled one. The panel's help text states the Lua-state, source, count, poll and memory bounds. `schedules` is how many schedules it lists.",
+      "group": "window",
+      "id": "window.livecode",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "schedules": {
+            "type": "integer"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "density": {
             "enum": [
@@ -35958,23 +36032,23 @@
       }
     }
   ],
-  "count": 841,
+  "count": 843,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-154/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-0mufc5az/zene.sock",
-    "version": "0.4.0-alpha.4297+3c504fd"
+    "source_socket": "/tmp/zctl-run-9v86afd5/zene.sock",
+    "version": "0.4.0-alpha.4298+dbb15dd"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 841,
-    "ids_sha256": "c7a36e0fba4ca3a75aa66588cd9c0a8a0120bd932cc916f0155f62e037aea42d"
+    "id_count": 843,
+    "ids_sha256": "f65236a8971f3f7058bc2d50529634d4bc4ca573e5f48bed865908e9b9d518c9"
   }
 }

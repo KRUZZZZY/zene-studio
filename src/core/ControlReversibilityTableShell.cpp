@@ -109,6 +109,12 @@ const ReversibilityRow kShellRows[] = {
 		"commands, each with its own row",
 		"nothing to reverse: the panel is closed like any window",
 		""),
+	R("window.livecode", RC::NotMutating, false,
+		"opens the live-code panel: interface state; its Schedule, Cancel Schedule and Load Source "
+		"buttons run livecode.schedule, livecode.unschedule and livecode.get_source, each with its "
+		"own row",
+		"nothing to reverse: the panel is closed like any window",
+		""),
 	R("window.progression", RC::NotMutating, false,
 		"opens the progression panel: interface state; its Write button runs "
 		"chord.progression_generate, which has its own row",

@@ -83,6 +83,13 @@ const ReversibilityRow kLivecodeRows[] = {
 		"read of the same Song accessors transport.get_state already reports, and a fire it "
 		"reports happened happened whether or not this read was made",
 		""),
+	R("livecode.get_source", RC::NotMutating, false,
+		"reads ONE schedule's captured definition - its source text, hook and budget - by id; it "
+		"schedules nothing, fires nothing and writes no engine or registry state",
+		"no write. It is the source-readback companion of livecode.get_state (which reports "
+		"source BYTES only, so a poll never carries every definition): the definition it returns "
+		"was captured by livecode.schedule/unschedule, whose own snapshot rows carry the undo",
+		""),
 };
 
 constexpr int kLivecodeRowCount =

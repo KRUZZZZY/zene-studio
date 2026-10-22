@@ -934,6 +934,7 @@ include/LinkSync.h
 include/LinkVendored.h
 include/LinkedClipEdits.h
 include/ListTable.h
+include/LivecodePanel.h
 include/LmmsPolyfill.h
 include/LoudnessReport.h
 include/LufsMeter.h
@@ -2006,6 +2007,7 @@ src/gui/LayoutMenu.cpp
 src/gui/LevelBar.cpp
 src/gui/LibraryCommandMenus.cpp
 src/gui/ListTable.cpp
+src/gui/LivecodePanel.cpp
 src/gui/MacroKnobs.cpp
 src/gui/MacroMenu.cpp
 src/gui/MainWindowGeometry.cpp
@@ -2696,6 +2698,7 @@ tests/src/gui/AgentSurfaceReportTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/MainWindowTest.cpp
+tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp

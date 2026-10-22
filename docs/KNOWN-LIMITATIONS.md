@@ -1794,9 +1794,10 @@ each one line, because each is a bound rather than a bug:
   (`script.set_memory_budget`; out-of-range values refused, one `control.undo` restores the previous cap)
   (`ScriptBudgetActionTest`). Still missing: a live readout of a running script's Lua bytes. The bullet below is
   the pre-menu record.
-- **The Lua memory budget has no interface.** `script.set_memory_budget` sets the cap and
-  `script.run` reports what a run measured against it; **no dialog shows live Lua bytes and nothing in
-  the window lets a user set a budget**. The default is 64 MiB
+- **The Lua memory budget has an interface for the CAP, not for live bytes.** `script.set_memory_budget`
+  sets the cap and `script.run` reports what a run measured against it; File > Script Memory Budget...
+  (the bullet above) is where a user sets it, and the live-code panel's help text states the default and
+  the accepted range. What is still missing is a **live readout of a run's Lua bytes**. The default is 64 MiB
   (`ScriptEngine::DefaultMemoryBudgetBytes`), the surface accepts `[512 KiB, 1 GiB]` and refuses
   anything outside that rather than clamping it, and the budget bounds **Lua memory** — what the script
   asks the Lua allocator for — **not** the C++ heap the bindings allocate, and not the process's total
@@ -2329,6 +2330,20 @@ measured by `ScriptClockTest` or the `ControlLivecodeCommands` transcript:
   `budget_exceeded` - and a schedule that ALWAYS overruns still costs its control thread that budget
   on every bar (bounded, not free). The audio thread is never on this path, which the transcript's
   negative control proves by reading the play head advancing across the overrun.
+- **Two hard caps, both stated in the live-code panel.** A single source is capped at 65,536 UTF-8 bytes
+  (`ScriptClock::SourceByteCap`) and the registry holds at most 64 schedules
+  (`ScriptClock::MaxScheduleCount`); scheduling past either is a typed refusal and changes nothing. The
+  caps exist because each schedule's definition is also carried by its transaction record (before-state
+  plus inverse) inside `control::MaxTransactionBytes`.
+- **Schedules are process-local runtime state.** `ScriptClock`'s registry is in memory and no project
+  save/load path carries it: a schedule does not survive a restart and is not in the `.mmp`/`.mmpz`, so
+  project-file compatibility is untouched (nothing was added to the format).
+- **The interface is Edit > Live Code (`window.livecode`).** The panel edits the source, schedules and
+  cancels through the same `livecode.*` commands an agent uses, shows a compile refusal without dropping
+  the active schedule, loads a schedule's captured text through `livecode.get_source` (a read-only
+  companion of `get_state`, which reports source BYTES only so a poll never carries every definition),
+  and its help text states the fresh-Lua-state rule and every bound above. Runtime schedules are still
+  not listed in the project's missing-devices or task surfaces - they are not project data.
 - **More than four crossings in one observation coalesce** (`ScriptClockGrid::CrossCap`): a forward
   seek or a control thread blocked inside a long `script.run` re-anchors the grid and counts the
   dropped bars as `coalesced` rather than firing stale bars late.

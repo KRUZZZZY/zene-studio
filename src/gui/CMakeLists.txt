@@ -133,6 +133,8 @@ SET(LMMS_SRCS
 	gui/TakeWaveform.cpp
 	gui/ModulatorPanel.cpp
 	gui/TempoMapPanel.cpp
+	# Q050-154: Edit > Live Code - the livecode.* schedule group from the interface.
+	gui/LivecodePanel.cpp
 	gui/ChordProgressionPanel.cpp
 	gui/TrackFolderMenu.cpp
 	gui/TrackPinStrip.cpp
