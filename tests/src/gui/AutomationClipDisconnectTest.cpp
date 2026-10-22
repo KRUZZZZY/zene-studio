@@ -29,9 +29,13 @@
 #include <atomic>
 #include <chrono>
 #include <concepts>
+#include <condition_variable>
 #include <future>
+#include <mutex>
+#include <optional>
 #include <thread>
 
+#include "AudioEngine.h"
 #include "AutomatableModel.h"
 #include "AutomationClip.h"
 #include "AutomationClipView.h"
@@ -79,6 +83,90 @@ bool removeObjectIfAvailable(ClipType& clip, AutomatableModel* model, std::atomi
 	}
 }
 
+//! The rendezvous of the target-change seam (AutomationClip's test seam).
+//!
+//! The seam is called twice per target-list change:
+//! - Before: the thread is inside the change, before it takes the engine's
+//!   change guard (the lock the render thread holds for a whole period). The
+//!   probe PARKS the thread there until the test lets it go, so the test knows
+//!   the thread is inside the change and not merely late.
+//! - Holding: the thread is HOLDING ON - the acquisition of the engine's
+//!   change guard was CONTENDED: the render thread held the lock when the
+//!   acquisition was attempted, so the change waits for the render to let go.
+//!   The report is made AT the acquisition, on the acquiring thread, so it is
+//!   positive evidence that the thread really reached the guard.
+//!
+//! The test asserts on the OBSERVED report, not on a timeout: a thread that
+//! never reached the guard reports nothing, and a change that took the guard
+//! while the render held it reports nothing either - both fail the same way.
+std::mutex s_probeMutex;
+std::condition_variable s_probeCv;
+bool s_atBefore = false;
+bool s_contended = false;
+bool s_allowProbe = false;
+
+void targetChangeProbe(AutomationClip::TargetChangePoint point)
+{
+	std::unique_lock lock(s_probeMutex);
+	if (point == AutomationClip::TargetChangePoint::Before)
+	{
+		s_atBefore = true;
+		s_probeCv.notify_all();
+		s_probeCv.wait(lock, [] { return s_allowProbe; });
+		return;
+	}
+	s_contended = true;
+	s_probeCv.notify_all();
+}
+
+void installProbe()
+{
+	{
+		std::lock_guard lock(s_probeMutex);
+		s_atBefore = false;
+		s_contended = false;
+		s_allowProbe = false;
+	}
+	AutomationClip::setTargetChangeProbeForTest(&targetChangeProbe);
+}
+
+void removeProbe()
+{
+	AutomationClip::setTargetChangeProbeForTest(nullptr);
+	{
+		std::lock_guard lock(s_probeMutex);
+		s_allowProbe = true;
+	}
+	s_probeCv.notify_all();
+}
+
+//! Wait for the changing thread to reach the seam. The window is a DEADLOCK
+//! GUARD, not the proof: the proof is the report the thread makes, and a
+//! thread that never arrives simply fails the assertion below.
+bool awaitBefore()
+{
+	std::unique_lock lock(s_probeMutex);
+	return s_probeCv.wait_for(lock, std::chrono::seconds(30), [] { return s_atBefore; });
+}
+
+//! Wait for the report of a contended acquisition of the engine's change
+//! guard. As above: the window is a deadlock guard, the report is the proof.
+bool awaitContended()
+{
+	std::unique_lock lock(s_probeMutex);
+	return s_probeCv.wait_for(lock, std::chrono::seconds(30), [] { return s_contended; });
+}
+
+//! Let the parked thread continue towards the guard.
+void releaseProbe()
+{
+	{
+		std::lock_guard lock(s_probeMutex);
+		s_allowProbe = true;
+	}
+	s_probeCv.notify_all();
+}
+
 } // namespace
 
 class AutomationClipDisconnectTest : public QObject
@@ -94,6 +182,65 @@ private slots:
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
+
+	/*! A target that is connected while the render thread is walking this clip's
+	 *  target list must WAIT for that walk: the list is read through a
+	 *  reference (objects() releases the clip mutex before the reader uses it),
+	 *  so a push_back() that reallocates it under the reader's feet is the
+	 *  defect. The engine change guard is what makes the connection wait.
+	 *
+	 *  The proof is an OBSERVATION, not a timeout: the test holds the render
+	 *  thread's own lock, so the changing thread's acquisition of the change
+	 *  guard is CONTENDED, and the seam reports that contention AT the
+	 *  acquisition. A connection that did not take the guard at all reports
+	 *  nothing and fails here.
+	 */
+	void addObjectWaitsForRenderPublication()
+	{
+		auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		FloatModel target{0.5f, 0.0f, 1.0f, 0.01f};
+
+		installProbe();
+		std::atomic<bool> published = false;
+		std::thread adder;
+		bool reached = false;
+		bool contended = false;
+		{
+			// The render thread's own lock, taken explicitly so the test can
+			// let go of it at the moment it chooses.
+			auto renderLock = std::optional<AudioEngine::RequestChangesGuard>{};
+			renderLock.emplace(Engine::audioEngine()->requestChangesGuard());
+			adder = std::thread([&]
+			{
+				clip->addObject(&target, false);
+				published.store(true, std::memory_order_release);
+			});
+			// The connecting thread is parked inside the change now.
+			reached = awaitBefore();
+			// Let it attempt the render's lock.
+			releaseProbe();
+			if (reached)
+			{
+				// It must find the render holding the lock: that contention is
+				// reported at the acquisition.
+				contended = awaitContended();
+			}
+			// The render lets go: the change may now take the lock and finish.
+			renderLock.reset();
+		}
+		adder.join();
+		removeProbe();
+
+		QVERIFY2(reached, "the connecting thread never reached the target change");
+		QVERIFY2(contended,
+			"connecting a target never reported a contended acquisition of the engine's change guard: "
+			"it either went on while the render held the lock, or it never reached the guard");
+		QVERIFY(published.load(std::memory_order_acquire));
+		QCOMPARE(clip->objects().size(), std::size_t(1));
+	}
 
 	void removeObjectWaitsForRenderPublication()
 	{

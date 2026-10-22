@@ -84,6 +84,31 @@ public:
 	bool addObject( AutomatableModel * _obj, bool _search_dup = true );
 	bool removeObject( AutomatableModel * _obj );
 
+#ifdef LMMS_TESTING
+	/*! Test seam: the points of a target-list change - a connection
+	 *  (addObject()) or a removal (removeObject()) - where the changing
+	 *  thread reports to the test:
+	 *  - Before: the thread is inside the change, before it takes the engine's
+	 *    change guard (the lock the render thread holds for a whole period).
+	 *  - Holding: the thread is HOLDING ON - the acquisition of the engine's
+	 *    change guard was CONTENDED, i.e. the render thread held the lock when
+	 *    the acquisition was attempted, so the change waits for the render to
+	 *    let go.
+	 *
+	 *  The report is made AT the acquisition, on the acquiring thread: it is
+	 *  positive evidence that the changing thread really reached the guard,
+	 *  where a report sent before the attempt could not tell a blocked thread
+	 *  from one that has not run yet. Null in product use.
+	 */
+	enum class TargetChangePoint { Before, Holding };
+	using TargetChangeProbe = void (*)(TargetChangePoint);
+	static void setTargetChangeProbeForTest( TargetChangeProbe probe )
+	{
+		s_targetChangeProbe = probe;
+	}
+	inline static TargetChangeProbe s_targetChangeProbe = nullptr;
+#endif
+
 	const AutomatableModel * firstObject() const;
 	const objectVector& objects() const;
 	bool hasObjects() const;

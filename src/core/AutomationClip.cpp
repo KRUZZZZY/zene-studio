@@ -82,6 +82,38 @@ std::pair<tick_t, float> unpackPendingWrite(std::uint64_t packed)
 	return { tick, value };
 }
 
+#ifdef LMMS_TESTING
+/*! The seam's report of a CONTENDED guard acquisition: the changing thread
+ *  really tried to take the render's lock, and the render held it. */
+void reportContendedGuardAcquisition( void* )
+{
+	if( AutomationClip::s_targetChangeProbe != nullptr )
+	{
+		AutomationClip::s_targetChangeProbe( AutomationClip::TargetChangePoint::Holding );
+	}
+}
+#endif
+
+/*! Takes the engine's change guard - the lock the render thread holds for a
+ *  whole render period, and which keeps the render thread out of the clip's
+ *  target list while a change runs.
+ *
+ *  In a test build the guard reports a CONTENDED acquisition through the
+ *  clip's target-change seam: the report is made at the acquisition itself, so
+ *  a test can observe that the changing thread really reached the guard (and
+ *  was held off by the render) instead of inferring it from a timeout on a
+ *  thread that may not have run yet.
+ */
+AudioEngine::RequestChangesGuard targetChangeGuard( AudioEngine* engine )
+{
+	if( engine == nullptr ) { return {}; }
+#ifdef LMMS_TESTING
+	return engine->requestChangesGuardForTest( &reportContendedGuardAcquisition, nullptr );
+#else
+	return engine->requestChangesGuard();
+#endif
+}
+
 } // namespace
 
 
@@ -139,6 +171,25 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 
 bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 {
+#ifdef LMMS_TESTING
+	// The test seam: the thread is inside the change, before it takes the guard.
+	if( s_targetChangeProbe != nullptr ) { s_targetChangeProbe( TargetChangePoint::Before ); }
+#endif
+	/*! The engine change guard comes FIRST, before the clip mutex - the order
+	 *  removeObject() takes it in, and the order the render thread takes the two
+	 *  in (it holds the engine's change lock for the whole render period and
+	 *  takes the clip mutex inside it).
+	 *
+	 *  The guard is what makes the push_back() below safe: the render thread
+	 *  walks this clip's targets through objects(), which hands the walk a
+	 *  REFERENCE to the vector after the clip mutex is released, so a
+	 *  push_back() that reallocates the vector while that walk is running pulls
+	 *  the ground out from under the reader. The guard waits for the running
+	 *  render period to finish and keeps the render thread out until the list
+	 *  is consistent again.
+	 */
+	AudioEngine* const engine = Engine::audioEngine();
+	const auto changes = targetChangeGuard( engine );
 	// Declared before the lock so it runs after the lock is released (see the copy constructor).
 	bool added = false;
 	struct TellSong
@@ -177,8 +228,12 @@ bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 
 bool AutomationClip::removeObject( AutomatableModel * _obj )
 {
+#ifdef LMMS_TESTING
+	// The test seam: the thread is inside the change, before it takes the guard.
+	if( s_targetChangeProbe != nullptr ) { s_targetChangeProbe( TargetChangePoint::Before ); }
+#endif
 	AudioEngine* const engine = Engine::audioEngine();
-	const auto changes = engine == nullptr ? AudioEngine::RequestChangesGuard{} : engine->requestChangesGuard();
+	const auto changes = targetChangeGuard( engine );
 	QMutexLocker m(&m_clipMutex);
 
 	auto it = std::find(m_objects.begin(), m_objects.end(), _obj);

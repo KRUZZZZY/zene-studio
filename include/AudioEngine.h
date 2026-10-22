@@ -105,6 +105,23 @@ public:
 		}
 	public:
 
+#ifdef LMMS_TESTING
+		/*! Test-only guard: it takes the change lock exactly like the ordinary
+		 *  guard, but it reports a CONTENDED acquisition - the lock was held by
+		 *  another thread (the render thread) when the acquisition was
+		 *  attempted - through @a contendedProbe.
+		 *
+		 *  The report is made AT the attempt, on the acquiring thread: a
+		 *  report sent before the attempt could not tell a thread that is
+		 *  blocked on the change lock from one that has not run yet.
+		 */
+		RequestChangesGuard(AudioEngine* audioEngine, void (*contendedProbe)(void*), void* context)
+			: m_audioEngine{audioEngine}
+		{
+			m_audioEngine->requestChangeInModelForTest(contendedProbe, context);
+		}
+#endif
+
 		RequestChangesGuard()
 			: m_audioEngine{nullptr}
 		{
@@ -560,6 +577,22 @@ public:
 	//! rebuild excludes the audio thread for its whole duration; it is not a
 	//! product query (the render thread takes m_changeMutex directly).
 	bool isChangeInModelHeld() const noexcept { return s_changeInModelDepth > 0; }
+
+	/*! Test-only: takes the change lock like requestChangeInModel(), but
+	 *  reports a CONTENDED acquisition through @a contendedProbe - the probe is
+	 *  called from the acquiring thread when the lock was held by another
+	 *  thread (the render thread) at the attempt.
+	 *
+	 *  This is the observation a test needs to tell a thread that is blocked
+	 *  on the change lock from one that has not run yet: a timeout on "nothing
+	 *  happened" cannot.
+	 */
+	void requestChangeInModelForTest(void (*contendedProbe)(void*), void* context);
+
+	RequestChangesGuard requestChangesGuardForTest(void (*contendedProbe)(void*), void* context)
+	{
+		return RequestChangesGuard{this, contendedProbe, context};
+	}
 #endif
 
 	static bool isAudioDevNameValid(QString name);

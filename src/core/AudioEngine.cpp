@@ -1463,6 +1463,23 @@ void AudioEngine::doneChangeInModel()
 	m_changeMutex.unlock();
 }
 
+#ifdef LMMS_TESTING
+void AudioEngine::requestChangeInModelForTest(void (*contendedProbe)(void*), void* context)
+{
+	if (s_renderingThread) { return; }
+	if (!m_changeMutex.try_lock())
+	{
+		// The acquisition was ATTEMPTED and the lock was held by another thread
+		// (the render thread): this is the observation a test needs, and it is
+		// made at the attempt - a report sent before the attempt could not tell
+		// a blocked thread from one that has not run yet.
+		if (contendedProbe != nullptr) { contendedProbe(context); }
+		m_changeMutex.lock();
+	}
+	++s_changeInModelDepth;
+}
+#endif
+
 bool AudioEngine::isAudioDevNameValid(QString name)
 {
 #ifdef LMMS_HAVE_SDL
