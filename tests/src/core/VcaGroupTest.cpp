@@ -847,6 +847,35 @@ private slots:
 			" audio_identical=1 sha256=%1").arg(sha256Hex(beforeSave)));
 	}
 
+	//! A non-finite persisted VCA fader must not reach its gain or a member channel.
+	void nonFiniteVcaGainDoesNotReachMemberChannel()
+	{
+		Mixer* mixer = Engine::mixer();
+		buildGraph(mixer);
+		VcaGroup* group = makeGroup(mixer, {2});
+		QVERIFY(group != nullptr);
+		group->vcaModel()->setValue(0.75f);
+		const int groupId = group->id();
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		mixer->saveSettings(doc, root);
+		QDomElement savedGroup = root.firstChildElement(QStringLiteral("vcagroup"));
+		QVERIFY(!savedGroup.isNull());
+		savedGroup.setAttribute(QStringLiteral("vca"), QStringLiteral("nan"));
+
+		mixer->loadSettings(root);
+		VcaGroup* loaded = mixer->vcaGroup(groupId);
+		QVERIFY(loaded != nullptr);
+		QVERIFY(std::isfinite(loaded->vcaModel()->value()));
+		QCOMPARE(loaded->vcaModel()->value(), 1.0f);
+		QVERIFY(std::isfinite(loaded->gain()));
+		QCOMPARE(loaded->gain(), 1.0f);
+		QVERIFY(std::isfinite(mixer->mixerChannel(2)->vcaGain()));
+		QCOMPARE(mixer->mixerChannel(2)->vcaGain(), 1.0f);
+	}
+
 	//! A duplicate serialized id must not discard the later group's contents.
 	void duplicateGroupIdsPreserveLaterGroup()
 	{

@@ -285,7 +285,9 @@ float attribute(const QDomElement& element, const char* name, float fallback, fl
 {
 	bool ok = false;
 	const float value = element.attribute(QString::fromLatin1(name)).toFloat(&ok);
-	return ok ? std::clamp(value, low, high) : fallback;
+	// std::clamp leaves NaN unchanged, and an overflowed literal converts to
+	// infinity with ok == false: either would reach the downmix matrices.
+	return ok && std::isfinite(value) ? std::clamp(value, low, high) : fallback;
 }
 
 } // namespace

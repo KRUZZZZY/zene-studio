@@ -25,6 +25,7 @@
 #include "MixerSnapshots.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDomElement>
 
@@ -125,19 +126,28 @@ int idAttribute(const QDomElement& element, const QString& name)
 	return ok ? id : -1;
 }
 
+//! A persisted float, or @a fallback when the text is missing, not a number or non-finite
+//! (no NaN/inf may be stored into a snapshot and recalled into the mixer).
+float floatAttribute(const QDomElement& element, const QString& name, float fallback)
+{
+	const float value = element.attribute(name, QString::number(fallback)).toFloat();
+	return std::isfinite(value) ? value : fallback;
+}
+
 MixerChannelState channelFrom(const QDomElement& element)
 {
 	MixerChannelState state;
 	state.id = idAttribute(element, QStringLiteral("id"));
-	state.volume = element.attribute(QStringLiteral("volume"), QStringLiteral("1")).toFloat();
-	state.pan = element.attribute(QStringLiteral("pan")).toFloat();
+	state.volume = floatAttribute(element, QStringLiteral("volume"), 1.f);
+	state.pan = floatAttribute(element, QStringLiteral("pan"), 0.f);
 	state.muted = element.attribute(QStringLiteral("muted")).toInt() != 0;
 	state.soloed = element.attribute(QStringLiteral("soloed")).toInt() != 0;
 	for (QDomElement send = element.firstChildElement(QStringLiteral("send")); !send.isNull();
 		send = send.nextSiblingElement(QStringLiteral("send")))
 	{
-		state.sends.push_back(MixerSendState{idAttribute(send, QStringLiteral("to")), send.attribute(QStringLiteral("amount"),
-			QStringLiteral("1")).toFloat(), send.attribute(QStringLiteral("pan")).toFloat(),
+		state.sends.push_back(MixerSendState{idAttribute(send, QStringLiteral("to")),
+			floatAttribute(send, QStringLiteral("amount"), 1.f),
+			floatAttribute(send, QStringLiteral("pan"), 0.f),
 			send.attribute(QStringLiteral("enabled"), QStringLiteral("1")).toInt() != 0,
 			// Luna cluster 1501: a snapshot written before the tap point was held takes it as the
 			// route constructor's default, post-fader.
