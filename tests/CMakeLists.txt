@@ -1435,6 +1435,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 				SF2PLAYER_MODULE="$<TARGET_FILE:sf2player>")
 			add_dependencies(${LMMS_TEST_NAME} sf2player)
+			# The test inspects the synth the player owns (its tuning and the
+			# settings it was built with), so it links FluidSynth itself.
+			target_link_libraries(${LMMS_TEST_NAME} PRIVATE fluidsynth)
 		else()
 			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE SF2PLAYER_MODULE="")
 		endif()

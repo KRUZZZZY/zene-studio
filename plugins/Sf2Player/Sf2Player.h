@@ -118,6 +118,20 @@ struct Sf2PresetInfo
 };
 
 /**
+ * A synth the UI thread created, together with the settings it was built with.
+ *
+ * FluidSynth requires that a settings object is used by one synth only, so
+ * every synth gets its own settings object and keeps it until the synth is
+ * deleted.
+ */
+struct Sf2OwnedSynth
+{
+	fluid_synth_t* synth = nullptr;
+	fluid_settings_t* settings = nullptr;
+};
+
+
+/**
  * A synth handed from the UI thread to the render thread.
  *
  * The UI builds and configures the synth completely before publishing it; the
@@ -128,7 +142,6 @@ struct Sf2PresetInfo
 struct Sf2SynthSwap
 {
 	fluid_synth_t* synth = nullptr;
-	int fontId = -1;
 	sample_rate_t sampleRate = 0;
 };
 
@@ -256,7 +269,7 @@ public slots:
 	void openFile( const QString & _sf2File, bool updateTrackName = true );
 	void updatePatch();
 	void reloadSynth();
-	
+
 	// We can't really support sample-exact with the way IPH and FS work.
 	// So, sig/slots work just fine for the synth settings right now.
 	void updateReverbOn();
@@ -266,6 +279,10 @@ public slots:
 	void updateGain();
 	void updateTuning();
 
+	//! Test seam for the SF2 realtime test: the address of the FluidSynth synth
+	//! the player owns, so the test can inspect what was configured on it.
+	quintptr currentSynthAddress() const { return reinterpret_cast<quintptr>(m_uiSynth); }
+
 private:
 	void playImpl(std::span<SampleFrame> out) override;
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
@@ -274,13 +291,19 @@ private:
 	std::array<SampleFrame, DEFAULT_BUFFER_SIZE> m_buffer;
 	std::span<SampleFrame> m_bufferView;
 
-	fluid_settings_t* m_settings;
-
-	//! The synth the render thread currently owns. UI code only touches a synth
-	//! before it is published; after that this pointer is the audio thread's.
+	//! The synth the render thread currently renders. The UI thread owns it and
+	//! only borrows it here; the render thread never deletes it.
 	fluid_synth_t* m_synth = nullptr;
-	//! The font id of the synth the render thread adopted.
-	int m_activeFontId = -1;
+
+	//! The synth the UI thread owns and configures. It is the newest synth the
+	//! UI published, so it is the one the render thread adopts next.
+	fluid_synth_t* m_uiSynth = nullptr;
+	//! The soundfont the UI synth loaded, for the program selection.
+	int m_uiFontId = -1;
+
+	//! Every synth the UI thread created, with the settings it was built with.
+	//! The render thread borrows one of them; the UI thread deletes them all.
+	std::vector<Sf2OwnedSynth> m_ownedSynths;
 
 	QString m_filename;
 	//! Absolute file the published synth was built from, for a sample-rate reload.
@@ -289,9 +312,11 @@ private:
 	std::vector<Sf2PresetInfo> m_presets;
 
 	//! How many notes may be pending for this instrument in one period.
-	static constexpr std::size_t NoteEventCapacity = 256;
-	//! How many notes may hold plugin data at the same time.
-	static constexpr std::size_t PluginDataSlotCount = 128;
+	static constexpr std::size_t NoteEventCapacity = 512;
+	//! How many notes may hold plugin data at the same time. FluidSynth's
+	//! default polyphony is 256 voices, so the pool has to hold at least that
+	//! many notes to keep a full load from being refused.
+	static constexpr std::size_t PluginDataSlotCount = 512;
 	//! How many synth replacements may wait for the render thread.
 	static constexpr std::size_t SynthHandoffCapacity = 8;
 
@@ -304,41 +329,12 @@ private:
 	int m_lastMidiPitchRange;
 	int m_channel;
 
-	//! Synthesis parameters the UI requests. The render thread applies them; the
-	//! UI never calls into the synth the render thread is using.
-	std::atomic<float> m_requestedGain{1.0f};
-	std::atomic<bool> m_requestedReverbOn{false};
-	std::atomic<float> m_requestedReverbRoomSize{0.2f};
-	std::atomic<float> m_requestedReverbDamping{0.0f};
-	std::atomic<float> m_requestedReverbWidth{0.5f};
-	std::atomic<float> m_requestedReverbLevel{0.9f};
-	std::atomic<bool> m_requestedChorusOn{false};
-	std::atomic<float> m_requestedChorusNum{3.0f};
-	std::atomic<float> m_requestedChorusLevel{2.0f};
-	std::atomic<float> m_requestedChorusSpeed{0.3f};
-	std::atomic<float> m_requestedChorusDepth{8.0f};
-	std::atomic<int> m_requestedBank{0};
-	std::atomic<int> m_requestedPatch{0};
-	std::array<std::atomic<double>, 128> m_requestedTuning{};
-	//! Even while the UI writes the tuning table; the render thread only reads an even, stable value.
-	std::atomic<std::uint32_t> m_tuningGeneration{0};
-
-	//! The values the render thread last sent to the current synth.
-	float m_appliedGain = -1.0f;
-	bool m_appliedReverbOn = false;
-	float m_appliedReverbRoomSize = -1.0f;
-	float m_appliedReverbDamping = -1.0f;
-	float m_appliedReverbWidth = -1.0f;
-	float m_appliedReverbLevel = -1.0f;
-	bool m_appliedChorusOn = false;
-	float m_appliedChorusNum = -1.0f;
-	float m_appliedChorusLevel = -1.0f;
-	float m_appliedChorusSpeed = -1.0f;
-	float m_appliedChorusDepth = -1.0f;
-	int m_appliedBank = -1;
-	int m_appliedPatch = -1;
-	int m_appliedFontId = -2;
-	std::uint32_t m_appliedTuningGeneration = 0;
+	//! The tuning the UI thread last sent to the synth: the pitch of every
+	//! MIDI note in cents from MIDI note 0.
+	std::array<double, 128> m_tuningCents{};
+	//! Whether the microtuner is on. With it off the synth plays the normal
+	//! equal temperament.
+	bool m_tuningEnabled = false;
 
 	//! UI -> render: synths ready to be adopted.
 	Sf2PointerQueue<Sf2SynthSwap, SynthHandoffCapacity> m_pendingSynths;
@@ -396,21 +392,27 @@ private:
 		std::uint32_t generation, f_cnt_t offset, bool isNew) noexcept -> bool;
 	//! Takes the event at \a index out of the render stage's pending list.
 	void removePendingEvent(std::size_t index) noexcept;
-	//! Render thread: adopt any synth the UI published and apply the requested controls.
+	//! Render thread: adopt any synth the UI published.
 	void serviceSynthHandoff() noexcept;
-	void applyControls() noexcept;
-	void resetAppliedControls() noexcept;
-	//! UI thread: build a synth with the current settings (no font loaded).
-	auto createSynth() const -> fluid_synth_t*;
+	//! UI thread: send the requested state (gain, effects, program, tuning) to
+	//! the synth the UI owns. Never called on the render thread: the tuning
+	//! activation allocates inside FluidSynth.
+	void applyRequestedState() noexcept;
+	//! UI thread: read FluidSynth's own defaults into the effect models.
+	void readSynthDefaults();
+	//! UI thread: build a synth with its own settings object (no font loaded).
+	auto createSynth(sample_rate_t outputRate) -> Sf2OwnedSynth;
+	//! UI thread: delete a synth and the settings object it was built with.
+	void destroySynth(fluid_synth_t* synth) noexcept;
 	//! UI thread: publish a fully configured synth to the render thread.
-	auto publishSynth(fluid_synth_t* synth, int fontId, sample_rate_t sampleRate) -> bool;
+	auto publishSynth(fluid_synth_t* synth, sample_rate_t sampleRate) -> bool;
 	//! UI thread: delete synths the render thread has finished with.
 	void drainRetiredSynths();
 	void drainRetiredSynthsLocked();
 	//! UI thread: collect the presets of a loaded synth (no render thread access).
 	void collectPresets(fluid_synth_t* synth, std::vector<Sf2PresetInfo>& presets);
 	//! UI thread: a private synth for the patch dialog, so the dialog never reads the audio synth.
-	auto createPatchDialogSynth() -> fluid_synth_t*;
+	auto createPatchDialogSynth() -> Sf2OwnedSynth;
 
 	friend class gui::Sf2InstrumentView;
 
