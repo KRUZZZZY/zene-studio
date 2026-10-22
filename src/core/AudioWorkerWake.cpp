@@ -143,7 +143,7 @@ bool parkOnce(std::atomic<std::uint32_t>& generation, std::uint32_t seen) noexce
 }
 
 } // namespace
-#endif
+#endif // LMMS_WORKER_WAKE_WAIT_ON_ADDRESS
 
 void wait(std::atomic<std::uint32_t>& generation, std::uint32_t seen) noexcept
 {

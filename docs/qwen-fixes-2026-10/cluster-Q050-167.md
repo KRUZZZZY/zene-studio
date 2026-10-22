@@ -13,8 +13,16 @@ session's file sandbox refuses writes there (`touch` → `Permission denied`; th
 `~/.local/share/...` tree and `$HOME` root are read-only, while `$HOME/.cache` and the
 worktree are writable). Every log this report cites is under
 `~/.cache/zene-q050-167-r3/logs/`. The harness's own `feature_check.py` also cannot write
-its `-feature-check` directory beside the worktree, so the gate rows below are the same
-committed gate scripts run directly from the worktree.
+its `-feature-check` directory beside the worktree (`PermissionError`), nor create the git
+worktree it wants for base listings (`git worktree add` → exit 97 under the lane guard), so
+the two ratchet rows below are measured against a real base tree made with
+`git archive 07d6d02bd` and compared key-by-key. Every other row is the committed gate
+script run directly from the worktree.
+
+`submit_check.py` therefore reports one remaining FAIL — its bundled `feature_check.py`
+row, which cannot run in this sandbox for the two reasons just named — and three WARNs for
+GUI/agent files, which do not apply: this unit adds no user-facing action (see the
+reversibility answer below).
 
 ## What changed
 
@@ -87,8 +95,9 @@ primitive), so the failure is behavioural rather than a compile error.
 | `bash tests/no-tautology-gate.sh` | 0 | `gate-no-tautology.log` |
 | `python3 tests/doc-figures-gate.py` | 0 | `gate-doc-figures.log` |
 | `python3 tests/rt-safety-sweep.py --check` | 0 | `rt-sweep-2.log` |
-| `bash tests/complexity-gate.sh --check` | 1 | `gate-complexity-2.log` — 7 regressions, **none in a file this branch touches** (all pre-existing on the train: `WasmSandbox.cpp`, `XyPadPairTest.cpp`, `DawProjectReadTracks.cpp`, `ControlCommandsMixerTools.cpp`, `ControlCommandsSessionRecordLand.cpp`, `ControlCommandsMixerStrip.cpp`, `ControlCommandsShortcuts.cpp`) |
-| `bash tests/file-length-gate.sh --check` | 1 | `gate-file-length.log` — 19 regressions, **none in a file this branch touches** (intersection empty) |
+| `tests/scripted/check-namespace` (final tree) | 0 | `namespace-2.log` — the last `#endif` gained its `// LMMS_WORKER_WAKE_WAIT_ON_ADDRESS` comment |
+| `bash tests/complexity-gate.sh --check` | 1 | `final2-complexity.log` — 7 regression keys, **all 7 also present at the base commit** (`git archive 07d6d02bd` → `base-complexity.log`); the difference is empty, so this branch adds no item |
+| `bash tests/file-length-gate.sh --check` | 1 | `final2-file-length.log` — 18 keys, **all 18 also present at the base** (`base-file-length.log`); the difference is empty |
 
 ## Self-check
 
