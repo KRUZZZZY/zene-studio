@@ -261,7 +261,9 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 void Xpressive::recordPendingError(const char* message)
 {
 	// The first error wins: a broken expression fails in every period.
-	if (m_pendingErrorSet.load(std::memory_order_relaxed))
+	// Pair with the main thread's release store when it clears the flag, so the
+	// message buffer is not reused until its previous read has completed.
+	if (m_pendingErrorSet.load(std::memory_order_acquire))
 	{
 		return;
 	}
