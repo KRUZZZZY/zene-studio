@@ -131,6 +131,9 @@ The test is deterministic: it reads a DOM element and loads it; no clock, no sle
 | `logs/gates-4.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (baseline cache filled from the full base tree) | 1 | **6 PASS, 2 FAIL** - the two failures are pre-existing on the train (see below) |
 | `logs/base-fork-sources.log` | `bash tests/fork-sources-gate.sh` on the **pristine HEAD** (the change temporarily reverted) | 1 | the same pre-existing failure, with the same 34 entries |
 | `logs/base-all-sources.log` | `bash tests/all-sources-reproduce.sh` on the **pristine HEAD** | 1 | the same pre-existing failure, with the same 34 entries |
+| `logs/gates-fork-after.log` | `bash tests/fork-sources-gate.sh` (after the manifest re-derivation) | 0 | `PASS: every tracked source in scope is registered (1976 fork-NEW, 1214 inherited, 48 tooling)` |
+| `logs/gates-all-after.log` | `bash tests/all-sources-reproduce.sh` (after the manifest re-derivation) | 0 | `REPRODUCES: the entry list in all-sources.txt is the recipe's own output` |
+| `logs/gates-5.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (final tree, after the manifest re-derivation) | 0 | **8/8 PASS, `RESULT: PASS`** |
 
 The reverse-patch proof ran exactly as the procedure asks:
 
@@ -179,16 +182,44 @@ feature-check zene-qwen-new-p14-120-port-port (base 07d6d02bd, 3 changed files)
 RESULT: FAIL
 ```
 
-**The two failing rows are pre-existing on the train and are not caused by this change.** Both
+**The two failing rows were pre-existing on the train and were not caused by this change.** Both
 were run on the **pristine HEAD** - the change temporarily reverted with
 `git checkout -- <paths>` and restored afterwards with `git apply` - and both fail there with
 exit 1 and the same 34 entries (`logs/base-fork-sources.log`, `logs/base-all-sources.log`). The
-entries are all vendored `plugins/SfzPlayer/sfizz/external/abseil-cpp/...` files, which the
-manifests' own recipe filters exclude (`tests/fork-sources.txt:47`:
-`grep -vE '^(src/3rdparty/|...|plugins/SfzPlayer/sfizz/)'`) while the manifest still lists them.
-That drift is train-wide and touches no file this change touches. The recipe itself
-(`git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- ...`) reads commits, not the working
-tree, and this change adds no new file, so it cannot move either row.
+entries are vendored `plugins/SfzPlayer/sfizz/external/...` files, which the manifests' own
+recipe filters exclude (`tests/all-sources.txt:22`:
+`grep -vE '^(src/3rdparty/|...|plugins/SfzPlayer/sfizz/)'`) while the manifest still lists them:
+1148 such paths in `tests/all-sources.txt`. The drift entered with the train-10 snapshot and was
+re-broken by the train-12 snapshot `07d6d02bd` - this branch's own base commit - twenty minutes
+after the owner's own repair `6168a6873` ("chore(tests): re-derive tests/all-sources.txt from
+its own header recipe") had put it right. `tests/fork-sources-gate.sh` runs the whole-tree
+manifest's recipe itself, so one manifest breaks both rows.
+
+**The repair applied** (commit `125996c2b`, separate from the fix): the entry list is re-derived
+the way the gate itself prescribes - "run the 'Regenerate with' command from the manifest's
+header and write its output over the entry list" - and the header is left untouched. The diff is
+**1148 deletions and nothing else**: no added line and no changed line outside the vendored
+tree, which was checked mechanically (`git diff -- tests/all-sources.txt` shows no `+` line at
+all). No gate limit, baseline or recipe was changed, no entry was hand-edited, and no product
+code was touched. This is the same repair the owner made in `6168a6873` and that four peer lanes
+of this train made for the same reason (`new-p12-221-port`, `new-p14-199-port`,
+`new-p15-97-port`, `new-p16-141-port`).
+
+After it, both rows are green (`logs/gates-fork-after.log`, `logs/gates-all-after.log`) and the
+whole gate suite passes (`logs/gates-5.log`):
+
+```
+feature-check zene-qwen-new-p14-120-port-port (base 07d6d02bd, 5 changed files)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
 
 The two ratchet rows - the ones that judge *this* change - both PASS: "no new item in your
 files".
@@ -213,10 +244,13 @@ files".
   ControlMixingRouting, MixerRoutingBackwardCompatTest, MixerAbRegressionTest, MixerConcurrencyTest).
   The changed product file is `src/core/HardwareIo.cpp`; no header changed, so no other target had
   to be rebuilt beyond `zene` and the test binaries above.
-- **Both gate runs** - `feature_check.py` -> exit 1, `RESULT: FAIL` with 6 PASS and 2 FAIL
-  (`logs/gates-4.log`). The two failing rows are the pre-existing train failures proved above by
-  running them on the pristine HEAD; the complexity and file-length rows, the ones that judge this
-  change, are PASS ("no new item in your files"). No gate limit or baseline was changed.
+- **Both gate runs** - `feature_check.py` -> exit 0, `RESULT: PASS`, **8/8 gates PASS**
+  (`logs/gates-5.log`). The two rows that were red on the train (`fork-sources`,
+  `all-sources-reproduce`) were proved pre-existing on the pristine HEAD and then repaired the way
+  the gate itself prescribes (the manifest re-derived from its own header recipe, 1148 deletions
+  and nothing else - see "The gate runs" above). No gate limit or baseline was changed, and the
+  complexity and file-length rows - the ones that judge this change - report "no new item in your
+  files".
 - **Old projects and saved data load exactly as before** - the fix only changes the case where the
   stored route does not parse; a stored route that parses (including "none", a mono number, a pair
   and a bus name) is set as before, and the insert's and the cue's paths are unchanged in their
@@ -228,5 +262,7 @@ files".
   at project load): nothing is added to the audio thread, nothing allocates, locks or logs there.
   No command was added and no undo step changed, so undo stays one honest step.
 - **The files committed** - `src/core/HardwareIo.cpp`, `tests/src/core/HardwareIoTest.cpp`,
-  `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p14-120-port-port.md`.
-  No new file was created, so nothing had to be registered in `tests/fork-sources.txt`.
+  `tests/upstream-modifications.txt`, `tests/all-sources.txt` (the train-wide manifest
+  re-derivation, in its own commit) and
+  `docs/qwen-fixes-2026-10/cluster-new-p14-120-port-port.md`. No new file was created, so nothing
+  had to be registered in `tests/fork-sources.txt`.
