@@ -66,14 +66,15 @@ namespace
  *
  *  The two tests are ordered, and the order is load-bearing:
  *
- *   - `Track::create()` reads `type` with QVariant::toInt(), so an element with
- *     NO `type` attribute reads as 0 - an Instrument track. Without the name
- *     test first, every element a newer writer put inside `<trackcontainer>`
- *     would be coerced into an instrument track. That is the same trap
- *     SPEC-stable-ids.md 3.1 records for `<track>`'s children, one level up.
- *     The name is the tag `Track::saveTrack` sets on every track's own element
- *     (src/core/Track.cpp) and the same literal Song::loadProject's pre-count
- *     walk compares against.
+ *   - `Track::create()` reads `type` with a CHECKED QVariant::toInt(), so an
+ *     element whose `type` is missing or unreadable is refused there (it used
+ *     to read as 0 - an Instrument track). Without the name test first, every
+ *     element a newer writer put inside `<trackcontainer>` would be offered to
+ *     the factory at all. That is the same trap SPEC-stable-ids.md 3.1 records
+ *     for `<track>`'s children, one level up. The name is the tag
+ *     `Track::saveTrack` sets on every track's own element (src/core/Track.cpp)
+ *     and the same literal Song::loadProject's pre-count walk compares
+ *     against.
  *   - A `<track>` whose `type` this build has no class for hits
  *     `Track::create`'s `default: break` arm and returns nullptr. That arm
  *     STAYS: it is the forward-compatibility contract documented beside the
@@ -227,8 +228,10 @@ void TrackContainer::loadSettings( const QDomElement & _this )
 			// build can construct a track from it. Otherwise it is kept verbatim
 			// and re-emitted on save, instead of being dropped (a `type` with no
 			// class here) or coerced into an instrument track (an element that
-			// is not a <track> at all) - Track::create() would do the latter by
-			// reading an absent `type` as 0.
+			// is not a <track> at all, or a <track> whose `type` is missing or
+			// unreadable - Track::create() reads that attribute with a CHECKED
+			// QVariant::toInt() and refuses the element, where it used to read
+			// an absent `type` as 0).
 			//
 			// The `metadata` guard above is unchanged, and it deliberately does
 			// NOT preserve: a marked element is REMOVED on write by
