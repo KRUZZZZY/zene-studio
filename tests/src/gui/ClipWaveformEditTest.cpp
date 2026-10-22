@@ -202,7 +202,13 @@ private slots:
 	{
 		m_view->resize(std::max(120, m_view->width()), 80);
 		const ClipOverlayFrame frame = frameOf(m_view);
-		const QPoint handle(frame.xOrigin + 10, frame.top + frame.height / 2);
+		// The handle's OWN drawn position (paintClipGain puts it at the clip's gain, held inside the
+		// clip), not the middle of the clip - a press at mid-height would pass even if the handle
+		// could not be grabbed where it is drawn.
+		const QPoint handle(frame.xOrigin + 10, clipGainHandleY(m_clip->clipEdits(), frame));
+		// The fade handles' strip runs first in the press path and shares this x: the gain handle must
+		// not be painted where a fade handle takes the press, or it cannot be dragged at all.
+		QCOMPARE(fadeHandleAt(m_clip->clipEdits(), m_clip->length().getTicks(), frame, handle), FadeHandle::None);
 		QImage plain;
 		renderView(m_view, &plain);
 
@@ -231,7 +237,7 @@ private slots:
 		QCOMPARE(m_clip->clipEdits().gain, 1.0f);
 
 		// And downward: a cut lowers the gain, and the drawn waveform gets shorter.
-		const QPoint again(frame.xOrigin + 10, frame.top + frame.height / 2);
+		const QPoint again(frame.xOrigin + 10, clipGainHandleY(m_clip->clipEdits(), frame));
 		dragTo(m_view, again, QPoint(again.x(), again.y() + frame.height / 4));
 		QVERIFY2(m_clip->clipEdits().gain < 1.0f,
 			qPrintable(QStringLiteral("the downward drag left gain at %1").arg(m_clip->clipEdits().gain)));
@@ -275,6 +281,46 @@ private slots:
 		QCOMPARE(m_clip->clipEdits().envelope[0].tick, addedTick);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);
+	}
+
+	//! An Alt-click in the MIDDLE of an existing envelope must drag the point it just added, not the
+	//! point whose end index it was appended at before the re-sort.
+	void anAddedPointDraggedPastItsNeighbourTakesTheRightPoint()
+	{
+		const ClipOverlayFrame frame = frameOf(m_view);
+		const tick_t length = m_clip->length().getTicks();
+		// Two existing points, at a quarter and three quarters.
+		QJsonArray points;
+		points.append(QJsonObject{{QStringLiteral("tick"), length / 4}, {QStringLiteral("gain_db"), 0}});
+		points.append(QJsonObject{{QStringLiteral("tick"), 3 * length / 4}, {QStringLiteral("gain_db"), 0}});
+		QVERIFY(run(QStringLiteral("clip.gain_envelope_set"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("points"), points}}).ok);
+		QCOMPARE(m_clip->clipEdits().envelopeCount, 2);
+
+		// Add a point in the middle and, without releasing, drag it left past the first point.
+		const QPoint add(frame.xOrigin + static_cast<int>(length / 2 * frame.pixelsPerTick), frame.top + frame.height / 2);
+		const QPoint to(frame.xOrigin + static_cast<int>(length / 8 * frame.pixelsPerTick), frame.top + frame.height / 2);
+		QMouseEvent press(QEvent::MouseButtonPress, QPointF(add), m_view->mapToGlobal(add), Qt::LeftButton,
+			Qt::LeftButton, Qt::AltModifier);
+		QCoreApplication::sendEvent(m_view, &press);
+		QMouseEvent move(QEvent::MouseMove, QPointF(to), m_view->mapToGlobal(to), Qt::NoButton, Qt::LeftButton,
+			Qt::NoModifier);
+		QCoreApplication::sendEvent(m_view, &move);
+		QMouseEvent release(QEvent::MouseButtonRelease, QPointF(to), m_view->mapToGlobal(to), Qt::LeftButton,
+			Qt::NoButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(m_view, &release);
+
+		const ClipEdits& edits = m_clip->clipEdits();
+		QCOMPARE(edits.envelopeCount, 3);
+		// The new point is now the FIRST (it was dragged past the quarter point); the quarter point
+		// moved right behind it and the last stayed. Had the gesture dragged the appended index (2),
+		// the tail point would have jumped to the dragged position instead.
+		QVERIFY2(std::abs(edits.envelope[0].tick - length / 8) <= 2,
+			qPrintable(QStringLiteral("the dragged point sits at tick %1, not %2").arg(edits.envelope[0].tick).arg(length / 8)));
+		QVERIFY2(std::abs(edits.envelope[1].tick - length / 4) <= 2,
+			qPrintable(QStringLiteral("the quarter point sits at tick %1").arg(edits.envelope[1].tick)));
+		QVERIFY2(std::abs(edits.envelope[2].tick - 3 * length / 4) <= 2,
+			qPrintable(QStringLiteral("the tail point sits at tick %1").arg(edits.envelope[2].tick)));
 	}
 
 	//! Criterion 2's display half: the menu item flips the polarity and the drawn waveform mirrors.
@@ -330,6 +376,35 @@ private slots:
 		QCOMPARE(clipGainDraggedDb(23.f, -10, frame), MaxGainPointDb);  // clamped to the range
 		QCOMPARE(clipGainDraggedDb(-59.f, 10, frame), MinGainPointDb);
 
+		// The handle is grabbable WHERE IT IS DRAWN, including at unity and on a short clip: the fade
+		// handles live in the top strip at the same x, and their drag takes a press before the gain's,
+		// so a handle painted in that strip could never be taken (the bug this pins).
+		ClipEdits neutral;
+		const ClipOverlayFrame tall{1.0f, 0, 192, 0, 84};
+		const int unityY = clipGainHandleY(neutral, tall);
+		QVERIFY2(unityY > tall.top + 7 + 6, "the unity handle sits inside the fade handles' hit strip");
+		QVERIFY2(clipGainHandleAt(neutral, tall, QPoint(tall.xOrigin + 10, unityY)),
+			"the gain handle is not under the pointer at its own drawn centre");
+		QVERIFY2(!clipGainHandleAt(neutral, tall, QPoint(tall.xOrigin + 10, unityY + 8)),
+			"the gain handle took a press 8 px away");
+		// A boosted clip's handle is held inside the clip, not painted above its top edge.
+		ClipEdits boosted;
+		boosted.gain = gainDbToLinear(MaxGainPointDb);
+		QVERIFY(clipGainHandleY(boosted, tall) >= tall.top + 3);
+		// The realistic case: a 25 px clip, where the fade handles' strip and the gain's own pixel
+		// collide. The fade hit test runs FIRST in the real press path, so it must NOT take the
+		// gain handle's own centre - otherwise the handle is painted where it cannot be grabbed.
+		const ClipOverlayFrame shortish{1.0f, 0, 192, 3, 25};
+		const int shortishY = clipGainHandleY(neutral, shortish);
+		const QPoint shortishAt(shortish.xOrigin + 10, shortishY);
+		QVERIFY2(clipGainHandleAt(neutral, shortish, shortishAt), "the gain handle is not under its own centre");
+		QCOMPARE(fadeHandleAt(neutral, 192, shortish, shortishAt), FadeHandle::None);
+		// On a very short clip the inside-the-clip bound wins, but the handle is still where it draws.
+		const ClipOverlayFrame shortClip{1.0f, 0, 192, 2, 8};
+		const int shortY = clipGainHandleY(neutral, shortClip);
+		QVERIFY(shortY >= shortClip.top && shortY <= shortClip.top + shortClip.height);
+		QVERIFY(clipGainHandleAt(neutral, shortClip, QPoint(shortClip.xOrigin + 10, shortY)));
+
 		ClipEdits edits;
 		edits.envelope[0] = {20, 0.f};
 		edits.envelope[1] = {60, -12.f};
@@ -354,12 +429,44 @@ private slots:
 		QVERIFY2(!withGainPoint(&edits, edits.envelopeCount, 130, 0.f, 192), "a 33rd point was accepted");
 	}
 
+	//! A press and release on the handle or a point without moving records NO undo step: otherwise the
+	//! no-op would shadow the edit before it and the user's next Ctrl+Z would appear to do nothing.
+	void aClickWithoutMovementRecordsNoStep()
+	{
+		// A real edit first, undone, so the depth below is the established baseline.
+		const ClipOverlayFrame frame = frameOf(m_view);
+		QVERIFY(run(QStringLiteral("clip.set_gain"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("gain_db"), 6.0}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(m_clip->clipEdits().gain, 1.0f);
+
+		const auto depth = [this] { return run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(); };
+		const int before = depth();
+		// A press/release exactly on the handle, no move: nothing is written, so no step appears.
+		const QPoint handle(frame.xOrigin + 10, clipGainHandleY(m_clip->clipEdits(), frame));
+		dragTo(m_view, handle, handle);
+		QCOMPARE(m_clip->clipEdits().gain, 1.0f);
+		QCOMPARE(depth(), before);
+
+		// Same for an envelope point: a press/release on it without a move writes no step.
+		QJsonArray points;
+		points.append(QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("gain_db"), 0}});
+		QVERIFY(run(QStringLiteral("clip.gain_envelope_set"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("points"), points}}).ok);
+		const int withPoint = depth();
+		const QPoint at(frame.xOrigin, frame.top + static_cast<int>((1.f - (0.f + 60.f) / 84.f) * frame.height));
+		dragTo(m_view, at, at);
+		QCOMPARE(m_clip->clipEdits().envelopeCount, 1);
+		QCOMPARE(m_clip->clipEdits().envelope[0].tick, 0);
+		QCOMPARE(depth(), withPoint);
+	}
+
 	//! A locked clip is not edited by any of the three gestures; the lock is the refusal the commands share.
 	void aLockedClipTakesNoGesture()
 	{
 		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)}}).ok);
 		const ClipOverlayFrame frame = frameOf(m_view);
-		const QPoint handle(frame.xOrigin + 10, frame.top + frame.height / 2);
+		const QPoint handle(frame.xOrigin + 10, clipGainHandleY(m_clip->clipEdits(), frame));
 		dragTo(m_view, handle, QPoint(handle.x(), handle.y() - frame.height / 4));
 		QCOMPARE(m_clip->clipEdits().gain, 1.0f);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);

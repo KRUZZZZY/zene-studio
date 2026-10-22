@@ -2534,6 +2534,7 @@ tests/src/core/ClipLinkTest.cpp
 tests/src/core/ClipLinkTestSupport.h
 tests/src/core/ClipOffsetFadePairTest.cpp
 tests/src/core/ClipOffsetFadeTest.cpp
+tests/src/core/ClipPolarityTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
@@ -2902,6 +2903,7 @@ tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/ChainPresetMenuTest.cpp
 tests/src/gui/ChordProgressionPanelTest.cpp
 tests/src/gui/ClipEditsMenuTest.cpp
+tests/src/gui/ClipWaveformEditTest.cpp
 tests/src/gui/CollabPanelTest.cpp
 tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
