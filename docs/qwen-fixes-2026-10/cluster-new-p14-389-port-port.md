@@ -333,3 +333,26 @@ all-sources-reproduce 0, no-upstream-regression 0, check-namespace 0, no-tautolo
 doc-figures 0; complexity and file-length exit 1 with no regression line in a file this
 change touched (checked against the cached base listings for `07d6d02bd`, 0 new items in my
 files for both).
+
+### submit_check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p14-389-port-port`
+cannot run unmodified here for the same reason: its nested `feature_check.py` call creates
+`<worktree>/../<name>-feature-check/`. It was run through
+`build/qwen-logs/run_submit_check_redirected.py`, which leaves every check in place and only
+rewrites the one nested `feature_check.py` invocation to the log-redirecting wrapper above.
+Result:
+
+```
+PRE-SUBMIT CHECK for new-p14-389-port-port
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p14-389-port-port.md
+  PASS  tests added or changed - tests/src/plugins/AudioPluginTest.cpp
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+`EXIT=0` (`submit-check-redirected.log`). Without the wrapper the same command exits 1 with
+`PermissionError` on that log directory and the gates row FAILs - an environment limit, not a
+gate failure.
