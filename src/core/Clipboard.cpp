@@ -133,6 +133,8 @@ QString decodeStringPairKey( const QString & keyHalf )
 
 		auto content = new QMimeData;
 		content->setData( mimeType( MimeType::StringPair ), finalString.toUtf8() );
+		content->setData( mimeType( MimeType::StringPairV2 ),
+			( encodeStringPairKey( key ) + ":" + value ).toUtf8() );
 		QApplication::clipboard()->setMimeData( content, QClipboard::Clipboard );
 	}
 
@@ -164,9 +166,11 @@ QString decodeStringPairKey( const QString & keyHalf )
 
 	QString decodeKey( const QMimeData * mimeData )
 	{
+		const bool isV2 = mimeData->hasFormat( mimeType( MimeType::StringPairV2 ) );
 		const QString payload = QString::fromUtf8(
-			mimeData->data( mimeType( MimeType::StringPair ) ) );
-		return( decodeStringPairKey( payload.section( ':', 0, 0 ) ) );
+			mimeData->data( mimeType( isV2 ? MimeType::StringPairV2 : MimeType::StringPair ) ) );
+		const QString key = payload.section( ':', 0, 0 );
+		return isV2 ? decodeStringPairKey( key ) : key;
 	}
 
 
@@ -174,7 +178,9 @@ QString decodeStringPairKey( const QString & keyHalf )
 
 	QString decodeValue( const QMimeData * mimeData )
 	{
-		return( QString::fromUtf8( mimeData->data( mimeType( MimeType::StringPair ) ) ).section( ':', 1, -1 ) );
+		const MimeType type = mimeData->hasFormat( mimeType( MimeType::StringPairV2 ) )
+			? MimeType::StringPairV2 : MimeType::StringPair;
+		return( QString::fromUtf8( mimeData->data( mimeType( type ) ) ).section( ':', 1, -1 ) );
 	}
 
 

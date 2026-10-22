@@ -4,6 +4,24 @@ FIXED
 
 **Verdict: FIXED**
 
+## QA follow-up: collision-free MIME versioning
+
+The round-2 `%1` key prefix alone still collided with an unversioned legacy key such as
+`%1a%3A`. QA reproduced that corruption. The final code publishes the escaped payload under the
+distinct `application/x-zene-stringpair-v2` MIME type. It also keeps
+`application/x-zene-stringpair` for existing consumers: ordinary keys remain byte-identical,
+while escaped keys carry the marker there so direct legacy key comparisons reject them instead
+of accepting a truncated key. Shared readers decode escaped keys only when the V2 MIME type is
+present; a payload with only the historical type is read literally, including keys `a%3A`,
+`a%25`, `%1a%3A` and `%1a%25`. Both drag and clipboard producers publish both formats. The V2 MIME
+type, not the `%1` prefix alone, is the unambiguous decoder discriminator.
+
+The QA regression was first run with the round-2 product code still in place: building
+`zene BrowserDragUrlTest` passed (EXIT=0), then
+`ctest -R '^BrowserDragUrlTest$' --output-on-failure` from `build/tests` failed (EXIT=8) because
+`Clipboard::decodeKey()` returned `a:` for the raw legacy key `%1a%3A`. With the QA correction,
+the same test is part of the focused five-target CTest run below.
+
 ## The defect
 
 A StringPair drag publishes its pair as the raw text `key:value` under the MIME type
@@ -53,7 +71,7 @@ in-tree plug-ins that parse the raw payload themselves, the two frozen reference
 `tests/reference/`, and `tests/src/gui/SampleEditorDialogTest.cpp:454` all read the raw
 `key:value` text, and a new shape would have broken them.
 
-### The key half is versioned (round-2 rework)
+### The key half is versioned (round-2 rework; MIME discriminator added in QA follow-up)
 
 The first version of this fix escaped the key half **unconditionally**, and the decoder translated
 `%3A` and `%25` in every payload it read. Round 2 found that this corrupted valid *legacy*
@@ -78,11 +96,10 @@ So a legacy payload's key is read exactly as it was read before the fix, and a k
 escape is distinguishable from every legacy payload of the same key - which is what
 `tests/src/gui/BrowserDragUrlTest.cpp:390` asserts.
 
-The one residual, stated plainly: a legacy key that *both* opens with the marker's text and
-carries an escape sequence would still be read as a marked payload. The marker text is `%1`, the
-key namespace is product-controlled (every key in use is a lower-case identifier such as
-`samplefile`, `clip_0`, `track_1`, `float_value`), and no such key exists in the tree; a legacy key
-would have to be crafted to collide.
+At round 2, a legacy key that both opened with the marker text and carried an escape sequence
+could still collide. The QA follow-up removes that residual by using the distinct V2 MIME type as
+the discriminator. A raw legacy payload has only `application/x-zene-stringpair` and is returned
+literally even if its key begins with `%1` and contains `%3A` or `%25`.
 
 ### Why every reader stays consistent
 
@@ -105,8 +122,9 @@ copies and were **not** edited; they parse plain keys, whose payload bytes are u
 
 ## Evidence table
 
-All rows below describe the **current** tree (round 2). The round-1 rows are kept at the end for
-the record; round 2 re-ran every proof against the reworked codec.
+Rows through the round-2 rework below describe the fixer run before the QA follow-up. The QA
+results in the follow-up section and addendum at the end supersede those rows. The round-1 rows
+are retained for the record.
 
 | Check | Exact command and result |
 | --- | --- |
@@ -279,3 +297,17 @@ Additional notes for the reviewers:
   exported `copyStringPair()`/`decodeKey()`/`decodeValue()` so the test could link them; that was
   dropped, because the test binaries link the static `lmmsobjs` library and need no export
   (`tests/CMakeLists.txt:1607`).
+
+## Final QA verification
+
+The QA correction gives escaped keys a distinct `StringPairV2` MIME type and keeps the escaped
+marker in the historical MIME payload so fixed-key raw readers do not accept a truncated key.
+Unversioned legacy payloads, including marker-shaped keys, are read literally. Regression
+coverage is in `tests/src/gui/BrowserDragUrlTest.cpp:333-408`.
+
+| Check | Command and result |
+| --- | --- |
+| QA regression before correction | `cmake --build build --target zene BrowserDragUrlTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-236.r3/logs/qa-build-1.log 2>&1; echo EXIT=$?` -> EXIT=0; then from `build/tests`, `ctest -R '^BrowserDragUrlTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-236.r3/logs/qa-test-1.log 2>&1; echo EXIT=$?` -> EXIT=8. `aLegacyPayloadIsReadLiterally` read `a:` for raw key `%1a%3A` (expected `%1a%3A`). |
+| Final build | `cmake --build build --target zene BrowserDragUrlTest SampleEditorDialogTest AudioFileProcessorPlayheadTest AudioFileProcessorWaveViewTest ControlDeviceCatalogueTest partc_ref_lv2instrument partc_ref_audiofileprocessor > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-236.r3/logs/qa-build-4.log 2>&1; echo EXIT=$?` -> EXIT=0. |
+| Focused CTests | From `build/tests`, `ctest -R 'BrowserDragUrlTest|Lv2InstrumentKeyRegressionTest|AudioFileProcessorPlayheadTest|AudioFileProcessorWaveViewTest|SampleEditorDialogTest' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-236.r3/logs/qa-test-2.log 2>&1; echo EXIT=$?` -> EXIT=0; 5/5 passed. |
+| `feature_check.py` | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p16-236 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-236.r3/logs/qa-gate-3.log 2>&1; echo EXIT=$?` -> EXIT=0; all eight rows PASS, complexity and file-length report no new items. |

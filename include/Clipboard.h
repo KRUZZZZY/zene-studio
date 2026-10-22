@@ -38,7 +38,8 @@ namespace lmms::Clipboard
 	enum class MimeType
 	{
 		StringPair,
-		Default
+		Default,
+		StringPairV2
 	};
 
 	// Convenience Methods
@@ -54,10 +55,11 @@ namespace lmms::Clipboard
 	QString decodeKey( const QMimeData * mimeData );
 	QString decodeValue( const QMimeData * mimeData );
 
-	/*! The key half of a StringPair payload, escaped. The payload is `key:value`, so a key that
+	/*! The key half of a StringPair V2 payload, escaped. The payload is `key:value`, so a key that
 	 *  carries a colon would be split at that colon and both halves of the pair would come out
-	 *  wrong. Such a key is marked with a version prefix and escaped - a colon becomes `%3A` and a
-	 *  percent sign `%25` - in one left-to-right pass, so the escape is an exact inverse. A key
+	 *  wrong. Such a key is marked with a prefix and escaped - a colon becomes `%3A` and a percent
+	 *  sign `%25` - in one left-to-right pass, so the escape is an exact inverse. The V2 MIME type
+	 *  distinguishes this payload from unversioned legacy StringPair data. A key
 	 *  that carries neither needs no escaping and is written as it always was, so every payload
 	 *  Zene wrote before keeps its bytes. The value half is left alone - it legitimately carries
 	 *  colons and percent signs (paths, base64 bodies, serialized clips) and every reader keeps
@@ -70,6 +72,9 @@ namespace lmms::Clipboard
 		{
 			case MimeType::StringPair:
 				return "application/x-zene-stringpair";
+			break;
+			case MimeType::StringPairV2:
+				return "application/x-zene-stringpair-v2";
 			break;
 			case MimeType::Default:
 			default:

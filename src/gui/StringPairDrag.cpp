@@ -92,6 +92,8 @@ QMimeData * StringPairDrag::createMimeData( const QString & _key, const QString 
 	auto m = new QMimeData();
 	m->setData( mimeType( MimeType::StringPair ),
 			( Clipboard::encodeStringPairKey( _key ) + ":" + _value ).toUtf8() );
+	m->setData( mimeType( MimeType::StringPairV2 ),
+			( Clipboard::encodeStringPairKey( _key ) + ":" + _value ).toUtf8() );
 	if( carriesAFilePath( _key ) )
 	{
 		// The same file as a URL, for a plug-in editor or the desktop that takes file URLs; the
@@ -123,7 +125,8 @@ bool StringPairDrag::processDragEnterEvent( QDragEnterEvent * _dee,
 	// For mimeType() and MimeType enum class
 	using namespace Clipboard;
 
-	if( !_dee->mimeData()->hasFormat( mimeType( MimeType::StringPair ) ) )
+	if( !_dee->mimeData()->hasFormat( mimeType( MimeType::StringPair ) ) &&
+		!_dee->mimeData()->hasFormat( mimeType( MimeType::StringPairV2 ) ) )
 	{
 		return( false );
 	}

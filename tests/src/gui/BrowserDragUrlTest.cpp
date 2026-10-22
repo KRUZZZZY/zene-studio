@@ -334,6 +334,9 @@ private slots:
 	{
 		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(QStringLiteral("preset:factory"),
 									   QStringLiteral("v")));
+		QCOMPARE(QString::fromUtf8(
+			mime->data(Clipboard::mimeType(Clipboard::MimeType::StringPair))).section(':', 0, 0),
+			QStringLiteral("%1preset%3Afactory"));
 
 		QDragEnterEvent enter(QPoint(4, 4), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
 		enter.setAccepted(false);
@@ -351,6 +354,10 @@ private slots:
 	void theClipboardKeepsAColonKeyIntact()
 	{
 		Clipboard::copyStringPair(QStringLiteral("preset:factory"), QStringLiteral("v"));
+		QCOMPARE(Clipboard::getMimeData()->data(Clipboard::mimeType(Clipboard::MimeType::StringPair)),
+			QByteArrayLiteral("%1preset%3Afactory:v"));
+		QVERIFY(Clipboard::getMimeData()->hasFormat(
+			Clipboard::mimeType(Clipboard::MimeType::StringPairV2)));
 		QCOMPARE(Clipboard::decodeKey(Clipboard::getMimeData()), QStringLiteral("preset:factory"));
 		QCOMPARE(Clipboard::decodeValue(Clipboard::getMimeData()), QStringLiteral("v"));
 	}
@@ -362,7 +369,8 @@ private slots:
 	{
 		const QVector<QString> legacyKeys = {
 			QStringLiteral("a%3A"), QStringLiteral("a%25"), QStringLiteral("%1legacy"),
-			QStringLiteral("%1"), QStringLiteral("samplefile"),
+			QStringLiteral("%1a%3A"), QStringLiteral("%1a%25"), QStringLiteral("%1"),
+			QStringLiteral("samplefile"),
 		};
 		for (const QString& key : legacyKeys)
 		{
@@ -385,15 +393,16 @@ private slots:
 		QCOMPARE(Clipboard::decodeValue(&mime), QStringLiteral("factory:v"));
 	}
 
-	//! A key that needs escaping is marked in the payload, so it cannot be read as the legacy
-	//! payload for the same key - and it still comes back whole.
-	void anEscapedKeyIsMarkedInThePayload()
+	//! An escaped key uses a distinct MIME type, and it still comes back whole.
+	void anEscapedKeyUsesTheVersionedMimeType()
 	{
 		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(QStringLiteral("a%3A"),
 									   QStringLiteral("v")));
 		const QByteArray raw = mime->data(Clipboard::mimeType(Clipboard::MimeType::StringPair));
-		QVERIFY2(raw != QByteArrayLiteral("a%3A:v"),
-			"the escaped key is not distinguishable from the legacy payload of the same key");
+		QCOMPARE(raw, QByteArrayLiteral("%1a%253A:v"));
+		const QByteArray v2 = mime->data(Clipboard::mimeType(Clipboard::MimeType::StringPairV2));
+		QVERIFY(mime->hasFormat(Clipboard::mimeType(Clipboard::MimeType::StringPairV2)));
+		QCOMPARE(v2, QByteArrayLiteral("%1a%253A:v"));
 		QDropEvent drop(QPointF(0, 0), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
 		QCOMPARE(StringPairDrag::decodeKey(&drop), QStringLiteral("a%3A"));
 		QCOMPARE(StringPairDrag::decodeValue(&drop), QStringLiteral("v"));
