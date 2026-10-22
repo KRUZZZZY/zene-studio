@@ -95,6 +95,22 @@ bool writeBufferSucceeded(T& device, const SampleFrame* frames, f_cnt_t count)
 	else { device.writeBuffer(frames, count); return true; }
 }
 
+//! True when the device can explicitly report whether its final page landed.
+template <typename T, typename = void>
+struct HasFinishEncoding : std::false_type {};
+
+template <typename T>
+struct HasFinishEncoding<T, std::void_t<decltype(std::declval<T&>().finishEncoding())>>
+	: std::true_type {};
+
+//! Finalises when that API exists; a tree without it cannot report a failed tail page.
+template <typename T>
+bool finalisationReportedFailure(T& device)
+{
+	if constexpr (HasFinishEncoding<T>::value) { return !device.finishEncoding(); }
+	else { (void)device; return false; }
+}
+
 //! Arm the page-write one-shot on @a device, when the seam exists (a template, so
 //! `if constexpr` can discard the branch on a tree without the seam).
 template <typename T>
@@ -195,19 +211,17 @@ private slots:
 		QVERIFY(successful);
 		QVERIFY(device != nullptr);
 
-		// Two seconds of audio, fed in periods, so the encoder emits audio pages while writing.
+		// Supply audio, then arm only after all ordinary writes have completed. OGG emits its EOS
+		// tail page when finishEncoding() calls writeBuffer(nullptr, 0), so the short count below
+		// exercises the finalization path the render must observe.
 		const std::vector<SampleFrame> frames(44100 * 2, SampleFrame(0.4f, -0.4f));
-		bool writeReportedFailure = false;
-		for (std::size_t at = 0; at < frames.size(); at += 4096)
-		{
-			const auto count = static_cast<f_cnt_t>(std::min<std::size_t>(4096, frames.size() - at));
-			if (at >= 44100) { armNextPageWriteShort(*static_cast<AudioFileOgg*>(device.get()), 5); }
-			if (!writeBufferSucceeded(*device, frames.data() + at, count)) { writeReportedFailure = true; }
-		}
+		QVERIFY(writeBufferSucceeded(*device, frames.data(), static_cast<f_cnt_t>(frames.size())));
+		armNextPageWriteShort(*static_cast<AudioFileOgg*>(device.get()), 5);
+		const bool finalisationFailed = finalisationReportedFailure(*device);
 		const bool reported = reportedWriteError(*device);
 		device.reset();
 
-		QVERIFY2(writeReportedFailure, "a short positive OGG page write was reported as a success");
+		QVERIFY2(finalisationFailed, "a short positive OGG tail-page write was reported as a success");
 		QVERIFY2(reported, "the short OGG page write was not recorded");
 	}
 

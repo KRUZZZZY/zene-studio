@@ -118,10 +118,11 @@ honours it and otherwise returns what `writeData()` stored. The comparison in
 `tests/src/core/AudioFileOggInitTest.cpp` (the existing OGG test target; a new
 target could not be registered because reconfiguring is the parent's job):
 
-* `aShortPositiveOggPageWriteIsReported` — two seconds of audio fed in periods;
-  from the second second on, an audio page is armed to store 5 bytes and answer
-  `5`. Asserts `writeBuffer()` says the period did not reach the file and the
-  device recorded the error.
+* `aShortPositiveOggPageWriteIsReported` — two seconds of audio are fed before
+  arming the one-shot for the EOS tail page. Explicit `finishEncoding()` then
+  flushes the tail and must report failure; the test also checks the device's
+  sticky write-error state. This exercises the finalization verdict the render
+  reads, rather than relying on the destructor's result.
 * `aPartialOggHeaderPageRejectsTheDevice` — the one-shot is armed across devices
   so the stream's opening page is short; asserts `successful` is false, the error
   is recorded, and no half-written `.ogg` is left behind.
