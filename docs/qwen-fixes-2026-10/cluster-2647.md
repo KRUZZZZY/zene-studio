@@ -62,7 +62,7 @@ Evidence it is fixed, and that the tests can see a regression:
 | RED test (mutation) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/32-test-2647-reverted2.log`; `readingTheAutomationRampTakesNoMutex` failed: "reading the automation ramp took the model's value-buffer mutex (cluster 2647)", 11 passed / 1 failed |
 | existing probes under a whole-`valueBuffer()` mutation | `ctest -R '^PhaseDSidechainTest$' --output-on-failure` | 8 | `build/2647-logs/22-test-2647-mutation-existing-probes.log`; `theSidechainAmountReadTakesNoLock`, `mixerFaderBufferLookupDoesNotWaitOnCacheLock`, `pluginParameterBufferLookupDoesNotWaitOrAllocate` all failed, 17 passed / 3 failed |
 | GREEN build (mutation reverted) | `cmake --build build --target zene AutomatableModelTest PhaseDSidechainTest AutomationPrepassProofTest -j$(nproc)` | 0 | `build/2647-logs/33-build-2647-restored.log` |
-| GREEN family | `ctest -R '^(AutomatableModelTest\|PhaseDSidechainTest\|AutomationPrepassProofTest)$' --output-on-failure` | 0 | `build/2647-logs/34-test-2647-restored-green.log`; 3/3 CTest tests passed |
+| GREEN family | `ctest -R '^(AutomatableModelTest\|PhaseDSidechainTest\|AutomationPrepassProofTest)$' --output-on-failure` | 0 | `build/2647-logs/34-test-2647-restored-green.log`; 3/3 CTest tests passed (re-run at the final tree: `build/2647-logs/52-final-family.log`, 3/3 passed) |
 
 ## 5524: FIXED
 
