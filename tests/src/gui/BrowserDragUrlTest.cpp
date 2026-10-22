@@ -355,6 +355,50 @@ private slots:
 		QCOMPARE(Clipboard::decodeValue(Clipboard::getMimeData()), QStringLiteral("v"));
 	}
 
+	//! A payload an older Zene wrote - the key as raw text, never escaped - is read literally: a key
+	//! that carries the text "%3A" or "%25" keeps its spelling instead of being decoded into a
+	//! colon or a percent sign.
+	void aLegacyPayloadIsReadLiterally()
+	{
+		const QVector<QString> legacyKeys = {
+			QStringLiteral("a%3A"), QStringLiteral("a%25"), QStringLiteral("%1legacy"),
+			QStringLiteral("%1"), QStringLiteral("samplefile"),
+		};
+		for (const QString& key : legacyKeys)
+		{
+			QMimeData mime;
+			mime.setData(Clipboard::mimeType(Clipboard::MimeType::StringPair),
+				(key + QStringLiteral(":v")).toUtf8());
+			QCOMPARE(Clipboard::decodeKey(&mime), key);
+			QCOMPARE(Clipboard::decodeValue(&mime), QStringLiteral("v"));
+		}
+	}
+
+	//! A legacy payload whose key carries a colon is read exactly as the old decoder read it - the
+	//! information the old format lost is still lost, but nothing else changed for it.
+	void aLegacyPayloadWithAColonKeyIsReadAsBefore()
+	{
+		QMimeData mime;
+		mime.setData(Clipboard::mimeType(Clipboard::MimeType::StringPair),
+			QByteArrayLiteral("preset:factory:v"));
+		QCOMPARE(Clipboard::decodeKey(&mime), QStringLiteral("preset"));
+		QCOMPARE(Clipboard::decodeValue(&mime), QStringLiteral("factory:v"));
+	}
+
+	//! A key that needs escaping is marked in the payload, so it cannot be read as the legacy
+	//! payload for the same key - and it still comes back whole.
+	void anEscapedKeyIsMarkedInThePayload()
+	{
+		std::unique_ptr<QMimeData> mime(StringPairDrag::createMimeData(QStringLiteral("a%3A"),
+									   QStringLiteral("v")));
+		const QByteArray raw = mime->data(Clipboard::mimeType(Clipboard::MimeType::StringPair));
+		QVERIFY2(raw != QByteArrayLiteral("a%3A:v"),
+			"the escaped key is not distinguishable from the legacy payload of the same key");
+		QDropEvent drop(QPointF(0, 0), Qt::CopyAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+		QCOMPARE(StringPairDrag::decodeKey(&drop), QStringLiteral("a%3A"));
+		QCOMPARE(StringPairDrag::decodeValue(&drop), QStringLiteral("v"));
+	}
+
 private:
 	QTemporaryDir m_home;
 	QTemporaryDir m_files;

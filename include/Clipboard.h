@@ -56,10 +56,12 @@ namespace lmms::Clipboard
 
 	/*! The key half of a StringPair payload, escaped. The payload is `key:value`, so a key that
 	 *  carries a colon would be split at that colon and both halves of the pair would come out
-	 *  wrong. A colon becomes `%3A` and a percent sign `%25`, in one left-to-right pass, so the
-	 *  escape is an exact inverse and a key that carries neither keeps its payload byte for byte.
-	 *  The value half is left alone - it legitimately carries colons and percent signs (paths,
-	 *  base64 bodies, serialized clips) and every reader keeps them. */
+	 *  wrong. Such a key is marked with a version prefix and escaped - a colon becomes `%3A` and a
+	 *  percent sign `%25` - in one left-to-right pass, so the escape is an exact inverse. A key
+	 *  that carries neither needs no escaping and is written as it always was, so every payload
+	 *  Zene wrote before keeps its bytes. The value half is left alone - it legitimately carries
+	 *  colons and percent signs (paths, base64 bodies, serialized clips) and every reader keeps
+	 *  them. */
 	QString encodeStringPairKey( const QString & key );
 
 	inline const char * mimeType( MimeType type )

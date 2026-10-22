@@ -32,15 +32,14 @@ was genuinely ambiguous, not merely unused.
 One shared codec in `Clipboard`, used by both producers and both decoders:
 
 - `include/Clipboard.h:63` — declares `encodeStringPairKey()`.
-- `src/core/Clipboard.cpp:115` — `encodeStringPairKey()` escapes the key half in one left-to-right
+- `src/core/Clipboard.cpp:142` — `encodeStringPairKey()` escapes the key half in one left-to-right
   pass: a colon becomes `%3A`, a percent sign becomes `%25`. Two characters is enough, because the
   only two characters that can make the format ambiguous are the separator itself and the escape
   marker.
-- `src/core/Clipboard.cpp:41` — `decodeStringPairKey()` unescapes in one left-to-right pass, so the
-  escape is an exact inverse. A percent sign that is not followed by `3A` or `25` stays a literal
-  percent sign, so a payload that was never escaped decodes exactly as it was read before.
-- `src/core/Clipboard.cpp:105` — `copyStringPair()` (the clipboard producer) encodes the key.
-- `src/core/Clipboard.cpp:135` — `decodeKey()` (the shared decoder) unescapes the key half.
+- `src/core/Clipboard.cpp:57` — `decodeStringPairKey()` unescapes in one left-to-right pass, so the
+  escape is an exact inverse.
+- `src/core/Clipboard.cpp:130` — `copyStringPair()` (the clipboard producer) encodes the key.
+- `src/core/Clipboard.cpp:165` — `decodeKey()` (the shared decoder) unescapes the key half.
 - `src/gui/StringPairDrag.cpp:94` — `createMimeData()` (the drag producer) encodes the key.
 - `src/gui/StringPairDrag.cpp:132` — `processDragEnterEvent()` reads the key through the shared
   decoder instead of its own `section( ':', 0, 0 )`, so it compares the whole key.
@@ -53,6 +52,37 @@ The **body shape** is deliberately unchanged (`key:value`, no JSON, no length pr
 in-tree plug-ins that parse the raw payload themselves, the two frozen reference copies under
 `tests/reference/`, and `tests/src/gui/SampleEditorDialogTest.cpp:454` all read the raw
 `key:value` text, and a new shape would have broken them.
+
+### The key half is versioned (round-2 rework)
+
+The first version of this fix escaped the key half **unconditionally**, and the decoder translated
+`%3A` and `%25` in every payload it read. Round 2 found that this corrupted valid *legacy*
+payloads: a key written by an older Zene as `a%3A` was read as `a:`, and `a%25` as `a%`, while the
+decoder before the fix (`b61e5f965:src/core/Clipboard.cpp:90`) returned the key text unchanged.
+
+The escape is therefore **versioned**: a key that has to be escaped is *marked*, and only a marked
+key half is unescaped.
+
+- `src/core/Clipboard.cpp:44` — `markedKeyPrefix` (`"%1"`) opens the key half of a payload Zene
+  wrote for a key that needed escaping.
+- `src/core/Clipboard.cpp:142` — `encodeStringPairKey()` writes the key **as it always was** when
+  it carries neither a colon nor a percent sign (no marker, byte-identical payload), and writes
+  `markedKeyPrefix` + the escaped key when it does.
+- `src/core/Clipboard.cpp:59` — a key half that does **not** open with the marker is returned
+  **literally**: it is a payload an older Zene wrote, or one written by hand.
+- `src/core/Clipboard.cpp:65` — a marked key half that carries no escape sequence was never marked
+  by the encoder, so it is returned literally too. That covers a legacy key that merely starts with
+  the marker's text.
+
+So a legacy payload's key is read exactly as it was read before the fix, and a key that Zene had to
+escape is distinguishable from every legacy payload of the same key - which is what
+`tests/src/gui/BrowserDragUrlTest.cpp:390` asserts.
+
+The one residual, stated plainly: a legacy key that *both* opens with the marker's text and
+carries an escape sequence would still be read as a marked payload. The marker text is `%1`, the
+key namespace is product-controlled (every key in use is a lower-case identifier such as
+`samplefile`, `clip_0`, `track_1`, `float_value`), and no such key exists in the tree; a legacy key
+would have to be crafted to collide.
 
 ### Why every reader stays consistent
 
@@ -75,15 +105,19 @@ copies and were **not** edited; they parse plain keys, whose payload bytes are u
 
 ## Evidence table
 
+All rows below describe the **current** tree (round 2). The round-1 rows are kept at the end for
+the record; round 2 re-ran every proof against the reworked codec.
+
 | Check | Exact command and result |
 | --- | --- |
-| RED before the fix | `cmake --build build --target BrowserDragUrlTest > .../logs/build-1.log 2>&1; echo EXIT=$?` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-1.log 2>&1; echo EXIT=$?` from `build/tests` -> **EXIT=8**. Failing assertions: `aKeyWithAColonSurvivesTheStringPairPayload` (actual key `preset`, expected `preset:factory`), `aKeyWithAPercentSignSurvivesTheStringPairPayload` (actual `%`, expected `%:`), `aDragEnterAcceptsTheWholeColonKey` (drag-enter refused the allowed colon key), `theClipboardKeepsAColonKeyIntact` (actual key `preset`, expected `preset:factory`). |
-| GREEN after the fix | `cmake --build build --target zene BrowserDragUrlTest > .../logs/build-5.log 2>&1; echo EXIT=$?` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-4.log 2>&1; echo EXIT=$?` from `build/tests` -> **EXIT=0**, 1/1 CTest target passed. |
-| Reversed-fix proof (4b) | `git diff -- include/Clipboard.h src/core/Clipboard.cpp src/gui/StringPairDrag.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch` -> **EXIT=0**; `cmake --build build --target zene BrowserDragUrlTest > .../logs/build-6.log 2>&1` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-5.log 2>&1` -> **EXIT=8**, the same four assertions fail again. |
-| Restored-fix proof (4b) | `git apply .../logs/fix.patch` -> **EXIT=0**; `cmake --build build --target zene BrowserDragUrlTest > .../logs/build-7.log 2>&1` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-6.log 2>&1` -> **EXIT=0**, 1/1 passed. |
-| Affected family | `ctest -R 'BrowserDragUrlTest\|Lv2InstrumentKeyRegressionTest\|AudioFileProcessorPlayheadTest\|AudioFileProcessorWaveViewTest\|SampleEditorDialogTest' --output-on-failure > .../logs/test-3.log 2>&1` from `build/tests` -> **EXIT=0**, **5 CTest test targets executed, 5/5 passed**. |
-| Gates (`feature_check.py`) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gate-1.log 2>&1` -> **EXIT=0**; all eight rows PASS (`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`). |
+| RED: the whole product change reverted (base `b61e5f965`) | `git diff b61e5f965 -- include/Clipboard.h src/core/Clipboard.cpp src/gui/StringPairDrag.cpp > .../logs/fix-full.patch && git apply -R .../logs/fix-full.patch` -> **EXIT=0**; `cmake --build build --target zene BrowserDragUrlTest > .../logs/build-11.log 2>&1` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-11.log 2>&1` -> **EXIT=8**. Failing assertions: `aKeyWithAColonSurvivesTheStringPairPayload`, `aKeyWithAPercentSignSurvivesTheStringPairPayload`, `aDragEnterAcceptsTheWholeColonKey`, `theClipboardKeepsAColonKeyIntact`, `anEscapedKeyIsMarkedInThePayload`. |
+| GREEN with the fix in place | `git apply .../logs/fix-full.patch` -> **EXIT=0**; `cmake --build build --target zene BrowserDragUrlTest > .../logs/build-12.log 2>&1` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-12.log 2>&1` -> **EXIT=0**, 1/1 CTest target passed, 16/16 cases in the binary. |
+| 4b for the round-2 rework: the rework reverted | `git diff -- include/Clipboard.h src/core/Clipboard.cpp src/gui/StringPairDrag.cpp > .../logs/fix-round2.patch && git apply -R .../logs/fix-round2.patch` -> **EXIT=0**; `cmake --build build --target zene BrowserDragUrlTest > .../logs/build-9.log 2>&1` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-9.log 2>&1` -> **EXIT=8**: `aLegacyPayloadIsReadLiterally` fails with actual key `a:` and expected `a%3A` - exactly the compatibility regression round 2 reported. |
+| 4b for the round-2 rework: restored | `git apply .../logs/fix-round2.patch` -> **EXIT=0**; `cmake --build build --target zene BrowserDragUrlTest > .../logs/build-10.log 2>&1` -> **EXIT=0**; `ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-10.log 2>&1` -> **EXIT=0**, 1/1 passed. |
+| Affected family (the five focused CTest cases) | `cmake --build build --target zene BrowserDragUrlTest SampleEditorDialogTest AudioFileProcessorPlayheadTest AudioFileProcessorWaveViewTest ControlDeviceCatalogueTest partc_ref_lv2instrument partc_ref_audiofileprocessor > .../logs/build-13.log 2>&1` -> **EXIT=0**; `ctest -R 'BrowserDragUrlTest\|Lv2InstrumentKeyRegressionTest\|AudioFileProcessorPlayheadTest\|AudioFileProcessorWaveViewTest\|SampleEditorDialogTest' --output-on-failure > .../logs/test-13.log 2>&1` from `build/tests` -> **EXIT=0**, **5 CTest test targets executed, 5/5 passed**. |
+| Gates (`feature_check.py`) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gate-2.log 2>&1` -> **EXIT=0**; all eight rows PASS (`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, `file-length`). |
 | Gates (`submit_check.py`) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p16-236` -> **EXIT=0** (see the Self-check below). |
+| Round-1 record | RED `.../logs/test-1.log` **EXIT=8**; GREEN `.../logs/test-4.log` **EXIT=0**; reversed fix `.../logs/test-5.log` **EXIT=8**; restored `.../logs/test-6.log` **EXIT=0**; family `.../logs/test-3.log` **EXIT=0**, 5/5; gates `.../logs/gate-1.log` **EXIT=0**. |
 
 All log files are in
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-236.r2/logs/`.
@@ -93,6 +127,7 @@ All log files are in
 All builds ran from the worktree root; all ctest runs ran from `build/tests`.
 
 ```text
+# round 1
 cmake --build build --target BrowserDragUrlTest > .../logs/build-1.log 2>&1; echo EXIT=$?  # EXIT=0, test only, product still buggy
 ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-1.log 2>&1; echo EXIT=$?  # EXIT=8, RED
 cmake --build build --target zene BrowserDragUrlTest > .../logs/build-2.log 2>&1; echo EXIT=$?  # EXIT=2, one target name does not exist in this build tree; corrected in build-3
@@ -108,14 +143,37 @@ git apply .../logs/fix.patch; echo EXIT=$?  # EXIT=0, fix restored
 cmake --build build --target zene BrowserDragUrlTest > .../logs/build-7.log 2>&1; echo EXIT=$?  # EXIT=0, fix restored
 ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-6.log 2>&1; echo EXIT=$?  # EXIT=0, restored-fix GREEN
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gate-1.log 2>&1; echo EXIT=$?  # EXIT=0, all eight gate rows PASS
+
+# round 2 - the key half is versioned, so a legacy payload's key is read literally
+cmake --build build --target zene BrowserDragUrlTest > .../logs/build-8.log 2>&1; echo EXIT=$?  # EXIT=0, versioned codec in place
+ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-8.log 2>&1; echo EXIT=$?  # EXIT=0, 16/16 cases in the binary
+git diff -- include/Clipboard.h src/core/Clipboard.cpp src/gui/StringPairDrag.cpp > .../logs/fix-round2.patch && git apply -R .../logs/fix-round2.patch; echo EXIT=$?  # EXIT=0, the round-2 rework reversed
+cmake --build build --target zene BrowserDragUrlTest > .../logs/build-9.log 2>&1; echo EXIT=$?  # EXIT=0, rework reversed
+ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-9.log 2>&1; echo EXIT=$?  # EXIT=8, aLegacyPayloadIsReadLiterally: actual "a:", expected "a%3A"
+git apply .../logs/fix-round2.patch; echo EXIT=$?  # EXIT=0, rework restored
+cmake --build build --target zene BrowserDragUrlTest > .../logs/build-10.log 2>&1; echo EXIT=$?  # EXIT=0, rework restored
+ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-10.log 2>&1; echo EXIT=$?  # EXIT=0, restored GREEN
+git diff b61e5f965 -- include/Clipboard.h src/core/Clipboard.cpp src/gui/StringPairDrag.cpp > .../logs/fix-full.patch && git apply -R .../logs/fix-full.patch; echo EXIT=$?  # EXIT=0, the whole product change reversed
+cmake --build build --target zene BrowserDragUrlTest > .../logs/build-11.log 2>&1; echo EXIT=$?  # EXIT=0, whole change reversed
+ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-11.log 2>&1; echo EXIT=$?  # EXIT=8, five failing cases
+git apply .../logs/fix-full.patch; echo EXIT=$?  # EXIT=0, whole change restored
+cmake --build build --target zene BrowserDragUrlTest > .../logs/build-12.log 2>&1; echo EXIT=$?  # EXIT=0, whole change restored
+ctest -R '^BrowserDragUrlTest$' --output-on-failure > .../logs/test-12.log 2>&1; echo EXIT=$?  # EXIT=0, GREEN
+cmake --build build --target zene BrowserDragUrlTest SampleEditorDialogTest AudioFileProcessorPlayheadTest AudioFileProcessorWaveViewTest ControlDeviceCatalogueTest partc_ref_lv2instrument partc_ref_audiofileprocessor > .../logs/build-13.log 2>&1; echo EXIT=$?  # EXIT=0, the five focused targets rebuilt
+ctest -R 'BrowserDragUrlTest|Lv2InstrumentKeyRegressionTest|AudioFileProcessorPlayheadTest|AudioFileProcessorWaveViewTest|SampleEditorDialogTest' --output-on-failure > .../logs/test-13.log 2>&1; echo EXIT=$?  # EXIT=0, 5/5 focused cases
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gate-2.log 2>&1; echo EXIT=$?  # EXIT=0, all eight gate rows PASS
 ```
 
 ## Files committed
 
+Round 1 (commit `e22f0ec9d`) and round 2 (the versioned key half, this commit) together touch:
+
 - `include/Clipboard.h` - declares the StringPair key codec.
-- `src/core/Clipboard.cpp` - the codec: encode in `copyStringPair()`, unescape in `decodeKey()`.
+- `src/core/Clipboard.cpp` - the codec: mark and escape the key in `copyStringPair()`, unescape a
+  marked key in `decodeKey()`, read an unmarked (legacy) key literally.
 - `src/gui/StringPairDrag.cpp` - the drag producer encodes the key; drag-enter reads it through the shared decoder.
-- `tests/src/gui/BrowserDragUrlTest.cpp` - the regression (five new cases).
+- `tests/src/gui/BrowserDragUrlTest.cpp` - the regression (eight new cases: five for the colon-key
+  fix, three for the legacy-payload compatibility round 2 asked for).
 - `tests/upstream-modifications.txt` - the three inherited files declared with their reasons.
 - `docs/qwen-fixes-2026-10/cluster-new-p16-236.md` - this report.
 
@@ -126,18 +184,28 @@ registered in `tests/fork-sources.txt:2742` and already built by `tests/CMakeLis
 ## Self-check
 
 1. **"The regression test FAILS with your product change reverted and PASSES with it (exit codes)."**
-   Reverted: `git diff -- include/Clipboard.h src/core/Clipboard.cpp src/gui/StringPairDrag.cpp >
-   .../logs/fix.patch && git apply -R .../logs/fix.patch` (EXIT=0), rebuild (`build-6.log`,
-   EXIT=0), `ctest -R '^BrowserDragUrlTest$'` (`test-5.log`) -> **EXIT=8** with the four failing
-   assertions listed in the evidence table. Restored: `git apply .../logs/fix.patch` (EXIT=0),
-   rebuild (`build-7.log`, EXIT=0), same ctest (`test-6.log`) -> **EXIT=0**, 1/1 passed. The
-   reverse-applied patch contains product files only; the regression stayed in place and still
-   compiled, so the failure is the assertion, not a broken build.
+   Two reversals were run, both on product files only, with the regression left in place and still
+   compiling (so the failure is an assertion, never a broken build).
+   - The **whole** product change vs the base `b61e5f965`: `git diff b61e5f965 -- include/Clipboard.h
+     src/core/Clipboard.cpp src/gui/StringPairDrag.cpp > .../logs/fix-full.patch && git apply -R
+     .../logs/fix-full.patch` (EXIT=0), rebuild (`build-11.log`, EXIT=0), `ctest -R
+     '^BrowserDragUrlTest$'` (`test-11.log`) -> **EXIT=8** with five failing cases (the four
+     colon/percent cases and `anEscapedKeyIsMarkedInThePayload`). Restored: `git apply
+     .../logs/fix-full.patch` (EXIT=0), rebuild (`build-12.log`, EXIT=0), same ctest (`test-12.log`)
+     -> **EXIT=0**, 1/1 passed.
+   - The **round-2 rework** on its own: `git diff -- include/Clipboard.h src/core/Clipboard.cpp
+     src/gui/StringPairDrag.cpp > .../logs/fix-round2.patch && git apply -R .../logs/fix-round2.patch`
+     (EXIT=0), rebuild (`build-9.log`, EXIT=0), `ctest -R '^BrowserDragUrlTest$'` (`test-9.log`)
+     -> **EXIT=8**, `aLegacyPayloadIsReadLiterally` fails with actual key `a:` and expected `a%3A`
+     - the compatibility regression round 2 reported, now guarded. Restored: `git apply
+     .../logs/fix-round2.patch` (EXIT=0), rebuild (`build-10.log`, EXIT=0), same ctest
+     (`test-10.log`) -> **EXIT=0**.
 
 2. **"The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses)."**
-   The five new cases in `tests/src/gui/BrowserDragUrlTest.cpp:297-357` use only injected values:
-   a literal key, a literal value, and a `QMimeData` built in the test
-   (`StringPairDrag::createMimeData()`), decoded through `QDropEvent`/`QDragEnterEvent` objects
+   The eight new cases in `tests/src/gui/BrowserDragUrlTest.cpp:297-400` use only injected values:
+   a literal key, a literal value, and a `QMimeData` built in the test - either through
+   `StringPairDrag::createMimeData()` or, for the legacy cases, from raw bytes written straight into
+   the MIME type with `QMimeData::setData()` - decoded through `QDropEvent`/`QDragEnterEvent` objects
    constructed in the test. No timer, no sleep, no clock, no thread, no polling - every assertion
    reads a value the test itself put in. The clipboard case
    (`tests/src/gui/BrowserDragUrlTest.cpp:351`) writes and reads the clipboard synchronously within
@@ -146,7 +214,7 @@ registered in `tests/fork-sources.txt:2742` and already built by `tests/CMakeLis
 3. **"The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent."**
    The cause is the payload format, so the fix is one codec shared by both producers and both
    decoders, not a per-site patch. Checked and consistent:
-   - Producers: `Clipboard::copyStringPair()` (`src/core/Clipboard.cpp:103`, used by
+   - Producers: `Clipboard::copyStringPair()` (`src/core/Clipboard.cpp:130`, used by
      `src/gui/clips/ClipView.cpp:1289` for the system clipboard) and
      `StringPairDrag::createMimeData()` (`src/gui/StringPairDrag.cpp:94`, used by the file
      browser, the search results, the automatable-model and instrument drags, the float editor,
@@ -164,21 +232,30 @@ registered in `tests/fork-sources.txt:2742` and already built by `tests/CMakeLis
    - `tests/src/gui/SampleEditorDialogTest.cpp:454` writes the payload by hand
      (`"samplefile:/tmp/dropped.wav"`); it still decodes to key `samplefile` and value
      `/tmp/dropped.wav`, and the family run above passes.
+   - Round 2 changed only the codec, so the callers above needed no further change; the version
+     marker is applied and read in exactly one place each (`src/core/Clipboard.cpp:142` and
+     `src/core/Clipboard.cpp:57`).
 
 4. **"No collateral damage: old projects and saved data still load as before, and any limit or check you added does not hit other callers that legitimately exceed it."**
    The payload shape is unchanged (`key:value`), and for every key in use today - `samplefile`,
    `sampledata`, `presetfile`, `pluginpresetfile`, `soundfontfile`, `patchfile`, `vstpluginfile`,
    `importedproject`, `projectfile`, `clip_<tracktype>`, `track_<tracktype>`, `float_value`,
    `automatable_model`, `instrument`, `vstplugin` - neither a colon nor a percent sign occurs, so
-   the escaped payload is **byte-identical** to the old one. The regression
-   `anOrdinaryKeyKeepsItsStringPairPayload` (`tests/src/gui/BrowserDragUrlTest.cpp:324`) pins that
-   byte equality (`samplefile:/tmp/dropped.wav`) and passes. Nothing is stored in a saved project
-   or in a session file, so no saved data changes; a payload written by an older Zene (or by hand)
-   still decodes unchanged, because a percent sign that is not followed by `3A` or `25` stays a
-   literal percent sign. No limit, threshold or check was added, so no caller that legitimately
-   exceeds one can be hit. The one behaviour change outside the bug is that a drag whose key
-   carries a colon is now *refused* by a target that does not allow that whole key, where before
-   it was accepted and decoded into the wrong pair - that is the fix.
+   the payload is **byte-identical** to the old one - no marker, no escape. The regression
+   `anOrdinaryKeyKeepsItsPayloadBytes` (`tests/src/gui/BrowserDragUrlTest.cpp:324`) pins that byte
+   equality (`samplefile:/tmp/dropped.wav`) and passes. Nothing is stored in a saved project or in a
+   session file, so no saved data changes.
+   **Legacy payloads are read exactly as the old decoder read them**: a key half that does not
+   carry the version marker is returned literally (`src/core/Clipboard.cpp:59`), so a legacy key
+   `a%3A` stays `a%3A` and `a%25` stays `a%25` instead of being decoded into `a:` and `a%` - the
+   compatibility regression round 2 found, which the version marker removes. The regressions
+   `aLegacyPayloadIsReadLiterally` (`tests/src/gui/BrowserDragUrlTest.cpp:361`) and
+   `aLegacyPayloadWithAColonKeyIsReadAsBefore` (`tests/src/gui/BrowserDragUrlTest.cpp:379`) pin
+   that, from raw legacy MIME bytes.
+   No limit, threshold or check was added, so no caller that legitimately exceeds one can be hit.
+   The one behaviour change outside the bug is that a drag whose key carries a colon is now
+   *refused* by a target that does not allow that whole key, where before it was accepted and
+   decoded into the wrong pair - that is the fix.
 
 5. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it."**
    Not applicable - the verdict is FIXED. The defect was confirmed empirically before the change:
