@@ -106,7 +106,10 @@ layer's own bound, next to `modulatorsAndRoutesAreBounded()`.
 | 4b - reversed fix (test must FAIL) | `git diff -- src/core/ModulationLayer.cpp include/ModulationLayer.h > .../logs/fix.patch` **EXIT=0**; `git apply -R .../logs/fix.patch` **EXIT=0**; `cmake --build build --target ModulationLayerValueTest -j 20 > .../logs/build-4b-red.log 2>&1` **EXIT=0**; `ctest -R '^ModulationLayerValueTest$' --output-on-failure > .../logs/test-4b-red.log 2>&1` **EXIT=8** - the same `FAIL!` line. |
 | 4b - restored fix (test must PASS) | `git apply .../logs/fix.patch` **EXIT=0**; `cmake --build build --target ModulationLayerValueTest -j 20 > .../logs/build-4b-green.log 2>&1` **EXIT=0**; `ctest -R '^ModulationLayerValueTest$' --output-on-failure > .../logs/test-4b-green.log 2>&1` **EXIT=0** - 1/1 passed. |
 | Affected family | `cmake --build build --target ModulatorToolsTest ModulatorPanelTest -j 20 > .../logs/build-family-extra.log 2>&1` **EXIT=0**; `ctest -R 'Modulation\|Modulator' --output-on-failure > .../logs/test-family-2.log 2>&1` **EXIT=0** - 8/8 passed (ModulationLayerValueTest, ModulationLayerTest, ModulationAudioViewTest, ControlModulatorCommandsTest, ModulationLayerProjectRoundTripTest, ModulationRateTest, ModulatorToolsTest, ModulatorPanelTest). |
-| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-199-port > .../logs/gate-2.log 2>&1` **EXIT=1** - `no-upstream-regression` PASS, `check-namespace` PASS, `no-tautology` PASS, `doc-figures` PASS, `complexity` PASS ("no new item in your files"), `file-length` PASS ("no new item in your files"); `fork-sources` FAIL and `all-sources-reproduce` FAIL are pre-existing on this branch (see "Gates" below). |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-199-port > .../logs/gate-3.log 2>&1` **EXIT=0** - `RESULT: PASS`, all eight rows green: `fork-sources` exit 0, `all-sources-reproduce` exit 0, `no-upstream-regression` exit 0, `check-namespace` exit 0, `no-tautology` exit 0, `doc-figures` exit 0, `complexity` "no new item in your files", `file-length` "no new item in your files". |
+| Gate 9 by hand | `bash tests/fork-sources-gate.sh` **EXIT=0** - "PASS: every tracked source in scope is registered (1958 fork-NEW, 1214 inherited, 48 tooling)", 0 stale entries; `bash tests/all-sources-reproduce.sh` **EXIT=0** - "REPRODUCES: the entry list in all-sources.txt is the recipe's own output." |
+| Whole-tree scope after the manifest repair | `bash tests/complexity-gate.sh --scope all --check` **EXIT=1**, 155 REGRESSION lines (before the repair: 560); `bash tests/file-length-gate.sh --scope all --check` **EXIT=1**, 123 REGRESSION lines (before: 247). The remainder is first-party drift that is not this branch's; the vendored third-party files the scope no longer owns are gone from both lists. |
+| Review round 1 rebuild | `cmake --build build --target zene ModulationLayerValueTest ModulationLayerTest ModulationLayerProjectRoundTripTest ModulationRateTest ModulationAudioViewTest ControlModulatorCommandsTest ModulatorToolsTest ModulatorPanelTest -j 20 > .../logs/build-review-round1.log 2>&1` **EXIT=0**; `ctest -R 'Modulation\|Modulator' --output-on-failure > .../logs/test-family-review1.log 2>&1` **EXIT=0** - 8/8 passed. |
 | Pre-existing transcript failures | `ctest -R 'ControlUndoStructuralTranscript\|ControlReversibilityTranscript' --output-on-failure > .../logs/test-transcript-baseline.log 2>&1` **EXIT=8** with the fix REVERTED - the same two failures as with the fix applied (`.../logs/test-undo-family.log`, **EXIT=8**): "FAIL: plugin.load returned no instance id" and "the LADSPA host plugin 'ladspaeffect' is not in this build". Neither mentions a modulator; both are this build's missing LADSPA plugin. |
 
 ### Gates
@@ -121,36 +124,61 @@ running the very same two ratchet commands there and writing the script's own ca
 (`gate-baselines/0a8842d397b331a98dcfce751c4f4bb2e8476cad.json`). No gate limit or
 baseline was moved.
 
-`fork-sources` and `all-sources-reproduce` fail on this branch before my change as well, and
-the failure is provably not mine:
+#### The two red rows: `fork-sources` and `all-sources-reproduce`
 
-- `tests/fork-sources.txt` says so in its own header (2026-10-12 entry): "the recipe below
-  does not parse (its second awk line ends in a stray continuation: bash reports a syntax
-  error at its line 5, already at HEAD), so this list cannot be re-derived mechanically
-  until that is fixed".
-- The failing entries are the vendored third-party tree: `tests/all-sources.txt` lists
-  1150 `plugins/SfzPlayer/sfizz/...` files while its own header recipe excludes that tree
-  (`grep -vE '^(...|plugins/SfzPlayer/sfizz/)'`, `tests/all-sources.txt:22`), so the manifest
-  and the recipe can never agree on this branch.
-- Both gates compare a manifest with a recipe whose input is the set of files added since
-  the upstream base commit. That set is byte-identical before and after my commit:
+Both rows were red on this branch before any of my work, and the review asked for them to be
+green. The cause was a real drift in a shared ledger, and it was repaired the way the
+ledger itself prescribes.
 
-  ```
-  git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' | sort > /tmp/recipe-head.set   # 4142 files
-  git diff --name-only --diff-filter=A 4e677cb6c6ab 0a8842d397b331a98dcfce751c4f4bb2e8476cad -- src include plugins tests/src/core tests/src/plugins tests/src/tracks | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' | sort > /tmp/recipe-base.set   # 4142 files
-  diff /tmp/recipe-head.set /tmp/recipe-base.set   # RECIPE_INPUTS_IDENTICAL
-  ```
+**What was wrong.** `tests/all-sources.txt` publishes the command that generates it ("Regenerate
+with", `tests/all-sources.txt:20-23`) and `tests/all-sources-reproduce.sh` runs that command on
+every gate run. The train commit `5ef150729` ("chore(train-10): ... all-sources re-derived
+(automatic merge train)") added the 1148 vendored `plugins/SfzPlayer/sfizz/...` files to the
+entry list **without touching the recipe**:
 
-  `git diff --name-status 0a8842d39 HEAD` shows my commit adds one file - a markdown report
-  under `docs/`, outside the recipe's pathspec and not a C/C++ extension - and modifies three
-  existing ones. It touches neither manifest. The gate's diff, and therefore its FAIL, is
-  identical to the base's.
-- The complexity and file-length ratchets - the two rows that are red on the train on purpose -
-  report "no new item in your files".
-- Making those two rows green would mean hand-editing a shared scope manifest (the gate's own
-  message: "never hand-edit, never delete a path the recipe derives") or re-anchoring a gate.
-  Both are forbidden by AGENTS.md and neither is this bug's business, so they are reported
-  as pre-existing rather than "fixed" here.
+```
+git show 5ef150729^:tests/all-sources.txt | grep -c 'plugins/SfzPlayer/sfizz/'   # 2
+git show 5ef150729:tests/all-sources.txt  | grep -c 'plugins/SfzPlayer/sfizz/'   # 1150
+git show 5ef150729 -- tests/all-sources.txt | grep -E '^[-+]# '                  # no header line changed
+```
+
+The recipe excludes that tree on purpose (`grep -vE '^(...|plugins/SfzPlayer/sfizz/)'`,
+`tests/all-sources.txt:22`), so from that commit on the manifest could not reproduce from its
+own command and Gate 9 has been red ever since. The whole-tree scope also measured 1148
+vendored third-party files it does not own - 560 complexity and 247 file-length regressions
+in `--scope all`, none of which any ratchet baseline ever covered (`grep -c 'SfzPlayer/sfizz'
+tests/complexity-baseline-all.tsv` -> 0, the same for `tests/file-length-baseline-all.tsv`).
+
+**The repair.** The list was re-derived from the recipe - exactly what the gate's own message
+asks for ("run the 'Regenerate with' command from the manifest's header and write its output
+over the entry list (never hand-edit, never delete a path the recipe derives)"). Nothing was
+hand-edited, and no path the recipe derives was dropped:
+
+```
+git diff --stat -- tests/all-sources.txt        # 10 insertions(+), 1148 deletions(-)
+git diff -U0 -- tests/all-sources.txt | grep -c "^-plugins/SfzPlayer/sfizz/"   # 1148
+git diff -U0 -- tests/all-sources.txt | grep -E "^[-+]" | grep -v "^[-+][-+]" | grep -v "plugins/SfzPlayer/sfizz/"
+# -> only the 10 header lines of the dated note below
+```
+
+The 1148 removed paths are exactly the ones the recipe does not derive; the recipe derives
+3036 paths and the manifest now holds exactly those 3036 (nothing was added, nothing else was
+removed). The dated note in the manifest's header records the re-derivation and its reason,
+in the file's own convention.
+
+**Why this direction and not the other.** Four independent signals say the vendored sfizz tree
+is out of scope: the manifest's header lists it among the trees "excluded on purpose", the
+recipe excludes it, Gate 9's registration scan excludes it (`is_excluded()` in
+`tests/fork-sources-gate.sh`), and no ratchet baseline ever held an entry for it. Adding the
+tree to the recipe instead would have put 1148 vendored files into the measured scope with no
+baseline behind them - the opposite of what the manifest documents.
+
+**Effect.** `bash tests/all-sources-reproduce.sh` -> EXIT=0 ("REPRODUCES");
+`bash tests/fork-sources-gate.sh` -> EXIT=0 ("every tracked source in scope is registered
+(1958 fork-NEW, 1214 inherited, 48 tooling)", 0 stale entries); `feature_check.py` -> EXIT=0,
+`RESULT: PASS`. The whole-tree scope shrank to the files this product owns: complexity
+regressions 560 -> 155, file-length regressions 247 -> 123 (the remainder is first-party
+drift that is not this branch's).
 
 ## Self-check
 
@@ -193,7 +221,9 @@ Answers to each item the completion check asks, with the evidence.
   whose source was validated when it was authored - so the check never refuses a legitimate
   insertion. The bound is the layer's own declared bound
   (`include/ModulationLayer.h:193`), not a smaller one: a modulator with exactly eight
-  routes is still accepted, and the regression asserts that.
+  routes is still accepted, and the regression asserts that. The ledger repair touches no
+  product code at all: it removes 1148 vendored third-party paths from the whole-tree scope
+  manifest and adds a dated note, so no build, no runtime and no saved project changes.
 - **Is the verdict ALREADY-FIXED or FALSE-POSITIVE?** No - the verdict is FIXED. Before
   this commit, `src/core/ModulationLayer.cpp:443` held no route check at all (the diff of
   this commit adds the two checks at `:455` and `:458`), and the regression failed on that
@@ -211,7 +241,13 @@ Rest of the self-check:
   `ControlModulatorCommandsTest::bindDriveUndoAndRebind`,
   `tests/src/core/ControlModulatorCommandsTest.cpp:210-219`, which passes). No new control
   command was added.
-- **Registration?** No new file was added: the product files and the test file were already
-  registered (`include/ModulationLayer.h` and `src/core/ModulationLayer.cpp` in
+- **Registration?** No new source file was added: the product files and the test file were
+  already registered (`include/ModulationLayer.h` and `src/core/ModulationLayer.cpp` in
   `tests/fork-sources.txt`; the test source is registered in `tests/all-sources.txt`, the
-  manifest `tests/fork-sources.txt` points at for the modulation test files).
+  manifest `tests/fork-sources.txt` points at for the modulation test files). The one new
+  file this branch adds is the markdown report under `docs/`, which no scope manifest lists
+  by extension. The scope manifest `tests/all-sources.txt` was re-derived from its own
+  published recipe (the 1148 vendored `plugins/SfzPlayer/sfizz/...` paths the train commit
+  `5ef150729` had added to it are what the recipe excludes), so Gate 9 is green again:
+  `bash tests/fork-sources-gate.sh` EXIT=0 - "every tracked source in scope is registered
+  (1958 fork-NEW, 1214 inherited, 48 tooling)", 0 stale entries.
