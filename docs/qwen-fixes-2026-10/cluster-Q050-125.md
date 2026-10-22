@@ -123,7 +123,16 @@ The regression test `ClipWaveformEditTest::altDragStillMovesTheClipAndAddsNoPoin
 with room for points and the press ON the curve, an Alt-drag moves the clip (`startPosition` advances) and adds
 no point. Negative control (the old Alt-add binding restored, `build EXIT 0`):
 `./ClipWaveformEditTest altDragStillMovesTheClipAndAddsNoPoint` -> **FAIL** (`the Alt-drag added an envelope
-point (2 -> 3)`); with the new binding **EXIT 0**. The full reworked case set is 10/10.
+point (2 -> 3)`); with the new binding **EXIT 0**. The full reworked case set is 10/10 and the 15-test focused
+set is **EXIT 0**; `bash tests/fork-sources-gate.sh` and `all-sources-reproduce.sh` are **EXIT 0**.
+
+The reviewer's non-blocking note (no waveform-pixel comparison after an envelope edit) was attempted and then
+DROPPED rather than shipped weak: the drawn band at the default clip height saturates the clip (a 0.6 sample
+fills it), and every candidate image assertion still passed with the envelope removed from the drawn gain
+(`drawnGainAt` forced to ignore `envelopeCount`, `build EXIT 0`), because it was measuring the gain-line overlay
+and the background, not the waveform amplitude. The drawn curve's fidelity is already proven directly by
+`ClipPolarityTest::theDrawnCurveIsTheRenderedMultiplier` (the drawn curve vs the rendered audio) and
+`theDrawnCurveIsIndependentOfTheRepaintedPixelRange`, so no weak image test was added.
 
 ## Self-check
 
@@ -146,7 +155,10 @@ Answered in the order `submit_check.py` asks ("?" items), with the commands and 
      **EXIT 8**; old value-match index with two identical points -> **EXIT 8**; drawn gain without the start
      offset -> **EXIT 8**; each restored -> **EXIT 0**.
 2. **Every acceptance criterion is proven by a test I ran**, per criterion and with its exit in the acceptance
-   table above (all 0): gain drag + envelope add/move + drawn waveform follows (`ClipWaveformEditTest`),
+   table above (all 0, re-run after the r1 gesture rework: the 15-test focused set is EXIT 0 and
+   `ClipWaveformEditTest` is 10/10), including the r1 regression case
+   `altDragStillMovesTheClipAndAddsNoPoint` (Alt-drag moves the clip and adds no point; negative control with
+   the old Alt binding FAILs, `the Alt-drag added an envelope point (2 -> 3)`): gain drag + envelope add/move + drawn waveform follows (`ClipWaveformEditTest`),
    polarity render and source untouched (`ClipPolarityTest`), the menu display half
    (`ClipWaveformEditTest::thePolarityMenuItemFlipsTheClipThroughTheCommand`), the agent surface
    (`ControlClipPolarity`), persistence/legacy (`ClipPolarityTest::theClipElementCarriesItOnlyWhenInverted`
