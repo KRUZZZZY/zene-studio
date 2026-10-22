@@ -248,7 +248,9 @@ void AutomatableModelViewSlots::removeConnection()
 
 	if( m->controllerConnection() )
 	{
-		delete m->controllerConnection();
+		// The model owns the connection it was given: setControllerConnection()
+		// disposes of the one it replaces (new-p15-273), so deleting it here
+		// first would be a double free.
 		m->setControllerConnection( nullptr );
 	}
 }

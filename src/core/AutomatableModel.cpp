@@ -686,7 +686,19 @@ void AutomatableModel::unlink()
 void AutomatableModel::setControllerConnection( ControllerConnection* c )
 {
 	auto changeGuard = modelChangeGuard(this);
+	ControllerConnection* const previous = m_controllerConnection;
 	m_controllerConnection = c;
+	if( previous != nullptr && previous != c )
+	{
+		// The connection this model had is given up: it must not keep driving
+		// the model, and its death must not clear the connection that replaces
+		// it. Disconnecting it first removes its destroyed() callback, so the
+		// disposal below cannot reach this model at all. The model owns the
+		// connection it is given (the destructor disposes of it), so the one it
+		// replaces is disposed of here instead of being leaked.
+		previous->disconnect( this );
+		delete previous;
+	}
 	invalidateLinkedValueBufferCaches();
 	if( c )
 	{
@@ -999,6 +1011,17 @@ const AutomationRamp* AutomatableModel::automationRamp() const noexcept
 void AutomatableModel::unlinkControllerConnection()
 {
 	auto changeGuard = modelChangeGuard(this);
+	// Only the connection this model holds may clear it. A connection that was
+	// replaced (setControllerConnection() disposes of it, so this is the
+	// belt-and-braces case of a sender that is already gone) must not take the
+	// connection that replaced it down when it dies. sender() is null for a
+	// direct call, which keeps the historic "drop the current connection"
+	// meaning of this slot.
+	QObject* const dying = sender();
+	if( dying != nullptr && dying != m_controllerConnection )
+	{
+		return;
+	}
 	if( m_controllerConnection )
 	{
 		m_controllerConnection->disconnect( this );

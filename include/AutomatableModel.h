@@ -172,6 +172,12 @@ public:
 	}
 
 
+	/*! Give this model the controller connection @a c (nullptr to remove it).
+	 *  The model OWNS the connection it is given and disposes of the one it
+	 *  replaces - or of the one it gives up when @a c is nullptr - so the
+	 *  previous connection is never leaked and its destroyed() handler is
+	 *  disconnected first, i.e. its death cannot clear the new connection.
+	 *  A caller must therefore not delete a connection it has handed over. */
 	void setControllerConnection( ControllerConnection* c );
 
 #ifdef LMMS_TESTING

@@ -26,8 +26,10 @@
 #include <QtTest>
 #include <QDomDocument>
 #include <QDomElement>
+#include <QPointer>
 #include "AutomatableModel.h"
 #include "ComboBoxModel.h"
+#include "ControllerConnection.h"
 #include "Engine.h"
 #include "LadspaBase.h"
 #include "LadspaControl.h"
@@ -212,6 +214,51 @@ private slots: // tests
 		// A person changes the loaded model: NOW it is the last touched one.
 		loaded.setValue(11.f);
 		QCOMPARE(AutomatableModel::lastTouched(), loaded.id());
+	}
+
+	//! Cluster new-p15-273: replacing a controller connection gives up the old
+	//! one - it is disconnected and disposed of, not left alive driving the
+	//! model - and a connection that dies later cannot clear the connection
+	//! that replaced it.
+	void replacingTheControllerConnectionGivesUpTheOldOne()
+	{
+		using namespace lmms;
+
+		FloatModel model(0.f, 0.f, 100.f, 1.f);
+		QPointer<ControllerConnection> first(new ControllerConnection(nullptr));
+		model.setControllerConnection(first.data());
+		QCOMPARE(model.controllerConnection(), first.data());
+		QVERIFY(!first.isNull());
+
+		// Replacing connection A with B disposes of A. Leaving A alive leaked it
+		// and kept its valueChanged() wired to the model.
+		QPointer<ControllerConnection> second(new ControllerConnection(nullptr));
+		model.setControllerConnection(second.data());
+		QVERIFY2(first.isNull(), "the replaced controller connection was not disposed of");
+		QCOMPARE(model.controllerConnection(), second.data());
+
+		// A connection that is destroyed while another one is in place must not
+		// clear the connection the model holds: the old connection's destroyed()
+		// handler used to do exactly that.
+		ControllerConnection* const stranger = new ControllerConnection(nullptr);
+		QObject::connect(stranger, &QObject::destroyed, &model,
+			&AutomatableModel::unlinkControllerConnection);
+		delete stranger;
+		QCOMPARE(model.controllerConnection(), second.data());
+
+		// Giving the connection up disposes of it as well (the model owns it).
+		model.setControllerConnection(nullptr);
+		QVERIFY2(second.isNull(), "the connection the model gave up was not disposed of");
+		QVERIFY(model.controllerConnection() == nullptr);
+
+		// A connection the model still holds when it is destroyed is disposed of
+		// (the ownership contract the destructor has always implemented).
+		{
+			FloatModel owned(0.f, 0.f, 100.f, 1.f);
+			QPointer<ControllerConnection> current(new ControllerConnection(nullptr));
+			owned.setControllerConnection(current.data());
+			QCOMPARE(owned.controllerConnection(), current.data());
+		}
 	}
 
 	void customMeterChangeUpdatesSyncOnceAfterReenteringCustom()
