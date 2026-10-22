@@ -178,6 +178,12 @@ const ReversibilityRow kRows[] = {
 		"the clip gain is part of the same Clip serialized state as the fades",
 		"ProjectJournal (Clip checkpoint)",
 		""),
+	R("clip.set_polarity", RC::TrueInverse, true,
+		"the polarity flag is part of the same Clip serialized state as the gain and the fades "
+		"(Clip::saveClipEdits writes `invert` only when set), so the Clip checkpoint the command "
+		"takes before it writes is a live inverse",
+		"ProjectJournal (Clip checkpoint)",
+		""),
 	R("clip.set_record", RC::TrueInverse, true,
 		"the record flag is not in the clip's serialized state, so no checkpoint could restore "
 		"it; the command records the flag's before-value",

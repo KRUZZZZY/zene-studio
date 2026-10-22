@@ -146,6 +146,8 @@ void SamplePlayHandle::applyPreFaded(SampleFrame* buffer, f_cnt_t frames) const
 	const float from = envelopeGainAt(m_edits, static_cast<double>(base) / perTick);
 	const float to = envelopeGainAt(m_edits, static_cast<double>(base + static_cast<std::int64_t>(frames)) / perTick);
 	const float step = frames > 0 ? (to - from) / static_cast<float>(frames) : 0.f;
+	// Q050-125: the clip's polarity multiplies in here, the same signed gain stage as the plain path.
+	const float sign = m_edits.polaritySign();
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		const std::int64_t at = base + static_cast<std::int64_t>(f);
@@ -156,7 +158,7 @@ void SamplePlayHandle::applyPreFaded(SampleFrame* buffer, f_cnt_t frames) const
 			fade *= clipFadeGainAt(static_cast<f_cnt_t>(at), m_clipFrames, m_edgeFadeFrames, m_edgeFadeFrames,
 				m_edits.fadeInShape, m_edits.fadeOutShape);
 		}
-		const float gain = m_edits.gain * fade * (from + step * static_cast<float>(f));
+		const float gain = sign * m_edits.gain * fade * (from + step * static_cast<float>(f));
 		buffer[f][0] *= gain;
 		buffer[f][1] *= gain;
 	}

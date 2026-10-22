@@ -411,6 +411,10 @@ void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 	const float from = envelopeGainAt(m_edits, base / perTick);
 	const float to = envelopeGainAt(m_edits, (base + frames) / perTick);
 	const float step = frames > 0 ? (to - from) / static_cast<float>(frames) : 0.f;
+	// Q050-125: the clip's polarity is one signed multiplier on the same stage as its gain - never a
+	// change to the source buffer (which the browser preview and the metronome share), and a constant
+	// read off the snapshot, so nothing is fetched per frame.
+	const float sign = m_edits.polaritySign();
 	for (f_cnt_t f = 0; f < frames; ++f)
 	{
 		float envelope = clipFadeGainAt(base + f, m_clipFrames, m_fadeInFrames, m_fadeOutFrames,
@@ -421,7 +425,7 @@ void SamplePlayHandle::applyClipEdits(SampleFrame* buffer, f_cnt_t frames) const
 			envelope *= clipFadeGainAt(base + f, m_clipFrames, m_edgeFadeFrames, m_edgeFadeFrames,
 				m_edits.fadeInShape, m_edits.fadeOutShape);
 		}
-		const float gain = m_edits.gain * envelope * (from + step * static_cast<float>(f));
+		const float gain = sign * m_edits.gain * envelope * (from + step * static_cast<float>(f));
 		buffer[f][0] *= gain;
 		buffer[f][1] *= gain;
 	}
