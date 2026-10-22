@@ -109,6 +109,12 @@ saves the same attribute as before.
 
 The test is deterministic: it reads a DOM element and loads it; no clock, no sleep, no thread.
 
+During review, the shared parser's other caller was checked with duplicate `<cuemix>` records:
+a valid route followed by a malformed route must retain the cue loader's prior fallback to
+nowhere. The reviewer added `HardwareIoTest::malformedDuplicateCueOutputKeepsItsPreviousDefaultSemantics`;
+it failed on the submitted refactor, so `loadMixer()` now explicitly applies the cue's default
+when parsing fails. The master's malformed-route behavior is unchanged.
+
 ## The evidence
 
 | Log | Command | Exit | Result |
@@ -126,6 +132,11 @@ The test is deterministic: it reads a DOM element and loads it; no clock, no sle
 | `logs/test-5.log` | `ctest -R '^(HardwareIoTest\|SurroundTest\|ImportTrackIoTest\|MixerWindowsTest\|ControlHardwareIo\|ControlMixingRouting\|MixerRoutingBackwardCompatTest\|MixerAbRegressionTest\|MixerConcurrencyTest)$' --output-on-failure` | 0 | **9/9 passed** |
 | `logs/build-7.log` | `cmake --build build --target zene HardwareIoTest` (after the pristine-HEAD experiment restored the change) | 0 | the final build |
 | `logs/test-6.log` | `ctest -R '^HardwareIoTest$' --output-on-failure` | 0 | 1/1 passed - the final state |
+| `logs/qa-review-cue-red-build.log` | `cmake --build build --target HardwareIoTest -j12` (the duplicate-cue regression against the submitted code) | 0 | test target rebuilt |
+| `logs/qa-review-cue-red-test.log` | `ctest -R '^HardwareIoTest$' --output-on-failure` | 8 | **RED**: `malformedDuplicateCueOutputKeepsItsPreviousDefaultSemantics()` failed; 32 passed, 1 failed |
+| `logs/qa-review-final-build.log` | `cmake --build build --target zene HardwareIoTest -j12` (after restoring cue fallback) | 0 | final focused build |
+| `logs/qa-review-final-test.log` | `ctest -R '^HardwareIoTest$' --output-on-failure` | 0 | 1/1 passed after the cue fallback correction |
+| `logs/qa-review-feature-check.log` | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | **8/8 PASS**, no new complexity or file-length item |
 | `logs/gates-1.log`, `logs/gates-2.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 | the gate script's baseline step stopped with the Bunny lane guard (exit 97) before any gate ran - see "The gate runs" below |
 | `logs/gates-3.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (baseline cache filled from an incomplete base export) | 1 | 6 PASS, 2 FAIL - the file-length row was wrong, the base export was incomplete |
 | `logs/gates-4.log` | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (baseline cache filled from the full base tree) | 1 | **6 PASS, 2 FAIL** - the two failures are pre-existing on the train (see below) |

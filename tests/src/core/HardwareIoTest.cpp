@@ -800,6 +800,26 @@ private slots:
 		QVERIFY(none.effectiveOutput(true).none());
 	}
 
+	void malformedDuplicateCueOutputKeepsItsPreviousDefaultSemantics()
+	{
+		QDomDocument doc;
+		QDomElement mixerElement = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(mixerElement);
+		for (const QString& output : {QStringLiteral("3"), QStringLiteral("3/5")})
+		{
+			QDomElement cue = doc.createElement(QStringLiteral("cuemix"));
+			cue.setAttribute(QStringLiteral("index"), 0);
+			cue.setAttribute(QStringLiteral("output"), output);
+			mixerElement.appendChild(cue);
+		}
+
+		// Before the shared parser refactor, the later malformed record set the cue back to its
+		// default (nowhere) instead of retaining the earlier record's route.
+		hardwareio::loadMixer(mixerElement);
+		QVERIFY(hardwareio::cueMaster(0).output.none());
+		hardwareio::resetMixer();
+	}
+
 	void channelCueLoadsRequireExplicitIndices()
 	{
 		bool ignored = true;

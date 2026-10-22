@@ -310,7 +310,8 @@ void loadMixer(const QDomElement& mixerElement)
 		cue.level = levelOk && std::isfinite(cueLevel) ? std::clamp(cueLevel, 0.f, 2.f) : 1.f;  // unparsable or non-finite: the cuemix's default
 		// A cue's default is nowhere, so a route that does not parse leaves it there.
 		audioio::Destination cueOutput;
-		if (readDestination(element, QStringLiteral("output"), &cueOutput)) { cue.output = cueOutput; }
+		if (!readDestination(element, QStringLiteral("output"), &cueOutput)) { cueOutput = audioio::Destination{}; }
+		cue.output = cueOutput;
 		cue.followListen = savedFlag(element, QStringLiteral("listen"), true);
 	}
 	s_listenToCue = mixerElement.firstChildElement(QStringLiteral("cuelisten")).attribute(QStringLiteral("target")) == QStringLiteral("cue");
