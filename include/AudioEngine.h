@@ -220,7 +220,10 @@ public:
 	//!
 	//! REALTIME-SAFE (cluster new-p15-253 / new-p12-313). On a render worker the engine
 	//! keeps the bus alive until the control thread has removed it from the bus list, so
-	//! no worker can read a bus that was freed under it.
+	//! no worker can read a bus that was freed under it. A bus whose registration is
+	//! still pending (the render owner did not consume the entry yet) is kept alive
+	//! until that entry is consumed - the render owner may still reach it through the
+	//! pending queue.
 	void destroyAudioBusHandle(AudioBusHandle* busHandle);
 
 	//! How many bus registrations a realtime thread published for the render owner
@@ -239,6 +242,12 @@ public:
 	std::uint64_t droppedAudioBusHandleRetirements() const noexcept
 	{
 		return m_droppedAudioBusHandleRetirements.load(std::memory_order_relaxed);
+	}
+	//! How many buses the engine keeps alive because the render owner may still reach
+	//! them through the pending queue (diagnostics, cluster new-p15-253 / new-p12-313).
+	std::uint64_t heldAudioBusHandleFrees() const noexcept
+	{
+		return m_heldAudioBusHandleFrees.load(std::memory_order_relaxed);
 	}
 
 	//! Asks the control thread to apply a device port update (the device call allocates).
@@ -695,6 +704,16 @@ private:
 	void applyPendingDevicePortUpdates();
 	//! Removes (and frees) the buses a render worker handed over. Control thread.
 	void drainPendingAudioBusHandleRetirements();
+	//! Frees a bus the engine owns, once the render path can no longer reach it: a bus
+	//! whose registration is still pending is kept alive until the render owner
+	//! consumed that entry (see holdAudioBusHandle).
+	void releaseAudioBusHandle(AudioBusHandle* busHandle);
+	//! Keeps a bus alive that the render owner may still reach through the pending
+	//! queue. The control thread frees it once the entry was consumed.
+	void holdAudioBusHandle(AudioBusHandle* busHandle);
+	//! Frees the buses the engine kept alive because the render owner had not consumed
+	//! their pending entry yet. Control thread.
+	void drainHeldAudioBusHandles();
 
 
 	void swapBuffers();
@@ -730,12 +749,20 @@ private:
 	};
 	MpscQueue<DevicePortUpdate, PendingAudioBusHandleCapacity> m_pendingDevicePortUpdates;
 
+	//! Buses the engine keeps alive because the render owner may still reach them
+	//! through the pending queue (cluster new-p15-253 / new-p12-313). Fixed storage,
+	//! lock-free: the control thread frees them once the entry was consumed.
+	MpscQueue<AudioBusHandle*, PendingAudioBusHandleCapacity> m_heldAudioBusHandles;
+
 	//! Buses whose registration was deferred to the render owner (diagnostics).
 	std::atomic<std::uint64_t> m_deferredAudioBusHandleRegistrations{0};
 	//! Published buses the fixed queue could not take (diagnostics).
 	std::atomic<std::uint64_t> m_droppedAudioBusHandleRegistrations{0};
 	//! Buses a render worker handed over that the fixed queue could not take (diagnostics).
 	std::atomic<std::uint64_t> m_droppedAudioBusHandleRetirements{0};
+	//! Buses the engine keeps alive because their pending entry is not consumed yet
+	//! (diagnostics).
+	std::atomic<std::uint64_t> m_heldAudioBusHandleFrees{0};
 	//! Device port updates a realtime thread published that the queue could not take.
 	std::atomic<std::uint64_t> m_droppedDevicePortUpdates{0};
 	//! Set by the render owner when the bus list had no room for a published bus.

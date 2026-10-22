@@ -332,6 +332,70 @@ private slots:
 
 		delete bus;
 	}
+
+	//! Cluster new-p15-253: a bus whose owner retires it while its registration is
+	//! still pending must not be registered by the render owner afterwards. The render
+	//! owner consumes the pending entry one period later - by then the bus is gone, and
+	//! the engine may already be about to free it, so registering it would put a freed
+	//! bus into the list the render stage walks.
+	void busRetiredWhileItsRegistrationIsPendingIsNotRegistered()
+	{
+		using namespace lmms;
+
+		auto* engine = Engine::audioEngine();
+		auto* bus = new AudioBusHandle(QStringLiteral("RetiredPendingBus"), false);
+		// The constructor registered it on the control thread; take it out again so the
+		// registration below is the only one that can put it back.
+		engine->removeAudioBusHandle(bus);
+		const std::size_t before = engine->audioBusHandles().size();
+
+		{
+			// The audio path: the bus is published to the engine's pending queue.
+			const RealtimeScope realtime;
+			engine->addAudioBusHandle(bus);
+		}
+		// The owner retires the bus before the render owner consumed the entry.
+		engine->removeAudioBusHandle(bus);
+
+		// The render owner consumes the entry: a retired bus is not registered.
+		engine->renderNextPeriod();
+		QCOMPARE(engine->audioBusHandles().size(), before);
+		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
+			== engine->audioBusHandles().end());
+
+		delete bus;
+	}
+
+	//! Cluster new-p15-253: a bus that is destroyed while its registration is still
+	//! pending must not be registered by the render owner afterwards either. The engine
+	//! owns the bus from that moment on: it frees it once the render path may no longer
+	//! reach it, and until the render owner consumed the pending entry it keeps the bus
+	//! alive - the queue still names it.
+	void busDestroyedWhileItsRegistrationIsPendingIsNotRegistered()
+	{
+		using namespace lmms;
+
+		auto* engine = Engine::audioEngine();
+		const std::size_t before = engine->audioBusHandles().size();
+		AudioBusHandle* bus = nullptr;
+		{
+			// The audio path: the bus is published to the engine's pending queue
+			// instead of being registered inline.
+			const RealtimeScope realtime;
+			bus = new AudioBusHandle(QStringLiteral("DestroyedPendingBus"), false);
+		}
+		// The owner hands the bus to the engine, which frees it once the render path
+		// may no longer reach it.
+		engine->destroyAudioBusHandle(bus);
+
+		// The render owner consumes the pending entry. The bus was retired, so it is
+		// not registered - and the engine kept it alive until that entry was consumed,
+		// so the render path never walks a freed bus.
+		engine->renderNextPeriod();
+		QCOMPARE(engine->audioBusHandles().size(), before);
+		QVERIFY(std::find(engine->audioBusHandles().begin(), engine->audioBusHandles().end(), bus)
+			== engine->audioBusHandles().end());
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioBusHandleTest)

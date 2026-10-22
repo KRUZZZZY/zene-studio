@@ -70,6 +70,25 @@ public:
 	bool extOutputEnabled() const { return m_extOutputEnabled; }
 	void setExtOutputEnabled(bool enabled);
 
+	//! Where this bus stands with the engine's registration (cluster new-p15-253).
+	//!
+	//! A bus that is created on the audio path is published to the engine's pending
+	//! queue; the render owner registers it at the start of the next period. Until the
+	//! render owner consumed that entry, the bus may still be reached through the
+	//! queue - so the engine keeps it alive (see AudioEngine::destroyAudioBusHandle)
+	//! and never registers a bus that was retired in the meantime.
+	enum class RegistrationState : std::uint8_t
+	{
+		Registered = 0, //!< the bus is in the engine's bus list
+		Pending = 1,    //!< published to the pending queue; the render owner did not consume it yet
+		Retired = 2,    //!< retired before the render owner consumed the entry: it must not be registered
+		Handled = 3     //!< the pending entry was consumed; the bus is in no list
+	};
+	RegistrationState registrationState() const noexcept
+	{
+		return m_registrationState.load(std::memory_order_acquire);
+	}
+
 	// next mixer-channel after this audio-bus-handle
 	// (-1 = none  0 = master)
 	mix_ch_t nextMixerChannel() const { return m_nextMixerChannel; }
@@ -213,6 +232,11 @@ private:
 
 	//! MX-157: see setSourceLatencyFrames().
 	std::atomic<int> m_sourceLatencyFrames{0};
+
+	//! Cluster new-p15-253: the state of this bus's registration with the engine.
+	//! Only the engine writes it (AudioEngine is a friend); it decides whether the
+	//! render owner may register the bus and whether the engine may free it.
+	std::atomic<RegistrationState> m_registrationState{RegistrationState::Registered};
 
 	friend class AudioEngine;
 	friend class AudioEngineWorkerThread;
