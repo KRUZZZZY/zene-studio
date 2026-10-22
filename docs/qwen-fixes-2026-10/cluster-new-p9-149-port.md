@@ -234,8 +234,9 @@ NOTE on the log folder: the run's log folder
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r1/logs` is
 read-only for this session (every write, even after `chmod 777`, returns `EACCES`; the
 worktree itself is writable, `~/.cache` and `/tmp` are writable too). The logs of this run
-are therefore in `/home/kruzzzzy/.cache/np9149logs/` with the `logs/`-relative names used
-above; they are copied into the log folder by whoever has write access there.
+are therefore in `/home/kruzzzzy/.cache/np9149logs/` (and a copy inside the gitignored
+build tree, `build/qwen-logs-new-p9-149-port/`) with the `logs/`-relative names used above;
+they are copied into the log folder by whoever has write access there.
 
 ## Self-check
 
