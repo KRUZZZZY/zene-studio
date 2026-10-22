@@ -125,6 +125,31 @@ struct Sf2Fixture
 		return nullptr;
 	}
 
+	//! The number of notes the player counts as running.
+	auto runningNotes() const -> int
+	{
+		int running = 0;
+		if (!QMetaObject::invokeMethod(instrument.get(), "runningNotesForTest",
+				Qt::DirectConnection, Q_RETURN_ARG(int, running)))
+		{
+			return -1;
+		}
+		return running;
+	}
+
+	//! Fills the player's bounded note event queue, so that the next event it
+	//! publishes is refused.
+	auto fillNoteEventQueue() const -> int
+	{
+		int queued = 0;
+		if (!QMetaObject::invokeMethod(instrument.get(), "fillNoteEventQueueForTest",
+				Qt::DirectConnection, Q_RETURN_ARG(int, queued)))
+		{
+			return -1;
+		}
+		return queued;
+	}
+
 	//! Plays a note and returns the frequency of the tone in the rendered audio.
 	auto playedFrequency(std::span<lmms::SampleFrame> span, int key) const -> double
 	{
@@ -234,6 +259,7 @@ private slots:
 	void reloadKeepsTheSoundFontWhenTheFileIsGone();
 	void everySynthHasItsOwnSoundFont();
 	void theTuningOffsetMatchesFluidSynthsKeyTuning();
+	void aStartedNoteIsStoppedWhenTheEventQueueIsFull();
 };
 
 void Sf2PlayerRealtimeTest::playsWithARealSoundFont()
@@ -701,6 +727,61 @@ void Sf2PlayerRealtimeTest::theTuningOffsetMatchesFluidSynthsKeyTuning()
 	QVERIFY2(std::abs(tunedFrequency - coarseFrequency) < 0.5,
 		qPrintable(QStringLiteral("FluidSynth's key tuning plays at %1 Hz, the coarse tune at %2 Hz")
 			.arg(tunedFrequency).arg(coarseFrequency)));
+}
+
+
+
+
+void Sf2PlayerRealtimeTest::aStartedNoteIsStoppedWhenTheEventQueueIsFull()
+{
+	// A note that is destroyed before its note-off was processed has to be
+	// stopped by the player: the voice it started on the synth must not keep
+	// sounding, and the player must not keep counting the note.
+	//
+	// The note-off of such a note travels through the player's bounded note
+	// event queue. When that queue is full, the queue refuses the note-off,
+	// and the player has to stop the note by another way: the note must not
+	// stay stuck.
+	Sf2Fixture fixture;
+	if (!fixture.create())
+	{
+		QSKIP("this build has no SF2 player module (no FluidSynth)");
+	}
+	if (!QFile::exists(QString::fromUtf8(SF2_TEST_SOUNDFONT)))
+	{
+		QSKIP("this tree has no SoundFont to play");
+	}
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{buffer};
+
+	// The player loads the soundfont off the audio thread and publishes the
+	// synth it built; the render thread adopts it with its first period.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "openFile", Qt::DirectConnection,
+		Q_ARG(QString, QString::fromUtf8(SF2_TEST_SOUNDFONT))));
+	fixture.instrument->play(span);
+
+	// The note reaches the synth, so the player counts it as running.
+	const lmms::Note note{lmms::TimePos{0}, lmms::TimePos{0}, lmms::DefaultKey};
+	auto* handle = lmms::NotePlayHandleManager::acquire(fixture.track.get(), 0, frames,
+		note, nullptr, -1, lmms::NotePlayHandle::Origin::MidiClip);
+	fixture.instrument->playNote(handle, span);
+	fixture.instrument->play(span);
+	QCOMPARE(fixture.runningNotes(), 1);
+
+	// The bounded event queue is full now, so the note-off the teardown needs
+	// cannot be queued.
+	const int queued = fixture.fillNoteEventQueue();
+	QVERIFY2(queued > 0, "the player's note event queue could not be filled");
+
+	// The note is destroyed while its note-off is still nowhere: the player
+	// has to stop the voice it started.
+	lmms::NotePlayHandleManager::release(handle);
+
+	// The render stage applies the note-off it could not queue.
+	fixture.instrument->play(span);
+	QCOMPARE(fixture.runningNotes(), 0);
 }
 
 QTEST_MAIN(Sf2PlayerRealtimeTest)

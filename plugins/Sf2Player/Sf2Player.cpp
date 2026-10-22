@@ -914,6 +914,40 @@ bool Sf2Instrument::publishNoteEvent(NotePlayHandle* handle, Sf2PluginDataSlot* 
 
 
 
+
+int Sf2Instrument::runningNotesForTest() const
+{
+	int running = 0;
+	for( const auto& notes : m_notesRunning )
+	{
+		running += notes.load( std::memory_order_relaxed );
+	}
+	return running;
+}
+
+
+
+
+int Sf2Instrument::fillNoteEventQueueForTest()
+{
+	// The filler events name a slot that is never claimed, so the render stage
+	// drops them: the queue fills up without changing what the synth plays.
+	Sf2NoteEvent event;
+	event.slot = &m_fillerSlot;
+	event.generation = 0;
+	event.offset = 0;
+	event.midiNote = 0;
+	event.isNew = true;
+	event.standalone = false;
+
+	// The queue is bounded, so the loop ends when the queue refuses the event.
+	int queued = 0;
+	while( m_noteEvents.push( event ) ) { ++queued; }
+	return queued;
+}
+
+
+
 void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 {
 	if( _n->isMasterNote() || ( _n->hasParent() && _n->isReleased() ) )

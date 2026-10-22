@@ -287,6 +287,18 @@ public slots:
 	//! the player uses, so the test can inspect what was configured on it.
 	quintptr currentSynthAddress() const { return reinterpret_cast<quintptr>(m_synth); }
 
+	//! Test seam for the SF2 realtime test: the number of notes the player
+	//! counts as running, over every pitch. The player counts a note from its
+	//! note-on until its note-off, so a note that stays counted is a note that
+	//! is still sounding.
+	int runningNotesForTest() const;
+
+	//! Test seam for the SF2 realtime test: fills the bounded note event queue
+	//! with events the render stage drops, so that the next event the player
+	//! publishes is refused by the queue.
+	//! @return the number of events the queue holds afterwards.
+	int fillNoteEventQueueForTest();
+
 private:
 	void playImpl(std::span<SampleFrame> out) override;
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
@@ -366,6 +378,19 @@ private:
 	//! The number of notes currently running per MIDI pitch. Atomic: the note
 	//! path updates it from the render stage and from the note teardown.
 	std::array<std::atomic<int>, 128> m_notesRunning{};
+	//! Teardown note-offs the bounded event queue refused, counted per MIDI
+	//! pitch. The note teardown adds to the pitch's counter and the render
+	//! stage takes the count away again: a started note always gets its
+	//! note-off, even when the queue was full. Fixed size: no allocation, no
+	//! lock, no waiting.
+	std::array<std::atomic<int>, 128> m_pendingTeardownNotes{};
+	//! Set when a teardown note-off was added to the counters above, so the
+	//! render stage knows that it has to look at them.
+	std::atomic<bool> m_pendingTeardownDirty{false};
+	//! A note slot that is never claimed: the test seam's filler events name
+	//! it, and the render stage drops them because a free slot's generation
+	//! never matches an event.
+	Sf2PluginDataSlot m_fillerSlot;
 	//! Set by the render thread when it adopts a synth; read by renderFrames.
 	std::atomic<sample_rate_t> m_internalSampleRate{0};
 	int m_lastMidiPitch;
@@ -429,6 +454,9 @@ private:
 		std::uint32_t generation, f_cnt_t offset, bool isNew) noexcept -> bool;
 	//! Takes the event at \a index out of the render stage's pending list.
 	void removePendingEvent(std::size_t index) noexcept;
+	//! Render thread: apply the teardown note-offs the bounded event queue
+	//! refused, so that a started note never stays sounding.
+	void applyPendingTeardownNoteOffs() noexcept;
 	//! Render thread: adopt any synth the UI published.
 	void serviceSynthHandoff() noexcept;
 	//! Render thread: send the requested state (gain, effects, program) to the
