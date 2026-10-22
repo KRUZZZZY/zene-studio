@@ -154,10 +154,12 @@ threads and no timing.
 
 `feature_check.py` wants to write its per-gate logs to `<worktree>-feature-check/`, which this
 sandbox refuses (`PermissionError: [Errno 13] ... zene-qwen-2647-feature-check`, exit 1 before
-any gate runs - `build/2647-logs/36-feature-check.log`). It was therefore run once with only
-that log directory redirected to `/tmp` (the script, its gate commands and its scoring are
-otherwise byte-identical - `/tmp/fc-shim.py`), and the eight gates were also run directly from
-the worktree. Both forms agree:
+any gate runs - `build/2647-logs/36-feature-check.log`; the same `mkdir` is denied for the
+worktree's parent directory at the syscall level, and so is every write outside the worktree).
+It was therefore run with only that one log directory redirected into the (git-ignored)
+`build/2647-logs/feature-check/` - the script itself, its gate commands, its baseline lookup
+and its scoring run unmodified - and the eight gates were also run directly from the worktree.
+Both forms agree:
 
 | Gate | Exit | Evidence |
 | --- | ---: | --- |
@@ -169,7 +171,7 @@ the worktree. Both forms agree:
 | doc-figures | 0 | `build/2647-logs/gate-doc-figures.log` |
 | complexity | 0 | `build/2647-logs/gate-complexity.log` - "no new item in your files" |
 | file-length | 0 | `build/2647-logs/gate-file-length.log` - "no new item in your files" |
-| full `feature_check.py` (redirected log dir) | 0 | `build/2647-logs/47-feature-check-final.log` - `RESULT: PASS` |
+| full `feature_check.py` (redirected log dir) | 0 | `build/2647-logs/50-feature-check-final-shim.log` - `RESULT: PASS`, all eight rows PASS |
 | RT safety sweep | 0 | `build/2647-logs/39-rt-sweep-after-ledger.log` - PASS; the new seam is `#ifdef LMMS_TESTING` and touches no declared audio-thread body |
 
 **The two manifest gates were red on the train before this branch.** `tests/all-sources.txt`
@@ -233,6 +235,14 @@ the bug fixes; it changes no product code, test or gate limit.
   lifetime rule. Full suites for the touched areas passed: `AutomatableModelTest`,
   `PhaseDSidechainTest`, `AutomationPrepassProofTest` (3/3, log `34`), and the RT safety sweep
   exits 0.
+- **Pre-submit check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 2647`
+  (`build/2647-logs/48-submit-check-final.log`) passes "commits on the branch", "working tree
+  clean", "report", "tests added or changed" and "no new test file to register"; its single FAIL
+  is "gates (feature_check.py)", and that is the sandbox `EACCES` on
+  `<worktree>-feature-check/` described above, not a gate result. Run with only that directory
+  redirected, `feature_check.py` exits 0 with all eight rows PASS
+  (`build/2647-logs/50-feature-check-final-shim.log`), and every question it ASKs is answered by
+  the bullets in this section.
 - **2647 is ALREADY-FIXED - cite the code (file:line) or the intended contract that shows it.**
   `src/core/AutomatableModel.cpp:752-777` (`valueBuffer()` has no mutex and no lock call),
   `src/core/AutomatableModel.cpp:884-919` (the ramp is read in the lock-free prepass function,
