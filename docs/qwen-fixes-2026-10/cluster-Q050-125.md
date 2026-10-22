@@ -95,15 +95,15 @@ ctest -R 'ClipPolarityTest|ClipWaveformEditTest|ControlClipPolarity|ClipEditsTes
 
 Answered in the order `submit_check.py` asks ("?" items), with the commands and exits seen in this session.
 
-1. **Each new test FAILS with the product change reverted, then PASSES restored.** Proven three ways, each with
-   a build that still compiled (`cmake --build build --target zene ClipPolarityTest ClipWaveformEditTest`,
-   build EXIT 0) and each exit seen:
-   - the 16 product hunks reverted plus behaviour reversals in the polarity sign (`SamplePlayHandle.cpp`,
-     `ClipPreFades.cpp`), the state key (`ControlEditSupport.cpp`), the drawn column gain
-     (`SampleThumbnail.cpp`), the drag write (`SampleClipView.cpp`) and the command write
-     (`ControlCommandsClipEdits.cpp`):
-     `ctest -R 'ClipPolarityTest|ClipWaveformEditTest|ControlClipPolarity'` -> **EXIT 8**;
-     restored and rebuilt -> **EXIT 0** (3/3).
+1. **Each new test FAILS with the product change reverted, then PASSES restored.** Every run below compiled
+   (`cmake --build build --target zene ClipPolarityTest ClipWaveformEditTest`, build EXIT 0) and every exit was
+   seen in this session:
+   - behaviour reversals with the model and command surfaces kept: polarity sign in `SamplePlayHandle.cpp`
+     and `ClipPreFades.cpp` set to +1, the drawn column gain in `SampleThumbnail.cpp` set to 1, the drag
+     write in `SampleClipView.cpp` dropped, the command write in `ControlCommandsClipEdits.cpp` dropped and
+     the persistence in `Clip.cpp` dropped:
+     `ctest -R 'ClipPolarityTest|ClipWaveformEditTest|ControlClipPolarity'` -> **EXIT 8**; restored and
+     rebuilt -> **EXIT 0** (3/3).
    - drawn-gain-alone reversed (`SampleThumbnail.cpp` `columnGain = 1.0f`), everything else kept:
      `ctest -R 'ClipWaveformEditTest|ClipPolarityTest'` -> **EXIT 8**
      (`louderTop < plainTop` FALSE, `the polarity flip did not repaint the waveform`); restored -> **EXIT 0**.
