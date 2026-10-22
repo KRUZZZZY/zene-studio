@@ -289,9 +289,8 @@ bool SampleClipView::startGainDrag(QMouseEvent* me)
 	}
 	else
 	{
-		// A point drag also starts an ADD (a press on empty waveform where no point is, but inside the
-		// clip's body, is deliberately not one: that is still the clip's move gesture). To add a point
-		// the user Alt-clicks; to move one, plain-drags it.
+		// A point drag is the MOVE gesture for an existing point; the ADD is the curve press in
+		// mousePressEvent. A press on empty waveform away from the curve is still the clip's move.
 		m_gainDrag = GainDrag::Point;
 		m_gainDragPoint = point;
 		m_gainDragStartDb = edits.envelope[point].gainDb;
@@ -416,10 +415,15 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 void SampleClipView::mousePressEvent( QMouseEvent * _me )
 {
 	if (startFadeDrag(_me)) { return; }
-	// Q050-125: Alt+click on the waveform adds an envelope point there (and starts dragging it); a plain
-	// press on a point or on the clip-gain handle takes that. A plain press anywhere else is still the
-	// clip's move gesture, which is why this runs after the fade handles and before ClipView's press.
-	if (_me->button() == Qt::LeftButton && _me->modifiers() == Qt::AltModifier && !EditLocks::instance().locks(m_clip))
+	// A press on an existing point or on the clip-gain handle takes that gesture FIRST: the handle sits
+	// on the level line, so the curve's own add gesture must not win over it.
+	if (startGainDrag(_me)) { return; }
+	// Q050-125: a plain press ON the drawn level curve adds an envelope point there and starts dragging
+	// it. The curve is the visible target, so this gesture needs NO modifier: Alt and Ctrl keep their
+	// arranger meaning (unsnapped move/resize, and copy on Apple). A plain press anywhere else is still
+	// the clip's move gesture, which is why this runs after the handles and before ClipView's press.
+	if (_me->button() == Qt::LeftButton && _me->modifiers() == Qt::NoModifier && !EditLocks::instance().locks(m_clip)
+		&& gainCurveAt(shownEdits(), overlayFrame(0), _me->pos()))
 	{
 		const ClipOverlayFrame frame = overlayFrame(0);
 		const ClipEdits edits = withValidOffsetFades(m_clip->clipEdits(), m_clip->length().getTicks());
@@ -427,14 +431,14 @@ void SampleClipView::mousePressEvent( QMouseEvent * _me )
 		const float db = gainDbAtY(_me->pos().y(), frame);
 		m_dragEdits = edits;
 		m_gainDragPress = _me->pos();
-		// The Alt-click ADD is itself the edit: releasing without moving still writes the point.
+		// The curve press IS the edit: releasing without moving still writes the point.
 		m_gainDragMoved = true;
 		int written = -1;
 		if (withGainPoint(&m_dragEdits, gainPointCount(edits), tick, db, m_clip->length().getTicks(), &written))
 		{
 			m_gainDrag = GainDrag::Point;
-			// The point's index AFTER the sort, not the end it was appended at: an Alt-click in the
-			// middle of an existing envelope must drag the point it just added, not another one.
+			// The point's index AFTER the sort, not the end it was appended at: a press in the middle
+			// of an existing envelope must drag the point it just added, not another one.
 			m_gainDragPoint = written;
 			m_gainDragStartDb = db;
 			setNeedsUpdate(true);
@@ -442,7 +446,6 @@ void SampleClipView::mousePressEvent( QMouseEvent * _me )
 			return;
 		}
 	}
-	if (startGainDrag(_me)) { return; }
 	if( _me->button() == Qt::LeftButton &&
 		_me->modifiers() & Qt::ControlModifier &&
 		_me->modifiers() & Qt::ShiftModifier )

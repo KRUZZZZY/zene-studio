@@ -50,6 +50,9 @@ constexpr int GainHandleInset = 10;
 //! Q050-125: a click this close to an envelope point takes it, and this close to the gain handle takes that.
 constexpr int PointReach = 5;
 constexpr int GainHandleReach = 6;
+//! Q050-125: a press this close to the DRAWN level curve adds an envelope point there. It is the
+//! non-conflicting add gesture: no modifier is taken from the arranger's Alt/Ctrl drags.
+constexpr int CurveReach = 4;
 
 int xOfTick(const ClipOverlayFrame& frame, int tick) { return frame.xOrigin + static_cast<int>(tick * frame.pixelsPerTick); }
 
@@ -188,6 +191,35 @@ int gainPointAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPo
 		if (std::abs(pos.x() - at.x()) <= PointReach && std::abs(pos.y() - at.y()) <= PointReach) { return i; }
 	}
 	return -1;
+}
+
+bool gainCurveAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPoint& pos)
+{
+	// A press ON the drawn level curve takes that gesture: the envelope itself when it has points (the
+	// same polyline paintGainEnvelope draws, held flat before the first point and after the last), or
+	// the clip-gain line when it has none. This is a VISIBLE target, like the fade and gain handles, so
+	// no modifier has to be taken from the arranger: Alt keeps its move/resize/copy meaning. A press
+	// anywhere off the line is still the clip's own move gesture.
+	if (pos.x() < frame.xOrigin || pos.x() > frame.xOrigin + frame.width) { return false; }
+	const int tick = gainTickAtX(pos.x(), frame);
+	int onCurveY = std::clamp(yOfDb(frame, gainLinearToDb(edits.gain)), frame.top, frame.top + frame.height);
+	if (edits.envelopeCount > 0)
+	{
+		// The curve's value at the pressed tick, exactly as the polyline is drawn: the nearest point on
+		// either side (held flat outside the end points).
+		int before = 0;
+		while (before + 1 < edits.envelopeCount && edits.envelope[before + 1].tick <= tick) { ++before; }
+		const GainPoint& a = edits.envelope[before];
+		if (tick <= a.tick) { onCurveY = yOfDb(frame, a.gainDb); }
+		else
+		{
+			const GainPoint& b = edits.envelope[std::min(before + 1, edits.envelopeCount - 1)];
+			const float db = b.tick <= a.tick ? a.gainDb
+				: a.gainDb + (b.gainDb - a.gainDb) * static_cast<float>(tick - a.tick) / static_cast<float>(b.tick - a.tick);
+			onCurveY = yOfDb(frame, db);
+		}
+	}
+	return std::abs(pos.y() - onCurveY) <= CurveReach;
 }
 
 float clipGainDraggedDb(float startDb, int dy, const ClipOverlayFrame& frame)

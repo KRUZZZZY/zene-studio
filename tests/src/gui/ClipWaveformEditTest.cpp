@@ -135,6 +135,13 @@ int bandTop(const QImage& image, int x)
 	return 0;
 }
 
+//! The y the clip-gain LINE is drawn at for @a db (the same -60..+24 scale the overlay uses). The
+//! handle is deliberately held away from its own line, so a curve press uses this, not clipGainHandleY.
+int lineY(const ClipOverlayFrame& frame, float db)
+{
+	return frame.top + static_cast<int>((1.f - (db + 60.f) / 84.f) * frame.height);
+}
+
 void dragTo(SampleClipView* view, const QPoint& from, const QPoint& to)
 {
 	QMouseEvent press(QEvent::MouseButtonPress, QPointF(from), view->mapToGlobal(from), Qt::LeftButton,
@@ -246,29 +253,33 @@ private slots:
 		QVERIFY(bandTop(quieter, column) > plainTop);
 	}
 
-	//! Criterion 1 (the envelope half): Alt+click adds a point, a plain drag moves it, each is one
-	//! undo step, and the drawn envelope changes with them.
+	//! Criterion 1 (the envelope half): a plain press ON the drawn level curve adds a point, a plain
+	//! drag moves it, each is one undo step, and the drawn envelope changes with them.
 	void envelopePointsAreAddedAndMovedOnTheWaveform()
 	{
 		const ClipOverlayFrame frame = frameOf(m_view);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);
-		const QPoint add(frame.xOrigin + frame.width / 2, frame.top + frame.height / 3);
+		// With no points yet the curve IS the clip-gain line at unity, so the press lands on that line -
+		// no modifier is held, which is the point of the binding: Alt stays with the arranger.
+		const QPoint add(frame.xOrigin + frame.width / 2, lineY(frame, 0.f));
+		QVERIFY2(gainCurveAt(m_clip->clipEdits(), frame, add), "the unity gain line is not the add target");
 		QMouseEvent press(QEvent::MouseButtonPress, QPointF(add), m_view->mapToGlobal(add), Qt::LeftButton,
-			Qt::LeftButton, Qt::AltModifier);
+			Qt::LeftButton, Qt::NoModifier);
 		QCoreApplication::sendEvent(m_view, &press);
 		QMouseEvent release(QEvent::MouseButtonRelease, QPointF(add), m_view->mapToGlobal(add), Qt::LeftButton,
-			Qt::NoButton, Qt::AltModifier);
+			Qt::NoButton, Qt::NoModifier);
 		QCoreApplication::sendEvent(m_view, &release);
 
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 1);
 		const int addedTick = m_clip->clipEdits().envelope[0].tick;
 		QVERIFY2(std::abs(addedTick - m_clip->length().getTicks() / 2) <= 2,
 			qPrintable(QStringLiteral("the point landed at tick %1, not the middle").arg(addedTick)));
-		QVERIFY2(m_clip->clipEdits().envelope[0].gainDb < 0.f, "the point above the middle should be a cut");
+		// The press was ON the line, so the point is the line's own level (unity), not a cut.
+		QVERIFY2(std::abs(m_clip->clipEdits().envelope[0].gainDb) < 1.f, "the point on the unity line is not unity");
 
 		// Move it: a plain press on the point, drag to another column and level, release.
 		const QPoint at = QPoint(frame.xOrigin + static_cast<int>(m_clip->clipEdits().envelope[0].tick * frame.pixelsPerTick),
-			frame.top + frame.height / 3);
+			lineY(frame, m_clip->clipEdits().envelope[0].gainDb));
 		const QPoint to(frame.xOrigin + frame.width / 4, frame.top + frame.height / 4);
 		dragTo(m_view, at, to);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 1);
@@ -283,8 +294,8 @@ private slots:
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);
 	}
 
-	//! An Alt-click in the MIDDLE of an existing envelope must drag the point it just added, not the
-	//! point whose end index it was appended at before the re-sort.
+	//! A press in the MIDDLE of an existing envelope must drag the point it just added, not the point
+	//! whose end index it was appended at before the re-sort.
 	void anAddedPointDraggedPastItsNeighbourTakesTheRightPoint()
 	{
 		const ClipOverlayFrame frame = frameOf(m_view);
@@ -297,11 +308,13 @@ private slots:
 			{QStringLiteral("points"), points}}).ok);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 2);
 
-		// Add a point in the middle and, without releasing, drag it left past the first point.
-		const QPoint add(frame.xOrigin + static_cast<int>(length / 2 * frame.pixelsPerTick), frame.top + frame.height / 2);
+		// Add a point in the middle (on the drawn envelope between the two unity points) and, without
+		// releasing, drag it left past the first point.
+		const QPoint add(frame.xOrigin + static_cast<int>(length / 2 * frame.pixelsPerTick), lineY(frame, 0.f));
+		QVERIFY2(gainCurveAt(m_clip->clipEdits(), frame, add), "the middle of the envelope is not the add target");
 		const QPoint to(frame.xOrigin + static_cast<int>(length / 8 * frame.pixelsPerTick), frame.top + frame.height / 2);
 		QMouseEvent press(QEvent::MouseButtonPress, QPointF(add), m_view->mapToGlobal(add), Qt::LeftButton,
-			Qt::LeftButton, Qt::AltModifier);
+			Qt::LeftButton, Qt::NoModifier);
 		QCoreApplication::sendEvent(m_view, &press);
 		QMouseEvent move(QEvent::MouseMove, QPointF(to), m_view->mapToGlobal(to), Qt::NoButton, Qt::LeftButton,
 			Qt::NoModifier);
@@ -490,6 +503,47 @@ private slots:
 		QCOMPARE(depth(), withPoint);
 	}
 
+	//! REGRESSION (review r1): Alt must keep the arranger's own meaning on a sample clip. An Alt-drag on
+	//! the clip body moves the clip WITHOUT adding an envelope point; the old Alt-add binding consumed it
+	//! (and on Apple Alt is also the copy modifier). The gesture that adds a point is the plain curve
+	//! press, which this proves is a different binding.
+	void altDragStillMovesTheClipAndAddsNoPoint()
+	{
+		const ClipOverlayFrame frame = frameOf(m_view);
+		// Room for points, and a press position ON the curve, so the OLD binding would certainly have
+		// added one there: this is exactly the press the regression was about.
+		QJsonArray points;
+		points.append(QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("gain_db"), 0}});
+		points.append(QJsonObject{{QStringLiteral("tick"), m_clip->length().getTicks()}, {QStringLiteral("gain_db"), 0}});
+		QVERIFY(run(QStringLiteral("clip.gain_envelope_set"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("points"), points}}).ok);
+		const int before = m_clip->clipEdits().envelopeCount;
+		const double startTicks = m_clip->startPosition().getTicks();
+		// A body press ON the drawn line (unity, between the two points), away from the handles and the
+		// edges: with the old binding this Alt press would have added a point here.
+		const QPoint from(frame.xOrigin + frame.width / 2, lineY(frame, 0.f));
+		QVERIFY2(gainCurveAt(m_clip->clipEdits(), frame, from), "the body press is not on the curve");
+
+		const int dx = 40;
+		QMouseEvent press(QEvent::MouseButtonPress, QPointF(from), m_view->mapToGlobal(from), Qt::LeftButton,
+			Qt::LeftButton, Qt::AltModifier);
+		QCoreApplication::sendEvent(m_view, &press);
+		const QPoint moved(from.x() + dx, from.y());
+		QMouseEvent move(QEvent::MouseMove, QPointF(moved), m_view->mapToGlobal(moved), Qt::NoButton,
+			Qt::LeftButton, Qt::AltModifier);
+		QCoreApplication::sendEvent(m_view, &move);
+		QMouseEvent release(QEvent::MouseButtonRelease, QPointF(moved), m_view->mapToGlobal(moved), Qt::LeftButton,
+			Qt::NoButton, Qt::AltModifier);
+		QCoreApplication::sendEvent(m_view, &release);
+
+		QVERIFY2(m_clip->clipEdits().envelopeCount == before,
+			qPrintable(QStringLiteral("the Alt-drag added an envelope point (%1 -> %2)")
+				.arg(before).arg(m_clip->clipEdits().envelopeCount)));
+		QVERIFY2(m_clip->startPosition().getTicks() > startTicks,
+			qPrintable(QStringLiteral("the Alt-drag did not move the clip (start %1 -> %2)")
+				.arg(startTicks).arg(m_clip->startPosition().getTicks())));
+	}
+
 	//! A locked clip is not edited by any of the three gestures; the lock is the refusal the commands share.
 	void aLockedClipTakesNoGesture()
 	{
@@ -500,9 +554,10 @@ private slots:
 		QCOMPARE(m_clip->clipEdits().gain, 1.0f);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);
 
-		QMouseEvent press(QEvent::MouseButtonPress, QPointF(frame.xOrigin + frame.width / 2, frame.top + 10),
-			m_view->mapToGlobal(QPoint(frame.xOrigin + frame.width / 2, frame.top + 10)), Qt::LeftButton,
-			Qt::LeftButton, Qt::AltModifier);
+		// The curve press - the add gesture - is refused as well, and an Alt press is not one of ours.
+		const QPoint onLine(frame.xOrigin + frame.width / 2, lineY(frame, 0.f));
+		QMouseEvent press(QEvent::MouseButtonPress, QPointF(onLine), m_view->mapToGlobal(onLine), Qt::LeftButton,
+			Qt::LeftButton, Qt::NoModifier);
 		QCoreApplication::sendEvent(m_view, &press);
 		QCOMPARE(m_clip->clipEdits().envelopeCount, 0);
 	}

@@ -82,6 +82,12 @@ LMMS_EXPORT int gainTickAtX(int x, const ClipOverlayFrame& frame);
 //! Q050-125: the envelope point within a few pixels of @a pos (-1 when none).
 LMMS_EXPORT int gainPointAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPoint& pos);
 
+/*! Q050-125: whether @a pos is on the DRAWN level curve - the envelope polyline when the clip has
+ *  points, otherwise the clip-gain line at its own dB. A press there is the envelope-point add
+ *  gesture (and starts the drag), so the feature needs NO modifier of its own and leaves Alt/Ctrl
+ *  to the arranger's move, unsnapped resize and copy. */
+LMMS_EXPORT bool gainCurveAt(const ClipEdits& edits, const ClipOverlayFrame& frame, const QPoint& pos);
+
 /*! Q050-125: @a edits with point @a index moved/added to @a tick and @a db, re-sorted into tick order
  *  (an existing point on the same tick is replaced). False - @a edits untouched - for an index outside
  *  the envelope, an add past MaxGainPoints, or a value outside the clip/range: `clip.gain_envelope_set`
