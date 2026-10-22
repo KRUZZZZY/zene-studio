@@ -413,11 +413,40 @@ private slots:
 		QCOMPARE(gainPointAt(edits, frame, QPoint(60, frame.top + 36)), 1);
 		QCOMPARE(gainPointAt(edits, frame, QPoint(100, frame.top + 24)), -1);
 
-		// A point dragged past its neighbour takes its place (the command needs tick order).
-		QVERIFY(withGainPoint(&edits, 0, 90, -6.f, 192));
+		// A point dragged past its neighbour takes its place (the command needs tick order), and the
+		// index it reports is its position AFTER the sort - including when two points share a tick.
+		int written = -1;
+		QVERIFY(withGainPoint(&edits, 0, 90, -6.f, 192, &written));
+		QCOMPARE(written, 1);
+		// Moving the second point onto the first's tick keeps it second (a stable sort).
+		QVERIFY(withGainPoint(&edits, 1, 60, -3.f, 192, &written));
+		QCOMPARE(written, 1);
+		{
+			// Two points on tick 60: the one originally first stays first (a stable sort).
+			ClipEdits tied;
+			tied.envelope[0] = {60, 0.f};
+			tied.envelope[1] = {90, 0.f};
+			tied.envelopeCount = 2;
+			QVERIFY(withGainPoint(&tied, 1, 60, -3.f, 192, &written));
+			QCOMPARE(written, 1);
+		}
+		{
+			// The ambiguous case a value match gets wrong: the moved point ends up IDENTICAL (tick and
+			// dB) to one before it. The stable sort keeps it after that one, so its index is 1; a
+			// search for the first equal value would answer 0 and the drag would move the wrong point.
+			ClipEdits identical;
+			identical.envelope[0] = {60, 0.f};
+			identical.envelope[1] = {90, 0.f};
+			identical.envelopeCount = 2;
+			QVERIFY(withGainPoint(&identical, 1, 60, 0.f, 192, &written));
+			QCOMPARE(written, 1);
+			QCOMPARE(identical.envelope[0].tick, identical.envelope[1].tick);
+			QCOMPARE(identical.envelope[0].gainDb, identical.envelope[1].gainDb);
+		}
 		QCOMPARE(edits.envelopeCount, 2);
+		// The first point stayed at tick 60 (it was moved there); the second is still after it.
 		QCOMPARE(edits.envelope[0].tick, 60);
-		QCOMPARE(edits.envelope[1].tick, 90);
+		QCOMPARE(edits.envelope[1].tick, 60);
 		// Adding at the end; the 32-point cap and the dB range are the command's own rules.
 		QVERIFY(withGainPoint(&edits, edits.envelopeCount, 120, 3.f, 192));
 		QCOMPARE(edits.envelopeCount, 3);

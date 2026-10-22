@@ -220,18 +220,22 @@ bool withGainPoint(ClipEdits* edits, int index, int tick, float db, int clipTick
 	// envelope's evaluation is a linear walk, so a point dragged past its neighbour must take its place.
 	if (index == edits->envelopeCount) { edits->envelope[edits->envelopeCount++] = GainPoint{tick, db}; }
 	else { edits->envelope[index] = GainPoint{tick, db}; }
-	std::stable_sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
-		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
 	if (writtenIndex != nullptr)
 	{
-		// The point we wrote can be found by its identity after the sort: the index it was written at
-		// holds exactly (tick, db), and two points on one tick are the caller's own replacing rule.
-		*writtenIndex = index;
+		/*! The point's index after the STABLE sort, derived from the list as it stands now (before the
+		 *  sort): every point with a lower tick sorts before ours, and among equal ticks the stable sort
+		 *  keeps the original order, so the ones originally before @a index stay before it. A value match
+		 *  alone is ambiguous when two points share a tick, which is why the position is derived. */
+		int at = 0;
 		for (int i = 0; i < edits->envelopeCount; ++i)
 		{
-			if (edits->envelope[i].tick == tick && edits->envelope[i].gainDb == db) { *writtenIndex = i; break; }
+			if (i == index) { continue; }
+			if (edits->envelope[i].tick < tick || (edits->envelope[i].tick == tick && i < index)) { ++at; }
 		}
+		*writtenIndex = at;
 	}
+	std::stable_sort(edits->envelope.begin(), edits->envelope.begin() + edits->envelopeCount,
+		[](const GainPoint& a, const GainPoint& b) { return a.tick < b.tick; });
 	return true;
 }
 
