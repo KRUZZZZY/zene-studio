@@ -225,15 +225,24 @@ EXIT=0
 | GREEN (fix applied) | `ctest -R '^(AudioPortsModelTest\|PinConnectorTest\|ScriptDawModelRegistrationTest\|AudioPortsTest)$' --output-on-failure --timeout 120` (`.../logs/test-4-green.log`) | 0 | 4/4 passed |
 | Affected family, final | `ctest -R '^(AudioPortsModelTest\|AudioPortsTest\|PluginAudioPortsTest\|RemotePluginAudioPortsTest\|RemotePluginClientE2ETest\|PinConnectorTest\|ScriptDawModelRegistrationTest\|...)$'` (`.../logs/test-10-family.log`) | 0 | 39/39 CTest targets passed |
 | Control surface | `ctest -R '^(ControlPortsCommands\|ControlRoutingCommands\|ControlDevices\|ControlUndoStructuralTranscript\|ControlPluginBuses\|ControlMixingRouting\|ControlHeadlessProjectOpen)$'` (`.../logs/test-8-control.log`) | 0 | 6/6 passed |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`.../logs/gates-1.log`) | 1 | 6 PASS, 2 FAIL (`fork-sources`, `all-sources-reproduce` — pre-existing, see below) |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`.../logs/gates-4-final.log`) | 0 | 8/8 PASS |
+| Gates, before the manifest re-derivation | the same command (`.../logs/gates-3-final.log`) | 1 | 6 PASS, 2 FAIL (`fork-sources`, `all-sources-reproduce`) — the stale `tests/all-sources.txt`, see below |
 | Gates on the unmodified tree | the same command with every change reverted (`.../logs/gates-2-base.log`) | 1 | the identical 6 PASS / 2 FAIL — the two failures are not mine |
 
-The two failing gates are the source-manifest gates, and they fail on the
+The two failing gates were the source-manifest gates, and they failed on the
 **unmodified** tree as well (`feature-check zene-qwen-23-port (base 07d6d02bd,
-0 changed files)`): the diff the gate prints names only
-`plugins/SfzPlayer/sfizz/external/abseil-cpp/**`, i.e. the vendored sfizz tree
-that drifted from the manifest's own recipe. No gate baseline and no gate
-limit was touched.
+0 changed files)`): `tests/all-sources.txt` still listed the 1148 vendored
+sfizz/abseil paths that its own recipe excludes, so its entry list was not the
+byte-exact output of the recipe the manifest itself publishes. The manifest's
+own header already says what the list is supposed to be ("The list is
+re-derived from the recipe here, as this file's own gate message asks … the
+vendored sfizz tree is excluded on purpose …"), so the file was stale, not the
+recipe. The list was therefore re-derived with the manifest's own "Regenerate
+with" command (`.../logs/gates-4-final.log`: 8/8 PASS); the diff is exactly
+those 1148 vendored paths and nothing else
+(`diff` of the recipe's output against the old list: 1148 deletions, 0
+additions, 0 changed lines outside `plugins/SfzPlayer/sfizz/`). No gate limit
+and no ratchet baseline was touched, and no product code changed.
 
 Two further CTest failures in the first family run
 (`.../logs/test-5-targeted.log`: `PluginPortsMigrationTest`, `AudioPluginTest`)
@@ -251,21 +260,74 @@ been built here. Building them (`.../logs/build-10-plugins.log`,
 - `tests/src/core/AudioPortsModelTest.cpp` — `routingEditsHoldTheEngineChangeGuard`.
 - `tests/src/gui/PinConnectorTest.cpp` — `pinEditsRunUnderTheEngineModelChangeGuard`.
 - `tests/upstream-modifications.txt` — the registration of the five changed files.
+- `tests/all-sources.txt` — the entry list re-derived with the manifest's own recipe (the
+  stale vendored-sfizz entries), so the manifest gate is green again.
 - `docs/qwen-fixes-2026-10/cluster-23-port.md` — this report.
 
 No new file was added, so `tests/fork-sources.txt` is unchanged.
 
 ## Self-check
 
+The five questions the completion check asks:
+
+1. **"The regression test FAILS with your product change reverted and PASSES with it
+   (exit codes)."** — RED: the product diff (`include/AudioPortsModel.h`,
+   `src/core/AudioPortsModel.cpp`, `src/core/ControlStructuralSupport.cpp`) reverted with
+   `git apply -R .../logs/fix.patch` (EXIT 0), rebuilt
+   (`cmake --build build --target AudioPortsModelTest PinConnectorTest`, EXIT 0), then
+   `ctest -R '^(AudioPortsModelTest|PinConnectorTest)$' --output-on-failure --timeout 120`
+   → **EXIT 8**, "0% tests passed, 2 tests failed out of 2", both failing on
+   `'guardAtSignal == 1' returned FALSE`. GREEN: `git apply .../logs/fix.patch` (EXIT 0),
+   rebuild (EXIT 0), `ctest -R '^(AudioPortsModelTest|PinConnectorTest|ScriptDawModelRegistrationTest|AudioPortsTest)$'`
+   → **EXIT 0**, "100% tests passed out of 4".
+2. **"The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
+   injected values it uses)."** — The seam is `AudioEngine::isChangeInModelHeld()`
+   (`include/AudioEngine.h:562`), compiled only with `LMMS_TESTING`: it reports whether
+   the **calling** thread holds the engine's model-change guard
+   (`s_changeInModelDepth`, `src/core/AudioEngine.cpp:294`, maintained by
+   `requestChangeInModel()` / `doneChangeInModel()`, `:1448`/`:1457`). The test connects a
+   `Qt::DirectConnection` slot to the model's `dataChanged` / `propertiesChanged` signal,
+   and the edit emits that signal from inside the edit, so the slot reads the counter
+   while the edit is still running. No thread is started, no sleep, no wall clock and no
+   injected timestamp is used; the same slot reads the same counter in every run. The
+   test looks the seam up through a `requires` expression, so it still compiles against
+   a tree without the fix and reports the missing seam instead of failing to build.
+3. **"The fix is at the cause and complete: every caller and sibling of what you changed
+   was checked and stays consistent."** — The guard is inside the model, at the nine
+   mutators of the routing state (`src/core/AudioPortsModel.cpp:153`, `:196`, `:214`,
+   `:317`, `:473`, `:490`, `:496`, `:517`, `:641`); the sibling write `setPinBatch()` was
+   moved into the `.cpp` so it is guarded too. Every writer of that state was checked and
+   reaches a guarded function: the GUI pin connector (`src/gui/PinConnector.cpp:481`),
+   the `port.set_pin` control command (`src/core/ControlCommandsPorts.cpp:275`), the
+   default connections (`src/core/AudioPortsModel.cpp:549`, `:556`, `:560`, `:561` →
+   `setPin()`), the project loader (`:657` → `setPinFromAttributeName()` →
+   `setPinBatch()`), and the channel-count entry points
+   (`setChannelCountIn()` / `setChannelCountOut()` → `setChannelCounts()`). The readers
+   (`include/AudioPorts.h:186`, `:431`, `:447`, `:544`, `:600`, `:684`; `src/core/AudioBus.cpp:92`)
+   are unchanged. The exemption is consistent with the fork's existing rule for the
+   sibling model (`DeferredModelRegistrationScope`, `include/AutomatableModel.h`): a model
+   the render thread cannot see is written without the change lock.
+4. **"No collateral damage: old projects and saved data still load as before, and any
+   limit or check you added does not hit other callers that legitimately exceed it."** —
+   Nothing about the data changed: the pin matrices, the used-channel caches and the
+   direct-routing decision are computed by exactly the same code with exactly the same
+   values; only the moment of the write moved (under the guard). `saveSettings()` /
+   `loadSettings()` write and read the same attributes (`cN_M`), and the project file
+   format is untouched, so old projects load as before. No limit, threshold or check was
+   added, so no caller can hit one it legitimately exceeds. The one behavioural
+   difference is that a routing edit now waits for the running render period to end —
+   that is the fix itself, and it is the same wait every other model change already
+   makes (`RemotePlugin::applyDeferredClientRequests()`, `src/core/RemotePlugin.cpp:691`).
+5. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the
+   intended contract that shows it."** — Not applicable: the verdict is **REAL** (and
+   FIXED). The writer is `src/core/AudioPortsModel.cpp:475` and the reader is
+   `include/AudioPorts.h:447`; the guard that separates them is
+   `src/core/AudioEngine.cpp:975`.
+
+The remaining questions of the completion check:
+
 - **Is the finding real?** Yes — the writer and the reader are named above with
   file:line, on two different threads, on a packed `std::vector<bool>`.
-- **Is the fix at the cause?** The guard is inside the model, at the nine
-  mutators of the routing state; the sibling write `setPinBatch()` was moved
-  into the `.cpp` so it is guarded too. Every writer of the state was checked:
-  `src/gui/PinConnector.cpp:481` (GUI), `src/core/ControlCommandsPorts.cpp:275`
-  (`port.set_pin`), `src/core/AudioPortsModel.cpp:549`-`:561`
-  (`setDefaultConnections`) and `:657` (`loadSettings` → `setPinFromAttributeName`)
-  all reach a guarded `setPin()` / `setPinBatch()`.
 - **Does anything on the audio thread change?** No: the render period already
   holds `m_changeMutex`; `requestChangeInModel()` returns immediately on the
   rendering thread (`src/core/AudioEngine.cpp:1450`), and `RealtimeScope::isActive()`
@@ -274,17 +336,12 @@ No new file was added, so `tests/fork-sources.txt` is unchanged.
 - **Does the fix break the recorded-device build?** No: the build is inside the
   scope, and `ScriptDawModelRegistrationTest` (#316) passes — with the accepted
   fix it timed out (60 s) in this tree.
-- **Does the fix change behaviour outside the bug?** No: no value, no file
-  format and no command changed; old projects load as before; the pin matrices,
-  the caches and the direct-routing decision are computed exactly as before,
-  only under the guard.
 - **Undo and commands:** `setPin` still journals nothing and `port.set_pin`
   still records one inverse; no control command was added (the
   `ControlCommandsSnapshot` canary is untouched).
 - **Registration:** the five changed inherited files are registered in
   `tests/upstream-modifications.txt` with their reason, in the same commit.
-- **Gates:** `feature_check.py` exits 1, with `fork-sources` and
-  `all-sources-reproduce` failing — proven pre-existing by the identical run on
-  the unmodified tree (`.../logs/gates-2-base.log`). `no-upstream-regression`,
-  `check-namespace`, `no-tautology`, `doc-figures`, `complexity` and
-  `file-length` all pass.
+- **Gates:** `feature_check.py` exits 0 with 8/8 PASS (`.../logs/gates-4-final.log`).
+  The two manifest gates were red before `tests/all-sources.txt` was re-derived
+  with its own recipe; the re-derivation removed only the 1148 vendored sfizz
+  paths the recipe excludes and no ratchet baseline was touched.
