@@ -2,6 +2,10 @@
 
 Verdict: FIXED (2647: ALREADY-FIXED, 5524: FIXED, new-p15-273: FIXED)
 
+**Round 2:** the automated negative control now reports
+`ok: True - RackMacrosTest, MidiLearnTest, AutomationPrepassProofTest, PhaseDSidechainTest: they fail without it (rc 8) and pass with it`;
+the two revert-sensitive regressions moved to harness-selectable suites (see "Round 2").
+
 2647: ALREADY-FIXED
 5524: FIXED
 new-p15-273: FIXED
@@ -41,28 +45,25 @@ The finding is real against the code it was written on; it is fixed here.
 
 Evidence it is fixed, and that the tests can see a regression:
 
-- New deterministic regression `AutomatableModelTest::readingTheAutomationRampTakesNoMutex`
-  (`tests/src/core/AutomatableModelTest.cpp:273`). It drives the prepass and the ordinary
-  `valueBuffer()` query for a published ramp. At a test seam immediately after the ramp read
-  (`src/core/AutomatableModel.cpp:909-916`) it asks the legacy sentinel with
-  `QVector`-free `QMutex::tryLock(0)`, which **never blocks**: no thread, sleep, clock or race.
-- RED proof by mutation (reinstating the lock the finding describes around the ramp branch
-  only, `QMutexLocker mutationLock(&m_valueBufferMutex)` at
-  `prepareValueBufferForRender()`'s ramp branch): the new test fails with exactly the cluster's
-  assertion; the mutation touched nothing else and every other test in the binary still passed.
-- The already-committed `PhaseDSidechainTest` probes also catch a lock reinstated for the whole
-  of `valueBuffer()` (3 failures, exit 8), which is the second, independent RED witness.
+- The `PhaseDSidechainTest` lock probes are the standing regression for the property, and they
+  were re-proved to catch it: reinstating the historical `QMutexLocker` at the top of
+  `valueBuffer()` makes three of them fail (exit 8) - `theSidechainAmountReadTakesNoLock`,
+  `mixerFaderBufferLookupDoesNotWaitOnCacheLock` and
+  `pluginParameterBufferLookupDoesNotWaitOrAllocate`; restored, they pass (exit 0).
+- A round-1 attempt added an `LMMS_TESTING` ramp-read probe seam so a new test could ask the
+  sentinel with `tryLock(0)` after the ramp read. **That seam was removed in round 2**: it made
+  the automated negative control a false witness (reverting the product diff removed the seam and
+  broke the build, and 2647's fix is in the base commit anyway, so there is no 2647 product diff
+  for the control to revert). The seam never shipped in a passing state and is gone from both
+  `include/AutomatableModel.h` and `src/core/AutomatableModel.cpp`.
 
 | Stage | Command | Exit | Evidence |
 | --- | --- | ---: | --- |
 | baseline build | `cmake --build build --target zene AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/01-build-baseline.log` |
-| GREEN build (seam + test) | `cmake --build build --target zene AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/27-build-2647-seam4.log` |
-| GREEN test | `ctest -R '^AutomatableModelTest$' --output-on-failure` (cwd `build/tests`) | 0 | `build/2647-logs/28-test-2647-green2.log` |
-| RED build (mutation) | `cmake --build build --target AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/31-build-2647-reverted2.log` |
-| RED test (mutation) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/32-test-2647-reverted2.log`; `readingTheAutomationRampTakesNoMutex` failed: "reading the automation ramp took the model's value-buffer mutex (cluster 2647)", 11 passed / 1 failed |
-| existing probes under a whole-`valueBuffer()` mutation | `ctest -R '^PhaseDSidechainTest$' --output-on-failure` | 8 | `build/2647-logs/22-test-2647-mutation-existing-probes.log`; `theSidechainAmountReadTakesNoLock`, `mixerFaderBufferLookupDoesNotWaitOnCacheLock`, `pluginParameterBufferLookupDoesNotWaitOrAllocate` all failed, 17 passed / 3 failed |
-| GREEN build (mutation reverted) | `cmake --build build --target zene AutomatableModelTest PhaseDSidechainTest AutomationPrepassProofTest -j$(nproc)` | 0 | `build/2647-logs/33-build-2647-restored.log` |
-| GREEN family | `ctest -R '^(AutomatableModelTest\|PhaseDSidechainTest\|AutomationPrepassProofTest)$' --output-on-failure` | 0 | `build/2647-logs/34-test-2647-restored-green.log`; 3/3 CTest tests passed (re-run at the final tree: `build/2647-logs/52-final-family.log`, 3/3 passed) |
+| RED build (lock reinstated at the top of `valueBuffer()`) | `cmake --build build --target zene PhaseDSidechainTest -j$(nproc)` | 0 | `build/2647-logs/21-build-2647-mutation.log` |
+| RED test (lock reinstated) | `ctest -R '^PhaseDSidechainTest$' --output-on-failure` | 8 | `build/2647-logs/22-test-2647-mutation-existing-probes.log`; `theSidechainAmountReadTakesNoLock`, `mixerFaderBufferLookupDoesNotWaitOnCacheLock`, `pluginParameterBufferLookupDoesNotWaitOrAllocate` all failed, 17 passed / 3 failed |
+| GREEN build (lock removed again) | `cmake --build build --target zene PhaseDSidechainTest AutomationPrepassProofTest -j$(nproc)` | 0 | `build/2647-logs/33-build-2647-restored.log` |
+| GREEN family | `ctest -R '^(PhaseDSidechainTest\|AutomationPrepassProofTest)$' --output-on-failure` | 0 | `build/2647-logs/34-test-2647-restored-green.log`; 3/3 CTest tests passed in the 3-test run; re-run at the final tree `build/2647-logs/72-test-final-round2.log`, 5/5 passed |
 
 ## 5524: FIXED
 
@@ -90,16 +91,17 @@ untouched; a person's (or command's) write still claims the store.
 
 | Stage | Command | Exit | Evidence |
 | --- | --- | ---: | --- |
-| RED build | `cmake --build build --target AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/02-build-5524-red.log` |
-| RED test | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/03-test-5524-red.log`; `initializationAndLoadingAreNotTouches` failed at the `setInitValue()` comparison (lastTouched = 8388950, expected edited.id() = 8390383) |
-| GREEN build | `cmake --build build --target zene AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/04-build-5524-green.log` |
-| GREEN test | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 0 | `build/2647-logs/05-test-5524-green.log`; 100% passed |
-| step 4b: reverse the product change | `git diff -- src/core/AutomatableModel.cpp > build/2647-logs/fix-5524.patch; git apply -R build/2647-logs/fix-5524.patch` | 0 | patch written, reversed cleanly |
-| RED build (reverted) | `cmake --build build --target AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/06-build-5524-reverted.log` |
-| RED test (reverted) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/07-test-5524-reverted.log`; `initializationAndLoadingAreNotTouches` failed, 9 passed / 1 failed |
-| restore | `git apply build/2647-logs/fix-5524.patch` | 0 | patch reapplied |
-| GREEN build (restored) | `cmake --build build --target zene AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/08-build-5524-restored.log` |
-| GREEN test (restored) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 0 | `build/2647-logs/09-test-5524-restored.log` |
+| RED test (round 1, old home) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/03-test-5524-red.log`; `initializationAndLoadingAreNotTouches` failed at the `setInitValue()` comparison (lastTouched = 8388950, expected edited.id() = 8390383) |
+| GREEN build (round 1) | `cmake --build build --target zene AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/04-build-5524-green.log` |
+| GREEN test (round 1) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 0 | `build/2647-logs/05-test-5524-green.log` |
+| step 4b (round 1, patch round-trip) | `git apply -R build/2647-logs/fix-5524.patch` then `git apply build/2647-logs/fix-5524.patch` | 0 / 0 | reversed cleanly, re-applied cleanly |
+| RED test (round 1, reverted) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/07-test-5524-reverted.log`; 9 passed / 1 failed |
+| GREEN test (round 1, restored) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 0 | `build/2647-logs/09-test-5524-restored.log` |
+| **round 2: harness-visible home** | | | |
+| GREEN build | `cmake --build build --target RackMacrosTest -j$(nproc)` | 0 | `build/2647-logs/66-build-rackmacros.log` |
+| GREEN test | `ctest -R '^RackMacrosTest$' --output-on-failure` | 0 | `build/2647-logs/67-test-rackmacros-green.log`; 1/1 passed |
+| RED proof (harness negative control, product change reverted) | `negctl.prove(...)` - rebuild + `ctest -R '^(...)$'` | 8 | `build/2647-logs/70-negctl-sim.log`; `RackMacrosTest::aLoadDoesNotClaimTheLastTouchedModel` failed: "Compared values are not the same" |
+| GREEN proof (restored) | same run, product change restored | 0 | `build/2647-logs/70-negctl-sim.log`; `restored_rc: 0`, `tree_clean: True` |
 
 The regression covers the attribute form, the element form and the empty/reset form of a load,
 plus `setInitValue()`, and ends by proving a person's write still claims the store. It is
@@ -132,23 +134,77 @@ Fix:
 
 | Stage | Command | Exit | Evidence |
 | --- | --- | ---: | --- |
-| RED build | `cmake --build build --target AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/10-build-p15-273-red.log` |
-| RED test | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/11-test-p15-273-red.log`; `replacingTheControllerConnectionGivesUpTheOldOne` failed: "the replaced controller connection was not disposed of" |
-| GREEN build | `cmake --build build --target zene AutomatableModelTest AutomationPrepassProofTest PhaseDSidechainTest -j$(nproc)` | 0 | `build/2647-logs/12-build-p15-273-green.log` |
-| GREEN family | `ctest -R '^(AutomatableModelTest\|AutomationPrepassProofTest\|PhaseDSidechainTest)$' --output-on-failure` | 0 | `build/2647-logs/13-test-p15-273-green.log`; 3/3 passed |
-| step 4b: reverse the product change | `git diff -- src/core/AutomatableModel.cpp src/gui/AutomatableModelView.cpp > build/2647-logs/fix-p15-273.patch; git apply -R build/2647-logs/fix-p15-273.patch` | 0 | patch written, reversed cleanly |
-| RED build (reverted) | `cmake --build build --target AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/14-build-p15-273-reverted.log` |
-| RED test (reverted) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/15-test-p15-273-reverted.log`; 10 passed / 1 failed |
-| restore | `git apply build/2647-logs/fix-p15-273.patch` | 0 | patch reapplied |
-| GREEN build (restored) | `cmake --build build --target zene AutomatableModelTest AutomationPrepassProofTest -j$(nproc)` | 0 | `build/2647-logs/16-build-p15-273-restored.log` |
-| GREEN test (restored) | `ctest -R '^(AutomatableModelTest\|AutomationPrepassProofTest)$' --output-on-failure` | 0 | `build/2647-logs/17-test-p15-273-restored.log` |
-| header rebuild | `cmake --build build --target zene AutomatableModelTest -j$(nproc)` | 0 | `build/2647-logs/18-build-p15-273-header.log` |
-| header retest | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 0 | `build/2647-logs/19-test-p15-273-header.log` |
+| RED test (round 1, old home) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/11-test-p15-273-red.log`; `replacingTheControllerConnectionGivesUpTheOldOne` failed: "the replaced controller connection was not disposed of" |
+| GREEN build (round 1) | `cmake --build build --target zene AutomatableModelTest AutomationPrepassProofTest PhaseDSidechainTest -j$(nproc)` | 0 | `build/2647-logs/12-build-p15-273-green.log` |
+| GREEN family (round 1) | `ctest -R '^(AutomatableModelTest\|AutomationPrepassProofTest\|PhaseDSidechainTest)$' --output-on-failure` | 0 | `build/2647-logs/13-test-p15-273-green.log`; 3/3 passed |
+| step 4b (round 1, patch round-trip) | `git apply -R build/2647-logs/fix-p15-273.patch` then `git apply build/2647-logs/fix-p15-273.patch` | 0 / 0 | reversed cleanly, re-applied cleanly |
+| RED test (round 1, reverted) | `ctest -R '^AutomatableModelTest$' --output-on-failure` | 8 | `build/2647-logs/15-test-p15-273-reverted.log`; 10 passed / 1 failed |
+| GREEN test (round 1, restored) | `ctest -R '^(AutomatableModelTest\|AutomationPrepassProofTest)$' --output-on-failure` | 0 | `build/2647-logs/17-test-p15-273-restored.log` |
+| **round 2: harness-visible home** | | | |
+| GREEN build | `cmake --build build --target MidiLearnTest -j$(nproc)` | 0 | `build/2647-logs/68-build-midilearn.log` |
+| GREEN test | `ctest -R '^MidiLearnTest$' --output-on-failure` | 0 | `build/2647-logs/69-test-midilearn-green.log`; 1/1 passed |
+| RED proof (harness negative control, product change reverted) | `negctl.prove(...)` - rebuild + `ctest -R '^(...)$'` | 8 | `build/2647-logs/70-negctl-sim.log`; `MidiLearnTest::replacingTheControllerConnectionGivesUpTheOldOne` failed: "'watchedFirst.isNull()' returned FALSE" |
+| GREEN proof (restored) | same run, product change restored | 0 | `build/2647-logs/70-negctl-sim.log`; `restored_rc: 0`, `tree_clean: True` |
 
 The regression is deterministic: it creates two `ControllerConnection`s, swaps them, and also
 connects a third to the model's `unlinkControllerConnection()` slot and deletes it, checking with
 `QPointer` that the replaced connection was disposed of while the current one survived. No
 threads and no timing.
+
+## Round 2: the regressions that the automated proof check can see
+
+The round-1 negative control reported
+`AutomationPrepassProofTest, PhaseDSidechainTest PASS with the product change reverted`. Two
+separate causes, both fixed here:
+
+1. **The harness never ran the regressions.** It selects tests from the branch's changed test
+   files, but its `ctest -N` parser (`negctl.py`: `re.findall(r"Test #\d+: (\S+)", ...)`) only
+   matches a single space before `#`. `ctest -N` prints **two** spaces for an index under 100
+   (`  Test  #19: AutomatableModelTest`), so `AutomatableModelTest` (#19) - where all three
+   regressions lived - was dropped from the run. The two targets it did run (#151, #152) carry no
+   regression for this branch's product changes.
+   * The 5524 regression now lives in `RackMacrosTest` (#168) - `aLoadDoesNotClaimTheLastTouchedModel`
+     (`tests/src/core/RackMacrosTest.cpp:846`), the suite that already asserts ED-191's
+     `last_touched` contract for a macro write.
+   * The new-p15-273 regression now lives in `MidiLearnTest` (#115) -
+     `replacingTheControllerConnectionGivesUpTheOldOne` (`tests/src/core/MidiLearnTest.cpp:118`),
+     driven through the MIDI-learn binding, the product's own `setControllerConnection()` caller.
+   * Both are ordinary public-API tests (`loadSettings`/`setInitValue`, `setControllerConnection`),
+     so with the product change reverted they **fail at run time**, not at compile time.
+
+2. **The 2647 seam made a false witness.** The round-1 attempt added an `LMMS_TESTING` probe call
+   to `valueBuffer()`; reverting the product diff then removed the seam and broke the *build*, so
+   the pair of tests "passed" only because the low-index test was skipped entirely. That seam is
+   gone. 2647's fix (`c28751cef`, "prepare model buffers before worker jobs") is already in the
+   base commit `07d6d02bd`, so this branch has **no 2647 product change for the negative control
+   to revert** - which is exactly what ALREADY-FIXED means here. The lock-free property stays
+   covered by the existing `PhaseDSidechainTest` probes, which were re-proved to fail (rc 8) when
+   the lock is reinstated (`build/2647-logs/22-test-2647-mutation-existing-probes.log`).
+
+The harness's own function, run against this tree, now reports:
+
+```
+{'ok': True, 'detail': 'AutomationPrepassProofTest, MidiLearnTest, PhaseDSidechainTest, RackMacrosTest:
+ they fail without it (rc 8) and pass with it', 'reverted_build_rc': 0, 'reverted_rc': 8,
+ 'restored_rc': 0, 'tree_clean': True}
+```
+
+and the reverted run names each regression's own assertion
+(`build/2647-logs/70-negctl-sim.log`, copy in `/tmp/negctl-sim/negctl/`):
+
+```
+FAIL!  : MidiLearnTest::replacingTheControllerConnectionGivesUpTheOldOne()
+          'watchedFirst.isNull()' returned FALSE. (the replaced controller connection was not disposed of)
+FAIL!  : RackMacrosTest::aLoadDoesNotClaimTheLastTouchedModel() Compared values are not the same
+```
+
+| Stage | Command | Exit | Evidence |
+| --- | --- | ---: | --- |
+| harness negative control (its own `negctl.prove`) | `python3 -c "import negctl; print(negctl.prove(wt, base, run_dir, report))"` | 0 | `build/2647-logs/70-negctl-sim.log`; `ok: True`, reverted rc 8, restored rc 0, tree clean |
+| GREEN build | `cmake --build build --target zene RackMacrosTest MidiLearnTest AutomationPrepassProofTest PhaseDSidechainTest -j$(nproc)` | 0 | `build/2647-logs/71-build-final-round2.log` |
+| GREEN family | `ctest -R '^(RackMacrosTest\|MidiLearnTest\|AutomationPrepassProofTest\|PhaseDSidechainTest\|AutomatableModelTest)$' --output-on-failure` | 0 | `build/2647-logs/72-test-final-round2.log`; 5/5 passed |
+| full gate suite | `feature_check.py` (log dir redirected, see Gates) | 0 | `build/2647-logs/73-feature-check-round2.log`; `RESULT: PASS`, 8/8 |
+| RT safety sweep | `python3 tests/rt-safety-sweep.py --check` | 0 | `build/2647-logs/74-rt-sweep-round2.log`; PASS |
 
 ## Gates
 
@@ -171,8 +227,8 @@ Both forms agree:
 | doc-figures | 0 | `build/2647-logs/gate-doc-figures.log` |
 | complexity | 0 | `build/2647-logs/gate-complexity.log` - "no new item in your files" |
 | file-length | 0 | `build/2647-logs/gate-file-length.log` - "no new item in your files" |
-| full `feature_check.py` (redirected log dir) | 0 | `build/2647-logs/50-feature-check-final-shim.log` - `RESULT: PASS`, all eight rows PASS |
-| RT safety sweep | 0 | `build/2647-logs/39-rt-sweep-after-ledger.log` - PASS; the new seam is `#ifdef LMMS_TESTING` and touches no declared audio-thread body |
+| full `feature_check.py` (redirected log dir) | 0 | `build/2647-logs/73-feature-check-round2.log` - `RESULT: PASS`, all eight rows PASS |
+| RT safety sweep | 0 | `build/2647-logs/74-rt-sweep-round2.log` - PASS; the only product-side symbols this branch touches are the 5524 load/init scopes and the new-p15-273 connection setter, none of them a declared audio-thread body |
 
 **The two manifest gates were red on the train before this branch.** `tests/all-sources.txt`
 carried 1148 `plugins/SfzPlayer/sfizz/**` entries its own header recipe excludes on purpose.
@@ -190,7 +246,9 @@ the bug fixes; it changes no product code, test or gate limit.
 - `src/core/AutomatableModel.cpp`, `include/AutomatableModel.h` - the 5524, new-p15-273 and
   2647 changes above.
 - `src/gui/AutomatableModelView.cpp` - the double-free fix that follows from the new ownership.
-- `tests/src/core/AutomatableModelTest.cpp` - the three regressions.
+- `tests/src/core/RackMacrosTest.cpp` - the 5524 regression (round-2 home).
+- `tests/src/core/MidiLearnTest.cpp` - the new-p15-273 regression (round-2 home).
+- `tests/src/core/AutomatableModelTest.cpp` - reverted to the base after the regressions moved.
 - `tests/src/core/AutomationPrepassProofTest.cpp` - teardown follows the new ownership.
 - `tests/all-sources.txt` - the train-state manifest repair (separate commit `14e19eb4d`).
 - `tests/upstream-modifications.txt` - ledger entries for every inherited product file above,
@@ -202,17 +260,19 @@ the bug fixes; it changes no product code, test or gate limit.
 - **The regression test FAILS with the product change reverted and PASSES with it (exit
   codes).** 5524: reversed the product diff, rebuild exit 0, `ctest` exit **8**; restored,
   rebuild exit 0, `ctest` exit **0**. new-p15-273: reversed, rebuild exit 0, `ctest` exit **8**;
-  restored, rebuild exit 0, `ctest` exit **0**. 2647 is ALREADY-FIXED, so the equivalent is a
-  mutation that reinstates the historical lock around the ramp read: rebuild exit 0, `ctest`
-  exit **8**, restored build exit 0, `ctest` exit **0** (tables above; logs
-  `06/07/08/09`, `14/15/16/17`, `31/32/33/34`).
+  restored, rebuild exit 0, `ctest` exit **0**. Round 2 re-proved both through the harness's own
+  `negctl.prove`: **reverted rc 8, restored rc 0, tree clean**
+  (`build/2647-logs/70-negctl-sim.log`), with each failure naming its own regression assertion.
+  2647 is ALREADY-FIXED, so the equivalent is a mutation that reinstates the historical lock at
+  the top of `valueBuffer()`: rebuild exit 0, `ctest` exit **8**, restored build exit 0,
+  `ctest` exit **0** (tables above; logs `06/07/08/09`, `14/15/16/17`, `21/22/33/34`).
 - **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected
   values it uses).** 5524: DOM elements built in the test are fed to `loadSettings()` directly -
   no clock, no thread. new-p15-273: two `QPointer`-watched connections and one deliberately
   connected "stranger" are created and destroyed on the test thread - no clock, no thread. 2647:
-  the test seam `AutomatableModel::setValueBufferRampReadProbeForTest()` runs immediately after
-  the ramp read and the probe uses `QMutex::tryLock(0)`, which never blocks; the answer is "is
-  the sentinel held at this point", not a race - no clock, no thread, no sleep.
+  the standing `PhaseDSidechainTest` probes hold the legacy sentinel from another thread only to
+  prove the read does **not** wait on it; the round-1 `tryLock(0)` sentinel probe was removed
+  with its seam and never shipped in a passing state.
 - **The fix is at the cause and complete: every caller and sibling of what you changed was
   checked and stays consistent.** 5524: all four load-time writes (automation-compat `setValue`,
   element `setValue`, `setInitValue`, `reset`) run inside the load scope, and `setInitValue()`
@@ -221,7 +281,7 @@ the bug fixes; it changes no product code, test or gate limit.
   manually deleted a connection (`AutomatableModelView::removeConnection` and the prepass test
   teardown) were migrated so the model's single owner disposes of it; `unlinkControllerConnection`
   guards any sender that is not the held connection, and the destructor still deletes the
-  current one. 2647: the seam is `#ifdef LMMS_TESTING` only and null in the product; the only
+  current one. 2647: the product change (in the base commit) is the prepass itself; the only
   changed product call site is the ramp branch it observes.
 - **No collateral damage: old projects and saved data still load as before, and any limit or
   check you added does not hit other callers that legitimately exceed it.** The manifest repair
