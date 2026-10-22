@@ -78,15 +78,6 @@ std::atomic<std::uint64_t> s_notifyCount{0};
 
 } // namespace
 
-Primitive compiledPrimitive() noexcept
-{
-#ifdef LMMS_WORKER_WAKE_WAIT_ON_ADDRESS
-	return Primitive::WaitOnAddress;
-#else
-	return Primitive::AtomicWait;
-#endif
-}
-
 #if defined(__APPLE__)
 // Compile-time, not a test-only claim: an Apple build whose wake is not the wait-on-address
 // path would put std::atomic::wait (unavailable below macOS 11) back on the render thread.

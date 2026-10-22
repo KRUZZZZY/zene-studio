@@ -28,10 +28,10 @@
 #include <atomic>
 #include <cstdint>
 
-// The wake primitive this build uses. The selection lives in the .cpp next to the code it
-// chooses between; compiledPrimitive() reports it, and a test asserts it is the
-// wait-on-address path on Apple and Linux so those jobs prove they exercise the path the
-// unit is about.
+// The wake primitive this build uses. compiledPrimitive() is constexpr in this header, so
+// the implementation's compile-time assertion, the runtime test and any future caller all
+// read the same answer; the test asserts it is the wait-on-address path on Apple and Linux
+// so those jobs prove they exercise the path the unit is about.
 //
 // * Apple: `__ulock_wait` / `__ulock_wake` on the generation word itself - the
 //   compare-and-wait trap libc++ itself uses under std::atomic::wait. std::atomic::wait is
@@ -80,8 +80,17 @@ enum class Primitive
 	WaitOnAddress
 };
 
-//! The primitive chosen when this translation unit was compiled (AudioWorkerWake.cpp).
-Primitive compiledPrimitive() noexcept;
+//! The primitive this build compiled. constexpr so a translation unit can assert on it at
+//! compile time - the Apple build must not silently fall back to std::atomic::wait, which is
+//! unavailable below macOS 11.
+constexpr Primitive compiledPrimitive() noexcept
+{
+#ifdef LMMS_WORKER_WAKE_WAIT_ON_ADDRESS
+	return Primitive::WaitOnAddress;
+#else
+	return Primitive::AtomicWait;
+#endif
+}
 
 //! Wake every thread waiting on \a generation. The caller has already advanced the word (the
 //! value, not this call, is the signal): this is a pure post. It runs on the render thread

@@ -92,8 +92,22 @@ primitive), so the failure is behavioural rather than a compile error.
 
 ## Neighbouring regressions run
 
-`ctest -R '^(AudioWorkerWakeTest|RenderJobQueueTest|AudioEngineTeardownTest)$'` → **0**
-(3/3). `ctest -R '^(MixerConcurrencyTest|PdcMixerTest)$'` → **0** (2/2).
+`ctest -R '^(AudioWorkerWakeTest|RenderJobQueueTest|AudioEngineTeardownTest|MixerConcurrencyTest|PdcMixerTest)$'`
+→ **0** (5/5, `test-9.log`). The new test was stress-run 25 more times after the final code
+change: 25 green of 25 (`stress3-*.log`).
+
+## Portability compile checks
+
+The Apple branch cannot be built on this Linux box, so both halves of the guard were
+syntax-checked directly, and the constexpr selection assertion was compiled on its own:
+
+```
+g++ -std=c++20 -I include -D__APPLE__=1 -fsyntax-only src/core/AudioWorkerWake.cpp   → 0
+g++ -std=c++20 -I include            -fsyntax-only src/core/AudioWorkerWake.cpp      → 0
+g++ -std=c++20 -I include -U__linux__ -fsyntax-only src/core/AudioWorkerWake.cpp     → 0
+```
+
+That is a compile check of the Apple *source path*, not an Apple build or run.
 
 ## Gates
 
@@ -107,8 +121,8 @@ primitive), so the failure is behavioural rather than a compile error.
 | `python3 tests/doc-figures-gate.py` | 0 | `gate-doc-figures.log` |
 | `python3 tests/rt-safety-sweep.py --check` | 0 | `rt-sweep-2.log` |
 | `tests/scripted/check-namespace` (final tree) | 0 | `namespace-2.log` — the last `#endif` gained its `// LMMS_WORKER_WAKE_WAIT_ON_ADDRESS` comment |
-| `bash tests/complexity-gate.sh --check` | 1 | `final2-complexity.log` — 7 regression keys, **all 7 also present at the base commit** (`git archive 07d6d02bd` → `base-complexity.log`); the difference is empty, so this branch adds no item |
-| `bash tests/file-length-gate.sh --check` | 1 | `final2-file-length.log` — 18 keys, **all 18 also present at the base** (`base-file-length.log`); the difference is empty |
+| `bash tests/complexity-gate.sh --check` | 1 | `final4-complexity.log` — 7 regression keys, **all 7 also present at the base commit** (`git archive 07d6d02bd` → `base-complexity.log`); the difference is empty, so this branch adds no item |
+| `bash tests/file-length-gate.sh --check` | 1 | `final4-file-length.log` — 18 keys, **all 18 also present at the base** (`base-file-length.log`); the difference is empty |
 
 ## Self-check
 
