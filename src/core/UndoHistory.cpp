@@ -45,6 +45,12 @@ const QString ConfigClass = QStringLiteral("undohistory");
 const QString StepName = QStringLiteral("z:undostep");
 constexpr qint64 Megabyte = 1024ll * 1024;
 
+//! The fingerprint schemes. The stored value says which scheme wrote it, so a
+//! history written before the scheme was versioned is read as that scheme's:
+//! v1 hashed the sections only, v2 hashes the root's format attributes too.
+const QString FingerprintV1Prefix = QStringLiteral("sha256:");
+const QString FingerprintV2Prefix = QStringLiteral("sha256:v2:");
+
 int configInt(const QString& attribute, int fallback, int low, int high)
 {
 	bool ok = false;
@@ -59,8 +65,11 @@ QString sha256Of(const QByteArray& bytes)
 }
 
 //! The writer's own prune (DataFile::cleanMetaNodes), on a detached copy.
-void stripMetadataNodes(QDomElement element)
+//! Returns false when \a element itself carries metadata="1", i.e. the writer
+//! would drop the whole section - so the caller must not measure it.
+bool stripMetadataNodes(QDomElement element)
 {
+	if (element.attribute(QStringLiteral("metadata")).toInt()) { return false; }
 	QDomNode node = element.firstChild();
 	while (!node.isNull())
 	{
@@ -68,10 +77,31 @@ void stripMetadataNodes(QDomElement element)
 		if (node.isElement())
 		{
 			if (node.toElement().attribute(QStringLiteral("metadata")).toInt()) { element.removeChild(node); }
-			else { stripMetadataNodes(node.toElement()); }
+			else if (!stripMetadataNodes(node.toElement())) { element.removeChild(node); }
 		}
 		node = next;
 	}
+	return true;
+}
+
+bool stepDamaged(const QDomElement& step, const QByteArray& bytes)
+{
+	return step.tagName() != StepName || bytes.isEmpty()
+		|| step.attribute(QStringLiteral("bytes")).toLongLong() != bytes.size()
+		|| step.attribute(QStringLiteral("sha256")) != sha256Of(bytes);
+}
+
+//! The steps a history section really carries: its <z:undostep> elements, one
+//! for each step the section says it holds.
+int stepCount(const QDomElement& section)
+{
+	int count = 0;
+	for (QDomElement step = section.firstChildElement(StepName); !step.isNull();
+		step = step.nextSiblingElement(StepName))
+	{
+		++count;
+	}
+	return count;
 }
 
 bool outsideFingerprint(const QString& name)
@@ -95,6 +125,41 @@ void pushLoadedStep(ProjectJournal* journal, const ProjectJournal::Snapshot& bef
 			if (*after) { Engine::getSong()->restoreUndoSnapshot(**after); }
 		},
 		before);
+}
+
+//! The digest of the sections a fingerprint covers: <head> (without its
+//! `writer`) and every <song> section except the ones that are not the
+//! project's content. \a schemeLine is what the scheme adds to the digest (the
+//! root's format attributes for v2, nothing for v1).
+QString digestOfSections(const QDomDocument& document, bool stripMetadata, const QString& schemeLine)
+{
+	const QDomElement root = document.documentElement();
+	QCryptographicHash hash(QCryptographicHash::Sha256);
+	if (!schemeLine.isEmpty()) { hash.addData(schemeLine.toUtf8()); }
+	const auto add = [&hash, stripMetadata](const QDomElement& element) {
+		QDomElement measured = element;
+		if (stripMetadata)
+		{
+			measured = element.cloneNode(true).toElement();
+			if (!stripMetadataNodes(measured)) { return; }
+		}
+		hash.addData(element.tagName().toUtf8());
+		hash.addData(QByteArrayLiteral(" "));
+		hash.addData(sectionDigest(measured).toUtf8());
+		hash.addData(QByteArrayLiteral("\n"));
+	};
+	// <head>'s `writer` names the PROCESS that saved (ProjectIds::writerInstance), not the project: any build
+	// that re-saves a revised project stamps its own, so it is left out - measured with the base build, whose
+	// unchanged re-save otherwise read as an edit.
+	QDomElement head = root.firstChildElement(QStringLiteral("head")).cloneNode(true).toElement();
+	head.removeAttribute(QStringLiteral("writer"));
+	add(head);
+	const QDomElement song = root.firstChildElement(QStringLiteral("song"));
+	for (QDomElement child = song.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+	{
+		if (!outsideFingerprint(child.tagName())) { add(child); }
+	}
+	return QString::fromLatin1(hash.result().toHex());
 }
 
 } // namespace
@@ -215,34 +280,17 @@ ProjectJournal::PersistPlan UndoHistory::currentPlan() const
 
 // ---- the fingerprint ---------------------------------------------------------
 
-QString UndoHistory::fingerprint(const QDomDocument& document, bool stripMetadata)
+QString UndoHistory::fingerprint(const QDomDocument& document, bool stripMetadata, const QString& version, const QString& type)
 {
-	const QDomElement root = document.documentElement();
-	QCryptographicHash hash(QCryptographicHash::Sha256);
-	const auto add = [&hash, stripMetadata](const QDomElement& element) {
-		QDomElement measured = element;
-		if (stripMetadata)
-		{
-			measured = element.cloneNode(true).toElement();
-			stripMetadataNodes(measured);
-		}
-		hash.addData(element.tagName().toUtf8());
-		hash.addData(QByteArrayLiteral(" "));
-		hash.addData(sectionDigest(measured).toUtf8());
-		hash.addData(QByteArrayLiteral("\n"));
-	};
-	// <head>'s `writer` names the PROCESS that saved (ProjectIds::writerInstance), not the project: any build
-	// that re-saves a revised project stamps its own, so it is left out - measured with the base build, whose
-	// unchanged re-save otherwise read as an edit.
-	QDomElement head = root.firstChildElement(QStringLiteral("head")).cloneNode(true).toElement();
-	head.removeAttribute(QStringLiteral("writer"));
-	add(head);
-	const QDomElement song = root.firstChildElement(QStringLiteral("song"));
-	for (QDomElement child = song.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
-	{
-		if (!outsideFingerprint(child.tagName())) { add(child); }
-	}
-	return QStringLiteral("sha256:") + QString::fromLatin1(hash.result().toHex());
+	// The root's format attributes lead the digest: a document whose version
+	// or type changed is not the document the history was written from.
+	const QString scheme = QStringLiteral("v2 ") + version + QLatin1Char(' ') + type + QLatin1Char('\n');
+	return FingerprintV2Prefix + digestOfSections(document, stripMetadata, scheme);
+}
+
+QString UndoHistory::legacyFingerprint(const QDomDocument& document, bool stripMetadata)
+{
+	return FingerprintV1Prefix + digestOfSections(document, stripMetadata, QString());
 }
 
 // ---- the section ---------------------------------------------------------------
@@ -325,15 +373,44 @@ void UndoHistory::seal(DataFile& file, bool withResources)
 	const bool steps = !section.isNull() && m_save.savedSteps > 0;
 	if (steps && withResources) { keepOutOfBundle(section, &m_save); }
 	m_save.written = steps && !withResources;
-	if (m_save.written) { section.setAttribute(QStringLiteral("fingerprint"), fingerprint(file, true)); }
+	if (m_save.written)
+	{
+		section.setAttribute(QStringLiteral("fingerprint"), fingerprint(file, true,
+			QString::number(file.originalFileVersion()), file.originalType()));
+	}
 	if (!m_save.warning.isEmpty()) { qWarning("%s", qUtf8Printable(m_save.warning)); }
 }
 
 void UndoHistory::beginLoad(const DataFile& file)
 {
 	m_loadFingerprint.clear();
+	m_loadLegacyFingerprint.clear();
+	m_loadSourceFormatChanged = false;
 	const QDomElement song = file.documentElement().firstChildElement(QStringLiteral("song"));
-	if (!song.firstChildElement(elementName()).isNull()) { m_loadFingerprint = fingerprint(file, false); }
+	if (!song.firstChildElement(elementName()).isNull())
+	{
+		// The root's format attributes AS THE FILE HAD THEM: a load that
+		// upgraded the file rewrote the root's version, and a file whose root
+		// version was changed under it must not be taken for the project its
+		// history was written from. The scheme v1 fingerprint is measured too,
+		// for a history written before the scheme was versioned.
+		m_loadFingerprint = fingerprint(file, false,
+			QString::number(file.originalFileVersion()), file.originalType());
+		m_loadLegacyFingerprint = legacyFingerprint(file, false);
+		m_loadSourceFormatChanged = file.sourceFormatChanged();
+	}
+}
+
+bool UndoHistory::fingerprintMatches(const QString& stored) const
+{
+	if (m_loadFingerprint.isEmpty()) { return false; }
+	// The stored value says which scheme wrote it.
+	if (stored.startsWith(FingerprintV2Prefix)) { return stored == m_loadFingerprint; }
+	// A fingerprint written before the scheme was versioned: honoured only when
+	// the file's format did not change under the load - then the version the
+	// file claims is the one the history was written against, which is what
+	// the v2 scheme would have told us.
+	return !m_loadSourceFormatChanged && stored == m_loadLegacyFingerprint;
 }
 
 void UndoHistory::load(const QDomElement& element)
@@ -356,8 +433,22 @@ void UndoHistory::load(const QDomElement& element)
 		return;
 	}
 	m_setting = setting;
-	if (element.firstChildElement(StepName).isNull()) { return; }
-	if (element.attribute(QStringLiteral("fingerprint")) != m_loadFingerprint)
+	// The declared count is checked against the steps the section really has,
+	// BEFORE anything is loaded: a history that declares more steps than it
+	// carries is INCOMPLETE, and loading what is left would undo across the
+	// edit the missing step belonged to. A history that declares no steps is
+	// not incomplete - it is a history with nothing in it, and it loads as
+	// nothing (found, no steps, no reason to discard it).
+	const bool hasDeclared = element.hasAttribute(QStringLiteral("steps"));
+	const int declared = hasDeclared ? element.attribute(QStringLiteral("steps")).toInt() : 0;
+	const int present = stepCount(element);
+	if (hasDeclared && present != declared)
+	{
+		m_load.discarded = QStringLiteral("undo history declares %1 step(s) but contains %2").arg(declared).arg(present);
+		return;
+	}
+	if (present == 0) { return; }
+	if (!fingerprintMatches(element.attribute(QStringLiteral("fingerprint"))))
 	{
 		m_load.discarded = QStringLiteral("the project was changed after its undo history was saved "
 			"(re-saved by a build that does not read the history), so the history no longer describes it");
@@ -369,14 +460,13 @@ void UndoHistory::load(const QDomElement& element)
 void UndoHistory::loadSteps(const QDomElement& section)
 {
 	// Validated whole before anything is pushed: a history is contiguous, so one
-	// bad step makes the steps below it unreachable anyway.
+	// bad step makes the steps below it unreachable anyway. The declared count
+	// was already checked against the section's step elements (load()).
 	QVector<ProjectJournal::Snapshot> snapshots;
 	for (QDomElement step = section.firstChildElement(); !step.isNull(); step = step.nextSiblingElement())
 	{
 		const QByteArray bytes = QByteArray::fromBase64(step.text().toLatin1());
-		if (step.tagName() != StepName || bytes.isEmpty()
-			|| step.attribute(QStringLiteral("bytes")).toLongLong() != bytes.size()
-			|| step.attribute(QStringLiteral("sha256")) != sha256Of(bytes))
+		if (stepDamaged(step, bytes))
 		{
 			m_load.discarded = QStringLiteral("undo step %1 of the saved history is damaged").arg(snapshots.size());
 			return;

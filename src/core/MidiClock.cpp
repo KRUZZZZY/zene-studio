@@ -19,8 +19,9 @@
  *     handleInputMessage() instead of dropping it, and processOutEvent() sends
  *     the one- and three-byte forms through sendByte().
  *   * src/core/midi/MidiAlsaSeq.cpp - processOutEvent() sends the same family
- *     as ALSA-sequencer events, DIRECT (not on the tick queue the note path
- *     uses), because a clock must not be scheduled behind a queue; and run()
+ *     as ALSA-sequencer events, through the sequencer's own output QUEUE (the
+ *     sequencer worker owns the mutex and the ALSA calls, so the audio thread
+ *     that emits the clock never touches either); and run()
  *     names the SENDER of an incoming clock-family event to handleInputMessage()
  *     (Q050-026), which is what the follower's source is matched against.
  *

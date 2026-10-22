@@ -91,6 +91,24 @@ inline bool scaleAccepts( const Note& note, const Filter& f )
 	return f.scaleMatch == ScaleMatch::InScale ? inScale : !inScale;
 }
 
+/*! The key a transpose by `semitones` gives `key`: the ONE rule both the
+ *  transpose and the count of what it would move follow, so the two cannot
+ *  disagree. The shift is bounded first: key + INT_MAX would overflow before
+ *  the clamp saw it. */
+inline int transposedKey( int key, int semitones ) noexcept
+{
+	return std::clamp( key + std::clamp( semitones, -NumKeys, NumKeys ), 0, NumKeys - 1 );
+}
+
+/*! The volume a velocity offset by `delta` gives `volume`: the ONE rule both
+ *  the offset and the count of what it would move follow. The delta is bounded
+ *  first, so the sum cannot overflow. */
+inline int offsetVolume( int volume, int delta ) noexcept
+{
+	const int bounded = std::clamp( delta, -static_cast<int>( MaxVolume ), static_cast<int>( MaxVolume ) );
+	return std::clamp( volume + bounded, static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
+}
+
 /*! The nearest in-scale pitch to `key`, with a tie resolving downward. Returns
  *  `key` unchanged when it is already in the scale (or is unreachable, which a
  *  non-empty scale cannot make it). */
@@ -154,8 +172,7 @@ int transpose( const NoteVector& notes, int semitones )
 	for( Note* note : notes )
 	{
 		if( note == nullptr ) { continue; }
-		// The shift is bounded first: key + INT_MAX would overflow before the clamp saw it.
-		const int target = std::clamp( note->key() + std::clamp( semitones, -NumKeys, NumKeys ), 0, NumKeys - 1 );
+		const int target = transposedKey( note->key(), semitones );
 		if( target != note->key() )
 		{
 			note->setKey( target );
@@ -166,6 +183,18 @@ int transpose( const NoteVector& notes, int semitones )
 }
 
 
+int countTransposed( const NoteVector& notes, int semitones )
+{
+	int count = 0;
+	for( const Note* note : notes )
+	{
+		if( note == nullptr ) { continue; }
+		if( transposedKey( note->key(), semitones ) != note->key() ) { ++count; }
+	}
+	return count;
+}
+
+
 int offsetVelocity( const NoteVector& notes, int delta )
 {
 	int changed = 0;
@@ -173,8 +202,7 @@ int offsetVelocity( const NoteVector& notes, int delta )
 	{
 		if( note == nullptr ) { continue; }
 		const int current = static_cast<int>( note->getVolume() );
-		const int bounded = std::clamp( delta, -static_cast<int>( MaxVolume ), static_cast<int>( MaxVolume ) );  // no overflow
-		const int target = std::clamp( current + bounded, static_cast<int>( MinVolume ), static_cast<int>( MaxVolume ) );
+		const int target = offsetVolume( current, delta );
 		if( target != current )
 		{
 			note->setVolume( static_cast<volume_t>( target ) );
@@ -182,6 +210,21 @@ int offsetVelocity( const NoteVector& notes, int delta )
 		}
 	}
 	return changed;
+}
+
+
+int countOffsetVelocity( const NoteVector& notes, int delta )
+{
+	int count = 0;
+	for( const Note* note : notes )
+	{
+		if( note == nullptr ) { continue; }
+		if( offsetVolume( static_cast<int>( note->getVolume() ), delta ) != static_cast<int>( note->getVolume() ) )
+		{
+			++count;
+		}
+	}
+	return count;
 }
 
 
@@ -330,6 +373,21 @@ int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees )
 		}
 	}
 	return changed;
+}
+
+
+int countOffScale( const NoteVector& notes, const std::vector<int>& scaleDegrees )
+{
+	const std::vector<int> classes = pitchClasses( scaleDegrees );
+	if( classes.empty() ) { return 0; }
+
+	int count = 0;
+	for( const Note* note : notes )
+	{
+		if( note == nullptr ) { continue; }
+		if( nearestInScaleKey( note->key(), classes ) != note->key() ) { ++count; }
+	}
+	return count;
 }
 
 

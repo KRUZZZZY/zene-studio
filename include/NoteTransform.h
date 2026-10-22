@@ -118,6 +118,26 @@ int quantizePositions( const NoteVector& notes, int grid, QuantizeMode mode );
  *  number of notes whose key actually changed. */
 int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees );
 
+/*! How many of `notes` a transpose by `semitones` would move: the rule
+ *  transpose() applies, asked WITHOUT changing anything.
+ *
+ *  A command that edits notes has to know whether its edit changes anything
+ *  BEFORE it runs - the undo checkpoint is taken before the edit, because it
+ *  captures the state the edit is about to replace - and an edit that changes
+ *  nothing must take no step at all (Luna cluster new-p14-41). These counts are
+ *  the question asked of the engine, so the answer and the edit that follows
+ *  it cannot drift apart.
+ */
+int countTransposed( const NoteVector& notes, int semitones );
+
+//! How many of `notes` a velocity offset by `delta` would move: the rule
+//! offsetVelocity() applies, asked without changing anything.
+int countOffsetVelocity( const NoteVector& notes, int delta );
+
+//! How many of `notes` a snap to `scaleDegrees` would move: the rule
+//! snapToScale() applies, asked without changing anything.
+int countOffScale( const NoteVector& notes, const std::vector<int>& scaleDegrees );
+
 /*! How a grid quantise is applied: the grid, how far a note travels to it, and
  *  the humanise amount added afterwards.
  *

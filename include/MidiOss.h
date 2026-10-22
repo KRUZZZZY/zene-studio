@@ -29,8 +29,12 @@
 
 #ifdef LMMS_HAVE_OSS
 
+#include <atomic>
+#include <future>
+#include <memory>
+#include <thread>
+
 #include <QThread>
-#include <QFile>
 
 #include "MidiClient.h"
 
@@ -66,10 +70,17 @@ protected:
 
 
 private:
-	QFile m_midiDev;
+	struct OutputWriter;
+	static void runWriter( std::shared_ptr<OutputWriter> out );
 
-	volatile bool m_quit;
+	static bool openOutputPipe( int fds[2] );
 
+	int m_fd;
+	std::atomic<bool> m_quit;
+	int m_outPipe[2];
+	std::shared_ptr<OutputWriter> m_output;
+	std::thread m_writer;
+	std::future<void> m_writerDone;
 } ;
 
 

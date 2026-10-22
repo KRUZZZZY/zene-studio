@@ -61,6 +61,7 @@
 #include <QTextStream>
 
 #include "AutomationClip.h"
+#include "UndoHistory.h"
 #include "AutomationTrack.h"
 #include "ConfigManager.h"
 #include "ControlAutomationSupport.h"
@@ -76,109 +77,14 @@
 #include "SampleTrack.h"
 #include "Song.h"
 #include "TakeLaneTestSupport.h"
+#include "UndoHistoryTestSupport.h"
 
 using namespace lmms;
 
-namespace
-{
+//! The shared helpers live in UndoHistoryTestSupport.h (one definition for the
+//! two test files that use them).
 
-ControlResult run(const QString& id, const QJsonObject& args = {})
-{
-	return ControlRegistry::instance()->invoke(id, args);
-}
-
-QString compact(const QJsonObject& object)
-{
-	return QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
-}
-
-QString textOf(const QString& path)
-{
-	QFile file(path);
-	return file.open(QIODevice::ReadOnly) ? QString::fromUtf8(file.readAll()) : QString();
-}
-
-//! Drops the save bookkeeping a revision stamp adds (rev / writer): it records
-//! WHO saved, not what the project is.
-void stripRevisionStamps(QDomElement element)
-{
-	element.removeAttribute(QStringLiteral("rev"));
-	element.removeAttribute(QStringLiteral("writer"));
-	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
-	{
-		stripRevisionStamps(child);
-	}
-}
-
-/*! The project's content as one canonical digest per section, over the file a
- *  save writes: <head> and every <song> section, each as DocumentIndex's
- *  process-independent digest. Left out: the append-only provenance log (an undo
- *  never rewinds it, by contract), the undo history itself and the document
- *  index. Returned as readable lines so a mismatch names the section. */
-QString contentOf(const QString& path)
-{
-	QDomDocument document;
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly) || !document.setContent(&file)) { return QStringLiteral("<unreadable>"); }
-	const QDomElement root = document.documentElement();
-	QString out;
-	const auto add = [&out](QDomElement element) {
-		stripRevisionStamps(element);
-		out += element.tagName() + QLatin1Char(' ') + sectionDigest(element) + QLatin1Char('\n');
-	};
-	add(root.firstChildElement(QStringLiteral("head")));
-	for (QDomElement child = root.firstChildElement(QStringLiteral("song")).firstChildElement(); !child.isNull();
-		child = child.nextSiblingElement())
-	{
-		const QString name = child.tagName();
-		if (name == QLatin1String("z:provenance") || name == QLatin1String("z:undohistory")
-			|| name == QLatin1String("z:index")) { continue; }
-		add(child);
-	}
-	return out;
-}
-
-QJsonObject historyState()
-{
-	const ControlResult state = run(QStringLiteral("project.undo_history"));
-	return state.ok ? state.result : QJsonObject{{QStringLiteral("error"), state.errorMessage}};
-}
-
-int journalDepth()
-{
-	return run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
-}
-
-QJsonObject lastTransaction()
-{
-	return run(QStringLiteral("control.transactions")).result.value(QStringLiteral("transactions")).toArray().last().toObject();
-}
-
-//! The parameter id automation.get_state names first for @a track (the instrument's own).
-QString firstParameter(const QString& track)
-{
-	const QJsonArray parameters = run(QStringLiteral("automation.get_state"), {{QStringLiteral("track"), track}}).result
-		.value(QStringLiteral("tracks")).toArray().first().toObject().value(QStringLiteral("parameters")).toArray();
-	return parameters.isEmpty() ? QString() : parameters.first().toObject().value(QStringLiteral("id")).toString();
-}
-
-double instrumentParameter(const QString& track)
-{
-	return run(QStringLiteral("plugin.param_get"),
-		{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), QStringLiteral("inst")},
-			{QStringLiteral("index"), 0}})
-		.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble(-1);
-}
-
-//! Random text: incompressible enough that its compressed snapshot stays large.
-QString noise(int bytes)
-{
-	QByteArray raw(bytes, Qt::Uninitialized);
-	for (char& c : raw) { c = static_cast<char>(QRandomGenerator::global()->bounded(256)); }
-	return QString::fromLatin1(raw.toBase64());
-}
-
-} // namespace
+using namespace undotest;
 
 class UndoHistoryPersistenceTest : public QObject
 {
@@ -201,42 +107,9 @@ private:
 	//! The baseline: an instrument track with a real instrument, an automation clip linked to its
 	//! first parameter, and a sample track with a clip on a real WAV. Built, then the journal is
 	//! cleared, so none of it is a step: the steps are the edits each test makes.
-	struct Baseline
-	{
-		QString track;
-		int trackId = -1;
-		QString parameter;
-		QString sampleClip;
-		QString wav;
-	};
-
 	Baseline buildBaseline()
 	{
-		Baseline base;
-		Song* song = Engine::getSong();
-		song->clearProject();
-		auto* instrument = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
-		if (instrument == nullptr) { return base; }
-		instrument->loadInstrument(QStringLiteral("tripleoscillator"));
-		base.trackId = instrument->id();
-		base.track = QStringLiteral("trk-%1").arg(base.trackId);
-		base.parameter = firstParameter(base.track);
-		run(QStringLiteral("automation.add_point"), {{QStringLiteral("track"), base.track},
-			{QStringLiteral("parameter"), base.parameter}, {QStringLiteral("ticks"), 0}, {QStringLiteral("value"), 0.4}});
-
-		auto* samples = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
-		base.wav = taketest::writeToneWav(path(QStringLiteral("tone.wav")), 440.0);
-		if (samples != nullptr)
-		{
-			auto* clip = dynamic_cast<SampleClip*>(samples->createClip(TimePos(0)));
-			if (clip != nullptr)
-			{
-				clip->setSampleFile(base.wav);
-				base.sampleClip = QStringLiteral("clip-%1").arg(clip->id());
-			}
-		}
-		Engine::projectJournal()->clearJournal();
-		return base;
+		return undotest::buildBaseline(m_dir.path());
 	}
 
 	//! An automation clip linked to the restored track's parameter - found by the live MODEL the
@@ -313,19 +186,15 @@ private slots:
 	{
 		QVERIFY(m_dir.isValid());
 		// A throwaway config: project.open records recent files, and the caps below are set in it.
-		qputenv("HOME", m_dir.path().toLocal8Bit());
-		ConfigManager::inst()->loadConfigFile(m_dir.filePath(QStringLiteral("zene.xml")));
 #ifdef LMMS_TEST_PLUGIN_DIR
 		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // a real instrument: plug-in data to restore
 #endif
-		Engine::init(true);
-		ControlRegistry::setReady(true);
+		undotest::initSession(m_dir.path());
 	}
 
 	void cleanupTestCase()
 	{
-		ControlRegistry::setReady(false);
-		Engine::destroy();
+		undotest::shutdownSession();
 	}
 
 	void init()
@@ -333,32 +202,6 @@ private slots:
 		ConfigManager::inst()->deleteValue(QStringLiteral("undohistory"), QStringLiteral("persist"));
 		ConfigManager::inst()->deleteValue(QStringLiteral("undohistory"), QStringLiteral("steps"));
 		ConfigManager::inst()->deleteValue(QStringLiteral("undohistory"), QStringLiteral("capmb"));
-	}
-
-	void offByDefaultAndAnOldProjectRoundTripsUnchanged()
-	{
-		const Baseline base = buildBaseline();
-		QVERIFY2(!base.track.isEmpty(), "no instrument track");
-		const QJsonObject state = historyState();
-		QVERIFY2(state.value(QStringLiteral("default_enabled")) == QJsonValue(false), qPrintable(compact(state)));
-		QVERIFY2(state.value(QStringLiteral("enabled")) == QJsonValue(false), qPrintable(compact(state)));
-
-		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("edited")}}).ok);
-		const QString old = path(QStringLiteral("old.mmp"));
-		const ControlResult saved = run(QStringLiteral("project.save"), {{QStringLiteral("path"), old}});
-		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
-		const QJsonObject report = saved.result.value(QStringLiteral("undo_history")).toObject();
-		QVERIFY2(report.value(QStringLiteral("enabled")) == QJsonValue(false)
-			&& report.value(QStringLiteral("written")) == QJsonValue(false), qPrintable(compact(saved.result)));
-		QVERIFY2(!textOf(old).contains(QStringLiteral("undohistory")), "a project that did not opt in carries a history section");
-
-		// The project without a history loads and re-saves as the same document, with no section.
-		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), old}}).ok);
-		QCOMPARE(historyState().value(QStringLiteral("last_load")).toObject().value(QStringLiteral("found")).toBool(true), false);
-		const QString again = path(QStringLiteral("old-again.mmp"));
-		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), again}}).ok);
-		QVERIFY(!textOf(again).contains(QStringLiteral("undohistory")));
-		QCOMPARE(contentOf(again), contentOf(old));
 	}
 
 	void aSavedHistoryUndoesToEveryPreEditState()
@@ -515,69 +358,217 @@ private slots:
 		QCOMPARE(textOf(resaved).count(QStringLiteral("<z:undostep")), 0);
 	}
 
-	void theCapsDropTheOldestAndAnOversizeStepIsReported()
+	void anIncompleteSavedHistoryIsDiscarded()
 	{
 		const Baseline base = buildBaseline();
 		QVERIFY(!base.track.isEmpty());
 		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
-		QVERIFY(run(QStringLiteral("settings.set"), {{QStringLiteral("key"), QStringLiteral("undohistory/steps")}, {QStringLiteral("value"), QStringLiteral("2")}}).ok);
-		for (const QString& name : {QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("c"), QStringLiteral("d")})
-		{
-			QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), name}}).ok);
-		}
-		// settings.set is an undo step of its own, so the stack is that step and the four renames.
-		const int depth = journalDepth();
-		QVERIFY(depth >= 4);
-		ControlResult saved = run(QStringLiteral("project.save"), {{QStringLiteral("path"), path(QStringLiteral("limit.mmp"))}});
-		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
-		QJsonObject report = saved.result.value(QStringLiteral("undo_history")).toObject();
-		QVERIFY2(report.value(QStringLiteral("saved_steps")).toInt() == 2 && report.value(QStringLiteral("dropped_oldest")).toInt() == depth - 2
-			&& !report.value(QStringLiteral("oversize")).toBool(), qPrintable(compact(report)));
-		QCOMPARE(textOf(path(QStringLiteral("limit.mmp"))).count(QStringLiteral("<z:undostep")), 2);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+		const QString file = path(QStringLiteral("incomplete.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
 
-		// A project whose compressed snapshot is over a 1 MB cap: ~2 MB of random text in a track
-		// name (base64 of random bytes compresses to about three quarters of itself).
-		QVERIFY(run(QStringLiteral("settings.set"), {{QStringLiteral("key"), QStringLiteral("undohistory/capmb")}, {QStringLiteral("value"), QStringLiteral("1")}}).ok);
-		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), noise(1500 * 1024)}}).ok);
-		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("small again")}}).ok);
-		const QString big = path(QStringLiteral("oversize.mmp"));
-		saved = run(QStringLiteral("project.save"), {{QStringLiteral("path"), big}});
-		QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
-		report = saved.result.value(QStringLiteral("undo_history")).toObject();
-		// The newest step's pre-state carries the 2 MB name: over the cap alone, so nothing from it back is saved.
-		QVERIFY2(report.value(QStringLiteral("oversize")).toBool() && report.value(QStringLiteral("saved_steps")).toInt() == 0
-			&& report.value(QStringLiteral("oversize_bytes")).toDouble() > 1024.0 * 1024.0
-			&& !report.value(QStringLiteral("warning")).toString().isEmpty()
-			&& !report.value(QStringLiteral("written")).toBool(), qPrintable(compact(report)));
-		QCOMPARE(textOf(big).count(QStringLiteral("<z:undostep")), 0);
-		QVERIFY(textOf(big).contains(QStringLiteral("<z:undohistory")));  // the project's own choice still saved
+		QDomDocument document;
+		{
+			QFile in(file);
+			QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+		}
+		QDomElement history = document.documentElement().firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("z:undohistory"));
+		QVERIFY(!history.isNull());
+		QDomElement step = history.firstChildElement(QStringLiteral("z:undostep"));
+		QVERIFY(!step.isNull());
+		history.removeChild(step);
+		// declared count left unchanged on purpose
+		const QString broken = path(QStringLiteral("incomplete-broken.mmp"));
+		{
+			QFile out(broken);
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QTextStream stream(&out);
+			document.save(stream, 1);
+		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), broken}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool()
+			&& load.value(QStringLiteral("loaded_steps")).toInt() == 0
+			&& !load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
+	//! A history that declares ONE step and carries NONE is incomplete too: the
+	//! count is checked against the step elements the section has, so a section
+	//! with no step element must not slip past the check that a section with
+	//! too few does.
+	void aMissingOnlyDeclaredStepIsDiscarded()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("only")}}).ok);
+		const QString file = path(QStringLiteral("one-step.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+		// One rename is one step: the file below declares one step and carries none.
+		QCOMPARE(textOf(file).count(QStringLiteral("<z:undostep")), 1);
+
+		QDomDocument document;
+		{
+			QFile in(file);
+			QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+		}
+		QDomElement history = document.documentElement().firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("z:undohistory"));
+		QVERIFY(!history.isNull());
+		QCOMPARE(history.attribute(QStringLiteral("steps")).toInt(), 1);
+		QDomElement step = history.firstChildElement(QStringLiteral("z:undostep"));
+		QVERIFY(!step.isNull());
+		history.removeChild(step);
+		// the declared count left unchanged on purpose
+		const QString broken = path(QStringLiteral("one-step-broken.mmp"));
+		{
+			QFile out(broken);
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QTextStream stream(&out);
+			document.save(stream, 1);
+		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), broken}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool()
+			&& load.value(QStringLiteral("loaded_steps")).toInt() == 0
+			&& !load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
+	//! A history that declares NO steps is not an incomplete one: it is a
+	//! history with nothing in it (a project that opted in before its first
+	//! edit), and it loads as nothing - found, no steps, nothing to discard.
+	void anEmptyHistoryIsNotIncomplete()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		const QString file = path(QStringLiteral("empty-history.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+		QVERIFY(textOf(file).contains(QStringLiteral("<z:undohistory")));
+		QCOMPARE(textOf(file).count(QStringLiteral("<z:undostep")), 0);
+
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), file}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool()
+			&& load.value(QStringLiteral("loaded_steps")).toInt() == 0
+			&& load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
+	void aTopLevelMetadataSectionDoesNotStaleTheFingerprint()
+	{
+		QDomDocument withMeta;
+		QVERIFY(withMeta.setContent(QStringLiteral(
+			"<zene-project version=\"1\" type=\"SongProject\"><head/><song><track metadata=\"1\" name=\"x\"/></song></zene-project>")));
+		QDomDocument pruned;
+		QVERIFY(pruned.setContent(QStringLiteral(
+			"<zene-project version=\"1\" type=\"SongProject\"><head/><song/></zene-project>")));
+		QCOMPARE(UndoHistory::fingerprint(withMeta, true, QStringLiteral("1"), QStringLiteral("SongProject")),
+			UndoHistory::fingerprint(pruned, false, QStringLiteral("1"), QStringLiteral("SongProject")));
+	}
+
+	void aChangedRootVersionChangesTheFingerprint()
+	{
+		QDomDocument v1;
+		QVERIFY(v1.setContent(QStringLiteral(
+			"<zene-project version=\"1\" type=\"SongProject\"><head/><song><track name=\"x\"/></song></zene-project>")));
+		QDomDocument v2;
+		QVERIFY(v2.setContent(QStringLiteral(
+			"<zene-project version=\"2\" type=\"SongProject\"><head/><song><track name=\"x\"/></song></zene-project>")));
+		QVERIFY(UndoHistory::fingerprint(v1, false, QStringLiteral("1"), QStringLiteral("SongProject"))
+			!= UndoHistory::fingerprint(v2, false, QStringLiteral("2"), QStringLiteral("SongProject")));
+		// The root's type counts too: the same sections under another type are
+		// not the same project.
+		QVERIFY(UndoHistory::fingerprint(v1, false, QStringLiteral("1"), QStringLiteral("SongProject"))
+			!= UndoHistory::fingerprint(v1, false, QStringLiteral("1"), QStringLiteral("SongProjectTemplate")));
+	}
+
+	//! A file whose root version was changed under it: the history was written
+	//! for the version the file claims, so a load that upgraded the file must
+	//! not accept it - the sections would be read under a format the history
+	//! does not describe. The song sections stay exactly as they were, so only
+	//! the version changed.
+	void anOlderFormatVersionInAFileDiscardsItsHistory()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+		const QString file = path(QStringLiteral("versioned.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+
+		QDomDocument document;
+		{
+			QFile in(file);
+			QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+		}
+		QDomElement root = document.documentElement();
+		const int version = root.attribute(QStringLiteral("version")).toInt();
+		QVERIFY2(version > 0, "the saved file carries no version");
+		root.setAttribute(QStringLiteral("version"), QString::number(version - 1));
+		const QString older = path(QStringLiteral("older-version.mmp"));
+		{
+			QFile out(older);
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QTextStream stream(&out);
+			document.save(stream, 1);
+		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), older}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool() && load.value(QStringLiteral("loaded_steps")).toInt() == 0
+			&& !load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
+	//! A file at the current format, unchanged, whose history carries the
+	//! fingerprint an OLDER build wrote (the scheme before the root's format
+	//! attributes were part of it): the history is still this project's, and it
+	//! loads. The scheme is versioned, so the old value is read as the old
+	//! scheme's - and accepted only while the file's format did not change
+	//! under the load.
+	void aCurrentFormatHistoryUsingTheOldFingerprintStillLoads()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+		const QString file = path(QStringLiteral("legacy.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+
+		QDomDocument document;
+		{
+			QFile in(file);
+			QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+		}
+		QDomElement history = document.documentElement().firstChildElement(QStringLiteral("song"))
+			.firstChildElement(QStringLiteral("z:undohistory"));
+		QVERIFY(!history.isNull());
+		// The fingerprint an older build wrote: the sections only.
+		const QString legacy = UndoHistory::legacyFingerprint(document, false);
+		QVERIFY(!legacy.isEmpty());
+		history.setAttribute(QStringLiteral("fingerprint"), legacy);
+		const QString old = path(QStringLiteral("legacy-fingerprint.mmp"));
+		{
+			QFile out(old);
+			QVERIFY(out.open(QIODevice::WriteOnly));
+			QTextStream stream(&out);
+			document.save(stream, 1);
+		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), old}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool() && load.value(QStringLiteral("loaded_steps")).toInt() == 2
+			&& load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
 	}
 
 	//! Turning persistence OFF drops the snapshots the steps carried, and turning it back on cannot recapture
 	//! them: that record is irreversible and control.undo refuses it. A switch that drops nothing stays reversible.
-	void aSettingThatDropsSnapshotsIsNotReversible()
-	{
-		const Baseline base = buildBaseline();
-		QVERIFY(!base.track.isEmpty());
-		// Persistence was never on, so no step carries a snapshot: nothing to drop, still reversible.
-		const ControlResult quiet = run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("off")}});
-		QVERIFY2(quiet.ok, qPrintable(quiet.errorMessage));
-		QVERIFY2(lastTransaction().value(QStringLiteral("reversible")).toBool(), qPrintable(compact(lastTransaction())));
-
-		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
-		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
-		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
-
-		// Turning it off now drops the snapshots of the two renames: the record must not claim a full inverse.
-		const ControlResult off = run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("off")}});
-		QVERIFY2(off.ok, qPrintable(off.errorMessage));
-		const QJsonObject record = lastTransaction();
-		QCOMPARE(record.value(QStringLiteral("command")).toString(), QStringLiteral("project.set_undo_history"));
-		QVERIFY2(!record.value(QStringLiteral("reversible")).toBool(), qPrintable(compact(record)));
-		const ControlResult undo = run(QStringLiteral("control.undo"));
-		QCOMPARE(undo.errorKind, ControlErrorKind::Irreversible);
-		QCOMPARE(run(QStringLiteral("project.undo_history")).result.value(QStringLiteral("setting")).toString(), QStringLiteral("off"));
-	}
 };
 
 QTEST_GUILESS_MAIN(UndoHistoryPersistenceTest)

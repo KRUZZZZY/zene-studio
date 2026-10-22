@@ -137,6 +137,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/DelayControlsDialog.h tests/src/gui/EqFader.h tests/src/gui/XyPadPairTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/core/NeuralAmpWavInputTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCRawProcessingTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCPluginStateTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCBaseTest.cpp ; \
 #     git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/EqCurveTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/EqFilterTest.cpp ; \
@@ -237,6 +238,7 @@
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/DelayControlsDialog.h tests/src/gui/EqFader.h tests/src/gui/XyPadPairTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/core/NeuralAmpWavInputTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCRawProcessingTest.cpp ; \
+#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCPluginStateTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCBaseTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-dry-run-journal.py tests/control-feedback-commands.py tests/control-import-lifetime.py tests/control-mastering-quit.py tests/control-mastering-run-bound.py tests/control-render-format-capability.py tests/control-save-state.py tests/control-tempo-map-persistence.py tests/src/core/DocumentIndexTest.cpp tests/src/core/DocumentSectionsTest.cpp tests/src/core/MidiOutQueueTest.cpp tests/src/core/MidiRetroCaptureTest.cpp tests/src/core/NamespaceRegistryTest.cpp tests/src/core/PartialLoadTest.cpp tests/src/core/ProjectContainerEntriesTest.cpp tests/src/core/ProjectContainerTest.cpp tests/src/core/ProvenanceSectionTest.cpp tests/src/core/RetroMidiRingTest.cpp tests/src/core/SessionPlaybackRenderTest.cpp tests/src/core/SessionPlaybackTest.cpp tests/src/core/StemJobManagerTest.cpp tests/src/core/UnclaimedElementsTest.cpp tests/src/core/UnclaimedTrackTypeTest.cpp tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp tests/src/gui/PianoViewFocusTest.cpp ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/EqCurveTest.cpp ; \
@@ -2367,6 +2369,7 @@ tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlSampleArrayTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
+tests/src/core/ControlStemExportTest.cpp
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControlWasmRenderTest.cpp
@@ -2422,6 +2425,7 @@ tests/src/core/MidiExportTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp
 tests/src/core/MidiSndioTest.cpp
+tests/src/core/MidiOssTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
@@ -2449,6 +2453,7 @@ tests/src/core/NoteCommandTransactionsTest.cpp
 tests/src/core/NoteCurvesAcrossTest.cpp
 tests/src/core/NoteEditRangeTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
+tests/src/core/NoteNoOpEditUndoStepTest.cpp
 tests/src/core/NotePlaybackTest.cpp
 tests/src/core/NoteSelectionIdentityTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp
@@ -2564,7 +2569,9 @@ tests/src/core/TrackFolderNoChannelTestSupport.h
 tests/src/core/UnclaimedElementsTest.cpp
 tests/src/core/UnclaimedTrackTypeTest.cpp
 tests/src/core/UndoBoundsTest.cpp
+tests/src/core/UndoHistoryOptionsTest.cpp
 tests/src/core/UndoHistoryPersistenceTest.cpp
+tests/src/core/UndoHistoryTestSupport.h
 tests/src/core/UndoHonestyStateTest.cpp
 tests/src/core/UndoHonestyTest.cpp
 tests/src/core/UnmuteChaseTest.cpp
@@ -2599,6 +2606,9 @@ tests/src/plugins/ReverbSCBaseTest.cpp
 # BUG 13 (new-p10-533): cover ReverbSC creation refusals and allocation failures.
 tests/src/plugins/ReverbSCCreateTest.cpp
 tests/src/plugins/ReverbSCCreateTestAllocator.c
+# cluster new-p9-401-port: the ReverbSC DSP state lifetime regression (the allocation
+# failures and the sample-rate change) is a fork-new plugin test.
+tests/src/plugins/ReverbSCPluginStateTest.cpp
 # 2026-10-11 (cluster new-p9-355): the null-model focus regression test is a fork-new GUI test.
 # Its exact path is an explicit input to both recipe copies above because the current
 # core-test keep-list does not cover tests/src/gui.
@@ -2922,3 +2932,11 @@ include/TakeLaneRows.h
 include/TakeWaveform.h
 src/gui/TakeWaveform.cpp
 src/gui/tracks/TakeLaneRows.cpp
+# cluster new-p14-269 (2026-10): the Ogg Vorbis decoder's channel handling regression (fork-NEW).
+tests/src/core/SampleDecoderOggChannelTest.cpp
+# cluster new-p14-271 (2026-10): the fix and verification report for the SampleDecoder's Ogg and bounded-decode defects.
+docs/qwen-fixes-2026-10/cluster-new-p14-271.md
+# cluster new-p14-271 (2026-10): the Ogg Vorbis decoder's decoder-state release regression (fork-NEW).
+tests/src/core/SampleDecoderOggStateTest.cpp
+# cluster new-p14-276 (2026-10): the bounded decoder's decode-limit regression test (fork-NEW).
+tests/src/core/SampleDecoderLimitTest.cpp
