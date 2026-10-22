@@ -142,6 +142,7 @@ struct Sf2OwnedSynth
 struct Sf2SynthSwap
 {
 	fluid_synth_t* synth = nullptr;
+	int fontId = -1;
 	sample_rate_t sampleRate = 0;
 };
 
@@ -259,13 +260,14 @@ public:
 
 	gui::PluginView* instantiateView( QWidget * _parent ) override;
 	
-	QString getCurrentPatchName();
-
-
 	void setParameter( const QString & _param, const QString & _value );
 
 
 public slots:
+	//! The name of the patch the player has loaded. The SF2 realtime test
+	//! reads it to see that the preset list survived a reload.
+	QString getCurrentPatchName();
+
 	void openFile( const QString & _sf2File, bool updateTrackName = true );
 	void updatePatch();
 	void reloadSynth();
@@ -280,8 +282,8 @@ public slots:
 	void updateTuning();
 
 	//! Test seam for the SF2 realtime test: the address of the FluidSynth synth
-	//! the player owns, so the test can inspect what was configured on it.
-	quintptr currentSynthAddress() const { return reinterpret_cast<quintptr>(m_uiSynth); }
+	//! the player uses, so the test can inspect what was configured on it.
+	quintptr currentSynthAddress() const { return reinterpret_cast<quintptr>(m_synth); }
 
 private:
 	void playImpl(std::span<SampleFrame> out) override;
@@ -294,16 +296,57 @@ private:
 	//! The synth the render thread currently renders. The UI thread owns it and
 	//! only borrows it here; the render thread never deletes it.
 	fluid_synth_t* m_synth = nullptr;
-
-	//! The synth the UI thread owns and configures. It is the newest synth the
-	//! UI published, so it is the one the render thread adopts next.
-	fluid_synth_t* m_uiSynth = nullptr;
-	//! The soundfont the UI synth loaded, for the program selection.
-	int m_uiFontId = -1;
+	//! The soundfont the render thread's synth plays, for the program select.
+	int m_activeFontId = -1;
 
 	//! Every synth the UI thread created, with the settings it was built with.
 	//! The render thread borrows one of them; the UI thread deletes them all.
 	std::vector<Sf2OwnedSynth> m_ownedSynths;
+
+	//! A synth that only holds the loaded soundfont. The font object outlives
+	//! the synth that plays it, so a reload can build a new synth with the
+	//! same font even when the file behind it is gone.
+	fluid_synth_t* m_fontHolder = nullptr;
+	//! The loaded soundfont, shared by the holder and the playing synths.
+	fluid_sfont_t* m_font = nullptr;
+
+	//! Synthesis parameters the UI requests. The render thread applies them;
+	//! the UI never calls into the synth the render thread is using.
+	std::atomic<float> m_requestedGain{1.0f};
+	std::atomic<int> m_requestedReverbOn{0};
+	std::atomic<float> m_requestedReverbRoomSize{0.2f};
+	std::atomic<float> m_requestedReverbDamping{0.0f};
+	std::atomic<float> m_requestedReverbWidth{0.5f};
+	std::atomic<float> m_requestedReverbLevel{0.9f};
+	std::atomic<int> m_requestedChorusOn{0};
+	std::atomic<float> m_requestedChorusNum{3.0f};
+	std::atomic<float> m_requestedChorusLevel{2.0f};
+	std::atomic<float> m_requestedChorusSpeed{0.3f};
+	std::atomic<float> m_requestedChorusDepth{8.0f};
+	std::atomic<int> m_requestedBank{0};
+	std::atomic<int> m_requestedPatch{0};
+	//! The pitch offset of every MIDI key in cents, relative to the equal
+	//! temperament. The UI writes it; the render thread reads it.
+	std::array<std::atomic<double>, 128> m_requestedTuning{};
+	//! Even while the UI writes the tuning table; the render thread only reads
+	//! a complete, even snapshot.
+	std::atomic<std::uint32_t> m_tuningGeneration{0};
+
+	//! The values the render thread last sent to the current synth.
+	float m_appliedGain = -1.0f;
+	int m_appliedReverbOn = -1;
+	float m_appliedReverbRoomSize = -1.0f;
+	float m_appliedReverbDamping = -1.0f;
+	float m_appliedReverbWidth = -1.0f;
+	float m_appliedReverbLevel = -1.0f;
+	int m_appliedChorusOn = -1;
+	float m_appliedChorusNum = -1.0f;
+	float m_appliedChorusLevel = -1.0f;
+	float m_appliedChorusSpeed = -1.0f;
+	float m_appliedChorusDepth = -1.0f;
+	int m_appliedBank = -1;
+	int m_appliedPatch = -1;
+	int m_appliedFontId = -2;
 
 	QString m_filename;
 	//! Absolute file the published synth was built from, for a sample-rate reload.
@@ -329,12 +372,6 @@ private:
 	int m_lastMidiPitchRange;
 	int m_channel;
 
-	//! The tuning the UI thread last sent to the synth: the pitch of every
-	//! MIDI note in cents from MIDI note 0.
-	std::array<double, 128> m_tuningCents{};
-	//! Whether the microtuner is on. With it off the synth plays the normal
-	//! equal temperament.
-	bool m_tuningEnabled = false;
 
 	//! UI -> render: synths ready to be adopted.
 	Sf2PointerQueue<Sf2SynthSwap, SynthHandoffCapacity> m_pendingSynths;
@@ -394,10 +431,16 @@ private:
 	void removePendingEvent(std::size_t index) noexcept;
 	//! Render thread: adopt any synth the UI published.
 	void serviceSynthHandoff() noexcept;
-	//! UI thread: send the requested state (gain, effects, program, tuning) to
-	//! the synth the UI owns. Never called on the render thread: the tuning
-	//! activation allocates inside FluidSynth.
-	void applyRequestedState() noexcept;
+	//! Render thread: send the requested state (gain, effects, program) to the
+	//! synth. Every call is lock free: the synth runs with FluidSynth's
+	//! thread-safe API switched off, so the render thread never waits.
+	void applyControls() noexcept;
+	//! Render thread: forget what was sent, so the next applyControls() sends
+	//! the whole state to the synth the render thread adopted.
+	void resetAppliedControls() noexcept;
+	//! Render thread: the pitch offset of a MIDI key in cents, relative to the
+	//! equal temperament.
+	double tuningOffsetForKey(int key) const noexcept;
 	//! UI thread: read FluidSynth's own defaults into the effect models.
 	void readSynthDefaults();
 	//! UI thread: build a synth with its own settings object (no font loaded).
@@ -405,7 +448,11 @@ private:
 	//! UI thread: delete a synth and the settings object it was built with.
 	void destroySynth(fluid_synth_t* synth) noexcept;
 	//! UI thread: publish a fully configured synth to the render thread.
-	auto publishSynth(fluid_synth_t* synth, sample_rate_t sampleRate) -> bool;
+	auto publishSynth(fluid_synth_t* synth, int fontId, sample_rate_t sampleRate) -> bool;
+	//! UI thread: load the soundfont into the holder that keeps it alive.
+	auto loadFont(const QByteArray& nativePath) -> bool;
+	//! UI thread: hand the loaded soundfont to a synth.
+	auto addFontTo(fluid_synth_t* synth) -> int;
 	//! UI thread: delete synths the render thread has finished with.
 	void drainRetiredSynths();
 	void drainRetiredSynthsLocked();

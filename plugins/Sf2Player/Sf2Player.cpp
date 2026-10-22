@@ -196,7 +196,6 @@ Sf2Instrument::~Sf2Instrument()
 	fluid_synth_t* retired = nullptr;
 	while( m_retiredSynths.pop( retired ) ) { /* the synths are deleted below */ }
 	m_synth = nullptr;
-	m_uiSynth = nullptr;
 
 	for( const auto& owned : m_ownedSynths )
 	{
@@ -330,6 +329,11 @@ Sf2OwnedSynth Sf2Instrument::createSynth( sample_rate_t outputRate )
 	fluid_settings_setint( owned.settings, "synth.reverb.active", m_reverbOn.value() ? 1 : 0 );
 	fluid_settings_setint( owned.settings, "synth.chorus.active", m_chorusOn.value() ? 1 : 0 );
 
+	// The render thread is the only user of this synth: it does not need
+	// FluidSynth's API mutex, and taking it would make the audio callback wait
+	// for another thread.
+	fluid_settings_setint( owned.settings, "synth.threadsafe-api", 0 );
+
 	owned.synth = new_fluid_synth( owned.settings );
 	if( owned.synth == nullptr )
 	{
@@ -366,11 +370,11 @@ void Sf2Instrument::destroySynth( fluid_synth_t* synth ) noexcept
 
 
 
-bool Sf2Instrument::publishSynth( fluid_synth_t* synth, sample_rate_t sampleRate )
+bool Sf2Instrument::publishSynth( fluid_synth_t* synth, int fontId, sample_rate_t sampleRate )
 {
 	if( synth == nullptr ) { return false; }
 
-	const Sf2SynthSwap swap{ synth, sampleRate };
+	const Sf2SynthSwap swap{ synth, fontId, sampleRate };
 	{
 		// Project loads and UI edits can both publish; the lock is UI-side only
 		// and the audio thread never takes it.
@@ -456,15 +460,21 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 	const QString absolutePath = PathUtil::toAbsolute( _sf2File );
 	const QByteArray nativePath = QFile::encodeName( absolutePath );
 
+	// The soundfont is loaded into the holder, which keeps it alive: a synth
+	// that plays it can be replaced without reading the file again, so a
+	// reload still works when the file behind it is gone.
+	if( !loadFont( nativePath ) )
+	{
+		collectErrorForUI( Sf2Instrument::tr( "A soundfont %1 could not be loaded." )
+			.arg( QFileInfo( _sf2File ).baseName() ) );
+		return;
+	}
+
 	// Build the candidate completely off the audio thread. Nothing is published
 	// until it is a working synth, so a failed load leaves the current font and
 	// the notes already playing exactly as they were.
 	auto candidate = createSynth( Engine::audioEngine()->outputSampleRate() );
-	int candidateFontId = -1;
-	if( candidate.synth != nullptr && fluid_is_soundfont( nativePath.constData() ) )
-	{
-		candidateFontId = fluid_synth_sfload( candidate.synth, nativePath.constData(), true );
-	}
+	const int candidateFontId = candidate.synth != nullptr ? addFontTo( candidate.synth ) : -1;
 
 	const bool loaded = candidate.synth != nullptr && candidateFontId >= 0;
 	if( loaded )
@@ -476,15 +486,7 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 		std::vector<Sf2PresetInfo> presets;
 		collectPresets( candidate.synth, presets );
 
-		// The candidate takes over the requested state before the render thread
-		// adopts it, so it never plays with another synth's settings.
-		auto* previousSynth = m_uiSynth;
-		const int previousFontId = m_uiFontId;
-		m_uiSynth = candidate.synth;
-		m_uiFontId = candidateFontId;
-		applyRequestedState();
-
-		if( publishSynth( candidate.synth, internalRate ) )
+		if( publishSynth( candidate.synth, candidateFontId, internalRate ) )
 		{
 			m_presets = std::move( presets );
 			m_sourceFile = absolutePath;
@@ -494,15 +496,13 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 			// someone resolves a missing file
 			emit fileChanged();
 
-			if( loaded && ( updateTrackName || instrumentTrack()->displayName() == displayName() ) )
+			if( updateTrackName || instrumentTrack()->displayName() == displayName() )
 			{
 				instrumentTrack()->setName( PathUtil::cleanName( _sf2File ) );
 			}
 		}
 		else
 		{
-			m_uiSynth = previousSynth;
-			m_uiFontId = previousFontId;
 			destroySynth( candidate.synth );
 			collectErrorForUI( Sf2Instrument::tr( "A soundfont %1 could not be loaded." )
 				.arg( QFileInfo( _sf2File ).baseName() ) );
@@ -520,13 +520,47 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 
 
 
+bool Sf2Instrument::loadFont( const QByteArray& nativePath )
+{
+	if( !fluid_is_soundfont( nativePath.constData() ) ) { return false; }
+
+	// The holder keeps the font object alive while the synths that play it come
+	// and go. It never renders.
+	if( m_fontHolder == nullptr )
+	{
+		auto holder = createSynth( Engine::audioEngine()->outputSampleRate() );
+		if( holder.synth == nullptr ) { return false; }
+		m_fontHolder = holder.synth;
+	}
+
+	// Drop the font that is loaded, if any: the holder keeps exactly one.
+	if( m_font != nullptr )
+	{
+		fluid_synth_remove_sfont( m_fontHolder, m_font );
+		m_font = nullptr;
+	}
+
+	const int fontId = fluid_synth_sfload( m_fontHolder, nativePath.constData(), true );
+	if( fontId < 0 ) { return false; }
+	m_font = fluid_synth_get_sfont_by_id( m_fontHolder, fontId );
+	return m_font != nullptr;
+}
+
+
+
+int Sf2Instrument::addFontTo( fluid_synth_t* synth )
+{
+	if( synth == nullptr || m_font == nullptr ) { return -1; }
+	return fluid_synth_add_sfont( synth, m_font );
+}
+
+
+
 void Sf2Instrument::updatePatch()
 {
 	drainRetiredSynths();
-
-	if( m_uiSynth == nullptr || m_uiFontId < 0 ) { return; }
-	fluid_synth_program_select( m_uiSynth, m_channel, m_uiFontId,
-		m_bankNum.value(), m_patchNum.value() );
+	m_requestedBank.store( m_bankNum.value(), std::memory_order_relaxed );
+	m_requestedPatch.store( m_patchNum.value(), std::memory_order_relaxed );
 }
 
 
@@ -548,110 +582,87 @@ QString Sf2Instrument::getCurrentPatchName()
 
 void Sf2Instrument::updateGain()
 {
-	if( m_uiSynth == nullptr ) { return; }
-	fluid_synth_set_gain( m_uiSynth, m_gain.value() );
+	m_requestedGain.store( m_gain.value(), std::memory_order_relaxed );
 }
 
 
 
 void Sf2Instrument::updateReverbOn()
 {
-	if( m_uiSynth == nullptr ) { return; }
-#if USE_NEW_EFFECT_API
-	fluid_synth_reverb_on( m_uiSynth, -1, m_reverbOn.value() ? 1 : 0 );
-#else
-	fluid_synth_set_reverb_on( m_uiSynth, m_reverbOn.value() ? 1 : 0 );
-#endif
+	m_requestedReverbOn.store( m_reverbOn.value() ? 1 : 0, std::memory_order_relaxed );
 }
 
 
 
 void Sf2Instrument::updateReverb()
 {
-	if( m_uiSynth == nullptr ) { return; }
-#if USE_NEW_EFFECT_API
-	fluid_synth_set_reverb_group_roomsize( m_uiSynth, -1, m_reverbRoomSize.value() );
-	fluid_synth_set_reverb_group_damp( m_uiSynth, -1, m_reverbDamping.value() );
-	fluid_synth_set_reverb_group_width( m_uiSynth, -1, m_reverbWidth.value() );
-	fluid_synth_set_reverb_group_level( m_uiSynth, -1, m_reverbLevel.value() );
-#else
-	fluid_synth_set_reverb( m_uiSynth, m_reverbRoomSize.value(), m_reverbDamping.value(),
-		m_reverbWidth.value(), m_reverbLevel.value() );
-#endif
+	m_requestedReverbRoomSize.store( m_reverbRoomSize.value(), std::memory_order_relaxed );
+	m_requestedReverbDamping.store( m_reverbDamping.value(), std::memory_order_relaxed );
+	m_requestedReverbWidth.store( m_reverbWidth.value(), std::memory_order_relaxed );
+	m_requestedReverbLevel.store( m_reverbLevel.value(), std::memory_order_relaxed );
 }
 
 
 
 void Sf2Instrument::updateChorusOn()
 {
-	if( m_uiSynth == nullptr ) { return; }
-#if USE_NEW_EFFECT_API
-	fluid_synth_chorus_on( m_uiSynth, -1, m_chorusOn.value() ? 1 : 0 );
-#else
-	fluid_synth_set_chorus_on( m_uiSynth, m_chorusOn.value() ? 1 : 0 );
-#endif
+	m_requestedChorusOn.store( m_chorusOn.value() ? 1 : 0, std::memory_order_relaxed );
 }
 
 
 
 void Sf2Instrument::updateChorus()
 {
-	if( m_uiSynth == nullptr ) { return; }
-#if USE_NEW_EFFECT_API
-	fluid_synth_set_chorus_group_nr( m_uiSynth, -1, static_cast<int>( m_chorusNum.value() ) );
-	fluid_synth_set_chorus_group_level( m_uiSynth, -1, m_chorusLevel.value() );
-	fluid_synth_set_chorus_group_speed( m_uiSynth, -1, m_chorusSpeed.value() );
-	fluid_synth_set_chorus_group_depth( m_uiSynth, -1, m_chorusDepth.value() );
-	fluid_synth_set_chorus_group_type( m_uiSynth, -1, FLUID_CHORUS_MOD_SINE );
-#else
-	fluid_synth_set_chorus( m_uiSynth, static_cast<int>( m_chorusNum.value() ), m_chorusLevel.value(),
-		m_chorusSpeed.value(), m_chorusDepth.value(), FLUID_CHORUS_MOD_SINE );
-#endif
+	m_requestedChorusNum.store( m_chorusNum.value(), std::memory_order_relaxed );
+	m_requestedChorusLevel.store( m_chorusLevel.value(), std::memory_order_relaxed );
+	m_requestedChorusSpeed.store( m_chorusSpeed.value(), std::memory_order_relaxed );
+	m_requestedChorusDepth.store( m_chorusDepth.value(), std::memory_order_relaxed );
 }
 
 
 
 void Sf2Instrument::updateTuning()
 {
-	m_tuningEnabled = instrumentTrack()->microtuner()->enabledModel()->value();
-	if( m_tuningEnabled )
+	// The table holds the offset of every key in cents, relative to the equal
+	// temperament: zero means the normal equal temperament, so the microtuner
+	// off (or a scale that is the equal temperament) leaves the notes alone.
+	std::array<double, 128> offset{};
+	const bool enabled = instrumentTrack()->microtuner()->enabledModel()->value();
+	if( enabled )
 	{
 		double lowestHz = std::exp2( -69. / 12. ) * 440.; // Frequency of MIDI note 0, which is approximately 8.175798916 Hz
 		for( int i = 0; i < 128; ++i )
 		{
 			// Get desired Hz of note
 			double noteHz = instrumentTrack()->microtuner()->keyToFreq( i, DefaultBaseKey );
-			// Convert Hz to cents
-			m_tuningCents[i] = noteHz == 0. ? 0. : 1200. * log2( noteHz / lowestHz );
+			// Convert Hz to cents. The equal temperament plays key i at i * 100
+			// cents, so the difference is the offset of the scale.
+			const double cents = noteHz == 0. ? 0. : 1200. * log2( noteHz / lowestHz );
+			offset[i] = enabled ? cents - i * 100. : 0.;
 		}
 	}
 
-	if( m_uiSynth == nullptr ) { return; }
-
-	// FluidSynth reads the table as cents from MIDI note 0. With the microtuner
-	// off the table is a null pointer, which selects the normal equal
-	// temperament - an all-zero table would pin every key to MIDI note 0.
-	const double* pitch = m_tuningEnabled ? m_tuningCents.data() : nullptr;
-	fluid_synth_activate_key_tuning( m_uiSynth, 0, 0, "", pitch, true );
-	for( int chan = 0; chan < 16; ++chan )
+	// Seqlock: the generation goes odd while the table is written and even once
+	// it is complete. The render thread reads only a complete, even snapshot.
+	m_tuningGeneration.fetch_add( 1, std::memory_order_acq_rel );
+	for( int i = 0; i < 128; ++i )
 	{
-		fluid_synth_activate_tuning( m_uiSynth, chan, 0, 0, true );
+		m_requestedTuning[i].store( offset[i], std::memory_order_relaxed );
 	}
+	m_tuningGeneration.fetch_add( 1, std::memory_order_release );
 }
 
 
 
-void Sf2Instrument::applyRequestedState() noexcept
+double Sf2Instrument::tuningOffsetForKey( int key ) const noexcept
 {
-	// The synth the UI owns gets the state the models ask for before the render
-	// thread adopts it: the render thread never configures the synth.
-	updateGain();
-	updateReverbOn();
-	updateReverb();
-	updateChorusOn();
-	updateChorus();
-	updatePatch();
-	updateTuning();
+	if( key < 0 || key >= 128 ) { return 0.; }
+	const std::uint32_t generation = m_tuningGeneration.load( std::memory_order_acquire );
+	if( generation & 1u ) { return 0.; }
+	const double offset = m_requestedTuning[key].load( std::memory_order_relaxed );
+	// Only take the value when the UI writer did not start another update.
+	if( m_tuningGeneration.load( std::memory_order_acquire ) != generation ) { return 0.; }
+	return offset;
 }
 
 
@@ -702,34 +713,27 @@ void Sf2Instrument::reloadSynth()
 	fluid_settings_getnum( candidate.settings, "synth.sample-rate", &tempRate );
 	const auto internalSampleRate = static_cast<sample_rate_t>( tempRate );
 
-	int fontId = -1;
-	std::vector<Sf2PresetInfo> presets;
-	if( !m_sourceFile.isEmpty() )
+	// The candidate plays the font that is already loaded: the reload must work
+	// even when the file behind the font is gone, and the font object outlives
+	// the synth that plays it.
+	const int fontId = addFontTo( candidate.synth );
+	if( fontId < 0 && m_font != nullptr )
 	{
-		const QByteArray nativePath = QFile::encodeName( m_sourceFile );
-		if( fluid_is_soundfont( nativePath.constData() ) )
-		{
-			fontId = fluid_synth_sfload( candidate.synth, nativePath.constData(), true );
-		}
-		if( fontId >= 0 ) { collectPresets( candidate.synth, presets ); }
-	}
-
-	// The candidate takes over the requested state before the render thread
-	// adopts it, so it never plays with another synth's settings.
-	auto* previousSynth = m_uiSynth;
-	const int previousFontId = m_uiFontId;
-	m_uiSynth = candidate.synth;
-	m_uiFontId = fontId;
-	applyRequestedState();
-
-	if( !publishSynth( candidate.synth, internalSampleRate ) )
-	{
-		m_uiSynth = previousSynth;
-		m_uiFontId = previousFontId;
+		// The font could not be handed over: keep the synth that still plays
+		// it, so the playback and the preset list survive the reload.
 		destroySynth( candidate.synth );
 		return;
 	}
-	m_presets = std::move( presets );
+
+	std::vector<Sf2PresetInfo> presets;
+	if( fontId >= 0 ) { collectPresets( candidate.synth, presets ); }
+
+	if( !publishSynth( candidate.synth, fontId, internalSampleRate ) )
+	{
+		destroySynth( candidate.synth );
+		return;
+	}
+	if( fontId >= 0 ) { m_presets = std::move( presets ); }
 
 	// Reset last MIDI pitch properties, which will be set to the correct values
 	// upon playing the next note
@@ -749,9 +753,7 @@ Sf2OwnedSynth Sf2Instrument::createPatchDialogSynth()
 	owned = createSynth( Engine::audioEngine()->outputSampleRate() );
 	if( owned.synth == nullptr ) { return owned; }
 
-	const QByteArray nativePath = QFile::encodeName( m_sourceFile );
-	const int fontId = fluid_is_soundfont( nativePath.constData() )
-		? fluid_synth_sfload( owned.synth, nativePath.constData(), true ) : -1;
+	const int fontId = addFontTo( owned.synth );
 	if( fontId < 0 )
 	{
 		destroySynth( owned.synth );
@@ -894,9 +896,15 @@ void Sf2Instrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 	// Update the pitch of all the voices
 	if (const auto slot = static_cast<Sf2PluginDataSlot*>(_n->m_pluginData)) {
 		const auto detuning = _n->currentDetuning();
+		// The scale of the microtuner shifts this key away from the equal
+		// temperament. FluidSynth's coarse tune counts semitones, so the cents
+		// of the offset are divided by 100. This is the same shift that
+		// fluid_synth_activate_key_tuning() would make, without its tuning
+		// object: the audio thread must not allocate.
+		const auto tuning = static_cast<float>( tuningOffsetForKey( slot->data.midiNote ) / 100. );
 		for (const auto& voice : slot->data.fluidVoices) {
 			if (voice.isValid()) {
-				fluid_voice_gen_set(voice.get(), GEN_COARSETUNE, voice.coarseTune() + detuning);
+				fluid_voice_gen_set(voice.get(), GEN_COARSETUNE, voice.coarseTune() + detuning + tuning);
 				fluid_voice_update_param(voice.get(), GEN_COARSETUNE);
 			}
 		}
@@ -954,6 +962,18 @@ void Sf2Instrument::noteOn( Sf2PluginData * n )
 	}
 #endif
 
+	// The scale of the microtuner shifts this key away from the equal
+	// temperament. The audio thread must not allocate, so the shift goes into
+	// the voice's coarse tune (FluidSynth counts semitones there) instead of
+	// into a FluidSynth tuning object.
+	const auto tuning = static_cast<float>( tuningOffsetForKey( n->midiNote ) / 100. );
+	for (const auto& voice : n->fluidVoices) {
+		if (voice.isValid()) {
+			fluid_voice_gen_set(voice.get(), GEN_COARSETUNE, voice.coarseTune() + tuning);
+			fluid_voice_update_param(voice.get(), GEN_COARSETUNE);
+		}
+	}
+
 	n->noteOnDone.store( true, std::memory_order_release );
 	m_notesRunning[ n->midiNote ].fetch_add(1, std::memory_order_relaxed);
 }
@@ -982,9 +1002,13 @@ void Sf2Instrument::serviceSynthHandoff() noexcept
 		if( m_synth != nullptr && !m_retiredSynths.push( m_synth ) ) { return false; }
 
 		m_synth = next.synth;
+		m_activeFontId = next.fontId;
 		m_internalSampleRate.store( next.sampleRate, std::memory_order_release );
 		m_resampler.setRatio( next.sampleRate, Engine::audioEngine()->outputSampleRate() );
 		m_bufferView = {};
+		// The new synth gets the whole requested state, not just the changes
+		// the old synth had already seen.
+		resetAppliedControls();
 
 		// The old synth owned the voices the notes referenced. Clearing the
 		// references is enough: the old synth is retired whole and the notes
@@ -1016,10 +1040,121 @@ void Sf2Instrument::serviceSynthHandoff() noexcept
 
 
 
-// The controls are applied by the UI thread: the render thread never calls
-// into FluidSynth to configure the synth. The tuning activation allocates a
-// tuning object inside FluidSynth and takes FluidSynth's API mutex, so it
-// cannot run on the audio thread.
+void Sf2Instrument::resetAppliedControls() noexcept
+{
+	m_appliedGain = -1.0f;
+	m_appliedReverbOn = -1;
+	m_appliedReverbRoomSize = -1.0f;
+	m_appliedReverbDamping = -1.0f;
+	m_appliedReverbWidth = -1.0f;
+	m_appliedReverbLevel = -1.0f;
+	m_appliedChorusOn = -1;
+	m_appliedChorusNum = -1.0f;
+	m_appliedChorusLevel = -1.0f;
+	m_appliedChorusSpeed = -1.0f;
+	m_appliedChorusDepth = -1.0f;
+	m_appliedBank = -1;
+	m_appliedPatch = -1;
+	m_appliedFontId = -2;
+}
+
+
+
+void Sf2Instrument::applyControls() noexcept
+{
+	if( m_synth == nullptr ) { return; }
+
+	// The synth runs with FluidSynth's thread-safe API switched off, so none of
+	// these calls takes a mutex: the render thread never waits for another
+	// thread, and the UI thread never calls into this synth at all.
+	const float gain = m_requestedGain.load( std::memory_order_relaxed );
+	if( gain != m_appliedGain )
+	{
+		fluid_synth_set_gain( m_synth, gain );
+		m_appliedGain = gain;
+	}
+
+	// The effect state is sent even when it is "off": FluidSynth's own default
+	// is "on", so a synth that never got the state would play with the effects.
+	const int reverbOn = m_requestedReverbOn.load( std::memory_order_relaxed );
+	if( reverbOn != m_appliedReverbOn )
+	{
+#if USE_NEW_EFFECT_API
+		fluid_synth_reverb_on( m_synth, -1, reverbOn );
+#else
+		fluid_synth_set_reverb_on( m_synth, reverbOn );
+#endif
+		m_appliedReverbOn = reverbOn;
+	}
+
+	const float roomSize = m_requestedReverbRoomSize.load( std::memory_order_relaxed );
+	const float damping = m_requestedReverbDamping.load( std::memory_order_relaxed );
+	const float width = m_requestedReverbWidth.load( std::memory_order_relaxed );
+	const float level = m_requestedReverbLevel.load( std::memory_order_relaxed );
+	if( roomSize != m_appliedReverbRoomSize || damping != m_appliedReverbDamping
+		|| width != m_appliedReverbWidth || level != m_appliedReverbLevel )
+	{
+#if USE_NEW_EFFECT_API
+		fluid_synth_set_reverb_group_roomsize( m_synth, -1, roomSize );
+		fluid_synth_set_reverb_group_damp( m_synth, -1, damping );
+		fluid_synth_set_reverb_group_width( m_synth, -1, width );
+		fluid_synth_set_reverb_group_level( m_synth, -1, level );
+#else
+		fluid_synth_set_reverb( m_synth, roomSize, damping, width, level );
+#endif
+		m_appliedReverbRoomSize = roomSize;
+		m_appliedReverbDamping = damping;
+		m_appliedReverbWidth = width;
+		m_appliedReverbLevel = level;
+	}
+
+	const int chorusOn = m_requestedChorusOn.load( std::memory_order_relaxed );
+	if( chorusOn != m_appliedChorusOn )
+	{
+#if USE_NEW_EFFECT_API
+		fluid_synth_chorus_on( m_synth, -1, chorusOn );
+#else
+		fluid_synth_set_chorus_on( m_synth, chorusOn );
+#endif
+		m_appliedChorusOn = chorusOn;
+	}
+
+	const float chorusNum = m_requestedChorusNum.load( std::memory_order_relaxed );
+	const float chorusLevel = m_requestedChorusLevel.load( std::memory_order_relaxed );
+	const float chorusSpeed = m_requestedChorusSpeed.load( std::memory_order_relaxed );
+	const float chorusDepth = m_requestedChorusDepth.load( std::memory_order_relaxed );
+	if( chorusNum != m_appliedChorusNum || chorusLevel != m_appliedChorusLevel
+		|| chorusSpeed != m_appliedChorusSpeed || chorusDepth != m_appliedChorusDepth )
+	{
+#if USE_NEW_EFFECT_API
+		fluid_synth_set_chorus_group_nr( m_synth, -1, static_cast<int>( chorusNum ) );
+		fluid_synth_set_chorus_group_level( m_synth, -1, chorusLevel );
+		fluid_synth_set_chorus_group_speed( m_synth, -1, chorusSpeed );
+		fluid_synth_set_chorus_group_depth( m_synth, -1, chorusDepth );
+		fluid_synth_set_chorus_group_type( m_synth, -1, FLUID_CHORUS_MOD_SINE );
+#else
+		fluid_synth_set_chorus( m_synth, static_cast<int>( chorusNum ), chorusLevel,
+			chorusSpeed, chorusDepth, FLUID_CHORUS_MOD_SINE );
+#endif
+		m_appliedChorusNum = chorusNum;
+		m_appliedChorusLevel = chorusLevel;
+		m_appliedChorusSpeed = chorusSpeed;
+		m_appliedChorusDepth = chorusDepth;
+	}
+
+	const int bank = m_requestedBank.load( std::memory_order_relaxed );
+	const int patch = m_requestedPatch.load( std::memory_order_relaxed );
+	const int fontId = m_activeFontId;
+	if( fontId >= 0 && ( bank != m_appliedBank || patch != m_appliedPatch
+		|| fontId != m_appliedFontId ) )
+	{
+		fluid_synth_program_select( m_synth, m_channel, fontId, bank, patch );
+		m_appliedBank = bank;
+		m_appliedPatch = patch;
+		m_appliedFontId = fontId;
+	}
+}
+
 
 
 void Sf2Instrument::playImpl(std::span<SampleFrame> out)
@@ -1030,6 +1165,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 		std::fill_n( out.data(), out.size(), SampleFrame{} );
 		return;
 	}
+	applyControls();
 
 	// set midi pitch for this period
 	const int currentMidiPitch = instrumentTrack()->midiPitch();

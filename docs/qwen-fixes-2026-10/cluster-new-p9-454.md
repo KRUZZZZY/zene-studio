@@ -4,75 +4,65 @@ new-p9-454: FIXED
 
 new-p9-453: FIXED
 
-Round 3 answers Luna's REWORK on `new-p9-454` (review
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/new-p9-454.r2.md`).
-The two findings keep their verdicts; the five blocking issues of the review are
-fixed at their cause.
+Round 4 answers Luna's REWORK on `new-p9-454` (review
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/new-p9-454.r3.md`).
+The round-2 and round-3 fixes are kept; the three blocking issues of this
+review are fixed at their cause.
 
 ## What the review asked for, and where it is fixed
 
-1. **One settings object per synth (crash-or-data-loss).** `createSynth()`
-   (`plugins/Sf2Player/Sf2Player.cpp:314`) now builds a *new* `fluid_settings_t`
-   for every synth (`Sf2Player.cpp:320`) and hands it to `new_fluid_synth()`
-   (`:333`); the single shared `m_settings` member is gone. The settings object
-   lives with its synth: `Sf2OwnedSynth` (`plugins/Sf2Player/Sf2Player.h:127`)
-   pairs them, `m_ownedSynths` (`Sf2Player.h:306`) owns every synth the UI
-   thread built, and `destroySynth()` (`Sf2Player.cpp:354`) deletes the synth
-   *and* its settings. That covers the three paths the review named: the live
-   synth, the candidate of `reloadSynth()`/`openFile()` (`:697`, `:462`) and the
-   patch-dialog synth (`:749`), which the view now deletes through
-   `destroySynth()` (`Sf2Player.cpp:1536`).
-2. **No allocating or locking FluidSynth control call on the render path
-   (realtime).** The whole control application moved to the UI thread, which
-   owns the synth: `applyRequestedState()` (`Sf2Player.cpp:644`) sends the
-   gain, the effects, the program and the tuning to `m_uiSynth` before the
-   render thread adopts it, and the slots `updateGain`/`updateReverbOn`/
-   `updateReverb`/`updateChorusOn`/`updateChorus`/`updatePatch`/`updateTuning`
-   do the same for later changes (`Sf2Player.cpp:549-641`). The render thread
-   keeps no control state at all: `applyControls()` and
-   `resetAppliedControls()` are deleted, together with the `m_requested*` and
-   `m_applied*` members. `playImpl()` (`Sf2Player.cpp:1025`) now only adopts the
-   published synth, plays the notes and renders. The only FluidSynth call left
-   on the render path is the pitch bend (`:1039`), which the baseline also had
-   there: it follows the track's per-period bend value and allocates nothing.
-3. **Equal temperament with the microtuner off (regression).** `updateTuning()`
-   passes a *null* pitch table when the microtuner is off
-   (`Sf2Player.cpp:634`: `m_tuningEnabled ? m_tuningCents.data() : nullptr`),
-   which is what the pre-cluster implementation did; an all-zero table would
-   pin every key to MIDI note 0.
-4. **The requested effect state on every new synth (regression).**
-   `createSynth()` writes `synth.reverb.active` and `synth.chorus.active` from
-   the models into the new synth's own settings (`Sf2Player.cpp:330-331`),
-   which is where FluidSynth reads the initial effect state from, and
-   `applyRequestedState()` sends the state explicitly on top of it. The
-   `USE_NEW_EFFECT_API` macro (the baseline's) was restored, so the current
-   FluidSynth 2.x API is used again (`Sf2Player.cpp:64`).
-5. **A note pool that holds a default-polyphony load (regression).**
-   `PluginDataSlotCount` and `NoteEventCapacity` are 512 now
-   (`Sf2Player.h:315`, `:319`), twice FluidSynth's default polyphony of 256.
-   Exhaustion is defined: a note that finds no free slot keeps its plugin data
-   empty and takes a slot in one of the next periods (`Sf2Player.cpp:851`), and
-   a note whose event the bounded queue refuses gives the slot back and tries
-   again next period (`Sf2Player.cpp:873`) - a full queue delays a note, it
-   never drops it and never leaks a slot.
+1. **No render-path FluidSynth API may take or wait on a mutex, and the UI must
+   not call into the playing synth (realtime).** Two changes:
+   - Every synth is built with `synth.threadsafe-api = 0`
+     (`plugins/Sf2Player/Sf2Player.cpp:335`). FluidSynth reads that setting
+     into `synth->use_mutex` when the synth is created
+     (fluidsynth v2.6.1 `src/synth/fluid_synth.c:745`) and only locks in
+     `fluid_synth_api_enter()` when that flag is set (`:8246`). With the flag
+     off, *no* FluidSynth call of the render path - `fluid_synth_get_gain()`,
+     `fluid_synth_pitch_bend()`, `fluid_synth_noteon()` - can wait for another
+     thread. The render thread is the only user of that synth, so the mutex
+     bought nothing.
+   - The UI thread no longer touches the synth the render thread plays. The
+     update slots only publish the request (`Sf2Player.cpp:560-680`), and the
+     render thread sends it to its own synth (`applyControls()`,
+     `Sf2Player.cpp:1063`). The render path is the only place that calls into
+     FluidSynth, and it calls a synth nobody else touches.
+   - The microtuner is no longer a FluidSynth key tuning. That API allocates a
+     tuning object and takes FluidSynth's API mutex, so it cannot run on the
+     audio thread. The player now shifts the note with the voice's coarse tune
+     (`Sf2Player.cpp:907` and `:972`), which is the same shift: the key
+     tuning moves a note by `T[key] - 100 * key` cents, and the coarse tune
+     moves it by the same amount. `theTuningOffsetMatchesFluidSynthsKeyTuning`
+     proves the two are the same with FluidSynth 2.6.1 itself.
+2. **A reload must not lose the loaded soundfont (regression).** The soundfont
+   is loaded into a holder synth that keeps the font object alive
+   (`loadFont()`, `Sf2Player.cpp:509`), and every synth that plays it gets the
+   font from the holder (`addFontTo()`, `Sf2Player.cpp:538`). A reload
+   therefore never reads the file again: the font survives, the playback
+   survives and the preset list survives, also when the file behind the font
+   is gone. This is what the base implementation did (it reused the loaded
+   `m_font`).
+3. **MidiHandoffQueueTest (regression).** The queue is a template over the
+   event type, so the test looks for the generic `auto pop(Event& event)
+   noexcept -> bool` now (`tests/src/core/MidiHandoffQueueTest.cpp:101`). Its
+   checks that `pop()` has no loop, no retry and no compare-exchange are kept
+   unchanged.
 
 ## Regressions (tests/src/plugins/Sf2PlayerRealtimeTest.cpp)
 
-The test drives the product's own `sf2player` module through the plugin's
-public interface. New cases: `renderPathAppliesNoState` (the state the player
-asks for is at the synth before the first render - the render thread does not
-configure the synth - and the render path allocates nothing),
-`disabledTuningKeepsEqualTemperament` (the tuning at the synth is the equal
-temperament, 100 cents per key, not an all-zero table),
-`newSynthStartsWithTheRequestedEffectState` (the new synth's settings have the
-effects off), `everySynthHasItsOwnSettings` (two synths never share a settings
-object) and `moreNotesThanTheOldPoolGetSlots` (200 simultaneous notes all get
-a plugin data slot). `playsWithARealSoundFont` is the collateral-damage guard:
-it loads the SoundFont that ships with the tree, plays a note through the
-player and checks that the rendered period is not silent (it is not a bug
-regression - it passes before and after - but it proves that the rewritten
-synth life cycle still makes sound). `notePathAllocatesNothing` and
-`renderSurvivesAPendingReload` from round 2 are kept.
+New in this round: `renderPathAppliesTheState` (the synth runs with
+FluidSynth's thread-safe API off, the UI publishes the gain and the synth only
+gets it with the next period - so the UI did not call into the playing synth -
+and the render path allocates nothing), `reloadKeepsTheSoundFontWhenTheFileIsGone`
+(a copy of the soundfont is loaded, the file is removed, a reload keeps the
+sound and the preset list) and
+`theTuningOffsetMatchesFluidSynthsKeyTuning` (FluidSynth's key tuning and the
+coarse tune the player uses move a note to the same frequency). The cases of
+the earlier rounds are kept: `notePathAllocatesNothing`,
+`disabledTuningKeepsEqualTemperament` (now measured on the rendered audio: the
+note plays the equal temperament), `newSynthStartsWithTheRequestedEffectState`,
+`everySynthHasItsOwnSettings`, `moreNotesThanTheOldPoolGetSlots`,
+`renderSurvivesAPendingReload` and `playsWithARealSoundFont`.
 
 ## Evidence
 
@@ -81,117 +71,108 @@ All logs are new numbered files in
 
 ### Whole-fix reversal (the brief's command)
 
-- `git diff -- plugins/Sf2Player/Sf2Player.cpp plugins/Sf2Player/Sf2Player.h > logs/fix.patch` EXIT=0 (909 lines);
+- `git diff -- plugins/Sf2Player/Sf2Player.cpp plugins/Sf2Player/Sf2Player.h > logs/fix.patch` EXIT=0 (693 lines);
   `git apply -R logs/fix.patch` EXIT=0;
   `cmake --build build --target sf2player Sf2PlayerRealtimeTest -j12` EXIT=0;
-  `cd build/tests && QT_QPA_PLATFORM=offscreen ./Sf2PlayerRealtimeTest` EXIT=5,
-  `Totals: 4 passed, 5 failed` (`test-red-full.log`): `renderPathAppliesNoState`,
-  `disabledTuningKeepsEqualTemperament`, `newSynthStartsWithTheRequestedEffectState`
-  and `everySynthHasItsOwnSettings` cannot reach the synth (the seam is part of
-  the fix), `moreNotesThanTheOldPoolGetSlots` reports
-  "72 of 200 notes did not get a plugin data slot".
+  `cd build/tests && QT_QPA_PLATFORM=offscreen ./Sf2PlayerRealtimeTest` EXIT=2,
+  `Totals: 9 passed, 2 failed` (`test-red-full-r4.log`):
+  `renderPathAppliesTheState` "Compared values are not the same" and
+  `reloadKeepsTheSoundFontWhenTheFileIsGone` "the player lost the soundfont:
+  the note plays at 0 Hz".
 - `git apply logs/fix.patch` EXIT=0; the same build EXIT=0;
   `cd build/tests && QT_QPA_PLATFORM=offscreen ./Sf2PlayerRealtimeTest` EXIT=0,
-  `Totals: 9 passed, 0 failed` (`test-green-final.log`); with the end-to-end
-case added: `Totals: 10 passed, 0 failed` (`test-e2e.log`).
+  `Totals: 12 passed, 0 failed` (`test-green-r4b.log`).
 
-### One reversal per defect (each defect re-introduced on its own, the seam kept)
+### One reversal per defect (each defect re-introduced on its own)
 
-- All-zero tuning table: `const double* pitch = m_tuningCents.data();` EXIT=0;
-  build EXIT=0; test EXIT=1 - "key 1 is tuned to 0 cents, the equal temperament
-  wants 100" (`test-red-tuning.log`).
-- Effect defaults: `fluid_settings_setint(..., "synth.reverb.active", 1)` and
-  the same for the chorus EXIT=0; build EXIT=0; test EXIT=1 -
-  `newSynthStartsWithTheRequestedEffectState` "Compared values are not the same"
-  (`test-red-effects.log`).
-- Note pool: `PluginDataSlotCount = 128` EXIT=0; build EXIT=0; test EXIT=1 -
-  "72 of 200 notes did not get a plugin data slot" (`test-red-pool.log`).
-- The state not applied by the UI: `updateGain()` returns before
-  `fluid_synth_set_gain()` EXIT=0; build EXIT=0; test EXIT=1 -
-  "the synth plays with the gain 0.2, the player asks for 1.0"
-  (`test-red-state-3.log`).
-- Shared settings object: `createSynth()` hands every synth one
-  `m_sharedSettings` EXIT=0; build EXIT=0; test EXIT=1 - "the two synths share
-  one FluidSynth settings object" (`test-red-settings.log`); the run then
-  aborted in the cleanup, which is the undefined behaviour FluidSynth warns
-  about (one settings object deleted twice).
+- The synth runs with FluidSynth's thread-safe API on again:
+  `fluid_settings_setint(owned.settings, "synth.threadsafe-api", 1)` EXIT=0;
+  build EXIT=0; test EXIT=1 - `renderPathAppliesTheState` "Compared values are
+  not the same" (`test-red-r4a1.log`).
+- The UI thread calls into the playing synth again:
+  `fluid_synth_set_gain(m_synth, ...)` in `updateGain()` EXIT=0; build EXIT=0;
+  test EXIT=1 - "Compared floats are not the same" (`test-red-r4a2.log`).
+- The reload reads the file again and publishes a synth without the font:
+  EXIT=0; build EXIT=0; test EXIT=1 - "the player lost the soundfont: the
+  note plays at 0 Hz" (`test-red-r4b2.log`).
+- The queue test looks for the old signature again: EXIT=0; build EXIT=0;
+  `cd build/tests && QT_QPA_PLATFORM=offscreen ./MidiHandoffQueueTest` EXIT=1 -
+  `popHasNoRetryLoop()` "start != std::string::npos" returned FALSE
+  (`test-red-queue.log`).
 
 ### Affected family, sweep and gates
 
-- `cd build/tests && ctest -R '^(Sf2PlayerRealtimeTest|RtSafetySweep|RtSafetySelfTest)$' --output-on-failure`
-  EXIT=0, 3/3 tests passed (`test-family-1.log`).
+- `cd build/tests && ctest -R '^(Sf2PlayerRealtimeTest|RtSafetySweep|RtSafetySelfTest|MidiHandoffQueueTest)$' --output-on-failure`
+  EXIT=0, 4/4 tests passed (`test-family-r4b.log`).
+- The four tests the review named:
+  `cd build/tests && ctest -R '^(MidiHandoffQueueTest|CarlaMidiHandoffTest|RemotePluginAudioPortsTest|RemotePluginClientE2ETest)$' --output-on-failure`
+  EXIT=0, 4/4 tests passed (`test-queue-1.log`).
 - `python3 tests/rt-safety-sweep.py` EXIT=0 - "PASS: every hit on a declared
   audio-thread path is allowlisted with a reason and at its allowed count"
-  (`rt-sweep-1.log`). The scope file lost the two functions that no longer
-  exist (`applyControls`, `resetAppliedControls`) and the `playImpl` entry now
-  describes the render path without a control application.
+  (`rt-sweep-2.log`). The scope declares `applyControls()` next to the render
+  path again, because the render thread applies the state now.
 - `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
   EXIT=0 - fork-sources PASS, all-sources-reproduce PASS,
   no-upstream-regression PASS, check-namespace PASS, no-tautology PASS,
   doc-figures PASS, complexity PASS ("no new item in your files"), file-length
-  PASS ("no new item in your files"), RESULT PASS (`feature-check-1.log`).
-- Build: `cmake --build build --target sf2player Sf2PlayerRealtimeTest zene -j12`
-  EXIT=0 (`build-green-final.log`).
-- End-to-end sound: `playsWithARealSoundFont` loads
-  `plugins/LadspaEffect/calf/veal/sf2/Hum.sf2` through the player, plays a note
-  and finds a peak of 0.42 in the rendered period (`test-e2e.log`), so the
-  rewritten synth life cycle (own settings, font load, program selection,
-  note-on, rendering with the requested effect state) still makes sound.
+  PASS ("no new item in your files"), RESULT PASS (`feature-check-r4.log`).
+- Build: `cmake --build build --target sf2player Sf2PlayerRealtimeTest MidiHandoffQueueTest zene -j12`
+  EXIT=0 (`build-final-r4b.log`).
 
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with
-  it (exit codes).** The whole-fix reversal gives EXIT=5 with five failing
-  cases, the restored fix EXIT=0 with `Totals: 9 passed, 0 failed`; each of the
-  five defects was also re-introduced on its own and made exactly its case
-  fail (EXIT=1 each, messages quoted above).
-- **The test is deterministic.** No wall-clock timing, no sleeps, no races: the
-  allocation count uses a replacement global `operator new` armed around one
-  call, the tuning is read back through FluidSynth's own
-  `fluid_synth_tuning_dump()`, the effect state through
-  `fluid_settings_getint()` on the synth's own settings, and the note pool
-  through the note handles' `m_pluginData`. Everything runs in the test thread.
-- **The fix is at the cause and complete.** The cause of all five findings is
-  the same: state that belongs to the FluidSynth synth was split between the UI
-  thread and the render thread. It is fixed once, in the place all the paths go
-  through: the synth and its settings are owned by the UI thread
-  (`m_ownedSynths`, `destroySynth()`), the state is applied by the UI thread
-  (`applyRequestedState()` and the update slots), and the render thread only
-  borrows the synth, plays notes and renders. Every caller was checked: the
-  live synth, the `reloadSynth()` candidate, the `openFile()` candidate, the
-  failed-load path (the previous synth is restored), the patch-dialog synth and
-  the destructor (every owned synth is deleted with its settings).
+  it (exit codes).** The whole-fix reversal gives EXIT=2 with two failing
+  cases, the restored fix EXIT=0 with `Totals: 12 passed, 0 failed`; each of
+  the three defects was also re-introduced on its own and made exactly its
+  case fail (EXIT=1 each, the messages quoted above).
+- **The test is deterministic.** No wall-clock timing, no sleeps, no races:
+  the allocation count uses a replacement global `operator new` armed around
+  one call, the state is read back through FluidSynth's own
+  `fluid_synth_get_gain()` and `fluid_settings_getint()`, the note pool
+  through the note handles' `m_pluginData`, the soundfont through the
+  rendered audio (a peak and an autocorrelation of the rendered period, both
+  arithmetic on the samples) and the missing file through a copy of the
+  soundfont in a `QTemporaryDir`. Everything runs in the test thread.
+- **The fix is at the cause and complete.** The cause of the review's first
+  item is that the synth was shared between two threads while FluidSynth's API
+  was thread safe. It is fixed once, where every path goes through: the synth
+  is built with the thread-safe API off, so the render path cannot wait, and
+  the UI thread only publishes numbers, so it cannot touch the synth the
+  render thread plays. Every caller was checked: the live synth, the
+  `reloadSynth()` candidate, the `openFile()` candidate, the failed-load path
+  (the previous synth keeps playing), the patch-dialog synth (it gets the font
+  from the holder), the font holder and the destructor (every owned synth is
+  deleted with its settings, the font with the holder).
 - **No collateral damage.** The saved attributes (`src`, `bank`, `patch`, the
   effect values, the gain) are untouched, so old projects load as before; a
-  failed font load still keeps the current font (the candidate is built and
-  destroyed off the audio thread and the old synth is restored); the note pool
-  grew, so no legitimate caller is refused; the queue-exhaustion behaviour is
-  documented and never drops a note. The only behaviour that changes is the one
-  the review asked for: the effects of a new synth follow the models, and the
-  microtuner off plays the equal temperament again.
+  failed font load still keeps the current font and the current presets; the
+  note pool grew, so no legitimate caller is refused. The microtuner still
+  plays the scale of the track: the shift per key is the same amount as
+  before, only applied through the voice instead of a FluidSynth tuning
+  object, so the equal temperament with the microtuner off is unchanged.
 - **Nothing new runs on the audio thread that allocates, frees, locks, waits or
   logs.** The render path is `playImpl` -> `serviceSynthHandoff` ->
-  `playNoteImpl`/`noteOn`/`noteOff`/`renderFrames`: the note data comes from
-  the preallocated slots, the events from the bounded preallocated queue, the
-  synth hand-off from the fixed-capacity queues, and the only FluidSynth call
-  left there is the pitch bend (no allocation, no wait for another thread
-  beyond FluidSynth's own uncontended API mutex). The control application -
-  the tuning activation, which allocates a tuning object inside FluidSynth -
-  runs on the UI thread. The RT-safety sweep over the declared audio paths
-  passes (EXIT=0).
-- **Qt 5.15 / MSVC / macOS portability.** No new Qt API is used (the test seam
-  is a `quintptr` slot, the settings read is `fluid_settings_getint`, which
-  exists in FluidSynth 1.x as well), no `windows.h` macro names, no
-  `std::filesystem`. The `USE_NEW_EFFECT_API` switch keeps the FluidSynth 1.x
-  path compiling, as in the baseline.
+  `applyControls` -> `playNoteImpl`/`noteOn`/`noteOff`/`renderFrames`: the
+  state it sends is a number, the note data comes from the preallocated slots,
+  the events from the bounded preallocated queue, the synth hand-off from the
+  fixed-capacity queues, and every FluidSynth call it makes is lock free
+  because the synth runs with the thread-safe API off. The RT-safety sweep
+  over the declared audio paths passes (EXIT=0).
+- **Qt 5.15 / MSVC / macOS portability.** No new Qt API is used (the test
+  seams are `quintptr` and `QString` slots, the settings read is
+  `fluid_settings_getint`, which exists in FluidSynth 1.x as well), no
+  `windows.h` macro names, no `std::filesystem`. The `USE_NEW_EFFECT_API`
+  switch keeps the FluidSynth 1.x path compiling, as in the baseline.
 - **Verdict.** Both findings are REAL and FIXED; neither is ALREADY-FIXED or
-  FALSE-POSITIVE. The round-2 review's blocking items (shared settings object,
-  allocating/locking control call on the render path, all-zero tuning table,
-  effect defaults, 128-note pool) are each fixed and each has a regression that
-  fails without its fix.
+  FALSE-POSITIVE. The round-3 review's blocking items (a render path that can
+  wait on FluidSynth's API mutex while the UI configures the same synth, a
+  reload that loses the loaded soundfont, and the queue test that no longer
+  finds the method) are each fixed and each has a regression that fails
+  without its fix.
 
 Files committed: `plugins/Sf2Player/Sf2Player.cpp`,
 `plugins/Sf2Player/Sf2Player.h`, `tests/src/plugins/Sf2PlayerRealtimeTest.cpp`,
-`tests/CMakeLists.txt`, `tests/rt-safety-scope.txt`,
+`tests/src/core/MidiHandoffQueueTest.cpp`, `tests/rt-safety-scope.txt`,
 `tests/upstream-modifications.txt`,
 `docs/qwen-fixes-2026-10/cluster-new-p9-454.md`.

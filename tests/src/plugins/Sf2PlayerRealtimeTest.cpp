@@ -31,6 +31,7 @@
 #include <fluidsynth.h>
 #include <QFile>
 #include <QLibrary>
+#include <QTemporaryDir>
 #include <QtTest>
 
 #include "AudioDevice.h"
@@ -39,6 +40,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Microtuner.h"
+#include "Model.h"
 #include "NotePlayHandle.h"
 #include "Plugin.h"
 #include "SampleFrame.h"
@@ -50,6 +52,25 @@ namespace
 //! Allocations counted while `counting` is true.
 std::atomic_bool counting{false};
 std::atomic<std::uint64_t> allocationCount{0};
+
+//! The frequency of the strongest period of the signal.
+auto fundamentalFrequency(const std::vector<float>& signal, double sampleRate) -> double;
+
+//! Renders a note on a synth and returns the frequency of the tone.
+auto synthFrequency(fluid_synth_t* synth, int key, double sampleRate) -> double
+{
+	std::vector<float> mono;
+	float left[16384] = {};
+	float right[16384] = {};
+	fluid_synth_noteon(synth, 0, key, 100);
+	for (int round = 0; round < 4; ++round)
+	{
+		fluid_synth_write_float(synth, 16384, left, 0, 1, right, 0, 1);
+		for (const auto sample : left) { mono.push_back(sample); }
+	}
+	fluid_synth_noteoff(synth, 0, key);
+	return fundamentalFrequency(mono, sampleRate);
+}
 
 //! The SF2 module and an instrument of its own.
 struct Sf2Fixture
@@ -75,7 +96,7 @@ struct Sf2Fixture
 		return instrument != nullptr;
 	}
 
-	//! The FluidSynth synth the player owns.
+	//! The FluidSynth synth the player uses.
 	auto synth() const -> fluid_synth_t*
 	{
 		quintptr address = 0;
@@ -86,7 +107,71 @@ struct Sf2Fixture
 		}
 		return reinterpret_cast<fluid_synth_t*>(address);
 	}
+
+	//! The plugin's own model with that display name.
+	template<typename T> auto findModel(const char* name) const -> T*
+	{
+		const auto models = instrument->findChildren<T*>();
+		for (auto* model : models)
+		{
+			if (model->displayName() == QString::fromUtf8(name)) { return model; }
+		}
+		return nullptr;
+	}
+
+	//! Plays a note and returns the frequency of the tone in the rendered audio.
+	auto playedFrequency(std::span<lmms::SampleFrame> span, int key) const -> double
+	{
+		const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+		// The note lasts for the whole measurement, so the tone is there all
+		// the time.
+		const auto noteFrames = static_cast<lmms::f_cnt_t>(frames * 32);
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(noteFrames)},
+			lmms::TimePos{0}, key};
+		lmms::NotePlayHandle handle{track.get(), 0, noteFrames, note, nullptr, -1,
+			lmms::NotePlayHandle::Origin::MidiClip};
+
+		std::vector<float> mono;
+		for (int period = 0; period < 32; ++period)
+		{
+			instrument->playNote(&handle, span);
+			instrument->play(span);
+			for (const auto& frame : span) { mono.push_back(frame[0]); }
+		}
+		return fundamentalFrequency(mono, lmms::Engine::audioEngine()->outputSampleRate());
+	}
 };
+
+
+//! The frequency of the strongest period of the signal, found with an
+//! autocorrelation. Deterministic: no timing, no randomness.
+auto fundamentalFrequency(const std::vector<float>& signal, double sampleRate) -> double
+{
+	if (signal.size() < 4096) { return 0.; }
+
+	// The search starts above the shortest lags: a tone that is mixed with
+	// noise correlates with itself at every short lag.
+	double best = 0.;
+	std::size_t bestLag = 0;
+	const std::size_t maxLag = std::min<std::size_t>(4000, signal.size() / 2);
+	for (std::size_t lag = 20; lag < maxLag; ++lag)
+	{
+		double sum = 0.;
+		double energyA = 0.;
+		double energyB = 0.;
+		for (std::size_t i = 0; i + lag < signal.size(); ++i)
+		{
+			sum += static_cast<double>(signal[i]) * signal[i + lag];
+			energyA += static_cast<double>(signal[i]) * signal[i];
+			energyB += static_cast<double>(signal[i + lag]) * signal[i + lag];
+		}
+		if (energyA <= 0. || energyB <= 0.) { continue; }
+		const double correlation = sum / std::sqrt(energyA * energyB);
+		if (correlation > best) { best = correlation; bestLag = lag; }
+	}
+	if (bestLag == 0 || best < 0.5) { return 0.; }
+	return sampleRate / static_cast<double>(bestLag);
+}
 
 } // namespace
 
@@ -133,13 +218,15 @@ class Sf2PlayerRealtimeTest : public QObject
 private slots:
 	void initTestCase();
 	void notePathAllocatesNothing();
-	void renderPathAppliesNoState();
+	void renderPathAppliesTheState();
 	void disabledTuningKeepsEqualTemperament();
 	void newSynthStartsWithTheRequestedEffectState();
 	void everySynthHasItsOwnSettings();
 	void moreNotesThanTheOldPoolGetSlots();
 	void renderSurvivesAPendingReload();
 	void playsWithARealSoundFont();
+	void reloadKeepsTheSoundFontWhenTheFileIsGone();
+	void theTuningOffsetMatchesFluidSynthsKeyTuning();
 };
 
 void Sf2PlayerRealtimeTest::playsWithARealSoundFont()
@@ -237,7 +324,7 @@ void Sf2PlayerRealtimeTest::notePathAllocatesNothing()
 
 
 
-void Sf2PlayerRealtimeTest::renderPathAppliesNoState()
+void Sf2PlayerRealtimeTest::renderPathAppliesTheState()
 {
 	Sf2Fixture fixture;
 	if (!fixture.create())
@@ -249,35 +336,36 @@ void Sf2PlayerRealtimeTest::renderPathAppliesNoState()
 	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
 	const std::span<lmms::SampleFrame> span{buffer};
 
-	// The state the player asks for is sent to the synth by the UI thread: the
-	// tuning activation allocates a tuning object inside FluidSynth and takes
-	// FluidSynth's API mutex, so it cannot run on the audio thread. The synth
-	// therefore knows the state before the first render - the render thread
-	// does not configure it.
+	// The render thread is the only user of the synth, so the synth runs with
+	// FluidSynth's thread-safe API switched off: no FluidSynth call on the
+	// audio thread can take a mutex and wait for another thread.
+	fixture.instrument->play(span);
 	auto* synth = fixture.synth();
 	QVERIFY(synth != nullptr);
+	auto* settings = fluid_synth_get_settings(synth);
+	QVERIFY(settings != nullptr);
+	int threadSafeApi = 1;
+	QCOMPARE(fluid_settings_getint(settings, "synth.threadsafe-api", &threadSafeApi), FLUID_OK);
+	QCOMPARE(threadSafeApi, 0);
 
-	// The player's gain model asks for 1.0, FluidSynth's own default is 0.2:
-	// the synth has the player's state before anything was rendered.
-	const float gain = fluid_synth_get_gain(synth);
-	QVERIFY2(std::abs(gain - 1.0f) < 0.001f,
-		qPrintable(QStringLiteral("the synth plays with the gain %1, the player asks for 1.0")
-			.arg(gain)));
-
-	char name[64] = {};
-	double pitch[128] = {};
-	QCOMPARE(fluid_synth_tuning_dump(synth, 0, 0, name, sizeof(name), pitch), FLUID_OK);
-
-	// The UI asks for a new state. Sending it to the synth is the UI thread's
-	// job, so the render path that follows must not allocate.
-	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "updateTuning", Qt::DirectConnection));
+	// The UI asks for another gain. The request is published, not applied: the
+	// UI thread must not call into the synth the render thread is playing.
+	auto* gainModel = fixture.findModel<lmms::FloatModel>("Gain");
+	QVERIFY(gainModel != nullptr);
+	const float before = fluid_synth_get_gain(synth);
+	gainModel->setValue(0.5f);
 	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "updateGain", Qt::DirectConnection));
-	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "updateReverbOn", Qt::DirectConnection));
+	QCOMPARE(fluid_synth_get_gain(synth), before);
 
-	// The render path is warmed up first: the synth allocates its own buffers
-	// when it is created and when it renders for the first time.
+	// The render thread applies the request: the state reaches the synth with
+	// the next period, without the audio thread waiting for the UI thread.
 	fixture.instrument->play(span);
+	QVERIFY2(std::abs(fluid_synth_get_gain(synth) - 0.5f) < 0.001f,
+		qPrintable(QStringLiteral("the synth plays with the gain %1, the player asks for 0.5")
+			.arg(fluid_synth_get_gain(synth))));
 
+	// The render path allocates nothing: the state it sends is a number, and
+	// the synth's own buffers were allocated when it was created.
 	allocationCount.store(0, std::memory_order_relaxed);
 	counting.store(true, std::memory_order_relaxed);
 	fixture.instrument->play(span);
@@ -299,34 +387,30 @@ void Sf2PlayerRealtimeTest::disabledTuningKeepsEqualTemperament()
 		QSKIP("this build has no SF2 player module (no FluidSynth)");
 	}
 
+	if (!QFile::exists(QString::fromUtf8(SF2_TEST_SOUNDFONT)))
+	{
+		QSKIP("this tree has no SoundFont to play");
+	}
+
+	// The microtuner is off by default: the notes play the normal equal
+	// temperament.
+	QVERIFY(!fixture.track->microtuner()->enabledModel()->value());
+
 	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
 	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
 	const std::span<lmms::SampleFrame> span{buffer};
 
-	// The microtuner is off by default: the player has to ask FluidSynth for
-	// the normal equal temperament.
-	QVERIFY(!fixture.track->microtuner()->enabledModel()->value());
-
-	// Render a period, so that the state the player asks for has reached the
-	// synth whichever thread does that.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "openFile", Qt::DirectConnection,
+		Q_ARG(QString, QString::fromUtf8(SF2_TEST_SOUNDFONT))));
 	fixture.instrument->play(span);
 
-	auto* synth = fixture.synth();
-	QVERIFY(synth != nullptr);
-
-	// FluidSynth reads the tuning table as cents from MIDI note 0. The equal
-	// temperament is 100 cents per key; an all-zero table would pin every key
-	// to MIDI note 0.
-	char name[64] = {};
-	double pitch[128] = {};
-	QCOMPARE(fluid_synth_tuning_dump(synth, 0, 0, name, sizeof(name), pitch), FLUID_OK);
-
-	for (int key = 0; key < 128; ++key)
-	{
-		QVERIFY2(std::abs(pitch[key] - key * 100.0) < 0.001,
-			qPrintable(QStringLiteral("key %1 is tuned to %2 cents, the equal temperament wants %3")
-				.arg(key).arg(pitch[key]).arg(key * 100.0)));
-	}
+	// The soundfont plays a fixed tone. With the microtuner off the note plays
+	// at that tone; a tuning table that was applied as a pitch (the table of
+	// cents from MIDI note 0) would shift the note down by whole octaves.
+	const double frequency = fixture.playedFrequency(span, 60);
+	QVERIFY2(std::abs(frequency - 50.0) < 1.0,
+		qPrintable(QStringLiteral("the note plays at %1 Hz, the equal temperament wants 50 Hz")
+			.arg(frequency)));
 }
 
 
@@ -338,6 +422,12 @@ void Sf2PlayerRealtimeTest::newSynthStartsWithTheRequestedEffectState()
 	{
 		QSKIP("this build has no SF2 player module (no FluidSynth)");
 	}
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{buffer};
+	// The render thread adopts the synth with its first period.
+	fixture.instrument->play(span);
 
 	auto* synth = fixture.synth();
 	QVERIFY(synth != nullptr);
@@ -365,6 +455,12 @@ void Sf2PlayerRealtimeTest::everySynthHasItsOwnSettings()
 		QSKIP("this build has no SF2 player module (no FluidSynth)");
 	}
 
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{buffer};
+	// The render thread adopts the synth with its first period.
+	fixture.instrument->play(span);
+
 	auto* firstSynth = fixture.synth();
 	QVERIFY(firstSynth != nullptr);
 	auto* firstSettings = fluid_synth_get_settings(firstSynth);
@@ -373,6 +469,8 @@ void Sf2PlayerRealtimeTest::everySynthHasItsOwnSettings()
 	// A reload builds a second synth. FluidSynth allows one synth per settings
 	// object, so the second synth has to have a settings object of its own.
 	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "reloadSynth", Qt::DirectConnection));
+	// The render thread adopts the replacement with its next period.
+	fixture.instrument->play(span);
 
 	auto* secondSynth = fixture.synth();
 	QVERIFY(secondSynth != nullptr);
@@ -455,6 +553,103 @@ void Sf2PlayerRealtimeTest::renderSurvivesAPendingReload()
 	// rendering: nothing on the audio path blocked or crashed.
 	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "reloadSynth", Qt::DirectConnection));
 	fixture.instrument->play(span);
+}
+
+void Sf2PlayerRealtimeTest::reloadKeepsTheSoundFontWhenTheFileIsGone()
+{
+	Sf2Fixture fixture;
+	if (!fixture.create())
+	{
+		QSKIP("this build has no SF2 player module (no FluidSynth)");
+	}
+
+	if (!QFile::exists(QString::fromUtf8(SF2_TEST_SOUNDFONT)))
+	{
+		QSKIP("this tree has no SoundFont to play");
+	}
+
+	// A copy of the soundfont: the test removes that one, not the file in the
+	// tree.
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString path = directory.filePath("reload-test.sf2");
+	QVERIFY(QFile::copy(QString::fromUtf8(SF2_TEST_SOUNDFONT), path));
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{buffer};
+
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "openFile", Qt::DirectConnection,
+		Q_ARG(QString, path)));
+	fixture.instrument->play(span);
+	QVERIFY(fixture.playedFrequency(span, 60) > 40.);
+
+	// The file behind the font is gone. A reload must not lose the font: the
+	// player keeps the synth that still plays it, and the preset list with it.
+	QVERIFY(QFile::remove(path));
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "reloadSynth", Qt::DirectConnection));
+	fixture.instrument->play(span);
+
+	const double frequency = fixture.playedFrequency(span, 60);
+	QVERIFY2(frequency > 40.,
+		qPrintable(QStringLiteral("the player lost the soundfont: the note plays at %1 Hz")
+			.arg(frequency)));
+
+	QString patchName;
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "getCurrentPatchName",
+		Qt::DirectConnection, Q_RETURN_ARG(QString, patchName)));
+	QVERIFY2(!patchName.isEmpty(), "the preset list was cleared by the reload");
+}
+
+void Sf2PlayerRealtimeTest::theTuningOffsetMatchesFluidSynthsKeyTuning()
+{
+	if (!QFile::exists(QString::fromUtf8(SF2_TEST_SOUNDFONT)))
+	{
+		QSKIP("this tree has no SoundFont to play");
+	}
+
+	const double sampleRate = 44100.;
+
+	// FluidSynth's key tuning shifts a note by the difference between its
+	// pitch and the equal temperament. The player cannot use it: the tuning
+	// activation allocates a tuning object and cannot run on the audio thread.
+	// The player shifts the note with the voice's coarse tune instead, and
+	// this case shows that both shifts are the same.
+	auto makeSynth = [](fluid_synth_t** synthOut) -> bool
+	{
+		auto* settings = new_fluid_settings();
+		auto* synth = new_fluid_synth(settings);
+		const int fontId = fluid_synth_sfload(synth, SF2_TEST_SOUNDFONT, 1);
+		if (fontId < 0) { return false; }
+		fluid_synth_program_select(synth, 0, fontId, 0, 0);
+		*synthOut = synth;
+		return true;
+	};
+
+	fluid_synth_t* tuned = nullptr;
+	QVERIFY(makeSynth(&tuned));
+	double pitch[128] = {};
+	for (int i = 0; i < 128; ++i) { pitch[i] = i * 100.; }
+	pitch[60] = 6100.; // +100 cents on the key that is played
+	fluid_synth_activate_key_tuning(tuned, 0, 0, "", pitch, true);
+	for (int channel = 0; channel < 16; ++channel)
+	{
+		fluid_synth_activate_tuning(tuned, channel, 0, 0, true);
+	}
+	const double tunedFrequency = synthFrequency(tuned, 60, sampleRate);
+
+	fluid_synth_t* coarse = nullptr;
+	QVERIFY(makeSynth(&coarse));
+	// A coarse tune of 1.0 is 100 cents: the same shift.
+	fluid_synth_set_gen(coarse, 0, GEN_COARSETUNE, 1.0f);
+	const double coarseFrequency = synthFrequency(coarse, 60, sampleRate);
+
+	QVERIFY2(tunedFrequency > 0. && coarseFrequency > 0.,
+		qPrintable(QStringLiteral("the soundfont did not play: %1 Hz and %2 Hz")
+			.arg(tunedFrequency).arg(coarseFrequency)));
+	QVERIFY2(std::abs(tunedFrequency - coarseFrequency) < 0.5,
+		qPrintable(QStringLiteral("FluidSynth's key tuning plays at %1 Hz, the coarse tune at %2 Hz")
+			.arg(tunedFrequency).arg(coarseFrequency)));
 }
 
 QTEST_MAIN(Sf2PlayerRealtimeTest)
