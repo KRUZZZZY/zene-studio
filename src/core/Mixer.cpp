@@ -179,15 +179,21 @@ bool hasNonFiniteAutomationValue(const QDomElement& clip)
 //! The child element AutomatableModel::loadSettings() would read @a name's value from.
 QDomElement modelValueElement(const QDomElement& element, const QString& name)
 {
+	QDomElement mismatchedNamedElement;
 	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
 	{
-		if ((!child.hasAttribute(QStringLiteral("nodename")) && child.tagName() == name)
-			|| child.attribute(QStringLiteral("nodename")) == name)
+		const bool matches = (!child.hasAttribute(QStringLiteral("nodename")) && child.tagName() == name)
+			|| child.attribute(QStringLiteral("nodename")) == name;
+		if (matches)
 		{
 			return child;
 		}
+		// AutomatableModel::loadSettings() starts with namedItem(name). If that
+		// element's nodename mismatches and there is no matching sibling, it still
+		// loads the original element, so validate it too.
+		if (mismatchedNamedElement.isNull() && child.tagName() == name) { mismatchedNamedElement = child; }
 	}
-	return {};
+	return mismatchedNamedElement;
 }
 
 //! True when the model @a name of @a element would load a non-finite value, from its

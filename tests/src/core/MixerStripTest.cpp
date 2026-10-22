@@ -491,6 +491,29 @@ private slots:
 		QCOMPARE(masterSend->pan()->value(), 0.f);
 	}
 
+	//! A mismatched nodename child is still loaded by AutomatableModel when no matching sibling exists.
+	void nonFiniteMixerSettingsWithMismatchedNodeNameAreIgnored()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		QDomElement master = doc.createElement(QStringLiteral("mixerchannel"));
+		master.setAttribute(QStringLiteral("num"), 0);
+		root.appendChild(master);
+		QDomElement mixerChannel = doc.createElement(QStringLiteral("mixerchannel"));
+		mixerChannel.setAttribute(QStringLiteral("num"), 1);
+		QDomElement volume = doc.createElement(QStringLiteral("volume"));
+		volume.setAttribute(QStringLiteral("nodename"), QStringLiteral("another-model"));
+		volume.setAttribute(QStringLiteral("value"), QStringLiteral("nan"));
+		mixerChannel.appendChild(volume);
+		root.appendChild(mixerChannel);
+
+		Engine::mixer()->loadSettings(root);
+
+		QVERIFY(std::isfinite(channel(1)->m_volumeModel.value()));
+		QCOMPARE(channel(1)->m_volumeModel.value(), 1.f);
+	}
+
 	//! A non-finite automation bend on a persisted model must not reach the value curve.
 	void nonFiniteMixerAutomationBendIsIgnored()
 	{
