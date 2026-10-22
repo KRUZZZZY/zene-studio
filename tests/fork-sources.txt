@@ -2937,3 +2937,5 @@ docs/qwen-fixes-2026-10/cluster-new-p14-271.md
 tests/src/core/SampleDecoderOggStateTest.cpp
 # cluster new-p14-276 (2026-10): the bounded decoder's decode-limit regression test (fork-NEW).
 tests/src/core/SampleDecoderLimitTest.cpp
+# cluster new-p12-342-port (2026-10): the browser search view keeps the library scan off the status line (fork-NEW regression test).
+docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md

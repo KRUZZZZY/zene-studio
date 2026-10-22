@@ -65,7 +65,8 @@ namespace lmms::gui
  *  - WF-019: Project Media lists every file the project uses (project.missing_assets), the same
  *    columns, found or missing.
  *  - WF-012: "Whole library" searches the library index (browser.index_query) instead of walking, and
- *    Rescan rebuilds it in the background (browser.reindex), its progress on the status line;
+ *    Rescan rebuilds it in the background (browser.reindex), its progress on a line of its own, so a
+ *    scan never hides the search's count;
  *  - WF-014: Back and Forward step through what the view has shown (browser.browse / history_go);
  *  - WF-018: Gallery shows the results as waveform thumbnails (browser.thumbnail) instead of columns;
  *  - WF-020 / WF-009: a row's menu finds similar sounds (browser.similar) and previews the file as it is

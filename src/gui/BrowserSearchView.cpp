@@ -227,7 +227,7 @@ void BrowserSearchView::buildActionRow()
 	connect(rescan, &QPushButton::clicked, this, [this] {
 		const ControlResult started = run(QStringLiteral("browser.reindex"), {{QStringLiteral("features"), true}});
 		if (started.ok) { refreshIndexStatus(); }
-		else { m_status->setText(started.errorMessage); }
+		else { m_scanStatus->setText(started.errorMessage); }  // the scan's own line: the search's count stays
 	});
 	connect(gallery, &QPushButton::toggled, this, &BrowserSearchView::setGallery);
 }
@@ -472,17 +472,19 @@ void BrowserSearchView::refreshCategories()
 
 void BrowserSearchView::refreshIndexStatus()
 {
+	// The scan's progress has its own line: the status line belongs to the search (its count, or why it
+	// failed), and a poll must never hide that behind the scan's message.
 	const QJsonObject status = run(QStringLiteral("browser.index_status")).result;
 	const int entries = status.value(QStringLiteral("entries")).toInt();
 	if (status.value(QStringLiteral("running")).toBool())
 	{
-		m_status->setText(tr("Scanning the library: %1 files, %2 measured").arg(status.value(QStringLiteral("scanned")).toInt())
+		m_scanStatus->setText(tr("Scanning the library: %1 files, %2 measured").arg(status.value(QStringLiteral("scanned")).toInt())
 			.arg(status.value(QStringLiteral("analysed")).toInt()));
 		QTimer::singleShot(1000, this, &BrowserSearchView::refreshIndexStatus);
 		return;
 	}
 	const QDateTime built = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(status.value(QStringLiteral("built_ms")).toDouble()));
-	m_status->setText(entries > 0 ? tr("Library index: %1 files, built %2").arg(entries).arg(built.toString(Qt::ISODate))
+	m_scanStatus->setText(entries > 0 ? tr("Library index: %1 files, built %2").arg(entries).arg(built.toString(Qt::ISODate))
 		: tr("No library index yet - Rescan Library builds it"));
 }
 
