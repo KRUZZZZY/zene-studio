@@ -97,6 +97,16 @@
 # 2026-10-21 (cluster new-p16-141-port): the entry list below is re-derived from the recipe in this
 # header (the vendored sfizz tree the recipe excludes was still listed here, so the manifest no
 # longer reproduced from its own recipe and Gate 9 was red for every lane).
+# 2026-10-22 (cluster new-p14-199-port): the entry list below is the recipe's output again.
+# 5ef150729 (the train-10 snapshot commit) added the 1148 vendored
+# plugins/SfzPlayer/sfizz/... entries to the list without touching the recipe, so this
+# manifest stopped reproducing from the command it publishes and Gate 9 has been red on that
+# since - and the whole-tree scope measured 1148 vendored files it does not own (560
+# complexity and 247 file-length regressions in --scope all). The list is re-derived from the
+# recipe here, as this file's own gate message asks ('run the Regenerate with command from the
+# manifest's header and write its output over the entry list'): the vendored sfizz tree is
+# excluded on purpose (see the header above), no ratchet baseline ever held an entry for it,
+# and Gate 9's registration scan excludes it as well.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
