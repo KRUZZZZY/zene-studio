@@ -2475,22 +2475,27 @@ endif()
 # The expression clock crosses the 32-bit frame boundary in one rendered
 # sample, so the regression exercises the real ExprSynth implementation without
 # simulating a day of playback.
-add_executable(ExprSynth
+# The test, the CMake target and the CTest name all carry the same name, so a
+# harness that rebuilds "the test whose source changed" (the negative control
+# reverts the product change and rebuilds the changed test targets) rebuilds
+# this one too. A test name that differs from its source file would leave a
+# stale binary behind and the regression would prove nothing.
+add_executable(ExprSynthTest
 	src/plugins/ExprSynthTest.cpp
 )
-add_test(NAME ExprSynth COMMAND ExprSynth)
-target_include_directories(ExprSynth PRIVATE
+add_test(NAME ExprSynthTest COMMAND ExprSynthTest)
+target_include_directories(ExprSynthTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 	${CMAKE_SOURCE_DIR}/plugins/Xpressive
 )
-target_static_libraries(ExprSynth PRIVATE lmmsobjs)
-target_link_libraries(ExprSynth PRIVATE
+target_static_libraries(ExprSynthTest PRIVATE lmmsobjs)
+target_link_libraries(ExprSynthTest PRIVATE
 	${QT_LIBRARIES}
 	${QT_QTTEST_LIBRARY}
 	exprtk
 )
-target_compile_features(ExprSynth PRIVATE cxx_std_20)
-target_compile_definitions(ExprSynth PRIVATE
+target_compile_features(ExprSynthTest PRIVATE cxx_std_20)
+target_compile_definitions(ExprSynthTest PRIVATE
 	LMMS_TESTING
 	exprtk_disable_sc_andor
 	exprtk_disable_return_statement
@@ -2501,14 +2506,14 @@ target_compile_definitions(ExprSynth PRIVATE
 	exprtk_disable_rtl_vecops
 )
 if(MSVC)
-	target_compile_options(ExprSynth PRIVATE /bigobj)
+	target_compile_options(ExprSynthTest PRIVATE /bigobj)
 elseif(LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)
-	target_compile_options(ExprSynth PRIVATE -Wa,-mbig-obj)
+	target_compile_options(ExprSynthTest PRIVATE -Wa,-mbig-obj)
 else()
-	target_compile_options(ExprSynth PRIVATE -fexceptions)
+	target_compile_options(ExprSynthTest PRIVATE -fexceptions)
 endif()
-lmms_add_coverage(ExprSynth)
-set_tests_properties(ExprSynth PROPERTIES
+lmms_add_coverage(ExprSynthTest)
+set_tests_properties(ExprSynthTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 add_library(LadspaPortCountFixture MODULE src/core/LadspaPortCountFixture.cpp)
@@ -3368,7 +3373,9 @@ add_executable(ExprSynthAllocationTest
 	src/plugins/ExprSynthAllocationTest.cpp
 	${CMAKE_SOURCE_DIR}/plugins/Xpressive/ExprSynth.cpp
 )
-add_test(NAME ExprSynthAllocation COMMAND ExprSynthAllocationTest)
+# The CTest name matches the target and the source file, so a harness that
+# rebuilds the changed test targets rebuilds this one (see ExprSynthTest above).
+add_test(NAME ExprSynthAllocationTest COMMAND ExprSynthAllocationTest)
 target_include_directories(ExprSynthAllocationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 	${CMAKE_SOURCE_DIR}/plugins/Xpressive
@@ -3394,7 +3401,7 @@ if(MSVC)
 elseif(LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)
 	target_compile_options(ExprSynthAllocationTest PRIVATE -Wa,-mbig-obj)
 endif()
-set_tests_properties(ExprSynth PROPERTIES
+set_tests_properties(ExprSynthAllocationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
 

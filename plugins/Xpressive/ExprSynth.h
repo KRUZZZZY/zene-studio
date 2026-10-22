@@ -25,6 +25,7 @@
 #ifndef EXPRSYNTH_H
 #define EXPRSYNTH_H
 
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <limits>
@@ -105,12 +106,26 @@ public:
 
 	void renderOutput(f_cnt_t frames, SampleFrame* buf );
 
+	//! Claims the pending render error, if there is one. The audio thread calls it
+	//! after the render, so the error is reported exactly once even though the broken
+	//! expression throws in every period. The message stays available through
+	//! pendingError().
+	bool takePendingError();
+	//! Message of the render error that is waiting to be reported.
+	const char* pendingError() const { return m_pendingError; }
 
 private:
+	//! Records a render error for a later report. Runs on the audio thread, so it
+	//! must not allocate: the message goes into a fixed size buffer.
+	void recordRenderError(const char* message);
+
 	ExprFront *m_exprO1, *m_exprO2;
 	const WaveSample *m_W1, *m_W2, *m_W3;
 	f_cnt_t m_note_sample;
 	f_cnt_t m_note_rel_sample;
+	//! Whether m_note_rel_sample holds the release position. Sample zero is a valid
+	//! release position, so it cannot be used as the "not set yet" marker.
+	bool m_note_rel_sample_set;
 	float m_note_sample_sec;
 	float m_note_rel_sec;
 	float m_frequency;
@@ -120,6 +135,12 @@ private:
 	const FloatModel *m_pan1,*m_pan2;
 	float m_rel_transition;
 	float m_rel_inc;
+	//! Render error waiting to be reported. Fixed size, so that recording it on the
+	//! audio thread never allocates.
+	char m_pendingError[128] = {};
+	std::atomic_bool m_pendingErrorSet{false};
+	//! Whether the recorded error was already claimed by the caller.
+	std::atomic_bool m_errorReported{false};
 
 } ;
 
