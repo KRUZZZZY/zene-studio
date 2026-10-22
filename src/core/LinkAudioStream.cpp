@@ -238,6 +238,27 @@ void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sam
 	}
 	const std::size_t wanted = static_cast<std::size_t>(m_latencyMs.load(std::memory_order_relaxed))
 		* sampleRate / 1000;
+	// A sample rate change: the I/O thread may still publish frames of the old rate (it
+	// validated them before the change). Until it has drained the old rate, the audio thread
+	// drops what the ring holds and stays silent - the old frames must not be played at the
+	// new rate.
+	if (m_rxFlushedEpoch.load(std::memory_order_acquire) < m_rxRateEpoch)
+	{
+		m_rx.skip(m_rx.fill());
+		m_primed = false;
+		m_latencyFrames.store(0, std::memory_order_relaxed);
+		m_primedReport.store(false, std::memory_order_relaxed);
+		return;
+	}
+	// The transition is over: the frames the I/O thread published before it drained the old
+	// rate are still in the ring, and they carry the old rate. Drop them once more, then the
+	// jitter buffer starts again.
+	if (m_rxDrainedEpoch != m_rxRateEpoch)
+	{
+		m_rx.skip(m_rx.fill());
+		m_rxDrainedEpoch = m_rxRateEpoch;
+		m_primed = false;
+	}
 	// At least two periods (so a trim never leaves less than one), at most a quarter of the ring.
 	const std::size_t target = std::clamp(wanted, period * 2, m_rx.capacity() / 4);
 	std::size_t fill = m_rx.fill();
@@ -268,9 +289,24 @@ void LinkAudioStream::onRateChanged(std::uint32_t rate) noexcept
 {
 	const std::uint32_t old = m_rate.load(std::memory_order_relaxed);
 	m_rate.store(rate, std::memory_order_relaxed);
-	// A new epoch: the I/O thread drops the old-rate TX frames, the old-rate RX frames are
-	// dropped here (they must not be played at the new rate) and the jitter buffer starts again.
-	if (old != 0 && old != rate) { ++m_txRateEpoch; m_rx.skip(m_rx.fill()); m_primed = false; }
+	if (old != 0 && old != rate)
+	{
+		++m_txRateEpoch;                 // the TX frames belong to the old rate
+		++m_rxRateEpoch;                 // the frames in the RX ring belong to the old rate
+		// The new epoch travels with the new rate: the I/O thread validates a packet against
+		// the pair, so the rate it checks and the epoch it publishes always belong together.
+		m_rxStamp.store((m_rxRateEpoch << 32) | rate, std::memory_order_release);
+		// The old-rate RX frames are dropped here (the audio thread is that ring's consumer)
+		// and the jitter buffer starts again. The I/O thread may still publish a frame of the
+		// old rate - it validated it before the change - so the audio thread keeps dropping
+		// what the ring holds and stays silent until the I/O thread has drained the old rate.
+		m_rx.skip(m_rx.fill());
+		m_primed = false;
+	}
+	else
+	{
+		m_rxStamp.store((m_rxRateEpoch << 32) | rate, std::memory_order_release);
+	}
 	m_txStamp.store((m_txRateEpoch << 32) | rate, std::memory_order_release);
 }
 
@@ -300,7 +336,10 @@ void LinkAudioStream::insertGapSilence(std::size_t frames) noexcept
 
 void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float* samples)
 {
-	const std::uint32_t rate = m_rate.load(std::memory_order_relaxed);
+	// The rate and the epoch of the RX ring travel together: the rate this packet is checked
+	// against is the rate of the frames that are in the ring.
+	const std::uint64_t stamp = m_rxStamp.load(std::memory_order_acquire);
+	const std::uint32_t rate = static_cast<std::uint32_t>(stamp & 0xffffffffu);
 	if (rate == 0 || header.sampleRate != rate)
 	{
 		m_rateMismatch.fetch_add(1, std::memory_order_relaxed);
@@ -309,6 +348,13 @@ void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float*
 	// The window between the validation of a packet and its publication: a sample rate
 	// change happens here, and the packet then carries the old rate.
 	LinkAudioStreamSeam::waitAtPublishHold();
+	// The rate changed while this packet was validated: it carries the old rate, and the
+	// audio thread has already dropped the old-rate frames, so it must not reach the ring.
+	if ((m_rxStamp.load(std::memory_order_acquire) >> 32) != (stamp >> 32))
+	{
+		m_rateMismatch.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
 	std::int32_t distance = 0;
 	if (m_haveRx)
 	{
@@ -505,11 +551,26 @@ void LinkAudioStream::sendPending()
 	}
 }
 
+//! The I/O thread's side of a sample rate change: it publishes the epoch it has drained, so
+//! the audio thread knows that everything it publishes from now on carries the current rate.
+//! The acknowledgement comes after the writes of the previous loop iteration, so the frames
+//! it published before belong to the old rate - the audio thread drops them.
+void LinkAudioStream::acknowledgeRxRate() noexcept
+{
+	const std::uint64_t stamp = m_rxStamp.load(std::memory_order_acquire);
+	const std::uint64_t epoch = stamp >> 32;
+	if (epoch == m_seenRxEpoch) { return; }
+	m_seenRxEpoch = epoch;
+	m_haveRx = false;                 // the sequence stream of the old rate is over
+	m_rxFlushedEpoch.store(epoch, std::memory_order_release);
+}
+
 void LinkAudioStream::ioLoop()
 {
 	while (!m_stop.load(std::memory_order_acquire))
 	{
 		waitReadable(handleOf(m_socket), IoPollMs);
+		acknowledgeRxRate();
 		receiveDatagrams();
 		sendPending();
 	}
