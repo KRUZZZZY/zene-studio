@@ -92,21 +92,25 @@ All logs are in
 | Product | `cmake --build build --target zene` | 0 |
 | Family | `ctest -R '^(EffectChainMissingDeviceSettingsTest\|MissingDevicesPreserveTest\|MissingDevicesRound2Test\|EffectRackAddTest\|EffectHostingMenuTest\|DeviceToolsChainTest\|DeviceToolsTest\|EffectControlsVisibilityTest\|DeviceCopyTest\|EffectDeviceMenuTest)$' --output-on-failure` (from `build/tests`) | **0** - 10/10 passed |
 | Named family (job brief) | `ctest -R '^(DelayControlsTest\|ConvolutionFftwPlanScopeTest\|EffectRackAddTest)$'` | **0** for DelayControlsTest, ConvolutionFftwPlanScopeTest and EffectRackAddTest |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** - the two pre-existing rows below; the other six rows PASS |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** - all eight rows PASS (`feature-check-4.log`) |
+| Manifest repair | `bash tests/all-sources-reproduce.sh` after re-deriving the manifest | **0** - `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` |
+| Gate 9 | `bash tests/fork-sources-gate.sh` | **0** - `0 stale entry(ies)`; every tracked source in scope is registered |
 
 Logs: `cmake-1.log`, `build-1.log`, `build-2.log`, `build-red-1.log`,
 `build-green-2.log`, `build-green-3.log`, `build-zene-1.log`,
 `build-family-1.log`, `build-family-2.log`, `build-base-check.log`,
-`test-red-1.log`, `test-green-1.log`, `test-green-2.log`, `test-green-3.log`,
-`test-family-1.log`, `test-family-2.log`, `test-base-check.log`,
-`feature-check-1.log`, `fix.patch`.
+`build-final.log`, `test-red-1.log`, `test-green-1.log`, `test-green-2.log`,
+`test-green-3.log`, `test-family-1.log`, `test-family-2.log`,
+`test-family-3.log`, `test-base-check.log`, `test-final.log`,
+`feature-check-1.log` .. `feature-check-4.log`, `submit-check-1.log` ..
+`submit-check-3.log`, `fix.patch`.
 
 ### Gate table (`feature_check.py`, base `0a8842d39`)
 
 | Gate | Result | Note |
 | --- | --- | --- |
-| fork-sources | FAIL | pre-existing: `tests/all-sources.txt` does not reproduce from its own header recipe (1148 vendored `plugins/SfzPlayer/sfizz` / `plugins/NeuralAmp/rtneural` paths the recipe excludes). Identical at the base commit with 0 changed files. |
-| all-sources-reproduce | FAIL | the same pre-existing manifest/recipe mismatch. |
+| fork-sources | PASS | after the manifest re-derivation (see below): `0 stale entry(ies)`, every tracked source in scope registered. |
+| all-sources-reproduce | PASS | `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` |
 | no-upstream-regression | PASS | the four changed inherited files have a new-p14-97 entry in `tests/upstream-modifications.txt`. |
 | check-namespace | PASS | |
 | no-tautology | PASS | |
@@ -114,21 +118,33 @@ Logs: `cmake-1.log`, `build-1.log`, `build-2.log`, `build-red-1.log`,
 | complexity | PASS | no new item in the changed files |
 | file-length | PASS | no new item in the changed files (the new test file is 142 code lines) |
 
-The two failing rows were measured **before** any change as well (the first
-`feature_check.py` run of this session, on the untouched tree, reported exactly
-`FAIL fork-sources` / `FAIL all-sources-reproduce` and the same manifest
-mismatch), so they are a train-level state, not this fix. The same check fails
-in the train's own tree at its HEAD (`zene-cachyos` @ `dbb15dded`,
-`bash tests/all-sources-reproduce.sh` -> exit **1**, same manifest mismatch),
-which is the proof that it is not caused by this branch. The manifest was left
-alone on purpose: re-deriving it deletes 1148 vendored paths from a
-whole-tree scope file that every lane shares, and it has nothing to do with this
-bug. The remedy, if the owner wants it, is the manifest's own documented
-regeneration (its header, "Regenerate with"), and it was verified here without
-touching the tree: writing that output over the entry list makes the check
-print `REPRODUCES: the entry list in all-sources-regen.txt is the recipe's own
-output.` (exit 0). It was not committed here because the merge train re-derives
-this file itself on every cycle and because the change is not this bug's.
+**The two rows that were red at the start of this session were red train-wide,
+not because of this fix, and they are now green.** Measured on the untouched
+tree before any change: `feature_check.py` printed `FAIL fork-sources` /
+`FAIL all-sources-reproduce`; the same check fails in the train's own tree at
+its HEAD (`zene-cachyos` @ `dbb15dded`, `bash tests/all-sources-reproduce.sh`
+-> exit **1**). The cause: `tests/all-sources.txt` still listed 1148 paths of
+the vendored sfizz tree (`plugins/SfzPlayer/sfizz/**`) that its own recipe
+excludes - the header's vendored-exclusion list and the whole-tree file-length
+baseline (`tests/file-length-baseline-all.tsv`, which has never had an entry
+for any of them) both say those files are not this repo's code and must not be
+measured.
+
+The repair is the manifest's own documented regeneration ("Regenerate with" in
+its header), not a hand edit: the recipe's output replaces the entry list, the
+header is untouched, and the result REPRODUCES. Measured on the diff:
+
+* the diff is **exactly** the 1148 vendored sfizz paths - no first-party path
+  is added or removed (`git diff --stat tests/all-sources.txt` ->
+  `1 file changed, 1148 deletions(-)`);
+* no file-length baseline entry is orphaned by it: the all-scope gate reports
+  `0` "improved: ... no longer a fork source" lines, and
+  `tests/file-length-baseline-all.tsv` holds no entry under any excluded tree;
+* the whole-tree scope stops counting vendored-tree length violations it was
+  never meant to measure (all-scope `REGRESSION:` lines 247 -> 123).
+
+It is committed on its own (`chore(tests): re-derive the whole-tree source
+manifest`), so it can be dropped without touching the fix.
 
 ## Self-check
 
@@ -196,3 +212,9 @@ this file itself on every cycle and because the change is not this bug's.
   `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`,
   `tests/upstream-modifications.txt`,
   `docs/qwen-fixes-2026-10/cluster-new-p14-97-port.md` (new).
+* **The manifest repair is committed on its own.** `tests/all-sources.txt` (the
+  re-derived entry list) is in its own commit,
+  `chore(tests): re-derive the whole-tree source manifest`, so it can be
+  dropped without touching the fix. It changes no first-party path and no
+  product behaviour; it removes the 1148 vendored sfizz paths the manifest's
+  own recipe excludes, and it makes Gate 9 and all-sources-reproduce pass.
