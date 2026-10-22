@@ -137,14 +137,15 @@ cause — and makes the model know when it is one of those invisible models.
 
 Nothing on the render path changed: the router still reads the same fields
 without taking a new lock, and no allocation, free, lock, wait, log or signal
-was added to any render path. The guard is taken only by edit entry points
-(GUI, control command, project load, plug-in layout change), and it is the
-engine's own existing recursive mutex, so an edit that already runs under it (a
-command handler, the project loader, the `RemotePlugin` path above) takes no
-second, different lock. Undo stays one honest step: `setPin` still journals
-nothing, and `port.set_pin` still records the single inverse from the value it
-read before the write (`src/core/ControlCommandsPorts.cpp` unchanged). No
-control command was added.
+was added to any render path. Each routing edit takes the engine's existing
+recursive mutex at the model mutation. `ControlRegistry::invoke()` runs command
+handlers on the UI thread (`src/core/ControlRegistry.cpp:249-259`), and
+`port.set_pin` reaches the guarded `Matrix::setPin()`; the project loader reaches
+guarded `loadSettings()`, while the `RemotePlugin` path above already holds the
+same mutex around `setChannelCounts()`. Undo stays one honest step: `setPin`
+still journals nothing, and `port.set_pin` still records the single inverse
+from the value it read before the write (`src/core/ControlCommandsPorts.cpp`
+unchanged). No control command was added.
 
 ## The regression tests
 
@@ -161,9 +162,10 @@ model-change guard. Each edit emits its model signal from inside the edit, so a
 `Qt::DirectConnection` slot reads the guard while the edit is still running. No
 threads, no sleeps, no wall clock, no injected timestamps, no race.
 
-Both tests look the seam up through a `requires` expression, so the test still
-compiles against a tree without the fix and reports the missing seam instead
-of failing to build — that is what makes the negative control a real proof.
+Both tests call the existing `LMMS_TESTING` seam directly.
+`AudioEngine::isChangeInModelHeld()` is already present on base `07d6d02bd`, so
+reverting only the product hunks leaves the tests buildable; the direct slot
+then observes no guard and the new assertions fail.
 
 What is asserted:
 
