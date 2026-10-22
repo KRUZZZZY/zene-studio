@@ -284,3 +284,21 @@ Likewise `feature_check.py` could not create its own log directory beside the wo
 copy of the unmodified gate script with only that one path relocated to `/tmp`; the script's
 `ROOT` (and therefore `FIX-BASE`, the cached baselines, the gates and their thresholds) was
 unchanged, and no gate limit or baseline was edited.
+
+## Completion check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p14-262-port`
+(log `submit-44-final.log`, run outside the file sandbox for the reason in the environment note
+above so the unmodified gate could create its own log directory):
+
+```text
+PRE-SUBMIT CHECK for new-p14-262-port
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p14-262-port.md
+  PASS  tests added or changed - tests/src/gui/BrowserDragUrlTest.cpp
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The five ASK items are answered, with evidence, in the Self-check section above.
