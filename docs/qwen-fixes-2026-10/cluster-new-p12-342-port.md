@@ -1,4 +1,6 @@
-new-p12-342-port: FIXED
+# Cluster new-p12-342-port
+
+Verdict: **FIXED**
 
 # Cluster new-p12-342-port: the library scan's poll overwrote the search's status
 
@@ -54,35 +56,74 @@ All logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-34
 | Reversed-fix proof | `git diff -- src/gui/BrowserSearchView.cpp include/BrowserSearchView.h > logs/fix.patch` - **EXIT=0** (49 lines); `git apply -R logs/fix.patch` - **EXIT=0**; `cmake --build build --target zene LibraryMenusTest > logs/build-rev-1.log 2>&1` - **EXIT=0**; `ctest -R '^LibraryMenusTest$' --output-on-failure > logs/test-rev-1.log 2>&1` - **EXIT=8**, the same assertion (`Actual "Library index: 9 files, built 2026-10-22T04:01:54"`, `Expected "No results"`), `Totals: 24 passed, 1 failed`. |
 | Restored-fix proof | `git apply logs/fix.patch` - **EXIT=0**; `cmake --build build --target zene LibraryMenusTest > logs/build-restore-1.log 2>&1` - **EXIT=0**; `ctest -R '^LibraryMenusTest$' --output-on-failure > logs/test-restore-1.log 2>&1` - **EXIT=0**, "100% tests passed out of 1". |
 | Affected family | `cmake --build build --target zene HelpAccessTest LibraryMenusTest > logs/build-deps-1.log 2>&1` - **EXIT=0** (the header changed, so every target that includes `BrowserSearchView.h` was rebuilt: `zene`, `HelpAccessTest`, `LibraryMenusTest`); from `build/tests`: `ctest -R '^(HelpAccessTest|LibraryMenusTest)$' --output-on-failure > logs/test-family-1.log 2>&1` - **EXIT=0**, **2 CTest test targets executed**, `LibraryMenusTest` 25 cases (24 + the new one) and `HelpAccessTest` both passed, "100% tests passed out of 2". |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - **EXIT=0** (`logs/gate-1.log`): every gate PASS, including fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length ("no new item in your files"). |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - **EXIT=1** (`logs/gate-1.log` before the commit, `logs/gate-2.log` after it): `PASS no-upstream-regression`, `PASS check-namespace`, `PASS no-tautology`, `PASS doc-figures`, `PASS complexity` ("no new item in your files"), `PASS file-length` ("no new item in your files"); `FAIL fork-sources` and `FAIL all-sources-reproduce` - both on the **same pre-existing** mismatch in `tests/all-sources.txt`, proved below to be present at the base commit and untouched by this change. |
 
 Files committed for this bug: `include/BrowserSearchView.h`, `src/gui/BrowserSearchView.cpp`,
 `tests/src/gui/LibraryMenusTest.cpp`, `tests/fork-sources.txt` (the new report file),
 `docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md`.
 
+### The two red gates are a pre-existing train state, not this change
+
+`fork-sources` and `all-sources-reproduce` both fail on one thing only: `tests/all-sources.txt`
+lists 1148 vendored `plugins/SfzPlayer/sfizz/...` paths that the manifest's own "Regenerate with"
+recipe excludes (the header calls that tree vendored and excluded on purpose). Proof that this
+pre-dates the port and is untouched by it:
+
+- `git diff dbb15dded -- tests/all-sources.txt` - **empty**: the manifest is exactly the base
+  commit's file.
+- The same comparison against the base commit's manifest,
+  `diff <(git show dbb15dded:tests/all-sources.txt | grep -vE '^[[:space:]]*(#|$)') <(the recipe's
+  own command) > logs/all-sources-base-diff.log` - **EXIT=1** with exactly **1148** differing
+  lines, and **not one** of them outside `plugins/SfzPlayer/sfizz/`.
+- The two gates' own logs (`zene-qwen-new-p12-342-port-feature-check/fork-sources.log`,
+  `.../all-sources-reproduce.log`) contain no other failure: no unregistered tracked source, no
+  registered path missing, no new item in this change's files.
+
+The last train commit (`dbb15dded`, "all-sources re-derived") re-derived that manifest with a
+different rule and kept the sfizz paths, so the gate is red on the train as it stands. Repairing
+it means re-deriving an auto-generated manifest that the merge train rewrites on every snapshot -
+out of scope for a browser bug fix, and a recipe change there would conflict with the train. It is
+therefore reported, not silently re-anchored: no gate limit, baseline or manifest was touched by
+this change.
+
 ## Self-check
 
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes)**:
+  RED `ctest -R '^LibraryMenusTest$'` - **EXIT=8**, `Actual "Library index: 9 files, built
+  2026-10-22T03:59:48"` vs `Expected "No results"`, `Totals: 24 passed, 1 failed`; with the fix
+  reversed (`git apply -R logs/fix.patch`, **EXIT=0**) the same run is **EXIT=8** with the same
+  assertion; with the fix restored (`git apply logs/fix.patch`, **EXIT=0**) it is **EXIT=0**,
+  "100% tests passed out of 1".
+- **The test is deterministic**: the seam is the public `BrowserSearchView::refreshIndexStatus()`
+  (`include/BrowserSearchView.h:106`) and the two readers `statusText()` / `scanStatusText()`
+  (`include/BrowserSearchView.h:102-104`); the test calls the poll directly, so no clock, no
+  sleeping and no race are involved. The values it compares are the view's own label text and the
+  fixture index in the test's temporary tree - no timestamp is asserted.
+- **The fix is at the cause and complete**: the cause is the shared label, so the scan was given
+  its own line rather than a guard on the poll. Every writer of the scan's text moved with it -
+  the running branch (`src/gui/BrowserSearchView.cpp:481`), the final message
+  (`src/gui/BrowserSearchView.cpp:487`) and the Rescan button's refusal
+  (`src/gui/BrowserSearchView.cpp:230`). Every caller of `refreshIndexStatus()` was checked: the
+  constructor (`:207`) and the Rescan button (`:229`) - both keep working, because only the label
+  written changed. The siblings of the changed value - the other `m_status` writers (the search's
+  count at `:327`, a search's error at `:321`, the preview's failure at `:163`, Project Media's
+  count at `:407`, a refused collection save/removal at `:501`/`:508`) - still write the search's
+  own status line, which is the contract the class documentation states.
+- **The gates**: `feature_check.py` - **EXIT=1**; six gates PASS (including `complexity` and
+  `file-length`, both "no new item in your files") and the two that fail fail on a pre-existing
+  `tests/all-sources.txt` mismatch that is identical at the base commit - the proof is in the
+  section above. No gate was re-anchored and no manifest was edited.
+- **No collateral damage**: no command, save file, project format or setting changed; old projects
+  and saved data load exactly as before. No limit or check was added, so no other caller can hit
+  one. The only visible change is that the scan's progress and its final message now appear on a
+  second line (accessible name "Library scan") instead of replacing the search's count.
+- **Realtime, undo and commands**: the change is a GUI label only - nothing on the audio thread
+  allocates, frees, locks, waits or logs; undo is unchanged; no new control command was added (the
+  ControlCommandsSnapshot canary is untouched).
 - **Verdict with evidence**: FIXED. The bug was live in this tree before the change
   (`src/gui/BrowserSearchView.cpp:465-478` wrote the scan's message into `m_status`, the label the
   search writes its count into at `src/gui/BrowserSearchView.cpp:327`), and the RED run shows the
   poll replacing the search's "No results" with the scan's "Library index: 9 files, built ...".
-- **Deterministic regression**: the test calls `refreshIndexStatus()` directly - no clock, no
-  sleeping, no polling race. The index the fixture holds is deterministic (the test's own
-  temporary tree), so the "Library index: N files" line is stable.
-- **The fix is at the cause**: the cause is the shared label, so the scan was given its own line
-  rather than a guard on the poll. Every writer of the scan's text was moved with it: the running
-  branch (`src/gui/BrowserSearchView.cpp:481`), the final message
-  (`src/gui/BrowserSearchView.cpp:487`) and the Rescan button's refusal
-  (`src/gui/BrowserSearchView.cpp:230`). The scan's own call sites of `refreshIndexStatus()` are the
-  constructor (`:207`) and the Rescan button (`:229`) - both keep working, because the function
-  only changed the label it writes.
-- **No collateral damage**: `m_status` still carries every other message the view shows (the
-  search's count, a search's error, the preview's failure, Project Media's count, a refused
-  collection save or removal) - only the scan's text moved. No command, save file or project
-  format changed.
-- **Realtime / undo / commands**: the change is a GUI label; nothing runs on the audio thread, no
-  allocation or locking was added there, no new control command was introduced (the
-  ControlCommandsSnapshot canary is untouched), and undo is unaffected.
 - **Registration**: the new report file is registered in `tests/fork-sources.txt`;
   `include/BrowserSearchView.h` and `src/gui/BrowserSearchView.cpp` are fork-owned sources already
   registered there, so no `tests/upstream-modifications.txt` entry was needed.
