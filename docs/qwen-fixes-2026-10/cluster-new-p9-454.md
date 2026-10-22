@@ -10,6 +10,14 @@ The round-2, round-3, round-4 and round-5 fixes are kept; the blocking issue
 of this review - a teardown note-off that the bounded event queue refused -
 is fixed at its cause.
 
+The fix and its regression were written by the round-5 fixer session
+(`16736dca2` the regression, `4094d8d43` the fix) after that review was
+written. Round 6 verified them from the committed state: the regression was
+run against the pre-fix code (it fails: the note stays counted) and against
+the fixed code (it passes), the focused family, the RT-safety sweep and
+`feature_check.py` were re-run, and the evidence below was rebuilt from the
+logs of this round.
+
 ## The finding that started the cluster
 
 `m_playingNotes` was a `QVector` whose `append()` could grow on the audio path.
@@ -65,7 +73,7 @@ it:
   `m_noteEvents.push()` refuses the standalone note-off, the pitch's counter is
   incremented and the flag is set (the counter first, the release store of the
   flag second, so a render stage that sees the flag also sees the count).
-- `plugins/Sf2Player/Sf2Player.cpp:1426-1447`
+- `plugins/Sf2Player/Sf2Player.cpp:1426-1445`
   (`applyPendingTeardownNoteOffs()`) - the render stage takes the counts
   (`exchange(0)`), lowers `m_notesRunning` for the pitch by that count and
   sends `fluid_synth_noteoff()` when the last note of the pitch is gone. That
@@ -149,58 +157,74 @@ The cases of the earlier rounds are kept: `notePathAllocatesNothing`,
 `renderSurvivesAPendingReload`, `renderPathAppliesTheState`,
 `playsWithARealSoundFont`, `reloadKeepsTheSoundFontWhenTheFileIsGone`,
 `everySynthHasItsOwnSoundFont` and `theTuningOffsetMatchesFluidSynthsKeyTuning`
-(13 cases in the binary, 14 with the new one).
+(13 QTest entries in the binary - `initTestCase`, `cleanupTestCase` and the
+11 cases - and 14 with the new one; the RED run shows "Totals: 13 passed, 1
+failed").
 
 ## Evidence
 
 All logs are new numbered files in
 `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-454.r6/logs`.
+The folder was empty when this round started (the round-5 fixer session's
+files went with it), so every number below is from the round-6 runs and every
+log name refers to a file that is in the folder now.
 
-### The regression test before the fix (RED)
+The product fix and its regression were committed by the round-5 fixer session
+(`16736dca2` the regression, `4094d8d43` the fix). This round rebuilt the
+evidence for them from the committed state and re-ran every gate.
 
-The first RED run was with the test as it was written first (the note handle
-destroyed through `NotePlayHandleManager::release`), which never reached the
-player's teardown at all - the plugin is loaded as a module and the track
-never gets its instrument pointer, so the track's `deleteNotePluginData()`
-never reaches the player. The test was corrected to call the player's own
-teardown, and the RED proof below is the reversal of the product change with
-the final test:
+### The regression test without the product fix (RED)
 
-- `cmake --build build --target sf2player Sf2PlayerRealtimeTest` EXIT=0
-  (`build-1.log`).
+`logs/fix.patch` is the diff of the two product files, pre-fix -> fixed (110
+lines); it is the reverse of what the round-5 fixer session had in its
+worktree, so that `git apply -R` removes the fix and `git apply` puts it back.
+
+- `git apply -R logs/fix.patch` EXIT=0 - the worktree holds the pre-fix code
+  (the refused `m_noteEvents.push()` in `deleteNotePluginData()` and no
+  fallback);
+- `cmake --build build --target zene Sf2PlayerRealtimeTest -j$(nproc)` EXIT=0
+  (`build-red.log`);
 - `cd build/tests && ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure`
-  EXIT=8 (`test-red-1.log`): `FAIL! :
+  EXIT=8 (`test-red.log`): `FAIL! :
   Sf2PlayerRealtimeTest::aStartedNoteIsStoppedWhenTheEventQueueIsFull()
   Compared values are not the same / Actual (fixture.runningNotes()): 1 /
-  Expected (0) : 0` - the started note stayed counted, i.e. stuck.
+  Expected (0) : 0 / Loc: [../../tests/src/plugins/Sf2PlayerRealtimeTest.cpp(656)]`
+  - the started note stayed counted, i.e. stuck; `0% tests passed, 1 tests
+  failed out of 1`.
 
-### The whole-fix reversal (the brief's command in step 4b)
+### The fix restored (GREEN)
 
-- `git diff -- plugins/Sf2Player/Sf2Player.cpp plugins/Sf2Player/Sf2Player.h > logs/fix.patch`
-  EXIT=0 (84 lines);
-- `git apply -R logs/fix.patch` EXIT=0;
-  `cmake --build build --target sf2player Sf2PlayerRealtimeTest` EXIT=0
-  (`build-revert-2.log`);
-  `cd build/tests && ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure`
-  EXIT=8 (`test-revert-2.log`): the same failure -
-  `Actual (fixture.runningNotes()): 1`, `Expected (0) : 0`,
-  `Totals: 13 passed, 1 failed`.
-- `git apply logs/fix.patch` EXIT=0;
-  `cmake --build build --target sf2player Sf2PlayerRealtimeTest` EXIT=0
-  (`build-green-4.log`);
-  `cd build/tests && ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure`
-  EXIT=0 (`test-green-5.log`): `100% tests passed out of 1`.
+- `git apply logs/fix.patch` EXIT=0 - the fix is back, `git status` is clean;
+- `cmake --build build --target zene Sf2PlayerRealtimeTest -j$(nproc)` EXIT=0
+  (`build-green.log`);
+- `cd build/tests && ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure`
+  EXIT=0 (`test-green.log`): `1/1 Test #165: Sf2PlayerRealtimeTest ........
+  Passed`, `100% tests passed out of 1`.
+
+The first RED attempt of the round-5 fixer session was with the test as it was
+written first (the note handle destroyed through
+`NotePlayHandleManager::release`), which never reached the player's teardown
+at all - the plugin is loaded as a module and the track never gets its
+instrument pointer, so the track's `deleteNotePluginData()` never reaches the
+player. The test was corrected to call the player's own teardown, and the RED
+proof above is the reversal of the product change with the final test.
 
 ### Affected family, sweep and gates
 
 - `cd build/tests && ctest -R '^(Sf2PlayerRealtimeTest|MidiHandoffQueueTest|CarlaMidiHandoffTest|RemotePluginAudioPortsTest|RemotePluginClientE2ETest|RtSafetySweep|RtSafetySelfTest)$' --output-on-failure`
-  EXIT=0, **7/7 tests passed** (`test-family-3.log`).
+  EXIT=0, **7/7 tests passed** (`test-1.log`). Two later runs of the same
+  family hit the known flaky `RemotePluginClientE2ETest`
+  (`test-family.log`, `test-family-2.log`): the failing cases are
+  `midiSentPerPeriodIsCapped` (the remote plugin's audio-port channel count is
+  2, the test wants 3) and `plugin.isUIVisible()`. That is the remote-plugin
+  client, a path this branch does not touch - the branch changes the SF2
+  player, the MIDI handoff queue header and the tests only
+  (`git diff --stat ded355440..HEAD`). The test passes when it runs on its
+  own: `ctest -R '^RemotePluginClientE2ETest$' --output-on-failure` EXIT=0
+  (`test-e2e-rerun.log`). The round-5 report records the same flake with the
+  same two cases.
 - `cd build/tests && ctest -R '^PluginPortsMigrationTest$' --output-on-failure`
-  EXIT=0, 1/1 test passed (`test-ppm-2.log`). (The first run of this test
-  failed with "SWH Decimator test fixture was not loaded" - the LADSPA fixture
-  was not built in this build tree; after
-  `cmake --build build --target decimator_1202` EXIT=0 (`build-decimator.log`)
-  the test passes. The failure is unrelated to this change.)
+  EXIT=0, 1/1 test passed (`test-ppm.log`).
 - `python3 tests/rt-safety-sweep.py --check` EXIT=0 - "PASS: every hit on a
   declared audio-thread path is allowlisted with a reason and at its allowed
   count" (`rt-safety-sweep-1.log`). The new render-path function is declared
@@ -209,37 +233,29 @@ the final test:
   EXIT=0 - fork-sources PASS, all-sources-reproduce PASS,
   no-upstream-regression PASS, check-namespace PASS, no-tautology PASS,
   doc-figures PASS, complexity PASS ("no new item in your files"), file-length
-  PASS ("no new item in your files"), RESULT PASS (`feature-check-2.log`).
-  The first run of this gate in this round was red
-  (`feature-check-1.log`, EXIT=1) with exactly one item: "file-length NEW: new
-  file over 500 lines: tests/src/plugins/Sf2PlayerRealtimeTest.cpp (549)". The
-  fixture was therefore moved into `tests/src/plugins/Sf2PlayerFixture.h` (the
-  test file is now 449 code lines, the header 126), the new header was
-  registered in `tests/fork-sources.txt` and `tests/all-sources.txt` was
-  re-derived with the recipe its own header publishes. No gate limit or
-  baseline was changed.
-- Build: `cmake --build build --target zene` EXIT=0 (`build-zene-2.log`),
-  `cmake --build build --target sf2player Sf2PlayerRealtimeTest` EXIT=0
-  (`build-4.log`), `cmake --build build --target MidiHandoffQueueTest
-  CarlaMidiHandoffTest RemotePluginAudioPortsTest RemotePluginClientE2ETest`
-  EXIT=0 (`build-family.log`).
+  PASS ("no new item in your files"), RESULT PASS (`feature-check-1.log`).
+  No gate limit or baseline was changed.
+- Build: `cmake --build build --target zene -j$(nproc)` EXIT=0
+  (`build-zene.log`), `cmake --build build --target zene
+  Sf2PlayerRealtimeTest -j$(nproc)` EXIT=0 (`build-1.log`, `build-red.log`,
+  `build-green.log`).
 
 ### A note on the flaky RemotePluginClientE2ETest
 
 `RemotePluginClientE2ETest` is flaky in this environment and says nothing about
-this change: it passed in the focused run above (11.72 s) and in the earlier
-runs of this round, and the round-5 report records the same flake with the
-same two cases (a large-message chunking case and a wall-clock case). This
-branch does not touch that path.
+this change: it passed in the focused run above (7/7), it passed when it was
+run on its own, and the round-5 report records the same flake with the same
+two cases (an audio-port channel count and a UI-visibility case). This branch
+does not touch that path.
 
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with
   it (exit codes).** With the fix reverted (`git apply -R logs/fix.patch`):
   EXIT=8, `Actual (fixture.runningNotes()): 1`, `Expected (0) : 0`
-  (`test-revert-2.log`). With the fix restored (`git apply logs/fix.patch`):
-  EXIT=0 (`test-green-5.log`). The RED run before the fix is
-  `test-red-1.log` (EXIT=8, the same failure).
+  (`test-red.log`). With the fix restored (`git apply logs/fix.patch`):
+  EXIT=0 (`test-green.log`). Both runs rebuilt the product and the test first
+  (`build-red.log`, `build-green.log`).
 - **The test is deterministic: no wall-clock timing, no sleeps, no races.** It
   uses no timing at all: the queue is filled through the player's own
   `fillNoteEventQueueForTest` seam (the loop stops when the bounded queue
@@ -279,8 +295,7 @@ branch does not touch that path.
   thrown away in `deleteNotePluginData()`
   (`plugins/Sf2Player/Sf2Player.cpp:1445` as the round-5 review quoted it),
   followed by `releasePluginDataSlot( slot )` on the next lines. The RED run
-  (`test-red-1.log`) and the reversal (`test-revert-2.log`) both show the
-  note staying counted with that code in place.
+  (`test-red.log`) shows the note staying counted with that code in place.
 - **Verdict.** The round-5 blocking finding (a teardown note-off lost when the
   bounded event queue was full) is REAL and is FIXED: the refusal is now
   handled by a bounded, allocation-free, lock-free fallback that guarantees
@@ -293,12 +308,18 @@ branch does not touch that path.
   that could allocate on the audio path) was fixed in the earlier rounds of
   this branch and stays fixed.
 
-Files committed: `plugins/Sf2Player/Sf2Player.cpp`,
-`plugins/Sf2Player/Sf2Player.h`, `tests/src/plugins/Sf2PlayerRealtimeTest.cpp`,
-`tests/src/plugins/Sf2PlayerFixture.h`, `tests/fork-sources.txt`,
-`tests/all-sources.txt`, `tests/rt-safety-scope.txt`,
-`tests/upstream-modifications.txt`,
+Files committed for the cluster: `plugins/Sf2Player/Sf2Player.cpp`,
+`plugins/Sf2Player/Sf2Player.h` (the fix, commit `4094d8d43`),
+`tests/src/plugins/Sf2PlayerRealtimeTest.cpp` (the regression, commit
+`16736dca2`), `tests/src/plugins/Sf2PlayerFixture.h`,
+`tests/fork-sources.txt`, `tests/all-sources.txt`,
+`tests/rt-safety-scope.txt`, `tests/upstream-modifications.txt`,
 `docs/qwen-fixes-2026-10/cluster-new-p9-454.md`.
+
+Committed in round 6: `docs/qwen-fixes-2026-10/cluster-new-p9-454.md` only -
+the product fix and its regression were already on the branch
+(`16736dca2`, `4094d8d43`) and this round rebuilt their evidence and re-ran
+every gate.
 
 ## Earlier rounds (kept for the record)
 
