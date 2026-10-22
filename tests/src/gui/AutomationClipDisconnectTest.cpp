@@ -91,8 +91,9 @@ bool removeObjectIfAvailable(ClipType& clip, AutomatableModel* model, std::atomi
 //!   probe PARKS the thread there until the test lets it go, so the test knows
 //!   the thread is inside the change and not merely late.
 //! - Holding: the thread is HOLDING ON - the acquisition of the engine's
-//!   change guard was CONTENDED: the render thread held the lock when the
-//!   acquisition was attempted, so the change waits for the render to let go.
+//!   change guard was CONTENDED: the test thread held the same engine change
+//!   lock that renderNextPeriod() holds when the acquisition was attempted.
+//!   The change therefore waits for the test thread to release that lock.
 //!   The report is made AT the acquisition, on the acquiring thread, so it is
 //!   positive evidence that the thread really reached the guard.
 //!
@@ -150,7 +151,8 @@ bool awaitBefore()
 }
 
 //! Wait for the report of a contended acquisition of the engine's change
-//! guard. As above: the window is a deadlock guard, the report is the proof.
+//! guard. The test thread is holding it; the window is a deadlock guard, and
+//! the report is the proof.
 bool awaitContended()
 {
 	std::unique_lock lock(s_probeMutex);
@@ -189,11 +191,11 @@ private slots:
 	 *  so a push_back() that reallocates it under the reader's feet is the
 	 *  defect. The engine change guard is what makes the connection wait.
 	 *
-	 *  The proof is an OBSERVATION, not a timeout: the test holds the render
-	 *  thread's own lock, so the changing thread's acquisition of the change
-	 *  guard is CONTENDED, and the seam reports that contention AT the
-	 *  acquisition. A connection that did not take the guard at all reports
-	 *  nothing and fails here.
+	 *  The proof is an OBSERVATION, not a timeout: the test thread holds the
+	 *  engine change lock also held by renderNextPeriod(), so the acquisition is
+	 *  CONTENDED; the seam reports that contention at the attempt.
+	 *  A connection that did not take the guard at all reports nothing and
+	 *  fails here.
 	 */
 	void addObjectWaitsForRenderPublication()
 	{
@@ -209,8 +211,8 @@ private slots:
 		bool reached = false;
 		bool contended = false;
 		{
-			// The render thread's own lock, taken explicitly so the test can
-			// let go of it at the moment it chooses.
+			// The engine change lock used by renderNextPeriod(), taken here by
+			// the test thread so the test can release it at the moment it chooses.
 			auto renderLock = std::optional<AudioEngine::RequestChangesGuard>{};
 			renderLock.emplace(Engine::audioEngine()->requestChangesGuard());
 			adder = std::thread([&]
@@ -220,15 +222,15 @@ private slots:
 			});
 			// The connecting thread is parked inside the change now.
 			reached = awaitBefore();
-			// Let it attempt the render's lock.
+			// Let it attempt the test-held engine change lock.
 			releaseProbe();
 			if (reached)
 			{
-				// It must find the render holding the lock: that contention is
-				// reported at the acquisition.
+				// It must find this test thread holding the lock: that contention
+				// is reported at the acquisition.
 				contended = awaitContended();
 			}
-			// The render lets go: the change may now take the lock and finish.
+			// The test thread releases the lock: the change may now finish.
 			renderLock.reset();
 		}
 		adder.join();

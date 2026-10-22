@@ -67,12 +67,14 @@ be a behaviour change outside this finding.
 
 `tests/src/gui/AutomationClipDisconnectTest.cpp` - slot **`addObjectWaitsForRenderPublication`**:
 
-* the test holds the **render thread's own lock** (`AudioEngine::requestChangesGuard()`), so the
-  changing thread's acquisition of the change guard is **contended**;
+* the test thread holds the engine's **change lock** (`AudioEngine::requestChangesGuard()`), the
+  same mutex `renderNextPeriod()` holds for a whole period, so the changing thread's acquisition
+  is **contended**; this exercises the shared exclusion lock without starting a nondeterministic render;
 * the seam's `Before` point **parks** the connecting thread inside the change, so the test knows
   the thread is inside the change and not merely late;
 * the contended acquisition is reported **at the attempt**, on the acquiring thread - the
-  assertion is made on that **observation**, never on a timeout. The two `wait_for` calls are
+  assertion is made on that **observation**, never on a timeout. The test thread releases the lock
+  after observing contention. The two `wait_for` calls are
   deadlock guards (a thread that never arrives fails the assertion instead).
 
 ## Evidence
