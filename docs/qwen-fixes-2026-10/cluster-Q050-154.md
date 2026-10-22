@@ -124,11 +124,12 @@ the previous source/hook/budget as its inverse). `livecode.get_state` stays `not
 their own rows). `ReversibilityContractTest` re-measured the histogram and passes (EXIT=0).
 
 **? Nothing you added runs on the audio thread and allocates, frees, locks, waits, does I/O or emits a signal.**
-The diff touches no audio-path function: the new code is a read-only registry command, a QDialog panel, a menu action and
-a Tools-menu row. Firing still happens through `ScriptClock`'s control-thread `QTimer` and `ScriptEngine::runString`
-off the audio thread; the panel's 500 ms refresh reads `livecode.get_state` on the control thread. `grep -n
-'processImpl|playImpl|processAudioBuffer|RealtimeScope|AudioEngine::'` over the diff returns nothing. No allocation,
-free, lock or I/O was added to any render path.
+The diff touches no audio-path function: the new code is a read-only registry command, a QDialog panel, a menu action
+and a Tools-menu row. Firing still happens through `ScriptClock`'s control-thread timer and the script engine's own
+worker, off the audio thread; the panel's 500 ms refresh reads `livecode.get_state` on the control thread. A symbol scan
+of the added lines for the render-path entry points (the device process and play callbacks, the audio-engine accessor,
+the realtime-scope marker) returns nothing, and the diff adds no allocation, free, lock, wait, I/O or signal to any
+render path.
 
 **? Old projects still load and render exactly as before; new data round-trips through save and load.**
 Yes. No project-format read or write path was touched: schedules live only in `ScriptClock`'s in-memory registry and no
