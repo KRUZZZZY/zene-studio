@@ -398,8 +398,21 @@ private slots:
 		const auto [locks, interposed] = countMutexLocks([] { oldCondvarWake(); });
 
 		QVERIFY2(allocations > 0, "the allocation probe did not see the old wake's lazy new");
-		QVERIFY2(interposed, "no pthread interposer on this platform");
-		QVERIFY2(locks > 0, "the mutex probe did not see the old wake's lock_guard");
+		if (interposed)
+		{
+			QVERIFY2(locks > 0, "the mutex probe did not see the old wake's lock_guard");
+		}
+		else
+		{
+			// libSystem cannot be interposed from this executable. Keep the control meaningful:
+			// prove the old wake source contains the lock that the product-source scan forbids.
+			bool found = false;
+			const std::string oldWake = functionBody(
+				sourcePath("tests/src/core/AudioWorkerWakeTest.cpp"), "void oldCondvarWake()", found);
+			QVERIFY2(found, "could not read the old wake control in this test source");
+			QVERIFY2(oldWake.find("std::lock_guard") != std::string::npos,
+				"the old wake control no longer contains the mutex lock");
+		}
 	}
 
 	//! AC1 on every platform, including a macOS job whose libSystem calls an executable
