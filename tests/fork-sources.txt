@@ -2957,3 +2957,5 @@ tests/src/core/ControlNoteNoOpUndoTest.cpp
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
 # cluster 908 (2026-10): fix and verification report for the ZynAddSubFx plugin mutex, hand-off and hosting getters.
 docs/qwen-fixes-2026-10/cluster-908.md
+# cluster Q050-167 (2026-10): the render-side worker wake is a post, not a lock - fix and verification report.
+docs/qwen-fixes-2026-10/cluster-Q050-167.md
