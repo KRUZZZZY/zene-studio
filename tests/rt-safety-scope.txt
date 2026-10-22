@@ -149,3 +149,5 @@ plugins/Watsyn/Watsyn.cpp	WatsynInstrument::deleteNotePluginData	called when a W
 # (the note path took that mutex with a blocking lock() until the queue existed).
 plugins/Vestige/Vestige.cpp	VestigeInstrument::handleMidiEvent	MIDI may arrive on the audio thread (the note path), the GUI thread or the input thread; this producer only publishes a fixed-size event into the bounded hand-off queue
 plugins/Vestige/Vestige.cpp	VestigeInstrument::processImpl	VeSTige's per-period render path: it drains the queued events into the plug-in and calls the plug-in's process
+plugins/Kicker/Kicker.cpp	KickerInstrument::playNoteImpl	per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
+plugins/Kicker/Kicker.cpp	KickerInstrument::deleteNotePluginData	called when a Kicker note ends, on the thread that released the note handle: destroys the note state in place
