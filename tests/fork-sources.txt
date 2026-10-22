@@ -2950,3 +2950,7 @@ tests/src/core/SessionMalformedAttributeTest.cpp
 # a call that changed nothing records no transaction, so the journal's top is still the
 # last REAL edit. This fork-NEW regression source is the proof of that rule.
 tests/src/core/ControlNoteNoOpUndoTest.cpp
+# cluster 908 (2026-10): white-box regression test for the Zyn instrument's audio path, plugin lock and MIDI hand-off (fork-NEW).
+tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
+# cluster 908 (2026-10): fix and verification report for the ZynAddSubFx plugin mutex, hand-off and hosting getters.
+docs/qwen-fixes-2026-10/cluster-908.md

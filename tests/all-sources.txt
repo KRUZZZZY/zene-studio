@@ -3130,6 +3130,7 @@ tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
 tests/src/plugins/VstEffectControlsTest.cpp
 tests/src/plugins/WatsynSelectedGraphTest.cpp
+tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp
 tests/src/plugins/ZynSeparateProcessTest.cpp
 tests/src/tracks/AutomationTrackTest.cpp

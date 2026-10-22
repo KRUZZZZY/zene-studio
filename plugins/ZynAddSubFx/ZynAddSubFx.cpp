@@ -314,8 +314,15 @@ void ZynAddSubFxInstrument::loadSettings( const QDomElement & _this )
 void ZynAddSubFxInstrument::loadFile( const QString & _file )
 {
 	const std::string fn = QSTR_TO_STDSTR( _file );
+	// The choice of the plugin and its use belong under one lock. A hosting-mode switch
+	// (the instrument view's checkbox and the control surface's oop.set_mode both end in
+	// reloadPlugin()) deletes the running instance and creates another one under this
+	// very mutex, so a caller that chose an instance without the lock could use it after
+	// it was gone - and the local branch would load the preset into a null pointer.
+	m_pluginMutex.lock();
 	if( m_remotePlugin )
 	{
+		testHook();
 		m_remotePlugin->lock();
 		m_remotePlugin->sendMessage( RemotePlugin::message( IdLoadPresetFile ).addString( fn ) );
 		m_remotePlugin->waitForMessage( IdLoadPresetFile );
@@ -323,10 +330,10 @@ void ZynAddSubFxInstrument::loadFile( const QString & _file )
 	}
 	else
 	{
-		m_pluginMutex.lock();
+		testHook();
 		m_localPlugin->loadPreset( fn );
-		m_pluginMutex.unlock();
 	}
+	m_pluginMutex.unlock();
 
 	instrumentTrack()->setName(QFileInfo(_file).baseName().replace(QRegularExpression("^[0-9]{4}-"), QString()));
 
@@ -350,22 +357,8 @@ auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, Pla
 	-> ProcessStatus
 {
 	// MIDI queued since the last period goes to the synth first, in order. A channel whose events the full queue
-	// refused is cut with all-notes-off at the point of the refusal (see drainMidi()).
-	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
-		[this](const HandoffMidiEvent& queued) -> bool
-		{
-			const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
-			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, 0); }
-			else { m_localPlugin->processMidiEvent(event); }
-			return true;
-		},
-		[this](int channel) -> bool
-		{
-			const MidiEvent allNotesOff(MidiControlChange, static_cast<int8_t>(channel), 123, 0);
-			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
-			else { m_localPlugin->processMidiEvent(allNotesOff); }
-			return true;
-		});
+	// refused is cut with all-notes-off at the point of the refusal (see forwardQueuedMidi()).
+	forwardQueuedMidi();
 
 	if (m_remotePlugin)
 	{
@@ -385,9 +378,62 @@ auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, Pla
 
 
 
+void ZynAddSubFxInstrument::forwardQueuedMidi()
+{
+	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
+		[this](const HandoffMidiEvent& queued) -> bool
+		{
+			const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
+#ifdef LMMS_TESTING
+			m_testLastForwardedOffset = static_cast<int>(queued.offset);
+#endif
+			// The remote client gets the frame offset, so it can place the event inside the
+			// period. The in-process synth has no sub-period placement: its API takes the
+			// event, not a position, so it applies it at the start of the period it renders.
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(event, queued.offset); }
+			else { m_localPlugin->processMidiEvent(event, queued.offset); }
+			return true;
+		},
+		[this](int channel) -> bool
+		{
+			const MidiEvent allNotesOff(MidiControlChange, static_cast<int8_t>(channel), 123, 0);
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
+			else { m_localPlugin->processMidiEvent(allNotesOff); }
+			return true;
+		});
+}
+
+
+
+
 auto ZynAddSubFxInstrument::processLock() -> bool
 {
-	return m_pluginMutex.tryLock(Engine::getSong()->isExporting() ? -1 : 0);
+	// Realtime: the audio path never WAITS for this mutex. The main thread holds it for
+	// as long as a plugin operation takes - a client handshake is seconds, and a preset
+	// load waits for the client to answer - and the old policy made the audio thread
+	// wait for it while the song was exporting, so a render could stall for the whole
+	// reload (and for as long as the main thread needed the lock, which is unbounded).
+	// The period is skipped instead: the lock is a try, never a wait.
+	return m_pluginMutex.tryLock(audioLockWaitMs());
+}
+
+
+
+
+auto ZynAddSubFxInstrument::renderIsExporting() const -> bool
+{
+	return Engine::getSong()->isExporting();
+}
+
+
+
+
+auto ZynAddSubFxInstrument::audioLockWaitMs() const -> int
+{
+	// The audio path does not wait for the plugin mutex at all. The export case is why
+	// it matters: an export renders periods back to back, so a wait here stalled the
+	// render for as long as the main thread held the mutex.
+	return 0;
 }
 
 
@@ -419,7 +465,9 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 	queued.channel = 0;
 	queued.param1 = event.param( 0 );
 	queued.param2 = event.param( 1 );
-	queued.offset = 0;
+	// The frame offset inside the period travels with the event: the remote client places
+	// the event at that frame, and dropping it here put every event at the period start.
+	queued.offset = static_cast<std::uint32_t>( offset );
 	pushOrRecord( m_midiHandoff, m_midiOverflow, queued );
 
 	return true;
@@ -430,13 +478,24 @@ bool ZynAddSubFxInstrument::handleMidiEvent( const MidiEvent& event, const TimeP
 
 QString ZynAddSubFxInstrument::hostingState() const
 {
+	// The plugin pointer is read under the lock: a hosting-mode switch deletes the
+	// instance and creates another one under this very mutex, so an unlocked read
+	// could ask an instance that is already gone.
+	m_pluginMutex.lock();
+	testHook();
+	QString state;
 	if( m_remotePlugin == nullptr )
 	{
-		return QStringLiteral( "in-process" );
+		state = QStringLiteral( "in-process" );
 	}
-	return m_remotePlugin->isRunning() && !m_remotePlugin->failed()
-		? QStringLiteral( "separate-process" )
-		: QStringLiteral( "separate-process-exited" );
+	else
+	{
+		state = (m_remotePlugin->isRunning() && !m_remotePlugin->failed())
+			? QStringLiteral( "separate-process" )
+			: QStringLiteral( "separate-process-exited" );
+	}
+	m_pluginMutex.unlock();
+	return state;
 }
 
 
@@ -446,8 +505,26 @@ qint64 ZynAddSubFxInstrument::hostingProcessId() const
 {
 	// The client is the instrument's own ZynAddSubFxRemotePlugin; its pid is
 	// the QProcess's (feature row 80). Zero means no client is running - the
-	// in-process synth, or a client that has gone away.
-	return m_remotePlugin == nullptr ? 0 : m_remotePlugin->hostProcessId();
+	// in-process synth, or a client that has gone away. Read under the lock, like
+	// hostingState() above: the instance can be replaced while it is being asked.
+	m_pluginMutex.lock();
+	testHook();
+	const auto pid = (m_remotePlugin == nullptr) ? 0 : m_remotePlugin->hostProcessId();
+	m_pluginMutex.unlock();
+	return pid;
+}
+
+
+
+
+void ZynAddSubFxInstrument::testHook() const
+{
+#ifdef LMMS_TESTING
+	if( m_testHook )
+	{
+		m_testHook();
+	}
+#endif
 }
 
 
