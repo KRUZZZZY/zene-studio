@@ -364,6 +364,10 @@ private slots:
 		QVERIFY2(help.contains(QString::number(ScriptClockGrid::CrossCap)), qPrintable(help));
 		QVERIFY2(help.contains(QString::number(ScriptEngine::DefaultMemoryBudgetBytes / (1024 * 1024))),
 			qPrintable(help));
+		QVERIFY2(help.contains(QString::number(ScriptEngine::MinMemoryBudgetBytes / 1024)),
+			qPrintable(help));
+		QVERIFY2(help.contains(QString::number(ScriptEngine::MaxMemoryBudgetBytes / (1024 * 1024))),
+			qPrintable(help));
 		QVERIFY2(help.contains(QStringLiteral("Script Memory Budget")), qPrintable(help));
 		QVERIFY2(help.contains(QStringLiteral("not saved in the project")), qPrintable(help));
 		QVERIFY2(help.contains(QStringLiteral("audio thread")), qPrintable(help));
