@@ -30,26 +30,26 @@ behaviour, and it repairs the train-level scope-manifest red that blocked the ga
   (`typeOk == false`), so `t` stays `nullptr` and the function answers `nullptr` -
   the same answer a `type` this build has no class for gives. Before `edc9fac6f` the
   attribute was read with an unchecked `QVariant::toInt()`, so it read as `0`, and
-  `Track::Type::Instrument` IS `0` (`include/Track.h:85-111`: Instrument=0, Pattern=1,
+  `Track::Type::Instrument` IS `0` (`include/Track.h:85-113`: Instrument=0, Pattern=1,
   Sample=2, Event=3, Video=4, Automation=5, HiddenAutomation=6, Folder=7, Count=8):
   a `<track>` with no `type` (or `type="bad"`) was fabricated into a real instrument
   track, and its own children were read as clips.
-- `src/core/TrackContainer.cpp:84-93` - the claim helper
+- `src/core/TrackContainer.cpp:85-93` - the claim helper
   `claimTrackOrPreserveChild()` claims a child ONLY when it is named `<track>` AND
   `Track::create()` constructed one from it; a `nullptr` answer falls through to
   `captureUnclaimed( element, element.nodeName(), into )`, so the element is kept
   VERBATIM and re-emitted on save (SPEC-ARCH-4 1.6.2). It is called from the one
   place the container reads its children: `TrackContainer::loadSettings()`
-  (`src/core/TrackContainer.cpp:237`).
+  (`src/core/TrackContainer.cpp:240`).
 - The fix is at the ONE place the attribute is read, so every caller of
   `Track::create(element, container)` gets the same answer: the container loader
   (`TrackContainer::loadSettings`, `src/core/TrackContainer.cpp:89`),
-  `Track::clone()` (`src/core/Track.cpp:551-558`),
+  `Track::clone()` (`src/core/Track.cpp:554-561`),
   `ControlEditSupport.cpp:486`, `ControlAutomationSupport.cpp:447`,
   `ControlProjectTransplantChannels.cpp:194`, `ControlTrackCreation.cpp:145`,
   `PatternEditor.cpp:177`, `TrackContainerView.cpp:623`.
 - The regression that already holds this line is
-  `tests/src/core/UnclaimedTrackTypeTest.cpp:277`
+  `tests/src/core/UnclaimedTrackTypeTest.cpp:278`
   `malformedTrackTypesArePreservedNotCoerced()` (added by `edc9fac6f`): a fixture with
   a `<track>` that has NO `type` and a `<track type="oops">` asserts the container
   holds only the one readable row, that BOTH unreadable rows are kept and REPORTED
@@ -65,7 +65,7 @@ one.
 
 ### The ported regression (this commit's own test)
 
-`tests/src/core/UnclaimedTrackTypeTest.cpp:307`
+`tests/src/core/UnclaimedTrackTypeTest.cpp:324`
 `aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack()` - the case
 the ORIGINAL report gave, ported by hand from `2e42fdba6` (the merge conflict that
 stopped that commit was in `src/core/Track.cpp`; the test file merged cleanly and is
@@ -173,7 +173,7 @@ gates turn green.
   base, so no old project, saved file or loaded project reads differently.
 - The `type` range check (`0 <= typeValue < Type::Count`) keeps every type this
   build has a class for, including the folder track (7) - `Folder` sits immediately
-  before `Count` in `include/Track.h:95-111`, exactly so that the persisted number
+  before `Count` in `include/Track.h:97-113`, exactly so that the persisted number
   never moves. `Event` (3) and `Video` (4) have no class, so they still answer
   `nullptr` through the factory's `default: break` arm, as before.
 - Nothing on the audio thread changed; no control command was added; undo is
@@ -188,7 +188,94 @@ gates turn green.
   `RESULT: PASS`. Before the manifest re-derivation the same command was
   **exit 1** with `fork-sources` and `all-sources-reproduce` FAIL
   (`gate-feature-check-1.log`), both red at the branch base.
-- `submit_check.py`: run after the commit; the result is recorded in this section.
+- `submit_check.py`: **exit 0** after the commit (`submit-2.log`): "RESULT: PASS -
+  submit" - commits on the branch PASS, working tree clean PASS, report PASS, tests
+  added or changed PASS (`tests/src/core/UnclaimedTrackTypeTest.cpp`), gates PASS.
+  Its five ASK items are answered here, one by one.
+
+### The ASK items, answered with evidence
+
+1. **"The regression test FAILS with your product change reverted and PASSES with it
+   (exit codes)."** The behavioural fix is UPSTREAM on this branch (`edc9fac6f`), so
+   "your product change reverted" is done by reverting THAT hunk. Commands and exit
+   codes, in order:
+
+   | step | command | exit |
+   |------|---------|------|
+   | revert the type check in `src/core/Track.cpp` | `git diff -- src/core/Track.cpp > <logs>/fix.patch` (the revert patch) | diff 0 |
+   | rebuild | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | 0 |
+   | RED | `./UnclaimedTrackTypeTest aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack` | **1** (`4 != 2`) |
+   | RED (sibling slot) | `./UnclaimedTrackTypeTest malformedTrackTypesArePreservedNotCoerced` | **1** (`3 != 1`) |
+   | restore the fix | `git apply -R <logs>/fix.patch` | 0 |
+   | rebuild | `cmake --build build --target zene UnclaimedTrackTypeTest -j 8` | 0 |
+   | GREEN | `./UnclaimedTrackTypeTest aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack` | **0** |
+   | GREEN (sibling slot) | `./UnclaimedTrackTypeTest malformedTrackTypesArePreservedNotCoerced` | **0** |
+
+   The product change THIS commit carries is a comment in
+   `src/core/TrackContainer.cpp`; reverting it changes no behaviour, so the RED
+   proof above is run against the hunk that actually decides the behaviour.
+
+2. **"The test is deterministic: no wall-clock timing, sleeps or races (name the
+   seam or injected values it uses)."** The ported slot
+   `aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack()` uses
+   NO clock, NO sleep, NO thread and NO injected time value. Its seam is the
+   FILE: it writes a project file with `writeText()` into a `QTemporaryDir`, loads
+   it with the file-local `loadFresh()` helper (`song->clearProject()`,
+   `song->setLoadOnLaunch(false)`, `song->loadProject(project)`), and every
+   assertion reads the loaded model (`song->tracks()`, `song->unclaimedChildren()`,
+   `song->unclaimedElements()`) or the saved file back
+   (`song->saveProjectFile()` -> `parse()` -> `childWith()`). The fixture's `type`
+   values are literal strings written into the file, and the timestamps QDom stamps
+   on a save are never compared - the assertions are on element names, attributes
+   and counts.
+
+3. **"The fix is at the cause and complete: every caller and sibling of what you
+   changed was checked and stays consistent."** The cause is the ONE place the
+   track's `type` attribute is read for construction:
+   `Track::create(const QDomElement&, TrackContainer*)` at `src/core/Track.cpp:527`.
+   Every caller of it was enumerated and checked - the container loader
+   (`src/core/TrackContainer.cpp:89`), `Track::clone()` (`src/core/Track.cpp:554`),
+   `ControlEditSupport.cpp:486`, `ControlAutomationSupport.cpp:447`,
+   `ControlProjectTransplantChannels.cpp:194`, `ControlTrackCreation.cpp:145`,
+   `PatternEditor.cpp:177`, `TrackContainerView.cpp:623` - and all of them get the
+   same answer, because there is only one read. The SIBLING of that read -
+   `Track::loadTrack()`'s type check at `src/core/Track.cpp:743` - only WARNS when
+   the file's type differs from the track's own type, which is a different question
+   and was left alone. The other `type` readers in the tree
+   (`DataFile.cpp:2418`, `Song.cpp:2034`, `UpgradeExtendedNoteRange.cpp:208,218,259`)
+   are not the track-factory read; they classify elements they have already
+   accepted and were left alone. `TrackContainer::claimTrackOrPreserveChild()`
+   (`src/core/TrackContainer.cpp:85-93`) is the only consumer of that answer, and
+   this commit changes only its COMMENT.
+
+4. **"No collateral damage: old projects and saved data still load as before, and
+   any limit or check you added does not hit other callers that legitimately exceed
+   it."** This commit changes no product behaviour: the only product edit is a
+   comment in `src/core/TrackContainer.cpp`, and the only other edits are a test
+   slot, a registration row and a test-scope manifest. No tracked file is added or
+   removed, so the loader sees the same tree. The upstream fix this port job
+   describes is itself narrow: the `type` range check keeps every value this build
+   has a class for, INCLUDING the folder track (7 - `Folder` sits immediately before
+   `Count` in `include/Track.h:97-113` precisely so the persisted number never
+   moves), and the two types with no class (`Event`=3, `Video`=4) still answer
+   `nullptr` through the factory's `default: break` arm, as before. A negative or
+   out-of-range number was already refused by that arm, so no old project changes
+   its load.
+
+5. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or
+   the intended contract that shows it."** The verdict is ALREADY-FIXED and the
+   code that shows it is `src/core/Track.cpp:527-545` - `Track::create(const
+   QDomElement&, TrackContainer*)` reads `type` with a CHECKED
+   `QVariant::toInt(&typeOk)` and refuses an element whose `type` is missing or
+   does not convert (`typeOk == false` -> `t` stays `nullptr`), and additionally
+   refuses a value outside `[0, Type::Count)`. `TrackContainer::claimTrackOrPreserveChild()`
+   (`src/core/TrackContainer.cpp:85-93`) therefore keeps such an element VERBATIM
+   (`captureUnclaimed()`) instead of modelling a track nobody wrote - the intended
+   contract of SPEC-ARCH-4 1.6.2, "an element the loader does not claim is kept,
+   not coerced". The contract is enforced by
+   `UnclaimedTrackTypeTest::malformedTrackTypesArePreservedNotCoerced` and, ported
+   here, by
+   `UnclaimedTrackTypeTest::aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack`.
 - New test files: none. The regression this commit adds is a slot in the existing
   `tests/src/core/UnclaimedTrackTypeTest.cpp` (the file is already registered in
   `tests/fork-sources.txt` and in `tests/CMakeLists.txt`); it is proved RED above by
