@@ -98,23 +98,50 @@ is written 0.0f - the test fails on both counts.
 
 ## Self-check
 
-- REAL? Yes - the rework point reproduced exactly as Luna described: RED run
-  shows `phaseDuringWait` 0.0 during the writer wait where the old view's
-  phase must stay 2.75.
-- Test fails without the fix (exit 8) and passes with it (exit 0); both legs
-  of the reversal proof recorded above.
-- The fix is at the cause and complete: every reader-visible publication in
-  the publisher (`m_hasLayer`, `m_triggerTrack`, `m_triggeredAt`,
-  `m_perVoice`, `m_anyTrigger`, `m_anyPerVoice`, `m_voices`, `m_view`) now
-  lands inside the bounded commit; `publishTriggers()` has no other caller;
-  writer quiescence, token re-issue and the liveness watches stay outside the
-  window; the no-spin regression still passes.
-- No collateral behaviour change outside the wait window: before the first
-  edit and after every edit completes, all values are identical to before
-  (constructor still seeds `-1` sentinels; `edit()` still sets everything on
-  every call). Old projects and saved data are untouched.
+- Q: The regression test FAILS with your product change reverted and PASSES
+  with it (exit codes). A: Yes. Reverted (`git apply -R logs/fix.patch`,
+  rebuild EXIT=0): `ctest -R '^ModulationAudioViewTest$'` **EXIT=8**,
+  `anEditWaitingForAnActiveWriterKeepsTheOldViewsTriggerPhase` fails -
+  `phaseDuringWait` Actual 0, Expected 2.75 (logs/09-test-reversed.log; the
+  same failure appears in the initial RED run, logs/02-test-red.log). With
+  the fix (`git apply logs/fix.patch`, rebuild EXIT=0): **EXIT=0**, 1/1
+  passed (logs/11-test-reapplied.log; logs/04-test-green.log).
+- Q: The test is deterministic: no wall-clock timing, sleeps or races (name
+  the seam or injected values it uses). A: Deterministic. The note time is
+  injected (`setBlockSeconds(10.0)` + `noteStarted(11)`), the read time is a
+  literal (12.75), and the pin/wait interleaving is ordered by
+  `std::binary_semaphore` handoff plus the writer-pin API: the worker holds
+  `beginTargetWrite(0, token)` and observes `targetAlive(0, token)` flip
+  false (the closing bit is set before the wait), which proves the edit is
+  inside its writer wait - and the edit cannot leave that wait until the
+  worker releases the pin, so the observation window cannot race. The 2s
+  `try_acquire_for` is only a hang watchdog on the setup handoff, not part
+  of the logic. No sleeps, no wall-clock assertions.
+- Q: The fix is at the cause and complete: every caller and sibling of what
+  you changed was checked and stays consistent. A: `publishTriggers()` has
+  exactly one caller (`edit()`, include/ModulationLayer.h:380; the only other
+  match is the test file's unrelated local lambda of the same name) and
+  `publishView()` has exactly one caller (`edit()`, include/ModulationLayer.h:371);
+  every reader-visible publication in the publisher
+  (`m_view`, `m_hasLayer`, `m_triggerTrack`, `m_triggeredAt`, `m_perVoice`,
+  `m_anyTrigger`, `m_anyPerVoice`, `m_voices`) now lands inside the single
+  bounded commit, and the non-window atomics (`m_targetWriters` closing
+  bits, `m_alive` tokens, `m_blockSeconds`, `m_blockRate`) are unchanged.
+  The whole `Modulation*`/instrument family (12 tests) passes.
+- Q: No collateral damage: old projects and saved data still load as before,
+  and any limit or check you added does not hit other callers that
+  legitimately exceed it. A: No save/load code changed (no new members, no
+  layout change, no format change); `ModulationLayerProjectRoundTripTest`,
+  `ProjectOpenIntegrityTest`, `ModulationLayerTest` and the rest of the
+  family pass. No limit or check was added - the change only moves WHEN the
+  already-existing publications land (before the writer wait -> inside the
+  bounded commit); values before the first edit and after every edit
+  completes are identical to before.
+- Q: If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code
+  (file:line) or the intended contract that shows it. A: N/A - verdict is
+  FIXED; the rework point was REAL and reproduced (RED log above).
 - Realtime: the audio thread gained nothing new (no new members, no
-  allocation, no lock); the window grew by one fixed-size trigger-state
-  commit (16 slots of atomics + the fixed voice-pool walk) - still bounded,
+  allocation, no lock); the write window grew by one fixed-size trigger-state
+  commit (16 atomic slots + the fixed voice-pool walk) - still bounded,
   still wait-free; writer waits remain on the control thread.
-- Gates: feature_check.py EXIT=0, all rows PASS.
+- Gates: feature_check.py EXIT=0, all rows PASS (logs/12-feature-check.log).
