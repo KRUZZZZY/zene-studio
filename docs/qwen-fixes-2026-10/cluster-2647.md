@@ -301,7 +301,7 @@ the bug fixes; it changes no product code, test or gate limit.
   is "gates (feature_check.py)", and that is the sandbox `EACCES` on
   `<worktree>-feature-check/` described above, not a gate result. Run with only that directory
   redirected, `feature_check.py` exits 0 with all eight rows PASS
-  (`build/2647-logs/50-feature-check-final-shim.log`), and every question it ASKs is answered by
+  (`build/2647-logs/73-feature-check-round2.log`), and every question it ASKs is answered by
   the bullets in this section.
 - **2647 is ALREADY-FIXED - cite the code (file:line) or the intended contract that shows it.**
   `src/core/AutomatableModel.cpp:752-777` (`valueBuffer()` has no mutex and no lock call),
@@ -309,4 +309,7 @@ the bug fixes; it changes no product code, test or gate limit.
   line 885), `include/AutomatableModel.h:663-664` (the mutex is documented as a test sentinel
   that product code no longer acquires), `rg -n 'QMutexLocker|\.lock\(\)|tryLock'
   src/core/AutomatableModel.cpp` -> no match. Introduced by ancestors `c28751cef` and
-  `8c837f075`. The new probe test was added so the property cannot silently regress.
+  `8c837f075` (both in the base commit). The standing `PhaseDSidechainTest` lock probes fail
+  when that lock is reinstated, so the property cannot silently regress.
+
+2647: ALREADY-FIXED
