@@ -56,42 +56,44 @@ All logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-34
 | Reversed-fix proof | `git diff -- src/gui/BrowserSearchView.cpp include/BrowserSearchView.h > logs/fix.patch` - **EXIT=0** (49 lines); `git apply -R logs/fix.patch` - **EXIT=0**; `cmake --build build --target zene LibraryMenusTest > logs/build-rev-1.log 2>&1` - **EXIT=0**; `ctest -R '^LibraryMenusTest$' --output-on-failure > logs/test-rev-1.log 2>&1` - **EXIT=8**, the same assertion (`Actual "Library index: 9 files, built 2026-10-22T04:01:54"`, `Expected "No results"`), `Totals: 24 passed, 1 failed`. |
 | Restored-fix proof | `git apply logs/fix.patch` - **EXIT=0**; `cmake --build build --target zene LibraryMenusTest > logs/build-restore-1.log 2>&1` - **EXIT=0**; `ctest -R '^LibraryMenusTest$' --output-on-failure > logs/test-restore-1.log 2>&1` - **EXIT=0**, "100% tests passed out of 1". |
 | Affected family | `cmake --build build --target zene HelpAccessTest LibraryMenusTest > logs/build-deps-1.log 2>&1` - **EXIT=0** (the header changed, so every target that includes `BrowserSearchView.h` was rebuilt: `zene`, `HelpAccessTest`, `LibraryMenusTest`); from `build/tests`: `ctest -R '^(HelpAccessTest|LibraryMenusTest)$' --output-on-failure > logs/test-family-1.log 2>&1` - **EXIT=0**, **2 CTest test targets executed**, `LibraryMenusTest` 25 cases (24 + the new one) and `HelpAccessTest` both passed, "100% tests passed out of 2". |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - **EXIT=1** (`logs/gate-1.log` before the commit, `logs/gate-2.log` after it): `PASS no-upstream-regression`, `PASS check-namespace`, `PASS no-tautology`, `PASS doc-figures`, `PASS complexity` ("no new item in your files"), `PASS file-length` ("no new item in your files"); `FAIL fork-sources` and `FAIL all-sources-reproduce` - both on the **same pre-existing** mismatch in `tests/all-sources.txt`, proved below to be present at the base commit and untouched by this change. |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - **EXIT=0** (`logs/gate-3.log`, after the manifest repair below): `PASS fork-sources`, `PASS all-sources-reproduce`, `PASS no-upstream-regression`, `PASS check-namespace`, `PASS no-tautology`, `PASS doc-figures`, `PASS complexity` ("no new item in your files"), `PASS file-length` ("no new item in your files") - **RESULT: PASS**. The earlier runs of the same command (`logs/gate-1.log`, `logs/gate-2.log`) exited **1** on `fork-sources` and `all-sources-reproduce` only; the repair is described below. |
 
 Files committed for this bug: `include/BrowserSearchView.h`, `src/gui/BrowserSearchView.cpp`,
 `tests/src/gui/LibraryMenusTest.cpp`, `tests/fork-sources.txt` (the new report file),
-`docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md`.
+`docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md`, and `tests/all-sources.txt` (the gate
+repair below - a manifest re-derivation, no product code).
 
-### The two red gates are a pre-existing train state, not this change
+### The gate repair: `tests/all-sources.txt` re-derived from its own recipe
 
-`fork-sources` and `all-sources-reproduce` both fail on one thing only: `tests/all-sources.txt`
-lists 1148 vendored `plugins/SfzPlayer/sfizz/...` paths that the manifest's own "Regenerate with"
-recipe excludes (the header calls that tree vendored and excluded on purpose). Proof that this
-pre-dates the port and is untouched by it:
+`fork-sources` and `all-sources-reproduce` were red on this branch's base commit, and the repair is
+the one the gate itself prescribes. What was wrong, measured first-hand:
 
-- `git diff dbb15dded -- tests/all-sources.txt` - **empty**: the manifest is exactly the base
-  commit's file.
-- The same comparison against the base commit's manifest,
-  `diff <(git show dbb15dded:tests/all-sources.txt | grep -vE '^[[:space:]]*(#|$)') <(the recipe's
-  own command) > logs/all-sources-base-diff.log` - **EXIT=1** with exactly **1148** differing
-  lines, and **not one** of them outside `plugins/SfzPlayer/sfizz/`.
-- Measured first-hand: the manifest carries **4193** entries, the recipe derives **3045**; the
-  recipe derives **nothing** the manifest lacks, and the manifest's extra **1148** entries are all
-  vendored `plugins/SfzPlayer/sfizz/external/**` paths - the tree the manifest's own header calls
-  vendored and excluded on purpose.
-- The previous train snapshot's manifest matched the recipe (0 differences of that kind), so the
-  row turned red with the train-11 snapshot `dbb15dded` - the base of this branch - and not with
-  this port.
-- The two gates' own logs (`zene-qwen-new-p12-342-port-feature-check/fork-sources.log`,
-  `.../all-sources-reproduce.log`) contain no other failure: no unregistered tracked source, no
-  registered path missing, no new item in this change's files.
+- `tests/all-sources.txt` listed **1148** vendored `plugins/SfzPlayer/sfizz/external/**` paths that
+  the manifest's own "Regenerate with" recipe excludes - the header calls that tree vendored and
+  excluded on purpose ("they are not this repo's code and no gate here rewrites them"), and
+  `tests/fork-sources-gate.sh`'s own `is_excluded()` skips the same tree.
+- The manifest carried **4193** entries, the recipe derives **3045**, and the recipe derived
+  **nothing** the manifest lacked: the whole difference was those 1148 vendored paths
+  (`diff <(git show dbb15dded:tests/all-sources.txt | grep -vE '^[[:space:]]*(#|$)') <(the
+  recipe's own command) > logs/all-sources-base-diff.log` - **EXIT=1**, exactly 1148 differing
+  lines, none outside `plugins/SfzPlayer/sfizz/`).
+- The inconsistency entered with the train-10 snapshot `5ef150729` ("all-sources re-derived"), which
+  added those 1148 entries to the list in the same commit that added the sfizz exclusion to the
+  header recipe - the manifest and its recipe were out of step from that point on, and the row has
+  been red since.
 
-The last train commit (`dbb15dded`, "all-sources re-derived") re-derived that manifest with a
-different rule and kept the sfizz paths, so the gate is red on the train as it stands. Repairing
-it means re-deriving an auto-generated manifest that the merge train rewrites on every snapshot -
-out of scope for a browser bug fix, and a recipe change there would conflict with the train. It is
-therefore reported, not silently re-anchored: no gate limit, baseline or manifest was touched by
-this change.
+The repair follows the gate's own instruction ("Fix by re-deriving the list: run the 'Regenerate
+with' command from the manifest's header and write its output over the entry list (never hand-edit,
+never delete a path the recipe derives)"): the entry list was re-derived from the manifest's own
+header recipe, the header left untouched. The diff is **1148 deletions and nothing else** - no
+added line, and not one changed line outside `plugins/SfzPlayer/sfizz/`
+(`git diff --stat -- tests/all-sources.txt` - "1 file changed, 1148 deletions(-)"). The vendored
+tree is simply no longer in the whole-tree scope, which is what the header and
+`tests/fork-sources-gate.sh` both describe. No gate limit, baseline or ratchet was touched, and
+no product source changed; `bash tests/all-sources-reproduce.sh` now prints "REPRODUCES" (**EXIT=0**).
+
+This is a train-level repair, kept in its own commit so the merge train can take it or drop it
+independently of the browser fix.
 
 ## Self-check
 
@@ -116,18 +118,22 @@ this change.
   count at `:327`, a search's error at `:321`, the preview's failure at `:163`, Project Media's
   count at `:407`, a refused collection save/removal at `:501`/`:508`) - still write the search's
   own status line, which is the contract the class documentation states.
-- **The gates**: `feature_check.py` - **EXIT=1**; six gates PASS (including `complexity` and
-  `file-length`, both "no new item in your files") and the two that fail fail on a pre-existing
-  `tests/all-sources.txt` mismatch that is identical at the base commit - the proof is in the
-  section above. This port adds no file and changes no manifest: `git diff --name-only dbb15dded`
-  lists exactly `docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md`,
-  `include/BrowserSearchView.h`, `src/gui/BrowserSearchView.cpp`, `tests/fork-sources.txt` and
-  `tests/src/gui/LibraryMenusTest.cpp`. No gate was re-anchored, no baseline moved and no
-  manifest was edited.
+- **The gates**: `feature_check.py` - **EXIT=0**, **RESULT: PASS** - all eight rows green
+  (`logs/gate-3.log`): `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`,
+  `check-namespace`, `no-tautology`, `doc-figures`, `complexity` and `file-length` (the last two
+  "no new item in your files"). The two rows that were red before the repair are green after it,
+  because `tests/all-sources.txt` was re-derived from its own header recipe - the repair the gate
+  itself prescribes, described in the section above: 1148 deletions, no added line and no changed
+  line outside the vendored `plugins/SfzPlayer/sfizz/` tree. No gate limit, threshold or baseline
+  was moved, no recipe was rewritten and no product source was touched by it; the manifest's header
+  (the recipe itself) is byte-for-byte unchanged.
 - **No collateral damage**: no command, save file, project format or setting changed; old projects
   and saved data load exactly as before. No limit or check was added, so no other caller can hit
   one. The only visible change is that the scan's progress and its final message now appear on a
-  second line (accessible name "Library scan") instead of replacing the search's count.
+  second line (accessible name "Library scan") instead of replacing the search's count. The gate
+  repair touches only a scope manifest's entry list (vendored third-party paths out of the
+  whole-tree measurement scope) - it changes no compiled source, no baseline and no product
+  behaviour.
 - **Realtime, undo and commands**: the change is a GUI label only - nothing on the audio thread
   allocates, frees, locks, waits or logs; undo is unchanged; no new control command was added (the
   ControlCommandsSnapshot canary is untouched).
@@ -137,4 +143,7 @@ this change.
   poll replacing the search's "No results" with the scan's "Library index: 9 files, built ...".
 - **Registration**: the new report file is registered in `tests/fork-sources.txt`;
   `include/BrowserSearchView.h` and `src/gui/BrowserSearchView.cpp` are fork-owned sources already
-  registered there, so no `tests/upstream-modifications.txt` entry was needed.
+  registered there, so no `tests/upstream-modifications.txt` entry was needed. The manifest repair
+  changes no registration: the vendored paths it removes were never required to be registered
+  (`tests/fork-sources-gate.sh`'s `is_excluded()` skips `plugins/SfzPlayer/sfizz/*`, and the
+  gate's own log shows no unregistered tracked source).
