@@ -45,12 +45,14 @@
 #include "ControlVocabulary.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AutomationClip.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerPostInserts.h"
 #include "MixerStrip.h"
 #include "PhaseDMixerTestSupport.h"
 #include "SampleFrame.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -423,6 +425,130 @@ private slots:
 		QCOMPARE(master->m_widthModel.value(), 1.f);
 		QVERIFY(!master->m_soloSafeModel.value());
 		QCOMPARE(master->m_crossfadeSideModel.value(), 0);
+	}
+
+	//! A non-finite persisted strip float must load as the same default a missing attribute gets.
+	void nonFiniteStripSettingsAreReplaced()
+	{
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		element.setAttribute(QStringLiteral("trim"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqlow"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqmid"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqmidf"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("eqhigh"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("panright"), QStringLiteral("nan"));
+		element.setAttribute(QStringLiteral("width"), QStringLiteral("nan"));
+		mixerstrip::load(*channel(1), element);
+
+		QCOMPARE(channel(1)->m_trimModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_eqLowModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_eqMidModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_eqMidFreqModel.value(), 1000.f);
+		QCOMPARE(channel(1)->m_eqHighModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_panRightModel.value(), 0.f);
+		QCOMPARE(channel(1)->m_widthModel.value(), 1.f);
+	}
+
+	//! A non-finite persisted channel/send float must not become a model value.
+	void nonFiniteMixerSettingsAreIgnored()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+
+		QDomElement master = doc.createElement(QStringLiteral("mixerchannel"));
+		master.setAttribute(QStringLiteral("num"), 0);
+		root.appendChild(master);
+
+		QDomElement element = doc.createElement(QStringLiteral("mixerchannel"));
+		element.setAttribute(QStringLiteral("num"), 1);
+		element.setAttribute(QStringLiteral("volume"), QStringLiteral("1e999"));
+		element.setAttribute(QStringLiteral("pan"), QStringLiteral("nan"));
+		QDomElement sendElement = doc.createElement(QStringLiteral("send"));
+		sendElement.setAttribute(QStringLiteral("channel"), 0);
+		sendElement.setAttribute(QStringLiteral("amount"), QStringLiteral("nan"));
+		sendElement.setAttribute(QStringLiteral("pan"), QStringLiteral("nan"));
+		element.appendChild(sendElement);
+		root.appendChild(element);
+
+		Engine::mixer()->loadSettings(root);
+
+		QVERIFY(std::isfinite(channel(1)->m_volumeModel.value()));
+		QCOMPARE(channel(1)->m_volumeModel.value(), 1.f);
+		QVERIFY(std::isfinite(channel(1)->m_panModel.value()));
+		QCOMPARE(channel(1)->m_panModel.value(), 0.f);
+
+		MixerRoute* masterSend = nullptr;
+		for (MixerRoute* route : channel(1)->m_sends)
+		{
+			if (route->receiverIndex() == 0) { masterSend = route; }
+		}
+		QVERIFY(masterSend != nullptr);
+		QVERIFY(std::isfinite(masterSend->amount()->value()));
+		QCOMPARE(masterSend->amount()->value(), 1.f);
+		QVERIFY(std::isfinite(masterSend->pan()->value()));
+		QCOMPARE(masterSend->pan()->value(), 0.f);
+	}
+
+	//! A mismatched nodename child is still loaded by AutomatableModel when no matching sibling exists.
+	void nonFiniteMixerSettingsWithMismatchedNodeNameAreIgnored()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		QDomElement master = doc.createElement(QStringLiteral("mixerchannel"));
+		master.setAttribute(QStringLiteral("num"), 0);
+		root.appendChild(master);
+		QDomElement mixerChannel = doc.createElement(QStringLiteral("mixerchannel"));
+		mixerChannel.setAttribute(QStringLiteral("num"), 1);
+		QDomElement volume = doc.createElement(QStringLiteral("volume"));
+		volume.setAttribute(QStringLiteral("nodename"), QStringLiteral("another-model"));
+		volume.setAttribute(QStringLiteral("value"), QStringLiteral("nan"));
+		mixerChannel.appendChild(volume);
+		root.appendChild(mixerChannel);
+
+		Engine::mixer()->loadSettings(root);
+
+		QVERIFY(std::isfinite(channel(1)->m_volumeModel.value()));
+		QCOMPARE(channel(1)->m_volumeModel.value(), 1.f);
+	}
+
+	//! A non-finite automation bend on a persisted model must not reach the value curve.
+	void nonFiniteMixerAutomationBendIsIgnored()
+	{
+		Mixer* mixer = Engine::mixer();
+		AutomationClip* clip = AutomationClip::globalAutomationClip(&channel(1)->m_volumeModel);
+		clip->clear();
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(root);
+		QDomElement mixerChannel = doc.createElement(QStringLiteral("mixerchannel"));
+		mixerChannel.setAttribute(QStringLiteral("num"), 1);
+		QDomElement automation = doc.createElement(AutomationClip::classNodeName());
+		QDomElement volume = doc.createElement(QStringLiteral("volume"));
+		for (int pos : {0, 100})
+		{
+			QDomElement point = doc.createElement(QStringLiteral("time"));
+			point.setAttribute(QStringLiteral("pos"), pos);
+			point.setAttribute(QStringLiteral("value"), QStringLiteral("0.5"));
+			point.setAttribute(QStringLiteral("outValue"), QStringLiteral("0.5"));
+			point.setAttribute(QStringLiteral("inTan"), QStringLiteral("0"));
+			point.setAttribute(QStringLiteral("outTan"), QStringLiteral("0"));
+			point.setAttribute(QStringLiteral("curve"), 4);  // AutomationNode::Curve::Bend
+			point.setAttribute(QStringLiteral("bend"), QStringLiteral("nan"));
+			volume.appendChild(point);
+		}
+		automation.appendChild(volume);
+		mixerChannel.appendChild(automation);
+		root.appendChild(mixerChannel);
+
+		mixer->loadSettings(root);
+
+		AutomationClip* loadedClip = AutomationClip::globalAutomationClip(&channel(1)->m_volumeModel);
+		QVERIFY(std::isfinite(loadedClip->valueAt(TimePos(50))));
+		QVERIFY(std::isfinite(channel(1)->m_volumeModel.value()));
 	}
 
 	//! MX-027: 'all' names every channel but the master, so a mixer left with only its master

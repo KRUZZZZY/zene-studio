@@ -26,6 +26,7 @@
 #include "RecorderTaps.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 
 #include <QDebug>
@@ -37,6 +38,8 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 #include "AudioEngineWorkerThread.h"
+#include "AutomatableModel.h"
+#include "AutomationClip.h"
 #include "DspLoadProbe.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -44,6 +47,7 @@
 
 #include "InstrumentOutputBuses.h"
 #include "InstrumentTrack.h"
+#include "LocaleHelper.h"
 #include "MixHelpers.h"
 #include "MixerListen.h"
 #include "MixerGroups.h"
@@ -140,6 +144,76 @@ ProjectIndex parseProjectChannelIndex(const QString& text, int describedChannels
 	}
 	index = static_cast<int>(value);
 	return ProjectIndex::Ok;
+}
+
+//! True when @a element carries @a name as a float attribute whose value is not finite.
+//! loadSettings() would otherwise feed it straight into the model (NaN, +/-inf), so the
+//! loader skips that one setting and keeps the default it already reset to.
+bool hasNonFiniteFloatAttribute(const QDomElement& element, const QString& name)
+{
+	if (!element.hasAttribute(name)) { return false; }
+	// The converted value is checked regardless of the conversion flag: an overflowing
+	// literal ("1e999") converts to infinity with the flag cleared.
+	const float value = LocaleHelper::toFloat(element.attribute(name));
+	return !std::isfinite(value);
+}
+
+//! True when any point of @a clip's automation carries a non-finite float.
+bool hasNonFiniteAutomationValue(const QDomElement& clip)
+{
+	for (QDomElement point = clip.firstChildElement(QStringLiteral("time")); !point.isNull();
+		 point = point.nextSiblingElement(QStringLiteral("time")))
+	{
+		if (hasNonFiniteFloatAttribute(point, QStringLiteral("value"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("outValue"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("inTan"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("outTan"))
+			|| hasNonFiniteFloatAttribute(point, QStringLiteral("bend")))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+//! The child element AutomatableModel::loadSettings() would read @a name's value from.
+QDomElement modelValueElement(const QDomElement& element, const QString& name)
+{
+	QDomElement mismatchedNamedElement;
+	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+	{
+		const bool matches = (!child.hasAttribute(QStringLiteral("nodename")) && child.tagName() == name)
+			|| child.attribute(QStringLiteral("nodename")) == name;
+		if (matches)
+		{
+			return child;
+		}
+		// AutomatableModel::loadSettings() starts with namedItem(name). If that
+		// element's nodename mismatches and there is no matching sibling, it still
+		// loads the original element, so validate it too.
+		if (mismatchedNamedElement.isNull() && child.tagName() == name) { mismatchedNamedElement = child; }
+	}
+	return mismatchedNamedElement;
+}
+
+//! True when the model @a name of @a element would load a non-finite value, from its
+//! attribute form, its child-element form or its automation clip.
+bool hasNonFiniteModelValue(const QDomElement& element, const QString& name)
+{
+	const QDomElement automation = element.firstChildElement(AutomationClip::classNodeName())
+		.firstChildElement(name);
+	if (!automation.isNull()) { return hasNonFiniteAutomationValue(automation); }
+
+	const QDomElement valueElement = modelValueElement(element, name);
+	return valueElement.isNull()
+		? hasNonFiniteFloatAttribute(element, name)
+		: hasNonFiniteFloatAttribute(valueElement, QStringLiteral("value"));
+}
+
+//! Load a persisted mixer model unless the file would give it a non-finite value.
+void loadFiniteMixerSetting(FloatModel& model, const QDomElement& element, const QString& name)
+{
+	if (!hasNonFiniteModelValue(element, name)) { model.loadSettings(element, name); }
 }
 
 } // namespace
@@ -2842,14 +2916,14 @@ void Mixer::loadSettings( const QDomElement & _this )
 			ProjectIds::noteLoadAssignment( m_mixerChannels[num]->id() );
 		}
 
-		m_mixerChannels[num]->m_volumeModel.loadSettings( mixch, "volume" );
+		loadFiniteMixerSetting(m_mixerChannels[num]->m_volumeModel, mixch, QStringLiteral("volume"));
 		// Absent means centred - every file written before channel pan existed.
 		// Explicit, so a restored journal checkpoint without the attribute
 		// takes a pan back off rather than keeping it.
 		if (mixch.hasAttribute("pan") || !mixch.firstChildElement("pan").isNull()
 			|| !mixch.firstChildElement("connection").firstChildElement("pan").isNull())
 		{
-			m_mixerChannels[num]->m_panModel.loadSettings( mixch, "pan" );
+			loadFiniteMixerSetting(m_mixerChannels[num]->m_panModel, mixch, QStringLiteral("pan"));
 		}
 		else
 		{
@@ -2909,8 +2983,11 @@ void Mixer::loadSettings( const QDomElement & _this )
 				// nothing about. A file that states the setting is taken at
 				// its word, so a post-fader send to a bus stays post-fader.
 				if( mxr && chDataItem.hasAttribute( "prefader" ) ) { mxr->setPreFader( preFader ); }
-				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
-				if( mxr && chDataItem.hasAttribute( "pan" ) ) { mxr->pan()->loadSettings( chDataItem, "pan" ); }
+				if (mxr) { loadFiniteMixerSetting(*mxr->amount(), chDataItem, QStringLiteral("amount")); }
+				if (mxr && chDataItem.hasAttribute("pan"))
+				{
+					loadFiniteMixerSetting(*mxr->pan(), chDataItem, QStringLiteral("pan"));
+				}
 				if( mxr ) { mxr->enabledModel()->setValue( chDataItem.attribute( "off" ).toInt() == 0 ); }
 				// board card #709: a cycle-permitted send carries its own
 				// flag, and loading one turns the submode on WITH it (the
@@ -2955,7 +3032,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 				{
 					mxr->setDeferred( chDataItem.attribute( "deferred" ).toInt() != 0 );
 				}
-				if( mxr ) mxr->amount()->loadSettings( chDataItem, "amount" );
+				if (mxr) { loadFiniteMixerSetting(*mxr->amount(), chDataItem, QStringLiteral("amount")); }
 			}
 		}
 
@@ -2990,7 +3067,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 				<< "in project; assigned id" << group->id();
 		}
 
-		group->vcaModel()->loadSettings( groupDom, "vca" );
+		loadFiniteMixerSetting(*group->vcaModel(), groupDom, QStringLiteral("vca"));
 		group->muteModel()->loadSettings( groupDom, "muted" );
 		group->soloModel()->loadSettings( groupDom, "soloed" );
 		// OWNER-31 item 11: the edit half. `locked` is read for EVERY group

@@ -69,6 +69,14 @@ struct Biquad
 	float b0 = 1.f, b1 = 0.f, b2 = 0.f, a1 = 0.f, a2 = 0.f;
 };
 
+//! A persisted float, or @a fallback when the text is missing, not a number or non-finite
+//! (a NaN/inf would otherwise reach the strip's filter and gain stages).
+float floatAttribute(const QDomElement& element, const QString& name, float fallback)
+{
+	const float value = element.attribute(name, QString::number(fallback)).toFloat();
+	return std::isfinite(value) ? value : fallback;
+}
+
 //! A shelf (@a high or low) or, with @a bell, a peaking band at @a hz, @a db gain, Q 0.7 (RBJ's cookbook).
 Biquad band(double hz, double db, double rate, bool bell, bool high)
 {
@@ -356,20 +364,20 @@ void save(const MixerChannel& c, QDomElement& e)
 
 void load(MixerChannel& c, const QDomElement& e)
 {
-	c.m_trimModel.setValue(e.attribute(QStringLiteral("trim"), QStringLiteral("0")).toFloat());
+	c.m_trimModel.setValue(floatAttribute(e, QStringLiteral("trim"), 0.f));
 	c.m_polarityLeftModel.setValue(e.attribute(QStringLiteral("polarityl")).toInt() != 0);
 	c.m_polarityRightModel.setValue(e.attribute(QStringLiteral("polarityr")).toInt() != 0);
 	c.m_monoModel.setValue(e.attribute(QStringLiteral("mono")).toInt() != 0);
 	c.m_swapModel.setValue(e.attribute(QStringLiteral("swap")).toInt() != 0);
 	c.m_inputMonoModel.setValue(e.attribute(QStringLiteral("inputmono")).toInt() != 0);
 	c.m_crossfadeSideModel.setValue(e.attribute(QStringLiteral("xfade"), QStringLiteral("0")).toInt());
-	c.m_eqLowModel.setValue(e.attribute(QStringLiteral("eqlow"), QStringLiteral("0")).toFloat());
-	c.m_eqMidModel.setValue(e.attribute(QStringLiteral("eqmid"), QStringLiteral("0")).toFloat());
-	c.m_eqMidFreqModel.setValue(e.attribute(QStringLiteral("eqmidf"), QStringLiteral("1000")).toFloat());
-	c.m_eqHighModel.setValue(e.attribute(QStringLiteral("eqhigh"), QStringLiteral("0")).toFloat());
+	c.m_eqLowModel.setValue(floatAttribute(e, QStringLiteral("eqlow"), 0.f));
+	c.m_eqMidModel.setValue(floatAttribute(e, QStringLiteral("eqmid"), 0.f));
+	c.m_eqMidFreqModel.setValue(floatAttribute(e, QStringLiteral("eqmidf"), 1000.f));
+	c.m_eqHighModel.setValue(floatAttribute(e, QStringLiteral("eqhigh"), 0.f));
 	c.m_panModeModel.setValue(e.attribute(QStringLiteral("panmode"), QStringLiteral("0")).toInt());
-	c.m_panRightModel.setValue(e.attribute(QStringLiteral("panright"), QStringLiteral("0")).toFloat());
-	c.m_widthModel.setValue(e.attribute(QStringLiteral("width"), QStringLiteral("1")).toFloat());
+	c.m_panRightModel.setValue(floatAttribute(e, QStringLiteral("panright"), 0.f));
+	c.m_widthModel.setValue(floatAttribute(e, QStringLiteral("width"), 1.f));
 	c.m_soloSafeModel.setValue(e.attribute(QStringLiteral("solosafe")).toInt() != 0);
 	c.m_note = e.attribute(QStringLiteral("note"));
 }
