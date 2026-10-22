@@ -34,11 +34,12 @@ so the control thread must take the change guard **before** the clip mutex, neve
   where the changing thread reports to a test (`Before` = inside the change, before the guard;
   `Holding` = the acquisition of the engine's change guard was **contended**). The whole block
   is `#ifdef LMMS_TESTING`.
-* `include/AudioEngine.h:105-121` and `:576-596`, `src/core/AudioEngine.cpp:1465-1484` - the
-  **test-only contended-acquisition guard**: the change lock is taken with a `try_lock`, and an
-  acquisition that finds the lock held by another thread (the render thread) is reported **at the
-  attempt, on the acquiring thread**. Compiled out without `LMMS_TESTING`: the product build, the
-  audio thread and the lock itself are unchanged.
+* `include/AudioEngine.h:108-123` (the test-only `RequestChangesGuard` constructor) and
+  `:576-597` (`requestChangeInModelForTest()` / `requestChangesGuardForTest()`),
+  `src/core/AudioEngine.cpp:1466-1481` - the **test-only contended-acquisition guard**: the change
+  lock is taken with a `try_lock`, and an acquisition that finds the lock held by another thread
+  (the render thread) is reported **at the attempt, on the acquiring thread**. Compiled out
+  without `LMMS_TESTING`: the product build, the audio thread and the lock itself are unchanged.
 
 ### What was re-applied, and what was deliberately not
 
