@@ -418,3 +418,5 @@ no `std::filesystem` were introduced.
 - `tests/upstream-modifications.txt` (the divergence ledger for the changed
   inherited files)
 - `docs/qwen-fixes-2026-10/cluster-new-p15-63.md` (this report)
+
+Verdict: FIXED
