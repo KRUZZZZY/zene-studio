@@ -253,6 +253,7 @@ private slots:
 	void gateRecoversAfterNanInput();
 	void analyzerDebugTimerUsesMonotonicTimePoint();
 	void analyzerDebugTimerKeepsStdoutOffAudioThread();
+	void analyzerConstructorInitializesTheDebugMembers();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -792,6 +793,32 @@ void AudioPluginTest::analyzerDebugTimerKeepsStdoutOffAudioThread()
 		"Analyzer::processImpl() writes to std::cout on the audio thread");
 	QVERIFY2(text.contains(QStringLiteral("Analyzer audio thread:")),
 		"the SA_DEBUG timing report must still be printed, from the GUI-side reporter");
+}
+
+void AudioPluginTest::analyzerConstructorInitializesTheDebugMembers()
+{
+	// The reported defect: the SA_DEBUG debug members have to be initialized by
+	// the constructor, otherwise the first processImpl() audio callback reads an
+	// indeterminate dump counter and the GUI-side reporter reads an indeterminate
+	// debug timer. The plugin's implementation is not linked into this generic
+	// AudioPlugin test host (see the comment above the Analyzer include), so the
+	// constructor's initializer list is read from the product source.
+	const QString analyzerPath = QFileInfo(QString::fromUtf8(__FILE__)).dir()
+		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/Analyzer.cpp"));
+	QFile source(analyzerPath);
+	QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.errorString()));
+	const QByteArray text = source.readAll();
+	const int ctor = text.indexOf("Analyzer::Analyzer(");
+	QVERIFY2(ctor > 0, "the Analyzer constructor was not found in the product source");
+	const int body = text.indexOf("m_processorThread.start()", ctor);
+	QVERIFY2(body > ctor, "the end of the Analyzer constructor was not found in the product source");
+	const QByteArray initializers = text.mid(ctor, body - ctor);
+	for (const char* member : {"m_last_dump_time", "m_dump_count", "m_sum_execution_ns", "m_max_execution_ns"})
+	{
+		QVERIFY2(initializers.contains(QByteArray{member} + '('),
+			qPrintable(QStringLiteral("the Analyzer constructor does not initialize %1")
+				.arg(QString::fromUtf8(member))));
+	}
 }
 
 QTEST_MAIN(AudioPluginTest)
