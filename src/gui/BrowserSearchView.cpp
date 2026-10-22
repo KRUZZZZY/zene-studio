@@ -149,6 +149,10 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 	m_status = new QLabel(contentParent());
 	addContentWidget(m_status);
 
+	m_scanStatus = new QLabel(contentParent());
+	m_scanStatus->setAccessibleName(tr("Library scan"));
+	addContentWidget(m_scanStatus);
+
 	m_collections = new QListWidget(contentParent());
 	m_collections->setAccessibleName(tr("Collections"));
 	m_collections->setMaximumHeight(90);
@@ -434,6 +438,10 @@ void BrowserSearchView::setGallery(bool on)
 }
 
 int BrowserSearchView::resultCount() const { return m_results->topLevelItemCount(); }
+
+QString BrowserSearchView::statusText() const { return m_status->text(); }
+
+QString BrowserSearchView::scanStatusText() const { return m_scanStatus == nullptr ? QString() : m_scanStatus->text(); }
 
 void BrowserSearchView::refreshCollections()
 {

@@ -97,6 +97,12 @@ public:
 	//! Thumbnails instead of columns.
 	void setGallery(bool on);
 	int resultCount() const;
+	//! The status line's text: the last search's own feedback (its count, or why it failed).
+	QString statusText() const;
+	//! The library scan's line: its progress, kept off the status line (a scan never hides a count).
+	QString scanStatusText() const;
+	//! The index scan's state on the scan line; the browser polls it while a scan runs.
+	void refreshIndexStatus();
 	QTreeWidget* results() const { return m_results; }
 	QListWidget* galleryView() const { return m_gallery; }
 	//! The category facet (Any category + the catalog's own), for tests and the panel.
@@ -125,7 +131,6 @@ private:
 	void refreshCollections();
 	//! Re-read the category vocabulary (browser.categories) into the filter, keeping the selection.
 	void refreshCategories();
-	void refreshIndexStatus();
 	void saveCollection();
 	void showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind);
 	void addPreviewEntries(QMenu* menu, const QString& path);
@@ -137,6 +142,7 @@ private:
 	QCheckBox* m_indexed = nullptr;
 	QCheckBox* m_probe = nullptr;
 	QLabel* m_status = nullptr;
+	QLabel* m_scanStatus = nullptr;  //!< the library scan's line, apart from the search's own status
 	QListWidget* m_collections = nullptr;
 	QTreeWidget* m_results = nullptr;
 	QListWidget* m_gallery = nullptr;
