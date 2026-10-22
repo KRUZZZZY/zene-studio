@@ -83,6 +83,12 @@ without the fix:
    real pointer movement (and a drag that returns to the stored value writes nothing). Negative control
    (`moved` forced true, `build EXIT 0`): `ctest -R ClipWaveformEditTest` -> **EXIT 8**
    (`depth() -> 2`, expected 1). Restored -> **EXIT 0**.
+4. **The added point's post-sort index was ambiguous when two points share a tick.** It was found by matching
+   `(tick, gain_db)`, which answers the FIRST equal point, so a point dragged onto an identical neighbour moved
+   the neighbour. Fix: derive the position from tick order plus the stable sort's original-order rule, before
+   the sort. Negative control (old value match restored, `build EXIT 0`):
+   `ctest -R ClipWaveformEditTest` -> **EXIT 8** (`written: 0`, expected 1, in the identical-point case).
+   Restored -> **EXIT 0**.
 
 The wider set re-run after the fixes (from `build/tests`):
 
@@ -107,9 +113,9 @@ Answered in the order `submit_check.py` asks ("?" items), with the commands and 
    - drawn-gain-alone reversed (`SampleThumbnail.cpp` `columnGain = 1.0f`), everything else kept:
      `ctest -R 'ClipWaveformEditTest|ClipPolarityTest'` -> **EXIT 8**
      (`louderTop < plainTop` FALSE, `the polarity flip did not repaint the waveform`); restored -> **EXIT 0**.
-   - the three defects of this session, each with its own reversal (see "Re-verified in this session (r1)"):
+   - the four defects of this session, each with its own reversal (see "Re-verified in this session (r1)"):
      old handle placement -> **EXIT 8**; old pre-sort point index -> **EXIT 8**; `moved` forced true ->
-     **EXIT 8**; each restored -> **EXIT 0**.
+     **EXIT 8**; old value-match index with two identical points -> **EXIT 8**; each restored -> **EXIT 0**.
 2. **Every acceptance criterion is proven by a test I ran**, per criterion and with its exit in the acceptance
    table above (all 0): gain drag + envelope add/move + drawn waveform follows (`ClipWaveformEditTest`),
    polarity render and source untouched (`ClipPolarityTest`), the menu display half
