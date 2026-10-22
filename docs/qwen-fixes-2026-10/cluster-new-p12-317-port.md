@@ -4,7 +4,7 @@ FIXED
 
 `new-p12-317-port: FIXED`
 
-This is a PORT job, reworked once after review round 1. The fix was accepted as
+This is a PORT job, reworked after review rounds 1 and 2. The fix was accepted as
 `bugs/qwen-new-p12-317` but the train refused it: it conflicted with the newer
 line in `include/AudioFileWave.h` and `src/core/audio/AudioFileWave.cpp` (the
 Q050-166 discrete-speaker-mask work). It was re-applied by hand here, reading
@@ -371,8 +371,10 @@ docs/qwen-fixes-2026-10/cluster-new-p12-317-port.md
 `tests/upstream-modifications.txt` declares every inherited file above (the new
 test is in `tests/fork-sources.txt` and `tests/all-sources.txt`).
 
-Post-commit checks: `feature_check.py` — RESULT: PASS, 8/8 rows (EXIT=0,
-`gate-post-commit.log`); `submit_check.py <worktree> new-p12-317-port` —
-RESULT: PASS - submit (EXIT=0, `submit-rework.log`); `git status --short` empty.
+Post-commit checks, after the round-2 commit (`2e8717a5e`): `feature_check.py` —
+RESULT: PASS, 8/8 rows (EXIT=0, `gate-post-r2.log`); `submit_check.py <worktree>
+new-p12-317-port` — RESULT: PASS - submit (EXIT=0, `submit-r2.log`);
+`git status --short` empty. (Round 1's checks were `gate-post-commit.log` and
+`submit-rework.log`, both PASS.)
 
 FIXED
