@@ -39,6 +39,8 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <QDomElement>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QScopeGuard>
@@ -835,6 +837,51 @@ private slots:
 		QCOMPARE(macros.macro(macro)->value, 0.5f);
 		QCOMPARE(gain->value(), 10.0f);
 		QVERIFY(macros.removeMacro(macro));
+	}
+
+	//! Cluster 5524: a project load and a model initialization are not a person's
+	//! change, so neither may become the "last touched" model (ED-191). This is
+	//! the same contract as the macro pair above - the store names what a command
+	//! wrote - read where a load writes instead.
+	void aLoadDoesNotClaimTheLastTouchedModel()
+	{
+		FloatModel* const edited = gainModel();
+		QVERIFY(edited != nullptr);
+		edited->setValue(edited->value() == 10.0f ? 11.0f : 10.0f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited->id());
+
+		// The initial value a model is BUILT with is not an edit.
+		FloatModel initialised(0.f, 0.f, 100.f, 1.f);
+		initialised.setInitValue(42.f);
+		QCOMPARE(initialised.value(), 42.f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited->id());
+
+		// The attribute form of a load (the shape a plain control is saved in).
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("control"));
+		doc.appendChild(element);
+		element.setAttribute(QStringLiteral("value"), QStringLiteral("42"));
+		FloatModel loaded(0.f, 0.f, 100.f, 1.f);
+		loaded.loadSettings(element, QStringLiteral("value"));
+		QCOMPARE(loaded.value(), 42.f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited->id());
+
+		// The element form.
+		QDomElement child = doc.createElement(QStringLiteral("value"));
+		child.setAttribute(QStringLiteral("id"), QString::number(loaded.id()));
+		child.setAttribute(QStringLiteral("value"), QStringLiteral("77"));
+		element.appendChild(child);
+		loaded.loadSettings(element, QStringLiteral("value"));
+		QCOMPARE(loaded.value(), 77.f);
+		QCOMPARE(AutomatableModel::lastTouched(), edited->id());
+
+		// The reset-on-absence form is still a load.
+		loaded.loadSettings(doc.createElement(QStringLiteral("empty")), QStringLiteral("value"));
+		QCOMPARE(AutomatableModel::lastTouched(), edited->id());
+
+		// A person writing the loaded model claims the store again.
+		loaded.setValue(11.f);
+		QCOMPARE(AutomatableModel::lastTouched(), loaded.id());
 	}
 
 	//! Repeating an unchanged XY pair must leave the first pair edit on top.

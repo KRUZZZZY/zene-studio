@@ -40,7 +40,6 @@
 
 #ifdef LMMS_TESTING
 class PhaseDSidechainTest;
-class AutomatableModelTest;
 #endif
 
 namespace lmms
@@ -184,12 +183,6 @@ public:
 #ifdef LMMS_TESTING
 	//! Test the destructor's worker-thread deadlock guard without destroying an object.
 	static bool destructorWouldRequestBlockingChangeGuard() noexcept;
-	/*! Test seam: \a probe runs immediately AFTER the sample-accurate ramp has
-	 *  been read into the period buffer. A regression asks the legacy
-	 *  value-buffer mutex with tryLock(0) there: a read that holds the mutex
-	 *  across the ramp (the historical shape) is seen, and tryLock(0) never
-	 *  blocks. The seam exists in test builds only and is null in the product. */
-	static void setValueBufferRampReadProbeForTest(void (*probe)(AutomatableModel*));
 #endif
 
 
@@ -673,9 +666,6 @@ private:
 	// The sidechain lock probe (PhaseDSidechainTest::theSidechainAmountReadTakesNoLock)
 	// holds this mutex from another thread to see whether the sidechain read waits on it.
 	friend class ::PhaseDSidechainTest;
-	// The ramp-read probe takes the same mutex with tryLock(0) to prove the
-	// read (the automation-ramp path included) does not hold it.
-	friend class ::AutomatableModelTest;
 #endif
 
 	bool m_useControllerValue;

@@ -25,6 +25,7 @@
 #include <limits>
 
 #include <QDomDocument>
+#include <QPointer>
 #include <QSignalSpy>
 #include <QtTest>
 
@@ -107,6 +108,43 @@ private slots:
 		QCOMPARE(TimePos::fromFrames(1024, -1.0f).getTicks(), tick_t{0});
 		QCOMPARE(TimePos::fromFrames(1024, std::numeric_limits<float>::quiet_NaN()).getTicks(), tick_t{0});
 		QCOMPARE(TimePos::fromFrames(1024, std::numeric_limits<float>::infinity()).getTicks(), tick_t{0});
+	}
+
+	//! Cluster new-p15-273: replacing a controller connection gives up the old
+	//! one - disconnected and disposed of, not left alive driving the model -
+	//! and a connection that dies later must not clear the connection that
+	//! replaced it. Driven through the binding a learn creates, which is the
+	//! product's own caller.
+	void replacingTheControllerConnectionGivesUpTheOldOne()
+	{
+		FloatModel target(0.5f, 0.0f, 1.0f, 0.01f);
+		MidiLearn::instance()->setFocusTarget(&target);
+		MidiLearn::instance()->setEnabled(true);
+		QVERIFY(MidiLearn::instance()->handleMidiEvent(makeCc(2, 74, 127)));
+		ControllerConnection* const first = target.controllerConnection();
+		QVERIFY(first != nullptr);
+		QPointer<ControllerConnection> watchedFirst(first);
+
+		// Connection B replaces A. A must be disposed of: leaving it alive leaked
+		// it, and kept its valueChanged() wired to the model's dataChanged().
+		QPointer<ControllerConnection> second(new ControllerConnection(nullptr));
+		target.setControllerConnection(second.data());
+		QVERIFY2(watchedFirst.isNull(), "the replaced controller connection was not disposed of");
+		QCOMPARE(target.controllerConnection(), second.data());
+
+		// A connection destroyed while another one is in place must not clear the
+		// connection the model holds: the old connection's destroyed() handler
+		// used to do exactly that.
+		ControllerConnection* const stranger = new ControllerConnection(nullptr);
+		QObject::connect(stranger, &QObject::destroyed, &target,
+			&AutomatableModel::unlinkControllerConnection);
+		delete stranger;
+		QCOMPARE(target.controllerConnection(), second.data());
+
+		// Giving the connection up disposes of it as well (the model owns it).
+		target.setControllerConnection(nullptr);
+		QVERIFY2(second.isNull(), "the connection the model gave up was not disposed of");
+		QVERIFY(target.controllerConnection() == nullptr);
 	}
 
 	// A frame count that no tick count can hold is no position either: the
