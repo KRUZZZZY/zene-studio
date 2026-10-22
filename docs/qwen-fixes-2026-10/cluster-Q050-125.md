@@ -64,7 +64,7 @@ ctest -R "ClipPolarityTest|ClipWaveformEditTest|ControlClipPolarity" --output-on
 
 ### Re-verified in this session (r1)
 
-Three defects found while re-checking the earlier work, each fixed and each pinned by a test that fails
+Five defects found while re-checking the earlier work, each fixed and each pinned by a test that fails
 without the fix:
 
 1. **The gain handle could not be grabbed where it is drawn.** At unity on a 25 px clip its centre sat in the
