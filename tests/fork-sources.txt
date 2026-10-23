@@ -2973,3 +2973,5 @@ tests/src/gui/ClipWaveformEditTest.cpp
 docs/qwen-fixes-2026-10/cluster-Q050-125.md
 # cluster new-p14-97 (2026-10): the cluster report for the placeholder settings defect (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p14-97-port.md
+# cluster new-p12-342-port (2026-10): the browser search view keeps the library scan off the status line (fork-NEW regression test).
+docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md

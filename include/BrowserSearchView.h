@@ -65,7 +65,8 @@ namespace lmms::gui
  *  - WF-019: Project Media lists every file the project uses (project.missing_assets), the same
  *    columns, found or missing.
  *  - WF-012: "Whole library" searches the library index (browser.index_query) instead of walking, and
- *    Rescan rebuilds it in the background (browser.reindex), its progress on the status line;
+ *    Rescan rebuilds it in the background (browser.reindex), its progress on a line of its own, so a
+ *    scan never hides the search's count;
  *  - WF-014: Back and Forward step through what the view has shown (browser.browse / history_go);
  *  - WF-018: Gallery shows the results as waveform thumbnails (browser.thumbnail) instead of columns;
  *  - WF-020 / WF-009: a row's menu finds similar sounds (browser.similar) and previews the file as it is
@@ -97,6 +98,12 @@ public:
 	//! Thumbnails instead of columns.
 	void setGallery(bool on);
 	int resultCount() const;
+	//! The status line's text: the last search's own feedback (its count, or why it failed).
+	QString statusText() const;
+	//! The library scan's line: its progress, kept off the status line (a scan never hides a count).
+	QString scanStatusText() const;
+	//! The index scan's state on the scan line; the browser polls it while a scan runs.
+	void refreshIndexStatus();
 	QTreeWidget* results() const { return m_results; }
 	QListWidget* galleryView() const { return m_gallery; }
 	//! The category facet (Any category + the catalog's own), for tests and the panel.
@@ -125,7 +132,6 @@ private:
 	void refreshCollections();
 	//! Re-read the category vocabulary (browser.categories) into the filter, keeping the selection.
 	void refreshCategories();
-	void refreshIndexStatus();
 	void saveCollection();
 	void showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind);
 	void addPreviewEntries(QMenu* menu, const QString& path);
@@ -137,6 +143,7 @@ private:
 	QCheckBox* m_indexed = nullptr;
 	QCheckBox* m_probe = nullptr;
 	QLabel* m_status = nullptr;
+	QLabel* m_scanStatus = nullptr;  //!< the library scan's line, apart from the search's own status
 	QListWidget* m_collections = nullptr;
 	QTreeWidget* m_results = nullptr;
 	QListWidget* m_gallery = nullptr;

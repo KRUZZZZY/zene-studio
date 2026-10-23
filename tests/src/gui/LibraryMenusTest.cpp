@@ -916,6 +916,20 @@ private slots:
 		QVERIFY2(labelShows(&view, QStringLiteral("is not a JSON object")), "a damaged store's refusal showed nothing");
 	}
 
+	void theScanProgressDoesNotHideTheSearchResult()  // cluster new-p12-342
+	{
+		BrowserPanel panel;
+		auto* search = new BrowserSearchView(&panel);
+		panel.addSource(search);
+		panel.searchField()->setText(QStringLiteral("zq-no-such-sound-4711"));
+		search->runSearch();  // a search writes the status line
+		const QString afterSearch = search->statusText();
+		QVERIFY(!afterSearch.isEmpty());
+		search->refreshIndexStatus();  // the scan's state, polled while a scan runs
+		QCOMPARE(search->statusText(), afterSearch);  // the search's own count is still there
+		QVERIFY(!search->scanStatusText().isEmpty());  // the scan has a line of its own
+	}
+
 private:
 	QString samplesRoot() const { return ConfigManager::inst()->userSamplesDir(); }
 
