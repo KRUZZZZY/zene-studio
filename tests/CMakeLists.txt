@@ -605,6 +605,9 @@ set(LMMS_TESTS
 	src/core/MidiHandoffQueueTest.cpp
 	# Carla's plugin boundary uses the production MIDI encoder and fixed-capacity drain with a native API stand-in.
 	src/plugins/CarlaMidiHandoffTest.cpp
+	# The SF2 player's note path: the note hand-off from the note stage to the
+	# render stage must not allocate on the audio thread.
+	src/plugins/Sf2PlayerRealtimeTest.cpp
 	# The system semaphore's timed acquire (the shared-memory transport's audio-thread waits use it).
 	src/core/SystemSemaphoreTest.cpp
 	src/core/RecordingRealtimeTest.cpp
@@ -1788,6 +1791,29 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "MidiReconnectTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/src/core")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "Sf2PlayerRealtimeTest")
+		# The product's own SF2 player module: the test loads it and drives the
+		# instrument through the plugin's public interface, so the allocation
+		# count covers the code the product ships. Without FluidSynth the module
+		# does not exist, and the test says so instead of failing.
+		if(TARGET sf2player)
+			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+				SF2PLAYER_MODULE="$<TARGET_FILE:sf2player>")
+			add_dependencies(${LMMS_TEST_NAME} sf2player)
+			# The test inspects the synth the player owns (its tuning and the
+			# settings it was built with), so it links FluidSynth itself.
+			target_link_libraries(${LMMS_TEST_NAME} PRIVATE fluidsynth)
+			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+				SF2_TEST_SOUNDFONT="${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/calf/veal/sf2/Hum.sf2")
+		else()
+			target_compile_definitions(${LMMS_TEST_NAME} PRIVATE SF2PLAYER_MODULE="")
+		endif()
+		# The loaded module resolves the host's engine classes at load time, so
+		# the test executable has to export them (the granular shifter test does
+		# the same).
+		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 
 	target_static_libraries("${LMMS_TEST_NAME}" PRIVATE lmmsobjs)

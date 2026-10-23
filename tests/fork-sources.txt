@@ -2650,6 +2650,12 @@ tests/src/tracks/SampleClipWarpModesTest.cpp
 tests/src/gui/SampleClipWarpModeMenuTest.cpp
 # 2026-10-12 (cluster new-p10-375): the SlicerT waveform endpoint regression test is fork-NEW.
 # It is named in both recipe copies above because tests/src/plugins is outside the core/tracks pathspec.
+# cluster new-p9-454 / new-p9-453: the SF2 note-path allocation and lock-free synth hand-off regression.
+tests/src/plugins/Sf2PlayerRealtimeTest.cpp
+# cluster new-p9-454: the fixture the SF2 player's regression tests share (the product's own
+# plugin module and the helpers that read the player back) lives in its own header, so that the
+# test file stays inside the file-length ratchet.
+tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/SlicerTWaveformTest.cpp
 # Q050-016 round 2: the MPE test consumer fixture and its probe interface are fork-NEW test
 # code (the playback test's readback surface). Named in both recipe copies above because

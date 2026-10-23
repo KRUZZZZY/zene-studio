@@ -123,7 +123,9 @@ private slots:
 		std::stringstream buffer;
 		buffer << file.rdbuf();
 		const std::string text = buffer.str();
-		const auto start = text.find("auto pop(HandoffMidiEvent& event) noexcept -> bool");
+		// The queue is a template over the event type, so pop() takes the
+		// generic event reference.
+		const auto start = text.find("auto pop(Event& event) noexcept -> bool");
 		QVERIFY(start != std::string::npos);
 		const auto open = text.find('{', start);
 		QVERIFY(open != std::string::npos);

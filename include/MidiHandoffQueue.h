@@ -65,8 +65,10 @@ struct HandoffMidiEvent
  * push; exactly ONE thread may pop (single consumer: pop() is wait-free and has no retry loop).
  *
  * @tparam Capacity number of events; must be a power of two
+ * @tparam Event the event type the queue carries. It must be a plain data
+ *         type: the queue copies it in and out, and never allocates.
  */
-template<std::size_t Capacity>
+template<std::size_t Capacity, typename Event = HandoffMidiEvent>
 class MidiHandoffQueue
 {
 	static_assert(Capacity >= 2 && (Capacity & (Capacity - 1)) == 0,
@@ -88,7 +90,7 @@ public:
 	MidiHandoffQueue& operator=(const MidiHandoffQueue&) = delete;
 
 	//! Queues \a event. @return false when the queue was full or contention exhausted the retry budget
-	auto push(const HandoffMidiEvent& event, std::uint64_t* refusedAt = nullptr) noexcept -> bool
+	auto push(const Event& event, std::uint64_t* refusedAt = nullptr) noexcept -> bool
 	{
 		return pushImpl(event, refusedAt, nullptr, [](std::uint32_t) noexcept {});
 	}
@@ -96,7 +98,7 @@ public:
 #ifdef LMMS_TESTING
 	//! Test seam that lets a queue test schedule a competing reservation before a producer's compare-exchange.
 	template<typename BeforeCompareExchange>
-	auto pushWithTestHook(const HandoffMidiEvent& event, std::uint64_t* refusedAt,
+	auto pushWithTestHook(const Event& event, std::uint64_t* refusedAt,
 		std::uint32_t* attemptsUsed, BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
 	{
 		return pushImpl(event, refusedAt, attemptsUsed, static_cast<BeforeCompareExchange&&>(beforeCompareExchange));
@@ -105,7 +107,7 @@ public:
 
 private:
 	template<typename BeforeCompareExchange>
-	auto pushImpl(const HandoffMidiEvent& event, std::uint64_t* refusedAt, std::uint32_t* attemptsUsed,
+	auto pushImpl(const Event& event, std::uint64_t* refusedAt, std::uint32_t* attemptsUsed,
 		BeforeCompareExchange&& beforeCompareExchange) noexcept -> bool
 	{
 		std::size_t position = m_enqueue.load(std::memory_order_relaxed);
@@ -153,7 +155,7 @@ public:
 	 *  dequeue position, checks its sequence, copies the event, publishes the cell as free for the next lap and
 	 *  advances the position: a constant number of steps on every path (wait-free). Calling pop() from two threads
 	 *  is not supported; drainMidi() is the only caller and each host drains from its one render thread. */
-	auto pop(HandoffMidiEvent& event) noexcept -> bool
+	auto pop(Event& event) noexcept -> bool
 	{
 		const std::size_t position = m_dequeue.load(std::memory_order_relaxed);
 		Cell& cell = m_cells[position & Mask];
@@ -192,7 +194,7 @@ private:
 	struct Cell
 	{
 		std::atomic<std::size_t> sequence{0};
-		HandoffMidiEvent event{};
+		Event event{};
 	};
 
 	std::array<Cell, Capacity> m_cells{};
