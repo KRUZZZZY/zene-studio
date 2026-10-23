@@ -55,11 +55,11 @@ AudioFileMP3::~AudioFileMP3()
 	tearDownEncoder();
 }
 
-void AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
+bool AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 {
 	if (_frames < 1)
 	{
-		return;
+		return true;
 	}
 
 	std::vector<float> interleavedDataBuffer(_frames * 2);
@@ -75,18 +75,40 @@ void AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 	int bytesWritten = lame_encode_buffer_interleaved_ieee_float(m_lame, &interleavedDataBuffer[0], _frames, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
 	assert (bytesWritten >= 0);
 
-	writeData(&encodingBuffer[0], bytesWritten);
+	if (writeData(&encodingBuffer[0], bytesWritten) != bytesWritten)
+	{
+		// The encoded frame did not reach the file: the export is broken.
+		recordWriteError();
+		return false;
+	}
+	return true;
+}
+
+bool AudioFileMP3::finishEncoding()
+{
+	// The tail is written here, not only in the destructor: run() calls this before it reads the
+	// verdict, so a failed final flush reaches the export result. Idempotent.
+	flushRemainingBuffers();
+	if (!flushOutputFile()) { return false; }
+	return !hasWriteError();
 }
 
 void AudioFileMP3::flushRemainingBuffers()
 {
+	if (m_flushed) { return; }
+	m_flushed = true;
+
 	// The documentation states that flush should have at least 7200 bytes. So let's be generous.
 	std::vector<unsigned char> encodingBuffer(7200 * 4);
 
 	int bytesWritten = lame_encode_flush(m_lame, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
 	assert (bytesWritten >= 0);
 
-	writeData(&encodingBuffer[0], bytesWritten);
+	if (writeData(&encodingBuffer[0], bytesWritten) != bytesWritten)
+	{
+		// The tail of the stream did not reach the file: the export is incomplete.
+		recordWriteError();
+	}
 }
 
 MPEG_mode mapToMPEG_mode(OutputSettings::StereoMode stereoMode)

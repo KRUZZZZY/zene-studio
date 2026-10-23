@@ -55,7 +55,14 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <type_traits>
+#include <utility>
 #include <vector>
+
+#ifdef Q_OS_UNIX
+#include <csignal>
+#include <sys/resource.h>
+#endif
 
 #include <sndfile.h>
 
@@ -116,6 +123,59 @@ int maxSampleDelta(const std::vector<std::int16_t>& expected,
 			static_cast<int>(expected[i]) - static_cast<int>(actual[i])));
 	}
 	return maximum;
+}
+
+//! True when the device's writeBuffer() hands back a result (the API the
+//! new-p12-317 fix introduced). The tree WITHOUT the fix returns nothing, so it
+//! cannot report a failed write - the test then fails on the other evidence,
+//! never on a compile error.
+template <typename T, typename = void>
+struct WriteBufferReports : std::false_type {};
+
+template <typename T>
+struct WriteBufferReports<T, std::void_t<decltype(std::declval<T&>().writeBuffer(
+	std::declval<const SampleFrame*>(), std::declval<f_cnt_t>()))>>
+	: std::bool_constant<!std::is_void_v<decltype(std::declval<T&>().writeBuffer(
+		std::declval<const SampleFrame*>(), std::declval<f_cnt_t>()))>> {};
+
+//! Writes the frames and reports whether the device reported success. A device
+//! whose writeBuffer() returns nothing (the tree without the fix) cannot report
+//! a failure, so it answers "no failure" here.
+template <typename T>
+bool writeBufferSucceeded(T& device, const SampleFrame* frames, f_cnt_t count)
+{
+	if constexpr (WriteBufferReports<T>::value)
+	{
+		return device.writeBuffer(frames, count);
+	}
+	else
+	{
+		device.writeBuffer(frames, count);
+		return true;
+	}
+}
+
+//! True when the device can report a write error (the API the fix introduced).
+template <typename T, typename = void>
+struct HasWriteError : std::false_type {};
+
+template <typename T>
+struct HasWriteError<T, std::void_t<decltype(std::declval<const T&>().hasWriteError())>>
+	: std::true_type {};
+
+//! The write error the device reports; false when it cannot report one (the tree
+//! without the fix), so the test still compiles there.
+template <typename T>
+bool reportedWriteError(const T& device)
+{
+	if constexpr (HasWriteError<T>::value)
+	{
+		return device.hasWriteError();
+	}
+	else
+	{
+		return false;
+	}
 }
 
 } // namespace
@@ -330,6 +390,51 @@ private slots:
 		QVERIFY2(tpdf24 == shaped24, "a 24-bit noise-shaped render is not the 24-bit TPDF render");
 		ExportRenderSettings::reset();
 	}
+
+#ifdef Q_OS_UNIX
+	//! BUG 14 (new-p12-317): a short write is reported instead of being ignored.
+	void aShortWavWriteIsReported()
+	{
+		struct rlimit previousLimit{};
+		struct sigaction previousAction{};
+		struct sigaction ignoredAction{};
+		ignoredAction.sa_handler = SIG_IGN;
+		sigemptyset(&ignoredAction.sa_mask);
+
+		QVERIFY(getrlimit(RLIMIT_FSIZE, &previousLimit) == 0);
+		QVERIFY(sigaction(SIGXFSZ, &ignoredAction, &previousAction) == 0);
+
+		struct rlimit highLimit = previousLimit;
+		if (highLimit.rlim_cur < 100000) { highLimit.rlim_cur = 100000; }
+		QVERIFY(setrlimit(RLIMIT_FSIZE, &highLimit) == 0);
+
+		OutputSettings settings(44100, 160, OutputSettings::BitDepth::Depth16Bit,
+			OutputSettings::StereoMode::Stereo);
+		ExportRenderSettings::setDither(false);
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("short-write.wav"));
+		bool successful = false;
+		std::unique_ptr<AudioFileDevice> device(
+			AudioFileWave::getInst(path, settings, DEFAULT_CHANNELS, Engine::audioEngine(), successful));
+		QVERIFY(successful);
+
+		struct rlimit shortLimit = previousLimit;
+		shortLimit.rlim_cur = 44;
+		QVERIFY(setrlimit(RLIMIT_FSIZE, &shortLimit) == 0);
+
+		std::vector<SampleFrame> frames(1024, SampleFrame(0.5f, 0.5f));
+		const bool writeOk = writeBufferSucceeded(*device, frames.data(),
+			static_cast<f_cnt_t>(frames.size()));
+
+		const bool restoredLimit = setrlimit(RLIMIT_FSIZE, &previousLimit) == 0;
+		const bool restoredSignal = sigaction(SIGXFSZ, &previousAction, nullptr) == 0;
+		QVERIFY(restoredLimit);
+		QVERIFY(restoredSignal);
+
+		QVERIFY(!writeOk);
+		QVERIFY(reportedWriteError(*device));
+		ExportRenderSettings::reset();
+	}
+#endif
 
 private:
 

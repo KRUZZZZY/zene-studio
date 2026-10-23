@@ -57,16 +57,25 @@ public:
 					 outputFilename, audioEngine );
 	}
 
+public:
+	/*! Flushes the LAME tail into the file and reports whether the whole MP3 was written: false when
+	 *  the tail did not reach it. The render calls this before it reads the result; the destructor
+	 *  calls it again, which is then a no-op. */
+	bool finishEncoding() override;
+
 protected:
-	void writeBuffer(const SampleFrame* /* _buf*/, const f_cnt_t /*_frames*/) override;
+	bool writeBuffer(const SampleFrame* /* _buf*/, const f_cnt_t /*_frames*/) override;
 
 private:
+	//! Flushes the LAME tail and records whether it reached the file. Idempotent.
 	void flushRemainingBuffers();
 	bool initEncoder();
 	void tearDownEncoder();
 
 private:
 	lame_t m_lame;
+	//! True once the LAME tail has been flushed (finishEncoding(), or the destructor without it).
+	bool m_flushed = false;
 };
 
 } // namespace lmms

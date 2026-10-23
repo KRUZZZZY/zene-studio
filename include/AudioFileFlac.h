@@ -60,15 +60,19 @@ public:
 		);
 	}
 
+public:
+	//! Syncs and closes the file; false when the close failed - the output is incomplete.
+	//! Nulls the handle, so a second call (the render's, then the destructor's) is a no-op.
+	bool finishEncoding() override;
+
 private:
 
 	SF_INFO  m_sfinfo;
 	SNDFILE* m_sf;
 
-	void writeBuffer(const SampleFrame* _ab, f_cnt_t const frames) override;
+	bool writeBuffer(const SampleFrame* _ab, f_cnt_t const frames) override;
 
 	bool startEncoding();
-	void finishEncoding();
 
 };
 

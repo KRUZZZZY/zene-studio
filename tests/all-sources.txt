@@ -2677,6 +2677,7 @@ tests/src/core/EnvelopeAndLfoParametersTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportNoiseShaperTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
+tests/src/core/ExportWavWriteErrorTest.cpp
 tests/src/core/FreezeRegionRepairTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp

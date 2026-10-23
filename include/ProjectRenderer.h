@@ -114,6 +114,11 @@ public:
 	//! The channels the file is written with: 2, or the surround master's for a surround export.
 	int channels() const { return m_channels; }
 
+	/*! True when this render's output could not be written completely - a write failed, or the
+	 *  finalisation (the close, the header) did. Read after finished(); written on the render thread
+	 *  from run(). A failed render also deletes its file, so a caller sees both by one question. */
+	bool hasWriteError() const { return m_writeFailed.load(std::memory_order_relaxed); }
+
 public slots:
 	void startProcessing();
 	void abortProcessing();
@@ -139,7 +144,8 @@ private:
 	//! Writes the sidecar, tells the console and emits loudnessReportReady().
 	void reportLoudness( const QString& renderedFile );
 	//! 0.5.0 F7: the period's stereo pair and the export tap's side channels, interleaved, to the file.
-	void writeSurround( const SampleFrame* pair, f_cnt_t frames );
+	//! False when that write failed, so run() can stop producing bytes the file cannot take.
+	bool writeSurround( const SampleFrame* pair, f_cnt_t frames );
 
 	AudioFileDevice * m_fileDev;
 
@@ -149,6 +155,8 @@ private:
 
 	std::atomic<int> m_progress;
 	std::atomic<bool> m_abort;  //!< set by abortProcessing() on another thread; volatile is not a synchronisation
+	//! Set in run() when a write or the finalisation failed; read via hasWriteError() after finished().
+	std::atomic<bool> m_writeFailed{false};
 
 	/*! The selection that was in force before this renderer published its own
 	 *  (see ProjectRenderer.cpp): restored by ~ProjectRenderer(), so a render's

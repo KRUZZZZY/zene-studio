@@ -409,6 +409,11 @@ set(LMMS_TESTS
 	# dither mode's mapping onto the pre-mode bool API.
 	src/core/ExportNoiseShaperTest.cpp
 	src/core/ExportWavDitherTest.cpp
+	# cluster new-p12-317: a WAV write or close that failed is a FAILED export -
+	# reported by the device, by the render and by RenderManager, with the broken
+	# file removed instead of left behind. The failure is provoked by capping
+	# RLIMIT_FSIZE, so it is deterministic: no disk, no timing, no race.
+	src/core/ExportWavWriteErrorTest.cpp
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
@@ -3058,6 +3063,10 @@ set_tests_properties(RevisionTimelineTest PROPERTIES
 set_tests_properties(ExportDitherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportWavDitherTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The write-error test builds the same Engine and drives the same export path
+# (and one real render through RenderManager), for the same reason.
+set_tests_properties(ExportWavWriteErrorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(LMMS_HAVE_OGGVORBIS)
 	set_tests_properties(AudioFileOggInitTest PROPERTIES
