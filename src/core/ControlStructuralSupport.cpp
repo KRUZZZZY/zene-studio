@@ -71,6 +71,7 @@
 #include <QJsonObject>
 #include <QPointer>
 
+#include "AudioPortsModel.h"
 #include "AutomatableModel.h"
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
@@ -406,6 +407,13 @@ Effect* instantiateRecordedDevice(EffectChain* chain, const QString& stateXml)
 	// engine while it is built (the registration is deferred until the device
 	// is attached), so a model the render thread cannot see is written without
 	// the change lock the render thread takes once per period.
+	//
+	// Cluster 23: the same rule holds for the device's audio-ports model, whose
+	// routing state the render thread reads. The detached-build scope marks the
+	// model that is created here, so its routing edits take no engine change
+	// guard either - which is what lets this build finish while another thread
+	// owns the audio change lock.
+	const AudioPortsModel::DetachedBuildScope detachedBuild;
 	const DeferredModelRegistrationScope deferredRegistration;
 	Effect* effect = Effect::instantiate(pluginName, chain, hosted ? &key : nullptr);
 	if (effect == nullptr)

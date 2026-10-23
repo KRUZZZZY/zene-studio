@@ -35,6 +35,7 @@
 
 #include <QMouseEvent>
 
+#include "AudioEngine.h"
 #include "AudioPortsModel.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -121,6 +122,44 @@ private slots:
 			QVERIFY2(view->cursor().shape() != Qt::CursorShape::PointingHandCursor,
 				"a move with a button held still shows the hover cursor, so a drag reads as a hover");
 		}
+	}
+
+	/**
+	 * Cluster 23: a pin edit rewrites the routing matrices and their caches, and the
+	 * render thread reads exactly those while it owns the engine's model-change guard
+	 * for a whole period. The pins are a packed std::vector<bool>, so an edit that runs
+	 * beside the renderer does not merely let it read a stale value: it can let it read
+	 * a torn word and route the wrong channel. Every routing edit must therefore be made
+	 * under that same guard, so the next period sees the whole new routing.
+	 *
+	 * The seam: `AudioEngine::isChangeInModelHeld()` (compiled only with LMMS_TESTING)
+	 * reports whether the CALLING thread holds the engine's model-change guard. The
+	 * edit emits its model signal from inside the edit, so a direct-connected slot
+	 * reads the guard while the edit is still running. No threads, no sleeps, no wall
+	 * clock, no race.
+	 */
+	void pinEditsRunUnderTheEngineModelChangeGuard()
+	{
+		QVERIFY2(Engine::audioEngine() != nullptr,
+			"the test needs an audio engine, because the guard it proves is the engine's");
+
+		TestAudioPortsModel model{2, 2, false};
+		int guardAtSignal = -1;
+		connect(&model, &Model::dataChanged, &model,
+			[&guardAtSignal] { guardAtSignal = Engine::audioEngine()->isChangeInModelHeld() ? 1 : 0; },
+			Qt::DirectConnection);
+
+		// The reported function: Matrix::setPin(), the write the pin connector makes.
+		model.in().setPin(0, 1, true);
+		QVERIFY2(guardAtSignal == 1,
+			"Matrix::setPin() changed the routing outside the engine model-change guard, so the "
+			"render thread can read the matrix while it is rewritten");
+
+		// The pin edit still does its work: the guard must not swallow the edit.
+		QVERIFY(model.in().enabled(0, 1));
+		// ...and the routing caches are refreshed with it: the extra pin rules the direct
+		// routing of this processor out, so the cached decision must be gone.
+		QVERIFY(!model.directRouting().has_value());
 	}
 
 private:
