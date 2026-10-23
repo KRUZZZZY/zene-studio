@@ -121,6 +121,12 @@
 # to 284 (the vendored tree is no longer measured), and both scope gates turn green.
 # Nothing is hand-edited and no path the recipe derives is dropped: the entry list below
 # IS the recipe's output, byte for byte (tests/all-sources-reproduce.sh prints REPRODUCES).
+# 2026-10-22 (cluster new-p14-81-port): the entry list below is re-derived from the recipe once
+# more. The train-12 snapshot commit 07d6d02bd added the 1148 vendored plugins/SfzPlayer/sfizz/...
+# entries back without touching the recipe, so the manifest had stopped reproducing again (the
+# repair from new-p14-199-port was undone by that snapshot). The sfizz tree is excluded on purpose
+# (header above), no ratchet baseline holds an entry for it and Gate 9's registration scan excludes
+# it; removing exactly those entries makes the list the recipe's own output (3052 paths).
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h

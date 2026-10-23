@@ -392,7 +392,12 @@ private slots:
 			transaction.insert(QStringLiteral("before"), QJsonObject{{QStringLiteral("value"), 1}});
 			transaction.insert(QStringLiteral("inverse"),
 				QJsonObject{{QStringLiteral("op"), QStringLiteral("test.mutator")},
-					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}}});
+					{QStringLiteral("args"), QJsonObject{{QStringLiteral("value"), 1}}},
+					// The inverse is the PAIRED COMMAND, and says so: a command
+					// inverse needs no journal step of its own (new-p14-81), while
+					// the default ("journal") means the inverse rests on a step this
+					// call recorded - and this test command records none.
+					{QStringLiteral("applies"), QStringLiteral("command")}});
 			transaction.insert(QStringLiteral("reversible"), true);
 			transaction.insert(QStringLiteral("mechanism"), QStringLiteral("test"));
 			QJsonObject result;

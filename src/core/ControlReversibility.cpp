@@ -162,12 +162,18 @@ void addUndoStep(const QVector<JournallingObject*>& journallingObjects)
 //! above, with the document the closure carries MEASURED and counted against
 //! the stack's byte budget - see the declaration for why that is the whole
 //! difference.
-void addStructuralUndoStep(std::function<void()> undo, std::function<void()> redo,
+//!
+//! TRUE only when the step was really pushed. ProjectJournal::addJournalStructure()
+//! refuses a step while the journal is not journalling, so the flag is asked
+//! BEFORE the call: a step that was refused is not an inverse, and the caller
+//! has to be able to say so (new-p14-81).
+bool addStructuralUndoStep(std::function<void()> undo, std::function<void()> redo,
 	qint64 payloadBytes)
 {
 	ProjectJournal* journal = Engine::projectJournal();
-	if (journal == nullptr || !undo) { return; }
+	if (journal == nullptr || !undo || !journal->isJournalling()) { return false; }
 	journal->addJournalStructure(std::move(undo), std::move(redo), payloadBytes);
+	return true;
 }
 
 // The record the header declares, and the same discipline ControlStructuralSupport
