@@ -37,6 +37,7 @@
 #include <sys/types.h>
 #endif
 
+#include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "endian_handling.h"
 #include "Engine.h"
@@ -101,6 +102,19 @@ auto hasSamplePayload(FILE* fd, unsigned dataLength) -> bool
 			static_cast<std::uint64_t>(fileEnd - dataStart);
 }
 
+//! The audio thread reads the patch state (m_patchFile and m_patchSamples)
+//! while it renders: playNoteImpl() checks the path and selectSample() picks
+//! a sample out of the bank. The engine's model-change guard is the contract
+//! for replacing model state without the render thread looking at it:
+//! AudioEngine::renderNextPeriod() holds the same mutex for a whole period,
+//! so a guarded replacement cannot land in the middle of one.
+auto patchChangeGuard() -> AudioEngine::RequestChangesGuard
+{
+	auto* const engine = Engine::audioEngine();
+	return engine != nullptr ? engine->requestChangesGuard() :
+							   AudioEngine::RequestChangesGuard{};
+}
+
 } // namespace
 
 
@@ -145,6 +159,9 @@ PatmanInstrument::PatmanInstrument( InstrumentTrack * _instrument_track ) :
 
 PatmanInstrument::~PatmanInstrument()
 {
+	// The bank is dropped under the engine's model-change guard: the audio
+	// thread may still be selecting a sample out of it.
+	const auto guard = patchChangeGuard();
 	unloadCurrentPatch();
 }
 
@@ -234,6 +251,7 @@ void PatmanInstrument::setFile( const QString & _patch_file, bool _rename )
 {
 	if( _patch_file.size() <= 0 )
 	{
+		const auto guard = patchChangeGuard();
 		unloadCurrentPatch();
 		m_patchFile = QString();
 		return;
@@ -251,11 +269,27 @@ void PatmanInstrument::setFile( const QString & _patch_file, bool _rename )
 	// else we don't touch the instrument-track-name, because the user
 	// named it self
 
-	m_patchFile = PathUtil::toShortestRelative( _patch_file );
-	LoadError error = loadPatch( PathUtil::toAbsolute( _patch_file ) );
+	{
+		// The audio thread reads m_patchFile while it renders, so the path is
+		// replaced under the engine's model-change guard.
+		const auto guard = patchChangeGuard();
+		m_patchFile = PathUtil::toShortestRelative( _patch_file );
+	}
+
+	// The patch file is read outside the guard: the file I/O must not hold the
+	// render thread's model state hostage. The new sample set is published
+	// below, under the guard, so the audio thread never sees a half-replaced
+	// bank.
+	QVector<std::shared_ptr<Sample>> patchSamples;
+	LoadError error = loadPatch( PathUtil::toAbsolute( _patch_file ), patchSamples );
 	if( error != LoadError::OK )
 	{
 		printf("Load error\n");
+	}
+	else
+	{
+		const auto guard = patchChangeGuard();
+		m_patchSamples.swap( patchSamples );
 	}
 
 	emit fileChanged();
@@ -265,7 +299,8 @@ void PatmanInstrument::setFile( const QString & _patch_file, bool _rename )
 
 
 PatmanInstrument::LoadError PatmanInstrument::loadPatch(
-						const QString & _filename )
+						const QString & _filename,
+						QVector<std::shared_ptr<Sample>> & _samples )
 {
 	FILE * fd = fopen( _filename.toUtf8().constData() , "rb" );
 	if( !fd )
@@ -427,7 +462,7 @@ PatmanInstrument::LoadError PatmanInstrument::loadPatch(
 		delete[] data;
 	}
 	fclose( fd );
-	m_patchSamples.swap(patchSamples);
+	_samples = std::move(patchSamples);
 	return( LoadError::OK );
 }
 

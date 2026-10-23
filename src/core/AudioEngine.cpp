@@ -1448,7 +1448,13 @@ void AudioEngine::removePlayHandlesOfTypes(Track * track, PlayHandle::Types type
 void AudioEngine::requestChangeInModel()
 {
 	if (s_renderingThread) { return; }
+	// Counted around the acquisition so that modelChangeWaiters() reports the
+	// control threads that are waiting for (or just got) the render period's
+	// model ownership; the rendering thread short-circuits above and never
+	// touches the counter.
+	m_modelChangeWaiters.fetch_add(1, std::memory_order_relaxed);
 	m_changeMutex.lock();
+	m_modelChangeWaiters.fetch_sub(1, std::memory_order_relaxed);
 #ifdef LMMS_TESTING
 	++s_changeInModelDepth;
 #endif

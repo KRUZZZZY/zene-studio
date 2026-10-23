@@ -110,7 +110,11 @@ private:
 		IO
 	} ;
 
-	LoadError loadPatch( const QString & _filename );
+	//! Parses a GF1 patch file into _samples. The caller publishes the result
+	//! under the engine's model-change guard: the audio thread selects its
+	//! samples out of the very same bank while it renders.
+	LoadError loadPatch( const QString & _filename,
+						QVector<std::shared_ptr<Sample>> & _samples );
 	void unloadCurrentPatch();
 
 	void selectSample( NotePlayHandle * _n );
