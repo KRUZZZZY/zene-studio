@@ -331,6 +331,9 @@ QJsonObject clipState(const ClipRef& ref)
 	entry.insert(QStringLiteral("fade_out"), edits.fadeOutTicks);
 	entry.insert(QStringLiteral("fade_in_shape"), fadeShapeName(edits.fadeInShape));
 	entry.insert(QStringLiteral("fade_out_shape"), fadeShapeName(edits.fadeOutShape));
+	// Q050-125: the clip's polarity, reported for every clip the way the gain is, so an agent reading
+	// arrangement.get_state sees it without a second call.
+	entry.insert(QStringLiteral("inverted"), edits.hasPolarity());
 	return entry;
 }
 

@@ -28,6 +28,7 @@
 
 #include <QDateTime>
 #include <QRect>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -71,6 +72,14 @@ public:
 		float sampleEnd = 1.0f; //!< Where the sample ends for drawing.
 
 		bool reversed = false; //!< Determines if the waveform is drawn in reverse or not.
+
+		/*! Q050-125: the clip's clipped-gain shape, as a function of the normalised position across
+		 *  `sampleRect` (0 at its left edge, 1 at its right): the effective gain INCLUDING the clip's
+		 *  polarity sign. Empty means the raw waveform, which is what every caller that does not pass
+		 *  one (the browser preview, the sample editor) keeps. The callback is called once per drawn
+		 *  column, on the interface thread, from SampleClipView's paint; it must not allocate beyond
+		 *  what a paint already does. */
+		std::function<float(float)> gainAt;
 	};
 
 	SampleThumbnail() = default;

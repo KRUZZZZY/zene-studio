@@ -521,6 +521,9 @@ void Clip::saveClipEdits(QDomElement& element) const
 	{
 		element.setAttribute("gainenv", envelopeToText(m_edits));
 	}
+	// Q050-125: the clip's polarity, written only when it is inverted (I9, additive): every project
+	// written before this loads with polarity off and renders exactly as it did.
+	if (m_edits.hasPolarity()) { element.setAttribute("invert", "1"); }
 }
 
 
@@ -705,6 +708,9 @@ void Clip::loadClipEdits(const QDomElement& element)
 	}
 	edits.snapTicks = std::max(0, element.attribute("snappoint", "0").toInt());
 	loadSpeed(element, &edits);
+	// Q050-125: polarity is reset by absence, so every file written before this attribute loads
+	// non-inverted - the same additive rule as the gain and the envelope above.
+	edits.polarityInverted = element.attribute("invert", "0").toInt() != 0;
 
 	m_edits = edits;
 	// Reset-on-absence for `lane` and `link`: both defaults live once in

@@ -127,6 +127,9 @@ set(LMMS_TESTS
 	src/core/ScriptDawEffectsTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
+	# Q050-125: a clip's polarity - its rendered sign, the source left alone, and the gain curve the
+	# waveform is drawn with is the multiplier the render got.
+	src/core/ClipPolarityTest.cpp
 	# Owner decision 2026-10-08: the offset fade - a crossfade into a contained clip fades the container where that clip is.
 	src/core/ClipOffsetFadeTest.cpp
 	# Round 3: an offset fade is a pair; a crossfade a clip is too short for is reported.
@@ -1201,6 +1204,9 @@ set(LMMS_TESTS
 	# A mixer strip's tooltip names its delay compensation.
 	# A sample clip's Gain and fades (clip.set_gain / clip.set_fade), with one control.undo.
 	src/gui/ClipEditsMenuTest.cpp
+	# Q050-125: the clip-gain handle, envelope points and the polarity item are DRAGGED/TRIGGERED on the
+	# real clip view, and the drawn waveform follows the gain curve.
+	src/gui/ClipWaveformEditTest.cpp
 	# A sample clip's Warp mode submenu (warp.stretch), Q050-036's five spec modes.
 	src/gui/SampleClipWarpModeMenuTest.cpp
 	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
@@ -2975,7 +2981,7 @@ set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(ClipEditsMenuTest SampleClipWarpModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ClipEditsMenuTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5360,6 +5366,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-audio-editing.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlAudioEditing PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-125 over the socket: clip gain, envelope, polarity, one undo each, read-back, save/reopen
+	# and an old writer's clip loading non-inverted.
+	add_test(NAME ControlClipPolarity
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-clip-polarity.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlClipPolarity PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

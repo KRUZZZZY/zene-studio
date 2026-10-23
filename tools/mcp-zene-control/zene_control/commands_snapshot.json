@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-22T07:56:46Z",
+  "captured_at": "2026-10-22T15:52:21Z",
   "commands": [
     {
       "args_schema": {
@@ -4469,6 +4469,9 @@
           "index_in_track": {
             "type": "number"
           },
+          "inverted": {
+            "type": "boolean"
+          },
           "length": {
             "maximum": 1919808,
             "minimum": 0,
@@ -4801,6 +4804,9 @@
           },
           "index_in_track": {
             "type": "number"
+          },
+          "inverted": {
+            "type": "boolean"
           },
           "length": {
             "type": "number"
@@ -5691,6 +5697,9 @@
           },
           "gain_db": {
             "type": "number"
+          },
+          "inverted": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -5783,6 +5792,9 @@
           },
           "gain_db": {
             "type": "number"
+          },
+          "inverted": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -5876,6 +5888,71 @@
             "type": "string"
           },
           "muted": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "inverted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "clip",
+          "inverted"
+        ],
+        "type": "object"
+      },
+      "description": "Set whether a sample clip renders with its polarity inverted: every frame it plays changes sign, and its drawn waveform mirrors around zero. The SOURCE sample is never modified - the inversion is a non-destructive stage on top of the clip's gain, like its fades - and an old project loads with polarity off. Reversible through the ProjectJournal (Clip checkpoint).",
+      "group": "clip",
+      "id": "clip.set_polarity",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "fade_in": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_in_offset": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_in_shape": {
+            "type": "string"
+          },
+          "fade_out": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_offset": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_shape": {
+            "type": "string"
+          },
+          "gain_db": {
+            "type": "number"
+          },
+          "inverted": {
             "type": "boolean"
           }
         },
@@ -25102,6 +25179,9 @@
           "index_in_track": {
             "type": "number"
           },
+          "inverted": {
+            "type": "boolean"
+          },
           "length": {
             "type": "number"
           },
@@ -36114,23 +36194,23 @@
       }
     }
   ],
-  "count": 845,
+  "count": 846,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-125/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-i8ppv2ui/zene.sock",
-    "version": "0.4.0-alpha.4410+168b6b9"
+    "source_socket": "/tmp/zctl-run-3fegjm7p/zene.sock",
+    "version": "0.4.0-alpha.4411+07d6d02"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 845,
-    "ids_sha256": "b188ec2174cb685cf249ac38796a2933595084401b662fc952b0489b2b7e258a"
+    "id_count": 846,
+    "ids_sha256": "cbd7259a8c3a868177335929c4430c8e060bdacfdf999d7e0a30268c73890bb9"
   }
 }

@@ -66,47 +66,6 @@
 # 2026-09-17 (lane 030/arch2-api, board card #672, ARCH-2): the zene::api
 # boundary's public header (include/zene/api/ControlApi.h), fork-NEW, registered
 # beside the registry headers it re-exports.
-
-# 2026-10-20 (cluster new-p12-53-port): tests/src/core/NoteSelectionIdentityTest.cpp - the
-# fork-NEW regression for the control selection store keeping the selected notes' ids - is
-# now a tracked source, so the recipe derives it and the entry list below lists it.
-# 2026-10-20 (cluster review-e39984ffb): the record.remaining volume case needs one filesystem
-# under two mount points, which the test makes in a mount namespace of its own; the namespace
-# helpers live in their own header (tests/src/core/MountNamespaceTestSupport.h), a fork-NEW test
-# helper like the other TestSupport.h files. It is registered in tests/fork-sources.txt as well.
-
-# 2026-10-20 (cluster 409): the fork-NEW sources of the ConvolutionReverb plugin's FFTW
-# scope (plugins/ConvolutionReverb/ConvolutionFftw.h and .cpp) and its regression test
-# (tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp) are tracked sources, so the recipe
-# derives them and the entry list below lists them.
-# 2026-10-20 (cluster new-p14-358 / 5451): tests/src/plugins/VestigeMidiHandoffTest.cpp - the
-# fork-NEW regression for the VeSTige VST host's MIDI path ("Turn off all notes" ends the notes
-# of every MIDI channel, and the note path publishes into the hand-off queue instead of taking
-# the plug-in mutex) - is now a tracked source, so the recipe derives it and the entry list
-# below lists it.
-# 2026-10-20 (cluster new-p15-300): tests/src/plugins/CompressorVisualizerTest.cpp - the
-# fork-NEW regression for the compressor's visualizer state being published instead of
-# shared - is now a tracked source, so the recipe derives it and the entry list below
-# lists it.
-
-# 2026-10-21 (cluster new-p14-314): tests/src/core/SmfNoteReadTest.cpp - the SMF note reader's own
-# regression file - is a tracked source, so the recipe derives it and the entry list below lists it.
-# 2026-10-21 (cluster new-p14-41): tests/src/core/NoteNoOpEditUndoStepTest.cpp - the
-# fork-NEW regression for the no-op rule of the note edits (a note edit that changes
-# nothing takes no undo step) - is now a tracked source, so the recipe derives it.
-# 2026-10-21 (cluster new-p16-141-port): the entry list below is re-derived from the recipe in this
-# header (the vendored sfizz tree the recipe excludes was still listed here, so the manifest no
-# longer reproduced from its own recipe and Gate 9 was red for every lane).
-# 2026-10-22 (cluster new-p14-199-port): the entry list below is the recipe's output again.
-# 5ef150729 (the train-10 snapshot commit) added the 1148 vendored
-# plugins/SfzPlayer/sfizz/... entries to the list without touching the recipe, so this
-# manifest stopped reproducing from the command it publishes and Gate 9 has been red on that
-# since - and the whole-tree scope measured 1148 vendored files it does not own (560
-# complexity and 247 file-length regressions in --scope all). The list is re-derived from the
-# recipe here, as this file's own gate message asks ('run the Regenerate with command from the
-# manifest's header and write its output over the entry list'): the vendored sfizz tree is
-# excluded on purpose (see the header above), no ratchet baseline ever held an entry for it,
-# and Gate 9's registration scan excludes it as well.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -2578,6 +2537,7 @@ tests/src/core/ClipLinkTest.cpp
 tests/src/core/ClipLinkTestSupport.h
 tests/src/core/ClipOffsetFadePairTest.cpp
 tests/src/core/ClipOffsetFadeTest.cpp
+tests/src/core/ClipPolarityTest.cpp
 tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
@@ -2946,6 +2906,7 @@ tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/ChainPresetMenuTest.cpp
 tests/src/gui/ChordProgressionPanelTest.cpp
 tests/src/gui/ClipEditsMenuTest.cpp
+tests/src/gui/ClipWaveformEditTest.cpp
 tests/src/gui/CollabPanelTest.cpp
 tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp

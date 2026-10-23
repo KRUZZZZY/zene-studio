@@ -462,6 +462,7 @@ void registerRollGetState(ControlRegistry& registry)
 		{QStringLiteral("fade_out"), control::numberProperty()},
 		{QStringLiteral("fade_out_shape"), control::stringProperty()},
 		{QStringLiteral("gain_db"), control::numberProperty()},
+		{QStringLiteral("inverted"), control::booleanProperty()},
 		{QStringLiteral("id"), control::stringProperty()},
 		{QStringLiteral("index_in_track"), control::numberProperty()},
 		{QStringLiteral("length"), control::numberProperty()},

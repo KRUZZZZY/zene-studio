@@ -153,10 +153,18 @@ struct ClipEdits
 	//! ED-042: the gain envelope, `envelopeCount` points in tick order.
 	std::array<GainPoint, MaxGainPoints> envelope{};
 	int envelopeCount = 0;
+	/*! 0.5.0 Q050-125: the clip's polarity is inverted - every sample it renders changes sign and its
+	 *  drawn waveform mirrors around zero. The SOURCE sample is never touched (the same non-destructive
+	 *  stage as the gain and the fades), and the attribute is written only when set, so an older project
+	 *  loads with polarity off and renders exactly as before. */
+	bool polarityInverted = false;
 
-	//! True when the gain stage has nothing to do: unity gain, no fades, no envelope, no pre-fades.
+	//! True when the gain stage has nothing to do: unity gain, no inversion, no fades, no envelope, no pre-fades.
 	//! Speed (hasSpeed()), transpose, formants and loops are not gain edits; callers test them apart.
-	bool isNeutral() const { return gain == 1.0f && !hasFade() && !hasEnvelope() && !hasPreFade(); }
+	bool isNeutral() const { return gain == 1.0f && !polarityInverted && !hasFade() && !hasEnvelope() && !hasPreFade(); }
+	//! Q050-125: whether the clip's rendered sign is flipped, and the multiplier that does it.
+	bool hasPolarity() const { return polarityInverted; }
+	float polaritySign() const { return polarityInverted ? -1.0f : 1.0f; }
 	bool hasFade() const { return fadeInTicks > 0 || fadeOutTicks > 0; }
 	bool hasSpeed() const { return speedFrom != 100 || speedTo != 100 || speedInTicks > 0 || speedOutTicks > 0; }
 	bool hasEnvelope() const { return envelopeCount > 0; }
@@ -167,7 +175,7 @@ struct ClipEdits
 	auto scalars() const
 	{
 		return std::tie(gain, fadeInTicks, fadeOutTicks, fadeInShape, fadeOutShape, fadeInOffsetTicks, fadeOutOffsetTicks, fadeOffsetGap, transpose, keepFormants, formant, loopTicks, snapTicks, speedFrom, speedTo, speedInTicks,
-			speedOutTicks, preFadeInTicks, preFadeOutTicks, envelopeCount, audioLoopStart, audioLoopFrames, audioLoopOffset);
+			speedOutTicks, preFadeInTicks, preFadeOutTicks, envelopeCount, audioLoopStart, audioLoopFrames, audioLoopOffset, polarityInverted);
 	}
 	bool operator==(const ClipEdits& other) const
 	{

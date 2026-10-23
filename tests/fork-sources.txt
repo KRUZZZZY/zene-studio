@@ -2330,6 +2330,7 @@ tests/src/core/BrowserFeaturesWindowTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipEditsTest.cpp
 tests/src/core/ClipGainEnvelopeTest.cpp
+tests/src/core/ClipPolarityTest.cpp
 tests/src/core/ClipImportFileTest.cpp
 tests/src/core/ClipJoinRippleTest.cpp
 tests/src/core/ClipOffsetFadePairTest.cpp
@@ -2959,3 +2960,10 @@ tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
 docs/qwen-fixes-2026-10/cluster-908.md
 # cluster Q050-167 (2026-10): the render-side worker wake is a post, not a lock - fix and verification report.
 docs/qwen-fixes-2026-10/cluster-Q050-167.md
+# Q050-125 (2026-10): the clip-gain handle, the envelope points and the Invert polarity item driven on
+# the real SampleClipView - the GUI half of the on-waveform editing wave, held by the drawn waveform's
+# own pixels (fork-NEW; under tests/src/gui, which the recipe's pathspec does not cover, so named here).
+tests/src/gui/ClipWaveformEditTest.cpp
+# cluster Q050-125 (2026-10): the clip gain handle, envelope points and polarity on the waveform - the unit's
+# report (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-Q050-125.md
