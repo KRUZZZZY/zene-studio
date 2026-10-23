@@ -682,6 +682,9 @@ set(LMMS_TESTS
 	src/core/RemotePluginAudioPortsTest.cpp
 	src/core/RemotePluginClientE2ETest.cpp
 	src/core/RenderJobQueueTest.cpp
+	# Q050-167: the render-side worker wake is a post, not a lock - the legacy macOS path's
+	# allocation and mutex are gone, and every period of a repeated wake delivers its jobs.
+	src/core/AudioWorkerWakeTest.cpp
 	src/core/RoutingGraphLiveTest.cpp
 	src/core/RoutingGraphScheduleTest.cpp
 	src/core/RoutingGraphTest.cpp
@@ -1824,6 +1827,19 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND LMMS_TEST_NAME STREQUAL "ThreadPoolTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE ${CMAKE_DL_LIBS})
+	endif()
+
+	# Q050-167: AudioWorkerWakeTest warms the wake on the MAIN thread with no worker parked,
+	# then interposes pthread_mutex_lock to prove the render-side post takes no mutex - the
+	# same shape and the same symbol export as ThreadPoolTest above. It also reads the two
+	# wake functions from the tree the binary was built from, for the platforms whose libSystem
+	# calls an executable cannot interpose.
+	if(LMMS_TEST_NAME STREQUAL "AudioWorkerWakeTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+			set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
+			target_link_libraries(${LMMS_TEST_NAME} PRIVATE ${CMAKE_DL_LIBS})
+		endif()
 	endif()
 
 	target_compile_features(${LMMS_TEST_NAME} PRIVATE cxx_std_20)

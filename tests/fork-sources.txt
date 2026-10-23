@@ -756,6 +756,7 @@ include/ArticulationMapEditor.h
 include/ArticulationRemap.h
 include/AudioAlsaWrite.h
 include/AudioBus.h
+include/AudioWorkerWake.h
 include/AudioInputPath.h
 include/AudioIoSetup.h
 include/AudioOssWrite.h
@@ -1336,6 +1337,7 @@ src/core/AudioInputPath.cpp
 src/core/AudioIoSetup.cpp
 src/core/AudioPortsModel.cpp
 src/core/AudioStretcher.cpp
+src/core/AudioWorkerWake.cpp
 src/core/AudioWideInputStage.cpp
 src/core/AutomationClipTransforms.cpp
 src/core/AutomationLatency.cpp
@@ -2313,6 +2315,7 @@ tests/src/core/AudioFileProcessorPlayheadTest.cpp
 tests/src/core/AudioFileProcessorWaveViewTest.cpp
 tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
+tests/src/core/AudioWorkerWakeTest.cpp
 tests/src/core/AutomationClipTransformTangentTestSupport.h
 tests/src/core/AutomationLaneChildrenTest.cpp
 tests/src/core/AutomationLanesTest.cpp
@@ -2954,3 +2957,5 @@ tests/src/core/ControlNoteNoOpUndoTest.cpp
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
 # cluster 908 (2026-10): fix and verification report for the ZynAddSubFx plugin mutex, hand-off and hosting getters.
 docs/qwen-fixes-2026-10/cluster-908.md
+# cluster Q050-167 (2026-10): the render-side worker wake is a post, not a lock - fix and verification report.
+docs/qwen-fixes-2026-10/cluster-Q050-167.md

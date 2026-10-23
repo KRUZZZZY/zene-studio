@@ -26,6 +26,15 @@ job is green, and packages come from the release page and nowhere else. Each pub
 digest is generated from the release itself by the publish step (`docs/RELEASING.md`), never typed
 into a file.
 
+**macOS support floor: 10.13 (High Sierra).** That is Qt 5.15's own minimum deployment target, and it
+is what the Apple build is configured and tested against (`CMakeLists.txt` prints the floor and warns
+if `MACOSX_DEPLOYMENT_TARGET` is set below it). The CI job's deployment target is derived from a
+dependency binary and today is macOS 11 or later — above the floor and supported — so the floor is a
+statement about the oldest OS the project supports, not the version CI happens to build for. Below
+10.13 nothing is claimed; the audio worker wake is one reason, because its lock-free path (the
+`__ulock` compare-and-wait the platform uses instead of `std::atomic::wait`, unavailable before macOS
+11) needs 10.12 or later.
+
 The builds are **unsigned**, so Windows SmartScreen and macOS Gatekeeper warn about an unknown
 developer. Read [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md) before you install or run
 anything: this alpha is unfinished, and that page lists what it is missing.

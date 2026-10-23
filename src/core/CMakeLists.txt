@@ -150,6 +150,9 @@ set(LMMS_SRCS
 	core/AudioEngine.cpp
 	core/AudioEngineProfiler.cpp
 	core/AudioEngineWorkerThread.cpp
+	# The worker wake's platform half (Q050-167): compare-and-wait on the generation word,
+	# with no mutex and no allocation on the render-side post.
+	core/AudioWorkerWake.cpp
 	core/AudioPortsModel.cpp
 	core/AudioResampler.cpp
 	# Pitch-preserving time stretch (0.3.0 feature-list row 30): WSOLA. The
