@@ -172,6 +172,11 @@ void SampleClipView::dropEvent( QDropEvent * _de )
 	if( StringPairDrag::decodeKey( _de ) == "samplefile" )
 	{
 		m_clip->setSampleFile( StringPairDrag::decodeValue( _de ) );
+		// Cluster new-p14-262 BUG 6: a dropped file replaces the clip's source, so this is a
+		// user edit the project must not lose silently - closing would otherwise not prompt.
+		// The mark is HERE and not inside setSampleFile because project loading reaches that
+		// setter too (SampleClip::loadSettings) and a loaded project must stay clean.
+		Engine::getSong()->setModified();
 		_de->accept();
 	}
 	else if( StringPairDrag::decodeKey( _de ) == "sampledata" )
