@@ -1278,6 +1278,9 @@ set(LMMS_TESTS
 	src/gui/PerformViewTest.cpp
 	# 0.5.0 L02 (WF-064): sub-scenes from the grid - select cells, make one, launch it - over the real application.
 	src/gui/SessionSubSceneGridTest.cpp
+	# 0.5.0 L14 (Q050-235): the touch workspace read once at start, and its launcher cells, scene and stop
+	# actions at 44 x 44 Qt logical pixels with the press landing anywhere in that rectangle.
+	src/gui/TouchWorkspaceTest.cpp
 	# M3 item 6: the take lanes panel - comp, audition and consolidate from its own buttons.
 	src/gui/TakeLanesPanelTest.cpp
 	# 0.5.0 F2 interface: an instrument track's output buses, MIDI parts, layer rack and per-voice modulation.
@@ -2944,6 +2947,7 @@ set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PerformViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSubSceneGridTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TouchWorkspaceTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(InstrumentSetupUiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5385,6 +5389,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-workflow-models.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlWorkflowModels PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-235: the touch workspace choice is a user preference - selected through window.appearance,
+	# one undo restores it, and a restarted instance over the same config reads the choice back.
+	add_test(NAME ControlTouchWorkspace
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-touch-workspace.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlTouchWorkspace PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

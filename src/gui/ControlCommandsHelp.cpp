@@ -26,7 +26,8 @@
  *    theme 21) with 'context' the focused control's help above the manual at its section (HelpTasks.h);
  *  - app.tours / app.tour (WF-140) list the guided tours and start one;
  *  - window.appearance (WF-130 / WF-131, W3 WF-118, 0.5.0 UX themes 17 and 23) sets the one interface zoom, the
- *    palette and accessible mode (Appearance.h), from the next start; a change is one undo step, as settings.set's. */
+ *    palette, accessible mode and the workspace (standard or touch) (Appearance.h), from the next start; a change
+ *    is one undo step, as settings.set's. */
 
 #include <QApplication>
 #include <QJsonArray>
@@ -97,7 +98,8 @@ ControlResult tour(const QJsonObject& args)
 }
 
 //! The appearance @a args ask for, on top of @a next: 'scale' is the one zoom, and the old 'font_scale' asks for that zoom
-//! when 'scale' is not given; 'accessible' switches accessible mode, and the old 'density' does when it is not given.
+//! when 'scale' is not given; 'accessible' switches accessible mode, and the old 'density' does when it is not given;
+//! 'workspace' picks the standard or touch workspace.
 appearance::Options requestedAppearance(const QJsonObject& args, appearance::Options next)
 {
 	const QJsonValue zoom = args.contains(QStringLiteral("scale")) ? args.value(QStringLiteral("scale")) : args.value(QStringLiteral("font_scale"));
@@ -105,6 +107,7 @@ appearance::Options requestedAppearance(const QJsonObject& args, appearance::Opt
 	next.palette = args.value(QStringLiteral("palette")).toString(next.palette);
 	if (args.contains(QStringLiteral("accessible"))) { next.accessible = args.value(QStringLiteral("accessible")).toBool(); }
 	else if (args.contains(QStringLiteral("density"))) { next.accessible = appearance::densityIsAccessible(args.value(QStringLiteral("density")).toString()); }
+	next.workspace = args.value(QStringLiteral("workspace")).toString(next.workspace);
 	return next;
 }
 
@@ -112,7 +115,8 @@ ControlResult appearanceCommand(const QJsonObject& args)
 {
 	const appearance::Options before = appearance::options();
 	const appearance::Options after = requestedAppearance(args, before);
-	const bool changed = after.scale != before.scale || after.palette != before.palette || after.accessible != before.accessible;
+	const bool changed = after.scale != before.scale || after.palette != before.palette || after.accessible != before.accessible
+		|| after.workspace != before.workspace;
 	if (changed)
 	{
 		appearance::setOptions(after);
@@ -161,13 +165,16 @@ void registerHelpCommands(ControlRegistry& registry)
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), false, true, tour);
 	add(registry, "window.appearance", QStringLiteral("How the interface looks, from the next start: 'scale' (0.5..3), the one "
 		"interface zoom - text, icons and controls scale together; an explicit QT_SCALE_FACTOR still wins - 'palette' (dark, "
-		"high_contrast - text at 7:1 on every surface - or light) and 'accessible', accessible mode: larger click targets, "
-		"strong focus rings, the high-contrast palette and reduced motion. Kept for older callers: 'font_scale' sets the zoom "
+		"high_contrast - text at 7:1 on every surface - or light), 'accessible', accessible mode: larger click targets, "
+		"strong focus rings, the high-contrast palette and reduced motion, and 'workspace' (standard or touch): the touch "
+		"workspace holds the launcher's cells, scene and stop buttons to at least 44 x 44 Qt logical pixels at 100% zoom. "
+		"Kept for older callers: 'font_scale' sets the zoom "
 		"when 'scale' is not given, and 'density' sets accessible mode (standard off; comfortable or touch on) when "
-		"'accessible' is not given. A field left out keeps its value; none reads them. A preference in the config file; a "
-		"change is one undo step."),
+		"'accessible' is not given - it does not choose the workspace. A field left out keeps its value; none reads them. "
+		"A preference in the config file; a change is one undo step."),
 		objectSchema({{QStringLiteral("scale"), numberProperty()}, {QStringLiteral("palette"), enumProperty(appearance::paletteNames())},
-			{QStringLiteral("accessible"), booleanProperty()}, {QStringLiteral("font_scale"), numberProperty()},
+			{QStringLiteral("accessible"), booleanProperty()}, {QStringLiteral("workspace"), enumProperty(appearance::workspaceNames())},
+			{QStringLiteral("font_scale"), numberProperty()},
 			{QStringLiteral("density"), enumProperty(appearance::densityNames())}}), true, false, appearanceCommand);
 }
 

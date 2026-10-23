@@ -161,6 +161,12 @@ LMMS_EXPORT qreal focusRingWidth();
 LMMS_EXPORT double targetFactor();
 //! A clickable target's side: size::target times targetFactor(), never below it.
 LMMS_EXPORT int targetSize();
+//! 0.5.0 L14 (Q050-235): whether this run draws the touch workspace (Appearance.h) - read once, like the palette.
+LMMS_EXPORT bool touchWorkspace();
+/*! The side a named tap target is held to: targetSize(), and at least Appearance's touchTargetSide (44 Qt logical
+ *  pixels) in the touch workspace. A widget whose explicit size bypasses targetSize() (the launcher's cells, a
+ *  fader) takes this so its real hit rectangle - not only its artwork - meets the touch minimum. */
+LMMS_EXPORT int tapTargetSize();
 //! @a css with every length of its padding, min-height and min-width declarations scaled by @a factor
 //! (accessible mode's stylesheet; exposed for the test).
 LMMS_EXPORT QString scaleMetrics(const QString& css, double factor);

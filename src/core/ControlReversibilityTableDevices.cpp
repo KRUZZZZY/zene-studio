@@ -119,8 +119,8 @@ const ReversibilityRow kDeviceRows[] = {
 	R("app.help", RC::NotMutating, false, "it opens the manual or the command reference: interface state", "no write", ""),
 	R("app.tours", RC::NotMutating, false, "it lists the guided tours. Nothing is written", "no write", ""),
 	R("app.tour", RC::NotMutating, false, "it starts a guided tour: interface state", "no write (Close ends it)", ""),
-	R("window.appearance", RC::TrueInverse, true, "it writes the interface zoom, palette and accessible-mode preferences (config "
-		"file) - three bounded values", "action checkpoint: the recorded undo step writes the previous appearance back", ""),
+	R("window.appearance", RC::TrueInverse, true, "it writes the interface zoom, palette, accessible-mode and workspace "
+		"preferences (config file) - four bounded values", "action checkpoint: the recorded undo step writes the previous appearance back", ""),
 	// 0.5.0 L07 (W3): the note tools.
 	R("note.invert", RC::TrueInverse, true, "it changes the keys of notes", "MidiClip journal checkpoint", ""),
 	R("note.arpeggiate", RC::TrueInverse, true, "it replaces chords with runs", "MidiClip journal checkpoint", ""),

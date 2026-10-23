@@ -34286,12 +34286,19 @@
           },
           "scale": {
             "type": "number"
+          },
+          "workspace": {
+            "enum": [
+              "standard",
+              "touch"
+            ],
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "How the interface looks, from the next start: 'scale' (0.5..3), the one interface zoom - text, icons and controls scale together; an explicit QT_SCALE_FACTOR still wins - 'palette' (dark, high_contrast - text at 7:1 on every surface - or light) and 'accessible', accessible mode: larger click targets, strong focus rings, the high-contrast palette and reduced motion. Kept for older callers: 'font_scale' sets the zoom when 'scale' is not given, and 'density' sets accessible mode (standard off; comfortable or touch on) when 'accessible' is not given. A field left out keeps its value; none reads them. A preference in the config file; a change is one undo step.",
+      "description": "How the interface looks, from the next start: 'scale' (0.5..3), the one interface zoom - text, icons and controls scale together; an explicit QT_SCALE_FACTOR still wins - 'palette' (dark, high_contrast - text at 7:1 on every surface - or light), 'accessible', accessible mode: larger click targets, strong focus rings, the high-contrast palette and reduced motion, and 'workspace' (standard or touch): the touch workspace holds the launcher's cells, scene and stop buttons to at least 44 x 44 Qt logical pixels at 100% zoom. Kept for older callers: 'font_scale' sets the zoom when 'scale' is not given, and 'density' sets accessible mode (standard off; comfortable or touch on) when 'accessible' is not given - it does not choose the workspace. A field left out keeps its value; none reads them. A preference in the config file; a change is one undo step.",
       "group": "window",
       "id": "window.appearance",
       "mutating": true,

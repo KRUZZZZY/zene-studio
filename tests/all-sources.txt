@@ -3075,6 +3075,7 @@ tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
+tests/src/gui/TouchWorkspaceTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/TrackRenderMenuTest.cpp

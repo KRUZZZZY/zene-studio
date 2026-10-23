@@ -2986,3 +2986,10 @@ docs/qwen-fixes-2026-10/cluster-new-p14-97-port.md
 docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md
 # cluster new-p17-168-port (2026-10): the Microtuner dialog's .scl file path regression (fork-NEW) - a file that describes no scale must be refused before the Song's scale or the session table is touched.
 tests/src/gui/MicrotunerScaleFileTest.cpp
+# cluster Q050-235.1 (2026-10): the touch workspace's launcher hit-area regression (fork-NEW
+# GUI test) and its control-socket restart persistence transcript (fork-NEW .py driver). Both
+# are named here by hand like the entries above: the recipe's awk keep-list admits only the
+# tests/src/core names it lists, so a tests/src/gui source and a tests/*.py driver are
+# registered by name rather than derived, and `bash tests/fork-sources-gate.sh` accepts either.
+tests/src/gui/TouchWorkspaceTest.cpp
+tests/control-touch-workspace.py
