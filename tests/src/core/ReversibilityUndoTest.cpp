@@ -386,15 +386,54 @@ private slots:
 		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
 		const QString pluginId = QStringLiteral("inst");
 
+		// The state load is only an INVERSE if replaying it restores what the
+		// load REPLACED. Saving and loading the same document happens to leave
+		// the device where it already was, so that shape passes even over an
+		// inverse that restores the wrong state. Move the device first, then
+		// load the saved document, then follow the inverse and read back the
+		// moved state - the state the load destroyed.
+		int index = -1;
+		double before = 0.0;
+		double wanted = 0.0;
+		for (int candidate = 0; candidate < 256 && index < 0; ++candidate)
+		{
+			const ControlResult read = run(QStringLiteral("plugin.param_get"),
+				{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+					{QStringLiteral("index"), candidate}});
+			if (!read.ok) { break; }
+			const QJsonObject parameter = read.result.value(QStringLiteral("parameter")).toObject();
+			const double low = parameter.value(QStringLiteral("min")).toDouble();
+			const double high = parameter.value(QStringLiteral("max")).toDouble();
+			if (parameter.value(QStringLiteral("type")).toString() != QLatin1String("number")
+				|| high <= low)
+			{
+				continue;
+			}
+			index = candidate;
+			before = parameter.value(QStringLiteral("value")).toDouble();
+			wanted = before > low ? low : high;  // a value the device is not at
+		}
+		QVERIFY2(index >= 0, "the loaded instrument exposes no numeric parameter to move");
+
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		const QString file = dir.path() + QStringLiteral("/state.xml");
 		QVERIFY(run(QStringLiteral("plugin.state_save"),
 			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
 				{QStringLiteral("path"), file}}).ok);
+
+		QVERIFY(run(QStringLiteral("plugin.param_set"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
+				{QStringLiteral("index"), index}, {QStringLiteral("value"), wanted}}).ok);
+		QVERIFY(qAbs(deviceParameterValue(track, pluginId, index) - wanted) < 1e-6);
+
 		QVERIFY(run(QStringLiteral("plugin.state_load"),
 			{{QStringLiteral("target"), track}, {QStringLiteral("plugin"), pluginId},
 				{QStringLiteral("path"), file}}).ok);
+		// The load really replaced the moved state with the saved document.
+		QVERIFY2(qAbs(deviceParameterValue(track, pluginId, index) - before) < 1e-6,
+			"plugin.state_load did not apply the saved document, so the replay below "
+			"would prove nothing");
 
 		const QJsonObject recorded = stateOf(QStringLiteral("plugin.state_load"));
 		QVERIFY(!recorded.isEmpty());
@@ -407,13 +446,82 @@ private slots:
 				"command of the surface").arg(op)));
 
 		// The promise `reversible: true` makes: a caller that follows the inverse
-		// must be able to run it. It refused, for want of the arguments the
-		// advertised command requires.
+		// must be able to run it - AND the run must restore the state the load
+		// replaced, not the state it installed.
 		const ControlResult replay = run(op, inverse.value(QStringLiteral("args")).toObject());
 		QVERIFY2(replay.ok, qPrintable(QStringLiteral("plugin.state_load advertised the "
 			"replayable inverse %1%2, which the registry refused: %3").arg(op,
 				QString::fromUtf8(QJsonDocument(inverse).toJson(QJsonDocument::Compact)),
 				replay.errorMessage)));
+		QVERIFY2(qAbs(deviceParameterValue(track, pluginId, index) - wanted) < 1e-6,
+			qPrintable(QStringLiteral("replaying plugin.state_load's inverse left parameter "
+				"%1 at %2; the load replaced %3, so the inverse restored the wrong state")
+				.arg(index).arg(deviceParameterValue(track, pluginId, index)).arg(wanted)));
+	}
+
+
+	//! The last two `true_inverse` rows that had no behavioural proof anywhere
+	//! (cluster new-p8-205): `plugin.midi_part_set` and `rack.layer_set`. The
+	//! contract calls both reversible through a recorded action checkpoint, but
+	//! an undo acceptance suite that only names them in the table cannot tell a
+	//! missing inverse from a working one. Each is applied, read back, undone
+	//! once and read back again - the pre-command state, which is what A16
+	//! promises and what the row's mechanism claims.
+	void partAndLayerEditsUndoToTheirPreCommandState()
+	{
+		const QString track = addInstrumentTrack();
+		if (track.isEmpty()) { QSKIP("this build exposes no loadable built-in instrument"); }
+		const ControlResult added = run(QStringLiteral("plugin.midi_part_add"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("midi_channel"), 3},
+				{QStringLiteral("low_key"), 40}, {QStringLiteral("high_key"), 80}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		QCOMPARE(added.result.value(QStringLiteral("part_count")).toInt(), 1);
+
+		// plugin.midi_part_set: change the channel and the range, then undo.
+		QVERIFY(run(QStringLiteral("plugin.midi_part_set"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("part"), QStringLiteral("part-0")},
+				{QStringLiteral("midi_channel"), 7}, {QStringLiteral("low_key"), 12},
+				{QStringLiteral("high_key"), 24}}).ok);
+		QJsonObject part = run(QStringLiteral("plugin.midi_parts"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("parts"))
+			.toArray().at(0).toObject();
+		QCOMPARE(part.value(QStringLiteral("midi_channel")).toInt(), 7);
+		QCOMPARE(part.value(QStringLiteral("low_key")).toInt(), 12);
+		QCOMPARE(stateOf(QStringLiteral("plugin.midi_part_set"))
+			.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(),
+			QStringLiteral("plugin.midi_part_set"));
+		REV_UNDO_OR_FAIL();
+		part = run(QStringLiteral("plugin.midi_parts"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("parts"))
+			.toArray().at(0).toObject();
+		QCOMPARE(part.value(QStringLiteral("midi_channel")).toInt(), 3);
+		QCOMPARE(part.value(QStringLiteral("low_key")).toInt(), 40);
+		QCOMPARE(part.value(QStringLiteral("high_key")).toInt(), 80);
+
+		// rack.layer_set: layer-0 is the track's own instrument, so its level is
+		// the track's volume and only mute/solo are settable. Both are read back.
+		const QJsonObject beforeLayer = run(QStringLiteral("rack.layers"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("layers"))
+			.toArray().at(0).toObject();
+		QVERIFY(!beforeLayer.value(QStringLiteral("muted")).toBool());
+		QVERIFY(!beforeLayer.value(QStringLiteral("solo")).toBool());
+		QVERIFY(run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), track}, {QStringLiteral("layer"), QStringLiteral("layer-0")},
+				{QStringLiteral("muted"), true}, {QStringLiteral("solo"), true}}).ok);
+		QJsonObject layer = run(QStringLiteral("rack.layers"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("layers"))
+			.toArray().at(0).toObject();
+		QVERIFY(layer.value(QStringLiteral("muted")).toBool());
+		QVERIFY(layer.value(QStringLiteral("solo")).toBool());
+		QCOMPARE(stateOf(QStringLiteral("rack.layer_set"))
+			.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(),
+			QStringLiteral("rack.layer_set"));
+		REV_UNDO_OR_FAIL();
+		layer = run(QStringLiteral("rack.layers"),
+			{{QStringLiteral("target"), track}}).result.value(QStringLiteral("layers"))
+			.toArray().at(0).toObject();
+		QVERIFY(!layer.value(QStringLiteral("muted")).toBool());
+		QVERIFY(!layer.value(QStringLiteral("solo")).toBool());
 	}
 
 
