@@ -2976,3 +2976,5 @@ docs/qwen-fixes-2026-10/cluster-Q050-125.md
 docs/qwen-fixes-2026-10/cluster-new-p14-97-port.md
 # cluster new-p12-342-port (2026-10): the browser search view keeps the library scan off the status line (fork-NEW regression test).
 docs/qwen-fixes-2026-10/cluster-new-p12-342-port.md
+# cluster new-p17-168-port (2026-10): the Microtuner dialog's .scl file path regression (fork-NEW) - a file that describes no scale must be refused before the Song's scale or the session table is touched.
+tests/src/gui/MicrotunerScaleFileTest.cpp

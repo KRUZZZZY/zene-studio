@@ -1230,6 +1230,9 @@ set(LMMS_TESTS
 	src/gui/FeedbackModeActionTest.cpp
 	# Edit > Session Tuning (mts.load_scale / load_keymap / reset / master_set).
 	src/gui/SessionTuningMenuTest.cpp
+	# The Microtuner dialog's own .scl file path: a file that describes no scale is refused
+	# before the Song's scale or the session table is touched.
+	src/gui/MicrotunerScaleFileTest.cpp
 	# File > Recover Recordings (record.recovery_*), over two journalled WAV takes.
 	src/gui/RecordingRecoveryMenuTest.cpp
 	# File > Render Presets (export.preset_* / render.render), over a throwaway preset store.
@@ -2991,6 +2994,7 @@ set_tests_properties(ScriptBudgetActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(EffectHostingMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FeedbackModeActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTuningMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MicrotunerScaleFileTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RecordingRecoveryMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RenderPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RenderRangeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
