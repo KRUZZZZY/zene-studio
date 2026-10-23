@@ -197,6 +197,173 @@ auto analyzerDebugTimerReportsAfter(std::chrono::seconds elapsed) -> bool
 	return false;
 }
 
+/*!
+ * Probes the SA_DEBUG timing collector of the Spectrum Analyzer.
+ *
+ * The collector is looked up through the Analyzer type, so this helper also
+ * compiles on a tree whose Analyzer has no collector at all: the pre-fix code
+ * kept the count, the sum and the peak in three separate atomics that the GUI
+ * thread reset one after another, so a callback between two of those resets
+ * put its count into the next report and its duration into the current one.
+ *
+ * The measurements are injected, so the probe is deterministic: no clock, no
+ * sleep, no thread and no race.
+ *
+ * Returns an empty string when every snapshot describes exactly one interval,
+ * and the reason for the failure otherwise.
+ */
+template<typename AnalyzerType>
+auto analyzerTimingSnapshotProbe() -> QString
+{
+	if constexpr (!requires { typename AnalyzerType::TimingCollector; })
+	{
+		return QStringLiteral("Analyzer has no coherent timing snapshot collector");
+	}
+	else
+	{
+		using Collector = typename AnalyzerType::TimingCollector;
+		using Snapshot = typename Collector::Snapshot;
+
+		Collector collector;
+		Snapshot snapshot;
+
+		// The first interval holds two callbacks.
+		collector.record(100);
+		collector.record(300);
+		// The GUI thread asks for the interval that ends now. The callback
+		// that lands after the request belongs to the next interval.
+		collector.request();
+		collector.record(50);
+
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the requested interval");
+		}
+		if (snapshot.count != 2 || snapshot.sumNs != 400 || snapshot.maxNs != 300)
+		{
+			return QStringLiteral("the first snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The next request closes the interval the late callback started.
+		collector.request();
+		collector.record(70);
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the second interval");
+		}
+		if (snapshot.count != 1 || snapshot.sumNs != 50 || snapshot.maxNs != 50)
+		{
+			return QStringLiteral("the second snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The third interval holds the callback of 70 ns and two more; the
+		// callback that lands after the request starts the fourth interval.
+		collector.record(90);
+		collector.record(110);
+		collector.request();
+		collector.record(10);
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the third interval");
+		}
+		if (snapshot.count != 3 || snapshot.sumNs != 270 || snapshot.maxNs != 110)
+		{
+			return QStringLiteral("the third snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The fourth interval holds the callback of 10 ns alone.
+		collector.request();
+		collector.record(20);
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("no snapshot was published for the fourth interval");
+		}
+		if (snapshot.count != 1 || snapshot.sumNs != 10 || snapshot.maxNs != 10)
+		{
+			return QStringLiteral("the fourth snapshot mixes intervals: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// Without a request there is nothing to take.
+		if (collector.take(snapshot))
+		{
+			return QStringLiteral("the collector published a snapshot nobody asked for");
+		}
+		return QString();
+	}
+}
+
+/*!
+ * Probes the SA_DEBUG timing collector of the Spectrum Analyzer for the case
+ * that no callback follows the GUI request.
+ *
+ * The GUI thread asks for the interval that ends now. The baseline reported
+ * the accumulated count, sum and peak of that interval even when the audio
+ * thread did not run again, so the measurements of an interval must stay
+ * reportable until they are taken: a collector that only publishes from the
+ * audio callback loses them as soon as the callbacks stop.
+ *
+ * The measurements are injected, so the probe is deterministic: no clock, no
+ * sleep, no thread and no race.
+ *
+ * Returns an empty string when the measurements stay reportable, and the
+ * reason for the failure otherwise.
+ */
+template<typename AnalyzerType>
+auto analyzerTimingNoCallbackAfterRequestProbe() -> QString
+{
+	if constexpr (!requires { typename AnalyzerType::TimingCollector; })
+	{
+		return QStringLiteral("Analyzer has no coherent timing snapshot collector");
+	}
+	else
+	{
+		using Collector = typename AnalyzerType::TimingCollector;
+		using Snapshot = typename Collector::Snapshot;
+
+		Collector collector;
+		Snapshot snapshot;
+
+		// Two callbacks are measured, then the GUI thread asks for the
+		// interval that ends now.
+		collector.record(100);
+		collector.record(300);
+		collector.request();
+
+		// No callback follows the request: the measurements of the interval
+		// must still be reportable.
+		if (!collector.take(snapshot))
+		{
+			return QStringLiteral("the accumulated measurements were lost because no callback followed the request");
+		}
+		if (snapshot.count != 2 || snapshot.sumNs != 400 || snapshot.maxNs != 300)
+		{
+			return QStringLiteral("the report of an interval without a following callback is wrong: count=%1 sum=%2 peak=%3")
+				.arg(static_cast<qulonglong>(snapshot.count))
+				.arg(static_cast<qulonglong>(snapshot.sumNs))
+				.arg(static_cast<qulonglong>(snapshot.maxNs));
+		}
+
+		// The interval was taken, so the next report has nothing to show.
+		if (collector.take(snapshot))
+		{
+			return QStringLiteral("the collector reported the same interval twice");
+		}
+		return QString();
+	}
+}
+
 //! 0 = Continue, 1 = ContinueIfNotQuiet, 2 = Sleep
 enum StatusCode
 {
@@ -259,6 +426,10 @@ private slots:
 	void analyzerDebugTimerUsesMonotonicTimePoint();
 	void analyzerDebugTimerKeepsStdoutOffAudioThread();
 	void analyzerConstructorInitializesTheDebugMembers();
+	void analyzerTimingSnapshotStaysCoherent();
+	void analyzerTimingSurvivesNoCallbackAfterRequest();
+	void analyzerTimingReportUsesOneCoherentSnapshot();
+	void analyzerTimingCollectorCoversMaximumSixSecondReportInterval();
 
 private:
 	auto createEffect() const -> std::unique_ptr<Effect>;
@@ -888,22 +1059,101 @@ void AudioPluginTest::analyzerConstructorInitializesTheDebugMembers()
 	// debug timer. The plugin's implementation is not linked into this generic
 	// AudioPlugin test host (see the comment above the Analyzer include), so the
 	// constructor's initializer list is read from the product source.
-	const QString analyzerPath = QFileInfo(QString::fromUtf8(__FILE__)).dir()
-		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/Analyzer.cpp"));
-	QFile source(analyzerPath);
+	const QString analyzerDir = QFileInfo(QString::fromUtf8(__FILE__)).dir()
+		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer"));
+	QFile source(analyzerDir + QStringLiteral("/Analyzer.cpp"));
 	QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.errorString()));
 	const QByteArray text = source.readAll();
+	QFile header(analyzerDir + QStringLiteral("/Analyzer.h"));
+	QVERIFY2(header.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(header.errorString()));
+	const QByteArray declarations = header.readAll();
+
 	const int ctor = text.indexOf("Analyzer::Analyzer(");
 	QVERIFY2(ctor > 0, "the Analyzer constructor was not found in the product source");
 	const int body = text.indexOf("m_processorThread.start()", ctor);
 	QVERIFY2(body > ctor, "the end of the Analyzer constructor was not found in the product source");
 	const QByteArray initializers = text.mid(ctor, body - ctor);
+	// Every scalar SA_DEBUG member that still exists must be initialized by the
+	// constructor. A member that no longer exists needs no initializer (the
+	// timing counters are gone once the coherent collector owns them, and the
+	// collector initializes its own storage).
+	const bool lastDumpTimeDeclared = declarations.contains("m_last_dump_time");
+	QVERIFY2(lastDumpTimeDeclared, "the Analyzer no longer stores the SA_DEBUG report time");
 	for (const char* member : {"m_last_dump_time", "m_dump_count", "m_sum_execution_ns", "m_max_execution_ns"})
 	{
+		if (!declarations.contains(QByteArray{member}))
+		{
+			continue;
+		}
 		QVERIFY2(initializers.contains(QByteArray{member} + '('),
 			qPrintable(QStringLiteral("the Analyzer constructor does not initialize %1")
 				.arg(QString::fromUtf8(member))));
 	}
+}
+
+void AudioPluginTest::analyzerTimingSnapshotStaysCoherent()
+{
+	// One report must never mix samples from two intervals: the count, the
+	// sum and the peak always describe the same set of callbacks. The
+	// measurements are injected, so the probe is deterministic.
+	const QString failure = analyzerTimingSnapshotProbe<Analyzer>();
+	QVERIFY2(failure.isEmpty(), qPrintable(failure));
+}
+
+void AudioPluginTest::analyzerTimingSurvivesNoCallbackAfterRequest()
+{
+	// The baseline reported the accumulated count, sum and peak of an interval
+	// even when the audio thread did not run again, so the measurements of an
+	// interval must stay reportable until they are taken. The measurements
+	// are injected, so the probe is deterministic.
+	const QString failure = analyzerTimingNoCallbackAfterRequestProbe<Analyzer>();
+	QVERIFY2(failure.isEmpty(), qPrintable(failure));
+}
+
+void AudioPluginTest::analyzerTimingReportUsesOneCoherentSnapshot()
+{
+	// The reporter must not read (and reset) the count, the sum and the peak
+	// one after another: a callback between two of those reads lands in the
+	// next report with its duration in the current one. The source is read
+	// through __FILE__ because this target does not link the Spectrum
+	// Analyzer plugin.
+	const QString analyzerPath = QFileInfo(QString::fromUtf8(__FILE__)).dir()
+		.filePath(QStringLiteral("../../../plugins/SpectrumAnalyzer/Analyzer.cpp"));
+	QFile source(analyzerPath);
+	QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.errorString()));
+	const QString text = QString::fromUtf8(source.readAll());
+
+	QVERIFY2(!text.contains(QStringLiteral(".exchange(0")),
+		"Analyzer resets the count, the sum and the peak with separate exchanges, "
+		"so one report can mix samples from two intervals");
+	QVERIFY2(text.contains(QStringLiteral("m_timing.record(")),
+		"the audio callback must record into the coherent timing collector");
+	QVERIFY2(text.contains(QStringLiteral("m_timing.request("))
+		&& text.contains(QStringLiteral("m_timing.take(")),
+		"the GUI reporter must close one interval and take that interval's measurements");
+}
+
+void AudioPluginTest::analyzerTimingCollectorCoversMaximumSixSecondReportInterval()
+{
+	// The engine supports 192 kHz and 32-frame periods: 6000 callbacks/second.
+	// The GUI timer checks once a second and reports after five seconds, so a
+	// six-second interval at that supported rate contains 36000 measurements.
+	using Collector = Analyzer::TimingCollector;
+	Collector collector;
+	Collector::Snapshot snapshot;
+	constexpr std::uint64_t callbacks = 36000;
+	std::uint64_t expectedSum = 0;
+	for (std::uint64_t i = 1; i <= callbacks; ++i)
+	{
+		expectedSum += i;
+		collector.record(i);
+	}
+	collector.request();
+	QVERIFY(collector.take(snapshot));
+	QCOMPARE(snapshot.count, callbacks);
+	QCOMPARE(snapshot.sumNs, expectedSum);
+	QCOMPARE(snapshot.maxNs, callbacks);
+	QVERIFY(snapshot.dropped == 0);
 }
 
 QTEST_MAIN(AudioPluginTest)
