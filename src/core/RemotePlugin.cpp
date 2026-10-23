@@ -1068,8 +1068,11 @@ void RemotePlugin::refuseIncompleteMessage(const message & _m)
 bool RemotePlugin::processMessage( const message & _m )
 {
 	lock();
-	message reply_message( _m.id );
+	// The answer to the message, if it needs one. It is kept as plain values, not as a message: building a
+	// message allocates (the vector of its arguments), and this handler can run on the audio thread.
 	bool reply = false;
+	int replyValue = 0;
+	int replyArgumentCount = 0;
 	// The handlers below read their arguments without a bounds check, and a complete message can still carry fewer
 	// than its id needs. Such a message is a protocol mismatch: it is refused before anything is read.
 	if( static_cast<int>( _m.size() ) < requiredArgumentCount( _m.id ) )
@@ -1091,12 +1094,14 @@ bool RemotePlugin::processMessage( const message & _m )
 
 		case IdSampleRateInformation:
 			reply = true;
-			reply_message.addInt( Engine::audioEngine()->outputSampleRate() );
+			replyValue = static_cast<int>( Engine::audioEngine()->outputSampleRate() );
+			replyArgumentCount = 1;
 			break;
 
 		case IdBufferSizeInformation:
 			reply = true;
-			reply_message.addInt( Engine::audioEngine()->framesPerPeriod() );
+			replyValue = static_cast<int>( Engine::audioEngine()->framesPerPeriod() );
+			replyArgumentCount = 1;
 			break;
 
 		case IdChangeInputCount:
@@ -1205,10 +1210,13 @@ bool RemotePlugin::processMessage( const message & _m )
 	{
 		if( m_inProcessPeriod )
 		{
-			// On the audio thread the reply is written without blocking. If it cannot be, the client
-			// is left waiting for it, which is the same failure as a lost client; it is reported later.
+			// On the audio thread the reply is written without blocking, and without a message: building one
+			// would allocate. If it cannot be written, the client is left waiting for it, which is the same
+			// failure as a lost client; it is reported later.
 			std::array<char, 512> frame{};
-			const auto size = frameFromMessage( frame.data(), frame.size(), reply_message );
+			const std::int32_t values[1] = { replyValue };
+			const auto size = frameFromInts( frame.data(), frame.size(), _m.id,
+				replyArgumentCount > 0 ? values : nullptr, static_cast<std::size_t>( replyArgumentCount ) );
 			if( size == 0 || sendFrameNonBlocking( frame.data(), size ) != SendResult::Sent )
 			{
 				m_pendingReplyLost = true;
@@ -1218,6 +1226,8 @@ bool RemotePlugin::processMessage( const message & _m )
 		}
 		else
 		{
+			message reply_message( _m.id );
+			if ( replyArgumentCount > 0 ) { reply_message.addInt( replyValue ); }
 			sendMessage( reply_message );
 		}
 	}

@@ -77,9 +77,18 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <thread>
 #include <vector>
+
+#include <QFile>
+#include <QTemporaryDir>
+
+#ifndef Q_OS_WIN
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -173,6 +182,45 @@ inline auto fakeClientExecutable() -> QString { return {}; }
 
 //! Name of the real client executable as RemotePlugin::init() resolves it.
 inline constexpr auto RealClientName = "RemoteZynAddSubFx";
+
+#ifndef Q_OS_WIN
+//! Captures what is written to stderr while it is alive, so a test can see WHEN the host printed a client's
+//! debug text: inside a period (the audio thread) or later, on the main thread. stderr is unbuffered, so what
+//! was written is in the file at once.
+class StderrCapture
+{
+public:
+	explicit StderrCapture(const QString& path) : m_path{path}
+	{
+		m_saved = ::dup(STDERR_FILENO);
+		m_file = ::open(path.toUtf8().constData(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+		if (m_file >= 0) { ::dup2(m_file, STDERR_FILENO); }
+	}
+
+	~StderrCapture()
+	{
+		std::fflush(stderr);
+		if (m_file >= 0) { ::dup2(m_saved, STDERR_FILENO); ::close(m_file); }
+		if (m_saved >= 0) { ::close(m_saved); }
+	}
+
+	StderrCapture(const StderrCapture&) = delete;
+	StderrCapture& operator=(const StderrCapture&) = delete;
+
+	//! Everything that was written to stderr so far.
+	auto text() const -> QString
+	{
+		QFile file{m_path};
+		if (!file.open(QIODevice::ReadOnly)) { return {}; }
+		return QString::fromUtf8(file.readAll());
+	}
+
+private:
+	QString m_path;
+	int m_saved = -1;
+	int m_file = -1;
+};
+#endif // Q_OS_WIN
 
 //! Points LMMS_PLUGIN_DIR at a directory for one test, and restores what was there before when the test ends.
 class ScopedPluginDir
@@ -1390,6 +1438,90 @@ private slots:
 
 		// The main thread applies it: its timer runs every 10 ms, so a short event-loop wait is enough.
 		QTRY_COMPARE_WITH_TIMEOUT(ports.audioPortsModel().out().channelCount(), ch_cnt_t{4}, 2000);
+	}
+
+	/*!
+	 * A debug text a client sends while the host waits for a period's reply is printed on the main
+	 * thread, not while the audio thread is inside the period: a print is a log, and a log allocates and
+	 * locks. The text is copied into a fixed slot during the period and printed later.
+	 */
+	void debugTextDuringPeriodIsPrintedOnTheMainThread()
+	{
+#ifndef Q_OS_WIN
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the deferred debug-text "
+				"path is UNEXERCISED by this run");
+		}
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto logPath = dir.filePath(QStringLiteral("stderr.log"));
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		StderrCapture capture{logPath};
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("debug")}),
+			"could not start/connect the debug fake client");
+		QVERIFY2(!plugin.failed(), "the debug fake client did not complete the handshake");
+
+		// The period: the client sends its debug text before it answers, so the host reads it while it
+		// waits for the reply - on the audio thread.
+		plugin.process();
+
+		// Nothing was printed: the text waits for the main thread.
+		QVERIFY2(!capture.text().contains(QStringLiteral("zene-remote-debug-marker")),
+			"the client's debug text was printed while the audio thread was inside the period");
+
+		// The main thread prints it, through the deferred work the period recorded.
+		QTRY_VERIFY_WITH_TIMEOUT(capture.text().contains(QStringLiteral("zene-remote-debug-marker")), 2000);
+#else
+		QSKIP("the stderr capture needs POSIX");
+#endif
+	}
+
+	/*!
+	 * A client message that arrives while the host waits for a period's reply is handled on the audio
+	 * thread, and handling it must not allocate: the frame is read into storage that was reserved once,
+	 * and the answer is written as plain values, not as a message. The audio thread may neither allocate
+	 * nor free.
+	 */
+	void clientMessageDuringPeriodIsParsedWithoutAllocating()
+	{
+		const QString client = fakeClientExecutable();
+		if (client.isEmpty() || !QFile::exists(client))
+		{
+			QSKIP("the deterministic fake client was not built (POSIX only); the allocation-free parse "
+				"is UNEXERCISED by this run");
+		}
+
+		DynamicPlanarPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+		const ScopedReplyBudget replyInTime;
+		QVERIFY2(startClient(plugin, client, {QStringLiteral("debug")}),
+			"could not start/connect the debug fake client");
+		QVERIFY2(!plugin.failed(), "the debug fake client did not complete the handshake");
+
+		// The client answers every period with a debug text and a sample-rate request before its reply,
+		// so every period parses a client message that carries an argument and has to answer it there.
+		std::uint64_t allocations = 0;
+		std::uint64_t frees = 0;
+		bool answered = false;
+		lmms::test::tlCountAllocations = true;
+		for (int period = 0; period < 3; ++period)
+		{
+			lmms::test::resetAllocationCount();
+			answered = plugin.process() || answered;
+			allocations += lmms::test::tlAllocationCount;
+			frees += lmms::test::tlFreeCount;
+		}
+		lmms::test::tlCountAllocations = false;
+
+		// The client answered at least one period, so a message was really read during a period.
+		QVERIFY2(answered, "the client never answered a period, so no message was parsed");
+		QCOMPARE(allocations, std::uint64_t{0});
+		QCOMPARE(frees, std::uint64_t{0});
 	}
 
 	/*!
