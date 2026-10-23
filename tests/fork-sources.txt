@@ -2971,3 +2971,5 @@ tests/src/gui/ClipWaveformEditTest.cpp
 # cluster Q050-125 (2026-10): the clip gain handle, envelope points and polarity on the waveform - the unit's
 # report (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-Q050-125.md
+# cluster new-p14-97 (2026-10): the cluster report for the placeholder settings defect (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p14-97-port.md

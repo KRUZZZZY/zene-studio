@@ -106,20 +106,73 @@ void Effect::setId( int id )
 	ProjectIds::observe( id );
 }
 
-void Effect::saveSettings( QDomDocument & _doc, QDomElement & _this )
+void Effect::saveGenericSettings( QDomDocument & _doc, QDomElement & _element )
 {
-	m_enabledModel.saveSettings( _doc, _this, "on" );
-	m_wetDryModel.saveSettings( _doc, _this, "wet" );
-	m_autoQuitModel.saveSettings( _doc, _this, "autoquit" );
-	controls()->saveState( _doc, _this );
+	m_enabledModel.saveSettings( _doc, _element, "on" );
+	m_wetDryModel.saveSettings( _doc, _element, "wet" );
+	m_autoQuitModel.saveSettings( _doc, _element, "autoquit" );
 
 	// The effect's stable id (SPEC-stable-ids.md slice 2). An ATTRIBUTE on the
 	// effect's own element, never a child element: the loader walks the
 	// element's children and turns each one into control state, so a child
 	// would become a phantom control group on load.
-	_this.setAttribute( "id", m_id );
+	_element.setAttribute( "id", m_id );
 	// 0.5.0 L10 (W3): the user's options for this device, as attributes written only when set.
-	m_deviceOptions.save( _this );
+	m_deviceOptions.save( _element );
+}
+
+
+QMap<QString, QString> Effect::genericSettings()
+{
+	// The canonical form: what a save writes for this device's generic
+	// settings, read back as attributes.
+	QDomDocument doc;
+	QDomElement scratch = doc.createElement( nodeName() );
+	saveGenericSettings( doc, scratch );
+
+	QMap<QString, QString> settings;
+	const QDomNamedNodeMap attributes = scratch.attributes();
+	for (int i = 0; i < attributes.count(); ++i)
+	{
+		const QDomNode attribute = attributes.item(i);
+		settings.insert( attribute.nodeName(), attribute.nodeValue() );
+	}
+	return settings;
+}
+
+
+void Effect::rememberLoadedGenericSettings()
+{
+	m_preservedGenericSettings = genericSettings();
+}
+
+
+QDomElement Effect::preservedXmlWithChangedGenericSettings( QDomDocument & _doc, const QDomElement & _preserved )
+{
+	// The file's own XML for this device, as an imported copy in the document
+	// being saved, with the generic settings the user changed on the device
+	// merged in (new-p14-97).
+	QDomElement merged = _doc.importNode( _preserved, true ).toElement();
+	const QMap<QString, QString> now = genericSettings();
+	const QMap<QString, QString>& loaded = preservedGenericSettings();
+	for (auto it = now.constBegin(); it != now.constEnd(); ++it)
+	{
+		if (loaded.value( it.key() ) != it.value()) { merged.setAttribute( it.key(), it.value() ); }
+	}
+	// A setting the user took back to its default is not written any more, so
+	// the file does not keep the value it had.
+	for (auto it = loaded.constBegin(); it != loaded.constEnd(); ++it)
+	{
+		if (!now.contains( it.key() )) { merged.removeAttribute( it.key() ); }
+	}
+	return merged;
+}
+
+
+void Effect::saveSettings( QDomDocument & _doc, QDomElement & _this )
+{
+	saveGenericSettings( _doc, _this );
+	controls()->saveState( _doc, _this );
 }
 
 
