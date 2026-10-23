@@ -40,6 +40,8 @@
 #include <tuple>
 #include <vector>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "BrowserTestSupport.h"
 #include "Clip.h"
 #include "ControlRegistry.h"
@@ -95,6 +97,15 @@ private slots:
 	void initTestCase()
 	{
 		Engine::init(true);
+		// Engine::init(true) starts the AudioDummy render thread, and that
+		// thread reaches the same session scheduler (Song::processNextBuffer ->
+		// SessionScheduler::processAudio). A test that drives the scheduler's
+		// periods ITSELF would then have two producers on it, and the events
+		// would land on whichever thread got there first. The dummy device is
+		// stopped here - the repo's own idiom (see ArrangeToolsTest,
+		// AudioBusPlayHandleQueueTest) - so the periods below are the ONLY
+		// ones the scheduler sees, and the regression is deterministic.
+		Engine::audioEngine()->audioDev()->stopProcessing();
 		ControlRegistry::setReady(true);
 		m_song = Engine::getSong();
 		QVERIFY(m_dir.isValid());
@@ -386,6 +397,71 @@ private slots:
 		QCOMPARE( static_cast<int>( m_first->getClips().front()->length().getTicks() ), 192 );
 		// The pass consumed the ring, so a second pass has nothing to do.
 		QCOMPARE( pending(), size_t{ 0 } );
+	}
+
+	//! CLUSTER 4926: the Back-to-Arrangement switch ends the performance, and
+	//! the ring must hold the STOP of every launch it ends - so the performance
+	//! can still be landed. The tap ends with the performance, but not BEFORE
+	//! the audio thread has taped the stops the reset records: disarming the tap
+	//! first lost those stops, every launch stayed open in the ring, and the
+	//! land pass refused for lack of a stop.
+	//!
+	//! THE DUMMY RENDER THREAD IS STOPPED by initTestCase(), so the periods
+	//! below drive the scheduler SERIALLY: this test is the only producer on
+	//! it, and the events land on the injected clock. The tick is not asserted
+	//! because the finding concerns the MISSING stop, not its exact tick: the
+	//! test counts the start/stop pair and asks the land pass whether the
+	//! performance is landable.
+	void backToArrangementLeavesThePerformanceLandable()
+	{
+		SessionScheduler& scheduler = m_song->sessionScheduler();
+		QVERIFY(scheduler.requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		SessionClockContext ctx;
+		ctx.ticksPerBar = 192;
+		ctx.framesPerTick = 1.0f;
+		ctx.transportRunning = true;
+		scheduler.processAudio(ctx, 16);
+		// The launch is taped and the cell is still playing: the tap is armed
+		// and the cell holds no content, so it plays on.
+		QCOMPARE(pending(), size_t{1});
+		QCOMPARE(static_cast<int>(scheduler.slotPhase(0, 0)), static_cast<int>(SlotPhase::Playing));
+		// One more period, so the clock the reset is carried out at is past the
+		// launch: the performance is a span, not a point.
+		ctx.positionTicks = 96;
+		scheduler.processAudio(ctx, 16);
+
+		const ControlResult handed = run(QStringLiteral("session.back_to_arrangement"));
+		QVERIFY2(handed.ok, qPrintable(handed.errorMessage));
+		QVERIFY(handed.result.value(QStringLiteral("handed_back")).toBool());
+
+		// Drive the next audio period: it carries out the reset the switch asked
+		// for, and the stop of the launch it ends is taped with it.
+		scheduler.processAudio(ctx, 16);
+
+		// The tap ends with the performance - after its last events, not before.
+		QVERIFY(!recorder().armed());
+
+		// The performance is a PAIR again: one launch, one stop - the stop the
+		// reset recorded. Without the fix the ring holds the start alone.
+		SessionArrangementRecorder::Event events[SessionArrangementRecorder::Capacity];
+		const std::size_t count = recorder().snapshot(events, SessionArrangementRecorder::Capacity);
+		QCOMPARE(count, std::size_t{2});
+		int starts = 0;
+		int stops = 0;
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			if (events[i].started) { ++starts; } else { ++stops; }
+		}
+		QCOMPARE(starts, 1);
+		QCOMPARE(stops, 1);
+
+		// ...so the performance is landable: the land pass finds nothing open,
+		// and it writes the one clip the pair describes.
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 1);
+		QCOMPARE(m_first->getClips().size(), size_t{1});
+		QVERIFY(m_first->getClips().front()->length().getTicks() > 0);
 	}
 
 	void aColumnWithoutASongTrackAndAnEmptySpanAreReportedNotLanded()
