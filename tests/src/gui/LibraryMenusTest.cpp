@@ -44,6 +44,7 @@
 #include <QFile>
 #include <QInputDialog>
 #include <QFile>
+#include <QApplication>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
@@ -61,6 +62,7 @@
 #include "ConfigManager.h"
 #include "BrowserTagMenu.h"
 #include "ConfigManager.h"
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "EditLocks.h"
 #include "Engine.h"
@@ -327,6 +329,57 @@ private slots:
 		LibraryCommandMenus::populateTrack(&again, track);
 		QVERIFY(lmms::test::menuAction(&again, {QStringLiteral("Unlock Track")}) != nullptr);
 		EditLocks::instance().clear();
+	}
+
+	/*! Q050-308: Project tools > Sync > Follow MIDI Clock... must open the clock.slave_set FORM, and that form
+	 *  must carry the two arguments the docs point a reader at - source_port and the integer drift_bound_ms
+	 *  (0-100 ms) - so the documented route is a real GUI path, not the command described as if it were one.
+	 *  Drives the menu ACTION (trigger), then the form's own Run, and reads the value back through
+	 *  clock.get_state: one command serves the form and the agent, which is the claim the docs make. */
+	void theSyncMenuOpensTheFollowClockForm()
+	{
+		QMenu menu;
+		LibraryCommandMenus::populateProject(&menu);
+		QAction* follow = lmms::test::menuAction(&menu, {QStringLiteral("Sync"), QStringLiteral("Follow MIDI Clock...")});
+		QVERIFY2(follow != nullptr, "the Sync submenu must offer Follow MIDI Clock...");
+		QCOMPARE(follow->property("controlCommand").toString(), QStringLiteral("clock.slave_set"));
+
+		follow->trigger();  // the menu entry, not the command: it must open the form
+		CommandForm* form = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (auto* candidate = qobject_cast<CommandForm*>(widget); candidate != nullptr && candidate->isVisible())
+			{
+				form = candidate;
+			}
+		}
+		QVERIFY2(form != nullptr, "Follow MIDI Clock... opened no form");
+		QVERIFY2(form->fields().contains(QStringLiteral("source_port")), "the form has no source_port field");
+		QVERIFY2(form->fields().contains(QStringLiteral("drift_bound_ms")), "the form has no drift_bound_ms field");
+		QVERIFY2(form->fields().contains(QStringLiteral("enabled")), "the form has no enabled field");
+
+		// The two fields the docs name, set the way a form sets them, then Run.
+		QVERIFY(form->setField(QStringLiteral("enabled"), true));
+		QVERIFY(form->setField(QStringLiteral("source_port"), QStringLiteral("128:0 Sequencer:Ableton Push")));
+		QVERIFY(form->setField(QStringLiteral("drift_bound_ms"), 40));
+		form->accept();
+		QCoreApplication::processEvents();
+
+		// The same registered command an agent calls: clock.get_state reports both values back.
+		const QJsonObject slave = run(QStringLiteral("clock.get_state"))
+			.result.value(QStringLiteral("slave")).toObject();
+		QCOMPARE(slave.value(QStringLiteral("source_port")).toString(),
+			QStringLiteral("128:0 Sequencer:Ableton Push"));
+		QCOMPARE(slave.value(QStringLiteral("drift_bound_ms")).toDouble(), 40.0);
+		QVERIFY(slave.value(QStringLiteral("enabled")).toBool());
+
+		// One form Run is one recorded undo step: the configuration before the form comes back.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		const QJsonObject after = run(QStringLiteral("clock.get_state"))
+			.result.value(QStringLiteral("slave")).toObject();
+		QCOMPARE(after.value(QStringLiteral("source_port")).toString(), QString());
+		QCOMPARE(after.value(QStringLiteral("drift_bound_ms")).toDouble(), 10.0);  // MidiClock's DefaultDriftBoundMs
+		QVERIFY(run(QStringLiteral("clock.slave_set"), {{QStringLiteral("enabled"), false}}).ok);
 	}
 
 	void theSearchViewShowsAGallery()

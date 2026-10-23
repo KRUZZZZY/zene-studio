@@ -259,6 +259,18 @@ session's beat grid: started on its own, it waits for the session's next bar (th
 Sync &gt; Quantum changes it). With Project &gt; Sync &gt; Share Start and Stop on, play and stop in any app that shares
 them start and stop the others. The button shows how many apps are connected and the session tempo; link.get_state
 has the rest.</p>
+<p><b>MIDI Clock.</b> <b>Edit &gt; MIDI Clock</b> makes the project a MIDI clock master (<b>Send Clock</b>) or
+follows an incoming clock (<b>Follow External Clock</b>, and <b>Follow Its Tempo</b> to write the measured tempo
+into the song); a line in that submenu says what the clock is doing, from not sending through following with no
+lock to locked at a measured BPM, and names a refusal. <b>Clock Source</b> there chooses which input drives the
+follower - <b>Any Input</b> or one of the readable MIDI ports - and clock messages from any other port are
+dropped and counted. The drift bound (how far one pulse may stray from the average before the lock is lost,
+0-100 ms) has no item of its own: open <b>Project tools &gt; Sync &gt; Follow MIDI Clock...</b> for the form of
+the same clock.slave_set command, which sets the mode, the source port and the drift bound together - one undo
+step. Send MIDI Clock... beside it opens the master's form. An agent sets the same fields over the control
+socket or MCP and reads them back with clock.get_state, so the menu, the forms and a script all drive one
+implementation. The clock's own limits are in Known Limitations: a client with one unnamed input can only
+follow any input, and an incoming start, stop or song position is counted but does not move the transport.</p>
 
 <h2 id="workflows">Patterns, clips and cells</h2>
 <p>Zene has three ways to place music, and they store different things. A <b>pattern</b> is a reusable grid of

@@ -1569,6 +1569,10 @@ compares the data chunk against a base-commit binary or a recorded hash.
 - **UI absence — one line: MIDI clock is drivable through the socket, not from the interface.** `grep -rniI
   'MidiClock' src/gui/` returns **0** hits, so there is no port selector, no external-sync toggle and no lock
   indicator; `docs/KNOWN-LIMITATIONS.md` carries the sentence and the bounds above.
+  *(Superseded 2026-10-20, Q050-308: this is the 0.3.0-alpha record, not the current state. Edit ▸ MIDI Clock
+  now switches send/follow, picks the clock source and shows the lock, and Project tools ▸ Sync ▸ Send/Follow
+  MIDI Clock... open the registry forms carrying `source_port` and `drift_bound_ms`; the current statement is in
+  `docs/KNOWN-LIMITATIONS.md`.)*
 - **Proof:** the registered QTest `MidiClockTest` (`tests/src/core/MidiClockTest.cpp`) drives the tracker with
   synthetic timestamps and asserts a pulse stream at 120 BPM measures 120 and one that moves to 140 BPM measures
   140 (following, not averaging), that two pulses or none never lock, that a lock drops past the timeout and

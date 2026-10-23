@@ -2238,6 +2238,10 @@ tests/link_sync_evidence.py
 tests/lua-api-surface.py
 tests/mastering_probe_lib.py
 tests/mcp_stdio_session.py
+# Q050-308 (R-workflow-117): the docs-truth gate that keeps BOTH MIDI Clock routes documented - the Edit
+# menu's Clock Source picker and the Project tools > Sync > Follow MIDI Clock... form carrying
+# source_port and drift_bound_ms - and fails on an unmarked socket-only claim about either field.
+tests/midi-clock-docs-gate.py
 tests/midi_reconnect_flows.py
 tests/midi_reconnect_probe.py
 tests/mmpz-v2-container-refusal.py
