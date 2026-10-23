@@ -110,6 +110,17 @@
 # manifest's header and write its output over the entry list'): the vendored sfizz tree is
 # excluded on purpose (see the header above), no ratchet baseline ever held an entry for it,
 # and Gate 9's registration scan excludes it as well.
+# 2026-10-22 (cluster new-p12-287-port): the entry list is RE-DERIVED from the recipe
+# above, as that recipe's own failure message instructs. The train-10 snapshot
+# (5ef150729) added 1148 paths under plugins/SfzPlayer/sfizz/ - the VENDORED third-party
+# tree this file's own header excludes on purpose ("Vendored third-party trees are
+# excluded on purpose - they are not this repo's code") - so the manifest and its recipe
+# disagreed and BOTH scope gates (fork-sources, all-sources-reproduce) were red at the
+# train-11 tip. Measured before and after the re-derivation, with the same recipe and the
+# same tracked file set: the whole-tree scope's own ratchets go from 813 regression lines
+# to 284 (the vendored tree is no longer measured), and both scope gates turn green.
+# Nothing is hand-edited and no path the recipe derives is dropped: the entry list below
+# IS the recipe's output, byte for byte (tests/all-sources-reproduce.sh prints REPRODUCES).
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h

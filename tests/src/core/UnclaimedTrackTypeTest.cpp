@@ -41,10 +41,12 @@
 #include <QTextStream>
 #include <QVector>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "DataFile.h"
 #include "Engine.h"
 #include "Song.h"
+#include "Track.h"
 #include "TrackContainer.h"
 #include "UnclaimedElements.h"
 
@@ -302,6 +304,129 @@ private slots:
 		QCOMPARE( nonnumeric.attribute( QStringLiteral( "type" ) ), QStringLiteral( "oops" ) );
 		QCOMPARE( missing.firstChildElement().attribute( QStringLiteral( "marker" ) ), QStringLiteral( "missing" ) );
 		QCOMPARE( nonnumeric.firstChildElement().attribute( QStringLiteral( "marker" ) ), QStringLiteral( "oops" ) );
+	}
+
+	//! The hole the NAME test does not cover, in the shape the ORIGINAL report
+	//! gave it (cluster new-p12-287): a <track> element whose `type` is MISSING
+	//! or MALFORMED, sitting BETWEEN two rows this build can construct.
+	//!
+	//! The sibling slot above proves such a row is preserved; this one proves it
+	//! is not FABRICATED: the container's own track LIST is what a fabricated
+	//! row would land in, and a fabricated row is an Instrument track - the
+	//! persisted value 0 - whose children are read as clips. So the assertion is
+	//! on the count of REAL tracks (2 here: the fixture's own row and the one
+	//! after the unreadable rows), on the NAMES of the tracks that exist (no
+	//! `no-type`, no `bad-type`), on the two rows being kept rather than
+	//! dropped, and on the load report naming both of them.
+	//!
+	//! Deterministic: no clock, no sleep, no race - the fixture is a file the
+	//! test writes, the song is loaded from it, and every assertion reads the
+	//! loaded model or the saved file back.
+	void aTrackWithAMissingOrMalformedTypeIsNotFabricatedIntoAnInstrumentTrack()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		// Two rows this build CAN construct (the fixture's own, and the one
+		// after the unreadable rows) around two it cannot name at all: one with
+		// no `type` attribute, one with a type that is not a number.
+		const QString project = dir.filePath( QStringLiteral( "unreadable-type.mmp" ) );
+		QVERIFY( writeText( project, projectWithContainerChildren(
+			"      <track name=\"no-type\">\n"
+			"        <instrumenttrack/>\n"
+			"      </track>\n"
+			"      <track type=\"bad\" name=\"bad-type\">\n"
+			"        <instrumenttrack/>\n"
+			"      </track>\n"
+			"      <track type=\"0\" name=\"second\" muted=\"0\">\n"
+			"        <instrumenttrack/>\n"
+			"      </track>\n" ) ) );
+
+		Song* const song = loadFresh( project );
+
+		// Only the two readable rows are tracks: the container holds the known
+		// track of the fixture and the one after the unreadable rows.
+		QCOMPARE( trackCount( song ), 2 );
+		for( const Track* track : song->tracks() )
+		{
+			QVERIFY2( track->name() != QLatin1String( "no-type" ),
+				"a track with no type attribute was loaded as a track" );
+			QVERIFY2( track->name() != QLatin1String( "bad-type" ),
+				"a track with a malformed type attribute was loaded as a track" );
+		}
+
+		// Both unreadable rows are KEPT, not dropped: the container's own list
+		// is what the next save re-emits.
+		QCOMPARE( static_cast<int>( song->unclaimedChildren().size() ), 2 );
+
+		// And the load REPORT names both of them - the index counts the
+		// re-emitted position, which is after the two claimed tracks.
+		const QStringList reported = song->unclaimedElements();
+		QVERIFY( reported.contains( QStringLiteral( "/song/trackcontainer/track[2]" ) ) );
+		QVERIFY( reported.contains( QStringLiteral( "/song/trackcontainer/track[3]" ) ) );
+
+		const QString save = dir.filePath( QStringLiteral( "round1.mmp" ) );
+		QVERIFY( song->saveProjectFile( save ) );
+		const QDomElement container = containerOf( parse( readText( save ) ) );
+		QVERIFY2( !container.isNull(), "the saved project has no <trackcontainer>" );
+
+		// The two rows are still rows, with the attributes they were read with:
+		// neither was rewritten into a track of some default type.
+		const QDomElement noType = childWith( container, QStringLiteral( "name" ),
+			QStringLiteral( "no-type" ) );
+		QVERIFY2( !noType.isNull(),
+			"a track with no type attribute was dropped by a load -> save round trip" );
+		QVERIFY2( !noType.hasAttribute( QStringLiteral( "type" ) ),
+			"a track with no type attribute was given one on the way out" );
+		const QDomElement badType = childWith( container, QStringLiteral( "name" ),
+			QStringLiteral( "bad-type" ) );
+		QVERIFY2( !badType.isNull(),
+			"a track with a malformed type attribute was dropped by a load -> save round trip" );
+		QCOMPARE( badType.attribute( QStringLiteral( "type" ) ), QStringLiteral( "bad" ) );
+	}
+
+	//! The NAME rule, at the cause. The loader's claim helper carries a name
+	//! test of its own, but the FACTORY did not: every other caller hands it
+	//! whatever element it has, and an element that is not a <track> was
+	//! fabricated into an INSTRUMENT track - 0 is Type::Instrument, so an
+	//! element with a `type` of its own became a track nobody wrote. That is
+	//! the same trap the type check closes, one rule short.
+	//!
+	//! The capture/restore path is where it shows: `control::restoreTrackFromXml`
+	//! PROMISES nullptr "when the XML does not parse or names no track element"
+	//! (include/ControlEdit.h), and the promise was not kept - a snapshot whose
+	//! element is not a <track> became a real instrument track in the song.
+	//!
+	//! Deterministic: a literal snapshot string, no clock, no sleep, no race.
+	void aTrackIsNotFabricatedFromAnElementThatIsNotATrack()
+	{
+		Song* const song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch( false );
+
+		const int before = trackCount( song );
+
+		// The element carries a `type` this build CAN build, so the TYPE rule
+		// accepts it - only the NAME rule can refuse it. Without the name rule
+		// the factory reads type=0 and builds an Instrument track out of it.
+		const QString snapshot = QStringLiteral(
+			"<zene-track-snapshot>\n"
+			"  <notatrack type=\"0\" name=\"fabricated\">\n"
+			"    <instrumenttrack/>\n"
+			"  </notatrack>\n"
+			"</zene-track-snapshot>\n" );
+
+		QVERIFY2( control::restoreTrackFromXml( snapshot, song ) == nullptr,
+			"an element that is not a <track> was fabricated into an instrument track" );
+
+		// And nothing was added to the song: the refusal is a refusal, not a
+		// track that is created and then hidden.
+		QCOMPARE( trackCount( song ), before );
+		for( const Track* track : song->tracks() )
+		{
+			QVERIFY2( track->name() != QLatin1String( "fabricated" ),
+				"a track was built from an element that is not a <track>" );
+		}
 	}
 
 	//! The sibling hole, and the reason the claim test is not simply "did the

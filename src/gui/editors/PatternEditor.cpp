@@ -173,8 +173,17 @@ void PatternEditor::dropEvent(QDropEvent* de)
 	if( type.left( 6 ) == "track_" )
 	{
 		DataFile dataFile( value.toUtf8() );
+		const QDomElement element = dataFile.content().firstChild().toElement();
+		// Track::create refuses elements that are not <track>. Check before
+		// making the Song's first pattern track, which is a side effect of this
+		// drop, and before dereferencing the factory result below.
+		if( element.nodeName() != QStringLiteral( "track" ) )
+		{
+			de->ignore();
+			return;
+		}
 		QVector<control::CreatedTrack> created = firstPatternTrack(m_ps);
-		Track * t = Track::create( dataFile.content().firstChild().toElement(), model() );
+		Track * t = Track::create( element, model() );
 
 		// Ensure pattern clips exist
 		bool hasValidPatternClips = false;
