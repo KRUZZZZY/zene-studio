@@ -7,8 +7,12 @@
  * dimension whose zones point at those samples; the second has no dimensions
  * and does not cover the test key. Passing --keyboard creates a two-zone
  * keyboard-dimension fixture, --one-frame-release creates a silent note with
- * a single non-zero release frame, and --pingpong / --single-frame-loop create
- * directional loop fixtures used by the regression tests.
+ * a single non-zero release frame, --layers N creates N regions that all match
+ * the same key (so one note has N matching samples), --dc replaces the sine
+ * with a constant level (so the sum of any number of voices is exactly
+ * proportional to the number of voices, whatever period each started in), and
+ * --pingpong / --single-frame-loop create directional loop fixtures used by
+ * the regression tests.
  * Built with:
  *   g++ -std=c++17 make_gig.cpp -o make_gig $(pkg-config --cflags --libs gig)
  *
@@ -50,6 +54,8 @@ int main(int argc, char** argv)
     bool singleFrameLoop = false;
     bool pingPong = false;
     bool oneFrameRelease = false;
+    uint32_t layers = 0;
+    bool dc = false;
     std::string out;
     for (int i = 1; i < argc; ++i)
     {
@@ -58,14 +64,21 @@ int main(int argc, char** argv)
         else if (arg == "--pingpong") pingPong = true;
         else if (arg == "--single-frame-loop") { singleFrameLoop = true; pingPong = true; }
         else if (arg == "--one-frame-release") oneFrameRelease = true;
+        else if (arg == "--layers" && i + 1 < argc) layers = static_cast<uint32_t>(std::stoul(argv[++i]));
+        else if (arg == "--dc") dc = true;
         else if (out.empty()) out = arg;
     }
     if (keyboardDimension) pingPong = false;
     if (oneFrameRelease) { pingPong = false; keyboardDimension = false; }
-    const bool releaseTrigger = !pingPong && !keyboardDimension;
+    if (layers > 0) { pingPong = false; keyboardDimension = false; oneFrameRelease = false; }
+    if (dc) { pingPong = false; keyboardDimension = false; oneFrameRelease = false; }
+    const bool releaseTrigger = !pingPong && !keyboardDimension && layers == 0 && !dc;
     if (out.empty())
     {
-        if (keyboardDimension) out = "keyboard-dimension.gig";
+        if (dc && layers > 0) out = "layered-dc.gig";
+        else if (dc) out = "dc.gig";
+        else if (layers > 0) out = "layered.gig";
+        else if (keyboardDimension) out = "keyboard-dimension.gig";
         else if (singleFrameLoop) out = "single-frame-loop.gig";
         else if (pingPong) out = "pingpong.gig";
         else if (oneFrameRelease) out = "one-frame-release.gig";
@@ -73,21 +86,29 @@ int main(int argc, char** argv)
     }
     constexpr uint32_t LoopStart = 64;
     const uint32_t loopLength = singleFrameLoop ? 1 : 64;
-    const uint32_t N = oneFrameRelease ? SR : (pingPong ? SR / 4 : SR * SECONDS);
+    // The layered fixture only needs enough frames to measure a level, and it
+    // has one sample per layer, so it is kept short to keep the file small.
+    const uint32_t N = oneFrameRelease ? SR
+        : (layers > 0 ? SR / 4 : (pingPong ? SR / 4 : SR * SECONDS));
 
     try
     {
+        // File::SetFileName() makes the first Save() below dereference an
+        // uninitialised chunk list in libgig 4.6.0; Save(path) alone sets the
+        // file name and writes the whole file, so it is not used here.
         gig::File* f = new gig::File();
-        f->SetFileName(out);
-        f->pInfo->Name      = pingPong ? "GigProof PingPong" : (keyboardDimension ? "GigProof KeyboardDimension" : "GigProof Sine440");
+        f->pInfo->Name      = dc ? "GigProof DC" : (layers > 0 ? "GigProof Layered"
+            : (pingPong ? "GigProof PingPong" : (keyboardDimension ? "GigProof KeyboardDimension" : "GigProof Sine440")));
         f->pInfo->Artists   = "gigproof";
         f->pInfo->Software  = std::string("libgig ") + gig::libraryVersion();
-        f->pInfo->Comments  = oneFrameRelease
+        f->pInfo->Comments  = layers > 0
+            ? "Layered fixture: every region matches the same key, so one note has several matching samples"
+            : (oneFrameRelease
             ? "GigPlayer regression: silent note and one-frame release trigger"
             : (pingPong
                 ? "Bidirectional loop fixture for LMMS GigPlayer verification"
                 : (keyboardDimension ? "Keyboard dimension regression fixture for LMMS GigPlayer verification"
-                                     : "GigPlayer release-trigger regression fixture"));
+                                     : "GigPlayer release-trigger regression fixture")));
         f->pInfo->Copyright = "public domain test tone";
 
         // ---------------------------------------------------------------- sample
@@ -99,6 +120,13 @@ int main(int argc, char** argv)
         {
             silentSample = f->AddSample();
             configureSample(silentSample, "zone1_silence");
+        }
+        std::vector<gig::Sample*> layerSamples;
+        for (uint32_t layer = 1; layer < layers; ++layer)
+        {
+            gig::Sample* layerSample = f->AddSample();
+            configureSample(layerSample, "layer" + std::to_string(layer));
+            layerSamples.push_back(layerSample);
         }
         gig::Sample* releaseSample = nullptr;
         std::vector<int16_t> releasePcm;
@@ -137,6 +165,12 @@ int main(int argc, char** argv)
                 pcm[LoopStart + loopLength] = -25000;
             }
         }
+        else if (dc)
+        {
+            // A constant level: the sum of N playing voices is N times the
+            // level of one voice, in every period and at every phase.
+            pcm.assign(N, static_cast<int16_t>(8192));
+        }
         else if (!oneFrameRelease)
         {
             const uint32_t fadeIn  = SR / 200;  // 5 ms
@@ -161,7 +195,8 @@ int main(int argc, char** argv)
 
         // ------------------------------------------------------------ instrument
         gig::Instrument* instr = f->AddInstrument();
-        instr->pInfo->Name    = pingPong ? "PingPong" : (keyboardDimension ? "KeyboardDimension" : "Sine440");
+        instr->pInfo->Name    = layers > 0 ? "Layered"
+            : (pingPong ? "PingPong" : (keyboardDimension ? "KeyboardDimension" : "Sine440"));
         instr->MIDIProgram    = 0;
         instr->MIDIBankCoarse = 0;
         instr->MIDIBankFine   = 0;
@@ -172,7 +207,28 @@ int main(int argc, char** argv)
             instr->DimensionKeyRange.high = 80;
         }
 
-        if (releaseTrigger)
+        if (layers > 0)
+        {
+            // Every region covers the same key and velocity, so a note that
+            // matches one of them matches every one of them. Each region gets
+            // its own sample, so dropping one of them is audible as a level
+            // change rather than as a silent layer.
+            for (uint32_t layer = 0; layer < layers; ++layer)
+            {
+                gig::Sample* layerSample = layer == 0 ? s : layerSamples[layer - 1];
+                gig::Region* r = instr->AddRegion();
+                r->SetKeyRange(0, 127);
+                r->VelocityRange.low  = 0;
+                r->VelocityRange.high = 127;
+                gig::DimensionRegion* dr = r->pDimensionRegions[0];
+                dr->pSample     = layerSample;
+                dr->UnityNote   = 60;
+                dr->FineTune    = 0;
+                dr->PitchTrack  = true;
+                dr->SampleLoops = 0;
+            }
+        }
+        else if (releaseTrigger)
         {
             gig::Region* r = instr->AddRegion();
             r->SetKeyRange(0, 100);
@@ -252,6 +308,10 @@ int main(int argc, char** argv)
 
         // ------------------------------------------------------------- save 1
         s->Resize(N);   // create/allocate the 'data' chunk
+        for (gig::Sample* layerSample : layerSamples)
+        {
+            layerSample->Resize(N);
+        }
         if (silentSample != nullptr)
         {
             silentSample->Resize(N);
@@ -270,6 +330,17 @@ int main(int argc, char** argv)
             fprintf(stderr, "ERROR: wrote %lld of %u sample points\n",
                     (long long) written, (unsigned) N);
             return 1;
+        }
+        for (gig::Sample* layerSample : layerSamples)
+        {
+            layerSample->SetPos(0);
+            const gig::file_offset_t layerWritten = layerSample->Write(pcm.data(), N);
+            if (layerWritten != gig::file_offset_t(N))
+            {
+                fprintf(stderr, "ERROR: wrote %lld of %u layer sample points\n",
+                        (long long) layerWritten, (unsigned) N);
+                return 1;
+            }
         }
         if (silentSample != nullptr)
         {

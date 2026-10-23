@@ -30,6 +30,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include <array>
 #include <QList>
@@ -89,14 +90,33 @@ public:
 } ;
 
 
-//! The audio thread never allocates, so every note and every sample lives in
-//! storage that exists before the first rendered period. These are the
-//! capacities of that storage: the number of notes that can sound at the same
-//! time, the number of samples (layers) that can sound at the same time and
-//! the number of layers a single note may use.
-constexpr std::size_t MaxGigNotes = 512;
-constexpr std::size_t MaxGigVoices = 512;
-constexpr std::size_t MaxGigSamplesPerNote = 8;
+//! Notes and samples (voices) live in segments. A segment is allocated and
+//! filled on the control thread and only published once it is complete; it is
+//! never moved or freed while the instrument exists, so a note or a voice that
+//! is already sounding keeps its address when the next segment is added. The
+//! audio thread only claims and releases entries. When a pool runs out it asks
+//! the control thread for as many segments as it is missing and retries on a
+//! later period, so playback is never silently limited to a pool size.
+constexpr std::size_t GigNoteSegmentShift = 9;	// 512 note slots per segment
+constexpr std::size_t GigNoteSegmentSize = std::size_t{1} << GigNoteSegmentShift;
+constexpr std::uint32_t GigNoteSegmentMask = static_cast<std::uint32_t>(GigNoteSegmentSize - 1);
+
+constexpr std::size_t GigVoiceSegmentShift = 6;	// 64 voices per segment
+constexpr std::size_t GigVoiceSegmentSize = std::size_t{1} << GigVoiceSegmentShift;
+constexpr std::uint32_t GigVoiceSegmentMask = static_cast<std::uint32_t>(GigVoiceSegmentSize - 1);
+
+//! How many segments a pool can hold. A segment is never freed while the
+//! instrument lives, so this bounds the pool's memory, not its behaviour: the
+//! audio thread asks for another segment and starts the note on a later period
+//! long before this is reached (1024 segments are 524288 notes or 65536 voices).
+constexpr std::size_t MaxGigSegments = 1024;
+
+//! The segments a pool is built with. These are starting sizes, not ceilings.
+constexpr std::size_t InitialGigNoteSegments = 1;
+constexpr std::size_t InitialGigVoiceSegments = 8;
+
+//! An index that refers to no note, voice or list entry.
+constexpr std::uint32_t GigNoIndex = 0xFFFFFFFFu;
 
 
 
@@ -253,21 +273,39 @@ public:
 struct GigFileState;
 
 
-//! One slot of the note pool. The slots have fixed indices, so a note can be
-//! addressed from any thread by its index alone. Everything in here is owned
-//! by the audio thread; the two atomics are the only parts another thread
-//! touches: the GUI thread asks for a note to be released by storing the note
-//! handle in m_releaseRequest, and the audio thread picks that request up.
+//! One segment of the note pool. A slot's packed index (segment * size +
+//! offset) is stable for the life of the instrument, so a note can be
+//! addressed from any thread by that index alone. A segment is filled on the
+//! control thread and published only once it is complete, and it is never
+//! moved or freed while the instrument lives.
+//!
+//! Everything in here is owned by the audio thread; the three atomics are the
+//! only parts another thread touches: the GUI thread asks for a note to be
+//! released by storing its generation in releaseGeneration, and the audio
+//! thread picks that request up.
 struct GigNoteSlot
 {
 	GigNote note { 0, 0, 0.0f };
 
-	//! The voices this note plays, as indices into the voice pool
-	std::array<std::uint16_t, MaxGigSamplesPerNote> voices {};
-	std::uint8_t voiceCount = 0;
+	//! The first and last voice of this note's voice list. There is no per-note
+	//! ceiling: a note takes one voice per matching region of the file.
+	std::uint32_t firstVoice = GigNoIndex;
+	std::uint32_t lastVoice = GigNoIndex;
+
+	//! How many voices this note plays right now
+	std::uint32_t voiceCount = 0;
+
+	//! The neighbours of this note in the note-order list
+	std::uint32_t orderPrev = GigNoIndex;
+	std::uint32_t orderNext = GigNoIndex;
 
 	//! Whether this slot currently holds a note
 	bool active = false;
+
+	//! Whether the release pass of this note still has to add its samples. The
+	//! pass is retried on the next period when the voice pool had no room, so
+	//! the note is not completed before its release samples played.
+	bool releasePassPending = false;
 
 	//! The file the note was started in. The notes of a file that is not open
 	//! any more are dropped by the audio thread.
@@ -282,6 +320,63 @@ struct GigNoteSlot
 
 	//! The note handle this slot belongs to
 	std::atomic<NotePlayHandle*> handle { nullptr };
+} ;
+
+
+//! One segment of the note pool, with the indices of the slots that are free.
+struct GigNoteSegment
+{
+	//! The slots of this segment, built before the segment is published
+	std::unique_ptr<GigNoteSlot[]> noteSlots;
+
+	//! The free slots of this segment. Audio thread only.
+	std::unique_ptr<std::uint32_t[]> freeSlots;
+
+	//! How many slots of this segment are free
+	std::uint32_t freeCount = GigNoteSegmentSize;
+} ;
+
+
+//! One voice of the voice pool. A voice belongs to one note and is built when
+//! its segment is filled on the control thread, so the audio thread never
+//! constructs a GigSample. The voices of one note are a doubly linked list
+//! through the pool, so a note can take as many as the file has matching
+//! regions; there is no per-note ceiling.
+struct GigVoice
+{
+	GigSample sample;
+
+	//! The neighbours of this voice in its note's voice list
+	std::uint32_t nextInNote = GigNoIndex;
+	std::uint32_t prevInNote = GigNoIndex;
+
+	//! The note that owns this voice
+	std::uint32_t ownerSlot = GigNoIndex;
+} ;
+
+
+//! One segment of the voice pool, with the indices of the voices that are free.
+struct GigVoiceSegment
+{
+	//! The voices of this segment, built before the segment is published
+	std::unique_ptr<GigVoice[]> voices;
+
+	//! The free voices of this segment. Audio thread only.
+	std::unique_ptr<std::uint32_t[]> freeVoices;
+
+	//! How many voices of this segment are free
+	std::uint32_t freeCount = GigVoiceSegmentSize;
+} ;
+
+
+//! Which samples a note still owes: the normal pass of a key-down, or the
+//! release pass of a key-up. A note that cannot get its voices keeps the pass
+//! and retries on the next period, so a layer is never silently dropped.
+enum class GigSamplePass : std::uint8_t
+{
+	None,
+	Normal,
+	Release,
 } ;
 
 
@@ -350,6 +445,14 @@ public slots:
 	void updatePatch();
 	void updateSampleRate();
 
+	//! Runs the pool growth service on the calling thread.
+	//!
+	//! The instrument grows its pools from a timer, because growing allocates
+	//! and must not happen on the audio thread. A test has no event loop, so it
+	//! calls this instead; it refuses to run inside a render.
+	void servicePoolGrowthForTest();
+
+
 
 private:
 	void playImpl(std::span<SampleFrame> out) override;
@@ -376,25 +479,43 @@ private:
 
 	FloatModel m_gain;
 
-	// The pool of notes. The audio thread owns it; a note is addressed by its
-	// slot index, which never moves.
-	std::array<GigNoteSlot, MaxGigNotes> m_noteSlots {};
-	std::array<std::uint16_t, MaxGigNotes> m_freeNotes {};
-	std::uint16_t m_freeNoteCount = 0;
+	// The note pool. The audio thread owns it; a note is addressed by the
+	// packed index of its slot, which never moves. Segments are published one
+	// at a time, once they are complete, so a reader always sees a whole slot.
+	std::array<std::atomic<GigNoteSegment*>, MaxGigSegments> m_noteSegments {};
+	std::atomic<std::uint32_t> m_noteSegmentCount { 0 };
 
-	// The slots of the playing notes, in the order the notes were started
-	std::array<std::uint16_t, MaxGigNotes> m_noteOrder {};
-	std::uint16_t m_noteOrderCount = 0;
+	//! The first note segment the audio thread looks in
+	std::uint32_t m_noteHint = 0;
+
+	// The playing notes, in the order they were started. The order is an
+	// intrusive list through the slots, so starting and removing a note never
+	// makes a container grow on the audio thread.
+	std::uint32_t m_noteOrderHead = GigNoIndex;
+	std::uint32_t m_noteOrderTail = GigNoIndex;
 
 	// The file state the notes belong to. When another file is published, the
 	// audio thread drops its notes.
 	GigFileState* m_activeState = nullptr;
 
-	// The pool of voices (samples). The voices are built once, when the
-	// instrument is created, so that the audio thread never constructs one.
-	std::array<GigSample, MaxGigVoices> m_voices;
-	std::array<std::uint16_t, MaxGigVoices> m_freeVoices {};
-	std::uint16_t m_freeVoiceCount = 0;
+	// The pool of voices (samples). The voices are built when a segment is
+	// filled on the control thread, so that the audio thread never constructs
+	// one. A voice is addressed by the packed index of its slot.
+	std::array<std::atomic<GigVoiceSegment*>, MaxGigSegments> m_voiceSegments {};
+	std::atomic<std::uint32_t> m_voiceSegmentCount { 0 };
+
+	//! The first voice segment the audio thread looks in
+	std::uint32_t m_voiceHint = 0;
+
+	// Set by the audio thread when a pool ran out or ran low; the control-thread
+	// service appends the segments and clears the request. A request is a hint,
+	// not a command: the audio thread keeps retrying either way.
+	std::atomic<bool> m_notePoolGrowthRequested { false };
+	std::atomic<bool> m_voicePoolGrowthRequested { false };
+
+	// Drives servicePoolGrowth() on the thread the instrument lives on. It
+	// never runs on the audio thread, because growing a pool allocates.
+	QTimer m_poolGrowthTimer;
 
 	// Set by another thread to ask the audio thread to drop all notes
 	std::atomic<bool> m_clearNotes { false };
@@ -426,11 +547,45 @@ private:
 	// Drop every note and give its voices back to the voice pool
 	void clearNotes();
 
-	// Take a note slot and a voice out of their pools, or return them
-	std::uint16_t acquireNoteSlot();
-	void releaseNoteSlot( std::uint16_t _slot );
-	std::uint16_t acquireVoice();
-	void releaseVoice( std::uint16_t _voice );
+	// Build the pools the instrument starts with. Control thread only.
+	void buildInitialPools();
+
+	// Append segments to a pool. Control thread only: appending allocates.
+	// Both keep the published segments complete before they publish them.
+	void growNotePool( std::size_t _additionalSegments );
+	void growVoicePool( std::size_t _additionalSegments );
+
+	// Append the segments the audio thread asked for. Control thread only.
+	void servicePoolGrowth();
+
+	// The slot or voice with the given packed index. The caller makes sure the
+	// segment is published.
+	GigNoteSlot & noteSlot( std::uint32_t _slot ) const;
+	GigVoice & voice( std::uint32_t _voice ) const;
+
+	// Put a note or a voice back into its pool. Audio thread only.
+	void releaseNote( std::uint32_t _slot );
+	void releaseVoice( std::uint32_t _voice );
+
+	// Take a note slot or a voice, or return GigNoIndex when none is free.
+	// Audio thread only: these never allocate.
+	std::uint32_t acquireNoteSlot();
+	std::uint32_t acquireVoice();
+
+	// The note-order list. Audio thread only.
+	void appendToNoteOrder( std::uint32_t _slot );
+	void removeFromNoteOrder( std::uint32_t _slot );
+
+	// Append a voice to the note's voice list, or take one away.
+	void appendVoiceToNote( std::uint32_t _slotIndex, std::uint32_t _voice );
+	void releaseVoiceOfNote( GigNoteSlot & _slot, std::uint32_t _voice );
+
+	// Take away the voices a pass added after the given tail. Audio thread only.
+	void rollBackVoices( GigNoteSlot & _slot, std::uint32_t _tailBefore );
+
+	// Ask the control thread for room. Audio thread safe: one atomic store.
+	void requestNotePoolGrowth();
+	void requestVoicePoolGrowth();
 
 	// Create "dimension" to select desired samples from GIG file based on
 	// parameters such as velocity
@@ -443,9 +598,10 @@ private:
 	f_cnt_t getLoopedIndex( f_cnt_t index, f_cnt_t startf, f_cnt_t endf ) const;
 	f_cnt_t getPingPongIndex( f_cnt_t index, f_cnt_t startf, f_cnt_t endf ) const;
 
-	// Add the desired samples to the note, either normal samples or release
-	// samples
-	void addSamples( GigNoteSlot & _slot, bool wantReleaseSample,
+	// Add every matching sample to the note, either normal samples or release
+	// samples. Returns false when the voice pool had no room: the voices taken
+	// by the pass are given back and the caller retries it on a later period.
+	bool addSamples( std::uint32_t _slotIndex, bool wantReleaseSample,
 		gig::Instrument * _instrument );
 
 	friend class gui::GigInstrumentView;

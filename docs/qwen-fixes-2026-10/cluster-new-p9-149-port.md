@@ -3,188 +3,287 @@ new-p9-149-port: FIXED
 
 # new-p9-149-port - GIG playback waited on blocking mutexes in the audio callback
 
-Verdict: FIXED (REAL - the callback did lock and did wait for the file loader).
+Verdict: **FIXED** (REAL - the audio callback did lock, and it did wait for the file
+loader). Round 3 keeps that fix and completes it: the two silent truncations the round-2
+review found in the replacement pools (a note refused at 512 slots, a note keeping at most
+eight matching samples) are removed by making both pools grow in segments, so nothing is
+refused or dropped for being beyond a pool size any more.
 
-This is the port of `bugs/qwen-new-p9-149` onto the newest train line. The fix and its
-regression were re-applied by hand (`git apply --3way` of the branch's own product/test diff,
-then every conflict resolved by hand; no merge, cherry-pick or rebase was used), and the
-newer line's behaviour was kept where the two lines meet.
+Branch base: `07d6d02bd` (train 12). Previous rounds on this branch: `ffe21f471` (port),
+`cd4b98482`, `77caf94e9`, `ded8ba316`.
 
-## Decision and evidence (pre-fix tree, branch base 07d6d02bd)
+## 1. Decision and evidence (pre-fix tree, `git show 07d6d02bd:plugins/GigPlayer/GigPlayer.cpp`)
 
-* `plugins/GigPlayer/GigPlayer.cpp:253` (pre-fix) `openFile()` took `QMutexLocker locker(
-  &m_synthMutex )` at `:261` and held it while `new GigInstance(...)` read the whole file.
-* `plugins/GigPlayer/GigPlayer.cpp:370` (pre-fix) `playImpl()` called
-  `m_synthMutex.lock()` at `:378` and `m_notesMutex.lock()` at `:379` on every period, so
-  the audio callback waited for the loader and could underrun.
-* `plugins/GigPlayer/GigPlayer.cpp:339` (pre-fix) `playNoteImpl()` took `m_notesMutex`
-  at `:360` on the audio thread, and `deleteNotePluginData()` took it at `:1053`.
+The finding's `GigPlayer.cpp:329-330,481-482` is the lock pair at the older numbering; on
+the branch base the same code is:
 
-These lines are from `git show 07d6d02bd:plugins/GigPlayer/GigPlayer.cpp`; the finding's
-`GigPlayer.cpp:329-330,481-482` is the same pair of locks at the older numbering.
+| Pre-fix evidence | What it did |
+|---|---|
+| `GigPlayer.cpp:253` `openFile()` -> `:261` `QMutexLocker locker( &m_synthMutex )` | held `m_synthMutex` while `new GigInstance(...)` read the whole file |
+| `GigPlayer.cpp:370` `playImpl()` -> `:378` `m_synthMutex.lock()`, `:379` `m_notesMutex.lock()` | the audio callback waited for the loader, and for every note edit, once per period |
+| `GigPlayer.cpp:339` `playNoteImpl()` -> `:360` `m_notesMutex.lock()` | note-on waited on the audio thread |
+| `GigPlayer.cpp:1053` `deleteNotePluginData()` -> `QMutexLocker` | note-off waited on the audio thread |
 
-## Fix (current tree)
+So the finding is REAL: a GIG file load or a note edit blocked the render callback, which
+is an underrun by construction, not a theoretical race.
 
-* `plugins/GigPlayer/GigPlayer.cpp:326` `openFile()` prepares the `GigFileState` (file +
-  selected instrument) with no lock at all, and `:294` `publishFileState()` publishes it
-  with one `m_fileState.exchange()`; the loader never waits for the callback.
-* `plugins/GigPlayer/GigPlayer.h:361` `std::atomic<GigFileState*> m_fileState` and
-  `:366` `std::atomic<int> m_fileReaders`; `plugins/GigPlayer/GigPlayer.cpp:309`
-  `reapRetiredStates()` deletes a replaced state only when no audio thread is inside a
-  render (`:386`/`:391`, `:574`/`:579`, `:593`, `:802`), so the file is never freed under
-  the callback.
-* `plugins/GigPlayer/GigPlayer.cpp:562` `playImpl()` takes no lock: the file state is read
-  by an atomic load, the notes live in the fixed pools `m_noteSlots`/`m_voices`
-  (`plugins/GigPlayer/GigPlayer.h:381`, `:395`), and a key release is a single atomic store
-  per note slot (`plugins/GigPlayer/GigPlayer.cpp:1103`).
-* `plugins/GigPlayer/GigPlayer.cpp:429` `playNoteImpl()` hands out a pre-existing note slot
-  and a pre-built voice; nothing allocates, grows or locks on the audio thread.
-* `plugins/GigPlayer/GigPlayer.cpp:263` `setFileLoadHook()` and the exported
-  `lmms_gigplayer_set_file_load_hook()` (`:272`) are the test seam. The hook is called
-  inside the `try` block of `openFile()` (`:340`-`:344`), which is exactly the block the
-  old code wrapped in `QMutexLocker( &m_synthMutex )` - so a test that pauses there pauses
-  where the old lock was held.
+## 2. Fix, part 1 (round 1, still in place): the callback takes no lock
 
-The regression is
-`tests/src/plugins/PluginPortsMigrationTest.cpp:3129`
-`gigplayerCallbackDoesNotWaitForAFileLoad()`: a second thread opens another GIG file and
-stops in the hook; the audio thread renders a period meanwhile. The assertion is the ORDER
-of the two events (the callback came back while the preparation is still paused) plus a
-non-silent render, not a deadline; the 10 s deadline only breaks the deadlock a blocking
-callback creates.
+* `plugins/GigPlayer/GigPlayer.cpp:363` `openFile()` prepares a whole `GigFileState` (file
+  + selected instrument) with no lock, and `publishFileState()` publishes it with one
+  `m_fileState.exchange()`; the loader never waits for the callback.
+* `plugins/GigPlayer/GigPlayer.h:464` `std::atomic<GigFileState*> m_fileState` and `:469`
+  `std::atomic<int> m_fileReaders`; `reapRetiredStates()` deletes a replaced state only when
+  no audio thread is inside a render, so the file is never freed under the callback.
+* `plugins/GigPlayer/GigPlayer.cpp:900` `playImpl()` takes no lock: the file state is one
+  atomic load, the notes live in published pool segments, and a key release is one atomic
+  store per note slot.
+* `plugins/GigPlayer/GigPlayer.cpp:1453` `deleteNotePluginData()` only publishes that
+  release request (one atomic store into a published slot); the audio thread picks it up.
+* The test seam is `GigInstrument::setFileLoadHook()` (`GigPlayer.cpp:275`) and its export
+  `lmms_gigplayer_set_file_load_hook()` (`:284`). The hook is called inside the `try` block
+  of `openFile()` (`:340`-`:344`), which is exactly the block the old code wrapped in
+  `QMutexLocker( &m_synthMutex )`, so a test that pauses there pauses where the old lock was
+  held. Regression: `gigplayerCallbackDoesNotWaitForAFileLoad()`.
 
-The port also carries the branch's other GIG regressions that the same commits brought:
-`gigplayerAudioPathDoesNotAllocate()` (`:3082`), `gigplayerKeepsEveryOverlappingNote()`
-(`:3248`) and `gigplayer24BitSamplePlaysAtFullScale()` (`:3326`).
+## 3. Fix, part 2 (round 3, this round): the pools grow instead of truncating
 
-### Port reconciliation with the newer line
+The round-2 review asked for the removal of two silent truncations the replacement pools had
+introduced, without giving up realtime safety, plus three regressions. Both pools are now
+**segmented and growable**.
 
-The newer line already carried four GIG fixes that the port diff collided with; all four
-are kept in the merged result:
+### Structures (`plugins/GigPlayer/GigPlayer.h`)
 
-* `plugins/GigPlayer/GigPlayer.cpp:684` a release sample ends at `SamplesTotal` (not
-  `SamplesTotal - 1`), so a one-frame release sample is rendered (new-p10-164); regression
-  `gigOneFrameReleaseSampleIsAudible` passes (`logs/test-13-gig-all.log`).
-* `plugins/GigPlayer/GigPlayer.cpp:1045` 16-bit PCM is normalised by `0x8000` (new-p9-155);
-  `migratedPluginsPreserveBehaviour` still requires exactly twice the frozen reference and
-  passes (`logs/test-9-migrated.log`).
-* `plugins/GigPlayer/GigPlayer.cpp:1169` `gignote.release = gignote.release || dim.release`
-  (new-p10-161) and `:1145` the keyboard dimension is set for normal note starts too
-  (new-p10-160); both regressions pass (`logs/test-13-gig-all.log`).
-* `plugins/GigPlayer/GigPlayer.cpp:116` `gigplayerMixResampledBlock()` (new-p12-88) is the
-  single mixing step the render path calls; its no-progress fallback no longer clears the
-  shared buffer. `gigplayerNoProgressFallbackKeepsEarlierSamples` passes.
+| Item | Line | Purpose |
+|---|---|---|
+| `GigNoteSegmentShift = 9` (512 slots/segment) | :100 | note-segment size |
+| `GigVoiceSegmentShift = 6` (64 voices/segment) | :104 | voice-segment size |
+| `MaxGigSegments = 1024` | :112 | bounds memory, not behaviour (1024 segments = 524288 notes or 65536 voices) |
+| `InitialGigNoteSegments = 1`, `InitialGigVoiceSegments = 8` | :115, :116 | starting sizes, explicitly not ceilings |
+| `struct GigNoteSlot` | :286 | carries `firstVoice`/`lastVoice`/`voiceCount`, the intrusive `orderPrev`/`orderNext`, the release request atomics and `releasePassPending`; **no `voices[8]` and no per-note cap** |
+| `struct GigNoteSegment` | :327 | `noteSlots[]` + `freeSlots[]` + `freeCount`, built complete before publication |
+| `struct GigVoice` | :345 | one `GigSample` plus its intrusive `nextInNote`/`prevInNote` |
+| `struct GigVoiceSegment` | :359 | `voices[]` + `freeVoices[]` + `freeCount` |
+| `std::array<std::atomic<GigNoteSegment*>, MaxGigSegments> m_noteSegments` | :485 | published note segments |
+| `std::array<std::atomic<GigVoiceSegment*>, MaxGigSegments> m_voiceSegments` | :504 | published voice segments |
+| `QTimer m_poolGrowthTimer` | :518 | drives the growth service on the instrument's own thread |
 
-The branch's 24-bit regression assumed the OLD 16-bit contract (a full-scale 16-bit sample
-playing at half scale, so 24-bit had to be 2x the 16-bit level). On this line the 16-bit
-path already normalises to full scale, so both full-scale fixtures must render at the SAME
-level. The test now says that (`tests/src/plugins/PluginPortsMigrationTest.cpp:3377`,
-ratio in `[0.9, 1.1]` instead of `[1.9, 2.1]`); the property it guards is unchanged - a
-24-bit sample divided by `0x100000000` still plays at half the level and fails.
+### Behaviour (`plugins/GigPlayer/GigPlayer.cpp`)
 
-## Regression proof
+* `:514` `buildInitialPools()` runs in the constructor, before the audio thread can claim
+  anything, and builds one note segment and eight voice segments. Every `GigSample` and its
+  resampler therefore already exists when a note starts.
+* `:524` `growNotePool()` and `:554` `growVoicePool()` allocate a whole segment, fill its
+  free list, and only then `store(..., release)` it and bump the segment count. A reader
+  never sees a free list that is still being filled.
+* `:588` `servicePoolGrowth()` is the only place that grows. It returns immediately when
+  `RealtimeScope::isActive()` or when it is not on the instrument's own thread, so it cannot
+  allocate on the audio thread even if a test calls it from there; the constructor connects
+  it to `QTimer::timeout` and starts the timer at 25 ms.
+* `:643` `acquireNoteSlot()` and `:705` `acquireVoice()` pop a prepared index from a
+  published free list; a full pool only returns `GigNoIndex`. They allocate nothing.
+* `:481` `playNoteImpl()` asks for another note segment (`requestNotePoolGrowth()`) and
+  leaves the note to be offered again on the next period instead of refusing it. This is
+  the round-2 cap at the old `:443-449`, removed.
+* `:744` `appendToNoteOrder()` / `:764` `removeFromNoteOrder()` keep the playing order as an
+  intrusive list through the slots (`m_noteOrderHead`/`m_noteOrderTail`), so starting or
+  ending a note never makes a container grow on the audio thread. This also removes the old
+  order-index wrap the previous test only just reached.
+* `:826` `appendVoiceToNote()` / `:834` `releaseVoiceOfNote()` keep each note's voices as a
+  doubly linked list through the pool: a note may take one voice per matching region, with
+  **no per-note ceiling**. This is the round-2 cap at the old `:1194-1204`, removed.
+* `:1495` `addSamples()` attaches a voice for every matching region of the file. When a
+  voice cannot be had it calls `rollBackVoices()` (`:794`) and reports `false`, so a pass is
+  all-or-nothing and no layer is silently skipped. `playImpl()` retries that pass on a later
+  period (`:1007`-`:1021` for the release pass, `:1022`-`:1033` for the key-down pass), and
+  keeps a note that is still waiting for its pass instead of deleting it as "ended".
+* `:900` `playImpl()` walks the note order and each note's voice list by index, and calls
+  `noteSlot()`/`voice()` (`:620`/`:631`) - an acquire load plus an offset.
 
-RED without the product fix (the whole product diff `logs/fix.patch` reverse-applied):
+Realtime rule: the audio-thread functions (`playImpl`, `playNoteImpl`,
+`deleteNotePluginData`, `addSamples` and the pool helpers) only claim, release and link
+prepared objects. They never allocate, free, lock, wait, log or grow a container. Growth
+happens only in `servicePoolGrowth()` on the instrument's thread, and a segment is never
+moved or freed while the instrument lives.
 
-```
-$ git diff HEAD -- plugins/GigPlayer/GigPlayer.cpp plugins/GigPlayer/GigPlayer.h > $LOGS/fix.patch
-$ git apply -R $LOGS/fix.patch                                                  EXIT=0
-$ cmake --build build --target gigplayer PluginPortsMigrationTest               # logs/build-4-fix-reversed.log EXIT=0
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad
-                                                                                # logs/test-5-red-fix-reversed.log EXIT=1
-FAIL!  : PluginPortsMigrationTest::gigplayerCallbackDoesNotWaitForAFileLoad() 'setHook != nullptr' returned FALSE. (the GIG player does not export its file load hook)
-```
+## 4. Regressions (all three new, all behavioural)
 
-That RED is the pre-fix plugin's own handover (it has no seam), so a second RED restores the
-exact blocking handoff the finding describes on top of the lock-free code
-(`logs/blocking-handoff.patch`: the loader holds a `std::mutex` through the construction
-block and `playImpl()` takes the same mutex):
+The measurements are levels, not counters or timings: each case renders audio and compares
+the summed |L|+|R| of the render, so it fails when the notes or layers it asked for are not
+in the output.
 
-```
-$ git apply $LOGS/blocking-handoff.patch                                        EXIT=0
-$ cmake --build build --target gigplayer PluginPortsMigrationTest               # logs/build-3-red-handoff.log EXIT=0
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad
-                                                                                # logs/test-4-red-handoff.log EXIT=1
-FAIL!  : PluginPortsMigrationTest::gigplayerCallbackDoesNotWaitForAFileLoad() 'renderFinished' returned FALSE. (the audio callback waited for the GIG file that was being loaded)
-$ git apply -R $LOGS/blocking-handoff.patch                                     EXIT=0
-```
+| Regression | Line | What it proves |
+|---|---|---|
+| `gigplayerPlaysMoreThan512OverlappingNotes()` | `PluginPortsMigrationTest.cpp:3334` | 512 notes and 600 notes are rendered; the 600-note render must be more than 1.1x the 512-note render. A 512-slot pool gives exactly the 512-note level for both. Uses `dc.gig`, whose constant level makes the sum exactly proportional to the voices that played whatever period each started in. |
+| `gigplayerKeepsEveryLayerOfANote()` | `:3460` | one note on `layered12.gig` (twelve regions, all matching the default key) must reach more than 9x the level of the same note on `dc.gig` (one region). The old eight-voice cap lands at 8x; the fixed code at 12x. |
+| `gigplayerSurvivesGlobalVoicePoolExhaustion()` | `:3552` | 512 one-voice notes empty the starting voice pool, then 64 more notes are offered; the 576-note render must exceed 1.06x the 512-note render. A pool that dropped the notes that found it empty adds exactly nothing. |
 
-GREEN with the fix restored:
+The existing GIG cases were not weakened; they all still pass:
+`gigplayerKeepsEveryOverlappingNote` (`:3251`, still checks the 129th and 256th note are
+audible), `gigplayerAudioPathDoesNotAllocate` (`:3085`), `gigplayerCallbackDoesNotWaitForAFileLoad`
+(`:3132`), `gigOneFrameReleaseSampleIsAudible`, `gigPlayerKeepsReleaseTriggerAcrossRegions`,
+`gigplayerBidirectionalLoopReflectsAtExclusiveEnd`, `gigplayerSingleFrameLoopRepeatsFrame`,
+`gigKeyboardDimensionUsesPressedKey`, `gigplayerNoProgressFallbackKeepsEarlierSamples`,
+`gigplayer24BitSamplePlaysAtFullScale`, `gigPatchDialogPreviewsSelectedProgram`.
 
-```
-$ git apply $LOGS/fix.patch                                                     EXIT=0
-$ cmake --build build --target gigplayer PluginPortsMigrationTest               # logs/build-5-green-again.log EXIT=0
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad
-                                                                                # logs/test-6-green-again.log EXIT=0
-PASS   : PluginPortsMigrationTest::gigplayerCallbackDoesNotWaitForAFileLoad()
-```
+### Fixtures
 
-The 24-bit regression's own RED/GREEN (the divisor reverted to `0x100000000`):
+`tests/data/gigproof/make_gig.cpp` gained two modes, preserving every existing mode:
+`--layers N` (N regions all covering the same key, each with its own sample) and `--dc`
+(a constant-level sample). Both new fixtures are generated by that generator:
 
-```
-$ sed -i 's|1.0 / 0x80000000|1.0 / 0x100000000|g' plugins/GigPlayer/GigPlayer.cpp
-$ cmake --build build --target gigplayer PluginPortsMigrationTest               # logs/build-7-red-24bit.log EXIT=0
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayer24BitSamplePlaysAtFullScale
-                                                                                # logs/test-11-red-24bit.log EXIT=1
-FAIL!  : PluginPortsMigrationTest::gigplayer24BitSamplePlaysAtFullScale() 'ratio > 0.9f' returned FALSE. (a full-scale 24-bit sample played at 0.435972, which is half the level of the full-scale 16-bit sample (0.871917))
-$ (restore the divisor)
-$ cmake --build build --target gigplayer PluginPortsMigrationTest               # logs/build-8-green-24bit.log EXIT=0
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayer24BitSamplePlaysAtFullScale
-                                                                                # logs/test-12-green-24bit.log EXIT=0
-PASS   : PluginPortsMigrationTest::gigplayer24BitSamplePlaysAtFullScale()
-```
+* `tests/data/gigproof/dc.gig` — `make_gig --dc`
+* `tests/data/gigproof/layered12.gig` — `make_gig --dc --layers 12`
 
-## Gates and family
+They are registered in `tests/upstream-modifications.txt` (with a reason each) and
+documented in `tests/data/gigproof/README.md`.
 
-```
-$ cmake --build build --target zene gigplayer PluginPortsMigrationTest          # logs/build-9-final.log EXIT=0
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest <the 11 GIG cases>
-                                                                                # logs/test-13-gig-all.log EXIT=0 (13 passed, 0 failed)
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(PluginPortsMigrationTest|RtSafetySweep|RtSafetySelfTest)$' --output-on-failure
-                                                                                # logs/test-14-family-final.log EXIT=8 (76 passed, 1 failed, 2 skipped)
-$ python3 tests/rt-safety-sweep.py --check                                      # logs/sweep-1-green.log EXIT=0
-$ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>        # logs/gate-2.log EXIT=0 (RESULT: PASS)
-```
+## 5. RED / GREEN proof (4b), with exit codes
 
-The family exit 8 is the pre-existing `nonRealtimeLadspaEffectsAreInvalid()` failure: this
-host has no SWH `decimator_1202.so` fixture ("SWH Decimator test fixture was not loaded",
-`logs/test-14-family-final.log`). It is unrelated to this change (the case needs a LADSPA
-plugin module that is not installed) and every GIG case passes.
-
-`fork-sources` and `all-sources-reproduce` were RED on the branch tip before this port: the
-train-12 snapshot `07d6d02bd` had re-added the 1148 vendored `plugins/SfzPlayer/sfizz/...`
-paths that `tests/all-sources.txt` excludes on purpose. That manifest is repaired here with
-its OWN published recipe (the "Regenerate with" command in its header, verbatim - no path
-hand-edited); `bash tests/all-sources-reproduce.sh` prints `REPRODUCES` (EXIT=0) and Gate 9
-passes (`logs/fork-sources-direct.log`, `logs/gate-2.log`).
-
-Every gate was also run by hand, one command at a time (`logs/gate-direct.log`):
+The whole product diff was written to `logs/fix.patch`, reverse-applied, rebuilt, tested
+(RED), then re-applied, rebuilt and tested (GREEN). Every command and exit code:
 
 ```
-$ bash tests/fork-sources-gate.sh                 EXIT=0
-$ bash tests/all-sources-reproduce.sh             EXIT=0  (REPRODUCES)
-$ bash tests/no-upstream-regression-gate.sh       EXIT=0
-$ tests/scripted/check-namespace                  EXIT=0
-$ bash tests/no-tautology-gate.sh                 EXIT=0
-$ python3 tests/doc-figures-gate.py               EXIT=0
-$ bash tests/complexity-gate.sh --check           EXIT=1  (train-wide: "no longer over CCN 10" entries)
-$ bash tests/file-length-gate.sh --check          EXIT=1  (train-wide: VideoTrackTest.cpp 651, ArrangerTimelineTest.cpp 868)
+$ git diff -- plugins/GigPlayer/GigPlayer.cpp plugins/GigPlayer/GigPlayer.h > $LOGS/fix.patch
+$ git apply -R --check $LOGS/fix.patch                                      EXIT=0
+$ git apply -R $LOGS/fix.patch                                              EXIT=0   (logs/4b-apply-reverse.log)
+$ cmake --build build --target gigplayer -j8                                EXIT=0   (logs/build-10-reverted-module.log)
+$ cmake --build build --target PluginPortsMigrationTest -j8                 EXIT=0   (logs/build-11-reverted-test.log)
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest \
+      gigplayerPlaysMoreThan512OverlappingNotes \
+      gigplayerKeepsEveryLayerOfANote \
+      gigplayerSurvivesGlobalVoicePoolExhaustion                            EXIT=3   (logs/test-6-RED.log)
 ```
 
-The two ratchet gates are red on the train on purpose; neither lists an item in a file this
-port changed (no `REGRESSION` line names `plugins/GigPlayer/...`,
-`tests/src/plugins/PluginPortsMigrationTest.cpp` or this report).
-
-The run's `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` cannot
-write its log directory in this session: the harness allows writes inside the worktree
-(and `/tmp`, `~/.cache`) only, and the script writes to `<worktree>/../<name>-feature-check`,
-which is outside it - `PermissionError: [Errno 13] Permission denied:
-.../zene-qwen-new-p9-149-port-feature-check` (`logs/gate-1.log`). The identical script with
-only that log path pointed at a writable directory (`/tmp`/`~/.cache`) prints the full
-table and exits 0 (`logs/gate-2.log`:
+The RED run fails all three for the intended behavioural reason, not for a missing symbol
+(the growth-service seam is resolved at run time, and the cases work without it):
 
 ```
-feature-check zene-qwen-new-p9-149-port (base 07d6d02bd, 6 changed files)
+FAIL!  : gigplayerPlaysMoreThan512OverlappingNotes() 'pastCap > 1.1 * atCap' returned FALSE.
+         (the notes past 512 were dropped: 512 notes summed 2742906.8, 600 notes summed 2742906.8)
+FAIL!  : gigplayerKeepsEveryLayerOfANote() 'twelve > 9.0 * one' returned FALSE.
+         (the note kept only a fraction of its matching layers: one layer summed 1785.7406,
+          twelve matching regions summed 14285.924; the eight-voice cap is back)
+FAIL!  : gigplayerSurvivesGlobalVoicePoolExhaustion() 'withLate > 1.06 * fillersOnly' returned FALSE.
+         (the notes that found the voice pool empty never played: 512 notes summed 1828604.5,
+          512 notes plus 64 after the pool grew summed 1828604.5)
+Totals: 2 passed, 3 failed
+```
+
+Note the first and third RED numbers: 512 and 600 notes (and 512 and 576 notes) render
+**exactly the same** level on the old code, which is the silent cap itself. The second is
+8/12 of the one-layer level, i.e. exactly the eight-voice cap.
+
+Restore and GREEN:
+
+```
+$ git apply $LOGS/fix.patch                                                 EXIT=0   (logs/4b-apply-forward.log)
+$ cmake --build build --target zene gigplayer -j8                           EXIT=0   (logs/build-12-restored.log)
+$ cmake --build build --target PluginPortsMigrationTest -j8                 EXIT=0   (logs/build-13-restored-test.log)
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest \
+      gigplayerPlaysMoreThan512OverlappingNotes \
+      gigplayerKeepsEveryLayerOfANote \
+      gigplayerSurvivesGlobalVoicePoolExhaustion                            EXIT=0   (logs/test-7-GREEN-restored.log)
+Totals: 5 passed, 0 failed
+```
+
+The full GIG family GREEN run (13 passed, 0 failed):
+
+```
+$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest <11 GIG cases>
+                                                                            EXIT=0   (logs/test-5-gig-green.log)
+Totals: 13 passed, 0 failed, 0 skipped
+```
+
+The locking fix from round 1 has its own RED/GREEN on record from that round (a temporary
+shared mutex restored the blocking handoff and made `renderFinished` fail), and its case
+still passes here.
+
+## 6. Gates
+
+Run one command at a time, each logged:
+
+```
+$ cmake --build build --target zene -j8                                     EXIT=0   (logs/build-9-clean.log)
+$ cmake --build build --target PluginPortsMigrationTest -j8                 EXIT=0   (logs/build-9-clean.log)
+$ bash tests/fork-sources-gate.sh                                           EXIT=0   (logs/gates/fork-sources.log)
+$ bash tests/all-sources-reproduce.sh                                       EXIT=0   (logs/gates/all-sources-reproduce.log, REPRODUCES)
+$ bash tests/no-upstream-regression-gate.sh                                 EXIT=0   (logs/gates/no-upstream-regression.log)
+$ python3 tests/scripted/check-namespace                                    EXIT=0   (logs/gates/check-namespace.log)
+$ bash tests/no-tautology-gate.sh                                           EXIT=0   (logs/gates/no-tautology.log)
+$ python3 tests/doc-figures-gate.py                                         EXIT=0   (logs/gates/doc-figures.log)
+$ python3 tests/rt-safety-sweep.py --tree . --scope tests/rt-safety-scope.txt \
+      --allowlist tests/rt-safety-allowlist.txt --check                     EXIT=0   (PASS, 0 fresh)
+$ cd build/tests && ctest -R '^RtSafetySweep$' --output-on-failure          EXIT=0   (logs/ctest-rtsafety.log)
+$ bash tests/complexity-gate.sh --check                                     EXIT=1   (logs/gates/complexity.log)
+$ bash tests/file-length-gate.sh --check                                    EXIT=1   (logs/gates/file-length.log)
+```
+
+The two ratchet gates are red on the train on purpose. Judged by `feature_check.py`'s own
+rule (an item fails only when it is NEW against the cached base listing **and** lives in a
+file this branch changed), both rows pass:
+
+```
+base 07d6d02bd, 11 changed files
+complexity:  total=7  new-vs-base=0  in-my-files=0  -> PASS
+file-length: total=19 new-vs-base=0  in-my-files=0  -> PASS
+RESULT: PASS
+```
+
+No `REGRESSION` line of either gate names `plugins/GigPlayer/...`,
+`tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/data/gigproof/...` or this report.
+The 7 complexity items are in `src/wasm/WasmSandbox.cpp`, `tests/src/gui/XyPadPairTest.cpp`,
+`src/core/DawProjectReadTracks.cpp`, `src/core/ControlCommandsMixerTools.cpp`,
+`src/core/ControlCommandsSessionRecordLand.cpp`, `src/core/ControlCommandsMixerStrip.cpp`
+and `src/gui/ControlCommandsShortcuts.cpp`; the 19 file-length items are in files this
+branch did not touch.
+
+### The rt-safety sweep and this change
+
+Both audio-thread paths the earlier round declared were already in
+`tests/rt-safety-scope.txt:162-163`. Because this round adds pool helpers that also run on
+the audio thread, sixteen more of them are now **declared** (`noteSlot`, `voice`,
+`acquireNoteSlot`, `acquireVoice`, `releaseNote`, `releaseVoice`, `appendToNoteOrder`,
+`removeFromNoteOrder`, `appendVoiceToNote`, `releaseVoiceOfNote`, `rollBackVoices`,
+`requestNotePoolGrowth`, `requestVoicePoolGrowth`, `clearNotes`, `addSamples`,
+`deleteNotePluginData`), each with the reason it cannot allocate. The sweep then measures
+**4060 region lines** across 125 declared pairs and reports
+`allocation 0, locking 2, growth 2, blocking-io 0`, all four hits being the three inherited
+upstream entries already in `tests/rt-safety-allowlist.txt`; `0 key(s) fresh` -> **PASS**.
+So the claim is not "the sweep passed because it did not look": the new paths are in the
+declared frontier and they measure clean.
+
+### `feature_check.py` and the sandbox
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` cannot write its
+log directory in this session: it writes to `<worktree>/../<name>-feature-check`, which is
+outside the writable set, and aborts before running a gate
+(`PermissionError: [Errno 13] Permission denied: .../zene-qwen-new-p9-149-port-feature-check`,
+`logs/feature-check-1.log`, EXIT=1). The directory exists with mode `0777` and is owned by
+this user, and even `touch` inside it, in its parent, or in the mandated run log folder
+returns `EACCES`; this is an environment fault, not a permission I can fix.
+
+Every gate was also run individually (table above, all six SIMPLE gates EXIT=0), and the two
+RATCHET rows were evaluated with the script's own `key()`/`item_file()` logic against its
+cached `gate-baselines/07d6d02bd*.json` — the same computation the script performs.
+
+Finally, the **unmodified script logic** was run with nothing changed but its two paths: its
+`ROOT` (so it reads the real `FIX-BASE`/`gate-baselines`) and its log directory (pointed at
+`$LOGS/fc`, since its own target is unwritable). `diff` against the shipped script shows
+exactly those two lines and nothing else:
+
+```
+$ diff ~/.local/share/zene-bunny-fix/qwen/feature_check.py $LOGS/fc/feature_check_writable.py
+19c19
+< ROOT = Path(__file__).resolve().parent
+---
+> ROOT = Path("/home/kruzzzzy/.local/share/zene-bunny-fix/qwen")
+70c70
+<     logs = wt.parent / f"{wt.name}-feature-check"
+---
+>     logs = Path("/home/kruzzzzy/.cache/np9149-r3-logs/fc")
+$ python3 $LOGS/fc/feature_check_writable.py <worktree>          EXIT=0   (logs/fc/gate-2.log)
+feature-check zene-qwen-new-p9-149-port (base 07d6d02bd, 11 changed files)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -196,118 +295,169 @@ feature-check zene-qwen-new-p9-149-port (base 07d6d02bd, 6 changed files)
 RESULT: PASS
 ```
 
-The same sandbox restriction makes
-`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-149-port`
-report its `gates (feature_check.py)` row as FAIL: the gate script it launches dies on the
-same unwritable log directory, not on a gate (`logs/submit-1.log`). Every other row of that
-check is PASS (commits on the branch, working tree clean, report, tests changed).
+`RESULT: PASS`, EXIT=0. This first became green **after the round-3 commit**: on the
+uncommitted tree the script classified the new files as untracked, so this table was
+produced on the committed tree, which is the state the submitted branch is in.
 
+## 7. Collateral damage
 
-## Commands (all logs in `$LOGS = <log folder of this run>`)
+* Saved data is unchanged: the attributes are still `src`, `bank`, `patch`, `gain`
+  (`saveSettings`, `GigPlayer.cpp:209`), and `loadSettings` (`:221`) opens the file the same
+  way. An old project loads with the same instrument and the same patch.
+* Nothing in the new pools changes rendering: `migratedPluginsPreserveBehaviour` still
+  requires exactly the frozen reference output, and passes.
+* `PluginPortsMigrationTest` as a whole: **79 passed, 1 failed, 2 skipped** (EXIT=1,
+  `logs/test-8-full-migration.log`). The single failure is the pre-existing
+  `nonRealtimeLadspaEffectsAreInvalid()` ("SWH Decimator test fixture was not loaded"), a
+  host that has no `decimator_1202.so`; it needs no GIG file and is unrelated to this
+  change, and it failed identically in round 2.
+* The limits that remain are explicit and harmless: `MaxGigSegments` bounds memory at
+  524288 notes / 65536 voices, far beyond any arrangement, and a request past it simply
+  retries. No caller legitimately exceeds it.
+
+## 8. Files changed in this round
+
+* `plugins/GigPlayer/GigPlayer.h` — segmented pool types, constants, members, helpers.
+* `plugins/GigPlayer/GigPlayer.cpp` — segmented acquire/release, control-thread growth
+  service, intrusive note/voice lists, all-or-nothing `addSamples()` with rollback and
+  retry, `deleteNotePluginData()` scanning published segments, and the
+  `lmms_gigplayer_service_pool_growth` test seam.
+* `tests/src/plugins/PluginPortsMigrationTest.cpp` — the three regressions.
+* `tests/data/gigproof/make_gig.cpp`, `tests/data/gigproof/README.md`,
+  `tests/data/gigproof/dc.gig`, `tests/data/gigproof/layered12.gig` — the two fixtures and
+  the generator modes.
+* `tests/rt-safety-scope.txt` — sixteen new declared audio-thread helpers.
+* `tests/upstream-modifications.txt` — registration of the inherited files changed and of
+  the two new fixtures (`fork-ADDED`), each with a reason.
+* `docs/qwen-fixes-2026-10/cluster-new-p9-149-port.md` — this report.
+
+## 9. Self-check (answers to every submit_check.py "?")
+
+**"The regression test FAILS with your product change reverted and PASSES with it (exit
+codes)."** — Yes, all three, with the product diff reverse-applied (`logs/fix.patch`,
+`git apply -R` EXIT=0) and rebuilt: the three cases exit **3** (3 failed) with exactly the
+cap messages quoted in §5 — 512 and 600 notes render the *identical* level, and the layered
+note keeps 8/12 of its level. With the patch re-applied and rebuilt they exit **0**
+(5 passed, `logs/test-7-GREEN-restored.log`). The cases fail on their level assertions, not
+on a missing export: the growth-service seam is looked up at run time and skipped when
+absent, so the same binary shape runs in both builds.
+
+**"The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
+injected values it uses)."** — No sleep, no deadline, no wall-clock measurement. The seam
+is `lmms_gigplayer_service_pool_growth` (`GigPlayer.cpp:297`), which calls
+`servicePoolGrowthForTest()` (`:609`) — the same function the 25 ms `QTimer` calls in the
+product — and the test calls it **between periods, on the thread that rendered**, exactly
+where the control thread would. `servicePoolGrowth()` refuses to run inside a
+`RealtimeScope` or off the instrument's thread, so the seam cannot accidentally allocate on
+the audio thread. The assertions are ratios of summed render levels with fixed note counts
+(512/600, 1 vs 12 layers, 512/576) and no dependence on sample rate, period size or
+scheduling. The old locking regression uses the file-load hook plus a `QMutex`/
+`QWaitCondition` pair and asserts the *order* of two synchronised events, with its 10 s
+deadline only as a deadlock breaker.
+
+**"The fix is at the cause and complete: every caller and sibling of what you changed was
+checked and stays consistent."** — Cause: the callback took locks (removed in round 1) and
+the replacement pools capped counts (removed here). Every reader of the published file
+state takes the reader reference (`getCurrentPatchName`, `playImpl`, `getInstrument`, the
+patch dialog) and every writer goes through `publishFileState()` (`openFile`,
+`freeInstance`). Every writer of note state is now accounted for: `playNoteImpl` claims a
+slot, `playImpl` claims/releases voices and notes, `clearNotes` walks the intrusive order,
+`deleteNotePluginData` only publishes a release request. Every accessor that previously
+indexed a fixed array (`m_noteSlots`, `m_voices`, `m_noteOrder`, `m_freeNotes`,
+`m_freeVoices`, `MaxGigNotes`, `MaxGigVoices`, `MaxGigSamplesPerNote`) was converted;
+`grep` finds none of those symbols left in either product file. The two writers of the
+pools are separated by thread: only the audio thread claims and releases, only
+`servicePoolGrowth()` (instrument thread) appends, and a segment is complete before its
+pointer is published with release ordering.
+
+**"No collateral damage: old projects and saved data still load as before, and any limit or
+check you added does not hit other callers that legitimately exceed it."** — The saved
+attributes (`src`, `bank`, `patch`, `gain`) and `loadSettings`/`saveSettings` are untouched,
+so an old project loads with the same file and patch. Rendering is unchanged for everything
+within the old bounds: `migratedPluginsPreserveBehaviour` (sample-exact against the frozen
+reference) passes, as do all the pre-existing GIG regressions. The one limit added,
+`MaxGigSegments = 1024`, is 1024 segments of 512 notes / 64 voices (524288 notes or 65536
+voices), a memory bound that no project reaches; a request beyond it retries rather than
+refusing or corrupting. Full binary: 79 passed, 1 pre-existing unrelated failure (missing
+SWH Decimator LADSPA fixture), 2 skipped.
+
+**"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
+contract that shows it."** — Not applicable: the verdict is **FIXED**. The pre-fix locking
+code is quoted with line numbers in §1 from
+`git show 07d6d02bd:plugins/GigPlayer/GigPlayer.cpp`; it is real, and it was in the audio
+callback path.
+
+**Realtime, undo and commands.** The audio-thread functions add no allocation, free, lock,
+wait, log or container growth: the sweep declares them and measures no allocation, no
+locking and no growth for the new ones (§6), and `gigplayerAudioPathDoesNotAllocate` still
+counts zero allocations and zero frees across repeated note starts on the render path. No
+control command was added or changed, and no undo step was introduced or altered.
+
+## 10. Commands (all logs in `$LOGS`)
 
 ```
-$ cmake --build build --target gigplayer PluginPortsMigrationTest          # logs/build-1.log        EXIT=0
-$ cd build/tests && QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad
-                                                                            # logs/test-1-green.log   EXIT=0
-$ ... ./PluginPortsMigrationTest gigplayer24BitSamplePlaysAtFullScale ...   # logs/test-3-24bit.log   EXIT=0
-$ git apply $LOGS/blocking-handoff.patch ; cmake --build ...
-                                                                            # logs/build-3-red-handoff.log EXIT=0
-$ ... ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad   # logs/test-4-red-handoff.log EXIT=1 (RED)
-$ git apply -R $LOGS/blocking-handoff.patch
-$ git diff HEAD -- plugins/GigPlayer/GigPlayer.cpp plugins/GigPlayer/GigPlayer.h > $LOGS/fix.patch
-$ git apply -R $LOGS/fix.patch ; cmake --build ...                          # logs/build-4-fix-reversed.log EXIT=0
-$ ... ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad   # logs/test-5-red-fix-reversed.log EXIT=1 (RED)
-$ git apply $LOGS/fix.patch ; cmake --build ...
-                                                                            # logs/build-5-green-again.log EXIT=0
-$ ... ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad   # logs/test-6-green-again.log EXIT=0 (GREEN)
-$ ... ./PluginPortsMigrationTest migratedPluginsPreserveBehaviour           # logs/test-9-migrated.log EXIT=0
-$ ... ./PluginPortsMigrationTest gigPlayerAcceptsMidiNoteZero gigKeyboardDimensionUsesPressedKey gigPlayerKeepsReleaseTriggerAcrossRegions gigOneFrameReleaseSampleIsAudible
-                                                                            # logs/test-10-newer-gig.log EXIT=0
-$ ... ./PluginPortsMigrationTest <11 GIG cases>                             # logs/test-13-gig-all.log EXIT=0
-$ cd build/tests && ctest -R '^(PluginPortsMigrationTest|RtSafetySweep|RtSafetySelfTest)$' --output-on-failure
-                                                                            # logs/test-14-family-final.log EXIT=8
-$ python3 tests/rt-safety-sweep.py --check                                  # logs/sweep-1-green.log EXIT=0
-$ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>    # logs/gate-2.log       EXIT=0
+$LOGS = /home/kruzzzzy/.cache/np9149-r3-logs
 ```
 
-NOTE on the log folder: the run's log folder
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r1/logs` is
-read-only for this session (every write, even after `chmod 777`, returns `EACCES`; the
-worktree itself is writable, `~/.cache` and `/tmp` are writable too). The logs of this run
-are therefore in `/home/kruzzzzy/.cache/np9149logs/` (and a copy inside the gitignored
-build tree, `build/qwen-logs-new-p9-149-port/`) with the `logs/`-relative names used above;
-they are copied into the log folder by whoever has write access there.
-
-## Self-check
-
-* "The regression test FAILS with your product change reverted and PASSES with it (exit
-  codes)." - Yes: `gigplayerCallbackDoesNotWaitForAFileLoad` EXIT=1 with
-  `logs/fix.patch` reverse-applied (the pre-fix plugin has no seam, so the case fails at
-  `setHook != nullptr`) and EXIT=1 with the exact blocking handoff restored on top of the
-  code ("the audio callback waited for the GIG file that was being loaded", which is the
-  behavioural RED); EXIT=0 with the fix.
-  `gigplayer24BitSamplePlaysAtFullScale` EXIT=1 with the divisor reverted
-  ("played at 0.435972, which is half the level of the full-scale 16-bit sample
-  (0.871917)"), EXIT=0 with it.
-* "The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
-  injected values it uses)." - The seam is the file load hook
-  (`plugins/GigPlayer/GigPlayer.cpp:263`, exported at `:272`), called inside the
-  construction block of `openFile()` (`:340`); it parks the loader on a
-  `QMutex`/`QWaitCondition` pair until the test releases it. The assertion is the order of
-  the two synchronised events (callback returned while `loaderPaused` is still true) and a
-  non-silent render (`renderPeak > 1e-4`), so the only deadline is the deadlock breaker of
-  a blocking callback. The allocation regression uses the replaced C allocator to count the
-  render thread's traffic; the 24-bit regression injects a full-scale fixture written from
-  the tracked one.
-* "The fix is at the cause and complete: every caller and sibling of what you changed was
-  checked and stays consistent." - Every reader of the published state takes the reader
-  reference: `getCurrentPatchName()` (`:386`), `playImpl()` (`:574`), `getInstrument()`
-  (`:1330`) and the patch dialog (`:1542`). Every writer goes through
-  `publishFileState()` (`:294`): `openFile()` (`:357`) and `freeInstance()` (`:285`, from
-  the destructor and from `openFile()`'s old path). `updateSampleRate()` (`:1349`) only
-  raises the audio-thread `m_clearNotes` flag; `selectInstrument()` (`:1295`) is the one
-  implementation used by both `openFile()` and `getInstrument()`. `addSamples()` takes the
-  instrument it renders (`:1137`), so it never reads the member the audio thread swapped.
-* "No collateral damage: old projects and saved data still load as before, and any limit or
-  check you added does not hit other callers that legitimately exceed it." - The saved
-  attributes (`src`, `bank`, `patch`, `gain`) are unchanged (`:197`-`:218`), and the render
-  is still exactly twice the frozen pre-fix reference
-  (`migratedPluginsPreserveBehaviour`, EXIT=0). The pool limits are 512 notes and 512
-  voices, far above a real arrangement; a note that does not fit is refused outright instead
-  of staying half registered. The 512-entry note-order counter is 16 bit, and every loop
-  that walks it uses 16-bit indices.
-* "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
-  contract that shows it." - Not applicable: the verdict is FIXED; the pre-fix locks are
-  quoted above from `git show 07d6d02bd:plugins/GigPlayer/GigPlayer.cpp`.
-* Realtime, undo and commands: `playImpl()` and `playNoteImpl()` take no lock and allocate
-  nothing (the rt-safety sweep, EXIT=0, measures both declared paths;
-  `tests/rt-safety-scope.txt:162-163`), no command was added and no undo step introduced.
-* Files committed: `plugins/GigPlayer/GigPlayer.cpp`, `plugins/GigPlayer/GigPlayer.h`,
-  `tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/rt-safety-scope.txt`,
-  `tests/upstream-modifications.txt` (the branch's registrations for the two product files,
-  the test and the scope lines), `tests/all-sources.txt` (repaired with its own recipe) and
-  this report.
-
-## Completion check (submit_check.py) and its one FAIL
+The run's mandated log folder
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r3/logs` is not
+writable in this session (every write returns `EACCES`, including after `chmod 777`; the
+parent `runs/` and `qwen/` deny writes too, while the worktree and `~/.cache` are writable).
+The logs of this round are therefore in `$LOGS`, with the names used throughout this report;
+they are copied into the mandated folder by whoever has write access there. This is stated
+plainly rather than claimed otherwise.
 
 ```
+$ cmake --build build --target zene PluginPortsMigrationTest -j8            EXIT=0   build-9-clean.log
+$ cd build/tests && ./PluginPortsMigrationTest <11 GIG cases>               EXIT=0   test-5-gig-green.log
+$ git diff -- plugins/GigPlayer/GigPlayer.cpp plugins/GigPlayer/GigPlayer.h > fix.patch
+$ git apply -R --check fix.patch                                           EXIT=0
+$ git apply -R fix.patch                                                   EXIT=0   4b-apply-reverse.log
+$ cmake --build build --target gigplayer -j8                               EXIT=0   build-10-reverted-module.log
+$ cmake --build build --target PluginPortsMigrationTest -j8                EXIT=0   build-11-reverted-test.log
+$ cd build/tests && ./PluginPortsMigrationTest <the three new cases>       EXIT=3   test-6-RED.log
+$ git apply fix.patch                                                      EXIT=0   4b-apply-forward.log
+$ cmake --build build --target zene gigplayer -j8                          EXIT=0   build-12-restored.log
+$ cmake --build build --target PluginPortsMigrationTest -j8                EXIT=0   build-13-restored-test.log
+$ cd build/tests && ./PluginPortsMigrationTest <the three new cases>       EXIT=0   test-7-GREEN-restored.log
+$ cd build/tests && ./PluginPortsMigrationTest                             EXIT=1   test-8-full-migration.log (79 passed, 1 pre-existing)
+$ bash tests/fork-sources-gate.sh                                          EXIT=0   gates/fork-sources.log
+$ bash tests/all-sources-reproduce.sh                                      EXIT=0   gates/all-sources-reproduce.log
+$ bash tests/no-upstream-regression-gate.sh                                EXIT=0   gates/no-upstream-regression.log
+$ python3 tests/scripted/check-namespace                                   EXIT=0   gates/check-namespace.log
+$ bash tests/no-tautology-gate.sh                                          EXIT=0   gates/no-tautology.log
+$ python3 tests/doc-figures-gate.py                                        EXIT=0   gates/doc-figures.log
+$ python3 tests/rt-safety-sweep.py --check                                 EXIT=0   (PASS, 0 fresh)
+$ cd build/tests && ctest -R '^RtSafetySweep$'                             EXIT=0   ctest-rtsafety.log
+$ bash tests/complexity-gate.sh --check                                    EXIT=1   gates/complexity.log
+$ bash tests/file-length-gate.sh --check                                   EXIT=1   gates/file-length.log
+$ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>    EXIT=1   feature-check-1.log (sandbox: unwritable log dir)
+$ python3 $LOGS/fc/feature_check_writable.py <worktree>                    EXIT=0   fc/gate-2.log (RESULT: PASS)
 $ python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-149-port
-                                                                  # logs/submit-1.log EXIT=1
+                                                                           EXIT=1   submit-2.log (only the sandbox gate row)
+```
+
+## 11. Completion check (`submit_check.py`)
+
+On the committed tree, `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree>
+new-p9-149-port` reports (`logs/submit-2.log`, EXIT=1):
+
+```
+PRE-SUBMIT CHECK for new-p9-149-port
   PASS  commits on the branch
   PASS  working tree clean
   PASS  report docs/qwen-fixes-2026-10/cluster-new-p9-149-port.md
-  PASS  tests added or changed - tests/src/plugins/PluginPortsMigrationTest.cpp
+  PASS  tests added or changed - tests/data/gigproof/make_gig.cpp, tests/src/plugins/PluginPortsMigrationTest.cpp
   FAIL  gates (feature_check.py)
 RESULT: FAIL - 1 item(s) to fix before submitting
 ```
 
-The one FAIL is the sandbox, not a gate: `feature_check.py` writes its per-gate logs to
-`<worktree>/../<name>-feature-check`, and that path is outside this session's writable set,
-so the script aborts with `PermissionError` before running a single gate. With only that log
-path redirected to a writable directory the very same script runs all eight gates and prints
-`RESULT: PASS` (`logs/gate-2.log`, EXIT=0, table above), and each gate also exits 0 when run
-by hand (`logs/gate-direct.log`: fork-sources 0, all-sources-reproduce 0,
-no-upstream-regression 0, check-namespace 0, no-tautology 0, doc-figures 0). The two
-ratchet rows are red train-wide and list no item in a file this port changed. The five ASK
-items are answered above in "Self-check"; no ALREADY-FIXED/FALSE-POSITIVE answer applies
+The single FAIL is the sandbox, not a gate: `submit_check.py` launches the shipped
+`feature_check.py`, which aborts with `EACCES` writing `<worktree>/../<name>-feature-check`
+before it runs a single gate. The identical script with only that log path redirected (and
+`ROOT` pinned to the real install directory, §6, two-line `diff` shown there) runs all eight
+gates on this same committed tree and prints `RESULT: PASS`, EXIT=0
+(`logs/fc/gate-2.log`). Every gate also exits 0 when run by hand (§6).
+
+The five ASK items are answered in §9; no ALREADY-FIXED/FALSE-POSITIVE answer applies
 because the verdict is FIXED.

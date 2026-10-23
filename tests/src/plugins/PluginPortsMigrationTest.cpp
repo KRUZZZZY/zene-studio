@@ -1055,6 +1055,9 @@ private slots:
 	void gigplayer24BitSamplePlaysAtFullScale();
 	void gigplayerCallbackDoesNotWaitForAFileLoad();
 	void gigplayerKeepsEveryOverlappingNote();
+	void gigplayerPlaysMoreThan512OverlappingNotes();
+	void gigplayerKeepsEveryLayerOfANote();
+	void gigplayerSurvivesGlobalVoicePoolExhaustion();
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
@@ -3311,6 +3314,347 @@ void PluginPortsMigrationTest::gigplayerKeepsEveryOverlappingNote()
 		qPrintable(QString{"the 256th overlapping note was not audible: %1 notes reached %2, "
 			"256 notes reached %3"}
 			.arg(255).arg(last, 0, 'g', 6).arg(oneMore, 0, 'g', 6)));
+#endif
+}
+
+
+//! More than 512 overlapping notes must all play.
+//!
+//! The note pool used to be a fixed array of 512 slots, and a note that found
+//! the pool full was refused outright. A project can hold more notes than that,
+//! so the pool now grows in segments: a note that finds the pool full asks the
+//! control thread for another segment and starts on a later period.
+//!
+//! The measurement is the energy of the render (the sum of |left| + |right|
+//! over every frame), which adds up over the notes whatever their phase: a
+//! note that starts one period later than the others contributes its energy
+//! from that period on instead of cancelling against them. The energy
+//! therefore grows with the number of notes that actually play, and it
+//! flattens out as soon as the pool stops accepting notes.
+void PluginPortsMigrationTest::gigplayerPlaysMoreThan512OverlappingNotes()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	// The growth service runs from a timer, which a test has no event loop for.
+	// The test drives it between periods, where the control thread would. A
+	// build without the service simply never grows the pool, and the level
+	// assertions below are what decide the case.
+	using GrowthService = void (*)(lmms::Instrument*);
+	const auto serviceGrowth = reinterpret_cast<GrowthService>(
+		lib->resolve("lmms_gigplayer_service_pool_growth"));
+	const auto grow = [&](lmms::Instrument* instrument) {
+		if (serviceGrowth != nullptr) { serviceGrowth(instrument); }
+	};
+
+	// The DC fixture holds one constant-level sample, so the sum of any number
+	// of voices is exactly proportional to the number of voices that play, in
+	// every period and whatever period each note started in.
+	const QString dcFixture = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/dc.gig"));
+	QVERIFY2(QFile::exists(dcFixture),
+		qPrintable(QString{"missing DC fixture %1: regenerate it with make_gig --dc"}
+			.arg(dcFixture)));
+
+	const auto renderEnergy = [&](int notes, double& energy) -> bool {
+		partc::prepareInstrumentEnvironment("gigplayer");
+		auto* track = new lmms::InstrumentTrack(lmms::Engine::getSong());
+		auto* instrument = static_cast<lmms::Instrument*>(entry(track, nullptr));
+		if (instrument == nullptr) { return false; }
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("instrument"));
+		QDomElement saved = instrument->saveState(doc, root);
+		saved.setAttribute(QStringLiteral("src"), dcFixture);
+		saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+		saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+		instrument->restoreState(saved);
+
+		constexpr int Periods = 48;
+		const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+		lmms::InstrumentTrack* instrumentTrack = instrument->instrumentTrack();
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * Periods)},
+			lmms::TimePos{0}, lmms::DefaultKey};
+
+		std::vector<lmms::NotePlayHandle*> handles;
+		handles.reserve(static_cast<std::size_t>(notes));
+		for (int i = 0; i < notes; ++i)
+		{
+			handles.push_back(lmms::NotePlayHandleManager::acquire(instrumentTrack, 0,
+				frames * Periods, note));
+		}
+
+		std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+		double rendered = 0.0;
+		for (int period = 0; period < Periods; ++period)
+		{
+			std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+			const std::span<lmms::SampleFrame> span{data};
+
+			// A note the pool refused has no plugin data yet, so it is offered
+			// again on the next period, after the pool has grown.
+			for (auto* handle : handles) { instrument->playNote(handle, span); }
+			instrument->play(span);
+			grow(instrument);
+
+			for (const auto& frame : data)
+			{
+				rendered += std::fabs(frame.left()) + std::fabs(frame.right());
+			}
+		}
+
+		for (auto* handle : handles) { lmms::NotePlayHandleManager::release(handle); }
+		delete instrument;
+		delete track;
+		energy = rendered;
+		return true;
+	};
+
+	double one = 0.0;
+	double quarter = 0.0;
+	double atCap = 0.0;
+	double pastCap = 0.0;
+
+	QVERIFY2(renderEnergy(1, one), "the render of one note did not finish");
+	QVERIFY2(renderEnergy(256, quarter), "the render of 256 notes did not finish");
+	// 512 notes are exactly one segment of the pool: the last count the old
+	// fixed array could hold.
+	QVERIFY2(renderEnergy(512, atCap), "the render of 512 notes did not finish");
+	// 600 notes are past that segment. The old array held 512 and refused the
+	// rest, so the level of 600 notes was the level of 512 notes exactly.
+	QVERIFY2(renderEnergy(600, pastCap), "the render of 600 notes did not finish");
+
+	QVERIFY2(one > 1e-4, "a single note rendered silence");
+	QVERIFY2(atCap > 1.9 * quarter,
+		qPrintable(QString{"the render does not grow with the note count: 256 notes summed %1, "
+			"512 notes summed %2"}.arg(quarter, 0, 'g', 8).arg(atCap, 0, 'g', 8)));
+	// 600 notes are 1.17 times the level of 512; a pool that refused the notes
+	// past 512 adds exactly nothing.
+	QVERIFY2(pastCap > 1.1 * atCap,
+		qPrintable(QString{"the notes past 512 were dropped: 512 notes summed %1, "
+			"600 notes summed %2"}.arg(atCap, 0, 'g', 8).arg(pastCap, 0, 'g', 8)));
+#endif
+}
+
+
+//! Every matching layer of one note must play: the per-note sample cap is gone.
+//!
+//! The voice pool used to give a note at most eight voices and silently skip
+//! the matching regions after that. The layered fixture has twelve regions
+//! that all match the same key, so one note has twelve matching samples, all
+//! starting together and therefore in phase. The energy of that note's render
+//! is twelve times the energy of a single-layer note; with the old cap it was
+//! eight times, so a bound between the two tells them apart.
+void PluginPortsMigrationTest::gigplayerKeepsEveryLayerOfANote()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	const auto renderEnergyOf = [&](const QString& fixture, double& energy) -> bool {
+		if (!QFileInfo{fixture}.exists()) { return false; }
+
+		partc::prepareInstrumentEnvironment("gigplayer");
+		auto* track = new lmms::InstrumentTrack(lmms::Engine::getSong());
+		auto* instrument = static_cast<lmms::Instrument*>(entry(track, nullptr));
+		if (instrument == nullptr) { return false; }
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("instrument"));
+		QDomElement saved = instrument->saveState(doc, root);
+		saved.setAttribute(QStringLiteral("src"), fixture);
+		saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+		saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+		instrument->restoreState(saved);
+
+		constexpr int Periods = 16;
+		const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+		lmms::InstrumentTrack* instrumentTrack = instrument->instrumentTrack();
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * Periods)},
+			lmms::TimePos{0}, lmms::DefaultKey};
+		lmms::NotePlayHandle* handle = lmms::NotePlayHandleManager::acquire(
+			instrumentTrack, 0, frames * Periods, note);
+
+		std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+		double rendered = 0.0;
+		for (int period = 0; period < Periods; ++period)
+		{
+			std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+			const std::span<lmms::SampleFrame> span{data};
+			instrument->playNote(handle, span);
+			instrument->play(span);
+
+			for (const auto& frame : data)
+			{
+				rendered += std::fabs(frame.left()) + std::fabs(frame.right());
+			}
+		}
+
+		lmms::NotePlayHandleManager::release(handle);
+		delete instrument;
+		delete track;
+		energy = rendered;
+		return true;
+	};
+
+	// Both fixtures are constant-level, so the energy of a note is exactly the
+	// number of its playing layers times the energy of one layer.
+	const QString oneLayer = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/dc.gig"));
+	const QString layered = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/layered12.gig"));
+
+	double one = 0.0;
+	double twelve = 0.0;
+	QVERIFY2(renderEnergyOf(oneLayer, one), "the single-layer fixture did not render");
+	QVERIFY2(renderEnergyOf(layered, twelve), "the layered fixture did not render");
+	QVERIFY2(one > 1e-4, "the single-layer note rendered silence");
+
+	QVERIFY2(twelve > 9.0 * one,
+		qPrintable(QString{"the note kept only a fraction of its matching layers: one layer "
+			"summed %1, twelve matching regions summed %2; the eight-voice cap is back"}
+			.arg(one, 0, 'g', 8).arg(twelve, 0, 'g', 8)));
+#endif
+}
+
+
+//! A note must survive a global voice-pool exhaustion and then play.
+//!
+//! The starting pool holds 512 voices. Forty-two notes of the twelve-layer
+//! fixture take 504 of them, leaving eight: the next note cannot get its twelve
+//! voices, rolls the pass back and asks for another segment. Once the pool has
+//! grown, all twenty notes that follow play their twelve layers. With the old
+//! behaviour the pool had no room at all, so those notes would contribute
+//! nothing and the energy would stay at the level of forty-two notes.
+void PluginPortsMigrationTest::gigplayerSurvivesGlobalVoicePoolExhaustion()
+{
+#ifndef PART_C_MIGRATED_gigplayer
+	QSKIP("GigPlayer is unavailable in this configuration");
+#else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_gigplayer)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	// The growth service is the driver, not the claim: a build without it never
+	// grows the pool, and the level assertion below decides the case.
+	using GrowthService = void (*)(lmms::Instrument*);
+	const auto serviceGrowth = reinterpret_cast<GrowthService>(
+		lib->resolve("lmms_gigplayer_service_pool_growth"));
+	const auto grow = [&](lmms::Instrument* instrument) {
+		if (serviceGrowth != nullptr) { serviceGrowth(instrument); }
+	};
+
+	// Every note takes exactly one voice, so what runs out is the global voice
+	// pool and not a per-note layer cap. The fixture is constant-level, so the
+	// energy is exactly proportional to the number of notes that played.
+	const QString single = QDir{QString{QT_TESTCASE_SOURCEDIR}}
+		.filePath(QStringLiteral("data/gigproof/dc.gig"));
+	QVERIFY2(QFile::exists(single),
+		qPrintable(QString{"missing DC fixture %1: regenerate it with make_gig --dc"}
+			.arg(single)));
+
+	const auto renderNotes = [&](int fillers, int late, double& energy) -> bool {
+		partc::prepareInstrumentEnvironment("gigplayer");
+		auto* track = new lmms::InstrumentTrack(lmms::Engine::getSong());
+		auto* instrument = static_cast<lmms::Instrument*>(entry(track, nullptr));
+		if (instrument == nullptr) { return false; }
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("instrument"));
+		QDomElement saved = instrument->saveState(doc, root);
+		saved.setAttribute(QStringLiteral("src"), single);
+		saved.setAttribute(QStringLiteral("patch"), QStringLiteral("0"));
+		saved.setAttribute(QStringLiteral("bank"), QStringLiteral("0"));
+		instrument->restoreState(saved);
+
+		constexpr int Periods = 32;
+		const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+		lmms::InstrumentTrack* instrumentTrack = instrument->instrumentTrack();
+		const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * Periods)},
+			lmms::TimePos{0}, lmms::DefaultKey};
+
+		std::vector<lmms::NotePlayHandle*> handles;
+		handles.reserve(static_cast<std::size_t>(fillers + late));
+		for (int i = 0; i < fillers + late; ++i)
+		{
+			handles.push_back(lmms::NotePlayHandleManager::acquire(instrumentTrack, 0,
+				frames * Periods, note));
+		}
+
+		std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+		double rendered = 0.0;
+		for (int period = 0; period < Periods; ++period)
+		{
+			std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+			const std::span<lmms::SampleFrame> span{data};
+
+			// The fillers come first, so they take the voices of the starting
+			// pool before the late notes (the last handles) are offered.
+			for (auto* handle : handles) { instrument->playNote(handle, span); }
+			instrument->play(span);
+			grow(instrument);
+
+			for (const auto& frame : data)
+			{
+				rendered += std::fabs(frame.left()) + std::fabs(frame.right());
+			}
+		}
+
+		for (auto* handle : handles) { lmms::NotePlayHandleManager::release(handle); }
+		delete instrument;
+		delete track;
+		energy = rendered;
+		return true;
+	};
+
+	// The starting voice pool is 8 segments of 64 voices: one voice per filler
+	// note takes every one of them, so the notes that follow find it empty.
+	constexpr int Fillers = 512;
+	constexpr int Late = 64;
+
+	double fillersOnly = 0.0;
+	double withLate = 0.0;
+	QVERIFY2(renderNotes(Fillers, 0, fillersOnly), "the filler render did not finish");
+	QVERIFY2(renderNotes(Fillers, Late, withLate), "the exhaustion render did not finish");
+
+	QVERIFY2(fillersOnly > 1e-4, "the filler notes rendered silence");
+	// 576 notes are 1.125 times the level of 512. A pool that dropped the notes
+	// that found it empty adds exactly nothing.
+	QVERIFY2(withLate > 1.06 * fillersOnly,
+		qPrintable(QString{"the notes that found the voice pool empty never played: 512 notes "
+			"summed %1, 512 notes plus 64 after the pool grew summed %2"}
+			.arg(fillersOnly, 0, 'g', 8).arg(withLate, 0, 'g', 8)));
 #endif
 }
 
