@@ -48,9 +48,11 @@
 #define LMMS_LINK_AUDIO_STREAM_H
 
 #include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -164,6 +166,38 @@ struct AudioStreamReport
 	std::uint32_t sampleRate = 0;
 };
 
+/*! A test seam for the stream's I/O thread: it can be held at two points, so that a test
+ *  can pin the window between the validation of a packet and its publication, and keep the
+ *  frames of the TX ring queued across a sample rate change. Both holds are off in
+ *  production: the I/O thread only reads a relaxed flag when they are, and it never takes
+ *  the seam's lock then. */
+class LMMS_EXPORT LinkAudioStreamSeam
+{
+public:
+	//! Hold the I/O thread before it sends the frames of the TX ring.
+	static void setSendHold(bool on);
+	//! Hold the I/O thread after it validated a packet, before it publishes it.
+	static void setPublishHold(bool on);
+	//! How many times the I/O thread waited at the sending hold.
+	static std::uint64_t sendHolds();
+	//! How many times the I/O thread waited at the publishing hold.
+	static std::uint64_t publishHolds();
+
+	//! The I/O thread waits here while the sending hold is on.
+	static void waitAtSendHold();
+	//! The I/O thread waits here while the publishing hold is on.
+	static void waitAtPublishHold();
+
+private:
+	static void waitAt(std::atomic<bool>& hold, std::atomic<std::uint64_t>& counter);
+	static std::atomic<bool> s_sendHold;
+	static std::atomic<bool> s_publishHold;
+	static std::atomic<std::uint64_t> s_sendHolds;
+	static std::atomic<std::uint64_t> s_publishHolds;
+	static std::mutex s_mutex;
+	static std::condition_variable s_cond;
+};
+
 class LMMS_EXPORT LinkAudioStream
 {
 public:
@@ -198,13 +232,19 @@ private:
 	void stopLocked();
 	void resetCounters();
 	void publish(const AudioStreamConfig& cfg);
-	void receivePeriod(float* interleaved, std::size_t period, sample_rate_t sampleRate) noexcept;
-	void addFromRing(float* interleaved, std::size_t period) noexcept;
+	void receivePeriod(SampleFrame* frames, std::size_t period, sample_rate_t sampleRate) noexcept;
+	void addFromRing(SampleFrame* frames, std::size_t period) noexcept;
+	void sendFrames(SampleFrame* frames, f_cnt_t count) noexcept;
 	bool openSocket(const AudioStreamConfig& cfg, std::string* error);
 	void ioLoop();
 	void receiveDatagrams();
 	void sendPending();
 	void acceptPacket(const AudioPacketHeader& header, const float* samples);
+	bool acceptSequence(const AudioPacketHeader& header) noexcept;
+	void insertGapSilence(std::size_t frames) noexcept;
+	void onRateChanged(std::uint32_t rate) noexcept;
+	std::uint32_t txRateForNextFrames() noexcept;
+	void acknowledgeRxRate() noexcept;
 
 	static std::atomic<LinkAudioStream*> s_active;   //!< the instance() while it runs
 	static LinkAudioStream* s_engineTapped;          //!< set by instance(), UI thread
@@ -219,6 +259,7 @@ private:
 	AudioRing m_tx;                  //!< producer: audio thread; consumer: I/O thread
 	AudioRing m_rx;                  //!< producer: I/O thread; consumer: audio thread
 	std::vector<float> m_scratch;    //!< audio thread's read buffer (preallocated)
+	std::vector<float> m_txBuf;      //!< audio thread's interleaved copy of the master's frames (preallocated)
 	std::vector<std::uint8_t> m_packet;   //!< I/O thread buffers (preallocated)
 	std::vector<float> m_samples;
 
@@ -231,16 +272,33 @@ private:
 	// audio-thread private state
 	std::uint64_t m_seenEpoch = 0;
 	bool m_primed = false;
+	std::uint64_t m_txRateEpoch = 0;         //!< bumped when the engine's sample rate changes
+	std::uint64_t m_rxRateEpoch = 0;         //!< bumped when the engine's sample rate changes
+	std::uint64_t m_rxDrainedEpoch = 0;      //!< the RX epoch whose frames were dropped after the drain
 	// shared control (UI writes before s_active is published)
 	std::atomic<bool> m_sendOn{false};
 	std::atomic<bool> m_receiveOn{false};
 	std::atomic<int> m_latencyMs{DefaultAudioLatencyMs};
 	std::atomic<std::uint64_t> m_epoch{0};
 	std::atomic<std::uint32_t> m_rate{0};
+	//! (epoch << 32) | rate: the rate the queued TX frames carry, and the epoch they belong to.
+	//! Both travel together, so a packet is never stamped with a rate that is not its own.
+	std::atomic<std::uint64_t> m_txStamp{0};
+	//! The TX epoch the I/O thread has already flushed (the audio thread waits for it).
+	std::atomic<std::uint64_t> m_txFlushedEpoch{0};
+	//! (epoch << 32) | rate: the rate the frames in the RX ring carry, and the epoch they
+	//! belong to. The I/O thread validates a packet against this pair, so the rate it checks
+	//! and the epoch it publishes always belong together.
+	std::atomic<std::uint64_t> m_rxStamp{0};
+	//! The RX epoch the I/O thread has drained (the audio thread waits for it): the frames it
+	//! published before that belong to the old rate and must not be played at the new one.
+	std::atomic<std::uint64_t> m_rxFlushedEpoch{0};
 	// I/O-thread private
 	std::uint32_t m_nextSequence = 0;    //!< next sequence to send
 	bool m_haveRx = false;
 	std::uint32_t m_expectedRx = 0;
+	std::uint64_t m_seenTxEpoch = 0;     //!< the TX epoch the I/O thread has already flushed
+	std::uint64_t m_seenRxEpoch = 0;     //!< the RX epoch the I/O thread has already drained
 
 	// counters
 	std::atomic<std::uint64_t> m_packetsSent{0}, m_packetsReceived{0}, m_framesSent{0}, m_framesReceived{0};

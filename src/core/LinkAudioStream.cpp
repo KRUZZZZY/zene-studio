@@ -30,21 +30,6 @@
 
 #include "SampleFrame.h"
 
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX  // windows.h must not define min/max over std::min/std::clamp
-#endif
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#include <cerrno>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <poll.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
 
 namespace lmms::link
 {
@@ -52,8 +37,6 @@ namespace lmms::link
 namespace
 {
 
-static_assert(sizeof(SampleFrame) == AudioChannels * sizeof(float),
-	"the stream reads SampleFrame arrays as interleaved stereo floats");
 static_assert(std::is_same_v<sample_t, float>, "the wire format is float32");
 
 //! Silence inserted for a sequence gap is capped, so a long outage cannot flood the ring.
@@ -61,9 +44,8 @@ constexpr std::uint32_t MaxGapPackets = 8;
 //! A sequence jump further than this is a restarted peer, not loss: resynchronise.
 constexpr std::int32_t ResyncDistance = 64;
 constexpr std::size_t ScratchFrames = 2048;
-constexpr int IoPollMs = 2;
-//! Datagrams read per wake: under a sustained flood the loop must come back to check the stop flag.
-constexpr int MaxPacketsPerWake = 256;
+//! Frames the audio thread converts at a time (its preallocated buffer); the period may be longer.
+constexpr std::size_t TxChunkFrames = 1024;
 
 void raiseMax(std::atomic<std::size_t>& slot, std::size_t value)
 {
@@ -72,6 +54,49 @@ void raiseMax(std::atomic<std::size_t>& slot, std::size_t value)
 }
 
 } // namespace
+
+// ---- LinkAudioStreamSeam -------------------------------------------------
+
+std::atomic<bool> LinkAudioStreamSeam::s_sendHold{false};
+std::atomic<bool> LinkAudioStreamSeam::s_publishHold{false};
+std::atomic<std::uint64_t> LinkAudioStreamSeam::s_sendHolds{0};
+std::atomic<std::uint64_t> LinkAudioStreamSeam::s_publishHolds{0};
+std::mutex LinkAudioStreamSeam::s_mutex;
+std::condition_variable LinkAudioStreamSeam::s_cond;
+
+void LinkAudioStreamSeam::setSendHold(bool on)
+{
+	{
+		const std::lock_guard<std::mutex> lock(s_mutex);
+		s_sendHold.store(on, std::memory_order_relaxed);
+	}
+	s_cond.notify_all();
+}
+
+void LinkAudioStreamSeam::setPublishHold(bool on)
+{
+	{
+		const std::lock_guard<std::mutex> lock(s_mutex);
+		s_publishHold.store(on, std::memory_order_relaxed);
+	}
+	s_cond.notify_all();
+}
+
+std::uint64_t LinkAudioStreamSeam::sendHolds() { return s_sendHolds.load(std::memory_order_relaxed); }
+std::uint64_t LinkAudioStreamSeam::publishHolds() { return s_publishHolds.load(std::memory_order_relaxed); }
+
+//! The I/O thread waits while the hold is on. The counter tells the test that the thread has
+//! reached the hold, so the test knows that the I/O thread will not pass it until it lets go.
+void LinkAudioStreamSeam::waitAt(std::atomic<bool>& hold, std::atomic<std::uint64_t>& counter)
+{
+	if (!hold.load(std::memory_order_relaxed)) { return; }   // production: no lock, no wait
+	std::unique_lock<std::mutex> lock(s_mutex);
+	counter.fetch_add(1, std::memory_order_relaxed);
+	s_cond.wait(lock, [&hold] { return !hold.load(std::memory_order_relaxed); });
+}
+
+void LinkAudioStreamSeam::waitAtSendHold() { waitAt(s_sendHold, s_sendHolds); }
+void LinkAudioStreamSeam::waitAtPublishHold() { waitAt(s_publishHold, s_publishHolds); }
 
 // ---- LinkAudioStream ----------------------------------------------------
 
@@ -82,6 +107,7 @@ LinkAudioStream::LinkAudioStream()
 	: m_tx(AudioRingFrames)
 	, m_rx(AudioRingFrames)
 	, m_scratch(ScratchFrames * AudioChannels, 0.0f)
+	, m_txBuf(TxChunkFrames * AudioChannels, 0.0f)
 	, m_packet(AudioMaxPacketBytes + 64, 0)
 	, m_samples(AudioMaxPacketFrames * AudioChannels, 0.0f)
 {
@@ -139,29 +165,51 @@ AudioStreamReport LinkAudioStream::report() const
 void LinkAudioStream::process(SampleFrame* frames, f_cnt_t count, sample_rate_t sampleRate) noexcept
 {
 	m_periods.fetch_add(1, std::memory_order_relaxed);
-	if (m_rate.load(std::memory_order_relaxed) != sampleRate) { m_rate.store(sampleRate, std::memory_order_relaxed); }
-	float* interleaved = reinterpret_cast<float*>(frames);
+	if (m_rate.load(std::memory_order_relaxed) != sampleRate) { onRateChanged(sampleRate); }
 
-	if (m_sendOn.load(std::memory_order_relaxed) && m_tx.write(interleaved, static_cast<std::size_t>(count)) < count)
-	{
-		m_txOverruns.fetch_add(1, std::memory_order_relaxed);
-	}
-	if (m_receiveOn.load(std::memory_order_relaxed)) { receivePeriod(interleaved, static_cast<std::size_t>(count), sampleRate); }
+	if (m_sendOn.load(std::memory_order_relaxed)) { sendFrames(frames, count); }
+	if (m_receiveOn.load(std::memory_order_relaxed)) { receivePeriod(frames, static_cast<std::size_t>(count), sampleRate); }
 }
 
-void LinkAudioStream::addFromRing(float* interleaved, std::size_t period) noexcept
+//! The master's frames go into the TX ring as interleaved floats, read channel by channel:
+//! an array of SampleFrame objects is not an array of floats, and reading it as one is
+//! undefined behaviour (the size of the frame says nothing about the type of its bytes).
+void LinkAudioStream::sendFrames(SampleFrame* frames, f_cnt_t count) noexcept
+{
+	// The sample rate changed: the I/O thread has not dropped the old-rate frames yet, and new
+	// frames must not be mixed with them.
+	if (m_txFlushedEpoch.load(std::memory_order_acquire) < m_txRateEpoch) { return; }
+	std::size_t written = 0;
+	for (f_cnt_t done = 0; done < count;)
+	{
+		const std::size_t n = std::min<std::size_t>(static_cast<std::size_t>(count - done), TxChunkFrames);
+		for (std::size_t i = 0; i < n; ++i)
+		{
+			m_txBuf[i * AudioChannels] = frames[done + i].left();
+			m_txBuf[i * AudioChannels + 1] = frames[done + i].right();
+		}
+		written += m_tx.write(m_txBuf.data(), n);
+		done += static_cast<f_cnt_t>(n);
+	}
+	if (written < static_cast<std::size_t>(count)) { m_txOverruns.fetch_add(1, std::memory_order_relaxed); }
+}
+
+void LinkAudioStream::addFromRing(SampleFrame* frames, std::size_t period) noexcept
 {
 	for (std::size_t done = 0; done < period;)
 	{
 		const std::size_t n = std::min(period - done, ScratchFrames);
 		m_rx.read(m_scratch.data(), n);
-		float* dst = interleaved + done * AudioChannels;
-		for (std::size_t i = 0; i < n * AudioChannels; ++i) { dst[i] += m_scratch[i]; }
+		for (std::size_t i = 0; i < n; ++i)
+		{
+			frames[done + i].left() += m_scratch[i * AudioChannels];
+			frames[done + i].right() += m_scratch[i * AudioChannels + 1];
+		}
 		done += n;
 	}
 }
 
-void LinkAudioStream::receivePeriod(float* interleaved, std::size_t period, sample_rate_t sampleRate) noexcept
+void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sample_rate_t sampleRate) noexcept
 {
 	const std::uint64_t epoch = m_epoch.load(std::memory_order_acquire);
 	if (epoch != m_seenEpoch)
@@ -172,6 +220,27 @@ void LinkAudioStream::receivePeriod(float* interleaved, std::size_t period, samp
 	}
 	const std::size_t wanted = static_cast<std::size_t>(m_latencyMs.load(std::memory_order_relaxed))
 		* sampleRate / 1000;
+	// A sample rate change: the I/O thread may still publish frames of the old rate (it
+	// validated them before the change). Until it has drained the old rate, the audio thread
+	// drops what the ring holds and stays silent - the old frames must not be played at the
+	// new rate.
+	if (m_rxFlushedEpoch.load(std::memory_order_acquire) < m_rxRateEpoch)
+	{
+		m_rx.skip(m_rx.fill());
+		m_primed = false;
+		m_latencyFrames.store(0, std::memory_order_relaxed);
+		m_primedReport.store(false, std::memory_order_relaxed);
+		return;
+	}
+	// The transition is over: the frames the I/O thread published before it drained the old
+	// rate are still in the ring, and they carry the old rate. Drop them once more, then the
+	// jitter buffer starts again.
+	if (m_rxDrainedEpoch != m_rxRateEpoch)
+	{
+		m_rx.skip(m_rx.fill());
+		m_rxDrainedEpoch = m_rxRateEpoch;
+		m_primed = false;
+	}
 	// At least two periods (so a trim never leaves less than one), at most a quarter of the ring.
 	const std::size_t target = std::clamp(wanted, period * 2, m_rx.capacity() / 4);
 	std::size_t fill = m_rx.fill();
@@ -187,21 +256,70 @@ void LinkAudioStream::receivePeriod(float* interleaved, std::size_t period, samp
 		m_underruns.fetch_add(1, std::memory_order_relaxed);
 		m_primed = false;
 	}
-	if (m_primed) { addFromRing(interleaved, period); }
+	if (m_primed) { addFromRing(frames, period); }
 	const std::size_t left = m_rx.fill();
 	m_latencyFrames.store(left, std::memory_order_relaxed);
 	raiseMax(m_latencyMaxFrames, left);
 	m_primedReport.store(m_primed, std::memory_order_relaxed);
 }
 
-void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float* samples)
+//! The engine's sample rate changed (the audio device was switched). The frames queued in the
+//! rings were captured at the old rate: the RX frames must not be played at the new one, and
+//! the TX frames must not go out with the new rate in their header - the peer would play
+//! old-rate samples at the new rate. Both rings are flushed before anything new is processed.
+void LinkAudioStream::onRateChanged(std::uint32_t rate) noexcept
 {
-	const std::uint32_t rate = m_rate.load(std::memory_order_relaxed);
-	if (rate == 0 || header.sampleRate != rate)
+	const std::uint32_t old = m_rate.load(std::memory_order_relaxed);
+	m_rate.store(rate, std::memory_order_relaxed);
+	if (old != 0 && old != rate)
 	{
-		m_rateMismatch.fetch_add(1, std::memory_order_relaxed);
-		return;
+		++m_txRateEpoch;                 // the TX frames belong to the old rate
+		++m_rxRateEpoch;                 // the frames in the RX ring belong to the old rate
+		// The new epoch travels with the new rate: the I/O thread validates a packet against
+		// the pair, so the rate it checks and the epoch it publishes always belong together.
+		m_rxStamp.store((m_rxRateEpoch << 32) | rate, std::memory_order_release);
+		// The old-rate RX frames are dropped here (the audio thread is that ring's consumer)
+		// and the jitter buffer starts again. The I/O thread may still publish a frame of the
+		// old rate - it validated it before the change - so the audio thread keeps dropping
+		// what the ring holds and stays silent until the I/O thread has drained the old rate.
+		m_rx.skip(m_rx.fill());
+		m_primed = false;
 	}
+	else
+	{
+		m_rxStamp.store((m_rxRateEpoch << 32) | rate, std::memory_order_release);
+	}
+	m_txStamp.store((m_txRateEpoch << 32) | rate, std::memory_order_release);
+}
+
+//! The rate the next frames go out with. The rate is read before the frames are taken from the
+//! ring, and the epoch it belongs to is flushed first: a packet never carries a rate that is
+//! not the rate of the frames in it.
+std::uint32_t LinkAudioStream::txRateForNextFrames() noexcept
+{
+	const std::uint64_t stamp = m_txStamp.load(std::memory_order_acquire);
+	const std::uint64_t epoch = stamp >> 32;
+	if (epoch != m_seenTxEpoch)
+	{
+		m_tx.skip(m_tx.fill());         // the queued frames belong to the old rate
+		m_seenTxEpoch = epoch;
+		m_txFlushedEpoch.store(epoch, std::memory_order_release);
+	}
+	return static_cast<std::uint32_t>(stamp & 0xffffffffu);
+}
+
+//! The silence that replaces a sequence gap. The frames that do not fit into the RX ring are
+//! dropped, and they are an overrun like any other frame the ring could not take.
+void LinkAudioStream::insertGapSilence(std::size_t frames) noexcept
+{
+	const std::size_t silenced = m_rx.writeSilence(frames);
+	if (silenced < frames) { m_rxOverruns.fetch_add(frames - silenced, std::memory_order_relaxed); }
+}
+
+//! The sequence of the packets: a gap is replaced by silence, a late packet is dropped, and a
+//! peer that restarted (a jump further than ResyncDistance) is picked up again.
+bool LinkAudioStream::acceptSequence(const AudioPacketHeader& header) noexcept
+{
 	std::int32_t distance = 0;
 	if (m_haveRx)
 	{
@@ -216,15 +334,40 @@ void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float*
 	if (distance < 0)
 	{
 		m_reordered.fetch_add(1, std::memory_order_relaxed);
-		return;
+		return false;
 	}
 	if (distance > 0)
 	{
 		m_lost.fetch_add(static_cast<std::uint64_t>(distance), std::memory_order_relaxed);
 		const std::uint32_t gap = std::min<std::uint32_t>(static_cast<std::uint32_t>(distance), MaxGapPackets);
-		m_rx.writeSilence(static_cast<std::size_t>(gap) * header.frames);
+		insertGapSilence(static_cast<std::size_t>(gap) * header.frames);
 	}
 	m_expectedRx = header.sequence + 1;
+	return true;
+}
+
+void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float* samples)
+{
+	// The rate and the epoch of the RX ring travel together: the rate this packet is checked
+	// against is the rate of the frames that are in the ring.
+	const std::uint64_t stamp = m_rxStamp.load(std::memory_order_acquire);
+	const std::uint32_t rate = static_cast<std::uint32_t>(stamp & 0xffffffffu);
+	if (rate == 0 || header.sampleRate != rate)
+	{
+		m_rateMismatch.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	// The window between the validation of a packet and its publication: a sample rate
+	// change happens here, and the packet then carries the old rate.
+	LinkAudioStreamSeam::waitAtPublishHold();
+	// The rate changed while this packet was validated: it carries the old rate, and the
+	// audio thread has already dropped the old-rate frames, so it must not reach the ring.
+	if ((m_rxStamp.load(std::memory_order_acquire) >> 32) != (stamp >> 32))
+	{
+		m_rateMismatch.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	if (!acceptSequence(header)) { return; }
 	const std::size_t written = m_rx.write(samples, header.frames);
 	if (written < header.frames)
 	{
@@ -234,193 +377,16 @@ void LinkAudioStream::acceptPacket(const AudioPacketHeader& header, const float*
 	m_framesReceived.fetch_add(written, std::memory_order_relaxed);
 }
 
-// ---- the socket layer: POSIX sockets, or winsock2 on Windows (unverified on Windows: not built here) ----
-
-namespace
+void LinkAudioStream::acknowledgeRxRate() noexcept
 {
-
-#ifdef _WIN32
-using Handle = SOCKET;
-using SockLen = int;
-using IoSize = int;
-using IoLen = int;
-constexpr Handle NoSocket = INVALID_SOCKET;
-std::string lastErrorText() { return "WSA error " + std::to_string(WSAGetLastError()); }
-
-//! Every successful networkReady() is paired with one networkRelease() (WSAStartup / WSACleanup are counted by winsock).
-bool networkReady(std::string* error)
-{
-	WSADATA data;
-	const int started = WSAStartup(MAKEWORD(2, 2), &data);
-	if (started != 0 && error != nullptr) { *error = "WSAStartup failed: " + std::to_string(started); }
-	return started == 0;
-}
-void networkRelease() { WSACleanup(); }
-bool setNonBlocking(Handle h) { u_long on = 1; return ::ioctlsocket(h, FIONBIO, &on) == 0; }
-void closeSocket(Handle h) { ::closesocket(h); }
-void waitReadable(Handle h, int ms)
-{
-	fd_set set;
-	FD_ZERO(&set);
-	FD_SET(h, &set);
-	timeval timeout{0, ms * 1000};
-	::select(0, &set, nullptr, nullptr, &timeout);
-}
-#else
-using Handle = int;
-using SockLen = socklen_t;
-using IoSize = ssize_t;
-using IoLen = std::size_t;
-constexpr Handle NoSocket = -1;
-std::string lastErrorText() { return std::strerror(errno); }
-
-bool networkReady(std::string*) { return true; }
-void networkRelease() {}
-bool setNonBlocking(Handle h)
-{
-	const int flags = ::fcntl(h, F_GETFL, 0);
-	return flags >= 0 && ::fcntl(h, F_SETFL, flags | O_NONBLOCK) == 0;
-}
-void closeSocket(Handle h) { ::close(h); }
-void waitReadable(Handle h, int ms)
-{
-	pollfd wait{h, POLLIN, 0};
-	::poll(&wait, 1, ms);
-}
-#endif
-
-constexpr std::uintptr_t NoStoredSocket = ~std::uintptr_t{0};   // INVALID_SOCKET on Windows, (uintptr_t)-1 for a POSIX fd
-
-Handle handleOf(std::uintptr_t stored) { return static_cast<Handle>(stored); }
-
-bool failWith(std::string* error, const std::string& what)
-{
-	if (error != nullptr) { *error = what + ": " + lastErrorText(); }
-	return false;
+	const std::uint64_t stamp = m_rxStamp.load(std::memory_order_acquire);
+	const std::uint64_t epoch = stamp >> 32;
+	if (epoch == m_seenRxEpoch) { return; }
+	m_seenRxEpoch = epoch;
+	m_haveRx = false;                 // the sequence stream of the old rate is over
+	m_rxFlushedEpoch.store(epoch, std::memory_order_release);
 }
 
-} // namespace
-
-bool LinkAudioStream::openSocket(const AudioStreamConfig& cfg, std::string* error)
-{
-	if (!networkReady(error)) { return false; }
-	std::uint32_t bindAddress = 0;
-	parseIpv4(cfg.bindAddress, bindAddress);   // configure() validated both literals
-	if (!cfg.peerAddress.empty()) { parseIpv4(cfg.peerAddress, m_peerAddress); }
-	const Handle fd = ::socket(AF_INET, SOCK_DGRAM, 0);
-	if (fd == NoSocket)
-	{
-		const bool ok = failWith(error, "socket()");
-		networkRelease();
-		return ok;
-	}
-	sockaddr_in local{};
-	local.sin_family = AF_INET;
-	local.sin_addr.s_addr = htonl(bindAddress);
-	local.sin_port = htons(static_cast<std::uint16_t>(cfg.receive ? cfg.listenPort : 0));
-	const bool nonBlocking = setNonBlocking(fd);
-	if (!nonBlocking || ::bind(fd, reinterpret_cast<sockaddr*>(&local), sizeof(local)) != 0)
-	{
-		const std::string what = !nonBlocking ? "non-blocking mode" : "bind " + cfg.bindAddress + ":" + std::to_string(cfg.listenPort);
-		const std::string reason = lastErrorText();
-		closeSocket(fd);
-		networkRelease();
-		m_peerAddress = 0;
-		if (error != nullptr) { *error = what + ": " + reason; }
-		return false;
-	}
-	SockLen length = sizeof(local);
-	::getsockname(fd, reinterpret_cast<sockaddr*>(&local), &length);
-	m_boundAddress = cfg.bindAddress;
-	m_boundPort = ntohs(local.sin_port);
-	m_socket = static_cast<std::uintptr_t>(fd);
-	m_peerPort = cfg.peerPort;
-	return true;
-}
-
-void LinkAudioStream::receiveDatagrams()
-{
-	for (int packets = 0; packets < MaxPacketsPerWake && !m_stop.load(std::memory_order_acquire); ++packets)
-	{
-		sockaddr_in from{};
-		SockLen fromLength = sizeof(from);
-		const IoSize got = ::recvfrom(handleOf(m_socket), reinterpret_cast<char*>(m_packet.data()),
-			static_cast<IoLen>(m_packet.size()), 0, reinterpret_cast<sockaddr*>(&from), &fromLength);
-		if (got < 0) { return; }  // would block: drained (or a transient error: wait again)
-		if (m_peerAddress != 0 && ntohl(from.sin_addr.s_addr) != m_peerAddress)
-		{
-			m_malformed.fetch_add(1, std::memory_order_relaxed);  // from a stranger
-			continue;
-		}
-		AudioPacketHeader header;
-		if (!decodeAudioPacket(m_packet.data(), static_cast<std::size_t>(got), header,
-				m_samples.data(), m_samples.size()))
-		{
-			m_malformed.fetch_add(1, std::memory_order_relaxed);
-			continue;
-		}
-		acceptPacket(header, m_samples.data());
-	}
-}
-
-void LinkAudioStream::sendPending()
-{
-	sockaddr_in to{};
-	to.sin_family = AF_INET;
-	to.sin_addr.s_addr = htonl(m_peerAddress);
-	to.sin_port = htons(static_cast<std::uint16_t>(m_peerPort));
-	for (int packets = 0; packets < MaxPacketsPerWake && !m_stop.load(std::memory_order_acquire); ++packets)
-	{
-		const std::size_t available = m_tx.fill();
-		if (available == 0) { return; }
-		const std::size_t n = m_tx.read(m_samples.data(), std::min(available, AudioMaxPacketFrames));
-		const std::uint32_t rate = m_rate.load(std::memory_order_relaxed);
-		if (m_peerAddress == 0 || rate == 0 || n == 0) { continue; }  // nowhere to send: drained and dropped
-		AudioPacketHeader header;
-		header.sequence = m_nextSequence++;
-		header.sampleRate = rate;
-		header.frames = static_cast<std::uint16_t>(n);
-		const std::size_t bytes = encodeAudioPacket(header, m_samples.data(), m_packet.data(), m_packet.size());
-		const IoSize sent = bytes == 0 ? -1
-			: ::sendto(handleOf(m_socket), reinterpret_cast<const char*>(m_packet.data()), static_cast<IoLen>(bytes), 0,
-				reinterpret_cast<sockaddr*>(&to), sizeof(to));
-		if (sent < 0)
-		{
-			m_sendErrors.fetch_add(1, std::memory_order_relaxed);
-			continue;
-		}
-		m_packetsSent.fetch_add(1, std::memory_order_relaxed);
-		m_framesSent.fetch_add(n, std::memory_order_relaxed);
-	}
-}
-
-void LinkAudioStream::ioLoop()
-{
-	while (!m_stop.load(std::memory_order_acquire))
-	{
-		waitReadable(handleOf(m_socket), IoPollMs);
-		receiveDatagrams();
-		sendPending();
-	}
-}
-
-void LinkAudioStream::stopLocked()
-{
-	// Order matters: the audio thread stops reaching us first, then the I/O thread ends.
-	m_running.store(false, std::memory_order_relaxed);
-	if (s_active.load(std::memory_order_relaxed) == this) { s_active.store(nullptr, std::memory_order_release); }
-	m_sendOn.store(false, std::memory_order_relaxed);
-	m_receiveOn.store(false, std::memory_order_relaxed);
-	m_stop.store(true, std::memory_order_release);
-	if (m_thread.joinable()) { m_thread.join(); }
-	if (m_socket != NoStoredSocket)
-	{
-		closeSocket(handleOf(m_socket));
-		networkRelease();
-	}
-	m_socket = NoStoredSocket;
-	m_peerAddress = 0;
-}
 
 namespace
 {

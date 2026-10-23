@@ -476,6 +476,7 @@ set(LMMS_SRCS
 	core/ControlCommandsLink.cpp
 	core/ControlCommandsLinkAudio.cpp
 	core/LinkAudioStream.cpp
+	core/LinkAudioSocket.cpp
 	core/LinkAudioCodec.cpp
 	core/LinkSync.cpp
 	core/LinkSyncWire.cpp

@@ -42,7 +42,11 @@
 #include <thread>
 #include <vector>
 
+#include <QFile>
+#include <QHostAddress>
 #include <QJsonObject>
+#include <QRegularExpression>
+#include <QUdpSocket>
 
 #include <fstream>
 #include <optional>
@@ -366,6 +370,89 @@ private slots:
 		QCOMPARE(rx2.report().packetsReceived, std::uint64_t{0});
 		QVERIFY(rx2.report().rateMismatches > 0);
 	}
+
+	/*! A sequence gap is replaced by silence. When the RX ring is full that silence does not
+	 *  fit, and the frames the ring could not take are an overrun like any other dropped frame:
+	 *  they must be counted, or the report hides a hole in the audio. */
+	void droppedGapSilenceIsCountedAsAnOverrun()
+	{
+		LinkAudioStream rx;
+		std::string why;
+		QVERIFY2(rx.configure(receiver(20), &why), why.c_str());
+		const quint16 port = static_cast<quint16>(rx.report().boundPort);
+		QVERIFY(port > 0);
+
+		std::vector<SampleFrame> mix(64, SampleFrame(0.f, 0.f));
+		rx.process(mix.data(), static_cast<f_cnt_t>(mix.size()), Rate);   // the receiver learns the engine rate
+		QCOMPARE(rx.report().packetsReceived, std::uint64_t{0});
+
+		QUdpSocket sender;
+		// Fill the ring exactly: the first packet, then 56 packets that each skip 8 sequences
+		// (8 * 128 frames of silence plus 128 frames of payload), then one that skips 7 - its
+		// silence takes exactly the rest of the ring and its payload does not fit at all.
+		QVERIFY(sendAudioPacket(sender, port, 0, Rate, AudioMaxPacketFrames, 0.25f));
+		QVERIFY(waitForPackets(rx, 1, 5000));
+		for (std::uint32_t k = 1; k <= 56; ++k)
+		{
+			QVERIFY(sendAudioPacket(sender, port, 9 * k, Rate, AudioMaxPacketFrames, 0.25f));
+			QVERIFY(waitForPackets(rx, k + 1, 5000));
+		}
+		QVERIFY(sendAudioPacket(sender, port, 512, Rate, AudioMaxPacketFrames, 0.25f));
+		QVERIFY(waitForPackets(rx, 58, 5000));
+		const std::uint64_t beforeGap = rx.report().rxOverruns;
+		QCOMPARE(beforeGap, std::uint64_t{128});   // only the payload that did not fit
+
+		// The next packet skips 8 sequences: not one of the 1024 silence frames fits either.
+		QVERIFY(sendAudioPacket(sender, port, 521, Rate, AudioMaxPacketFrames, 0.25f));
+		QVERIFY(waitForPackets(rx, 59, 5000));
+		QCOMPARE(rx.report().rxOverruns - beforeGap, std::uint64_t{1024 + 128});
+	}
+
+	/*! The master's frames are SampleFrame objects, not floats: an array of them is not a
+	 *  float array, and the size of one frame says nothing about the type of its bytes, so
+	 *  reading the array through a float* is undefined behaviour. The stream reads the frames
+	 *  channel by channel instead - this pins that (the values themselves are pinned by
+	 *  loopbackExchangeIsSampleExact, which compares every sample of the round trip). */
+	void theFrameArrayIsNotReadAsAFlatFloatArray()
+	{
+		QFile source(QStringLiteral(ZENE_SOURCE_DIR "/src/core/LinkAudioStream.cpp"));
+		QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.fileName()));
+		const QString text = QString::fromUtf8(source.readAll());
+		QVERIFY2(!text.contains(QRegularExpression("reinterpret_cast\\s*<\\s*(const\\s+)?float\\s*\\*")),
+			"the stream must not read a SampleFrame array through a float*");
+		QVERIFY2(!text.contains("sizeof(SampleFrame)"),
+			"the size of a frame does not make an array of frames a float array");
+	}
+
+	/*! The engine's sample rate changed (the audio device was switched): the frames queued for
+	 *  playback were captured at the old rate and must not be played at the new one. */
+
+	/*! The other half of the same change: the frames queued for sending were captured at the old
+	 *  rate and must not go out with the new rate in their header (the peer would play old-rate
+	 *  samples at the new rate). The stream must also keep working at the new rate.
+	 *
+	 *  The I/O thread is held before it sends, so the frames of the TX ring are certainly still
+	 *  queued when the rate changes: the test does not depend on how the two threads are
+	 *  scheduled. */
+
+	/*! The engine's sample rate changed (the audio device was switched): the frames queued for
+	 *  playback were captured at the old rate and must not be played at the new one. */
+	void aSampleRateChangeDropsTheOldRateRxFrames() { checkRateChangeDropsTheOldRateRxFrames(); }
+
+	/*! The other half of the same change: the frames queued for sending were captured at the old
+	 *  rate and must not go out with the new rate in their header (the peer would play old-rate
+	 *  samples at the new rate). The stream must also keep working at the new rate.
+	 *
+	 *  The I/O thread is held before it sends, so the frames of the TX ring are certainly still
+	 *  queued when the rate changes: the test does not depend on how the two threads are
+	 *  scheduled. */
+	void aSampleRateChangeDoesNotSendOldRateFramesAsNewRate() { checkRateChangeDoesNotSendOldRateFramesAsNewRate(); }
+
+	/*! A packet that the I/O thread validated before the sample rate changed must not reach the
+	 *  mix at the new rate. The I/O thread holds the packet between the validation and the
+	 *  publication, the engine switches to the new rate (which drops the frames of the ring),
+	 *  and the packet is published afterwards. */
+	void anOldRatePacketIsNotPlayedAtTheNewRate() { checkOldRatePacketIsNotPlayedAtTheNewRate(); }
 
 	/*! Criterion 1, with Link ACTIVE: two in-process Ableton Link participants whose discovery is
 	 *  confined to the loopback interface (AbletonLinkSession::setLoopbackOnly - the scanner seam in
