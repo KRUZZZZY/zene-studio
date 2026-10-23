@@ -58,14 +58,15 @@ bool exporting()
 	return song != nullptr && song->isExporting();
 }
 
-audioio::Destination readDestination(const QDomElement& element, const QString& name)
+//! Read a routing target from @a element. False when @a name does not hold one that parses: the
+//! caller keeps the default then. A project stores channel NUMBERS, not the interface's own count:
+//! a route saved on a machine with eight outputs must load on one with two, so the whole range is
+//! read here.
+bool readDestination(const QDomElement& element, const QString& name, audioio::Destination* out)
 {
-	audioio::Destination out;
-	// A project stores channel NUMBERS, not the interface's own count: a route saved on a machine
-	// with eight outputs must load on one with two, so the whole range is read here.
 	audioio::Side routes;
 	routes.channels = audioio::MaxChannels;
-	return audioio::parseDestination(element.attribute(name), routes, &out, nullptr) ? out : audioio::Destination{};
+	return audioio::parseDestination(element.attribute(name), routes, out, nullptr);
 }
 
 //! A saved 0/1 flag. A malformed value ("abc") does not convert, so it keeps @a fallback rather than reading as 0.
@@ -183,8 +184,14 @@ void ChannelHardwareIo::load(const QDomElement& channelElement, f_cnt_t frames)
 	const QDomElement element = channelElement.firstChildElement(QStringLiteral("hardwareio"));
 	if (element.hasAttribute(QStringLiteral("output")))
 	{
-		outputSet = true;
-		output = readDestination(element, QStringLiteral("output"));
+		// A route that does not parse (a hand-edited project) leaves the default in force: the
+		// master stays on the outputs 1/2 instead of going nowhere (cluster new-p14-120-port).
+		audioio::Destination parsed;
+		if (readDestination(element, QStringLiteral("output"), &parsed))
+		{
+			outputSet = true;
+			output = parsed;
+		}
 	}
 	loadCueSends(element, *this);
 	insert.load(element, frames);
@@ -301,7 +308,10 @@ void loadMixer(const QDomElement& mixerElement)
 		bool levelOk = false;
 		const float cueLevel = element.attribute(QStringLiteral("level"), QStringLiteral("1")).toFloat(&levelOk);
 		cue.level = levelOk && std::isfinite(cueLevel) ? std::clamp(cueLevel, 0.f, 2.f) : 1.f;  // unparsable or non-finite: the cuemix's default
-		cue.output = readDestination(element, QStringLiteral("output"));
+		// A cue's default is nowhere, so a route that does not parse leaves it there.
+		audioio::Destination cueOutput;
+		if (!readDestination(element, QStringLiteral("output"), &cueOutput)) { cueOutput = audioio::Destination{}; }
+		cue.output = cueOutput;
 		cue.followListen = savedFlag(element, QStringLiteral("listen"), true);
 	}
 	s_listenToCue = mixerElement.firstChildElement(QStringLiteral("cuelisten")).attribute(QStringLiteral("target")) == QStringLiteral("cue");
