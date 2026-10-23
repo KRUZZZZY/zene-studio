@@ -24,7 +24,11 @@
 
 
 #include <QtTest>
+#include <QMutex>
+
+#include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "AutomationRamp.h"
 #include "ComboBoxModel.h"
 #include "Engine.h"
 #include "LadspaBase.h"
@@ -37,6 +41,15 @@ class AutomatableModelTest : public QObject
 public:
 	bool m1Changed, m2Changed;
 	void resetChanged() { m1Changed = m2Changed = false; }
+	static bool s_rampReadLockHeld;
+	static int s_rampReadProbeCalls;
+	static void probeRampRead(lmms::AutomatableModel* model)
+	{
+		QMutex& mutex = model->m_valueBufferMutex;
+		s_rampReadLockHeld = !mutex.tryLock(0);
+		if (!s_rampReadLockHeld) { mutex.unlock(); }
+		++s_rampReadProbeCalls;
+	}
 
 private slots: // helper slots
 	void onM1Changed() { m1Changed = true; }
@@ -154,6 +167,35 @@ private slots: // tests
 		QVERIFY(m1.countLinks() == 2);
 	}
 
+	//! Cluster 2647: valueBuffer() fills its period cache from the published
+	//! automation ramp without holding the legacy per-model mutex. The probe runs
+	//! immediately after that read and uses tryLock(0), so this check has no wait,
+	//! thread or wall-clock timing.
+	void readingTheAutomationRampTakesNoMutex()
+	{
+		using namespace lmms;
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		FloatModel model(0.f, 0.f, 1.f, 0.001f);
+		AutomationRamp ramp;
+		QVERIFY(ramp.addKnot(0, 0.f));
+		QVERIFY(ramp.addKnot(frames - 1, 1.f));
+		model.publishAutomationRamp(ramp);
+
+		s_rampReadLockHeld = false;
+		s_rampReadProbeCalls = 0;
+		AutomatableModel::setValueBufferRampReadProbeForTest(&AutomatableModelTest::probeRampRead);
+		ValueBuffer* const buffer = model.valueBuffer();
+		AutomatableModel::setValueBufferRampReadProbeForTest(nullptr);
+
+		QCOMPARE(s_rampReadProbeCalls, 1);
+		QVERIFY2(!s_rampReadLockHeld,
+			"valueBuffer() held the model mutex across the automation-ramp read (cluster 2647)");
+		QVERIFY2(buffer != nullptr, "the published ramp produced no sample-exact buffer");
+		QCOMPARE(buffer->length(), frames);
+		QVERIFY(buffer->values()[0] < 0.001f);
+		QVERIFY(buffer->values()[frames - 1] > 0.999f);
+	}
+
 	void customMeterChangeUpdatesSyncOnceAfterReenteringCustom()
 	{
 		using namespace lmms;
@@ -172,6 +214,9 @@ private slots: // tests
 		QCOMPARE(updateCount, 4);
 	}
 };
+
+bool AutomatableModelTest::s_rampReadLockHeld = false;
+int AutomatableModelTest::s_rampReadProbeCalls = 0;
 
 QTEST_GUILESS_MAIN(AutomatableModelTest)
 #include "AutomatableModelTest.moc"
