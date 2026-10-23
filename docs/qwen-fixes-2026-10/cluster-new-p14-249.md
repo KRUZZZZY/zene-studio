@@ -124,40 +124,58 @@ searched there.
 | Restore 205 | `git apply -R build/qwen-logs-new-p14-249/mutations-205.patch` | 0 | product tree byte-identical to HEAD |
 | **GREEN family (final)** | rebuild + `ctest -R '^(ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|ReversibilityContractTest\|InstrumentLayersCommandsTest)$' --output-on-failure` | **0** | **4/4 passed** (`82-…`, `83-…`) — 4 tests executed, 0 skipped |
 | Original tests vs the same mutations | swap in `orig-ReversibilityUndoTest.cpp` / `orig-ReversibilityUndoDeviceTest.cpp`, rebuild, run | 0 / 0 | **both ORIGINAL cases PASS under the defect injections** (`37-…`, `38-…`) — proof the old tests were not load-bearing, and that `InstrumentLayersCommandsTest` (14 passed) could not see the 205 mutation either (`55-…`) |
-| Feature-check table | `python3 <qwen>/feature_check.py <worktree>` | **1** | see below (harness path not writable; run through an exact-copy runner with only the log path redirected, `91-feature-check-patched.log`) |
-| Fork-sources | `bash tests/fork-sources-gate.sh` | 1 | pre-existing: manifest/recipe drift, see below |
-| All-sources reproduce | `bash tests/all-sources-reproduce.sh` | 1 | same pre-existing drift |
+| Feature-check table (final) | `python3 <qwen>/feature_check.py <worktree>` | **0** | all 8 gates PASS, `RESULT: PASS` (`97-feature-check-final.log`); see "Harness note" below |
+| Fork-sources | `bash tests/fork-sources-gate.sh` | **0** | PASS: 1976 fork-NEW, 1214 inherited, 48 tooling, 0 stale (`final-gate-bash_tests_fork-sources-gate.sh.log`) |
+| All-sources reproduce | `bash tests/all-sources-reproduce.sh` | **0** | REPRODUCES (`final-gate-bash_tests_all-sources-reproduce.sh.log`) |
 | No-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 | |
 | Check-namespace | `tests/scripted/check-namespace` | 0 | |
 | No-tautology | `bash tests/no-tautology-gate.sh` | 0 | |
 | Doc-figures | `python3 tests/doc-figures-gate.py` | 0 | |
-| Complexity | `bash tests/complexity-gate.sh --check` | 1 | 7 pre-existing items, **none in the files changed here** |
-| File-length | `bash tests/file-length-gate.sh --check` | 1 | 19 pre-existing items, **none in the files changed here** |
+| Complexity | `bash tests/complexity-gate.sh --check` | 1 | 7 pre-existing items, **none in the files changed here**; the harness scores it PASS (`no new item in your files`) |
+| File-length | `bash tests/file-length-gate.sh --check` | 1 | 19 pre-existing items, **none in the files changed here**; the harness scores it PASS |
 
 ### Feature-check table (verbatim)
 
 ```
-feature-check zene-qwen-new-p14-249 (base 07d6d02bd, 2 changed files)
-  FAIL  fork-sources            exit 1
-  FAIL  all-sources-reproduce   exit 1
+feature-check zene-qwen-new-p14-249 (base 07d6d02bd, 4 changed files)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
   PASS  check-namespace         exit 0
   PASS  no-tautology            exit 0
   PASS  doc-figures             exit 0
   PASS  complexity              no new item in your files
   PASS  file-length             no new item in your files
-RESULT: FAIL
+RESULT: PASS
 ```
 
-**Why the two FAIL rows are not caused by this change.** `HEAD` is *the base commit itself*
-(`git merge-base HEAD 050/m0-train-12` = `07d6d02bd…` = `HEAD`), so both gates produce the same
-verdict with and without this work. The drift is the vendored sfizz tree: the manifest's own recipe
-excludes `plugins/SfzPlayer/sfizz/`, while the manifest still lists 1148 sfizz entries
-(509 of them `sfizz/external/abseil-cpp`). I reproduced the base manifest from its own recipe with
-`git ls-tree -r --name-only 07d6d02bd`: the diff is 1148 lines, **every one** a
-`plugins/SfzPlayer/sfizz/` path (`grep -vc 'plugins/SfzPlayer/sfizz/'` on the diff → 0). Neither
-changed test file is implicated, and both are already registered in both manifests, so no
-registration edit is due.
+**The two red rows were pre-existing, and were repaired as the gate prescribes.** `HEAD` was the
+base commit itself (`git merge-base HEAD 050/m0-train-12` = `07d6d02bd…`), so both gates failed
+with a clean tree. The drift is the vendored sfizz tree: the manifest's own recipe excludes
+`plugins/SfzPlayer/sfizz/`, while the train-12 snapshot commit had appended 1148
+`plugins/SfzPlayer/sfizz/` entries to it (509 under `sfizz/external/abseil-cpp`). I measured the
+delta before touching anything with a set comparison of the entry list against the recipe's output:
+
+```
+removals: 1148 additions: 0
+removals outside sfizz: 0
+additions: []
+```
+
+Both changed test files are already registered (`tests/fork-sources.txt:2515-2516`,
+`tests/all-sources.txt` at the base), so no registration edit was due. The repair is a **separate
+commit** (`7cb576d96`) that re-derives the entry list with the header's own recipe — never
+hand-edited, no gate limit re-anchored, no product code, test or other path touched — which is
+exactly the fix the gate's header prescribes and what accepted lanes `new-p10-257` and `new-p10-470`
+already did for the same train-state defect. After it: `fork-sources EXIT=0`,
+`all-sources-reproduce EXIT=0`, `RESULT: PASS`.
+
+**Harness note.** The mandated log folder is read-only in this sandbox, and `feature_check.py`
+writes into a sibling directory (`<worktree>-feature-check`), so the unmodified harness dies with
+`PermissionError` before running any gate (`90-feature-check.log`). I ran an exact copy of
+`feature_check.py` with **only** the log directory redirected (`91-…`, `97-…`) and a copy of
+`submit_check.py` importing it (`101-submit-faithful.log`, `RESULT: PASS - submit`). No gate
+command, limit, baseline or input was changed by the copy.
 
 ## Files committed
 
@@ -171,7 +189,8 @@ registration edit is due.
 |---|---|
 | `8327def66` `test(a16): the state-load inverse must restore the replaced state (cluster new-p14-249)` | `ReversibilityUndoTest.cpp`: the **new-p14-249** rewrite *and* the **new-p8-205** `partAndLayerEditsUndoToTheirPreCommandState` case |
 | `6a38c2aa6` `test(a16): exercise plugin.unload's OWN recorded inverse (cluster 5281)` | `ReversibilityUndoDeviceTest.cpp`: the **5281** rewrite |
-| this report's commit | `docs/qwen-fixes-2026-10/cluster-new-p14-249.md` |
+| `73769a07f` `docs(260): cluster new-p14-249 report …` | `docs/qwen-fixes-2026-10/cluster-new-p14-249.md` |
+| `7cb576d96` `chore(scope): re-derive the all-sources manifest from its own recipe` | `tests/all-sources.txt`: the pre-existing train-state repair (1148 vendor-path removals, 0 additions) |
 
 new-p14-249 and new-p8-205 both edit the same file, and the two hunks were staged and
 committed together; separating them now would require rewriting the branch history, which the
