@@ -1,4 +1,86 @@
 FIXED
+
+## Current QA rework (Round 4)
+
+This subsection is authoritative for the current tree; §§9-11 below retain the evidence
+from earlier rounds.
+
+Luna's latest review asked that the 24-bit normalization change and its dedicated test be
+removed from this one-bug change. I restored the original divisors at
+`plugins/GigPlayer/GigPlayer.cpp:1372,1385` (`0x100000000`) and removed
+`gigplayer24BitSamplePlaysAtFullScale()` and its private fixture helpers. This keeps the
+sample conversion behavior at the branch base. The callback handoff and the segmented-pool
+fixes remain.
+
+### Decision and current code evidence
+
+**Verdict: FIXED (REAL).** At the branch base, `openFile()` held `m_synthMutex` while
+constructing `GigInstance`, and `playImpl()` took `m_synthMutex` and `m_notesMutex`; the
+pre-fix file:line evidence is in §1. In the current tree, `openFile()` prepares a private
+`GigFileState` at `plugins/GigPlayer/GigPlayer.cpp:363`, then
+`publishFileState()` swaps it through `m_fileState.exchange()` at `:331-339`.
+`playImpl()` at `:900-912` acquires a reader reference and loads the state atomically; it
+does not take a mutex. Retired states are reclaimed off the callback when no render holds a
+reader reference (`:346-358`).
+
+The deterministic regression is `gigplayerCallbackDoesNotWaitForAFileLoad()` at
+`tests/src/plugins/PluginPortsMigrationTest.cpp:2955`. It pauses file preparation with the
+load hook and waits for a render completion signal. The three pool regressions at `:3157`,
+`:3283`, and `:3375` still cover more than 512 notes, twelve matching layers, and voice-pool
+growth.
+
+### Rework evidence
+
+| Check | Command and working directory | Exit | Result |
+|---|---|---:|---|
+| Initial compile after removing the unrelated test | `cmake --build build --target zene gigplayer PluginPortsMigrationTest -j8` (worktree) | 2 | `renderGigPeak()` became unused; removed that orphan helper. `build-1-review-rework.log`. |
+| Rebuild | same command | 0 | `build-2-review-rework.log`. |
+| Callback and pool regressions | `QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad gigplayerPlaysMoreThan512OverlappingNotes gigplayerKeepsEveryLayerOfANote gigplayerSurvivesGlobalVoicePoolExhaustion` (`build/tests`) | 0 | All four pass; `test-3-focused-green.log`. |
+| Registered test family | `ctest -R '^PluginPortsMigrationTest$' --output-on-failure` (`build/tests`) | 8 | QtTest totals: 78 passed, 1 failed, 2 skipped. The only failure is `nonRealtimeLadspaEffectsAreInvalid()` because the SWH Decimator fixture is unavailable; all nine GIG slots in the family pass. `test-4-family-ctest.log`. |
+| Lock regression proof | Temporarily put a shared `QMutexLocker` around `openFile()` preparation and `playImpl()`, then `cmake --build build --target gigplayer PluginPortsMigrationTest -j8` | 0 | The temporary lock reproduces the finding; `build-5-lock-mutation.log`. |
+| RED | `QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad` (`build/tests`) | 1 | Fails at `renderFinished` with “the audio callback waited for the GIG file that was being loaded”; `test-6-lock-mutation-RED.log`. |
+| Restore and rebuild | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/red-mutation.patch` (0), `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/fix.patch` (0), then `cmake --build build --target zene gigplayer PluginPortsMigrationTest -j8` | 0 | Temporary lock removed and intended baseline sample conversion restored; `build-7-restored-green.log`. |
+| GREEN | same callback test command as RED (`build/tests`) | 0 | `test-8-lock-restored-GREEN.log`. |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port` | 0 | All eight rows PASS, including complexity and file-length (no new item in touched files); `gate-10-feature-check-final.log`. |
+
+The product `fix.patch` here contains only the two 24-bit divisor restorations, so reversing
+that patch cannot undo the already-committed callback fix. For a meaningful RED comparison,
+`red-mutation.patch` records the temporary shared-lock mutation. Reversing that mutation and
+reapplying `fix.patch` returns the source to the reviewed, lock-free behavior. Both patch
+files and every build/test log for this rework are in
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs`.
+
+The exact patch and proof commands, with observed exits:
+
+```sh
+git diff -- plugins/GigPlayer/GigPlayer.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/fix.patch                 # EXIT=0
+git diff -- plugins/GigPlayer/GigPlayer.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/red-mutation.patch       # EXIT=0
+cmake --build build --target gigplayer PluginPortsMigrationTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/build-5-lock-mutation.log 2>&1 # EXIT=0
+QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/test-6-lock-mutation-RED.log 2>&1 # EXIT=1
+git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/red-mutation.patch # EXIT=0
+git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/fix.patch # EXIT=0
+cmake --build build --target zene gigplayer PluginPortsMigrationTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/build-7-restored-green.log 2>&1 # EXIT=0
+QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/test-8-lock-restored-GREEN.log 2>&1 # EXIT=0
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/gate-10-feature-check-final.log 2>&1 # EXIT=0
+```
+
+### Self-check (current rework)
+
+- The reported issue is real: the branch-base lock evidence is recorded in §1; current
+  publication is atomic at `GigPlayer.cpp:331-339`, and the render path at `:900-912` takes
+  no mutex.
+- The regression is deterministic: the load hook blocks at a synchronization condition; the
+  callback test fails at `renderFinished` with the temporary shared lock and passes after
+  restoring the lock-free code (RED `EXIT=1`, GREEN `EXIT=0`).
+- The QA scope correction preserves old 24-bit behavior: the old divisor is restored at
+  `GigPlayer.cpp:1372,1385`; the unrelated test and fixture helpers are removed.
+- Saved project attributes and commands were not changed in this rework. No new command,
+  audio-thread allocation, free, log, or lock was added.
+- Registration is unchanged: no new files were added; the existing modified test file is
+  already listed in `tests/upstream-modifications.txt` for this cluster.
+- Family limitation: 78 passed, 1 unrelated missing-fixture failure, and 2 skipped; focused
+  GIG regressions all pass.
+
 new-p9-149-port: FIXED
 
 # new-p9-149-port - GIG playback waited on blocking mutexes in the audio callback
@@ -124,7 +206,7 @@ audible), `gigplayerAudioPathDoesNotAllocate` (`:3085`), `gigplayerCallbackDoesN
 (`:3132`), `gigOneFrameReleaseSampleIsAudible`, `gigPlayerKeepsReleaseTriggerAcrossRegions`,
 `gigplayerBidirectionalLoopReflectsAtExclusiveEnd`, `gigplayerSingleFrameLoopRepeatsFrame`,
 `gigKeyboardDimensionUsesPressedKey`, `gigplayerNoProgressFallbackKeepsEarlierSamples`,
-`gigplayer24BitSamplePlaysAtFullScale`, `gigPatchDialogPreviewsSelectedProgram`.
+`gigPatchDialogPreviewsSelectedProgram`.
 
 ### Fixtures
 
