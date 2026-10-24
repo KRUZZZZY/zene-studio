@@ -250,27 +250,6 @@ private slots:
 		}
 	}
 
-	//! Q050-062.1: the shared hop formula. Standard is the legacy segment / 2 for
-	//! every segment (odd ones too), the others overlap 25% / 75%, and no hop is 0.
-	void testQualityHopFormula()
-	{
-		for (const int segment : {2, 3, 7, 1024, 16384, HTDemucsSegmentFrames, 44100 * 600})
-		{
-			QCOMPARE(stemHopFrames(segment, StemQuality::Standard), segment / 2);
-			QVERIFY(stemHopFrames(segment, StemQuality::High) >= 1);
-			QVERIFY(stemHopFrames(segment, StemQuality::High) <= stemHopFrames(segment, StemQuality::Standard));
-			QVERIFY(stemHopFrames(segment, StemQuality::Fast) >= stemHopFrames(segment, StemQuality::Standard));
-		}
-		QCOMPARE(stemHopFrames(16384, StemQuality::Fast), 12288);
-		QCOMPARE(stemHopFrames(16384, StemQuality::High), 4096);
-		QCOMPARE(stemHopFrames(HTDemucsSegmentFrames, StemQuality::Fast), 257985);
-		QCOMPARE(stemHopFrames(HTDemucsSegmentFrames, StemQuality::High), 85995);
-		QCOMPARE(stemOverlapFraction(StemQuality::Fast), 0.25);
-		QCOMPARE(stemOverlapFraction(StemQuality::Standard), 0.5);
-		QCOMPARE(stemOverlapFraction(StemQuality::High), 0.75);
-		QCOMPARE(QString::fromLatin1(stemQualityName(DefaultStemQuality)), QStringLiteral("standard"));
-	}
-
 	void testProgressIsReportedDuringTheRun()
 	{
 		StemJobManager manager;

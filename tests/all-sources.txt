@@ -4055,6 +4055,7 @@ tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/StemModelStoreTest.cpp
+tests/src/core/StemQualityTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/StereoDelay.cpp
 tests/src/core/SurroundExportTest.cpp

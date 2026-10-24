@@ -1391,6 +1391,8 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	LIST(APPEND LMMS_TESTS
 		src/core/StemJobManagerTest.cpp
 		src/core/StemModelStoreTest.cpp
+		# Q050-062.1: the quality table and the hop formula every backend shares.
+		src/core/StemQualityTest.cpp
 		src/core/StemSplitPipelineTest.cpp
 	)
 	IF(LMMS_HAVE_ONNXRUNTIME)
