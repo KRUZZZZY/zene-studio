@@ -61,6 +61,7 @@ Commands and exit codes:
 
 - `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p15-20-aac861e62b` — first run EXIT 1 (`gates-1-feature-check.log`), rerun after regeneration EXIT 0 (`gates-2-feature-check.log`).
 - Manifest recipe from `tests/all-sources.txt`: `{ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/|plugins/SfzPlayer/sfizz/)' ; git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u` — EXIT 0; output was written to the run log folder and copied over the manifest's entry list.
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p15-20-aac861e62b new-p15-20-port-port` — EXIT 0 on the committed tree (`submit-check-1.log`).
 
 ## Self-check
 
