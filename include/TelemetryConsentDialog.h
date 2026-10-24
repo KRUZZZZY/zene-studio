@@ -48,7 +48,11 @@ namespace lmms::gui
 class TelemetryConsentDialog : public QDialog
 {
 public:
+	// Save intentionally keeps the dialog open, so exec() cannot indicate whether it was used.
+	static constexpr auto SavedProperty = "zeneConsentSaved";
+
 	explicit TelemetryConsentDialog(QWidget * parent = nullptr);
+	bool wasSaved() const { return property(SavedProperty).toBool(); }
 
 private:
 	void refreshPreview();
