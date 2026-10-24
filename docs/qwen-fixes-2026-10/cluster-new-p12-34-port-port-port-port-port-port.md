@@ -26,6 +26,18 @@ The handler now captures the prior template and, when DataFile will replace it, 
 
 The source manifest was regenerated using the recipe in `tests/all-sources.txt`; this registers the new C++ test in the whole-tree scope and removes the 1,148 stale vendored sfizz entries that the recipe explicitly excludes. No gate threshold or baseline changed.
 
+## QA round 2 follow-up
+
+Luna's blocking scope finding was valid: the new regression test was present in `tests/all-sources.txt` but absent from `tests/fork-sources.txt`, so `tests/fork-sources-gate.sh` classified it as inherited and the fork-scoped per-file ratchets did not measure it. Added `tests/src/core/ControlProjectTemplateTest.cpp` to `tests/fork-sources.txt:2361`, with a scope note covering default, named, and new-template undo/redo behavior. No product code changed in this follow-up.
+
+| Purpose | Exact command and working directory | Exit |
+| --- | --- | ---: |
+| Rebuild application and focused project test targets; worktree root | `cmake --build build --target zene ControlProjectTemplateTest ControlProjectArchiveTest ControlCommandsSaveVersionTest > "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-34-port-port-port-port-port-port.r3/logs/build-1.log" 2>&1` | 0 |
+| Focused project CTest family; `build/tests` | `ctest -R 'ControlProject|ControlCommandsSaveVersion' --output-on-failure > "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-34-port-port-port-port-port-port.r3/logs/test-1.log" 2>&1` | 0, 3/3 tests |
+| Feature gates; worktree root | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-34-port-port-port-port-port-port" > "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-34-port-port-port-port-port-port.r3/logs/gate-2.log" 2>&1` | 0, all PASS |
+
+The focused family ran `ControlProjectArchiveTest`, `ControlProjectTemplateTest`, and `ControlCommandsSaveVersionTest`. The feature table reports PASS for `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, and `file-length`.
+
 ## Files committed
 
 - `src/core/ControlCommandsProjectLifecycle.cpp`
@@ -33,6 +45,7 @@ The source manifest was regenerated using the recipe in `tests/all-sources.txt`;
 - `tests/src/core/ControlProjectTemplateTest.cpp`
 - `tests/CMakeLists.txt`
 - `tests/all-sources.txt`
+- `tests/fork-sources.txt`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p12-34-port-port-port-port-port-port.md`
 

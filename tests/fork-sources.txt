@@ -2357,6 +2357,8 @@ tests/src/core/ControlHostedDeviceCatalogueTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlMidiReconnectSharedTest.cpp
 tests/src/core/ControlPluginBusesTest.cpp
+# Template save undo/redo coverage for default, named, and new templates.
+tests/src/core/ControlProjectTemplateTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
