@@ -32,6 +32,7 @@ control. The p17-203 test and its tracking entry are committed separately in
 | Restored regression | From `build/tests`: `./PluginPortsMigrationTest watsynPublishesItsOscillatorParametersThroughARealTimeSafeHandoff > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-202-port.r4/logs/10-proof-restored-param-test.log 2>&1` | 0 | Same regression passed (3 passed, 0 failed). |
 | Product files restored | `git diff --exit-code -- plugins/Watsyn/Watsyn.h plugins/Watsyn/Watsyn.cpp plugins/Watsyn/WatsynParamHandoff.h` | 0 | No product-file diff remains. |
 | Pre-commit completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port new-p17-202-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-202-port.r4/logs/17-submit-check-precommit.log 2>&1` | 1 | Only `working tree clean` failed because these report and scope-cleanup edits were not committed yet; the report and test registrations were detected. |
+| Clean completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port new-p17-202-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-202-port.r4/logs/20-submit-check-clean.log 2>&1` | 0 | `RESULT: PASS - submit`; commits, clean tree, report, test registration, and feature gate passed. |
 
 ## Decision and code evidence
 
@@ -99,6 +100,7 @@ The round 4 final gates passed after the scope correction. The p17-203 slot is c
 | file-length | PASS, no new item in changed files |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port` | **EXIT=0**, `RESULT: PASS` (`19-feature-check-final.log`) |
 | `git diff --check` | **EXIT=0** (`18-diff-check-final.log`) |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port new-p17-202-port` | **EXIT=0**, `RESULT: PASS - submit` (`20-submit-check-clean.log`) |
 
 The existing fix commit `aff8b3383` explicitly committed: `plugins/Watsyn/Watsyn.cpp`, `plugins/Watsyn/Watsyn.h`, `plugins/Watsyn/WatsynParamHandoff.h`, `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/rt-safety-scope.txt`, `tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/src/plugins/WatsynParamHandoffTest.cpp`, `tests/upstream-modifications.txt`, and this report. The all-sources regeneration in that commit matches the manifest's published recipe; it was required because the base manifest contained vendored paths excluded by that recipe.
 
@@ -107,7 +109,7 @@ The existing fix commit `aff8b3383` explicitly committed: `plugins/Watsyn/Watsyn
 | Change | Commit | Files |
 | --- | --- | --- |
 | Separate p17-203 wavetable regression | `a4f43be86` | `tests/src/plugins/WatsynSelectedGraphTest.cpp`, `tests/upstream-modifications.txt` |
-| p17-202 scope cleanup and this report | This cluster-named cleanup commit | `tests/src/plugins/PluginPortsMigrationTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p17-202-port.md` |
+| p17-202 scope cleanup and report | `4c109b384` | `tests/src/plugins/PluginPortsMigrationTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p17-202-port.md` |
 
 ## Self-check
 
@@ -123,5 +125,5 @@ The existing fix commit `aff8b3383` explicitly committed: `plugins/Watsyn/Watsyn
 - **Were the r4 gates clean?** The final `feature_check.py` result and its one PASS/FAIL table are recorded in the r4 log folder; `submit_check.py` is run after this report is complete and its exact result is recorded below.
 - **Did the gates pass?** Yes. The r4 `feature_check.py` returned 0 with all eight gate rows passing (`19-feature-check-final.log`); `git diff --check` returned 0 (`18-diff-check-final.log`). The final `submit_check.py` result is recorded after it is run below.
 - **Was the fix committed?** Yes, the implementation and parameter regressions are in `aff8b3383`; the p17-203 snapshot regression is separate in `a4f43be86`. This scope-cleanup commit contains the p17-202 test cleanup and this report; the explicit paths are listed below.
-- **Did the completion check pass?** The pre-commit attempt returned 1 only because the worktree was still being edited (`17-submit-check-precommit.log`). The clean post-commit rerun and its exit code are recorded after it runs.
+- **Did the completion check pass?** Yes. The pre-commit attempt returned 1 only because the worktree was still being edited (`17-submit-check-precommit.log`); the clean completion check returned 0 with `RESULT: PASS - submit` (`20-submit-check-clean.log`).
 - **Exact completion check command and result:** `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port new-p17-202-port` — EXIT=0, `RESULT: PASS - submit`. All five `?` prompts are answered in the preceding bullets: the verdict is REAL, and the regression, determinism, completeness, and collateral-damage evidence is stated above.
