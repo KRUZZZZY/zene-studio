@@ -374,6 +374,49 @@ private slots:
 				"(max difference %1)").arg(maxDifference)));
 	}
 
+	//! Sample::play must use the converter already on its playback state. Recreating
+	//! it to match a changed selection allocates on the audio-thread path.
+	void thePlayPathDoesNotReCreateTheConverter()
+	{
+		AudioEngine* const engine = Engine::audioEngine();
+		const int sourceRate = static_cast<int>(engine->outputSampleRate()) / 2;
+		const std::vector<SampleFrame> source = sineFrames(8192, sourceRate, 2000.0);
+		Sample sample(source.data(), source.size(), sourceRate);
+
+		const auto render = [&sample](AudioResampler::Mode mode, SrcQuality quality) {
+			ExportRenderSettings::setSrcQuality(quality);
+			Sample::PlaybackState state(mode);
+			state.setFrameIndex(0);
+			std::vector<SampleFrame> out(2048, SampleFrame(0.0f, 0.0f));
+			sample.play(out.data(), &state, out.size(), Sample::Loop::Off, 1.0);
+			return out;
+		};
+
+		const std::vector<SampleFrame> linear = render(AudioResampler::Mode::Linear, SrcQuality::Linear);
+		const std::vector<SampleFrame> pinned = render(AudioResampler::Mode::Linear, SrcQuality::SincBest);
+		const std::vector<SampleFrame> best = render(AudioResampler::Mode::SincBest, SrcQuality::SincBest);
+		ExportRenderSettings::reset();
+		QCOMPARE(ExportRenderSettings::srcQuality(), SrcQuality::Linear);
+
+		const double controlDifference = [&linear, &best] {
+			double difference = 0.0;
+			for (std::size_t i = 0; i < linear.size(); ++i)
+			{
+				difference = std::max(difference,
+					std::fabs(static_cast<double>(linear[i][0]) - static_cast<double>(best[i][0])));
+			}
+			return difference;
+		}();
+		QVERIFY2(controlDifference > 1e-5,
+			"the fixture cannot tell the converters apart, so the comparison below proves nothing");
+
+		for (std::size_t i = 0; i < linear.size(); ++i)
+		{
+			QCOMPARE(pinned[i][0], linear[i][0]);
+			QCOMPARE(pinned[i][1], linear[i][1]);
+		}
+	}
+
 	//! The other half of the contract: the DEFAULT quality is the one the
 	//! engine always used, so a render that asks for nothing is unchanged.
 	void theDefaultQualityIsTheHistoricalConverter()

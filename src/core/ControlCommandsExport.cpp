@@ -240,10 +240,15 @@ void registerExportSetSrcQuality(ControlRegistry& registry)
 		}
 
 		const SrcQuality previous = ExportRenderSettings::srcQuality();
+		if (!ExportRenderSettings::setSrcQuality(parsed))
+		{
+			return ControlResult::failure(ControlErrorKind::Busy,
+				QStringLiteral("the requested SRC converter could not be created; the selection is still '%1'")
+					.arg(qualityWireName(previous)));
+		}
 		control::addUndoStep(
 			[previous]() { ExportRenderSettings::setSrcQuality(previous); },
 			[parsed]() { ExportRenderSettings::setSrcQuality(parsed); });
-		ExportRenderSettings::setSrcQuality(parsed);
 
 		QJsonObject result = exportSettingsJson();
 		result.insert(QStringLiteral("previous"), qualityWireName(previous));

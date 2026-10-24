@@ -76,6 +76,35 @@ SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
 	m_sliceSnap.setValue(0);
 }
 
+void SlicerT::applyConverterMode(AudioResampler::Mode mode)
+{
+	for (PlaybackSlot& slot : m_playbackSlots) { slot.state.setConverterMode(mode); }
+}
+
+auto SlicerT::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+{
+	for (std::size_t slot = 0; slot < m_playbackSlots.size(); ++slot)
+	{
+		if (m_playbackSlots[slot].state.prepareConverterMode(mode)) { continue; }
+		for (std::size_t done = 0; done < slot; ++done)
+		{
+			m_playbackSlots[done].state.discardPreparedConverterMode();
+		}
+		return false;
+	}
+	return true;
+}
+
+void SlicerT::adoptPreparedConverterMode() noexcept
+{
+	for (PlaybackSlot& slot : m_playbackSlots) { slot.state.adoptPreparedConverterMode(); }
+}
+
+void SlicerT::discardPreparedConverterMode() noexcept
+{
+	for (PlaybackSlot& slot : m_playbackSlots) { slot.state.discardPreparedConverterMode(); }
+}
+
 SlicerT::PlaybackSlot* SlicerT::acquirePlaybackSlot(int startFrame) noexcept
 {
 	for (PlaybackSlot& slot : m_playbackSlots)

@@ -156,7 +156,11 @@ ProjectRenderer::ProjectRenderer(
 	, m_previousSrcQuality(ExportRenderSettings::srcQuality())
 {
 	ExportRenderSettings::setDitherMode(outputSettings.ditherMode());
-	ExportRenderSettings::setSrcQuality(outputSettings.srcQuality());
+	if (!ExportRenderSettings::setSrcQuality(outputSettings.srcQuality()))
+	{
+		m_refusal = QStringLiteral("The requested SRC converter could not be created.");
+		return;
+	}
 
 	// 0.5.0 F7 (MX-060): a surround export the master or the format cannot carry is refused before a
 	// file is opened. A stereo export is never refused, and is written with the two channels it was.

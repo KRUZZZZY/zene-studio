@@ -1155,7 +1155,10 @@ int main( int argc, char * * argv )
 					"sinc_fastest, sinc_medium or sinc_best)" ).arg( argv[i] ) );
 			}
 			os.setSrcQuality( quality );
-			ExportRenderSettings::setSrcQuality( quality );
+			if (!ExportRenderSettings::setSrcQuality(quality))
+			{
+				return usageError("The requested SRC converter could not be created");
+			}
 		}
 		else if( arg == "--import" )
 		{

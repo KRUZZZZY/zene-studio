@@ -25,11 +25,36 @@
 #include "AudioResampler.h"
 
 #include <samplerate.h>
+#include <atomic>
 #include <stdexcept>
+
+#include "ExportRenderSettings.h"
 
 namespace lmms {
 
 namespace {
+
+#ifdef LMMS_TESTING
+std::atomic<int> s_allocationsBeforeFailure{0};
+std::atomic<int> s_failuresToInject{0};
+
+bool converterAllocationMustFailForTest() noexcept
+{
+	if (s_allocationsBeforeFailure.load(std::memory_order_relaxed) > 0)
+	{
+		s_allocationsBeforeFailure.fetch_sub(1, std::memory_order_relaxed);
+		return false;
+	}
+	if (s_failuresToInject.load(std::memory_order_relaxed) > 0)
+	{
+		s_failuresToInject.fetch_sub(1, std::memory_order_relaxed);
+		return true;
+	}
+	return false;
+}
+#else
+bool converterAllocationMustFailForTest() noexcept { return false; }
+#endif
 
 constexpr auto converterType(AudioResampler::Mode mode) -> int
 {
@@ -122,6 +147,60 @@ void AudioResampler::setMode(Mode mode)
 	m_mode = mode;
 }
 
+auto AudioResampler::trySetMode(Mode mode) noexcept -> bool
+{
+	if (mode == m_mode) { return true; }
+	if (converterAllocationMustFailForTest()) { return false; }
+	auto* const state = src_new(converterType(mode), m_channels, &m_error);
+	if (state == nullptr) { return false; }
+	m_state.reset(state);
+	m_mode = mode;
+	return true;
+}
+
+auto AudioResampler::prepareMode(Mode mode) noexcept -> bool
+{
+	if (mode == m_mode)
+	{
+		m_preparedState.reset();
+		m_preparedMode = mode;
+		m_hasPrepared = true;
+		return true;
+	}
+	if (converterAllocationMustFailForTest()) { return false; }
+	auto* const state = src_new(converterType(mode), m_channels, &m_error);
+	if (state == nullptr) { return false; }
+	m_preparedState.reset(state);
+	m_preparedMode = mode;
+	m_hasPrepared = true;
+	return true;
+}
+
+void AudioResampler::adoptPreparedMode() noexcept
+{
+	if (!m_hasPrepared) { return; }
+	if (m_preparedState) { m_state.reset(m_preparedState.release()); }
+	m_mode = m_preparedMode;
+	m_hasPrepared = false;
+}
+
+void AudioResampler::discardPreparedMode() noexcept
+{
+	m_preparedState.reset();
+	m_hasPrepared = false;
+}
+
+#ifdef LMMS_TESTING
+void AudioResampler::forceConverterAllocationFailuresForTest(int failuresToInject,
+	int allocationsToSkip) noexcept
+{
+	s_allocationsBeforeFailure.store(failuresToInject > 0 ? allocationsToSkip : 0,
+		std::memory_order_relaxed);
+	s_failuresToInject.store(failuresToInject > 0 ? failuresToInject : 0,
+		std::memory_order_relaxed);
+}
+#endif
+
 auto AudioResampler::modeForSrcQuality(SrcQuality quality) noexcept -> Mode
 {
 	// The mapping is total and the default is the historical converter: a
@@ -135,6 +214,11 @@ auto AudioResampler::modeForSrcQuality(SrcQuality quality) noexcept -> Mode
 	case SrcQuality::Linear:
 	default:                      return Mode::Linear;
 	}
+}
+
+auto AudioResampler::modeForCurrentSrcQuality() noexcept -> Mode
+{
+	return modeForSrcQuality(ExportRenderSettings::srcQuality());
 }
 
 void AudioResampler::StateDeleter::operator()(void* state)

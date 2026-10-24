@@ -115,6 +115,10 @@ public:
 	void armPooledVoice(std::shared_ptr<const SampleBuffer> buffer, int sourceIn, int sourceOut,
 		float amplification, f_cnt_t offset, Track* track) noexcept;
 	void resetPooledVoice() noexcept;
+	//! Prepare/adopt/discard the handle state and its comp-slip readers together.
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool;
+	void adoptPreparedConverterMode() noexcept;
+	void discardPreparedConverterMode() noexcept;
 
 private:
 	Sample::PlaybackState m_state;

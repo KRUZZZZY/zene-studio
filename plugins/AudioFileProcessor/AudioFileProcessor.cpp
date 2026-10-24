@@ -288,6 +288,21 @@ void AudioFileProcessor::deleteNotePluginData( NotePlayHandle * _n )
 	std::destroy_at(handle);
 }
 
+auto AudioFileProcessor::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+{
+	return m_voices->prepareConverterMode(mode);
+}
+
+void AudioFileProcessor::adoptPreparedConverterMode() noexcept
+{
+	m_voices->adoptPreparedConverterMode();
+}
+
+void AudioFileProcessor::discardPreparedConverterMode() noexcept
+{
+	m_voices->discardPreparedConverterMode();
+}
+
 
 
 

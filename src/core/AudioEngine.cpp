@@ -43,6 +43,10 @@
 #include "TunerTap.h"
 #include "LinkAudioStream.h"
 #include "EnvelopeAndLfoParameters.h"
+#include "Engine.h"
+#include "ExportRenderSettings.h"
+#include "Instrument.h"
+#include "InstrumentTrack.h"
 #include "NotePlayHandle.h"
 #include "RealtimeScope.h"
 #include "ConfigManager.h"
@@ -207,6 +211,31 @@ struct AudioEngine::SampleVoicePool
 
 	bool ownsBus(const AudioBusHandle* candidate) const noexcept { return &bus == candidate; }
 
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+	{
+		std::size_t prepared = 0;
+		for (; prepared < m_voiceSlots.size(); ++prepared)
+		{
+			if (m_voiceSlots[prepared].handle.prepareConverterMode(mode)) { continue; }
+			for (std::size_t i = 0; i < prepared; ++i)
+			{
+				m_voiceSlots[i].handle.discardPreparedConverterMode();
+			}
+			return false;
+		}
+		return true;
+	}
+
+	void adoptPreparedConverterMode() noexcept
+	{
+		for (Slot& slot : m_voiceSlots) { slot.handle.adoptPreparedConverterMode(); }
+	}
+
+	void discardPreparedConverterMode() noexcept
+	{
+		for (Slot& slot : m_voiceSlots) { slot.handle.discardPreparedConverterMode(); }
+	}
+
 	void service() noexcept
 	{
 		std::uint16_t index = 0;
@@ -232,6 +261,137 @@ SamplePlayHandle* AudioEngine::acquirePooledSampleVoice(const std::shared_ptr<co
 }
 
 
+auto AudioEngine::applyConverterModeToRetainedStates(AudioResampler::Mode mode,
+	SrcQuality quality) noexcept -> bool
+{
+	const auto changeGuard = requestChangesGuard();
+	if (!prepareConverterModeForRetainedStates(mode))
+	{
+		discardPreparedConverterModeForRetainedStates();
+		m_converterModePropagationFailures.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+
+	// The publication and all pointer swaps happen while renderNextPeriod is
+	// excluded by the same guard. No failure remains after this store.
+	ExportRenderSettings::commitProposedSrcQuality(quality);
+	adoptPreparedConverterModeForRetainedStates();
+	return true;
+}
+
+
+bool AudioEngine::prepareConverterModeForRetainedStates(AudioResampler::Mode mode) noexcept
+{
+	if (m_sampleVoicePool != nullptr && !m_sampleVoicePool->prepareConverterMode(mode)) { return false; }
+
+	Song* const song = Engine::getSong();
+	if (song != nullptr && !song->prepareConverterModeForInstruments(mode)) { return false; }
+
+	for (PlayHandle* const handle : m_playHandles)
+	{
+		if (!applyConverterModeToPlayHandle(handle, mode, ConverterModePhase::Prepare)) { return false; }
+	}
+	for (LocklessListElement* element = m_newPlayHandles.first(); element; element = element->next)
+	{
+		if (!applyConverterModeToPlayHandle(element->value, mode, ConverterModePhase::Prepare)) { return false; }
+	}
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		if (!applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], mode,
+			ConverterModePhase::Prepare)) { return false; }
+	}
+	return true;
+}
+
+
+void AudioEngine::adoptPreparedConverterModeForRetainedStates() noexcept
+{
+	if (m_sampleVoicePool != nullptr) { m_sampleVoicePool->adoptPreparedConverterMode(); }
+	if (Song* const song = Engine::getSong()) { song->adoptPreparedConverterModeForInstruments(); }
+	for (PlayHandle* const handle : m_playHandles)
+	{
+		applyConverterModeToPlayHandle(handle, AudioResampler::Mode::Linear, ConverterModePhase::Adopt);
+	}
+	for (LocklessListElement* element = m_newPlayHandles.first(); element; element = element->next)
+	{
+		applyConverterModeToPlayHandle(element->value, AudioResampler::Mode::Linear, ConverterModePhase::Adopt);
+	}
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], AudioResampler::Mode::Linear,
+			ConverterModePhase::Adopt);
+	}
+}
+
+
+void AudioEngine::discardPreparedConverterModeForRetainedStates() noexcept
+{
+	if (m_sampleVoicePool != nullptr) { m_sampleVoicePool->discardPreparedConverterMode(); }
+	if (Song* const song = Engine::getSong()) { song->discardPreparedConverterModeForInstruments(); }
+	for (PlayHandle* const handle : m_playHandles)
+	{
+		applyConverterModeToPlayHandle(handle, AudioResampler::Mode::Linear, ConverterModePhase::Discard);
+	}
+	for (LocklessListElement* element = m_newPlayHandles.first(); element; element = element->next)
+	{
+		applyConverterModeToPlayHandle(element->value, AudioResampler::Mode::Linear, ConverterModePhase::Discard);
+	}
+	for (std::size_t i = 0; i < m_capacityDeferredPlayHandleCount; ++i)
+	{
+		applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], AudioResampler::Mode::Linear,
+			ConverterModePhase::Discard);
+	}
+}
+
+
+auto AudioEngine::applyConverterModeToPlayHandle(PlayHandle* handle, AudioResampler::Mode mode,
+	ConverterModePhase phase) noexcept -> bool
+{
+	if (handle == nullptr) { return true; }
+	if (auto* const sampleHandle = dynamic_cast<SamplePlayHandle*>(handle))
+	{
+		if (sampleHandle->isPooledVoice()) { return true; }
+		switch (phase)
+		{
+		case ConverterModePhase::Prepare: return sampleHandle->prepareConverterMode(mode);
+		case ConverterModePhase::Adopt: sampleHandle->adoptPreparedConverterMode(); return true;
+		case ConverterModePhase::Discard: sampleHandle->discardPreparedConverterMode(); return true;
+		}
+		return true;
+	}
+	if (auto* const note = dynamic_cast<NotePlayHandle*>(handle))
+	{
+		InstrumentTrack* const track = note->instrumentTrack();
+		Instrument* const instrument = track != nullptr ? track->instrument() : nullptr;
+		if (instrument == nullptr) { return true; }
+		switch (phase)
+		{
+		case ConverterModePhase::Prepare:
+			return instrument->prepareConverterModeForNote(note, mode);
+		case ConverterModePhase::Adopt:
+			instrument->adoptPreparedConverterModeForNote(note);
+			return true;
+		case ConverterModePhase::Discard:
+			instrument->discardPreparedConverterModeForNote(note);
+			return true;
+		}
+	}
+	return true;
+}
+
+
+auto AudioEngine::onSrcQualityChanged(SrcQuality quality) noexcept -> bool
+{
+	AudioEngine* const engine = Engine::audioEngine();
+	if (engine == nullptr)
+	{
+		ExportRenderSettings::commitProposedSrcQuality(quality);
+		return true;
+	}
+	return engine->applyConverterModeToRetainedStates(AudioResampler::modeForSrcQuality(quality), quality);
+}
+
+
 
 void AudioEngine::recyclePooledSampleVoice(SamplePlayHandle* handle, bool realtime) noexcept
 {
@@ -251,6 +411,7 @@ void AudioEngine::serviceSampleVoicePoolOnControlThread() noexcept
 {
 	if (!RealtimeScope::isActive() && QThread::currentThread() == thread() && m_sampleVoicePool != nullptr)
 	{
+		const auto changeGuard = requestChangesGuard();
 		m_sampleVoicePool->service();
 	}
 }
@@ -393,6 +554,7 @@ int AudioEngine::renderThreadCount() const noexcept
 
 AudioEngine::~AudioEngine()
 {
+	ExportRenderSettings::setSrcQualityListener(nullptr);
 	m_playHandleCapacityTimer.stop();
 	for( int w = 0; w < m_numWorkers; ++w )
 	{
@@ -604,6 +766,7 @@ void AudioEngine::initDevices()
 	}
 	// Loading audio device may have changed the sample rate
 	m_sampleVoicePool = std::make_unique<SampleVoicePool>(this);
+	ExportRenderSettings::setSrcQualityListener(&AudioEngine::onSrcQualityChanged);
 	emit sampleRateChanged();
 }
 

@@ -86,6 +86,40 @@ void CompSlipReaders::openReaders(f_cnt_t sourceIn, float sourceFramesPerTick)
 	}
 }
 
+auto CompSlipReaders::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+{
+	for (int reader = 0; reader < m_readerCount; ++reader)
+	{
+		auto& state = m_readers[static_cast<std::size_t>(reader)];
+		if (!state || state->prepareConverterMode(mode)) { continue; }
+		for (int done = 0; done < reader; ++done)
+		{
+			auto& prepared = m_readers[static_cast<std::size_t>(done)];
+			if (prepared) { prepared->discardPreparedConverterMode(); }
+		}
+		return false;
+	}
+	return true;
+}
+
+void CompSlipReaders::adoptPreparedConverterMode() noexcept
+{
+	for (int reader = 0; reader < m_readerCount; ++reader)
+	{
+		auto& state = m_readers[static_cast<std::size_t>(reader)];
+		if (state) { state->adoptPreparedConverterMode(); }
+	}
+}
+
+void CompSlipReaders::discardPreparedConverterMode() noexcept
+{
+	for (int reader = 0; reader < m_readerCount; ++reader)
+	{
+		auto& state = m_readers[static_cast<std::size_t>(reader)];
+		if (state) { state->discardPreparedConverterMode(); }
+	}
+}
+
 void CompSlipReaders::render(const Sample& sample, SampleFrame* dst, f_cnt_t frames, f_cnt_t clipFrame, double ratio)
 {
 	std::array<SampleFrame, DEFAULT_BUFFER_SIZE> chunk;

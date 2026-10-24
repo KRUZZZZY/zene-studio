@@ -35,11 +35,20 @@ namespace lmms
 std::atomic<int> ExportRenderSettings::s_ditherMode{static_cast<int>(DitherMode::Off)};
 std::atomic<int> ExportRenderSettings::s_srcQuality{
 	static_cast<int>(SrcQuality::Linear)};
+std::atomic<int> ExportRenderSettings::s_proposedSrcQuality{
+	static_cast<int>(SrcQuality::Linear)};
 // OFF by default: the report is opt-in (feature row 24 of
 // docs/FEATURE-LIST-0.3.0.md), and a render that never asks for one is
 // byte-for-byte the render it always was - the loudness report is measure-only,
 // but not constructing a meter is still the honest default.
 std::atomic<bool> ExportRenderSettings::s_loudnessReport{false};
+std::atomic<ExportRenderSettings::SrcQualityListener> ExportRenderSettings::s_srcQualityListener{nullptr};
+std::atomic<std::uint64_t> ExportRenderSettings::s_srcQualityPropagationFailures{0};
+#ifdef LMMS_TESTING
+std::atomic<ExportRenderSettings::SrcQualityPublicationProbe>
+	ExportRenderSettings::s_srcQualityPublicationProbe{nullptr};
+std::atomic<void*> ExportRenderSettings::s_srcQualityPublicationProbeUserData{nullptr};
+#endif
 
 DitherMode ExportRenderSettings::ditherMode() noexcept
 {
@@ -76,10 +85,50 @@ SrcQuality ExportRenderSettings::srcQuality() noexcept
 	return static_cast<SrcQuality>(s_srcQuality.load(std::memory_order_relaxed));
 }
 
-void ExportRenderSettings::setSrcQuality(SrcQuality quality) noexcept
+auto ExportRenderSettings::setSrcQuality(SrcQuality quality) noexcept -> bool
+{
+	if (quality == srcQuality()) { return true; }
+	const auto listener = s_srcQualityListener.load(std::memory_order_acquire);
+	if (listener == nullptr)
+	{
+		s_srcQuality.store(static_cast<int>(quality), std::memory_order_relaxed);
+		return true;
+	}
+	s_proposedSrcQuality.store(static_cast<int>(quality), std::memory_order_relaxed);
+#ifdef LMMS_TESTING
+	if (const auto probe = s_srcQualityPublicationProbe.load(std::memory_order_acquire))
+	{
+		probe(s_srcQualityPublicationProbeUserData.load(std::memory_order_acquire));
+	}
+#endif
+	if (listener(quality)) { return true; }
+	s_srcQualityPropagationFailures.fetch_add(1, std::memory_order_relaxed);
+	return false;
+}
+
+void ExportRenderSettings::commitProposedSrcQuality(SrcQuality quality) noexcept
 {
 	s_srcQuality.store(static_cast<int>(quality), std::memory_order_relaxed);
 }
+
+void ExportRenderSettings::setSrcQualityListener(SrcQualityListener listener) noexcept
+{
+	s_srcQualityListener.store(listener, std::memory_order_release);
+}
+
+auto ExportRenderSettings::srcQualityPropagationFailures() noexcept -> std::uint64_t
+{
+	return s_srcQualityPropagationFailures.load(std::memory_order_relaxed);
+}
+
+#ifdef LMMS_TESTING
+void ExportRenderSettings::setSrcQualityPublicationProbeForTest(SrcQualityPublicationProbe probe,
+	void* userData) noexcept
+{
+	s_srcQualityPublicationProbeUserData.store(userData, std::memory_order_release);
+	s_srcQualityPublicationProbe.store(probe, std::memory_order_release);
+}
+#endif
 
 void ExportRenderSettings::reset() noexcept
 {

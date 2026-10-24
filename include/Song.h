@@ -704,6 +704,10 @@ public slots:
 
 	void startExport();
 	void stopExport();
+	//! Prepare every instrument's retained converters, then adopt or discard the set.
+	auto prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept -> bool;
+	void adoptPreparedConverterModeForInstruments() noexcept;
+	void discardPreparedConverterModeForInstruments() noexcept;
 
 
 	void setModified();

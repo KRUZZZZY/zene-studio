@@ -32,6 +32,7 @@
 #include <cstdint>
 #include <span>
 
+#include "AudioResampler.h"
 #include "Flags.h"
 #include "lmms_export.h"
 #include "LmmsTypes.h"
@@ -115,6 +116,32 @@ public:
 	// cast void-ptr so that the plugin-data is deleted properly
 	// (call of dtor if it's a class etc.)
 	virtual void deleteNotePluginData( NotePlayHandle * _note_to_play );
+
+	//! Change any playback states retained by this instrument away from the play path.
+	virtual void applyConverterMode(AudioResampler::Mode mode) { (void)mode; }
+	//! Prepare the retained states as a set; adoption and discard cannot fail.
+	virtual auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+	{
+		(void)mode;
+		return true;
+	}
+	virtual void adoptPreparedConverterMode() noexcept {}
+	virtual void discardPreparedConverterMode() noexcept {}
+
+	//! Change the playback state retained by a live note, if this instrument owns one.
+	virtual void applyConverterModeToNote(NotePlayHandle* note, AudioResampler::Mode mode)
+	{
+		(void)note;
+		(void)mode;
+	}
+	virtual auto prepareConverterModeForNote(NotePlayHandle* note, AudioResampler::Mode mode) noexcept -> bool
+	{
+		(void)note;
+		(void)mode;
+		return true;
+	}
+	virtual void adoptPreparedConverterModeForNote(NotePlayHandle* note) noexcept { (void)note; }
+	virtual void discardPreparedConverterModeForNote(NotePlayHandle* note) noexcept { (void)note; }
 
 	// Get number of sample-frames that should be used when playing beat
 	// (note with unspecified length)

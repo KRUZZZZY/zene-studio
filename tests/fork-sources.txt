@@ -2993,3 +2993,4 @@ tests/src/gui/MicrotunerScaleFileTest.cpp
 # registered by name rather than derived, and `bash tests/fork-sources-gate.sh` accepts either.
 tests/src/gui/TouchWorkspaceTest.cpp
 tests/control-touch-workspace.py
+docs/qwen-fixes-2026-10/cluster-5284-port-port.md

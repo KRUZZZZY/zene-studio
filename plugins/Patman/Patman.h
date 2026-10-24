@@ -63,6 +63,9 @@ public:
 	~PatmanInstrument() override;
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
+	auto prepareConverterModeForNote(NotePlayHandle* note, AudioResampler::Mode mode) noexcept -> bool override;
+	void adoptPreparedConverterModeForNote(NotePlayHandle* note) noexcept override;
+	void discardPreparedConverterModeForNote(NotePlayHandle* note) noexcept override;
 
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;

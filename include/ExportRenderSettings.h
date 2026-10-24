@@ -27,6 +27,7 @@
 #define LMMS_EXPORT_RENDER_SETTINGS_H
 
 #include <atomic>
+#include <cstdint>
 
 #include "ExportDitherMode.h"
 #include "SrcQuality.h"
@@ -81,7 +82,19 @@ public:
 	static void setLoudnessReport(bool enabled) noexcept;
 
 	static SrcQuality srcQuality() noexcept;
-	static void setSrcQuality(SrcQuality quality) noexcept;
+	//! Change the selection and all retained converters as one transaction.
+	static auto setSrcQuality(SrcQuality quality) noexcept -> bool;
+	//! Called by the engine while it owns the change lock, after all states prepare.
+	static void commitProposedSrcQuality(SrcQuality quality) noexcept;
+	using SrcQualityListener = bool (*)(SrcQuality quality) noexcept;
+	static void setSrcQualityListener(SrcQualityListener listener) noexcept;
+	static std::uint64_t srcQualityPropagationFailures() noexcept;
+
+#ifdef LMMS_TESTING
+	using SrcQualityPublicationProbe = void (*)(void* userData) noexcept;
+	static void setSrcQualityPublicationProbeForTest(SrcQualityPublicationProbe probe,
+		void* userData) noexcept;
+#endif
 
 	//! Back to the compile-time defaults: dither off, `SrcQuality::Linear`,
 	//! loudness report OFF.
@@ -90,7 +103,14 @@ public:
 private:
 	static std::atomic<int> s_ditherMode;
 	static std::atomic<int> s_srcQuality;
+	static std::atomic<int> s_proposedSrcQuality;
 	static std::atomic<bool> s_loudnessReport;
+	static std::atomic<SrcQualityListener> s_srcQualityListener;
+	static std::atomic<std::uint64_t> s_srcQualityPropagationFailures;
+#ifdef LMMS_TESTING
+	static std::atomic<SrcQualityPublicationProbe> s_srcQualityPublicationProbe;
+	static std::atomic<void*> s_srcQualityPublicationProbeUserData;
+#endif
 };
 
 } // namespace lmms

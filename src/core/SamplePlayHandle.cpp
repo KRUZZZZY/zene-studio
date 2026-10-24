@@ -489,6 +489,31 @@ void SamplePlayHandle::resetPooledVoice() noexcept
 }
 
 
+auto SamplePlayHandle::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+{
+	if (!m_state.prepareConverterMode(mode)) { return false; }
+	if (m_compSlip != nullptr && !m_compSlip->prepareConverterMode(mode))
+	{
+		m_state.discardPreparedConverterMode();
+		m_compSlip->discardPreparedConverterMode();
+		return false;
+	}
+	return true;
+}
+
+void SamplePlayHandle::adoptPreparedConverterMode() noexcept
+{
+	m_state.adoptPreparedConverterMode();
+	if (m_compSlip) { m_compSlip->adoptPreparedConverterMode(); }
+}
+
+void SamplePlayHandle::discardPreparedConverterMode() noexcept
+{
+	m_state.discardPreparedConverterMode();
+	if (m_compSlip) { m_compSlip->discardPreparedConverterMode(); }
+}
+
+
 
 
 void SamplePlayHandle::play( std::span<SampleFrame> buffer )

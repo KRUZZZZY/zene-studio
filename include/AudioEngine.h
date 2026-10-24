@@ -40,6 +40,7 @@
 
 #include "AudioBufferView.h"
 #include "AudioDevice.h"
+#include "AudioResampler.h"
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
 #include "LocklessList.h"
@@ -267,6 +268,14 @@ public:
 		int sourceIn, int sourceOut, float amplification, f_cnt_t offset, Track* track, bool metronome) noexcept;
 	//! Return a detached pool handle; realtime returns are retired for the main-thread recycler.
 	void recyclePooledSampleVoice(SamplePlayHandle* handle, bool realtime) noexcept;
+
+	//! Reconfigure every retained sample converter off the audio thread.
+	auto applyConverterModeToRetainedStates(AudioResampler::Mode mode, SrcQuality quality) noexcept -> bool;
+	static auto onSrcQualityChanged(SrcQuality quality) noexcept -> bool;
+	std::uint64_t converterModePropagationFailures() const noexcept
+	{
+		return m_converterModePropagationFailures.load(std::memory_order_relaxed);
+	}
 	//! Whether @a handle is the private bus used by the fixed sample-voice pool.
 	bool isSampleVoicePoolBus(const AudioBusHandle* handle) const noexcept;
 	void recordSampleVoiceOverflow() noexcept
@@ -283,6 +292,13 @@ public:
 	}
 	//! Release the pool bus while Engine's global audio-engine pointer and device are still valid.
 	void shutdownSampleVoicePool() noexcept;
+	//! Prepare, adopt, and discard form the engine-wide converter transaction.
+	bool prepareConverterModeForRetainedStates(AudioResampler::Mode mode) noexcept;
+	void adoptPreparedConverterModeForRetainedStates() noexcept;
+	void discardPreparedConverterModeForRetainedStates() noexcept;
+	enum class ConverterModePhase { Prepare, Adopt, Discard };
+	static auto applyConverterModeToPlayHandle(PlayHandle* handle, AudioResampler::Mode mode,
+		ConverterModePhase phase) noexcept -> bool;
 	void recordDroppedPlayHandleEdit() noexcept
 	{
 		m_droppedPlayHandleEditCount.fetch_add(1, std::memory_order_relaxed);
@@ -804,6 +820,7 @@ private:
 	std::atomic<std::uint64_t> m_slicerTStateOverflowCount{0};
 	std::atomic<std::uint64_t> m_sampleVoiceOverflowCount{0};
 	std::atomic<std::uint64_t> m_sampleVoiceQueueInvariantFailureCount{0};
+	std::atomic<std::uint64_t> m_converterModePropagationFailures{0};
 	std::unique_ptr<SampleVoicePool> m_sampleVoicePool;
 	// place where new playhandles are added temporarily
 	LocklessList<PlayHandle *> m_newPlayHandles;
