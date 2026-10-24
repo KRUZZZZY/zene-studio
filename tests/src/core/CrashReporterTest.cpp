@@ -77,11 +77,6 @@ void alternateStackSignalHandler(int) noexcept
 		&& address < s_expectedAltStackEnd;
 }
 
-// Weak so this regression builds and fails with an assertion on the unfixed tree.
-namespace lmms::crashreporter
-{
-bool installAlternateStackForCurrentThread() __attribute__((weak));
-}
 #endif
 
 namespace
@@ -533,8 +528,8 @@ private slots:
 	}
 
 	// sigaltstack() is per-thread, while SA_ONSTACK dispositions are process-wide.
-	// A later thread must register its own stack, and delivery must actually use it.
-	void a_thread_can_register_the_alternate_signal_stack_for_itself()
+	// Reinstalling on a later thread must register its stack before the handler is used.
+	void repeated_install_registers_and_uses_the_calling_threads_stack()
 	{
 		QTemporaryDir dir;
 		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
@@ -552,6 +547,10 @@ private slots:
 		action.sa_flags = SA_ONSTACK;
 		QVERIFY(::sigemptyset(&action.sa_mask) == 0);
 		QVERIFY(::sigaction(SIGUSR1, &action, nullptr) == 0);
+		struct sigaction crashAction{};
+		QVERIFY(::sigaction(SIGSEGV, nullptr, &crashAction) == 0);
+		QVERIFY2((crashAction.sa_flags & SA_ONSTACK) != 0,
+			"the crash reporter's process-wide handler must request alternate-stack delivery");
 
 		bool unarmedThreadHasNone = false;
 		bool unarmedSignalUsedAltStack = true;
@@ -567,12 +566,13 @@ private slots:
 		});
 		control.join();
 
-		const auto registerStack = &lmms::crashreporter::installAlternateStackForCurrentThread;
-		bool registered = false;
+		bool workerInstallSucceeded = false;
 		bool hasStack = false;
 		bool registeredSignalUsedAltStack = false;
 		std::thread worker([&] {
-			registered = registerStack != nullptr && registerStack();
+			// install() must register this thread even though the process-wide handlers
+			// are already armed by the main thread.
+			workerInstallSucceeded = install(dir.path().toStdString());
 			stack_t stack{};
 			const bool queried = ::sigaltstack(nullptr, &stack) == 0;
 			hasStack = queried && (stack.ss_flags & SS_DISABLE) == 0
@@ -589,38 +589,12 @@ private slots:
 		QVERIFY2(unarmedThreadHasNone, "a thread that registers nothing must have no alternate stack");
 		QVERIFY2(!unarmedSignalUsedAltStack,
 			"SA_ONSTACK must not claim an alternate stack on an unregistered thread");
-		QVERIFY2(registerStack != nullptr,
-			"the reporter cannot register an alternate signal stack for a thread");
-		QVERIFY2(registered, "registering the alternate stack for a thread failed");
+		QVERIFY2(workerInstallSucceeded,
+			"reinstall() must succeed while registering its calling thread's alternate stack");
 		QVERIFY2(hasStack, "the thread that registered an alternate stack does not have one");
 		QVERIFY2(registeredSignalUsedAltStack,
 			"SA_ONSTACK signal delivery did not run on the registered alternate stack");
 		QVERIFY(restored);
-	}
-
-	void a_repeated_install_registers_the_calling_thread()
-	{
-		QTemporaryDir dir;
-		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
-		QVERIFY(install(dir.path().toStdString()));
-
-		bool workerInstallSucceeded = false;
-		bool workerHasAlternateStack = false;
-		std::size_t workerStackSize = 0;
-		std::thread worker([&] {
-			workerInstallSucceeded = install(dir.path().toStdString());
-			stack_t stack{};
-			const bool queried = ::sigaltstack(nullptr, &stack) == 0;
-			workerHasAlternateStack = queried && (stack.ss_flags & SS_DISABLE) == 0;
-			workerStackSize = static_cast<std::size_t>(stack.ss_size);
-		});
-		worker.join();
-
-		QVERIFY(workerInstallSucceeded);
-		QVERIFY2(workerHasAlternateStack,
-			"install() returned early for an already armed reporter without registering the "
-			"calling thread's alternate stack");
-		QCOMPARE(workerStackSize, std::size_t(32 * 1024));
 	}
 
 #endif // Q_OS_WIN

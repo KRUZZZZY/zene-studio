@@ -1,190 +1,61 @@
 FIXED
+# Cluster 5039-port-port-port-port-port-port: per-thread alternate signal stacks
 
-# Cluster 5039-port-port-port-port-port-port: alternate signal stacks are per-thread
+## Verdict and code evidence
 
-This is the manual port of accepted fix `d51f0e653` from the older line. The
-fresh branch did not already contain it. The reported conflict in
-`src/core/AudioEngineWorkerThread.cpp` was resolved by adding registration at
-the start of the current `run()` body, leaving the newer worker/drain code
-intact. No merge, cherry-pick or rebase was used.
+Verdict: **REAL**. POSIX signal dispositions are process-wide, but `sigaltstack()` is per-thread. Before the fix, `install()` registered one process-wide `SA_ONSTACK` handler and only configured the installing thread's stack. A worker thread could therefore enter the handler on its exhausted ordinary stack.
 
-## Decision: REAL
+The product fix is already present in commit `46c3011ed` on this branch. `src/core/CrashReporter.cpp:100` provides thread-local stack storage; `:266-277` registers that storage with `sigaltstack()` once per calling thread. `install()` invokes the helper before its already-installed early return at `:280-285`, and installs handlers with `SA_ONSTACK` at `:292`. Audio and render entry points register their threads at `src/core/AudioEngineWorkerThread.cpp:307`, `src/core/AudioEngine.cpp:976`, `src/core/ProjectRenderer.cpp:281`, `include/AudioDummy.h:105`, and the audio backend callbacks and loops. The documented limit for private plug-in threads remains at `docs/CRASH-REPORTER.md:445-452`.
 
-Before this port, `src/core/CrashReporter.cpp` held one process-global
-`s_altStack`, and `install()` called `sigaltstack()` only on the installing
-thread before arming process-wide dispositions with `SA_ONSTACK`. POSIX
-`sigaltstack()` is per-thread. A later audio thread therefore had no alternate
-stack and would handle stack exhaustion on its ordinary, exhausted stack.
+The round-two test change makes the proof follow the public `install()` path. `tests/src/core/CrashReporterTest.cpp:532-596` installs the reporter on the test thread, confirms the process-wide crash handler requests `SA_ONSTACK`, then calls `install()` from a second thread and checks that a `SA_ONSTACK` signal handler actually runs inside that thread's registered stack. It also confirms an otherwise unregistered thread has no alternate stack. This fails if the product patch is reverted.
 
-The regression recorded that state before the product change:
-`CrashReporterTest::a_thread_can_register_the_alternate_signal_stack_for_itself`
-failed because the registration API was absent, and
-`a_repeated_install_registers_the_calling_thread` showed that a repeated
-`install()` on another thread left it without a stack.
+## Regression evidence
 
-## Fix and current-tree evidence
+Commands below ran from the worktree root except `ctest`, which ran from `build/tests`. The RED cycle reversed the product-only patch saved as `logs/fix.patch`; the tests remained in the worktree.
 
-- [`src/core/CrashReporter.cpp`](../../src/core/CrashReporter.cpp:100) now has
-  thread-local 32 KiB stack storage. The helper at `:266-278` registers the
-  calling thread once; `install()` calls it before its already-installed
-  early return at `:280-287`. Signal dispositions still use `SA_ONSTACK` at
-  `:292`.
-- [`include/CrashReporter.h`](../../include/CrashReporter.h:147) declares the
-  per-thread API. [`src/core/CrashReporterWindows.cpp`](../../src/core/CrashReporterWindows.cpp:51)
-  provides the matching Windows no-op.
-- The new thread registration is at the current thread's entry point or
-  callback in `include/AudioDummy.h:105`,
-  `src/core/AudioEngineWorkerThread.cpp:307`, `src/core/AudioEngine.cpp:976`,
-  `src/core/ProjectRenderer.cpp:281`, `src/core/audio/AudioAlsa.cpp:297,608`,
-  `src/core/audio/AudioJack.cpp:413`, `src/core/audio/AudioOss.cpp:227`,
-  `src/core/audio/AudioPortAudio.cpp:214`,
-  `src/core/audio/AudioPulseAudio.cpp:185`,
-  `src/core/audio/AudioSdl.cpp:174,192`,
-  `src/core/audio/AudioSndio.cpp:134`, and
-  `src/core/audio/AudioSoundIo.cpp:256`. The
-  `AudioEngine::renderNextPeriod()` registration is the backstop for every
-  render path. ALSA's capture thread and SDL's separate input callback register
-  as well.
-- [`tests/src/core/CrashReporterTest.cpp`](../../tests/src/core/CrashReporterTest.cpp:537)
-  synchronously raises `SIGUSR1` on an unregistered thread and a registered
-  worker thread. It verifies the first has no alternate stack and that the
-  second receives `SA_ONSTACK` delivery inside its own kernel-reported stack
-  range. It also tests repeated installation on another thread.
-- [`docs/CRASH-REPORTER.md`](../../docs/CRASH-REPORTER.md:445) now states the
-  coverage limit: a private plugin thread that never reaches a registration
-  point still has no alternate stack.
+| Phase | Command | Exit | Result |
+|---|---|---:|---|
+| RED build | `cmake --build build --target zene CrashReporterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/build-red-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Built the reverted product and regression test. |
+| RED test | `ctest -R '^CrashReporterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/test-red-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 8 | Failed at `hasStack`: the second thread had no alternate stack (13 passed, 1 failed). |
+| GREEN build | `cmake --build build --target zene CrashReporterTest CrashReporterArmTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/build-green-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Rebuilt with the product patch restored. |
+| GREEN test | `ctest -R '^CrashReporterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/test-green-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Passed. |
+| Sibling test | `ctest -R '^CrashReporterArmTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/test-arm-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` | 0 | Passed. |
 
-## Evidence table
+Affected family count: **2 ctest executables ran**, `CrashReporterTest` and `CrashReporterArmTest`; neither run had zero tests. Test output is in `build-red-2.log`, `test-red-2.log`, `build-green-3.log`, `test-green-2.log`, and `test-arm-2.log` in the run log folder.
 
-Logs are in
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs`.
-Test commands below ran from `build/tests`; build and gate commands ran from
-the worktree root.
+The proof patch was generated from the committed product change, excluding test files, and was applied and reversed successfully:
 
-The exact command strings and exit codes follow. Each ctest ran with working
-directory `build/tests`; other commands ran from the worktree root. Build and
-test output is in the listed new log file. The shell `EXIT` marker was printed
-after redirection and is recorded here.
-
-| Step | Command | Exit | Result |
-| --- | --- | ---: | --- |
-| RED build | `mkdir -p /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs && cmake --build build --target zene CrashReporterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/build-1.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | Built test against unchanged product. |
-| RED test | `ctest -R '^CrashReporterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/test-1.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 8 | 13 passed, 2 failed: missing helper and repeated-install assertions. |
-| GREEN build | `cmake --build build --target zene CrashReporterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/build-2.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | Built the per-thread implementation. |
-| GREEN test | `ctest -R '^CrashReporterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/test-2.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | CrashReporterTest passed. |
-| Family build | `cmake --build build --target zene CrashReporterTest CrashReporterArmTest ControlCrashAcknowledgeTest DummyPacingTest RenderJobQueueTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/build-3.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | All five related targets built. |
-| Family test | `ctest -R '^(CrashReporterTest|CrashReporterArmTest|ControlCrashAcknowledgeTest|DummyPacingTest|RenderJobQueueTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/test-3.log 2>&1; result=$?; echo EXIT=$result; exit $result` | 0 | 5/5 ctest targets passed. |
-
-The exact 4b product patch commands were:
-
-```sh
-git diff -- include/AudioDummy.h include/CrashReporter.h src/core/AudioEngine.cpp src/core/AudioEngineWorkerThread.cpp src/core/CrashReporter.cpp src/core/CrashReporterWindows.cpp src/core/ProjectRenderer.cpp src/core/audio/AudioAlsa.cpp src/core/audio/AudioJack.cpp src/core/audio/AudioOss.cpp src/core/audio/AudioPortAudio.cpp src/core/audio/AudioPulseAudio.cpp src/core/audio/AudioSdl.cpp src/core/audio/AudioSndio.cpp src/core/audio/AudioSoundIo.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/fix.patch; result=$?; echo EXIT=$result; exit $result
+```text
+git diff 46c3011ed^ 46c3011ed -- docs/CRASH-REPORTER.md include/AudioDummy.h include/CrashReporter.h src/core/AudioEngine.cpp src/core/AudioEngineWorkerThread.cpp src/core/CrashReporter.cpp src/core/CrashReporterWindows.cpp src/core/ProjectRenderer.cpp src/core/audio/AudioAlsa.cpp src/core/audio/AudioJack.cpp src/core/audio/AudioOss.cpp src/core/audio/AudioPortAudio.cpp src/core/audio/AudioPulseAudio.cpp src/core/audio/AudioSdl.cpp src/core/audio/AudioSndio.cpp src/core/audio/AudioSoundIo.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/fix.patch
 EXIT=0
-git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/fix.patch; result=$?; echo EXIT=$result; exit $result
-EXIT=0
-cmake --build build --target zene CrashReporterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/build-4.log 2>&1; result=$?; echo EXIT=$result; exit $result
-EXIT=0
-ctest -R '^CrashReporterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/test-4.log 2>&1; result=$?; echo EXIT=$result; exit $result
-EXIT=8
-git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/fix.patch; result=$?; echo EXIT=$result; exit $result
-EXIT=0
-cmake --build build --target zene CrashReporterTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/build-5.log 2>&1; result=$?; echo EXIT=$result; exit $result
-EXIT=0
-ctest -R '^CrashReporterTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/test-5.log 2>&1; result=$?; echo EXIT=$result; exit $result
+git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/fix.patch
 EXIT=0
 ```
 
-The source-manifest correction used this Python command and exited 0:
+## Feature gates
 
-```sh
-python3 - <<'PY'
-from pathlib import Path
-import subprocess
+Command: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5039-port-port-port-port-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r2/logs/feature-check-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"` — **EXIT=0**. The run produced the table below and `RESULT: PASS`.
 
-manifest = Path('tests/all-sources.txt')
-current = manifest.read_text()
-first_entry = current.index('include/AafImport.h')
-header = current[:first_entry]
-recipe = """{ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' \\
-    | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/|plugins/SfzPlayer/sfizz/)' ; \\
-  git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u"""
-result = subprocess.run(['bash', '-c', recipe], check=True, text=True, capture_output=True)
-manifest.write_text(header + result.stdout)
-PY
-EXIT=0
-```
-
-The two exact feature-gate
-commands and results were:
-
-```sh
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5039-port-port-port-port-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/gate-1.log 2>&1; result=$?; echo EXIT=$result; exit $result
-EXIT=1
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5039-port-port-port-port-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5039-port-port-port-port-port-port.r1/logs/gate-2.log 2>&1; result=$?; echo EXIT=$result; exit $result
-EXIT=0
-git diff --check; result=$?; echo EXIT=$result; exit $result
-EXIT=0
-```
-
-The first feature gate found the pre-existing `tests/all-sources.txt` mismatch:
-1,148 tracked vendored sfizz paths contradicted its exclusion recipe. After
-re-deriving the manifest from that recipe, all 8/8 gates passed, including
-`fork-sources` and `all-sources-reproduce`.
-
-## Files committed
-
-- `docs/CRASH-REPORTER.md`
-- `include/AudioDummy.h`
-- `include/CrashReporter.h`
-- `src/core/AudioEngine.cpp`
-- `src/core/AudioEngineWorkerThread.cpp`
-- `src/core/CrashReporter.cpp`
-- `src/core/CrashReporterWindows.cpp`
-- `src/core/ProjectRenderer.cpp`
-- `src/core/audio/AudioAlsa.cpp`
-- `src/core/audio/AudioJack.cpp`
-- `src/core/audio/AudioOss.cpp`
-- `src/core/audio/AudioPortAudio.cpp`
-- `src/core/audio/AudioPulseAudio.cpp`
-- `src/core/audio/AudioSdl.cpp`
-- `src/core/audio/AudioSndio.cpp`
-- `src/core/audio/AudioSoundIo.cpp`
-- `tests/all-sources.txt` (manifest regeneration described above)
-- `tests/src/core/CrashReporterTest.cpp`
-- `tests/upstream-modifications.txt`
-- `docs/qwen-fixes-2026-10/cluster-5039-port-port-port-port-port-port.md` (this report)
-
-The reporter's header and implementation were already registered as fork
-sources. The modified inherited files and the changed regression test are
-registered in `tests/upstream-modifications.txt`; no new source file was
-introduced.
+| Gate | Result |
+|---|---|
+| fork-sources | PASS |
+| all-sources-reproduce | PASS |
+| no-upstream-regression | PASS |
+| check-namespace | PASS |
+| no-tautology | PASS |
+| doc-figures | PASS |
+| complexity | PASS — no new item in changed files |
+| file-length | PASS — no new item in changed files |
 
 ## Self-check
 
-- **RED/GREEN proof:** `CrashReporterTest` failed on the original product
-  (`test-1.log`, ctest exit 8; 13 passed and the two alternate-stack cases
-  failed), passed after the fix (`test-2.log`, exit 0), failed again with the
-  product-only diff reversed (`test-4.log`, exit 8), and passed after restoring
-  it (`test-5.log`, exit 0). The `fix.patch` reverse/apply commands both exited
-  0. The related family passed 5/5 ctest targets (`test-3.log`, exit 0).
-- **Determinism:** the new test uses synchronous `raise(SIGUSR1)` and
-  `std::thread::join()` for completion. The handler records a stack-local
-  marker address; the worker compares it to the range returned by its own
-  `sigaltstack()` query. There are no sleeps, clocks, timeout assertions or
-  races in the new cases.
-- **Completeness:** `install()` registers its caller even when the process-wide
-  handlers are already armed. App-owned audio render/capture threads,
-  library-owned audio callbacks, the export thread and the shared engine render
-  entry point were checked and registered. The conflict site only gained the
-  registration at `run()` entry; its newer worker/drain handshake is intact.
-  Windows has the matching stub.
-- **Realtime and collateral behavior:** registration uses a thread-local
-  32 KiB buffer and a thread-local boolean. The first call makes one
-  `sigaltstack()` system call; later calls are a TLS check. The path adds no
-  allocation, free, lock, wait, logging, Qt call or emitted signal. There is no
-  project format, save/load, report format, limit or command change. A
-  non-audio private thread that never registers remains outside the coverage,
-  and that limitation is documented.
-- **Undo/commands and verdict:** no undoable behavior or control command was
-  changed or added. Verdict is FIXED because the original defect reproduced in
-  the RED runs and the same assertions passed only with the product change.
+- Finding verdict is REAL: `sigaltstack()` is registered per thread, while `SA_ONSTACK` is process-wide (`src/core/CrashReporter.cpp:266-292`).
+- Regression is deterministic: it uses `sigaltstack()` state and synchronous `raise(SIGUSR1)`; no sleep, timing threshold, or racing assertion is used.
+- Negative control proves the regression: with the product-only patch reversed, `CrashReporterTest` failed at `hasStack`; restoring it made the same test pass.
+- Affected test family: both registered crash reporter tests ran and passed after restoration.
+- Caller coverage: the shared registration helper is used by the audio engine worker, engine render path, project renderer, dummy backend, and audio backend run/capture/callback paths (`46c3011ed`; examples at the evidence lines above). `docs/CRASH-REPORTER.md:445-452` states the remaining private plug-in-thread limitation.
+- Collateral behavior: the fix changes only per-thread POSIX signal-stack registration and handler delivery; it does not touch project loading, saving, or render data. No project format limits or saved fields changed.
+- Realtime, undo, saved projects, and commands: this follow-up changes only the regression test and this report; no product runtime behavior, project format, undo behavior, or control command changed.
+- Audio-thread work: registration uses fixed thread-local stack storage and `sigaltstack()`; repeat calls return on the per-thread registered flag. The follow-up adds no audio-thread code. No command was added or changed, so command reversibility is not applicable.
+- Registration: `tests/src/core/CrashReporterTest.cpp` is already listed in `tests/CMakeLists.txt` and `tests/upstream-modifications.txt`.
+- Files in this follow-up commit: `tests/src/core/CrashReporterTest.cpp` and `docs/qwen-fixes-2026-10/cluster-5039-port-port-port-port-port-port.md`. The product fix remains in the existing `46c3011ed` commit.
