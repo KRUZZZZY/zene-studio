@@ -86,6 +86,7 @@ Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-365-po
 | Direct host test count | `./Vst3HostTest` (from `build/tests`) | 0 | `025-final-host-direct.log`: 22 passed, 0 failed. |
 | Final feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-365-aac861e62b` | 0 | `026-final-feature-check.log`: all eight gates PASS. |
 | Completion check (after integration commit) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-365-aac861e62b new-p14-365-port-port-port` | 0 | `027-submit-check-first.log`: PASS - submit; clean tree. |
+| Completion check (after evidence update commit) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-365-aac861e62b new-p14-365-port-port-port` | 0 | `028-submit-check-final.log`: PASS - submit; clean tree. |
 
 The exact manifest-generation command was:
 
@@ -124,6 +125,6 @@ The focused VST3 host test is one ctest entry. The VST3 family ran seven ctest e
 - **Platform review:** the only new key narrowing is from the fixed range 0..2079 to `uint16_t`; offsets and parameter
   IDs use existing VST3-compatible widths. Linux targets were built. Cross-platform builds were not run here.
 - **Gates and completion check:** the first feature check exited 1 for the train-stale manifest and CCN 11; after the
-  recipe re-derivation and helper extraction, final `feature_check.py` exits 0 with all gates PASS. The first
-  post-commit completion check exits 0 and reports `PASS - submit` in `027-submit-check-first.log`; it will be rerun
-  after this evidence update is committed.
+  recipe re-derivation and helper extraction, final `feature_check.py` exits 0 with all gates PASS. Both logged
+  post-commit completion checks (`027-submit-check-first.log` and `028-submit-check-final.log`) exit 0 and report
+  `PASS - submit` on clean trees.
