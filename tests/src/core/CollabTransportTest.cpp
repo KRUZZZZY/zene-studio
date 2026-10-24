@@ -889,6 +889,22 @@ private slots:
 		QVERIFY2(!sessionSync.contains(QStringLiteral("static_cast<int>(file.size())")), "saved snapshot narrows the frame byte count to int");
 	}
 
+	//! A journal change during the snapshot grace window must remain visible after the window expires.
+	void snapshotGraceDoesNotConsumeAnUntrackedEdit()
+	{
+		QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+		const QString source = QString::fromUtf8(sessionSyncSource.readAll());
+		const qsizetype trackStart = source.indexOf(QStringLiteral("bool CollabSession::trackUntrackedEdit"));
+		const qsizetype trackEnd = source.indexOf(QStringLiteral("void CollabSession::pollJournal"), trackStart);
+		QVERIFY2(trackStart >= 0 && trackEnd > trackStart, "untracked edit tracker is missing");
+		const QString tracker = source.mid(trackStart, trackEnd - trackStart);
+		const qsizetype graceCheck = tracker.indexOf(QStringLiteral("if (nowMs() < m_graceUntilMs)"));
+		const qsizetype fingerprintUpdate = tracker.indexOf(QStringLiteral("m_fingerprint = fingerprint"));
+		QVERIFY2(graceCheck >= 0, "snapshot grace check is missing");
+		QVERIFY2(fingerprintUpdate > graceCheck, "the grace check consumes a fingerprint before it can be reconsidered");
+	}
+
 	//! Blank lines must not be dropped before the request handler in the host source.
 	void blankLinesAreDispatchedInSource()
 	{

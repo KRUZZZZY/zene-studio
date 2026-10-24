@@ -256,8 +256,9 @@ void CollabSession::recordFingerprint()
 
 bool CollabSession::trackUntrackedEdit(const QByteArray& fingerprint)
 {
-	m_fingerprint = fingerprint;
 	if (nowMs() < m_graceUntilMs) { return false; }
+	// Keep the previous fingerprint during the grace window so a real edit is revisited once it closes.
+	m_fingerprint = fingerprint;
 	if (m_mode == Mode::Hosting)
 	{
 		scheduleResync(QStringLiteral("an edit made outside the command surface"), UntrackedResyncMs);
