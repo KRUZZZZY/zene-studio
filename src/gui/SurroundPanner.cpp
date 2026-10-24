@@ -114,10 +114,23 @@ protected:
 		if (released) { released(); }
 	}
 
-	void mousePressEvent(QMouseEvent* event) override { moveTo(positionF(event)); }
-	void mouseMoveEvent(QMouseEvent* event) override { moveTo(positionF(event)); }
+	void mousePressEvent(QMouseEvent* event) override
+	{
+		if (event->button() == Qt::LeftButton) { moveTo(positionF(event)); }
+		else { QWidget::mousePressEvent(event); }
+	}
+	void mouseMoveEvent(QMouseEvent* event) override
+	{
+		if (event->buttons() & Qt::LeftButton) { moveTo(positionF(event)); }
+		else { QWidget::mouseMoveEvent(event); }
+	}
 	void mouseReleaseEvent(QMouseEvent* event) override
 	{
+		if (event->button() != Qt::LeftButton)
+		{
+			QWidget::mouseReleaseEvent(event);
+			return;
+		}
 		moveTo(positionF(event));
 		if (released) { released(); }
 	}

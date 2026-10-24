@@ -600,6 +600,27 @@ private slots:
 		window->close();
 	}
 
+	void theSurroundPannerIgnoresRightClickPlacement()
+	{
+		QVERIFY(run(QStringLiteral("mixer.surround_pan"), {{QStringLiteral("channel"), m_ch[2]}, {QStringLiteral("x"), -0.25},
+			{QStringLiteral("y"), -0.4}, {QStringLiteral("lfe"), 0.2}, {QStringLiteral("spread"), 0.3},
+			{QStringLiteral("enabled"), false}}).ok);
+		showSurroundPanner(m_ch[2]);
+		QWidget* window = windowTitled(QStringLiteral("Surround Panner"));
+		QVERIFY(window != nullptr);
+		auto* pad = childNamed<QWidget>(window, QStringLiteral("Surround position"));
+		QVERIFY(pad != nullptr);
+		const double side = std::min(pad->width(), pad->height()) - 56.0;
+		const QPoint target(pad->width() / 2 + static_cast<int>(side / 4), pad->height() / 2 - static_cast<int>(side / 4));
+		QTest::mouseClick(pad, Qt::RightButton, Qt::NoModifier, target);
+		const QJsonObject pan = channelState(QStringLiteral("mixer.surround_get"), m_ch[2]).value(QStringLiteral("pan")).toObject();
+		const bool stayedUnchanged = std::abs(pan.value(QStringLiteral("x")).toDouble() + 0.25) < 0.01
+			&& std::abs(pan.value(QStringLiteral("y")).toDouble() + 0.4) < 0.01 && !pan.value(QStringLiteral("enabled")).toBool();
+		window->close();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY2(stayedUnchanged, "right-click moved the channel or enabled its panner");
+	}
+
 private:
 	//! The CommandForm the last action opened (they are modeless and deleted on close), or nullptr.
 	QWidget* formOpen() const
