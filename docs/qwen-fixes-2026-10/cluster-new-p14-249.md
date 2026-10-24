@@ -50,7 +50,7 @@ Evidence commands and results:
 | 5281 | build `EXIT=0`; test `EXIT=8` (`009`, `010`) | build `EXIT=0`; test `EXIT=0` (`011`, `012`) | `ReversibilityUndoDeviceTest`, 1 test |
 | new-p8-205 | Not run: needs-context; no complete per-row regression | Not run | Shared baseline: 2 tests, 2 passed |
 
-Gate table: `feature_check.py` — `EXIT=0` (`015-final-feature-check.log`).
+Gate table: `feature_check.py` — `EXIT=0` (`020-final-feature-check.log`).
 
 | Gate | Result |
 |---|---|
@@ -63,7 +63,7 @@ Gate table: `feature_check.py` — `EXIT=0` (`015-final-feature-check.log`).
 | complexity | PASS — no new item in changed files |
 | file-length | PASS — no new item in changed files |
 
-The first completion-check run, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-249 new-p14-249`, returned `EXIT=1` because the first line started with the cluster id instead of the verdict (`017-submit-check.log`). I moved the verdict to line one; the completion check is rerun on the corrected committed report.
+The first completion-check run, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-249 new-p14-249`, returned `EXIT=1` because the first line started with the cluster id instead of the verdict (`017-submit-check.log`). I moved the verdict to line one. The corrected command `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-249 new-p14-249` returned `EXIT=0` with `RESULT: PASS - submit` (`019-submit-check-corrected.log`).
 
 Files committed for this completion: `docs/qwen-fixes-2026-10/cluster-new-p14-249.md`. The two already-fixed regression changes are in the earlier commits named above. Test/source/log evidence is under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-249.r3/logs/`; source searches used `rg` because no `fff` search tool was available.
 
