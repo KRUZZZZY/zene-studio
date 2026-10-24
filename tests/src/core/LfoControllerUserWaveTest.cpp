@@ -13,12 +13,31 @@
 
 #include <QtTest>
 
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "Engine.h"
+#include "AutomatableModel.h"
+#include "Controller.h"
+#include "ControllerDialog.h"
+#include "SampleBuffer.h"
+#include "TempoSyncKnobModel.h"
+
+#define private public
 #include "LfoController.h"
+#undef private
 
 using namespace lmms;
+
+template<typename T>
+concept HasRenderSafeUserWaveHandoff = requires(T& lfo, std::shared_ptr<const SampleBuffer> buffer)
+{
+	lfo.setUserDefSampleBuffer(std::move(buffer));
+	lfo.acquireUserDefSampleBufferForRender();
+	lfo.releaseUserDefSampleBufferForRender();
+	lfo.reclaimRetiredUserDefSampleBuffers();
+};
 
 class LfoControllerUserWaveTest : public QObject
 {
@@ -37,26 +56,44 @@ private slots:
 
 	void replacedWaveRemainsAliveWhileRenderLeaseIsHeld()
 	{
-		LfoController lfo(nullptr);
+		verifyReplacementLifetime<LfoController>();
+	}
+
+private:
+	template<typename T>
+	static void verifyReplacementLifetime()
+	{
+		T lfo(nullptr);
 		auto original = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>{}, 44100);
 		std::weak_ptr<const SampleBuffer> originalLifetime = original;
-		lfo.setUserDefSampleBuffer(std::move(original));
-
-		QVERIFY(lfo.acquireUserDefSampleBufferForRender() != nullptr);
+		const auto* originalBuffer = original.get();
 		auto replacement = std::make_shared<const SampleBuffer>(std::vector<SampleFrame>{}, 44100);
-		lfo.setUserDefSampleBuffer(replacement);
 
-		QVERIFY2(!originalLifetime.expired(),
-			"replacing the waveform freed a buffer while a render lease still used it");
-		lfo.reclaimRetiredUserDefSampleBuffers();
-		QVERIFY(!originalLifetime.expired());
-
-		lfo.releaseUserDefSampleBufferForRender();
-		lfo.reclaimRetiredUserDefSampleBuffers();
-		QVERIFY2(originalLifetime.expired(), "the released waveform was not reclaimed on the control thread");
-
-		QCOMPARE(lfo.acquireUserDefSampleBufferForRender(), replacement.get());
-		lfo.releaseUserDefSampleBufferForRender();
+		if constexpr (HasRenderSafeUserWaveHandoff<T>)
+		{
+			lfo.setUserDefSampleBuffer(std::move(original));
+			QVERIFY(lfo.acquireUserDefSampleBufferForRender() == originalBuffer);
+			lfo.setUserDefSampleBuffer(replacement);
+			QVERIFY2(!originalLifetime.expired(),
+				"replacing the waveform freed a buffer while rendering held its lease");
+			lfo.reclaimRetiredUserDefSampleBuffers();
+			QVERIFY(!originalLifetime.expired());
+			lfo.releaseUserDefSampleBufferForRender();
+			lfo.reclaimRetiredUserDefSampleBuffers();
+			QVERIFY2(originalLifetime.expired(), "released waveform was not reclaimed on the control thread");
+			QCOMPARE(lfo.acquireUserDefSampleBufferForRender(), replacement.get());
+			lfo.releaseUserDefSampleBufferForRender();
+		}
+		else
+		{
+			// Model the old render-side raw pointer and the dialog's direct shared_ptr assignment.
+			lfo.m_userDefSampleBuffer = std::move(original);
+			const auto* renderBuffer = lfo.m_userDefSampleBuffer.get();
+			QVERIFY(renderBuffer == originalBuffer);
+			lfo.m_userDefSampleBuffer = replacement;
+			QVERIFY2(!originalLifetime.expired(),
+				"replacing the waveform freed a buffer while rendering held its raw pointer");
+		}
 	}
 };
 
