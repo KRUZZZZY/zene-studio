@@ -177,7 +177,11 @@ QByteArray CollabSession::writeSnapshot(QString* error) const
 		return QByteArray();
 	}
 	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly)) { *error = QStringLiteral("the project could not be written"); return QByteArray(); }
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		*error = QStringLiteral("the project snapshot could not be read: %1").arg(file.errorString());
+		return QByteArray();
+	}
 	const qint64 fileSize = file.size();
 	if (fileSize >= MaxHostLineBytes)
 	{
@@ -198,7 +202,18 @@ QByteArray CollabSession::writeSnapshot(QString* error) const
 			.arg(file.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
 		return QByteArray();
 	}
-	return file.readAll();
+	const QByteArray snapshot = file.readAll();
+	if (file.error() != QFileDevice::NoError)
+	{
+		*error = QStringLiteral("the project snapshot could not be read: %1").arg(file.errorString());
+		return QByteArray();
+	}
+	if (snapshot.size() != fileSize)
+	{
+		*error = QStringLiteral("the project snapshot could not be read completely");
+		return QByteArray();
+	}
+	return snapshot;
 }
 
 bool CollabSession::applySnapshot(const QByteArray& project, QString* error)

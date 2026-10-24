@@ -857,7 +857,7 @@ private slots:
 		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
 		const QString sessionSync = QString::fromUtf8(sessionSyncSource.readAll());
 		const qsizetype fileCheck = sessionSync.indexOf(QStringLiteral("base64Size + frameHeader.size() >= MaxHostLineBytes"));
-		const qsizetype readAll = sessionSync.indexOf(QStringLiteral("return file.readAll();"));
+		const qsizetype readAll = sessionSync.indexOf(QStringLiteral("file.readAll();"));
 		QVERIFY2(fileCheck >= 0, "temporary file size check missing");
 		QVERIFY2(readAll > fileCheck, "temporary file is read before the size check");
 	}
@@ -903,6 +903,25 @@ private slots:
 		const qsizetype fingerprintUpdate = tracker.indexOf(QStringLiteral("m_fingerprint = fingerprint"));
 		QVERIFY2(graceCheck >= 0, "snapshot grace check is missing");
 		QVERIFY2(fingerprintUpdate > graceCheck, "the grace check consumes a fingerprint before it can be reconsidered");
+	}
+
+	//! Snapshot open and read failures must expose the QFile reason to the caller.
+	void snapshotReadFailuresPreserveFileReason()
+	{
+		QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+		const QString source = QString::fromUtf8(sessionSyncSource.readAll());
+		const qsizetype readStart = source.indexOf(QStringLiteral("QByteArray CollabSession::writeSnapshot"));
+		const qsizetype readEnd = source.indexOf(QStringLiteral("bool CollabSession::applySnapshot"), readStart);
+		QVERIFY2(readStart >= 0 && readEnd > readStart, "snapshot writer is missing");
+		const QString writer = source.mid(readStart, readEnd - readStart);
+		const qsizetype openFailure = writer.indexOf(QStringLiteral("if (!file.open(QIODevice::ReadOnly))"));
+		const qsizetype openReason = writer.indexOf(QStringLiteral("file.errorString()"), openFailure);
+		const qsizetype read = writer.indexOf(QStringLiteral("file.readAll()"));
+		const qsizetype readFailure = writer.indexOf(QStringLiteral("file.error() != QFileDevice::NoError"), read);
+		QVERIFY2(openFailure >= 0, "snapshot file open check is missing");
+		QVERIFY2(openReason > openFailure, "snapshot open failure discards QFile's error reason");
+		QVERIFY2(read >= 0 && readFailure > read, "snapshot read errors are not checked after readAll");
 	}
 
 	//! Blank lines must not be dropped before the request handler in the host source.
