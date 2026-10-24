@@ -26,7 +26,7 @@ The first post-fix thread test run (test-004.log, exit 8) caught the injection s
 
 ## Gates and committed files
 
-`feature_check.py` reported PASS for fork-sources, source reproduction, upstream regression, namespace, tautology, doc figures, complexity, and file length (gate-001.log, exit 0). The final five-test CTest family run is recorded above. The completion check will be recorded here after the report and fixes are committed.
+`feature_check.py` reported PASS for fork-sources, source reproduction, upstream regression, namespace, tautology, doc figures, complexity, and file length (gate-002.log, exit 0). The final five-test CTest family run is recorded above. After the fixes and report were committed, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-274 new-p12-274 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-274.r1/logs/submit-001.log 2>&1; rc=$?; cat /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p12-274.r1/logs/submit-001.log; echo EXIT=$rc; exit $rc` reported `RESULT: PASS - submit`, exit 0.
 
 Files committed for this batch:
 
