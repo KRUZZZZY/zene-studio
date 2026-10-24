@@ -37,6 +37,8 @@ The manifest entry list was generated using the command in its header (EXIT=0):
 
 The generated 3,067-entry list replaced the manifest's entry section while its comment header was preserved (Python replacement command EXIT=0). `git diff --stat` reported 1,148 deletions and zero additions; all removals were under `plugins/SfzPlayer/sfizz/`.
 
+Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4964 4964` (worktree), EXIT=0, RESULT `PASS - submit` (`complete-1.log`). It passed the commit, clean-tree, report, test, and feature-gate checks; the Self-check questions are answered below.
+
 ## Self-check
 
 - **Regression proof:** the committed product-only patch was reversed, the dependent targets rebuilt, and the focused test failed with EXIT=8 (5 passed, 1 failed). After restoring the patch and rebuilding, the same test passed with EXIT=0 (1/1). Commands and logs are above.
