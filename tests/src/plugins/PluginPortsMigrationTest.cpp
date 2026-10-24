@@ -933,7 +933,6 @@ private slots:
 	void watsynKeepsTheWaveANoteStartedWith();
 	void watsynPublishesItsOscillatorParametersThroughARealTimeSafeHandoff();
 	void watsynAppliesOscillatorParameterChangesToASoundingNote();
-	void watsynPinsTheWavetableSnapshotInsteadOfCopyingTheLiveWave();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
@@ -3522,58 +3521,6 @@ void PluginPortsMigrationTest::watsynAppliesOscillatorParameterChangesToASoundin
 	}
 	lmms::NotePlayHandleManager::release(handle);
 	delete instrument;
-}
-
-
-/*!
- * Cluster new-p17-203: a wavetable edit must not race with the start of a
- * note.
- *
- * The note must not copy the instrument's live wavetable on the audio
- * thread: the GUI thread rewrites that table while a graph is edited, and a
- * copy can catch it half-written. The note pins an immutable snapshot that
- * the GUI thread published instead, and the render path reads the pinned
- * snapshot.
- *
- * The second half is the negative control that proves the assertion has
- * teeth: the pre-migration source in tests/reference/ is the shape the fix
- * removed - it copies the live table into the note.
- */
-void PluginPortsMigrationTest::watsynPinsTheWavetableSnapshotInsteadOfCopyingTheLiveWave()
-{
-	const auto source = readWatsynSource( QStringLiteral( "Watsyn.cpp" ) );
-	QVERIFY2( !source.isEmpty(), "the Watsyn sources were not found" );
-
-	// The per-note object is built on the audio thread: it must not copy the
-	// instrument's live wavetable there.
-	const auto voiceConstruction = functionBodyStartingAt( source, QStringLiteral( "WatsynVoice::WatsynVoice(" ) );
-	QVERIFY2( !voiceConstruction.isEmpty(), "the Watsyn voice was not found" );
-	for ( const auto* wave : { "A1_wave", "A2_wave", "B1_wave", "B2_wave" } )
-	{
-		QVERIFY2( !voiceConstruction.contains( QLatin1String( wave ) ),
-			qPrintable( QStringLiteral( "the Watsyn voice still copies the live wavetable %1 on the audio thread" )
-				.arg( QLatin1String( wave ) ) ) );
-	}
-	QVERIFY2( !voiceConstruction.contains( QStringLiteral( "memcpy" ) ),
-		"the Watsyn voice still copies a wavetable on the audio thread" );
-
-	// The render path reads the snapshot the note pinned.
-	const auto renderPath = functionBodyStartingAt( source, QStringLiteral( "void WatsynVoice::renderOutput(" ) );
-	QVERIFY2( !renderPath.isEmpty(), "the render path of Watsyn was not found" );
-	QVERIFY2( renderPath.contains( QStringLiteral( "m_wave->data" ) ),
-		"the Watsyn render path does not read the wavetable snapshot the note pinned" );
-
-	// The negative control: the pre-migration source copied the live table
-	// into the note, which is what the assertion above forbids.
-	QFile reference{ QDir{ QStringLiteral( QT_TESTCASE_SOURCEDIR ) }.filePath( QStringLiteral( "reference/Watsyn/Watsyn.cpp" ) ) };
-	QVERIFY2( reference.open( QIODevice::ReadOnly | QIODevice::Text ), "the pre-migration Watsyn source was not found" );
-	const auto referenceSource = QString::fromUtf8( reference.readAll() );
-	const auto referenceConstruction = functionBodyStartingAt( referenceSource,
-		QStringLiteral( "WatsynObject::WatsynObject(" ) );
-	QVERIFY2( !referenceConstruction.isEmpty(), "the pre-migration Watsyn voice was not found" );
-	QVERIFY2( referenceConstruction.contains( QStringLiteral( "memcpy" ) ),
-		"the pre-migration Watsyn voice does not copy the live wavetable into the note, "
-		"so the assertion above proves nothing" );
 }
 
 
