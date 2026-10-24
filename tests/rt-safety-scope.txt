@@ -173,3 +173,21 @@ src/core/Song.cpp	Song::buildAutomationRamps	the per-block sample-accurate publi
 src/core/TrackContainer.cpp	TrackContainer::collectAutomatedValues	the per-tick automation read: bounded scratch writes plus per-target scalar initial-value reads; the clip lock stays in valueAt() and is taken once per clip as before
 plugins/Kicker/Kicker.cpp	KickerInstrument::playNoteImpl	per-note render path on the audio thread: the note state lives in the note handle's own storage, so a note start must not allocate
 plugins/Kicker/Kicker.cpp	KickerInstrument::deleteNotePluginData	called when a Kicker note ends, on the thread that released the note handle: destroys the note state in place
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::playImpl	the GIG player's audio callback renders the playing notes once per period: it must not lock, allocate or grow a container while the audio thread is inside it
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::playNoteImpl	the GIG player's note-on runs on the audio thread: the note storage it hands out must already exist, so that the callback neither allocates nor locks
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::noteSlot	maps a packed note index to its slot in a published segment: the segment is complete before the index is handed out, so this is a load and an offset, never an allocation
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::voice	maps a packed voice index to its voice in a published segment: the segment is complete before the index is handed out
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::acquireNoteSlot	takes a free note slot from a published segment: it pops a prepared index, and a pool that is full only raises the grow request
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::acquireVoice	takes a free voice from a published segment: it pops a prepared index, and a pool that is full only raises the grow request
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::releaseNote	returns a note slot and its voices to their pools: it pushes prepared indices back and never frees or grows anything
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::releaseVoice	returns one voice to its pool: it pushes a prepared index back and never frees or grows anything
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::appendToNoteOrder	links a note into the intrusive playing order: two slot indices are rewritten, no container grows
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::removeFromNoteOrder	unlinks a note from the intrusive playing order: two slot indices are rewritten, no container grows
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::appendVoiceToNote	appends a voice to its note's intrusive voice list: two voice indices are rewritten, no container grows
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::releaseVoiceOfNote	unlinks one voice from its note's intrusive voice list and returns it to the pool
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::rollBackVoices	gives back the voices a sample pass took when the pool ran out: it only unlinks and pushes prepared indices
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::requestNotePoolGrowth	asks the control thread for another note segment: one atomic store, no allocation and no wait
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::requestVoicePoolGrowth	asks the control thread for another voice segment: one atomic store, no allocation and no wait
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::clearNotes	drops every playing note by walking the intrusive order and releasing each slot
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::addSamples	attaches one voice per matching region of the file to a note: the voices and their resamplers are built by the control thread, so this only links prepared objects
+plugins/GigPlayer/GigPlayer.cpp	GigInstrument::deleteNotePluginData	requests the release of a note from another thread: one atomic store into a published slot, then the audio thread picks it up

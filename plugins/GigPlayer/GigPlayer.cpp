@@ -33,6 +33,10 @@
 #include <algorithm>
 #include <cstring>
 #include <QDebug>
+#include <QThread>
+#include <QTimer>
+
+#include "RealtimeScope.h"
 #include <QLayout>
 #include <QLabel>
 #include <QDomDocument>
@@ -67,6 +71,15 @@
 
 namespace lmms
 {
+
+namespace
+{
+
+//! The hook that is called while a GIG file is opened, and its context.
+std::atomic<GigInstrument::FileLoadHook> g_fileLoadHook { nullptr };
+std::atomic<void*> g_fileLoadHookContext { nullptr };
+
+} // namespace
 
 
 extern "C"
@@ -130,8 +143,6 @@ f_cnt_t PLUGIN_EXPORT gigplayerMixResampledBlock(
 
 GigInstrument::GigInstrument(InstrumentTrack* _instrument_track)
 	: Instrument(_instrument_track, &gigplayer_plugin_descriptor, nullptr, Flag::IsSingleStreamed | Flag::IsNotBendable)
-	, m_instance(nullptr)
-	, m_instrument(nullptr)
 	, m_filename("")
 	, m_bankNum(0, 0, 999, this, tr("Bank"))
 	, m_patchNum(0, 0, 127, this, tr("Patch"))
@@ -141,6 +152,16 @@ GigInstrument::GigInstrument(InstrumentTrack* _instrument_track)
 {
 	auto iph = new InstrumentPlayHandle(this, _instrument_track);
 	Engine::audioEngine()->addPlayHandle( iph );
+
+	// The pools are built here, before the audio thread can claim anything, so
+	// that starting a note never allocates. They grow on this thread later,
+	// driven by the timer, when the audio thread reports that they ran out.
+	buildInitialPools();
+
+	// The service runs on the thread the instrument lives on, never on the
+	// audio thread: it appends segments, which allocates.
+	connect( &m_poolGrowthTimer, &QTimer::timeout, this, &GigInstrument::servicePoolGrowth );
+	m_poolGrowthTimer.start( 25 );
 
 	updateSampleRate();
 
@@ -154,10 +175,32 @@ GigInstrument::GigInstrument(InstrumentTrack* _instrument_track)
 
 GigInstrument::~GigInstrument()
 {
+	m_poolGrowthTimer.stop();
 	Engine::audioEngine()->removePlayHandlesOfTypes( instrumentTrack(),
 				PlayHandle::Type::NotePlayHandle
 				| PlayHandle::Type::InstrumentPlayHandle );
 	freeInstance();
+
+	// The published state and the retired ones are deleted here: the
+	// instrument is gone, so no audio thread can be rendering with them any
+	// more.
+	delete m_fileState.exchange( nullptr, std::memory_order_acq_rel );
+	for( auto * state : m_retiredStates )
+	{
+		delete state;
+	}
+	m_retiredStates.clear();
+
+	// The pool segments are never moved while the instrument lives, so every
+	// slot and voice that was handed out still points into them until here.
+	for( std::uint32_t i = 0; i < m_noteSegmentCount.load( std::memory_order_relaxed ); ++i )
+	{
+		delete m_noteSegments[ i ].load( std::memory_order_relaxed );
+	}
+	for( std::uint32_t i = 0; i < m_voiceSegmentCount.load( std::memory_order_relaxed ); ++i )
+	{
+		delete m_voiceSegments[ i ].load( std::memory_order_relaxed );
+	}
 }
 
 
@@ -229,22 +272,89 @@ QString GigInstrument::nodeName() const
 
 
 
+void GigInstrument::setFileLoadHook( FileLoadHook _hook, void* _context )
+{
+	g_fileLoadHookContext.store( _context, std::memory_order_release );
+	g_fileLoadHook.store( _hook, std::memory_order_release );
+}
+
+
+
+
+extern "C" PLUGIN_EXPORT void lmms_gigplayer_set_file_load_hook( void (*hook)(void*), void* context )
+{
+	GigInstrument::setFileLoadHook( hook, context );
+}
+
+
+
+
+// Runs the pool growth service for a test that has no event loop. The timer
+// that normally drives it never fires in such a test, so the test runs it
+// between periods, on the test thread, exactly where the control thread would
+// have run it. It refuses to run inside a render, so it cannot allocate on the
+// audio thread even when a test calls it by mistake.
+extern "C" PLUGIN_EXPORT void lmms_gigplayer_service_pool_growth( GigInstrument * instrument )
+{
+	if( instrument != nullptr )
+	{
+		instrument->servicePoolGrowthForTest();
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 void GigInstrument::freeInstance()
 {
-	QMutexLocker synthLock( &m_synthMutex );
-	QMutexLocker notesLock( &m_notesMutex );
+	// Publish an empty state: the audio thread sees that no file is open and
+	// drops its notes. The old state is retired, not deleted right here: an
+	// audio thread may still be rendering with it.
+	publishFileState( new GigFileState() );
+}
 
-	if( m_instance != nullptr )
+
+
+
+// Publishes a new file state and retires the previous one. The swap is a
+// single atomic store, so the audio thread never waits for the file that is
+// being loaded.
+void GigInstrument::publishFileState( GigFileState * _state )
+{
+	GigFileState * previous = m_fileState.exchange( _state, std::memory_order_seq_cst );
+	if( previous != nullptr )
 	{
-		delete m_instance;
-		m_instance = nullptr;
-
-		// If we're changing instruments, we got to make sure that we
-		// remove all pointers to the old samples and don't try accessing
-		// that instrument again
-		m_instrument = nullptr;
-		m_notes.clear();
+		m_retiredStates.push_back( previous );
 	}
+	reapRetiredStates();
+}
+
+
+
+
+// Deletes the retired file states that no audio thread is reading. A state
+// that is still in use stays in the list until the next call.
+void GigInstrument::reapRetiredStates()
+{
+	if( m_fileReaders.load( std::memory_order_seq_cst ) != 0 )
+	{
+		return;
+	}
+
+	for( auto * state : m_retiredStates )
+	{
+		delete state;
+	}
+	m_retiredStates.clear();
 }
 
 
@@ -254,23 +364,34 @@ void GigInstrument::openFile( const QString & _gigFile, bool updateTrackName )
 {
 	emit fileLoading();
 
-	// Remove the current instrument if one is selected
-	freeInstance();
+	// The file is opened and the instrument is selected before anything is
+	// published, so the audio thread never sees a half-loaded file and never
+	// waits for the file to be read.
+	GigFileState * state = new GigFileState();
 
+	try
 	{
-		QMutexLocker locker( &m_synthMutex );
+		// The hook pauses the file preparation inside the block that the old
+		// code protected with its mutex, so a test can pause the preparation
+		// there and see that the audio thread goes on rendering.
+		const FileLoadHook hook = g_fileLoadHook.load( std::memory_order_acquire );
+		if( hook != nullptr )
+		{
+			hook( g_fileLoadHookContext.load( std::memory_order_acquire ) );
+		}
 
-		try
-		{
-			m_instance = new GigInstance( PathUtil::toAbsolute( _gigFile ) );
-			m_filename = PathUtil::toShortestRelative( _gigFile );
-		}
-		catch( ... )
-		{
-			m_instance = nullptr;
-			m_filename = "";
-		}
+		state->instance = new GigInstance( PathUtil::toAbsolute( _gigFile ) );
+		m_filename = PathUtil::toShortestRelative( _gigFile );
 	}
+	catch( ... )
+	{
+		state->instance = nullptr;
+		m_filename = "";
+	}
+
+	state->instrument.store( selectInstrument( state->instance ) );
+
+	publishFileState( state );
 
 	emit fileChanged();
 
@@ -297,17 +418,21 @@ void GigInstrument::updatePatch()
 
 QString GigInstrument::getCurrentPatchName()
 {
-	QMutexLocker locker( &m_synthMutex );
+	// Take a reference on the published state, so that the file cannot be
+	// deleted while it is read.
+	m_fileReaders.fetch_add( 1, std::memory_order_seq_cst );
+	GigFileState * state = m_fileState.load( std::memory_order_seq_cst );
 
-	if( m_instance == nullptr )
+	if( state == nullptr || state->instance == nullptr )
 	{
+		m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
 		return "";
 	}
 
 	int iBankSelected = m_bankNum.value();
 	int iProgSelected = m_patchNum.value();
 
-	gig::Instrument * pInstrument = m_instance->gig.GetFirstInstrument();
+	gig::Instrument * pInstrument = state->instance->gig.GetFirstInstrument();
 
 	while( pInstrument != nullptr )
 	{
@@ -323,12 +448,14 @@ QString GigInstrument::getCurrentPatchName()
 				name = "<no name>";
 			}
 
+			m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
 			return name;
 		}
 
-		pInstrument = m_instance->gig.GetNextInstrument();
+		pInstrument = state->instance->gig.GetNextInstrument();
 	}
 
+	m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
 	return "";
 }
 
@@ -350,15 +477,418 @@ void GigInstrument::playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame>)
 
 	if (!_n->m_pluginData)
 	{
-		auto pluginData = new GIGPluginData;
-		pluginData->midiNote = midiNote;
-		_n->m_pluginData = pluginData;
+		const std::uint32_t slot = acquireNoteSlot();
+		if( slot == GigNoIndex )
+		{
+			// The pool has no free slot this period. The control thread is
+			// already adding another segment; this note is offered again on the
+			// next period instead of being silently dropped.
+			requestNotePoolGrowth();
+			return;
+		}
+
+		_n->m_pluginData = _n;
 
 		const int baseVelocity = instrumentTrack()->midiPort()->baseVelocity();
 		const uint velocity = _n->midiVelocity( baseVelocity );
 
-		QMutexLocker locker( &m_notesMutex );
-		m_notes.push_back( GigNote( midiNote, velocity, _n->unpitchedFrequency(), pluginData ) );
+		GigNoteSlot & note = noteSlot( slot );
+		note.note = GigNote( midiNote, velocity, _n->unpitchedFrequency() );
+		note.firstVoice = GigNoIndex;
+		note.lastVoice = GigNoIndex;
+		note.voiceCount = 0;
+		note.releasePassPending = false;
+		note.active = true;
+		note.fileState = m_fileState.load( std::memory_order_acquire );
+		note.handle.store( _n, std::memory_order_release );
+		m_activeNotes.fetch_add( 1, std::memory_order_release );
+	}
+}
+
+
+
+
+// Build the note and voice segments the instrument starts with. The voices are
+// built here, on the control thread, so that the audio thread only ever
+// attaches a sample to a voice that already exists.
+void GigInstrument::buildInitialPools()
+{
+	growNotePool( InitialGigNoteSegments );
+	growVoicePool( InitialGigVoiceSegments );
+}
+
+
+
+
+// Appends one note segment. Control thread only: this allocates.
+void GigInstrument::growNotePool( std::size_t _additionalSegments )
+{
+	for( std::size_t added = 0; added < _additionalSegments; ++added )
+	{
+		const std::uint32_t index = m_noteSegmentCount.load( std::memory_order_acquire );
+		if( index >= MaxGigSegments )
+		{
+			return;
+		}
+
+		// Build the whole segment before it is published: a reader never sees
+		// a free list that is still being filled.
+		auto * segment = new GigNoteSegment();
+		segment->noteSlots = std::make_unique<GigNoteSlot[]>( GigNoteSegmentSize );
+		segment->freeSlots = std::make_unique<std::uint32_t[]>( GigNoteSegmentSize );
+		for( std::size_t i = 0; i < GigNoteSegmentSize; ++i )
+		{
+			segment->freeSlots[ i ] = static_cast<std::uint32_t>( i );
+		}
+		segment->freeCount = GigNoteSegmentSize;
+
+		m_noteSegments[ index ].store( segment, std::memory_order_release );
+		m_noteSegmentCount.store( index + 1, std::memory_order_release );
+	}
+}
+
+
+
+
+// Appends one voice segment. Control thread only: this allocates.
+void GigInstrument::growVoicePool( std::size_t _additionalSegments )
+{
+	for( std::size_t added = 0; added < _additionalSegments; ++added )
+	{
+		const std::uint32_t index = m_voiceSegmentCount.load( std::memory_order_acquire );
+		if( index >= MaxGigSegments )
+		{
+			return;
+		}
+
+		auto * segment = new GigVoiceSegment();
+		segment->voices = std::make_unique<GigVoice[]>( GigVoiceSegmentSize );
+		segment->freeVoices = std::make_unique<std::uint32_t[]>( GigVoiceSegmentSize );
+		for( std::size_t i = 0; i < GigVoiceSegmentSize; ++i )
+		{
+			segment->freeVoices[ i ] = static_cast<std::uint32_t>( i );
+		}
+		segment->freeCount = GigVoiceSegmentSize;
+
+		m_voiceSegments[ index ].store( segment, std::memory_order_release );
+		m_voiceSegmentCount.store( index + 1, std::memory_order_release );
+	}
+}
+
+
+
+
+// Appends the segments the audio thread asked for. Control thread only.
+void GigInstrument::servicePoolGrowth()
+{
+	// Never grow inside a render: the audio thread must not allocate, and the
+	// engine renders on its own thread.
+	if( RealtimeScope::isActive() || QThread::currentThread() != thread() )
+	{
+		return;
+	}
+
+	if( m_notePoolGrowthRequested.exchange( false, std::memory_order_acquire ) )
+	{
+		growNotePool( 1 );
+	}
+	if( m_voicePoolGrowthRequested.exchange( false, std::memory_order_acquire ) )
+	{
+		growVoicePool( 1 );
+	}
+}
+
+
+
+
+// Runs the growth service on the calling thread. The regression tests drive the
+// instrument without an event loop, so the timer never fires there; this seam
+// lets them grow the pools the way the control thread would. It is a plain
+// call: it allocates, so it must never run on the audio thread, and
+// servicePoolGrowth() refuses to run inside a render.
+void GigInstrument::servicePoolGrowthForTest()
+{
+	servicePoolGrowth();
+}
+
+
+
+
+
+// The slot with the given packed index. The segment is published before the
+// index is handed out, so it is always there.
+GigNoteSlot & GigInstrument::noteSlot( std::uint32_t _slot ) const
+{
+	const std::uint32_t segmentIndex = _slot >> GigNoteSegmentShift;
+	GigNoteSegment * segment = m_noteSegments[ segmentIndex ].load( std::memory_order_acquire );
+	return segment->noteSlots[ _slot & GigNoteSegmentMask ];
+}
+
+
+
+
+// The voice with the given packed index.
+GigVoice & GigInstrument::voice( std::uint32_t _voice ) const
+{
+	const std::uint32_t segmentIndex = _voice >> GigVoiceSegmentShift;
+	GigVoiceSegment * segment = m_voiceSegments[ segmentIndex ].load( std::memory_order_acquire );
+	return segment->voices[ _voice & GigVoiceSegmentMask ];
+}
+
+
+
+
+// Takes a note slot out of the pool. Returns GigNoIndex when every published
+// segment is full.
+std::uint32_t GigInstrument::acquireNoteSlot()
+{
+	const std::uint32_t segmentCount = m_noteSegmentCount.load( std::memory_order_acquire );
+
+	// The hint only decides where the search starts; a segment that filled up
+	// since is skipped, so an empty pool is found in one pass at the worst.
+	for( std::uint32_t probe = 0; probe < segmentCount; ++probe )
+	{
+		const std::uint32_t segmentIndex = ( m_noteHint + probe ) % segmentCount;
+		GigNoteSegment * segment =
+			m_noteSegments[ segmentIndex ].load( std::memory_order_acquire );
+		if( segment->freeCount == 0 )
+		{
+			continue;
+		}
+
+		const std::uint32_t offset = segment->freeSlots[ --segment->freeCount ];
+		const std::uint32_t slot = ( segmentIndex << GigNoteSegmentShift ) | offset;
+
+		GigNoteSlot & note = segment->noteSlots[ offset ];
+		note.generation.fetch_add( 1, std::memory_order_acq_rel );
+		note.releaseGeneration.store( 0, std::memory_order_release );
+
+		m_noteHint = segmentIndex;
+
+		appendToNoteOrder( slot );
+		return slot;
+	}
+
+	return GigNoIndex;
+}
+
+
+
+
+// Gives a note slot back to the pool and drops the voices it was playing.
+void GigInstrument::releaseNote( std::uint32_t _slot )
+{
+	GigNoteSlot & note = noteSlot( _slot );
+
+	while( note.firstVoice != GigNoIndex )
+	{
+		releaseVoiceOfNote( note, note.firstVoice );
+	}
+	note.active = false;
+	note.releasePassPending = false;
+	note.handle.store( nullptr, std::memory_order_release );
+	m_activeNotes.fetch_sub( 1, std::memory_order_acq_rel );
+
+	removeFromNoteOrder( _slot );
+
+	const std::uint32_t segmentIndex = _slot >> GigNoteSegmentShift;
+	GigNoteSegment * segment = m_noteSegments[ segmentIndex ].load( std::memory_order_acquire );
+	segment->freeSlots[ segment->freeCount++ ] = _slot & GigNoteSegmentMask;
+	m_noteHint = segmentIndex;
+}
+
+
+
+
+// Takes a voice out of the pool. Returns GigNoIndex when every published
+// segment is full.
+std::uint32_t GigInstrument::acquireVoice()
+{
+	const std::uint32_t segmentCount = m_voiceSegmentCount.load( std::memory_order_acquire );
+
+	for( std::uint32_t probe = 0; probe < segmentCount; ++probe )
+	{
+		const std::uint32_t segmentIndex = ( m_voiceHint + probe ) % segmentCount;
+		GigVoiceSegment * segment =
+			m_voiceSegments[ segmentIndex ].load( std::memory_order_acquire );
+		if( segment->freeCount == 0 )
+		{
+			continue;
+		}
+
+		const std::uint32_t offset = segment->freeVoices[ --segment->freeCount ];
+		m_voiceHint = segmentIndex;
+		return ( segmentIndex << GigVoiceSegmentShift ) | offset;
+	}
+
+	return GigNoIndex;
+}
+
+
+
+
+// Gives a voice back to the pool.
+void GigInstrument::releaseVoice( std::uint32_t _voice )
+{
+	const std::uint32_t segmentIndex = _voice >> GigVoiceSegmentShift;
+	GigVoiceSegment * segment = m_voiceSegments[ segmentIndex ].load( std::memory_order_acquire );
+	segment->freeVoices[ segment->freeCount++ ] = _voice & GigVoiceSegmentMask;
+	m_voiceHint = segmentIndex;
+}
+
+
+
+
+// Appends the note to the end of the note order. Audio thread only: the list
+// is two indices per slot, so it never grows a container.
+void GigInstrument::appendToNoteOrder( std::uint32_t _slot )
+{
+	GigNoteSlot & note = noteSlot( _slot );
+	note.orderPrev = m_noteOrderTail;
+	note.orderNext = GigNoIndex;
+
+	if( m_noteOrderTail != GigNoIndex )
+	{
+		noteSlot( m_noteOrderTail ).orderNext = _slot;
+	}
+	else
+	{
+		m_noteOrderHead = _slot;
+	}
+	m_noteOrderTail = _slot;
+}
+
+
+
+
+// Removes the note from the note order.
+void GigInstrument::removeFromNoteOrder( std::uint32_t _slot )
+{
+	GigNoteSlot & note = noteSlot( _slot );
+
+	if( note.orderPrev != GigNoIndex )
+	{
+		noteSlot( note.orderPrev ).orderNext = note.orderNext;
+	}
+	else
+	{
+		m_noteOrderHead = note.orderNext;
+	}
+	if( note.orderNext != GigNoIndex )
+	{
+		noteSlot( note.orderNext ).orderPrev = note.orderPrev;
+	}
+	else
+	{
+		m_noteOrderTail = note.orderPrev;
+	}
+	note.orderPrev = GigNoIndex;
+	note.orderNext = GigNoIndex;
+}
+
+
+
+
+// Takes away the voices a sample pass added after the given tail, so a pass
+// that ran out of voices leaves the note exactly as it found it.
+void GigInstrument::rollBackVoices( GigNoteSlot & _slot, std::uint32_t _tailBefore )
+{
+	while( _slot.lastVoice != _tailBefore )
+	{
+		if( _slot.lastVoice == GigNoIndex )
+		{
+			break;
+		}
+		releaseVoiceOfNote( _slot, _slot.lastVoice );
+	}
+}
+
+
+
+
+// Appends the voice to the end of the note's voice list.
+void GigInstrument::appendVoiceToNote( std::uint32_t _slotIndex, std::uint32_t _voice )
+{
+	GigNoteSlot & slot = noteSlot( _slotIndex );
+	GigVoice & added = voice( _voice );
+	added.nextInNote = GigNoIndex;
+	added.prevInNote = slot.lastVoice;
+	added.ownerSlot = _slotIndex;
+
+	if( slot.lastVoice != GigNoIndex )
+	{
+		voice( slot.lastVoice ).nextInNote = _voice;
+	}
+	else
+	{
+		slot.firstVoice = _voice;
+	}
+	slot.lastVoice = _voice;
+	++slot.voiceCount;
+}
+
+
+
+
+// Takes the voice out of the note's voice list and gives it back to the pool.
+void GigInstrument::releaseVoiceOfNote( GigNoteSlot & _slot, std::uint32_t _voice )
+{
+	GigVoice & released = voice( _voice );
+
+	if( released.prevInNote != GigNoIndex )
+	{
+		voice( released.prevInNote ).nextInNote = released.nextInNote;
+	}
+	else
+	{
+		_slot.firstVoice = released.nextInNote;
+	}
+	if( released.nextInNote != GigNoIndex )
+	{
+		voice( released.nextInNote ).prevInNote = released.prevInNote;
+	}
+	else
+	{
+		_slot.lastVoice = released.prevInNote;
+	}
+
+	released.prevInNote = GigNoIndex;
+	released.nextInNote = GigNoIndex;
+	released.ownerSlot = GigNoIndex;
+	--_slot.voiceCount;
+
+	releaseVoice( _voice );
+}
+
+
+
+
+// Asks the control thread for another note segment. Audio thread safe: one
+// atomic store, no allocation and no wait.
+void GigInstrument::requestNotePoolGrowth()
+{
+	m_notePoolGrowthRequested.store( true, std::memory_order_release );
+}
+
+
+
+
+// Asks the control thread for another voice segment.
+void GigInstrument::requestVoicePoolGrowth()
+{
+	m_voicePoolGrowthRequested.store( true, std::memory_order_release );
+}
+
+
+
+
+// Drops every note and gives the voices back to the voice pool. This is
+// called on the audio thread only.
+void GigInstrument::clearNotes()
+{
+	while( m_noteOrderHead != GigNoIndex )
+	{
+		releaseNote( m_noteOrderHead );
 	}
 }
 
@@ -375,94 +905,185 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 	// Initialize to zeros
 	zeroSampleFrames(out.data(), out.size());
 
-	m_synthMutex.lock();
-	m_notesMutex.lock();
+	// Take a reference on the published file state, so that the file cannot be
+	// deleted while it is read. This never waits: the state is published by
+	// swapping a pointer, and the file it owns is only deleted when no audio
+	// thread is inside a render.
+	m_fileReaders.fetch_add( 1, std::memory_order_seq_cst );
+	GigFileState * state = m_fileState.load( std::memory_order_seq_cst );
 
-	if( m_instance == nullptr || m_instrument == nullptr )
+	if( state == nullptr )
 	{
-		m_synthMutex.unlock();
-		m_notesMutex.unlock();
+		m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
 		return;
 	}
 
-	for( QList<GigNote>::iterator it = m_notes.begin(); it != m_notes.end(); ++it )
+	// The notes belong to the file that was open when they were started, so
+	// they are dropped when another file is published.
+	if( state != m_activeState )
 	{
+		m_activeState = state;
+	}
+
+	gig::Instrument * instrument = state->instrument.load( std::memory_order_acquire );
+	if( state->instance == nullptr || instrument == nullptr )
+	{
+		m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
+		return;
+	}
+
+	// Another thread may have asked for the notes to be dropped
+	if( m_clearNotes.exchange( false, std::memory_order_acquire ) )
+	{
+		clearNotes();
+	}
+
+	// The notes are processed in the order they were started. Removing a note
+	// unlinks it from the order, so the walk holds on to the next slot before
+	// it possibly releases the current one.
+	std::uint32_t slotIndex = m_noteOrderHead;
+	while( slotIndex != GigNoIndex )
+	{
+		const std::uint32_t nextSlot = noteSlot( slotIndex ).orderNext;
+		GigNoteSlot & slot = noteSlot( slotIndex );
+		if( !slot.active )
+		{
+			slotIndex = nextSlot;
+			continue;
+		}
+		GigNote & note = slot.note;
+
+		// A note that was started in a file that is not open any more is
+		// dropped: its samples belong to that file.
+		if( slot.fileState != state )
+		{
+			releaseNote( slotIndex );
+			slotIndex = nextSlot;
+			continue;
+		}
+
+		// A release that another thread asked for
+		const std::uint32_t requested = slot.releaseGeneration.load( std::memory_order_acquire );
+		if( requested != 0 && requested == slot.generation.load( std::memory_order_acquire ) )
+		{
+			slot.releaseGeneration.store( 0, std::memory_order_release );
+
+			// Mark the note as being released, but only if it was playing or
+			// was just pressed (i.e. not if the key was already released)
+			if( note.state == GigState::KeyDown || note.state == GigState::PlayingKeyDown )
+			{
+				note.state = GigState::KeyUp;
+			}
+		}
+
 		// Process notes in the KeyUp state, adding release samples if desired
-		if( it->state == GigState::KeyUp )
+		if( note.state == GigState::KeyUp )
 		{
 			// If there are no samples, we're done
-			if( it->samples.empty() )
+			if( slot.voiceCount == 0 )
 			{
-				it->state = GigState::Completed;
+				note.state = GigState::Completed;
 			}
 			else
 			{
-				it->state = GigState::PlayingKeyUp;
+				note.state = GigState::PlayingKeyUp;
 
 				// Notify each sample that the key has been released
-				for (auto& sample : it->samples)
+				for( std::uint32_t v = slot.firstVoice; v != GigNoIndex; v = voice( v ).nextInNote )
 				{
-					sample.adsr.keyup();
+					voice( v ).sample.adsr.keyup();
 				}
 
-				// Add release samples if available
-				if( it->release == true )
-				{
-					addSamples( *it, true );
-				}
+				// The release pass adds its layers now, or on a later period
+				// when the voice pool had no room. It is not dropped in that
+				// case, so a release sample is never lost to a pool size.
+				slot.releasePassPending = note.release == true;
 			}
 		}
-		// Process notes in the KeyDown state, adding samples for the notes
-		else if( it->state == GigState::KeyDown )
+
+		// A release pass that could not get all of its voices is retried. A
+		// pass either takes every layer it needs or rolls back, so retrying
+		// cannot duplicate a layer.
+		if( note.state == GigState::PlayingKeyUp && slot.releasePassPending )
 		{
-			it->state = GigState::PlayingKeyDown;
-			addSamples( *it, false );
+			if( addSamples( slotIndex, true, instrument ) )
+			{
+				slot.releasePassPending = false;
+			}
+			else
+			{
+				requestVoicePoolGrowth();
+			}
+		}
+		// Process notes in the KeyDown state, adding samples for the notes.
+		// addSamples() reports a full voice pool; the note then asks for
+		// another segment and the pass is repeated next period, because the
+		// note stays in KeyDown until its normal pass went through.
+		else if( note.state == GigState::KeyDown )
+		{
+			if( addSamples( slotIndex, false, instrument ) )
+			{
+				note.state = GigState::PlayingKeyDown;
+			}
+			else
+			{
+				requestVoicePoolGrowth();
+			}
 		}
 
-		// Delete ended samples
-		for (auto sample = it->samples.begin(); sample != it->samples.end(); ++sample)
+		// Delete ended samples. A note's voices are a list, so a voice that
+		// ended is unlinked where it stands instead of shifting an array.
+		for( std::uint32_t v = slot.firstVoice; v != GigNoIndex; )
 		{
+			const std::uint32_t nextVoice = voice( v ).nextInNote;
+			GigSample & sample = voice( v ).sample;
+
 			// Delete if the ADSR for a sample is complete for normal
 			// notes, or if a release sample, then if we've reached
 			// the end of the sample. The position counts frames already
 			// read, so every frame must be rendered before the sample is
 			// removed; a one-frame release sample starts at position zero.
-			if( sample->sample == nullptr || sample->adsr.done() ||
-				( it->isRelease == true &&
-				  sample->pos >= sample->sample->SamplesTotal ) )
+			if( sample.sample == nullptr || sample.adsr.done() ||
+				( note.isRelease == true &&
+				  sample.pos >= sample.sample->SamplesTotal ) )
 			{
-				sample = it->samples.erase( sample );
-
-				if( sample == it->samples.end() )
-				{
-					break;
-				}
+				releaseVoiceOfNote( slot, v );
 			}
+			v = nextVoice;
 		}
 
-		// Delete ended notes (either in the completed state or all the samples ended)
-		if( it->state == GigState::Completed || it->samples.empty() )
+		// Delete ended notes: either the note completed, or all of its samples
+		// ended. A note whose normal or release pass is still waiting for
+		// voices is not playing yet, so it is kept until the pass went through.
+		const bool playing = note.state == GigState::PlayingKeyDown ||
+			note.state == GigState::PlayingKeyUp;
+		if( note.state == GigState::Completed || ( playing && slot.voiceCount == 0 ) )
 		{
-			it = m_notes.erase( it );
-
-			if( it == m_notes.end() )
-			{
-				break;
-			}
+			releaseNote( slotIndex );
 		}
+
+		slotIndex = nextSlot;
 	}
 
 	// Fill buffer with portions of the note samples
-	for (auto& note : m_notes)
+	for( std::uint32_t n = m_noteOrderHead; n != GigNoIndex; n = noteSlot( n ).orderNext )
 	{
+		GigNoteSlot & slot = noteSlot( n );
+		if( !slot.active || slot.fileState != state )
+		{
+			continue;
+		}
+		GigNote & note = slot.note;
+
 		// Only process the notes if we're in a playing state
 		if (!(note.state == GigState::PlayingKeyDown || note.state == GigState::PlayingKeyUp ))
 		{
 			continue;
 		}
 
-		for (auto& sample : note.samples)
+		for( std::uint32_t v = slot.firstVoice; v != GigNoIndex; v = voice( v ).nextInNote )
 		{
+			GigSample & sample = voice( v ).sample;
 			if (sample.sample == nullptr || sample.region == nullptr) { continue; }
 
 			float freq_factor = 1.0; // How much to resample
@@ -528,8 +1149,7 @@ void GigInstrument::playImpl(std::span<SampleFrame> out)
 		}
 	}
 
-	m_notesMutex.unlock();
-	m_synthMutex.unlock();
+	m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
 
 	// Set gain properly based on volume control
 	for( f_cnt_t i = 0; i < frames; ++i )
@@ -832,23 +1452,28 @@ f_cnt_t GigInstrument::getPingPongIndex( f_cnt_t index, f_cnt_t startf, f_cnt_t 
 // A key has been released
 void GigInstrument::deleteNotePluginData( NotePlayHandle * _n )
 {
-	auto pluginData = static_cast<GIGPluginData*>(_n->m_pluginData);
-	QMutexLocker locker( &m_notesMutex );
-
-	// Mark the note as being released, but only if it was playing or was just
-	// pressed (i.e., not if the key was already released)
-	for (auto& note : m_notes)
+	// The notes belong to the audio thread, so the release is only requested
+	// here: a single atomic store per note slot, which neither blocks nor
+	// allocates. The audio thread picks the request up in the next period.
+	const std::uint32_t segmentCount = m_noteSegmentCount.load( std::memory_order_acquire );
+	for( std::uint32_t s = 0; s < segmentCount; ++s )
 	{
-		// Find the note by matching pointers to the plugin data
-		if (note.handle == pluginData && (note.state == GigState::KeyDown || note.state == GigState::PlayingKeyDown))
+		GigNoteSegment * segment = m_noteSegments[ s ].load( std::memory_order_acquire );
+		for( std::size_t i = 0; i < GigNoteSegmentSize; ++i )
 		{
-			note.state = GigState::KeyUp;
+			GigNoteSlot & slot = segment->noteSlots[ i ];
+			if( slot.handle.load( std::memory_order_acquire ) != _n )
+			{
+				continue;
+			}
+			const std::uint32_t generation = slot.generation.load( std::memory_order_acquire );
+			slot.releaseGeneration.store( generation, std::memory_order_release );
+			s = segmentCount;
+			break;
 		}
 	}
 
-	// TODO: not sample exact? What about in the middle of us writing out the sample?
-
-	delete pluginData;
+	_n->m_pluginData = nullptr;
 }
 
 
@@ -867,20 +1492,28 @@ gui::PluginView* GigInstrument::instantiateView( QWidget * _parent )
 //
 // Note: not thread safe since libgig stores current region position data in
 // the instrument object
-void GigInstrument::addSamples( GigNote & gignote, bool wantReleaseSample )
+bool GigInstrument::addSamples( std::uint32_t _slotIndex, bool wantReleaseSample,
+		gig::Instrument * _instrument )
 {
+	GigNoteSlot & slot = noteSlot( _slotIndex );
+	GigNote & gignote = slot.note;
+
+	// The voices that this pass adds are appended to the note's list, so the
+	// list's current tail is where the rollback stops if the pool runs out.
+	const std::uint32_t tailBefore = slot.lastVoice;
+
 	// Change key dimension, e.g. change samples based on what key is pressed
 	// in a certain range. From LinuxSampler
-	if( gignote.midiNote >= m_instrument->DimensionKeyRange.low &&
-			gignote.midiNote <= m_instrument->DimensionKeyRange.high )
+	if( gignote.midiNote >= _instrument->DimensionKeyRange.low &&
+			gignote.midiNote <= _instrument->DimensionKeyRange.high )
 	{
 		m_currentKeyDimension = float( gignote.midiNote -
-				m_instrument->DimensionKeyRange.low ) / (
-					m_instrument->DimensionKeyRange.high -
-					m_instrument->DimensionKeyRange.low + 1 );
+				_instrument->DimensionKeyRange.low ) / (
+					_instrument->DimensionKeyRange.high -
+					_instrument->DimensionKeyRange.low + 1 );
 	}
 
-	gig::Region* pRegion = m_instrument->GetFirstRegion();
+	gig::Region* pRegion = _instrument->GetFirstRegion();
 
 	while( pRegion != nullptr )
 	{
@@ -921,12 +1554,30 @@ void GigInstrument::addSamples( GigNote & gignote, bool wantReleaseSample )
 					attenuation *= pDimRegion->SampleAttenuation;
 				}
 
-				gignote.samples.emplace_back(pSample, pDimRegion, attenuation, AudioResampler::Mode::Linear, gignote.frequency);
+				// Every matching region gets a voice: a note has no layer
+				// ceiling. A pass that cannot get one rolls the whole pass
+				// back and reports false, so the caller retries it later and
+				// no layer is silently skipped.
+				const std::uint32_t voiceIndex = acquireVoice();
+				if( voiceIndex == GigNoIndex )
+				{
+					rollBackVoices( slot, tailBefore );
+					return false;
+				}
+
+				// The voice was built when its segment was filled on the
+				// control thread, so attaching a sample to it neither
+				// allocates nor frees.
+				voice( voiceIndex ).sample.attach( pSample, pDimRegion, attenuation,
+						gignote.frequency );
+				appendVoiceToNote( _slotIndex, voiceIndex );
 			}
 		}
 
-		pRegion = m_instrument->GetNextRegion();
+		pRegion = _instrument->GetNextRegion();
 	}
+
+	return true;
 }
 
 
@@ -1013,33 +1664,50 @@ Dimension GigInstrument::getDimensions( gig::Region * pRegion, int velocity, boo
 
 // Get the selected instrument from the GIG file we opened if we haven't gotten
 // it already. This is based on the bank and patch numbers.
-void GigInstrument::getInstrument()
+gig::Instrument * GigInstrument::selectInstrument( GigInstance * _instance ) const
 {
-	// Find instrument
-	int iBankSelected = m_bankNum.value();
-	int iProgSelected = m_patchNum.value();
-
-	QMutexLocker locker( &m_synthMutex );
-
-	if( m_instance != nullptr )
+	if( _instance == nullptr )
 	{
-		gig::Instrument * pInstrument = m_instance->gig.GetFirstInstrument();
+		return nullptr;
+	}
 
-		while( pInstrument != nullptr )
+	const int iBankSelected = m_bankNum.value();
+	const int iProgSelected = m_patchNum.value();
+
+	gig::Instrument * pInstrument = _instance->gig.GetFirstInstrument();
+
+	while( pInstrument != nullptr )
+	{
+		const int iBank = pInstrument->MIDIBank;
+		const int iProg = pInstrument->MIDIProgram;
+
+		if( iBank == iBankSelected && iProg == iProgSelected )
 		{
-			int iBank = pInstrument->MIDIBank;
-			int iProg = pInstrument->MIDIProgram;
-
-			if( iBank == iBankSelected && iProg == iProgSelected )
-			{
-				break;
-			}
-
-			pInstrument = m_instance->gig.GetNextInstrument();
+			break;
 		}
 
-		m_instrument = pInstrument;
+		pInstrument = _instance->gig.GetNextInstrument();
 	}
+
+	return pInstrument;
+}
+
+
+
+
+void GigInstrument::getInstrument()
+{
+	// Take a reference on the published state, so that the file cannot be
+	// deleted while the instrument is selected in it.
+	m_fileReaders.fetch_add( 1, std::memory_order_seq_cst );
+	GigFileState * state = m_fileState.load( std::memory_order_seq_cst );
+
+	if( state != nullptr )
+	{
+		state->instrument.store( selectInstrument( state->instance ) );
+	}
+
+	m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
 }
 
 
@@ -1048,10 +1716,16 @@ void GigInstrument::getInstrument()
 // Since the sample rate changes when we start an export, clear all the
 // currently-playing notes when we get this signal. Then, the export won't
 // include leftover notes that were playing in the program.
+//
+// The notes belong to the audio thread, so this only asks it to drop them.
 void GigInstrument::updateSampleRate()
 {
-	QMutexLocker locker( &m_notesMutex );
-	m_notes.clear();
+	// Asking the audio thread to drop the notes it plays is only worth it
+	// when there are notes.
+	if( m_activeNotes.load( std::memory_order_acquire ) > 0 )
+	{
+		m_clearNotes.store( true, std::memory_order_release );
+	}
 }
 
 
@@ -1234,8 +1908,17 @@ void GigInstrumentView::showPatchDialog()
 {
 	auto k = castModel<GigInstrument>();
 	PatchesDialog pd( this );
-	pd.setup( k->m_instance, 1, k->instrumentTrack()->name(), &k->m_bankNum, &k->m_patchNum, m_patchLabel );
+
+	// Take a reference on the published state, so that the file cannot be
+	// deleted while the dialog is open.
+	k->m_fileReaders.fetch_add( 1, std::memory_order_seq_cst );
+	GigFileState * state = k->m_fileState.load( std::memory_order_seq_cst );
+	GigInstance * instance = state != nullptr ? state->instance : nullptr;
+
+	pd.setup( instance, 1, k->instrumentTrack()->name(), &k->m_bankNum, &k->m_patchNum, m_patchLabel );
 	pd.exec();
+
+	k->m_fileReaders.fetch_sub( 1, std::memory_order_seq_cst );
 }
 
 
@@ -1243,16 +1926,42 @@ void GigInstrumentView::showPatchDialog()
 
 
 // Store information related to playing a sample from the GIG file
-GigSample::GigSample(gig::Sample* pSample, gig::DimensionRegion* pDimRegion, float attenuation,
-	AudioResampler::Mode interpolation, float desiredFreq)
-	: sample(pSample)
-	, region(pDimRegion)
-	, attenuation(attenuation)
+//
+// A voice is built before the audio thread starts, so that attaching a
+// sample to it on the audio thread neither allocates nor frees. The
+// resampler and the two frame buffers belong to the voice.
+GigSample::GigSample()
+	: sample(nullptr)
+	, region(nullptr)
+	, attenuation(0.0f)
 	, pos(0)
-	, m_resampler(interpolation)
+	, pitchtrack(false)
+	, m_resampler(AudioResampler::Mode::Linear, DEFAULT_CHANNELS)
 	, sampleFreq(0)
 	, freqFactor(1)
 {
+}
+
+
+
+
+// Attaches a sample to this voice. This does exactly what the old GigSample
+// constructor did, except that the resampler is reset instead of being built
+// from scratch: a reset converter behaves like a fresh one.
+void GigSample::attach( gig::Sample* pSample, gig::DimensionRegion* pDimRegion, float attenuation,
+		float desiredFreq )
+{
+	sample = pSample;
+	region = pDimRegion;
+	this->attenuation = attenuation;
+	pos = 0;
+	pitchtrack = false;
+	sampleFreq = 0;
+	freqFactor = 1;
+	m_sourceBufferView = std::span<SampleFrame>();
+	m_mixBufferView = std::span<SampleFrame>();
+	m_resampler.reset();
+
 	if( sample != nullptr && region != nullptr )
 	{
 		// Calculate note pitch and frequency factor only if we're actually
@@ -1269,33 +1978,10 @@ GigSample::GigSample(gig::Sample* pSample, gig::DimensionRegion* pDimRegion, flo
 		// seconds after resampling
 		adsr = ADSR( region, sample->SamplesPerSecond / freqFactor );
 	}
-}
-
-GigSample::GigSample(const GigSample& g)
-	: sample(g.sample)
-	, region(g.region)
-	, attenuation(g.attenuation)
-	, adsr(g.adsr)
-	, pos(g.pos)
-	, m_resampler(AudioResampler::Mode::Linear, DEFAULT_CHANNELS)
-	, sampleFreq(g.sampleFreq)
-	, freqFactor(g.freqFactor)
-{
-}
-
-
-
-
-GigSample& GigSample::operator=( const GigSample& g )
-{
-	sample = g.sample;
-	region= g.region;
-	attenuation = g.attenuation;
-	adsr = g.adsr;
-	pos = g.pos;
-	sampleFreq = g.sampleFreq;
-	freqFactor = g.freqFactor;
-	return *this;
+	else
+	{
+		adsr = ADSR();
+	}
 }
 
 ADSR::ADSR()
