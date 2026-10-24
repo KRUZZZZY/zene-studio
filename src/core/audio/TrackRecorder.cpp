@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <system_error>
 
 #include <QFileInfo>
 #include <QString>
@@ -40,6 +41,20 @@
 
 namespace lmms
 {
+
+#ifdef LMMS_TESTING
+namespace
+{
+
+std::atomic<bool> s_failNextWriterThreadStart{false};
+
+}
+
+void TrackRecorder::failNextWriterThreadStartForTesting() noexcept
+{
+	s_failNextWriterThreadStart.store(true, std::memory_order_release);
+}
+#endif
 
 static_assert(TrackRecorder::WriteBatchFrames == recordingjournal::WriterBatchFrames,
 	"the journal's loss bound names the writer batch");
@@ -192,6 +207,12 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 		m_journalPath.clear();
 	}
 
+#ifdef LMMS_TESTING
+	if (s_failNextWriterThreadStart.exchange(false, std::memory_order_acq_rel))
+	{
+		throw std::system_error(std::make_error_code(std::errc::resource_unavailable_try_again));
+	}
+#endif
 	m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
 	// Only now does the audio thread see the route: m_armed was claimed above, before the ring
 	// reset and the channel change it must not race.

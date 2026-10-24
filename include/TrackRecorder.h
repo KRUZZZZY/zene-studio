@@ -70,6 +70,11 @@ public:
 	//! Frames per sndfile write on the disk-writer thread.
 	static constexpr std::size_t WriteBatchFrames = 4096;
 
+#ifdef LMMS_TESTING
+	//! Inject one portable writer-start failure for lifecycle regression tests.
+	static void failNextWriterThreadStartForTesting() noexcept;
+#endif
+
 	TrackRecorder();
 	~TrackRecorder();
 

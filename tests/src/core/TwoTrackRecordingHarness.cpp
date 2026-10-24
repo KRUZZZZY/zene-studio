@@ -340,6 +340,30 @@ int main(int argc, char** argv)
 		producerAllocations);
 	check(producerAllocations == 0, "audio-thread path did not allocate (dynamic probe)");
 
+	// A device-width reduction is handled on the control thread. The route on
+	// channel 1 must stop before a later stereo period can silently skip it;
+	// processing that unavailable route still performs no producer allocation.
+	const auto unavailableRouteFrames = recorder.track(0).framesPushed();
+	recorder.track(1).disarm();
+	recorder.setInputChannelCapacity(1);
+	check(!recorder.track(0).isArmed(), "capacity reduction disarmed the unavailable route");
+	std::vector<lmms::SampleFrame> unavailableBlock(BlockFrames);
+	std::uint64_t unavailableProducerAllocations = 0;
+	{
+		std::thread producer([&] {
+			lmms::test::resetAllocationCount();
+			lmms::test::tlCountAllocations = true;
+			recorder.processInput(unavailableBlock.data(), static_cast<lmms::f_cnt_t>(BlockFrames));
+			unavailableProducerAllocations = lmms::test::tlAllocationCount;
+			lmms::test::tlCountAllocations = false;
+		});
+		producer.join();
+	}
+	check(unavailableProducerAllocations == 0,
+		"unavailable-route audio-thread path did not allocate (dynamic probe)");
+	check(recorder.track(0).framesPushed() == unavailableRouteFrames,
+		"unavailable route accepted no later input frames");
+
 	recorder.disarmAll();
 
 	const auto report0 = verifyTrack(0, path0, 1, recorder.track(0), TotalFrames);
