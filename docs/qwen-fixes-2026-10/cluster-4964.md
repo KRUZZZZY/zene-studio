@@ -38,6 +38,8 @@ Build commands all exited 0: `cmake --build build --target zene TelemetryConsent
 
 `feature_check.py` exited 1 again after the final source edit and did not emit its table. Its underlying checkout attempt is the blocker; the standalone raw ratchet exits above are not represented as a passing comparative gate.
 
+The required completion check, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4964 4964`, exited 1 (`complete-1.log`). It passed the commit, clean-tree, report, and changed-test checks; its only failure was the blocked `feature_check.py` gate. All six questions it printed are answered below.
+
 ## Self-check
 
 - **Regression proof:** RED on the original code (focused ctest EXIT=8), RED after reversing only the product patch (EXIT=8), GREEN after restoring it (EXIT=0). Commands and logs are listed above.
