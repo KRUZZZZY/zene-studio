@@ -23,14 +23,16 @@ All build and test logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qw
 | Watsyn test family | `ctest -R '^Watsyn' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-203.r4/logs/test-2.log 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc"` | EXIT 0, 2/2 passed |
 | Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-203 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-203.r4/logs/feature-check-1.log 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc"` | EXIT 0; all eight checks PASS, including complexity and file-length |
 | Whitespace check | `git diff --check > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-203.r4/logs/diff-check-1.log 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc"` | EXIT 0 |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-203 new-p17-203 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-203.r4/logs/submit-check-1.log 2>&1; rc=$?; printf 'EXIT=%d\n' "$rc"` | EXIT 0; RESULT: PASS - submit |
 
 ## Self-check
 
-- **Finding decision:** REAL. The red run fails specifically because the new note renders the half-written staging data; the restored implementation passes the same assertion.
-- **Cause and scope:** Snapshot publication and pinning are at the source of the race. This round changes only the Watsyn test target's compile definitions and its `tests/upstream-modifications.txt` rationale; no product runtime, project serialization, saved-data, or undo behavior changes.
-- **Realtime:** The compile-definition change has no audio-thread effect. The existing snapshot code pins on note start and performs recycling on the publishing side; no new audio-thread allocation, free, lock, wait, or logging was added.
-- **Regression and registration:** The existing deterministic `WatsynWaveSnapshotTest` is registered in `tests/CMakeLists.txt` and fails on the historical implementation, then passes with the current implementation. The Watsyn test family passed 2/2.
-- **Gates:** `feature_check.py` exited 0 with all checks passing. The completion check is recorded in the final status after commit.
+- **RED/GREEN regression:** The historical-source test build exited 0, then `ctest -R '^WatsynWaveSnapshotTest$'` exited 8 at `tests/src/plugins/WatsynWaveSnapshotTest.cpp:200`; after restoring the current product sources, the same test exited 0. The family run passed 2/2.
+- **Determinism:** The test has no sleeps or wall-clock checks. `leaveStagingTableMidEdit()` writes `8000.0f` into the first half of `A1_wave` at `tests/src/plugins/WatsynWaveSnapshotTest.cpp:81-84`, then the test explicitly starts and renders notes at lines 178-203. The complete edit is an explicit `setWaveToSquare()` operation.
+- **Cause and completeness:** All four graph signals connect to matching update slots at `plugins/Watsyn/Watsyn.cpp:433-436`; initialization calls all four at lines 448-451, and each sibling update method publishes a completed wave at lines 666-696. A note claims its snapshot at line 469, and the voice releases it at lines 83-95. The test target is the only test CMake source entry compiling `plugins/Watsyn/Watsyn.cpp` (`tests/CMakeLists.txt:1940`), so `watsyn_EXPORTS` is attached to the target that needs it.
+- **Collateral and realtime:** This round changes no product runtime or data format. The compile-definition change is test-build-only; no saved-project, undo, allocation, free, lock, wait, or logging behavior on the audio thread changes.
+- **Verdict:** `FIXED` is used because the race was real and is addressed by the current published-snapshot implementation; the review's dropped Windows test-target export definition is now restored. The finding is not a false positive.
+- **Gates:** `feature_check.py` exited 0 with all eight checks passing, and `submit_check.py` exited 0 with `RESULT: PASS - submit`.
 
 ## Files committed
 
