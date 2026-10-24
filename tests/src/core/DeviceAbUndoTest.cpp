@@ -141,6 +141,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);                                     // the unload: the device is back
 		QCOMPARE(chainOf(index).effects().size(), std::size_t{1});
 		const QString back = control::effectIdOf(chainOf(index).effects().front());
+		QVERIFY(back != plugin);
 		plugin = back;  // the recreated device has a new fx id
 		QVERIFY(run(QStringLiteral("control.undo")).ok);                                     // the store is undone
 		const ControlResult undone = ab(QStringLiteral("get"));
@@ -152,6 +153,79 @@ private slots:
 		QVERIFY2(redone.result.value(QStringLiteral("has_a")).toBool(), "the redone store lost its slot on the recreated device");
 		QVERIFY(ab(QStringLiteral("recall"), QStringLiteral("a")).ok);
 		QVERIFY(std::abs(parameterValue(target, back, name) - other) < 1e-3);
+		chainOf(index).clear();
+	}
+
+	//! Storing the same state in the selected slot twice does not create an undo step above the real store.
+	void anUnchangedStoreDoesNotShieldThePreviousStoreUndo()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		QString name;
+		double other = 0.0;
+		QVERIFY(aParameter(target, plugin, &name, &other));
+		const double original = parameterValue(target, plugin, name);
+		const auto ab = [target, &plugin](const QString& action, const QString& slot = QString()) {
+			QJsonObject args{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("action"), action}};
+			if (!slot.isEmpty()) { args.insert(QStringLiteral("slot"), slot); }
+			return run(QStringLiteral("plugin.ab"), args);
+		};
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("a")).ok);  // selected A contains original
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), other}}).ok);
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("a")).ok);  // a real change to A
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("a")).ok);  // no change: still selected A, same settings
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY2(ab(QStringLiteral("recall"), QStringLiteral("a")).ok, "slot A should still be available after undo");
+		QVERIFY(std::abs(parameterValue(target, plugin, name) - original) < 1e-3);
+		chainOf(index).clear();
+	}
+
+	//! Unload undo rebuilds the effect but carries its session A/B records back onto the new instance.
+	void storedSlotsSurviveUnloadUndo()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		QString plugin = loadAnEffect(target);
+		if (plugin.isEmpty()) { QSKIP("this build loads no effect"); }
+		QString name;
+		double other = 0.0;
+		QVERIFY(aParameter(target, plugin, &name, &other));
+		const double original = parameterValue(target, plugin, name);
+		const auto ab = [target, &plugin](const QString& action, const QString& slot = QString()) {
+			QJsonObject args{{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+				{QStringLiteral("action"), action}};
+			if (!slot.isEmpty()) { args.insert(QStringLiteral("slot"), slot); }
+			return run(QStringLiteral("plugin.ab"), args);
+		};
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("a")).ok);
+		QVERIFY(run(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin},
+			{QStringLiteral("name"), name}, {QStringLiteral("value"), other}}).ok);
+		QVERIFY(ab(QStringLiteral("store"), QStringLiteral("b")).ok);
+		const ControlResult beforeUnload = ab(QStringLiteral("get"));
+		QVERIFY(beforeUnload.ok);
+		QVERIFY(beforeUnload.result.value(QStringLiteral("has_a")).toBool());
+		QVERIFY(beforeUnload.result.value(QStringLiteral("has_b")).toBool());
+		QCOMPARE(beforeUnload.result.value(QStringLiteral("current")).toString(), QStringLiteral("b"));
+		QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), plugin}}).ok);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(chainOf(index).effects().size(), std::size_t{1});
+		const QString rebuilt = control::effectIdOf(chainOf(index).effects().front());
+		QVERIFY(rebuilt != plugin);
+		plugin = rebuilt;
+		const ControlResult restored = ab(QStringLiteral("get"));
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		QVERIFY(restored.result.value(QStringLiteral("has_a")).toBool());
+		QVERIFY(restored.result.value(QStringLiteral("has_b")).toBool());
+		QCOMPARE(restored.result.value(QStringLiteral("current")).toString(), QStringLiteral("b"));
+		QVERIFY(ab(QStringLiteral("recall"), QStringLiteral("a")).ok);
+		QVERIFY(std::abs(parameterValue(target, plugin, name) - original) < 1e-3);
+		QVERIFY(ab(QStringLiteral("recall"), QStringLiteral("b")).ok);
+		QVERIFY(std::abs(parameterValue(target, plugin, name) - other) < 1e-3);
 		chainOf(index).clear();
 	}
 

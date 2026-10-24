@@ -73,6 +73,7 @@
 
 #include "AudioPortsModel.h"
 #include "AutomatableModel.h"
+#include "ControlDeviceTools.h"
 #include "ControlDevicePlacement.h"
 #include "ControlDeviceSupport.h"
 #include "ControlEdit.h"
@@ -721,9 +722,10 @@ bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const
 	const bool wasEnabled = chain->isEnabled();
 	const auto chainOf = recordedChainFinder(chain);
 	const QString plugin = pluginNameOf(effect);
+	const auto abSnapshot = captureAbSlotsForRemoval(effect);
 	auto made = std::make_shared<QPointer<Effect>>();
 	return addStructuralUndoStep(
-		[chainOf, xml, index, made, wasEnabled]() {
+		[chainOf, xml, index, made, wasEnabled, abSnapshot]() {
 			JournalPause quiet;
 			EffectChain* live = chainOf();
 			if (live == nullptr) { return; }
@@ -735,16 +737,20 @@ bool journalRemovalDocument(EffectChain* chain, Effect* effect, int index, const
 			// Nothing is touched when no device was built.
 			Effect* device = instantiateRecordedDevice(live, xml);
 			if (device == nullptr) { *made = nullptr; return; }
-			const auto changes = Engine::audioEngine()->requestChangesGuard();
-			if (!attachRecordedDevice(live, device, index)) { *made = nullptr; return; }
-			*made = device;
-			live->setEnabledUnjournalled(wasEnabled);
+			{
+				const auto changes = Engine::audioEngine()->requestChangesGuard();
+				if (!attachRecordedDevice(live, device, index)) { *made = nullptr; return; }
+				*made = device;
+				live->setEnabledUnjournalled(wasEnabled);
+			}
+			// Rebinding can allocate, so keep it outside the audio change guard.
+			restoreAbSlotsAfterRemoval(device, abSnapshot);
 		},
 		[chainOf, made, index, plugin]() {
 			JournalPause quiet;
 			removeBuiltDevice(chainOf(), *made, index, plugin);
 		},
-		xml.size());
+		xml.size() + static_cast<qint64>(abSlotsSnapshotSize(abSnapshot)));
 }
 
 void journalEffectLoad(EffectChain* chain, Effect* effect, const ControlDeviceEntry& entry, int slot)

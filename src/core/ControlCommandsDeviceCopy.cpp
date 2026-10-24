@@ -413,11 +413,14 @@ ControlResult pluginAb(const QJsonObject& args)
 		const AbSlots before = pair;
 		storeSlot(effect, pair, toB);
 		pair.onB = toB;
-		// The command is registered mutating, so the slots it changed (what they hold, which one is
-		// heard) go back as one undo step. The device is recorded like recall's, so its undo and redo
-		// find it again after an unload and its undo rebuilt it.
-		addUndoStep([recorded, before]() { restoreSlots(recorded, before); },
-			[recorded, after = pair]() { restoreSlots(recorded, after); });
+		const bool changed = before.a != pair.a || before.b != pair.b || before.onB != pair.onB ||
+			before.aValues != pair.aValues || before.bValues != pair.bValues;
+		if (changed)
+		{
+			// The device is recorded like recall's, so undo and redo find it again after an unload and its undo rebuilt it.
+			addUndoStep([recorded, before]() { restoreSlots(recorded, before); },
+				[recorded, after = pair]() { restoreSlots(recorded, after); });
+		}
 	}
 	return ControlResult::success(abJson(pair));
 }
@@ -461,6 +464,15 @@ ControlResult pluginMove(const QJsonObject& args)
 
 } // namespace
 
+struct control::AbSlotsSnapshot
+{
+	QString a;
+	QString b;
+	bool onB = false;
+	std::vector<float> aValues;
+	std::vector<float> bValues;
+};
+
 bool control::abSlotState(const Effect* effect, AbState* state)
 {
 	const auto found = effect != nullptr ? abSlots().find(effect->id()) : abSlots().end();
@@ -470,6 +482,40 @@ bool control::abSlotState(const Effect* effect, AbState* state)
 	}
 	*state = AbState{found->second.onB, !found->second.a.isEmpty(), !found->second.b.isEmpty()};
 	return true;
+}
+
+std::shared_ptr<control::AbSlotsSnapshot> control::captureAbSlotsForRemoval(Effect* effect)
+{
+	if (effect == nullptr) { return {}; }
+	const auto found = abSlots().find(effect->id());
+	if (found == abSlots().end() || found->second.owner != effect) { return {}; }
+	auto snapshot = std::make_shared<AbSlotsSnapshot>();
+	snapshot->a = found->second.a;
+	snapshot->b = found->second.b;
+	snapshot->onB = found->second.onB;
+	snapshot->aValues = found->second.aValues;
+	snapshot->bValues = found->second.bValues;
+	return snapshot;
+}
+
+void control::restoreAbSlotsAfterRemoval(Effect* effect, const std::shared_ptr<AbSlotsSnapshot>& snapshot)
+{
+	if (effect == nullptr || !snapshot) { return; }
+	AbSlots& pair = claimAbSlots(effect);
+	pair.a = snapshot->a;
+	pair.b = snapshot->b;
+	pair.onB = snapshot->onB;
+	pair.aValues = snapshot->aValues;
+	pair.bValues = snapshot->bValues;
+	// claimAbSlots binds the record to the rebuilt effect and releases it with that effect.
+}
+
+std::size_t control::abSlotsSnapshotSize(const std::shared_ptr<AbSlotsSnapshot>& snapshot)
+{
+	if (!snapshot) { return 0; }
+	return sizeof(AbSlotsSnapshot) +
+		(static_cast<std::size_t>(snapshot->a.size()) + static_cast<std::size_t>(snapshot->b.size())) * sizeof(QChar) +
+		(snapshot->aValues.size() + snapshot->bValues.size()) * sizeof(float);
 }
 
 bool control::abSlotValues(Effect* effect, std::vector<float>* a, std::vector<float>* b)

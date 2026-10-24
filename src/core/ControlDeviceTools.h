@@ -26,6 +26,7 @@
 #define LMMS_CONTROL_DEVICE_TOOLS_H
 
 #include <cstddef>
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -43,6 +44,8 @@ class Effect;
 
 namespace lmms::control
 {
+
+struct AbSlotsSnapshot;
 
 //! Registers one command of the 0.5.0 W3 device files (L10): group and verb from the dotted @a id,
 //! the args schema built from @a args / @a required (additionalProperties false), a free-form
@@ -64,6 +67,11 @@ bool abSlotValues(Effect* effect, std::vector<float>* a, std::vector<float>* b);
 //! Number of retained A/B slot records (one per device id that holds or held slots); DeviceCopyTest uses it to
 //! check that a destroyed device's record is released. Defined in ControlCommandsDeviceCopy.cpp.
 std::size_t abSlotEntryCountForTesting();
+
+//! Keep a device's session A/B state across a recorded removal and restore it on the rebuilt effect.
+std::shared_ptr<AbSlotsSnapshot> captureAbSlotsForRemoval(Effect* effect);
+void restoreAbSlotsAfterRemoval(Effect* effect, const std::shared_ptr<AbSlotsSnapshot>& snapshot);
+std::size_t abSlotsSnapshotSize(const std::shared_ptr<AbSlotsSnapshot>& snapshot);
 
 } // namespace lmms::control
 
