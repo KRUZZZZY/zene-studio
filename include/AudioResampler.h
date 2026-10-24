@@ -26,6 +26,7 @@
 #define LMMS_AUDIO_RESAMPLER_H
 
 #include <memory>
+#include <cstdint>
 #include "AudioBufferView.h"
 #include "SrcQuality.h"
 #include "lmms_export.h"
@@ -157,6 +158,9 @@ public:
 	//! Deterministically fail the next converter allocations in tests.
 	static void forceConverterAllocationFailuresForTest(int failuresToInject,
 		int allocationsToSkip = 0) noexcept;
+	//! Count converter states created while RealtimeScope is active.
+	static auto realtimeConverterAllocationsForTest() noexcept -> std::uint64_t;
+	static void resetRealtimeConverterAllocationsForTest() noexcept;
 #endif
 
 	//! The converter \p quality selects. `Linear` is `Mode::Linear`, the

@@ -73,8 +73,14 @@
 #include "interpolation.h"
 #include "OversamplingHelpers.h"
 #include "Sample.h"
+#include "SampleClip.h"
 #include "SampleFrame.h"
+#include "SamplePlayHandle.h"
+#include "SampleTrack.h"
 #include "SrcQuality.h"
+#include "RealtimeScope.h"
+#include "Song.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -449,6 +455,23 @@ private slots:
 			QCOMPARE(byDefault[i][1], byName[i][1]);
 		}
 		evidence("default quality is exactly Linear", 1.0);
+	}
+
+	void sampleTrackVoiceUsesPreparedConverterOnRenderPath()
+	{
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::SincBest));
+		SampleTrack track(Engine::getSong());
+		auto* const clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+
+		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		{
+			const RealtimeScope realtime;
+			SamplePlayHandle handle(clip, clip->sampleWindow());
+		}
+		const auto realtimeAllocations = AudioResampler::realtimeConverterAllocationsForTest();
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
+		QCOMPARE(realtimeAllocations, std::uint64_t{0});
 	}
 
 	void upsamplerRejectsOutOfRangeStageChanges()

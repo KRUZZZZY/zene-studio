@@ -29,6 +29,7 @@
 #include <stdexcept>
 
 #include "ExportRenderSettings.h"
+#include "RealtimeScope.h"
 
 namespace lmms {
 
@@ -37,6 +38,7 @@ namespace {
 #ifdef LMMS_TESTING
 std::atomic<int> s_allocationsBeforeFailure{0};
 std::atomic<int> s_failuresToInject{0};
+std::atomic<std::uint64_t> s_realtimeConverterAllocations{0};
 
 bool converterAllocationMustFailForTest() noexcept
 {
@@ -74,10 +76,21 @@ constexpr auto converterType(AudioResampler::Mode mode) -> int
 		throw std::invalid_argument{"Invalid interpolation mode"};
 	}
 }
+
+auto createConverterState(AudioResampler::Mode mode, ch_cnt_t channels, int* error) -> SRC_STATE*
+{
+#ifdef LMMS_TESTING
+	if (RealtimeScope::isActive())
+	{
+		s_realtimeConverterAllocations.fetch_add(1, std::memory_order_relaxed);
+	}
+#endif
+	return src_new(converterType(mode), channels, error);
+}
 } // namespace
 
 AudioResampler::AudioResampler(Mode mode, ch_cnt_t channels)
-	: m_state{src_new(converterType(mode), channels, &m_error)}
+	: m_state{createConverterState(mode, channels, &m_error)}
 	, m_mode{mode}
 	, m_channels{channels}
 {
@@ -140,7 +153,7 @@ void AudioResampler::setMode(Mode mode)
 	// A fresh converter. The requested quality is what a render's SRC setting
 	// selects; the state has to be re-created because libsamplerate fixes the
 	// converter at src_new() time.
-	auto* state = src_new(converterType(mode), m_channels, &m_error);
+	auto* state = createConverterState(mode, m_channels, &m_error);
 	if (state == nullptr) { throw std::runtime_error{src_strerror(m_error)}; }
 
 	m_state.reset(state);
@@ -151,7 +164,7 @@ auto AudioResampler::trySetMode(Mode mode) noexcept -> bool
 {
 	if (mode == m_mode) { return true; }
 	if (converterAllocationMustFailForTest()) { return false; }
-	auto* const state = src_new(converterType(mode), m_channels, &m_error);
+	auto* const state = createConverterState(mode, m_channels, &m_error);
 	if (state == nullptr) { return false; }
 	m_state.reset(state);
 	m_mode = mode;
@@ -168,7 +181,7 @@ auto AudioResampler::prepareMode(Mode mode) noexcept -> bool
 		return true;
 	}
 	if (converterAllocationMustFailForTest()) { return false; }
-	auto* const state = src_new(converterType(mode), m_channels, &m_error);
+	auto* const state = createConverterState(mode, m_channels, &m_error);
 	if (state == nullptr) { return false; }
 	m_preparedState.reset(state);
 	m_preparedMode = mode;
@@ -198,6 +211,16 @@ void AudioResampler::forceConverterAllocationFailuresForTest(int failuresToInjec
 		std::memory_order_relaxed);
 	s_failuresToInject.store(failuresToInject > 0 ? failuresToInject : 0,
 		std::memory_order_relaxed);
+}
+
+auto AudioResampler::realtimeConverterAllocationsForTest() noexcept -> std::uint64_t
+{
+	return s_realtimeConverterAllocations.load(std::memory_order_relaxed);
+}
+
+void AudioResampler::resetRealtimeConverterAllocationsForTest() noexcept
+{
+	s_realtimeConverterAllocations.store(0, std::memory_order_relaxed);
 }
 #endif
 
