@@ -258,6 +258,9 @@ set(LMMS_TESTS
 	# in-process claim with no hardware - and the mapping templates
 	# (save/list/read/apply, and what they report they cannot resolve).
 	src/core/ControllerSurfaceTest.cpp
+	# cluster new-p15-90: a replaced user LFO waveform stays owned through a
+	# render lease and is reclaimed only on the control thread after release.
+	src/core/LfoControllerUserWaveTest.cpp
 	# CODE-8: the shutdown-hook lifetime. The hook that unlinks the control
 	# socket must survive a registry instance it was not registered on, and
 	# must NOT outlive the ControlServer that registered it - both halves are
@@ -2955,7 +2958,7 @@ set_tests_properties(VisibilitySetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(CaptureMidiMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ProjectContainerSaveAsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlCommandsSaveVersionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(MidiControllerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiControllerMenuTest LfoControllerUserWaveTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

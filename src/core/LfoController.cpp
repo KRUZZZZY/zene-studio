@@ -27,6 +27,9 @@
 
 #include <QDomElement>
 #include <QFileInfo>
+#include <QTimer>
+
+#include <utility>
 
 #include "AudioEngine.h"
 #include "Oscillator.h"
@@ -35,6 +38,9 @@
 
 namespace lmms
 {
+
+static_assert(std::atomic<const SampleBuffer*>::is_always_lock_free);
+static_assert(std::atomic<unsigned int>::is_always_lock_free);
 
 
 LfoController::LfoController( Model * _parent ) :
@@ -51,7 +57,8 @@ LfoController::LfoController( Model * _parent ) :
 	m_currentPhase( 0 ),
 	m_sampleFunction( &Oscillator::sinSample ),
 	m_heldSample( 0.0f ),
-	m_userDefSampleBuffer(std::make_shared<SampleBuffer>())
+	m_userDefSampleBuffer(std::make_shared<SampleBuffer>()),
+	m_userDefSampleBufferForRender(m_userDefSampleBuffer.get())
 {
 	setSampleExact( true );
 	connect( &m_waveModel, SIGNAL(dataChanged()),
@@ -109,6 +116,8 @@ void LfoController::updateValueBuffer()
 	int amountInc = amountBuffer ? 1 : 0;
 	float *amountPtr = amountBuffer ? &(amountBuffer->values()[ 0 ] ) : &amount;
 	Oscillator::WaveShape waveshape = static_cast<Oscillator::WaveShape>(m_waveModel.value());
+	const bool usesUserWave = waveshape == Oscillator::WaveShape::UserDefined;
+	const auto* userWave = usesUserWave ? acquireUserDefSampleBufferForRender() : nullptr;
 
 	for( float& f : m_valueBuffer )
 	{
@@ -127,7 +136,7 @@ void LfoController::updateValueBuffer()
 		}
 		case Oscillator::WaveShape::UserDefined:
 		{
-			currentSample = Oscillator::userWaveSample(m_userDefSampleBuffer.get(), phase);
+			currentSample = Oscillator::userWaveSample(userWave, phase);
 			break;
 		}
 		default:
@@ -145,9 +154,59 @@ void LfoController::updateValueBuffer()
 		phase += 1.0 / m_duration;
 		amountPtr += amountInc;
 	}
+	if (usesUserWave) { releaseUserDefSampleBufferForRender(); }
 
 	m_currentPhase = absFraction(phase - m_phaseOffset);
 	m_bufferLastUpdated = s_periods;
+}
+
+
+void LfoController::setUserDefSampleBuffer(std::shared_ptr<const SampleBuffer> buffer)
+{
+	if (!buffer) { buffer = SampleBuffer::emptyBuffer(); }
+	m_retiredUserDefSampleBuffers.push_back(std::move(m_userDefSampleBuffer));
+	m_userDefSampleBuffer = std::move(buffer);
+	m_userDefSampleBufferForRender.store(m_userDefSampleBuffer.get(), std::memory_order_seq_cst);
+	reclaimRetiredUserDefSampleBuffers();
+	if (!m_retiredUserDefSampleBuffers.empty()) { scheduleUserDefSampleBufferReclaim(); }
+}
+
+
+const SampleBuffer* LfoController::acquireUserDefSampleBufferForRender() noexcept
+{
+	m_userWaveRenderReaders.fetch_add(1, std::memory_order_seq_cst);
+	return m_userDefSampleBufferForRender.load(std::memory_order_seq_cst);
+}
+
+
+void LfoController::releaseUserDefSampleBufferForRender() noexcept
+{
+	m_userWaveRenderReaders.fetch_sub(1, std::memory_order_seq_cst);
+}
+
+
+void LfoController::reclaimRetiredUserDefSampleBuffers() noexcept
+{
+	if (m_userWaveRenderReaders.load(std::memory_order_seq_cst) != 0) { return; }
+
+	m_retiredUserDefSampleBuffers.clear();
+	if (m_userWaveReclaimTimer != nullptr) { m_userWaveReclaimTimer->stop(); }
+}
+
+
+void LfoController::scheduleUserDefSampleBufferReclaim()
+{
+	if (m_userWaveReclaimTimer == nullptr)
+	{
+		m_userWaveReclaimTimer = new QTimer(this);
+		m_userWaveReclaimTimer->setObjectName(QStringLiteral("lfoRetiredUserWaveReclaimTimer"));
+		m_userWaveReclaimTimer->setTimerType(Qt::VeryCoarseTimer);
+		m_userWaveReclaimTimer->setInterval(1000);
+		QObject::connect(m_userWaveReclaimTimer, &QTimer::timeout, this, [this] {
+			reclaimRetiredUserDefSampleBuffers();
+		});
+	}
+	m_userWaveReclaimTimer->start();
 }
 
 void LfoController::updatePhase()
@@ -248,7 +307,7 @@ void LfoController::loadSettings( const QDomElement & _this )
 	{
 		if (QFileInfo(PathUtil::toAbsolute(userWaveFile)).exists())
 		{
-			m_userDefSampleBuffer = SampleBuffer::fromFile(_this.attribute("userwavefile"));
+			setUserDefSampleBuffer(SampleBuffer::fromFile(_this.attribute("userwavefile")));
 		}
 		else { Engine::getSong()->collectError(QString("%1: %2").arg(tr("Sample not found"), userWaveFile)); }
 	}

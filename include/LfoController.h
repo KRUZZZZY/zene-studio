@@ -26,11 +26,17 @@
 #define LMMS_LFO_CONTROLLER_H
 
 
+#include <atomic>
+#include <vector>
+
 #include "AutomatableModel.h"
 #include "Controller.h"
 #include "ControllerDialog.h"
 #include "SampleBuffer.h"
 #include "TempoSyncKnobModel.h"
+
+class LfoControllerUserWaveTest;
+class QTimer;
 
 namespace lmms
 {
@@ -85,6 +91,20 @@ protected:
 private:
 	float m_heldSample;
 	std::shared_ptr<const SampleBuffer> m_userDefSampleBuffer = SampleBuffer::emptyBuffer();
+	std::atomic<const SampleBuffer*> m_userDefSampleBufferForRender;
+	std::atomic<unsigned int> m_userWaveRenderReaders{0};
+	std::vector<std::shared_ptr<const SampleBuffer>> m_retiredUserDefSampleBuffers;
+	QTimer* m_userWaveReclaimTimer = nullptr;
+
+	void setUserDefSampleBuffer(std::shared_ptr<const SampleBuffer> buffer);
+	const SampleBuffer* acquireUserDefSampleBufferForRender() noexcept;
+	void releaseUserDefSampleBufferForRender() noexcept;
+	void reclaimRetiredUserDefSampleBuffers() noexcept;
+	void scheduleUserDefSampleBufferReclaim();
+
+#ifdef LMMS_TESTING
+	friend class ::LfoControllerUserWaveTest;
+#endif
 
 protected slots:
 	void updatePhase();
