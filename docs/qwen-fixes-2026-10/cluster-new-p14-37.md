@@ -54,8 +54,8 @@ Final gates:
 
 | Gate | Result |
 |---|---|
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-37` | PASS, exit 0 (`gate-4.log`; all eight checks passed, including complexity and file-length). |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-37 new-p14-37` | Run after commit; result recorded in the completion response. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-37` | PASS, exit 0 (`gate-5.log`; all eight checks passed, including complexity and file-length). |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-37 new-p14-37` | PASS, exit 0 (`submit-1.log`; ran after commit `7366045da`). |
 
 ## Self-check
 
