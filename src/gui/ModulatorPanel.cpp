@@ -24,6 +24,9 @@
 
 #include "ModulatorPanel.h"
 
+#include <functional>
+#include <utility>
+
 #include <QComboBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
@@ -48,6 +51,22 @@ namespace lmms::gui
 
 namespace
 {
+
+class RefreshingComboBox final : public QComboBox
+{
+public:
+	explicit RefreshingComboBox(QWidget* parent) : QComboBox(parent) {}
+	void setRefresh(std::function<void()> refresh) { m_refresh = std::move(refresh); }
+
+	void showPopup() override
+	{
+		if (m_refresh) { m_refresh(); }
+		QComboBox::showPopup();
+	}
+
+private:
+	std::function<void()> m_refresh;
+};
 
 ControlResult run(const char* command, const QJsonObject& args = {})
 {
@@ -139,9 +158,12 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	m_targets->setSelectionBehavior(QAbstractItemView::SelectRows);
 	m_targets->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_targets->setAccessibleName(tr("Parameters this modulator drives"));
-	m_channel = new QComboBox(this);
-	m_effect = new QComboBox(this);
-	m_parameter = new QComboBox(this);
+	auto* channel = new RefreshingComboBox(this);
+	m_channel = channel;
+	auto* effect = new RefreshingComboBox(this);
+	m_effect = effect;
+	auto* parameter = new RefreshingComboBox(this);
+	m_parameter = parameter;
 	m_depth = new QDoubleSpinBox(this);
 	m_depth->setRange(-1.0, 1.0);
 	m_depth->setSingleStep(0.05);
@@ -173,6 +195,9 @@ ModulatorPanel::ModulatorPanel(QWidget* parent) :
 	connect(m_rate, &QDoubleSpinBox::editingFinished, this, [this] { setShapeAndRate(m_shape->currentText(), m_rate->value()); });
 	connect(m_channel, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillEffects(); });
 	connect(m_effect, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { fillParameters(); });
+	channel->setRefresh([this] { fillChannels(); });
+	effect->setRefresh([this] { fillEffects(); });
+	parameter->setRefresh([this] { fillParameters(); });
 
 	auto* listButtons = new QHBoxLayout;
 	listButtons->addWidget(add);
@@ -288,6 +313,7 @@ void ModulatorPanel::showSelected()
 void ModulatorPanel::fillChannels()
 {
 	const QSignalBlocker block(m_channel);
+	const QString selected = m_channel->currentData().toString();
 	m_channel->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -295,12 +321,15 @@ void ModulatorPanel::fillChannels()
 		if (object.value(QStringLiteral("count")).toInt() == 0) { continue; }
 		m_channel->addItem(object.value(QStringLiteral("id")).toString(), object.value(QStringLiteral("id")).toString());
 	}
+	const int selectedIndex = m_channel->findData(selected);
+	if (selectedIndex >= 0) { m_channel->setCurrentIndex(selectedIndex); }
 	fillEffects();
 }
 
 void ModulatorPanel::fillEffects()
 {
 	const QSignalBlocker block(m_effect);
+	const QString selected = m_effect->currentData(Qt::UserRole + 1).toString();
 	m_effect->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -310,13 +339,17 @@ void ModulatorPanel::fillEffects()
 		{
 			const QJsonObject device = devices.at(i).toObject();
 			m_effect->addItem(QStringLiteral("fx-%1 %2").arg(i).arg(device.value(QStringLiteral("display_name")).toString()), i);
+			m_effect->setItemData(m_effect->count() - 1, device.value(QStringLiteral("id")).toString(), Qt::UserRole + 1);
 		}
 	}
+	const int selectedIndex = m_effect->findData(selected, Qt::UserRole + 1);
+	if (selectedIndex >= 0) { m_effect->setCurrentIndex(selectedIndex); }
 	fillParameters();
 }
 
 void ModulatorPanel::fillParameters()
 {
+	const QString selected = m_parameter->currentText();
 	m_parameter->clear();
 	for (const QJsonValue& chain : channelChains())
 	{
@@ -329,6 +362,8 @@ void ModulatorPanel::fillParameters()
 			m_parameter->addItem(parameter.toObject().value(QStringLiteral("name")).toString());
 		}
 	}
+	const int selectedIndex = m_parameter->findText(selected);
+	if (selectedIndex >= 0) { m_parameter->setCurrentIndex(selectedIndex); }
 }
 
 QString ModulatorPanel::selectedId() const

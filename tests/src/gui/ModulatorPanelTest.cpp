@@ -39,6 +39,9 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "AutomatableModel.h"
+#include "Effect.h"
+#include "EffectChain.h"
 #include "LfoGraph.h"
 #include "Mixer.h"
 #include "ModulatorPanel.h"
@@ -53,6 +56,24 @@ ControlResult run(const QString& id, const QJsonObject& args = QJsonObject{})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
+
+class PickerTestEffect final : public Effect
+{
+public:
+	explicit PickerTestEffect(Model* parent, const QString& parameterName = QStringLiteral("Gain")) :
+		Effect{&s_descriptor, parent, nullptr}, m_parameter{0.5f, 0.0f, 1.0f, 0.01f, this, parameterName} {}
+	EffectControls* controls() override { return nullptr; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+private:
+	static const Plugin::Descriptor s_descriptor;
+	FloatModel m_parameter;
+};
+
+const Plugin::Descriptor PickerTestEffect::s_descriptor{"modulatorpaneltest", "Picker Test Effect",
+	"Test effect for ModulatorPanelTest", "Zene Studio", 0x0100, Plugin::Type::Effect, nullptr, nullptr, nullptr};
 
 QJsonArray modulators()
 {
@@ -88,6 +109,89 @@ private slots:
 		graph.show();
 		QTest::mouseClick(&graph, Qt::LeftButton);
 		QVERIFY(graph.model() == nullptr);
+	}
+
+	void theChannelPickerShowsAChannelAfterItGainsAnEffect()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* channelObject = Engine::mixer()->mixerChannel(index);
+		const QString channel = control::channelIdOf(channelObject);
+
+		ModulatorPanel panel;
+		QComboBox* channels = nullptr;
+		QComboBox* effects = nullptr;
+		QComboBox* parameters = nullptr;
+		for (QComboBox* combo : panel.findChildren<QComboBox*>())
+		{
+			if (combo->accessibleName() == QLatin1String("Mixer channel to modulate")) { channels = combo; }
+			if (combo->accessibleName() == QLatin1String("Effect to modulate")) { effects = combo; }
+			if (combo->accessibleName() == QLatin1String("Parameter to modulate")) { parameters = combo; }
+		}
+		QVERIFY(channels != nullptr);
+		QVERIFY(effects != nullptr);
+		QVERIFY(parameters != nullptr);
+		QCOMPARE(channels->findData(channel), -1);
+
+		Effect* effect = new PickerTestEffect(&channelObject->m_fxChain);
+		channelObject->m_fxChain.appendEffect(effect);
+		channels->showPopup();
+		const int channelIndex = channels->findData(channel);
+		QVERIFY(channelIndex >= 0);
+		channels->setCurrentIndex(channelIndex);
+		QCOMPARE(effects->count(), 1);
+		QVERIFY(parameters->findText(QStringLiteral("Gain")) >= 0);
+
+		channelObject->m_fxChain.removeEffect(effect);
+		delete effect;
+		channels->showPopup();
+		QCOMPARE(channels->findData(channel), -1);
+		QCOMPARE(effects->count(), 0);
+	}
+
+	void theEffectPickerShowsEffectsAddedWhileThePanelIsOpen()
+	{
+		const int index = Engine::mixer()->createChannel();
+		MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+		const QString id = control::channelIdOf(channel);
+		auto* first = new PickerTestEffect(&channel->m_fxChain);
+		channel->m_fxChain.appendEffect(first);
+
+		ModulatorPanel panel;
+		QComboBox* channels = nullptr;
+		QComboBox* effects = nullptr;
+		QComboBox* parameters = nullptr;
+		for (QComboBox* combo : panel.findChildren<QComboBox*>())
+		{
+			if (combo->accessibleName() == QLatin1String("Mixer channel to modulate")) { channels = combo; }
+			if (combo->accessibleName() == QLatin1String("Effect to modulate")) { effects = combo; }
+			if (combo->accessibleName() == QLatin1String("Parameter to modulate")) { parameters = combo; }
+		}
+		QVERIFY(channels != nullptr);
+		QVERIFY(effects != nullptr);
+		QVERIFY(parameters != nullptr);
+		channels->setCurrentIndex(channels->findData(id));
+		QCOMPARE(effects->count(), 1);
+		QVERIFY(parameters->findText(QStringLiteral("Gain")) >= 0);
+
+		auto* second = new PickerTestEffect(&channel->m_fxChain, QStringLiteral("Mix"));
+		channel->m_fxChain.appendEffect(second);
+		effects->showPopup();
+		QCOMPARE(effects->count(), 2);
+
+		effects->setCurrentIndex(1);
+		QVERIFY(parameters->findText(QStringLiteral("Mix")) >= 0);
+		const QString selectedEffect = control::effectIdOf(second);
+		channel->m_fxChain.moveUp(second);
+		effects->showPopup();
+		QCOMPARE(effects->currentData(Qt::UserRole + 1).toString(), selectedEffect);
+		QCOMPARE(effects->currentData().toInt(), 0);
+		QVERIFY(parameters->findText(QStringLiteral("Mix")) >= 0);
+
+		channel->m_fxChain.removeEffect(first);
+		delete first;
+		effects->showPopup();
+		QCOMPARE(effects->count(), 1);
+		QCOMPARE(effects->currentData(Qt::UserRole + 1).toString(), selectedEffect);
 	}
 
 	void theLayerIsEditedFromThePanel()
