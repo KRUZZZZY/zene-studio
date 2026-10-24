@@ -41,7 +41,8 @@ growth.
 | RED | `QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad` (`build/tests`) | 1 | Fails at `renderFinished` with “the audio callback waited for the GIG file that was being loaded”; `test-6-lock-mutation-RED.log`. |
 | Restore and rebuild | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/red-mutation.patch` (0), `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/fix.patch` (0), then `cmake --build build --target zene gigplayer PluginPortsMigrationTest -j8` | 0 | Temporary lock removed and intended baseline sample conversion restored; `build-7-restored-green.log`. |
 | GREEN | same callback test command as RED (`build/tests`) | 0 | `test-8-lock-restored-GREEN.log`. |
-| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port` | 0 | All eight rows PASS, including complexity and file-length (no new item in touched files); `gate-12-feature-check-final.log`. |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port` | 0 | All eight rows PASS, including complexity and file-length (no new item in touched files); `gate-14-feature-check-final.log`. |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port new-p9-149-port` | 0 | Commits, clean tree, report, test registration, and gates PASS; the five prompts are answered in this section. `submit-13-final.log`. |
 
 The product `fix.patch` here contains only the two 24-bit divisor restorations, so reversing
 that patch cannot undo the already-committed callback fix. For a meaningful RED comparison,
@@ -61,7 +62,8 @@ git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-por
 git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/fix.patch # EXIT=0
 cmake --build build --target zene gigplayer PluginPortsMigrationTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/build-7-restored-green.log 2>&1 # EXIT=0
 QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/test-8-lock-restored-GREEN.log 2>&1 # EXIT=0
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/gate-12-feature-check-final.log 2>&1 # EXIT=0
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/gate-14-feature-check-final.log 2>&1 # EXIT=0
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port new-p9-149-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/submit-13-final.log 2>&1 # EXIT=0
 ```
 
 ## Self-check
