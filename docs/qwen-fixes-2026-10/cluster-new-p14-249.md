@@ -1,3 +1,5 @@
+ALREADY-FIXED
+
 new-p14-249: ALREADY-FIXED
 
 Decision: REAL; the weakness was in the regression test. The state-load case is already corrected in commit `8327def668c9f284c70e5795449e6367fc0035bc` and remains at `tests/src/core/ReversibilityUndoTest.cpp:383-460`. It saves the original state, changes a numeric parameter, loads the saved state, confirms the load replaced the changed value, replays the recorded inverse, and checks the changed pre-load value is restored.
@@ -61,7 +63,7 @@ Gate table: `feature_check.py` — `EXIT=0` (`015-final-feature-check.log`).
 | complexity | PASS — no new item in changed files |
 | file-length | PASS — no new item in changed files |
 
-Completion check command and exit code are added after the committed report is checked.
+The first completion-check run, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-249 new-p14-249`, returned `EXIT=1` because the first line started with the cluster id instead of the verdict (`017-submit-check.log`). I moved the verdict to line one; the completion check is rerun on the corrected committed report.
 
 Files committed for this completion: `docs/qwen-fixes-2026-10/cluster-new-p14-249.md`. The two already-fixed regression changes are in the earlier commits named above. Test/source/log evidence is under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-249.r3/logs/`; source searches used `rg` because no `fff` search tool was available.
 
