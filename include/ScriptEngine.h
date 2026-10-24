@@ -221,6 +221,20 @@ public:
 	//! Producer side. Returns false when the queue is full (command dropped).
 	bool push(const ScriptCommand& command);
 
+	/*! Producer side, for the TWO commands one change needs: its undo
+	 *  checkpoint and its value write.
+	 *
+	 *  The pair is all-or-nothing. A queue with room for the checkpoint but
+	 *  not for the write would take the checkpoint and drop the write, and
+	 *  the change would leave an empty undo step behind - one that restores
+	 *  nothing. Both slots are reserved before either command is queued, so
+	 *  the change is either wholly queued or wholly refused.
+	 *
+	 *  \return false when the pair did not fit: both commands are dropped and
+	 *  counted, as two dropped commands are.
+	 */
+	bool push(const ScriptCommand& first, const ScriptCommand& second);
+
 	//! Consumer side: hands at most \a max commands to \a fn. Returns count.
 	std::size_t drain(const std::function<void(const ScriptCommand&)>& fn,
 				std::size_t max = ScriptCommandQueueCapacity);
@@ -385,7 +399,24 @@ public:
 	static bool isCompatibleVersion(const QString& version, QString* reason = nullptr);
 
 	// --- used by the binding layer, which runs on the worker thread ---
-	void enqueue(const ScriptCommand& command);
+	/*! Queue \a command for the apply side.
+	 *
+	 *  \return false when the bounded queue was full and the command was
+	 *  DROPPED (spec section 4: the producer is never blocked, and the drop
+	 *  is counted). The caller owns the refusal - only it knows what the
+	 *  command was for, so only it can tell the script what was lost. The
+	 *  count is unchanged either way (droppedCommandCount()).
+	 */
+	bool enqueue(const ScriptCommand& command);
+
+	/*! Queue a checkpoint and a write as ONE reservation: both are queued, or
+	 *  neither is.
+	 *
+	 *  \return false when the queue had no room for BOTH: the change is
+	 *  refused whole, so it never leaves a checkpoint behind without its
+	 *  write (an empty undo step).
+	 */
+	bool enqueue(const ScriptCommand& first, const ScriptCommand& second);
 	//! Apply pending commands synchronously so reads see a consistent state.
 	void flushCommandsForRead();
 	void logMessage(const QString& message);

@@ -2538,6 +2538,12 @@ tests/src/core/ScriptCommandBridgeTest.cpp
 tests/src/core/ScriptDawBindingTest.cpp
 tests/src/core/ScriptDawEffectsTest.cpp
 tests/src/core/ScriptDawModelRegistrationTest.cpp
+# cluster new-p14-285 (round 2): the two-command reservation regression - a
+# model edit's checkpoint and write must be reserved as a whole.
+tests/src/core/ScriptDawPairReservationTest.cpp
+# cluster new-p14-285: the DAW-control write half's refusal regression - a full
+# script command queue must refuse an edit and say so, not drop it in silence.
+tests/src/core/ScriptDawQueueFullTest.cpp
 tests/src/core/ScriptImportTest.cpp
 tests/src/core/SessionCommandArgsTest.cpp
 tests/src/core/ScriptDawRemovalUndoTest.cpp

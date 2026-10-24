@@ -712,9 +712,15 @@ QString ScriptEngine::lastError() const
 }
 
 
-void ScriptEngine::enqueue(const ScriptCommand& command)
+bool ScriptEngine::enqueue(const ScriptCommand& command)
 {
-	m_commands.push(command);
+	return m_commands.push(command);
+}
+
+
+bool ScriptEngine::enqueue(const ScriptCommand& first, const ScriptCommand& second)
+{
+	return m_commands.push(first, second);
 }
 
 
