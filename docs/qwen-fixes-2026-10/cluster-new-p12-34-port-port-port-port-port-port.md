@@ -22,6 +22,7 @@ The handler now captures the prior template and, when DataFile will replace it, 
 | Rebuild related targets; worktree root | `cmake --build build --target zene ControlProjectTemplateTest ControlProjectArchiveTest ControlCommandsSaveVersionTest` (log: `build-18.log`) | 0 |
 | Related CTest family; `build/tests` | `ctest -R 'ControlProject|ControlCommandsSaveVersion' --output-on-failure` (log: `test-15.log`) | 0, 3/3 tests |
 | Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-34-port-port-port-port-port-port` (log: `gate-4.log`) | 0, all PASS |
+| Post-commit completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p12-34-port-port-port-port-port-port new-p12-34-port-port-port-port-port-port` (log: `gate-submit-1.log`) | 0, PASS - submit |
 
 The source manifest was regenerated using the recipe in `tests/all-sources.txt`; this registers the new C++ test in the whole-tree scope and removes the 1,148 stale vendored sfizz entries that the recipe explicitly excludes. No gate threshold or baseline changed.
 
