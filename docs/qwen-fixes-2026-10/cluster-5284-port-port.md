@@ -56,9 +56,11 @@ Exit 0; all eight rows passed:
 
 The completion check will be run after committing this report.
 
-## Registration and self-check
+## Registration
 
 No new product or test source file was added. The regression remains in the registered tests/src/core/AudioResamplerRatioTest.cpp. This new report is registered in tests/fork-sources.txt; inherited changes are recorded in tests/upstream-modifications.txt; Sample::play() is recorded in tests/rt-safety-scope.txt.
+
+## Self-check
 
 - Realtime: Sample::play() uses its existing resampler and does not change converter mode. Retained-state prepare/discard work runs during control-side propagation; adoption occurs under the render change guard.
 - Undo and commands: export.set_src_quality adds one undo step only after successful propagation. export.get_settings reads settings; export.preset_add, export.preset_apply, export.preset_list and export.preset_remove operate on presets; export.set_dither and export.set_loudness_report touch separate settings. These siblings do not change live SRC quality. The CLI and ProjectRenderer handle failed propagation.
