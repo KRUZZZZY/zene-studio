@@ -74,6 +74,15 @@ What it drives, in order:
                                            model-store verbs are `not_mutating`,
                                            so a separation leaves NO project
                                            transaction;
+ 9b. `quality` (Q050-062.1)              `stem.get_state` lists fast / standard /
+                                           high; jobs started with each (and with
+                                           none: standard, the legacy overlap)
+                                           report the effective `quality`,
+                                           `overlap`, `hop_frames` in the start
+                                           reply and `stem.job_status`; an
+                                           unknown name is refused typed; the CLI
+                                           runs 6 / 9 / 17 segments at fast /
+                                           standard / high (stem_quality_lib.py);
  10. `stem.tracks_create`                  the USER-FACING half: the four stems
                                            become four SampleTracks in one
                                            command - the SAME one the GUI's
@@ -103,6 +112,7 @@ from stem_commands_lib import (CHUNK_DELAY_MS, CLI_PATH, SAMPLE_RATE, SOURCE_SEC
                              check_tracks_create, check_transactions, check_windows_absolute_sources,
                              job_state, onnxruntime_site_dir, poll_until, python_with_onnxruntime,
                              start_job, write_source_wav)
+from stem_quality_lib import check_quality
 
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
@@ -148,6 +158,11 @@ def run_checks(session, instance, recorder, outdir):
         if completed:
             check_result(session, recorder, job_id, os.path.join(outdir, "stems"), frames)
     check_cancel(session, recorder, source, os.path.join(outdir, "cancelled"))
+    # Q050-062.1: the quality setting, over the socket and through the CLI.
+    cli_env = dict(os.environ)
+    if instance.extra_env.get("PYTHONPATH"):
+        cli_env["PYTHONPATH"] = instance.extra_env["PYTHONPATH"]
+    check_quality(session, recorder, outdir, instance.extra_env["LMMS_STEM_PYTHON"], cli_env)
     check_model_store(session, recorder, instance.extra_env["LMMS_STEM_MODEL_DIR"])
     check_transactions(session, recorder)
     # The user-facing half: the GUI action and the agent surface share

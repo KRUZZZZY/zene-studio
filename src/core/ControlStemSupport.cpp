@@ -115,6 +115,8 @@ struct JobRecord
 	int sampleRate = StemModelSampleRate;
 	int frames = 0;
 	int segmentFrames = HTDemucsSegmentFrames;
+	//! Q050-062.1: the quality the job was submitted at (the legacy one when omitted).
+	StemQuality quality = DefaultStemQuality;
 	qint64 submittedMs = 0;
 };
 
@@ -195,6 +197,10 @@ public:
 		QJsonArray order;
 		for (const QString& name : stemOrder()) { order.append(name); }
 		out.insert(QStringLiteral("stem_order"), order);
+		QJsonArray qualities;
+		for (const QString& name : stemQualityNames()) { qualities.append(name); }
+		out.insert(QStringLiteral("qualities"), qualities);
+		out.insert(QStringLiteral("default_quality"), QString::fromLatin1(stemQualityName(DefaultStemQuality)));
 		out.insert(QStringLiteral("jobs"), jobCounts());
 		out.insert(QStringLiteral("fetch_on_first_use"), fetchable(nullptr));
 		return out;
@@ -202,6 +208,7 @@ public:
 
 	bool start(const QString& source,
 		int segmentFrames,
+		StemQuality quality,
 		int* jobId,
 		QJsonObject* job,
 		QString* error)
@@ -243,9 +250,10 @@ public:
 		record.sampleRate = StemModelSampleRate;
 		record.frames = static_cast<int>(mix->size());
 		record.segmentFrames = segmentFrames > 0 ? segmentFrames : HTDemucsSegmentFrames;
+		record.quality = quality;
 		record.submittedMs = QDateTime::currentMSecsSinceEpoch();
 
-		const int id = m_manager.submit(std::move(mix), record.sampleRate, record.segmentFrames);
+		const int id = m_manager.submit(std::move(mix), record.sampleRate, record.segmentFrames, record.quality);
 		if (id < 0)
 		{
 			*error = QStringLiteral("the stem engine refused the job");
@@ -465,6 +473,11 @@ private:
 		out.insert(QStringLiteral("frames"), record.frames);
 		out.insert(QStringLiteral("seconds"), static_cast<double>(record.frames) / record.sampleRate);
 		out.insert(QStringLiteral("segment_frames"), record.segmentFrames);
+		// Q050-062.1: the setting the backend was handed, and the overlap and hop
+		// it derives from it (the one formula every backend uses, StemTypes.h).
+		out.insert(QStringLiteral("quality"), QString::fromLatin1(stemQualityName(record.quality)));
+		out.insert(QStringLiteral("overlap"), stemOverlapFraction(record.quality));
+		out.insert(QStringLiteral("hop_frames"), stemHopFrames(record.segmentFrames, record.quality));
 		// The SURFACE's clock, named as such: the engine keeps its own elapsed
 		// time on the job and publishes none of it through an accessor, so this
 		// is the wall time since submit and never a claim about inference time.
@@ -548,11 +561,35 @@ QJsonObject stemState()
 
 bool stemStartJob(const QString& source,
 	int segmentFrames,
+	StemQuality quality,
 	int* jobId,
 	QJsonObject* job,
 	QString* error)
 {
-	return surface()->start(source, segmentFrames, jobId, job, error);
+	return surface()->start(source, segmentFrames, quality, jobId, job, error);
+}
+
+QStringList stemQualityNames()
+{
+	QStringList names;
+	for (int q = 0; q < NumStemQualities; ++q)
+	{
+		names << QString::fromLatin1(stemQualityName(static_cast<StemQuality>(q)));
+	}
+	return names;
+}
+
+bool stemQualityFromName(const QString& name, StemQuality* quality)
+{
+	for (int q = 0; q < NumStemQualities; ++q)
+	{
+		if (name == QLatin1String(stemQualityName(static_cast<StemQuality>(q))))
+		{
+			*quality = static_cast<StemQuality>(q);
+			return true;
+		}
+	}
+	return false;
 }
 
 bool stemHasJob(int jobId)

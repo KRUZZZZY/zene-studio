@@ -2671,6 +2671,8 @@ tests/src/tracks/SampleClipWindowTest.cpp
 # cluster new-p10-116: the anchored-name regression for favourite effects in the picker.
 tests/src/gui/EffectSelectDialogFilterTest.cpp
 tests/stem_commands_lib.py
+# cluster Q050-062.1 (2026-10): the stem-separation quality checks control-stem-commands.py runs.
+tests/stem_quality_lib.py
 # cluster Q050-148 (2026-10): the docs regression test the rework asked for - it checks the
 # warp docs keep stating the three warp.stretch modes, the per-algorithm caveats and the
 # runnable reviewer example, and rejects the old "pitch-preserving stretch is not built"
