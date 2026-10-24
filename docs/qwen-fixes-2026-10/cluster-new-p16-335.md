@@ -1,3 +1,5 @@
+FIXED
+
 new-p16-335: FIXED
 
 Evidence: REAL residual issue. The branch already checked the project before `file.readAll()` and the host checked before `toBase64()`, but both built frame metadata first and narrowed the `bytes` field to `int`. `src/core/CollabSessionSync.cpp:181-193` now rejects raw files at the line cap before header serialization and keeps `fileSize` as `qint64`; `src/core/CollabHost.cpp:373-383` applies the matching guard and keeps `project.size()` wide. The regression is `CollabTransportTest::snapshotSizesAreCheckedBeforeHeaderSerialization`.
@@ -45,3 +47,11 @@ Affected family: `ctest -R Collab --output-on-failure` (cwd `build/tests`; EXIT=
 Gates: final `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p16-335` EXIT=0, all eight rows PASS (see the gate table above).
 
 Files committed for new-p10-8: `src/core/CollabSessionSync.cpp`, `tests/src/core/CollabTransportTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+
+## Self-check
+
+- Regression proof: each source invariant regression failed before its product change and in its own reverse-patch run, then passed after restoration. `snapshotSizesAreCheckedBeforeHeaderSerialization`: RED/reverse EXIT=8, GREEN/restored EXIT=0. `snapshotGraceDoesNotConsumeAnUntrackedEdit`: RED/reverse EXIT=8, GREEN/restored EXIT=0. `snapshotReadFailuresPreserveFileReason`: RED/reverse EXIT=8, GREEN/restored EXIT=0. Exact commands and assertions are recorded in each cluster section above.
+- Determinism: all three regressions inspect the relevant source function and assert the guard/update/error-check ordering. They use no clock, sleeps, timer races, or injected timestamps; file paths are supplied by the test's existing compile-time source-path definitions.
+- Cause and sibling coverage: snapshot limits and byte counts were checked in both `CollabSession::writeSnapshot` and `CollabHost::snapshotFrame`; `CollabClient` consumes only frames returned by the host, so no second encoder path exists. The grace fix is at `trackUntrackedEdit`, called by `pollJournal`. The read failure handling is at the only saved-file read in `writeSnapshot`; its host provider remains `CollabSession::host`'s `setSnapshotProvider` lambda.
+- Collateral: the raw limit applies only to collaboration snapshot framing, where even an unencoded file at the 64 MiB wire-line cap cannot fit. Normal project save/open code and project formats are unchanged. Failed or short snapshot reads now refuse sharing rather than forwarding empty or partial bytes.
+- Not-real verdict item: not applicable; all three clusters are FIXED, with no ALREADY-FIXED or FALSE-POSITIVE decision.
