@@ -550,6 +550,28 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!channel(3)->color().has_value());  // one undo reaches the first colouring
 	}
+
+	//! MX-172: setting the position and a channel's side in one command is one undoable edit.
+	void settingCrossfaderPositionAndSideUsesOneUndoStep()
+	{
+		MixerOptions& options = MixerOptions::instance();
+		MixerChannel* selected = channel(4);
+		options.setCrossfader(0.25f);
+		selected->m_crossfadeSideModel.setValue(2);
+
+		QVERIFY(run(QStringLiteral("mixer.crossfader"), {{QStringLiteral("position"), -0.5},
+			{QStringLiteral("channel"), ch(4)}, {QStringLiteral("side"), QStringLiteral("A")}}).ok);
+		QCOMPARE(options.crossfader(), -0.5f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 1);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(options.crossfader(), 0.25f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 2);
+
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(options.crossfader(), -0.5f);
+		QCOMPARE(selected->m_crossfadeSideModel.value(), 1);
+	}
 };
 
 QTEST_MAIN(MixerToolsTest)
