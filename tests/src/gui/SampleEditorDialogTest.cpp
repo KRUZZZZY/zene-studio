@@ -179,6 +179,12 @@ private slots:
 		QVERIFY(Editor::lastPlayedEditor() == nullptr);
 	}
 
+	void editorOwnsOnlyItsTransportToolbar()
+	{
+		TestEditor editor;
+		QCOMPARE(editor.findChildren<DropToolBar*>(QString(), Qt::FindDirectChildrenOnly).size(), 1);
+	}
+
 	void graphClickAtFivePixelHeightKeepsSamplesFinite()
 	{
 		Graph graph(nullptr, Graph::Style::Linear, 16, 5);
