@@ -32,10 +32,12 @@ Evidence: `forgetDestroyedAbSlots` erases the live record when an effect is dest
 | `DeviceAbUndoTest` full binary | 7 passed, 0 failed, 0 skipped; exit 0 (`logs/034-test-final-full-device-ab.log`) |
 | `DeviceCopyTest` full binary | 16 passed, 0 failed, 0 skipped; exit 0 (`logs/043-test-devicecopy-detail-final.log`) |
 | A/B, device copy, and structural removal ctest family | 5/5 passed; exit 0 (`logs/049-test-after-complexity-helper.log`) |
-| `feature_check.py` after the final evidence update | all eight gates PASS; exit 0 (`logs/051-feature-check-final-evidence.log`) |
-| `submit_check.py` | first run found `pluginAb` complexity 11; comparison extracted to `sameAbSlots`, final run pending |
+| `feature_check.py` final report run | all eight gates PASS; exit 0 (`logs/054-feature-check-final-report.log`) |
+| `submit_check.py` after the complexity fix | PASS; exit 0 (`logs/053-submit-check-after-complexity-fix.log`) |
 
 The first feature gate run failed because the train snapshot had reintroduced 1,148 vendored `plugins/SfzPlayer/sfizz/` paths excluded by `tests/all-sources.txt`'s published recipe. I re-derived that manifest with the recipe; the final gate run passed `fork-sources` and `all-sources-reproduce`. The regeneration output is `logs/036-all-sources-derived.txt`.
+
+The first post-commit submit check found `pluginAb` at CCN 11. I extracted the slot comparison into `sameAbSlots`; the subsequent feature and submit checks passed.
 
 The `DeviceAbUndoTest` target now depends on the amplifier module so its A/B regressions execute instead of skipping when the target is built. The initial no-module attempt was a skip and is not counted as regression evidence (`logs/002-test-red-noop.log`, `logs/003-test-noop-detail.log`).
 
@@ -47,6 +49,7 @@ The `DeviceAbUndoTest` target now depends on the amplifier module so its A/B reg
 - Sibling command audit from the checker: `chain.apply` (ControlCommandsChainEdit.cpp) restores a chain XML checkpoint; `chain.bypass_all` / `chain.clean` (ControlCommandsMixerTools.cpp) change bypass state or use `removeDevicesRecorded`; `chain.copy` uses the independent copy/replacement path; `chain.get_state`, `chain.list`, `chain.save`, `chain.remove`, and `chain.rename` operate on preset files; `chain.receive` is routing setup in ControlCommandsW3Engine.cpp. None calls the `pluginAb` store branch; the removal snapshot change is confined to callers of `journalRemovalDocument`. No command schema or registration changed. The existing `DeviceCopyTest` exercised `chain.copy` and `chain.clean` with 16 passed, 0 skipped.
 - Realtime and saved data: the new capture/restore helpers run on the command/undo path; restoration occurs outside `requestChangesGuard`. No render code, project serialization format, or saved project data changed. A/B slots remain session state.
 - Portability: the configured Linux C++20 / Qt build passed. The change uses standard `shared_ptr`, `QString`, `QChar`, and `std::vector` APIs and adds no platform-specific code; MSVC and macOS builds were not run in this worktree.
+- Gate follow-through: the first submit check reported the complexity item above; after extracting `sameAbSlots`, `feature_check.py` passed (`logs/052-feature-check-pre-followup-commit.log`) and `submit_check.py` passed (`logs/053-submit-check-after-complexity-fix.log`).
 
 ## Files committed
 
