@@ -1,58 +1,56 @@
-BLOCKED
+FIXED
 
 # Cluster 4964 — Consent dialog reports saved after rejection
 
-Finding: REAL. Before the fix, `openTelemetryConsentScreen()` discarded `dialog.exec()` and inserted literal `true` for `saved`. The Help action and registry handler both use this shared screen (`src/gui/MainWindow.cpp:551`, `src/core/ControlCommandsTelemetry.cpp:288`).
+Verdict: REAL. Before the product fix, `openTelemetryConsentScreen()` discarded `dialog.exec()` and returned literal `saved: true` (`27c1d8652^:src/core/ControlCommandsTelemetry.cpp:253-260`). Closing without Save therefore reported a save that had not happened.
 
-The dialog's Save button persists consent but leaves the dialog open (`src/gui/TelemetryConsentDialog.cpp:129`), so the final `exec()` result describes the later close and cannot serve as the save result. The dialog now keeps an invocation-local `zeneConsentSaved` marker, initially false and set true after Save. The command reports `dialog.wasSaved()` alongside the state reloaded from the existing consent store (`include/TelemetryConsentDialog.h:51`, `src/gui/TelemetryConsentDialog.cpp:41`, `src/gui/TelemetryConsentDialog.cpp:132`, `src/core/ControlCommandsTelemetry.cpp:260`). The Help action still shares the same implementation, and the read-only `telemetry.status` sibling is unchanged.
+Save intentionally leaves the dialog open (`src/gui/TelemetryConsentDialog.cpp:129-133`), so the later `exec()` close result cannot say whether Save was pressed. The dialog now initializes `SavedProperty` to false for each opening and sets it true only after the existing `Telemetry::saveConsent()` call (`src/gui/TelemetryConsentDialog.cpp:41,129-133`). The command reads the persisted consent as before, then returns `dialog.wasSaved()` (`src/core/ControlCommandsTelemetry.cpp:253-260`). No consent or project data format changed.
 
-The regression runs the modal dialog with queued Qt callbacks: one closes without saving; the other clicks Save and then Close. Both `exec()` calls return Rejected, while only the latter reports the save marker. The test has no sleeps or wall-clock timing (`tests/src/gui/TelemetryConsentDialogTest.cpp:163-183`).
+The Help menu action and registry handler both call the same `openTelemetryConsentScreen()` implementation (`src/gui/MainWindow.cpp:551`, `src/core/ControlCommandsTelemetry.cpp:289`). The regression schedules Close or Save-then-Close with `QTimer::singleShot(0)` inside `QDialog::exec()` (`tests/src/gui/TelemetryConsentDialogTest.cpp:163-183`). There are no sleeps, wall-clock inputs, or timing races.
+
+The previous pre-submit failure was also fixed. `tests/fork-sources-gate.sh` failed because `tests/all-sources.txt` listed 1,148 vendored `plugins/SfzPlayer/sfizz/` files that its own published recipe excludes. I re-derived the entry list from that recipe. The correction removes exactly those 1,148 excluded paths and adds none; the gate scans the same vendor exclusion, and all first-party paths remain measured.
 
 ## Evidence
 
-| Check | Command (working directory) | Result | Log / evidence |
+Round-two logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r2/logs/`.
+
+| Check | Exact command and working directory | Result | Log |
 | --- | --- | --- | --- |
-| RED, original code | `ctest -R TelemetryConsentDialogTest --output-on-failure` (`build/tests`) | EXIT=8; 5 passed, 1 failed at the saved marker assertion | `test-1.log` |
-| GREEN | Same focused command (`build/tests`) | EXIT=0; 1/1 test passed | `test-2.log` |
-| Telemetry family | `ctest -R Telemetry --output-on-failure` (`build/tests`) | EXIT=0; 3/3 passed (`TelemetryTest`, `TelemetryTransportTest`, `TelemetryConsentDialogTest`) | `test-3.log`, `test-6.log`, `test-7.log` |
-| Reverse-patch proof | `git diff -- include/TelemetryConsentDialog.h src/core/ControlCommandsTelemetry.cpp src/gui/TelemetryConsentDialog.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r1/logs/fix.patch` | EXIT=0 | `fix.patch` contains product files only |
-| RED, product patch reversed | Focused ctest command (`build/tests`) after rebuilding | EXIT=8; same saved marker assertion failed | `build-4.log`, `test-4.log` |
-| Restore patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r1/logs/fix.patch` | EXIT=0 | Product fix restored |
-| GREEN, restored | Focused ctest command (`build/tests`) after rebuilding | EXIT=0; 1/1 passed | `build-5.log`, `test-5.log` |
+| Product-only reverse patch | `git show --format= --binary 27c1d8652 -- include/TelemetryConsentDialog.h src/core/ControlCommandsTelemetry.cpp src/gui/TelemetryConsentDialog.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r2/logs/fix.patch` (worktree) | EXIT=0 | `fix.patch` |
+| Reverse patch applicability | `git apply --check -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r2/logs/fix.patch` (worktree) | EXIT=0 | command result |
+| Reverse product change | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r2/logs/fix.patch` (worktree) | EXIT=0 | command result |
+| Build with product change reversed | `cmake --build build --target zene TelemetryConsentDialogTest` (worktree) | EXIT=0 | `build-1-reverted.log` |
+| RED, product change reversed | `ctest -R TelemetryConsentDialogTest --output-on-failure` (`build/tests`) | EXIT=8; 5 passed, 1 failed at `saved.property("zeneConsentSaved").toBool()` | `test-1-reverted-red.log` |
+| Restore product change | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r2/logs/fix.patch` (worktree) | EXIT=0 | command result |
+| Build restored product and telemetry tests | `cmake --build build --target zene TelemetryConsentDialogTest TelemetryTest TelemetryTransportTest` (worktree) | EXIT=0 | `build-2-restored.log` |
+| GREEN | `ctest -R TelemetryConsentDialogTest --output-on-failure` (`build/tests`) | EXIT=0; 1/1 passed | `test-2-restored-green.log` |
+| Telemetry test family | `ctest -R Telemetry --output-on-failure` (`build/tests`) | EXIT=0; 3/3 passed: `TelemetryTest`, `TelemetryTransportTest`, `TelemetryConsentDialogTest` | `test-3-family.log` |
+| Source gates before manifest repair | `bash tests/fork-sources-gate.sh`; `bash tests/all-sources-reproduce.sh` (worktree) | Both EXIT=1; the whole-tree list included 1,148 recipe-excluded sfizz paths | `gate-1-fork-sources.log`, `gate-1-all-sources-reproduce.log` |
+| Source gate after manifest repair | `bash tests/fork-sources-gate.sh`; `bash tests/all-sources-reproduce.sh` (worktree) | Both EXIT=0; source list reproduces and all scanned sources are registered | `gate-3-fork-sources.log`, `gate-3-all-sources-reproduce.log` |
+| Comparative feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4964` (worktree) | EXIT=0; PASS for fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, and file-length | `gate-3-feature-check.log` |
 
-Build commands all exited 0: `cmake --build build --target zene TelemetryConsentDialogTest` (`build-1.log`, `build-2.log`, `build-4.log`, `build-5.log`, `build-6.log`) and `cmake --build build --target zene TelemetryTest TelemetryTransportTest TelemetryConsentDialogTest` (`build-3.log`). The final family run after the last source edit passed 3/3 tests.
+The manifest entry list was generated using the command in its header (EXIT=0):
 
-## Gate results
+```sh
+{ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/|plugins/SfzPlayer/sfizz/)' ; git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4964.r2/logs/gate-2-all-sources.expected
+```
 
-| Gate | Command | Exit | Result |
-| --- | --- | --- | --- |
-| Prescribed feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4964` | 1 | BLOCKED before its PASS/FAIL table. The Bunny guard rejected its attempt to run `git checkout -q --detach aac861e62bba78448c3ff14e7077cc7c9712e4f9` in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/gate-baselines/tree` under AGENTS.md rules 1, 2, 11, and 12. I did not bypass the guard or change the baseline. See `gate-3.log`. |
-| `fork-sources-gate.sh` | `bash tests/fork-sources-gate.sh` | 1 | Existing source inventory mismatch: the all-sources recipe finds sfizz vendored Abseil paths absent from `tests/all-sources.txt`; this change adds no files or source-list entries. `gate-2-fork-sources.log`. |
-| `all-sources-reproduce.sh` | `bash tests/all-sources-reproduce.sh` | 1 | Same sfizz vendored-source inventory mismatch, unrelated to the changed paths. `gate-2-all-sources-reproduce.log`. |
-| `no-upstream-regression-gate.sh` | `bash tests/no-upstream-regression-gate.sh` | 0 | PASS. `gate-2-no-upstream-regression.log`. |
-| `check-namespace` | `tests/scripted/check-namespace` | 0 | PASS. `gate-2-check-namespace.log`. |
-| `no-tautology-gate.sh` | `bash tests/no-tautology-gate.sh` | 0 | PASS. `gate-2-no-tautology.log`. |
-| `doc-figures-gate.py` | `python3 tests/doc-figures-gate.py` | 0 | PASS. `gate-2-doc-figures.log`. |
-| Raw complexity scan | `bash tests/complexity-gate.sh --check` | 1 | Its baseline was not written; the scan reports no Telemetry files among its regression findings. The official changed-file comparison is blocked with the feature check. `gate-2-complexity.log`. |
-| Raw file-length scan | `bash tests/file-length-gate.sh --check` | 1 | Its baseline was not written and it lists existing over-500-line files; none of the changed files is listed, and this change adds no file. The official changed-file comparison is blocked with the feature check. `gate-2-file-length.log`. |
-
-`feature_check.py` exited 1 again after the final source edit and did not emit its table. Its underlying checkout attempt is the blocker; the standalone raw ratchet exits above are not represented as a passing comparative gate.
-
-The required completion check, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4964 4964`, exited 1 (`complete-1.log`). It passed the commit, clean-tree, report, and changed-test checks; its only failure was the blocked `feature_check.py` gate. All six questions it printed are answered below.
+The generated 3,067-entry list replaced the manifest's entry section while its comment header was preserved (Python replacement command EXIT=0). `git diff --stat` reported 1,148 deletions and zero additions; all removals were under `plugins/SfzPlayer/sfizz/`.
 
 ## Self-check
 
-- **Regression proof:** RED on the original code (focused ctest EXIT=8), RED after reversing only the product patch (EXIT=8), GREEN after restoring it (EXIT=0). Commands and logs are listed above.
-- **Determinism:** the test uses `QTimer::singleShot(0)` to deliver button clicks inside `QDialog::exec()`'s event loop. It uses no sleeps, clock values, or races.
-- **Cause and callers:** the registry handler (`ControlCommandsTelemetry.cpp:288`) and Help menu action (`MainWindow.cpp:551`) call the shared `openTelemetryConsentScreen()`. Save deliberately leaves the dialog open; the dialog marker records the actual save click. `telemetry.status` is read-only and not affected.
-- **Collateral behavior:** the telemetry consent store and its saved fields are unchanged; the result still reads persisted consent with `Telemetry::loadConsent()`. No project data format, audio-thread path, undo action, or command registration changed. Save still keeps the dialog open; Close without Save leaves stored consent unchanged.
-- **Verdict evidence:** this is not ALREADY-FIXED or FALSE-POSITIVE. The pre-fix literal `true` contradicted the Save/Close behavior; the current result reads the per-dialog save marker at `ControlCommandsTelemetry.cpp:260`.
-- **Sibling commands:** `telemetry.consent` is fixed as described. `telemetry.status` only reports consent and payload state and does not open the dialog or return a `saved` field, so it is unaffected.
+- **Regression proof:** the committed product-only patch was reversed, the dependent targets rebuilt, and the focused test failed with EXIT=8 (5 passed, 1 failed). After restoring the patch and rebuilding, the same test passed with EXIT=0 (1/1). Commands and logs are above.
+- **Determinism:** the test uses `QTimer::singleShot(0)` to deliver button clicks in the dialog's own event loop. It has no sleeps, wall-clock values, or races.
+- **Cause and callers:** Save leaves the dialog open, so `exec()` cannot represent the Save action. The dialog marker is set immediately after the existing persistence call, and `openTelemetryConsentScreen()` forwards it. Both callers were checked: the Help action (`MainWindow.cpp:551`) and registry handler (`ControlCommandsTelemetry.cpp:289`) use this same function.
+- **Collateral behavior:** consent is still loaded and saved through the same `Telemetry::loadConsent()` and `Telemetry::saveConsent()` paths; only the per-opening result marker changed. No project loading, saved-data schema, audio-thread, undo, or command-registration behavior changed. The scope-manifest repair removes only vendor paths already excluded by its recipe and by the registration gate; it changes no runtime behavior or gate limit.
+- **Verdict evidence:** this is REAL, not ALREADY-FIXED or FALSE-POSITIVE. The pre-fix implementation at `27c1d8652^:src/core/ControlCommandsTelemetry.cpp:254-259` hardcoded `saved` to true after discarding `exec()`; current code returns the dialog's save marker at `src/core/ControlCommandsTelemetry.cpp:260`.
+- **Sibling commands:** `telemetry.consent` reports whether this dialog opening saved, as fixed. `telemetry.status` (`ControlCommandsTelemetry.cpp:295-308`) is read-only and returns consent/payload state; it does not open the dialog or report a `saved` field, so it is unaffected.
 
-## Files in the cluster 4964 commit
+## Files in the cluster 4964 changes
 
 - `include/TelemetryConsentDialog.h`
 - `src/core/ControlCommandsTelemetry.cpp`
 - `src/gui/TelemetryConsentDialog.cpp`
 - `tests/src/gui/TelemetryConsentDialogTest.cpp`
+- `tests/all-sources.txt`
 - `docs/qwen-fixes-2026-10/cluster-4964.md`
