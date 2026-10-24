@@ -24,6 +24,7 @@
 
 #include "SharedMemory.h"
 
+#include <limits>
 #include <random>
 #include <stdexcept>
 #include <system_error>
@@ -68,6 +69,15 @@ auto arrayDataOffset(std::size_t alignment) noexcept -> std::size_t
 {
 	const auto elementAlignment = alignment > 0 ? alignment : std::size_t{1};
 	return (sizeof(Header) + elementAlignment - 1) / elementAlignment * elementAlignment;
+}
+
+auto checkedArrayAllocationSize(std::size_t dataSize, std::size_t dataOffset) -> std::size_t
+{
+	if (dataSize > std::numeric_limits<std::size_t>::max() - dataOffset)
+	{
+		throw std::length_error{"shared memory array allocation size overflows"};
+	}
+	return dataSize + dataOffset;
 }
 
 } // namespace
@@ -147,9 +157,8 @@ public:
 	{
 		if (isArray)
 		{
-			const auto offset = arrayDataOffset(alignment);
-			m_dataOffset = offset;
-			m_size += offset; // space for the header and alignment padding
+			m_dataOffset = arrayDataOffset(alignment);
+			m_size = checkedArrayAllocationSize(size, m_dataOffset); // space for the header and alignment padding
 			m_arraySize = size;
 		}
 
@@ -258,9 +267,10 @@ public:
 
 	SharedMemoryImpl(const std::string& key, std::size_t size, bool readOnly, bool isArray, std::size_t alignment = 1)
 	{
-		const auto [high, low] = isArray
-			? sizeToHighAndLow(size + arrayDataOffset(alignment))
-			: sizeToHighAndLow(size);
+		const auto allocationSize = isArray
+			? checkedArrayAllocationSize(size, arrayDataOffset(alignment))
+			: size;
+		const auto [high, low] = sizeToHighAndLow(allocationSize);
 		m_mapping.reset(CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, high, low, key.c_str()));
 		// This constructor is supposed to create a new shared memory object,
 		// but passing the name of an existing object causes CreateFileMappingA
