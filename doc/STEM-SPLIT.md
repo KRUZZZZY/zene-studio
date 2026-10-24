@@ -64,7 +64,10 @@ the setting existed, so a caller that omits it gets the legacy output bit for
 bit. The C++ backends call `stemHopFrames()`; the CLI's `--quality` uses the
 same table and integer formula, and its `info` line reports `quality`, `hop`
 and `chunks`. `stem.job_start` takes `quality` (omitted = `standard`) and every
-job object reports the effective `quality`, `overlap` and `hop_frames`.
+job object reports the effective `quality`, `overlap` and `hop_frames` (read
+from `StemJobManager::quality()`, not the surface's record of the request) and
+`inference_quality`: the setting the worker handed `separate()`, published just
+before the call (empty until then).
 `segment_frames` is NOT a quality control: it changes the model's context, and
 HTDemucs is trained at its own 343,980-frame segment.
 
