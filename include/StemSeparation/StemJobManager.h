@@ -81,6 +81,8 @@ public:
 		std::shared_ptr<const SampleBuffer> mix;
 		int sampleRate = StemModelSampleRate;
 		int segmentFrames = HTDemucsSegmentFrames;
+		//! Q050-062.1: the segment overlap the backend runs at; set once at submit.
+		StemQuality quality = DefaultStemQuality;
 		std::atomic<State> state{State::Queued};
 		std::atomic<float> progress{0.0f};
 		std::atomic<bool> cancelRequested{false};
@@ -120,9 +122,11 @@ public:
 
 	// Queues a job and returns its id immediately. The caller keeps ownership
 	// of the mix buffer through the shared_ptr. `mix` must not be null.
+	// `quality` is handed to the backend unchanged (StemTypes.h).
 	int submit(std::shared_ptr<const SampleBuffer> mix,
 		int sampleRate,
-		int segmentFrames = HTDemucsSegmentFrames);
+		int segmentFrames = HTDemucsSegmentFrames,
+		StemQuality quality = DefaultStemQuality);
 
 	void cancel(int jobId);
 	void cancelAll();

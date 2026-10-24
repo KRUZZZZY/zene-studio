@@ -59,9 +59,11 @@ public:
 	// mix: stereo source at sampleRate. On success `out` holds one buffer per
 	// stem, all at sampleRate and of the same length as `mix`. On cancellation
 	// `out` may hold partial stems (implementation defined, see each backend).
+	// `quality` sets the segment overlap (stemHopFrames(), StemTypes.h).
 	virtual Status separate(const SampleBuffer& mix,
 		int sampleRate,
 		int segmentFrames,
+		StemQuality quality,
 		const ProgressFn& progress,
 		StemSet& out,
 		QString& error) = 0;

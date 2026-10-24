@@ -239,6 +239,7 @@ QString OnnxRuntimeStemSeparator::backendName() const
 StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix,
 	int sampleRate,
 	int segmentFrames,
+	StemQuality quality,
 	const ProgressFn& progress,
 	StemSet& out,
 	QString& error)
@@ -289,7 +290,8 @@ StemSeparator::Status OnnxRuntimeStemSeparator::separate(const SampleBuffer& mix
 			outputNamesRaw.push_back(name.c_str());
 		}
 
-		const int hop = segment / 2;
+		// The quality's overlap (StemTypes.h); Standard is the legacy segment / 2.
+		const int hop = stemHopFrames(segment, quality);
 		const int padLeft = segment / 2;
 		const int paddedLength = frames + padLeft + segment;
 		const int chunkCount = (paddedLength + hop - 1) / hop;

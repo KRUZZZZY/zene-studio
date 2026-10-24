@@ -156,7 +156,8 @@ QString StemJobManager::backendName() const
 
 int StemJobManager::submit(std::shared_ptr<const SampleBuffer> mix,
 	int sampleRate,
-	int segmentFrames)
+	int segmentFrames,
+	StemQuality quality)
 {
 	if (!mix)
 	{
@@ -170,6 +171,7 @@ int StemJobManager::submit(std::shared_ptr<const SampleBuffer> mix,
 		job->mix = std::move(mix);
 		job->sampleRate = sampleRate;
 		job->segmentFrames = segmentFrames;
+		job->quality = quality;
 		m_state->jobs.insert(job->id, job);
 		m_state->queue.push_back(job);
 	}
@@ -516,7 +518,7 @@ void StemJobManager::runJob(const std::shared_ptr<SharedState>& state, const std
 
 	StemSet stems;
 	QString error;
-	const auto status = state->separator->separate(*job->mix, job->sampleRate, job->segmentFrames,
+	const auto status = state->separator->separate(*job->mix, job->sampleRate, job->segmentFrames, job->quality,
 		[state, job](float fraction)
 		{
 			if (job->cancelRequested.load())

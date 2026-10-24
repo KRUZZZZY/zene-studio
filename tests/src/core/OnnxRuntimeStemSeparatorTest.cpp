@@ -71,7 +71,7 @@ void expectOutputLayoutRefused(const QString& fixture)
 	OnnxRuntimeStemSeparator separator(QStringLiteral(LMMS_TEST_DATA_DIR) + QStringLiteral("/") + fixture);
 	StemSet stems;
 	QString error;
-	const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+	const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384, StemQuality::Standard,
 		[](float) { return true; }, stems, error);
 	QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
 	QVERIFY2(error.contains(QStringLiteral("float32 stereo block")), qPrintable(error));
@@ -95,7 +95,7 @@ private slots:
 		OnnxRuntimeStemSeparator separator(QStringLiteral("/nonexistent/model.onnx"));
 		StemSet stems;
 		QString error;
-		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384, StemQuality::Standard,
 			[](float) { return true; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
 		QVERIFY(!error.isEmpty());
@@ -115,7 +115,7 @@ private slots:
 		bool exceptionEscaped = false;
 		try
 		{
-			status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+			status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384, StemQuality::Standard,
 				[](float) { return true; }, stems, error);
 		}
 		catch (...)
@@ -160,7 +160,7 @@ private slots:
 		bool exceptionEscaped = false;
 		try
 		{
-			status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+			status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384, StemQuality::Standard,
 				[](float) { return true; }, stems, error);
 		}
 		catch (...)
@@ -179,7 +179,7 @@ private slots:
 			+ QStringLiteral("/stub-4stem-linear.onnx"));
 		StemSet stems;
 		QString error;
-		const auto status = separator.separate(*makeSineMix(1), 48000, 16384,
+		const auto status = separator.separate(*makeSineMix(1), 48000, 16384, StemQuality::Standard,
 			[](float) { return true; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
 		QVERIFY(error.contains(QStringLiteral("44100")));
@@ -194,7 +194,7 @@ private slots:
 		QString error;
 		int progressCalls = 0;
 		bool progressInRange = true;
-		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+		const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 			[&](float fraction) -> bool {
 				progressInRange = progressInRange && fraction >= 0.0f && fraction <= 1.0f;
 				++progressCalls;
@@ -224,6 +224,40 @@ private slots:
 		QVERIFY(maxError < 1.0e-4f);
 	}
 
+	/*! Q050-062.1: the quality sets how many overlapping segments the model runs. A one-second mix
+	 *  at a 16384-frame segment is padded to 44100 + 8192 + 16384 = 68676 frames; at a hop of
+	 *  12288 / 8192 / 4096 (25% / 50% / 75% overlap) that is 6 / 9 / 17 runs. separate() reports
+	 *  progress once before each run and once at the end, so the call count is runs + 1, and the
+	 *  stems still add up to the mix at every setting (the stub graph's gains sum to one). */
+	void testQualitySetsTheSegmentCount()
+	{
+		const struct { StemQuality quality; int runs; } cases[] = {
+			{StemQuality::Fast, 6}, {StemQuality::Standard, 9}, {StemQuality::High, 17},
+		};
+		const auto mix = makeSineMix(1);
+		for (const auto& c : cases)
+		{
+			OnnxRuntimeStemSeparator separator(QStringLiteral(LMMS_TEST_DATA_DIR)
+				+ QStringLiteral("/stub-4stem-linear.onnx"));
+			StemSet stems;
+			QString error;
+			int progressCalls = 0;
+			const auto status = separator.separate(*mix, StemModelSampleRate, 16384, c.quality,
+				[&](float) { ++progressCalls; return true; }, stems, error);
+			QVERIFY2(status == StemSeparator::Status::Success, qPrintable(error));
+			QVERIFY2(progressCalls == c.runs + 1, qPrintable(QStringLiteral("%1: %2 progress calls, expected %3")
+				.arg(QString::fromLatin1(stemQualityName(c.quality))).arg(progressCalls).arg(c.runs + 1)));
+			float maxError = 0.0f;
+			for (std::size_t i = 0; i < mix->size(); i += 97)
+			{
+				float sum = 0.0f;
+				for (int s = 0; s < NumStems; ++s) { sum += stems[static_cast<std::size_t>(s)]->data()[i].left(); }
+				maxError = std::max(maxError, std::abs(sum - mix->data()[i].left()));
+			}
+			QVERIFY(maxError < 1.0e-4f);
+		}
+	}
+
 	void testTransposedOutputsAreRefused()
 	{
 		// [1, T, 2] per stem: the element count is right, the channel axis is not.
@@ -243,7 +277,7 @@ private slots:
 		StemSet stems;
 		QString error;
 		int progressCalls = 0;
-		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384,
+		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 16384, StemQuality::Standard,
 			[&](float) { return ++progressCalls < 2; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Cancelled));
 	}
@@ -290,7 +324,7 @@ private slots:
 			+ QStringLiteral("/stub-4stem-linear.onnx"));
 		StemSet stems;
 		QString error;
-		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 1500000000,
+		const auto status = separator.separate(*makeSineMix(1), StemModelSampleRate, 1500000000, StemQuality::Standard,
 			[](float) { return true; }, stems, error);
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
 		QVERIFY(error.contains(QStringLiteral("too long")));

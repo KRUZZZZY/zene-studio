@@ -75,14 +75,19 @@ public:
 	{
 	}
 
+	//! Q050-062.1: where separate() records the quality the manager handed it.
+	void recordQualityInto(std::atomic<int>* sink) { m_qualitySink = sink; }
+
 	Status separate(const SampleBuffer& mix,
 		int sampleRate,
 		int segmentFrames,
+		StemQuality quality,
 		const ProgressFn& progress,
 		StemSet& out,
 		QString& error) override
 	{
 		Q_UNUSED(segmentFrames);
+		if (m_qualitySink != nullptr) { m_qualitySink->store(static_cast<int>(quality)); }
 		if (m_mode == Mode::Fail)
 		{
 			error = QStringLiteral("fake failure");
@@ -134,6 +139,7 @@ private:
 
 	Mode m_mode;
 	int m_steps;
+	std::atomic<int>* m_qualitySink = nullptr;
 };
 
 // Test double for a backend stuck inside one inference call: it blocks until
@@ -151,7 +157,7 @@ public:
 
 	~BlockingInferenceSeparator() override { m_destroyed.store(true); }
 
-	Status separate(const SampleBuffer&, int, int, const ProgressFn& progress,
+	Status separate(const SampleBuffer&, int, int, StemQuality, const ProgressFn& progress,
 		StemSet&, QString&) override
 	{
 		m_entered.store(true);
@@ -216,6 +222,53 @@ private slots:
 		// the fake writes stem s at 0.25*(s+1); the last stem must be 1.0
 		QCOMPARE(stems[3]->data()[0].left(), 1.0f);
 		QVERIFY(finishedSpy.last().at(1).toDouble() >= 0.0);
+	}
+
+	//! Q050-062.1: a job reaches its backend at the quality it was submitted at,
+	//! and a caller that names none gets the legacy Standard.
+	void testSubmitHandsTheQualityToTheBackend()
+	{
+		const struct { bool given; StemQuality quality; StemQuality expected; } cases[] = {
+			{false, StemQuality::Fast, StemQuality::Standard},
+			{true, StemQuality::Fast, StemQuality::Fast},
+			{true, StemQuality::Standard, StemQuality::Standard},
+			{true, StemQuality::High, StemQuality::High},
+		};
+		for (const auto& c : cases)
+		{
+			std::atomic<int> seen{-1};
+			StemJobManager manager;
+			auto separator = std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 2);
+			separator->recordQualityInto(&seen);
+			manager.setSeparator(std::move(separator));
+			QSignalSpy finishedSpy(&manager, &StemJobManager::jobFinished);
+			const int id = c.given ? manager.submit(makeMix(), StemModelSampleRate, 1024, c.quality)
+				: manager.submit(makeMix(), StemModelSampleRate, 1024);
+			QVERIFY(id > 0);
+			QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
+			QCOMPARE(seen.load(), static_cast<int>(c.expected));
+		}
+	}
+
+	//! Q050-062.1: the shared hop formula. Standard is the legacy segment / 2 for
+	//! every segment (odd ones too), the others overlap 25% / 75%, and no hop is 0.
+	void testQualityHopFormula()
+	{
+		for (const int segment : {2, 3, 7, 1024, 16384, HTDemucsSegmentFrames, 44100 * 600})
+		{
+			QCOMPARE(stemHopFrames(segment, StemQuality::Standard), segment / 2);
+			QVERIFY(stemHopFrames(segment, StemQuality::High) >= 1);
+			QVERIFY(stemHopFrames(segment, StemQuality::High) <= stemHopFrames(segment, StemQuality::Standard));
+			QVERIFY(stemHopFrames(segment, StemQuality::Fast) >= stemHopFrames(segment, StemQuality::Standard));
+		}
+		QCOMPARE(stemHopFrames(16384, StemQuality::Fast), 12288);
+		QCOMPARE(stemHopFrames(16384, StemQuality::High), 4096);
+		QCOMPARE(stemHopFrames(HTDemucsSegmentFrames, StemQuality::Fast), 257985);
+		QCOMPARE(stemHopFrames(HTDemucsSegmentFrames, StemQuality::High), 85995);
+		QCOMPARE(stemOverlapFraction(StemQuality::Fast), 0.25);
+		QCOMPARE(stemOverlapFraction(StemQuality::Standard), 0.5);
+		QCOMPARE(stemOverlapFraction(StemQuality::High), 0.75);
+		QCOMPARE(QString::fromLatin1(stemQualityName(DefaultStemQuality)), QStringLiteral("standard"));
 	}
 
 	void testProgressIsReportedDuringTheRun()
