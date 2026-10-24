@@ -221,6 +221,19 @@ def check_arbitrary_input_count_instance_a(session, recorder, shared, instance):
                    before.get("input_channel_capacity") == 2,
                    "input_channel_capacity=%r" % before.get("input_channel_capacity"))
 
+    before_plan = (session.result("record.input_get_state").get("configured") or {})
+    first_write = session.result("record.input_set", {"channels": 8})
+    first_after = session.result("record.input_get_state").get("configured") or {}
+    undone = session.result("control.undo")
+    restored = session.result("record.input_get_state").get("configured") or {}
+    recorder.check("one control.undo restores record.input_set's exact previous plan",
+                   first_write.get("channels") == 8 and first_after.get("channels") == 8
+                   and undone.get("undone") is True and restored == before_plan,
+                   "before=%r after=%r undo=%r restored=%r"
+                   % (before_plan, first_after, undone, restored))
+
+    # Keep the end-to-end next-start check below: undo the first write above,
+    # then write the same plan again for instance B to consume.
     raised = session.result("record.input_set", {"channels": 8})
     recorder.check("record.input_set accepts an eight-channel input count",
                    raised.get("channels") == 8 and raised.get("restart_required") is True,

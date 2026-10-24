@@ -116,6 +116,23 @@ def channel_ids(session):
             for entry in session.result("mixer.get_state").get("channels", [])]
 
 
+def solo_mute_snapshot(session):
+    """The full state vca.set_solo changes, read from its owning commands."""
+    groups = session.result("vca.list").get("groups", [])
+    channels = session.result("mixer.get_state").get("channels", [])
+    return {
+        "groups": {entry.get("id"): entry.get("soloed") for entry in groups},
+        "channels": {entry.get("id"): entry.get("muted") for entry in channels},
+    }
+
+
+def latest_transaction(session, command):
+    """The most recent recorded inverse for a command that may have run twice."""
+    matches = [entry for entry in session.result("control.transactions").get("transactions", [])
+               if entry.get("command") == command]
+    return matches[-1] if matches else {}
+
+
 def ensure_channels(session, recorder, wanted):
     """The group commands need channels to assign; a fresh instance has few."""
     count = session.result("mixer.get_state").get("count", 0)
@@ -231,6 +248,7 @@ def check_mute_and_solo(session, recorder, group):
                    member_gain(muted, member) == 0.0, "members=%r" % muted.get("members"))
     session.result("vca.set_mute", {"group": group, "muted": False})
 
+    before_solo = solo_mute_snapshot(session)
     soloed = session.result("vca.set_solo", {"group": group, "soloed": True})
     recorder.check("soloing a group reports the flag and the previous value",
                    soloed.get("soloed") is True and soloed.get("previous_soloed") is False,
@@ -240,9 +258,16 @@ def check_mute_and_solo(session, recorder, group):
              for entry in session.result("mixer.get_state").get("channels", [])}
     recorder.check("soloing the group unmutes its members and mutes the rest",
                    mutes.get(member) is False and mutes.get(other) is True, "mutes=%r" % mutes)
-    resumed = session.result("vca.set_solo", {"group": group, "soloed": False})
-    recorder.check("clearing the flag restores the pre-solo mute state",
-                   resumed.get("soloed") is False, "resumed=%s" % resumed)
+    record = latest_transaction(session, "vca.set_solo")
+    inverse = record.get("inverse") or {}
+    inverse_args = inverse.get("args") or {}
+    replayed = session.result(inverse.get("op", ""), inverse_args)
+    restored = solo_mute_snapshot(session)
+    recorder.check("replaying vca.set_solo's recorded inverse restores exact prior flags and channel mutes",
+                   inverse.get("op") == "vca.set_solo" and inverse_args.get("soloed") is False
+                   and replayed.get("soloed") is False and restored == before_solo,
+                   "before=%r inverse=%r replay=%r restored=%r"
+                   % (before_solo, inverse, replayed, restored))
 
 
 def build_locked_fixture(session, recorder):

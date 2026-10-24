@@ -158,9 +158,17 @@ def check_the_instance(binary, problems):
         expect_refused(session, {"out": os.path.join(tmp, "s.flac"), "format": "flac", "channels": "surround"},
                        "only WAV", problems)
         expect_refused(session, {"out": os.path.join(tmp, "bad.wav"), "channels": "9.1"}, "", problems)
-        session.ok("export.set_loudness_report", {"enabled": True})
+        before_loudness = session.ok("export.get_settings").get("loudness_report")
+        enabled_loudness = session.ok("export.set_loudness_report", {"enabled": True})
         expect_refused(session, {"out": os.path.join(tmp, "loud.wav"), "channels": "surround"}, "loudness", problems)
-        session.ok("export.set_loudness_report", {"enabled": False})
+        undo_loudness = session.ok("control.undo")
+        restored_loudness = session.ok("export.get_settings").get("loudness_report")
+        if (enabled_loudness.get("loudness_report") is not True
+                or undo_loudness.get("undone") is not True
+                or restored_loudness != before_loudness):
+            problems.add("one control.undo did not restore export.set_loudness_report's exact prior value: "
+                         "before=%r enabled=%r undo=%r restored=%r"
+                         % (before_loudness, enabled_loudness, undo_loudness, restored_loudness))
         expect_rendered(session, os.path.join(tmp, "surround.wav"), {"channels": "surround"},
                         (6, "5.1", 0xFFFE, 0x3F), problems)
         expect_rendered(session, os.path.join(tmp, "explicit-stereo.wav"), {"channels": "stereo"},

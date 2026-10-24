@@ -272,8 +272,20 @@ def check_load_round_trip(session, recorder, saved_path):
 
 def check_a_project_that_never_punched(session, recorder, outdir):
     """The additive rule: no region means no punch attributes in the file."""
+    session.result("transport.punch_set", {"start": PUNCH_START, "end": PUNCH_END})
+    before_clear = punch_state(session)
     cleared = session.result("transport.punch_clear")
     recorder.check("transport.punch_clear disarms and empties the region",
+                   cleared.get("punch_begin") == 0 and cleared.get("punch_end") == 0
+                   and cleared.get("punch_armed") is False,
+                   "state=%r" % cleared)
+    undone = session.result("control.undo")
+    restored = punch_state(session)
+    recorder.check("one control.undo restores transport.punch_clear's exact prior region",
+                   undone.get("undone") is True and restored == before_clear,
+                   "before=%r undo=%r restored=%r" % (before_clear, undone, restored))
+    cleared = session.result("transport.punch_clear")
+    recorder.check("the region is clear again before saving the never-punched project",
                    cleared.get("punch_begin") == 0 and cleared.get("punch_end") == 0
                    and cleared.get("punch_armed") is False,
                    "state=%r" % cleared)
