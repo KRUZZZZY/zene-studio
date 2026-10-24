@@ -59,7 +59,7 @@ run found the train-15 `tests/all-sources.txt` snapshot still contained 1,148 ve
 recipe excluding that tree, and reported CCN 11 in `drainMidiIntoEventList`. I re-derived only the manifest entry list
 from its published recipe and extracted the null check into the helper. The final gate run passes all eight rows.
 
-The commit contains these eight paths: `plugins/Vst3Effect/Vst3MidiEvent.cpp`,
+The integration commit contains these eight paths: `plugins/Vst3Effect/Vst3MidiEvent.cpp`,
 `plugins/Vst3Effect/Vst3MidiEvent.h`, `plugins/Vst3Effect/Vst3MidiMapping.cpp`,
 `plugins/Vst3Effect/Vst3MidiMapping.h`, `tests/src/plugins/Vst3HostTest.cpp`, `tests/upstream-modifications.txt`,
 `tests/all-sources.txt` (recipe-derived gate repair), and this report.
@@ -85,7 +85,7 @@ Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-365-po
 | Final VST3 test family | `ctest -R 'Vst3' --output-on-failure` (from `build/tests`) | 0 | `024-final-vst3-family.log`: 7/7 tests passed. |
 | Direct host test count | `./Vst3HostTest` (from `build/tests`) | 0 | `025-final-host-direct.log`: 22 passed, 0 failed. |
 | Final feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-365-aac861e62b` | 0 | `026-final-feature-check.log`: all eight gates PASS. |
-| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-365-aac861e62b new-p14-365-port-port-port` | pending | To be recorded after this report is committed. |
+| Completion check (after integration commit) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-365-aac861e62b new-p14-365-port-port-port` | 0 | `027-submit-check-first.log`: PASS - submit; clean tree. |
 
 The exact manifest-generation command was:
 
@@ -123,6 +123,7 @@ The focused VST3 host test is one ctest entry. The VST3 family ran seven ctest e
   ALREADY-FIXED or FALSE-POSITIVE claim is made.
 - **Platform review:** the only new key narrowing is from the fixed range 0..2079 to `uint16_t`; offsets and parameter
   IDs use existing VST3-compatible widths. Linux targets were built. Cross-platform builds were not run here.
-- **Gates:** the first feature check exited 1 for the train-stale manifest and CCN 11; after the recipe re-derivation and
-  helper extraction, final `feature_check.py` exits 0 with all gates PASS. The completion-check result will be recorded
-  here after running it on the committed tree.
+- **Gates and completion check:** the first feature check exited 1 for the train-stale manifest and CCN 11; after the
+  recipe re-derivation and helper extraction, final `feature_check.py` exits 0 with all gates PASS. The first
+  post-commit completion check exits 0 and reports `PASS - submit` in `027-submit-check-first.log`; it will be rerun
+  after this evidence update is committed.
