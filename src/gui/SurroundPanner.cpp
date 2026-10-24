@@ -38,6 +38,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QSlider>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "DeprecationHelper.h"
@@ -68,6 +69,12 @@ public:
 	}
 
 	QPointF point() const { return m_point; }
+	void setFormat(surround::Format format)
+	{
+		if (m_format == format) { return; }
+		m_format = format;
+		update();
+	}
 	//! Called when a drag ends, with the point.
 	std::function<void()> released;
 
@@ -218,6 +225,7 @@ struct Controls
 	QSlider* lfe = nullptr;
 	QSlider* spread = nullptr;
 	QCheckBox* enabled = nullptr;
+	QLabel* destination = nullptr;
 
 	void commit(QWidget* parent, QJsonObject changed) const
 	{
@@ -244,6 +252,24 @@ surround::Format targetFormat(const QJsonObject& state, QString* into)
 	surround::formatFromName(first.value(QStringLiteral("format")).toString(), &format);
 	*into = QStringLiteral("%1 (%2)").arg(first.value(QStringLiteral("to")).toString(), first.value(QStringLiteral("format")).toString());
 	return format;
+}
+
+QString destinationText(const QString& into)
+{
+	return into.isEmpty() ? QObject::tr("This channel sends into no surround channel: route it into one "
+		"(set to LCR, quad, 5.1 or 7.1) for the panner to act.") : QObject::tr("Pans into %1.").arg(into);
+}
+
+void refreshRoute(const Controls& controls)
+{
+	const QJsonArray channels = ControlRegistry::instance()->invoke(QStringLiteral("mixer.surround_get"),
+		{{QStringLiteral("channel"), controls.channelId}}).result.value(QStringLiteral("channels")).toArray();
+	if (channels.isEmpty()) { return; }
+	QString into;
+	const surround::Format format = targetFormat(channels.at(0).toObject(), &into);
+	controls.pad->setFormat(format);
+	const QString text = destinationText(into);
+	if (controls.destination->text() != text) { controls.destination->setText(text); }
 }
 
 //! A slider commits when it is let go, and on a keyboard step (no drag under way).
@@ -291,14 +317,13 @@ void showSurroundPanner(const QString& channelId, QWidget* parent)
 	dialog->setProperty("controlCommand", QStringLiteral("mixer.surround_pan"));
 	Controls controls{channelId, new PannerPad(format, {pan.value(QStringLiteral("x")).toDouble(0.0), pan.value(QStringLiteral("y")).toDouble(1.0)}, dialog),
 		percentSlider(pan.value(QStringLiteral("lfe")).toDouble(), dialog), percentSlider(pan.value(QStringLiteral("spread")).toDouble(), dialog),
-		new QCheckBox(QObject::tr("Panner on"), dialog)};
+		new QCheckBox(QObject::tr("Panner on"), dialog), new QLabel(destinationText(into), dialog)};
 	controls.enabled->setChecked(pan.value(QStringLiteral("enabled")).toBool());
 	controls.lfe->setAccessibleName(QObject::tr("LFE send"));
 	controls.spread->setAccessibleName(QObject::tr("Spread"));
 
 	auto* layout = new QVBoxLayout(dialog);
-	layout->addWidget(new QLabel(into.isEmpty() ? QObject::tr("This channel sends into no surround channel: route it into one "
-		"(set to LCR, quad, 5.1 or 7.1) for the panner to act.") : QObject::tr("Pans into %1.").arg(into), dialog));
+	layout->addWidget(controls.destination);
 	layout->addWidget(controls.pad, 1);
 	auto* form = new QFormLayout;
 	form->addRow(QObject::tr("LFE"), controls.lfe);
@@ -309,6 +334,11 @@ void showSurroundPanner(const QString& channelId, QWidget* parent)
 	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
 	layout->addWidget(buttons);
 	connectControls(dialog, controls);
+	auto* refresh = new QTimer(dialog);
+	refresh->setObjectName(QStringLiteral("surroundPannerRefresh"));
+	refresh->setInterval(250);
+	QObject::connect(refresh, &QTimer::timeout, dialog, [controls] { refreshRoute(controls); });
+	refresh->start();
 	dialog->show();
 }
 

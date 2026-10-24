@@ -43,6 +43,7 @@
 #include <QSlider>
 #include <QTableView>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -523,6 +524,62 @@ private slots:
 		QVERIFY(pan.value(QStringLiteral("enabled")).toBool());
 		QVERIFY(std::abs(pan.value(QStringLiteral("lfe")).toDouble() - 0.45) < 0.01);
 		window->close();
+	}
+
+	void theSurroundPannerRefreshesItsDestinationFormat()
+	{
+		QVERIFY(run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[2]}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[3]}}).ok);
+		const auto restoreRoutes = [this] {
+			run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[2]}});
+			run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[3]}});
+			run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), m_ch[2]}, {QStringLiteral("format"), QStringLiteral("stereo")}});
+			run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), m_ch[3]}, {QStringLiteral("format"), QStringLiteral("5.1")} });
+			run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[2]}, {QStringLiteral("amount"), 1.0}});
+			run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[3]}, {QStringLiteral("amount"), 1.0}});
+		};
+		QVERIFY(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), m_ch[3]}, {QStringLiteral("format"), QStringLiteral("5.1")}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), m_ch[2]}, {QStringLiteral("format"), QStringLiteral("7.1")}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[3]},
+			{QStringLiteral("amount"), 1.0}}).ok);
+		showSurroundPanner(m_ch[1]);
+		QWidget* window = windowTitled(QStringLiteral("Surround Panner"));
+		QVERIFY(window != nullptr);
+		QLabel* destination = nullptr;
+		for (QLabel* label : window->findChildren<QLabel*>())
+		{
+			if (label->text().startsWith(QStringLiteral("Pans into"))) { destination = label; }
+		}
+		QVERIFY(destination != nullptr);
+		QCOMPARE(destination->text(), QStringLiteral("Pans into %1 (5.1).").arg(m_ch[3]));
+
+		QVERIFY(run(QStringLiteral("mixer.route_remove"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[3]}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("to"), m_ch[2]},
+			{QStringLiteral("amount"), 1.0}}).ok);
+		auto* refresh = window->findChild<QTimer*>(QStringLiteral("surroundPannerRefresh"));
+		if (refresh == nullptr)
+		{
+			window->close();
+			QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+			restoreRoutes();
+			QFAIL("the panner has no route refresh hook");
+		}
+		QVERIFY(QMetaObject::invokeMethod(refresh, "timeout", Qt::DirectConnection));
+		QCOMPARE(destination->text(), QStringLiteral("Pans into %1 (7.1).").arg(m_ch[2]));
+
+		QWidget* pad = childNamed<QWidget>(window, QStringLiteral("Surround position"));
+		QVERIFY(pad != nullptr);
+		float speakerX = 0.f;
+		float speakerY = 0.f;
+		surround::speakerPoint(surround::Format::Surround71, 6, &speakerX, &speakerY);
+		QCOMPARE(padPixelAtRoom(pad, speakerX, speakerY), tokens::palette().panel);
+		QVERIFY(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), m_ch[2]}, {QStringLiteral("format"), QStringLiteral("5.1")}}).ok);
+		QVERIFY(QMetaObject::invokeMethod(refresh, "timeout", Qt::DirectConnection));
+		QCOMPARE(destination->text(), QStringLiteral("Pans into %1 (5.1).").arg(m_ch[2]));
+		QVERIFY(padPixelAtRoom(pad, speakerX, speakerY) != tokens::palette().panel);
+		window->close();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		restoreRoutes();
 	}
 
 	void theSurroundPannerOfAChannelThatSendsNowhereSaysSo()
