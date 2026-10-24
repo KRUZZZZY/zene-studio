@@ -32,6 +32,8 @@
  *  any MIDI clip. */
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <QJsonArray>
@@ -181,14 +183,16 @@ void fillClipboard(const std::vector<Note*>& notes)
 }
 
 //! Earliest start and latest end of @a notes (non-empty).
-std::pair<tick_t, tick_t> spanOf(const std::vector<Note*>& notes)
+std::pair<std::int64_t, std::int64_t> spanOf(const std::vector<Note*>& notes)
 {
-	tick_t first = notes.front()->pos().getTicks();
-	tick_t last = notes.front()->endPos().getTicks();
+	const Note* firstNote = notes.front();
+	std::int64_t first = firstNote->pos().getTicks();
+	std::int64_t last = first + firstNote->length().getTicks();
 	for (const Note* note : notes)
 	{
-		first = std::min<tick_t>(first, note->pos().getTicks());
-		last = std::max<tick_t>(last, note->endPos().getTicks());
+		const std::int64_t start = note->pos().getTicks();
+		first = std::min(first, start);
+		last = std::max(last, start + note->length().getTicks());
 	}
 	return {first, last};
 }
@@ -203,7 +207,7 @@ ControlResult copyNotes(const QJsonObject& args)
 	fillClipboard(notes);
 	const auto [first, last] = spanOf(notes);
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("copied"), static_cast<int>(notes.size())},
-		{QStringLiteral("start"), first}, {QStringLiteral("end"), last}});
+		{QStringLiteral("start"), static_cast<qint64>(first)}, {QStringLiteral("end"), static_cast<qint64>(last)}});
 }
 
 ControlResult cutNotes(const QJsonObject& args)
@@ -222,13 +226,14 @@ ControlResult cutNotes(const QJsonObject& args)
 }
 
 //! Add @a copies to @a clip moved by @a offset ticks, selected, the clip's other notes deselected; the new ids.
-QJsonArray addSelected(MidiClip* clip, const std::vector<Note>& copies, tick_t offset)
+QJsonArray addSelected(MidiClip* clip, const std::vector<Note>& copies, std::int64_t offset)
 {
 	for (Note* note : clip->notes()) { note->setSelected(false); }
 	QJsonArray ids;
 	for (Note copy : copies)
 	{
-		copy.setPos(TimePos(copy.pos().getTicks() + offset));
+		const std::int64_t position = static_cast<std::int64_t>(copy.pos().getTicks()) + offset;
+		copy.setPos(TimePos(static_cast<tick_t>(position)));
 		copy.setSelected(true);
 		ids.append(noteIdOf(clip->addNote(copy, false)));
 	}
@@ -236,20 +241,22 @@ QJsonArray addSelected(MidiClip* clip, const std::vector<Note>& copies, tick_t o
 }
 
 //! Whether every copy moved by @a offset starts at 0 or later and ends inside the longest song.
-bool fits(const std::vector<Note>& copies, tick_t offset)
+bool fits(const std::vector<Note>& copies, std::int64_t offset)
 {
 	return std::all_of(copies.begin(), copies.end(), [offset](const Note& note) {
-		return note.pos().getTicks() + offset >= 0 && note.endPos().getTicks() + offset <= MaxSongLength;
+		const std::int64_t start = static_cast<std::int64_t>(note.pos().getTicks()) + offset;
+		const std::int64_t end = start + note.length().getTicks();
+		return start >= 0 && start <= std::numeric_limits<tick_t>::max() && end <= MaxSongLength;
 	});
 }
 
 //! The paste's shift: 'position' (where the earliest note lands) when given, else 0 - where they were copied from.
-tick_t pasteOffset(const QJsonObject& args)
+std::int64_t pasteOffset(const QJsonObject& args)
 {
 	if (!args.contains(QStringLiteral("position"))) { return 0; }
-	tick_t first = clipboard().front().pos().getTicks();
-	for (const Note& note : clipboard()) { first = std::min<tick_t>(first, note.pos().getTicks()); }
-	return static_cast<tick_t>(args.value(QStringLiteral("position")).toInt()) - first;
+	std::int64_t first = clipboard().front().pos().getTicks();
+	for (const Note& note : clipboard()) { first = std::min(first, static_cast<std::int64_t>(note.pos().getTicks())); }
+	return static_cast<std::int64_t>(args.value(QStringLiteral("position")).toInt()) - first;
 }
 
 ControlResult pasteNotes(const QJsonObject& args)
@@ -262,7 +269,7 @@ ControlResult pasteNotes(const QJsonObject& args)
 	{
 		return refused(ControlErrorKind::NotFound, QStringLiteral("the note clipboard is empty: note.copy or note.cut fills it"));
 	}
-	const tick_t offset = pasteOffset(args);
+	const std::int64_t offset = pasteOffset(args);
 	if (!fits(clipboard(), offset))
 	{
 		return refused(ControlErrorKind::InvalidArgs, QStringLiteral("that position puts notes outside 0..%1 ticks").arg(MaxSongLength));
@@ -274,13 +281,13 @@ ControlResult pasteNotes(const QJsonObject& args)
 }
 
 //! The duplicate's shift: the scope's span from its earliest start to its latest end, both rounded out to 'grid'.
-tick_t duplicateOffset(const std::vector<Note*>& notes, int grid)
+std::int64_t duplicateOffset(const std::vector<Note*>& notes, int grid)
 {
 	const auto [first, last] = spanOf(notes);
-	const tick_t step = std::max(1, grid);
-	const tick_t from = first / step * step;
-	const tick_t to = (last + step - 1) / step * step;
-	return std::max<tick_t>(1, to - from);
+	const std::int64_t step = std::max(1, grid);
+	const std::int64_t from = first / step * step;
+	const std::int64_t to = (last + step - 1) / step * step;
+	return std::max<std::int64_t>(1, to - from);
 }
 
 ControlResult duplicateNotes(const QJsonObject& args)
@@ -290,7 +297,7 @@ ControlResult duplicateNotes(const QJsonObject& args)
 	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
 	std::vector<Note*> notes;
 	if (clip == nullptr || !scopedNotes(clip, args, &notes, &error)) { return error; }
-	const tick_t offset = duplicateOffset(notes, args.value(QStringLiteral("grid")).toInt(1));
+	const std::int64_t offset = duplicateOffset(notes, args.value(QStringLiteral("grid")).toInt(1));
 	std::vector<Note> copies;
 	for (const Note* note : notes) { copies.push_back(*note); }
 	if (!fits(copies, offset))
@@ -300,7 +307,7 @@ ControlResult duplicateNotes(const QJsonObject& args)
 	clip->addJournalCheckPoint();
 	const QJsonArray ids = addSelected(clip, copies, offset);
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.duplicate"), {{QStringLiteral("duplicated"), ids.size()},
-		{QStringLiteral("offset"), offset}, {QStringLiteral("notes"), ids}}));
+		{QStringLiteral("offset"), static_cast<qint64>(offset)}, {QStringLiteral("notes"), ids}}));
 }
 
 void add(ControlRegistry& registry, const char* verb, const QString& description, const QJsonObject& args,

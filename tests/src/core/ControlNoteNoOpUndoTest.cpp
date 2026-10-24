@@ -45,11 +45,16 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include <QJsonObject>
 #include <QString>
 
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "MidiClip.h"
+#include "Note.h"
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
 
@@ -233,6 +238,54 @@ private slots:
 		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
 		QCOMPARE(scaled.result.value(QStringLiteral("notes_changed")).toInt(), 0);
 		QCOMPARE(transactionCount(), before);
+	}
+
+	//! A note with the largest tick_t length is refused before a paste checkpoint.
+	void clipboardPasteRefusesAnOverflowingEndpoint()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		control::ClipRef ref;
+		ControlResult error;
+		MidiClip* clip = control::resolveMidiClip(fixture.clip, &ref, &error);
+		QVERIFY2(clip != nullptr, qPrintable(error.errorMessage));
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		Note* note = clip->notes().front();
+		note->setLength(TimePos(std::numeric_limits<tick_t>::max()));
+		QVERIFY2(run(QStringLiteral("note.copy"), {{QStringLiteral("clip"), fixture.clip}}).ok,
+			"could not copy the wide note");
+		const quint64 before = Engine::projectJournal()->topStepSerial();
+
+		const ControlResult pasted = run(QStringLiteral("note.paste"), {{QStringLiteral("clip"), fixture.clip},
+			{QStringLiteral("position"), 1}});
+		QCOMPARE(pasted.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QCOMPARE(note->pos().getTicks(), tick_t{0});
+		QCOMPARE(note->length().getTicks(), std::numeric_limits<tick_t>::max());
+		QCOMPARE(Engine::projectJournal()->topStepSerial(), before);
+	}
+
+	//! Duplicate shares the fit check, so its span-derived offset must refuse before checkpointing too.
+	void duplicateRefusesAnOverflowingEndpoint()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		control::ClipRef ref;
+		ControlResult error;
+		MidiClip* clip = control::resolveMidiClip(fixture.clip, &ref, &error);
+		QVERIFY2(clip != nullptr, qPrintable(error.errorMessage));
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		Note* note = clip->notes().front();
+		note->setLength(TimePos(std::numeric_limits<tick_t>::max()));
+		const quint64 before = Engine::projectJournal()->topStepSerial();
+
+		const ControlResult duplicated = run(QStringLiteral("note.duplicate"),
+			{{QStringLiteral("clip"), fixture.clip}});
+		QCOMPARE(duplicated.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QCOMPARE(note->pos().getTicks(), tick_t{0});
+		QCOMPARE(note->length().getTicks(), std::numeric_limits<tick_t>::max());
+		QCOMPARE(Engine::projectJournal()->topStepSerial(), before);
 	}
 
 	//! The positive control: a transform that DID change something still records
