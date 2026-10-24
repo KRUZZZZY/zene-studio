@@ -54,16 +54,19 @@ The final five-test CTest run executed all five affected families: 4/5 passed; `
 - `ctest -R '^ReversibilityUndoTest$|^ReversibilityUndoDeviceTest$' --output-on-failure` — EXIT=0, 2/2 (`050-green-p14-ctest.log`).
 - Five affected p8 CTests: `ctest -R '^(ControlRecordInputs|ControlRenderSurround|ControlVcaCommands|ControlPunchTranscript|ControlCustomisation)$' --output-on-failure` — EXIT=8, 4/5 passed (`051-final-p8-ctest.log`).
 - `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-249` — EXIT=0 (`054-feature-check-final.log`): all gates PASS, including complexity and file-length.
-- The focused export socket run uses the same `check_the_instance` path with only the unrelated CLI diagnostics check excluded; EXIT=0 (`052-green-export-focused.log`).
+- `python3 -c 'import importlib.util,sys; spec=importlib.util.spec_from_file_location("render_surround_test", "tests/control-render-surround.py"); module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module); module.check_cli=lambda *args: None; problems=module.H.Problems(); module.check_the_instance(sys.argv[1], problems); problems.report("focused surround socket checks (CLI argument diagnostics excluded)"); sys.exit(1 if problems else 0)' "$PWD/build/zene"` — EXIT=0 (`052-green-export-focused.log`).
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-249 new-p14-249` — EXIT=0, `RESULT: PASS - submit` (`056-submit-check-clean.log`). A pre-commit run exited 1 only because the worktree was dirty; the clean-tree run passed.
 
 ## Self-check
 
 - Decisions: both ReversibilityUndoTest findings are REAL and ALREADY-FIXED with prior RED/GREEN proof; new-p8-205 is FIXED by five behavioral checks.
 - Regression proof: each p8 row has an isolated inverse mutation that fails its named readback, then passes after restoration. State-load and unload mutation proofs remain in the prior-round r3 logs accepted by Luna.
 - Determinism: no sleeps, races, or wall-clock assumptions were added. VCA uses a recorded inverse; fit-tracks compares persisted heights; other rows compare command readbacks.
-- Scope: no production C++ changes remain. Only the five existing regression scripts and this report are changed; project formats and audio-thread code are untouched.
+- Cause and siblings: reviewed the owning handlers and their inverse paths at `src/core/ControlCommandsRecordingInput.cpp:134-157`, `src/core/ControlCommandsExport.cpp:304-321`, `src/core/ControlCommandsVcaMix.cpp:189-222`, `src/core/ControlCommandsPunch.cpp:270-282`, and `src/gui/ControlCommandsArrangerView.cpp:267-286`. The checks exercise the registered inverse/undo path for each; no production C++ changes remain.
+- Collateral: only existing regression scripts and this report changed; no project format, saved data, limits, or audio-thread code changed.
+- Scope: no new test files were created in this batch.
 - Test status: the undo CTest family passes 2/2. Four p8 CTests pass; the fifth has the separately documented CLI diagnostic failure, while the requested loudness socket assertions pass.
-- Gate status: `feature_check.py` EXIT=0. `submit_check.py` is run after this report is written; its result is recorded after the run.
+- Gate status: `feature_check.py` EXIT=0; clean-tree `submit_check.py` EXIT=0 (`056-submit-check-clean.log`). An interim feature check after tentative manifest entries exited 1 (`053-feature-check.log`); those entries were removed because no new files were created in this batch, and the final manifest/gate run passes.
 
 Files for this commit:
 
