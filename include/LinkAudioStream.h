@@ -229,9 +229,17 @@ public:
 	}
 
 private:
+	friend struct LinkAudioStreamTestAccess;
+	struct JitterBounds
+	{
+		std::size_t minimum;
+		std::size_t maximum;
+	};
+
 	void stopLocked();
 	void resetCounters();
 	void publish(const AudioStreamConfig& cfg);
+	static JitterBounds jitterBounds(std::size_t period, std::size_t capacity) noexcept;
 	void receivePeriod(SampleFrame* frames, std::size_t period, sample_rate_t sampleRate) noexcept;
 	void addFromRing(SampleFrame* frames, std::size_t period) noexcept;
 	void sendFrames(SampleFrame* frames, f_cnt_t count) noexcept;

@@ -209,6 +209,14 @@ void LinkAudioStream::addFromRing(SampleFrame* frames, std::size_t period) noexc
 	}
 }
 
+LinkAudioStream::JitterBounds LinkAudioStream::jitterBounds(std::size_t period, std::size_t capacity) noexcept
+{
+	const std::size_t maximum = capacity / 4;
+	// std::clamp requires ordered bounds; cap before doubling to avoid overflow too.
+	const std::size_t minimum = std::min(period, maximum / 2) * 2;
+	return {minimum, maximum};
+}
+
 void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sample_rate_t sampleRate) noexcept
 {
 	const std::uint64_t epoch = m_epoch.load(std::memory_order_acquire);
@@ -242,7 +250,8 @@ void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sam
 		m_primed = false;
 	}
 	// At least two periods (so a trim never leaves less than one), at most a quarter of the ring.
-	const std::size_t target = std::clamp(wanted, period * 2, m_rx.capacity() / 4);
+	const JitterBounds bounds = jitterBounds(period, m_rx.capacity());
+	const std::size_t target = std::clamp(wanted, bounds.minimum, bounds.maximum);
 	std::size_t fill = m_rx.fill();
 	m_primed = m_primed || fill >= target;
 	if (m_primed && fill > target * 2 + period)
