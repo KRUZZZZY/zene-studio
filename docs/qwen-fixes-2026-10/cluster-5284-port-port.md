@@ -54,7 +54,7 @@ Exit 0; all eight rows passed:
 | complexity | PASS, no new item in changed files |
 | file-length | PASS, no new item in changed files |
 
-The completion check will be run after committing this report.
+The completion check command was run after commit 86a0d36c1: python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5284-port-port 5284-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/submit-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc". Exit 0; RESULT: PASS - submit.
 
 ## Registration
 
@@ -62,11 +62,12 @@ No new product or test source file was added. The regression remains in the regi
 
 ## Self-check
 
-- Realtime: Sample::play() uses its existing resampler and does not change converter mode. Retained-state prepare/discard work runs during control-side propagation; adoption occurs under the render change guard.
-- Undo and commands: export.set_src_quality adds one undo step only after successful propagation. export.get_settings reads settings; export.preset_add, export.preset_apply, export.preset_list and export.preset_remove operate on presets; export.set_dither and export.set_loudness_report touch separate settings. These siblings do not change live SRC quality. The CLI and ProjectRenderer handle failed propagation.
-- Compatibility: no project serialization or saved-data format changed. The default remains Linear. PluginPortsMigrationTest's sample-exact comparison passes.
-- Determinism: fixed sample data and explicit quality/mode choices; no timing, sleeps, or races.
-- Portability: C++20 facilities already used by the project; no Qt-version-specific API or platform-specific behavior added.
+- Regression proof: with product changes reversed, build-9 exited 0 and test-12 exited 8 (15 passed, the new mode comparison failed at AudioResamplerRatioTest.cpp:415). With the patch restored, build-10 exited 0; test-13 and test-14 exited 0. Verbose test-15 exited 0: AudioResamplerRatioTest 16 passed; PluginPortsMigrationTest 73 passed, 0 failed, 2 skipped, including a passing migratedPluginsPreserveBehaviour comparison.
+- Determinism: the test injects a fixed 8192-frame sine at 2000 Hz, source rate equal to half the engine output rate, and renders 2048 frames. It compares explicit Linear-state outputs under Linear and SincBest selections; a SincBest-state render is the sensitivity control. No wall clock, sleep, or race is used.
+- Cause and complete caller audit: Sample::play() no longer reads SRC quality or changes converter mode (src/core/Sample.cpp:100-108); setMode()'s src_new() is at src/core/AudioResampler.cpp:136-148. Its direct playback callers are SamplePlayHandle::play (src/core/SamplePlayHandle.cpp:573), CompSlip rendering (src/core/CompSlip.cpp:133), AudioFileProcessor (plugins/AudioFileProcessor/AudioFileProcessor.cpp:210), Patman (plugins/Patman/Patman.cpp:226), and SlicerT (plugins/SlicerT/SlicerT.cpp:179). AudioEngine's retained-state walk (src/core/AudioEngine.cpp:283-303) reaches the engine pool, song instruments, live handles, and note states; each plugin/comp-slip state owner prepares, adopts, or discards with the transaction. The global setting callers are ControlCommandsExport, ProjectRenderer, and the CLI; ExportRenderSettings::reset is used only by tests. OutputSettings::setSrcQuality stores a render option and does not publish the live global selection. Each caller handles or deliberately ignores failure according to its role; no new command was added.
+- No collateral damage: no project serialization, saved data, limits, or checks changed. Linear remains the default. The migration regression's sample-exact comparison passes; the legacy reference fixture initializes its converter from the selected quality to preserve the old play-path result.
+- Verdict: REAL, evidenced by the port-base Sample.cpp:116-121 comparison and AudioResampler.cpp src_new() call at line 143 described above; this is not an ALREADY-FIXED or FALSE-POSITIVE case.
+- Sibling commands: export.get_settings only reads; export.preset_add, export.preset_apply, export.preset_list, and export.preset_remove operate on stored presets; export.set_dither and export.set_loudness_report change separate settings. None changes live SRC quality. export.set_src_quality uses the transactional setter and records one undo step only after success.
 
 ## Files in the port
 
