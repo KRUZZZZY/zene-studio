@@ -613,6 +613,11 @@ set(LMMS_TESTS
 	# The SF2 player's note path: the note hand-off from the note stage to the
 	# render stage must not allocate on the audio thread.
 	src/plugins/Sf2PlayerRealtimeTest.cpp
+	# Cluster new-p17-202: the real-time-safe hand-off of Watsyn's oscillator
+	# parameters (plugins/Watsyn/WatsynParamHandoff.h) - the editing thread
+	# publishes a set, the audio thread takes it, and a reader taken while a
+	# publication is in progress never sees half a set and never waits.
+	src/plugins/WatsynParamHandoffTest.cpp
 	# The system semaphore's timed acquire (the shared-memory transport's audio-thread waits use it).
 	src/core/SystemSemaphoreTest.cpp
 	src/core/RecordingRealtimeTest.cpp
@@ -3562,6 +3567,9 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	LMMS_TESTING
 	PART_C_REFERENCE_EXE="$<TARGET_FILE:PluginPortsMigrationReference>"
 	QT_TESTCASE_SOURCEDIR="${CMAKE_CURRENT_SOURCE_DIR}"
+	# Cluster new-p17-202: the Watsyn regression reads the plugin's own
+	# sources, so it needs to know where they are.
+	WATSYN_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Watsyn"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
 if(TARGET partial_init_failure_ladspa)

@@ -32,6 +32,7 @@
 #include "Graph.h"
 #include "AutomatableModel.h"
 #include "TempoSyncKnob.h"
+#include "WatsynParamHandoff.h"
 #include <samplerate.h>
 
 #include <atomic>
@@ -167,21 +168,29 @@ public slots:
 	void updateWaveB2();
 
 protected:
-	float m_lvol [NUM_OSCS];
-    float m_rvol [NUM_OSCS];
-
-	float m_lfreq [NUM_OSCS];
-	float m_rfreq [NUM_OSCS];
+	//! The published oscillator parameters. The thread that owns the
+	//! instrument publishes them, the audio thread takes the published set
+	//! once per rendered period. The plain float arrays the upstream code
+	//! kept here were written by one thread and read by another with
+	//! nothing between them, which is a data race.
+	WatsynParamHandoff<NUM_OSCS> m_paramHandoff;
 
 private:
 	void playNoteImpl(NotePlayHandle* _n, std::span<SampleFrame> out) override;
 
-	inline float leftCh( float _vol, float _pan )
+	//! Computes the oscillator parameters from the models. The models are
+	//! the state of the instrument, and every model value is read once, so
+	//! the set is one coherent computation.
+	WatsynParamHandoff<NUM_OSCS>::Values computeParams() const;
+	//! Computes the oscillator parameters and publishes them.
+	void publishParams();
+
+	inline float leftCh( float _vol, float _pan ) const
 	{
 		return ( _pan <= 0 ? 1.0 : 1.0 - ( _pan / 100.0 ) ) * _vol / 100.0;
 	}
 
-	inline float rightCh( float _vol, float _pan )
+	inline float rightCh( float _vol, float _pan ) const
 	{
 		return ( _pan >= 0 ? 1.0 : 1.0 + ( _pan / 100.0 ) ) * _vol / 100.0;
 	}

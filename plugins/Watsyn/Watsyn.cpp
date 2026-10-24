@@ -75,6 +75,10 @@ WatsynVoice::WatsynVoice( WatsynInstrument * _parent, NotePlayHandle * _nph, Wat
 			m_parent( _parent ),
 			m_wave( _wave )
 {
+	// The note takes its parameters from the published set, never from a
+	// separate reading of the models: the published set is one complete
+	// publication, and a reading of the models could combine values from
+	// different points of a multi-parameter update.
 	std::fill_n(m_lphase, NUM_OSCS, 0.0f);
 	std::fill_n(m_rphase, NUM_OSCS, 0.0f);
 }
@@ -102,6 +106,11 @@ void WatsynVoice::renderOutput( std::span<SampleFrame> out )
 {
 	const f_cnt_t frames = static_cast<f_cnt_t>(out.size());
 
+	// The oscillator parameters are taken as one published set. The set is
+	// immutable once it is published, so a render never mixes two
+	// publications and the read never fails.
+	const auto params = m_parent->m_paramHandoff.read();
+
 	// envelope parameters
 	const float envAmt = m_parent->m_envAmt.value();
 	const float envAtt = ( m_parent->m_envAtt.value() * samplerate() ) / 1000.0f;
@@ -127,12 +136,12 @@ void WatsynVoice::renderOutput( std::span<SampleFrame> out )
 		/////////////   A-series   /////////////////
 
 		// A2
-		sample_t A2_L = m_parent->m_lvol[A2_OSC] * std::lerp(
+		sample_t A2_L = params.lvol[A2_OSC] * std::lerp(
 			m_wave->data[1][static_cast<int>(m_lphase[A2_OSC])],
 			m_wave->data[1][static_cast<int>(m_lphase[A2_OSC] + 1) % WAVELEN],
 			fraction(m_lphase[A2_OSC])
 		);
-		sample_t A2_R = m_parent->m_rvol[A2_OSC] * std::lerp(
+		sample_t A2_R = params.rvol[A2_OSC] * std::lerp(
 			m_wave->data[1][static_cast<int>(m_rphase[A2_OSC])],
 			m_wave->data[1][static_cast<int>(m_rphase[A2_OSC] + 1) % WAVELEN],
 			fraction(m_rphase[A2_OSC])
@@ -147,12 +156,12 @@ void WatsynVoice::renderOutput( std::span<SampleFrame> out )
 			if( A1_rphase < 0 ) A1_rphase += WAVELEN;
 		}
 		// A1
-		sample_t A1_L = m_parent->m_lvol[A1_OSC] * std::lerp(
+		sample_t A1_L = params.lvol[A1_OSC] * std::lerp(
 			m_wave->data[0][static_cast<int>(A1_lphase)],
 			m_wave->data[0][static_cast<int>(A1_lphase + 1) % WAVELEN],
 			fraction(A1_lphase)
 		);
-		sample_t A1_R = m_parent->m_rvol[A1_OSC] * std::lerp(
+		sample_t A1_R = params.rvol[A1_OSC] * std::lerp(
 			m_wave->data[0][static_cast<int>(A1_rphase)],
 			m_wave->data[0][static_cast<int>(A1_rphase + 1) % WAVELEN],
 			fraction(A1_rphase)
@@ -161,12 +170,12 @@ void WatsynVoice::renderOutput( std::span<SampleFrame> out )
 		/////////////   B-series   /////////////////
 
 		// B2
-		sample_t B2_L = m_parent->m_lvol[B2_OSC] * std::lerp(
+		sample_t B2_L = params.lvol[B2_OSC] * std::lerp(
 			m_wave->data[3][static_cast<int>(m_lphase[B2_OSC])],
 			m_wave->data[3][static_cast<int>(m_lphase[B2_OSC] + 1) % WAVELEN],
 			fraction(m_lphase[B2_OSC])
 		);
-		sample_t B2_R = m_parent->m_rvol[B2_OSC] * std::lerp(
+		sample_t B2_R = params.rvol[B2_OSC] * std::lerp(
 			m_wave->data[3][static_cast<int>(m_rphase[B2_OSC])],
 			m_wave->data[3][static_cast<int>(m_rphase[B2_OSC] + 1) % WAVELEN],
 			fraction(m_rphase[B2_OSC])
@@ -189,12 +198,12 @@ void WatsynVoice::renderOutput( std::span<SampleFrame> out )
 			if( B1_rphase < 0 ) B1_rphase += WAVELEN;
 		}
 		// B1
-		sample_t B1_L = m_parent->m_lvol[B1_OSC] * std::lerp(
+		sample_t B1_L = params.lvol[B1_OSC] * std::lerp(
 			m_wave->data[2][static_cast<int>(B1_lphase) % WAVELEN],
 			m_wave->data[2][static_cast<int>(B1_lphase + 1) % WAVELEN],
 			fraction(B1_lphase)
 		);
-		sample_t B1_R = m_parent->m_rvol[B1_OSC] * std::lerp(
+		sample_t B1_R = params.rvol[B1_OSC] * std::lerp(
 			m_wave->data[2][static_cast<int>(B1_rphase) % WAVELEN],
 			m_wave->data[2][static_cast<int>(B1_rphase + 1) % WAVELEN],
 			fraction(B1_rphase)
@@ -266,9 +275,9 @@ void WatsynVoice::renderOutput( std::span<SampleFrame> out )
 		// update phases
 		for( int i = 0; i < NUM_OSCS; i++ )
 		{
-			m_lphase[i] += ( static_cast<float>( WAVELEN ) / ( m_samplerate / ( m_nph->frequency() * m_parent->m_lfreq[i] ) ) );
+			m_lphase[i] += ( static_cast<float>( WAVELEN ) / ( m_samplerate / ( m_nph->frequency() * params.lfreq[i] ) ) );
 			m_lphase[i] = std::fmod(m_lphase[i], WAVELEN);
-			m_rphase[i] += ( static_cast<float>( WAVELEN ) / ( m_samplerate / ( m_nph->frequency() * m_parent->m_rfreq[i] ) ) );
+			m_rphase[i] += ( static_cast<float>( WAVELEN ) / ( m_samplerate / ( m_nph->frequency() * params.rfreq[i] ) ) );
 			m_rphase[i] = std::fmod(m_rphase[i], WAVELEN);
 		}
 	}
@@ -615,51 +624,97 @@ gui::PluginView* WatsynInstrument::instantiateView( QWidget * _parent )
 }
 
 
+WatsynParamHandoff<NUM_OSCS>::Values WatsynInstrument::computeParams() const
+{
+	// The models are the state of the instrument. Every model value is read
+	// once, so the left and the right gain of an oscillator come from the
+	// same volume and panning, and the set is one coherent computation.
+	WatsynParamHandoff<NUM_OSCS>::Values values{};
+
+	const float a1Vol = a1_vol.value();
+	const float a1Pan = a1_pan.value();
+	values.lvol[A1_OSC] = leftCh( a1Vol, a1Pan );
+	values.rvol[A1_OSC] = rightCh( a1Vol, a1Pan );
+
+	const float a2Vol = a2_vol.value();
+	const float a2Pan = a2_pan.value();
+	values.lvol[A2_OSC] = leftCh( a2Vol, a2Pan );
+	values.rvol[A2_OSC] = rightCh( a2Vol, a2Pan );
+
+	const float b1Vol = b1_vol.value();
+	const float b1Pan = b1_pan.value();
+	values.lvol[B1_OSC] = leftCh( b1Vol, b1Pan );
+	values.rvol[B1_OSC] = rightCh( b1Vol, b1Pan );
+
+	const float b2Vol = b2_vol.value();
+	const float b2Pan = b2_pan.value();
+	values.lvol[B2_OSC] = leftCh( b2Vol, b2Pan );
+	values.rvol[B2_OSC] = rightCh( b2Vol, b2Pan );
+
+	const float a1Mult = a1_mult.value();
+	const float a1LTune = a1_ltune.value();
+	const float a1RTune = a1_rtune.value();
+	values.lfreq[A1_OSC] = (a1Mult / 8) * std::exp2(a1LTune / 1200);
+	values.rfreq[A1_OSC] = (a1Mult / 8) * std::exp2(a1RTune / 1200);
+
+	const float a2Mult = a2_mult.value();
+	const float a2LTune = a2_ltune.value();
+	const float a2RTune = a2_rtune.value();
+	values.lfreq[A2_OSC] = (a2Mult / 8) * std::exp2(a2LTune / 1200);
+	values.rfreq[A2_OSC] = (a2Mult / 8) * std::exp2(a2RTune / 1200);
+
+	const float b1Mult = b1_mult.value();
+	const float b1LTune = b1_ltune.value();
+	const float b1RTune = b1_rtune.value();
+	values.lfreq[B1_OSC] = (b1Mult / 8) * std::exp2(b1LTune / 1200);
+	values.rfreq[B1_OSC] = (b1Mult / 8) * std::exp2(b1RTune / 1200);
+
+	const float b2Mult = b2_mult.value();
+	const float b2LTune = b2_ltune.value();
+	const float b2RTune = b2_rtune.value();
+	values.lfreq[B2_OSC] = (b2Mult / 8) * std::exp2(b2LTune / 1200);
+	values.rfreq[B2_OSC] = (b2Mult / 8) * std::exp2(b2RTune / 1200);
+
+	return values;
+}
+
+
+void WatsynInstrument::publishParams()
+{
+	// The models are the state of the instrument; the published set is
+	// computed from them, so the set the audio thread takes is always one
+	// coherent computation and never a mixture of two.
+	m_paramHandoff.publish( computeParams() );
+}
+
+
 void WatsynInstrument::updateVolumes()
 {
-	m_lvol[A1_OSC] = leftCh( a1_vol.value(), a1_pan.value() );
-	m_rvol[A1_OSC] = rightCh( a1_vol.value(), a1_pan.value() );
-
-	m_lvol[A2_OSC] = leftCh( a2_vol.value(), a2_pan.value() );
-	m_rvol[A2_OSC] = rightCh( a2_vol.value(), a2_pan.value() );
-
-	m_lvol[B1_OSC] = leftCh( b1_vol.value(), b1_pan.value() );
-	m_rvol[B1_OSC] = rightCh( b1_vol.value(), b1_pan.value() );
-
-	m_lvol[B2_OSC] = leftCh( b2_vol.value(), b2_pan.value() );
-	m_rvol[B2_OSC] = rightCh( b2_vol.value(), b2_pan.value() );
+	publishParams();
 }
 
 
 void WatsynInstrument::updateFreqA1()
 {
-	// calculate frequencies
-	m_lfreq[A1_OSC] = (a1_mult.value() / 8) * std::exp2(a1_ltune.value() / 1200);
-	m_rfreq[A1_OSC] = (a1_mult.value() / 8) * std::exp2(a1_rtune.value() / 1200);
+	publishParams();
 }
 
 
 void WatsynInstrument::updateFreqA2()
 {
-	// calculate frequencies
-	m_lfreq[A2_OSC] = (a2_mult.value() / 8) * std::exp2(a2_ltune.value() / 1200);
-	m_rfreq[A2_OSC] = (a2_mult.value() / 8) * std::exp2(a2_rtune.value() / 1200);
+	publishParams();
 }
 
 
 void WatsynInstrument::updateFreqB1()
 {
-	// calculate frequencies
-	m_lfreq[B1_OSC] = (b1_mult.value() / 8) * std::exp2(b1_ltune.value() / 1200);
-	m_rfreq[B1_OSC] = (b1_mult.value() / 8) * std::exp2(b1_rtune.value() / 1200);
+	publishParams();
 }
 
 
 void WatsynInstrument::updateFreqB2()
 {
-	// calculate frequencies
-	m_lfreq[B2_OSC] = (b2_mult.value() / 8) * std::exp2(b2_ltune.value() / 1200);
-	m_rfreq[B2_OSC] = (b2_mult.value() / 8) * std::exp2(b2_rtune.value() / 1200);	
+	publishParams();
 }
 
 

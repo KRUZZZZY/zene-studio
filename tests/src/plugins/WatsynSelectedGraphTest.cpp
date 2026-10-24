@@ -15,7 +15,9 @@
  * Licensed under the GNU General Public License version 2 or later.
  */
 
+#include <QDir>
 #include <QDomDocument>
+#include <QFile>
 #include <QtTest>
 
 #include "AudioDevice.h"
@@ -44,6 +46,22 @@ QDomElement savedElement(QDomDocument& doc, Instrument& instrument)
 {
 	QDomElement parent = doc.createElement(QStringLiteral("instruments"));
 	return instrument.saveState(doc, parent);
+}
+
+QString readSource(const QString& relativePath)
+{
+	QFile file{QDir{QStringLiteral(QT_TESTCASE_SOURCEDIR)}.filePath(relativePath)};
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) { return {}; }
+	return QString::fromUtf8(file.readAll());
+}
+
+QString functionBodyStartingAt(const QString& source, const QString& signature)
+{
+	const auto start = source.indexOf(signature);
+	if (start < 0) { return {}; }
+	const auto end = source.indexOf(QStringLiteral("\n}\n"), start);
+	if (end < 0) { return {}; }
+	return source.mid(start, end - start);
 }
 
 } // namespace
@@ -111,6 +129,43 @@ private slots:
 		QDomDocument resavedDoc;
 		QDomElement resaved = savedElement(resavedDoc, *reopened);
 		QCOMPARE(resaved.attribute(QStringLiteral("selgraph")), QStringLiteral("0"));
+	}
+
+	//! Cluster new-p17-203: note creation must pin the published wavetable.
+	void aNotePinsThePublishedWavetableSnapshot()
+	{
+		const auto source = readSource(QStringLiteral("../plugins/Watsyn/Watsyn.cpp"));
+		QVERIFY2(!source.isEmpty(), "the Watsyn sources were not found");
+
+		// Building a note runs on the audio thread: it must not copy any live table.
+		const auto voiceConstruction = functionBodyStartingAt(source,
+			QStringLiteral("WatsynVoice::WatsynVoice("));
+		QVERIFY2(!voiceConstruction.isEmpty(), "the Watsyn voice was not found");
+		for (const auto* wave : {"A1_wave", "A2_wave", "B1_wave", "B2_wave"})
+		{
+			QVERIFY2(!voiceConstruction.contains(QLatin1String(wave)),
+				qPrintable(QStringLiteral("the Watsyn voice still copies the live wavetable %1 on the audio thread")
+					.arg(QLatin1String(wave))));
+		}
+		QVERIFY2(!voiceConstruction.contains(QStringLiteral("memcpy")),
+			"the Watsyn voice still copies a wavetable on the audio thread");
+
+		// Rendering reads the immutable snapshot pinned to the note.
+		const auto renderPath = functionBodyStartingAt(source,
+			QStringLiteral("void WatsynVoice::renderOutput("));
+		QVERIFY2(!renderPath.isEmpty(), "the render path of Watsyn was not found");
+		QVERIFY2(renderPath.contains(QStringLiteral("m_wave->data")),
+			"the Watsyn render path does not read the wavetable snapshot the note pinned");
+
+		// The pre-migration source is a negative control: it copied the live table.
+		const auto referenceSource = readSource(QStringLiteral("reference/Watsyn/Watsyn.cpp"));
+		QVERIFY2(!referenceSource.isEmpty(), "the pre-migration Watsyn source was not found");
+		const auto referenceConstruction = functionBodyStartingAt(referenceSource,
+			QStringLiteral("WatsynObject::WatsynObject("));
+		QVERIFY2(!referenceConstruction.isEmpty(), "the pre-migration Watsyn voice was not found");
+		QVERIFY2(referenceConstruction.contains(QStringLiteral("memcpy")),
+			"the pre-migration Watsyn voice does not copy the live wavetable into the note, "
+			"so the assertion above proves nothing");
 	}
 };
 

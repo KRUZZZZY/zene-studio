@@ -127,6 +127,11 @@
 # repair from new-p14-199-port was undone by that snapshot). The sfizz tree is excluded on purpose
 # (header above), no ratchet baseline holds an entry for it and Gate 9's registration scan excludes
 # it; removing exactly those entries makes the list the recipe's own output (3052 paths).
+# 2026-10-23 (cluster new-p17-202-port): the entry list below is the recipe's output again.
+# The train-12 snapshot (07d6d02bd) re-added the 1148 vendored plugins/SfzPlayer/sfizz/...
+# paths this file's own recipe excludes, so the manifest stopped reproducing from the
+# command it publishes and Gate 9 has been red on that base; this port re-derives it, and
+# only those vendored paths plus this branch's own WatsynParamHandoffTest.cpp entry change.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -1399,6 +1404,7 @@ plugins/WasmEffect/WasmEffectControls.cpp
 plugins/WasmEffect/WasmEffectControls.h
 plugins/Watsyn/Watsyn.cpp
 plugins/Watsyn/Watsyn.h
+plugins/Watsyn/WatsynParamHandoff.h
 plugins/WaveShaper/WaveShaper.cpp
 plugins/WaveShaper/WaveShaper.h
 plugins/WaveShaper/WaveShaperControlDialog.cpp
@@ -3160,6 +3166,7 @@ tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
 tests/src/plugins/VstEffectControlsTest.cpp
+tests/src/plugins/WatsynParamHandoffTest.cpp
 tests/src/plugins/WatsynSelectedGraphTest.cpp
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp

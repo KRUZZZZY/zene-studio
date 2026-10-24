@@ -191,3 +191,4 @@ plugins/GigPlayer/GigPlayer.cpp	GigInstrument::requestVoicePoolGrowth	asks the c
 plugins/GigPlayer/GigPlayer.cpp	GigInstrument::clearNotes	drops every playing note by walking the intrusive order and releasing each slot
 plugins/GigPlayer/GigPlayer.cpp	GigInstrument::addSamples	attaches one voice per matching region of the file to a note: the voices and their resamplers are built by the control thread, so this only links prepared objects
 plugins/GigPlayer/GigPlayer.cpp	GigInstrument::deleteNotePluginData	requests the release of a note from another thread: one atomic store into a published slot, then the audio thread picks it up
+plugins/Watsyn/WatsynParamHandoff.h	WatsynParamHandoff::read	called from WatsynVoice::renderOutput on the audio thread: takes the published oscillator parameters once per rendered period, so it must not allocate or lock

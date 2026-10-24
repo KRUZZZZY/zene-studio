@@ -1064,6 +1064,8 @@ private slots:
 	void watsynOverlappingNotesAreIndependentAndAllocationFree();
 	void watsynServesEveryAdmittedNoteWithoutAllocating();
 	void watsynKeepsTheWaveANoteStartedWith();
+	void watsynPublishesItsOscillatorParametersThroughARealTimeSafeHandoff();
+	void watsynAppliesOscillatorParameterChangesToASoundingNote();
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
@@ -4167,6 +4169,246 @@ void PluginPortsMigrationTest::watsynKeepsTheWaveANoteStartedWith()
 	QVERIFY2(secondPeak > 0.0f, "a sounding Watsyn note lost the wave it started with");
 	QVERIFY2(thirdPeak <= 0.0f, "a new Watsyn note did not render the edited wave");
 }
+
+namespace
+{
+
+//! Reads one file of the Watsyn plugin's own source tree.
+QString readWatsynSource( const QString& _name )
+{
+	QFile file{ QDir{ QStringLiteral( WATSYN_PLUGIN_SOURCE_DIR ) }.filePath( _name ) };
+	if ( !file.open( QIODevice::ReadOnly | QIODevice::Text ) ) { return {}; }
+	return QString::fromUtf8( file.readAll() );
+}
+
+//! The body of the function whose definition starts with _signature.
+QString functionBodyStartingAt( const QString& _source, const QString& _signature )
+{
+	const auto start = _source.indexOf( _signature );
+	if ( start < 0 ) { return {}; }
+	const auto end = _source.indexOf( QStringLiteral( "\n}\n" ), start );
+	if ( end < 0 ) { return {}; }
+	return _source.mid( start, end - start );
+}
+
+}
+
+
+/*!
+ * Cluster new-p17-202 (and new-p9-524): Watsyn's oscillator parameters must
+ * not travel from the editing thread to the audio thread through a plain
+ * cache.
+ *
+ * The upstream code kept the gains and the frequencies in plain float arrays
+ * that the editing thread wrote and the audio thread read, with nothing
+ * between them: a data race, and the audio thread could read a value that was
+ * being written. The parameters now travel through a published set that the
+ * editing thread fills and the audio thread takes once per rendered period.
+ *
+ * The regression reads the plugin's own sources, so it says the same thing
+ * on the unfixed code (where the plain caches are still there) and on the
+ * fixed code. The hand-off's own behaviour - a reader that is taken while a
+ * publication is in progress - is proved by
+ * tests/src/plugins/WatsynParamHandoffTest.cpp.
+ */
+void PluginPortsMigrationTest::watsynPublishesItsOscillatorParametersThroughARealTimeSafeHandoff()
+{
+	const auto header = readWatsynSource( QStringLiteral( "Watsyn.h" ) );
+	const auto source = readWatsynSource( QStringLiteral( "Watsyn.cpp" ) );
+	QVERIFY2( !header.isEmpty() && !source.isEmpty(), "the Watsyn sources were not found" );
+
+	// The plain caches the editing thread wrote and the audio thread read.
+	const QStringList caches{ "m_lvol", "m_rvol", "m_lfreq", "m_rfreq" };
+	for ( const auto& cache : caches )
+	{
+		QVERIFY2( !header.contains( cache ),
+			qPrintable( QStringLiteral( "Watsyn.h still declares the plain parameter cache %1" ).arg( cache ) ) );
+	}
+
+	// The published set the instrument fills and the audio thread takes.
+	QVERIFY2( header.contains( QStringLiteral( "WatsynParamHandoff" ) ),
+		"Watsyn does not hand its oscillator parameters over through a real-time-safe set" );
+	QVERIFY2( header.contains( QStringLiteral( "m_paramHandoff" ) ),
+		"Watsyn does not keep a published set of oscillator parameters" );
+	QVERIFY2( source.contains( QStringLiteral( "publishParams" ) ),
+		"Watsyn never publishes its oscillator parameters" );
+
+	const auto renderPath = functionBodyStartingAt( source, QStringLiteral( "void WatsynVoice::renderOutput(" ) );
+	QVERIFY2( !renderPath.isEmpty(), "the render path of Watsyn was not found" );
+	for ( const auto& cache : caches )
+	{
+		QVERIFY2( !renderPath.contains( cache ),
+			qPrintable( QStringLiteral( "the Watsyn render path still reads the plain parameter cache %1" ).arg( cache ) ) );
+	}
+	QVERIFY2( renderPath.contains( QStringLiteral( "m_paramHandoff" ) ),
+		"the Watsyn render path does not take the published set of oscillator parameters" );
+
+	// A note takes the published set, never a reading of the models: a
+	// reading of the models could combine values from different points of a
+	// multi-parameter update. The parameters are computed once, by the
+	// editing thread, and published.
+	QVERIFY2( !renderPath.contains( QStringLiteral( "computeParams" ) ),
+		"the Watsyn render path recomputes the oscillator parameters from the models" );
+	const auto voiceConstruction = functionBodyStartingAt( source, QStringLiteral( "WatsynVoice::WatsynVoice(" ) );
+	QVERIFY2( !voiceConstruction.isEmpty(), "the Watsyn voice was not found" );
+	QVERIFY2( !voiceConstruction.contains( QStringLiteral( "computeParams" ) ),
+		"a Watsyn note seeds its parameters from a reading of the models" );
+	QCOMPARE( source.count( QStringLiteral( "computeParams" ) ), 2 );
+
+	// The reclamation protocol's ordering. The published pointer's load and
+	// the exchange that publishes it have to be in the same total order as
+	// the claimer counter (seq_cst): a load that is only an acquire may read
+	// a STALE pointer, and a stale pointer is a set the editing thread has
+	// already retired and may be filling again.
+	const auto handoff = readWatsynSource( QStringLiteral( "WatsynParamHandoff.h" ) );
+	QVERIFY2( !handoff.isEmpty(), "the Watsyn parameter hand-off was not found" );
+	const auto lineOf = [&handoff]( const QString& _needle ) {
+		for ( const auto& line : handoff.split( '\n' ) )
+		{
+			const auto trimmed = line.trimmed();
+			// The protocol is written out in the comment above the code, so
+			// only the code itself is looked at here.
+			if ( trimmed.startsWith( '*' ) || trimmed.startsWith( "//" ) ) { continue; }
+			if ( line.contains( _needle ) ) { return line; }
+		}
+		return QString();
+	};
+	const auto loadLine = lineOf( QStringLiteral( "m_published.load( std::memory_order" ) );
+	QVERIFY2( !loadLine.isEmpty(), "the hand-off does not read the published pointer" );
+	QVERIFY2( loadLine.contains( QStringLiteral( "seq_cst" ) ),
+		"the hand-off reads the published pointer with a weaker order than the claimer counter: "
+		"a reader could observe a set the editing thread has already retired" );
+	const auto exchangeLine = lineOf( QStringLiteral( "m_published.exchange( fresh" ) );
+	QVERIFY2( !exchangeLine.isEmpty(), "the hand-off does not publish the pointer" );
+	QVERIFY2( exchangeLine.contains( QStringLiteral( "seq_cst" ) ),
+		"the hand-off publishes the pointer with a weaker order than the claimer counter" );
+
+	// The claim window, in the code: a reader announces itself BEFORE it
+	// observes the published pointer, and leaves the window only AFTER it has
+	// pinned the set it observed. The editing thread's recycle() refuses to
+	// recycle while the claimer count is non-zero, so a set a reader could
+	// still copy cannot be put back into the free list. The interleaving
+	// itself is exercised by
+	// WatsynParamHandoffTest::anIndependentReaderPausedInTheClaimWindowKeepsItsSetAlive().
+	const auto claimIn = handoff.indexOf( QStringLiteral( "m_claimers.fetch_add( 1," ) );
+	const auto observe = handoff.indexOf( QStringLiteral( "Set* set = m_published.load(" ) );
+	const auto pin = handoff.indexOf( QStringLiteral( "set->pins.fetch_add( 1," ) );
+	const auto claimOut = handoff.indexOf( QStringLiteral( "m_claimers.fetch_sub( 1," ) );
+	QVERIFY2( claimIn >= 0 && observe >= 0 && pin >= 0 && claimOut >= 0,
+		"the hand-off's claim window is not the one this regression describes" );
+	QVERIFY2( claimIn < observe,
+		"a reader observes the published pointer before it announces its claim: the editing "
+		"thread could recycle the observed set under it" );
+	QVERIFY2( observe < pin && pin < claimOut,
+		"a reader leaves the claim window before it has pinned the set it observed" );
+	QVERIFY2( handoff.contains( QStringLiteral( "m_claimers.load( std::memory_order_seq_cst ) != 0" ) ),
+		"the editing thread does not refuse to recycle while a reader is inside the claim window" );
+
+	// The seam is test-only. It is the one thing added to the audio-thread
+	// read for the regression, and the shipped plugin must not contain it:
+	// the type, the setter, the branch and the members are all behind
+	// LMMS_TESTING. The build proves the hook is inert in production (the
+	// plugin module has no such symbol); this says it cannot creep back.
+	bool sawTestGuard = false;
+	bool everySeamLineGuarded = true;
+	int testGuardDepth = 0;
+	for ( const auto& line : handoff.split( '\n' ) )
+	{
+		const auto trimmed = line.trimmed();
+		if ( trimmed.startsWith( QStringLiteral( "#ifdef LMMS_TESTING" ) ) ) { ++testGuardDepth; sawTestGuard = true; }
+		else if ( trimmed.startsWith( QStringLiteral( "#endif" ) ) && testGuardDepth > 0 ) { --testGuardDepth; }
+		if ( line.contains( QStringLiteral( "m_claimHook" ) ) && testGuardDepth == 0 ) { everySeamLineGuarded = false; }
+	}
+	QVERIFY2( sawTestGuard, "the hand-off does not compile its test seam out of the shipped plugin" );
+	QVERIFY2( everySeamLineGuarded,
+		"a claim-window seam member is outside #ifdef LMMS_TESTING, so the shipped plugin carries it" );
+}
+
+
+/*!
+ * The oscillator parameters still reach a note that is already sounding: a
+ * volume of zero silences it, and a volume that is set back makes it sound
+ * again. The hand-off must not cost the instrument its parameters.
+ */
+void PluginPortsMigrationTest::watsynAppliesOscillatorParameterChangesToASoundingNote()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	const auto& instruments = migratedInstruments();
+	const auto module = std::find_if(instruments.begin(), instruments.end(),
+		[](const auto& candidate) { return std::string{candidate.plugin} == "watsyn"; });
+	QVERIFY(module != instruments.end());
+
+	auto* lib = new QLibrary{QString::fromUtf8(module->path)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	const auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto* instrument = static_cast<lmms::Instrument*>(entry(track.get(), nullptr));
+	QVERIFY(instrument != nullptr);
+
+	lmms::NotePlayHandleManager::init();
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 4)}, lmms::TimePos{0}, 60};
+	auto* handle = lmms::NotePlayHandleManager::acquire(track.get(), 0, frames * 4, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip);
+	QVERIFY(handle != nullptr);
+
+	const auto peakOf = [](const std::vector<lmms::SampleFrame>& buffer) {
+		float peak = 0.0f;
+		for (const auto& frame : buffer)
+		{
+			peak = std::max(peak, std::abs(frame.left()));
+			peak = std::max(peak, std::abs(frame.right()));
+		}
+		return peak;
+	};
+
+	QDomDocument doc;
+	QDomElement root = doc.createElement("instrument");
+	const QDomElement saved = instrument->saveState(doc, root);
+	const auto withVolumes = [&](const char* volume) {
+		QDomElement state = saved.cloneNode(true).toElement();
+		for (const auto* name : {"a1_vol", "a2_vol", "b1_vol", "b2_vol"})
+		{
+			state.setAttribute(name, volume);
+		}
+		instrument->restoreState(state);
+	};
+
+	const auto render = [&](std::vector<lmms::SampleFrame>& buffer) {
+		instrument->playNote(handle, std::span<lmms::SampleFrame>{buffer});
+	};
+
+	std::vector<lmms::SampleFrame> loud(static_cast<std::size_t>(frames));
+	render(loud);
+	QVERIFY2(peakOf(loud) > 0.0f, "the Watsyn note rendered no sound at all");
+
+	withVolumes("0");
+	std::vector<lmms::SampleFrame> silent(static_cast<std::size_t>(frames));
+	render(silent);
+	QCOMPARE(peakOf(silent), 0.0f);
+
+	withVolumes("100");
+	std::vector<lmms::SampleFrame> loudAgain(static_cast<std::size_t>(frames));
+	render(loudAgain);
+	QVERIFY2(peakOf(loudAgain) > 0.0f, "the Watsyn note did not come back after its volume was restored");
+
+	if (handle->m_pluginData != nullptr)
+	{
+		instrument->deleteNotePluginData(handle);
+		handle->m_pluginData = nullptr;
+	}
+	lmms::NotePlayHandleManager::release(handle);
+	delete instrument;
+}
+
 
 void PluginPortsMigrationTest::monoDelayUpdatesItsDelayAcrossSampleRateChanges()
 {
