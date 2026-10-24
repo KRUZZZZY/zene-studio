@@ -23,8 +23,8 @@
 
 /*! One row per verb the File/Edit/View/Help menus and the main toolbar gained a command
  *  for (src/core/ControlCommandsProjectLifecycle.cpp, src/gui/ControlCommandsShell.cpp).
- *  The four that write are IRREVERSIBLE and say what a caller can still do; the rest write
- *  no project state. Joined by reversibilityRowTable() (ControlReversibilityTable.cpp).
+ *  The file-writing verbs with no inverse are IRREVERSIBLE and say what a caller can still do;
+ *  the rest write no project state. Joined by reversibilityRowTable() (ControlReversibilityTable.cpp).
  */
 
 #include "ControlReversibility.h"
@@ -49,11 +49,12 @@ const ReversibilityRow kShellRows[] = {
 		"keeps no snapshot of what it replaced (unsaved edits included)",
 		"none",
 		"save first (project.save), then reopen that file with project.open"),
-	R("project.save_as_template", RC::Irreversible, false,
-		"it REPLACES the user's default template file (<user template dir>/default.mpt) and keeps "
-		"no copy; the session itself is not modified",
-		"none",
-		"copy default.mpt aside before the call; the reply's `replaced` says whether one existed"),
+	R("project.save_as_template", RC::TrueInverse, true,
+		"a template is a file outside the project journal; the previous bytes and any backup bytes "
+		"the save replaces are captured before the write",
+		"action checkpoint: one file-level undo step restores the prior template tree, and redo "
+		"reapplies the bytes the save published",
+		""),
 	R("project.import", RC::Irreversible, false,
 		"the import filters add tracks with the project journal paused (ImportFilter::import), so "
 		"there is no checkpoint for control.undo to apply",

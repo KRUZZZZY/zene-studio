@@ -224,6 +224,9 @@ set(LMMS_TESTS
 	# compare the whole file with the bytes that were there before. It needs a
 	# real Engine (the recorded action checkpoint goes on the project journal).
 	src/core/ControlProjectArchiveTest.cpp
+	# Replacing the default or a named template is one file-level undo step,
+	# including restoration and redo of the save path's backup side effect.
+	src/core/ControlProjectTemplateTest.cpp
 	# render.render accepts an absolute output path according to this host's
 	# filesystem rules; its source guard catches the POSIX-only regression on
 	# non-Windows builders, while the runtime call exercises a Windows drive path
@@ -6322,6 +6325,10 @@ set_tests_properties(ControlChainPresetTest PROPERTIES
 # verbs through the registry, so it wants a real Qt platform plugin even though
 # nothing opens a window - the same reason as the three groups above.
 set_tests_properties(ControlProjectArchiveTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# The template save group constructs a full Engine and writes real template files,
+# so it needs a Qt platform plugin even though nothing opens a window.
+set_tests_properties(ControlProjectTemplateTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The transport.tempo_map_* group constructs a full Engine and drives the map
 # through the registry (and the engine's undo stack), so it needs a Qt platform
