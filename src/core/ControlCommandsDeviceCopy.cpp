@@ -258,6 +258,12 @@ void storeSlot(Effect* effect, AbSlots& pair, bool toB)
 	(toB ? pair.bValues : pair.aValues) = parameterValues(effect);
 }
 
+bool sameAbSlots(const AbSlots& first, const AbSlots& second)
+{
+	return first.a == second.a && first.b == second.b && first.onB == second.onB &&
+		first.aValues == second.aValues && first.bValues == second.bValues;
+}
+
 std::map<int, AbSlots>& abSlots()
 {
 	static std::map<int, AbSlots> pairs;
@@ -413,8 +419,7 @@ ControlResult pluginAb(const QJsonObject& args)
 		const AbSlots before = pair;
 		storeSlot(effect, pair, toB);
 		pair.onB = toB;
-		const bool changed = before.a != pair.a || before.b != pair.b || before.onB != pair.onB ||
-			before.aValues != pair.aValues || before.bValues != pair.bValues;
+		const bool changed = !sameAbSlots(before, pair);
 		if (changed)
 		{
 			// The device is recorded like recall's, so undo and redo find it again after an unload and its undo rebuilt it.
