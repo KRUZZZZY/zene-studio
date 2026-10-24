@@ -52,6 +52,7 @@ The required feature gate passed. Its recorded table is in `12-feature-check.log
 | complexity | PASS, no new item in changed files |
 | file-length | PASS, no new item in changed files |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port` | **EXIT=0** |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port new-p17-202-port` | **EXIT=0**, `RESULT: PASS - submit` (log `16-submit-check-final.log`) |
 
 The existing fix commit `aff8b3383` explicitly committed: `plugins/Watsyn/Watsyn.cpp`, `plugins/Watsyn/Watsyn.h`, `plugins/Watsyn/WatsynParamHandoff.h`, `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/rt-safety-scope.txt`, `tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/src/plugins/WatsynParamHandoffTest.cpp`, `tests/upstream-modifications.txt`, and this report. The all-sources regeneration in that commit matches the manifest's published recipe; it was required because the base manifest contained vendored paths excluded by that recipe.
 
@@ -64,5 +65,6 @@ The existing fix commit `aff8b3383` explicitly committed: `plugins/Watsyn/Watsyn
 - **Is there collateral damage to old projects or legitimate callers?** No. Save/load fields and model ranges are unchanged, and the fix adds no limit or rejection check. The separate full plugin-migration ctest fixture failure is documented above.
 - **Does the ALREADY-FIXED/FALSE-POSITIVE evidence question apply?** No; the verdict is REAL. The pre-fix arrays, writers, and render reads are cited above at `HEAD^` file:line locations.
 - **Did the Watsyn test family pass?** Yes, 2/2 registered CTest tests passed. The focused source-contract and sounding-note tests passed as well.
-- **Did the gates pass?** Yes. `feature_check.py` returned 0, and `submit_check.py` returned 0 (`RESULT: PASS - submit`); logs `13-feature-check-final.log` and `14-submit-check.log` contain the outputs.
-- **Was the fix committed?** Yes, implementation and tests in `aff8b3383`, and the refreshed report in `6faf22d3d`. The implementation commit's explicit paths are listed above.
+- **Did the gates pass?** Yes. The final `feature_check.py` returned 0, and `submit_check.py` returned 0 (`RESULT: PASS - submit`); logs `15-feature-check-self-check.log` and `16-submit-check-final.log` contain those outputs.
+- **Was the fix committed?** Yes, implementation and tests in `aff8b3383`. The report was refreshed in `6faf22d3d` and its self-check was completed in `275b2a9e7`; both report commits contain only `docs/qwen-fixes-2026-10/cluster-new-p17-202-port.md`. The implementation commit's explicit paths are listed above.
+- **Exact completion check command and result:** `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-202-port new-p17-202-port` — EXIT=0, `RESULT: PASS - submit`. All five `?` prompts are answered in the preceding bullets: the verdict is REAL, and the regression, determinism, completeness, and collateral-damage evidence is stated above.
