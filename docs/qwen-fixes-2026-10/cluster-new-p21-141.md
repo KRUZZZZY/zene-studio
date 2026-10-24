@@ -25,6 +25,7 @@ All build and test output is in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen
 | Rebuild restored code (`build-4.log`) | `cmake --build build --target zene SampleEditorDialogTest` | 0 | Rebuilt both targets. |
 | Restored code, GREEN (`test-4.log`) | `ctest -R '^SampleEditorDialogTest$' --output-on-failure` (from `build/tests`) | 0 | 1/1 CTest target passed. |
 | Feature gates (`gate-2.log`) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-141` | 0 | All eight gates passed. |
+| Completion check (`submit-1.log`) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-141 new-p21-141` | 0 | The committed report, clean tree, tests, and feature gates passed; the Self-check answers the ASK items. |
 
 The first feature gate run (`gate-1.log`, exit 1) found that `tests/all-sources.txt` still contained vendored sfizz paths excluded by its own checked-in recipe. I regenerated that manifest from the recipe. The subsequent gate run passed `fork-sources`, `all-sources-reproduce`, and the other gates; complexity and file-length reported no new items in changed files.
 
@@ -50,3 +51,5 @@ The first feature gate run (`gate-1.log`, exit 1) found that `tests/all-sources.
 - **Cause and completeness:** The `m_toolBar` search found the redundant initializer, the assignment from `addDropToolBarToTop()`, later uses, and the single member declaration. Every `Editor` goes through this constructor, and the toolbar helper still creates the sole installed toolbar.
 - **Collateral behavior:** Only the redundant widget allocation is removed. Project load/save paths and serialized formats are untouched, and the transport toolbar/actions remain initialized as before.
 - **Not-real verdict evidence:** Not applicable; this is a confirmed real bug.
+
+The fix commit is `7f31add44` (`Fix new-p21-141 redundant Editor toolbar`).
