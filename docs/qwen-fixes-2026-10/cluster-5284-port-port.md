@@ -1,76 +1,48 @@
 FIXED
 
-# Cluster 5284-port-port — SRC mode changes on the audio thread
+# Cluster 5284-port-port — SRC converter creation on the render path
 
-## Decision and evidence
+## Decision and code evidence
 
-Verdict: REAL. On the port base 09ce5f1c8, src/core/Sample.cpp:116-121 compared the playback state's mode with ExportRenderSettings::srcQuality() and called AudioResampler::setMode() from Sample::play(). AudioResampler::setMode() calls src_new() at src/core/AudioResampler.cpp:143, which creates converter state and can allocate. Sample::play() is the sample playback path.
+**REAL.** `SampleTrack::play()` creates a `SamplePlayHandle` for a clip at `src/tracks/SampleTrack.cpp:293`. Its clip constructor runs the tagged state setup at `src/core/SamplePlayHandle.cpp:137-138`; before this fix, the embedded `Sample::PlaybackState` used the ordinary `AudioResampler` constructor, whose `createConverterState()` calls `src_new()` at `src/core/AudioResampler.cpp:84-92, 362-368`. `PatmanInstrument::selectSample()` created another default `PlaybackState` at `plugins/Patman/Patman.cpp:528`, reached while a note is rendered (`src/core/NotePlayHandle.cpp:358`).
 
-The manual port implementation is commit 5e1379547, directly on top of 09ce5f1c8. The verification below was rerun on this branch.
+Comped sample clips had the same sibling path: `CompSlipReaders::openReaders()` emplaced up to four default playback states at `src/core/CompSlip.cpp:79-85` while the clip handle was being constructed. The deterministic sample test exposed that sibling separately: with the main clip state already prepared, it still observed one converter allocation until comp-slip readers were tagged.
 
-The fix removes mode selection from Sample::play(); current src/core/Sample.cpp:100-108 only sets the existing resampler's ratio before processing. Sample::PlaybackState now defaults to the selected mode at construction (include/Sample.h:51-55). A quality change prepares every retained converter under AudioEngine::requestChangesGuard(), publishes only after all preparations succeed, then adopts them (src/core/AudioEngine.cpp:264-279). Failure discards prepared states and leaves the published setting unchanged. The walk covers engine voices, song instruments and their retained pools, sample handles and comp-slip readers, and note states.
+The original `Sample::play()` body now sets the ratio and processes audio only (`src/core/Sample.cpp:100-121`); quality changes for retained states already use the engine transaction. This round closes the remaining new-state paths. Tagged clip, comp-slip, and Patman states claim prepared slots (`src/core/SamplePlayHandle.cpp:137-138`, `src/core/CompSlip.cpp:84`, `plugins/Patman/Patman.cpp:528`). `AudioEngine::initDevices()` initializes the pool off the render path (`src/core/AudioEngine.cpp:769-775`); converter states are created in pool chunk creation (`src/core/AudioResampler.cpp:292`). Quality changes prepare and adopt pool states under the engine change guard before publishing the new quality (`src/core/AudioEngine.cpp:275-289, 294-337`).
 
-The existing export.set_src_quality command only records its undo step after propagation succeeds (src/core/ControlCommandsExport.cpp:242-251). ProjectRenderer and the CLI handle a failed selection. No command was added.
+The pool grows in chunks as the play-handle capacity grows (`src/core/AudioResampler.cpp:324-346`, `src/core/AudioEngine.cpp:1390-1397, 1489-1495`), with room for the primary state plus the four `CompSlipReaders::MaxReaders` states per play handle (`src/core/AudioEngine.cpp:137-145`). This adds no fixed voice limit. Project serialization and saved SRC settings are unchanged.
 
-The legacy AudioFileProcessor reference fixture now constructs its playback state with the selected quality (tests/reference/AudioFileProcessor/AudioFileProcessor.cpp:132-136). Its old play path relied on Sample::play() replacing the model-selected converter. This keeps the sample-exact migration comparison aligned with the behavior under test.
+## Regression and verification evidence
 
-## Regression and verification
+All `ctest` commands below ran from `build/tests`; build commands ran from the worktree root. Each command’s output was saved in a new numbered log under the requested run log folder.
 
-AudioResamplerRatioTest::thePlayPathDoesNotReCreateTheConverter renders fixed sine input through a Linear state while selecting Linear and SincBest, with a SincBest control proving the fixture distinguishes converter output. With the product patch reversed, the pinned-state comparison fails at tests/src/core/AudioResamplerRatioTest.cpp:415; with the patch restored, it passes. The test uses no clock, sleep, or race.
-
-The product-only patch was generated from the port diff and reversed for RED:
-
-git diff 09ce5f1c8..HEAD -- include/AudioEngine.h include/AudioResampler.h include/CompSlip.h include/ExportRenderSettings.h include/Instrument.h include/Sample.h include/SamplePlayHandle.h include/Song.h plugins/AudioFileProcessor/AudioFileProcessor.cpp plugins/AudioFileProcessor/AudioFileProcessor.h plugins/AudioFileProcessor/SamplerVoicePool.h plugins/Patman/Patman.cpp plugins/Patman/Patman.h plugins/SlicerT/SlicerT.cpp plugins/SlicerT/SlicerT.h src/core/AudioEngine.cpp src/core/AudioResampler.cpp src/core/CompSlip.cpp src/core/ControlCommandsExport.cpp src/core/ExportRenderSettings.cpp src/core/ProjectRenderer.cpp src/core/Sample.cpp src/core/SamplePlayHandle.cpp src/core/Song.cpp src/core/main.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/fix.patch && git status --short
-Exit 0.
-
-| Check | Command (CTest runs from build/tests) | Exit | Result |
+| Stage | Exact command | Exit | Evidence |
 |---|---|---:|---|
-| RED build | cmake --build build --target zene AudioResamplerRatioTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/build-9.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" | 0 | Rebuilt zene and the regression target with the product patch reversed. |
-| RED test | ctest -R '^AudioResamplerRatioTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/test-12.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" | 8 | The new comparison failed; 15 passed and 1 failed. |
-| Restore patch | git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/fix.patch && git status --short --branch | 0 | Product patch restored; worktree clean before report update. |
-| GREEN build | cmake --build build --target zene AudioResamplerRatioTest PluginPortsMigrationTest decimator_1202 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/build-10.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" | 0 | All requested targets and the optional migration fixture built. |
-| GREEN regression | ctest -R '^AudioResamplerRatioTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/test-13.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" | 0 | 1/1 CTest target passed. |
-| Focused family | ctest -R '^(AudioResamplerRatioTest|PluginPortsMigrationTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/test-14.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" | 0 | 2/2 CTest targets passed. |
-| Case totals | ctest -R '^(AudioResamplerRatioTest|PluginPortsMigrationTest)$' -V --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/test-15.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc" | 0 | AudioResamplerRatioTest: 16 passed. PluginPortsMigrationTest: 73 passed, 0 failed, 2 skipped; migratedPluginsPreserveBehaviour passed. |
+| Build the expanded regression before its comp-slip fix | `cmake --build build --target AudioResamplerRatioTest -j4` | 0 | `build-13.log` |
+| Comp-slip RED with the main SampleTrack state already prepared | `ctest -R '^AudioResamplerRatioTest$' --output-on-failure` | 8 | `test-10.log`: `sampleTrackVoiceUsesPreparedConverterOnRenderPath` observed 1 RT converter allocation; the existing ratio and mismatch-rate checks passed. |
+| Save and reverse all production hunks | `git diff -- include/AudioResampler.h include/Sample.h include/SamplePlayHandle.h plugins/Patman/Patman.cpp src/core/AudioEngine.cpp src/core/AudioResampler.cpp src/core/CompSlip.cpp src/core/SamplePlayHandle.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r2/logs/fix.patch` | 0 | `fix.patch` contains production paths only; tests and allocation seam remained present. |
+| Build the two regressions with production changes reversed | `cmake --build build --target AudioResamplerRatioTest PatmanLoadTest -j4` | 0 | `build-15.log` |
+| RED with production hunks reversed | `ctest -R '^(AudioResamplerRatioTest|PatmanLoadTest)$' --output-on-failure` | 8 | `test-12.log`: SampleTrack/comp-slip observed 2 allocations, Patman observed 1; both expected 0. Existing output/input ratio and mismatch-rate tests passed in the same reversed run. |
+| Restore production hunks | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r2/logs/fix.patch` | 0 | Restored the exact patch used for the reversal. |
+| Rebuild the app, plugin modules, and nine focused test targets | `cmake --build build --target zene AudioResamplerRatioTest PluginPortsMigrationTest AudioFileProcessorPlayheadTest AudioFileProcessorWaveViewTest PatmanLoadTest SlicerTPlayheadTest SlicerTWaveformTest SlicerTZoomTest TapTempoTest slicert patman -j4` | 0 | `build-16.log` |
+| GREEN for both creation-path regressions | `ctest -R '^(AudioResamplerRatioTest|PatmanLoadTest)$' --output-on-failure` | 0 | `test-13.log`: 2/2 passed. |
+| Focused test family | `ctest -R '^(AudioResamplerRatioTest|PluginPortsMigrationTest|AudioFileProcessorPlayheadTest|AudioFileProcessorWaveViewTest|PatmanLoadTest|SlicerTPlayheadTest|SlicerTWaveformTest|SlicerTZoomTest|TapTempoTest)$' --output-on-failure` | 0 | `test-14.log`: 9/9 passed. |
+| Feature gate after report was written | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5284-port-port` | 0 | `gate-4.log`: all eight checks passed; complexity and file-length reported no new item. |
 
-PluginPortsMigrationTest's two skips are SF2Player cases unavailable in this build. Its migration comparison reports SF2Player and PeakControllerEffect as unproven because their optional fixtures cannot be loaded/built here; these are reported gaps, not failures. The test target needs decimator_1202 built explicitly because CMake does not make it a dependency.
-
-The train base's tests/all-sources.txt included 1,148 vendored sfizz paths excluded by its own published recipe. The manifest was regenerated from that recipe.
-
-## Gates
-
-Command: python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5284-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/gate-10.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"
-
-Exit 0; all eight rows passed:
-
-| Gate | Result |
-|---|---|
-| fork-sources | PASS, exit 0 |
-| all-sources-reproduce | PASS, exit 0 |
-| no-upstream-regression | PASS, exit 0 |
-| check-namespace | PASS, exit 0 |
-| no-tautology | PASS, exit 0 |
-| doc-figures | PASS, exit 0 |
-| complexity | PASS, no new item in changed files |
-| file-length | PASS, no new item in changed files |
-
-The completion check command was run after commit 86a0d36c1: python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5284-port-port 5284-port-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5284-port-port.r1/logs/submit-2.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc". Exit 0; RESULT: PASS - submit.
-
-## Registration
-
-No new product or test source file was added. The regression remains in the registered tests/src/core/AudioResamplerRatioTest.cpp. This new report is registered in tests/fork-sources.txt; inherited changes are recorded in tests/upstream-modifications.txt; Sample::play() is recorded in tests/rt-safety-scope.txt.
+The new tests are `AudioResamplerRatioTest::sampleTrackVoiceUsesPreparedConverterOnRenderPath` (`tests/src/core/AudioResamplerRatioTest.cpp:461-479`) and `PatmanLoadTest::patmanVoiceUsesPreparedConverterOnRenderPath` (`tests/src/plugins/PatmanLoadTest.cpp:192-220`). Both set `SincBest`, enter `RealtimeScope`, and assert the `LMMS_TESTING` converter-allocation counter is zero. The sample case creates a slipped comp segment, so the same assertion covers the primary sample state and comp-slip reader state.
 
 ## Self-check
 
-- Regression proof: with product changes reversed, build-9 exited 0 and test-12 exited 8 (15 passed, the new mode comparison failed at AudioResamplerRatioTest.cpp:415). With the patch restored, build-10 exited 0; test-13 and test-14 exited 0. Verbose test-15 exited 0: AudioResamplerRatioTest 16 passed; PluginPortsMigrationTest 73 passed, 0 failed, 2 skipped, including a passing migratedPluginsPreserveBehaviour comparison.
-- Determinism: the test injects a fixed 8192-frame sine at 2000 Hz, source rate equal to half the engine output rate, and renders 2048 frames. It compares explicit Linear-state outputs under Linear and SincBest selections; a SincBest-state render is the sensitivity control. No wall clock, sleep, or race is used.
-- Cause and complete caller audit: Sample::play() no longer reads SRC quality or changes converter mode (src/core/Sample.cpp:100-108); setMode()'s src_new() is at src/core/AudioResampler.cpp:136-148. Its direct playback callers are SamplePlayHandle::play (src/core/SamplePlayHandle.cpp:573), CompSlip rendering (src/core/CompSlip.cpp:133), AudioFileProcessor (plugins/AudioFileProcessor/AudioFileProcessor.cpp:210), Patman (plugins/Patman/Patman.cpp:226), and SlicerT (plugins/SlicerT/SlicerT.cpp:179). AudioEngine's retained-state walk (src/core/AudioEngine.cpp:283-303) reaches the engine pool, song instruments, live handles, and note states; each plugin/comp-slip state owner prepares, adopts, or discards with the transaction. The global setting callers are ControlCommandsExport, ProjectRenderer, and the CLI; ExportRenderSettings::reset is used only by tests. OutputSettings::setSrcQuality stores a render option and does not publish the live global selection. Each caller handles or deliberately ignores failure according to its role; no new command was added.
-- No collateral damage: no project serialization, saved data, limits, or checks changed. Linear remains the default. The migration regression's sample-exact comparison passes; the legacy reference fixture initializes its converter from the selected quality to preserve the old play-path result.
-- Verdict: REAL, evidenced by the port-base Sample.cpp:116-121 comparison and AudioResampler.cpp src_new() call at line 143 described above; this is not an ALREADY-FIXED or FALSE-POSITIVE case.
-- Sibling commands: export.get_settings only reads; export.preset_add, export.preset_apply, export.preset_list, and export.preset_remove operate on stored presets; export.set_dither and export.set_loudness_report change separate settings. None changes live SRC quality. export.set_src_quality uses the transactional setter and records one undo step only after success.
+1. **Fails with the production fix reversed and passes with it restored:** `test-12.log` records the production-only reversal and CTest exit 8, with actual allocation counts of 2 for the sample/comp-slip path and 1 for Patman. `test-13.log` records the same two tests passing 2/2 after `git apply` restored the patch. The earlier ratio regression remains in `AudioResamplerRatioTest`; its output/input and mismatch-rate tests pass in the reversed run.
+2. **Deterministic:** the tests use `RealtimeScope` plus the `LMMS_TESTING` counter around `createConverterState()` (`src/core/AudioResampler.cpp:84-92`). They inject no timestamps, sleep, or race. The sample test invokes the real clip-handle constructor and comp-slip setup; the Patman test invokes `instrument.playNote()` under the scope.
+3. **Cause and sibling paths checked:** SampleTrack clip handles, their comp-slip readers, and Patman note states are tagged. SlicerT’s retained playback slots and AudioFileProcessor’s sampler voice pool are already constructed off-thread and remain on their existing prepare/adopt path. Preview, metronome, and file-browser `SamplePlayHandle(Sample*)` callers retain the ordinary constructor; they are not the render-created SampleClip path.
+4. **No collateral data or limit change:** no project/file format or saved setting changed. The selected `SrcQuality` still determines the converter; new states claim a slot in that mode. The reserve grows with play-handle capacity and comp-reader headroom instead of rejecting voices at a new fixed cap.
+5. **Realtime, undo, and commands:** tagged RT construction only claims/releases an existing slot with atomics; `src_new` and `src_delete` for converter changes happen during control-thread prepare/adopt work. No new control command was added. `export.set_src_quality` still publishes only after converter preparation succeeds and records its existing undo step on success (`src/core/ControlCommandsExport.cpp:243-251`, `src/core/AudioEngine.cpp:275-289`).
+6. **Verdict-only prompt:** not applicable; the verdict is FIXED and the REAL mechanism is evidenced above.
+7. **Sibling export commands checked:** `export.get_settings` is read-only; `export.preset_add`, `export.preset_apply`, `export.preset_list`, and `export.preset_remove` only store/apply/list/remove sample rate, bit depth, and stereo-mode presets (`src/core/ControlCommandsExportPresets.cpp:28-31, 161-170, 221-229, 328-336, 414-425`). `export.set_dither` changes dither only, and `export.set_loudness_report` changes the report flag only (`src/core/ControlCommandsExport.cpp:118-197, 273-319`). `export.set_src_quality` is the only sibling that changes converter mode; it uses the existing guarded quality transaction described above.
 
-## Files in the port
+## Files committed for this cluster
 
-Product: include/AudioEngine.h, include/AudioResampler.h, include/CompSlip.h, include/ExportRenderSettings.h, include/Instrument.h, include/Sample.h, include/SamplePlayHandle.h, include/Song.h, plugins/AudioFileProcessor/AudioFileProcessor.cpp, plugins/AudioFileProcessor/AudioFileProcessor.h, plugins/AudioFileProcessor/SamplerVoicePool.h, plugins/Patman/Patman.cpp, plugins/Patman/Patman.h, plugins/SlicerT/SlicerT.cpp, plugins/SlicerT/SlicerT.h, src/core/AudioEngine.cpp, src/core/AudioResampler.cpp, src/core/CompSlip.cpp, src/core/ControlCommandsExport.cpp, src/core/ExportRenderSettings.cpp, src/core/ProjectRenderer.cpp, src/core/Sample.cpp, src/core/SamplePlayHandle.cpp, src/core/Song.cpp, src/core/main.cpp.
-
-Tests and registration: tests/all-sources.txt, tests/fork-sources.txt, tests/reference/AudioFileProcessor/AudioFileProcessor.cpp, tests/rt-safety-scope.txt, tests/src/core/AudioResamplerRatioTest.cpp, tests/upstream-modifications.txt. Report: docs/qwen-fixes-2026-10/cluster-5284-port-port.md.
+- Test-seam commit `fba4e6ad1`: `include/AudioResampler.h`, `src/core/AudioResampler.cpp`, `tests/src/core/AudioResamplerRatioTest.cpp`, `tests/src/plugins/PatmanLoadTest.cpp`, `tests/upstream-modifications.txt`.
+- Comp-slip regression commit `8958b5157`: `tests/src/core/AudioResamplerRatioTest.cpp`.
+- Fix/report commit: `include/AudioResampler.h`, `include/Sample.h`, `include/SamplePlayHandle.h`, `plugins/Patman/Patman.cpp`, `src/core/AudioEngine.cpp`, `src/core/AudioResampler.cpp`, `src/core/CompSlip.cpp`, `src/core/SamplePlayHandle.cpp`, `tests/upstream-modifications.txt`, and this report.

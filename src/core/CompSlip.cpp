@@ -81,7 +81,7 @@ void CompSlipReaders::openReaders(f_cnt_t sourceIn, float sourceFramesPerTick)
 	for (int reader = 0; reader < m_readerCount; ++reader)
 	{
 		auto& state = m_readers[static_cast<std::size_t>(reader)];
-		state.emplace();
+		state.emplace(AudioResampler::RealtimeVoiceTag{});
 		state->setFrameIndex(static_cast<int>(sourceIn + TimePos(m_slips[static_cast<std::size_t>(reader)]).frames(sourceFramesPerTick)));
 	}
 }

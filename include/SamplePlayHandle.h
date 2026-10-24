@@ -121,6 +121,9 @@ public:
 	void discardPreparedConverterMode() noexcept;
 
 private:
+	SamplePlayHandle(Sample* sample, bool ownAudioBusHandle, AudioResampler::RealtimeVoiceTag realtimeVoice);
+	void initializeSampleState();
+
 	Sample::PlaybackState m_state;
 	//! The source window this handle renders, snapshotted at construction: nothing
 	//! that happens to the clip or the Sample afterwards changes this handle's

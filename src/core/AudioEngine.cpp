@@ -23,6 +23,8 @@
  */
 
 #include "AudioEngine.h"
+#include <stdexcept>
+
 #include "AutomatableModel.h"
 #include "ControlRoom.h"
 #include "RenderPeriodClock.h"
@@ -51,6 +53,7 @@
 #include "RealtimeScope.h"
 #include "ConfigManager.h"
 #include "SamplePlayHandle.h"
+#include "CompSlip.h"
 #include "Track.h"
 
 // platform-specific audio-interface-classes
@@ -132,6 +135,14 @@ namespace
 {
 
 constexpr qsizetype PlayHandleListLowWater = static_cast<qsizetype>(PlayHandle::MaxNumber / 4);
+constexpr std::size_t PendingPlaybackStateCapacity = 2 * PlayHandle::MaxNumber + 1;
+constexpr std::size_t RealtimePlaybackStatesPerPlayHandle = 1 + CompSlipReaders::MaxReaders;
+
+auto realtimeVoiceConverterCapacity(qsizetype playHandleCapacity) noexcept -> std::size_t
+{
+	const std::size_t playHandleStates = static_cast<std::size_t>(playHandleCapacity) + PendingPlaybackStateCapacity;
+	return playHandleStates * RealtimePlaybackStatesPerPlayHandle;
+}
 
 constexpr std::size_t MetronomeVoicePoolCapacity = AudioEngine::MetronomeSampleVoicePoolCapacity;
 constexpr std::size_t SampleVoicePoolCapacity = MetronomeVoicePoolCapacity
@@ -282,6 +293,7 @@ auto AudioEngine::applyConverterModeToRetainedStates(AudioResampler::Mode mode,
 
 bool AudioEngine::prepareConverterModeForRetainedStates(AudioResampler::Mode mode) noexcept
 {
+	if (!AudioResampler::prepareRealtimeVoiceConverterPool(mode)) { return false; }
 	if (m_sampleVoicePool != nullptr && !m_sampleVoicePool->prepareConverterMode(mode)) { return false; }
 
 	Song* const song = Engine::getSong();
@@ -321,6 +333,7 @@ void AudioEngine::adoptPreparedConverterModeForRetainedStates() noexcept
 		applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], AudioResampler::Mode::Linear,
 			ConverterModePhase::Adopt);
 	}
+	AudioResampler::adoptRealtimeVoiceConverterPool();
 }
 
 
@@ -341,6 +354,7 @@ void AudioEngine::discardPreparedConverterModeForRetainedStates() noexcept
 		applyConverterModeToPlayHandle(m_capacityDeferredPlayHandles[i], AudioResampler::Mode::Linear,
 			ConverterModePhase::Discard);
 	}
+	AudioResampler::discardRealtimeVoiceConverterPool();
 }
 
 
@@ -754,6 +768,11 @@ void AudioEngine::prepareAutomatableModelBuffers() noexcept
 
 void AudioEngine::initDevices()
 {
+	if (!AudioResampler::initializeRealtimeVoiceConverterPool(AudioResampler::modeForCurrentSrcQuality(),
+		realtimeVoiceConverterCapacity(m_playHandles.capacity())))
+	{
+		throw std::runtime_error{"Unable to prepare realtime sample converters"};
+	}
 	bool success_ful = false;
 	if( m_renderOnly ) {
 		m_audioDev = new AudioDummy( success_ful, this );
@@ -1371,8 +1390,13 @@ void AudioEngine::addAudioBusHandle(AudioBusHandle* busHandle)
 			* PlayHandle::MaxNumber);
 		if (capacity < required || capacity - m_playHandles.size() <= PlayHandleListLowWater)
 		{
-			m_playHandles.reserve(std::max(required,
-				capacity + static_cast<qsizetype>(PlayHandle::MaxNumber)));
+			const qsizetype requested = std::max(required,
+				capacity + static_cast<qsizetype>(PlayHandle::MaxNumber));
+			if (AudioResampler::ensureRealtimeVoiceConverterPoolCapacity(
+				realtimeVoiceConverterCapacity(requested)))
+			{
+				m_playHandles.reserve(requested);
+			}
 		}
 	}
 	doneChangeInModel();
@@ -1465,7 +1489,12 @@ void AudioEngine::topUpPlayHandleCapacityOnControlThread()
 		const qsizetype capacity = m_playHandles.capacity();
 		if (capacity - m_playHandles.size() <= PlayHandleListLowWater)
 		{
-			m_playHandles.reserve(capacity + static_cast<qsizetype>(PlayHandle::MaxNumber));
+			const qsizetype requested = capacity + static_cast<qsizetype>(PlayHandle::MaxNumber);
+			if (AudioResampler::ensureRealtimeVoiceConverterPoolCapacity(
+				realtimeVoiceConverterCapacity(requested)))
+			{
+				m_playHandles.reserve(requested);
+			}
 		}
 	}
 	for (AudioBusHandle* bus : m_audioBusHandles) { bus->topUpPlayHandleCapacityUnderEngineChangeLock(); }

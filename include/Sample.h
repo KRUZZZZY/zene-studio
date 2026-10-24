@@ -55,6 +55,12 @@ public:
 		{
 		}
 
+		PlaybackState(AudioResampler::RealtimeVoiceTag tag, int frameIndex = 0)
+			: m_resampler(tag)
+			, m_frameIndex(frameIndex)
+		{
+		}
+
 		auto frameIndex() const -> int { return m_frameIndex; }
 		auto backwards() const -> bool { return m_backwards; }
 		auto converterMode() const -> AudioResampler::Mode { return m_resampler.mode(); }
