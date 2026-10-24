@@ -1396,6 +1396,38 @@ QString writeKbmSized(QTemporaryDir& dir, const QString& name, const QString& de
 		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
 	}
 
+	//! A repeated mts.master_set changes nothing and must not sit on the undo
+	//! stack: the real table edit before it is the step control.undo unwinds.
+	void repeatedMasterSetLeavesTheRealEditForUndo()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const ControlResult firstDisarm = run(QStringLiteral("mts.master_set"),
+			QJsonObject{{QStringLiteral("enabled"), false}});
+		QVERIFY2(firstDisarm.ok, qPrintable(firstDisarm.errorMessage));
+		const int depthBefore = Engine::projectJournal()->undoDepth();
+		const QJsonObject before = snapshotState(run(QStringLiteral("mts.get_state")).result);
+
+		const ControlResult noted = run(QStringLiteral("mts.set_note"),
+			QJsonObject{{QStringLiteral("note"), 60}, {QStringLiteral("frequency"), 432.0},
+				{QStringLiteral("source"), QStringLiteral("repeated-master-set")}});
+		QVERIFY2(noted.ok, qPrintable(noted.errorMessage));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+
+		const ControlResult repeated = run(QStringLiteral("mts.master_set"),
+			QJsonObject{{QStringLiteral("enabled"), false}});
+		QVERIFY2(repeated.ok, qPrintable(repeated.errorMessage));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore + 1);
+
+		REV_UNDO_OR_FAIL();
+		int mismatchKey = 0;
+		const QJsonObject undone = snapshotState(run(QStringLiteral("mts.get_state")).result);
+		QVERIFY2(sameTable(before, undone, &mismatchKey),
+			qPrintable(QStringLiteral("control.undo unwound the repeated mts.master_set "
+				"instead of the set_note before it (first difference: %1)").arg(mismatchKey)));
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depthBefore);
+	}
+
 };
 
 QTEST_GUILESS_MAIN(SessionTuningTest)
