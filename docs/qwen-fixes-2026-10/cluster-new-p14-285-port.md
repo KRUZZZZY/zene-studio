@@ -37,7 +37,7 @@ The mandatory registration gate also exposed the pinned train's existing `tests/
 | Focused GREEN after restoring accepted changes | `test-10.log`: `EXIT=0`; 3/3 targets passed: `ScriptCommandBridgeTest`, `ScriptDawQueueFullTest`, and `ScriptDawPairReservationTest`. |
 | Script/Lua family | `test-8.log`: `EXIT=8`; 16 targets ran, 13 passed and 3 existing environment-dependent targets failed: `ControlAutomationScriptTest` could not find expected fresh-song track fixtures, `ScriptEngineTest` could not load `tripleoscillator`, and `ScriptMemoryBudgetTest`'s simulated impossible allocation succeeded under host overcommit. The accepted source report records the same failures; the new focused targets passed in this run. |
 | Registration gate diagnosis | `gate-1.log`, `gate-fork-2.log`, and `gate-all-2.log`: `EXIT=1` before rederiving the whole-tree source manifest; the exact diff was the 1,148 sfizz paths documented in the pinned manifest header. After rederiving, `gate-3.log` and `gate-4.log` both passed. |
-| Feature gates | `gate-5.log`: `EXIT=0`, all 8 checks passed after the final report edit. Complexity and file length report no new item in the changed files. |
+| Feature gates | `gate-6.log`: `EXIT=0`, all 8 checks passed. Complexity and file length report no new item in the changed files. |
 | Completion check | Precommit `submit-1.log`: `EXIT=1` because no integration commit existed and the tree was staged. Postcommit `submit-2.log`: `EXIT=0`, `RESULT: PASS - submit`; commit, clean-tree, report, test-registration, and gate checks all pass. The checker listed its five ASK items; each is answered in “Self-check.” |
 
 ## Exact commands and exit codes
@@ -55,7 +55,7 @@ ctest -R 'ScriptDawQueueFullTest|ScriptDawPairReservationTest|ScriptCommandBridg
 git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/fix.patch; echo EXIT=$?  # EXIT=0
 cmake --build build --target zene ScriptCommandBridgeTest ScriptDawQueueFullTest ScriptDawPairReservationTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/build-12.log 2>&1; echo EXIT=$?  # EXIT=0
 ctest -R 'Script|Lua' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/test-8.log 2>&1; echo EXIT=$?  # EXIT=8 (16 targets: 13 passed, 3 environment-dependent failures)
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-285-aac861e62b > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/gate-5.log 2>&1; echo EXIT=$?  # EXIT=0
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-285-aac861e62b > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/gate-6.log 2>&1; echo EXIT=$?  # EXIT=0
 ```
 
 The following integration diagnostics are recorded to make the compatibility adjustments reviewable:
