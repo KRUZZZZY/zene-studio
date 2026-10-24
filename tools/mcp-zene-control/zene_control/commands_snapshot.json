@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-24T06:19:36Z",
+  "captured_at": "2026-10-24T14:19:43Z",
   "commands": [
     {
       "args_schema": {
@@ -21534,7 +21534,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Write the session as the user's DEFAULT TEMPLATE (<user template dir>/default.mpt) - what every later project.new starts from. File > Save as default template dispatches this after asking before an overwrite. The session itself is unchanged; an existing default template is REPLACED (`replaced` says so). 0.5.0 L11 (WF-027): with 'name' it writes a NAMED template (<user template dir>/<name>.mpt) instead, which the start hub lists and project.new opens.",
+      "description": "Write the session as the user's DEFAULT TEMPLATE (<user template dir>/default.mpt) - what every later project.new starts from. File > Save as default template dispatches this after asking before an overwrite. The session itself is unchanged; an existing default template is REPLACED (`replaced` says so), and one control.undo restores the template file and any backup the save replaced. 0.5.0 L11 (WF-027): with 'name' it writes a NAMED template (<user template dir>/<name>.mpt) instead, which the start hub lists and project.new opens.",
       "group": "project",
       "id": "project.save_as_template",
       "mutating": true,
@@ -36209,8 +36209,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-3_twp8cr/zene.sock",
-    "version": "0.4.0-alpha.4568+09ce5f1"
+    "source_socket": "/tmp/zctl-run-702vwkkh/zene.sock",
+    "version": "0.4.0-alpha.4610+b5f5a69"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

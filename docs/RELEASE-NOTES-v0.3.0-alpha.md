@@ -1053,8 +1053,10 @@ which move the figure to `rows=839 true_inverse=417 snapshot=42 irreversible=22 
 (Q050-125, 2026-10-22, after the train snapshot: `clip.set_polarity` adds one `true_inverse` row, so the
 same tree measures `rows=855 true_inverse=424 snapshot=42 irreversible=24 not_mutating=365`.)
 
+**M0 merge train 15** (`050/m0-train-15`, 2026-10-24, automatic): `ReversibilityContractTest` on the merged tree measures `rows=855 true_inverse=425 snapshot=42 irreversible=23 not_mutating=365`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=855 true_inverse=424 snapshot=42 irreversible=24 not_mutating=365
+     measured: rows=855 true_inverse=425 snapshot=42 irreversible=23 not_mutating=365
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
