@@ -30,6 +30,7 @@ import json
 import os
 import sys
 import time
+import xml.etree.ElementTree as ET
 
 import control_socket_harness as H
 from freeze_bounce_evidence import Recorder, Session, report_results
@@ -39,6 +40,20 @@ ODD_KEYS = "Ctrl+Alt+Shift+F9"
 
 def kind(reply):
     return (reply.get("error") or {}).get("kind")
+
+
+def saved_track_heights(session, outdir, name):
+    """Read persisted Track::saveTrack heights as an independent state readback."""
+    path = os.path.join(outdir, name)
+    saved = session.result("project.save", {"path": path})
+    if saved.get("file") != path or not os.path.exists(path):
+        return None
+    try:
+        root = ET.parse(path).getroot()
+        return [int(track.get("trackheight")) for track in root.iter("track")
+                if track.get("trackheight") is not None]
+    except (OSError, ET.ParseError, ValueError):
+        return None
 
 
 def binding(session, action_id):
@@ -331,7 +346,7 @@ def check_workflow_scope(session, recorder):
     session.result("workflow.remove", {"name": "everywhere"})
 
 
-def check_arranger_view(session, recorder):
+def check_arranger_view(session, recorder, outdir):
     first = session.result("arrangement.zoom", {"pixels_per_bar": 32})
     second = session.result("arrangement.zoom", {"pixels_per_bar": 96})
     third = session.result("arrangement.zoom", {"pixels_per_bar": 200})
@@ -378,11 +393,24 @@ def check_arranger_view(session, recorder):
     fit = session.call("arrangement.zoom", {"fit": "song"})
     recorder.check("fit song answers a zoom", fit.get("ok") and (fit.get("result") or {}).get("pixels_per_bar", 0) > 0,
                    "reply=%r" % fit)
+    track_count = session.result("track.overview").get("count", 0)
+    seeded_heights = [48 + (index % 97) for index in range(track_count)]
+    seeded = session.result("arrangement.fit_tracks", {"heights": seeded_heights})
+    before_heights = saved_track_heights(session, outdir, "fit-tracks-before.mmp")
+    recorder.check("fit_tracks test captured every track's distinct prior height",
+                   len(seeded_heights) > 1 and before_heights == seeded.get("heights")
+                   and len(set(before_heights or [])) > 1,
+                   "expected=%r reply=%r saved=%r" % (seeded_heights, seeded, before_heights))
+
     tracks = session.call("arrangement.fit_tracks")
     heights = (tracks.get("result") or {}).get("heights") or []
     recorder.check("fit_tracks gives every track one height",
                    tracks.get("ok") and len(heights) > 0 and len(set(heights)) == 1, "reply=%r" % tracks)
-    session.result("control.undo")
+    undone = session.result("control.undo")
+    restored_heights = saved_track_heights(session, outdir, "fit-tracks-after-undo.mmp")
+    recorder.check("one control.undo restores every track's exact pre-fit height",
+                   undone.get("undone") is True and restored_heights == before_heights,
+                   "before=%r undo=%r restored=%r" % (before_heights, undone, restored_heights))
     tool = session.result("arrangement.set_tool", {"tool": "select"})
     menu = session.result("window.tool_menu")
     # The arranger's seven tools and the note editor's seven (paint and mute included since the 0.5.0 review).
@@ -448,7 +476,7 @@ def main(argv):
         check_workflow_recording(session, recorder)
         check_workflow_recovery(session, recorder)
         check_workflow_scope(session, recorder)
-        check_arranger_view(session, recorder)
+        check_arranger_view(session, recorder, instance.tmp)
         check_patterns(session, recorder)
         check_nudge_and_navigation(session, recorder)
         check_lua_refuses(session, recorder)
