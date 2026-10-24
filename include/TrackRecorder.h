@@ -90,7 +90,7 @@ public:
 	//! feature row 64 "Arbitrary input count"). With no capture device open the
 	//! engine's bus is two channels wide, so that is the default; an N-channel
 	//! interface raises it. Off the audio thread.
-	void setInputChannelCapacity(int channels) noexcept;
+	void setInputChannelCapacity(int channels);
 	int inputChannelCapacity() const noexcept;
 	//! True when \a channel can be selected: the check arm() makes, exposed so
 	//! the control surface can refuse a bad channel with the range in the

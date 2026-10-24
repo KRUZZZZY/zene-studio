@@ -107,9 +107,16 @@ int TrackRecorder::inputChannel() const noexcept
 
 
 
-void TrackRecorder::setInputChannelCapacity(int channels) noexcept
+void TrackRecorder::setInputChannelCapacity(int channels)
 {
-	m_inputChannelCapacity.store(channels < 1 ? 1 : channels, std::memory_order_relaxed);
+	const int capacity = channels < 1 ? 1 : channels;
+	m_inputChannelCapacity.store(capacity, std::memory_order_relaxed);
+	if (!inputChannelSelectable(inputChannel()))
+	{
+		// This is an off-audio-thread reconfiguration. Stop the writer here so a
+		// route that lost its selected input cannot remain armed with no frames.
+		disarm();
+	}
 }
 
 

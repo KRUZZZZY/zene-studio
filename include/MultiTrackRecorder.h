@@ -102,7 +102,7 @@ public:
 	//! The number of interleaved input channels a route may select from.
 	int inputChannelCapacity() const noexcept;
 	//! Applies a new selectable range to every route (off the audio thread).
-	void setInputChannelCapacity(int channels) noexcept;
+	void setInputChannelCapacity(int channels);
 
 	//! Route \a index. Undefined for an index outside [0, trackCount()).
 	TrackRecorder& track(int index) noexcept { return *m_tracks[static_cast<std::size_t>(index)]; }

@@ -68,7 +68,7 @@ int MultiTrackRecorder::inputChannelCapacity() const noexcept
 }
 
 
-void MultiTrackRecorder::setInputChannelCapacity(int channels) noexcept
+void MultiTrackRecorder::setInputChannelCapacity(int channels)
 {
 	for (auto& track : m_tracks)
 	{
