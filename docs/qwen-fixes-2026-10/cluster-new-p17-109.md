@@ -31,6 +31,7 @@ The CTest family contains one registered test (`ModulatorPanelTest`, CTest #447)
 | GREEN rebuild | `cmake --build build --target zene ModulatorPanelTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-109.r1/logs/build-14.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` | 0 | Rebuilt with fix |
 | GREEN test (run from `build/tests`) | `ctest -R '^ModulatorPanelTest$' --verbose > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-109.r1/logs/test-16.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` | 0 | 1/1 CTest target passed; 8 passed, 0 failed, 1 skipped |
 | Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-109 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-109.r1/logs/gates-4.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` | 0 | All eight gate rows PASS |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p17-109 new-p17-109 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-109.r1/logs/submit-1.log 2>&1; rc=$?; echo EXIT=$rc; exit $rc` | 0 | PASS; all ASK items are answered in Self-check |
 
 The first feature-gate run returned exit 1 because the checked-in `tests/all-sources.txt` contained 1,148 vendored sfizz/Abseil source entries that its documented recipe excludes. I regenerated its entry list from that recipe; `fork-sources` and `all-sources-reproduce` then passed. No gate thresholds or baselines changed.
 
@@ -48,4 +49,4 @@ The first feature-gate run returned exit 1 because the checked-in `tests/all-sou
 - **Cause and siblings:** `fillChannels`, `fillEffects`, and `fillParameters` are now refreshed at their corresponding picker popup. Existing constructor initialization and channel/effect selection connections remain in place. Stable IDs preserve a selected effect across reorder; a removed item falls back to an available entry.
 - **Collateral and saved data:** the change is confined to the GUI picker widgets and their list refreshes. It adds no command, serialized field, limit, or project save/load behavior; old project data continues through the unchanged loader and renderer paths.
 - **Realtime and undo:** no audio-thread code or undo path changed; the refresh runs from GUI interaction, and no control command was added.
-- **Gate exit code:** final `feature_check.py` exit 0. The completion check runs after commit.
+- **Gate exit codes:** final `feature_check.py` exit 0 and `submit_check.py` exit 0.
