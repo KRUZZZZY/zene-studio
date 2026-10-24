@@ -87,7 +87,7 @@ auto midiToVst3Event(const MidiEventIn& midi, Steinberg::int32 busIndex,
  */
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 	Steinberg::Vst::EventList& events, Steinberg::int32 busIndex, int frames,
-	const class MidiControllerMap* controllers = nullptr,
+	class MidiControllerMap* controllers = nullptr,
 	Steinberg::Vst::IParameterChanges* changes = nullptr, int maxEvents = -1) -> int;
 
 /**

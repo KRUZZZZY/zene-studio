@@ -60,14 +60,30 @@ public:
 	void build(Steinberg::Vst::IEditController* controller, std::int32_t busIndex);
 	//! Audio thread: queue @a midi as a parameter change when it is a mapped controller, as a point
 	//! at @a sampleOffset (the event's own frame, which the caller bounds to the request). True when
-	//! it was (and is then not to be sent as an event).
+	//! it was (and is then not to be sent as an event). A parameter whose queue is full keeps its
+	//! later points deferred; flush() writes the newest of them, so call it after the last apply().
 	auto apply(const MidiEventIn& midi, Steinberg::Vst::IParameterChanges* changes,
-		std::int32_t sampleOffset = 0) const -> bool;
+		std::int32_t sampleOffset = 0) -> bool;
+	//! Audio thread: write each deferred parameter's newest point at its own frame, then forget them.
+	//! @a changes may be nullptr, in which case nothing was deferred and only the bookkeeping runs.
+	void flush(Steinberg::Vst::IParameterChanges* changes);
 	auto mappedCount() const -> int { return m_mapped; }
 
 private:
 	static constexpr std::uint32_t Unmapped = 0xffffffffu;
+	//! The newest point of a parameter whose queue was full, waiting for flush().
+	struct Deferred
+	{
+		bool pending = false;
+		std::int32_t sampleOffset = 0;
+		double value = 0.0;
+	};
+	void defer(std::size_t key, std::int32_t sampleOffset, double value);
 	std::array<std::uint32_t, 16 * Controllers> m_params{};
+	std::array<Deferred, 16 * Controllers> m_deferred{};
+	//! The keys with a pending point, so flush() visits only those.
+	std::array<std::uint16_t, 16 * Controllers> m_deferredKeys{};
+	int m_deferredCount = 0;
 	int m_mapped = 0;
 };
 
@@ -76,11 +92,11 @@ private:
  *  that stays within it never reallocates on the audio thread. */
 inline constexpr int kMaxPointsPerParameter = 5;
 
-/*! Audio thread: add a point at @a sampleOffset to @a queue without growing it past
- *  kMaxPointsPerParameter. Points arrive in time order (drainMidiIntoEventList sorts them); once the
- *  queue is full, a later point overwrites the last one's value, so the newest value is never lost
- *  and only lands at the last kept point's frame. */
-void addBoundedPoint(Steinberg::Vst::IParamValueQueue* queue, std::int32_t sampleOffset, double value);
+/*! Audio thread: add a point at @a sampleOffset to @a queue, unless the queue already holds
+ *  kMaxPointsPerParameter - 1 points. The last slot stays free for the newest point, which
+ *  MidiControllerMap::flush() adds at its own frame; a point refused here is deferred, never moved
+ *  earlier. @returns false when the point was not added. */
+bool addBoundedPoint(Steinberg::Vst::IParamValueQueue* queue, std::int32_t sampleOffset, double value);
 
 /*! Audio thread: copy into @a to the points of @a from that fall in the chunk [offset, offset + chunk),
  *  rebased to the chunk's start - the parameter half of the per-chunk slicing HostedPlugin::process()
