@@ -48,6 +48,7 @@ namespace lmms::crashreporter
 
 bool setReportDirectory(const std::string&) { return false; }
 bool install(const std::string&) { return false; }
+bool installAlternateStackForCurrentThread() { return false; }
 bool uninstall() { return false; }
 bool handlersArmed() { return false; }
 std::string reportDirectory() { return std::string(); }

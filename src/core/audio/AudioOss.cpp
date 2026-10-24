@@ -34,6 +34,7 @@
 #include "LcdSpinBox.h"
 #include "AudioEngine.h"
 #include "AudioOssWrite.h"
+#include "CrashReporter.h"
 #include "OssSampleConversion.h"
 
 #ifdef LMMS_HAVE_UNISTD_H
@@ -223,6 +224,7 @@ void AudioOss::stopProcessingImpl()
 
 void AudioOss::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	auto buf = std::vector<float>(audioEngine()->framesPerAudioBuffer() * channels());
 	auto pcmBuf = std::vector<int16_t>(buf.size());
 	const auto bytesToWrite = static_cast<int>(pcmBuf.size() * sizeof(int16_t));

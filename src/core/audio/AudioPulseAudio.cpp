@@ -30,6 +30,7 @@
 #ifdef LMMS_HAVE_PULSEAUDIO
 
 #include "ConfigManager.h"
+#include "CrashReporter.h"
 #include "LcdSpinBox.h"
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -181,6 +182,7 @@ static void context_state_callback(pa_context *c, void *userdata)
 
 void AudioPulseAudio::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	pa_mainloop * mainLoop = pa_mainloop_new();
 	if( !mainLoop )
 	{

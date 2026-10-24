@@ -34,6 +34,7 @@
 #include "LoudnessReport.h"
 
 #include "AudioEngineWorkerThread.h"
+#include "CrashReporter.h"
 #include "AudioFileWave.h"
 #include "AudioFileOgg.h"
 #include "AudioFileMP3.h"
@@ -277,6 +278,7 @@ void ProjectRenderer::startProcessing()
 
 void ProjectRenderer::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	PerfLogTimer perfLog("Project Render");
 
 	// Everything below renders on this thread alone; see DeterministicRenderScope.

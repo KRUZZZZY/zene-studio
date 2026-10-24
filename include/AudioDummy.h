@@ -33,6 +33,7 @@
 #include "AudioDevice.h"
 #include "AudioDeviceSetupWidget.h"
 #include "AudioEngine.h"
+#include "CrashReporter.h"
 
 namespace lmms
 {
@@ -101,6 +102,7 @@ private:
 
 	void run() override
 	{
+		crashreporter::installAlternateStackForCurrentThread();
 		// Paced against an absolute deadline, not "a period minus the render time": each sleep's
 		// overshoot used to be lost for good, so a host with coarse sleep slack (macOS) drifted
 		// far below real time - two bars in 25 s on the hosted macos-arm64 runner (run

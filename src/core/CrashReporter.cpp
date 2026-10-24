@@ -95,10 +95,9 @@ alignas(16) char s_projectPath[2][kMaxProjectPathBytes] = {"(none)", "(none)"};
 std::atomic<int> s_projectSlot{0};
 
 // A crash from an exhausted stack cannot run a handler on that stack, so the
-// handlers are installed with SA_ONSTACK and this dedicated stack.  It is
-// per-thread (POSIX sigaltstack is a thread attribute): the thread that calls
-// install() gets it.  See the "not proven" list in docs/CRASH-REPORTER.md.
-alignas(16) char s_altStack[32 * 1024];
+// handlers are installed with SA_ONSTACK and each thread that may need crash
+// handling registers its own stack. sigaltstack() is a per-thread attribute.
+alignas(16) thread_local char s_altStack[32 * 1024];
 
 bool s_installed = false;
 constexpr int kCrashSignalCount = 5;
@@ -264,22 +263,28 @@ bool setReportDirectory(const std::string& workingDirectory)
 	return true;
 }
 
-bool install(const std::string& workingDirectory)
+bool installAlternateStackForCurrentThread()
 {
-	if (!setReportDirectory(workingDirectory)) { return false; }
+	static thread_local bool registered = false;
+	if (registered) { return true; }
 
-	if (s_installed) { return true; }
-
-	// The handler's own stack, so an exhausted stack is still reportable.
 	stack_t ss;
 	std::memset(&ss, 0, sizeof(ss));
 	ss.ss_sp = s_altStack;
 	ss.ss_size = sizeof(s_altStack);
-	ss.ss_flags = 0;
-	if (::sigaltstack(&ss, nullptr) != 0)
-	{
-		// Non-fatal: without it a stack-overflow crash is not reportable.
-	}
+	if (::sigaltstack(&ss, nullptr) != 0) { return false; }
+	registered = true;
+	return true;
+}
+
+bool install(const std::string& workingDirectory)
+{
+	if (!setReportDirectory(workingDirectory)) { return false; }
+	// Repeated installs may come from a different thread; each caller needs its
+	// own alternate stack even when the process-wide handlers are already armed.
+	installAlternateStackForCurrentThread();
+
+	if (s_installed) { return true; }
 
 	struct sigaction sa;
 	std::memset(&sa, 0, sizeof(sa));
