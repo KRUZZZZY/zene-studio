@@ -31,6 +31,7 @@
  */
 
 #include <QDir>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
@@ -39,7 +40,9 @@
 
 #include "ConfigManager.h"
 #include "ControlProjectAssets.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "ExportFilter.h"
@@ -99,6 +102,124 @@ void setControlExportMidiTempPathHook(ExportMidiTempPathHook hook)
 
 namespace
 {
+
+struct TemplateFileSnapshot
+{
+	bool exists = false;
+	QByteArray bytes;
+	QFileDevice::Permissions permissions = {};
+};
+
+bool captureTemplateFile(const QString& path, TemplateFileSnapshot* snapshot, QString* error)
+{
+	snapshot->exists = QFileInfo::exists(path);
+	if (!snapshot->exists) { return true; }
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly))
+	{
+		*error = QStringLiteral("cannot read '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	snapshot->bytes = file.readAll();
+	if (file.error() != QFileDevice::NoError)
+	{
+		*error = QStringLiteral("cannot capture '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	snapshot->permissions = file.permissions();
+	return true;
+}
+
+bool captureTemplateFiles(const QString& path, const QString& backupPath, bool backupChanges,
+	TemplateFileSnapshot* file, TemplateFileSnapshot* backup, QString* error)
+{
+	if (!captureTemplateFile(path, file, error)) { return false; }
+	return !backupChanges || captureTemplateFile(backupPath, backup, error);
+}
+
+bool restoreTemplateFile(const QString& path, const TemplateFileSnapshot& snapshot, QString* error)
+{
+	if (!snapshot.exists)
+	{
+		if (QFileInfo::exists(path) && !QFile::remove(path))
+		{
+			*error = QStringLiteral("cannot remove '%1'").arg(path);
+			return false;
+		}
+		return true;
+	}
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly))
+	{
+		*error = QStringLiteral("cannot open '%1' for restore (%2)").arg(path, file.errorString());
+		return false;
+	}
+	if (file.write(snapshot.bytes) != snapshot.bytes.size())
+	{
+		*error = QStringLiteral("cannot write '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	if (!file.setPermissions(snapshot.permissions) || !file.commit())
+	{
+		*error = QStringLiteral("cannot commit '%1' (%2)").arg(path, file.errorString());
+		return false;
+	}
+	return true;
+}
+
+bool restoreTemplateFiles(const QString& path, const QString& backupPath, bool backupChanges,
+	const TemplateFileSnapshot& file, const TemplateFileSnapshot& backup, QString* error)
+{
+	QStringList failures;
+	QString fileError;
+	if (!restoreTemplateFile(path, file, &fileError))
+	{
+		failures << QStringLiteral("%1: %2").arg(path, fileError);
+	}
+	QString backupError;
+	if (backupChanges && !restoreTemplateFile(backupPath, backup, &backupError))
+	{
+		failures << QStringLiteral("%1: %2").arg(backupPath, backupError);
+	}
+	if (failures.isEmpty()) { return true; }
+	*error = failures.join(QStringLiteral("; "));
+	return false;
+}
+
+void restoreTemplateTree(const QString& path, const QString& backupPath, bool backupChanges,
+	const TemplateFileSnapshot& file, const TemplateFileSnapshot& backup)
+{
+	QString error;
+	if (!restoreTemplateFiles(path, backupPath, backupChanges, file, backup, &error))
+	{
+		control::recordActionRestoreFailure(
+			QStringLiteral("could not restore the template file tree: %1").arg(error));
+	}
+}
+
+QJsonObject templateFileSummary(const TemplateFileSnapshot& snapshot)
+{
+	QJsonObject result{{QStringLiteral("exists"), snapshot.exists}};
+	if (snapshot.exists)
+	{
+		result.insert(QStringLiteral("bytes"), snapshot.bytes.size());
+		result.insert(QStringLiteral("sha256"), QString::fromLatin1(
+			QCryptographicHash::hash(snapshot.bytes, QCryptographicHash::Sha256).toHex()));
+	}
+	return result;
+}
+
+qint64 templateUndoBytes(const TemplateFileSnapshot& file, const TemplateFileSnapshot& backup,
+	const TemplateFileSnapshot& redoneFile, const TemplateFileSnapshot& redoneBackup)
+{
+	return file.bytes.size() + backup.bytes.size() + redoneFile.bytes.size() + redoneBackup.bytes.size();
+}
+
+bool validTemplateName(const QString& name)
+{
+	return !name.isEmpty() && !name.contains(QLatin1Char('/')) && !name.contains(QLatin1Char('\\'))
+		&& !name.startsWith(QLatin1Char('.'));
+}
 
 ControlResult refused(const QString& message)
 {
@@ -176,7 +297,8 @@ void registerProjectSaveAsTemplate(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Write the session as the user's DEFAULT TEMPLATE "
 		"(<user template dir>/default.mpt) - what every later project.new starts from. File > "
 		"Save as default template dispatches this after asking before an overwrite. The session "
-		"itself is unchanged; an existing default template is REPLACED (`replaced` says so). 0.5.0 L11 "
+		"itself is unchanged; an existing default template is REPLACED (`replaced` says so), and "
+		"one control.undo restores the template file and any backup the save replaced. 0.5.0 L11 "
 		"(WF-027): with 'name' it writes a NAMED template (<user template dir>/<name>.mpt) instead, which "
 		"the start hub lists and project.new opens.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("name"), stringProperty()}});
@@ -187,13 +309,25 @@ void registerProjectSaveAsTemplate(ControlRegistry& registry)
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
 		const QString name = args.value(QStringLiteral("name")).toString(QStringLiteral("default")).trimmed();
-		if (name.isEmpty() || name.contains(QLatin1Char('/')) || name.contains(QLatin1Char('\\')) || name.startsWith(QLatin1Char('.')))
+		if (!validTemplateName(name))
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'name' is a file name, without a folder"));
 		}
 		const QString path = ConfigManager::inst()->userTemplateDir() + name + QStringLiteral(".mpt");
+		const QString backupPath = path + QStringLiteral(".bak");
 		QDir().mkpath(QFileInfo(path).absolutePath());
 		const bool replaced = QFileInfo::exists(path);
+		const bool backupChanges = replaced
+			&& ConfigManager::inst()->value(QStringLiteral("app"), QStringLiteral("disablebackup")).toInt() == 0;
+		TemplateFileSnapshot previous;
+		TemplateFileSnapshot previousBackup;
+		QString captureError;
+		if (!captureTemplateFiles(path, backupPath, backupChanges,
+				&previous, &previousBackup, &captureError))
+		{
+			return refused(QStringLiteral("the previous template file tree could not be captured for undo: %1")
+				.arg(captureError));
+		}
 		// saveProjectFile() writes the document and leaves the session's own
 		// file name where it was: a template is an artefact, not the project's
 		// new home (guiSaveProjectAs is the call that moves the name).
@@ -203,8 +337,42 @@ void registerProjectSaveAsTemplate(ControlRegistry& registry)
 			return refused(QStringLiteral("the template could not be written to '%1': %2")
 				.arg(path, song->saveRefusal()));
 		}
+		TemplateFileSnapshot written;
+		TemplateFileSnapshot writtenBackup;
+		if (!captureTemplateFiles(path, backupPath, backupChanges,
+				&written, &writtenBackup, &captureError))
+		{
+			QString restoreError;
+			const QString detail = restoreTemplateFiles(path, backupPath, backupChanges,
+				previous, previousBackup, &restoreError)
+				? captureError
+				: QStringLiteral("%1; the previous file tree could not be restored: %2")
+					.arg(captureError, restoreError);
+			return refused(QStringLiteral("the saved template could not be captured for undo: %1").arg(detail));
+		}
+
+		control::addStructuralUndoStep(
+			[path, backupPath, backupChanges, previous, previousBackup]() {
+				restoreTemplateTree(path, backupPath, backupChanges, previous, previousBackup);
+			},
+			[path, backupPath, backupChanges, written, writtenBackup]() {
+				restoreTemplateTree(path, backupPath, backupChanges, written, writtenBackup);
+			},
+			templateUndoBytes(previous, previousBackup, written, writtenBackup));
+
+		QJsonObject before{{QStringLiteral("path"), path},
+			{QStringLiteral("file"), templateFileSummary(previous)}};
+		if (backupChanges)
+		{
+			before.insert(QStringLiteral("backup_path"), backupPath);
+			before.insert(QStringLiteral("backup"), templateFileSummary(previousBackup));
+		}
 		return ControlResult::success(QJsonObject{{QStringLiteral("path"), path},
-			{QStringLiteral("replaced"), replaced}});
+			{QStringLiteral("replaced"), replaced},
+			{QStringLiteral("__transaction"), control::transactionPayload(before,
+				QStringLiteral("control.undo"), QJsonObject(), true,
+				QStringLiteral("action checkpoint: one file-level undo step restores the previous "
+					"template and any backup the save replaced"))}});
 	};
 	registry.registerCommand(cmd);
 }
