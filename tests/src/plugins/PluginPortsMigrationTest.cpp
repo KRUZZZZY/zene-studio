@@ -1091,6 +1091,7 @@ private slots:
 	void opulenzUpdatePatchLocksEmulatorForWholeUpdate();
 	void opulenzReloadEmulatorReplacesEmulatorUnderMutex();
 	void opulenzRendersTheProvidedSpanSize();
+	void opulenzZeroFrameCountStopsLoop();
 	void opulenzReappliesVelocityScalingToHeldVoice();
 	void realtimeWatchCoversSingleStreamedPlay();
 	void sf2DialogRejectsAFilteredOutProgram();
@@ -5418,6 +5419,30 @@ void PluginPortsMigrationTest::opulenzRendersTheProvidedSpanSize()
 		});
 	QVERIFY2(shortSpanBoundaryPreserved && longSpanFullyWritten,
 		"OpulenZ wrote outside a short span or left the tail of a long span unwritten");
+}
+
+/*!
+ * Regression for cluster new-p23-186: playImpl must leave its loop when a
+ * non-empty output span produces a zero-sized chunk. Calling the broken path
+ * would hang the test, so verify the guard sits between chunk calculation and
+ * emulator update instead.
+ */
+void PluginPortsMigrationTest::opulenzZeroFrameCountStopsLoop()
+{
+	const auto sourcePath = QDir{QCoreApplication::applicationDirPath()}
+		.filePath(QStringLiteral("../../plugins/OpulenZ/OpulenZ.cpp"));
+	QFile source{sourcePath};
+	QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+	const auto playBody = functionBody(source.readAll(), "void OpulenzInstrument::playImpl(");
+	QVERIFY2(!playBody.isEmpty(), "OpulenzInstrument::playImpl() source was not found");
+
+	const auto chunkPosition = playBody.indexOf("const auto chunkSize =");
+	const auto zeroGuardPosition = playBody.indexOf("if (chunkSize == 0)", chunkPosition);
+	const auto breakPosition = playBody.indexOf("break;", zeroGuardPosition);
+	const auto emulatorUpdatePosition = playBody.indexOf("theEmulator->update(", chunkPosition);
+	QVERIFY2(chunkPosition >= 0 && zeroGuardPosition > chunkPosition
+		&& breakPosition > zeroGuardPosition && emulatorUpdatePosition > breakPosition,
+		"playImpl must break on a zero chunk before updating the emulator, so offset cannot stall");
 }
 
 /*!

@@ -399,6 +399,11 @@ void OpulenzInstrument::playImpl(std::span<SampleFrame> out)
 	for (std::size_t offset = 0; offset < out.size();)
 	{
 		const auto chunkSize = std::min(out.size() - offset, static_cast<std::size_t>(frameCount));
+		if (chunkSize == 0)
+		{
+			break;
+		}
+
 		theEmulator->update(renderbuffer, static_cast<f_cnt_t>(chunkSize));
 
 		for (std::size_t frame = 0; frame < chunkSize; ++frame)
