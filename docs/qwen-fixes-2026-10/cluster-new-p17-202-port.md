@@ -58,9 +58,11 @@ The existing fix commit `aff8b3383` explicitly committed: `plugins/Watsyn/Watsyn
 ## Self-check
 
 - **Was the finding real?** Yes. `HEAD^` had plain float arrays in `Watsyn.h:170-174`, model callbacks wrote them in `Watsyn.cpp:618-645`, and the render path read them at `Watsyn.cpp:130-200`.
-- **Did the deterministic regression fail without and pass with the fix?** Yes. The exact RED/GREEN commands, assertions and exit codes are recorded in the proof table above and in numbered logs `09-proof-red-test.log` and `11-proof-green-test.log`.
+- **Did the deterministic regression fail without and pass with the fix?** Yes. The exact RED/GREEN commands, assertions and exit codes are recorded above and in numbered logs `09-proof-red-test.log` and `11-proof-green-test.log`.
+- **Is the test deterministic and race-free?** Yes. The interleaving test holds the reader in the claim window through a mutex/condition-variable handshake; shared test flags are guarded by that mutex, and the read result is checked after joining the reader. It uses no clock or sleep. The source-contract test and sounding-note test are also deterministic.
 - **Were all writers and readers checked?** Yes. All five update slots publish the complete set; the render takes one set; the old caches have no remaining product references.
-- **Did the Watsyn test family pass?** Yes, 2/2 registered CTest tests passed. The separate full plugin-migration ctest failure is documented above and is caused by its unavailable LADSPA fixture.
-- **Did the feature gate pass?** Yes, `feature_check.py` returned 0; its full PASS table is preserved in the numbered log.
-- **Was the fix committed?** Yes, in `aff8b3383` with the explicit paths listed above. This report is being refreshed in the follow-up commit after the review rerun.
-- **Completion check:** Run after committing this refreshed report; record its exact exit code and answer any `?` items here before finalizing.
+- **Is there collateral damage to old projects or legitimate callers?** No. Save/load fields and model ranges are unchanged, and the fix adds no limit or rejection check. The separate full plugin-migration ctest fixture failure is documented above.
+- **Does the ALREADY-FIXED/FALSE-POSITIVE evidence question apply?** No; the verdict is REAL. The pre-fix arrays, writers, and render reads are cited above at `HEAD^` file:line locations.
+- **Did the Watsyn test family pass?** Yes, 2/2 registered CTest tests passed. The focused source-contract and sounding-note tests passed as well.
+- **Did the gates pass?** Yes. `feature_check.py` returned 0, and `submit_check.py` returned 0 (`RESULT: PASS - submit`); logs `13-feature-check-final.log` and `14-submit-check.log` contain the outputs.
+- **Was the fix committed?** Yes, implementation and tests in `aff8b3383`, and the refreshed report in `6faf22d3d`. The implementation commit's explicit paths are listed above.
