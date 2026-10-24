@@ -390,7 +390,7 @@ private slots:
 		array.create(1);
 		array[0] = 'a';
 		QVERIFY_EXCEPTION_THROWN(
-			array.create("shared-memory-array-header-overflow-test", overflowingBytes), std::length_error);
+			array.create("array-header-overflow-test", overflowingBytes), std::length_error);
 		QCOMPARE(array.size(), std::size_t{1});
 		QCOMPARE(array[0], 'a');
 	}
