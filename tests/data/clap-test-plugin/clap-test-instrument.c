@@ -412,6 +412,10 @@ static bool instrument_state_load(const clap_plugin_t* plugin,
 	{
 		return false;
 	}
+	if (!isfinite(state.gain) || state.gain < 0.0 || state.gain > 1.0)
+	{
+		return false;
+	}
 	/* Only the value a user set is restored: the counters describe what this
 	   instance has been asked to process and belong to the host's session. */
 	self->gain = state.gain;
