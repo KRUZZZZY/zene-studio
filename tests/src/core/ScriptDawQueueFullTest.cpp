@@ -196,6 +196,30 @@ private slots:
 		QCOMPARE(channel->m_volumeModel.value(), originalValue);
 	}
 
+	/*! muteModel() exposes LuaBoolModel through the DAW-control API. It must
+	 *  report a dropped direct model write just like setMuted() does. */
+	void aBoolModelWriteOnAFullQueueIsRefusedAndTheScriptIsTold()
+	{
+		MixerChannel* channel = Engine::mixer()->mixerChannel(m_channel);
+		QVERIFY(channel != nullptr);
+		const bool originalValue = channel->m_muteModel.value();
+		LuaBoolModel& model = ScriptDawBindings::newMixerChannel(channel).muteModel();
+
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->takeLogMessages();
+		fillCommandQueue();
+
+		model.setValue(!originalValue);
+
+		const QStringList logs = engine->takeLogMessages();
+		const QString refusal = refusalIn(logs);
+		QVERIFY2(!refusal.isEmpty(),
+			qPrintable(QStringLiteral("the dropped bool-model write was not reported to the script: %1")
+				.arg(logs.join(QStringLiteral(" | ")))));
+		QVERIFY2(refusal.contains(QStringLiteral("queue is full")), qPrintable(refusal));
+		QCOMPARE(channel->m_muteModel.value(), originalValue);
+	}
+
 	/*! The stable-ID effect wrapper resolves its chain by flushing pending
 	 *  commands first, so this mutator drains the full queue before enqueueing
 	 *  the switch. The edit must still land, with no new drop or refusal. */

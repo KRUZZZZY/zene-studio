@@ -22,8 +22,9 @@ The mandatory registration gate also exposed the pinned train's existing `tests/
 | One-command DAW edits | `enqueueDaw()` reports a queue-full refusal for the DAW edit callers (`src/core/ScriptDawEdit.cpp:113-118,349-454`). The test exercises rename and mute; `addChannel`, `loadEffect`, and `removeEffect` share this helper. The target's effect wrapper synchronizes first, as described above. |
 | Mixer fader, mute, and solo | `enqueueModelWrite()` uses `ScriptEngine::enqueue(checkpoint, write)` so both commands fit or neither does (`src/core/ScriptDawEdit.cpp:135-156`). A one-slot queue refuses the pair without moving the model or adding an empty undo step; a fitting pair applies and one undo restores it (`ScriptDawPairReservationTest.cpp:136-191`). |
 | Direct model wrapper | `LuaFloatModel::setValue()` reports a failed single-command enqueue (`src/core/ScriptDawBindings.cpp:629-644`). The full-queue regression uses a direct model wrapper so it reaches the admission failure without the mixer-ID read synchronization (`ScriptDawQueueFullTest.cpp:177-199`). |
+| Boolean model wrapper | `LuaMixerChannel::muteModel()` and `soloModel()` expose `LuaBoolModel`; its `setValue()` now reports a failed enqueue (`src/core/ScriptDawBindings.cpp:544-555`, `src/core/ScriptBindings.cpp:562-573`). The reviewer-added case obtains the wrapper before filling the queue and verifies refusal plus unchanged mute state. |
 | `zene.command()` bridge | `luaCommand()` returns typed `refused` immediately when the queue rejects the request (`src/core/ScriptCommandBridge.cpp:273-309`). Its test verifies a saturated queue yields `nil, ..., "refused"` rather than the previous default `busy` response (`ScriptCommandBridgeTest.cpp:110-128`). |
-| Legacy v0 binding callers | `src/core/ScriptBindings.cpp` still ignores the returned bool. This preserves its documented drop-and-count contract (`docs/LUA-API-STABILISATION.md:29`) and is outside the DAW-control binding finding. |
+| Remaining legacy v0 command callers | Other direct command enqueues in `src/core/ScriptBindings.cpp` remain unchanged, consistent with the v0 drop-and-count description (`docs/LUA-API-STABILISATION.md:29`) and outside this DAW-control finding. The shared Boolean model setter is covered above because the new DAW API exposes it. |
 | Queue/audio thread | The new pair operation checks fixed ring-buffer space, writes a two-command stack array, and updates the existing relaxed dropped counter (`src/core/ScriptCommandQueue.cpp:57-80`). The producer never waits. No code was added to the audio thread; `audioThreadTick()` remains a pair of relaxed reads. Refusal logging occurs on the script caller thread. |
 | Undo, commands, and project data | A rejected pair leaves no checkpoint; a successful pair remains one undoable change. No control command, project serialization, saved-data limit, or load path changed. Existing projects and saved data are unaffected. |
 | Supported platforms | The change uses the existing C++20 lockless ring buffer, `std::size_t`, fixed stack storage, and Qt logging; it adds no OS-specific API or command layout. The configured host/build verified here is Linux x86-64, Qt 6.12.0, GCC 16.2. Windows and macOS builds were not available in this tree, so they are not claimed. |
@@ -37,7 +38,8 @@ The mandatory registration gate also exposed the pinned train's existing `tests/
 | Focused GREEN after restoring accepted changes | `test-10.log`: `EXIT=0`; 3/3 targets passed: `ScriptCommandBridgeTest`, `ScriptDawQueueFullTest`, and `ScriptDawPairReservationTest`. |
 | Script/Lua family | `test-8.log`: `EXIT=8`; 16 targets ran, 13 passed and 3 existing environment-dependent targets failed: `ControlAutomationScriptTest` could not find expected fresh-song track fixtures, `ScriptEngineTest` could not load `tripleoscillator`, and `ScriptMemoryBudgetTest`'s simulated impossible allocation succeeded under host overcommit. The accepted source report records the same failures; the new focused targets passed in this run. |
 | Registration gate diagnosis | `gate-1.log`, `gate-fork-2.log`, and `gate-all-2.log`: `EXIT=1` before rederiving the whole-tree source manifest; the exact diff was the 1,148 sfizz paths documented in the pinned manifest header. After rederiving, `gate-3.log` and `gate-4.log` both passed. |
-| Feature gates | `gate-6.log`: `EXIT=0`, all 8 checks passed. Complexity and file length report no new item in the changed files. |
+| Feature gates | `gate-6.log` passed before the QA follow-up; final tree gate `qa-review-5-final-gate.log`: `EXIT=0`, all 8 checks passed. Complexity and file length report no new item in the changed files. |
+| QA follow-up: Boolean model refusal | `qa-review-4-final-build.log`: `EXIT=0`; final focused CTest run in `qa-review-4-final-green.log`: `EXIT=0`, 3/3 targets pass. With only the Boolean model product hunk reversed, `qa-review-2-reversed-build.log`: `EXIT=0`; `qa-review-2-boolmodel-reversed-red.log`: `EXIT=8`, failing the new `LuaBoolModel` refusal assertion at `ScriptDawQueueFullTest.cpp:216`. |
 | Completion check | Precommit `submit-1.log`: `EXIT=1` because no integration commit existed and the tree was staged. Postcommit `submit-2.log`: `EXIT=0`, `RESULT: PASS - submit`; commit, clean-tree, report, test-registration, and gate checks all pass. The checker listed its five ASK items; each is answered in “Self-check.” |
 
 ## Exact commands and exit codes
@@ -56,6 +58,14 @@ git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.
 cmake --build build --target zene ScriptCommandBridgeTest ScriptDawQueueFullTest ScriptDawPairReservationTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/build-12.log 2>&1; echo EXIT=$?  # EXIT=0
 ctest -R 'Script|Lua' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/test-8.log 2>&1; echo EXIT=$?  # EXIT=8 (16 targets: 13 passed, 3 environment-dependent failures)
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-285-aac861e62b > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/gate-6.log 2>&1; echo EXIT=$?  # EXIT=0
+git diff -- src/core/ScriptBindings.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-boolmodel.patch; echo EXIT=$?  # EXIT=0
+git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-boolmodel.patch; echo EXIT=$?  # EXIT=0 (only the QA Boolean model hunk reversed)
+cmake --build build -j12 --target zene ScriptDawQueueFullTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-2-reversed-build.log 2>&1; echo EXIT=$?  # EXIT=0
+ctest -R '^ScriptDawQueueFullTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-2-boolmodel-reversed-red.log 2>&1; echo EXIT=$?  # EXIT=8 (new Boolean model case fails; other cases pass)
+git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-boolmodel.patch; echo EXIT=$?  # EXIT=0 (the QA Boolean model hunk restored)
+cmake --build build -j12 --target zene ScriptCommandBridgeTest ScriptDawPairReservationTest ScriptDawQueueFullTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-4-final-build.log 2>&1; echo EXIT=$?  # EXIT=0
+ctest -R 'ScriptCommandBridgeTest|ScriptDawPairReservationTest|ScriptDawQueueFullTest' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-4-final-green.log 2>&1; echo EXIT=$?  # EXIT=0 (3/3 targets passed)
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-new-p14-285-aac861e62b > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-285-port.r6/logs/qa-review-5-final-gate.log 2>&1; echo EXIT=$?  # EXIT=0 (all 8 checks passed)
 ```
 
 The following integration diagnostics are recorded to make the compatibility adjustments reviewable:
@@ -90,6 +100,7 @@ awk '/^[[:space:]]*[^#[:space:]]/ { exit } { print }' tests/all-sources.txt > /h
 - `src/core/ScriptCommandBridge.cpp`
 - `src/core/ScriptCommandQueue.cpp`
 - `src/core/ScriptDawBindings.cpp`
+- `src/core/ScriptBindings.cpp` (QA follow-up: queue refusal from the DAW API's shared Boolean model wrapper)
 - `src/core/ScriptDawEdit.cpp`
 - `src/core/ScriptEngine.cpp`
 - `tests/CMakeLists.txt`
@@ -103,7 +114,7 @@ awk '/^[[:space:]]*[^#[:space:]]/ { exit } { print }' tests/all-sources.txt > /h
 
 - The finding is REAL: the accepted report records the pre-fix `void enqueue()` and ignored push result; the final reversed-patch run reproduces the lost refusals and stranded-checkpoint path.
 - The focused tests are deterministic: they saturate the bounded queue through enqueue calls, use no sleeps or timing assumptions, verify state/log/reply, and cover both the one-slot refusal and a fitting undoable pair.
-- All changed queue admission callers were checked: DAW writes, paired model writes, direct `LuaFloatModel::setValue`, `zene.command`, and legacy v0 calls. The legacy caller behavior remains documented and unchanged.
+- All changed queue admission callers were checked: DAW writes, paired model writes, direct `LuaFloatModel::setValue`, the DAW API's shared `LuaBoolModel::setValue`, and `zene.command`. Remaining legacy v0 direct command calls retain their documented drop-and-count behavior.
 - No saved-data or serialization code changed. No audio-thread allocation, free, lock, wait, or logging was added. Undo remains one step; no control command was added.
 - Registration and final gates pass. The exact current-host limitation is recorded above; no cross-platform build is claimed.
 - The focused family ran 3 CTest targets and passed 3/3 after restoration. The wider `Script|Lua` family ran 16 targets; the three environment failures and their evidence are listed above.
