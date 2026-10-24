@@ -63,7 +63,14 @@ QString DeviceOptions::shownName(const QString& name) const
 
 void DeviceOptions::setAlias(const QString& name, const QString& alias)
 {
-	const QString trimmed = alias.trimmed().left(MaxAliasLength);
+	QString trimmed = alias.trimmed();
+	qsizetype end = 0;
+	for (int codePoints = 0; end < trimmed.size() && codePoints < MaxAliasLength; ++codePoints)
+	{
+		if (trimmed.at(end).isHighSurrogate() && end + 1 < trimmed.size() && trimmed.at(end + 1).isLowSurrogate()) { end += 2; }
+		else { ++end; }
+	}
+	trimmed.truncate(end);
 	if (trimmed.isEmpty() || trimmed == name) { m_aliases.remove(name); }
 	else { m_aliases.insert(name, trimmed); }
 }
