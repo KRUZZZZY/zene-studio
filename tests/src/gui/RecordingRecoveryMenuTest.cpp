@@ -40,9 +40,11 @@
 #include <QTemporaryDir>
 
 #include "ConfigManager.h"
+#include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "PathUtil.h"
+#include "ProjectJournal.h"
 #include "RecordingRecoveryMenu.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -361,6 +363,97 @@ private slots:
 		QVERIFY2(reported, "the failed recovery query was not reported");
 		// Nothing was placed and nothing was discarded: the journal is exactly as it was.
 		QCOMPARE(journalState(take + QStringLiteral(".rec-journal")), QStringLiteral("in_progress"));
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
+	}
+
+	//! A redo that cannot place the take changes nothing and records nothing: control.redo fails typed, nothing is
+	//! placed, the journal is not marked restored, the take is still offered, and the undo stack gets no step for the
+	//! redo - the step stays on the redo stack. Track creation is made to fail between the undo and the redo.
+	void aRedoThatCannotPlaceKeepsTheOffer()
+	{
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-redo.wav"));
+		QVERIFY(writeWav(take, kFrames));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), kFrames}}).ok);
+		const QString journal = take + QStringLiteral(".rec-journal");
+		const auto tracksBefore = Engine::getSong()->tracks().size();
+		QJsonArray takesBefore;
+		QVERIFY(interruptedTakes(&takesBefore).ok);
+
+		QVERIFY(run(QStringLiteral("record.recovery_place"), {{QStringLiteral("take"), take}}).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore + 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
+
+		// The undo stack and the redo stack as the undo left them: the redo must add nothing to the first and
+		// keep the step on the second.
+		ProjectJournal* history = Engine::projectJournal();
+		QVERIFY(history != nullptr);
+		const int undoDepthBefore = history->undoDepth();
+		QVERIFY(history->canRedo());
+
+		// The seam is set only around the redo, and reset before any assertion can return early.
+		control::setRecoveredTakeFailsForTest(true);
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		control::setRecoveredTakeFailsForTest(false);
+		QCOMPARE(history->undoDepth(), undoDepthBefore);
+		QVERIFY(!redone.ok);
+		QCOMPARE(redone.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
+		QJsonArray takesAfter;
+		QVERIFY(interruptedTakes(&takesAfter).ok);
+		QCOMPARE(takesAfter.size(), takesBefore.size());
+		QVERIFY(history->canRedo());
+
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
+	}
+
+	//! The successful path is unchanged: place, undo, redo, undo is one undo step each way. The redo records exactly
+	//! one step, and the undo after it takes that step back, so the undo stack is as it was before the placement.
+	void aPlaceUndoRedoIsOneStep()
+	{
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-one-step.wav"));
+		QVERIFY(writeWav(take, kFrames));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), kFrames}}).ok);
+		const QString journal = take + QStringLiteral(".rec-journal");
+		const auto tracksBefore = Engine::getSong()->tracks().size();
+		ProjectJournal* history = Engine::projectJournal();
+		QVERIFY(history != nullptr);
+		const int undoDepthBefore = history->undoDepth();
+
+		QVERIFY(run(QStringLiteral("record.recovery_place"), {{QStringLiteral("take"), take}}).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore + 1);
+		QCOMPARE(history->undoDepth(), undoDepthBefore + 1);
+		QVERIFY(history->canUndo());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
+		QCOMPARE(history->undoDepth(), undoDepthBefore);
+		QVERIFY(history->canRedo());
+
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY(redone.ok);
+		QVERIFY(redone.result.value(QStringLiteral("redone")).toBool());
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore + 1);
+		QCOMPARE(journalState(journal), QStringLiteral("restored"));
+		QCOMPARE(history->undoDepth(), undoDepthBefore + 1);
+		QVERIFY(history->canUndo());
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QCOMPARE(journalState(journal), QStringLiteral("in_progress"));
+		QCOMPARE(history->undoDepth(), undoDepthBefore);
 		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
 		QFile::remove(take);
 	}

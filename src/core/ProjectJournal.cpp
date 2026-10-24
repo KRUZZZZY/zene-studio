@@ -154,6 +154,7 @@ void ProjectJournal::undo()
 
 void ProjectJournal::redo()
 {
+	m_redoDecline.clear();
 	while( !m_redoCheckPoints.isEmpty() )
 	{
 		CheckPoint c = m_redoCheckPoints.pop();
@@ -166,12 +167,24 @@ void ProjectJournal::redo()
 		// Redo replays the recorded operations in push order - the order the command ran them, so a
 		// later one finds what an earlier one made (a chain before the devices put on it) - and the
 		// undo record keeps that order for the next undo to run backwards.
+		bool declined = false;
 		for( const auto & action : c.actions )
 		{
 			if( !action.second ) { continue; }
 			undoState.actions.append( action );
 			action.second();
+			if( !m_redoDecline.isEmpty() ) { declined = true; break; }
 			did = true;
+		}
+		if( declined )
+		{
+			// The declining action changed nothing, and it is the last action appended. The actions this step
+			// replayed before it are taken back, in reverse, and the step goes back on the redo stack: a redo
+			// that did nothing is not an applied step, so the undo stack gets no entry for it.
+			undoState.actions.removeLast();
+			for( int i = undoState.actions.size() - 1; i >= 0; --i ) { undoState.actions.at( i ).first(); }
+			m_redoCheckPoints.push( c );
+			break;
 		}
 		if( !did ) { continue; }
 		// A fresh serial: the step is a new entry on the stack, and a record
@@ -185,6 +198,18 @@ void ProjectJournal::redo()
 		Engine::getSong()->setModified();
 		break;
 	}
+}
+
+void ProjectJournal::declineRedo( const QString& reason )
+{
+	m_redoDecline = reason.isEmpty() ? QStringLiteral("the redo changed nothing") : reason;
+}
+
+QString ProjectJournal::takeRedoDecline()
+{
+	const QString reason = m_redoDecline;
+	m_redoDecline.clear();
+	return reason;
 }
 
 bool ProjectJournal::canUndo() const

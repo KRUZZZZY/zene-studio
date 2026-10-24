@@ -155,6 +155,10 @@ VolumeNaming platformVolumeNaming();
  */
 QString filesystemIdentityKey(const QString& path, VolumeNaming naming, const QString& deviceId,
 	const QString& mountPoint);
+/*! TEST SEAM. While set, record.recovery_place's placement of a recovered take reports that no sample track could be
+ *  created - the failure Track::create never gives for a Sample track, so no loadable build reaches it on its own. A
+ *  production path never sets it. */
+LMMS_EXPORT void setRecoveredTakeFailsForTest(bool fails);
 
 } // namespace control
 
