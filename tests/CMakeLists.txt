@@ -1941,7 +1941,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Watsyn/Watsyn.h)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/Watsyn ${CMAKE_BINARY_DIR}/plugins/Watsyn)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=watsyn)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=watsyn watsyn_EXPORTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE SampleRate::samplerate)
 	endif()
 	IF(LMMS_HAVE_STEM_SPLIT)
