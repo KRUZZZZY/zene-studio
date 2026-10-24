@@ -80,6 +80,7 @@
 #include "SrcQuality.h"
 #include "RealtimeScope.h"
 #include "Song.h"
+#include "TakeLane.h"
 #include "TimePos.h"
 
 using namespace lmms;
@@ -463,6 +464,9 @@ private slots:
 		SampleTrack track(Engine::getSong());
 		auto* const clip = dynamic_cast<SampleClip*>(track.createClip(TimePos(0)));
 		QVERIFY(clip != nullptr);
+		clip->changeLength(TimePos(1920));
+		QCOMPARE(track.takeLanes().addLane(), 0);
+		QVERIFY(track.takeLanes().selectSegment(0, 1920, 0, 1));
 
 		AudioResampler::resetRealtimeConverterAllocationsForTest();
 		{
