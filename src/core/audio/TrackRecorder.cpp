@@ -207,15 +207,41 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 		m_journalPath.clear();
 	}
 
-#ifdef LMMS_TESTING
-	if (s_failNextWriterThreadStart.exchange(false, std::memory_order_acq_rel))
+	try
 	{
-		throw std::system_error(std::make_error_code(std::errc::resource_unavailable_try_again));
-	}
+#ifdef LMMS_TESTING
+		if (s_failNextWriterThreadStart.exchange(false, std::memory_order_acq_rel))
+		{
+			throw std::system_error(std::make_error_code(std::errc::resource_unavailable_try_again));
+		}
 #endif
-	m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
+		m_writerThread = std::thread(&TrackRecorder::writerLoop, this);
+	}
+	catch (const std::system_error&)
+	{
+		m_stopRequested.store(true, std::memory_order_release);
+		if (m_sf != nullptr)
+		{
+			sf_close(m_sf);
+			m_sf = nullptr;
+		}
+		if (!m_journalPath.empty())
+		{
+			recordingjournal::remove(QString::fromStdString(m_journalPath));
+			m_journalPath.clear();
+		}
+		m_journalTake.clear();
+		m_journalFrames.store(0, std::memory_order_relaxed);
+		m_journalSampleRate = 0;
+		m_journalIntervalFrames = 0;
+		m_filePath.clear();
+		m_writerRunning.store(false, std::memory_order_release);
+		m_armed.store(false, std::memory_order_release);
+		return false;
+	}
 	// Only now does the audio thread see the route: m_armed was claimed above, before the ring
-	// reset and the channel change it must not race.
+	// reset and the channel change it must not race. isArmed() reports the
+	// capturing state, published only after this thread and the take are ready.
 	m_capturing.store(true, std::memory_order_release);
 	return true;
 }

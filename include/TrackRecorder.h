@@ -106,7 +106,7 @@ public:
 	//! file. Idempotent.
 	void disarm();
 
-	bool isArmed() const noexcept { return m_armed.load(std::memory_order_acquire); }
+	bool isArmed() const noexcept { return m_capturing.load(std::memory_order_acquire); }
 	bool isWriterRunning() const noexcept { return m_writerRunning.load(std::memory_order_acquire); }
 
 	//! Audio-thread entry point. Demuxes one channel of the interleaved input
