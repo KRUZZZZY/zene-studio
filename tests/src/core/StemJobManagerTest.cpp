@@ -228,6 +228,8 @@ private slots:
 	//! and a caller that names none gets the legacy Standard.
 	void testSubmitHandsTheQualityToTheBackend()
 	{
+		StemQuality none = StemQuality::High;
+		QVERIFY(!StemJobManager().inferenceQuality(42, &none));
 		const struct { bool given; StemQuality quality; StemQuality expected; } cases[] = {
 			{false, StemQuality::Fast, StemQuality::Standard},
 			{true, StemQuality::Fast, StemQuality::Fast},
@@ -247,6 +249,10 @@ private slots:
 			QVERIFY(id > 0);
 			QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
 			QCOMPARE(seen.load(), static_cast<int>(c.expected));
+			StemQuality ran = StemQuality::Fast;
+			QVERIFY(manager.inferenceQuality(id, &ran));
+			QCOMPARE(static_cast<int>(ran), static_cast<int>(c.expected));
+			QCOMPARE(static_cast<int>(manager.quality(id)), static_cast<int>(c.expected));
 		}
 	}
 

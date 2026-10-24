@@ -332,6 +332,29 @@ float StemJobManager::downloadProgress(int jobId) const
 
 
 
+StemQuality StemJobManager::quality(int jobId) const
+{
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? DefaultStemQuality : (*it)->quality;
+}
+
+
+
+
+bool StemJobManager::inferenceQuality(int jobId, StemQuality* quality) const
+{
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	const int value = it == m_state->jobs.end() ? -1 : (*it)->inferenceQuality.load();
+	if (value < 0) { return false; }
+	*quality = static_cast<StemQuality>(value);
+	return true;
+}
+
+
+
+
 std::shared_ptr<StemJobManager::Job> StemJobManager::findJob(int jobId) const
 {
 	QMutexLocker locker(&m_state->mutex);
@@ -518,7 +541,11 @@ void StemJobManager::runJob(const std::shared_ptr<SharedState>& state, const std
 
 	StemSet stems;
 	QString error;
-	const auto status = state->separator->separate(*job->mix, job->sampleRate, job->segmentFrames, job->quality,
+	// Q050-062.1: published before the call, so job state names the setting
+	// the backend runs at, not only the one the job was submitted with.
+	const StemQuality inferenceQuality = job->quality;
+	job->inferenceQuality.store(static_cast<int>(inferenceQuality));
+	const auto status = state->separator->separate(*job->mix, job->sampleRate, job->segmentFrames, inferenceQuality,
 		[state, job](float fraction)
 		{
 			if (job->cancelRequested.load())

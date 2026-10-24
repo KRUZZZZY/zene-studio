@@ -359,7 +359,8 @@ void registerStemJobStart(ControlRegistry& registry)
 		"separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about "
 		"2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before "
 		"the setting existed) or `high` 75% (about twice the passes, each frame averaged over more "
-		"predictions); the job reports the effective `quality`, `overlap` and `hop_frames`. NOT "
+		"predictions); the job reports the effective `quality`, `overlap` and `hop_frames`, and `inference_quality` (the "
+		"setting its worker handed the backend; empty until inference starts). NOT "
 		"realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with "
 		"`stem.job_status`, then `stem.job_result`.");
 	cmd.argsSchema = objectSchema({
@@ -381,6 +382,7 @@ void registerStemJobStart(ControlRegistry& registry)
 		{QStringLiteral("quality"), stringProperty()},
 		{QStringLiteral("overlap"), numberProperty()},
 		{QStringLiteral("hop_frames"), integerProperty()},
+		{QStringLiteral("inference_quality"), stringProperty()},
 		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("backend"), stringProperty()},
 		{QStringLiteral("error"), stringProperty()},
@@ -401,7 +403,7 @@ void registerStemJobStatus(ControlRegistry& registry)
 		"has run when `job_id` is omitted: each job's `state` (queued, running, cancel_requested, "
 		"completed, cancelled, failed), `progress` (0..1), `fetching_model` and `download_progress` "
 		"(0..1) while a first job fetches the model, its source, frame count, the effective "
-		"`quality` / `overlap` / `hop_frames` it runs at and "
+		"`quality` / `overlap` / `hop_frames` it runs at, `inference_quality` (what the worker handed the backend) and "
 		"`since_submit_seconds` (the surface's own wall clock, not a claim about inference time), "
 		"and `error` when it failed. Reads the manager's atomics, so it answers even while a job is "
 		"running - this is the poll that proves the control surface is not held by the work.");
@@ -478,6 +480,7 @@ void registerStemJobCancel(ControlRegistry& registry)
 		{QStringLiteral("quality"), stringProperty()},
 		{QStringLiteral("overlap"), numberProperty()},
 		{QStringLiteral("hop_frames"), integerProperty()},
+		{QStringLiteral("inference_quality"), stringProperty()},
 		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("backend"), stringProperty()},
 		{QStringLiteral("error"), stringProperty()},

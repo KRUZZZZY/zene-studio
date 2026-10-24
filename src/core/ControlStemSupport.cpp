@@ -115,8 +115,6 @@ struct JobRecord
 	int sampleRate = StemModelSampleRate;
 	int frames = 0;
 	int segmentFrames = HTDemucsSegmentFrames;
-	//! Q050-062.1: the quality the job was submitted at (the legacy one when omitted).
-	StemQuality quality = DefaultStemQuality;
 	qint64 submittedMs = 0;
 };
 
@@ -250,10 +248,9 @@ public:
 		record.sampleRate = StemModelSampleRate;
 		record.frames = static_cast<int>(mix->size());
 		record.segmentFrames = segmentFrames > 0 ? segmentFrames : HTDemucsSegmentFrames;
-		record.quality = quality;
 		record.submittedMs = QDateTime::currentMSecsSinceEpoch();
 
-		const int id = m_manager.submit(std::move(mix), record.sampleRate, record.segmentFrames, record.quality);
+		const int id = m_manager.submit(std::move(mix), record.sampleRate, record.segmentFrames, quality);
 		if (id < 0)
 		{
 			*error = QStringLiteral("the stem engine refused the job");
@@ -475,9 +472,16 @@ private:
 		out.insert(QStringLiteral("segment_frames"), record.segmentFrames);
 		// Q050-062.1: the setting the backend was handed, and the overlap and hop
 		// it derives from it (the one formula every backend uses, StemTypes.h).
-		out.insert(QStringLiteral("quality"), QString::fromLatin1(stemQualityName(record.quality)));
-		out.insert(QStringLiteral("overlap"), stemOverlapFraction(record.quality));
-		out.insert(QStringLiteral("hop_frames"), stemHopFrames(record.segmentFrames, record.quality));
+		// The ENGINE's answers, not this surface's record of the request: the
+		// quality the manager holds for the job, and the one its worker handed
+		// the backend (empty until the job started inference).
+		const StemQuality quality = m_manager.quality(jobId);
+		out.insert(QStringLiteral("quality"), QString::fromLatin1(stemQualityName(quality)));
+		out.insert(QStringLiteral("overlap"), stemOverlapFraction(quality));
+		out.insert(QStringLiteral("hop_frames"), stemHopFrames(record.segmentFrames, quality));
+		StemQuality ran = DefaultStemQuality;
+		out.insert(QStringLiteral("inference_quality"), m_manager.inferenceQuality(jobId, &ran)
+			? QString::fromLatin1(stemQualityName(ran)) : QString());
 		// The SURFACE's clock, named as such: the engine keeps its own elapsed
 		// time on the job and publishes none of it through an accessor, so this
 		// is the wall time since submit and never a claim about inference time.

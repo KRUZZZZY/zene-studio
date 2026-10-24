@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-24T18:37:11Z",
+  "captured_at": "2026-10-24T19:21:35Z",
   "commands": [
     {
       "args_schema": {
@@ -28840,6 +28840,9 @@
           "hop_frames": {
             "type": "integer"
           },
+          "inference_quality": {
+            "type": "string"
+          },
           "job_id": {
             "type": "integer"
           },
@@ -28971,7 +28974,7 @@
         ],
         "type": "object"
       },
-      "description": "Queue one offline 4-stem separation of an absolute audio FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on its own worker thread, so the control surface keeps answering while the job runs. The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no python onnxruntime, or the model absent and not fetchable). An absent model that IS fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about 2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before the setting existed) or `high` 75% (about twice the passes, each frame averaged over more predictions); the job reports the effective `quality`, `overlap` and `hop_frames`. NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with `stem.job_status`, then `stem.job_result`.",
+      "description": "Queue one offline 4-stem separation of an absolute audio FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on its own worker thread, so the control surface keeps answering while the job runs. The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no python onnxruntime, or the model absent and not fetchable). An absent model that IS fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about 2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before the setting existed) or `high` 75% (about twice the passes, each frame averaged over more predictions); the job reports the effective `quality`, `overlap` and `hop_frames`, and `inference_quality` (the setting its worker handed the backend; empty until inference starts). NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with `stem.job_status`, then `stem.job_result`.",
       "group": "stem",
       "id": "stem.job_start",
       "mutating": false,
@@ -28996,6 +28999,9 @@
           },
           "hop_frames": {
             "type": "integer"
+          },
+          "inference_quality": {
+            "type": "string"
           },
           "job_id": {
             "type": "integer"
@@ -29053,7 +29059,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "One separator job by `job_id`, or every job this instance has run when `job_id` is omitted: each job's `state` (queued, running, cancel_requested, completed, cancelled, failed), `progress` (0..1), `fetching_model` and `download_progress` (0..1) while a first job fetches the model, its source, frame count, the effective `quality` / `overlap` / `hop_frames` it runs at and `since_submit_seconds` (the surface's own wall clock, not a claim about inference time), and `error` when it failed. Reads the manager's atomics, so it answers even while a job is running - this is the poll that proves the control surface is not held by the work.",
+      "description": "One separator job by `job_id`, or every job this instance has run when `job_id` is omitted: each job's `state` (queued, running, cancel_requested, completed, cancelled, failed), `progress` (0..1), `fetching_model` and `download_progress` (0..1) while a first job fetches the model, its source, frame count, the effective `quality` / `overlap` / `hop_frames` it runs at, `inference_quality` (what the worker handed the backend) and `since_submit_seconds` (the surface's own wall clock, not a claim about inference time), and `error` when it failed. Reads the manager's atomics, so it answers even while a job is running - this is the poll that proves the control surface is not held by the work.",
       "group": "stem",
       "id": "stem.job_status",
       "mutating": false,
@@ -36241,8 +36247,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-062.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-t9pj1ji7/zene.sock",
-    "version": "0.4.0-alpha.4611+aac861e"
+    "source_socket": "/tmp/zctl-run-xlso_wyt/zene.sock",
+    "version": "0.4.0-alpha.4613+2f5c0d7"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

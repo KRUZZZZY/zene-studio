@@ -5,7 +5,10 @@ and through the reference CLI. Called from control-stem-commands.py.
 `stem.job_start` takes an optional `quality` (fast / standard / high: 25% /
 50% / 75% segment overlap); every job object - the start reply, `stem.job_status`
 and `stem.job_cancel` - reports the effective `quality`, `overlap` and
-`hop_frames`. A caller that omits it gets `standard`, the overlap every backend
+`hop_frames`, read from the job manager, and `inference_quality`, the setting
+the manager's worker handed the backend's separate() (empty before it ran). A
+finished job's `inference_quality` is what proves the requested setting crossed
+the control -> manager -> worker handoff over the socket. A caller that omits it gets `standard`, the overlap every backend
 used before the setting existed. The CLI (tools/stem_split_cli.py --quality)
 uses the same table; its `info` line reports the hop and the number of segments
 the run takes, which is how this file sees the setting change the inference.
@@ -37,7 +40,8 @@ def reports_quality(job, quality):
 
 
 def job_facts(job):
-    return "quality=%r overlap=%r hop=%r" % (job.get("quality"), job.get("overlap"), job.get("hop_frames"))
+    return "quality=%r overlap=%r hop=%r inference=%r" % (job.get("quality"), job.get("overlap"),
+                                                          job.get("hop_frames"), job.get("inference_quality"))
 
 
 def first_job(session, job_id):
@@ -71,8 +75,9 @@ def check_job_at(session, recorder, source, quality):
                    job_facts(first_job(session, job_id)))
     state, seen, seconds = poll_until(session, job_id, ("completed", "failed", "cancelled"))
     finished = first_job(session, job_id)
-    recorder.check("%s: the job completes and still reports it" % label,
-                   state == "completed" and reports_quality(finished, effective),
+    recorder.check("%s: the job completes and the worker ran inference at it" % label,
+                   state == "completed" and reports_quality(finished, effective)
+                   and finished.get("inference_quality") == effective,
                    "state=%r after %.1fs %s error=%r" % (state, seconds, job_facts(finished),
                                                          finished.get("error")))
 
