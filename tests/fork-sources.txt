@@ -2904,6 +2904,8 @@ tests/src/gui/MidiClockMenuTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-133-port-port.md
 # cluster new-p17-205: regression for Watsyn's selected oscillator graph save/load (the selgraph attribute), fork-NEW test.
 tests/src/plugins/WatsynSelectedGraphTest.cpp
+# cluster new-p17-203: regression for Watsyn's published wavetable snapshot - a note started while a graph edit has the staging table half rewritten renders the last complete published wave (fork-NEW test).
+tests/src/plugins/WatsynWaveSnapshotTest.cpp
 # cluster new-p12-162-port-port (2026-10): Multitap Echo constructor graph-bounds guard test (fork-NEW).
 tests/src/plugins/MultitapEchoBoundsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-162-port-port.md

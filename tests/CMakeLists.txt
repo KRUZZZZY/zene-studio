@@ -435,6 +435,10 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/plugins/EqFilterTest.cpp
 	src/plugins/WatsynSelectedGraphTest.cpp
+	# cluster new-p17-203: a Watsyn note that starts while a graph edit has the staging
+	# wavetable half rewritten must render the last complete published wave, never the
+	# half-written one.
+	src/plugins/WatsynWaveSnapshotTest.cpp
 	# The LIVE loudness tap (feature row 24 of docs/FEATURE-LIST-0.3.0.md, the
 	# `meter.*` group's live half): what an armed tap reads, the three negative
 	# controls that keep it honest - silence reads the sentinel, 10 dB more input
@@ -1991,6 +1995,18 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=bitinvader)
+	endif()
+	# cluster new-p17-203: the Watsyn wavetable-snapshot regression compiles the plug-in's
+	# own sources into the test (the SlicerT/Vibed/BitInvader shape), so the note path under
+	# test is the shipping one and the staging tables a graph edit rewrites are reachable.
+	if(LMMS_TEST_NAME STREQUAL "WatsynWaveSnapshotTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Watsyn/Watsyn.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Watsyn/Watsyn.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Watsyn ${CMAKE_BINARY_DIR}/plugins/Watsyn)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=watsyn watsyn_EXPORTS)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE SampleRate::samplerate)
 	endif()
 	IF(LMMS_HAVE_STEM_SPLIT)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
