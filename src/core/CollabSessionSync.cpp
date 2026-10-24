@@ -178,12 +178,19 @@ QByteArray CollabSession::writeSnapshot(QString* error) const
 	}
 	QFile file(path);
 	if (!file.open(QIODevice::ReadOnly)) { *error = QStringLiteral("the project could not be written"); return QByteArray(); }
+	const qint64 fileSize = file.size();
+	if (fileSize >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(fileSize / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
 	// Refuse before reading the whole file into memory: the snapshot is base64-framed, so an oversized
 	// project cannot fit the host's line limit anyway.
-	const qint64 base64Size = ((file.size() + 2) / 3) * 4;
+	const qint64 base64Size = ((fileSize + 2) / 3) * 4;
 	const QByteArray frameHeader = QJsonDocument(QJsonObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
 		{QStringLiteral("seq"), static_cast<double>(m_host->sequence())},
-		{QStringLiteral("bytes"), static_cast<int>(file.size())}, {QStringLiteral("data"), QString()}})
+		{QStringLiteral("bytes"), fileSize}, {QStringLiteral("data"), QString()}})
 		.toJson(QJsonDocument::Compact);
 	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
 	{
