@@ -41,7 +41,7 @@ growth.
 | RED | `QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad` (`build/tests`) | 1 | Fails at `renderFinished` with “the audio callback waited for the GIG file that was being loaded”; `test-6-lock-mutation-RED.log`. |
 | Restore and rebuild | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/red-mutation.patch` (0), `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/fix.patch` (0), then `cmake --build build --target zene gigplayer PluginPortsMigrationTest -j8` | 0 | Temporary lock removed and intended baseline sample conversion restored; `build-7-restored-green.log`. |
 | GREEN | same callback test command as RED (`build/tests`) | 0 | `test-8-lock-restored-GREEN.log`. |
-| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port` | 0 | All eight rows PASS, including complexity and file-length (no new item in touched files); `gate-10-feature-check-final.log`. |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port` | 0 | All eight rows PASS, including complexity and file-length (no new item in touched files); `gate-12-feature-check-final.log`. |
 
 The product `fix.patch` here contains only the two 24-bit divisor restorations, so reversing
 that patch cannot undo the already-committed callback fix. For a meaningful RED comparison,
@@ -61,25 +61,37 @@ git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-por
 git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/fix.patch # EXIT=0
 cmake --build build --target zene gigplayer PluginPortsMigrationTest -j8 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/build-7-restored-green.log 2>&1 # EXIT=0
 QT_QPA_PLATFORM=offscreen ./PluginPortsMigrationTest gigplayerCallbackDoesNotWaitForAFileLoad > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/test-8-lock-restored-GREEN.log 2>&1 # EXIT=0
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/gate-10-feature-check-final.log 2>&1 # EXIT=0
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-149-port > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-149-port.r5/logs/gate-12-feature-check-final.log 2>&1 # EXIT=0
 ```
 
-### Self-check (current rework)
+## Self-check
 
-- The reported issue is real: the branch-base lock evidence is recorded in §1; current
-  publication is atomic at `GigPlayer.cpp:331-339`, and the render path at `:900-912` takes
-  no mutex.
-- The regression is deterministic: the load hook blocks at a synchronization condition; the
-  callback test fails at `renderFinished` with the temporary shared lock and passes after
-  restoring the lock-free code (RED `EXIT=1`, GREEN `EXIT=0`).
-- The QA scope correction preserves old 24-bit behavior: the old divisor is restored at
-  `GigPlayer.cpp:1372,1385`; the unrelated test and fixture helpers are removed.
-- Saved project attributes and commands were not changed in this rework. No new command,
-  audio-thread allocation, free, log, or lock was added.
-- Registration is unchanged: no new files were added; the existing modified test file is
-  already listed in `tests/upstream-modifications.txt` for this cluster.
-- Family limitation: 78 passed, 1 unrelated missing-fixture failure, and 2 skipped; focused
-  GIG regressions all pass.
+- **Regression RED/GREEN:** `gigplayerCallbackDoesNotWaitForAFileLoad()` at
+  `PluginPortsMigrationTest.cpp:2955` fails at `renderFinished` with a temporary shared
+  mutex around load preparation and `playImpl()` (EXIT 1), then passes after reversing that
+  mutation and restoring the lock-free code (EXIT 0). Logs: `test-6-lock-mutation-RED.log`
+  and `test-8-lock-restored-GREEN.log` in the r5 log folder.
+- **Deterministic test:** the file-load hook pauses the loader at a condition-variable
+  handshake; the render thread signals completion through that same test synchronization
+  object. There are no sleeps or elapsed-time assertions. `QDeadlineTimer` is only a
+  deadlock guard so a broken callback cannot hang the test process indefinitely.
+- **Cause and sibling paths:** `openFile()` prepares a private state then publishes through
+  `publishFileState()` (`GigPlayer.cpp:363,331-339`); `freeInstance()` uses that same publish
+  path (`:317-323`). Render reads are protected by the reader counter in `playImpl()`
+  (`:900-917`), and the other file-state readers `getCurrentPatchName()` (`:419-428`),
+  `getInstrument()` (`:1698-1710`), and GUI `showPatchDialog()` (`:1907-1921`) use the same
+  reference protocol. `playNoteImpl()` stores the current state identity (`:502`), and the
+  render drops notes from an older state. No mutex remains on the render path.
+- **Compatibility:** saved `src`, `bank`, `patch`, and `gain` attributes are unchanged; the
+  24-bit divisors are restored to their branch-base values at `GigPlayer.cpp:1372,1385`.
+  Pool growth retries on the existing path and adds no serialized limit or control command.
+  No undo behavior changed, and the audio callback adds no allocation, free, log, or lock.
+- **Verdict evidence:** this is FIXED, not ALREADY-FIXED or FALSE-POSITIVE. The branch-base
+  `openFile()` and `playImpl()` mutex evidence is in §1; the current atomic handoff is at
+  `GigPlayer.cpp:331-339,900-917`.
+- **Registration and family:** no new files were introduced. The existing test source is
+  registered in `tests/upstream-modifications.txt`; the family run had 78 passes, one
+  unrelated missing-fixture failure, and two skips. All focused GIG cases passed.
 
 new-p9-149-port: FIXED
 
