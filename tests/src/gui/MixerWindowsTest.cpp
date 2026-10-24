@@ -502,6 +502,29 @@ private slots:
 		window->close();
 	}
 
+	void theSurroundPannerSliderKeepsNewerPanValues()
+	{
+		QVERIFY(run(QStringLiteral("mixer.surround_pan"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("x"), 0.1},
+			{QStringLiteral("y"), 0.8}, {QStringLiteral("lfe"), 0.1}, {QStringLiteral("spread"), 0.2}, {QStringLiteral("enabled"), false}}).ok);
+		showSurroundPanner(m_ch[1]);
+		QWidget* window = windowTitled(QStringLiteral("Surround Panner"));
+		QVERIFY(window != nullptr);
+		auto* lfe = childNamed<QSlider>(window, QStringLiteral("LFE send"));
+		QVERIFY(lfe != nullptr);
+
+		QVERIFY(run(QStringLiteral("mixer.surround_pan"), {{QStringLiteral("channel"), m_ch[1]}, {QStringLiteral("x"), -0.4},
+			{QStringLiteral("y"), -0.3}, {QStringLiteral("spread"), 0.65}, {QStringLiteral("enabled"), true}}).ok);
+		lfe->setValue(45);
+
+		const QJsonObject pan = channelState(QStringLiteral("mixer.surround_get"), m_ch[1]).value(QStringLiteral("pan")).toObject();
+		QVERIFY(std::abs(pan.value(QStringLiteral("x")).toDouble() + 0.4) < 0.01);
+		QVERIFY(std::abs(pan.value(QStringLiteral("y")).toDouble() + 0.3) < 0.01);
+		QVERIFY(std::abs(pan.value(QStringLiteral("spread")).toDouble() - 0.65) < 0.01);
+		QVERIFY(pan.value(QStringLiteral("enabled")).toBool());
+		QVERIFY(std::abs(pan.value(QStringLiteral("lfe")).toDouble() - 0.45) < 0.01);
+		window->close();
+	}
+
 	void theSurroundPannerOfAChannelThatSendsNowhereSaysSo()
 	{
 		showSurroundPanner(m_ch[2]);

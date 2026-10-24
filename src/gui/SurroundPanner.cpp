@@ -219,12 +219,18 @@ struct Controls
 	QSlider* spread = nullptr;
 	QCheckBox* enabled = nullptr;
 
-	void commit(QWidget* parent) const
+	void commit(QWidget* parent, QJsonObject changed) const
 	{
-		const QPointF point = pad->point();
-		runCommand(parent, CommandCall{QStringLiteral("mixer.surround_pan"), {{QStringLiteral("channel"), channelId},
-			{QStringLiteral("x"), point.x()}, {QStringLiteral("y"), point.y()}, {QStringLiteral("lfe"), lfe->value() / 100.0},
-			{QStringLiteral("spread"), spread->value() / 100.0}, {QStringLiteral("enabled"), enabled->isChecked()}}, {}, QString(), false});
+		changed.insert(QStringLiteral("channel"), channelId);
+		runCommand(parent, CommandCall{QStringLiteral("mixer.surround_pan"), changed, {}, QString(), false});
+	}
+
+	bool currentEnabled() const
+	{
+		const QJsonArray channels = ControlRegistry::instance()->invoke(QStringLiteral("mixer.surround_get"),
+			{{QStringLiteral("channel"), channelId}}).result.value(QStringLiteral("channels")).toArray();
+		return channels.isEmpty() ? enabled->isChecked() : channels.at(0).toObject().value(QStringLiteral("pan")).toObject()
+			.value(QStringLiteral("enabled")).toBool(enabled->isChecked());
 	}
 };
 
@@ -241,11 +247,15 @@ surround::Format targetFormat(const QJsonObject& state, QString* into)
 }
 
 //! A slider commits when it is let go, and on a keyboard step (no drag under way).
-void commitOnChange(QSlider* slider, QDialog* dialog, const Controls& controls)
+void commitOnChange(QSlider* slider, QDialog* dialog, const Controls& controls, const QString& field)
 {
-	QObject::connect(slider, &QSlider::sliderReleased, dialog, [dialog, controls] { controls.commit(dialog); });
-	QObject::connect(slider, &QSlider::valueChanged, dialog, [dialog, controls, slider] {
-		if (!slider->isSliderDown()) { controls.commit(dialog); }
+	const auto commit = [dialog, controls, slider, field] {
+		QJsonObject changed{{field, slider->value() / 100.0}, {QStringLiteral("enabled"), controls.currentEnabled()}};
+		controls.commit(dialog, changed);
+	};
+	QObject::connect(slider, &QSlider::sliderReleased, dialog, commit);
+	QObject::connect(slider, &QSlider::valueChanged, dialog, [slider, commit] {
+		if (!slider->isSliderDown()) { commit(); }
 	});
 }
 
@@ -254,11 +264,14 @@ void connectControls(QDialog* dialog, const Controls& controls)
 	controls.pad->released = [dialog, controls] {
 		const QSignalBlocker quiet(controls.enabled);
 		controls.enabled->setChecked(true);  // placing the channel turns the panner on
-		controls.commit(dialog);
+		const QPointF point = controls.pad->point();
+		controls.commit(dialog, {{QStringLiteral("x"), point.x()}, {QStringLiteral("y"), point.y()}, {QStringLiteral("enabled"), true}});
 	};
-	commitOnChange(controls.lfe, dialog, controls);
-	commitOnChange(controls.spread, dialog, controls);
-	QObject::connect(controls.enabled, &QCheckBox::toggled, dialog, [dialog, controls] { controls.commit(dialog); });
+	commitOnChange(controls.lfe, dialog, controls, QStringLiteral("lfe"));
+	commitOnChange(controls.spread, dialog, controls, QStringLiteral("spread"));
+	QObject::connect(controls.enabled, &QCheckBox::toggled, dialog, [dialog, controls](bool checked) {
+		controls.commit(dialog, {{QStringLiteral("enabled"), checked}});
+	});
 }
 
 } // namespace
