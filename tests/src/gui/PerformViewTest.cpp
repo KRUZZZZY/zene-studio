@@ -38,6 +38,8 @@
 #include <QTemporaryDir>
 #include <QToolButton>
 
+#include <functional>
+
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
@@ -126,6 +128,26 @@ QJsonObject cell(int track, int scene, const QString& name)
 	return {{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene}, {QStringLiteral("type"), QStringLiteral("audio")},
 		{QStringLiteral("source"), name + QStringLiteral(".wav")}, {QStringLiteral("name"), name}};
 }
+
+//! Fails one registered read while leaving its siblings and the registry ready.
+class CommandFailureOverride
+{
+public:
+	CommandFailureOverride(const QString& id, const QString& message) :
+		m_command(const_cast<ControlCommand*>(ControlRegistry::instance()->command(id))),
+		m_handler(m_command->handler)
+	{
+		m_command->handler = [message](const QJsonObject&) {
+			return ControlResult::failure(ControlErrorKind::Refused, message);
+		};
+	}
+
+	~CommandFailureOverride() { m_command->handler = m_handler; }
+
+private:
+	ControlCommand* m_command;
+	std::function<ControlResult(const QJsonObject&)> m_handler;
+};
 
 } // namespace
 
@@ -294,14 +316,61 @@ private slots:
 		const QString position = view->positionText();
 		const bool playing = view->playButton()->isChecked();
 
-		ControlRegistry::setReady(false);
-		view->refresh();
-		ControlRegistry::setReady(true);
+		const QString failureMessage = QStringLiteral("injected transport.get_state failure");
+		{
+			CommandFailureOverride failure(QStringLiteral("transport.get_state"), failureMessage);
+			view->refresh();
+		}
 
 		QCOMPARE(view->tempoText(), tempo);
 		QCOMPARE(view->positionText(), position);
 		QCOMPARE(view->playButton()->isChecked(), playing);
-		QVERIFY2(view->statusLine().contains(QStringLiteral("not addressable")), qPrintable(view->statusLine()));
+		QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
+	}
+
+	//! A failed session state read keeps the grid and reports that read's error even while siblings succeed.
+	void failedSessionStateReadKeepsGridAndShowsError()
+	{
+		PerformView* view = PerformView::instance(true);
+		view->refresh();
+		const int scenes = view->sceneButtonCount();
+		const QString intro = view->sceneButton(0)->text();
+		const QString column = view->columnText(0);
+		const QString failureMessage = QStringLiteral("injected session.get_state failure");
+		{
+			CommandFailureOverride failure(QStringLiteral("session.get_state"), failureMessage);
+			view->refresh();
+		}
+
+		QCOMPARE(view->sceneButtonCount(), scenes);
+		QCOMPARE(view->sceneButton(0)->text(), intro);
+		QCOMPARE(view->columnText(0), column);
+		QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
+	}
+
+	//! A failed direct setlist read keeps its last valid labels and navigation availability.
+	void failedSetlistReadKeepsLastKnownSetlist()
+	{
+		PerformView* view = PerformView::instance(true);
+		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"),
+			QJsonArray{m_dir.filePath(QStringLiteral("first.mmpz")), m_dir.filePath(QStringLiteral("second.mmpz"))}}}).ok);
+		view->refreshSetlist();
+		const QString song = view->songText();
+		const QString nextSong = view->nextSongText();
+		const bool nextEnabled = view->nextSongButton()->isEnabled();
+		const bool previousEnabled = view->previousSongButton()->isEnabled();
+		QVERIFY(nextEnabled);
+		const QString failureMessage = QStringLiteral("injected session.setlist failure");
+		{
+			CommandFailureOverride failure(QStringLiteral("session.setlist"), failureMessage);
+			view->refreshSetlist();
+		}
+
+		QCOMPARE(view->songText(), song);
+		QCOMPARE(view->nextSongText(), nextSong);
+		QCOMPARE(view->nextSongButton()->isEnabled(), nextEnabled);
+		QCOMPARE(view->previousSongButton()->isEnabled(), previousEnabled);
+		QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
 	}
 
 	//! The setlist's song and the next one, from session.setlist; the song buttons follow where the set stands.

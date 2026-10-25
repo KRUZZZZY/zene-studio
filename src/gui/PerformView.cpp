@@ -236,11 +236,13 @@ QToolButton* PerformView::sceneButton(int scene) const
 
 void PerformView::refresh()
 {
+	m_readError.clear();
 	const ControlResult state = run(QStringLiteral("session.get_state"));
 	if (state.ok) { readSession(state.result); }
+	else { m_readError = state.errorMessage; }
 	readTransport();
 	if (m_refreshes++ % SetlistEvery == 0) { refreshSetlist(); }
-	setText(m_status, m_notice.isEmpty() ? tr("Keys: 1-9 launch a scene, Up/Down select, Enter launches the selected "
+	setText(m_status, !m_readError.isEmpty() ? m_readError : m_notice.isEmpty() ? tr("Keys: 1-9 launch a scene, Up/Down select, Enter launches the selected "
 		"scene, Space starts or stops, Escape stops all, Page Up/Down change song") : m_notice);
 }
 
@@ -382,7 +384,7 @@ void PerformView::readTransport()
 	const ControlResult state = run(QStringLiteral("transport.get_state"));
 	if (!state.ok)
 	{
-		m_notice = state.errorMessage;
+		m_readError = state.errorMessage;
 		return;
 	}
 	const QJsonObject transport = state.result;
@@ -397,7 +399,14 @@ void PerformView::readTransport()
 
 void PerformView::refreshSetlist()
 {
-	const QJsonObject setlist = run(QStringLiteral("session.setlist")).result;
+	const ControlResult state = run(QStringLiteral("session.setlist"));
+	if (!state.ok)
+	{
+		m_readError = state.errorMessage;
+		setText(m_status, m_readError);
+		return;
+	}
+	const QJsonObject setlist = state.result;
 	const QJsonArray items = setlist.value(QStringLiteral("items")).toArray();
 	const int index = setlist.value(QStringLiteral("index")).toInt(-1);
 	if (items.isEmpty())
