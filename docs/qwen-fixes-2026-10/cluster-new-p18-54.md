@@ -41,8 +41,8 @@ RED/GREEN proof:
 
 - Final build: `cmake --build build --target zene MidiClipLinkedEditTest MidiClipStepMenuTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-54.r1/logs/038-final-build.log 2>&1; status=$?; echo EXIT=$status` — EXIT=0.
 - Affected family: from `build/tests`, `ctest -R '^(MidiClipLinkedEditTest|MidiClipStepMenuTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-54.r1/logs/039-final-gui-family.log 2>&1; status=$?; echo EXIT=$status` — EXIT=0, 2/2 CTest targets passed.
-- Feature gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-54 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-54.r1/logs/040-feature-check-post-report.log 2>&1; status=$?; echo EXIT=$status` — EXIT=0.
-- `submit_check.py`: pending post-commit run.
+- Feature gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-54 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-54.r1/logs/041-feature-check-final.log 2>&1; status=$?; echo EXIT=$status` — EXIT=0.
+- Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-54 new-p18-54 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-54.r1/logs/042-submit-check-post-commit.log 2>&1; status=$?; echo EXIT=$status` — EXIT=0.
 - Explicit commit files: `include/MidiClipView.h`, `src/gui/clips/MidiClipView.cpp`, `tests/src/gui/MidiClipStepMenuTest.cpp`, `tests/all-sources.txt`, `tests/upstream-modifications.txt`, and this report.
 
 ## Self-check
