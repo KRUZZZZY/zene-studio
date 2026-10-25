@@ -5165,3 +5165,6 @@ src/tracks/SampleTrack.cpp	cluster new-p15-221/new-p14-439: playback bypasses th
 tests/src/core/TakeLaneTest.cpp	cluster new-p15-221: covers group-zero recording, negative rejection, group reload and clip playback-mirror round trip.
 tests/src/tracks/TakeLaneCompPlaybackTest.cpp	cluster new-p14-439: covers group-zero render gating, ordinary-clip playback and zero realtime allocations.
 tests/all-sources.txt	cluster new-p15-221 gate repair: re-derived the source manifest from its header recipe, removing only the vendored sfizz paths that recipe excludes so both manifest gates reproduce.
+tests/src/core/MultiTrackRecorderTest.cpp	# Writer thread creation failure leaves the recorder armed
+tests/src/core/RecordingInputPathTest.cpp	# Writer thread creation failure leaves the recorder armed
+tests/src/core/TwoTrackRecordingHarness.cpp	# Writer thread creation failure leaves the recorder armed

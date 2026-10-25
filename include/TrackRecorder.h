@@ -70,6 +70,11 @@ public:
 	//! Frames per sndfile write on the disk-writer thread.
 	static constexpr std::size_t WriteBatchFrames = 4096;
 
+#ifdef LMMS_TESTING
+	//! Inject one portable writer-start failure for lifecycle regression tests.
+	static void failNextWriterThreadStartForTesting() noexcept;
+#endif
+
 	TrackRecorder();
 	~TrackRecorder();
 
@@ -85,7 +90,7 @@ public:
 	//! feature row 64 "Arbitrary input count"). With no capture device open the
 	//! engine's bus is two channels wide, so that is the default; an N-channel
 	//! interface raises it. Off the audio thread.
-	void setInputChannelCapacity(int channels) noexcept;
+	void setInputChannelCapacity(int channels);
 	int inputChannelCapacity() const noexcept;
 	//! True when \a channel can be selected: the check arm() makes, exposed so
 	//! the control surface can refuse a bad channel with the range in the
@@ -101,7 +106,17 @@ public:
 	//! file. Idempotent.
 	void disarm();
 
-	bool isArmed() const noexcept { return m_armed.load(std::memory_order_acquire); }
+	bool isArmed() const noexcept
+	{
+		return m_capturing.load(std::memory_order_acquire)
+			&& !m_inputUnavailable.load(std::memory_order_acquire);
+	}
+	//! True after the audio thread sees a delivered block narrower than the
+	//! selected channel, until the control thread retires the route.
+	bool hasUnavailableInput() const noexcept
+	{
+		return m_inputUnavailable.load(std::memory_order_acquire);
+	}
 	bool isWriterRunning() const noexcept { return m_writerRunning.load(std::memory_order_acquire); }
 
 	//! Audio-thread entry point. Demuxes one channel of the interleaved input
@@ -166,6 +181,7 @@ private:
 	//! writer are ready (m_armed is claimed first, so it cannot gate the audio path), cleared first
 	//! by disarm().
 	std::atomic<bool> m_capturing{false};
+	std::atomic<bool> m_inputUnavailable{false};
 	std::atomic<bool> m_stopRequested{false};
 	std::atomic<bool> m_writerRunning{false};
 	std::atomic<int> m_inputChannel{0};

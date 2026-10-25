@@ -28,6 +28,7 @@
 #include <QtTest>
 
 #include <cstdint>
+#include <system_error>
 #include <vector>
 
 #include <QFile>
@@ -40,6 +41,7 @@
 
 using lmms::MultiTrackRecorder;
 using lmms::SampleFrame;
+using lmms::TrackRecorder;
 using lmms::TakeJournal;
 namespace recjournal = lmms::recordingjournal;
 
@@ -75,6 +77,44 @@ private slots:
 		// must also leave the recorder disarmed.
 		QVERIFY(!recorder.armTrack(0, "/nonexistent-dir/unwritable.wav", 44100, 0));
 		QVERIFY(!recorder.track(0).isArmed());
+	}
+
+	//! A portable startup failure must leave one route retryable without disturbing another.
+	void writerStartFailureLeavesRouteRetryable()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		MultiTrackRecorder recorder;
+		const QString healthyTake = dir.filePath(QStringLiteral("healthy.wav"));
+		const QString retryTake = dir.filePath(QStringLiteral("retry.wav"));
+		QVERIFY(recorder.armTrack(0, healthyTake.toStdString(), 48000, 0));
+
+		TrackRecorder::failNextWriterThreadStartForTesting();
+		bool failedArmReturned = false;
+		bool failureEscaped = false;
+		try
+		{
+			failedArmReturned = recorder.armTrack(1, retryTake.toStdString(), 48000, 1);
+		}
+		catch (const std::system_error&)
+		{
+			failureEscaped = true;
+		}
+
+		QVERIFY(!recorder.track(1).isArmed());
+		QVERIFY(!failureEscaped);
+		QVERIFY(!failedArmReturned);
+		QVERIFY(recorder.track(0).isArmed());
+		QVERIFY(!QFileInfo::exists(recjournal::journalPathFor(retryTake)));
+
+		QVERIFY(recorder.armTrack(1, retryTake.toStdString(), 48000, 1));
+		std::vector<SampleFrame> period(32, SampleFrame{0.25f, -0.5f});
+		recorder.processInput(period.data(), static_cast<lmms::f_cnt_t>(period.size()));
+		QCOMPARE(recorder.track(0).framesPushed(), std::uint64_t{32});
+		QCOMPARE(recorder.track(1).framesPushed(), std::uint64_t{32});
+		recorder.disarmAll();
+		QCOMPARE(recorder.track(0).framesRecorded(), std::uint64_t{32});
+		QCOMPARE(recorder.track(1).framesRecorded(), std::uint64_t{32});
 	}
 
 	//! totalOverflowCount() sums the per-track ring-buffer counters.

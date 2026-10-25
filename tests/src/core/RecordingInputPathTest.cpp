@@ -271,6 +271,64 @@ private slots:
 		recorder.disarmAll();
 	}
 
+	//! Shrinking the input width disarms only routes that can no longer receive their selected channel.
+	void shrinkingInputCapacityDisarmsUnavailableRoutes()
+	{
+		MultiTrackRecorder recorder(2, 8);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QVERIFY(recorder.armTrack(0, dir.filePath(QStringLiteral("channel5.wav")).toStdString(),
+			SampleRate, 5));
+		QVERIFY(recorder.armTrack(1, dir.filePath(QStringLiteral("channel0.wav")).toStdString(),
+			SampleRate, 0));
+
+		std::vector<sample_t> wideInput(4 * 8, 0.25f);
+		recorder.processInputInterleaved(wideInput.data(), 8, 4);
+		QCOMPARE(recorder.track(0).framesPushed(), std::uint64_t{4});
+		QCOMPARE(recorder.track(1).framesPushed(), std::uint64_t{4});
+
+		recorder.setInputChannelCapacity(2);
+		QVERIFY(!recorder.track(0).isArmed());
+		QVERIFY(recorder.track(1).isArmed());
+
+		const sample_t stereoInput[] = {0.1f, -0.2f, 0.3f, -0.4f, 0.5f, -0.6f};
+		recorder.processInputInterleaved(stereoInput, 2, 3);
+		QCOMPARE(recorder.track(0).framesPushed(), std::uint64_t{4});
+		QCOMPARE(recorder.track(1).framesPushed(), std::uint64_t{7});
+		recorder.disarmAll();
+		QCOMPARE(recorder.track(0).framesRecorded(), std::uint64_t{4});
+		QCOMPARE(recorder.track(1).framesRecorded(), std::uint64_t{7});
+	}
+
+	//! The same interleaved input seam as AudioEngine makes a narrowed route
+	//! report unavailable, then blocks further frames from reaching it.
+	void deliveredInputWidthDisarmsUnavailableRoutes()
+	{
+		MultiTrackRecorder recorder(2, 8);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QVERIFY(recorder.armTrack(0, dir.filePath(QStringLiteral("delivered-channel5.wav")).toStdString(),
+			SampleRate, 5));
+		QVERIFY(recorder.armTrack(1, dir.filePath(QStringLiteral("delivered-channel0.wav")).toStdString(),
+			SampleRate, 0));
+
+		std::vector<sample_t> wideInput(2 * 8, 0.25f);
+		recorder.processInputInterleaved(wideInput.data(), 8, 2);
+		const sample_t stereoInput[] = {0.1f, -0.2f, 0.3f, -0.4f};
+		recorder.processInputInterleaved(stereoInput, 2, 2);
+		QCOMPARE(recorder.track(0).framesPushed(), std::uint64_t{2});
+		QCOMPARE(recorder.track(1).framesPushed(), std::uint64_t{4});
+		QVERIFY(!recorder.track(0).isArmed());
+		QVERIFY(recorder.track(1).isArmed());
+
+		recorder.processInputInterleaved(stereoInput, 2, 2);
+		QCOMPARE(recorder.track(0).framesPushed(), std::uint64_t{2});
+		QCOMPARE(recorder.track(1).framesPushed(), std::uint64_t{6});
+		recorder.disarmAll();
+		QCOMPARE(recorder.track(0).framesRecorded(), std::uint64_t{2});
+		QCOMPARE(recorder.track(1).framesRecorded(), std::uint64_t{6});
+	}
+
 	//! The input path's plan accepts an ARBITRARY count inside its stated bound and
 	//! refuses what it cannot honour, with a message that names the bound.
 	void theInputPlanAcceptsAnArbitraryCountAndRefusesWhatItCannotHonour()

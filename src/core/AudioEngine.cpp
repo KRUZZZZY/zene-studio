@@ -549,6 +549,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 	}
 	AudioEngineWorkerThread::setInlineRenderSlot(m_numWorkers);
 	connect(&m_playHandleCapacityTimer, &QTimer::timeout, this, [this] {
+		m_recorder.reconcileInputChannelCapacity();
 		serviceSampleVoicePoolOnControlThread();
 		topUpPlayHandleCapacityOnControlThread();
 		// Q050-016 round 3: free the expression-stream snapshots the render path
