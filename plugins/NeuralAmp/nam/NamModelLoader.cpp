@@ -365,7 +365,12 @@ std::unique_ptr<NamModel> NamModel::loadFromFile(const std::string& path, std::s
 		weights.reserve(weightsJson.size());
 		for (const json& w : weightsJson)
 		{
-			weights.push_back(w.get<float>());
+			const float weight = w.get<float>();
+			if (!std::isfinite(weight))
+			{
+				throw ParseError("weights array contains a non-finite value after float conversion");
+			}
+			weights.push_back(weight);
 		}
 
 		// Build the engine (all allocation happens here, never in process()).
