@@ -341,6 +341,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// half, then the edit half, each its own translation unit.
 	registerPluginScanCommands(registry);
 	registerPluginScanEditCommands(registry);
+	// Q050-090: the background rescan (scan_start / scan_status /
+	// scan_cancel), its own translation unit for the same reason.
+	registerPluginScanBackgroundCommands(registry);
 	// CODE-4 (feature row 82): the chunking contract both plugin host paths
 	// keep, and the counters their audio paths increment. The hosts are plugin
 	// modules, so the counters and the command live in the core

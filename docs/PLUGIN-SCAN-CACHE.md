@@ -204,6 +204,24 @@ Every line of the new code runs on the thread that calls `PluginFactory::discove
   block or wake an audio thread; it allocates, which is why it must never be called from one, and
   it isn't.
 
+### 2.6 The background run (Q050-090), and why it needs no lock either
+
+`plugin.scan_start` runs the same scan without blocking the window: the run marks itself active, shows
+itself in the task area and returns BEFORE touching a directory or a library - the first turn plans the
+candidate files, each following pre-load turn loads ONE library, and each scan turn scans ONE file
+(`PluginFactoryBackgroundScan.cpp`), committing the staged catalogue only when the last file is done.
+The chunks and every control handler run on the same main thread (§2.5), so there is no worker thread, no
+mutex and nothing for the audio thread to meet - the realtime argument above holds unchanged, and the
+task, the active status and `plugin.scan_cancel` exist before the first potentially slow plug-in load.
+Three deliberate differences from the synchronous run: the quarantine list is snapshotted when the run
+plans (its first turn, after the start returns - an edit made before that takes effect, one made later
+waits for the next run); records are stored live as they are taken, so the Modules list shows them
+mid-run and a cancelled run's measurements stay cached; and `plugin.rescan` is refused while a run is
+active, because both would commit a catalogue and only the last commit would survive. `plugin.scan_status`
+reports the progress and per-file outcomes, `plugin.scan_cancel` stops the run at its next turn boundary
+and keeps the previous catalogue, and the task area (`task.list`) shows the run with its progress and
+Cancel.
+
 ---
 
 ## 3. Tests

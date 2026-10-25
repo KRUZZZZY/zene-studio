@@ -39,16 +39,7 @@
 #include "ControlDeviceSupport.h"
 #include "ControlVocabulary.h"
 #include "DesignTokens.h"
-#include "Engine.h"
-#include "Ladspa2LMMS.h"
 #include "PluginOrganiser.h"
-#include "PluginVendors.h"
-#include "lmmsconfig.h"
-
-#ifdef LMMS_HAVE_LV2
-#include "Lv2Basics.h"
-#include "Lv2Manager.h"
-#endif
 
 namespace lmms::gui
 {
@@ -117,41 +108,13 @@ QString devicelabels::kindLabel(const QString& kind)
 	return DevicePicker::tr("Other");
 }
 
-namespace
-{
-
-QString ladspaMaker(const ControlDeviceEntry& entry)
-{
-	return Engine::getLADSPAManager() != nullptr
-		? Engine::getLADSPAManager()->getMaker(ladspa_key_t(entry.file, entry.label)) : QString();
-}
-
-QString lv2Maker(const ControlDeviceEntry& entry)
-{
-#ifdef LMMS_HAVE_LV2
-	if (Engine::getLv2Manager() == nullptr) { return QString(); }
-	if (const LilvPlugin* plugin = Engine::getLv2Manager()->getPlugin(entry.uri))
-	{
-		return qStringFromPluginNode(plugin, lilv_plugin_get_author_name);
-	}
-#else
-	(void)entry;
-#endif
-	return QString();
-}
-
-} // namespace
-
 QString devicelabels::vendorOf(const ControlDeviceEntry& entry)
 {
-	QString maker;
-	if (entry.format == QLatin1String("builtin")) { maker = QStringLiteral("Zene Studio"); }
-	else if (entry.format == QLatin1String("ladspa")) { maker = ladspaMaker(entry); }
-	else if (entry.format == QLatin1String("lv2")) { maker = lv2Maker(entry); }
-	// VST3 and CLAP: the vendor the module's own factory reported when the catalogue listed it (PluginVendors.h).
-	else if (entry.format == QLatin1String("vst3")) { maker = pluginvendors::vendorOf(entry.file, entry.className); }
-	else if (entry.format == QLatin1String("clap")) { maker = pluginvendors::vendorOf(entry.file, entry.name); }
-	return maker.trimmed().isEmpty() ? DevicePicker::tr("Not reported") : maker.trimmed();
+	// The maker is resolved once, in the core (ControlDeviceCatalogue.cpp's
+	// controlDeviceVendor, the same string plugin.list carries as `vendor`);
+	// the window only adds the "Not reported" words for an empty one (Q050-090).
+	const QString maker = controlDeviceVendor(entry);
+	return maker.isEmpty() ? DevicePicker::tr("Not reported") : maker;
 }
 
 DevicePicker::DevicePicker(Kind kind, const QString& title, QWidget* parent)

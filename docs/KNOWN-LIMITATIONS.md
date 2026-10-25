@@ -2812,7 +2812,8 @@ Fleshed out, because both halves of that sentence hide something real:
   device picker (the Device panel's Add, the device card's Replace and Insert) shows the vendor the module's
   own factory reports: a VST3 class's vendor, which the SDK fills from `PFactoryInfo` when the class names
   none, or a CLAP descriptor's vendor (`include/PluginVendors.h`). A plug-in that reports no vendor still
-  reads "Not reported". `plugin.list` does not carry the vendor, for any format.
+  reads "Not reported". *(Resolved 2026-10-16, Q050-090.)* `plugin.list` carries the same vendor on every
+  entry (empty when the format reports none), and the Plug-in Manager list shows it as its Vendor column.
 - Channel pan and width still read in the knob's own units.
 - Mixed values cover the selected notes only: the selection holds one clip.
 - *(Resolved 2026-10-07, plugin-hosting lane.)* The rack's own "Add effect" (a mixer channel's or an
@@ -2831,7 +2832,11 @@ Fleshed out, because both halves of that sentence hide something real:
 
 **Themes, shared controls and background tasks (themes 20, 23, 24).**
 - Theme changes apply at the next start, and every reply and the window say so.
-- The plug-in scan, `render.render`, `render.stems` and `browser.peaks` stay synchronous and are not in the task area.
+- *(Partly resolved 2026-10-16, Q050-090.)* The plug-in scan runs in the background on request
+  (`plugin.scan_start`, one file per event-loop turn) with progress and cancellation
+  (`plugin.scan_status`, `plugin.scan_cancel`) and appears in the task area; the synchronous
+  `plugin.rescan` stays for scripts. `render.render`, `render.stems` and `browser.peaks` stay
+  synchronous and are not in the task area.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
 
 ## 0.5.0 L08 metering — ballistics, the Selected filter, live input meters, the phase view (050/feat-meters, 2026-10-06)

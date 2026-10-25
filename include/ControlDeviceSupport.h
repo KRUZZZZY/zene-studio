@@ -101,6 +101,15 @@ LMMS_EXPORT bool controlDeviceById(const QString& id, ControlDeviceEntry* entry,
 //! JSON for one catalogue entry (the plugin.list element shape).
 LMMS_EXPORT QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index);
 
+//! Who made @a entry, as its own format reports it: "Zene Studio" for a
+//! built-in, the LADSPA maker's string, the LV2 author's name, or the VST3 /
+//! CLAP vendor the module's own factory reported when the catalogue listed it
+//! (PluginVendors.h). Empty when the format reports none. The single
+//! implementation both plugin.list (controlDeviceJson above) and the device
+//! picker (gui::devicelabels::vendorOf, which adds the "Not reported" words)
+//! read, so the wire and the window cannot disagree.
+LMMS_EXPORT QString controlDeviceVendor(const ControlDeviceEntry& entry);
+
 //! A plugin.* target: a Song track or a mixer channel and the effect chain it owns.
 struct ControlTarget
 {

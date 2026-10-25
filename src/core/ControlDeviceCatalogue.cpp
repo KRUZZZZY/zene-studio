@@ -34,6 +34,13 @@
 #include "LadspaBase.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
+#include "PluginVendors.h"
+#include "lmmsconfig.h"
+
+#ifdef LMMS_HAVE_LV2
+#include "Lv2Basics.h"
+#include "Lv2Manager.h"
+#endif
 
 namespace lmms
 {
@@ -130,7 +137,45 @@ void appendLadspaDevices(QList<ControlDeviceEntry>* out)
 	}
 }
 
+QString ladspaVendorOf(const ControlDeviceEntry& entry)
+{
+	return Engine::getLADSPAManager() != nullptr
+		? Engine::getLADSPAManager()->getMaker(ladspa_key_t(entry.file, entry.label)) : QString();
+}
+
+QString lv2VendorOf(const ControlDeviceEntry& entry)
+{
+#ifdef LMMS_HAVE_LV2
+	if (Engine::getLv2Manager() == nullptr) { return QString(); }
+	if (const LilvPlugin* plugin = Engine::getLv2Manager()->getPlugin(entry.uri))
+	{
+		return qStringFromPluginNode(plugin, lilv_plugin_get_author_name);
+	}
+#else
+	(void)entry;
+#endif
+	return QString();
+}
+
 } // namespace
+
+QString controlDeviceVendor(const ControlDeviceEntry& entry)
+{
+	QString maker;
+	if (entry.format == QLatin1String("builtin")) { maker = QStringLiteral("Zene Studio"); }
+	else if (entry.format == QLatin1String("ladspa")) { maker = ladspaVendorOf(entry); }
+	else if (entry.format == QLatin1String("lv2")) { maker = lv2VendorOf(entry); }
+	// VST3 and CLAP: the vendor the module's own factory reported when the catalogue listed it.
+	else if (entry.format == QLatin1String("vst3"))
+	{
+		maker = pluginvendors::vendorOf(entry.file, entry.className);
+	}
+	else if (entry.format == QLatin1String("clap"))
+	{
+		maker = pluginvendors::vendorOf(entry.file, entry.name);
+	}
+	return maker.trimmed();
+}
 
 QList<ControlDeviceEntry> controlDeviceCatalogue()
 {
@@ -178,6 +223,10 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 	out.insert(QStringLiteral("format"), entry.format);
 	out.insert(QStringLiteral("kind"), entry.kind);
 	out.insert(QStringLiteral("loadable"), entry.loadable);
+	// Who made it, as its own format reports it (empty when it reports none):
+	// the vendor the device picker's Vendor column shows, minus the
+	// "Not reported" words the window adds. Q050-090.
+	out.insert(QStringLiteral("vendor"), controlDeviceVendor(entry));
 	if (entry.format == QLatin1String("ladspa"))
 	{
 		out.insert(QStringLiteral("file"), entry.file);
