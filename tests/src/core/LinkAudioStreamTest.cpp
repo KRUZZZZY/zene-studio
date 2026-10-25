@@ -79,6 +79,43 @@ ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 
 } // namespace
 
+namespace lmms::link
+{
+
+//! The receive jitter bounds and RX ring, exposed only to this regression.
+struct LinkAudioStreamTestAccess
+{
+	static bool jitterBoundsAreOrdered(std::size_t period)
+	{
+		const auto bounds = LinkAudioStream::jitterBounds(period, AudioRingFrames);
+		return bounds.minimum <= bounds.maximum;
+	}
+
+	static std::size_t jitterMinimum(std::size_t period, std::size_t capacity)
+	{
+		return LinkAudioStream::jitterBounds(period, capacity).minimum;
+	}
+
+	static std::size_t jitterMaximum(std::size_t period, std::size_t capacity)
+	{
+		return LinkAudioStream::jitterBounds(period, capacity).maximum;
+	}
+
+	static void enableReceiver(LinkAudioStream& stream, int latencyMs)
+	{
+		stream.m_latencyMs.store(latencyMs, std::memory_order_relaxed);
+		stream.m_receiveOn.store(true, std::memory_order_relaxed);
+		stream.m_epoch.fetch_add(1, std::memory_order_release);
+	}
+
+	static std::size_t writeRx(LinkAudioStream& stream, const float* samples, std::size_t frames)
+	{
+		return stream.m_rx.write(samples, frames);
+	}
+};
+
+} // namespace lmms::link
+
 class LinkAudioStreamTest : public QObject
 {
 	Q_OBJECT
@@ -184,6 +221,34 @@ private slots:
 		QVERIFY(!stream.config().enabled);
 		QVERIFY(!stream.report().running);
 		QCOMPARE(AudioStreamConfig{}.bindAddress, std::string("127.0.0.1"));  // loopback unless the user opts out
+	}
+
+	void largePeriodsKeepTheJitterTargetInsideItsSupportedRange()
+	{
+		constexpr std::size_t Period = 9000;
+		QVERIFY2(LinkAudioStreamTestAccess::jitterBoundsAreOrdered(Period),
+			"the jitter target's lower bound must not exceed its ceiling (std::clamp needs lo <= hi)");
+		QCOMPARE(LinkAudioStreamTestAccess::jitterMinimum(Period, AudioRingFrames), AudioRingFrames / 4);
+		QCOMPARE(LinkAudioStreamTestAccess::jitterMaximum(Period, AudioRingFrames), AudioRingFrames / 4);
+
+		constexpr std::size_t NormalPeriod = 512;
+		QVERIFY(LinkAudioStreamTestAccess::jitterBoundsAreOrdered(NormalPeriod));
+		QCOMPARE(LinkAudioStreamTestAccess::jitterMinimum(NormalPeriod, AudioRingFrames), NormalPeriod * 2);
+		QCOMPARE(LinkAudioStreamTestAccess::jitterMaximum(NormalPeriod, AudioRingFrames), AudioRingFrames / 4);
+		QVERIFY(LinkAudioStreamTestAccess::jitterBoundsAreOrdered(SIZE_MAX / 2 + 1));
+
+		LinkAudioStream stream;
+		LinkAudioStreamTestAccess::enableReceiver(stream, 5);
+		std::vector<SampleFrame> warmup(1, SampleFrame(0.f, 0.f));
+		stream.process(warmup.data(), warmup.size(), Rate);
+		std::vector<float> incoming(17000 * AudioChannels, 1.f);
+		QCOMPARE(LinkAudioStreamTestAccess::writeRx(stream, incoming.data(), 17000), std::size_t{17000});
+		std::vector<SampleFrame> output(Period, SampleFrame(0.f, 0.f));
+		stream.process(output.data(), output.size(), Rate);
+		QCOMPARE(stream.report().primed, true);
+		QCOMPARE(output.front().left(), 1.f);
+		QCOMPARE(stream.report().underruns, std::uint64_t{0});
+		QCOMPARE(stream.report().trims, std::uint64_t{0});
 	}
 
 	void loopbackExchangeIsSampleExact()
