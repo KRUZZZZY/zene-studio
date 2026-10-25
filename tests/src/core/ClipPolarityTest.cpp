@@ -255,6 +255,7 @@ private slots:
 		};
 		QVERIFY(setGain(-6.0).ok);
 		QVERIFY(setGain(-6.0).ok);
+		QCOMPARE(setGain(-61.0).errorKind, ControlErrorKind::InvalidArgs);
 
 		const ControlResult undone = run(QStringLiteral("control.undo"));
 		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
