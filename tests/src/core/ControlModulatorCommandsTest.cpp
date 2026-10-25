@@ -387,6 +387,8 @@ private slots:
 		QJsonObject bind = targetArgs(QStringLiteral("modulator-0"), "Gain", 0.35);
 		bind.insert(QStringLiteral("per_sample"), true);
 		QVERIFY(run(QStringLiteral("modulator.target_set"), bind).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Panning", -0.2)).ok);
 		QVERIFY(run(QStringLiteral("modulator.target_remove"),
 			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
 				{QStringLiteral("target"), 0}}).ok);
@@ -399,12 +401,15 @@ private slots:
 		const ControlResult replayed = run(inverseOp, inverseArgs);
 		QVERIFY2(replayed.ok, qPrintable(replayed.errorMessage));
 		const ModulationRoute& restored = layer().modulator(0)->routes[0];
+		const ModulationRoute& following = layer().modulator(0)->routes[1];
 		QCOMPARE(restored.channel, underTestChannelId());
 		QCOMPARE(restored.chain, kDrivenChain);
 		QCOMPARE(restored.effect, 0);
 		QCOMPARE(restored.parameter, QStringLiteral("Gain"));
 		QCOMPARE(restored.depth, 0.35f);
 		QCOMPARE(restored.perSample, true);
+		QCOMPARE(following.parameter, QStringLiteral("Panning"));
+		QCOMPARE(following.depth, -0.2f);
 	}
 
 	//! Every refusal is typed, changes nothing, and records no transaction -

@@ -203,7 +203,8 @@ void registerTargetSet(ControlRegistry& registry)
 		"parameter already has. 'per_sample' true evaluates the route INSIDE each block (the value "
 		"is published as a ramp and read per sample, so a fast LFO does not zipper) - off, the "
 		"route moves once per block, as it always has. Refused when the parameter does not resolve or is already driven, "
-		"so a modulator never carries a route that can only fail. Reversible through the "
+		"so a modulator never carries a route that can only fail. Optional 'target' inserts at a route index; "
+		"omitting it appends. Reversible through the "
 		"ProjectJournal.");
 	cmd.argsSchema = objectSchema(routeSchema(true),
 		{QStringLiteral("modulator"), QStringLiteral("channel"), QStringLiteral("effect"),
@@ -232,16 +233,15 @@ void registerTargetSet(ControlRegistry& registry)
 		const ModulationRoute route = modulationRouteFromArgs(args);
 		const ControlResult refused = refusedRoute(layer, route);
 		if (!refused.ok) { return refused; }
-
+		const int requestedIndex = args.value(QStringLiteral("target")).toInt(layer.modulator(index)->routeCount());
 		const QJsonObject before = modulationLayerJson(layer);
 		int routeIndex = -1;
 		editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
-			routeIndex = target.addRoute(index, route);
+			routeIndex = insertModulationRouteAtIndex(target, index, requestedIndex, route);
 		});
 		if (routeIndex < 0)
 		{
-			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("modulator %1 is full").arg(modulatorId(index)));
+			return modulationRouteInsertFailure(args, QStringLiteral("target"));
 		}
 		recordRouteCreation(index, routeIndex, route);
 
@@ -377,9 +377,11 @@ void registerTargetRemove(ControlRegistry& registry)
 		{
 			inverseCommand = QStringLiteral("modulator.instrument_target_set");
 			inverseArgs.insert(QStringLiteral("target"), trackId(captured.track));
+			inverseArgs.insert(QStringLiteral("target_index"), route);
 		}
 		else
 		{
+			inverseArgs.insert(QStringLiteral("target"), route);
 			inverseArgs.insert(QStringLiteral("channel"), channelId(captured.channel));
 			inverseArgs.insert(QStringLiteral("chain"), captured.chain);
 			inverseArgs.insert(QStringLiteral("effect"), captured.effect);

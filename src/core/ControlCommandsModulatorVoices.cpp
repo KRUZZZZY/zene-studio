@@ -218,13 +218,16 @@ ControlResult bindInstrumentRoute(InstrumentTrack* track, const QJsonObject& arg
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'depth' %1 is outside -1..1 (a fraction of the target's range)").arg(depth));
 	}
+	const int requestedIndex = args.value(QStringLiteral("target_index")).toInt(layer.modulator(modulator)->routeCount());
 	const ModulationRoute route = instrumentRoute(track, args);
 	const ControlResult refused = refusedInstrumentRoute(layer, route);
 	if (!refused.ok) { return refused; }
 	const QJsonObject before = modulationLayerJson(layer);
 	int index = -1;
-	editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) { index = target.addRoute(modulator, route); });
-	if (index < 0) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("modulator %1 is full").arg(modulatorId(modulator))); }
+	editModulationLayer([&](ModulationLayer& target, ModulationRuntime&) {
+		index = insertModulationRouteAtIndex(target, modulator, requestedIndex, route);
+	});
+	if (index < 0) { return modulationRouteInsertFailure(args, QStringLiteral("target_index")); }
 	recordInstrumentRoute(modulator, index, route);
 	Instrument* instrument = track->instrument();
 	QJsonObject result = layerResultFor(modulator);
@@ -249,10 +252,12 @@ void registerInstrumentTargetSet(ControlRegistry& registry)
 		"the parameter's range (-1..1). This is the target a per-voice modulator sends per-note values to; "
 		"'per_note' says whether the instrument takes them for this parameter (a CLAP parameter marked "
 		"modulatable per key or note, a VST3 note-expression type). Refused when the parameter does not resolve "
-		"or is already driven. Reversible through the ProjectJournal (modulator.target_remove is the inverse).");
+		"or is already driven. Optional 'target_index' inserts at a route position; omitting it appends. "
+		"Reversible through the ProjectJournal (modulator.target_remove is the inverse).");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("modulator"), stringProperty()},
 		{QStringLiteral("target"), stringProperty()},
+		{QStringLiteral("target_index"), integerProperty()},
 		{QStringLiteral("parameter"), stringProperty()},
 		{QStringLiteral("depth"), numberProperty()},
 		{QStringLiteral("per_sample"), booleanProperty()},
