@@ -81,6 +81,78 @@ bool sharedElsewhere(Mixer* mixer, VcaGroup* own, mix_ch_t channel)
 	return false;
 }
 
+//! The complete solo state carried by a vca.set_solo transaction inverse.
+QJsonObject soloState(Mixer* mixer)
+{
+	QJsonArray groups;
+	for (VcaGroup* group : mixer->vcaGroups())
+	{
+		groups.append(QJsonObject{{QStringLiteral("group"), vcaGroupId(group->id())},
+			{QStringLiteral("soloed"), group->soloModel()->value()}});
+	}
+	QJsonArray channels;
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* channel = mixer->mixerChannel(i);
+		channels.append(QJsonObject{{QStringLiteral("channel"), control::channelIdOf(channel)},
+			{QStringLiteral("muted"), channel->m_muteModel.value()},
+			{QStringLiteral("mute_before_solo"), channel->m_muteBeforeSolo}});
+	}
+	return QJsonObject{{QStringLiteral("groups"), groups}, {QStringLiteral("channels"), channels}};
+}
+
+//! Resolve the stable channel id in a solo-state record against the live mix.
+MixerChannel* channelById(Mixer* mixer, const QString& id)
+{
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* channel = mixer->mixerChannel(i);
+		if (control::channelIdOf(channel) == id) { return channel; }
+	}
+	return nullptr;
+}
+
+//! Restore solo flags before channel mute models so the model hooks cannot
+//! replace the checkpointed mutes or pre-solo cache.
+void restoreSoloState(Mixer* mixer, const QJsonObject& state)
+{
+	for (VcaGroup* group : mixer->vcaGroups()) { group->soloModel()->setValue(false); }
+	const QJsonArray groupStates = state.value(QStringLiteral("groups")).toArray();
+	VcaGroup* activeSolo = nullptr;
+	for (const QJsonValue& value : groupStates)
+	{
+		const QJsonObject record = value.toObject();
+		if (!record.value(QStringLiteral("soloed")).toBool()) { continue; }
+		const int id = control::idToIndex(record.value(QStringLiteral("group")).toString(),
+			QStringLiteral("vca-"));
+		VcaGroup* group = mixer->vcaGroup(id);
+		if (group != nullptr && group->linksSolo() && !group->isSuspended()) { activeSolo = group; }
+	}
+	if (activeSolo != nullptr) { activeSolo->soloModel()->setValue(true); }
+	for (const QJsonValue& value : groupStates)
+	{
+		const QJsonObject record = value.toObject();
+		if (!record.value(QStringLiteral("soloed")).toBool()) { continue; }
+		const int id = control::idToIndex(record.value(QStringLiteral("group")).toString(),
+			QStringLiteral("vca-"));
+		VcaGroup* group = mixer->vcaGroup(id);
+		if (group != nullptr && group != activeSolo
+			&& (group->isSuspended() || !group->linksSolo()))
+		{
+			group->soloModel()->setValue(true);
+		}
+	}
+	for (const QJsonValue& value : state.value(QStringLiteral("channels")).toArray())
+	{
+		const QJsonObject record = value.toObject();
+		if (MixerChannel* channel = channelById(mixer, record.value(QStringLiteral("channel")).toString()))
+		{
+			channel->m_muteModel.setValue(record.value(QStringLiteral("muted")).toBool());
+			channel->m_muteBeforeSolo = record.value(QStringLiteral("mute_before_solo")).toBool();
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // vca.set_gain - the group fader.
 // ---------------------------------------------------------------------------
@@ -196,6 +268,8 @@ ControlResult setSolo(const QJsonObject& args)
 	}
 	const bool soloed = args.value(QStringLiteral("soloed")).toBool();
 	const bool previous = group->soloModel()->value();
+	Mixer* mixer = Engine::mixer();
+	const QJsonObject previousState = soloState(mixer);
 
 	// One step for the whole action, taken BEFORE it: see soloStepObjects.
 	control::addUndoStep(soloStepObjects());
@@ -205,25 +279,29 @@ ControlResult setSolo(const QJsonObject& args)
 	// there is a display. A GUI instance needs no second call - unlike
 	// track.set_solo, where the cross-track mute lives in a VIEW and therefore
 	// has to be applied by hand when there is none.
-	group->soloModel()->setValue(soloed);
+	if (args.contains(QStringLiteral("restore")))
+	{
+		restoreSoloState(mixer, args.value(QStringLiteral("restore")).toObject());
+	}
+	else
+	{
+		group->soloModel()->setValue(soloed);
+	}
 
 	QJsonObject result = groupState(group);
 	result.insert(QStringLiteral("previous_soloed"), previous);
 	result.insert(QStringLiteral("__transaction"),
 		control::transactionPayload(
-			QJsonObject{{QStringLiteral("group"), vcaGroupId(group->id())},
-				{QStringLiteral("soloed"), previous}},
+			previousState,
 			QStringLiteral("vca.set_solo"),
 			QJsonObject{{QStringLiteral("group"), vcaGroupId(group->id())},
-				{QStringLiteral("soloed"), previous}},
+				{QStringLiteral("soloed"), previous},
+				{QStringLiteral("restore"), previousState}},
 			true,
 			QStringLiteral("composite checkpoint: the group's own solo flag, every other "
-				"group's solo flag and every mixer channel's mute model are recorded as ONE "
-				"undo step, so one control.undo or one Ctrl+Z restores the whole action "
-				"(Mixer::applyGroupSolo is exclusive and rewrites the channels' mutes). LIMIT: "
-				"MixerChannel::m_muteBeforeSolo is transient and is not part of the project "
-				"file, so it is not restored - it is re-derived on the next solo action, "
-				"exactly as track.set_solo states for Track::mutedBeforeSolo")));
+				"group's solo flag, every mixer channel's mute model and each transient "
+				"m_muteBeforeSolo cache value are captured. The advertised inverse carries "
+				"that full state, including other groups cleared by Mixer::applyGroupSolo")));
 	return ControlResult::success(result);
 }
 
@@ -424,6 +502,10 @@ void registerVcaSetSolo(ControlRegistry& registry)
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("soloed"), control::booleanProperty()},
+		{QStringLiteral("restore"), control::objectSchema({
+			{QStringLiteral("groups"), control::arrayProperty()},
+			{QStringLiteral("channels"), control::arrayProperty()},
+		}, {QStringLiteral("groups"), QStringLiteral("channels")})},
 	}, {QStringLiteral("group"), QStringLiteral("soloed")});
 	cmd.resultSchema = vcacontrol::groupStateSchema({
 		{QStringLiteral("previous_soloed"), control::booleanProperty()},

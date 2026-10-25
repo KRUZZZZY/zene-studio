@@ -362,6 +362,82 @@ private slots:
 			"undo_depth_unchanged=1 transaction_unchanged=1"));
 	}
 
+	//! A transaction inverse must restore every exclusive solo flag and the
+	//! channel mutes it displaced, even after the bounded journal evicts it.
+	void replayingSoloInverseRestoresPreviousExclusiveSolo()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(journal != nullptr);
+		const QString first = createGroup(QStringLiteral("Solo A"));
+		const QString second = createGroup(QStringLiteral("Solo B"));
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), first},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), second},
+			{QStringLiteral("channel"), channelId(2)}}).ok);
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			mixer->mixerChannel(ch)->m_muteModel.setValue(ch == 3);
+		}
+		QVector<bool> originalMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			originalMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), first}, {QStringLiteral("soloed"), true}}).ok);
+		QVector<bool> beforeSecondSoloMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			beforeSecondSoloMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+
+		const int oldCap = journal->maxUndoStates();
+		QVERIFY(journal->setMaxUndoStates(1));
+		const int evictedBefore = journal->evictedSteps();
+		const ControlResult secondSolo = run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("soloed"), true}});
+		QVERIFY2(secondSolo.ok, qPrintable(secondSolo.errorMessage));
+		const QJsonObject inverse = stateOf(QStringLiteral("vca.set_solo"))
+			.value(QStringLiteral("inverse")).toObject();
+		QCOMPARE(journal->undoDepth(), 1);
+		QVERIFY(run(QStringLiteral("vca.set_gain"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("gain"), 0.75}}).ok);
+		QVERIFY(journal->evictedSteps() > evictedBefore);
+		const ControlResult restored = run(inverse.value(QStringLiteral("op")).toString(),
+			inverse.value(QStringLiteral("args")).toObject());
+		QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
+		const bool firstRestored = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), first}}).result.value(QStringLiteral("soloed")).toBool();
+		const bool secondCleared = !run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), second}}).result.value(QStringLiteral("soloed")).toBool();
+		QVector<bool> restoredMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			restoredMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		const ControlResult unsoloed = run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), first}, {QStringLiteral("soloed"), false}});
+		QVERIFY2(unsoloed.ok, qPrintable(unsoloed.errorMessage));
+		QVector<bool> finalMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			finalMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QVERIFY(journal->setMaxUndoStates(oldCap));
+
+		QVERIFY2(firstRestored, "replaying B's inverse left A unsoloed");
+		QVERIFY(secondCleared);
+		QCOMPARE(restoredMutes, beforeSecondSoloMutes);
+		QCOMPARE(finalMutes, originalMutes);
+		evidence(QStringLiteral("solo_inverse_restored_prior_group=1 channel_mutes=1 "
+			"unsolo_restored_original_mutes=1 journal_evicted=1"));
+	}
+
 	//! A deleted track keeps its stable id in the group's edit set so callers
 	//! can see and repair the missing membership. Removing that id must not need
 	//! a live Track object, and its undo restores the same missing membership.
