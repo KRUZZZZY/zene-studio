@@ -354,23 +354,18 @@ void registerClipSetGain(ControlRegistry& registry)
 		const ClipEdits before = ref.clip->clipEdits();
 		ClipEdits after = before;
 		after.gain = gainDbToLinear(static_cast<float>(db));
+		if (after == before) { return ControlResult::success(editsState(ref, after)); }
 
-		if (after != before)
-		{
-			ref.clip->addJournalCheckPoint();
-			ref.clip->setClipEdits(after);
-		}
+		ref.clip->addJournalCheckPoint();
+		ref.clip->setClipEdits(after);
 
 		QJsonObject result = editsState(ref, after);
-		if (after != before)
-		{
-			QJsonObject inverseArgs = clipArg(ref);
-			inverseArgs.insert(QStringLiteral("gain_db"),
-				static_cast<double>(gainLinearToDb(before.gain)));
-			result.insert(QStringLiteral("__transaction"),
-				control::transactionPayload(editsState(ref, before),
-					QStringLiteral("clip.set_gain"), inverseArgs, true, ClauseClipJournalled));
-		}
+		QJsonObject inverseArgs = clipArg(ref);
+		inverseArgs.insert(QStringLiteral("gain_db"),
+			static_cast<double>(gainLinearToDb(before.gain)));
+		result.insert(QStringLiteral("__transaction"),
+			control::transactionPayload(editsState(ref, before),
+				QStringLiteral("clip.set_gain"), inverseArgs, true, ClauseClipJournalled));
 		return ControlResult::success(result);
 	};
 	registry.registerCommand(cmd);
