@@ -379,7 +379,13 @@ void PerformView::paintColumns()
 
 void PerformView::readTransport()
 {
-	const QJsonObject transport = run(QStringLiteral("transport.get_state")).result;
+	const ControlResult state = run(QStringLiteral("transport.get_state"));
+	if (!state.ok)
+	{
+		m_notice = state.errorMessage;
+		return;
+	}
+	const QJsonObject transport = state.result;
 	m_transportRunning = transport.value(QStringLiteral("playing")).toBool();
 	m_bpm = transport.value(QStringLiteral("tempo")).toDouble();
 	m_ticks = transport.value(QStringLiteral("position_ticks")).toInt();

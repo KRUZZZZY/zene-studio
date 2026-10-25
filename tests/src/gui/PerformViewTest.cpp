@@ -283,6 +283,27 @@ private slots:
 		QTest::qWait(50);
 	}
 
+	//! A failed transport read leaves the last valid transport display and reports the read refusal.
+	void failedTransportStateReadKeepsLastKnownState()
+	{
+		PerformView* view = PerformView::instance(true);
+		QVERIFY(run(QStringLiteral("transport.set_tempo"), {{QStringLiteral("bpm"), 120}}).ok);
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 48}}).ok);
+		view->refresh();
+		const QString tempo = view->tempoText();
+		const QString position = view->positionText();
+		const bool playing = view->playButton()->isChecked();
+
+		ControlRegistry::setReady(false);
+		view->refresh();
+		ControlRegistry::setReady(true);
+
+		QCOMPARE(view->tempoText(), tempo);
+		QCOMPARE(view->positionText(), position);
+		QCOMPARE(view->playButton()->isChecked(), playing);
+		QVERIFY2(view->statusLine().contains(QStringLiteral("not addressable")), qPrintable(view->statusLine()));
+	}
+
 	//! The setlist's song and the next one, from session.setlist; the song buttons follow where the set stands.
 	void theSetlistShowsTheSongAndTheNext()
 	{
