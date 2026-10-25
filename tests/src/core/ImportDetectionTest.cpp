@@ -65,6 +65,7 @@
 #include <QDir>
 #include <QFile>
 #include <QString>
+#include <QDomDocument>
 #include <QDomElement>
 #include <QTemporaryDir>
 
@@ -466,6 +467,36 @@ private slots:
 		cleared.loadSettings(QDomElement());
 		QVERIFY(cleared.empty());
 		QVERIFY(cleared.tonicName().isEmpty());
+	}
+
+	void unreadableProjectKeyNumbersAreRejectedAndCleared()
+	{
+		const QStringList invalidXml = {
+			QStringLiteral("<detected-key scale=\"Major\" tonic=\"D\" pitch-class=\"bad\" confidence=\"1.2\" margin=\"0.1\"/>"),
+			QStringLiteral("<detected-key scale=\"Major\" tonic=\"D\" pitch-class=\"2\" confidence=\"bad\" margin=\"0.1\"/>"),
+			QStringLiteral("<detected-key scale=\"Major\" tonic=\"D\" pitch-class=\"2\" confidence=\"1.2\" margin=\"bad\"/>")
+		};
+
+		ProjectKey key;
+		for (const QString& xml : invalidXml)
+		{
+			key.set(QStringLiteral("A"), 9, QStringLiteral("Major"), 1.16, 0.06,
+				QString::fromLatin1(detection::KeyMethodName), QStringLiteral("/tmp/a-major.wav"));
+			QDomDocument document;
+			QVERIFY2(document.setContent(xml), qPrintable(xml));
+			QVERIFY2(!key.loadSettings(document.documentElement()), qPrintable(xml));
+			QVERIFY(key.empty());
+			QCOMPARE(key.tonicPitchClass(), ProjectKey::UnknownPitchClass);
+		}
+	}
+
+	void omittedProjectKeyNumbersKeepTheirDefaults()
+	{
+		ProjectKey key;
+		QVERIFY(key.fromXml(QStringLiteral("<detected-key scale=\"Major\"/>")));
+		QCOMPARE(key.tonicPitchClass(), ProjectKey::UnknownPitchClass);
+		QCOMPARE(key.confidence(), 0.0);
+		QCOMPARE(key.margin(), 0.0);
 	}
 
 private:

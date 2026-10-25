@@ -100,11 +100,32 @@ bool ProjectKey::loadSettings(const QDomElement& element)
 	const QString scale = element.attribute(QString::fromLatin1(kScale));
 	if (scale.isEmpty()) { return false; }
 
+	bool pitchClassOk = false;
+	const int tonicPitchClass = element.attribute(QString::fromLatin1(kPitchClass), QStringLiteral("-1"))
+		.toInt(&pitchClassOk);
+	if (!pitchClassOk) { return false; }
+
+	double confidence = 0.0;
+	if (element.hasAttribute(QString::fromLatin1(kConfidence)))
+	{
+		bool confidenceOk = false;
+		confidence = element.attribute(QString::fromLatin1(kConfidence)).toDouble(&confidenceOk);
+		if (!confidenceOk) { return false; }
+	}
+
+	double margin = 0.0;
+	if (element.hasAttribute(QString::fromLatin1(kMargin)))
+	{
+		bool marginOk = false;
+		margin = element.attribute(QString::fromLatin1(kMargin)).toDouble(&marginOk);
+		if (!marginOk) { return false; }
+	}
+
 	m_tonicName = element.attribute(QString::fromLatin1(kTonic));
-	m_tonicPitchClass = element.attribute(QString::fromLatin1(kPitchClass), QStringLiteral("-1")).toInt();
+	m_tonicPitchClass = tonicPitchClass;
 	m_scaleName = scale;
-	m_confidence = element.attribute(QString::fromLatin1(kConfidence)).toDouble();
-	m_margin = element.attribute(QString::fromLatin1(kMargin)).toDouble();
+	m_confidence = confidence;
+	m_margin = margin;
 	m_method = element.attribute(QString::fromLatin1(kMethod));
 	m_sourcePath = element.attribute(QString::fromLatin1(kSource));
 	return true;
