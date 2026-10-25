@@ -43,7 +43,7 @@ The first `feature_check.py` run exited 1 because `tests/all-sources.txt` contai
 | Command | Exit | Result |
 | --- | ---: | --- |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-128` | 0 | `gate-3.log` and `gate-4.log`: both exit 0; all eight rows PASS, with no new complexity/file-length item. `gate-4.log` is after report registration. |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-128 new-p23-128` | pending post-commit | The committed-tree result will be added after running the completion check. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-128 new-p23-128` | 0 | `submit-1.log`: PASS, with all five ASK items answered in this report's Self-check section. |
 
 ## Self-check
 
