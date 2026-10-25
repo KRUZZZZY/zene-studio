@@ -69,6 +69,10 @@ The subsequent `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_
 
 The same command was run again after this report was first written; it exited 0 with the same table (`021-feature-check-final.log`).
 
+## Completion check
+
+The first `submit_check.py` run exited 1 (`023-submit-check.log`) because it requires a bare overall verdict word on line one. The report now begins with `FIXED`, followed by the required per-bug lines. `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p15-221 new-p15-221` then exited 0 (`025-submit-check-after-report-fix.log`): `RESULT: PASS - submit`.
+
 ## Self-check
 
 - **RED/GREEN:** `TakeLaneTest` and `TakeLaneCompPlaybackTest` each failed with the production patch removed (CTest EXIT 8) and passed after restoration (CTest EXIT 0). The reversed patch is saved as `fix.patch`; builds and ctest logs are listed above.
