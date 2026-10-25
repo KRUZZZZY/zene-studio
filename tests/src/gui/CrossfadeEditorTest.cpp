@@ -179,6 +179,25 @@ private slots:
 		QVERIFY(reopened->outSide().shape == pending.shape);
 	}
 
+	void reopeningBeforeDeferredDeleteCreatesNewEditor()
+	{
+		CrossfadeEditorDialog* closing = CrossfadeEditorDialog::openFor(m_first, m_second, nullptr);
+		QVERIFY(closing != nullptr);
+		const QPointer<CrossfadeEditorDialog> closingGuard(closing);
+		QVERIFY(closing->isVisible());
+
+		closing->close();
+		QVERIFY(!closing->isVisible());
+		QVERIFY(!closingGuard.isNull());  // close() has queued deletion, but it has not run yet.
+
+		CrossfadeEditorDialog* reopened = CrossfadeEditorDialog::openFor(m_second, m_first, nullptr);
+		QVERIFY(reopened != nullptr);
+		QVERIFY(reopened != closingGuard.data());
+		QVERIFY(reopened->isVisible());
+		const QPointer<CrossfadeEditorDialog> reopenedGuard(reopened);
+		const auto closeReopened = qScopeGuard([&] { if (reopenedGuard) { reopenedGuard->close(); } });
+	}
+
 	void theEditorTracksClipMovesAndResizes()
 	{
 		CrossfadeEditorDialog dialog(m_first, m_second);

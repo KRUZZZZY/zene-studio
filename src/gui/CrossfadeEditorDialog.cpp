@@ -201,7 +201,7 @@ CrossfadeEditorDialog* CrossfadeEditorDialog::openFor(SampleClip* first, SampleC
 	for (QWidget* window : QApplication::topLevelWidgets())
 	{
 		auto* open = qobject_cast<CrossfadeEditorDialog*>(window);
-		if (open != nullptr && open->outClip() == first && open->inClip() == second)
+		if (open != nullptr && open->isVisible() && open->outClip() == first && open->inClip() == second)
 		{
 			open->show();
 			open->raise();
