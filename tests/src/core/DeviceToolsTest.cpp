@@ -360,6 +360,23 @@ private slots:
 			rack.split().crossoverCount);
 	}
 
+	//! A 64-character alias keeps a supplementary Unicode character intact at the length limit.
+	void aliasTruncationPreservesUnicodeCodePoints()
+	{
+		const QString key = QStringLiteral("parameter");
+		const QString alias = QString(63, QLatin1Char('a')) + QStringLiteral("😀");
+		DeviceOptions options;
+		options.setAlias(key, alias);
+		QCOMPARE(options.alias(key), alias);
+
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("effect"));
+		options.save(element);
+		DeviceOptions loaded;
+		loaded.load(element);
+		QCOMPARE(loaded.alias(key), alias);
+	}
+
 	//! MX-089 / MX-097: a parameter is found by its name, renamed, found by its alias, keeps its own name
 	//! as its address, saves the alias only when set, and the rename undoes.
 	void aParameterIsFoundAndRenamed()
