@@ -520,7 +520,14 @@ int main( int argc, char * * argv )
 	{
 		QString arg = argv[i];
 
-		if (arg == "--help" || arg == "-h")
+		if (arg == "--config" || arg == "-c")
+		{
+			// Qt reads the interface scale before QApplication exists. Remember
+			// the selected file in this pass so Appearance can read its ui/scale;
+			// stage two still validates the option and loads the complete config.
+			if (i + 1 < argc) { configFile = QString::fromLocal8Bit(argv[++i]); }
+		}
+		else if (arg == "--help" || arg == "-h")
 		{
 			printHelp();
 			return EXIT_SUCCESS;
@@ -690,7 +697,7 @@ int main( int argc, char * * argv )
 	}
 
 	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
-	if (!coreOnly) { lmms::appearance::applyStoredScale(); }
+	if (!coreOnly) { lmms::appearance::applyStoredScale(configFile); }
 
 	QCoreApplication * app = coreOnly ?
 			new QCoreApplication( argc, argv ) :
@@ -1365,6 +1372,8 @@ int main( int argc, char * * argv )
 		if( !controlServer->listen( controlSocket, &controlError ) )
 		{
 			fprintf( stderr, "control socket: %s\n", controlError.toUtf8().constData() );
+			crashreporter::endSession();
+			safestart::endSession();
 			return EXIT_FAILURE;
 		}
 		printf( "control socket listening on %s\n", controlSocket.toUtf8().constData() );
