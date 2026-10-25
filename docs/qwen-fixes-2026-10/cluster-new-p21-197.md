@@ -1,3 +1,4 @@
+FALSE-POSITIVE
 new-p21-197: FALSE-POSITIVE
 Evidence: `include/InstrumentOutputBuses.h:101` documents that routes for buses missing from the current layout are retained for later. `src/core/InstrumentOutputBuses.cpp:211-212` implements this by storing a route when `route()` cannot use the current layout, and `:189-195` saves those retained routes. Bounding `saveSettings()` by `busCount()` would discard this supported deferred-route state. The actual stale route after a host layout shrink is cleared by the new-p21-196 fix; the compatibility test at `tests/src/core/InstrumentRoutingTest.cpp:265-294` proves that a deferred route survives saving and a later shrink until its bus appears.
 Commands: `./InstrumentRoutingTest outputBusDeferredRoutesSurviveSaveBeforeLayoutAppears` passed against the original implementation (EXIT=0, log `31-deferred-original.log`) and with the fixes applied (EXIT=0, log `33-deferred-fixed.log`). This is characterization evidence, not a RED/GREEN bug test, because changing the save loop would break the documented contract.
@@ -47,13 +48,14 @@ The product patch was saved and reversed with `git diff -- src/core/InstrumentOu
 
 ## Self-check
 
-- RED/GREEN proof: Each real bug has its own test case. The two tests fail with the product patch reversed and pass after it is restored; the exact commands and exit codes are in the evidence table.
-- Determinism: New tests use synchronous layout and XML operations. They contain no sleeps, timing assumptions, or races.
-- Cause and sibling paths: Shrink cleanup covers only previously present bus indices; `routedIndex()` and `routedBuffer()` both reject indices past the current layout. `send()` reaches `routedBuffer()` before slot use, and `deliver()`/LV2 delivery iterate the current layout.
-- Compatibility: Deferred routes absent from the current layout remain loadable and savable, including across shrink, and become available if the bus later appears. The save format is unchanged.
+- Regression reversal: Each real bug has a dedicated test. Both fail with the product patch reversed and pass after it is restored; the commands and exit codes are in the evidence table. The new-p21-197 characterization passes on original and fixed code because the finding conflicts with the documented deferred-route contract.
+- Determinism: The new tests use synchronous layout and XML operations. They contain no sleeps, timing assumptions, or races.
+- Cause and siblings: Shrink cleanup covers only previously present bus indices; `routedIndex()` and `routedBuffer()` both reject indices past the current layout. `send()` reaches `routedBuffer()` before slot use, and `deliver()`/LV2 delivery iterate the current layout.
+- No collateral damage: Deferred routes absent from the current layout remain loadable and savable, including across shrink, and become available if the bus later appears. The save format is unchanged.
+- Non-real verdict evidence: `include/InstrumentOutputBuses.h:101`, `src/core/InstrumentOutputBuses.cpp:211-212`, and the original/fixed characterization results document why new-p21-197 is a false positive.
 - Realtime: `setLayout()` is control-thread configuration under the existing guard. `storeRoute(bus, -1)` operates on an existing slot without allocating a replacement; `routedBuffer()` adds no allocating or locking operation.
 - Registration: `InstrumentRoutingTest.cpp` is already registered in CMake and `tests/fork-sources.txt`; no new product file or header was added. The corrected whole-tree source manifest now reproduces its documented generator.
-- Completion check: run the required post-commit `submit_check.py`; record its observed exit code after the commit.
+- Completion check: the first post-commit `submit_check.py` run returned EXIT=1 because the verdict word was not the first line. The verdict is now on line 1; rerun the completion check after this report update and record its result.
 
 ## Files in this change
 
