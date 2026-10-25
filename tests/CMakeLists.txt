@@ -1632,6 +1632,12 @@ endif()
 # the mechanical negative control (qwen/negctl.py) can see its name in `ctest -N`.
 list(APPEND LMMS_TESTS src/plugins/CompressorVisualizerTest.cpp)
 
+# Cluster new-p23-113: exercise sfizz's SSE division helper with independent
+# buffer alignment, including an unaligned divisor and aligned input/output.
+if(TARGET sfzplayer_sfizz)
+	list(APPEND LMMS_TESTS src/plugins/SfzSimdHelperAlignmentTest.cpp)
+endif()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1848,6 +1854,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# OversamplingHelpers.h coverage in this DSP test needs hiir's include path.
 	if(LMMS_TEST_NAME STREQUAL "AudioResamplerRatioTest")
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "SfzSimdHelperAlignmentTest")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "VstEffectControlsTest")
 		# vsteffect's resource source is generated in the plug-in's build directory; without
