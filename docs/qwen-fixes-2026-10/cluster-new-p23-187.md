@@ -4,7 +4,9 @@ FIXED
 
 **REAL.** `m_pauseModel` is initialized to `false` in [OscilloscopeControls.cpp](../../plugins/Oscilloscope/OscilloscopeControls.cpp:39), and [Oscilloscope.cpp](../../plugins/Oscilloscope/Oscilloscope.cpp:65) consults it to decide whether to capture samples. Before this fix, `OscilloscopeControls::loadSettings` and `saveSettings` at lines 47 and 57 handled amp, length, phase, and stereo, but skipped pause. The methods now load and save the `pause` setting at lines 52 and 62.
 
-The test-first run failed because the saved controls element lacked `pause`. After the fix, a paused value survives load/save/load, legacy XML without `pause` stays unpaused, and amp and stereo still round-trip.
+The project path reaches these methods through [Effect::saveSettings](../../src/core/Effect.cpp:172), which calls the controls' `saveState`, and `Effect::loadSettings` at line 181, which restores the matching controls state. `SerializingObject::saveState` and `restoreState` delegate to the controls' settings methods.
+
+The test-first run failed because the saved controls element lacked `pause`. After the fix, a paused value survives load/save/load, legacy XML without `pause` stays unpaused, and amp and stereo still round-trip. The pause button is bound to this same model in [OscilloscopeControlDialog.cpp](../../plugins/Oscilloscope/OscilloscopeControlDialog.cpp:61).
 
 ## Regression matrix
 
@@ -48,6 +50,7 @@ The source manifest includes the new test in both fork and whole-tree scopes. Th
 | Gate | Exact command | Exit and result |
 | --- | --- | --- |
 | Feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-187 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-187.r1/logs/gate-6-feature.log 2>&1; rc=$?; echo EXIT=$rc` | `EXIT=0`; fork-sources, all-sources-reproduce, no-upstream-regression, namespace, no-tautology, doc-figures, complexity, and file-length all PASS. |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-187 new-p23-187 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-187.r1/logs/submit-1.log 2>&1; rc=$?; echo EXIT=$rc` | `EXIT=0`; commit, clean tree, report, test registration, and feature gates passed. The evidence prompts are answered below. |
 
 ## Files in the commit
 
@@ -62,8 +65,10 @@ The source manifest includes the new test in both fork and whole-tree scopes. Th
 ## Self-check
 
 - **Verdict:** REAL; the persisted pause value is read by `Oscilloscope::processImpl`, while the settings methods had omitted it.
-- **Regression proof:** RED is recorded in `test-3-red.log`; the reversal proof in `test-5-proof-red.log` reproduces both failures; the restored fix passes in `test-6-proof-green.log`.
-- **Old project behavior:** XML without a pause attribute loads and saves the model’s existing `false` default, covered by `legacySettingsDefaultPauseToFalse`.
-- **Realtime and scope:** No audio processing, control command, undo operation, or model declaration changed. The only production changes are the two settings calls.
+- **The regression fails with the product change reverted and passes with it:** the RED test in `test-3-red.log` exited 8; the required reversal run in `test-5-proof-red.log` also exited 8 after a successful build; the restored run in `test-6-proof-green.log` exited 0 after a successful build. Each CTest run executed one test target.
+- **The test is deterministic:** `pauseSettingRoundTrips` and `legacySettingsDefaultPauseToFalse` use fixed XML attributes (`pause=1`, `amp=321.5`, and `stereo=1`) and direct DOM comparisons. They use no clock, sleep, thread scheduling, or race.
+- **The fix is at the cause and complete:** `OscilloscopeControls::loadSettings` and `saveSettings` own this plugin's persisted controls. `Effect::saveSettings` and `Effect::loadSettings` reach them through controls' state serialization. The pause button and `Oscilloscope::processImpl` use the same `m_pauseModel`. The amp, length, phase, and stereo sibling calls remain in both settings methods; amp and stereo are checked by the regression, and length and phase code is unchanged.
+- **No collateral damage:** A legacy element without `pause` restores the constructor's `false` default, as tested. Existing amp and stereo values remain unchanged. No limits, checks, control commands, or changes to audio processing or undo were added.
+- **Conditional verdict check:** Not applicable; the verdict is REAL, supported by the missing serialization calls and their failing regression.
 - **Registration and gates:** The new test is in both source manifests, and the feature-check table above passes with exit 0.
 - **Files committed:** The seven explicit paths listed above are included in the cluster commit.
