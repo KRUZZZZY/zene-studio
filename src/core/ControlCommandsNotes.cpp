@@ -370,6 +370,7 @@ void registerNoteResize(ControlRegistry& registry)
 		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2): a resize
 		// does not re-sort the list, but the id is still what addresses the note.
 		result.insert(QStringLiteral("note"), control::noteIdOf(note));
+		if (!changed) { return ControlResult::success(result); }
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));
@@ -434,6 +435,7 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2).
 		result.insert(QStringLiteral("note"), control::noteIdOf(note));
+		if (!changed) { return ControlResult::success(result); }
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));

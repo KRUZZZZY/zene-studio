@@ -283,6 +283,8 @@ private slots:
 		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
 		ProjectJournal* journal = Engine::projectJournal();
 		QVERIFY(journal != nullptr);
+		const int transactionsBefore = transactionCount();
+		const QString lastTransactionBefore = lastTransactionCommand();
 		markProjectClean();
 		const quint64 before = journal->topStepSerial();
 
@@ -292,6 +294,8 @@ private slots:
 		QVERIFY2(resized.ok, qPrintable(resized.errorMessage));
 		QCOMPARE(resized.result.value(QStringLiteral("length")).toInt(), 24);
 		QCOMPARE(journal->topStepSerial(), before);
+		QCOMPARE(transactionCount(), transactionsBefore);
+		QCOMPARE(lastTransactionCommand(), lastTransactionBefore);
 		QVERIFY(!Engine::getSong()->isModified());
 	}
 
@@ -302,6 +306,8 @@ private slots:
 		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
 		ProjectJournal* journal = Engine::projectJournal();
 		QVERIFY(journal != nullptr);
+		const int transactionsBefore = transactionCount();
+		const QString lastTransactionBefore = lastTransactionCommand();
 		markProjectClean();
 		const quint64 before = journal->topStepSerial();
 
@@ -311,6 +317,23 @@ private slots:
 		QVERIFY2(set.ok, qPrintable(set.errorMessage));
 		QCOMPARE(set.result.value(QStringLiteral("velocity")).toInt(), 100);
 		QCOMPARE(journal->topStepSerial(), before);
+		QCOMPARE(transactionCount(), transactionsBefore);
+		QCOMPARE(lastTransactionCommand(), lastTransactionBefore);
+		QVERIFY(!Engine::getSong()->isModified());
+	}
+
+	//! Zero jitter is a valid identity roll and must not dirty the project.
+	void zeroJitterRandomizeDoesNotDirtyProject()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		markProjectClean();
+
+		const ControlResult rolled = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 0.0}, {QStringLiteral("position_jitter"), 0.0},
+				{QStringLiteral("seed"), 123}, {QStringLiteral("scope"), QStringLiteral("clip")}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
 		QVERIFY(!Engine::getSong()->isModified());
 	}
 
