@@ -167,7 +167,8 @@ bool readSeed(const QJsonObject& args, uint32_t* out, bool* present, ControlResu
 	if (!args.contains(QStringLiteral("seed"))) { return true; }
 	const QJsonValue value = args.value(QStringLiteral("seed"));
 	const double number = value.toDouble(-1.0);
-	if (!value.isDouble() || number < 0.0 || number > static_cast<double>(kMaxSchemaInteger))
+	if (!value.isDouble() || !std::isfinite(number) || number < 0.0
+		|| number > static_cast<double>(kMaxSchemaInteger))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'seed' is %1; the roll is a pure function of it and of each note's own "

@@ -450,6 +450,43 @@ private slots:
 		QCOMPARE(positionNan.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster new-p22-42: a handler call that bypasses schema validation must
+	//! still reject NaN before converting it to the engine's uint32 seed.
+	void nonfiniteSeedIsRefusedByRandomizeHandler()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		QVERIFY2(addRollFixtureNotes(fixture.clip), "could not add the roll fixture's notes");
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* command = registry->command(QStringLiteral("note.randomize"));
+		QVERIFY(command != nullptr);
+		QVERIFY(static_cast<bool>(command->handler));
+		const double nan = std::nan("0");
+		const ControlResult rejected = command->handler(QJsonObject{
+			{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("velocity_jitter"), 0.5},
+			{QStringLiteral("seed"), nan}});
+		QVERIFY2(!rejected.ok, "note.randomize handler accepted a NaN seed");
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! The same readSeed helper serves random_seed_set, so its direct-handler path
+	//! must reject NaN without changing the persisted project seed.
+	void nonfiniteSeedIsRefusedBySeedSetHandler()
+	{
+		const double previous = run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* command = registry->command(QStringLiteral("note.random_seed_set"));
+		QVERIFY(command != nullptr);
+		QVERIFY(static_cast<bool>(command->handler));
+		const ControlResult rejected = command->handler(
+			QJsonObject{{QStringLiteral("seed"), std::nan("0")}});
+		QVERIFY2(!rejected.ok, "note.random_seed_set handler accepted a NaN seed");
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble(), previous);
+	}
+
 	//! W5: the slide verbs, from the trap state (a note at the DEFAULT, which writes
 	//! no "slide" attribute at all).
 	void slideSetAndClearAreOneUndoableStepEach()
