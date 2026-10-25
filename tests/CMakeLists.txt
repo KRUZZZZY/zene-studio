@@ -4234,6 +4234,7 @@ if(TARGET lmms_clap)
 	# White-box checks for the instrument fixture's state and process callbacks.
 	add_executable(ClapTestInstrumentUnitTest src/plugins/ClapTestInstrumentUnitTest.c)
 	add_test(NAME ClapTestInstrumentStateTest COMMAND ClapTestInstrumentUnitTest state)
+	add_test(NAME ClapTestInstrumentEventCountTest COMMAND ClapTestInstrumentUnitTest events)
 	target_include_directories(ClapTestInstrumentUnitTest PRIVATE
 		${CMAKE_SOURCE_DIR}/tests/data/clap-test-plugin
 	)

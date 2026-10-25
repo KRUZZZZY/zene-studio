@@ -575,12 +575,17 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 		for (uint32_t i = 0; i < size; ++i)
 		{
 			const clap_event_header_t* header = process->in_events->get(process->in_events, i);
-			if (!header || header->space_id != CLAP_CORE_EVENT_SPACE_ID)
+			if (!header)
 			{
 				++self->ignored_event_count;
 				continue;
 			}
 			++self->event_count;
+			if (header->space_id != CLAP_CORE_EVENT_SPACE_ID)
+			{
+				++self->ignored_event_count;
+				continue;
+			}
 			switch (header->type)
 			{
 			case CLAP_EVENT_NOTE_ON:

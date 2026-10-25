@@ -27,6 +27,13 @@ typedef struct test_state_blob
 	int64_t available;
 } test_state_blob_t;
 
+typedef struct test_event_list
+{
+	clap_input_events_t events;
+	const clap_event_header_t* entries[2];
+	uint32_t count;
+} test_event_list_t;
+
 static int64_t test_state_read(const clap_istream_t* stream, void* buffer, uint64_t size)
 {
 	const test_state_blob_t* blob = (const test_state_blob_t*)stream->ctx;
@@ -86,12 +93,59 @@ static int test_state_gain_validation(void)
 	return 0;
 }
 
+static uint32_t test_event_list_size(const clap_input_events_t* events)
+{
+	const test_event_list_t* list = (const test_event_list_t*)events->ctx;
+	return list->count;
+}
+
+static const clap_event_header_t* test_event_list_get(const clap_input_events_t* events,
+	uint32_t index)
+{
+	const test_event_list_t* list = (const test_event_list_t*)events->ctx;
+	return index < list->count ? list->entries[index] : NULL;
+}
+
+static int test_non_core_event_count(void)
+{
+	instrument_plugin_t self = {0};
+	clap_plugin_t plugin = {0};
+	clap_event_header_t non_core = {0};
+	test_event_list_t list = {0};
+	clap_process_t process = {0};
+	plugin.plugin_data = &self;
+
+	non_core.size = sizeof(non_core);
+	non_core.space_id = CLAP_CORE_EVENT_SPACE_ID + 1;
+	non_core.type = 0x7f;
+	list.entries[0] = &non_core;
+	list.entries[1] = NULL;
+	list.count = 2;
+	list.events.ctx = &list;
+	list.events.size = test_event_list_size;
+	list.events.get = test_event_list_get;
+	process.in_events = &list.events;
+
+	CHECK(instrument_process(&plugin, &process) == CLAP_PROCESS_CONTINUE,
+		"process did not continue after ignored events");
+	CHECK(self.event_count == 1, "non-core event was omitted from the total event count");
+	CHECK(self.ignored_event_count == 2, "non-core and null entries were not both ignored");
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
-	if (argc != 2 || strcmp(argv[1], "state") != 0)
+	if (argc == 2 && strcmp(argv[1], "state") == 0)
 	{
-		fprintf(stderr, "usage: %s state\n", argv[0]);
+		return test_state_gain_validation();
+	}
+	if (argc == 2 && strcmp(argv[1], "events") == 0)
+	{
+		return test_non_core_event_count();
+	}
+	else
+	{
+		fprintf(stderr, "usage: %s state|events\n", argv[0]);
 		return 2;
 	}
-	return test_state_gain_validation();
 }
