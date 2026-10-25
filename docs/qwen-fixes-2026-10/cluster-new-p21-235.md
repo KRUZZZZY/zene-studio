@@ -16,3 +16,53 @@ Commands and results:
 Affected family: `MeterTapTest`, 1/1 ctest target; its pre-fix run reported 11 passed and the new regression failed. The initial `-j2` rebuild was interrupted to increase parallelism (EXIT=130); the completed `-j4` builds above succeeded.
 
 Files committed for this bug: `include/MasterLoudnessTap.h`, `tests/src/core/MeterTapTest.cpp`, this report.
+
+## 5122
+
+5122: FIXED
+
+Decision: REAL. Before the fix, `setEnabled(true)` unconditionally restored `m_enabled` to true after a timed-out quiet wait, including when it was disabled before the call, while leaving the prior measurement intact. The corrected path saves the prior state, reports timeout, restores that state, and clears only after a successful quiet wait (`src/core/MasterLoudnessTap.cpp:65-83`). `handleArm` reports `Busy` and records no undo step when the transition fails (`src/core/ControlCommandsMeter.cpp:185-193`).
+
+Regression: `timedOutRearmRestoresPriorStateAndMeasurement()` forces the next quiet wait to fail without sleeping; it checks the disabled and enabled prior-state cases and verifies measurement counters are preserved (`tests/src/core/MeterTapTest.cpp:215-245`). Its test-only seam is outside the tap class, so it does not alter class layout (`include/MasterLoudnessTap.h:228-231`, `src/core/MasterLoudnessTap.cpp:43-55`).
+
+RED/GREEN and 4b proof:
+
+- Baseline plus test seam build: `cmake --build build --target zene MeterTapTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/build-16.log 2>&1; echo EXIT=$?` — EXIT=0.
+- 4b product patch save: `git diff -- include/MasterLoudnessTap.h src/core/MasterLoudnessTap.cpp src/core/ControlCommandsMeter.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/fix.patch` — PATCH_EXIT=0. Product removal: `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/fix.patch; echo EXIT=$?` — EXIT=0. Seam check/apply: `git apply --check /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-seam-only.patch; echo CHECK_EXIT=$?; git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-seam-only.patch; echo APPLY_EXIT=$?` — both EXIT=0. After RED: `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-seam-only.patch; echo REVERSE_SEAM_EXIT=$?; git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/fix.patch; echo RESTORE_FIX_EXIT=$?` — both EXIT=0.
+- RED: `./MeterTapTest timedOutRearmRestoresPriorStateAndMeasurement > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-33.log 2>&1; echo EXIT=$?` from `build/tests` — EXIT=1; the old behavior failed `!afterDisabledRearm.enabled`.
+- Fix restored and rebuilt: `cmake --build build --target zene MeterTapTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/build-17.log 2>&1; echo EXIT=$?` — EXIT=0.
+- GREEN: `./MeterTapTest timedOutRearmRestoresPriorStateAndMeasurement > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-35.log 2>&1; echo EXIT=$?` from `build/tests` — EXIT=0.
+- Affected family: `ctest -R '^MeterTapTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-37.log 2>&1; echo EXIT=$?` from `build/tests` — EXIT=0, 1/1 test target passed.
+
+Files committed for this bug: `include/MasterLoudnessTap.h`, `src/core/MasterLoudnessTap.cpp`, `src/core/ControlCommandsMeter.cpp`, `tests/src/core/MeterTapTest.cpp`, this report.
+
+## new-p8-149
+
+new-p8-149: FIXED
+
+Decision: REAL. Before the fix, `setEnabled(false)` returned after its bounded wait regardless of the result, so an in-flight `feed()` could publish a later reading and the caller received no indication that its snapshot was not final. The corrected `setEnabled` returns false on timeout and restores the prior enabled flag; its API comment states that an in-flight feed may still publish after a failed wait (`src/core/MasterLoudnessTap.cpp:65-83`, `include/MasterLoudnessTap.h:149-161`). The control command surfaces that failure as `Busy` rather than claiming the disarm completed (`src/core/ControlCommandsMeter.cpp:185-193`).
+
+Regression: `timedOutDisableReportsThatTheSnapshotMayChange()` injects a quiet-wait timeout and requires the caller to observe failure while the original enabled state and counters remain intact (`tests/src/core/MeterTapTest.cpp:247-263`). It has no sleep or race.
+
+RED/GREEN and 4b proof:
+
+- Baseline plus test seam build: `cmake --build build --target zene MeterTapTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/build-16.log 2>&1; echo EXIT=$?` — EXIT=0.
+- 4b product patch save: `git diff -- include/MasterLoudnessTap.h src/core/MasterLoudnessTap.cpp src/core/ControlCommandsMeter.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/fix.patch` — PATCH_EXIT=0. Product removal: `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/fix.patch; echo EXIT=$?` — EXIT=0. Seam check/apply: `git apply --check /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-seam-only.patch; echo CHECK_EXIT=$?; git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-seam-only.patch; echo APPLY_EXIT=$?` — both EXIT=0. After RED: `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-seam-only.patch; echo REVERSE_SEAM_EXIT=$?; git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/fix.patch; echo RESTORE_FIX_EXIT=$?` — both EXIT=0.
+- RED: `./MeterTapTest timedOutDisableReportsThatTheSnapshotMayChange > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-34.log 2>&1; echo EXIT=$?` from `build/tests` — EXIT=1; the old API did not report its failed wait.
+- Fix restored and rebuilt: `cmake --build build --target zene MeterTapTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/build-17.log 2>&1; echo EXIT=$?` — EXIT=0.
+- GREEN: `./MeterTapTest timedOutDisableReportsThatTheSnapshotMayChange > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-36.log 2>&1; echo EXIT=$?` from `build/tests` — EXIT=0.
+- Affected family: `ctest -R '^MeterTapTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-37.log 2>&1; echo EXIT=$?` from `build/tests` — EXIT=0, 1/1 test target passed. Integration: `ctest -R '^ControlMeterCommands$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/test-38.log 2>&1; echo EXIT=$?` from `build/tests` — EXIT=0, 1/1 test passed.
+
+## Verification matrix
+
+- Normal inputs and state changes: the suite checks positive signed feeds, unsigned block feeds, normal arm/disarm readings, and reset while armed; `MeterTapTest` passed 1/1 ctest target.
+- Failure paths: signed negative, zero, and null feeds are ignored; forced quiet-wait timeouts exercise failed re-arm from both prior states and failed disarm. The test seam overrides one control-side wait result directly; it does not sleep or run on the audio thread.
+- Reconfiguration and audio-thread constraints: the suite checks the meter configuration snapshot and verifies an armed feed allocates nothing. The frame-count guard happens before conversion and `feed()` remains allocation-free, lock-free, and log-free.
+- Build target/platform: the configured C++20/Qt build rebuilt `zene` and `MeterTapTest` on this Linux worktree. No platform-specific timing or thread scheduling is used by the new tests.
+- Integration prerequisite: `cmake --build build --target audiofileprocessor -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/build-9.log 2>&1; echo EXIT=$?` — EXIT=0; `ControlMeterCommands` then passed 1/1. An earlier regex typo, `ctest -R '^ControlMeterCommandsTest$'`, returned EXIT=0 but ran zero tests (`test-31.log`) and is not counted as evidence; the registered `ControlMeterCommands` target was run successfully.
+- Feature gate before the batch: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-235 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/gate-2.log 2>&1; echo EXIT=$?` — EXIT=0 after regenerating the stale whole-tree source manifest in commit `e05089128`. Final gate and completion-check results are recorded below.
+- Final feature gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-235 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-235.r1/logs/gate-4.log 2>&1; echo EXIT=$?` — EXIT=0; all eight checks report PASS, including complexity and file length.
+
+## Self-check
+
+`feature_check.py` exited 0 (`gate-4.log`); the report check remains to be run after committing the completed batch.

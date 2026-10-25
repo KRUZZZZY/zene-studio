@@ -63,6 +63,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -71,6 +72,7 @@ using lmms::LufsMeter;
 using lmms::MasterLoudnessTap;
 using lmms::SampleFrame;
 using lmms::sample_t;
+using lmms::setMasterLoudnessTapNextQuietWaitResultForTesting;
 
 namespace
 {
@@ -126,6 +128,28 @@ constexpr bool HasSignedFrameCountFeed = requires
 {
 	static_cast<void (Tap::*)(const SampleFrame*, int) noexcept>(&Tap::template feed<int>);
 };
+
+template <typename Tap>
+bool rearmReportsQuietTimeout(Tap& tap)
+{
+	if constexpr (std::is_same_v<decltype(tap.setEnabled(true)), bool>)
+	{
+		return !tap.setEnabled(true);
+	}
+	tap.setEnabled(true);
+	return false;
+}
+
+template <typename Tap>
+bool disableReportsQuietTimeout(Tap& tap)
+{
+	if constexpr (std::is_same_v<decltype(tap.setEnabled(false)), bool>)
+	{
+		return !tap.setEnabled(false);
+	}
+	tap.setEnabled(false);
+	return false;
+}
 
 //! Feeds \a buffer in one-block-per-call slices of \a blockFrames, the shape the
 //! engine's renderStageMix() calls in.
@@ -183,6 +207,56 @@ private slots:
 		tap.feed(&frame, -1);
 		tap.feed(&frame, 0);
 		tap.feed(nullptr, 1);
+		const auto after = tap.snapshot();
+		QCOMPARE(after.blocksFed, before.blocksFed);
+		QCOMPARE(after.framesFed, before.framesFed);
+	}
+
+	//! A timed-out re-arm reports failure and preserves both the prior enabled
+	//! state and the measurement, whether the tap was armed or disarmed before it.
+	void timedOutRearmRestoresPriorStateAndMeasurement()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		const SampleFrame frame(sample_t{0.25}, sample_t{0.25});
+		tap.setEnabled(true);
+		tap.feed(&frame, 1);
+		tap.setEnabled(false);
+		const auto beforeDisabledRearm = tap.snapshot();
+		QVERIFY(!beforeDisabledRearm.enabled);
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const bool disabledRearmFailed = rearmReportsQuietTimeout(tap);
+		const auto afterDisabledRearm = tap.snapshot();
+		QVERIFY(!afterDisabledRearm.enabled);
+		QVERIFY(disabledRearmFailed);
+		QCOMPARE(afterDisabledRearm.blocksFed, beforeDisabledRearm.blocksFed);
+		QCOMPARE(afterDisabledRearm.framesFed, beforeDisabledRearm.framesFed);
+
+		tap.setEnabled(true);
+		tap.feed(&frame, 1);
+		const auto beforeEnabledRearm = tap.snapshot();
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const bool enabledRearmFailed = rearmReportsQuietTimeout(tap);
+		QVERIFY(tap.enabled());
+		QVERIFY(enabledRearmFailed);
+		const auto afterEnabledRearm = tap.snapshot();
+		QCOMPARE(afterEnabledRearm.blocksFed, beforeEnabledRearm.blocksFed);
+		QCOMPARE(afterEnabledRearm.framesFed, beforeEnabledRearm.framesFed);
+	}
+
+	//! A failed disarm wait is visible to the caller, so it cannot treat the
+	//! returned snapshot as final while an earlier feed may still publish.
+	void timedOutDisableReportsThatTheSnapshotMayChange()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		const SampleFrame frame(sample_t{0.25}, sample_t{0.25});
+		tap.setEnabled(true);
+		tap.feed(&frame, 1);
+		const auto before = tap.snapshot();
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		QVERIFY(disableReportsQuietTimeout(tap));
+		QVERIFY(tap.enabled());
 		const auto after = tap.snapshot();
 		QCOMPARE(after.blocksFed, before.blocksFed);
 		QCOMPARE(after.framesFed, before.framesFed);

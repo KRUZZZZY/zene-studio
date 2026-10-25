@@ -185,7 +185,12 @@ ControlResult handleArm(const QJsonObject& args)
 	const bool requested = args.value(QStringLiteral("enabled")).toBool();
 	const bool previous = tap->enabled();
 	const bool changes = requested != previous;
-	if (changes) { tap->setEnabled(requested); }
+	if (changes && !tap->setEnabled(requested))
+	{
+		return ControlResult::failure(ControlErrorKind::Busy,
+			QStringLiteral("the master loudness tap did not go quiet within its bounded wait; "
+				"the requested state change was not completed"));
+	}
 	const bool applied = tap->enabled();
 
 	// SPEC A16: the tap's armed flag is engine state with no JournallingObject
@@ -202,11 +207,11 @@ ControlResult handleArm(const QJsonObject& args)
 		control::addUndoStep(
 			[previous]() {
 				MasterLoudnessTap* t = engineTap();
-				if (t != nullptr) { t->setEnabled(previous); }
+				if (t != nullptr) { (void) t->setEnabled(previous); }
 			},
 			[requested]() {
 				MasterLoudnessTap* t = engineTap();
-				if (t != nullptr) { t->setEnabled(requested); }
+				if (t != nullptr) { (void) t->setEnabled(requested); }
 			});
 	}
 

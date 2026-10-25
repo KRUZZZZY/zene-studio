@@ -148,13 +148,17 @@ public:
 	 *
 	 *  Disabling keeps the last reading readable - `snapshot()` still answers
 	 *  with what was measured - so a caller can disarm and then read the result.
+	 *  Returns false if the bounded quiet wait expires. Any failed state change
+	 *  restores the prior enabled flag and leaves the measurement unreset; an
+	 *  in-flight feed may still publish, so the snapshot is not final until a
+	 *  later successful quiet wait.
 	 *
 	 *  Allocates nothing, and never replaces the meter object: the algorithm is
 	 *  designed so the tap can be armed and disarmed while the transport is
 	 *  running (the tap goes quiet for a bounded moment, its own fixed arrays are
 	 *  zeroed, and it is let back in).
 	 */
-	void setEnabled(bool enabled) noexcept;
+	bool setEnabled(bool enabled) noexcept;
 
 	/*! Drops the accumulated measurement and starts a new one, keeping the
 	 *  current enabled state. CONTROL THREAD. Returns false when the tap did not
@@ -220,6 +224,11 @@ private:
 	//! path), published through m_shortTermMaxLufs.
 	float m_shortTermMax = LufsMeter::MinusInfinity;
 };
+
+#ifdef LMMS_TESTING
+//! TEST SEAM: overrides the next control-side quiet wait without sleeping.
+LMMS_EXPORT void setMasterLoudnessTapNextQuietWaitResultForTesting(bool quiet) noexcept;
+#endif
 
 } // namespace lmms
 
