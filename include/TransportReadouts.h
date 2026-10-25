@@ -61,6 +61,8 @@ public:
 	//! A readout whose text comes from @a text, refreshed by refresh(); with @a typed it can be
 	//! typed into (double-click), the handler returning false for text it refuses.
 	void bindText(std::function<QString()> text, std::function<bool(const QString&)> typed = {});
+	//! Like bindText(), but preserves a registered command's refusal message for the field's error display.
+	void bindTextResult(std::function<QString()> text, std::function<ControlResult(const QString&)> typed);
 	void refresh();
 
 	QString caption() const { return m_caption; }
@@ -86,6 +88,7 @@ private:
 	std::function<QString(int)> m_format;
 	std::function<QString()> m_text;
 	std::function<bool(const QString&)> m_typed;
+	std::function<ControlResult(const QString&)> m_typedResult;
 	int m_pixelsPerStep = 4;
 	int m_pressY = 0;
 	int m_pressValue = 0;

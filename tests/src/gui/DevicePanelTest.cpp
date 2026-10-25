@@ -57,6 +57,7 @@
 #include <QPointer>
 #include <QMenu>
 #include <QTimer>
+#include <QToolTip>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
@@ -437,6 +438,59 @@ private slots:
 		QCOMPARE(clip->notes().front()->key(), 62);
 		QVERIFY(type(QStringLiteral("Velocity"), QStringLiteral("64")));
 		QCOMPARE(static_cast<int>(clip->notes().front()->getVolume()), 64);  // the 0..200 note volume scale
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
+	//! Cluster 4168: a registered Inspector edit's refusal is shown verbatim in the field's error tooltip.
+	void theInspectorShowsARegisteredNoteEditRefusal()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		Note* note = clip->addNote(Note(TimePos(96), TimePos(0), 60, 100), false);
+		QVERIFY(note != nullptr);
+		note->setSelected(true);
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setClip(clip);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		ReadoutField* key = nullptr;
+		for (ReadoutField* candidate : inspector.findChildren<ReadoutField*>())
+		{
+			if (candidate->caption() == QStringLiteral("Key") && candidate->isVisibleTo(&inspector)) { key = candidate; }
+		}
+		QVERIFY(key != nullptr);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* registered = registry->command(QStringLiteral("note.transpose"));
+		QVERIFY(registered != nullptr);
+		ControlCommand* command = const_cast<ControlCommand*>(registered);
+		const auto originalHandler = command->handler;
+		const QString refusal = QStringLiteral("the note is locked by the test");
+		bool dispatched = false;
+		command->handler = [&dispatched, refusal](const QJsonObject&) {
+			dispatched = true;
+			return ControlResult::failure(ControlErrorKind::Refused, refusal);
+		};
+
+		QToolTip::hideText();
+		QTest::mouseDClick(key, Qt::LeftButton);
+		auto* editor = key->findChild<QLineEdit*>();
+		const bool hasEditor = editor != nullptr;
+		if (hasEditor)
+		{
+			editor->selectAll();
+			QTest::keyClicks(editor, QStringLiteral("D4"));
+			emit editor->editingFinished();
+		}
+		const QString shownError = QToolTip::text();
+		command->handler = originalHandler;
+		QVERIFY(hasEditor);
+		QVERIFY(dispatched);
+		QVERIFY2(shownError.contains(refusal), qPrintable(shownError));
+
 		ShellSelection::instance()->setTrack(nullptr);
 		delete track;
 	}
