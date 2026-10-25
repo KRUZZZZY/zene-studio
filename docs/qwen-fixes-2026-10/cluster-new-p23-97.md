@@ -2,7 +2,7 @@ FIXED
 
 new-p23-97: FIXED
 
-Evidence: `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.cpp:623-633` now requests `information.end + 1`, bounded by both the real reader frame count and the `uint32_t` reader API. The pre-fix three-frame PCM WAV produced a two-frame RAM buffer; after the fix it contains all three frames and the final sample. Test: `tests/src/plugins/SfzFilePoolTest.cpp:65-82`.
+Evidence: `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.cpp:635-645` now requests `information.end + 1`, bounded by both the real reader frame count and the `uint32_t` reader API. The pre-fix three-frame PCM WAV produced a two-frame RAM buffer; after the fix it contains all three frames and the final sample. Test: `tests/src/plugins/SfzFilePoolTest.cpp:102-119`.
 
 RED: `./SfzFilePoolTest ramLoadingReadsInclusiveEndFrame > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-97.r1/logs/test-01-red.log 2>&1` (run from `build/tests`), EXIT=1; observed actual 2 frames, expected 3. GREEN: `./SfzFilePoolTest ramLoadingReadsInclusiveEndFrame > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-97.r1/logs/test-04-green.log 2>&1` (from `build/tests`), EXIT=0.
 
@@ -14,7 +14,7 @@ Test matrix: covered the three-frame normal path and the `setRamLoading(false)` 
 
 new-p21-164: FIXED
 
-Evidence: `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.cpp:520-536` now holds the dispatcher/job-list mutex while it discards queued raw pointers and waits for every tracked future, then takes the garbage mutex and erases both maps. The tests at `tests/src/plugins/SfzFilePoolTest.cpp:121-151` separately prove queue draining and that a deferred tracked job dereferences its captured `FileData*` before clear frees the map node. `FilePool::emptyFileLoadingQueues()` remains a no-op, so its existing caller behavior does not gain a wait.
+Evidence: `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.cpp:521-539` now holds the dispatcher/job-list mutex while it discards queued raw pointers and waits for every tracked future, then takes the garbage mutex and erases both maps. The tests at `tests/src/plugins/SfzFilePoolTest.cpp:135-164` separately prove queue draining and that a deferred tracked job dereferences its captured `FileData*` before clear frees the map node. `FilePool::emptyFileLoadingQueues()` remains a no-op, so its existing caller behavior does not gain a wait.
 
 RED: `./SfzFilePoolTest clearDrainsQueuedFilePointers > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-97.r1/logs/test-09-red-queue.log 2>&1` (from `build/tests`), EXIT=1; `./SfzFilePoolTest clearWaitsForLoadingJobsBeforeFreeingFileData > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-97.r1/logs/test-10-red-job.log 2>&1` (from `build/tests`), EXIT=1. GREEN: `./SfzFilePoolTest clearDrainsQueuedFilePointers > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-97.r1/logs/test-11-green-queue.log 2>&1` (from `build/tests`), EXIT=0; `./SfzFilePoolTest clearWaitsForLoadingJobsBeforeFreeingFileData > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-97.r1/logs/test-12-green-job.log 2>&1` (from `build/tests`), EXIT=0.
 
