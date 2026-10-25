@@ -43,6 +43,7 @@
 #include "AutomatableButton.h"
 #include "AutomationTrack.h"
 #include "ConfigManager.h"
+#include "DesignTokens.h"
 #include "DataFile.h"
 #include "DeprecationHelper.h"
 #include "DpiHelper.h"
@@ -60,6 +61,33 @@
 
 namespace lmms::gui
 {
+
+int trackLaneHeight()
+{
+	// The clip is the 44 px target and the rest of the lane is the touch gap to the next track's
+	// clip. Standard mode keeps its 32 px lane.
+	return tokens::accessibleMode()
+		? std::max(DEFAULT_TRACK_HEIGHT, tokens::targetSize() + tokens::targetSpacing(0))
+		: DEFAULT_TRACK_HEIGHT;
+}
+
+int trackOperationsWidth(bool compact)
+{
+	const int standard = compact ? TRACK_OP_WIDTH_COMPACT : TRACK_OP_WIDTH;
+	if (!tokens::accessibleMode()) { return standard; }
+	// The grip, then the Actions/Mute/Solo/Arm buttons - the most any track shows - a touch gap apart.
+	const int grip = tokens::targetSize();
+	const int buttons = 4 * tokens::targetSize() + 3 * tokens::targetSpacing(2);
+	return std::max(standard, grip + buttons + 2 * tokens::space::xs);
+}
+
+int trackSettingsWidth(bool compact)
+{
+	const int standard = compact ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT : DEFAULT_SETTINGS_WIDGET_WIDTH;
+	if (!tokens::accessibleMode()) { return standard; }
+	// Wide enough for the name, channel, monitor and the two knobs at target size with touch gaps.
+	return std::max(standard, 520);
+}
 
 namespace
 {
@@ -114,7 +142,7 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 	layout->addWidget( &m_trackOperationsWidget );
 	layout->addWidget( &m_trackSettingsWidget );
 	layout->addWidget( &m_trackContentWidget, 1 );
-	setFixedHeight(scaledPixels(m_track->getHeight()));
+	setFixedHeight(std::max(scaledPixels(m_track->getHeight()), trackLaneHeight()));
 
 	resizeEvent( nullptr );
 
@@ -252,13 +280,13 @@ void TrackView::resizeEvent( QResizeEvent * re )
 	if( ConfigManager::inst()->value( "ui",
 					  "compacttrackbuttons" ).toInt() )
 	{
-		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH_COMPACT, laneHeight() - 1 );
-		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT, laneHeight() - 1 );
+		m_trackOperationsWidget.setFixedSize(trackOperationsWidth(true), laneHeight() - 1);
+		m_trackSettingsWidget.setFixedSize(trackSettingsWidth(true), laneHeight() - 1);
 	}
 	else
 	{
-		m_trackOperationsWidget.setFixedSize( TRACK_OP_WIDTH, laneHeight() - 1 );
-		m_trackSettingsWidget.setFixedSize( DEFAULT_SETTINGS_WIDGET_WIDTH, laneHeight() - 1 );
+		m_trackOperationsWidget.setFixedSize(trackOperationsWidth(false), laneHeight() - 1);
+		m_trackSettingsWidget.setFixedSize(trackSettingsWidth(false), laneHeight() - 1);
 	}
 
 	m_trackContentWidget.setFixedHeight( laneHeight() );
@@ -281,7 +309,7 @@ void TrackView::applySpacer()
 	// No spacer now and none before: the row is left exactly as it always was.
 	if (layout() == nullptr || (spacer == 0 && layout()->contentsMargins().bottom() == 0)) { return; }
 	layout()->setContentsMargins(0, 0, 0, spacer);
-	setFixedHeight(scaledPixels(m_track->getHeight()) + spacer);
+	setFixedHeight(std::max(scaledPixels(m_track->getHeight()), trackLaneHeight()) + spacer);
 }
 
 
@@ -339,7 +367,7 @@ void TrackView::modelChanged()
 	m_trackOperationsWidget.m_muteBtn->setModel( &m_track->m_mutedModel );
 	m_trackOperationsWidget.m_soloBtn->setModel( &m_track->m_soloModel );
 	ModelView::modelChanged();
-	setFixedHeight(scaledPixels(m_track->getHeight()));
+	setFixedHeight(std::max(scaledPixels(m_track->getHeight()), trackLaneHeight()));
 	applySpacer();  // WF-107: a no-op for a row without a spacer
 }
 
@@ -426,10 +454,8 @@ void TrackView::mousePressEvent( QMouseEvent * me )
 	}
 
 
-	int widgetTotal = ConfigManager::inst()->value( "ui",
-							"compacttrackbuttons" ).toInt()==1 ?
-		DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT :
-		DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH;
+	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1;
+	const int widgetTotal = trackSettingsWidth(compactTrackButtons) + trackOperationsWidth(compactTrackButtons);
 	if (m_trackContainerView->allowRubberband() == true  && pos.x() > widgetTotal)
 	{
 		QWidget::mousePressEvent( me );
@@ -474,10 +500,8 @@ void TrackView::mouseMoveEvent( QMouseEvent * me )
 {
 	const auto pos = position(me);
 
-	int widgetTotal = ConfigManager::inst()->value( "ui",
-							"compacttrackbuttons" ).toInt()==1 ?
-		DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT :
-		DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH;
+	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1;
+	const int widgetTotal = trackSettingsWidth(compactTrackButtons) + trackOperationsWidth(compactTrackButtons);
 	if (m_trackContainerView->allowRubberband() == true && pos.x() > widgetTotal)
 	{
 		QWidget::mouseMoveEvent( me );
@@ -622,7 +646,8 @@ void TrackView::resizeToHeight(int h)
 	// @a h is the whole row; the track keeps the part above its spacer (WF-107), set before the realign
 	// that lays the row out from it.
 	const int spacer = spacerPixels();
-	setFixedHeight(qMax<int>(h - spacer, scaledPixels(MINIMAL_TRACK_HEIGHT)) + spacer);
+	const int minimum = std::max(scaledPixels(MINIMAL_TRACK_HEIGHT), trackLaneHeight());
+	setFixedHeight(std::max(h - spacer, minimum) + spacer);
 	m_track->setHeight(unscaledPixels(height() - spacer));
 	m_trackContainerView->realignTracks();
 }

@@ -26,9 +26,12 @@
 
 #include "TrackLabelButton.h"
 
+#include <algorithm>
+
 #include <QMouseEvent>
 
 #include "ConfigManager.h"
+#include "DesignTokens.h"
 #include "DeprecationHelper.h"
 #include "embed.h"
 #include "Instrument.h"
@@ -55,13 +58,12 @@ TrackLabelButton::TrackLabelButton( TrackView * _tv, QWidget * _parent ) :
 	m_renameLineEdit = new TrackRenameLineEdit( this );
 	m_renameLineEdit->hide();
 	
-	if (isInCompactMode())
+	// 0.5.0 Q050-141: in the touch-first layout the label is a target a finger can hit.
+	const int labelWidth = isInCompactMode() ? 32 : 160;
+	const int labelHeight = tokens::accessibleMode() ? std::max(29, tokens::targetSize()) : 29;
+	setFixedSize(std::max(labelWidth, tokens::accessibleMode() ? tokens::targetSize() : 0), labelHeight);
+	if (!isInCompactMode())
 	{
-		setFixedSize( 32, 29 );
-	}
-	else
-	{
-		setFixedSize( 160, 29 );
 		connect( m_renameLineEdit, SIGNAL(editingFinished()), this, SLOT(renameFinished()));
 	}
 	

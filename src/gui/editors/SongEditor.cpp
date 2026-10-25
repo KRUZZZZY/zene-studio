@@ -104,9 +104,8 @@ SongEditor::SongEditor( Song * song ) :
 	m_rubberBandStartTrackview(0),
 	m_rubberbandStartTimePos(0),
 	m_rubberbandPixelsPerBar(DEFAULT_PIXELS_PER_BAR),
-	m_trackHeadWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt()==1
-					 ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT
-					 : DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH),
+	m_trackHeadWidth(trackSettingsWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1)
+					 + trackOperationsWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1)),
 	m_selectRegion(false)
 {
 	// R8.5: what a screen reader announces when Tab reaches it.
@@ -693,8 +692,8 @@ void SongEditor::updatePosition()
 {
 	const TimePos& t = m_timeLine->timeline()->pos();
 	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt();
-	const auto widgetWidth = compactTrackButtons ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT : DEFAULT_SETTINGS_WIDGET_WIDTH;
-	const auto trackOpWidth = compactTrackButtons ? TRACK_OP_WIDTH_COMPACT : TRACK_OP_WIDTH;
+	const auto widgetWidth = trackSettingsWidth(compactTrackButtons);
+	const auto trackOpWidth = trackOperationsWidth(compactTrackButtons);
 
 	if ((m_song->isPlaying() && m_song->m_playMode == Song::PlayMode::Song)
 							|| m_scrollBack)
@@ -728,8 +727,8 @@ void SongEditor::updatePosition()
 void SongEditor::updatePositionLine()
 {
 	const bool compactTrackButtons = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt();
-	const auto widgetWidth = compactTrackButtons ? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT : DEFAULT_SETTINGS_WIDGET_WIDTH;
-	const auto trackOpWidth = compactTrackButtons ? TRACK_OP_WIDTH_COMPACT : TRACK_OP_WIDTH;
+	const auto widgetWidth = trackSettingsWidth(compactTrackButtons);
+	const auto trackOpWidth = trackOperationsWidth(compactTrackButtons);
 	const int x = m_timeLine->markerX(m_timeLine->timeline()->pos());
 	if( x >= trackOpWidth + widgetWidth -1 )
 	{

@@ -113,7 +113,8 @@ constexpr int md = 4;
 constexpr int lg = 6;
 } // namespace radius
 
-//! Component sizes. A clickable target is never below `target` (WCAG 2.5.8, 24 x 24).
+//! Component sizes. A clickable target is never below `target` (WCAG 2.5.8, 24 x 24); accessible
+//! mode, the touch-first layout, raises every target to Appearance's accessibleTargetPixels (44 x 44).
 namespace size
 {
 constexpr int target = 24;
@@ -159,7 +160,7 @@ LMMS_EXPORT qreal focusRingWidth();
 //! How much accessible mode enlarges click targets and paddings: 1, or Appearance's accessibleTargetFactor
 //! (it replaces the W3 density presets; the one global zoom does all other sizing).
 LMMS_EXPORT double targetFactor();
-//! A clickable target's side: size::target times targetFactor(), never below it.
+//! A clickable target's side: size::target times targetFactor(), never below it (44 in accessible mode).
 LMMS_EXPORT int targetSize();
 //! 0.5.0 L14 (Q050-235): whether this run draws the touch workspace (Appearance.h) - read once, like the palette.
 LMMS_EXPORT bool touchWorkspace();
@@ -167,6 +168,9 @@ LMMS_EXPORT bool touchWorkspace();
  *  pixels) in the touch workspace. A widget whose explicit size bypasses targetSize() (the launcher's cells, a
  *  fader) takes this so its real hit rectangle - not only its artwork - meets the touch minimum. */
 LMMS_EXPORT int tapTargetSize();
+//! The gap between adjacent targets: @a standard, or at least Appearance's accessibleTargetSpacing (8 logical
+//! pixels) in accessible mode, so a finger cannot hit the neighbour of the target it aimed at.
+LMMS_EXPORT int targetSpacing(int standard);
 //! @a css with every length of its padding, min-height and min-width declarations scaled by @a factor
 //! (accessible mode's stylesheet; exposed for the test).
 LMMS_EXPORT QString scaleMetrics(const QString& css, double factor);

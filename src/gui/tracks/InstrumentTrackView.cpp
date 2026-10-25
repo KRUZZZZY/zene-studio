@@ -52,6 +52,7 @@
 #include "Mixer.h"
 #include "MixerChannelLcdSpinBox.h"
 #include "MixerView.h"
+#include "DesignTokens.h"
 #include "TrackLabelButton.h"
 
 
@@ -65,7 +66,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	m_lastPos( -1, -1 )
 {
 	setAcceptDrops( true );
-	setFixedHeight( 32 );
+	setFixedHeight(trackLaneHeight());
 
 	m_tlb = new TrackLabelButton( this, getTrackSettingsWidget() );
 	m_tlb->setCheckable( true );
@@ -137,8 +138,10 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 		this, SLOT(toggleMidiCCRack()));
 
 	m_activityIndicator = new FadeButton(getTrackSettingsWidget());
-	m_activityIndicator->setFixedSize(8, 28);
+	m_activityIndicator->setFixedSize(tokens::accessibleMode() ? tokens::targetSize() : 8,
+		tokens::accessibleMode() ? tokens::targetSize() : 28);
 	m_activityIndicator->show();
+	if (tokens::accessibleMode()) { m_mixerChannelNumber->setMinimumSize(tokens::targetSize(), tokens::targetSize()); }
 	const InstrumentTrack::NoteActivitySnapshot initialActivity = _it->noteActivitySnapshot();
 	m_activityIndicator->syncNoteActivity(initialActivity.activeNotes, initialActivity.noteOnGeneration);
 
@@ -148,7 +151,7 @@ InstrumentTrackView::InstrumentTrackView( InstrumentTrack * _it, TrackContainerV
 	// 0.5.0 (docs/UI-SHELL.md §1): a gap between the header's controls, so the knobs' captions
 	// no longer run together ("VOLPAN") and the row reads as separate controls.
 	layout->setContentsMargins(0, 0, 4, 0);
-	layout->setSpacing(4);
+	layout->setSpacing(tokens::targetSpacing(4));
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);

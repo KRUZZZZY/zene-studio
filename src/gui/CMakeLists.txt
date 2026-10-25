@@ -71,6 +71,8 @@ SET(LMMS_SRCS
 	gui/WorkspaceWindows.cpp
 	gui/ControlCommandsViewMemory.cpp
 	gui/ArrangerAids.cpp
+	# 0.5.0 Q050-141: a finger's tap and drag as the mouse gesture the widgets already handle.
+	gui/TouchInput.cpp
 	gui/AccessibilityAudit.cpp
 	gui/AccessibleMode.cpp
 	gui/AccessibleWidgets.cpp

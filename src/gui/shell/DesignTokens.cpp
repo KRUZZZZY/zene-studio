@@ -270,6 +270,11 @@ int tapTargetSize()
 	return touchWorkspace() ? std::max(targetSize(), appearance::touchTargetSide) : targetSize();
 }
 
+int targetSpacing(int standard)
+{
+	return accessibleMode() ? std::max(standard, appearance::accessibleTargetSpacing) : standard;
+}
+
 QString accessibleModeRules()
 {
 	// The base rules colour a focused control's border with @focusRing; three pixels make that ring strong, and

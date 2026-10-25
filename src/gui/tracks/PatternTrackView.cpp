@@ -39,7 +39,7 @@ PatternTrackView::PatternTrackView(PatternTrack* pt, TrackContainerView* tcv) :
 	TrackView(pt, tcv),
 	m_patternTrack(pt)
 {
-	setFixedHeight( 32 );
+	setFixedHeight(trackLaneHeight());
 	// drag'n'drop with pattern tracks only causes troubles (and makes no sense too), so disable it
 	setAcceptDrops( false );
 

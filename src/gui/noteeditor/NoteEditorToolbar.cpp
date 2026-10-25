@@ -139,7 +139,8 @@ QWidget* NoteEditor::buildToolbar()
 	bar->setPalette(pal);
 	auto* row = new QHBoxLayout(bar);
 	row->setContentsMargins(tokens::space::sm, tokens::space::xs, tokens::space::sm, tokens::space::xs);
-	row->setSpacing(tokens::space::xxs);
+	// 0.5.0 Q050-141: adjacent targets keep the touch minimum apart in accessible mode.
+	row->setSpacing(tokens::targetSpacing(tokens::space::xxs));
 
 	m_clipLabel = new QLabel(bar);
 	m_clipLabel->setFont(tokens::font(tokens::TextRole::Title));
@@ -184,6 +185,7 @@ void NoteEditor::addGridControls(QWidget* bar, QHBoxLayout* row)
 	m_gridBox = new QComboBox(bar);
 	for (const GridChoice& choice : kGrid) { m_gridBox->addItem(tr(choice.label), choice.ticks); }
 	m_gridBox->setCurrentIndex(m_gridBox->findData(m_state.gridTicks));
+	m_gridBox->setMinimumHeight(tokens::targetSize());  // 0.5.0 Q050-141: a target a finger can hit
 	a11y::announce(m_gridBox, tr("Grid"), tr("The snap grid for drawing, moving and resizing notes; Alt while dragging turns it off. "
 		"Right-click it to set the length a new note takes."));
 	// FL: right-clicking the snap control sets a default length for new notes instead of the last note's.
@@ -302,6 +304,7 @@ void NoteEditor::buildLaneChooser()
 	m_laneBox->setMaxVisibleItems(24);
 	a11y::announce(m_laneBox, tr("Expression lane"), tr("Which per-note value, or which controller curve of the clip, the lane below the notes edits."));
 	m_laneBox->setFixedWidth(84);
+	m_laneBox->setMinimumHeight(tokens::targetSize());  // 0.5.0 Q050-141: a target a finger can hit
 	m_laneBox->setStyleSheet(QStringLiteral("QComboBox { padding: 2px 16px 2px 6px; }"));
 	// The box is as narrow as the keys; its list opens wide enough for every name, and the
 	// tooltip names the lane shown.

@@ -51,8 +51,8 @@ PatternEditor::PatternEditor(PatternStore* ps) :
 	TrackContainerView(ps),
 	m_ps(ps),
 	m_trackHeadWidth(ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1
-		? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT
-		: DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH),
+		? trackSettingsWidth(true) + trackOperationsWidth(true)
+		: trackSettingsWidth(false) + trackOperationsWidth(false)),
 	m_maxClipLength(TimePos::ticksPerBar())
 {
 	// R8.5: what a screen reader announces when Tab reaches it.
@@ -326,11 +326,11 @@ PatternEditorWindow::PatternEditorWindow(PatternStore* ps) :
 	// TODO: Use style sheet
 	if (ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt())
 	{
-		setMinimumWidth(TRACK_OP_WIDTH_COMPACT + DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + 2 * ClipView::BORDER_WIDTH + 384);
+		setMinimumWidth(trackOperationsWidth(true) + trackSettingsWidth(true) + 2 * ClipView::BORDER_WIDTH + 384);
 	}
 	else
 	{
-		setMinimumWidth(TRACK_OP_WIDTH + DEFAULT_SETTINGS_WIDGET_WIDTH + 2 * ClipView::BORDER_WIDTH + 384);
+		setMinimumWidth(trackOperationsWidth(false) + trackSettingsWidth(false) + 2 * ClipView::BORDER_WIDTH + 384);
 	}
 
 	m_playAction->setToolTip(tr("Play/pause current pattern (Space)"));

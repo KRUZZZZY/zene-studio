@@ -41,6 +41,8 @@
 #include "DesignTokens.h"
 #include "GuiApplication.h"
 #include "SongEditor.h"
+#include "TrackContainerView.h"
+#include "TouchInput.h"
 
 namespace lmms::gui
 {
@@ -162,6 +164,12 @@ void installArrangerAids(QWidget* arranger)
 	if (arranger == nullptr || !s_overlay.isNull()) { return; }
 	s_overlay = new CrosshairOverlay(arranger);
 	new PinchZoom(arranger);
+	// A tap or one-finger drag selects clips: install where the content is, so the finger's event is
+	// delivered to the viewport under it rather than swallowed by the arranger that accepts touch for
+	// the pinch above.
+	auto* container = qobject_cast<TrackContainerView*>(arranger);
+	touch::installSingleTouch(container != nullptr && container->contentWidget() != nullptr
+		? container->contentWidget()->viewport() : arranger);
 	s_overlay->setShown(s_shown);
 }
 

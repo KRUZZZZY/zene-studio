@@ -219,6 +219,7 @@ come back. Every route ends in `window.detach` or `window.attach` (`Shell::dispa
 |---|---|
 | `ShellLayoutTest` | region, view and refusal rules; save/restore; corrupt layouts |
 | `ShellTest` | the rendered shell: a view switch moves an editor without deleting it; the region rule; reveal by switching view; actions and footer follow the layout; 24 px targets; persistence; MDI geometry ignored; BUGS 11.30's clamp (moved from the retired Focus Desk tests) |
+| `TouchLayoutTest` | accessible mode, the touch-first layout: the rendered transport and note-editor targets are at least 44 x 44 logical pixels with 8 between neighbours, and a finger's touch event selects an arranger clip and a note and plays and stops the transport |
 | `DesignTokensTest` | every declared text/surface pair meets AA; the generated stylesheet meets AA; the velocity ramp is ordered by lightness; icons are paths that paint at the screen's scale |
 | `AccessibilityHelperTest` | every footer switch and view word is named and Tab-focusable; the chrome bands and panel frames are named |
 | `ControlShell` | the socket proof (§4) and three distinct rendered views |

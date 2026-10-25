@@ -257,7 +257,8 @@ private slots:
 		QVERIFY(touch.contains(QStringLiteral("min-height: 36px;")));
 		QVERIFY(touch.contains(QStringLiteral("border-width: 1px;")));
 		QVERIFY(appearance::accessibleTargetFactor > 1.0);
-		QCOMPARE(static_cast<int>(std::lround(tokens::size::target * appearance::accessibleTargetFactor)), 32);
+		// 0.5.0 Q050-141: the touch minimum - 44 x 44 logical pixels with 8 between adjacent targets.
+		QCOMPARE(static_cast<int>(std::lround(tokens::size::target * appearance::accessibleTargetFactor)), 44);
 		QVERIFY(tokens::targetSize() >= tokens::size::target);
 		// Accessible mode's own rules thicken every focusable border and ring the controls the base rules leave bare.
 		QStringList unknown;

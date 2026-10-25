@@ -861,6 +861,7 @@ include/ToolButton.h
 include/ToolPlugin.h
 include/ToolPluginView.h
 include/ToolWindowMemory.h
+include/TouchInput.h
 include/Track.h
 include/TrackContainer.h
 include/TrackContainerView.h
@@ -2362,6 +2363,7 @@ src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/ToolPluginView.cpp
 src/gui/ToolWindowMemory.cpp
+src/gui/TouchInput.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/TrackIcons.cpp
 src/gui/TrackPinStrip.cpp
@@ -3104,6 +3106,7 @@ tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
+tests/src/gui/TouchLayoutTest.cpp
 tests/src/gui/TouchWorkspaceTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
