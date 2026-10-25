@@ -1,3 +1,5 @@
+FIXED
+
 4380: FIXED
 
 Decision: REAL. `src/core/RenderQueue.cpp:312-338` sent renderer stderr to the null device and finished with a generic process error. `TaskCenterTest::failedRenderSurfacesChildDiagnostics` now launches the queue's fake CLI child, which emits “encoder refused the requested output” and exits 3; its job report includes that text. `appendDiagnosticTail` retains at most 512 bytes. The test failed on the original production code and failed again when the production patch was removed, then passed after restoration.
@@ -43,3 +45,11 @@ Regression commands and exit codes:
 - Affected family: `ctest -R '^(RenderSourceGuardTest|TaskCenterTest|ControlRenderJobTest)$' --output-on-failure` from `build/tests` — EXIT=0 (`test-23.log`), 3/3 CTest targets passed.
 
 Files in the new-p15-167 fix commit: `include/RenderQueue.h`, `src/core/RenderQueue.cpp`, `tests/src/core/TaskCenterTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+
+## Self-check
+
+- Reverting each production patch makes its regression fail; restoring it makes the same regression pass. 4380: `test-8.log` EXIT=8, `test-9.log` EXIT=0. 5270: `test-15.log` EXIT=8, `test-16.log` EXIT=0. new-p15-167: `test-21.log` EXIT=8, `test-22.log` EXIT=0. Initial RED runs are `test-6.log`, `test-13.log`, and `test-18.log`, each EXIT=8. Each proof rebuilt the affected targets before running the test.
+- The tests use a fake child process and explicit file/semaphore barriers. The render cancellation test waits for the fake child PID file, cancels, and injects a future destination timestamp; conversion cancellation holds the global pool worker with semaphores and gates the next fake child with a release file. No assertion depends on elapsed time or sleeps; bounded Qt wait helpers only prevent a hung test. See `tests/src/core/TaskCenterTest.cpp:403-529`.
+- The 4380 fix covers the render process completion and failed-start paths in `runRender`. The 5270 fix covers both render and conversion staging, the shared success commit in `finish`, and both cancellation/failure cleanup paths; the direct `convert` helper also commits through the same staging helper. The conversion cancellation token is checked before and between decode/resample/write stages; both worker completion and queue release are handled in `finish`/`cancel`. Evidence is in `src/core/RenderQueue.cpp:62-197,232-240,334-384,387-426` and the matching declaration in `include/RenderQueue.h:82-87`. The affected test family passed 3/3 (`test-16.log`, `test-23.log`, both EXIT=0).
+- Existing project and saved-data formats are unchanged: these changes touch render job runtime state and output-file handling only; no project serialization or load path changed. The tests verify preservation of prior output on cancellation and replacement on success. No new limit was added. Final feature gate command: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4380` — EXIT=0 (`feature-check-5.log`); all eight rows passed.
+- The conditional check for ALREADY-FIXED or FALSE-POSITIVE does not apply: all three findings were REAL and are marked FIXED above, with code and regression evidence.
