@@ -75,10 +75,15 @@ std::size_t expectedWeights(const ModelShape& shape)
 }
 
 
-std::string modelJson(const ModelShape& shape)
+std::string modelJson(const ModelShape& shape, const std::string& sampleRateJson = {})
 {
 	std::ostringstream json;
-	json << "{\"architecture\":\"WaveNet\",\"config\":{\"layers\":[{"
+	json << "{\"architecture\":\"WaveNet\"";
+	if (!sampleRateJson.empty())
+	{
+		json << ",\"sample_rate\":" << sampleRateJson;
+	}
+	json << ",\"config\":{\"layers\":[{"
 	     << "\"input_size\":1,\"condition_size\":1,\"head_size\":" << shape.headSize
 	     << ",\"head_bias\":false,\"channels\":" << shape.channels
 	     << ",\"bottleneck\":" << shape.bottleneck
@@ -123,6 +128,63 @@ bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
 	if (model || error.empty())
 	{
 		std::cerr << "loader accepted invalid model: " << label << '\n';
+		return false;
+	}
+	return true;
+}
+
+
+bool rejectsInvalidSampleRates(const std::filesystem::path& path)
+{
+	const auto rejectsRate = [&path](const std::string& sampleRate, const char* label,
+		const char* expectedError)
+	{
+		const std::string content = modelJson(ModelShape{}, sampleRate);
+		{
+			std::ofstream output(path, std::ios::binary | std::ios::trunc);
+			output << content;
+			if (!output)
+			{
+				std::cerr << "could not write model fixture\n";
+				return false;
+			}
+		}
+
+		std::string error;
+		const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+		if (model || error.empty() || error.find(expectedError) == std::string::npos)
+		{
+			std::cerr << "loader accepted or misreported invalid sample_rate: " << label
+			          << " (" << error << ")\n";
+			return false;
+		}
+		return true;
+	};
+
+	return rejectsRate("0", "zero", "sample_rate") &&
+		rejectsRate("-1", "negative", "sample_rate") &&
+		rejectsRate("1e400", "overflow to non-finite double", "not valid JSON");
+}
+
+
+bool loadsModelWithSampleRate(const std::filesystem::path& path,
+	const std::string& sampleRate, double expectedSampleRate)
+{
+	{
+		std::ofstream output(path, std::ios::binary | std::ios::trunc);
+		output << modelJson(ModelShape{}, sampleRate);
+		if (!output)
+		{
+			std::cerr << "could not write valid sample-rate fixture\n";
+			return false;
+		}
+	}
+
+	std::string error;
+	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	if (!model || model->spec().sampleRate != expectedSampleRate)
+	{
+		std::cerr << "loader refused a valid sample_rate fixture: " << error << '\n';
 		return false;
 	}
 	return true;
@@ -198,6 +260,15 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
 }
 
 
+bool validatesSampleRatesAndFileLimits(const std::filesystem::path& path)
+{
+	return rejectsInvalidSampleRates(path) &&
+		loadsModelWithSampleRate(path, "48000", 48000.0) &&
+		loadsModelWithSampleRate(path, "null", -1.0) &&
+		refusesOversizedFile(path) && loadsFileAtLimit(path);
+}
+
+
 }  // namespace
 
 
@@ -262,7 +333,7 @@ int main()
 		return 1;
 	}
 
-	if (!refusesOversizedFile(fixture) || !loadsFileAtLimit(fixture))
+	if (!validatesSampleRatesAndFileLimits(fixture))
 	{
 		std::filesystem::remove_all(directory);
 		return 1;
