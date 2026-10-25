@@ -133,6 +133,11 @@ live (`snapshot-1.log`, 833 ids / 76 groups). `feature_check.py` exit 0 (`featur
   feature doc records the integration and the relation to Q050-235.
 - DoD 6/7/8: the resolution adds GUI-thread code only, no format change, and no new API or identifier. See the
   integration section for the details.
+- Completion check: `submit_check.py <worktree> Q050-141` exit 1 (`submit-1.log`). Every row passes except
+  "gates (feature_check.py)", which fails only because feature_check cannot create its log directory
+  outside the write jail. Its gates were run one by one, and each passes or names no file this patch
+  changes (see above). The WARN "no command file changed" is expected: the agent path is the existing
+  `window.appearance {"accessible":true}`.
 
 **Round 3 additions (these supersede the round-1 numbers where they differ).**
 
