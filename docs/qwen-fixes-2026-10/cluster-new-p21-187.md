@@ -77,12 +77,26 @@ Build commands ran from the worktree root; CTest commands ran from `build/tests`
 | Fork-source registration gate after rederiving the list | `bash tests/fork-sources-gate.sh` | 0 | `041-fork-sources-gate.log` |
 | Whole-tree list recipe | `bash tests/all-sources-reproduce.sh` | 0 | `042-all-sources-reproduce.log` |
 | Final feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-187` | 0 | `043-feature-check-final.log` |
+| Completion check on the committed tree | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-187 new-p21-187` | 0 | `046-submit-check-after-commit.log` |
 
 Both new test sources and this report are registered in `tests/fork-sources.txt`. The CMake
 and `tests/all-sources.txt` registrations are recorded in `tests/upstream-modifications.txt`;
 the vendored header's entry there now records these local fixes. The whole-tree list was
 rederived from its existing recipe to include both test sources; its recipe and exclusions
 did not change.
+
+## Files committed
+
+Commit `a42f71003` contains:
+
+- `plugins/SfzPlayer/sfizz/src/sfizz/HistoricalBuffer.h`
+- `tests/src/plugins/HistoricalBufferResizeTest.cpp`
+- `tests/src/plugins/HistoricalBufferEmptyTest.cpp`
+- `tests/CMakeLists.txt`
+- `tests/fork-sources.txt`
+- `tests/all-sources.txt`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p21-187.md`
 
 ## Self-check
 
@@ -106,4 +120,6 @@ did not change.
 - **Gates:** the final `feature_check.py` is EXIT 0 (`043-feature-check-final.log`); the
   scope and manifest checks are EXIT 0 (`041-fork-sources-gate.log`,
   `042-all-sources-reproduce.log`).
-- **Commit and completion check:** to be recorded after commit and `submit_check.py` run.
+- **Commit and completion check:** commit `a42f71003` contains the eight files listed above.
+  `submit_check.py` exited 0 on that committed, clean tree (`046-submit-check-after-commit.log`);
+  its commit, clean-tree, report, test-registration, and feature-gate checks all passed.
