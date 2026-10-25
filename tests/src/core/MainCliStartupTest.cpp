@@ -169,7 +169,7 @@ private slots:
 			"a failed socket listen left the safe-start marker armed");
 	}
 
-	void stemOutputFailuresKeepMarkersClean()
+	void missingStemOutputIsRejectedBeforeSessionStartup()
 	{
 		QTemporaryDir home;
 		QVERIFY(home.isValid());
@@ -184,23 +184,36 @@ private slots:
 
 		const CliRun missingOutput = runCli(home.path(), {QStringLiteral("--allowroot"), QStringLiteral("--config"), config,
 			QStringLiteral("exportstems"), project});
+		QVERIFY2(!missingOutput.standardOutput.contains("Loading project..."),
+			"the missing-output refusal ran after project loading");
 		QCOMPARE(missingOutput.status, QProcess::NormalExit);
 		QCOMPARE(missingOutput.exitCode, EXIT_FAILURE);
-		QVERIFY2(missingOutput.standardOutput.contains("Done\n"),
-			"the stem test fixture did not load before the missing-output refusal");
 		QVERIFY(!QFile::exists(QDir(workingDirectory).filePath(QStringLiteral("zene-session-open.marker"))));
 		QVERIFY(!QFile::exists(QDir(workingDirectory).filePath(QStringLiteral("zene-safe-start.marker"))));
+	}
 
+	void uncreatableStemOutputIsRejectedBeforeSessionStartup()
+	{
+		QTemporaryDir home;
+		QVERIFY(home.isValid());
+		const QString config = configForWorkingDirectory(home.path());
+		QVERIFY(!config.isEmpty());
+		const QString workingDirectory = QDir(home.path()).filePath(QStringLiteral("working"));
+#ifdef ZENE_SOURCE_DIR
+		const QString project = QDir(QStringLiteral(ZENE_SOURCE_DIR)).filePath(QStringLiteral("tests/emptyproject.mmp"));
+#else
+		const QString project = QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("../../tests/emptyproject.mmp"));
+#endif
 		QTemporaryDir failedOutput;
 		QVERIFY(failedOutput.isValid());
 		const QString outputFile = QDir(failedOutput.path()).filePath(QStringLiteral("is-a-file"));
 		QVERIFY(writeFile(outputFile, QByteArrayLiteral("occupied")));
 		const CliRun mkdirFailure = runCli(home.path(), {QStringLiteral("--allowroot"), QStringLiteral("--config"), config,
 			QStringLiteral("exportstems"), project, QStringLiteral("-o"), outputFile});
+		QVERIFY2(!mkdirFailure.standardOutput.contains("Loading project..."),
+			"the output-directory refusal ran after project loading");
 		QCOMPARE(mkdirFailure.status, QProcess::NormalExit);
 		QCOMPARE(mkdirFailure.exitCode, EXIT_FAILURE);
-		QVERIFY2(mkdirFailure.standardOutput.contains("Done\n"),
-			"the stem test fixture did not load before output-directory creation failed");
 		QVERIFY(!QFile::exists(QDir(workingDirectory).filePath(QStringLiteral("zene-session-open.marker"))));
 		QVERIFY(!QFile::exists(QDir(workingDirectory).filePath(QStringLiteral("zene-safe-start.marker"))));
 	}

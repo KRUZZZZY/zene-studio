@@ -1295,6 +1295,20 @@ int main( int argc, char * * argv )
 
 	ConfigManager::inst()->loadConfigFile(configFile);
 
+	// Stem output is known from the CLI arguments. Validate it before arming the
+	// session markers or starting the engine, since this is a normal refusal.
+	if (renderStems)
+	{
+		if (!outputGiven)
+		{
+			return usageError( "exportstems needs an output directory (-o <dir>)" );
+		}
+		if (!QDir().mkpath( renderOut ))
+		{
+			return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
+		}
+	}
+
 	// Install the local crash reporter as soon as the user's working directory
 	// is known.  It writes ONE bounded text file and dies exactly as the
 	// process would have without it; the next launch offers the file.  There is
@@ -1470,24 +1484,6 @@ int main( int argc, char * * argv )
 			{
 				renderOut = baseName( renderOut ) +
 					ProjectRenderer::getFileExtensionFromFormat(eff);
-			}
-
-			if ( renderStems )
-			{
-				// A stem export writes many files, so the destination must be a
-				// directory the user asked for -- never a guess next to the project.
-				if ( !outputGiven )
-				{
-					crashreporter::endSession();
-					safestart::endSession();
-					return usageError( "exportstems needs an output directory (-o <dir>)" );
-				}
-				if ( !QDir().mkpath( renderOut ) )
-				{
-					crashreporter::endSession();
-					safestart::endSession();
-					return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
-				}
 			}
 
 			// create renderer

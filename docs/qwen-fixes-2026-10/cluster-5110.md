@@ -17,9 +17,9 @@ Regression evidence: with only those three existing checks temporarily removed, 
 
 ## 5112 — normal startup failures leave session markers armed
 
-**Decision: REAL.** `src/core/main.cpp:1372-1377` returned after a failed control-socket listen without disarming either marker. The failure branch now calls `crashreporter::endSession()` and `safestart::endSession()` before returning. The two `exportstems` output-failure paths already clean both markers (`src/core/main.cpp:1396-1401` and `:1478-1489`); regression coverage exercises the missing-output and output-directory creation failures as sibling paths.
+**Decision: REAL.** Stem output validation runs at `src/core/main.cpp:1296-1310`, immediately after config loading and before either marker is installed or `Engine::init()` starts; missing `-o` and an uncreatable output path therefore exit as ordinary CLI refusals without starting the engine. The failed control-socket listen at `src/core/main.cpp:1386-1391` calls `crashreporter::endSession()` and `safestart::endSession()` before returning.
 
-Regression: `failedControlSocketStartupClearsBothSessionMarkers()` launches `zene` against an occupied local socket and checks that both marker files are absent after its normal failure exit. With the product patch reversed, this assertion failed because `zene-session-open.marker` remained; after restoration, the regression passed. No audio-thread path is touched; these are startup/CLI paths.
+Regression: `failedControlSocketStartupClearsBothSessionMarkers()` launches `zene` against an occupied local socket and checks that both marker files are absent after its normal failure exit. `missingStemOutputIsRejectedBeforeSessionStartup()` and `uncreatableStemOutputIsRejectedBeforeSessionStartup()` separately cover the missing `-o` and output-directory creation failures, assert each exits before `Loading project...`, and check both markers are absent. With the product patch reversed, the socket marker assertion failed; each stem test also fails deterministically if prevalidation is moved back after engine startup. No audio-thread path is touched; these are startup/CLI paths.
 
 ## Test matrix and commands
 
@@ -30,7 +30,7 @@ The deterministic matrix covers selected scale, absent scale fallback, explicit 
 | Reverse changed product files: `git diff -- include/Appearance.h src/core/Appearance.cpp src/core/main.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5110.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5110.r1/logs/fix.patch` | 0 |
 | Build without 5110/5112 fix: `cmake --build build --target zene AppearanceStartupTest MainCliStartupTest` (`28-build-product-reversed.log`) | 0 |
 | 5110 + 5112 RED: `ctest -R '^(AppearanceStartupTest|MainCliStartupTest)$' --output-on-failure` from `build/tests` (`29-test-product-reversed.log`); selected scale and socket marker assertions failed | 8 |
-| Stem sibling negative-control isolation: `./MainCliStartupTest stemOutputFailuresKeepMarkersClean` from `build/tests` (`30-test-stem-negative-isolated.log`) | 0 |
+| Stem sibling negative-control isolation before the QA follow-up split: `./MainCliStartupTest stemOutputFailuresKeepMarkersClean` from `build/tests` (`30-test-stem-negative-isolated.log`) | 0 |
 | Restore product patch: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5110.r1/logs/fix.patch` | 0 |
 | 4203 RED control: remove the three pre-existing dump/compress checks, then `cmake --build build --target zene MainCliStartupTest` (`34-build-4203-negative.log`) | 0 |
 | 4203 dump RED: `./MainCliStartupTest dumpRejectsMissingAndInvalidInputs` from `build/tests` (`35-test-4203-dump-negative.log`) | 1 |
@@ -44,6 +44,17 @@ The deterministic matrix covers selected scale, absent scale fallback, explicit 
 | Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5110 5110` (`47-submit-check-committed.log`) | 0 |
 
 The first feature-check found that the inherited `tests/all-sources.txt` contained vendored sfizz files its own header recipe excludes. I regenerated that manifest from the published recipe, preserving its header and adding the two newly tracked startup-test sources; the excluded files are vendored dependencies and are outside the product scope. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5110.r1/logs`.
+
+## QA follow-up
+
+The first independent review caught that the `exportstems` output refusals still initialized the engine before returning. A repeated `MainCliStartupTest` run intermittently observed `CrashExit` after `Loading project...`; the checks have been moved before session-marker installation and engine startup. The updated test proves both refusals happen before project loading.
+
+| Proof | Command | EXIT |
+|---|---|---:|
+| Final build of touched and direct `Appearance.h` test targets (`qa-15-build-final.log`) | `cmake --build build --target zene AppearanceStartupTest CustomAccessTest HelpAccessTest MainCliStartupTest MainWindowGeometryTest MainWindowTest RecordRemainingTest TouchWorkspaceTest WorkspaceAccessTest --parallel 12` | 0 |
+| Final focused suite (`qa-16-tests-final.log`), 9/9 CTest targets | `ctest -R '^(AppearanceStartupTest|CustomAccessTest|HelpAccessTest|MainCliStartupTest|MainWindowGeometryTest|MainWindowTest|RecordRemainingTest|TouchWorkspaceTest|WorkspaceAccessTest)$' --output-on-failure` from `build/tests` | 0 |
+| Final startup CLI repeat (`qa-18-maincli-repeat-final.log`), 20/20 runs | `ctest --repeat until-fail:20 -R '^MainCliStartupTest$' --output-on-failure` from `build/tests` | 0 |
+| Feature gate after the QA follow-up (`qa-17-feature-check-final.log`), all eight checks PASS | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5110` | 0 |
 
 ## Self-check
 
