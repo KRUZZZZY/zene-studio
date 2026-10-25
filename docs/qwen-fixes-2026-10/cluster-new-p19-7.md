@@ -41,10 +41,43 @@ GREEN and reverse-patch proof:
 - `cmake --build build --target ControlNoteScaleVerbsTest zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/028-build-p22-proof-green.log 2>&1; echo EXIT=$?` — 0.
 - Direct runs of both seed regressions — 0 each (logs 029 and 030).
 
+new-p15-14: ALREADY-FIXED
+
+Evidence: [src/core/ControlEditSupport.cpp:273](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/src/core/ControlEditSupport.cpp:273) stores selected `Note::id()` values; `noteSelected` and `selectedNoteIndices` resolve those IDs against the current order at lines 282–297. `note.select_where` writes the same identity store at [ControlCommandsNoteShape.cpp:495](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/src/core/ControlCommandsNoteShape.cpp:495), and note removal and move explicitly rely on IDs at [ControlCommandsNotes.cpp:198](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/src/core/ControlCommandsNotes.cpp:198) and line 275. The positional-store defect is not present in this branch.
+
+The deterministic regression in [NoteSelectionIdentityTest.cpp:126](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/tests/src/core/NoteSelectionIdentityTest.cpp:126) selects the first of two notes, rolls them with seed 2 and position jitter 48 until their order reverses, then checks both `selected` and `selected_notes` still name the original ID. It passed on the branch's ID-based store. To prove sensitivity, I temporarily fault-injected the old positional behavior into `ControlEditSupport.cpp`; the test failed at the selected-flag assertion, and the source was restored before the final build.
+
+Commands and exit codes:
+
+- `./NoteSelectionIdentityTest randomizeReorderingNotesKeepsTheSelectionOnItsIdentity > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/033-test-p15-baseline-green.log 2>&1; echo EXIT=$?` — 0.
+- `git diff -- src/core/ControlEditSupport.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/p15-mutation.patch; echo EXIT=$?` — 0; records the temporary positional-store mutation.
+- `./NoteSelectionIdentityTest randomizeReorderingNotesKeepsTheSelectionOnItsIdentity > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/035-test-p15-mutation-red.log 2>&1; echo EXIT=$?` — 1 under the positional-store mutation.
+- `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/p15-mutation.patch; echo EXIT=$?` — 0; restores the branch's identity store.
+- `cmake --build build --target ControlNoteScaleVerbsTest NoteSelectionIdentityTest zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/038-build-family-final.log 2>&1; echo EXIT=$?` — 0.
+- `ctest -R '^(ControlNoteScaleVerbsTest|NoteSelectionIdentityTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/039-ctest-family-final.log 2>&1; echo EXIT=$?` — 0; 2/2 CTest tests passed.
+
+Final feature-check table (log `040-feature-check-final.log`, command exit 1):
+
+| Gate | Result |
+| --- | --- |
+| fork-sources | FAIL, exit 1 |
+| all-sources-reproduce | FAIL, exit 1 |
+| no-upstream-regression | PASS, exit 0 |
+| check-namespace | PASS, exit 0 |
+| no-tautology | PASS, exit 0 |
+| doc-figures | PASS, exit 0 |
+| complexity | PASS, no new item |
+| file-length | PASS, no new item |
+
+The two failures are unrelated to these fixes: the gate logs show `tests/all-sources.txt` lists SfzPlayer vendored Abseil sources excluded by its own documented recipe. That manifest and recipe were unchanged. Altering the gate scope would re-anchor it, so the pre-existing mismatch is recorded here rather than changed as part of this bug batch.
+
 ## Self-check
 
-- Normal and failure paths: seeded rolls/transforms, finite and non-finite seeds, and inverse replay are covered. The p19 inverse tests fail with the product patch reversed; both p22 handler tests fail with the finite check reversed.
+- Normal and failure paths: seeded rolls/transforms, finite and non-finite seeds, inverse replay, and note reordering are covered. The p15 regression fails under the positional-store mutation and passes after restoring the branch implementation.
 - Exhaustion/reconfiguration: these command handlers have no such path or bounded resource state.
 - Audio-thread safety: no audio-thread or per-period code changed.
-- Supported-platform build: the configured C++20 build compiled `zene` and the existing Qt test target; its offscreen CTest run passed.
-- Test family count: `ControlNoteScaleVerbsTest` passed as 1/1 in log `031-ctest-p22-green.log`.
+- Supported-platform build: both existing Qt test targets and `zene` built with the configured C++20 toolchain; CTest ran with the configured offscreen environment.
+- Test family count: 2/2 passed in log `039-ctest-family-final.log`.
+- `new-p19-7` commit `13e00ec90` contains `src/core/ControlCommandsNoteRandom.cpp`, `src/core/ControlCommandsNoteTransform.cpp`, `tests/src/core/ControlNoteScaleVerbsTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+- `new-p22-42` commit `cafdb6221` contains `src/core/ControlCommandsNoteRandom.cpp`, `tests/src/core/ControlNoteScaleVerbsTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+- `new-p15-14` is an already-fixed finding; its separate regression/report commit contains `tests/src/core/NoteSelectionIdentityTest.cpp` and this report.
