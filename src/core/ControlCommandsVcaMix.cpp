@@ -41,6 +41,7 @@
 
 #include <cmath>
 
+#include <QJsonDocument>
 #include <QJsonObject>
 #include <QVector>
 
@@ -112,37 +113,103 @@ MixerChannel* channelById(Mixer* mixer, const QString& id)
 	return nullptr;
 }
 
-//! Restore solo flags before channel mute models so the model hooks cannot
-//! replace the checkpointed mutes or pre-solo cache.
-void restoreSoloState(Mixer* mixer, const QJsonObject& state)
+struct SoloMuteCacheEntry
 {
-	for (VcaGroup* group : mixer->vcaGroups()) { group->soloModel()->setValue(false); }
-	const QJsonArray groupStates = state.value(QStringLiteral("groups")).toArray();
+	QString channel;
+	bool muted;
+};
+
+using SoloMuteCache = QVector<SoloMuteCacheEntry>;
+
+//! Capture the transient pre-solo latch by stable channel id for journal undo.
+SoloMuteCache muteBeforeSoloCache(Mixer* mixer)
+{
+	SoloMuteCache cache;
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		MixerChannel* channel = mixer->mixerChannel(i);
+		cache.append({control::channelIdOf(channel), channel->m_muteBeforeSolo});
+	}
+	return cache;
+}
+
+//! Restore the cache values after the journal has restored model checkpoints.
+void restoreMuteBeforeSoloCache(Mixer* mixer, const SoloMuteCache& cache)
+{
+	for (const SoloMuteCacheEntry& entry : cache)
+	{
+		if (MixerChannel* channel = channelById(mixer, entry.channel))
+		{
+			channel->m_muteBeforeSolo = entry.muted;
+		}
+	}
+}
+
+//! The structural action budget includes both captured caches and their ids.
+QJsonArray muteBeforeSoloJson(const SoloMuteCache& cache)
+{
+	QJsonArray values;
+	for (const SoloMuteCacheEntry& entry : cache)
+	{
+		values.append(QJsonObject{{QStringLiteral("channel"), entry.channel},
+			{QStringLiteral("muted"), entry.muted}});
+	}
+	return values;
+}
+
+//! Budget the structural action by the exact serialized before/after cache.
+qint64 soloMuteCacheBytes(const SoloMuteCache& before, const SoloMuteCache& after)
+{
+	return QJsonDocument(QJsonObject{{QStringLiteral("before"), muteBeforeSoloJson(before)},
+		{QStringLiteral("after"), muteBeforeSoloJson(after)}})
+		.toJson(QJsonDocument::Compact).size();
+}
+
+VcaGroup* groupFromSoloState(Mixer* mixer, const QJsonObject& record)
+{
+	return mixer->vcaGroup(control::idToIndex(record.value(QStringLiteral("group")).toString(),
+		QStringLiteral("vca-")));
+}
+
+VcaGroup* activeSoloFromState(Mixer* mixer, const QJsonArray& groupStates)
+{
 	VcaGroup* activeSolo = nullptr;
 	for (const QJsonValue& value : groupStates)
 	{
 		const QJsonObject record = value.toObject();
 		if (!record.value(QStringLiteral("soloed")).toBool()) { continue; }
-		const int id = control::idToIndex(record.value(QStringLiteral("group")).toString(),
-			QStringLiteral("vca-"));
-		VcaGroup* group = mixer->vcaGroup(id);
+		VcaGroup* group = groupFromSoloState(mixer, record);
 		if (group != nullptr && group->linksSolo() && !group->isSuspended()) { activeSolo = group; }
 	}
-	if (activeSolo != nullptr) { activeSolo->soloModel()->setValue(true); }
+	return activeSolo;
+}
+
+void restoreInertSoloFlags(Mixer* mixer, const QJsonArray& groupStates, VcaGroup* activeSolo)
+{
 	for (const QJsonValue& value : groupStates)
 	{
 		const QJsonObject record = value.toObject();
 		if (!record.value(QStringLiteral("soloed")).toBool()) { continue; }
-		const int id = control::idToIndex(record.value(QStringLiteral("group")).toString(),
-			QStringLiteral("vca-"));
-		VcaGroup* group = mixer->vcaGroup(id);
+		VcaGroup* group = groupFromSoloState(mixer, record);
 		if (group != nullptr && group != activeSolo
 			&& (group->isSuspended() || !group->linksSolo()))
 		{
 			group->soloModel()->setValue(true);
 		}
 	}
-	for (const QJsonValue& value : state.value(QStringLiteral("channels")).toArray())
+}
+
+void restoreSoloFlags(Mixer* mixer, const QJsonArray& groupStates)
+{
+	for (VcaGroup* group : mixer->vcaGroups()) { group->soloModel()->setValue(false); }
+	VcaGroup* activeSolo = activeSoloFromState(mixer, groupStates);
+	if (activeSolo != nullptr) { activeSolo->soloModel()->setValue(true); }
+	restoreInertSoloFlags(mixer, groupStates, activeSolo);
+}
+
+void restoreSoloChannels(Mixer* mixer, const QJsonArray& channels)
+{
+	for (const QJsonValue& value : channels)
 	{
 		const QJsonObject record = value.toObject();
 		if (MixerChannel* channel = channelById(mixer, record.value(QStringLiteral("channel")).toString()))
@@ -151,6 +218,14 @@ void restoreSoloState(Mixer* mixer, const QJsonObject& state)
 			channel->m_muteBeforeSolo = record.value(QStringLiteral("mute_before_solo")).toBool();
 		}
 	}
+}
+
+//! Restore solo flags before channel mute models so the model hooks cannot
+//! replace the checkpointed mutes or pre-solo cache.
+void restoreSoloState(Mixer* mixer, const QJsonObject& state)
+{
+	restoreSoloFlags(mixer, state.value(QStringLiteral("groups")).toArray());
+	restoreSoloChannels(mixer, state.value(QStringLiteral("channels")).toArray());
 }
 
 // ---------------------------------------------------------------------------
@@ -248,7 +323,6 @@ QVector<JournallingObject*> soloStepObjects()
 	for (VcaGroup* other : Engine::mixer()->vcaGroups())
 	{
 		step.append(other->soloModel());
-		step.append(other->muteModel());
 	}
 	const int channels = static_cast<int>(Engine::mixer()->numChannels());
 	for (int ch = 0; ch < channels; ++ch)
@@ -270,6 +344,7 @@ ControlResult setSolo(const QJsonObject& args)
 	const bool previous = group->soloModel()->value();
 	Mixer* mixer = Engine::mixer();
 	const QJsonObject previousState = soloState(mixer);
+	const SoloMuteCache cacheBefore = muteBeforeSoloCache(mixer);
 
 	// One step for the whole action, taken BEFORE it: see soloStepObjects.
 	control::addUndoStep(soloStepObjects());
@@ -287,6 +362,11 @@ ControlResult setSolo(const QJsonObject& args)
 	{
 		group->soloModel()->setValue(soloed);
 	}
+	const SoloMuteCache cacheAfter = muteBeforeSoloCache(mixer);
+	control::addStructuralUndoStep(
+		[mixer, cacheBefore] { restoreMuteBeforeSoloCache(mixer, cacheBefore); },
+		[mixer, cacheAfter] { restoreMuteBeforeSoloCache(mixer, cacheAfter); },
+		soloMuteCacheBytes(cacheBefore, cacheAfter));
 
 	QJsonObject result = groupState(group);
 	result.insert(QStringLiteral("previous_soloed"), previous);
@@ -497,8 +577,9 @@ void registerVcaSetSolo(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Solo or unsolo a group. Soloing a group makes exactly its "
 		"members audible (the same exclusive solo a channel has, so soloing a group clears any "
 		"other group's), and clearing the flag restores the pre-solo mute state of every "
-		"channel. Reversible: the whole action - the flag, every other group's flag and every "
-		"channel's mute - is one recorded undo step.");
+		"channel. Reversible: one undo step restores every group's solo flag, channel mute and "
+		"transient pre-solo cache. The transaction inverse carries that full state for replay "
+		"even after its journal step is evicted.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("group"), control::stringProperty()},
 		{QStringLiteral("soloed"), control::booleanProperty()},

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-24T14:19:43Z",
+  "captured_at": "2026-10-25T18:15:22Z",
   "commands": [
     {
       "args_schema": {
@@ -33283,6 +33283,22 @@
           "group": {
             "type": "string"
           },
+          "restore": {
+            "additionalProperties": false,
+            "properties": {
+              "channels": {
+                "type": "array"
+              },
+              "groups": {
+                "type": "array"
+              }
+            },
+            "required": [
+              "groups",
+              "channels"
+            ],
+            "type": "object"
+          },
           "soloed": {
             "type": "boolean"
           }
@@ -33293,7 +33309,7 @@
         ],
         "type": "object"
       },
-      "description": "Solo or unsolo a group. Soloing a group makes exactly its members audible (the same exclusive solo a channel has, so soloing a group clears any other group's), and clearing the flag restores the pre-solo mute state of every channel. Reversible: the whole action - the flag, every other group's flag and every channel's mute - is one recorded undo step.",
+      "description": "Solo or unsolo a group. Soloing a group makes exactly its members audible (the same exclusive solo a channel has, so soloing a group clears any other group's), and clearing the flag restores the pre-solo mute state of every channel. Reversible: one undo step restores every group's solo flag, channel mute and transient pre-solo cache. The transaction inverse carries that full state for replay even after its journal step is evicted.",
       "group": "vca",
       "id": "vca.set_solo",
       "mutating": true,
@@ -36206,11 +36222,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
-    "lane_head": null,
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-10",
+    "lane_head": "dd1b3beca5786b671a38362b57ad74ecc39c3dd6",
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-702vwkkh/zene.sock",
-    "version": "0.4.0-alpha.4610+b5f5a69"
+    "source_socket": "/tmp/zctl-run-jz41yj9f/zene.sock",
+    "version": "0.4.0-alpha.4611+aac861e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

@@ -438,6 +438,69 @@ private slots:
 			"unsolo_restored_original_mutes=1 journal_evicted=1"));
 	}
 
+	//! The pre-solo cache can be stale while no solo is active: a later manual
+	//! mute edit changes the model but does not rewrite that transient cache.
+	void soloUndoRestoresPreSoloMuteCache()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(journal != nullptr);
+		const QString group = createGroup(QStringLiteral("Cache restore"));
+		QVERIFY(!group.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), group},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+
+		const bool wasJournalling = journal->isJournalling();
+		journal->setJournalling(false);
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			mixer->mixerChannel(ch)->m_muteModel.setValue(ch == 3);
+		}
+		journal->setJournalling(wasJournalling);
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("soloed"), true}}).ok);
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("soloed"), false}}).ok);
+
+		// A user mute edit while solo is inactive changes the models but leaves
+		// the previous cache available for the command's undo checkpoint.
+		journal->setJournalling(false);
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			mixer->mixerChannel(ch)->m_muteModel.setValue(ch == 2);
+		}
+		journal->setJournalling(wasJournalling);
+		QVector<bool> cacheBefore;
+		QVector<bool> changedMutes;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			cacheBefore.append(mixer->mixerChannel(ch)->m_muteBeforeSolo);
+			changedMutes.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QVERIFY(run(QStringLiteral("vca.set_solo"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("soloed"), true}}).ok);
+		QVector<bool> cacheAfterSolo;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			cacheAfterSolo.append(mixer->mixerChannel(ch)->m_muteBeforeSolo);
+		}
+		QVERIFY(cacheAfterSolo != cacheBefore);
+		REV_UNDO_OR_FAIL();
+
+		QVector<bool> cacheAfterUndo;
+		QVector<bool> mutesAfterUndo;
+		for (int ch = 1; ch < static_cast<int>(mixer->numChannels()); ++ch)
+		{
+			cacheAfterUndo.append(mixer->mixerChannel(ch)->m_muteBeforeSolo);
+			mutesAfterUndo.append(mixer->mixerChannel(ch)->m_muteModel.value());
+		}
+		QCOMPARE(cacheAfterUndo, cacheBefore);
+		QCOMPARE(mutesAfterUndo, changedMutes);
+		evidence(QStringLiteral("solo_undo_restored_mute_models=1 pre_solo_cache=1"));
+	}
+
 	//! A deleted track keeps its stable id in the group's edit set so callers
 	//! can see and repair the missing membership. Removing that id must not need
 	//! a live Track object, and its undo restores the same missing membership.

@@ -174,11 +174,7 @@ by the SAME DELTA. Then all of them - anchor included - are one undo step.
    inverse is the **checkpoint**, not a replayed `clip-<n>` id. The recorded
    `inverseArgs` address the anchor by the id the caller used and are reported
    for audit only.
-4. **`vca.set_solo`'s undo does not restore `MixerChannel::m_muteBeforeSolo`**,
-   which is transient and is not part of the project file. It is re-derived on
-   the next solo action - the same limit `track.set_solo` states in its own
-   transaction text.
-5. **No interface, and no Lua binding.** There is no VCA strip, no group menu,
+4. **No interface, and no Lua binding.** There is no VCA strip, no group menu,
    no member list and no phase-lock toggle in `src/gui/`, and the socket (plus
    the MCP bridge over it) is the only way to reach any of this. That is the
    `docs/KNOWN-LIMITATIONS.md` line. *(2026-10-18 (Q050-171): superseded. M3.7
@@ -191,7 +187,7 @@ by the SAME DELTA. Then all of them - anchor included - are one undo step.
    the interface still does not offer - the other four phase-locked edits, the
    edit set's track list, shared membership through `also: true` - is listed in
    that bullet now.)*
-6. **The edit half is not audibly proved by this lane.** The mix half's
+5. **The edit half is not audibly proved by this lane.** The mix half's
    audibility was measured before it (`VcaGroupTest` renders and measures a dB
    delta, bit-exactly reversible). This lane's end-to-end proof drives the model
    through the socket and reads state back; it does not re-render.

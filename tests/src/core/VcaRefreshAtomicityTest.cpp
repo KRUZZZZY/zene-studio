@@ -46,6 +46,7 @@
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "VcaGroup.h"
@@ -61,10 +62,15 @@ private slots:
 	{
 		Engine::init(true);
 		Engine::audioEngine()->audioDev()->stopProcessing();
+		ControlRegistry::setReady(true);
 		QVERIFY(Engine::mixer() != nullptr);
 	}
 
-	void cleanupTestCase() { Engine::destroy(); }
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady(false);
+		Engine::destroy();
+	}
 
 	void aGroupedChannelNeverReadsATransientGain()
 	{
@@ -82,12 +88,14 @@ private slots:
 		QCOMPARE(mixer->mixerChannel(member)->vcaGain(), expected);
 
 		std::atomic<bool> stop{false};
+		std::atomic<bool> readerStarted{false};
 		std::atomic<std::uint64_t> reads{0};
 		std::atomic<std::uint64_t> wrong{0};
 		std::thread reader([&] {
 			const MixerChannel* channel = mixer->mixerChannel(member);
 			std::uint64_t r = 0;
 			std::uint64_t w = 0;
+			readerStarted.store(true, std::memory_order_release);
 			while (!stop.load(std::memory_order_relaxed))
 			{
 				if (channel->vcaGain() != expected) { ++w; }
@@ -96,16 +104,77 @@ private slots:
 			reads.store(r);
 			wrong.store(w);
 		});
+		while (!readerStarted.load(std::memory_order_acquire)) { std::this_thread::yield(); }
 
 		constexpr int kRefreshes = 200000;
-		for (int i = 0; i < kRefreshes; ++i) { mixer->refreshGroups(); }
+		bool commandRoundTrip = false;
+		bool soloInverseRestored = false;
+		for (int i = 0; i < kRefreshes; ++i)
+		{
+			mixer->refreshGroups();
+			if (i != kRefreshes / 2) { continue; }
+
+			const QString firstId = QStringLiteral("vca-%1").arg(group->id());
+			const QString channelOneId = QStringLiteral("ch-%1").arg(mixer->mixerChannel(1)->id());
+			const ControlResult assigned = ControlRegistry::instance()->invoke(
+				QStringLiteral("vca.assign"), {{QStringLiteral("group"), firstId},
+					{QStringLiteral("channel"), channelOneId}});
+			const ControlResult undone = assigned.ok
+				? ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), QJsonObject{})
+				: ControlResult::failure(ControlErrorKind::Refused, assigned.errorMessage);
+			commandRoundTrip = assigned.ok && undone.ok
+				&& mixer->mixerChannel(member)->vcaGain() == expected;
+
+			const ControlResult secondGroup = ControlRegistry::instance()->invoke(
+				QStringLiteral("vca.create"), {{QStringLiteral("name"), QStringLiteral("Atomic solo")}});
+			const QString secondId = secondGroup.result.value(QStringLiteral("group")).toString();
+			const QString channelTwoId = QStringLiteral("ch-%1").arg(mixer->mixerChannel(2)->id());
+			const ControlResult secondAssigned = secondGroup.ok
+				? ControlRegistry::instance()->invoke(QStringLiteral("vca.assign"),
+					{{QStringLiteral("group"), secondId}, {QStringLiteral("channel"), channelTwoId}})
+				: ControlResult::failure(ControlErrorKind::Refused, secondGroup.errorMessage);
+			const ControlResult firstSolo = secondAssigned.ok
+				? ControlRegistry::instance()->invoke(QStringLiteral("vca.set_solo"),
+					{{QStringLiteral("group"), firstId}, {QStringLiteral("soloed"), true}})
+				: ControlResult::failure(ControlErrorKind::Refused, secondAssigned.errorMessage);
+			const ControlResult secondSolo = firstSolo.ok
+				? ControlRegistry::instance()->invoke(QStringLiteral("vca.set_solo"),
+					{{QStringLiteral("group"), secondId}, {QStringLiteral("soloed"), true}})
+				: ControlResult::failure(ControlErrorKind::Refused, firstSolo.errorMessage);
+			QJsonObject inverse;
+			if (secondSolo.ok)
+			{
+				const QJsonArray transactions = ControlRegistry::instance()->invoke(
+					QStringLiteral("control.transactions"), QJsonObject{})
+					.result.value(QStringLiteral("transactions")).toArray();
+				if (!transactions.isEmpty())
+				{
+					inverse = transactions.last().toObject().value(QStringLiteral("inverse")).toObject();
+				}
+			}
+			const ControlResult inverseResult = !inverse.isEmpty()
+				? ControlRegistry::instance()->invoke(inverse.value(QStringLiteral("op")).toString(),
+					inverse.value(QStringLiteral("args")).toObject())
+				: ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("solo inverse missing"));
+			const ControlResult unsolo = inverseResult.ok
+				? ControlRegistry::instance()->invoke(QStringLiteral("vca.set_solo"),
+					{{QStringLiteral("group"), firstId}, {QStringLiteral("soloed"), false}})
+				: ControlResult::failure(ControlErrorKind::Refused, inverseResult.errorMessage);
+			soloInverseRestored = secondAssigned.ok && firstSolo.ok && secondSolo.ok
+				&& inverseResult.ok && unsolo.ok
+				&& mixer->mixerChannel(member)->vcaGain() == expected;
+		}
 		stop.store(true);
 		reader.join();
 
-		std::printf("EVIDENCE refreshes=%d reads=%llu wrong_readings=%llu\n", kRefreshes,
-			static_cast<unsigned long long>(reads.load()), static_cast<unsigned long long>(wrong.load()));
+		std::printf("EVIDENCE refreshes=%d reads=%llu wrong_readings=%llu assignment_undo=%d "
+			"solo_inverse=%d\n", kRefreshes, static_cast<unsigned long long>(reads.load()),
+			static_cast<unsigned long long>(wrong.load()), commandRoundTrip ? 1 : 0,
+			soloInverseRestored ? 1 : 0);
 		QVERIFY2(reads.load() > 0, "the reader never ran");
 		QCOMPARE(wrong.load(), std::uint64_t{0});
+		QVERIFY2(commandRoundTrip, "assignment and undo changed the observed member gain");
+		QVERIFY2(soloInverseRestored, "solo inverse and restoration changed the observed member gain");
 
 		mixer->clearVcaGroups();
 		QCOMPARE(mixer->mixerChannel(member)->vcaGain(), 1.0f);
