@@ -51,6 +51,10 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/k
 
 Exit 0, recorded in `11-feature-check.log`. Results: `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, and `doc-figures` PASS; complexity and file-length PASS with no new-item failures.
 
+| Completion check | Exact command | Exit | Evidence |
+|---|---|---:|---|
+| Post-commit check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-34 new-p23-34` | 0 | `13-submit-check.log`: committed branch, clean tree, report, tests, and gates PASS; RESULT: PASS. |
+
 ## Self-check
 
 - **Reverted test fails, restored test passes:** with the final test source, the patch was reversed, `zene` and `ArrangeToolsTest` rebuilt (exit 0), and `ctest -R ArrangeToolsTest --output-on-failure` returned 8 with both padded-name slots failing. After `git apply` restored the patch and the same targets were rebuilt (exit 0), the same CTest command returned 0 (1/1). See logs `05`–`08` above.
