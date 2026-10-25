@@ -49,6 +49,7 @@ The manifest recipe command was run with its output captured as `all-sources-gen
 | `cmake --build build --target zene Lv2StateTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/build-7.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 | Rebuilt the focused application and LV2 test target after the manifest repair. |
 | `ctest -R '^Lv2StateTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/test-4.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` (run from `build/tests`) | 0 | 1/1 CTest test passed. |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-50 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/gate-5.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 | Final feature table passes all gates after the manifest re-derivation. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-50 new-p18-50 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/submit-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 | Final completion check passed after the manifest repair. |
 
 The regression RED/GREEN proof is **not applicable** to this false-positive finding. The affected-family count is 1 existing CTest test, passed; no regression test was added.
 
