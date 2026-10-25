@@ -47,7 +47,7 @@ void gainAVX(const float* gain, const float* input, float* output, unsigned size
 
     while (output < lastAligned) {
         _mm256_store_ps(output, _mm256_mul_ps(_mm256_load_ps(gain), _mm256_load_ps(input)));
-        incrementAll<TypeAlignment>(input, output);
+        incrementAll<TypeAlignment>(gain, input, output);
     }
 #endif
 
