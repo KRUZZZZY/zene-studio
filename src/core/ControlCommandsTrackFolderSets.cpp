@@ -345,8 +345,10 @@ void registerVisibilitySetSave(ControlRegistry& registry)
 		"project, so a set survives project.save / project.open.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("name"), control::stringProperty()},
-		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-	}, {QStringLiteral("name")});
+		{QStringLiteral("tracks"), QJsonObject{
+			{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), control::stringProperty()}}},
+	}, {QStringLiteral("name"), QStringLiteral("tracks")});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},

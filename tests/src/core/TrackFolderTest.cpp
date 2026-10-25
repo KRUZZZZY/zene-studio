@@ -940,6 +940,32 @@ private slots:
 		removeAll(name);
 	}
 
+	//! A visibility-set save needs an array of track-id strings. Missing or
+	//! wrongly typed input must be refused instead of silently creating an empty set.
+	void visibilitySetSaveRefusesMalformedTrackLists()
+	{
+		const QJsonArray malformedValues{
+			QJsonObject{{QStringLiteral("id"), QStringLiteral("track")}},
+			7,
+			QStringLiteral("trk-1"),
+			QJsonArray{7},
+		};
+		Song* song = Engine::getSong();
+		for (int index = 0; index <= malformedValues.size(); ++index)
+		{
+			const QString setName = QStringLiteral("Malformed-%1").arg(index);
+			QJsonObject args{{QStringLiteral("name"), setName}};
+			if (index < malformedValues.size())
+			{
+				args.insert(QStringLiteral("tracks"), malformedValues.at(index));
+			}
+			const ControlResult result = ControlRegistry::instance()->invoke(
+				QStringLiteral("track.visibility_set_save"), args);
+			QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY(song->findVisibilitySet(setName) == nullptr);
+		}
+	}
+
 	//! The inverse control.transactions REPORTS is a promise a client may replay,
 	//! so it has to name a command that really puts the state back. Removing a set
 	//! cannot name itself: the set is already gone, so that replay restores nothing
