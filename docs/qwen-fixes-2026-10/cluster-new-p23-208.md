@@ -75,10 +75,11 @@ Commands (all output logs share `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen
 
 | Check | Evidence | Exit |
 |---|---|---:|
-| PerformView CTest family | `ctest -R '^PerformViewTest$' --output-on-failure`, 1/1 (`036-final-test.log`) | 0 |
+| PerformView CTest family | `ctest -R '^PerformViewTest$' --output-on-failure`, 1/1 (`049-final-test-after-redproof.log`) | 0 |
 | Qt test cases | `./PerformViewTest -silent`, 14 passed, 0 failed (`037-final-suite-direct.log`) | 0 |
-| Feature gates | `feature_check.py`; all eight rows PASS (`042-feature-check-final.log`) | 0 |
+| Feature gates | `feature_check.py`; all eight rows PASS (`050-feature-check-final.log`) | 0 |
 | Source inventory recipe | `bash tests/all-sources-reproduce.sh`, `REPRODUCES` (`041-all-sources-reproduce.log`) | 0 |
+| Completion check | `submit_check.py`, clean tree and report PASS (`051-submit-check-final.log`) | 0 |
 
 The source inventory gate prerequisite is committed separately: the branch base listed 1,148 `plugins/SfzPlayer/sfizz` vendored paths excluded by the manifest's published recipe. Re-deriving the manifest removed only those recipe-excluded paths; no gate or ratchet changed.
 
@@ -90,6 +91,7 @@ The source inventory gate prerequisite is committed separately: the branch base 
 | `Report PerformView state read failures (new-p17-121)` | `include/PerformView.h`, `src/gui/PerformView.cpp`, `tests/src/gui/PerformViewTest.cpp`, this report |
 | `Repair source scope gate for new-p23-208` | `tests/all-sources.txt`, `tests/upstream-modifications.txt` |
 | `Fix PerformView bar overflow (new-p16-163)` | `src/gui/PerformView.cpp`, `tests/src/gui/PerformViewTest.cpp`, this report |
+| `Record final completion evidence (new-p23-208)` | this report |
 
 ## Self-check
 
@@ -99,4 +101,4 @@ The source inventory gate prerequisite is committed separately: the branch base 
 4. **No collateral data changes.** These changes affect only PerformView's GUI readout and status line. They add no saved-data fields, schema limits or audio-thread work. Existing successful-read and undo behavior remains covered by the 14-pass PerformView suite (`037-final-suite-direct.log`).
 5. **Not-real verdict evidence:** not applicable; all three verdicts are FIXED.
 
-Final gates: `feature_check.py` exit 0 (`043-feature-check-final2.log`); `submit_check.py` is rerun after this commit and recorded in the final handoff.
+Final gates: `feature_check.py` exit 0 (`050-feature-check-final.log`); `submit_check.py` exit 0 (`051-submit-check-final.log`).
