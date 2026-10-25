@@ -86,6 +86,8 @@ public:
 	void setEnabled(bool on);
 	//! Control thread: recompute every automation clip's upstream latency (0 for every clip while off).
 	void refresh();
+	//! Project load: refresh clips after PDC has been published, while the engine model-change guard is held.
+	void refreshAfterProjectLoad();
 	//! Control thread: frames of latency the audio has been through when it reaches @a model's place - the
 	//! running devices before its device in the chain, plus where that chain starts after PDC (a mixer
 	//! channel's alignment point; 0 for a track's own chain, which PDC delays after it). 0 for a parameter

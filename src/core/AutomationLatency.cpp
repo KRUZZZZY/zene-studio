@@ -251,6 +251,12 @@ void AutomationLatency::poll(bool on)
 
 void AutomationLatency::refresh() { refreshAs(enabled(), false); }
 
+void AutomationLatency::refreshAfterProjectLoad()
+{
+	if (Engine::mixer() == nullptr || Engine::patternStore() == nullptr) { return; }
+	refreshClips(enabled(), true);
+}
+
 void AutomationLatency::refreshAs(bool on, bool waitForFreeBank)
 {
 	Song* song = Engine::getSong();

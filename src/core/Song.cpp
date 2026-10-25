@@ -2224,6 +2224,9 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	// resolve all IDs so that autoModels are automated
 	AutomationClip::resolveAllIDs();
 
+	// Publish PDC and its automation offsets before the first period can render this project.
+	Engine::mixer()->publishLatencyCompensationForProjectLoad();
+	AutomationLatency::instance().refreshAfterProjectLoad();
 
 	Engine::audioEngine()->doneChangeInModel();
 

@@ -49,10 +49,14 @@
 #include <QTemporaryDir>
 
 #include "AutomationClip.h"
+#include "AutomationLatency.h"
 #include "AutomationRamp.h"
 #include "AutomationTrack.h"
 #include "AutomatableModel.h"
+#include "EffectChain.h"
 #include "Engine.h"
+#include "Mixer.h"
+#include "PhaseDMixerTestSupport.h"
 #include "Song.h"
 #include "TimePos.h"
 #include "Track.h"
@@ -65,6 +69,15 @@ namespace
 constexpr float kParamInit = 0.72f;   // the authored initial value of every model here
 constexpr float kCurveStart = 0.1f;   // the first node's value, at tick 50
 constexpr float kCurveEnd = 0.9f;     // the second node's value, at tick 200
+partd::LatentDelayEffect* g_projectLoadEffect = nullptr;
+
+void injectProjectLoadLatency(Mixer* mixer)
+{
+	if (g_projectLoadEffect != nullptr) { return; }
+	EffectChain& chain = mixer->mixerChannel(0)->m_fxChain;
+	g_projectLoadEffect = new partd::LatentDelayEffect(&chain, 64);
+	chain.appendEffect(g_projectLoadEffect);
+}
 
 //! Builds a clip whose curve BEGINS at tick 50: the tick-0 node
 //! AutomationClip::addObject seeds is removed, so the pre-first region is real.
@@ -122,6 +135,53 @@ private slots:
 	}
 
 	void cleanupTestCase() { Engine::destroy(); }
+
+	void loadedProjectPublishesPdcBeforeAutomationIsStamped()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		AutomationLatency& latency = AutomationLatency::instance();
+		latency.setEnabled(false);
+		auto* track = Track::create(Track::Type::Automation, song);
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		clip->addObject(&Engine::mixer()->mixerChannel(0)->m_volumeModel);
+		latency.setEnabled(true);
+		const QString project = m_dir.filePath(QStringLiteral("loaded-latency.mmp"));
+		const bool saved = song->saveProjectFile(project);
+
+		Mixer::setLatencyUpdateProbeForTest(injectProjectLoadLatency);
+		if (saved) { song->loadProject(project); }
+		Mixer::setLatencyUpdateProbeForTest(nullptr);
+
+		bool loadedTarget = false;
+		int stampedFrames = 0;
+		for (Track* songTrack : song->tracks())
+		{
+			for (Clip* songClip : songTrack->getClips())
+			{
+				auto* automation = dynamic_cast<AutomationClip*>(songClip);
+				if (automation == nullptr) { continue; }
+				const auto targets = automation->objectsSnapshot();
+				loadedTarget = !targets.empty()
+					&& targets.front() == &Engine::mixer()->mixerChannel(0)->m_volumeModel;
+				if (loadedTarget) { stampedFrames = automation->latencyFrames(); }
+			}
+		}
+
+		if (g_projectLoadEffect != nullptr)
+		{
+			EffectChain& chain = Engine::mixer()->mixerChannel(0)->m_fxChain;
+			chain.removeEffect(g_projectLoadEffect);
+			delete g_projectLoadEffect;
+			g_projectLoadEffect = nullptr;
+		}
+		latency.setEnabled(false);
+		song->clearProject();
+
+		QVERIFY(saved);
+		QVERIFY(loadedTarget);
+		QCOMPARE(stampedFrames, 64);
+	}
 
 	//! Acceptance 1 (the default, no explicit start point): times before the
 	//! first node read the authored parameter's initial value, not zero - and

@@ -1,3 +1,5 @@
+FIXED
+
 new-p16-299: FIXED
 
 Decision: REAL. `AutomationClip::objects()` unlocks before returning its vector reference (`src/core/AutomationClip.cpp:325`); the refresh then queried `.empty()` through that reference (`src/core/AutomationLatency.cpp:262`). `objectsSnapshot()` copies the QPointers while holding `m_clipMutex`, and refresh uses that stable copy. The regression's LMMS_TESTING probe removes a target exactly after the legacy getter unlocks; the old refresh stamped 0 frames where the target's upstream latency was 64.
@@ -44,3 +46,34 @@ RED / reverse-patch proof:
 - From `build/tests`: `ctest -R '^W3EngineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/test-12.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/test-12.log; echo EXIT=$result` — EXIT=0; 1/1 CTest target passed.
 
 Files in this commit: `src/core/AutomationLatency.cpp`, `tests/src/core/W3EngineTest.cpp`, and this report.
+
+new-p9-575: FIXED
+
+Decision: REAL. Before the fix, `Song::loadProject` released the engine model-change guard and emitted `projectLoaded` before the mixer's first `prepareMasterMix()` published channel PDC. The one-shot automation refresh therefore stamped clips from the prior channel alignment (normally 0). The load path now publishes the mixer PDC and refreshes automation clips after target resolution while it still holds the guard, before a new audio period can read the project.
+
+Test matrix:
+
+- Immediate load/render path: `AutomationPreFirstValueTest::loadedProjectPublishesPdcBeforeAutomationIsStamped` saves an enabled automation clip on the master fader, reloads it, and injects a 64-frame effect at the load-time PDC update hook. It checks the stamp before rendering; it uses no sleeps, wall-clock waits or concurrent race.
+- Failure and reconfiguration: the update uses the mixer's existing preallocated PDC scratch and the clip refresh uses its existing wait-for-free-bank publication. Disabled compensation still publishes 0. The periodic refresh and its busy-bank path remain in place for later changes.
+- Realtime: both new calls run on the project-load control thread under the existing model-change guard. PDC recomputation is allocation-free; target-vector copying stays off the audio thread. The audio read path remains unchanged.
+- Platform: the configured C++20/Qt6 Linux build passed for `zene`, `AutomationPreFirstValueTest`, `W3EngineTest` and `InstrumentLatencyPdcTest`. The added probe is compiled only for LMMS_TESTING; no other platform builder was available.
+
+RED / reverse-patch proof:
+
+- `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/fix.patch; result=$?; echo EXIT=$result` — EXIT=0; this reverses only the Song load call and retains the test seam.
+- `LOG=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/build-23.log; cmake --build build --target zene AutomationPreFirstValueTest > "$LOG" 2>&1; result=$?; echo EXIT=$result >> "$LOG"; echo EXIT=$result` — EXIT=0.
+- From `build/tests`: `LOG=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/test-22.log; ctest -R '^AutomationPreFirstValueTest$' --output-on-failure > "$LOG" 2>&1; result=$?; echo EXIT=$result >> "$LOG"; echo EXIT=$result` — EXIT=8; 1 CTest target failed at the new case (actual 0, expected 64).
+- `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/fix.patch; result=$?; echo EXIT=$result` — EXIT=0.
+- `LOG=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/build-24.log; cmake --build build --target zene W3EngineTest InstrumentLatencyPdcTest AutomationPreFirstValueTest > "$LOG" 2>&1; result=$?; echo EXIT=$result >> "$LOG"; echo EXIT=$result` — EXIT=0.
+- From `build/tests`: `LOG=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-299.r1/logs/test-23.log; ctest -R '^(W3EngineTest|InstrumentLatencyPdcTest|AutomationPreFirstValueTest)$' --output-on-failure > "$LOG" 2>&1; result=$?; echo EXIT=$result >> "$LOG"; echo EXIT=$result` — EXIT=0; 3/3 affected CTest targets passed.
+- Final gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p16-299` — EXIT=0; all gate rows PASS in `gate-7.log`.
+
+Files in this commit: `include/AutomationLatency.h`, `include/Mixer.h`, `src/core/AutomationLatency.cpp`, `src/core/Mixer.cpp`, `src/core/Song.cpp`, `tests/src/core/AutomationPreFirstValueTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+
+## Self-check
+
+- **RED/GREEN proof:** `new-p16-299` reverse-patch build `build-6.log` exited 0 and `test-5.log` exited 8 (the snapshot regression saw 0 instead of 64); restored build `build-7.log` and `test-6.log` both exited 0. `5492` reverse-patch build `build-12.log` exited 0 and `test-11.log` exited 8 (mixed targets stamped 64 instead of 0); restored build `build-13.log` and `test-12.log` both exited 0. `new-p9-575` reversed `Song.cpp` with exit 0, build `build-23.log` exited 0 and `test-22.log` exited 8 (load regression saw 0 instead of 64); reapply exited 0, build `build-24.log` and the combined test `test-23.log` both exited 0, with 3/3 affected CTest targets passing.
+- **Determinism:** the target-list test removes a target synchronously at the `objects()` unlock probe; the mixed-latency test builds one 64-frame target and one 0-frame target; the project-load test injects 64 frames from the `LMMS_TESTING` mixer update hook. None uses a sleep, timestamp, or racing thread.
+- **Completeness:** `AutomationLatency::refreshClips` now snapshots its target vector before calculating offsets. The existing `Song::process` reference path still walks `objects()` inside the render-period change guard documented at `src/core/AutomationClip.cpp:179`; target add/remove acquires that same guard first. The test-only target counter is not a runtime refresh caller. Both the periodic refresh and the existing `projectLoaded` refresh remain; the explicit `Song::loadProject` path now publishes PDC before the first render, and template loading enters that same loader (`src/core/Song.cpp:1860`).
+- **Compatibility and realtime:** no project schema or saved target links changed. Mixed-latency clips retain links and only use zero compensation; the load update recomputes ephemeral PDC and automation offsets on the control thread. The audio reader remains unchanged and allocates, frees, locks, waits, logs and emits no new signal. No command or undo behavior changed. The gate table in `gate-7.log` is all PASS with EXIT=0.
+- **Verdicts:** all three are REAL and FIXED. No ALREADY-FIXED or FALSE-POSITIVE verdict needs a separate contract citation.
