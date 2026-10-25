@@ -14,3 +14,18 @@ Regression commands and exit codes (run from the stated directories):
 Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4380` initially EXIT=1 (`feature-check-1.log`): the changed test exceeded the file-length ratchet and the existing whole-tree manifest did not match its declared recipe. The regression was moved to the smaller registered `TaskCenterTest`; `tests/all-sources.txt` was regenerated with its own header recipe, removing stale vendored sfizz entries. `bash tests/all-sources-reproduce.sh` then printed REPRODUCES, and the same feature-check command exited 0 (`feature-check-2.log`); all eight rows passed, including complexity and file-length with no new items. The renderer and worker run outside the audio thread; no audio callback changed.
 
 Files in the 4380 fix commit: `src/core/RenderQueue.cpp`, `tests/src/core/TaskCenterTest.cpp`, `tests/all-sources.txt`, and this report.
+
+5270: FIXED
+
+Decision: REAL. Before this fix, `runRender` passed `job.out` directly to the child and `discardOutput` deleted it when its modification time was at least `startedMs`. `src/core/RenderQueue.cpp:93-105` now gives render jobs a unique same-directory staging path that keeps the requested format suffix; `runRender` passes it to the child and `endJob` commits it only after a successful exit, preserving the prior destination on failure or cancellation. `TaskCenterTest::cancellingRenderPreservesPreviousDestination` assigns the existing destination a future mtime after the child is synchronized and cancellation requested, then proves the original bytes survive. The successful sibling test proves the staged file replaces the destination after completion.
+
+Regression commands and exit codes:
+
+- RED build: `cmake --build build --target zene TaskCenterTest` — EXIT=0 (`build-13.log`).
+- RED test from `build/tests`: `ctest -R '^TaskCenterTest$' --output-on-failure` — EXIT=8 (`test-13.log`), original destination had been removed.
+- GREEN build with the affected header dependents: `cmake --build build --target zene TaskCenterTest ControlRenderJobTest RenderSourceGuardTest` — EXIT=0 (`build-14.log`).
+- GREEN test from `build/tests`: `ctest -R '^TaskCenterTest$' --output-on-failure` — EXIT=0 (`test-14.log`), 1/1 CTest target passed.
+- 4b removal command: `git diff -- include/RenderQueue.h src/core/RenderQueue.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4380.r1/logs/fix-5270.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4380.r1/logs/fix-5270.patch`; rebuild — EXIT=0 (`build-15.log`); test from `build/tests` — EXIT=8 (`test-15.log`), same lost-destination assertion.
+- 4b restore command: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4380.r1/logs/fix-5270.patch && cmake --build build --target zene TaskCenterTest ControlRenderJobTest RenderSourceGuardTest` — EXIT=0 (`build-16.log`); `ctest -R '^(RenderSourceGuardTest|TaskCenterTest|ControlRenderJobTest)$' --output-on-failure` from `build/tests` — EXIT=0 (`test-16.log`), 3/3 affected CTest targets passed.
+
+Files in the 5270 fix commit: `include/RenderQueue.h`, `src/core/RenderQueue.cpp`, `tests/src/core/TaskCenterTest.cpp`, `tests/upstream-modifications.txt`, and this report.

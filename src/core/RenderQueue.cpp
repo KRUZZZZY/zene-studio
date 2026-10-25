@@ -86,16 +86,21 @@ int sndfileFormat(const RenderJob& job)
 	return major | (job.bitDepth == 32 && major == SF_FORMAT_WAV ? SF_FORMAT_FLOAT : SF_FORMAT_PCM_24);
 }
 
-//! Where a conversion is written first. It is moved over the destination only once complete, so a failed or
-//! cancelled conversion never costs the file already there - which can be the source itself, converted in
+//! Where a render or conversion is written first. It is moved over the destination only once complete, so a
+//! failed or cancelled job never costs the file already there - which can be the source itself, converted in
 //! place (review L17 #1, #4). A name of the job's own, made once: a fixed "out.part" would be truncated by
-//! every conversion and removed by every cancellation, taking a file the user had put there with it.
+//! every job and removed by every cancellation, taking a file the user had put there with it.
 QString stagedPath(const RenderJob& job)
 {
 	if (job.staged.isEmpty())
 	{
-		job.staged = job.out + QStringLiteral(".part.")
-			+ QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
+		const QString unique = QStringLiteral(".part.") + QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
+		if (job.kind == RenderJob::Kind::Render)
+		{
+			const QFileInfo out(job.out);
+			job.staged = out.dir().filePath(out.completeBaseName() + unique + QLatin1Char('.') + job.format);
+		}
+		else { job.staged = job.out + unique; }
 	}
 	return job.staged;
 }
@@ -124,7 +129,7 @@ QString writeFile(const RenderJob& job, const SampleBuffer& buffer)
 	return QStringLiteral("writing %1 failed").arg(job.out);
 }
 
-//! The staged conversion moved over its destination; empty on success, else the reason. The old
+//! The staged output moved over its destination; empty on success, else the reason. The old
 //! destination is moved aside, not removed, until the staged file is in place: a failed rename
 //! puts it back instead of leaving neither file.
 QString commitStaged(const RenderJob& job)
@@ -196,25 +201,16 @@ void conclude(RenderJob* job, bool ok, int exitCode, const QString& error)
 	if (written) { job->report = reportOf(*job); }
 }
 
-//! A render cancelled while it ran keeps no output: what its killed process wrote since the job started,
-//! whole or in part (review L17 #2). A file older than the job is someone else's and stays.
-void discardOutput(const RenderJob& job)
-{
-	const QFileInfo out(job.out);
-	if (out.exists() && out.lastModified().toMSecsSinceEpoch() >= job.startedMs) { QFile::remove(job.out); }
-}
-
-//! A job's end once its process or worker is done: a conversion's staged file is committed when the job is
-//! still running and wrote it, dropped otherwise; a cancelled render's output is discarded.
+//! A job's end once its process or worker is done: its staged file is committed when it succeeded while
+//! running, dropped otherwise. A previous destination stays in place until the staged file is ready.
 void endJob(RenderJob* job, bool ok, int exitCode, QString error)
 {
 	const bool running = job->state == RenderJob::State::Running;
-	if (job->kind == RenderJob::Kind::Convert)
+	if (job->kind == RenderJob::Kind::Convert || job->kind == RenderJob::Kind::Render)
 	{
 		if (running && ok) { error = commitStaged(*job); ok = error.isEmpty(); }
 		else { QFile::remove(stagedPath(*job)); }
 	}
-	else if (job->state == RenderJob::State::Cancelled) { discardOutput(*job); }
 	if (running) { conclude(job, ok, exitCode, error); }
 	if (job->ownsSource) { QFile::remove(job->source); }
 }
@@ -337,7 +333,7 @@ void RenderQueue::runRender(RenderJob& job)
 				withRenderDiagnostic(QStringLiteral("the render process could not be started: %1").arg(process->errorString()), *diagnostics));
 		}
 	});
-	m_process->start(QCoreApplication::applicationFilePath(), controlRenderCliArguments(job.source, job.out, job.format,
+	m_process->start(QCoreApplication::applicationFilePath(), controlRenderCliArguments(job.source, stagedPath(job), job.format,
 		job.settings, job.rangeBegin, job.rangeEnd));
 }
 

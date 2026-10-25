@@ -31,7 +31,11 @@
 #include <QtTest>
 
 #include <QCoreApplication>
+#include <QDateTime>
+#include <QEventLoop>
 #include <QFile>
+#include <QFileInfo>
+#include <QFileSystemWatcher>
 #include <QJsonArray>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -74,6 +78,58 @@ void drainTaskCenterEvents(TaskCenter& tasks)
 	QTRY_VERIFY(drained);
 }
 
+int writeFakeRenderPid()
+{
+	const QString pidPath = qEnvironmentVariable("ZENE_FAKE_RENDER_PID_PATH");
+	if (pidPath.isEmpty()) { return 0; }
+	QFile pidFile(pidPath);
+	if (!pidFile.open(QIODevice::WriteOnly)) { return 6; }
+	pidFile.write(QByteArray::number(QCoreApplication::applicationPid()));
+	return 0;
+}
+
+bool waitForFakeRenderRelease()
+{
+	const QString holdPath = qEnvironmentVariable("ZENE_FAKE_RENDER_HOLD_PATH");
+	if (holdPath.isEmpty()) { return true; }
+	QEventLoop loop;
+	QFileSystemWatcher watcher;
+	if (!watcher.addPath(QFileInfo(holdPath).absolutePath())) { return false; }
+	QObject::connect(&watcher, &QFileSystemWatcher::directoryChanged, &loop, [&loop, holdPath] {
+		if (QFileInfo::exists(holdPath)) { loop.quit(); }
+	});
+	if (!QFileInfo::exists(holdPath)) { loop.exec(); }
+	return true;
+}
+
+QString fakeRenderOutput(int argc, char** argv)
+{
+	for (int i = 2; i + 1 < argc; ++i)
+	{
+		if (QString::fromLocal8Bit(argv[i]) == QLatin1String("-o")) { return QString::fromLocal8Bit(argv[++i]); }
+	}
+	return QString();
+}
+
+int writeFakeRenderOutput(int argc, char** argv)
+{
+	QFile rendered(fakeRenderOutput(argc, argv));
+	if (!rendered.open(QIODevice::WriteOnly)) { return 5; }
+	rendered.write("rendered output");
+	return 0;
+}
+
+int fakeRender(int argc, char** argv)
+{
+	const int pidError = writeFakeRenderPid();
+	if (pidError != 0) { return pidError; }
+	if (!waitForFakeRenderRelease()) { return 7; }
+	if (std::getenv("ZENE_FAKE_RENDER_SUCCESS") != nullptr) { return writeFakeRenderOutput(argc, argv); }
+	const char* diagnostic = std::getenv("ZENE_FAKE_RENDER_DIAGNOSTIC");
+	if (diagnostic != nullptr) { std::fputs(diagnostic, stderr); std::fputc('\n', stderr); }
+	return 3;
+}
+
 } // namespace
 
 class TaskCenterTest : public QObject
@@ -100,6 +156,9 @@ private slots:
 	void init()
 	{
 		qunsetenv("ZENE_FAKE_RENDER_DIAGNOSTIC");
+		qunsetenv("ZENE_FAKE_RENDER_SUCCESS");
+		qunsetenv("ZENE_FAKE_RENDER_PID_PATH");
+		qunsetenv("ZENE_FAKE_RENDER_HOLD_PATH");
 		TaskCenter::instance().clearFinished();
 	}
 
@@ -306,6 +365,67 @@ private slots:
 		queue.clearFinished();
 	}
 
+	void cancellingRenderPreservesPreviousDestination()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString destination = dir.filePath(QStringLiteral("existing.wav"));
+		QFile previous(destination);
+		QVERIFY(previous.open(QIODevice::WriteOnly));
+		QCOMPARE(previous.write("previous output"), qint64(15));
+		previous.close();
+
+		const QString pidPath = dir.filePath(QStringLiteral("child.pid"));
+		qputenv("ZENE_FAKE_RENDER_PID_PATH", pidPath.toLocal8Bit());
+		qputenv("ZENE_FAKE_RENDER_HOLD_PATH", dir.filePath(QStringLiteral("release-child")).toLocal8Bit());
+		RenderJob job;
+		job.kind = RenderJob::Kind::Render;
+		job.source = dir.filePath(QStringLiteral("project.mmp"));
+		job.out = destination;
+		RenderQueue& queue = RenderQueue::instance();
+		const int id = queue.add(job);
+		QVERIFY(id > 0);
+		queue.start();
+		QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(pidPath), 5000);
+		QVERIFY(queue.cancel(id));
+		const QDateTime futureTime = QDateTime::currentDateTimeUtc().addDays(2);
+		QVERIFY(previous.open(QIODevice::ReadWrite));
+		QVERIFY(previous.setFileTime(futureTime, QFileDevice::FileModificationTime));
+		previous.close();
+		QVERIFY(QFileInfo(destination).lastModified().toMSecsSinceEpoch() >= futureTime.toMSecsSinceEpoch());
+		QVERIFY(QFileInfo(destination).lastModified().toMSecsSinceEpoch() >= queue.job(id)->startedMs);
+		QTRY_VERIFY_WITH_TIMEOUT(!queue.isRunning(), 5000);
+		QCOMPARE(queue.job(id)->state, RenderJob::State::Cancelled);
+		QVERIFY(previous.open(QIODevice::ReadOnly));
+		QCOMPARE(previous.readAll(), QByteArray("previous output"));
+		if (!queue.job(id)->staged.isEmpty()) { QVERIFY(!QFileInfo::exists(queue.job(id)->staged)); }
+		queue.clearFinished();
+	}
+
+	void successfulRenderReplacesDestinationFromStaging()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString destination = dir.filePath(QStringLiteral("render.wav"));
+		QFile previous(destination);
+		QVERIFY(previous.open(QIODevice::WriteOnly));
+		QCOMPARE(previous.write("previous output"), qint64(15));
+		previous.close();
+		qputenv("ZENE_FAKE_RENDER_SUCCESS", "1");
+		RenderJob job;
+		job.kind = RenderJob::Kind::Render;
+		job.source = dir.filePath(QStringLiteral("project.mmp"));
+		job.out = destination;
+		RenderQueue& queue = RenderQueue::instance();
+		const int id = queue.add(job);
+		QVERIFY(id > 0);
+		queue.start();
+		QTRY_VERIFY_WITH_TIMEOUT(queue.job(id) != nullptr && queue.job(id)->state == RenderJob::State::Done, 5000);
+		QVERIFY(previous.open(QIODevice::ReadOnly));
+		QCOMPARE(previous.readAll(), QByteArray("rendered output"));
+		queue.clearFinished();
+	}
+
 	void aQueuedRenderIsListedAndCancelledThroughTheList()
 	{
 		QTemporaryDir dir;
@@ -331,9 +451,8 @@ int main(int argc, char** argv)
 {
 	if (argc > 1 && std::strcmp(argv[1], "render") == 0)
 	{
-		const char* diagnostic = std::getenv("ZENE_FAKE_RENDER_DIAGNOSTIC");
-		if (diagnostic != nullptr) { std::fputs(diagnostic, stderr); std::fputc('\n', stderr); }
-		return 3;
+		QCoreApplication app(argc, argv);
+		return fakeRender(argc, argv);
 	}
 	QCoreApplication app(argc, argv);
 	QTEST_SET_MAIN_SOURCE_PATH

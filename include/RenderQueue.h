@@ -77,8 +77,8 @@ struct LMMS_EXPORT RenderJob
 	QJsonObject report;
 	//! The task-area token of this job's current generation; its reports carry it (RenderQueue::add).
 	TaskToken taskToken;
-	//! A conversion's own staging file, beside its destination and named for this job alone; made when
-	//! first asked for and never on a name anyone else could be using (RenderQueue::stagedPath).
+	//! This render or conversion's own staging file, beside its destination and named for this job alone;
+	//! made when first asked for and never on a name anyone else could be using (RenderQueue::stagedPath).
 	mutable QString staged;
 	//! Bounce inputs are captured on the main thread; callbacks re-check and apply model state there.
 	BounceInPlace::PreparedRender bounce;
