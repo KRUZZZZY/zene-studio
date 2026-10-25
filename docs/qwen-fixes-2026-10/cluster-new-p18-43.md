@@ -43,3 +43,25 @@ new-p18-44: FIXED
 | Feature gate table: all rows PASS | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-43` | 0 |
 
 Files in this fix commit: `src/tracks/InstrumentTrackNotes.cpp`, `src/tracks/InstrumentTrack.cpp`, `tests/src/core/InstrumentRoutingTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+
+new-p14-123: FIXED
+
+`src/tracks/InstrumentTrackNotes.cpp:128-137` was REAL: its `thread_local bool inside` suppressed every track's transform while any one track forwarded a transformed external event. `MidiInputTransformTest::nestedLayerAppliesItsOwnInputTransform` creates owner A and layer B with transposes +1 and +2, sends external key 60 through the real layer forwarding path, and verifies B starts key 63 rather than 61. The corresponding external note-off releases B's key 63.
+
+The thread-local recursion guard is now a linked stack of active track contexts. It blocks re-entry for the same track while allowing nested layer tracks to apply their transforms. The context is stack-owned and uses no heap allocation, lock or logging.
+
+| Evidence | Command | Exit |
+| --- | --- | ---: |
+| Original implementation/test target built | `cmake --build build --target MidiInputTransformTest -j12` | 0 |
+| RED: layer transform skipped; key 63 handle was absent | `ctest -R '^MidiInputTransformTest$' --output-on-failure` from `build/tests` | 8 |
+| GREEN build of app and affected test | `cmake --build build --target zene MidiInputTransformTest -j12` | 0 |
+| GREEN: 17 QtTest cases passed; 1/1 CTest target passed | `ctest -R '^MidiInputTransformTest$' -V` from `build/tests` | 0 |
+| Step 4b: saved the production diff and reversed it | `git diff -- src/tracks/InstrumentTrackNotes.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-43.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-43.r1/logs/fix.patch` | 0 |
+| Reverse proof: rebuilt original app and test | `cmake --build build --target zene MidiInputTransformTest -j12` | 0 |
+| Reverse proof RED: the same layer-key assertion failed | `ctest -R '^MidiInputTransformTest$' --output-on-failure` from `build/tests` | 8 |
+| Reapplied the saved production patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-43.r1/logs/fix.patch` | 0 |
+| Reverse proof GREEN: rebuilt app and test | `cmake --build build --target zene MidiInputTransformTest -j12` | 0 |
+| Reverse proof GREEN: focused test passed | `ctest -R '^MidiInputTransformTest$' --output-on-failure` from `build/tests` | 0 |
+| Final feature gate table: all rows PASS | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-43` | 0 |
+
+Files in this fix commit: `src/tracks/InstrumentTrackNotes.cpp`, `tests/src/core/MidiInputTransformTest.cpp`, and this report.

@@ -107,6 +107,36 @@ void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip*
 namespace
 {
 
+struct ActiveInputTransform
+{
+	const InstrumentTrack* track;
+	const ActiveInputTransform* previous;
+};
+
+thread_local const ActiveInputTransform* s_activeInputTransforms = nullptr;
+
+bool inputTransformIsActiveFor(const InstrumentTrack* track)
+{
+	for (const ActiveInputTransform* active = s_activeInputTransforms; active != nullptr; active = active->previous)
+	{
+		if (active->track == track) { return true; }
+	}
+	return false;
+}
+
+class InputTransformScope
+{
+public:
+	explicit InputTransformScope(const InstrumentTrack* track) : m_context{track, s_activeInputTransforms}
+	{
+		s_activeInputTransforms = &m_context;
+	}
+	~InputTransformScope() { s_activeInputTransforms = m_context.previous; }
+
+private:
+	ActiveInputTransform m_context;
+};
+
 MidiEvent controllerEvent(const ControllerLane& lane, int value, int channel)
 {
 	switch (lane.kind)
@@ -123,16 +153,17 @@ MidiEvent controllerEvent(const ControllerLane& lane, int value, int channel)
 
 bool InstrumentTrack::handleInputTransform(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
 {
-	// MIDI input thread. The transformed event re-enters processInEvent once; the flag keeps it from
-	// being transformed twice (a thread's own re-entry, so a thread-local).
-	thread_local bool inside = false;
-	if (inside || event.source() != MidiEvent::Source::External || !m_inputTransform.active()) { return false; }
+	// MIDI input thread. Each active track may transform once in a forwarding chain; a track's own recursive
+	// re-entry is skipped while a nested layer track can still apply its transform.
+	if (inputTransformIsActiveFor(this) || event.source() != MidiEvent::Source::External || !m_inputTransform.active())
+	{
+		return false;
+	}
 	MidiEvent transformed = event;
 	if (m_inputTransform.apply(&transformed))
 	{
-		inside = true;
+		InputTransformScope scope{this};
 		processInEvent(transformed, time, offset);
-		inside = false;
 	}
 	return true;
 }
