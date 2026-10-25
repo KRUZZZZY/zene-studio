@@ -1180,6 +1180,13 @@ void InstrumentTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& 
 
 void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement )
 {
+	loadTrackSpecificSettings(thisElement, false);
+}
+
+
+
+void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, bool presetMode)
+{
 	// don't delete instrument in preview mode if it's the same
 	// we can't do this for other situations due to some issues with linked models
 	bool reuseInstrument = m_previewMode && m_instrument && m_instrument->nodeName() == getSavedInstrumentName(thisElement);
@@ -1293,7 +1300,7 @@ void InstrumentTrack::loadTrackSpecificSettings( const QDomElement & thisElement
 	updatePitchRange();
 	unlock();
 
-	loadZeneInstrumentSettings(thisElement);
+	loadZeneInstrumentSettings(thisElement, presetMode);
 }
 
 

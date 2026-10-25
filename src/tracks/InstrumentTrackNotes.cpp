@@ -386,14 +386,18 @@ void InstrumentTrack::saveZeneInstrumentSettings(QDomDocument& doc, QDomElement&
 	if (!presetMode && buses != nullptr) { buses->saveSettings(doc, element); }
 }
 
-void InstrumentTrack::loadZeneInstrumentSettings(const QDomElement& element)
+void InstrumentTrack::loadZeneInstrumentSettings(const QDomElement& element, bool presetMode)
 {
-	// Each reads its own element and treats a missing one as "none", so an undo step or a preset that
-	// predates the feature takes it back.
+	// MIDI parts and layers reset on absence. Output-bus routes name project mixer channels and presets
+	// deliberately omit them, so a preset only replaces routes when it explicitly carries the node.
 	m_midiParts.loadSettings(element);
 	m_layers.loadSettings(element);
 	InstrumentOutputBuses* buses = m_instrument != nullptr ? m_instrument->outputBuses() : nullptr;
-	if (buses != nullptr && !m_previewMode) { buses->loadSettings(element); }
+	if (buses != nullptr && !m_previewMode
+		&& (!presetMode || !element.firstChildElement(QStringLiteral("outputbuses")).isNull()))
+	{
+		buses->loadSettings(element);
+	}
 }
 
 } // namespace lmms
