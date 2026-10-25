@@ -98,15 +98,26 @@ ControlResult store(const QJsonObject& workflows, QJsonObject result, const gui:
 	return gui::uistore::write(StoreKey, {{QStringLiteral("workflows"), workflows}}, std::move(result), inverse, refreshMenu);
 }
 
-//! Why @a steps cannot be a workflow, or empty.
+//! Why @a steps cannot be saved as a workflow.
 QString stepsRefusal(const QJsonArray& steps)
 {
 	if (steps.isEmpty() || steps.size() > MaxSteps) { return QStringLiteral("a workflow has 1..%1 steps").arg(MaxSteps); }
 	for (const QJsonValue& value : steps)
 	{
-		const QString command = value.toObject().value(QStringLiteral("command")).toString();
-		if (!ControlRegistry::instance()->hasCommand(command)) { return QStringLiteral("no command '%1'").arg(command); }
+		if (!value.isObject()) { return QStringLiteral("a workflow step is an object"); }
+		const QJsonObject step = value.toObject();
+		const QJsonValue commandValue = step.value(QStringLiteral("command"));
+		if (!commandValue.isString()) { return QStringLiteral("a workflow step needs a command string"); }
+		const QString command = commandValue.toString();
+		const ControlCommand* registered = ControlRegistry::instance()->command(command);
+		if (registered == nullptr) { return QStringLiteral("no command '%1'").arg(command); }
 		if (command.startsWith(QStringLiteral("workflow."))) { return QStringLiteral("a workflow cannot run or edit workflows"); }
+		const QJsonValue args = step.value(QStringLiteral("args"));
+		if (!args.isObject()) { return QStringLiteral("workflow step '%1' needs an args object").arg(command); }
+		if (const QString invalid = ControlRegistry::validateArgs(registered->argsSchema, args.toObject()); !invalid.isEmpty())
+		{
+			return QStringLiteral("invalid args for workflow step '%1': %2").arg(command, invalid);
+		}
 	}
 	return QString();
 }
@@ -133,7 +144,7 @@ ControlResult saveWorkflow(const QJsonObject& args)
 
 ControlResult removeWorkflow(const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	QJsonObject workflows = saved();
 	if (!workflows.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no workflow '%1'").arg(name)); }
 	const QJsonValue steps = workflows.value(name).toObject().value(QStringLiteral("steps"));
@@ -172,7 +183,7 @@ ControlResult setScope(const QJsonObject& args)
 
 ControlResult runWorkflow(const QJsonObject& args)
 {
-	const QString name = args.value(QStringLiteral("name")).toString();
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
 	const QJsonObject workflows = saved();
 	if (!workflows.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no workflow '%1'").arg(name)); }
 	return workflow::start(name, workflows.value(name).toObject().value(QStringLiteral("steps")).toArray());
