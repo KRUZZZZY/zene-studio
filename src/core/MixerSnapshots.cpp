@@ -130,8 +130,9 @@ int idAttribute(const QDomElement& element, const QString& name)
 //! (no NaN/inf may be stored into a snapshot and recalled into the mixer).
 float floatAttribute(const QDomElement& element, const QString& name, float fallback)
 {
-	const float value = element.attribute(name, QString::number(fallback)).toFloat();
-	return std::isfinite(value) ? value : fallback;
+	bool ok = false;
+	const float value = element.attribute(name, QString::number(fallback)).toFloat(&ok);
+	return ok && std::isfinite(value) ? value : fallback;
 }
 
 MixerChannelState channelFrom(const QDomElement& element)
@@ -245,6 +246,7 @@ void MixerSnapshots::load(const QDomElement& element)
 	{
 		MixerSnapshot snapshot;
 		snapshot.name = child.attribute(QStringLiteral("name"));
+		if (find(snapshot.name) != nullptr) { continue; }
 		for (QDomElement channel = child.firstChildElement(QStringLiteral("channel")); !channel.isNull();
 			channel = channel.nextSiblingElement(QStringLiteral("channel")))
 		{
