@@ -3002,3 +3002,7 @@ tests/control-touch-workspace.py
 tests/src/plugins/WatsynParamHandoffTest.cpp
 # cluster new-p17-202-port (2026-10): the fix and verification report for the Watsyn parameter hand-off on the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p17-202-port.md
+# cluster new-p23-187 (2026-10): regression for Oscilloscope pause-setting persistence (fork-NEW).
+tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
+# cluster new-p23-187 (2026-10): fix and verification report for Oscilloscope pause-setting persistence (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p23-187.md
