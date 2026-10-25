@@ -55,6 +55,7 @@
 #include "MixerView.h"
 #include "GuiApplication.h"
 #include "ExportFilter.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Keymap.h"
 #include "NotePlayHandle.h"
@@ -1341,6 +1342,48 @@ void Song::startExport()
 	playSong();
 
 	m_vstSyncController.setPlaybackState( true );
+}
+
+
+auto Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept -> bool
+{
+	for (Track* const track : tracks())
+	{
+		if (track == nullptr || track->type() != Track::Type::Instrument) { continue; }
+		auto* const instrumentTrack = dynamic_cast<InstrumentTrack*>(track);
+		if (instrumentTrack == nullptr) { continue; }
+		Instrument* const instrument = instrumentTrack->instrument();
+		if (instrument != nullptr && !instrument->prepareConverterMode(mode)) { return false; }
+	}
+	return true;
+}
+
+void Song::adoptPreparedConverterModeForInstruments() noexcept
+{
+	for (Track* const track : tracks())
+	{
+		if (track == nullptr || track->type() != Track::Type::Instrument) { continue; }
+		auto* const instrumentTrack = dynamic_cast<InstrumentTrack*>(track);
+		if (instrumentTrack == nullptr) { continue; }
+		if (Instrument* const instrument = instrumentTrack->instrument())
+		{
+			instrument->adoptPreparedConverterMode();
+		}
+	}
+}
+
+void Song::discardPreparedConverterModeForInstruments() noexcept
+{
+	for (Track* const track : tracks())
+	{
+		if (track == nullptr || track->type() != Track::Type::Instrument) { continue; }
+		auto* const instrumentTrack = dynamic_cast<InstrumentTrack*>(track);
+		if (instrumentTrack == nullptr) { continue; }
+		if (Instrument* const instrument = instrumentTrack->instrument())
+		{
+			instrument->discardPreparedConverterMode();
+		}
+	}
 }
 
 

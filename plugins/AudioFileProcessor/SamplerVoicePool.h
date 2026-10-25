@@ -77,6 +77,31 @@ public:
 
 	Voice& voice(int index) noexcept { return *m_voices[static_cast<std::size_t>(index)]; }
 
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+	{
+		std::size_t prepared = 0;
+		for (; prepared < m_voices.size(); ++prepared)
+		{
+			if (m_voices[prepared]->state.prepareConverterMode(mode)) { continue; }
+			for (std::size_t i = 0; i < prepared; ++i)
+			{
+				m_voices[i]->state.discardPreparedConverterMode();
+			}
+			return false;
+		}
+		return true;
+	}
+
+	void adoptPreparedConverterMode() noexcept
+	{
+		for (const auto& voice : m_voices) { voice->state.adoptPreparedConverterMode(); }
+	}
+
+	void discardPreparedConverterMode() noexcept
+	{
+		for (const auto& voice : m_voices) { voice->state.discardPreparedConverterMode(); }
+	}
+
 	/*! Start a note: a free voice, or - at \a limit - the reuse policy's choice faded out and a spare taken.
 	 *  Returns an invalid claim only when every voice is taken (limit + FadeHeadroom stolen notes at once). */
 	Claim acquire(int limit) noexcept

@@ -244,6 +244,28 @@ void PatmanInstrument::deleteNotePluginData( NotePlayHandle * _n )
 	delete hdata;
 }
 
+auto PatmanInstrument::prepareConverterModeForNote(NotePlayHandle* note,
+	AudioResampler::Mode mode) noexcept -> bool
+{
+	if (note == nullptr || note->m_pluginData == nullptr) { return true; }
+	auto* const hdata = static_cast<handle_data*>(note->m_pluginData);
+	return hdata->state == nullptr || hdata->state->prepareConverterMode(mode);
+}
+
+void PatmanInstrument::adoptPreparedConverterModeForNote(NotePlayHandle* note) noexcept
+{
+	if (note == nullptr || note->m_pluginData == nullptr) { return; }
+	auto* const hdata = static_cast<handle_data*>(note->m_pluginData);
+	if (hdata->state != nullptr) { hdata->state->adoptPreparedConverterMode(); }
+}
+
+void PatmanInstrument::discardPreparedConverterModeForNote(NotePlayHandle* note) noexcept
+{
+	if (note == nullptr || note->m_pluginData == nullptr) { return; }
+	auto* const hdata = static_cast<handle_data*>(note->m_pluginData);
+	if (hdata->state != nullptr) { hdata->state->discardPreparedConverterMode(); }
+}
+
 
 
 
@@ -503,7 +525,7 @@ void PatmanInstrument::selectSample( NotePlayHandle * _n )
 	auto hdata = new handle_data;
 	hdata->tuned = m_tunedModel.value();
 	hdata->sample = sample ? sample : std::make_shared<Sample>();
-	hdata->state = new Sample::PlaybackState(AudioResampler::Mode::Linear);
+	hdata->state = new Sample::PlaybackState(AudioResampler::RealtimeVoiceTag{});
 
 	_n->m_pluginData = hdata;
 }

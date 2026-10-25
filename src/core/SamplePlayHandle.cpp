@@ -66,6 +66,27 @@ SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 	, m_sample(sample)
 	, m_ownAudioBusHandle(ownAudioBusHandle)
 {
+	initializeSampleState();
+}
+
+
+
+
+SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle,
+	AudioResampler::RealtimeVoiceTag realtimeVoice)
+	: PlayHandle(Type::SamplePlayHandle)
+	, m_state(realtimeVoice)
+	, m_sample(sample)
+	, m_ownAudioBusHandle(ownAudioBusHandle)
+{
+	initializeSampleState();
+}
+
+
+
+
+void SamplePlayHandle::initializeSampleState()
+{
 	// The window this handle renders, taken once here. For the preview and
 	// metronome paths (SamplePlayHandle.cpp:106-108) that is the sample's own
 	// range, which is exactly what they rendered before Slice 0; the clip
@@ -73,7 +94,7 @@ SamplePlayHandle::SamplePlayHandle(Sample* sample, bool ownAudioBusHandle)
 	m_window = { static_cast<f_cnt_t>(m_sample->startFrame()),
 		static_cast<f_cnt_t>(m_sample->endFrame()) };
 	m_state.setFrameIndex(m_sample->startFrame());
-	if (ownAudioBusHandle)
+	if (m_ownAudioBusHandle)
 	{
 		setAudioBusHandle(new AudioBusHandle("SamplePlayHandle", false));
 	}
@@ -114,7 +135,7 @@ bool rendersThroughStretcher(WarpStretchMode mode, bool rendersLinearly, int tra
 } // namespace
 
 SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window ) :
-	SamplePlayHandle(&clip->sample(), false)
+	SamplePlayHandle(&clip->sample(), false, AudioResampler::RealtimeVoiceTag{})
 {
 	m_track = clip->getTrack();
 	setAudioBusHandle(((SampleTrack *)clip->getTrack())->audioBusHandle());
@@ -486,6 +507,31 @@ void SamplePlayHandle::resetPooledVoice() noexcept
 	m_doneMayReturnTrue = true;
 	m_ignoresTrackMute = false;
 	setOffset(0);
+}
+
+
+auto SamplePlayHandle::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+{
+	if (!m_state.prepareConverterMode(mode)) { return false; }
+	if (m_compSlip != nullptr && !m_compSlip->prepareConverterMode(mode))
+	{
+		m_state.discardPreparedConverterMode();
+		m_compSlip->discardPreparedConverterMode();
+		return false;
+	}
+	return true;
+}
+
+void SamplePlayHandle::adoptPreparedConverterMode() noexcept
+{
+	m_state.adoptPreparedConverterMode();
+	if (m_compSlip) { m_compSlip->adoptPreparedConverterMode(); }
+}
+
+void SamplePlayHandle::discardPreparedConverterMode() noexcept
+{
+	m_state.discardPreparedConverterMode();
+	if (m_compSlip) { m_compSlip->discardPreparedConverterMode(); }
 }
 
 

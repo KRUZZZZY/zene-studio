@@ -48,14 +48,29 @@ public:
 	class LMMS_EXPORT PlaybackState
 	{
 	public:
-		PlaybackState(AudioResampler::Mode interpolationMode = AudioResampler::Mode::Linear, int frameIndex = 0)
+		PlaybackState(AudioResampler::Mode interpolationMode = AudioResampler::modeForCurrentSrcQuality(),
+			int frameIndex = 0)
 			: m_resampler(interpolationMode)
+			, m_frameIndex(frameIndex)
+		{
+		}
+
+		PlaybackState(AudioResampler::RealtimeVoiceTag tag, int frameIndex = 0)
+			: m_resampler(tag)
 			, m_frameIndex(frameIndex)
 		{
 		}
 
 		auto frameIndex() const -> int { return m_frameIndex; }
 		auto backwards() const -> bool { return m_backwards; }
+		auto converterMode() const -> AudioResampler::Mode { return m_resampler.mode(); }
+		void setConverterMode(AudioResampler::Mode mode) { m_resampler.setMode(mode); }
+		auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
+		{
+			return m_resampler.prepareMode(mode);
+		}
+		void adoptPreparedConverterMode() noexcept { m_resampler.adoptPreparedMode(); }
+		void discardPreparedConverterMode() noexcept { m_resampler.discardPreparedMode(); }
 
 		void setFrameIndex(int index) { m_frameIndex = index; }
 		void setBackwards(bool backwards) { m_backwards = backwards; }

@@ -26,10 +26,16 @@
 #include <thread>
 
 #include "AudioEngine.h"
+#include "AudioResampler.h"
 #include "Engine.h"
+#include "ExportRenderSettings.h"
 #include "InstrumentTrack.h"
+#include "Note.h"
+#include "NotePlayHandle.h"
 #include "Patman.h"
 #include "PathUtil.h"
+#include "RealtimeScope.h"
+#include "SampleFrame.h"
 #include "Song.h"
 
 namespace
@@ -141,6 +147,7 @@ private slots:
 	{
 		Engine::init(true);
 		Engine::audioEngine()->audioDev()->stopProcessing();
+		NotePlayHandleManager::init();
 	}
 
 	void cleanupTestCase()
@@ -180,6 +187,36 @@ private slots:
 			}
 		}
 		QVERIFY2(!allocationThrew, "truncated patch length reached the sample allocation");
+	}
+
+	void patmanVoiceUsesPreparedConverterOnRenderPath()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString patchPath = directory.filePath(QStringLiteral("voice.pat"));
+		QVERIFY(writePatch(patchPath));
+
+		InstrumentTrack track{Engine::getSong()};
+		PatmanInstrument instrument{&track};
+		instrument.loadFile(patchPath);
+		QVERIFY(!instrument.nodeName().isEmpty());
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::SincBest));
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		NotePlayHandle* const note = NotePlayHandleManager::acquire(&track, 0, frames * 2,
+			Note(TimePos(), TimePos(), 60, 100));
+		std::vector<SampleFrame> output(static_cast<std::size_t>(frames));
+		AudioResampler::resetRealtimeConverterAllocationsForTest();
+		{
+			const RealtimeScope realtime;
+			instrument.playNote(note, output);
+		}
+		const auto realtimeAllocations = AudioResampler::realtimeConverterAllocationsForTest();
+		instrument.deleteNotePluginData(note);
+		note->m_pluginData = nullptr;
+		NotePlayHandleManager::release(note);
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
+		QCOMPARE(realtimeAllocations, std::uint64_t{0});
 	}
 };
 

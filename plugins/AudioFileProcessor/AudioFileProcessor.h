@@ -51,6 +51,9 @@ public:
 	AudioFileProcessor( InstrumentTrack * _instrument_track );
 
 	void deleteNotePluginData( NotePlayHandle * _n ) override;
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool override;
+	void adoptPreparedConverterMode() noexcept override;
+	void discardPreparedConverterMode() noexcept override;
 
 	//! Slide (portamento) notes are meaningless on a raw sample player: opt
 	//! out so slide notes play as regular notes (SPEC-slide-notes D-3)

@@ -26,6 +26,8 @@
 #define LMMS_AUDIO_RESAMPLER_H
 
 #include <memory>
+#include <cstdint>
+#include <cstddef>
 #include "AudioBufferView.h"
 #include "SrcQuality.h"
 #include "lmms_export.h"
@@ -41,6 +43,8 @@ namespace lmms {
 class LMMS_EXPORT AudioResampler
 {
 public:
+	//! A playback voice takes a state prebuilt on the control thread.
+	struct RealtimeVoiceTag {};
 	/**
 	 * @enum Mode
 	 * @brief Defines the resampling method to use.
@@ -70,6 +74,10 @@ public:
 	 * @param channels Number of audio channels. Defaults to `2` (stereo).
 	 */
 	AudioResampler(Mode mode, ch_cnt_t channels = 2);
+	AudioResampler(RealtimeVoiceTag, ch_cnt_t channels = 2);
+	~AudioResampler();
+	AudioResampler(AudioResampler&& other) noexcept;
+	auto operator=(AudioResampler&& other) noexcept -> AudioResampler&;
 
 	/**
 	 * @brief Process a block of interleaved audio input from `input` and resample it into `output`.
@@ -129,28 +137,60 @@ public:
 	auto channels() const -> ch_cnt_t { return m_channels; }
 
 	//! @returns the interpolation mode used by this resampler.
-	auto mode() const -> Mode { return m_mode; }
+	auto mode() const -> Mode;
 
 	/*! Switches the converter, re-creating the libsamplerate state.
 	 *
-	 *  Called on the render path (via `Sample::play`) only when the requested
-	 *  quality differs from the current one, so a render that does not change the
-	 *  quality never pays for it. Re-creating the state drops the converter's
-	 *  filter history, so a *change* mid-render is a discontinuity - which is why
-	 *  the engine sets the quality once per render rather than per buffer.
+	 *  This allocates (`src_new`) and drops the converter's filter history, so it
+	 *  must not be called from the audio play path. Playback states are built
+	 *  with their converter off that path, and retained states are reconfigured
+	 *  at a control-thread boundary.
 	 *
 	 *  @throws std::runtime_error when libsamplerate cannot create the state.
 	 */
 	void setMode(Mode mode);
 
+	//! Exception-safe form used when a larger set of playback states is switched.
+	//! A failed allocation leaves this resampler unchanged.
+	auto trySetMode(Mode mode) noexcept -> bool;
+
+	//! Prepare/adopt/discard let a set of states switch atomically. Preparing may
+	//! allocate and fail; adopting is a pointer swap and cannot fail.
+	auto prepareMode(Mode mode) noexcept -> bool;
+	void adoptPreparedMode() noexcept;
+	void discardPreparedMode() noexcept;
+	auto hasPreparedMode() const noexcept -> bool;
+
+#ifdef LMMS_TESTING
+	//! Deterministically fail the next converter allocations in tests.
+	static void forceConverterAllocationFailuresForTest(int failuresToInject,
+		int allocationsToSkip = 0) noexcept;
+	//! Count converter states created while RealtimeScope is active.
+	static auto realtimeConverterAllocationsForTest() noexcept -> std::uint64_t;
+	static void resetRealtimeConverterAllocationsForTest() noexcept;
+#endif
+
 	//! The converter \p quality selects. `Linear` is `Mode::Linear`, the
 	//! converter this engine has always used.
 	static Mode modeForSrcQuality(SrcQuality quality) noexcept;
+	//! The mode selected for playback states built now, away from Sample::play.
+	static Mode modeForCurrentSrcQuality() noexcept;
+	//! Engine lifecycle and mode-transaction hooks for prebuilt realtime voices.
+	static auto initializeRealtimeVoiceConverterPool(Mode mode, std::size_t capacity) noexcept -> bool;
+	static auto ensureRealtimeVoiceConverterPoolCapacity(std::size_t capacity) noexcept -> bool;
+	static auto prepareRealtimeVoiceConverterPool(Mode mode) noexcept -> bool;
+	static void adoptRealtimeVoiceConverterPool() noexcept;
+	static void discardRealtimeVoiceConverterPool() noexcept;
 
 private:
 	struct LMMS_EXPORT StateDeleter { void operator()(void* state); };
+	auto currentState() const noexcept -> void*;
 	std::unique_ptr<void, StateDeleter> m_state;
+	std::unique_ptr<void, StateDeleter> m_preparedState;
+	void* m_poolSlot = nullptr;
 	Mode m_mode;
+	Mode m_preparedMode = Mode::Linear;
+	bool m_hasPrepared = false;
 	ch_cnt_t m_channels = 0;
 	double m_ratio = 1.0;
 	int m_error = 0;

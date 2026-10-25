@@ -115,8 +115,15 @@ public:
 	void armPooledVoice(std::shared_ptr<const SampleBuffer> buffer, int sourceIn, int sourceOut,
 		float amplification, f_cnt_t offset, Track* track) noexcept;
 	void resetPooledVoice() noexcept;
+	//! Prepare/adopt/discard the handle state and its comp-slip readers together.
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool;
+	void adoptPreparedConverterMode() noexcept;
+	void discardPreparedConverterMode() noexcept;
 
 private:
+	SamplePlayHandle(Sample* sample, bool ownAudioBusHandle, AudioResampler::RealtimeVoiceTag realtimeVoice);
+	void initializeSampleState();
+
 	Sample::PlaybackState m_state;
 	//! The source window this handle renders, snapshotted at construction: nothing
 	//! that happens to the clip or the Sample afterwards changes this handle's

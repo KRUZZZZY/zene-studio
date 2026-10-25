@@ -24,7 +24,6 @@
 
 #include "Sample.h"
 
-#include "ExportRenderSettings.h"
 
 namespace lmms {
 
@@ -103,22 +102,6 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 	if (!m_buffer || m_buffer->empty()) { return false; }
 
 	state->m_frameIndex = std::max<int>(m_startFrame, state->m_frameIndex);
-
-	/*! Explicit SRC quality (include/SrcQuality.h): the render's selected
-	 *  converter is what converts this sample.
-	 *
-	 *  The comparison is the whole cost on the render path and it is false for
-	 *  every render that does not ask for a non-default quality, so the
-	 *  default path neither re-creates the converter state nor changes a byte
-	 *  of output. The quality is set once per render by ProjectRenderer, not
-	 *  per buffer, so the filter history is never dropped mid-render.
-	 */
-	const auto requestedMode = AudioResampler::modeForSrcQuality(
-		ExportRenderSettings::srcQuality());
-	if (state->m_resampler.mode() != requestedMode)
-	{
-		state->m_resampler.setMode(requestedMode);
-	}
 
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / m_buffer->sampleRate();
 	const auto freqRatio = frequency() / DefaultBaseFreq;

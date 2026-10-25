@@ -53,6 +53,10 @@ public:
 	SlicerT(InstrumentTrack* instrumentTrack);
 
 	void deleteNotePluginData(NotePlayHandle* handle) override;
+	void applyConverterMode(AudioResampler::Mode mode) override;
+	auto prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool override;
+	void adoptPreparedConverterMode() noexcept override;
+	void discardPreparedConverterMode() noexcept override;
 
 	void saveSettings(QDomDocument& document, QDomElement& element) override;
 	void loadSettings(const QDomElement& element) override;
