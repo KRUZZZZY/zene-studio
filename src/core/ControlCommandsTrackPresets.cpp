@@ -59,7 +59,7 @@ ControlResult presetSave(const QJsonObject& args)
 	Track* track = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 	if (track == nullptr) { return error; }
 	const QString path = args.value(QStringLiteral("path")).toString();
-	if (!QFileInfo(path).isAbsolute()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'path' is an absolute file path")); }
+	if (!QFileInfo(path).isAbsolute()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'path' must be an absolute file path")); }
 	DataFile file(DataFile::Type::InstrumentTrackSettings);
 	QDomElement& content = file.content();
 	track->savePreset(file, content);
