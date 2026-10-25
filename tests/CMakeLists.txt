@@ -2182,6 +2182,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
+	# cluster new-p23-37: the replacement regression loads a real amplifier device.
+	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
 	# so a targeted build has to bring that module up first.
 	if(LMMS_TEST_NAME STREQUAL "UnmuteChaseTest")

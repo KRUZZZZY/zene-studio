@@ -41,8 +41,10 @@
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
 #include "DataFile.h"
+#include "Engine.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "Song.h"
 #include "Track.h"
 
 namespace lmms
@@ -122,6 +124,7 @@ ControlResult pluginReplace(const QJsonObject& args)
 	journalEffectRemoval(chain, old, slot + 1);
 	chain->removeEffect(old);
 	old->deleteLater();
+	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("target"), target.id}, {QStringLiteral("plugin"), effectIdOf(fresh)}, {QStringLiteral("index"), slot},
 		{QStringLiteral("device"), deviceId(deviceIndex)}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("target"), target.id}}, QStringLiteral("control.undo"), {},
