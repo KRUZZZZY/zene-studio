@@ -18,6 +18,10 @@ The declaration now represents omission with `std::optional<tick_t>` and default
 | Audio-thread constraints | This writer remains on the GUI/control consumer path as documented in its header. `std::optional<tick_t>` is stack value handling; no audio-thread path, allocation, locking, waiting, or logging was added. |
 | Build/platform | Rebuilt the configured Linux C++20 `zene` target and `RetroMidiCaptureCommandsTest`, which compile all three header consumers (`ControlCommandsMidi.cpp`, `ControlCommandsSessionCapture.cpp`, and the test). The API uses standard C++20 `std::optional`; other platform toolchains were not available in this worktree. |
 
+## Gate blocker repair
+
+The first feature check found two failures caused by source registration: the modified test had no `tests/upstream-modifications.txt` entry, and `tests/all-sources.txt` still listed 1,148 vendored `plugins/SfzPlayer/sfizz/` files even though its own header excludes that tree. The test registration was added in commit `c2ec522c9`. The manifest entry list was regenerated with its documented recipe; the header and gate thresholds were left unchanged. A diff check confirmed that all 1,148 removed entries were under the excluded sfizz path and that no entries were added. The manifest now reproduces and the feature gates pass.
+
 ## Command evidence
 
 All build and test output was written under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs`.
@@ -37,13 +41,35 @@ All build and test output was written under `/home/kruzzzzy/.local/share/zene-bu
 | Final build after proof | `cmake --build build --target zene RetroMidiCaptureCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/build-6.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/build-6.log; echo EXIT=$result` | 0 | `zene` and capture test target rebuilt. |
 | Final capture family | `ctest -R '^RetroMidiCaptureCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-5.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-5.log; echo EXIT=$result` | 0 | CTest 1/1 passed. |
 | QtTest case count | `ctest -V -R '^RetroMidiCaptureCommandsTest$' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-6.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-6.log; echo EXIT=$result` | 0 | QtTest totals: 19 passed, 0 failed; CTest 1/1 passed. |
-| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p16-189 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/gate-1.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/gate-1.log; echo EXIT=$result` | 1 | `fork-sources` and `all-sources-reproduce` fail because the unchanged `tests/all-sources.txt` contains tracked vendored sfizz entries excluded by its documented regeneration recipe. Other reported gates pass, including complexity and file length. No gate baseline or manifest was re-anchored. |
+| Pre-repair manifest reproduction | `bash tests/all-sources-reproduce.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-7.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-7.log; echo EXIT=$result` | 1 | Confirmed the blocker before editing the manifest. |
+| Generate manifest entries from the documented recipe | `{ git ls-files '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp' | grep -vE '^(src/3rdparty/|tests/reference/|plugins/NeuralAmp/(rtneural|nam|tests)/|plugins/RnnoiseDenoiser/rnnoise/|plugins/SfzPlayer/sfizz/)' ; git ls-files tests/control-detect-commands.py tests/control_detect_fixtures.py ; } | LC_ALL=C sort -u > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/all-sources-generated-1.txt; result=$?; echo EXIT=$result` | 0 | Used as the entry list; the existing comment header was preserved byte-for-byte. |
+| Rewrite manifest entries, preserving its header | `python3` heredoc shown below | 0 | The recipe's output replaced only the manifest's data entries. |
+| Post-repair manifest reproduction | `bash tests/all-sources-reproduce.sh > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-8.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-8.log; echo EXIT=$result` | 0 | `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` |
+| Focused rebuild after registry repair | `cmake --build build --target zene RetroMidiCaptureCommandsTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/build-7.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/build-7.log; echo EXIT=$result` | 0 | Rebuilt both focused targets. |
+| Focused capture test after registry repair | `ctest -R '^RetroMidiCaptureCommandsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-9.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/test-9.log; echo EXIT=$result` | 0 | CTest 1/1 passed. |
+| Final feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p16-189 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/gate-7.log 2>&1; result=$?; echo EXIT=$result >> /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/gate-7.log; echo EXIT=$result` | 0 | Every gate passes; complexity and file-length report no new item. |
+
+The manifest rewrite command was:
+
+```sh
+python3 - <<'PY'
+from pathlib import Path
+manifest = Path('tests/all-sources.txt')
+generated = Path('/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-189.r1/logs/all-sources-generated-1.txt').read_bytes()
+data = manifest.read_bytes()
+lines = data.splitlines(keepends=True)
+first_entry = next(i for i, line in enumerate(lines) if line.strip() and not line.lstrip().startswith(b'#'))
+manifest.write_bytes(b''.join(lines[:first_entry]) + generated)
+PY
+```
 
 ## Files committed
 
 - `include/RetroMidiClipWriter.h`
 - `src/core/RetroMidiClipWriter.cpp`
 - `tests/src/core/RetroMidiCaptureCommandsTest.cpp`
+- `tests/upstream-modifications.txt` (test registration, commit `c2ec522c9`)
+- `tests/all-sources.txt` (entry list regenerated from its documented recipe)
 - `docs/qwen-fixes-2026-10/cluster-new-p16-189.md`
 
 ## Self-check
@@ -54,4 +80,4 @@ All build and test output was written under `/home/kruzzzzy/.local/share/zene-bu
 4. **Compatibility:** the change adds no project data, serialization, loader, or renderer changes and adds no limit. Explicit end ticks retain the prior `max(start, edge)` clamp; only omitted edges stop treating `-1` as a tick. The existing project load/save paths were not changed.
 5. **Verdict evidence:** this finding is REAL, so the conditional ALREADY-FIXED/FALSE-POSITIVE citation does not apply. The intended omitted-edge contract is `include/RetroMidiClipWriter.h:68-70`; the prior implementation contradicted it at `src/core/RetroMidiClipWriter.cpp:141` by treating `-1` as an edge. The red test proves the user-visible length error.
 
-The feature gate still exits 1 because its unchanged `tests/all-sources.txt` is out of sync with its documented regeneration recipe, which excludes vendored sfizz files. Correcting that source-scope manifest would be an unrelated whole-tree gate re-anchor, so it was left untouched and the gate failure is reported rather than hidden.
+The feature gate now exits 0. The source registry repair follows the manifest's existing first-party scope and its documented recipe; it did not change gate limits, complexity baselines, or file-length baselines.
