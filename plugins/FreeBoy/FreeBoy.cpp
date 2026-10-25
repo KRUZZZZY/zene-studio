@@ -58,7 +58,6 @@ constexpr blip_time_t FRAME_LENGTH = 70224;
 constexpr long CLOCK_RATE = 4194304;
 constexpr int BUFFER_LENGTH_MS = 25;
 constexpr std::size_t VOICE_POOL_CAPACITY = 1024;
-char noFreeBoyVoiceMarker;
 }
 
 class FreeBoyVoicePool
@@ -355,16 +354,10 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 	int data = 0;
 	int freq = nph->frequency();
 
-	if (nph->m_pluginData == &noFreeBoyVoiceMarker) { return; }
-
 	if (!nph->m_pluginData)
 	{
 		auto voice = m_voicePool->acquire();
-		if (!voice)
-		{
-			nph->m_pluginData = &noFreeBoyVoiceMarker;
-			return;
-		}
+		if (!voice) { return; }
 		auto papu = &voice->apu;
 
 		// Master sound circuitry power control
@@ -535,7 +528,7 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 void FreeBoyInstrument::deleteNotePluginData(NotePlayHandle* nph)
 {
-	if (!nph->m_pluginData || nph->m_pluginData == &noFreeBoyVoiceMarker) { return; }
+	if (!nph->m_pluginData) { return; }
 	FreeBoyVoicePool::release(static_cast<FreeBoyVoicePool::Voice*>(nph->m_pluginData));
 }
 
