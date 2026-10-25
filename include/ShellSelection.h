@@ -39,8 +39,8 @@ namespace lmms::gui
 //! What the user is working on: one track and, optionally, one clip on it - or one mixer channel. The Inspector and
 //! the Device panel show whatever this says; a click on a track header, opening a clip in the
 //! note editor and window.select (the agent's way) all set it. Interface state, not project
-//! state. Pointers are QPointers: destroying either selected object clears the selection and
-//! emits changed(), so listeners can drop the deleted content.
+//! state. A destroyed track clears the selection; a destroyed clip clears the clip and emits
+//! changed(), leaving its still-live track selected.
 class LMMS_EXPORT ShellSelection : public QObject
 {
 	Q_OBJECT

@@ -234,13 +234,15 @@ private slots:
 		ShellSelection* selection = ShellSelection::instance();
 		auto* oldTrack = Track::create(Track::Type::Instrument, Engine::getSong());
 		auto* selectedTrack = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* selectedClip = selectedTrack->createClip(TimePos(0));
 		selection->setTrack(oldTrack);
-		selection->setTrack(selectedTrack);
+		selection->setClip(selectedClip);
 		QSignalSpy changed(selection, &ShellSelection::changed);
 
 		delete oldTrack;
 		QCOMPARE(changed.count(), 0);
 		QCOMPARE(selection->track(), selectedTrack);
+		QCOMPARE(selection->clip(), selectedClip);
 
 		delete selectedTrack;
 		QCOMPARE(changed.count(), 1);
@@ -264,9 +266,11 @@ private slots:
 
 		delete selectedClip;
 		QCOMPARE(changed.count(), 1);
-		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
+		QCOMPARE(selection->track(), track);
 		QVERIFY(selection->clip() == nullptr);
 		delete track;
+		QCOMPARE(changed.count(), 2);
+		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
 	}
 
 	void theInspectorEditsThroughTheCommands()

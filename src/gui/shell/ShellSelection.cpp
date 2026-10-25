@@ -102,8 +102,15 @@ void ShellSelection::watchSelectedObjects()
 	m_trackDestroyedConnection = {};
 	m_clipDestroyedConnection = {};
 	const auto clear = [this] { clearDestroyedSelection(); };
-	if (m_track != nullptr) { m_trackDestroyedConnection = connect(m_track, &QObject::destroyed, this, clear); }
-	if (m_clip != nullptr) { m_clipDestroyedConnection = connect(m_clip, &QObject::destroyed, this, clear); }
+	if (m_track != nullptr) { m_trackDestroyedConnection = connect(m_track, &Track::destroyedTrack, this, clear); }
+	if (m_clip != nullptr)
+	{
+		m_clipDestroyedConnection = connect(m_clip, &QObject::destroyed, this, [this] {
+			m_clipDestroyedConnection = {};
+			m_clip = nullptr;
+			emit changed();
+		});
+	}
 }
 
 void ShellSelection::clearDestroyedSelection()
