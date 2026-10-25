@@ -66,8 +66,8 @@ The pre-report feature gate run passed (logs/032-feature-check-pre-report-fixed.
 
 | Final check | Command | Exit | Log |
 | --- | --- | ---: | --- |
-| feature gates | python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3776 | 0 | logs/034-feature-check-final.log |
-| completion check | python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3776 3776 | 0 | logs/035-submit-check-final.log |
+| feature gates | python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3776 | 0 | logs/036-feature-check-final.log |
+| completion check | python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-3776 3776 | 0 | logs/037-submit-check-final.log |
 
 The initial gate run found that tests/all-sources.txt carried 1,148 vendored sfizz entries excluded by its own recipe. The manifest was regenerated verbatim from that recipe; tests/upstream-modifications.txt records the reason. This gate-only inventory repair changes no product source or ratchet baseline.
 
@@ -80,6 +80,7 @@ Build/test output is in /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/377
 3. Cause and callers: quietRuns has one caller, removeSilence. transientsAround has one caller, nextTransient; next and previous both select from its output, so the interval check covers both directions. The min-frame change is local to the same validated command argument.
 4. Collateral and realtime: these control-command paths run on the control thread. No audio-thread code, allocation, lock, wait, I/O, signal, undo mechanism, or saved project format was changed. The frame check only changes runs below the requested duration; the transient check only excludes ticks outside the visible clip. Existing normal, no-match, no-audio, forward/backward, and undo coverage passed with ArrangeToolsTest. The configured Linux/Qt build was verified; no MSVC or macOS build environment was available. The only new API used is standard C++20 std::ceil from <cmath>.
 5. False-positive evidence for 3776: ControlSchema::finishResult strips the private handler payload by design, while ControlRegistry records a reversible fallback for a true-inverse command with a journal step and control.transactions exposes that record. The Track checkpoint contract row and the command's addUndoStep are cited above.
+6. Siblings: clip.list is read-only and track.folder_move uses separate position and track-checkpoint logic; neither calls the edited helpers. clip.remove_silence is the only quietRuns caller. arrangement.next_transient is the only transientsAround caller, and its next and previous directions both use the filtered list. The listed arrangement.fit_tracks, arrangement.get_state, arrangement.modes, arrangement.modifier_tools, arrangement.navigator, arrangement.nudge, arrangement.ruler_lanes, arrangement.scroll, arrangement.select_clip, arrangement.set_tool, arrangement.zoom, arrangement.zoom_back, arrangement.zoom_forward, and arrangement.zoom_toggle commands live on other command paths and do not map transient ticks or convert a tick duration to sample frames, so they are unaffected.
 
 ## Files committed
 
