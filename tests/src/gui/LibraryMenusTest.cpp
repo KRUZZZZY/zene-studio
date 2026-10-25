@@ -66,6 +66,7 @@
 #include "ControlRegistry.h"
 #include "EditLocks.h"
 #include "Engine.h"
+#include "GuiTestApplication.h"
 #include "LibraryCommandMenus.h"
 #include "MenuTestSupport.h"
 #include "ProjectInfo.h"
@@ -194,7 +195,7 @@ private slots:
 		// file the Search view's queries can actually find.
 		qputenv("ZENE_BROWSER_COLLECTIONS", m_dir.filePath(QStringLiteral("collections.json")).toLocal8Bit());
 		qputenv("ZENE_BROWSER_INDEX", m_dir.filePath(QStringLiteral("index.json")).toLocal8Bit());
-		Engine::init(true);
+		guitest::startGui(m_dir);
 		ConfigManager::inst()->setWorkingDir(m_dir.filePath(QStringLiteral("work")));
 		QVERIFY(BrowserTagStore::instance().openAt(m_dir.filePath(QStringLiteral("browser-tags.json"))));
 		ControlRegistry::setReady(true);
@@ -290,6 +291,39 @@ private slots:
 
 		chosen->trigger();  // choosing the type already chosen leaves it ticked
 		QCOMPARE(ticked(), QStringList{other});
+	}
+
+	void aSettingsCommandSwitchesToItsDocumentView()
+	{
+		QVERIFY(run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), QStringLiteral("production")}}).ok);
+		QVERIFY(run(QStringLiteral("window.set_view"), {{QStringLiteral("view"), QStringLiteral("arrange")}}).ok);
+		QCOMPARE(run(QStringLiteral("window.get_state")).result.value(QStringLiteral("view")).toString(), QStringLiteral("arrange"));
+
+		const ControlResult changed = run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), QStringLiteral("mastering")}});
+		QVERIFY2(changed.ok, qPrintable(changed.errorMessage));
+		QCOMPARE(ProjectInfo::instance().documentType(), QStringLiteral("mastering"));
+		QCOMPARE(run(QStringLiteral("window.get_state")).result.value(QStringLiteral("view")).toString(), QStringLiteral("mix"));
+
+		QVERIFY(run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), QStringLiteral("mastering")}}).ok);
+		const ControlResult invalid = run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), QStringLiteral("portrait")}});
+		QVERIFY(!invalid.ok);
+		QCOMPARE(ProjectInfo::instance().documentType(), QStringLiteral("mastering"));
+		QCOMPARE(run(QStringLiteral("window.get_state")).result.value(QStringLiteral("view")).toString(), QStringLiteral("mix"));
+	}
+
+	void loadingDefaultProductionRestoresArrangeView()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("production.mmp"));
+		QVERIFY(run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), QStringLiteral("production")}}).ok);
+		QVERIFY2(Engine::getSong()->guiSaveProjectAs(path), "the production project fixture was not saved");
+
+		QVERIFY(run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), QStringLiteral("mastering")}}).ok);
+		QVERIFY(run(QStringLiteral("window.set_view"), {{QStringLiteral("view"), QStringLiteral("mix")}}).ok);
+		QCOMPARE(run(QStringLiteral("window.get_state")).result.value(QStringLiteral("view")).toString(), QStringLiteral("mix"));
+
+		Engine::getSong()->loadProject(path);
+		QCOMPARE(ProjectInfo::instance().documentType(), QStringLiteral("production"));
+		QCOMPARE(run(QStringLiteral("window.get_state")).result.value(QStringLiteral("view")).toString(), QStringLiteral("arrange"));
 	}
 
 	void theTitleNamesANonDefaultDocumentType()  // 0.5.0 F3: WF-048 (production, the default, is untagged)
