@@ -250,7 +250,8 @@ absl::optional<sfz::FileInformation> getReaderInformation(sfz::AudioReader* read
         return {};
 
     sfz::FileInformation returnedValue;
-    returnedValue.end = static_cast<uint32_t>(reader->frames()) - 1;
+    const auto frameCount = reader->frames();
+    returnedValue.end = frameCount > 0 ? frameCount - 1 : 0;
     returnedValue.sampleRate = static_cast<double>(reader->sampleRate());
     returnedValue.numChannels = static_cast<int>(channels);
 

@@ -118,6 +118,20 @@ private slots:
 		QVERIFY(std::abs(data->preloadedData.getSpan(0)[2] - 0.5f) < 0.001f);
 	}
 
+	void emptySampleEndIsNotUnderflowed()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		QVERIFY(writeMonoWave(directory.filePath(QStringLiteral("empty.wav")), {}));
+
+		sfz::FilePool pool;
+		pool.setRootDirectory(fs::path(directory.path().toStdString()));
+		const auto information = pool.getFileInformation(sfz::FileId("empty.wav"));
+		QVERIFY(information);
+		QCOMPARE(information->end, int64_t(0));
+		QVERIFY(!pool.getFileInformation(sfz::FileId("missing.wav")));
+	}
+
 	void clearDrainsQueuedFilePointers()
 	{
 		sfz::FilePool pool;
