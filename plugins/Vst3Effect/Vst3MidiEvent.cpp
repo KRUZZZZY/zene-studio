@@ -156,8 +156,18 @@ auto midiToVst3Event(const MidiEventIn& midi, int32 busIndex, int32 noteId, Even
 	}
 }
 
+namespace
+{
+
+void flushMappedParameters(MidiControllerMap* controllers, IParameterChanges* changes)
+{
+	if (controllers != nullptr) { controllers->flush(changes); }
+}
+
+} // namespace
+
 auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
-	EventList& events, int32 busIndex, int frames, const MidiControllerMap* controllers,
+	EventList& events, int32 busIndex, int frames, MidiControllerMap* controllers,
 	IParameterChanges* changes, int maxEvents) -> int
 {
 	const auto capacity = maxEvents < 0
@@ -197,6 +207,8 @@ auto drainMidiIntoEventList(MidiQueue& queue, std::vector<MidiEventIn>& scratch,
 		event.sampleOffset = std::clamp(scratch[i].frameOffset, 0, frames);
 		events.addEvent(event);
 	}
+	// A parameter whose queue filled up gets its newest controller point now, at its own frame.
+	flushMappedParameters(controllers, changes);
 	return static_cast<int>(count);
 }
 

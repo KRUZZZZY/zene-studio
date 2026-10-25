@@ -117,6 +117,22 @@ public:
 	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return nullptr; }
 };
 
+//! A second controller assignment for the same parameter, as IMidiMapping permits.
+class AliasedMappingController : public MappingController
+{
+public:
+	Steinberg::tresult PLUGIN_API getMidiControllerAssignment(Steinberg::int32 busIndex,
+		Steinberg::int16 channel, Steinberg::Vst::CtrlNumber number, Steinberg::Vst::ParamID& id) override
+	{
+		if (channel == 3 && number == 75)
+		{
+			id = 74;
+			return Steinberg::kResultTrue;
+		}
+		return MappingController::getMidiControllerAssignment(busIndex, channel, number, id);
+	}
+};
+
 //! The queue @a changes holds for parameter @a id, or nullptr.
 auto queueFor(Steinberg::Vst::IParameterChanges& changes, Steinberg::Vst::ParamID id) -> Steinberg::Vst::IParamValueQueue*
 {
@@ -162,6 +178,8 @@ private slots:
 	void testMappedControllersKeepTheirFrame();
 	void testParameterChangesAreSlicedPerChunk();
 	void testAFullParameterQueueKeepsTheNewestValue();
+	void testAliasedControllersKeepNewestDeferredPoint();
+	void testRebuildingControllerMapClearsDeferredPoints();
 	void testPrepareRejectsInvalidRequests();
 	void testComponentHandlerAnswersInterfaceQueries();
 	void testNonFiniteParameterValuesAreRefused();
@@ -428,18 +446,75 @@ void Vst3HostTest::testParameterChangesAreSlicedPerChunk()
 }
 
 /*! 0.5.0 W4: a burst of controller points never grows a parameter's queue past the points the SDK
- *  reserves (no allocation on the audio thread); the newest value is kept, on the last kept point. */
+ *  reserves (no allocation on the audio thread), and the newest value takes effect at its OWN frame:
+ *  the first points keep theirs, the later ones are coalesced and the newest is written last. */
 void Vst3HostTest::testAFullParameterQueueKeepsTheNewestValue()
 {
-	Steinberg::Vst::ParameterChanges changes(1);
-	Steinberg::int32 index = 0;
-	auto* queue = changes.addParameterData(7, index);
-	for (int i = 0; i < kMaxPointsPerParameter + 3; ++i) { addBoundedPoint(queue, i * 10, i / 10.0); }
-	QCOMPARE(queue->getPointCount(), kMaxPointsPerParameter);
-	QCOMPARE(pointOf(queue, 0), std::make_pair(Steinberg::int32{0}, 0.0));
-	const auto last = pointOf(queue, kMaxPointsPerParameter - 1);
-	QCOMPARE(last.first, Steinberg::int32{(kMaxPointsPerParameter - 1) * 10});
-	QCOMPARE(last.second, (kMaxPointsPerParameter + 2) / 10.0);
+	MappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	constexpr int Frames = 1024;
+	constexpr int Events = kMaxPointsPerParameter + 2;
+	auto queue = std::make_unique<MidiQueue>();
+	for (int i = 0; i < Events; ++i)
+	{
+		const bool newest = i == Events - 1;
+		QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74,
+			static_cast<std::uint8_t>(newest ? 127 : 0), 100 * (i + 1)}));
+	}
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	Steinberg::Vst::ParameterChanges changes(4);
+	QCOMPARE(drainMidiIntoEventList(*queue, scratch, events, 0, Frames, &map, &changes), Events);
+	auto* timbre = queueFor(changes, 74);
+	QVERIFY(timbre != nullptr);
+	QCOMPARE(timbre->getPointCount(), kMaxPointsPerParameter);
+	QCOMPARE(pointOf(timbre, 0), std::make_pair(Steinberg::int32{100}, 0.0));
+	QCOMPARE(pointOf(timbre, kMaxPointsPerParameter - 1), std::make_pair(Steinberg::int32{100 * Events}, 1.0));
+}
+
+void Vst3HostTest::testAliasedControllersKeepNewestDeferredPoint()
+{
+	AliasedMappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	constexpr int Frames = 1024;
+	auto queue = std::make_unique<MidiQueue>();
+	for (int i = 0; i < kMaxPointsPerParameter - 1; ++i)
+	{
+		QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74, 0, 100 * (i + 1)}));
+	}
+	QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 74, 0, 500}));
+	QVERIFY(queue->push({static_cast<std::uint8_t>(MidiControlChange), 3, 75, 127, 600}));
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	Steinberg::Vst::ParameterChanges changes(4);
+	QCOMPARE(drainMidiIntoEventList(*queue, scratch, events, 0, Frames, &map, &changes), kMaxPointsPerParameter + 1);
+	auto* timbre = queueFor(changes, 74);
+	QVERIFY(timbre != nullptr);
+	QCOMPARE(timbre->getPointCount(), kMaxPointsPerParameter);
+	QCOMPARE(pointOf(timbre, kMaxPointsPerParameter - 1), std::make_pair(Steinberg::int32{600}, 1.0));
+}
+
+void Vst3HostTest::testRebuildingControllerMapClearsDeferredPoints()
+{
+	MappingController controller;
+	MidiControllerMap map;
+	map.build(&controller, 0);
+	Steinberg::Vst::ParameterChanges changes(4);
+	const MidiEventIn timbre{static_cast<std::uint8_t>(MidiControlChange), 3, 74, 0, 0};
+	for (int i = 0; i < kMaxPointsPerParameter; ++i) { QVERIFY(map.apply(timbre, &changes, 100 * (i + 1))); }
+	auto* queue = queueFor(changes, 74);
+	QVERIFY(queue != nullptr);
+	QVERIFY(queue->getPointCount() > 0);
+
+	map.build(&controller, 0);
+	MidiQueue emptyQueue;
+	std::vector<MidiEventIn> scratch(kMaxMidiEventsPerBlock);
+	Steinberg::Vst::EventList events{kMaxMidiEventsPerBlock};
+	Steinberg::Vst::ParameterChanges nextChanges(4);
+	QCOMPARE(drainMidiIntoEventList(emptyQueue, scratch, events, 0, 1024, &map, &nextChanges), 0);
+	QCOMPARE(nextChanges.getParameterCount(), 0);
 }
 
 void Vst3HostTest::testPrepareRejectsInvalidRequests()
