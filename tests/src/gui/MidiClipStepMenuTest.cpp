@@ -39,6 +39,7 @@
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
 #include "MidiClip.h"
+#include "MidiClipControllers.h"
 #include "MidiClipView.h"
 #include "Note.h"
 #include "Song.h"
@@ -118,6 +119,79 @@ private slots:
 		Engine::getSong()->clearProject();
 		m_track = Track::create(Track::Type::Instrument, Engine::getSong());
 		QCoreApplication::processEvents();
+	}
+
+	//! The paint loop may visit steps only when their button image has at least one horizontal pixel.
+	//! This bounds a narrow view's work without a timing assertion, even for the maximum loaded count.
+	void beatPaintingSkipsStepsWithoutAWholePixel()
+	{
+		QCOMPARE(MidiClipView::beatStepCountToPaint(16, 64), 16);
+		QCOMPARE(MidiClipView::beatStepCountToPaint(16, 8), 0);
+		QCOMPARE(MidiClipView::beatStepCountToPaint(64, 32), 0);
+		QCOMPARE(MidiClipView::beatStepCountToPaint(64, 128), 64);
+		QCOMPARE(MidiClipView::beatStepCountToPaint(5'000'000, 1000), 0);
+		QCOMPARE(MidiClipView::beatStepCountToPaint(64, 0), 0);
+	}
+
+	//! Merge preserves each lane kind and clips/rebases a nonzero source window; later input wins at a shared tick.
+	void mergingClipsKeepsAndRebasesControllerLanes()
+	{
+		auto* a = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(0)));
+		QVERIFY(a != nullptr);
+		a->changeLength(TimePos(Bar));
+		a->setAutoResize(false);
+		a->setControllerPoints(ControllerKind::ControlChange, 74, {{0, 20}, {96, 90}, {192, 100}});
+		a->setControllerPoints(ControllerKind::PitchBend, 0, {{0, 8192}, {192, 10000}});
+
+		auto* b = dynamic_cast<MidiClip*>(m_track->createClip(TimePos(Bar / 2)));
+		QVERIFY(b != nullptr);
+		b->changeLength(TimePos(Bar));
+		b->setAutoResize(false);
+		b->setStartTimeOffset(TimePos(-24));
+		b->setControllerPoints(ControllerKind::ControlChange, 74, {{24, 40}, {72, 120}, {216, 80}});
+		b->setControllerPoints(ControllerKind::ChannelPressure, 0, {{0, 10}, {192, 70}});
+		b->setControllerPoints(ControllerKind::ProgramChange, 0, {{0, 5}, {48, 11}, {192, 13}});
+
+		m_editor->realignTracks();
+		QCoreApplication::processEvents();
+		MidiClipView* aView = viewOf(a);
+		MidiClipView* bView = viewOf(b);
+		QVERIFY(aView != nullptr && bView != nullptr);
+
+		MidiClipView::mergeClips(QVector<ClipView*>{aView, bView});
+		QCoreApplication::processEvents();
+
+		QCOMPARE(m_track->numOfClips(), 1);
+		const auto* merged = static_cast<const MidiClip*>(m_track->getClip(0));
+		const ControllerLane* cc = merged->controllers().lane(ControllerKind::ControlChange, 74);
+		QVERIFY2(cc != nullptr, "the merge dropped the controller lane");
+		QCOMPARE(cc->points.size(), std::size_t{5});
+		QCOMPARE(cc->points[0].tick, tick_t{0});
+		QCOMPARE(cc->points[0].value, 20);
+		QCOMPARE(cc->points[1].tick, tick_t{96});
+		QCOMPARE(cc->points[1].value, 40); // later clip wins the overlapping tick
+		QCOMPARE(cc->points[2].tick, tick_t{144});
+		QCOMPARE(cc->points[2].value, 120);
+		QCOMPARE(cc->points[3].tick, tick_t{192});
+		QCOMPARE(cc->points[3].value, 100);
+		QCOMPARE(cc->points[4].tick, tick_t{288});
+		QCOMPARE(cc->points[4].value, 80);
+
+		const ControllerLane* pitch = merged->controllers().lane(ControllerKind::PitchBend, 0);
+		QVERIFY(pitch != nullptr);
+		QCOMPARE(pitch->points.front().tick, tick_t{0});
+		QCOMPARE(pitch->points.front().value, 8192);
+		QCOMPARE(pitch->points.back().tick, tick_t{192});
+		QCOMPARE(pitch->points.back().value, 10000);
+		const ControllerLane* pressure = merged->controllers().lane(ControllerKind::ChannelPressure, 0);
+		QVERIFY(pressure != nullptr);
+		QCOMPARE(pressure->points.front().tick, tick_t{96});
+		const ControllerLane* program = merged->controllers().lane(ControllerKind::ProgramChange, 0);
+		QVERIFY(program != nullptr);
+		QCOMPARE(program->points.front().tick, tick_t{96});
+		QCOMPARE(program->points.front().value, 5);
+		QCOMPARE(program->points[1].tick, tick_t{120});
+		QCOMPARE(program->points[1].value, 11);
 	}
 
 	//! A beat clip with the most steps a project may load, and a cursor far across it: the step menu's

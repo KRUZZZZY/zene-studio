@@ -428,6 +428,27 @@ void MidiClipView::mergeClips(QVector<ClipView*> clipvs)
 			}
 		}
 
+		// Merge the visible controller window in the same song-time frame as this clip's notes.
+		// setControllerPoints keeps one point per tick, so a later clip in clipvs wins a collision.
+		const tick_t controllerStart = -mcView->getMidiClip()->startTimeOffset().getTicks();
+		const tick_t controllerEnd = mcView->getMidiClip()->length().getTicks()
+			- mcView->getMidiClip()->startTimeOffset().getTicks();
+		const tick_t controllerShift = mcView->getMidiClip()->startPosition().getTicks() - earliestPos.getTicks();
+		for (const ControllerLane& lane : mcView->getMidiClip()->controllers().lanes())
+		{
+			std::vector<ControllerPoint> points;
+			if (const ControllerLane* existing = newMidiClip->controllers().lane(lane.kind, lane.controller))
+			{
+				points = existing->points;
+			}
+			for (ControllerPoint point : controllerSegment(lane, controllerStart, controllerEnd))
+			{
+				point.tick += controllerShift;
+				points.push_back(point);
+			}
+			newMidiClip->setControllerPoints(lane.kind, lane.controller, std::move(points));
+		}
+
 		// We disable the journalling system before removing, so the
 		// removal doesn't get added to the undo/redo history
 		clipv->getClip()->saveJournallingState(false);
@@ -646,6 +667,13 @@ static int computeNoteRange(int minKey, int maxKey)
 	return (maxKey - minKey) + 1;
 }
 
+
+int MidiClipView::beatStepCountToPaint(int steps, int drawableWidth)
+{
+	const int stepCount = std::max(1, steps);
+	return drawableWidth / stepCount > 0 ? stepCount : 0;
+}
+
 void MidiClipView::paintEvent( QPaintEvent * )
 {
 	QPainter painter( this );
@@ -738,6 +766,7 @@ void MidiClipView::paintEvent( QPaintEvent * )
 		QPixmap stephighlight;
 		const int steps = std::max(1, m_clip->m_steps);
 		const int w = width() - 2 * BORDER_WIDTH;
+		const int stepsToPaint = beatStepCountToPaint(steps, w);
 
 		// scale step graphics to fit the beat clip length
 		stepon0
@@ -751,7 +780,7 @@ void MidiClipView::paintEvent( QPaintEvent * )
 		stephighlight = m_stepBtnHighlight.scaled(
 			w / steps, m_stepBtnHighlight.height(), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
 
-		for (int it = 0; it < steps; it++)	// go through all the steps in the beat clip
+		for (int it = 0; it < stepsToPaint; it++)	// go through the steps with visible buttons
 		{
 			Note* n = m_clip->noteAtStep(it);
 
