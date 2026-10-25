@@ -415,6 +415,21 @@ private slots:
 		QCOMPARE(track->getClips().size(), std::size_t{1});  // untouched
 	}
 
+	//! ED-040: a minimum duration in ticks must include a partial source frame.
+	void aQuietStretchShorterThanOneTickIsNotRemoved()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		constexpr int sampleRate = 44101;
+		const float framesPerTick = Engine::framesPerTick(sampleRate);
+		const int quietFrames = static_cast<int>(framesPerTick);
+		QVERIFY(framesPerTick > static_cast<float>(quietFrames));  // this sample rate makes one tick fractional
+		SampleClip* clip = loudQuietLoudAtRate(track, sampleRate, 8, quietFrames);
+		const ControlResult result = run(QStringLiteral("clip.remove_silence"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("min_length"), 1}});
+		QCOMPARE(result.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(track->getClips().size(), std::size_t{1});  // the clip was not cut
+	}
+
 	//! ED-036: a 'track' that names nothing must not read as an empty track. automation.get_state
 	//! (ControlCommandsAutomation.cpp:129) already refuses a filter that matched nothing.
 	void aClipListRefusesATrackThatIsNotThere()
