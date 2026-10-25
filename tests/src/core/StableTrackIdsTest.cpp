@@ -34,6 +34,8 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 
+#include <limits>
+
 #include "ControlRegistry.h"
 #include "DataFile.h"
 #include "DummyEffect.h"
@@ -478,6 +480,37 @@ private slots:
 		// a new track never takes a number the counter has passed
 		const int fresh = Track::create(Track::Type::Instrument, song)->id();
 		QVERIFY(!repaired.contains(fresh));
+	}
+
+	//! A missing track id can inherit INT_MAX when it follows a stored maximum
+	//! id. Both its load assignment and the duplicate-id repair must saturate the
+	//! project counter rather than wrapping it negative.
+	void aMaximumKeptLoadIdDoesNotWrapTheCounter()
+	{
+		const int maximum = std::numeric_limits<int>::max();
+		const QString maxText = QString::number(maximum);
+		const QString path = writeTemp(QStringLiteral("maximum-load-id.mmp"),
+			QStringLiteral(
+				"<?xml version=\"1.0\"?>\n"
+				"<lmms-project version=\"75\" type=\"song\" creator=\"LMMS\" "
+				"creatorversion=\"1.2.0\" next-id=\"%1\">\n"
+				"  <head/>\n"
+				"  <song>\n"
+				"    <trackcontainer type=\"song\">\n"
+				"      <track type=\"0\" name=\"A\" muted=\"0\" id=\"%2\">\n"
+				"        <instrumenttrack/>\n"
+				"      </track>\n"
+				"      <track type=\"0\" name=\"B\" muted=\"0\">\n"
+				"        <instrumenttrack/>\n"
+				"      </track>\n"
+				"    </trackcontainer>\n"
+				"  </song>\n"
+				"</lmms-project>\n").arg(maxText, maxText));
+
+		loadProject(path);
+		QCOMPARE(trackIds(), QVector<int>({maximum, maximum}));
+		QCOMPARE(ProjectIds::loadAssignments(), 2);
+		QCOMPARE(ProjectIds::next(), maximum);
 	}
 
 	//! Luna cluster 3324: the SAME rule the track and clip passes already
