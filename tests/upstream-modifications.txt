@@ -5123,3 +5123,4 @@ src/core/audio/AudioSoundIo.cpp	cluster 5039-port-port-port-port-port-port: the 
 docs/CRASH-REPORTER.md	cluster 5039-port-port-port-port-port-port: corrects the alternate-stack coverage statement and documents the per-thread registration points and plugin-thread limit.
 tests/src/core/CrashReporterTest.cpp	cluster 5039-port-port-port-port-port-port: verifies an unregistered thread has no alternate stack, a registered thread receives SA_ONSTACK on its own stack, and repeated install() registers its calling thread.
 tests/all-sources.txt	cluster 5039-port-port-port-port-port-port train-state repair: re-derived the whole-tree source manifest from its documented recipe, removing the tracked vendored sfizz paths the recipe explicitly excludes.
+tests/CMakeLists.txt	cluster new-p17-180: register the dedicated panner regression test target in LMMS_TESTS and apply the same offscreen Qt environment as adjacent GUI tests.
