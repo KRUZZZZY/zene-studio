@@ -146,6 +146,9 @@ struct FreeBoyVoicePoolRegistry
 			if (reaperPausedForTesting.load(std::memory_order_relaxed)) { continue; }
 #endif
 			const std::lock_guard lock{mutex};
+#ifdef LMMS_TESTING
+			if (reaperPausedForTesting.load(std::memory_order_relaxed)) { continue; }
+#endif
 			collectRetiredFreeBoyVoicePoolsLocked(*this);
 		}
 	}};
@@ -255,7 +258,12 @@ void PLUGIN_EXPORT lmms_freeboy_test_collect_voice_pools()
 
 void PLUGIN_EXPORT lmms_freeboy_test_pause_pool_reaper(bool pause)
 {
-	freeBoyVoicePoolRegistry().reaperPausedForTesting.store(pause, std::memory_order_relaxed);
+	auto& registry = freeBoyVoicePoolRegistry();
+	registry.reaperPausedForTesting.store(pause, std::memory_order_relaxed);
+	if (pause)
+	{
+		const std::lock_guard lock{registry.mutex};
+	}
 }
 
 #endif
