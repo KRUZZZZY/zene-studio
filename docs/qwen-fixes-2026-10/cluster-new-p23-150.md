@@ -41,7 +41,8 @@ RED/GREEN proof: The same test failed on the original implementation because the
 ## Verification
 
 - Final family command: `ctest -R '^MicrotunerScaleFileTest$' --output-on-failure` from `build/tests` — EXIT=0, 1/1 ctest targets passed. The direct test binary reports 7 passed, 0 failed (log `31-test-binary-full.log`).
-- Final gate command: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-150` — EXIT=0; all 8 rows PASS in `30-feature-check-after-manifest.log`.
+- Final gate command: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-150` — EXIT=0; all 8 rows PASS in `32-feature-check-final-precommit.log`.
+- Completion command: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-150 new-p23-150` — EXIT=0, PASS in `33-submit-check-first.log`.
 - The first gate run exited 1 because `tests/all-sources.txt` contained vendored sfizz paths excluded by its own recipe. Re-deriving the manifest from that published recipe exited 0; the final fork-sources and all-sources-reproduce checks pass. The manifest update is recorded in `tests/upstream-modifications.txt`.
 ## Self-check
 
