@@ -415,6 +415,21 @@ private slots:
 		QCOMPARE(track->getClips().size(), std::size_t{1});  // untouched
 	}
 
+	//! ED-040: a minimum duration in ticks must include a partial source frame.
+	void aQuietStretchShorterThanOneTickIsNotRemoved()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		constexpr int sampleRate = 44101;
+		const float framesPerTick = Engine::framesPerTick(sampleRate);
+		const int quietFrames = static_cast<int>(framesPerTick);
+		QVERIFY(framesPerTick > static_cast<float>(quietFrames));  // this sample rate makes one tick fractional
+		SampleClip* clip = loudQuietLoudAtRate(track, sampleRate, 8, quietFrames);
+		const ControlResult result = run(QStringLiteral("clip.remove_silence"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("min_length"), 1}});
+		QCOMPARE(result.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(track->getClips().size(), std::size_t{1});  // the clip was not cut
+	}
+
 	//! ED-036: a 'track' that names nothing must not read as an empty track. automation.get_state
 	//! (ControlCommandsAutomation.cpp:129) already refuses a filter that matched nothing.
 	void aClipListRefusesATrackThatIsNotThere()
@@ -446,6 +461,16 @@ private slots:
 		const int before = back.result.value(QStringLiteral("position_ticks")).toInt();
 		QVERIFY2(std::abs(before - 10) <= 6, qPrintable(QStringLiteral("previous transient at %1, burst at 10").arg(before)));
 		QCOMPARE(static_cast<int>(Engine::getSong()->getPlayPos().getTicks()), before);
+	}
+
+	void nextTransientDoesNotLeaveTheVisibleClip()
+	{
+		SampleClip* clip = test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
+		clip->setStartTimeOffset(TimePos(100));  // its later source bursts now map past the 200-tick clip end
+		Engine::getSong()->setPlayPos(170);      // still inside the visible clip
+		const ControlResult next = run(QStringLiteral("arrangement.next_transient"));
+		QCOMPARE(next.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(Engine::getSong()->getPlayPos().getTicks(), tick_t{170});  // no seek outside the clip
 	}
 
 	void aClipBecomesAScore()
