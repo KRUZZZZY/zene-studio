@@ -40,8 +40,8 @@ The deterministic matrix covers selected scale, absent scale fallback, explicit 
 | GREEN: `ctest -R '^(AppearanceStartupTest|MainCliStartupTest)$' --verbose` from `build/tests` (`39-test-regressions-final.log`); 2 CTest targets, 11 QtTest passes | 0 |
 | Related family: `ctest -R '^(MainWindowTest|MainWindowGeometryTest|RecordRemainingTest|CustomAccessTest|HelpAccessTest|TouchWorkspaceTest|WorkspaceAccessTest)$' --output-on-failure` from `build/tests` (`40-test-related-family-final.log`); 7/7 targets passed | 0 |
 | `git diff --check` | 0 |
-| Feature gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5110` (`44-feature-check-final.log`); all eight checks PASS | 0 |
-| Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5110 5110` (run after commit) | pending |
+| Feature gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5110` (`46-feature-check-final-report.log`); all eight checks PASS | 0 |
+| Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5110 5110` (`47-submit-check-committed.log`) | 0 |
 
 The first feature-check found that the inherited `tests/all-sources.txt` contained vendored sfizz files its own header recipe excludes. I regenerated that manifest from the published recipe, preserving its header and adding the two newly tracked startup-test sources; the excluded files are vendored dependencies and are outside the product scope. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5110.r1/logs`.
 
@@ -54,4 +54,19 @@ The first feature-check found that the inherited `tests/all-sources.txt` contain
 - ALREADY-FIXED evidence: 4203's pre-existing checks are at `src/core/main.cpp:788-793,818-824,843-848`; the tests fail when those checks are temporarily removed.
 - Registration: the two new test sources are in `tests/fork-sources.txt`; test targets are registered in `tests/CMakeLists.txt`; modified inherited files have reasons in `tests/upstream-modifications.txt`.
 - Feature check: all eight checks PASS, including `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, complexity, and file-length (EXIT 0).
-- Submit-check: run after commit; its result is recorded in the evidence table after execution.
+- Submit-check: all mechanical checks PASS on commit `a150d9e24` with a clean worktree (EXIT 0). Its five judgement questions are answered above with RED/GREEN logs, test setup, source line evidence, sibling-path review, and scope notes.
+
+## Files committed
+
+Commit `a150d9e24` (`fix: cluster 5110 startup and CLI failure handling`) contains:
+
+- `include/Appearance.h`
+- `src/core/Appearance.cpp`
+- `src/core/main.cpp`
+- `tests/CMakeLists.txt`
+- `tests/src/core/AppearanceStartupTest.cpp`
+- `tests/src/core/MainCliStartupTest.cpp`
+- `tests/fork-sources.txt`
+- `tests/all-sources.txt` (re-derived from its documented recipe for the source-registration gate)
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-5110.md`
