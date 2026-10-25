@@ -109,9 +109,15 @@ std::vector<tick_t> transientsAround(tick_t tick)
 		for (Clip* clip : track->getClips())
 		{
 			auto* audio = dynamic_cast<SampleClip*>(clip);
-			if (audio == nullptr || tick < clip->startPosition().getTicks() || tick >= clip->endPosition().getTicks()) { continue; }
+			const tick_t clipStart = clip->startPosition().getTicks();
+			const tick_t clipEnd = clip->endPosition().getTicks();
+			if (audio == nullptr || tick < clipStart || tick >= clipEnd) { continue; }
 			const tick_t origin = clip->startPosition().getTicks() + clip->startTimeOffset().getTicks();
-			for (const int at : clipTransientTicks(*audio)) { out.push_back(origin + at); }
+			for (const int at : clipTransientTicks(*audio))
+			{
+				const tick_t mapped = origin + at;
+				if (mapped >= clipStart && mapped < clipEnd) { out.push_back(mapped); }
+			}
 		}
 	}
 	std::sort(out.begin(), out.end());

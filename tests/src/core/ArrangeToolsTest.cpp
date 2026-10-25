@@ -463,6 +463,16 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->getPlayPos().getTicks()), before);
 	}
 
+	void nextTransientDoesNotLeaveTheVisibleClip()
+	{
+		SampleClip* clip = test::sampleClipOf(test::burstAudio(200, {10, 58, 106, 154}));
+		clip->setStartTimeOffset(TimePos(100));  // its later source bursts now map past the 200-tick clip end
+		Engine::getSong()->setPlayPos(170);      // still inside the visible clip
+		const ControlResult next = run(QStringLiteral("arrangement.next_transient"));
+		QCOMPARE(next.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(Engine::getSong()->getPlayPos().getTicks(), tick_t{170});  // no seek outside the clip
+	}
+
 	void aClipBecomesAScore()
 	{
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
