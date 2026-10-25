@@ -1,3 +1,5 @@
+ALREADY-FIXED
+
 new-p20-51: ALREADY-FIXED
 Evidence: `src/core/HardwareInsert.cpp:409` checks `toFloat(&mixOk)` and falls back to `Settings{}.mix`; the existing regression is `tests/src/core/HardwareIoTest.cpp:465` (`unparsableSavedLevelsUseTheirDefaults`). Commit `0665cd09422a77cf219160a3a6bac66aa4679857` already introduced this correction.
 RED/GREEN: Temporarily restored the old `toFloat()` parser; `HardwareIoTest::unparsableSavedLevelsUseTheirDefaults` failed (36 passed, 1 failed). Restored the checked parser; the test family passed.
@@ -34,8 +36,10 @@ Commands:
 
 ## Self-check
 
-- Each finding has an independent verdict and regression: p20 uses the existing malformed-mix regression; p17 has route, saved-rate and live-rate assertions; p14 has a deterministic late-response check for both routes.
-- The `HardwareIoTest` family ran 37 cases with no skips; product-only reversal failed the new p17/p14 cases, and restoration passed them.
-- Existing saved projects without `measured_rate` retain their prior load behavior. Explicit latency overrides continue to take precedence, and negative unknown-measurement sentinels are preserved.
-- Realtime review: `process()` only performs bounded atomic operations and scalar comparisons for the new invalidation/cancel paths. Persistence and settings normalization remain outside the audio thread.
-- Feature gates and source registration were checked after the manifest was re-derived; no gate limits or baselines were changed.
+- Regression reversal evidence: the final p17/p14 product-only reversal build exited 0, ctest exited 8 with 33 passed/4 failed, and restored build/ctest exited 0/0 (`038`-`041` logs). The p20 old-parser negative control exited 8 with its malformed-mix test failing, then exited 0 after restoration (`015`-`018` logs).
+- Determinism: the tests use a direct sample-rate injection through `AudioDevice::setSampleRateForTesting`, `setSettings`, and the private `publishPingResult` seam for the late-response case. They use no sleeps, wall-clock timing, or races.
+- Cause and caller coverage: route/rate validation is in `HardwareInsert::setSettings` and runtime rate invalidation is in `process`; project load/save is covered by `load`/`save`. `ControlCommandsHardwareInsert.cpp` applies settings and undo through `setSettings`; `ChannelHardwareIo::load` is reached from mixer project load and channel transplant. Both send and return route changes are tested. Explicit latency overrides remain authoritative.
+- Compatibility: older projects without `measured_rate` associate the existing measurement with the current rate, preserving their prior load behavior. Negative unknown-measurement sentinels are preserved, no latency limit was added, and a typed latency override is unchanged.
+- ALREADY-FIXED evidence: `src/core/HardwareInsert.cpp:409` checks `mixOk` and falls back to `Settings{}.mix`; prior commit `0665cd09422a77cf219160a3a6bac66aa4679857` introduced it, and `unparsableSavedLevelsUseTheirDefaults` is the regression.
+- Realtime review: `process()` adds only bounded atomic operations and scalar comparisons for invalidation/cancel; persistence and settings normalization remain outside the audio thread.
+- Feature gates passed after source-manifest re-derivation (`043-feature-final.log`); existing product and test sources are already registered and no new product source was added.
