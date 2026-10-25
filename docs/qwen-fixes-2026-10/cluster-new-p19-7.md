@@ -1,3 +1,4 @@
+FIXED
 new-p19-7: FIXED
 
 Evidence: [src/core/ControlCommandsNoteRandom.cpp:390](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/src/core/ControlCommandsNoteRandom.cpp:390) now records an empty argument object for `control.undo`. [src/core/ControlCommandsNoteTransform.cpp:180](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/src/core/ControlCommandsNoteTransform.cpp:180) uses the same argument-free inverse for transpose, velocity offset, and velocity scale. Regression methods are in [ControlNoteScaleVerbsTest.cpp:364](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/tests/src/core/ControlNoteScaleVerbsTest.cpp:364) and [ControlNoteScaleVerbsTest.cpp:660](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7/tests/src/core/ControlNoteScaleVerbsTest.cpp:660).
@@ -56,7 +57,9 @@ Commands and exit codes:
 - `cmake --build build --target ControlNoteScaleVerbsTest NoteSelectionIdentityTest zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/038-build-family-final.log 2>&1; echo EXIT=$?` — 0.
 - `ctest -R '^(ControlNoteScaleVerbsTest|NoteSelectionIdentityTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/039-ctest-family-final.log 2>&1; echo EXIT=$?` — 0; 2/2 CTest tests passed.
 
-Final feature-check table (log `040-feature-check-final.log`, command exit 1):
+Final feature-check table (log `041-feature-check-final-report.log`, command exit 1):
+
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/041-feature-check-final-report.log 2>&1; echo EXIT=$?` — 1.
 
 | Gate | Result |
 | --- | --- |
@@ -73,11 +76,14 @@ The two failures are unrelated to these fixes: the gate logs show `tests/all-sou
 
 ## Self-check
 
-- Normal and failure paths: seeded rolls/transforms, finite and non-finite seeds, inverse replay, and note reordering are covered. The p15 regression fails under the positional-store mutation and passes after restoring the branch implementation.
+- RED/GREEN proof: p19 inverse calls failed with extra arguments on the original and reversed-patch implementations, then passed with empty inverse args. p22 direct handlers accepted NaN without the finite check and refused it with the fix. p15 passed on the existing ID store and failed under the temporary positional-store mutation.
+- Determinism: fixed seed 424242 drives the roll inverse test; fixed transform values drive the three transform inverse paths; `std::nan("0")` is injected directly to both seed handlers; seed 2 and jitter 48 deterministically reorder the two selected notes. No clocks, sleeps, or races are used.
+- Cause and sibling coverage: both `readSeed` callers (`note.randomize`, `note.random_seed_set`) are tested. All three callers of `transformTransaction` (transpose, velocity offset, velocity scale) are covered. The shared ID store used by selection, reordering, and removal paths was inspected; the p15 finding is already fixed in this branch.
+- Collateral behavior: no project serialization or audio-thread code changed. The only new validation rejects non-finite seeds, which cannot be legitimate seed values; existing finite bounds and old project seed loading remain unchanged.
 - Exhaustion/reconfiguration: these command handlers have no such path or bounded resource state.
-- Audio-thread safety: no audio-thread or per-period code changed.
 - Supported-platform build: both existing Qt test targets and `zene` built with the configured C++20 toolchain; CTest ran with the configured offscreen environment.
 - Test family count: 2/2 passed in log `039-ctest-family-final.log`.
+- Gate exception: `fork-sources` and `all-sources-reproduce` remain failed only because the unchanged source manifest disagrees with its own SfzPlayer vendored-Abseil exclusion recipe. Changing that recipe would alter the gate scope; evidence is the 041 gate log and unchanged `tests/all-sources.txt`.
 - `new-p19-7` commit `13e00ec90` contains `src/core/ControlCommandsNoteRandom.cpp`, `src/core/ControlCommandsNoteTransform.cpp`, `tests/src/core/ControlNoteScaleVerbsTest.cpp`, `tests/upstream-modifications.txt`, and this report.
 - `new-p22-42` commit `cafdb6221` contains `src/core/ControlCommandsNoteRandom.cpp`, `tests/src/core/ControlNoteScaleVerbsTest.cpp`, `tests/upstream-modifications.txt`, and this report.
 - `new-p15-14` is an already-fixed finding; its separate regression/report commit contains `tests/src/core/NoteSelectionIdentityTest.cpp` and this report.
