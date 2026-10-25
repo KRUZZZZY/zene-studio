@@ -74,7 +74,8 @@ needed for this finding, so a reverse-patch RED/GREEN run is not applicable.
 | doc-figures | PASS, EXIT=0 |
 | complexity | PASS, no new item in changed files |
 | file-length | PASS, no new item in changed files |
-| feature_check.py | PASS, EXIT=0 (`042-feature-check-final.log`) |
+| feature_check.py | PASS, EXIT=0 (`043-feature-check-post-report.log`) |
+| submit_check.py | PASS, EXIT=0 (`044-submit-check.log`) |
 
 To make the source-manifest gates pass, `tests/all-sources.txt` was regenerated
 from its published recipe. It removed only the 1,148 stale, vendored
@@ -102,6 +103,7 @@ passed (`021-all-sources-reproduce.log`). No gate threshold or baseline changed.
   built in the configured Linux C++20/Qt tree. The fix uses existing C++ and Qt
   APIs and introduces no platform-specific code; no other platform toolchain
   is configured in this worktree.
+- **Completion check:** `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p22-3 new-p22-3` — EXIT=0; each emitted `?` item is answered above.
 - **Committed files:** `src/core/ControlCommandsClipEdits.cpp`,
   `tests/src/core/ClipPolarityTest.cpp`, `tests/all-sources.txt`, and this
   report. The product/test commits are `136748694`, `200127217`, and
