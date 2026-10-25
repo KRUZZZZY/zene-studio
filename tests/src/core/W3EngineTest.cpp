@@ -337,6 +337,39 @@ private slots:
 		QCOMPARE(stampedFrames, 64);
 	}
 
+	void mixedLatencyTargetsDoNotShareOneCompensationShift()
+	{
+		AutomationLatency& latency = AutomationLatency::instance();
+		latency.setEnabled(false);
+		EffectChain& chain = channel(1)->m_fxChain;
+		channel(1)->setInputLatencyFrames(0);
+		auto* latent = new partd::LatentDelayEffect(&chain, 64);
+		auto* after = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(latent);
+		chain.appendEffect(after);
+		auto* afterModel = new FloatModel(0.f, 0.f, 1.f, 0.001f, after, QStringLiteral("After"));
+		auto* latentModel = new FloatModel(0.f, 0.f, 1.f, 0.001f, latent, QStringLiteral("Before"));
+		QCOMPARE(AutomationLatency::upstreamFrames(afterModel), 64);
+		QCOMPARE(AutomationLatency::upstreamFrames(latentModel), 0);
+
+		auto* track = Track::create(Track::Type::Automation, Engine::getSong());
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		clip->addObject(afterModel);
+		clip->addObject(latentModel);
+		latency.setEnabled(true);
+		const int stampedFrames = clip->latencyFrames();
+
+		latency.setEnabled(false);
+		delete track;
+		chain.removeEffect(after);
+		chain.removeEffect(latent);
+		delete after;
+		delete latent;
+		channel(1)->setInputLatencyFrames(0);
+
+		QCOMPARE(stampedFrames, 0);
+	}
+
 	void discreteAutomationCompensationKeepsItsFrameOffset()
 	{
 		constexpr int latencyFrames = 64;
@@ -523,6 +556,7 @@ private slots:
 		delete instrument;
 		delete track;
 	}
+
 };
 
 QTEST_MAIN(W3EngineTest)

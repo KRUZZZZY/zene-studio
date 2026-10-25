@@ -130,6 +130,18 @@ void forEachAutomationClip(Visit visit)
 	}
 }
 
+//! One clip has one read time; mixed target latencies therefore leave it uncompensated.
+int sharedTargetLatency(const AutomationClip::objectVector& targets, bool on)
+{
+	if (!on || targets.empty()) { return 0; }
+	const int frames = targets.front() != nullptr ? AutomationLatency::upstreamFrames(targets.front().data()) : 0;
+	for (const auto& target : targets)
+	{
+		if (target != nullptr && AutomationLatency::upstreamFrames(target.data()) != frames) { return 0; }
+	}
+	return frames;
+}
+
 } // namespace
 
 AutomationLatency& AutomationLatency::instance()
@@ -260,9 +272,7 @@ bool AutomationLatency::refreshClips(bool on, bool waitForFreeBank)
 	}
 	forEachAutomationClip([on, slot](AutomationClip* clip) {
 		const auto targets = clip->objectsSnapshot();
-		const int frames = on && !targets.empty() && targets.front() != nullptr
-			? upstreamFrames(targets.front().data()) : 0;
-		clip->setLatencyFramesForSnapshot(slot, frames);
+		clip->setLatencyFramesForSnapshot(slot, sharedTargetLatency(targets, on));
 	});
 	state = m_state.load(std::memory_order_seq_cst);
 	const std::uint32_t generation = (state + GenerationStep) & ~(SlotBit | EnabledBit);
