@@ -255,6 +255,12 @@ ControlResult assignChannel(const QJsonObject& args)
 	auto mixerRef = Engine::mixer();
 	const mix_ch_t member = static_cast<mix_ch_t>(index);
 	const bool also = args.value(QStringLiteral("also")).toBool();
+	if (!group->addMember(member, also))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 could not be added to %2")
+				.arg(control::channelIdOf(channel), vcaGroupId(id)));
+	}
 	// The membership is a list of channel indices on the group; a MixerChannel
 	// has no back-reference a checkpoint could restore, so the inverse is the
 	// recorded OPERATION that removes the member this call adds - and the
@@ -269,7 +275,6 @@ ControlResult assignChannel(const QJsonObject& args)
 		{
 			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->addMember(member, also); }
 		});
-	group->addMember(member, also);
 
 	QJsonObject result = groupState(group);
 	result.insert(QStringLiteral("assigned"), control::channelIdOf(channel));

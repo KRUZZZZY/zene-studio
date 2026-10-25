@@ -51,6 +51,7 @@
 #include "ControlVcaTestSupport.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
 #include "Track.h"
 
 using namespace lmms;
@@ -280,6 +281,85 @@ private slots:
 		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 1.0);
 		evidence(QStringLiteral("double_assign_refused=1 cross_group_refused=1 master_refused=1 "
 			"ghost_unassign_refused=1 undo_membership=1"));
+	}
+
+	//! The command must trust the engine mutation result before claiming a
+	//! successful transaction. A detached live group makes addMember refuse
+	//! after the argument resolver has accepted an `also:true` request.
+	void failedAssignmentMutationLeavesNoUndoOrTransaction()
+	{
+		clearGroups();
+		Mixer* mixer = Engine::mixer();
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(mixer != nullptr);
+		QVERIFY(journal != nullptr);
+
+		const QString first = createGroup(QStringLiteral("First member"));
+		const QString second = createGroup(QStringLiteral("Shared member"));
+		QVERIFY(!first.isEmpty());
+		QVERIFY(!second.isEmpty());
+		QVERIFY(run(QStringLiteral("vca.assign"), {{QStringLiteral("group"), first},
+			{QStringLiteral("channel"), channelId(1)}}).ok);
+		QVERIFY(run(QStringLiteral("vca.set_gain"), {{QStringLiteral("group"), first},
+			{QStringLiteral("gain"), 0.5}}).ok);
+		QVERIFY(run(QStringLiteral("vca.set_gain"), {{QStringLiteral("group"), second},
+			{QStringLiteral("gain"), 0.25}}).ok);
+
+		const int depthBeforeCrossGroup = journal->undoDepth();
+		const int transactionsBeforeCrossGroup = run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size();
+		const ControlResult crossGroup = run(QStringLiteral("vca.assign"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("channel"), channelId(1)}});
+		QVERIFY2(!crossGroup.ok, "default cross-group assign reported success");
+		QCOMPARE(crossGroup.errorKind, ControlErrorKind::Refused);
+		QVERIFY(crossGroup.errorMessage.contains(first));
+		QCOMPARE(journal->undoDepth(), depthBeforeCrossGroup);
+		QCOMPARE(run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size(), transactionsBeforeCrossGroup);
+		QCOMPARE(memberGain(second, channelId(1)), -1.0);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.5);
+
+		const ControlResult shared = run(QStringLiteral("vca.assign"),
+			{{QStringLiteral("group"), second}, {QStringLiteral("channel"), channelId(1)},
+				{QStringLiteral("also"), true}});
+		QVERIFY2(shared.ok, qPrintable(shared.errorMessage));
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), first}})
+			.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), second}})
+			.result.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), first}})
+			.result.value(QStringLiteral("volume")).toDouble(), 0.5);
+		QCOMPARE(run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), second}})
+			.result.value(QStringLiteral("volume")).toDouble(), 0.25);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.125);
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(memberGain(second, channelId(1)), -1.0);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(1)->vcaGain()), 0.5);
+
+		const QString detachedId = createGroup(QStringLiteral("Detached target"));
+		QVERIFY(!detachedId.isEmpty());
+		const QString detachedWireId = run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), detachedId}}).result.value(QStringLiteral("id")).toString();
+		const int detachedGroupId = detachedWireId.mid(QStringLiteral("vca-").size()).toInt();
+		VcaGroup* detached = mixer->vcaGroup(detachedGroupId);
+		QVERIFY(detached != nullptr);
+		detached->detach();
+		const int depthBeforeFailure = journal->undoDepth();
+		const int transactionsBeforeFailure = run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size();
+		const ControlResult failed = run(QStringLiteral("vca.assign"),
+			{{QStringLiteral("group"), detachedId}, {QStringLiteral("channel"), channelId(2)},
+				{QStringLiteral("also"), true}});
+		QVERIFY2(!failed.ok, "a refused VcaGroup::addMember mutation reported success");
+		QCOMPARE(failed.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(journal->undoDepth(), depthBeforeFailure);
+		QCOMPARE(run(QStringLiteral("control.transactions"))
+			.result.value(QStringLiteral("transactions")).toArray().size(), transactionsBeforeFailure);
+		QCOMPARE(run(QStringLiteral("vca.get_state"),
+			{{QStringLiteral("group"), detachedId}}).result.value(QStringLiteral("member_count")).toInt(), 0);
+		QCOMPARE(static_cast<double>(mixer->mixerChannel(2)->vcaGain()), 1.0);
+		evidence(QStringLiteral("cross_group_refused=1 also_shared_gain=0.125 add_member_refusal=1 "
+			"undo_depth_unchanged=1 transaction_unchanged=1"));
 	}
 
 	//! A deleted track keeps its stable id in the group's edit set so callers
