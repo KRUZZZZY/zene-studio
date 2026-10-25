@@ -990,6 +990,7 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		// skipped while muted - and the render thread remembers that, so unmuting it during
 		// playback chases the notes already under the playhead once (Q050-040).
 		const bool clipMuted = Engine::getSong()->playMode() != Song::PlayMode::MidiClip && clip->isMuted();
+		const bool controllerResumed = !clipMuted && clip->playbackWasMuted();
 		const bool clipUnmutedNow = chase && !clipMuted && clip->playbackWasMuted();
 		clip->setPlaybackWasMuted(clipMuted);
 		if (clipMuted)
@@ -1014,6 +1015,10 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			&& (_clip_num >= 0 || compPlays(c, c->startPosition().getTicks()
 				+ c->startTimeOffset().getTicks() + cur_start.getTicks() + passBase)))
 		{
+			if (controllerResumed)
+			{
+				for (const ControllerLane& lane : c->controllers().lanes()) { lane.lastSent = -1; }
+			}
 			playClipControllers(c, cur_start.getTicks(), _offset);
 		}
 

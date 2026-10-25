@@ -144,7 +144,7 @@ void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_c
 	for (const ControllerLane& lane : clip->controllers().lanes())
 	{
 		const int value = lane.valueAt(tick);
-		const bool jumped = tick != lane.lastTick + 1;
+		const bool jumped = MidiPlayback::instance().chasingNow() || tick < lane.lastTick;
 		lane.lastTick = tick;
 		if (!jumped && value == lane.lastSent) { continue; }
 		lane.lastSent = value;
