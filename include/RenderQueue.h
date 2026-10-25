@@ -25,7 +25,9 @@
 #ifndef LMMS_RENDER_QUEUE_H
 #define LMMS_RENDER_QUEUE_H
 
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include <QJsonObject>
@@ -77,9 +79,14 @@ struct LMMS_EXPORT RenderJob
 	QJsonObject report;
 	//! The task-area token of this job's current generation; its reports carry it (RenderQueue::add).
 	TaskToken taskToken;
-	//! A conversion's own staging file, beside its destination and named for this job alone; made when
-	//! first asked for and never on a name anyone else could be using (RenderQueue::stagedPath).
+	//! This render or conversion's own staging file, beside its destination and named for this job alone;
+	//! made when first asked for and never on a name anyone else could be using (RenderQueue::stagedPath).
 	mutable QString staged;
+	//! The render's resolved destination (so a symlink target stays stable while its staged output is written).
+	mutable QString renderDestination;
+	//! A running conversion's cooperative worker stop signal and lifecycle marker.
+	std::shared_ptr<std::atomic_bool> conversionCancellation;
+	bool conversionWorkerActive = false;
 	//! Bounce inputs are captured on the main thread; callbacks re-check and apply model state there.
 	BounceInPlace::PreparedRender bounce;
 	std::function<bool(QString*)> validateBounce;
@@ -89,7 +96,9 @@ struct LMMS_EXPORT RenderJob
 /*! 0.5.0 L12 (WF-040): a render queue. Renders run as the shipped CLI render in a CHILD process, as
  *  render.render does, but started asynchronously (QProcess signals on the UI thread), so queueing
  *  and following them never blocks the control surface; conversions decode, resample and write on
- *  a worker thread. One job runs at a time, in order. A finished job carries its report - bytes,
+ *  a worker thread. Jobs start in order; cancelling a conversion releases the queue slot immediately
+ *  while its worker observes cancellation at stage and write-chunk boundaries. A finished job carries
+ *  its report - bytes,
  *  sha256, seconds taken, and the loudness meter's reading of the file (meter.measure_file's
  *  payload). Session state only: jobs are not saved and nothing is journalled. Bounded: MaxJobs. */
 class LMMS_EXPORT RenderQueue : public QObject
@@ -106,7 +115,7 @@ public:
 	int add(RenderJob job);
 	//! Start working through the queue (nothing when a job is already running).
 	void start();
-	//! Cancel job @a id: dropped when queued, stopped when running. False when it is not cancellable.
+	//! Cancel @a id: drop queued jobs; kill renders and stop conversions cooperatively. False when not cancellable.
 	bool cancel(int id);
 	//! Remove every job that has ended; how many were removed.
 	int clearFinished();
