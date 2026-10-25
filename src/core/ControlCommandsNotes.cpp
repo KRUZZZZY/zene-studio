@@ -355,7 +355,7 @@ void registerNoteResize(ControlRegistry& registry)
 		}
 		const tick_t previous = note->length().getTicks();
 
-		clip->addJournalCheckPoint();
+		if (requestedLength != previous) { clip->addJournalCheckPoint(); }
 		note->setLength(TimePos(requestedLength));
 		clip->updateLength();
 		clip->dataChanged();

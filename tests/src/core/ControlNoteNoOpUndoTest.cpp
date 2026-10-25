@@ -52,6 +52,7 @@
 #include "Engine.h"
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -63,6 +64,7 @@ struct Fixture
 {
 	QString track;
 	QString clip;
+	QString note;
 };
 
 bool makeFixture(Fixture* fixture)
@@ -81,10 +83,13 @@ bool makeFixture(Fixture* fixture)
 bool makeOneNoteFixture(Fixture* fixture)
 {
 	if (!makeFixture(fixture)) { return false; }
-	return run(QStringLiteral("note.add"),
+	const ControlResult added = run(QStringLiteral("note.add"),
 		QJsonObject{{QStringLiteral("clip"), fixture->clip}, {QStringLiteral("key"), 60},
 			{QStringLiteral("position"), 0}, {QStringLiteral("length"), 24},
-			{QStringLiteral("velocity"), 100}}).ok;
+			{QStringLiteral("velocity"), 100}});
+	if (!added.ok) { return false; }
+	fixture->note = added.result.value(QStringLiteral("note")).toString();
+	return !fixture->note.isEmpty();
 }
 
 //! How many transactions the registry has recorded so far.
@@ -100,6 +105,12 @@ QString lastTransactionCommand()
 {
 	const ControlRegistry::Transaction* tx = ControlRegistry::instance()->lastTransaction();
 	return tx == nullptr ? QString() : tx->command;
+}
+
+void markProjectClean()
+{
+	Song* song = Engine::getSong();
+	song->noteProjectSaved(song->projectFileName());
 }
 
 } // namespace
@@ -233,6 +244,25 @@ private slots:
 		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
 		QCOMPARE(scaled.result.value(QStringLiteral("notes_changed")).toInt(), 0);
 		QCOMPARE(transactionCount(), before);
+	}
+
+	//! Resizing to the current length must not push a MidiClip journal checkpoint.
+	void noOpResizeDoesNotAddCheckpoint()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		markProjectClean();
+		const quint64 before = journal->topStepSerial();
+
+		const ControlResult resized = run(QStringLiteral("note.resize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("note"), fixture.note}, {QStringLiteral("length"), 24}});
+		QVERIFY2(resized.ok, qPrintable(resized.errorMessage));
+		QCOMPARE(resized.result.value(QStringLiteral("length")).toInt(), 24);
+		QCOMPARE(journal->topStepSerial(), before);
+		QVERIFY(!Engine::getSong()->isModified());
 	}
 
 	//! The positive control: a transform that DID change something still records
