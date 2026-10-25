@@ -99,6 +99,7 @@ QJsonArray recreateDevices(EffectChain* chain, const QStringList& states, int po
 QJsonArray recreateDevices(const std::function<EffectChain*()>& chainOf, const QStringList& states, int position, ControlResult* error)
 {
 	EffectChain* chain = chainOf();
+	if (chain == nullptr) { return {}; }
 	auto made = std::make_shared<std::vector<RecordedDevice>>();
 	QJsonArray ids;
 	for (const QString& state : states)

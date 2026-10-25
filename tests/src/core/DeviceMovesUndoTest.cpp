@@ -101,6 +101,14 @@ private slots:
 		Engine::destroy();
 	}
 
+	void recreationWithoutAChainReturnsNoIds()
+	{
+		const auto missingChain = []() -> EffectChain* { return nullptr; };
+		ControlResult error;
+		const QJsonArray ids = control::recreateDevices(missingChain, {QStringLiteral("<missing-chain/>")}, -1, &error);
+		QVERIFY(ids.isEmpty());
+	}
+
 	void copiedDevicesAreUndoneOnARebuiltTrack_data()
 	{
 		QTest::addColumn<QString>("command");
