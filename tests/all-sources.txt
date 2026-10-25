@@ -132,6 +132,8 @@
 # paths this file's own recipe excludes, so the manifest stopped reproducing from the
 # command it publishes and Gate 9 has been red on that base; this port re-derives it, and
 # only those vendored paths plus this branch's own WatsynParamHandoffTest.cpp entry change.
+# 2026-10-24 (cluster new-p16-335): the base snapshot re-added 1,148 vendored sfizz paths after
+# the previous re-derivation; the entry list below is regenerated from the recipe once more.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h

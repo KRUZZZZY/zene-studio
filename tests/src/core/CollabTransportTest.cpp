@@ -857,9 +857,71 @@ private slots:
 		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
 		const QString sessionSync = QString::fromUtf8(sessionSyncSource.readAll());
 		const qsizetype fileCheck = sessionSync.indexOf(QStringLiteral("base64Size + frameHeader.size() >= MaxHostLineBytes"));
-		const qsizetype readAll = sessionSync.indexOf(QStringLiteral("return file.readAll();"));
+		const qsizetype readAll = sessionSync.indexOf(QStringLiteral("file.readAll();"));
 		QVERIFY2(fileCheck >= 0, "temporary file size check missing");
 		QVERIFY2(readAll > fileCheck, "temporary file is read before the size check");
+	}
+
+	//! Huge projects are rejected before header work, and their byte counts never narrow to int.
+	void snapshotSizesAreCheckedBeforeHeaderSerialization()
+	{
+		QFile hostSource(QStringLiteral(COLLAB_HOST_SOURCE_PATH));
+		QVERIFY2(hostSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(hostSource.errorString()));
+		const QString host = QString::fromUtf8(hostSource.readAll());
+		const qsizetype hostGuard = host.indexOf(QStringLiteral("if (project.size() >= MaxHostLineBytes)"));
+		const qsizetype hostHeader = host.indexOf(QStringLiteral("QJsonObject frameObject"));
+		QVERIFY2(hostGuard >= 0, "host has no raw size guard before serializing frame metadata");
+		QVERIFY2(hostHeader > hostGuard, "host serializes frame metadata before its raw size guard");
+		QVERIFY2(host.contains(QStringLiteral("{QStringLiteral(\"bytes\"), project.size()}")),
+			"host frame byte count does not preserve the project's wide size");
+		QVERIFY2(!host.contains(QStringLiteral("static_cast<int>(project.size())")), "host narrows the frame byte count to int");
+
+		QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+		const QString sessionSync = QString::fromUtf8(sessionSyncSource.readAll());
+		const qsizetype snapshotStart = sessionSync.indexOf(QStringLiteral("QByteArray CollabSession::writeSnapshot"));
+		const qsizetype fileGuard = sessionSync.indexOf(QStringLiteral("if (fileSize >= MaxHostLineBytes)"), snapshotStart);
+		const qsizetype fileHeader = sessionSync.indexOf(QStringLiteral("const QByteArray frameHeader"), snapshotStart);
+		QVERIFY2(fileGuard > snapshotStart, "saved snapshot has no raw size guard");
+		QVERIFY2(fileHeader > fileGuard, "saved snapshot serializes frame metadata before its raw size guard");
+		QVERIFY2(sessionSync.contains(QStringLiteral("{QStringLiteral(\"bytes\"), fileSize}")),
+			"saved snapshot frame byte count does not preserve the file's wide size");
+		QVERIFY2(!sessionSync.contains(QStringLiteral("static_cast<int>(file.size())")), "saved snapshot narrows the frame byte count to int");
+	}
+
+	//! A journal change during the snapshot grace window must remain visible after the window expires.
+	void snapshotGraceDoesNotConsumeAnUntrackedEdit()
+	{
+		QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+		const QString source = QString::fromUtf8(sessionSyncSource.readAll());
+		const qsizetype trackStart = source.indexOf(QStringLiteral("bool CollabSession::trackUntrackedEdit"));
+		const qsizetype trackEnd = source.indexOf(QStringLiteral("void CollabSession::pollJournal"), trackStart);
+		QVERIFY2(trackStart >= 0 && trackEnd > trackStart, "untracked edit tracker is missing");
+		const QString tracker = source.mid(trackStart, trackEnd - trackStart);
+		const qsizetype graceCheck = tracker.indexOf(QStringLiteral("if (nowMs() < m_graceUntilMs)"));
+		const qsizetype fingerprintUpdate = tracker.indexOf(QStringLiteral("m_fingerprint = fingerprint"));
+		QVERIFY2(graceCheck >= 0, "snapshot grace check is missing");
+		QVERIFY2(fingerprintUpdate > graceCheck, "the grace check consumes a fingerprint before it can be reconsidered");
+	}
+
+	//! Snapshot open and read failures must expose the QFile reason to the caller.
+	void snapshotReadFailuresPreserveFileReason()
+	{
+		QFile sessionSyncSource(QStringLiteral(COLLAB_SESSION_SYNC_SOURCE_PATH));
+		QVERIFY2(sessionSyncSource.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(sessionSyncSource.errorString()));
+		const QString source = QString::fromUtf8(sessionSyncSource.readAll());
+		const qsizetype readStart = source.indexOf(QStringLiteral("QByteArray CollabSession::writeSnapshot"));
+		const qsizetype readEnd = source.indexOf(QStringLiteral("bool CollabSession::applySnapshot"), readStart);
+		QVERIFY2(readStart >= 0 && readEnd > readStart, "snapshot writer is missing");
+		const QString writer = source.mid(readStart, readEnd - readStart);
+		const qsizetype openFailure = writer.indexOf(QStringLiteral("if (!file.open(QIODevice::ReadOnly))"));
+		const qsizetype openReason = writer.indexOf(QStringLiteral("file.errorString()"), openFailure);
+		const qsizetype read = writer.indexOf(QStringLiteral("file.readAll()"));
+		const qsizetype readFailure = writer.indexOf(QStringLiteral("file.error() != QFileDevice::NoError"), read);
+		QVERIFY2(openFailure >= 0, "snapshot file open check is missing");
+		QVERIFY2(openReason > openFailure, "snapshot open failure discards QFile's error reason");
+		QVERIFY2(read >= 0 && readFailure > read, "snapshot read errors are not checked after readAll");
 	}
 
 	//! Blank lines must not be dropped before the request handler in the host source.

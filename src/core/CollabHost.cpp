@@ -370,11 +370,17 @@ QByteArray CollabHost::snapshotFrame(QString* error)
 		if (error->isEmpty()) { *error = QStringLiteral("the host could not write its project"); }
 		return QByteArray();
 	}
+	if (project.size() >= MaxHostLineBytes)
+	{
+		*error = QStringLiteral("the project is too large to share (%1 MB; the limit is %2 MB)")
+			.arg(project.size() / (1024 * 1024)).arg(MaxHostLineBytes / (1024 * 1024) * 3 / 4);
+		return QByteArray();
+	}
 	// Reject before base64-encoding: the frame carries the project base64-encoded, so an oversized project
 	// cannot fit even before paying for the (large) allocation.
 	const qsizetype base64Size = ((project.size() + 2) / 3) * 4;
 	QJsonObject frameObject{{QStringLiteral("type"), QStringLiteral("snapshot")},
-		{QStringLiteral("seq"), static_cast<double>(m_seq)}, {QStringLiteral("bytes"), static_cast<int>(project.size())},
+		{QStringLiteral("seq"), static_cast<double>(m_seq)}, {QStringLiteral("bytes"), project.size()},
 		{QStringLiteral("data"), QString()}};
 	const QByteArray frameHeader = frameOf(frameObject);
 	if (base64Size + frameHeader.size() >= MaxHostLineBytes)
