@@ -37,9 +37,9 @@ namespace lmms::appearance
  *  window.appearance, read when the application starts:
  *  - 'scale' (0.5..3): the one global zoom, and the only sizing control (0.5.0 UX decision, theme 23: text,
  *    icons and every control scale together, as Bitwig's UI zoom does). Qt takes it only before the application
- *    object exists, which is before the config file can be found, so it is also kept in a one-line file beside
- *    it in the home folder (~/.zenestudio-scale; ZENE_UI_SCALE_FILE names another) that main() reads first -
- *    QT_SCALE_FACTOR, when set, still wins;
+ *    object exists, so main() reads ui/scale from the selected --config file directly before QApplication
+ *    construction. When that file has no scale entry, the home-folder fallback (~/.zenestudio-scale;
+ *    ZENE_UI_SCALE_FILE names another) is used. QT_SCALE_FACTOR, when set, still wins;
  *  - 'palette': dark (the default), high_contrast (text 7:1 on every surface, a bright focus ring) or
  *    light (dark text on light surfaces, every pair held to AA - 0.5.0 W3 WF-118);
  *  - 'accessible' (0.5.0 UX decision, themes 17 and 23): accessible mode - larger click targets (accessibleTargetFactor),
@@ -107,8 +107,10 @@ LMMS_EXPORT QString scaleFilePath();
 LMMS_EXPORT bool syncScaleFile();
 //! main(), before the application object: the stored scale, or 0 when none.
 LMMS_EXPORT double storedScale();
-//! main(), before the application object: hand the stored scale to Qt (an explicit QT_SCALE_FACTOR wins).
+//! main(), before the application object: hand the stored fallback to Qt (an explicit QT_SCALE_FACTOR wins).
 LMMS_EXPORT void applyStoredScale();
+//! Use the selected config's ui/scale when present, falling back to the stored scale file.
+LMMS_EXPORT void applyStoredScale(const QString& configFile);
 
 } // namespace lmms::appearance
 

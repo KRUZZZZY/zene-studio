@@ -428,6 +428,9 @@ set(LMMS_TESTS
 	src/core/LoudnessReportTest.cpp
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
+	# Startup and CLI regressions: the selected UI scale, dump/compress refusals,
+	# and session-marker cleanup on failed command startup.
+	src/core/MainCliStartupTest.cpp
 	# Import detection (0.3.0, feature row 34; the `detect.*` group's engine half):
 	# a RIFF/WAVE synthesised BYTE BY BYTE at a known answer - click tracks at 128
 	# and 90 BPM, an A major scale over an A bass - read back through the engine's
@@ -905,6 +908,8 @@ set(LMMS_TESTS
 	src/plugins/SfzPlayerRealtimeTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
+	# Qt reads the startup scale before QApplication; the selected config must win over its fallback file.
+	src/core/AppearanceStartupTest.cpp
 	src/core/CustomAccessTest.cpp
 	# 0.5.0 L12 (W3): mixer snapshots, project settings and metadata, the document type, edit locks.
 	src/core/ProjectStateTest.cpp
@@ -1684,6 +1689,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# is never a missing or a stale binary.
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			ZENE_APP_BINARY="$<TARGET_FILE:zene>")
+		add_dependencies(${LMMS_TEST_NAME} zene)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "MainCliStartupTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			ZENE_APP_BINARY="$<TARGET_FILE:zene>"
+			ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 		add_dependencies(${LMMS_TEST_NAME} zene)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "HydrogenImportTest")

@@ -25,7 +25,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
+#include <QDomDocument>
 #include <QDir>
 #include <QFile>
 #include <QObject>
@@ -46,6 +48,21 @@ double configDouble(const char* key, double fallback)
 	bool ok = false;
 	const double value = ConfigManager::inst()->value(kSection, QLatin1String(key), QString::number(fallback)).toDouble(&ok);
 	return ok ? value : fallback;
+}
+
+std::optional<double> selectedConfigScale(const QString& configFile)
+{
+	if (configFile.isEmpty()) { return std::nullopt; }
+	QFile file(configFile);
+	if (!file.open(QIODevice::ReadOnly)) { return std::nullopt; }
+	QDomDocument document;
+	if (!document.setContent(&file)) { return std::nullopt; }
+	const QDomElement ui = document.documentElement().firstChildElement(kSection);
+	if (ui.isNull() || !ui.hasAttribute(QStringLiteral("scale"))) { return std::nullopt; }
+
+	bool ok = false;
+	const double scale = ui.attribute(QStringLiteral("scale")).toDouble(&ok);
+	return ok && std::isfinite(scale) ? std::clamp(scale, 0.5, 3.0) : 1.0;
 }
 
 //! The zoom to store or draw with: a finite value inside 0.5..3. std::clamp alone does NOT do
@@ -175,8 +192,15 @@ double storedScale()
 
 void applyStoredScale()
 {
+	applyStoredScale(QString());
+}
+
+void applyStoredScale(const QString& configFile)
+{
 	if (!qEnvironmentVariableIsEmpty("QT_SCALE_FACTOR")) { return; }
-	if (const double scale = storedScale(); scale > 0.0 && scale != 1.0) { qputenv("QT_SCALE_FACTOR", QByteArray::number(scale)); }
+	const std::optional<double> configured = selectedConfigScale(configFile);
+	const double scale = configured.value_or(storedScale());
+	if (scale > 0.0 && scale != 1.0) { qputenv("QT_SCALE_FACTOR", QByteArray::number(scale)); }
 }
 
 } // namespace lmms::appearance

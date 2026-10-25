@@ -520,7 +520,14 @@ int main( int argc, char * * argv )
 	{
 		QString arg = argv[i];
 
-		if (arg == "--help" || arg == "-h")
+		if (arg == "--config" || arg == "-c")
+		{
+			// Qt reads the interface scale before QApplication exists. Remember
+			// the selected file in this pass so Appearance can read its ui/scale;
+			// stage two still validates the option and loads the complete config.
+			if (i + 1 < argc) { configFile = QString::fromLocal8Bit(argv[++i]); }
+		}
+		else if (arg == "--help" || arg == "-h")
 		{
 			printHelp();
 			return EXIT_SUCCESS;
@@ -690,7 +697,7 @@ int main( int argc, char * * argv )
 	}
 
 	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
-	if (!coreOnly) { lmms::appearance::applyStoredScale(); }
+	if (!coreOnly) { lmms::appearance::applyStoredScale(configFile); }
 
 	QCoreApplication * app = coreOnly ?
 			new QCoreApplication( argc, argv ) :
@@ -1291,6 +1298,20 @@ int main( int argc, char * * argv )
 
 	ConfigManager::inst()->loadConfigFile(configFile);
 
+	// Stem output is known from the CLI arguments. Validate it before arming the
+	// session markers or starting the engine, since this is a normal refusal.
+	if (renderStems)
+	{
+		if (!outputGiven)
+		{
+			return usageError( "exportstems needs an output directory (-o <dir>)" );
+		}
+		if (!QDir().mkpath( renderOut ))
+		{
+			return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
+		}
+	}
+
 	// Install the local crash reporter as soon as the user's working directory
 	// is known.  It writes ONE bounded text file and dies exactly as the
 	// process would have without it; the next launch offers the file.  There is
@@ -1368,6 +1389,8 @@ int main( int argc, char * * argv )
 		if( !controlServer->listen( controlSocket, &controlError ) )
 		{
 			fprintf( stderr, "control socket: %s\n", controlError.toUtf8().constData() );
+			crashreporter::endSession();
+			safestart::endSession();
 			return EXIT_FAILURE;
 		}
 		printf( "control socket listening on %s\n", controlSocket.toUtf8().constData() );
@@ -1464,24 +1487,6 @@ int main( int argc, char * * argv )
 			{
 				renderOut = baseName( renderOut ) +
 					ProjectRenderer::getFileExtensionFromFormat(eff);
-			}
-
-			if ( renderStems )
-			{
-				// A stem export writes many files, so the destination must be a
-				// directory the user asked for -- never a guess next to the project.
-				if ( !outputGiven )
-				{
-					crashreporter::endSession();
-					safestart::endSession();
-					return usageError( "exportstems needs an output directory (-o <dir>)" );
-				}
-				if ( !QDir().mkpath( renderOut ) )
-				{
-					crashreporter::endSession();
-					safestart::endSession();
-					return usageError( QString( "Could not create output directory %1" ).arg( renderOut ) );
-				}
 			}
 
 			// create renderer

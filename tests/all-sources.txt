@@ -2553,6 +2553,7 @@ tests/src/core/AbletonLinkSessionTest.cpp
 tests/src/core/AllocationProbe.cpp
 tests/src/core/AllocationProbe.h
 tests/src/core/AllocationProbeTest.cpp
+tests/src/core/AppearanceStartupTest.cpp
 tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
@@ -2732,6 +2733,7 @@ tests/src/core/LinkedClipGroupEditsTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
+tests/src/core/MainCliStartupTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp

@@ -3029,3 +3029,8 @@ docs/qwen-fixes-2026-10/cluster-5284-port-port.md
 tests/src/gui/CommandPaletteTest.cpp
 # cluster 5564 / new-p14-454 / new-p14-455: the combined fix report and its red/green evidence.
 docs/qwen-fixes-2026-10/cluster-5564.md
+# cluster 5110 batch (2026-10): startup-scale, dump/compress and session-marker regressions.
+tests/src/core/AppearanceStartupTest.cpp
+tests/src/core/MainCliStartupTest.cpp
+# cluster 5110 batch (2026-10): verdicts, negative-control evidence and completion record.
+docs/qwen-fixes-2026-10/cluster-5110.md
