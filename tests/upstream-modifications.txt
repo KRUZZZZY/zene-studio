@@ -2271,6 +2271,7 @@ src/gui/clips/ClipView.cpp	cluster new-p11-9: Shift-clicking an unselected locke
 tests/control-wasm-sandbox.py	new-p10-72: reject 1e300 in wasm.set_param and confirm invalid_args leaves the hosted module's parameter slot unchanged.
 src/core/Scale.cpp	Scale::loadSettings accepts only interval elements with complete, parseable ratio or cents fields so unexpected children cannot create default-like intervals.
 tests/src/core/ControlNoteScaleVerbsTest.cpp	Regression loads valid ratio and cents intervals beside non-interval nodes and malformed interval elements, then checks that only valid intervals remain.
+tests/src/core/ControlNoteScaleVerbsTest.cpp	new-p19-7: exercise the recorded note.randomize and note.transform inverses by reissuing their control.undo operation and checking validation plus restored note state.
 tests/CMakeLists.txt	new-p8-264 regression: compile VST3 host sources into Vst3InstrumentIntegrationTest so it can release the loaded host through Vst3Instrument::vst3Plugin() and verify the unprepared output path.
 tests/src/gui/CommandFormTest.cpp	cluster new-p8-295: adds direct CommandFormFields regressions proving string and path editor values retain leading and trailing whitespace
 include/CollabHost.h	new-p8-304: track accepted pending handshake sockets so stop can invalidate callbacks and reset the pending count; regression CollabTransportTest::stoppingHostAbortsPendingHandshakes

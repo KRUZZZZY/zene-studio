@@ -386,10 +386,8 @@ ControlResult randomize(const QJsonObject& args)
 	beforeState.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	beforeState.insert(QStringLiteral("note_count"), static_cast<int>(clip->notes().size()));
 	beforeState.insert(QStringLiteral("seed"), static_cast<double>(seed));
-	QJsonObject inverseArgs;
-	inverseArgs.insert(QStringLiteral("clip"), clipId(ref.id));
 	result.insert(QStringLiteral("__transaction"),
-		transactionPayload(beforeState, QStringLiteral("control.undo"), inverseArgs, true,
+		transactionPayload(beforeState, QStringLiteral("control.undo"), {}, true,
 			grooveClipMechanism() + QStringLiteral("; and because the roll is multiplicative on "
 				"velocities and drawn from each note's position at entry, the inverse is the "
 				"checkpoint and NOT \"run it again\" - a second call rolls on top of the first")));

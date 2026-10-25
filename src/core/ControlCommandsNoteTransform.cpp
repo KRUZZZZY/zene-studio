@@ -177,18 +177,15 @@ bool readNumber(const QJsonObject& args, const QString& key, double minimum, dou
 
 /*! The transaction payload every verb here records: the clip's own checkpoint, one
  *  recorded inverse op a reader can re-issue. */
-QJsonObject transformTransaction(const ClipRef& ref, const MidiClip& clip, NoteScope scope,
-	const QString& changedKey, int changed, const QJsonObject& inverseArgs)
+QJsonObject transformTransaction(const ClipRef& ref, const MidiClip& clip,
+	const QString& changedKey, int changed)
 {
 	QJsonObject before;
 	before.insert(QStringLiteral("clip"), clipId(ref.id));
 	before.insert(QStringLiteral("track"), trackIdOf(ref.track));
 	before.insert(QStringLiteral("note_count"), static_cast<int>(clip.notes().size()));
 	before.insert(changedKey, changed);
-	QJsonObject inverse = inverseArgs;
-	inverse.insert(QStringLiteral("clip"), clipId(ref.id));
-	inverse.insert(QStringLiteral("scope"), scopeName(scope));
-	return transactionPayload(before, QStringLiteral("control.undo"), inverse, true,
+	return transactionPayload(before, QStringLiteral("control.undo"), {}, true,
 		grooveClipMechanism() + QStringLiteral("; no velocity TARGET and no pre-transform key is "
 			"stored per note, so the inverse is the checkpoint and not \"run the opposite "
 			"transform\": a second transpose back would land notes the clamp had already "
@@ -252,8 +249,7 @@ ControlResult transpose(const QJsonObject& args)
 	if (changes)
 	{
 		result.insert(QStringLiteral("__transaction"),
-			transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
-				arguments));
+			transformTransaction(ref, *clip, QStringLiteral("notes_changed"), changed));
 	}
 	return ControlResult::success(result);
 }
@@ -296,8 +292,7 @@ ControlResult velocityOffset(const QJsonObject& args)
 	if (changes)
 	{
 		result.insert(QStringLiteral("__transaction"),
-			transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
-				arguments));
+			transformTransaction(ref, *clip, QStringLiteral("notes_changed"), changed));
 	}
 	return ControlResult::success(result);
 }
@@ -338,8 +333,7 @@ ControlResult velocityScale(const QJsonObject& args)
 	if (changes)
 	{
 		result.insert(QStringLiteral("__transaction"),
-			transformTransaction(ref, *clip, scope, QStringLiteral("notes_changed"), changed,
-				arguments));
+			transformTransaction(ref, *clip, QStringLiteral("notes_changed"), changed));
 	}
 	return ControlResult::success(result);
 }
