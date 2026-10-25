@@ -32,13 +32,16 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QEvent>
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QJsonArray>
+#include <QSemaphore>
 #include <QSignalSpy>
 #include <QTemporaryDir>
+#include <QThreadPool>
 
 #include <cstdio>
 #include <cstdlib>
@@ -48,6 +51,7 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "RenderQueue.h"
+#include "SampleDecoder.h"
 #include "TaskCenter.h"
 #include "BrowserTestSupport.h"
 
@@ -129,6 +133,55 @@ int fakeRender(int argc, char** argv)
 	if (diagnostic != nullptr) { std::fputs(diagnostic, stderr); std::fputc('\n', stderr); }
 	return 3;
 }
+
+class ThreadPoolGate
+{
+public:
+	ThreadPoolGate() : m_pool(*QThreadPool::globalInstance()), m_previousLimit(m_pool.maxThreadCount())
+	{
+		m_pool.setMaxThreadCount(1);
+		m_pool.start([this] { m_entered.release(); m_release.acquire(); });
+		m_entered.acquire();
+	}
+
+	~ThreadPoolGate()
+	{
+		releaseAndWait();
+		m_pool.setMaxThreadCount(m_previousLimit);
+	}
+
+	void releaseAndWait()
+	{
+		if (!m_released) { m_released = true; m_release.release(); }
+		m_pool.waitForDone();
+	}
+
+private:
+	QThreadPool& m_pool;
+	int m_previousLimit;
+	QSemaphore m_entered;
+	QSemaphore m_release;
+	bool m_released = false;
+};
+
+class ReleaseFileGuard
+{
+public:
+	explicit ReleaseFileGuard(QString path) : m_path(std::move(path)) {}
+	~ReleaseFileGuard() { release(); }
+
+	bool release()
+	{
+		if (QFileInfo::exists(m_path)) { return true; }
+		QFile file(m_path);
+		if (!file.open(QIODevice::WriteOnly)) { return false; }
+		file.close();
+		return true;
+	}
+
+private:
+	QString m_path;
+};
 
 } // namespace
 
@@ -423,6 +476,54 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(queue.job(id) != nullptr && queue.job(id)->state == RenderJob::State::Done, 5000);
 		QVERIFY(previous.open(QIODevice::ReadOnly));
 		QCOMPARE(previous.readAll(), QByteArray("rendered output"));
+		queue.clearFinished();
+	}
+
+	void cancellingConversionStopsWorkerAndAdvancesQueue()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString source = dir.filePath(QStringLiteral("source.wav"));
+		QVERIFY(browserfixture::writeWave(source, browserfixture::WaveSpec{}));
+		const QString pidPath = dir.filePath(QStringLiteral("render.pid"));
+		const QString releasePath = dir.filePath(QStringLiteral("release-render"));
+		ReleaseFileGuard renderRelease(releasePath);
+		qputenv("ZENE_FAKE_RENDER_SUCCESS", "1");
+		qputenv("ZENE_FAKE_RENDER_PID_PATH", pidPath.toLocal8Bit());
+		qputenv("ZENE_FAKE_RENDER_HOLD_PATH", releasePath.toLocal8Bit());
+		ThreadPoolGate workerGate;
+		SampleDecoder::resetDecodeCallCountsForTesting();
+		RenderQueue& queue = RenderQueue::instance();
+		RenderJob conversion;
+		conversion.kind = RenderJob::Kind::Convert;
+		conversion.source = source;
+		conversion.out = dir.filePath(QStringLiteral("converted.wav"));
+		const int conversionId = queue.add(conversion);
+		QVERIFY(conversionId > 0);
+		queue.start();
+		QCOMPARE(queue.job(conversionId)->state, RenderJob::State::Running);
+		QVERIFY(queue.cancel(conversionId));
+
+		RenderJob render;
+		render.kind = RenderJob::Kind::Render;
+		render.source = dir.filePath(QStringLiteral("project.mmp"));
+		render.out = dir.filePath(QStringLiteral("next.wav"));
+		const int renderId = queue.add(render);
+		QVERIFY(renderId > 0);
+		queue.start();
+		const bool advancedWhileWorkerBlocked = queue.job(renderId)->state == RenderJob::State::Running;
+		if (advancedWhileWorkerBlocked) { QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(pidPath), 5000); }
+		workerGate.releaseAndWait();
+		QCoreApplication::sendPostedEvents(&queue, QEvent::MetaCall);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QCoreApplication::processEvents(QEventLoop::AllEvents);
+		QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(pidPath), 5000);
+		QVERIFY(renderRelease.release());
+		QTRY_VERIFY_WITH_TIMEOUT(queue.job(renderId)->state == RenderJob::State::Done, 5000);
+		QCOMPARE(queue.job(conversionId)->state, RenderJob::State::Cancelled);
+		QVERIFY(!QFileInfo::exists(queue.job(conversionId)->staged));
+		QVERIFY(advancedWhileWorkerBlocked);
+		QCOMPARE(SampleDecoder::decodeCallCountsForTesting().full, std::uint64_t(0));
 		queue.clearFinished();
 	}
 

@@ -29,3 +29,17 @@ Regression commands and exit codes:
 - 4b restore command: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4380.r1/logs/fix-5270.patch && cmake --build build --target zene TaskCenterTest ControlRenderJobTest RenderSourceGuardTest` — EXIT=0 (`build-16.log`); `ctest -R '^(RenderSourceGuardTest|TaskCenterTest|ControlRenderJobTest)$' --output-on-failure` from `build/tests` — EXIT=0 (`test-16.log`), 3/3 affected CTest targets passed.
 
 Files in the 5270 fix commit: `include/RenderQueue.h`, `src/core/RenderQueue.cpp`, `tests/src/core/TaskCenterTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+
+new-p15-167: FIXED
+
+Decision: REAL. Before this fix, `runConvert` launched `staged(copy)` without a stop signal, and `cancel` only killed `m_process`, which is null for conversions; `m_current` remained occupied until the worker callback. `include/RenderQueue.h:86-87` now carries a shared atomic cancellation token and worker lifecycle flag. `src/core/RenderQueue.cpp:113-148,185-196` checks the token before and between stages and at 4096-frame write chunks; cancellation removes the partial stage. `cancel` signals the token, ends the task and releases the queue immediately. `clearFinished` retains the job until worker cleanup completes, and `finish` ignores stale worker callbacks when deciding whether to delete the current process. `TaskCenterTest::cancellingConversionStopsWorkerAndAdvancesQueue` blocks the pool worker with a semaphore, cancels the conversion, starts a render before releasing that worker, then confirms the cancelled source was not decoded and the render completed.
+
+Regression commands and exit codes:
+
+- RED before fix: `cmake --build build --target zene TaskCenterTest ControlRenderJobTest RenderSourceGuardTest` — EXIT=0 (`build-18.log`); `ctest -R '^TaskCenterTest$' --output-on-failure` from `build/tests` — EXIT=8 (`test-18.log`), `advancedWhileWorkerBlocked` was false.
+- GREEN after fix: the same build command — EXIT=0 (`build-19.log`); the same ctest command from `build/tests` — EXIT=0 (`test-19.log`), 1/1 target passed.
+- 4b removal: `git diff -- include/RenderQueue.h src/core/RenderQueue.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4380.r1/logs/fix-new-p15-167.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4380.r1/logs/fix-new-p15-167.patch`; rebuild — EXIT=0 (`build-21.log`); test from `build/tests` — EXIT=8 (`test-21.log`), same queue-advancement assertion.
+- 4b restore: `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4380.r1/logs/fix-new-p15-167.patch && cmake --build build --target zene TaskCenterTest ControlRenderJobTest RenderSourceGuardTest` — EXIT=0 (`build-22.log`); test from `build/tests` — EXIT=0 (`test-22.log`), 1/1 target passed.
+- Affected family: `ctest -R '^(RenderSourceGuardTest|TaskCenterTest|ControlRenderJobTest)$' --output-on-failure` from `build/tests` — EXIT=0 (`test-23.log`), 3/3 CTest targets passed.
+
+Files in the new-p15-167 fix commit: `include/RenderQueue.h`, `src/core/RenderQueue.cpp`, `tests/src/core/TaskCenterTest.cpp`, `tests/upstream-modifications.txt`, and this report.
