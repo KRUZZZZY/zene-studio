@@ -229,6 +229,46 @@ private slots:
 		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
 	}
 
+	void deletingSelectedTrackNotifiesListeners()
+	{
+		ShellSelection* selection = ShellSelection::instance();
+		auto* oldTrack = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* selectedTrack = Track::create(Track::Type::Instrument, Engine::getSong());
+		selection->setTrack(oldTrack);
+		selection->setTrack(selectedTrack);
+		QSignalSpy changed(selection, &ShellSelection::changed);
+
+		delete oldTrack;
+		QCOMPARE(changed.count(), 0);
+		QCOMPARE(selection->track(), selectedTrack);
+
+		delete selectedTrack;
+		QCOMPARE(changed.count(), 1);
+		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
+		QVERIFY(selection->clip() == nullptr);
+	}
+
+	void deletingSelectedClipNotifiesListeners()
+	{
+		ShellSelection* selection = ShellSelection::instance();
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* oldClip = track->createClip(TimePos(0));
+		Clip* selectedClip = track->createClip(TimePos(1));
+		selection->setClip(oldClip);
+		selection->setClip(selectedClip);
+		QSignalSpy changed(selection, &ShellSelection::changed);
+
+		delete oldClip;
+		QCOMPARE(changed.count(), 0);
+		QCOMPARE(selection->clip(), selectedClip);
+
+		delete selectedClip;
+		QCOMPARE(changed.count(), 1);
+		QCOMPARE(selection->track(), static_cast<Track*>(nullptr));
+		QVERIFY(selection->clip() == nullptr);
+		delete track;
+	}
+
 	void theInspectorEditsThroughTheCommands()
 	{
 		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
