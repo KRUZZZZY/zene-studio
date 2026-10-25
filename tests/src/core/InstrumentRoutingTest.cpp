@@ -240,6 +240,100 @@ private slots:
 		QCOMPARE(loaded.routedCount(), 0);
 	}
 
+	//! A route belonging to a bus removed by a smaller host layout is discarded.
+	void outputBusShrinkClearsRoutesFromRemovedBuses()
+	{
+		const TestChannel target = newChannel();
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Kick"), 2, 2},
+			{QStringLiteral("Snare"), 2, 4}, {QStringLiteral("Aux"), 2, 6}});
+		QVERIFY(buses.route(3, target.id));
+		QCOMPARE(buses.routedCount(), 1);
+
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Kick"), 2, 2}});
+
+		QCOMPARE(buses.routeOf(3), -1);
+		QCOMPARE(buses.routedCount(), 0);
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("instrumenttrack"));
+		doc.appendChild(parent);
+		buses.saveSettings(doc, parent);
+		QCOMPARE(parent.elementsByTagName(QStringLiteral("route")).size(), 0);
+	}
+
+	//! A route for a bus absent from the loaded layout remains saved for a later layout.
+	void outputBusDeferredRoutesSurviveSaveBeforeLayoutAppears()
+	{
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("instrumenttrack"));
+		doc.appendChild(parent);
+		QDomElement outputBuses = doc.createElement(QStringLiteral("outputbuses"));
+		parent.appendChild(outputBuses);
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("bus"), 2);
+		route.setAttribute(QStringLiteral("channel"), 417);
+		outputBuses.appendChild(route);
+
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out"), 2, 2}});
+		buses.loadSettings(parent);
+		QCOMPARE(buses.routeOf(2), 417);
+
+		QDomDocument savedDoc;
+		QDomElement savedParent = savedDoc.createElement(QStringLiteral("instrumenttrack"));
+		savedDoc.appendChild(savedParent);
+		buses.saveSettings(savedDoc, savedParent);
+		QCOMPARE(savedParent.elementsByTagName(QStringLiteral("route")).size(), 1);
+
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}});
+		QCOMPARE(buses.routeOf(2), 417);  // the absent bus was never part of the prior layout
+
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out"), 2, 2},
+			{QStringLiteral("Deferred"), 2, 4}});
+		QCOMPARE(buses.routeOf(2), 417);
+	}
+
+	//! A loaded route for a bus outside the current layout must not expose a render buffer.
+	void outputBusBufferRejectsBusOutsideCurrentLayout()
+	{
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("instrumenttrack"));
+		doc.appendChild(parent);
+		QDomElement outputBuses = doc.createElement(QStringLiteral("outputbuses"));
+		parent.appendChild(outputBuses);
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("bus"), 2);
+		route.setAttribute(QStringLiteral("channel"), 417);
+		outputBuses.appendChild(route);
+
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out"), 2, 2}});
+		buses.loadSettings(parent);
+		QCOMPARE(buses.routeOf(2), 417);  // saved route retained until the matching layout appears
+		QVERIFY(buses.routedBuffer(2, Engine::audioEngine()->framesPerPeriod()) == nullptr);
+	}
+
+	//! The fixed slot array's last valid index works, and layout overflow cannot reach it.
+	void outputBusCapacityRemainsBounded()
+	{
+		const TestChannel target = newChannel();
+		std::vector<InstrumentOutputBus> layout;
+		for (int bus = 0; bus <= InstrumentOutputBuses::MaxBuses; ++bus)
+		{
+			layout.push_back({QStringLiteral("Bus %1").arg(bus), 2, bus * 2});
+		}
+
+		InstrumentOutputBuses buses;
+		buses.setLayout(layout);
+		QCOMPARE(buses.busCount(), InstrumentOutputBuses::MaxBuses);
+		QVERIFY(buses.route(InstrumentOutputBuses::MaxBuses - 1, target.id));
+		QVERIFY(buses.routedBuffer(InstrumentOutputBuses::MaxBuses - 1,
+			Engine::audioEngine()->framesPerPeriod()) != nullptr);
+		QVERIFY(!buses.route(InstrumentOutputBuses::MaxBuses, target.id));
+		QVERIFY(buses.routedBuffer(InstrumentOutputBuses::MaxBuses,
+			Engine::audioEngine()->framesPerPeriod()) == nullptr);
+	}
+
 	void malformedOutputBusChannelIsIgnored()
 	{
 		QDomDocument doc;

@@ -110,6 +110,11 @@ void InstrumentOutputBuses::setLayout(const std::vector<InstrumentOutputBus>& bu
 {
 	const auto count = std::min<std::size_t>(buses.size(), MaxBuses);
 	ChangeGuard guard;
+	for (int bus = static_cast<int>(count); bus < busCount(); ++bus)
+	{
+		// A route loaded for a bus absent from the previous layout is retained for a future layout.
+		if (routeOf(bus) >= 0) { storeRoute(bus, -1); }
+	}
 	m_layout.assign(buses.begin(), buses.begin() + static_cast<std::ptrdiff_t>(count));
 }
 
@@ -236,7 +241,7 @@ auto InstrumentOutputBuses::routedIndex(int bus) -> int
 
 auto InstrumentOutputBuses::routedBuffer(int bus, f_cnt_t frames) -> SampleFrame*
 {
-	if (bus < 1 || bus >= MaxBuses || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return nullptr; }
+	if (bus < 1 || bus >= busCount() || m_slots[static_cast<std::size_t>(bus)] == nullptr) { return nullptr; }
 	Slot& slot = *m_slots[static_cast<std::size_t>(bus)];
 	if (slot.channelId.load(std::memory_order_acquire) < 0) { return nullptr; }
 	return slot.block.size() == static_cast<std::size_t>(frames) ? slot.block.data() : nullptr;
