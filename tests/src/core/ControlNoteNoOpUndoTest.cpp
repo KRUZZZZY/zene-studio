@@ -265,6 +265,25 @@ private slots:
 		QVERIFY(!Engine::getSong()->isModified());
 	}
 
+	//! Setting the current velocity must not push a MidiClip journal checkpoint.
+	void noOpVelocitySetDoesNotAddCheckpoint()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		markProjectClean();
+		const quint64 before = journal->topStepSerial();
+
+		const ControlResult set = run(QStringLiteral("note.velocity_set"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("note"), fixture.note}, {QStringLiteral("velocity"), 100}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("velocity")).toInt(), 100);
+		QCOMPARE(journal->topStepSerial(), before);
+		QVERIFY(!Engine::getSong()->isModified());
+	}
+
 	//! The positive control: a transform that DID change something still records
 	//! its transaction, still advertises the undo that reverses it, and still
 	//! undoes in one step. A guard that swallowed every transaction would pass

@@ -417,9 +417,10 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		Note* note = control::resolveNote(clip, args.value(QStringLiteral("note")).toString(), &index, &error);
 		if (note == nullptr) { return error; }
 		const volume_t previous = note->getVolume();
+		const volume_t requested = static_cast<volume_t>(args.value(QStringLiteral("velocity")).toDouble());
 
-		clip->addJournalCheckPoint();
-		note->setVolume(static_cast<volume_t>(args.value(QStringLiteral("velocity")).toDouble()));
+		if (requested != previous) { clip->addJournalCheckPoint(); }
+		note->setVolume(requested);
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
 
