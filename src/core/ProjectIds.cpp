@@ -243,8 +243,9 @@ void ProjectIds::noteLoadAssignment(int id)
 {
 	++s_loadAssignments;
 	// The object KEEPS this id, so it is live from now on.
-	if (id + 1 > s_documentFloor) { s_documentFloor = id + 1; }
-	if (id >= s_next) { s_next = id + 1; }
+	const int successor = successorOf(id);
+	if (successor > s_documentFloor) { s_documentFloor = successor; }
+	if (id >= s_next) { s_next = successor; }
 }
 
 bool ProjectIds::isDocumentElement(const QDomNode& node)
