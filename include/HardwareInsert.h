@@ -83,6 +83,9 @@ public:
 		float mix = 1.f;                     //!< 0 dry .. 1 wet
 		int latencyOverride = -1;            //!< frames; negative: the measured figure
 		int measured = -1;                   //!< the last ping's result; negative: never measured
+		sample_rate_t measuredRate = 0;      //!< sample rate at which the measured frame count was found
+		audioio::Destination measuredSend{0, 2};
+		audioio::Destination measuredReturn{0, 2};
 		bool operator==(const Settings&) const = default;
 	};
 
@@ -134,6 +137,7 @@ private:
 	void pushCaptured(AudioEngine& engine) noexcept;
 	void listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept;
 	void writeOutput(SampleFrame* buffer, f_cnt_t frames, bool measuring) noexcept;
+	void invalidateMeasurementForRate(sample_rate_t rate) noexcept;
 
 	/*! The ping's state machine, in one atomic word: the state in the low bits, the frames the
 	 *  last ping measured above them. One word, so a state change and the figure it carries are
@@ -165,6 +169,7 @@ private:
 	 *  thread changed the word in between. */
 	//! The period claims the request: the click goes out and the ping waits for its answer.
 	bool claimPing(PingWord expected) noexcept;
+	bool claimPing(PingWord expected, sample_rate_t rate) noexcept;
 	//! The period hears the click: the ping is done and @a frames is what it measured.
 	bool publishPingResult(PingWord expected, int frames) noexcept;
 	//! The period heard nothing in time: the ping failed.
@@ -192,6 +197,8 @@ private:
 	bool m_sent = false;
 	//! The ping's state and the figure it measured, in one word.
 	std::atomic<PingWord> m_ping{packPing(-1, PingState::Idle)};
+	std::atomic<sample_rate_t> m_measurementRate{0};
+	sample_rate_t m_pingSampleRate = 0;
 	int m_pingFrames = 0;
 };
 
