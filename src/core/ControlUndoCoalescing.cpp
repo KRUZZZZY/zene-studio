@@ -66,6 +66,7 @@ void UndoCoalescer::breakRun()
 {
 	m_key.clear();
 	m_topSerial = 0;
+	m_atMs = -1;
 }
 
 bool UndoCoalescer::setWindowMs(int ms)

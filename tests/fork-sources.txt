@@ -3002,3 +3002,5 @@ tests/control-touch-workspace.py
 tests/src/plugins/WatsynParamHandoffTest.cpp
 # cluster new-p17-202-port (2026-10): the fix and verification report for the Watsyn parameter hand-off on the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p17-202-port.md
+# cluster new-p21-113 (2026-10): the undo coalescer forgotten-run timestamp fix and verification report.
+docs/qwen-fixes-2026-10/cluster-new-p21-113.md
