@@ -33,6 +33,7 @@
 #include <QComboBox>
 #include <QLabel>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QSpinBox>
@@ -160,6 +161,22 @@ private slots:
 		QCOMPARE(open->outClip(), m_first);
 		QCOMPARE(open->inClip(), m_second);
 		open->close();
+	}
+
+	void reopeningAnExistingEditorPreservesPendingControls()
+	{
+		CrossfadeEditorDialog* open = CrossfadeEditorDialog::openFor(m_first, m_second, nullptr);
+		QVERIFY(open != nullptr);
+		const QPointer<CrossfadeEditorDialog> guard(open);
+		const auto close = qScopeGuard([&] { if (guard) { guard->close(); } });
+		const CrossfadeSide pending{12, FadeShape::Exponential};
+		open->setOutSide(pending);
+
+		CrossfadeEditorDialog* reopened = CrossfadeEditorDialog::openFor(m_second, m_first, nullptr);
+
+		QCOMPARE(reopened, open);
+		QCOMPARE(reopened->outSide().ticks, pending.ticks);
+		QVERIFY(reopened->outSide().shape == pending.shape);
 	}
 
 	void theEditorTracksClipMovesAndResizes()
