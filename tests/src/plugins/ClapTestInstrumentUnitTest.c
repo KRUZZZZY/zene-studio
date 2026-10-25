@@ -133,6 +133,37 @@ static int test_non_core_event_count(void)
 	return 0;
 }
 
+static int test_activation_counters_reset(void)
+{
+	instrument_plugin_t self = {0};
+	clap_plugin_t plugin = {0};
+	clap_process_t process = {0};
+	plugin.plugin_data = &self;
+	self.layout_ports = instrument_output_ports();
+	self.event_count = 5;
+	self.note_on_count = 2;
+
+	CHECK(instrument_activate(&plugin, 48000.0, 1, 64),
+		"initial activation failed");
+	process.frames_count = 65;
+	CHECK(instrument_process(&plugin, &process) == CLAP_PROCESS_CONTINUE,
+		"initial process call failed");
+	CHECK(self.frames_processed == 65.0 && self.blocks == 1 && self.max_block == 65 &&
+		self.oversized_calls == 1,
+		"initial activation did not record its processing metrics");
+
+	instrument_deactivate(&plugin);
+	CHECK(instrument_activate(&plugin, 48000.0, 1, 128),
+		"reactivation failed");
+	CHECK(self.declared_max_frames == 128, "reactivation did not update the declared maximum");
+	CHECK(self.frames_processed == 0.0 && self.blocks == 0 && self.max_block == 0 &&
+		self.oversized_calls == 0,
+		"activation-scoped processing metrics survived reactivation");
+	CHECK(self.event_count == 5 && self.note_on_count == 2,
+		"session event counters were reset during reactivation");
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	if (argc == 2 && strcmp(argv[1], "state") == 0)
@@ -143,9 +174,13 @@ int main(int argc, char** argv)
 	{
 		return test_non_core_event_count();
 	}
+	if (argc == 2 && strcmp(argv[1], "activation") == 0)
+	{
+		return test_activation_counters_reset();
+	}
 	else
 	{
-		fprintf(stderr, "usage: %s state|events\n", argv[0]);
+		fprintf(stderr, "usage: %s state|events|activation\n", argv[0]);
 		return 2;
 	}
 }

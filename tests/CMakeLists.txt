@@ -4235,6 +4235,7 @@ if(TARGET lmms_clap)
 	add_executable(ClapTestInstrumentUnitTest src/plugins/ClapTestInstrumentUnitTest.c)
 	add_test(NAME ClapTestInstrumentStateTest COMMAND ClapTestInstrumentUnitTest state)
 	add_test(NAME ClapTestInstrumentEventCountTest COMMAND ClapTestInstrumentUnitTest events)
+	add_test(NAME ClapTestInstrumentActivationCountersTest COMMAND ClapTestInstrumentUnitTest activation)
 	target_include_directories(ClapTestInstrumentUnitTest PRIVATE
 		${CMAKE_SOURCE_DIR}/tests/data/clap-test-plugin
 	)

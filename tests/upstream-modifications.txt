@@ -5082,3 +5082,8 @@ tests/CMakeLists.txt	cluster new-p15-293: registers ClapTestInstrumentUnitTest a
 tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p15-293: rejects non-finite and out-of-range state gains before restoring the parameter.
 tests/CMakeLists.txt	cluster new-p14-436: registers a direct CLAP fixture regression for counting non-core events before classifying them.
 tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p14-436: counts each non-null event before filtering non-core event spaces.
+tests/CMakeLists.txt	cluster new-p14-435: registers a reactivation regression for the CLAP instrument's activation-scoped metrics.
+tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p14-435: clears frame, block, largest-block, and oversized-call metrics at activation.
+tests/fork-sources.txt	cluster new-p15-293: names the fixture unit test in both the regeneration and verify recipes and records it as a fork-new test source.
+tests/all-sources.txt	cluster new-p15-293: adds the fixture unit test to the regenerated whole-tree source inventory.
+tests/all-sources.txt	cluster new-p14-435/new-p15-293: re-derives the whole-tree source list from its header recipe, removing vendored sfizz entries that recipe excludes and including the new fixture regression source.

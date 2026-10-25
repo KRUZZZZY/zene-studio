@@ -100,8 +100,8 @@ typedef struct instrument_state
 	uint32_t version;
 	uint32_t declared_max_frames; /* what activate() was told */
 	uint32_t blocks;              /* process() calls since activate() */
-	uint32_t max_block;           /* largest frames_count seen */
-	uint32_t oversized_calls;     /* calls with frames_count > declared_max_frames */
+	uint32_t max_block;           /* largest frames_count since activate() */
+	uint32_t oversized_calls;     /* oversized calls since activate() */
 	uint32_t event_count;         /* every event in every input list */
 	uint32_t param_event_count;   /* CLAP_EVENT_PARAM_VALUE events */
 	uint32_t note_on_count;
@@ -675,6 +675,10 @@ static bool instrument_activate(const clap_plugin_t* plugin, double sample_rate,
 	(void)min_frames_count;
 	instrument_plugin_t* self = (instrument_plugin_t*)plugin->plugin_data;
 	self->declared_max_frames = max_frames_count;
+	self->frames_processed = 0.0;
+	self->blocks = 0;
+	self->max_block = 0;
+	self->oversized_calls = 0;
 	instrument_follow_layout(self);
 	return self->latent ? instrument_activate_latency(self) : true;
 }
