@@ -61,7 +61,7 @@ The train snapshot had 1,148 vendored `plugins/SfzPlayer/sfizz/` paths in `tests
 | Gate | Result | Evidence |
 | --- | --- | --- |
 | `feature_check.py` | PASS, **EXIT=0** | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5564`; `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5564.r1/logs/040-feature-check-final.log`. All rows pass: fork-sources, all-sources-reproduce, no-upstream-regression, namespace, no-tautology, doc-figures, complexity, file-length. |
-| `submit_check.py` | To be recorded after commit. | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5564 5564`. |
+| `submit_check.py` | PASS, **EXIT=0** (`PASS - submit`) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5564 5564`; `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5564.r1/logs/041-submit-check-postcommit.log`. |
 
 ## Self-check
 
@@ -73,4 +73,4 @@ The train snapshot had 1,148 vendored `plugins/SfzPlayer/sfizz/` paths in `tests
 
 ## Files committed
 
-Commit contents: `src/gui/CommandPalette.cpp`, `tests/src/gui/CommandPaletteTest.cpp`, `tests/fork-sources.txt`, `tests/all-sources.txt`, and `docs/qwen-fixes-2026-10/cluster-5564.md`.
+Fix commit `d5caa3d49` contents: `src/gui/CommandPalette.cpp`, `tests/src/gui/CommandPaletteTest.cpp`, `tests/fork-sources.txt`, `tests/all-sources.txt`, and `docs/qwen-fixes-2026-10/cluster-5564.md`.
