@@ -23,6 +23,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <array>
 
 #include <cmath>
@@ -198,7 +199,7 @@ private slots:
 
 		QElapsedTimer timer;
 		timer.start();
-		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+		const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 			[&](float fraction) {
 				if (fraction < lastProgress)
 				{
@@ -222,6 +223,40 @@ private slots:
 		{
 			QVERIFY2(stems[static_cast<std::size_t>(s)] != nullptr, stemName(static_cast<Stem>(s)));
 			QCOMPARE(stems[static_cast<std::size_t>(s)]->size(), mix->size());
+		}
+	}
+
+	/*! Q050-062.1: the quality travels to tools/stem_split_cli.py (--quality) and sets how many
+	 *  segments it runs. The CLI reports chunks_done / chunks after each one, so its smallest
+	 *  positive fraction is 1 / runs: a one-second mix at a 16384-frame segment takes 6 / 9 / 17
+	 *  runs at 25% / 50% / 75% overlap (the same counts as OnnxRuntimeStemSeparatorTest). */
+	void testQualitySetsTheSegmentCountThroughTheCli()
+	{
+		const struct { StemQuality quality; int runs; } cases[] = {
+			{StemQuality::Fast, 6}, {StemQuality::Standard, 9}, {StemQuality::High, 17},
+		};
+		const auto mix = makeSineMix(1);
+		for (const auto& c : cases)
+		{
+			ExternalProcessStemSeparator separator;
+			StemSet stems;
+			QString error;
+			float smallest = 2.0f;
+			const auto status = separator.separate(*mix, StemModelSampleRate, 16384, c.quality,
+				[&](float fraction) {
+					if (fraction > 0.0f) { smallest = std::min(smallest, fraction); }
+					return true;
+				},
+				stems, error);
+			QVERIFY2(status == StemSeparator::Status::Success, qPrintable(error));
+			const int runs = static_cast<int>(std::lround(1.0 / smallest));
+			QVERIFY2(runs == c.runs, qPrintable(QStringLiteral("%1: %2 runs, expected %3")
+				.arg(QString::fromLatin1(stemQualityName(c.quality))).arg(runs).arg(c.runs)));
+			for (int s = 0; s < NumStems; ++s)
+			{
+				QVERIFY(stems[static_cast<std::size_t>(s)] != nullptr);
+				QCOMPARE(stems[static_cast<std::size_t>(s)]->size(), mix->size());
+			}
 		}
 	}
 
@@ -269,7 +304,7 @@ subprocess.Popen(
 		SampleBuffer mix(std::vector<SampleFrame>{ SampleFrame(0.25f, -0.25f) }, StemModelSampleRate);
 		StemSet stems;
 		QString error;
-		const auto status = separator.separate(mix, StemModelSampleRate, 1,
+		const auto status = separator.separate(mix, StemModelSampleRate, 1, StemQuality::Standard,
 			[](float) { return true; }, stems, error);
 
 		QCOMPARE(static_cast<int>(status), static_cast<int>(StemSeparator::Status::Failed));
@@ -292,7 +327,7 @@ subprocess.Popen(
 		{
 			ExternalProcessStemSeparator separator(QString(), QString(), models[m]);
 			QString error;
-			const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+			const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 				[](float) { return true; }, results[m], error);
 			QVERIFY2(status == StemSeparator::Status::Success, qPrintable(models[m] + ": " + error));
 		}
@@ -323,7 +358,7 @@ subprocess.Popen(
 		StemSet stems;
 		QString error;
 		int progressCalls = 0;
-		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+		const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 			[&](float) {
 				// cancel after the first chunk
 				return ++progressCalls < 2;
@@ -391,7 +426,7 @@ subprocess.Popen(
 		QString error;
 		const auto mix = makeSineMix(1);
 		ExternalProcessStemSeparator separator;
-		const auto status = separator.separate(*mix, StemModelSampleRate, 16384,
+		const auto status = separator.separate(*mix, StemModelSampleRate, 16384, StemQuality::Standard,
 			[](float) { return true; }, stems, error);
 		QVERIFY2(status == StemSeparator::Status::Success, qPrintable(error));
 

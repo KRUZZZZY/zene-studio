@@ -85,6 +85,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 
 #include "StemSeparation/StemTypes.h"
 #include "lmms_export.h"
@@ -124,9 +125,18 @@ LMMS_EXPORT QJsonObject stemState();
  */
 LMMS_EXPORT bool stemStartJob(const QString& source,
 	int segmentFrames,
+	StemQuality quality,
 	int* jobId,
 	QJsonObject* job,
 	QString* error);
+
+/*! Q050-062.1: the names `stem.job_start` accepts for `quality`, in
+ *  StemQuality order ("fast", "standard", "high").
+ */
+LMMS_EXPORT QStringList stemQualityNames();
+
+//! The StemQuality called \a name in \p quality; false for any other name.
+LMMS_EXPORT bool stemQualityFromName(const QString& name, StemQuality* quality);
 
 //! Whether \a jobId is a id THIS surface issued. The manager alone cannot
 //! answer it (see the file header).
@@ -139,6 +149,7 @@ LMMS_EXPORT bool stemHasJob(int jobId);
  *  Each job object carries `job_id`, `state` ("queued", "running",
  *  "cancel_requested", "completed", "cancelled", "failed"), `progress` (0..1),
  *  `source`, `sample_rate`, `frames`, `seconds`, `segment_frames`,
+ *  `quality`, `overlap` and `hop_frames` (the job's effective setting),
  *  `since_submit_seconds` (the SURFACE's wall clock, not the engine's job
  *  time), `backend` and `error` (empty unless the job failed).
  */

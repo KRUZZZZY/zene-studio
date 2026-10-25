@@ -75,14 +75,19 @@ public:
 	{
 	}
 
+	//! Q050-062.1: where separate() records the quality the manager handed it.
+	void recordQualityInto(std::atomic<int>* sink) { m_qualitySink = sink; }
+
 	Status separate(const SampleBuffer& mix,
 		int sampleRate,
 		int segmentFrames,
+		StemQuality quality,
 		const ProgressFn& progress,
 		StemSet& out,
 		QString& error) override
 	{
 		Q_UNUSED(segmentFrames);
+		if (m_qualitySink != nullptr) { m_qualitySink->store(static_cast<int>(quality)); }
 		if (m_mode == Mode::Fail)
 		{
 			error = QStringLiteral("fake failure");
@@ -134,6 +139,7 @@ private:
 
 	Mode m_mode;
 	int m_steps;
+	std::atomic<int>* m_qualitySink = nullptr;
 };
 
 // Test double for a backend stuck inside one inference call: it blocks until
@@ -151,7 +157,7 @@ public:
 
 	~BlockingInferenceSeparator() override { m_destroyed.store(true); }
 
-	Status separate(const SampleBuffer&, int, int, const ProgressFn& progress,
+	Status separate(const SampleBuffer&, int, int, StemQuality, const ProgressFn& progress,
 		StemSet&, QString&) override
 	{
 		m_entered.store(true);
@@ -216,6 +222,38 @@ private slots:
 		// the fake writes stem s at 0.25*(s+1); the last stem must be 1.0
 		QCOMPARE(stems[3]->data()[0].left(), 1.0f);
 		QVERIFY(finishedSpy.last().at(1).toDouble() >= 0.0);
+	}
+
+	//! Q050-062.1: a job reaches its backend at the quality it was submitted at,
+	//! and a caller that names none gets the legacy Standard.
+	void testSubmitHandsTheQualityToTheBackend()
+	{
+		StemQuality none = StemQuality::High;
+		QVERIFY(!StemJobManager().inferenceQuality(42, &none));
+		const struct { bool given; StemQuality quality; StemQuality expected; } cases[] = {
+			{false, StemQuality::Fast, StemQuality::Standard},
+			{true, StemQuality::Fast, StemQuality::Fast},
+			{true, StemQuality::Standard, StemQuality::Standard},
+			{true, StemQuality::High, StemQuality::High},
+		};
+		for (const auto& c : cases)
+		{
+			std::atomic<int> seen{-1};
+			StemJobManager manager;
+			auto separator = std::make_unique<FakeSeparator>(FakeSeparator::Mode::Success, 2);
+			separator->recordQualityInto(&seen);
+			manager.setSeparator(std::move(separator));
+			QSignalSpy finishedSpy(&manager, &StemJobManager::jobFinished);
+			const int id = c.given ? manager.submit(makeMix(), StemModelSampleRate, 1024, c.quality)
+				: manager.submit(makeMix(), StemModelSampleRate, 1024);
+			QVERIFY(id > 0);
+			QTRY_VERIFY_WITH_TIMEOUT(finishedSpy.count() == 1, 10000);
+			QCOMPARE(seen.load(), static_cast<int>(c.expected));
+			StemQuality ran = StemQuality::Fast;
+			QVERIFY(manager.inferenceQuality(id, &ran));
+			QCOMPARE(static_cast<int>(ran), static_cast<int>(c.expected));
+			QCOMPARE(static_cast<int>(manager.quality(id)), static_cast<int>(c.expected));
+		}
 	}
 
 	void testProgressIsReportedDuringTheRun()

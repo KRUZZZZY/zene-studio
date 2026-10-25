@@ -47,6 +47,34 @@ progress/cancel, and delivers results via queued signals.
 `StemSplitController` is the GUI side; `StemTrackBuilder` turns a finished
 `StemSet` into tracks/clips in the Song.
 
+## Quality: the segment overlap (Q050-062.1)
+
+Both backends and `tools/stem_split_cli.py` run the model over overlapping
+segments and average the Hann-windowed predictions (overlap-add). The overlap
+is the quality setting, `StemQuality` in `include/StemSeparation/StemTypes.h`:
+
+| quality | overlap | hop (frames between segment starts) | passes vs standard |
+|---|---|---|---|
+| `fast` | 25 % | `floor(segment * 3 / 4)` | about 2/3 |
+| `standard` (default) | 50 % | `floor(segment * 2 / 4)` = `segment / 2` | 1 |
+| `high` | 75 % | `floor(segment * 1 / 4)` | about 2x |
+
+The hop is never below 1. `standard` is the overlap every backend used before
+the setting existed, so a caller that omits it gets the legacy output bit for
+bit. The C++ backends call `stemHopFrames()`; the CLI's `--quality` uses the
+same table and integer formula, and its `info` line reports `quality`, `hop`
+and `chunks`. `stem.job_start` takes `quality` (omitted = `standard`) and every
+job object reports the effective `quality`, `overlap` and `hop_frames` (read
+from `StemJobManager::quality()`, not the surface's record of the request) and
+`inference_quality`: the setting the worker handed `separate()`, published just
+before the call (empty until then).
+`segment_frames` is NOT a quality control: it changes the model's context, and
+HTDemucs is trained at its own 343,980-frame segment.
+
+Not measured yet: real-model SDR per quality (Q050-062 stage 3). More overlap
+averages more predictions per frame, which is how Demucs's own `--overlap`
+works, but no figure here claims it separates better.
+
 ## The ONNX gate: both configure modes
 
 There is no system-wide ONNX Runtime on this machine, so the integration is

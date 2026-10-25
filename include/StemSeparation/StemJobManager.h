@@ -81,6 +81,11 @@ public:
 		std::shared_ptr<const SampleBuffer> mix;
 		int sampleRate = StemModelSampleRate;
 		int segmentFrames = HTDemucsSegmentFrames;
+		//! Q050-062.1: the segment overlap the backend runs at; set once at submit.
+		StemQuality quality = DefaultStemQuality;
+		//! The quality the worker handed the backend, as an int; -1 until it
+		//! did (atomic: the worker writes it while the owner may read it).
+		std::atomic<int> inferenceQuality{-1};
 		std::atomic<State> state{State::Queued};
 		std::atomic<float> progress{0.0f};
 		std::atomic<bool> cancelRequested{false};
@@ -118,11 +123,19 @@ public:
 	bool fetchingModel(int jobId) const;
 	float downloadProgress(int jobId) const;
 
+	//! Q050-062.1: the quality \a jobId was submitted at (the default for an
+	//! unknown id), and the one the worker passed to the backend's separate():
+	//! false until the worker called it (or for an unknown id).
+	StemQuality quality(int jobId) const;
+	bool inferenceQuality(int jobId, StemQuality* quality) const;
+
 	// Queues a job and returns its id immediately. The caller keeps ownership
 	// of the mix buffer through the shared_ptr. `mix` must not be null.
+	// `quality` is handed to the backend unchanged (StemTypes.h).
 	int submit(std::shared_ptr<const SampleBuffer> mix,
 		int sampleRate,
-		int segmentFrames = HTDemucsSegmentFrames);
+		int segmentFrames = HTDemucsSegmentFrames,
+		StemQuality quality = DefaultStemQuality);
 
 	void cancel(int jobId);
 	void cancelAll();

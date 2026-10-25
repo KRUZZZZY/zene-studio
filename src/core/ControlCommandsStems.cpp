@@ -127,11 +127,20 @@ ControlResult stemJobStart(const QJsonObject& args)
 	const int segmentFrames = args.contains(QStringLiteral("segment_frames"))
 		? args.value(QStringLiteral("segment_frames")).toInt()
 		: 0;
+	// Q050-062.1: an omitted quality is the legacy 50% overlap.
+	StemQuality quality = DefaultStemQuality;
+	if (args.contains(QStringLiteral("quality"))
+		&& !stemQualityFromName(args.value(QStringLiteral("quality")).toString(), &quality))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'quality' must be one of %1")
+				.arg(stemQualityNames().join(QStringLiteral(", "))));
+	}
 
 	int jobId = -1;
 	QJsonObject job;
 	QString error;
-	if (!stemStartJob(source, segmentFrames, &jobId, &job, &error))
+	if (!stemStartJob(source, segmentFrames, quality, &jobId, &job, &error))
 	{
 		// Every refusal here is the engine's own: a missing file, a file the
 		// decoders cannot read, a source too long or too short to split at the
@@ -323,6 +332,8 @@ void registerStemGetState(ControlRegistry& registry)
 		{QStringLiteral("realtime"), booleanProperty()},
 		{QStringLiteral("realtime_reason"), stringProperty()},
 		{QStringLiteral("stem_order"), arrayProperty()},
+		{QStringLiteral("qualities"), arrayProperty()},
+		{QStringLiteral("default_quality"), stringProperty()},
 		{QStringLiteral("jobs"), objectProperty()},
 		{QStringLiteral("fetch_on_first_use"), booleanProperty()},
 	});
@@ -345,11 +356,17 @@ void registerStemJobStart(ControlRegistry& registry)
 		"python onnxruntime, or the model absent and not fetchable). An absent model that IS "
 		"fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the "
 		"pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then "
-		"separates. NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with "
+		"separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about "
+		"2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before "
+		"the setting existed) or `high` 75% (about twice the passes, each frame averaged over more "
+		"predictions); the job reports the effective `quality`, `overlap` and `hop_frames`, and `inference_quality` (the "
+		"setting its worker handed the backend; empty until inference starts). NOT "
+		"realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with "
 		"`stem.job_status`, then `stem.job_result`.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("source"), stringProperty()},
 		{QStringLiteral("segment_frames"), integerProperty(1, 44100 * 600)},
+		{QStringLiteral("quality"), enumProperty(stemQualityNames())},
 	}, {QStringLiteral("source")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("job_id"), integerProperty()},
@@ -362,6 +379,10 @@ void registerStemJobStart(ControlRegistry& registry)
 		{QStringLiteral("frames"), integerProperty()},
 		{QStringLiteral("seconds"), numberProperty()},
 		{QStringLiteral("segment_frames"), integerProperty()},
+		{QStringLiteral("quality"), stringProperty()},
+		{QStringLiteral("overlap"), numberProperty()},
+		{QStringLiteral("hop_frames"), integerProperty()},
+		{QStringLiteral("inference_quality"), stringProperty()},
 		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("backend"), stringProperty()},
 		{QStringLiteral("error"), stringProperty()},
@@ -381,7 +402,8 @@ void registerStemJobStatus(ControlRegistry& registry)
 	cmd.description = QStringLiteral("One separator job by `job_id`, or every job this instance "
 		"has run when `job_id` is omitted: each job's `state` (queued, running, cancel_requested, "
 		"completed, cancelled, failed), `progress` (0..1), `fetching_model` and `download_progress` "
-		"(0..1) while a first job fetches the model, its source, frame count and "
+		"(0..1) while a first job fetches the model, its source, frame count, the effective "
+		"`quality` / `overlap` / `hop_frames` it runs at, `inference_quality` (what the worker handed the backend) and "
 		"`since_submit_seconds` (the surface's own wall clock, not a claim about inference time), "
 		"and `error` when it failed. Reads the manager's atomics, so it answers even while a job is "
 		"running - this is the poll that proves the control surface is not held by the work.");
@@ -455,6 +477,10 @@ void registerStemJobCancel(ControlRegistry& registry)
 		{QStringLiteral("frames"), integerProperty()},
 		{QStringLiteral("seconds"), numberProperty()},
 		{QStringLiteral("segment_frames"), integerProperty()},
+		{QStringLiteral("quality"), stringProperty()},
+		{QStringLiteral("overlap"), numberProperty()},
+		{QStringLiteral("hop_frames"), integerProperty()},
+		{QStringLiteral("inference_quality"), stringProperty()},
 		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("backend"), stringProperty()},
 		{QStringLiteral("error"), stringProperty()},

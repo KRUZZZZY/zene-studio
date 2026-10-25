@@ -45,6 +45,7 @@ public:
 	Status separate(const SampleBuffer& mix,
 		int sampleRate,
 		int segmentFrames,
+		StemQuality quality,
 		const ProgressFn& progress,
 		StemSet& out,
 		QString& error) override;

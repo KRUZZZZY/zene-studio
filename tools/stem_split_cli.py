@@ -43,6 +43,24 @@ import time
 
 STEM_NAMES = ("drums", "bass", "other", "vocals")
 
+# Q050-062.1: --quality sets how much consecutive segments overlap, in quarters
+# of a segment; the C++ backends use the same table and integer formula
+# (include/StemSeparation/StemTypes.h, stemHopFrames). "standard" is the 50%
+# overlap this tool always used, so omitting --quality changes nothing.
+QUALITY_OVERLAP_QUARTERS = {"fast": 1, "standard": 2, "high": 3}
+
+
+def hop_frames(segment, quality="standard"):
+    """Frames between two segment starts for `quality`, never below 1."""
+    return max(1, segment * (4 - QUALITY_OVERLAP_QUARTERS[quality]) // 4)
+
+
+def chunk_count(frames, segment, hop):
+    """Segments one run takes: the padded length (segment // 2 in front, a
+    whole segment behind) divided by the hop, rounded up."""
+    padded = frames + segment // 2 + segment
+    return (padded + hop - 1) // hop
+
 
 def emit(obj):
     print(json.dumps(obj), flush=True)
@@ -192,16 +210,16 @@ def resolve_output_indices(session):
 
 # --------------------------------------------------------------- separation
 
-def separate(session, mix, segment, progress_cb, cancel_cb, chunk_delay_ms=0.0):
+def separate(session, mix, segment, progress_cb, cancel_cb, chunk_delay_ms=0.0,
+             quality="standard"):
     """Overlap-add separation. Returns (stems [4,2,n] or partial, chunks_done,
     cancelled)."""
     import numpy as np
 
     frames = mix.shape[1]
-    hop = segment // 2
+    hop = hop_frames(segment, quality)
     pad_left = segment // 2
-    padded = frames + pad_left + segment
-    chunk_count = (padded + hop - 1) // hop
+    chunks = chunk_count(frames, segment, hop)
 
     window = (0.5 - 0.5 * np.cos(2.0 * np.pi * (np.arange(segment) + 0.5) / segment)
               ).astype(np.float32)
@@ -215,7 +233,7 @@ def separate(session, mix, segment, progress_cb, cancel_cb, chunk_delay_ms=0.0):
 
     chunks_done = 0
     cancelled = False
-    for chunk in range(chunk_count):
+    for chunk in range(chunks):
         if cancel_cb():
             cancelled = True
             break
@@ -237,7 +255,7 @@ def separate(session, mix, segment, progress_cb, cancel_cb, chunk_delay_ms=0.0):
                 acc[s, :, dst] += block_out[:, a:b].astype(np.float64) * window[a:b]
             window_sum[dst] += window[a:b]
         chunks_done = chunk + 1
-        progress_cb(chunks_done / chunk_count)
+        progress_cb(chunks_done / chunks)
         if chunk_delay_ms > 0:
             time.sleep(chunk_delay_ms / 1000.0)
 
@@ -258,6 +276,9 @@ def main():
     parser.add_argument("--out-format", choices=("f32", "wav"), default="f32")
     parser.add_argument("--segment", type=int, default=None,
                         help="model segment length in frames (required for dynamic-T models)")
+    parser.add_argument("--quality", choices=tuple(QUALITY_OVERLAP_QUARTERS),
+                        default="standard",
+                        help="segment overlap: fast 25%%, standard 50%% (default), high 75%%")
     parser.add_argument("--progress-json", action="store_true")
     parser.add_argument("--cancel-file", default=None)
     parser.add_argument("--chunk-delay-ms", type=float, default=0.0,
@@ -291,10 +312,12 @@ def main():
         "providers": ort.get_available_providers(),
         "model": os.path.abspath(args.model),
         "segment": int(segment),
+        "quality": args.quality,
+        "hop": int(hop_frames(int(segment), args.quality)),
         "sample_rate": int(rate),
         "frames": int(mix.shape[1]),
-        "chunks": int((mix.shape[1] + segment // 2 + segment + segment // 2 - 1)
-                      // (segment // 2)),
+        "chunks": int(chunk_count(int(mix.shape[1]), int(segment),
+                                  hop_frames(int(segment), args.quality))),
     })
 
     def cancel_cb():
@@ -306,7 +329,7 @@ def main():
             session, mix, int(segment),
             lambda fraction: emit({"type": "progress",
                                    "fraction": round(float(fraction), 6)}),
-            cancel_cb, args.chunk_delay_ms)
+            cancel_cb, args.chunk_delay_ms, args.quality)
     except Exception as exc:  # noqa: BLE001
         fail(f"inference failed: {exc}")
 
@@ -322,6 +345,7 @@ def main():
         "type": "cancelled" if cancelled else "done",
         "stems": outputs,
         "chunks": chunks_done,
+        "quality": args.quality,
         "elapsed_s": round(elapsed, 6),
         "audio_s": round(duration, 6),
         "rtf": round(elapsed / duration, 6) if duration > 0 else None,
