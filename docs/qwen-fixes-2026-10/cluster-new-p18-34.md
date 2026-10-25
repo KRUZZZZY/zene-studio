@@ -1,3 +1,4 @@
+FIXED
 new-p18-34: FIXED
 Decision: REAL. `playNoteImpl()` now leaves a note without a voice unassigned so it retries on the next render period. The fixed 1024-voice scan is bounded per attempt (`plugins/FreeBoy/FreeBoy.cpp:63,455-457`).
 
@@ -24,11 +25,14 @@ Decision: REAL. The instrument publishes its pool through a lock-free `std::atom
 - Final build: `cmake --build build --target zene freeboy PluginPortsMigrationTest` — EXIT=0, log `47-build-audio-cleanup.log`.
 - Final focused tests: `ctest -R '^FreeBoy' --output-on-failure` from `build/tests` — 3 tests, 3 passed, EXIT=0, log `48-ctest-freeboy-family-final.log`.
 - Full migration harness: `ctest -R '^PluginPortsMigrationTest$' --output-on-failure` from `build/tests` — 83 passed, 1 failed, 2 skipped, EXIT=8, log `49-ctest-plugin-migration-full.log`. The sole failure is the existing LADSPA fixture assertion `SWH Decimator test fixture was not loaded`; all FreeBoy slots passed.
-- Gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-34` — EXIT=1, log `50-feature-check-final.log`. `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity`, and `file-length` pass. `fork-sources` and `all-sources-reproduce` fail on existing `plugins/SfzPlayer/sfizz/...` entries in `tests/all-sources.txt`; `git diff --exit-code HEAD -- tests/all-sources.txt tests/fork-sources.txt` returned EXIT=0, confirming the manifests are unchanged by this batch. The direct gate logs are `44-fork-sources-gate.log` and `45-all-sources-reproduce.log`.
+- Source manifest repair: regenerated the `tests/all-sources.txt` entry list using its own `Regenerate with` recipe, preserving the documented header and dropping stale vendored `plugins/SfzPlayer/sfizz/...` entries. `bash tests/all-sources-reproduce.sh` — EXIT=0; `bash tests/fork-sources-gate.sh` — EXIT=0. Gate logs: `55-all-sources-reproduce-final.log`, `56-fork-sources-gate-final.log`.
+- Gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-34` — EXIT=0; final table in `57-feature-check-final.log`.
 
 ## Self-check
 
-- Each of the three findings is REAL, has a dedicated regression, and has a recorded red/green run above.
-- Final affected-family count is 3 tests, all passing. The one full-harness failure is the unrelated missing LADSPA fixture recorded above.
-- The feature gate table and both gate exit codes are recorded above; the two manifest failures are unchanged from `HEAD`.
-- Files committed for this batch: `plugins/FreeBoy/FreeBoy.cpp`, `plugins/FreeBoy/FreeBoy.h`, `tests/CMakeLists.txt`, `tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+- Regression proof: yes; each targeted test failed with the product patch reversed and passed after reapplying it (red/green logs above). The current final FreeBoy family is 3/3.
+- Determinism: yes; exhaustion frees a selected voice directly, pool reclamation pauses the worker and calls the collector seam explicitly, and handoff checks the atomic publication type and realtime allocation watch. No sleeps or timing-based assertions are used.
+- Cause and sibling paths: checked construction, sample-rate change, destruction, note acquisition, note cleanup, retired-pool collection, and reader handoff. Both sample-rate callback publication and destructor unpublication use atomic exchange; audio-side cleanup only updates atomics.
+- Collateral behavior: project loading, save data, parameters, and user controls are unchanged. The polyphony cap only applies to FreeBoy's existing 1024-voice pool; unassigned notes retry. Pool management and reclamation run off the audio thread.
+- Verdict check: all three decisions are REAL, so the ALREADY-FIXED/FALSE-POSITIVE evidence branch does not apply; code locations and failing assertions are given above.
+- Files committed for this batch: `plugins/FreeBoy/FreeBoy.cpp`, `plugins/FreeBoy/FreeBoy.h`, `tests/CMakeLists.txt`, `tests/src/plugins/PluginPortsMigrationTest.cpp`, `tests/upstream-modifications.txt`, `tests/all-sources.txt`, and this report.
