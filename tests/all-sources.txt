@@ -137,6 +137,9 @@
 # 2026-10-24 (cluster new-p14-285-port): train-15 carried those 1148 excluded vendor paths
 # forward again. The entry list is regenerated from this header's recipe; the two new
 # ScriptDaw regression sources are included in the derived whole-tree scope.
+# 2026-10-25 (cluster rc-f9686856 gate repair): the train-12 snapshot re-added those excluded
+# sfizz entries again after the prior re-derivation; Gate 9 caught the manifest mismatch while
+# closing this cluster. Re-run the published recipe and keep its full output as the entry list.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h

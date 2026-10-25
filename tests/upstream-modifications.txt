@@ -5168,3 +5168,4 @@ tests/all-sources.txt	cluster new-p15-221 gate repair: re-derived the source man
 tests/src/core/MultiTrackRecorderTest.cpp	# Writer thread creation failure leaves the recorder armed
 tests/src/core/RecordingInputPathTest.cpp	# Writer thread creation failure leaves the recorder armed
 tests/src/core/TwoTrackRecordingHarness.cpp	# Writer thread creation failure leaves the recorder armed
+tests/src/gui/LibraryMenusTest.cpp	cluster rc-f9686856: exercise the document-type view sync through a real GUI, the direct project.settings command path and loading a default production project.

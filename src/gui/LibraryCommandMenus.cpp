@@ -52,6 +52,8 @@ namespace lmms::gui::LibraryCommandMenus
 namespace
 {
 
+void syncDocumentTypeView();
+
 QString tr(const char* text)
 {
 	return QObject::tr(text);
@@ -110,7 +112,7 @@ void documentTypeMenu(QMenu* menu)
 		exclusive->addAction(action);
 		action->setProperty("controlCommand", QStringLiteral("project.settings"));
 		QObject::connect(action, &QAction::triggered, menu, [type] {
-			if (run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), type}}).ok) { applyDocumentType(type); }
+			if (run(QStringLiteral("project.settings"), {{QStringLiteral("document_type"), type}}).ok) { syncDocumentTypeView(); }
 		});
 	}
 }
@@ -327,6 +329,11 @@ void tagTitle(MainWindow* window)
 	if (window->windowTitle() != tagged) { window->setWindowTitle(tagged); }
 }
 
+void syncDocumentTypeView()
+{
+	applyDocumentType(ProjectInfo::instance().documentType());
+}
+
 //! Once the main window exists: keep its title tagged from now on.
 void ensureTitleTagging()
 {
@@ -339,9 +346,9 @@ void ensureTitleTagging()
 	tagTitle(window);
 }
 
-void documentChanged(ProjectInfo::Change change)
+void documentChanged(ProjectInfo::Change)
 {
-	if (change == ProjectInfo::Change::Created) { applyDocumentType(ProjectInfo::instance().documentType()); }
+	syncDocumentTypeView();
 	ensureTitleTagging();
 	if (!titledWindow().isNull()) { titledWindow()->resetWindowTitle(); }
 }
@@ -355,8 +362,7 @@ void install()
 	if (installed || song == nullptr) { return; }
 	installed = true;
 	QObject::connect(song, &Song::projectLoaded, song, [] {
-		const QString type = ProjectInfo::instance().documentType();
-		if (type != ProjectInfo::documentTypes().first()) { applyDocumentType(type); }
+		syncDocumentTypeView();
 	});
 	ProjectInfo::setChangeHook(documentChanged);  // WF-048: the type in the title, a new document's view
 	ReferenceProject::setChangeHook(ReferenceProjectPanel::refreshIfOpen);  // WF-042
