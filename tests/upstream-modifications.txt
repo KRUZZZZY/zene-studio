@@ -5170,3 +5170,10 @@ tests/src/core/RecordingInputPathTest.cpp	# Writer thread creation failure leave
 tests/src/core/TwoTrackRecordingHarness.cpp	# Writer thread creation failure leaves the recorder armed
 tests/src/gui/LibraryMenusTest.cpp	cluster rc-f9686856: exercise the document-type view sync through a real GUI, the direct project.settings command path and loading a default production project.
 tests/all-sources.txt	cluster 3776 gate repair: re-derived the whole-tree manifest from its published recipe after the train snapshot reintroduced 1148 vendored sfizz paths that the recipe excludes; the entry list is recipe output, with no product source or ratchet baseline change.
+tests/all-sources.txt	cluster 4168 gate repair: the train-15 snapshot reintroduced 1148 vendored plugins/SfzPlayer/sfizz/** paths although the manifest's published recipe excludes them; the entry list was regenerated from that recipe to restore source-registration gates without changing the intended scope.
+include/TransportReadouts.h	cluster 4168: adds a result-aware text binding while preserving the existing bool binding for other readout clients.
+src/gui/shell/TransportReadouts.cpp	cluster 4168: passes ControlResult.errorMessage into the typed readout refusal tooltip.
+src/gui/shell/InspectorClipFields.cpp	cluster 4168: returns full registered command results from Inspector clip and note edits so refusals reach the field error display.
+tests/src/gui/DevicePanelTest.cpp	cluster 4168: adds a deterministic Inspector note-command refusal regression, with the registered handler returning a fixed refusal.
+src/gui/shell/InspectorClipFields.cpp	new-p10-171: checks note time origins with wide arithmetic and safely formats or rejects unsupported Time values while keeping tick/bar edits independent.
+tests/src/gui/DevicePanelTest.cpp	new-p10-171: adds fixed normal and INT_MAX-boundary tick positions to verify note length formatting and parsing in Time mode.

@@ -35,7 +35,9 @@
  *  Velocities read in % of the default (the engine's 0..200 note volume, 100 % the default). */
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
+#include <limits>
 
 #include <QGridLayout>
 #include <QJsonArray>
@@ -58,10 +60,12 @@ namespace lmms::gui
 namespace
 {
 
-bool invoke(const QString& id, const QJsonObject& args)
+ControlResult invoke(const QString& id, const QJsonObject& args)
 {
-	return ControlRegistry::instance()->invoke(id, args).ok;
+	return ControlRegistry::instance()->invoke(id, args);
 }
+
+ControlResult invalidEdit() { return ControlResult::failure(ControlErrorKind::InvalidArgs, QString()); }
 
 //! A typed length that starts at @a at, in any time format: "2" (bars, as shown), "1.2.0", "1.5 bars", "96 ticks";
 //! false when it is not a positive length. The text shown is exact, so Enter on it unchanged is the same length.
@@ -119,6 +123,37 @@ QString lengthKey(const Note* note) { return QString::number(note->length().getT
 //! Where @a clip starts (gone: 0) - a length, and a note's time, are measured from there.
 int clipStart(const Clip* clip) { return clip != nullptr ? clip->startPosition().getTicks() : 0; }
 
+qint64 noteTimeOrigin(const Clip* clip, const Note* note)
+{
+	return static_cast<qint64>(clipStart(clip)) + note->pos().getTicks();
+}
+
+bool tickInRange(qint64 tick)
+{
+	return tick >= std::numeric_limits<tick_t>::min() && tick <= std::numeric_limits<tick_t>::max();
+}
+
+//! Whether the typed length uses seconds, the only MusicalTime unit that needs its absolute start tick.
+bool lengthNeedsTimeOrigin(const QString& typed)
+{
+	QString body = typed.trimmed();
+	if (body.startsWith(QLatin1Char('-'))) { body.remove(0, 1); }
+	const auto hasSuffix = [&body](const QStringList& words) {
+		return std::any_of(words.begin(), words.end(), [&body](const QString& word) {
+			return body.endsWith(word, Qt::CaseInsensitive);
+		});
+	};
+	// Keep the same unit precedence as musicaltime::unitOf: tick/bar suffixes take priority over seconds.
+	if (hasSuffix({QObject::tr("ticks"), QStringLiteral("ticks"), QStringLiteral("tick"), QStringLiteral("t")})
+		|| hasSuffix({QObject::tr("bars"), QStringLiteral("bars"), QObject::tr("bar"), QStringLiteral("bar")}))
+	{
+		return false;
+	}
+	if (body.contains(QLatin1Char(':')) || hasSuffix({QStringLiteral("sec"), QStringLiteral("s")})) { return true; }
+	if (body.count(QLatin1Char('.')) >= 2) { return false; }
+	return musicaltime::currentFormat() == musicaltime::Format::Time;
+}
+
 //! The arguments that run a command on the notes selected in @a clip - the editor's selection, handed to the command
 //! surface first, since that is the one a 'selection' scope reads.
 QJsonObject selectionOf(const MidiClip* clip, const QString& id)
@@ -127,15 +162,15 @@ QJsonObject selectionOf(const MidiClip* clip, const QString& id)
 	return {{QStringLiteral("clip"), id}, {QStringLiteral("scope"), QStringLiteral("selection")}};
 }
 
-bool editSelected(const QPointer<MidiClip>& clip, const QString& id, const QString& field, const std::function<int(const Note*)>& valueOf);
+ControlResult editSelected(const QPointer<MidiClip>& clip, const QString& id, const QString& field, const std::function<int(const Note*)>& valueOf);
 
 //! The typed key for the selection: transposed so the first selected note lands on it - or, when the notes' keys
 //! differ (the field said "Multiple values"), given to every selected note.
-bool setSelectedKey(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+ControlResult setSelectedKey(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
 {
 	int wanted = 0;
 	const Note* note = firstSelected(clip);
-	if (note == nullptr || !keyFromText(typed, &wanted)) { return false; }
+	if (note == nullptr || !keyFromText(typed, &wanted)) { return invalidEdit(); }
 	if (differ(clip, &keyText)) { return editSelected(clip, id, QStringLiteral("key"), [wanted](const Note*) { return wanted; }); }
 	QJsonObject args = selectionOf(clip, id);
 	args.insert(QStringLiteral("semitones"), wanted - note->key());
@@ -144,12 +179,12 @@ bool setSelectedKey(const QPointer<MidiClip>& clip, const QString& id, const QSt
 
 //! The typed velocity ("80" or "80%"): the selection offset so the first selected note has it - or, when the notes'
 //! velocities differ, given to every selected note.
-bool setSelectedVelocity(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+ControlResult setSelectedVelocity(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
 {
 	bool ok = false;
 	const int wanted = std::clamp(QString(typed).remove(QLatin1Char('%')).trimmed().toInt(&ok), 0, 200);
 	const Note* note = firstSelected(clip);
-	if (note == nullptr || !ok) { return false; }
+	if (note == nullptr || !ok) { return invalidEdit(); }
 	if (differ(clip, &velocityText)) { return editSelected(clip, id, QStringLiteral("velocity"), [wanted](const Note*) { return wanted; }); }
 	QJsonObject args = selectionOf(clip, id);
 	args.insert(QStringLiteral("delta"), wanted - static_cast<int>(note->getVolume()));
@@ -157,28 +192,29 @@ bool setSelectedVelocity(const QPointer<MidiClip>& clip, const QString& id, cons
 }
 
 //! One note.edit (one undo step) setting @a field on every selected note to what @a valueOf gives it.
-bool editSelected(const QPointer<MidiClip>& clip, const QString& id, const QString& field, const std::function<int(const Note*)>& valueOf)
+ControlResult editSelected(const QPointer<MidiClip>& clip, const QString& id, const QString& field, const std::function<int(const Note*)>& valueOf)
 {
-	if (clip.isNull()) { return false; }
+	if (clip.isNull()) { return invalidEdit(); }
 	QJsonArray edits;
 	for (const Note* note : selectedNotes(clip))
 	{
 		edits.append(QJsonObject{{QStringLiteral("note"), control::noteIdOf(note)}, {field, valueOf(note)}});
 	}
-	return !edits.isEmpty() && invoke(QStringLiteral("note.edit"), {{QStringLiteral("clip"), id}, {QStringLiteral("edits"), edits}});
+	return edits.isEmpty() ? invalidEdit()
+		: invoke(QStringLiteral("note.edit"), {{QStringLiteral("clip"), id}, {QStringLiteral("edits"), edits}});
 }
 
 //! The typed start (a position from the clip's start): the selection moved so the first selected note starts there.
-bool setSelectedStart(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+ControlResult setSelectedStart(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
 {
 	int ticks = 0;
 	const Note* first = firstSelected(clip);
-	if (first == nullptr || !musicaltime::positionFromText(typed, &ticks, clipStart(clip.data()))) { return false; }
+	if (first == nullptr || !musicaltime::positionFromText(typed, &ticks, clipStart(clip.data()))) { return invalidEdit(); }
 	const qint64 delta = static_cast<qint64>(ticks) - first->pos().getTicks();
 	// note.edit accepts positions only through MaxSongLength; validate wide sums before narrowing them to int.
 	for (const Note* note : selectedNotes(clip))
 	{
-		if (static_cast<qint64>(note->pos().getTicks()) + delta > MaxSongLength) { return false; }
+		if (static_cast<qint64>(note->pos().getTicks()) + delta > MaxSongLength) { return invalidEdit(); }
 	}
 	return editSelected(clip, id, QStringLiteral("position"), [delta](const Note* n) {
 		return static_cast<int>(std::max<qint64>(0, static_cast<qint64>(n->pos().getTicks()) + delta));
@@ -186,28 +222,34 @@ bool setSelectedStart(const QPointer<MidiClip>& clip, const QString& id, const Q
 }
 
 //! The typed length (any time format), for every selected note.
-bool setSelectedLength(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
+ControlResult setSelectedLength(const QPointer<MidiClip>& clip, const QString& id, const QString& typed)
 {
 	int ticks = 0;
 	const Note* first = firstSelected(clip);
-	if (first == nullptr || !positiveLength(typed, clipStart(clip.data()) + first->pos().getTicks(), &ticks)) { return false; }
+	if (first == nullptr) { return invalidEdit(); }
+	const qint64 origin = noteTimeOrigin(clip.data(), first);
+	if (!tickInRange(origin))
+	{
+		if (lengthNeedsTimeOrigin(typed) || !positiveLength(typed, 0, &ticks)) { return invalidEdit(); }
+	}
+	else if (!positiveLength(typed, static_cast<tick_t>(origin), &ticks)) { return invalidEdit(); }
 	return editSelected(clip, id, QStringLiteral("length"), [ticks](const Note*) { return ticks; });
 }
 
 //! The typed length (any time format) for the clip: clip.resize.
-bool resizeClip(const QPointer<Clip>& clip, const QString& id, const QString& typed)
+ControlResult resizeClip(const QPointer<Clip>& clip, const QString& id, const QString& typed)
 {
 	int ticks = 0;
 	return clip && positiveLength(typed, clipStart(clip.data()), &ticks)
-		&& invoke(QStringLiteral("clip.resize"), {{QStringLiteral("clip"), id}, {QStringLiteral("length"), ticks}});
+		? invoke(QStringLiteral("clip.resize"), {{QStringLiteral("clip"), id}, {QStringLiteral("length"), ticks}}) : invalidEdit();
 }
 
 //! The typed offset (a signed length): clip.slip - the content shifts inside the clip, which does not move.
-bool slipClip(const QPointer<Clip>& clip, const QString& id, const QString& typed)
+ControlResult slipClip(const QPointer<Clip>& clip, const QString& id, const QString& typed)
 {
 	int ticks = 0;
 	return clip && musicaltime::lengthFromText(typed, &ticks, clipStart(clip.data()))
-		&& invoke(QStringLiteral("clip.slip"), {{QStringLiteral("clip"), id}, {QStringLiteral("offset"), ticks}});
+		? invoke(QStringLiteral("clip.slip"), {{QStringLiteral("clip"), id}, {QStringLiteral("offset"), ticks}}) : invalidEdit();
 }
 
 //! A field that shows a musical position or length: right-click picks the time format, and a new one shows at once.
@@ -217,22 +259,40 @@ void timeField(ReadoutField* field)
 	QObject::connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, field, &ReadoutField::refresh);
 }
 
+QString noteTimeText(const QPointer<MidiClip>& clip, const Note* note, bool start)
+{
+	const int origin = clipStart(clip.data());
+	if (musicaltime::currentFormat() == musicaltime::Format::Time)
+	{
+		const qint64 absoluteStart = noteTimeOrigin(clip.data(), note);
+		if (!tickInRange(absoluteStart)) { return InspectorPanel::tr("out of range"); }
+		if (start) { return musicaltime::positionText(note->pos().getTicks(), origin); }
+		const qint64 absoluteEnd = absoluteStart + std::abs(static_cast<qint64>(note->length().getTicks()));
+		if (!tickInRange(absoluteEnd)) { return InspectorPanel::tr("out of range"); }
+		return musicaltime::lengthText(note->length().getTicks(), static_cast<tick_t>(absoluteStart));
+	}
+	return start ? musicaltime::positionText(note->pos().getTicks(), origin)
+		: musicaltime::lengthText(note->length().getTicks());
+}
+
 } // namespace
 
 void InspectorPanel::addClipFields(QGridLayout* grid, Clip* clip, const QString& id, QWidget* parent)
 {
 	const QPointer<Clip> guarded(clip);
 	auto* start = new ReadoutField(tr("Start"), parent);
-	start->bindText([guarded] { return guarded ? musicaltime::positionText(guarded->startPosition().getTicks()) : QString(); },
+	start->bindTextResult([guarded] { return guarded ? musicaltime::positionText(guarded->startPosition().getTicks()) : QString(); },
 		[id](const QString& typed) {
 			int ticks = 0;
-			return musicaltime::positionFromText(typed, &ticks) && invoke(QStringLiteral("clip.move"), {{QStringLiteral("clip"), id}, {QStringLiteral("position"), ticks}});
+			return musicaltime::positionFromText(typed, &ticks)
+				? invoke(QStringLiteral("clip.move"), {{QStringLiteral("clip"), id}, {QStringLiteral("position"), ticks}})
+				: invalidEdit();
 		});
 	auto* length = new ReadoutField(tr("Length"), parent);
-	length->bindText([guarded] { return guarded ? musicaltime::lengthText(guarded->length().getTicks(), clipStart(guarded)) : QString(); },
+	length->bindTextResult([guarded] { return guarded ? musicaltime::lengthText(guarded->length().getTicks(), clipStart(guarded)) : QString(); },
 		[guarded, id](const QString& typed) { return resizeClip(guarded, id, typed); });
 	auto* offset = new ReadoutField(tr("Offset"), parent);
-	offset->bindText([guarded] { return guarded ? musicaltime::lengthText(guarded->startTimeOffset().getTicks(), clipStart(guarded)) : QString(); },
+	offset->bindTextResult([guarded] { return guarded ? musicaltime::lengthText(guarded->startTimeOffset().getTicks(), clipStart(guarded)) : QString(); },
 		[guarded, id](const QString& typed) { return slipClip(guarded, id, typed); });
 	for (ReadoutField* field : {start, length, offset})
 	{
@@ -262,21 +322,19 @@ QWidget* InspectorPanel::notesSection(MidiClip* clip, const QString& id, QWidget
 		return [guarded, start] {
 			const Note* note = firstSelected(guarded);
 			if (note == nullptr) { return tr("no notes selected"); }
-			const int origin = clipStart(guarded.data());
-			const QString text = start ? musicaltime::positionText(note->pos().getTicks(), origin)
-				: musicaltime::lengthText(note->length().getTicks(), origin + note->pos().getTicks());
+			const QString text = noteTimeText(guarded, note, start);
 			if (!differ(guarded, start ? &startKey : &lengthKey)) { return text; }
 			return start ? tr("%1, first at %2").arg(mixedText(), text) : mixedText();
 		};
 	};
 	auto* key = new ReadoutField(tr("Key"), box);
-	key->bindText(shown(&keyText), [guarded, id](const QString& typed) { return setSelectedKey(guarded, id, typed); });
+	key->bindTextResult(shown(&keyText), [guarded, id](const QString& typed) { return setSelectedKey(guarded, id, typed); });
 	auto* velocity = new ReadoutField(tr("Velocity"), box);
-	velocity->bindText(shown(&velocityText), [guarded, id](const QString& typed) { return setSelectedVelocity(guarded, id, typed); });
+	velocity->bindTextResult(shown(&velocityText), [guarded, id](const QString& typed) { return setSelectedVelocity(guarded, id, typed); });
 	auto* start = new ReadoutField(tr("Start"), box);
-	start->bindText(timed(true), [guarded, id](const QString& typed) { return setSelectedStart(guarded, id, typed); });
+	start->bindTextResult(timed(true), [guarded, id](const QString& typed) { return setSelectedStart(guarded, id, typed); });
 	auto* length = new ReadoutField(tr("Length"), box);
-	length->bindText(timed(false), [guarded, id](const QString& typed) { return setSelectedLength(guarded, id, typed); });
+	length->bindTextResult(timed(false), [guarded, id](const QString& typed) { return setSelectedLength(guarded, id, typed); });
 	timeField(start);
 	timeField(length);
 	// How many notes the fields speak for, live (a selection changed in the note editor shows at once).

@@ -46,6 +46,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>
 
 #include <QApplication>
@@ -57,6 +58,7 @@
 #include <QPointer>
 #include <QMenu>
 #include <QTimer>
+#include <QToolTip>
 #include <QToolButton>
 
 #include "ControlRegistry.h"
@@ -70,6 +72,7 @@
 #include "InspectorPanel.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "MusicalTime.h"
 #include "MenuTestSupport.h"
 #include "Mixer.h"
 #include "Model.h"
@@ -137,6 +140,45 @@ bool allDeclareRegisteredCommands(QMenu* menu, QString* stray)
 	}
 	return true;
 }
+
+ReadoutField* selectedNoteLength(InspectorPanel& inspector)
+{
+	for (ReadoutField* candidate : inspector.findChildren<ReadoutField*>())
+	{
+		if (candidate->caption() == QStringLiteral("Length")
+			&& candidate->parentWidget()->objectName() == QStringLiteral("inspectorNotes")
+			&& candidate->isVisibleTo(&inspector)) { return candidate; }
+	}
+	return nullptr;
+}
+
+bool typeReadout(ReadoutField* field, const QString& text)
+{
+	if (field == nullptr) { return false; }
+	QTest::mouseDClick(field, Qt::LeftButton);
+	auto* editor = field->findChild<QLineEdit*>();
+	if (editor == nullptr) { return false; }
+	editor->selectAll();
+	QTest::keyClicks(editor, text);
+	emit editor->editingFinished();
+	return true;
+}
+
+struct RestoreMusicalTimeFormat
+{
+	musicaltime::Format format = musicaltime::currentFormat();
+	~RestoreMusicalTimeFormat() { musicaltime::setFormat(format); }
+};
+
+struct ClearInspectorTrack
+{
+	Track* track;
+	~ClearInspectorTrack()
+	{
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+};
 
 //! The menu a right-click opened: the visible QMenu among the application's widgets (the offscreen
 //! platform has no active popup widget, so the menu is found by what it shows).
@@ -439,6 +481,124 @@ private slots:
 		QCOMPARE(static_cast<int>(clip->notes().front()->getVolume()), 64);  // the 0..200 note volume scale
 		ShellSelection::instance()->setTrack(nullptr);
 		delete track;
+	}
+
+	//! Cluster 4168: a registered Inspector edit's refusal is shown verbatim in the field's error tooltip.
+	void theInspectorShowsARegisteredNoteEditRefusal()
+	{
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		Note* note = clip->addNote(Note(TimePos(96), TimePos(0), 60, 100), false);
+		QVERIFY(note != nullptr);
+		note->setSelected(true);
+		InspectorPanel inspector;
+		inspector.show();
+		ShellSelection::instance()->setClip(clip);
+		inspector.rebuild();
+		QCoreApplication::processEvents();
+		ReadoutField* key = nullptr;
+		for (ReadoutField* candidate : inspector.findChildren<ReadoutField*>())
+		{
+			if (candidate->caption() == QStringLiteral("Key") && candidate->isVisibleTo(&inspector)) { key = candidate; }
+		}
+		QVERIFY(key != nullptr);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* registered = registry->command(QStringLiteral("note.transpose"));
+		QVERIFY(registered != nullptr);
+		ControlCommand* command = const_cast<ControlCommand*>(registered);
+		const auto originalHandler = command->handler;
+		const QString refusal = QStringLiteral("the note is locked by the test");
+		bool dispatched = false;
+		command->handler = [&dispatched, refusal](const QJsonObject&) {
+			dispatched = true;
+			return ControlResult::failure(ControlErrorKind::Refused, refusal);
+		};
+
+		QToolTip::hideText();
+		QTest::mouseDClick(key, Qt::LeftButton);
+		auto* editor = key->findChild<QLineEdit*>();
+		const bool hasEditor = editor != nullptr;
+		if (hasEditor)
+		{
+			editor->selectAll();
+			QTest::keyClicks(editor, QStringLiteral("D4"));
+			emit editor->editingFinished();
+		}
+		const QString shownError = QToolTip::text();
+		command->handler = originalHandler;
+		QVERIFY(hasEditor);
+		QVERIFY(dispatched);
+		QVERIFY2(shownError.contains(refusal), qPrintable(shownError));
+
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
+	//! new-p10-171: note time origins are widened and range-checked before parsing or display.
+	void theInspectorHandlesAnOutOfRangeNoteTimeOrigin()
+	{
+		RestoreMusicalTimeFormat restoreFormat;
+		musicaltime::setFormat(musicaltime::Format::Time);
+		{
+			auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+			ClearInspectorTrack cleanup{track};
+			auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+			QVERIFY(clip != nullptr);
+			Note* note = clip->addNote(Note(TimePos(48), TimePos(200), 60, 100), false);
+			QVERIFY(note != nullptr);
+			note->setSelected(true);
+			InspectorPanel inspector;
+			inspector.show();
+			ShellSelection::instance()->setClip(clip);
+			inspector.rebuild();
+			QCoreApplication::processEvents();
+			ReadoutField* length = selectedNoteLength(inspector);
+			QVERIFY(length != nullptr);
+			QVERIFY(!length->valueText().contains(QStringLiteral("out of range")));
+			QVERIFY(typeReadout(length, QStringLiteral("1s")));
+			QVERIFY(note->length().getTicks() > 0);
+			QVERIFY(note->length().getTicks() != 48);
+		}
+
+		const tick_t clipPosition = std::numeric_limits<tick_t>::max() - 100;
+		auto* track = Track::create(Track::Type::Instrument, Engine::getSong());
+		ClearInspectorTrack cleanup{track};
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(clipPosition)));
+		QVERIFY(clip != nullptr);
+		Note* note = clip->addNote(Note(TimePos(48), TimePos(200), 60, 100), false);
+		QVERIFY(note != nullptr);
+		note->setSelected(true);
+		{
+			InspectorPanel inspector;
+			inspector.show();
+			ShellSelection::instance()->setClip(clip);
+			inspector.rebuild();
+			QCoreApplication::processEvents();
+			ReadoutField* length = selectedNoteLength(inspector);
+			QVERIFY(length != nullptr);
+			const QString shownLength = length->valueText();
+			QVERIFY(typeReadout(length, QStringLiteral("96 ticks")));
+			QCOMPARE(note->length().getTicks(), 96);
+
+			ControlRegistry* registry = ControlRegistry::instance();
+			const ControlCommand* registered = registry->command(QStringLiteral("note.edit"));
+			QVERIFY(registered != nullptr);
+			ControlCommand* command = const_cast<ControlCommand*>(registered);
+			const auto originalHandler = command->handler;
+			bool dispatched = false;
+			command->handler = [&dispatched](const QJsonObject&) {
+				dispatched = true;
+				return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("origin was not checked"));
+			};
+			const bool typed = typeReadout(length, QStringLiteral("1s"));
+			command->handler = originalHandler;
+			QVERIFY(typed);
+			const QString evidence = QStringLiteral("shown length: %1; note.edit dispatched: %2")
+				.arg(shownLength).arg(dispatched);
+			QVERIFY2(shownLength == QStringLiteral("out of range") && !dispatched, qPrintable(evidence));
+		}
 	}
 
 	void theInspectorShowsAChannelsSendsAndStrip()

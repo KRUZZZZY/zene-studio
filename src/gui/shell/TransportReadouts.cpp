@@ -89,7 +89,17 @@ void ReadoutField::bindText(std::function<QString()> text, std::function<bool(co
 {
 	m_text = std::move(text);
 	m_typed = std::move(typed);
+	m_typedResult = {};
 	if (m_typed) { setToolTip(tr("%1: double-click to type").arg(m_caption)); }
+	refresh();
+}
+
+void ReadoutField::bindTextResult(std::function<QString()> text, std::function<ControlResult(const QString&)> typed)
+{
+	m_text = std::move(text);
+	m_typed = {};
+	m_typedResult = std::move(typed);
+	if (m_typedResult) { setToolTip(tr("%1: double-click to type").arg(m_caption)); }
 	refresh();
 }
 
@@ -120,7 +130,7 @@ void ReadoutField::paintEvent(QPaintEvent*)
 	QPainter p(this);
 	p.setRenderHint(QPainter::Antialiasing);
 	const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-	const bool live = m_model != nullptr || m_typed;
+	const bool live = m_model != nullptr || m_typed || m_typedResult;
 	p.setPen(Qt::NoPen);
 	p.setBrush(m_dragging ? pal.selected : (underMouse() && live) ? pal.controlHover : pal.control);
 	p.drawRoundedRect(r, tokens::radius::lg, tokens::radius::lg);
@@ -192,7 +202,7 @@ void ReadoutField::step(int delta)
 
 void ReadoutField::mouseDoubleClickEvent(QMouseEvent*)
 {
-	if (m_model == nullptr && !m_typed) { return; }
+	if (m_model == nullptr && !m_typed && !m_typedResult) { return; }
 	if (m_editor == nullptr)
 	{
 		m_editor = new QLineEdit(this);
@@ -214,7 +224,13 @@ void ReadoutField::commitTyped()
 	const QString text = m_editor->text().trimmed();
 	m_editor->hide();
 	bool accepted = false;
-	if (m_typed) { accepted = m_typed(text); }
+	ControlResult typedResult = ControlResult::success();
+	if (m_typedResult)
+	{
+		typedResult = m_typedResult(text);
+		accepted = typedResult.ok;
+	}
+	else if (m_typed) { accepted = m_typed(text); }
 	else if (m_model != nullptr)
 	{
 		const int v = text.toInt(&accepted);
@@ -229,7 +245,9 @@ void ReadoutField::commitTyped()
 	// Typed text the readout refuses says so, rather than the old value quietly coming back (review r4 L19 #15).
 	if (!accepted && m_editor->isModified())
 	{
-		QToolTip::showText(mapToGlobal(QPoint(0, height())), tr("%1: \"%2\" was not accepted").arg(m_caption, text), this);
+		const QString reason = typedResult.errorMessage.isEmpty()
+			? tr("%1: \"%2\" was not accepted").arg(m_caption, text) : typedResult.errorMessage;
+		QToolTip::showText(mapToGlobal(QPoint(0, height())), reason, this);
 	}
 }
 
