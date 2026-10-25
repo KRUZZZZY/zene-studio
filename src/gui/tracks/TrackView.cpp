@@ -75,10 +75,12 @@ int trackOperationsWidth(bool compact)
 {
 	const int standard = compact ? TRACK_OP_WIDTH_COMPACT : TRACK_OP_WIDTH;
 	if (!tokens::accessibleMode()) { return standard; }
-	// The grip, then the Actions/Mute/Solo/Arm buttons - the most any track shows - a touch gap apart.
+	// The grip, then the Actions/Mute/Solo/Arm and automation-lane buttons - the most any track shows - a touch gap apart.
 	const int grip = tokens::targetSize();
-	const int buttons = 4 * tokens::targetSize() + 3 * tokens::targetSpacing(2);
-	return std::max(standard, grip + buttons + 2 * tokens::space::xs);
+	const int buttons = 5 * tokens::targetSize() + 4 * tokens::targetSpacing(2);
+	// QToolButton styles can render a 50 px square after control cues; leave a final 8 px touch
+	// inset so the last control stays within this column on every platform style.
+	return std::max(standard, grip + buttons + 2 * tokens::space::xs + tokens::targetSpacing(2));
 }
 
 int trackSettingsWidth(bool compact)

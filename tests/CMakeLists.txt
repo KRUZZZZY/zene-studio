@@ -2160,6 +2160,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
 		# Cluster new-p17-205: the Watsyn save/load regression loads the watsyn module.
 		OR LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest"
+		# 0.5.0 Q050-141: the touch-layout geometry test creates an instrument automation lane.
+		OR LMMS_TEST_NAME STREQUAL "TouchLayoutTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
@@ -2741,6 +2743,7 @@ if(TARGET tripleoscillator)
 	# Q050-022: the lane-child tests drive a real instrument's parameter.
 	add_dependencies(AutomationLaneChildrenTest tripleoscillator)
 	add_dependencies(AutomationLaneChildGuiTest tripleoscillator)
+	add_dependencies(TouchLayoutTest tripleoscillator)
 endif()
 
 # These tests exercise the LV2 host through the plugin factory; build the

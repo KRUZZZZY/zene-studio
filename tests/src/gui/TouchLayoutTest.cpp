@@ -47,12 +47,14 @@
 #include <QJsonObject>
 #include <QLayout>
 #include <QMenu>
+#include <QToolButton>
 
 #include "Appearance.h"
 #include "ArrangerAids.h"
 #include "ClipView.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -86,6 +88,15 @@ ClipView* viewOf(const Clip* clip)
 	for (ClipView* view : getGUI()->songEditor()->m_editor->findChildren<ClipView*>())
 	{
 		if (view->getClip() == clip) { return view; }
+	}
+	return nullptr;
+}
+
+TrackView* trackViewOf(const Track* track)
+{
+	for (TrackView* view : getGUI()->songEditor()->m_editor->trackViews())
+	{
+		if (view->getTrack() == track) { return view; }
 	}
 	return nullptr;
 }
@@ -133,6 +144,9 @@ private slots:
 		// Accessible mode is captured by the design tokens the first time they are read, which is
 		// while GuiApplication is built: configure it first.
 		ConfigManager::inst()->setValue(QStringLiteral("ui"), QStringLiteral("density"), QStringLiteral("accessible"));
+		#ifdef LMMS_TEST_PLUGIN_DIR
+		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
+		#endif
 		guitest::startGui(m_home);
 		QVERIFY(getGUI() != nullptr && getGUI()->mainWindow() != nullptr);
 		ControlRegistry::setReady(true);
@@ -466,6 +480,40 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(Engine::getSong()->isPlaying(), 3000);
 		tap(stop, stop->rect().center());
 		QTRY_VERIFY_WITH_TIMEOUT(!Engine::getSong()->isPlaying(), 3000);
+	}
+
+	//! An automation owner adds a fifth operation target; it must fit inside the touch-sized column.
+	void anAutomationLaneTargetFitsInsideItsTrackOperationsColumn()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		track->loadInstrument(QStringLiteral("tripleoscillator"));
+		QTRY_VERIFY(trackViewOf(track) != nullptr);
+
+		const QString trackId = control::trackIdOf(track);
+		const ControlResult state = ControlRegistry::instance()->invoke(QStringLiteral("automation.get_state"),
+			{{QStringLiteral("track"), trackId}});
+		QVERIFY2(state.ok, qPrintable(state.errorMessage));
+		const QJsonArray parameters = state.result.value(QStringLiteral("tracks")).toArray().first().toObject()
+			.value(QStringLiteral("parameters")).toArray();
+		QVERIFY(!parameters.isEmpty());
+		const QString parameter = parameters.first().toObject().value(QStringLiteral("id")).toString();
+		const ControlResult added = ControlRegistry::instance()->invoke(QStringLiteral("automation.lane_add"),
+			{{QStringLiteral("track"), trackId}, {QStringLiteral("parameter"), parameter}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+
+		TrackView* owner = trackViewOf(track);
+		QVERIFY(owner != nullptr);
+		TrackOperationsWidget* operations = owner->getTrackOperationsWidget();
+		operations->repaint();
+		auto* fold = operations->findChild<QToolButton*>(QStringLiteral("btn-automation-lanes"));
+		QTRY_VERIFY(fold != nullptr && fold->isVisibleTo(operations));
+		QVERIFY(fold->width() >= 44 && fold->height() >= 44);
+		QVERIFY(leastGap(visibleRow(fold->parentWidget())) >= 8);
+		const QRect target(fold->mapTo(operations, QPoint()), fold->size());
+		QVERIFY2(operations->rect().contains(target),
+			qPrintable(QStringLiteral("the %1x%2 automation target at %3..%4 is clipped by a %5 px column")
+				.arg(target.width()).arg(target.height()).arg(target.left()).arg(target.right()).arg(operations->width())));
 	}
 
 private:
