@@ -27,6 +27,7 @@
 #include <functional>
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QEvent>
 #include <QJsonArray>
 #include <QKeyEvent>
@@ -289,7 +290,7 @@ QTreeWidgetItem* itemFor(const PaletteEntry& entry)
 	if (entry.irreversible)
 	{
 		const QString warning = commandUndoWarning(entry.command);
-		name += warning == QObject::tr("This cannot be undone.")
+		name += warning == QCoreApplication::translate("CommandMetadata", "This cannot be undone.")
 			? QObject::tr("  (cannot be undone)") : QObject::tr("  (undo may not fully reverse this)");
 	}
 	auto* item = new QTreeWidgetItem(QStringList{name, entry.path, entry.shortcut, entry.command});

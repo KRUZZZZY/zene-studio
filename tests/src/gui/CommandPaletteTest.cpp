@@ -37,6 +37,7 @@
 
 #include <QAbstractButton>
 #include <QAction>
+#include <QCoreApplication>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -44,6 +45,7 @@
 #include <QTemporaryDir>
 #include <QTreeWidget>
 #include <QTimer>
+#include <QTranslator>
 
 #include "DeprecationHelper.h"
 #include "CommandForm.h"
@@ -59,6 +61,21 @@ using namespace lmms::gui;
 
 namespace
 {
+
+class PaletteWarningTranslator : public QTranslator
+{
+public:
+	QString translate(const char* context, const char* sourceText, const char* disambiguation, int n) const override
+	{
+		Q_UNUSED(disambiguation)
+		Q_UNUSED(n)
+		if (qstrcmp(context, "CommandMetadata") == 0 && qstrcmp(sourceText, "This cannot be undone.") == 0)
+		{
+			return QStringLiteral("translated irreversible warning");
+		}
+		return {};
+	}
+};
 
 int g_noopRuns = 0;
 
@@ -371,6 +388,32 @@ private slots:
 		const QString label = list->topLevelItem(row)->text(0);
 		QVERIFY2(!label.contains(QStringLiteral("cannot be undone")), qPrintable(label));
 		QVERIFY2(label.contains(QStringLiteral("may not fully reverse")), qPrintable(label));
+	}
+
+	void irreversibleLabelUsesCommandMetadataTranslation()
+	{
+		PaletteWarningTranslator translator;
+		const bool installed = QCoreApplication::installTranslator(&translator);
+		CommandPalette palette(&m_bar);
+		palette.setQuery(QStringLiteral("project.new"));
+		QTreeWidget* list = palette.findChild<QTreeWidget*>();
+		QString label;
+		if (list != nullptr)
+		{
+			for (int i = 0; i < list->topLevelItemCount(); ++i)
+			{
+				if (list->topLevelItem(i)->text(3) == QStringLiteral("project.new"))
+				{
+					label = list->topLevelItem(i)->text(0);
+					break;
+				}
+			}
+		}
+		QCoreApplication::removeTranslator(&translator);
+		QVERIFY(installed);
+		QVERIFY(!label.isEmpty());
+		QVERIFY2(label.contains(QStringLiteral("cannot be undone")), qPrintable(label));
+		QVERIFY2(!label.contains(QStringLiteral("may not fully reverse")), qPrintable(label));
 	}
 
 	void shiftEnterWithListFocusRunsFormDefaults()
