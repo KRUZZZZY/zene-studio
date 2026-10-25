@@ -95,6 +95,36 @@ ShellSelection* ShellSelection::instance()
 	return selection;
 }
 
+void ShellSelection::watchSelectedObjects()
+{
+	QObject::disconnect(m_trackDestroyedConnection);
+	QObject::disconnect(m_clipDestroyedConnection);
+	m_trackDestroyedConnection = {};
+	m_clipDestroyedConnection = {};
+	const auto clear = [this] { clearDestroyedSelection(); };
+	if (m_track != nullptr) { m_trackDestroyedConnection = connect(m_track, &Track::destroyedTrack, this, clear); }
+	if (m_clip != nullptr)
+	{
+		m_clipDestroyedConnection = connect(m_clip, &QObject::destroyed, this, [this] {
+			m_clipDestroyedConnection = {};
+			m_clip = nullptr;
+			emit changed();
+		});
+	}
+}
+
+void ShellSelection::clearDestroyedSelection()
+{
+	QObject::disconnect(m_trackDestroyedConnection);
+	QObject::disconnect(m_clipDestroyedConnection);
+	m_trackDestroyedConnection = {};
+	m_clipDestroyedConnection = {};
+	m_track = nullptr;
+	m_clip = nullptr;
+	m_channel.clear();
+	emit changed();
+}
+
 void ShellSelection::setTrack(Track* track)
 {
 	const bool clipStays = m_clip != nullptr && m_clip->getTrack() == track;
@@ -102,6 +132,7 @@ void ShellSelection::setTrack(Track* track)
 	m_track = track;
 	m_channel.clear();
 	if (!clipStays) { m_clip = nullptr; }
+	watchSelectedObjects();
 	emit changed();
 }
 
@@ -111,6 +142,7 @@ void ShellSelection::setClip(Clip* clip)
 	m_clip = clip;
 	m_channel.clear();
 	if (clip != nullptr) { m_track = clip->getTrack(); }
+	watchSelectedObjects();
 	emit changed();
 }
 
@@ -122,6 +154,7 @@ void ShellSelection::setChannel(const QString& id)
 	m_track = nullptr;
 	m_clip = nullptr;
 	m_channel = id;
+	watchSelectedObjects();
 	emit changed();
 }
 
