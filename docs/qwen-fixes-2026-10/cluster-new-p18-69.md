@@ -2,7 +2,7 @@ FIXED
 
 ## Decision
 
-REAL. [NoteConditions.cpp:80](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69/src/core/NoteConditions.cpp:80) sends every loaded lyric attribute to `internLyric()`. Before this fix, [NoteConditions.cpp:116](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69/src/core/NoteConditions.cpp:116) searched the whole vector for every nonempty value.
+REAL. [NoteConditions.cpp:80](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69/src/core/NoteConditions.cpp:80) sends every loaded lyric attribute to `internLyric()`. Before this fix, `src/core/NoteConditions.cpp:96` used `std::find` across the whole vector for every nonempty value. The fixed indexed lookup is at [NoteConditions.cpp:123](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69/src/core/NoteConditions.cpp:123).
 
 ## Fix
 
@@ -38,23 +38,27 @@ The original scan failed the regression as expected. The first CTest attempt, be
 | Reapplied build | `cmake --build build --target zene NotePlaybackTest -j12` | 0 | Rebuilt `zene` and the test. |
 | Reapplied test | `ctest -R '^NotePlaybackTest$' --output-on-failure` (from `build/tests`) | 0 | 1/1 CTest test passed. |
 
-Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-69.r1/logs/` (`5` through `12` contain the RED/GREEN and negative-control build/test records; `16-feature-check-precommit.log` contains the final pre-commit gate table).
+Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-69.r1/logs/` (`5` through `12` contain the RED/GREEN and negative-control build/test records; `13` and `15` record the gate repair; `17-feature-check-final-edit.log` contains the final pre-commit gate table; `18-submit-check-initial.log` contains the post-commit completion check).
 
-`feature_check.py` first returned 1 because `tests/all-sources.txt` still contained 1,148 vendored sfizz paths excluded by its own documented recipe. I regenerated that manifest from the recipe; no gate limit or baseline changed. The final gate returned 0:
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69` first returned 1 because `tests/all-sources.txt` still contained 1,148 vendored sfizz paths excluded by its own documented recipe. I regenerated that manifest from the recipe; no gate limit or baseline changed. The same command then returned 0:
 
 | Gate | Result |
 |---|---|
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69` | EXIT=0; all gates PASS. Complexity and file-length report no new items. |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69 new-p18-69` | To be run after commit. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-69 new-p18-69` | EXIT=0; all completion checks passed. It emitted five Self-check prompts, answered below. |
 
 ## Self-check
 
 - **Callers and ID flow:** `NoteConditions::load()` and `ControlCommandsNotePlayback.cpp:76` call `internLyric()`. Both are UI-side; IDs remain `int`, assigned from the vector size, and `lyricText(int)` still reads that same vector.
 - **Compatibility:** Empty lyrics, duplicate reuse, append-only ID order, serialization through `lyricText()`, and unknown IDs retain their existing behavior. No limits were added.
 - **Realtime and undo:** No render path, locking, logging, new commands, or undo behavior changed.
-- **Regression:** The clean RED and negative-control runs fail the work-bound assertion; the fixed GREEN run passes it. The assertion uses a test-only counter, not elapsed time.
+- **RED/GREEN proof:** The clean RED CTest run exited 8 (29 passed, 1 failed). With `fix.patch` reversed, the build exited 0 and the CTest run exited 8 on the same assertion. Reapplying the patch exited 0; the rebuild and CTest run exited 0. The CTest family has 1 registered CTest test; the executable ran 30 QtTest cases.
+- **Determinism:** The test imports the fixed values `new-p18-69-import-0` through `new-p18-69-import-511`. It uses `resetInternLyricLookupWorkForTest()` / `internLyricLookupWorkForTest()` under `LMMS_TESTING` and asserts at most 1,024 indexed lookup steps. It has no clock, sleep, worker thread, or race.
 - **Registration:** Both changed C++ files were already registered in `tests/fork-sources.txt`; `tests/all-sources.txt` now matches its documented generator. No new source file was added.
-- **Gates:** Final `feature_check.py` exit 0. Record the post-commit `submit_check.py` result here after running it.
+- **Callers and siblings:** The only `internLyric()` callers are `NoteConditions::load()` and the `note.lyrics` UI control handler. `lyricText()` still reads the ID-ordered vector used by save and the note canvas; no declaration, wider type, audio path, command, or undo path changed.
+- **Compatibility and limits:** Previously saved `lyr` strings still load through `NoteConditions::load()` and retain their text/ID behavior. The vector remains the ID authority, duplicate IDs are reused, and no new limit can reject existing or future callers.
+- **Conditional verdict question:** Not applicable; the verdict is FIXED for a REAL finding.
+- **Gates:** Final `feature_check.py` exit 0; post-commit `submit_check.py` exit 0 (log `18-submit-check-initial.log`).
 
 ## Committed files
 
