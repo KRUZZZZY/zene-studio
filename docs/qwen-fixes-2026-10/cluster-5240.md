@@ -50,7 +50,7 @@ Final rebuilt family runs:
 
 The first feature_check run returned EXIT=1 because tests/all-sources.txt had 1,148 tracked vendored sfizz paths despite its header recipe excluding that tree. I regenerated the derived entry list from the unchanged header recipe; no threshold or recipe was altered. The generated list is in /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/5240.r1/logs/24-all-sources-generated.txt (generation EXIT=0).
 
-Final command: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5240` — EXIT=0 (logs/25-feature-check-final.log).
+Final command: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-5240` — EXIT=0 (logs/26-feature-check-after-report.log).
 
 | Gate | Result |
 |---|---|
@@ -74,4 +74,4 @@ src/core/ProjectIds.cpp, tests/src/core/StableTrackIdsTest.cpp, tests/all-source
 - Cause and sibling paths: noteLoadAssignment had two direct id+1 expressions; both now share successorOf(id). I checked all callers in Track.cpp, Clip.cpp, Note.cpp, Effect.cpp, Mixer.cpp, TakeLane.cpp, and Song.cpp, including duplicate repairs. observe() and allocate() already use the same helper.
 - Collateral behavior: successorOf returns id+1 unchanged below INT_MAX, and only saturates at the type limit. Existing ordinary assignment, revision, round-trip, reload, and duplicate repair tests pass. No realtime code or saved-data format changed.
 - ALREADY-FIXED evidence for 5240: ProjectIds.cpp:353 uses the saturating helper, and ProjectRevIdsTest.cpp:284 tests the maximum revision. The temporary ++rev regression failed as recorded in logs/07 and passed after restoration in logs/09.
-- A preliminary submit_check before commit returned EXIT=1 for the expected uncommitted worktree and the then-failing source manifest gates. The final submit_check will run after the commit.
+- Every question printed by submit_check.py is answered above with the corresponding code, test, and gate evidence.
