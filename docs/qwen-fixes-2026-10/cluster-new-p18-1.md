@@ -1,3 +1,5 @@
+FIXED
+
 new-p18-1: FIXED
 
 Decision: REAL. `depth_set` edited and recorded an undo step for an equal depth at `src/core/ControlCommandsModulatorRoutes.cpp:302`; its no-op return now precedes the edit and `recordDepth`. The sibling `rate_set` and `voice_set` handlers did the same at `src/core/ControlCommandsModulator.cpp:367` and `src/core/ControlCommandsModulatorVoices.cpp:122`; they now return before `editModulationLayer`/`addUndoStep` when their writable fields match. The tests at `tests/src/core/ControlModulatorCommandsTest.cpp:291`, `:308`, and `:323` put a real edit immediately beneath the no-op and show that one undo reaches that real edit.
@@ -68,7 +70,7 @@ The first `feature_check.py` run returned 1 because the unchanged derived `tests
 | new-p18-1 RED/GREEN and 4b | PASS | Three targeted methods each RED=1 with reversed patch and GREEN=0 restored; `proof-red-*` / `proof-green-*` logs. |
 | 201 RED/GREEN and 4b | PASS | `targetSetEnforcesDocumentedDepthRange`: RED=1 reversed, GREEN=0 restored; `proof-red-201-final.log` / `proof-green-201-final.log`. |
 | 4802 RED/GREEN and 4b | PASS | `targetRemoveInverseRecreatesCapturedRoute`: RED=1 reversed, GREEN=0 restored; `proof-red-4802-1.log` / `proof-green-4802-1.log`. |
-| Affected ctest family | PASS | `ctest -R '^(ControlModulatorCommandsTest|InstrumentLayersCommandsTest)$' --output-on-failure`, from `build/tests`: EXIT=0, 2/2 tests passed (`test-4-final.log`). |
+| Affected ctest family | PASS | `ctest -R '^(ControlModulatorCommandsTest|InstrumentLayersCommandsTest|ModulatorToolsTest)$' --output-on-failure`, from `build/tests`: EXIT=0, 3/3 tests passed (`test-5-final.log`). |
 | fork-sources | PASS | `feature_check.py`: EXIT=0. |
 | all-sources-reproduce | PASS | `bash tests/all-sources-reproduce.sh`: EXIT=0; feature gate EXIT=0. |
 | no-upstream-regression | PASS | `feature_check.py`: EXIT=0. |
@@ -83,7 +85,8 @@ The first `feature_check.py` run returned 1 because the unchanged derived `tests
 
 - Reverted-patch proof: each regression above has a separate RED command (EXIT=1), restored GREEN command (EXIT=0), and a rebuild of `zene` plus `ControlModulatorCommandsTest` (EXIT=0); the instrument test binary was also built and passed in the final family run.
 - Determinism: tests invoke commands and undo synchronously; no timestamps, sleeps, races or scheduling assumptions are used.
-- Cause and siblings: depth/rate/voice setters skip unchanged writes; rack and instrument route creation enforce the same depth range; route removal produces the matching inverse for rack and instrument route addresses.
+- Cause and siblings: `modulator.depth_set` / `rate_set` / `voice_set` skip unchanged writes; `target_set` / `instrument_target_set` enforce the same depth range; `target_remove` produces matching rack and instrument inverses. `modulator.formula_set` and `trigger_set` already share `editModulator`, whose equality return is at `src/core/ControlCommandsModulatorTools.cpp:120`; `sameSource` includes the formula program and trigger track at `:90`. `create` and `remove` change collection membership, and `get_state` is read-only, so they have no idempotent value-write path. Invalid `target_remove` indices remain `NotFound`; duplicate target binds remain refused.
 - Collateral behavior: stored depth stays in -1..1, endpoints remain valid, route ordering and captured `per_sample` are preserved, and the project serialization format is unchanged. No audio-thread function was changed.
 - Decisions: all three findings were REAL, with current source locations and the original failing assertions recorded above.
+- Sibling command audit: `modulator.create` (append), `modulator.remove` (remove), and `modulator.get_state` (read-only) are unaffected by equal-value write semantics; `depth_set`, `rate_set`, and `voice_set` now skip equal values; `target_set` and `instrument_target_set` reject non-finite/out-of-range depth; `target_remove` captures the matching inverse; `formula_set` and `trigger_set` already return through `editModulator`'s equality guard. `ModulatorToolsTest` passed in the final family run.
 - Files committed: `src/core/ControlCommandsModulator.cpp`, `src/core/ControlCommandsModulatorRoutes.cpp`, `src/core/ControlCommandsModulatorVoices.cpp`, `tests/src/core/ControlModulatorCommandsTest.cpp`, `tests/all-sources.txt`, and this report.
