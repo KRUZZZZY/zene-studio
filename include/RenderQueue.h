@@ -82,6 +82,8 @@ struct LMMS_EXPORT RenderJob
 	//! This render or conversion's own staging file, beside its destination and named for this job alone;
 	//! made when first asked for and never on a name anyone else could be using (RenderQueue::stagedPath).
 	mutable QString staged;
+	//! The render's resolved destination (so a symlink target stays stable while its staged output is written).
+	mutable QString renderDestination;
 	//! A running conversion's cooperative worker stop signal and lifecycle marker.
 	std::shared_ptr<std::atomic_bool> conversionCancellation;
 	bool conversionWorkerActive = false;

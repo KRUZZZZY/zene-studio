@@ -83,6 +83,17 @@ bool conversionCancelled(const std::shared_ptr<std::atomic_bool>& cancellation)
 	return cancellation != nullptr && cancellation->load(std::memory_order_acquire);
 }
 
+QString renderOutputPath(const RenderJob& job)
+{
+	if (job.renderDestination.isEmpty())
+	{
+		const QFileInfo out(job.out);
+		job.renderDestination = out.isSymLink() ? out.symLinkTarget() : job.out;
+		if (job.renderDestination.isEmpty()) { job.renderDestination = job.out; }
+	}
+	return job.renderDestination;
+}
+
 int sndfileFormat(const RenderJob& job)
 {
 	const int major = job.format == QLatin1String("flac") ? SF_FORMAT_FLAC : SF_FORMAT_WAV;
@@ -102,8 +113,9 @@ QString stagedPath(const RenderJob& job)
 		const QString unique = QStringLiteral(".part.") + QUuid::createUuid().toString(QUuid::WithoutBraces).left(12);
 		if (job.kind == RenderJob::Kind::Render)
 		{
-			const QFileInfo out(job.out);
-			job.staged = out.dir().filePath(out.completeBaseName() + unique + QLatin1Char('.') + job.format);
+			const QFileInfo out(renderOutputPath(job));
+			job.staged = out.dir().filePath(QStringLiteral(".zene-render-")
+				+ QUuid::createUuid().toString(QUuid::WithoutBraces).left(12) + QLatin1Char('.') + job.format);
 		}
 		else { job.staged = job.out + unique; }
 	}
@@ -157,26 +169,28 @@ QString writeFile(const RenderJob& job, const SampleBuffer& buffer,
 QString commitStaged(const RenderJob& job)
 {
 	const QString path = stagedPath(job);
-	const bool hadOld = QFile::exists(job.out);
+	const QString destination = job.kind == RenderJob::Kind::Render ? renderOutputPath(job) : job.out;
+	const bool hadOld = QFile::exists(destination);
 	QString aside;
 	if (hadOld)
 	{
 		do
 		{
-			aside = job.out + QStringLiteral(".backup-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+			aside = QFileInfo(destination).dir().filePath(QStringLiteral(".zene-backup-")
+				+ QUuid::createUuid().toString(QUuid::WithoutBraces).left(12));
 		} while (QFile::exists(aside) || aside == job.source);
-		if (!QFile::rename(job.out, aside))
+		if (!QFile::rename(destination, aside))
 		{
 			QFile::remove(path);
 			return QStringLiteral("writing %1 failed").arg(job.out);
 		}
 	}
-	if (QFile::rename(path, job.out))
+	if (QFile::rename(path, destination))
 	{
 		if (hadOld) { QFile::remove(aside); }
 		return QString();
 	}
-	if (hadOld && !QFile::exists(job.out)) { QFile::rename(aside, job.out); }
+	if (hadOld && !QFile::exists(destination)) { QFile::rename(aside, destination); }
 	QFile::remove(path);
 	return QStringLiteral("writing %1 failed").arg(job.out);
 }
@@ -335,6 +349,11 @@ void RenderQueue::runRender(RenderJob& job)
 {
 	const int id = job.id;
 	const TaskToken taskToken = job.taskToken;
+	if (QFileInfo(job.out).isDir())
+	{
+		finish(taskToken, id, false, -1, QStringLiteral("the render output path is a directory"));
+		return;
+	}
 	m_process = new QProcess(this);
 	QProcess* const process = m_process;
 	auto diagnostics = std::make_shared<QByteArray>();

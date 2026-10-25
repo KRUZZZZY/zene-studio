@@ -23,8 +23,10 @@
 
 #include <QtTest>
 
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -54,6 +56,34 @@ QByteArray contents(const QString& path)
 	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 
+QString fakeOutputPath(int argc, char** argv)
+{
+	for (int i = 2; i + 1 < argc; ++i)
+	{
+		if (QString::fromLocal8Bit(argv[i]) == QLatin1String("-o")) { return QString::fromLocal8Bit(argv[i + 1]); }
+	}
+	return {};
+}
+
+int fakeRender(int argc, char** argv)
+{
+	QFile output(fakeOutputPath(argc, argv));
+	if (!output.open(QIODevice::WriteOnly)) { return 5; }
+	return output.write("rendered output") == 15 ? 0 : 5;
+}
+
+int queueRender(const QString& source, const QString& destination)
+{
+	RenderJob job;
+	job.kind = RenderJob::Kind::Render;
+	job.source = source;
+	job.out = destination;
+	RenderQueue& queue = RenderQueue::instance();
+	const int id = queue.add(job);
+	if (id > 0) { queue.start(); }
+	return id;
+}
+
 } // namespace
 
 class RenderSourceGuardTest : public QObject
@@ -80,6 +110,7 @@ private slots:
 
 	void init()
 	{
+		qunsetenv("ZENE_FAKE_RENDER_SUCCESS");
 		run(QStringLiteral("render.queue_cancel"), {{QStringLiteral("all"), true}});
 		run(QStringLiteral("render.queue_clear"));
 		Engine::getSong()->clearProject();
@@ -123,10 +154,71 @@ private slots:
 		QCOMPARE(RenderQueue::instance().jobs().size(), std::size_t(1));
 		QCOMPARE(contents(project), original);
 	}
+
+#ifndef _WIN32
+	void successfulRenderKeepsSymbolicLinkDestination()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString target = dir.filePath(QStringLiteral("target.wav"));
+		const QString destination = dir.filePath(QStringLiteral("render.wav"));
+		QFile previous(target);
+		QVERIFY(previous.open(QIODevice::WriteOnly));
+		QCOMPARE(previous.write("previous output"), qint64(15));
+		previous.close();
+		QVERIFY(QFile::link(target, destination));
+		qputenv("ZENE_FAKE_RENDER_SUCCESS", "1");
+		const int id = queueRender(dir.filePath(QStringLiteral("project.mmp")), destination);
+		QVERIFY(id > 0);
+		QTRY_VERIFY_WITH_TIMEOUT(RenderQueue::instance().job(id)->state == RenderJob::State::Done, 5000);
+		QVERIFY(QFileInfo(destination).isSymLink());
+		QCOMPARE(contents(target), QByteArray("rendered output"));
+		RenderQueue::instance().clearFinished();
+	}
+
+	void renderToSymbolicLinkDirectoryDoesNotReplaceIt()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QTemporaryDir targetDirectory(dir.filePath(QStringLiteral("target-XXXXXX")));
+		QVERIFY(targetDirectory.isValid());
+		const QString destination = dir.filePath(QStringLiteral("render.wav"));
+		QVERIFY(QFile::link(targetDirectory.path(), destination));
+		qputenv("ZENE_FAKE_RENDER_SUCCESS", "1");
+		const int id = queueRender(dir.filePath(QStringLiteral("project.mmp")), destination);
+		QVERIFY(id > 0);
+		QTRY_VERIFY_WITH_TIMEOUT(RenderQueue::instance().job(id)->state == RenderJob::State::Failed, 5000);
+		QVERIFY(QFileInfo(destination).isSymLink());
+		QVERIFY(QFileInfo(destination).isDir());
+		RenderQueue::instance().clearFinished();
+	}
+
+	void successfulRenderSupportsLongDestinationNames()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString destination = dir.filePath(QString(240, QLatin1Char('r')) + QStringLiteral(".wav"));
+		QFile previous(destination);
+		QVERIFY(previous.open(QIODevice::WriteOnly));
+		QCOMPARE(previous.write("previous output"), qint64(15));
+		previous.close();
+		qputenv("ZENE_FAKE_RENDER_SUCCESS", "1");
+		const int id = queueRender(dir.filePath(QStringLiteral("project.mmp")), destination);
+		QVERIFY(id > 0);
+		QTRY_VERIFY_WITH_TIMEOUT(RenderQueue::instance().job(id)->state == RenderJob::State::Done, 5000);
+		QCOMPARE(contents(destination), QByteArray("rendered output"));
+		RenderQueue::instance().clearFinished();
+	}
+#endif
 };
 
 int main(int argc, char** argv)
 {
+	if (argc > 1 && QString::fromLocal8Bit(argv[1]) == QLatin1String("render"))
+	{
+		QCoreApplication app(argc, argv);
+		return fakeRender(argc, argv);
+	}
 	QCoreApplication app(argc, argv);
 	QTEST_SET_MAIN_SOURCE_PATH
 	RenderSourceGuardTest test;
