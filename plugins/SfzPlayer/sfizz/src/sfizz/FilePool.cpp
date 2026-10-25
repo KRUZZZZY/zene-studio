@@ -519,8 +519,19 @@ void sfz::FilePool::loadingJob(const QueuedFileData& data) noexcept
 
 void sfz::FilePool::clear()
 {
+    {
+        std::lock_guard<std::mutex> guard { loadingJobsMutex };
+
+        QueuedFileData queuedData;
+        while (filesToLoad->try_pop(queuedData)) {
+        }
+
+        for (auto& job : loadingJobs)
+            job.wait();
+        loadingJobs.clear();
+    }
+
     std::lock_guard<SpinMutex> guard { garbageAndLastUsedMutex };
-    emptyFileLoadingQueues();
     garbageToCollect.clear();
     lastUsedFiles.clear();
     preloadedFiles.clear();

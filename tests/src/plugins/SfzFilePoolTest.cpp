@@ -10,10 +10,47 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <atomic>
 #include <cmath>
+#include <future>
 #include <initializer_list>
 
 #include "sfizz/FilePool.h"
+
+namespace sfz
+{
+
+struct FilePoolTestAccess
+{
+	static FileData* addMappedFile(FilePool& pool)
+	{
+		auto [it, inserted] = pool.preloadedFiles.try_emplace(FileId("queued.wav"));
+		return inserted ? &it->second : nullptr;
+	}
+
+	static bool queueMappedFile(FilePool& pool, FileData* data)
+	{
+		return pool.filesToLoad->try_push(FilePool::QueuedFileData{{}, data});
+	}
+
+	static void addDeferredLoad(FilePool& pool, FileData* data, std::atomic<bool>& completed,
+		std::atomic<bool>& sawLiveData)
+	{
+		pool.loadingJobs.push_back(std::async(std::launch::deferred, [data, &completed, &sawLiveData]
+		{
+			sawLiveData.store(data->status.load() == FileData::Status::Invalid);
+			completed.store(true);
+		}));
+	}
+
+	static bool hasQueuedFile(FilePool& pool)
+	{
+		FilePool::QueuedFileData queued;
+		return pool.filesToLoad->try_pop(queued);
+	}
+};
+
+} // namespace sfz
 
 namespace
 {
@@ -79,6 +116,37 @@ private slots:
 		QVERIFY(data);
 		QCOMPARE(data->preloadedData.getNumFrames(), size_t(3));
 		QVERIFY(std::abs(data->preloadedData.getSpan(0)[2] - 0.5f) < 0.001f);
+	}
+
+	void clearDrainsQueuedFilePointers()
+	{
+		sfz::FilePool pool;
+		sfz::FileData* queuedData = sfz::FilePoolTestAccess::addMappedFile(pool);
+		QVERIFY(queuedData);
+		QVERIFY(sfz::FilePoolTestAccess::queueMappedFile(pool, queuedData));
+
+		pool.clear();
+
+		const bool staleQueueEntryRemained = sfz::FilePoolTestAccess::hasQueuedFile(pool);
+		QVERIFY(!staleQueueEntryRemained);
+		QCOMPARE(pool.getNumPreloadedSamples(), size_t(0));
+	}
+
+	void clearWaitsForLoadingJobsBeforeFreeingFileData()
+	{
+		sfz::FilePool pool;
+		sfz::FileData* loadingData = sfz::FilePoolTestAccess::addMappedFile(pool);
+		QVERIFY(loadingData);
+		std::atomic<bool> deferredLoadCompleted { false };
+		std::atomic<bool> deferredLoadSawLiveData { false };
+		sfz::FilePoolTestAccess::addDeferredLoad(
+			pool, loadingData, deferredLoadCompleted, deferredLoadSawLiveData);
+
+		pool.clear();
+
+		QVERIFY(deferredLoadCompleted.load());
+		QVERIFY(deferredLoadSawLiveData.load());
+		QCOMPARE(pool.getNumPreloadedSamples(), size_t(0));
 	}
 
 };
