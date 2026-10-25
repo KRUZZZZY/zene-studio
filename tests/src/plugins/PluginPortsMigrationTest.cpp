@@ -1251,8 +1251,14 @@ void PluginPortsMigrationTest::freeBoyExhaustedNoteRetriesWhenVoiceFrees()
 
 	struct NoteHandleReleaser
 	{
+		lmms::Instrument* instrument;
 		void operator()(lmms::NotePlayHandle* handle) const
 		{
+			if (handle->m_pluginData != nullptr)
+			{
+				instrument->deleteNotePluginData(handle);
+				handle->m_pluginData = nullptr;
+			}
 			lmms::NotePlayHandleManager::release(handle);
 		}
 	};
@@ -1283,7 +1289,7 @@ void PluginPortsMigrationTest::freeBoyExhaustedNoteRetriesWhenVoiceFrees()
 	auto acquireNote = [&]() {
 		auto* handle = lmms::NotePlayHandleManager::acquire(instrument->instrumentTrack(), 0,
 			frames * 8, note, nullptr, -1, lmms::NotePlayHandle::Origin::MidiClip);
-		notes.emplace_back(handle);
+		notes.emplace_back(handle, NoteHandleReleaser{instrument.get()});
 		return handle;
 	};
 
@@ -1317,6 +1323,20 @@ void PluginPortsMigrationTest::freeBoyOldSampleRatePoolsAreReclaimed()
 	auto poolCount = reinterpret_cast<PoolCountFn>(
 		library.resolve("lmms_freeboy_test_voice_pool_count"));
 	QVERIFY(poolCount != nullptr);
+	using PoolCollectorFn = void (*)();
+	auto collectPools = reinterpret_cast<PoolCollectorFn>(
+		library.resolve("lmms_freeboy_test_collect_voice_pools"));
+	QVERIFY(collectPools != nullptr);
+	using ReaperPauseFn = void (*)(bool);
+	auto pauseReaper = reinterpret_cast<ReaperPauseFn>(
+		library.resolve("lmms_freeboy_test_pause_pool_reaper"));
+	QVERIFY(pauseReaper != nullptr);
+	pauseReaper(true);
+	struct ReaperResume
+	{
+		ReaperPauseFn pause;
+		~ReaperResume() { pause(false); }
+	} reaperResume{pauseReaper};
 
 	auto* engine = lmms::Engine::audioEngine();
 	auto* device = engine->audioDev();
@@ -1347,20 +1367,18 @@ void PluginPortsMigrationTest::freeBoyOldSampleRatePoolsAreReclaimed()
 		lmms::NotePlayHandle::Origin::MidiClip};
 	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
 	const std::span<lmms::SampleFrame> span{data};
-	const auto render = [&]() {
-		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
-		instrument->playNote(&handle, span);
-		return std::any_of(data.begin(), data.end(), [](const lmms::SampleFrame& frame) {
-			return frame.left() != 0.0f || frame.right() != 0.0f;
-		});
-	};
-	QVERIFY(render());
+	instrument->playNote(&handle, span);
+	QVERIFY(handle.m_pluginData != nullptr);
+	void* const oldVoice = handle.m_pluginData;
 	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{101});
 	emit engine->sampleRateChanged();
 	QCOMPARE(poolCount(), poolsBefore + 2);
-	QVERIFY(render());
+	instrument->playNote(&handle, span);
+	QCOMPARE(handle.m_pluginData, oldVoice);
 	instrument->deleteNotePluginData(&handle);
 	handle.m_pluginData = nullptr;
+	QCOMPARE(poolCount(), poolsBefore + 2);
+	collectPools();
 	QCOMPARE(poolCount(), poolsBefore + 1);
 	for (const auto offset : {lmms::sample_rate_t{202}, lmms::sample_rate_t{303}})
 	{

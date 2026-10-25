@@ -28,9 +28,11 @@
 #include <algorithm>
 #include <atomic>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <thread>
 #include <type_traits>
 #include <vector>
 #include <QDomElement>
@@ -44,7 +46,6 @@
 #include "PixmapButton.h"
 #include "Engine.h"
 #include "Graph.h"
-#include "RealtimeScope.h"
 
 #include "embed.h"
 
@@ -60,7 +61,11 @@ constexpr blip_time_t FRAME_LENGTH = 70224;
 constexpr long CLOCK_RATE = 4194304;
 constexpr int BUFFER_LENGTH_MS = 25;
 constexpr std::size_t VOICE_POOL_CAPACITY = 1024;
+std::atomic<std::size_t> activeFreeBoyVoicePoolReaders{0};
 }
+
+static_assert(std::atomic<std::size_t>::is_always_lock_free,
+	"FreeBoy pool reader tracking must be lock-free on the audio thread");
 
 class FreeBoyVoicePool
 {
@@ -116,13 +121,34 @@ private:
 	std::array<Voice, VOICE_POOL_CAPACITY> m_voices;
 };
 
+static_assert(std::atomic<FreeBoyVoicePool*>::is_always_lock_free,
+	"FreeBoy pool publication must be lock-free on the audio thread");
+
 namespace
 {
+struct FreeBoyVoicePoolRegistry;
+void collectRetiredFreeBoyVoicePoolsLocked(FreeBoyVoicePoolRegistry& registry);
+
 struct FreeBoyVoicePoolRegistry
 {
 	std::mutex mutex;
-	std::atomic<std::size_t> activeReaders{0};
 	std::vector<std::unique_ptr<FreeBoyVoicePool>> pools;
+#ifdef LMMS_TESTING
+	std::atomic<bool> reaperPausedForTesting{false};
+#endif
+	// Voice cleanup runs on the audio thread, so retired pools are reclaimed here.
+	std::jthread reaperThread{[this](std::stop_token stop) {
+		while (!stop.stop_requested())
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds{100});
+			if (stop.stop_requested()) { break; }
+#ifdef LMMS_TESTING
+			if (reaperPausedForTesting.load(std::memory_order_relaxed)) { continue; }
+#endif
+			const std::lock_guard lock{mutex};
+			collectRetiredFreeBoyVoicePoolsLocked(*this);
+		}
+	}};
 };
 
 auto freeBoyVoicePoolRegistry() -> FreeBoyVoicePoolRegistry&
@@ -133,7 +159,7 @@ auto freeBoyVoicePoolRegistry() -> FreeBoyVoicePoolRegistry&
 
 void collectRetiredFreeBoyVoicePoolsLocked(FreeBoyVoicePoolRegistry& registry)
 {
-	if (registry.activeReaders.load(std::memory_order_acquire) != 0) { return; }
+	if (activeFreeBoyVoicePoolReaders.load(std::memory_order_seq_cst) != 0) { return; }
 	auto& pools = registry.pools;
 	pools.erase(std::remove_if(pools.begin(), pools.end(), [](const auto& pool) {
 		return pool->instrumentReferenceCount() == 0 && pool->activeVoiceCount() == 0;
@@ -145,6 +171,16 @@ void collectRetiredFreeBoyVoicePools()
 	auto& registry = freeBoyVoicePoolRegistry();
 	const std::lock_guard lock{registry.mutex};
 	collectRetiredFreeBoyVoicePoolsLocked(registry);
+}
+
+auto acquireFreeBoyVoice(std::atomic<FreeBoyVoicePool*>& publishedPool) noexcept
+	-> FreeBoyVoicePool::Voice*
+{
+	activeFreeBoyVoicePoolReaders.fetch_add(1, std::memory_order_seq_cst);
+	FreeBoyVoicePool* const pool = publishedPool.load(std::memory_order_seq_cst);
+	FreeBoyVoicePool::Voice* const voice = pool == nullptr ? nullptr : pool->acquire();
+	activeFreeBoyVoicePoolReaders.fetch_sub(1, std::memory_order_seq_cst);
+	return voice;
 }
 
 auto freeBoyVoicePoolForSampleRate(long sampleRate) -> FreeBoyVoicePool*
@@ -212,6 +248,16 @@ bool PLUGIN_EXPORT lmms_freeboy_test_pool_pointer_is_realtime_safe()
 	return FreeBoyInstrument::testPoolPointerIsRealtimeSafe();
 }
 
+void PLUGIN_EXPORT lmms_freeboy_test_collect_voice_pools()
+{
+	collectRetiredFreeBoyVoicePools();
+}
+
+void PLUGIN_EXPORT lmms_freeboy_test_pause_pool_reaper(bool pause)
+{
+	freeBoyVoicePoolRegistry().reaperPausedForTesting.store(pause, std::memory_order_relaxed);
+}
+
 #endif
 
 }
@@ -272,15 +318,16 @@ FreeBoyInstrument::FreeBoyInstrument( InstrumentTrack * _instrument_track ) :
 	m_graphModel( 0, 15, 32, this, false, 1 )
 {
 	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this]() {
-		auto* previousPool = m_voicePool;
-		m_voicePool = freeBoyVoicePoolForSampleRate(Engine::audioEngine()->outputSampleRate());
+		auto* const newPool = freeBoyVoicePoolForSampleRate(
+			Engine::audioEngine()->outputSampleRate());
+		auto* const previousPool = m_voicePool.exchange(newPool, std::memory_order_seq_cst);
 		releaseFreeBoyVoicePoolForInstrument(previousPool);
 	});
 }
 
 FreeBoyInstrument::~FreeBoyInstrument()
 {
-	releaseFreeBoyVoicePoolForInstrument(m_voicePool);
+	releaseFreeBoyVoicePoolForInstrument(m_voicePool.exchange(nullptr, std::memory_order_seq_cst));
 }
 
 #ifdef LMMS_TESTING
@@ -405,7 +452,8 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 
 	if (!nph->m_pluginData)
 	{
-		auto voice = m_voicePool->acquire();
+		auto voice = acquireFreeBoyVoice(m_voicePool);
+		// The fixed 1024-voice scan is bounded per render attempt; unassigned notes retry next period.
 		if (!voice) { return; }
 		auto papu = &voice->apu;
 
@@ -579,7 +627,6 @@ void FreeBoyInstrument::deleteNotePluginData(NotePlayHandle* nph)
 {
 	if (!nph->m_pluginData) { return; }
 	FreeBoyVoicePool::release(static_cast<FreeBoyVoicePool::Voice*>(nph->m_pluginData));
-	if (!RealtimeScope::isActive()) { collectRetiredFreeBoyVoicePools(); }
 }
 
 

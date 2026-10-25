@@ -26,6 +26,7 @@
 #ifndef LMMS_FREEBOY_H
 #define LMMS_FREEBOY_H
 
+#include <atomic>
 
 #include "AutomatableModel.h"
 #include "Instrument.h"
@@ -77,7 +78,7 @@ public:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
-	FreeBoyVoicePool* m_voicePool;
+	std::atomic<FreeBoyVoicePool*> m_voicePool;
 
 	FloatModel m_ch1SweepTimeModel;
 	BoolModel m_ch1SweepDirModel;
