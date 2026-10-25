@@ -30,6 +30,7 @@
 #include <cmath>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <vector>
 #include <QDomElement>
 
@@ -103,20 +104,40 @@ private:
 
 namespace
 {
+struct FreeBoyVoicePoolRegistry
+{
+	std::mutex mutex;
+	std::vector<std::unique_ptr<FreeBoyVoicePool>> pools;
+};
+
+auto freeBoyVoicePoolRegistry() -> FreeBoyVoicePoolRegistry&
+{
+	static FreeBoyVoicePoolRegistry registry;
+	return registry;
+}
+
 auto freeBoyVoicePoolForSampleRate(long sampleRate) -> FreeBoyVoicePool*
 {
-	static std::mutex poolsMutex;
-	static std::vector<std::unique_ptr<FreeBoyVoicePool>> pools;
-	const std::lock_guard lock{poolsMutex};
-	for (const auto& pool : pools)
+	auto& registry = freeBoyVoicePoolRegistry();
+	const std::lock_guard lock{registry.mutex};
+	for (const auto& pool : registry.pools)
 	{
 		if (pool->sampleRate() == sampleRate) { return pool.get(); }
 	}
 	auto pool = std::make_unique<FreeBoyVoicePool>(sampleRate);
 	FreeBoyVoicePool* result = pool.get();
-	pools.push_back(std::move(pool));
+	registry.pools.push_back(std::move(pool));
 	return result;
 }
+
+auto freeBoyVoicePoolCountForTesting() -> std::size_t
+{
+	auto& registry = freeBoyVoicePoolRegistry();
+	const std::lock_guard lock{registry.mutex};
+	return registry.pools.size();
+}
+
+void collectFreeBoyVoicePoolsForTesting() {}
 }
 
 extern "C"
@@ -134,6 +155,23 @@ Plugin::Descriptor PLUGIN_EXPORT freeboy_plugin_descriptor =
 	new PluginPixmapLoader( "logo" ),
 	nullptr,
 } ;
+
+#ifdef LMMS_TESTING
+std::size_t PLUGIN_EXPORT lmms_freeboy_test_voice_pool_count()
+{
+	return freeBoyVoicePoolCountForTesting();
+}
+
+bool PLUGIN_EXPORT lmms_freeboy_test_pool_pointer_is_realtime_safe()
+{
+	return FreeBoyInstrument::testPoolPointerIsRealtimeSafe();
+}
+
+void PLUGIN_EXPORT lmms_freeboy_test_collect_voice_pools()
+{
+	collectFreeBoyVoicePoolsForTesting();
+}
+#endif
 
 }
 
@@ -196,6 +234,14 @@ FreeBoyInstrument::FreeBoyInstrument( InstrumentTrack * _instrument_track ) :
 		m_voicePool = freeBoyVoicePoolForSampleRate(Engine::audioEngine()->outputSampleRate());
 	});
 }
+
+#ifdef LMMS_TESTING
+auto FreeBoyInstrument::testPoolPointerIsRealtimeSafe() -> bool
+{
+	return std::is_same_v<decltype(m_voicePool), std::atomic<FreeBoyVoicePool*>>
+		&& std::atomic<FreeBoyVoicePool*>::is_always_lock_free;
+}
+#endif
 
 
 void FreeBoyInstrument::saveSettings( QDomDocument & _doc,

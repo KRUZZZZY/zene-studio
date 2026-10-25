@@ -66,6 +66,10 @@ public:
 
 	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
+#ifdef LMMS_TESTING
+	static auto testPoolPointerIsRealtimeSafe() -> bool;
+#endif
+
 
 /*public slots:
 	void updateKnobHint();
