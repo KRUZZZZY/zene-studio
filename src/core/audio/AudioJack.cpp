@@ -35,6 +35,7 @@
 #include <QStringList>
 
 #include "AudioEngine.h"
+#include "CrashReporter.h"
 #include "AudioInputPath.h"
 #include "AudioIoSetup.h"
 #include "ConfigManager.h"
@@ -409,6 +410,7 @@ void AudioJack::renamePort(AudioBusHandle* port)
 
 int AudioJack::processCallback(jack_nframes_t nframes)
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	// do midi processing first so that midi input can
 	// add to the following sound processing
 	if (m_midiClient && nframes > 0)

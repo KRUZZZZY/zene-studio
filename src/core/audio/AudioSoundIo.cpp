@@ -33,6 +33,7 @@
 #include "ConfigManager.h"
 #include "ComboBox.h"
 #include "AudioEngine.h"
+#include "CrashReporter.h"
 
 namespace lmms
 {
@@ -252,6 +253,7 @@ void AudioSoundIo::underflowCallback()
 
 void AudioSoundIo::writeCallback(int frameCountMin, int frameCountMax)
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	const auto layout = static_cast<SoundIoChannelLayout*>(&m_outstream->layout);
 	auto areas = static_cast<SoundIoChannelArea*>(nullptr);
 	auto framesLeft = frameCountMax;

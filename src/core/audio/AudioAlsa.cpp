@@ -33,6 +33,7 @@
 #include "AudioInputPath.h"
 #include "AudioIoSetup.h"
 #include "ConfigManager.h"
+#include "CrashReporter.h"
 
 namespace lmms
 {
@@ -293,6 +294,7 @@ void AudioAlsa::stopProcessingImpl()
 
 void AudioAlsa::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	const auto framesPerAudioBuffer = audioEngine()->framesPerAudioBuffer();
 	auto buf = std::vector<float>(framesPerAudioBuffer * channels());
 	while (AudioDevice::isRunning())
@@ -603,6 +605,7 @@ void AudioAlsa::reportCaptureErrors()
 
 void AudioAlsa::captureLoop()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	// Realtime rules, kept: no allocation, no locks, no QString and no logging
 	// in this loop - the buffers were allocated in openCapture(), and the
 	// counters it touches are relaxed atomics.

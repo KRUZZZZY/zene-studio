@@ -442,11 +442,14 @@ none:
    through the documented test seam (`setReentrancyGuardForTest`), and the
    "second signal must not hang" case is proven end to end with a real child.
    What is *not* covered is a genuine fault occurring inside the handler body.
-3. **A stack-overflow SIGSEGV is only covered on the thread that installed the
-   handlers.** `sigaltstack()` is a per-thread attribute (POSIX), and the
-   reporter installs a 32 KiB alternate stack from the main thread, so only the
-   main thread benefits. A stack overflow on another thread would still hang
-   the process in the fault loop; this is not tested and not claimed.
+3. **The alternate stack is registered per thread.** `sigaltstack()` is a
+   per-thread attribute (POSIX), while the signal dispositions are
+   process-wide. `install()` registers the calling thread, and audio render
+   and capture threads register at their entry points or callbacks; the
+   engine's `renderNextPeriod()` is also a backstop for every render path.
+   A thread that never reaches a registration point (for example, a plugin's
+   private thread) still has no alternate stack, so a stack-overflow crash on
+   that thread is not covered.
 4. **`pc` is architecture-dependent.** It is read from the signal `ucontext` on
    `aarch64` and on `x86_64` when `REG_RIP` is visible to the toolchain;
    elsewhere it is `0x0`. Only `x86_64` was exercised here.

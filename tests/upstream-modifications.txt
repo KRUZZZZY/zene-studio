@@ -5104,3 +5104,18 @@ src/core/LfoController.cpp	cluster new-p15-90: user-wave rendering borrows an at
 src/gui/LfoControllerDialog.cpp	cluster new-p15-90: the waveform picker routes the selected immutable sample buffer through LfoController's shared publication path instead of assigning the render-visible shared_ptr directly.
 tests/CMakeLists.txt	cluster new-p15-90: registers LfoControllerUserWaveTest, the deterministic lifetime regression for replacing a custom LFO waveform while a render lease is held.
 tests/all-sources.txt	cluster new-p15-90: re-derives the manifest from its published recipe to register the new regression source and remove 1,148 stale vendored sfizz entries that the recipe explicitly excludes; this makes the all-sources-reproduce gate match the manifest's own contract.
+include/AudioDummy.h	cluster 5039-port-port-port-port-port-port: the Dummy render thread registers its own alternate signal stack at run() entry.
+src/core/AudioEngineWorkerThread.cpp	cluster 5039-port-port-port-port-port-port: the render worker registers its own alternate signal stack at run() entry, preserving the current worker/drain handshake.
+src/core/AudioEngine.cpp	cluster 5039-port-port-port-port-port-port: renderNextPeriod() registers the calling thread as a backstop shared by device, export and callback render paths.
+src/core/ProjectRenderer.cpp	cluster 5039-port-port-port-port-port-port: the export thread registers its own alternate signal stack before rendering.
+src/core/audio/AudioAlsa.cpp	cluster 5039-port-port-port-port-port-port: ALSA render and capture threads register their own alternate signal stacks at entry.
+src/core/audio/AudioJack.cpp	cluster 5039-port-port-port-port-port-port: the library-owned JACK process callback registers its thread before audio processing.
+src/core/audio/AudioOss.cpp	cluster 5039-port-port-port-port-port-port: the OSS render thread registers its own alternate signal stack at run() entry.
+src/core/audio/AudioPortAudio.cpp	cluster 5039-port-port-port-port-port-port: the library-owned PortAudio callback registers its thread before audio processing.
+src/core/audio/AudioPulseAudio.cpp	cluster 5039-port-port-port-port-port-port: the PulseAudio event/render thread registers its own alternate signal stack at run() entry.
+src/core/audio/AudioSdl.cpp	cluster 5039-port-port-port-port-port-port: SDL output and input callbacks register the library-owned callback threads before processing.
+src/core/audio/AudioSndio.cpp	cluster 5039-port-port-port-port-port-port: the sndio render thread registers its own alternate signal stack at run() entry.
+src/core/audio/AudioSoundIo.cpp	cluster 5039-port-port-port-port-port-port: the libsoundio write callback registers its library-owned thread before rendering.
+docs/CRASH-REPORTER.md	cluster 5039-port-port-port-port-port-port: corrects the alternate-stack coverage statement and documents the per-thread registration points and plugin-thread limit.
+tests/src/core/CrashReporterTest.cpp	cluster 5039-port-port-port-port-port-port: verifies an unregistered thread has no alternate stack, a registered thread receives SA_ONSTACK on its own stack, and repeated install() registers its calling thread.
+tests/all-sources.txt	cluster 5039-port-port-port-port-port-port train-state repair: re-derived the whole-tree source manifest from its documented recipe, removing the tracked vendored sfizz paths the recipe explicitly excludes.

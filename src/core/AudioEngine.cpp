@@ -36,6 +36,7 @@
 #include "lmmsconfig.h"
 
 #include "AudioEngineWorkerThread.h"
+#include "CrashReporter.h"
 #include "AudioBusHandle.h"
 #include "MpscQueue.h"
 #include "AudioInputPath.h"
@@ -1154,6 +1155,7 @@ void AudioEngine::renderStageMix()
 
 std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	const auto lock = std::lock_guard{m_changeMutex};
 	// R7.2: under WANT_DEBUG_RTSAN everything from here to the return is checked as realtime code.
 	const RealtimeScope realtime;

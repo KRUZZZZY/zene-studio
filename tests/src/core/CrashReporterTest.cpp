@@ -52,10 +52,31 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include <thread>
 #include <unistd.h>
+#endif
+
+#ifndef Q_OS_WIN
+
+// The expected alternate-stack range and result of synchronous signal delivery.
+// The handler and the thread that raises the signal access these on that same thread.
+uintptr_t s_expectedAltStackBegin = 0;
+uintptr_t s_expectedAltStackEnd = 0;
+volatile sig_atomic_t s_signalUsedAltStack = 0;
+
+void alternateStackSignalHandler(int) noexcept
+{
+	char marker;
+	const uintptr_t address = reinterpret_cast<uintptr_t>(&marker);
+	s_signalUsedAltStack = address >= s_expectedAltStackBegin
+		&& address < s_expectedAltStackEnd;
+}
+
 #endif
 
 namespace
@@ -504,6 +525,76 @@ private slots:
 		beginSession();
 		endSession();
 		QVERIFY(!sessionMarkerExists());
+	}
+
+	// sigaltstack() is per-thread, while SA_ONSTACK dispositions are process-wide.
+	// Reinstalling on a later thread must register its stack before the handler is used.
+	void repeated_install_registers_and_uses_the_calling_threads_stack()
+	{
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		QVERIFY(install(dir.path().toStdString()));
+
+		stack_t mainStack{};
+		QVERIFY(::sigaltstack(nullptr, &mainStack) == 0);
+		QVERIFY2((mainStack.ss_flags & SS_DISABLE) == 0,
+			"the installing thread must have an alternate stack");
+
+		struct sigaction previousAction{};
+		QVERIFY(::sigaction(SIGUSR1, nullptr, &previousAction) == 0);
+		struct sigaction action{};
+		action.sa_handler = &alternateStackSignalHandler;
+		action.sa_flags = SA_ONSTACK;
+		QVERIFY(::sigemptyset(&action.sa_mask) == 0);
+		QVERIFY(::sigaction(SIGUSR1, &action, nullptr) == 0);
+		struct sigaction crashAction{};
+		QVERIFY(::sigaction(SIGSEGV, nullptr, &crashAction) == 0);
+		QVERIFY2((crashAction.sa_flags & SA_ONSTACK) != 0,
+			"the crash reporter's process-wide handler must request alternate-stack delivery");
+
+		bool unarmedThreadHasNone = false;
+		bool unarmedSignalUsedAltStack = true;
+		std::thread control([&] {
+			stack_t stack{};
+			const bool queried = ::sigaltstack(nullptr, &stack) == 0;
+			unarmedThreadHasNone = queried && (stack.ss_flags & SS_DISABLE) != 0;
+			s_expectedAltStackBegin = queried ? reinterpret_cast<uintptr_t>(stack.ss_sp) : 0;
+			s_expectedAltStackEnd = s_expectedAltStackBegin + (queried ? stack.ss_size : 0);
+			s_signalUsedAltStack = 0;
+			::raise(SIGUSR1);
+			unarmedSignalUsedAltStack = s_signalUsedAltStack != 0;
+		});
+		control.join();
+
+		bool workerInstallSucceeded = false;
+		bool hasStack = false;
+		bool registeredSignalUsedAltStack = false;
+		std::thread worker([&] {
+			// install() must register this thread even though the process-wide handlers
+			// are already armed by the main thread.
+			workerInstallSucceeded = install(dir.path().toStdString());
+			stack_t stack{};
+			const bool queried = ::sigaltstack(nullptr, &stack) == 0;
+			hasStack = queried && (stack.ss_flags & SS_DISABLE) == 0
+				&& stack.ss_size == 32 * 1024;
+			s_expectedAltStackBegin = queried ? reinterpret_cast<uintptr_t>(stack.ss_sp) : 0;
+			s_expectedAltStackEnd = s_expectedAltStackBegin + (queried ? stack.ss_size : 0);
+			s_signalUsedAltStack = 0;
+			::raise(SIGUSR1);
+			registeredSignalUsedAltStack = s_signalUsedAltStack != 0;
+		});
+		worker.join();
+		const bool restored = ::sigaction(SIGUSR1, &previousAction, nullptr) == 0;
+
+		QVERIFY2(unarmedThreadHasNone, "a thread that registers nothing must have no alternate stack");
+		QVERIFY2(!unarmedSignalUsedAltStack,
+			"SA_ONSTACK must not claim an alternate stack on an unregistered thread");
+		QVERIFY2(workerInstallSucceeded,
+			"reinstall() must succeed while registering its calling thread's alternate stack");
+		QVERIFY2(hasStack, "the thread that registered an alternate stack does not have one");
+		QVERIFY2(registeredSignalUsedAltStack,
+			"SA_ONSTACK signal delivery did not run on the registered alternate stack");
+		QVERIFY(restored);
 	}
 
 #endif // Q_OS_WIN

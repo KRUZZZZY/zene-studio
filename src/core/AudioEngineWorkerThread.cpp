@@ -32,6 +32,7 @@
 
 #include "AudioEngine.h"
 #include "AudioBusHandle.h"
+#include "CrashReporter.h"
 #include "AudioWorkerWake.h"
 #include "Hardware.h"
 #include "RealtimeScope.h"
@@ -303,6 +304,7 @@ void AudioEngineWorkerThread::startAndWaitForJobs()
 
 void AudioEngineWorkerThread::run()
 {
+	crashreporter::installAlternateStackForCurrentThread();
 	disableDenormals();
 	s_renderSlot = m_renderSlot;
 	DeferredPlayHandleEdits* const previousPending = s_currentDeferredPlayHandleEdits;
