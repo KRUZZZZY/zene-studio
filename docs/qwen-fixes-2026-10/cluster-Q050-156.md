@@ -75,3 +75,5 @@ The conflict resolution adds only existing includes and members; there is no new
 
 **? Docs.**
 `data/manual/index.html` (from the accepted patch, applied cleanly) and `docs/050-features/Q050-156.md` now have an "Integration onto 050/m0-train-16" section and the rate-change limit.
+
+**Completion check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-156` (submit-check-1.log, exit 1). Every mechanical row passes except `gates (feature_check.py)`. That row runs the unmodified `feature_check.py`, which fails before any gate runs with a PermissionError: it creates `<worktree>-feature-check/` next to the worktree, outside this lane's write jail. The same gates, with only the log directory moved to /tmp, all PASS (feature-check-2.log, exit 0, 8/8). The loop's own run outside the jail should show the same result.
