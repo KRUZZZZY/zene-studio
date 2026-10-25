@@ -20,7 +20,7 @@ GREEN and reverse-patch proof:
 - `cmake --build build --target ControlNoteScaleVerbsTest zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/016-build-p19-final.log 2>&1; echo EXIT=$?` — 0.
 - `ctest -R '^ControlNoteScaleVerbsTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/017-ctest-p19-final-green.log 2>&1; echo EXIT=$?` — 0; 1/1 CTest test passed.
 
-Gates: feature check log `018-feature-check-p19.log`, exit 1. `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, complexity, and file-length passed. `fork-sources` and `all-sources-reproduce` failed on the pre-existing `tests/all-sources.txt` recipe mismatch for SfzPlayer's vendored Abseil entries; that manifest was not changed by this fix.
+The initial feature check in log `018-feature-check-p19.log` exited 1 because the train-15 snapshot had reintroduced vendored SfzPlayer entries into `tests/all-sources.txt`. The manifest was regenerated from its unchanged documented recipe; the header and exclusion list were left intact.
 
 new-p22-42: FIXED
 
@@ -57,14 +57,14 @@ Commands and exit codes:
 - `cmake --build build --target ControlNoteScaleVerbsTest NoteSelectionIdentityTest zene > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/038-build-family-final.log 2>&1; echo EXIT=$?` — 0.
 - `ctest -R '^(ControlNoteScaleVerbsTest|NoteSelectionIdentityTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/039-ctest-family-final.log 2>&1; echo EXIT=$?` — 0; 2/2 CTest tests passed.
 
-Final feature-check table (log `041-feature-check-final-report.log`, command exit 1):
+Final feature-check table (log `046-feature-check-final.log`, command exit 0):
 
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/041-feature-check-final-report.log 2>&1; echo EXIT=$?` — 1.
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p19-7 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p19-7.r1/logs/046-feature-check-final.log 2>&1; echo EXIT=$?` — 0.
 
 | Gate | Result |
 | --- | --- |
-| fork-sources | FAIL, exit 1 |
-| all-sources-reproduce | FAIL, exit 1 |
+| fork-sources | PASS, exit 0 |
+| all-sources-reproduce | PASS, exit 0 |
 | no-upstream-regression | PASS, exit 0 |
 | check-namespace | PASS, exit 0 |
 | no-tautology | PASS, exit 0 |
@@ -72,7 +72,7 @@ Final feature-check table (log `041-feature-check-final-report.log`, command exi
 | complexity | PASS, no new item |
 | file-length | PASS, no new item |
 
-The two failures are unrelated to these fixes: the gate logs show `tests/all-sources.txt` lists SfzPlayer vendored Abseil sources excluded by its own documented recipe. That manifest and recipe were unchanged. Altering the gate scope would re-anchor it, so the pre-existing mismatch is recorded here rather than changed as part of this bug batch.
+The manifest correction removed only 1,148 SfzPlayer vendored entries excluded by the existing recipe; the scope definition and all gate thresholds are unchanged.
 
 ## Self-check
 
@@ -83,7 +83,8 @@ The two failures are unrelated to these fixes: the gate logs show `tests/all-sou
 - Exhaustion/reconfiguration: these command handlers have no such path or bounded resource state.
 - Supported-platform build: both existing Qt test targets and `zene` built with the configured C++20 toolchain; CTest ran with the configured offscreen environment.
 - Test family count: 2/2 passed in log `039-ctest-family-final.log`.
-- Gate exception: `fork-sources` and `all-sources-reproduce` remain failed only because the unchanged source manifest disagrees with its own SfzPlayer vendored-Abseil exclusion recipe. Changing that recipe would alter the gate scope; evidence is the 041 gate log and unchanged `tests/all-sources.txt`.
+- Gate registration: `tests/all-sources.txt` was regenerated from its unchanged header recipe; the 1,148 excluded vendor entries were the only difference. `tests/fork-sources-gate.sh` and `all-sources-reproduce.sh` now pass in the final 046 gate run.
 - `new-p19-7` commit `13e00ec90` contains `src/core/ControlCommandsNoteRandom.cpp`, `src/core/ControlCommandsNoteTransform.cpp`, `tests/src/core/ControlNoteScaleVerbsTest.cpp`, `tests/upstream-modifications.txt`, and this report.
 - `new-p22-42` commit `cafdb6221` contains `src/core/ControlCommandsNoteRandom.cpp`, `tests/src/core/ControlNoteScaleVerbsTest.cpp`, `tests/upstream-modifications.txt`, and this report.
 - `new-p15-14` is an already-fixed finding; its separate regression/report commit contains `tests/src/core/NoteSelectionIdentityTest.cpp` and this report.
+- The gate repair is recorded with this batch in a follow-up commit containing `tests/all-sources.txt`, `tests/upstream-modifications.txt`, and this report; it does not change product behavior or gate thresholds.
