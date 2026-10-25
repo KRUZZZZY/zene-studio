@@ -30,11 +30,15 @@
 
 #include <QtTest>
 
+#include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <thread>
 
 #include "ControlRegistry.h"
@@ -93,7 +97,11 @@ private slots:
 		Engine::destroy();
 	}
 
-	void init() { TaskCenter::instance().clearFinished(); }
+	void init()
+	{
+		qunsetenv("ZENE_FAKE_RENDER_DIAGNOSTIC");
+		TaskCenter::instance().clearFinished();
+	}
 
 	void aJobIsListedFromBeginToEnd()
 	{
@@ -280,6 +288,24 @@ private slots:
 		QVERIFY(QFile::exists(output));
 	}
 
+	void failedRenderSurfacesChildDiagnostics()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		qputenv("ZENE_FAKE_RENDER_DIAGNOSTIC", "encoder refused the requested output");
+		RenderJob job;
+		job.kind = RenderJob::Kind::Render;
+		job.source = dir.filePath(QStringLiteral("project.mmp"));
+		job.out = dir.filePath(QStringLiteral("output.wav"));
+		RenderQueue& queue = RenderQueue::instance();
+		const int id = queue.add(job);
+		QVERIFY(id > 0);
+		queue.start();
+		QTRY_VERIFY_WITH_TIMEOUT(queue.job(id) != nullptr && queue.job(id)->state == RenderJob::State::Failed, 5000);
+		QVERIFY(queue.job(id)->error.contains(QStringLiteral("encoder refused the requested output")));
+		queue.clearFinished();
+	}
+
 	void aQueuedRenderIsListedAndCancelledThroughTheList()
 	{
 		QTemporaryDir dir;
@@ -301,5 +327,17 @@ private slots:
 	}
 };
 
-QTEST_GUILESS_MAIN(TaskCenterTest)
+int main(int argc, char** argv)
+{
+	if (argc > 1 && std::strcmp(argv[1], "render") == 0)
+	{
+		const char* diagnostic = std::getenv("ZENE_FAKE_RENDER_DIAGNOSTIC");
+		if (diagnostic != nullptr) { std::fputs(diagnostic, stderr); std::fputc('\n', stderr); }
+		return 3;
+	}
+	QCoreApplication app(argc, argv);
+	QTEST_SET_MAIN_SOURCE_PATH
+	TaskCenterTest test;
+	return QTest::qExec(&test, argc, argv);
+}
 #include "TaskCenterTest.moc"

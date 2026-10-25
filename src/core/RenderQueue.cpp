@@ -29,6 +29,7 @@
 #include <optional>
 
 #include <QCoreApplication>
+#include <QByteArray>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -54,7 +55,28 @@ namespace lmms
 namespace
 {
 
+constexpr qsizetype RenderDiagnosticLimit = 512;
+
 qint64 now() { return QDateTime::currentMSecsSinceEpoch(); }
+
+void appendDiagnosticTail(QByteArray& output, const QByteArray& chunk)
+{
+	if (chunk.size() >= RenderDiagnosticLimit)
+	{
+		output = chunk.right(RenderDiagnosticLimit);
+		return;
+	}
+	const qsizetype excess = output.size() + chunk.size() - RenderDiagnosticLimit;
+	if (excess > 0) { output.remove(0, excess); }
+	output.append(chunk);
+}
+
+QString withRenderDiagnostic(QString error, const QByteArray& diagnostic)
+{
+	const QString detail = QString::fromLocal8Bit(diagnostic).trimmed();
+	if (detail.isEmpty()) { return error; }
+	return error.isEmpty() ? detail : QStringLiteral("%1: %2").arg(error, detail);
+}
 
 int sndfileFormat(const RenderJob& job)
 {
@@ -292,15 +314,28 @@ void RenderQueue::runRender(RenderJob& job)
 	const int id = job.id;
 	const TaskToken taskToken = job.taskToken;
 	m_process = new QProcess(this);
+	QProcess* const process = m_process;
+	auto diagnostics = std::make_shared<QByteArray>();
 	m_process->setStandardOutputFile(QProcess::nullDevice());
-	m_process->setStandardErrorFile(QProcess::nullDevice());
-	connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
-		[this, id, taskToken](int exitCode, QProcess::ExitStatus status) {
-		finish(taskToken, id, status == QProcess::NormalExit && exitCode == 0, exitCode,
-			status == QProcess::NormalExit ? QString() : QStringLiteral("the render process crashed"));
+	connect(m_process, &QProcess::readyReadStandardError, this, [process, diagnostics] {
+		appendDiagnosticTail(*diagnostics, process->readAllStandardError());
 	});
-	connect(m_process, &QProcess::errorOccurred, this, [this, id, taskToken](QProcess::ProcessError error) {
-		if (error == QProcess::FailedToStart) { finish(taskToken, id, false, -1, QStringLiteral("the render process could not be started")); }
+	connect(m_process, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this,
+		[this, id, taskToken, process, diagnostics](int exitCode, QProcess::ExitStatus status) {
+		appendDiagnosticTail(*diagnostics, process->readAllStandardError());
+		QString error;
+		if (status != QProcess::NormalExit) { error = QStringLiteral("the render process crashed"); }
+		else if (exitCode != 0) { error = QStringLiteral("the render process exited with code %1").arg(exitCode); }
+		finish(taskToken, id, status == QProcess::NormalExit && exitCode == 0, exitCode,
+			withRenderDiagnostic(error, *diagnostics));
+	});
+	connect(m_process, &QProcess::errorOccurred, this, [this, id, taskToken, process, diagnostics](QProcess::ProcessError error) {
+		if (error == QProcess::FailedToStart)
+		{
+			appendDiagnosticTail(*diagnostics, process->readAllStandardError());
+			finish(taskToken, id, false, -1,
+				withRenderDiagnostic(QStringLiteral("the render process could not be started: %1").arg(process->errorString()), *diagnostics));
+		}
 	});
 	m_process->start(QCoreApplication::applicationFilePath(), controlRenderCliArguments(job.source, job.out, job.format,
 		job.settings, job.rangeBegin, job.rangeEnd));
