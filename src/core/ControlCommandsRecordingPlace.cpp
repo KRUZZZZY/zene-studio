@@ -28,6 +28,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <atomic>
 #include <memory>
 
 #include <QFileInfo>
@@ -39,6 +40,7 @@
 #include "ControlRecordingSupport.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "RecordingJournal.h"
 #include "SampleClip.h"
 #include "Song.h"
@@ -53,9 +55,12 @@ using namespace recordingjournal;
 namespace
 {
 
+std::atomic<bool> g_recoveredTakeFailsForTest{false};  // the test seam: setRecoveredTakeFailsForTest()
+
 //! A new sample track named after the take, holding \a audio in a clip at bar 1; its stable id, or empty.
 QString landRecoveredTake(Song* song, const QString& audio)
 {
+	if (g_recoveredTakeFailsForTest.load()) { return QString(); }
 	Track* track = Track::create(Track::Type::Sample, song);
 	if (track == nullptr) { return QString(); }
 	track->setName(QObject::tr("Recovered: %1").arg(QFileInfo(audio).completeBaseName()));
@@ -105,8 +110,18 @@ ControlResult recoveryPlace(const QJsonObject& args)
 			placed->clear();
 			write(journalPath, offered);
 		},
-		[placed, restored, journalPath, song, audio]() {
+		[placed, offered, restored, journalPath, song, audio]() {
 			*placed = landRecoveredTake(song, audio);
+			// A redo that places nothing leaves the take offered, as the first placement's failure does below, and
+			// declines the redo: the step goes back on the redo stack instead of being recorded as an applied undo step.
+			if (placed->isEmpty())
+			{
+				write(journalPath, offered);
+				if (ProjectJournal* journal = Engine::projectJournal()) {
+					journal->declineRedo(QStringLiteral("no sample track could be created for the recovered take"));
+				}
+				return;
+			}
 			write(journalPath, restored);
 		});
 	*placed = landRecoveredTake(song, audio);
@@ -131,6 +146,13 @@ ControlResult recoveryPlace(const QJsonObject& args)
 }
 
 } // namespace
+
+namespace control
+{
+
+void setRecoveredTakeFailsForTest(bool fails) { g_recoveredTakeFailsForTest.store(fails); }
+
+} // namespace control
 
 void registerRecordingPlaceCommand(ControlRegistry& registry)
 {

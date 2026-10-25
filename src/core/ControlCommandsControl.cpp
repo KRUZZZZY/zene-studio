@@ -566,15 +566,24 @@ void registerRedoCommand(ControlRegistry& registry)
 	cmd.handler = [](const QJsonObject&) {
 		auto* journal = Engine::projectJournal();
 		bool redone = false;
+		QString declined;
 		clearStructuralRestoreFailure();  // as control.undo: only THIS step's failure is reported
 		clearActionRestoreFailure();
 		if (journal != nullptr && journal->canRedo())
 		{
 			journal->redo();
-			redone = true;
+			// A redo that changed nothing is declined by its step: it is not redone, and the step stays on the redo stack.
+			declined = journal->takeRedoDecline();
+			redone = declined.isEmpty();
 		}
 		if (std::optional<ControlResult> failed = restoreFailureOf(QStringLiteral("redo"), QString())) { return *failed; }
 		if (std::optional<ControlResult> failed = actionRestoreFailureOf(QStringLiteral("redo"), QString())) { return *failed; }
+		if (!declined.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("cannot redo: %1. Nothing was changed, so no undo step was recorded and the step "
+					"stays on the redo stack").arg(declined));
+		}
 		QJsonObject result;
 		result.insert(QStringLiteral("redone"), redone);
 		result.insert(QStringLiteral("can_undo"), journal != nullptr && journal->canUndo());

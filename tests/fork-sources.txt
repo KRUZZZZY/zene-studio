@@ -99,7 +99,7 @@
 #     tests/src/core/OutOfProcessHostSupport.h tests/zene-api-boundary.py \
 #     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/HydrogenImportLocalFileMngTest.cpp ; \
-#     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp tests/src/gui/PianoViewFocusTest.cpp ; \
+#     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp tests/src/gui/PianoViewFocusTest.cpp tests/src/gui/RecordingRecoveryMenuTest.cpp ; \
 #     tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp \
 #     tests/src/plugins/ReverbScAllocationTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
@@ -240,7 +240,7 @@
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCRawProcessingTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCPluginStateTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ReverbSCBaseTest.cpp ; \
-#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-dry-run-journal.py tests/control-feedback-commands.py tests/control-import-lifetime.py tests/control-mastering-quit.py tests/control-mastering-run-bound.py tests/control-render-format-capability.py tests/control-save-state.py tests/control-tempo-map-persistence.py tests/src/core/DocumentIndexTest.cpp tests/src/core/DocumentSectionsTest.cpp tests/src/core/MidiOutQueueTest.cpp tests/src/core/MidiRetroCaptureTest.cpp tests/src/core/NamespaceRegistryTest.cpp tests/src/core/PartialLoadTest.cpp tests/src/core/ProjectContainerEntriesTest.cpp tests/src/core/ProjectContainerTest.cpp tests/src/core/ProvenanceSectionTest.cpp tests/src/core/RetroMidiRingTest.cpp tests/src/core/SessionPlaybackRenderTest.cpp tests/src/core/SessionPlaybackTest.cpp tests/src/core/StemJobManagerTest.cpp tests/src/core/UnclaimedElementsTest.cpp tests/src/core/UnclaimedTrackTypeTest.cpp tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp tests/src/gui/PianoViewFocusTest.cpp ; \
+#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-dry-run-journal.py tests/control-feedback-commands.py tests/control-import-lifetime.py tests/control-mastering-quit.py tests/control-mastering-run-bound.py tests/control-render-format-capability.py tests/control-save-state.py tests/control-tempo-map-persistence.py tests/src/core/DocumentIndexTest.cpp tests/src/core/DocumentSectionsTest.cpp tests/src/core/MidiOutQueueTest.cpp tests/src/core/MidiRetroCaptureTest.cpp tests/src/core/NamespaceRegistryTest.cpp tests/src/core/PartialLoadTest.cpp tests/src/core/ProjectContainerEntriesTest.cpp tests/src/core/ProjectContainerTest.cpp tests/src/core/ProvenanceSectionTest.cpp tests/src/core/RetroMidiRingTest.cpp tests/src/core/SessionPlaybackRenderTest.cpp tests/src/core/SessionPlaybackTest.cpp tests/src/core/StemJobManagerTest.cpp tests/src/core/UnclaimedElementsTest.cpp tests/src/core/UnclaimedTrackTypeTest.cpp tests/mmpz-v2-container-refusal.py tests/src/core/DeviceMovesUndoTest.cpp tests/src/gui/PianoViewFocusTest.cpp tests/src/gui/RecordingRecoveryMenuTest.cpp ; \
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/EqCurveTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- plugins/NeuralAmp/tests/compare_rate_test.py ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
@@ -2638,6 +2638,8 @@ tests/src/gui/PianoViewFocusTest.cpp
 # 2026-10-16 (cluster Q050-179): the Rec left readout's regression test is a fork-new GUI test,
 # named by hand as its neighbour above (the current core-test keep-list does not cover tests/src/gui).
 tests/src/gui/RecordRemainingTest.cpp
+# cluster new-p14-48-port-port: deterministic recovery redo failure and exact undo-depth tests.
+tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/EqCurveTest.cpp
 tests/src/plugins/EqFilterTest.cpp

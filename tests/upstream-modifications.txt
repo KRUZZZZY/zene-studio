@@ -5126,3 +5126,7 @@ tests/all-sources.txt	cluster 5039-port-port-port-port-port-port train-state rep
 tests/CMakeLists.txt	cluster new-p17-180: register the dedicated panner regression test target in LMMS_TESTS and apply the same offscreen Qt environment as adjacent GUI tests.
 tests/all-sources.txt	cluster new-p14-365-port-port-port: re-derive the whole-tree source manifest from its published recipe after train-15 re-added 1148 vendored plugins/SfzPlayer/sfizz paths the recipe excludes; this restores the fork-sources and all-sources-reproduce gates without changing the measured first-party source set.
 tests/src/core/SessionTuningTest.cpp	cluster new-p15-20-port-port: regression verifies repeated unchanged mts.master_set does not bury the preceding mts.set_note undo; preserves train-15 MTS-ESP available/unavailable coverage.
+include/ProjectJournal.h	cluster new-p14-48-port-port: expose declineRedo/takeRedoDecline so a failed recovery action can remain on the redo stack without creating an undo step.
+src/core/ProjectJournal.cpp	cluster new-p14-48-port-port: roll back earlier actions in a declined redo and keep that checkpoint on the redo stack.
+src/core/ControlCommandsControl.cpp	cluster new-p14-48-port-port: return a typed Refused result when control.redo's action reports that it placed nothing.
+tests/all-sources.txt	cluster new-p14-48-port-port gate repair: re-derived from its published recipe; removed only 1,148 plugins/SfzPlayer/sfizz vendor entries that the recipe excludes.

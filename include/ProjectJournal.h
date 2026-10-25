@@ -31,6 +31,7 @@
 #include <QByteArray>
 #include <QHash>
 #include <QStack>
+#include <QString>
 #include <QVector>
 
 #include "LmmsTypes.h"
@@ -102,6 +103,15 @@ public:
 
 	void undo();
 	void redo();
+
+	/*! Called from a redo action while redo() replays it, when the replay did not happen: the action changed
+	 *  nothing. redo() then takes back the actions the step replayed before it, and returns the step to the redo
+	 *  stack unrecorded, so no undo step is added for a redo that did nothing. \a reason says why; the control
+	 *  layer reads it with takeRedoDecline(). For an action-only step: a step that restored journalled objects
+	 *  cannot be taken back this way. */
+	void declineRedo( const QString& reason );
+	//! The reason the last redo was declined, or empty; clears it.
+	QString takeRedoDecline();
 
 	bool canUndo() const;
 	bool canRedo() const;
@@ -494,6 +504,8 @@ private:
 	int m_coalesced = 0;
 	//! The last serial handed to a step; 0 means "no step has been pushed yet".
 	quint64 m_stepSerial = 0;
+	//! Set by declineRedo() during a redo, read and cleared by redo() and takeRedoDecline().
+	QString m_redoDecline;
 
 	//! WF-033: Song::captureUndoSnapshot is building its document (idToWrite).
 	static bool s_snapshotIds;
