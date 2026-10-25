@@ -290,7 +290,16 @@ int luaCommand(lua_State* L)
 	command.type = ScriptCommand::Type::DawEdit;
 	command.i0 = static_cast<std::int32_t>(ScriptDawBindings::Op::RegistryCall);
 	command.object0 = &request;
-	ScriptEngine::instance()->enqueue(command);
+	if (!ScriptEngine::instance()->enqueue(command))
+	{
+		// The bounded queue was full, so the request was DROPPED and will
+		// never be applied: the reply below would be an empty failure that
+		// says nothing. Say what happened instead.
+		return pushFailure(L,
+			QStringLiteral("the script command queue is full (%1 commands); the command was dropped")
+				.arg(ScriptCommandQueueCapacity),
+			QStringLiteral("refused"));
+	}
 	// The read-back rule (ScriptDawEdit.cpp): the request is on this stack, so the script waits
 	// until the apply side has run it.
 	ScriptEngine::instance()->flushCommandsForRead();

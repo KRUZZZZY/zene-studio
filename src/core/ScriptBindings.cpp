@@ -565,7 +565,12 @@ void LuaBoolModel::setValue(bool value)
 	ScriptCommand command = makeCommand(ScriptCommand::Type::SetModelValue);
 	command.object0 = m_model;
 	command.f0 = value ? 1.0f : 0.0f;
-	ScriptEngine::instance()->enqueue(command);
+	if (!ScriptEngine::instance()->enqueue(command))
+	{
+		ScriptEngine::instance()->logMessage(QStringLiteral(
+			"[error] setting this parameter refused: the script command queue is full (%1 commands); "
+			"the edit was dropped").arg(ScriptCommandQueueCapacity));
+	}
 }
 
 QString LuaBoolModel::name() const

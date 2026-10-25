@@ -634,7 +634,16 @@ void LuaFloatModel::setValue(float value)
 	command.type = ScriptCommand::Type::SetModelValue;
 	command.object0 = model;
 	command.f0 = value;
-	ScriptEngine::instance()->enqueue(command);
+	if (!ScriptEngine::instance()->enqueue(command))
+	{
+		// The bounded queue was full, so the write was dropped (spec section 4:
+		// the producer is never blocked). The script is told, rather than left
+		// to read back a value it never wrote - the same refusal the DAW
+		// write half reports (src/core/ScriptDawEdit.cpp).
+		ScriptEngine::instance()->logMessage(QStringLiteral(
+			"[error] setting this parameter refused: the script command queue is full (%1 commands); "
+			"the edit was dropped").arg(ScriptCommandQueueCapacity));
+	}
 }
 
 float LuaFloatModel::minValue() const

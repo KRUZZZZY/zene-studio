@@ -107,6 +107,25 @@ private slots:
 		QVERIFY(hasTrackNamed(QStringLiteral("From Lua")));
 	}
 
+	void aFullCommandQueueReturnsATypedRefusal()
+	{
+		ScriptEngine* engine = ScriptEngine::instance();
+		engine->processCommands();
+		ScriptCommand filler;
+		filler.type = ScriptCommand::Type::AddCheckPoint;
+		const quint64 droppedBefore = engine->droppedCommandCount();
+		const int attempts = 4 * static_cast<int>(ScriptCommandQueueCapacity);
+		for (int i = 0; i < attempts; ++i) { engine->enqueue(filler); }
+		QVERIFY(engine->droppedCommandCount() > droppedBefore);
+		QVERIFY(engine->pendingCommandCount() > 0);
+
+		const QStringList out = run(QStringLiteral(
+			"local reply, err, kind = zene.command('track.list')\n"
+			"print(type(reply) .. ' ' .. tostring(kind))\n"));
+		engine->processCommands();
+		QCOMPARE(out, QStringList{QStringLiteral("nil refused")});
+	}
+
 	void stringsWithEmbeddedNullBytesKeepTheirLengthAcrossCommands()
 	{
 		const QString seededName = QString::fromUtf8("A\0B", 3);

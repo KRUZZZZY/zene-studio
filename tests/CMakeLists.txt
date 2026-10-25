@@ -962,6 +962,16 @@ set(LMMS_TESTS
 	src/core/ScriptDawRemovalUndoTest.cpp
 	# review-51e7da51f: deterministic recorded-device registration handoff checks.
 	src/core/ScriptDawModelRegistrationTest.cpp
+	# cluster new-p14-285: a FULL script command queue must refuse a DAW edit and
+	# say so, instead of dropping the edit while the script's mutator returns
+	# normally. The queue is filled through the same public enqueue() a script
+	# uses; the refusal is read from the script's own console.
+	src/core/ScriptDawQueueFullTest.cpp
+	# cluster new-p14-285 (round 2): a model edit travels as TWO queue commands
+	# (its undo checkpoint and its write), so the pair must reserve its room as
+	# a whole: a queue with one slot left must refuse the change whole, not
+	# take the checkpoint and strand an empty undo step.
+	src/core/ScriptDawPairReservationTest.cpp
 	src/core/ScriptEngineTest.cpp
 	# Q050-051: the sandboxed Lua `require` - traversal, absolute and Windows paths,
 	# symlink and junction escapes, cycles, bounds, and the sandbox staying closed in modules.
@@ -2810,7 +2820,8 @@ target_compile_definitions(AutomationPrepassProofTest PRIVATE LMMS_AUTOMATION_PR
 # ScriptDawBindingTest constructs a real Engine (mixer, script worker thread,
 # ProjectJournal) and drives it through the Lua binding, so it needs the same
 # headless Qt platform. ScriptDawRemovalUndoTest is the same kind of test.
-set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawModelRegistrationTest ScriptDawEffectsTest PROPERTIES
+set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawModelRegistrationTest ScriptDawEffectsTest
+	ScriptDawQueueFullTest ScriptDawPairReservationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The rack command-group tests (rack.* macros and key/velocity zones) construct a
