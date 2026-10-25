@@ -111,7 +111,13 @@ public:
 
 	const AutomatableModel * firstObject() const;
 	const objectVector& objects() const;
+	objectVector objectsSnapshot() const;
 	bool hasObjects() const;
+#ifdef LMMS_TESTING
+	using ObjectsReadProbe = void (*)(const AutomationClip*);
+	static void setObjectsReadProbeForTest(ObjectsReadProbe probe) { s_objectsReadProbe = probe; }
+	inline static ObjectsReadProbe s_objectsReadProbe = nullptr;
+#endif
 
 	// progression-type stuff
 	inline ProgressionType progressionType() const

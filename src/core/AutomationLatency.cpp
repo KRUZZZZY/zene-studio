@@ -259,7 +259,10 @@ bool AutomationLatency::refreshClips(bool on, bool waitForFreeBank)
 		slot = (state & SlotBit) ^ 1u;
 	}
 	forEachAutomationClip([on, slot](AutomationClip* clip) {
-		clip->setLatencyFramesForSnapshot(slot, on && !clip->objects().empty() ? upstreamFrames(clip->firstObject()) : 0);
+		const auto targets = clip->objectsSnapshot();
+		const int frames = on && !targets.empty() && targets.front() != nullptr
+			? upstreamFrames(targets.front().data()) : 0;
+		clip->setLatencyFramesForSnapshot(slot, frames);
 	});
 	state = m_state.load(std::memory_order_seq_cst);
 	const std::uint32_t generation = (state + GenerationStep) & ~(SlotBit | EnabledBit);

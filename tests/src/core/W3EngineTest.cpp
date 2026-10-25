@@ -68,6 +68,14 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
+AutomationClip* g_objectsReadClip = nullptr;
+AutomatableModel* g_objectsReadTarget = nullptr;
+
+void removeTargetAfterObjectsUnlock(const AutomationClip* clip)
+{
+	if (clip == g_objectsReadClip) { const_cast<AutomationClip*>(clip)->removeObject(g_objectsReadTarget); }
+}
+
 MixerChannel* channel(int index) { return Engine::mixer()->mixerChannel(index); }
 
 QString ch(int index) { return control::channelIdOf(channel(index)); }
@@ -291,6 +299,42 @@ private slots:
 		QVERIFY(firstBefore >= 0.f && secondBefore >= 0.f);
 		QCOMPARE(firstDuring, firstBefore);
 		QCOMPARE(secondDuring, secondBefore);
+	}
+
+	void latencyRefreshUsesTargetStateCapturedUnderItsLock()
+	{
+		AutomationLatency& latency = AutomationLatency::instance();
+		latency.setEnabled(false);
+		EffectChain& chain = channel(1)->m_fxChain;
+		channel(1)->setInputLatencyFrames(0);
+		auto* latent = new partd::LatentDelayEffect(&chain, 64);
+		auto* target = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(latent);
+		chain.appendEffect(target);
+		auto* model = new FloatModel(0.f, 0.f, 1.f, 0.001f, target, QStringLiteral("Probe"));
+		auto* track = Track::create(Track::Type::Automation, Engine::getSong());
+		auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+		clip->addObject(model);
+		QCOMPARE(AutomationLatency::upstreamFrames(model), 64);
+
+		g_objectsReadClip = clip;
+		g_objectsReadTarget = model;
+		AutomationClip::setObjectsReadProbeForTest(removeTargetAfterObjectsUnlock);
+		latency.setEnabled(true);
+		const int stampedFrames = clip->latencyFrames();
+		AutomationClip::setObjectsReadProbeForTest(nullptr);
+		g_objectsReadClip = nullptr;
+		g_objectsReadTarget = nullptr;
+
+		latency.setEnabled(false);
+		delete track;
+		chain.removeEffect(target);
+		chain.removeEffect(latent);
+		delete target;
+		delete latent;
+		channel(1)->setInputLatencyFrames(0);
+
+		QCOMPARE(stampedFrames, 64);
 	}
 
 	void discreteAutomationCompensationKeepsItsFrameOffset()
