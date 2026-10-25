@@ -45,6 +45,8 @@
 #include <QTemporaryDir>
 #include <QVector>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
@@ -54,6 +56,7 @@
 #include "EffectControls.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "MasterLoudnessTap.h"
 #include "Plugin.h"
 #include "ProjectJournal.h"
 #include "ReversibilityTestSupport.h"
@@ -634,6 +637,33 @@ private slots:
 			"handed a <song> element it ignores, and restored:true was returned");
 		QVERIFY2(!restored.result.value(QStringLiteral("restored")).toBool(),
 			"the refusal still carried restored:true");
+	}
+
+	//! A failed meter.arm action restore must be reported by control.undo rather
+	//! than claimed as undone while the live tap remains armed.
+	void meterArmUndoReportsQuietWaitFailure()
+	{
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		MasterLoudnessTap* tap = Engine::audioEngine()->masterLoudness();
+		QVERIFY(tap != nullptr);
+		QVERIFY(tap->setEnabled(false));
+
+		const ControlResult armed = run(QStringLiteral("meter.arm"),
+			{{QStringLiteral("enabled"), true}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		QVERIFY(tap->enabled());
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(!undone.ok, "control.undo claimed the meter.arm action was undone after the tap timed out");
+		QCOMPARE(undone.errorKind, ControlErrorKind::Refused);
+		QVERIFY(tap->enabled());
+
+		setMasterLoudnessTapNextQuietWaitResultForTesting(false);
+		const ControlResult redone = run(QStringLiteral("control.redo"));
+		QVERIFY2(!redone.ok, "control.redo claimed the meter.arm action was reapplied after the tap timed out");
+		QCOMPARE(redone.errorKind, ControlErrorKind::Refused);
+		QVERIFY(tap->enabled());
 	}
 };
 

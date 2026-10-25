@@ -207,11 +207,19 @@ ControlResult handleArm(const QJsonObject& args)
 		control::addUndoStep(
 			[previous]() {
 				MasterLoudnessTap* t = engineTap();
-				if (t != nullptr) { (void) t->setEnabled(previous); }
+				if (t != nullptr && !t->setEnabled(previous))
+				{
+					recordActionRestoreFailure(QStringLiteral(
+						"the master loudness tap's prior armed state was not restored"));
+				}
 			},
 			[requested]() {
 				MasterLoudnessTap* t = engineTap();
-				if (t != nullptr) { (void) t->setEnabled(requested); }
+				if (t != nullptr && !t->setEnabled(requested))
+				{
+					recordActionRestoreFailure(QStringLiteral(
+						"the master loudness tap's requested armed state was not restored"));
+				}
 			});
 	}
 
