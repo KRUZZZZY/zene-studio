@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <string.h>
 
+// The included fixture's entry symbol is not exported from this unit-test executable.
+#define CLAP_EXPORT
 #include "clap-test-instrument.c"
 
 #define CHECK(condition, message) \
