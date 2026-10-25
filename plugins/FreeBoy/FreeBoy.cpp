@@ -25,6 +25,7 @@
 
 #include "FreeBoy.h"
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <cmath>
@@ -43,6 +44,7 @@
 #include "PixmapButton.h"
 #include "Engine.h"
 #include "Graph.h"
+#include "RealtimeScope.h"
 
 #include "embed.h"
 
@@ -67,6 +69,7 @@ public:
 	{
 		GbApuWrapper apu;
 		std::atomic_flag inUse = ATOMIC_FLAG_INIT;
+		FreeBoyVoicePool* pool = nullptr;
 		bool ready = false;
 	};
 
@@ -74,17 +77,26 @@ public:
 	{
 		for (Voice& voice : m_voices)
 		{
+			voice.pool = this;
 			voice.ready = voice.apu.setSampleRate(sampleRate, CLOCK_RATE, BUFFER_LENGTH_MS) == nullptr;
 		}
 	}
 
 	auto sampleRate() const -> long { return m_sampleRate; }
+	auto activeVoiceCount() const noexcept -> std::size_t
+	{
+		return m_activeVoices.load(std::memory_order_acquire);
+	}
+	auto instrumentReferenceCount() const noexcept -> std::size_t { return m_instrumentReferences; }
+	void retainInstrument() noexcept { ++m_instrumentReferences; }
+	void releaseInstrument() noexcept { --m_instrumentReferences; }
 
 	auto acquire() noexcept -> Voice*
 	{
 		for (Voice& voice : m_voices)
 		{
 			if (!voice.ready || voice.inUse.test_and_set(std::memory_order_acquire)) { continue; }
+			m_activeVoices.fetch_add(1, std::memory_order_release);
 			voice.apu.reset();
 			return &voice;
 		}
@@ -94,10 +106,13 @@ public:
 	static void release(Voice* voice) noexcept
 	{
 		voice->inUse.clear(std::memory_order_release);
+		voice->pool->m_activeVoices.fetch_sub(1, std::memory_order_release);
 	}
 
 private:
 	long m_sampleRate;
+	std::atomic<std::size_t> m_activeVoices{0};
+	std::size_t m_instrumentReferences = 0;
 	std::array<Voice, VOICE_POOL_CAPACITY> m_voices;
 };
 
@@ -106,6 +121,7 @@ namespace
 struct FreeBoyVoicePoolRegistry
 {
 	std::mutex mutex;
+	std::atomic<std::size_t> activeReaders{0};
 	std::vector<std::unique_ptr<FreeBoyVoicePool>> pools;
 };
 
@@ -115,18 +131,49 @@ auto freeBoyVoicePoolRegistry() -> FreeBoyVoicePoolRegistry&
 	return registry;
 }
 
+void collectRetiredFreeBoyVoicePoolsLocked(FreeBoyVoicePoolRegistry& registry)
+{
+	if (registry.activeReaders.load(std::memory_order_acquire) != 0) { return; }
+	auto& pools = registry.pools;
+	pools.erase(std::remove_if(pools.begin(), pools.end(), [](const auto& pool) {
+		return pool->instrumentReferenceCount() == 0 && pool->activeVoiceCount() == 0;
+	}), pools.end());
+}
+
+void collectRetiredFreeBoyVoicePools()
+{
+	auto& registry = freeBoyVoicePoolRegistry();
+	const std::lock_guard lock{registry.mutex};
+	collectRetiredFreeBoyVoicePoolsLocked(registry);
+}
+
 auto freeBoyVoicePoolForSampleRate(long sampleRate) -> FreeBoyVoicePool*
 {
 	auto& registry = freeBoyVoicePoolRegistry();
 	const std::lock_guard lock{registry.mutex};
+	collectRetiredFreeBoyVoicePoolsLocked(registry);
 	for (const auto& pool : registry.pools)
 	{
-		if (pool->sampleRate() == sampleRate) { return pool.get(); }
+		if (pool->sampleRate() == sampleRate)
+		{
+			pool->retainInstrument();
+			return pool.get();
+		}
 	}
 	auto pool = std::make_unique<FreeBoyVoicePool>(sampleRate);
 	FreeBoyVoicePool* result = pool.get();
+	result->retainInstrument();
 	registry.pools.push_back(std::move(pool));
 	return result;
+}
+
+void releaseFreeBoyVoicePoolForInstrument(FreeBoyVoicePool* pool)
+{
+	if (pool == nullptr) { return; }
+	auto& registry = freeBoyVoicePoolRegistry();
+	const std::lock_guard lock{registry.mutex};
+	pool->releaseInstrument();
+	collectRetiredFreeBoyVoicePoolsLocked(registry);
 }
 
 auto freeBoyVoicePoolCountForTesting() -> std::size_t
@@ -136,7 +183,6 @@ auto freeBoyVoicePoolCountForTesting() -> std::size_t
 	return registry.pools.size();
 }
 
-void collectFreeBoyVoicePoolsForTesting() {}
 }
 
 extern "C"
@@ -166,10 +212,6 @@ bool PLUGIN_EXPORT lmms_freeboy_test_pool_pointer_is_realtime_safe()
 	return FreeBoyInstrument::testPoolPointerIsRealtimeSafe();
 }
 
-void PLUGIN_EXPORT lmms_freeboy_test_collect_voice_pools()
-{
-	collectFreeBoyVoicePoolsForTesting();
-}
 #endif
 
 }
@@ -230,8 +272,15 @@ FreeBoyInstrument::FreeBoyInstrument( InstrumentTrack * _instrument_track ) :
 	m_graphModel( 0, 15, 32, this, false, 1 )
 {
 	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this, [this]() {
+		auto* previousPool = m_voicePool;
 		m_voicePool = freeBoyVoicePoolForSampleRate(Engine::audioEngine()->outputSampleRate());
+		releaseFreeBoyVoicePoolForInstrument(previousPool);
 	});
+}
+
+FreeBoyInstrument::~FreeBoyInstrument()
+{
+	releaseFreeBoyVoicePoolForInstrument(m_voicePool);
 }
 
 #ifdef LMMS_TESTING
@@ -530,6 +579,7 @@ void FreeBoyInstrument::deleteNotePluginData(NotePlayHandle* nph)
 {
 	if (!nph->m_pluginData) { return; }
 	FreeBoyVoicePool::release(static_cast<FreeBoyVoicePool::Voice*>(nph->m_pluginData));
+	if (!RealtimeScope::isActive()) { collectRetiredFreeBoyVoicePools(); }
 }
 
 

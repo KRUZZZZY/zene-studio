@@ -1338,8 +1338,31 @@ void PluginPortsMigrationTest::freeBoyOldSampleRatePoolsAreReclaimed()
 	auto instrument = std::unique_ptr<lmms::Instrument>{
 		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
 	QVERIFY(instrument != nullptr);
-	for (const auto offset : {lmms::sample_rate_t{101}, lmms::sample_rate_t{202},
-		lmms::sample_rate_t{303}})
+	partc::prepareInstrumentEnvironment("freeboy");
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * 8, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	const auto render = [&]() {
+		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+		instrument->playNote(&handle, span);
+		return std::any_of(data.begin(), data.end(), [](const lmms::SampleFrame& frame) {
+			return frame.left() != 0.0f || frame.right() != 0.0f;
+		});
+	};
+	QVERIFY(render());
+	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{101});
+	emit engine->sampleRateChanged();
+	QCOMPARE(poolCount(), poolsBefore + 2);
+	QVERIFY(render());
+	instrument->deleteNotePluginData(&handle);
+	handle.m_pluginData = nullptr;
+	QCOMPARE(poolCount(), poolsBefore + 1);
+	for (const auto offset : {lmms::sample_rate_t{202}, lmms::sample_rate_t{303}})
 	{
 		device->setSampleRateForTesting(originalRate + offset);
 		emit engine->sampleRateChanged();

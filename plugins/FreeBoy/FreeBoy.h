@@ -53,7 +53,7 @@ class FreeBoyInstrument : public Instrument
 public:
 
 	FreeBoyInstrument( InstrumentTrack * _instrument_track );
-	~FreeBoyInstrument() override = default;
+	~FreeBoyInstrument() override;
 
 	void deleteNotePluginData(NotePlayHandle* nph) override;
 
