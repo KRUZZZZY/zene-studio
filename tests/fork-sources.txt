@@ -2968,8 +2968,9 @@ tests/src/core/SampleDecoderLimitTest.cpp
 # valid target - the Follow Action jump target, the legacy scene index and the
 # legacy clip coordinate (fork-NEW regression source).
 tests/src/core/SessionMalformedAttributeTest.cpp
-# clusters new-p14-38 / new-p22-45 / new-p22-46 (2026-10): no-op note edits
-# must not record undo checkpoints. This fork-NEW regression source is the proof.
+# clusters new-p14-38 / new-p22-45 / new-p22-46 / new-p23-12 (2026-10): no-op
+# note edits skip undo checkpoints and successful mutations dirty the project.
+# This fork-NEW regression source is the proof of both rules.
 tests/src/core/ControlNoteNoOpUndoTest.cpp
 # cluster 908 (2026-10): white-box regression test for the Zyn instrument's audio path, plugin lock and MIDI hand-off (fork-NEW).
 tests/src/plugins/ZynAddSubFxInstrumentTest.cpp

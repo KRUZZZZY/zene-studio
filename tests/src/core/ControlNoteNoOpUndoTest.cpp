@@ -45,8 +45,10 @@
 
 #include <QtTest>
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -112,6 +114,34 @@ void markProjectClean()
 	Song* song = Engine::getSong();
 	song->noteProjectSaved(song->projectFileName());
 }
+
+void checkProjectDirtyAfter(const QString& command, const QJsonObject& args, QStringList* failures)
+{
+	markProjectClean();
+	const ControlResult result = run(command, args);
+	if (!result.ok)
+	{
+		failures->append(command + QStringLiteral(" failed: ") + result.errorMessage);
+		return;
+	}
+	if (!Engine::getSong()->isModified())
+	{
+		failures->append(command + QStringLiteral(" left the project clean"));
+	}
+}
+
+QJsonObject noteMutationArgs(const Fixture& fixture, const QString& field, const QJsonValue& value)
+{
+	return {{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), fixture.note}, {field, value}};
+}
+
+struct UndoDepthRestore
+{
+	ProjectJournal* journal;
+	int depth;
+
+	~UndoDepthRestore() { journal->setMaxUndoStates(depth); }
+};
 
 } // namespace
 
@@ -282,6 +312,109 @@ private slots:
 		QCOMPARE(set.result.value(QStringLiteral("velocity")).toInt(), 100);
 		QCOMPARE(journal->topStepSerial(), before);
 		QVERIFY(!Engine::getSong()->isModified());
+	}
+
+	//! Every named successful note mutation dirties the project; the existing
+	//! stream, seed, harmony and move helpers are included as consistency controls.
+	void successfulNoteMutationsMarkProjectDirty()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		QStringList failures;
+		const QJsonObject noteRef{{QStringLiteral("clip"), fixture.clip},
+			{QStringLiteral("note"), fixture.note}};
+
+		checkProjectDirtyAfter(QStringLiteral("note.move"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), fixture.note},
+				{QStringLiteral("position"), 12}}, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.resize"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), fixture.note},
+				{QStringLiteral("length"), 48}}, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.velocity_set"),
+			noteMutationArgs(fixture, QStringLiteral("velocity"), 120), &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.probability_set"),
+			noteMutationArgs(fixture, QStringLiteral("probability"), 0.25), &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.expression_set"),
+			noteMutationArgs(fixture, QStringLiteral("pitch"), 120), &failures);
+
+		markProjectClean();
+		const ControlResult expression = run(QStringLiteral("note.expression_set"),
+			noteMutationArgs(fixture, QStringLiteral("pitch"), 240));
+		if (!expression.ok) { failures.append(QStringLiteral("expression_clear setup failed")); }
+		checkProjectDirtyAfter(QStringLiteral("note.expression_clear"), noteRef, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.expression_stream_set"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), fixture.note},
+				{QStringLiteral("pitch"),
+					QJsonArray{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 300}}}}},
+			&failures);
+		checkProjectDirtyAfter(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 0.5}, {QStringLiteral("position_jitter"), 12},
+				{QStringLiteral("seed"), 123}, {QStringLiteral("scope"), QStringLiteral("clip")}},
+			&failures);
+		checkProjectDirtyAfter(QStringLiteral("note.random_seed_set"),
+			{{QStringLiteral("seed"), static_cast<int>(Engine::getSong()->midiSeed() + 1)}}, &failures);
+
+		markProjectClean();
+		const ControlResult chord = run(QStringLiteral("chord.set"),
+			{{QStringLiteral("pos"), 0}, {QStringLiteral("chord"), QStringLiteral("Major")},
+				{QStringLiteral("root"), 2}, {QStringLiteral("octave"), 4}});
+		if (!chord.ok) { failures.append(QStringLiteral("follow_chords setup failed")); }
+		checkProjectDirtyAfter(QStringLiteral("note.follow_chords"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("scope"), QStringLiteral("clip")}},
+			&failures);
+
+		const QString destination = addTrack();
+		if (destination.isEmpty()) { failures.append(QStringLiteral("move_to_track setup failed")); }
+		else
+		{
+			checkProjectDirtyAfter(QStringLiteral("note.move_to_track"),
+				{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("track"), destination},
+					{QStringLiteral("scope"), QStringLiteral("clip")}}, &failures);
+		}
+		QVERIFY2(failures.isEmpty(), qPrintable(failures.join(QLatin1Char('\n'))));
+	}
+
+	//! An invalid note reference fails before the checkpoint or dirty-state update.
+	void failedNoteMutationLeavesProjectClean()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		markProjectClean();
+		const quint64 before = journal->topStepSerial();
+		const ControlResult failed = run(QStringLiteral("note.resize"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), QStringLiteral("note-missing")},
+				{QStringLiteral("length"), 48}});
+		QVERIFY(!failed.ok);
+		QCOMPARE(journal->topStepSerial(), before);
+		QVERIFY(!Engine::getSong()->isModified());
+	}
+
+	//! A one-step undo cap does not turn a no-op into a checkpoint or suppress a real edit.
+	void boundedJournalKeepsMutationDirtyState()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		UndoDepthRestore restore{journal, journal->maxUndoStates()};
+		QVERIFY(journal->setMaxUndoStates(1));
+		markProjectClean();
+		const quint64 before = journal->topStepSerial();
+
+		QVERIFY(run(QStringLiteral("note.resize"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), fixture.note},
+				{QStringLiteral("length"), 24}}).ok);
+		QCOMPARE(journal->topStepSerial(), before);
+		QVERIFY(!Engine::getSong()->isModified());
+		const ControlResult changed = run(QStringLiteral("note.resize"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), fixture.note},
+				{QStringLiteral("length"), 48}});
+		QVERIFY2(changed.ok, qPrintable(changed.errorMessage));
+		QCOMPARE(journal->topStepSerial(), before + 1);
+		QVERIFY(Engine::getSong()->isModified());
 	}
 
 	//! The positive control: a transform that DID change something still records

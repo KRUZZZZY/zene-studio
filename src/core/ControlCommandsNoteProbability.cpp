@@ -55,6 +55,7 @@
 #include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
@@ -142,10 +143,13 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		if (!checkProbability(probability, &error)) { return error; }
 
 		const float previous = note->probability();
+		const float requested = static_cast<float>(probability);
+		const bool changed = requested != previous;
 		clip->addJournalCheckPoint();
-		note->setProbability(static_cast<float>(probability));
+		note->setProbability(requested);
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the same probability
+		if (changed) { Engine::getSong()->setModified(); }
 
 		QJsonObject result = noteState(note, index);
 		result.insert(QStringLiteral("clip"), clipId(ref.id));

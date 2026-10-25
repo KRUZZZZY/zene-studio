@@ -367,6 +367,7 @@ ControlResult randomize(const QJsonObject& args)
 	clip->updateLength();
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the rolled notes
+	song->setModified();
 
 	QJsonObject result;
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
