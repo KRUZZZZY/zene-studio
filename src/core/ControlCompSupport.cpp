@@ -130,7 +130,7 @@ QJsonArray takeGroupsState(const Track* track)
 		QJsonArray takes;
 		for (const Clip* clip : track->getClips())
 		{
-			if (clip == nullptr || clip->takeGroupId() != selection.groupId) { continue; }
+			if (clip == nullptr || !clip->belongsToTakeGroup(selection.groupId)) { continue; }
 			QJsonObject take;
 			take.insert(QStringLiteral("clip"), takeClipId(clip));
 			take.insert(QStringLiteral("lane"), clip->laneIndex());

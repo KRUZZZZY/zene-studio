@@ -206,6 +206,43 @@ private slots:
 
 	// ------------------------------------------------------------------ the takes
 
+	//! Clip ID zero is a valid take-group key and must be recordable.
+	void zeroIdTakeGroupCanBeRecorded()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		TakeLaneModel& model = track->takeLanes();
+		QCOMPARE(model.addLane(), 0);
+		clips.front()->setTakeGroupId(0);
+
+		QVERIFY(!model.recordTake(-1, 0, track->getClips()));
+		QVERIFY(model.recordTake(0, 0, track->getClips()));
+		QCOMPARE(model.activeTakeLane(0), 0);
+
+		Track* restored = reloadTrack(track);
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->takeLanes().activeTakeLane(0), 0);
+		QCOMPARE(restored->getClips().front()->activeTakeLane(), 0);
+	}
+
+	//! A saved group with key zero is restored just like any other take group.
+	void zeroIdTakeGroupLoadsFromSavedState()
+	{
+		QVector<SampleClip*> clips;
+		SampleTrack* track = makeTakeTrack(m_dir.path(), 1, &clips);
+		QVERIFY(track != nullptr);
+		QDomDocument doc;
+		QDomElement takeLanes = doc.createElement(QStringLiteral("takelanes"));
+		QDomElement group = doc.createElement(QStringLiteral("z:takegroup"));
+		group.setAttribute(QStringLiteral("group"), 0);
+		group.setAttribute(QStringLiteral("active"), 1);
+		takeLanes.appendChild(group);
+
+		track->takeLanes().loadSettings(takeLanes);
+		QCOMPARE(track->takeLanes().activeTakeLane(0), 1);
+	}
+
 	//! THE NON-DESTRUCTIVE PROPERTY. The composite resolves onto the take clip
 	//! of the selected lane (its frame comes from that clip's own mapping), and
 	//! the take FILES and take BUFFERS are byte-identical after every operation.

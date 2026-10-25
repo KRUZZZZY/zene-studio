@@ -148,7 +148,7 @@ bool containsTake(int groupId, int laneIndex, const std::vector<Clip*>& clips)
 {
 	for (const Clip* clip : clips)
 	{
-		if (clip != nullptr && clip->takeGroupId() == groupId && clip->laneIndex() == laneIndex) { return true; }
+		if (clip != nullptr && clip->belongsToTakeGroup(groupId) && clip->laneIndex() == laneIndex) { return true; }
 	}
 	return false;
 }
@@ -159,7 +159,7 @@ int newestTakeLane(int groupId, const std::vector<Clip*>& clips)
 	const Clip* newest = nullptr;
 	for (const Clip* clip : clips)
 	{
-		if (clip == nullptr || clip->takeGroupId() != groupId) { continue; }
+		if (clip == nullptr || !clip->belongsToTakeGroup(groupId)) { continue; }
 		if (newest == nullptr || clip->id() > newest->id()) { newest = clip; }
 	}
 	return newest == nullptr ? -1 : newest->laneIndex();
@@ -264,7 +264,7 @@ bool TakeLaneModel::canSelectTake(int groupId, int laneIndex, const std::vector<
 	if (activeTakeLane(groupId) < 0 || laneIndex < 0) { return false; }
 	for (const Clip* clip : clips)
 	{
-		if (clip != nullptr && clip->takeGroupId() == groupId && clip->laneIndex() == laneIndex) { return true; }
+		if (clip != nullptr && clip->belongsToTakeGroup(groupId) && clip->laneIndex() == laneIndex) { return true; }
 	}
 	return false;
 }
@@ -274,7 +274,7 @@ void TakeLaneModel::publishTakeGroup(int groupId, int activeLane, const std::vec
 {
 	for (Clip* clip : clips)
 	{
-		if (clip != nullptr && clip->takeGroupId() == groupId) { clip->publishActiveTakeLane(activeLane); }
+		if (clip != nullptr && clip->belongsToTakeGroup(groupId)) { clip->publishActiveTakeLane(activeLane); }
 	}
 }
 
@@ -282,7 +282,7 @@ void TakeLaneModel::publishTakeGroup(int groupId, int activeLane, const std::vec
 bool TakeLaneModel::recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips)
 {
 	const auto changeLock = changeLockForEdit();
-	if (groupId <= 0 || laneIndex < 0 || !containsTake(groupId, laneIndex, clips)) { return false; }
+	if (groupId < 0 || laneIndex < 0 || !containsTake(groupId, laneIndex, clips)) { return false; }
 
 	auto it = std::lower_bound(m_takeGroups.begin(), m_takeGroups.end(), groupId,
 		[](const TakeGroupSelection& group, int id) { return group.groupId < id; });
@@ -338,7 +338,7 @@ void TakeLaneModel::synchronizeTakePlayback(const std::vector<Clip*>& clips) con
 	for (Clip* clip : clips)
 	{
 		if (clip == nullptr) { continue; }
-		clip->publishActiveTakeLane(activeTakeLane(clip->takeGroupId()));
+		clip->publishActiveTakeLane(clip->hasTakeGroup() ? activeTakeLane(clip->takeGroupId()) : -1);
 	}
 }
 
@@ -723,7 +723,7 @@ void TakeLaneModel::loadTakeGroup(const QDomElement& element)
 	bool activeOk = false;
 	const int groupId = element.attribute(QStringLiteral("group")).toInt(&groupOk);
 	const int activeLane = element.attribute(QStringLiteral("active")).toInt(&activeOk);
-	if (!groupOk || !activeOk || groupId <= 0 || activeLane < 0) { return; }
+	if (!groupOk || !activeOk || groupId < 0 || activeLane < 0) { return; }
 	TakeGroupSelection group{groupId, activeLane,
 		element.attribute(QStringLiteral("user"), QStringLiteral("0")).toInt() != 0};
 	auto pos = std::lower_bound(m_takeGroups.begin(), m_takeGroups.end(), groupId,
