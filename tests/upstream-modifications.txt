@@ -5143,3 +5143,12 @@ tests/all-sources.txt	cluster new-p14-37 (2026-10-24): re-derived the whole-tree
 tests/CMakeLists.txt	cluster new-p16-9: build the amplifier module with DeviceAbUndoTest so A/B undo regressions run instead of skipping when the configured test target is built.
 src/core/ControlStructuralSupport.cpp	cluster new-p14-22: journaled effect removal captures plugin.ab session slots, restores them after a successful device reattach, and charges the snapshot to structural undo bytes; held by DeviceAbUndoTest::storedSlotsSurviveUnloadUndo.
 tests/all-sources.txt	cluster new-p16-9: re-derive the source manifest from its published recipe; the 2026-10-23 train snapshot had reintroduced 1,148 vendored sfizz paths that the recipe excludes.
+tests/CMakeLists.txt	cluster new-p15-293: registers ClapTestInstrumentUnitTest as a direct regression for invalid CLAP instrument gain state.
+tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p15-293: rejects non-finite and out-of-range state gains before restoring the parameter.
+tests/CMakeLists.txt	cluster new-p14-436: registers a direct CLAP fixture regression for counting non-core events before classifying them.
+tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p14-436: counts each non-null event before filtering non-core event spaces.
+tests/CMakeLists.txt	cluster new-p14-435: registers a reactivation regression for the CLAP instrument's activation-scoped metrics.
+tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p14-435: clears frame, block, largest-block, and oversized-call metrics at activation.
+tests/fork-sources.txt	cluster new-p15-293: names the fixture unit test in both the regeneration and verify recipes and records it as a fork-new test source.
+tests/all-sources.txt	cluster new-p15-293: adds the fixture unit test to the regenerated whole-tree source inventory.
+tests/all-sources.txt	cluster new-p14-435/new-p15-293: re-derives the whole-tree source list from its header recipe, removing vendored sfizz entries that recipe excludes and including the new fixture regression source.

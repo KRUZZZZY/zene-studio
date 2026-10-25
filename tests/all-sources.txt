@@ -3120,6 +3120,7 @@ tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
+tests/src/plugins/ClapTestInstrumentUnitTest.cpp
 tests/src/plugins/CompressorVisualizerTest.cpp
 tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
 tests/src/plugins/DelayControlsTest.cpp

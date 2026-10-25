@@ -100,8 +100,8 @@ typedef struct instrument_state
 	uint32_t version;
 	uint32_t declared_max_frames; /* what activate() was told */
 	uint32_t blocks;              /* process() calls since activate() */
-	uint32_t max_block;           /* largest frames_count seen */
-	uint32_t oversized_calls;     /* calls with frames_count > declared_max_frames */
+	uint32_t max_block;           /* largest frames_count since activate() */
+	uint32_t oversized_calls;     /* oversized calls since activate() */
 	uint32_t event_count;         /* every event in every input list */
 	uint32_t param_event_count;   /* CLAP_EVENT_PARAM_VALUE events */
 	uint32_t note_on_count;
@@ -412,6 +412,10 @@ static bool instrument_state_load(const clap_plugin_t* plugin,
 	{
 		return false;
 	}
+	if (!isfinite(state.gain) || state.gain < 0.0 || state.gain > 1.0)
+	{
+		return false;
+	}
 	/* Only the value a user set is restored: the counters describe what this
 	   instance has been asked to process and belong to the host's session. */
 	self->gain = state.gain;
@@ -571,12 +575,17 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 		for (uint32_t i = 0; i < size; ++i)
 		{
 			const clap_event_header_t* header = process->in_events->get(process->in_events, i);
-			if (!header || header->space_id != CLAP_CORE_EVENT_SPACE_ID)
+			if (!header)
 			{
 				++self->ignored_event_count;
 				continue;
 			}
 			++self->event_count;
+			if (header->space_id != CLAP_CORE_EVENT_SPACE_ID)
+			{
+				++self->ignored_event_count;
+				continue;
+			}
 			switch (header->type)
 			{
 			case CLAP_EVENT_NOTE_ON:
@@ -666,6 +675,10 @@ static bool instrument_activate(const clap_plugin_t* plugin, double sample_rate,
 	(void)min_frames_count;
 	instrument_plugin_t* self = (instrument_plugin_t*)plugin->plugin_data;
 	self->declared_max_frames = max_frames_count;
+	self->frames_processed = 0.0;
+	self->blocks = 0;
+	self->max_block = 0;
+	self->oversized_calls = 0;
 	instrument_follow_layout(self);
 	return self->latent ? instrument_activate_latency(self) : true;
 }

@@ -145,6 +145,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/doc-pricing-model-gate.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ClapTestInstrumentUnitTest.cpp ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -246,6 +247,7 @@
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
+#        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ClapTestInstrumentUnitTest.cpp ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-10-10 (new-p10-108): XyPadPairTest now exercises the Delay plug-in's XyPad directly. Its two test-local headers
 #   provide AUTOMOC inputs for the already-configured target without changing the CMake build graph.
@@ -2617,6 +2619,8 @@ tests/src/gui/ModulatorPanelTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
 # cluster new-p10-3: product-new regression for the CLAP instrument view's output count after a layout rescan.
 tests/src/plugins/ClapInstrumentViewTest.cpp
+# cluster new-p15-293: direct fixture regressions for CLAP instrument state, event counts and reactivation.
+tests/src/plugins/ClapTestInstrumentUnitTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
 tests/src/gui/XyPadPairTest.cpp
