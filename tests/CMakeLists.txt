@@ -3608,6 +3608,10 @@ set_tests_properties(PluginPortsMigrationTest PROPERTIES
 # there), so the registration is a second ctest entry over the same binary.
 add_test(NAME OpulenZ COMMAND PluginPortsMigrationTest opulenzReappliesVelocityScalingToHeldVoice)
 set_tests_properties(OpulenZ PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+add_test(NAME OpulenZSpanSize COMMAND PluginPortsMigrationTest opulenzRendersTheProvidedSpanSize)
+set_tests_properties(OpulenZSpanSize PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+add_test(NAME OpulenZZeroFrameCount COMMAND PluginPortsMigrationTest opulenzZeroFrameCountStopsLoop)
+set_tests_properties(OpulenZZeroFrameCount PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 )

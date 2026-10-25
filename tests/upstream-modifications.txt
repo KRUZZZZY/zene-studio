@@ -5130,3 +5130,8 @@ include/ProjectJournal.h	cluster new-p14-48-port-port: expose declineRedo/takeRe
 src/core/ProjectJournal.cpp	cluster new-p14-48-port-port: roll back earlier actions in a declined redo and keep that checkpoint on the redo stack.
 src/core/ControlCommandsControl.cpp	cluster new-p14-48-port-port: return a typed Refused result when control.redo's action reports that it placed nothing.
 tests/all-sources.txt	cluster new-p14-48-port-port gate repair: re-derived from its published recipe; removed only 1,148 plugins/SfzPlayer/sfizz vendor entries that the recipe excludes.
+plugins/OpulenZ/OpulenZ.cpp	cluster new-p23-186: make playImpl stop when a non-empty output span yields a zero-sized chunk, preventing an audio-thread infinite loop.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p23-186: add a deterministic source-order regression that requires playImpl to break on a zero chunk before emulator update, avoiding an unbounded test invocation.
+tests/CMakeLists.txt	cluster new-p23-186: register the focused OpulenZZeroFrameCount regression with the existing plugin migration test executable and offscreen Qt environment.
+tests/CMakeLists.txt	cluster new-p23-186 follow-up: register the existing opulenzRendersTheProvidedSpanSize slot as OpulenZSpanSize so the final focused family run covers ordinary short and multi-period spans.
+tests/all-sources.txt	cluster new-p23-186: re-derive the source entry list from its published recipe, removing 1,148 tracked vendored sfizz paths that the recipe explicitly excludes; restores fork-sources and all-sources-reproduce without changing gate rules or product behavior.
