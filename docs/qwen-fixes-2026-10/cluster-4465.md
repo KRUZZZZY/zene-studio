@@ -94,11 +94,22 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/k
 
 EXIT=0. Table: PASS for `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity` (no new item), and `file-length` (no new item).
 
+Submit-check command (the first run requested the explicit answers below):
+
+```sh
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-4465 4465 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/4465.r1/logs/gate-08-submit-check.log 2>&1; gate_status=$?; echo EXIT=$gate_status; exit $gate_status
+```
+
+EXIT=0; the check passed and requested the five self-check answers supplied here.
+
 ## Self-check
 
 - Shared cause: both reports came from the same missing observer around the `QPointer` selection state; one helper handles both object types.
-- Both regression slots failed with the production patch reversed and passed with it restored. The normal and reselection paths also pass.
-- The fix changes only transient UI selection notification. It adds no control command and does not alter saved projects or undo steps.
-- The changed selection code is on GUI/control paths; no realtime audio path calls these setters.
+- RED/GREEN evidence: `test-05-proof-red.log` has separate failures for `deletingSelectedTrackNotifiesListeners` and `deletingSelectedClipNotifiesListeners` (CTest exit 8; QtTest totals 23 passed, 2 failed). `test-06-proof-green.log` passes all 6/6 CTest targets (exit 0), including `DevicePanelTest` with both slots. These runs use the exact commands above.
+- Deterministic test behavior: there are no sleeps, clock values, timers, or races. Each test deletes an object synchronously and uses `QSignalSpy` to count the synchronous `changed()` signal; no test seam or injected timestamp is needed.
+- Caller/sibling review: selection enters through the shell event filter, note editor, and `ControlCommandsSelection`; `setChannel()` also replaces observers when it clears track/clip state. All three setters route through `watchSelectedObjects()`, and both the track and clip destruction paths route through `clearDestroyedSelection()`. Reselection tests prove old object connections are disconnected.
+- Collateral review: selection is transient UI state; no project serialization, project loading, undo implementation, or command schema changed. No limits or checks were added. Existing project data therefore follows the same load path.
+- Realtime review: the call sites are GUI/control paths; no realtime audio path calls these setters, and the fix adds no audio-thread allocation, lock, wait, or logging.
+- Verdict question: N/A for ALREADY-FIXED/FALSE-POSITIVE evidence; both reports are decided REAL and FIXED by the reproduced failures.
 - Build evidence is for the configured Linux Qt tree; other supported platform builds were not available in this run.
 - Files in the fix commit: `include/ShellSelection.h`, `src/gui/shell/ShellSelection.cpp`, `tests/src/gui/DevicePanelTest.cpp`, `tests/all-sources.txt`, and `docs/qwen-fixes-2026-10/cluster-4465.md`.
