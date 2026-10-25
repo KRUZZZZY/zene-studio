@@ -337,7 +337,7 @@ private slots:
 		QCOMPARE(stampedFrames, 64);
 	}
 
-	void mixedLatencyTargetsDoNotShareOneCompensationShift()
+	void mixedLatencyTargetsAreRejectedUntilCompatible()
 	{
 		AutomationLatency& latency = AutomationLatency::instance();
 		latency.setEnabled(false);
@@ -357,7 +357,25 @@ private slots:
 		clip->addObject(afterModel);
 		clip->addObject(latentModel);
 		latency.setEnabled(true);
-		const int stampedFrames = clip->latencyFrames();
+		const auto absoluteValues = Engine::getSong()->automatedValuesAt(TimePos(0));
+		const bool absoluteRejected = !absoluteValues.contains(afterModel) && !absoluteValues.contains(latentModel);
+
+		clip->setRelative(true);
+		const auto relativeValues = Engine::getSong()->automatedValuesAt(TimePos(0));
+		const bool relativeRejected = !relativeValues.contains(afterModel) && !relativeValues.contains(latentModel);
+
+		clip->setSampleAccurate(true);
+		AutomatableModel::incrementPeriodCounter();
+		Engine::getSong()->buildAutomationRamps(Engine::getSong()->tracks(), TimePos(0), 256, 0);
+		const bool rampRejected = afterModel->automationRamp() == nullptr && latentModel->automationRamp() == nullptr;
+
+		clip->setSampleAccurate(false);
+		clip->setRelative(false);
+		const bool targetRemoved = clip->removeObject(latentModel);
+		latency.refresh();
+		const int compatibleFrames = clip->latencyFrames();
+		const auto compatibleValues = Engine::getSong()->automatedValuesAt(TimePos(0));
+		const bool compatibleResumed = compatibleValues.contains(afterModel) && !compatibleValues.contains(latentModel);
 
 		latency.setEnabled(false);
 		delete track;
@@ -367,7 +385,12 @@ private slots:
 		delete latent;
 		channel(1)->setInputLatencyFrames(0);
 
-		QCOMPARE(stampedFrames, 0);
+		QVERIFY(absoluteRejected);
+		QVERIFY(relativeRejected);
+		QVERIFY(rampRejected);
+		QVERIFY(targetRemoved);
+		QCOMPARE(compatibleFrames, 64);
+		QVERIFY(compatibleResumed);
 	}
 
 	void discreteAutomationCompensationKeepsItsFrameOffset()

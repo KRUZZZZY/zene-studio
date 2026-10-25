@@ -130,16 +130,21 @@ void forEachAutomationClip(Visit visit)
 	}
 }
 
-//! One clip has one read time; mixed target latencies therefore leave it uncompensated.
+//! A mixed-target clip is rejected while compensation is enabled because it has no valid shared read time.
+constexpr int IncompatibleTargetLatencies = -1;
+
 int sharedTargetLatency(const AutomationClip::objectVector& targets, bool on)
 {
 	if (!on || targets.empty()) { return 0; }
-	const int frames = targets.front() != nullptr ? AutomationLatency::upstreamFrames(targets.front().data()) : 0;
+	int frames = IncompatibleTargetLatencies;
 	for (const auto& target : targets)
 	{
-		if (target != nullptr && AutomationLatency::upstreamFrames(target.data()) != frames) { return 0; }
+		if (target == nullptr) { continue; }
+		const int targetFrames = AutomationLatency::upstreamFrames(target.data());
+		if (frames >= 0 && targetFrames != frames) { return IncompatibleTargetLatencies; }
+		frames = targetFrames;
 	}
-	return frames;
+	return frames < 0 ? 0 : frames;
 }
 
 } // namespace

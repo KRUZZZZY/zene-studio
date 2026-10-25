@@ -1555,6 +1555,11 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 		for( Clip* clip : track->getClips() )
 		{
 			auto* automationClip = dynamic_cast<AutomationClip*>( clip );
+			// Do not publish one sample-accurate curve at the wrong time to mixed-latency targets.
+			if( automationClip != nullptr && latencySnapshot.latencyFrames(automationClip) < 0 )
+			{
+				continue;
+			}
 			const bool latencyNeedsRamp = automationClip != nullptr
 				&& automationClip->rampSetting() == AutomationClip::RampSetting::Default
 				&& latencySnapshot.enabled() && latencySnapshot.latencyFrames(automationClip) > 0;
