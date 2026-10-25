@@ -2963,6 +2963,8 @@ src/gui/TakeWaveform.cpp
 src/gui/tracks/TakeLaneRows.cpp
 # 2026-10-20 (Q050-037): the pre-first-point contract of an automation clip (fork-NEW regression).
 tests/src/core/AutomationPreFirstValueTest.cpp
+# cluster new-p15-90 (2026-10): the user LFO waveform is retained until its render lease is released.
+tests/src/core/LfoControllerUserWaveTest.cpp
 # cluster new-p14-269 (2026-10): the Ogg Vorbis decoder's channel handling regression (fork-NEW).
 tests/src/core/SampleDecoderOggChannelTest.cpp
 # cluster new-p14-271 (2026-10): the fix and verification report for the SampleDecoder's Ogg and bounded-decode defects.

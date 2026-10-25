@@ -2712,6 +2712,7 @@ tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LanesUpconvertTest.cpp
 tests/src/core/LegacyPatternUpgradeTest.cpp
+tests/src/core/LfoControllerUserWaveTest.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
