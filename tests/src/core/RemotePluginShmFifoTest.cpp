@@ -12,12 +12,15 @@
  */
 
 #include "RemotePluginBase.h"
+#include "SharedMemory.h"
 
 #include <QtTest>
 
 #include <atomic>
 #include <barrier>
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 
@@ -49,6 +52,33 @@ private slots:
 		QVERIFY(!fifo.isInvalid());
 		fifo.invalidate();
 		QVERIFY(fifo.isInvalid());
+	}
+
+	void sharedMemoryArrayWithoutKeyRejectsHeaderAdditionOverflow()
+	{
+		using Array = SharedMemory<char[]>;
+		constexpr auto overflowingBytes = std::numeric_limits<std::size_t>::max() - sizeof(std::uint64_t) + 1;
+
+		Array array;
+		array.create(1);
+		array[0] = 'a';
+		QVERIFY_EXCEPTION_THROWN(array.create(overflowingBytes), std::length_error);
+		QCOMPARE(array.size(), std::size_t{1});
+		QCOMPARE(array[0], 'a');
+	}
+
+	void sharedMemoryArrayWithKeyRejectsHeaderAdditionOverflow()
+	{
+		using Array = SharedMemory<char[]>;
+		constexpr auto overflowingBytes = std::numeric_limits<std::size_t>::max() - sizeof(std::uint64_t) + 1;
+
+		Array array;
+		array.create(1);
+		array[0] = 'a';
+		QVERIFY_EXCEPTION_THROWN(
+			array.create("array-header-overflow-test", overflowingBytes), std::length_error);
+		QCOMPARE(array.size(), std::size_t{1});
+		QCOMPARE(array[0], 'a');
 	}
 
 	void callerTokensStayDistinctDespiteLegacyHashCollision()

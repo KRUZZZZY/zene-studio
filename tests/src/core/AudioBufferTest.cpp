@@ -366,6 +366,35 @@ private slots:
 			named.create("shared-memory-array-overflow-test", overflowingElementCount), std::length_error);
 	}
 
+	//! Verifies an array allocation rejects overflow when adding the in-band header
+	void CreateArrayWithoutKey_RejectsHeaderAdditionOverflow()
+	{
+		using Array = lmms::SharedMemory<char[]>;
+		constexpr auto overflowingBytes = std::numeric_limits<std::size_t>::max() - sizeof(std::uint64_t) + 1;
+
+		Array array;
+		array.create(1);
+		array[0] = 'a';
+		QVERIFY_EXCEPTION_THROWN(array.create(overflowingBytes), std::length_error);
+		QCOMPARE(array.size(), std::size_t{1});
+		QCOMPARE(array[0], 'a');
+	}
+
+	//! Verifies named array allocation rejects overflow when adding the in-band header
+	void CreateArrayWithKey_RejectsHeaderAdditionOverflow()
+	{
+		using Array = lmms::SharedMemory<char[]>;
+		constexpr auto overflowingBytes = std::numeric_limits<std::size_t>::max() - sizeof(std::uint64_t) + 1;
+
+		Array array;
+		array.create(1);
+		array[0] = 'a';
+		QVERIFY_EXCEPTION_THROWN(
+			array.create("array-header-overflow-test", overflowingBytes), std::length_error);
+		QCOMPARE(array.size(), std::size_t{1});
+		QCOMPARE(array[0], 'a');
+	}
+
 	//! Verifies that the `allocateInterleavedBuffer` method allocates the interleaved buffer
 	void AllocateInterleavedBuffer()
 	{
