@@ -29,6 +29,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonObject>
 
@@ -118,6 +119,10 @@ ControlResult setVoice(const QJsonObject& args)
 	const ModulatorSource previous = layer.modulator(index)->source;
 	ModulatorSource wanted = previous;
 	if (!voiceSource(args, &wanted, &error)) { return error; }
+	if (wanted.perVoice == previous.perVoice && wanted.triggerTrack == previous.triggerTrack)
+	{
+		return ControlResult::success(layerResultFor(index));
+	}
 	const QJsonObject before = modulationLayerJson(layer);
 	editModulationLayer([index, wanted](ModulationLayer& target, ModulationRuntime&) { target.setSource(index, wanted); });
 	addUndoStep(sourceWriter(index, previous), sourceWriter(index, wanted));
@@ -206,6 +211,12 @@ ControlResult bindInstrumentRoute(InstrumentTrack* track, const QJsonObject& arg
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("modulator %1 already drives %2 parameters (the cap)")
 			.arg(modulatorId(modulator)).arg(ModulationLayer::MaxRoutesPerModulator));
+	}
+	const double depth = args.value(QStringLiteral("depth")).toDouble();
+	if (!std::isfinite(depth) || depth < -1.0 || depth > 1.0)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'depth' %1 is outside -1..1 (a fraction of the target's range)").arg(depth));
 	}
 	const ModulationRoute route = instrumentRoute(track, args);
 	const ControlResult refused = refusedInstrumentRoute(layer, route);
