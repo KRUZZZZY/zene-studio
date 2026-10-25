@@ -5083,3 +5083,5 @@ include/TransportReadouts.h	cluster 4168: adds a result-aware text binding while
 src/gui/shell/TransportReadouts.cpp	cluster 4168: passes ControlResult.errorMessage into the typed readout refusal tooltip.
 src/gui/shell/InspectorClipFields.cpp	cluster 4168: returns full registered command results from Inspector clip and note edits so refusals reach the field error display.
 tests/src/gui/DevicePanelTest.cpp	cluster 4168: adds a deterministic Inspector note-command refusal regression, with the registered handler returning a fixed refusal.
+src/gui/shell/InspectorClipFields.cpp	new-p10-171: checks note time origins with wide arithmetic and safely formats or rejects unsupported Time values while keeping tick/bar edits independent.
+tests/src/gui/DevicePanelTest.cpp	new-p10-171: adds fixed normal and INT_MAX-boundary tick positions to verify note length formatting and parsing in Time mode.

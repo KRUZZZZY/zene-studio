@@ -35,7 +35,9 @@
  *  Velocities read in % of the default (the engine's 0..200 note volume, 100 % the default). */
 
 #include <algorithm>
+#include <cstdlib>
 #include <functional>
+#include <limits>
 
 #include <QGridLayout>
 #include <QJsonArray>
@@ -121,6 +123,37 @@ QString lengthKey(const Note* note) { return QString::number(note->length().getT
 //! Where @a clip starts (gone: 0) - a length, and a note's time, are measured from there.
 int clipStart(const Clip* clip) { return clip != nullptr ? clip->startPosition().getTicks() : 0; }
 
+qint64 noteTimeOrigin(const Clip* clip, const Note* note)
+{
+	return static_cast<qint64>(clipStart(clip)) + note->pos().getTicks();
+}
+
+bool tickInRange(qint64 tick)
+{
+	return tick >= std::numeric_limits<tick_t>::min() && tick <= std::numeric_limits<tick_t>::max();
+}
+
+//! Whether the typed length uses seconds, the only MusicalTime unit that needs its absolute start tick.
+bool lengthNeedsTimeOrigin(const QString& typed)
+{
+	QString body = typed.trimmed();
+	if (body.startsWith(QLatin1Char('-'))) { body.remove(0, 1); }
+	const auto hasSuffix = [&body](const QStringList& words) {
+		return std::any_of(words.begin(), words.end(), [&body](const QString& word) {
+			return body.endsWith(word, Qt::CaseInsensitive);
+		});
+	};
+	// Keep the same unit precedence as musicaltime::unitOf: tick/bar suffixes take priority over seconds.
+	if (hasSuffix({QObject::tr("ticks"), QStringLiteral("ticks"), QStringLiteral("tick"), QStringLiteral("t")})
+		|| hasSuffix({QObject::tr("bars"), QStringLiteral("bars"), QObject::tr("bar"), QStringLiteral("bar")}))
+	{
+		return false;
+	}
+	if (body.contains(QLatin1Char(':')) || hasSuffix({QStringLiteral("sec"), QStringLiteral("s")})) { return true; }
+	if (body.count(QLatin1Char('.')) >= 2) { return false; }
+	return musicaltime::currentFormat() == musicaltime::Format::Time;
+}
+
 //! The arguments that run a command on the notes selected in @a clip - the editor's selection, handed to the command
 //! surface first, since that is the one a 'selection' scope reads.
 QJsonObject selectionOf(const MidiClip* clip, const QString& id)
@@ -193,7 +226,13 @@ ControlResult setSelectedLength(const QPointer<MidiClip>& clip, const QString& i
 {
 	int ticks = 0;
 	const Note* first = firstSelected(clip);
-	if (first == nullptr || !positiveLength(typed, clipStart(clip.data()) + first->pos().getTicks(), &ticks)) { return invalidEdit(); }
+	if (first == nullptr) { return invalidEdit(); }
+	const qint64 origin = noteTimeOrigin(clip.data(), first);
+	if (!tickInRange(origin))
+	{
+		if (lengthNeedsTimeOrigin(typed) || !positiveLength(typed, 0, &ticks)) { return invalidEdit(); }
+	}
+	else if (!positiveLength(typed, static_cast<tick_t>(origin), &ticks)) { return invalidEdit(); }
 	return editSelected(clip, id, QStringLiteral("length"), [ticks](const Note*) { return ticks; });
 }
 
@@ -218,6 +257,22 @@ void timeField(ReadoutField* field)
 {
 	addTimeFormatChoices(field);
 	QObject::connect(musicaltime::formatSignal(), &musicaltime::FormatSignal::changed, field, &ReadoutField::refresh);
+}
+
+QString noteTimeText(const QPointer<MidiClip>& clip, const Note* note, bool start)
+{
+	const int origin = clipStart(clip.data());
+	if (musicaltime::currentFormat() == musicaltime::Format::Time)
+	{
+		const qint64 absoluteStart = noteTimeOrigin(clip.data(), note);
+		if (!tickInRange(absoluteStart)) { return InspectorPanel::tr("out of range"); }
+		if (start) { return musicaltime::positionText(note->pos().getTicks(), origin); }
+		const qint64 absoluteEnd = absoluteStart + std::abs(static_cast<qint64>(note->length().getTicks()));
+		if (!tickInRange(absoluteEnd)) { return InspectorPanel::tr("out of range"); }
+		return musicaltime::lengthText(note->length().getTicks(), static_cast<tick_t>(absoluteStart));
+	}
+	return start ? musicaltime::positionText(note->pos().getTicks(), origin)
+		: musicaltime::lengthText(note->length().getTicks());
 }
 
 } // namespace
@@ -267,9 +322,7 @@ QWidget* InspectorPanel::notesSection(MidiClip* clip, const QString& id, QWidget
 		return [guarded, start] {
 			const Note* note = firstSelected(guarded);
 			if (note == nullptr) { return tr("no notes selected"); }
-			const int origin = clipStart(guarded.data());
-			const QString text = start ? musicaltime::positionText(note->pos().getTicks(), origin)
-				: musicaltime::lengthText(note->length().getTicks(), origin + note->pos().getTicks());
+			const QString text = noteTimeText(guarded, note, start);
 			if (!differ(guarded, start ? &startKey : &lengthKey)) { return text; }
 			return start ? tr("%1, first at %2").arg(mixedText(), text) : mixedText();
 		};
