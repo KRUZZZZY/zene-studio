@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <type_traits>
 
 #include "LmmsTypes.h"
 #include "LufsMeter.h"
@@ -167,6 +168,13 @@ public:
 	 *  allocates nothing, locks nothing. A disabled tap does nothing at all.
 	 */
 	void feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept;
+	template <typename FrameCount>
+	requires (std::is_integral_v<FrameCount> && std::is_signed_v<FrameCount>)
+	void feed(const SampleFrame* frames, FrameCount frameCount) noexcept
+	{
+		if (frames == nullptr || frameCount <= 0) { return; }
+		feed(frames, static_cast<f_cnt_t>(frameCount));
+	}
 
 	//! Snapshot of everything the tap knows. Any thread, any time.
 	Snapshot snapshot() const noexcept;

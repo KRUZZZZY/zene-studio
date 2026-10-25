@@ -121,6 +121,12 @@ std::uint64_t hashFrames(const std::vector<SampleFrame>& frames)
 	return hash;
 }
 
+template <typename Tap>
+constexpr bool HasSignedFrameCountFeed = requires
+{
+	static_cast<void (Tap::*)(const SampleFrame*, int) noexcept>(&Tap::template feed<int>);
+};
+
 //! Feeds \a buffer in one-block-per-call slices of \a blockFrames, the shape the
 //! engine's renderStageMix() calls in.
 void feedInBlocks(MasterLoudnessTap& tap, const std::vector<SampleFrame>& buffer, int blockFrames)
@@ -157,6 +163,29 @@ private slots:
 		QCOMPARE(after.framesFed, 0ull);
 		QCOMPARE(after.integratedLufs, LufsMeter::MinusInfinity);
 		QCOMPARE(after.truePeakDbtp, LufsMeter::MinusInfinity);
+	}
+
+	//! Signed frame counts must be checked before conversion to f_cnt_t, which
+	//! is unsigned. A negative value must not enter LufsMeter or wrap into a huge
+	//! feed; ordinary signed positive counts must still feed one frame.
+	void negativeFrameCountsAreIgnoredBeforeUnsignedConversion()
+	{
+		QVERIFY(HasSignedFrameCountFeed<MasterLoudnessTap>);
+
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		tap.setEnabled(true);
+		const SampleFrame frame{};
+		tap.feed(&frame, 1);
+		QCOMPARE(tap.snapshot().blocksFed, 1ull);
+		QCOMPARE(tap.snapshot().framesFed, 1ull);
+
+		const auto before = tap.snapshot();
+		tap.feed(&frame, -1);
+		tap.feed(&frame, 0);
+		tap.feed(nullptr, 1);
+		const auto after = tap.snapshot();
+		QCOMPARE(after.blocksFed, before.blocksFed);
+		QCOMPARE(after.framesFed, before.framesFed);
 	}
 
 	//! NEGATIVE CONTROL 1: digital silence is not a plausible number. The meter
