@@ -418,9 +418,15 @@ private slots:
 		QCOMPARE(insert.latencyFrames(), 512);
 
 		engine->audioDev()->setSampleRateForTesting(changedRate);
+		const int preProcessLatency = insert.latencyFrames();  // PDC queries this before the next insert process period
+		const int preProcessMeasurement = insert.settings().measured;
 		std::vector<SampleFrame> block(static_cast<std::size_t>(engine->framesPerPeriod()), SampleFrame(0.25f, -0.25f));
 		insert.process(block.data(), engine->framesPerPeriod(), *engine);
+		const int postProcessMeasurement = insert.settings().measured;
 		engine->audioDev()->setSampleRateForTesting(currentRate);
+		QCOMPARE(preProcessLatency, 0);
+		QCOMPARE(preProcessMeasurement, -1);
+		QCOMPARE(postProcessMeasurement, -1);
 		QCOMPARE(insert.settings().measured, -1);
 		QCOMPARE(insert.latencyFrames(), 0);
 	}

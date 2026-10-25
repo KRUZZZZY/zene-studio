@@ -132,6 +132,11 @@ HardwareInsert::Settings HardwareInsert::settings() const
 	Settings out = m_settings;
 	out.measured = measuredFrames();
 	out.measuredRate = out.measured >= 0 ? m_measurementRate.load(std::memory_order_acquire) : 0;
+	if (out.measured >= 0 && out.measuredRate != currentOutputSampleRate())
+	{
+		out.measured = -1;
+		out.measuredRate = 0;
+	}
 	out.measuredSend = out.send;
 	out.measuredReturn = out.ret;
 	return out;
@@ -163,7 +168,10 @@ void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 int HardwareInsert::latencyFrames() const
 {
 	if (!m_settings.enabled) { return 0; }
-	return m_settings.latencyOverride >= 0 ? m_settings.latencyOverride : std::max(0, measuredFrames());
+	if (m_settings.latencyOverride >= 0) { return m_settings.latencyOverride; }
+	const int measured = measuredFrames();
+	return measured >= 0 && m_measurementRate.load(std::memory_order_acquire) == currentOutputSampleRate()
+		? measured : 0;
 }
 
 void HardwareInsert::requestPing()
