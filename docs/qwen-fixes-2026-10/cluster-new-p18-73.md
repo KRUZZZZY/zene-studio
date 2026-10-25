@@ -39,6 +39,7 @@ Commands below ran in the worktree unless a different working directory is shown
 | `cmake --build build --target decimator_1202` | 0 | `build-6.log`; produced the existing fixture at `build/plugins/ladspa/decimator_1202.so`. |
 | `ctest -R '^(PluginPortsMigrationTest|OpulenZ)$' --output-on-failure` (from `build/tests`) | 0 | `test-6.log`; 2/2 CTest registrations passed. |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-73` | 1, then 0 | `gate-1.log` initially found 1,148 stale vendored sfizz entries in `tests/all-sources.txt`, contrary to that file’s documented recipe. The inventory was re-derived from the recipe and documented; final result is `gate-3.log`, with every gate PASS. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-73 new-p18-73` | 0 | `submit-1.log`; commit, clean tree, report, regression, and feature gates passed. |
 
 The affected CTest family count is two registrations: `PluginPortsMigrationTest` and `OpulenZ`. Both passed on the final run. The behavior slot’s SF2 skip is due to the missing configured soundfont fixture, not the Windows host guard.
 
