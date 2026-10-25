@@ -366,6 +366,7 @@ AudioEngine::AudioEngine(bool renderOnly)
 		m_workers.push_back( wt );
 	}
 	connect(&m_playHandleCapacityTimer, &QTimer::timeout, this, [this] {
+		m_recorder.reconcileInputChannelCapacity();
 		serviceSampleVoicePoolOnControlThread();
 		topUpPlayHandleCapacityOnControlThread();
 	});

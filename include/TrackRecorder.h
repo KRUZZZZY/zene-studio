@@ -106,7 +106,17 @@ public:
 	//! file. Idempotent.
 	void disarm();
 
-	bool isArmed() const noexcept { return m_capturing.load(std::memory_order_acquire); }
+	bool isArmed() const noexcept
+	{
+		return m_capturing.load(std::memory_order_acquire)
+			&& !m_inputUnavailable.load(std::memory_order_acquire);
+	}
+	//! True after the audio thread sees a delivered block narrower than the
+	//! selected channel, until the control thread retires the route.
+	bool hasUnavailableInput() const noexcept
+	{
+		return m_inputUnavailable.load(std::memory_order_acquire);
+	}
 	bool isWriterRunning() const noexcept { return m_writerRunning.load(std::memory_order_acquire); }
 
 	//! Audio-thread entry point. Demuxes one channel of the interleaved input
@@ -171,6 +181,7 @@ private:
 	//! writer are ready (m_armed is claimed first, so it cannot gate the audio path), cleared first
 	//! by disarm().
 	std::atomic<bool> m_capturing{false};
+	std::atomic<bool> m_inputUnavailable{false};
 	std::atomic<bool> m_stopRequested{false};
 	std::atomic<bool> m_writerRunning{false};
 	std::atomic<int> m_inputChannel{0};

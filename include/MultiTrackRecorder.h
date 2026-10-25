@@ -27,6 +27,7 @@
 #ifndef LMMS_MULTI_TRACK_RECORDER_H
 #define LMMS_MULTI_TRACK_RECORDER_H
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -103,6 +104,9 @@ public:
 	int inputChannelCapacity() const noexcept;
 	//! Applies a new selectable range to every route (off the audio thread).
 	void setInputChannelCapacity(int channels);
+	//! Applies the most recently delivered input width to route capacity.
+	//! The audio thread only publishes the width; route teardown stays here.
+	void reconcileInputChannelCapacity();
 
 	//! Route \a index. Undefined for an index outside [0, trackCount()).
 	TrackRecorder& track(int index) noexcept { return *m_tracks[static_cast<std::size_t>(index)]; }
@@ -130,6 +134,7 @@ public:
 
 private:
 	std::vector<std::unique_ptr<TrackRecorder>> m_tracks;
+	std::atomic<int> m_lastDeliveredInputChannels{0};
 } ;
 
 

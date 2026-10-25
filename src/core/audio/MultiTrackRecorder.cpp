@@ -77,6 +77,23 @@ void MultiTrackRecorder::setInputChannelCapacity(int channels)
 }
 
 
+void MultiTrackRecorder::reconcileInputChannelCapacity()
+{
+	const int deliveredChannels = m_lastDeliveredInputChannels.exchange(0, std::memory_order_acq_rel);
+	if (deliveredChannels > 0 && deliveredChannels != inputChannelCapacity())
+	{
+		setInputChannelCapacity(deliveredChannels);
+	}
+	for (auto& track : m_tracks)
+	{
+		if (track->hasUnavailableInput())
+		{
+			track->disarm();
+		}
+	}
+}
+
+
 void MultiTrackRecorder::processInput(const SampleFrame* input, f_cnt_t frames) noexcept
 {
 	if (input == nullptr)
@@ -96,6 +113,10 @@ void MultiTrackRecorder::processInputInterleaved(const sample_t* interleaved, in
 	if (interleaved == nullptr || channels < 1)
 	{
 		return;
+	}
+	if (frames > 0)
+	{
+		m_lastDeliveredInputChannels.store(channels, std::memory_order_release);
 	}
 	for (std::size_t route = 0; route < m_tracks.size(); ++route)
 	{
