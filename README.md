@@ -7,17 +7,17 @@ derived from [LMMS](https://github.com/LMMS/lmms), keeps project files portable,
 stack open source. This repository is the **0.2.1-alpha** tree.
 
 This repository ships no screenshot. For what this release is, read
-[`docs/RELEASE-NOTES-v0.4.0-alpha.md`](docs/RELEASE-NOTES-v0.4.0-alpha.md); for what it cannot do,
+[`docs/RELEASE-NOTES-v0.4.1-alpha.md`](docs/RELEASE-NOTES-v0.4.1-alpha.md); for what it cannot do,
 [`docs/KNOWN-LIMITATIONS.md`](docs/KNOWN-LIMITATIONS.md); for a dated, feature-by-feature status of
 this exact commit, [`docs/STATUS.md`](docs/STATUS.md).
 
 ## Download
 
-**Zene Studio 0.4.0-alpha is the version this text documents** — [get it from the releases
-page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.4.0-alpha). That page appears when the
+**Zene Studio 0.4.1-alpha is the version this text documents** — [get it from the releases
+page](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.4.1-alpha). That page appears when the
 release is published; until then the previous release,
-[v0.3.0-alpha](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.3.0-alpha), is the one you can
-download (its notes are [`docs/RELEASE-NOTES-v0.3.0-alpha.md`](docs/RELEASE-NOTES-v0.3.0-alpha.md)).
+[v0.4.0-alpha](https://github.com/KRUZZZZY/zene-studio/releases/tag/v0.4.0-alpha), is the one you can
+download (its notes are [`docs/RELEASE-NOTES-v0.4.0-alpha.md`](docs/RELEASE-NOTES-v0.4.0-alpha.md)).
 
 The six release build jobs cover seven platform builds — Linux (x86_64 and aarch64, AppImage), macOS
 (Apple Silicon and Intel, `.dmg` — one job, a matrix over two architectures) and Windows (x64 — two
