@@ -640,15 +640,16 @@ private slots:
 		{
 			QVERIFY2(!id.startsWith(QStringLiteral("telemetry.")), qPrintable(id));
 		}
-		// 85 is the product surface this instance reports here (87 with the
-		// telemetry.* pair), plus the five synthetic commands the slots above
-		// declare. rack.* (#599) and transport.tempo_map_* (D11) are in the 85;
-		// script.set_memory_budget (CODE-6) is new.
-		//   + 7 (feature row 19, board task #651): the controller.* ids -
-		//   surface_state, soft_takeover, feedback, template_save,
-		//   template_list, template_apply, template_delete.
-		// MEASUREMENT, re-taken by the merge train: base 102 + sample 5 + livecode 3 + 3 feedback = 113, + 7 mts (#712) = 120; mismatch at tip = finding. LANE-LOCAL, board cards #709/#712: the merge tip must re-measure.
-		QCOMPARE(registry->commandCount(), 85 + 7 + 5 + 5 + 5 + 3 + 3 + 7);
+		// MEASUREMENT (Q050-156, round 6): the whole registry of a telemetry-OFF
+		// build of the Q050-156 branch (`-DZENE_TELEMETRY=OFF`, ControlRegistryTest
+		// run from its build tree) reported 842 commands while its live snapshot
+		// held 837 ids. Integrated onto 050/m0-train-16 the live snapshot holds 853
+		// ids (16 more train ids, none of them telemetry.*), so the same build
+		// reports 842 + 16 = 858; the 4 record.sampler_capture* ids are in it. The
+		// older hand-summed figure (85 + 7 + 5 + 5 + 5 + 3 + 3 + 7 + 4 = 124) had
+		// stopped matching long before. A mismatch at the tip = finding: the merge
+		// train must re-measure.
+		QCOMPARE(registry->commandCount(), 858);
 	}
 #endif
 };

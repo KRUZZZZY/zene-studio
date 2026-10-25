@@ -1221,6 +1221,10 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// read - and while it is disarmed this is one relaxed atomic load. Realtime-safe.
 	m_retroCapture.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead],
 		static_cast<int>(inputSampleRate()));
+	// 0.5.0 L10 (Q050-156): the input a sampler (AudioFileProcessor / SlicerT) is recording
+	// straight into. While idle this is one relaxed atomic load; the accumulator's ring is
+	// pre-allocated by the control-thread arm(), never here. Realtime-safe.
+	m_samplerTakeRecorder.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
 	inputmeter::measure(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);  // 0.5.0 L08 (MX-134)
 	// 0.5.0 L09 (MX-038): the control room on what is heard - skipped while exporting and while neutral.
 	controlroom::apply(m_outputBufferRead.get(), m_framesPerPeriod);

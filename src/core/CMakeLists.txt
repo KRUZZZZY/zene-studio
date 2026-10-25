@@ -148,6 +148,8 @@ set(LMMS_SRCS
 	core/AudioBus.cpp
 	core/AudioBusHandle.cpp
 	core/AudioEngine.cpp
+	# 0.5.0 L10 (Q050-156): the bounded input take recorded into a sampler (include/SamplerTakeRecorder.h).
+	core/SamplerTakeRecorder.cpp
 	core/AudioEngineProfiler.cpp
 	core/AudioEngineWorkerThread.cpp
 	# The worker wake's platform half (Q050-167): compare-and-wait on the generation word,
@@ -280,6 +282,8 @@ set(LMMS_SRCS
 	core/ControlCommandsRecordingPass.cpp
 	core/ControlCommandsSessionCapture.cpp
 	core/ControlCommandsSessionAudioRecord.cpp
+	# 0.5.0 L10 (Q050-156): record.sampler_capture / _stop / _status / _land - an input take into a sampler.
+	core/ControlCommandsSamplerTake.cpp
 	core/ControlCommandsTrackPresets.cpp
 	core/ControlCommandsRemote.cpp
 	core/ControlDeviceMoves.cpp

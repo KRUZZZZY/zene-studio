@@ -496,6 +496,8 @@ set(LMMS_TESTS
 	src/core/AudioBusPlayHandleQueueTest.cpp
 	src/core/AutomationRenderAllocationTest.cpp
 	src/core/SlicerTPlayheadTest.cpp
+	# Q050-156: recording a bounded input take straight into AudioFileProcessor / SlicerT, through the agent surface.
+	src/core/SamplerTakeTest.cpp
 	src/core/MidiEventToByteSeqTest.cpp
 	src/core/RetroMidiCaptureCommandsTest.cpp
 	src/core/MidiProbabilityPersistenceTest.cpp
@@ -907,6 +909,7 @@ set(LMMS_TESTS
 	src/plugins/SfzPlayerTest.cpp
 	src/plugins/SfzPlayerRealtimeTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
+	src/gui/SamplerTakeGuiTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
 	# Qt reads the startup scale before QApplication; the selected config must win over its fallback file.
 	src/core/AppearanceStartupTest.cpp
@@ -2149,6 +2152,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NoteCommandTransactionsTest"
 		# cluster new-p10-380-port-port: plays a real SID note through the build's sid module.
 		OR LMMS_TEST_NAME STREQUAL "SidInstrument"
+		# Q050-156: the sampler-take tests load the real AudioFileProcessor and SlicerT modules.
+		OR LMMS_TEST_NAME STREQUAL "SamplerTakeTest"
+		OR LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest"
 		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest"
@@ -2215,6 +2221,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Q050-087: the canvas test adds the build's amplifier module through the picker.
 	if(LMMS_TEST_NAME STREQUAL "PatcherCanvasTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+
+	# Q050-156: the sampler-take tests load both sampler modules; the GUI test needs an offscreen platform.
+	if(LMMS_TEST_NAME STREQUAL "SamplerTakeTest" OR LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest")
+		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor slicert)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,

@@ -811,6 +811,10 @@ LMMS_EXPORT void registerSessionCaptureCommand(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-055): session.record_slot / record_slot_status / record_slot_land - audio into a launcher cell
 //! (ControlCommandsSessionAudioRecord.cpp).
 LMMS_EXPORT void registerSessionAudioRecordCommands(ControlRegistry& registry);
+//! 0.5.0 L10 (Q050-156): record.sampler_capture / sampler_capture_stop / sampler_capture_status /
+//! sampler_capture_land - an input take recorded straight into a sampler instrument
+//! (ControlCommandsSamplerTake.cpp).
+LMMS_EXPORT void registerSamplerTakeCommands(ControlRegistry& registry);
 //! 0.5.0 L01 (MX-159): transport.low_latency (ControlCommandsLowLatency.cpp).
 LMMS_EXPORT void registerLowLatencyCommand(ControlRegistry& registry);
 //! 0.5.0 L11 (WF-006): browser.collection_save / remove / collections / collection_run.

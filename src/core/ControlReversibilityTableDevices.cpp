@@ -95,6 +95,15 @@ const ReversibilityRow kDeviceRows[] = {
 	R("session.record_slot_status", RC::NotMutating, false, "it reads the take's progress. Nothing is written", "no write", ""),
 	R("session.record_slot_land", RC::TrueInverse, true, "it writes the take to a WAV and points the launcher cell at it",
 		"action checkpoint: the recorded undo step restores the <session> block (the WAV stays on disk)", ""),
+	// 0.5.0 L10 (Q050-156): an input take into a sampler - capture is engine state, landing is the edit.
+	R("record.sampler_capture", RC::NotMutating, false, "it arms a bounded input take for a sampler: engine mode "
+		"state, not a project edit (the take is landed by record.sampler_capture_land)", "no write (cancel: true drops the take)", ""),
+	R("record.sampler_capture_stop", RC::NotMutating, false, "it ends the take in hand: engine mode state, not a "
+		"project edit", "no write", ""),
+	R("record.sampler_capture_status", RC::NotMutating, false, "it reads the take's progress. Nothing is written", "no write", ""),
+	R("record.sampler_capture_land", RC::TrueInverse, true, "it writes the take to a WAV and loads it into the "
+		"sampler device (its sample and, for SlicerT, its slices)",
+		"ProjectJournal (Track checkpoint): the device's previous sample and settings come back; the WAV stays on disk", ""),
 	// 0.5.0 L01 / L11 / L12 / L14.
 	R("transport.low_latency", RC::NotMutating, false, "it stops high-latency devices processing while monitoring: session "
 		"state (Effect::setDontRun, neither journalled nor saved)", "no project write (enabled:false puts them back)", ""),
