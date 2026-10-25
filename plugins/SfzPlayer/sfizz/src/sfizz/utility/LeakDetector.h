@@ -54,7 +54,7 @@ private:
         ObjectCounter() = default;
         ~ObjectCounter()
         {
-            if (auto residualCount = count.load() > 0) {
+            if (auto residualCount = count.load(); residualCount > 0) {
                 DBG("Leaked " << residualCount << " instance(s) of class " << Owner::getClassName());
                 // Leaked ojects
                 ASSERTFALSE;
