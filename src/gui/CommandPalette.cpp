@@ -27,6 +27,7 @@
 #include <functional>
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QEvent>
 #include <QJsonArray>
 #include <QKeyEvent>
@@ -242,6 +243,10 @@ QString paletteActivate(const PaletteEntry& entry, QWidget* formParent)
 {
 	if (!entry.action.isNull())
 	{
+		if (entry.irreversible && !confirmAction(formParent, entry.label, QString(), commandUndoWarning(entry.command)))
+		{
+			return QObject::tr("%1: cancelled").arg(entry.label);
+		}
 		entry.action->trigger();
 		return QString();
 	}
@@ -282,7 +287,12 @@ namespace
 QTreeWidgetItem* itemFor(const PaletteEntry& entry)
 {
 	QString name = entry.form ? entry.label + QStringLiteral("…") : entry.label;
-	if (entry.irreversible) { name += QObject::tr("  (cannot be undone)"); }
+	if (entry.irreversible)
+	{
+		const QString warning = commandUndoWarning(entry.command);
+		name += warning == QCoreApplication::translate("CommandMetadata", "This cannot be undone.")
+			? QObject::tr("  (cannot be undone)") : QObject::tr("  (undo may not fully reverse this)");
+	}
 	auto* item = new QTreeWidgetItem(QStringList{name, entry.path, entry.shortcut, entry.command});
 	item->setForeground(3, tokens::palette().textMuted);
 	if (entry.irreversible) { item->setForeground(0, tokens::palette().warning); }
@@ -309,6 +319,7 @@ CommandPalette::CommandPalette(QMenuBar* bar, QWidget* parent) :
 	m_filter->setAccessibleName(tr("Filter"));
 	m_filter->installEventFilter(this);
 	m_list = new QTreeWidget(this);
+	m_list->installEventFilter(this);
 	m_list->setAccessibleName(tr("Matching commands"));
 	m_list->setRootIsDecorated(false);
 	m_list->setUniformRowHeights(true);
@@ -416,15 +427,19 @@ bool CommandPalette::runRow(int row, bool withDefaults)
 
 bool CommandPalette::eventFilter(QObject* watched, QEvent* event)
 {
-	if (watched == m_filter && event->type() == QEvent::KeyPress)
+	if ((watched == m_filter || watched == m_list) && event->type() == QEvent::KeyPress)
 	{
 		auto* key = static_cast<QKeyEvent*>(event);
 		const int row = currentRow();
 		const int last = m_list->topLevelItemCount() - 1;
 		switch (key->key())
 		{
-		case Qt::Key_Down: m_list->setCurrentItem(m_list->topLevelItem(std::min(row + 1, last))); return true;
-		case Qt::Key_Up: m_list->setCurrentItem(m_list->topLevelItem(std::max(row - 1, 0))); return true;
+		case Qt::Key_Down:
+			if (watched == m_filter) { m_list->setCurrentItem(m_list->topLevelItem(std::min(row + 1, last))); return true; }
+			break;
+		case Qt::Key_Up:
+			if (watched == m_filter) { m_list->setCurrentItem(m_list->topLevelItem(std::max(row - 1, 0))); return true; }
+			break;
 		case Qt::Key_Return:
 		case Qt::Key_Enter: runRow(row, key->modifiers().testFlag(Qt::ShiftModifier)); return true;
 		default: break;

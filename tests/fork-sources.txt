@@ -3025,3 +3025,7 @@ tests/src/plugins/WatsynParamHandoffTest.cpp
 # cluster new-p17-202-port (2026-10): the fix and verification report for the Watsyn parameter hand-off on the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p17-202-port.md
 docs/qwen-fixes-2026-10/cluster-5284-port-port.md
+# cluster 5564 / new-p14-454 / new-p14-455: the palette's independent menu-confirmation, fallback-warning and list-focused Shift+Enter regressions.
+tests/src/gui/CommandPaletteTest.cpp
+# cluster 5564 / new-p14-454 / new-p14-455: the combined fix report and its red/green evidence.
+docs/qwen-fixes-2026-10/cluster-5564.md
