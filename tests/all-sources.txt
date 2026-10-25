@@ -140,6 +140,9 @@
 # 2026-10-25 (cluster rc-f9686856 gate repair): the train-12 snapshot re-added those excluded
 # sfizz entries again after the prior re-derivation; Gate 9 caught the manifest mismatch while
 # closing this cluster. Re-run the published recipe and keep its full output as the entry list.
+# 2026-10-25 (cluster 4345 gate repair): regenerated from this recipe; removed 1,148 stale
+# vendored sfizz paths, which the published recipe excludes.
+
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
