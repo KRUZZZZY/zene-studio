@@ -92,7 +92,11 @@ ControlResult presetLoad(const QJsonObject& args)
 	const QString name = track->name();
 	track->loadPreset(content);
 	track->setName(name);  // a preset brings the sound, the track keeps its name
-	return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path}});
+	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("track"), trackIdOf(track)}},
+		QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("ProjectJournal (Track checkpoint: control.undo restores the track's previous state)")));
+	return ControlResult::success(result);
 }
 
 ControlResult pluginReplace(const QJsonObject& args)
