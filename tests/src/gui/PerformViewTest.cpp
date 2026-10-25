@@ -373,6 +373,8 @@ private slots:
 			CommandHandlerOverride failure(QStringLiteral("session.setlist"), [failureMessage](const QJsonObject&) {
 				return ControlResult::failure(ControlErrorKind::Refused, failureMessage);
 			});
+			view->nextSongButton()->click();
+			QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
 			view->refreshSetlist();
 		}
 
