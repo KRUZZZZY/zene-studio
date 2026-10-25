@@ -1,3 +1,5 @@
+FIXED
+
 new-p23-97: FIXED
 
 Evidence: `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.cpp:623-633` now requests `information.end + 1`, bounded by both the real reader frame count and the `uint32_t` reader API. The pre-fix three-frame PCM WAV produced a two-frame RAM buffer; after the fix it contains all three frames and the final sample. Test: `tests/src/plugins/SfzFilePoolTest.cpp:65-82`.
@@ -37,3 +39,20 @@ Test matrix: zero-frame mono WAV returns end zero; a missing WAV returns no info
 ## Registration and gates
 
 `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-97 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-97.r1/logs/gate-04-final.log 2>&1` EXIT=0; the final feature-check table reports PASS for every gate. The earlier `feature_check.py` command redirected to `gate-01.log` exited 1 because the inherited `all-sources.txt` still contained the train snapshot's 1,148 excluded vendored sfizz paths. The entry list was regenerated from its unchanged header recipe; the recipe verification redirected to `manifest-verify.log` exited 0, and the final feature check passes.
+
+## Commits
+
+- `9616e1f35` — new-p23-97.
+- `f27f67195` — new-p21-164.
+- `1a985a384` — new-p23-98.
+
+Files committed: `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.cpp`, `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.h`, `tests/src/plugins/SfzFilePoolTest.cpp`, `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt`, `tests/upstream-modifications.txt`, and this report.
+
+## Self-check
+
+- Reversion proof: new-p23-97 RED/GREEN/rollback RED/restored GREEN exits were 1/0/1/0 (`test-01`, `test-04`, `test-05`, `test-06`); new-p21-164's queue and tracked-job pairs were 1/0 on both initial and rollback runs (`test-09` through `test-16`); new-p23-98 was 1/0/1/0 (`test-18` through `test-21`). The named commands and log paths are recorded above.
+- Determinism: the three-frame and empty WAV fixtures are byte-written in the test; RAM mode transitions are direct calls; clear coverage uses a directly enqueued queue item and a `std::launch::deferred` future that dereferences the captured `FileData*` when clear waits. No sleeps, wall-clock checks, or unsynchronized test races are used.
+- Cause and sibling checks: `getReaderInformation()` feeds `getFileInformation()` and `loadFromRam()`; `preloadFile()` and `loadFile()` use that information through `getFileInformation()`. All keep non-empty inclusive `end = frames - 1`, while zero frames now yield zero. `setRamLoading()` bounds `end + 1` by both the reader and its `uint32_t` read API. `clear()` synchronizes with `dispatchingJob()` through `loadingJobsMutex`; existing `Resources::clearNonState()` and SFZ reload/failure callers were checked. The separate `emptyFileLoadingQueues()` caller remains nonblocking and unchanged.
+- Collateral behavior: no project or saved-file format changes were made. Normal non-empty sample end values are unchanged; the RAM count is limited only to the downstream `uint32_t` API and actual reader length. Missing files still return no information, queue admission failure is unchanged, and clear runs on resource/reset paths rather than render callbacks. The related SFZ family passed 3/3.
+- Not-real verdict evidence: not applicable; all three findings were real on the original code, as shown by their failing assertions and observed values.
+- Final `feature_check.py` exited 0. Completion-check result will be recorded after this report is committed and rechecked.
