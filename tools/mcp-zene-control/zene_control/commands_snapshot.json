@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-24T19:21:35Z",
+  "captured_at": "2026-10-25T20:31:23Z",
   "commands": [
     {
       "args_schema": {
@@ -18655,7 +18655,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, so adding a host does not renumber the ids of the formats that were already there.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, so adding a host does not renumber the ids of the formats that were already there.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -20222,6 +20222,136 @@
           },
           "reason": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop the background plug-in rescan at its next file boundary and keep the previous catalogue: plugin.scan_status then reports outcome cancelled with what the run had finished, and the records it measured stay cached for the next run. Refused when the last run already ended, not found when no run ever started. The project is not touched.",
+      "group": "plugin",
+      "id": "plugin.scan_cancel",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelling": {
+            "type": "boolean"
+          },
+          "done_files": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "integer"
+          },
+          "total_files": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "pace_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start a background plug-in rescan: the same scan plugin.rescan runs, one file per event-loop turn, so the window stays usable - plugin.list keeps serving the previous catalogue until the run commits. Follow it with plugin.scan_status, stop it with plugin.scan_cancel; the task list (task.list) shows it with its progress and Cancel. 'pace_ms' (0..1000, default 0) is the delay between two files, so a progress display or a test can watch the run. Not reversible: a finished run re-measures the files and refreshes the cache, like plugin.rescan.",
+      "group": "plugin",
+      "id": "plugin.scan_start",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "catalogue_count": {
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "pace_ms": {
+            "type": "integer"
+          },
+          "task_id": {
+            "type": "integer"
+          },
+          "total_files": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The background plug-in rescan's progress: whether a run is active, its outcome (never, running, done, cancelled), done/total files and the 0..1 progress, the file being scanned, one entry per finished file (path, status, name, error) in scan order, the run's task.list row and the catalogue_count plugin.list still serves. total_files is 0 until the run's first turn plans the files. Read-only.",
+      "group": "plugin",
+      "id": "plugin.scan_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "cancel_requested": {
+            "type": "boolean"
+          },
+          "catalogue_count": {
+            "type": "integer"
+          },
+          "current_file": {
+            "type": "string"
+          },
+          "done_files": {
+            "type": "integer"
+          },
+          "files": {
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "progress": {
+            "type": "number"
+          },
+          "report": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "integer"
+          },
+          "total_files": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -36239,23 +36369,23 @@
       }
     }
   ],
-  "count": 846,
+  "count": 849,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-062.1/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-xlso_wyt/zene.sock",
-    "version": "0.4.0-alpha.4613+2f5c0d7"
+    "source_socket": "/tmp/zctl-run-celzf1jz/zene.sock",
+    "version": "0.4.0-alpha.4775+9643c37"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 846,
-    "ids_sha256": "cbd7259a8c3a868177335929c4430c8e060bdacfdf999d7e0a30268c73890bb9"
+    "id_count": 849,
+    "ids_sha256": "fd877b788a64b551f0ada13e219eccb4cc84545c69067d1855dd19ac4f2dd242"
   }
 }

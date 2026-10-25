@@ -7,7 +7,7 @@ WHY. The command count is quoted in many places, and they drift: on 2026-09-28 t
 written, so the gate does not grep for numbers. Instead a document marks the figure it claims is
 CURRENT:
 
-    <!-- canary -->846 ids / 76 groups<!-- /canary -->
+    <!-- canary -->849 ids / 76 groups<!-- /canary -->
 
 (the comment markers render invisibly), and this gate checks every marked figure against the
 committed snapshot, tools/mcp-zene-control/zene_control/commands_snapshot.json - the file the

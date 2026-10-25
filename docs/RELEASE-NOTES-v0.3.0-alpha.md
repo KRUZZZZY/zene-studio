@@ -1060,8 +1060,10 @@ same tree measures `rows=855 true_inverse=424 snapshot=42 irreversible=24 not_mu
 `plugin.scan_cancel` (both `not_mutating`: progress reads and a session-state stop) - measured off the tree
 with the contract test: `rows=840 true_inverse=417 snapshot=42 irreversible=23 not_mutating=358`.
 
+**M0 merge train 16** (`050/m0-train-16`, 2026-10-25, automatic): `ReversibilityContractTest` on the merged tree measures `rows=858 true_inverse=425 snapshot=42 irreversible=24 not_mutating=367`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=855 true_inverse=425 snapshot=42 irreversible=23 not_mutating=365
+     measured: rows=858 true_inverse=425 snapshot=42 irreversible=24 not_mutating=367
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
