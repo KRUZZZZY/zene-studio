@@ -245,7 +245,7 @@ private:
 	static constexpr int MaxCompSpans = TakeLaneModel::MaxCompositeSpansPerLane;
 	static constexpr f_cnt_t CompRampFrames = 64;
 	bool m_comped = false;
-	int m_takeGroupId = 0;
+	int m_takeGroupId = -1;
 	int m_takeLaneIndex = 0;
 	const std::atomic<int>* m_activeTakeLane = nullptr;
 	const std::atomic<bool>* m_playAllTakes = nullptr;

@@ -463,7 +463,7 @@ void Clip::saveClipEdits(QDomElement& element) const
 	}
 	// The group is additive clip state: ordinary clips keep the old bytes, and
 	// the track-owned TakeLaneModel persists the active lane and user-choice bit.
-	if (m_takeGroupId > 0)
+	if (m_takeGroupId >= 0)
 	{
 		element.setAttribute("takegroup", m_takeGroupId);
 	}
@@ -721,7 +721,10 @@ void Clip::loadClipEdits(const QDomElement& element)
 	// it restores "unlinked" exactly - the inverse of a first link is a real
 	// inverse rather than a no-op.
 	m_laneIndex = std::max(0, element.attribute("lane", clipRestoreDefault("lane")).toInt());
-	m_takeGroupId = std::max(0, element.attribute("takegroup", clipRestoreDefault("takegroup")).toInt());
+	bool takeGroupOk = false;
+	const int takeGroupId = element.attribute("takegroup", clipRestoreDefault("takegroup")).toInt(&takeGroupOk);
+	m_takeGroupId = element.hasAttribute("takegroup") && takeGroupOk && takeGroupId >= 0
+		? takeGroupId : -1;
 	m_activeTakeLane.store(-1, std::memory_order_relaxed); // rebound from TakeLaneModel after load
 	/* An id read from a file is OBSERVED by the project-scoped counter
 	 * (SPEC-stable-ids.md R3), so a group number that a project already uses can

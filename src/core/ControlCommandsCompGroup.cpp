@@ -336,7 +336,7 @@ void registerTakeSelect(ControlRegistry& registry)
 		const int groupId = ref.clip->takeGroupId();
 		const int lane = args.value(QStringLiteral("lane")).toInt(-1);
 		TakeLaneModel& model = ref.track->takeLanes();
-		if (groupId <= 0 || !model.canSelectTake(groupId, lane, ref.track->getClips()))
+		if (!ref.clip->hasTakeGroup() || groupId < 0 || !model.canSelectTake(groupId, lane, ref.track->getClips()))
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound,
 				QStringLiteral("%1 is not in a recorded take group containing lane %2")

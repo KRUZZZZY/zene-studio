@@ -531,7 +531,7 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 		// A pasted clip is independent of the source take group. Keeping the
 		// copied group/lane would leave it with no active-lane mirror when
 		// pasted onto another track (or make it share a take choice by accident).
-		clip->setTakeGroupId(0);
+		clip->clearTakeGroupId();
 		control::assignTakeLane(clip, 0);  // the lane tag's one writer (ControlCommandsComp.cpp)
 		clip->movePosition(pos); // Because we restored the state, we need to move the Clip again.
 		if( wasSelection )

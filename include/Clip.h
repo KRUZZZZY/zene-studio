@@ -192,15 +192,21 @@ public:
 	void setLaneIndex(int laneIndex) { m_laneIndex = laneIndex < 0 ? 0 : laneIndex; }
 
 	/*! The group of loop-recorded passes this clip belongs to, keyed by the
-	 *  stable id of the clip that was armed. Zero means an ordinary clip. The
-	 *  group id is project state; the active lane mirror below is published by
-	 *  TakeLaneModel and is never serialized here. */
-	int takeGroupId() const noexcept { return m_takeGroupId; }
+	 *  stable id of the clip that was armed. Group id zero is valid, so callers
+	 *  use hasTakeGroup() to distinguish an ordinary clip. The group id is
+	 *  project state; the active lane mirror below is published by TakeLaneModel. */
+	int takeGroupId() const noexcept { return m_takeGroupId < 0 ? 0 : m_takeGroupId; }
+	bool hasTakeGroup() const noexcept { return m_takeGroupId >= 0; }
+	bool belongsToTakeGroup(int groupId) const noexcept
+	{
+		return m_takeGroupId >= 0 && m_takeGroupId == groupId;
+	}
 	void setTakeGroupId(int groupId) noexcept
 	{
-		m_takeGroupId = groupId > 0 ? groupId : 0;
+		m_takeGroupId = groupId >= 0 ? groupId : -1;
 		m_activeTakeLane.store(-1, std::memory_order_relaxed);
 	}
+	void clearTakeGroupId() noexcept { setTakeGroupId(-1); }
 	//! Lock-free render mirror of the take group's active lane (-1 until published).
 	int activeTakeLane() const noexcept { return m_activeTakeLane.load(std::memory_order_relaxed); }
 	void publishActiveTakeLane(int lane) noexcept { m_activeTakeLane.store(lane, std::memory_order_relaxed); }
@@ -383,8 +389,8 @@ private:
 	//! The take lane this clip is a take of: its per-track INDEX into the
 	//! track's `<z:lane id>` entities (comping; docs/COMPING.md section 3).
 	int m_laneIndex = 0;
-	//! Loop-pass group, keyed by the armed source clip's stable id; zero when ordinary.
-	int m_takeGroupId = 0;
+	//! Loop-pass group key; -1 means ordinary, and 0 is a valid group id.
+	int m_takeGroupId = -1;
 	//! Runtime mirror only: TakeLaneModel publishes its group's active lane here.
 	std::atomic<int> m_activeTakeLane{-1};
 

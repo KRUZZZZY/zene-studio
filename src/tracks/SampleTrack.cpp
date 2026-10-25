@@ -125,7 +125,7 @@ bool namedByComposite( const Track& track, const SampleClip& clip )
 //! The active-pass predicate used by the audio-thread clip scheduler.
 bool activeTakeForPlayback(const SampleClip& clip, bool comped, bool playAllTakes)
 {
-	return clip.takeGroupId() == 0 || comped || playAllTakes
+	return !clip.hasTakeGroup() || comped || playAllTakes
 		|| clip.activeTakeLane() == clip.laneIndex();
 }
 } // namespace

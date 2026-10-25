@@ -1040,10 +1040,11 @@ void Track::removeClip( Clip * clip )
 	clipVector::iterator it = std::find( m_clips.begin(), m_clips.end(), clip );
 	if( it != m_clips.end() )
 	{
+		const bool hasTakeGroup = clip->hasTakeGroup();
 		const int takeGroupId = clip->takeGroupId();
 		const int takeLane = clip->laneIndex();
 		m_clips.erase( it );
-		if( takeGroupId > 0 ) { m_takeLanes.removeTakeClip( takeGroupId, takeLane, m_clips ); }
+		if( hasTakeGroup ) { m_takeLanes.removeTakeClip( takeGroupId, takeLane, m_clips ); }
 		if( Engine::getSong() )
 		{
 			Engine::getSong()->updateLength();

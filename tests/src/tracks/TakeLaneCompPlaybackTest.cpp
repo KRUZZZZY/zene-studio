@@ -42,6 +42,7 @@
 #include <array>
 #include <cmath>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "../core/AllocationProbe.h"
@@ -224,6 +225,41 @@ private slots:
 			QVERIFY(withLanes[i][0] == plain[i][0] && withLanes[i][1] == plain[i][1]);
 		}
 		QVERIFY(std::fabs(meanLevel(plain, 256, plain.size() / 2) - 0.5) < 1e-6);
+	}
+
+	//! A clip assigned to group zero obeys the active-take gate; ordinary clips remain ungated.
+	void aZeroIdTakeGroupIsDistinctFromAnOrdinaryClip()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* zeroGroup = makeTake(track, m_rate, 0.5f, 0);
+		zeroGroup->setTakeGroupId(0);
+		zeroGroup->publishActiveTakeLane(1);
+		SampleClip* ordinary = makeTake(track, m_rate, 0.5f, 0);
+		ordinary->publishActiveTakeLane(1);
+		SamplePlayHandle zeroGroupHandle(zeroGroup, zeroGroup->sampleWindow());
+		SamplePlayHandle ordinaryHandle(ordinary, ordinary->sampleWindow());
+		std::array<SampleFrame, 512> buffer{};
+
+		const auto renderLevel = [&buffer](SamplePlayHandle& handle) {
+			std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
+			test::resetAllocationCount();
+			test::tlCountAllocations = true;
+			{
+				const RealtimeScope realtime;
+				handle.play(std::span<SampleFrame>(buffer));
+			}
+			test::tlCountAllocations = false;
+			double sum = 0.0;
+			for (const SampleFrame& frame : buffer) { sum += std::fabs(frame[0]); }
+			return std::pair{test::tlAllocationCount, sum / static_cast<double>(buffer.size())};
+		};
+
+		const auto [takeAllocations, takeLevel] = renderLevel(zeroGroupHandle);
+		QCOMPARE(takeAllocations, std::uint64_t{0});
+		QCOMPARE(takeLevel, 0.0);
+		const auto [ordinaryAllocations, ordinaryLevel] = renderLevel(ordinaryHandle);
+		QCOMPARE(ordinaryAllocations, std::uint64_t{0});
+		QVERIFY(std::fabs(ordinaryLevel - 0.5) < 1e-6);
 	}
 
 	//! Existing play handles follow the atomic active-take mirror without allocation or a lock.

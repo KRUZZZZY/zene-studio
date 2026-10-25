@@ -5152,3 +5152,16 @@ tests/data/clap-test-plugin/clap-test-instrument.c	cluster new-p14-435: clears f
 tests/fork-sources.txt	cluster new-p15-293: names the fixture unit test in both the regeneration and verify recipes and records it as a fork-new test source.
 tests/all-sources.txt	cluster new-p15-293: adds the fixture unit test to the regenerated whole-tree source inventory.
 tests/all-sources.txt	cluster new-p14-435/new-p15-293: re-derives the whole-tree source list from its header recipe, removing vendored sfizz entries that recipe excludes and including the new fixture regression source.
+include/Clip.h	cluster new-p15-221/new-p14-439: uses -1 internally for no take group so ID 0 is valid; takeGroupId() keeps its ordinary-clip return value while hasTakeGroup()/belongsToTakeGroup() disambiguate membership.
+include/SamplePlayHandle.h	cluster new-p15-221/new-p14-439: uses -1 for an ungrouped render handle so take group ID 0 passes through the active-take gate.
+src/core/Clip.cpp	cluster new-p15-221/new-p14-439: serializes an explicit takegroup=0 and restores it as membership; absent or invalid attributes still restore an ordinary clip.
+src/core/ControlCommandsCompGroup.cpp	cluster new-p15-221/new-p14-439: take selection accepts valid group ID 0 and checks membership before reading the group.
+src/core/ControlCompSupport.cpp	cluster new-p15-221/new-p14-439: group state includes only clips explicitly belonging to the selected group, so ordinary clips do not alias group 0.
+src/core/SamplePlayHandle.cpp	cluster new-p15-221/new-p14-439: snapshots group-zero clips into the existing allocation-free take gate.
+src/core/TakeLane.cpp	cluster new-p15-221/new-p14-439: membership matching accepts group ID 0, while record/load reject only negative IDs and ungrouped clip mirrors remain clear.
+src/core/Track.cpp	cluster new-p15-221/new-p14-439: removing a clip checks explicit group membership so ID-zero take groups are maintained.
+src/gui/tracks/TrackContentWidget.cpp	cluster new-p15-221/new-p14-439: pasted ordinary clips call clearTakeGroupId() so zero remains a valid group key.
+src/tracks/SampleTrack.cpp	cluster new-p15-221/new-p14-439: playback bypasses the take gate only for clips with no group, allowing group ID 0 to be gated.
+tests/src/core/TakeLaneTest.cpp	cluster new-p15-221: covers group-zero recording, negative rejection, group reload and clip playback-mirror round trip.
+tests/src/tracks/TakeLaneCompPlaybackTest.cpp	cluster new-p14-439: covers group-zero render gating, ordinary-clip playback and zero realtime allocations.
+tests/all-sources.txt	cluster new-p15-221 gate repair: re-derived the source manifest from its header recipe, removing only the vendored sfizz paths that recipe excludes so both manifest gates reproduce.

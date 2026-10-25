@@ -139,7 +139,7 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 {
 	m_track = clip->getTrack();
 	setAudioBusHandle(((SampleTrack *)clip->getTrack())->audioBusHandle());
-	if (clip->takeGroupId() > 0 && m_track != nullptr)
+	if (clip->hasTakeGroup() && m_track != nullptr)
 	{
 		m_takeGroupId = clip->takeGroupId();
 		m_takeLaneIndex = clip->laneIndex();
@@ -404,7 +404,7 @@ void SamplePlayHandle::applyComp(SampleFrame* buffer, f_cnt_t frames) const
 
 void SamplePlayHandle::applyActiveTakeGate(SampleFrame* buffer, f_cnt_t frames) const
 {
-	if (m_takeGroupId == 0 || m_comped || m_activeTakeLane == nullptr || m_playAllTakes == nullptr
+	if (m_takeGroupId < 0 || m_comped || m_activeTakeLane == nullptr || m_playAllTakes == nullptr
 		|| m_playAllTakes->load(std::memory_order_relaxed))
 	{
 		return;
