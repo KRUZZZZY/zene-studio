@@ -33,16 +33,31 @@ No leak regression test is retained because it would assert the opposite of Lilv
 | `cmake --build build --target zene Lv2StateTest > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/build-6.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 0 | Final unchanged product and existing test target built. |
 | `ctest -R '^Lv2StateTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/test-3.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` (run from `build/tests`) | 0 | 1/1 CTest test passed. |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-50 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/gate-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 1 | `fork-sources` and `all-sources-reproduce` fail; all other rows pass, including complexity and file length. The existing baseline note is `tests/upstream-modifications.txt:5077`. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p18-50 new-p18-50 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p18-50.r1/logs/submit-1.log 2>&1; rc=$?; printf 'EXIT=%s\n' "$rc"; exit "$rc"` | 1 | Report, commit, clean tree, and false-positive claim checks pass; only the same two baseline manifest gates fail. |
 
 The regression RED/GREEN proof is **not applicable** to this false-positive finding. The affected-family count is 1 existing CTest test, passed; no regression test was added.
 
+## Feature gate table
+
+| Gate | Result |
+|---|---|
+| fork-sources | FAIL (exit 1) |
+| all-sources-reproduce | FAIL (exit 1) |
+| no-upstream-regression | PASS (exit 0) |
+| check-namespace | PASS (exit 0) |
+| no-tautology | PASS (exit 0) |
+| doc-figures | PASS (exit 0) |
+| complexity | PASS (no new item in changed files) |
+| file-length | PASS (no new item in changed files) |
+| feature_check.py overall | FAIL (exit 1) |
+
 ## Self-check
 
-- Regression RED/GREEN: not applicable. Lilv's contract proves the alleged leak is not a leak; the exploratory assertion was invalid and removed. Its temporary test command exited 8; the final existing test command exited 0.
-- Determinism: no retained regression test. The temporary fixture check used 32 direct calls, with no sleeps, timing, or races.
-- Call sites and siblings: checked `PortBase::uri()`, `Lv2Proc.cpp`, and `Lv2ViewBase.cpp`; each uses the borrowed port-owned symbol. The owned `lilv_port_get_name()` path remains wrapped.
-- Collateral/data: no source, test, project-format, or saved-data changes are retained.
-- False-positive evidence: `/usr/include/lilv-0/lilv/lilv.h:1266-1274` explicitly defines the symbol's borrowed ownership and forbids freeing it.
+- ASK 1 — Regression RED/GREEN: not applicable. Lilv's contract proves the alleged leak is not a leak; the exploratory assertion was invalid and removed. Its temporary test command exited 8; the final existing test command exited 0.
+- ASK 2 — Determinism: no retained regression test. The temporary fixture check used 32 direct calls, with no sleeps, timing, or races.
+- ASK 3 — Cause and siblings: checked `PortBase::uri()`, `Lv2Proc.cpp`, and `Lv2ViewBase.cpp`; each uses the borrowed port-owned symbol. The owned `lilv_port_get_name()` path remains wrapped.
+- ASK 4 — Collateral/data: no source, test, project-format, or saved-data changes are retained.
+- ASK 5 — False-positive evidence: `/usr/include/lilv-0/lilv/lilv.h:1266-1274` explicitly defines the symbol's borrowed ownership and forbids freeing it.
 
 ## Committed files
 
