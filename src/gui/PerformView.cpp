@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -392,7 +393,8 @@ void PerformView::readTransport()
 	m_bpm = transport.value(QStringLiteral("tempo")).toDouble();
 	m_ticks = transport.value(QStringLiteral("position_ticks")).toInt();
 	setText(m_tempo, tr("%1 BPM").arg(std::lround(m_bpm)));
-	setText(m_position, tr("Bar %1 · Beat %2").arg(m_ticks / m_ticksPerBar + 1).arg((m_ticks % m_ticksPerBar) / TicksPerBeat + 1));
+	const std::int64_t bar = static_cast<std::int64_t>(m_ticks) / m_ticksPerBar + 1;
+	setText(m_position, tr("Bar %1 · Beat %2").arg(static_cast<qlonglong>(bar)).arg((m_ticks % m_ticksPerBar) / TicksPerBeat + 1));
 	m_play->setChecked(m_transportRunning);
 }
 

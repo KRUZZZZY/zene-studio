@@ -39,6 +39,8 @@
 #include <QToolButton>
 
 #include <functional>
+#include <limits>
+#include <utility>
 
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
@@ -129,20 +131,18 @@ QJsonObject cell(int track, int scene, const QString& name)
 		{QStringLiteral("source"), name + QStringLiteral(".wav")}, {QStringLiteral("name"), name}};
 }
 
-//! Fails one registered read while leaving its siblings and the registry ready.
-class CommandFailureOverride
+//! Replaces one registered command handler while leaving the rest of the registry ready.
+class CommandHandlerOverride
 {
 public:
-	CommandFailureOverride(const QString& id, const QString& message) :
+	CommandHandlerOverride(const QString& id, std::function<ControlResult(const QJsonObject&)> handler) :
 		m_command(const_cast<ControlCommand*>(ControlRegistry::instance()->command(id))),
 		m_handler(m_command->handler)
 	{
-		m_command->handler = [message](const QJsonObject&) {
-			return ControlResult::failure(ControlErrorKind::Refused, message);
-		};
+		m_command->handler = std::move(handler);
 	}
 
-	~CommandFailureOverride() { m_command->handler = m_handler; }
+	~CommandHandlerOverride() { m_command->handler = m_handler; }
 
 private:
 	ControlCommand* m_command;
@@ -318,7 +318,9 @@ private slots:
 
 		const QString failureMessage = QStringLiteral("injected transport.get_state failure");
 		{
-			CommandFailureOverride failure(QStringLiteral("transport.get_state"), failureMessage);
+			CommandHandlerOverride failure(QStringLiteral("transport.get_state"), [failureMessage](const QJsonObject&) {
+				return ControlResult::failure(ControlErrorKind::Refused, failureMessage);
+			});
 			view->refresh();
 		}
 
@@ -338,7 +340,9 @@ private slots:
 		const QString column = view->columnText(0);
 		const QString failureMessage = QStringLiteral("injected session.get_state failure");
 		{
-			CommandFailureOverride failure(QStringLiteral("session.get_state"), failureMessage);
+			CommandHandlerOverride failure(QStringLiteral("session.get_state"), [failureMessage](const QJsonObject&) {
+				return ControlResult::failure(ControlErrorKind::Refused, failureMessage);
+			});
 			view->refresh();
 		}
 
@@ -352,6 +356,10 @@ private slots:
 	void failedSetlistReadKeepsLastKnownSetlist()
 	{
 		PerformView* view = PerformView::instance(true);
+		struct RestoreSetlist
+		{
+			~RestoreSetlist() { run(QStringLiteral("session.setlist"), {{QStringLiteral("items"), QJsonArray{}}}); }
+		} restore;
 		QVERIFY(run(QStringLiteral("session.setlist"), {{QStringLiteral("items"),
 			QJsonArray{m_dir.filePath(QStringLiteral("first.mmpz")), m_dir.filePath(QStringLiteral("second.mmpz"))}}}).ok);
 		view->refreshSetlist();
@@ -362,7 +370,9 @@ private slots:
 		QVERIFY(nextEnabled);
 		const QString failureMessage = QStringLiteral("injected session.setlist failure");
 		{
-			CommandFailureOverride failure(QStringLiteral("session.setlist"), failureMessage);
+			CommandHandlerOverride failure(QStringLiteral("session.setlist"), [failureMessage](const QJsonObject&) {
+				return ControlResult::failure(ControlErrorKind::Refused, failureMessage);
+			});
 			view->refreshSetlist();
 		}
 
@@ -371,6 +381,30 @@ private slots:
 		QCOMPARE(view->nextSongButton()->isEnabled(), nextEnabled);
 		QCOMPARE(view->previousSongButton()->isEnabled(), previousEnabled);
 		QVERIFY2(view->statusLine().contains(failureMessage), qPrintable(view->statusLine()));
+	}
+
+	//! The largest transport tick and the one-tick boundary render a 64-bit bar number.
+	void displayedBarDoesNotOverflowAtMaxTicks()
+	{
+		PerformView* view = PerformView::instance(true);
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), std::numeric_limits<int>::max()}}).ok);
+		struct RestoreTransport
+		{
+			~RestoreTransport() { run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), 0}}); }
+		} restore;
+		const auto original = ControlRegistry::instance()->command(QStringLiteral("session.get_state"))->handler;
+		CommandHandlerOverride ticksPerBarOverride(QStringLiteral("session.get_state"), [original](const QJsonObject& args) {
+			ControlResult state = original(args);
+			if (state.ok)
+			{
+				QJsonObject launch = state.result.value(QStringLiteral("launch")).toObject();
+				launch.insert(QStringLiteral("ticks_per_bar"), 1);
+				state.result.insert(QStringLiteral("launch"), launch);
+			}
+			return state;
+		});
+		view->refresh();
+		QCOMPARE(view->positionText(), QStringLiteral("Bar 2147483648 · Beat 1"));
 	}
 
 	//! The setlist's song and the next one, from session.setlist; the song buttons follow where the set stands.
