@@ -28,6 +28,8 @@ so it only connects Zene instances, never Live or Bitwig.
   (1040 bytes, one LAN frame). A 16-byte header carries a sequence number and the
   sample rate; a packet at another rate than the receiving engine's is dropped and
   counted (`rate_mismatches`) - there is no resampling.
+* A non-finite sample (NaN or an infinity) in a received packet is decoded as silence,
+  so a peer cannot poison the master mix.
 
 ## Threads and the realtime rule
 
