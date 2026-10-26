@@ -1098,6 +1098,7 @@ private slots:
 	void gigPatchDialogPreviewsSelectedProgram();
 	void gigKeyboardDimensionUsesPressedKey();
 	void rmsHelperCopiesHaveIndependentBuffers();
+	void sf2FailureTestChecksPluginModuleHostBeforeLoading();
 	void sf2FailedLoadPreservesCurrentFontAndSource();
 	void sf2PatchListKeepsEarlierDuplicateAndLaterUniqueProgram();
 	void frequencyShifterSampleRateDropKeepsDelayIndicesInRange();
@@ -5651,11 +5652,32 @@ void PluginPortsMigrationTest::rmsHelperCopiesHaveIndependentBuffers()
 	QVERIFY(qFuzzyIsNull(assignedRms));
 }
 
+void PluginPortsMigrationTest::sf2FailureTestChecksPluginModuleHostBeforeLoading()
+{
+	QFile source{QDir{QStringLiteral(QT_TESTCASE_SOURCEDIR)}
+		.filePath(QStringLiteral("src/plugins/PluginPortsMigrationTest.cpp"))};
+	QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(source.fileName()));
+	const auto sf2FailureTest = functionBody(source.readAll(),
+		"void PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource()");
+	QVERIFY2(!sf2FailureTest.isEmpty(), "SF2 failed-load test source was not found");
+
+	const auto hostGuard = sf2FailureTest.indexOf("if (!testHostCanLoadPluginModules())");
+	const auto skip = sf2FailureTest.indexOf("QSKIP(PluginModuleHostSkipMessage);");
+	const auto moduleLoad = sf2FailureTest.indexOf("partc::loadPluginModule(");
+	QVERIFY2(hostGuard >= 0 && hostGuard < skip && skip < moduleLoad,
+		"the SF2 failed-load test must skip unsupported hosts before loading its module");
+}
+
 void PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource()
 {
 #ifndef PART_C_MIGRATED_sf2player
 	QSKIP("Sf2Player is not built in this configuration");
 #else
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
 	const auto [entry, descriptor] = partc::loadPluginModule(PART_C_MIGRATED_sf2player,
 		QStringLiteral("sf2player"));
 	QVERIFY(entry != nullptr && descriptor != nullptr);

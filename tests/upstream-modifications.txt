@@ -2353,6 +2353,7 @@ src/core/SerializingObject.cpp	new-p9-418: detach a hook from its previous Seria
 tests/CMakeLists.txt	new-p9-418: registers SerializingObjectHookTest beside the serialisation tests, without changing existing test behaviour.
 plugins/Sf2Player/Sf2Player.cpp	cluster new-p9-452 (2026-10-11): load and validate a candidate SoundFont before unloading the selected font; preserve the current font, serialized source, and live patch dialog after a failed selection. Regression: PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p9-452 (2026-10-11): extend the failed SoundFont replacement regression through a live Sf2Player view and verify its patch dialog remains enabled.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p18-73: check the SF2 failure test skips unsupported Windows module hosts before loading the module.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p12-157: add a ring-cycle regression proving a zero-length MonoDelay passes the current input through; it reuses the MonoDelay implementation this file already includes for the sample-rate regression
 include/SharedMemory.h	new-p9-459: reject overflowing SharedMemory<T[]> element-to-byte multiplication with std::length_error; covered by AudioBufferTest keyed and unkeyed regressions.
 tests/src/core/AudioBufferTest.cpp	new-p9-459: cover overflow rejection in both keyed and unkeyed SharedMemory<T[]>::create overloads.
