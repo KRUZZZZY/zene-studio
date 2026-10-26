@@ -30,11 +30,13 @@
 // §3.1). The four BAKERS live in ControlCommandsSampleEdit.cpp, one group
 // across two translation units exactly as clip.* / warp.* split theirs.
 //
-// SCOPE, because it is a real limit rather than an accident: these ids are
-// socket-only in this release. No widget, menu, toolbar, dock or dialog
-// reaches them; placement (mixer-slot vs clip editor vs window) stays an open
-// owner decision for the UI phase (docs/KNOWN-LIMITATIONS.md carries the
-// same sentence).
+// ROUTE: sample.generate is offered by a sample track's More menu (the track
+// header's and the Inspector's) as Insert Test Signal..., which opens its
+// command form with that track fixed and position 0, length 192 and kind tone
+// as the starting values; the four bakers are offered by a sample clip's
+// Process menu. The same ids stay on the control socket and through MCP.
+// docs/KNOWN-LIMITATIONS.md carries the bounds around them, not a no-interface
+// claim.
 
 #include <cmath>
 #include <memory>
@@ -200,8 +202,11 @@ void registerSampleCommands(ControlRegistry& registry)
 		"design/specs/DECISION-706-DESTRUCTION-MODEL.md). One journal checkpoint before the "
 		"clip exists: one control.undo removes clip and buffer together. length is in ticks, "
 		"position the clip's start; frequency (Hz) and amplitude (0..1) reach the tone and "
-		"noise kinds - silence ignores them. Socket-only in this release: no interface reaches "
-		"this verb (docs/KNOWN-LIMITATIONS.md).");
+		"noise kinds - silence ignores them. In the interface a sample track's More menu - the "
+		"track header's and the Inspector's - offers it as Insert Test Signal..., which opens "
+		"this command's form with that track fixed and position 0, length 192 and kind tone as "
+		"the starting values; confirming creates the clip. Agents reach the same command on the "
+		"control socket, through MCP and from a script (docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{
 			{QStringLiteral("track"), stringProperty()},

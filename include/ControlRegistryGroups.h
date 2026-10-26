@@ -532,8 +532,9 @@ LMMS_EXPORT void registerClipLinkStateCommands(ControlRegistry& registry);
  *  group (amplify / normalize / reverse / fade) are declared next. Declared here
  *  rather than in include/ControlRegistry.h because that header sits at the
  *  file-length ratchet's limit; registered by
- *  src/core/ControlRegistryRegistrations.cpp. Socket-only this release: no
- *  interface reaches these ids (docs/KNOWN-LIMITATIONS.md). */
+ *  src/core/ControlRegistryRegistrations.cpp. Offered in the interface as a
+ *  sample track's More > Insert Test Signal... as well as on the control socket
+ *  and through MCP (docs/KNOWN-LIMITATIONS.md). */
 LMMS_EXPORT void registerSampleCommands(ControlRegistry& registry);
 /*! sample.amplify / sample.normalize / sample.reverse / sample.fade - the
  *  group's four BAKERS, in their own translation unit (the clip group's

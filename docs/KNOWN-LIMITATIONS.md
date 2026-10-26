@@ -2330,16 +2330,21 @@ ignored. (Adds the `fsync`-before-rename durability step on POSIX; on Windows th
 guarantee. The `complete="1"` index marker the same spec section sketches is *not* implemented — it belongs to
 `<z:index>`/`DocumentIndex`, which this slice is scoped out of.)
 
-## The destructive waveform editor's first slice (`sample.*`, board card #706) — socket-only, no interface
+## The destructive waveform editor's first slice (`sample.*`, board card #706) — its menus and its bounds
 
 Five commands exist — `sample.generate` (tone / white / pink / silence into a new audio clip),
 `sample.amplify`, `sample.normalize`, `sample.reverse` and `sample.fade` (linear, in or out) — and
-**no interface reaches any of them**: there is no waveform view, no menu entry, no toolbar button, no
-docked panel and no dialog for them in `src/gui/`, so the ONLY way to run a generator or a baker in
-this release is the control socket (the MCP bridge is the same door). **Placement is an open owner
-decision for the UI phase** — mixer-slot vs clip editor vs window — and this lane did not take it
-(board card #706, question 4; `design/specs/DECISION-706-DESTRUCTION-MODEL.md` records the same
-defer). The bounds around them, stated rather than left to be discovered: every operator transforms
+**every one of them has an interface entry point as well as the control socket**: a sample track's
+**More** menu (the track header's and the Inspector's) offers `sample.generate` as **Insert Test
+Signal...**, which opens the command's own form with that track fixed and position `0`, length `192`
+and kind `tone` pre-filled; a sample clip's **Process** menu offers `sample.normalize`, `sample.amplify`,
+`sample.reverse` and `sample.fade` (in / out). The MCP bridge and the control socket are the same
+command, not a second implementation. There is still **no waveform view** that shows the result in
+place: a generated clip is drawn by the ordinary sample-clip view, and the bakers' feedback is the
+ordinary undo journal and clip repaint. **Placement beyond those two menus is an open owner decision
+for the UI phase** — mixer-slot vs clip editor vs window — and this lane did not take it (board card
+#706, question 4; `design/specs/DECISION-706-DESTRUCTION-MODEL.md` records the same defer). The
+bounds around them, stated rather than left to be discovered: every operator transforms
 the clip's **whole source** — there is no range/selection model, a clip playing a trimmed
 `srcin/srcout` window is REFUSED with the typed error naming that limit, and a fade therefore always
 spans the whole clip and has only the linear curve (`clip.set_fade` remains the non-baking window

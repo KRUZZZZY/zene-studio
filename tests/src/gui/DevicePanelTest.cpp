@@ -66,6 +66,7 @@
 
 #include <sndfile.h>
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DevicePanel.h"
@@ -633,6 +634,75 @@ private slots:
 		}
 		ShellSelection::instance()->setTrack(nullptr);
 		delete track;
+	}
+
+	/*! Q050-343: the sample generator's interface route is a CLICK, not just a registered id.
+	 *  A sample track's More menu (the track header's and the Inspector's are the same
+	 *  populateTrack) offers Insert Test Signal...; the action opens the SHARED sample.generate
+	 *  command form with the track fixed and position 0, length 192 and kind tone pre-filled, and
+	 *  running the form creates the clip in ONE undo step. An instrument track offers no such
+	 *  entry. The form's about text is the registry description - the same help an agent reads -
+	 *  so the route is checked where the menu actually puts it. */
+	void theSampleGeneratorsMenuActionOpensItsFormAndMakesAClip()
+	{
+		auto* sample = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* instrument = Track::create(Track::Type::Instrument, Engine::getSong());
+		dynamic_cast<InstrumentTrack*>(instrument)->loadInstrument(QStringLiteral("tripleoscillator"));
+		const int before = sample->numOfClips();
+
+		QMenu menu;
+		ShellCommandMenus::populateTrack(&menu, sample);
+		QAction* entry = menuAction(&menu, {QStringLiteral("Insert Test Signal...")});
+		QVERIFY2(entry != nullptr, "a sample track's menu offered no Insert Test Signal...");
+		QCOMPARE(entry->property("controlCommand").toString(), QStringLiteral("sample.generate"));
+
+		entry->trigger();
+		CommandForm* form = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (qobject_cast<CommandForm*>(widget) != nullptr && widget->isVisible()) { form = qobject_cast<CommandForm*>(widget); }
+		}
+		QVERIFY2(form != nullptr, "Insert Test Signal... opened no command form");
+		// The form shows the registered description, and that description names the route that
+		// opened it (the same text control.commands_list / MCP hand an agent).
+		auto* about = form->findChild<QLabel*>(QStringLiteral("commandFormAbout"));
+		QVERIFY(about != nullptr);
+		QCOMPARE(about->text(), ControlRegistry::instance()->command(QStringLiteral("sample.generate"))->description);
+		QVERIFY2(about->text().contains(QStringLiteral("Insert Test Signal...")),
+			"the form's help did not name the route that opened it");
+		// Where it was asked from is fixed, and the brief's defaults are what the fields start at.
+		QJsonObject args;
+		QString error;
+		QVERIFY2(form->collect(&args, &error), qPrintable(error));
+		QCOMPARE(args.value(QStringLiteral("track")).toString(), control::trackIdOf(sample));
+		QCOMPARE(args.value(QStringLiteral("position")).toInt(), 0);
+		QCOMPARE(args.value(QStringLiteral("length")).toInt(), 192);
+		QCOMPARE(args.value(QStringLiteral("kind")).toString(), QStringLiteral("tone"));
+
+		// The form is WA_DeleteOnClose, so the outcome is captured from its ran() signal instead
+		// of read off a widget that is already on its way out.
+		ControlResult made;
+		int ran = 0;
+		QObject::connect(form, &CommandForm::ran, form,
+			[&made, &ran](const ControlResult& result) { made = result; ++ran; });
+		form->accept();
+		QCOMPARE(ran, 1);
+		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		const QString clip = made.result.value(QStringLiteral("clip")).toString();
+		QVERIFY2(!clip.isEmpty(), "the form's run reported no clip");
+		QCOMPARE(made.result.value(QStringLiteral("kind")).toString(), QStringLiteral("tone"));
+		QCOMPARE(sample->numOfClips(), before + 1);
+		// ONE undo removes the clip the click made; the sample track is as it was.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(sample->numOfClips(), before);
+
+		QMenu other;
+		ShellCommandMenus::populateTrack(&other, instrument);
+		QVERIFY2(menuAction(&other, {QStringLiteral("Insert Test Signal...")}) == nullptr,
+			"an instrument track offered a test signal clip");
+
+		delete instrument;
+		delete sample;
 	}
 
 	/*! ED-015/016 (0.5.0 L04): the Inspector's clip and note fields edit through the registry -
