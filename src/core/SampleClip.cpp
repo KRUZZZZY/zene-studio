@@ -343,10 +343,11 @@ void SampleClip::installFirstPass(std::shared_ptr<const SampleBuffer> take)
 void SampleClip::overdub(std::shared_ptr<const SampleBuffer> take)
 {
 	// The pass can be mixed into the clip's buffer only where the buffer plays as recorded: from its
-	// first frame, forwards, at its own rate, through the whole buffer. A trimmed, reversed, warped
-	// or frame-led clip is left as it is and the pass is added as a clip of its own over it - the old
-	// audio stays audible beside the new either way, and nothing is thrown away.
-	const bool plain = rendersLinearly() && !m_sample.reversed() && leadFrames() == 0 && startTimeOffset() == 0
+	// first frame, forwards, at its own rate, with default pitch and gain, through the whole buffer.
+	// A trimmed, reversed, warped, pitch-shifted, gain-adjusted, frame-led or offset clip is left
+	// unchanged; the pass goes in a clip of its own over it, so neither sound is lost.
+	const bool plain = rendersLinearly() && !m_sample.reversed() && m_sample.amplification() == 1.0f
+		&& m_sample.frequency() == DefaultBaseFreq && leadFrames() == 0 && startTimeOffset() == 0
 		&& m_window == SampleWindow::full(static_cast<f_cnt_t>(m_sample.sampleSize()));
 	if (plain && m_sample.buffer() != nullptr)
 	{

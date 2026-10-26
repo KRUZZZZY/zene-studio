@@ -1852,6 +1852,29 @@ private slots:
 		lmms::recordoptions::setOptions({});
 	}
 
+	//! A pitched or gain-adjusted source is not a raw, sample-aligned mix target: keep it intact and add the pass as a layer.
+	void anOverdubOverAPitchedAndAmplifiedClipAddsTheLayerWithoutTouchingIt()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Overdub});
+		ArmedClip armed = armedClip(true);
+		const auto original = armed.clip->sample().buffer();
+		armed.clip->sample().setFrequency(880.0f);
+		armed.clip->sample().setAmplification(2.0f);
+		recordPass(armed.clip, 0.125f);
+
+		QVERIFY(armed.clip->sample().buffer() == original);
+		QCOMPARE(armed.clip->sample().frequency(), 880.0f);
+		QCOMPARE(armed.clip->sample().amplification(), 2.0f);
+		QVERIFY(std::abs(extremes(*armed.clip).first - 0.25f) < 1e-6f);
+		const auto layers = others(armed.track, armed.clip);
+		QCOMPARE(layers.size(), std::size_t{1});
+		QCOMPARE(layers.front()->sample().frequency(), 440.0f);
+		QCOMPARE(layers.front()->sample().amplification(), 1.0f);
+		QVERIFY(std::abs(extremes(*layers.front()).first - 0.125f) < 1e-6f);
+		delete armed.track;
+		lmms::recordoptions::setOptions({});
+	}
+
 	//! Keep History on a clip with no audio yet: the first pass is a lane too (every kept pass is one).
 	void aKeepHistoryPassOnAnEmptyClipIsALane()
 	{
