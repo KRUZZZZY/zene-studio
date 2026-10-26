@@ -89,7 +89,7 @@ pass (`logs/test-4-family.log`). I built them (`logs/build-7.log`) and reran the
 
 Gate note: `feature_check.py` writes its per-gate logs to `<worktree>/../<name>-feature-check`, which is outside this
 lane's write-jail, and it failed there with `PermissionError` (`logs/feature-check-1.log`). I ran a copy with only the
-log directory and the `ROOT` path changed, so the gate logic is untouched. The copy is at `$TMPDIR/p21/fc_logdir.py`.
+log directory and the `ROOT` path changed, so the gate logic is untouched. The copy is at `logs/feature_check_logdir_copy.py`.
 The shared `gate-baselines` cache was read (the base listing for `cf3618e61` was already there).
 
 Build note: `ccache` could not write to its temp dir in this sandbox (`logs/build-3.log`), so every build used
