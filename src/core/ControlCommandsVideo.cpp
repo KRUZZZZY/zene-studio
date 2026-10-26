@@ -62,7 +62,7 @@ using namespace control;
 namespace
 {
 
-constexpr int MaxAudioNames = 100;  //!< "<video>-audio-<n>.wav" tried up to this n before the last one is reused
+constexpr int MaxAudioNames = 100;  //!< "<video>-audio-<n>.wav" tried up to this n; past it the default name is refused
 const int ExtractionOwner = 0;  //!< its address names the background extractions in the task area
 int nextExtraction = 1;
 
@@ -153,7 +153,8 @@ ControlResult setOffset(const QJsonObject& args)
 	return ControlResult::success(stateJson());
 }
 
-//! "<video>-audio.wav" in the project's folder (the video's while the project has no file), numbered past any taken.
+//! "<video>-audio.wav" in the project's folder (the video's while the project has no file), numbered past any taken;
+//! empty when every name up to MaxAudioNames is taken.
 QString defaultAudioPath(const QString& videoPath)
 {
 	const QString project = Engine::getSong()->projectFileName();
@@ -229,6 +230,12 @@ ControlResult extractAudio(const QJsonObject& args)
 	if (!video.hasAudio) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the video has no audio stream")); }
 	const QString out = args.value(QStringLiteral("out")).toString();
 	const QString wav = out.isEmpty() ? defaultAudioPath(video.path) : QFileInfo(out).absoluteFilePath();
+	// Refused before anything is decoded or recorded: an existing WAV is never reused as the default target.
+	if (wav.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("every default WAV name in the video's folder is taken "
+			"('<video>-audio.wav' and '-audio-2' to '-audio-%1'); pass 'out' to choose a new path").arg(MaxAudioNames));
+	}
 	if (args.value(QStringLiteral("background")).toBool()) { return extractInBackground(video, wav); }
 	VideoAudio audio;
 	QString why;

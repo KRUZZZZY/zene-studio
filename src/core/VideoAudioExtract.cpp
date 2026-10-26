@@ -227,8 +227,9 @@ bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out
 QString firstFreeAudioPath(const QDir& dir, const QString& stem, int maxNames)
 {
 	QString candidate = dir.filePath(stem + QStringLiteral(".wav"));
-	for (int n = 2; QFileInfo::exists(candidate) && n < maxNames; ++n)
+	for (int n = 2; QFileInfo::exists(candidate); ++n)
 	{
+		if (n > maxNames) { return QString(); }
 		candidate = dir.filePath(QStringLiteral("%1-%2.wav").arg(stem).arg(n));
 	}
 	return candidate;
