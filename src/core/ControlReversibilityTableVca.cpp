@@ -34,10 +34,9 @@
  *     control::addUndoStep, which is a true_inverse checkpoint by the table's
  *     own definition ("the plain, the composite and the action checkpoint").
  *
- * Two of these rows carry a LIMIT in their own text rather than a claim
- * (vca.set_solo's transient m_muteBeforeSolo, vca.edit_move's index-derived
- * clip ids); the same limits are in docs/VCA-EDIT-GROUPS.md and in the release
- * notes, and they are the reason the rows are not all one sentence.
+ * One row carries a LIMIT in its own text rather than a claim
+ * (vca.edit_move's index-derived clip ids); the same limit is in
+ * docs/VCA-EDIT-GROUPS.md and in the release notes.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -133,14 +132,11 @@ const ReversibilityRow kVcaRows[] = {
 		"group's solo flag, saves and mutes every channel, then unmutes this "
 		"group's members and their send neighbours. A single-object checkpoint "
 		"would make one agent command cost N Ctrl+Z presses",
-		"composite checkpoint: the group's own solo flag, every other group's solo "
-		"and mute flags and every mixer channel's mute model are recorded as ONE "
-		"step (control::addUndoStep with the object list), so one control.undo "
-		"restores the whole exclusive-solo action - the same shape track.set_solo "
-		"uses for the cross-track mute. LIMIT: MixerChannel::m_muteBeforeSolo is "
-		"transient, is not part of the project file, and is therefore not "
-		"restored; it is re-derived on the next solo action, exactly as "
-		"track.set_solo states for Track::mutedBeforeSolo",
+		"composite model checkpoint plus a measured structural action: the group's "
+		"solo flag, every other group's solo flag, every mixer channel's mute model "
+		"and each transient MixerChannel::m_muteBeforeSolo value are one undo step. "
+		"The transaction inverse carries the full prior solo state by stable group and "
+		"channel ids, so it remains replayable after journal eviction",
 		""),
 	R("vca.assign", RC::TrueInverse, true,
 		"membership is a list of channel indices ON THE GROUP; a MixerChannel "
