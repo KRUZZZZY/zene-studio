@@ -70,10 +70,12 @@
 #include <QTemporaryDir>
 
 #include "DrumSynth.h"
+#include "Engine.h"
 #include "ImportDetection.h"
 #include "ImportDetectionDsp.h"
 #include "ControlDetectSupport.h"
 #include "ControlRegistry.h"
+#include "ControlRegistryGroups.h"
 #include "DrumSynth.h"
 #include "ProjectKey.h"
 #include "../../../src/core/SampleDecoderFrameLoop.h"
@@ -499,7 +501,50 @@ private slots:
 		QCOMPARE(key.margin(), 0.0);
 	}
 
+	//! The registry's engine gate runs on the caller's thread, but the handler
+	//! re-reads the song on the UI thread. With no song (this test never starts the
+	//! engine) the handler is driven DIRECTLY, past the gate, and must refuse with a
+	//! typed Busy failure rather than dereference a null song.
+	void detectStateRefusesWhenThereIsNoSong()
+	{
+		QVERIFY2(Engine::getSong() == nullptr, "this test needs an engine-less process");
+		ControlRegistry& registry = detectRegistry();
+		const ControlCommand* getState = registry.command(QStringLiteral("detect.get_state"));
+		QVERIFY(getState != nullptr);
+
+		const ControlResult reply = getState->handler(QJsonObject());
+		QVERIFY(!reply.ok);
+		QVERIFY(reply.errorKind == ControlErrorKind::Busy);
+	}
+
+	//! detect.apply reads the song only after its refusals, so a valid click track
+	//! with `key` off reaches the song read; with no song it must refuse Busy and
+	//! write nothing.
+	void detectApplyRefusesWhenThereIsNoSong()
+	{
+		QVERIFY2(Engine::getSong() == nullptr, "this test needs an engine-less process");
+		ControlRegistry& registry = detectRegistry();
+		const ControlCommand* apply = registry.command(QStringLiteral("detect.apply"));
+		QVERIFY(apply != nullptr);
+
+		QJsonObject args;
+		args.insert(QStringLiteral("path"), m_clickA);
+		args.insert(QStringLiteral("key"), false);
+		const ControlResult reply = apply->handler(args);
+		QVERIFY(!reply.ok);
+		QVERIFY(reply.errorKind == ControlErrorKind::Busy);
+	}
+
 private:
+	//! The process-wide registry with the detect group registered once (a second
+	//! registration is a qFatal), so both refusal tests can share it.
+	static ControlRegistry& detectRegistry()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		if (!registry->hasCommand(QStringLiteral("detect.get_state"))) { registerDetectCommands(*registry); }
+		return *registry;
+	}
+
 	QTemporaryDir m_dir;
 	QString m_clickA;
 	QString m_clickB;
