@@ -117,4 +117,32 @@ Only those two path lines differ from `feature_check.py`; the checks, commands a
 
 ## Self-check
 
-Filled in after the completion check, below.
+`submit_check.py <worktree> new-p14-410` (`submit-check-1.log`, EXIT 1): PASS for commits on the branch, clean working
+tree, this report, tests added/changed, and test registration in `tests/CMakeLists.txt`. **FAIL for `gates
+(feature_check.py)`** — not a check result. The submit check runs the unmodified `feature_check.py`, which creates its
+log directory at `<worktree>/../<name>-feature-check`, i.e. in the project folder outside this lane's write-jail, so it
+stops with `PermissionError` before running any gate. The same gates, run with the log directory moved into the run
+folder, all pass (`feature-check-2.log`, RESULT PASS; table above). I did not edit the gate, its paths or the submit
+check. The parent needs to run the gate with write access to the project folder, or make its log directory
+configurable, for this row to turn green.
+
+Answers to the submit check's questions:
+
+1. **Regression fails with the change reverted, passes with it.** RED: `manual-red-2.log` (run EXIT 2, 2 FAIL) and
+   `test-3-red.log` (`ctest -R ReverbSCPrecisionTest`, EXIT 8, `Actual 4 / Expected 8`). GREEN: `manual-green-1.log`
+   (EXIT 0, 4 passed) and `test-4-green.log` (EXIT 0, 1/1 passed). The `git apply -R` / `git apply` proof on
+   `fix.patch`: `manual-4b-revert.log` (EXIT 2) and `manual-4b-reapply.log` (EXIT 0).
+2. **Deterministic.** No timing, sleep, thread or wall clock. The seam is `sp_precision_test_calloc` (C-only compile
+   definition, `tests/CMakeLists.txt:2664`), which records the count and size `sp_createn` requests and can refuse
+   the next call. The test never writes into the buffer, because under the bug that write would overflow.
+   `initTestCase` asserts `sizeof(SPFLOAT) == sizeof(double)` so a float build cannot pass silently.
+3. **Fix at the cause, complete.** The only `calloc` sizing an SPFLOAT array is `base.c:28`
+   (`rg -n "calloc\(|sizeof"` over `plugins/ReverbSC/`; `base.c:107,115,149` and `revsc.c:120,173` already use
+   `sizeof(SPFLOAT)`). The only callers of `sp_createn` are `sp_create` (`base.c:7`), used at `ReverbSC.cpp:77`
+   with one channel, and its destroy path at `ReverbSC.cpp:122` (`sp_destroy`, unchanged, still frees `out`).
+   `revsc.c` `(float)` casts are sample rates, not element sizes (`revsc.c:68-88`).
+4. **No collateral damage.** In the default `float` build `sizeof(*out) == sizeof(float)`, so the allocation is the
+   same byte count as before. In a double build it is the size the element type needs. No limit or check is added,
+   so nothing else can be refused. `out` is runtime-only: no `->out` or `.out` use in `ReverbSC.cpp`,
+   `ReverbSCControls.cpp` or `ReverbSC.h`, so saved projects and plugin state are unaffected.
+5. **Verdict is FIXED,** not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" or "not real" proof is needed.
