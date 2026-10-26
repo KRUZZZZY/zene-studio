@@ -34,12 +34,16 @@ The other readers of `target.chain` after a successful resolve dereference it th
 
 1. `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-60` - `EXIT=1`. It stopped at `logs.mkdir` with `PermissionError` on `.../zene-studio-program/zene-qwen-new-p21-60-feature-check`, a directory outside the write-jail. Log: `logs/gate-1.log`. The gate itself did not run.
 2. The same gate logic, run from a copy at `runs/new-p21-60.r1/gate-runner/feature_check_logdir.py`. Only two lines differ from the original: `ROOT` points at the original qwen folder, and the per-gate log folder points at `runs/new-p21-60.r1/logs/gate-out`. Command: `python3 -I runs/new-p21-60.r1/gate-runner/feature_check_logdir.py <worktree>` - `EXIT=0`, `RESULT: PASS` (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures all PASS; complexity and file-length "no new item in your files"). Log: `logs/gate-2.log`.
-3. Not run: any build or ctest. No product file changed, so there is nothing to rebuild.
+3. Re-run after the report was committed: `python3 -I runs/new-p21-60.r1/gate-runner/feature_check_logdir.py <worktree>` - `EXIT=0`, `RESULT: PASS` (1 changed file). Log: `logs/gate-3.log`.
+4. `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-60` - `EXIT=1`; the only FAIL is the gate row, for the write-jail reason in the Self-check. Log: `logs/submit-1.log`.
+5. Not run: any build or ctest. No product file changed, so there is nothing to rebuild.
 
 ## Self-check
 
-- The regression test FAILS with the product change reverted and PASSES with it: not applicable. No product change, no test added. This closure is claim-only; the evidence is the code cited above.
-- The test is deterministic: not applicable, no test added.
-- The fix is at the cause and complete: not applicable, nothing was changed. The sibling readers were checked (see "Sibling precedent").
-- No collateral damage: nothing changed, so no saved data or caller is affected.
-- Verdict evidence (file:line or contract): given above, from `include/ControlDeviceSupport.h:119`, `src/core/ControlDeviceSupport.cpp:101-107, 157, 220-224`, `src/core/AudioBusHandle.cpp:83`, `src/tracks/InstrumentTrack.cpp:66`, `src/tracks/SampleTrack.cpp:61`.
+1. "The regression test FAILS with the product change reverted and PASSES with it (exit codes)": not applicable. There is no product change and no test was added. This is a claim-only closure; the evidence is the cited code and contract above.
+2. "The test is deterministic": not applicable, no test added.
+3. "The fix is at the cause and complete": not applicable, nothing was changed. The sibling readers of `target.chain` were checked (see "Sibling precedent").
+4. "No collateral damage": nothing changed, so no saved data, project load or caller is affected.
+5. "If your verdict is FALSE-POSITIVE: the code (file:line) or the intended contract": `include/ControlDeviceSupport.h:119` (the contract), `src/core/ControlDeviceSupport.cpp:101-107, 157, 220-224` (every success path), `src/core/AudioBusHandle.cpp:83`, `src/tracks/InstrumentTrack.cpp:66`, `src/tracks/SampleTrack.cpp:61` (the track bus always has a chain).
+
+Completion check (`submit_check.py`, log `logs/submit-1.log`, EXIT=1): commits, clean tree, report verdict, claim-only test row and the "Self-check" section all PASS. The "gates" row FAILs for an environment reason, not a gate result. `submit_check.py` runs the original `feature_check.py`, and that script's `mkdir` of `<worktree>-feature-check` is refused by the write-jail. The same gate logic run from the copy (`logs/gate-3.log`) gives EXIT=0 and `RESULT: PASS` with 1 changed file. The original script was not edited.
