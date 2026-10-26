@@ -410,6 +410,15 @@ private slots:
 		QCOMPARE(audio::oss::toPcmSample(std::numeric_limits<float>::quiet_NaN()), std::int16_t{0});
 	}
 
+	//! Full scale maps to the signed 16-bit limits without wrapping, including the first float above +1.0.
+	void ossConversionFullScaleStaysInRange()
+	{
+		QCOMPARE(audio::oss::toPcmSample(1.0f), std::int16_t{32767});
+		QCOMPARE(audio::oss::toPcmSample(-1.0f), std::int16_t{-32767});
+		QCOMPARE(audio::oss::toPcmSample(std::nextafter(1.0f, 2.0f)), std::int16_t{32767});
+		QCOMPARE(audio::oss::toPcmSample(std::nextafter(-1.0f, -2.0f)), std::int16_t{-32767});
+	}
+
 	//! A sample-rate drop must keep an existing LFO frequency at or below the new Nyquist limit.
 	void quadratureLfoDoesNotExceedNyquistAfterSampleRateDrop()
 	{
