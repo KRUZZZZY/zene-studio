@@ -143,3 +143,35 @@ directly in this worktree.
 The product code, the test binary's source, and the null regression are unchanged
 since round 1. The RED/GREEN reversal from round 1 (`test-4`, `test-5`, `test-6`)
 still holds for the same committed guard; it was not rerun in round 2.
+
+## Round 3 (review rework)
+
+Luna's round-2 review (`qa/reviews/new-p9-340.r2.md`, verdict DISPUTE) had one
+blocking item: `tests/src/core/ControllerSurfaceTest.cpp` was back in
+`tests/upstream-modifications.txt`. Commit `eaa81e071` (workflow, "derive source
+registries from tracked files") re-added it. It ran about 30 seconds after
+`849be5a02`, which had removed the row.
+
+**Cause of the re-add.** The loop's housekeeping
+(`qwen/workflow_evidence.py`, `housekeeping`) treats a changed source file as
+inherited when it is not an active line in `tests/fork-sources.txt`, not added on
+the branch, and not already in the ledger. It does not count `tests/all-sources.txt`
+as a registration. This test is in `all-sources.txt` at line 2710, and
+`tests/fork-sources.txt` deliberately moved it out (the comment at lines 560-575
+says the three `ControlAutomationModesTest` / `ControllerSurfaceTest` /
+`DawProjectInterchangeRoundTripTest` sources were moved to `all-sources.txt`, which
+Gate 9 accepts). So any commit that changes this
+file gets the row re-added, and this worktree cannot change that housekeeping code.
+
+- **Change in this round:** the ledger row (old line 5284) is removed again. Nothing
+  else changed. `git diff` shows one deletion.
+- **Registry check:** `fork-sources-gate` and `all-sources-reproduce` pass without
+  the row (see the gate run below).
+
+| Step | Command (abbrev.) | Log | EXIT |
+|---|---|---|---|
+| Build targets | `cmake --build build --target ControllerSurfaceTest LfoControllerUserWaveTest MidiClipControllersLoadTest MidiControllerMenuTest ControllerTemplateMenuTest EqPeakHandoffTest -j4` | r3-build-1.log | 0 |
+| Family, GREEN | `ctest -R 'Controller\|Peak' --output-on-failure` from `build/tests`, scratch `HOME` as in round 1 | r3-test-1-family.log | 0 (6/6 passed) |
+| Gate | unchanged `feature_check.py` logic, log folder redirected to `gate-logs/` | r3-gate-1.log | 0 (all 8 rows PASS) |
+
+Run folder for round 3: `runs/new-p9-340.r3/logs`.
