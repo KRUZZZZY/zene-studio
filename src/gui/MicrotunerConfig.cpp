@@ -530,11 +530,21 @@ bool MicrotunerConfig::loadScaleFile(const QString& fileName, QString* error)
 		if (error != nullptr) {*error = reason;}
 		return false;
 	}
+	const QString previousName = m_scaleNameEdit->text();
+	const QString previousIntervals = m_scaleTextEdit->toPlainText();
 	m_scaleNameEdit->setText(name);
 	m_scaleTextEdit->clear();
 	for (const QString& line : intervals) {m_scaleTextEdit->appendPlainText(line);}
 
-	return applyScale();
+	if (applyScale()) {return true;}
+
+	m_scaleNameEdit->setText(previousName);
+	m_scaleTextEdit->setPlainText(previousIntervals);
+	if (error != nullptr && Engine::getSong() == nullptr)
+	{
+		*error = tr("No song is available to apply the scale.");
+	}
+	return false;
 }
 
 

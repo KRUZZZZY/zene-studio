@@ -32,9 +32,17 @@
 #include <QtTest>
 
 #include <cstddef>
+#include <memory>
 
+#include <QApplication>
+#include <QCoreApplication>
 #include <QFile>
+#include <QLineEdit>
+#include <QMessageBox>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -85,6 +93,37 @@ ScaleState stateOfScaleZero()
 	return state;
 }
 
+template <typename Widget>
+Widget* accessibleChild(QWidget* parent, const QString& name)
+{
+	for (Widget* child : parent->findChildren<Widget*>())
+	{
+		if (child->accessibleName() == name) { return child; }
+	}
+	return nullptr;
+}
+
+QPushButton* applyScaleButton(QWidget* parent)
+{
+	for (QPushButton* button : parent->findChildren<QPushButton*>())
+	{
+		if (button->text() == QStringLiteral("Apply scale changes")) { return button; }
+	}
+	return nullptr;
+}
+
+void dismissValidationMessage(bool* dismissed)
+{
+	QTimer::singleShot(0, qApp, [dismissed] {
+		auto* message = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+		if (message != nullptr)
+		{
+			*dismissed = true;
+			message->accept();
+		}
+	});
+}
+
 } // namespace
 
 class MicrotunerScaleFileTest : public QObject
@@ -103,7 +142,7 @@ private slots:
 
 	void cleanupTestCase()
 	{
-		Engine::destroy();
+		if (Engine::getSong() != nullptr) { Engine::destroy(); }
 	}
 
 	void anEmptyScaleFileIsRefused()
@@ -142,6 +181,41 @@ private slots:
 		QCOMPARE(stateOfScaleZero(), before);
 	}
 
+	void manualApplyRejectsInvalidIntervals()
+	{
+		QLineEdit* name = accessibleChild<QLineEdit>(m_config, QStringLiteral("Scale description"));
+		QPlainTextEdit* intervals = accessibleChild<QPlainTextEdit>(m_config, QStringLiteral("Scale intervals"));
+		QPushButton* apply = applyScaleButton(m_config);
+		QVERIFY(name != nullptr);
+		QVERIFY(intervals != nullptr);
+		QVERIFY(apply != nullptr);
+
+		for (const QString& invalid : {QStringLiteral("abc"), QStringLiteral("1000000.0")})
+		{
+			Song* song = Engine::getSong();
+			QVERIFY(song != nullptr);
+			const auto previousScale = song->getScale(0);
+			const auto previousSessionScale = SessionTuning::instance()->scale();
+			const ScaleState before = stateOfScaleZero();
+
+			name->setText(QStringLiteral("invalid manual scale"));
+			intervals->setPlainText(invalid);
+			bool dismissed = false;
+			dismissValidationMessage(&dismissed);
+			apply->click();
+			QCoreApplication::processEvents();
+			const bool unchanged = stateOfScaleZero() == before;
+
+			// Keep the next case independent when running against a build without the guard.
+			song->setScale(0, std::const_pointer_cast<Scale>(previousScale));
+			SessionTuning::instance()->feedScale(previousSessionScale, before.description);
+			m_config->updateScaleForm();
+
+			QVERIFY2(dismissed, "invalid manual input did not open the scale validation message");
+			QVERIFY2(unchanged, "invalid manual input changed the Song scale or session scale");
+		}
+	}
+
 	void aValidScaleFileStillLoads()
 	{
 		QTemporaryDir dir;
@@ -161,6 +235,32 @@ private slots:
 		QCOMPARE(scale->getIntervals().size(), std::size_t{4});
 		QVERIFY(SessionTuning::instance()->scale() != nullptr);
 		QCOMPARE(SessionTuning::instance()->scale()->getDescription(), QStringLiteral("JI three"));
+	}
+
+	void zLoadingScaleWithoutSongReportsFailureAndPreservesForm()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("ji3.scl"));
+		QVERIFY(writeScl(path, {QStringLiteral("JI three"), QStringLiteral("3"),
+			QStringLiteral("100.0"), QStringLiteral("200.0"), QStringLiteral("300.0")}));
+
+		QLineEdit* name = accessibleChild<QLineEdit>(m_config, QStringLiteral("Scale description"));
+		QPlainTextEdit* intervals = accessibleChild<QPlainTextEdit>(m_config, QStringLiteral("Scale intervals"));
+		QVERIFY(name != nullptr);
+		QVERIFY(intervals != nullptr);
+		const QString previousName = name->text();
+		const QString previousIntervals = intervals->toPlainText();
+		Engine::destroy();
+		QVERIFY(Engine::getSong() == nullptr);
+
+		QString error;
+		const bool loaded = m_config->loadScaleFile(path, &error);
+		const bool formPreserved = name->text() == previousName && intervals->toPlainText() == previousIntervals;
+
+		QVERIFY2(!loaded, "a scale was applied without an active Song");
+		QVERIFY2(!error.isEmpty(), "the failed application carried no reason");
+		QVERIFY2(formPreserved, "the failed application replaced the scale form");
 	}
 
 private:
