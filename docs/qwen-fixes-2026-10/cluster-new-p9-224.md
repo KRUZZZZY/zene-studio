@@ -106,7 +106,10 @@ Registration: the change adds no new file, so `tests/fork-sources.txt`, `tests/a
 
 Answers to the four open questions:
 
-1. **RED/GREEN with the product change reverted and restored** - yes. Reverted: `test-4b-unfixed.log`, EXIT=8, three duplicate-name cases fail. Restored: `test-4b-fixed.log`, EXIT=0, 14/14 (the table above has the commands).
+1. **RED/GREEN with the product change reverted and restored** - yes, with these exit codes:
+   - `git diff -- src/core/LinkedModelGroups.cpp > fix.patch` EXIT=0, then `git apply -R fix.patch` EXIT=0, then `cmake --build build --target AutomatableModelTest -j2` EXIT=0, then `ctest -R '^AutomatableModelTest$' --output-on-failure` **EXIT=8** (three duplicate-name cases fail; `test-4b-unfixed.log`).
+   - `git apply fix.patch` EXIT=0, rebuild EXIT=0, `ctest` **EXIT=0** (14/14; `test-4b-fixed.log`).
+   - The first RED run (`test-red-2.log`, original code) also gives EXIT=8 with the same three failures.
 2. **Deterministic** - yes. No clock, sleep, thread or race. The inputs are `FloatModel` objects with fixed values. Destruction is synchronous: `destroyed` is connected `Qt::DirectConnection`, so the `unique_ptr::reset()` call that destroys a model runs the handler before the next line. The only log check is `QTest::ignoreMessage` with an exact regex.
 3. **Fix at the cause, complete** - the cause is that `addModel` accepted a name it could not store and that the erase paths ignored which model owned the name. Callers and siblings checked: `Lv2Proc.cpp:852` is the only `addModel` caller, and `createPorts` runs once per `Lv2Proc` (`Lv2Proc.cpp:213`), so the same name is never added twice on a legitimate path. `removeControl` callers are `LinkedModelGroupViews.cpp:102` (removable controls only). The sibling `LinkedModelGroupView::addControl` (`LinkedModelGroupViews.cpp:115`) keeps the same silent duplicate drop; it is listed as residual above, not fixed.
 4. **No collateral damage** - a model under a unique name follows the same path as before, so project save and load are unchanged (`saveValues` and `loadValues` iterate the same map with the same keys). A refused duplicate was never in the map before the fix, so save output is unchanged for it too. There is no limit or size check, only the name-collision refusal, and its only caller never produces a collision in a legitimate project.
