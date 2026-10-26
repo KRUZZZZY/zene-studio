@@ -122,10 +122,8 @@ void LocalZynAddSubFx::setSampleRate( int sampleRate )
 
 void LocalZynAddSubFx::setBufferSize( int bufferSize )
 {
-	// A period has at least one frame. A non-positive size is refused and the last valid
-	// one stays in force: the synth divides by its buffer size when it starts a note, so
-	// a zero there would put infinities into the voices, and a negative transport size
-	// would silence every period.
+	// Period sizes must be positive: zero makes the synth divide by zero when creating a
+	// voice, and negative sizes violate the transport and synth block-size invariants.
 	if (bufferSize < 1) { return; }
 
 	m_transportSize = bufferSize;
