@@ -436,18 +436,17 @@ private slots:
 			{QStringLiteral("out"), dir.filePath(QStringLiteral("own.png"))}});
 		QVERIFY2(drawn.ok, qPrintable(drawn.errorMessage));
 		QVERIFY(!QImage(dir.filePath(QStringLiteral("own.png"))).isNull());
-		// A symbolic link and a hard link name the same file: a link is written through, so it must be refused.
+		// On POSIX, a symbolic link and a hard link name the same file, so both must be refused.
+		// QFile::link creates a Windows .lnk shortcut rather than a filesystem symbolic link.
+	#ifndef _WIN32
 		const QString alias = dir.filePath(QStringLiteral("alias.wav"));
 		QFile::remove(alias);
-		if (!QFile(source).link(alias)) { QSKIP("this platform does not let the test create a symbolic link"); }
+		QVERIFY2(QFile(source).link(alias), "could not create a symbolic link for the test");
 		QVERIFY2(refusedOver(alias), "a symbolic link to the source");
-#ifndef _WIN32
 		const QString hard = dir.filePath(QStringLiteral("hard.wav"));
 		QFile::remove(hard);
-		if (::link(QFile::encodeName(source).constData(), QFile::encodeName(hard).constData()) != 0)
-		{
-			QSKIP("this file system does not let the test create a hard link");
-		}
+		QVERIFY2(::link(QFile::encodeName(source).constData(), QFile::encodeName(hard).constData()) == 0,
+			"could not create a hard link for the test");
 		QVERIFY2(refusedOver(hard), "a hard link to the source");  // a second name for the same inode
 #endif
 	}
