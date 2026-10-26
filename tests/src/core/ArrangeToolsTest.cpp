@@ -208,6 +208,31 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	void switchingTrackVersionTrimsTheName()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		track->createClip(TimePos(0))->setName(QStringLiteral("old bass"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+		track->deleteClips();
+		track->createClip(TimePos(192))->setName(QStringLiteral("new bass"));
+
+		const ControlResult switched = run(QStringLiteral("track.version_switch"),
+			{{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A ")}});
+		QVERIFY2(switched.ok, qPrintable(switched.errorMessage));
+		QCOMPARE(TrackVersions::instance().of(track->id()).active, QStringLiteral("A"));
+		QCOMPARE(track->getClips().size(), std::size_t{1});
+		QCOMPARE(track->getClips().front()->name(), QStringLiteral("old bass"));
+
+		const TrackVersions::Set state = TrackVersions::instance().of(track->id());
+		const QString currentClips = TrackVersions::clipsOf(track);
+		QCOMPARE(run(QStringLiteral("track.version_switch"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("missing ")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(TrackVersions::instance().of(track->id()).active, state.active);
+		QCOMPARE(TrackVersions::clipsOf(track), currentClips);
+	}
+
 	void replacingTrackVersionKeepsModelGuardThroughClipRestore()
 	{
 		// The audio thread takes the same change mutex the guard takes, so the
@@ -301,6 +326,30 @@ private slots:
 		QVERIFY(TrackVersions::instance().of(track->id()).clips.contains(QStringLiteral("A")));
 		QCOMPARE(run(QStringLiteral("track.version_remove"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("C")}}).errorKind,
 			ControlErrorKind::NotFound);
+	}
+
+	void removingTrackVersionTrimsTheName()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		const QString id = control::trackIdOf(track);
+		track->createClip(TimePos(0))->setName(QStringLiteral("current"));
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+		const QString clipsBefore = TrackVersions::clipsOf(track);
+
+		const ControlResult removed = run(QStringLiteral("track.version_remove"),
+			{{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B ")}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		QVERIFY(!TrackVersions::instance().of(track->id()).clips.contains(QStringLiteral("B")));
+		QVERIFY(TrackVersions::instance().of(track->id()).clips.contains(QStringLiteral("A")));
+		QVERIFY(TrackVersions::instance().of(track->id()).active.isEmpty());
+		QCOMPARE(TrackVersions::clipsOf(track), clipsBefore);
+
+		const TrackVersions::Set state = TrackVersions::instance().of(track->id());
+		QCOMPARE(run(QStringLiteral("track.version_remove"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("  ")}}).errorKind,
+			ControlErrorKind::NotFound);
+		QCOMPARE(TrackVersions::instance().of(track->id()).clips, state.clips);
+		QCOMPARE(TrackVersions::clipsOf(track), clipsBefore);
 	}
 
 	void sectionsAreSpansWithUndo()
