@@ -127,7 +127,7 @@ void divideSSE(const float* input, const float* divisor, float* output, unsigned
 
 #if SFIZZ_HAVE_SSE2
     const auto* lastAligned = prevAligned<ByteAlignment>(sentinel);
-    while (unaligned<ByteAlignment>(input, output) && output < lastAligned)
+    while (unaligned<ByteAlignment>(input, divisor, output) && output < lastAligned)
         *output++ = (*input++) / (*divisor++);
 
     while (output < lastAligned) {
@@ -146,7 +146,7 @@ void multiplyAddSSE(const float* gain, const float* input, float* output, unsign
 
 #if SFIZZ_HAVE_SSE2
     const auto* lastAligned = prevAligned<ByteAlignment>(sentinel);
-    while (unaligned<ByteAlignment>(input, output) && output < lastAligned)
+    while (unaligned<ByteAlignment>(input, gain, output) && output < lastAligned)
         *output++ += (*gain++) * (*input++);
 
     while (output < lastAligned) {
@@ -189,7 +189,7 @@ void multiplyMulSSE(const float* gain, const float* input, float* output, unsign
 
 #if SFIZZ_HAVE_SSE2
     const auto* lastAligned = prevAligned<ByteAlignment>(sentinel);
-    while (unaligned<ByteAlignment>(input, output) && output < lastAligned)
+    while (unaligned<ByteAlignment>(input, gain, output) && output < lastAligned)
         *output++ *= (*gain++) * (*input++);
 
     while (output < lastAligned) {

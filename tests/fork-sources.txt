@@ -2927,6 +2927,7 @@ tests/src/plugins/HistoricalBufferResizeTest.cpp
 # cluster new-p21-188: sfizz HistoricalBuffer empty-average regression.
 tests/src/plugins/HistoricalBufferEmptyTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+tests/src/plugins/SfzSimdHelperAlignmentTest.cpp
 tests/src/plugins/SfzTestSupport.h
 # cluster new-p21-182: the sfizz AVX gain kernel advances per-sample gains across vector blocks.
 tests/src/plugins/SfzSimdGainAVXTest.cpp
