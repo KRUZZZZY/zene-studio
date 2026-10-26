@@ -1,83 +1,91 @@
-FALSE-POSITIVE (the stated mechanism does not reproduce on this build; one latent Debug-only assert remains, not fixed - see Residual)
+FIXED
 
-# Cluster new-p15-259 - LAME initialisation failure "used as a valid encoder"
+# Cluster new-p15-259 - LAME initialisation failure reaches the null encoder handle
 
-Finding: `src/core/audio/AudioFileMP3.cpp:~95` - "`lame_init()` can return null, but the code immediately
-passes `m_lame` to setter and ID3 functions; a setter dereferences the null handle instead of reporting
-initialization failure."
+Finding: `src/core/audio/AudioFileMP3.cpp` - "`lame_init()` can return null, but the code passes `m_lame` to
+LAME functions regardless; a failed initialisation must be reported, not used."
 
-## Verdict and why
+This supersedes the earlier FALSE-POSITIVE verdict (`c4f54333c`), which was wrong. The LAME setters are
+null-safe in the installed LAME 4.0 (`logs/probe-lame-null-1.log`), but that is not the defect. The defect is in the
+cleanup path: `ProjectRenderer` deletes a rejected device (`src/core/ProjectRenderer.cpp:185-187`), and the
+device's destructor then flushed the null handle (`AudioFileMP3.cpp` destructor -> `flushRemainingBuffers()`),
+calling `lame_encode_flush(NULL)`, which answers -3. The flush's `assert (bytesWritten >= 0)`
+(`AudioFileMP3.cpp:122`) rejects that in a debug build, and in every build the -3 went on as a byte count to
+`writeData()`.
 
-The finding's mechanism is wrong on this build, and its proposed behaviour (fail initialisation cleanly)
-already holds:
+## Fix (current code)
 
-1. **"A setter dereferences the null handle" is false for the installed LAME (4.0).** Probed with a NULL
-   handle: every setter used on the path returns -1 without touching memory; `id3tag_init(NULL)` and
-   `id3tag_set_comment(NULL, ...)` return; `lame_init_params(NULL)` returns -1; `lame_encode_flush(NULL, ...)`
-   and `lame_encode_buffer_interleaved_ieee_float(NULL, ...)` return -3; `lame_close(NULL)` returns 0.
-   Evidence: `logs/probe-lame-null-1.log` (program source was a scratch file in `$TMPDIR`, not committed).
-2. **The failure is already reported.** `initEncoder()` returns `lame_init_params(m_lame) != -1`
-   (`src/core/audio/AudioFileMP3.cpp:148`), so a NULL handle gives `successful == false`.
-   `ProjectRenderer` then deletes the device and never uses it (`src/core/ProjectRenderer.cpp:180-187`).
-   The export path therefore never writes or finishes a device whose encoder did not start.
-3. **Behaviour of such a device when it is destroyed (what the test measured).** The destructor calls
-   `flushRemainingBuffers()` (`src/core/audio/AudioFileMP3.cpp:52-54`), which calls `lame_encode_flush(NULL)`
-   (-3), and `writeData(buf, -3)` (`src/core/audio/AudioFileMP3.cpp:104-111`, `src/core/audio/AudioFileDevice.cpp:84-91`).
-   The RED run below checked this path on the unfixed code: the write into the device returned false,
-   `finishEncoding()` returned false, `hasWriteError()` was true, and the file stayed at 0 bytes.
-   No crash, no bytes written, and the failure is recorded.
+- `src/core/audio/AudioFileMP3.cpp:154-158` `initEncoder()`: returns false straight after `lame_init()` returns null,
+  before any setter, ID3 or flush call.
+- `:60-65` `writeBuffer()`: a device with no encoder records a write error and returns false.
+- `:108-113` `flushRemainingBuffers()`: no encoder means no tail; it records a write error and makes no LAME call.
+  The destructor and `finishEncoding()` both go through this, so a rejected device reports failure.
+- `:178-185` `tearDownEncoder()`: closes only a live handle.
 
-## Residual (latent, not fixed here)
+Callers and siblings checked: the only construction path is `&AudioFileMP3::getInst`
+(`src/core/ProjectRenderer.cpp:134`); the only consumer of a rejected device is `src/core/ProjectRenderer.cpp:185-187`
+(deleted, never used). `writeBuffer`, `flushRemainingBuffers` and `tearDownEncoder` are the only places that
+call LAME after construction.
 
-`src/core/audio/AudioFileMP3.cpp:105` is `assert (bytesWritten >= 0);`. In a build without `NDEBUG`, the flush
-of a NULL handle (-3, probe above) would make that assert abort during the destructor of a device whose
-`lame_init()` returned null. This is reachable only if LAME cannot allocate its state (out of memory).
-The build tree here is `RelWithDebInfo` (`build/CMakeCache.txt:59`, flags `-DNDEBUG` at line 94), so the
-assert is compiled out and this could not be reproduced. A regression test for it cannot fail in this build,
-so I did not make a change that cannot be shown to fix anything. Suggested follow-up: a null-handle guard in
-`flushRemainingBuffers()`/`writeBuffer()`, verified in a Debug build.
+Not changed, recorded as residual: when `lame_init()` succeeds but `lame_init_params()` fails (`AudioFileMP3.cpp:175`), the handle
+stays live and the destructor still flushes it as before. I did not reproduce that failure with valid settings
+(a parameter probe in this session crashed and was not resolved), and it is outside the blocking points of this
+round. It is worth a follow-up.
 
-## Evidence (file:line, current HEAD)
+## Commits (on `bugs/qwen-new-p15-259`)
 
-- `src/core/audio/AudioFileMP3.cpp:131` `m_lame = lame_init();` - no null check (the finding's point, true).
-- `src/core/audio/AudioFileMP3.cpp:135-146` setters and ID3 calls on `m_lame` - null-safe in LAME 4.0 (probe).
-- `src/core/audio/AudioFileMP3.cpp:148` `return lame_init_params(m_lame) != -1;` - the failure is reported.
-- `src/core/ProjectRenderer.cpp:130-134` the encoder is `&AudioFileMP3::getInst`; `:180-187` a device with
-  `successful == false` is deleted and discarded.
-- `include/AudioFileMP3.h`, `src/core/audio/AudioFileMP3.cpp:52-56,96-112` destructor and flush path (above).
+- `3d3f371b1` test(cluster new-p15-259): the regression, the test seams, and the registration. RED state.
+- `a7530be9a` fix(cluster new-p15-259): the null-handle guards. GREEN state.
+- this commit: the report.
 
-## Regression test (RED), and why it does not prove a defect
+The QA commits `1167a6034` and `1971284ed` are not reachable from this branch (no ref contains them), so they were not
+cherry-picked. I used them as a reference for the design (guard placement, the one-shot seam, the flush counter), but
+the code, the test and the manifests here are written again on `c4f54333c`.
 
-A test was written first to drive the NULL-encoder path through a test seam (`LMMS_TESTING` static flag making
-`initEncoder()` skip `lame_init()`): `tests/src/core/AudioFileMP3InitTest.cpp` (a copy is at
-`logs/red-test-AudioFileMP3InitTest.cpp`). Its checks: `successful` false; `writeBuffer` false; `finishEncoding()`
-false; `hasWriteError()` true; file size 0 after destruction.
+## Regression test
 
-It PASSED on the unfixed code, so it is not a regression proof for any defect, and the seam, the test and the
-CMake registration were reverted. Nothing from the test is committed. Per the procedure, a not-real finding
-does not get a fix.
+`tests/src/core/AudioFileMP3InitTest.cpp`, registered in `tests/CMakeLists.txt` under `LMMS_HAVE_MP3LAME` (with
+`QT_QPA_PLATFORM=offscreen`), in `tests/fork-sources.txt`, and in `tests/all-sources.txt`; the inherited files it
+touches are noted in `tests/upstream-modifications.txt`.
 
-## Commands run (EXIT codes are the ones shown)
+Deterministic, with no timing or races: `AudioFileMP3::failNextLameInitForTest()` (one-shot, `LMMS_TESTING` only)
+makes the next `lame_init()` return null; `AudioFileMP3::flushCallsForTest()` counts `lame_encode_flush()` calls.
+Frame counts are fixed.
 
-Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p15-259.r1/logs`
+Test matrix:
+1. `normalEncoderFlushesItsTailOnce` - normal stereo path: device accepted, writes, finishes, exactly one flush,
+   non-empty file.
+2. `rejectedDeviceIsDestroyedWithoutTouchingLame` - the `ProjectRenderer` path: a rejected device is destroyed with no
+   LAME flush and no bytes written.
+3. `rejectedDeviceReportsItsFailureWithoutTouchingLame` - a rejected device refuses writes, `finishEncoding()` is
+   false, `hasWriteError()` is true, and no flush reaches LAME.
+4. Audio-thread constraints: not applicable (export and control thread only).
+5. Platform: the test is built only where LAME is enabled, as with the Ogg test.
 
-| # | Command (from worktree) | EXIT | Log |
-|---|---|---|---|
-| 1 | `cmake --build build --target AudioFileMP3InitTest -j4` | 2 | `build-1-red.log` ("No rule to make target": tree not yet regenerated for the new test) |
-| 2 | `cmake --build build --target cmake_check_build_system` | 0 | (regeneration; output not kept) |
-| 3 | `cmake --build build --target AudioFileMP3InitTest -j4` | 2 | `build-2-red.log` (ccache could not create its temp file under the sandbox path; environment, not code) |
-| 4 | `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/ccache-bunny/tmp-new-p15-259 cmake --build build --target AudioFileMP3InitTest -j4` | 0 | `build-3-red.log` (built; ccache temp dir changed by environment only) |
-| 5 | `cd build/tests && ctest -R AudioFileMP3InitTest --output-on-failure` | 0 | `test-1-red.log` (1/1 executed, passed on UNFIXED code) |
-| 6 | probe of LAME with a NULL handle (`$TMPDIR/lamecheck/probe`, linked `-lmp3lame`) | 0 | `probe-lame-null-1.log` |
+## Evidence (EXIT codes; logs in `logs/` under the round-2 run folder, `new-p15-259.r2`)
 
-No product file is committed; the only commit is this report.
+| # | Command (from the worktree unless noted) | EXIT | Result | Log |
+|---|---|---|---|---|
+| 1 | `cmake --build build --target cmake_check_build_system` | 0 | build tree regenerated | `build-0-regen.log` |
+| 2 | `cmake --build build --target AudioFileMP3InitTest -j4` (unguarded, seams only) | 0 | built | `build-1-red-unguarded.log` |
+| 3 | `cd build/tests && ctest -R AudioFileMP3InitTest --output-on-failure` (unguarded) | 8 | RED: 2 failed; flush delta 1, expected 0 | `test-1-red-unguarded.log` |
+| 4 | same, after rebuilding the committed RED state (`3d3f371b1`) | 8 | RED confirmed on the committed source | `test-3-red-commitA.log` |
+| 5 | `cmake --build build --target AudioFileMP3InitTest -j4` (guards in, `a7530be9a`) | 0 | built | `build-2-green.log` |
+| 6 | `cd build/tests && ctest -R AudioFileMP3InitTest --output-on-failure` (guards in) | 0 | GREEN: 1/1 executed, passed | `test-2-green.log` |
+| 7 | `git diff HEAD~1 HEAD -- src/core/audio/AudioFileMP3.cpp > fix.patch && git apply -R fix.patch`, rebuild, ctest | 8 | RED with the guards reversed: the same 2 failures | `test-4-red-reversed.log` |
+| 8 | `git apply fix.patch`, rebuild, ctest | 0 | GREEN restored | `test-5-restored.log` |
+| 9 | `cd build/tests && ./AudioFileMP3InitTest` (guards in) | 0 | 5 passed, 0 failed (incl. init/cleanup) | `test-6-binary-green.log` |
+| 10 | `cmake --build build --target zene -j4` | 0 | `zene` built against this HEAD | `build-7-zene-final.log` |
 
-## Gates (step 5) - what ran and what could not
+Affected test family: `AudioFileMP3InitTest`, 1 ctest test executed (`100% tests passed ... out of 1`) in row 6.
+Build environment: `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/ccache-bunny/tmp-new-p15-259` was set for the builds (see
+Environment notes).
 
-`feature_check.py` could not run as shipped in this lane: it creates its log folder at
-`<worktree>/../<name>-feature-check` (`qwen/feature_check.py:70-71`), outside the write-jail, and its ratchet
-baseline for the merge-base needs a git worktree inside `zene-cachyos`, also outside it. I did not work around
-that. Instead I ran each of its checks with the same commands, from the worktree, logging to
+### Gates (step 5)
+
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` as shipped: EXIT 1 with
+`PermissionError` at its log folder `<worktree>-feature-check` (`logs/gate-feature-r2-asis.log`), outside the
+write-jail. I did not work around that. I ran each of its checks with the same commands from the worktree, logs in
 `logs/feature-check/`:
 
 | Check | Command | EXIT |
@@ -88,42 +96,43 @@ that. Instead I ran each of its checks with the same commands, from the worktree
 | check-namespace | `tests/scripted/check-namespace` | 0 |
 | no-tautology | `bash tests/no-tautology-gate.sh` | 0 |
 | doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
-| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 (7 train-wide items, none in a changed file) |
-| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 (22 train-wide items, none in a changed file) |
+| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 |
+| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 |
 
-The ratchets are red on the train on purpose. The gate only fails on items in files this branch changed, and
-this commit changes only `docs/qwen-fixes-2026-10/cluster-new-p15-259.md`, so no ratchet item can be "new in
-your files". The red items listed are in `src/wasm/WasmSandbox.cpp`, `src/core/DawProjectReadTracks.cpp`,
-`plugins/Vst3Effect/Vst3Host.cpp`, `src/core/TakeLane.cpp` and test files, none of them touched here
-(`logs/feature-check/complexity.log`, `logs/feature-check/file-length.log`).
-
-Affected-family test count: `AudioFileMP3InitTest` 1 executed (`test-1-red.log`), passed on the unfixed code.
-There is no GREEN run because there is no fix.
+The two ratchets are red on the train on purpose, and they fail only on items in files this branch changed. Their
+output has 7 (complexity) and 22 (file-length) items, none of which names `AudioFileMP3`, `AudioFileMP3InitTest`, or any
+other changed file (`rg` over both logs returns nothing for them). The changed files are:
+`include/AudioFileMP3.h`, `src/core/audio/AudioFileMP3.cpp`, `tests/CMakeLists.txt`, `tests/all-sources.txt`,
+`tests/fork-sources.txt`, `tests/src/core/AudioFileMP3InitTest.cpp`, `tests/upstream-modifications.txt`, and this report.
+Result: no ratchet item is new in a changed file. I could not compute the baseline comparison itself, because that
+needs a worktree inside `zene-cachyos`, outside the jail.
 
 ## Self-check
 
-- **Regression test FAILS with the product change reverted and PASSES with it.** Not met, and that is the
-  finding. There is no product change, because the claim does not reproduce. The one test written
-  (`logs/red-test-AudioFileMP3InitTest.cpp`) passed on the unfixed code (`test-1-red.log`, EXIT 0, 1/1), so it
-  was reverted with its seam and CMake registration. Nothing from it is committed.
-- **Deterministic: no timing, sleeps or races.** The reverted test used a static `LMMS_TESTING` flag to make
-  `lame_init()` return null for the next device, with fixed frame counts and no timing. It is not committed.
-- **Fix at the cause; every caller and sibling checked.** No fix. Callers: the only construction path is
-  `&AudioFileMP3::getInst` in `src/core/ProjectRenderer.cpp:130-134`, and the only consumer of a failed device is
-  `src/core/ProjectRenderer.cpp:180-187` (deleted, never used). The destructor path is
-  `src/core/audio/AudioFileMP3.cpp:52-56,96-112`.
-- **No collateral damage.** No product code changed. Existing MP3 export behaviour is untouched, and the normal
-  path (stereo encoder starts, encodes, finishes, non-empty file) was exercised by the reverted test's first
-  case before revert.
-- **FALSE-POSITIVE evidence (file:line / contract).** Set out above: the setter claim is false for LAME 4.0
-  (`logs/probe-lame-null-1.log`), the failure is reported at `src/core/audio/AudioFileMP3.cpp:148`, and the
-  device is discarded at `src/core/ProjectRenderer.cpp:180-187`. The residual Debug-only assert
-  (`src/core/audio/AudioFileMP3.cpp:105`) is recorded above as latent and not reproduced here.
+- **The regression test FAILS with the fix reverted and PASSES with it.** Yes. Reversed guards: ctest exit 8, with
+  `rejectedDeviceIsDestroyedWithoutTouchingLame` and `rejectedDeviceReportsItsFailureWithoutTouchingLame` failing on
+  `flushCallsForTest() - flushesBefore`, Actual 1, Expected 0 (`test-4-red-reversed.log`, rows 7-8). Restored: exit 0
+  (`test-5-restored.log`, `test-6-binary-green.log`).
+- **Deterministic.** The injected failure is a one-shot flag set by the test before construction; the flush
+  count is read as a delta from a counter. No sleeps, timing, threads or races. The seams compile only under
+  `LMMS_TESTING`, which only the test targets and `lmmsobjs` in a testing build define.
+- **Fix at the cause; callers and siblings checked.** See the Fix section: the single construction path, the single
+  consumer (`ProjectRenderer.cpp:185-187`), and the three LAME call sites after construction. Residual: the
+  `lame_init_params()` failure path with a live handle (`AudioFileMP3.cpp:175`), not changed, not reproduced.
+- **No collateral damage.** A normal stereo export is unchanged: the normal-path test flushes once and writes a
+  non-empty file. No file format, saved data or control command changed. The guards are control-thread code, not
+  audio-thread code. Nothing is logged or allocated on any audio path.
+- **FIXED evidence (file:line).** `src/core/audio/AudioFileMP3.cpp:122` (the unguarded flush and its assert),
+  `:154-158` (the init guard), `:108-113` (the flush guard), `src/core/ProjectRenderer.cpp:185-187` (the rejected device
+  is deleted), `:134` (the factory).
 
-## Environment notes (affect reproduction, not the verdict)
+## Environment notes
 
-- The first build attempts failed inside ccache (`Permission denied` for its temp file under the sandbox
-  path). The retry used `CCACHE_TEMPDIR` inside the ccache directory (an environment setting for that one
-  command, no config change).
-- The build tree was regenerated with `cmake --build build --target cmake_check_build_system`, because the
-  wrapper refuses an explicit `cmake -S/-B` configure.
+- The first build attempt failed in ccache (`Permission denied` for its temp file under the sandbox path). The builds
+  used `CCACHE_TEMPDIR` inside the ccache directory (set for those commands only; no config change).
+- The build tree was regenerated with `cmake --build build --target cmake_check_build_system`; the wrapper refuses an
+  explicit `cmake -S/-B`.
+- The Debug-only assertion at `AudioFileMP3.cpp:122` was not run: the tree here is RelWithDebInfo (`NDEBUG`), and no
+  Debug build exists. The regression signal is the LAME flush call count, which is the call that assertion guards.
+- A parameter probe of LAME's `lame_init_params()` crashed in this session (exit 139) and was not resolved, so the
+  residual above is recorded as unverified rather than as a finding.
