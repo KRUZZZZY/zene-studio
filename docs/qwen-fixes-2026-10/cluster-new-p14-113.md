@@ -52,4 +52,19 @@ The two items it reports are CLI refusal-text checks (`--channels takes`, `--cha
 
 ## Self-check
 
-Completion check and its answers are recorded below after the run.
+Completion check run: `python3 …/submit_check.py <worktree> new-p14-113` → `submit-check-1.log`, EXIT=1.
+
+| Item | Result |
+|---|---|
+| commits on the branch | PASS (`6cfdc5f57`) |
+| working tree clean | PASS |
+| report present | PASS |
+| tests added or changed | PASS (`tests/src/core/HardwareIoTest.cpp`) |
+| **gates (feature_check.py)** | **FAIL, environmental.** `submit_check.py` runs `feature_check.py` unmodified, which must create `<worktree>/../<name>-feature-check`, outside the write-jail: `PermissionError`. This is the same blocker as `feature-check-1.log`. The gate logic itself passed from the scratch copy with only the log path changed: `feature-check-3.log`, EXIT=0, `RESULT: PASS`. Needs the check to run outside the jail, or a log directory allowed in it. |
+
+Answers to the `?` items:
+
+1. **The regression fails with the change reverted and passes with it.** RED: `test-hwio-red.log`, EXIT=8, `FAIL! … sample(0, 256, master) == 0.f` at `HardwareIoTest.cpp(214)`. GREEN: `test-hwio-green2.log`, EXIT=0; `test-final2-hwio-verbose.log` shows 38 of 38 passing. The same cycle held in `SurroundTest` before the move (`test-prove-red.log` EXIT=8, `test-prove-green.log` EXIT=0).
+2. **Deterministic.** No clock, sleep, thread or engine period. The test builds a local `HardwareOutputBus`, initialises it to 256 frames, writes constant planes (0.5 on channel 0, 0.25 on channel 1), sets the master off the outputs, swaps, and reads at frames 255 and 256.
+3. **Fix at the cause; callers and siblings checked.** Frame bound added to both read methods (`src/core/HardwareOutputBus.cpp:91`, `:101`), matching the storage `init()` allocates (`:32-37`). Callers: the device feed (`src/core/AudioEngine.cpp:2154`) reads frames below `m_framesPerPeriod`, the bus's own size (`:537`), so the in-range path is unchanged. `monoSample` has no production caller. Siblings `add()` and `addPlane()` already clamp to `m_frames` (`:57`, `:76`). No other reader of the planes exists.
+4. **No collateral damage.** The bound only changes results for frames outside `[0, frames())`, which no current caller produces. In-range reads are asserted unchanged (`sample(0, 255)` and `monoSample(255)` both return 0.5 in the test). `HardwareIoTest` (38), `SurroundExportTest`, `SurroundPannerTest` and `ControlHardwareIo` pass. The one red in the family, `ControlRenderSurround`, fails identically with the fix reverted (`test-baseline-controlrendersurround.log`, EXIT=8), so it is pre-existing and was not edited. No limit, saved format or control command was added; the realtime path gained two integer comparisons and nothing else.
