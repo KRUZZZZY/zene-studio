@@ -67,7 +67,7 @@ No build and no ctest were run: nothing in the product tree changed, so there is
 - **Realtime / undo / commands (DoD 5):** not applicable, no product change and no command added.
 - **Gates (DoD 6):** rows 3-10 above, all pass under the wrapper's rule; the wrapper itself could not run (row 2, permission denied on the parent directory).
 - **Anything the gates cannot see:** the audio-thread rule and the write-jail. `createClip` runs on the UI thread (the handler is run through `runOnUiThread`, `src/core/ControlRegistry.cpp:296`), so no realtime path is involved.
-- **Open:** the completion check (`submit_check.py`) result is recorded in the next commit message and summary, not here, because it runs after this commit.
+- **Completion check (`submit_check.py`):** run twice (`submit-check-1.log`, `submit-check-2.log`). Every row passes except `gates (feature_check.py)`, which fails only because the wrapper cannot write its logs outside the write-jail (see the unresolved note below). The ASK items are answered in this section.
 
 ### Answers to the completion-check ASK items (verdict is a not-real claim, so no product change)
 
