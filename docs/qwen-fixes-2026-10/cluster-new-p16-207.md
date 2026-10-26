@@ -25,7 +25,7 @@ No behaviour changes for valid indices. For an out-of-range index the removed si
 
 ## Regression test
 
-`tests/src/tracks/SampleClipWarpTest.cpp`, slot `aSingleClipIndexTheTrackDoesNotHoldCreatesNothing` (line 654). Matrix:
+`tests/src/tracks/SampleClipWarpTest.cpp`, slot `aSingleClipIndexTheTrackDoesNotHoldCreatesNothing` (line 655). Matrix:
 - an index one past the end (`1`) and a far one (`7`) both return `false` (`!pastEnd`, `!farPast`);
 - `numOfClips()` stays `1` after both (no clip is built);
 - the two out-of-range calls allocate nothing (`test::tlAllocationCount == 0`, via the existing `AllocationProbe`).
