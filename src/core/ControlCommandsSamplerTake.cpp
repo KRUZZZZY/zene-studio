@@ -311,6 +311,12 @@ ControlResult land(const QJsonObject& args)
 	if (!landTarget(recorder, &track, &instrument, &error)) { return error; }
 	const QString path = takePathOf(args, &error);
 	if (path.isEmpty()) { return error; }
+	if (QFileInfo::exists(path))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the take path %1 already exists: choose a new file; nothing was overwritten and the take stays in hand")
+				.arg(path));
+	}
 	const std::shared_ptr<const SampleBuffer> take = recorder.takeFinished();
 	if (take == nullptr || take->size() == 0)
 	{
@@ -408,9 +414,9 @@ void registerLand(ControlRegistry& registry)
 	cmd.id = QStringLiteral("record.sampler_capture_land");
 	cmd.group = QStringLiteral("record");
 	cmd.verb = QStringLiteral("sampler_capture_land");
-	cmd.description = QStringLiteral("Land a finished sampler take: write it as a 24-bit stereo WAV ('file', "
-		"absolute; a new take in the user's Recordings folder when left out) and load it into the device it "
-		"was recorded for, through the instrument's own loader - AudioFileProcessor shows and plays it, "
+	cmd.description = QStringLiteral("Land a finished sampler take as a 24-bit stereo WAV. Optional 'file' must be "
+		"an absolute path that does not exist; without it, a new take is saved in the user's Recordings folder. "
+		"Load it into the device it was recorded for through the instrument's own loader - AudioFileProcessor shows and plays it, "
 		"SlicerT recalculates its slices. Refused until record.sampler_capture_status says done. One undo "
 		"step: it restores the device's previous sample and settings; the WAV stays on disk.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("file"), stringProperty()}});

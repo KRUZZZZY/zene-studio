@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-25T23:29:51Z",
+  "captured_at": "2026-10-26T00:22:23Z",
   "commands": [
     {
       "args_schema": {
@@ -24442,7 +24442,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Land a finished sampler take: write it as a 24-bit stereo WAV ('file', absolute; a new take in the user's Recordings folder when left out) and load it into the device it was recorded for, through the instrument's own loader - AudioFileProcessor shows and plays it, SlicerT recalculates its slices. Refused until record.sampler_capture_status says done. One undo step: it restores the device's previous sample and settings; the WAV stays on disk.",
+      "description": "Land a finished sampler take as a 24-bit stereo WAV. Optional 'file' must be an absolute path that does not exist; without it, a new take is saved in the user's Recordings folder. Load it into the device it was recorded for through the instrument's own loader - AudioFileProcessor shows and plays it, SlicerT recalculates its slices. Refused until record.sampler_capture_status says done. One undo step: it restores the device's previous sample and settings; the WAV stays on disk.",
       "group": "record",
       "id": "record.sampler_capture_land",
       "mutating": true,
@@ -36457,7 +36457,7 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-156-cf3618e61a/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-wk95d1kj/zene.sock",
+    "source_socket": "/tmp/zctl-run-lyb4eba3/zene.sock",
     "version": "0.4.0-alpha.4776+cf3618e"
   },
   "kind": "zene-control-command-list",

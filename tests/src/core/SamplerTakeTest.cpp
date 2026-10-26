@@ -40,6 +40,7 @@
 
 #include <QDomDocument>
 #include <QDomElement>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
 #include <QTemporaryDir>
@@ -280,6 +281,20 @@ private slots:
 		// A relative landing path is refused without consuming the take.
 		QCOMPARE(run(QStringLiteral("record.sampler_capture_land"), {{QStringLiteral("file"), QStringLiteral("relative.wav")}}).errorKind,
 			ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("record.sampler_capture_status")).result.value(QStringLiteral("state")).toString(),
+			QStringLiteral("done"));
+		const QString occupiedPath = m_dir.filePath(QStringLiteral("existing.wav"));
+		{
+			QFile existing(occupiedPath);
+			QVERIFY(existing.open(QIODevice::WriteOnly));
+			QVERIFY(existing.write(QByteArrayLiteral("keep")) == 4);
+		}
+		const ControlResult occupied = run(QStringLiteral("record.sampler_capture_land"),
+			{{QStringLiteral("file"), occupiedPath}});
+		QCOMPARE(occupied.errorKind, ControlErrorKind::Refused);
+		QFile existing(occupiedPath);
+		QVERIFY(existing.open(QIODevice::ReadOnly));
+		QCOMPARE(existing.readAll(), QByteArrayLiteral("keep"));
 		QCOMPARE(run(QStringLiteral("record.sampler_capture_status")).result.value(QStringLiteral("state")).toString(),
 			QStringLiteral("done"));
 
