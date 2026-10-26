@@ -169,17 +169,16 @@ void learnNote(const QJsonObject& action, const LaunchNote& note)
 		if (!same) { list.append(old); }
 	}
 	list.append(binding);
-	// Q050-217.1: one control has one meaning. A note just bound to launch keeps no command binding - on its
-	// own channel or on any channel, since either would answer the same press - and that removal is part of
-	// THIS edit: one undo step puts both stores back, one redo writes both.
+	// Q050-217.1: the learned launcher takes this channel's command binding over; a wildcard command
+	// remains available on the other channels. The removal is part of THIS edit: one undo step puts both
+	// stores back, one redo writes both.
 	QJsonArray commands;
 	for (const QJsonValue& value : LaunchBindings::commandBindings())
 	{
 		const QJsonObject old = value.toObject();
 		const bool control = old.value(QStringLiteral("trigger")).toString() == QLatin1String("cc");
 		const int channel = old.value(QStringLiteral("channel")).toInt(-1);
-		const bool same = !control && old.value(QStringLiteral("key")).toInt() == note.key
-			&& (channel < 0 || channel == note.channel);
+		const bool same = !control && old.value(QStringLiteral("key")).toInt() == note.key && channel == note.channel;
 		if (!same) { commands.append(old); }
 	}
 	const QJsonArray before = LaunchBindings::bindings();

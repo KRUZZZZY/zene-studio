@@ -471,11 +471,19 @@ private slots:
 		bindings->processInEvent(noteOff(0, 60));
 		bindings->drainPending();
 
-		// Learning a note still works, and takes that note off the command bindings in the same edit.
-		QVERIFY(run(QStringLiteral("session.bind_command"), noteBinding(64, 0, QStringLiteral("miditest.count"))).ok);
+		// Learning an exact-channel launcher binding takes over only that channel. The wildcard
+		// command remains available on the other channels, just as it does with session.bind.
+		QVERIFY(run(QStringLiteral("session.bind_command"), noteBinding(64, -1, QStringLiteral("miditest.count"))).ok);
 		QVERIFY(run(QStringLiteral("session.bind_learn"), {{QStringLiteral("action"), QStringLiteral("stop_all")}}).ok);
 		bindings->applyNote(LaunchNote{0, 64, true});
 		QVERIFY(storedNote(64, 0).isEmpty());
+		QVERIFY(!storedNote(64, -1).isEmpty());
+		Counter::reset();
+		bindings->processInEvent(noteOn(1, 64, 100));
+		bindings->drainPending();
+		QCOMPARE(Counter::count(), 1);
+		bindings->processInEvent(noteOff(1, 64));
+		bindings->drainPending();
 		QVERIFY(run(QStringLiteral("session.unbind"), {{QStringLiteral("key"), 64}, {QStringLiteral("channel"), 0}}).ok);
 	}
 
