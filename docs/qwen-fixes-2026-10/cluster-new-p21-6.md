@@ -110,4 +110,41 @@ It is not caused by this change.
 
 ## Self-check
 
-(filled in after the completion check)
+Completion check: `python3 .../submit_check.py <worktree> new-p21-6`, log `submit-check-1.log`, exit 1.
+Five items PASS (commits, clean tree, this report, test added, registration). One item FAILS: the gates row. Its cause
+is the lane's write-jail, not a gate result (see G below). Each "?" item:
+
+1. **Regression FAILS with the fix reverted, PASSES with it.** RED: `test-red-1.log` (exit 8, SIGSEGV in
+   `armQueryWithNoSong...`) and `test-red-2-resolve.log` (exit 139, SIGSEGV in `resolveTrackWithNoSong...`). GREEN:
+   `test-green-1.log` (exit 0) and `test-green-2-binary.log` (exit 0, 5 passed). The 4b cycle with the reverted fix:
+   `test-4b-revert-1.log` (exit 8, regression SEGFAULT) and, after re-applying it, `test-4b-fix-1.log` (regression PASS).
+
+2. **Deterministic, no timing.** No sleeps, clocks or threads. The song-less state comes from `Engine::destroy()`, which
+   nulls `Engine::s_song` and `s_audioEngine` (`src/core/Engine.cpp:106-123`, `include/Engine.h:134-137`). Nothing is
+   randomized. `dropEngine()` destroys only while the song is alive, so reruns and cleanup are safe.
+
+3. **At the cause and complete.** Callers of `trackRouteOf`: `setArm` (`ArrangementState.cpp:251`) and
+   `trackRecordArmed` (`:444`), whose callers are `TrackOperationsWidget.cpp:140,148,216` and
+   `ControlCommandsLowLatency.cpp:99`. Nothing else calls it. `trackRouteOf` now returns `-1` only when there is
+   no song, which is the case its contract covers. `resolveTrack` has 83 call sites. Its change alters behaviour only
+   when there is no song, where it used to crash. The sampled sites handle `nullptr` plus `error` already:
+   `ControlCommandsRange.cpp:144` and `:421` and `ControlCommandsArrangeTools.cpp:261`. Unguarded song reads that were
+   not part of the finding are listed under "Siblings not changed".
+
+4. **No collateral damage.** No project, file format or load path is touched. No limit or check was added. The only new
+   behaviour is in the no-song state, where the old code crashed.
+
+5. **Verdict not ALREADY-FIXED or FALSE-POSITIVE.** The verdict is FIXED. Its reach is stated above: the defect is real
+   as code and latent in practice.
+
+6. **Sibling commands.** The named `arrangement.*` rows are reversibility-table entries
+   (`ControlReversibilityTable{Customisation,Arranger,Passive,Devices}.cpp`). None calls `trackRouteOf` or
+   `resolveTrack`, so they are not affected. `arrangement.get_state` is the only one whose handler lives in a changed
+   file (`ControlCommandsArrangementState.cpp:80,102`). It still reads `Engine::getSong()` directly, as before, and does
+   not call the changed functions. It stays as it was, as a sibling outside this finding.
+
+**G. Gates row (FAIL in submit_check).** `submit_check` runs the original `feature_check.py`, which creates
+`<worktree>-feature-check` next to the worktree. That is outside the write-jail, so it stops at
+`PermissionError` (`gates-original-1.log`, exit 1, nothing evaluated). The same gate code, with only the log folder
+redirected (`gates-2.log`, exit 0, eight rows PASS, `RESULT: PASS`), passes. I did not change the gate. Clearing the
+row needs a run of the original script from a place where that log folder can be created.
