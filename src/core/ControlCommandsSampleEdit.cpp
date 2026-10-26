@@ -28,9 +28,10 @@
 // second clip shares is untouched (decision §2.1: no operator writes sample
 // data in place, and no inverse machinery is built for one - the Clip's own
 // ProjectJournal checkpoint IS the inverse, the same true-inverse set_gain
-// already runs on). Socket-only in this release: no widget, menu, toolbar,
-// dock or dialog reaches these ids; placement stays an open owner decision
-// for the UI phase (docs/KNOWN-LIMITATIONS.md carries the same sentence).
+// already runs on). A sample clip's Process menu reaches all four (Normalize,
+// Amplify, Reverse, Fade), each through its command form, and the same ids stay
+// on the control socket and through MCP; placing them anywhere else stays an
+// open owner decision for the UI phase (docs/KNOWN-LIMITATIONS.md).
 
 #include <memory>
 #include <vector>
@@ -160,8 +161,9 @@ void registerSampleAmplify(ControlRegistry& registry)
 		"as a transformed COPY - the previous buffer is never modified, so a second clip "
 		"sharing it keeps its audio, and one control.undo re-loads the previous source. No "
 		"limiter is applied (the float pipeline keeps values past 0 dBFS); sample.normalize "
-		"is the peak-targeted bake and clip.set_gain the non-baking alternative. Socket-only "
-		"in this release (docs/KNOWN-LIMITATIONS.md).");
+		"is the peak-targeted bake and clip.set_gain the non-baking alternative. A sample "
+		"clip's Process menu offers it as Amplify..., and agents reach the same command on "
+		"the control socket and through MCP (docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{
 			{QStringLiteral("clip"), stringProperty()},
@@ -209,7 +211,7 @@ void registerSampleNormalize(ControlRegistry& registry)
 		"is applied to every frame, and the result replaces the source through "
 		"SampleClip::setSampleBuffer as a transformed COPY. A silent source is REFUSED with "
 		"the measured peak - there is no scale factor to apply - and one control.undo "
-		"re-loads the previous source. Socket-only in this release "
+		"re-loads the previous source. A sample clip's Process menu offers it as Normalize... "
 		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{
@@ -271,8 +273,8 @@ void registerSampleReverse(ControlRegistry& registry)
 		"order is reversed, both channels together, and the result replaces the source "
 		"through SampleClip::setSampleBuffer as a transformed COPY - the previous buffer is "
 		"never modified and one control.undo re-loads it, so the command is its own "
-		"documented inverse rather than a flag to toggle. Socket-only in this release "
-		"(docs/KNOWN-LIMITATIONS.md).");
+		"documented inverse rather than a flag to toggle. A sample clip's Process menu offers "
+		"it as Reverse (docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("clip"), stringProperty()}},
 		{QStringLiteral("clip")});
@@ -308,7 +310,8 @@ void registerSampleFade(ControlRegistry& registry)
 		"SampleClip::setSampleBuffer as a transformed COPY and one control.undo re-loads the "
 		"previous source. This release has no range/selection model, so a fade always spans "
 		"the whole clip source and has only the linear curve; clip.set_fade remains the "
-		"non-baking window fade. Socket-only (docs/KNOWN-LIMITATIONS.md).");
+		"non-baking window fade. A sample clip's Process menu offers it as Fade, in or out "
+		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{
 			{QStringLiteral("clip"), stringProperty()},

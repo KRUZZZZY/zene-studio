@@ -195,7 +195,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// sample.* group over SampleClip's non-destructive model - the generator,
 	// then the four bakers - each its own translation unit. No compile-time
 	// switch: the DSP is in-tree arithmetic, so the ids are honest in every
-	// configuration; no interface reaches them yet (docs/KNOWN-LIMITATIONS.md).
+	// configuration. The interface reaches them too: a sample track's More menu
+	// runs the generator as Insert Test Signal..., and a sample clip's Process
+	// menu runs the bakers (docs/KNOWN-LIMITATIONS.md).
 	registerSampleCommands(registry);
 	registerSampleEditCommands(registry);
 	registerNoteCommands(registry);

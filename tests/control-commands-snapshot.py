@@ -450,17 +450,87 @@ def snapshot_missing_report(why):
     return 1
 
 
-def verdict(problems, absent, extra, excused, admitted, coverage_problems, committed):
+#: Q050-343: the route the snapshot must document is the SAMPLE TRACK's More menu,
+#: where the same registered id is offered as this label. The snapshot is what the
+#: bridge serves with no instance running, so a stale description here is what an
+#: agent reads before it opens the DAW - the ids can all match and this still be
+#: wrong, which is why the description needs its own assertion.
+SAMPLE_GENERATE_ID = "sample.generate"
+SAMPLE_GENERATE_MENU_LABEL = "Insert Test Signal..."
+SAMPLE_GENERATE_MENU = "More"
+
+
+def _sample_generate_entry(modules, committed_ids):
+    """(entry, problems): the snapshot's sample.generate entry, or why it cannot be read."""
+    if SAMPLE_GENERATE_ID not in committed_ids:
+        return None, ["%s is not in the committed snapshot's id set" % SAMPLE_GENERATE_ID]
+    bundle = modules.registry.load_bundle(str(SNAPSHOT)) or {}
+    entry = {str(item.get("id") or ""): item
+             for item in bundle.get("commands") or []}.get(SAMPLE_GENERATE_ID)
+    if entry is None:
+        return None, ["the committed snapshot carries no %s entry to read a description from"
+                      % SAMPLE_GENERATE_ID]
+    return entry, []
+
+
+def _help_text_problems(entry):
+    """(problems): the route claims this description must carry and must not carry."""
+    help_text = str(entry.get("description") or "")
+    print("snapshot help     %s: %d character(s)" % (SAMPLE_GENERATE_ID, len(help_text)))
+    lowered = help_text.lower()
+    wanted = [
+        (SAMPLE_GENERATE_MENU_LABEL in help_text,
+         "the snapshot's %s description does not name its menu entry %r"
+         % (SAMPLE_GENERATE_ID, SAMPLE_GENERATE_MENU_LABEL)),
+        (SAMPLE_GENERATE_MENU in help_text,
+         "the snapshot's %s description does not name the sample track's %s menu"
+         % (SAMPLE_GENERATE_ID, SAMPLE_GENERATE_MENU)),
+        (entry.get("id") == SAMPLE_GENERATE_ID,
+         "the snapshot entry read as %s carries id %r"
+         % (SAMPLE_GENERATE_ID, entry.get("id"))),
+    ]
+    problems = [why for ok, why in wanted if not ok]
+    for stale in ("socket-only", "no interface reaches"):
+        if stale in lowered:
+            problems.append("the snapshot's %s description still says %r"
+                            % (SAMPLE_GENERATE_ID, stale))
+    return problems
+
+
+def snapshot_help_problems(modules, committed_ids):
+    """(problems) for the ONE description this check pins, read from the committed snapshot.
+
+    `compare` proves the id SETS agree; it says nothing about the text. `sample.generate`
+    carried a "Socket-only / no interface reaches this verb" claim while a sample track's
+    More menu already offered it, so this reads the committed snapshot the bridge serves
+    and requires the route and the registered id in the same entry.
+    """
+    entry, problems = _sample_generate_entry(modules, committed_ids)
+    if entry is None:
+        return problems
+    problems += _help_text_problems(entry)
+    if not problems:
+        print("PASS: the snapshot's %s entry documents its track-menu route (%s > %s)"
+              % (SAMPLE_GENERATE_ID, SAMPLE_GENERATE_MENU, SAMPLE_GENERATE_MENU_LABEL))
+    return problems
+
+
+def _report_findings(items, printer):
+    """Print one finding group and its own failure banner; the group's size."""
+    for item in items or []:
+        print("  - %s" % item)
+    if items:
+        printer(len(items))
+    return len(items or [])
+
+
+def verdict(problems, absent, extra, excused, admitted, coverage_problems, committed,
+            help_problems=()):
     """Print both halves' findings and return the exit code."""
-    for item in problems:
-        print("  - %s" % item)
-    if problems:
-        print_failure(len(problems), len(absent) + len(extra))
-    for item in coverage_problems or []:
-        print("  - %s" % item)
-    if coverage_problems:
-        print_coverage_failure(len(coverage_problems))
-    if problems or coverage_problems:
+    findings = _report_findings(problems, lambda n: print_failure(n, len(absent) + len(extra)))
+    findings += _report_findings(coverage_problems, print_coverage_failure)
+    findings += _report_findings(help_problems, print_help_failure)
+    if findings:
         return 1
     print("PASS: the committed offline snapshot and this binary register the SAME %d command "
           "id(s)%s" % (len(committed) - len(excused),
@@ -470,6 +540,17 @@ def verdict(problems, absent, extra, excused, admitted, coverage_problems, commi
     print("PASS: the bridge exposes a tool for EVERY one of them, live, offline, and with a "
           "stale cache planted")
     return 0
+
+
+def print_help_failure(findings):
+    print("FAIL: the committed snapshot's sample.generate help does not describe the route "
+          "this binary offers (%d finding(s))." % findings)
+    print("      `compare` above proves the ID SETS agree; the description is what a reader "
+          "sees")
+    print("      before any instance is running, so a stale route claim survives an id match.")
+    print("      The fix is the source description in src/core/ControlCommandsSample.cpp, then "
+          "regenerate:")
+    print("        %s" % FIX)
 
 
 def main(argv):
@@ -488,7 +569,9 @@ def main(argv):
     problems, absent, extra, excused, admitted = compare(
         live, committed, options.compiled_out, options.compiled_in)
     print_diff(absent, extra, excused, admitted)
-    return verdict(problems, absent, extra, excused, admitted, coverage_problems, committed)
+    help_problems = snapshot_help_problems(modules, committed)
+    return verdict(problems, absent, extra, excused, admitted, coverage_problems, committed,
+                   help_problems)
 
 
 if __name__ == "__main__":

@@ -146,6 +146,32 @@ private slots:
 		QVERIFY(sawPing);
 	}
 
+	//! Q050-343: sample.generate's help names BOTH routes - the command surface an
+	//! agent uses and the sample track's More menu, where the same registered id is
+	//! offered as Insert Test Signal... - and rejects the stale "Socket-only / no
+	//! interface reaches this verb" claim the description carried while the menu
+	//! action already existed. A description is what `control.commands_list`, the
+	//! MCP tool text and the CommandForm's about line all show, so this is the one
+	//! place the route can drift.
+	void sampleGenerateHelpNamesItsTrackMenuRoute()
+	{
+		const ControlCommand* command =
+			ControlRegistry::instance()->command(QStringLiteral("sample.generate"));
+		QVERIFY(command != nullptr);
+		const QString help = command->description;
+		QVERIFY2(help.contains(QStringLiteral("Insert Test Signal...")) &&
+			help.contains(QStringLiteral("More")) && help.contains(QStringLiteral("sample track")),
+			qPrintable(QStringLiteral("sample.generate does not name its menu route: %1").arg(help)));
+		QVERIFY2(help.contains(QStringLiteral("control socket")) && help.contains(QStringLiteral("MCP")),
+			qPrintable(QStringLiteral("sample.generate dropped its command-surface route: %1").arg(help)));
+		QVERIFY2(!help.contains(QStringLiteral("Socket-only"), Qt::CaseInsensitive) &&
+			!help.contains(QStringLiteral("no interface reaches")),
+			qPrintable(QStringLiteral("sample.generate still denies an interface: %1").arg(help)));
+		QVERIFY2(help.contains(QStringLiteral("NEW audio clip")),
+			qPrintable(QStringLiteral("sample.generate stopped describing the generated clip: %1").arg(help)));
+		QCOMPARE(command->id, QStringLiteral("sample.generate"));  // the id the snapshot carries
+	}
+
 	//! An unknown command id is the typed not_found error, never an empty success.
 	void unknownCommandIsNotFound()
 	{
