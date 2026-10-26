@@ -92,6 +92,35 @@ QJsonObject setState(const TrackContainer::VisibilitySet& set, const QString& ac
 	return state;
 }
 
+//! Whether an existing definition names a track that a replayable save cannot resolve.
+bool containsStaleTrack(TrackContainer* song, const std::vector<int>& ids)
+{
+	return std::any_of(ids.begin(), ids.end(), [song](int id) {
+		return song->findTrackById(id) == nullptr;
+	});
+}
+
+struct SaveSetInverse
+{
+	QString operation;
+	QJsonObject arguments;
+};
+
+//! Choose a replayable command for the prior definition, or the recorded undo when it has stale IDs.
+SaveSetInverse saveSetInverse(const QString& name, bool existed, bool hasStaleTrack,
+	const std::vector<int>& previousIds)
+{
+	if (!existed)
+	{
+		return {QStringLiteral("track.visibility_set_remove"),
+			QJsonObject{{QStringLiteral("name"), name}}};
+	}
+	if (hasStaleTrack) { return {QStringLiteral("control.undo"), QJsonObject{}}; }
+	return {QStringLiteral("track.visibility_set_save"),
+		QJsonObject{{QStringLiteral("name"), name},
+			{QStringLiteral("tracks"), idList(previousIds)}}};
+}
+
 // ---------------------------------------------------------------------------
 // track.visibility_set_save
 // ---------------------------------------------------------------------------
@@ -128,6 +157,8 @@ ControlResult saveSet(const QJsonObject& args)
 	const TrackContainer::VisibilitySet* previous = song->findVisibilitySet(name);
 	const bool existed = previous != nullptr;
 	const std::vector<int> previousIds = existed ? previous->trackIds : std::vector<int>();
+	const bool previousContainsStaleTrack = existed && containsStaleTrack(song, previousIds);
+	const SaveSetInverse inverse = saveSetInverse(name, existed, previousContainsStaleTrack, previousIds);
 
 	// SPEC A16: a set is project state the Song's journal checkpoint does not
 	// carry, so the inverse is a RECORDED ACTION - the captured definition
@@ -156,18 +187,13 @@ ControlResult saveSet(const QJsonObject& args)
 			QJsonObject{{QStringLiteral("name"), name},
 				{QStringLiteral("existed"), existed},
 				{QStringLiteral("tracks"), idList(previousIds)}},
-			existed ? QStringLiteral("track.visibility_set_save")
-				: QStringLiteral("track.visibility_set_remove"),
-			existed ? QJsonObject{{QStringLiteral("name"), name},
-					{QStringLiteral("tracks"), idList(previousIds)}}
-				: QJsonObject{{QStringLiteral("name"), name}},
+			inverse.operation,
+			inverse.arguments,
 			true,
-			QStringLiteral("action checkpoint: the recorded undo step writes the definition "
-				"captured before the write back through the same call (and removes the set "
-				"again when there was none), so one control.undo restores the named set "
-				"exactly. The inverse REPORTED here is that same restore as a command: the "
-				"capture through the same call when this save replaced a set, "
-				"track.visibility_set_remove when it created one")));
+			QStringLiteral("action checkpoint: the recorded undo step restores the definition "
+				"captured before the write, or removes the set when none existed. The reported "
+				"inverse replays the saved definition when all its ids are live; otherwise "
+				"control.undo restores stale ids without asking saveSet to resolve them")));
 	return ControlResult::success(result);
 }
 
@@ -287,6 +313,7 @@ ControlResult removeSet(const QJsonObject& args)
 	}
 	const std::vector<int> ids = previous->trackIds;
 	const bool wasActive = song->activeVisibilitySet() == name;
+	const bool inverseNeedsUndo = wasActive || containsStaleTrack(song, ids);
 	control::addUndoStep(
 		[song, name, ids, wasActive]() {
 			song->saveVisibilitySet(name, ids);
@@ -311,22 +338,20 @@ ControlResult removeSet(const QJsonObject& args)
 				{QStringLiteral("tracks"), idList(ids)}},
 			// The inverse REPORTED to clients is one they can replay. It is NOT this
 			// command: the set is already gone, so replaying it refuses on the missing
-			// name and restores nothing. Writing the captured definition back through
-			// the same call restores it - but only the definition, so a set that was the
-			// ACTIVE one (whose name the removal cleared) needs the recorded step, which
-			// restores both facts as one action.
-		wasActive ? QStringLiteral("control.undo") : QStringLiteral("track.visibility_set_save"),
-			wasActive ? QJsonObject{}
-				: QJsonObject{{QStringLiteral("name"), name},
-					{QStringLiteral("tracks"), idList(ids)}},
+			// name and restores nothing. An inactive set with live members can be
+			// restored through saveSet; stale members or an active name need the exact
+			// recorded step.
+		inverseNeedsUndo ? QStringLiteral("control.undo") : QStringLiteral("track.visibility_set_save"),
+			inverseNeedsUndo ? QJsonObject{} : QJsonObject{{QStringLiteral("name"), name},
+				{QStringLiteral("tracks"), idList(ids)}},
 			true,
 			QStringLiteral("action checkpoint: the recorded undo step writes the captured "
 				"definition back through the same call, so one control.undo restores the set "
 				"and, when it was the active one, that fact too. The tracks' own visible flags "
 				"are deliberately NOT touched in either direction: a set is a saved selection "
-				"over them. The inverse REPORTED here is that restore as a command - "
-				"track.visibility_set_save with the captured name and tracks, or control.undo "
-				"when the set was the active one, since only the step puts that fact back")));
+				"over them. The reported inverse is track.visibility_set_save when its ids are "
+				"live and the set was inactive; otherwise control.undo restores the captured "
+				"definition exactly, including stale ids or its active name")));
 	return ControlResult::success(result);
 }
 
@@ -345,8 +370,10 @@ void registerVisibilitySetSave(ControlRegistry& registry)
 		"project, so a set survives project.save / project.open.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("name"), control::stringProperty()},
-		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
-	}, {QStringLiteral("name")});
+		{QStringLiteral("tracks"), QJsonObject{
+			{QStringLiteral("type"), QStringLiteral("array")},
+			{QStringLiteral("items"), control::stringProperty()}}},
+	}, {QStringLiteral("name"), QStringLiteral("tracks")});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("tracks"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
