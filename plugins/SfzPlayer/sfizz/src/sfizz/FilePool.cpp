@@ -36,6 +36,7 @@
 #include <absl/strings/match.h>
 #include <absl/memory/memory.h>
 #include <algorithm>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <system_error>
@@ -249,7 +250,8 @@ absl::optional<sfz::FileInformation> getReaderInformation(sfz::AudioReader* read
         return {};
 
     sfz::FileInformation returnedValue;
-    returnedValue.end = static_cast<uint32_t>(reader->frames()) - 1;
+    const auto frameCount = reader->frames();
+    returnedValue.end = frameCount > 0 ? frameCount - 1 : 0;
     returnedValue.sampleRate = static_cast<double>(reader->sampleRate());
     returnedValue.numChannels = static_cast<int>(channels);
 
@@ -518,8 +520,19 @@ void sfz::FilePool::loadingJob(const QueuedFileData& data) noexcept
 
 void sfz::FilePool::clear()
 {
+    {
+        std::lock_guard<std::mutex> guard { loadingJobsMutex };
+
+        QueuedFileData queuedData;
+        while (filesToLoad->try_pop(queuedData)) {
+        }
+
+        for (auto& job : loadingJobs)
+            job.wait();
+        loadingJobs.clear();
+    }
+
     std::lock_guard<SpinMutex> guard { garbageAndLastUsedMutex };
-    emptyFileLoadingQueues();
     garbageToCollect.clear();
     lastUsedFiles.clear();
     preloadedFiles.clear();
@@ -619,9 +632,16 @@ void sfz::FilePool::setRamLoading(bool loadInRam) noexcept
         for (auto& preloadedFile : preloadedFiles) {
             fs::path file { rootDirectory / preloadedFile.first.filename() };
             AudioReaderPtr reader = createAudioReader(file, preloadedFile.first.isReverse());
+            const auto readerFrames = reader->frames();
+            const auto realFrameCount = readerFrames > 0
+                ? std::min<uint64_t>(static_cast<uint64_t>(readerFrames), std::numeric_limits<uint32_t>::max())
+                : uint64_t { 0 };
+            const auto end = preloadedFile.second.information.end;
+            const auto requestedFrameCount = end >= 0 ? static_cast<uint64_t>(end) + 1 : uint64_t { 0 };
+            const auto framesToRead = static_cast<uint32_t>(std::min(realFrameCount, requestedFrameCount));
             preloadedFile.second.preloadedData = readFromFile(
                 *reader,
-                preloadedFile.second.information.end
+                framesToRead
             );
         }
     } else {

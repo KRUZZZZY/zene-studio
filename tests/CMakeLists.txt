@@ -923,6 +923,7 @@ set(LMMS_TESTS
 	src/plugins/SfzPlayerRealtimeTest.cpp
 	# cluster new-p21-208: sfizz's shutdown leak diagnostic reports the actual residual instance count.
 	src/plugins/SfizzLeakDetectorTest.cpp
+	src/plugins/SfzFilePoolTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/SamplerTakeGuiTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
@@ -2260,6 +2261,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Q050-484: the SFZ tests load the build's sfzplayer module (sfizz) and render through it.
 	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "SfzFilePoolTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			"$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			GHC_FILESYSTEM_FWD SFIZZ_USE_SNDFILE=1 ST_AUDIO_FILE_USE_SNDFILE=1)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE
+			sfzplayer_sfizz
+			absl::strings absl::span absl::flat_hash_map absl::optional absl::memory
+			Threads::Threads SndFile::sndfile)
+		add_dependencies(${LMMS_TEST_NAME} sfzplayer_sfizz)
 	endif()
 
 	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")

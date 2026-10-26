@@ -337,6 +337,7 @@ public:
      */
     void triggerGarbageCollection() noexcept;
 private:
+    friend struct FilePoolTestAccess;
 
     absl::optional<sfz::FileInformation> checkExistingFileInformation(const FileId& fileId) noexcept;
     fs::path rootDirectory;

@@ -149,6 +149,9 @@
 # the entry list despite the recipe's exclusion; the list below is re-derived from the recipe.
 # 2026-10-25 (cluster new-p16-299): re-derived after the train-12 snapshot restored the 1148
 # vendored sfizz entries again; the recipe excludes them and the list below is its exact output.
+# 2026-10-25 (cluster new-p23-97): re-derived again from the recipe after the same 1148
+# vendored sfizz paths returned in the current snapshot; the new FilePool regression is
+# included in this whole-tree source list.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -3211,6 +3214,7 @@ tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+tests/src/plugins/SfzFilePoolTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzSimdGainAVXTest.cpp
