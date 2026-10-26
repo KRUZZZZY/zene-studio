@@ -120,13 +120,22 @@ RESULT: PASS
    refusal instead of an overwrite. The explicit `out` path is not affected by the limit or the refusal.
 6. **Portability.** Only `QDir`, `QFileInfo`, `QString` and `QStringLiteral` are used, all Qt 5.15-compatible; no
    platform guard needed.
-7. **Siblings.** `defaultAudioPath` has one caller (`extractAudio`). In `ControlCommandsVideo.cpp` the other `video.*`
-   commands (`attach`, `detach`, `set_offset`, `get_state`) do not touch the naming and are unchanged. The background
-   path takes its `wav` from `extractAudio`, so it gets the same refusal.
+7. **Siblings.** `defaultAudioPath` has one caller (`extractAudio`). The `video.*` commands in the same file, checked
+   one by one: `video.attach`, `video.detach`, `video.set_offset`, `video.get_state` and `video.window_show` (registered
+   from `src/gui/VideoWindow.cpp`) do not touch the naming and are unchanged. `video.extract_audio` is the one changed
+   command; its synchronous and background paths both take `wav` from the same place, so both get the refusal.
 8. **Residual risk (not fixed here, outside the finding's trigger).** The default name is checked when the request
    arrives, but the WAV only appears when the decode commits (`src/core/VideoAudioExtract.cpp:60`, `QSaveFile`, and
    `:115` commit). Two `video.extract_audio {background:true}` requests sent before the first finishes both get
    `<video>-audio.wav`, and the second overwrites the first's output. Fixing that needs an in-flight reservation of
    names on the main thread, which is a lifecycle change beyond this bug; recommend a follow-up cluster. The explicit `out`
    path still replaces an existing file by design (`include/VideoAudioExtract.h`, "success replaces it").
-9. **Submit check.** Run after the commit; the result is recorded in the next section.
+9. **Test determinism.** The test uses a `QTemporaryDir` and empty files; there is no clock, sleep, thread or engine
+   (`tests/src/core/VideoAudioNameTest.cpp`, the header comment and `take()`).
+10. **Submit check (`submit_check.py … new-p9-66`, `submit-1.log`, EXIT=1).** Passing: commits on the branch, clean
+   tree, report verdict, tests changed, new test registered. **Failing: the `gates (feature_check.py)` row only.** The
+   cause is the environment, not the gates: `submit_check.py` runs `feature_check.py` directly, and that script writes
+   its logs to `<projects>/zene-qwen-new-p9-66-feature-check`, outside this lane's write-jail; it dies with
+   `PermissionError` before any gate runs (`gates-1-feature-check.log`, EXIT=1). The same eight gate commands, run
+   through the log-redirected wrapper, all pass (`gates-1-feature-check.table.log`, EXIT=0). This row needs the owner
+   to run `feature_check.py` from an allowed location, or to allow that folder.
