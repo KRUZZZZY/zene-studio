@@ -5193,3 +5193,8 @@ include/TrackLabelButton.h	Q050-322: declares the header's key handler so a focu
 src/gui/tracks/TrackLabelButton.cpp	Q050-322: the track header takes focus, names itself with its track, and opens the existing TrackOperationsWidget menu from Menu/Shift+F10 or right-click; double-click still renames.
 include/TrackOperationsWidget.h	Q050-322: exposes the existing Actions menu builder for the keyboard header path.
 src/gui/tracks/TrackOperationsWidget.cpp	Q050-322: showActionsMenu() builds and pops the same menu the Actions button owns; no second menu implementation.
+tests/doc-figures-gate.py	# Spoken meters and peak watching
+tests/src/core/MeterTapTest.cpp	# Spoken meters and peak watching
+tests/src/gui/HelpAccessTest.cpp	# Spoken meters and peak watching
+tests/src/gui/MixerMeteringTest.cpp	# Spoken meters and peak watching
+tests/src/gui/ShortcutsPageTest.cpp	# Spoken meters and peak watching
