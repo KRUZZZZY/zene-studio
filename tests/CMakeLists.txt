@@ -919,6 +919,8 @@ set(LMMS_TESTS
 	# 0.5.0 Q050-484: the SFZ instrument (sfizz) - layers, round robins, key switches, state, the command and window routes.
 	src/plugins/SfzPlayerTest.cpp
 	src/plugins/SfzPlayerRealtimeTest.cpp
+	# cluster new-p21-208: sfizz's shutdown leak diagnostic reports the actual residual instance count.
+	src/plugins/SfizzLeakDetectorTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/SamplerTakeGuiTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
@@ -1694,6 +1696,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz)
+		if(MSVC)
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE /UNDEBUG)
+		else()
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE -UNDEBUG)
+		endif()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "RnnoiseDenoiserEffectTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp
@@ -1834,6 +1845,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING PLUGIN_NAME=ladspaeffect)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
 	if(LMMS_TEST_NAME STREQUAL "EqCurveTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

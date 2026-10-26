@@ -3208,6 +3208,7 @@ tests/src/plugins/RnnoiseHarnessOutputTest.cpp
 tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
+tests/src/plugins/SfizzLeakDetectorTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzSimdGainAVXTest.cpp
