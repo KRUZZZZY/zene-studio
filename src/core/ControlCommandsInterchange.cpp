@@ -241,7 +241,8 @@ void registerExportCommand(ControlRegistry& registry)
 					QStringLiteral("'path' must be an absolute path"));
 			}
 			const bool overwrite = args.value(QStringLiteral("overwrite")).toBool();
-			if (QFileInfo::exists(path) && !overwrite)
+			// A dangling link is occupied too: QFileInfo::exists is false for it, and the save would replace it.
+			if ((QFileInfo::exists(path) || QFileInfo(path).isSymLink()) && !overwrite)
 			{
 				return ControlResult::failure(ControlErrorKind::Refused,
 					QStringLiteral("%1 already exists; pass overwrite true to replace it").arg(path));
