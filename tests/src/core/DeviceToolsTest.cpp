@@ -454,6 +454,32 @@ private slots:
 		effect->deviceOptions() = DeviceOptions();
 	}
 
+	//! A legacy alias remains available when the stable key already has a newer alias.
+	void aLegacyAliasSurvivesWhenItsStableKeyIsAlreadyOccupied()
+	{
+		AliasCollisionEffect effect(nullptr);
+		DeviceOptions options;
+		const QString name = effect.m_second.displayName();
+		const QString key = parameteraliases::keysOf(&effect, {&effect.m_second}).value(0);
+		options.setAlias(name, QStringLiteral("Legacy"));
+		options.setAlias(key, QStringLiteral("Current"));
+
+		parameteraliases::adoptLegacyAliases(&effect, &options);
+		QCOMPARE(options.alias(key), QStringLiteral("Current"));
+		QCOMPARE(options.alias(name), QStringLiteral("Legacy"));
+	}
+	void aLegacyAliasSurvivesWhenItsValueCannotBeStoredUnderItsKey()
+	{
+		AliasCollisionEffect effect(nullptr);
+		DeviceOptions options;
+		const QString key = parameteraliases::keysOf(&effect, {&effect.m_second}).value(0);
+		options.setAlias(effect.m_second.displayName(), key);
+
+		parameteraliases::adoptLegacyAliases(&effect, &options);
+		QVERIFY(options.alias(key).isEmpty());
+		QCOMPARE(options.alias(effect.m_second.displayName()), key);
+	}
+
 	//! MX-097: the "#2" suffix a duplicate key gets is checked against every other parameter's
 	//! own key too, so a device that owns a port named "gain" twice AND a port named "gain#2"
 	//! still gives each parameter a key of its own.
