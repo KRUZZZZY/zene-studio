@@ -3074,3 +3074,5 @@ src/core/ControlCommandsMeterSpeech.cpp
 # 2026-10-20 (Q050-202): the shipped keyboard presets, fork-NEW.
 include/ShortcutPresets.h
 src/gui/ShortcutPresets.cpp
+# cluster new-p21-113 (2026-10): the undo coalescer forgotten-run timestamp fix and verification report.
+docs/qwen-fixes-2026-10/cluster-new-p21-113.md

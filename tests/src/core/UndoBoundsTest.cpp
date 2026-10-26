@@ -157,6 +157,38 @@ private:
 
 private slots:
 
+	void breakRunClearsLastStepTime()
+	{
+		control::UndoCoalescer coalescer;
+		QCOMPARE(coalescer.sinceLastMs(), qint64(-1));
+		coalescer.stepOpened(QStringLiteral("clip.move:clip-1"), 1);
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+
+		coalescer.breakRun();
+		QCOMPARE(coalescer.sinceLastMs(), qint64(-1));
+	}
+
+	void changingWindowClearsLastStepTime()
+	{
+		control::UndoCoalescer coalescer;
+		coalescer.stepOpened(QStringLiteral("clip.move:clip-1"), 1);
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+
+		QVERIFY(coalescer.setWindowMs(0));
+		QCOMPARE(coalescer.sinceLastMs(), qint64(-1));
+	}
+
+	void invalidWindowLeavesLastStepTimeIntact()
+	{
+		control::UndoCoalescer coalescer;
+		coalescer.stepOpened(QStringLiteral("clip.move:clip-1"), 1);
+
+		QVERIFY(!coalescer.setWindowMs(-1));
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+		QVERIFY(!coalescer.setWindowMs(control::MaxUndoCoalesceWindowMs + 1));
+		QVERIFY(coalescer.sinceLastMs() >= 0);
+	}
+
 	void initTestCase()
 	{
 		Engine::init(true);
