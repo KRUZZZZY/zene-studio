@@ -303,7 +303,7 @@ private slots:
 		QVERIFY(printed.errorMessage.contains(QStringLiteral("must be an audio clip with audio")));
 	}
 
-	//! A rendered tail is inside the replacement window and length, including after rate conversion.
+	//! A rendered tail extends a manually trimmed source window and length, including after rate conversion.
 	void aRenderedTailExtendsThePlayableWindowAndClipLength()
 	{
 		const QString amp = loadByName(ch(3), QStringLiteral("amplifier"));
@@ -319,11 +319,12 @@ private slots:
 		const auto originalBuffer = std::make_shared<SampleBuffer>(
 			std::vector<SampleFrame>(2000, SampleFrame(0.25f, 0.25f)), sourceRate);
 		clip->setSampleBuffer(originalBuffer);
-		clip->setSampleWindow(SampleWindow(200, 2000));
+		clip->setSampleWindow(SampleWindow(200, 1000));
 		const SampleWindow originalWindow = clip->sampleWindow();
 		const TimePos originalLength = clip->length();
 		constexpr double tailSeconds = 0.25;
-		const auto resampledFrames = static_cast<f_cnt_t>(2000.0 * outputRate / static_cast<double>(sourceRate));
+		const auto resampledFrames = static_cast<f_cnt_t>(static_cast<double>(originalWindow.sourceOut)
+			* outputRate / static_cast<double>(sourceRate));
 		const auto tailFrames = static_cast<f_cnt_t>(tailSeconds * outputRate);
 		const auto expectedFrames = resampledFrames + tailFrames;
 		const auto expectedSourceIn = static_cast<f_cnt_t>(200.0 * outputRate / static_cast<double>(sourceRate));

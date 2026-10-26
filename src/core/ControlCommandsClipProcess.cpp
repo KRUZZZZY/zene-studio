@@ -111,6 +111,11 @@ void extendClipLengthForTail(SampleClip& clip, std::size_t tailFrames)
 	if (processedLength.getTicks() > clip.length().getTicks()) { clip.changeLength(processedLength); }
 }
 
+std::size_t sourceFrameCountForPrint(const SampleClip& clip, bool appendTail)
+{
+	return appendTail ? static_cast<std::size_t>(clip.sampleWindow().sourceOut) : clip.sample().sampleSize();
+}
+
 ControlResult process(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -129,13 +134,14 @@ ControlResult process(const QJsonObject& args)
 	const double rate = Engine::audioEngine()->outputSampleRate();
 	const double tail = std::clamp(args.value(QStringLiteral("tail")).toDouble(0.0), 0.0, kMaxTailSeconds);
 	const auto tailFrames = static_cast<std::size_t>(tail * rate);
-	std::vector<SampleFrame> audio = prepared(clip->sample().data(), clip->sample().sampleSize(), clip->sample().sampleRate(), rate,
+	const SampleWindow window = clip->sampleWindow();
+	const auto sourceFrames = sourceFrameCountForPrint(*clip, tailFrames > 0);
+	std::vector<SampleFrame> audio = prepared(clip->sample().data(), sourceFrames, clip->sample().sampleRate(), rate,
 		tailFrames);
 	EffectChain scratch(nullptr);
 	cloneChain(*from.chain, scratch);
 	render(scratch, audio);
 	// The window the clip plays, in frames of the new source (the rate may have changed).
-	const SampleWindow window = clip->sampleWindow();
 	const double scale = rate / static_cast<double>(clip->sample().sampleRate());
 	const auto frames = static_cast<f_cnt_t>(audio.size());
 	const auto keptIn = static_cast<f_cnt_t>(std::llround(static_cast<double>(window.sourceIn) * scale));
