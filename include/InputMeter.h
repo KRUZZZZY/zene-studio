@@ -45,11 +45,13 @@ namespace inputmeter
 
 //! Audio thread: raise the held peaks with @a frames frames of @a buffer.
 LMMS_EXPORT void measure(const SampleFrame* buffer, f_cnt_t frames);
-//! The peaks held since the last take, linear; they start again from zero.
+//! The peaks held since the last take, linear; they start again from zero. A null output is not read:
+//! that side's peak stays held for the next reader.
 LMMS_EXPORT void take(float* left, float* right);
 //! The live meter's own read (InputLevelMeter.h, polled at 25 Hz): the peaks since ITS last read, linear -
 //! every period's, so a transient between two polls is not missed - from a second pair of maxima, so it
-//! never empties what meter.input takes, nor the other way round. One live reader at a time.
+//! never empties what meter.input takes, nor the other way round. One live reader at a time. A null output
+//! is not read, as for take().
 LMMS_EXPORT void live(float* left, float* right);
 
 #ifdef LMMS_TESTING

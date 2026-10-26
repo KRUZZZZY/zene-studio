@@ -92,14 +92,15 @@ void measure(const SampleFrame* buffer, f_cnt_t frames)
 
 void take(float* left, float* right)
 {
-	*left = s_left.exchange(0.f, std::memory_order_relaxed);
-	*right = s_right.exchange(0.f, std::memory_order_relaxed);
+	// A null output is a side the reader does not want: it is not read, so its peak stays held for the next reader.
+	if (left != nullptr) { *left = s_left.exchange(0.f, std::memory_order_relaxed); }
+	if (right != nullptr) { *right = s_right.exchange(0.f, std::memory_order_relaxed); }
 }
 
 void live(float* left, float* right)
 {
-	*left = s_liveLeft.exchange(0.f, std::memory_order_relaxed);
-	*right = s_liveRight.exchange(0.f, std::memory_order_relaxed);
+	if (left != nullptr) { *left = s_liveLeft.exchange(0.f, std::memory_order_relaxed); }
+	if (right != nullptr) { *right = s_liveRight.exchange(0.f, std::memory_order_relaxed); }
 }
 
 } // namespace lmms::inputmeter

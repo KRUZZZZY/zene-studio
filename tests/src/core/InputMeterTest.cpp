@@ -146,6 +146,39 @@ private slots:
 		QCOMPARE(liveRight, 0.5f);
 	}
 
+	//! A reader with a null output asks for the other side only: the null side is not read, so its peak is held
+	//!  for the next reader, and a call with both outputs null reads nothing (cluster new-p21-190).
+	void aNullOutputSkipsItsSideOfTheTake()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		inputmeter::measure(loud.data(), Frames);
+		float right = -1.f;
+		inputmeter::take(nullptr, &right);
+		QCOMPARE(right, 0.25f);
+		inputmeter::take(nullptr, nullptr);
+		float left = -1.f;
+		float rightAgain = -1.f;
+		inputmeter::take(&left, &rightAgain);
+		QCOMPARE(left, 0.5f);  // the left peak was never taken, so it is still held
+		QCOMPARE(rightAgain, 0.f);
+	}
+
+	//! The same for the live read: a null side is skipped and its peak stays for the live reader's next read.
+	void aNullOutputSkipsItsSideOfTheLiveRead()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		inputmeter::measure(loud.data(), Frames);
+		float right = -1.f;
+		inputmeter::live(nullptr, &right);
+		QCOMPARE(right, 0.25f);
+		inputmeter::live(nullptr, nullptr);
+		float left = -1.f;
+		float rightAgain = -1.f;
+		inputmeter::live(&left, &rightAgain);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(rightAgain, 0.f);
+	}
+
 	//! The audio thread's half allocates nothing (realtime rule).
 	void measuringAllocatesNothing()
 	{
