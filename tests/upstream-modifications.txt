@@ -5278,3 +5278,6 @@ src/core/Track.cpp	cluster new-p18-43: passes the known preset/project mode thro
 src/tracks/InstrumentTrack.cpp	cluster new-p18-43: forwards the preset mode to InstrumentTrackNotes.cpp while preserving the preview-mode one-argument entry point.
 tests/all-sources.txt	cluster new-p18-43 gate repair: regenerated the whole-tree source list from its published recipe; removed only the 1,148 vendored plugins/SfzPlayer/sfizz paths the recipe excludes, with no additions or threshold changes.
 src/tracks/InstrumentTrack.cpp	cluster new-p18-44: resets controller-lane lastSent on clip resume, so a muted clip restores the held value after unchanged-value sends stop treating ordinary tick advances as jumps.
+src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies and rebases each controller lane, with later clips winning duplicate ticks; beat repaint visits steps only when each button has nonzero pixel width.
+include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
+tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.

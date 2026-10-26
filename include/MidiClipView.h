@@ -67,6 +67,8 @@ public:
 	static bool canMergeSelection(QVector<ClipView*> clipvs);
 	static void mergeClips(QVector<ClipView*> clipvs);
 	static void bulkClearNotesOutOfBounds(QVector<ClipView*> clipvs);
+	//! Number of beat steps whose button images have nonzero width in the drawable area.
+	static int beatStepCountToPaint(int steps, int drawableWidth);
 
 public slots:
 	lmms::MidiClip* getMidiClip();
