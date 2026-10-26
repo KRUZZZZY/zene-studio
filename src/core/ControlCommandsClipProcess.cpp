@@ -110,7 +110,7 @@ ControlResult process(const QJsonObject& args)
 	ControlResult error;
 	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
 	auto* clip = dynamic_cast<SampleClip*>(ref.clip);
-	if (clip == nullptr || clip->sample().data() == nullptr || clip->sample().sampleSize() == 0)
+	if (clip == nullptr || clip->sample().data() == nullptr || clip->sample().sampleSize() == 0 || clip->sample().sampleRate() <= 0)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip with audio"));
 	}

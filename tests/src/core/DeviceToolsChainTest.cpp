@@ -270,6 +270,23 @@ private slots:
 		channel(3)->m_fxChain.clear();
 	}
 
+	//! A non-empty source without a positive rate is rejected before clip.process resolves or renders a chain.
+	void aClipWithNoSampleRateIsRefusedBeforeProcessing()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(std::vector<SampleFrame>(4, SampleFrame(0.25f, 0.25f)), 0));
+		const SampleFrame* const originalData = clip->sample().data();
+
+		const ControlResult printed = run(QStringLiteral("clip.process"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), ch(2)}});
+
+		QCOMPARE(printed.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(clip->sample().data() == originalData);
+		QCOMPARE(clip->sample().sampleRate(), 0);
+	}
+
 	//! WF-016: plugin.replace puts a fresh device at the replaced one's slot of the same chain, and one
 	//! control.undo brings the old one back with its settings.
 	void aDeviceIsReplacedInItsSlot()
