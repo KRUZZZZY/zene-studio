@@ -430,6 +430,55 @@ private slots:
 		QVERIFY(!std::isnan(clip->getTimeMap().value(10).getOutValue()));
 	}
 
+	/*! automation.add_point checks its value with the same two comparisons as move_point, so a NaN value passed and was
+	 *  stored as the new point. The command refuses it before it makes the automation track or clip. */
+	void addPointCommandRefusesANonFiniteValue()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		const ControlResult added = run(QStringLiteral("automation.add_point"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 10}, {QStringLiteral("value"), std::numeric_limits<double>::quiet_NaN()}}));
+		QVERIFY(!added.ok);  // refused
+		QVERIFY(control::existingAutomationClip(model) == nullptr);  // and the refusal recorded nothing
+	}
+
+	/*! automation.write_to_end holds its value from a tick to the song's end, and its value passes the same two
+	 *  comparisons, so a NaN would be held through the rest of the song. The command refuses it with the clip untouched. */
+	void writeToEndCommandRefusesANonFiniteValue()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		AutomationClip* clip = freshClip(model);
+		const auto points = clip->getTimeMap().size();  // the clip's own point at tick 0 is the baseline
+		const ControlResult wrote = run(QStringLiteral("automation.write_to_end"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 288}, {QStringLiteral("value"), std::numeric_limits<double>::quiet_NaN()}}));
+		QVERIFY(!wrote.ok);  // refused
+		QCOMPARE(clip->getTimeMap().size(), points);  // nothing was held from tick 288 on
+		QVERIFY(!clip->getTimeMap().contains(288));
+	}
+
+	/*! automation.draw_shape checks its min and max with the same two comparisons (shapeBoundsFit), so a NaN bound
+	 *  passed and drew NaN points. The command refuses it before it makes the automation track or clip. */
+	void drawShapeCommandRefusesANonFiniteBound()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		const ControlResult drawn = run(QStringLiteral("automation.draw_shape"), addressed(id, parameter,
+			{{QStringLiteral("start"), 0}, {QStringLiteral("end"), 192}, {QStringLiteral("shape"), QStringLiteral("triangle")},
+				{QStringLiteral("step"), 48}, {QStringLiteral("min"), std::numeric_limits<double>::quiet_NaN()}}));
+		QVERIFY(!drawn.ok);  // refused
+		QVERIFY(control::existingAutomationClip(model) == nullptr);  // and the refusal recorded nothing
+	}
+
 private:
 	static QString fileText(const QString& path)
 	{
