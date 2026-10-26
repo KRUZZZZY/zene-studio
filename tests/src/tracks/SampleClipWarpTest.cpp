@@ -650,23 +650,20 @@ private slots:
 	//! that index and appends it to the track - on the audio thread: an allocation, a
 	//! printf and a clip the GUI can see appear mid-play. InstrumentTrack::play checks
 	//! numOfClips() first; SampleTrack now does the same, so a stale or past-the-end
-	//! index plays nothing and creates nothing, while an index the track holds plays.
+	//! index plays nothing and creates nothing. The engine is render-only here, so the
+	//! handles a wrong pass queues are cleared on this thread (no audio thread, no wait).
 	void aSingleClipIndexTheTrackDoesNotHoldCreatesNothing()
 	{
 		SampleTrack track(Engine::getSong());
 		makeClip(track, m_rate);
 		QCOMPARE(track.numOfClips(), 1);
 
-		const bool held = track.play(TimePos(0), 1024, 0, 0);
-		drainPlayHandles(track);
-		QVERIFY(held);
-
 		test::resetAllocationCount();
 		test::tlCountAllocations = true;
 		const bool pastEnd = track.play(TimePos(0), 1024, 0, 1);
 		const bool farPast = track.play(TimePos(0), 1024, 0, 7);
 		test::tlCountAllocations = false;
-		drainPlayHandles(track);
+		Engine::audioEngine()->clearNewPlayHandles();
 
 		QVERIFY(!pastEnd);
 		QVERIFY(!farPast);
