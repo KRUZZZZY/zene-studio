@@ -71,4 +71,22 @@ finding, not this one.
 
 ## Self-check
 
-Filled in after `submit_check.py` (see below).
+Answers to the `submit_check.py` items (`LOG FOLDER/submit-check-1.log`, EXIT=1):
+
+- **Regression test fails with the change reverted / passes with it:** not applicable. There is no product change and
+  no test (`git show --stat b9637db8c` lists only this report). The finding is FALSE-POSITIVE; the reachable behaviour
+  is already the one a test would assert (typed error on allocation failure, no null dereference).
+- **Deterministic test:** not applicable (no test added).
+- **Fix at the cause, siblings consistent:** no fix made. Siblings checked: `ControlCommandsClip.cpp:463` and
+  `ArrangementEdits.cpp:75` also use `clone()` without a null check; all four overrides are `return new …`
+  (table above).
+- **No collateral damage:** no product code, save format or limit changed.
+- **FALSE-POSITIVE evidence (file:line):** `include/MidiClip.h:130-133`, `include/SampleClip.h:258-261`,
+  `include/AutomationClip.h:362-365`, `include/PatternClip.h:55-58`; exception path `src/core/ControlRegistry.cpp:315-319`
+  and `:455-458`.
+- **Gates row FAIL:** `submit_check.py` runs `feature_check.py`, which exits 1 at `feature_check.py:71`
+  (`logs.mkdir` → `PermissionError`) because it writes its logs to `<worktree>/../<name>-feature-check`, outside the
+  write-jail. That is an environment block, not a content failure. The six non-ratchet gates were run by hand from the
+  worktree and all exit 0. The two ratchet gates exit 1 only with standing train items; none is in a file this branch
+  changes, so they pass by the feature_check rule. Needs the owner or the loop to run feature_check from a location the
+  lane may write to, or to allow that log directory.
