@@ -83,3 +83,12 @@ The two ratchet gates pass the feature-check rule. That rule fails only on items
 - Realtime, undo, commands: no product change, so nothing new on the audio thread, no undo change, no control commands.
 - Registration: no new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt` are unchanged.
 - Working tree: no product or test edits remain; only this report is committed.
+
+### Answers to the completion-check items
+
+- Regression test FAILS with the product change reverted and PASSES with it: not applicable. The verdict is ALREADY-FIXED, so there is no product change to revert. The closed-file behaviour was measured instead: probe `logs/probe-2.log` (EXIT 0, `PROBE successful= false`). The existing mechanism test `aPartialOggHeaderPageRejectsTheDevice` passed on the clean build (`logs/run-clean-1.log`, EXIT 0).
+- Deterministic: no test was added. The existing test uses injected short counts (`setFirstPageWriteShortForTest`, `AudioFileOggInitTest.cpp:249`), with no timing or sleeps.
+- Fix at the cause and complete: no fix. Checked the path into the write check: `writeData` (`AudioFileDevice.cpp:84-92`) → `writePage` (`AudioFileOgg.cpp:200-213`) → constructor (`AudioFileOgg.cpp:89-94`) → caller (`ProjectRenderer.cpp:185-188`). The export path is in agreement.
+- No collateral damage: no product change, so old projects, saved data, limits and callers are untouched.
+- ALREADY-FIXED evidence: `AudioFileOgg.cpp:89-94, 200-213, 111` and `AudioFileDevice.cpp:84-92`, as cited above.
+- Gates row FAILS for environment reasons, not gate findings: `feature_check.py` raised `PermissionError` creating `<worktree>-feature-check` (outside the write-jail, `gates-1.log`), so `submit_check.py` read its exit 1 as a failed gate. The six simple gates and the two ratchets exit as listed above, and the ratchet rule is reproduced by hand. The row needs a run from an unrestricted shell.
