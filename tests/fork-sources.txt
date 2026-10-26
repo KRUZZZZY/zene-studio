@@ -1157,6 +1157,7 @@ include/TelemetryNetworkTransport.h
 include/TempoMap.h
 include/TempoMapPanel.h
 include/ToolWindowMemory.h
+include/TouchInput.h
 include/TrackFolder.h
 include/TrackFolderMenu.h
 include/TrackIcons.h
@@ -2071,6 +2072,8 @@ src/gui/TaskIndicator.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/ToolWindowMemory.cpp
+# 0.5.0 Q050-141: a finger's touch event as the mouse gesture the widget already handles.
+src/gui/TouchInput.cpp
 src/gui/TrackFolderMenu.cpp
 src/gui/TrackIcons.cpp
 src/gui/TrackPinStrip.cpp
@@ -2645,6 +2648,8 @@ tests/src/gui/RecordRemainingTest.cpp
 # cluster new-p14-48-port-port: deterministic recovery redo failure and exact undo-depth tests.
 tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
+# 2026-10-20 (cluster Q050-141): the touch-first layout's rendered targets and touch selection.
+tests/src/gui/TouchLayoutTest.cpp
 tests/src/gui/EqCurveTest.cpp
 tests/src/plugins/EqFilterTest.cpp
 tests/src/core/PluginAudioPortsTest.cpp

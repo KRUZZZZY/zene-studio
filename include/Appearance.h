@@ -42,11 +42,12 @@ namespace lmms::appearance
  *    ZENE_UI_SCALE_FILE names another) is used. QT_SCALE_FACTOR, when set, still wins;
  *  - 'palette': dark (the default), high_contrast (text 7:1 on every surface, a bright focus ring) or
  *    light (dark text on light surfaces, every pair held to AA - 0.5.0 W3 WF-118);
- *  - 'accessible' (0.5.0 UX decision, themes 17 and 23): accessible mode - larger click targets (accessibleTargetFactor),
- *    strong focus rings on every control, the high-contrast palette whatever 'palette' says, and reduced motion
- *    (no animated menus, tooltips, docks or scrolling). It replaces the W3 layout-density presets: the config
- *    keeps it in ui/density, where "accessible" is on and "standard" off, and the old values comfortable and
- *    touch still read as on.
+ *  - 'accessible' (0.5.0 UX decision, themes 17 and 23): accessible mode - the touch-first layout, with
+ *    targets at least accessibleTargetPixels square and accessibleTargetSpacing between adjacent ones
+ *    (accessibleTargetFactor), strong focus rings on every control, the high-contrast palette whatever
+ *    'palette' says, and reduced motion (no animated menus, tooltips, docks or scrolling). It replaces the W3
+ *    layout-density presets: the config keeps it in ui/density, where "accessible" is on and "standard" off,
+ *    and the old values comfortable and touch still read as on.
  *  - 'workspace' (0.5.0 L14, Q050-235): standard, or touch - the touch workspace holds the launcher's cells,
  *    scene buttons and stop buttons to at least touchTargetSide (44) Qt logical pixels at 100% zoom. It is a
  *    preference of its own: it changes no palette, motion or density, so the old 'density: "touch"' keeps meaning
@@ -62,8 +63,12 @@ struct Options
 	bool operator==(const Options&) const = default;
 };
 
-//! How much larger accessible mode's click targets and control paddings are than standard's (24 -> 32 px).
-constexpr double accessibleTargetFactor = 1.35;
+//! 0.5.0 Q050-141: the touch minimum accessible mode holds its controls to - a 44 x 44 logical-pixel
+//! target (WCAG 2.5.5's target size) with at least 8 logical pixels between adjacent targets.
+constexpr int accessibleTargetPixels = 44;
+constexpr int accessibleTargetSpacing = 8;
+//! How much larger accessible mode's click targets and control paddings are than standard's (24 -> 44 px).
+constexpr double accessibleTargetFactor = static_cast<double>(accessibleTargetPixels) / 24.0;
 
 //! The side a touch workspace's named tap targets are held to, in Qt logical pixels (WCAG 2.5.5's 44 x 44).
 constexpr int touchTargetSide = 44;

@@ -52,6 +52,7 @@
 #include "SongEditor.h"
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
+#include "DesignTokens.h"
 #include "TrackLabelButton.h"
 
 
@@ -62,7 +63,7 @@ namespace lmms::gui
 SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	TrackView( _t, tcv )
 {
-	setFixedHeight( 32 );
+	setFixedHeight(trackLaneHeight());
 
 	m_tlb = new TrackLabelButton(this, getTrackSettingsWidget());
 	m_tlb->setCheckable(true);
@@ -72,6 +73,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	m_tlb->show();
 
 	m_mixerChannelNumber = new MixerChannelLcdSpinBox(2, getTrackSettingsWidget(), tr("Mixer channel"), this);
+	if (tokens::accessibleMode()) { m_mixerChannelNumber->setMinimumSize(tokens::targetSize(), tokens::targetSize()); }
 	m_mixerChannelNumber->show();
 
 	m_volumeKnob = new VolumeKnob(KnobType::Small17, tr("VOL"), getTrackSettingsWidget(), Knob::LabelRendering::LegacyFixedFontSize, tr("Track volume"));
@@ -85,7 +87,8 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	m_panningKnob->show();
 
 	m_activityIndicator = new FadeButton(getTrackSettingsWidget());
-	m_activityIndicator->setFixedSize(8, 28);
+	m_activityIndicator->setFixedSize(tokens::accessibleMode() ? tokens::targetSize() : 8,
+		tokens::accessibleMode() ? tokens::targetSize() : 28);
 	m_activityIndicator->show();
 
 	// R2.1: the input monitor, a registry action like every other (M3.2): the button runs
@@ -93,7 +96,8 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	// change the same state through the same verb.
 	m_monitorButton = new QToolButton(getTrackSettingsWidget());
 	// 0.5.0: wide enough for its longest word (AUT) in the interface's typeface.
-	m_monitorButton->setFixedSize(34, 22);
+	m_monitorButton->setFixedSize(tokens::accessibleMode() ? tokens::targetSize() : 34,
+		tokens::accessibleMode() ? tokens::targetSize() : 22);
 	m_monitorButton->setProperty("controlCommand", QStringLiteral("track.set_monitor"));
 	m_monitorButton->setAccessibleName(tr("Input monitoring"));
 	connect(m_monitorButton, &QToolButton::clicked, this, &SampleTrackView::cycleMonitor);
@@ -105,7 +109,7 @@ SampleTrackView::SampleTrackView( SampleTrack * _t, TrackContainerView* tcv ) :
 	// 0.5.0 (docs/UI-SHELL.md §1): a gap between the header's controls, so the knobs' captions
 	// no longer run together ("VOLPAN") and the row reads as separate controls.
 	layout->setContentsMargins(0, 0, 4, 0);
-	layout->setSpacing(4);
+	layout->setSpacing(tokens::targetSpacing(4));
 	layout->addWidget(m_tlb);
 	layout->addWidget(m_mixerChannelNumber);
 	layout->addWidget(m_activityIndicator);
@@ -232,8 +236,8 @@ void SampleTrackView::dropEvent(QDropEvent *de)
 	if (type == "samplefile")
 	{
 		int trackHeadWidth = ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt()==1
-				? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT
-				: DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH;
+				? trackSettingsWidth(true) + trackOperationsWidth(true)
+				: trackSettingsWidth(false) + trackOperationsWidth(false);
 
 		const int deX = position(de).x();
 		int xPos = deX < trackHeadWidth

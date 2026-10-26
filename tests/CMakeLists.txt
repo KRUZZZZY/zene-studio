@@ -1080,6 +1080,9 @@ set(LMMS_TESTS
 	# The design tokens: every declared text/surface pair AA, the generated stylesheet AA, the
 	# velocity ramp ordered in lightness, every icon a path that paints at the screen's scale.
 	src/gui/DesignTokensTest.cpp
+	# 0.5.0 Q050-141: accessible mode is the touch-first layout (44 x 44 targets, 8 px apart), and a
+	# finger's touch event selects an arranger clip and a note and operates Play and Stop.
+	src/gui/TouchLayoutTest.cpp
 	# The 0.5.0 note editor (docs/NOTE-EDITOR.md): its geometry, folding, snapping and lane table
 	# without a display, then the editor's tools driven by mouse and keys - each gesture one
 	# command and one undo step - and note.edit's whole-batch validation.
@@ -2157,6 +2160,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
 		# Cluster new-p17-205: the Watsyn save/load regression loads the watsyn module.
 		OR LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest"
+		# 0.5.0 Q050-141: the touch-layout geometry test creates an instrument automation lane.
+		OR LMMS_TEST_NAME STREQUAL "TouchLayoutTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
 		OR LMMS_TEST_NAME STREQUAL "ClipTransposeTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
@@ -2738,6 +2743,7 @@ if(TARGET tripleoscillator)
 	# Q050-022: the lane-child tests drive a real instrument's parameter.
 	add_dependencies(AutomationLaneChildrenTest tripleoscillator)
 	add_dependencies(AutomationLaneChildGuiTest tripleoscillator)
+	add_dependencies(TouchLayoutTest tripleoscillator)
 endif()
 
 # These tests exercise the LV2 host through the plugin factory; build the
@@ -3001,6 +3007,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest LinkedClipEditsTest Li
 # from aborting.
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES

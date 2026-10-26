@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_NOTE_GRID_H
 #define LMMS_GUI_NOTE_GRID_H
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -72,7 +73,12 @@ public:
 	static constexpr double maxPixelsPerTick = 8.0;
 
 	int rowHeight() const { return m_rowHeight; }
+	//! Clamped to [minRowHeight, 64].
 	void setRowHeight(int px);
+	//! 0.5.0 Q050-141: the least a row may shrink to (6 px by default; accessible mode raises it to a touch
+	//! target plus the gap to the next row, so vertical zoom cannot shrink notes below the touch minimum).
+	int minRowHeight() const { return m_minRowHeight; }
+	void setMinRowHeight(int px) { m_minRowHeight = std::clamp(px, 6, 64); }
 
 	double scrollTicks() const { return m_scrollTicks; }
 	void setScrollTicks(double ticks);
@@ -172,6 +178,7 @@ private:
 
 	double m_pixelsPerTick = 0.25;  // 48 px per quarter note, 192 px per bar at 4/4
 	int m_rowHeight = 14;
+	int m_minRowHeight = 6;
 	double m_scrollTicks = 0.0;
 	int m_scrollY = 0;
 	int m_width = 800;

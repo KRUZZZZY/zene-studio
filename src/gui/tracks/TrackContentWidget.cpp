@@ -24,6 +24,8 @@
 
 #include "TrackContentWidget.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QMenu>
@@ -45,6 +47,7 @@
 #include "StringPairDrag.h"
 #include "TrackContainerView.h"
 #include "ClipView.h"
+#include "DesignTokens.h"
 #include "TrackView.h"
 
 namespace lmms::gui
@@ -211,9 +214,10 @@ void TrackContentWidget::removeClipView( ClipView * clipv )
  */
 void TrackContentWidget::update()
 {
+	const int clipHeight = tokens::accessibleMode() ? std::min(tokens::targetSize(), height() - 1) : height() - 1;
 	for (const auto& clipView : m_clipViews)
 	{
-		clipView->setFixedHeight(height() - 1);
+		clipView->setFixedHeight(clipHeight);
 		clipView->update();
 	}
 	QWidget::update();

@@ -64,8 +64,8 @@ QStringList localFiles(const QMimeData* mime)
 int trackHeadWidth()
 {
 	return ConfigManager::inst()->value("ui", "compacttrackbuttons").toInt() == 1
-		? DEFAULT_SETTINGS_WIDGET_WIDTH_COMPACT + TRACK_OP_WIDTH_COMPACT
-		: DEFAULT_SETTINGS_WIDGET_WIDTH + TRACK_OP_WIDTH;
+		? trackSettingsWidth(true) + trackOperationsWidth(true)
+		: trackSettingsWidth(false) + trackOperationsWidth(false);
 }
 
 } // namespace

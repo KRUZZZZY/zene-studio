@@ -38,6 +38,7 @@
 #include "NoteEditor.h"
 #include "Song.h"
 #include "TempoMap.h"
+#include "TouchInput.h"
 #include "Track.h"
 #include "WcagContrast.h"
 
@@ -69,9 +70,11 @@ QColor labelColour(const QColor& fill, const tokens::Palette& pal)
 	return a11y::contrastRatio(pal.textOnAccent, shown) >= a11y::contrastRatio(pal.text, shown) ? pal.textOnAccent : pal.text;
 }
 
-//! 0.5.0 theme 11: the narrowest a note's click target gets - the design system's, larger in accessible mode.
+//! 0.5.0 theme 11: the narrowest a note's click target gets - the design system's; in accessible mode (Q050-141)
+//! the touch minimum, 44 px.
 int minimumTarget()
 {
+	if (tokens::accessibleMode()) { return tokens::targetSize(); }
 	return static_cast<int>(std::lround(tokens::space::md * tokens::targetFactor()));
 }
 
@@ -96,6 +99,14 @@ NoteCanvas::NoteCanvas(NoteEditor* editor)
 	setFocusPolicy(Qt::StrongFocus);
 	setMouseTracking(true);
 	setAttribute(Qt::WA_OpaquePaintEvent, true);
+	// 0.5.0 Q050-141: a finger's tap selects the note under it, as a left click does. In accessible mode a
+	// row is a 44 px note target plus the 8 px gap to the next row, and vertical zoom cannot go below that.
+	touch::installSingleTouch(this);
+	if (tokens::accessibleMode())
+	{
+		m_state.grid.setMinRowHeight(tokens::targetSize() + tokens::targetSpacing(0));
+		m_state.grid.setRowHeight(m_state.grid.rowHeight());
+	}
 	a11y::announce(this, tr("Notes"),
 		tr("The clip's notes, edited as in FL Studio's piano roll. P draw, B paint, D delete, T mute, C slice, "
 			"E select, Y play, Z zoom to the selection (1 to 7 pick the tools too). A click draws, a drag on a note "
@@ -187,7 +198,21 @@ QRect NoteCanvas::rectFor(int key, int start, int end) const
 	const double x0 = m_state.grid.xOfTick(start);
 	const double x1 = m_state.grid.xOfTick(end);
 	const int w = std::max(3, static_cast<int>(x1 - x0));
-	return QRect(static_cast<int>(x0), m_state.grid.yOfKey(key) + 1, w, m_state.grid.rowHeight() - 1);
+	const int rowTop = m_state.grid.yOfKey(key);
+	if (tokens::accessibleMode())
+	{
+		// A target-high note centred in its row: the row's remaining height is the gap to the next row's note.
+		const int h = std::min(tokens::targetSize(), m_state.grid.rowHeight() - 1);
+		return QRect(static_cast<int>(x0), rowTop + (m_state.grid.rowHeight() - h) / 2, w, h);
+	}
+	return QRect(static_cast<int>(x0), rowTop + 1, w, m_state.grid.rowHeight() - 1);
+}
+
+QRect NoteCanvas::touchRect(const Note& note) const
+{
+	const QRect r = noteRect(note);
+	const int grow = minimumTarget() - r.width();
+	return grow > 0 && !r.isEmpty() ? r.adjusted(-grow / 2, 0, grow - grow / 2, 0) : r;
 }
 
 QRect NoteCanvas::noteRect(const Note& note) const
@@ -204,19 +229,24 @@ Note* NoteCanvas::noteAt(const QPoint& pos) const
 	{
 		if (noteRect(*notes[static_cast<std::size_t>(i)]).contains(pos)) { return notes[static_cast<std::size_t>(i)]; }
 	}
-	// 0.5.0 theme 11: a note narrower than the minimum target is hit anywhere in a target that wide, centred
-	// on it - only where no note is hit exactly, so a short note never takes a click from its neighbour.
-	const int minimum = minimumTarget();
+	// 0.5.0 theme 11 / Q050-141: a note narrower than the minimum target is hit anywhere in its touch target -
+	// only where no note is hit exactly, so a short note never takes a tap from its neighbour; where several
+	// targets hold the tap, the note whose centre is nearest wins.
+	Note* nearest = nullptr;
+	int nearestDistance = 0;
 	for (int i = last - 1; i >= first; --i)
 	{
-		const QRect r = noteRect(*notes[static_cast<std::size_t>(i)]);
-		const int grow = minimum - r.width();
-		if (!r.isEmpty() && grow > 0 && r.adjusted(-grow / 2, 0, grow - grow / 2, 0).contains(pos))
+		Note* note = notes[static_cast<std::size_t>(i)];
+		const QRect r = touchRect(*note);
+		if (r.isEmpty() || !r.contains(pos)) { continue; }
+		const int distance = std::abs(noteRect(*note).center().x() - pos.x());
+		if (nearest == nullptr || distance < nearestDistance)
 		{
-			return notes[static_cast<std::size_t>(i)];
+			nearest = note;
+			nearestDistance = distance;
 		}
 	}
-	return nullptr;
+	return nearest;
 }
 
 bool NoteCanvas::onResizeHandle(const Note& note, const QPoint& pos) const

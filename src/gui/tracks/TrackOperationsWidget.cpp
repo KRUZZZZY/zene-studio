@@ -24,6 +24,8 @@
 
 #include "TrackOperationsWidget.h"
 
+#include <algorithm>
+
 #include <QCheckBox>
 #include <QHBoxLayout>
 #include <QMenu>
@@ -45,6 +47,7 @@
 #include "ControlRegistry.h"
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
+#include "DesignTokens.h"
 #include "embed.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -177,6 +180,27 @@ TrackOperationsWidget::TrackOperationsWidget( TrackView * parent ) :
 		m_trackView->update();
 	});
 	operationsLayout->addWidget(m_lanesBtn);
+
+	// 0.5.0 Q050-141: in the touch-first layout every operation is a 44 px target, a touch gap
+	// apart, and the grip is wide enough to grab as well.
+	if (tokens::accessibleMode())
+	{
+		const int target = tokens::targetSize();
+		operationsLayout->setContentsMargins(0, 0, 0, 0);
+		operationsLayout->setSpacing(tokens::targetSpacing(2));
+		m_trackGrip->setFixedWidth(std::max(m_trackGrip->width(), target));
+		const QString metrics = QStringLiteral("min-width: %1px; max-width: %1px; min-height: %1px; max-height: %1px; padding: 0;")
+			.arg(target).arg(target).arg(target).arg(target);
+		for (QWidget* control : {static_cast<QWidget*>(m_trackOps), static_cast<QWidget*>(m_muteBtn),
+				static_cast<QWidget*>(m_soloBtn), static_cast<QWidget*>(m_armBtn),
+				static_cast<QWidget*>(m_lanesBtn)})
+		{
+			if (control == nullptr) { continue; }
+			// The track header's inherited 14 px button rule would otherwise shrink these targets.
+			control->setStyleSheet(metrics);
+			control->setFixedSize(target, target);
+		}
+	}
 
 	layout->addWidget(operationsWidget, 0, Qt::AlignTop | Qt::AlignLeading);
 

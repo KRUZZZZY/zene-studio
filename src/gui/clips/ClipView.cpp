@@ -46,6 +46,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "DataFile.h"
+#include "DesignTokens.h"
 #include "DeprecationHelper.h"
 #include "EditLocks.h"
 #include "Engine.h"
@@ -166,7 +167,8 @@ ClipView::ClipView( Clip * clip,
 	move( 0, 0 );
 	show();
 
-	setFixedHeight( tv->getTrackContentWidget()->height() - 1);
+	const int contentHeight = tv->getTrackContentWidget()->height() - 1;
+	setFixedHeight(tokens::accessibleMode() ? std::min(tokens::targetSize(), contentHeight) : contentHeight);
 	setAcceptDrops( true );
 	setMouseTracking( true );
 
@@ -316,8 +318,9 @@ void ClipView::updateLength()
 	else
 	{
 		// this std::max function is needed for clips that do not start or end on the beat, otherwise, they "disappear" when zooming to min 
-		// 3 is the minimum width needed to make a clip visible
-		setFixedWidth(std::max(static_cast<int>(m_clip->length() * pixelsPerBar() / TimePos::ticksPerBar() + 1), 3));
+		// 3 is the minimum width needed to make a clip visible; accessible mode makes the clip a touch target.
+		const int minimum = tokens::accessibleMode() ? tokens::targetSize() : 3;
+		setFixedWidth(std::max(static_cast<int>(m_clip->length() * pixelsPerBar() / TimePos::ticksPerBar() + 1), minimum));
 	}
 	m_trackView->trackContainerView()->update();
 }

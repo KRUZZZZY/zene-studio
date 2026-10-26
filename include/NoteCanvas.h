@@ -77,6 +77,10 @@ public:
 	Note* noteAt(const QPoint& pos) const;
 	//! The note's rectangle on screen; empty when its key is folded away.
 	QRect noteRect(const Note& note) const;
+	//! 0.5.0 Q050-141: the note's touch target - @a noteRect widened (never moved) to the design system's
+	//! minimum width, so a short note is a finger-sized target. Targets of adjacent short notes overlap;
+	//! noteAt() resolves a tap on an overlap to the note whose drawn rectangle holds it, else the nearest.
+	QRect touchRect(const Note& note) const;
 	//! The rectangle a note of @a key over [start, end) ticks would occupy.
 	QRect rectFor(int key, int start, int end) const;
 	//! Whether @a pos is on the resize handle at the right end of @a note.
