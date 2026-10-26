@@ -32,6 +32,8 @@
 
 #include <QtTest>
 
+#include <atomic>
+#include <thread>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -73,6 +75,51 @@ std::vector<float> fourChannelBlock(int frames)
 		for (int c = 0; c < 4; ++c) { block[static_cast<std::size_t>(f * 4 + c)] = static_cast<float>(c * 1000 + f); }
 	}
 	return block;
+}
+
+//! Q050-146: global frame g, channel c carries g * 4 + c (exact in a float below 2^22 frames),
+//! so a channel-2/3 sample names the capture frame it came from.
+std::vector<float> uniqueBlock(unsigned firstFrame, int frames)
+{
+	std::vector<float> block(static_cast<std::size_t>(frames) * 4);
+	for (int f = 0; f < frames; ++f)
+	{
+		for (int c = 0; c < 4; ++c)
+		{
+			block[static_cast<std::size_t>(f * 4 + c)] = static_cast<float>((firstFrame + static_cast<unsigned>(f)) * 4 + static_cast<unsigned>(c));
+		}
+	}
+	return block;
+}
+
+//! The period the engine just rendered: both views hold the same number of frames, the stereo
+//! bus is the (2, 3) pair of the wide frames, and frame 0 is capture frame \a firstFrame.
+//! Returns the number of frames compared, or -1 on the first disagreement (described in \a why).
+int comparePeriod(AudioEngine* engine, unsigned firstFrame, QString* why)
+{
+	const f_cnt_t bus = engine->inputBufferFrames();
+	const f_cnt_t wide = engine->inputWideFrames();
+	if (bus != wide)
+	{
+		*why = QStringLiteral("stereo bus holds %1 frames, wide stage %2").arg(bus).arg(wide);
+		return -1;
+	}
+	if (wide == 0) { return 0; }
+	const float* w = engine->inputWideBuffer();
+	const SampleFrame* b = engine->inputBuffer();
+	for (f_cnt_t i = 0; i < wide; ++i)
+	{
+		const float wl = w[static_cast<std::size_t>(i) * 4 + 2];
+		const float wr = w[static_cast<std::size_t>(i) * 4 + 3];
+		const float expectedLeft = static_cast<float>((firstFrame + static_cast<unsigned>(i)) * 4 + 2);
+		if (b[i][0] != wl || b[i][1] != wr || wl != expectedLeft)
+		{
+			*why = QStringLiteral("frame %1: bus (%2, %3), wide (%4, %5), expected left %6")
+				.arg(i).arg(b[i][0]).arg(b[i][1]).arg(wl).arg(wr).arg(expectedLeft);
+			return -1;
+		}
+	}
+	return static_cast<int>(wide);
 }
 
 } // namespace
@@ -240,6 +287,94 @@ private slots:
 		QCOMPARE(stage.stagedFrames(), std::size_t{64});
 		stage.drain(64);
 		QCOMPARE(stage.frames(), f_cnt_t{64});
+	}
+
+	//! Q050-146: a render period that lands BETWEEN the wide push and the stereo push of one
+	//! captured block used to take the block from the wide ring only; the stereo bus then ran one
+	//! block behind the wide channels for every consumer. The schedule below is that interleaving,
+	//! step for step what publishCaptured() does (wide push, then stereo push).
+	void aDrainBetweenTheWideAndStereoPushesKeepsBothViewsOnOneBlock()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		// Start from empty rings, as a device start does: a wide block an earlier case left
+		// staged without its stereo pair (cluster 3705's refusal case) is drained on its own.
+		engine->resetInputStream();
+		engine->renderNextPeriod();
+		engine->renderNextPeriod();  // empty both rings
+		FakeCaptureDevice device(engine);
+		device.prepare(64, 2, 3);
+		QString why;
+
+		device.publish(uniqueBlock(0, 64), 4);  // block A, whole
+		const auto b = uniqueBlock(64, 64);  // block B, published in steps
+		engine->pushInputFramesWide(b.data(), 4, 64);
+		engine->renderNextPeriod();  // the drain lands between the two pushes
+		const int midFrames = comparePeriod(engine, 0, &why);
+		QVERIFY2(midFrames >= 0, qPrintable(why));
+		QVERIFY2(midFrames == 0 || midFrames == 64, "a mid-publication period holds nothing or block A only");
+
+		std::vector<SampleFrame> pair(64);
+		for (std::size_t i = 0; i < 64; ++i) { pair[i] = SampleFrame(b[i * 4 + 2], b[i * 4 + 3]); }
+		engine->pushInputFrames(pair.data(), 64);
+		engine->renderNextPeriod();  // the next period takes the rest, from both views
+		const int rest = comparePeriod(engine, static_cast<unsigned>(midFrames), &why);
+		QVERIFY2(rest >= 0, qPrintable(why));
+		QCOMPARE(midFrames + rest, 128);  // A and B, none lost, none repeated, none one block behind
+
+		// A drain that follows a completed publication takes the block from both at once.
+		device.publish(uniqueBlock(128, 64), 4);
+		engine->renderNextPeriod();
+		QCOMPARE(comparePeriod(engine, 128, &why), 64);
+	}
+
+	//! Q050-146: the same property under a real producer thread calling publishCaptured() while
+	//! the test thread renders as fast as it can. Every period must hold the same capture frames
+	//! in both views, and the periods together must be gap-free.
+	void aRenderThreadDrainingWhileABlockIsPublishedNeverSkewsTheViews()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		engine->resetInputStream();  // empty rings, as a device start
+		engine->renderNextPeriod();
+		engine->renderNextPeriod();
+		FakeCaptureDevice device(engine);
+		device.prepare(64, 2, 3);
+		constexpr unsigned Blocks = 3000;
+		std::atomic<bool> done{false};
+		std::thread producer([&] {
+			for (unsigned k = 0; k < Blocks; ++k)
+			{
+				// Pace on the consumer so neither ring overflows: the property is alignment, not drops.
+				while (engine->inputWideFramesStaged() > 4096 || engine->inputFramesStaged() > 4096) { std::this_thread::yield(); }
+				device.publish(uniqueBlock(k * 64, 64), 4);
+			}
+			done.store(true, std::memory_order_release);
+		});
+		unsigned next = 0;
+		int bad = 0;
+		QString first;
+		bool last = false;
+		while (!last)
+		{
+			last = done.load(std::memory_order_acquire);  // read first: one more period after the producer ends
+			engine->renderNextPeriod();
+			QString why;
+			const int frames = comparePeriod(engine, next, &why);
+			if (frames < 0)
+			{
+				// Keep draining so the paced producer can finish; only the first disagreement is reported.
+				if (bad++ == 0) { first = why; }
+				next += static_cast<unsigned>(engine->inputWideFrames());
+				continue;
+			}
+			next += static_cast<unsigned>(frames);
+		}
+		producer.join();
+		engine->renderNextPeriod();
+		QString why;
+		const int tail = comparePeriod(engine, next, &why);
+		QVERIFY2(bad == 0 && tail >= 0, qPrintable(first.isEmpty() ? why : first));
+		next += static_cast<unsigned>(tail);
+		QCOMPARE(next, Blocks * 64u);
 	}
 
 	//! BUGS_FOUND 11.9: the stage's width was fixed at its 128-channel storage, so a real
