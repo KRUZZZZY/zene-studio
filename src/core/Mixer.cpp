@@ -1016,7 +1016,28 @@ void MixerChannel::doProcessing()
 	processed();
 }
 
+#ifdef LMMS_TESTING
+namespace
+{
 
+//! Test seam (cluster new-p14-29): the mixerChannel() lookups that named no channel.
+int refusedLookups = 0;
+
+} // namespace
+
+MixerChannel* Mixer::refusedLookupForTesting()
+{
+	++refusedLookups;
+	return nullptr;
+}
+
+int Mixer::takeRefusedLookupsForTesting()
+{
+	const int count = refusedLookups;
+	refusedLookups = 0;
+	return count;
+}
+#endif
 
 Mixer::Mixer() :
 	Model( nullptr ),
