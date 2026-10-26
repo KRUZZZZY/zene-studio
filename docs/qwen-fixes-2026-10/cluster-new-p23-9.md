@@ -26,4 +26,10 @@ No RED/GREEN build or ctest was run, because there is no product change and no r
 Files committed: `docs/qwen-fixes-2026-10/cluster-new-p23-9.md` only.
 
 ## Self-check
-(filled in after `submit_check.py`; see below)
+
+- **Regression test FAILS reverted / PASSES fixed (exit codes):** not applicable. The verdict is FALSE-POSITIVE, so there is no product change to revert and no test was added. The branch's only commit is `e55db2d2d`, which touches only `docs/qwen-fixes-2026-10/cluster-new-p23-9.md` (`git show --stat e55db2d2d`).
+- **Deterministic (seam or injected values):** not applicable, since no test was added.
+- **Fix at the cause and complete (every caller and sibling checked):** no fix. I checked every caller of `sendsOnFaders()`, and each guards the index before use: `ControlCommandsMixerView.cpp:140-142` (`sends >= 0`), `MixerOverlays.cpp:157-158` (`roleOf` via `faderRole`/`apply`, which handles `target < 0`), `MixerSendsBanner.cpp:80-82` (`return` on `target < 0`), `MixerModeBar.cpp:208-210` and `:265-267` (`target < 0` ternary or `target >= 0` flag before `mixerChannel(target)`).
+- **No collateral damage:** no product code changed, so saved projects and existing behaviour are unaffected.
+- **FALSE-POSITIVE evidence (file:line):** `MixerOverlays.cpp:121-129` (`sendsOnFaders()` returns only a bounded-loop index matched by id), `MixerOverlays.cpp:46` and `:132-135` (state is an id), `ControlRegistry.cpp:258` (synchronous app-thread handler). Full list in the Evidence section above.
+- **Gate status (honest):** `submit_check.py` reports the gate row as FAIL because the stock `feature_check.py` cannot create its log folder `zene-studio-program/zene-qwen-new-p23-9-feature-check` (`PermissionError`, outside the write jail; log `001-feature-check.log`). The same gate with its logs redirected to the LOG FOLDER passes (`002-feature-check.log`, EXIT=0, 0 changed files). This is an environment limit, not a result on the code. The gate was not run in its stock form.
