@@ -110,7 +110,7 @@ Commands run from the worktree root or `build/tests`. Every build sets `CCACHE_T
 | GREEN: run | `ctest -R "^MixerOrderByTracksTest$" --output-on-failure` | **0** | `test-5-green.log`: 100% passed, 1 of 1 |
 | Affected family | `ctest -R "Mixer\|PdcMixerTest" --output-on-failure` | **0** | `test-6-family.log`: 100% passed out of 15 (the 14 earlier tests plus the new one) |
 | Gate, before the commit | `python3 <scratch>/feature_check_r2.py <worktree>` (copy; see Notes) | 1 | `gate-1-feature-check.log`: six rows PASS; `fork-sources` and `all-sources-reproduce` FAIL because the new file was not yet tracked; `all-sources` now reproduces with the file staged |
-| Gate, after the commit | same | see final report | |
+| Gate, after the commit | same | **0** | `gate-2-feature-check.log`: 8 of 8 rows PASS, `RESULT: PASS` (fork-sources and all-sources-reproduce pass on the committed tree) |
 
 Notes on the verification:
 
@@ -155,8 +155,9 @@ Answers to the completion check's items, with the evidence above.
    shares the bad lookup and none needs a change. In this file the only lookup of a track's channel value is
    `orderByTracks` (lines 291-293, fixed). `whatUsesAChannel` (line 430) compares the value with a channel's index and
    never indexes with it.
-6. **Gates row.** The real `feature_check.py` cannot create its sibling log directory from inside the write-jail; the
-   redirected copy is the gate evidence (see Notes and the table).
+6. **Gates row.** The real `feature_check.py` cannot create its sibling log directory from inside the write-jail, so
+   `submit_check.py` (`submit-check-1.log`, EXIT 1) shows only this row red; every other row passes. The redirected copy is
+   the gate evidence: all eight rows PASS on the committed tree (`gate-2-feature-check.log`, EXIT 0).
 7. **Verdict and contract.** FIXED. The contract is the one `orderByTracks` already states: a track on no channel is not
    followed (the `channel != nullptr` branch, and the master at index 0). No new control command was added, the
    `ControlCommandsSnapshot` canary is untouched, and no audio-thread code is involved.
