@@ -775,6 +775,8 @@ set(LMMS_TESTS
 	src/core/MidiCommandBindingsTest.cpp
 	# 0.5.0 L11 / L12: search expressions, collections, track presets, importing tracks, the hand-off folder.
 	src/core/LibraryProjectsTest.cpp
+	# Focused regressions for track preset command replies.
+	src/core/TrackPresetCommandsTest.cpp
 	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
 	src/core/PunchWindowTest.cpp
 	# Mixer::refreshGroups publishes each channel's VCA gain with ONE store, so a
@@ -2284,6 +2286,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+
+	# cluster new-p23-37: the replacement regression loads a real amplifier device.
+	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,

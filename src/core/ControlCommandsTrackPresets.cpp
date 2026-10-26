@@ -41,8 +41,10 @@
 #include "ControlStructuralSupport.h"
 #include "ControlVocabulary.h"
 #include "DataFile.h"
+#include "Engine.h"
 #include "Effect.h"
 #include "EffectChain.h"
+#include "Song.h"
 #include "Track.h"
 
 namespace lmms
@@ -59,7 +61,7 @@ ControlResult presetSave(const QJsonObject& args)
 	Track* track = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 	if (track == nullptr) { return error; }
 	const QString path = args.value(QStringLiteral("path")).toString();
-	if (!QFileInfo(path).isAbsolute()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'path' is an absolute file path")); }
+	if (!QFileInfo(path).isAbsolute()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'path' must be an absolute file path")); }
 	DataFile file(DataFile::Type::InstrumentTrackSettings);
 	QDomElement& content = file.content();
 	track->savePreset(file, content);
@@ -92,7 +94,11 @@ ControlResult presetLoad(const QJsonObject& args)
 	const QString name = track->name();
 	track->loadPreset(content);
 	track->setName(name);  // a preset brings the sound, the track keeps its name
-	return ControlResult::success({{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path}});
+	QJsonObject result{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("path"), path}};
+	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("track"), trackIdOf(track)}},
+		QStringLiteral("control.undo"), {}, true,
+		QStringLiteral("ProjectJournal (Track checkpoint: control.undo restores the track's previous state)")));
+	return ControlResult::success(result);
 }
 
 ControlResult pluginReplace(const QJsonObject& args)
@@ -118,6 +124,7 @@ ControlResult pluginReplace(const QJsonObject& args)
 	journalEffectRemoval(chain, old, slot + 1);
 	chain->removeEffect(old);
 	old->deleteLater();
+	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("target"), target.id}, {QStringLiteral("plugin"), effectIdOf(fresh)}, {QStringLiteral("index"), slot},
 		{QStringLiteral("device"), deviceId(deviceIndex)}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("target"), target.id}}, QStringLiteral("control.undo"), {},

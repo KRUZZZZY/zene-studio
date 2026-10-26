@@ -2978,6 +2978,7 @@ tests/src/core/TimelineTest.cpp
 tests/src/core/TrackFolderNoChannelTestSupport.h
 tests/src/core/TrackFolderTest.cpp
 tests/src/core/TrackKeyNamesLoadTest.cpp
+tests/src/core/TrackPresetCommandsTest.cpp
 tests/src/core/TunerTapTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp

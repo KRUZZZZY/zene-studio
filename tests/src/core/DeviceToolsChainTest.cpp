@@ -32,6 +32,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSet>
+#include <QTemporaryDir>
 
 #include <cmath>
 #include <vector>
@@ -291,6 +292,34 @@ private slots:
 		QCOMPARE(parameterValue(ch(3), control::effectIdOf(effectOn(3)), QStringLiteral("Volume")), 150.0);  // the old settings
 		QCOMPARE(run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)}, {QStringLiteral("plugin"), QStringLiteral("fx-999999")},
 			{QStringLiteral("device"), deviceNamed(QStringLiteral("amplifier"))}}).errorKind, ControlErrorKind::NotFound);
+		channel(3)->m_fxChain.clear();
+	}
+
+	void replacingADeviceMarksTheProjectModified()
+	{
+		channel(3)->m_fxChain.clear();
+		const QString device = deviceNamed(QStringLiteral("amplifier"));
+		if (device.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const QString old = loadByName(ch(3), QStringLiteral("amplifier"));
+		if (old.isEmpty()) { QSKIP("this build has no loadable amplifier module"); }
+
+		Song* song = Engine::getSong();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString baseline = dir.filePath(QStringLiteral("before-replace.mmp"));
+		QVERIFY(song->saveProjectFile(baseline));
+		song->noteProjectSaved(baseline);
+		QVERIFY(!song->isModified());
+		const ControlResult missing = run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)},
+			{QStringLiteral("plugin"), QStringLiteral("fx-999999")}, {QStringLiteral("device"), device}});
+		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
+		QVERIFY(!song->isModified());  // a refused replacement changes nothing
+
+		const ControlResult replaced = run(QStringLiteral("plugin.replace"), {{QStringLiteral("target"), ch(3)},
+			{QStringLiteral("plugin"), old}, {QStringLiteral("device"), device}});
+		QVERIFY2(replaced.ok, qPrintable(replaced.errorMessage));
+		QVERIFY(song->isModified());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		channel(3)->m_fxChain.clear();
 	}
 
