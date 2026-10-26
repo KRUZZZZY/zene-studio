@@ -46,4 +46,16 @@ Gates and completion check are below in `## Self-check`.
 
 ## Self-check
 
-Filled in after running `feature_check.py` and `submit_check.py`; see the completion section below.
+Verdict is FALSE-POSITIVE, so there is no product change. The items the completion check asks about are answered as follows.
+
+- **Regression test FAILS with the fix reverted and PASSES with it (exit codes).** Not applicable: there is no fix to revert. No product file changed, so no step 4b patch was produced and no test was added. The existing `RangeEdits` test passes unchanged (`logs/003-ctest-rangeedits.log`, EXIT=0, 1/1).
+- **Test is deterministic (seam or injected values).** Not applicable: no new test. The existing test has no timing, sleeps or races.
+- **Fix is at the cause and complete.** Not applicable: no fix. The callers of the null-returning path were checked (`Track.cpp:170-198`, `ControlCommandsRange.cpp:316-335`, and the clip constructor sites listed in the evidence above).
+- **No collateral damage.** Nothing changed in product code, so no saved data or caller behaviour can change.
+- **Verdict evidence.** The code (file:line) for the FALSE-POSITIVE verdict is in the Evidence section above: the type gate at `ControlCommandsRange.cpp:321`, the folder type at `TrackFolder.cpp:98-99`, and the no-folder-clips invariant at `Clip.cpp:73`, `:119` and the loader's null handling at `Track.cpp:189-192`.
+
+### Gate evidence
+
+- `feature_check.py` could not run in place: it writes its logs to `<worktree>/../zene-qwen-new-p22-62-feature-check/`, which is outside the write-jail (`PermissionError: [Errno 13]`, `logs/004-feature-check.log`, EXIT=1). I did not change the tooling.
+- The same gate commands and the same comparison were run from a scratch driver (`$TMPDIR/gate-driver-p22-62/drive_gate.py`, which imports `feature_check.py` unchanged and writes its logs to the run folder). Result: all six SIMPLE gates and both RATCHET gates PASS, RESULT: PASS (`logs/005-feature-check-driver.log`, EXIT=0; per-gate logs in `logs/gate-004/`). The ratchet exit codes are 1 (the known red state), with no new item in changed files.
+- `submit_check.py` therefore still shows `FAIL gates (feature_check.py)` because it calls `feature_check.py` directly, with the same sibling-log `PermissionError`. This is an environment limit, not a gate result. Its log is `logs/006-submit-check.log`, EXIT=1. All other submit-check items pass (commits, clean tree, report, claim-only closure).
