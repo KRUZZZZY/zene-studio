@@ -175,3 +175,28 @@ file gets the row re-added, and this worktree cannot change that housekeeping co
 | Gate | unchanged `feature_check.py` logic, log folder redirected to `gate-logs/` | r3-gate-1.log | 0 (all 8 rows PASS) |
 
 Run folder for round 3: `runs/new-p9-340.r3/logs`.
+
+## Round 4 (review rework)
+
+Luna's round-3 review (`qa/reviews/new-p9-340.r3.md`, verdict DISPUTE) blocked on the
+same row again: commit `55c9b5a50` (workflow, "derive source registries from tracked
+files") re-added `tests/src/core/ControllerSurfaceTest.cpp` to
+`tests/upstream-modifications.txt`, 1 minute 43 seconds after `859493763` removed it.
+This is the fourth recurrence (`db8c2c047`, `eaa81e071`, `55c9b5a50`), and each one
+follows a commit on this branch. The cause is the one in Round 3 (loop housekeeping,
+`qwen/workflow_evidence.py`, which does not count `tests/all-sources.txt`).
+
+- **Change in this round:** the row is removed again. `git diff` shows one deletion.
+- **Checks:** `cmake --build` of the six targets exits 0 (`r4-build-1.log`), the
+  controller-family ctest passes 6/6 (`r4-test-1-family.log`, exit 0), and the gate
+  passes all eight rows without the row (`r4-gate-1.log`, exit 0).
+- **Run folder:** `runs/new-p9-340.r4/logs`.
+
+A row removed by a commit on this branch will return on the next housekeeping run.
+Two ways to end the loop, both outside this worktree:
+1. Change `workflow_evidence.py` so an inherited file that is listed in
+   `tests/all-sources.txt` is not added to the ledger.
+2. Register the file as an active `tests/fork-sources.txt` line. The fork-sources
+   comment (lines 560-575) says this file was moved out on purpose, and the
+   fork-sources gate requires the list to match the recipe byte for byte, so this is
+   an owner decision, not a worktree change.
