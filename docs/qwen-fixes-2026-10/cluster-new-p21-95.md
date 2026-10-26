@@ -83,3 +83,9 @@ was not run. This verdict rests on code reading, not on a test.
   original gate was not executed as written. The copy changes only the log path.
 - **Not verified by execution:** the claim that no test covers the null-song path. The test suite can't null
   `Engine::getSong()` without tearing the engine down. This is established by reading `tests/...` only.
+- **submit_check.py `gates (feature_check.py)` item: FAIL, environmental.** The check runs the unmodified
+  `feature_check.py`, which exits 1 with the `PermissionError` at `feature_check.py:71` (it cannot create
+  `zene-qwen-new-p21-95-feature-check` beside the worktree, outside the write-jail). Log saved at
+  `LOG/submit-check-1.log` (EXIT=1). The same gate logic with only the log path redirected passed (EXIT=0,
+  row 3). This is not a code failure; it cannot be fixed from inside the worktree. Reviewers should re-run
+  `feature_check.py` from an environment that can write beside the worktree.
