@@ -77,3 +77,19 @@ Environment notes: `cmake` on PATH is a shim that refuses to configure ("configu
 - `tests/fork-sources.txt` (new product-new test registered)
 - `tests/all-sources.txt` (regenerated from its recipe; the only change is the new test line)
 - `docs/qwen-fixes-2026-10/cluster-new-p23-168.md` (this report)
+
+## Self-check
+
+Completion check (`submit_check.py`, log `submit-check-1.log`, EXIT 1): commits on the branch, clean tree, report, test added, test registered - PASS. Two items still fail, answered below.
+
+- **Regression FAILS reverted, PASSES with the fix.** Reverted: `test-4-4b-reverted.log` (EXIT 8, SIGSEGV) after `git apply -R fix.patch` and `build-8-4b-reverted.log` (EXIT 0). Fixed: `test-5-4b-fixed.log` (EXIT 0, 100%) after `git apply fix.patch` and `build-9-4b-fixed.log` (EXIT 0). The original header also crashed on the first test-run version (`test-1-red.log`, EXIT 8, `openWithoutAudioEngineLeavesSurfaceClosed`) and on the final version (`test-2-red.log`, EXIT 8, `subscribedAfterEngineTeardownReportsNotSubscribed`).
+- **Deterministic.** No sleeps, no wall-clock, no timers are waited on, no races. The test uses no injected values. Its seam is the engine lifecycle: `Engine::init(true)` and `Engine::destroy()` in `tests/src/core/MidiSurfaceInputTest.cpp` decide whether `Engine::audioEngine()` is null. The MIDI client is the real one in render-only mode, with a port name that does not exist. The one non-obvious choice is leaking the teardown test's surface, which avoids destroying a port after its client is freed (`src/core/midi/MidiPort.cpp:128,131`).
+- **Fix at the cause, callers and siblings checked.** Every caller of the changed code was read:
+  - `open()` callers: `LaunchBindings::connect` (`src/core/LaunchBindings.cpp:137`) and `RemoteControls::connect` (`src/core/RemoteControls.cpp:95`). An unopened surface keeps `m_port` null. `RemoteControls::setTarget` → `sendPage()` returns early when not open (`src/core/RemoteControls.cpp:165`), and the base `send()` checks `m_port` (`include/MidiSurfaceInput.h:105`). `close()` resets a null port safely.
+  - `subscribed()` callers: `src/core/ControlCommandsLaunchBindings.cpp:132` and `src/core/RemoteControls.cpp:189` (via `state()`). Both still return a boolean, now false when there is no engine.
+  - The other engine dereference in the class is in `open()` only; `send()`, `close()`, `drain()` and `decode()` do not touch the engine.
+  - Not fixed (residual, see above): surfaces that outlive the engine, and `~MidiPort` after teardown.
+- **No collateral damage.** The only behaviour change is the no-engine case, which previously faulted. With an engine, `open()` and `subscribed()` run the same code as before. `unknownInputIsOpenButNotSubscribed` covers the engine-present path and passes with the fix (`test-7-green-verbose.log`). It was not run on the original header: the earlier crash in a preceding test aborts the executable before it runs, so its pass-on-both status is unverified. Nothing is saved or loaded from these classes, and no limit or check was added. Realtime: `open()`/`subscribed()` run on the UI or control thread, not on the audio thread, and the change adds no allocation, locking or logging on any audio path. No control command was added (no `ControlCommandsSnapshot` change).
+- **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so no contract citation is needed beyond the `file:line` evidence above.
+
+Gate status: the stock `feature_check.py` exits 1 before running any gate, with `PermissionError` creating `<worktree>-feature-check` in the projects directory (`gates-1.log`). That location is outside the write-jail, so it cannot pass from this lane. Its functions, run with logs in the run folder, pass all eight rows (`gates-4.table.log`, EXIT 0). The `gates (feature_check.py)` row of `submit_check.py` will keep failing for this reason until the stock script can write its logs here.
