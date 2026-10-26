@@ -33,7 +33,6 @@
 #include "NamModel.h"
 
 #include <algorithm>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -42,6 +41,12 @@
 #include <limits>
 #include <sstream>
 #include <string>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace
 {
@@ -63,6 +68,16 @@ std::size_t nonnegative(int value)
 }
 
 
+long long testProcessId()
+{
+#ifdef _WIN32
+	return static_cast<long long>(_getpid());
+#else
+	return static_cast<long long>(getpid());
+#endif
+}
+
+
 std::size_t expectedWeights(const ModelShape& shape)
 {
 	const std::size_t channels = nonnegative(shape.channels);
@@ -75,10 +90,17 @@ std::size_t expectedWeights(const ModelShape& shape)
 }
 
 
-std::string modelJson(const ModelShape& shape)
+std::string modelJson(const ModelShape& shape, const std::string& sampleRateJson = {},
+	std::size_t specialWeightIndex = std::numeric_limits<std::size_t>::max(),
+	const std::string& specialWeightJson = "0")
 {
 	std::ostringstream json;
-	json << "{\"architecture\":\"WaveNet\",\"config\":{\"layers\":[{"
+	json << "{\"architecture\":\"WaveNet\"";
+	if (!sampleRateJson.empty())
+	{
+		json << ",\"sample_rate\":" << sampleRateJson;
+	}
+	json << ",\"config\":{\"layers\":[{"
 	     << "\"input_size\":1,\"condition_size\":1,\"head_size\":" << shape.headSize
 	     << ",\"head_bias\":false,\"channels\":" << shape.channels
 	     << ",\"bottleneck\":" << shape.bottleneck
@@ -98,19 +120,19 @@ std::string modelJson(const ModelShape& shape)
 		{
 			json << ',';
 		}
-		json << '0';
+		json << (i == specialWeightIndex ? specialWeightJson : "0");
 	}
 	json << "]}";
 	return json.str();
 }
 
 
-bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
-	const char* label)
+bool rejectsModelJson(const std::filesystem::path& path, const std::string& content,
+	const char* label, const char* expectedError = nullptr)
 {
 	{
 		std::ofstream output(path, std::ios::binary | std::ios::trunc);
-		output << modelJson(shape);
+		output << content;
 		if (!output)
 		{
 			std::cerr << "could not write model fixture\n";
@@ -120,9 +142,87 @@ bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
 
 	std::string error;
 	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
-	if (model || error.empty())
+	if (model || error.empty() ||
+	    (expectedError != nullptr && error.find(expectedError) == std::string::npos))
 	{
-		std::cerr << "loader accepted invalid model: " << label << '\n';
+		std::cerr << "loader accepted or misreported invalid model: " << label
+		          << " (" << error << ")\n";
+		return false;
+	}
+	return true;
+}
+
+
+bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
+	const char* label)
+{
+	return rejectsModelJson(path, modelJson(shape), label);
+}
+
+
+bool rejectsInvalidSampleRates(const std::filesystem::path& path)
+{
+	const auto rejectsRate = [&path](const std::string& sampleRate, const char* label,
+		const char* expectedError)
+	{
+		const std::string content = modelJson(ModelShape{}, sampleRate);
+		{
+			std::ofstream output(path, std::ios::binary | std::ios::trunc);
+			output << content;
+			if (!output)
+			{
+				std::cerr << "could not write model fixture\n";
+				return false;
+			}
+		}
+
+		std::string error;
+		const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+		if (model || error.empty() || error.find(expectedError) == std::string::npos)
+		{
+			std::cerr << "loader accepted or misreported invalid sample_rate: " << label
+			          << " (" << error << ")\n";
+			return false;
+		}
+		return true;
+	};
+
+	return rejectsRate("0", "zero", "sample_rate") &&
+		rejectsRate("-1", "negative", "sample_rate") &&
+		rejectsRate("1e400", "overflow to non-finite double", "not valid JSON");
+}
+
+
+bool rejectsOverflowingWeights(const std::filesystem::path& path)
+{
+	const ModelShape shape;
+	const std::size_t headScaleIndex = expectedWeights(shape) - 1;
+	const bool rejectsTensorWeight = rejectsModelJson(path,
+		modelJson(shape, {}, 0, "1e100"), "tensor weight overflow", "weight");
+	const bool rejectsHeadScale = rejectsModelJson(path,
+		modelJson(shape, {}, headScaleIndex, "1e100"), "head_scale overflow", "weight");
+	return rejectsTensorWeight && rejectsHeadScale;
+}
+
+
+bool loadsModelWithSampleRate(const std::filesystem::path& path,
+	const std::string& sampleRate, double expectedSampleRate)
+{
+	{
+		std::ofstream output(path, std::ios::binary | std::ios::trunc);
+		output << modelJson(ModelShape{}, sampleRate);
+		if (!output)
+		{
+			std::cerr << "could not write valid sample-rate fixture\n";
+			return false;
+		}
+	}
+
+	std::string error;
+	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	if (!model || model->spec().sampleRate != expectedSampleRate)
+	{
+		std::cerr << "loader refused a valid sample_rate fixture: " << error << '\n';
 		return false;
 	}
 	return true;
@@ -198,14 +298,24 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
 }
 
 
+bool validatesSampleRatesAndFileLimits(const std::filesystem::path& path)
+{
+	return rejectsInvalidSampleRates(path) &&
+		loadsModelWithSampleRate(path, "48000", 48000.0) &&
+		loadsModelWithSampleRate(path, "null", -1.0) &&
+		rejectsOverflowingWeights(path) &&
+		refusesOversizedFile(path) && loadsFileAtLimit(path);
+}
+
+
 }  // namespace
 
 
 int main()
 {
-	const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
 	const auto directory = std::filesystem::temp_directory_path() /
-		("zene-nam-loader-test-" + std::to_string(stamp));
+		("zene-nam-loader-test-" + std::to_string(testProcessId()));
+	std::filesystem::remove_all(directory);
 	if (!std::filesystem::create_directory(directory))
 	{
 		std::cerr << "could not create temporary fixture directory\n";
@@ -262,7 +372,7 @@ int main()
 		return 1;
 	}
 
-	if (!refusesOversizedFile(fixture) || !loadsFileAtLimit(fixture))
+	if (!validatesSampleRatesAndFileLimits(fixture))
 	{
 		std::filesystem::remove_all(directory);
 		return 1;
