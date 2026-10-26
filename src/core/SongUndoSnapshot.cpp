@@ -41,9 +41,10 @@
  * revision of any object.
  *
  * A RESTORE is a project load of that document, in place. A load clears the
- * journal, the provenance log, the per-project undo-history setting and the
- * file name, and rewinds the id counter; each of those is held across it and
- * put back, because the restore is an undo step, not an open.
+ * journal, the provenance log, the per-project undo-history setting, the
+ * container format and the file name, and rewinds the id counter; each of
+ * those is held across it and put back, because the restore is an undo step,
+ * not an open.
  */
 
 #include <QDir>
@@ -113,6 +114,9 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & r
 	const QString fileName = restoredFileName;
 	const QString oldFileName = m_oldFileName;
 	const int nextId = ProjectIds::next();
+	// The snapshot is plain XML, so the load would read the session as a legacy
+	// project; its container format is the session's, not the document's.
+	const bool containerV2 = m_containerV2Project;
 
 	m_restoringSnapshot = true;
 	loadProject( path );
@@ -122,6 +126,7 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & r
 
 	setProjectFileName( fileName );
 	m_oldFileName = oldFileName;
+	m_containerV2Project = containerV2;
 	// An id is never handed out twice: an object the restore removed keeps its
 	// address retired, as a structural undo does.
 	ProjectIds::observeNext( nextId );

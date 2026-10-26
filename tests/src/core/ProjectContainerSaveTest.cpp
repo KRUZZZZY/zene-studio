@@ -522,6 +522,80 @@ private slots:
 		QVERIFY( second.result.value( QStringLiteral( "revision_kept" ) ).toBool() );
 		QCOMPARE( readBytes( path + QStringLiteral( ".rev0" ) ), first );
 	}
+
+	// -- Undo keeps the session's container format ---------------------------
+
+	//! An undo step restores a snapshot document, which is plain XML. The load
+	//! that restore runs must not turn the session into a legacy one: the next
+	//! bare save to .mmpz stays a v2 container, as it was before the undo.
+	void undoingAV2ProjectKeepsItsContainerFormat()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		buildSession();
+		const QString path = dir.filePath( QStringLiteral( "undo.mmpz" ) );
+		QVERIFY( saveTo( path, QStringLiteral( "v2" ) ).ok );
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY( run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), path }} ).ok );
+		QVERIFY( song->isContainerV2Project() );
+
+		const std::shared_ptr<const QByteArray> before = song->captureUndoSnapshot();
+		QVERIFY( before && !before->isEmpty() );
+		const QStringList state = stateOf();
+		QVERIFY( run( QStringLiteral( "transport.set_tempo" ), {{ QStringLiteral( "bpm" ), 90 }} ).ok );
+
+		QVERIFY( song->restoreUndoSnapshot( *before ) );
+		QCOMPARE( stateOf(), state );
+		QVERIFY2( song->isContainerV2Project(), "undo must keep the v2 container format" );
+
+		const QString next = dir.filePath( QStringLiteral( "after-undo.mmpz" ) );
+		QVERIFY( saveTo( next ).ok );
+		QCOMPARE( projectcontainer::shapeOf( readBytes( next ) ), projectcontainer::Shape::ZipContainer );
+	}
+
+	//! The other side of the same restore: a legacy session stays legacy across
+	//! an undo, so the fix changes nothing for projects that never were containers.
+	void undoingALegacyProjectKeepsItsLegacyFormat()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		buildSession();
+		const QString path = dir.filePath( QStringLiteral( "legacy-undo.mmpz" ) );
+		QVERIFY( saveTo( path ).ok );
+		Song* song = Engine::getSong();
+		QVERIFY( !song->isContainerV2Project() );
+
+		const std::shared_ptr<const QByteArray> before = song->captureUndoSnapshot();
+		QVERIFY( before && !before->isEmpty() );
+		QVERIFY( run( QStringLiteral( "transport.set_tempo" ), {{ QStringLiteral( "bpm" ), 90 }} ).ok );
+		QVERIFY( song->restoreUndoSnapshot( *before ) );
+		QVERIFY( !song->isContainerV2Project() );
+
+		const QString next = dir.filePath( QStringLiteral( "legacy-after-undo.mmpz" ) );
+		QVERIFY( saveTo( next ).ok );
+		QCOMPARE( projectcontainer::shapeOf( readBytes( next ) ), projectcontainer::Shape::LegacyCompressed );
+	}
+
+	//! A restore the loader refuses leaves the document, and so its container
+	//! format, exactly as it was.
+	void aRefusedUndoRestoreKeepsTheContainerFormat()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		buildSession();
+		const QString path = dir.filePath( QStringLiteral( "refused-undo.mmpz" ) );
+		QVERIFY( saveTo( path, QStringLiteral( "v2" ) ).ok );
+		Song* song = Engine::getSong();
+		song->clearProject();
+		QVERIFY( run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), path }} ).ok );
+		const QStringList state = stateOf();
+
+		const QByteArray unreadable = qCompress( QByteArrayLiteral( "<<not a project" ) );
+		QVERIFY( !song->restoreUndoSnapshot( unreadable ) );
+		QVERIFY( song->isContainerV2Project() );
+		QCOMPARE( stateOf(), state );
+	}
 };
 
 QTEST_GUILESS_MAIN( ProjectContainerSaveTest )
