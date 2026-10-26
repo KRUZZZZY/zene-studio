@@ -26,6 +26,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <type_traits>
 
 #include "LmmsTypes.h"
 #include "LufsMeter.h"
@@ -152,13 +153,17 @@ public:
 	 *
 	 *  Disabling keeps the last reading readable - `snapshot()` still answers
 	 *  with what was measured - so a caller can disarm and then read the result.
+	 *  Returns false if the bounded quiet wait expires. Any failed state change
+	 *  restores the prior enabled flag and leaves the measurement unreset; an
+	 *  in-flight feed may still publish, so the snapshot is not final until a
+	 *  later successful quiet wait.
 	 *
 	 *  Allocates nothing, and never replaces the meter object: the algorithm is
 	 *  designed so the tap can be armed and disarmed while the transport is
 	 *  running (the tap goes quiet for a bounded moment, its own fixed arrays are
 	 *  zeroed, and it is let back in).
 	 */
-	void setEnabled(bool enabled) noexcept;
+	bool setEnabled(bool enabled) noexcept;
 
 	/*! Drops the accumulated measurement and starts a new one, keeping the
 	 *  current enabled state. CONTROL THREAD. Returns false when the tap did not
@@ -174,6 +179,13 @@ public:
 	 *  the loudness meter itself does nothing while disabled.
 	 */
 	void feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept;
+	template <typename FrameCount>
+	requires (std::is_integral_v<FrameCount> && std::is_signed_v<FrameCount>)
+	void feed(const SampleFrame* frames, FrameCount frameCount) noexcept
+	{
+		if (frames == nullptr || frameCount <= 0) { return; }
+		feed(frames, static_cast<f_cnt_t>(frameCount));
+	}
 
 	//! Snapshot of everything the tap knows. Any thread, any time.
 	Snapshot snapshot() const noexcept;
@@ -228,6 +240,11 @@ private:
 	//! path), published through m_shortTermMaxLufs.
 	float m_shortTermMax = LufsMeter::MinusInfinity;
 };
+
+#ifdef LMMS_TESTING
+//! TEST SEAM: overrides the next control-side quiet wait without sleeping.
+LMMS_EXPORT void setMasterLoudnessTapNextQuietWaitResultForTesting(bool quiet) noexcept;
+#endif
 
 } // namespace lmms
 

@@ -43,7 +43,18 @@ namespace
 //! spin a core while an audio period finishes.
 constexpr int QuietPollMicroseconds = 200;
 
+#ifdef LMMS_TESTING
+std::atomic<int> nextQuietWaitResultForTesting{-1};
+#endif
+
 } // namespace
+
+#ifdef LMMS_TESTING
+void setMasterLoudnessTapNextQuietWaitResultForTesting(bool quiet) noexcept
+{
+	nextQuietWaitResultForTesting.store(quiet ? 1 : 0, std::memory_order_relaxed);
+}
+#endif
 
 MasterLoudnessTap::MasterLoudnessTap(sample_rate_t sampleRate, ch_cnt_t channelCount) :
 	m_meter(sampleRate, channelCount)
@@ -53,32 +64,25 @@ MasterLoudnessTap::MasterLoudnessTap(sample_rate_t sampleRate, ch_cnt_t channelC
 	// on the audio thread (AGENTS.md rule 4).
 }
 
-void MasterLoudnessTap::setEnabled(bool enabled) noexcept
+bool MasterLoudnessTap::setEnabled(bool enabled) noexcept
 {
-	if (!enabled)
-	{
-		m_enabled.store(false, std::memory_order_seq_cst);
-		// Not required for correctness (nothing below touches the meter), but it
-		// makes the contract simple to state: once setEnabled(false) returns, the
-		// last feed() that could have been running has finished, so the reading a
-		// caller sees next is final.
-		(void) waitForQuiet();
-		return;
-	}
-
-	// ARMING (or RE-ARMING) STARTS A MEASUREMENT, every time. The tap is taken
-	// out of the audio path first, so the meter is only ever touched while the
-	// audio thread is not inside it; the quiesce wait is bounded, and a wait that
-	// expires leaves the tap exactly as it was rather than resetting under a feed
-	// in flight.
+	const bool wasEnabled = m_enabled.load(std::memory_order_seq_cst);
 	m_enabled.store(false, std::memory_order_seq_cst);
+
 	if (!waitForQuiet())
 	{
-		m_enabled.store(true, std::memory_order_release);
-		return;
+		// Keep failed state changes atomic from a caller's point of view. The
+		// false return warns that an in-flight feed may still publish after this
+		// call, so the caller must not treat its snapshot as final.
+		m_enabled.store(wasEnabled, std::memory_order_release);
+		return false;
 	}
-	clearMeasurement();
-	m_enabled.store(true, std::memory_order_release);
+
+	// ARMING (or RE-ARMING) STARTS A MEASUREMENT, every time. Clearing is safe
+	// only after the audio thread has left the tap.
+	if (enabled) { clearMeasurement(); }
+	m_enabled.store(enabled, std::memory_order_release);
+	return true;
 }
 
 bool MasterLoudnessTap::reset() noexcept
@@ -179,6 +183,12 @@ void MasterLoudnessTap::publish() noexcept
 
 bool MasterLoudnessTap::waitForQuiet() noexcept
 {
+#ifdef LMMS_TESTING
+	const int forcedResult = nextQuietWaitResultForTesting.exchange(-1,
+		std::memory_order_relaxed);
+	if (forcedResult >= 0) { return forcedResult != 0; }
+#endif
+
 	const auto deadline = std::chrono::steady_clock::now() +
 		std::chrono::milliseconds(QuietWaitMs);
 	while (m_inFlight.load(std::memory_order_seq_cst) != 0)

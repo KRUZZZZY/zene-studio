@@ -5244,3 +5244,4 @@ tests/CMakeLists.txt	clusters new-p23-32 / new-p20-21: register TrackPresetComma
 tests/fork-sources.txt	clusters new-p23-32 / new-p20-21: register the new TrackPresetCommandsTest source in the fork-scope manifest.
 tests/all-sources.txt	clusters new-p23-32 / new-p20-21: re-derive from the manifest's own recipe to remove stale vendored sfizz entries, and include TrackPresetCommandsTest so the whole-tree scope reproduces.
 tests/CMakeLists.txt	cluster new-p23-37: make a targeted DeviceToolsChainTest build also build the amplifier module required by the replacement modified-state regression.
+tests/src/core/MeterTapTest.cpp	# MasterLoudnessTap accumulates a huge frame count for negative frameCount

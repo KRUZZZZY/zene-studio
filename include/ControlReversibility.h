@@ -515,13 +515,11 @@ LMMS_EXPORT bool addStructuralUndoStep(std::function<void()> undo,
  *  control.undo / control.redo to report - and the two ends of that channel.
  *
  *  WHY A SIDE CHANNEL AND NOT A RETURN VALUE: a journal action's closure is
- *  `void` and `ProjectJournal::undo()`/`redo()` are `void`, so a step whose FILE
- *  operation fails - `revisions.restore`'s undo restores revision 0 out of the
- *  keep-3 set, its redo re-restores the revision the call chose - has no way to
- *  hand a failure to the command that asked for the undo. Without this record
- *  such an undo answered `undone: true` over a project file that was NOT put
- *  back: the same lie ControlStructuralSupport's own channel was added for
- *  (BUG-CTL-1), one file operation instead of one device.
+ *  `void` and `ProjectJournal::undo()`/`redo()` are `void`, so an action whose
+ *  inverse fails has no way to hand a failure to the command that asked for the
+ *  undo. That includes file restore actions such as `revisions.restore`, and
+ *  bounded state changes such as the master loudness tap's arm flag. Without
+ *  this record, either can answer `undone: true` over state it did not restore.
  *
  *  The SAME discipline as that channel, and the reason it is safe to trust:
  *  control.undo and control.redo clear the record before they unwind a step and

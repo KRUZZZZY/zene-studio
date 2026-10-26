@@ -314,15 +314,12 @@ std::optional<ControlResult> restoreFailureOf(const QString& verb, const QString
 			"hand").arg(verb, what, failed->errorMessage));
 }
 
-/*! The typed failure for the journal step that just ran when its FILE operation
+/*! The typed failure for the journal step that just ran when its recorded action
  *  did not complete, or nullopt.
  *
- *  The file half of the record `restoreFailureOf` reads: a recorded ACTION step
- *  whose inverse is a file operation (`revisions.restore`) is `void` for the same
- *  reason a device recreate is, and a restore that failed left the project file
- *  exactly as it was - so `undone: true` / `redone: true` over it claims a file
- *  put back that is not there. `Refused`, the kind the restore itself answers,
- *  because the step ran and its inverse is exactly what was refused.
+ *  Journal action callbacks are `void`, so an action whose inverse failed has no
+ *  return path to the command that asked for undo or redo. `Refused` reports that
+ *  the recorded action ran but its prior state was not restored.
  */
 std::optional<ControlResult> actionRestoreFailureOf(const QString& verb, const QString& command)
 {
@@ -332,8 +329,8 @@ std::optional<ControlResult> actionRestoreFailureOf(const QString& verb, const Q
 		? QStringLiteral("the last journal step")
 		: QStringLiteral("'%1'").arg(command);
 	return ControlResult::failure(ControlErrorKind::Refused,
-		QStringLiteral("cannot %1 %2: the recorded step ran but the project file was NOT "
-			"restored - %3").arg(verb, what, reason));
+		QStringLiteral("cannot %1 %2: the recorded action was NOT restored - %3")
+			.arg(verb, what, reason));
 }
 
 //! Unwinds one step of the engine's own undo stack.
