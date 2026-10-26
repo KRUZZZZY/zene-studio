@@ -38,6 +38,7 @@
 #include "Engine.h"
 #include "PatternStore.h"
 #include "PathUtil.h"
+#include "RecordOptions.h"
 #include "SampleClipView.h"
 #include "SampleRecordHandle.h"
 #include "SampleTrack.h"
@@ -305,7 +306,7 @@ void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, st
 	}
 	else if (take)
 	{
-		setSampleBuffer(std::move(take));
+		installFirstPass(std::move(take));
 	}
 	if (!continues)
 	{
@@ -313,32 +314,110 @@ void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, st
 	}
 }
 
-void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take)
+void SampleClip::installFirstPass(std::shared_ptr<const SampleBuffer> take)
+{
+	// Q050-094: the first (or only) pass of an arming lands according to the record mode, on this
+	// main-thread path. A clip with no audio takes the pass as its own content in every mode
+	// (Overdub and Replace), exactly as before the modes applied to audio.
+	const bool hasAudio = m_sample.sampleSize() > 0;
+	switch (recordoptions::options().mode)
+	{
+	case recordoptions::Mode::KeepHistory:
+		// Every pass is a take lane: the clip's earlier audio becomes one first, then the pass.
+		if (hasAudio) { addHistoryLane(); }
+		addRecordedLane(std::move(take), true);
+		return;
+	case recordoptions::Mode::Overdub:
+		if (hasAudio)
+		{
+			overdub(std::move(take));
+			return;
+		}
+		break;
+	case recordoptions::Mode::Replace:
+		break;
+	}
+	setSampleBuffer(std::move(take));
+}
+
+void SampleClip::overdub(std::shared_ptr<const SampleBuffer> take)
+{
+	// The pass can be mixed into the clip's buffer only where the buffer plays as recorded: from its
+	// first frame, forwards, at its own rate, through the whole buffer. A trimmed, reversed, warped
+	// or frame-led clip is left as it is and the pass is added as a clip of its own over it - the old
+	// audio stays audible beside the new either way, and nothing is thrown away.
+	const bool plain = rendersLinearly() && !m_sample.reversed() && leadFrames() == 0 && startTimeOffset() == 0
+		&& m_window == SampleWindow::full(static_cast<f_cnt_t>(m_sample.sampleSize()));
+	if (plain && m_sample.buffer() != nullptr)
+	{
+		replaceSample(recordoptions::overdubMix(*m_sample.buffer(), *take), SampleWindow());
+		return;
+	}
+	auto* track = dynamic_cast<SampleTrack*>(getTrack());
+	if (track == nullptr) { return; }
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+	const ClipUpdatesSuspension suspended{track};
+	auto* layer = new SampleClip(track, Sample(std::move(take)), false);
+	layer->setJournalling(false);  // its placement is not an undo step of its own: the arm's step covers it
+	layer->movePosition(startPosition());
+	layer->updateLength();
+	layer->setJournalling(true);  // ... but the clip is saved with the project and in later checkpoints
+	Engine::getSong()->setModified();
+}
+
+SampleClip* SampleClip::newLaneClip(SampleTrack* track, SampleClip* source, std::shared_ptr<const SampleBuffer> take, int lane)
+{
+	// The clip is created and added to the track under the change lock the audio thread's
+	// processing takes, as every other clip edit is (the caller holds it).
+	// The lane clip's constructor and its position change reach updateClips(), which would remove
+	// the track's live play handles - the take of the pass that has just begun. Suspended for the
+	// creation, even if it throws.
+	const ClipUpdatesSuspension suspended{track};
+	auto* take_clip = source != nullptr ? new SampleClip(*source) : new SampleClip(track, Sample(std::move(take)), false);
+	// Placing it is not an undo step of its own: the arm's step covers the lane (one undo step). A clip
+	// whose journalling stays off is not written by saveState(), so it would be lost from the saved
+	// project and from every later track checkpoint (a take choice's undo) - journalling comes back on.
+	take_clip->setJournalling(false);
+	control::assignTakeLane(take_clip, lane);
+	take_clip->setTakeGroupId(id());
+	take_clip->movePosition(startPosition());
+	take_clip->updateLength();
+	take_clip->setJournalling(true);
+	return take_clip;
+}
+
+void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool newestIsActive)
 {
 	auto* track = dynamic_cast<SampleTrack*>(getTrack());
 	if (track == nullptr) { return; }
-	// The clip is created and added to the track under the change lock the audio thread's
-	// processing takes, as every other clip edit is.
-	const auto guard = Engine::audioEngine()->requestChangesGuard();
-	const int lane = track->takeLanes().addLane();
-	SampleClip* take_clip = nullptr;
 	{
-		// The lane clip's constructor and its position change reach updateClips(), which would remove
-		// the track's live play handles - the take of the pass that has just begun. Suspended for the
-		// creation, even if it throws.
-		const ClipUpdatesSuspension suspended{track};
-		take_clip = new SampleClip(track, Sample(std::move(take)), false);
-		// Not journalled on its own: the arm's step covers the lane (one undo step).
-		take_clip->setJournalling(false);
-		control::assignTakeLane(take_clip, lane);
-		take_clip->setTakeGroupId(id());
-		take_clip->movePosition(startPosition());
-		take_clip->updateLength();
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const int lane = track->takeLanes().addLane();
+		newLaneClip(track, nullptr, std::move(take), lane);
+		// The model makes the newest pass active unless the user explicitly chose a take from this armed
+		// clip's group (Keep History: the new pass is active whatever was chosen). No clip mute flag is
+		// changed here.
+		track->takeLanes().recordTake(id(), lane, track->getClips(), newestIsActive);
 	}
-	// The model makes the newest pass active unless the user explicitly chose a
-	// take from this armed clip's group. No clip mute flag is changed here.
-	track->takeLanes().recordTake(id(), lane, track->getClips());
 	Engine::getSong()->setModified();
+}
+
+void SampleClip::addHistoryLane()
+{
+	auto* track = dynamic_cast<SampleTrack*>(getTrack());
+	if (track == nullptr) { return; }
+	const TimePos keptLength = length();
+	{
+		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		const int lane = track->takeLanes().addLane();
+		newLaneClip(track, this, nullptr, lane);  // a copy: the audio, its window and how it plays
+		track->takeLanes().recordTake(id(), lane, track->getClips(), true);
+	}
+	// This clip is now the (empty) shell the passes' lanes hang from, as a loop recording leaves it.
+	// It keeps its length; the lane clips carry the audio.
+	setAutoResize(false);
+	setSampleBuffer(SampleBuffer::emptyBuffer());
+	changeLength(keptLength);
 }
 
 

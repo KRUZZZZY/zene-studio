@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-25T20:31:23Z",
+  "captured_at": "2026-10-26T03:46:05Z",
   "commands": [
     {
       "args_schema": {
@@ -31984,7 +31984,8 @@
           "mode": {
             "enum": [
               "overdub",
-              "replace"
+              "replace",
+              "keep_history"
             ],
             "type": "string"
           },
@@ -31997,7 +31998,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "How a recording pass starts and what it keeps: 'count_in_bars' (0..4 - the metronome clicks them before the play position, on or not), 'pre_roll_bars' (0..8 - played without the click), so the transport starts that many bars early and audio is captured only from the play position; 'mode' overdub (a MIDI pass keeps the notes it plays over) or replace (a recorded note erases the notes already in the clip that it overlaps, at any pitch - notes only: the clip's controller lanes and all automation are kept; the reply's 'mode_scope' says so). A field left out keeps its value; none reads them. A preference in the config file, not the project; a change is one undo step.",
+      "description": "How a recording pass starts and what it keeps: 'count_in_bars' (0..4 - the metronome clicks them before the play position, on or not), 'pre_roll_bars' (0..8 - played without the click), so the transport starts that many bars early and audio is captured only from the play position; 'mode' - the same choice for MIDI and audio - is overdub (a MIDI pass keeps the notes it plays over; an audio pass is mixed into the clip's audio, so the old audio stays audible), replace (a recorded note erases the notes already in the clip that it overlaps, at any pitch - notes only: the clip's controller lanes and all automation are kept; an audio pass replaces the clip's audio) or keep_history (an audio pass keeps the clip's earlier audio and the new pass as take lanes, the new pass active - comp.take_select chooses another; MIDI keeps notes as overdub does); the reply's 'mode_scope', 'midi_scope' and 'audio_scope' say so and 'modes' lists the choices. A field left out keeps its value; none reads them. A preference in the config file, not the project; a change is one undo step.",
       "group": "transport",
       "id": "transport.record_options",
       "mutating": true,
@@ -36374,11 +36375,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-146-cf3618e61a/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-celzf1jz/zene.sock",
-    "version": "0.4.0-alpha.4775+9643c37"
+    "source_socket": "/tmp/zctl-run-z6zzmjhv/zene.sock",
+    "version": "0.4.0-alpha.4776+cf3618e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

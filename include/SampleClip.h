@@ -42,6 +42,7 @@ namespace lmms
 
 class SampleBuffer;
 class SampleRecordHandle;
+class SampleTrack;
 
 namespace gui
 {
@@ -301,8 +302,18 @@ private:
 	void releaseRecordTakes();
 	//! Main thread, at the arm: one journal step, a checkpoint of the track as it was before the arm.
 	void journalArmStep();
-	//! Main thread: an armed clip's take on a new take lane.
-	void addRecordedLane(std::shared_ptr<const SampleBuffer> take);
+	//! Main thread: an armed clip's take on a new take lane; \a newestIsActive makes it the active
+	//! take even over a take the user chose (Keep History).
+	void addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool newestIsActive = false);
+	//! Main thread (Q050-094): this clip's own audio, as a copy, on a new take lane of its group.
+	void addHistoryLane();
+	//! Main thread: a clip for take lane \a lane of this clip's group, a copy of \a source or (no source)
+	//! holding \a take. Called with the engine's change lock held.
+	SampleClip* newLaneClip(SampleTrack* track, SampleClip* source, std::shared_ptr<const SampleBuffer> take, int lane);
+	//! Main thread (Q050-094): the first pass of an arming lands according to the record mode.
+	void installFirstPass(std::shared_ptr<const SampleBuffer> take);
+	//! Main thread: the Overdub landing - mixed into this clip's audio, or a clip of its own over it.
+	void overdub(std::shared_ptr<const SampleBuffer> take);
 	//! See rubberBandPool(): one slot per Rubber Band-backed mode, each built
 	//! at most once (the mode's own voices; never replaced once built).
 	std::array<std::unique_ptr<RubberBandPool>, WarpRubberBandModeSlots> m_rubberBands;
