@@ -26,6 +26,7 @@
 #include <QtTest>
 #include "Timeline.h"
 
+#include "Metronome.h"
 #include "Song.h"
 
 class TimelineTest : public QObject
@@ -111,6 +112,50 @@ private slots:
 		secondsPerTick = 60.0f / Engine::getSong()->getTempo() * 4 / DefaultTicksPerBar;
 		timeline.setTicks(25);
 		QCOMPARE(static_cast<int>(timeline.getElapsedSeconds() * 1000), static_cast<int>(25 * secondsPerTick * 1000));
+	}
+
+	// Metronome::processTick divides by beatsPerBar and takes a modulo by ticksPerBar / beatsPerBar. Both come from the
+	// song's time-signature model, which clamps every write to 1..32, so neither reaches those operations as zero.
+	void MetronomeTickMathTests()
+	{
+		using namespace lmms;
+		Song* const song = Engine::getSong();
+		MeterModel& meter = song->getTimeSigModel();
+
+		meter.setNumerator(0);
+		QCOMPARE(meter.getNumerator(), 1);
+		meter.setNumerator(1000);
+		QCOMPARE(meter.getNumerator(), 32);
+		meter.setDenominator(0);
+		QCOMPARE(meter.getDenominator(), 1);
+		meter.setDenominator(1000);
+		QCOMPARE(meter.getDenominator(), 32);
+
+		// Every signature the model can hold: ticksPerBeat stays at least one tick and processTick walks the whole bar
+		// without trapping. The metronome stays inactive, so no click is built and the audio path is not run here.
+		Metronome metronome;
+		for (int numerator = 1; numerator <= 32; ++numerator)
+		{
+			for (int denominator = 1; denominator <= 32; ++denominator)
+			{
+				meter.setNumerator(numerator);
+				meter.setDenominator(denominator);
+
+				const int ticksPerBar = song->ticksPerBar();
+				const int beatsPerBar = meter.getNumerator();
+				QVERIFY(beatsPerBar >= 1);
+				QVERIFY(ticksPerBar >= beatsPerBar);
+				QVERIFY(ticksPerBar / beatsPerBar >= 1);
+
+				for (int tick = 0; tick < ticksPerBar; ++tick)
+				{
+					metronome.processTick(tick, ticksPerBar, beatsPerBar, 0);
+				}
+			}
+		}
+
+		meter.setNumerator(4);
+		meter.setDenominator(4);
 	}
 
 };
