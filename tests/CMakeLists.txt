@@ -4967,6 +4967,20 @@ endif()
 target_compile_features(ReverbSCRawProcessingTest PRIVATE cxx_std_20)
 lmms_add_coverage(ReverbSCRawProcessingTest)
 
+# The sfizz AVX gain regression must call the kernel compiled by sfzplayer_sfizz
+# with its per-file -mavx flag. Other architectures use different kernels.
+if(TARGET sfzplayer_sfizz
+	AND (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|amd64|AMD64|x64|X64|i.86|x86|X86)"
+		OR CMAKE_GENERATOR_PLATFORM MATCHES "(x64|Win32)")
+	AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	add_executable(SfzSimdGainAVXTest src/plugins/SfzSimdGainAVXTest.cpp)
+	add_test(NAME SfzSimdGainAVXTest COMMAND SfzSimdGainAVXTest)
+	target_include_directories(SfzSimdGainAVXTest PRIVATE
+		${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz/simd)
+	target_link_libraries(SfzSimdGainAVXTest PRIVATE sfzplayer_sfizz)
+	set_tests_properties(SfzSimdGainAVXTest PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 # The NAM engine's block-spanning silence prewarm is tested without loading the
 # plugin module, using a small model written by the test itself.
 add_executable(NamModelPrewarmTest

@@ -2921,6 +2921,8 @@ plugins/SfzPlayer/SfzSynth.h
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzTestSupport.h
+# cluster new-p21-182: the sfizz AVX gain kernel advances per-sample gains across vector blocks.
+tests/src/plugins/SfzSimdGainAVXTest.cpp
 # Q050-087 (2026-10-21): the device-chain patcher canvas and its test (fork-NEW).
 include/PatcherCanvas.h
 include/PatcherGraph.h

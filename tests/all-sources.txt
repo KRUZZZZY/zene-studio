@@ -3208,6 +3208,7 @@ tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
+tests/src/plugins/SfzSimdGainAVXTest.cpp
 tests/src/plugins/SfzTestSupport.h
 tests/src/plugins/SidInstrument.cpp
 tests/src/plugins/SlicerTWaveformTest.cpp
