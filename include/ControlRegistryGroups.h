@@ -676,6 +676,12 @@ LMMS_EXPORT void registerChordWriteCommands(ControlRegistry& registry);
  * given. Named in docs/KNOWN-LIMITATIONS.md and the release notes.
  */
 LMMS_EXPORT void registerProjectArchiveCommands(ControlRegistry& registry);
+/*! project.media_usage / project.media_cleanup - the Project Media completion (Q050-121):
+ *  per-file reference counts from the saved project document, the unused files in the managed
+ *  `media` folder, and the rechecked removal of a selected set of those unused files.
+ *  The engine half is include/ControlProjectMedia.h. The cleanup is IRREVERSIBLE: a deleted
+ *  media file is not restorable by project undo. */
+LMMS_EXPORT void registerProjectMediaCommands(ControlRegistry& registry);
 /*! The mmpz-git depth group (feature row 42, task #612): project.merge,
  *  project.diff, project.conflicts, project.audible_diff, over
  *  tools/mmpz-git/mmpz_git.py.  No compile-time switch: shipped everywhere.

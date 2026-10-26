@@ -311,6 +311,7 @@ include/ControlMixerSupport.h
 include/ControlModulationSupport.h
 include/ControlNoteShared.h
 include/ControlProjectAssets.h
+include/ControlProjectMedia.h
 include/ControlProjectTransplant.h
 include/ControlRackMacroWrites.h
 include/ControlRackSupport.h
@@ -1664,6 +1665,7 @@ src/core/ControlCommandsProjectArchive.cpp
 src/core/ControlCommandsProjectFiles.cpp
 src/core/ControlCommandsProjectInfo.cpp
 src/core/ControlCommandsProjectLifecycle.cpp
+src/core/ControlCommandsProjectMedia.cpp
 src/core/ControlCommandsProjectMmpzGit.cpp
 src/core/ControlCommandsPunch.cpp
 src/core/ControlCommandsRack.cpp
@@ -1777,6 +1779,7 @@ src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
 src/core/ControlProjectAssetsRelink.cpp
 src/core/ControlProjectAssetsShared.h
+src/core/ControlProjectMedia.cpp
 src/core/ControlProjectTransplantChannels.cpp
 src/core/ControlRackSupport.cpp
 src/core/ControlRecordingSupport.cpp
@@ -2212,6 +2215,7 @@ src/gui/AutomatableModelView.cpp
 src/gui/AutomationModeMenu.cpp
 src/gui/BrowserResults.cpp
 src/gui/BrowserSearchView.cpp
+src/gui/BrowserSearchViewMedia.cpp
 src/gui/BrowserTagMenu.cpp
 src/gui/ChainPresetMenu.cpp
 src/gui/ChannelPickDialog.cpp
@@ -2650,6 +2654,7 @@ tests/src/core/ControlNoteNoOpUndoTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
 tests/src/core/ControlPluginBusesTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
+tests/src/core/ControlProjectMediaTest.cpp
 tests/src/core/ControlProjectTemplateTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
@@ -2990,6 +2995,7 @@ tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationLaneChildGuiTest.cpp
 tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserDragUrlTest.cpp
+tests/src/gui/BrowserProjectMediaTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
 tests/src/gui/CPULoadWidgetTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp

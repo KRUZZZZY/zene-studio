@@ -42,8 +42,10 @@ namespace lmms::gui
 namespace browserresults
 {
 
-//! The search view's columns.
-enum Column { Name, Kind, Size, Modified, Tags };
+//! The search view's columns. The first five keep their indices: every client and
+//! test that already reads a result row by Name/Kind/Size/Modified/Tags is not
+//! moved. Q050-121 adds the usage/state pair Project Media shows (hidden by default).
+enum Column { Name, Kind, Size, Modified, Tags, Usage, State, ColumnCount };
 //! Where a result row (in its Name column) or a gallery tile keeps the file it names, and the file's kind.
 constexpr int PathRole = Qt::UserRole;
 constexpr int KindRole = Qt::UserRole + 1;

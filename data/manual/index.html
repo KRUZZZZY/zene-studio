@@ -53,7 +53,14 @@ that data, and the result says how many it read; a library wider than that is be
 <code>kind:</code>, a tag or a folder until the audio candidates fit. Probing reads only the file headers,
 not the audio. The checkbox is unavailable while <i>Whole library</i> is on, because the whole-library
 index stores names and tags but not embedded metadata. Save a search as a <i>collection</i> to keep it;
-<i>Project Media</i> lists every file the project uses. A file dragged out of the
+<i>Project Media</i> lists every file the saved project references with a <i>Uses</i>
+count (every clip and supported instrument reference adds one) and a state: used, unused, missing, external or
+unresolved. <i>Unused Only</i> keeps the unreferenced files in the project's <code>media/</code> folder visible beside
+the missing and external references that are never cleanup candidates. Select unused rows and choose
+<i>Clean Up Selected...</i>: the exact paths are shown and must be confirmed, and the cleanup rescans the saved project
+immediately before removing anything, so a file that is referenced again is refused. Cleanup is irreversible - a removed
+media file cannot be restored by undo - and it refuses while the open project has unsaved changes, because the scan
+reads the saved document. A file dragged out of the
 Browser - from its list or a search result - carries the file itself as well, so a plug-in editor's window, the desktop
 or a file manager that takes files receives the file, while Zene's own drop targets (a sample clip, a track, the session
 grid) load it as they always did.</li>

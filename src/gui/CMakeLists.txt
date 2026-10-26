@@ -236,6 +236,7 @@ SET(LMMS_SRCS
 	gui/ChainPresetMenu.cpp
 	gui/ChannelPickDialog.cpp
 	gui/BrowserSearchView.cpp
+	gui/BrowserSearchViewMedia.cpp
 	gui/BrowserResults.cpp
 	gui/ClipEditsMenu.cpp
 	gui/CrashReportMenu.cpp

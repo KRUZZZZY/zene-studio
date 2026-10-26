@@ -716,6 +716,11 @@ set(LMMS_SRCS
 	core/ControlCommandsProjectArchive.cpp
 	core/ControlProjectAssets.cpp
 	core/ControlProjectAssetsRelink.cpp
+	# project.media_usage / project.media_cleanup (Q050-121): the Project Media inventory
+	# (per-file usage counts, unused local assets, distinct missing/external states) and the
+	# irreversible cleanup of selected still-unused files. Built on ControlProjectAssets' scan.
+	core/ControlProjectMedia.cpp
+	core/ControlCommandsProjectMedia.cpp
 	core/ControlProjectTransplantChannels.cpp
 	# The mmpz-git depth group (feature row 42, task #612): the control-surface
 	# wrappers around tools/mmpz-git/mmpz_git.py.

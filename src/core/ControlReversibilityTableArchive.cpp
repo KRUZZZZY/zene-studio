@@ -78,6 +78,20 @@ const ReversibilityRow kArchiveRows[] = {
 		"error, and the aggregated digest covers the reference set, not the "
 		"session",
 		""),
+	R("project.media_usage", RC::NotMutating, false,
+		"it reads the named project file and the files in its managed media folder, groups the "
+		"references by file and counts them. Nothing is written - not the project, not the media",
+		"no write. The scan reads the SAVED project document, which is why cleanup refuses while "
+		"the open project has unsaved changes: a live reference the file does not carry yet must "
+		"not be deleted",
+		""),
+	R("project.media_cleanup", RC::Irreversible, false,
+		"it deletes the selected media files from the project's managed folder. The bytes are gone; "
+		"project undo carries no file content and cannot restore a deleted media file",
+		"none. The transaction records each path, its size and mtime before the removal, so the "
+		"caller can see exactly what it deleted; a dry_run removes nothing and records nothing",
+		"restore the files from a backup or from the source they came from; the project's references "
+		"stay valid only while those files exist"),
 	R("project.collect_media", RC::TrueInverse, true,
 		"it rewrites the project FILE's media references to copies it makes beside it; the "
 		"recorded action step writes the file's previous bytes back (the copies stay on disk)",

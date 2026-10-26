@@ -164,11 +164,13 @@ BrowserSearchView::BrowserSearchView(QWidget* parent) :
 
 	m_results = new QTreeWidget(contentParent());
 	m_results->setAccessibleName(tr("Results"));
-	m_results->setHeaderLabels({tr("Name"), tr("Kind"), tr("Size (KB)"), tr("Modified"), tr("Tags")});
+	m_results->setHeaderLabels({tr("Name"), tr("Kind"), tr("Size (KB)"), tr("Modified"), tr("Tags"), tr("Uses"), tr("State")});
 	m_results->setSortingEnabled(true);
 	m_results->setRootIsDecorated(false);
+	m_results->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	m_results->setContextMenuPolicy(Qt::CustomContextMenu);
 	m_results->header()->setSectionResizeMode(Name, QHeaderView::Stretch);
+	for (int column = Usage; column < ColumnCount; ++column) { m_results->setColumnHidden(column, true); }
 	m_results->setProperty("browserResults", true);  // what the panel's search field steps through and loads from
 	addContentWidget(m_results);
 
@@ -213,17 +215,26 @@ void BrowserSearchView::buildActionRow()
 	auto* back = button(contentParent(), tr("Back"), "browser.history_go");  // WF-014
 	auto* forward = button(contentParent(), tr("Forward"), "browser.history_go");
 	auto* save = button(contentParent(), tr("Save as Collection..."), "browser.collection_save");
-	auto* media = button(contentParent(), tr("Project Media"), "project.missing_assets");
+	auto* media = button(contentParent(), tr("Project Media"), "project.media_usage");
+	m_unused = button(contentParent(), tr("Unused Only"), "project.media_usage");
+	m_unused->setObjectName(QStringLiteral("browserMediaUnused"));
+	m_unused->setCheckable(true);
+	m_unused->setEnabled(false);
+	m_cleanup = button(contentParent(), tr("Clean Up Selected..."), "project.media_cleanup");
+	m_cleanup->setObjectName(QStringLiteral("browserMediaCleanup"));
+	m_cleanup->setEnabled(false);
 	auto* rescan = button(contentParent(), tr("Rescan Library"), "browser.reindex");
 	auto* gallery = button(contentParent(), tr("Gallery"), "browser.thumbnail");  // WF-018
 	gallery->setCheckable(true);
-	for (QPushButton* each : {back, forward, save, media, rescan, gallery}) { actions->addWidget(each); }
+	for (QPushButton* each : {back, forward, save, media, m_unused, m_cleanup, rescan, gallery}) { actions->addWidget(each); }
 	actions->addStretch(1);
 	addContentLayout(actions);
 	connect(back, &QPushButton::clicked, this, [this] { goHistory(-1); });
 	connect(forward, &QPushButton::clicked, this, [this] { goHistory(1); });
 	connect(save, &QPushButton::clicked, this, &BrowserSearchView::saveCollection);
 	connect(media, &QPushButton::clicked, this, &BrowserSearchView::showProjectMedia);
+	connect(m_unused, &QPushButton::toggled, this, &BrowserSearchView::setShowUnused);
+	connect(m_cleanup, &QPushButton::clicked, this, &BrowserSearchView::cleanupSelectedMedia);
 	connect(rescan, &QPushButton::clicked, this, [this] {
 		const ControlResult started = run(QStringLiteral("browser.reindex"), {{QStringLiteral("features"), true}});
 		if (started.ok) { refreshIndexStatus(); }
@@ -323,6 +334,9 @@ void BrowserSearchView::showBrowsed(const ControlResult& shown)
 	}
 	m_showingMedia = false;
 	m_liveEntry = false;  // a list shown from the history is no longer the one being typed
+	if (m_unused != nullptr) { m_unused->setEnabled(false); }
+	if (m_cleanup != nullptr) { m_cleanup->setEnabled(false); }
+	showMediaColumns(false);
 	showItems(shown.result.value(QStringLiteral("items")).toArray());
 	m_status->setText(countText(shown.result));
 	restoreQuery(shown.result.value(QStringLiteral("entry")).toObject());
@@ -376,35 +390,6 @@ void BrowserSearchView::findSimilar(const QString& path)
 void BrowserSearchView::goHistory(int step)
 {
 	showBrowsed(run(QStringLiteral("browser.history_go"), {{QStringLiteral("step"), step}}));
-}
-
-void BrowserSearchView::showProjectMedia()
-{
-	const ControlResult listed = run(QStringLiteral("project.missing_assets"), {{QStringLiteral("project"), Engine::getSong()->projectFileName()}});
-	if (!listed.ok)
-	{
-		m_status->setText(listed.errorMessage);
-		return;
-	}
-	QJsonArray items;
-	int missing = 0;
-	for (const QJsonValue& value : listed.result.value(QStringLiteral("references")).toArray())
-	{
-		const QJsonObject ref = value.toObject();
-		const bool gone = ref.value(QStringLiteral("missing")).toBool();
-		missing += gone ? 1 : 0;
-		// 'path' is where the reference resolves (against the project file's folder); 'resolved' is only a flag.
-		const QString resolved = ref.value(QStringLiteral("path")).toString();
-		const QString path = resolved.isEmpty() ? ref.value(QStringLiteral("raw")).toString() : resolved;
-		items.append(QJsonObject{{QStringLiteral("name"), QFileInfo(path).fileName()}, {QStringLiteral("path"), path},
-			{QStringLiteral("kind"), gone ? tr("missing") : QStringLiteral("audio")},
-			{QStringLiteral("size_bytes"), gone ? qint64(-1) : QFileInfo(path).size()},
-			{QStringLiteral("modified_ms"), gone ? qint64(-1) : QFileInfo(path).lastModified().toMSecsSinceEpoch()},
-			{QStringLiteral("tags"), QJsonArray{ref.value(QStringLiteral("tag")).toString()}}});
-	}
-	m_showingMedia = true;
-	showItems(items);
-	m_status->setText(tr("Project Media: %1 files, %2 missing").arg(items.size()).arg(missing));
 }
 
 void BrowserSearchView::showItems(const QJsonArray& items)
@@ -507,52 +492,6 @@ void BrowserSearchView::removeCollection(const QString& name)
 	const ControlResult removed = run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), name}});
 	if (!removed.ok) { m_status->setText(removed.errorMessage); }
 	refreshCollections();  // the list shows what the store holds: a refused removal leaves its collection listed
-}
-
-void BrowserSearchView::addPreviewEntries(QMenu* menu, const QString& path)
-{
-	QMenu* preview = menu->addMenu(tr("Preview"));  // WF-009
-	const std::pair<QString, const char*> modes[] = {{tr("As It Is"), "none"}, {tr("At the Song's Tempo"), "tempo"},
-		{tr("In the Song's Key"), "key"}, {tr("Matched to Tempo and Key"), "both"}};
-	for (const auto& [label, match] : modes)
-	{
-		QAction* action = preview->addAction(label);
-		action->setProperty("controlCommand", QStringLiteral("browser.preview"));
-		connect(action, &QAction::triggered, this, [this, path, match = QLatin1String(match)] {
-			m_actions->preview(path, QStringLiteral("audio"), match);  // an error shows on the status line
-		});
-	}
-	QAction* stop = preview->addAction(tr("Stop"));
-	stop->setProperty("controlCommand", QStringLiteral("browser.preview_stop"));
-	connect(stop, &QAction::triggered, this, [this] {
-		m_actions->stopPreview();
-		run(QStringLiteral("browser.preview_stop"));  // whoever started it
-	});
-}
-
-void BrowserSearchView::showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind)
-{
-	QMenu menu(this);
-	m_actions->addLoadEntry(&menu, path, kind);  // theme 3: what Enter does, named where the other actions are
-	if (kind == QLatin1String("audio"))
-	{
-		addPreviewEntries(&menu, path);
-		QAction* similar = menu.addAction(tr("Find Similar Sounds"));  // WF-020
-		similar->setProperty("controlCommand", QStringLiteral("browser.similar"));
-		connect(similar, &QAction::triggered, this, [this, path] { findSimilar(path); });
-		menu.addSeparator();
-	}
-	addBrowserTagMenu(&menu, path);
-	addBrowserCategoryMenu(&menu, path);
-	const QAction* chosen = menu.exec(static_cast<QAbstractScrollArea*>(view)->viewport()->mapToGlobal(at));
-	// A tag or category edit: the list is shown again as it stands (the current history entry,
-	// not a new one), and the category filter's vocabulary follows the edit.
-	const QString command = chosen != nullptr ? chosen->data().toString() : QString();
-	if (command.startsWith(QLatin1String("browser.tag")) || command.startsWith(QLatin1String("browser.category")))
-	{
-		refreshCategories();
-		m_showingMedia ? showProjectMedia() : goHistory(0);
-	}
 }
 
 } // namespace lmms::gui

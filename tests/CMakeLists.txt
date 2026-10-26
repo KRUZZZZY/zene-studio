@@ -235,6 +235,9 @@ set(LMMS_TESTS
 	# Replacing the default or a named template is one file-level undo step,
 	# including restoration and redo of the save path's backup side effect.
 	src/core/ControlProjectTemplateTest.cpp
+	# Q050-121: project.media_usage per-file counts/unused states and the irreversible
+	# project.media_cleanup, over a private fixture project (no plug-in modules needed).
+	src/core/ControlProjectMediaTest.cpp
 	# render.render accepts an absolute output path according to this host's
 	# filesystem rules; its source guard catches the POSIX-only regression on
 	# non-Windows builders, while the runtime call exercises a Windows drive path
@@ -1114,6 +1117,9 @@ set(LMMS_TESTS
 	src/gui/Lv2ViewBaseLifetimeTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
+	# Q050-121: Project Media's usage/state columns, the Unused view, and the injected
+	# confirmation proving Cancel keeps and Confirm removes only the selected unused file.
+	src/gui/BrowserProjectMediaTest.cpp
 	# The shell window's own startup: a floating editor hides its whole frame, and an unattended
 	# first run does not record the skipped setup as done.
 	src/gui/MainWindowTest.cpp
@@ -3012,6 +3018,7 @@ set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(PluginCompatEditorProbe PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BrowserProjectMediaTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6385,9 +6392,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-reversibility-transcript.py
 			$<TARGET_FILE:zene>
 	)
+	# The L11 media cluster's agent transcript (Q050-121): the inventory
+	# and the confirmed irreversible cleanup, all over the real
+	# socket, i.e. the same JSON-RPC surface MCP exposes.
+	add_test(NAME ControlMediaAgentTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-media-agent-transcript.py
+			$<TARGET_FILE:zene>
+	)
 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
-		ControlReversibilityTranscript PROPERTIES
+		ControlReversibilityTranscript ControlMediaAgentTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 420
 		SKIP_RETURN_CODE 77

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-25T20:31:23Z",
+  "captured_at": "2026-10-26T01:02:01Z",
   "commands": [
     {
       "args_schema": {
@@ -21143,6 +21143,137 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "confirm": {
+            "type": "boolean"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "paths": {
+            "type": "array"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "paths"
+        ],
+        "type": "object"
+      },
+      "description": "Remove selected files from a project's managed media folder, but only the ones that are STILL unused: called with the paths a project.media_usage preview listed, it rescans the project document and refuses every file a reference now names, every missing or external path, and every symbolic link. 'dir' names the same managed folder the preview listed (default \"media\"). 'dry_run' reports exactly what would be removed and writes nothing; without it each selected file is deleted. A real removal also requires 'confirm': true - pass it only after showing the paths to a human and getting their authorization. IRREVERSIBLE: a deleted media file cannot be restored by control.undo, so preview first and keep a backup if the file matters. Refuses while the open project is the named one and has unsaved changes, because the saved-file scan would not see them.",
+      "group": "project",
+      "id": "project.media_cleanup",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cleanup_candidates_before": {
+            "type": "integer"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "file": {
+            "type": "string"
+          },
+          "media_dir": {
+            "type": "string"
+          },
+          "refused": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "array"
+          },
+          "unused_after": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dir": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project"
+        ],
+        "type": "object"
+      },
+      "description": "The Project Media inventory of a saved project file: one row per file the project references, with a usage count that adds every clip and every supported instrument reference (repeated references to the same file add up), and one row for each file in the project's managed 'media' folder that nothing references. Missing references, unresolved paths and files referenced outside the folder are reported as distinct states and are never cleanup candidates. Reads the project FILE; nothing is written. 'dir' names the managed folder (default \"media\").",
+      "group": "project",
+      "id": "project.media_usage",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "external_count": {
+            "type": "integer"
+          },
+          "file": {
+            "type": "string"
+          },
+          "file_count": {
+            "type": "integer"
+          },
+          "files": {
+            "type": "array"
+          },
+          "format": {
+            "type": "string"
+          },
+          "media_dir": {
+            "type": "string"
+          },
+          "media_dir_contained": {
+            "type": "boolean"
+          },
+          "media_dir_exists": {
+            "type": "boolean"
+          },
+          "missing_count": {
+            "type": "integer"
+          },
+          "reference_count": {
+            "type": "integer"
+          },
+          "unresolved_count": {
+            "type": "integer"
+          },
+          "unused": {
+            "type": "array"
+          },
+          "unused_count": {
+            "type": "integer"
+          },
+          "usage_total": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "base": {
             "type": "string"
           },
@@ -36369,23 +36500,23 @@
       }
     }
   ],
-  "count": 849,
+  "count": 851,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-121-cf3618e61a/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-celzf1jz/zene.sock",
-    "version": "0.4.0-alpha.4775+9643c37"
+    "source_socket": "/tmp/zctl-run-vku52yij/zene.sock",
+    "version": "0.4.0-alpha.4776+cf3618e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 849,
-    "ids_sha256": "fd877b788a64b551f0ada13e219eccb4cc84545c69067d1855dd19ac4f2dd242"
+    "id_count": 851,
+    "ids_sha256": "612a618aff288b9aace721cd16d0ca0a179f23d62238161bdd0e32ab2f9a4821"
   }
 }

@@ -24,6 +24,8 @@
 #ifndef LMMS_GUI_BROWSER_SEARCH_VIEW_H
 #define LMMS_GUI_BROWSER_SEARCH_VIEW_H
 
+#include <functional>
+
 #include <QElapsedTimer>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -36,6 +38,7 @@ class QComboBox;
 class QLabel;
 class QLineEdit;
 class QMenu;
+class QPushButton;
 class QListWidget;
 class QTimer;
 class QTreeWidget;
@@ -91,8 +94,15 @@ public:
 	void removeCollection(const QString& name);
 	//! The indexed sounds most like the file at @a path.
 	void findSimilar(const QString& path);
-	//! List the project's media.
+	//! List the project's media with its usage counts, unused local assets and
+	//! distinct missing/external states (project.media_usage).
 	void showProjectMedia();
+	//! In Project Media, show the non-used rows: unused candidates beside the
+	//! missing and external references that are not candidates.
+	void setShowUnused(bool on);
+	//! Remove the selected still-unused local media files after a preview and a
+	//! confirmation (project.media_cleanup). Cancel changes nothing.
+	void cleanupSelectedMedia();
 	//! Step @a step entries back (negative) or forward through the view's history.
 	void goHistory(int step);
 	//! Thumbnails instead of columns.
@@ -135,6 +145,14 @@ private:
 	void saveCollection();
 	void showRowMenu(QWidget* view, const QPoint& at, const QString& path, const QString& kind);
 	void addPreviewEntries(QMenu* menu, const QString& path);
+	//! The rows Project Media shows: every file, or - with the Unused switch on -
+	//! the unused candidates and the missing/external references kept distinct.
+	QJsonArray mediaItems() const;
+	void showMediaColumns(bool on);
+	QStringList selectedUnusedPaths() const;
+
+	QPushButton* m_unused = nullptr;
+	QPushButton* m_cleanup = nullptr;
 
 	QLineEdit* m_search = nullptr;
 	QComboBox* m_kind = nullptr;
@@ -151,10 +169,19 @@ private:
 	QTimer* m_live = nullptr;  //!< the pause in typing before a live search runs
 	bool m_liveEntry = false;  //!< the current history entry is a live search (the next one replaces it)
 	QJsonArray m_items;
+	QJsonArray m_mediaFiles;  //!< the project.media_usage files, for the Unused switch and refresh
 	bool m_showingMedia = false;  //!< the list is Project Media, not a history entry
+	int m_mediaUnusedCount = 0;
+	int m_mediaMissingCount = 0;
+	int m_mediaExternalCount = 0;
 	QString m_lastPicked;  //!< pickCollection's last name and when, so one gesture runs it once
 	QElapsedTimer m_lastPickedAt;
 };
+
+/*! Q050-121: tests replace the cleanup confirmation (default: a question box
+ *  naming every path). Passing an empty function restores the default. */
+using BrowserMediaCleanupConfirm = std::function<bool(const QStringList& paths)>;
+LMMS_EXPORT void setBrowserMediaCleanupConfirm(BrowserMediaCleanupConfirm confirm);
 
 } // namespace lmms::gui
 
