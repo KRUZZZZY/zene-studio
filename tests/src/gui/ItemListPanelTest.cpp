@@ -431,6 +431,19 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	void aNullSurfaceOpensNothing()
+	{
+		// No canvas means no list: nothing is made for it and nothing is shown beside it.
+		bool made = false;
+		ItemListPanel* panel = ItemListPanel::open(nullptr, QStringLiteral("notes"), [this, &made](QObject* parent) {
+			made = true;
+			return itemlists::notes(m_editor, parent);
+		});
+		QVERIFY(panel == nullptr);
+		QVERIFY(!made);
+		QVERIFY(ItemListPanel::find(nullptr, QStringLiteral("notes")) == nullptr);
+	}
+
 	void theAuditRunsItsChecksSeparately()
 	{
 		QWidget root;
