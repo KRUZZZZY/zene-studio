@@ -31,6 +31,10 @@
 
 #include <QtTest>
 
+#define private public // the regression needs a live mixer with the song pointer absent
+#include "Engine.h"
+#undef private
+
 #include <QDataStream>
 #include <QFile>
 #include <QFileInfo>
@@ -863,6 +867,39 @@ private slots:
 
 	//! MX-156: the Recorder passes the sound unchanged and writes what passed to its take; the take lands
 	//! on a new audio track as one undo step; a device that is not a Recorder is refused.
+	void recorderLandRefusesWithoutSong()
+	{
+		const QString recorder = loadByName(ch(1), QStringLiteral("insertrecorder"));
+		if (recorder.isEmpty()) { QSKIP("this build has no recorder module"); }
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), recorder}};
+		QJsonObject start = device;
+		start.insert(QStringLiteral("on"), true);
+		start.insert(QStringLiteral("file"), dir.filePath(QStringLiteral("take.wav")));
+		const ControlResult started = run(QStringLiteral("plugin.record"), start);
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		QJsonObject stop = device;
+		stop.insert(QStringLiteral("on"), false);
+		QVERIFY2(run(QStringLiteral("plugin.record"), stop).ok, "could not finish the test take");
+
+		QVERIFY(Engine::s_song != nullptr);
+		const ControlCommand* command = ControlRegistry::instance()->command(QStringLiteral("plugin.recorder_land"));
+		QVERIFY(command != nullptr);
+		const ControlResult landed = [&]()
+		{
+			Song* song = Engine::s_song;
+			Engine::s_song = nullptr;
+			// The public registry rejects a missing song before calling the handler; test the handler's
+			// own no-song safety directly so this failure path is covered too.
+			const ControlResult result = command->handler(device);
+			Engine::s_song = song;
+			return result;
+		}();
+		QCOMPARE(landed.errorKind, ControlErrorKind::Refused);
+		QVERIFY(landed.errorMessage.contains(QStringLiteral("song"), Qt::CaseInsensitive));
+	}
+
 	void theRecorderRecordsWhatPassesIt()
 	{
 		const QString recorder = loadByName(ch(1), QStringLiteral("insertrecorder"));

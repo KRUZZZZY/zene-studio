@@ -2729,6 +2729,11 @@ set_target_properties(mpe_test_consumer PROPERTIES
 if(TARGET receiver AND TARGET insertrecorder)
 	add_dependencies(ReceiverEffectTest receiver insertrecorder)
 endif()
+# new-p22-61/new-p22-64: DeviceDspTest exercises Recorder commands and its frequency-shifter and console
+# slots require the build's modules; a targeted test build must not skip or fail on missing modules.
+if(TARGET DeviceDspTest AND TARGET insertrecorder AND TARGET frequencyshifter AND TARGET console)
+	add_dependencies(DeviceDspTest insertrecorder frequencyshifter console)
+endif()
 if(TARGET sid AND TARGET SidInstrument)
 	add_dependencies(SidInstrument sid)
 endif()

@@ -103,7 +103,16 @@ ControlResult land(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the Recorder has no take on disk"));
 	}
-	Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("there is no song to land the take on"));
+	}
+	Track* track = Track::create(Track::Type::Sample, song);
+	if (track == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("could not create a track for the take"));
+	}
 	track->setName(QFileInfo(take).completeBaseName());
 	if (auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(args.value(QStringLiteral("position")).toInt(0)))))
 	{
