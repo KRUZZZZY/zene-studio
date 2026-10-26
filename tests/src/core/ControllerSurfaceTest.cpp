@@ -166,6 +166,21 @@ private slots:
 		QCOMPARE(controller.currentValue(0), 0.0f);
 	}
 
+	// Explicit nullptr is the same state as the default argument, but it also
+	// covers repeated periods and the last frame of a period, where the null
+	// branch must keep filling the buffer with zeros.
+	void explicitNullPeakEffectStaysSilentAcrossPeriods()
+	{
+		PeakController controller(Engine::getSong(), nullptr);
+		const f_cnt_t lastFrame = Engine::audioEngine()->framesPerPeriod() - 1;
+		for (int period = 0; period < 4; ++period)
+		{
+			Controller::triggerFrameCounter();
+			QCOMPARE(controller.currentValue(0), 0.0f);
+			QCOMPARE(controller.currentValue(lastFrame), 0.0f);
+		}
+	}
+
 	void runningFrameCountDoesNotWrapAtUnsignedIntLimit()
 	{
 		RunningFrameCountProbeController controller;
