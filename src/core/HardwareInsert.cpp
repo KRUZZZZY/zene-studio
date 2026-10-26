@@ -31,6 +31,7 @@
 #include <QDomElement>
 
 #include "AudioEngine.h"
+#include "Engine.h"
 
 namespace lmms
 {
@@ -41,6 +42,8 @@ namespace
 //! The ping's state machine lives in one word: the audio thread must never take a lock for it.
 static_assert(std::atomic<std::int64_t>::is_always_lock_free,
 	"the ping's state machine must be a lock-free atomic");
+static_assert(std::atomic<sample_rate_t>::is_always_lock_free,
+	"the measured sample rate must be a lock-free atomic");
 
 //! Channel @a channel of a frame of @a width interleaved channels, 0 when the block does not carry it.
 float wideSample(const float* frame, int width, int channel)
@@ -62,6 +65,54 @@ audioio::Destination destinationAttribute(const QDomElement& element, const char
 	return out;
 }
 
+bool hasMeasurementContext(const HardwareInsert::Settings& settings, sample_rate_t rate)
+{
+	return settings.measured >= 0 && settings.measuredRate == rate
+		&& settings.measuredSend == settings.send && settings.measuredReturn == settings.ret;
+}
+
+void normalizeMeasurementContext(HardwareInsert::Settings& settings, sample_rate_t rate)
+{
+	if (settings.measured < 0)
+	{
+		settings.measuredRate = 0;
+		return;
+	}
+	if (settings.measuredRate == 0 && settings.measuredSend == settings.send && settings.measuredReturn == settings.ret)
+	{
+		settings.measuredRate = rate;
+	}
+	if (!hasMeasurementContext(settings, rate))
+	{
+		settings.measured = -1;
+		settings.measuredRate = 0;
+	}
+}
+
+void loadMeasurement(const QDomElement& element, sample_rate_t rate, HardwareInsert::Settings& loaded)
+{
+	bool measuredOk = false;
+	const int measured = element.attribute(QStringLiteral("measured"), QStringLiteral("-1")).toInt(&measuredOk);
+	if (!measuredOk) { return; }
+	loaded.measured = measured;
+	if (loaded.measured < 0) { return; }
+	bool measuredRateOk = !element.hasAttribute(QStringLiteral("measured_rate"));
+	sample_rate_t measuredRate = rate;  // older projects have no rate metadata; keep their prior interpretation
+	if (element.hasAttribute(QStringLiteral("measured_rate")))
+	{
+		const uint parsedRate = element.attribute(QStringLiteral("measured_rate")).toUInt(&measuredRateOk);
+		if (measuredRateOk) { measuredRate = static_cast<sample_rate_t>(parsedRate); }
+	}
+	loaded.measuredRate = measuredRate;
+	if (!measuredRateOk || measuredRate != rate) { loaded.measured = -1; }
+}
+
+sample_rate_t currentOutputSampleRate()
+{
+	const AudioEngine* engine = Engine::audioEngine();
+	return engine == nullptr ? 0 : engine->outputSampleRate();
+}
+
 } // namespace
 
 void HardwareInsert::prepare(f_cnt_t frames)
@@ -80,11 +131,20 @@ HardwareInsert::Settings HardwareInsert::settings() const
 {
 	Settings out = m_settings;
 	out.measured = measuredFrames();
+	out.measuredRate = out.measured >= 0 ? m_measurementRate.load(std::memory_order_acquire) : 0;
+	if (out.measured >= 0 && out.measuredRate != currentOutputSampleRate())
+	{
+		out.measured = -1;
+		out.measuredRate = 0;
+	}
+	out.measuredSend = out.send;
+	out.measuredReturn = out.ret;
 	return out;
 }
 
 void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 {
+	const sample_rate_t rate = currentOutputSampleRate();
 	if (settings.enabled) { prepare(frames); }
 	// Switched on: the return starts from an empty ring, so what it held when it went off cannot shift
 	// the round trip the ping measured (the render is held off: the caller has the change lock).
@@ -93,15 +153,25 @@ void HardwareInsert::setSettings(const Settings& settings, f_cnt_t frames)
 		m_ringRead = 0;
 		m_ringFill = 0;
 	}
-	m_settings = settings;
-	if (!settings.enabled) { movePingTo(PingState::Idle); }
-	setMeasured(settings.measured);
+	const bool routeChanged = settings.send != m_settings.send || settings.ret != m_settings.ret;
+	const bool waitingAtAnotherRate = pingState() == PingState::Waiting && m_pingSampleRate != rate;
+	if (routeChanged || !settings.enabled || waitingAtAnotherRate) { movePingTo(PingState::Idle); }
+	Settings applied = settings;
+	normalizeMeasurementContext(applied, rate);
+	applied.measuredSend = applied.send;
+	applied.measuredReturn = applied.ret;
+	m_settings = applied;
+	m_measurementRate.store(applied.measuredRate, std::memory_order_release);
+	setMeasured(applied.measured);
 }
 
 int HardwareInsert::latencyFrames() const
 {
 	if (!m_settings.enabled) { return 0; }
-	return m_settings.latencyOverride >= 0 ? m_settings.latencyOverride : std::max(0, measuredFrames());
+	if (m_settings.latencyOverride >= 0) { return m_settings.latencyOverride; }
+	const int measured = measuredFrames();
+	return measured >= 0 && m_measurementRate.load(std::memory_order_acquire) == currentOutputSampleRate()
+		? measured : 0;
 }
 
 void HardwareInsert::requestPing()
@@ -150,10 +220,18 @@ void HardwareInsert::setMeasured(int measured) noexcept
 void HardwareInsert::process(SampleFrame* buffer, f_cnt_t frames, AudioEngine& engine) noexcept
 {
 	if (!m_settings.enabled || m_send.size() < static_cast<std::size_t>(frames)) { return; }
-	const PingWord word = pingWord();
-	const auto state = pingStateOf(word);
+	const sample_rate_t rate = engine.outputSampleRate();
+	invalidateMeasurementForRate(rate);
+	PingWord word = pingWord();
+	auto state = pingStateOf(word);
+	if (state == PingState::Waiting && m_pingSampleRate != rate)
+	{
+		cancelPing();
+		word = pingWord();
+		state = pingStateOf(word);
+	}
 	bool measuring = false;
-	if (state == PingState::Requested && claimPing(word))
+	if (state == PingState::Requested && claimPing(word, rate))
 	{
 		// The click, alone on the send: the music stays off it until the click is heard back.
 		std::fill_n(m_send.begin(), frames, SampleFrame{});
@@ -168,8 +246,15 @@ void HardwareInsert::process(SampleFrame* buffer, f_cnt_t frames, AudioEngine& e
 	else { std::copy_n(buffer, frames, m_send.begin()); }
 	m_sent = true;
 	pullReturn(engine, frames);
-	listenForPing(frames, engine.outputSampleRate());
+	listenForPing(frames, rate);
 	writeOutput(buffer, frames, measuring);
+}
+
+void HardwareInsert::invalidateMeasurementForRate(sample_rate_t rate) noexcept
+{
+	if (measuredFrames() < 0 || m_measurementRate.load(std::memory_order_acquire) == rate) { return; }
+	m_measurementRate.store(0, std::memory_order_release);
+	setMeasured(-1);
 }
 
 void HardwareInsert::pullReturn(AudioEngine& engine, f_cnt_t frames) noexcept
@@ -215,6 +300,7 @@ void HardwareInsert::listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept
 	{
 		if (std::abs(m_return[f][0]) > PingThreshold || std::abs(m_return[f][1]) > PingThreshold)
 		{
+			m_measurementRate.store(rate, std::memory_order_relaxed);
 			publishPingResult(word, m_pingFrames + static_cast<int>(f));
 			return;
 		}
@@ -224,6 +310,11 @@ void HardwareInsert::listenForPing(f_cnt_t frames, sample_rate_t rate) noexcept
 }
 
 bool HardwareInsert::claimPing(PingWord expected) noexcept
+{
+	return claimPing(expected, currentOutputSampleRate());
+}
+
+bool HardwareInsert::claimPing(PingWord expected, sample_rate_t rate) noexcept
 {
 	// The claim goes through only when the word is still the one the period read: a ping that
 	// was called off (or replaced) in the meantime stays as it is, and no click goes out.
@@ -236,6 +327,7 @@ bool HardwareInsert::claimPing(PingWord expected) noexcept
 				std::memory_order_acq_rel, std::memory_order_acquire))
 		{
 			m_pingFrames = 0;
+			m_pingSampleRate = rate;
 			return true;
 		}
 		word = current;  // the failed swap wrote the word as it is now back
@@ -306,11 +398,13 @@ void HardwareInsert::save(QDomDocument& doc, QDomElement& channelElement) const
 	element.setAttribute(QStringLiteral("mix"), static_cast<double>(current.mix));
 	element.setAttribute(QStringLiteral("latency"), current.latencyOverride);
 	element.setAttribute(QStringLiteral("measured"), current.measured);
+	if (current.measured >= 0) { element.setAttribute(QStringLiteral("measured_rate"), current.measuredRate); }
 	channelElement.appendChild(element);
 }
 
 void HardwareInsert::load(const QDomElement& channelElement, f_cnt_t frames)
 {
+	const sample_rate_t rate = currentOutputSampleRate();
 	const QDomElement element = channelElement.firstChildElement(QStringLiteral("hardwareinsert"));
 	Settings loaded;
 	if (!element.isNull())
@@ -324,9 +418,9 @@ void HardwareInsert::load(const QDomElement& channelElement, f_cnt_t frames)
 		bool latencyOk = false;
 		const int latency = element.attribute(QStringLiteral("latency"), QStringLiteral("-1")).toInt(&latencyOk);
 		if (latencyOk) { loaded.latencyOverride = latency; }
-		bool measuredOk = false;
-		const int measured = element.attribute(QStringLiteral("measured"), QStringLiteral("-1")).toInt(&measuredOk);
-		if (measuredOk) { loaded.measured = measured; }
+		loadMeasurement(element, rate, loaded);
+		loaded.measuredSend = loaded.send;
+		loaded.measuredReturn = loaded.ret;
 	}
 	setSettings(loaded, frames);
 	movePingTo(PingState::Idle);

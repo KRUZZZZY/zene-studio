@@ -379,6 +379,78 @@ private slots:
 		QCOMPARE(insert.latencyFrames(), 512);
 	}
 
+	void savedInsertMeasurementAtAnotherSampleRateIsDiscarded()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		const sample_rate_t currentRate = engine->outputSampleRate();
+		const sample_rate_t savedRate = currentRate == 1 ? 2 : 1;
+		QVERIFY(currentRate != savedRate);
+		HardwareInsert source;
+		HardwareInsert::Settings measured;
+		measured.enabled = true;
+		measured.measured = 512;
+		source.setSettings(measured, 64);
+		QDomDocument doc;
+		QDomElement channel = doc.createElement(QStringLiteral("channel"));
+		doc.appendChild(channel);
+		source.save(doc, channel);
+		QDomElement element = channel.firstChildElement(QStringLiteral("hardwareinsert"));
+		QVERIFY(!element.isNull());
+		QCOMPARE(element.attribute(QStringLiteral("measured_rate")).toUInt(), currentRate);
+		element.setAttribute(QStringLiteral("measured_rate"), savedRate);
+
+		HardwareInsert insert;
+		insert.load(channel, 64);
+		QCOMPARE(insert.settings().measured, -1);
+		QCOMPARE(insert.latencyFrames(), 0);
+	}
+
+	void liveInsertMeasurementIsDiscardedWhenSampleRateChanges()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		const sample_rate_t currentRate = engine->outputSampleRate();
+		const sample_rate_t changedRate = currentRate == 1 ? 2 : 1;
+		HardwareInsert insert;
+		HardwareInsert::Settings settings;
+		settings.enabled = true;
+		settings.measured = 512;
+		insert.setSettings(settings, engine->framesPerPeriod());
+		QCOMPARE(insert.latencyFrames(), 512);
+
+		engine->audioDev()->setSampleRateForTesting(changedRate);
+		const int preProcessLatency = insert.latencyFrames();  // PDC queries this before the next insert process period
+		const int preProcessMeasurement = insert.settings().measured;
+		std::vector<SampleFrame> block(static_cast<std::size_t>(engine->framesPerPeriod()), SampleFrame(0.25f, -0.25f));
+		insert.process(block.data(), engine->framesPerPeriod(), *engine);
+		const int postProcessMeasurement = insert.settings().measured;
+		engine->audioDev()->setSampleRateForTesting(currentRate);
+		QCOMPARE(preProcessLatency, 0);
+		QCOMPARE(preProcessMeasurement, -1);
+		QCOMPARE(postProcessMeasurement, -1);
+		QCOMPARE(insert.settings().measured, -1);
+		QCOMPARE(insert.latencyFrames(), 0);
+	}
+
+	void measuredInsertLatencyIsDiscardedWhenItsRouteChanges()
+	{
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		for (const bool changeSend : {true, false})
+		{
+			HardwareInsert insert;
+			HardwareInsert::Settings settings;
+			settings.enabled = true;
+			settings.measured = 512;
+			insert.setSettings(settings, frames);
+			QCOMPARE(insert.latencyFrames(), 512);
+
+			if (changeSend) { settings.send = {2, 2}; }
+			else { settings.ret = {2, 2}; }
+			insert.setSettings(settings, frames);
+			QCOMPARE(insert.settings().measured, -1);
+			QCOMPARE(insert.latencyFrames(), 0);
+		}
+	}
+
 	void malformedInsertMeasurementKeepsUnknownSentinel()
 	{
 		QDomDocument doc;
@@ -447,6 +519,35 @@ private slots:
 		insert.setSettings(settings, fpp);
 		insert.process(block.data(), fpp, *engine);
 		QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
+	}
+
+	void changingAnInsertRouteCancelsAnInProgressPing()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		const f_cnt_t frames = engine->framesPerPeriod();
+		for (const bool changeSend : {true, false})
+		{
+			HardwareInsert insert;
+			HardwareInsert::Settings settings;
+			settings.enabled = true;
+			settings.ret = {10000, 2};  // no engine input can accidentally complete the ping
+			insert.setSettings(settings, frames);
+			insert.requestPing();
+			std::vector<SampleFrame> block(static_cast<std::size_t>(frames), SampleFrame(0.25f, 0.25f));
+			insert.process(block.data(), frames, *engine);
+			QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Waiting));
+
+			settings = insert.settings();
+			const auto waiting = insert.pingWord();
+			if (changeSend) { settings.send = {2, 2}; }
+			else { settings.ret = {10002, 2}; }
+			insert.setSettings(settings, frames);
+			QVERIFY2(!insert.publishPingResult(waiting, 1234), "a response from the old route published latency after a route change");
+			QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
+			insert.process(block.data(), frames, *engine);
+			QCOMPARE(static_cast<int>(insert.pingState()), static_cast<int>(HardwareInsert::PingState::Idle));
+			QCOMPARE(insert.settings().measured, -1);
+		}
 	}
 
 	void changingReturnRouteDropsQueuedFrames()
@@ -751,7 +852,7 @@ private slots:
 	 cue.setAttribute(QStringLiteral("pan"), QStringLiteral("nan"));
 	 element.appendChild(cue);
 	 ChannelHardwareIo loaded;
-	 loaded.load(channelElement, Engine::audioEngine()->framesPerPeriod());
+		 loaded.load(channelElement, Engine::audioEngine()->framesPerPeriod());
 	 QVERIFY(std::isfinite(loaded.cues[0].level) && std::isfinite(loaded.cues[0].pan));
 	 QCOMPARE(loaded.cues[0].level, 0.f);  // the attribute's own default: no send
 	 QCOMPARE(loaded.cues[0].pan, 0.f);    // centred
