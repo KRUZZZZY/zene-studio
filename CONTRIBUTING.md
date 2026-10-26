@@ -14,6 +14,10 @@ endorsed by, the LMMS project.
 - Bugs and feature requests go through the templates in
   [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/): `bug_report.yml`, `feature_request.yml`
   and `alpha-feedback.yml` for the alpha build.
+- Accessibility blockers have their own [accessibility report
+  form](https://github.com/KRUZZZZY/zene-studio/issues/new?template=accessibility-report.yml). Describe the affected workflow, the assistive technology and version, and the steps to
+  reproduce; no personal medical information is requested or needed.
+
 - Security problems are **not** issues — see [SECURITY.md](SECURITY.md).
 
 ## Build and test

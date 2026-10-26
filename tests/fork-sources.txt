@@ -3060,3 +3060,12 @@ docs/qwen-fixes-2026-10/cluster-Q050-121.md
 # registered proof (the mono downmix extends the fork-NEW sample.edit_range unit).
 src/core/ControlCommandsSampleStereo.cpp
 tests/src/core/ControlSampleStereoTest.cpp
+# 2026-10-20 (Q050-100): spoken meter, peak watch and the launcher/session announcer, fork-NEW.
+include/MeterSpeech.h
+src/gui/MeterSpeech.cpp
+include/SessionAnnouncements.h
+src/gui/SessionAnnouncements.cpp
+src/core/ControlCommandsMeterSpeech.cpp
+# 2026-10-20 (Q050-202): the shipped keyboard presets, fork-NEW.
+include/ShortcutPresets.h
+src/gui/ShortcutPresets.cpp

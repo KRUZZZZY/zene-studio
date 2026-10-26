@@ -25,9 +25,63 @@ Undo History); actions outside it - files written to disk, messages sent to hard
 <p class="tip">Hover over a control to see what it does; press <b>Shift+F1</b> (Help &gt; What's This?) and click a
 control for its full description. Help &gt; Command Reference lists every command with its arguments, and the Command Palette finds any menu item or command by name: Enter runs it, or opens its settings when it has any, Shift+Enter runs it with its defaults, and a command that cannot be undone is marked; Help &gt; Keyboard
 Shortcuts lists every shortcut, and Project tools &gt; Customise &gt; Keyboard Shortcuts changes them.</p>
-<nav><a href="#window">The window</a> <a href="#arrange">Arranging</a> <a href="#notes">Notes</a> <a href="#mix">Mixing</a>
+<nav><a href="#quickstart">Quick start</a> <a href="#window">The window</a> <a href="#arrange">Arranging</a> <a href="#notes">Notes</a> <a href="#mix">Mixing</a>
 <a href="#devices">Devices</a> <a href="#record">Recording</a> <a href="#launch">Launcher</a> <a href="#workflows">Patterns and cells</a>
 <a href="#projects">Projects</a> <a href="#agents">Scripts and agents</a> <a href="#customise">Customising</a> <a href="#access">Access</a></nav>
+
+<h2 id="quickstart">Quick start</h2>
+<p>Six short guides, in the order most projects need them. Each names the controls and menu paths it uses, links to the
+area reference below, and points at the command an agent sends for the same job. The Find field searches all of this text.</p>
+
+<h3 id="task-first-beat">Make a first beat</h3>
+<ol>
+<li>Open the Browser and drag an instrument onto the arrangement, or choose Track &gt; Add Instrument Track (<code>track.add</code>).</li>
+<li>Double-click the track at bar 1 to make a MIDI clip, then double-click the clip to open the note editor (<code>note.add</code>).</li>
+<li>Draw a kick and a snare with the pencil; Space plays and stops.</li>
+<li>Take the tour: Help &gt; Tours &gt; Your first beat (<code>app.tour</code>, tour <code>first-beat</code>).</li>
+</ol>
+<p>Reference: <a href="#arrange">Arranging</a>, <a href="#notes">Editing notes</a>.</p>
+
+<h3 id="task-arrange-clips">Arrange clips</h3>
+<ol>
+<li>Drag clips to move them and their edges to trim; one drag is one undo step.</li>
+<li>Choose the Range tool, drag over the tracks, then split, delete, crop, fade or bounce from Navigate &gt; Range.</li>
+<li>Use <code>arrangement.get_state</code> to read positions and lengths, and <code>clip.move</code> or <code>clip.resize</code> to make the same edit from an agent.</li>
+</ol>
+<p>Reference: <a href="#arrange">Arranging</a>.</p>
+
+<h3 id="task-edit-notes">Edit notes</h3>
+<ol>
+<li>Open a MIDI clip in the note editor and pick the draw, paint, delete or select tool from its toolbar.</li>
+<li>Notes &gt; Quantise, Transpose, Scale and Transform change the selection; the lanes below edit per-note expression.</li>
+<li>From the keyboard, Alt+Left/Right walks the notes and Shift adds; <code>note.edit</code> writes a validated batch as one undo step.</li>
+</ol>
+<p>Reference: <a href="#notes">Editing notes</a>.</p>
+
+<h3 id="task-instrument-effect">Add an instrument or effect</h3>
+<ol>
+<li>Drag an instrument from the Browser to a track, or choose it in the track's instrument window (<code>plugin.load</code>).</li>
+<li>Drag an effect onto a mixer strip or into the Device panel's chain; right-click a device to insert, copy or bypass it.</li>
+<li>The selected channel's rack and macros are in the Device panel; <code>plugin.load</code> is the agent route to the same chain.</li>
+</ol>
+<p>Reference: <a href="#devices">Devices</a>, <a href="#mix">Mixing</a>.</p>
+
+<h3 id="task-record-comp">Record and comp takes</h3>
+<ol>
+<li>Arm a track with the round button in its header (<code>track.set_arm</code>) and choose its input in the track's Record menu.</li>
+<li>Press Record (or R); Record &gt; Count-In and Pre-Roll start early, and Record Mode chooses overdub or replace.</li>
+<li>Looped passes become take lanes in the Inspector. Drag along a lane to comp a range, or double-click to cycle the take there.</li>
+<li>The recording tour is Help &gt; Tours &gt; Recording (tour <code>recording</code>).</li>
+</ol>
+<p>Reference: <a href="#record">Recording</a>.</p>
+
+<h3 id="task-mix-export">Mix, export and hand off</h3>
+<ol>
+<li>Open Mix (Alt+2). Each strip has trim, pan, sends, inserts and a meter; right-click for its Strip, Listen and Mixer View menus.</li>
+<li>Read the mix with <code>mixer.get_state</code>, then export from File &gt; Export (<code>render.render</code>).</li>
+<li>Mixing tour: Help &gt; Tours &gt; Mixing (tour <code>mixing</code>). Projects are ordinary files; the command reference lists the save and render commands.</li>
+</ol>
+<p>Reference: <a href="#mix">Mixing</a>, <a href="#projects">Projects</a>.</p>
 
 <h2 id="window">The window</h2>
 <ul>
@@ -87,7 +141,7 @@ splits it at the play position. A crossfade's two sides can have their own lengt
 track moves every clip inside it. A clip's Snap Point (its menu) is the place inside it that lands on the grid
 when you drag it - a downbeat after a pickup. Navigate &gt; Show Navigator puts the whole song in a strip under the arranger:
 click or drag in it to scroll, turn the wheel to zoom; it names the sections and shows the markers, the loop and the play position, and Alt-click or a double-click on one zooms the arranger to it. Navigate &gt; Second Tool on a Modifier Key gives Alt, Ctrl or Shift a
-tool of its own while held. Track &gt; Versions keeps several versions of a track's clips and switches between them. An audio
+tool of its own while held. A focused track header's Menu or Shift+F10 opens its actions menu; the time ruler's opens the loop menu at the play position. Track &gt; Versions keeps several versions of a track's clips and switches between them. An audio
 clip's Speed menu ramps its speed (the pitch going with it) or adds a tape start or a tape stop.</p>
 <p>Splits and trims can land on an exact sample, and with Navigate &gt; Snap Cuts to Zero Crossings on, the knife and an edge drag move to the
 nearest zero crossing so the cut does not click. A track's menu adds a spacer below it (Add Spacer Below): an empty band
@@ -131,7 +185,7 @@ loops or jumps into the middle of, or one already under the playhead when its tr
 
 <h2 id="mix">Mixing</h2>
 <p>Each strip has its trim, polarity, mono and pan mode (balance, dual or width), sends with their own pan, inserts and a
-meter line with the clip light and the gain reduction. Right-click a strip and open More for its Strip, Listen and Mixer View menus:
+meter line with the clip light and the gain reduction. Right-click a strip for <b>Speak Meter</b> (Ctrl+Shift+M: its post-fader peak and the master's LUFS-S) and <b>Peak Watch</b> (off, or -18, -12, -6, -3 or 0 dBFS; the input and master each announce a rising crossing once and re-arm after the level falls). More holds its Strip, Listen and Mixer View menus:
 show or hide sections, change the strip width, show only some channels, switch the meter between peak, RMS and pre-fader.
 VCA groups have their own strips at the right of the mixer: right-click one for Links (which of level, mute and solo
 reach its members) and Put Inside (nesting), right-click a mixer channel for VCA group (join a group or make one), and
@@ -258,7 +312,7 @@ of a MIDI controller to cells and scenes. Launcher &gt; Record What I Played Int
 cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell for its Follow Action Chain (the
 action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
 scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps
-a setlist of songs to step through. A marker can run a command when playback crosses it (marker.set 'action').</p>
+a setlist of songs to step through. A marker can run a command when playback crosses it (marker.set 'action'). Launches and stops are announced once they actually play or stop, not when queued, and one scene launch is one scene announcement rather than one per cell; view.announcements gates these routine messages.</p>
 <p>For a show, View &gt; Perform Mode (or Launcher &gt; Perform Mode) opens a window made to be read from a distance: the
 setlist's song and the next one, Play and Stop, the bar and beat, the tempo with - and + (each an undoable change), the scene
 playing and the scene that plays next, one big button per scene, what each track is playing, and a large Stop All. Its keys:
@@ -388,10 +442,12 @@ keyboard reaches every menu and most lists, and F6 moves between the panels.</p>
 <p>Help &gt; Ask answers a question from this manual and the command reference, offline: nothing is sent anywhere.
 Help &gt; What's New shows the release notes, once per version at start; Help &gt; Tours walks through the window part
 by part.</p>
-<p>F1 (Help &gt; Help for This) shows what the focused control is, the command it runs and its shortcut, above the manual opened at its section - no hovering needed. The manual has a find field (Enter: next match, Shift+Enter: previous); the Command Reference groups every command under these sections, names it as the menus do and finds it by a task (&quot;mixing&quot;), a shortcut or a word of its description. Help &gt; Keyboard Shortcuts lists every shortcut by task; Enter runs the highlighted one. Lists - revisions, missing files, plug-ins in the project and the rest - have a find field, sort by a column title (numbers by value; a third click restores the list's own order), run their main action on Enter or a double-click and offer every action on the row from the Menu key, Shift+F10 or a right-click; each action's outcome stays in the Results log under the list.</p>
+<p>F1 (Help &gt; Help for This) shows what the focused control is, the command it runs and its shortcut, above the manual opened at its section - no hovering needed. The manual has a find field (Enter: next match, Shift+Enter: previous); the Command Reference groups every command under these sections, names it as the menus do and finds it by a task (&quot;mixing&quot;), a shortcut or a word of its description. Help &gt; Keyboard Shortcuts lists every shortcut by task; Enter runs the highlighted one, and Presets... applies the recommended accessibility map or a migration map for Ableton Live, FL Studio or Logic Pro after saving the current map as a timestamped backup. Lists - revisions, missing files, plug-ins in the project and the rest - have a find field, sort by a column title (numbers by value; a third click restores the list's own order), run their main action on Enter or a double-click and offer every action on the row from the Menu key, Shift+F10 or a right-click; each action's outcome stays in the Results log under the list.</p>
 <p>Press Shift+F1 on any knob, fader, number or menu to learn its drag, wheel, keys and right-click options. Theme, zoom, palette, workspace and accessible-mode changes apply at the next start, and each change says so; a colour that makes text or a control fall below WCAG AA contrast is refused unless you allow low contrast.</p>
-<p><b>Editing without a mouse.</b> Every editing canvas has keys and an editable list. Note editor: Alt+Left/Right previous/next note (Shift adds), Alt+Up/Down the chord's note above/below, Home/End first/last; Ctrl+Left/Right shorten/lengthen, Ctrl+Up/Down velocity (Ctrl+Shift finely); Insert adds a note after the cursor; Enter opens its properties. Expression lane: Left/Right note to note, Up/Down value (Page Up/Down by 10). Controller lane: Left/Right a grid step, Ctrl+Left/Right point to point, Up/Down value at the cursor, Insert adds a point, Delete removes it. XY pad: arrows 1 % (Shift 10 %). Comp lanes: Up/Down lane, Left/Right beat (Ctrl bar), Shift marks a range, Enter comps it, C cycles the take. Arranger: Shift+Alt+Up/Down clip on the track above/below, Ctrl+Alt+Left/Right resize. <b>Ctrl+Shift+L on any of these opens its list</b>: a table you can read cell by cell and edit by typing (positions as 5.2.1, pitches as C5); Insert, Delete, + and - work there, and every edit is one undo step.</p>
-<p><b>Announcements.</b> Zene tells your screen reader about errors, refused edits, recording starting and stopping, and saving or opening a project, never meter movement; the announcements level (view.announcements) sets this to all, errors only, or off. Accessibility Check can run its checks separately: names, roles, values, keyboard reach and duplicate names.</p>
+<p><b>Editing without a mouse.</b> Every editing canvas has keys and an editable list. Note editor: Alt+Left/Right previous/next note (Shift adds), Alt+Up/Down the chord's note above/below, Home/End first/last; Ctrl+Left/Right shorten/lengthen, Ctrl+Up/Down velocity (Ctrl+Shift finely); Insert adds a note after the cursor; Enter opens its properties. Expression lane: Left/Right note to note, Up/Down value (Page Up/Down by 10); with several notes selected, one key changes every selected note - including the timbre, pressure and micro-pitch lanes - as one undo step. Controller lane: Left/Right a grid step, Ctrl+Left/Right point to point, Up/Down value at the cursor, Insert adds a point, Delete removes it. XY pad: arrows 1 % (Shift 10 %). Sample Editor: Tab to the waveform, Left/Right move the cursor, Shift+Left/Right extend the selection, Home/End go to the ends, Ctrl+Plus/Minus zoom, Ctrl+0 shows all and Ctrl+A selects all; Tab to an operation and press Space. Comp lanes: Up/Down lane, Left/Right beat (Ctrl bar), Shift marks a range, Enter comps it, C cycles the take. Arranger: Shift+Alt+Up/Down clip on the track above/below, Ctrl+Alt+Left/Right resize. <b>Ctrl+Shift+L on any of these opens its list</b>: a table you can read cell by cell and edit by typing (positions as 5.2.1, pitches as C5); Insert, Delete, + and - work there, and every edit is one undo step.</p>
+<p><b>Announcements.</b> Zene tells your screen reader about errors, refused edits, recording starting and stopping, saving or opening a project, and completed launcher cell and scene changes; the announcements level (view.announcements) sets this to all, errors only, or off. Meter movement is not narrated continuously: <b>Speak Meter</b> (Ctrl+Shift+M, or a strip's menu) reports the focused strip's peak and the master's short-term loudness on request, and <b>Peak Watch</b> speaks once when the input or master crosses a threshold you set, then stays quiet until it falls below again. Accessibility Check can run its checks separately: names, roles, values, keyboard reach and duplicate names.</p>
+<p><b>Screen-reader setup.</b> Zene supports the platform bridge used by NVDA on Windows, VoiceOver on macOS and Orca on Linux. Turn on accessible mode under Help &gt; Appearance, then use Tab and the arrow keys for controls and F6 / Shift+F6 to move between panels. The manual and Help &gt; Accessibility Check read the same names, roles and values the bridge exposes. The <a href="https://github.com/KRUZZZZY/zene-studio/blob/main/docs/ACCESSIBILITY-TEST-MATRIX.md">tested workflow matrix</a> records each platform's actual screen-reader runs and explicitly marks the ones not yet tested.</p>
+<p><b>Reporting an accessibility blocker.</b> If a workflow is blocked or unclear with a screen reader, magnifier or other assistive technology, use the <a href="https://github.com/KRUZZZZY/zene-studio/issues/new?template=accessibility-report.yml">accessibility blocker form</a>. It asks for the affected workflow, the assistive technology and version, and the steps to reproduce. You do not need to give a diagnosis or any personal medical information. Agents can open this topic with app.help topic "access".</p>
 <p>Background tasks - renders from the render queue, stem splits, mastering, library indexing and background video-audio extraction - appear under TASKS in the footer. Click it (or press Space on it) to see each job's progress; Cancel stops the jobs that support it. The list never blocks the window.</p>
 
 </body>

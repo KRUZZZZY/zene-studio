@@ -43,7 +43,8 @@ anything: this alpha is unfinished, and that page lists what it is missing.
 
 This is an **early alpha** — expect crashes and rough edges, and treat the known-limitations page as
 required reading. The release's own promise, in one sentence: **everything is operable through
-`--control-socket` and the MCP bridge; almost nothing is operable from the interface.**
+`--control-socket` and the MCP bridge, and the core editing workflows are also operable from the interface; some
+advanced or diagnostic operations remain socket-only.**
 
 **The DAW core inherited from LMMS**: the Piano Roll, Song Editor and Beat/Bassline editor; a mixer
 with a multi-channel port model, sidechain sends and no fixed channel limit; 15+ built-in
@@ -254,6 +255,11 @@ Build, test and gate instructions are in [CONTRIBUTING.md](CONTRIBUTING.md); loc
 [docs/LOCAL-CI.md](docs/LOCAL-CI.md), and the gate definitions and their known open defects are in
 [tests/QA-GATES.md](tests/QA-GATES.md). Security problems go through [SECURITY.md](SECURITY.md), not
 the public issue tracker. Release publishing is documented in [docs/RELEASING.md](docs/RELEASING.md).
+
+**Accessibility feedback.** If a workflow is blocked or unclear with a screen reader, magnifier or
+other assistive technology, use the [accessibility blocker form](https://github.com/KRUZZZZY/zene-studio/issues/new?template=accessibility-report.yml). It asks for the affected
+workflow, the assistive technology and version, and the steps to reproduce - nothing about your
+health or a medical diagnosis. The same route is in Help > Manual > Access.
 
 ## License and attribution
 

@@ -48,6 +48,7 @@
 #include <limits>
 #include <vector>
 
+#include "AccessibleCanvas.h"
 #include "ControlRegistry.h"
 #include "Editor.h"
 #include "Clipboard.h"
@@ -392,6 +393,47 @@ private slots:
 		QTest::mouseRelease(view, Qt::LeftButton, Qt::NoModifier, QPoint(endX + 80, view->height() / 2));
 		QCOMPARE(view->from(), Rate / 4);
 		QVERIFY(view->to() > Rate / 2);
+	}
+
+	//! Q050-099: the waveform is a focusable canvas with a cursor, range selection and
+	//! zoom from the keyboard, and an applied range edit is one undo step.
+	void theWaveformTakesKeysForCursorRangeZoomAndEdit()
+	{
+		SampleSelectionView* view = m_dialog->view();
+		QCOMPARE(a11y::canvasRole(view), QAccessible::Canvas);
+		QVERIFY((view->focusPolicy() & Qt::TabFocus) != 0);
+		QCOMPARE(view->accessibleName(), QStringLiteral("Waveform"));
+		view->setFocus();
+		QVERIFY(view->hasFocus());
+
+		QTest::keyClick(view, Qt::Key_Right);
+		const int step = std::max(1, view->viewFrames() / 100);
+		QCOMPARE(view->from(), step);
+		QCOMPARE(view->to(), step);
+		QTest::keyClick(view, Qt::Key_Right, Qt::ShiftModifier);
+		QCOMPARE(view->from(), step);
+		QCOMPARE(view->to(), 2 * step);
+		QTest::keyClick(view, Qt::Key_Home);
+		QCOMPARE(view->from(), 0);
+		QCOMPARE(view->to(), 0);
+		QVERIFY(a11y::canvasValue(view).contains(QStringLiteral("Frames 0 to 0")));
+
+		QTest::keyClick(view, Qt::Key_Plus, Qt::ControlModifier);
+		QVERIFY(view->viewFrames() < view->frames());
+		QTest::keyClick(view, Qt::Key_0, Qt::ControlModifier);
+		QCOMPARE(view->viewFrames(), view->frames());
+		QTest::keyClick(view, Qt::Key_A, Qt::ControlModifier);
+		QCOMPARE(view->from(), 0);
+		QCOMPARE(view->to(), view->frames());
+
+		QPushButton* silence = button(m_dialog, QStringLiteral("Silence"));
+		QVERIFY(silence != nullptr);
+		silence->setFocus();
+		QTest::keyClick(silence, Qt::Key_Space);
+		QCOMPARE(m_clip->sample().data()[0][0], 0.f);
+		QCOMPARE(m_clip->sample().data()[Rate / 2][0], 0.f);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY(m_clip->sample().data()[Rate / 4][0] != 0.f || m_clip->sample().data()[Rate / 4 + 1][0] != 0.f);
 	}
 
 	void anOperationActsOnTheFieldsRange()

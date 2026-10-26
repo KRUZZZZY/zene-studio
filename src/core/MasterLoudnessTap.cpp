@@ -27,7 +27,9 @@
 
 #include "MasterLoudnessTap.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <thread>
 
 namespace lmms
@@ -113,6 +115,7 @@ void MasterLoudnessTap::clearMeasurement() noexcept
 	m_truePeakDbtp.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
 	m_loudnessRangeLu.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
 	m_peakToLoudnessRatioDb.store(LufsMeter::MinusInfinity, std::memory_order_relaxed);
+	m_samplePeak.store(0.f, std::memory_order_relaxed);
 }
 
 void MasterLoudnessTap::feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept
@@ -124,6 +127,17 @@ void MasterLoudnessTap::feed(const SampleFrame* frames, f_cnt_t frameCount) noex
 	// zero in flight and started clearing it. Both sides are seq_cst (the store
 	// of false and waitForQuiet's load too): store-then-load on each side.
 	m_inFlight.fetch_add(1, std::memory_order_seq_cst);
+	// Q050-100: the sample peak is measured even while the loudness meter is disarmed.
+	// A peak watch must see the master before anyone arms the LUFS tap, and this loop
+	// is the same fixed work the loudness meter's own peak scan does: no allocation,
+	// no lock and no write to the samples.
+	float peak = 0.f;
+	for (f_cnt_t frame = 0; frame < frameCount; ++frame)
+	{
+		peak = std::max(peak, std::max(std::abs(frames[frame][0]), std::abs(frames[frame][1])));
+	}
+	const float previousPeak = m_samplePeak.load(std::memory_order_relaxed);
+	if (peak > previousPeak) { m_samplePeak.store(peak, std::memory_order_relaxed); }
 	if (!m_enabled.load(std::memory_order_seq_cst))
 	{
 		m_inFlight.fetch_sub(1, std::memory_order_release);
@@ -190,6 +204,7 @@ MasterLoudnessTap::Snapshot MasterLoudnessTap::snapshot() const noexcept
 	out.truePeakDbtp = m_truePeakDbtp.load(std::memory_order_relaxed);
 	out.loudnessRangeLu = m_loudnessRangeLu.load(std::memory_order_relaxed);
 	out.peakToLoudnessRatioDb = m_peakToLoudnessRatioDb.load(std::memory_order_relaxed);
+	out.samplePeak = m_samplePeak.load(std::memory_order_relaxed);
 	return out;
 }
 

@@ -102,6 +102,12 @@ public:
 
 	float m_peakLeft;
 	float m_peakRight;
+	//! Q050-100: the same post-fader, post-insert peak, held for the meter SPEECH/watch path.
+	//! The GUI meter consumes and clears m_peakLeft each tick; a command or a peak watch must
+	//! not race that consumer, so these are written by the mixer worker and are never reset by
+	//! the interface. They are atomics, like the strip's other published readings.
+	MeterValue m_speechPeakLeft;
+	MeterValue m_speechPeakRight;
 	//! Interleaved stereo buffer (one track channel pair) this channel is mixed into
 	SampleFrame* m_buffer;
 	//! Bus view over m_buffer, used for effect processing and mixing

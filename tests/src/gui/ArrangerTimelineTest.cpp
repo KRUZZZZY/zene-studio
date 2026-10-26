@@ -41,6 +41,8 @@
 #include <limits>
 
 #include <QAbstractSlider>
+#include <QApplication>
+#include <QMenu>
 #include <QRegularExpression>
 #include <QMouseEvent>
 #include <QImage>
@@ -85,6 +87,8 @@
 #include "SampleTrack.h"
 #include "Song.h"
 #include "SongEditor.h"
+#include "TrackLabelButton.h"
+#include "TrackView.h"
 #include "TimeLineWidget.h"
 #include "Track.h"
 #include "TrackView.h"
@@ -134,6 +138,13 @@ ClipView* viewOf(const Clip* clip)
 
 } // namespace
 
+class TestTrackLabel final : public TrackLabelButton
+{
+public:
+	using TrackLabelButton::TrackLabelButton;
+	using TrackLabelButton::mousePressEvent;
+};
+
 class ArrangerTimelineTest : public QObject
 {
 	Q_OBJECT
@@ -165,6 +176,84 @@ private slots:
 		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}, {QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
 		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
 		QCoreApplication::processEvents();
+	}
+
+	//! Q050-322: a focused track header and the ruler both open their real menu with Menu and
+	//! Shift+F10, with the same actions the mouse path offers.
+	void trackHeaderAndRulerOpenMenusFromTheKeyboard()
+	{
+		const auto popup = [] {
+			for (QWidget* widget : QApplication::topLevelWidgets())
+			{
+				auto* menu = qobject_cast<QMenu*>(widget);
+				if (menu != nullptr && menu->isVisible()) { return menu; }
+			}
+			return static_cast<QMenu*>(nullptr);
+		};
+		const auto actionTexts = [](QMenu* menu) {
+			QStringList texts;
+			for (QAction* action : menu->actions()) { texts << action->text(); }
+			return texts;
+		};
+		TrackView* view = nullptr;
+		for (TrackView* candidate : m_editor->trackViews())
+		{
+			if (candidate->getTrack() == m_track) { view = candidate; }
+		}
+		QVERIFY(view != nullptr);
+		auto* label = view->findChild<TrackLabelButton*>();
+		QVERIFY(label != nullptr);
+		QVERIFY((label->focusPolicy() & Qt::TabFocus) != 0);
+		QVERIFY(!label->accessibleName().isEmpty());
+		QVERIFY(label->isVisible());
+		QVERIFY(TrackLabelButton::isMenuKey(Qt::Key_Menu, Qt::NoModifier));
+		QVERIFY(TrackLabelButton::isMenuKey(Qt::Key_F10, Qt::ShiftModifier));
+		QVERIFY(!TrackLabelButton::isMenuKey(Qt::Key_F10, Qt::NoModifier));
+		label->openActionsMenu();
+		QTRY_VERIFY(popup() != nullptr);
+		QStringList keyboardActions = actionTexts(popup());
+		QVERIFY2(keyboardActions.contains(QStringLiteral("Clone this track")), qPrintable(keyboardActions.join(QStringLiteral(" | "))));
+		QVERIFY(keyboardActions.contains(QStringLiteral("Remove this track")));
+		popup()->close();
+		QTRY_VERIFY(popup() == nullptr);  // let a popup's queued hide finish before reopening
+
+		label->openActionsMenu();
+		QTRY_VERIFY(popup() != nullptr);
+		QCOMPARE(actionTexts(popup()), keyboardActions);
+		popup()->close();
+		QTRY_VERIFY(popup() == nullptr);  // let a popup's queued hide finish before reopening
+
+		// The mouse route opens that same menu now, rather than the old right-click rename.
+		TestTrackLabel probe(view, view->getTrackSettingsWidget());
+		probe.show();
+		QMouseEvent rightPress(QEvent::MouseButtonPress, QPointF(1, 1), Qt::RightButton, Qt::NoButton, Qt::NoModifier);
+		probe.mousePressEvent(&rightPress);
+		QTRY_VERIFY(popup() != nullptr);
+		QCOMPARE(actionTexts(popup()), keyboardActions);
+		popup()->close();
+		QTRY_VERIFY(popup() == nullptr);  // let a popup's queued hide finish before reopening
+
+		TimeLineWidget* ruler = m_editor->timeLine();
+		QVERIFY((ruler->focusPolicy() & Qt::TabFocus) != 0);
+		QCOMPARE(ruler->accessibleName(), QStringLiteral("Time ruler"));
+		Engine::getSong()->setPlayPos(2 * Bar, Song::PlayMode::Song);
+		QVERIFY(TimeLineWidget::isMenuKey(Qt::Key_Menu, Qt::NoModifier));
+		QVERIFY(TimeLineWidget::isMenuKey(Qt::Key_F10, Qt::ShiftModifier));
+		QVERIFY(!TimeLineWidget::isMenuKey(Qt::Key_F10, Qt::NoModifier));
+		ruler->openRulerMenu();
+		QTRY_VERIFY(popup() != nullptr);
+		const QStringList rulerActions = actionTexts(popup());
+		QVERIFY(rulerActions.contains(QStringLiteral("Set loop begin here")));
+		QVERIFY(rulerActions.contains(QStringLiteral("Set loop end here")));
+		// The shared builder keeps the punch range's own actions (Q050-147), so the keyboard menu has them too.
+		QVERIFY2(rulerActions.contains(QStringLiteral("Set punch in here")), qPrintable(rulerActions.join(QStringLiteral(" | "))));
+		QVERIFY(rulerActions.contains(QStringLiteral("Clear the punch range")));
+		popup()->close();
+		QTRY_VERIFY(popup() == nullptr);  // let a popup's queued hide finish before reopening
+		ruler->openRulerMenu();
+		QTRY_VERIFY(popup() != nullptr);
+		QCOMPARE(actionTexts(popup()), rulerActions);
+		popup()->close();
 	}
 
 	//! A canceled pinch that has already zoomed still leaves its starting zoom for arrangement.zoom_back.

@@ -34,6 +34,8 @@
 #include "embed.h"
 
 
+class QKeyEvent;
+class QMenu;
 class QToolBar;
 
 namespace lmms {
@@ -172,6 +174,11 @@ public:
 	bool isPlayheadVisible() const { return m_isPlayheadVisible; }
 	void setPlayheadVisible(bool visible) { m_isPlayheadVisible = visible; }
 
+	//! Q050-322: whether this key event asks for the ruler's loop menu.
+	static bool isMenuKey(int key, Qt::KeyboardModifiers modifiers);
+	//! Open the loop menu at the play position (the mouse and keyboard paths share buildLoopMenu).
+	void openRulerMenu();
+
 signals:
 	void regionSelectedFromPixels( int, int );
 	void selectionFinished();
@@ -189,6 +196,7 @@ protected:
 	void mouseMoveEvent( QMouseEvent * _me ) override;
 	void mouseReleaseEvent( QMouseEvent * _me ) override;
 	void contextMenuEvent(QContextMenuEvent* event) override;
+	void keyPressEvent(QKeyEvent* event) override;
 
 private:
 	enum class Action
@@ -205,6 +213,8 @@ private:
 	};
 
 	auto getClickedTime(int xPosition) const -> TimePos;
+	//! Q050-322: the loop menu for @a at, snapped unless @a snap is false; the mouse and keyboard both use it.
+	QMenu* buildLoopMenu(const TimePos& at, bool snap);
 	auto getLoopAction(QMouseEvent* event) const -> Action;
 	//! 0.5.0 L03 (Q050-147): a press in the punch band grabs a handle (or the whole range).
 	auto getPunchAction(QMouseEvent* event) const -> Action;

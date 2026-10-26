@@ -43,6 +43,8 @@
 
 #include "Accessibility.h"
 #include "MenuBarExtras.h"
+#include "MeterSpeech.h"
+#include "SessionAnnouncements.h"
 #include "AboutDialog.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
@@ -259,6 +261,8 @@ MainWindow::MainWindow() :
 	}
 
 	installEventFilter(this);
+	meterspeech::start(this);
+	(new SessionAnnouncer(this))->start();
 }
 
 

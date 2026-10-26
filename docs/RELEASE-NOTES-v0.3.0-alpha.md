@@ -1069,6 +1069,8 @@ with the contract test: `rows=860 true_inverse=425 snapshot=42 irreversible=25 n
 
 **Q050-106** (integrated on `050/m0-train-16`, 2026-10-26): one new `not_mutating` row, `sample.split_stereo`; `ReversibilityContractTest` on the merged tree measures `rows=859 true_inverse=425 snapshot=42 irreversible=24 not_mutating=368`.
 
+**Q050-100 batch integration onto train 16** (2026-10-26): four new rows - `meter.set_peak_watch` and `shortcuts.preset_apply` (`true_inverse`), `meter.speak` and `shortcuts.preset_list` (`not_mutating`) - give `rows=862 true_inverse=427 snapshot=42 irreversible=24 not_mutating=369`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=862 true_inverse=426 snapshot=42 irreversible=24 not_mutating=370
      configuration: telemetry.status wasm.load session.get_state stem.get_state

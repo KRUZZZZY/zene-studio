@@ -26,8 +26,10 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <memory>
 
 #include <QGuiApplication>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
@@ -67,6 +69,9 @@ TimeLineWidget::TimeLineWidget(const int xoff, const int yoff, const float ppb, 
 	move( 0, yoff );
 
 	setMouseTracking(true);
+	setFocusPolicy(Qt::StrongFocus);
+	setAccessibleName(tr("Time ruler"));
+	setAccessibleDescription(tr("Press Menu or Shift+F10 for the loop actions at the play position"));
 
 	connect( Engine::getSong(), SIGNAL(timeSignatureChanged(int,int)),
 					this, SLOT(update()));
@@ -588,53 +593,53 @@ void TimeLineWidget::invokePunchSet(const tick_t begin, const tick_t end, const 
 	}
 }
 
-void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
+QMenu* TimeLineWidget::buildLoopMenu(const TimePos& at, bool snap)
 {
-	if (event->x() < m_xOffset) { return; }
-
-	auto menu = QMenu{};
-
-	menu.addAction(tr("Set loop begin here"), [this, event] {
-		auto begin = getClickedTime(event->x());
+	auto* menu = new QMenu(this);
+	menu->setAccessibleName(tr("Ruler actions"));
+	menu->addAction(tr("Set loop begin here"), [this, at, snap] {
+		// The mouse menu has always honoured Ctrl held at the moment the action fires, not at
+		// the moment the menu opened; the keyboard path uses the same rule (Q050-322).
+		auto begin = (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier))
+			? at.quantize(m_snapSize) : at;
 		const auto end = m_timeline->loopEnd();
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = begin.quantize(m_snapSize); }
 		if (begin == end) { m_timeline->setLoopEnd(end + m_snapSize * TimePos::ticksPerBar()); }
 		m_timeline->setLoopBegin(begin);
 		update();
 	});
-	menu.addAction(tr("Set loop end here"), [this, event] {
+	menu->addAction(tr("Set loop end here"), [this, at, snap] {
 		const auto begin = m_timeline->loopBegin();
-		auto end = getClickedTime(event->x());
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = end.quantize(m_snapSize); }
+		auto end = (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier))
+			? at.quantize(m_snapSize) : at;
 		if (begin == end) { m_timeline->setLoopBegin(begin - m_snapSize * TimePos::ticksPerBar()); }
 		m_timeline->setLoopEnd(end);
 		update();
 	});
 
-	menu.addSeparator();
+	menu->addSeparator();
 
 	// 0.5.0 L03 (Q050-147): the punch range's own edits. They go through the transport commands,
 	// the same path the toolbar arm control and an agent use, so each is one undo step.
-	menu.addAction(tr("Set punch in here"), [this, event] {
+	menu->addAction(tr("Set punch in here"), [this, at, snap] {
 		m_oldPunchBegin = m_timeline->punchBegin();
 		m_oldPunchEnd = m_timeline->punchEnd();
-		auto begin = getClickedTime(event->x()).getTicks();
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = TimePos(begin).quantize(m_snapSize).getTicks(); }
+		auto begin = at.getTicks();
+		if (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { begin = TimePos(begin).quantize(m_snapSize).getTicks(); }
 		const tick_t end = std::max<tick_t>(begin + 1, m_timeline->punchEnd());
 		invokePunchSet(begin, end, true);
 		update();
 	});
-	menu.addAction(tr("Set punch out here"), [this, event] {
+	menu->addAction(tr("Set punch out here"), [this, at, snap] {
 		m_oldPunchBegin = m_timeline->punchBegin();
 		m_oldPunchEnd = m_timeline->punchEnd();
-		auto end = getClickedTime(event->x()).getTicks();
-		if (!QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = TimePos(end).quantize(m_snapSize).getTicks(); }
+		auto end = at.getTicks();
+		if (snap && !QGuiApplication::keyboardModifiers().testFlag(Qt::ControlModifier)) { end = TimePos(end).quantize(m_snapSize).getTicks(); }
 		const tick_t begin = std::min<tick_t>(std::max<tick_t>(0, end - 1), m_timeline->punchBegin());
 		if (end <= begin) { return; }
 		invokePunchSet(begin, end, true);
 		update();
 	});
-	const auto armPunch = menu.addAction(tr("Arm the punch range"), [this] {
+	const auto armPunch = menu->addAction(tr("Arm the punch range"), [this] {
 		const tick_t begin = m_timeline->punchBegin();
 		const tick_t end = m_timeline->punchEnd();
 		if (end <= begin) { return; }
@@ -644,15 +649,15 @@ void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
 		update();
 	});
 	armPunch->setEnabled(m_timeline->punchEnd() > m_timeline->punchBegin() && !m_timeline->punchEnabled());
-	const auto clearPunch = menu.addAction(tr("Clear the punch range"), [this] {
+	const auto clearPunch = menu->addAction(tr("Clear the punch range"), [this] {
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.punch_clear"), {});
 		update();
 	});
 	clearPunch->setEnabled(m_timeline->shouldPersistPunch());
 
-	menu.addSeparator();
+	menu->addSeparator();
 
-	const auto loopMenu = menu.addMenu(tr("Loop edit mode (hold shift)"));
+	const auto loopMenu = menu->addMenu(tr("Loop edit mode (hold shift)"));
 	const auto loopMode = ConfigManager::inst()->value("app", "loopmarkermode", "dual");
 	const auto addLoopModeAction = [loopMenu, &loopMode](QString text, QString mode) {
 		const auto action = loopMenu->addAction(text, [mode] {
@@ -664,8 +669,37 @@ void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
 	addLoopModeAction(tr("Dual-button"), "dual");
 	addLoopModeAction(tr("Grab closest"), "closest");
 	addLoopModeAction(tr("Handles"), "handles");
+	return menu;
+}
 
-	menu.exec(event->globalPos());
+void TimeLineWidget::contextMenuEvent(QContextMenuEvent* event)
+{
+	if (event->x() < m_xOffset) { return; }
+	std::unique_ptr<QMenu> menu(buildLoopMenu(getClickedTime(event->x()), true));
+	menu->exec(event->globalPos());
+}
+
+bool TimeLineWidget::isMenuKey(int key, Qt::KeyboardModifiers modifiers)
+{
+	return key == Qt::Key_Menu || (key == Qt::Key_F10 && modifiers.testFlag(Qt::ShiftModifier));
+}
+
+void TimeLineWidget::openRulerMenu()
+{
+	QMenu* menu = buildLoopMenu(m_timeline->pos(), true);
+	menu->setAttribute(Qt::WA_DeleteOnClose);
+	menu->popup(mapToGlobal(QPoint(std::max(m_xOffset, markerX(m_timeline->pos())), height())));
+}
+
+void TimeLineWidget::keyPressEvent(QKeyEvent* event)
+{
+	if (isMenuKey(event->key(), event->modifiers()))
+	{
+		openRulerMenu();
+		event->accept();
+		return;
+	}
+	QWidget::keyPressEvent(event);
 }
 
 

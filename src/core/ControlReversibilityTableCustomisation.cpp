@@ -67,6 +67,14 @@ const ReversibilityRow kCustomisationRows[] = {
 	R("shortcuts.set", RC::TrueInverse, true, CONFIG_WRITE_REASON("one shortcut override"), CONFIG_WRITE_MECHANISM, ""),
 	R("shortcuts.reset", RC::TrueInverse, true, CONFIG_WRITE_REASON("the shortcut overrides"), CONFIG_WRITE_MECHANISM, ""),
 	R("shortcuts.import", RC::TrueInverse, true, CONFIG_WRITE_REASON("the shortcut overrides"), CONFIG_WRITE_MECHANISM, ""),
+	R("shortcuts.preset_list", RC::NotMutating, false, "it lists the shipped keyboard maps. Nothing is written", "no write", ""),
+	R("shortcuts.preset_apply", RC::TrueInverse, true,
+		"it replaces the shortcut overrides in the config file and, before that, writes a timestamped "
+		"shortcuts-backup JSON file in the workspace",
+		"action checkpoint: the recorded undo step restores the previous ui/shortcuts overrides. The "
+		"backup file is a deliberate durable side effect and is not removed by the undo; shortcuts.import "
+		"reads it back",
+		"delete the backup file and resend shortcuts.import with the previous overrides"),
 	R("shortcuts.export", RC::NotMutating, false,
 		"it writes the named file and nothing else: no project, model or interface state changes",
 		"no write to the project or the interface (delete the file to undo it)", ""),

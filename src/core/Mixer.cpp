@@ -1005,6 +1005,8 @@ void MixerChannel::doProcessing()
 		SampleFrame peakSamples = getAbsPeakValues(m_buffer, fpp);
 		m_peakLeft = std::max(m_peakLeft, peakSamples[0] * meterGain);
 		m_peakRight = std::max(m_peakRight, peakSamples[1] * meterGain);
+		m_speechPeakLeft.set(peakSamples[0] * meterGain);
+		m_speechPeakRight.set(peakSamples[1] * meterGain);
 		mixerstrip::updateMeters( *this, m_buffer, meterGain, fpp );  // 0.5.0 L08
 	}
 	// A muted channel never reaches this function: Mixer::masterMix handles
