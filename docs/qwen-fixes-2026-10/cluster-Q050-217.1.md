@@ -137,16 +137,16 @@ eight gate rows PASS, on the committed tree (`feature-check-4.log`). The "?" ite
 - **One undo step, honest classes / realtime / projects / portability:** code is byte-identical to the accepted
   patch, so the answers below are unchanged; `ReversibilityContractTest` exit 0 on the re-taken histogram.
 
-### Accepted round's self-check (unchanged code)
+### Independent red/green confirmation on the integrated tree
 
 **? Each new test FAILS with your product change reverted (reverse the non-test hunks, rebuild, run: exit
 code?), then PASSES restored.**
 Yes. Reverting the dispatch call in `LaunchBindings::applyTrigger` and the registrations in
 `ControlCommandsLaunchBindings.cpp` / `RecordLaunchMenus.cpp` (tests and the new API kept, so the harness still
-compiles): `MidiCommandBindingsTest` exit **8** (3 failing slots, every dispatch count 0), `GuiTest` exit
-**8**. Restored: both exit **0**. A full revert of the header too cannot compile the tests at all, which is
-why the reversal used is the behavioural one - the assertions exercise commands, the store and the menu
-entries, all of which the reverted product lacks.
+compiles): `MidiCommandBindingsTest` exit **8** with 9 failing slots and `MidiCommandBindingsGuiTest` exit
+**8** with 3 failing slots. Restored and rebuilt: both exit **0**. A full revert of the header too cannot compile
+the tests at all, which is why the reversal used is the behavioural one - the assertions exercise commands,
+the store and the menu entries, all of which the reverted product lacks.
 
 **? Every acceptance criterion is proven by a test you ran yourself (name the test and its exit code per
 criterion).**
