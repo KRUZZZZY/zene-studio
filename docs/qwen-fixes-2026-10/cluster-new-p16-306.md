@@ -58,7 +58,7 @@ Build tree `build/`, all logs in the LOG FOLDER. `CCACHE_TEMPDIR=$TMPDIR` on eve
 | 4b: rebuild test with fix | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target BiquadSectionTest -j4` | 0 | build-8-restored.log |
 | 4b: **must PASS** | `cd build/tests && ctest -R BiquadSectionTest --output-on-failure` | **0** | test-green-2.log |
 | Gates | `python3 -I $TMPDIR/fc-scratch-new-p16-306/feature_check_logdir.py <worktree>` (see Notes) | **0**, `RESULT: PASS`, 8 rows PASS | feature-check-1.log |
-| Completion check (before commit) | `python3 .../qwen/submit_check.py <worktree> new-p16-306` | 1 (uncommitted, no report, gates item; see Notes) | submit-check-1.log |
+| Completion check (after commit) | `python3 .../qwen/submit_check.py <worktree> new-p16-306` | 1: every item passes except the gates item, which runs the unmodified `feature_check.py` and hits the log-folder permission (see Notes) | submit-check-2.log, feature-check-unmodified.log (exit 1, `PermissionError` before any check runs) |
 
 Affected-family test count: 8 tests executed (`ctest` reports "out of 8"). 7 pass. DeviceDspTest runs 41 checks: 38 pass, 1 fails, 2 skipped (see Notes).
 
