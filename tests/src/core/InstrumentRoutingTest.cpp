@@ -37,11 +37,14 @@
 #include <QDomDocument>
 #include <QDomElement>
 
-#include "InstrumentTrack.h"
+#include "Instrument.h"
+#include "MidiClip.h"
+#include "MidiPlayback.h"
 #include "InstrumentOutputBus.h"
 #include "LmmsTypes.h"
 #include "Song.h"
-#define private public // This TU checks slot publication while the render-period guard is held.
+#define private public // This TU checks slot publication and installs an in-process instrument probe.
+#include "InstrumentTrack.h"
 #include "InstrumentOutputBuses.h"
 #undef private
 #include "InstrumentMidiParts.h"
@@ -54,6 +57,61 @@ using namespace racktest;
 
 namespace
 {
+
+const Plugin::Descriptor s_trackNotesProbeDescriptor{
+	"instrumenttracknotesprobe", "InstrumentTrack notes probe", "Test probe",
+	"Zene Studio test suite", 0x0100, Plugin::Type::Instrument, nullptr, nullptr, nullptr};
+
+class TrackNotesProbe final : public Instrument
+{
+public:
+	explicit TrackNotesProbe(InstrumentTrack* track) : Instrument(track, &s_trackNotesProbeDescriptor)
+	{
+		m_buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Aux"), 2, 2}});
+	}
+
+	QString nodeName() const override { return QStringLiteral("instrumenttracknotesprobe"); }
+	void saveSettings(QDomDocument&, QDomElement&) override {}
+	void loadSettings(const QDomElement&) override {}
+	gui::PluginView* instantiateView(QWidget*) override { return nullptr; }
+	InstrumentOutputBuses* outputBuses() override { return &m_buses; }
+	bool handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt_t) override
+	{
+		m_events.push_back(event);
+		return true;
+	}
+
+	InstrumentOutputBuses& buses() { return m_buses; }
+	const std::vector<MidiEvent>& events() const { return m_events; }
+
+protected:
+	void playNoteImpl(NotePlayHandle*, std::span<SampleFrame>) override {}
+
+private:
+	InstrumentOutputBuses m_buses;
+	std::vector<MidiEvent> m_events;
+};
+
+class TrackNotesProbeInstall
+{
+public:
+	explicit TrackNotesProbeInstall(InstrumentTrack& track) : m_track(track), m_original(track.m_instrument),
+		m_probe(new TrackNotesProbe(&track))
+	{
+		m_track.m_instrument = m_probe;
+	}
+	~TrackNotesProbeInstall()
+	{
+		m_track.m_instrument = m_original;
+		delete m_probe;
+	}
+	TrackNotesProbe* get() const { return m_probe; }
+
+private:
+	InstrumentTrack& m_track;
+	Instrument* m_original;
+	TrackNotesProbe* m_probe;
+};
 
 //! A channel of the mixer, created for this test: its index and persistent id.
 struct TestChannel
@@ -136,6 +194,101 @@ private slots:
 	}
 
 	void cleanupTestCase() { teardownRackFixture(); }
+
+	//! A preset omits project mixer routes, while a project without this node still resets old routes.
+	void presetWithoutOutputBusNodeKeepsRoutes()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		TrackNotesProbeInstall probe(*track);
+		const TestChannel first = newChannel();
+		QVERIFY(probe.get()->buses().route(1, first.id));
+
+		QDomDocument doc;
+		QDomElement preset = doc.createElement(QStringLiteral("track"));
+		preset.setAttribute(QStringLiteral("type"), static_cast<int>(Track::Type::Instrument));
+		QDomElement instrumentTrack = doc.createElement(QStringLiteral("instrumenttrack"));
+		preset.appendChild(instrumentTrack);
+		track->loadPreset(preset);
+		QCOMPARE(probe.get()->buses().routeOf(1), first.id);
+
+		const TestChannel second = newChannel();
+		QDomElement outputBuses = doc.createElement(QStringLiteral("outputbuses"));
+		QDomElement route = doc.createElement(QStringLiteral("route"));
+		route.setAttribute(QStringLiteral("bus"), 1);
+		route.setAttribute(QStringLiteral("channel"), second.id);
+		outputBuses.appendChild(route);
+		instrumentTrack.appendChild(outputBuses);
+		track->loadPreset(preset);
+		QCOMPARE(probe.get()->buses().routeOf(1), second.id);
+
+		instrumentTrack.removeChild(outputBuses);
+		track->loadSettings(preset);
+		QCOMPARE(probe.get()->buses().routeOf(1), -1);
+	}
+
+	//! Multi-tick advancement is normal; only an actual seek or clip-loop rewind resends a held value.
+	void controllerLaneDoesNotResendAcrossMultiTickAdvances()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		TrackNotesProbeInstall probe(*track);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setControllerPoints(ControllerKind::ProgramChange, 0, {{0, 7}, {200, 9}});
+		MidiPlayback& playback = MidiPlayback::instance();
+		playback.stopped();
+		playback.tickPlayed(0, 0);
+		track->playClipControllers(clip, 0, 0);
+		QCOMPARE(probe.get()->events().size(), std::size_t{1});
+
+		playback.tickPlayed(1, 0);
+		track->playClipControllers(clip, 12, 0); // the period can cover several clip ticks
+		QCOMPARE(probe.get()->events().size(), std::size_t{1});
+		playback.tickPlayed(2, 0);
+		track->playClipControllers(clip, 24, 0);
+		QCOMPARE(probe.get()->events().size(), std::size_t{1});
+
+		playback.tickPlayed(3, 0);
+		track->playClipControllers(clip, 200, 0); // a changed value still goes out
+		QCOMPARE(probe.get()->events().size(), std::size_t{2});
+		playback.tickPlayed(4, 0);
+		track->playClipControllers(clip, 220, 0);
+		QCOMPARE(probe.get()->events().size(), std::size_t{2});
+
+		playback.tickPlayed(7, 0); // a real song seek
+		track->playClipControllers(clip, 225, 0);
+		QCOMPARE(probe.get()->events().size(), std::size_t{3});
+		playback.tickPlayed(8, 0);
+		track->playClipControllers(clip, 205, 0); // clip-local loop rewind, same held value
+		QCOMPARE(probe.get()->events().size(), std::size_t{4});
+
+		clip->setControllerPoints(ControllerKind::ProgramChange, 0, {{0, 7}, {200, 9}});
+		playback.tickPlayed(9, 0);
+		track->playClipControllers(clip, 10, 0); // reconfigured lanes start with no sent value
+		QCOMPARE(probe.get()->events().size(), std::size_t{5});
+	}
+
+	//! A muted clip's held controller state must be restored when it starts playing again.
+	void controllerLaneResendsAfterClipUnmute()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		TrackNotesProbeInstall probe(*track);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setControllerPoints(ControllerKind::ProgramChange, 0, {{0, 7}});
+		MidiPlayback& playback = MidiPlayback::instance();
+		playback.stopped();
+		playback.tickPlayed(0, 0);
+		track->playClipControllers(clip, 10, 0); // value 7 was sent before the mute
+		QCOMPARE(probe.get()->events().size(), std::size_t{1});
+
+		playback.tickPlayed(1, 0);
+		clip->setPlaybackWasMuted(true);
+		track->play(TimePos(10), Engine::audioEngine()->framesPerPeriod(), 0);
+		QCOMPARE(probe.get()->events().size(), std::size_t{2});
+	}
 
 	//! Note activity must reach GUI receivers through polling, not queued Qt signals from the event thread.
 	void midiNoteActivityDoesNotQueueQtSignalsFromTheEventThread()

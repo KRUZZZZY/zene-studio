@@ -136,6 +136,8 @@ public:
 
 	virtual void saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode) = 0;
 	virtual void loadTrackSpecificSettings( const QDomElement & element ) = 0;
+	//! Mode-aware load hook; older track types keep their existing one-argument loader by default.
+	virtual void loadTrackSpecificSettings(const QDomElement& element, bool presetMode);
 
 	// Saving and loading of presets which do not necessarily contain all the track information
 	void savePreset(QDomDocument & doc, QDomElement & element);

@@ -107,6 +107,36 @@ void InstrumentTrack::decorateNoteHandle(NotePlayHandle* handle, const MidiClip*
 namespace
 {
 
+struct ActiveInputTransform
+{
+	const InstrumentTrack* track;
+	const ActiveInputTransform* previous;
+};
+
+thread_local const ActiveInputTransform* s_activeInputTransforms = nullptr;
+
+bool inputTransformIsActiveFor(const InstrumentTrack* track)
+{
+	for (const ActiveInputTransform* active = s_activeInputTransforms; active != nullptr; active = active->previous)
+	{
+		if (active->track == track) { return true; }
+	}
+	return false;
+}
+
+class InputTransformScope
+{
+public:
+	explicit InputTransformScope(const InstrumentTrack* track) : m_context{track, s_activeInputTransforms}
+	{
+		s_activeInputTransforms = &m_context;
+	}
+	~InputTransformScope() { s_activeInputTransforms = m_context.previous; }
+
+private:
+	ActiveInputTransform m_context;
+};
+
 MidiEvent controllerEvent(const ControllerLane& lane, int value, int channel)
 {
 	switch (lane.kind)
@@ -123,16 +153,17 @@ MidiEvent controllerEvent(const ControllerLane& lane, int value, int channel)
 
 bool InstrumentTrack::handleInputTransform(const MidiEvent& event, const TimePos& time, f_cnt_t offset)
 {
-	// MIDI input thread. The transformed event re-enters processInEvent once; the flag keeps it from
-	// being transformed twice (a thread's own re-entry, so a thread-local).
-	thread_local bool inside = false;
-	if (inside || event.source() != MidiEvent::Source::External || !m_inputTransform.active()) { return false; }
+	// MIDI input thread. Each active track may transform once in a forwarding chain; a track's own recursive
+	// re-entry is skipped while a nested layer track can still apply its transform.
+	if (inputTransformIsActiveFor(this) || event.source() != MidiEvent::Source::External || !m_inputTransform.active())
+	{
+		return false;
+	}
 	MidiEvent transformed = event;
 	if (m_inputTransform.apply(&transformed))
 	{
-		inside = true;
+		InputTransformScope scope{this};
 		processInEvent(transformed, time, offset);
-		inside = false;
 	}
 	return true;
 }
@@ -144,7 +175,7 @@ void InstrumentTrack::playClipControllers(const MidiClip* clip, tick_t tick, f_c
 	for (const ControllerLane& lane : clip->controllers().lanes())
 	{
 		const int value = lane.valueAt(tick);
-		const bool jumped = tick != lane.lastTick + 1;
+		const bool jumped = MidiPlayback::instance().chasingNow() || tick < lane.lastTick;
 		lane.lastTick = tick;
 		if (!jumped && value == lane.lastSent) { continue; }
 		lane.lastSent = value;
@@ -386,14 +417,18 @@ void InstrumentTrack::saveZeneInstrumentSettings(QDomDocument& doc, QDomElement&
 	if (!presetMode && buses != nullptr) { buses->saveSettings(doc, element); }
 }
 
-void InstrumentTrack::loadZeneInstrumentSettings(const QDomElement& element)
+void InstrumentTrack::loadZeneInstrumentSettings(const QDomElement& element, bool presetMode)
 {
-	// Each reads its own element and treats a missing one as "none", so an undo step or a preset that
-	// predates the feature takes it back.
+	// MIDI parts and layers reset on absence. Output-bus routes name project mixer channels and presets
+	// deliberately omit them, so a preset only replaces routes when it explicitly carries the node.
 	m_midiParts.loadSettings(element);
 	m_layers.loadSettings(element);
 	InstrumentOutputBuses* buses = m_instrument != nullptr ? m_instrument->outputBuses() : nullptr;
-	if (buses != nullptr && !m_previewMode) { buses->loadSettings(element); }
+	if (buses != nullptr && !m_previewMode
+		&& (!presetMode || !element.firstChildElement(QStringLiteral("outputbuses")).isNull()))
+	{
+		buses->loadSettings(element);
+	}
 }
 
 } // namespace lmms

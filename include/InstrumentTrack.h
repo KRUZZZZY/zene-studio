@@ -251,6 +251,7 @@ public:
 	// called by track
 	void saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode) override;
 	void loadTrackSpecificSettings( const QDomElement & _this ) override;
+	void loadTrackSpecificSettings(const QDomElement& _this, bool presetMode) override;
 
 	using Track::setJournalling;
 
@@ -455,7 +456,7 @@ private:
 	void noteVoiceChanged( bool on, int channel, int key, f_cnt_t offset );
 	//! The layers, MIDI parts and output-bus routes, saved beside the instrument.
 	void saveZeneInstrumentSettings( QDomDocument& doc, QDomElement& element, bool presetMode );
-	void loadZeneInstrumentSettings( const QDomElement& element );
+	void loadZeneInstrumentSettings(const QDomElement& element, bool presetMode);
 	//! Whether @a name is one of those elements (the loader must not take it for an instrument plug-in).
 	static bool isZeneInstrumentNode( const QString& name );
 

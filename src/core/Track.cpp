@@ -818,7 +818,7 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		{
 			if( node.isElement() && node.nodeName() == nodeName() )
 			{
-				loadTrackSpecificSettings( node.toElement() );
+				loadTrackSpecificSettings(node.toElement(), true);
 				break;
 			}
 			node = node.nextSibling();
@@ -892,7 +892,7 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 		{
 			if( node.nodeName() == nodeName() )
 			{
-				loadTrackSpecificSettings( node.toElement() );
+				loadTrackSpecificSettings(node.toElement(), false);
 			}
 			else if( node.nodeName() == "takelanes" )
 			{
@@ -992,6 +992,12 @@ void Track::savePreset(QDomDocument & doc, QDomElement & element)
 void Track::loadPreset(const QDomElement & element)
 {
 	loadTrack(element, true);
+}
+
+void Track::loadTrackSpecificSettings(const QDomElement& element, bool presetMode)
+{
+	Q_UNUSED(presetMode)
+	loadTrackSpecificSettings(element);
 }
 
 void Track::saveSettings(QDomDocument& doc, QDomElement& element)

@@ -43,6 +43,7 @@
 #include "MidiInputTransform.h"
 #include "NotePlayHandle.h"
 #include "ProjectJournal.h"
+#include "RackZones.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -401,6 +402,46 @@ private slots:
 		off.setSource(MidiEvent::Source::External);
 		track->processInEvent(off, TimePos(0), 0);
 		Engine::audioEngine()->renderNextPeriod();
+	}
+
+	//! A forwarded external event re-enters the owner but must still get the layer track's own transform.
+	void nestedLayerAppliesItsOwnInputTransform()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* owner = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(owner != nullptr);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("root"));
+		QDomElement layers = doc.createElement(QStringLiteral("layers"));
+		QDomElement layerEntry = doc.createElement(QStringLiteral("layer"));
+		QDomElement layerTrackState = doc.createElement(QStringLiteral("track"));
+		layerTrackState.setAttribute(QStringLiteral("type"), static_cast<int>(Track::Type::Instrument));
+		layerTrackState.appendChild(doc.createElement(QStringLiteral("instrumenttrack")));
+		layerEntry.appendChild(layerTrackState);
+		layers.appendChild(layerEntry);
+		root.appendChild(layers);
+		owner->layers().loadSettings(root);
+		RackZone zone;
+		zone.chain = 1;
+		QVERIFY(owner->layers().zones().addZone(zone) >= 0);
+		InstrumentTrack* layer = owner->layers().layer(1);
+		QVERIFY(layer != nullptr);
+		QVERIFY(set(owner->inputTransform(), {{QStringLiteral("transpose"), 1}}));
+		QVERIFY(set(layer->inputTransform(), {{QStringLiteral("transpose"), 2}}));
+
+		MidiEvent on = noteOn(60, 100);
+		on.setSource(MidiEvent::Source::External);
+		owner->processInEvent(on, TimePos(0), 0);
+		QVERIFY(layer->playingNote(63) != nullptr);
+		QVERIFY(layer->playingNote(61) == nullptr);
+
+		MidiEvent off = noteOff(60);
+		off.setSource(MidiEvent::Source::External);
+		owner->processInEvent(off, TimePos(0), 0);
+		Engine::audioEngine()->renderNextPeriod();
+		QVERIFY(layer->playingNote(63) == nullptr);
 	}
 
 	void aStrayNoteOffDoesNotReleaseAnOverlappingVoice()
