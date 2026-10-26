@@ -53,15 +53,18 @@ public:
 		: ItemListSource(parent)
 		, m_editor(editor)
 	{
-		connect(editor, &NoteEditor::clipChanged, this, [this] { follow(); });
-		connect(editor, &NoteEditor::stateChanged, this, &ItemListSource::changed);
+		if (editor != nullptr)
+		{
+			connect(editor, &NoteEditor::clipChanged, this, [this] { follow(); });
+			connect(editor, &NoteEditor::stateChanged, this, &ItemListSource::changed);
+		}
 		follow();
 	}
 
 protected:
 	MidiClip* clip() const { return m_editor != nullptr ? m_editor->clip() : nullptr; }
-	QString clipId() const { return m_editor->clipId(); }
-	int grid() const { return std::max(1, m_editor->state().gridTicks); }
+	QString clipId() const { return m_editor != nullptr ? m_editor->clipId() : QString(); }
+	int grid() const { return m_editor != nullptr ? std::max(1, m_editor->state().gridTicks) : 1; }
 
 private:
 	void follow()
