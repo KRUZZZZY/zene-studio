@@ -28,6 +28,7 @@
 #include "ClipLinks.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
@@ -279,6 +280,7 @@ void registerNoteMove(ControlRegistry& registry)
 		// Row 6: a content edit to a linked clip is an edit to the whole group -
 		// the members' note lists are rebuilt from this clip's, in the same step.
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+		if (position != previousPos) { Engine::getSong()->setModified(); }
 
 		const int newIndex = indexOfNote(clip, note);
 		if (newIndex < 0)
@@ -354,18 +356,21 @@ void registerNoteResize(ControlRegistry& registry)
 					.arg(requestedEnd).arg(static_cast<qint64>(MaxSongLength)));
 		}
 		const tick_t previous = note->length().getTicks();
+		const bool changed = requestedLength != previous;
 
-		clip->addJournalCheckPoint();
+		if (changed) { clip->addJournalCheckPoint(); }
 		note->setLength(TimePos(requestedLength));
 		clip->updateLength();
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+		if (changed) { Engine::getSong()->setModified(); }
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2): a resize
 		// does not re-sort the list, but the id is still what addresses the note.
 		result.insert(QStringLiteral("note"), control::noteIdOf(note));
+		if (!changed) { return ControlResult::success(result); }
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));
@@ -417,16 +422,20 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		Note* note = control::resolveNote(clip, args.value(QStringLiteral("note")).toString(), &index, &error);
 		if (note == nullptr) { return error; }
 		const volume_t previous = note->getVolume();
+		const volume_t requested = static_cast<volume_t>(args.value(QStringLiteral("velocity")).toDouble());
+		const bool changed = requested != previous;
 
-		clip->addJournalCheckPoint();
-		note->setVolume(static_cast<volume_t>(args.value(QStringLiteral("velocity")).toDouble()));
+		if (changed) { clip->addJournalCheckPoint(); }
+		note->setVolume(requested);
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+		if (changed) { Engine::getSong()->setModified(); }
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		// The note's own id (Note::id(), SPEC-stable-ids.md slice 2).
 		result.insert(QStringLiteral("note"), control::noteIdOf(note));
+		if (!changed) { return ControlResult::success(result); }
 		QJsonObject inverseArgs;
 		inverseArgs.insert(QStringLiteral("clip"), control::clipId(ref.id));
 		inverseArgs.insert(QStringLiteral("note"), control::noteIdOf(note));

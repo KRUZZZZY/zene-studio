@@ -395,8 +395,10 @@ void registerExpressionSet(ControlRegistry& registry)
 
 		target.clip->addJournalCheckPoint();
 		target.note->setMpeExpression(wanted);
+		const bool changed = before != expressionJson(target.note);
 		target.clip->dataChanged();
 		if (target.clip->linkId() > 0) { ClipLinks::mirrorContent(target.clip); }
+		if (changed) { Engine::getSong()->setModified(); }
 
 		QJsonObject result = expressionJson(target.note);
 		result.insert(QStringLiteral("clip"), target.clipId);
@@ -499,6 +501,7 @@ void registerExpressionClear(ControlRegistry& registry)
 		target.note->clearMpeExpression();
 		target.clip->dataChanged();
 		if (target.clip->linkId() > 0) { ClipLinks::mirrorContent(target.clip); }
+		Engine::getSong()->setModified();
 
 		QJsonObject result = expressionJson(target.note);
 		result.insert(QStringLiteral("clip"), target.clipId);

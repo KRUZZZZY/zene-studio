@@ -113,8 +113,9 @@ int jitteredPosition(int pos, double jitter, float unit)
  *  the two things it has to decide (an empty scope, and a link group to mirror).
  *  The draw is a pure function of the seed and each note's identity at entry, so
  *  a note already moved is rolled again from where it now is. */
-void rollNotes(const NoteVector& notes, uint32_t seed, double velocityJitter, double positionJitter)
+bool rollNotes(const NoteVector& notes, uint32_t seed, double velocityJitter, double positionJitter)
 {
+	bool changed = false;
 	for (Note* note : notes)
 	{
 		if (note == nullptr) { continue; }
@@ -128,15 +129,24 @@ void rollNotes(const NoteVector& notes, uint32_t seed, double velocityJitter, do
 			const int velocity = static_cast<int>(note->getVolume());
 			const int rolled = std::clamp(static_cast<int>(std::lround(velocity * factor)),
 				static_cast<int>(MinVolume), static_cast<int>(MaxVolume));
-			if (rolled != velocity) { note->setVolume(static_cast<volume_t>(rolled)); }
+			if (rolled != velocity)
+			{
+				note->setVolume(static_cast<volume_t>(rolled));
+				changed = true;
+			}
 		}
 		if (positionJitter > 0.0)
 		{
 			const float unit = NoteRandom::rollUnit(seed, key, pos, length, kTimingSalt);
 			const int moved = jitteredPosition(pos, positionJitter, unit);
-			if (moved != pos) { note->setPos(TimePos(moved)); }
+			if (moved != pos)
+			{
+				note->setPos(TimePos(moved));
+				changed = true;
+			}
 		}
 	}
+	return changed;
 }
 
 //! Resolves the clip a roll runs over, refusing one with no notes: a roll over
@@ -357,16 +367,21 @@ ControlResult randomize(const QJsonObject& args)
 				"nothing (note.select chooses them)").arg(clipId(ref.id)));
 	}
 	const NoteSnapshot before = snapshotNotes(*clip);
+	const tick_t previousClipLength = clip->length().getTicks();
+	const tick_t previousStartOffset = clip->startTimeOffset().getTicks();
 	clip->addJournalCheckPoint();
-	rollNotes(notes, seed, velocityJitter, positionJitter);
+	const bool notesChanged = rollNotes(notes, seed, velocityJitter, positionJitter);
 	// The notes moved, so the clip's own order (position, then key) has to be
 	// restored - the call note.move makes after it moves one note.
 	clip->rearrangeAllNotes();
 	// A note rolled past the old end is outside an auto-resizing clip until the
 	// clip's length is recomputed, the same way finish() does after an edit.
 	clip->updateLength();
+	const bool changed = notesChanged || clip->length().getTicks() != previousClipLength
+		|| clip->startTimeOffset().getTicks() != previousStartOffset;
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the rolled notes
+	if (changed) { song->setModified(); }
 
 	QJsonObject result;
 	result.insert(QStringLiteral("clip"), clipId(ref.id));
