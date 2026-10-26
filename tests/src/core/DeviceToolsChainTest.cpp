@@ -288,6 +288,21 @@ private slots:
 		QCOMPARE(clip->sample().sampleRate(), 0);
 	}
 
+	//! An audio-less clip reports the condition it needs in order to be processed.
+	void anEmptyClipGetsAnActionableProcessError()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(SampleBuffer::emptyBuffer());
+
+		const ControlResult printed = run(QStringLiteral("clip.process"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), ch(3)}});
+
+		QCOMPARE(printed.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(printed.errorMessage.contains(QStringLiteral("must be an audio clip with audio")));
+	}
+
 	//! A rendered tail is inside the replacement window and length, including after rate conversion.
 	void aRenderedTailExtendsThePlayableWindowAndClipLength()
 	{

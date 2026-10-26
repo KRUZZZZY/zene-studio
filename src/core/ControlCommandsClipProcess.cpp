@@ -119,7 +119,7 @@ ControlResult process(const QJsonObject& args)
 	auto* clip = dynamic_cast<SampleClip*>(ref.clip);
 	if (clip == nullptr || clip->sample().data() == nullptr || clip->sample().sampleSize() == 0 || clip->sample().sampleRate() <= 0)
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip with audio"));
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' must be an audio clip with audio"));
 	}
 	ControlTarget from;
 	QJsonObject named{{QStringLiteral("target"), args.value(QStringLiteral("from"))}};
