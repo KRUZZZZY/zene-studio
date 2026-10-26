@@ -5182,3 +5182,4 @@ src/core/main.cpp	cluster 5110: capture --config during the first argument pass 
 tests/CMakeLists.txt	cluster 5110 batch: register AppearanceStartupTest and MainCliStartupTest, link the latter to this build's zene and point its fixture path at this source tree; no existing target properties change.
 tests/src/gui/DevicePanelTest.cpp	# Deleting the selected clip or track does not notify selection listeners
 src/core/Clip.cpp	cluster new-p16-325: loadWarp reports a <warp> with more markers than WarpMarkers::MaxMarkers through Song::collectError (the first MaxMarkers still load; nothing else changes).
+tests/src/core/ClipWarpPersistenceTest.cpp	# Excess warp markers are silently discarded
