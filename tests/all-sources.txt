@@ -3196,6 +3196,7 @@ tests/src/plugins/NeuralAmpModelLoadTest.cpp
 tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 tests/src/plugins/OrganicParamRaceTest.cpp
 tests/src/plugins/OrganicZeroOscTest.cpp
+tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
 tests/src/plugins/PartialInitFailureLadspa.cpp
 tests/src/plugins/PatmanLoadTest.cpp
 tests/src/plugins/PluginPortsHarness.h

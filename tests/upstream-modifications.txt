@@ -733,6 +733,7 @@ plugins/MultitapEcho/MultitapEchoControls.cpp	new-p9-299: recalculate filters fo
 plugins/Nes/Nes.cpp	new-p9-322: recalculate channel 4 noise wavelength when held-note frequency mode or quantization changes; regression: PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes
 plugins/Nes/Nes.h	new-p9-322: cache channel 4 noise frequency mode and quantization per note for held-note retuning; regression: PluginPortsMigrationTest::nesNoiseFrequencyControlsRetuneHeldNotes
 plugins/Oscilloscope/Oscilloscope.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
+plugins/Oscilloscope/OscilloscopeControls.cpp	cluster new-p23-187: save and restore the pause model with the other scope controls; legacy projects without the pause attribute still use its false default.
 plugins/Oscilloscope/OscilloscopeGraph.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a)
 plugins/Patman/Patman.cpp	cluster new-p9-350 (2026-10-10): clearing the selected patch releases its sample bank; AudioPluginTest observes the loaded sample through a weak reference.
 plugins/Patman/Patman.h	cluster new-p9-350 (2026-10-10): LMMS_TESTING-only friend lets AudioPluginTest inspect sample-bank ownership without exposing a product API.
@@ -5259,3 +5260,5 @@ src/core/MixerSnapshots.cpp	cluster new-p23-172/new-p8-163: require successful f
 tests/src/core/ProjectStateTest.cpp	clusters new-p23-172/new-p8-163: add deterministic malformed-float fallback and duplicate-name load/replacement regressions in the existing snapshot test suite.
 tests/all-sources.txt	cluster new-p23-172: re-derive the whole-tree scope manifest from its published recipe, removing the 1,148 vendored sfizz entries that the recipe excludes; this restores the failing Gate 9 manifest check without changing the recipe or its tracked source set.
 tests/all-sources.txt	cluster new-p23-184 gate repair (2026-10-25): rederive the entry list from its header recipe, excluding vendored plugins/SfzPlayer/sfizz sources so Gate 9 and all-sources-reproduce match the documented whole-tree scope.
+tests/CMakeLists.txt	cluster new-p23-187: register OscilloscopeControlsPersistenceTest and compile the plugin sources into it; no existing test registration or properties change.
+tests/all-sources.txt	cluster new-p23-187: remove stale vendored sfizz paths that the manifest header recipe excludes, so the registered whole-tree source list reproduces; also register the new Oscilloscope persistence test.

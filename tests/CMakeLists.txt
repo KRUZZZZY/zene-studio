@@ -3934,6 +3934,39 @@ target_compile_definitions(DelayControlsTest PRIVATE
 	PLUGIN_NAME=delay
 )
 
+# Cluster new-p23-187: Oscilloscope's pause control must survive the same
+# settings load/save cycle as its other controls. Compile the plugin sources
+# into the test so the regression exercises its real EffectControls methods.
+add_executable(OscilloscopeControlsPersistenceTest
+	src/plugins/OscilloscopeControlsPersistenceTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope/Oscilloscope.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope/OscilloscopeControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope/OscilloscopeControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope/OscilloscopeGraph.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope/OscilloscopeControls.h
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope/OscilloscopeControlDialog.h
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope/OscilloscopeGraph.h
+)
+add_test(NAME OscilloscopeControlsPersistenceTest COMMAND OscilloscopeControlsPersistenceTest)
+set_tests_properties(OscilloscopeControlsPersistenceTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(OscilloscopeControlsPersistenceTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Oscilloscope
+	${CMAKE_BINARY_DIR}/plugins/Oscilloscope
+)
+target_static_libraries(OscilloscopeControlsPersistenceTest PRIVATE lmmsobjs)
+target_link_libraries(OscilloscopeControlsPersistenceTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(OscilloscopeControlsPersistenceTest PRIVATE cxx_std_20)
+target_compile_definitions(OscilloscopeControlsPersistenceTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=oscilloscope
+	PLUGIN_STATIC_DEFINE
+)
+
 # Cluster 409: FFTW's planner API (creating and destroying a plan, allocating and freeing its
 # buffers) must not run while the audio thread executes a plan. The convolution kernel makes and
 # destroys its plans inside a ConvolutionFftwScope, which takes the engine's model-change guard -
