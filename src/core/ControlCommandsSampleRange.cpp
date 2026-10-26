@@ -24,10 +24,15 @@
 /*! 0.5.0 L05 (ED-156): the sample editor's operations over a selection of a sample clip's source -
  *  gain, silence, delete (the rest closes up), reverse, fade in or out, and crop to the selection. Each
  *  bakes a fresh copy of the source and swaps it in (a buffer another clip shares is never written), as
- *  one undo step; the clip's window is kept over what it played, or reset when the source changes length. */
+ *  one undo step; the clip's window is kept over what it played, or reset when the source changes length.
+ *
+ *  Q050-106 adds `mono`: the whole source downmixed with the documented (L + R) / 2 rule onto both
+ *  sides, with the source layout recorded as one channel (SampleBuffer::channels) so the clip's
+ *  serialized state, arrangement.get_state and one undo all report mono / stereo honestly. */
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <vector>
 
 #include <QJsonArray>
@@ -39,6 +44,7 @@
 #include "Engine.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
+#include "SampleOperators.h"
 #include "Song.h"
 
 namespace lmms
@@ -52,8 +58,40 @@ namespace
 const QStringList& operations()
 {
 	static const QStringList names{QStringLiteral("gain"), QStringLiteral("silence"), QStringLiteral("delete"), QStringLiteral("reverse"),
-		QStringLiteral("fade_in"), QStringLiteral("fade_out"), QStringLiteral("crop")};
+		QStringLiteral("fade_in"), QStringLiteral("fade_out"), QStringLiteral("crop"), QStringLiteral("mono")};
 	return names;
+}
+
+QString layoutName(int channels)
+{
+	return channels == 1 ? QStringLiteral("mono") : QStringLiteral("stereo");
+}
+
+/*! `mono` is the one operation that is not a range edit: it downmixes the WHOLE source with the
+ *  documented per-frame mean, (L + R) / 2, on both playback sides. It keeps the source's rate,
+ *  frame count and the clip's window, records the new layout on the buffer and takes one Clip
+ *  checkpoint, exactly like the range bakers below. */
+ControlResult bakeMono(const ClipRef& ref, SampleClip* clip, const SampleWindow& window,
+	std::size_t size, int rate)
+{
+	if (clip->sample().channels() == 1)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 is already mono").arg(clipId(ref.id)));
+	}
+	const auto* data = clip->sample().data();
+	std::vector<SampleFrame> result = sampleops::toMono(data, static_cast<f_cnt_t>(size));
+	clip->addJournalCheckPoint();
+	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(result), rate, QString(), 1), window);
+	Engine::getSong()->setModified();
+	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)},
+		{QStringLiteral("op"), QStringLiteral("mono")},
+		{QStringLiteral("frames"), static_cast<double>(size)},
+		{QStringLiteral("sample_rate"), rate},
+		{QStringLiteral("channels"), 1},
+		{QStringLiteral("layout"), layoutName(1)},
+		{QStringLiteral("window"), QJsonArray{static_cast<double>(window.sourceIn),
+			static_cast<double>(window.sourceOut)}}});
 }
 
 //! @a frames with operation @a op applied over [@a from, @a to).
@@ -121,18 +159,70 @@ bool gainRefused(const QString& op, double db)
 	return db < -60.0 || db > 24.0;  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
 }
 
-ControlResult editRange(const QJsonObject& args)
+//! The clip and the clamped [from, to) a range edit addresses - the part every op shares.
+struct RangeTarget
 {
 	ClipRef ref;
+	SampleClip* clip = nullptr;
+	std::size_t size = 0;
+	std::size_t from = 0;
+	std::size_t to = 0;
+	QString op;
+};
+
+//! Whether a range op is missing one of its two bounds ('mono' needs neither).
+bool halfRange(const QJsonObject& args, const QString& op)
+{
+	if (op == QLatin1String("mono")) { return false; }
+	return !args.contains(QStringLiteral("from")) || !args.contains(QStringLiteral("to"));
+}
+
+bool resolveRange(const QJsonObject& args, RangeTarget* target, ControlResult* error)
+{
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &target->ref, error)) { return false; }
+	auto* clip = dynamic_cast<SampleClip*>(target->ref.clip);
+	if (clip == nullptr || clip->sample().data() == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'clip' is an audio clip with audio"));
+		return false;
+	}
+	target->clip = clip;
+	target->size = static_cast<std::size_t>(clip->sample().sampleSize());
+	target->op = args.value(QStringLiteral("op")).toString();
+	const bool monoSink = target->op == QLatin1String("mono");
+	// 'mono' is a whole-source op, so an agent that only wants the downmix need not
+	// know the frame count: absent from/to mean the whole source. Every range op
+	// still insists on both bounds.
+	if (halfRange(args, target->op))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a range 'from' < 'to' inside the source, and an 'op'"));
+		return false;
+	}
+	target->from = static_cast<std::size_t>(std::max(0, args.value(QStringLiteral("from")).toInt()));
+	target->to = args.contains(QStringLiteral("to"))
+		? std::min(target->size, static_cast<std::size_t>(std::max(0, args.value(QStringLiteral("to")).toInt())))
+		: (monoSink ? target->size : 0);
+	if (target->to <= target->from || !operations().contains(target->op))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a range 'from' < 'to' inside the source, and an 'op'"));
+		return false;
+	}
+	return true;
+}
+
+ControlResult editRange(const QJsonObject& args)
+{
+	RangeTarget target;
 	ControlResult error;
-	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	auto* clip = dynamic_cast<SampleClip*>(ref.clip);
-	if (clip == nullptr || clip->sample().data() == nullptr) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'clip' is an audio clip with audio")); }
-	const auto size = static_cast<std::size_t>(clip->sample().sampleSize());
-	const auto from = static_cast<std::size_t>(std::max(0, args.value(QStringLiteral("from")).toInt()));
-	const auto to = std::min(size, static_cast<std::size_t>(std::max(0, args.value(QStringLiteral("to")).toInt())));
-	const QString op = args.value(QStringLiteral("op")).toString();
-	if (to <= from || !operations().contains(op)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a range 'from' < 'to' inside the source, and an 'op'")); }
+	if (!resolveRange(args, &target, &error)) { return error; }
+	SampleClip* clip = target.clip;
+	const std::size_t size = target.size;
+	const std::size_t from = target.from;
+	const std::size_t to = target.to;
+	const QString& op = target.op;
 	const double db = args.value(QStringLiteral("gain_db")).toDouble(0.0);
 	if (gainRefused(op, db))
 	{
@@ -150,16 +240,31 @@ ControlResult editRange(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("that deletes everything the clip plays (clip.delete removes the clip)"));
 	}
+	const int rate = static_cast<int>(clip->sample().sampleRate());
+	if (op == QLatin1String("mono"))
+	{
+		// The layout is a property of the whole source, not of a selection: refuse a partial
+		// range rather than silently converting only part of it.
+		if (from != 0 || to != size)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("'mono' converts the whole source: use from 0 and to %1").arg(size));
+		}
+		return bakeMono(target.ref, clip, window, size, rate);
+	}
 	const float gain = std::pow(10.f, static_cast<float>(db) / 20.f);
 	const SampleFrame* data = clip->sample().data();
 	std::vector<SampleFrame> result = applied(std::vector<SampleFrame>(data, data + size), op, from, to, gain);
-	const int rate = static_cast<int>(clip->sample().sampleRate());
 	const auto frames = static_cast<f_cnt_t>(result.size());
+	const int channels = clip->sample().channels();
 	clip->addJournalCheckPoint();
 	// Same length: the clip keeps playing the window it played; a new length plays the whole new source.
-	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(result), rate), windowAfter(window, op, from, to, frames));
+	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(result), rate, QString(), channels),
+		windowAfter(window, op, from, to, frames));
 	Engine::getSong()->setModified();
-	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("op"), op}, {QStringLiteral("frames"), static_cast<double>(frames)},
+	return ControlResult::success({{QStringLiteral("clip"), clipId(target.ref.id)}, {QStringLiteral("op"), op}, {QStringLiteral("frames"), static_cast<double>(frames)},
+		{QStringLiteral("sample_rate"), rate}, {QStringLiteral("channels"), channels},
+		{QStringLiteral("layout"), layoutName(channels)},
 		{QStringLiteral("window"), QJsonArray{static_cast<double>(clip->sampleWindow().sourceIn), static_cast<double>(clip->sampleWindow().sourceOut)}}});
 }
 
@@ -173,10 +278,14 @@ void registerSampleRangeCommands(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("edit_range");
 	cmd.description = QStringLiteral("Edit an audio clip's source over source frames ['from', 'to'): 'op' gain ('gain_db'), silence, "
 		"delete (the rest closes up), reverse, fade_in, fade_out or crop (keep only the range) - the sample editor's "
-		"operations. A fresh copy of the source is swapped in, never a buffer another clip shares. One undo step (Clip checkpoint).");
+		"operations - or 'mono', which converts the WHOLE source (from 0, to the frame count) with the documented "
+		"per-frame arithmetic mean (L + R) / 2 on both playback sides, keeping the rate, frame count and clip "
+		"settings and reporting channels/layout - 'mono' needs only 'clip' (absent from/to default to the whole "
+		"source), while every range op requires both bounds. A fresh copy of the source is swapped in, never a "
+		"buffer another clip shares. One undo step (Clip checkpoint).");
 	cmd.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("from"), integerProperty()},
 		{QStringLiteral("to"), integerProperty()}, {QStringLiteral("op"), enumProperty(operations())}, {QStringLiteral("gain_db"), numberProperty()}},
-		QJsonArray{QStringLiteral("clip"), QStringLiteral("from"), QStringLiteral("to"), QStringLiteral("op")});
+		QJsonArray{QStringLiteral("clip"), QStringLiteral("op")});
 	cmd.resultSchema = objectProperty();
 	cmd.mutating = true;
 	cmd.handler = editRange;

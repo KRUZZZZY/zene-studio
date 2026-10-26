@@ -159,7 +159,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("workflow.record_stop", RC::TrueInverse, true,
 		"it saves the recorded workflow in the library in use (config file, or the project's <workspace>), as workflow.save does",
 		"workflow.save's own: the recorded undo step puts the previous workflows back", ""),
-	R("sample.edit_range", RC::TrueInverse, true, "it bakes an edit of a range into a clip's source", "Clip checkpoint", ""),
+	R("sample.edit_range", RC::TrueInverse, true, "it bakes an edit of a range into a clip's source - including the whole-source 'mono' downmix, whose new channel layout is part of the serialized clip state", "Clip checkpoint", ""),
 	R("clip.audio_to_midi", RC::TrueInverse, true, "it adds an instrument track with the notes found in the audio",
 		"action checkpoint: the recorded undo step removes the track", ""),
 	R("clip.import_file", RC::TrueInverse, true, "it adds one clip (and, with no track named, the track) made from a MIDI or audio file",

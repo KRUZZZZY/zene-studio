@@ -78,7 +78,10 @@ finds a clip by name; Next and Previous Transient move the play position through
 of its audio; Split to stems (a sample clip's menu) separates its audio into stems on tracks of their own. A split runs at one of three qualities - fast, standard or high - which set how much the model's
 overlapping passes over the audio overlap (25 %, 50 % or 75 %): high takes about twice as long as standard and fast about two
 thirds of it. The menu splits at standard, the quality every split used before the setting existed; an agent picks one with the
-<code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's menu
+<code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's
+Process menu also converts its whole source to mono with (L + R) / 2 on both sides (one undo step), or writes its left and
+right channels as two mono WAV files at the source rate and length (Split Stereo to Two Mono Files..., which leaves the clip
+unchanged). A sample clip's menu
 removes its silent stretches, crops its sample to what it plays, makes it unique, converts its melody to MIDI notes or
 splits it at the play position. A crossfade's two sides can have their own lengths and shapes. Moving a folder
 track moves every clip inside it. A clip's Snap Point (its menu) is the place inside it that lands on the grid
@@ -89,7 +92,7 @@ clip's Speed menu ramps its speed (the pitch going with it) or adds a tape start
 <p>Splits and trims can land on an exact sample, and with Navigate &gt; Snap Cuts to Zero Crossings on, the knife and an edge drag move to the
 nearest zero crossing so the cut does not click. A track's menu adds a spacer below it (Add Spacer Below): an empty band
 that separates groups of tracks and moves with the track.</p>
-<p>Sample Editor (a clip's menu, Sample Editor...): drag across the waveform to select a range, or drag the [ and ] handles at its edges. Start, End and Length show the range in the unit Units picks - time from the source's start, bars and beats at the song's tempo from the clip's start, or samples - and can be typed into (Enter applies; a suffix such as s, smp or bars overrides the unit) or stepped with Up and Down. End is the first frame after the range. Ctrl+wheel zooms the waveform around the pointer, the wheel scrolls it, and Zoom In, Zoom Out, Zoom to Selection and Show All do the same from the keyboard. Each operation edits only the range the fields show, as one undo step; the line under the buttons says what was done, or why it was refused.</p>
+<p>Sample Editor (a clip's menu, Sample Editor...): drag across the waveform to select a range, or drag the [ and ] handles at its edges. Start, End and Length show the range in the unit Units picks - time from the source's start, bars and beats at the song's tempo from the clip's start, or samples - and can be typed into (Enter applies; a suffix such as s, smp or bars overrides the unit) or stepped with Up and Down. End is the first frame after the range. Ctrl+wheel zooms the waveform around the pointer, the wheel scrolls it, and Zoom In, Zoom Out, Zoom to Selection and Show All do the same from the keyboard. Each range operation edits only the range the fields show, as one undo step; the line under the buttons says what was done, or why it was refused. To Mono and Split Stereo... act on the whole source instead: the first bakes the documented (L + R) / 2 downmix, the second asks for two destinations and writes the left and right channels as mono WAV files.</p>
 <p>Edit &gt; Tempo Map... lists the song's tempo and metre changes: add, remove and ramp them, or import and export them as a
 Standard MIDI File.</p>
 <p>Edit &gt; Progression... lists the named progressions and spells each one out in the selected scale and key; Write puts the

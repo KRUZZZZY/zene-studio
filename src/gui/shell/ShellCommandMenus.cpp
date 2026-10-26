@@ -199,7 +199,7 @@ void inputTransformMenu(QMenu* menu, const QJsonObject& self)
 
 void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 {
-	const auto* sample = static_cast<SampleClip*>(clip);
+	auto* sample = static_cast<SampleClip*>(clip);
 	const QString id = control::clipIdOf(clip);
 	QMenu* warp = menu->addMenu(tr("Tempo and Warp"));
 	choices(warp, "Tempo", "warp.set", "mode", self);
@@ -220,6 +220,14 @@ void sampleClipMenus(QMenu* menu, Clip* clip, const QJsonObject& self)
 	add(process, "Amplify...", "sample.amplify", self, true);
 	add(process, "Reverse", "sample.reverse", self, false);
 	choices(process, "Fade", "sample.fade", "direction", self);
+	// Q050-106: the whole source as mono, or as two mono files. `mono` is an op of
+	// sample.edit_range, so this entry and the Sample Editor's button are one command.
+	const auto frames = static_cast<int>(sample->sample().sampleSize());
+	const bool stereo = frames > 0 && sample->sample().channels() == DEFAULT_CHANNELS;
+	QAction* toMono = add(process, "Convert to Mono", "sample.edit_range",
+		with(with(with(self, "from", 0), "to", frames), "op", QStringLiteral("mono")), false);
+	toMono->setEnabled(toMono->isEnabled() && stereo);
+	SampleEditorDialog::addSplitStereoAction(process, sample, stereo);
 	add(process, "Gain Envelope...", "clip.gain_envelope_set", self, true);
 	add(process, "Clear Gain Envelope", "clip.gain_envelope_set", with(self, "points", QJsonArray()), false);
 	// MX-083 (L10 W3): the clip printed through a chain's devices - its own track's by default.

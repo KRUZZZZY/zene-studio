@@ -197,6 +197,14 @@ const ReversibilityRow kPassiveRows[] = {
 		"consent record at all",
 		""),
 #endif // ZENE_TELEMETRY_ENABLED
+	R("sample.split_stereo", RC::NotMutating, false,
+		"it writes two OUTPUT FILES - the clip's left and right channels as mono WAVs - and "
+		"changes nothing in the session: the source buffer, the clip's window, its timing and "
+		"its playback settings are all untouched, so there is no checkpoint to take and one "
+		"control.undo would (correctly) undo an older edit",
+		"the project is unchanged; the two files are outputs, not project state, and "
+		"overwriting them is the caller's decision",
+		""),
 	R("render.render", RC::NotMutating, false,
 		"it writes an OUTPUT ARTEFACT; the session it renders is not modified "
 		"(it serialises to a temp file and removes it). A render RANGE "

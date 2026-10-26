@@ -3056,3 +3056,7 @@ tests/src/core/ControlProjectMediaTest.cpp
 tests/src/gui/BrowserProjectMediaTest.cpp
 tests/control-media-agent-transcript.py
 docs/qwen-fixes-2026-10/cluster-Q050-121.md
+# Q050-106 (2026-10-19): the stereo pair - sample.split_stereo's command unit and its
+# registered proof (the mono downmix extends the fork-NEW sample.edit_range unit).
+src/core/ControlCommandsSampleStereo.cpp
+tests/src/core/ControlSampleStereoTest.cpp

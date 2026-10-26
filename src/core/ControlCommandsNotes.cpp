@@ -468,6 +468,8 @@ void registerRollGetState(ControlRegistry& registry)
 		{QStringLiteral("length"), control::numberProperty()},
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("selected"), control::booleanProperty()},
 		{QStringLiteral("selected_notes"), control::arrayProperty()},

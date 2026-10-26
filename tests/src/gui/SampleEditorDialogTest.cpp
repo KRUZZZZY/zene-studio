@@ -29,9 +29,11 @@
 #include <QtTest>
 
 #include <QFile>
+#include <QFileInfo>
 #include <QImage>
+#include <QLineEdit>
 #include <QPainter>
-#include <QFile>
+#include <QPointer>
 #include <QApplication>
 #include <QFileDialog>
 #include <QDragEnterEvent>
@@ -417,6 +419,94 @@ private slots:
 		QCOMPARE(m_dialog->view()->from(), 0);
 		QCOMPARE(m_dialog->view()->to(), Rate);
 		QCOMPARE(static_cast<int>(m_clip->sample().sampleSize()), Rate);
+	}
+
+	//! Q050-106 AC2 through the Sample Editor: the button drives sample.edit_range
+	//! op 'mono', the source reads mono, and one undo restores the exact stereo
+	//! samples and layout.
+	void theMonoButtonConvertsTheWholeSourceAndUndoRestoresIt()
+	{
+		std::vector<SampleFrame> stereo;
+		for (int i = 0; i < Rate; ++i)
+		{
+			stereo.emplace_back(0.20f * std::sin(2.0 * M_PI * 220.0 * i / Rate),
+				-0.10f * std::cos(2.0 * M_PI * 330.0 * i / Rate));
+		}
+		m_clip->setSampleBuffer(std::make_shared<SampleBuffer>(stereo.data(), stereo.size(), Rate));
+		m_dialog->view()->setClip(m_clip);
+
+		QPushButton* mono = button(m_dialog, QStringLiteral("To Mono"));
+		QVERIFY(mono != nullptr);
+		QVERIFY(mono->isEnabled());
+		mono->click();
+
+		QCOMPARE(m_dialog->describe().value(QStringLiteral("channels")).toInt(), 1);
+		QCOMPARE(m_dialog->describe().value(QStringLiteral("layout")).toString(), QStringLiteral("mono"));
+		QVERIFY2(m_dialog->status().contains(QStringLiteral("Mono")), qPrintable(m_dialog->status()));
+		QCOMPARE(static_cast<int>(m_clip->sample().sampleSize()), Rate);
+		for (int i = 0; i < Rate; ++i)
+		{
+			const float mean = (stereo[static_cast<std::size_t>(i)].left()
+				+ stereo[static_cast<std::size_t>(i)].right()) / 2.0f;
+			QCOMPARE(m_clip->sample().data()[i].left(), mean);
+			QCOMPARE(m_clip->sample().data()[i].right(), mean);
+		}
+
+		const ControlResult undo = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
+		QCOMPARE(m_dialog->describe().value(QStringLiteral("layout")).toString(), QStringLiteral("stereo"));
+		for (int i = 0; i < Rate; ++i)
+		{
+			QCOMPARE(m_clip->sample().data()[i].left(), stereo[static_cast<std::size_t>(i)].left());
+			QCOMPARE(m_clip->sample().data()[i].right(), stereo[static_cast<std::size_t>(i)].right());
+		}
+	}
+
+	//! Q050-106 AC1/AC3 through the Sample Editor: the split button asks for two
+	//! destinations and runs sample.split_stereo; both files appear and the clip
+	//! is unchanged.
+	void theSplitButtonWritesTwoMonoFilesFromTheMenuPath()
+	{
+		const auto before = std::vector<SampleFrame>(m_clip->sample().data(),
+			m_clip->sample().data() + m_clip->sample().sampleSize());
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString left = directory.filePath(QStringLiteral("left.wav"));
+		const QString right = directory.filePath(QStringLiteral("right.wav"));
+
+		QTimer probe;
+		probe.setInterval(10);
+		connect(&probe, &QTimer::timeout, this, [&]
+		{
+			auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+			if (dialog == nullptr || dialog->objectName() != QStringLiteral("stereoSplitDialog")) { return; }
+			auto* leftField = dialog->findChild<QLineEdit*>(QStringLiteral("leftPath"));
+			auto* rightField = dialog->findChild<QLineEdit*>(QStringLiteral("rightPath"));
+			if (leftField == nullptr || rightField == nullptr) { dialog->reject(); return; }
+			leftField->setText(left);
+			rightField->setText(right);
+			dialog->accept();
+			probe.stop();
+		});
+		probe.start();
+
+		QPushButton* split = button(m_dialog, QStringLiteral("Split Stereo..."));
+		QVERIFY(split != nullptr);
+		QVERIFY(split->isEnabled());
+		split->click();
+		probe.stop();
+
+		QVERIFY2(QFileInfo::exists(left), qPrintable(left + QStringLiteral(" status=") + m_dialog->status()));
+		QVERIFY2(QFileInfo::exists(right), qPrintable(right + QStringLiteral(" status=") + m_dialog->status()));
+		QVERIFY(QFileInfo(left).size() > 0);
+		QVERIFY(QFileInfo(right).size() > 0);
+		QVERIFY2(m_dialog->status().contains(QStringLiteral("Wrote")), qPrintable(m_dialog->status()));
+		QCOMPARE(m_clip->sample().sampleSize(), before.size());
+		for (std::size_t i = 0; i < before.size(); ++i)
+		{
+			QCOMPARE(m_clip->sample().data()[i].left(), before[i].left());
+			QCOMPARE(m_clip->sample().data()[i].right(), before[i].right());
+		}
 	}
 
 	void audioOpenDialogUsesSingleFileSelection()

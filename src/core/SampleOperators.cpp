@@ -193,5 +193,31 @@ float peakOf(const SampleFrame* in, f_cnt_t frames)
 	return peak;
 }
 
+StereoChannels splitStereo(const SampleFrame* in, f_cnt_t frames)
+{
+	StereoChannels out;
+	out.left.reserve(static_cast<size_t>(frames));
+	out.right.reserve(static_cast<size_t>(frames));
+	for (f_cnt_t i = 0; i < frames; ++i)
+	{
+		out.left.push_back(in[i].left());
+		out.right.push_back(in[i].right());
+	}
+	return out;
+}
+
+std::vector<SampleFrame> toMono(const SampleFrame* in, f_cnt_t frames)
+{
+	std::vector<SampleFrame> out;
+	out.reserve(static_cast<size_t>(frames));
+	for (f_cnt_t i = 0; i < frames; ++i)
+	{
+		// The documented rule: the per-frame arithmetic mean on BOTH sides.
+		const sample_t mean = in[i].average();
+		out.emplace_back(mean, mean);
+	}
+	return out;
+}
+
 } // namespace sampleops
 } // namespace lmms

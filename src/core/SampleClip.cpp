@@ -859,6 +859,13 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 
 	_this.setAttribute( "sample_rate", m_sample.sampleRate());
+	// The source layout (Q050-106): a mono downmix writes `channels="1"` beside the data it
+	// already writes. Additive like the window and the lead - a stereo clip writes nothing, so
+	// every existing project serialises byte for byte as it did.
+	if (m_sample.channels() != DEFAULT_CHANNELS)
+	{
+		_this.setAttribute("channels", m_sample.channels());
+	}
 	// The authored window, in source frames (Slice 1 of task #611). Additive: a
 	// clip that plays its whole source writes neither attribute, so a project
 	// without a trim serialises exactly as it did before this slice (I9).
@@ -918,8 +925,13 @@ void SampleClip::loadSettings( const QDomElement & _this )
 			? _this.attribute("sample_rate").toInt() : 0;
 		const auto sampleRate = statedRate > 0
 			? statedRate : Engine::audioEngine()->outputSampleRate();
+		// Q050-106: `channels` is written ONLY for a mono downmix; its absence is the
+		// pre-existing stereo layout every older project has. Any other value is read as
+		// stereo, the only other layout a SampleFrame carries.
+		const int channels = _this.attribute("channels", QString::number(DEFAULT_CHANNELS)).toInt() == 1
+			? 1 : DEFAULT_CHANNELS;
 
-		auto buffer = SampleBuffer::fromBase64(_this.attribute("data"), sampleRate);
+		auto buffer = SampleBuffer::fromBase64(_this.attribute("data"), sampleRate, channels);
 		m_sample = Sample(std::move(buffer));
 		resetWindowToFullBuffer();
 	}

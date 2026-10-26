@@ -880,6 +880,9 @@ LMMS_EXPORT void registerAudioAnalysisCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipImportFileCommands(ControlRegistry& registry);
 //! 0.5.0 L05 (ED-156): sample.edit_range (ControlCommandsSampleRange.cpp).
 LMMS_EXPORT void registerSampleRangeCommands(ControlRegistry& registry);
+//! 0.5.0 L05 (Q050-106): sample.split_stereo, the stereo source as two mono WAV files
+//! (ControlCommandsSampleStereo.cpp).
+LMMS_EXPORT void registerSampleStereoCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-053, MX-140, MX-042): mixer.send_meters, mixer.eq_compare, browser.preview_output, monitor.control_room
 //! (ControlCommandsMixerMeters.cpp).
 LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);

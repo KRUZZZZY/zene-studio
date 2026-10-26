@@ -113,6 +113,8 @@ void registerClipAdd(ControlRegistry& registry)
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("note_count"), control::nullable(control::numberProperty())},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("selected"), control::booleanProperty()},
 	});
 	cmd.mutating = true;
@@ -377,6 +379,8 @@ void registerClipDelete(ControlRegistry& registry)
 		{QStringLiteral("muted"), control::booleanProperty()},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("note_count"), control::numberProperty()},
+		{QStringLiteral("channels"), control::nullable(control::numberProperty())},
+		{QStringLiteral("layout"), control::nullable(control::stringProperty())},
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("selected"), control::booleanProperty()},
 	});

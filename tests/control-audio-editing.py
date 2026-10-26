@@ -10,13 +10,19 @@ Starts the REAL `zene` binary headless (its own throwaway config) and proves:
   3. arrangement.modes takes auto_fade_ms and show_transients and answers them;
   4. clip.split_at cuts a clip at every beat, and one undo puts it back whole;
   5. clip.transients answers on a generated clip, and a fade can take the new s_curve shape;
-  6. clip.slice_to_instrument makes a SlicerT track (or is refused requires without SlicerT), one undo removes it.
+  6. clip.slice_to_instrument makes a SlicerT track (or is refused requires without SlicerT), one undo removes it;
+  7. Q050-106: sample.split_stereo writes an asymmetric fixture as two mono WAVs (channels, rate and length read
+     from their headers) and leaves the clip stereo, then sample.edit_range op mono reads back mono through
+     arrangement.get_state and one control.undo restores the stereo read-back.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-audio-editing.py <zene>
 Exit 0 only when every check held.
 """
 
+import os
+import struct
 import sys
+import tempfile
 
 import control_socket_harness as H
 from freeze_bounce_evidence import Recorder, Session, report_results
@@ -116,6 +122,82 @@ def check_slice(session, recorder, track):
     recorder.check("one undo removes the slice track", after == before, "tracks=%d before=%d" % (after, before))
 
 
+def wavInfo(path):
+    """(channels, rate, frames, format_tag) from a canonical RIFF/WAVE file."""
+    with open(path, "rb") as handle:
+        data = handle.read()
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        return None
+    channels = rate = format_tag = frames = None
+    position = 12
+    while position + 8 <= len(data):
+        chunk = data[position:position + 4]
+        size = struct.unpack("<I", data[position + 4:position + 8])[0]
+        body = data[position + 8:position + 8 + size]
+        if chunk == b"fmt " and len(body) >= 16:
+            format_tag, channels, rate = struct.unpack("<HHI", body[:8])
+        elif chunk == b"data":
+            frames = size // 4  # float32 mono
+        position += 8 + size + (size & 1)
+    if None in (channels, rate, format_tag, frames):
+        return None
+    return channels, rate, frames, format_tag
+
+
+def check_stereo_tools(session, recorder):
+    track = session.result("track.add", {"type": "sample", "name": "Stereo"}).get("track")
+    generated = session.result("sample.generate", {"track": track, "position": 0, "length": 192,
+                                                   "kind": "white"})
+    clip = generated.get("clip")
+    frames = generated.get("frames")
+    rate = generated.get("sample_rate")
+    recorder.check("the stereo fixture is asymmetric white noise",
+                   bool(clip) and frames and rate, "generated=%r" % generated)
+    before = [c for c in clips_on(session, track) if c.get("id") == clip]
+    recorder.check("the agent reads the fixture as stereo",
+                   len(before) == 1 and before[0].get("channels") == 2 and before[0].get("layout") == "stereo",
+                   "clips=%r" % before)
+
+    with tempfile.TemporaryDirectory() as directory:
+        left = os.path.join(directory, "fixture-left.wav")
+        right = os.path.join(directory, "fixture-right.wav")
+        reply = session.call("sample.split_stereo",
+                             {"clip": clip, "left_path": left, "right_path": right})
+        result = reply.get("result") or {}
+        left_info = wavInfo(left) if os.path.isfile(left) else None
+        right_info = wavInfo(right) if os.path.isfile(right) else None
+        recorder.check("sample.split_stereo writes two mono WAVs at the source rate and length",
+                       reply.get("ok") and result.get("frames") == frames
+                       and result.get("sample_rate") == rate and result.get("channels") == 1
+                       and left_info is not None and right_info is not None
+                       and left_info[0] == 1 and right_info[0] == 1
+                       and left_info[1] == rate and right_info[1] == rate
+                       and left_info[2] == frames and right_info[2] == frames
+                       and left_info[3] == 3 and right_info[3] == 3,
+                       "reply=%r left=%r right=%r" % (reply, left_info, right_info))
+        after = clips_on(session, track)
+        recorder.check("the split leaves the clip unchanged",
+                       len(after) == 1 and after[0].get("channels") == 2
+                       and after[0].get("layout") == "stereo",
+                       "clips=%r" % after)
+
+    reply = session.call("sample.edit_range", {"clip": clip, "op": "mono"})
+    result = reply.get("result") or {}
+    mono = clips_on(session, track)
+    recorder.check("sample.edit_range op mono reads back as mono",
+                   reply.get("ok") and result.get("channels") == 1
+                   and result.get("layout") == "mono" and result.get("frames") == frames
+                   and len(mono) == 1 and mono[0].get("channels") == 1
+                   and mono[0].get("layout") == "mono",
+                   "reply=%r clips=%r" % (reply, mono))
+    session.result("control.undo")
+    stereo = clips_on(session, track)
+    recorder.check("one control.undo restores the stereo read-back",
+                   len(stereo) == 1 and stereo[0].get("channels") == 2
+                   and stereo[0].get("layout") == "stereo",
+                   "clips=%r" % stereo)
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -133,6 +215,7 @@ def main(argv):
         check_modes(session, recorder)
         check_split_and_shape(session, recorder, track)
         check_slice(session, recorder, track)
+        check_stereo_tools(session, recorder)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()

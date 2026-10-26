@@ -109,6 +109,8 @@ public:
 	auto sampleFile() const -> const QString& { return m_buffer->audioFile(); }
 	auto sampleRate() const -> int { return m_buffer->sampleRate(); }
 	auto sampleSize() const -> size_t { return m_buffer->size(); }
+	//! The source's layout (1 after a mono downmix, else 2) - see SampleBuffer::channels().
+	auto channels() const -> int { return m_buffer->channels(); }
 
 	auto toBase64() const -> QString { return m_buffer->toBase64(); }
 

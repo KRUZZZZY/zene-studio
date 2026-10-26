@@ -131,8 +131,11 @@ ControlResult commitBake(const BakeTarget& target, std::vector<SampleFrame>&& ba
 	QJsonObject result, const QJsonObject& before)
 {
 	const int rate = static_cast<int>(target.clip->sample().sampleRate());
+	// Keep the source's layout (Q050-106): a bake on a mono clip stays mono rather than
+	// silently re-labelling its dual-mono frames as stereo.
+	const int channels = target.clip->sample().channels();
 	target.clip->addJournalCheckPoint();
-	auto newBuffer = std::make_shared<SampleBuffer>(std::move(baked), rate);
+	auto newBuffer = std::make_shared<SampleBuffer>(std::move(baked), rate, QString(), channels);
 	const auto newFrames = static_cast<f_cnt_t>(newBuffer->size());
 	// replaceSample preserves the clip's amplification, frequency and reversed
 	// settings (the three playback settings a user sets in the GUI); setSampleBuffer
