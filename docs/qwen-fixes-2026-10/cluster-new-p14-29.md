@@ -120,6 +120,16 @@ gate evidence (`gate-3-feature-check.log`, EXIT 0).
 4. **Collateral.** Projects and saved data are untouched: `loadSettings` paths are not changed. The new bound is
    `numChannels()`, the first index that does not exist, so it refuses no valid index. Index 0 is still excluded, as before.
    The undo step is still added only when `after != before`.
-5. **Verdict and contract.** FIXED. The contract is the one `orderByTracks` already states: a track on no channel is not
+5. **Sibling commands in the changed file.** `ControlCommandsMixerTools.cpp` also registers the `chain.*` and `meter.*`
+   commands (`ControlCommandsMixerTools.cpp:548-576`). None of the ones the check lists (chain.apply, chain.bypass_all,
+   chain.clean, chain.copy, chain.get_state, chain.list, chain.receive, chain.remove, chain.rename, chain.save,
+   meter.arm, meter.get_state, meter.input, meter.measure_file, meter.set_reference) reads a track's mixer-channel value,
+   so none shares the bad lookup and none needs a change. In this file the only lookup of a track's channel value is
+   `orderByTracks` (lines 291-293, fixed). The other `mixerChannelModel()` use, `whatUsesAChannel` (line 430), compares
+   the value with a channel's index and never indexes with it. The other `mixerChannel(` calls in the file take their index
+   from a loop bound or from a channel the command has just resolved or created.
+6. **Gates row.** `gates (feature_check.py)` stays red in `submit_check` for the environment reason given at the top of this
+   section; the redirected copy passes all eight rows (`gate-3-feature-check.log`, EXIT 0).
+7. **Verdict and contract.** FIXED. The contract is the one `orderByTracks` already states: a track on no channel is not
    followed (the `channel != nullptr` branch, and the master at index 0). No new control command was added, the
    `ControlCommandsSnapshot` canary is untouched, and no audio-thread code is involved.
