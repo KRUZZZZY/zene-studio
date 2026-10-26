@@ -113,6 +113,8 @@ set(LMMS_TESTS
 	# that outlives it, so control.undo refuses both instead of disarming and leaving the
 	# take behind.
 	src/core/ControlArmReversibilityTest.cpp
+	# Cluster new-p21-6: the record-arm query and the track resolver with no song container (Engine::destroy).
+	src/core/ControlTrackRouteNoSongTest.cpp
 	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
