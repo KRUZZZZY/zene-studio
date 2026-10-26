@@ -86,3 +86,23 @@ Red probe on the resolved load hunk: the `channels` read was forced to stereo an
 - exit 1, red on the train itself: `complexity-gate.sh --check` and `file-length-gate.sh --check`. I matched every `REGRESSION` line they print against the 36 files this branch changes (`grep -F -f`) and found none (grep exit 1).
 
 Build note: the default ccache temp dir is not writable here, so builds used `CCACHE_TEMPDIR=/tmp/ccache-q106-tmp`. Logs are in `Q050-106.r5/logs/` (`build-2..7`, `test-*`, `gate-*`).
+
+### Self-check, round 5 (`submit_check.py` on `82e922489`)
+
+`submit_check.py <worktree> Q050-106` ran with exit 1. It passed 11 items and failed only `gates (feature_check.py)`. In this write-jail, `feature_check.py` stops at `logs.mkdir()` on `<worktree>-feature-check` with a `PermissionError`, before it runs any gate. Its gate commands, run directly against its own base (`FIX-BASE` = `050/m0-train-16`, merge-base `cf3618e61`), gave:
+- exit 0 for all six simple gates.
+- exit 1 for both ratchets, with none of their REGRESSION items in a file this branch changes. This was red on the train before this branch.
+
+The six ASK items:
+
+1. **New tests fail without the product change.** I did not repeat the full product-hunk reversal this round. Round 1 did it for all four tests (exit 8, then exit 0 restored), and none of those tests changed in this integration. This round's probes cover the code that changed:
+   - Process-menu split slot neutralised: `DevicePanelTest` exit 8, then exit 0 restored.
+   - Resolved `SampleClip` load hunk forced to stereo: `ControlSampleStereoTest` exit 8, then exit 0 restored.
+2. **Criteria proven by tests I ran.** All on the merged tree, from `build/tests`:
+   - AC1: `ControlSampleStereoTest` exit 0 and `ControlAudioEditing` exit 0.
+   - AC2: `ControlSampleStereoTest` exit 0 and `ControlAudioEditing` exit 0.
+   - AC3: `SampleEditorDialogTest` exit 0 and `DevicePanelTest` exit 0.
+3. **One undo step, honest reversibility class.** Unchanged from the accepted patch: `sample.edit_range` op `mono` is `true_inverse` with one checkpoint, and `sample.split_stereo` is `not_mutating`. `ReversibilityContractTest` gave exit 0 after the A16 re-measure (rows=859).
+4. **Audio thread.** Nothing added runs there. The resolved `commitBake` and the new `addSplitStereoAction` run on the control and GUI threads only.
+5. **Old projects and round-trip.** A project with no `channels` attribute still loads as stereo, and the positive-rate guard from the train is kept. `ClipSerialisationTest` gave exit 0. `ControlSampleStereoTest::monoLayoutRoundTripsThroughAProject` gave exit 0, and exit 8 under the red probe.
+6. **Portability.** The only new API is `<QAction>`, `QMenu::addAction`, `QPointer` and `QObject::connect`, all available in Qt 5.15. No `std::filesystem`, no reserved identifiers, no POSIX calls.
