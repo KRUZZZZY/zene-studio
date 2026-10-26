@@ -5182,3 +5182,4 @@ src/core/main.cpp	cluster 5110: capture --config during the first argument pass 
 tests/CMakeLists.txt	cluster 5110 batch: register AppearanceStartupTest and MainCliStartupTest, link the latter to this build's zene and point its fixture path at this source tree; no existing target properties change.
 tests/src/gui/DevicePanelTest.cpp	# Deleting the selected clip or track does not notify selection listeners
 src/gui/RowTableView.cpp	cluster new-p14-267 (2026-10-26): keyPressEvent walks the column count only when a model is set, so Tab/Backtab with no model (new view or after setModel(nullptr)) no longer dereferences null; regression tests/src/gui/RowTableViewTest.cpp (tabAndBacktabWithoutModelAreSafe, tabAndBacktabAfterClearingModelAreSafe).
+tests/src/gui/RowTableViewTest.cpp	# Tab handling crashes when RowTableView has no model
