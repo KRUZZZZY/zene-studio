@@ -5262,3 +5262,7 @@ tests/all-sources.txt	cluster new-p23-172: re-derive the whole-tree scope manife
 tests/all-sources.txt	cluster new-p23-184 gate repair (2026-10-25): rederive the entry list from its header recipe, excluding vendored plugins/SfzPlayer/sfizz sources so Gate 9 and all-sources-reproduce match the documented whole-tree scope.
 tests/CMakeLists.txt	cluster new-p23-187: register OscilloscopeControlsPersistenceTest and compile the plugin sources into it; no existing test registration or properties change.
 tests/all-sources.txt	cluster new-p23-187: remove stale vendored sfizz paths that the manifest header recipe excludes, so the registered whole-tree source list reproduces; also register the new Oscilloscope persistence test.
+include/PerformView.h	cluster new-p17-121: keeps the failed-read message separate from action feedback so the next full refresh can clear read errors cleanly.
+src/gui/PerformView.cpp	cluster new-p23-208/new-p17-121/new-p16-163: checks state read results before replacing visible state and computes the bar number in int64_t.
+tests/src/gui/PerformViewTest.cpp	cluster new-p23-208/new-p17-121/new-p16-163: adds deterministic failures for each state read and a max-tick/one-tick-bar regression for the display overflow.
+tests/all-sources.txt	cluster new-p23-208 gate prerequisite: re-derived the source list from the manifest's published recipe after the inherited train snapshot re-added 1,148 excluded vendored sfizz files; no first-party path was removed and no gate or ratchet changed.

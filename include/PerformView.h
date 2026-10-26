@@ -158,6 +158,7 @@ private:
 	std::vector<int> m_playingScene;    //!< per column, -1 when idle
 	std::vector<QString> m_phases;      //!< per column: launching, playing, stopping or empty
 	std::vector<QString> m_sceneNames;  //!< each scene's own name, empty when it has none
+	QString m_readError;                //!< latest failed state read, until the next full refresh
 	QString m_notice;                   //!< the last press's refusal, until one succeeds
 	double m_bpm = 0.0;
 	bool m_transportRunning = false;
