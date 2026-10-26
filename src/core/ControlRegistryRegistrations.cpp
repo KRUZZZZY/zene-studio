@@ -117,6 +117,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerLaunchBindingCommands(registry);
 	registerSessionCaptureCommand(registry);
 	registerSessionAudioRecordCommands(registry);
+	registerSamplerTakeCommands(registry);
 	registerLowLatencyCommand(registry);
 	registerBrowserCollectionCommands(registry);
 	registerTrackPresetCommands(registry);

@@ -52,6 +52,7 @@
 #include "HardwareOutputBus.h"
 #include "MultiTrackRecorder.h"
 #include "RetroAudioCapture.h"
+#include "SamplerTakeRecorder.h"
 #include "SampleFrameRingBuffer.h"
 
 #ifdef LMMS_TESTING
@@ -461,6 +462,11 @@ public:
 	RetroAudioCapture& retroCapture() noexcept { return m_retroCapture; }
 	const RetroAudioCapture& retroCapture() const noexcept { return m_retroCapture; }
 
+	//! 0.5.0 L10 (Q050-156): the input take being recorded straight into a sampler
+	//! instrument (AudioFileProcessor / SlicerT). Idle unless one is in hand.
+	SamplerTakeRecorder& samplerTakeRecorder() noexcept { return m_samplerTakeRecorder; }
+	const SamplerTakeRecorder& samplerTakeRecorder() const noexcept { return m_samplerTakeRecorder; }
+
 	/**
 	 * @returns The internal buffer size used by audio plugins and other processing done within the audio engine.
 	 * Its value is @ref DEFAULT_BUFFER_SIZE or @ref framesPerAudioBuffer(), whichever is lower.
@@ -788,6 +794,12 @@ private:
 	//! this object's constructor - i.e. off the audio thread - and the audio
 	//! thread's cost while it is disarmed is one relaxed atomic load per period.
 	RetroAudioCapture m_retroCapture;
+
+	//! 0.5.0 L10 (Q050-156): the take a sampler instrument (AudioFileProcessor /
+	//! SlicerT) records from the input bus. Its ring is made by arm() on the
+	//! control thread; the audio thread's cost while idle is one relaxed atomic
+	//! load per period (include/SamplerTakeRecorder.h).
+	SamplerTakeRecorder m_samplerTakeRecorder;
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;

@@ -5184,3 +5184,4 @@ tests/CMakeLists.txt	cluster 5110 batch: register AppearanceStartupTest and Main
 tests/src/gui/DevicePanelTest.cpp	# Deleting the selected clip or track does not notify selection listeners
 tests/src/gui/NoteGridTest.cpp	# Touch-first layout and large-target mode
 tests/src/gui/WorkspaceAccessTest.cpp	# Touch-first layout and large-target mode
+plugins/AudioFileProcessor/AudioFileProcessorView.h	Q050-156: declare the view's own "Record take" button and its recordTake() slot; the button invokes the registered record.sampler_capture* commands, and SamplerTakeGuiTest drives it with a real click.

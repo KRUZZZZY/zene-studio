@@ -226,7 +226,12 @@ cannot be measured, "0m" when the budget is spent); scripts and agents ask the s
 recording route can take the master or a channel
 instead of the input (record.route_source), before or after the channel's devices or fader - if you also monitor what
 you record, lower the level first: a signal recorded from what it feeds can howl. Track &gt; MIDI Out sends an
-instrument track's notes to a hardware synth; record its audio back on an audio track that monitors the input.</p>
+instrument track's notes to a hardware synth; record its audio back on an audio track that monitors the input.
+AudioFileProcessor and SlicerT also record the input straight into the sampler: Record take in the
+instrument's window captures a bounded take (click again to stop, or let it reach its length), then loads it
+so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
+puts the sampler's previous sample back. Agents use record.sampler_capture, record.sampler_capture_stop,
+record.sampler_capture_status and record.sampler_capture_land for the same take.</p>
 <p>An instrument track's Instrument Setup menu - on its header menu, the Inspector's More menu and its instrument's device
 card - holds what a multi-output, multitimbral or layered instrument needs. Output Buses lists a plug-in's extra outputs:
 route one to a mixer channel, or make a channel for each. MIDI Parts sends the notes in a key and velocity range on a MIDI

@@ -28,6 +28,7 @@
 #include "AudioFileProcessorWaveView.h"
 
 #include <QPainter>
+#include <QPushButton>
 #include <QTimer>
 
 #include "ComboBox.h"
@@ -36,7 +37,9 @@
 #include "FontHelper.h"
 #include "Knob.h"
 #include "LcdSpinBox.h"
+#include "InstrumentTrack.h"
 #include "PixmapButton.h"
+#include "SamplerTakeButton.h"
 #include "Song.h"
 #include "StringPairDrag.h"
 #include "Track.h"
@@ -63,6 +66,14 @@ AudioFileProcessorView::AudioFileProcessorView(Instrument* instrument,
 	connect(m_openAudioFileButton, SIGNAL(clicked()),
 					this, SLOT(openAudioFile()));
 	m_openAudioFileButton->setToolTip(tr("Open sample"));
+
+	// Q050-156: record the input straight into this sampler - the same registered
+	// record.sampler_capture* commands an agent runs (SamplerTakeButton.h).
+	m_recordTakeButton = new QPushButton(tr("Record take"), this);
+	m_recordTakeButton->setObjectName(QStringLiteral("audioFileProcessorRecordTake"));
+	m_recordTakeButton->setGeometry(5, 148, 90, 20);
+	m_recordTakeButton->setToolTip(tr("Record the input into this sampler; click again to stop"));
+	connect(m_recordTakeButton, &QPushButton::clicked, this, &AudioFileProcessorView::recordTake);
 
 	m_reverseButton = new PixmapButton(this);
 	m_reverseButton->setCheckable(true);
@@ -292,6 +303,12 @@ void AudioFileProcessorView::openAudioFile()
 	castModel<AudioFileProcessor>()->setAudioFile(af);
 	Engine::getSong()->setModified();
 	m_waveView->updateSampleRange();
+}
+
+void AudioFileProcessorView::recordTake()
+{
+	samplerTakeButtonStep(m_recordTakeButton,
+		QStringLiteral("trk-%1").arg(castModel<AudioFileProcessor>()->instrumentTrack()->id()));
 }
 
 void AudioFileProcessorView::modelChanged()

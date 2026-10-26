@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-25T20:31:23Z",
+  "captured_at": "2026-10-26T00:22:23Z",
   "commands": [
     {
       "args_schema": {
@@ -24406,6 +24406,86 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "cancel": {
+            "type": "boolean"
+          },
+          "seconds": {
+            "type": "number"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Record the engine's configured stereo input straight into an AudioFileProcessor or SlicerT on instrument track 'track'. The take is bounded: it ends when 'seconds' (default 2, at most 30) of input have been taken, or when record.sampler_capture_stop ends it early. The first frames (the recording round trip, 'latency_frames' in the reply) are skipped so the take lines up with what was heard. record.sampler_capture_status follows it; record.sampler_capture_land writes it as a WAV and loads it into the device. 'cancel': true drops the take in hand. Not a project edit: no transaction is recorded.",
+      "group": "record",
+      "id": "record.sampler_capture",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Land a finished sampler take as a 24-bit stereo WAV. Optional 'file' must be an absolute path that does not exist; without it, a new take is saved in the user's Recordings folder. Load it into the device it was recorded for through the instrument's own loader - AudioFileProcessor shows and plays it, SlicerT recalculates its slices. Refused until record.sampler_capture_status says done. One undo step: it restores the device's previous sample and settings; the WAV stays on disk.",
+      "group": "record",
+      "id": "record.sampler_capture_land",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Read the sampler take back: 'state' (idle, recording, done - ready for record.sampler_capture_land), the target track and device, the frames taken and the length it was bounded to, their lengths in seconds, the frames a starved writer dropped, the sample rate and the round trip it was shifted by. Read-only.",
+      "group": "record",
+      "id": "record.sampler_capture_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "End the sampler take in hand early: the input frames taken so far are the take, and record.sampler_capture_land can install it. Idempotent once the take is done. Not a project edit: no transaction is recorded.",
+      "group": "record",
+      "id": "record.sampler_capture_stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -36369,23 +36449,23 @@
       }
     }
   ],
-  "count": 849,
+  "count": 853,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-156-cf3618e61a/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-celzf1jz/zene.sock",
-    "version": "0.4.0-alpha.4775+9643c37"
+    "source_socket": "/tmp/zctl-run-lyb4eba3/zene.sock",
+    "version": "0.4.0-alpha.4776+cf3618e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 849,
-    "ids_sha256": "fd877b788a64b551f0ada13e219eccb4cc84545c69067d1855dd19ac4f2dd242"
+    "id_count": 853,
+    "ids_sha256": "18819c8ba5fec226dd2a26dad454a7d11f23e10d8f50e1b4521ae9cb09fdb064"
   }
 }

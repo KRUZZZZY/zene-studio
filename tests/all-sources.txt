@@ -756,6 +756,8 @@ include/SampleTrack.h
 include/SampleTrackView.h
 include/SampleTrackWindow.h
 include/SampleWindow.h
+include/SamplerTakeButton.h
+include/SamplerTakeRecorder.h
 include/Scale.h
 include/ScoreExport.h
 include/ScriptApiVersion.h
@@ -1699,6 +1701,7 @@ src/core/ControlCommandsSample.cpp
 src/core/ControlCommandsSampleEdit.cpp
 src/core/ControlCommandsSampleRange.cpp
 src/core/ControlCommandsSampleTools.cpp
+src/core/ControlCommandsSamplerTake.cpp
 src/core/ControlCommandsScale.cpp
 src/core/ControlCommandsScaleEdit.cpp
 src/core/ControlCommandsScoreExport.cpp
@@ -2067,6 +2070,7 @@ src/core/SampleOperators.cpp
 src/core/SampleOperators.h
 src/core/SamplePlayHandle.cpp
 src/core/SampleRecordHandle.cpp
+src/core/SamplerTakeRecorder.cpp
 src/core/Scale.cpp
 src/core/ScoreExport.cpp
 src/core/ScriptApiVersion.cpp
@@ -2337,6 +2341,7 @@ src/gui/SampleRangeFields.cpp
 src/gui/SampleSelectionView.cpp
 src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
+src/gui/SamplerTakeButton.cpp
 src/gui/ScriptBudgetAction.cpp
 src/gui/SendButtonIndicator.cpp
 src/gui/SessionGridCells.cpp
@@ -2880,6 +2885,7 @@ tests/src/core/SampleDecoderLimitTest.cpp
 tests/src/core/SampleDecoderOggChannelTest.cpp
 tests/src/core/SampleDecoderOggStateTest.cpp
 tests/src/core/SamplerEnvelopeTest.cpp
+tests/src/core/SamplerTakeTest.cpp
 tests/src/core/SamplerTestSupport.h
 tests/src/core/SamplerVoiceReuseTest.cpp
 tests/src/core/ScaleIntervalOverflowTest.cpp
@@ -3086,6 +3092,7 @@ tests/src/gui/RenderRangeMenuTest.cpp
 tests/src/gui/RowTableViewTest.cpp
 tests/src/gui/SampleClipWarpModeMenuTest.cpp
 tests/src/gui/SampleEditorDialogTest.cpp
+tests/src/gui/SamplerTakeGuiTest.cpp
 tests/src/gui/ScriptBudgetActionTest.cpp
 tests/src/gui/SessionGridRecordTest.cpp
 tests/src/gui/SessionGridViewTest.cpp

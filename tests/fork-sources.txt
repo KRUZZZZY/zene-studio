@@ -3039,3 +3039,11 @@ tests/src/core/AppearanceStartupTest.cpp
 tests/src/core/MainCliStartupTest.cpp
 # cluster 5110 batch (2026-10): verdicts, negative-control evidence and completion record.
 docs/qwen-fixes-2026-10/cluster-5110.md
+# 2026-10-20 (Q050-156): record a bounded input take straight into AudioFileProcessor / SlicerT.
+include/SamplerTakeButton.h
+include/SamplerTakeRecorder.h
+src/core/ControlCommandsSamplerTake.cpp
+src/core/SamplerTakeRecorder.cpp
+src/gui/SamplerTakeButton.cpp
+tests/src/core/SamplerTakeTest.cpp
+tests/src/gui/SamplerTakeGuiTest.cpp

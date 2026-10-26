@@ -32,10 +32,12 @@
 #include "ComboBox.h"
 #include "DataFile.h"
 #include "FileDialog.h"
+#include "InstrumentTrack.h"
 #include "InstrumentView.h"
 #include "Knob.h"
 #include "LcdSpinBox.h"
 #include "PixmapButton.h"
+#include "SamplerTakeButton.h"
 #include "SlicerT.h"
 #include "SlicerTWaveform.h"
 #include "StringPairDrag.h"
@@ -116,6 +118,14 @@ SlicerTView::SlicerTView(SlicerT* instrument, QWidget* parent)
 	m_resetButton->setToolTip(tr("Reset slices"));
 	connect(m_resetButton, &PixmapButton::clicked, m_slicerTParent, &SlicerT::updateSlices);
 
+	// Q050-156: record the input straight into this slicer - the same registered
+	// record.sampler_capture* commands an agent runs (SamplerTakeButton.h).
+	m_recordTakeButton = new QPushButton(tr("Record take"), this);
+	m_recordTakeButton->setObjectName(QStringLiteral("slicerTRecordTake"));
+	m_recordTakeButton->setGeometry(s_x6 + 45, 12, 100, 26);
+	m_recordTakeButton->setToolTip(tr("Record the input into this slicer; click again to stop"));
+	connect(m_recordTakeButton, &QPushButton::clicked, this, &SlicerTView::recordTake);
+
 	update();
 }
 
@@ -169,6 +179,12 @@ void SlicerTView::openFiles()
 	const auto audioFile = FileDialog::openAudioFile();
 	if (audioFile.isEmpty()) { return; }
 	m_slicerTParent->updateFile(audioFile);
+}
+
+void SlicerTView::recordTake()
+{
+	samplerTakeButtonStep(m_recordTakeButton,
+		QStringLiteral("trk-%1").arg(m_slicerTParent->instrumentTrack()->id()));
 }
 
 // all the drag stuff is copied from AudioFileProcessor
@@ -303,6 +319,7 @@ void SlicerTView::resizeEvent(QResizeEvent* re)
 
 	// Right box
 	// For explanation on the choice of constants, look at #7850
+	m_recordTakeButton->move(width() - 112, 12);
 	m_syncToggle->move((width() - 100), m_y1 - 7);
 	m_clearButton->move((width() - 100), m_y1 + 17);
 

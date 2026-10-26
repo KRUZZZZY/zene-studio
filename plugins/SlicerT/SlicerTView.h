@@ -52,6 +52,8 @@ public slots:
 	void exportMidi();
 	void openFiles();
 	void clearSlices();
+	//! Q050-156: record the input straight into this slicer (record.sampler_capture*).
+	void recordTake();
 
 public:
 	SlicerTView(SlicerT* instrument, QWidget* parent);
@@ -96,6 +98,7 @@ private:
 
 	QPushButton* m_resetButton;
 	QPushButton* m_midiExportButton;
+	QPushButton* m_recordTakeButton;
 
 	SlicerTWaveform* m_wf;
 
