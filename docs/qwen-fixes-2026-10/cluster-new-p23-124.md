@@ -38,6 +38,10 @@ Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p23-124.m
 
 ## Self-check
 
-- Working tree was clean at start; `AGENTS.md` is not present at this worktree root (`wc -l AGENTS.md` returned "No such file", EXIT=1), so the rules used are the condensed ones in the run brief.
-- `feature_check.py` could not run in this write-jail (see table). Equivalent gate commands were run directly, all in the worktree.
-- `submit_check.py` result: recorded below after it runs.
+- **Gates (feature_check.py).** The stock wrapper cannot run in this write-jail: it creates `<worktree>-feature-check/` as a sibling of the worktree and gets `PermissionError` (`gates-feature-check-1.log`, EXIT=1). Its own logic was then run from a copy with only two paths changed, `ROOT` (read-only use of the existing `gate-baselines` cache and `FIX-BASE`) and the log folder (into the LOG FOLDER). Command: `python3 -I <LOG>/feature_check_logredirect.py <worktree>` → `gates-feature-check-2.log`, EXIT=0, table: all eight rows PASS, `RESULT: PASS`. The base for the ratchet comparison is `cf3618e61` (merge-base with `050/m0-train-17`), and its cached listing was read, not recomputed.
+- **Regression test FAILS with the change reverted, PASSES with it:** not applicable. There is no product change, so there is nothing to revert (step 4b skipped under step 2). No RED or GREEN run exists for this verdict.
+- **Deterministic test:** not applicable, no test was added.
+- **Fix at the cause, every caller/sibling checked:** not applicable, no fix. The callers that matter for the verdict are the two `setValue` call sites (`ItemListPanel.cpp:218`, `:416`), both on the GUI thread, and `refuse()` is not reached on the null path.
+- **No collateral damage:** not applicable, no product or saved-data change.
+- **Evidence for FALSE-POSITIVE:** `ItemListAutomationSource.cpp:90` (row guard) with `:72` (`rowCount()` is 0 for a null clip) and `:130` (`clip()` null-check); `AutomationEditor.h:78` and `:94` (`currentClip()` and `editedClip()` are the same `m_clip`); `AutomationEditor.cpp:2246` and `:2306-2309` (clip destroyed → null); `AutomationPointEdit.cpp:47-49` (`controlOf` is null-safe); `ControlCommandsAutomationTools.cpp:149-165` (the command path does not touch the editor).
+- **Working tree:** clean after the verdict commit; `AGENTS.md` is not present at this worktree root (`wc -l AGENTS.md`, EXIT=1), so the brief's condensed rules were used.
