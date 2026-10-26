@@ -46,7 +46,7 @@ Test matrix: existing valid print/undo exercises the normal path; an empty audio
 | RED with fix removed (4b) | `git diff -- src/core/ControlCommandsClipProcess.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; `ctest -R '^DeviceToolsChainTest$' --output-on-failure` from `build/tests` → EXIT=8 with the same message assertion (10 passed, 1 failed). |
 | GREEN after restoring patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1). |
 | Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS (run at log 060). |
-| Completion gate | Run `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` after this commit; its final result will be recorded below. |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; submit check PASS (log 063). |
 | Commit files | `src/core/ControlCommandsClipProcess.cpp`, `tests/src/core/DeviceToolsChainTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p21-14.md`. |
 
 ## Self-check
@@ -59,5 +59,5 @@ Test matrix: existing valid print/undo exercises the normal path; an empty audio
 - Realtime and undo: `clip.process` remains on the offline control path; no audio-thread code was changed. The tail regression checks one undo restores the source contents, rate, window and length.
 - Verdicts: all three reports are REAL and FIXED, so the ALREADY-FIXED/FALSE-POSITIVE evidence question does not apply.
 - Feature gate: final `feature_check.py` command above → EXIT=0; all gates PASS (run at log 060; the final report gate is rerun before the documentation commit).
-- Completion gate: rerun `submit_check.py` after this report edit and record its final exit code.
-- Commits: `646017c98` (new-p21-14), `43c3815ce` (5602), and `b17bd11f8` (new-p22-5). Their changed file lists are recorded under the matching bug evidence above.
+- Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0 (log 063); it reports PASS for commits, clean status, report, test registration and gates. Its five ASK items are answered by the evidence in this section.
+- Commits: `646017c98` (new-p21-14), `43c3815ce` (5602), `b17bd11f8` (new-p22-5), and `6fc5da83b` (self-check report). Changed files are listed under each bug's evidence.
