@@ -167,6 +167,37 @@ QString newRestoreStagingPath(const QString& projectPath, int revision)
 		+ QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
 
+//! Stages the bytes a restore of \a revision will install, into \a staging: the pending stage an earlier
+//! attempt left, or a fresh copy of the revision. The per-revision cap binds those bytes, so they are
+//! checked BEFORE any copy is made and before the live file is rotated - a refusal after the rotation
+//! would already have moved the retained set. False with \a error set when they are over the cap or
+//! cannot be staged.
+bool stageRestoreTarget(const QString& projectPath, int revision, QString* staging, QString* error)
+{
+	const QString source = projectRevisionPath(projectPath, revision);
+	*staging = pendingRestoreStagingPath(projectPath, revision);
+	const QString installed = staging->isEmpty() ? source : *staging;
+	const qint64 size = QFileInfo(installed).size();
+	if (size > ProjectRevisionPolicy::MaxRevisionBytes)
+	{
+		*error = QStringLiteral("%1 is %2 bytes, over the %3-byte per-revision cap of policy '%4': "
+			"revision %5 was not restored, because a restore installs the whole file and the cap "
+			"bounds every retained revision")
+			.arg(installed).arg(size).arg(ProjectRevisionPolicy::MaxRevisionBytes)
+			.arg(QStringLiteral("keep-%1").arg(ProjectRevisionPolicy::Keep)).arg(revision);
+		return false;
+	}
+	if (!staging->isEmpty()) { return true; }
+
+	*staging = newRestoreStagingPath(projectPath, revision);
+	if (!QFile::copy(source, *staging))
+	{
+		*error = QStringLiteral("could not stage %1").arg(source);
+		return false;
+	}
+	return true;
+}
+
 //! Drops the revisions past the policy's \c Keep slots.
 bool trimRevisionSet(const QString& projectPath, QString* failedPath)
 {
@@ -348,16 +379,8 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 	// are then the only copy of the target left. Staging the revision slot
 	// again would restore the file the rotation put there instead - the bytes
 	// the failed attempt was asked for would be gone for good.
-	QString staging = pendingRestoreStagingPath(projectPath, revision);
-	if (staging.isEmpty())
-	{
-		staging = newRestoreStagingPath(projectPath, revision);
-		if (!QFile::copy(source, staging))
-		{
-			*error = QStringLiteral("could not stage %1").arg(source);
-			return false;
-		}
-	}
+	QString staging;
+	if (!stageRestoreTarget(projectPath, revision, &staging, error)) { return false; }
 
 	// Rotate the live file in, so the restore itself is recoverable: the file
 	// it replaces becomes revision 0.
