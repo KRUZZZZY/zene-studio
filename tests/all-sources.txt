@@ -143,6 +143,8 @@
 # 2026-10-25 (cluster 4345 gate repair): regenerated from this recipe; removed 1,148 stale
 # vendored sfizz paths, which the published recipe excludes.
 
+# 2026-10-25 (cluster new-p18-50): the train merge restored the 1148 vendored sfizz entries;
+# this list is re-derived from the recipe again and now matches it byte-for-byte.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
