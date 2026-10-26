@@ -112,3 +112,35 @@ The changed-file set the gate used is 3 files (the three listed below).
 - The finding's `src/core/ControlCues.cpp` path is wrong for this branch; the file is `src/gui/widgets/ControlCues.cpp`.
 - The `ccache` failure (`build-red-1.log`) is an environment issue: ccache wrote its temp file to a path outside the write-jail. `CCACHE_DISABLE=1` skips the cache and compiles with the same flags.
 - Not checked: the `ControlLayout::count()` vs `pairAt()` relation (`size() - 1`) is an odd count and may under-report by one in some map states. I did not prove that, and it is outside this bug.
+
+## Self-check
+
+- **Regression fails with the product change reverted and passes with it (exit codes).** Yes. Reverted: `git apply -R`
+  → rebuild → `ctest -R '^KnobAccessibleNullItemTest$'` EXIT 8, SIGSEGV in `holds` (`test-4b-unfixed.log`). Re-applied:
+  rebuild → EXIT 0, 1/1 passed (`test-4b-fixed.log`). The RED run before the first edit also gave EXIT 8 (`test-red-1.log`).
+- **Deterministic.** The test uses no timers, sleeps, waits or event loop. The only wait is the child-process
+  `waitForFinished(120000)` in the whole-executable path, the same pattern as `accessibleTargetSurvivesKnobSizingReset`.
+  Inputs are fixed: a `GapLayout` with a null item at index 0, a `Knob` at index 1, and one explicit `ensurePolished()`
+  (the Polish event drives `applyTarget`). The layout is never shown or activated, so no layout pass runs.
+- **Fix at the cause; callers and siblings checked.** `holds` has one caller: `applyTarget`
+  (`src/gui/widgets/ControlCues.cpp:180`), and `holds` recurses only into `item->layout()`, which the guard covers
+  (`ControlCues.cpp:57-59`). Siblings in the same file (`applyTarget`, `prepare`, `kindOf`) do not index layouts.
+  Repo-wide `itemAt(` uses (`rg -n 'itemAt\(' src include`) are on other types: `ControlLayout` (`ControlLayout.cpp:164-168`,
+  returns `nullptr` only past the end), `QLayout` helpers in `ShellChrome.cpp:316` and `DevicePanel.cpp` (which dereference
+  `itemAt(i)->widget()` without a check). Those are real siblings, but outside this finding and outside `ControlCues`, so
+  I did not change them. Reported here as a follow-up candidate, not fixed.
+- **No collateral damage.** The change is a single `continue` on a null item that previously crashed. Non-null paths run
+  exactly as before: `item->widget()` and the recursion are unchanged for every non-null item. No new limit or check
+  was added, no saved data or project format is touched, no command was added, and no audio-thread code is involved (the
+  path runs only on Polish events in accessible mode). Undo is not involved.
+- **Verdict evidence.** The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so no not-real citation is needed.
+  The contract cited is Qt's `QLayout::itemAt` documentation (nullptr when there is no item).
+
+### Gate row: `feature_check.py` (submit_check item "gates")
+
+`feature_check.py` exits 1 in this sandbox before running any gate, because it creates
+`zene-qwen-new-p23-46-feature-check/` outside the write-jail (`PermissionError`, `feature-check-native-1.log`).
+The gate itself was not run to completion by its own code. I ran its SIMPLE and RATCHET logic from a driver in the
+LOG FOLDER (`gate_driver.py`, logs in `gates-1/`); the driver's RESULT was PASS, EXIT 0 (`feature-check-1.log`). The
+gate's script and baselines were not edited. A re-run of the native `feature_check.py` from a shell that can write
+beside the worktree is still needed to close the native row.
