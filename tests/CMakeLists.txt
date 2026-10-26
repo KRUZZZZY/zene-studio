@@ -1684,6 +1684,11 @@ endif()
 # the mechanical negative control (qwen/negctl.py) can see its name in `ctest -N`.
 list(APPEND LMMS_TESTS src/plugins/CompressorVisualizerTest.cpp)
 
+# cluster new-p21-187: sfizz's circular power-history buffer must track resize capacity.
+list(APPEND LMMS_TESTS src/plugins/HistoricalBufferResizeTest.cpp)
+# cluster new-p21-188: an empty sfizz power-history buffer has an average of zero.
+list(APPEND LMMS_TESTS src/plugins/HistoricalBufferEmptyTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1781,6 +1786,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# (atomic) instead of shared. Only the header is needed - the plugin stays a module.
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/Compressor)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "HistoricalBufferResizeTest"
+		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCBaseTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c)

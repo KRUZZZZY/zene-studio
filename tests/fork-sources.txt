@@ -2920,6 +2920,10 @@ plugins/SfzPlayer/SfzSynth.cpp
 plugins/SfzPlayer/SfzSynth.h
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
+# cluster new-p21-187: sfizz HistoricalBuffer resize regression.
+tests/src/plugins/HistoricalBufferResizeTest.cpp
+# cluster new-p21-188: sfizz HistoricalBuffer empty-average regression.
+tests/src/plugins/HistoricalBufferEmptyTest.cpp
 tests/src/plugins/SfzTestSupport.h
 # cluster new-p21-182: the sfizz AVX gain kernel advances per-sample gains across vector blocks.
 tests/src/plugins/SfzSimdGainAVXTest.cpp
@@ -2964,6 +2968,8 @@ tests/src/plugins/OrganicZeroOscTest.cpp
 tests/src/plugins/CompressorVisualizerTest.cpp
 # cluster new-p15-300 (2026-10): fix and verification report for the compressor visualizer state race (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p15-300.md
+# clusters new-p21-187 / new-p21-188: HistoricalBuffer verdicts and regression evidence.
+docs/qwen-fixes-2026-10/cluster-new-p21-187.md
 # cluster new-p14-314 (2026-10): the SMF note reader's own regression file (fork-NEW).
 tests/src/core/SmfNoteReadTest.cpp
 
