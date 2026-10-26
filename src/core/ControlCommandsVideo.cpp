@@ -158,13 +158,7 @@ QString defaultAudioPath(const QString& videoPath)
 {
 	const QString project = Engine::getSong()->projectFileName();
 	const QDir dir = project.isEmpty() ? QFileInfo(videoPath).absoluteDir() : QFileInfo(project).absoluteDir();
-	const QString stem = QFileInfo(videoPath).completeBaseName() + QStringLiteral("-audio");
-	QString candidate = dir.filePath(stem + QStringLiteral(".wav"));
-	for (int n = 2; QFileInfo::exists(candidate) && n < MaxAudioNames; ++n)
-	{
-		candidate = dir.filePath(QStringLiteral("%1-%2.wav").arg(stem).arg(n));
-	}
-	return candidate;
+	return firstFreeAudioPath(dir, QFileInfo(videoPath).completeBaseName() + QStringLiteral("-audio"), MaxAudioNames);
 }
 
 //! A new audio track named after the video, holding @a wav at the video's offset; recorded as one undo step.
