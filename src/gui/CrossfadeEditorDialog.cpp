@@ -25,6 +25,7 @@
 #include "CrossfadeEditorDialog.h"
 
 #include <algorithm>
+#include <cstdint>
 
 #include <QApplication>
 #include <QComboBox>
@@ -114,13 +115,17 @@ void CrossfadeCurveView::paintEvent(QPaintEvent*)
 	const QRectF area = QRectF(rect()).adjusted(6, 6, -6, -6);
 	p.fillRect(rect(), palette().base());
 	// The span drawn: both ramps, and the overlap between the incoming clip's start and the outgoing clip's end.
-	const int from = std::min(m_outEnd - m_out.ticks, m_inStart);
-	const int to = std::max(m_inStart + m_in.ticks, m_outEnd);
+	const std::int64_t from = std::min(static_cast<std::int64_t>(m_outEnd) - m_out.ticks,
+		static_cast<std::int64_t>(m_inStart));
+	const std::int64_t to = std::max(static_cast<std::int64_t>(m_inStart) + m_in.ticks,
+		static_cast<std::int64_t>(m_outEnd));
 	if (to <= from || area.width() <= 0) { return; }
-	const auto xAt = [&](double tick) { return area.left() + (tick - from) / (to - from) * area.width(); };
+	const double firstTick = static_cast<double>(from);
+	const double tickSpan = static_cast<double>(to - from);
+	const auto xAt = [&](double tick) { return area.left() + (tick - firstTick) / tickSpan * area.width(); };
 	const auto yAt = [&](double gain) { return area.bottom() - gain * area.height(); };
 	p.fillRect(QRectF(QPointF(xAt(m_inStart), area.top()), QPointF(xAt(m_outEnd), area.bottom())), palette().alternateBase());
-	const auto ramp = [&](const CrossfadeSide& side, int begin, bool rising, const QColor& colour) {
+	const auto ramp = [&](const CrossfadeSide& side, std::int64_t begin, bool rising, const QColor& colour) {
 		QPainterPath path;
 		constexpr int Steps = 64;
 		for (int i = 0; i <= Steps; ++i)
@@ -133,7 +138,7 @@ void CrossfadeCurveView::paintEvent(QPaintEvent*)
 		p.setPen(QPen(colour, 2));
 		p.drawPath(path);
 	};
-	ramp(m_out, m_outEnd - m_out.ticks, false, palette().text().color());
+	ramp(m_out, static_cast<std::int64_t>(m_outEnd) - m_out.ticks, false, palette().text().color());
 	ramp(m_in, m_inStart, true, palette().highlight().color());
 }
 
@@ -201,9 +206,8 @@ CrossfadeEditorDialog* CrossfadeEditorDialog::openFor(SampleClip* first, SampleC
 	for (QWidget* window : QApplication::topLevelWidgets())
 	{
 		auto* open = qobject_cast<CrossfadeEditorDialog*>(window);
-		if (open != nullptr && open->outClip() == first && open->inClip() == second)
+		if (open != nullptr && open->isVisible() && open->outClip() == first && open->inClip() == second)
 		{
-			open->reload();
 			open->show();
 			open->raise();
 			return open;

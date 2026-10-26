@@ -2606,7 +2606,7 @@ tests/src/core/SessionCheckpointTest.cpp	cluster new-p11-49: reject script.run w
 src/core/main.cpp	BUG new-p12-124: end crash-reporter and safe-start sessions before the missing-output and failed-directory-creation returns in exportstems; regression tests/control-stem-export-verb.py.
 include/Clip.h	cluster new-p11-70 rework: clipEditsChanged identifies clip-edit updates so the crossfade editor ignores unrelated model changes.
 src/core/Clip.cpp	cluster new-p11-70 rework: setClipEdits emits clipEditsChanged when edits change, allowing the crossfade editor to refresh selectively.
-tests/src/gui/CrossfadeEditorTest.cpp	cluster new-p11-70 rework: cover preserving pending values across clip rename and refreshing after external fade edits.
+tests/src/gui/CrossfadeEditorTest.cpp	cluster new-p11-70 rework: cover preserving pending values across clip rename and refreshing after external fade edits; clusters new-p18-18, new-p23-75, new-p10-91: add reopen lifecycle and signed-tick painting regressions.
 src/gui/clips/MidiClipView.cpp	new-p12-134: crop and rebase controller-lane points, including interpolated trim/split boundaries, with the arranger's destructive MIDI clip edits; held by tests/src/gui/MidiClipLinkedEditTest.cpp.
 src/core/Mixer.cpp	cluster new-p12-144: keep the sample-exact master fader multiplication on output accumulation so channel 0 retains its pre-fader signal for PFL and AFL applies the fader once; covered by MixerListenTest::listeningToMasterAppliesItsFaderOnceOrBypassesIt.
 src/core/SessionAudioCells.cpp	new-p12-235: load() detects an engine output-sample-rate change and invalidates the held clip cache (moves held clips to retired for the audio thread to drain) before re-resampling from the source at the new rate; retire() resets the cached rate.
@@ -5267,3 +5267,4 @@ src/gui/PerformView.cpp	cluster new-p23-208/new-p17-121/new-p16-163: checks stat
 tests/src/gui/PerformViewTest.cpp	cluster new-p23-208/new-p17-121/new-p16-163: adds deterministic failures for each state read and a max-tick/one-tick-bar regression for the display overflow.
 tests/all-sources.txt	cluster new-p23-208 gate prerequisite: re-derived the source list from the manifest's published recipe after the inherited train snapshot re-added 1,148 excluded vendored sfizz files; no first-party path was removed and no gate or ratchet changed.
 tests/src/core/ControlModulatorCommandsTest.cpp	# Idempotent modulation writes create undo steps; target_remove transaction inverse must restore the captured route index
+tests/all-sources.txt	cluster new-p18-18: regenerate the whole-tree manifest with the command in its header, removing the 1148 vendored sfizz paths excluded by that recipe so both scope gates reproduce.

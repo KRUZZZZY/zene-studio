@@ -152,6 +152,9 @@
 # 2026-10-25 (cluster new-p23-97): re-derived again from the recipe after the same 1148
 # vendored sfizz paths returned in the current snapshot; the new FilePool regression is
 # included in this whole-tree source list.
+# 2026-10-25 (cluster new-p18-18): re-derived from the recipe above after the train snapshot
+# restored 1148 vendored plugins/SfzPlayer/sfizz paths excluded by that recipe. No path the
+# recipe produces was removed; the generated entry list now matches its declared scope.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
