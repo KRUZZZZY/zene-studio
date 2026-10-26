@@ -49,6 +49,7 @@
 
 #include "AudioEngine.h"
 #include "AudioStretcher.h"
+#include "BounceInPlace.h"
 #include "BrowserCatalog.h"
 #include "BrowserPeakCache.h"
 #include "ConfigManager.h"
@@ -125,6 +126,12 @@ ControlResult thumbnail(const QJsonObject& args)
 	const int height = args.value(QStringLiteral("height")).toInt(48);
 	const QString out = args.value(QStringLiteral("out")).toString(thumbnailPath(key, width, height));
 	if (!QFileInfo(out).isAbsolute()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'out' must be absolute")); }
+	// The PNG replaces whatever the name resolves to: an output that is the audio file itself would destroy it.
+	if (BounceInPlace::namesTheSameFile(key, out))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'out' is the audio file itself: a thumbnail cannot be written over its own source"));
+	}
 	// A cached file counts only if it decodes: an interrupted save must not stand in for the thumbnail for good.
 	const bool cached = !args.contains(QStringLiteral("out")) && !QImage(out).isNull();
 	if (!cached)

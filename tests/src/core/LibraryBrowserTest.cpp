@@ -34,6 +34,10 @@
 
 #include <limits>
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -63,6 +67,12 @@ namespace
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
+}
+
+QByteArray readWhole(const QString& path)
+{
+	QFile file(path);
+	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
 
 } // namespace
@@ -401,6 +411,45 @@ private slots:
 		const QImage image(out);
 		QCOMPARE(image.width(), 120);
 		QCOMPARE(image.height(), 40);
+	}
+
+	void aThumbnailNeverWritesOverItsSource()
+	{
+		// The refusals run on a private copy, so a run that fails cannot damage the shared tone fixtures.
+		QVERIFY(QDir(m_dir.path()).mkpath(QStringLiteral("thumb-source")));
+		const QDir dir(QDir(m_dir.path()).filePath(QStringLiteral("thumb-source")));
+		const QString source = dir.filePath(QStringLiteral("own.wav"));
+		QFile::remove(source);
+		QVERIFY(QFile::copy(tones(QStringLiteral("tone-440.wav")), source));
+		const QByteArray original = readWhole(source);
+		// Refused, with the source's bytes unchanged, whatever name the output is given.
+		const auto refusedOver = [&](const QString& out) {
+			const ControlResult refused = run(QStringLiteral("browser.thumbnail"), {{QStringLiteral("path"), source},
+				{QStringLiteral("width"), 120}, {QStringLiteral("height"), 40}, {QStringLiteral("out"), out}});
+			return !refused.ok && refused.errorKind == ControlErrorKind::InvalidArgs && readWhole(source) == original;
+		};
+		QVERIFY(!original.isEmpty());
+		QVERIFY2(refusedOver(source), "the source itself");
+		QVERIFY2(refusedOver(dir.absolutePath() + QStringLiteral("/../thumb-source/own.wav")), "the source through a '..' segment");
+		// Only the source is refused: another name beside it still gets its picture.
+		const ControlResult drawn = run(QStringLiteral("browser.thumbnail"), {{QStringLiteral("path"), source},
+			{QStringLiteral("out"), dir.filePath(QStringLiteral("own.png"))}});
+		QVERIFY2(drawn.ok, qPrintable(drawn.errorMessage));
+		QVERIFY(!QImage(dir.filePath(QStringLiteral("own.png"))).isNull());
+		// A symbolic link and a hard link name the same file: a link is written through, so it must be refused.
+		const QString alias = dir.filePath(QStringLiteral("alias.wav"));
+		QFile::remove(alias);
+		if (!QFile(source).link(alias)) { QSKIP("this platform does not let the test create a symbolic link"); }
+		QVERIFY2(refusedOver(alias), "a symbolic link to the source");
+#ifndef _WIN32
+		const QString hard = dir.filePath(QStringLiteral("hard.wav"));
+		QFile::remove(hard);
+		if (::link(QFile::encodeName(source).constData(), QFile::encodeName(hard).constData()) != 0)
+		{
+			QSKIP("this file system does not let the test create a hard link");
+		}
+		QVERIFY2(refusedOver(hard), "a hard link to the source");  // a second name for the same inode
+#endif
 	}
 
 	void aMatchedPreviewPlaysAndStops()
