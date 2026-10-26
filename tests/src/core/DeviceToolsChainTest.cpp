@@ -31,6 +31,7 @@
 #include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QScopeGuard>
 #include <QSet>
 
 #include <cmath>
@@ -285,6 +286,49 @@ private slots:
 		QCOMPARE(printed.errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY(clip->sample().data() == originalData);
 		QCOMPARE(clip->sample().sampleRate(), 0);
+	}
+
+	//! A rendered tail is inside the replacement window and length, including after rate conversion.
+	void aRenderedTailExtendsThePlayableWindowAndClipLength()
+	{
+		const QString amp = loadByName(ch(3), QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		const auto clearChain = qScopeGuard([] { channel(3)->m_fxChain.clear(); });
+
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const double outputRate = Engine::audioEngine()->outputSampleRate();
+		const int sourceRate = static_cast<int>(outputRate / 2.0);
+		QVERIFY(sourceRate > 0);
+		const auto originalBuffer = std::make_shared<SampleBuffer>(
+			std::vector<SampleFrame>(2000, SampleFrame(0.25f, 0.25f)), sourceRate);
+		clip->setSampleBuffer(originalBuffer);
+		clip->setSampleWindow(SampleWindow(200, 2000));
+		const SampleWindow originalWindow = clip->sampleWindow();
+		const TimePos originalLength = clip->length();
+		constexpr double tailSeconds = 0.25;
+		const auto resampledFrames = static_cast<f_cnt_t>(2000.0 * outputRate / static_cast<double>(sourceRate));
+		const auto tailFrames = static_cast<f_cnt_t>(tailSeconds * outputRate);
+		const auto expectedFrames = resampledFrames + tailFrames;
+		const auto expectedSourceIn = static_cast<f_cnt_t>(200.0 * outputRate / static_cast<double>(sourceRate));
+
+		const ControlResult printed = run(QStringLiteral("clip.process"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("from"), ch(3)},
+				{QStringLiteral("tail"), tailSeconds}});
+		QVERIFY2(printed.ok, qPrintable(printed.errorMessage));
+
+		QCOMPARE(static_cast<f_cnt_t>(clip->sample().sampleSize()), expectedFrames);
+		QCOMPARE(clip->sampleWindow().sourceIn, expectedSourceIn);
+		QCOMPARE(clip->sampleWindow().sourceOut, expectedFrames);
+		QVERIFY(clip->length().getTicks() > originalLength.getTicks());
+		QVERIFY(clip->length().getTicks() >= clip->sampleLength().getTicks());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(clip->sample().sampleSize(), originalBuffer->size());
+		QCOMPARE(clip->sample().sampleRate(), sourceRate);
+		QCOMPARE(clip->sample().data()[100][0], originalBuffer->data()[100][0]);
+		QCOMPARE(clip->sampleWindow(), originalWindow);
+		QCOMPARE(clip->length(), originalLength);
 	}
 
 	//! WF-016: plugin.replace puts a fresh device at the replaced one's slot of the same chain, and one

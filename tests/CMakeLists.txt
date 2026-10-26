@@ -2245,6 +2245,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# The A/B undo cases need at least one effect module so they exercise the command instead of skipping.
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest" AND TARGET amplifier)
+		# clip.process regressions load the build's amplifier module; build it with this targeted test.
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "ScriptDawModelRegistrationTest")
 		add_dependencies(${LMMS_TEST_NAME} bassbooster amplifier)
 	endif()

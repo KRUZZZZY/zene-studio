@@ -104,6 +104,13 @@ void cloneChain(EffectChain& source, EffectChain& scratch)
 	scratch.restoreState(root.firstChildElement(source.nodeName()));
 }
 
+void extendClipLengthForTail(SampleClip& clip, std::size_t tailFrames)
+{
+	if (tailFrames == 0) { return; }
+	const TimePos processedLength = clip.sampleLength();
+	if (processedLength.getTicks() > clip.length().getTicks()) { clip.changeLength(processedLength); }
+}
+
 ControlResult process(const QJsonObject& args)
 {
 	ClipRef ref;
@@ -121,8 +128,9 @@ ControlResult process(const QJsonObject& args)
 	if (from.chain->effects().empty()) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1's chain has no devices").arg(from.id)); }
 	const double rate = Engine::audioEngine()->outputSampleRate();
 	const double tail = std::clamp(args.value(QStringLiteral("tail")).toDouble(0.0), 0.0, kMaxTailSeconds);
+	const auto tailFrames = static_cast<std::size_t>(tail * rate);
 	std::vector<SampleFrame> audio = prepared(clip->sample().data(), clip->sample().sampleSize(), clip->sample().sampleRate(), rate,
-		static_cast<std::size_t>(tail * rate));
+		tailFrames);
 	EffectChain scratch(nullptr);
 	cloneChain(*from.chain, scratch);
 	render(scratch, audio);
@@ -130,10 +138,13 @@ ControlResult process(const QJsonObject& args)
 	const SampleWindow window = clip->sampleWindow();
 	const double scale = rate / static_cast<double>(clip->sample().sampleRate());
 	const auto frames = static_cast<f_cnt_t>(audio.size());
-	const SampleWindow kept = SampleWindow::clamped(static_cast<f_cnt_t>(std::llround(static_cast<double>(window.sourceIn) * scale)),
-		static_cast<f_cnt_t>(std::llround(static_cast<double>(window.sourceOut) * scale)), frames);
+	const auto keptIn = static_cast<f_cnt_t>(std::llround(static_cast<double>(window.sourceIn) * scale));
+	const auto keptOut = tailFrames > 0 ? frames
+		: static_cast<f_cnt_t>(std::llround(static_cast<double>(window.sourceOut) * scale));
+	const SampleWindow kept = SampleWindow::clamped(keptIn, keptOut, frames);
 	clip->addJournalCheckPoint();
 	clip->replaceSample(std::make_shared<SampleBuffer>(std::move(audio), static_cast<int>(rate)), kept);
+	extendClipLengthForTail(*clip, tailFrames);
 	Engine::getSong()->setModified();
 	return ControlResult::success({{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("from"), from.id},
 		{QStringLiteral("devices"), static_cast<int>(scratch.effects().size())}, {QStringLiteral("frames"), static_cast<double>(frames)}});
