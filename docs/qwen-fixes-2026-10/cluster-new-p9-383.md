@@ -102,3 +102,9 @@ register in `tests/fork-sources.txt` or `tests/upstream-modifications.txt`. No c
 - **Verdict REAL, so the ALREADY-FIXED/FALSE-POSITIVE clause does not apply.**
 - **Gates.** `feature_check` (copy, see note) exit 0, RESULT PASS, all eight rows PASS. Complexity and file-length
   report no new item in the changed files.
+- **Completion check (`submit_check.py`, log `submit-check-1.log`, exit 1).** Four rows PASS (commits on the branch,
+  clean tree, this report with its verdict, tests changed). One row FAILS: `gates (feature_check.py)`. Its cause is the
+  write-jail, not the code. `submit_check.py` runs the original `feature_check.py`, which creates its log folder at
+  `projects/zene-studio-program/zene-qwen-new-p9-383-feature-check` and got `PermissionError` there. The gate logic
+  itself passes (`gates-1.log`, exit 0, via the log-redirected copy described above). The five "?" items are the
+  ASK list, answered in this section.
