@@ -63,6 +63,13 @@ public:
 	 *  calls it again, which is then a no-op. */
 	bool finishEncoding() override;
 
+#ifdef LMMS_TESTING
+	//! TEST SEAM: the next encoder created sees lame_init() return null, once.
+	static void failNextLameInitForTest() { s_failNextLameInitForTest = true; }
+	//! TEST SEAM: how many times lame_encode_flush() has been called in this process.
+	static int flushCallsForTest() { return s_flushCallsForTest; }
+#endif
+
 protected:
 	bool writeBuffer(const SampleFrame* /* _buf*/, const f_cnt_t /*_frames*/) override;
 
@@ -73,9 +80,13 @@ private:
 	void tearDownEncoder();
 
 private:
-	lame_t m_lame;
+	lame_t m_lame = nullptr;
 	//! True once the LAME tail has been flushed (finishEncoding(), or the destructor without it).
 	bool m_flushed = false;
+#ifdef LMMS_TESTING
+	inline static bool s_failNextLameInitForTest = false;
+	inline static int s_flushCallsForTest = 0;
+#endif
 };
 
 } // namespace lmms

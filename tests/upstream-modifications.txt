@@ -5281,3 +5281,6 @@ src/tracks/InstrumentTrack.cpp	cluster new-p18-44: resets controller-lane lastSe
 src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies and rebases each controller lane, with later clips winning duplicate ticks; beat repaint visits steps only when each button has nonzero pixel width.
 include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
 tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.
+include/AudioFileMP3.h	cluster new-p15-259: LMMS_TESTING-only hooks (failNextLameInitForTest, flushCallsForTest) and their private statics, so the MP3 init-failure regression can inject a null LAME handle and count the flushes.
+src/core/audio/AudioFileMP3.cpp	cluster new-p15-259: LMMS_TESTING-only one-shot LAME init-failure injection and flush counter; null LAME handles are checked before any LAME call in init, write, flush and teardown.
+tests/CMakeLists.txt	cluster new-p15-259: registers AudioFileMP3InitTest only when LAME is enabled, with the headless Qt platform.

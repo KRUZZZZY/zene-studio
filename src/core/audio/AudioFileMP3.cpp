@@ -101,6 +101,9 @@ void AudioFileMP3::flushRemainingBuffers()
 	// The documentation states that flush should have at least 7200 bytes. So let's be generous.
 	std::vector<unsigned char> encodingBuffer(7200 * 4);
 
+#ifdef LMMS_TESTING
+	++s_flushCallsForTest;
+#endif
 	int bytesWritten = lame_encode_flush(m_lame, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
 	assert (bytesWritten >= 0);
 
@@ -128,8 +131,12 @@ MPEG_mode mapToMPEG_mode(OutputSettings::StereoMode stereoMode)
 
 bool AudioFileMP3::initEncoder()
 {
+#ifdef LMMS_TESTING
+	m_lame = s_failNextLameInitForTest ? nullptr : lame_init();
+	s_failNextLameInitForTest = false;
+#else
 	m_lame = lame_init();
-
+#endif
 	// Handle stereo/joint/mono settings
 	OutputSettings::StereoMode stereoMode = getOutputSettings().getStereoMode();
 	lame_set_mode(m_lame, mapToMPEG_mode(stereoMode));

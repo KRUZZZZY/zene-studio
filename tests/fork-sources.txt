@@ -2327,6 +2327,7 @@ tests/src/core/AudioOssWriteTest.cpp
 tests/src/core/AudioJackPortRestartTest.cpp
 tests/src/core/AudioFileProcessorPlayheadTest.cpp
 tests/src/core/AudioFileProcessorWaveViewTest.cpp
+tests/src/core/AudioFileMP3InitTest.cpp
 tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioWorkerWakeTest.cpp

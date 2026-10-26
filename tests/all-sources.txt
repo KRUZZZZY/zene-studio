@@ -2608,6 +2608,7 @@ tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioEngineProfilerTest.cpp
 tests/src/core/AudioEngineTeardownTest.cpp
+tests/src/core/AudioFileMP3InitTest.cpp
 tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioFileProcessorPlayheadTest.cpp
 tests/src/core/AudioFileProcessorWaveViewTest.cpp
