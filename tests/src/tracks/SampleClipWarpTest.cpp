@@ -645,6 +645,35 @@ private slots:
 		QCOMPARE(static_cast<int>(clip->sampleLength().getTicks()), 0);
 	}
 
+	//! BUG 4 (cluster new-p16-207). A single-clip pass (_clip_num >= 0) for an index
+	//! the track does not hold went through Track::getClip(), which builds a clip at
+	//! that index and appends it to the track - on the audio thread: an allocation, a
+	//! printf and a clip the GUI can see appear mid-play. InstrumentTrack::play checks
+	//! numOfClips() first; SampleTrack now does the same, so a stale or past-the-end
+	//! index plays nothing and creates nothing, while an index the track holds plays.
+	void aSingleClipIndexTheTrackDoesNotHoldCreatesNothing()
+	{
+		SampleTrack track(Engine::getSong());
+		makeClip(track, m_rate);
+		QCOMPARE(track.numOfClips(), 1);
+
+		const bool held = track.play(TimePos(0), 1024, 0, 0);
+		drainPlayHandles(track);
+		QVERIFY(held);
+
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		const bool pastEnd = track.play(TimePos(0), 1024, 0, 1);
+		const bool farPast = track.play(TimePos(0), 1024, 0, 7);
+		test::tlCountAllocations = false;
+		drainPlayHandles(track);
+
+		QVERIFY(!pastEnd);
+		QVERIFY(!farPast);
+		QCOMPARE(track.numOfClips(), 1);
+		QCOMPARE(N(test::tlAllocationCount), N(0));
+	}
+
 private:
 	int m_rate = 44100;
 };
