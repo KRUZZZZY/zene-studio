@@ -5186,3 +5186,4 @@ src/core/SampleBuffer.cpp	Q050-106: carry the optional channel count through bot
 src/core/SampleClip.cpp	Q050-106: serialize the mono layout as an additive `channels="1"` attribute beside the data already written, and read its absence as the pre-existing stereo layout.
 include/Sample.h	Q050-106: expose Sample::channels() as the clip's read-back of the buffer layout; no playback path changes.
 tests/CMakeLists.txt	Q050-106: register the new ControlSampleStereoTest in LMMS_TESTS with the offscreen platform property its sample.* neighbour uses; registration and one property block only.
+tests/control-audio-editing.py	# Split stereo files and convert clips to mono
