@@ -488,6 +488,7 @@ set(LMMS_TESTS
 	# name the follower cannot hold is refused invalid_args.
 	src/core/MidiClockSourceTest.cpp
 	src/core/MidiLearnThreadTest.cpp
+	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
@@ -6548,6 +6549,11 @@ set_tests_properties(AafImportTest VideoTrackTest LegacyPatternUpgradeTest Hardw
 # VideoTrackTest's Linux/macOS allocation-failure case interposes FFmpeg entry points from
 # the test executable, so its symbols must be exported - same reason plugin-loading tests carry ENABLE_EXPORTS.
 set_target_properties(VideoTrackTest PROPERTIES ENABLE_EXPORTS ON)
+# The MIDI surface base's engine-backed case builds a real Engine (its port
+# needs the MIDI client), so it needs a Qt platform plugin even though nothing
+# opens a window.
+set_tests_properties(MidiSurfaceInputTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a
 # Qt platform plugin even though nothing opens a window.

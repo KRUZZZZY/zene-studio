@@ -2759,6 +2759,7 @@ tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MidiSndioTest.cpp
+tests/src/core/MidiSurfaceInputTest.cpp
 tests/src/core/MissingDevicesPreserveTest.cpp
 tests/src/core/MissingDevicesRound2Test.cpp
 tests/src/core/MixerAbRegressionTest.cpp

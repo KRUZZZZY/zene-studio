@@ -2446,6 +2446,7 @@ tests/src/core/MidiSndioTest.cpp
 tests/src/core/MidiOssTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
+tests/src/core/MidiSurfaceInputTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiEventToByteSeqTest.cpp
