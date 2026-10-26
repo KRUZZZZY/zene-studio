@@ -172,13 +172,15 @@ bool recipeTemplateWritable(const QString& path)
 //! because the restore is an undo-snapshot restore (Song::restoreUndoSnapshot), the undo/redo steps around it
 //! and the append-only provenance log. The content and the history are one document again, not just the file.
 ControlResult restoreSession(Song& song, const QByteArray& snapshot, const QString& previousFile,
-	const QStringList& skippedSections, bool previousModified)
+	const QStringList& skippedSections, bool previousModified, bool previousContainerV2)
 {
 	if (!song.restoreUndoSnapshot(snapshot, previousFile, skippedSections))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("the original session could not be restored"));
 	}
+	// The restore keeps the format of the session it replaces; the original session's own format goes back.
+	song.setContainerV2Project(previousContainerV2);
 	// The restore marks the session modified; put the flag back the way it was (the same two-step
 	// Song::noteProjectSaved performs for a save, here for a rollback).
 	song.noteProjectSaved(previousFile);
@@ -210,6 +212,7 @@ ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 	const QString previousType = ProjectInfo::instance().documentType();
 	QStringList skippedSections;
 	const std::shared_ptr<const QByteArray> snapshot = song->captureUndoSnapshot(&skippedSections);
+	const bool previousContainerV2 = song->isContainerV2Project();
 	if (!snapshot)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
@@ -234,7 +237,7 @@ ControlResult newFromRecipe(const Recipe& recipe, QStringList* missing)
 	}
 	const auto restorePrevious = [&]()
 	{
-		const ControlResult restored = restoreSession(*song, *snapshot, previousFile, skippedSections, previousModified);
+		const ControlResult restored = restoreSession(*song, *snapshot, previousFile, skippedSections, previousModified, previousContainerV2);
 		if (restored.ok)
 		{
 			ProjectInfo::instance().setDocumentType(previousType);

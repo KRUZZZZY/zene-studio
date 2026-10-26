@@ -115,7 +115,9 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & r
 	const QString oldFileName = m_oldFileName;
 	const int nextId = ProjectIds::next();
 	// The snapshot is plain XML, so the load would read the session as a legacy
-	// project; its container format is the session's, not the document's.
+	// project. The format kept here is the session's own: an ordinary undo of the
+	// same project stays in its format. A caller that puts back a session captured
+	// in another format (a checkpoint's displaced session) sets it after a restore.
 	const bool containerV2 = m_containerV2Project;
 
 	m_restoringSnapshot = true;

@@ -39,6 +39,7 @@
 #include "DataFile.h"
 #include "Engine.h"
 #include "ProjectContainer.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -107,6 +108,13 @@ ControlResult saveTo( const QString& path, const QString& format = QString() )
 	if( !format.isEmpty() ) { args.insert( QStringLiteral( "format" ), format ); }
 	return run( QStringLiteral( "project.save" ), args );
 }
+
+//! The undo byte budget for one test: an empty journal under \a bytes, and the default back however the test leaves.
+struct BudgetGuard
+{
+	explicit BudgetGuard( qint64 bytes ) { Engine::projectJournal()->clearJournal(); Engine::projectJournal()->setMaxUndoBytes( bytes ); }
+	~BudgetGuard() { Engine::projectJournal()->setMaxUndoBytes( ProjectJournal::DefaultMaxUndoBytes ); }
+};
 
 } // namespace
 
@@ -537,8 +545,7 @@ private slots:
 		QVERIFY( saveTo( path, QStringLiteral( "v2" ) ).ok );
 		Song* song = Engine::getSong();
 		song->clearProject();
-		QVERIFY( run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), path }} ).ok );
-		QVERIFY( song->isContainerV2Project() );
+		QVERIFY( run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), path }} ).ok && song->isContainerV2Project() );
 
 		const std::shared_ptr<const QByteArray> before = song->captureUndoSnapshot();
 		QVERIFY( before && !before->isEmpty() );
@@ -595,6 +602,74 @@ private slots:
 		QVERIFY( !song->restoreUndoSnapshot( unreadable ) );
 		QVERIFY( song->isContainerV2Project() );
 		QCOMPARE( stateOf(), state );
+	}
+
+	// -- Checkpoints put back the format of the session they restore ----------
+
+	//! project.open is a checkpoint too, and a restore takes the format of the session it puts back, not
+	//! the one it replaces: undo restores the displaced legacy session as legacy, redo the opened v2 project.
+	void undoingAProjectOpenRestoresTheDisplacedContainerFormat()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		Song* song = Engine::getSong();
+		// The project to open is a v2 container.
+		buildSession();
+		const QString opened = dir.filePath( QStringLiteral( "opened.mmpz" ) );
+		QVERIFY( saveTo( opened, QStringLiteral( "v2" ) ).ok );
+		// The displaced session is legacy with unsaved work, so the open checkpoints it.
+		buildSession();
+		QVERIFY( run( QStringLiteral( "track.add" ), {{ QStringLiteral( "type" ), QStringLiteral( "sample" ) }, { QStringLiteral( "name" ), QStringLiteral( "Displaced" ) }} ).ok );
+		QVERIFY( !song->isContainerV2Project() && song->isModified() );
+		const QStringList displaced = stateOf();
+		const QString displacedFile = song->projectFileName();
+
+		const ControlResult open = run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), opened }} );
+		QVERIFY2( open.ok && open.result.value( QStringLiteral( "checkpoint" ) ).toObject().value( QStringLiteral( "undoable" ) ).toBool(), qPrintable( open.errorMessage ) );
+		QVERIFY( song->isContainerV2Project() );
+		const QStringList openedState = stateOf();
+
+		QVERIFY( run( QStringLiteral( "control.undo" ) ).ok );
+		QCOMPARE( stateOf(), displaced );
+		QCOMPARE( song->projectFileName(), displacedFile );
+		QVERIFY2( !song->isContainerV2Project(), "undo must restore the displaced legacy format" );
+		const QString legacy = dir.filePath( QStringLiteral( "displaced-saved.mmpz" ) );
+		QVERIFY( saveTo( legacy ).ok );
+		QCOMPARE( projectcontainer::shapeOf( readBytes( legacy ) ), projectcontainer::Shape::LegacyCompressed );
+
+		QVERIFY( run( QStringLiteral( "control.redo" ) ).ok );
+		QCOMPARE( stateOf(), openedState );
+		QVERIFY2( song->isContainerV2Project(), "redo must restore the opened v2 format" );
+		const QString container = dir.filePath( QStringLiteral( "opened-saved.mmpz" ) );
+		QVERIFY( saveTo( container ).ok );
+		QCOMPARE( projectcontainer::shapeOf( readBytes( container ) ), projectcontainer::Shape::ZipContainer );
+	}
+
+	//! A checkpoint that cannot be kept rolls the open back after the v2 project has loaded. The displaced
+	//! legacy session must come back as legacy, not keep the loaded project's container format.
+	void aRefusedProjectOpenRollsBackToTheDisplacedContainerFormat()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		Song* song = Engine::getSong();
+		buildSession();
+		const QString opened = dir.filePath( QStringLiteral( "opened-refused.mmpz" ) );
+		QVERIFY( saveTo( opened, QStringLiteral( "v2" ) ).ok );
+		buildSession();
+		QVERIFY( run( QStringLiteral( "track.add" ), {{ QStringLiteral( "type" ), QStringLiteral( "sample" ) }, { QStringLiteral( "name" ), QStringLiteral( "Displaced" ) }} ).ok );
+		QVERIFY( !song->isContainerV2Project() );
+		const QStringList displaced = stateOf();
+		const QString displacedFile = song->projectFileName();
+
+		// The budget admits the displaced session's own snapshot (the pre-action checkpoint) but not that snapshot
+		// beside the loaded project's redo state, so the open loads, cannot keep its step and rolls back. The
+		// 64-byte margin covers the two captures of the same session differing in their compressed size.
+		const BudgetGuard budget( song->captureUndoSnapshot()->size() + 64 );
+		const ControlResult refused = run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), opened }} );
+		QVERIFY2( !refused.ok && refused.errorMessage.contains( QStringLiteral( "its redo state" ) ), qPrintable( refused.errorMessage ) );
+		QCOMPARE( stateOf(), displaced );
+		QCOMPARE( song->projectFileName(), displacedFile );
+		QVERIFY2( !song->isContainerV2Project(), "the rollback must put the displaced legacy format back" );
 	}
 };
 
