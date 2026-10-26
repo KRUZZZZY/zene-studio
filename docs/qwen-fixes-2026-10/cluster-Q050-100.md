@@ -309,4 +309,9 @@ a read-only ccache temp dir, then a tool time limit and a self-killing `pkill`; 
   `MasterLoudnessTap::feed`, `inputmeter::measure`) are unchanged. No TSan run on this box; by inspection.
 - **Projects:** no format change; the integration touches no serialization.
 - **Portability:** no new API; `NoteState`'s defaulted `operator==` was already there (C++20, which the tree requires).
-- **Gates:** see the commit's `feature_check.py` / `submit_check.py` results recorded below.
+- **Gates:** `submit_check.py <worktree> Q050-100` (`submit-check-1.log`, exit 1) passes every mechanical item except
+  "gates", and that one only because `feature_check.py:71` cannot create its sibling log directory
+  `../zene-integrate-Q050-100-cf3618e61a-feature-check` in this write-jail (`feature-check-1.log`: PermissionError).
+  A copy of `feature_check.py` that differs only in that log path (and an absolute `ROOT`) ran on HEAD `1e12a726b`:
+  fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures all exit 0;
+  complexity and file-length "no new item in your files"; **RESULT: PASS, exit 0** (`feature-check-2.log`).
