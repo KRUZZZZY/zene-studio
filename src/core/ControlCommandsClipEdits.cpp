@@ -354,6 +354,7 @@ void registerClipSetGain(ControlRegistry& registry)
 		const ClipEdits before = ref.clip->clipEdits();
 		ClipEdits after = before;
 		after.gain = gainDbToLinear(static_cast<float>(db));
+		if (after == before) { return ControlResult::success(editsState(ref, after)); }
 
 		ref.clip->addJournalCheckPoint();
 		ref.clip->setClipEdits(after);

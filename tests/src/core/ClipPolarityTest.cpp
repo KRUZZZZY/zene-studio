@@ -239,6 +239,29 @@ private slots:
 		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
 	}
 
+	//! Repeating an unchanged clip gain does not shadow the real edit with an empty undo step.
+	void settingTheSameGainRecordsNoSecondUndoStep()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setSampleBuffer(rampBuffer());
+		const QString id = control::clipIdOf(clip);
+		const auto setGain = [&](double db) {
+			return run(QStringLiteral("clip.set_gain"),
+				{{QStringLiteral("clip"), id}, {QStringLiteral("gain_db"), db}});
+		};
+		QVERIFY(setGain(-6.0).ok);
+		QVERIFY(setGain(-6.0).ok);
+		QCOMPARE(setGain(-61.0).errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY(std::fabs(gainLinearToDb(clip->clipEdits().gain)) < 1e-5f);
+	}
+
 	//! Persistence: written only when set, read back exactly, and reset by absence so an old file
 	//! loads non-inverted.
 	void theClipElementCarriesItOnlyWhenInverted()
