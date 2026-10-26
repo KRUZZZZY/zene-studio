@@ -117,3 +117,13 @@ No new file, so `tests/fork-sources.txt`, `tests/all-sources.txt` and `tests/CMa
   registration changed.
 - **Verdict evidence.** `src/core/MeterModel.cpp:35-36`, `src/core/AutomatableModel.cpp:604-606`,
   `src/core/Song.cpp:971`, `src/core/Engine.cpp:72,102,123`, `logs/invariant-run-1.log`.
+
+## Completion check (submit_check.py)
+
+`submit_check.py <worktree> new-p21-241` on commit `2f960aad1`: EXIT=1, `logs/submit-check-2.log`. Four of five rows pass
+(commits, clean tree, report, tests changed). The gates row fails only because the unmodified `feature_check.py` cannot create
+its log directory (`<worktree>/../<name>-feature-check`, outside this lane's write-jail):
+`PermissionError: [Errno 13] Permission denied: '.../zene-qwen-new-p21-241-feature-check'`
+(`logs/feature-check-5-original-committed.log`, EXIT=1). On the same committed tree, with only the log directory redirected,
+the gates pass 8/8: `logs/feature-check-4-committed.log`, EXIT=0. The gate logic was not changed. The check needs to run
+from a session that can write next to the worktree.
