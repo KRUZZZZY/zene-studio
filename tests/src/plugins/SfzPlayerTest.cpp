@@ -26,7 +26,9 @@
 #include <QPushButton>
 #include <QTemporaryDir>
 
+#include <iostream>
 #include <memory>
+#include <sstream>
 
 #include "AutomatableModel.h"
 #include "ControlRegistry.h"
@@ -39,6 +41,7 @@
 #include "PluginFactory.h"
 #include "../core/ReversibilityTestSupport.h"
 #include "SfzTestSupport.h"
+#include "../../../plugins/SfzPlayer/sfizz/external/abseil-cpp/absl/random/internal/iostream_state_saver.h"
 
 using namespace lmms;
 using namespace lmms::sfz_test;
@@ -202,6 +205,45 @@ private slots:
 		QDomElement parent2 = doc2.createElement(QStringLiteral("state"));
 		doc2.appendChild(parent2);
 		QVERIFY(third.instrument->saveState(doc2, parent2).attribute(QStringLiteral("src")).endsWith(QStringLiteral("gone.sfz")));
+	}
+
+	//! The non-stream no-op saver does not write a diagnostic to stderr.
+	void nonStreamStateSaversAreSilent()
+	{
+		int value = 7;
+		std::ostringstream capturedStderr;
+		std::streambuf* const originalStderr = std::cerr.rdbuf(capturedStderr.rdbuf());
+		{
+			auto outputSaver = absl::random_internal::make_ostream_state_saver(value);
+			auto inputSaver = absl::random_internal::make_istream_state_saver(value);
+			(void)outputSaver;
+			(void)inputSaver;
+		}
+		std::cerr.rdbuf(originalStderr);
+
+		QVERIFY2(capturedStderr.str().empty(), "non-stream state saver wrote to stderr");
+	}
+
+	//! The stream overload still applies its requested formatting and restores prior stream state.
+	void ostreamStateSaverRestoresFormatting()
+	{
+		std::ostringstream stream;
+		stream.flags(std::ios_base::hex | std::ios_base::right);
+		stream.fill('0');
+		stream.precision(7);
+		const auto originalFlags = stream.flags();
+		const auto originalFill = stream.fill();
+		const auto originalPrecision = stream.precision();
+		{
+			auto saver = absl::random_internal::make_ostream_state_saver(
+				stream, std::ios_base::dec | std::ios_base::left);
+			(void)saver;
+			QCOMPARE(stream.flags(), std::ios_base::dec | std::ios_base::left);
+			QCOMPARE(stream.fill(), ' ');
+		}
+		QCOMPARE(stream.flags(), originalFlags);
+		QCOMPARE(stream.fill(), originalFill);
+		QCOMPARE(stream.precision(), originalPrecision);
 	}
 
 	//! plugin.list shows the instrument and says it loads; plugin.load puts it on a track; plugin.param_* read and set its models.

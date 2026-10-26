@@ -3088,3 +3088,5 @@ include/ShortcutPresets.h
 src/gui/ShortcutPresets.cpp
 # cluster new-p21-113 (2026-10): the undo coalescer forgotten-run timestamp fix and verification report.
 docs/qwen-fixes-2026-10/cluster-new-p21-113.md
+# cluster new-p23-128 (2026-10): fix and regression evidence for the non-stream iostream state saver diagnostic.
+docs/qwen-fixes-2026-10/cluster-new-p23-128.md
