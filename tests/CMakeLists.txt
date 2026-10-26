@@ -906,6 +906,8 @@ set(LMMS_TESTS
 	# 0.5.0 Q050-484: the SFZ instrument (sfizz) - layers, round robins, key switches, state, the command and window routes.
 	src/plugins/SfzPlayerTest.cpp
 	src/plugins/SfzPlayerRealtimeTest.cpp
+	# Cluster new-p21-142: sfizz's effect bus view must reject the index equal to its effect count (links sfzplayer_sfizz).
+	src/plugins/SfzEffectBusViewTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/WorkspaceAccessTest.cpp
 	# Qt reads the startup scale before QApplication; the selected config must win over its fallback file.
@@ -2197,6 +2199,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Q050-484: the SFZ tests load the build's sfzplayer module (sfizz) and render through it.
 	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
+	endif()
+
+	# Cluster new-p21-142: the effect-bus test calls sfizz's EffectBus directly, so it links the static sfizz library
+	# and takes the sfizz headers (Effects.h includes "absl" headers, which the abseil targets supply).
+	if(LMMS_TEST_NAME STREQUAL "SfzEffectBusViewTest")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz absl::span absl::strings)
+		# sfizz's own private include directories (simde, hiir, ...), which its headers reach through MathHelpers.h.
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			"${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz"
+			$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>)
 	endif()
 
 	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")

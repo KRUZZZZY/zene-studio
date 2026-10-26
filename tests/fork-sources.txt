@@ -2908,6 +2908,7 @@ plugins/SfzPlayer/SfzPlayerView.cpp
 plugins/SfzPlayer/SfzPlayerView.h
 plugins/SfzPlayer/SfzSynth.cpp
 plugins/SfzPlayer/SfzSynth.h
+tests/src/plugins/SfzEffectBusViewTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzTestSupport.h
