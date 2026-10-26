@@ -13,8 +13,8 @@ Test matrix: normal valid print/undo; invalid zero-rate non-empty source with so
 | GREEN | `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1 CTest target). |
 | RED with fix removed (4b) | `git diff -- src/core/ControlCommandsClipProcess.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=8 with the same assertion. |
 | GREEN after restoring patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1). |
-| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS (run at log 060). |
-| Completion gate | `submit_check.py` will be run after all three fixes and the final report entries are present. |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS. |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; final clean-tree submit check PASS. |
 | Commit files | `src/core/ControlCommandsClipProcess.cpp`, `tests/src/core/DeviceToolsChainTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p21-14.md`. |
 
 5602: FIXED
@@ -30,7 +30,7 @@ Test matrix: normal zero-tail print remains covered by the existing command test
 | RED with fix removed (4b, final code) | `git diff -- src/core/ControlCommandsClipProcess.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=8 with the same assertion (`sourceOut` 4,000, expected 15,025; 9 passed, 1 failed). |
 | GREEN after restoring patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1). |
 | Targeted plugin build | `DeviceToolsChainTest` now adds a dependency on `amplifier` in `tests/CMakeLists.txt`, so a targeted build loads the real plugin instead of skipping the command cases. `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; ctest from `build/tests` → EXIT=0 (1/1). |
-| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS (run at log 060). |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS. |
 | Commit files | `src/core/ControlCommandsClipProcess.cpp`, `tests/src/core/DeviceToolsChainTest.cpp`, `tests/CMakeLists.txt`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p21-14.md`. |
 
 new-p22-5: FIXED
@@ -45,8 +45,8 @@ Test matrix: existing valid print/undo exercises the normal path; an empty audio
 | GREEN | `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1 CTest target). |
 | RED with fix removed (4b) | `git diff -- src/core/ControlCommandsClipProcess.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; `ctest -R '^DeviceToolsChainTest$' --output-on-failure` from `build/tests` → EXIT=8 with the same message assertion (10 passed, 1 failed). |
 | GREEN after restoring patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1). |
-| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS (run at log 060). |
-| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; submit check PASS (log 063). |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS. |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; final clean-tree submit check PASS. |
 | Commit files | `src/core/ControlCommandsClipProcess.cpp`, `tests/src/core/DeviceToolsChainTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p21-14.md`. |
 
 ## Self-check
@@ -58,6 +58,6 @@ Test matrix: existing valid print/undo exercises the normal path; an empty audio
 - Collateral and saved data: the source-rate check is scoped to this command; zero-frame tails retain the old window; a positive tail extends its window and timeline, without shortening a longer authored duration. The edit adds no serialized fields, so old project data and save/load formats are unchanged. Valid print and one-step undo remain covered by the same CTest family.
 - Realtime and undo: `clip.process` remains on the offline control path; no audio-thread code was changed. The tail regression checks one undo restores the source contents, rate, window and length.
 - Verdicts: all three reports are REAL and FIXED, so the ALREADY-FIXED/FALSE-POSITIVE evidence question does not apply.
-- Feature gate: final `feature_check.py` command above → EXIT=0; all gates PASS (run at log 060; the final report gate is rerun before the documentation commit).
-- Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0 (log 063); it reports PASS for commits, clean status, report, test registration and gates. Its five ASK items are answered by the evidence in this section.
-- Commits: `646017c98` (new-p21-14), `43c3815ce` (5602), `b17bd11f8` (new-p22-5), and `6fc5da83b` (self-check report). Changed files are listed under each bug's evidence.
+- Feature gate: final `feature_check.py` command above → EXIT=0; all gates PASS.
+- Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; it reports PASS for commits, clean status, report, test registration and gates. Its five ASK items are answered by the evidence in this section.
+- Bug commits: `646017c98` (new-p21-14), `43c3815ce` (5602), and `b17bd11f8` (new-p22-5). Their changed files are listed under each bug's evidence above; report updates are in this file.
