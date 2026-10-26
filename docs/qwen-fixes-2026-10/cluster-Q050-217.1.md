@@ -123,6 +123,22 @@ Derived/docs (as integrated onto train 16): `tools/mcp-zene-control/zene_control
 
 ## Self-check
 
+**Integration run r4 (2026-10-26), on commit `9cd0b8f7a`.** `submit_check.py $PWD Q050-217.1` exit 1
+(`submit-check-1.log`): every row PASS except "gates (feature_check.py)", with an empty detail. The cause is the
+lane's write-jail, not a gate: the stock `feature_check.py` exits 1 with `PermissionError` creating its log
+directory `../zene-integrate-Q050-217.1-cf3618e61a-feature-check` beside the worktree (`feature-check-3-stock.log`).
+The same script run from a /tmp copy with only the log directory moved into this run's `logs/` exits **0**, all
+eight gate rows PASS, on the committed tree (`feature-check-4.log`). The "?" items, for the integrated tree:
+
+- **Red/green:** the `Red` and `Green` rows of the integration table above - exit **8** reverted, **0** restored.
+- **Each criterion proven:** criterion 1 - `MidiCommandBindingsTest` and `MidiCommandBindingsGuiTest`, exit 0;
+  criterion 2 - the same two plus `RecordingPassTest` and `PerformViewTest` for the existing launcher bindings,
+  exit 0 (`ctest-3.log`, 7/7).
+- **One undo step, honest classes / realtime / projects / portability:** code is byte-identical to the accepted
+  patch, so the answers below are unchanged; `ReversibilityContractTest` exit 0 on the re-taken histogram.
+
+### Accepted round's self-check (unchanged code)
+
 **? Each new test FAILS with your product change reverted (reverse the non-test hunks, rebuild, run: exit
 code?), then PASSES restored.**
 Yes. Reverting the dispatch call in `LaunchBindings::applyTrigger` and the registrations in
