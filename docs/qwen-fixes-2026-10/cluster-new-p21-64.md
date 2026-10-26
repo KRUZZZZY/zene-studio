@@ -36,3 +36,15 @@ Commands run (EXIT codes are the ones shown; logs are in `/home/kruzzzzy/.local/
 The six simple gates all pass. The two ratchet gates are red on the train by design. I did not compare their listings against the base checkout, which `feature_check.py` does in its cache, so the PASS for those rows rests on this branch changing no source file, not on a baseline diff.
 
 Product files changed: none. Committed files: this report only.
+
+## Self-check
+
+Submit-check (`submit_check.py ... new-p21-64`, output in `.../logs/submit-check-1.log`, EXIT=1 before this section existed):
+
+- **Report has a Self-check section answering every ASK item:** this section (added in a follow-up commit).
+- **Gates (`feature_check.py`) FAIL, not a product failure:** the script cannot run in this sandbox. It creates `<worktree>-feature-check/` beside the worktree, which is outside the write-jail (`PermissionError` at `feature_check.py:71`, `.../logs/gates-1.log`, EXIT=1). The six simple gates were run directly from the worktree and all exit 0. The two ratchet gates exit 1 on the train by design, with no `REGRESSION` line naming a file this branch changes. Re-run `feature_check.py` from an unrestricted shell to confirm the table.
+- **Regression test fails with the product change reverted and passes with it (exit codes):** not applicable. There is no product change, and no new test, because the reported state cannot be produced. The nearest existing test, `ControlSampleOperatorTest` (`ctest -R ControlSampleOperator`), passes on this branch: EXIT=0, 1/1 (`test-1.log`).
+- **Test is deterministic (seam or injected values):** not applicable, no new test. The existing test uses no timing; it authors its window via `setSampleWindow` at `tests/src/core/ControlSampleOperatorTest.cpp:359`.
+- **Fix is at the cause and complete, every caller and sibling checked:** not applicable, no product change. Callers of `swapIn` (`crop`, `makeUnique`) and every writer of `SampleClip::m_window` were checked (`src/core/SampleClip.cpp:377-379, 694-705, 729-732, 737-746, 942-944`, `src/core/ControlCommandsSampleTools.cpp:85-87, 95, 107`).
+- **No collateral damage (saved data, limits, other callers):** no product code changed, so nothing that loads or calls the code changes behaviour. Saved projects enter the window through `setSampleWindow()` (`SampleClip.cpp:942-944`), which clamps and refuses empty windows, so a saved `srcin > srcout` cannot be stored.
+- **FALSE-POSITIVE justification (file:line or contract):** `SampleClip.cpp:377-379` (`replaceSample`, clamp then full-buffer fallback), `SampleClip.cpp:694-705` (`setSampleWindow`, clamp then reject empty; I4 contract in the comment at 700-701), `include/SampleWindow.h:64-68` (`clamped` makes `out >= in`). Full list in the Evidence section above.
