@@ -1,3 +1,5 @@
+FIXED
+
 # Cluster new-p9-162
 
 Verdict: **FIXED**
@@ -11,13 +13,13 @@ const int target = ( ( i + centerOffset ) % graphLength + graphLength ) % graphL
 m_samples[target] = sum;
 ```
 
-**Reachability (stated plainly).** The defect is real in the function's contract but latent in the product. The header documents `centerOffset` only as "Offset for resulting values" (`include/Graph.h:179`), so a negative offset is a valid cyclic shift and the old code was wrong for it. The only production caller is `Xpressive::smooth`, which passes `guass_center = guass_size/2` (`tests/reference/Xpressive/Xpressive.cpp:250-251, 267`). `guass_size = (int)(smoothness*5) | 1` is non-negative because the smoothness models are clamped to 0..70 (`tests/reference/Xpressive/Xpressive.cpp:94-96`). So no shipped path reached the negative branch. The fix is at the cause and does not change any non-negative case.
+**Reachability (stated plainly).** The defect is real in the function's contract but latent in the product. The header documents `centerOffset` only as "Offset for resulting values" (`include/Graph.h:179`), so a negative offset is a valid cyclic shift and the old code was wrong for it. The production caller is `Xpressive::smooth` in `plugins/Xpressive/Xpressive.cpp:297-319`; it calls `convolve()` with `guass_center = guass_size/2` only when `smoothness > 0` (`:300-303, 319`), so that offset is non-negative. The smoothness models are constructed with a 0..70 range (`:97-99`). The reference copy in `tests/reference/Xpressive/Xpressive.cpp:245-269` has the same non-negative call. No shipped path reaches the negative branch, but the public `graphModel::convolve()` contract permits it. The fix is at the cause and does not change any non-negative case.
 
 ## Sibling check
 
 - Read side, `Graph.cpp:661` `temp[( i + j ) % graphLength]`: `i >= 0` and `j >= 0` by loop bounds, so it cannot go negative. Unchanged.
 - `Graph.cpp:663` was the only write into `m_samples` in `convolve()`. `smooth()` and `smoothNonCyclic()` (`Graph.cpp:617-647`) index with loop bounds only and have no modulo, so they are not affected.
-- Only other caller: `Xpressive.cpp:267` (non-negative offset). For non-negative `i + centerOffset`, `((x % N) + N) % N == x % N`, so every existing caller gets the same index as before.
+- The production call is `plugins/Xpressive/Xpressive.cpp:319`; the test reference copy calls it at `tests/reference/Xpressive/Xpressive.cpp:267`. Both pass a non-negative center. For non-negative `i + centerOffset`, `((x % N) + N) % N == x % N`, so every existing caller gets the same index as before.
 - Header `include/Graph.h:180` is unchanged, so no rebuild of dependents was needed beyond the targets listed below.
 - Not checked: `(i + centerOffset)` overflows for a huge positive `centerOffset`. That is pre-existing, no caller comes near it, and it is out of scope for this finding.
 
@@ -33,7 +35,7 @@ Why `EnvelopeGraphTest.cpp` and not a new file: a new test file needs `tests/CMa
 
 ## Realtime, undo, commands
 
-- Nothing new on any audio thread. `convolve()` is called from `Xpressive.cpp:184-186` (restoring saved sample graphs) and `Xpressive.cpp:635` (writing into the GUI graph model). Neither is in a render or `process()` path. The change adds one `int` addition and one `int` modulo per sample. It does not allocate, free, lock, wait, log or emit anything new (`emit samplesChanged` is unchanged).
+- Nothing new on any audio thread. The production plugin calls `Xpressive::smooth()` while loading its sample graphs (`plugins/Xpressive/Xpressive.cpp:203-205`) and from the GUI change handler (`:695`); `smooth()` calls `convolve()` at `:319`. In the test reference copy, `smooth()` is called at `tests/reference/Xpressive/Xpressive.cpp:184-186, 635` and calls `convolve()` at `:267`. These are model and GUI paths, not render or `process()` paths. The change adds one `int` addition and one `int` modulo per sample. It does not allocate, free, lock, wait, log or emit anything new (`emit samplesChanged` is unchanged).
 - Undo: not touched. No command, no `ControlRegistry` change, no new control command.
 
 ## Files committed
@@ -79,6 +81,6 @@ Completion check: `python3 .../qwen/submit_check.py <worktree> new-p9-162` → E
 
 1. **RED then GREEN with the fix reverted.** Reverted: `test-4-proof-unfixed.log`, EXIT 8, failing `convolveNegativeOffsetRotatesLeft`, `convolveNegativeOffsetEqualToLengthIsZeroShift`, `convolveNegativeOffsetBeyondLengthWraps`. Restored: `test-5-proof-fixed.log`, EXIT 0, `100% tests passed out of 1`. The zero and positive slots pass in both states; they guard the unchanged behaviour.
 2. **Deterministic.** The helper `expectConvolve` (`tests/src/gui/EnvelopeGraphTest.cpp:43-56`) builds a fresh `graphModel` with fixed input `{1,2,3,4}`, kernel `{2,0}`, and fixed offsets. It uses no clock, sleep, thread, or shared state.
-3. **Fix at the cause; callers and siblings checked.** The write at `Graph.cpp:663-666` is the only write into `m_samples` in `convolve()`. The read at `Graph.cpp:661` cannot go negative (loop indices are non-negative). `smooth()` and `smoothNonCyclic()` have no modulo. The one production caller, `Xpressive.cpp:267`, passes a non-negative offset, and for `x >= 0` the new expression `((x % N) + N) % N` equals the old `x % N`. No control command is touched, so there are no sibling commands to align.
-4. **No collateral damage.** No serialized format or limit changed. Saved projects reach `convolve()` only through `Xpressive::smooth` with a non-negative offset (`Xpressive.cpp:184-186, 635`), so their output is unchanged. The fix adds no check that other callers could hit.
-5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so this item is not applicable. For the record, the defect is evidenced by `Graph.cpp:663` before the fix and by the header contract `include/Graph.h:179`. Reachability is evidenced by `Xpressive.cpp:250-251, 267` and the 0..70 clamp at `Xpressive.cpp:94-96`.
+3. **Fix at the cause; callers and siblings checked.** The write at `Graph.cpp:663-666` is the only write into `m_samples` in `convolve()`. The read at `Graph.cpp:661` cannot go negative (loop indices are non-negative). `smooth()` and `smoothNonCyclic()` have no modulo. The production caller at `plugins/Xpressive/Xpressive.cpp:319` and reference copy at `tests/reference/Xpressive/Xpressive.cpp:267` both pass a non-negative offset; for `x >= 0` the new expression `((x % N) + N) % N` equals the old `x % N`. No control command is touched, so there are no sibling commands to align.
+4. **No collateral damage.** No serialized format or limit changed. Project model loading reaches the production `convolve()` through `Xpressive::smooth` at `plugins/Xpressive/Xpressive.cpp:203-205, 319`; the GUI handler uses it at `:695, 319`. Both use a non-negative offset, so their output is unchanged. The fix adds no check that other callers could hit.
+5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE**, so this item is not applicable. For the record, the defect is evidenced by `Graph.cpp:663` before the fix and by the header contract `include/Graph.h:179`. The production call's non-negative offset is evidenced by `plugins/Xpressive/Xpressive.cpp:300-303, 319`; the corresponding reference call is at `tests/reference/Xpressive/Xpressive.cpp:250-251, 267`.
