@@ -3210,6 +3210,7 @@ tests/src/plugins/ReverbSCCreateTest.cpp
 tests/src/plugins/ReverbSCCreateTestAllocator.c
 tests/src/plugins/ReverbSCInitTest.cpp
 tests/src/plugins/ReverbSCPluginStateTest.cpp
+tests/src/plugins/ReverbSCPrecisionTest.cpp
 tests/src/plugins/ReverbSCRawProcessingTest.cpp
 tests/src/plugins/ReverbScAllocationTest.cpp
 tests/src/plugins/RnnoiseDenoiserEffectTest.cpp
