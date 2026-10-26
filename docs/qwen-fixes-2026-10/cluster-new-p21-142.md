@@ -80,3 +80,29 @@ scripts were run by hand from the worktree, each to its own log:
 
 The complexity and file-length exits are the train-wide red the task describes. By `feature_check`'s rule (only items in
 changed files count) they pass.
+
+## Self-check
+
+- **Fails with the product change reverted, passes with it.** Yes. Reverted (`git apply -R` of `fix.patch`): empty-bus
+  case SIGSEGV, EXIT=139 (`test-3-proof-reverted.log`); index==size case FAIL, EXIT=1 when run alone
+  (`test-1-red-indexEqualToEffectCountIsRejected.log`). Fix applied: 6 passed, EXIT=0 (`test-2-green.log`,
+  `test-4-proof-reapplied-direct.log`); ctest `^SfzEffectBusViewTest$` 1/1, EXIT=0 (`test-5-ctest.log`).
+- **Deterministic: partly.** The empty-bus case is deterministic: it reads address 0 without the fix, on every platform.
+  The index==size case reads the slot past the vector's end, which the language leaves undefined; its RED happened to
+  return non-null here, but nothing in the test forces that. The test uses no wall-clock, sleeps, threads or injected
+  seams: every value is constructed in the test (fixed effect counts and pointers returned by `addEffect` for identity).
+  I did not add a sanitizer or `_GLIBCXX_ASSERTIONS` build to make the index==size RED guaranteed; the empty-bus case
+  carries the deterministic guarantee.
+- **At the cause, complete.** The comparison at `Effects.cpp:105` is the only bounds check in `effectView`. Callers:
+  none in the tree (`rg -n effectView` over the worktree: only `Effects.h:107` and `Effects.cpp:103`). Siblings
+  `numEffects()` (`Effects.h`) and `addEffect()` (`Effects.cpp:98`) do not index the vector. `operator[]` on
+  `_effects` elsewhere is not reachable from `effectView`.
+- **No collateral damage.** The only behaviour change is that an index equal to the effect count now returns `nullptr`
+  instead of reading one slot past the end. No caller legitimately passes that index (there are none), no saved data
+  or project format involves the sfizz bus (it is in-memory only), and no limit was added.
+- **Verdict is FIXED**, so the ALREADY-FIXED / FALSE-POSITIVE evidence item does not apply.
+- **Feature-check gate: not run as `feature_check.py`.** It exits 1 with `PermissionError` creating
+  `<worktree-parent>/zene-qwen-new-p21-142-feature-check` (`gate-feature-check-1.log`), outside the write-jail. The gate
+  scripts it calls were run by hand (table above); after committing the test, `fork-sources` and `all-sources-reproduce`
+  now exit 0 (`gate-fork-sources-2.log`, `gate-all-sources-2.log`). The complexity and file-length ratchets stay
+  red train-wide, with no item in a changed file.
