@@ -2294,6 +2294,7 @@ src/gui/editors/Editor.cpp	cluster new-p21-141: initialize m_toolBar empty becau
 plugins/Xpressive/ExprSynth.cpp	cluster new-p9-143: return zero for random-vector indexes above UINT_MAX and use seed zero for seeds above INT_MAX, checking finite float bounds before integer conversion.
 plugins/Xpressive/ExprSynth.h	new ExprFront instances start with null m_data, so a caught ExprFrontData allocation failure leaves destruction safe; covered by ExprSynth.
 src/gui/widgets/Graph.cpp	new-p9-160: refuse Graph edits at heights with no usable plot range, preventing division by zero in click and line-draw coordinate conversion
+src/gui/widgets/Graph.cpp	new-p9-162: graphModel::convolve wraps a negative centre offset into [0, length) before indexing m_samples (C++ % keeps the sign of its dividend, so the write could land before the buffer); regression tests/src/gui/EnvelopeGraphTest.cpp (convolve* slots)
 src/gui/widgets/Graph.cpp	Initialize cursor history and make a first Shift-click edit only its clicked sample before line drawing can continue.
 src/gui/widgets/Graph.cpp	cluster new-p9-161: clamp constructor lengths to the two-sample minimum and reject shorter setLength requests, because smooth requires two samples and other operations divide or index by length.
 tests/src/gui/SampleEditorDialogTest.cpp	cluster new-p9-161: regression for graphModel refusing lengths below two and remaining safe for smoothing and normalization at the minimum.

@@ -660,7 +660,10 @@ void graphModel::convolve(const float *convolution,
 		{
 			sum += convolution[j] * temp[( i + j ) % graphLength];
 		}
-		m_samples[( i + centerOffset ) % graphLength] = sum;
+		// '%' keeps the sign of its left operand, so a negative centerOffset
+		// needs a second modulo to land back in [0, graphLength)
+		const int target = ( ( i + centerOffset ) % graphLength + graphLength ) % graphLength;
+		m_samples[target] = sum;
 	}
 	emit samplesChanged(0, graphLength - 1);
 }
