@@ -32,6 +32,7 @@
  *    holds one value. */
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 
 #include <QJsonArray>
@@ -175,6 +176,11 @@ ControlResult movePoint(const QJsonObject& args)
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("destination tick %1 is before automation clip start at %2")
 				.arg(static_cast<qint64>(toSong)).arg(static_cast<qint64>(origin)));
+	}
+	// NaN passes both comparisons of the range check below, so it is refused on its own.
+	if (!std::isfinite(value))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("new_value is not a finite number"));
 	}
 	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>())
 	{

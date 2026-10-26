@@ -40,14 +40,21 @@
 
 #include <QtTest>
 
+#include <cmath>
+#include <limits>
+
 #include <QDir>
 #include <QDomDocument>
 #include <QFile>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include "AutomatableModel.h"
 #include "AutomationClip.h"
+#include "AutomationPointEdit.h"
 #include "AutomationTrack.h"
+#include "ControlAutomationSupport.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -93,6 +100,33 @@ QJsonObject lastTransaction(const QString& command)
 		if (record.value(QStringLiteral("command")).toString() == command) { return record; }
 	}
 	return {};
+}
+
+//! @a extra plus the track and parameter an automation command addresses.
+QJsonObject addressed(const QString& track, const QString& parameter, QJsonObject extra = {})
+{
+	extra.insert(QStringLiteral("track"), track);
+	extra.insert(QStringLiteral("parameter"), parameter);
+	return extra;
+}
+
+//! The model behind @a parameter of @a track, through the commands' own resolver.
+AutomatableModel* modelOf(const QString& track, const QString& parameter)
+{
+	ControlTarget target;
+	control::AutomationParameter found;
+	ControlResult error;
+	return control::resolveAutomationParameter(addressed(track, parameter), &target, &found, &error) ? found.model : nullptr;
+}
+
+//! A fresh clip starting at song tick 0 on a new automation track, carrying @a model.
+AutomationClip* freshClip(AutomatableModel* model)
+{
+	auto* track = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+	auto* clip = dynamic_cast<AutomationClip*>(track->createClip(TimePos(0)));
+	clip->addObject(model);
+	clip->changeLength(TimePos(4 * 192));
+	return clip;
 }
 
 } // namespace
@@ -356,6 +390,44 @@ private slots:
 		QVERIFY(loadedOwnerState(&loaded));
 		QCOMPARE(loaded.value(QStringLiteral("lanes_collapsed")).toBool(), true);
 		QCOMPARE(loaded.value(QStringLiteral("automation_lane_count")).toInt(), 1);
+	}
+
+	/*! A NaN is no automation value: std::clamp hands it back unchanged (every comparison with NaN is false), so the
+	 *  in-place path wrote it into the time map, where it poisons the curve and the audio it drives. The track's volume
+	 *  is a control no command can name, so movePoint takes that in-place path: the NaN move is refused with both
+	 *  points as they were, and a finite move onto the same tick still works. */
+	void movePointRefusesANonFiniteValueOnAnInPlaceClip()
+	{
+		AutomationClip* clip = freshClip(m_track->volumeModel());
+		clip->putValue(TimePos(10), 0.5f, false, true);
+		QString error;
+		QVERIFY(!gui::automationedit::movePoint(clip, 10, 20, std::numeric_limits<float>::quiet_NaN(), &error));
+		QVERIFY(!error.isEmpty());
+		QVERIFY(clip->getTimeMap().contains(10));  // the source survived the refusal
+		QVERIFY(!clip->getTimeMap().contains(20));  // and nothing was written at the destination
+		QCOMPARE(clip->getTimeMap().value(10).getOutValue(), 0.5f);
+		QVERIFY2(gui::automationedit::movePoint(clip, 10, 20, 0.25f, &error), qPrintable(error));
+		QCOMPARE(clip->getTimeMap().value(20).getOutValue(), 0.25f);
+	}
+
+	/*! The command's own range check is two comparisons, and NaN passes both, so an in-process caller's NaN new_value
+	 *  (a script's 0/0, say) was stored as the moved point's value. The command refuses it with the points as they were. */
+	void movePointCommandRefusesANonFiniteValue()
+	{
+		const QString id = control::trackIdOf(m_track);
+		const QString parameter = firstParameter(id);
+		QVERIFY(!parameter.isEmpty());
+		AutomatableModel* model = modelOf(id, parameter);
+		QVERIFY(model != nullptr);
+		AutomationClip* clip = freshClip(model);
+		clip->putValue(TimePos(10), model->minValue<float>(), false, true);
+		const ControlResult moved = run(QStringLiteral("automation.move_point"), addressed(id, parameter,
+			{{QStringLiteral("ticks"), 10}, {QStringLiteral("new_ticks"), 20},
+				{QStringLiteral("new_value"), std::numeric_limits<double>::quiet_NaN()}}));
+		QVERIFY(!moved.ok);  // refused, not stored
+		QVERIFY(clip->getTimeMap().contains(10));  // the source survived the refusal
+		QVERIFY(!clip->getTimeMap().contains(20));
+		QVERIFY(!std::isnan(clip->getTimeMap().value(10).getOutValue()));
 	}
 
 private:
