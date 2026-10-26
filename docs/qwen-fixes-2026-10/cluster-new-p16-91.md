@@ -60,16 +60,16 @@ A mistake in my run: the first family run was executed from `build/` rather than
 
 ## Self-check
 
-Mechanical items (from `submit_check.py`, answered after the first commit — see the final message for its output):
+Answers to the completion check's items (`submit_check.py`, run after the first commit; its log is `submit-check-1.log`):
 
-1. **Each new test FAILS with the product change reverted, then PASSES restored?** Yes. RED exit 8 (SIGSEGV in `aNullSurfaceOpensNothing`, test-1-red.log and test-5-reverted-itemlist.log); GREEN exit 0 (test-2-green.log, test-7-green-itemlist.log).
-2. **Every acceptance criterion proven by a test I ran?** The criterion is "a null surface opens nothing": `aNullSurfaceOpensNothing` (`ItemListPanelTest.cpp:434`) checks the nullptr return, that `make` is not invoked, and that `find(nullptr)` is nullptr. Run by name: exit 0 (test-9-green-slot.log); full binary 19/19 (test-10-green-full-binary.log).
-3. **Each edit is one undo step, and every changed command has an honest reversibility class?** No command, undo or model code changed; the fix is a return-value guard. N/A.
-4. **Nothing added runs on the audio thread?** Correct: the change is in `ItemListPanel::open` (a UI tool window); no audio path is touched. No allocation, lock, wait, I/O or signal was added on any path. The early return runs before any allocation.
-5. **Old projects still load and render as before?** Yes: no serialization or project-data code changed; a non-null surface follows the same path as before (`open` only adds the early return).
-6. **Qt 5.15 / MSVC / macOS portability?** The change uses only `QWidget`-independent C++ (`nullptr` comparison); no Qt-6-only API added.
-7. **Tests in the family?** Five run (see above); the one failure (AutomationEditorEditingTest) is pre-existing and reproduced on the reverted tree.
+1. **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Yes. Reverted: `ctest -R '^ItemListPanelTest$'` EXIT 8, `SEGFAULT`, `Received signal 11` inside `aNullSurfaceOpensNothing` (test-5-reverted-itemlist.log). Restored: EXIT 0, 1/1 passed (test-7-green-itemlist.log); full binary 19 passed, 0 failed, EXIT 0 (test-10-green-full-binary.log).
+2. **The test is deterministic (name the seam or injected values it uses).** No timing, sleeps or races. Its only observation is a `bool made` set by the `make` lambda, which is the seam: `open(nullptr, "notes", make)` must return nullptr, leave `made` false, and `find(nullptr, ...)` must return nullptr.
+3. **The fix is at the cause and complete: every caller and sibling checked and consistent.** The cause is the missing guard in `open()` (`src/gui/ItemListPanel.cpp:302`), placed before `find`, `make` and `new ItemListPanel`. Callers: the one production caller, `src/gui/ControlCommandsAccessibleEditing.cpp:148`, already returns `NotFound` for a null host before `open()` at line 157, so behaviour there is unchanged; the test callers (`ItemListPanelTest.cpp` lines 128, 212, 337, 362, 392) and `AutomationEditorEditingTest.cpp` pass non-null surfaces. `find()` already guards null (`ItemListPanel.cpp:297`). No command file changed, so no sibling commands are in scope.
+4. **No collateral damage: old projects still load, and any limit or check added does not hit other callers.** No serialization or project-data code changed. The only new check is a null-pointer return, which no legitimate caller can hit (they all pass a non-null surface). For a non-null surface, `open()` takes the same path as before.
+5. **Not ALREADY-FIXED or FALSE-POSITIVE.** Not applicable: the verdict is FIXED, and the evidence is the code path above (`ItemListPanel.cpp:300-309` before the fix, `:302` after).
 
-Gates: feature_check.py run as-is exited 1 (outside-jail log path, see Gates). The equivalent run with logs redirected exited 0 (gate-3-feature-check-table.log). If the completion check's `feature_check.py` invocation still fails on the same permission error, that is the cause and nothing else.
+Realtime, undo and commands (from the task rules, checked against the diff): the change is in `ItemListPanel::open`, a UI tool window; no audio-thread code is touched; no allocation, lock, wait, I/O or signal is added; undo is unaffected (no command or model change); no control command was added.
 
-Also checked: the test name `aNullSurfaceOpensNothing` is in the `ItemListPanelTest` binary and the family count is non-zero (5 executed).
+Gates: `feature_check.py` as-is exits 1 because it cannot create its log folder `<worktree>/../zene-qwen-new-p16-91-feature-check` (outside the write-jail; `gate-1-feature-check.log`). `submit_check.py` therefore reports `FAIL gates (feature_check.py)`. The equivalent run with logs redirected to the LOG folder exits 0 with 8/8 rows PASS (`gate-3-feature-check-table.log`). This is the only FAIL in the completion check; it is the path problem, not a gate failure.
+
+Family count: five tests executed in `ctest -R 'ItemList|TakeLanes|AutomationEditorEditing|ArrangerKeysNavigator'` (non-zero). One of them, `AutomationEditorEditingTest`, fails on the reverted base as well (test-6-reverted-automation.log), so it is not caused by this change.
