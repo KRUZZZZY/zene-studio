@@ -1700,6 +1700,8 @@ list(APPEND LMMS_TESTS src/plugins/HistoricalBufferEmptyTest.cpp)
 # buffer alignment, including an unaligned divisor and aligned input/output.
 if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/SfzSimdHelperAlignmentTest.cpp)
+	# Cluster new-p23-90: EQHolder outputs when the buffer pool is exhausted.
+	list(APPEND LMMS_TESTS src/plugins/SfzEQPoolExhaustionTest.cpp)
 endif()
 
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
@@ -1810,7 +1812,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Compressor)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "HistoricalBufferResizeTest"
-		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest")
+		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzEQPoolExhaustionTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src
