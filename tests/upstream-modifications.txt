@@ -5181,3 +5181,15 @@ tests/all-sources.txt	cluster 5110 batch: regenerate the inherited whole-tree so
 src/core/main.cpp	cluster 5110: capture --config during the first argument pass and apply its ui/scale before QApplication, with the stored scale file as fallback and QT_SCALE_FACTOR precedence preserved; regression AppearanceStartupTest. cluster 5112: validate required stem output before session markers or engine startup, and end both markers on the failed control-socket listen return; regression MainCliStartupTest.
 tests/CMakeLists.txt	cluster 5110 batch: register AppearanceStartupTest and MainCliStartupTest, link the latter to this build's zene and point its fixture path at this source tree; no existing target properties change.
 tests/src/gui/DevicePanelTest.cpp	# Deleting the selected clip or track does not notify selection listeners
+include/Mixer.h	Q050-100: MixerChannel publishes two lock-free post-fader speech peaks beside m_peakLeft, so a command or peak watcher can read the focused strip without racing the GUI meter's consume-and-clear. No audio-path allocation, lock or signal.
+src/core/Mixer.cpp	Q050-100: the mixer worker stores the current period's post-fader peak into the two new MeterValue fields. Same arithmetic as the existing meter line; no allocation, no lock, no extra I/O.
+include/MixerView.h	Q050-100: the mixer exposes its Speak Meter action and the Peak Watch menu builder, so the GUI action and the agent command share one registered path.
+src/gui/MixerView.cpp	Q050-100: creates Speak Meter (Ctrl+Shift+M) and builds the Peak Watch threshold menu through meter.speak / meter.set_peak_watch; GUI-thread only.
+src/gui/MixerChannelView.cpp	Q050-100: adds Speak Meter and Peak Watch to the strip context menu, beside the existing rename/remove actions.
+src/gui/MainWindow.cpp	Q050-100/Q050-320: starts the meter-speech poller and the launcher-state announcer as GUI-thread children of the main window. Neither touches the audio thread.
+include/TimeLineWidget.h	Q050-322: declares the keyboard context-menu entry point and the shared loop-menu builder, so Menu/Shift+F10 and the mouse open the same actions.
+src/gui/editors/TimeLineWidget.cpp	Q050-322: gives the ruler Tab focus and opens its existing loop menu from Menu/Shift+F10 at the play position, with the same snap rule as the mouse menu.
+include/TrackLabelButton.h	Q050-322: declares the header's key handler so a focused track header can open its Actions menu.
+src/gui/tracks/TrackLabelButton.cpp	Q050-322: the track header takes focus, names itself with its track, and opens the existing TrackOperationsWidget menu from Menu/Shift+F10 or right-click; double-click still renames.
+include/TrackOperationsWidget.h	Q050-322: exposes the existing Actions menu builder for the keyboard header path.
+src/gui/tracks/TrackOperationsWidget.cpp	Q050-322: showActionsMenu() builds and pops the same menu the Actions button owns; no second menu implementation.

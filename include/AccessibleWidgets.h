@@ -100,9 +100,20 @@ enum class Politeness
 	Polite,   //!< after what it is saying now (a finished render, a saved project)
 	Assertive //!< at once (an error, a refused edit)
 };
-//! Speak @a message (Qt 6.8's announcement event; on older Qt an alert raised on @a source, whose name the screen
-//! reader reads, so pass the label that shows the message). Nothing when no assistive technology is listening.
-LMMS_EXPORT void announceStatus(QObject* source, const QString& message, Politeness politeness = Politeness::Polite);
+//! Whether a message the policy spoke a moment ago may be spoken again at once.
+enum class Repeat
+{
+	Suppress, //!< the same text within the repeat window is dropped (a status that is re-sent on every refresh)
+	Allow     //!< each call is a new event and is spoken (a threshold crossing, an explicit "speak it" request)
+};
+//! Speak @a message (Qt 6.8's announcement event; on older Qt an alert raised on announcementSource(), whose name
+//! the screen reader reads). Nothing when no assistive technology is listening.
+LMMS_EXPORT void announceStatus(QObject* source, const QString& message, Politeness politeness = Politeness::Polite,
+	Repeat repeat = Repeat::Suppress);
+//! The object a pre-6.8 alert for @a message is raised on: @a source when its accessible name already is the
+//! message (a label that shows it), otherwise the window's hidden live region, named for the message, so the
+//! screen reader reads the text and not the name of the window or application. Null when there is no source.
+LMMS_EXPORT QObject* announcementSource(QObject* source, const QString& message);
 
 //! The value @a widget shows, as a screen reader reads it ("-6.00 dB"); empty when it has none. A canvas
 //! (AccessibleCanvas.h) reads the value it was described with.
@@ -121,9 +132,11 @@ LMMS_EXPORT AnnounceLevel announceLevel();
 //! "all", "errors", "off" - view.announcements' enum, in AnnounceLevel order.
 LMMS_EXPORT const QStringList& announceLevelNames();
 //! Whether announceStatus() may speak @a message now (the level, then the repeat window); true records it as spoken.
-LMMS_EXPORT bool shouldAnnounce(const QString& message, Politeness politeness);
+LMMS_EXPORT bool shouldAnnounce(const QString& message, Politeness politeness, Repeat repeat = Repeat::Suppress);
 //! The last message the policy let through - spoken, or about to be when an assistive technology listens (tests).
 LMMS_EXPORT QString lastAnnouncement();
+//! How many messages the policy has let through since the program started (tests: a repeat of the same text counts).
+LMMS_EXPORT int announcementCount();
 
 //! The state transitions spoken by default.
 enum class Transition

@@ -65,13 +65,20 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include <algorithm>
+#include <cmath>
+
+#include <QCoreApplication>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QString>
 
+#include "AccessibleWidgets.h"
 #include "ControlEdit.h"
 #include "ControlMeterSupport.h"
+#include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
+#include "ControlRegistryGroups.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 
@@ -80,6 +87,7 @@
 #include "Engine.h"
 #include "LufsMeter.h"
 #include "MasterLoudnessTap.h"
+#include "Mixer.h"
 
 namespace lmms
 {
@@ -233,6 +241,7 @@ ControlResult handleArm(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+
 ControlResult handleMeasureFile(const QJsonObject& args)
 {
 	// The reader and the whole payload are in ControlCommandsMeterFile.cpp; the
@@ -301,6 +310,7 @@ void registerMeterCommands(ControlRegistry& registry)
 		registry.registerCommand(cmd);
 	}
 
+
 	{
 		ControlCommand cmd;
 		cmd.id = QStringLiteral("meter.measure_file");
@@ -346,6 +356,7 @@ void registerMeterCommands(ControlRegistry& registry)
 		cmd.handler = [](const QJsonObject& args) { return handleMeasureFile(args); };
 		registry.registerCommand(cmd);
 	}
+	registerMeterSpeechCommands(registry);
 }
 
 } // namespace lmms

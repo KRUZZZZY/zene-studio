@@ -42,6 +42,9 @@ namespace lmms
 	class Mixer;
 }
 
+class QAction;
+class QMenu;
+
 namespace lmms::gui
 {
 
@@ -65,6 +68,13 @@ public:
 	{
 		return m_currentMixerChannel;
 	}
+
+	//! Q050-100: the strip holding keyboard focus (the focused control's strip), else the selected strip.
+	MixerChannelView* focusedChannelView() const;
+	//! Q050-100: the mixer's Speak Meter action (Ctrl+Shift+M). Public for tests and for a menu.
+	QAction* speakMeterAction() const { return m_speakMeterAction; }
+	//! Q050-100: fill @a menu with the peak-watch choices (off and -18..0 dBFS), the current one checked.
+	void populatePeakWatchMenu(QMenu* menu) const;
 
 	inline MixerChannelView* channelView(int index)
 	{
@@ -167,6 +177,7 @@ private:
 	int m_viewOptionsGeneration = -1;  // 0.5.0 L08: MixerViewOptions::generation() last applied
 	MixerSendsBanner* m_sendsBanner = nullptr;
 	MixerModeBar* m_modeBar = nullptr;
+	QAction* m_speakMeterAction = nullptr;  //!< Q050-100
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();

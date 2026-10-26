@@ -42,6 +42,8 @@ std::atomic<float> s_left{0.f};
 std::atomic<float> s_right{0.f};
 std::atomic<float> s_liveLeft{0.f};   //!< the same maxima for the live meter's own read (MX-134)
 std::atomic<float> s_liveRight{0.f};
+std::atomic<float> s_watchLeft{0.f};  //!< and for the peak watcher's (Q050-100)
+std::atomic<float> s_watchRight{0.f};
 
 #ifdef LMMS_TESTING
 // The test seam: the raise's observation point. It is null in production, and it is only ever
@@ -88,6 +90,8 @@ void measure(const SampleFrame* buffer, f_cnt_t frames)
 	raise(s_right, right);
 	raise(s_liveLeft, left);
 	raise(s_liveRight, right);
+	raise(s_watchLeft, left);
+	raise(s_watchRight, right);
 }
 
 void take(float* left, float* right)
@@ -100,6 +104,12 @@ void live(float* left, float* right)
 {
 	*left = s_liveLeft.exchange(0.f, std::memory_order_relaxed);
 	*right = s_liveRight.exchange(0.f, std::memory_order_relaxed);
+}
+
+void watch(float* left, float* right)
+{
+	*left = s_watchLeft.exchange(0.f, std::memory_order_relaxed);
+	*right = s_watchRight.exchange(0.f, std::memory_order_relaxed);
 }
 
 } // namespace lmms::inputmeter

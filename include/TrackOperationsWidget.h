@@ -27,6 +27,7 @@
 
 #include <QWidget>
 
+class QPoint;
 class QPushButton;
 class QToolButton;
 
@@ -45,6 +46,8 @@ public:
 	~TrackOperationsWidget() override = default;
 
 	TrackGrip* getTrackGrip() const { return m_trackGrip; }
+	//! Q050-322: open the same menu the Actions button owns, at @a global (the header's Menu/Shift+F10 path).
+	void showActionsMenu(const QPoint& global);
 
 protected:
 	void paintEvent( QPaintEvent * pe ) override;

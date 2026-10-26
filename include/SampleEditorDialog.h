@@ -100,6 +100,7 @@ protected:
 	void mousePressEvent(QMouseEvent* event) override;
 	void mouseMoveEvent(QMouseEvent* event) override;
 	void wheelEvent(QWheelEvent* event) override;
+	void keyPressEvent(QKeyEvent* event) override;
 
 private:
 	enum class Edge
@@ -110,6 +111,9 @@ private:
 	};
 	int frameAt(int x) const;
 	int xOf(int frame) const;
+	//! The frame step a plain arrow takes: about one percent of the visible source, at least one frame.
+	int keyboardStep() const;
+	QString readout() const;
 	//! The selection edge whose handle is under @a x (a target no narrower than the design system's).
 	Edge edgeAt(int x) const;
 	//! Show @a span frames from @a first, clamped to the source and to a frame a pixel at the most.

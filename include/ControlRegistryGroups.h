@@ -502,6 +502,8 @@ LMMS_EXPORT void registerDeviceCommands(ControlRegistry& registry);
  *  `export.set_loudness_report` in src/core/ControlCommandsExport.cpp.
  */
 LMMS_EXPORT void registerMeterCommands(ControlRegistry& registry);
+//! Q050-100: meter.speak and meter.set_peak_watch, the speech half of the meter group.
+LMMS_EXPORT void registerMeterSpeechCommands(ControlRegistry& registry);
 /*! clip.link_create / clip.link_remove / clip.link_get_state / clip.link_sync -
  *  the linked / smart clip relation (feature-list row 6, board task #645): two
  *  clips that share one source, so an edit to one is seen by all of them, with

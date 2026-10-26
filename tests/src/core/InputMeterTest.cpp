@@ -72,6 +72,7 @@ private slots:
 		float right = 0.f;
 		inputmeter::take(&left, &right);  // a clean start for both readers
 		inputmeter::live(&left, &right);
+		inputmeter::watch(&left, &right);
 	}
 
 	//! Every period counts: a transient between two polls is still read, once.
@@ -112,6 +113,27 @@ private slots:
 		QCOMPARE(left, 0.125f);
 		inputmeter::live(&left, &right);  // and the take did not empty the live reading
 		QCOMPARE(left, 0.125f);
+	}
+
+	//! Q050-100: the peak watch has its own read; it neither steals meter.input nor the live meter's peaks.
+	void theWatcherHasItsOwnIndependentPeakRead()
+	{
+		const auto loud = period(0.5f, 0.25f);
+		inputmeter::measure(loud.data(), Frames);
+		float left = 0.f;
+		float right = 0.f;
+		inputmeter::watch(&left, &right);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.25f);
+		inputmeter::watch(&left, &right);
+		QCOMPARE(left, 0.f);
+		QCOMPARE(right, 0.f);
+		inputmeter::take(&left, &right);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.25f);
+		inputmeter::live(&left, &right);
+		QCOMPARE(left, 0.5f);
+		QCOMPARE(right, 0.25f);
 	}
 
 	void aPeriodWithNoInputReadsSilence()

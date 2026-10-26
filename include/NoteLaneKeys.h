@@ -35,9 +35,9 @@ class QWidget;
  *
  *  The expression lane (velocity, pan, chance, ...) - a slider over the selected notes:
  *  Left / Right the previous / next note (Shift adds it to the selection), Home / End the first / last note;
- *  Up / Down the value 1 up / down, Page Up / Page Down 10; Ctrl+Shift+L the editable note list. A note.edit lane
- *  writes every selected note in ONE note.edit; an MPE lane (timbre, pressure, micro-pitch) writes the cursor note's
- *  note.expression_set, so each key press is one undo step.
+ *  Up / Down the value 1 up / down, Page Up / Page Down 10; Ctrl+Shift+L the editable note list. Every lane - the
+ *  MPE lanes (timbre, pressure, micro-pitch) included - writes every selected note in ONE note.edit, so each key
+ *  press is one undo step and a selected note the cursor is not on moves with the rest.
  *
  *  The controller lane (a CC, pitch bend, aftertouch or program curve) - a cursor on the time axis:
  *  Left / Right a grid step, Ctrl+Left / Ctrl+Right the previous / next point, Home / End the clip's start / end;

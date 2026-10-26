@@ -58,9 +58,12 @@ struct Task
 	const char* groups;
 };
 
-const std::array<Task, 12>& tasks()
+const std::array<Task, 13>& tasks()
 {
-	static const std::array<Task, 12> list{{
+	static const std::array<Task, 13> list{{
+		// Q050-323: the task-indexed quick start leads the manual; it owns no command group.
+		{"quickstart", QT_TRANSLATE_NOOP("HelpTasks", "Quick start"), "quick start first beat task how to begin "
+			"getting started", ""},
 		{"window", QT_TRANSLATE_NOOP("HelpTasks", "The window"), "header browser inspector panel view zoom", "window view"},
 		{"arrange", QT_TRANSLATE_NOOP("HelpTasks", "Arranging"), "arranger playlist timeline clip track automation marker "
 			"loop tempo transport", "arrangement clip track automation range section selection marker location warp video "

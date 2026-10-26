@@ -394,6 +394,12 @@ void TrackOperationsWidget::resetClipColors()
  *  on all Clips (same should be added for sample tracks when
  *  sampletrack recording is implemented)
  */
+void TrackOperationsWidget::showActionsMenu(const QPoint& global)
+{
+	updateMenu();
+	if (QMenu* menu = m_trackOps->menu()) { menu->popup(global); }
+}
+
 void TrackOperationsWidget::updateMenu()
 {
 	QMenu * toMenu = m_trackOps->menu();

@@ -461,6 +461,10 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 
 	contextMenu->addAction(tr("Rename &channel"), this, &MixerChannelView::renameChannel);
 	contextMenu->addSeparator();
+	contextMenu->addAction(m_mixerView->speakMeterAction());
+	auto* peakWatch = contextMenu->addMenu(tr("Peak Watch"));
+	m_mixerView->populatePeakWatchMenu(peakWatch);
+	contextMenu->addSeparator();
 
 	if (!isMasterChannel()) // no remove-option in master
 	{

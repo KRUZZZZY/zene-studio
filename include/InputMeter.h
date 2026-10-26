@@ -51,6 +51,10 @@ LMMS_EXPORT void take(float* left, float* right);
 //! every period's, so a transient between two polls is not missed - from a second pair of maxima, so it
 //! never empties what meter.input takes, nor the other way round. One live reader at a time.
 LMMS_EXPORT void live(float* left, float* right);
+//! The peak watcher's own read (0.5.0 Q050-100): the peaks since ITS last read, linear. A THIRD pair of
+//! maxima, because a threshold crossing must neither consume the live meter's reading nor meter.input's.
+//! One watcher at a time; the caller owns the crossing latch.
+LMMS_EXPORT void watch(float* left, float* right);
 
 #ifdef LMMS_TESTING
 namespace detail

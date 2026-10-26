@@ -1004,16 +1004,14 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
 - *(Updated 2026-09-30.)* **An instrument or sample track's menu now has Freeze track / Unfreeze track and
   Bounce in place** (`freeze.track`, `freeze.unfreeze`, `bounce.in_place`; `TrackRenderMenuTest`). Freezing a
   region (`freeze.region`) is still socket-only. The bullet below is the pre-menu record.
-- **Freeze and bounce-in-place have no interface — added 2026-09-13.** A track's own output (its devices,
-  fader, pan and sends) can be rendered to a WAV and the track made to play that render instead of its clips —
-  drivable through `--control-socket` (`bounce.in_place`, `freeze.track`, `freeze.region`, `freeze.unfreeze`),
-  and the frozen state is saved with the project and one `control.undo` takes it off — but **nothing in
-  `src/gui/` renders a track, marks it frozen or plays a take**: drivable through the socket, not from the
-  interface. Stated limits: a **region** freeze cuts a clip that crosses the region's edges at those
-  edges (named in `overlapping_clips`; fixed 2026-10-16, it used to sound twice) and mutes only the pieces inside - a
-  MIDI note held across an edge can still ring on; the render is 44.1 kHz and the take is re-sampled to the session's device rate,
-  so a frozen render is not bit-identical to the same track unfrozen; a tempo map is followed (fixed 2026-10-16); a frozen track's take bypasses the
-  track's own device chain and fader (they are already baked into the render), so those controls are inert
+- **Region freeze is still socket-only; track freeze and bounce-in-place are in the track menu.** Freeze track,
+  Unfreeze track and Bounce in place are on an instrument or sample track's menu (`freeze.track`, `freeze.unfreeze`,
+  `bounce.in_place`; `TrackRenderMenuTest`). A **region** freeze (`freeze.region`) has no menu of its own yet; the
+  session command remains the way to freeze a range. Stated limits: a region freeze cuts a clip that crosses the
+  region's edges at those edges (named in `overlapping_clips`) and mutes only the pieces inside - a MIDI note held
+  across an edge can still ring on; the render is 44.1 kHz and the take is re-sampled to the session's device rate,
+  so a frozen render is not bit-identical to the same track unfrozen; a tempo map is followed; a frozen track's take
+  bypasses the track's own device chain and fader (they are already baked into the render), so those controls are inert
   until `freeze.unfreeze`; and a take whose WAV has moved since it was frozen still reports `frozen: true`, is listed by
   `project.missing_assets` (`track` / `frozenAudio`, repointed by `project.relink`), is reported with
   `frozen_audio_ready: false` plus the ways out, lets the source play on, and can be taken off with `freeze.unfreeze`
@@ -1022,19 +1020,14 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   (at the roll's grid, `groove.extract`), Apply groove ▸ each pooled groove at a chosen strength (`groove.apply`),
   and Quantize with strength... (`groove.quantize`) - `GrooveMenuTest`. Renaming and removing grooves, and the
   random/humanise amounts, are still socket-only. The bullet below is the pre-menu record.
-- **The groove pool and quantise have no interface — added 2026-09-13.** A note pattern's timing and
-  velocity feel can be captured into a named groove, re-applied to another clip with a strength, and notes
-  can be quantised with a strength and a humanise amount — drivable through `--control-socket`
-  (`groove.list`, `groove.extract`, `groove.set`, `groove.apply`, `groove.quantize`, `groove.remove`,
-  `groove.rename`), with a registered ctest driving the real binary over the socket — but **nothing in
-  `src/gui/` creates, shows, edits or applies a groove**: there is no groove list, no template browser, no
-  drag-to-apply and no quantise dialog. The groove pool and quantise are drivable through the socket, not
-  from the interface. `docs/GROOVE-POOL.md` also records the engine's own stated limits (a groove's
-  resolution is the slot, a sample clip is refused because there are no notes to move, a groove is
-  applied once rather than played live, and a re-quantise with no humanise puts the positions back on
-  the grid but restores no velocity — a humanised take is reversed with `control.undo`, not by
-  re-quantising).
-
+- **The groove pool's rename, remove and humanise controls remain socket-only.** The piano roll's Groove menu can
+  extract a groove from the current clip, apply any pooled groove at a chosen strength, and quantise with a strength
+  (`groove.extract`, `groove.apply`, `groove.quantize`; `GrooveMenuTest`). There is no groove-list editor in the
+  interface yet, so renaming or removing a pooled groove, and the random/humanise amount fields, stay on
+  `groove.rename`, `groove.remove`, `groove.set` and `groove.quantize` over the socket. `docs/GROOVE-POOL.md` records
+  the engine's own limits: a groove's resolution is the slot, a sample clip is refused because it has no notes to move,
+  a groove is applied once rather than played live, and a re-quantise with no humanise puts positions back on the grid
+  but restores no velocity - a humanised take is reversed with `control.undo`.
 - *(Updated 2026-09-30.)* **File ▸ Render Presets** is rebuilt from `export.preset_list` each time it opens:
   Default Settings and one item per stored preset with the applied one checked (`export.preset_apply`), Save
   Preset... (name, sample rate, bit depth, stereo mode; `export.preset_add`, asking before a name is replaced),
@@ -1190,7 +1183,7 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   are `ControlClockCommands` (`clock.slave_set` accepts `source_port` and the bounded integer
   `drift_bound_ms`; a bound outside 0-100 or a source name longer than the engine can hold is a typed
   refusal). The drift-bound field is NOT in the Edit menu; only this form and the command carry it.
-- *(Corrected 2026-10-20, Q050-308.)* **The clock has an interface now: Edit ▸ MIDI Clock and Project
+- *(Corrected 2026-10-20, Q050-308.)* **The clock has an interface now: MIDI clock is in Edit ▸ MIDI Clock and Project
   tools ▸ Sync.** The bullet below is the 2026-09-13 record of the engine-only release, kept for its bounds
   (the backend coverage, the tempo-error bound, MTC's absence) and NOT as a current claim about the
   interface: `src/gui/MidiClockMenu.cpp` (attached by `MainWindow.cpp`) offers **Send Clock**, **Follow
@@ -2798,8 +2791,11 @@ Fleshed out, because both halves of that sentence hide something real:
   Since 2026-10-06 (ED-194) the automation editor has a list too (`surface: "automation"`, see the section below). It has
   no List button: the List buttons (050/feat-ui-gaps) and the automation list (050/feat-editor-lanes) landed in parallel,
   so that list opens with Ctrl+Shift+L or `window.item_list` only.
-- The sample editor's keyboard route is its range fields. The waveform itself takes no keys.
-- An MPE lane key edits only the cursor note.
+- The sample editor's waveform takes keyboard focus: Left/Right move its cursor, Shift+Left/Right
+  extend the selection, Home/End go to the ends, Ctrl+Plus/Minus zoom, Ctrl+0 shows all and Ctrl+A
+  selects all; its range fields and operation buttons remain the typed route (`SampleEditorDialogTest`).
+- An MPE lane key edits every selected note in one undo step, not only the cursor note; the lane's
+  accessible value names the lane, value and selection count (`CanvasKeyboardTest`).
 - Screen readers (NVDA, VoiceOver, Orca) are reached through Qt's bridge, which the tests assert. No screen reader was run.
 
 **Lanes and the sample editor (themes 11, 15).**

@@ -328,6 +328,7 @@ set(LMMS_SRCS
 	# drivable.
 	core/ControlCommandsMeter.cpp
 	core/ControlCommandsMeterFile.cpp
+	core/ControlCommandsMeterSpeech.cpp
 	# ... which is also the group's shared JSON vocabulary and the target it
 	# reports against (include/ControlMeterSupport.h), so the live readout and a
 	# measured file cannot drift into two spellings of one number.

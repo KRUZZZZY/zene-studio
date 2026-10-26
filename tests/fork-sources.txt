@@ -3034,3 +3034,12 @@ tests/src/core/AppearanceStartupTest.cpp
 tests/src/core/MainCliStartupTest.cpp
 # cluster 5110 batch (2026-10): verdicts, negative-control evidence and completion record.
 docs/qwen-fixes-2026-10/cluster-5110.md
+# 2026-10-20 (Q050-100): spoken meter, peak watch and the launcher/session announcer, fork-NEW.
+include/MeterSpeech.h
+src/gui/MeterSpeech.cpp
+include/SessionAnnouncements.h
+src/gui/SessionAnnouncements.cpp
+src/core/ControlCommandsMeterSpeech.cpp
+# 2026-10-20 (Q050-202): the shipped keyboard presets, fork-NEW.
+include/ShortcutPresets.h
+src/gui/ShortcutPresets.cpp

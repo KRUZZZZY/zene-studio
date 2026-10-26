@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-25T20:31:23Z",
+  "captured_at": "2026-10-26T01:21:36Z",
   "commands": [
     {
       "args_schema": {
@@ -74,7 +74,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Open the manual inside the application - at 'topic' (window, arrange, notes, mix, devices, record, launch, workflows, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry and grouped by the manual's sections, found by 'query' when given (a name, a task, a shortcut or a word) - or, with 'whats_this', What's This? mode: the next click on a control shows its full description - or, with 'context' (F1), help for the control with the keyboard focus, needing no hover: the manual at its section with what the control is, the command it runs by name and its shortcut ('context' in the reply). Interface state.",
+      "description": "Open the manual inside the application - at 'topic' (quickstart, window, arrange, notes, mix, devices, record, launch, workflows, projects, agents, customise, access) - or, with 'reference', the command reference: every command with its description and arguments, built from the registry and grouped by the manual's sections, found by 'query' when given (a name, a task, a shortcut or a word) - or, with 'whats_this', What's This? mode: the next click on a control shows its full description - or, with 'context' (F1), help for the control with the keyboard focus, needing no hover: the manual at its section with what the control is, the command it runs by name and its shortcut ('context' in the reply). Interface state.",
       "group": "app",
       "id": "app.help",
       "mutating": false,
@@ -12633,6 +12633,45 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "threshold_dbfs": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Set the peak watch: 'enabled' and 'threshold_dbfs' (-60..0, -6 by default). When on, the input stereo bus and the master output each speak one announcement when their peak rises from below the threshold to at or above it, stay quiet while it remains high, and arm again after it falls below. The threshold is a preference in the config file; one undo step restores both values. With no arguments it reports them.",
+      "group": "meter",
+      "id": "meter.set_peak_watch",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "previous_enabled": {
+            "type": "boolean"
+          },
+          "previous_threshold_dbfs": {
+            "type": "number"
+          },
+          "threshold_dbfs": {
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "dbfs": {
             "type": "number"
           }
@@ -12646,6 +12685,56 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Speak, through the screen reader, the focused mixer channel's post-fader stereo sample peak in dBFS and the master's short-term loudness (LUFS-S). The master tap is read, never armed or reset; when it is disarmed or its three-second window is not ready, the reply says the loudness is unavailable and the speech says why instead of speaking a zero. Read only.",
+      "group": "meter",
+      "id": "meter.speak",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "master_lufs": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "master_lufs_available": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "peak_db": {
+            "type": "number"
+          },
+          "spoken": {
+            "type": "string"
+          },
+          "tap_armed": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -15870,7 +15959,7 @@
         ],
         "type": "object"
       },
-      "description": "Change several notes of one clip as ONE edit and ONE undo step - what the note editor sends for a drag, a multi-note resize or a lane gesture. 'edits' is a list of {note, position?, key?, length?, velocity?, pan?, probability?, muted?, release_velocity?}: position and length in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, probability 0..1, muted 0/1 (a muted note stays in the clip, unplayed), release_velocity -1..200 (the note-off velocity on the volume scale; -1 none, a note-off of 0), velocity_spread 0..1 (the velocity varies by up to that share each playback), repeats 0..16 (extra hits evenly inside the note), recur_length 0..16 and recur_mask (over that many passes of the loop the note plays on the passes whose bit is set: length 2, mask 1 is the first of every two), articulation (the track's articulation, track.articulations, 1-based; 0 none), group (0 none; note.group makes one), slide 0/1 (a slide note), timbre and pressure 0..127 (the note's MPE timbre and pressure - the note properties box's Mod X and Mod Y); a field left out keeps its value. The whole batch is validated first - one bad entry (an unknown note, a value out of range, an entry naming no field) refuses it and changes nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip checkpoint); the inverse is note.edit with the previous values.",
+      "description": "Change several notes of one clip as ONE edit and ONE undo step - what the note editor sends for a drag, a multi-note resize or a lane gesture. 'edits' is a list of {note, position?, key?, length?, velocity?, pan?, probability?, muted?, release_velocity?}: position and length in ticks, key 0..127, velocity 0..200 (the engine's note volume), pan -100..100, probability 0..1, muted 0/1 (a muted note stays in the clip, unplayed), release_velocity -1..200 (the note-off velocity on the volume scale; -1 none, a note-off of 0), velocity_spread 0..1 (the velocity varies by up to that share each playback), repeats 0..16 (extra hits evenly inside the note), recur_length 0..16 and recur_mask (over that many passes of the loop the note plays on the passes whose bit is set: length 2, mask 1 is the first of every two), articulation (the track's articulation, track.articulations, 1-based; 0 none), group (0 none; note.group makes one), slide 0/1 (a slide note), timbre and pressure 0..127 (the note's MPE timbre and pressure - the note properties box's Mod X and Mod Y), pitch -4800..4800 cents (its MPE micro-pitch); a field left out keeps its value. The whole batch is validated first - one bad entry (an unknown note, a value out of range, an entry naming no field) refuses it and changes nothing. The note ids do not change. Reversible through the ProjectJournal (one MidiClip checkpoint); the inverse is note.edit with the previous values.",
       "group": "note",
       "id": "note.edit",
       "mutating": true,
@@ -28794,6 +28883,82 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "preset": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "preset"
+        ],
+        "type": "object"
+      },
+      "description": "Apply a shipped keyboard map ('preset': accessibility, ableton-live, fl-studio or logic-pro) to the matching Zene menu actions. Before the map is replaced, the current set is written to a timestamped shortcuts-backup JSON file in the workspace and its path is reported; shortcuts.import can restore it. One undo step also restores the previous overrides. The backup file remains after that undo, deliberately.",
+      "group": "shortcuts",
+      "id": "shortcuts.preset_apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "backup": {
+            "type": "string"
+          },
+          "conflicts": {
+            "type": "array"
+          },
+          "imported": {
+            "type": "integer"
+          },
+          "invalid": {
+            "type": "array"
+          },
+          "mapped": {
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "preset": {
+            "type": "string"
+          },
+          "unknown": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The shipped keyboard maps: the accessibility one and the Ableton Live, FL Studio and Logic Pro migration maps, each by id, name, description and mapping count. They map Zene's corresponding menu actions only, never another DAW's project or settings.",
+      "group": "shortcuts",
+      "id": "shortcuts.preset_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "presets": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "id": {
             "type": "string"
           }
@@ -36369,23 +36534,23 @@
       }
     }
   ],
-  "count": 849,
+  "count": 853,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-100-cf3618e61a/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-celzf1jz/zene.sock",
-    "version": "0.4.0-alpha.4775+9643c37"
+    "source_socket": "/tmp/zctl-run-058qx875/zene.sock",
+    "version": "0.4.0-alpha.4776+cf3618e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 849,
-    "ids_sha256": "fd877b788a64b551f0ada13e219eccb4cc84545c69067d1855dd19ac4f2dd242"
+    "id_count": 853,
+    "ids_sha256": "d592521fecb55fa546a443f601f0095a31e2322bfdd98472706ade75088dd67a"
   }
 }

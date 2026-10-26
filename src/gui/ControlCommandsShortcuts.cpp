@@ -26,6 +26,10 @@
  *  read from the live menus (ShortcutMap), the choices are overrides in ui/shortcuts written as
  *  one undo step (UiConfigStore), and a set is a file that can be exported and imported. */
 
+#include <algorithm>
+
+#include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -35,9 +39,11 @@
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "ConfigManager.h"
 #include "ControlWindowCommands.h"
 #include "MainWindow.h"
 #include "ShortcutMap.h"
+#include "ShortcutPresets.h"
 #include "UiConfigStore.h"
 
 namespace lmms
@@ -222,6 +228,92 @@ QJsonArray clashesUnder(const QList<sm::Binding>& all, const QJsonObject& overri
 	return out;
 }
 
+//! The whole shortcut set as shortcuts.export writes it (Q050-202 uses the same document for a backup).
+QJsonObject shortcutSetJson(QMenuBar* menus)
+{
+	QJsonArray all;
+	for (const sm::Binding& binding : sm::bindings(menus)) { all.append(bindingJson(binding)); }
+	return {{QStringLiteral("format"), ExportFormat}, {QStringLiteral("version"), ExportVersion},
+		{QStringLiteral("overrides"), sm::overrides()}, {QStringLiteral("bindings"), all}};
+}
+
+bool writeShortcutSet(const QString& path, const QJsonObject& document, ControlResult* error)
+{
+	const QByteArray bytes = QJsonDocument(document).toJson();
+	QSaveFile file(path);
+	if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot write '%1': %2").arg(path, file.errorString()));
+		return false;
+	}
+	return true;
+}
+
+//! The safety copy Q050-202 makes before a preset replaces the map. A real file, not only the undo
+//! step: it survives closing the app and can be imported with shortcuts.import.
+QString backupShortcuts(QMenuBar* menus, ControlResult* error)
+{
+	const QString directory = ConfigManager::inst()->workingDir();
+	const QString base = directory + QStringLiteral("shortcuts-backup-")
+		+ QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMdd-HHmmss-zzz"));
+	QString path = base + QStringLiteral(".json");
+	for (int suffix = 2; QFile::exists(path); ++suffix) { path = base + QStringLiteral("-%1.json").arg(suffix); }
+	return writeShortcutSet(path, shortcutSetJson(menus), error) ? path : QString();
+}
+
+ControlResult listPresets()
+{
+	QJsonArray presets;
+	for (const gui::ShortcutPreset& preset : gui::shortcutPresets())
+	{
+		presets.append(QJsonObject{{QStringLiteral("preset"), preset.id}, {QStringLiteral("name"), preset.name},
+			{QStringLiteral("description"), preset.description}, {QStringLiteral("mappings"), preset.keysByCommand.size()}});
+	}
+	return ControlResult::success({{QStringLiteral("presets"), presets}, {QStringLiteral("count"), presets.size()}});
+}
+
+//! Q050-202: replace the overrides with a shipped preset, after a safety copy of the map it replaces.
+ControlResult applyPreset(const QJsonObject& args)
+{
+	QMenuBar* menus = bar();
+	if (menus == nullptr) { return noInterface(QStringLiteral("shortcuts.preset_apply")); }
+	const gui::ShortcutPreset* preset = gui::shortcutPreset(args.value(QStringLiteral("preset")).toString());
+	if (preset == nullptr)
+	{
+		QStringList ids;
+		for (const gui::ShortcutPreset& p : gui::shortcutPresets()) { ids << p.id; }
+		return ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no shortcut preset '%1' (shortcuts.preset_list names %2)")
+				.arg(args.value(QStringLiteral("preset")).toString(), ids.join(QStringLiteral(", "))));
+	}
+	const QList<sm::Binding> all = sm::bindings(menus);
+	QJsonObject before = sm::overrides();
+	QJsonObject wanted;
+	QStringList unknown;
+	QStringList invalid;
+	QStringList mapped;
+	for (auto it = preset->keysByCommand.begin(); it != preset->keysByCommand.end(); ++it)
+	{
+		bool ok = false;
+		const QString key = sm::portable(it.value().toString(), &ok);
+		if (!ok) { invalid << it.key(); continue; }
+		const auto found = std::find_if(all.begin(), all.end(), [&it](const sm::Binding& b) { return b.command == it.key(); });
+		if (found == all.end()) { unknown << it.key(); continue; }
+		wanted.insert(found->id, key);
+		mapped << it.key();
+	}
+	ControlResult error;
+	const QString backup = backupShortcuts(menus, &error);
+	if (backup.isEmpty()) { return error; }
+	const ControlResult result = storeOverrides(menus, wanted,
+		{{QStringLiteral("preset"), preset->id}, {QStringLiteral("name"), preset->name}, {QStringLiteral("backup"), backup},
+			{QStringLiteral("imported"), wanted.size()}, {QStringLiteral("mapped"), QJsonArray::fromStringList(mapped)},
+			{QStringLiteral("unknown"), QJsonArray::fromStringList(unknown)}, {QStringLiteral("invalid"), QJsonArray::fromStringList(invalid)},
+			{QStringLiteral("conflicts"), clashesUnder(all, wanted)}},
+		{QStringLiteral("shortcuts.import"), {{QStringLiteral("overrides"), before}, {QStringLiteral("replace"), true}}});
+	return result;
+}
+
 ControlResult importShortcuts(const QJsonObject& args)
 {
 	QMenuBar* menus = bar();
@@ -297,6 +389,21 @@ void registerShortcutCommands(ControlRegistry& registry)
 		objectSchema({{QStringLiteral("imported"), integerProperty()}, {QStringLiteral("unknown"), arrayProperty()},
 			{QStringLiteral("invalid"), arrayProperty()}, {QStringLiteral("conflicts"), arrayProperty()}}), true,
 		importShortcuts);
+	add(registry, "preset_list", QStringLiteral("The shipped keyboard maps: the accessibility one and the Ableton Live, "
+		"FL Studio and Logic Pro migration maps, each by id, name, description and mapping count. They map Zene's "
+		"corresponding menu actions only, never another DAW's project or settings."),
+		objectSchema(), objectSchema({{QStringLiteral("presets"), arrayProperty()}, {QStringLiteral("count"), integerProperty()}}),
+		false, [](const QJsonObject&) { return listPresets(); });
+	add(registry, "preset_apply", QStringLiteral("Apply a shipped keyboard map ('preset': accessibility, ableton-live, "
+		"fl-studio or logic-pro) to the matching Zene menu actions. Before the map is replaced, the current set is written "
+		"to a timestamped shortcuts-backup JSON file in the workspace and its path is reported; shortcuts.import can restore "
+		"it. One undo step also restores the previous overrides. The backup file remains after that undo, deliberately."),
+		objectSchema({{QStringLiteral("preset"), stringProperty()}}, {QStringLiteral("preset")}),
+		objectSchema({{QStringLiteral("preset"), stringProperty()}, {QStringLiteral("name"), stringProperty()},
+			{QStringLiteral("backup"), stringProperty()}, {QStringLiteral("imported"), integerProperty()},
+			{QStringLiteral("mapped"), arrayProperty()}, {QStringLiteral("unknown"), arrayProperty()},
+			{QStringLiteral("invalid"), arrayProperty()}, {QStringLiteral("conflicts"), arrayProperty()}}), true,
+		applyPreset);
 }
 
 } // namespace lmms

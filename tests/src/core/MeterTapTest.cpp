@@ -159,6 +159,37 @@ private slots:
 		QCOMPARE(after.truePeakDbtp, LufsMeter::MinusInfinity);
 	}
 
+	//! Q050-100: the sample peak is published even while the loudness meter is
+	//! disarmed - a peak watch must hear the master before anyone arms the LUFS tap -
+	//! while the loudness counters still do not move.
+	void aDisarmedTapStillPublishesTheSamplePeak()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		QVERIFY(!tap.enabled());
+		const std::vector<SampleFrame> signal = makeSine(-6.0, 0.1);
+		tap.feed(signal.data(), static_cast<lmms::f_cnt_t>(signal.size()));
+		const MasterLoudnessTap::Snapshot reading = tap.snapshot();
+		QVERIFY2(reading.samplePeak > 0.4f && reading.samplePeak < 0.6f, qPrintable(QString::number(reading.samplePeak)));
+		QCOMPARE(reading.blocksFed, 0ull);
+		QCOMPARE(reading.integratedLufs, LufsMeter::MinusInfinity);
+	}
+
+	//! Q050-100: the peak watch CONSUMES the sample peak, so a quiet period lets its latch
+	//! fall and the next loud one can cross again. A held maximum would stay high forever.
+	void takingTheSamplePeakLetsTheWatchReArm()
+	{
+		MasterLoudnessTap tap(SampleRate, lmms::DEFAULT_CHANNELS);
+		const std::vector<SampleFrame> loud = makeSine(-6.0, 0.1);
+		tap.feed(loud.data(), static_cast<lmms::f_cnt_t>(loud.size()));
+		QVERIFY(tap.takeSamplePeak() > 0.4f);
+		QCOMPARE(tap.takeSamplePeak(), 0.f);  // a second read has nothing new
+		const std::vector<SampleFrame> quiet = makeSine(-60.0, 0.1);
+		tap.feed(quiet.data(), static_cast<lmms::f_cnt_t>(quiet.size()));
+		QVERIFY(tap.takeSamplePeak() < 0.01f);  // below the threshold: the latch can fall
+		tap.feed(loud.data(), static_cast<lmms::f_cnt_t>(loud.size()));
+		QVERIFY(tap.takeSamplePeak() > 0.4f);  // and a later loud period crosses again
+	}
+
 	//! NEGATIVE CONTROL 1: digital silence is not a plausible number. The meter
 	//! gates everything below -70 LUFS, so nothing survives to be averaged and
 	//! every value stays at the sentinel - including the true peak, which is

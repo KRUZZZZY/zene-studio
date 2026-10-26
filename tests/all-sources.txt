@@ -521,6 +521,7 @@ include/McuSurface.h
 include/MenuBarExtras.h
 include/MeterDialog.h
 include/MeterModel.h
+include/MeterSpeech.h
 include/Metronome.h
 include/MetronomeOptions.h
 include/MicroTimer.h
@@ -772,6 +773,7 @@ include/ScriptMemoryBudget.h
 include/ScriptPackage.h
 include/SendButtonIndicator.h
 include/SerializingObject.h
+include/SessionAnnouncements.h
 include/SessionArrangementRecorder.h
 include/SessionAudioBake.h
 include/SessionAudioCells.h
@@ -804,6 +806,7 @@ include/ShellSelection.h
 include/ShellTearOff.h
 include/ShellToolsMenu.h
 include/ShortcutMap.h
+include/ShortcutPresets.h
 include/ShortcutsPage.h
 include/SideBar.h
 include/SideBarWidget.h
@@ -1601,6 +1604,7 @@ src/core/ControlCommandsMasteringRun.cpp
 src/core/ControlCommandsMcu.cpp
 src/core/ControlCommandsMeter.cpp
 src/core/ControlCommandsMeterFile.cpp
+src/core/ControlCommandsMeterSpeech.cpp
 src/core/ControlCommandsMidi.cpp
 src/core/ControlCommandsMidiReconnect.cpp
 src/core/ControlCommandsMidiReconnectEdit.cpp
@@ -2289,6 +2293,7 @@ src/gui/MainApplication.cpp
 src/gui/MainWindow.cpp
 src/gui/MainWindowGeometry.cpp
 src/gui/MenuBarExtras.cpp
+src/gui/MeterSpeech.cpp
 src/gui/MicrotunerConfig.cpp
 src/gui/MidiCCRackView.cpp
 src/gui/MidiClockMenu.cpp
@@ -2338,6 +2343,7 @@ src/gui/SampleThumbnail.cpp
 src/gui/SampleTrackWindow.cpp
 src/gui/ScriptBudgetAction.cpp
 src/gui/SendButtonIndicator.cpp
+src/gui/SessionAnnouncements.cpp
 src/gui/SessionGridCells.cpp
 src/gui/SessionGridDrop.cpp
 src/gui/SessionGridMenus.cpp
@@ -2347,6 +2353,7 @@ src/gui/SessionSyncAction.cpp
 src/gui/SessionTransportBar.cpp
 src/gui/SessionTuningMenu.cpp
 src/gui/ShortcutMap.cpp
+src/gui/ShortcutPresets.cpp
 src/gui/ShortcutsPage.cpp
 src/gui/SideBar.cpp
 src/gui/SideBarWidget.cpp

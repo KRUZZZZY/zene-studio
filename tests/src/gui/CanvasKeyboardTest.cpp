@@ -46,6 +46,7 @@
 #include "InstrumentTrack.h"
 #include "Knob.h"
 #include "MidiClip.h"
+#include "MusicalTime.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
@@ -225,6 +226,37 @@ private slots:
 		QVERIFY(!handledBy(canvas, Qt::Key_Home, Qt::NoModifier));
 	}
 
+	//! Q050-099: an MPE lane edits every SELECTED note in one undo step, not only the cursor
+	//! note, and its readout says how many notes the value applies to.
+	void anMpeLaneEditsEverySelectedNoteInOneStep()
+	{
+		m_editor->setLane(NoteLane::Timbre);
+		QWidget* lane = m_editor->laneView();
+		lane->setFocus();
+		const auto selectTheChord = [this] {
+			return invoke(QStringLiteral("note.select"), {{QStringLiteral("clip"), m_editor->clipId()},
+				{QStringLiteral("notes"), QJsonArray{control::noteIdOf(noteAt(m_clip, 0, 60)), control::noteIdOf(noteAt(m_clip, 0, 64))}}}).ok;
+		};
+		QVERIFY(selectTheChord());
+		QTest::keyClick(lane, Qt::Key_Up);
+		QCOMPARE(noteAt(m_clip, 0, 60)->mpeTimbre(), 1);
+		QCOMPARE(noteAt(m_clip, 0, 64)->mpeTimbre(), 1);
+		QVERIFY2(a11y::canvasValue(lane).contains(QStringLiteral("2 selected")), qPrintable(a11y::canvasValue(lane)));
+		QVERIFY(undo());
+		QCOMPARE(noteAt(m_clip, 0, 60)->mpeTimbre(), 0);
+		QCOMPARE(noteAt(m_clip, 0, 64)->mpeTimbre(), 0);
+
+		// Micro-pitch uses the same batch path; a note outside the selection stays where it was.
+		m_editor->setLane(NoteLane::Pitch);
+		lane = m_editor->laneView();
+		QVERIFY(selectTheChord());
+		QTest::keyClick(lane, Qt::Key_Up);
+		QCOMPARE(noteAt(m_clip, 0, 60)->mpePitchCents(), 1);
+		QCOMPARE(noteAt(m_clip, 0, 64)->mpePitchCents(), 1);
+		QCOMPARE(noteAt(m_clip, 192, 62)->mpePitchCents(), 0);
+		QVERIFY(undo());
+	}
+
 	void ctrlArrowsResizeAndChangeVelocityOneStepEach()
 	{
 		QWidget* canvas = m_editor->canvas();
@@ -280,6 +312,7 @@ private slots:
 		QVERIFY2(face->text(QAccessible::Value).contains(QStringLiteral("3 notes, 0 selected")), qPrintable(face->text(QAccessible::Value)));
 		QTest::keyClick(canvas, Qt::Key_End);
 		QVERIFY(face->text(QAccessible::Value).startsWith(NoteGrid::keyName(62)));
+		QVERIFY2(face->text(QAccessible::Value).contains(musicaltime::positionText(192)), qPrintable(face->text(QAccessible::Value)));
 		// CanvasKeyCursor has no Q_OBJECT, so findChild<CanvasKeyCursor*> matched any QFocusFrame (and Qt 6.12 refuses it).
 		const auto frames = canvas->findChildren<QFocusFrame*>();
 		QVERIFY(std::any_of(frames.begin(), frames.end(),

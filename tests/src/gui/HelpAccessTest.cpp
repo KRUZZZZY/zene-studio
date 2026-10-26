@@ -129,6 +129,141 @@ private slots:
 		centre->close();
 	}
 
+	//! Q050-099: the limitations page no longer says the waveform takes no keys or that an
+	//! MPE lane edits only the cursor note, and the manual describes the keyboard route.
+	void theWaveformAndMpeKeyboardLimitsAreCurrent()
+	{
+		QFile limitations(QStringLiteral("../../docs/KNOWN-LIMITATIONS.md"));
+		QVERIFY(limitations.open(QIODevice::ReadOnly));
+		const QString text = QString::fromUtf8(limitations.readAll());
+		QVERIFY(!text.contains(QStringLiteral("The waveform itself takes no keys")));
+		QVERIFY(!text.contains(QStringLiteral("An MPE lane key edits only the cursor note")));
+		QVERIFY(text.contains(QStringLiteral("waveform takes keyboard focus")));
+		QVERIFY(text.contains(QStringLiteral("MPE lane key edits every selected note")));
+		QFile manual(ConfigManager::inst()->dataDir() + QStringLiteral("manual/index.html"));
+		QVERIFY(manual.open(QIODevice::ReadOnly));
+		const QString html = QString::fromUtf8(manual.readAll());
+		QVERIFY(html.contains(QStringLiteral("Sample Editor: Tab to the waveform")));
+		QVERIFY(html.contains(QStringLiteral("one key changes every selected note")));
+	}
+
+	//! Q050-325: the stale blanket "no interface" claims for Groove, MIDI Clock and
+	//! freeze/bounce are gone, and the residual limits name both the GUI route and the command.
+	void theLimitationsPageKeepsOnlyTrueInterfaceClaims()
+	{
+		QFile limitations(QStringLiteral("../../docs/KNOWN-LIMITATIONS.md"));
+		QVERIFY(limitations.open(QIODevice::ReadOnly));
+		const QString text = QString::fromUtf8(limitations.readAll());
+		for (const QString& stale : {QStringLiteral("The groove pool and quantise have no interface"),
+			QStringLiteral("Freeze and bounce-in-place have no interface"),
+			QStringLiteral("MIDI clock is the engine and the socket, and there is no interface for it")})
+		{
+			QVERIFY2(!text.contains(stale), qPrintable(stale));
+		}
+		for (const QString& current : {QStringLiteral("The groove pool's rename, remove and humanise controls remain socket-only"),
+			QStringLiteral("MIDI clock is in Edit ▸ MIDI Clock"), QStringLiteral("Clock Source"),
+			QStringLiteral("Unfreeze track and Bounce in place"), QStringLiteral("freeze.region")})
+		{
+			QVERIFY2(text.contains(current), qPrintable(current));
+		}
+		QVERIFY(QFile::exists(QStringLiteral("../../docs/qwen-fixes-2026-10/Q050-325-audit.md")));
+	}
+
+	//! Q050-324: README, CONTRIBUTING and the manual's Access topic point at the same
+	//! accessibility report form, and the form asks for the workflow, assistive technology and
+	//! reproduction steps without requiring personal medical information.
+	void theAccessibilityFeedbackRouteIsTheSameEverywhere()
+	{
+		const QString route = QStringLiteral("https://github.com/KRUZZZZY/zene-studio/issues/new?template=accessibility-report.yml");
+		for (const QString& path : {QStringLiteral("../../README.md"), QStringLiteral("../../CONTRIBUTING.md"),
+			ConfigManager::inst()->dataDir() + QStringLiteral("manual/index.html")})
+		{
+			QFile file(path);
+			QVERIFY2(file.open(QIODevice::ReadOnly), qPrintable(path));
+			QVERIFY2(QString::fromUtf8(file.readAll()).contains(route), qPrintable(path));
+		}
+		QFile form(QStringLiteral("../../.github/ISSUE_TEMPLATE/accessibility-report.yml"));
+		QVERIFY(form.open(QIODevice::ReadOnly));
+		const QString yaml = QString::fromUtf8(form.readAll());
+		for (const QString& id : {QStringLiteral("id: workflow"), QStringLiteral("id: assistive_technology"),
+			QStringLiteral("id: steps")})
+		{
+			QVERIFY2(yaml.contains(id), qPrintable(id));
+		}
+		QVERIFY(yaml.count(QStringLiteral("required: true")) >= 3);
+		QVERIFY2(!yaml.contains(QStringLiteral("id: medical")) && !yaml.contains(QStringLiteral("id: diagnosis")),
+			"the form asked for medical information");
+		HelpCenter* centre = HelpCenter::showHelp(QStringLiteral("access"), false);
+		QVERIFY(centre != nullptr);
+		QVERIFY(centre->findInManual(QStringLiteral("accessibility blocker form")));
+		centre->close();
+	}
+
+	//! Q050-323: the manual has a searchable task-indexed quick start, each task links to its
+	//! area reference and to registered commands and installed tours, and Find reaches them.
+	void theQuickStartIsSearchableAndReachesEveryArea()
+	{
+		QFile manual(ConfigManager::inst()->dataDir() + QStringLiteral("manual/index.html"));
+		QVERIFY(manual.open(QIODevice::ReadOnly));
+		const QString html = QString::fromUtf8(manual.readAll());
+		QVERIFY(html.contains(QStringLiteral("<h2 id=\"quickstart\">Quick start</h2>")));
+		QVERIFY(html.contains(QStringLiteral("<a href=\"#quickstart\">Quick start</a>")));
+		const QList<QPair<QString, QString>> tasks{
+			{QStringLiteral("task-first-beat"), QStringLiteral("Make a first beat")},
+			{QStringLiteral("task-arrange-clips"), QStringLiteral("Arrange clips")},
+			{QStringLiteral("task-edit-notes"), QStringLiteral("Edit notes")},
+			{QStringLiteral("task-instrument-effect"), QStringLiteral("Add an instrument or effect")},
+			{QStringLiteral("task-record-comp"), QStringLiteral("Record and comp takes")},
+			{QStringLiteral("task-mix-export"), QStringLiteral("Mix, export and hand off")}};
+		HelpCenter* centre = HelpCenter::showHelp(QString(), false);
+		QVERIFY(centre != nullptr);
+		for (const auto& [id, title] : tasks)
+		{
+			QVERIFY2(html.contains(QStringLiteral("<h3 id=\"%1\">%2</h3>").arg(id, title)), qPrintable(title));
+			QVERIFY2(centre->findInManual(title), qPrintable(title));
+		}
+		for (const QString& command : {QStringLiteral("track.add"), QStringLiteral("app.tour"), QStringLiteral("note.edit"),
+			QStringLiteral("plugin.load"), QStringLiteral("track.set_arm"), QStringLiteral("render.render")})
+		{
+			QVERIFY2(html.contains(command), qPrintable(command));
+			QVERIFY2(ControlRegistry::instance()->hasCommand(command), qPrintable(command));
+		}
+		QVERIFY(html.contains(QStringLiteral("first-beat")));
+		QVERIFY(html.contains(QStringLiteral("recording")));
+		QVERIFY(html.contains(QStringLiteral("mixing")));
+		// The area references remain the manual's own headings (HelpTasks owns the list).
+		for (const QString& topic : help::topics())
+		{
+			QVERIFY2(html.contains(QStringLiteral("<a href=\"#%1\">").arg(topic)) || topic == QLatin1String("quickstart"),
+				qPrintable(topic));
+		}
+		centre->close();
+	}
+
+	//! Q050-159: one manual section and one tour step compare patterns, clips and launcher
+	//! cells with an example that traces a track to its mixer channel. (The train's own Q050-159
+	//! section, "workflows", is the one section; this batch's duplicate was folded into it.)
+	void theThreeArrangementMethodsAndTheirRoutingAreExplained()
+	{
+		QFile manual(ConfigManager::inst()->dataDir() + QStringLiteral("manual/index.html"));
+		QVERIFY(manual.open(QIODevice::ReadOnly));
+		const QString html = QString::fromUtf8(manual.readAll());
+		QVERIFY(html.contains(QStringLiteral("<h2 id=\"workflows\">Patterns, clips and cells</h2>")));
+		for (const QString& term : {QStringLiteral("PatternStore pattern"), QStringLiteral("PatternTrack"),
+			QStringLiteral("clip"), QStringLiteral("launcher cell"), QStringLiteral("kick.wav"),
+			QStringLiteral("track.overview"), QStringLiteral("mixer.get_state"), QStringLiteral("track.set_mixer_channel"),
+			QStringLiteral("Inspector"), QStringLiteral("Routing")})
+		{
+			QVERIFY2(html.contains(term), qPrintable(term));
+		}
+		QFile tour(ConfigManager::inst()->dataDir() + QStringLiteral("tours/first-beat.json"));
+		QVERIFY(tour.open(QIODevice::ReadOnly));
+		const QString json = QString::fromUtf8(tour.readAll());
+		QVERIFY(json.contains(QStringLiteral("Patterns, clips and cells")));
+		QVERIFY(json.contains(QStringLiteral("PatternTrack placeholder")));
+		QVERIFY(json.contains(QStringLiteral("PatternStore")));
+	}
+
 	//! Theme 21: in-context help for the focused control, no hovering - its name, its command by name, its
 	//! section - from F1's command, over the help centre.
 	void theFocusedControlHasHelpWithoutHovering()

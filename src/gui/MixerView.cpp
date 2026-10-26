@@ -40,7 +40,10 @@
  * every delete (Mixer::channelDeleted) and the view rebuilds before it can paint.
  * --------------------------------------------------------------------------- */
 
+#include <QAction>
+#include <QApplication>
 #include <QHBoxLayout>
+#include <QMenu>
 #include <QTimer>
 #include <QLayout>
 #include <QLineEdit>
@@ -61,6 +64,7 @@
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
 #include "CommandForm.h"
+#include "ControlMeterSupport.h"
 #include "ControlRegistry.h"
 #include "MixerModeBar.h"
 #include "MixerOverlays.h"
@@ -221,6 +225,24 @@ MixerView::MixerView(Mixer* mixer) :
 	ml->addWidget(m_racksWidget);
 
 	setCurrentMixerChannel(m_mixerChannelViews[0]);
+
+	// Q050-100: the focused strip's level in words, from the keyboard (and the strip's menu).
+	m_speakMeterAction = new QAction(tr("Speak Meter"), this);
+	m_speakMeterAction->setObjectName(QStringLiteral("speakMeterAction"));
+	m_speakMeterAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+Shift+M")));
+	m_speakMeterAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+	m_speakMeterAction->setProperty("controlCommand", QStringLiteral("meter.speak"));
+	m_speakMeterAction->setToolTip(tr("Speak the focused channel's peak and the master short-term loudness"));
+	addAction(m_speakMeterAction);
+	connect(m_speakMeterAction, &QAction::triggered, this, [this] {
+		const MixerChannelView* strip = focusedChannelView();
+		if (strip == nullptr) { return; }
+		MixerChannel* channel = getMixer()->mixerChannel(strip->channelIndex());
+		if (channel == nullptr) { return; }
+		runCommand(this, CommandCall{QStringLiteral("meter.speak"),
+			{{QStringLiteral("channel"), control::channelIdOf(channel)}}, {}, QString(), false});
+	});
+
 	refreshVcaStrips();
 
 	auto* syncTimer = new QTimer(this);
@@ -501,6 +523,20 @@ void MixerView::disconnectFromSoloAndMute(int channelIndex)
 }
 
 
+MixerChannelView* MixerView::focusedChannelView() const
+{
+	// Keyboard focus moves between strips without a mouse press, so the selected strip may not be the focused one.
+	for (QWidget* widget = QApplication::focusWidget(); widget != nullptr; widget = widget->parentWidget())
+	{
+		if (auto* strip = qobject_cast<MixerChannelView*>(widget); strip != nullptr && strip->parentWidget() != nullptr
+			&& isAncestorOf(strip))
+		{
+			return strip;
+		}
+	}
+	return m_currentMixerChannel;
+}
+
 void MixerView::setCurrentMixerChannel(MixerChannelView* channel)
 {
 	// select
@@ -657,6 +693,35 @@ void MixerView::renameChannel(int index)
 	m_mixerChannelViews[index]->renameChannel();
 }
 
+
+void MixerView::populatePeakWatchMenu(QMenu* menu) const
+{
+	menu->clear();
+	menu->setObjectName(QStringLiteral("peakWatchMenu"));
+	menu->setAccessibleName(tr("Peak watch"));
+	const bool enabled = control::meterPeakWatchEnabled();
+	const double threshold = control::meterPeakWatchThresholdDbfs();
+	QAction* off = menu->addAction(tr("Off"));
+	off->setObjectName(QStringLiteral("peakWatchOff"));
+	off->setCheckable(true);
+	off->setChecked(!enabled);
+	connect(off, &QAction::triggered, menu, [menu] {
+		runCommand(menu->parentWidget(), CommandCall{QStringLiteral("meter.set_peak_watch"),
+			{{QStringLiteral("enabled"), false}}, {}, QString(), false});
+	});
+	menu->addSeparator();
+	for (const int db : {-18, -12, -6, -3, 0})
+	{
+		QAction* action = menu->addAction(tr("%1 dBFS").arg(db));
+		action->setObjectName(QStringLiteral("peakWatch%1").arg(db < 0 ? QStringLiteral("Minus%1").arg(-db) : QStringLiteral("Zero")));
+		action->setCheckable(true);
+		action->setChecked(enabled && qFuzzyCompare(threshold, static_cast<double>(db)));
+		connect(action, &QAction::triggered, menu, [menu, db] {
+			runCommand(menu->parentWidget(), CommandCall{QStringLiteral("meter.set_peak_watch"),
+				{{QStringLiteral("enabled"), true}, {QStringLiteral("threshold_dbfs"), db}}, {}, QString(), false});
+		});
+	}
+}
 
 void MixerView::keyPressEvent(QKeyEvent * e)
 {

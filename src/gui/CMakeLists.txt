@@ -117,10 +117,12 @@ SET(LMMS_SRCS
 	gui/MenuBarExtras.cpp
 	gui/RecordLaunchMenus.cpp
 	gui/ShortcutMap.cpp
+	gui/ShortcutPresets.cpp
 	gui/UiConfigStore.cpp
 	gui/PluginNativeEditor.cpp
 	gui/SessionGridMenus.cpp
 	gui/SessionGridView.cpp
+	gui/SessionAnnouncements.cpp
 	gui/SessionGridCells.cpp
 	gui/SessionGridDrop.cpp
 	gui/SessionGridSelect.cpp
@@ -264,6 +266,7 @@ SET(LMMS_SRCS
 	gui/MixerSendsBanner.cpp
 	gui/MixerStripInfo.cpp
 	gui/MixerStripTags.cpp
+	gui/MeterSpeech.cpp
 	gui/MixerModeBar.cpp
 	gui/MixerRoutingMatrix.cpp
 	gui/MixerViewOptions.cpp

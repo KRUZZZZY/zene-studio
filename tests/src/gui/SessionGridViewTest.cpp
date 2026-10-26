@@ -44,9 +44,13 @@
 #include <QToolButton>
 #include <QUrl>
 
+#include <tuple>
+
+#include "AccessibleWidgets.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MenuTestSupport.h"
+#include "SessionAnnouncements.h"
 #include "SessionGridCells.h"
 #include "SessionGridView.h"
 #include "Song.h"
@@ -292,6 +296,78 @@ private slots:
 		QCOMPARE(slotState(1, 1).value(QStringLiteral("type")).toString(), QStringLiteral("midi"));
 		QCOMPARE(slotState(1, 1).value(QStringLiteral("pattern")).toInt(), patterns.first().toObject().value(QStringLiteral("pattern")).toInt());
 		QVERIFY(run(QStringLiteral("session.clear_slot"), {{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 1}}).ok);
+	}
+
+	//! Q050-320: a queued launch is silent, a completed state change is said once, a
+	//! whole scene start/stop is one scene message, and view.announcements gates it.
+	void theAnnouncerSpeaksCompletedLaunchesOnceAndHonoursTheLevel()
+	{
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
+		const auto makeState = [](bool launching, bool track0, bool track1) {
+			QJsonArray slotList;
+			for (const auto& [track, scene, name] : {std::tuple{0, 0, QStringLiteral("kick")}, std::tuple{1, 0, QStringLiteral("bass")}})
+			{
+				slotList.append(QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("scene"), scene},
+					{QStringLiteral("type"), QStringLiteral("audio")}, {QStringLiteral("name"), name}});
+			}
+			QJsonArray columns;
+			if (track0) { columns.append(QJsonObject{{QStringLiteral("track"), 0}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("phase"), launching ? QStringLiteral("launching") : QStringLiteral("playing")}}); }
+			if (track1) { columns.append(QJsonObject{{QStringLiteral("track"), 1}, {QStringLiteral("scene"), 0},
+				{QStringLiteral("phase"), launching ? QStringLiteral("launching") : QStringLiteral("playing")}}); }
+			return QJsonObject{{QStringLiteral("grid"), QJsonObject{{QStringLiteral("tracks"), 2}, {QStringLiteral("scenes"), 2}}},
+				{QStringLiteral("slots"), slotList}, {QStringLiteral("columns"), columns},
+				{QStringLiteral("scenes"), QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("Intro")}},
+					QJsonObject{{QStringLiteral("name"), QString()}}}}};
+		};
+		QWidget source;
+		SessionAnnouncer announcer;
+		announcer.observe(makeState(false, false, false));  // seeds silently
+		announcer.observe(makeState(true, true, true));  // queued, not playing
+		// A refused launch changes no published state, so it says nothing. Stop All with nothing
+		// playing is likewise silent. Both routes (UI, bound controller, agent) end in this state.
+		QVERIFY(!run(QStringLiteral("session.launch_slot"), {{QStringLiteral("track"), 99}, {QStringLiteral("scene"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("session.stop_all")).ok);
+		announcer.observe(makeState(false, false, false));
+		QVERIFY(announcer.lastMessage().isEmpty());
+		QVERIFY(announcer.lastMessage().isEmpty());
+		a11y::announceStatus(&source, QStringLiteral("session watch marker one"));
+		const QString marker = a11y::lastAnnouncement();
+		announcer.observe(makeState(false, true, true));
+		QCOMPARE(announcer.lastMessage(), QStringLiteral("Intro playing"));
+		QCOMPARE(a11y::lastAnnouncement(), QStringLiteral("Intro playing"));
+		announcer.observe(makeState(false, true, true));  // unchanged: no second word
+		QCOMPARE(a11y::lastAnnouncement(), QStringLiteral("Intro playing"));
+		QVERIFY(marker != a11y::lastAnnouncement());
+
+		// One cell stopping is that cell; every cell of the row stopping is the scene once.
+		announcer.observe(makeState(false, true, false));
+		QVERIFY2(announcer.lastMessage().endsWith(QStringLiteral("bass stopped")), qPrintable(announcer.lastMessage()));
+		announcer.reset();
+		announcer.observe(makeState(false, false, false));
+		announcer.observe(makeState(false, true, true));
+		const QString playing = announcer.lastMessage();
+		QVERIFY(playing.endsWith(QStringLiteral("playing")));
+		announcer.observe(makeState(false, false, false));
+		QCOMPARE(announcer.lastMessage(), QStringLiteral("Intro stopped"));
+		announcer.observe(makeState(false, false, false));
+		QCOMPARE(announcer.lastMessage(), QStringLiteral("Intro stopped"));
+
+		// errors and off suppress the ordinary launch message.
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("errors")}}).ok);
+		announcer.reset();
+		announcer.observe(makeState(false, false, false));
+		a11y::announceStatus(&source, QStringLiteral("session watch marker two"));
+		const QString errorsMarker = a11y::lastAnnouncement();
+		announcer.observe(makeState(false, true, true));
+		QVERIFY(announcer.lastMessage().endsWith(QStringLiteral("playing")));
+		QCOMPARE(a11y::lastAnnouncement(), errorsMarker);
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("off")}}).ok);
+		announcer.reset();
+		announcer.observe(makeState(false, false, false));
+		announcer.observe(makeState(false, true, true));
+		QCOMPARE(a11y::lastAnnouncement(), errorsMarker);
+		QVERIFY(run(QStringLiteral("view.announcements"), {{QStringLiteral("level"), QStringLiteral("all")}}).ok);
 	}
 
 	//! 0.5.0 theme 14: a scene's state is its row's - queued over playing over stopped over empty - and a cell's

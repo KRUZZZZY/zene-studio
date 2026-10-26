@@ -261,6 +261,18 @@ private slots:
 		QCOMPARE(result.result.value(QStringLiteral("edited")).toInt(), 1);
 		QVERIFY(m_clip->notes()[0]->hasMpeExpression());
 	}
+
+	void aMicroPitchEditIsAChange()
+	{
+		// Q050-099 added note.edit's MPE "pitch" field; the no-change check must see it, or a pitch-only
+		// batch is dropped as a no-op (found integrating Q050-099/Q050-100 onto train 16).
+		freshClip();
+		const ControlResult result = run(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip()}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), control::noteIdOf(m_clip->notes()[0])}, {QStringLiteral("pitch"), 25}}}}});
+		QVERIFY(result.ok);
+		QCOMPARE(result.result.value(QStringLiteral("edited")).toInt(), 1);
+		QCOMPARE(m_clip->notes()[0]->mpePitchCents(), 25);
+	}
 };
 
 QTEST_MAIN(NoteEditRangeTest)

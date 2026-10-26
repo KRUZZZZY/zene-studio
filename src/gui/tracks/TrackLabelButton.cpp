@@ -48,9 +48,11 @@ TrackLabelButton::TrackLabelButton( TrackView * _tv, QWidget * _parent ) :
 	m_iconName()
 {
 	setAcceptDrops( true );
-	setFocusPolicy(Qt::NoFocus);
+	setFocusPolicy(Qt::StrongFocus);
 	setCursor(Qt::PointingHandCursor);
 	setToolButtonStyle( Qt::ToolButtonTextBesideIcon );
+	setAccessibleName(tr("Track header: %1").arg(m_trackView->getTrack()->name()));
+	setAccessibleDescription(tr("Press Menu or Shift+F10 for this track's actions"));
 
 	m_renameLineEdit = new TrackRenameLineEdit( this );
 	m_renameLineEdit->hide();
@@ -134,6 +136,7 @@ void TrackLabelButton::renameFinished()
 void TrackLabelButton::nameChanged()
 {
 	setText( elideName( m_trackView->getTrack()->name() ) );
+	setAccessibleName(tr("Track header: %1").arg(m_trackView->getTrack()->name()));
 }
 
 
@@ -157,11 +160,33 @@ void TrackLabelButton::dropEvent( QDropEvent * _de )
 
 
 
+bool TrackLabelButton::isMenuKey(int key, Qt::KeyboardModifiers modifiers)
+{
+	return key == Qt::Key_Menu || (key == Qt::Key_F10 && modifiers.testFlag(Qt::ShiftModifier));
+}
+
+void TrackLabelButton::openActionsMenu()
+{
+	m_trackView->getTrackOperationsWidget()->showActionsMenu(mapToGlobal(QPoint(0, height())));
+}
+
+void TrackLabelButton::keyPressEvent(QKeyEvent* event)
+{
+	if (isMenuKey(event->key(), event->modifiers()))
+	{
+		openActionsMenu();
+		event->accept();
+		return;
+	}
+	QToolButton::keyPressEvent(event);
+}
+
 void TrackLabelButton::mousePressEvent( QMouseEvent * _me )
 {
 	if( _me->button() == Qt::RightButton )
 	{
-		rename();
+		openActionsMenu();
+		_me->accept();
 	}
 	else
 	{

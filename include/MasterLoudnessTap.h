@@ -114,6 +114,11 @@ public:
 		//! programme's level moves.
 		float loudnessRangeLu = LufsMeter::MinusInfinity;
 		float peakToLoudnessRatioDb = LufsMeter::MinusInfinity;
+		//! Q050-100: the sample peak (linear, absolute) of the master mix since the last
+		//! reset() or takeSamplePeak(), measured even while the loudness meter is disarmed.
+		//! This is the value a peak watch compares with its threshold; it is not the
+		//! BS.1770 true peak above.
+		float samplePeak = 0.f;
 	};
 
 	/*! @param sampleRate   The engine's PROCESSING rate, which is the rate of
@@ -164,12 +169,20 @@ public:
 	bool reset() noexcept;
 
 	/*! Feeds one period of the master mix. AUDIO THREAD. Reads \p frames only;
-	 *  allocates nothing, locks nothing. A disabled tap does nothing at all.
+	 *  allocates nothing, locks nothing. A disabled tap still scans the period for the
+	 *  Q050-100 sample peak (the peak watch must work before the loudness tap is armed);
+	 *  the loudness meter itself does nothing while disabled.
 	 */
 	void feed(const SampleFrame* frames, f_cnt_t frameCount) noexcept;
 
 	//! Snapshot of everything the tap knows. Any thread, any time.
 	Snapshot snapshot() const noexcept;
+
+	/*! Q050-100: read and clear the sample peak since the last call. The peak watch uses this,
+	 *  so its latch can re-arm when the master falls below the threshold. `snapshot().samplePeak`
+	 *  keeps the held maximum since reset for a one-off reading. Any thread; audio-safe (one
+	 *  atomic exchange, no lock or allocation). */
+	float takeSamplePeak() noexcept { return m_samplePeak.exchange(0.f, std::memory_order_relaxed); }
 
 	//! The bound on how long reset()/setEnabled() wait for the audio thread to
 	//! leave the tap before touching the meter, in milliseconds. Generous: one
@@ -206,6 +219,9 @@ private:
 	std::atomic<float> m_truePeakDbtp{LufsMeter::MinusInfinity};
 	std::atomic<float> m_loudnessRangeLu{LufsMeter::MinusInfinity};
 	std::atomic<float> m_peakToLoudnessRatioDb{LufsMeter::MinusInfinity};
+	//! Q050-100: independent of m_enabled, because a peak watch has to work before the
+	//! loudness tap is armed. Audio thread writes it; any thread reads it.
+	std::atomic<float> m_samplePeak{0.f};
 
 	//! The loudest short-term window so far. Written by the audio thread only
 	//! (the same rule LoudnessReport::m_shortTermMax follows on the render

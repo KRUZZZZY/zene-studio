@@ -26,10 +26,12 @@
 #include <cmath>
 #include <cstdlib>
 
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QWheelEvent>
 
+#include "AccessibleCanvas.h"
 #include "DesignTokens.h"
 #include "SampleClip.h"
 #include "SampleEditorDialog.h"
@@ -42,10 +44,16 @@ SampleSelectionView::SampleSelectionView(QWidget* parent) :
 {
 	setMinimumHeight(120);
 	setMouseTracking(true);  // the cursor says when it is over an edge's handle
-	setAccessibleName(tr("Waveform - drag to select"));
+	setFocusPolicy(Qt::StrongFocus);
+	setAccessibleName(tr("Waveform"));
 	setToolTip(tr("Drag across the waveform to select a range, or drag an edge's handle to move that edge; Ctrl+wheel "
-		"zooms around the pointer and the wheel scrolls. Each button below edits the clip's audio over the range, one "
-		"undo step per edit."));
+		"zooms around the pointer and the wheel scrolls. From the keyboard: Left/Right move the cursor, Shift+Left/Right "
+		"extend the selection, Home/End go to the ends, Ctrl+Plus/Minus zoom, Ctrl+0 shows all and Ctrl+A selects all. "
+		"Each button below edits the clip's audio over the range, one undo step per edit."));
+	a11y::describeCanvas(this, QAccessible::Canvas, [this] { return readout(); });
+	a11y::CanvasKeyCursor::of(this)->setMark([this] {
+		return QRect(xOf(to()) - 2, 1, 5, height() - 2);
+	});
 }
 
 void SampleSelectionView::setClip(SampleClip* clip)
@@ -171,6 +179,79 @@ void SampleSelectionView::paintHandle(QPainter& p, int frame, Edge edge) const
 		p.fillRect(flag, pal.accent);
 		tokens::strokeCrisp(p, QRectF(flag), pal.text);
 	}
+}
+
+int SampleSelectionView::keyboardStep() const
+{
+	return std::max(1, viewFrames() / 100);
+}
+
+QString SampleSelectionView::readout() const
+{
+	if (m_unsupportedFrameCount) { return tr("This sample is too long to select"); }
+	if (m_frames <= 0) { return tr("No audio"); }
+	return tr("Frames %1 to %2 of %3; showing %4 frames from %5")
+		.arg(from()).arg(to()).arg(m_frames).arg(viewFrames()).arg(m_viewFrom);
+}
+
+namespace
+{
+
+bool zoomKey(SampleSelectionView* view, int key, bool ctrl)
+{
+	if (!ctrl) { return false; }
+	switch (key)
+	{
+		case Qt::Key_Plus:
+		case Qt::Key_Equal: view->zoomBy(2.0, view->width() / 2); return true;
+		case Qt::Key_Minus: view->zoomBy(0.5, view->width() / 2); return true;
+		case Qt::Key_0: view->showAll(); return true;
+		default: return false;
+	}
+}
+
+bool cursorKey(int key, int current, int step, int frames, int* target)
+{
+	switch (key)
+	{
+		case Qt::Key_Left: *target = std::clamp(current - step, 0, frames); return true;
+		case Qt::Key_Right: *target = std::clamp(current + step, 0, frames); return true;
+		case Qt::Key_Home: *target = 0; return true;
+		case Qt::Key_End: *target = frames; return true;
+		default: return false;
+	}
+}
+
+} // namespace
+
+void SampleSelectionView::keyPressEvent(QKeyEvent* event)
+{
+	if (m_frames <= 0 || m_unsupportedFrameCount) { QWidget::keyPressEvent(event); return; }
+	const bool ctrl = event->modifiers().testFlag(Qt::ControlModifier);
+	if (ctrl && event->key() == Qt::Key_A)
+	{
+		m_anchor = 0;
+		m_end = m_frames;
+		update();
+		emit selectionChanged();
+		return;
+	}
+	if (zoomKey(this, event->key(), ctrl))
+	{
+		update();
+		emit selectionChanged();
+		return;
+	}
+	int target = 0;
+	if (cursorKey(event->key(), to(), keyboardStep(), m_frames, &target))
+	{
+		if (event->modifiers().testFlag(Qt::ShiftModifier)) { m_end = target; }
+		else { m_anchor = m_end = target; }
+		update();
+		emit selectionChanged();
+		return;
+	}
+	QWidget::keyPressEvent(event);
 }
 
 void SampleSelectionView::mousePressEvent(QMouseEvent* event)
