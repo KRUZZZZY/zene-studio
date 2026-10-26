@@ -3039,6 +3039,8 @@ tests/src/gui/MicrotunerScaleFileTest.cpp
 # registered by name rather than derived, and `bash tests/fork-sources-gate.sh` accepts either.
 tests/src/gui/TouchWorkspaceTest.cpp
 tests/control-touch-workspace.py
+# Clusters new-p23-4/new-p22-32/new-p23-5 (2026-10): workflow names, saved-step schemas and read-only recording regression.
+tests/src/gui/ControlCommandsMacrosTest.cpp
 # cluster new-p17-202 (2026-10): the real-time-safe Watsyn parameter hand-off regression test (fork-NEW).
 tests/src/plugins/WatsynParamHandoffTest.cpp
 # cluster new-p17-202-port (2026-10): the fix and verification report for the Watsyn parameter hand-off on the newest line.

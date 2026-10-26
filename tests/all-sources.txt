@@ -3031,6 +3031,7 @@ tests/src/gui/ClipWaveformEditTest.cpp
 tests/src/gui/CollabPanelTest.cpp
 tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
+tests/src/gui/ControlCommandsMacrosTest.cpp
 tests/src/gui/ControlCommandsSaveVersionTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
