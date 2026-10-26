@@ -271,6 +271,28 @@ private slots:
 		QCOMPARE(channel(3)->id(), third);
 	}
 
+	//! BUG 14: a track whose channel index names no channel is left out of the order, as a track on
+	//! the master is, instead of reading past the channel list. A headless session keeps the model's
+	//! widened range, so the model can hold an index one past the last channel. Deleting channel 1
+	//! leaves the old last channel's pointer in the slot just past the new end; the unguarded lookup
+	//! then reaches that live channel and would move it, while the bound skips the track.
+	void aTrackOnAMissingChannelIsLeftOutOfTheOrder()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		while (Engine::mixer()->numChannels() <= 5) { Engine::mixer()->createChannel(); }  // five still remain after the delete
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		track->mixerChannelModel()->setRange(0, static_cast<float>(Engine::mixer()->numChannels() + 5));
+		Engine::mixer()->deleteChannel(1);
+		const int missing = Engine::mixer()->numChannels();  // names no channel now
+		track->mixerChannelModel()->setValue(missing);
+		QCOMPARE(track->mixerChannelModel()->value(), missing);
+		const ControlResult result = run(QStringLiteral("mixer.order_by_tracks"));
+		QVERIFY(result.ok);
+		QCOMPARE(result.result.value(QStringLiteral("moved")).toBool(), false);  // nothing to follow
+		QCOMPARE(track->mixerChannelModel()->value(), missing);  // the track is not rewritten
+	}
+
 	//! MX-085 / MX-059 / MX-137: the strip EQ is skipped while flat and changes the signal when not;
 	//! a mono input sums the sides before the inserts; the correlation reads in phase and out of phase.
 	void theStripsEqMonoInputAndCorrelation()
