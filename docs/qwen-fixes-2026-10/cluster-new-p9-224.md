@@ -99,4 +99,16 @@ Registration: the change adds no new file, so `tests/fork-sources.txt`, `tests/a
 
 ## Self-check
 
-(Filled in below after `submit_check.py` ran.)
+`python3 .../submit_check.py <worktree> new-p9-224` (log `submit-check-1.log`, EXIT=1):
+
+- PASS commits on the branch; PASS working tree clean; PASS this report; PASS tests added or changed (`AutomatableModelTest.cpp`).
+- FAIL `gates (feature_check.py)`: the script cannot write its own log directory. It creates `<worktree>-feature-check` beside the worktree and got `PermissionError` (`gate-feature-check-1.log`, EXIT=1). That location is outside the write-jail and the script was not edited. Its commands were run separately above: six simple gates EXIT 0, two ratchets EXIT 1 with no regression item in a changed file. Under the gate's rule both ratchet rows pass. The `feature_check.py` row itself has no clean run, and this is the one open item.
+
+Answers to the four open questions:
+
+1. **RED/GREEN with the product change reverted and restored** - yes. Reverted: `test-4b-unfixed.log`, EXIT=8, three duplicate-name cases fail. Restored: `test-4b-fixed.log`, EXIT=0, 14/14 (the table above has the commands).
+2. **Deterministic** - yes. No clock, sleep, thread or race. The inputs are `FloatModel` objects with fixed values. Destruction is synchronous: `destroyed` is connected `Qt::DirectConnection`, so the `unique_ptr::reset()` call that destroys a model runs the handler before the next line. The only log check is `QTest::ignoreMessage` with an exact regex.
+3. **Fix at the cause, complete** - the cause is that `addModel` accepted a name it could not store and that the erase paths ignored which model owned the name. Callers and siblings checked: `Lv2Proc.cpp:852` is the only `addModel` caller, and `createPorts` runs once per `Lv2Proc` (`Lv2Proc.cpp:213`), so the same name is never added twice on a legitimate path. `removeControl` callers are `LinkedModelGroupViews.cpp:102` (removable controls only). The sibling `LinkedModelGroupView::addControl` (`LinkedModelGroupViews.cpp:115`) keeps the same silent duplicate drop; it is listed as residual above, not fixed.
+4. **No collateral damage** - a model under a unique name follows the same path as before, so project save and load are unchanged (`saveValues` and `loadValues` iterate the same map with the same keys). A refused duplicate was never in the map before the fix, so save output is unchanged for it too. There is no limit or size check, only the name-collision refusal, and its only caller never produces a collision in a legitimate project.
+
+Verdict stays **FIXED**.
