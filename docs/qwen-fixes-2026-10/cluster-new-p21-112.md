@@ -64,7 +64,36 @@ Logged under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-112.r
 - `rg -n "recordCreatedTrack\(|captureCreatedTrack\(" src include tests` (evidence-1.log): the caller list above.
 - `rg -n "stopAllJournalling|deleteHelper\( &s_(patternStore|projectJournal|song)|s_projectJournal = new|s_song = new|s_patternStore = new" src/core/Engine.cpp`
   (evidence-3.log): the ordering at lines 70-74 and 101-123, `EXIT=0`.
-- Gates and submit check: see Self-check.
+## Gates (step 5) and completion check (step 8)
+
+`python3 .../qwen/feature_check.py <worktree>` (logs: `.../logs/gates-1.log`) exits 1 before running any gate:
+it creates its log folder `<worktree>-feature-check` next to the worktree (`qwen/feature_check.py:70-71`,
+`PermissionError` on the parent directory, log `gates-1.log`). The write-jail forbids that location, so the
+script could not run as written. Its gate commands were run from the worktree instead, with the same arguments
+(`qwen/feature_check.py:22-29`), each logged under `logs/gate-<name>.log`:
+
+| gate | command (from the worktree) | EXIT |
+| --- | --- | --- |
+| fork-sources | `bash tests/fork-sources-gate.sh` | 0 |
+| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 |
+| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 |
+| check-namespace | `tests/scripted/check-namespace` | 0 |
+| no-tautology | `bash tests/no-tautology-gate.sh` | 0 |
+| doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
+| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 |
+| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 |
+
+The two ratchet gates are red on the train on purpose. Their `REGRESSION:` lines (7 complexity, 19 file-length,
+`logs/gate-complexity.log`, `logs/gate-file-length.log`) name files such as `src/wasm/WasmSandbox.cpp`,
+`src/core/DawProjectReadTracks.cpp` and `plugins/Vst3Effect/Vst3Host.cpp`. None of them is in this branch's diff
+(`git diff --name-only cf3618e61..HEAD` lists only `docs/qwen-fixes-2026-10/cluster-new-p21-112.md`), so the
+gate's rule (fail only on items in changed files) would pass them. The base listing used for the "new vs base"
+comparison was not computed, because the gate's cache is outside the jail. The result does not depend on it
+for these items.
+
+`python3 .../qwen/submit_check.py <worktree> new-p21-112` (logs: `logs/submit-check-1.log`), `EXIT=1`:
+PASS commits on the branch, PASS working tree clean, PASS report, PASS claim-only closure. FAIL is the
+"gates (feature_check.py)" row only, for the jail reason above. The row does not reflect a gate failure.
 
 ## Self-check
 
