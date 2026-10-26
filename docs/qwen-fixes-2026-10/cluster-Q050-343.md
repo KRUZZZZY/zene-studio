@@ -46,6 +46,41 @@ Signal... -> `sample.generate`) and `:219-222` (Process -> the four bakers) on t
 The ccache config on this box points its temp dir at a path this sandbox cannot write; builds set
 `CCACHE_TEMPDIR=/tmp/q343-ccache-tmp` (nothing else changed; `build-1.log` shows the original failure).
 
+## Self-check
+
+Answers for this integration round (the round-1 answers are kept below under "Round 1 self-check").
+
+- **? Each new test FAILS with the product change reverted, then PASSES restored.** On the integrated
+  tree the four product files and the snapshot were replaced with their `cf3618e61` contents, `zene
+  ControlRegistryTest DevicePanelTest` rebuilt (exit 0, `build-red.log`): `ControlRegistryTest` exit 8
+  (`ControlRegistryTest.cpp:162`), `DevicePanelTest` exit 8 (`DevicePanelTest.cpp:503`, the form's help
+  does not name Insert Test Signal...), `ControlCommandsSnapshot` exit 8 (4 findings). Restored the same
+  files, rebuilt (exit 0, `build-green.log`): all three exit 0. No test file changed between the runs.
+- **? Every acceptance criterion proven by a test I ran.** Help names the track-menu route:
+  `ControlRegistryTest` exit 0. Snapshot documents the route and the id: `ControlCommandsSnapshot` exit 0
+  (reads the regenerated snapshot's `sample.generate` entry). GUI and agent are one command, driven by a
+  click: `DevicePanelTest` exit 0. All in `test-1-green.log` (5/5, exit 0).
+- **? One undo step, honest reversibility.** No command, schema or handler changed; `sample.generate`
+  stays `true_inverse`. `ReversibilityContractTest` exit 0, `ControlSampleOperatorTest` exit 0, and the GUI
+  slot's single `control.undo` removes the menu-made clip.
+- **? Nothing on the audio thread.** The integration diff against the train is string literals,
+  comments, docs, tests and regenerated JSON - no executable product line. TSan is not available here;
+  the argument is that no executable line changed.
+- **? Old projects load and render as before.** No serialisation code touched; generated clips use the
+  existing `SampleClip` save/load path; `ControlSampleOperatorTest` exit 0.
+- **? Portability.** The only C++ is the accepted test slot (`QApplication::topLevelWidgets`,
+  `qobject_cast`, `QObject::connect`, QtTest macros - all Qt 5.15) and the train's own include, kept.
+  No Qt-6-only API, `windows.h` macro name or `std::filesystem`.
+- **Gates FAIL in `submit_check.py` is the sandbox, not a gate.** Unpatched `feature_check.py` exits 1
+  with `PermissionError` creating `<worktree>-feature-check` beside the worktree, outside this session's
+  write jail (`gates-4-unpatched.log`). A copy with only its log dir (and its own `ROOT`, so it still
+  reads `FIX-BASE` and the cached train-16 baselines) pointed elsewhere, run on the committed HEAD:
+  8/8 PASS, `RESULT: PASS`, exit 0 (`gates-3-head.log`).
+- **WARNs.** "no GUI file changed": docs-only unit; the existing route at
+  `src/gui/shell/ShellCommandMenus.cpp:293` is driven by the `DevicePanelTest` slot. "canary - new
+  command ids control.undo, sample.generate": a text heuristic over quoted ids; no id was added (849 /
+  76 before and after, `doc-figures-gate.py` exit 0).
+
 ## Round 1 (the accepted patch) - original report
 
 
@@ -93,7 +128,7 @@ regressions in files this unit does not touch; both were verified to name none o
 - `tools/mcp-zene-control/zene_control/commands_snapshot.json` - regenerated live.
 - `docs/050-features/Q050-343.md` - the feature record.
 
-## Self-check
+### Round 1 self-check
 
 - **? Each new test FAILS with the product change reverted, then PASSES restored.** Save the six product
   files + the snapshot, `git checkout --` them, rebuild `zene ControlRegistryTest DevicePanelTest`
