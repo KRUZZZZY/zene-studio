@@ -26,9 +26,10 @@ and repeated-period path. It makes no product change.
   `tests/src/core/ControllerSurfaceTest.cpp:169-182` (new in this lane:
   `explicitNullPeakEffectStaysSilentAcrossPeriods`, explicit `nullptr`, four periods,
   first and last frame).
-- **Registration.** `tests/CMakeLists.txt:274` registers `ControllerSurfaceTest.cpp`.
-  No new file was added, so no `fork-sources.txt` or `upstream-modifications.txt` entry
-  is needed.
+- **Registration.** `tests/CMakeLists.txt:274` registers `ControllerSurfaceTest.cpp`,
+  and `tests/all-sources.txt:2710` lists it. The file is fork-authored, so it has no
+  row in the inherited-file ledger `tests/upstream-modifications.txt` (see Round 2).
+  No new file was added.
 
 ## Reversal proof
 
@@ -114,3 +115,31 @@ Not verified here:
 - **Attached-effect path.** Not re-tested in this lane. The product code on that path
   is unchanged. The family run passes, but it does not exercise attack/decay model
   updates.
+
+## Round 2 (review rework)
+
+Luna's review (`qa/reviews/new-p9-340.r1.md`, verdict REWORK) had one blocking item:
+`tests/upstream-modifications.txt` carried a row for the fork-authored
+`tests/src/core/ControllerSurfaceTest.cpp`. The row came from workflow commit
+`db8c2c047` ("derive source registries from tracked files"), which ran after this
+lane's commit `d92cf3c7b`. The review cites QA commit `07c6281bc`, which removes the
+row, but that commit is not on this branch. The same one-line removal was made
+directly in this worktree.
+
+- **Change:** `tests/upstream-modifications.txt` loses the
+  `tests/src/core/ControllerSurfaceTest.cpp` row (old line 5284). Nothing else
+  changed. `git diff` shows one deletion, and the file still ends with a newline.
+- **Ledger check:** `rg -n "^tests/src/core/ControllerSurfaceTest.cpp"
+  tests/upstream-modifications.txt` has no match. Line 1046 still mentions the name
+  inside another row's prose; that is not a row for this file.
+- **Log folder:** `runs/new-p9-340.r2/logs`. The round-1 logs stay where they were.
+
+| Step | Command (abbrev.) | Log | EXIT |
+|---|---|---|---|
+| Build targets | `cmake --build build --target ControllerSurfaceTest LfoControllerUserWaveTest MidiClipControllersLoadTest MidiControllerMenuTest ControllerTemplateMenuTest EqPeakHandoffTest -j4` (with `CCACHE_TEMPDIR` as in round 1) | r2-build-1.log | 0 |
+| Family, GREEN | `ctest -R 'Controller\|Peak' --output-on-failure` from `build/tests`, with the scratch `HOME` from round 1 | r2-test-1-family.log | 0 (6/6 passed) |
+| Gate | unchanged `feature_check.py` logic, log folder redirected to `gate-logs/` as in round 1 | r2-gate-1.log | 0 (all 8 rows PASS) |
+
+The product code, the test binary's source, and the null regression are unchanged
+since round 1. The RED/GREEN reversal from round 1 (`test-4`, `test-5`, `test-6`)
+still holds for the same committed guard; it was not rerun in round 2.
