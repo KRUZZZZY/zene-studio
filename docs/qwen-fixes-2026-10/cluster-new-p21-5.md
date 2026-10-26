@@ -73,8 +73,9 @@ finding, not this one.
 
 Answers to the `submit_check.py` items (`LOG FOLDER/submit-check-1.log`, EXIT=1):
 
-- **Regression test fails with the change reverted / passes with it:** not applicable. There is no product change and
-  no test (`git show --stat b9637db8c` lists only this report). The finding is FALSE-POSITIVE; the reachable behaviour
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes):** not applicable, no
+  exit codes exist for it. There is no product change and no regression test to run RED or GREEN (`git show --stat
+  b9637db8c` lists only this report, and `git show --stat 90e9c8b6a` lists only this report too). The finding is FALSE-POSITIVE; the reachable behaviour
   is already the one a test would assert (typed error on allocation failure, no null dereference).
 - **Deterministic test:** not applicable (no test added).
 - **Fix at the cause, siblings consistent:** no fix made. Siblings checked: `ControlCommandsClip.cpp:463` and
