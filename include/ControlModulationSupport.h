@@ -67,6 +67,19 @@ LMMS_EXPORT ModulatorSource modulationSourceFromArgs(const QJsonObject& args,
 //! The route a target_set call describes.
 LMMS_EXPORT ModulationRoute modulationRouteFromArgs(const QJsonObject& args);
 
+inline int insertModulationRouteAtIndex(ModulationLayer& layer, int modulator, int index,
+	const ModulationRoute& route)
+{
+	return layer.insertRoute(modulator, index, route) ? index : -1;
+}
+
+inline ControlResult modulationRouteInsertFailure(const QJsonObject& args, const QString& indexKey)
+{
+	return args.contains(indexKey)
+		? ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("invalid route insertion index"))
+		: ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("modulator is full"));
+}
+
 /*! Every edit to the layer goes through here, and every edit restores the targets first - what
  *  makes re-capturing a base idempotent (docs/MODULATION.md section 3): @a change edits the
  *  authored layer, then the runtime is rebuilt from the values the models had before they were

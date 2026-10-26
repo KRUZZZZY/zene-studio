@@ -5266,3 +5266,4 @@ include/PerformView.h	cluster new-p17-121: keeps the failed-read message separat
 src/gui/PerformView.cpp	cluster new-p23-208/new-p17-121/new-p16-163: checks state read results before replacing visible state and computes the bar number in int64_t.
 tests/src/gui/PerformViewTest.cpp	cluster new-p23-208/new-p17-121/new-p16-163: adds deterministic failures for each state read and a max-tick/one-tick-bar regression for the display overflow.
 tests/all-sources.txt	cluster new-p23-208 gate prerequisite: re-derived the source list from the manifest's published recipe after the inherited train snapshot re-added 1,148 excluded vendored sfizz files; no first-party path was removed and no gate or ratchet changed.
+tests/src/core/ControlModulatorCommandsTest.cpp	# Idempotent modulation writes create undo steps; target_remove transaction inverse must restore the captured route index

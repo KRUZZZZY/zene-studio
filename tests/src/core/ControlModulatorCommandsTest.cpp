@@ -46,6 +46,7 @@
 #include <QString>
 
 #include <cstdio>
+#include <limits>
 
 #include "AllocationProbe.h"
 #include "ControlModulationSupport.h"
@@ -283,6 +284,132 @@ private slots:
 				{QStringLiteral("shape"), QStringLiteral("square")}}).ok);
 		QCOMPARE(layer().modulator(0)->source.rateHz, 4.0f);
 		QCOMPARE(layer().modulator(0)->source.shape, ModulationShape::Square);
+	}
+
+	//! Cluster new-p18-1: a repeated depth is a successful no-op, so Ctrl+Z
+	//! still undoes the real depth edit underneath it.
+	void identicalDepthSetDoesNotShadowUndo()
+	{
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Depth")}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Gain", 0.1)).ok);
+		QVERIFY(run(QStringLiteral("modulator.depth_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), 0}, {QStringLiteral("depth"), 0.4}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.depth_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), 0}, {QStringLiteral("depth"), 0.4}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layer().modulator(0)->routes[0].depth, 0.1f);
+	}
+
+	//! The rate_set sibling follows the same no-op rule as depth_set.
+	void identicalRateSetDoesNotShadowUndo()
+	{
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Rate")}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.rate_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("rate"), 2.0}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.rate_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("rate"), 2.0}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layer().modulator(0)->source.rateHz, 1.0f);
+	}
+
+	//! The voice_set sibling must leave the preceding trigger change as one undo.
+	void identicalVoiceSetDoesNotShadowUndo()
+	{
+		const ControlResult track = run(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(track.ok, qPrintable(track.errorMessage));
+		const QString trackId = track.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!trackId.isEmpty());
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Voice")}}).ok);
+		const QJsonObject args{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+			{QStringLiteral("per_voice"), false}, {QStringLiteral("trigger"), trackId}};
+		QVERIFY(run(QStringLiteral("modulator.voice_set"), args).ok);
+		QVERIFY(run(QStringLiteral("modulator.voice_set"), args).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layer().modulator(0)->source.triggerTrack, -1);
+	}
+
+	//! Cluster 201: the route creation contract rejects invalid depth values but
+	//! keeps both inclusive endpoints usable.
+	void targetSetEnforcesDocumentedDepthRange()
+	{
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Depth bounds")}}).ok);
+		const ControlResult track = run(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY2(track.ok, qPrintable(track.errorMessage));
+		const ControlResult invalidInstrumentDepth = run(QStringLiteral("modulator.instrument_target_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), track.result.value(QStringLiteral("track")).toString()},
+				{QStringLiteral("parameter"), QStringLiteral("Unavailable")},
+				{QStringLiteral("depth"), 5.0}});
+		QCOMPARE(invalidInstrumentDepth.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(invalidInstrumentDepth.errorMessage.contains(QStringLiteral("'depth'")));
+		QCOMPARE(layer().modulator(0)->routeCount(), 0);
+
+		ControlResult result = run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Gain", 5.0));
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(layer().modulator(0)->routeCount(), 0);
+		QCOMPARE(runtime().entryCount, 0);
+		result = run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Panning", -5.0));
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(layer().modulator(0)->routeCount(), 0);
+		result = run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Gain",
+				std::numeric_limits<double>::infinity()));
+		QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(layer().modulator(0)->routeCount(), 0);
+
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Gain", 1.0)).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Panning", -1.0)).ok);
+		QCOMPARE(layer().modulator(0)->routes[0].depth, 1.0f);
+		QCOMPARE(layer().modulator(0)->routes[1].depth, -1.0f);
+	}
+
+	//! Cluster 4802: replay the reported target_remove inverse against the same
+	//! route, including its depth and per-sample setting.
+	void targetRemoveInverseRecreatesCapturedRoute()
+	{
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Inverse")}}).ok);
+		QJsonObject bind = targetArgs(QStringLiteral("modulator-0"), "Gain", 0.35);
+		bind.insert(QStringLiteral("per_sample"), true);
+		QVERIFY(run(QStringLiteral("modulator.target_set"), bind).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Panning", -0.2)).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_remove"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), 0}}).ok);
+		const ControlRegistry::Transaction* transaction = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(transaction != nullptr);
+		QCOMPARE(transaction->command, QStringLiteral("modulator.target_remove"));
+		const QString inverseOp = transaction->inverse.value(QStringLiteral("op")).toString();
+		const QJsonObject inverseArgs = transaction->inverse.value(QStringLiteral("args")).toObject();
+		QCOMPARE(inverseOp, QStringLiteral("modulator.target_set"));
+		const ControlResult replayed = run(inverseOp, inverseArgs);
+		QVERIFY2(replayed.ok, qPrintable(replayed.errorMessage));
+		const ModulationRoute& restored = layer().modulator(0)->routes[0];
+		const ModulationRoute& following = layer().modulator(0)->routes[1];
+		QCOMPARE(restored.channel, underTestChannelId());
+		QCOMPARE(restored.chain, kDrivenChain);
+		QCOMPARE(restored.effect, 0);
+		QCOMPARE(restored.parameter, QStringLiteral("Gain"));
+		QCOMPARE(restored.depth, 0.35f);
+		QCOMPARE(restored.perSample, true);
+		QCOMPARE(following.parameter, QStringLiteral("Panning"));
+		QCOMPARE(following.depth, -0.2f);
 	}
 
 	//! Every refusal is typed, changes nothing, and records no transaction -
