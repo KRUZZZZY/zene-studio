@@ -5282,3 +5282,4 @@ src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies 
 include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
 tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.
 tests/src/core/ConfigMigrationTest.cpp	# A malformed config can be overwritten with defaults
+tests/src/gui/MidiReconnectActionTest.cpp	# A malformed config can be overwritten with defaults
