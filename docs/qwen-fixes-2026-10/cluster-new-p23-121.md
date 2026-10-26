@@ -60,3 +60,13 @@ Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p23-121.m
 - **No collateral damage.** Not applicable: no change.
 - **Verdict evidence (file:line).** Given in items 1-6 above.
 - **Gates.** Relocated copy of `feature_check.py`: RESULT PASS, EXIT 0 (log `002`). Canonical run: EXIT 1 from a sandbox permission error on its log directory (log `004`), not from a gate failure.
+
+### Answers to the completion check's judgement items
+
+Completion check output (`logs/005-submit-check.log`, EXIT 1): commits, clean tree, report and claim-only closure PASS; **gates (feature_check.py) FAIL** because the canonical script cannot create its log directory outside the write area (same `PermissionError` as log `004`). The relocated copy passes all gates (log `002`). This FAIL is an environment blocker, not a gate result, and I have not worked around it in the canonical location.
+
+- **The regression test FAILS with the product change reverted and PASSES with it.** No regression test exists because the finding is not real; no product change exists to revert. Exit codes: none recorded for this verdict.
+- **The test is deterministic.** No test was added (see above). Nothing time-dependent is involved in the verdict; the cited code reads no clock, sleeps or races.
+- **The fix is at the cause and complete.** No fix. The only caller of `ArticulationMap::at` is `InstrumentTrackNotes.cpp:278` (`rg` for `\.at\(` on the map finds no other); the editor and the note menus read `entries()` (`src/gui/noteeditor/NoteEditorMenus.cpp:143-144`), and `ArticulationRemap.cpp:110` writes indices that `at()` would also guard.
+- **No collateral damage.** No product change, so no behaviour changes for old projects, save/load or other callers. The clamp at `NoteConditions.cpp:76` is unchanged.
+- **FALSE-POSITIVE evidence (file:line).** Items 1-6 of "Evidence" above: `InstrumentTrackNotes.cpp:278-279`, `include/InstrumentTrack.h:467`, `include/ArticulationMap.h:64`, `src/core/ArticulationMap.cpp:36-38`, `src/core/NoteConditions.cpp:60-76`, `include/NoteConditions.h:50`, and the history check at `c414ab31d`.
