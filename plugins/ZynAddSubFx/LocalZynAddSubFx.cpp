@@ -122,6 +122,12 @@ void LocalZynAddSubFx::setSampleRate( int sampleRate )
 
 void LocalZynAddSubFx::setBufferSize( int bufferSize )
 {
+	// A period has at least one frame. A non-positive size is refused and the last valid
+	// one stays in force: the synth divides by its buffer size when it starts a note, so
+	// a zero there would put infinities into the voices, and a negative transport size
+	// would silence every period.
+	if (bufferSize < 1) { return; }
+
 	m_transportSize = bufferSize;
 	// Zyn renders in blocks of its own. A block that is smaller than the period is
 	// what lets a scheduled MIDI event take effect inside the period it was scheduled

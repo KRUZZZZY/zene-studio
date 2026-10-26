@@ -1,5 +1,6 @@
 /*
- * ZynNoteOffTest.cpp - unmatched note-offs leave Zyn's running-note count alone.
+ * ZynNoteOffTest.cpp - unmatched note-offs leave Zyn's running-note count alone, and a
+ * non-positive buffer size is refused.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -23,6 +24,7 @@ class ObservableLocalZynAddSubFx final : public lmms::LocalZynAddSubFx
 {
 public:
 	int runningNotesFor(int key) const { return m_runningNotes[static_cast<std::size_t>(key)]; }
+	int transportSize() const { return m_transportSize; }
 };
 
 } // namespace
@@ -46,6 +48,22 @@ private slots:
 		QCOMPARE(synth.runningNotesFor(60), 1);
 		synth.processMidiEvent(lmms::MidiEvent(lmms::MidiNoteOff, 0, 60, 0));
 		QCOMPARE(synth.runningNotesFor(60), 0);
+	}
+
+	//! A period has at least one frame. A non-positive size must not replace the last
+	//! valid one: it would make the transport size non-positive and the synth's buffer
+	//! size invalid, so the refused call leaves the valid size in force.
+	void nonPositiveBufferSizeIsRefusedAndTheLastValidSizeStays()
+	{
+		ObservableLocalZynAddSubFx synth;
+		synth.setBufferSize(128);
+		QCOMPARE(synth.transportSize(), 128);
+
+		synth.setBufferSize(0);
+		QCOMPARE(synth.transportSize(), 128);
+
+		synth.setBufferSize(-4);
+		QCOMPARE(synth.transportSize(), 128);
 	}
 };
 
