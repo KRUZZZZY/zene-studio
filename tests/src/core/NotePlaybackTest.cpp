@@ -536,6 +536,46 @@ private slots:
 		QVERIFY(std::all_of(keys.cbegin(), keys.cend(), [](int key) { return key == 60; }));
 	}
 
+	//! Cluster new-p14-121: with range 3 and repeats 2 the up/down and down/up arpeggios reach every step of the range.
+	void upDownArpeggioWithRepeatsReachesEveryStep()
+	{
+		oneNote();
+		for (const auto direction : {InstrumentFunctionArpeggio::ArpDirection::UpAndDown, InstrumentFunctionArpeggio::ArpDirection::DownAndUp})
+		{
+			QDomDocument doc;
+			QDomElement trackSettings = doc.createElement(QStringLiteral("instrumenttrack"));
+			QDomElement arpeggio = doc.createElement(QStringLiteral("arpeggiator"));
+			arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+			arpeggio.setAttribute(QStringLiteral("arp"), 0); // The "octave" chord: each step is one octave of the note.
+			arpeggio.setAttribute(QStringLiteral("arprange"), 3);
+			arpeggio.setAttribute(QStringLiteral("arprepeats"), 2);
+			arpeggio.setAttribute(QStringLiteral("arpdir"), static_cast<int>(direction));
+			arpeggio.setAttribute(QStringLiteral("arptime"), 25);
+			trackSettings.appendChild(arpeggio);
+			m_track->loadTrackSpecificSettings(trackSettings);
+			QVERIFY(m_track->isArpeggioEnabled());
+
+			// Render whole periods offline and record every key that sounds, so a step that never plays is seen.
+			Song* song = Engine::getSong();
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			QList<int> sounded;
+			for (int period = 0; period < 256; ++period)
+			{
+				Engine::audioEngine()->renderNextPeriod();
+				for (int key : handleKeys(m_track)) { if (!sounded.contains(key)) { sounded << key; } }
+			}
+			song->stop();
+			for (int period = 0; period < 64 && !handleKeys(m_track).isEmpty(); ++period) { Engine::audioEngine()->renderNextPeriod(); }
+
+			std::sort(sounded.begin(), sounded.end());
+			QStringList soundedText;
+			for (int key : sounded) { soundedText << QString::number(key); }
+			QVERIFY2(sounded.contains(60) && sounded.contains(72) && sounded.contains(84),
+				qPrintable(QStringLiteral("direction %1 sounded keys: %2").arg(static_cast<int>(direction)).arg(soundedText.join(QLatin1Char(' ')))));
+		}
+	}
+
 	void aRecurrenceSkipsThePassesItIsNotOn()
 	{
 		Note* note = oneNote();
