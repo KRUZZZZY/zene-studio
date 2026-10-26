@@ -324,11 +324,25 @@ float AutomationClip::preFirstValueLocked( const AutomatableModel * target ) con
 
 const AutomationClip::objectVector& AutomationClip::objects() const
 {
-	QMutexLocker m(&m_clipMutex);
+	{
+		QMutexLocker m(&m_clipMutex);
+	}
+#ifdef LMMS_TESTING
+	// Probe the exact unlocked interval before the legacy reference is consumed.
+	if (s_objectsReadProbe != nullptr) { s_objectsReadProbe(this); }
+#endif
 
 	return m_objects;
 }
 
+
+
+
+AutomationClip::objectVector AutomationClip::objectsSnapshot() const
+{
+	QMutexLocker m(&m_clipMutex);
+	return m_objects;
+}
 
 
 

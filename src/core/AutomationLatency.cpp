@@ -130,6 +130,23 @@ void forEachAutomationClip(Visit visit)
 	}
 }
 
+//! A mixed-target clip is rejected while compensation is enabled because it has no valid shared read time.
+constexpr int IncompatibleTargetLatencies = -1;
+
+int sharedTargetLatency(const AutomationClip::objectVector& targets, bool on)
+{
+	if (!on || targets.empty()) { return 0; }
+	int frames = IncompatibleTargetLatencies;
+	for (const auto& target : targets)
+	{
+		if (target == nullptr) { continue; }
+		const int targetFrames = AutomationLatency::upstreamFrames(target.data());
+		if (frames >= 0 && targetFrames != frames) { return IncompatibleTargetLatencies; }
+		frames = targetFrames;
+	}
+	return frames < 0 ? 0 : frames;
+}
+
 } // namespace
 
 AutomationLatency& AutomationLatency::instance()
@@ -239,6 +256,12 @@ void AutomationLatency::poll(bool on)
 
 void AutomationLatency::refresh() { refreshAs(enabled(), false); }
 
+void AutomationLatency::refreshAfterProjectLoad()
+{
+	if (Engine::mixer() == nullptr || Engine::patternStore() == nullptr) { return; }
+	refreshClips(enabled(), true);
+}
+
 void AutomationLatency::refreshAs(bool on, bool waitForFreeBank)
 {
 	Song* song = Engine::getSong();
@@ -259,7 +282,8 @@ bool AutomationLatency::refreshClips(bool on, bool waitForFreeBank)
 		slot = (state & SlotBit) ^ 1u;
 	}
 	forEachAutomationClip([on, slot](AutomationClip* clip) {
-		clip->setLatencyFramesForSnapshot(slot, on && !clip->objects().empty() ? upstreamFrames(clip->firstObject()) : 0);
+		const auto targets = clip->objectsSnapshot();
+		clip->setLatencyFramesForSnapshot(slot, sharedTargetLatency(targets, on));
 	});
 	state = m_state.load(std::memory_order_seq_cst);
 	const std::uint32_t generation = (state + GenerationStep) & ~(SlotBit | EnabledBit);

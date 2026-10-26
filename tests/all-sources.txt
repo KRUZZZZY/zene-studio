@@ -147,6 +147,8 @@
 # this list is re-derived from the recipe again and now matches it byte-for-byte.
 # 2026-10-25 (cluster new-p18-73): the worktree again had those 1148 vendored sfizz paths in
 # the entry list despite the recipe's exclusion; the list below is re-derived from the recipe.
+# 2026-10-25 (cluster new-p16-299): re-derived after the train-12 snapshot restored the 1148
+# vendored sfizz entries again; the recipe excludes them and the list below is its exact output.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h

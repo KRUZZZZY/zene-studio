@@ -615,6 +615,13 @@ public:
 	//! PDC (#605): the alignment point of a channel's input, or 0 when the
 	//! index is out of range.
 	int channelInputLatency(mix_ch_t channel) const;
+	//! Recompute PDC while project loading still holds the engine's change guard.
+	void publishLatencyCompensationForProjectLoad() { updateLatencyCompensation(); }
+#ifdef LMMS_TESTING
+	using LatencyUpdateProbe = void (*)(Mixer*);
+	static void setLatencyUpdateProbeForTest(LatencyUpdateProbe probe) { s_latencyUpdateProbe = probe; }
+	inline static LatencyUpdateProbe s_latencyUpdateProbe = nullptr;
+#endif
 
 	void saveSettings( QDomDocument & _doc, QDomElement & _parent ) override;
 	void loadSettings( const QDomElement & _this ) override;

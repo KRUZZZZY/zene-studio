@@ -2274,6 +2274,9 @@ int Mixer::sidechainTapLatency(const MixerSidechainRoute& route) const
 
 void Mixer::updateLatencyCompensation()
 {
+#ifdef LMMS_TESTING
+	if (s_latencyUpdateProbe != nullptr) { s_latencyUpdateProbe(this); }
+#endif
 	const std::size_t count = m_mixerChannels.size();
 	if (count == 0 || m_latencyInputScratch.size() < count)
 	{

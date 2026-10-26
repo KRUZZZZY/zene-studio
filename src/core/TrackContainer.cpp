@@ -466,9 +466,11 @@ void applyRelativeClips(const std::vector<Clip*>& clips, TimePos time, Automatio
 	for (Clip* clip : clips)
 	{
 		auto* p = dynamic_cast<AutomationClip*>(clip);
+		// One relative curve has one read time; reject it if its targets disagree.
+		if (p == nullptr || snapshot.latencyFrames(p) < 0) { continue; }
 		// Read where the absolute clips are read: the latent audio's time when compensation is on (review L19 #3).
 		const TimePos readTime = AutomationLatency::instance().readTime(clip, time, snapshot);
-		if (p == nullptr || !p->isRelative() || clip->isMuted() || clip->startPosition() > readTime || !p->hasAutomation()) { continue; }
+		if (!p->isRelative() || clip->isMuted() || clip->startPosition() > readTime || !p->hasAutomation()) { continue; }
 		TimePos relTime = readTime - p->startPosition() - p->startTimeOffset();
 		relTime = std::min(static_cast<int>(relTime), p->length() - p->startTimeOffset());
 		const float offset = p->valueAt(relTime) - (p->getMin() + p->getMax()) / 2.f;
@@ -553,6 +555,9 @@ void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, Auto
 
 	for(Clip* clip : clips)
 	{
+		auto* automation = dynamic_cast<AutomationClip*>(clip);
+		// One curve read cannot serve mixed target latencies, so reject the whole clip.
+		if( automation != nullptr && snapshot.latencyFrames(automation) < 0 ) { continue; }
 		// 0.5.0 MX-160: an automation clip is read where the latent audio is - `time` itself unless
 		// the project turned latency-compensated automation on.
 		const TimePos readTime = AutomationLatency::instance().readTime(clip, time, snapshot);
@@ -560,8 +565,9 @@ void TrackContainer::collectAutomatedValues(AutomationRenderScratch& level, Auto
 			continue;
 		}
 
-		if (auto* p = dynamic_cast<AutomationClip *>(clip))
+		if (automation != nullptr)
 		{
+			auto* p = automation;
 			// A relative (trim) clip offsets rather than sets: applied after every absolute one.
 			if (! p->hasAutomation() || p->isRelative()) {
 				continue;

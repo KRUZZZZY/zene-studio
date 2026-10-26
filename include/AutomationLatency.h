@@ -44,7 +44,9 @@ class Clip;
 /*! 0.5.0 W3 (MX-160): latency-compensated automation. The audio that reaches a device inside a latent
  *  chain is late by the latency upstream of it - the devices before it, plus the PDC alignment point of
  *  its mixer channel - so a curve read at the timeline position moves the parameter early. With this on,
- *  every automation clip is read at curve(t - upstream latency of the parameter it drives).
+ *  a clip with one shared target latency is read at curve(t - upstream latency). A clip with live targets
+ *  at different upstream latencies has no valid shared read time and is rejected from every automation
+ *  application path until its targets become compatible or compensation is turned off.
  *
  *  Opt-in per project: saved as <automation-latency enabled="1"/> only while on, so every older project
  *  loads off and renders bit for bit (with it off every clip's lag is 0 and both read paths do the
@@ -56,7 +58,8 @@ public:
 	//! Pins one complete latency publication while an audio block reads its clips. A snapshot whose
 	//! acquisition raced its final validation pins no bank at all: enabled() is false and every
 	//! latencyFrames() is 0, so the whole block is read uncompensated - coherently - and safe bank
-	//! reuse is kept (the writer only rewrites banks whose reader count it observed as 0).
+	//! reuse is kept (the writer only rewrites banks whose reader count it observed as 0). In a pinned bank,
+	//! a negative clip latency marks incompatible target timing; consumers must skip that whole clip.
 	class ReadSnapshot
 	{
 	public:
@@ -86,6 +89,8 @@ public:
 	void setEnabled(bool on);
 	//! Control thread: recompute every automation clip's upstream latency (0 for every clip while off).
 	void refresh();
+	//! Project load: refresh clips after PDC has been published, while the engine model-change guard is held.
+	void refreshAfterProjectLoad();
 	//! Control thread: frames of latency the audio has been through when it reaches @a model's place - the
 	//! running devices before its device in the chain, plus where that chain starts after PDC (a mixer
 	//! channel's alignment point; 0 for a track's own chain, which PDC delays after it). 0 for a parameter

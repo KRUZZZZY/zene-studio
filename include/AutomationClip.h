@@ -111,7 +111,13 @@ public:
 
 	const AutomatableModel * firstObject() const;
 	const objectVector& objects() const;
+	objectVector objectsSnapshot() const;
 	bool hasObjects() const;
+#ifdef LMMS_TESTING
+	using ObjectsReadProbe = void (*)(const AutomationClip*);
+	static void setObjectsReadProbeForTest(ObjectsReadProbe probe) { s_objectsReadProbe = probe; }
+	inline static ObjectsReadProbe s_objectsReadProbe = nullptr;
+#endif
 
 	// progression-type stuff
 	inline ProgressionType progressionType() const
@@ -329,11 +335,11 @@ public:
 		double framesPerTick, int frameOffsetInTick,
 		const AutomatableModel * target = nullptr, f_cnt_t * firstNodeFrame = nullptr ) const;
 
-	//! 0.5.0 MX-160: the latency (frames) upstream of the parameter this clip drives, which the
-	//! clip's reading lags by while latency-compensated automation is on (AutomationLatency).
-	//! Derived control-thread data, read through a pinned AutomationLatency snapshot; never saved.
+	//! 0.5.0 MX-160: the latency (frames) upstream of this clip's target, which its reading lags by
+	//! while latency-compensated automation is on. Returns -1 when live targets have incompatible
+	//! upstream latencies and the clip is rejected for automation; derived data, never saved.
 	int latencyFrames() const;
-	//! Read only while holding the matching AutomationLatency::ReadSnapshot.
+	//! Read only while holding the matching AutomationLatency::ReadSnapshot; may be -1 for incompatible targets.
 	int latencyFramesForSnapshot(unsigned bank) const { return m_latencyFrames[bank]; }
 
 	QString name() const;
