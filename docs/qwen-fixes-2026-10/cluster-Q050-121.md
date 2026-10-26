@@ -95,6 +95,26 @@ failed on `usageCountsRepeatedReferencesAndSeparatesStates` and
 
 ## Self-check
 
+**Round 6 (integration on train 16), answering `submit_check.py` (`submit-1.log`):**
+
+- **Revert proof** - `ControlProjectMedia.cpp:89` reverted to one count per file, rebuilt (`build-rev.log`, exit 0):
+  `ControlProjectMediaTest`, `BrowserProjectMediaTest`, `ControlMediaAgentTranscript` all fail (`test-rev.log`, exit 8);
+  restored, rebuilt (`build-6.log`, exit 0): the 14-test focused suite passes (`test-6.log`, exit 0).
+- **Acceptance criteria** - all three are proven by `ControlProjectMediaTest`, `BrowserProjectMediaTest` and
+  `ControlMediaAgentTranscript` (see the acceptance table below), each exit 0 in `test-6.log` on the integrated tree.
+- **Undo / reversibility** - unchanged from the accepted patch: `project.media_usage` `not_mutating`,
+  `project.media_cleanup` `irreversible`; `ReversibilityContractTest` passes with the re-taken 860-row block (`test-2.log`, `test-6.log`).
+- **Audio thread** - integration added no product code beyond moving the train's category entries into the
+  GUI-thread `showRowMenu`; nothing new reaches the audio thread.
+- **Old projects** - no project-format change; the train's `sfzplayer` reference element only adds protection.
+- **Portability** - the integration adds no API; the HelpAccessTest edit uses `QTreeWidget::isColumnHidden` (Qt 5 and 6).
+- **Gates** - `submit_check.py` reports `FAIL gates` only because the stock `feature_check.py` cannot create its
+  sibling log directory `<worktree>-feature-check` in this write jail (`fc-1.log`: `PermissionError`). The same
+  script with only `ROOT` and the log path changed (`/tmp/q121fc/feature_check.py`) on the committed tree: all eight
+  rows PASS, `RESULT: PASS`, exit 0 (`fc-2.log`). Every other `submit_check` row is PASS.
+
+**Round 5 self-check (kept):**
+
 - **Each new test fails with the product change reverted, then passes restored** — see the
   revert-proof paragraph above (exit 8, then exit 0). `ControlMediaAgentTranscript` drives the
   same behaviour over the real socket.
