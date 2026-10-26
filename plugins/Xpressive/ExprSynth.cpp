@@ -129,7 +129,11 @@ struct IntegrateFunction : public exprtk::ifunction<T>
 			res = m_counters[m_cc];
 			m_counters[m_cc] += x;
 		}
-		m_cc = (m_cc + 1) % m_nCountersCalls;
+		// Without a frame counter no call is ever counted, so there is no cycle to advance.
+		if (m_nCountersCalls > 0)
+		{
+			m_cc = (m_cc + 1) % m_nCountersCalls;
+		}
 		return res / m_sampleRate;
 	}
 	f_cnt_t m_firstValue;
