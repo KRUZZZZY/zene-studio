@@ -68,3 +68,13 @@ No build and no ctest were run: nothing in the product tree changed, so there is
 - **Gates (DoD 6):** rows 3-10 above, all pass under the wrapper's rule; the wrapper itself could not run (row 2, permission denied on the parent directory).
 - **Anything the gates cannot see:** the audio-thread rule and the write-jail. `createClip` runs on the UI thread (the handler is run through `runOnUiThread`, `src/core/ControlRegistry.cpp:296`), so no realtime path is involved.
 - **Open:** the completion check (`submit_check.py`) result is recorded in the next commit message and summary, not here, because it runs after this commit.
+
+### Answers to the completion-check ASK items (verdict is a not-real claim, so no product change)
+
+1. *Regression test fails with the change reverted and passes with it:* no product change exists, so there is no test to run RED/GREEN. Not applicable to this verdict; the claim rests on the code citations above.
+2. *Deterministic test:* no test was added. Not applicable.
+3. *Fix at cause and complete:* no fix. Siblings checked: `src/core/ControlCommandsClip.cpp:131-134` and `src/core/ControlCommandsMidi.cpp:453-454` also dereference a `createClip` result without a null check. The Midi sibling calls `InstrumentTrack::createClip`, which is the same plain `new` (`src/tracks/InstrumentTrack.cpp:1086-1090`, `new MidiClip(this)`). I did not trace the track type of the `ControlCommandsClip.cpp` sibling, so it is unverified beyond the missing guard. None was changed.
+4. *No collateral damage:* no product code changed, so no saved data, project load or limit path is affected.
+5. *Verdict evidence (file:line / contract):* `src/tracks/SampleTrack.cpp:318-323` (plain `new`, never null), `include/SampleTrack.h:66` (only override), `include/Track.h:135` (pure virtual base), `src/core/ControlCommandsSample.cpp:229-232` (`dynamic_cast` plus null guard before the call), `src/core/ControlRegistry.cpp:444-456` and `:514` (exception boundary). The contract is the one in `ControlRegistry.cpp:297-306`: a handler that throws is a typed failure, never a crash.
+
+**Unresolved - gates row (`feature_check.py`):** the wrapper exits 1 with `PermissionError` before running any gate, because it creates `<worktree>/../zene-qwen-new-p21-58-feature-check` in `projects/zene-studio-program/`, which is outside this session's write-jail. The gates were run individually in row 3-10 above and all pass under the wrapper's rule. This is an environment blocker, not a gate failure in the code, and it needs the owner to run `feature_check.py` from an unjailed shell or relocate its log directory. I did not edit the shared gate script.
