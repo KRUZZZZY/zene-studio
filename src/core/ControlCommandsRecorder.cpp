@@ -81,8 +81,9 @@ ControlResult record(const QJsonObject& args)
 		recorder->stop();
 		return ControlResult::success(takeState(args, *recorder));
 	}
-	const QString file = args.contains(QStringLiteral("file"))
-		? QFileInfo(args.value(QStringLiteral("file")).toString()).absoluteFilePath() : TakeRecorder::defaultTakePath();
+	const QString requestedFile = args.value(QStringLiteral("file")).toString();
+	const QString file = requestedFile.isEmpty()
+		? TakeRecorder::defaultTakePath() : QFileInfo(requestedFile).absoluteFilePath();
 	QString why;
 	if (!recorder->start(file, static_cast<int>(Engine::audioEngine()->outputSampleRate()), &why))
 	{

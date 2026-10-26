@@ -36,6 +36,7 @@
 #undef private
 
 #include <QDataStream>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -135,6 +136,7 @@ extern "C"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "BasicFilters.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Delay.h"
@@ -898,6 +900,39 @@ private slots:
 		}();
 		QCOMPARE(landed.errorKind, ControlErrorKind::Refused);
 		QVERIFY(landed.errorMessage.contains(QStringLiteral("song"), Qt::CaseInsensitive));
+	}
+
+	void emptyRecorderFileUsesDefaultTakePath()
+	{
+		const QString recorder = loadByName(ch(1), QStringLiteral("insertrecorder"));
+		if (recorder.isEmpty()) { QSKIP("this build has no recorder module"); }
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		ConfigManager* config = ConfigManager::inst();
+		struct RestoreWorkingDir
+		{
+			QString path;
+			~RestoreWorkingDir() { ConfigManager::inst()->setWorkingDir(path); }
+		} restore{config->workingDir()};
+		config->setWorkingDir(dir.path());
+
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), recorder}};
+		QJsonObject start = device;
+		start.insert(QStringLiteral("on"), true);
+		start.insert(QStringLiteral("file"), QString());
+		const ControlResult started = run(QStringLiteral("plugin.record"), start);
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		const QString take = started.result.value(QStringLiteral("take")).toString();
+		QVERIFY(!take.isEmpty());
+		QCOMPARE(QFileInfo(take).absolutePath(), QDir(config->userSamplesDir()).filePath(QStringLiteral("Recordings")));
+		QVERIFY(QFileInfo(take).fileName().startsWith(QStringLiteral("Take ")));
+
+		QJsonObject stop = device;
+		stop.insert(QStringLiteral("on"), false);
+		const ControlResult stopped = run(QStringLiteral("plugin.record"), stop);
+		QVERIFY2(stopped.ok, qPrintable(stopped.errorMessage));
+		QVERIFY(!stopped.result.value(QStringLiteral("recording")).toBool());
+		QVERIFY(QFileInfo::exists(take));
 	}
 
 	void theRecorderRecordsWhatPassesIt()
