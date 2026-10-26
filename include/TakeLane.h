@@ -187,8 +187,10 @@ public:
 	const std::vector<TakeLane>& lanes() const { return m_lanes; }
 
 	// ---- active takes ----------------------------------------------------
-	//! Main-thread recording update: newest lane becomes active unless the user chose one.
-	bool recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips);
+	//! Main-thread recording update: newest lane becomes active unless the user chose one. With
+	//! \p overrideChoice the pass is active whatever was chosen before (Keep History: "the new pass
+	//! is the active take"), and the earlier user choice is forgotten.
+	bool recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips, bool overrideChoice = false);
 	//! Whether the named group still contains a clip on this lane.
 	bool canSelectTake(int groupId, int laneIndex, const std::vector<Clip*>& clips) const;
 	//! User choice: sets the group's active lane and remembers that choice through later passes.

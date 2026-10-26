@@ -279,7 +279,7 @@ void TakeLaneModel::publishTakeGroup(int groupId, int activeLane, const std::vec
 }
 
 
-bool TakeLaneModel::recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips)
+bool TakeLaneModel::recordTake(int groupId, int laneIndex, const std::vector<Clip*>& clips, bool overrideChoice)
 {
 	const auto changeLock = changeLockForEdit();
 	if (groupId < 0 || laneIndex < 0 || !containsTake(groupId, laneIndex, clips)) { return false; }
@@ -290,9 +290,10 @@ bool TakeLaneModel::recordTake(int groupId, int laneIndex, const std::vector<Cli
 	{
 		it = m_takeGroups.insert(it, TakeGroupSelection{groupId, laneIndex, false});
 	}
-	else if (!it->userChosen)
+	else if (!it->userChosen || overrideChoice)
 	{
 		it->activeLane = laneIndex;
+		it->userChosen = false;
 	}
 	publishTakeGroup(groupId, it->activeLane, clips);
 	return true;

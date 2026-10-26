@@ -2647,6 +2647,9 @@ tests/src/gui/PianoViewFocusTest.cpp
 tests/src/gui/RecordRemainingTest.cpp
 # cluster new-p14-48-port-port: deterministic recovery redo failure and exact undo-depth tests.
 tests/src/gui/RecordingRecoveryMenuTest.cpp
+# 2026-10-23 (cluster Q050-146, unit Q050-094): the Record Mode menu and Rec mode readout test - a fork-new GUI test,
+# named by hand like its neighbour above.
+tests/src/gui/RecordModeMenuTest.cpp
 tests/src/gui/TaskIndicatorTest.cpp
 # 2026-10-20 (cluster Q050-141): the touch-first layout's rendered targets and touch selection.
 tests/src/gui/TouchLayoutTest.cpp

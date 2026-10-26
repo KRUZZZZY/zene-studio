@@ -5317,8 +5317,8 @@ PianoRollWindow::PianoRollWindow() :
 
 	m_playAction->setToolTip(tr( "Play/pause current clip (Space)" ) );
 	// Theme 7: the record buttons state what a pass does to the notes already there (Record > Record Mode).
-	const QString recordScope = tr("Record Mode decides what happens to the notes already there. %1 %2")
-		.arg(recordoptions::modeScope(recordoptions::Mode::Overdub), recordoptions::modeScope(recordoptions::Mode::Replace));
+	const QString recordScope = tr("Record Mode decides what happens to the notes already there. Overdub: %1 Replace: %2")
+		.arg(recordoptions::midiScope(recordoptions::Mode::Overdub), recordoptions::midiScope(recordoptions::Mode::Replace));
 	m_recordAction->setToolTip(tr( "Record notes from MIDI-device/channel-piano" ) + QStringLiteral("\n") + recordScope);
 	m_recordAccompanyAction->setToolTip( tr( "Record notes from MIDI-device/channel-piano while playing song or pattern track" )
 		+ QStringLiteral("\n") + recordScope);

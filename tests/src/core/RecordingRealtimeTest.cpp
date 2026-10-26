@@ -42,11 +42,14 @@
 #include <QJsonObject>
 #include <QPointer>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 
 #include "AudioEngine.h"
 #include "ControlEdit.h"
+#include "ControlCompSupport.h"
 #include "ControlRegistry.h"
 #include "ProjectJournal.h"
+#include "RecordOptions.h"
 #include "RealtimeScope.h"
 #include "Engine.h"
 #include "SampleClip.h"
@@ -57,6 +60,7 @@
 #include "SampleRecordHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "SampleWindow.h"
 #include "TakeLane.h"
 #include "TimePos.h"
 #include "Track.h"
@@ -124,6 +128,75 @@ private:
 			engine->renderNextPeriod();
 			handle->play(emptyBuffer);
 		}
+	}
+
+	// ---- Q050-094: the record mode applied to an audio pass ------------------------------------------
+	//! Frames of earlier audio the clip holds: longer than a pass, so a Replace shows as a shorter buffer.
+	static constexpr std::size_t EarlierFrames = 20000;
+
+	struct ArmedClip
+	{
+		lmms::SampleTrack* track = nullptr;
+		lmms::SampleClip* clip = nullptr;
+		int trackId = 0;
+	};
+
+	//! A track with one clip armed to record; with \a earlier it already holds EarlierFrames frames of that level.
+	ArmedClip armedClip(bool hasEarlier, float earlier = 0.25f)
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		ArmedClip armed;
+		armed.track = new lmms::SampleTrack(song);
+		armed.trackId = armed.track->id();
+		armed.clip = dynamic_cast<lmms::SampleClip*>(armed.track->createClip(lmms::TimePos(0)));
+		if (hasEarlier)
+		{
+			std::vector<SampleFrame> old(EarlierFrames, SampleFrame(earlier, earlier));
+			armed.clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(old.data(), old.size(),
+				static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+		}
+		armed.clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		armed.clip->setAutoResize(false);
+		armed.clip->setRecord(true);
+		return armed;
+	}
+
+	//! One recording pass of constant \a level into the armed clip, ended by Stop and installed.
+	void recordPass(lmms::SampleClip* clip, float level)
+	{
+		auto* song = lmms::Engine::getSong();
+		song->playAndRecord();
+		driveRecordPeriods(30, level);
+		song->stop();
+		QTRY_VERIFY2_WITH_TIMEOUT(!clip->isRecord(), "the pass did not end", 3000);
+		QTest::qWait(50);
+	}
+
+	//! The clips of \a track other than \a shell, in track order.
+	static std::vector<lmms::SampleClip*> others(lmms::Track* track, const lmms::Clip* shell)
+	{
+		std::vector<lmms::SampleClip*> out;
+		for (lmms::Clip* c : track->getClips())
+		{
+			if (c != shell) { if (auto* sc = dynamic_cast<lmms::SampleClip*>(c)) { out.push_back(sc); } }
+		}
+		return out;
+	}
+
+	static lmms::SampleTrack* trackById(int id)
+	{
+		for (lmms::Track* t : lmms::Engine::getSong()->tracks()) { if (t->id() == id) { return dynamic_cast<lmms::SampleTrack*>(t); } }
+		return nullptr;
+	}
+
+	//! Highest and lowest left sample of \a clip's buffer.
+	static std::pair<float, float> extremes(lmms::SampleClip& clip)
+	{
+		float high = -2.f, low = 2.f;
+		const auto* data = clip.sample().buffer()->data();
+		for (std::size_t i = 0; i < clip.sample().sampleSize(); ++i) { high = std::max(high, data[i].left()); low = std::min(low, data[i].left()); }
+		return {high, low};
 	}
 
 private slots:
@@ -1600,6 +1673,221 @@ private slots:
 		QCOMPARE(back->recordTakesReady(), 0);
 		delete restored;
 		QTest::qWait(10);
+	}
+
+
+	// ---- Q050-094: Overdub, Replace and Keep History for an audio pass ---------------------------------
+	//! Overdub: the earlier audio stays, the pass is mixed into it (0.25 + 0.125 where both sound), and one
+	//! undo brings the clip back as it was.
+	void anOverdubPassIsMixedIntoTheEarlierAudio()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Overdub});
+		ArmedClip armed = armedClip(true);
+		recordPass(armed.clip, 0.125f);
+		QCOMPARE(armed.clip->sample().sampleSize(), EarlierFrames);  // the earlier audio's length
+		QCOMPARE(armed.track->takeLanes().laneCount(), 0);
+		const auto range = extremes(*armed.clip);
+		QVERIFY2(range.second >= 0.25f - 1e-6f, "the earlier audio was lost where the pass sounds");
+		QVERIFY2(std::abs(range.first - 0.375f) < 1e-6f, qPrintable(QStringLiteral("no frame holds earlier + pass: %1").arg(range.first)));
+
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {}).ok);
+		lmms::SampleTrack* restored = trackById(armed.trackId);
+		QVERIFY(restored != nullptr);
+		auto* back = dynamic_cast<lmms::SampleClip*>(restored->getClips().front());
+		QCOMPARE(back->sample().sampleSize(), EarlierFrames);
+		const auto undone = extremes(*back);
+		QVERIFY(std::abs(undone.first - 0.25f) < 1e-6f && std::abs(undone.second - 0.25f) < 1e-6f);  // exactly the earlier audio
+		delete restored;
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! Replace: the pass is the clip's audio (shorter than the earlier audio, none of it left); undo restores it.
+	void aReplacePassReplacesTheEarlierAudio()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Replace});
+		ArmedClip armed = armedClip(true);
+		recordPass(armed.clip, 0.125f);
+		QVERIFY2(armed.clip->sample().sampleSize() < EarlierFrames, "the pass did not replace the earlier audio");
+		QVERIFY(armed.clip->sample().sampleSize() > 0);
+		QCOMPARE(armed.track->takeLanes().laneCount(), 0);
+		QVERIFY2(extremes(*armed.clip).first <= 0.125f + 1e-6f, "earlier audio is still in the clip");
+
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {}).ok);
+		lmms::SampleTrack* restored = trackById(armed.trackId);
+		QVERIFY(restored != nullptr);
+		auto* back = dynamic_cast<lmms::SampleClip*>(restored->getClips().front());
+		QCOMPARE(back->sample().sampleSize(), EarlierFrames);
+		QVERIFY(std::abs(extremes(*back).first - 0.25f) < 1e-6f);
+		delete restored;
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! Keep History: the earlier audio and the pass are two take lanes of the clip's group, the pass is active,
+	//! the earlier one can be chosen again, and the next pass is active again; one undo restores the clip.
+	void aKeepHistoryPassKeepsTheEarlierAudioAsATakeLane()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::KeepHistory});
+		ArmedClip armed = armedClip(true);
+		const int groupId = armed.clip->id();
+		recordPass(armed.clip, 0.125f);
+
+		QCOMPARE(armed.track->takeLanes().laneCount(), 2);
+		QCOMPARE(armed.clip->sample().sampleSize(), std::size_t{0});  // the shell the lanes hang from
+		QCOMPARE(armed.clip->length(), lmms::TimePos(lmms::Engine::getSong()->ticksPerBar()));  // and it keeps its length
+		const auto takes = others(armed.track, armed.clip);
+		QCOMPARE(takes.size(), std::size_t{2});
+		lmms::SampleClip* history = nullptr;
+		lmms::SampleClip* pass = nullptr;
+		for (auto* take : takes)
+		{
+			QCOMPARE(take->takeGroupId(), groupId);
+			QVERIFY(!take->isMuted());
+			(take->sample().sampleSize() == EarlierFrames ? history : pass) = take;
+		}
+		QVERIFY2(history != nullptr && pass != nullptr, "the earlier audio and the pass are not two separate takes");
+		QVERIFY(history->laneIndex() != pass->laneIndex());
+		QVERIFY(std::abs(extremes(*history).first - 0.25f) < 1e-6f && std::abs(extremes(*history).second - 0.25f) < 1e-6f);
+		QVERIFY(extremes(*pass).first <= 0.125f + 1e-6f);
+		QCOMPARE(armed.track->takeLanes().activeTakeLane(groupId), pass->laneIndex());  // the new pass is active
+
+		// The earlier audio is recoverable: choose its lane through the take-group command.
+		const auto chosen = lmms::ControlRegistry::instance()->invoke(QStringLiteral("comp.take_select"),
+			{{QStringLiteral("clip"), lmms::control::takeClipId(history)}, {QStringLiteral("lane"), history->laneIndex()}});
+		QVERIFY2(chosen.ok, qPrintable(chosen.errorMessage));
+		QCOMPARE(armed.track->takeLanes().activeTakeLane(groupId), history->laneIndex());
+
+		// Arm and record again: a third lane, active even though the user chose the earlier one.
+		armed.clip->setRecord(true);
+		recordPass(armed.clip, 0.0625f);
+		QCOMPARE(armed.track->takeLanes().laneCount(), 3);
+		QCOMPARE(armed.clip->sample().sampleSize(), std::size_t{0});
+		const auto all = others(armed.track, armed.clip);
+		QCOMPARE(all.size(), std::size_t{3});
+		int newest = -1;
+		for (auto* take : all) { newest = std::max(newest, take->laneIndex()); }
+		QCOMPARE(armed.track->takeLanes().activeTakeLane(groupId), newest);
+		delete armed.track;
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! One undo takes a Keep History recording back to the clip as it was, and redo brings the lanes back.
+	void oneUndoRestoresTheClipAKeepHistoryPassSplit()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::KeepHistory});
+		ArmedClip armed = armedClip(true);
+		recordPass(armed.clip, 0.125f);
+		QCOMPARE(armed.track->takeLanes().laneCount(), 2);
+
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.undo"), {}).ok);
+		lmms::SampleTrack* restored = trackById(armed.trackId);
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->takeLanes().laneCount(), 0);
+		QCOMPARE(restored->getClips().size(), 1);
+		auto* back = dynamic_cast<lmms::SampleClip*>(restored->getClips().front());
+		QCOMPARE(back->sample().sampleSize(), EarlierFrames);
+		QVERIFY(!back->isRecord());
+		QVERIFY(std::abs(extremes(*back).first - 0.25f) < 1e-6f);
+
+		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("control.redo"), {}).ok);
+		restored = trackById(armed.trackId);
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->takeLanes().laneCount(), 2);
+		delete restored;
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! The kept lanes and the active take are in the project: save, reopen, and they are still two takes.
+	void keepHistoryLanesSurviveSaveAndReopen()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::KeepHistory});
+		ArmedClip armed = armedClip(true);
+		const int groupId = armed.clip->id();
+		recordPass(armed.clip, 0.125f);
+		const int active = armed.track->takeLanes().activeTakeLane(groupId);
+		QVERIFY(active >= 0);
+
+		QCOMPARE(others(armed.track, armed.clip).size(), std::size_t{2});
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = dir.filePath(QStringLiteral("keep-history.mmp"));
+		auto* song = lmms::Engine::getSong();
+		QVERIFY2(song->saveProjectFile(project, false), "project save failed");
+		song->loadProject(project);
+
+		lmms::SampleTrack* reopened = trackById(armed.trackId);
+		QVERIFY2(reopened != nullptr, "reopen lost the track");
+		QCOMPARE(reopened->takeLanes().laneCount(), 2);
+		QCOMPARE(reopened->takeLanes().activeTakeLane(groupId), active);
+		std::size_t earlierFound = 0;
+		int inGroup = 0;
+		for (lmms::Clip* c : reopened->getClips())
+		{
+			auto* sc = dynamic_cast<lmms::SampleClip*>(c);
+			if (sc == nullptr || sc->takeGroupId() != groupId) { continue; }
+			++inGroup;
+			if (sc->sample().sampleSize() == EarlierFrames) { ++earlierFound; }
+		}
+		QCOMPARE(inGroup, 2);
+		QCOMPARE(earlierFound, std::size_t{1});  // the earlier audio is back, whole
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! Overdub over a clip that does not play as recorded (here a trimmed one) cannot be mixed in place: the
+	//! clip is left exactly as it was and the pass sounds beside it as a clip of its own.
+	void anOverdubOverATrimmedClipAddsTheLayerWithoutTouchingIt()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Overdub});
+		ArmedClip armed = armedClip(true);
+		armed.clip->setSampleWindow(lmms::SampleWindow(10, 15000));
+		recordPass(armed.clip, 0.125f);
+		QCOMPARE(armed.clip->sample().sampleSize(), EarlierFrames);
+		QVERIFY(std::abs(extremes(*armed.clip).first - 0.25f) < 1e-6f);  // untouched
+		QCOMPARE(armed.track->takeLanes().laneCount(), 0);
+		const auto layers = others(armed.track, armed.clip);
+		QCOMPARE(layers.size(), std::size_t{1});
+		QVERIFY(layers.front()->sample().sampleSize() > 0);
+		QCOMPARE(layers.front()->takeGroupId(), 0);  // it always sounds, whatever take is active
+		QVERIFY(!layers.front()->isMuted());
+		delete armed.track;
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! A pitched or gain-adjusted source is not a raw, sample-aligned mix target: keep it intact and add the pass as a layer.
+	void anOverdubOverAPitchedAndAmplifiedClipAddsTheLayerWithoutTouchingIt()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Overdub});
+		ArmedClip armed = armedClip(true);
+		const auto original = armed.clip->sample().buffer();
+		armed.clip->sample().setFrequency(880.0f);
+		armed.clip->sample().setAmplification(2.0f);
+		recordPass(armed.clip, 0.125f);
+
+		QVERIFY(armed.clip->sample().buffer() == original);
+		QCOMPARE(armed.clip->sample().frequency(), 880.0f);
+		QCOMPARE(armed.clip->sample().amplification(), 2.0f);
+		QVERIFY(std::abs(extremes(*armed.clip).first - 0.25f) < 1e-6f);
+		const auto layers = others(armed.track, armed.clip);
+		QCOMPARE(layers.size(), std::size_t{1});
+		QCOMPARE(layers.front()->sample().frequency(), 440.0f);
+		QCOMPARE(layers.front()->sample().amplification(), 1.0f);
+		QVERIFY(std::abs(extremes(*layers.front()).first - 0.125f) < 1e-6f);
+		delete armed.track;
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! Keep History on a clip with no audio yet: the first pass is a lane too (every kept pass is one).
+	void aKeepHistoryPassOnAnEmptyClipIsALane()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::KeepHistory});
+		ArmedClip armed = armedClip(false);
+		recordPass(armed.clip, 0.125f);
+		QCOMPARE(armed.track->takeLanes().laneCount(), 1);
+		QCOMPARE(armed.clip->sample().sampleSize(), std::size_t{0});
+		const auto takes = others(armed.track, armed.clip);
+		QCOMPARE(takes.size(), std::size_t{1});
+		QVERIFY(takes.front()->sample().sampleSize() > 0);
+		delete armed.track;
+		lmms::recordoptions::setOptions({});
 	}
 
 	//! clip.set_record has its own undo step (an action keyed by the clip's id): control.undo disarms the

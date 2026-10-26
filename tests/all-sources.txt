@@ -3099,6 +3099,7 @@ tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/gui/RackMenuTest.cpp
+tests/src/gui/RecordModeMenuTest.cpp
 tests/src/gui/RecordRemainingTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp

@@ -93,16 +93,17 @@ void armAllEntry(QMenu* menu, const QString& label, bool armed)
 	});
 }
 
-//! Theme 7: Record Mode as two choices that each state their scope ("Replace notes (erase the notes it overlaps,
-//! any pitch; keep controllers and automation)"), the one in use checked, each running transport.record_options.
+//! Theme 7 / Q050-094: Record Mode as the three choices transport.record_options takes - for MIDI and audio - each
+//! stating its scope, the one in use checked, each running transport.record_options.
 void recordModeMenu(QMenu* menu)
 {
-	QMenu* sub = menu->addMenu(QObject::tr("Record Mode (MIDI)"));
+	QMenu* sub = menu->addMenu(QObject::tr("Record Mode"));
 	sub->setToolTipsVisible(true);
 	auto* group = new QActionGroup(sub);
-	for (const recordoptions::Mode mode : {recordoptions::Mode::Overdub, recordoptions::Mode::Replace})
+	for (int index = 0; index < recordoptions::modeNames().size(); ++index)
 	{
-		const QString name = recordoptions::modeNames().at(static_cast<int>(mode));
+		const auto mode = static_cast<recordoptions::Mode>(index);
+		const QString name = recordoptions::modeNames().at(index);
 		QAction* action = addCommandAction(sub, recordoptions::modeChoice(mode), QStringLiteral("transport.record_options"),
 			[name] { return CommandCall{QStringLiteral("transport.record_options"), {{QStringLiteral("mode"), name}}, {}, QString(), false}; });
 		action->setCheckable(true);

@@ -24,6 +24,7 @@
 #ifndef LMMS_RECORD_OPTIONS_H
 #define LMMS_RECORD_OPTIONS_H
 
+#include <memory>
 #include <vector>
 
 #include <QJsonObject>
@@ -37,6 +38,7 @@ namespace lmms
 
 class MidiClip;
 class Note;
+class SampleBuffer;
 class Song;
 
 /*! 0.5.0 L03: how a recording pass starts and what it does to what is there, kept in the config file
@@ -45,8 +47,12 @@ class Song;
  *    position, the metronome clicks through the count-in bars whether or not it is on, and audio is
  *    captured only from the play position (the punch gate opened there, unless a punch region is
  *    armed - then the region decides). Stopping puts the punch region back as the timeline has it.
- *  - WF-082 record mode: overdub keeps the notes a MIDI pass plays over; replace removes the notes
- *    already in the clip that a recorded note overlaps. (An audio pass always lands as its own take.)
+ *  - WF-082 record mode (Q050-094: ONE mode for MIDI and audio): overdub keeps the notes a MIDI pass plays
+ *    over and mixes an audio pass into the clip's audio; replace removes the notes already in the clip
+ *    that a recorded note overlaps and replaces the clip's audio; keep_history keeps an audio clip's
+ *    earlier audio and every new pass as take lanes (the newest pass active; comp.take_select chooses
+ *    another) and, for MIDI, keeps notes as overdub does (MIDI take lanes are not kept yet). A loop
+ *    recording's passes are take lanes in every mode (the loop policy is a separate unit).
  *    Theme 7 (owner decision 2026-10-03): Replace erases NOTES only - every note from before the pass that
  *    a recorded note overlaps in time, at any pitch - and never the clip's controller lanes (CC, pitch
  *    bend, aftertouch, program) or any automation. modeScope() is that sentence, for the record controls.
@@ -57,8 +63,9 @@ namespace recordoptions
 
 enum class Mode
 {
-	Overdub = 0,
-	Replace = 1
+	Overdub = 0,  //!< the stored values 0 and 1 are the config file's: never renumbered
+	Replace = 1,
+	KeepHistory = 2
 };
 
 struct Options
@@ -74,10 +81,17 @@ LMMS_EXPORT void setOptions(const Options& next);
 LMMS_EXPORT QJsonObject toJson(const Options& options);
 //! "Overdub" or "Replace notes": the mode as a record control names it.
 LMMS_EXPORT QString modeLabel(Mode mode);
-//! What @a mode does to what is there, in one sentence - the scope a record control states.
+//! What @a mode does to what is there, MIDI and audio - the scope a record control states.
 LMMS_EXPORT QString modeScope(Mode mode);
-//! A record control's choice for @a mode, its scope in brief: "Replace notes (erase overlapped notes; keep ...)".
+//! Just the MIDI half of modeScope(), and just the audio half.
+LMMS_EXPORT QString midiScope(Mode mode);
+LMMS_EXPORT QString audioScope(Mode mode);
+//! A record control's choice for @a mode, its scope in brief: "Replace (MIDI erases overlapped notes; ...)".
 LMMS_EXPORT QString modeChoice(Mode mode);
+//! Overdub for audio (UI thread): @a take mixed into @a existing from the first frame, sample for sample, at
+//! @a existing's rate (a take of another rate is linearly resampled to it). The result is as long as the
+//! longer of the two. Neither input is changed.
+LMMS_EXPORT std::shared_ptr<const SampleBuffer> overdubMix(const SampleBuffer& existing, const SampleBuffer& take);
 //! The Replace pass's erase (UI thread): in Replace mode, removes from @a clip every note of @a beforePass (note
 //! ids: the notes the clip held when the pass began) that @a recorded overlaps in time, at any pitch, and answers
 //! how many it removed. Notes only - the clip's controller lanes are not touched. In Overdub: nothing, 0.

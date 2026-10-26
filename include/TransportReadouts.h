@@ -135,6 +135,8 @@ public:
 	ReadoutField* tempo() const { return m_tempo; }
 	ReadoutField* loudness() const { return m_loudness; }
 	ReadoutField* recordRemaining() const { return m_recordRemaining; }
+	//! Q050-094: the Rec mode readout (overdub, replace or keep history; right-click chooses).
+	ReadoutField* recordMode() const { return m_recordMode; }
 
 private:
 	void bindToSong(Song* song);

@@ -30,11 +30,19 @@
  *  Theme 7: Replace erases the notes from before the pass that a recorded note overlaps, at any pitch, and
  *  nothing else - not a note of the pass itself, not the clip's controller lanes - and the record options'
  *  reply states that scope; transport.time_format switches bars|beats, ticks and time as one undo step, and
- *  positions and lengths read and type back exactly in each. */
+ *  positions and lengths read and type back exactly in each.
+ *  Q050-094: the record mode is one choice for MIDI and audio - overdub, replace or keep_history - read and set
+ *  through transport.record_options with its scope for each medium, as one undo step; the stored config numbers
+ *  0 (overdub) and 1 (replace) keep their meaning; the audio overdub mix is sample-exact. */
 
 #include <QtTest>
 
+#include <vector>
+
+#include <QJsonArray>
+
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -48,6 +56,8 @@
 #include "PatternStore.h"
 #include "RecordOptions.h"
 #include "RetroMidiCapture.h"
+#include "SampleBuffer.h"
+#include "SampleFrame.h"
 #include "ReversibilityTestSupport.h"
 #include "SessionModel.h"
 #include "SessionScheduler.h"
@@ -170,6 +180,83 @@ private slots:
 		QVERIFY(reply.value(QStringLiteral("mode_scope")).toString().contains(QStringLiteral("Controllers and automation are kept")));
 		recordoptions::setOptions({});
 		delete track;
+	}
+
+	//! Q050-094: the same three choices for MIDI and audio, each with its scope, one undo step per change.
+	void theRecordModeIsOneChoiceForMidiAndAudio()
+	{
+		recordoptions::setOptions({});
+		const QJsonObject read = run(QStringLiteral("transport.record_options")).result;
+		QCOMPARE(read.value(QStringLiteral("mode")).toString(), QStringLiteral("overdub"));
+		QCOMPARE(read.value(QStringLiteral("modes")).toVariant().toStringList(),
+			(QStringList{QStringLiteral("overdub"), QStringLiteral("replace"), QStringLiteral("keep_history")}));
+		// The command's schema offers exactly those choices.
+		const ControlCommand* command = ControlRegistry::instance()->command(QStringLiteral("transport.record_options"));
+		QVERIFY(command != nullptr);
+		const QJsonArray offered = command->argsSchema.value(QStringLiteral("properties")).toObject()
+			.value(QStringLiteral("mode")).toObject().value(QStringLiteral("enum")).toArray();
+		QCOMPARE(offered.size(), 3);
+
+		for (const QString& name : recordoptions::modeNames())
+		{
+			const ControlResult set = run(QStringLiteral("transport.record_options"), {{QStringLiteral("mode"), name}});
+			QVERIFY2(set.ok, qPrintable(name + QStringLiteral(": ") + set.errorMessage));
+			const QJsonObject reply = set.result;
+			QCOMPARE(reply.value(QStringLiteral("mode")).toString(), name);
+			const auto mode = static_cast<recordoptions::Mode>(recordoptions::modeNames().indexOf(name));
+			QCOMPARE(reply.value(QStringLiteral("mode_label")).toString(), recordoptions::modeLabel(mode));
+			QCOMPARE(reply.value(QStringLiteral("midi_scope")).toString(), recordoptions::midiScope(mode));
+			QCOMPARE(reply.value(QStringLiteral("audio_scope")).toString(), recordoptions::audioScope(mode));
+			QVERIFY(reply.value(QStringLiteral("mode_scope")).toString().contains(recordoptions::audioScope(mode)));
+		}
+		QVERIFY(recordoptions::options().mode == recordoptions::Mode::KeepHistory);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one step: back to Replace, the previous change
+		QVERIFY(recordoptions::options().mode == recordoptions::Mode::Replace);
+		QCOMPARE(run(QStringLiteral("transport.record_options"), {{QStringLiteral("mode"), QStringLiteral("merge")}}).errorKind,
+			ControlErrorKind::InvalidArgs);
+		recordoptions::setOptions({});
+	}
+
+	//! Q050-094: the numbers in an existing config keep their meaning; one no build knows reads as the default.
+	void theStoredModeNumbersAreStable()
+	{
+		const auto stored = [](int value) {
+			ConfigManager::inst()->setValue(QStringLiteral("recording"), QStringLiteral("mode"), QString::number(value));
+			return recordoptions::options().mode;
+		};
+		QVERIFY(stored(0) == recordoptions::Mode::Overdub);
+		QVERIFY(stored(1) == recordoptions::Mode::Replace);
+		QVERIFY(stored(2) == recordoptions::Mode::KeepHistory);
+		QVERIFY(stored(9) == recordoptions::Mode::Overdub);
+		recordoptions::setOptions({0, 0, recordoptions::Mode::KeepHistory});
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("recording"), QStringLiteral("mode")), QStringLiteral("2"));
+		recordoptions::setOptions({});
+	}
+
+	//! Q050-094: the Overdub mix adds the pass to the audio already there, frame for frame.
+	void theOverdubMixAddsThePassToTheEarlierAudio()
+	{
+		const int rate = 48000;
+		std::vector<SampleFrame> earlier(100, SampleFrame(0.25f, -0.25f));
+		std::vector<SampleFrame> pass(150, SampleFrame(0.125f, 0.5f));
+		const SampleBuffer a(earlier.data(), earlier.size(), rate);
+		const SampleBuffer b(pass.data(), pass.size(), rate);
+		const auto mixed = recordoptions::overdubMix(a, b);
+		QCOMPARE(mixed->size(), std::size_t{150});  // as long as the longer
+		QCOMPARE(mixed->sampleRate(), rate);
+		QCOMPARE(mixed->data()[0].left(), 0.375f);
+		QCOMPARE(mixed->data()[99].right(), 0.25f);
+		QCOMPARE(mixed->data()[100].left(), 0.125f);  // past the earlier audio: the pass alone
+		QCOMPARE(mixed->data()[149].right(), 0.5f);
+		QCOMPARE(a.size(), std::size_t{100});  // the inputs are not changed
+		QCOMPARE(a.data()[0].left(), 0.25f);
+
+		// A pass at another rate is resampled to the earlier audio's rate (24 kHz doubles in length).
+		const SampleBuffer slow(pass.data(), 50, rate / 2);
+		const auto resampled = recordoptions::overdubMix(a, slow);
+		QCOMPARE(resampled->size(), std::size_t{100});
+		QCOMPARE(resampled->data()[10].left(), 0.375f);
+		QCOMPARE(recordoptions::overdubMix(a, SampleBuffer())->size(), std::size_t{100});  // nothing to add
 	}
 
 	//! Theme 7: the time format is one undo step, and every format reads and types back the same tick.

@@ -411,18 +411,19 @@ void TransportReadouts::bindToSong(Song* song)
 		return QStringLiteral("%1:%2.%3").arg(ms / 60000).arg((ms / 1000) % 60, 2, 10, QLatin1Char('0'))
 			.arg((ms % 1000) / 10, 2, 10, QLatin1Char('0'));
 	});
-	// Theme 7: the record mode, its scope in the tooltip - what a MIDI pass does to the notes already there.
-	// Right-click chooses (transport.record_options); typing "overdub" or "replace" does too.
+	// Theme 7 / Q050-094: the record mode, its scope in the tooltip - what a MIDI and an audio pass do to what is
+	// already there. Right-click chooses (transport.record_options); typing "overdub", "replace" or "keep" does too.
 	m_recordMode->bindText([]() { return recordoptions::modeLabel(recordoptions::options().mode); },
 		[](const QString& typed) {
 			const QString word = typed.trimmed().toLower();
-			const int mode = word.isEmpty() ? -1 : word.startsWith(QLatin1Char('r')) ? 1 : word.startsWith(QLatin1Char('o')) ? 0 : -1;
+			const int mode = word.isEmpty() ? -1 : word.startsWith(QLatin1Char('r')) ? 1 : word.startsWith(QLatin1Char('o')) ? 0
+				: word.startsWith(QLatin1Char('k')) ? 2 : -1;
 			return mode >= 0 && ControlRegistry::instance()->invoke(QStringLiteral("transport.record_options"),
 				{{QStringLiteral("mode"), recordoptions::modeNames().at(mode)}}).ok;
 		});
 	m_recordModes = addChoices(m_recordMode, QStringLiteral("transport.record_options"), QStringLiteral("mode"),
 		recordoptions::modeNames(), {recordoptions::modeChoice(recordoptions::Mode::Overdub),
-			recordoptions::modeChoice(recordoptions::Mode::Replace)});
+			recordoptions::modeChoice(recordoptions::Mode::Replace), recordoptions::modeChoice(recordoptions::Mode::KeepHistory)});
 	syncRecordMode();
 	// WF-085 (Q050-179): the header shows record.remaining's estimate next to the record mode,
 	// so the recording budget is visible while a route is armed and while a pass runs - and the
@@ -452,7 +453,7 @@ void TransportReadouts::syncRecordMode()
 	if (mode == m_shownRecordMode) { return; }
 	m_shownRecordMode = mode;
 	m_recordMode->refresh();
-	m_recordMode->setToolTip(tr("%1\nRight-click to choose; double-click and type overdub or replace.")
+	m_recordMode->setToolTip(tr("%1\nRight-click to choose; double-click and type overdub, replace or keep.")
 		.arg(recordoptions::modeScope(static_cast<recordoptions::Mode>(mode))));
 	checkChoice(m_recordModes, mode);
 }
