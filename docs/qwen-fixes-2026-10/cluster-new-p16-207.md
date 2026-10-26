@@ -69,7 +69,7 @@ Gate:
   - PASS file-length ("no new item in your files") — this is the one that failed on the first draft (`gate-feature-2.log`, EXIT=1);
   - RESULT: PASS.
 
-Files committed (explicit paths): `src/tracks/SampleTrack.cpp`, `tests/src/tracks/SampleClipWarpTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p16-207.md`.
+Files committed (explicit paths): `src/tracks/SampleTrack.cpp`, `tests/src/tracks/SampleClipWarpTest.cpp`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p16-207.md`.
 
 No new control commands, no header changes, no new files. Undo: the fix changes only what `play()` does for an out-of-range index, and the removed clip creation was an audio-thread side effect, so undo history is unaffected.
 
