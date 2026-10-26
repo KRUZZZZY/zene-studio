@@ -86,6 +86,14 @@ const ReversibilityRow kDeviceRows[] = {
 	R("session.unbind", RC::TrueInverse, true, "it removes one launcher binding from the config file",
 		"action checkpoint: the recorded undo step writes the previous bindings back", ""),
 	R("session.bindings", RC::NotMutating, false, "it reads the launcher's bindings. Nothing is written", "no write", ""),
+	// Q050-217.1: the controller bound to built-in commands.
+	R("session.bind_command", RC::TrueInverse, true, "it writes one command binding in the config file - a bounded list "
+		"(and takes the note off the launcher's list, in the same edit)",
+		"action checkpoint: the recorded undo step writes both previous lists back", ""),
+	R("session.unbind_command", RC::TrueInverse, true, "it removes one command binding from the config file",
+		"action checkpoint: the recorded undo step writes the previous bindings back", ""),
+	R("session.command_bindings", RC::NotMutating, false, "it reads the controller's command bindings. Nothing is written",
+		"no write", ""),
 	R("session.capture_to_slot", RC::TrueInverse, true,
 		"it adds a pattern holding what was played and points a launcher cell at it",
 		"action checkpoint: the recorded undo step restores the <session> block and removes the pattern track it made", ""),

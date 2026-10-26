@@ -1071,6 +1071,11 @@ with the contract test: `rows=860 true_inverse=425 snapshot=42 irreversible=25 n
 
 **Q050-100 batch integration onto train 16** (2026-10-26): four new rows - `meter.set_peak_watch` and `shortcuts.preset_apply` (`true_inverse`), `meter.speak` and `shortcuts.preset_list` (`not_mutating`) - give `rows=862 true_inverse=427 snapshot=42 irreversible=24 not_mutating=369`.
 
+**Q050-217.1** (MIDI bindings for built-in commands, 2026-10-23; integrated onto `050/m0-train-16` 2026-10-26) adds three `session.*` rows - two
+`true_inverse` (`session.bind_command`, `session.unbind_command`: a recorded undo step writes the previous
+config lists back) and one `not_mutating` (`session.command_bindings`, a read) - moving the train-16 figure from
+`858/425/42/24/367` to `861/427/42/24/368`:
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=862 true_inverse=426 snapshot=42 irreversible=24 not_mutating=370
      configuration: telemetry.status wasm.load session.get_state stem.get_state

@@ -25,7 +25,12 @@
  *  session.bindings_connect opens the controller; session.bind binds a note to a cell, a scene or
  *  stop-all, session.bind_learn binds the next note played, session.unbind removes one, and
  *  session.bindings lists them. The bindings are a preference in the config file; a change is one
- *  undo step. */
+ *  undo step.
+ *
+ *  Q050-217.1 adds the same surface for built-in commands: session.bind_command binds a note OR a
+ *  control-change to a command that needs no arguments, session.unbind_command removes it, and
+ *  session.command_bindings lists them. Same controller, same undo rule; an overlapping note binding
+ *  is resolved by channel specificity, with commands winning ties. */
 
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -46,6 +51,129 @@ const QStringList& actionNames()
 {
 	static const QStringList names{QStringLiteral("slot"), QStringLiteral("scene"), QStringLiteral("stop_all")};
 	return names;
+}
+
+//! The command binding names' triggers (Q050-217.1).
+const QStringList& triggerNames()
+{
+	static const QStringList names{QStringLiteral("note"), QStringLiteral("cc")};
+	return names;
+}
+
+/*! Q050-217.1: why @a id cannot be bound to a MIDI control, or an empty string when it can. A
+ *  control activation carries no arguments - the CC value is NOT one - so a command that requires
+ *  any would only ever fail; it is refused when the binding is made, with the reason, rather than
+ *  firing into a refusal the user cannot see. */
+QString unbindableReason(const QString& id)
+{
+	const ControlCommand* command = ControlRegistry::instance()->command(id);
+	if (command == nullptr) { return QStringLiteral("no command '%1'").arg(id); }
+	if (!command->argsSchema.value(QStringLiteral("required")).toArray().isEmpty())
+	{
+		return QStringLiteral("'%1' needs arguments, and a MIDI control supplies none").arg(id);
+	}
+	return QString();
+}
+
+//! The stored command bindings without the one a trigger names: the same note (on a channel) or the same CC.
+QJsonArray commandBindingsWithout(const QJsonObject& trigger)
+{
+	QJsonArray out;
+	const bool control = trigger.value(QStringLiteral("trigger")).toString() == QLatin1String("cc");
+	const int channel = trigger.value(QStringLiteral("channel")).toInt(-1);
+	for (const QJsonValue& value : LaunchBindings::commandBindings())
+	{
+		const QJsonObject binding = value.toObject();
+		const bool sameKind = (binding.value(QStringLiteral("trigger")).toString() == QLatin1String("cc")) == control;
+		const bool sameNumber = control ? binding.value(QStringLiteral("controller")).toInt(-1) == trigger.value(QStringLiteral("controller")).toInt()
+										: binding.value(QStringLiteral("key")).toInt(-1) == trigger.value(QStringLiteral("key")).toInt();
+		const bool sameChannel = binding.value(QStringLiteral("channel")).toInt(-1) == channel;
+		if (!(sameKind && sameNumber && sameChannel)) { out.append(binding); }
+	}
+	return out;
+}
+
+//! The trigger @a args name: {trigger: note|cc, key|controller, channel}. The kind's own number is
+//! checked here (the schema cannot say "key is required when trigger is note"); false with a reason
+//! when it is missing.
+bool triggerOf(const QJsonObject& args, QJsonObject* out, ControlResult* error)
+{
+	const QString trigger = args.value(QStringLiteral("trigger")).toString();
+	const QString number = trigger == QLatin1String("cc") ? QStringLiteral("controller") : QStringLiteral("key");
+	if (!args.contains(number))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a %1 binding needs '%2'").arg(trigger, number));
+		return false;
+	}
+	*out = {{QStringLiteral("trigger"), trigger}, {number, args.value(number).toInt()},
+		{QStringLiteral("channel"), args.value(QStringLiteral("channel")).toInt(-1)}};
+	return true;
+}
+
+//! Replace the command bindings with @a next as one undo step; answers them.
+ControlResult storeCommandBindings(const QJsonArray& next)
+{
+	const QJsonArray before = LaunchBindings::commandBindings();
+	LaunchBindings::setCommandBindings(next);
+	addUndoStep([before]() { LaunchBindings::setCommandBindings(before); }, [next]() { LaunchBindings::setCommandBindings(next); });
+	return ControlResult::success({{QStringLiteral("bindings"), next}});
+}
+
+ControlResult bindCommand(const QJsonObject& args)
+{
+	const QString command = args.value(QStringLiteral("command")).toString();
+	const QString reason = unbindableReason(command);
+	if (!reason.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, reason); }
+	QJsonObject trigger;
+	ControlResult error;
+	if (!triggerOf(args, &trigger, &error)) { return error; }
+	QJsonObject binding = trigger;
+	binding.insert(QStringLiteral("command"), command);
+	// A NOTE bound to a command takes the same-channel launcher binding over. A binding on any channel
+	// (-1) replaces every launcher binding for that note; a channel-specific one leaves a wildcard
+	// launcher available on the other channels. A control change never launched anything, so a CC binding
+	// leaves the launcher store alone. Undo puts both stores back: this is ONE edit, so it is one step.
+	const bool note = trigger.value(QStringLiteral("trigger")).toString() == QLatin1String("note");
+	const int channel = trigger.value(QStringLiteral("channel")).toInt(-1);
+	QJsonArray launcher;
+	for (const QJsonValue& value : LaunchBindings::bindings())
+	{
+		const QJsonObject old = value.toObject();
+		const bool same = note && old.value(QStringLiteral("key")).toInt() == trigger.value(QStringLiteral("key")).toInt()
+			&& (channel < 0 || old.value(QStringLiteral("channel")).toInt(-1) == channel);
+		if (!same) { launcher.append(old); }
+	}
+	QJsonArray next = commandBindingsWithout(trigger);
+	next.append(binding);
+	const QJsonArray launcherBefore = LaunchBindings::bindings();
+	const QJsonArray before = LaunchBindings::commandBindings();
+	LaunchBindings::setBindings(launcher);
+	LaunchBindings::setCommandBindings(next);
+	addUndoStep([launcherBefore, before]() { LaunchBindings::setBindings(launcherBefore); LaunchBindings::setCommandBindings(before); },
+		[launcher, next]() { LaunchBindings::setBindings(launcher); LaunchBindings::setCommandBindings(next); });
+	return ControlResult::success({{QStringLiteral("bindings"), next}});
+}
+
+ControlResult unbindCommand(const QJsonObject& args)
+{
+	QJsonObject trigger;
+	ControlResult error;
+	if (!triggerOf(args, &trigger, &error)) { return error; }
+	const QJsonArray remaining = commandBindingsWithout(trigger);
+	if (remaining.size() == LaunchBindings::commandBindings().size())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no command binding on that %1")
+			.arg(trigger.value(QStringLiteral("trigger")).toString()));
+	}
+	return storeCommandBindings(remaining);
+}
+
+ControlResult listCommandBindings(const QJsonObject&)
+{
+	const LaunchBindings* bindings = LaunchBindings::instance();
+	return ControlResult::success({{QStringLiteral("connected"), bindings != nullptr},
+		{QStringLiteral("bindings"), LaunchBindings::commandBindings()}});
 }
 
 //! The action part of a binding from @a args, or false (with @a error) when it is incomplete.
@@ -171,6 +299,23 @@ void registerLaunchBindingCommands(ControlRegistry& registry)
 		{QStringLiteral("key")}), unbind, true);
 	add(registry, "bindings", QStringLiteral("The launcher's controller bindings, whether a controller is connected and what the "
 		"next note will be bound to (session.bind_learn)."), objectSchema({}), listBindings, false);
+
+	// Q050-217.1: the same controller, bound to built-in commands that need no arguments.
+	const QJsonObject commandTrigger{{QStringLiteral("trigger"), enumProperty(triggerNames())},
+		{QStringLiteral("key"), integerProperty(0, 127)}, {QStringLiteral("controller"), integerProperty(0, 127)},
+		{QStringLiteral("channel"), integerProperty(-1, 15)}, {QStringLiteral("command"), stringProperty()}};
+	add(registry, "bind_command", QStringLiteral("Bind a MIDI NOTE or CONTROL CHANGE to a built-in command that needs no "
+		"arguments, and run it through the registry once per activation. 'trigger' is note (with 'key' 0..127) or cc (with "
+		"'controller' 0..127); 'channel' is 0..15 or -1 for any; 'command' is a registered command id whose schema requires no "
+		"arguments (the control change's value is NOT passed on as one). A note fires on its press and rearms on its release; a "
+		"control change fires when it leaves zero and rearms at zero, so a sweep is one activation. Replaces a binding on the "
+		"same control, and a note still bound to the launcher is taken away from it by the same edit (one undo step). Kept in the "
+		"config file."), objectSchema(commandTrigger, {QStringLiteral("trigger"), QStringLiteral("command")}), bindCommand, true);
+	add(registry, "unbind_command", QStringLiteral("Remove the command binding on a note ('trigger' note, 'key', 'channel') or a "
+		"control change ('trigger' cc, 'controller', 'channel'). One undo step."),
+		objectSchema(commandTrigger, {QStringLiteral("trigger")}), unbindCommand, true);
+	add(registry, "command_bindings", QStringLiteral("The controller's command bindings (what session.bind_command made), and "
+		"whether a controller is connected."), objectSchema({}), listCommandBindings, false);
 }
 
 } // namespace lmms

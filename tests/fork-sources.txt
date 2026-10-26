@@ -2447,6 +2447,7 @@ tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp
 tests/src/core/MidiSndioTest.cpp
 tests/src/core/MidiOssTest.cpp
+tests/src/core/MidiCommandBindingsTest.cpp
 tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
@@ -2618,6 +2619,7 @@ tests/src/tracks/HeadlessGuiGuardTest.cpp
 # reserved on the control thread, and the MPE expression a live note plays with is one atomic
 # snapshot. One file, three slots.
 tests/src/tracks/InstrumentTrackRenderPathTest.cpp
+tests/src/gui/MidiCommandBindingsGuiTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
 # cluster new-p10-3: product-new regression for the CLAP instrument view's output count after a layout rescan.

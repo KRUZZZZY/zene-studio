@@ -317,7 +317,10 @@ parameter of the instrument; Modulation Assignments changes a depth or removes a
 <p>Show the launcher from the footer's Clip Launcher button, View &gt; Clip Launcher or Alt+L. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it. Each column is headed by its track's name. A cell's play mark shows its state - ▷ stopped, ▷… queued, ▶ playing - and a scene's mark shows its row's, so you can see what will launch. Dragging a sample over a filled cell shows "Replace" before you let go; after the drop, Undo Replace (or Edit &gt; Undo) puts the old clip back.
 Cells launch on the next bar (or the cell's own quantisation) in trigger, gate, toggle or repeat mode, and scenes launch a
 row. Launcher &gt; Launch Scene 1-8 can be given keys (Project tools &gt; Customise &gt; Keyboard Shortcuts); Launcher &gt; Controller binds the notes
-of a MIDI controller to cells and scenes. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
+of a MIDI controller to cells and scenes, and binds a note or a control change to a built-in command that needs no
+arguments (Bind a Command to a Note or Control Change..., Unbind a Command... and Command Bindings list them): a
+note runs its command on the press and is ready again when you let go, and a control change runs it once as the
+knob leaves zero and is ready again at zero, so a sweep is one action rather than 127. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
 cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell for its Follow Action Chain (the
 action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
 scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps

@@ -770,6 +770,9 @@ set(LMMS_TESTS
 	src/core/DeviceAbUndoTest.cpp
 	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
 	src/core/RecordingPassTest.cpp
+	# Q050-217.1: a MIDI note or control-change bound to an argument-free built-in command - one
+	# dispatch per activation through the registry, read back, replaced, and undone as one step.
+	src/core/MidiCommandBindingsTest.cpp
 	# 0.5.0 L11 / L12: search expressions, collections, track presets, importing tracks, the hand-off folder.
 	src/core/LibraryProjectsTest.cpp
 	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
@@ -1330,6 +1333,9 @@ set(LMMS_TESTS
 	src/gui/SessionTransportBarTest.cpp
 	# 0.5.0 L02 (WF-071): perform mode, the launcher's live show window, over the real application.
 	src/gui/PerformViewTest.cpp
+	# Q050-217.1: the Launcher > Controller entries that bind a MIDI control to a built-in command,
+	# driven over the real application (the menu action, the command's own form, Edit > Undo).
+	src/gui/MidiCommandBindingsGuiTest.cpp
 	# 0.5.0 L02 (WF-064): sub-scenes from the grid - select cells, make one, launch it - over the real application.
 	src/gui/SessionSubSceneGridTest.cpp
 	# 0.5.0 L14 (Q050-235): the touch workspace read once at start, and its launcher cells, scene and stop
@@ -3054,6 +3060,7 @@ set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM
 set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PerformViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiCommandBindingsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSubSceneGridTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchWorkspaceTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

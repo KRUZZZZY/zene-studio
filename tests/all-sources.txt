@@ -2767,6 +2767,7 @@ tests/src/core/MeterTapTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/core/MidiClockSourceTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiCommandBindingsTest.cpp
 tests/src/core/MidiEventToByteSeqTest.cpp
 tests/src/core/MidiExportTest.cpp
 tests/src/core/MidiHandoffQueueTest.cpp
@@ -3069,6 +3070,7 @@ tests/src/gui/MicrotunerScaleFileTest.cpp
 tests/src/gui/MidiClipLinkedEditTest.cpp
 tests/src/gui/MidiClipStepMenuTest.cpp
 tests/src/gui/MidiClockMenuTest.cpp
+tests/src/gui/MidiCommandBindingsGuiTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
