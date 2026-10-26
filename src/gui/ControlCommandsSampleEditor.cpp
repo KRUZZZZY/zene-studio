@@ -96,7 +96,8 @@ void registerSampleEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("unit"), enumProperty(gui::samplerange::unitNames())}, {QStringLiteral("zoom"), enumProperty(kZooms)}},
 		QJsonArray{QStringLiteral("clip")});
 	cmd.resultSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("frames"), integerProperty()},
-		{QStringLiteral("sample_rate"), integerProperty()}, {QStringLiteral("from"), integerProperty()},
+		{QStringLiteral("sample_rate"), integerProperty()}, {QStringLiteral("channels"), integerProperty()},
+		{QStringLiteral("layout"), stringProperty()}, {QStringLiteral("from"), integerProperty()},
 		{QStringLiteral("to"), integerProperty()}, {QStringLiteral("length"), integerProperty()},
 		{QStringLiteral("view_from"), integerProperty()}, {QStringLiteral("view_to"), integerProperty()},
 		{QStringLiteral("unit"), stringProperty()}, {QStringLiteral("start_text"), stringProperty()},

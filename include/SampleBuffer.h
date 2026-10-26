@@ -49,15 +49,22 @@ public:
 	using const_reverse_iterator = std::vector<SampleFrame>::const_reverse_iterator;
 
 	SampleBuffer() = default;
-	SampleBuffer(std::vector<SampleFrame> data, int sampleRate, const QString& audioFile = "");
-	SampleBuffer(
-		const SampleFrame* data, size_t numFrames, int sampleRate = Engine::audioEngine()->outputSampleRate());
+	SampleBuffer(std::vector<SampleFrame> data, int sampleRate, const QString& audioFile = "",
+		int channels = DEFAULT_CHANNELS);
+	SampleBuffer(const SampleFrame* data, size_t numFrames,
+		int sampleRate = Engine::audioEngine()->outputSampleRate(), int channels = DEFAULT_CHANNELS);
 
 	friend void swap(SampleBuffer& first, SampleBuffer& second) noexcept;
 	auto toBase64() const -> QString;
 
 	auto audioFile() const -> const QString& { return m_audioFile; }
 	auto sampleRate() const -> sample_rate_t { return m_sampleRate; }
+	//! The SOURCE layout this buffer was written with: 2 for every file and
+	//! generator, 1 after sample.edit_range's mono downmix. The frames still
+	//! carry two channels (a mono source is dual-mono), so playback is
+	//! unchanged; the count is what the clip's state and the agent read-back
+	//! report.
+	auto channels() const -> int { return m_channels; }
 
 	auto begin() -> iterator { return m_data.begin(); }
 	auto end() -> iterator { return m_data.end(); }
@@ -85,12 +92,14 @@ public:
 
 	static std::shared_ptr<const SampleBuffer> fromFile(const QString& path);
 	static std::shared_ptr<const SampleBuffer> fromBase64(
-		const QString& str, int sampleRate = Engine::audioEngine()->outputSampleRate());
+		const QString& str, int sampleRate = Engine::audioEngine()->outputSampleRate(),
+		int channels = DEFAULT_CHANNELS);
 
 private:
 	std::vector<SampleFrame> m_data;
 	QString m_audioFile;
 	sample_rate_t m_sampleRate = Engine::audioEngine()->outputSampleRate();
+	int m_channels = DEFAULT_CHANNELS;
 };
 
 } // namespace lmms

@@ -38,6 +38,7 @@
 #include "GuiApplication.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "SampleClip.h"
 #include "Song.h"
 #include "SongEditor.h"
 #include "TrackContainer.h"
@@ -318,6 +319,17 @@ QJsonObject clipState(const ClipRef& ref)
 	entry.insert(QStringLiteral("note_count"),
 		midiClip == nullptr ? QJsonValue(QJsonValue::Null)
 			: QJsonValue(static_cast<int>(midiClip->notes().size())));
+	// Q050-106: an audio clip's source layout. null rather than 2 for a clip with no
+	// audio, the note_count convention: "not a sample clip" and "a stereo sample clip"
+	// are different facts. After sample.edit_range op 'mono' this reads 1 / "mono", and
+	// one control.undo restores 2 / "stereo" with the original samples.
+	auto* sampleClip = dynamic_cast<SampleClip*>(ref.clip);
+	const int channels = sampleClip == nullptr ? 0 : sampleClip->sample().channels();
+	entry.insert(QStringLiteral("channels"),
+		sampleClip == nullptr ? QJsonValue(QJsonValue::Null) : QJsonValue(channels));
+	entry.insert(QStringLiteral("layout"),
+		sampleClip == nullptr ? QJsonValue(QJsonValue::Null)
+			: QJsonValue(channels == 1 ? QStringLiteral("mono") : QStringLiteral("stereo")));
 	entry.insert(QStringLiteral("selected"), selectedClipId() == clipId(ref.id));
 	// The clip's fades and gain (the fade/crossfade/clip-gain wave). Reported
 	// for EVERY clip, neutral or not, so an agent reading arrangement.get_state

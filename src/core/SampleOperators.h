@@ -73,6 +73,21 @@ std::vector<SampleFrame> fade(const SampleFrame* in, f_cnt_t frames, bool fadeIn
 //! which is the number `sample.normalize` scales against.
 float peakOf(const SampleFrame* in, f_cnt_t frames);
 
+//! The two channels of a stereo source as separate mono signals, frame for
+//! frame - `sample.split_stereo`'s two output files. No resampling, no
+//! trimming and no mixing: index i is source frame i.
+struct StereoChannels
+{
+	std::vector<float> left;
+	std::vector<float> right;
+};
+StereoChannels splitStereo(const SampleFrame* in, f_cnt_t frames);
+
+//! The documented mono downmix of `sample.edit_range` op "mono": every frame
+//! becomes (L + R) / 2 on BOTH channels (SampleFrame::average's arithmetic),
+//! so playback is dual-mono and the source keeps its rate and frame count.
+std::vector<SampleFrame> toMono(const SampleFrame* in, f_cnt_t frames);
+
 } // namespace sampleops
 } // namespace lmms
 

@@ -51,15 +51,20 @@
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QDialog>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPointer>
 #include <QMenu>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QToolTip>
 #include <QToolButton>
+
+#include <sndfile.h>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -77,6 +82,8 @@
 #include "Mixer.h"
 #include "Model.h"
 #include "RemoteControls.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
 #include "SampleTrack.h"
 #include "ChannelLevelMeter.h"
 #include "CommandLists.h"
@@ -418,6 +425,8 @@ private slots:
 		ShellCommandMenus::populateClip(&audio, sampleClip);
 		QVERIFY2(allDeclareRegisteredCommands(&audio, &stray), qPrintable(stray));
 		QVERIFY(menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Reverse")}) != nullptr);
+		QVERIFY(menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Convert to Mono")}) != nullptr);
+		QVERIFY(menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Split Stereo to Two Mono Files...")}) != nullptr);
 		QVERIFY(menuAction(&audio, {QStringLiteral("Tempo and Warp"), QStringLiteral("Stretch Algorithm"), QStringLiteral("preserve_pitch")}) != nullptr);
 		QVERIFY2(!menuAction(&audio, {QStringLiteral("Crossfade Into Next Clip...")})->isEnabled(), "the last clip offered a crossfade");
 
@@ -465,6 +474,165 @@ private slots:
 		ShellSelection::instance()->setTrack(nullptr);
 		delete instrument;
 		delete sample;
+	}
+
+	/*! Q050-106 AC3: the clip Process menu offers BOTH stereo operations as registered
+	 *  commands, and triggering Convert to Mono really bakes the mean through
+	 *  sample.edit_range - one undo puts the stereo samples back. */
+	void theProcessMenuConvertsAClipToMonoThroughTheCommand()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<SampleFrame> stereo;
+		for (int i = 0; i < 64; ++i)
+		{
+			stereo.emplace_back(0.02f * static_cast<float>(i + 1), -0.03f * static_cast<float>(i + 1));
+		}
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(stereo.data(), stereo.size(), 44100));
+		const QString id = control::clipIdOf(clip);
+
+		QMenu audio;
+		ShellCommandMenus::populateClip(&audio, clip);
+		QAction* mono = menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Convert to Mono")});
+		QVERIFY(mono != nullptr);
+		QCOMPARE(mono->property("controlCommand").toString(), QStringLiteral("sample.edit_range"));
+		QVERIFY(mono->isEnabled());
+		mono->trigger();
+
+		const auto layoutOf = [id]()
+		{
+			for (const QJsonValue& value : run(QStringLiteral("arrangement.get_state"))
+				.result.value(QStringLiteral("clips")).toArray())
+			{
+				const QJsonObject state = value.toObject();
+				if (state.value(QStringLiteral("id")).toString() == id) { return state; }
+			}
+			return QJsonObject();
+		};
+		QCOMPARE(layoutOf().value(QStringLiteral("layout")).toString(), QStringLiteral("mono"));
+		for (int i = 0; i < 64; ++i)
+		{
+			const float mean = (stereo[static_cast<std::size_t>(i)].left()
+				+ stereo[static_cast<std::size_t>(i)].right()) / 2.0f;
+			QCOMPARE(clip->sample().data()[i].left(), mean);
+			QCOMPARE(clip->sample().data()[i].right(), mean);
+		}
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf().value(QStringLiteral("layout")).toString(), QStringLiteral("stereo"));
+		for (int i = 0; i < 64; ++i)
+		{
+			QCOMPARE(clip->sample().data()[i].left(), stereo[static_cast<std::size_t>(i)].left());
+			QCOMPARE(clip->sample().data()[i].right(), stereo[static_cast<std::size_t>(i)].right());
+		}
+
+		QAction* split = menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Split Stereo to Two Mono Files...")});
+		QVERIFY(split != nullptr);
+		QCOMPARE(split->property("controlCommand").toString(), QStringLiteral("sample.split_stereo"));
+		QVERIFY(split->isEnabled());
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
+	}
+
+	/*! Q050-106 AC1/AC3: TRIGGERING the clip Process menu's Split Stereo action opens the
+	 *  destination dialog; filled with two distinct paths it writes both mono files (left
+	 *  and right samples, source rate and length) and leaves the clip's source alone. */
+	void theProcessMenuSplitsAClipIntoTwoMonoFiles()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		std::vector<SampleFrame> stereo;
+		for (int i = 0; i < 64; ++i)
+		{
+			stereo.emplace_back(0.02f * static_cast<float>(i + 1), -0.03f * static_cast<float>(i + 1));
+		}
+		clip->setSampleBuffer(std::make_shared<SampleBuffer>(stereo.data(), stereo.size(), 44100));
+
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString leftPath = directory.filePath(QStringLiteral("menu-left.wav"));
+		const QString rightPath = directory.filePath(QStringLiteral("menu-right.wav"));
+
+		QMenu audio;
+		ShellCommandMenus::populateClip(&audio, clip);
+		QAction* split = menuAction(&audio, {QStringLiteral("Process"), QStringLiteral("Split Stereo to Two Mono Files...")});
+		QVERIFY(split != nullptr);
+		QVERIFY(split->isEnabled());
+
+		// The dialog is modal (exec), so a timer inside its event loop fills and accepts it.
+		bool dialogSeen = false;
+		QTimer probe;
+		probe.setInterval(10);
+		connect(&probe, &QTimer::timeout, this, [&]
+		{
+			auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+			if (dialog == nullptr || dialog->objectName() != QStringLiteral("stereoSplitDialog")) { return; }
+			dialogSeen = true;
+			auto* leftField = dialog->findChild<QLineEdit*>(QStringLiteral("leftPath"));
+			auto* rightField = dialog->findChild<QLineEdit*>(QStringLiteral("rightPath"));
+			if (leftField == nullptr || rightField == nullptr) { dialog->reject(); probe.stop(); return; }
+			leftField->setText(leftPath);
+			rightField->setText(rightPath);
+			dialog->accept();
+			probe.stop();
+		});
+		QTimer watchdog;
+		watchdog.setSingleShot(true);
+		connect(&watchdog, &QTimer::timeout, []
+		{
+			if (auto* modal = QApplication::activeModalWidget()) { modal->close(); }
+		});
+		probe.start();
+		watchdog.start(5000);
+		split->trigger();
+		probe.stop();
+		watchdog.stop();
+		QVERIFY(dialogSeen);
+
+		const auto decode = [](const QString& path, std::vector<float>* samples, int* channels, int* rate)
+		{
+			SF_INFO info{};
+			SNDFILE* file = sf_open(QFile::encodeName(path).constData(), SFM_READ, &info);
+			if (file == nullptr) { return false; }
+			*channels = info.channels;
+			*rate = info.samplerate;
+			samples->resize(static_cast<std::size_t>(info.frames) * static_cast<std::size_t>(info.channels));
+			const sf_count_t got = sf_readf_float(file, samples->data(), info.frames);
+			sf_close(file);
+			return got == info.frames;
+		};
+		std::vector<float> left;
+		std::vector<float> right;
+		int leftChannels = 0;
+		int rightChannels = 0;
+		int leftRate = 0;
+		int rightRate = 0;
+		QVERIFY2(decode(leftPath, &left, &leftChannels, &leftRate), qPrintable(leftPath));
+		QVERIFY2(decode(rightPath, &right, &rightChannels, &rightRate), qPrintable(rightPath));
+		QCOMPARE(leftChannels, 1);
+		QCOMPARE(rightChannels, 1);
+		QCOMPARE(leftRate, 44100);
+		QCOMPARE(rightRate, 44100);
+		QCOMPARE(left.size(), stereo.size());
+		QCOMPARE(right.size(), stereo.size());
+		for (std::size_t i = 0; i < stereo.size(); ++i)
+		{
+			QCOMPARE(left[i], stereo[i].left());
+			QCOMPARE(right[i], stereo[i].right());
+		}
+
+		// The source clip is untouched: same frames, same samples, still stereo.
+		QCOMPARE(static_cast<std::size_t>(clip->sample().sampleSize()), stereo.size());
+		for (std::size_t i = 0; i < stereo.size(); ++i)
+		{
+			QCOMPARE(clip->sample().data()[i].left(), stereo[i].left());
+			QCOMPARE(clip->sample().data()[i].right(), stereo[i].right());
+		}
+		ShellSelection::instance()->setTrack(nullptr);
+		delete track;
 	}
 
 	/*! ED-015/016 (0.5.0 L04): the Inspector's clip and note fields edit through the registry -

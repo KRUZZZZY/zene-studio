@@ -44,13 +44,16 @@ namespace lmms
 {
 class ControlRegistry;
 class SampleClip;
+struct ControlResult;
 
 //! 0.5.0 theme 15: window.sample_editor (src/gui/ControlCommandsSampleEditor.cpp); registered by registerWindowCommands.
 LMMS_EXPORT void registerSampleEditorWindowCommands(ControlRegistry& registry);
 }
 
+class QAction;
 class QComboBox;
 class QLabel;
+class QMenu;
 class QPushButton;
 
 namespace lmms::gui
@@ -138,6 +141,15 @@ public:
 	//! The open sample editor of @a clip, or a new one (shown either way).
 	static SampleEditorDialog* openFor(SampleClip* clip, QWidget* parent);
 
+	/*! Q050-106: ask for the two destinations, then run sample.split_stereo on the clip's
+	 *  whole source. False when the person cancelled a destination dialog (nothing ran);
+	 *  true with the command's outcome in @a result otherwise. Shared by the Sample Editor
+	 *  and the clip's Process menu, so both surfaces reach the same registered command. */
+	static bool splitStereoToFiles(SampleClip* clip, QWidget* parent, ControlResult* result);
+	//! Q050-106: the clip Process menu's "Split Stereo to Two Mono Files..." entry, running
+	//! splitStereoToFiles on @a clip (tagged with sample.split_stereo; disabled unless @a enabled).
+	static QAction* addSplitStereoAction(QMenu* menu, SampleClip* clip, bool enabled);
+
 	SampleClip* clip() const;  // out of line: QPointer<SampleClip>::data() needs the complete type
 	SampleSelectionView* view() const { return m_view; }
 	void setRange(int from, int to) { m_view->setRange(from, to); }
@@ -160,6 +172,9 @@ private:
 	void report(const QString& message, bool failed);
 	//! Run @a op (the button @a label) on the range the fields say; the status line says what happened.
 	void apply(const QString& op, double gainDb, const QString& label);
+	//! Q050-106: the whole source to mono, or the two destinations for a stereo split.
+	void applyMono();
+	void applySplit();
 	QPointer<SampleClip> m_clip;
 	SampleSelectionView* m_view;
 	SampleFrameField* m_start = nullptr;
@@ -167,6 +182,8 @@ private:
 	SampleFrameField* m_length = nullptr;
 	QComboBox* m_unitBox = nullptr;
 	QLabel* m_status = nullptr;
+	QPushButton* m_mono = nullptr;
+	QPushButton* m_split = nullptr;
 	samplerange::Unit m_unit = samplerange::Unit::Time;
 	std::vector<QPushButton*> m_actions;  //!< the edit buttons: enabled while there is a selection to edit
 };

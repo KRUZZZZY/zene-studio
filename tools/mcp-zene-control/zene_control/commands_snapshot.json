@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-25T20:31:23Z",
+  "captured_at": "2026-10-26T01:42:27Z",
   "commands": [
     {
       "args_schema": {
@@ -4445,6 +4445,12 @@
           "auto_resize": {
             "type": "boolean"
           },
+          "channels": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "clip": {
             "type": "string"
           },
@@ -4471,6 +4477,12 @@
           },
           "inverted": {
             "type": "boolean"
+          },
+          "layout": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "length": {
             "maximum": 1919808,
@@ -4778,6 +4790,12 @@
           "auto_resize": {
             "type": "boolean"
           },
+          "channels": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "deleted": {
             "type": "string"
           },
@@ -4807,6 +4825,12 @@
           },
           "inverted": {
             "type": "boolean"
+          },
+          "layout": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "length": {
             "type": "number"
@@ -25285,6 +25309,12 @@
           "auto_resize": {
             "type": "boolean"
           },
+          "channels": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
           "clip": {
             "type": "string"
           },
@@ -25311,6 +25341,12 @@
           },
           "inverted": {
             "type": "boolean"
+          },
+          "layout": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "length": {
             "type": "number"
@@ -25737,7 +25773,8 @@
               "reverse",
               "fade_in",
               "fade_out",
-              "crop"
+              "crop",
+              "mono"
             ],
             "type": "string"
           },
@@ -25747,13 +25784,11 @@
         },
         "required": [
           "clip",
-          "from",
-          "to",
           "op"
         ],
         "type": "object"
       },
-      "description": "Edit an audio clip's source over source frames ['from', 'to'): 'op' gain ('gain_db'), silence, delete (the rest closes up), reverse, fade_in, fade_out or crop (keep only the range) - the sample editor's operations. A fresh copy of the source is swapped in, never a buffer another clip shares. One undo step (Clip checkpoint).",
+      "description": "Edit an audio clip's source over source frames ['from', 'to'): 'op' gain ('gain_db'), silence, delete (the rest closes up), reverse, fade_in, fade_out or crop (keep only the range) - the sample editor's operations - or 'mono', which converts the WHOLE source (from 0, to the frame count) with the documented per-frame arithmetic mean (L + R) / 2 on both playback sides, keeping the rate, frame count and clip settings and reporting channels/layout - 'mono' needs only 'clip' (absent from/to default to the whole source), while every range op requires both bounds. A fresh copy of the source is swapped in, never a buffer another clip shares. One undo step (Clip checkpoint).",
       "group": "sample",
       "id": "sample.edit_range",
       "mutating": true,
@@ -26016,6 +26051,61 @@
       "mutating": false,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "left_path": {
+            "type": "string"
+          },
+          "right_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "left_path",
+          "right_path"
+        ],
+        "type": "object"
+      },
+      "description": "Write a sample clip's whole stereo source as two mono WAV files (float32, at the source rate): 'left_path' receives the left channel and 'right_path' the right channel, sample for sample, with no resampling, trimming or mixing. The clip and the project are not changed. Both paths are .wav files and must differ; a mono clip is refused.",
+      "group": "sample",
+      "id": "sample.split_stereo",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "layout": {
+            "type": "string"
+          },
+          "left_path": {
+            "type": "string"
+          },
+          "right_path": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -35626,6 +35716,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "channels": {
+            "type": "integer"
+          },
           "clip": {
             "type": "string"
           },
@@ -35637,6 +35730,9 @@
           },
           "from": {
             "type": "integer"
+          },
+          "layout": {
+            "type": "string"
           },
           "length": {
             "type": "integer"
@@ -36369,23 +36465,23 @@
       }
     }
   ],
-  "count": 849,
+  "count": 850,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-106-cf3618e61a/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-celzf1jz/zene.sock",
-    "version": "0.4.0-alpha.4775+9643c37"
+    "source_socket": "/tmp/zctl-run-j2obyrpf/zene.sock",
+    "version": "0.4.0-alpha.4776+cf3618e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 849,
-    "ids_sha256": "fd877b788a64b551f0ada13e219eccb4cc84545c69067d1855dd19ac4f2dd242"
+    "id_count": 850,
+    "ids_sha256": "ad5afabbdb3b9db72ad181246a9d9e59aa5d5e95c79837b5d21d1f90ffed2807"
   }
 }

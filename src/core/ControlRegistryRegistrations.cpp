@@ -143,6 +143,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerAudioAnalysisCommands(registry);
 	registerClipImportFileCommands(registry);  // 0.5.0 L04 (Q050-031)
 	registerSampleRangeCommands(registry);
+	registerSampleStereoCommands(registry);  // 0.5.0 L05 (Q050-106): sample.split_stereo
 	registerMixerMeterCommands(registry);
 	registerHardwareIoCommands(registry);  // 0.5.0 F1: audio.io_*, mixer.hardware_*, mixer.cue_*
 	registerTrackMidiOutCommands(registry);

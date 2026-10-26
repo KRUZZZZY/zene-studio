@@ -5181,3 +5181,8 @@ tests/all-sources.txt	cluster 5110 batch: regenerate the inherited whole-tree so
 src/core/main.cpp	cluster 5110: capture --config during the first argument pass and apply its ui/scale before QApplication, with the stored scale file as fallback and QT_SCALE_FACTOR precedence preserved; regression AppearanceStartupTest. cluster 5112: validate required stem output before session markers or engine startup, and end both markers on the failed control-socket listen return; regression MainCliStartupTest.
 tests/CMakeLists.txt	cluster 5110 batch: register AppearanceStartupTest and MainCliStartupTest, link the latter to this build's zene and point its fixture path at this source tree; no existing target properties change.
 tests/src/gui/DevicePanelTest.cpp	# Deleting the selected clip or track does not notify selection listeners
+include/SampleBuffer.h	Q050-106: record the source channel count (1 after the documented mono downmix, 2 otherwise) and expose it; the default keeps every existing buffer, caller and serialization byte-identical.
+src/core/SampleBuffer.cpp	Q050-106: carry the optional channel count through both constructors, swap() and fromBase64(); stereo callers use the default and are unchanged.
+src/core/SampleClip.cpp	Q050-106: serialize the mono layout as an additive `channels="1"` attribute beside the data already written, and read its absence as the pre-existing stereo layout.
+include/Sample.h	Q050-106: expose Sample::channels() as the clip's read-back of the buffer layout; no playback path changes.
+tests/CMakeLists.txt	Q050-106: register the new ControlSampleStereoTest in LMMS_TESTS with the offscreen platform property its sample.* neighbour uses; registration and one property block only.

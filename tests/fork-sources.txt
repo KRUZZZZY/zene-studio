@@ -3034,3 +3034,7 @@ tests/src/core/AppearanceStartupTest.cpp
 tests/src/core/MainCliStartupTest.cpp
 # cluster 5110 batch (2026-10): verdicts, negative-control evidence and completion record.
 docs/qwen-fixes-2026-10/cluster-5110.md
+# Q050-106 (2026-10-19): the stereo pair - sample.split_stereo's command unit and its
+# registered proof (the mono downmix extends the fork-NEW sample.edit_range unit).
+src/core/ControlCommandsSampleStereo.cpp
+tests/src/core/ControlSampleStereoTest.cpp
