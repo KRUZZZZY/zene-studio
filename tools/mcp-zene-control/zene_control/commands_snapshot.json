@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-25T20:31:23Z",
+  "captured_at": "2026-10-26T06:13:08Z",
   "commands": [
     {
       "args_schema": {
@@ -27047,6 +27047,51 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "maximum": 15,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "command": {
+            "type": "string"
+          },
+          "controller": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "note",
+              "cc"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger",
+          "command"
+        ],
+        "type": "object"
+      },
+      "description": "Bind a MIDI NOTE or CONTROL CHANGE to a built-in command that needs no arguments, and run it through the registry once per activation. 'trigger' is note (with 'key' 0..127) or cc (with 'controller' 0..127); 'channel' is 0..15 or -1 for any; 'command' is a registered command id whose schema requires no arguments (the control change's value is NOT passed on as one). A note fires on its press and rearms on its release; a control change fires when it leaves zero and rearms at zero, so a sweep is one activation. Replaces a binding on the same control, and a note still bound to the launcher is taken away from it by the same edit (one undo step). Kept in the config file.",
+      "group": "session",
+      "id": "session.bind_command",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "action": {
             "enum": [
               "slot",
@@ -27236,6 +27281,22 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The controller's command bindings (what session.bind_command made), and whether a controller is connected.",
+      "group": "session",
+      "id": "session.command_bindings",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -28448,6 +28509,50 @@
       "description": "Remove the binding on a note ('key', 'channel' - -1 for an any-channel binding). One undo step.",
       "group": "session",
       "id": "session.unbind",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "maximum": 15,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "command": {
+            "type": "string"
+          },
+          "controller": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trigger": {
+            "enum": [
+              "note",
+              "cc"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "trigger"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the command binding on a note ('trigger' note, 'key', 'channel') or a control change ('trigger' cc, 'controller', 'channel'). One undo step.",
+      "group": "session",
+      "id": "session.unbind_command",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -36369,23 +36474,23 @@
       }
     }
   ],
-  "count": 849,
+  "count": 852,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-217.1-cf3618e61a/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-celzf1jz/zene.sock",
-    "version": "0.4.0-alpha.4775+9643c37"
+    "source_socket": "/tmp/zctl-run-3ty6gvhh/zene.sock",
+    "version": "0.4.0-alpha.4776+cf3618e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 849,
-    "ids_sha256": "fd877b788a64b551f0ada13e219eccb4cc84545c69067d1855dd19ac4f2dd242"
+    "id_count": 852,
+    "ids_sha256": "343b6f8dfc8add5b58b397684949971f8bc6222e4feca0032b5cadc99e9347ab"
   }
 }

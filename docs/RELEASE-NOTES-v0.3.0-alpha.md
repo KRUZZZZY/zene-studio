@@ -1062,8 +1062,13 @@ with the contract test: `rows=840 true_inverse=417 snapshot=42 irreversible=23 n
 
 **M0 merge train 16** (`050/m0-train-16`, 2026-10-25, automatic): `ReversibilityContractTest` on the merged tree measures `rows=858 true_inverse=425 snapshot=42 irreversible=24 not_mutating=367`.
 
+**Q050-217.1** (MIDI bindings for built-in commands, 2026-10-23; integrated onto `050/m0-train-16` 2026-10-26) adds three `session.*` rows - two
+`true_inverse` (`session.bind_command`, `session.unbind_command`: a recorded undo step writes the previous
+config lists back) and one `not_mutating` (`session.command_bindings`, a read) - moving the train-16 figure from
+`858/425/42/24/367` to `861/427/42/24/368`:
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=858 true_inverse=425 snapshot=42 irreversible=24 not_mutating=367
+     measured: rows=861 true_inverse=427 snapshot=42 irreversible=24 not_mutating=368
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

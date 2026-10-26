@@ -164,6 +164,12 @@ void fillLauncher(QMenu* menu)
 	run(controller, QObject::tr("Unbind a Note..."), QStringLiteral("session.unbind"), {}, true);
 	addCommandAction(controller, QObject::tr("Bindings"), QStringLiteral("session.bindings"),
 		[] { return CommandCall{QStringLiteral("session.bindings"), {}, {}, QString(), false, true}; });
+	// Q050-217.1: a note or a control change runs a built-in command that needs no arguments.
+	controller->addSeparator();
+	run(controller, QObject::tr("Bind a Command to a Note or Control Change..."), QStringLiteral("session.bind_command"), {}, true);
+	run(controller, QObject::tr("Unbind a Command..."), QStringLiteral("session.unbind_command"), {}, true);
+	addCommandAction(controller, QObject::tr("Command Bindings"), QStringLiteral("session.command_bindings"),
+		[] { return CommandCall{QStringLiteral("session.command_bindings"), {}, {}, QString(), false, true}; });
 }
 
 QMenu* install(QMenuBar* bar, const QString& title, const QString& name, void (*fill)(QMenu*))

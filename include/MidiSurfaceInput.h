@@ -93,6 +93,12 @@ public:
 	const QString& output() const { return m_output; }
 	int eventsIn() const { return m_eventsIn.load(std::memory_order_relaxed); }
 
+	//! Apply everything the MIDI thread has queued so far, now, on the caller's (UI) thread.
+	//! The drain timer does this by itself in the running application; a harness that feeds
+	//! processInEvent() directly calls it instead of waiting for a timer tick, so a count of
+	//! "one dispatch per activation" is exact and not a timing race.
+	void drainPending() { drain(); }
+
 protected:
 	//! MIDI thread: what @a event means, or false to ignore it.
 	virtual bool decode(const MidiEvent& event, Item* out) = 0;
