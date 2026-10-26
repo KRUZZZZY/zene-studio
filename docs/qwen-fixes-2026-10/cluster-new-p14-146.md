@@ -111,4 +111,19 @@ gates row as FAIL for the same `PermissionError` (see Self-check).
 * **Registration: new test function is in an already-registered file.** `tests/src/core/LinkAudioStreamTest.cpp` and
   `src/core/LinkAudioCodec.cpp` are both listed in `tests/fork-sources.txt` (lines 2429 and 1769). No new file.
 * **Sibling commands in the command files: N/A** (no command file changed).
-* **Official `submit_check.py`:** run after the commit; its result is in the section below.
+* **Verdict type (ALREADY-FIXED / FALSE-POSITIVE evidence): N/A.** The verdict is FIXED; the bug was confirmed in the code
+  at `LinkAudioCodec.cpp:103-107` before the fix (see Evidence).
+
+## Completion check (`submit_check.py new-p14-146`)
+
+`runs/new-p14-146.r1/logs/submit-check-1.log`, EXIT 1:
+
+* PASS commits on the branch; PASS working tree clean; PASS report present with the verdict in its first line;
+  PASS tests changed (`tests/src/core/LinkAudioStreamTest.cpp`).
+* **FAIL gates (feature_check.py).** The check runs the official `feature_check.py`, which writes its logs to
+  `<worktree>-feature-check` beside the worktree. That path is outside this lane's write-jail, so the official script stops
+  with `PermissionError` before any gate runs (`gates-1.log`). The same gates were run through a copy that differs only in
+  its log folder (`gates-5-final-docs.log`, EXIT 0, all PASS). This is an environment blocker in the lane, not a gate
+  failure on the code. The lead needs to run the official script where it can write its logs, or lift the path restriction.
+* The ASK items are answered in the Self-check above (regression reverted/restored, determinism, completeness,
+  collateral damage). No ASK item is left unanswered.
