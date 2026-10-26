@@ -327,7 +327,12 @@ private slots:
 	void theSearchViewListsColumns()
 	{
 		BrowserSearchView view(nullptr);
-		QCOMPARE(view.results()->columnCount(), 5);
+		// Name, Kind, Size, Modified and Tags are the search's columns; Uses and State (Q050-121)
+		// exist for Project Media only and stay hidden until it is shown.
+		QCOMPARE(view.results()->columnCount(), 7);
+		for (int column = 0; column < 5; ++column) { QVERIFY(!view.results()->isColumnHidden(column)); }
+		QVERIFY(view.results()->isColumnHidden(5));
+		QVERIFY(view.results()->isColumnHidden(6));
 		QVERIFY(view.results()->isSortingEnabled());
 	}
 

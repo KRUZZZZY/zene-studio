@@ -111,6 +111,14 @@ QTreeWidgetItem* rowOf(const QJsonObject& item)
 	QStringList tags;
 	for (const QJsonValue& tag : item.value(QStringLiteral("tags")).toArray()) { tags << tag.toString(); }
 	row->setText(Tags, tags.join(QStringLiteral(", ")));
+
+	// Q050-121: Project Media's usage count and the explicit state that keeps a
+	// missing, external or unresolved reference visibly out of the unused set.
+	if (item.contains(QStringLiteral("usage_count")))
+	{
+		row->setData(Usage, Qt::DisplayRole, item.value(QStringLiteral("usage_count")).toInt());
+	}
+	if (item.contains(QStringLiteral("state"))) { row->setText(State, item.value(QStringLiteral("state")).toString()); }
 	row->setData(Name, PathRole, item.value(QStringLiteral("path")).toString());
 	row->setData(Name, KindRole, item.value(QStringLiteral("kind")).toString());
 	row->setToolTip(Name, item.value(QStringLiteral("path")).toString());

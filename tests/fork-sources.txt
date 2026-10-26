@@ -3047,3 +3047,12 @@ src/core/SamplerTakeRecorder.cpp
 src/gui/SamplerTakeButton.cpp
 tests/src/core/SamplerTakeTest.cpp
 tests/src/gui/SamplerTakeGuiTest.cpp
+# 2026-10-21 (cluster Q050-121): Project Media usage/unused/cleanup.
+include/ControlProjectMedia.h
+src/core/ControlProjectMedia.cpp
+src/core/ControlCommandsProjectMedia.cpp
+src/gui/BrowserSearchViewMedia.cpp
+tests/src/core/ControlProjectMediaTest.cpp
+tests/src/gui/BrowserProjectMediaTest.cpp
+tests/control-media-agent-transcript.py
+docs/qwen-fixes-2026-10/cluster-Q050-121.md

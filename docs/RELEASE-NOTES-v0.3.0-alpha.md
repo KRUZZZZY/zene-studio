@@ -1062,6 +1062,11 @@ with the contract test: `rows=840 true_inverse=417 snapshot=42 irreversible=23 n
 
 **M0 merge train 16** (`050/m0-train-16`, 2026-10-25, automatic): `ReversibilityContractTest` on the merged tree measures `rows=858 true_inverse=425 snapshot=42 irreversible=24 not_mutating=367`.
 
+**Q050-121** (Project Media usage and unused-media cleanup, integrated onto `050/m0-train-16`) adds two rows -
+`project.media_usage` (`not_mutating`: a read of the saved project and its `media/` folder) and
+`project.media_cleanup` (`irreversible`: a removed media file is not restored by undo) - measured off the tree
+with the contract test: `rows=860 true_inverse=425 snapshot=42 irreversible=25 not_mutating=368`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=862 true_inverse=426 snapshot=42 irreversible=24 not_mutating=370
      configuration: telemetry.status wasm.load session.get_state stem.get_state
