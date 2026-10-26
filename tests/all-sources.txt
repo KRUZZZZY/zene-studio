@@ -3139,6 +3139,7 @@ tests/src/plugins/ExprSynthAllocationTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
+tests/src/plugins/FilterPoolTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/LadspaChannelCountFixture.cpp
 tests/src/plugins/LadspaChannelCountsTest.cpp

@@ -3022,6 +3022,8 @@ tests/src/gui/TouchWorkspaceTest.cpp
 tests/control-touch-workspace.py
 # cluster new-p17-202 (2026-10): the real-time-safe Watsyn parameter hand-off regression test (fork-NEW).
 tests/src/plugins/WatsynParamHandoffTest.cpp
+# cluster new-p21-158 (2026-10): a reset sfizz filter holder bypasses until setup is called again.
+tests/src/plugins/FilterPoolTest.cpp
 # cluster new-p17-202-port (2026-10): the fix and verification report for the Watsyn parameter hand-off on the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p17-202-port.md
 docs/qwen-fixes-2026-10/cluster-5284-port-port.md

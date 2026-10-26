@@ -18,6 +18,7 @@ sfz::FilterHolder::FilterHolder(Resources& resources)
 void sfz::FilterHolder::reset()
 {
     filter->clear();
+    description = nullptr;
     prepared = false;
 }
 

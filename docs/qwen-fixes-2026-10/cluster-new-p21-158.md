@@ -1,74 +1,47 @@
-FALSE-POSITIVE: `FilterHolder::reset()` leaves `description` set, but nothing dereferences it, so the reported dangling-pointer harm does not occur. The state the finding describes is reachable, but the affected block is silent.
+FIXED: `FilterHolder::reset()` now clears `description`, and a new holder initializes it to null. A holder processed before its next `setup()` no longer tests an indeterminate or stale pointer or runs the previous filter.
 
-Cluster: new-p21-158 (Luna patrol: "reset() leaves a dangling description pointer", FilterPool.cpp:18). Branch `bugs/qwen-new-p21-158`, starting HEAD `cf3618e61`. No product file is changed.
+Cluster: new-p21-158 (Luna patrol: “reset() leaves a dangling description pointer”, FilterPool.cpp:18). Branch `bugs/qwen-new-p21-158`, base `cf3618e61`.
 
-## Verdict
+## Evidence
 
-The finding's mechanism is "a later process() before a new setup() dereferences the stale `description`". The code does not do that:
+- `FilterPool.h:47` previously declared `description` without an initializer. `FilterPool.cpp:68-72` reads it in a null check before choosing either bypass or filter processing; an uninitialized pointer read is undefined behavior.
+- `FilterPool.cpp:29` assigns the pointer only in `setup()`. `Voice.cpp:480-484` can return before the filter setup loop at `Voice.cpp:510-512`, after `Synth.cpp:1313-1315` has reset the selected voice. `Voice::reset()` previously left the pointer unchanged (`Voice.cpp:1719-1720` calls `FilterHolder::reset()`, which did not clear it).
+- The report was right that `process()` does not dereference `description` itself. That does not make the state safe: `process()` reads it, and a non-null value selects processing with the previous filter configuration. The existing null branch is the explicit bypass behavior.
+- The deterministic regression sets up a low-pass filter, resets the holder, then processes an alternating input. Before the product change the old filter still changed the input; after reset clears the pointer the block is copied unchanged.
+- `FilterPool.h:47` now initializes `description` to null, and `FilterPool.cpp:20-23` clears it on reset. Both assignments are allocation-free and do not add work beyond the existing reset on the audio path.
 
-- `description` is dereferenced only inside `setup()`, and only after `setup()` assigns it.
-- `process()` reads `description` only in a null check.
-- The state the finding describes (a reset holder that is processed before setup) is reachable through one early return. In that state the block is all zeros, so no output is affected.
+## Test and build evidence
 
-The proposed fix (`description = nullptr;` in `reset()`) would therefore not change any observable behaviour. It is not applied.
+One test (`FilterPoolTest`) was executed per focused ctest run, from `build/tests`.
 
-## Evidence (file:line on `cf3618e61`)
+| State | Command | EXIT | Result |
+| --- | --- | ---: | --- |
+| Original product, regression added | `cmake --build build/tests --target FilterPoolTest -j4` | 0 | Test built |
+| Original product, regression added | `ctest -R '^FilterPoolTest$' --output-on-failure` | 8 | Failed: reset did not bypass the previous filter (`FilterPoolTest.cpp:46`) |
+| Fix applied | `cmake --build build --target zene -j4` | 0 | Built |
+| Fix applied | `cmake --build build/plugins/SfzPlayer --target sfzplayer -j4` | 0 | Built touched sfizz code and module |
+| Fix applied | `cmake --build build/tests --target FilterPoolTest -j4` | 0 | Built |
+| Fix applied | `ctest -R '^FilterPoolTest$' --output-on-failure` | 0 | 1/1 passed |
+| Product hunks reversed | `cmake --build build/plugins/SfzPlayer --target sfzplayer -j4` | 0 | Built |
+| Product hunks reversed | `cmake --build build/tests --target FilterPoolTest -j4` | 0 | Built |
+| Product hunks reversed | `ctest -R '^FilterPoolTest$' --output-on-failure` | 8 | Failed at the same assertion |
+| Fix restored with `git checkout -- plugins/SfzPlayer/sfizz/src/sfizz/FilterPool.cpp plugins/SfzPlayer/sfizz/src/sfizz/FilterPool.h` | `cmake --build build --target zene -j4` | 0 | Built |
+| Fix restored | `cmake --build build/plugins/SfzPlayer --target sfzplayer -j4` | 0 | Built |
+| Fix restored | `cmake --build build/tests --target FilterPoolTest -j4` | 0 | Built |
+| Fix restored | `ctest -R '^FilterPoolTest$' --output-on-failure` | 0 | 1/1 passed |
 
-1. `reset()` clears only the filter and `prepared`: `plugins/SfzPlayer/sfizz/src/sfizz/FilterPool.cpp:18-22`.
-2. `setup()` assigns the pointer first: `FilterPool.cpp:29`. Every dereference of `description` in the file is inside `setup()`, after that assignment: `FilterPool.cpp:30, 34, 35, 36, 39, 43, 51, 52`.
-3. `process()` uses `description` only as a null test: `FilterPool.cpp:68-72`. Its body (`FilterPool.cpp:74-110`) never reads `*description`. A non-null stale value only selects the filtered branch.
-4. Normal path cannot reach `process()` after `reset()`:
-   - `Voice::reset()` sets the state to idle, clears `region_`, and resets every holder: `plugins/SfzPlayer/sfizz/src/sfizz/Voice.cpp:1700-1726` (idle at :1703, `region_ = nullptr` at :1705, holder reset at :1719-1720).
-   - `renderBlock()` returns when `region_` is null: `Voice.cpp:782-784`.
-   - The synth skips idle voices: `Synth.cpp:1170` (`isFree()` is `state_ == idle`, `Voice.cpp:569-573`).
-5. The reachable path is `Voice::startVoice()` returning early with the state at `cleanMeUp` after `region_` is set (`Voice.cpp:419`) and before the setup loop (`Voice.cpp:510-512`):
-   - Early return at `Voice.cpp:480-484` when the file promise is missing (`cleanMeUp` at :483).
-   - `Synth.cpp:1313-1315` calls `reset()` and then `startVoice()`. A voice that returns false is not idle, so `Synth.cpp:1170` renders it.
-   - `renderBlock()` then runs `filterStageMono/Stereo` (`Voice.cpp:798-804`), which calls `filters_[i].process()` (`Voice.cpp:1039-1040`, `1058-1059`) on holders that were reset and never set up.
-6. The block is silent in that path:
-   - `renderBlock()` zero-fills the buffer first (`Voice.cpp:778`).
-   - `fillWithData()` returns early when `currentPromise_` is null (`Voice.cpp:1073-1075`), so the input to the filter stage is all zeros.
-   - A cleared filter with zero input outputs zero. The `description == nullptr` branch copies zeros as well. This is reasoning from the code, not a measured result.
+The reversal patch was limited to `FilterPool.cpp` and `FilterPool.h`; the test and registrations remained unchanged. It is saved as `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-158.r1/logs/qa-new-p21-158-reverse.patch`.
 
-## Latent issue found while checking (not changed here)
+## Gates and files
 
-`FilterPool.h:47` declares `const FilterDescription* description;` with no initializer, and the constructor (`FilterPool.cpp:11-16`) does not set it. `process()` reads it at `FilterPool.cpp:68` before any `setup()` on a fresh holder. A fresh holder is created by `Voice::setMaxFiltersPerVoice()` (`Voice.cpp:1802-1811`, called from `Synth.cpp:1995`). If the next `startVoice()` returns early as in step 5, `process()` reads an indeterminate pointer. That is undefined behaviour, though its output is still silent because the input is zero. It is a different defect from the one reported. A deterministic regression test is not possible without a sanitizer, so it is not fixed in this cluster. Suggested follow-up: initialise `description` to `nullptr` in the header, verified under ASan or valgrind.
-
-## Commands run and EXIT codes
-
-Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-158.r1/logs/`.
-
-| Command | EXIT | Log |
-| --- | --- | --- |
-| `python3 .../qwen/feature_check.py <worktree>` | 1 | `feature-check-1.log` (PermissionError: the script writes `<worktree>/../<name>-feature-check/`, outside the write-jail) |
-| `bash tests/fork-sources-gate.sh` | 0 | `gate-fork-sources.log` |
-| `bash tests/all-sources-reproduce.sh` | 0 | `gate-all-sources-reproduce.log` |
-| `bash tests/no-upstream-regression-gate.sh` | 0 | `gate-no-upstream-regression.log` |
-| `tests/scripted/check-namespace` | 0 | `gate-check-namespace.log` |
-| `bash tests/no-tautology-gate.sh` | 0 | `gate-no-tautology.log` |
-| `python3 tests/doc-figures-gate.py` | 0 | `gate-doc-figures.log` |
-| `bash tests/complexity-gate.sh --check` | 1 | `gate-complexity.log` (7 REGRESSION lines, all in product files) |
-| `bash tests/file-length-gate.sh --check` | 1 | `gate-file-length.log` (19 REGRESSION lines, all in product files) |
-
-The feature_check.py table could not be produced. The eight gate commands above are the same ones it runs, run from the worktree. Complexity and file-length are red on the train by design. Their REGRESSION items cannot be in a file this branch changes, because the branch changes no product file (the only change is this report).
-
-## RED / GREEN and test count
-
-- RED: not applicable. No product code changed, so there is no failing regression to show.
-- GREEN: not applicable, for the same reason.
-- Affected-family tests executed: 0. No test was run because no code changed.
-- No regression test is added. A claim-only closure has no test to add, and an independent reviewer should check the cited lines.
+- `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-158`: EXIT 0. All eight checks passed; complexity and file-length reported no new item in changed files.
+- Regression registration: `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt`.
+- Files in the QA fix commit: `plugins/SfzPlayer/sfizz/src/sfizz/FilterPool.cpp`, `plugins/SfzPlayer/sfizz/src/sfizz/FilterPool.h`, `tests/src/plugins/FilterPoolTest.cpp`, `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt`, and this report.
 
 ## Self-check
 
-- **Test fails with the change reverted, and passes with it:** not applicable. There is no product change to revert.
-- **Acceptance criteria proven by a test:** the criterion is "the reported dangling dereference is real". It is answered by the code citations above, not by a test.
-- **Undo, realtime, old-project loading, portability:** no code is changed, so none of these apply. The audio path (`Voice.cpp:776-804`, `FilterPool.cpp:63-111`) is read but not modified.
-- **Gates:** feature_check.py cannot run in this write-jail (EXIT 1, PermissionError at its own log directory). The eight gate commands were run individually, with the EXIT codes above. Six pass. Complexity and file-length are red by design and have no new item in a changed file.
-- **Submit check:** `python3 .../qwen/submit_check.py <worktree> new-p21-158` run at this commit, EXIT=1, log `submit-check-1.log`. PASS: commits on the branch, clean tree, report verdict in the first lines, tests row (claim-only closure, no `src/`, `include/` or `plugins/` file changed). FAIL: the "gates (feature_check.py)" row only, because `feature_check.py` exits 1 with a PermissionError when it creates `<worktree>/../<name>-feature-check/`, outside the write-jail. The eight gate commands were run individually above (six exit 0, two red by design with no new item in a changed file). This FAIL is environmental and is not a gate failure on the product.
-- **Answers to the five ASK items:**
-  1. *Test fails with the change reverted, passes with it:* no product change, so there is no test and no RED/GREEN pair to report.
-  2. *Test is deterministic:* no test is added; the verdict rests on the code citations above.
-  3. *Fix at the cause and complete:* no fix. The cause is not in `reset()`; the only consumer of `description` is `setup()` (FilterPool.cpp:29-52) and the null test in `process()` (FilterPool.cpp:68). The sibling holder paths (`Voice::reset`, `Voice::setMaxFiltersPerVoice`) are checked in the latent-issue section.
-  4. *No collateral damage:* nothing changed, so old projects and saved data are untouched.
-  5. *Verdict evidence:* FALSE-POSITIVE is supported by the file:line citations in "Evidence" steps 2-6 (FilterPool.cpp:18-22, 29-52, 68-110; Voice.cpp:419, 480-484, 510-512, 778, 782-784, 798-804, 1039-1040, 1058-1059, 1073-1075, 1700-1726; Synth.cpp:1170, 1313-1315).
+1. `FilterPoolTest` fails on the original code (ctest EXIT 8), passes with the fix (EXIT 0), and fails again with only the product changes reversed (EXIT 8). After restoring the product changes, it passes again (EXIT 0).
+2. The test is deterministic: it supplies a fixed alternating 64-frame block synchronously; it uses no clock, sleep or race.
+3. The pointer is initialized at construction and cleared at the reset cause. `Synth::Impl::startVoice()` calls `Voice::reset()` before `Voice::startVoice()`; the early-return-before-setup path and the `FilterHolder::process()` consumer were checked. `Voice::reset()` is the production caller of `FilterHolder::reset()`.
+4. The change affects only filter-holder state after reset and before the next setup. It does not touch project data, save/load code or commands.
+5. The prior FALSE-POSITIVE verdict was incorrect. `FilterPool.h:47` was uninitialized and `FilterPool.cpp:68` read it before setup; `FilterPool.cpp:20-23` now initializes the holder state safely on reset.

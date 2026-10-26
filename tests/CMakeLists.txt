@@ -1659,6 +1659,11 @@ endif()
 # the mechanical negative control (qwen/negctl.py) can see its name in `ctest -N`.
 list(APPEND LMMS_TESTS src/plugins/CompressorVisualizerTest.cpp)
 
+# Qwen cluster new-p21-158: a reset filter holder must bypass until its next setup.
+if(TARGET sfzplayer_sfizz)
+	list(APPEND LMMS_TESTS src/plugins/FilterPoolTest.cpp)
+endif()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1793,6 +1798,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING PLUGIN_NAME=ladspaeffect)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "FilterPoolTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	lmms_link_allocation_probe(${LMMS_TEST_NAME} "${CMAKE_CURRENT_SOURCE_DIR}/${LMMS_TEST_SRC}")
