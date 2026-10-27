@@ -2943,6 +2943,7 @@ tests/src/core/SaSpectrumViewTest.cpp
 tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
 tests/src/core/SampleAccurateAutomationTest.cpp
+tests/src/core/SampleBufferNoEngineTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/SampleDecoderLimitTest.cpp
 tests/src/core/SampleDecoderOggChannelTest.cpp
