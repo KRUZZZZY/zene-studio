@@ -5389,3 +5389,4 @@ src/gui/widgets/Fader.cpp	new-p14-108 (2026-10-27, BUGS_FOUND 11.12 family): mou
 tests/src/gui/VcaStripLifetimeTest.cpp	# Fader input can dereference a destroyed model
 tests/CMakeLists.txt	cluster new-p21-156: registers SfzFilterEqDescriptionTest in LMMS_TESTS and links it to sfzplayer_sfizz (with the sfizz include directories) so the regression can drive the FilterHolder and EQHolder directly.
 tests/src/gui/SampleEditorDialogTest.cpp	cluster new-p21-61: openFor always returns a dialog whose view() is non-null (new or reopened); regression tests/src/gui/SampleEditorDialogTest.cpp::openForGivesEveryDialogAView.
+tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
