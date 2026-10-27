@@ -31,6 +31,19 @@
 namespace lmms
 {
 
+namespace
+{
+
+//! A harmonic of a table with \a len samples is kept while its period, len / harm, is at least two samples
+//! (Nyquist). The generation loops test this before they add a harmonic. The exactly-Nyquist harmonic is kept.
+//! Harmonic 1 always passes for the tables that exist (len >= 2), so the two-sample table is unchanged.
+bool withinNyquist( int len, int harm )
+{
+	return 2 * harm <= len;
+}
+
+} // namespace
+
 std::array<WaveMipMap, BandLimitedWave::NumWaveforms> BandLimitedWave::s_waveforms = {  };
 bool BandLimitedWave::s_wavesGenerated = false;
 QString BandLimitedWave::s_wavetableDir = "";
@@ -98,17 +111,13 @@ void BandLimitedWave::generateWaves()
 
 			for( int ph = 0; ph < len; ph++ )
 			{
-				int harm = 1;
 				double s = 0.0f;
-				double hlen;
-				do
+				for( int harm = 1; withinNyquist( len, harm ); harm++ )
 				{
-					hlen = static_cast<double>( len ) / static_cast<double>( harm );
 					const double amp = -1.0 / static_cast<double>( harm );
 					//const double a2 = std::cos(om * harm * 2 * pi_v<float>);
 					s += amp * /*a2 **/ std::sin(static_cast<double>(ph * harm) / static_cast<double>(len) * 2 * pi_v<float>);
-					harm++;
-				} while( hlen > 2.0 );
+				}
 				s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLSaw)].setSampleAt( i, ph, s );
 				max = std::max(max, std::abs(s));
 			}
@@ -140,17 +149,13 @@ void BandLimitedWave::generateWaves()
 
 			for( int ph = 0; ph < len; ph++ )
 			{
-				int harm = 1;
 				double s = 0.0f;
-				double hlen;
-				do
+				for( int harm = 1; withinNyquist( len, harm ); harm += 2 )
 				{
-					hlen = static_cast<double>( len ) / static_cast<double>( harm );
 					const double amp = 1.0 / static_cast<double>( harm );
 					//const double a2 = std::cos(om * harm * 2 * pi_v<float>);
 					s += amp * /*a2 **/ std::sin(static_cast<double>(ph * harm) / static_cast<double>(len) * 2 * pi_v<float>);
-					harm += 2;
-				} while( hlen > 2.0 );
+				}
 				s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLSquare)].setSampleAt( i, ph, s );
 				max = std::max(max, std::abs(s));
 			}
@@ -181,18 +186,14 @@ void BandLimitedWave::generateWaves()
 
 			for( int ph = 0; ph < len; ph++ )
 			{
-				int harm = 1;
 				double s = 0.0f;
-				double hlen;
-				do
+				for( int harm = 1; withinNyquist( len, harm ); harm += 2 )
 				{
-					hlen = static_cast<double>( len ) / static_cast<double>( harm );
 					const double amp = 1.0 / static_cast<double>( harm * harm );
 					//const double a2 = std::cos(om * harm * 2 * pi_v<float>);
 					s += amp * /*a2 **/ std::sin((static_cast<double>(ph * harm) / static_cast<double>(len) +
 							((harm + 1) % 4 == 0 ? 0.5 : 0.0)) * 2 * pi_v<float>);
-					harm += 2;
-				} while( hlen > 2.0 );
+				}
 				s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLTriangle)].setSampleAt( i, ph, s );
 				max = std::max(max, std::abs(s));
 			}

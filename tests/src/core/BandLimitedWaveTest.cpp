@@ -40,9 +40,12 @@ using namespace lmms;
 namespace
 {
 
-//! Tolerance for stored samples against the reference. The generator uses a float pi and the shipped
-//! files store rounded values, so their deviation is about 1e-6; the aliased harmonics deviate by 1e-3 or more.
+//! Tolerance for stored samples against the reference. The reference uses the generator's own float pi, so
+//! only float storage remains; the aliased harmonics deviate by 1e-3 or more.
 constexpr double kTolerance = 1e-4;
+
+//! The generator's pi (pi_v<float>), so the reference and the stored tables use the same phase constant.
+constexpr double kGeneratorPi = static_cast<double>(std::numbers::pi_v<float>);
 
 enum class Shape
 {
@@ -67,15 +70,15 @@ std::vector<double> inBandReference(Shape shape, int len)
 			switch (shape)
 			{
 			case Shape::Saw:
-				s += -std::sin(2.0 * std::numbers::pi * cycles) / harm;
+				s += -std::sin(2.0 * kGeneratorPi * cycles) / harm;
 				break;
 			case Shape::Square:
-				s += std::sin(2.0 * std::numbers::pi * cycles) / harm;
+				s += std::sin(2.0 * kGeneratorPi * cycles) / harm;
 				break;
 			case Shape::Triangle:
 			{
 				const double shift = (harm + 1) % 4 == 0 ? 0.5 : 0.0;
-				s += std::sin(2.0 * std::numbers::pi * (cycles + shift)) / (static_cast<double>(harm) * harm);
+				s += std::sin(2.0 * kGeneratorPi * (cycles + shift)) / (static_cast<double>(harm) * harm);
 				break;
 			}
 			}

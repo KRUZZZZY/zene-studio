@@ -5305,3 +5305,7 @@ tests/src/gui/ItemListPanelTest.cpp	2026-10-26 new-p21-203: regression for a neg
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Note position and duration are swapped when importing a DAWproject session
 src/gui/RowTableView.cpp	cluster new-p14-267 (2026-10-26): keyPressEvent walks the column count only when a model is set, so Tab/Backtab with no model (new view or after setModel(nullptr)) no longer dereferences null; regression tests/src/gui/RowTableViewTest.cpp (tabAndBacktabWithoutModelAreSafe, tabAndBacktabAfterClearingModelAreSafe).
 tests/src/gui/RowTableViewTest.cpp	# Tab handling crashes when RowTableView has no model
+src/core/BandLimitedWave.cpp	cluster new-p12-328: the saw, square and triangle generation loops test one shared Nyquist cutoff (2 * harm <= len) before adding a harmonic; the old do-while checked after the add and admitted one harmonic above Nyquist. Regression: tests/src/core/BandLimitedWaveTest.cpp.
+data/wavetables/sqr.bin	cluster new-p12-328: regenerated with the corrected cutoff; the shipped table had an aliased harmonic for len >= 8. Regression: BandLimitedWaveShipped.
+data/wavetables/tri.bin	cluster new-p12-328: regenerated with the corrected cutoff; the shipped table had an aliased harmonic for len >= 8. Regression: BandLimitedWaveShipped.
+data/wavetables/moog.bin	cluster new-p12-328: regenerated because the moog table averages the triangle table, which had the aliased harmonic. Regression: BandLimitedWaveShipped.
