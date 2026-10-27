@@ -2,6 +2,71 @@ IMPLEMENTED
 
 # Q050-502 - Open plug-in windows on Wayland desktops
 
+## Round 2: integration onto `050/m0-train-20`
+
+Integration job: the accepted patch `feat/050-Q050-502-oc @ a35a24f72` applied on `050/m0-train-20 @ c6ee4fc7b`.
+The driver's three-way apply left 8 files conflicted. The source was Q050-490 (VST3/CLAP editors embedded on
+Windows and macOS, `include/PluginWindowSystem.h`), which reached the train after this branch was cut. Every conflict
+was resolved by keeping both sides. No new design was needed, so the verdict stays IMPLEMENTED. Logs are in
+`~/.local/share/zene-bunny-fix/qwen/runs/Q050-502.r2/logs`.
+
+### Conflicts and how they were resolved
+
+| File | Resolution |
+| --- | --- |
+| `src/core/ControlCommandsPluginEditor.cpp` | Only the description string conflicted. It keeps the train's wording (X11 / HWND / NSView) and adds the Wayland sentence, scoped "On Linux". The `requires` refusal hunk merged cleanly. |
+| `data/manual/index.html` | Both paragraphs are kept. The train's sentence "start Zene with `QT_QPA_PLATFORM=xcb`" became "On a Wayland desktop see below". The Wayland paragraph now begins "On Linux". |
+| `tests/src/gui/PluginNativeEditorTest.cpp` | Both includes are kept (`PluginWindowSystem.h`, `PluginWindowPlatform.h`). |
+| `tests/src/plugins/ClapEffectIntegrationTest.cpp` | Both slots are kept: the train's `testTheButtonNamesThePlatformAPluginCannotEmbedOn` and this patch's `testOnNativeWaylandTheEditorRefusesWithTheReason`. The added lines are identical to the accepted patch, except `<QLabel>`, which the train already includes. |
+| `tests/fork-sources.txt`, `tests/upstream-modifications.txt` | Union of both sides. |
+| `tests/all-sources.txt` | Re-derived with its header recipe -> REPRODUCES. |
+| `tools/mcp-zene-control/zene_control/commands_snapshot.json` | Took the train's version, then regenerated it live with `snapshot_live.py` (871 ids / 76 groups). Only `plugin.editor_open`'s description and the capture metadata differ from the train. |
+
+### Semantic difference from the accepted patch
+
+Q050-490 added its own native-Wayland check inside each format's host: `PluginWindowSystem::None` ->
+`noPluginWindowSystemError()`, at `plugins/Vst3Effect/Vst3EditorSession.cpp:203` and
+`plugins/ClapEffect/ClapHostGui.cpp:66`. This patch's checks run before that one, in `plugin.editor_open`
+(`src/core/ControlCommandsPluginEditor.cpp:68`) and in `PluginNativeEditor::open` (`src/gui/PluginNativeEditor.cpp:228`).
+So on native Wayland the reason the user sees is still this patch's, and it names the start-up decision. The
+format-level check is now a second line of defence.
+
+`pluginwindow::editorRefusal()` returns nothing on every platform except `wayland*`, so Q050-490's Windows and macOS
+paths are untouched. Its tests pass on the integrated tip.
+
+### Failure paths and platform hazards
+
+- **Native Wayland, user override.** Typed `requires` with the reason.
+- **Native Wayland, no XWayland (no `DISPLAY`).** Typed `requires`, saying to enable XWayland.
+- **XWayland chosen but libqxcb missing.** The Qt 6 fallback `xcb;wayland` starts on Wayland, and the refusal names
+  the missing plug-in.
+- **Plug-in with no X11 editor.** The format host's existing refusal.
+- **Windows and macOS.** `chooseStartupPlatform()` is a no-op under `LMMS_BUILD_WIN32`/`LMMS_BUILD_APPLE`, and
+  `editorRefusal()` is empty on `windows`/`cocoa`.
+- **Qt 5.15.** `xcb` only, with no list syntax (guarded by `QT_VERSION`).
+
+### Round 2 evidence (all exit codes as seen)
+
+| Step | Command | Result |
+| --- | --- | --- |
+| Build | `cmake --build build --target zene PluginWindowPlatformTest PluginNativeEditorTest ClapEffectIntegrationTest Vst3InstrumentIntegrationTest clapeffect clap-test-gain vst3effect vst3instrument vst3-test-instrument -- -j4` [build-2] | exit 0 |
+| Focused tests | `ctest -R '^(Vst3EditorTest\|ClapEffectIntegrationTest\|Vst3InstrumentIntegrationTest\|PluginNativeEditorTest)$' -V` [test-2] | exit 0. The Q050-502 cases PASS, as do Q050-490's |
+| PluginNativeEditorTest with amplifier | `ctest -R '^PluginNativeEditorTest$'` [build-4, test-3] | exit 0, 12 passed / 0 skipped |
+| Revert proof | Wiring hunks in `main.cpp`, `PluginNativeEditor.cpp` and `ControlCommandsPluginEditor.cpp` reversed; `decide()` and `editorRefusal()` stubbed to `{}`; rebuilt [build-6-reverted, exit 0] | `PluginWindowPlatformTest` 8, `PluginNativeEditorTest` 8, `ClapEffectIntegrationTest` 8, `Vst3InstrumentIntegrationTest` 8. Only the Q050-502 cases failed [test-6-reverted-*] |
+| Restored | `git checkout --` on the 4 files; rebuilt [build-7-restored, exit 0]; 8 suites run [test-7-restored] | Exit 0 for `PluginWindowPlatformTest`, `PluginNativeEditorTest`, `ClapEffectIntegrationTest`, `Vst3InstrumentIntegrationTest`, `Vst3EditorTest`, `ReversibilityContractTest` and `ControlCommandsSnapshot`. `MainCliStartupTest` was not built in that run; built and run in [build-8, test-8] -> exit 0 |
+| Start-up neighbours | `MainCliStartupTest`, `ControlShutdown` [test-8]; `AppearanceStartupTest` [build-9, test-9] | exit 0 |
+| Snapshot | `snapshot_live.py $PWD` [snapshot-1] | exit 0, 871 ids / 76 groups |
+| Doc figures | `python3 tests/doc-figures-gate.py` [docfig-1] | exit 0, PASS |
+| A16 | `ReversibilityContractTest` [test-5] | exit 0. No class changed, so the histogram line is unchanged |
+| Gates | `feature_check.py`, copy with only its log dir and ROOT made absolute [feature-check-2] | exit 0. All 8 rows PASS |
+
+The original `feature_check.py` exits 1 from this lane [feature-check-1] with `PermissionError`, because it creates
+`<worktree>-feature-check` beside the worktree, outside the write-jail. This is the same environment issue as round 1.
+Builds used `CCACHE_TEMPDIR=/tmp/q502-ccache-tmp`, because the configured ccache temp dir is not writable here
+[build-1 failed on that, exit 2].
+
+## Round 1 record (accepted patch)
+
 Branch `feat/050-Q050-502-oc` from `050/m0-train-19` (`5c1c6715d`). The full record, the measurements and the
 reasoning behind the design are in `docs/050-features/Q050-502.md`. Logs are in
 `~/.local/share/zene-bunny-fix/qwen/runs/Q050-502.r1/logs`. Every exit code below was read from those runs.
