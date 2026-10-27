@@ -42,9 +42,10 @@
 #include "Song.h"
 #include "Track.h"
 
-#if defined(__SANITIZE_ADDRESS__)
+// GCC/Clang AddressSanitizer only (MSVC's /fsanitize=address has no LeakSanitizer or hook API).
+#if !defined(_MSC_VER) && defined(__SANITIZE_ADDRESS__)
 #define GRAPH_TEST_ASAN 1
-#elif defined(__has_feature)
+#elif !defined(_MSC_VER) && defined(__has_feature)
 #if __has_feature(address_sanitizer)
 #define GRAPH_TEST_ASAN 1
 #endif

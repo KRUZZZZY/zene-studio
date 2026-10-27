@@ -3103,3 +3103,5 @@ tests/src/core/WaveformDataTest.cpp
 tests/src/plugins/GraphWaveformLoadTest.cpp
 tests/control-graph-waveform-load.py
 tests/src/gui/GraphWaveformEditorGuiTest.cpp
+docs/050-features/Q050-486.md
+docs/qwen-fixes-2026-10/cluster-Q050-486.md
