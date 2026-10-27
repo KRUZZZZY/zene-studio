@@ -1018,6 +1018,7 @@ include/OutOfProcessHosting.h
 include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
+include/ParameterReadOnly.h
 include/PatchWiring.h
 include/PerformView.h
 include/PhaseScopeTap.h

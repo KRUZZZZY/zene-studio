@@ -24,6 +24,8 @@
 
 #include "Vst3Parameter.h"
 
+#include "ParameterReadOnly.h"
+
 namespace lmms
 {
 
@@ -37,6 +39,8 @@ Vst3ParamModel::Vst3ParamModel(const Vst3ParamDescriptor& descriptor, Model* par
 	setStep(m_descriptor.stepped && m_descriptor.stepCount > 0
 			? 1.f / static_cast<float>(m_descriptor.stepCount)
 			: 0.01f);
+	// stress-4: a kIsReadOnly parameter is the plug-in's to set; the control surface reports and refuses it.
+	markParameterReadOnly(this, m_descriptor.readOnly);
 }
 
 QString Vst3ParamModel::displayValue(const float value) const

@@ -256,6 +256,7 @@ private slots:
 	void testAnEffectsEditorOpensAtItsDeviceScale();
 	void testReadOnlyParametersAreNotKnobs();
 	void testReadOnlyParametersAreNotEffectKnobs();
+	void testReadOnlyParametersAreReportedAndRefusedOverControl();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -987,6 +988,62 @@ void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreNotEffectKnobs()
 	QCOMPARE(knobs.size(), 1);
 	QVERIFY2(knobs.first()->model()->displayName() == QStringLiteral("Level"),
 		"the surviving effect knob is not the automatable Level parameter");
+}
+
+/*! stress-4 (a): the plug-in stress run's state round-trip "lost" read-only parameters - DPF's "Buffer Size"
+ *  and "Sample Rate", AIDA-X's "Meter Out" - because plugin.param_get listed them with a range and
+ *  plugin.param_set accepted a write the plug-in then overwrote. The fixture's "Meter" is declared with
+ *  ParameterInfo::kIsReadOnly: over the control surface it must say read_only, a write to it must be refused
+ *  with a typed error and leave it as it was, and plugin.randomise must not move it - while "Level", the
+ *  writable parameter beside it, keeps working exactly as before. */
+void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreReportedAndRefusedOverControl()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	QCOMPARE(instrument->parameterName(1), QStringLiteral("Meter"));
+
+	ControlRegistry::setReady(true);
+	auto* registry = ControlRegistry::instance();
+	const auto address = [&track](int index) {
+		return QJsonObject{{QStringLiteral("target"), control::trackIdOf(track.get())},
+			{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("index"), index}};
+	};
+	const auto parameterOf = [](const ControlResult& reply) {
+		return reply.result.value(QStringLiteral("parameter")).toObject();
+	};
+
+	const ControlResult meter = registry->invoke(QStringLiteral("plugin.param_get"), address(1));
+	QVERIFY2(meter.ok, qPrintable(meter.errorMessage));
+	QVERIFY2(parameterOf(meter).value(QStringLiteral("read_only")).toBool(),
+		"plugin.param_get does not report the kIsReadOnly Meter as read_only");
+	const ControlResult level = registry->invoke(QStringLiteral("plugin.param_get"), address(0));
+	QVERIFY2(level.ok, qPrintable(level.errorMessage));
+	QVERIFY2(!parameterOf(level).contains(QStringLiteral("read_only")), "the writable Level is reported read-only");
+
+	AutomatableModel* meterModel = instrument->parameterModel(1);
+	const float before = meterModel->value<float>();
+	QJsonObject write = address(1);
+	write.insert(QStringLiteral("value"), before < 0.5f ? 1.0 : 0.0);
+	const ControlResult refused = registry->invoke(QStringLiteral("plugin.param_set"), write);
+	QVERIFY2(!refused.ok, "plugin.param_set wrote a read-only parameter");
+	QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+	QCOMPARE(meterModel->value<float>(), before);
+
+	// A sibling write path: plugin.randomise changes the device's settings, and a read-only one is not one.
+	const QJsonObject randomise{{QStringLiteral("target"), control::trackIdOf(track.get())},
+		{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("amount"), 1.0}, {QStringLiteral("seed"), 7}};
+	const ControlResult randomised = registry->invoke(QStringLiteral("plugin.randomise"), randomise);
+	QVERIFY2(randomised.ok, qPrintable(randomised.errorMessage));
+	QCOMPARE(meterModel->value<float>(), before);
+
+	// The writable parameter is untouched by any of it.
+	QJsonObject levelWrite = address(0);
+	levelWrite.insert(QStringLiteral("value"), 0.25);
+	const ControlResult written = registry->invoke(QStringLiteral("plugin.param_set"), levelWrite);
+	QVERIFY2(written.ok, qPrintable(written.errorMessage));
+	QCOMPARE(instrument->parameterModel(0)->value<float>(), 0.25f);
+	ControlRegistry::setReady(false);
 }
 
 } // namespace lmms

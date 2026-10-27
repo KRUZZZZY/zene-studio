@@ -47,6 +47,7 @@
 #include "ClapKnobGrid.h"
 #include "ClapSubPluginFeatures.h"
 #include "ConfigManager.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
@@ -85,6 +86,7 @@ private slots:
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
 	void testReadOnlyParametersGetNoKnob();
+	void testReadOnlyParametersAreReportedReadOnly();
 	void testAProcessingErrorFallsBackToDryAudio();
 	void testScanFailuresAreReported();
 
@@ -619,6 +621,35 @@ void lmms::ClapEffectIntegrationTest::testParameterRescansRebuildTheModels()
 	AudioBus bus{busData, 1, 48};
 	QVERIFY(chain.processAudioBuffer(bus));
 	QVERIFY2(std::abs(storage[0][0] - 0.25f) < 1e-6f, qPrintable(QString::number(storage[0][0])));
+	chain.clear();
+}
+
+/*! stress-4 (a): a CLAP_PARAM_IS_READONLY parameter is the plug-in's to set, so the control surface's parameter
+ *  object - what plugin.param_get and dsp.get_state report - says read_only, and plugin.param_set refuses it
+ *  (the refusal is the shared one Vst3InstrumentIntegrationTest drives). The writable Gain says nothing new. */
+void lmms::ClapEffectIntegrationTest::testReadOnlyParametersAreReportedReadOnly()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_READONLY", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	qunsetenv("CLAP_TEST_GAIN_READONLY");
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* readOnly = controls->modelForParam(2);
+	QVERIFY(readOnly != nullptr && readOnly->descriptor().readOnly);
+
+	const QList<AutomatableModel*> models = controlEffectParameters(effect);
+	const int readOnlyIndex = models.indexOf(readOnly);
+	QVERIFY(readOnlyIndex >= 0);
+	QVERIFY2(controlParameterJson(readOnly, readOnlyIndex).value(QStringLiteral("read_only")).toBool(),
+		"the CLAP_PARAM_IS_READONLY parameter is not reported read_only");
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr && !gain->descriptor().readOnly);
+	QVERIFY2(!controlParameterJson(gain, static_cast<int>(models.indexOf(gain))).contains(QStringLiteral("read_only")),
+		"the writable Gain is reported read-only");
 	chain.clear();
 }
 

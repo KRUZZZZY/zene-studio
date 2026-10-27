@@ -31,6 +31,7 @@
 #include "AudioEngine.h"
 #include "ClapHost.h"
 #include "Engine.h"
+#include "ParameterReadOnly.h"
 
 namespace lmms
 {
@@ -58,6 +59,8 @@ ClapParamModel::ClapParamModel(const ClapParamDescriptor& descriptor, Model* par
 	// W6: the parameter's own id as the model's name - the stable key its alias is kept by (ParameterAliases.h),
 	// which a rename or a translation of its title does not move.
 	setObjectName(QStringLiteral("clap-%1").arg(descriptor.id));
+	// stress-4: a CLAP_PARAM_IS_READONLY parameter is the plug-in's to set; the control surface reports and refuses it.
+	markParameterReadOnly(this, m_descriptor.readOnly);
 }
 
 void ClapParamModel::setDescriptor(const ClapParamDescriptor& descriptor)
@@ -66,6 +69,7 @@ void ClapParamModel::setDescriptor(const ClapParamDescriptor& descriptor)
 		&& descriptor.stepped == m_descriptor.stepped;
 	m_descriptor = descriptor;
 	setDisplayName(descriptor.title);
+	markParameterReadOnly(this, descriptor.readOnly);
 	// An info or text rescan leaves the range as it is: the model's, which the audio thread may be reading while it
 	// automates the parameter, is then not written at all.
 	if (!sameRange)
