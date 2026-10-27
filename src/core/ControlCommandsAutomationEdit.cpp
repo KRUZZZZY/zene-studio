@@ -73,8 +73,9 @@ ControlResult automationAddPoint(const QJsonObject& args)
 	if (!resolveParameter(args, &target, &parameter, &error)) { return error; }
 
 	const double value = args.value(QStringLiteral("value")).toDouble();
-	if (value < static_cast<double>(parameter.model->minValue<float>()) ||
-		value > static_cast<double>(parameter.model->maxValue<float>()))
+	// Written as "inside the range", not "outside it": NaN fails both comparisons, so it is refused with the rest.
+	if (!(value >= static_cast<double>(parameter.model->minValue<float>()) &&
+		value <= static_cast<double>(parameter.model->maxValue<float>())))
 	{
 		return control::automatableRangeRefusal(parameter.model, value);
 	}
