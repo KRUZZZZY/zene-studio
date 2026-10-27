@@ -378,6 +378,7 @@ include/DocumentIndex.h
 include/DpiHelper.h
 include/Draggable.h
 include/DrumPadState.h
+include/DrumRackPanel.h
 include/DrumSynth.h
 include/DspEffectLibrary.h
 include/DspLoadProbe.h
@@ -2298,6 +2299,7 @@ src/gui/ControllerView.cpp
 src/gui/Controls.cpp
 src/gui/CrashReportMenu.cpp
 src/gui/CrossfadeEditorDialog.cpp
+src/gui/DrumRackPanel.cpp
 src/gui/EffectControlDialog.cpp
 src/gui/EffectDeviceMenu.cpp
 src/gui/EffectHostingMenu.cpp
@@ -3080,6 +3082,7 @@ tests/src/gui/CrossfadeEditorTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
+tests/src/gui/DrumRackPanelTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp

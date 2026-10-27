@@ -41,7 +41,8 @@ namespace lmms::gui
  *  a "Folder" submenu for @a track's operations menu. Every item runs the registry command an
  *  agent runs - "Move to folder" (track.set_folder, with "No folder" for the container root),
  *  and on a folder itself "Collapsed" (track.folder_set_collapsed), "Pinned" (track.set_pinned)
- *  and "Route children through the folder" (track.set_routing) - so the menu and the socket
+ *  and "Route children through the folder" (track.set_routing), and "Drum Rack Pads..." (the folder's
+ *  sample pads, DrumRackPanel: track.drum_rack_*) - so the menu and the socket
  *  cannot disagree. A refusal (a cycle, say) is shown in a message box, typed text and all. */
 LMMS_EXPORT void addTrackFolderMenu(QMenu* menu, Track* track);
 

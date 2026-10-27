@@ -1225,6 +1225,8 @@ set(LMMS_TESTS
 	src/gui/XyPadPairTest.cpp
 	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
 	src/gui/TrackFolderMenuTest.cpp
+	# Q050-066 stage 1: the folder's Drum Rack Pads... panel adds and edits pads through track.drum_rack_*.
+	src/gui/DrumRackPanelTest.cpp
 	# 0.5.0 ED-035: a folder's row draws its children's clips as summary clips, each moved, copied or deleted as one.
 	src/gui/FolderSummaryLaneTest.cpp
 	# 0.5.0 L06 (Q050-022): a lane is drawn as a collapsible child under its owner in the arranger.
@@ -2263,6 +2265,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"
 		# Q050-066: the pad tests and the pad panel play through the build's audiofileprocessor module.
 		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest"
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest"
 		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
@@ -2367,7 +2370,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 
 	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
-		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest")
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()
 
@@ -3307,6 +3310,7 @@ set_tests_properties(MidiClipLinkedEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(MidiClipStepMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(DrumRackPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationLaneChildGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MainWindowGeometryTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3369,6 +3373,8 @@ target_compile_definitions(ThemeContrastTest PRIVATE
 target_compile_definitions(DeviceCopyTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 target_compile_definitions(DrumRackPadsTest PRIVATE
+	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+target_compile_definitions(DrumRackPanelTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
