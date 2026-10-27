@@ -1054,6 +1054,7 @@ private slots:
 	void positiveFractionHandlesVeryLargePositiveValues();
 	void positiveFractionHandlesVeryLargeNegativeValues();
 	void positiveFractionPreservesOrdinaryValues();
+	void waveshaperLookupHandlesSamplesPastTheTableEnd();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
 	void ladspaEffectProcessLockTakesNoExclusiveMutex();
 	void ladspaEffectRejectsZeroInputPlugin();
@@ -1916,6 +1917,63 @@ void PluginPortsMigrationTest::positiveFractionPreservesOrdinaryValues()
 	QCOMPARE(lmms::positiveFraction(1.25f), 0.25f);
 	QCOMPARE(lmms::positiveFraction(-0.25f), 0.75f);
 	QCOMPARE(lmms::positiveFraction(-2.0f), 0.0f);
+}
+
+void PluginPortsMigrationTest::waveshaperLookupHandlesSamplesPastTheTableEnd()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_waveshaper)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	std::unique_ptr<lmms::Effect> effect{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	// Clip off, unity gains, fully wet. The last table entry is scaled down to
+	// 2^-20 so that a waveshaped out-of-table sample stays inside the +/-1000
+	// range that AudioBus::sanitize() applies to track output. Without that,
+	// the bus clamp would hide what the waveshaper itself produced.
+	constexpr auto tailGain = 0x1p-20f;
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", 1);
+	root.setAttribute("autoquit", 0);
+	QDomElement controls = effect->controls()->saveState(doc, root);
+	controls.setAttribute("inputGain", 1);
+	controls.setAttribute("outputGain", 1);
+	controls.setAttribute("clipInput", 0);
+	effect->loadSettings(root);
+	const auto graphs = effect->controls()->findChildren<lmms::graphModel*>();
+	QCOMPARE(static_cast<int>(graphs.size()), 1);
+	graphs[0]->setSampleAt(199, tailGain);
+
+	// Frame 0: |x| * 200 is far beyond the int range (lookup must saturate, not wrap).
+	// Frame 1: |x| * 200 is about 4e9, also beyond the int range, with a finite result.
+	// Frame 2: |x| * 200 overflows float to +inf; the result must not turn into NaN.
+	// Frame 3: an in-table sample (|x| * 200 == 100) keeps the ordinary lookup covered.
+	std::vector<lmms::SampleFrame> data{{1e9f, -1e9f}, {2e7f, -2e7f}, {3e38f, -3e38f}, {0.5f, -0.5f}};
+	const lmms::f_cnt_t frames = static_cast<lmms::f_cnt_t>(data.size());
+	lmms::SampleFrame* busPointers[partc::ChannelPairs] = {data.data()};
+	lmms::AudioBus bus{busPointers, partc::ChannelPairs, frames};
+	effect->processAudioBuffer(bus);
+
+	QCOMPARE(data[0].left(), 1e9f * tailGain);
+	QCOMPARE(data[0].right(), -1e9f * tailGain);
+	QCOMPARE(data[1].left(), 2e7f * tailGain);
+	QCOMPARE(data[1].right(), -2e7f * tailGain);
+	// The bus clamps track output to +/-1000, and the waveshaped value is far above that.
+	QCOMPARE(data[2].left(), 1000.0f);
+	QCOMPARE(data[2].right(), -1000.0f);
+	QCOMPARE(data[3].left(), 0.5f);
+	QCOMPARE(data[3].right(), -0.5f);
 }
 
 void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange()
