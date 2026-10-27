@@ -6472,14 +6472,14 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			SKIP_RETURN_CODE 77
 		)
 		# Q050-062.3: the real-model quality benchmark (tools/stem_quality_bench.py,
-		# doc/STEM-SPLIT.md "Quality per setting") checked hermetically - every
-		# quality runs through the CLI on the committed stub model and a synthetic
+		# doc/STEM-SPLIT.md "End-to-end §5") checked hermetically - every quality
+		# runs through the CLI on the committed stub model and a synthetic
 		# reference set whose SDRs are known in closed form, and the record carries
 		# the model/CLI identity. No network: the MUSDB18-HQ fetch is not exercised.
 		add_test(NAME StemQualityBench
 			COMMAND ${PYTHON3_EXECUTABLE}
-				${CMAKE_SOURCE_DIR}/tools/stem_quality_bench.py selftest
-				--model ${CMAKE_CURRENT_SOURCE_DIR}/data/stub-4stem-linear.onnx)
+				${CMAKE_CURRENT_SOURCE_DIR}/stem-quality-bench.py
+				${CMAKE_CURRENT_SOURCE_DIR}/data/stub-4stem-linear.onnx)
 		set_tests_properties(StemQualityBench PROPERTIES
 			TIMEOUT 300
 			SKIP_RETURN_CODE 77

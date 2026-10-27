@@ -26,9 +26,10 @@
 #             checked against the pins below (a mismatch is an error).
 #   run       separate every excerpt at every quality with the CLI the GUI
 #             drives, time it, and score the stems against the references.
-#   selftest  the hermetic check registered in ctest (StemQualityBench): a
-#             synthetic reference set and the committed stub model, with SDR
-#             values known in closed form. It never touches the network.
+#
+# tests/stem-quality-bench.py (ctest StemQualityBench) checks `run`
+# hermetically: a synthetic reference set and the committed stub model, with
+# SDR values known in closed form. It never touches the network.
 #
 # SDR is the global signal-to-distortion ratio of the Music Demixing
 # challenges (the "nSDR" Demucs reports): per stem and excerpt,
@@ -417,92 +418,6 @@ def command_run(args):
     return 0
 
 
-# ----------------------------------------------------------------- selftest
-
-def make_synthetic_refset(refset):
-    """One excerpt whose references are fixed multiples of the mix, chosen so
-    the stub model's estimates (0.4/0.3/0.2/0.1 x mix, tests/data/
-    stub-4stem-linear.onnx) score known SDRs: ref = g x mix, est = s x mix
-    gives SDR = 20 log10(g / |g - s|) for any mix."""
-    import numpy as np
-    gains = {"drums": 0.5, "bass": 0.3, "other": 0.1, "vocals": 0.1}
-    stub = {"drums": 0.4, "bass": 0.3, "other": 0.2, "vocals": 0.1}
-    track_dir = os.path.join(refset, "synthetic")
-    os.makedirs(track_dir, exist_ok=True)
-    rng = np.random.default_rng(20261027)
-    mix = (0.3 * rng.standard_normal((2, 3 * SAMPLE_RATE))).astype(np.float32)
-    write_f32(os.path.join(track_dir, "mix.f32"), mix)
-    for stem, gain in gains.items():
-        write_f32(os.path.join(track_dir, stem + ".f32"), (gain * mix).astype(np.float32))
-    expected = {}
-    for stem in STEM_NAMES:
-        miss = abs(gains[stem] - stub[stem])
-        expected[stem] = None if miss == 0 else 20.0 * np.log10(gains[stem] / miss)
-    return expected
-
-
-def _row_failures(row, expected):
-    failures = []
-    for stem, want in expected.items():
-        got = row["sdr"][stem]
-        if want is None and got < 60.0:
-            failures.append(f"{row['quality']}/{stem}: exact estimate scored {got} dB, want >= 60")
-        if want is not None and abs(got - want) > 0.01:
-            failures.append(f"{row['quality']}/{stem}: SDR {got} dB, want {want:.4f}")
-    if not row["elapsed_s"] > 0 or row["hop"] < 1:
-        failures.append(f"{row['quality']}: elapsed {row['elapsed_s']} hop {row['hop']}")
-    return failures
-
-
-def _record_failures(record):
-    failures = []
-    rows = record["rows"]
-    if sorted({row["quality"] for row in rows}) != sorted(QUALITIES):
-        failures.append(f"qualities measured {[r['quality'] for r in rows]}")
-    chunks = {row["quality"]: row["chunks"] for row in rows}
-    if not chunks.get("fast", 0) < chunks.get("standard", 0) < chunks.get("high", 0):
-        failures.append(f"chunk counts do not rise with quality: {chunks}")
-    missing = [key for key in ("model_sha256", "cli_sha256", "onnxruntime", "python")
-               if not record["conditions"].get(key)]
-    failures += [f"run conditions lack {key}" for key in missing]
-    if set(record["summary"]) != set(QUALITIES):
-        failures.append(f"summary covers {sorted(record['summary'])}")
-    return failures
-
-
-def selftest_failures(record, expected):
-    failures = _record_failures(record)
-    for row in record["rows"]:
-        failures += _row_failures(row, expected)
-    return failures
-
-
-def command_selftest(args):
-    import tempfile
-    try:
-        import numpy  # noqa: F401
-        import onnxruntime  # noqa: F401
-    except ImportError as exc:
-        print(f"SKIP: {exc}")
-        return 77
-    with tempfile.TemporaryDirectory() as scratch:
-        expected = make_synthetic_refset(os.path.join(scratch, "refset"))
-        out = os.path.join(scratch, "result.json")
-        run_args = argparse.Namespace(refset=os.path.join(scratch, "refset"), cli=args.cli,
-                                      model=args.model, work=os.path.join(scratch, "work"),
-                                      out=out, qualities=list(QUALITIES), repeats=1,
-                                      segment=16384)
-        if command_run(run_args) != 0:
-            print("FAIL: run did not complete")
-            return 1
-        with open(out) as fh:
-            failures = selftest_failures(json.load(fh), expected)
-    for failure in failures:
-        print("FAIL:", failure)
-    print("PASS" if not failures else f"{len(failures)} failure(s)")
-    return 0 if not failures else 1
-
-
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
     parser = argparse.ArgumentParser(description="Stem-separation SDR and time per quality")
@@ -518,12 +433,9 @@ def main():
     run.add_argument("--qualities", nargs="+", choices=QUALITIES, default=list(QUALITIES))
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--segment", type=int, default=None)
-    selftest = sub.add_parser("selftest", help="hermetic check with the stub model")
-    selftest.add_argument("--model", required=True)
-    for each in (run, selftest):
-        each.add_argument("--cli", default=os.path.join(here, "stem_split_cli.py"))
+    run.add_argument("--cli", default=os.path.join(here, "stem_split_cli.py"))
     args = parser.parse_args()
-    return {"fetch": command_fetch, "run": command_run, "selftest": command_selftest}[args.command](args)
+    return {"fetch": command_fetch, "run": command_run}[args.command](args)
 
 
 if __name__ == "__main__":

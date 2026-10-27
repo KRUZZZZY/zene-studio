@@ -17,8 +17,8 @@ gave identical SDRs:
 | `standard` | 11 | 7.723 dB | 0 | 1.00x |
 | `high` | 22 | 7.768 dB | +0.045 dB | 2.01x |
 
-New: `tools/stem_quality_bench.py` (`fetch` / `run` / `selftest`) and the hermetic ctest
-`StemQualityBench`. The run's JSON record is `docs/050-features/Q050-062.3-bench.md`, unedited in one fenced block.
+New: `tools/stem_quality_bench.py` (`fetch` / `run`) and the hermetic ctest `StemQualityBench`
+(`tests/stem-quality-bench.py`, a black-box check of `run`). The run's JSON record is `docs/050-features/Q050-062.3-bench.md`, unedited in one fenced block.
 The docs, the manual and a stale header comment are updated. No command, engine, GUI or project-format
 change.
 
@@ -31,16 +31,19 @@ change.
 | Per-setting SDR and elapsed time with model/data identity and reproducible conditions | the JSON record (`docs/050-features/Q050-062.3-bench.md`, verified equal to `07-quality-bench.json` with `json.loads`) + `doc/STEM-SPLIT.md` §5 | SDR per stem/excerpt/setting; `elapsed_s`, RTF and process wall for each run; loadavg before/after; model, CLI and 20 data-file sha256s; Python/onnxruntime/numpy versions, CPU, kernel; exact commands. The cgroup quota (`400000 100000`, captured in `19-bench-cgroup.log`) is in the doc; the tool records it from now on. Identical SDRs on both passes | 0 |
 | Tool correctness (hermetic) | `ctest -R '^StemQualityBench$'` | closed-form SDRs (13.9794 dB, 0 dB, exact ≥ 60 dB), chunk counts fast<standard<high, identity fields present | 0 |
 
-Revert proof for `StemQualityBench` (`13`-`16-*.log`): the tool removed → exit 8 (`can't open file`); SDR
-`10→20 log10` → exit 8 (`SDR 27.9588 dB, want 13.9794`); only two qualities run → exit 8 (`qualities
-measured ['fast', 'standard']`); restored → exit 0, and `git status` clean.
+Revert proof for the final `StemQualityBench` (`41`-`45-*.log`): tool removed → exit 8 (`FAIL: run exited
+2`); SDR `10→20 log10` → exit 8 (`SDR 27.9588 dB, want 13.9794`); only two qualities run → exit 8
+(`qualities measured ['fast', 'standard']`); record without the model hash → exit 8 (`run conditions lack
+model_sha256`). Restored → exit 0, and the file is byte-identical to the original (`cmp`). The earlier
+in-tool selftest had the same proof (`13`-`16`, `31`-`35`).
 
 Final ctest (`22-ctest-final.log`, after rebuilding `zene` and the stem test targets for the `StemTypes.h`
 comment; build `21-build.log` exit 0):
 `ctest -R '^(StemQualityBench|StemQualityTest|StemJobManagerTest|StemSplitPipelineTest|StemSplitMenuTest|ControlStemCommands|DocFiguresGate|StemAvailabilityDocsGate)$'`
-→ 8/8 passed, exit 0. After the final doc edits, `StemQualityBench|DocFiguresGate|StemAvailabilityDocsGate` → 3/3, exit 0 (`27-ctest-docs.log`).
+→ 8/8 passed, exit 0. After the test moved to `tests/stem-quality-bench.py` (the build regenerated, `29-build.log`
+exit 0): `StemQualityBench|DocFiguresGate|StemAvailabilityDocsGate` → 3/3, exit 0 (`39-ctest.log`).
 
-Gates (`26-feature-check.log`): fork-sources, all-sources-reproduce, no-upstream-regression,
+Gates (`40-feature-check.log`): fork-sources, all-sources-reproduce, no-upstream-regression,
 check-namespace, no-tautology, doc-figures PASS; complexity and file-length: no new item. Tools scope:
 `complexity-gate.sh --scope tools --check` exit 0, `file-length-gate.sh --scope tools --check` exit 0.
 
@@ -66,8 +69,8 @@ Notes on the environment:
 ## Self-check
 
 - **Each new test fails with the change reverted, then passes restored.** `StemQualityBench` exited 8 in
-  three separate runs: tool absent, SDR formula mutated, one quality dropped. Restored, it exited 0 (logs
-  `13`-`16`). The unit's other "test" is the real-model render comparison itself: 24 runs, exit 0, and
+  four separate runs: tool absent, SDR formula mutated, one quality dropped, model hash dropped. Restored, it
+  exited 0 (logs `41`-`45`). The unit's other "test" is the real-model render comparison itself: 24 runs, exit 0, and
   identical results on both passes.
 - **Every acceptance criterion is proven by a test I ran.** Criterion 1: the `run` command (exit 0) with the
   model hash recorded, plus the two `fetch` runs (exit 0, 0) with 20/20 files byte-identical. Criterion 2:
@@ -82,7 +85,7 @@ Notes on the environment:
 - **Portability.** No C++ code changed (one comment). The Python tool guards `os.sched_getaffinity` with
   `hasattr`, reads `/proc` and `/sys/fs/cgroup` in `try/except OSError`, and `os.getloadavg` the same way.
   The ctest uses only the stub model and the CLI that `ControlStemCommands` already runs on every platform,
-  and it returns 77 (skip) where numpy/onnxruntime are missing.
+  and it returns 77 (skip) where numpy/onnxruntime are missing. Its scratch files go in a `tempfile` directory.
 - **GUI and agent path (DoD 2).** This stage adds no user action. The quality choice already has its GUI
   entry (stage 2, the **Split to stems** submenu) and its agent argument (stage 1, `stem.job_start
   quality`), both through the registered command. This stage measures those settings and documents the
