@@ -3175,6 +3175,7 @@ tests/src/plugins/CompressorVisualizerTest.cpp
 tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
 tests/src/plugins/DelayLfoAutomationTest.cpp
+tests/src/plugins/DispersionNonFiniteTest.cpp
 tests/src/plugins/EqFilterTest.cpp
 tests/src/plugins/EqPeakHandoffTest.cpp
 tests/src/plugins/ExprSynthAllocationTest.cpp

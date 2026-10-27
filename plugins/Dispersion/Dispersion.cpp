@@ -25,6 +25,7 @@
 #include "Dispersion.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 
 #include "embed.h"
@@ -61,15 +62,31 @@ DispersionEffect::DispersionEffect(Model* parent, const Descriptor::SubPluginFea
 }
 
 
+namespace
+{
+
+//! Returns the control value, or its default when the value is not finite.
+//! std::min and std::max return their first argument when it is NaN, so a
+//! NaN control (a project can store one) would otherwise reach the all-pass
+//! coefficients and poison the filter output.
+float finiteOrDefault(float value, const FloatModel& model)
+{
+	return std::isfinite(value) ? value : model.initValue();
+}
+
+} // namespace
+
+
 ProcessStatus DispersionEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
 	const float d = dryLevel();
 	const float w = wetLevel();
 	
 	const int amount = m_dispersionControls.m_amountModel.value();
-	const float freq = std::min(m_dispersionControls.m_freqModel.value(), m_sampleRate * 0.499f);
-	const float reso = m_dispersionControls.m_resoModel.value();
-	float feedback = m_dispersionControls.m_feedbackModel.value();
+	const float freq = std::min(finiteOrDefault(m_dispersionControls.m_freqModel.value(), m_dispersionControls.m_freqModel),
+		m_sampleRate * 0.499f);
+	const float reso = finiteOrDefault(m_dispersionControls.m_resoModel.value(), m_dispersionControls.m_resoModel);
+	float feedback = finiteOrDefault(m_dispersionControls.m_feedbackModel.value(), m_dispersionControls.m_feedbackModel);
 	const bool dc = m_dispersionControls.m_dcModel.value();
 	
 	// All-pass coefficient calculation

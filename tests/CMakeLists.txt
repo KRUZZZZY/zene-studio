@@ -3870,6 +3870,46 @@ if(TARGET multitapecho)
 	add_dependencies(MultitapEchoBoundsTest multitapecho)
 endif()
 
+# Cluster new-p16-64: a NaN Dispersion control (frequency, resonance or
+# feedback, as a project saves it) must not reach the audio output. The plugin
+# sources are compiled into this test binary (the MultitapEchoBoundsTest
+# pattern), so the code under test is the shipped one and no plugin module is
+# loaded.
+add_executable(DispersionNonFiniteTest
+	src/plugins/DispersionNonFiniteTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/Dispersion.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/Dispersion.h
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControls.h
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControlDialog.h
+)
+add_test(NAME DispersionNonFiniteTest COMMAND DispersionNonFiniteTest)
+set_tests_properties(DispersionNonFiniteTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(DispersionNonFiniteTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the dispersion plugin
+	${CMAKE_BINARY_DIR}/plugins/Dispersion
+)
+target_static_libraries(DispersionNonFiniteTest PRIVATE lmmsobjs)
+target_link_libraries(DispersionNonFiniteTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(DispersionNonFiniteTest PRIVATE cxx_std_20)
+target_compile_definitions(DispersionNonFiniteTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=dispersion
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+if(TARGET dispersion)
+	add_dependencies(DispersionNonFiniteTest dispersion)
+endif()
+
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
 # were published straight onto the model from the control thread while
 # playNoteImpl() read them on the audio thread. The plugin sources are compiled

@@ -2951,6 +2951,9 @@ tests/src/plugins/WatsynWaveSnapshotTest.cpp
 # cluster new-p12-162-port-port (2026-10): Multitap Echo constructor graph-bounds guard test (fork-NEW).
 tests/src/plugins/MultitapEchoBoundsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-162-port-port.md
+# cluster new-p16-64 (2026-10): Dispersion non-finite control guard test (fork-NEW).
+tests/src/plugins/DispersionNonFiniteTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p16-64.md
 # cluster new-p12-44-port-port (2026-10): the landing pass checkpoints one track once - report for the fix ported onto the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p12-44-port-port.md
 tests/src/plugins/Lb302NotePathTest.cpp
