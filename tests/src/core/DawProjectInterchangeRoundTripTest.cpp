@@ -784,6 +784,50 @@ private slots:
 		QVERIFY(!result.ok);
 	}
 
+	//! The tempo arm rounds a point's value and casts it to int. A value that is
+	//! not finite, or that rounds outside the engine's bounds, has no int to
+	//! become (a NaN or out-of-range cast is undefined), so applyDawProjectModel
+	//! refuses it before the cast - naming the value, as the beat refusal names
+	//! its time - and the session's tempo map is left as it was.
+	void tempoPointValuesOutsideTheEngineAreRefusedBeforeTheCast()
+	{
+		Song* song = Engine::getSong();
+		const double refused[] = {
+			std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity(),
+			1e300,
+			-1e300,
+			5000.0,
+			9.4,
+		};
+		for (const double value : refused)
+		{
+			DawProjectModel model;
+			DawProjectPoint point;
+			point.time = 1.0;
+			point.value = value;
+			model.tempoPoints.append(point);
+
+			QString error;
+			QVERIFY(!applyDawProjectModel(song, model, &error));
+			QVERIFY2(error.contains(QString::number(value, 'g', 17)), qPrintable(error));
+			QCOMPARE(song->tempoMap().map().size(), 0);
+		}
+
+		// The rounding itself is unchanged: a value that rounds into the engine's
+		// bounds is applied exactly as it was before the check existed.
+		DawProjectModel accepted;
+		DawProjectPoint point;
+		point.time = 1.0;
+		point.value = 999.4;
+		accepted.tempoPoints.append(point);
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, accepted, &error), qPrintable(error));
+		QCOMPARE(song->tempoMap().map().size(), 1);
+		QCOMPARE(song->tempoMap().map()[0].tempo, 999);
+	}
+
 	//! Claim 5: typed refusals - a missing file, a file that is not a ZIP, a
 	//! file with no project.xml, and a relative path on export.
 	void refusalsAreTyped()

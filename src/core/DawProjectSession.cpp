@@ -427,7 +427,22 @@ bool addTempoPoints(const QVector<DawProjectPoint>& points, TempoMap& rebuilt, Q
 		TempoMapEvent event;
 		event.tick = static_cast<tick_t>(dawProjectTicksFromBeats(point.time));
 		event.hasTempo = true;
-		event.tempo = static_cast<int>(std::floor(point.value + 0.5));
+		// Checked on the rounded double, BEFORE the int cast: a NaN, an infinity or
+		// a value past int's range has no int to become (the cast is undefined), and
+		// a value that rounds outside the engine's bounds is refused here, naming it.
+		const double bpm = std::floor(point.value + 0.5);
+		if (!std::isfinite(bpm) || bpm < DawProjectMinTempo || bpm > DawProjectMaxTempo)
+		{
+			if (error)
+			{
+				*error = QStringLiteral("a tempo-map point at beat %1 carries %2 bpm, outside the "
+					"engine's own %3..%4")
+					.arg(point.time, 0, 'g', 17).arg(point.value, 0, 'g', 17)
+					.arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
+			}
+			return false;
+		}
+		event.tempo = static_cast<int>(bpm);
 		if (!rebuilt.addEvent(event))
 		{
 			if (error)
