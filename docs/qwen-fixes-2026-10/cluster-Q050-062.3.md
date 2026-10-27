@@ -68,6 +68,9 @@ Notes on the environment:
 
 ## Self-check
 
+Completion check (the local copy described above, `46-submit-check.log`): `RESULT: PASS - submit`, exit 0.
+It shows no FAIL and three WARNs (no GUI file, GUI test or command file changed), which are answered below.
+
 - **Each new test fails with the change reverted, then passes restored.** `StemQualityBench` exited 8 in
   four separate runs: tool absent, SDR formula mutated, one quality dropped, model hash dropped. Restored, it
   exited 0 (logs `41`-`45`). The unit's other "test" is the real-model render comparison itself: 24 runs, exit 0, and
