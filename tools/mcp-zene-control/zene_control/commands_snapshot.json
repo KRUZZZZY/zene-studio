@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T18:17:04Z",
+  "captured_at": "2026-10-27T20:06:46Z",
   "commands": [
     {
       "args_schema": {
@@ -18741,7 +18741,7 @@
         ],
         "type": "object"
       },
-      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view and CLAP plug-ins whose gui embeds in X11 open; a plug-in with no editor, or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
+      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 and CLAP plug-ins whose editor embeds in this platform's window (X11, a Windows HWND, a macOS NSView) open; a plug-in with no editor, one that cannot embed on this platform (the refusal names the platform and the window API), or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
       "group": "plugin",
       "id": "plugin.editor_open",
       "mutating": false,
@@ -27777,7 +27777,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
+      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation; every playing cell stops. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
       "group": "session",
       "id": "session.clear",
       "mutating": true,
@@ -27814,7 +27814,7 @@
         ],
         "type": "object"
       },
-      "description": "Empty one grid cell, whatever it held. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Empty one grid cell, whatever it held; if it is playing or queued it stops, as session.stop_slot stops it. Undo puts the clip back without launching it. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.clear_slot",
       "mutating": true,
@@ -28531,7 +28531,7 @@
         ],
         "type": "object"
       },
-      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty; a playing cell the grid no longer holds stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_grid",
       "mutating": true,
@@ -28779,7 +28779,7 @@
         ],
         "type": "object"
       },
-      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written; a playing cell sounds its new content at once, and one emptied stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_slot",
       "mutating": true,
@@ -30733,6 +30733,95 @@
       "description": "Build a drum rack: 'pads' [{sample (a file), key (0..127; 36 upward when left out), name}] - each pad a sampler track playing its sample at its key, inside one folder named 'name', and each playing into a mixer channel of its own (the pad's chain, for its inserts) that sends to one bus channel, the rack's output. Answers the folder, the pad tracks, the bus and the channels. One undo step.",
       "group": "track",
       "id": "track.drum_rack",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Read a drum rack back: 'track' is its folder. Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation, attack (ms), release (ms), voice_limit}} - what the project saves. Writes nothing.",
+      "group": "track",
+      "id": "track.drum_rack_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "sample"
+        ],
+        "type": "object"
+      },
+      "description": "Add a sample pad to a drum rack: 'track' is the rack's folder, 'sample' a file, 'name' (the file's name when left out), 'key' (0..127; the next after 36 when left out). The pad is a sampler track in the folder with a channel of its own sending to the rack's bus. Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Edit a drum-rack pad: 'track' is the pad, and any of 'name', 'key' (the trigger key, 0..127) and 'sample' (a file). Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_set",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -37198,23 +37287,23 @@
       }
     }
   ],
-  "count": 868,
+  "count": 871,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-089.1/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-hhpen5a4/zene.sock",
-    "version": "0.4.0-alpha.5216+5c1c671"
+    "source_socket": "/tmp/zctl-run-6lez5hw1/zene.sock",
+    "version": "0.4.0-alpha.5380+df0f2d0"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 868,
-    "ids_sha256": "f8d3dba72a91ae1b6493ea2983c6ccf4ebf711671e61e81d3ece2c056f486862"
+    "id_count": 871,
+    "ids_sha256": "6d53edb592b77fa1e893d6bfdc9dd7e9c12acee591cfaf69e27fc8972409fdc4"
   }
 }
