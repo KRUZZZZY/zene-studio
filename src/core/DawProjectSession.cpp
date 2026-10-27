@@ -60,7 +60,9 @@
 #include <QColor>
 #include <QString>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "lmmsversion.h"
 
@@ -217,6 +219,106 @@ void resetMasterForEmptyMixerModel(Mixer* mixer, const DawProjectModel& model)
 	master->m_muteModel.setValue(false);
 	master->m_volumeModel.setValue(1.0f);
 	master->m_name = Mixer::tr("Master");
+}
+
+//! The last tick a clip or note end may reach. The engine adds a start and a length in tick_t, so
+//! every sum an import makes must stay at or below it.
+constexpr qint64 LastTick = std::numeric_limits<tick_t>::max();
+
+//! A note's start and length in ticks. The start is held to the tick range, and the length to the room
+//! after it, so the end the engine adds (position plus length) stays in range.
+struct NoteSpan
+{
+	qint64 start;
+	qint64 length;
+};
+
+NoteSpan noteSpan(const DawProjectNote& note)
+{
+	const qint64 start = std::clamp<qint64>(dawProjectTicksFromBeats(note.time), 0, LastTick);
+	return {start, std::clamp<qint64>(dawProjectTicksFromBeats(note.duration), 0, LastTick - start)};
+}
+
+//! The length MidiClip::updateLength() picks for notes: one bar, or the latest note end rounded up to a
+//! whole bar. It is worked out in qint64 because the engine's TimePos::nextFullBar() adds a bar's
+//! remainder in tick_t, which overflows near the end of the range.
+qint64 autoLengthForNotes(const QVector<DawProjectNote>& notes)
+{
+	const qint64 bar = TimePos::ticksPerBar();
+	qint64 latestEnd = bar;
+	for (const DawProjectNote& note : notes)
+	{
+		const NoteSpan span = noteSpan(note);
+		if (span.length > 0) { latestEnd = std::max(latestEnd, span.start + span.length); }
+	}
+	return (latestEnd + bar - 1) / bar * bar;
+}
+
+//! Adds an imported clip's notes with the engine's auto-resize off. With it on, each addNote() runs
+//! MidiClip::updateLength(), which rounds the latest note end up to a whole bar in tick_t. That is the
+//! overflow this avoids. placeImportedClip() gives the clip the length that run would have chosen, and
+//! the start offset it resets.
+void addImportedNotes(MidiClip& midi, const QVector<DawProjectNote>& notes)
+{
+	const bool autoResize = midi.getAutoResize();
+	midi.setAutoResize(false);
+	for (const DawProjectNote& noteEntry : notes)
+	{
+		const NoteSpan span = noteSpan(noteEntry);
+		Note note(TimePos(static_cast<tick_t>(span.length)),
+			TimePos(static_cast<tick_t>(span.start)),
+			noteEntry.key,
+			static_cast<volume_t>(std::lround(noteEntry.vel * MaxVolume)));
+		// FALSE: the clip does not quantise a note an agent placed by
+		// tick, and the quantiser reads the piano roll's GUI, which a
+		// headless instance does not have.
+		Note* placed = midi.addNote(note, false);
+		// The note-off velocity the document carried, when it says
+		// anything the note-on velocity does not: the engine's Note
+		// holds one (`relvel`) and the format's `rel` is required, so a
+		// distinct value is a fact, not a default. Equal rel and vel is
+		// left alone, which is the engine's own default.
+		if (placed != nullptr && noteEntry.rel != noteEntry.vel)
+		{
+			placed->setReleaseVelocity(static_cast<int>(std::lround(noteEntry.rel * MaxVolume)));
+		}
+	}
+	midi.setAutoResize(autoResize);
+	// The engine's auto-resize also resets the clip's start offset once notes are added. Keep that result.
+	if (autoResize && !notes.isEmpty()) { midi.setStartTimeOffset(TimePos(0)); }
+}
+
+//! Gives an imported clip its length and its place. The clip was created at the origin, where the
+//! engine's start-plus-length sums are small, and it moves to its start last. Its length is the
+//! document's, or without one the auto length of its notes, and either way it is held to the room
+//! after the start.
+void placeImportedClip(Clip* clip, const DawProjectClip& clipEntry, qint64 start)
+{
+	const qint64 room = LastTick - start;
+	qint64 length = dawProjectTicksFromBeats(clipEntry.duration);
+	if (length <= 0)
+	{
+		const bool midi = dynamic_cast<MidiClip*>(clip) != nullptr;
+		length = midi && !clipEntry.notes.isEmpty()
+			? autoLengthForNotes(clipEntry.notes)
+			: clip->length().getTicks();
+	}
+	const TimePos wanted(static_cast<tick_t>(std::min(length, room)));
+	if (clip->length().getTicks() != wanted.getTicks()) { clip->changeLength(wanted); }
+	clip->movePosition(TimePos(static_cast<tick_t>(start)));
+}
+
+//! Imports one clip of an imported track: its name, colour, start offset and notes, then its place.
+void importClip(Track* track, const DawProjectClip& clipEntry)
+{
+	Clip* clip = track->createClip(TimePos(0));
+	if (clip == nullptr) { return; }
+	if (!clipEntry.name.isEmpty()) { clip->setName(clipEntry.name); }
+	if (!clipEntry.color.isEmpty()) { clip->setColor(QColor(clipEntry.color)); }
+	clip->setStartTimeOffset(TimePos(static_cast<tick_t>(dawProjectTicksFromBeats(clipEntry.playStart))));
+	if (auto* midi = dynamic_cast<MidiClip*>(clip)) { addImportedNotes(*midi, clipEntry.notes); }
+	const qint64 start = std::clamp<qint64>(dawProjectTicksFromBeats(clipEntry.time), 0, LastTick);
+	placeImportedClip(clip, clipEntry, start);
 }
 
 } // namespace
@@ -567,46 +669,7 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 			}
 		}
 
-		for (const DawProjectClip& clipEntry : entry.clips)
-		{
-			Clip* clip = track->createClip(TimePos(
-				static_cast<tick_t>(dawProjectTicksFromBeats(clipEntry.time))));
-			if (clip == nullptr) { continue; }
-			if (!clipEntry.name.isEmpty()) { clip->setName(clipEntry.name); }
-			if (!clipEntry.color.isEmpty()) { clip->setColor(QColor(clipEntry.color)); }
-			clip->setStartTimeOffset(TimePos(
-				static_cast<tick_t>(dawProjectTicksFromBeats(clipEntry.playStart))));
-			if (auto* midi = dynamic_cast<MidiClip*>(clip))
-			{
-				for (const DawProjectNote& noteEntry : clipEntry.notes)
-				{
-					Note note(TimePos(static_cast<tick_t>(
-							dawProjectTicksFromBeats(noteEntry.duration))),
-						TimePos(static_cast<tick_t>(
-							dawProjectTicksFromBeats(noteEntry.time))),
-						noteEntry.key,
-						static_cast<volume_t>(std::lround(
-							noteEntry.vel * MaxVolume)));
-					// FALSE: the clip does not quantise a note an agent placed by
-					// tick, and the quantiser reads the piano roll's GUI, which a
-					// headless instance does not have.
-					Note* placed = midi->addNote(note, false);
-					// The note-off velocity the document carried, when it says
-					// anything the note-on velocity does not: the engine's Note
-					// holds one (`relvel`) and the format's `rel` is required, so a
-					// distinct value is a fact, not a default. Equal rel and vel is
-					// left alone, which is the engine's own default.
-					if (placed != nullptr && noteEntry.rel != noteEntry.vel)
-					{
-						placed->setReleaseVelocity(static_cast<int>(std::lround(
-							noteEntry.rel * MaxVolume)));
-					}
-				}
-			}
-			const tick_t length = static_cast<tick_t>(
-				dawProjectTicksFromBeats(clipEntry.duration));
-			if (length > 0) { clip->changeLength(TimePos(length)); }
-		}
+		for (const DawProjectClip& clipEntry : entry.clips) { importClip(track, clipEntry); }
 	}
 	return true;
 }

@@ -470,7 +470,7 @@ private slots:
 		QString error;
 		Song* song = Engine::getSong();
 		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
-		QCOMPARE(song->tracks().size(), 1);
+		QCOMPARE(static_cast<int>(song->tracks().size()), 1);
 		auto* sampleTrack = dynamic_cast<SampleTrack*>(song->tracks().front());
 		QVERIFY(sampleTrack != nullptr);
 		QCOMPARE(sampleTrack->panningModel()->value(), 50.f);
@@ -2172,6 +2172,88 @@ void readerKeepsATimelineEndpointInsideTheTickRange()
 		&uncarriedModel, &uncarriedReport, &error), qPrintable(error));
 	QCOMPARE(uncarriedModel.tracks[0].clips.size(), 0);
 	QCOMPARE(uncarriedReport.loss.automationClipsSkipped, 1);
+}
+
+//! Cluster new-p14-89, rework: applying an imported boundary clip or note must not overflow tick_t
+//! inside the engine's own sums. Song::lengthChanged runs after every engine length update, so each
+//! clip is checked while the import runs, and a transient overflow is caught even when the final
+//! values look right.
+void appliedBoundaryEndpointsStayInTheTickRange()
+{
+	const qint64 lastTick = std::numeric_limits<tick_t>::max();
+	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
+		return QByteArray("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+			"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip ") + clipAttributes + ">" + clipBody + "</Clip>"
+			"</Clips></Lanes></Lanes></Arrangement></Project>";
+	};
+	struct Fixture
+	{
+		const char* what;
+		QByteArray xml;
+		qint64 clipStart;
+		qint64 clipLength;
+		qint64 noteStart;
+		qint64 noteLength;
+	};
+	const QByteArray oneBeatNote = "<Notes><Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QList<Fixture> fixtures = {
+		{"a clip starting 79 ticks short of the end",
+			documentWith("time=\"44739241\" duration=\"1.6458333333\"", oneBeatNote), 2147483568, 79, 0, 48},
+		{"a note ending on the last tick",
+			documentWith("time=\"0\" duration=\"44739242.6458333333\"",
+				"<Notes><Note time=\"44739241\" duration=\"1.6458333333\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>"),
+			0, lastTick, 2147483568, 79},
+		{"a clip with no duration, 79 ticks short of the end",
+			documentWith("time=\"44739241\" duration=\"0\"", oneBeatNote), 2147483568, 79, 0, 48},
+	};
+
+	Song* song = Engine::getSong();
+	for (const Fixture& fixture : fixtures)
+	{
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(fixture.xml, &model, &report, &error), qPrintable(error));
+
+		song->clearProject();
+		int outsideStates = 0;
+		const auto clipsOutsideTickRange = [song, lastTick]() {
+			int outside = 0;
+			for (const Track* track : song->tracks())
+			{
+				for (const Clip* clip : track->getClips())
+				{
+					const qint64 start = clip->startPosition().getTicks();
+					const qint64 length = clip->length().getTicks();
+					if (start < 0 || length < 0 || start + length > lastTick) { ++outside; }
+				}
+			}
+			return outside;
+		};
+		const auto link = QObject::connect(song, &Song::lengthChanged,
+			[&outsideStates, &clipsOutsideTickRange]() { outsideStates += clipsOutsideTickRange(); });
+		const bool applied = applyDawProjectModel(song, model, &error);
+		QObject::disconnect(link);
+		QVERIFY2(applied, qPrintable(error));
+		QVERIFY2(outsideStates == 0, qPrintable(QStringLiteral("%1: %2 engine length states left the tick range")
+			.arg(QString::fromLatin1(fixture.what)).arg(outsideStates)));
+
+		QCOMPARE(static_cast<int>(song->tracks().size()), 1);
+		const auto& clips = song->tracks().front()->getClips();
+		QCOMPARE(clips.size(), 1);
+		const Clip* clip = clips.front();
+		QCOMPARE(static_cast<qint64>(clip->startPosition().getTicks()), fixture.clipStart);
+		QCOMPARE(static_cast<qint64>(clip->length().getTicks()), fixture.clipLength);
+		const auto* midi = dynamic_cast<const MidiClip*>(clip);
+		QVERIFY(midi != nullptr);
+		QCOMPARE(static_cast<int>(midi->notes().size()), 1);
+		const Note* note = midi->notes().front();
+		QCOMPARE(static_cast<qint64>(note->pos().getTicks()), fixture.noteStart);
+		QCOMPARE(static_cast<qint64>(note->length().getTicks()), fixture.noteLength);
+	}
 }
 
 //! Luna cluster 5067: dawProjectXmlFromModel(DawProjectModel{}) SUCCEEDED and

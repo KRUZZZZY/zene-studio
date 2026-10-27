@@ -1,84 +1,103 @@
-FIXED: a clip or note whose start plus duration passes `tick_t` is no longer imported with an overflowing end; the duration is cut back to the room the start leaves, and the cut is counted in `rounded_times`. The finding asked for a refusal instead; see "Design choice" below.
+FIXED: a clip or note whose end passes `tick_t` no longer reaches the engine with an overflowing end, either in the model (round 1: the duration is cut to fit) or while it is applied (round 2: each clip is built at the origin, its length is set before it moves to its start, and auto-resize is off while notes are added). The finding asked for a refusal instead; see "Design choices".
 
 # Cluster new-p14-89: clip and note end times overflow the engine tick range
 
 ## Verdict and evidence
 
-**REAL, fixed on `bugs/qwen-new-p14-89`.** Both paths the finding names are real on the base `7641e9493d`:
+**REAL, fixed on `bugs/qwen-new-p14-89`.** The overflow is reachable through two paths, and both are fixed.
 
-- **Reader, no end check.** `src/core/DawProjectReadTracks.cpp` (base) read a note's `time` and `duration` (base lines 134-139) and a clip's `time` and `duration` (base lines 175-180) each through `ticksFromBeats()`, which clamps each value into `int32` (`src/core/DawProjectReadShared.h:237-255`). Nothing summed them. A document with a clip at tick 2147483568 (beat 44739241) and duration 96 ticks was accepted with the end at 2147483664, past `INT32_MAX`.
-- **Engine end is an `int` add.** `include/Clip.h:128-131`: `const int sp = m_startPosition; return sp + m_length;`. Past `INT32_MAX` that is signed overflow. The session applies the clip at `src/core/DawProjectSession.cpp:572-573` (`createClip(TimePos(start))`) and sets its length at `:606-608` (`changeLength`).
-- **Writer already refuses the same condition.** `src/core/DawProjectWrite.cpp:161` (clip end) and `:176` (note end), via `endFitsTickRange()` at `:137-143`. A document this module writes never contains the overflowing end; only a foreign document does.
+*Reader (round 1).* `src/core/DawProjectReadTracks.cpp` clamped each clip and note start and duration into `tick_t` (`src/core/DawProjectReadShared.h:237-255`) and never summed them. `durationWithinTickRange()` (`src/core/DawProjectReadTracks.cpp:97-104`) now cuts a duration to the room its start leaves and counts the cut in `loss.roundedTimes`.
 
-### Design choice (please confirm)
+*Apply (round 2, review rework).* The engine adds in `tick_t` in every place an imported clip passes through:
+- `include/Clip.h:128-131`: `endPosition()` is `sp + m_length`, an `int` add.
+- `src/tracks/InstrumentTrack.cpp:1091-1095`: `createClip()` builds the clip and calls `movePosition()`, which calls `Song::updateLength()` (`src/core/Clip.cpp:280-289`). `Track::length()` reads `endPosition()` (`src/core/Track.cpp:1250-1264`).
+- `src/tracks/MidiClip.cpp:116-125`: `MidiClip::init()` runs `updateLength()` at construction, so a new clip gets a one-bar length.
+- `src/tracks/MidiClip.cpp:200-205`: `addNote()` runs `updateLength()`, which rounds the latest note end up with `TimePos::nextFullBar()` (`include/TimePos.h:93`, adds `ticksPerBar - 1` in `tick_t`) and sets the length from it.
 
-The finding's fix line says to "refuse values past the tick range". I did not refuse, for one reason. The reader's documented contract (`DawProjectReadShared.h:231-236`) is that a time past the 32-bit tick is clamped and counted, not refused, and an existing test pins that contract: `DawProjectInterchangeRoundTripTest.cpp:1842` `hugeBeatPositionsCannotEnterTheModelOutOfTickRange` imports a clip at beat 50000000 with duration 4 and a note at the same start, and asserts `dawProjectModelFromXml()` succeeds. Refusing the end would make that test fail. Changing its expectation would weaken an existing test, which this lane is not allowed to do.
+So a clip starting in the last bar overflowed at creation, and a note ending in the last bar overflowed in auto-resize, before the imported length was ever set.
 
-So the fix extends the same clamp to the end. `durationWithinTickRange()` (`src/core/DawProjectReadTracks.cpp:97-104`) returns the duration unchanged when `start + duration <= tick_t` max, and otherwise returns `max - start` and increments `loss.roundedTimes`. It applies to every note, and to a clip only when the clip is carried (it has `<Notes>`), so an uncarried clip keeps its full duration and the skipped-clip count is unchanged (`:223-230`). If the owner wants refusal instead, `hugeBeatPositionsCannotEnterTheModelOutOfTickRange` must change its expectation in the same commit. That is an owner call.
+## Design choices
+
+1. **Clamp, not refuse (round 1, unchanged).** The file's documented contract (`DawProjectReadShared.h:231-236`) clamps a value past the tick domain and counts it. The existing test `hugeBeatPositionsCannotEnterTheModelOutOfTickRange` (`tests/src/core/DawProjectInterchangeRoundTripTest.cpp:1842`) expects a clamped clip with a duration to import. Refusing would make that test fail, and changing its expectation would weaken it. If the owner wants refusal, that test must change in the same commit.
+2. **Build at the origin, move last (round 2).** `importClip()` creates the clip at 0 (`src/core/DawProjectSession.cpp:312`), so no default-length sum is taken at a late start. `placeImportedClip()` (`:295`) sets the final length, then moves the clip to its start. The start is clamped to the tick range first, so `start + length <= tick_t` max at the final move.
+3. **Auto-resize off while notes are added (round 2).** `addImportedNotes()` (`:261`) turns auto-resize off, so `updateLength()` never runs on a note end near the top of the range. The length the engine would have chosen is computed in `qint64` by `autoLengthForNotes()` (`:245`), and that length is held to the room after the start. Notes are also clamped to that room (`noteSpan()`, `:236`).
+4. **Same final state for in-range documents.** With auto-resize off, the engine's own updates are replaced by their results: a document length wins, otherwise the note-driven length (the same rounding the engine does, in `qint64`). The engine's start-offset reset, which runs when notes are added, is kept (`:288`). That reset is pre-existing behaviour: it erases a `playStart` on a clip that has notes. This change keeps it and does not fix it; it is an observation for the owner.
+5. **Zero-duration clip with notes (round 2).** It takes the note-driven length, held to the room after its start. Before this change the same clip overflowed at creation.
 
 ## Changes
 
-- `src/core/DawProjectReadTracks.cpp`: new `durationWithinTickRange()` (`:97-104`); note start/duration with the end cut (`:144-151`); clip start/duration with the end cut only for a carried clip (`:185-191`, `:223-230`).
-- `tests/src/core/DawProjectInterchangeRoundTripTest.cpp`: new `readerKeepsATimelineEndpointInsideTheTickRange()` (`:2122`), placed beside the writer's end-point tests. It is a private slot, so QTest runs it.
-- No header change. No new file. No new control command. No audio-thread code. `tests/fork-sources.txt` and `all-sources.txt` already list both files (`DawProjectReadTracks.cpp` in fork-sources; the test in all-sources at `:2732`), so no registration change is needed.
+- `src/core/DawProjectSession.cpp`: helpers `LastTick`, `NoteSpan`, `noteSpan()`, `autoLengthForNotes()`, `addImportedNotes()`, `placeImportedClip()`, `importClip()` (`:226-320`); `applyDawProjectModel`'s clip loop calls `importClip()` (`:672`); includes `<algorithm>` and `<limits>`.
+- `tests/src/core/DawProjectInterchangeRoundTripTest.cpp`: `readerKeepsATimelineEndpointInsideTheTickRange()` (`:2122`, round 1, model level) and `appliedBoundaryEndpointsStayInTheTickRange()` (`:2181`, round 2, applies through `applyDawProjectModel` into the engine). The apply test counts, through `Song::lengthChanged`, every clip whose start or length leaves the tick range during the import, so a transient overflow is caught even when the final values are right. It then checks the final clip and note positions for three fixtures: a clip 79 ticks short of the end, a note ending on the last tick, and a zero-duration clip 79 ticks short of the end.
+- No header, no new file, no control command, no audio-thread code. Both files are fork-new and already registered (`tests/fork-sources.txt`, `tests/all-sources.txt:2732`).
 
 ## Test matrix
 
 | Path | Case | Covered by |
 | --- | --- | --- |
-| Normal | clip and note that fit (`79` ticks, end exactly at max) keep their duration, no loss counted | `readerKeepsATimelineEndpointInsideTheTickRange` (fit clip, fit note, `roundedTimes == 0`) |
-| Overflow, clip | start 2147483568 + duration 96 cut to 79, counted | same test, clip block |
-| Overflow, note | note start 2147483568 + duration 96 cut to 79, counted | same test, note block |
-| Uncarried clip | clip with no `<Notes>` keeps full duration, counted as automation-skipped | same test, last block |
-| Clamped start (existing) | start beyond tick range, duration 4 beats: accepted, positions clamped | existing `hugeBeatPositionsCannotEnterTheModelOutOfTickRange`, passes unchanged |
-| Writer side | writer still refuses overflowing clip/note end | existing `writerRefusesAClipEndpointPastTheTickRange`, `writerRefusesANoteEndpointPastTheTickRange` |
-| Audio thread / undo / commands | not applicable: import-time reader only; no command, no undo path | n/a |
-| Platform | Qt 5.15/6 APIs only (`qRound64`, `qint64`); no Windows macros, no `std::filesystem` | n/a |
+| Model, boundary clip | 79-tick end kept; overflowing duration cut and counted | `readerKeepsATimelineEndpointInsideTheTickRange` |
+| Model, boundary note | note end cut and counted | same test |
+| Model, exact fit | end at `tick_t` max unchanged, nothing counted | same test |
+| Model, uncarried clip | clip without `<Notes>` keeps its duration, counted as skipped | same test |
+| Apply, boundary clip | creation and move stay in range | `appliedBoundaryEndpointsStayInTheTickRange`, fixture 1 |
+| Apply, boundary note | auto-resize does not overflow; clip length equals the end | same test, fixture 2 |
+| Apply, zero-duration boundary clip | length held to room | same test, fixture 3 |
+| In-range round trips | 60 existing tests unchanged | whole binary |
+| Clamped start (existing) | `hugeBeatPositions...` still imports | existing test |
+| Writer | still refuses overflowing ends | existing writer end-point tests |
+| Audio thread / undo / commands | not applicable: import runs on the calling thread; no command or undo path | n/a |
+| Platform | `std::clamp`, `qRound64`, `qint64`; no Windows macros | n/a |
+
+A caveat on the RED evidence: `QTest` stops at the first failing function's first failing assertion, so the reversed-product run fails on fixture 1. Fixtures 2 and 3 pass on the rework (GREEN) but were not separately shown RED on the old code.
 
 ## Commands and exit codes
 
-Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-89.r1/logs/`.
+Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p14-89.r2/logs/`.
 
-| # | Command (run from the worktree unless noted) | Log | EXIT |
+| # | What | Log | EXIT |
 | --- | --- | --- | --- |
-| 1 | `cmake --build build --target DawProjectInterchangeRoundTripTest -j4` | `build-1-red.log` | 2 (ccache could not write its temp dir: `Permission denied`; no compile happened) |
-| 2 | `CCACHE_DISABLE=1 cmake --build build --target DawProjectInterchangeRoundTripTest -j4` | `build-2-red.log` | 0 |
-| 3 | `ctest -R DawProjectInterchangeRoundTripTest` after the first RED test (expected refusal of a clip end) | `test-1-red.log` | 8: `60 passed, 1 failed`; `accepted a timeline end past the tick range: time="44739241" duration="2"` (first test version, before the fix) |
-| 4 | Same binary with a **refusal** fix (first attempt) | `build-3-green.log`, `test-2-green.log` | build 0; test 8: `60 passed, 1 failed`; `hugeBeatPositionsCannotEnterTheModelOutOfTickRange` now refused → this is why the design changed to a clamp |
-| 5 | Clamp fix, second test version | `build-4-green.log`, `test-3-green.log` | build 0; test 0 |
-| 6 | Proof pass 1 on the clamp fix, before the uncarried-clip change: revert, rebuild, test; restore, rebuild, test | `build-5-red-proof.log`, `test-4-red-proof.log`, `build-6-green-proof.log`, `test-5-green-proof.log` | build 0, **test 8** (`readerKeepsATimelineEndpointInsideTheTickRange` fails); build 0, **test 0** |
-| 7 | Final code (uncarried-clip change, final test): `CCACHE_DISABLE=1 cmake --build build --target DawProjectInterchangeRoundTripTest -j4`, then `cd build/tests && ctest -R DawProjectInterchangeRoundTripTest -V` | `build-8-green.log`, `test-7-green.log` | build 0; test 0 |
-| 8 | **RED/GREEN proof (4b), final code.** `git diff -- src/core/DawProjectReadTracks.cpp > logs/fix.patch`; `git apply -R logs/fix.patch`; rebuild; ctest. Then `git apply logs/fix.patch`; rebuild; ctest | `build-9-red-proof.log`, `test-8-red-proof.log`, `build-10-green-proof.log`, `test-9-green-proof.log` | diff 0, revert 0, build 0, **RED test 8**; reapply 0, build 0, **GREEN test 0** |
-| 9 | `CCACHE_DISABLE=1 cmake --build build --target zene DawProjectDeflateImportTest -j4` (final tree) | `build-11-final.log` | 0 |
-| 10 | `cd build/tests && ctest -R DawProject -V` (final tree) | `test-10-family-final.log` | 0 |
-| 11 | Gates, final tree: `python3 runs/new-p14-89.r1/gate-wrap.py <worktree> logs/gate-logs` (see note) | `gates-3.log` | 0 |
-| — | Stock `feature_check.py` run (before the wrapper) | `gates-1.log` | 1: `PermissionError` creating `<worktree>-feature-check` outside the jail; no check ran |
-| — | Wrapper run before the uncarried-clip change | `gates-2.log` | 0 (superseded by `gates-3.log`) |
+| 1-6 | Test-target builds and runs during the work: compile errors in the new test (`clipVector`, `.first()` on `std::vector`, `size_t` against `int`) and then a stale binary from the failed builds. The `test-1..6` results used the stale binary and are not evidence. | `build-1..6-*.log`, `test-1..6-*.log` | build 2 each; tests not evidence |
+| 7 | Build with the test fixed, product reverted (committed code) | `build-7-red.log` | 0 |
+| 8 | `ctest -R DawProjectInterchangeRoundTripTest -V`, product reverted | `test-7-red.log` | **8**: `appliedBoundaryEndpointsStayInTheTickRange` fails, `1 engine length states left the tick range` (fixture 1) |
+| 9 | Build, product restored | `build-8-green.log` | 0 |
+| 10 | `ctest -R DawProjectInterchangeRoundTripTest -V`, product restored | `test-8-green.log` | **0**: 62 passed, 0 failed |
+| 11 | **4b proof on the final patch.** `git diff -- src/core/DawProjectSession.cpp > fix2-final.patch`; `git apply -R`; build; ctest | `build-11-red-proof.log`, `test-11-red-proof.log` | diff 0, revert 0, build 0, **test 8** (1 failed, 61 passed) |
+| 12 | `git apply fix2-final.patch`; build; ctest | `build-12-green-proof.log`, `test-12-green-proof.log` | apply 0, build 0, **test 0** (62 passed) |
+| 13 | Final tree: `cmake --build build --target zene DawProjectInterchangeRoundTripTest DawProjectDeflateImportTest -j4` | `build-10-final.log` | 0 |
+| 14 | `ctest -R DawProject -V` (family) | `test-10-family-final.log` | **0**: `DawProjectInterchangeRoundTripTest` 62/62, `DawProjectDeflateImportTest` 11/11 |
+| 15 | `git diff --check` | (inline) | 0 |
 
-Note on 11: `feature_check.py` itself writes its per-gate logs to `<worktree>/../<name>-feature-check`, which is outside the write-jail, so it stopped with `PermissionError` before running any check (`gates-1.log`, exit 1). I did not edit the shared script. I ran a wrapper that imports `feature_check.py` unchanged and calls its own `SIMPLE`/`RATCHET` lists and classification, with logs in the run folder (`gate-wrap.py`). Its table is the one below. The baseline cache for base `7641e9493d` was already present, so the complexity and file-length comparison used the existing cache. Someone with write access to the parent folder should re-run the stock `feature_check.py` to confirm.
+Every build used `CCACHE_DISABLE=1`: ccache could not write its temp directory (`Permission denied`).
 
-### Evidence table
+### Gates
 
-| Item | Result |
-| --- | --- |
-| RED command and EXIT | `test-8-red-proof.log`, fix reverted, `ctest … -V`: **EXIT 8**, `60 passed, 1 failed`; failed `readerKeepsATimelineEndpointInsideTheTickRange`: `Actual (qRound(clip.duration * DawProjectTicksPerQuarterNote)): 96`, `Expected (79): 79` (`DawProjectInterchangeRoundTripTest.cpp:2144`) |
-| GREEN command and EXIT | `test-9-green-proof.log`, fix restored, `ctest … -V`: **EXIT 0**, `61 passed, 0 failed` |
-| Affected family (ctest `-R DawProject`) | **2 of 2 tests** passed (`#354 DawProjectInterchangeRoundTripTest`, `#355 DawProjectDeflateImportTest`), `test-10-family-final.log` EXIT 0 |
-| Gate exit (`feature_check` table) | `gates-3.log` EXIT 0, `RESULT: PASS` (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures: PASS; complexity and file-length: "no new item in your files") |
-| Files committed | `src/core/DawProjectReadTracks.cpp`, `tests/src/core/DawProjectInterchangeRoundTripTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p14-89.md` |
+Gates were run **directly**, with exit codes in `logs/gates/`:
 
-`DawProjectReadTracks.cpp` is 519 lines. It was already over the 500-line file gate on the base, and the gate reports no new item, so the limit was not touched.
+| Gate | EXIT | Note |
+| --- | --- | --- |
+| fork-sources | 0 | |
+| all-sources-reproduce | 0 | |
+| no-upstream-regression | 0 | |
+| check-namespace | 0 | |
+| no-tautology | 0 | |
+| doc-figures | 0 | |
+| complexity | 1 | `REGRESSION: new function over target: parseNotes@src/core/DawProjectReadTracks.cpp (CCN 13)`. Pre-existing, not from this change: lizard gives `parseNotes` CCN 13 at the new base `5c1c6715` and at HEAD, and no edit to its body. The cached train-18 listing (`gate-baselines/7641e9493d….json`) already lists it, so the stock gate treats it as not new. Its absence from `tests/complexity-baseline.tsv` is a train-level problem. |
+| file-length | 1 | 22 items, none in a file this change touched (`logs/gates/file-length.log`). |
+
+**Stock `feature_check.py` could not complete.** `HEAD` now includes the orchestrator's merge `915e4fb23d` of `050/m0-train-19`, so the merge-base moved to `5c1c6715`. Its base listing is not cached, and computing it runs `git checkout` in `gate-baselines/tree`, which the Bunny-lane guard refuses (`bunny-guard: … is not allowed in a Bunny lane`). The wrapper `gate-wrap.py` crashed there (`logs/gates-1.log` of round 2 is not a pass). Someone outside the lane should run the stock gate on the merged tree to confirm the complexity and file-length rows.
+
+For this change the relevant measurements are:
+- `applyDawProjectModel`: CCN 32 at the base (lizard), 33 in the baseline TSV, 24 now. The ratchet only fails on a rise.
+- The new helpers (`noteSpan`, `autoLengthForNotes`, `addImportedNotes`, `placeImportedClip`, `importClip`) do not appear in the complexity log, so each is at or under CCN 10.
 
 ## Self-check
 
-- **Each new test FAILS with the product change reverted and PASSES with it.** Yes. Reverting `src/core/DawProjectReadTracks.cpp` (`git apply -R logs/fix.patch`) and running the new test: EXIT 8, the test fails on `Actual 96 / Expected 79` (`test-8-red-proof.log`). Restoring the fix (`git apply logs/fix.patch`): EXIT 0, 61 of 61 pass (`test-9-green-proof.log`).
-- **Acceptance criteria.** The brief lists no per-criterion acceptance table. The six Definition-of-done items are each answered in this report (verdict and evidence; RED/GREEN proof; the sibling and caller check below; no collateral damage below; no realtime, undo or command change; gates and registration above).
-- **Undo and commands.** No control command is added or changed. The change is reader-side and runs only when a document is imported; it is not an edit, so it has no undo step and no reversibility class.
-- **Audio thread.** Nothing added runs on the audio thread. Both changed functions are in the XML reader (`parseNotes`, `parseClips`) and run during import. The diff touches none of `processImpl`, `playImpl`, `renderPeriod`, `NotePlayHandle` or `AudioEngine::`.
-- **Old projects still load and render exactly as before.** For a document whose end fits in tick range, `durationWithinTickRange()` returns the duration unchanged, so the model is identical to before. Only a document whose end passes the range changes (its duration is cut and counted in `rounded_times`). The 60 existing tests in that binary pass unchanged, including `hugeBeatPositionsCannotEnterTheModelOutOfTickRange` (`:1842`) and the writer's end-point tests. The writer is untouched, so saved projects and their output are unchanged. The round trip of in-range data is covered by the existing round-trip tests, which pass.
-- **Sibling and caller check.** Every caller of `ticksFromBeats()` in the reader (note time, note duration, clip time, clip duration, clip playStart, `parseNotes`/`parseClips`) was checked. The end cut is applied only where start and duration both enter the end (note, carried clip). `playStart` is not an end and is unchanged. The writer's matching checks (`DawProjectWrite.cpp:161,176`) were checked against the reader's new behaviour; both test `start + duration <= tick_t` max; the writer refuses that case, and the reader now cuts it to fit.
-- **Qt portability.** `qRound64` (in the new test) and `qint64`/`std::numeric_limits` are Qt 5.15 and 6 compatible, with no Windows macros and no `std::filesystem`.
-- **Deterministic.** The new test builds its documents in memory and parses them with `dawProjectModelFromXml()`. It has no clock, no sleep, no thread and no file I/O beyond the existing test fixture. The values (`44739241` beats, `2` and `1.6458333333` beat durations) are fixed literals, and the expected ticks are computed from them (`2147483568` = 44739241 × 48; `79` = `INT32_MAX` − that).
-- **Verdict item.** Not applicable: the verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.
-- **Pre-submit check, gates row.** `submit_check.py` reports `FAIL gates (feature_check.py)`. That row runs the stock `feature_check.py`, which stops with `PermissionError` creating `<worktree>-feature-check` outside the write-jail (`logs/gates-1.log`, exit 1). No gate ran in that run. The same gate set, run through the unmodified script's own lists by `gate-wrap.py`, passes: `logs/gates-3.log`, exit 0. Re-running the stock script needs write access to the worktree's parent folder.
-- **Still open for the owner.** Whether to refuse (the finding's wording) or clamp (this fix). Refusal requires changing `hugeBeatPositionsCannotEnterTheModelOutOfTickRange`, which this lane did not do.
+- **Each new test FAILS with the product change reverted and PASSES with it.** Yes: the reversed run fails on the boundary clip (`test-11-red-proof.log`, EXIT 8). The restored run passes, 62 of 62 (`test-12-green-proof.log`, EXIT 0). The caveat above applies to fixtures 2 and 3.
+- **Acceptance criteria.** The brief lists no per-criterion table. The review's blocking items are answered: (1) the boundary clip is created at the origin, its length set, then moved (`importClip`, `placeImportedClip`); (2) the boundary note's auto-resize is off during insertion and the engine's rounding is done in `qint64` (`addImportedNotes`, `autoLengthForNotes`). The regression exercises both through `applyDawProjectModel`.
+- **Deterministic.** Fixed literals, no clock, no sleep, no thread. The observer is `Song::lengthChanged`, emitted synchronously on the calling thread, and it reads positions and lengths in `qint64`.
+- **Verdict item.** Not applicable: the verdict is FIXED.
+- **Undo and commands.** No control command is added or changed. The import is not an undo step.
+- **Audio thread.** Nothing added runs on the audio thread. `applyDawProjectModel` runs on the calling thread (a control handler or a project load). None of `processImpl`, `playImpl`, `renderPeriod`, `NotePlayHandle` or `AudioEngine::` appears in the diff.
+- **Old projects still load and render exactly as before.** Documents whose ends fit produce the same final clip position, length, offset and notes as before (Design choice 4). The 60 other tests in the binary pass unchanged. The writer is untouched.
+- **Callers and siblings.** `createClip` is called from the import in one place (`importClip`). The reader's end cut from round 1 is unchanged. `noteSpan()` feeds both the note creation and the auto length, so the two cannot disagree.
+- **Qt portability.** `std::clamp`, `qRound64`, `qint64` are available on Qt 5.15 and 6, with no Windows macros and no `std::filesystem`.
+- **Still open for the owner.** (a) Refusal or clamp for an over-range end (the finding's wording is refusal). (b) The pre-existing erasure of `playStart` on clips that have notes (Design choice 4), which this change keeps.
