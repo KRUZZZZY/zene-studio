@@ -913,6 +913,51 @@ private slots:
 		removeAll(name);
 	}
 
+	//! (k) A move that changes a track's folder changes the project: the membership is
+	//! saved in the file, so the project is marked modified and closing it prompts to
+	//! save. A move onto the folder the track is already in changes nothing and must
+	//! leave a clean project clean. The undo that takes the move back also dirties it.
+	void reparentingMarksTheProjectModified()
+	{
+		const QString name = QStringLiteral("k-dirty");
+		const QString folderId = control::trackIdOf(addTrack(Track::Type::Folder, name));
+		const QString trackId = control::trackIdOf(addTrack(Track::Type::Instrument, name));
+		ControlRegistry* registry = ControlRegistry::instance();
+		Song* song = Engine::getSong();
+
+		// into a folder, from a clean project
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult into = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), folderId}});
+		QVERIFY2(into.ok, qPrintable(into.errorMessage));
+		QVERIFY2(song->isModified(), "moving a track into a folder left the project clean");
+
+		// out of the folder, from a clean project
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult out = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), QString()}});
+		QVERIFY2(out.ok, qPrintable(out.errorMessage));
+		QVERIFY2(song->isModified(), "moving a track out of a folder left the project clean");
+
+		// already at the root: nothing changed, so the project stays clean
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult noop = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), QString()}});
+		QVERIFY2(noop.ok, qPrintable(noop.errorMessage));
+		QVERIFY2(!song->isModified(), "a no-op folder move dirtied a clean project");
+
+		// the undo of the move dirties the project too
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult moveBack = registry->invoke(QStringLiteral("track.set_folder"),
+			QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("folder"), folderId}});
+		QVERIFY2(moveBack.ok, qPrintable(moveBack.errorMessage));
+		song->noteProjectSaved(song->projectFileName());
+		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(QStringLiteral("control.undo failed: ") + undone.errorMessage));
+		QVERIFY2(song->isModified(), "undoing a folder move left the project clean");
+		removeAll(name);
+	}
+
 	//! A visibility set is a SET: naming the same track twice must still leave it a set of ONE
 	//! member. The stored definition and the `track_count` the save reply reports both count
 	//! MEMBERS, so the duplicate has to go before either is taken.
