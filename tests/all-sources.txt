@@ -2696,6 +2696,7 @@ tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlSessionRecordLandUndoTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlStemExportTest.cpp
+tests/src/core/ControlStemWavTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
