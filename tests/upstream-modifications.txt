@@ -5282,3 +5282,5 @@ src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies 
 include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
 tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.
 tests/src/core/ControlDeviceVendorTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
+tests/src/gui/EffectRackAddTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
+tests/src/plugins/DelayControlsTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
