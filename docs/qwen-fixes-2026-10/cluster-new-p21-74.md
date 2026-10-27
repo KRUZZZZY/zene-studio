@@ -49,4 +49,12 @@ The non-feature checklist in `submit_check.py` applies to a claim-only closure. 
 4. No collateral damage (old projects load as before): no behaviour changed, since no code changed.
 5. The verdict cites the code (file:line) or the intended contract: yes, `src/gui/MidiLearnGui.cpp:50-54` (function-local static, `include/MidiLearnGui.h:55`), `src/core/ControlCommandsSettings.cpp:449-459` (refusal before the call), `src/gui/MainWindow.cpp:444`, `src/gui/GuiApplication.cpp:217`.
 
-Completion check and the final `git status` are recorded below after the commit.
+Items 1-5 above answer the five completion-check questions in order (the questions are the exact text of `submit_check.py`'s non-feature list).
+
+Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-74 > .../logs/submit-check-1.log 2>&1` gave EXIT=1 (log `submit-check-1.log`):
+
+- PASS: commits on the branch; working tree clean; report `docs/qwen-fixes-2026-10/cluster-new-p21-74.md`; tests added or changed (claim-only closure).
+- FAIL: `gates (feature_check.py)`. This is the environment blocker above: `feature_check.py` cannot create `<worktree>-feature-check` next to the worktree, because the sandbox write-jail denies that path. The denial is the jail itself (the parent directory mode is `drwxrwxrwx`), so it was not bypassed. The six simple gates and the two ratchets were run directly and are logged above; the ratchets exit 1 on train items not in files this branch changes.
+- The five `?` items are answered in items 1-5 above.
+
+Verdict: FALSE-POSITIVE. The one FAIL is the jail blocking `feature_check.py`'s log directory, not a code problem. It needs the runner's output directory moved inside the jail, or a run of `feature_check.py` from an unjailed shell, to turn green.
