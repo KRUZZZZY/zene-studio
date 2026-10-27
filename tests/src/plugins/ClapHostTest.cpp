@@ -182,6 +182,7 @@ class ClapHostTest : public QObject
 
 private slots:
 	void initTestCase();
+	void cleanup();
 	void testModuleListing();
 	void testIdentity();
 	void testParameters();
@@ -238,6 +239,16 @@ void ClapHostTest::initTestCase()
 	QVERIFY(m_plugin.isLoaded());
 	QString prepareError;
 	QVERIFY2(m_plugin.prepare(TestSampleRate, TestBlockSize, &prepareError), qPrintable(prepareError));
+}
+
+//! Q050-490: a failed editor case must not leave its fixture switches or window system to the next one.
+void ClapHostTest::cleanup()
+{
+	m_plugin.closeEditor();
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	qunsetenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+	m_plugin.setEditorScale(1.0);
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
 void ClapHostTest::testModuleListing()

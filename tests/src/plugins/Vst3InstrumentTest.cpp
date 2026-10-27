@@ -166,6 +166,7 @@ class Vst3InstrumentTest : public QObject
 private slots:
 	void initTestCase();
 	void cleanupTestCase();
+	void cleanup();
 
 	void testTheFixtureIsAnInstrumentWithAnEventBus();
 	void testNoEventsIsExactlySilent();
@@ -212,6 +213,16 @@ void Vst3InstrumentTest::initTestCase()
 void Vst3InstrumentTest::cleanupTestCase()
 {
 	m_plugin.release();
+}
+
+//! Q050-490: a failed editor case must not leave its fixture switches or window system to the next one.
+void Vst3InstrumentTest::cleanup()
+{
+	m_plugin.closeEditor();
+	qunsetenv("VST3_TEST_EDITOR_PLATFORM");
+	qunsetenv("VST3_TEST_EDITOR_REQUEST_RESIZE");
+	m_plugin.setEditorScale(1.0);
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
 void Vst3InstrumentTest::renderInto(const std::vector<MidiEventIn>& events,
