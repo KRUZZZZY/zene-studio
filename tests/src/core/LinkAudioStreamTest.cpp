@@ -37,6 +37,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <thread>
@@ -163,6 +164,23 @@ private slots:
 		QVERIFY(!decodeAudioPacket(bad.data(), bytes, out, samples.data(), samples.size()));        // channels
 		QVERIFY(!decodeAudioPacket(wire.data(), 3, out, samples.data(), samples.size()));
 		QCOMPARE(encodeAudioPacket(h, in.data(), wire.data(), 20), std::size_t{0});                 // does not fit
+	}
+
+	void nonFiniteSamplesInAValidPacketAreSilencedNotMixed()
+	{
+		// x + NaN and x + inf are not finite: a non-finite sample of a valid packet must not reach the mix.
+		std::vector<float> in(AudioMaxPacketFrames * 2, 0.5f);
+		in[0] = NAN;
+		in[3] = INFINITY;
+		in[10] = -INFINITY;
+		AudioPacketHeader h{7, 48000, static_cast<std::uint16_t>(AudioMaxPacketFrames)};
+		std::vector<std::uint8_t> wire(AudioMaxPacketBytes);
+		const std::size_t bytes = encodeAudioPacket(h, in.data(), wire.data(), wire.size());
+
+		std::vector<float> samples(in.size(), 9.f);
+		QVERIFY(decodeAudioPacket(wire.data(), bytes, h, samples.data(), samples.size()));
+		QVERIFY(std::all_of(samples.begin(), samples.end(), [](float s) { return std::isfinite(s); }));
+		QVERIFY(samples[0] == 0.f && samples[3] == 0.f && samples[10] == 0.f && samples[1] == 0.5f && samples[11] == 0.5f);  // non-finite -> silence, neighbours kept
 	}
 
 	void ipv4ParserAcceptsLiteralsOnly()

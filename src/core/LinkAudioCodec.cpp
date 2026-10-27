@@ -27,6 +27,7 @@
 #include "LinkAudioStream.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace lmms::link
@@ -99,7 +100,11 @@ bool decodeAudioPacket(const std::uint8_t* data, std::size_t size, AudioPacketHe
 	for (std::size_t i = 0; i < floats; ++i)
 	{
 		const std::uint32_t bits = get32(data + AudioHeaderBytes + i * 4);
-		std::memcpy(&interleavedOut[i], &bits, 4);
+		float sample;
+		std::memcpy(&sample, &bits, 4);
+		// The peer is untrusted and the samples are summed into the master mix: NaN or an infinity
+		// would poison it, so a non-finite sample becomes silence and its neighbours are kept.
+		interleavedOut[i] = std::isfinite(sample) ? sample : 0.f;
 	}
 	return true;
 }
