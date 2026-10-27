@@ -2529,6 +2529,7 @@ tests/src/core/ProjectContainerSaveTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
+tests/src/core/ProjectRestoreMissingTargetTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 tests/src/core/ProjectRevisionRestoreStagingTest.cpp
 tests/src/core/ProjectSectionTest.cpp
