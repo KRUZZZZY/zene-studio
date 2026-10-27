@@ -5366,3 +5366,4 @@ src/tracks/PatternTrack.cpp	Q050-489: the destructor and swapPatternTracks tell 
 tests/control-hardware-io.py	# Hardware insert latency detail and real-time export - stage 1/3: Expose hardware insert latency in PDC
 tests/src/gui/MixerLatencyTextTest.cpp	# Hardware insert latency detail and real-time export - stage 1/3: Expose hardware insert latency in PDC
 plugins/Xpressive/ExprSynth.cpp	new-p12-80: WaveSample::copyFrom copies min(table length, graph length) samples under the audio change lock and zero-fills the rest of the table, so the table keeps its pointer and length while playing notes hold it and the copy never reads past the graph's own samples. Regression: ExprSynthTimeTest::waveTableCopyFromShorterGraphStaysInGraphSamples (and waveTableCopyFromLongerGraphKeepsTableLength for the truncating path).
+tests/src/gui/ShellTest.cpp	# focusTarget dereferences a null frame

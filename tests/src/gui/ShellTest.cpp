@@ -170,6 +170,20 @@ private slots:
 		QVERIFY(world.shell.viewActions().at(1)->isChecked());
 	}
 
+	void everyRegisteredPanelHasAFrame()
+	{
+		// window.focus_panel (ControlCommandsWorkspace.cpp, focusPanel) passes Shell::panel() a frame only after
+		// ShellLayout::isPanel() accepted the id; this pins that both answer from the same register.
+		World world;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
+		{
+			QVERIFY(ShellLayout::isPanel(spec.id));
+			QVERIFY2(world.shell.panel(spec.id) != nullptr, qPrintable(spec.id));
+		}
+		QVERIFY(!ShellLayout::isPanel(QStringLiteral("no-such-panel")));
+		QVERIFY(world.shell.panel(QStringLiteral("no-such-panel")) == nullptr);
+	}
+
 	void everyTargetMeetsTheMinimumSize()
 	{
 		World world;
