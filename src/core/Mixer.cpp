@@ -23,6 +23,7 @@
  */
 
 #include "Mixer.h"
+#include "RealtimeExport.h"
 #include "RecorderTaps.h"
 
 #include <algorithm>
@@ -2536,6 +2537,7 @@ void Mixer::masterMix( SampleFrame* _buf )
 	// 0.5.0 F7 (MX-060): a surround master's other speakers - onto the outputs, or folded into the mix.
 	surround::masterOutput( *this, _buf, fpp );
 	recordertaps::master( _buf, fpp );  // 0.5.0 WF-072: a record route resampling the master
+	realtimeexport::master( _buf, fpp );  // Q050-089.2: render.realtime keeps the master (one load while idle)
 	// 0.5.0 F1 (MX-040, MX-036, MX-061): direct outs, cue mixes and insert sends onto the hardware outputs.
 	hardwareio::mixOutputs( *this, _buf, fpp );
 	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output - unless the

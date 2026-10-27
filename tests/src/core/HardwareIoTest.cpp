@@ -59,6 +59,8 @@
 #include "HardwareIo.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
+#include "RealtimeExport.h"
+#include "SampleBuffer.h"
 #include "MixerListen.h"
 #include "SampleFrame.h"
 
@@ -305,6 +307,44 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), static_cast<qulonglong>(0));
 		mixerlisten::clear();
 		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("default")}}));
+	}
+
+	//! Q050-089.2: render.realtime's capture keeps the master from the song's first period, drops the delay
+	//! compensation's head, ends at the end tick plus the tail and scales by the master gain - and the period
+	//! that feeds it allocates nothing.
+	void theRealtimeCaptureTrimsEndsAndAllocatesNothing()
+	{
+		RealtimeExportCapture capture;
+		// 100 frames a tick: the song ends at tick 10 = frame 1000; 100 frames of compensation, 50 of tail.
+		QVERIFY(capture.arm(44100, 10, 100, 50, 0.5f, 1000000));
+		QVERIFY(!capture.arm(44100, 10, 100, 50, 0.5f, 1000000));  // one take at a time
+		constexpr f_cnt_t Period = 256;
+		std::vector<SampleFrame> period(Period);
+		f_cnt_t played = 0;
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		for (int n = 0; n < 8 && capture.state() != RealtimeExportCapture::State::Done; ++n)
+		{
+			for (f_cnt_t f = 0; f < Period; ++f)
+			{
+				const float at = static_cast<float>(played + f) / 10000.f;
+				period[f] = SampleFrame(at, -at);
+			}
+			played += Period;
+			capture.push(period.data(), Period, played / 100, static_cast<double>(played % 100), 100.0);
+		}
+		test::tlCountAllocations = false;
+		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), static_cast<qulonglong>(0));
+		QCOMPARE(static_cast<int>(capture.state()), static_cast<int>(RealtimeExportCapture::State::Done));
+		QCOMPARE(capture.targetFrames(), static_cast<std::uint64_t>(1000 + 50));
+		QVERIFY(!capture.capped());
+		const std::shared_ptr<const SampleBuffer> take = capture.takeFinished();
+		QVERIFY(take != nullptr);
+		QCOMPARE(static_cast<int>(take->size()), 1050);
+		// File frame k is song frame k: master frame k + 100, at half the level.
+		QCOMPARE(take->data()[0][0], 0.5f * 100 / 10000.f);
+		QCOMPARE(take->data()[1049][1], -0.5f * 1149 / 10000.f);
+		QCOMPARE(static_cast<int>(capture.state()), static_cast<int>(RealtimeExportCapture::State::Idle));
 	}
 
 	void aPingMeasuresTheLoopAndFeedsDelayCompensation()

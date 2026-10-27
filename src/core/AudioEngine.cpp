@@ -80,6 +80,7 @@
 
 #include "BufferManager.h"
 
+#include <cmath>
 #include <limits>
 #include <memory>
 
@@ -2130,6 +2131,12 @@ void AudioDummy::configureLoopback()
 	if (!m_loopback) { return; }
 	m_loopInLatency = latencyFromEnv("LMMS_DUMMY_INPUT_LATENCY");
 	m_loopOutLatency = latencyFromEnv("LMMS_DUMMY_OUTPUT_LATENCY");
+	// Q050-089.2: LMMS_DUMMY_LOOPBACK_GAIN makes the cable a piece of outboard gear that changes the level
+	// (-4 .. 4; a negative figure flips the polarity), so a render can tell the processed return from the dry
+	// signal. Unset or unparsable: 1, the plain cable it has always been.
+	bool gainOk = false;
+	const float gain = qEnvironmentVariable("LMMS_DUMMY_LOOPBACK_GAIN").toFloat(&gainOk);
+	m_loopGain = gainOk && std::isfinite(gain) ? std::clamp(gain, -4.f, 4.f) : 1.f;
 	// The line holds the whole delay plus the largest period a render can hand back.
 	m_loopLine.assign(static_cast<std::size_t>(m_loopInLatency + m_loopOutLatency) + MAXIMUM_BUFFER_SIZE + 1,
 		SampleFrame(0.0f, 0.0f));
@@ -2159,7 +2166,11 @@ void AudioDummy::feedBack(std::span<const SampleFrame> period)
 		m_loopLine[(m_loopWrite + f) % size] = !bus.active() ? (pair == 0 ? period[f] : SampleFrame(0.f, 0.f))
 			: SampleFrame(bus.sample(pair, at, period[f]), bus.sample(pair + 1, at, period[f]));
 	}
-	for (std::size_t f = 0; f < frames; ++f) { m_loopBlock[f] = m_loopLine[(m_loopWrite + f + size - delay) % size]; }
+	for (std::size_t f = 0; f < frames; ++f)
+	{
+		const SampleFrame& back = m_loopLine[(m_loopWrite + f + size - delay) % size];
+		m_loopBlock[f] = SampleFrame(back[0] * m_loopGain, back[1] * m_loopGain);
+	}
 	m_loopWrite = (m_loopWrite + frames) % size;
 	audioEngine()->pushInputFrames(m_loopBlock.data(), static_cast<f_cnt_t>(frames));
 }
