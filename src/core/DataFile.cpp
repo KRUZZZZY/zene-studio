@@ -392,7 +392,10 @@ bool DataFile::isRecoverableDocument( const QDomDocument & doc )
 	{
 		return false;
 	}
-	return ! root.elementsByTagName( DataFile::typeName( type ) ).item( 0 ).toElement().isNull();
+	// The content element is the root's own child (DataFile::DataFile(Type) and
+	// every save write it there). A same-named element further down is not the
+	// content, and adopting a temp that holds one would load that nested element.
+	return ! root.firstChildElement( DataFile::typeName( type ) ).isNull();
 }
 
 

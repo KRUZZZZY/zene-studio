@@ -591,6 +591,47 @@ private slots:
 		QCOMPARE( readText( target ), oldText );
 	}
 
+	//! A .new whose root, type and head are all recognised, but whose content
+	//! element sits under an unrelated wrapper rather than directly under the
+	//! root, is not a document this program writes. Recovery used to search
+	//! every descendant for the content element, so it adopted this temp over
+	//! the valid project and the load then selected the nested song. The content
+	//! element must be the root's own child, so this temp is discarded and the
+	//! project stands.
+	void newFileWithContentNestedUnderAnotherElementIsNotAdopted()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		QVERIFY( writeText( temp, QStringLiteral( "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head/>"
+			"<wrapper><song s5probe=\"nested\"/></wrapper></zene-project>\n" ) ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "a misnested .new was adopted; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( !QFile::exists( temp ), "the misnested .new was not discarded" );
+		QCOMPARE( probe, QStringLiteral( "old" ) );
+		QCOMPARE( readText( target ), oldText );
+	}
+
 	//! The recovery parses the temp before the guarded project load does, so a
 	//! deeply nested - but well-formed and complete - .new used to be adopted
 	//! with no depth guard at all. Both parses now carry the same limit, so such
