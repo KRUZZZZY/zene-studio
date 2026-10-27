@@ -151,3 +151,32 @@ and the registered `control.quit`), which are unchanged. No command or GUI file 
   are available. It uses no Qt-6-only API: `QThread::wait(unsigned long)` exists in Qt 5.15 and 6. There are
   no windows.h macro names, no `std::filesystem`, and none of `small`/`near`/`far`/`interface`/`min`/`max` as
   identifiers.
+
+### Self-check, round 2
+
+Logs for this round are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-488.r2/logs/`.
+
+- **Build:** `cmake --build build --target zene MidiAlsaRawShutdownTest MidiOutQueueTest -- -j4` -> `0` (`build-6.log`).
+- **Focused tests:** `ctest -R "MidiAlsaRawShutdownTest|MidiOutQueueTest" --output-on-failure` -> `0`, 3 runs
+  out of 3. The engine neighbours pass, 4/4.
+- **Gates:** `/tmp` copy of `feature_check.py` -> `0`, all 8 PASS (`gates-1.log`). `submit_check.py` -> `1`.
+  Its only FAIL is the gates row, from the same write-jail `PermissionError` on
+  `<worktree>/../zene-feat-q050-488-feature-check` as in round 1 (`submit-check-1.log`).
+- **Fails reverted / passes restored:**
+  - semantic revert (override and engine call removed): `1`, `1`;
+  - engine call only removed: `1`, `0`;
+  - restored: `0`.
+
+  A full revert of all product files does not compile, because the test uses `stopWorker`/`stopInput`
+  (round 1: build `2`).
+- **Audio thread:** nothing is added to the audio thread. `stopInput()` and its join run in
+  `Engine::destroy()`, on the main thread, after `stopProcessing()` has stopped the audio workers.
+- **Undo, commands, projects, render:** unchanged.
+- **Portability:**
+  - The `MidiClient::stopInput()` virtual is plain C++.
+  - The `MidiAlsaRaw` override stays inside `LMMS_HAVE_ALSA`.
+  - The test's `qScopeGuard` exists in Qt 5.12+.
+- **Not done:**
+  - the `050/m0-train-18` merge (refused by the lane guard, see above);
+  - TSan;
+  - runtime track-deletion synchronisation (stage 4).
