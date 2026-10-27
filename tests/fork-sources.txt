@@ -818,6 +818,8 @@ include/CommandMetadata.h
 include/CommandPalette.h
 include/CompSlip.h
 include/CompSwipeStrip.h
+include/ConsoleStrip.h
+include/ConsoleStripSection.h
 include/ContainedCrossfade.h
 include/ContextHelp.h
 include/ControlArrangingCommands.h
@@ -909,10 +911,12 @@ include/HelpCenter.h
 include/HelpTasks.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
+include/InputChannelMeters.h
 include/InputChannelRing.h
 include/InputLevelMeter.h
 include/InputMeter.h
 include/InputMonitor.h
+include/InputReadings.h
 include/InspectorChannelRouting.h
 include/InspectorPanel.h
 include/InstrumentCommandMenus.h
@@ -1143,6 +1147,7 @@ include/StemSeparation/StemSeparator.h
 include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
+include/StripMeters.h
 include/SurroundExport.h
 include/SurroundPanner.h
 include/TakeLane.h
@@ -1375,6 +1380,7 @@ src/core/CollabSession.cpp
 src/core/CollabSessionAddress.h
 src/core/CollabSessionSync.cpp
 src/core/CompSlip.cpp
+src/core/ConsoleStrip.cpp
 src/core/ContainedCrossfade.cpp
 src/core/ControlAutomationSupport.cpp
 src/core/ControlBounceSupport.cpp
@@ -1427,6 +1433,7 @@ src/core/ControlCommandsCollectMedia.cpp
 src/core/ControlCommandsComp.cpp
 src/core/ControlCommandsCompEdits.cpp
 src/core/ControlCommandsCompGroup.cpp
+src/core/ControlCommandsConsoleStrip.cpp
 src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
@@ -1460,6 +1467,7 @@ src/core/ControlCommandsHostChunking.cpp
 src/core/ControlCommandsHostNotes.cpp
 src/core/ControlCommandsIdContract.cpp
 src/core/ControlCommandsImportTracks.cpp
+src/core/ControlCommandsInputMeters.cpp
 src/core/ControlCommandsInputTransform.cpp
 src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
@@ -1604,6 +1612,7 @@ src/core/ControlCommandsTrackFolderSets.cpp
 src/core/ControlCommandsTrackFolderShared.h
 src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackMidiOut.cpp
+src/core/ControlCommandsTrackOffset.cpp
 src/core/ControlCommandsTrackPresets.cpp
 src/core/ControlCommandsTrackSpacers.cpp
 src/core/ControlCommandsTrackVersions.cpp
@@ -1761,6 +1770,7 @@ src/core/ImportDetectionSpectrum.cpp
 src/core/ImportDetectionSpectrum.h
 src/core/InputMeter.cpp
 src/core/InputMonitor.cpp
+src/core/InputReadings.cpp
 src/core/InstrumentLayers.cpp
 src/core/InstrumentMidiParts.cpp
 src/core/InstrumentOutputBuses.cpp
@@ -1915,6 +1925,7 @@ src/core/SongUndoSnapshot.cpp
 src/core/StemJobManager.cpp
 src/core/StemModelStore.cpp
 src/core/StemTrackBuilder.cpp
+src/core/StripMeters.cpp
 src/core/SurroundExport.cpp
 src/core/TakeLane.cpp
 src/core/TakeRecorder.cpp
@@ -1980,6 +1991,7 @@ src/gui/CommandMetadata.cpp
 src/gui/CommandPalette.cpp
 src/gui/CommandRun.cpp
 src/gui/CompSwipeStrip.cpp
+src/gui/ConsoleStripSection.cpp
 src/gui/ContextHelp.cpp
 src/gui/ControlCommandsAccessibleEditing.cpp
 src/gui/ControlCommandsArrangerView.cpp
@@ -2008,6 +2020,7 @@ src/gui/FollowActionEditor.cpp
 src/gui/GrooveMenu.cpp
 src/gui/HelpCenter.cpp
 src/gui/HelpTasks.cpp
+src/gui/InputChannelMeters.cpp
 src/gui/InputLevelMeter.cpp
 src/gui/InstrumentCommandMenus.cpp
 src/gui/ItemListPanel.cpp
@@ -2353,6 +2366,7 @@ tests/src/core/ClipSerialisationTest.cpp
 tests/src/core/ClipTransposeTest.cpp
 tests/src/core/CollabPolicyTest.cpp
 tests/src/core/CollabTransportTest.cpp
+tests/src/core/ConsoleStripTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlArmReversibilityTest.cpp
 tests/src/core/ControlBounceSupportTest.cpp
@@ -2417,6 +2431,7 @@ tests/src/core/HardwareIoTest.cpp
 tests/src/core/HydrogenImportTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/ImportTrackIoTest.cpp
+tests/src/core/InputChannelMeterTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
 # cluster new-p8-127 (2026-10-07): import journalling exception regression and throwing importer fixture.
@@ -2582,6 +2597,7 @@ tests/src/core/StemJobManagerTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
 tests/src/core/StereoDelay.cpp
+tests/src/core/StripMeterModeTest.cpp
 tests/src/core/SurroundTest.cpp
 tests/src/core/TakeLaneTest.cpp
 tests/src/core/TapTempoTest.cpp
@@ -2753,10 +2769,12 @@ tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
+tests/src/gui/MixerStripFeaturesTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/core/TrackKeyNamesLoadTest.cpp
+tests/src/core/TrackOffsetTest.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/MixerWindowsTest.cpp
 tests/src/gui/SurroundPannerTest.cpp
@@ -3096,3 +3114,4 @@ docs/qwen-fixes-2026-10/cluster-new-p23-128.md
 tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
 # cluster new-p23-187 (2026-10): fix and verification report for Oscilloscope pause-setting persistence (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p23-187.md
+tests/control-mixing-strip-features.py

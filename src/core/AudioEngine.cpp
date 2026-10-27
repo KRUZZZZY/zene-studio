@@ -1226,6 +1226,12 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// pre-allocated by the control-thread arm(), never here. Realtime-safe.
 	m_samplerTakeRecorder.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
 	inputmeter::measure(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);  // 0.5.0 L08 (MX-134)
+	// Q050-340: each capture channel's own peak - the wide capture when the backend fills it, else the stereo bus.
+	if (m_wideInputStage != nullptr && m_wideInputStage->frames() > 0 && m_wideInputStage->channels() > 0)
+	{
+		inputmeter::measureChannels(m_wideInputStage->data(), m_wideInputStage->channels(), m_wideInputStage->frames());
+	}
+	else { inputmeter::measureStereoChannels(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]); }
 	// 0.5.0 L09 (MX-038): the control room on what is heard - skipped while exporting and while neutral.
 	controlroom::apply(m_outputBufferRead.get(), m_framesPerPeriod);
 	// 0.5.0 W3 (WF-147): the tuner's tap on the input bus - one relaxed load unless it listens here.

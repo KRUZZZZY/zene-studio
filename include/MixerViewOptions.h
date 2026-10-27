@@ -48,7 +48,8 @@ class MixerChannelView;
 /*! 0.5.0 L08: how the mixer view draws its strips, set by window.mixer_view and kept in the config
  *  file (ui/mixerview) - the user's interface, never the project:
  *  - MX-003: which sections a strip shows (sends, pan, channel number, the meter line - and, from L10,
- *    its inserts by name (MX-073) and its rack's first macros as knobs (MX-090));
+ *    its inserts by name (MX-073) and its rack's first macros as knobs (MX-090); from Q050-088 its Console
+ *    section, off by default);
  *  - MX-004: the strip width (narrow, normal, wide);
  *  - MX-005: which channels are shown (all, instruments, audio, returns, used, selected - the channels picked
  *    for it, by window.mixer_view's selected_channels, a Ctrl+click on a strip or the mode bar's picker);
@@ -74,6 +75,7 @@ struct Options
 	bool meterInfo = true;
 	bool inserts = true;  //!< L10 (MX-073): the inserts by name
 	bool macros = true;   //!< L10 (MX-090): the rack's first macros
+	bool console = false;  //!< Q050-088: the Console section (trim, polarity, EQ, the Console's drive and glue)
 	QString width = QStringLiteral("normal");
 	QString filter = QStringLiteral("all");
 	QString meterMode = QStringLiteral("peak");
@@ -126,6 +128,8 @@ LMMS_EXPORT void toggleSelected(QWidget* origin, int index);
 LMMS_EXPORT bool shows(int index);
 //! The sections, width, scale and meter line on one strip.
 LMMS_EXPORT void applyToStrip(MixerChannelView* view, MixerChannel* channel);
+//! Q050-108: the meter mode @a channel's strip shows - its own (mixer.set_strip 'meter_mode'), else the view's.
+LMMS_EXPORT QString meterModeOf(const MixerChannel* channel);
 //! In a meter mode other than the peak, feed @a fader from that meter and say so (the caller skips
 //! the inherited peak feed); false in the peak mode.
 LMMS_EXPORT bool feedMeter(Fader* fader, MixerChannel* channel);

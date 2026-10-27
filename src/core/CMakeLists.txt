@@ -268,6 +268,9 @@ set(LMMS_SRCS
 	core/ControlCommandsMixer.cpp
 	core/ControlCommandsMixerListen.cpp
 	core/ControlCommandsMixerStrip.cpp
+	core/ControlCommandsConsoleStrip.cpp
+	core/ControlCommandsTrackOffset.cpp
+	core/ControlCommandsInputMeters.cpp
 	core/ControlCommandsMixerRename.cpp
 	core/ControlCommandsDeviceCopy.cpp
 	core/ControlCommandsDrumRack.cpp
@@ -920,6 +923,9 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableTask.cpp
 	core/MixerSendPan.cpp
 	core/MixerStrip.cpp
+	core/ConsoleStrip.cpp
+	core/StripMeters.cpp
+	core/InputReadings.cpp
 	core/Model.cpp
 	core/ModelVisitor.cpp
 	# Q050-016: scheduled playback of a note's MPE expression event streams -

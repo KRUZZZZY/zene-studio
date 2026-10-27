@@ -42,6 +42,7 @@ class MixerChannel;
 
 namespace lmms::gui {
 class AutomatableButton;
+class ConsoleStripSection;
 class EffectRackView;
 class Fader;
 class Knob;
@@ -99,6 +100,8 @@ public:
 	QLabel* meterInfo() const { return m_meterInfo; }
 	QLabel* insertList() const { return m_insertList; }
 	MacroKnobs* macroKnobs() const { return m_macroKnobs; }
+	//! Q050-088: the Console section (window.mixer_view 'show_console').
+	ConsoleStripSection* consoleSection() const { return m_consoleSection; }
 	//! The mixer view's "sends" option: false hides the send row and its space; true gives the space back
 	//! (which of its widgets show is the current channel's business, MixerView::updateMixerChannel).
 	void setSendsShown(bool shown);
@@ -165,6 +168,7 @@ private:
 	QLabel* m_meterInfo = nullptr;  // 0.5.0 L08: the clip light and the gain reduction
 	QLabel* m_insertList = nullptr;  // 0.5.0 L10 (MX-073): the inserts, by name
 	MacroKnobs* m_macroKnobs = nullptr;  // 0.5.0 L10 (MX-090): the rack's first macros
+	ConsoleStripSection* m_consoleSection = nullptr;  // Q050-088: trim, polarity, EQ, the Console's drive and glue
 	Knob* m_panKnob;
 	Fader* m_fader;
 	QLabel* m_faderTarget = nullptr;  // 0.5.0 theme 6: what the fader drives, with the faders on a return's sends

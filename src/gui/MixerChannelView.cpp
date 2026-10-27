@@ -50,6 +50,7 @@
 #include "CaptionMenu.h"
 #include "ColorChooser.h"
 #include "CommandForm.h"
+#include "ConsoleStripSection.h"
 #include "ConfigManager.h"
 #include "ControlVocabulary.h"
 #include "EffectRackView.h"
@@ -199,6 +200,10 @@ MixerChannelView::MixerChannelView(QWidget* parent, MixerView* mixerView, int ch
 	mainLayout->addWidget(m_stateLine, 0, Qt::AlignHCenter);
 	mainLayout->addLayout(soloMuteLayout);
 	mainLayout->addWidget(m_panKnob, 0, Qt::AlignHCenter);
+	// Q050-088: the Console section, hidden unless the view shows it (MixerViewOptions::applyToStrip).
+	m_consoleSection = new ConsoleStripSection(control::channelIdOf(mixerChannel), this);
+	m_consoleSection->hide();
+	mainLayout->addWidget(m_consoleSection, 0, Qt::AlignHCenter);
 	// 0.5.0 L10: the rack's first four macros (MX-090) and the inserts by name (MX-073); MixerViewOptions shows them.
 	m_macroKnobs = new MacroKnobs(control::channelIdOf(mixerChannel), 4, true, this);
 	mainLayout->addWidget(m_macroKnobs, 0, Qt::AlignHCenter);

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-26T20:35:25Z",
+  "captured_at": "2026-10-27T09:47:20Z",
   "commands": [
     {
       "args_schema": {
@@ -12540,6 +12540,22 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Q050-340: how loud each input is - 'channels': every capture channel the input carries (the interface's own channels, before the stereo bus picks its pair; the stereo bus as channels 0 and 1 for a backend without the wide capture path), each with its 'peak' (linear) and 'peak_db' (-120 for silence) since the last call and 'clipped'; 'armed': every record-armed route with its 'track' (id and 'track_name'), the 'input_channel' it records and that channel's level - silence when the channel delivered nothing - whatever the track's input monitoring. 'channel_count' is 0 until a capture has delivered audio. The agent's readings are its own: Large Meters' input meters keep theirs. Read only.",
+      "group": "meter",
+      "id": "meter.inputs",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "path": {
             "type": "string"
@@ -13431,6 +13447,64 @@
       "description": "Put the Console device - a console channel's saturation and tone - at the end of every mixer channel's chain, master included, all set alike: 'drive' (0..100 %) and 'character' (clean, warm, bright); channels that have one keep it and take the new settings. 'remove' true takes every Console out instead. One undo step.",
       "group": "mixer",
       "id": "mixer.console_apply",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "drive": {
+            "type": "number"
+          },
+          "eq_high_db": {
+            "type": "number"
+          },
+          "eq_low_db": {
+            "type": "number"
+          },
+          "eq_mid_db": {
+            "type": "number"
+          },
+          "eq_mid_freq": {
+            "type": "number"
+          },
+          "glue": {
+            "type": "boolean"
+          },
+          "glue_makeup_db": {
+            "type": "number"
+          },
+          "glue_ratio": {
+            "type": "number"
+          },
+          "glue_threshold_db": {
+            "type": "number"
+          },
+          "polarity_left": {
+            "type": "boolean"
+          },
+          "polarity_right": {
+            "type": "boolean"
+          },
+          "trim_db": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Q050-088: one channel's Console section, as the mixer strip shows it (window.mixer_view 'show_console'): 'trim_db' (-24..24, before the inserts), 'polarity_left' / 'polarity_right', the strip EQ - 'eq_low_db' (a shelf at 100 Hz), 'eq_mid_db' (a bell at 'eq_mid_freq', 100..10000 Hz), 'eq_high_db' (a shelf at 8 kHz), each -18..18 - and, when the channel carries a Console device (mixer.console_apply puts one on every channel), that Console's 'drive' (0..100 %) and its glue compressor: 'glue' (on or off - off by default, and then the Console sounds exactly as it did), 'glue_threshold_db' (-40..0), 'glue_ratio' (1..20) and 'glue_makeup_db' (0..24). Only this channel changes. A Console field on a channel without a Console is refused; any refusal changes nothing. A field left out keeps its value; with only 'channel' it reports. The answer has every field ('console' says whether the channel has one; its fields are null without). Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.console_strip",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -14348,6 +14422,17 @@
           "input_mono": {
             "type": "boolean"
           },
+          "meter_mode": {
+            "enum": [
+              "default",
+              "peak",
+              "rms",
+              "pre_fader",
+              "vu",
+              "lufs"
+            ],
+            "type": "string"
+          },
           "mono": {
             "type": "boolean"
           },
@@ -14392,7 +14477,7 @@
         ],
         "type": "object"
       },
-      "description": "A channel's own settings: 'trim_db' (-24..24, an input gain before the inserts), 'polarity_left' / 'polarity_right', 'mono', 'swap' (left and right exchanged), 'input_mono' (a mono source, summed before the inserts), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left side and 'pan_right' the right, so both centred sum the sides to mono; entering dual from centred pans spreads them hard left and right -, width - 'width' 0..2 scales the stereo side, then 'pan' balances), 'solo_safe' (soloing another channel never mutes this one) and 'note' (free text, shown as the strip's tooltip). A field left out keeps its value. Saved with the project; one undo step.",
+      "description": "A channel's own settings: 'trim_db' (-24..24, an input gain before the inserts), 'polarity_left' / 'polarity_right', 'mono', 'swap' (left and right exchanged), 'input_mono' (a mono source, summed before the inserts), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left side and 'pan_right' the right, so both centred sum the sides to mono; entering dual from centred pans spreads them hard left and right -, width - 'width' 0..2 scales the stereo side, then 'pan' balances), 'solo_safe' (soloing another channel never mutes this one), 'note' (free text, shown as the strip's tooltip) and, Q050-108, 'meter_mode' - what this strip's meter shows: default (the mixer view's meter_mode, as every older project), peak (after the fader), rms, pre_fader, vu (a VU meter: 300 ms integration, 0 VU at meter.set_reference's level for a steady sine) or lufs (BS.1770 short-term loudness and true peak of this channel, after the fader); other strips keep theirs. A field left out keeps its value. Saved with the project; one undo step.",
       "group": "mixer",
       "id": "mixer.set_strip",
       "mutating": true,
@@ -14628,7 +14713,7 @@
         ],
         "type": "object"
       },
-      "description": "A channel's own settings (as mixer.set_strip writes them) and its meters: pre-fader peak (held since the last clear), RMS after the fader (this period), the latched clip light, and the deepest gain reduction (dB) an insert reported.",
+      "description": "A channel's own settings (as mixer.set_strip writes them) and its meters: pre-fader peak (held since the last clear), RMS after the fader (this period), the latched clip light, and the deepest gain reduction (dB) an insert reported; Q050-108: its 'meter_mode' and, under 'meters', the VU needle ('vu_left' / 'vu_right', in VU against 'vu_reference_dbfs') and - while the strip is in lufs - 'lufs_momentary', 'lufs_short_term' and 'true_peak_dbtp' (null with no reading yet). meter.get_state and the shell's loudness readout stay the master's.",
       "group": "mixer",
       "id": "mixer.strip_get",
       "mutating": false,
@@ -18321,6 +18406,33 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "offset_samples": {
+            "maximum": 8192,
+            "minimum": -8192,
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Q050-339: the manual delay of 'target' - an audio track or an instrument track (trk-<n>), or a mixer channel (ch-<n>, not the master) - as 'offset_samples', a whole number of samples at the engine's rate (-8192..8192): positive plays it later, negative earlier. It is added to the automatic delay compensation, so every other path stays aligned (pdc.report shows the result). A track's offset moves its audio output (not a hosted instrument's extra routed output buses); an instrument track's note delay (track.set_delay) is a separate setting. With only 'target' it reports; the answer adds 'offset_ms' and 'kind' (track or channel). Saved with the track or channel; one undo step.",
+      "group": "pdc",
+      "id": "pdc.set_offset",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -35377,6 +35489,35 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Q050-340: open the Input Meters window (an open one is raised): a labelled bar for every capture channel the input carries ('In 1', 'In 2', ...) and one for every record-armed track's selected input ('<track> - In <n>'), -60..0 dB with the mixer's fall-off. The answer is what the window shows now: 'channels' and 'armed', each meter's 'label', 'input_channel' (0-based), 'level_db' (-120 for silence) and, for an armed track, its record 'route'. meter.inputs reads the same levels for an agent without taking the window's. A display.",
+      "group": "window",
+      "id": "window.input_meters",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "array"
+          },
+          "channels": {
+            "type": "array"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "surface": {
             "enum": [
@@ -35709,6 +35850,9 @@
           "sends_on_faders": {
             "type": "string"
           },
+          "show_console": {
+            "type": "boolean"
+          },
           "show_inserts": {
             "type": "boolean"
           },
@@ -35746,7 +35890,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -35820,6 +35964,9 @@
           },
           "sends_on_faders_name": {
             "type": "string"
+          },
+          "show_console": {
+            "type": "boolean"
           },
           "show_inserts": {
             "type": "boolean"
@@ -36970,23 +37117,23 @@
       }
     }
   ],
-  "count": 863,
+  "count": 867,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-088-639e1d23e4/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-g1xlp9bw/zene.sock",
-    "version": "0.4.0-alpha.4951+9072aa2"
+    "source_socket": "/tmp/zctl-run-wfaejsyf/zene.sock",
+    "version": "0.4.0-alpha.4952+639e1d2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 863,
-    "ids_sha256": "b5d5de2cffe6b11bce50bc4eb6eb8b271782d0c98b555c0ea74af685cb30d021"
+    "id_count": 867,
+    "ids_sha256": "b12c2ea5aa694b92c7adf27b400767ed5edbd9616434f5388d94e7de3fd44030"
   }
 }

@@ -331,6 +331,7 @@ void SampleTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& this
 	m_volumeModel.saveSettings(doc, thisElem, "vol");
 	m_panningModel.saveSettings(doc, thisElem, "pan");
 	m_mixerChannelModel.saveSettings(doc, thisElem, "mixch");
+	if (m_audioBusHandle.offsetFrames() != 0) { thisElem.setAttribute("offsetframes", m_audioBusHandle.offsetFrames()); }  // Q050-339
 }
 
 
@@ -338,6 +339,7 @@ void SampleTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& this
 
 void SampleTrack::loadTrackSpecificSettings(const QDomElement & thisElem)
 {
+	m_audioBusHandle.setOffsetFrames(thisElem.attribute("offsetframes", "0").toInt());  // Q050-339 (absent: none)
 	QDomNode node = thisElem.firstChild();
 	m_audioBusHandle.effects()->clear();
 	while(!node.isNull())
