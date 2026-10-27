@@ -428,6 +428,14 @@ the arranger; the video's sound can be extracted to an audio track. Edit &gt; Co
 across the internet, where your router allows it) join the project: you share an invite code, every edit is sent to the
 others, and a remote invite gives a phone or another machine the transport and faders only. Nothing listens until you host,
 and you are asked first.</p>
+<p><b>Damaged drawn waveforms.</b> Watsyn, BitInvader, FreeBoy, Vibed and Xpressive save the waveforms you draw, and
+Wave Shaper, Dynamics Processor and Multitap Echo save their curves, inside the project or preset. When one of those
+saved graphs is damaged - cut short, too long, not readable, or holding values that are not numbers - Zene does not use
+it: the device keeps the waveform it already had (a freshly opened device keeps its default; Dynamics Processor returns
+to its default curve), the rest of the project loads normally, and the problem is listed in the load error report that
+appears after opening (agents read the same lines in <code>project.open</code>'s <code>errors</code>). A graph that is
+simply absent, as in projects saved before the device stored it, loads silently as before. Saving the project writes
+the waveform the device now holds.</p>
 
 <h2 id="agents">Scripts, agents and controllers</h2>
 <p>Every command is reachable over the control socket (JSON-RPC) and from the MCP bridge; Lua scripts

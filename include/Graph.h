@@ -189,6 +189,8 @@ public slots:
 	void setSampleAt( int x, float val );
 	//! Update samples array
 	void setSamples( const float * _value );
+	//! Update the first min(count, length()) samples from a source that holds `count` values
+	void setSamples(const float* samples, int count);
 
 	void setWaveToSine();
 	void setWaveToTriangle();

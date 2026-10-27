@@ -30,6 +30,7 @@
 #include "BitInvader.h"
 #include "AudioEngine.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "Engine.h"
 #include "Graph.h"
 #include "InstrumentTrack.h"
@@ -177,23 +178,35 @@ void BitInvader::saveSettings( QDomDocument & _doc, QDomElement & _this )
 
 void BitInvader::loadSettings( const QDomElement & _this )
 {
-	// Clear wavetable before loading a new
-	m_graph.clear();
+	// The wavetable is cleared at the length it had before this load, as it always was (Q050-486).
+	const int previousLength = m_graph.length();
 
 	// Load sample length
 	m_sampleLength.loadSettings( _this, "sampleLength" );
 
 	int sampleLength = (int)m_sampleLength.value();
 
-	// Load sample shape
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "sampleShape"), &dst, &size );
-
-	m_graph.setLength(size / sizeof(float));
-	m_graph.setSamples(reinterpret_cast<float*>(dst));
-	m_graph.setLength(sampleLength);
-	delete[] dst;
+	// Load sample shape: older writers saved sampleLength values, this one saves wavetableSize.
+	// Any other payload keeps the current wavetable and is reported (Q050-486).
+	const QString shapeAttribute = QStringLiteral("sampleShape");
+	auto shape = waveform::decode(_this.attribute(shapeAttribute), 1, wavetableSize);
+	if (shape.ok() && shape.count != sampleLength && shape.count != wavetableSize)
+	{
+		shape.status = waveform::DecodeStatus::WrongLength;
+	}
+	if (shape.ok())
+	{
+		// Clear wavetable before loading a new
+		m_graph.setLength(previousLength);
+		m_graph.clear();
+		m_graph.setLength(shape.count);
+		m_graph.setSamples(shape.samples.get(), shape.count);
+		m_graph.setLength(sampleLength);
+	}
+	else
+	{
+		waveform::reportRefused(QStringLiteral("BitInvader"), shapeAttribute, shape, sampleLength, wavetableSize);
+	}
 
 	// Load LED normalize 
 	m_interpolation.loadSettings( _this, "interpolation" );

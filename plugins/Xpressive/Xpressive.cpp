@@ -43,6 +43,7 @@
 #include "Song.h"
 
 #include "base64.h"
+#include "WaveformData.h"
 #include "embed.h"
 
 #include "ExprSynth.h"
@@ -176,29 +177,11 @@ void Xpressive::loadSettings(const QDomElement & _this) {
 	m_panning2.loadSettings(_this,"PAN2");
 	m_relTransition.loadSettings(_this,"RELTRANS");
 
-	// A waveform is only replaced when the decoded payload is exactly one float per graph
-	// point; a missing or truncated attribute keeps the graph's current samples.
-	const auto loadSamples = [&_this](const char* attribute, graphModel& graph) {
-		int size = 0;
-		char* dst = nullptr;
-		base64::decode(_this.attribute(attribute), &dst, &size);
-		if (size == graph.length() * static_cast<int>(sizeof(float)))
-		{
-			auto* samples = reinterpret_cast<float*>(dst);
-			for (int i = 0; i < graph.length(); ++i)
-			{
-				if (!std::isfinite(samples[i]))
-				{
-					samples[i] = 0.0f;
-				}
-			}
-			graph.setSamples(samples);
-		}
-		delete[] dst;
-	};
-	loadSamples("W1sample", m_rawgraphW1);
-	loadSamples("W2sample", m_rawgraphW2);
-	loadSamples("W3sample", m_rawgraphW3);
+	// A waveform is only replaced by exactly one finite float per graph point; a missing,
+	// truncated or nonfinite attribute keeps the graph's current samples (Q050-486).
+	waveform::loadGraph(_this, QStringLiteral("W1sample"), m_rawgraphW1, QStringLiteral("Xpressive"));
+	waveform::loadGraph(_this, QStringLiteral("W2sample"), m_rawgraphW2, QStringLiteral("Xpressive"));
+	waveform::loadGraph(_this, QStringLiteral("W3sample"), m_rawgraphW3, QStringLiteral("Xpressive"));
 
 	smooth(m_smoothW1.value(),&m_rawgraphW1,&m_graphW1);
 	smooth(m_smoothW2.value(),&m_rawgraphW2,&m_graphW2);

@@ -3134,3 +3134,12 @@ tests/control-panel-shortcuts.py
 # ControlCommandsShortcuts.cpp once the panel scopes and the Q050-202 presets both landed in it.
 src/gui/ControlCommandsShortcutsRegister.cpp
 src/gui/ControlCommandsShortcutsShared.h
+# Q050-486 (2026-10): the shared loader for saved plug-in waveform data (fork-NEW) and its regressions.
+include/WaveformData.h
+src/core/WaveformData.cpp
+tests/src/core/WaveformDataTest.cpp
+tests/src/plugins/GraphWaveformLoadTest.cpp
+tests/control-graph-waveform-load.py
+tests/src/gui/GraphWaveformEditorGuiTest.cpp
+docs/050-features/Q050-486.md
+docs/qwen-fixes-2026-10/cluster-Q050-486.md

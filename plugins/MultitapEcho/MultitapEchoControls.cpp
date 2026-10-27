@@ -30,6 +30,7 @@
 #include "MultitapEcho.h"
 #include "lmms_math.h"
 #include "base64.h"
+#include "WaveformData.h"
 
 namespace lmms
 {
@@ -84,16 +85,9 @@ void MultitapEchoControls::loadSettings( const QDomElement & elem )
 	m_swapInputs.loadSettings( elem, "swapinputs" );
 	m_stages.loadSettings( elem, "stages" );
 	
-	int size = 0;
-	char * dst = 0;
-	
-	base64::decode( elem.attribute( "ampsteps"), &dst, &size );
-	m_ampGraph.setSamples( (float*) dst );
-
-	base64::decode( elem.attribute( "lpsteps"), &dst, &size );
-	m_lpGraph.setSamples( (float*) dst );
-	
-	delete[] dst;
+	// The graphs are `steps` long by now; each loads only from exactly that many finite values (Q050-486).
+	waveform::loadGraph(elem, QStringLiteral("ampsteps"), m_ampGraph, QStringLiteral("Multitap Echo"));
+	waveform::loadGraph(elem, QStringLiteral("lpsteps"), m_lpGraph, QStringLiteral("Multitap Echo"));
 }
 
 
