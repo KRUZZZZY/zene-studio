@@ -787,7 +787,9 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		if (relTime >= 0 && relTime < p->length())
 		{
 			const AutomatableModel* recordedModel = p->firstObject();
-			bool writes = p->isRecording();
+			// A clip with no live target has nothing to record from: firstObject() hands back a
+			// fallback model for it, which must not be written (new-p9-439).
+			bool writes = p->isRecording() && p->hasObjects();
 			if( !writes && recordedModel
 				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
 			{

@@ -902,6 +902,35 @@ private slots:
 		QCOMPARE(timeMapBits(rig.clip), before);
 	}
 
+	//! A recording automation clip whose target was removed has nothing to record
+	//! from. `AutomationClip::firstObject()` hands back a fallback model for such a
+	//! clip, and the render pass must not queue a write taken from it: the drain
+	//! would plant that fallback's value as nodes in a clip with no control.
+	//! Attaching a target again resumes recording, so the same harness is its own
+	//! inversion: it must queue writes once the target is back.
+	void testRecordingClipWithoutTargetWritesNothing()
+	{
+		auto* song = Engine::getSong();
+		Rig rig(song);
+		rig.writeCurve();
+		rig.clip.setRecording(true);
+		rig.clip.removeObject(&rig.volume);
+		QVERIFY(!rig.clip.hasObjects());
+
+		const auto before = timeMapBits(rig.clip);
+		const auto pendingBefore = rig.clip.pendingWriteCount();
+		playFromZero(song, 8);
+		QCOMPARE(rig.clip.pendingWriteCount(), pendingBefore);
+		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(timeMapBits(rig.clip), before);
+
+		// --- inversion: the same harness with a target must queue writes -------
+		rig.clip.addObject(&rig.volume);
+		playFromZero(song, 8);
+		QVERIFY2(rig.clip.pendingWriteCount() > pendingBefore,
+			"a recording clip with a target queued no write - the no-target assertion proves nothing");
+	}
+
 	//! The realtime contract, stated as a test: the mode state the audio thread
 	//! reads must be lock-free, so `automationWantsWrite()` can never block on a
 	//! mutex. (The stored values are read with relaxed atomics on the render
