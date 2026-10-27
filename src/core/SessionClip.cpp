@@ -29,12 +29,31 @@
 #include <QDomElement>
 #include <QString>
 
+#include "Engine.h"
+#include "Song.h"
+
 namespace lmms
 {
 
 namespace
 {
 using namespace sessionSerialization;
+
+//! A malformed, present clip integer must be visible in the project-load
+//! report even when its documented fallback is also zero.
+int clipIntegerAttribute( const QDomElement& element, const QString& name, int defaultValue )
+{
+	int value = defaultValue;
+	if( intAttribute( element, name, value ) ) { return value; }
+	if( element.hasAttribute( name ) )
+	{
+		if( Song* song = Engine::getSong() )
+		{
+			song->collectError( Song::tr( "Malformed session clip attribute '%1'; using its default." ).arg( name ) );
+		}
+	}
+	return defaultValue;
+}
 
 //! A Follow Action chain as a <followactions> child - the one vocabulary a cell and (R5.2) a
 //! scene share. An empty chain writes nothing, so neither element gains a byte.
@@ -194,21 +213,21 @@ void ClipSlot::restoreState( const QDomElement& element )
 	}
 
 	m_name = element.attribute( QStringLiteral( "name" ) );
-	m_launchMode = launchModeFromInt( element.attribute( QStringLiteral( "launchmode" ),
-		QStringLiteral( "0" ) ).toInt() );
+	m_launchMode = launchModeFromInt( clipIntegerAttribute( element,
+		QStringLiteral( "launchmode" ), 0 ) );
 	// The documented default of an absent quantisation is Global (-1); an
 	// unreadable one now falls back to it instead of to "None" (0).
 	int quantisation = -1;
 	intAttribute( element, QStringLiteral( "quantisation" ), quantisation );
 	m_launchQuantisation = launchQuantisationFromInt( quantisation, true );
-	m_legato = element.attribute( QStringLiteral( "legato" ), QStringLiteral( "0" ) ).toInt() != 0;
-	m_loopStart = element.attribute( QStringLiteral( "loopstart" ), QStringLiteral( "0" ) ).toInt();
-	m_loopLength = element.attribute( QStringLiteral( "looplength" ), QStringLiteral( "0" ) ).toInt();
+	m_legato = clipIntegerAttribute( element, QStringLiteral( "legato" ), 0 ) != 0;
+	m_loopStart = clipIntegerAttribute( element, QStringLiteral( "loopstart" ), 0 );
+	m_loopLength = clipIntegerAttribute( element, QStringLiteral( "looplength" ), 0 );
 	m_gainDb = static_cast<float>( doubleAttribute( element, QStringLiteral( "gain" ), 0.0 ) );
-	m_transpose = element.attribute( QStringLiteral( "transpose" ), QStringLiteral( "0" ) ).toInt();
-	m_detune = element.attribute( QStringLiteral( "detune" ), QStringLiteral( "0" ) ).toInt();
-	m_ramMode = element.attribute( QStringLiteral( "ram" ), QStringLiteral( "0" ) ).toInt() != 0;
-	m_warp = element.attribute( QStringLiteral( "warp" ), QStringLiteral( "0" ) ).toInt() != 0;
+	m_transpose = clipIntegerAttribute( element, QStringLiteral( "transpose" ), 0 );
+	m_detune = clipIntegerAttribute( element, QStringLiteral( "detune" ), 0 );
+	m_ramMode = clipIntegerAttribute( element, QStringLiteral( "ram" ), 0 ) != 0;
+	m_warp = clipIntegerAttribute( element, QStringLiteral( "warp" ), 0 ) != 0;
 	m_warpBpm = doubleAttribute( element, QStringLiteral( "warpbpm" ), 120.0 );
 
 	m_followActions = restoreFollowChain( element );
