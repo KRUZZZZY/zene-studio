@@ -54,7 +54,7 @@ public:
 	static ReferenceProject& instance();
 
 	//! Parse the project file at @a path (.mmp / .mmpz) as the reference, replacing any other; false and
-	//! @a why when it is not a project with song tracks.
+	//! @a why (when not nullptr) when it is not a project with song tracks.
 	bool open(const QString& path, QString* why);
 	void close();
 	bool isOpen() const { return m_file != nullptr; }
