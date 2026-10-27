@@ -14,6 +14,61 @@ A startup failure after open releases everything and starts no worker. `sendByte
 never opened. The new test is `tests/src/core/MidiAlsaRawShutdownTest.cpp`, which fakes libasound's rawmidi
 entry points with a pipe.
 
+## Review round 1 (Luna REWORK) - what was done
+
+**Merge of `050/m0-train-18`: NOT done.** The brief asked to run `git merge 050/m0-train-18` first. The lane's
+guard hook refused it: `bunny-guard: 'git merge 050/m0-train-18' is not allowed in a Bunny lane (AGENTS.md
+rules 1, 2, 11, 12)`. I did not route around the guard with git plumbing. The branch is therefore still based
+on `050/m0-train-17`. The conflicts reported in `tests/fork-sources.txt` and `tests/upstream-modifications.txt`
+are append-only registration lines. Resolving them means keeping both sides; that resolution needs whoever is
+allowed to merge.
+
+**The blocking finding is fixed** (commit `a6fe71331`). `Engine::destroy()` cleared the project, destroying
+every track's `MidiPort` (and erasing it from the client's port list), while the raw worker could still
+dispatch through that list. The worker was stopped only later, in `~AudioEngine`. The fix:
+- `MidiClient::stopInput()` is a new virtual, a no-op in the base. Its contract: after it returns, no input
+  dispatch is in flight and none can start.
+- `MidiAlsaRaw` overrides it to join its worker.
+- `Engine::destroy()` calls it right after `stopProcessing()` and before `clearProject()`.
+
+A port lock held across dispatch was rejected: it would deadlock. A note-off dispatch takes
+`requestChangeInModel()` (`src/tracks/InstrumentTrack.cpp:561`), and the main thread holds that while it
+destroys tracks, which would then wait in `removePort` for the lock.
+
+New regressions:
+- `stopInputWaitsForAnInFlightDispatch`: a gated `MidiEventProcessor` holds the worker inside a real
+  `MidiPort`'s dispatch. `stopInput()` must not return until the dispatch ends, and an event written after the
+  stop is never dispatched.
+- `engineShutdownStopsRawInputBeforePortsAreDestroyed`: `Engine::init(false)` with the raw client over the
+  fake device, plus a real instrument track. When `Engine::destroy()` destroys the track's `MidiPort`, the
+  worker must already be stopped.
+
+Negative controls for this round:
+- `stopInput` override and `Engine.cpp` call removed (base virtual kept, so the test compiles): build `0`;
+  the two tests -> `1`, `1` (`test-3-negative.log`). The messages were "stopInput() returned while a dispatch
+  to the port was in flight" and "the raw-MIDI worker was still running while a track's MidiPort was destroyed".
+- Only the `Engine.cpp` call removed: `1` for the engine test, `0` for the client test
+  (`test-4-negative-engine-only.log`). So each half is held by its own test.
+
+Restored: build `0`. `ctest -R "MidiAlsaRawShutdownTest|MidiOutQueueTest"` -> `0`, 3 runs out of 3
+(`test-5-fixed-run{1,2,3}.log`).
+
+`Engine::destroy` runs in every engine test, so these neighbours were also run: `MidiReconnectTest`,
+`MidiLearnTest`, `AudioAlsaPollDescriptorTest` and `ArrangeToolsTest` -> `0`, 4/4 (`test-6-neighbours.log`).
+
+ASan+UBSan for this round instrumented the test, `MidiAlsaRaw.cpp` and `Engine.cpp`, with
+`detect_leaks=1:halt_on_error=1:use_sigaltstack=0` -> `0`, 12/12, no suppressions (`test-8-asan.log`).
+`use_sigaltstack=0` was needed because, without it, ASan's own runtime aborted on thread exit. It failed to
+unmap its 32 KB signal alt-stack (EINVAL; `test-7-asan.log`), because the engine's `CrashReporter.cpp`
+installs its own `sigaltstack`. That is a runtime option, not a suppression; no report was hidden.
+Round-2 logs are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-488.r2/logs/`.
+
+**Remaining limit (pre-existing, not this finding).** Deleting a track at runtime, while MIDI input
+arrives, still erases from the port list without synchronising with the input thread. This is true for
+every raw client, and MidiAlsaSeq dispatches from a snapshot to ports that may be gone. A correct fix needs
+a deferred-removal ownership design that cannot deadlock against `requestChangeInModel()`. That is the
+stage-4 callback-ownership work, recorded in the feature doc.
+
 **Deliberately not changed.** Per the scope and the Q050-479/Q050-483 coordination:
 - OSS, sndio (retiring, Q050-479) and RemotePlugin (retiring, Q050-483): no change, because no issue was
   reproduced that needs containment.
@@ -26,8 +81,8 @@ entry points with a pipe.
 | # | Criterion | Evidence (command -> exit code) |
 | --- | --- | --- |
 | 1 | Deterministic reproduction; repeated close of a blocked worker within a justified bound | `MidiAlsaRawShutdownTest::closingAWorkerBlockedOnInputIsBounded` (5 rounds, < 500 ms each; the bound is justified in the test and the feature doc). Fixed: `ctest -R "MidiAlsaRawShutdownTest\|MidiOutQueueTest" --output-on-failure` -> `0`, 3 runs out of 3. Old behaviour: `./MidiAlsaRawShutdownTest closingAWorkerBlockedOnInputIsBounded` -> `1` (`close took 1000 ms`). |
-| 2 | Release after the worker stops; duplicate stop; partial startup failure | `duplicateStopIsHarmless`, `partialStartupFailureReleasesOnce` (3 rows) and `failedOpenStartsNothingAndDropsOutput`. Each checks that the worker was not running at `snd_rawmidi_close` and that no closed handle was used. Fixed `0`. Old behaviour: `1`; `1` / `134` / `1`; `1`. |
-| 3 | TSan/ASan, no added suppressions | ASan+UBSan build of the test TU and `MidiAlsaRaw.cpp` (`-fsanitize=address,undefined`), linked against the existing objects. Run with `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1` -> `0`, 10/10, no suppressions (`test-5-asan.log`). **TSan not run**: it does not run on this box. The race reasoning is in the feature doc, row 3. |
+| 2 | Release after the worker stops; duplicate stop; partial startup failure | Round 2: `stopInputWaitsForAnInFlightDispatch` and `engineShutdownStopsRawInputBeforePortsAreDestroyed` (the callback targets, the ports, are released only after the worker can no longer dispatch) -> `0`; old order -> `1`, `1`. Round 1: `duplicateStopIsHarmless`, `partialStartupFailureReleasesOnce` (3 rows) and `failedOpenStartsNothingAndDropsOutput`. Each checks that the worker was not running at `snd_rawmidi_close` and that no closed handle was used. Fixed `0`. Old behaviour: `1`; `1` / `134` / `1`; `1`. |
+| 3 | TSan/ASan, no added suppressions | ASan+UBSan build of the test TU and `MidiAlsaRaw.cpp` (`-fsanitize=address,undefined`), linked against the existing objects. Run with `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1` -> `0`, 10/10, no suppressions (round 1, `test-5-asan.log`). Round 2, now also instrumenting `Engine.cpp`, with `use_sigaltstack=0` -> `0`, 12/12 (`r2/logs/test-8-asan.log`). **TSan not run**: it does not run on this box. The race reasoning is in the feature doc, row 3. |
 | 4 | Audio-thread entry allocation/lock free; delivery and timeouts preserved | `sendByteStaysAllocationFree` (allocation probe: 0 allocations, 0 frees, direct write) and `inputStillReachesTheParser` -> `0`. `MidiOutQueueTest` (incl. `AlsaRaw_ClosesHandlesAfterWorkerExitsOnPollError`) -> `0`. The 10 s poll timeout is unchanged. |
 | 5 | Platform shutdown regression; unavailable coverage reported | Linux/ALSA mocked blocking poll -> `0`. JACK, WinMM, CoreMIDI, OSS and sndio are not covered and not changed (reasons in the feature doc). |
 | 6 | Plan names surviving/retiring paths and prerequisites; no competing modernization | Inventory table in `docs/050-features/Q050-488.md`. The diff touches no OSS, sndio, libsoundio or RemotePlugin file. |
