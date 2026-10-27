@@ -617,10 +617,10 @@ bool writeDocumentContainer( const QString& path, const QByteArray& document,
 
 
 bool readDocumentContainer( const QString& path, const QString& contentElementName,
-	QByteArray* document, QString* error )
+	QByteArray* document, QString* error, bool* unreadable )
 {
 	std::vector<std::pair<QString, QByteArray>> entries;
-	if( !readContainer( path, QStringList(), &entries, error ) ) { return false; }
+	if( !readContainer( path, QStringList(), &entries, error, unreadable ) ) { return false; }
 	return reassembleContainerDocument( entries, contentElementName, document, error );
 }
 

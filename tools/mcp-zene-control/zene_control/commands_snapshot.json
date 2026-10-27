@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T20:06:46Z",
+  "captured_at": "2026-10-27T22:13:36Z",
   "commands": [
     {
       "args_schema": {
@@ -19571,7 +19571,7 @@
         ],
         "type": "object"
       },
-      "description": "Read one device parameter by 'name' or by 'index'. 'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range reported is the engine's own model range.",
+      "description": "Read one device parameter by 'name' or by 'index'. 'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range reported is the engine's own model range. A parameter the plug-in owns (a meter or output, declared read-only by the plug-in) carries read_only:true; plugin.param_set refuses it.",
       "group": "plugin",
       "id": "plugin.param_get",
       "mutating": false,
@@ -19596,6 +19596,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
               },
               "step": {
                 "type": "number"
@@ -19709,7 +19712,7 @@
         ],
         "type": "object"
       },
-      "description": "Set one device parameter by 'name' or by 'index' with the engine's own range enforcement: a value outside the model's min..max is refused with invalid_args rather than silently clamped. Reversible through the ProjectJournal.",
+      "description": "Set one device parameter by 'name' or by 'index' with the engine's own range enforcement: a value outside the model's min..max is refused with invalid_args rather than silently clamped, and a parameter the plug-in declares read-only is refused. Reversible through the ProjectJournal.",
       "group": "plugin",
       "id": "plugin.param_set",
       "mutating": true,
@@ -19734,6 +19737,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
               },
               "step": {
                 "type": "number"
@@ -25501,7 +25507,7 @@
         ],
         "type": "object"
       },
-      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). The file name is the section's name with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base (CON -> CON_), the same on every platform. Names that are equal after Unicode canonical decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a name empty once cleaned is its id (sec-<n>). 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). The file name is the section's name with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base (CON -> CON_), the same on every platform. Names that are equal after Unicode canonical decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a name empty once cleaned is its id (sec-<n>). Before any render starts, every generated path is checked: a file, a directory or a symbolic link already there (even a dangling one) refuses the whole call with a typed refusal that names it, so no existing file is replaced and no part of the batch is written. 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.sections",
       "mutating": false,
@@ -32543,7 +32549,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
+      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. A latent instrument on those tracks (over 'max_ms') keeps playing but is monitored without the alignment delay PDC adds to line it up with later paths ('instruments': track, channel, path, latency, the frames skipped); every other path stays aligned. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
       "group": "transport",
       "id": "transport.low_latency",
       "mutating": false,
@@ -37295,8 +37301,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-6lez5hw1/zene.sock",
-    "version": "0.4.0-alpha.5380+df0f2d0"
+    "source_socket": "/tmp/zctl-run-6x1yudpn/zene.sock",
+    "version": "0.4.0-alpha.5511+ba8fc34"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

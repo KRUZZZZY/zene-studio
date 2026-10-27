@@ -434,6 +434,7 @@ include/HardwareIo.h
 include/HardwareOutputBus.h
 include/HelpCenter.h
 include/HelpTasks.h
+include/HostedTrackChannels.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/ImportFilter.h
@@ -648,6 +649,7 @@ include/PanelShortcuts.h
 include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
+include/ParameterReadOnly.h
 include/PatchWiring.h
 include/PatcherCanvas.h
 include/PatcherGraph.h
@@ -679,6 +681,7 @@ include/PluginEditorHost.h
 include/PluginFactory.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
+include/PluginInstantiationFailure.h
 include/PluginIssue.h
 include/PluginLoadPolicy.h
 include/PluginNativeEditor.h
@@ -2037,6 +2040,7 @@ src/core/PluginFactoryBackgroundScan.cpp
 src/core/PluginFactoryScanDetail.h
 src/core/PluginHostChunking.cpp
 src/core/PluginHostNotes.cpp
+src/core/PluginInstantiationFailure.cpp
 src/core/PluginIssue.cpp
 src/core/PluginOrganiser.cpp
 src/core/PluginPaths.cpp
@@ -2703,6 +2707,7 @@ tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlDeviceVendorTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp
+tests/src/core/ControlHostedBusLayoutTest.cpp
 tests/src/core/ControlHostedDeviceCatalogueTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlMidiReconnectSharedTest.cpp
@@ -2727,6 +2732,7 @@ tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlSessionRecordLandUndoTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlStemExportTest.cpp
+tests/src/core/ControlStemWavTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlTempoMapCommandsTest.cpp
@@ -2743,6 +2749,7 @@ tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/CustomAccessTest.cpp
+tests/src/core/DataFileContainerRecoveryTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DawProjectDeflateImportTest.cpp
@@ -2785,6 +2792,7 @@ tests/src/core/InputMonitorTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
 tests/src/core/InstrumentLayerZonePublishTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
+tests/src/core/InstrumentLowLatencyMonitorTest.cpp
 tests/src/core/InstrumentNoteOffProbe.h
 tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/LadspaManagerTest.cpp
@@ -2895,6 +2903,7 @@ tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
 tests/src/core/ProjectRecoveryTest.cpp
+tests/src/core/ProjectRestoreMissingTargetTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 tests/src/core/ProjectRevisionRestoreStagingTest.cpp
 tests/src/core/ProjectSectionTest.cpp
@@ -2925,6 +2934,7 @@ tests/src/core/RecordingRealtimeTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
+tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
 tests/src/core/RemotePluginShmFifoTest.cpp
 tests/src/core/RenderJobQueueTest.cpp
 tests/src/core/RenderSourceGuardTest.cpp
@@ -2935,6 +2945,7 @@ tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoDeviceTest.cpp
 tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/RevisionRestoreCreatedFileUndoTest.cpp
 tests/src/core/RevisionTimelineTest.cpp
 tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
@@ -2943,6 +2954,7 @@ tests/src/core/SaSpectrumViewTest.cpp
 tests/src/core/SafeStartLoadPathTest.cpp
 tests/src/core/SafeStartTest.cpp
 tests/src/core/SampleAccurateAutomationTest.cpp
+tests/src/core/SampleBufferNoEngineTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/SampleDecoderLimitTest.cpp
 tests/src/core/SampleDecoderOggChannelTest.cpp
@@ -3225,6 +3237,7 @@ tests/src/plugins/CompressorVisualizerTest.cpp
 tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
 tests/src/plugins/DelayLfoAutomationTest.cpp
+tests/src/plugins/DispersionNonFiniteTest.cpp
 tests/src/plugins/EqFilterTest.cpp
 tests/src/plugins/EqPeakHandoffTest.cpp
 tests/src/plugins/ExprSynthAllocationTest.cpp

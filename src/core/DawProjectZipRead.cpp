@@ -140,22 +140,51 @@ void note(Scan& scan, const QString& entry, const char* kind, const QString& det
 	scan.report->deviations.push_back({entry, QString::fromLatin1(kind), detail});
 }
 
-//! Reads the whole of \a path. Every offset is an int, so a file past INT_MAX
-//! bytes is refused before it is read.
-bool readWhole(const QString& path, QByteArray* bytes, QString* error)
+//! Test seam, ZENE_TEST_CONTAINER_READ_FAULT: closes the file after its open and
+//! before the read, so the read gives back nothing while the open succeeded -
+//! the second-read fault a recovery must keep a file through. Closing needs no
+//! platform call, so every platform runs the same fault.
+void armTestReadFault(QFile& source)
 {
+	if (!qgetenv("ZENE_TEST_CONTAINER_READ_FAULT").isEmpty()) { source.close(); }
+}
+
+//! Reads the whole of \a path. Every offset is an int, so a file past INT_MAX
+//! bytes is refused before it is read. \a unreadable is set true when the file
+//! could not be opened or read: its bytes were never checked, which is not the
+//! same as the file being malformed or truncated, and a caller must not treat
+//! the two alike.
+//! Refuses a file that could not be opened or read, or that gave back less than
+//! it holds. Such a file was never checked: it is unreadable, not malformed, and
+//! \a unreadable says so for the caller. Always returns false.
+bool refuseUnreadable(const QString& path, const QFile& source, qint64 gotBytes, qint64 expected,
+	QString* error, bool* unreadable)
+{
+	if (unreadable) { *unreadable = true; }
+	const QString why = source.error() != QFileDevice::NoError
+		? source.errorString()
+		: QStringLiteral("it gave back %1 of %2 bytes").arg(gotBytes).arg(expected);
+	if (error) { *error = QStringLiteral("cannot read %1: %2").arg(path, why); }
+	return false;
+}
+
+bool readWhole(const QString& path, QByteArray* bytes, QString* error, bool* unreadable)
+{
+	if (unreadable) { *unreadable = false; }
 	QFile source(path);
-	if (!source.open(QIODevice::ReadOnly))
-	{
-		if (error) { *error = QStringLiteral("cannot read %1: %2").arg(path, source.errorString()); }
-		return false;
-	}
+	if (!source.open(QIODevice::ReadOnly)) { return refuseUnreadable(path, source, 0, 0, error, unreadable); }
 	if (source.size() > std::numeric_limits<int>::max())
 	{
 		if (error) { *error = QStringLiteral("%1 is too large for this reader (over 2 GiB)").arg(path); }
 		return false;
 	}
+	const qint64 expected = source.size();
+	armTestReadFault(source);
 	*bytes = source.readAll();
+	if (source.error() != QFileDevice::NoError || bytes->size() != expected)
+	{
+		return refuseUnreadable(path, source, bytes->size(), expected, error, unreadable);
+	}
 	return true;
 }
 
@@ -522,10 +551,10 @@ void scanDirectory(Scan& scan, int cursor, int count)
 
 bool dawProjectZipReadTolerant(const QString& path, std::vector<DawProjectEntry>* entries,
 	DawProjectZipReport* report, QString* error, const DawProjectZipLimits& limits,
-	const QStringList& retain)
+	const QStringList& retain, bool* unreadable)
 {
 	QByteArray bytes;
-	if (!readWhole(path, &bytes, error)) { return false; }
+	if (!readWhole(path, &bytes, error, unreadable)) { return false; }
 	int centralOffset = 0;
 	int count = 0;
 	if (!locateDirectory(path, bytes, &centralOffset, &count, error)) { return false; }
@@ -539,7 +568,8 @@ bool dawProjectZipReadTolerant(const QString& path, std::vector<DawProjectEntry>
 	return true;
 }
 
-bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries, QString* error)
+bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries, QString* error,
+	bool* unreadable)
 {
 	DawProjectZipLimits limits;
 	limits.maxEntryBytes = std::numeric_limits<int>::max();
@@ -547,7 +577,7 @@ bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entrie
 	limits.allowDeflate = false;  // the .mmpz v2 container is STORE; a deflated one stays refused
 	DawProjectZipReport report;
 	std::vector<DawProjectEntry> found;
-	if (!dawProjectZipReadTolerant(path, &found, &report, error, limits)) { return false; }
+	if (!dawProjectZipReadTolerant(path, &found, &report, error, limits, QStringList(), unreadable)) { return false; }
 	if (!report.deviations.empty())
 	{
 		if (error) { *error = QStringLiteral("%1: %2").arg(path, report.deviations.front().detail); }

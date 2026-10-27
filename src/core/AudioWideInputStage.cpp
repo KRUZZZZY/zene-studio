@@ -84,6 +84,14 @@ std::size_t AudioWideInputStage::push(const float* interleaved, int channels, f_
 }
 
 
+void AudioWideInputStage::discardStaged() noexcept
+{
+	// InputChannelRing::reset also clears that ring's own overflow count, which nothing reads:
+	// droppedFrames() is this stage's counter, and it is kept.
+	if (m_stage != nullptr) { m_stage->reset(); }
+}
+
+
 void AudioWideInputStage::drain(f_cnt_t maxFrames) noexcept
 {
 	// The other half of the double buffer: whatever the consumer was reading is

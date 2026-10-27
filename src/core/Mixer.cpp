@@ -2386,7 +2386,8 @@ void Mixer::updateLatencyCompensation()
 		for (const AudioBusHandle* handle : Engine::audioEngine()->audioBusHandles())
 		{
 			const mix_ch_t channel = handle->nextMixerChannel();
-			if (channel < count && !m_mixerChannels[channel]->isBus())
+			// Q050-174: a handle monitored unaligned applies no delay, so it cannot be clamped.
+			if (channel < count && !m_mixerChannels[channel]->isBus() && !handle->monitorUnaligned())
 			{
 				clamped = clamped
 					|| (m_latencyInputScratch[channel]

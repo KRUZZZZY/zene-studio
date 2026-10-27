@@ -626,6 +626,28 @@ private slots:
 		QVERIFY2(error.contains(QStringLiteral("DEFLATE")) && error.contains(QStringLiteral("project.xml")),
 			qPrintable(error));
 	}
+
+	//! A read that gives back nothing is refused AS A READ by both readers, so an
+	//! import or a container recovery names the file it could not read. The same
+	//! file read without the fault is a valid import. The fault is ZENE_TEST_CONTAINER_READ_FAULT.
+	void aFailedReadIsNamedAsARead()
+	{
+		const QString path = containerOf(QStringLiteral("read-fault.dawproject"),
+			{stored(QStringLiteral("project.xml"), m_projectXml)});
+		std::vector<DawProjectEntry> entries;
+		DawProjectZipReport report;
+		QString error;
+		QVERIFY2(dawProjectZipReadTolerant(path, &entries, &report, &error), qPrintable(error));
+
+		qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+		const bool tolerant = dawProjectZipReadTolerant(path, &entries, &report, &error);
+		const bool strict = dawProjectZipRead(path, &entries, &error);
+		qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+		QVERIFY(!tolerant);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+		QVERIFY(!strict);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+	}
 };
 
 QTEST_GUILESS_MAIN(DawProjectDeflateImportTest)

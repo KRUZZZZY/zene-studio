@@ -35,6 +35,7 @@
 #include "ClapInstrumentView.h"
 #include "ClapSubPluginFeatures.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "InstrumentPlayHandle.h"
 #include "LmmsCommonMacros.h"
 #include "MidiEvent.h"
@@ -102,7 +103,7 @@ ChannelCounts channelCountsOf(const clap::PortLayout& layout)
 {
 	const auto inputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
 	const auto outputs = std::max<ch_cnt_t>(ch_cnt_t{2}, static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-	return {std::max(inputs, outputs), inputs, outputs};
+	return {hostedTrackChannels(inputs, outputs), inputs, outputs};
 }
 
 } // namespace
@@ -361,18 +362,23 @@ void ClapInstrument::modulateNote(std::int64_t target, int channel, int key, flo
 void ClapInstrument::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray state;
-	if (!m_plugin.saveState(&state)) { return; }
-
-	auto stateElement = doc.createElement(QStringLiteral("state"));
-	stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
-	element.appendChild(stateElement);
+	if (m_plugin.saveState(&state))
+	{
+		auto stateElement = doc.createElement(QStringLiteral("state"));
+		stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
+		element.appendChild(stateElement);
+	}
+	m_params.saveValues(doc, element);
 }
 
 void ClapInstrument::loadSettings(const QDomElement& element)
 {
 	const auto node = element.firstChildElement(QStringLiteral("state"));
-	if (node.isNull()) { return; }
-	m_plugin.loadState(QByteArray::fromBase64(node.text().toLatin1()));
+	if (!node.isNull()) { m_plugin.loadState(QByteArray::fromBase64(node.text().toLatin1())); }
+	// stress-4: the host's saved values of what the plug-in's state did not bring back (none in a document
+	// written before they were saved).
+	const bool restored = m_params.restoreValues(element);
+	if (node.isNull() && !restored) { return; }
 
 	// reflect the restored state in the models
 	m_params.pullValues(0.f);

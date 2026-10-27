@@ -1007,9 +1007,11 @@ private slots:
 		QVERIFY(QFileInfo(createdProject).isDir());
 	}
 
-	//! A dangling symlink is still a path undo must remove, even though
-	//! QFileInfo::exists() follows it and reports false.
-	void undoOfRestoreCreatedDanglingSymlinkRemovesPath()
+	//! BUG 9 (cluster new-p15-27): a dangling symlink written at the path after the
+	//! restore created the file is a NEWER entry, not the bytes the restore wrote,
+	//! so undo must leave it alone. QFileInfo::exists() follows the link and reports
+	//! false, so the check looks at the link itself.
+	void undoOfRestoreCreatedDanglingSymlinkLeavesTheNewerEntry()
 	{
 		buildFixture();
 		QString projectName = QStringLiteral("dangling-song.mmp");
@@ -1034,9 +1036,12 @@ private slots:
 		QVERIFY(!QFileInfo(createdProject).exists());
 
 		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
-		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
-		QVERIFY(!QFileInfo(createdProject).isSymLink());
-		QVERIFY(!QFileInfo(createdProject).exists());
+		QVERIFY2(!undo.ok, "control.undo answered success and removed a symlink written after the "
+			"restore - the file the restore created was no longer at the path");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("revisions.restore")),
+			qPrintable(undo.errorMessage));
+		QVERIFY(QFileInfo(createdProject).isSymLink());
 	}
 
 

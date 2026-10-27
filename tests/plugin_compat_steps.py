@@ -92,14 +92,16 @@ GENERIC_EFFECT_PARAMETERS = 5  # an effect's first parameters are Zene's own: en
 
 def ranged_parameters(session, track, plugin):
     """Up to CHECKED_PARAMETERS of the plug-in's own parameters with a real range, spread over its list, as
-    plugin.param_get reports them (an effect's first few are the host's generic controls and are left out)."""
+    plugin.param_get reports them (an effect's first few are the host's generic controls and are left out).
+    A parameter the plug-in owns - reported read_only (VST3 kIsReadOnly, CLAP_PARAM_IS_READONLY: a meter, an
+    output, DPF's Buffer Size) - is not one a state round-trip can move: plugin.param_set refuses it (stress-4)."""
     every = []
     for index in range(GENERIC_EFFECT_PARAMETERS if plugin.startswith("fx-") else 0, 64):
         reply = session.call("plugin.param_get", {"target": track, "plugin": plugin, "index": index})
         if not reply.get("ok"):
             break
         parameter = reply["result"]["parameter"]
-        if parameter["max"] > parameter["min"]:
+        if parameter["max"] > parameter["min"] and not parameter.get("read_only"):
             every.append(parameter)
     if len(every) <= CHECKED_PARAMETERS:
         return every

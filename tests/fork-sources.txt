@@ -1020,6 +1020,7 @@ include/OutOfProcessHosting.h
 include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
+include/ParameterReadOnly.h
 include/PatchWiring.h
 include/PerformView.h
 include/PhaseScopeTap.h
@@ -2206,6 +2207,7 @@ tests/control-import-lifetime.py
 tests/control-link-interop.py
 tests/control-link-sync.py
 tests/control-livecode-commands.py
+tests/control-low-latency-commands.py
 tests/control-mastering-commands.py
 tests/control-mastering-quit.py
 tests/control-mastering-run-bound.py
@@ -2259,6 +2261,9 @@ tests/control_vendor_libs.py
 # product-source search on every run (ctest DocPricingModelGate).
 tests/doc-pricing-model-gate.py
 tests/exprtk.hpp
+# cluster ci-v041-6: checks include/fenv.h takes no #include_next under cl.exe's
+# predefines (MSVC C1021), by preprocessing it with the host GCC/Clang (ctest FenvShimMsvcInclude).
+tests/fenv-shim-msvc-check.py
 tests/freeze_bounce_evidence.py
 tests/golden_audio_lib.py
 tests/golden_audio_record.py
@@ -2414,10 +2419,12 @@ tests/src/core/ControlSampleArrayTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlStemExportTest.cpp
+tests/src/core/ControlStemWavTest.cpp
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControlWasmRenderTest.cpp
 tests/src/core/CustomAccessTest.cpp
+tests/src/core/DataFileContainerRecoveryTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DeviceAbUndoTest.cpp
 tests/src/core/DeviceCopyTest.cpp
@@ -2445,6 +2452,7 @@ tests/src/core/ImportTrackIoTest.cpp
 tests/src/core/InputChannelMeterTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
+tests/src/core/InstrumentLowLatencyMonitorTest.cpp
 # cluster new-p8-127 (2026-10-07): import journalling exception regression and throwing importer fixture.
 tests/src/core/ImportFilterTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
@@ -2522,6 +2530,7 @@ tests/src/core/ProjectContainerSaveTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
+tests/src/core/ProjectRestoreMissingTargetTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 tests/src/core/ProjectRevisionRestoreStagingTest.cpp
 tests/src/core/ProjectSectionTest.cpp
@@ -2566,8 +2575,10 @@ tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoDeviceTest.cpp
 tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/RevisionRestoreCreatedFileUndoTest.cpp
 tests/src/core/RevisionTimelineTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
+tests/src/core/SampleBufferNoEngineTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/SaSpectrumViewTest.cpp
 tests/src/core/ScaleIntervalOverflowTest.cpp
@@ -3007,6 +3018,9 @@ tests/src/plugins/WatsynWaveSnapshotTest.cpp
 # cluster new-p12-162-port-port (2026-10): Multitap Echo constructor graph-bounds guard test (fork-NEW).
 tests/src/plugins/MultitapEchoBoundsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-162-port-port.md
+# cluster new-p16-64 (2026-10): Dispersion non-finite control guard test (fork-NEW).
+tests/src/plugins/DispersionNonFiniteTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p16-64.md
 # cluster new-p12-44-port-port (2026-10): the landing pass checkpoints one track once - report for the fix ported onto the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p12-44-port-port.md
 tests/src/plugins/Lb302NotePathTest.cpp
@@ -3188,3 +3202,11 @@ tests/control-drum-rack-pads.py
 tests/src/plugins/VibratingStringTest.cpp
 # cluster new-p23-25 (2026-10): regression for window.select during GuiApplication startup (fork-NEW).
 tests/src/gui/WindowSelectStartupTest.cpp
+tests/moc-qt5-trailing-return-check.py
+tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
+docs/qwen-fixes-2026-10/cluster-ci-v041-5.md
+include/HostedTrackChannels.h
+include/PluginInstantiationFailure.h
+src/core/PluginInstantiationFailure.cpp
+tests/src/core/ControlHostedBusLayoutTest.cpp
+docs/qwen-fixes-2026-10/cluster-stress-3.md

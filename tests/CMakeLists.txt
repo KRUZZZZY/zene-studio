@@ -216,6 +216,9 @@ set(LMMS_TESTS
 	# file-length ratchet, so it is its own binary now - same registry read,
 	# same picker comparison, same built-in amplifier naming Zene Studio.
 	src/core/ControlDeviceVendorTest.cpp
+	# Cluster stress-3: plug-ins whose bus layout is not one stereo in + one stereo out (an odd channel
+	# count: mono x4 mixers, a mono side-chain) are hosted; one with no audio port is refused with why.
+	src/core/ControlHostedBusLayoutTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	# The control selection store keeps the SELECTED NOTES' ids, so a removal
 	# cannot shift the selection onto another note (cluster new-p12-53-port).
@@ -363,6 +366,7 @@ set(LMMS_TESTS
 	src/core/SafeStartLoadPathTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
+	src/core/DataFileContainerRecoveryTest.cpp
 	# ARCH-4 S2a: the document index (SPEC-ARCH-4 1.4) and the ONE condition
 	# under which a project may carry one - the S1 preserved set being non-empty
 	# (risk 2, "a release invariant"). The index's own slots are DOM-level; the
@@ -632,6 +636,8 @@ set(LMMS_TESTS
 	src/core/InstrumentLayerZonePublishTest.cpp
 	# MX-157 (BUGS 11.34): a hosted instrument's latency reaches PDC, measured on rendered audio
 	src/core/InstrumentLatencyPdcTest.cpp
+	# Q050-174 (MX-159): low-latency monitoring takes an armed latent instrument off its alignment, on rendered audio
+	src/core/InstrumentLowLatencyMonitorTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/InputChannelRingTest.cpp
 	src/core/RecordRingBufferTest.cpp
@@ -679,6 +685,15 @@ set(LMMS_TESTS
 	# glob characters. Split out of RevisionTimelineTest to keep that file under
 	# the file-length ratchet.
 	src/core/ProjectRevisionRestoreStagingTest.cpp
+	# The keep-3 restore into a project file that does not exist (cluster new-p15-24): the
+	# recorded undo removes the file the restore created instead of restoring revision 0,
+	# and the advertised inverse is control.undo. Driven through the registry with a real Engine.
+	src/core/ProjectRestoreMissingTargetTest.cpp
+	# The undo of a revisions.restore that CREATED the project file (cluster
+	# new-p15-27, BUG 9): undo removes the file only while it still holds the bytes
+	# the restore wrote, and leaves a newer file at the path in place. Its own file
+	# so RevisionTimelineTest does not grow past the file-length ratchet.
+	src/core/RevisionRestoreCreatedFileUndoTest.cpp
 	# ARCH-4 S1b: the elements a loader did not claim, kept verbatim so that
 	# opening and re-saving cannot destroy them (SPEC-ARCH-4 1.6.1). The
 	# mechanism's own slots are unit-level; the owed proof is the integration
@@ -921,6 +936,8 @@ set(LMMS_TESTS
 	src/core/PluginHostMetadataTest.cpp
 	# The record tool commands on an instance with NO audio engine: typed refusals, no null deref.
 	src/core/RecordToolsNoEngineTest.cpp
+	# Cluster stress-1 (2026-10-27): a default SampleBuffer and the metronome samples with no engine and no data dir.
+	src/core/SampleBufferNoEngineTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
 	src/core/ArrangeToolsTest.cpp
 	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.
@@ -1509,6 +1526,8 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		src/core/StemSplitPipelineTest.cpp
 		# Q050-062.2: the sample clip's Split to stems submenu picks the job's quality.
 		src/gui/StemSplitMenuTest.cpp
+		# new-p21-107: the stem WAV writer's header arithmetic and its refusals (ControlStemWav.cpp).
+		src/core/ControlStemWavTest.cpp
 	)
 	IF(LMMS_HAVE_ONNXRUNTIME)
 		LIST(APPEND LMMS_TESTS src/core/OnnxRuntimeStemSeparatorTest.cpp)
@@ -2365,6 +2384,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayerZonePublishTest"
 		# MX-157: the hosted instrument modules (clapinstrument, vst3instrument) carry the fixtures.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLatencyPdcTest"
+		OR LMMS_TEST_NAME STREQUAL "InstrumentLowLatencyMonitorTest"
 		OR LMMS_TEST_NAME STREQUAL "InstrumentSetupUiTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingSpacerReferenceTest"
@@ -2376,6 +2396,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# the binary discovers the build tree's modules like its catalogue
 		# sibling does (the built-in amplifier is the case that names Zene Studio).
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceVendorTest"
+		# Cluster stress-3: plugin.load of the CLAP/VST3 fixtures through the real host modules.
+		OR LMMS_TEST_NAME STREQUAL "ControlHostedBusLayoutTest"
 		# WF-033: the options half of the undo-history proof needs the same real
 		# instrument (its baseline loads one) as the format half.
 		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest")
@@ -2565,6 +2587,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		# Q050-157: the cache-served effect lifetime reproducer copies the amplifier.
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 		if(TARGET lv2instrument)
 			add_dependencies(${LMMS_TEST_NAME} lv2instrument)
 		endif()
@@ -2632,7 +2656,8 @@ add_executable(RemotePluginShmFifoTest
 	${CMAKE_SOURCE_DIR}/src/common/SharedMemory.cpp
 	${CMAKE_SOURCE_DIR}/src/common/SystemSemaphore.cpp)
 target_include_directories(RemotePluginShmFifoTest PRIVATE
-	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated)
 target_link_libraries(RemotePluginShmFifoTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 target_compile_features(RemotePluginShmFifoTest PRIVATE cxx_std_20)
 target_compile_definitions(RemotePluginShmFifoTest PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
@@ -2644,8 +2669,29 @@ add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/commo
 target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
 target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
-target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+# LMMS_STATIC_DEFINE: this TU defines LMMS_EXPORT members, and outside lmmsobjs
+# lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
+target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck)
+# RemotePluginBase.h on a host without <sys/ipc.h> (Windows): a shadow
+# lmmsconfig.h, first on this target's include path, takes the header's own
+# SYNC_WITH_SHM_FIFO branch on every host (cluster ci-v041-5).
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoNoSysIpc/lmmsconfig.h
+	"#include \"${CMAKE_BINARY_DIR}/lmmsconfig.h\"\n#undef LMMS_HAVE_SYS_IPC_H\n")
+add_library(RemotePluginShmFifoNoSysIpcProbe OBJECT src/core/RemotePluginShmFifoNoSysIpcProbe.cpp)
+target_include_directories(RemotePluginShmFifoNoSysIpcProbe BEFORE PRIVATE
+	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoNoSysIpc)
+target_include_directories(RemotePluginShmFifoNoSysIpcProbe PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_link_libraries(RemotePluginShmFifoNoSysIpcProbe PRIVATE ${QT_LIBRARIES})
+target_compile_features(RemotePluginShmFifoNoSysIpcProbe PRIVATE cxx_std_20)
+target_compile_definitions(RemotePluginShmFifoNoSysIpcProbe PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+target_sources(RemotePluginShmFifoTest PRIVATE $<TARGET_OBJECTS:RemotePluginShmFifoNoSysIpcProbe>)
+
+# Tell the test whether each target compiles RemotePluginBase.cpp through the
+# static branch of lmms_export.h (cluster ci-v041-5).
+file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated/RemotePluginShmFifoTargetDefinitions.h
+	CONTENT "#define ZENE_SHM_FIFO_TEST_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoTest,COMPILE_DEFINITIONS>>\n#define ZENE_SHM_FIFO_COMPILE_CHECK_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoCompileCheck,COMPILE_DEFINITIONS>>\n")
 
 # ImportFilter's exception-path proof uses a real, isolated importer plugin
 # module so the exception crosses the same PluginFactory/ImportFilter path as
@@ -3133,7 +3179,7 @@ set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawMode
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
 set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest InstrumentRoutingTest InstrumentLayersCommandsTest
-	InstrumentLayerZonePublishTest InstrumentLatencyPdcTest PROPERTIES
+	InstrumentLayerZonePublishTest InstrumentLatencyPdcTest InstrumentLowLatencyMonitorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
@@ -3439,6 +3485,14 @@ set_tests_properties(MasteringTest PROPERTIES
 # runs real `git` commands, so it needs a Qt platform plugin for the same reason
 # the tests above do.
 set_tests_properties(RevisionTimelineTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ProjectRestoreMissingTargetTest starts a real Engine and drives the registry's
+# undo/redo, so it needs a Qt platform plugin for the same reason.
+set_tests_properties(ProjectRestoreMissingTargetTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# RevisionRestoreCreatedFileUndoTest drives a real Engine through the registry,
+# the same way RevisionTimelineTest does, so it needs the same Qt platform plugin.
+set_tests_properties(RevisionRestoreCreatedFileUndoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The dither and SRC-quality tests build a real Engine and drive the real
@@ -4092,6 +4146,46 @@ if(TARGET multitapecho)
 	add_dependencies(MultitapEchoBoundsTest multitapecho)
 endif()
 
+# Cluster new-p16-64: a NaN Dispersion control (frequency, resonance or
+# feedback, as a project saves it) must not reach the audio output. The plugin
+# sources are compiled into this test binary (the MultitapEchoBoundsTest
+# pattern), so the code under test is the shipped one and no plugin module is
+# loaded.
+add_executable(DispersionNonFiniteTest
+	src/plugins/DispersionNonFiniteTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/Dispersion.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/Dispersion.h
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControls.h
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControlDialog.h
+)
+add_test(NAME DispersionNonFiniteTest COMMAND DispersionNonFiniteTest)
+set_tests_properties(DispersionNonFiniteTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(DispersionNonFiniteTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the dispersion plugin
+	${CMAKE_BINARY_DIR}/plugins/Dispersion
+)
+target_static_libraries(DispersionNonFiniteTest PRIVATE lmmsobjs)
+target_link_libraries(DispersionNonFiniteTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(DispersionNonFiniteTest PRIVATE cxx_std_20)
+target_compile_definitions(DispersionNonFiniteTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=dispersion
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+if(TARGET dispersion)
+	add_dependencies(DispersionNonFiniteTest dispersion)
+endif()
+
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
 # were published straight onto the model from the control thread while
 # playNoteImpl() read them on the audio thread. The plugin sources are compiled
@@ -4708,10 +4802,14 @@ if(TARGET lmms_clap)
 		CLAP_TEST_BROKEN_OLD_VERSION_PATH="$<TARGET_FILE:clap-test-broken-old-version>"
 		CLAP_TEST_BROKEN_INIT_FAILS_PATH="$<TARGET_FILE:clap-test-broken-init-fails>"
 		CLAP_TEST_BROKEN_NO_FACTORY_PATH="$<TARGET_FILE:clap-test-broken-no-factory>"
-		CLAP_TEST_BROKEN_NULL_CALLBACK_PATH="$<TARGET_FILE:clap-test-broken-null-callback>")
+		CLAP_TEST_BROKEN_NULL_CALLBACK_PATH="$<TARGET_FILE:clap-test-broken-null-callback>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH="$<TARGET_FILE:clap-test-broken-null-factory-count>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH="$<TARGET_FILE:clap-test-broken-null-factory-descriptor>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH="$<TARGET_FILE:clap-test-broken-null-factory-create>")
 	add_dependencies(ClapLoaderErrorTest clap-test-gain clap-test-broken-no-symbol
 		clap-test-broken-old-version clap-test-broken-init-fails clap-test-broken-no-factory
-		clap-test-broken-null-callback)
+		clap-test-broken-null-callback clap-test-broken-null-factory-count
+		clap-test-broken-null-factory-descriptor clap-test-broken-null-factory-create)
 
 	add_executable(ClapEffectIntegrationTest
 		src/plugins/ClapEffectIntegrationTest.cpp
@@ -4841,6 +4939,12 @@ if(TARGET lmms_clap)
 			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
 		add_dependencies(PluginNativeEditorTest clap-test-gain clapeffect)
 	endif()
+	# Cluster stress-3: the CLAP fixture's mono side-chain and no-audio layouts, through plugin.load.
+	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET ControlHostedBusLayoutTest)
+		target_compile_definitions(ControlHostedBusLayoutTest PRIVATE
+			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
+		add_dependencies(ControlHostedBusLayoutTest clap-test-gain clapeffect)
+	endif()
 	# MX-114 (plugin.output_*): the fixture's multi-output class is the instrument with output buses.
 	if(TARGET clap-test-instrument AND TARGET InstrumentLayersCommandsTest)
 		target_compile_definitions(InstrumentLayersCommandsTest PRIVATE
@@ -4857,6 +4961,15 @@ if(TARGET lmms_clap)
 		add_dependencies(InstrumentLatencyPdcTest clap-test-instrument)
 		if(TARGET clapinstrument)
 			add_dependencies(InstrumentLatencyPdcTest clapinstrument)
+		endif()
+	endif()
+	# Q050-174: the same latent CLAP subject for the low-latency monitoring proof.
+	if(TARGET clap-test-instrument AND TARGET InstrumentLowLatencyMonitorTest)
+		target_compile_definitions(InstrumentLowLatencyMonitorTest PRIVATE
+			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
+		add_dependencies(InstrumentLowLatencyMonitorTest clap-test-instrument)
+		if(TARGET clapinstrument)
+			add_dependencies(InstrumentLowLatencyMonitorTest clapinstrument)
 		endif()
 	endif()
 	# The F2 interface's output-bus surface drives the same multi-output class.
@@ -5568,6 +5681,13 @@ if(TARGET lmms_vst3_sdk)
 				vst3-test-instrument
 			)
 		endif()
+		# Cluster stress-3: the three-channel variant is hosted by vst3effect and vst3instrument.
+		if(TARGET vst3effect AND TARGET vst3instrument AND TARGET ControlHostedBusLayoutTest)
+			target_compile_definitions(ControlHostedBusLayoutTest PRIVATE
+				VST3_TEST_THREE_INSTRUMENT_BUNDLE="${LMMS_VST3_THREE_TEST_BUNDLE_DIR}")
+			add_dependencies(ControlHostedBusLayoutTest vst3effect vst3instrument
+				vst3-test-three-channel-instrument)
+		endif()
 		# The VST3 EFFECT half: plugin.list carries the SDK's gain sample and plugin.load hosts it in
 		# vst3effect.
 		if(TARGET vst3effect AND TARGET vst3-test-effect AND TARGET ControlDeviceCatalogueTest)
@@ -5679,6 +5799,19 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(GoldenAudioSelfTest PROPERTIES TIMEOUT 300)
 endif()
 
+# Qt 5 moc portability (cluster ci-v041-1, 2026-10-27). The Qt 5.15.3 moc of the hosted
+# linux-x86_64 job cannot parse a trailing return type on a meta-method (a slots:/signals:
+# member or a Q_INVOKABLE one) - "include/Song.h:706: Parse error" stopped AutoMoc and the
+# whole build - while the Qt 6 moc here accepts it. The check reads sources only, runs its
+# own red/green fixtures first, and is registered wherever a python3 is.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME MocQt5TrailingReturnCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/moc-qt5-trailing-return-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(MocQt5TrailingReturnCheck PROPERTIES TIMEOUT 300)
+endif()
+
 # The real-time-safety WHOLE-TREE SWEEP (2026-09-16, lane 030/rt-safety, board task #678,
 # feature row 52). AGENTS.md's realtime rule - "no allocation, no locking, no unbounded
 # growth on audio-thread paths" - was held per feature until now: an allocation-counter
@@ -5711,6 +5844,19 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/rt_safety_selftest.py)
 	set_tests_properties(RtSafetySelfTest PROPERTIES TIMEOUT 300)
+endif()
+
+# include/fenv.h (the macOS feenableexcept shim) must not take #include_next under
+# cl.exe, which rejects it (C1021, hosted msvc-x64 job, cluster ci-v041-6). The
+# check preprocesses the shim with the host GCC/Clang under cl.exe's predefines and
+# a fake Windows SDK layout, so it needs a GNU-style driver (not MSVC itself).
+if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+	add_test(NAME FenvShimMsvcInclude
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/fenv-shim-msvc-check.py
+			${CMAKE_CXX_COMPILER}
+			${CMAKE_SOURCE_DIR}/include)
+	set_tests_properties(FenvShimMsvcInclude PROPERTIES TIMEOUT 60)
 endif()
 
 # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
@@ -6095,6 +6241,21 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Q050-174 (MX-159): transport.low_latency on a record-armed LATENT instrument, over the socket of
+	# the real binary - the in-tree CLAP fixture (made latent by CLAP_TEST_INSTRUMENT_LATENCY, which the
+	# script sets) found by the binary's own scan of the fixture's directory. Needs the
+	# clap-test-instrument and clapinstrument targets built; the audio proof is InstrumentLowLatencyMonitorTest.
+	if(TARGET clap-test-instrument AND TARGET clapinstrument)
+		add_test(NAME ControlLowLatencyCommands
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-low-latency-commands.py
+				$<TARGET_FILE:zene>
+				$<TARGET_FILE_DIR:clap-test-instrument>)
+		set_tests_properties(ControlLowLatencyCommands PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
+		)
+	endif()
 	# routing.* and the mixer group's routing verbs (0.3.0, feature rows 27-28):
 	# routing.get_state on a MEASURED graph - load effects and read the node set,
 	# the connections, the cached topological order and the output node back off

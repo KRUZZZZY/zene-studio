@@ -34,8 +34,15 @@
 #include "AutomatableModel.h"
 #include "Vst3ParamDescriptor.h"
 
+class QDomElement;
+
 namespace lmms
 {
+
+namespace vst3
+{
+class HostedPlugin;
+}
 
 /**
  * An LMMS model for a single VST3 parameter.
@@ -68,6 +75,14 @@ private:
 	Vst3ParamDescriptor m_descriptor;
 	DisplayFormatter m_formatter;
 };
+
+/*! stress-4 (b): the host's own value of each writable parameter, saved beside the plug-in's state chunks
+ *  (`<parameters>`, written by Vst3EffectControls / Vst3Instrument::saveSettings), put back after a load. A
+ *  plug-in's chunk does not always carry what the host set - an edit it never stored, a slot it resets on
+ *  load, a controller that reports the old value - and the round-trip then "lost" it. Applied after every
+ *  load, successful or not; a parameter the plug-in already brought back, or a read-only one, is left alone,
+ *  so a plug-in whose chunk agrees with the host sees no write at all. GUI thread. */
+void restoreSavedParameters(vst3::HostedPlugin& plugin, const QDomElement& element);
 
 } // namespace lmms
 
