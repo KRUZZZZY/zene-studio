@@ -38,6 +38,9 @@ namespace MidiFile
 //! position is written exactly (the old 128 truncated 3 of every 8 positions).
 const int TICKSPERBEAT = 480;
 
+//! The largest chunk body an SMF chunk can record: the chunk length field is 32 bits.
+const uint64_t SmfMaxChunkBody = 0xFFFFFFFFu;
+
 // Every writer below APPENDS to a growable byte vector. Nothing is written into a fixed-size buffer,
 // so a track of any size is written whole: there is no cap to exceed and nothing to truncate.
 
@@ -94,7 +97,7 @@ class MIDIHeader
 
 	MIDIHeader(uint16_t nTracks, uint16_t ticksPB=TICKSPERBEAT): numTracks(nTracks), ticksPerBeat(ticksPB) {}
 
-	inline void writeToBuffer(vector<uint8_t> &out) const
+	inline bool writeToBuffer(vector<uint8_t> &out) const
 	{
 		// chunk ID
 		out.push_back('M'); out.push_back('T'); out.push_back('h'); out.push_back('d');
@@ -104,6 +107,7 @@ class MIDIHeader
 		writeBigEndian2(1, out);
 		writeBigEndian2(numTracks, out);
 		writeBigEndian2(ticksPerBeat, out);
+		return true;
 	}
 
 };
@@ -292,7 +296,7 @@ class MIDITrack
 
 	//! Appends one complete MTrk chunk: the events, then the end-of-track meta event.
 	//! Every event is written, however many there are; the chunk length is the real length.
-	inline void writeToBuffer(vector<uint8_t> &out) const
+	inline bool writeToBuffer(vector<uint8_t> &out, uint64_t maxBody = SmfMaxChunkBody) const
 	{
 		vector<uint8_t> body;
 		writeEventsToBuffer(body);
@@ -307,6 +311,7 @@ class MIDITrack
 		// chunk size
 		writeBigEndian4(uint32_t(body.size()), out);
 		out.insert(out.end(), body.begin(), body.end());
+		return true;
 	}
 };
 
