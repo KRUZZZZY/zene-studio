@@ -164,6 +164,6 @@ and an audible-diff test that expects a rendering difference and gets none (`tes
 `submit_check.py` runs `<tools>/feature_check.py` on the worktree. That script creates its log folder
 `<worktree>-feature-check/` next to the worktree, which is outside the write area for this lane, so it exits 1 with
 `PermissionError` before any gate runs (`logs/gates-1-feature-check.log` is the failing run; `submit-check-1.txt` the check).
-The same gate code, with only the log folder changed (`logs/feature_check_redirected.py`), passes all 8 rows with EXIT 0
+The same gate code, with only the log folder changed (`feature_check_redirected.py` in the run folder, next to `logs/`), passes all 8 rows with EXIT 0
 (`logs/gates-2-feature-check-table.txt`). The shared gate script and its baselines were not edited. The gate row needs a
 run where the sibling log folder can be created, and this lane could not do that.
