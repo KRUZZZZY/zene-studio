@@ -37,3 +37,21 @@ Adjacent code checked on the same path: `lengthOfPattern()` returns `maxLength.n
 Both ratchet scripts were run directly because the wrapper could not write its log directory. This branch's only changed file is this report, which is not a product file, so the wrapper's rule (fail only on items in changed files) cannot fail on a `REGRESSION:` line here. The base-listing comparison that the wrapper performs was not executed.
 
 Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p23-207.md`. No product file changed.
+
+## Self-check
+
+Submit-check log: `logs/submit-check-1.log` (EXIT=1). Its rows: commits on the branch PASS, working tree clean PASS, report PASS, tests-added PASS (no test; see below), and two FAILs: the missing Self-check section (answered here) and `gates (feature_check.py)`.
+
+- **Regression test fails with the change reverted and passes with it (exit codes):** not applicable. The verdict is FALSE-POSITIVE, so there is no product change to revert and no test was added (procedure steps 2 and 6). Nothing here is claimed as RED/GREEN.
+- **Deterministic:** not applicable (no test in the repo). The standalone probe `logs/probe-divzero.cpp` has no timing, sleeps or threads; it only prints values computed from fixed inputs.
+- **Fix at the cause and complete:** not applicable (no fix). Checked instead: every use of `totalTracks` and of the NaN locals (`PatternClipView.cpp:151-198`), the other integer modulos on the same path (`:121`, `:122`), and `lengthOfPattern` (`PatternStore.cpp:85-101`). The NaN has no consumer that changes output.
+- **No collateral damage:** no product code changed, so no saved data, limit or caller behaviour can move.
+- **Not-real evidence (file:line):** `PatternClipView.cpp:155` (the only division by `totalTracks`), `:158-165` (count-gated ternaries, `verticalNoteSpacing` = 0), `:169-198` (loop over the empty `tracks()`), `TrackContainer.h:61` (`TrackList` is `std::vector`, so `size()` is `size_t`).
+
+### Gates: blocked by the sandbox, not by the code
+
+`feature_check.py` exits 1 before it runs any gate. It writes its logs to `wt.parent / "<worktree>-feature-check"` (`feature_check.py` line 70-71), which is `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207-feature-check`. That directory is outside the write jail, so `mkdir` fails with `PermissionError` (`logs/gate-feature-check-1.log`). I did not change the wrapper or its path; the same failure will recur on any worktree run from inside the jail.
+
+The six gates the wrapper runs as `SIMPLE` all exit 0 when run directly from the worktree with logs in the LOG FOLDER. The two `RATCHET` gates exit 1 when run directly, which is the expected red on the train (base violations). Nothing in those outputs names a file this branch changed: the only change is the report, and `grep -c "cluster-new\|docs/"` over the `REGRESSION:` lines returns 0. So the wrapper's ratchet rule would not fail on this branch, but I did not execute its base-listing comparison (`gate-baselines` cache is outside the jail).
+
+Result: the product gates pass as far as they can be run from here. The wrapper gate itself remains blocked on the jail and needs the owner or the loop to run it from outside the sandbox.
