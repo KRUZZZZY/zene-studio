@@ -39,6 +39,32 @@
 namespace lmms
 {
 
+#ifdef LMMS_TESTING
+namespace
+{
+
+std::atomic<int> s_mixerIndexCacheHitsForTesting{0};
+std::atomic<int> s_mixerIndexFallbacksForTesting{0};
+
+} // namespace
+
+LMMS_EXPORT void resetMixerIndexLookupCountsForTesting()
+{
+	s_mixerIndexCacheHitsForTesting.store(0, std::memory_order_relaxed);
+	s_mixerIndexFallbacksForTesting.store(0, std::memory_order_relaxed);
+}
+
+LMMS_EXPORT auto mixerIndexCacheHitsForTesting() -> int
+{
+	return s_mixerIndexCacheHitsForTesting.load(std::memory_order_relaxed);
+}
+
+LMMS_EXPORT auto mixerIndexFallbacksForTesting() -> int
+{
+	return s_mixerIndexFallbacksForTesting.load(std::memory_order_relaxed);
+}
+#endif
+
 //! One bus's route and the storage its audio passes through.
 struct InstrumentOutputBuses::Slot
 {
@@ -219,8 +245,17 @@ auto InstrumentOutputBuses::mixerIndexOf(Slot& slot, int channelId) const -> int
 	if (mixer == nullptr) { return -1; }
 	const int channels = static_cast<int>(mixer->numChannels());
 	const int cached = slot.cachedIndex.load(std::memory_order_relaxed);
-	if (cached > 0 && cached < channels && mixer->mixerChannel(cached)->id() == channelId) { return cached; }
+	if (cached >= 0 && cached < channels && mixer->mixerChannel(cached)->id() == channelId)
+	{
+#ifdef LMMS_TESTING
+		s_mixerIndexCacheHitsForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
+		return cached;
+	}
 	// The master (index 0) is a valid target too; a linear scan of pointers, no allocation.
+#ifdef LMMS_TESTING
+	s_mixerIndexFallbacksForTesting.fetch_add(1, std::memory_order_relaxed);
+#endif
 	for (int i = 0; i < channels; ++i)
 	{
 		if (mixer->mixerChannel(i)->id() != channelId) { continue; }
