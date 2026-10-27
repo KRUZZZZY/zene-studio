@@ -300,6 +300,16 @@ reordering and removing devices work as usual. Wiring you author is not saved wi
 LV2 plug-ins that were tried, each by its package, version and file hash, with whether it loaded, whether its own editor opened and whether its saved state
 came back, and every failure. A plug-in that is not on that page is untested - that Zene lists it as loadable only means the host accepted it.</p>
 
+<p>A VST3 or CLAP plug-in's own editor (Show plugin editor, or Open Editor in a device card's Actions menu; the agent command
+<code>plugin.editor_open</code>) opens in a window of its own on Linux, Windows and macOS: Zene puts the editor inside the system's own kind of
+window (an X11 window on Linux, a Windows window, a macOS view). A plug-in whose editor cannot go inside that kind of window does not
+open; the line under the button says why, naming the system and the plug-in's window type - for example <em>cannot embed on Windows (VST3
+platform type HWND)</em> - and no empty window is left behind. On a Linux desktop that runs Wayland without X11, start Zene with
+<code>QT_QPA_PLATFORM=xcb</code> to open plug-in editors. The device's Editor zoom (<code>plugin.options editor_scale</code>) is passed to
+the plug-in on Linux and Windows; on macOS the system scales the editor for the screen itself, so a VST3 editor is only given the larger
+size and a CLAP editor keeps its own size. Windows and macOS editors have so far been proved with Zene's test plug-ins only; the
+compatibility page says which real plug-ins have been opened where.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 

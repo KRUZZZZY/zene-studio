@@ -2653,6 +2653,11 @@ include/StringPairDrag.h	Q050-133 (2026-10-19): declares createMimeData() - the 
 src/gui/StringPairDrag.cpp	Q050-133 (2026-10-19): createMimeData() builds the unchanged StringPair payload and, for the browser file keys (whose value IS the file's path), also publishes the file as a text/uri-list URL, so a plug-in editor or file manager that takes file URLs receives it; every other StringPair value is never read as a path; covered by tests/src/gui/BrowserDragUrlTest.cpp. cluster new-p16-236: escaped keys carry a marker in the historical MIME format so legacy fixed-key parsers reject them, and are also published as V2; processDragEnterEvent() reads the full key through the shared decoder.
 tests/CMakeLists.txt	Q050-133: registers BrowserDragUrlTest in LMMS_TESTS and gives it the offscreen Qt platform its GUI neighbours use; registration only.
 tests/src/plugins/Vst3HostTest.cpp	cluster new-p10-445: cover rejection of non-finite sample rates and oversized VST3 prepare block sizes. cluster new-p14-365-port-port-port: assert that excess mapped MIDI points keep their newest frame, including aliased mappings and a rebuilt controller map.
+tests/data/clap-test-plugin/clap-test-gain.c	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/data/vst3-test-instrument/vst3-test-instrument.cpp	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/plugin_compat_page.py	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/src/plugins/ClapEffectIntegrationTest.cpp	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/src/plugins/Vst3InstrumentTest.cpp	# Open VST3 and CLAP plug-in windows on Windows and macOS
 include/AutomationClip.h	new-p10-507-port: declares the bounded offset/count valuesAfter sampler and widens curve-evaluation offsets to int64_t.
 src/core/AutomationClip.cpp	new-p10-507-port: checks automation tick spans in wide arithmetic and allocates only the requested viewport sample count.
 src/gui/clips/AutomationClipView.cpp	new-p10-507-port: requests only samples intersecting the clip view and its adjacent curve endpoints.

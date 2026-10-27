@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QLabel>
 #include <QToolButton>
 #include <QWidget>
 
@@ -36,6 +37,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <vector>
 
 #include "AudioBuffer.h"
@@ -53,6 +55,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "PluginWindowSystem.h"
 #include "Song.h"
 #include "Track.h"
 #include "plugin_export.h" // PLUGIN_EXPORT of the clapeffect plug-in
@@ -81,6 +84,7 @@ private slots:
 	void testLegacyAudioBufferPathRoutesPlanarPorts();
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
 	void testTheControlDialogsButtonOpensTheEditor();
+	void testTheButtonNamesThePlatformAPluginCannotEmbedOn();
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
@@ -532,6 +536,57 @@ void lmms::ClapEffectIntegrationTest::testTheControlDialogsButtonOpensTheEditor(
 	master.removeEffect(effect);
 	delete effect;
 	QVERIFY2(opened, "the dialog's button did not open the editor");
+}
+
+/*! Q050-490 through the product's own button: a plug-in whose editor embeds only in some OTHER
+ *  platform's window is refused - the dialog's "Show plugin editor" runs plugin.editor_open, which
+ *  refuses typed, and the refusal line under the button names this platform and its CLAP window API.
+ *  No editor is open and no window titled after the effect is left on screen. */
+void lmms::ClapEffectIntegrationTest::testTheButtonNamesThePlatformAPluginCannotEmbedOn()
+{
+	const PluginWindowSystem native = currentPluginWindowSystem();
+	const char* nativeApi = native == PluginWindowSystem::Win32 ? "win32" : native == PluginWindowSystem::Cocoa ? "cocoa" : "x11";
+	qputenv("CLAP_TEST_GAIN_GUI_API", native == PluginWindowSystem::Win32 ? "x11" : "win32");
+	EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&master, &key};
+	master.appendEffect(effect);
+	ControlRegistry::setReady(true);
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(false);  // the offscreen platform is a display
+	QWidget parent;
+	gui::EffectControlDialog* dialog = effect->controls()->createView();
+	dialog->setParent(&parent);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : dialog->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+	QVERIFY2(show != nullptr, "the effect's control dialog has no plugin-editor button");
+	QTest::mouseClick(show, Qt::LeftButton);
+	const bool opened = effect->nativeEditorOpen();
+	QString reason;
+	for (const QLabel* label : show->parentWidget()->findChildren<QLabel*>())
+	{
+		if (!label->isHidden()) { reason = label->text(); }
+	}
+	bool windowLeft = false;
+	for (QWidget* top : QApplication::topLevelWidgets())
+	{
+		if (top->isVisible() && top->windowTitle() == effect->displayName()) { windowLeft = true; }
+	}
+	effect->closeNativeEditor();
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
+	master.removeEffect(effect);
+	delete effect;
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	QVERIFY2(!opened, "an editor that cannot embed here reported open");
+	QVERIFY2(!windowLeft, "a refused editor left a window on screen");
+	const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(pluginWindowSystemName(native),
+		QLatin1String(nativeApi));
+	QVERIFY2(reason.contains(expected), qPrintable(QStringLiteral("refusal line: '%1'").arg(reason)));
+	std::printf("CLAP_EDITOR_BUTTON_REFUSAL_EVIDENCE %s\n", qPrintable(reason));
 }
 
 /*! BUGS 11.34: the latency a CLAP plug-in declares (clap.latency) is what the effect reports

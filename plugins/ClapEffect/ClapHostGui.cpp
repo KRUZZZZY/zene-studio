@@ -23,9 +23,11 @@
  */
 
 /*! The clap.gui life cycle the extension's own header prescribes (clap/ext/gui.h, "Showing
- *  the GUI"): is_api_supported(x11, embedded) -> create -> set_scale -> get_size -> set_parent
- *  -> show, and on close hide -> destroy. Embedded only: a plug-in that can only float is
- *  refused with that reason rather than given a window this host does not manage. The host
+ *  the GUI"): is_api_supported(api, embedded) -> create -> set_scale -> get_size -> set_parent
+ *  -> show, and on close hide -> destroy. The api is the platform's (Q050-490): x11, win32 or
+ *  cocoa, read when the editor opens; on cocoa set_scale is not called, as the header says
+ *  (cocoa sizes are logical: the OS applies the screen's factor). Embedded only: a plug-in that
+ *  can only float is refused with that reason rather than given a window this host does not manage. The host
  *  half (clap.gui: request_resize, request_show/hide, closed) is in ClapHostInternals.h.
  */
 
@@ -38,6 +40,62 @@
 
 namespace lmms::clap
 {
+
+namespace
+{
+//! Q050-490: the clap.gui window API of each window system (nullptr: none to embed in).
+const char* windowApiOf(PluginWindowSystem system)
+{
+	switch (system)
+	{
+	case PluginWindowSystem::X11: return CLAP_WINDOW_API_X11;
+	case PluginWindowSystem::Win32: return CLAP_WINDOW_API_WIN32;
+	case PluginWindowSystem::Cocoa: return CLAP_WINDOW_API_COCOA;
+	case PluginWindowSystem::None: break;
+	}
+	return nullptr;
+}
+
+//! The api the plug-in's editor embeds in on @a system, or nullptr with the refusal in @a error.
+const char* embeddableApi(const clap_plugin_gui_t* gui, const clap_plugin_t* plugin, PluginWindowSystem system,
+	QString* error)
+{
+	const char* api = windowApiOf(system);
+	if (api == nullptr)
+	{
+		*error = noPluginWindowSystemError();
+		return nullptr;
+	}
+	if (!gui->is_api_supported(plugin, api, false))
+	{
+		*error = QStringLiteral("the plug-in's editor cannot embed on %1 (CLAP window API %2)")
+			.arg(pluginWindowSystemName(system), QLatin1String(api));
+		return nullptr;
+	}
+	return api;
+}
+
+//! MX-094: the device's zoom; a plug-in that cannot scale refuses it and keeps its own size. Never on cocoa: its
+//! sizes are logical and clap/ext/gui.h says not to call set_scale there.
+void askForScale(const clap_plugin_gui_t* gui, const clap_plugin_t* plugin, PluginWindowSystem system, double scale)
+{
+	if (system != PluginWindowSystem::Cocoa) { gui->set_scale(plugin, scale); }
+}
+
+//! @a parent (QWidget::winId()) in the union member of @a system's api.
+clap_window_t parentWindowOf(PluginWindowSystem system, const char* api, void* parent)
+{
+	clap_window_t window{};
+	window.api = api;
+	switch (system)
+	{
+	case PluginWindowSystem::Win32: window.win32 = parent; break;
+	case PluginWindowSystem::Cocoa: window.cocoa = parent; break;
+	default: window.x11 = static_cast<clap_xwnd>(reinterpret_cast<std::uintptr_t>(parent)); break;
+	}
+	return window;
+}
+} // namespace
 
 auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 {
@@ -62,23 +120,18 @@ auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 		*error = QStringLiteral("the plug-in has no editor (no clap.gui extension)");
 		return false;
 	}
-	if (!gui->is_api_supported(impl.plugin, CLAP_WINDOW_API_X11, false))
-	{
-		*error = QStringLiteral("the plug-in's editor cannot embed in an X11 window");
-		return false;
-	}
-	if (!gui->create(impl.plugin, CLAP_WINDOW_API_X11, false))
+	const PluginWindowSystem system = impl.editorWindowSystem.value_or(currentPluginWindowSystem());
+	const char* api = embeddableApi(gui, impl.plugin, system, error);
+	if (api == nullptr) { return false; }
+	if (!gui->create(impl.plugin, api, false))
 	{
 		*error = QStringLiteral("the plug-in refused to create its editor");
 		return false;
 	}
 	impl.guiCreated = true;
 	impl.guiClosedByPlugin = false;
-	// MX-094: the device's zoom; a plug-in that cannot scale refuses it and keeps its own size.
-	gui->set_scale(impl.plugin, impl.editorScale);
-	clap_window_t window{};
-	window.api = CLAP_WINDOW_API_X11;
-	window.x11 = static_cast<clap_xwnd>(reinterpret_cast<std::uintptr_t>(parentWindow));
+	askForScale(gui, impl.plugin, system, impl.editorScale);
+	const clap_window_t window = parentWindowOf(system, api, parentWindow);
 	if (!gui->set_parent(impl.plugin, &window) || !gui->show(impl.plugin))
 	{
 		closeEditor();
@@ -86,6 +139,11 @@ auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 		return false;
 	}
 	return true;
+}
+
+void HostedPlugin::setEditorWindowSystem(PluginWindowSystem system)
+{
+	m_impl->editorWindowSystem = system;
 }
 
 void HostedPlugin::setEditorScale(double scale)

@@ -41,6 +41,7 @@
 #include <algorithm>
 
 #include "ClapHost.h"
+#include "PluginWindowSystem.h"
 
 #ifndef CLAP_TEST_PLUGIN_PATH
 #define CLAP_TEST_PLUGIN_PATH ""
@@ -181,6 +182,7 @@ class ClapHostTest : public QObject
 
 private slots:
 	void initTestCase();
+	void cleanup();
 	void testModuleListing();
 	void testIdentity();
 	void testParameters();
@@ -211,6 +213,11 @@ private slots:
 	void testAPluginClosedEditorIsReopened();
 	void testANonFiniteParamValueNeverReachesThePlugin();
 	void testReloadingAPluginWithoutNotePortsClearsTheCounters();
+	void testTheWindowSystemFollowsThePlatform();
+	void testTheEditorEmbedsOnEveryWindowSystem();
+	void testThePluginResizesItsOwnEditorOnEveryWindowSystem();
+	void testAnEditorThatCannotEmbedIsRefusedByName();
+	void testCocoaIsNeverAskedToScale();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -232,6 +239,17 @@ void ClapHostTest::initTestCase()
 	QVERIFY(m_plugin.isLoaded());
 	QString prepareError;
 	QVERIFY2(m_plugin.prepare(TestSampleRate, TestBlockSize, &prepareError), qPrintable(prepareError));
+}
+
+//! Q050-490: a failed editor case must not leave its fixture switches or window system to the next one.
+void ClapHostTest::cleanup()
+{
+	m_plugin.closeEditor();
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	qunsetenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+	qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	m_plugin.setEditorScale(1.0);
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
 void ClapHostTest::testModuleListing()
@@ -1333,6 +1351,158 @@ void lmms::clap::ClapHostTest::testASideChainFirstPluginReadsItsOwnMainInput()
 	QCOMPARE(layout.pluginInputPorts, 2);
 	QCOMPARE(layout.inputPortIndices, (std::vector<int>{1, 0}));
 	qunsetenv("CLAP_TEST_GAIN_LAYOUT");
+}
+
+namespace
+{
+//! Q050-490: the three window systems, with the name and clap.gui api a refusal must carry.
+struct WindowCase
+{
+	lmms::PluginWindowSystem system;
+	const char* name;
+	const char* api;
+};
+constexpr WindowCase WindowCases[] = {
+	{lmms::PluginWindowSystem::X11, "X11", "x11"},
+	{lmms::PluginWindowSystem::Win32, "Windows", "win32"},
+	{lmms::PluginWindowSystem::Cocoa, "macOS", "cocoa"},
+};
+} // namespace
+
+/*! Q050-490: the window system is read from the build's platform and the running Qt platform -
+ *  Windows embeds in an HWND, macOS in an NSView, elsewhere X11 (xcb, and the offscreen platform
+ *  the tests run on) unless the session is native Wayland, which has no X11 window to give. */
+void lmms::clap::ClapHostTest::testTheWindowSystemFollowsThePlatform()
+{
+#if defined(_WIN32)
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("windows")) == PluginWindowSystem::Win32);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("offscreen")) == PluginWindowSystem::Win32);
+#elif defined(__APPLE__)
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("cocoa")) == PluginWindowSystem::Cocoa);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("offscreen")) == PluginWindowSystem::Cocoa);
+#else
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("xcb")) == PluginWindowSystem::X11);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("offscreen")) == PluginWindowSystem::X11);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("wayland")) == PluginWindowSystem::None);
+	QVERIFY(pluginWindowSystemFor(QStringLiteral("wayland-egl")) == PluginWindowSystem::None);
+#endif
+}
+
+/*! Q050-490: the clap.gui life cycle on each window system - created for x11, win32 or cocoa, the
+ *  parent handed in that api's union member (the fixture reads only that one, so a handle in the
+ *  wrong member is no parent), sized, resized by the host and to its minimum, closed and reopened.
+ *  The window system is chosen explicitly so all three run on every machine; the default (the
+ *  running platform's) is what testTheEditorEmbedsResizesAndCloses runs on each hosted job. */
+void lmms::clap::ClapHostTest::testTheEditorEmbedsOnEveryWindowSystem()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	for (const WindowCase& each : WindowCases)
+	{
+		// The fixture takes ONLY this api: an editor that opens was created and parented with it.
+		qputenv("CLAP_TEST_GAIN_GUI_API", each.api);
+		m_plugin.setEditorWindowSystem(each.system);
+		QString error;
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		QVERIFY(m_plugin.editorOpen());
+		int width = 0;
+		int height = 0;
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 400);
+		QCOMPARE(height, 300);
+		QVERIFY(m_plugin.resizeEditor(640, 480));
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 640);
+		QCOMPARE(height, 480);
+		QVERIFY(m_plugin.resizeEditor(10, 10));
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 100);
+		QCOMPARE(height, 80);
+		m_plugin.closeEditor();
+		QVERIFY(!m_plugin.editorOpen());
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1 reopen: %2").arg(QLatin1String(each.name), error)));
+		QVERIFY(m_plugin.editorOpen());
+		m_plugin.closeEditor();
+		std::printf("CLAP_EDITOR_PLATFORM_EVIDENCE %s (%s): open 400x300, resize 640x480, min 100x80, close, reopen\n",
+			each.name, each.api);
+	}
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
+}
+
+/*! Q050-490: a resize the plug-in makes from its own editor (clap.gui request_resize) is granted on
+ *  each window system - the host answers it with set_size, and the editor reports the new size. */
+void lmms::clap::ClapHostTest::testThePluginResizesItsOwnEditorOnEveryWindowSystem()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	qputenv("CLAP_TEST_GAIN_REQUEST_RESIZE", "520x390");
+	for (const WindowCase& each : WindowCases)
+	{
+		qputenv("CLAP_TEST_GAIN_GUI_API", each.api);
+		HostedPlugin plugin;
+		QString error;
+		QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+			qPrintable(error));
+		QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+		plugin.setEditorWindowSystem(each.system);
+		QVERIFY2(plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		plugin.serviceMainThread();  // the plug-in asks for 520x390 from its main-thread callback
+		int width = 0;
+		int height = 0;
+		plugin.editorSize(&width, &height);
+		QCOMPARE(width, 520);
+		QCOMPARE(height, 390);
+		plugin.closeEditor();
+	}
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	qunsetenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+}
+
+/*! Q050-490: a plug-in whose editor cannot embed in this platform's window is refused with the
+ *  platform and the window API named - nothing is created, so no empty window is left behind. A
+ *  session with no window to embed in (native Wayland) is refused before the plug-in is asked. */
+void lmms::clap::ClapHostTest::testAnEditorThatCannotEmbedIsRefusedByName()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	for (const WindowCase& each : WindowCases)
+	{
+		// A plug-in that embeds only in some OTHER api.
+		qputenv("CLAP_TEST_GAIN_GUI_API", each.system == PluginWindowSystem::X11 ? "win32" : "x11");
+		m_plugin.setEditorWindowSystem(each.system);
+		QString error;
+		QVERIFY2(!m_plugin.openEditor(standInWindow, &error), each.name);
+		QVERIFY(!m_plugin.editorOpen());
+		const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(QLatin1String(each.name),
+			QLatin1String(each.api));
+		QVERIFY2(error.contains(expected), qPrintable(error));
+		std::printf("CLAP_EDITOR_REFUSAL_EVIDENCE %s\n", qPrintable(error));
+	}
+	qunsetenv("CLAP_TEST_GAIN_GUI_API");
+	m_plugin.setEditorWindowSystem(PluginWindowSystem::None);
+	QString error;
+	QVERIFY(!m_plugin.openEditor(standInWindow, &error));
+	QVERIFY(!m_plugin.editorOpen());
+	QVERIFY2(error.contains(QLatin1String("no native window a plug-in editor can embed in")), qPrintable(error));
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
+}
+
+/*! Q050-490: cocoa forbids set_scale, and win32/x11 must receive the device's zoom. The fixture
+ *  refuses a cocoa set_scale and requires an exact 1.5 set_scale before parenting on win32/x11. */
+void lmms::clap::ClapHostTest::testCocoaIsNeverAskedToScale()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	m_plugin.setEditorScale(1.5);
+	for (const WindowCase& each : WindowCases)
+	{
+		m_plugin.setEditorWindowSystem(each.system);
+		if (each.system == PluginWindowSystem::Cocoa) { qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE"); }
+		else { qputenv("CLAP_TEST_GAIN_EXPECT_SCALE", "1.5"); }
+		QString error;
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		m_plugin.closeEditor();
+	}
+	qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	m_plugin.setEditorScale(1.0);
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
 QTEST_GUILESS_MAIN(lmms::clap::ClapHostTest)

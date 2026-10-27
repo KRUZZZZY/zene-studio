@@ -27,11 +27,14 @@
  *  leaves no window; an open window is sized to the view plus the host header above it; opening again raises it
  *  instead of attaching twice; closing from the window manager or from the editor detaches exactly once. The host
  *  header's buttons (Bypass, A/B, presets) run plugin.* commands on the device the window shows. Also the "Show
- *  plugin editor" button of a generated control view, and the owner address of a chain. */
+ *  plugin editor" button of a generated control view, and the owner address of a chain. Q050-490: that button against
+ *  the in-tree CLAP effect fixture - its editor opens in this platform's window, or the refusal names the window. */
 
 #include <QtTest>
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QTemporaryDir>
@@ -39,6 +42,7 @@
 
 #include "CommandForm.h"
 #include "CommandListDialog.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -50,6 +54,7 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "PluginNativeEditor.h"
+#include "PluginWindowSystem.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -374,6 +379,32 @@ private slots:
 		delete instrumentBox;
 	}
 
+	/*! Q050-490 through the GUI, against the real CLAP host and fixture: clicking "Show plugin editor" opens the
+	 *  fixture's editor in this platform's window (x11 here, win32 / cocoa on those jobs); restricted to another
+	 *  platform's window API, the same click is refused and the line under the button names this platform and its
+	 *  CLAP window API, with no editor and no window left. */
+	void theShowEditorButtonOpensOnThisPlatformOrNamesTheWindow()
+	{
+		Effect* effect = clapFixtureEffect();
+		if (effect == nullptr) { QSKIP("this build has no CLAP effect fixture, or no clapeffect module to host it"); }
+		const bool headless = ControlRegistry::instance()->isHeadless();
+		ControlRegistry::instance()->setHeadless(false);  // the offscreen platform is a display
+		const EditorClick native = clickShowEditor(effect);
+
+		const PluginWindowSystem system = currentPluginWindowSystem();
+		const char* api = system == PluginWindowSystem::Win32 ? "win32" : system == PluginWindowSystem::Cocoa ? "cocoa" : "x11";
+		qputenv("CLAP_TEST_GAIN_GUI_API", system == PluginWindowSystem::Win32 ? "x11" : "win32");
+		const EditorClick elsewhere = clickShowEditor(effect);
+		qunsetenv("CLAP_TEST_GAIN_GUI_API");
+		ControlRegistry::instance()->setHeadless(headless);
+
+		QVERIFY2(native.opened && native.windowShown, qPrintable(QStringLiteral("refused: %1").arg(native.reason)));
+		QVERIFY2(!elsewhere.opened && !elsewhere.windowShown, "an editor that cannot embed here opened or left a window");
+		const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(pluginWindowSystemName(system),
+			QLatin1String(api));
+		QVERIFY2(elsewhere.reasonShown && elsewhere.reason.contains(expected), qPrintable(elsewhere.reason));
+	}
+
 	void aChainIsAddressedByTheTrackOrChannelThatOwnsIt()
 	{
 		QCOMPARE(targetIdOfChain(&Engine::mixer()->mixerChannel(1)->m_fxChain), control::channelIdOf(Engine::mixer()->mixerChannel(1)));
@@ -384,6 +415,56 @@ private slots:
 	}
 
 private:
+	//! What one click of an effect's "Show plugin editor" did; the editor is closed again afterwards.
+	struct EditorClick
+	{
+		bool opened = false;
+		bool windowShown = false;
+		bool reasonShown = false;
+		QString reason;
+	};
+
+	EditorClick clickShowEditor(Effect* effect)
+	{
+		QWidget* box = makeNativeEditorButton(effect, nullptr);
+		box->show();
+		box->findChild<QToolButton*>()->click();
+		EditorClick click;
+		click.opened = effect->nativeEditorOpen();
+		const QWidget* window = editorWindow(effect->displayName());
+		click.windowShown = window != nullptr && window->isVisible();
+		const QLabel* reason = box->findChild<QLabel*>();
+		click.reasonShown = reason->isVisible();
+		click.reason = reason->text();
+		effect->closeNativeEditor();
+		delete box;
+		return click;
+	}
+
+	//! Q050-490: the in-tree CLAP gain fixture, found by plugin.list and loaded by plugin.load onto a new track.
+	Effect* clapFixtureEffect()
+	{
+#ifdef CLAP_TEST_EFFECT_DIR
+		if (!QFileInfo::exists(QStringLiteral(CLAP_TEST_EFFECT_DIR))) { return nullptr; }
+		ConfigManager::inst()->setVSTDir(QStringLiteral(CLAP_TEST_EFFECT_DIR));
+		const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("format"), QStringLiteral("clap")}});
+		const QString name = QStringLiteral("LMMS CLAP Test Gain");
+		for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() != name && entry.value(QStringLiteral("display_name")).toString() != name)
+			{
+				continue;
+			}
+			auto* track = dynamic_cast<InstrumentTrack*>(newTrack());
+			const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), control::trackIdOf(track)},
+				{QStringLiteral("device"), entry.value(QStringLiteral("id")).toString()}});
+			return loaded.ok ? track->audioBusHandle()->effects()->effects().back() : nullptr;
+		}
+#endif
+		return nullptr;
+	}
+
 	Effect* amplifier()
 	{
 		EffectChain& chain = Engine::mixer()->mixerChannel(1)->m_fxChain;

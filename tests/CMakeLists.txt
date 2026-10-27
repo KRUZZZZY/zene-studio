@@ -4773,6 +4773,12 @@ if(TARGET lmms_clap)
 			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
 		add_dependencies(ControlDeviceCatalogueTest clap-test-gain clapeffect)
 	endif()
+	# Q050-490: the "Show plugin editor" button opens the CLAP fixture's editor in this platform's window.
+	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET PluginNativeEditorTest)
+		target_compile_definitions(PluginNativeEditorTest PRIVATE
+			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
+		add_dependencies(PluginNativeEditorTest clap-test-gain clapeffect)
+	endif()
 	# MX-114 (plugin.output_*): the fixture's multi-output class is the instrument with output buses.
 	if(TARGET clap-test-instrument AND TARGET InstrumentLayersCommandsTest)
 		target_compile_definitions(InstrumentLayersCommandsTest PRIVATE
@@ -5296,6 +5302,48 @@ if(TARGET lmms_vst3_sdk)
 		"Build the VST3 instrument test fixture and its probe (test subject only)" OFF)
 	if(WANT_VST3_TEST_INSTRUMENT)
 		add_subdirectory(data/vst3-test-instrument)
+
+		# Q050-490: the VST3 host's editor - open, host and plug-in resize, close, reopen, the
+		# named refusal, the zoom - against the fixture's view, on EVERY platform that builds
+		# the fixture: X11 on Linux, HWND on Windows, NSView on macOS (the fixture's bundle
+		# layout and entry point are per platform). It compiles the host sources itself, as
+		# Vst3InstrumentTest does.
+		add_executable(Vst3EditorTest
+			src/plugins/Vst3EditorTest.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
+			${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiMapping.cpp
+			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
+		)
+		add_test(NAME Vst3EditorTest COMMAND Vst3EditorTest)
+		target_compile_definitions(Vst3EditorTest PRIVATE LMMS_STATIC_DEFINE)
+		target_include_directories(Vst3EditorTest PRIVATE
+			${CMAKE_BINARY_DIR}
+			${CMAKE_BINARY_DIR}/src
+			${CMAKE_SOURCE_DIR}/include
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect
+		)
+		target_compile_features(Vst3EditorTest PRIVATE cxx_std_20)
+		target_link_libraries(Vst3EditorTest PRIVATE
+			${QT_LIBRARIES}
+			${QT_QTTEST_LIBRARY}
+			lmms_vst3_sdk
+			${CMAKE_DL_LIBS}
+		)
+		target_compile_definitions(Vst3EditorTest PRIVATE
+			LMMS_TESTING
+			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}"
+		)
+		add_dependencies(Vst3EditorTest vst3-test-instrument)
+	endif()
+	# The rest of the fixture's suite - the probe, the MIDI path, the product-level and
+	# socket-driven cases - has only ever run on the linux-x86_64 job, and stays there: the
+	# Windows and macOS jobs build the fixture for the editor cases above (Q050-490).
+	if(WANT_VST3_TEST_INSTRUMENT AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 
 		# A probe, not a QTest class: it is the independent check that the
 		# fixture really reads ProcessData::inputEvents and renders audio in
