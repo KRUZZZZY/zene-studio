@@ -81,8 +81,9 @@ ControlResult record(const QJsonObject& args)
 		recorder->stop();
 		return ControlResult::success(takeState(args, *recorder));
 	}
-	const QString file = args.contains(QStringLiteral("file"))
-		? QFileInfo(args.value(QStringLiteral("file")).toString()).absoluteFilePath() : TakeRecorder::defaultTakePath();
+	const QString requestedFile = args.value(QStringLiteral("file")).toString();
+	const QString file = requestedFile.isEmpty()
+		? TakeRecorder::defaultTakePath() : QFileInfo(requestedFile).absoluteFilePath();
 	QString why;
 	if (!recorder->start(file, static_cast<int>(Engine::audioEngine()->outputSampleRate()), &why))
 	{
@@ -103,7 +104,16 @@ ControlResult land(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the Recorder has no take on disk"));
 	}
-	Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("there is no song to land the take on"));
+	}
+	Track* track = Track::create(Track::Type::Sample, song);
+	if (track == nullptr)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("could not create a track for the take"));
+	}
 	track->setName(QFileInfo(take).completeBaseName());
 	if (auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(args.value(QStringLiteral("position")).toInt(0)))))
 	{
