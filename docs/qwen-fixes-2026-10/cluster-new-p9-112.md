@@ -23,10 +23,11 @@ FIXED
 
 ## The fix (`src/core/DawProjectSession.cpp:430-445`)
 
-The bpm is computed as `floor(value + 0.5)` (the same rounding as before), then checked on that double
-**before** the int cast: it must be finite and inside `DawProjectMinTempo..DawProjectMaxTempo`. A refusal
-names the value, in the same words the writer uses (`beat %1 carries %2 bpm, outside the engine's own
-%3..%4`). The check is applied only where the cast was.
+The value is checked for finiteness and against the half-step interval whose values round into
+`DawProjectMinTempo..DawProjectMaxTempo` **before** rounding or casting. This preserves the old
+`floor(value + 0.5)` behavior: `9.5` still rounds to 10, `999.4` still rounds to 999, and `999.5` is
+refused. The cast therefore only sees a finite rounded BPM in range. A refusal names the value, in the
+same words the writer uses (`beat %1 carries %2 bpm, outside the engine's own %3..%4`).
 
 Accepted set: unchanged. Before the fix, a value was accepted exactly when its rounded int landed in
 10..999 (`TempoMap::addEvent` refused everything else). After the fix, the same values are accepted. Only
@@ -40,9 +41,9 @@ the reader refuses these values first.
 beat-refusal tests sit beside it); no new test file, so no registration change.
 
 It is deterministic: fixed values, no clock, no sleep, no race. It asserts that `applyDawProjectModel`
-refuses NaN, +inf, -inf, 1e300, -1e300, 5000 and 9.4, that each refusal names the value, and that the tempo
-map is left empty. It also asserts that 999.4 (which rounds to 999) is still applied, to show the accepted
-set is unchanged.
+refuses NaN, +inf, -inf, 1e300, -1e300, 5000, 9.4 and 999.5, that each refusal names the value, and
+that the tempo map is left empty. It also asserts that 9.5 (which rounds to 10) and 999.4 (which rounds
+to 999) are still applied, to show both ends of the accepted set are unchanged.
 
 ## Evidence (exact commands, EXIT codes; logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-112.r1/logs/`)
 
@@ -100,6 +101,24 @@ matches only a complexity table row for the existing `applyDawProjectModel` (CCN
 (for example `plugins/Vst3Effect/Vst3Host.cpp`, `src/core/TakeLane.cpp`). Under the script's rule, both
 rows are therefore PASS. The exit code of 1 comes from those untouched files.
 
+## Independent QA verification
+
+After the lane's run, QA rebuilt `zene` and `DawProjectInterchangeRoundTripTest` with
+`cmake --build build --target zene DawProjectInterchangeRoundTripTest -j4` (EXIT 0), then ran
+`ctest -R '^DawProjectInterchangeRoundTripTest$' --output-on-failure` from `build/tests` (EXIT 0,
+1/1). `ctest -R 'DawProject' --output-on-failure` also passed 2/2 (EXIT 0).
+
+QA reversed only the product hunk with
+`git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-112.r1/logs/qa-product-reversal.patch`
+(EXIT 0), rebuilt both targets (EXIT 0), and reran the focused test (EXIT 8). The regression failed at
+`DawProjectInterchangeRoundTripTest.cpp:815`: the old generic map-capacity error did not name the NaN
+value. `git checkout -- src/core/DawProjectSession.cpp` restored the staged product change (EXIT 0); QA
+rebuilt both targets (EXIT 0) and reran the focused test (EXIT 0, 1/1).
+
+QA then reran `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p9-112` (EXIT 0):
+all six direct gates passed, and complexity and file-length reported no new item in changed files.
+
 ## Self-check
 
 1. **Each new test FAILS with the product change reverted and PASSES restored.** Yes: RED exit 8 and GREEN
@@ -126,7 +145,7 @@ rows are therefore PASS. The exit code of 1 comes from those untouched files.
 8. **Registration.** No new test file (the test sits in an existing registered file), and no new product file.
    `tests/fork-sources.txt` and `tests/upstream-modifications.txt` need no change. `DawProjectSession.cpp` is
    already fork-authored.
-9. **Determinism.** The test uses fixed literal inputs only (NaN, ±inf, ±1e300, 5000, 9.4, 999.4). It has no
+9. **Determinism.** The test uses fixed literal inputs only (NaN, ±inf, ±1e300, 5000, 9.4, 999.5, 9.5, 999.4). It has no
    clock, sleep, thread or race, and no injected seam is needed, because `applyDawProjectModel` takes the
    model and the song as arguments.
 10. **Verdict.** FIXED, so the ALREADY-FIXED / FALSE-POSITIVE evidence question does not apply. The reachability

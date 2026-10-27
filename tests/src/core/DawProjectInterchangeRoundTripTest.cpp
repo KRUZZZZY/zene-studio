@@ -800,6 +800,7 @@ private slots:
 			-1e300,
 			5000.0,
 			9.4,
+			999.5,
 		};
 		for (const double value : refused)
 		{
@@ -815,17 +816,21 @@ private slots:
 			QCOMPARE(song->tempoMap().map().size(), 0);
 		}
 
-		// The rounding itself is unchanged: a value that rounds into the engine's
-		// bounds is applied exactly as it was before the check existed.
+		// The rounding itself is unchanged at both edges of the accepted interval.
 		DawProjectModel accepted;
-		DawProjectPoint point;
-		point.time = 1.0;
-		point.value = 999.4;
-		accepted.tempoPoints.append(point);
+		DawProjectPoint minimum;
+		minimum.time = 1.0;
+		minimum.value = 9.5;
+		accepted.tempoPoints.append(minimum);
+		DawProjectPoint maximum;
+		maximum.time = 2.0;
+		maximum.value = 999.4;
+		accepted.tempoPoints.append(maximum);
 		QString error;
 		QVERIFY2(applyDawProjectModel(song, accepted, &error), qPrintable(error));
-		QCOMPARE(song->tempoMap().map().size(), 1);
-		QCOMPARE(song->tempoMap().map()[0].tempo, 999);
+		QCOMPARE(song->tempoMap().map().size(), 2);
+		QCOMPARE(song->tempoMap().map()[0].tempo, 10);
+		QCOMPARE(song->tempoMap().map()[1].tempo, 999);
 	}
 
 	//! Claim 5: typed refusals - a missing file, a file that is not a ZIP, a
