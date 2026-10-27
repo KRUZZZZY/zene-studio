@@ -1714,6 +1714,10 @@ set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-W
 # control (qwen/negctl.py) cannot read its name out of ctest -N (see the note under the last append).
 list(APPEND LMMS_TESTS src/core/SmfNoteReadTest.cpp)
 
+# cluster new-p9-503: the string model's oversampling count (VibratingString) is never zero.
+# The test compiles the Vibed plug-in's string sources, the same shape as the Vibed tests below.
+list(APPEND LMMS_TESTS src/plugins/VibratingStringTest.cpp)
+
 # cluster new-p12-278: the Vibed waveform handoff proof - a note's render must
 # depend on the waveform the GUI thread handed off, never on the wave graph model
 # being edited underneath the audio thread. It is registered LAST on purpose: the
@@ -1824,6 +1828,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCCreateTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE src/plugins/ReverbSCCreateTestAllocator.c)
+	endif()
+	# cluster new-p9-503: VibratingStringTest compiles the string model's own sources.
+	if(LMMS_TEST_NAME STREQUAL "VibratingStringTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed)
 	endif()
 	# cluster new-p12-278: VibedWaveformHandoffTest compiles the plug-in's own
 	# sources into the test (the SlicerT plug-in tests' shape), so the audio path it

@@ -5371,3 +5371,6 @@ src/core/LocklessAllocator.cpp	new-p10-226: reject allocator dimensions whose ro
 tests/src/core/ArrayVectorTest.cpp	new-p10-226: test that overflowing LocklessAllocator dimensions are rejected with std::length_error.
 tests/src/core/LoudnessReportTest.cpp	# `addBlock()` does pointer arithmetic on null
 tests/src/plugins/MalletsInstrumentViewTest.cpp	# Mallets can index its scaler table with a project-supplied invalid preset
+plugins/Vibed/VibratingString.cpp	new-p9-503: the oversampling count is clamped to at least one, and an output rate below the base rate counts as the base rate (no division by zero).
+plugins/Vibed/VibratingString.h	new-p9-503: declares the read-only oversampleCount() test seam used by the regression.
+tests/CMakeLists.txt	new-p9-503: registers src/plugins/VibratingStringTest.cpp and compiles the string model sources into it (the Vibed test shape).
