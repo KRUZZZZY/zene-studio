@@ -5432,3 +5432,4 @@ tests/src/gui/KnobKeyboardTest.cpp	new-p14-329: adds three bar-editor cases besi
 tests/control-render-sections.py	# Section export does not check whether its generated paths already exist
 tests/CMakeLists.txt	new-p15-24: registers ProjectRestoreMissingTargetTest, the keep-3 restore into a missing project file proof (cluster new-p15-24); one added source path in the LMMS_TESTS list and one set_tests_properties block for the offscreen platform, no target, flag or option moved.
 tests/src/core/SessionSubSceneTest.cpp	# Sub-scenes loader discards non-whitespace text
+tests/CMakeLists.txt	new-p15-27: registers RevisionRestoreCreatedFileUndoTest, the undo-of-a-created-file proof (BUG 9); one added source path in the LMMS_TESTS list and one set_tests_properties block, no target, flag or option moved.

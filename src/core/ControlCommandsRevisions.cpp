@@ -23,7 +23,8 @@
  *                                      staged bytes replace it, so the recorded
  *                                      undo step restores revision 0 - and where
  *                                      there was no live file the recorded step
- *                                      REMOVES the file the restore created.
+ *                                      REMOVES the file the restore created, while
+ *                                      that file still holds the bytes it wrote.
  *                                      A live file over the policy's 8 MiB cap
  *                                      cannot be rotated, and then the restore is
  *                                      REFUSED, typed, before anything is written
@@ -141,10 +142,46 @@ bool isRotationId(const QString& id)
 		&& number.at(0) >= QLatin1Char('0') && number.at(0) <= QLatin1Char('2');
 }
 
+//! Whether \a target still holds the bytes the restore wrote: a regular file
+//! whose sha256 is \a restoredSha. A symlink is never that file - QFileInfo
+//! would follow it - so the link itself is checked first.
+bool holdsRestoredBytes(const QString& target, const QString& restoredSha)
+{
+	const QFileInfo info(target);
+	return !info.isSymLink() && info.isFile() && !restoredSha.isEmpty()
+		&& sha256OfFile(target) == restoredSha;
+}
+
+//! The undo of a restore that CREATED the file: remove it, but only while it
+//! still holds the bytes the restore wrote. Anything else at the path was written
+//! after the restore, and undo must not delete a newer file (BUG 9).
+void undoCreatedFileStep(const QString& target, const QString& restoredSha)
+{
+	// Nothing at the path: there is nothing for this undo to remove.
+	const QFileInfo before(target);
+	if (!before.exists() && !before.isSymLink()) { return; }
+	if (!holdsRestoredBytes(target, restoredSha))
+	{
+		control::recordActionRestoreFailure(
+			QStringLiteral("the project file %1, created by revisions.restore, was changed after the "
+				"restore - it no longer holds the bytes the restore wrote - so undo left it in place "
+				"rather than remove a file it did not create").arg(target));
+		return;
+	}
+	const bool removed = QFile::remove(target);
+	const QFileInfo remaining(target);
+	if (!removed && (remaining.exists() || remaining.isSymLink()))
+	{
+		control::recordActionRestoreFailure(
+			QStringLiteral("the project file %1, created by revisions.restore, could NOT be "
+				"removed during undo - the path still exists").arg(target));
+	}
+}
+
 //! The recorded UNDO half of revisions.restore: put revision 0 - the file the
 //! restore rotated in - back over the live file, or, when the restore CREATED
 //! the file, remove it, because a file that never existed cannot be restored.
-void undoRestoreStep(const QString& target, bool liveExisted)
+void undoRestoreStep(const QString& target, bool liveExisted, const QString& restoredSha)
 {
 	if (liveExisted)
 	{
@@ -157,14 +194,7 @@ void undoRestoreStep(const QString& target, bool liveExisted)
 				"restores what it still holds").arg(target, reason));
 		return;
 	}
-	const bool removed = QFile::remove(target);
-	const QFileInfo remaining(target);
-	if (!removed && (remaining.exists() || remaining.isSymLink()))
-	{
-		control::recordActionRestoreFailure(
-			QStringLiteral("the project file %1, created by revisions.restore, could NOT be "
-				"removed during undo - the path still exists").arg(target));
-	}
+	undoCreatedFileStep(target, restoredSha);
 }
 
 //! The recorded REDO half: re-restore the revision the call chose, from that
@@ -215,7 +245,7 @@ void recordRestoreUndoStep(const QString& target, const QString& recoveryFile,
 	const QString& id, bool liveExisted, const QString& restoredSha)
 {
 	control::addUndoStep(
-		[target, liveExisted]() { undoRestoreStep(target, liveExisted); },
+		[target, liveExisted, restoredSha]() { undoRestoreStep(target, liveExisted, restoredSha); },
 		[target, recoveryFile, id, restoredSha]() { redoRestoreStep(target, recoveryFile, id, restoredSha); });
 }
 
@@ -434,7 +464,7 @@ void registerRevisionsRestore(ControlRegistry& registry)
 			liveExisted ? QStringLiteral("revision 0 of the keep-3 set (the file this restore "
 				"replaced), through control.undo or project.restore_revision")
 						: QStringLiteral("nothing: the restore created the file, so control.undo "
-				"removes it again"));
+				"removes it again while it still holds the bytes the restore wrote"));
 		result.insert(QStringLiteral("__transaction"), transactionPayload(
 			QJsonObject{{QStringLiteral("file"), target}, {QStringLiteral("id"), id},
 				{QStringLiteral("live_file_existed"), liveExisted},
@@ -459,7 +489,8 @@ void registerRevisionsRestore(ControlRegistry& registry)
 					"file-level inverse is a COMMAND here and not a journal step (see "
 					"docs/A16-REVERSIBILITY.md)")
 				: QStringLiteral("action checkpoint: the project file did not exist before this "
-					"call, so the recorded undo step REMOVES the file the restore created - a "
+					"call, so the recorded undo step REMOVES the file the restore created while "
+					"it still holds the bytes it wrote - a "
 					"file that never existed cannot be restored. The redo re-restores the "
 					"revision from its own artefact")));
 		return ControlResult::success(result);
