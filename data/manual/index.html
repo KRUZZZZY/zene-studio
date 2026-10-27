@@ -255,7 +255,9 @@ windows have a header with presets, and an effect's also has bypass and A/B. Fav
 picker or the plug-in manager (Project &gt; Plug-in Manager); Preferred Plug-in Format lists a plug-in installed in
 several formats once. <i>Project tools &gt; Plug-in Modules...</i> lists every file the scan found with its path, its
 per-file status and the error it failed with, and quarantines or releases one from its row (Edit &gt; Plugin Quarantine
-adds and releases entries too). A device card's dot lights while the device processes audio. The rack menu bypasses every device,
+adds and releases entries too). Its Rescan and Rescan in Background (agent: <code>plugin.rescan</code>,
+<code>plugin.scan_start</code>) are safe with plug-ins loaded: devices already in the project keep working and save as
+before, and the new scan applies to devices you add or reload afterwards. A device card's dot lights while the device processes audio. The rack menu bypasses every device,
 switches them all back on, removes the bypassed ones and opens an XY pad that plays two macros at once. Modulators can
 be random, smooth random, a step sequence or a retriggered envelope as well as an LFO; a modulator can run a formula of
 its own (sin(2*pi*t), tri(t) * rand(x)...) and restart on every note a track plays.</p>
