@@ -396,6 +396,43 @@ private slots:
 		QCOMPARE(stage.data()[7], 0.25f);
 		QCOMPARE(stage.push(eight.data(), AudioInputPath::MaxChannels + 1, 1), std::size_t{0});
 	}
+	//! Cluster new-p14-402: a block captured before the device stopped and never rendered
+	//! must not survive the restart. The device start (resetInputStream) empties both staging
+	//! rings, so the first period after it neither drains those frames nor reports the input
+	//! stream as started, and the first block captured after the restart is what the engine
+	//! hears first.
+	void aRestartDropsTheFramesStagedBeforeTheStop()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		// Start from empty rings: drain whatever an earlier case left behind.
+		for (int i = 0; i < 8 && (engine->inputFramesStaged() > 0 || engine->inputWideFramesStaged() > 0); ++i)
+		{
+			engine->renderNextPeriod();
+		}
+		QCOMPARE(engine->inputFramesStaged(), std::size_t{0});
+		QCOMPARE(engine->inputWideFramesStaged(), std::size_t{0});
+
+		FakeCaptureDevice device(engine);
+		device.prepare(64, 2, 3);
+		device.publish(uniqueBlock(0, 64), 4);  // captured, staged, and the device stops before a render
+		QCOMPARE(engine->inputFramesStaged(), std::size_t{64});
+		QCOMPARE(engine->inputWideFramesStaged(), std::size_t{64});
+
+		engine->resetInputStream();  // the device (re)start
+
+		QCOMPARE(engine->inputFramesStaged(), std::size_t{0});
+		QCOMPARE(engine->inputWideFramesStaged(), std::size_t{0});
+		engine->renderNextPeriod();
+		QVERIFY2(!engine->inputStreamStarted(), "the period after a restart took frames captured before the stop");
+		QCOMPARE(engine->inputBufferFrames(), f_cnt_t{0});
+
+		device.publish(uniqueBlock(64, 64), 4);  // the first block captured after the restart
+		engine->renderNextPeriod();
+		QString why;
+		const int fresh = comparePeriod(engine, 64, &why);
+		QVERIFY2(fresh >= 0, qPrintable(why));
+		QCOMPARE(fresh, 64);
+	}
 };
 
 QTEST_GUILESS_MAIN(CapturePublisherTest)
