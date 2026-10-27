@@ -369,12 +369,8 @@ bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
 		return false;
 	}
-	if (anyRangeEmpty(*f))
-	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("a filter range is empty: its minimum is above its maximum (key, velocity, position or length)"));
-		return false;
-	}
+	if (anyRangeEmpty(*f)) { *error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("a filter range's minimum is above its maximum")); return false; }
 	return readInvert(json.value(QStringLiteral("invert")), f, error)
 		&& readScale(json.value(QStringLiteral("scale")), f, error);
 }
