@@ -118,17 +118,17 @@ The gate's logic was not changed. The unpiped exit is `0` (the script's own `RES
 
 ## Self-check
 
-Answers to the completion-check items (`submit_check.py`):
+Each judgement item from the completion check, answered with its evidence:
 
-1. *RED/GREEN with the product change reverted:* yes. RED exit 1 (`test-4`, `test-8`), GREEN exit 0 (`test-9`, `test-10`).
-2. *Acceptance criteria proven by a test I ran:* the refusal cases (relative, directory, missing) and "no undo step / state unchanged" are each asserted in `theStateLoadRequiresAnAbsoluteExistingFile`, which passed (exit 0).
-3. *Each edit is one undo step; honest reversibility class:* a refused load records nothing; a successful load is unchanged (one undo step as before).
-4. *Nothing new on the audio thread:* confirmed. The handler is a control-thread command; no audio path is touched.
-5. *Old projects still load and render; saved data round-trips:* the change only refuses inputs that the sibling commands already refuse; no saved-data path changed. `ReversibilityUndoTest`, `UndoHonestyTest`, `ControlRegistryTest` and `ControlRegistryNestingTest` pass with the fix.
-6. *Portability (Qt 5.15 / MSVC / macOS):* `QFileInfo` and `QStringLiteral`, both already used in this file. No Qt-6-only API, no `windows.h`, no `std::filesystem`.
-7. *Sibling commands:* checked (see the audit above).
-8. *Caller audit / plugin_compat folder:* partially unverified, see above.
+1. *The regression test FAILS with the product change reverted and PASSES with it (exit codes):* yes. Reverted: `test-8-revert-direct.log`, exit **1** (`FAIL! '!relative.ok' returned FALSE`). Restored: `test-9-reapply-direct.log`, exit **0**. Initial RED before any fix: `test-4-red-direct.log`, exit 1.
+2. *The test is deterministic (no wall-clock timing, sleeps or races; name the seam or injected values):* yes. It uses only a `QTemporaryDir` (absolute paths it creates itself) and `QDir::setCurrent` to that temp directory for the relative-path case, restored before any assertion. No timer, sleep or thread. Assertions are on `ControlErrorKind` and `control.undo_depth`, both synchronous.
+3. *The fix is at the cause and complete; every caller and sibling was checked and stays consistent:* the cause is the missing precondition in the handler, fixed at `ControlCommandsPluginState.cpp:174-185`. Callers and siblings: see "Caller and sibling audit". One caller is not verified: `tests/plugin_compat_steps.py`'s `folder` argument (its origin was not traced; a plugin-compat run is needed to confirm).
+4. *No collateral damage (old projects and saved data load as before; any limit or check does not hit callers that legitimately exceed it):* the check is a path precondition only. It adds no size or count limit. `state_load` is not on the project-load path, and saved documents are unchanged. The in-repo callers with a path pass absolute paths (see the audit). `ReversibilityUndoTest`, `UndoHonestyTest`, `ControlRegistryTest` and `ControlRegistryNestingTest` pass with the fix.
+5. *ALREADY-FIXED or FALSE-POSITIVE:* not applicable. The verdict is FIXED, and the evidence is the RED run plus the code at `ControlCommandsPluginState.cpp:96-101` and `:267-269`.
 
-Open items, not claimed as done:
-- `feature_check.py` as specified cannot write its logs under this sandbox; the copy run above is the evidence.
-- The `ReversibilityUndoDeviceTest` segfault and the `ControlChainPresets`/`ControlReversibilityTranscript` failures are pre-existing in this environment (verified identical on the baseline), not caused by this change.
+Also answered:
+- *Undo:* a refused load records nothing (the check precedes `addUndoStep`). A successful load is still one undo step, as before.
+- *Audio thread:* nothing new runs there; the handler is a control command.
+- *Portability:* `QFileInfo` and `QStringLiteral` are already used in this file. No Qt-6-only API, no `windows.h`, no `std::filesystem`.
+
+Completion-check status: `submit_check.py` reports **FAIL on the gates item only**, because the script it runs (`feature_check.py`) cannot create its log directory outside this sandbox's write-jail (`PermissionError`, the same as the first attempt above). The same gate logic, run from the LOG FOLDER with the log path redirected, passes (table above, EXIT 0). The other checks PASS: commits on the branch, working tree clean, report present, tests changed.
