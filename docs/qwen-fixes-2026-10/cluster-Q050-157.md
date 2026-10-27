@@ -34,7 +34,10 @@ That is a tool interaction, documented in the feature record.
 
 ## Self-check
 
-`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-157`: see the last run below. The
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-157` (`submit-check-2.log`, EXIT 1) passes
+commits, clean tree, report, feature record, manual and tests. It WARNs on GUI/agent (no new action, see below), and
+its only FAIL is "gates (feature_check.py)" with an empty detail. That FAIL is the PermissionError described next, not
+a gate result. The
 `feature_check.py` gates, run with only the log directory redirected (the script writes to
 `<worktree>/../zene-feat-q050-157-feature-check`, outside this lane's write jail, so the original fails with
 PermissionError; `feature-check-1.log`), all PASS. The rows are fork-sources, all-sources-reproduce,
