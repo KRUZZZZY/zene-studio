@@ -68,14 +68,14 @@ this.
 | RED test | `ctest -R '^RecordRingBufferTest$' --output-on-failure` | 8 | `test-1-red.log`: `RingBuffer_NonFiniteMillisecondOffsetsAreDefined` fails, `RecordRingBufferTest.cpp:282`, Actual 256, Expected 0 |
 | Fix applied | edit `include/RingBuffer.h` (see above) | - | - |
 | GREEN build | `CCACHE_DISABLE=1 cmake --build build --target zene RecordRingBufferTest MultitapEchoBoundsTest PluginPortsMigrationTest -j2` | 0 | `build-3-green.log` |
-| GREEN family | `ctest -R '^(RecordRingBufferTest\|MultitapEchoBoundsTest\|PluginPortsMigrationTest)$' --output-on-failure` | 8 | `test-2-green.log`: RecordRingBufferTest and MultitapEchoBoundsTest pass; PluginPortsMigrationTest fails (baseline, see below) |
+| GREEN family | `ctest -R '^(RecordRingBufferTest|MultitapEchoBoundsTest|PluginPortsMigrationTest)$' --output-on-failure` | 8 | `test-2-green.log`: RecordRingBufferTest and MultitapEchoBoundsTest pass; PluginPortsMigrationTest fails (baseline, see below) |
 | Proof: save patch | `git diff -- include/RingBuffer.h > logs/fix.patch` | 0 | `fix.patch` |
 | Proof: revert | `git apply -R logs/fix.patch` | 0 | - |
 | Proof: build without fix | `CCACHE_DISABLE=1 cmake --build build --target zene RecordRingBufferTest MultitapEchoBoundsTest PluginPortsMigrationTest -j2` | 0 | `build-4-noFix.log` |
-| Proof: RED without fix | `ctest -R '^(RecordRingBufferTest\|MultitapEchoBoundsTest\|PluginPortsMigrationTest)$' --output-on-failure` | 8 | `test-3-noFix-4b.log`: RecordRingBufferTest FAILS (`RingBuffer_NonFiniteMillisecondOffsetsAreDefined`, fuzzy compare); PluginPortsMigrationTest fails identically; MultitapEchoBoundsTest passes |
+| Proof: RED without fix | `ctest -R '^(RecordRingBufferTest|MultitapEchoBoundsTest|PluginPortsMigrationTest)$' --output-on-failure` | 8 | `test-3-noFix-4b.log`: RecordRingBufferTest FAILS (`RingBuffer_NonFiniteMillisecondOffsetsAreDefined`, fuzzy compare); PluginPortsMigrationTest fails identically; MultitapEchoBoundsTest passes |
 | Proof: re-apply | `git apply logs/fix.patch` | 0 | - |
 | Proof: build with fix | `CCACHE_DISABLE=1 cmake --build build --target zene RecordRingBufferTest MultitapEchoBoundsTest PluginPortsMigrationTest -j2` | 0 | `build-5-fix.log` |
-| Proof: GREEN with fix | `ctest -R '^(RecordRingBufferTest\|MultitapEchoBoundsTest\|PluginPortsMigrationTest)$' --output-on-failure` | 8 | `test-4-fix-4b.log`: same as the GREEN family row (only PluginPortsMigrationTest fails) |
+| Proof: GREEN with fix | `ctest -R '^(RecordRingBufferTest|MultitapEchoBoundsTest|PluginPortsMigrationTest)$' --output-on-failure` | 8 | `test-4-fix-4b.log`: same as the GREEN family row (only PluginPortsMigrationTest fails) |
 | Totals, RecordRingBufferTest | `./RecordRingBufferTest` (in `build/tests`) | 0 | `run-5-record.log`: `Totals: 20 passed, 0 failed, 0 skipped` |
 | Totals, MultitapEchoBoundsTest | `./MultitapEchoBoundsTest` (in `build/tests`) | 0 | `run-6-multitap.log`: `Totals: 4 passed, 0 failed, 0 skipped` |
 | Gates (the script's own checks) | `python3 -I logs/gate_driver.py <worktree> logs/gates-2` | 0 | `gate-2-feature-check.log`: all 8 rows PASS, `RESULT: PASS` |
