@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Info.plist of the vst3-test-instrument.vst3 (and vst3-test-mono-instrument.vst3)
+  CFBundle on macOS (Q050-490). The SDK's macOS loader is CoreFoundation's bundle
+  loader (public.sdk/source/vst/hosting/module_mac.mm: CFBundleCreate +
+  CFBundleLoadExecutableAndReturnError), which finds the module through
+  CFBundleExecutable under Contents/MacOS. The same keys as
+  tests/data/vst3-test-effect/Info.plist.in, whose header records the hosted macOS
+  failure a missing plist causes. @...@ is substituted by configure_file() in
+  CMakeLists.txt with the module's own name.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>@LMMS_VST3_TEST_PLIST_NAME@</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.lmms.tests.@LMMS_VST3_TEST_PLIST_NAME@</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>@LMMS_VST3_TEST_PLIST_NAME@</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleSupportedPlatforms</key>
+	<array>
+		<string>MacOSX</string>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+</dict>
+</plist>

@@ -100,7 +100,7 @@ enum
 };
 
 static const float kDefaultLevel = 0.5f;
-static const float kTestStateMagic = 0x5A4E5431; // 'ZNT1'
+static const float kTestStateMagic = static_cast<float> (0x5A4E5431); // 'ZNT1' (explicit: MSVC C4305)
 static const int32 kNumKeys = 128;
 // The largest latency a latent instance takes, and the size of its delay rings.
 static const int32 kMaxLatency = 16384;
