@@ -142,7 +142,11 @@ No new source files, no registration changes (the test was already in `tests/CMa
   still passes). Realtime: the code runs on the GUI thread, not on any audio path; nothing new allocates on an audio
   thread. Undo: none involved.
 - **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable (verdict FIXED).
-- **submit_check.py** (`LOGS/submit-check-1.log`, run before the commit): FAILs on commits-not-made, dirty tree, the
-  missing report, this section, tests-changed (now satisfied), and the gates row. The gates row fails only because
-  `feature_check.py` cannot create its log directory from this sandbox (see Gates). The per-gate results above are
-  the substitute evidence.
+- **submit_check.py** (`LOGS/submit-check-2.log`, after the fix commit): PASS on commits on the branch, working tree
+  clean, report present, and tests added or changed. The only FAIL is `gates (feature_check.py)`, which fails because
+  `feature_check.py` cannot create its log directory from this sandbox (see Gates, `LOGS/gates-1.log`). The
+  per-gate results above are the substitute evidence, and that row should be re-run by the loop outside the jail.
+  The five `?` items are answered in this section. Post-commit `no-upstream-regression` gate: EXIT 0
+  (`LOGS/gate-no-upstream-regression-postcommit.log`).
+- Earlier `submit_check.py` run, before the commit (`LOGS/submit-check-1.log`): it also failed on commits and a dirty
+  tree, as expected before the commit; the commit fixed those.
