@@ -86,4 +86,32 @@ PASS. The `REGRESSION` lines do not mention `lv2`.
 
 ## Self-check
 
-(Filled in after running `submit_check.py`; see the section below.)
+`submit_check.py` (log `submit-check-1.log`, EXIT 1) reported:
+
+- PASS commits on the branch; PASS working tree clean; PASS report present.
+- FAIL **tests added or changed**. This is expected for this verdict. No product file changed, so
+  no regression test was added. The claim-only exemption in `submit_check.py:94-97` applies only to
+  ALREADY-FIXED or FALSE-POSITIVE, and this verdict is NEEDS-CONTEXT. A test that pins the
+  unverified behaviour for a document that names another plugin would be an invented contract, so
+  none was added. The owner decision in "Why no fix was made" (3) comes first.
+- FAIL **gates (feature_check.py)**. This is an environment failure, not a code failure:
+  `feature_check.py` cannot create `zene-studio-program/zene-qwen-new-p23-144-feature-check`
+  (PermissionError, `gates-1.log`), which is outside the write-jail. The equivalent per-gate runs are
+  in the Gates table above: six PASS, and the two ratchets exit 1 on items this branch does not touch.
+
+ASK items:
+
+1. **Regression test fails with the fix reverted and passes with it (RED/GREEN).** Not applicable.
+   There is no product change to revert. The existing `aFailedStateRestoreIsReported` passes at HEAD
+   (`qtest-1.log`, EXIT 0), which covers the parse-failure part only.
+2. **Test is deterministic.** No test was added or changed.
+3. **Fix at the cause, every caller checked.** No fix was made. The callers of
+   `Lv2Proc::restoreState` were checked (`rg -n "restoreState\("` over `src include plugins tests`):
+   production caller `src/core/lv2/Lv2ControlBase.cpp:242`, and direct test calls at
+   `tests/src/core/Lv2StateTest.cpp:197`, `:201` and `:336`. The caller already reports a refused
+   payload (`Lv2ControlBase.cpp:237-249`).
+4. **No collateral damage.** No behaviour changed, so old projects and saved data load as before.
+5. **Verdict evidence (the claim is not ALREADY-FIXED or FALSE-POSITIVE).** The evidence is the
+   file:line citations above: `Lv2Proc.cpp:810-823` (restore call and its void result),
+   `/usr/include/lilv-0/lilv/lilv.h:1637-1638` (`void lilv_state_restore`), and
+   `Lv2ControlBase.cpp:237-264` (the existing report path).
