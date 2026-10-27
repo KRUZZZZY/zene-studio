@@ -58,7 +58,17 @@ No product source changed. No control command was added and the `ControlCommands
 
 ## Self-check
 
-- **Regression test fails with the product change reverted and passes with it.** Not applicable: the verdict is FALSE-POSITIVE, so there is no product change to revert. The product code is untouched (`git show --stat 607c16612` lists only the test and this report). The test passes on the unchanged product code: command 4 above, EXIT=0, `PASS` for `omittedEnabledIsRefusedAndTheRunningStreamKeepsRunning`. It would fail if the schema stopped requiring `enabled` (the refusal assertion would then be false), which is the change a future fix would have to make.
+- **Regression test fails with the product change reverted and passes with it.** There is no product fix to revert, because the verdict is FALSE-POSITIVE (`git show --stat 607c16612` lists only the test and this report). The test passes on the unchanged product code: command 4 above, EXIT=0. To check that the guard is sensitive, I made the one change that would make the finding real (drop `"enabled"` from the required list at `src/core/ControlCommandsLinkAudio.cpp:180`, the `{}` in its place), saved it with `git diff` to `mutation.patch`, and ran:
+
+  | Step | Command | EXIT | Result |
+  | --- | --- | --- | --- |
+  | mutant build | `CCACHE_DISABLE=1 cmake --build build --target zene LinkAudioStreamTest -j4` | 0 | `build-3-mutant.log` |
+  | RED | `./LinkAudioStreamTest omittedEnabledIsRefusedAndTheRunningStreamKeepsRunning -v2` | 1 | `FAIL! : ... '!omitted.ok' returned FALSE` (`test-3-mutant.log`) |
+  | revert | `git apply -R mutation.patch` | 0 | working tree clean (`git diff --stat` empty) |
+  | reverted build | `CCACHE_DISABLE=1 cmake --build build --target zene LinkAudioStreamTest -j4` | 0 | `build-4-reverted.log` |
+  | GREEN | `./LinkAudioStreamTest omittedEnabledIsRefusedAndTheRunningStreamKeepsRunning -v2` | 0 | `PASS` (`test-4-reverted.log`) |
+
+  The mutant was not committed. So the test catches the exact regression the finding describes, and passes on HEAD.
 - **Deterministic.** The test uses no wall-clock timing and no sleeps. It starts the stream with `listen_port` 0 on loopback (the OS picks the port, as in the existing tests at `tests/src/core/LinkAudioStreamTest.cpp:579-580`). Every step is a synchronous `ControlRegistry::invoke` call, and the refusal is decided by schema validation (`ControlRegistry.cpp:277-281`), not by a race.
 - **Fix at the cause and complete.** No product change. The cause is the contract, not code: `enabled` is required by the schema (`ControlCommandsLinkAudio.cpp:180`), so the handler is never given a call without it. Checked the other ways into the command: the handler is called only at `src/core/ControlRegistry.cpp:449`, after validation; the workflow-step path validates too (`src/gui/ControlCommandsMacros.cpp:117`); the undo step calls `LinkAudioStream::configure` directly with the stored config (`src/core/ControlCommandsLinkAudio.cpp:196-197`), not the handler, so it cannot reach `mergeArgs`.
 - **No collateral damage.** Nothing that loads saved data or runs on the audio thread changed. The stream is process state, not journaled (`ControlCommandsLinkAudio.cpp:193`), and no limit or check was added.
