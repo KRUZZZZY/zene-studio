@@ -5305,3 +5305,6 @@ tests/src/gui/ItemListPanelTest.cpp	2026-10-26 new-p21-203: regression for a neg
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Note position and duration are swapped when importing a DAWproject session
 src/gui/RowTableView.cpp	cluster new-p14-267 (2026-10-26): keyPressEvent walks the column count only when a model is set, so Tab/Backtab with no model (new view or after setModel(nullptr)) no longer dereferences null; regression tests/src/gui/RowTableViewTest.cpp (tabAndBacktabWithoutModelAreSafe, tabAndBacktabAfterClearingModelAreSafe).
 tests/src/gui/RowTableViewTest.cpp	# Tab handling crashes when RowTableView has no model
+include/Song.h	cluster ci-v041-1: prepareConverterModeForInstruments (a public slot) declared with a leading return type - the Qt 5.15.3 moc of the hosted linux-x86_64 job cannot parse a trailing one on a slot (Parse error at ";"); same signature, no behaviour change
+src/core/Song.cpp	cluster ci-v041-1: the matching definition of prepareConverterModeForInstruments spelled with a leading return type like its declaration; no behaviour change
+tests/CMakeLists.txt	cluster ci-v041-1: registers MocQt5TrailingReturnCheck (tests/moc-qt5-trailing-return-check.py), a source-only check that no slot/signal/Q_INVOKABLE declaration uses a trailing return type the Qt 5 moc cannot parse

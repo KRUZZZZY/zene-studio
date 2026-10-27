@@ -705,7 +705,8 @@ public slots:
 	void startExport();
 	void stopExport();
 	//! Prepare every instrument's retained converters, then adopt or discard the set.
-	auto prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept -> bool;
+	//! Leading return type: the Qt 5.15.3 moc cannot parse a trailing one on a slot (ci-v041-1).
+	bool prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept;
 	void adoptPreparedConverterModeForInstruments() noexcept;
 	void discardPreparedConverterModeForInstruments() noexcept;
 

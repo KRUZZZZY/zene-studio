@@ -3122,3 +3122,4 @@ docs/qwen-fixes-2026-10/cluster-new-p23-187.md
 # Q050-288: fork-authored proof that the Sample Editor docs and agent descriptions match the GUI/registry.
 tests/src/gui/SampleEditorDocsTest.cpp
 tests/control-mixing-strip-features.py
+tests/moc-qt5-trailing-return-check.py
