@@ -195,6 +195,19 @@ private slots:
 		}
 	}
 
+	void everyPanelIdHasAFrameBeforeAndAfterItIsRevealed()
+	{
+		// window.focus_panel dereferences shell.panel(id) for every id ShellLayout::isPanel accepts: the frame is
+		// built for each spec in the Shell constructor and never removed, so the lookup must not be null.
+		World world;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
+		{
+			QVERIFY2(world.shell.panel(spec.id) != nullptr, qPrintable(spec.id));
+			world.shell.revealPanel(spec.id);
+			QVERIFY2(world.shell.panel(spec.id) != nullptr, qPrintable(spec.id));
+		}
+	}
+
 	void theLayoutSurvivesARestart()
 	{
 		{
