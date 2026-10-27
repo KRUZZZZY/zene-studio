@@ -334,6 +334,8 @@ private slots:
 		QVERIFY(lv2Controls->control(0) != nullptr);
 		// The precondition: the payload the project holds is refused by the processor.
 		QVERIFY(!lv2Controls->control(0)->restoreState(QStringLiteral("this is not a state document")));
+		// An empty document is refused by restoreState's own guard, and reported as false too.
+		QVERIFY(!lv2Controls->control(0)->restoreState(QString()));
 
 		// The state the project holds cannot be parsed.
 		QDomDocument doc;

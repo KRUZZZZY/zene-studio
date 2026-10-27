@@ -24,8 +24,8 @@ code was changed.
 - `src/core/lv2/Lv2ControlBase.cpp:237-249` - `loadSettings()` already reports a refused
   non-empty `<lv2state>` payload through `reportStateRestoreFailure()` (lines 257-264), which calls
   `Song::collectError()`. This is the new-p17-83 fix.
-- `tests/src/core/Lv2StateTest.cpp:304-336` - `aFailedStateRestoreIsReported` covers the
-  parse-failure report. It passes at HEAD (see the test run below).
+- `tests/src/core/Lv2StateTest.cpp:304-338` - `aFailedStateRestoreIsReported` covers the
+  parse-failure report. It passes at HEAD and with the test change below.
 
 ## Why no fix was made
 
@@ -41,77 +41,101 @@ code was changed.
    still accepted, is a compatibility decision for the owner. It was not made here, because the
    brief says not to invent a behaviour change.
 
+## Test change (round 2)
+
+Review asked for a test to be added or changed. I added one assertion to the existing
+`aFailedStateRestoreIsReported` (`tests/src/core/Lv2StateTest.cpp:338`):
+
+    QVERIFY(!lv2Controls->control(0)->restoreState(QString()));
+
+It pins the refusal contract the caller depends on: an empty document is refused (`false`), so
+the load's error path sees it. The test runs on the in-tree LV2 fixture instrument
+(`tests/data/lv2-test-instrument`), which is built and loaded in this environment, so the test is
+not skipped here.
+
+No product change is part of this round. The mutation probe below was a temporary edit that was
+reverted exactly; it is not a fix.
+
 ## Tests run
 
-No product file changed, so there was no RED/GREEN cycle and no regression test was added.
-The existing `Lv2StateTest` was run to check the already-fixed parse-failure path.
+| Command (from the worktree unless noted) | Log (`new-p23-144.r2/logs`) | EXIT | Result |
+| --- | --- | --- | --- |
+| `CCACHE_TEMPDIR=$PWD/build/ccache-tmp cmake --build build --target Lv2StateTest -j4` (test edited, product unchanged) | `build-3.log` | 0 | built |
+| `QT_QPA_PLATFORM=offscreen ./Lv2StateTest` (in `build/tests`) | `qtest-3.log` | 0 | Totals: 7 passed, 0 failed, 3 skipped |
+| Mutation probe: `src/core/lv2/Lv2Proc.cpp:816` `return false` changed to `return true` (diff saved as `mutant-1.patch`) → `cmake --build ...` | `build-4-mutant.log` | 0 | built |
+| `QT_QPA_PLATFORM=offscreen ./Lv2StateTest` against the mutant | `qtest-4-mutant.log` | **1** | `FAIL! : Lv2StateTest::aFailedStateRestoreIsReported() '!lv2Controls->control(0)->restoreState(QStringLiteral("this is not a state document"))' returned FALSE`; Totals: 6 passed, 1 failed, 3 skipped |
+| Mutation reverted exactly (`git diff -- src/core/lv2/Lv2Proc.cpp` empty) → `cmake --build ...` | `build-5-restored.log` | 0 | built |
+| `QT_QPA_PLATFORM=offscreen ./Lv2StateTest` after the revert | `qtest-5-restored.log` | 0 | Totals: 7 passed, 0 failed, 3 skipped |
+| `ctest -R '^Lv2StateTest$' --output-on-failure` (from `build/tests`) | `test-5-ctest.log` | 0 | 100% tests passed, 1 of 1 |
 
-| Command (from the worktree unless noted) | Log | EXIT |
-| --- | --- | --- |
-| `cmake --build build --target Lv2StateTest -j4` | `build-1.log` | 2 (ccache temp dir under `zene-bunny-fix/dsh` denied; not a code error) |
-| `CCACHE_TEMPDIR=$PWD/build/ccache-tmp cmake --build build --target Lv2StateTest -j4` | `build-2.log` | 0 |
-| `cd build/tests && ctest -R '^Lv2StateTest$' --output-on-failure` | `test-2.log` | 0 (1 of 1 ctest entry passed) |
-| `QT_QPA_PLATFORM=offscreen ./Lv2StateTest` (in `build/tests`) | `qtest-1.log` | 0 (Totals: 7 passed, 0 failed, 3 skipped) |
+Earlier round-1 runs at HEAD, for reference: `build-2.log` (EXIT 0), `test-2.log` (EXIT 0),
+`qtest-1.log` (EXIT 0), in `new-p23-144.r1/logs`.
 
-Per QTest function: `aFailedStateRestoreIsReported` PASS, `malformedStateInstanceAttributeIsRefused`
-PASS. `aPluginsOwnStateRoundTrips`, `theStateElementIsWrittenExactlyWhenThereIsState` and
-`aSecondInstanceIsFoundByTheFirstsUri` SKIP, because this environment has no installed LV2 effect
-that implements the State interface. **The plug-in-refusal path is therefore not exercised by any
-test that ran here.**
+Per QTest function (after the test change): `aFailedStateRestoreIsReported` PASS,
+`malformedStateInstanceAttributeIsRefused` PASS, `rejectsAnEventWhosePaddingDoesNotFit` PASS.
+`aPluginsOwnStateRoundTrips`, `theStateElementIsWrittenExactlyWhenThereIsState` and
+`aSecondInstanceIsFoundByTheFirstsUri` SKIP, because the environment has no installed LV2 effect
+that implements the State interface. **The plug-in-refusal and success round-trip paths are
+therefore not exercised by any test that ran here.**
 
 ## Gates
 
-`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exited 1 before running
-any gate. Its log is `gates-1.log`. It tries to create `<worktree>/../<name>-feature-check`, which
-is `zene-studio-program/zene-qwen-new-p23-144-feature-check`, and that directory is outside the
-write-jail (`PermissionError`). The script was not changed.
+`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (log `gates-2.log`)
+exited 1 before any gate ran. It tries to write its per-gate logs to
+`zene-studio-program/zene-qwen-new-p23-144-feature-check/`. That folder is outside the write-jail,
+and writing `fork-sources.log` there fails with `PermissionError`. The script was not changed and
+I did not write into that folder. (The folder exists and was created by an earlier run, but it is
+not a path this lane may write to.)
 
-The same gate scripts were run directly from the worktree, with logs in the lane folder:
+The same gate scripts were run directly from the worktree, with logs in the lane folder
+(`new-p23-144.r2/logs`):
 
 | Gate script | Log | EXIT | Result |
 | --- | --- | --- | --- |
-| `bash tests/fork-sources-gate.sh` | `gate-fork-sources-2.log` | 0 | PASS |
-| `bash tests/all-sources-reproduce.sh` | `gate-all-sources-2.log` | 0 | PASS |
-| `bash tests/no-upstream-regression-gate.sh` | `gate-no-upstream-2.log` | 0 | PASS |
-| `tests/scripted/check-namespace` | `gate-check-namespace-2.log` | 0 | PASS |
-| `bash tests/no-tautology-gate.sh` | `gate-no-tautology-2.log` | 0 | PASS |
-| `python3 tests/doc-figures-gate.py` | `gate-doc-figures-2.log` | 0 | PASS |
-| `bash tests/complexity-gate.sh --check` | `gate-complexity-2.log` | 1 | 7 `REGRESSION` lines, none in a changed file |
-| `bash tests/file-length-gate.sh --check` | `gate-file-length-2.log` | 1 | 22 `REGRESSION` lines, none in a changed file |
+| `bash tests/fork-sources-gate.sh` | `gate-fork-sources-3.log` | 0 | PASS |
+| `bash tests/all-sources-reproduce.sh` | `gate-all-sources-3.log` | 0 | PASS |
+| `bash tests/no-upstream-regression-gate.sh` | `gate-no-upstream-3.log` | 0 | PASS |
+| `tests/scripted/check-namespace` | `gate-check-namespace-3.log` | 0 | PASS |
+| `bash tests/no-tautology-gate.sh` | `gate-no-tautology-3.log` | 0 | PASS |
+| `python3 tests/doc-figures-gate.py` | `gate-doc-figures-4.log` | 0 | PASS |
+| `bash tests/complexity-gate.sh --check` | `gate-complexity-3.log` | 1 | 7 `REGRESSION` lines, none naming a changed file |
+| `bash tests/file-length-gate.sh --check` | `gate-file-length-3.log` | 1 | 22 `REGRESSION` lines, none naming a changed file |
 
-The two ratchet gates exit 1 on items that already exist on the train. The branch has no product
-changes against its base, so `git diff --name-only <base>..HEAD` is empty and no item is in a file
-the branch changed. Under the script's own rule (`feature_check.py`, lines 84-87) those two rows
-PASS. The `REGRESSION` lines do not mention `lv2`.
+The two ratchets exit 1 on items that already exist on the train. The branch's changes against
+its base are `tests/src/core/Lv2StateTest.cpp` and the report
+(`git diff --name-only 639e1d23e..HEAD`), and no `REGRESSION` line names either file. Under the
+script's own rule (`feature_check.py` lines 84-87) those two rows PASS. The automated pre-submit
+gate row also passed in the review round.
 
 ## Self-check
 
-`submit_check.py` (log `submit-check-1.log`, EXIT 1) reported:
+Round 2 answers, against the pre-submit check that failed on "tests added or changed".
 
-- PASS commits on the branch; PASS working tree clean; PASS report present.
-- FAIL **tests added or changed**. This is expected for this verdict. No product file changed, so
-  no regression test was added. The claim-only exemption in `submit_check.py:94-97` applies only to
-  ALREADY-FIXED or FALSE-POSITIVE, and this verdict is NEEDS-CONTEXT. A test that pins the
-  unverified behaviour for a document that names another plugin would be an invented contract, so
-  none was added. The owner decision in "Why no fix was made" (3) comes first.
-- FAIL **gates (feature_check.py)**. This is an environment failure, not a code failure:
-  `feature_check.py` cannot create `zene-studio-program/zene-qwen-new-p23-144-feature-check`
-  (PermissionError, `gates-1.log`), which is outside the write-jail. The equivalent per-gate runs are
-  in the Gates table above: six PASS, and the two ratchets exit 1 on items this branch does not touch.
-
-ASK items:
-
-1. **Regression test fails with the fix reverted and passes with it (RED/GREEN).** Not applicable.
-   There is no product change to revert. The existing `aFailedStateRestoreIsReported` passes at HEAD
-   (`qtest-1.log`, EXIT 0), which covers the parse-failure part only.
-2. **Test is deterministic.** No test was added or changed.
-3. **Fix at the cause, every caller checked.** No fix was made. The callers of
-   `Lv2Proc::restoreState` were checked (`rg -n "restoreState\("` over `src include plugins tests`):
-   production caller `src/core/lv2/Lv2ControlBase.cpp:242`, and direct test calls at
-   `tests/src/core/Lv2StateTest.cpp:197`, `:201` and `:336`. The caller already reports a refused
-   payload (`Lv2ControlBase.cpp:237-249`).
-4. **No collateral damage.** No behaviour changed, so old projects and saved data load as before.
+1. **Regression test fails with the product change reverted and passes with it (RED/GREEN).**
+   There is no product fix, so there is no product change to revert. The closest evidence is the
+   mutation probe: with `Lv2Proc.cpp:816` mutated to `return true` (the behaviour the finding
+   describes), `Lv2StateTest` exits **1** (`qtest-4-mutant.log`), and the failing assertion is the
+   existing one at `Lv2StateTest.cpp:336`. With the line restored, it exits **0** (`qtest-5-restored.log`).
+   The new assertion at line 338 sits after line 336, so it is not the one that trips in that
+   probe. It also would not trip on an empty-document mutation, because lilv returns `nullptr` for
+   an empty string, so the return value is `false` either way. It is a pin on the contract, not a
+   RED test for a bug.
+2. **The test is deterministic.** It uses no clock, sleep, thread or race. Its inputs are literal
+   strings (`QString()`, `"this is not a state document"`) and the fixture instrument loaded from
+   the fixed URI `urn:zene:test:lv2-instrument`. Its outcome depends only on `restoreState`'s return value.
+3. **Fix at the cause; callers and siblings checked.** No fix was made. Callers of
+   `Lv2Proc::restoreState` (`rg -n "restoreState\("` over `src include plugins tests`): the
+   production caller is `src/core/lv2/Lv2ControlBase.cpp:242`, and the direct test calls are
+   `tests/src/core/Lv2StateTest.cpp:197`, `:201`, `:336` and `:338`. The production caller already
+   reports a refused payload (`Lv2ControlBase.cpp:237-249`). The sibling `saveState` guards with
+   `lilv_plugin_has_extension_data` (`Lv2Proc.cpp:792-793`); `restoreState` does not. That is a
+   difference, but it changes nothing for the verified cases, and I did not change it.
+4. **No collateral damage.** No product behaviour changed, so old projects and saved data load as
+   before. The only change is one added assertion in an existing test, which strengthens it. No
+   limit or check was added.
 5. **Verdict evidence (the claim is not ALREADY-FIXED or FALSE-POSITIVE).** The evidence is the
-   file:line citations above: `Lv2Proc.cpp:810-823` (restore call and its void result),
+   file:line citations in "Evidence": `Lv2Proc.cpp:810-823` (restore call and its void result),
    `/usr/include/lilv-0/lilv/lilv.h:1637-1638` (`void lilv_state_restore`), and
-   `Lv2ControlBase.cpp:237-264` (the existing report path).
+   `Lv2ControlBase.cpp:237-264` (the existing report path). The verdict is NEEDS-CONTEXT, so the
+   claim-only exemption in `submit_check.py` does not apply, and the test change above is what
+   addresses the "tests added or changed" row.
