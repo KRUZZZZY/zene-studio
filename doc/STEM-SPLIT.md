@@ -293,8 +293,8 @@ This is sanity of the I/O path, not a quality claim.
 Every quality setting (Q050-062.1: the segment overlap) measured on the
 **real pinned HTDemucs model** against reference stems known sample for sample.
 The figures come from one run of `tools/stem_quality_bench.py`. Its full JSON
-record, with every row, hash and run condition, is committed as
-`docs/050-features/Q050-062.3-bench.json`.
+record, with every row, hash and run condition, is committed unedited (as one
+fenced block) in `docs/050-features/Q050-062.3-bench.md`.
 
 **Reference set (fixed, hash-pinned):** four tracks of the MUSDB18-HQ **test**
 split (Zenodo record 3338373, `musdb18hq.zip`, 22,656,664,047 bytes; HTDemucs
