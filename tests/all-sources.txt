@@ -2925,6 +2925,7 @@ tests/src/core/RecordingRealtimeTest.cpp
 tests/src/core/RelativePathsTest.cpp
 tests/src/core/RemotePluginAudioPortsTest.cpp
 tests/src/core/RemotePluginClientE2ETest.cpp
+tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
 tests/src/core/RemotePluginShmFifoTest.cpp
 tests/src/core/RenderJobQueueTest.cpp
 tests/src/core/RenderSourceGuardTest.cpp

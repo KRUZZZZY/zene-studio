@@ -2634,7 +2634,8 @@ add_executable(RemotePluginShmFifoTest
 	${CMAKE_SOURCE_DIR}/src/common/SharedMemory.cpp
 	${CMAKE_SOURCE_DIR}/src/common/SystemSemaphore.cpp)
 target_include_directories(RemotePluginShmFifoTest PRIVATE
-	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated)
 target_link_libraries(RemotePluginShmFifoTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 target_compile_features(RemotePluginShmFifoTest PRIVATE cxx_std_20)
 target_compile_definitions(RemotePluginShmFifoTest PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
@@ -2646,8 +2647,29 @@ add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/commo
 target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
 target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
-target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+# LMMS_STATIC_DEFINE: this TU defines LMMS_EXPORT members, and outside lmmsobjs
+# lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
+target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck)
+# RemotePluginBase.h on a host without <sys/ipc.h> (Windows): a shadow
+# lmmsconfig.h, first on this target's include path, takes the header's own
+# SYNC_WITH_SHM_FIFO branch on every host (cluster ci-v041-5).
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoNoSysIpc/lmmsconfig.h
+	"#include \"${CMAKE_BINARY_DIR}/lmmsconfig.h\"\n#undef LMMS_HAVE_SYS_IPC_H\n")
+add_library(RemotePluginShmFifoNoSysIpcProbe OBJECT src/core/RemotePluginShmFifoNoSysIpcProbe.cpp)
+target_include_directories(RemotePluginShmFifoNoSysIpcProbe BEFORE PRIVATE
+	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoNoSysIpc)
+target_include_directories(RemotePluginShmFifoNoSysIpcProbe PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_link_libraries(RemotePluginShmFifoNoSysIpcProbe PRIVATE ${QT_LIBRARIES})
+target_compile_features(RemotePluginShmFifoNoSysIpcProbe PRIVATE cxx_std_20)
+target_compile_definitions(RemotePluginShmFifoNoSysIpcProbe PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+target_sources(RemotePluginShmFifoTest PRIVATE $<TARGET_OBJECTS:RemotePluginShmFifoNoSysIpcProbe>)
+
+# Tell the test whether each target compiles RemotePluginBase.cpp through the
+# static branch of lmms_export.h (cluster ci-v041-5).
+file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated/RemotePluginShmFifoTargetDefinitions.h
+	CONTENT "#define ZENE_SHM_FIFO_TEST_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoTest,COMPILE_DEFINITIONS>>\n#define ZENE_SHM_FIFO_COMPILE_CHECK_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoCompileCheck,COMPILE_DEFINITIONS>>\n")
 
 # ImportFilter's exception-path proof uses a real, isolated importer plugin
 # module so the exception crosses the same PluginFactory/ImportFilter path as
