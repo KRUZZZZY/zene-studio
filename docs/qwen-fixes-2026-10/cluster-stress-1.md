@@ -79,7 +79,10 @@ redirected to an empty directory, and the configured `audioengine/samplerate`, w
 | Part 2 only | fix applied but the `emptyBuffer()` pre-engine guard line deleted; rebuild test; run it | **EXIT=1**: `afterEngineStart…` fails, `Actual 44100 / Expected 48000`, 5 passed 1 failed (`15`, `16`) |
 | 4b restore | `git checkout -- <both product files> && git apply logs/fix.patch` (diff identical to `fix.patch`: `PATCH_IDENTICAL`) → rebuild the full target list above | apply EXIT=0, build EXIT=0 (`17`); ctest of the regression + family **EXIT=0**, 7/7 (`18`) |
 | End to end, fixed | `python3 -I logs/reloc_check.py …` | **EXIT=0**: `control.ping` ok, `control.quit`, process exit 0 (`10`, `11`, `19`) |
-| Gates | `feature_check.py <worktree>`, with only its log folder redirected (see below) | **EXIT=0**, all 8 PASS (`21-gates.log`) |
+| Gates, before the first commit | `feature_check.py <worktree>`, with only its log folder redirected (see below) | EXIT=0, all 8 PASS (`21-gates.log`). This was misleading: the new test was still untracked, so the `git ls-files` recipe did not see it. |
+| Gates, after the first commit | same | EXIT=1: fork-sources and all-sources-reproduce FAIL, `tests/all-sources.txt` lacks the new test (`24-gates-head.log`) |
+| Re-derive | header lines 1-157 of `tests/all-sources.txt` kept, its own "Regenerate with" recipe output written below them | the diff against the old list is exactly `+tests/src/core/SampleBufferNoEngineTest.cpp` |
+| Gates, final | same | **EXIT=0**, all 8 PASS (`25-gates.log`, `26-gates-final.log`) |
 
 **Gate note.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exits 1 with
 `PermissionError` (`20-gates.log`). It writes its logs to `<worktree>-feature-check`, a sibling of the worktree, and
@@ -87,6 +90,10 @@ this lane's write-jail refuses that. I did not edit the gate. I ran its unchange
 string replaced: the log folder became `logs/feature-check`. The result: fork-sources, all-sources-reproduce,
 no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity ("no new item in your files") and
 file-length all PASS, `RESULT: PASS`.
+
+`submit_check.py` runs the same unredirected `feature_check.py`. Its "gates (feature_check.py)" line therefore
+reports FAIL with an empty detail: the script dies with the `PermissionError` before any gate runs (`22`, `23`). That
+FAIL comes from the sandbox, not from a gate. The redirected run of the unchanged gate source is the real result.
 
 **Build note.** A direct `cmake build` reconfigure is refused by the lane guard (`01-cmake.log`). Building an
 existing target regenerated the tree for the new test. That first build failed only because ccache's default temp
@@ -96,6 +103,7 @@ dir is outside the jail (`03`). Every build after that ran with `CCACHE_TEMPDIR=
 
 - `tests/CMakeLists.txt`: `SampleBufferNoEngineTest` registered next to `RecordToolsNoEngineTest`.
 - `tests/fork-sources.txt`: the new test, in sorted position.
+- `tests/all-sources.txt`: re-derived from its own recipe, which adds only the new test.
 - `tests/upstream-modifications.txt`: entries for `include/SampleBuffer.h`, `src/core/SampleBuffer.cpp` and
   `tests/CMakeLists.txt`, each with a reason.
 
