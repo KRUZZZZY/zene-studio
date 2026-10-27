@@ -95,3 +95,5 @@ No new source files, so `tests/fork-sources.txt` is not touched.
 - **Caller and sibling check.** Done as listed in the Evidence section. The sibling `&x[0][0]` sites in other functions are reported and left unchanged.
 - **Gates.** feature_check.py itself exited 1 for the environmental reason stated; the reproduction of its eight rows gives PASS for all (see Gates).
 - **Registration.** Inherited files changed are registered in `tests/upstream-modifications.txt` with reasons, in the same commit.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: this verdict is FIXED.
+- **submit_check gates row.** `submit_check.py` runs `feature_check.py`, which exits 1 with `PermissionError` creating `<worktree>/../zene-qwen-new-p9-283-feature-check`, outside the write-jail. Its stdout has no FAIL rows (`gates-6-feature-check-rerun.log`). The eight gate commands themselves all pass as recorded above.
