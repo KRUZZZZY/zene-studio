@@ -480,8 +480,8 @@ graphModel::graphModel(float ymin, float ymax, int length, Model* parent, bool d
 	m_samples(std::max(length, MinGraphLength)),
 	m_length(std::max(length, MinGraphLength)),
 	// A reversed pair names the same interval: store it ordered, as std::clamp needs
-	m_minValue(std::min(ymin, ymax)),
-	m_maxValue(std::max(ymin, ymax)),
+	m_minValue(ymin > ymax ? ymax : ymin),
+	m_maxValue(ymin > ymax ? ymin : ymax),
 	m_step(std::clamp(step, 0.f, std::abs(ymax - ymin)))
 {
 }

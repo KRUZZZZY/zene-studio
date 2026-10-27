@@ -24,6 +24,8 @@
 #include <QtTest>
 
 #include <array>
+#include <cmath>
+#include <limits>
 
 #include "Engine.h"
 #include "EnvelopeAndLfoParameters.h"
@@ -137,6 +139,14 @@ private slots:
 	{
 		graphModel graph(1.0f, -1.0f, 4, nullptr);
 		QCOMPARE(graph.minValue(), -1.0f);
+		QCOMPARE(graph.maxValue(), 1.0f);
+	}
+
+	void constructorPreservesOrderedNaNBound()
+	{
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		graphModel graph(nan, 1.0f, 4, nullptr);
+		QVERIFY(std::isnan(graph.minValue()));
 		QCOMPARE(graph.maxValue(), 1.0f);
 	}
 
