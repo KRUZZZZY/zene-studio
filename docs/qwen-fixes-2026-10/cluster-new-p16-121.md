@@ -67,6 +67,7 @@ All commands were run from the worktree or from `build/tests` as stated. Logs ar
 | Neighbour rerun | `ctest -R ControlSuccessPathsTest --output-on-failure > test-8-csp-rerun.log` | 8 | the same 3 failures (deterministic) |
 | Gate, as written | `python3 .../feature_check.py <worktree> > gate-1-feature-check.log` | 1 | Crashed before any check: `PermissionError` creating `<worktree>-feature-check`, outside the write-jail. |
 | Gate, same checks, logs redirected | `python3 -I $TMPDIR/gate-driver-p16-121/run_gate.py <worktree> > gate-2-driver.log` | 0 | `RESULT: PASS`. Six simple gates exit 0 (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures). Complexity and file-length: no new item in the changed files. |
+| Completion check | `python3 .../submit_check.py <worktree> new-p16-121 > submit-check-1-postcommit.log` | 1 | PASS: commits, clean tree, report, tests. FAIL: gates item only (the permission error above). |
 
 ## Self-check
 
@@ -86,7 +87,9 @@ All commands were run from the worktree or from `build/tests` as stated. Logs ar
 
 5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** Not applicable beyond the code citation in "Finding status".
 
+**Completion check (`submit_check.py`, after the fix commit), logged in `submit-check-1-postcommit.log`: EXIT 1.** PASS: commits on the branch, working tree clean, report present, tests added or changed. FAIL: `gates (feature_check.py)` only, for the reason below. The five ASK items are answered above.
+
 **Open items in this sandbox (not hidden):**
-- `feature_check.py` as written exits 1 here, because it must create `<worktree>-feature-check` next to the worktree, which the write-jail forbids. It runs no check before failing. I ran the same six simple checks and the two ratchet checks through the script's own functions in `gate-driver-p16-121/run_gate.py`, with logs in the LOG FOLDER (`gates/`). The gate logic, limits and baselines are unchanged. The `submit_check.py` gate item will fail here for the same permission reason.
+- **BLOCKED on the gate item only:** `feature_check.py` exits 1 here, because it must create `<worktree>-feature-check` next to the worktree, which the write-jail forbids. It runs no check before failing. I did not create that directory or work around the jail. I ran the same six simple checks and the two ratchet checks through the script's own functions in `gate-driver-p16-121/run_gate.py`, with logs in the LOG FOLDER (`gates/`). The gate logic, limits and baselines are unchanged. The gate result above is the driver's, not the script's; the completion check's gate item needs a run where the worktree's parent is writable.
 - `ControlSuccessPathsTest` fails 3 of 18 functions, deterministically, in `controller.template_save` (`tests/src/core/ControlSuccessPathsTest.cpp:239`) and in `removeRecursively` on `document-templates` (`:516`, `:549`). These run before any export. The template write targets `~/Documents/Zene Studio/presets/controller-templates/`, outside the worktree. I did not run this test on the base commit, so I cannot say whether it fails there. The assertions do not pass through `MidiExport.cpp` or `MidiFile.hpp`.
 - The first baseline build failed on a ccache temp-file permission error. Environmental; the rebuild with `CCACHE_TEMPDIR` set succeeded with no code change.
