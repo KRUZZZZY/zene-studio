@@ -111,3 +111,26 @@ Gates, run directly from the worktree after the final code change (see Deviation
 
 - Other widgets with the same `addDefaultActions` pattern (`src/gui/widgets/LcdSpinBox.cpp:77`, `src/gui/widgets/MixerChannelLcdSpinBox.cpp:80`, `src/gui/widgets/TempoSyncBarModelEditor.cpp:91`) are outside this finding and were not examined.
 - Right-click and copy-drag on a live fader: the live path is unchanged by the guards, but no new test drives those with a live model.
+
+## Self-check
+
+Completion check run: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-108 new-p14-108 > $L/submit-check-1.log 2>&1` → EXIT=1 (`submit-check-1.log`). PASS: commits on the branch, working tree clean, report with verdict, tests changed. FAIL before this section was written: "Self-check" section missing. FAIL that remains: "gates (feature_check.py)" (see item 0).
+
+0. **Gates row (`feature_check.py`): not verified by the wrapper.** It exits 1 with `PermissionError` creating `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-108-feature-check` (`gate-1-feature-check.log`), a folder outside this write-jail. Its ratchet baseline cache also writes outside the jail. I did not change the script. Its gate commands, run directly from the worktree on the final tree: six simple gates EXIT 0; complexity and file-length EXIT 1 with train-wide regression lines, none naming `src/gui/widgets/Fader.cpp` or `tests/src/gui/VcaStripLifetimeTest.cpp` (`gate-2-complexity.log`, `gate-2-file-length.log`). Under the wrapper's rule (fail only on items in changed files) those rows would pass, but the wrapper itself has not produced that result. Needs a re-run from a location the sandbox allows.
+
+1. **Regression FAILS with the product change reverted and PASSES with it.** Yes, with exit codes (full table above): RED on the unfixed base, exit 139 (SIGSEGV) for `aFaderWhoseModelDiesIgnoresMousePressAndDrag` (`test-1-red-*.log`), and 139 for each of the other four destroyed-model functions when run alone (`test-1-red-*.log`, `test-8-menu-red.log`); with the final diff reverted (4b), 139 for the five destroyed-model functions and 0 for the live control (`test-11-reverted-*.log`), ctest exit 8. Reapplied: 13 passed, 0 failed, exit 0 (`test-12-reapplied-final.log`), ctest exit 0.
+
+2. **Deterministic.** No timers, sleeps, threads or wall-clock values. Events are built with `QMouseEvent`/`QWheelEvent`/`QContextMenuEvent` at fixed positions (20, 100) and delivered synchronously with `QCoreApplication::sendEvent`. The only numbers are the model's fixed range (0..2, value 1.0) and the wheel's 120-unit notch. The dead-model paths return before any `QInputDialog` or `QMenu::exec()` can open, so nothing blocks on an event loop. Test file: `tests/src/gui/VcaStripLifetimeTest.cpp:147-220`.
+
+3. **Fix at the cause, every caller and sibling checked.** Every read of `model()` in `src/gui/widgets/Fader.cpp` was listed (rg for `updateTextFloat|getModelValueAsDbString|dbValueText|calculateKnobPosYFromModel|setVolumeByLocalPixelValue|adjustModelByDBDelta|adjustByDialog|adjustByDecibelDelta`). Results:
+   - `adjustByDecibelDelta` (`:125`) is called by `adjust()` (`:122`, reached from `src/gui/MixerView.cpp:732`) and `wheelEvent` (`:310`). Guarded at `:128`.
+   - `adjustByDialog` (`:136`) is called only from `mouseDoubleClickEvent` (`:275`). Guarded at `:139`.
+   - `calculateKnobPosYFromModel`, `setVolumeByLocalPixelValue`, `updateTextFloat` and `adjustModelByDBDelta` are called only from the mouse handlers and `adjustByDecibelDelta`, all behind a guard, or from `paintEvent` (`:635`, behind the existing guard at `:616`).
+   - `getModelValueAsDbString`/`dbValueText` (`:552`/`:562`) are null-safe already (`dbValueText` returns "-inf" for a null model); `accessibleValueText` (`:557`) and `modelValueChanged` (`:547`, connected to `dataChanged` at `:105`) go through `dbValueText`.
+   - `keyPressEvent` (`:591`) and `mouseReleaseEvent` were already null-safe on the base.
+   - The base-class paths that the fixed handlers no longer reach for a dead fader (`AutomatableModelView::mousePressEvent`, `addDefaultActions`) were left unchanged; they are still reachable by other widgets.
+   - Other widgets with the same `addDefaultActions` pattern (`LcdSpinBox`, `MixerChannelLcdSpinBox`, `TempoSyncBarModelEditor`) were not changed and not examined.
+
+4. **No collateral damage.** `git show --numstat HEAD` for `src/gui/widgets/Fader.cpp`: `16 0` (no deletions); the guards only fire when `model()` is null, which previously crashed. The live-model control (`aLiveFaderStillTakesWheelInput`) passes before and after, and the family (8 registered tests) passes. No save/load, no command, no limit, no check that other callers could hit. The journal and undo calls are below the guards and unchanged with a live model.
+
+5. **Verdict FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** This ask is not applicable; the code is cited above (`src/gui/widgets/Fader.cpp:128, 139, 177, 196, 217`).
