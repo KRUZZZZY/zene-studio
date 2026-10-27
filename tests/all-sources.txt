@@ -3257,6 +3257,7 @@ tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
 tests/src/plugins/SfzEffectBusViewTest.cpp
+tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfzFilePoolTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp

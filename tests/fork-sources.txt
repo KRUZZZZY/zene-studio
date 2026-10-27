@@ -2953,6 +2953,8 @@ tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/HistoricalBufferResizeTest.cpp
 # cluster new-p21-188: sfizz HistoricalBuffer empty-average regression.
 tests/src/plugins/HistoricalBufferEmptyTest.cpp
+# cluster new-p23-90: sfizz EQHolder writes its outputs when the buffer pool is exhausted.
+tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
 tests/src/plugins/SfzSimdHelperAlignmentTest.cpp
 tests/src/plugins/SfzTestSupport.h
