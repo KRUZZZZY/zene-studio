@@ -38,6 +38,7 @@
 #include <sndfile.h>
 
 extern "C" {
+#include <libavutil/error.h>
 #include <libswresample/swresample.h>
 }
 
@@ -60,6 +61,7 @@ struct WavSink
 	std::vector<float> buffer;
 	long long frames = 0;
 	bool writeFailed = false;
+	bool convertFailed = false;
 	QString error;
 
 	WavSink() = default;
@@ -119,16 +121,28 @@ struct WavSink
 		return true;
 	}
 
-	//! Convert @a count input frames (none flushes what the resampler holds) and write them; false once a write falls short.
+	//! Record a resampler error @a code: the decode stops and the WAV is never published.
+	bool failConversion(int code)
+	{
+		char text[AV_ERROR_MAX_STRING_SIZE] = {};
+		av_strerror(code, text, sizeof text);
+		convertFailed = true;
+		error = QString::fromUtf8(text);
+		return false;
+	}
+
+	//! Convert @a count input frames (none flushes what the resampler holds) and write them; false once a conversion or write fails.
 	bool write(const uint8_t** input, int count)
 	{
-		if (writeFailed) { return false; }
+		if (writeFailed || convertFailed) { return false; }
 		const int room = swr_get_out_samples(resampler, count);
-		if (room <= 0) { return true; }
+		if (room < 0) { return failConversion(room); }
+		if (room == 0) { return true; }
 		buffer.resize(static_cast<std::size_t>(room) * 2);
 		auto* out = reinterpret_cast<uint8_t*>(buffer.data());
 		const int got = swr_convert(resampler, &out, room, input, count);
-		if (got <= 0) { return true; }
+		if (got < 0) { return failConversion(got); }
+		if (got == 0) { return true; }
 		const sf_count_t written = sf_writef_float(file, buffer.data(), static_cast<sf_count_t>(got));
 		if (written != got)
 		{
@@ -188,6 +202,7 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out, Video
 	if (!sink.openFile(wav, media.codec->sample_rate)) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 	if (!decodeAll(media, sink, control))
 	{
+		if (sink.convertFailed) { return QObject::tr("the video's audio could not be converted (%1)").arg(sink.error); }
 		if (sink.writeFailed) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 		return QObject::tr("the extraction was cancelled");
 	}

@@ -72,6 +72,10 @@
 #include <unistd.h>
 #include <atomic>
 #include <functional>
+
+extern "C" {
+#include <libswresample/swresample.h>
+}
 #endif
 
 using namespace lmms;
@@ -164,6 +168,17 @@ std::atomic_bool failFrameAllocation{false};
 std::atomic_bool failCodecContextAllocation{false};
 std::atomic_bool failCodecAfterStream{false};
 std::atomic_bool failStreamAllocation{false};
+//! swr_convert calls that succeed before one fails; -1 disarms the hook.
+std::atomic_int swrConvertCallsBeforeFailure{-1};
+std::atomic_int swrConvertFailuresInjected{0};
+
+//! Arm one swr_convert failure for the scope's lifetime, after @a callsBeforeFailure successful conversions.
+class ScopedSwrConvertFailure
+{
+public:
+	explicit ScopedSwrConvertFailure(int callsBeforeFailure) { swrConvertCallsBeforeFailure.store(callsBeforeFailure); }
+	~ScopedSwrConvertFailure() { swrConvertCallsBeforeFailure.store(-1); }
+};
 
 //! Run @a checkFailure with one FFmpeg allocation forced to fail; crashes stay inside the child.
 bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std::atomic_bool& fail)
@@ -208,6 +223,18 @@ extern "C" AVStream* avformat_new_stream(AVFormatContext* context, const AVCodec
 		failCodecContextAllocation.store(true, std::memory_order_relaxed);
 	}
 	return stream;
+}
+
+extern "C" int swr_convert(SwrContext* context, uint8_t* const* out, int outCount, const uint8_t* const* in, int inCount)
+{
+	if (swrConvertCallsBeforeFailure.load(std::memory_order_relaxed) >= 0
+		&& swrConvertCallsBeforeFailure.fetch_sub(1, std::memory_order_relaxed) == 0)
+	{
+		swrConvertFailuresInjected.fetch_add(1, std::memory_order_relaxed);
+		return AVERROR_INVALIDDATA;
+	}
+	static const auto real = reinterpret_cast<decltype(&swr_convert)>(dlsym(RTLD_NEXT, "swr_convert"));
+	return real == nullptr ? AVERROR(ENOSYS) : real(context, out, outCount, in, inCount);
 }
 #pragma GCC visibility pop
 #endif // ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
@@ -725,6 +752,30 @@ private slots:
 		QCOMPARE(song->tracks().size(), tracksBefore + (done ? 1 : 0));
 		if (!done) { QVERIFY2(!QFileInfo::exists(out), "a cancelled extraction left its WAV"); }
 		song->clearProject();
+	}
+
+	//! A resampler error after audio was already converted fails the extraction and publishes no WAV
+	//! (a negative swr_convert result used to count as an empty success and commit a truncated file).
+	void aResamplerErrorFailsTheExtractionAndPublishesNoWav()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		const QString out = m_dir.filePath(QStringLiteral("resampler-failure.wav"));
+		VideoAudio audio;
+		QString error;
+		const int injectedBefore = swrConvertFailuresInjected.load();
+		bool extracted = true;
+		{
+			ScopedSwrConvertFailure failure(1);
+			extracted = extractVideoAudio(m_clip, out, &audio, &error);
+		}
+		QCOMPARE(swrConvertFailuresInjected.load() - injectedBefore, 1);
+		QVERIFY2(!extracted, "a resampler error was reported as a successful extraction");
+		QVERIFY(!error.isEmpty());
+		QVERIFY2(!QFileInfo::exists(out), "a truncated WAV was published after a resampler error");
+#else
+		QSKIP("the resampler failure hook needs Linux or macOS with FFmpeg");
+#endif
 	}
 
 	//! A failed FFmpeg allocation is reported, not dereferenced.
