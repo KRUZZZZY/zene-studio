@@ -105,6 +105,39 @@ private slots:
 
 		LadspaControls::setLinkPortVisitor( nullptr, nullptr );
 	}
+
+	// A plugin whose channel count does not divide the host's, such as a three-input
+	// plugin on a stereo host, has no processors. It has no ports to walk, so the global
+	// stereo link must change nothing and must not divide by the zero processor count.
+	void globalStereoLinkOfAPluginWithoutProcessorsWalksNoPortsAndDoesNotDivideByZero()
+	{
+		LinkWalk walk;
+		LadspaControls::setLinkPortVisitor( &onLinkPort, &walk );
+
+		LadspaControls controls( 0, 4 );
+
+		controls.setGlobalLinkState( false );
+		controls.setGlobalLinkState( true );
+		QCOMPARE( walk.calls, 0 );
+
+		LadspaControls::setLinkPortVisitor( nullptr, nullptr );
+	}
+
+	// A plugin without processors may also report no controls, so the global stereo link
+	// must be safe with zero processors and zero controls as well.
+	void globalStereoLinkOfAPluginWithoutProcessorsOrControlsDoesNotDivideByZero()
+	{
+		LinkWalk walk;
+		LadspaControls::setLinkPortVisitor( &onLinkPort, &walk );
+
+		LadspaControls controls( 0, 0 );
+
+		controls.setGlobalLinkState( false );
+		controls.setGlobalLinkState( true );
+		QCOMPARE( walk.calls, 0 );
+
+		LadspaControls::setLinkPortVisitor( nullptr, nullptr );
+	}
 };
 
 QTEST_GUILESS_MAIN(LadspaGlobalLinkTest)
