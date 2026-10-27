@@ -29,6 +29,7 @@
 #include "DynamicsProcessorControls.h"
 #include "DynamicsProcessor.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "Graph.h"
 #include "Engine.h"
 #include "Song.h"
@@ -81,20 +82,12 @@ void DynProcControls::loadSettings( const QDomElement & _this )
 	m_releaseModel.loadSettings( _this, "release" );
 	m_stereomodeModel.loadSettings( _this, "stereoMode" );
 	
-//load waveshape
-	int size = 0;
-	char * dst = 0;
-	base64::decode( _this.attribute( "waveShape"), &dst, &size );
-
-	if( size == m_wavegraphModel.length() * static_cast<int>( sizeof( float ) ) )
-	{
-		m_wavegraphModel.setSamples( (float*) dst );
-	}
-	else
+//load waveshape: exactly 200 finite values, else the default curve (Q050-486)
+	if (waveform::loadGraph(_this, QStringLiteral("waveShape"), m_wavegraphModel,
+		QStringLiteral("Dynamics Processor")) != waveform::DecodeStatus::Ok)
 	{
 		setDefaultShape();
 	}
-	delete[] dst;
 
 }
 

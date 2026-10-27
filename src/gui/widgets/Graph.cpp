@@ -533,6 +533,18 @@ void graphModel::setSamples( const float * _samples )
 
 
 
+void graphModel::setSamples(const float* samples, int count)
+{
+	// Q050-486: a source with its own length never reads past its end.
+	const int copied = std::min(std::max(count, 0), length());
+	if (samples == nullptr || copied == 0) { return; }
+	std::copy(samples, samples + copied, m_samples.begin());
+
+	emit samplesChanged(0, copied - 1);
+}
+
+
+
 void graphModel::setWaveToSine()
 {
 	for( int i = 0; i < length(); i++ )

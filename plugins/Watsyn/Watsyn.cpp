@@ -31,6 +31,7 @@
 
 #include "Watsyn.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
@@ -582,20 +583,11 @@ void WatsynInstrument::loadSettings( const QDomElement & _this )
 	b1_rtune.loadSettings( _this, "b1_rtune" );
 	b2_rtune.loadSettings( _this, "b2_rtune" );
 
-	// load graphs
-	int size = 0;
-	char * dst = 0;
-
-	base64::decode( _this.attribute( "a1_wave"), &dst, &size );
-	a1_graph.setSamples( (float*) dst );
-	base64::decode( _this.attribute( "a2_wave"), &dst, &size );
-	a2_graph.setSamples( (float*) dst );
-	base64::decode( _this.attribute( "b1_wave"), &dst, &size );
-	b1_graph.setSamples( (float*) dst );
-	base64::decode( _this.attribute( "b2_wave"), &dst, &size );
-	b2_graph.setSamples( (float*) dst );
-
-	delete[] dst;
+	// load graphs: each from exactly GRAPHLEN finite saved values, else it keeps its wave (Q050-486)
+	waveform::loadGraph(_this, QStringLiteral("a1_wave"), a1_graph, QStringLiteral("Watsyn"));
+	waveform::loadGraph(_this, QStringLiteral("a2_wave"), a2_graph, QStringLiteral("Watsyn"));
+	waveform::loadGraph(_this, QStringLiteral("b1_wave"), b1_graph, QStringLiteral("Watsyn"));
+	waveform::loadGraph(_this, QStringLiteral("b2_wave"), b2_graph, QStringLiteral("Watsyn"));
 
 	m_abmix.loadSettings( _this, "abmix" );
 

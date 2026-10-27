@@ -3096,3 +3096,8 @@ docs/qwen-fixes-2026-10/cluster-new-p23-128.md
 tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
 # cluster new-p23-187 (2026-10): fix and verification report for Oscilloscope pause-setting persistence (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p23-187.md
+# Q050-486 (2026-10): the shared loader for saved plug-in waveform data (fork-NEW) and its regressions.
+include/WaveformData.h
+src/core/WaveformData.cpp
+tests/src/core/WaveformDataTest.cpp
+tests/src/plugins/GraphWaveformLoadTest.cpp

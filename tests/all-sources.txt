@@ -924,6 +924,7 @@ include/VisibilitySetMenu.h
 include/VstSyncController.h
 include/VstSyncData.h
 include/WarpMarkers.h
+include/WaveformData.h
 include/WaveformPreview.h
 include/WcagContrast.h
 include/WorkflowRecordingIndicator.h
@@ -2167,6 +2168,7 @@ src/core/VideoFramePump.cpp
 src/core/VideoReference.cpp
 src/core/ViewMemory.cpp
 src/core/VstSyncController.cpp
+src/core/WaveformData.cpp
 src/core/audio/AudioAlsa.cpp
 src/core/audio/AudioDevice.cpp
 src/core/audio/AudioFileDevice.cpp
@@ -3010,6 +3012,7 @@ tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
+tests/src/core/WaveformDataTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
@@ -3181,6 +3184,7 @@ tests/src/plugins/ExprSynthAllocationTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
+tests/src/plugins/GraphWaveformLoadTest.cpp
 tests/src/plugins/HistoricalBufferEmptyTest.cpp
 tests/src/plugins/HistoricalBufferResizeTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp

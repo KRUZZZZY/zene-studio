@@ -457,6 +457,11 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/plugins/EqFilterTest.cpp
 	src/plugins/WatsynSelectedGraphTest.cpp
+	# Q050-486: the shared loader for saved plug-in waveform data (bounds, strict base64, exact
+	# counts, finite values, owning storage), and every plug-in that loads a graph through it,
+	# driven through the real modules' saved XML. Both are AddressSanitizer builds on Linux (below).
+	src/core/WaveformDataTest.cpp
+	src/plugins/GraphWaveformLoadTest.cpp
 	# cluster new-p17-203: a Watsyn note that starts while a graph edit has the staging
 	# wavetable half rewritten must render the last complete published wave, never the
 	# half-written one.
@@ -2228,6 +2233,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
 		# Cluster new-p17-205: the Watsyn save/load regression loads the watsyn module.
 		OR LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest"
+		# Q050-486: the waveform-load regression loads the eight graph-saving modules.
+		OR LMMS_TEST_NAME STREQUAL "GraphWaveformLoadTest"
 		# 0.5.0 Q050-141: the touch-layout geometry test creates an instrument automation lane.
 		OR LMMS_TEST_NAME STREQUAL "TouchLayoutTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
@@ -2323,6 +2330,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Cluster new-p17-205: the Watsyn save/load regression needs the watsyn module built first.
 	if(LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest")
 		add_dependencies(${LMMS_TEST_NAME} watsyn)
+	endif()
+
+	# Q050-486: the waveform-load regression needs every module whose saved graph it loads.
+	if(LMMS_TEST_NAME STREQUAL "GraphWaveformLoadTest")
+		foreach(GRAPH_MODULE watsyn multitapecho waveshaper dynamicsprocessor freeboy vibedstrings xpressive bitinvader)
+			if(TARGET ${GRAPH_MODULE})
+				add_dependencies(${LMMS_TEST_NAME} ${GRAPH_MODULE})
+			endif()
+		endforeach()
 	endif()
 
 	# cluster new-p11-38-port: the note-command transaction test puts a real instrument on its
@@ -2698,6 +2714,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	target_link_options(AudioFileProcessorWaveViewTest PRIVATE -fsanitize=float-cast-overflow)
 	set_tests_properties(AudioFileProcessorWaveViewTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;UBSAN_OPTIONS=halt_on_error=1")
+endif()
+
+# Q050-486: the waveform-loader tests run under AddressSanitizer where it and LeakSanitizer are
+# supported (Linux, GCC/Clang). The plug-in modules and lmmsobjs stay uninstrumented, but ASan's
+# allocator and memcpy/memmove interceptors cover them, so a read past a decoded buffer aborts
+# the run and GraphWaveformLoadTest's explicit leak checks see every plug-in allocation.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	foreach(ASAN_TEST WaveformDataTest GraphWaveformLoadTest)
+		target_compile_options(${ASAN_TEST} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+		target_link_options(${ASAN_TEST} PRIVATE -fsanitize=address)
+	endforeach()
+	set_tests_properties(GraphWaveformLoadTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ASAN_OPTIONS=detect_leaks=1:leak_check_at_exit=0:use_sigaltstack=0")
 endif()
 
 # The expression clock crosses the 32-bit frame boundary in one rendered
