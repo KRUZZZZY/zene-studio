@@ -14,10 +14,12 @@ identity and run conditions the doc relies on.
 Usage: stem-quality-bench.py <stub model>. Exit 0 pass, 1 fail, 77 skip (no numpy / onnxruntime).
 """
 import json
+import importlib.util
 import os
 import subprocess
 import sys
 import tempfile
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TOOL = os.path.join(HERE, os.pardir, "tools", "stem_quality_bench.py")
@@ -84,6 +86,38 @@ def identity_failures(record):
     return failures
 
 
+def portability_failures():
+    """The benchmark's fetch and run helpers also work without Unix-only paths/APIs."""
+    spec = importlib.util.spec_from_file_location("stem_quality_bench_under_test", TOOL)
+    bench = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bench)
+    failures = []
+
+    temp_dir = os.path.abspath("portable temp")
+    tmpdir = os.environ.pop("TMPDIR", None)
+    try:
+        with mock.patch("tempfile.gettempdir", return_value=temp_dir):
+            if os.path.dirname(bench._scratch_wav()) != temp_dir:
+                failures.append("fetch scratch WAV does not use tempfile.gettempdir()")
+    finally:
+        if tmpdir is not None:
+            os.environ["TMPDIR"] = tmpdir
+
+    getloadavg = getattr(bench.os, "getloadavg", None)
+    try:
+        if getloadavg is not None:
+            delattr(bench.os, "getloadavg")
+        try:
+            if bench.load_average() is not None:
+                failures.append("missing os.getloadavg() should record no load average")
+        except Exception as exc:
+            failures.append(f"load average requires os.getloadavg(): {exc}")
+    finally:
+        if getloadavg is not None:
+            bench.os.getloadavg = getloadavg
+    return failures
+
+
 def main():
     if len(sys.argv) != 2:
         print(__doc__)
@@ -106,7 +140,7 @@ def main():
             return 1
         with open(out) as fh:
             record = json.load(fh)
-    failures = record_failures(record)
+    failures = portability_failures() + record_failures(record)
     for row in record["rows"]:
         failures += row_failures(row, expected)
     for failure in failures:

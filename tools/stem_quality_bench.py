@@ -48,6 +48,7 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 import zipfile
@@ -220,7 +221,7 @@ def read_wav_member(archive, name):
 
 
 def _scratch_wav():
-    return os.path.join(os.environ.get("TMPDIR", "/tmp"), f"stem-quality-bench-{os.getpid()}.wav")
+    return os.path.join(tempfile.gettempdir(), f"stem-quality-bench-{os.getpid()}.wav")
 
 
 def track_slug(track):
@@ -296,8 +297,11 @@ def run_cli(cli, model, mix_path, out_dir, quality, segment):
 
 
 def load_average():
+    getloadavg = getattr(os, "getloadavg", None)
+    if getloadavg is None:
+        return None
     try:
-        return [round(value, 2) for value in os.getloadavg()]
+        return [round(value, 2) for value in getloadavg()]
     except OSError:
         return None
 
