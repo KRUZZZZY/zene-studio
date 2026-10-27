@@ -24,7 +24,12 @@
 
 #include "Vst3Parameter.h"
 
+#include <cmath>
+
+#include <QDomElement>
+
 #include "ParameterReadOnly.h"
+#include "Vst3Host.h"
 
 namespace lmms
 {
@@ -50,6 +55,28 @@ QString Vst3ParamModel::displayValue(const float value) const
 		return m_formatter(value);
 	}
 	return FloatModel::displayValue(value);
+}
+
+void restoreSavedParameters(vst3::HostedPlugin& plugin, const QDomElement& element)
+{
+	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
+	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
+		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	{
+		bool idOk = false;
+		bool valueOk = false;
+		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
+		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
+		const int index = idOk ? plugin.paramIndex(id) : -1;
+		if (!valueOk || !std::isfinite(value) || index < 0
+			|| plugin.parameters()[static_cast<std::size_t>(index)].readOnly)
+		{
+			continue;
+		}
+		// The value is written with 9 significant digits, so a float that came back reads back equal.
+		if (std::abs(plugin.paramNormalized(id) - value) <= 1e-6f) { continue; }
+		plugin.notifyController(id, value);
+	}
 }
 
 } // namespace lmms

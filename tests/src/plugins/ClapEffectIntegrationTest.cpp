@@ -78,6 +78,7 @@ private slots:
 	void testProcessesAudioThroughAudioBus();
 	void testMultiChannelBusPassesThroughExtraChannels();
 	void testStateRoundTripThroughMmp();
+	void testAValueTheStateDoesNotCarryIsRestoredFromTheHost();
 	void testRendersBeforeAfterWav();
 	void testLegacyAudioBufferPathRoutesPlanarPorts();
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
@@ -348,6 +349,50 @@ void ClapEffectIntegrationTest::testStateRoundTripThroughMmp()
 		qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
 	qInfo("state round trip: input 0.5, restored gain 0.3 -> measured out[0]=%.9f",
 		storage[0][0]);
+}
+
+/*! stress-4 (b): a SUCCESSFUL clap.state load that does not bring a writable parameter back must not lose it.
+ *  The stress run lost Surge XT's parameters this way, and an effect that has not heard audio yet loses every
+ *  edit: the host hands a change to the plug-in only in process(), so a save before the next block writes the
+ *  plug-in's old value into its state. Here Gain is set to 0.3 and the effect saved with no block in between, so
+ *  the plug-in's state holds its default and the host's saved <parameters> hold 0.3. Loading it back leaves Gain
+ *  at 0.3, and the next block applies it to the audio. */
+void ClapEffectIntegrationTest::testAValueTheStateDoesNotCarryIsRestoredFromTheHost()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.3f);
+
+	QDomDocument doc;
+	QDomElement element = doc.createElement("effect");
+	effect->saveSettings(doc, element);
+	QVERIFY2(!element.elementsByTagName(QStringLiteral("state")).isEmpty(),
+		"the effect wrote no plug-in state: this case is about a SUCCESSFUL state load");
+
+	gain->setValue(0.9f);
+	effect->loadSettings(element);
+	QVERIFY2(std::abs(gain->value() - 0.3f) < 1e-6f, qPrintable(QStringLiteral("restored %1").arg(gain->value())));
+
+	SampleFrame storage[fpp];
+	for (f_cnt_t frame = 0; frame < fpp; ++frame)
+	{
+		storage[frame][0] = 0.5f;
+		storage[frame][1] = 0.5f;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f, qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
+	chain.clear();
 }
 
 void ClapEffectIntegrationTest::testRendersBeforeAfterWav()

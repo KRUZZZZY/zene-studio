@@ -257,6 +257,7 @@ private slots:
 	void testReadOnlyParametersAreNotKnobs();
 	void testReadOnlyParametersAreNotEffectKnobs();
 	void testReadOnlyParametersAreReportedAndRefusedOverControl();
+	void testAValueTheChunksDoNotCarryIsRestoredFromTheHost();
 
 private:
 	//! The real module, loaded exactly as the plugin factory loads it.
@@ -714,7 +715,11 @@ void Vst3InstrumentIntegrationTest::testStateSurvivesTheProjectFile()
 	QVERIFY2(freshInstrument != nullptr, "the project carried no instrument to reload");
 	QCOMPARE(QString::fromLatin1(freshInstrument->descriptor()->name),
 		QStringLiteral("vst3instrument"));
-	QCOMPARE(freshInstrument->parameterModel(0)->value<float>(), FixtureLevel);
+	// The fixture's controller does not read the component state back, so straight after the chunks are applied
+	// it still reports its default (0.5) while the processor renders the saved 0.75. The host's saved value of
+	// the parameter is put back over that disagreement (stress-4), so the model now shows what is rendered -
+	// it used to show the stale FixtureLevel.
+	QCOMPARE(freshInstrument->parameterModel(0)->value<float>(), WrittenLevel);
 
 	const auto restored = renderNote(freshTrack.get(), freshInstrument, note, 0,
 		Blocks * BlockFrames);
@@ -1044,6 +1049,39 @@ void Vst3InstrumentIntegrationTest::testReadOnlyParametersAreReportedAndRefusedO
 	QVERIFY2(written.ok, qPrintable(written.errorMessage));
 	QCOMPARE(instrument->parameterModel(0)->value<float>(), 0.25f);
 	ControlRegistry::setReady(false);
+}
+
+/*! stress-4 (b): a SUCCESSFUL chunk load that does not bring a writable parameter back must not lose it. The
+ *  stress run lost parameters this way on real instruments (Odin2, Vitalium: the controller reports the old value
+ *  after setComponentState; Surge: slots it resets on load). Here the chunk is made to disagree with the host the
+ *  way a project saved before the plug-in processed an edit does: "Level" is set and the instrument is saved
+ *  before any block or poll has carried it to the processor, so its component state still holds the default
+ *  while the host's saved <parameters> hold the edit. Loading that state back must leave Level at the edit - in
+ *  the host's model AND in what the instrument renders. No timers: nothing here spins the event loop. */
+void Vst3InstrumentIntegrationTest::testAValueTheChunksDoNotCarryIsRestoredFromTheHost()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	auto* level = instrument->parameterModel(0);
+	QVERIFY(level != nullptr);
+	level->setValue(WrittenLevel);
+
+	QDomDocument doc;
+	QDomElement parent = doc.createElement(QStringLiteral("parent"));
+	QDomElement state = instrument->saveState(doc, parent);
+	QVERIFY2(!state.firstChildElement(QStringLiteral("componentstate")).isNull(),
+		"the instrument wrote no state chunk: this case is about a SUCCESSFUL chunk load");
+	QVERIFY(!state.firstChildElement(QStringLiteral("parameters")).isNull());
+
+	level->setValue(0.25f);
+	instrument->restoreState(state);
+	QCOMPARE(level->value<float>(), WrittenLevel);
+
+	const Note note{TimePos::fromFrames(Blocks * BlockFrames, 1.0), TimePos(0), 60, DefaultVolume};
+	const auto rendered = renderNote(track.get(), instrument, note, 0, Blocks * BlockFrames);
+	QVERIFY2(std::all_of(rendered.begin(), rendered.end(), [](float sample) { return sample == WrittenLevel; }),
+		"the instrument does not render the Level the host restored");
 }
 
 } // namespace lmms

@@ -159,4 +159,41 @@ void ClapParamModelList::pullValues(float tolerance)
 	m_syncing = false;
 }
 
+void ClapParamModelList::saveValues(QDomDocument& doc, QDomElement& element) const
+{
+	auto parameters = doc.createElement(QStringLiteral("parameters"));
+	for (const auto* model : m_models)
+	{
+		if (model->descriptor().readOnly) { continue; }
+		auto parameter = doc.createElement(QStringLiteral("parameter"));
+		parameter.setAttribute(QStringLiteral("id"), QString::number(model->paramId()));
+		// 17 significant digits: the plain double reads back exactly.
+		parameter.setAttribute(QStringLiteral("value"), QString::number(m_plugin->paramPlain(model->paramId()), 'g', 17));
+		parameters.appendChild(parameter);
+	}
+	if (parameters.hasChildNodes()) { element.appendChild(parameters); }
+}
+
+auto ClapParamModelList::restoreValues(const QDomElement& element) -> bool
+{
+	bool restored = false;
+	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
+	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter")); !parameter.isNull();
+		parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	{
+		bool idOk = false;
+		bool valueOk = false;
+		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
+		const double value = parameter.attribute(QStringLiteral("value")).toDouble(&valueOk);
+		const ClapParamModel* model = idOk ? modelFor(id) : nullptr;
+		if (model == nullptr || !valueOk || !std::isfinite(value) || model->descriptor().readOnly) { continue; }
+		// Straight into the host's snapshot, not through the model: the model rounds to its step, and the
+		// saved value is the snapshot's own. pullValues() then shows it.
+		if (m_plugin->paramPlain(id) == value) { continue; }
+		m_plugin->setParamPlain(id, value);
+		restored = true;
+	}
+	return restored;
+}
+
 } // namespace lmms

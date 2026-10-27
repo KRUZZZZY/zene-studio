@@ -173,7 +173,7 @@ void HostedPlugin::Impl::serviceRescan(std::uint32_t flags)
 	// A rescan of values, text or info re-reads the values; info re-reads the descriptors in place, and text only
 	// needs what shows them to draw again. A rescan of the whole list was taken when it was asked for
 	// (paramsRescan): it waits for the next prepare(), deactivated.
-	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { mirrorParamValues(); }
+	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { mirrorParamValues(true); }
 	if ((flags & CLAP_PARAM_RESCAN_INFO) != 0) { refreshParamInfo(); }
 	else if ((flags & CLAP_PARAM_RESCAN_TEXT) != 0) { ++paramsRevision; }
 }
