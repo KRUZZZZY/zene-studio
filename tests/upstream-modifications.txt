@@ -5335,3 +5335,4 @@ data/manual/index.html	Q050-486: the Projects section says what happens to a dam
 src/core/Clip.cpp	cluster new-p16-325: loadWarp reports a <warp> with more markers than WarpMarkers::MaxMarkers through Song::collectError (the first MaxMarkers still load; nothing else changes).
 tests/src/core/ClipWarpPersistenceTest.cpp	# Excess warp markers are silently discarded
 tests/CMakeLists.txt	cluster new-p21-14: build the amplifier module with DeviceToolsChainTest so clip.process command regressions run rather than skip when the configured test target is built.
+tests/src/gui/ItemListPanelTest.cpp	cluster new-p16-91: regression aNullSurfaceOpensNothing - ItemListPanel::open(nullptr, ...) returns nullptr without making a source (was a null dereference of the surface).

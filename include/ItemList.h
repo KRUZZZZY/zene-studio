@@ -139,7 +139,8 @@ public:
 
 	//! The open list of @a kind on @a surface, or nullptr.
 	static ItemListPanel* find(QWidget* surface, const QString& kind);
-	//! The list of @a kind on @a surface, made with @a make (given the panel to parent the source to) when none is.
+	//! The list of @a kind on @a surface, made with @a make (given the panel to parent the source to) when none is;
+	//! nullptr when @a surface is nullptr.
 	static ItemListPanel* open(QWidget* surface, const QString& kind, const std::function<ItemListSource*(QObject*)>& make);
 
 	ItemListSource* source() const { return m_source; }
