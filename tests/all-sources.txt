@@ -638,6 +638,7 @@ include/Oscilloscope.h
 include/OutOfProcessHosting.h
 include/OutputSettings.h
 include/OversamplingHelpers.h
+include/PanelShortcuts.h
 include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
@@ -2256,6 +2257,7 @@ src/gui/CompSwipeStrip.cpp
 src/gui/ContextHelp.cpp
 src/gui/ControlCommandsAccessibleEditing.cpp
 src/gui/ControlCommandsArrangerView.cpp
+src/gui/ControlCommandsAutomationMode.cpp
 src/gui/ControlCommandsHelp.cpp
 src/gui/ControlCommandsLayouts.cpp
 src/gui/ControlCommandsMacros.cpp
@@ -2265,6 +2267,8 @@ src/gui/ControlCommandsSampleEditor.cpp
 src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
+src/gui/ControlCommandsShortcutsRegister.cpp
+src/gui/ControlCommandsShortcutsShared.h
 src/gui/ControlCommandsTheme.cpp
 src/gui/ControlCommandsViewMemory.cpp
 src/gui/ControlCommandsWindow.cpp
@@ -2340,6 +2344,7 @@ src/gui/ModifierTools.cpp
 src/gui/ModulatorPanel.cpp
 src/gui/MpeInputAction.cpp
 src/gui/NoteTransformActions.cpp
+src/gui/PanelShortcuts.cpp
 src/gui/ParameterGridDialog.cpp
 src/gui/PatcherCanvas.cpp
 src/gui/PatcherGraph.cpp
@@ -3102,6 +3107,7 @@ tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/OnlineHelpNoticeTest.cpp
+tests/src/gui/PanelShortcutsTest.cpp
 tests/src/gui/PatcherCanvasTest.cpp
 tests/src/gui/PerformViewTest.cpp
 tests/src/gui/PianoRollBenchmarkTest.cpp

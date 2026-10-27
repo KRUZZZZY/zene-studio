@@ -3096,3 +3096,15 @@ docs/qwen-fixes-2026-10/cluster-new-p23-128.md
 tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
 # cluster new-p23-187 (2026-10): fix and verification report for Oscilloscope pause-setting persistence (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p23-187.md
+# Q050-055.1 stage 1 (2026-10-22): panel-scoped shortcuts - the four contexts' action table and key
+# router, the automation editor's edit-mode command (stage 1's one new command), the GUI test that
+# drives the criteria and the two-process restart transcript.
+include/PanelShortcuts.h
+src/gui/PanelShortcuts.cpp
+src/gui/ControlCommandsAutomationMode.cpp
+tests/src/gui/PanelShortcutsTest.cpp
+tests/control-panel-shortcuts.py
+# Q050-055.1 integration onto train 17 (2026-10-27): the shortcuts.* registration table split from
+# ControlCommandsShortcuts.cpp once the panel scopes and the Q050-202 presets both landed in it.
+src/gui/ControlCommandsShortcutsRegister.cpp
+src/gui/ControlCommandsShortcutsShared.h

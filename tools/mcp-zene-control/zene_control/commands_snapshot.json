@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-26T20:35:25Z",
+  "captured_at": "2026-10-27T10:49:07Z",
   "commands": [
     {
       "args_schema": {
@@ -1158,6 +1158,47 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "draw",
+              "erase",
+              "draw_out_values",
+              "edit_tangents"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Set the automation editor's edit mode: draw (add and move points), erase (remove them), draw_out_values (draw a curve's out-values directly) or edit_tangents (shape the tangents of a cubic Hermite curve - refused, typed, for any other progression, exactly as the toolbar's own disabled button says). The toolbar's matching button is checked afterwards and 'previous' reports the mode it was in. The mode is interface state: it is not saved with the project and has no undo.",
+      "group": "automation",
+      "id": "automation.editor_mode",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -29191,7 +29232,7 @@
         ],
         "type": "object"
       },
-      "description": "Write the shortcut set - the overrides and every binding - to 'file' as JSON, for another machine or a backup. Writes only that file.",
+      "description": "Write the shortcut set - the menu overrides, the panel overrides and every binding - to 'file' as JSON, for another machine or a backup. Writes only that file.",
       "group": "shortcuts",
       "id": "shortcuts.export",
       "mutating": false,
@@ -29206,6 +29247,9 @@
             "type": "string"
           },
           "overrides": {
+            "type": "integer"
+          },
+          "panels": {
             "type": "integer"
           }
         },
@@ -29223,6 +29267,9 @@
           "overrides": {
             "type": "object"
           },
+          "panels": {
+            "type": "object"
+          },
           "replace": {
             "type": "boolean"
           }
@@ -29230,7 +29277,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Apply a shortcut set: the overrides in 'file' (written by shortcuts.export) or given as 'overrides'; merged over the current ones, or replacing them with 'replace'. Ids this build's menus do not have are kept and listed in 'unknown'; a value that is no key sequence is left out and listed in 'invalid'; 'conflicts' lists the keys more than one action holds afterwards ({keys, ids}). One undo step.",
+      "description": "Apply a shortcut set: the overrides in 'file' (written by shortcuts.export) or given as 'overrides', plus a stage-1 'panels' object; merged over the current ones, or replacing them with 'replace'. Ids this build's actions do not have are kept and listed in 'unknown'; a value that is no key sequence is left out and listed in 'invalid'; 'conflicts' lists the keys more than one action of one scope holds afterwards ({keys, ids, scope}). One undo step.",
       "group": "shortcuts",
       "id": "shortcuts.import",
       "mutating": true,
@@ -29247,6 +29294,9 @@
           "invalid": {
             "type": "array"
           },
+          "panels": {
+            "type": "integer"
+          },
           "unknown": {
             "type": "array"
           }
@@ -29261,12 +29311,21 @@
         "properties": {
           "query": {
             "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "arranger",
+              "note_editor",
+              "automation_editor",
+              "perform"
+            ],
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "Every menu action that can carry a keyboard shortcut: its id (\"File \u25b8 Save\" - where it lives and what it says), the registry command it declares, its current keys, the code's own default and whether the user overrode it. 'query' filters by id, keys or command.",
+      "description": "Every action that can carry a keyboard shortcut: the menu actions ('scope' empty) and the arranger's, note editor's, automation editor's and Perform's own actions ('scope' names which - the same key may differ in each). A binding is its id, its scope, the registry command it declares, its current keys, the code's own default and whether the user overrode it; 'conflict' names the actions of the SAME scope already on those keys (a clash to resolve, while the same key in another scope is not one). 'query' filters by id, keys, command or scope; 'scope' keeps one context. 'conflict_count' is how many rows clash.",
       "group": "shortcuts",
       "id": "shortcuts.list",
       "mutating": false,
@@ -29277,11 +29336,17 @@
           "bindings": {
             "type": "array"
           },
+          "conflict_count": {
+            "type": "integer"
+          },
           "count": {
             "type": "integer"
           },
           "overridden_count": {
             "type": "integer"
+          },
+          "scopes": {
+            "type": "array"
           }
         },
         "required": [],
@@ -29370,12 +29435,15 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "scope": {
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "Give one action ('id') - or, without it, every action - its own default shortcut back. One undo step.",
+      "description": "Give one action ('id') - or, without it, every action of one context ('scope': that panel's bindings; the menu map when 'scope' is empty) - its own default shortcut back; with no 'id' and no 'scope' argument at all, every menu AND panel binding. One undo step.",
       "group": "shortcuts",
       "id": "shortcuts.reset",
       "mutating": true,
@@ -29404,6 +29472,16 @@
           "keys": {
             "format": "keys",
             "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "",
+              "arranger",
+              "note_editor",
+              "automation_editor",
+              "perform"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -29412,7 +29490,7 @@
         ],
         "type": "object"
       },
-      "description": "Bind a menu action to 'keys' (portable text such as \"Ctrl+Shift+K\"; empty unbinds it). Refused, typed, when another action already has those keys - unless 'force', which moves them here and unbinds the other. Kept in the config file (ui/shortcuts), applied at once, one undo step.",
+      "description": "Bind an action to 'keys' (portable text such as \"Ctrl+Shift+K\"; empty unbinds it) - a menu action, or one of a panel scope's actions ('scope' arranger, note_editor, automation_editor or perform). Refused, typed, when another action of the SAME scope already has those keys - unless 'force', which moves them here and unbinds the other; a binding in another scope is never touched. Kept in the config file (ui/shortcuts), applied at once, one undo step.",
       "group": "shortcuts",
       "id": "shortcuts.set",
       "mutating": true,
@@ -29430,6 +29508,9 @@
             "type": "string"
           },
           "previous": {
+            "type": "string"
+          },
+          "scope": {
             "type": "string"
           }
         },
@@ -36970,23 +37051,23 @@
       }
     }
   ],
-  "count": 863,
+  "count": 864,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-055.1-639e1d23e4/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-g1xlp9bw/zene.sock",
-    "version": "0.4.0-alpha.4951+9072aa2"
+    "source_socket": "/tmp/zctl-run-en21cgnh/zene.sock",
+    "version": "0.4.0-alpha.4952+639e1d2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 863,
-    "ids_sha256": "b5d5de2cffe6b11bce50bc4eb6eb8b271782d0c98b555c0ea74af685cb30d021"
+    "id_count": 864,
+    "ids_sha256": "841055e7e365e7337cfdf7ae44a266c08cee75334f6473cfd7879a6fb9be2c91"
   }
 }
