@@ -4,118 +4,125 @@ FIXED
 
 ## Verdict
 
-FIXED. The finding is real on the branch base (`639e1d23e`). A `<file>.new` that could not be opened, or whose read failed, was reported as an incomplete document, and `recoverPendingWrite()` then deleted it. The fix keeps such a file in place, reports it, and adopts it on a later open once it can be read.
+FIXED. The finding is real on the branch base (`639e1d23e`). A `<file>.new` that could not be opened, or whose read did not return what the file holds, was reported as an incomplete document, and `recoverPendingWrite()` then deleted it. The fix keeps such a file in place, reports it, and adopts it on a later open once it can be read.
 
-Round 2 (Luna REWORK) closed the one remaining path: a v2 container `.new` whose second read (the container reader's) failed while the file still opened was also deleted. The zip reader now reports read failures, and the recovery keeps those containers as well. Malformed and truncated containers are still discarded.
+Round 3 (automated proof check, DIAGNOSTIC CHECKPOINT) asked for negative controls that fail without the fix, portable fault injection, and coverage of the first read, the second read, repeated failures and malformed/oversized controls. The loop's negative control had reverted the product changes and ran five collateral tests that do not reach the changed branch, so they passed. This round adds a differential case to each of those five files, so each one fails with the fix removed. The fault is now injected portably (on every platform, with no skips) and the regression set covers both reads.
 
-## Evidence (file:line on the committed tree, `ff8df3eda`)
+## Evidence (file:line on the committed tree, `eebd92f17`)
 
-Plain pending save (round 1):
-- `src/core/DataFile.cpp:282-290` (`isCompleteDocument`): an open failure sets `*reason = "unreadable"` (:288). Before the fix it was `return false` with no reason, and the caller discarded the file.
-- `src/core/DataFile.cpp:299-304`: a read error (`f.error() != QFileDevice::NoError` after `readAll()`, :300) also sets `"unreadable"`. An empty file with no error still returns `false` and is discarded as before.
-- `src/core/DataFile.cpp:383-389` (`recoverPendingWrite`): the `else if( reason == "unreadable" )` branch prints `Could not read <pending> ... it was not checked, so it is left in place` and does not remove the file. The truncation branch (`Discarded incomplete`, :390) is unchanged.
+Recovery (`src/core/DataFile.cpp`):
+- `:226` (`armPendingReadFault`): test seam `ZENE_TEST_PENDING_READ_FAULT`. Closes the pending file after its open, before the read, so the read gives back nothing.
+- `:309-312` (`isCompleteDocument`, plain pending file): `expected = f.size()` before the read. The file is unreadable if QFile reports an error or the read returns `bytes.size() != expected`. Before this round only the error was checked, so a short read was taken as a truncated save and deleted.
+- `:338` (container branch): `readDocumentContainer(..., &unreadable)`, then `if( unreadable ) *reason = "unreadable"`. The round-2 flag path is unchanged.
+- `:395-401` (`recoverPendingWrite`): the `"unreadable"` branch prints `Could not read <pending> ... it was not checked, so it is left in place` and keeps the file.
 
-Container pending save (round 2):
-- `src/core/DawProjectZipRead.cpp:171-194` (`readWhole`): an open failure sets `*unreadable = true` (:176). After `readAll()`, a QFile read error sets it too (:185-190). A short or malformed file leaves it false.
-- `src/core/DawProjectZipRead.cpp:557-562` (`dawProjectZipReadTolerant`), `:576-` (`dawProjectZipRead`, the strict reader the container uses): both pass the flag to `readWhole`. The DAWproject importer (`src/core/DawProjectRead.cpp:502`) calls the tolerant reader without it and is unchanged.
-- `src/core/ProjectContainer.cpp:310,320` (`readContainer`) and `src/core/ProjectContainerEntries.cpp:620,623` (`readDocumentContainer`): pass the flag down. `include/ProjectContainer.h:156,333` and `include/DawProjectInterchange.h:571,586` declare it with `nullptr` defaults, so every other caller is unchanged.
-- `src/core/DataFile.cpp:320-331` (container branch of `isCompleteDocument`): `readDocumentContainer(..., &unreadable)`; `if( unreadable ) *reason = "unreadable"`. The reopen-the-path check from round 1 is removed, because it could not tell a failed read from malformed content.
-- `src/core/DawProjectZipRead.cpp:153-164` (`armTestReadFault`): the test seam. When `ZENE_TEST_CONTAINER_READ_FAULT` is set (Unix only), the descriptor is `dup2`'d onto a write-only `/dev/null`, so the next `read()` fails with EBADF while the open succeeded. It is a no-op without the variable and compiled out elsewhere.
+Zip reader (`src/core/DawProjectZipRead.cpp`):
+- `:147-151` (`armTestReadFault`): test seam `ZENE_TEST_CONTAINER_READ_FAULT`. Closes the file after its open, before the read. Portable: `QFile::close()` needs no platform call. The Unix-only `dup2` seam from round 2 is removed.
+- `:160-168` (`refuseUnreadable`): one place that sets `*unreadable = true` and writes `cannot read <path>: <QFile error or "it gave back N of M bytes">`. Used for an open failure and for a failed or short read (factored out to keep `readWhole` under the complexity gate).
+- `:171-190` (`readWhole`): `expected = source.size()` before the read; a read that errors or returns fewer bytes than `expected` is refused through `refuseUnreadable`.
+- The strict and tolerant readers and `readContainer`/`readDocumentContainer` pass the flag down (round 2, unchanged).
 
-Regressions:
-- `tests/src/core/DataFileContainerRecoveryTest.cpp:134` (`unreadableContainerNewFileIsPreservedNotDeleted`): a valid container `.new` whose second read fails. Asserts no `Discarded incomplete`, a `Could not read` line, the `.new` still present, the canonical project unchanged, and then that the preserved container is adopted once the seam is off (`s5probe == "pending"`). It QSKIPs on non-Unix, where the seam does not exist.
-- `tests/src/core/DataFileContainerRecoveryTest.cpp:185` (`truncatedContainerNewFileIsDiscardedWithReport`): a container cut in half is still discarded with `Discarded incomplete`. This keeps malformed content on the old path.
-- `tests/src/core/DataFileSaveIntegrityTest.cpp:685` (`unreadableNewFileIsPreservedNotDeleted`, round 1): the plain-file permission case, unchanged.
+Regressions. Each file below has a case that fails with the fix removed:
+- `tests/src/core/DataFileContainerRecoveryTest.cpp:146` `unreadableContainerNewFileIsPreservedNotDeleted`: the second read of a valid v2 `.new` fails; preserved; adopted once readable.
+- `:236` `unreadablePendingFileIsPreservedNotDeleted`: the initial read of a plain `.new` fails; preserved, canonical project untouched; adopted once readable.
+- `:280` `repeatedContainerReadFailuresKeepTheNewFileUntilAReadableAttempt`: three failed recoveries keep the `.new`, then one readable attempt adopts it.
+- `:333` `oversizedContainerNewFileIsRefusedAndKept` (control, passes both ways): the container is refused by its own size limit and kept.
+- `:194` `truncatedContainerNewFileIsDiscardedWithReport` (control, passes both ways): a truncated container is still discarded.
+- `tests/src/core/ProjectContainerTest.cpp:333` `aFailedReadIsNamedAsARead`: `readContainer` names a failed read, and an opaque file is still "malformed".
+- `tests/src/core/ProjectContainerEntriesTest.cpp:464` `aFailedDocumentReadIsNamedAsARead`: the document entry point.
+- `tests/src/core/ProjectContainerSaveTest.cpp:529` `aFailedReadOfASavedContainerIsNamedAsARead` (with an ordinary read as control) and `:553` `aTruncatedSavedContainerIsRefusedAsMalformed` (control).
+- `tests/src/core/DawProjectDeflateImportTest.cpp:633` `aFailedReadIsNamedAsARead`: both the tolerant and strict readers, with a valid import as control.
+- `tests/src/core/DawProjectInterchangeRoundTripTest.cpp:296` `aFailedReadOfTheStrictReaderIsNamedAsARead`: the strict reader, with a malformed control.
+- `tests/src/core/DataFileSaveIntegrityTest.cpp:685` `unreadableNewFileIsPreservedNotDeleted` (round 1, unchanged): the permission-denied open. It skips only when the process can still read a 0-permission file (root, or a platform without read bits).
 
-No wall-clock timing, sleeps or races are used. The seam is driven by an environment variable, and the failing read is a real kernel error.
+No wall-clock timing, sleeps or threads anywhere. Every fault is set and cleared by the test around one call, and the fixture documents are fixed literals.
 
-## Commands and exit codes
+## Negative controls (the proof)
 
-Log folder (round 2): `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-72.r2/logs`. Round 1 logs are in `new-p11-72.r1/logs`.
+Two controls were run on the final code. Neither changed a test.
 
-Commits: `de9ee899f` (seam and RED regression), `ff8df3eda` (fix and registration).
+**Control A: only this round's fix removed (size comparisons out; seams and round-2 flags kept).** The seam still empties the read, so the removed check is the only thing that keeps the file.
+- Build: `zene` and the 8 targets, all EXIT 0 (`negctl-size-final/build-*.log`).
+- `ctest` (8 targets): **EXIT 8**, 6 of 8 failed (`negctl-size-final/ctest-family.log`):
+  - `DataFileContainerRecoveryTest`: `unreadableContainerNewFileIsPreservedNotDeleted`, `unreadablePendingFileIsPreservedNotDeleted`, `repeatedContainerReadFailuresKeepTheNewFileUntilAReadableAttempt`. Each: `!report.contains("Discarded incomplete")` returned FALSE, i.e. the `.new` was deleted.
+  - `ProjectContainerTest::aFailedReadIsNamedAsARead`, `ProjectContainerEntriesTest::aFailedDocumentReadIsNamedAsARead`, `ProjectContainerSaveTest::aFailedReadOfASavedContainerIsNamedAsARead`, `DawProjectInterchangeRoundTripTest::aFailedReadOfTheStrictReaderIsNamedAsARead`, `DawProjectDeflateImportTest::aFailedReadIsNamedAsARead`: the refusal says `… is too short to be a ZIP container`, not `cannot read`.
+- Passing without the fix, as they should: the oversized and truncated controls, the permission test, and `DataFileFormatTest`.
 
-RED on the round-1 fix (before the round-2 fix), with the seam and regression in place:
+**Control B: the full revert the loop performs** (`git diff 639e1d23e -- src include` reversed; every product change since base removed, seams included; tests kept). `negctl-full/`.
+- Build: all EXIT 0. `ctest`: **EXIT 8**, 7 of 8 failed (`negctl-full/ctest-family.log`). Only `DataFileFormatTest` passed, which doesn't touch the read path.
+- In this control the seam is absent, so the fault-injection tests fail for that reason too. Control A is the one that isolates the fix; control B shows the set as a whole fails without the change.
 
-| Step | Command | EXIT | Log |
-|---|---|---|---|
-| Build zene | `cmake --build build --target zene -j4` | 0 | build-r2-1-red.log |
-| Build test | `cmake --build build --target DataFileSaveIntegrityTest -j4` | 0 | build-r2-2-red.log |
-| Fixture first try | `./DataFileSaveIntegrityTest` | 2 | test-r2-1-red-direct.log (writer refused: no `<z:index>`; fixture error, fixed) |
-| Fixture second try | same, after the trackcontainer child | 2 | test-r2-2-red-direct.log (same cause; fixed) |
-| **RED** | `./DataFileSaveIntegrityTest` | **1** | test-r2-3-red-direct.log: `unreadableContainerNewFileIsPreservedNotDeleted` FAILS on `!report.contains("Discarded incomplete")`; 18 passed, 1 failed |
+After each control the product files were restored and verified: `cmp` identical to the saved copies (`RESTORED_IDENTICAL`), and `git diff -- src include` byte-identical to the saved patch (`PRODUCT_DIFF_IDENTICAL`). Each restore was followed by a rebuild and a GREEN run.
 
-GREEN with the round-2 fix:
+One invalid attempt, recorded for honesty: the first Control A build failed (`-Werror=unused-variable` in `DataFile.cpp`, `negctl-size/build-zene.log`), so `ctest` ran the stale binaries and passed 8/8. That run was discarded. The control was re-applied with the declaration removed, the build was checked to exit 0, and the run above was taken on that build.
 
-| Step | Command | EXIT | Log |
-|---|---|---|---|
-| Build zene | `cmake --build build --target zene -j4` | 0 | build-r2-5-green.log |
-| Build the 7 targets | DataFileSaveIntegrityTest, DataFileFormatTest, ProjectContainerTest, ProjectContainerEntriesTest, ProjectContainerSaveTest, DawProjectInterchangeRoundTripTest, DawProjectDeflateImportTest | 0 each | build-r2-6-*.log |
-| Focused, direct | `./DataFileSaveIntegrityTest` | 0 | test-r2-4-green-direct.log: 19 passed (before the test moved) |
-| Family, 7 targets | `ctest -R '^(DataFileFormatTest\|DataFileSaveIntegrityTest\|ProjectContainerTest\|ProjectContainerEntriesTest\|ProjectContainerSaveTest\|DawProjectInterchangeRoundTripTest\|DawProjectDeflateImportTest)$'` | 0 | test-r2-5-family-green.log: 7/7 |
+## Commands and exit codes (round 3)
 
-After the test moved to its own file (the save-integrity file exceeded the file-length ratchet; see Gates):
-
-| Step | Command | EXIT | Log |
-|---|---|---|---|
-| Build new target | `cmake --build build --target DataFileContainerRecoveryTest -j4` | 0 | build-r2-13-newfile.log |
-| GREEN, ctest | `ctest -R '^DataFileContainerRecoveryTest$' --output-on-failure` | 0 | test-r2-9-newfile-green.log |
-| GREEN, direct | `./DataFileContainerRecoveryTest` | 0 | test-r2-10-newfile-direct.log: 4 passed (2 tests, plus init/cleanup) |
-
-### Step 4b: the new regression fails with the product fix reverted
-
-Product diff of the fix (`src include`, against the RED commit): `git diff -- src include > fix-r2b.patch` (EXIT 0; identical to the earlier `fix-r2.patch`).
+Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p11-72.r3/logs`. Earlier rounds are in `new-p11-72.r2/` and `new-p11-72.r1/`.
 
 | Step | Command | EXIT | Log |
 |---|---|---|---|
-| Revert | `git apply -R fix-r2b.patch` | 0 | — |
-| Rebuild zene | `cmake --build build --target zene -j4` | 0 | build-r2-14-revert.log |
-| Rebuild test | `cmake --build build --target DataFileContainerRecoveryTest -j4` | 0 | build-r2-15-revert.log |
-| **Run, reverted** | `ctest -R '^DataFileContainerRecoveryTest$' --output-on-failure` | **8** | test-r2-11-revert-red.log: `FAIL! unreadableContainerNewFileIsPreservedNotDeleted() '!report.contains("Discarded incomplete")' returned FALSE` |
-| Re-apply | `git apply fix-r2b.patch` | 0 | — |
-| Rebuild zene, test | as above | 0; 0 | build-r2-16-reapply.log, build-r2-17-reapply.log |
-| **Run, restored** | ctest as above | **0** | test-r2-12-reapply-green.log: 100% |
+| Build zene (fix) | `cmake --build build --target zene -j4` | 0 | build-r3-1-green.log |
+| Build 8 targets | DataFileContainerRecoveryTest, DataFileSaveIntegrityTest, DataFileFormatTest, ProjectContainerTest, ProjectContainerEntriesTest, ProjectContainerSaveTest, DawProjectDeflateImportTest, DawProjectInterchangeRoundTripTest | 0 each | build-r3-2-*.log |
+| **GREEN, family** | `ctest -R '^(DataFileFormatTest\|DataFileSaveIntegrityTest\|DataFileContainerRecoveryTest\|ProjectContainerTest\|ProjectContainerEntriesTest\|ProjectContainerSaveTest\|DawProjectInterchangeRoundTripTest\|DawProjectDeflateImportTest)$' --output-on-failure` | **0** | test-r3-1-green-family.log: 8/8 |
+| GREEN, totals | `./<target>` (direct) | 0 | direct-r3-green-*.log: DataFileContainerRecoveryTest 7, DataFileSaveIntegrityTest 17, ProjectContainerTest 13, ProjectContainerEntriesTest 16, ProjectContainerSaveTest 17, DawProjectDeflateImportTest 12, DawProjectInterchangeRoundTripTest 60 — all passed, 0 failed |
+| Control A (fix removed) | build + ctest as above | build 0; **ctest 8** | negctl-size-final/ |
+| Control B (base) | build + ctest as above | build 0; **ctest 8** | negctl-full/ |
+| GREEN after restore | build + ctest | 0 | test-r3-5-final-family.log: 8/8 |
 
-The same cycle was run earlier against the first test location (`DataFileSaveIntegrityTest`): reverted EXIT 8 (test-r2-6-revert-red.log), restored EXIT 0 (test-r2-7-reapply-green.log, 19 passed).
-
-Affected-family count: `ctest -R '^(DataFileFormatTest|DataFileSaveIntegrityTest|DataFileContainerRecoveryTest|ProjectContainerTest|ProjectContainerEntriesTest|ProjectContainerSaveTest|DawProjectInterchangeRoundTripTest|DawProjectDeflateImportTest)$'`: EXIT 0, **8/8** (test-r2-13-family.log). The two DAWproject tests cover the shared zip reader used by import.
-
-`AudioFileProcessorView` (named in the brief) is still not a test target in this build (round 1, build-5-AudioFileProcessorView.log), so it is not counted.
+Refactor step: `readWhole` at CCN 11 failed the complexity gate (`gates-r3-1.log`). It was split into `refuseUnreadable`, the build and family were re-run (`test-r3-4-refactor-family.log`, EXIT 0), and the gates re-run.
 
 ### Gates
 
-`feature_check.py` writes its logs next to the worktree (outside the write jail), so it cannot run as given. I ran an otherwise identical copy with three lines changed: `ROOT` points at the bunny-fix folder (reads `FIX-BASE` and the cached base baselines, `639e1d23e`), and the log folder points into the run's `logs/feature-check/`.
+`feature_check.py` writes its logs next to the worktree, outside the write jail, so it cannot run as given. I ran an identical copy with two lines changed: `ROOT` points at the bunny-fix folder (reads `FIX-BASE` and the cached base baselines, `639e1d23e`), and the log folder points into the run's `logs/feature-check/`.
+- `gates-r3-1.log` (before the refactor): complexity FAIL (`readWhole` CCN 11).
+- `gates-r3-2.log` (after the refactor): all PASS, EXIT 0.
+- `gates-r3-3.log` (after recording the two inherited test files in `upstream-modifications.txt`): all PASS, EXIT 0. `fork-sources` and `all-sources-reproduce` PASS; `no-upstream-regression` PASS; complexity and file-length: "no new item in your files".
 
-- Before the commit, `fork-sources` and `all-sources-reproduce` failed (gates-r2-2.log, EXIT 1). Both manifests are derived from git state, and the new test file was untracked. After `git add`, `all-sources-reproduce` reproduced exactly (its header's verify diff, empty output). `fork-sources` reads `HEAD`, so the commit was needed.
-- Also in gates-r2-2.log: `file-length` FAILED with `NEW: new file over 500 lines: tests/src/core/DataFileSaveIntegrityTest.cpp (579)`. That file's code lines were over the limit once this round's container tests were added to it. The tests moved to `DataFileContainerRecoveryTest.cpp`, and the save-integrity file is back to its round-1 content. I did not re-anchor or change any gate.
-- After the commit (`ff8df3eda`), `python3 -I <shim>/feature_check_wt.py <worktree>` → EXIT 0 (gates-r2-3.log): fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS, check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity "no new item in your files" PASS, file-length "no new item in your files" PASS, `RESULT: PASS`.
+### Real-time boundary audit
+
+Recovery and the zip readers run only from constructors and load or command paths:
+- `DataFile(fileName)` (which runs `recoverPendingWrite`) is built from GUI and command code (`src/gui/…`, `src/core/Song.cpp`, `ControlCommands*.cpp`, `ProjectJournal.cpp`, and others).
+- The one `DataFile` in an audio-adjacent object is `PresetPreviewPlayHandle`'s constructor. It is called from `src/gui/FileBrowser.cpp:850-858` on the GUI thread, before the handle is played (`src/core/PresetPreviewPlayHandle.cpp:156`).
+- `readContainer`, `readDocumentContainer`, `dawProjectZipRead(Tolerant)` have no caller in an audio callback (`rg` over `src` and `include`).
+- The new code adds an `expected` size read and `qgetenv` calls on those same load paths. No allocation or I/O is added to any process or render path.
+
+### Portability
+
+- The seams use `QFile::close()` and `qgetenv` only; no `dup2`, no `fcntl.h`, no `Q_OS_UNIX`. The new regression cases run on every platform and never skip.
+- The only `QSKIP` left is the round-1 permission test, which skips only when the process can still read a 0-permission file.
 
 ## Files committed
 
-Round 1 (`ee4257cee`, `0370312a9`): `src/core/DataFile.cpp`, `tests/src/core/DataFileSaveIntegrityTest.cpp`, `tests/upstream-modifications.txt`, this report.
+Round 1: `ee4257cee` (`src/core/DataFile.cpp`, `tests/src/core/DataFileSaveIntegrityTest.cpp`, `tests/upstream-modifications.txt`), `0370312a9` (report).
+Round 2: `de9ee899f` (seam and RED regression, Unix dup2 seam), `ff8df3eda` (fix and registration), `1be5dc1ec` (report).
+Round 3: `eebd92f17` (portable seams, size checks, `refuseUnreadable`, the new and differential regressions, the two inherited test files recorded in `tests/upstream-modifications.txt`), and this report.
 
-Round 2 (`de9ee899f`): `src/core/DawProjectZipRead.cpp` (seam), `tests/src/core/DataFileSaveIntegrityTest.cpp` (the RED regression, later moved out).
-
-Round 2 (`ff8df3eda`): `src/core/DataFile.cpp`, `src/core/DawProjectZipRead.cpp`, `src/core/ProjectContainer.cpp`, `src/core/ProjectContainerEntries.cpp`, `include/DawProjectInterchange.h`, `include/ProjectContainer.h`, `tests/src/core/DataFileContainerRecoveryTest.cpp` (new), `tests/src/core/DataFileSaveIntegrityTest.cpp` (back to round-1 content), `tests/CMakeLists.txt`, `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/upstream-modifications.txt`.
-
-Round 2 report commit: this file.
+Round 3 product files: `src/core/DataFile.cpp`, `src/core/DawProjectZipRead.cpp`. Round 3 tests: `tests/src/core/DataFileContainerRecoveryTest.cpp`, `ProjectContainerTest.cpp`, `ProjectContainerEntriesTest.cpp`, `ProjectContainerSaveTest.cpp`, `DawProjectDeflateImportTest.cpp`, `DawProjectInterchangeRoundTripTest.cpp`.
 
 ## Self-check
 
-1. **Each new test fails with the product change reverted, then passes restored.** Yes, for both sets. The plain-file regression: EXIT 8 reverted, 0 restored (round 1, test-5/test-6). The container regression: EXIT 8 reverted (test-r2-11-revert-red.log), 0 restored (test-r2-12-reapply-green.log).
-2. **Acceptance criteria proven by a test you ran.** The finding: distinguish I/O failure from invalid content, and preserve a pending save that could not be checked. Plain file: `unreadableNewFileIsPreservedNotDeleted`. Container: `unreadableContainerNewFileIsPreservedNotDeleted`, including adoption once readable. Malformed and truncated content: `truncatedContainerNewFileIsDiscardedWithReport`, `truncatedNewFileIsDiscardedWithReport`, `unrelatedXmlNewFileIsNotAdopted`, `deeplyNestedNewFileIsRefusedBeforeParsing`, `newFileDeclaringAnEnormousSizeIsRefusedBeforeDecompressing`, and `orphanedNewFileIsAdoptedWithReport`, all passing in the family run.
-3. **Undo and reversibility.** Not affected. The change is confined to recovering a `.new` in the `DataFile` constructor. No command, undo entry or reversibility class is added or changed.
-4. **Audio thread.** Nothing on the audio thread. `recoverPendingWrite()` runs only in the `DataFile(fileName)` constructor on project open. The zip reader runs on project open and DAWproject import. The new code adds a flag and a `qWarning()` on a failure path, which is the same kind of logging the existing branches use.
-5. **Old projects still load, and the reader's behaviour outside the bug is unchanged.** Only a read that fails changes behaviour, and the failure now reports as an error instead of parsing partial bytes. Under that change: the canonical v2 load (`src/core/DataFile.cpp`, `readDocumentContainer` with no flag) refuses an unreadable container with its existing warning; the DAWproject importer (`DawProjectRead.cpp:502`) refuses an unreadable file instead of decoding partial bytes. Both are refusals of a file that could not be read, not new rejections of valid data. Valid containers, malformed containers and the DAWproject round-trip and deflate tests all pass (family 8/8). The `unreadable` out-parameter defaults to `nullptr`, so existing callers are unchanged.
-6. **Portability.** The seam uses `dup2`, `open`, `fcntl.h` and `unistd.h` only under `Q_OS_UNIX`. Elsewhere it is compiled out, and the container regression QSKIPs. `QFileDevice::NoError` is valid in Qt 5.15 and Qt 6. `QFile::setPermissions` is used by the plain-file regression, which QSKIPs when the process can still read a 0-permission file.
-7. **Deterministic.** Yes. The container regression does no timing, sleeping or threading. The seam is set and cleared by the test around one load, and the failing read is a real kernel `EBADF`, not a simulated flag. The fixture is a fixed literal document.
-8. **Sibling and caller coverage.** The only caller of `readWhole` is `dawProjectZipReadTolerant`, which is reached from the strict `dawProjectZipRead` (the container path) and from `DawProjectRead.cpp:502` (import). The only caller of `readContainer` is `readDocumentContainer`, which is reached from `DataFile.cpp` (recovery at :320 and the canonical load at :509). `isCompleteDocument` has one caller, `recoverPendingWrite` (`DataFile.cpp:363`). The first-read check (`DataFile.cpp:299-304`) and the container-reader check (`DawProjectZipRead.cpp:185-190`) are separate; each is covered.
-9. **Verdict.** FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" citation is needed. The finding's line is `src/core/DataFile.cpp:~275`; the code it names is now at `:282-331`, cited above.
+1. **Each new test fails with the product change reverted, then passes restored.** Yes, shown per test in Control A (the 8 failing cases listed above, `negctl-size-final/ctest-family.log`) and Control B (7 of 8 fail, `negctl-full/ctest-family.log`). Restored: GREEN 8/8 (`test-r3-5-final-family.log`).
+2. **Acceptance criteria proven by a test that was run.** First read: `unreadablePendingFileIsPreservedNotDeleted`. Second read: `unreadableContainerNewFileIsPreservedNotDeleted`. Repeated failures: `repeatedContainerReadFailuresKeepTheNewFileUntilAReadableAttempt`. Named refusals at each reader: the five differential cases. Malformed and oversized controls: `truncatedContainerNewFileIsDiscardedWithReport`, `aTruncatedSavedContainerIsRefusedAsMalformed`, `oversizedContainerNewFileIsRefusedAndKept`, `aTruncatedDirectoryIsListedAndANonZipIsRefused` (existing), and the existing document-size and compressed-size tests in `DataFileSaveIntegrityTest`.
+3. **Undo and reversibility.** Not affected. Recovery runs only in the `DataFile` constructor. No command, undo entry or reversibility class is added or changed.
+4. **Audio thread.** Nothing on the audio thread. See the audit above.
+5. **Old projects still load.** A valid project, a legacy save and an ordinary v2 save read exactly as before. Only a read that returns fewer bytes than the file holds, or that errors, changes: the canonical v2 load and the DAWproject import now refuse it with `cannot read`, where they previously parsed partial bytes. Those callers see a refusal of an unreadable file, not a new rejection of valid data. The `unreadable` flag and the `refuseUnreadable` helper default to no effect for other callers.
+6. **Portability.** The seams are portable and every new case runs everywhere. `QFileDevice::NoError` and `QFile::close()` exist in Qt 5.15 and Qt 6.
+7. **Deterministic.** Yes. No timing, sleeps or threads. The fault is set and cleared by the test around one call.
+8. **Sibling and caller coverage.** `readWhole` has one caller, `dawProjectZipReadTolerant`, reached from the strict `dawProjectZipRead` (container path) and from `DawProjectRead.cpp:502` (import). `readContainer` is called only from `readDocumentContainer`, which is called from `DataFile.cpp` (recovery at `:338` and the canonical load at `:521`). `isCompleteDocument` has one caller, `recoverPendingWrite` (`DataFile.cpp:375`). The first-read check (`DataFile.cpp:309-312`) and the zip reader's check (`DawProjectZipRead.cpp:183`) are separate, and both are covered.
+9. **Verdict.** FIXED. Not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" citation is needed. The finding's line is `src/core/DataFile.cpp:~275`; the code it names is now at `:290-345`.
 
-Not covered by a regression test, stated plainly: an open refused by the zip reader after DataFile's own open succeeded (`DawProjectZipRead.cpp:176`). It takes the same flag as the read path and the same branch, but reaching it needs the file to change permission between two opens, which a deterministic test cannot arrange.
+Stated plainly, not covered:
+- The `QFile::error()` branch is in production code but no test reaches it. The seam closes the file, and Qt reports no error for a closed-file read, so the size comparison is the path the tests exercise. A real I/O error (EIO) would take the `error()` branch.
+- An open refused after DataFile's own open succeeded (`DawProjectZipRead.cpp:174`) takes the same branch as a failed open, but a deterministic test can't arrange a permission change between two opens.
+
+## Requested of the loop
+
+- The negative-control selection should include `DataFileContainerRecoveryTest` (and `DataFileSaveIntegrityTest`). The loop's five files do not reach the changed branch without these; the five now carry differential cases, but the recovery behaviour is tested only in those two targets.
 
 ## Known environment issues (not product defects)
 
 - ccache could not create temp files under `zene-bunny-fix/dsh/home/ccache-tmp-r6`, outside the write jail. Builds used `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/zene-tmp/ccache`.
 - `feature_check.py` writes its logs next to the worktree (outside the jail). `submit_check.py` calls it directly, so its "gates" row will report the same `PermissionError` until the script writes inside the worktree or the run folder. The gate logic passes (EXIT 0 above).
-- The lane build tree refuses `cmake -S . -B build` ("configuring is the parent's job"). The new test target was picked up by `cmake --build build --target DataFileContainerRecoveryTest`, which regenerated it.
+- The lane build tree refuses `cmake -S . -B build` ("configuring is the parent's job"). The new test targets were picked up by `cmake --build`.
+- A shell guard blocked one `rm -f "$N/*.log"`, because the glob was a shell variable. I used literal paths after that.
