@@ -1048,7 +1048,7 @@ one-entry swap, adding two `not_mutating` rows - `arrangement.zoom_forward` and 
 which move the figure to `rows=839 true_inverse=417 snapshot=42 irreversible=22 not_mutating=358`
 (`DECLARED rows=839`).
 
-**M0 merge train 12** (`050/m0-train-12`, 2026-10-22, automatic): `ReversibilityContractTest` on the merged tree measures `rows=854 true_inverse=423 snapshot=42 irreversible=24 not_mutating=365`.
+**M0 merge train 12** (`050/m0-train-12`, 2026-10-22, automatic): `ReversibilityContractTest` on the merged tree measures `rows=854 true_inverse=423 snapshot=42 irreversible=24 not_mutating=365`. **Q050-055.1 stage 1** (2026-10-22): `automation.editor_mode` adds one `not_mutating` row - the automation editor's edit mode is interface state, like a zoom level - so the figure is `rows=855 true_inverse=423 snapshot=42 irreversible=24 not_mutating=366`.
 
 (Q050-125, 2026-10-22, after the train snapshot: `clip.set_polarity` adds one `true_inverse` row, so the
 same tree measures `rows=855 true_inverse=424 snapshot=42 irreversible=24 not_mutating=365`.)
@@ -1082,6 +1082,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 `050/m0-train-17` 2026-10-27) adds four rows: `mixer.console_strip` and `pdc.set_offset` (`true_inverse`), `meter.inputs` and
 `window.input_meters` (`not_mutating`); `ReversibilityContractTest` on the integrated tree measures
 `rows=876 true_inverse=432 snapshot=42 irreversible=25 not_mutating=377`.
+
+**Q050-055.1** (panel-scoped shortcuts, integrated onto `050/m0-train-17`, 2026-10-27): `automation.editor_mode` adds one `not_mutating` row - `rows=873 true_inverse=430 snapshot=42 irreversible=25 not_mutating=376`.
 
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=876 true_inverse=432 snapshot=42 irreversible=25 not_mutating=377

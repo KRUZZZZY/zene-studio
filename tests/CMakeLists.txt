@@ -1373,6 +1373,10 @@ set(LMMS_TESTS
 	# shortcuts.* driven against the real menus: a value that is not key text, an undo of a set
 	# that must not clear bindings it never touched, and a reset of an action no menu has.
 	src/gui/ShortcutsCommandsTest.cpp
+	# Q050-055.1 stage 1 (0.5.0 L13): panel-scoped shortcuts - one key bound to a different action
+	# in the arranger, the note editor, the automation editor and Perform, only the focused panel's
+	# action firing; and a same-context clash resolved in the shortcuts page, surviving a restart.
+	src/gui/PanelShortcutsTest.cpp
 	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
 	src/gui/WorkflowFeedbackTest.cpp
 	# Clusters new-p23-4/new-p22-32/new-p23-5: workflow command names, saved step validation and recording filters.
@@ -3182,6 +3186,7 @@ set_tests_properties(InstrumentSetupUiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsCommandsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlCommandsMacrosTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PanelShortcutsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

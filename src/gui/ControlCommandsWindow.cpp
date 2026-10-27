@@ -281,6 +281,7 @@ void registerWindowCommands(ControlRegistry& registry)
 	registerSampleEditorWindowCommands(registry);  // 0.5.0 wave 3 theme 15
 	registerSelectionWindowCommands(registry);
 	registerShortcutCommands(registry);
+	registerAutomationEditorCommands(registry);  // 0.5.0 L13 stage 1: automation.editor_mode
 	registerMixerViewCommands(registry);
 	registerHelpCommands(registry);
 	registerLayoutCommands(registry);

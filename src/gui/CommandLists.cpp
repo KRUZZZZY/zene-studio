@@ -194,10 +194,17 @@ ListSpec safeStart()
 
 ListSpec shortcuts()
 {
-	ListSpec out = spec("Keyboard Shortcuts", "shortcuts.list", "bindings", {QStringLiteral("id"), QStringLiteral("keys"),
-		QStringLiteral("default"), QStringLiteral("overridden"), QStringLiteral("command")});
-	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("overridden_count")};
-	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")}};
+	// 0.5.0 L13 stage 1: a row carries its context (`scope`), because the same key may mean four
+	// different things - a clash is only two actions of ONE context on one key. The row actions
+	// pass the scope back, so "Set Keys..." on the note editor's Draw Tool edits THAT binding and
+	// never the menu action or another panel's.
+	ListSpec out = spec("Keyboard Shortcuts", "shortcuts.list", "bindings", {QStringLiteral("scope"), QStringLiteral("id"),
+		QStringLiteral("keys"), QStringLiteral("default"), QStringLiteral("overridden"), QStringLiteral("command"),
+		QStringLiteral("conflict")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("overridden_count"),
+		QStringLiteral("conflict_count")};
+	const QHash<QString, QString> id{{QStringLiteral("id"), QStringLiteral("id")},
+		{QStringLiteral("scope"), QStringLiteral("scope")}};
 	out.actions = {act("Set Keys...", "shortcuts.set", id, {}, true), act("Unbind", "shortcuts.set", id,
 		{{QStringLiteral("keys"), QString()}}), act("Reset", "shortcuts.reset", id)};
 	ListExtra resetAll = extra("Reset All", "shortcuts.reset", {}, false);

@@ -126,9 +126,16 @@ QStringList conflicts(const QList<Binding>& all, const QString& keys, const QStr
 {
 	QStringList out;
 	if (keys.isEmpty()) { return out; }
+	// A conflict is two bindings that fire in the SAME place: the global menu map, or one panel
+	// scope. The same key in two panels is the point of a scoped map, not a clash.
+	QString scope;
 	for (const Binding& binding : all)
 	{
-		if (binding.id != except && binding.keys == keys) { out.append(binding.id); }
+		if (binding.id == except) { scope = binding.scope; break; }
+	}
+	for (const Binding& binding : all)
+	{
+		if (binding.id != except && binding.keys == keys && binding.scope == scope) { out.append(binding.id); }
 	}
 	return out;
 }

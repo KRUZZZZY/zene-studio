@@ -3088,9 +3088,13 @@ Evidence, all from the `050/feat-alloc-probe-fix` lane:
 `PerformView`: the setlist's song and the next one, transport and tempo, the playing scene and the next, one big
 button per scene, each column's playing cell and a large Stop All - every press a registered command
 (`PerformViewTest`). What it does not do:
-- Its keys (1-9, Up/Down, Enter, Space, Escape, Page Up/Down) are the window's own and cannot be rebound: the
-  shortcut map (`shortcuts.set`) binds main-window menu actions only. Launcher > Launch Scene 1-8 and Stop All
-  Clips remain rebindable there.
+- Its built-in keys (1-9, Up/Down, Enter, Space, Escape, Page Up/Down) are the window's own. Since Q050-055.1
+  stage 1 the shortcut map has a `perform` context (`shortcuts.set` `scope: "perform"`) covering Stop All, Start and
+  Stop Transport and Launch Scene 1-2, and a scoped key wins over the built-in table while Perform holds the focus -
+  but the remaining meanings (Up/Down, Enter, Page Up/Down, digits past 2) have no scoped action yet and cannot be
+  rebound. Launcher > Launch Scene 1-8 and Stop All Clips remain rebindable as menu actions.
+- Stage 2 of the context-aware map (keys bound to plug-in actions) is not implemented: a panel scope covers the four
+  panels' own commands only.
 - MIDI learn reaches what the launcher's controller bindings can do - launch a scene, stop everything
   (`session.bind_learn`). "Select the next scene", "launch the selected scene", play/stop, tempo and the song
   steps cannot be bound to a note.
