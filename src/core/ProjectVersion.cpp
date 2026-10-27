@@ -27,9 +27,33 @@
 
 #include "ProjectVersion.h"
 
+#include <algorithm>
+
 
 namespace lmms
 {
+
+
+namespace
+{
+
+//! Converts one MAJOR, MINOR or PATCH identifier to an int.
+//! A number too large for an int is clamped to INT_MAX, so it still sorts above
+//! every representable value instead of reading as 0. Other text keeps the 0 that
+//! pads invalid versions, so the order of existing saved files does not change.
+int parseIdentifier(const QString& identifier)
+{
+	bool ok = false;
+	const int value = identifier.toInt(&ok);
+	if (ok){ return value; }
+
+	const QString digits = identifier.trimmed();
+	const bool isNumber = !digits.isEmpty() && std::all_of(digits.cbegin(), digits.cend(),
+		[](QChar c){ return c.unicode() >= '0' && c.unicode() <= '9'; });
+	return isNumber ? std::numeric_limits<int>::max() : 0;
+}
+
+} // namespace
 
 
 ProjectVersion::ProjectVersion(QString version, CompareType c) :
@@ -48,9 +72,9 @@ ProjectVersion::ProjectVersion(QString version, CompareType c) :
 	QStringList mainVersion = obligatorySegment.split(".");
 	// HACK: Pad invalid versions in order to prevent crashes
 	while (mainVersion.size() < 3){ mainVersion.append("0"); }
-	m_major = mainVersion.at(0).toInt();
-	m_minor = mainVersion.at(1).toInt();
-	m_patch = mainVersion.at(2).toInt();
+	m_major = parseIdentifier(mainVersion.at(0));
+	m_minor = parseIdentifier(mainVersion.at(1));
+	m_patch = parseIdentifier(mainVersion.at(2));
 
 	// Any # of optional pre-release identifiers may follow, separated by '.'s
 	if (!prereleaseSegment.isEmpty()){ m_labels = prereleaseSegment.split("."); }

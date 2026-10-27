@@ -33,6 +33,8 @@
 #include <QString>
 #include <QTextStream>
 
+#include <limits>
+
 #include "DataFile.h"
 #include "SessionModel.h"
 
@@ -109,6 +111,28 @@ private slots:
 		QVERIFY(ProjectVersion("1.0.0-alpha") > "1.0.0-1");
 		//An identifier of the form "-x" is non-numeric, not negative
 		QVERIFY(ProjectVersion("1.0.0-alpha.-1") > "1.0.0-alpha.1");
+	}
+
+	//! A numeric component that does not fit in an int is clamped to INT_MAX,
+	//! not read as 0, so it still sorts above every representable value.
+	void oversizedComponentsAreClamped()
+	{
+		using namespace lmms;
+
+		const int maxInt = std::numeric_limits<int>::max();
+		// The reported case: this used to parse as 2.0.0
+		QCOMPARE(ProjectVersion("2.999999999999.0").getMajor(), 2);
+		QCOMPARE(ProjectVersion("2.999999999999.0").getMinor(), maxInt);
+		QVERIFY(ProjectVersion("2.999999999999.0") > "2.5.0");
+		QVERIFY(ProjectVersion("2.999999999999.0", ProjectVersion::CompareType::Minor) > "2.5.0");
+		// Boundary: INT_MAX itself is in range and is not changed
+		QCOMPARE(ProjectVersion("2.2147483647.0").getMinor(), maxInt);
+		// One past INT_MAX is clamped, not wrapped or zeroed
+		QCOMPARE(ProjectVersion("2.2147483648.0").getMinor(), maxInt);
+		QCOMPARE(ProjectVersion("1.2.99999999999").getPatch(), maxInt);
+		QVERIFY(ProjectVersion("3000000000.0.0", ProjectVersion::CompareType::Major) > "2.9.9");
+		// A huge minor is not an old 1.2.2-style build version, so no labels are taken from it
+		QVERIFY(ProjectVersion("1.99999999999.2.42").getLabels().isEmpty());
 	}
 
 	//! (task #594) A <session> block round-trips every ClipSlot and Scene
