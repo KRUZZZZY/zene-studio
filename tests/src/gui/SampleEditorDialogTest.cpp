@@ -188,6 +188,21 @@ private slots:
 		QCOMPARE(editor.findChildren<DropToolBar*>(QString(), Qt::FindDirectChildrenOnly).size(), 1);
 	}
 
+	void openForGivesEveryDialogAView()
+	{
+		// new-p21-61: window.sample_editor's applyZoom was reported to dereference a possibly null view. The view is a
+		// member built in the constructor's initialiser list, so a dialog from openFor - new or reopened - always has one.
+		SampleClip* clip = toneClip(m_track);
+		SampleEditorDialog* dialog = SampleEditorDialog::openFor(clip, nullptr);
+		QVERIFY(dialog != nullptr);
+		QVERIFY(dialog->view() != nullptr);
+		QCOMPARE(dialog->clip(), clip);
+		QCOMPARE(SampleEditorDialog::openFor(clip, nullptr), dialog);
+		QVERIFY(dialog->view() != nullptr);
+		delete dialog;
+		delete clip;
+	}
+
 	void graphClickAtFivePixelHeightKeepsSamplesFinite()
 	{
 		Graph graph(nullptr, Graph::Style::Linear, 16, 5);
