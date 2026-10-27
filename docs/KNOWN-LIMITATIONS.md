@@ -210,6 +210,32 @@ library to work.
   chain keeps a saved one as its placeholder, state intact, as before.
   `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
   and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
+- *(Added 2026-10-27, Q050-490.)* **VST3 and CLAP editors now try to open on Windows and macOS too.** The host
+  chooses the platform's native window when an editor opens (`include/PluginWindowSystem.h`): VST3 `HWND` /
+  CLAP `win32` on Windows, VST3 `NSView` / CLAP `cocoa` on macOS, and X11 on Linux as before. Before this change
+  every non-X11 view was refused. A plug-in that cannot embed in the platform's window is refused with the platform
+  and window API named (*"cannot embed on macOS (CLAP window API cocoa)"*). No editor is created, so no empty
+  window stays open. A native Wayland session is refused the same way (start with `QT_QPA_PLATFORM=xcb`).
+  **What was proved, and where:**
+  - **Linux:** every test named here was run, including the explicit Windows and macOS cases. `ClapHostTest`,
+    `Vst3InstrumentTest` and `ClapEffectIntegrationTest` choose the window system themselves, so all three paths
+    run on any machine.
+  - **Windows and macOS, hosted CI:** the hosted macOS, msvc and msys2 jobs build and run `ClapHostTest` and
+    `ClapEffectIntegrationTest` on their own native path. That run had **not yet been observed** when this was
+    written, because lanes are not pushed.
+  - **VST3 on Windows and macOS:** the VST3 fixture (`tests/data/vst3-test-instrument`) builds only on the
+    linux-x86_64 job; its bundle layout and entry file are Linux-only. So no hosted Windows or macOS job runs
+    the VST3 editor. That side is proved only by the explicit HWND / NSView cases run on Linux.
+  - **Still to check on a real machine (the owner's Windows laptop and Mac mini):** a real third-party VST3 and
+    CLAP editor that opens, draws, resizes (host and plug-in), closes and reopens.
+  **Limits:**
+  - **Content scale on macOS:** both APIs use logical points on macOS and the OS applies the screen's factor
+    itself. So a VST3 view there is given the scaled size instead of `setContentScaleFactor`, and a CLAP editor
+    is never sent `set_scale`. `editor_scale` therefore has no effect on a CLAP editor on macOS.
+  - **Plug-in resizes:** a resize the plug-in asks for is granted to the view, but the host window keeps the
+    size it opened at, on every platform (as on X11 before).
+  - **Run loop:** the run loop for editor timers and file descriptors (Linux `IRunLoop`, CLAP fd/timer support) is
+    the same Qt loop on every platform.
 - *(Added 2026-10-07, plugin-hosting lane, MX-094.)* **A VST3 effect's own window now opens at the device's
   zoom** (`plugin.options editor_scale`, 0.5 to 3), as a CLAP effect's already did. A view that scales itself
   (`IPlugViewContentScaleSupport`) is told the factor. Any other view that can resize is given the scaled size.

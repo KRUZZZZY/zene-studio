@@ -80,6 +80,29 @@ statement, not a finding about the plug-in.
 - **Audio.** The matrix measures loading, the editor and the state round-trip. It does not compare rendered audio
   against another host.
 
+## Plug-in editors on each platform (Q050-490)
+
+A VST3 or CLAP plug-in's own editor embeds in the platform's native window, chosen when it opens: an X11 window on Linux, an
+HWND on Windows, an NSView on macOS (`include/PluginWindowSystem.h`). A plug-in that cannot embed in it is refused with the
+platform and the window API named - for example *"cannot embed on Windows (VST3 platform type HWND)"* - and no window is left
+open. A native Wayland session has no X11 window to give and is refused the same way (start with `QT_QPA_PLATFORM=xcb`).
+
+The CI column says which tests the hosted jobs build and run for each platform. When this section was written (2026-10-27)
+the change had not been through hosted CI yet (lanes are not pushed), so a Windows or macOS result in that column is still to
+be observed on the first hosted run of the merged line; every test named was run on Linux, where the Windows and macOS cases
+run too because the window system is chosen explicitly in them.
+
+| Platform | VST3 platform type / CLAP window API | Hosted CI (tests that run there) | Still needs a real-machine run |
+| --- | --- | --- | --- |
+| Linux (X11) | `X11EmbedWindowID` / `x11` | the third-party rows above (Xvfb); `ClapHostTest`, `ClapEffectIntegrationTest` and `Vst3InstrumentTest` on the hosted Linux jobs | Wayland without XWayland: refused by design |
+| Windows | `HWND` / `win32` | `ClapHostTest` and `ClapEffectIntegrationTest`, run by ctest on the hosted msvc and msys2 jobs, open, resize, close and reopen the in-tree CLAP fixture's editor through the native `win32` path. The VST3 fixture is built only on the linux-x86_64 job (its bundle layout is Linux-only), so on Windows the VST3 side is proved by `Vst3InstrumentTest`'s explicit HWND case, run on Linux | every third-party VST3 and CLAP editor: open, draw, host and plug-in resize, close, reopen, `editor_scale` - on the owner's Windows laptop |
+| macOS | `NSView` / `cocoa` | `ClapHostTest` and `ClapEffectIntegrationTest` on the hosted macOS x86_64 and arm64 jobs (native `cocoa` path, `set_scale` never called); the VST3 side by `Vst3InstrumentTest`'s explicit NSView case, run on Linux, for the same reason as Windows | the same, on the owner's Mac mini |
+
+Content scaling (`plugin.options editor_scale`): on X11 and Windows a VST3 view that scales itself is told the factor
+(`IPlugViewContentScaleSupport`) and a CLAP editor gets `set_scale`; on macOS both APIs work in logical points and the OS applies
+the screen's factor, so a VST3 view is given the scaled size instead (when it can resize) and a CLAP editor is not asked to
+scale at all - `editor_scale` has no effect on a CLAP editor on macOS.
+
 ## Reproduce a row
 
 The packages are pinned in `docs/plugin-compat/subjects.json` (package, version, download URL, sha256 of the package file and
@@ -178,3 +201,5 @@ These are Zene's own test fixtures. They prove the host's code paths work agains
 | `PluginNativeEditorTest` | the native editor window around a plug-in view, with fake editor hooks - not a real plug-in editor |
 | `Lv2StateTest` | the LV2 state interface against a test bundle |
 | `ControlSocketIntegration` | the control-socket transcripts that save and load a hosted device state against the fixture modules |
+| `ClapHostTest, ClapEffectIntegrationTest` | the in-tree CLAP gain fixture's editor on X11, Windows (win32) and macOS (cocoa): open, host and plug-in resize, close, reopen, the refusal naming platform and window API, and the editor button's refusal line (Q050-490) |
+| `Vst3InstrumentTest` | the MIT VST3 fixture's editor as X11EmbedWindowID, HWND and NSView: open, host and plug-in resize, close, reopen, the refusal naming platform and platform type, editor_scale per platform (Q050-490) |
