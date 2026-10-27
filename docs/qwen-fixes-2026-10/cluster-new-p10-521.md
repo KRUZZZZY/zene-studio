@@ -51,4 +51,12 @@ Not run:
 
 ## Self-check
 
-Pending: the completion check (`submit_check.py`) runs after this commit. Its gate step calls `feature_check.py` from the bunny directory, so it is expected to hit the same out-of-jail log directory error. That will be reported as-is below.
+`submit_check.py` (`logs/005-submit-check.log`, EXIT=1): commits, clean tree, report and test-scope rows PASS. The one FAIL is `gates (feature_check.py)`. The check runs the gate script from the bunny directory, which creates its log directory next to the worktree. That is outside this lane's write-jail, so the gate cannot run here (same `PermissionError` as `logs/002-feature-check-pre-report.log`). This is an environment limit, not a code finding. The gate itself passes when its log directory is redirected (`logs/004-feature-check-pre-report.log`, 8/8 PASS). The loop should run the gate outside the jail.
+
+Answers to the "?" items:
+
+- **Regression test FAILS with the change reverted and PASSES with it:** not applicable. The verdict is FALSE-POSITIVE, and no product file changed, so there is no test. The committed diff touches only `docs/qwen-fixes-2026-10/cluster-new-p10-521.md`.
+- **Deterministic test:** not applicable, no test added.
+- **Fix at the cause and complete:** not applicable, no fix. Every production caller and the indirect Eq path were checked (table above and `logs/001-caller-audit.log`), and each passes a channel in `[0, CHANNELS)`.
+- **No collateral damage:** not applicable. Nothing in product code or saved data changed, so behaviour is unchanged.
+- **FALSE-POSITIVE evidence (file:line / contract):** `include/BasicFilters.h:125-127`, `:182-187`, `:219-222`, `:357`, `:708`, `:714` (unchecked index by `ch`); `include/BasicFilters.h:146-147`, `:192`, `:227` and `include/lmms_constants.h:38` (arrays sized by `CHANNELS`, default `2`); production call sites listed above, all literal 0/1 or loops bounded by 2; `plugins/Eq/EqFilter.h:137-140` forwards the caller's literal channel.
