@@ -39,9 +39,9 @@ Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p14-203.m
 
 ## Self-check
 
-- Regression fails with the change reverted and passes with it: not applicable, no product change; no regression test added (a not-real verdict).
-- Deterministic test: not applicable.
-- Fix at the cause, callers and siblings: the callers and the sibling `MidiEvent::volume` were checked above and all receive the clamped base velocity.
-- No collateral damage: no code changed, so old projects and saved data are unaffected.
-- Realtime/undo/commands: no code changed; no new command.
-- Registration and gates: the six simple gates and two ratchets were run directly (EXIT codes above). The ratchet failures are on items in files this branch does not change.
+- **The regression test FAILS with your product change reverted and PASSES with it (exit codes).** Not applicable: there is no product change and no regression test (verdict FALSE-POSITIVE, claim-only closure). Nothing was reverted, so no RED/GREEN exit codes exist.
+- **The test is deterministic (name the seam or injected values).** Not applicable: no test was added or changed.
+- **The fix is at the cause; every caller and sibling checked.** No fix. The one production caller (InstrumentTrack.cpp:435) and the sibling division (MidiEvent.h:145, callers InstrumentTrack.cpp:532 and :579) were checked; all receive the clamped base velocity (MidiPort.cpp:65, AutomatableModel.cpp:604-616).
+- **No collateral damage: old projects and saved data still load; any limit or check does not hit other callers.** No code changed, so behaviour is unchanged. Saved base velocities load through `loadSettings` → `setValue` → `fittedValue` (AutomatableModel.cpp:328-347, 497-500, 604-616), so an old project with a 0 value loads as 1.
+- **Verdict evidence (file:line).** Note.cpp:264 (the division), Note.cpp:274 (no division by base), MidiPort.cpp:65 (range 1..127), AutomatableModel.cpp:604-616 (clamp), InstrumentTrack.cpp:435 (the caller).
+- **Gates (feature_check.py): FAIL, environment only.** `feature_check.py` creates its log folder at `<worktree>/../<name>-feature-check`, which is the read-only programs directory; it exits 1 with `PermissionError` (`logs/001-feature-check.log`). That is outside my write jail, and I did not work around it. The six simple gates and the two ratchets were run directly from the worktree with the exit codes in the table: all six simple gates EXIT=0; complexity and file-length EXIT=1 on items in files this branch does not change (the branch diff against base is empty), which feature_check's rule passes. The completion check's gate row therefore reflects the log-folder permission, not a gate result.
