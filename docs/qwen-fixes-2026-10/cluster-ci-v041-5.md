@@ -89,3 +89,25 @@ too.
 - **Committed files.** `include/RemotePluginBase.h`, `tests/CMakeLists.txt`,
   `tests/src/core/RemotePluginShmFifoTest.cpp`, `tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp`,
   `tests/fork-sources.txt`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-ci-v041-5.md`.
+- **submit_check.py gates row (log 21: FAIL).** That row runs the unmodified `feature_check.py`, which dies on the same
+  `PermissionError` before any gate runs: it cannot create `../zene-qwen-ci-v041-5-feature-check` (checked by
+  re-running it directly). This is the lane's write-jail, not a gate failure. The gates themselves are 8/8 PASS,
+  EXIT=0 (log 20, run after the report existed). The loop's own run, outside the jail, should see the same.
+- **Fails reverted / passes fixed.** Without the product change (`git apply -R logs/fix.patch`, EXIT=0), the build
+  fails (EXIT=2, `RemotePluginBase.h:49:9: 'SYNC_WITH_SHM_FIFO' redefined [-Werror]`) and ctest gives EXIT=8, Not
+  Run. With only the header half back, ctest gives EXIT=8 on
+  `ZENE_SHM_FIFO_COMPILE_CHECK_IS_STATIC_EXPORT: 0`. With the whole patch back, the build gives EXIT=0 and ctest
+  EXIT=0 (2/2, 11/11 cases).
+- **Deterministic.** Both checks are compile-time facts: the macro value seen through a shadow `lmmsconfig.h` that
+  has no `LMMS_HAVE_SYS_IPC_H`, and `$<IN_LIST:LMMS_STATIC_DEFINE,...>` from `file(GENERATE)`. There is no timing,
+  sleep or thread.
+- **At the cause, siblings consistent.** Every compile site of `RemotePluginBase.cpp` was checked: `lmmsobjs`
+  (dllexport), `RemoteVstPlugin`/`RemoteZynAddSubFx` (`BUILD_REMOTE_PLUGIN_CLIENT`, empty export),
+  `RemotePluginShmFifoTest` (already static), and `RemotePluginShmFifoCompileCheck` (now static). The header has
+  the only in-tree `#define SYNC_WITH_SHM_FIFO`. Every target that includes the header was rebuilt (logs 14, 16),
+  and the `RemotePlugin` ctest family is 3/3.
+- **No collateral damage.** No product build predefines `SYNC_WITH_SHM_FIFO`, so `#ifndef` changes nothing for
+  them. On Linux the branch is not taken at all. `LMMS_STATIC_DEFINE` only affects an OBJECT compile check that
+  nothing links. No data format, limit, command, undo or audio-thread path is touched.
+- **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: the verdict is FIXED, and the RED build above reproduces the
+  CI error on this box.
