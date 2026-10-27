@@ -54,4 +54,12 @@ Gate run (the brief's `feature_check.py` could not run as written; see the first
 
 ## Self-check
 
-Filled in after `submit_check.py` ran (see below).
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p10-59` → EXIT=1 (`logs/submit-check-1.log`):
+
+- PASS: commits on the branch; working tree clean; this report present; tests (claim-only closure, no test added).
+- FAIL: `gates (feature_check.py)`. The cause is the sandbox, not a gate result: `feature_check.py` stops with `PermissionError` at `logs.mkdir` for `<worktree>/../zene-qwen-new-p10-59-feature-check`, which is outside the write-jail (`logs/gate-feature-1.log`). I did not edit the shared script. Rows 2-9 of the table above are the same commands it runs; six pass, and the two ratchets are red by design with no reported item in a changed file. **Someone with write access outside the jail needs to run `feature_check.py` once to get the official table.**
+- `?` regression test fails without the fix and passes with it: **not applicable**, because the verdict is FALSE-POSITIVE and no product code changed. There is no fix to prove. The not-real verdict rests on the cited code (Evidence 1-6 above).
+- `?` deterministic test: **not applicable**, no test added.
+- `?` fix at the cause and complete: **not applicable**, no fix. The siblings that read the same ids were checked: `rangeJson` (`src/core/ControlCommandsRange.cpp:71-78`), `duplicateRange` (`:357`), the ripple helpers (`:225-233`), and the bounce cache (`src/core/ControlCommandsRenderBounce.cpp:132`, `:388`). None processes a track twice.
+- `?` no collateral damage: **not applicable**, no product change; saved data and old projects are untouched.
+- `?` FALSE-POSITIVE evidence: `src/core/ArrangementEdits.cpp:522-529` (`tracks()` dedups by iteration), `src/core/ControlCommandsRange.cpp:113` (`beginEdit`), `:251`/`:258` (delete), `:225-233` (ripple), `:71-78` (reply). Full list in the Evidence section above.
