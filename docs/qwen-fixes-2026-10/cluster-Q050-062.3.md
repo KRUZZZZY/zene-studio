@@ -21,6 +21,26 @@ New: `tools/stem_quality_bench.py` (`fetch` / `run`) and the hermetic ctest `Ste
 (`tests/stem-quality-bench.py`, a black-box check of `run`). The run's JSON record is `docs/050-features/Q050-062.3-bench.md`, unedited in one fenced block.
 The docs and the manual are updated. No C/C++, command, engine, GUI or project-format change.
 
+## Round 3 (review: two Windows portability defects in the bench helpers)
+
+The reviewer's fix `824cc54de` was not on the branch. I applied it as a patch (`git show | git apply`) and
+committed it as `fc7a8e499`:
+- `_scratch_wav()` builds its path from `tempfile.gettempdir()` instead of `$TMPDIR` or `/tmp`.
+- `load_average()` gets `os.getloadavg` with `getattr` and returns `None` when it does not exist.
+- `tests/stem-quality-bench.py` gains `portability_failures()`. It mocks `tempfile.gettempdir`, and it removes
+  `os.getloadavg` from the loaded module before restoring it.
+
+Negative control: with only the two `tools/stem_quality_bench.py` hunks reversed, `ctest -R
+'^StemQualityBench$'` gives exit 8 (`r3/logs/01-reverted.log`). It prints both `FAIL: fetch scratch WAV does
+not use tempfile.gettempdir()` and `FAIL: load average requires os.getloadavg(): module 'os' has no
+attribute 'getloadavg'`. Restored, it gives exit 0 (`02-restored.log`).
+
+The loop has since merged train 21 into the branch (`188e5acd1`). On that tree:
+- The build of `zene` and the stem test targets succeeded, exit 0 (`03-build.log`).
+- The 8 targeted ctests passed, exit 0 (`04-ctest.log`).
+- The tools-scope complexity and file-length gates passed, exit 0 and 0 (`05`, `06`).
+- The full gates and the completion check: see the end of this section.
+
 ## Round 2 (review: train merge + automated proof check)
 
 1. **Merge of `050/m0-train-21`: not done. The lane's guard refuses it.** `git merge 050/m0-train-21` returned
@@ -108,8 +128,11 @@ It shows no FAIL and three WARNs (no GUI file, GUI test or command file changed)
   withdrawn in round 2). The benchmark is an offline Python tool that runs as its own process. No locks or races are introduced; TSan does
   not run on this box, and nothing here is concurrent.
 - **Old projects load and render as before.** No project format, load or render path changed.
-- **Portability.** No C/C++ code changed. The Python tool guards `os.sched_getaffinity` with
-  `hasattr`, reads `/proc` and `/sys/fs/cgroup` in `try/except OSError`, and `os.getloadavg` the same way.
+- **Portability.** No C/C++ code changed. The Python tool guards `os.sched_getaffinity` with `hasattr`
+  and reads `/proc` and `/sys/fs/cgroup` in `try/except OSError`. Since round 3, `os.getloadavg` is looked up
+  with `getattr`, so where it is missing (Windows) no load average is recorded. The fetch scratch WAV goes in
+  `tempfile.gettempdir()`. Round 2 claimed `getloadavg` was already guarded; that was wrong, because only
+  `OSError` was caught and a missing function raised `AttributeError`.
   The ctest uses only the stub model and the CLI that `ControlStemCommands` already runs on every platform,
   and it returns 77 (skip) where numpy/onnxruntime are missing. Its scratch files go in a `tempfile` directory.
 - **GUI and agent path (DoD 2).** This stage adds no user action. The quality choice already has its GUI
