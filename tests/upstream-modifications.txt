@@ -694,6 +694,7 @@ plugins/DualFilter/DualFilter.h	cluster new-p10-145: initialize cached cutoff an
 plugins/DynamicsProcessor/DynamicsProcessor.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change); 2026-10-11 bug cluster new-p9-124: define frame progress for zero/one-frame blocks before division; AudioPluginTest covers finite nonzero output with an active high-pass filter
 plugins/DynamicsProcessor/DynamicsProcessorControls.cpp	validate decoded wave-shape size against the fixed 200-float model; malformed saved shapes restore the default curve, covered by PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape
+plugins/DynamicsProcessor/DynamicsProcessor.h	cluster new-p9-129: initialise m_needsUpdate to false, the state the constructor leaves (RMS sizes and coefficients are computed for the current rate); regression PluginPortsMigrationTest::dynamicsProcessorNeedsUpdateStartsCleared
 plugins/Eq/EqEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Flanger/FlangerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/Flanger/MonoDelay.cpp	cluster new-p9-293: pair both buffer releases with new[]; covered by MonoDelayTest.
