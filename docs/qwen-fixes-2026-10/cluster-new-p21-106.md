@@ -26,3 +26,14 @@ Observation, not changed (outside this finding): `fitsAtModelRate()` at [Control
 | Regression test RED/GREEN | not run | No product change, so there is no fix to reverse (step 4b). No regression test was added because the claim is not real. |
 
 Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p21-106.md`. No product file and no test file changed.
+
+## Self-check
+
+Answers to the four ASK items that apply to a no-change verdict, and the gate status.
+
+- **Regression test fails with the change reverted and passes with it.** Not applicable. No product change was made, so there is nothing to revert, and no test was added because the reported defect is not reachable. The only evidence is the code path at `src/core/ControlStemSupport.cpp:231`, `src/core/SampleBufferResample.cpp:67` and `:88`, and `src/core/ControlRegistry.cpp:300-318`, as cited above.
+- **Deterministic test.** Not applicable (no test added).
+- **Fix at the cause and complete; callers and siblings checked.** Not applicable (no fix). The other caller of the same function, `src/core/RenderQueue.cpp:207`, uses the same non-null contract with no null check, and that is consistent with the cited contract at `include/SampleBufferResample.h:37-42`.
+- **No collateral damage.** Not applicable. No product file changed, so saved projects, old data, limits and the other callers are unaffected.
+- **Verdict evidence.** The file:line claims in the Evidence section above, including the bad_alloc-to-typed-error path (`src/core/ControlRegistry.cpp:300-318`, `:451-455`).
+- **Gates.** `feature_check.py` passes with its log folder redirected: EXIT=0, RESULT: PASS, all eight rows PASS (`logs/003-feature-check.log`). Run as the procedure states it, it exits 1 because it creates its log folder beside the worktree, outside the write-jail (`logs/001-feature-check.log`). The gate logic itself was not changed.
