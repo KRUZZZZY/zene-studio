@@ -28,8 +28,11 @@
 
 #include <QtTest>
 
+#include <QAbstractItemModel>
 #include <QAbstractSpinBox>
+#include <QCoreApplication>
 #include <QDoubleSpinBox>
+#include <QFocusEvent>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLineEdit>
@@ -59,6 +62,30 @@ class FollowActionEditorTest : public QObject
 	Q_OBJECT
 
 private slots:
+	void aRowRemovedWhileItsControlsReceiveFocusLeavesTheEditorIntact()
+	{
+		// Qt releases a removed row's cell widgets while the row is still in the model. A focus-in delivered to one of
+		// that row's controls then reaches rowOf with a null cell. The focus-in is sent from the model's
+		// rowsAboutToBeRemoved hook (connected after the view's own, so the cells are already gone) rather than by moving
+		// real focus, which would also re-enter the editor's focus handler and is a separate defect.
+		const QJsonArray chain{QJsonObject{{QStringLiteral("type"), QStringLiteral("next")}},
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("stop")}},
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("none")}}};
+		FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, chain, QStringLiteral("1"));
+		auto* table = editor.findChild<QTableWidget*>();
+		QVERIFY(table != nullptr);
+		QWidget* control = table->cellWidget(2, 1);
+		QVERIFY(control != nullptr);
+		connect(table->model(), &QAbstractItemModel::rowsAboutToBeRemoved, table,
+			[control](const QModelIndex&, int first, int) {
+				if (first != 2) { return; }
+				QFocusEvent focusIn(QEvent::FocusIn);
+				QCoreApplication::sendEvent(control, &focusIn);
+			});
+		table->removeRow(2);
+		QCOMPARE(table->rowCount(), 2);
+	}
+
 	void anExplicitChanceEditIsWritten()
 	{
 		const QJsonArray chain{QJsonObject{{QStringLiteral("type"), QStringLiteral("next")},
