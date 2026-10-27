@@ -153,6 +153,28 @@ class SessionModel;
  *  include/SessionAudioCells.h), loaded here on the model thread. */
 int publishSessionSlotContent( SessionScheduler& scheduler, const SessionModel& model ) noexcept;
 
+class ClipSlot;
+
+//! Publishes one cell, as publishSessionSlotContent publishes each. MODEL THREAD; one queue push.
+bool publishSessionCell( SessionScheduler& scheduler, int track, int scene, const ClipSlot& slot ) noexcept;
+
+/*! Q050-489: THE transition boundary between the authored grid and the launcher. Every change of the session
+ *  model after a project is open - a session.* edit, its undo and its redo, a capture or a landed take, a pattern
+ *  deleted or moved under the cells - ends here, with the model as it was (@a before) and as it is (@a after).
+ *
+ *  For each cell whose CONTENT changed (sameSessionContent) the new content is published, so a playing cell
+ *  sounds what the grid now holds instead of what it held at the last launch; a cell that held a clip and now
+ *  holds none (cleared, or outside a shrunk grid) is also stopped, exactly as session.stop_slot stops it, so the
+ *  launcher never reports - and the track is never taken over by - a cell the grid no longer has. Nothing else is
+ *  touched: launch settings, follow chains and scenes are read at the next launch, as before.
+ *
+ *  MODEL THREAD. Bounded by the cells that changed, and only queue pushes reach the engine (no allocation or
+ *  lock on the audio thread). Returns the cells published. */
+int syncSessionLauncher( SessionScheduler& scheduler, const SessionModel& before, const SessionModel& after ) noexcept;
+
+//! Whether two cells render the same thing: the fields publishSessionCell sends (and the audio bake reads).
+bool sameSessionContent( const ClipSlot& a, const ClipSlot& b ) noexcept;
+
 } // namespace lmms
 
 #endif // LMMS_SESSION_PLAYBACK_H

@@ -118,6 +118,8 @@ SET(LMMS_SESSION_SRCS
 		# its own TU because SessionScheduler.h is AT the file-length limit, so
 		# the new declarations' bodies cannot live beside their class.
 		core/SessionPlayback.cpp
+		# Q050-489: the one boundary that keeps the launcher in step with grid edits, undo, redo and pattern renumbering.
+		core/SessionTransitions.cpp
 		# The session.* control-surface group (SPEC A11-A16): always compiled
 		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp

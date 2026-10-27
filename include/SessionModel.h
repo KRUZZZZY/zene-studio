@@ -344,6 +344,16 @@ public:
 
 	void clear();
 
+	// ---- pattern references (Q050-489; bodies in SessionTransitions.cpp) ----
+
+	/*! Pattern @a removed was deleted and every pattern numbered after it moved down one (PatternTrack's
+	 *  registry renumbers them). A MIDI cell naming the deleted pattern is emptied - its notes went with the
+	 *  pattern, as the pattern's arrangement clips did - and a cell naming a later pattern follows it down, so
+	 *  every remaining cell still names the pattern it named. Returns the cells changed. */
+	int patternRemoved( int removed );
+	//! Patterns @a first and @a second swapped numbers (a pattern track moved): the cells follow their patterns.
+	int patternsSwapped( int first, int second );
+
 	// ---- persistence ---------------------------------------------------
 
 	//! Appends <session version="1" ...> to `parent` and returns it: the
