@@ -443,6 +443,27 @@ private slots:
 				.arg(actual).arg(expected)));
 	}
 
+	//! The public Scale constructor takes an empty interval list and Song::setScale
+	//! stores it. A mapped key must then read 0 Hz from keyToFreq, not index the
+	//! empty list (the octave degree would be -1).
+	void emptyStoredScaleReadsSilenceForAMappedKey()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setScale(0, std::make_shared<Scale>(QStringLiteral("empty scale"), std::vector<Interval>{}));
+		song->setKeymap(0, std::make_shared<Keymap>(QStringLiteral("empty scale fixture"), std::vector<int>{0, 2},
+			0, 127, 69, 69, 440.0f));
+		QVERIFY2(song->getKeymap(0)->getDegree(70) != -1, "key 70 must be mapped so keyToFreq reaches the scale");
+		float actual = -1.0f;
+		{
+			Microtuner microtuner;
+			actual = microtuner.keyToFreq(70, 69);
+		}
+		song->clearProject();
+
+		QCOMPARE(actual, 0.0f);
+	}
+
 	//! THE PROOF: transport playing, two sounding notes, one .scl, both tracks
 	//! on the ONE table, undo brings the old sound back - transport never stops.
 	void loadScaleWhileTransportPlaysRetunesSoundingNotes()
