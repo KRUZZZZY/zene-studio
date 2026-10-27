@@ -103,3 +103,10 @@ No change made. The project-value path (`static_cast<VcoShape>(m_waveShape.value
 Yes: `include/BandLimitedWave.h:127-130` (contract: four waveforms), `:93-101` (enum and `NumWaveforms`), `plugins/Lb302/Lb302.cpp:423-481`
 (no-default switch, literal BL cases), `plugins/Monstro/Monstro.h:183-244` (int switch, literal cases, `return 0.0` default),
 `src/core/AutomatableModel.cpp:604-616` (clamp). Gate-wrapper gaps (row 6) and the ratchet rows (13-14) are reported above, not hidden.
+
+## Completion check (submit_check.py)
+Log: `submit-check-1.log`, EXIT=1. PASS: commits on the branch, working tree clean, report present,
+tests row (claim-only closure, no `src/`, `include/` or `plugins/` file changed). **FAIL: gates (feature_check.py)**
+because the wrapper cannot create its `<worktree>-feature-check/` log folder outside the write-jail
+(row 6). The six simple gates (rows 7-12) and the two ratchets (rows 13-14) were run one by one as above;
+the wrapper itself was not run to completion. The five `?` items are answered in the Self-check section above.
