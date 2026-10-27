@@ -280,6 +280,44 @@ def check_refusals(session, recorder, outdir):
     # carries both ticks; the section-list refusals above are the ones this verb adds.
 
 
+#: Bytes that are not a WAV, put where a section's file will go, to see whether the export replaces them.
+STALE_BYTES = b"stale: not a WAV from an earlier export\n"
+
+
+def check_existing_file_is_replaced(session, recorder, outdir):
+    """Pins the CURRENT overwrite contract of render.sections (docs/qwen-fixes-2026-10/cluster-new-p20-13.md).
+
+    A file already in the output directory under a section's name is replaced by that section's render, and
+    the reply carries no sign of it. This is a characterization check, not a regression of a fixed bug: the
+    owner has not yet chosen between keeping this and refusing an existing file unless an overwrite flag is
+    passed. If the contract changes, this check changes with it on purpose.
+    """
+    chorus = session.result("section.add", {"start": 3 * ONE_BAR, "end": 4 * ONE_BAR, "name": "Chorus"})
+    recorder.check("section.add names the Chorus section", "error" not in chorus, repr(chorus)[:200])
+    if "error" in chorus:
+        return
+    directory = os.path.join(outdir, "sections-existing")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "Chorus.wav")
+    with open(path, "wb") as handle:
+        handle.write(STALE_BYTES)
+    result = session.result("render.sections", {"out": directory, "sections": [chorus["section"]]},
+                            timeout=SECTIONS_TIMEOUT)
+    recorder.check("render.sections answered success with a file over the existing one",
+                   "error" not in result and result.get("count") == 1, repr(result)[:300])
+    if "error" in result:
+        return
+    with open(path, "rb") as handle:
+        data = handle.read()
+    recorder.check("the stale Chorus.wav is replaced by the section's render",
+                   data != STALE_BYTES and data[:4] == b"RIFF", "first bytes=%r" % (data[:12],))
+    info = wav_header(path)
+    want = expected_frames(ONE_BAR, PRESET_RATE)
+    recorder.check("the replacing Chorus.wav is bounded to its %d ticks (%d frames, want %d)"
+                   % (ONE_BAR, info["frames"], want),
+                   abs(info["frames"] - want) <= FRAME_SLACK, "header=%r" % (info,))
+
+
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
     if reply.get("ok") is not True:
@@ -311,6 +349,7 @@ def run_checks(session, instance, recorder, outdir):
     check_sections(session, recorder, outdir)
     check_portable_names(session, recorder, outdir)
     check_stems_follow_the_selection(session, recorder, outdir)
+    check_existing_file_is_replaced(session, recorder, outdir)
 
 
 def main(argv):

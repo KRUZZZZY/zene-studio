@@ -41,40 +41,48 @@ Pick one contract for `render.sections`:
 
 My recommendation is 2, because it is the convention the codebase already uses to stop silent clobbering, and the GUI change is small. If the owner wants the batch export to behave like `render.stems`, pick 1. Either way I can make the change once the choice is made.
 
+## Test added (round 2)
+
+`tests/control-render-sections.py`, new check `check_existing_file_is_replaced`, run last in `run_checks`. It stages `Chorus.wav` with non-WAV bytes in its own directory (`sections-existing`), exports the one section `sec-9` with `render.sections`, and checks that the file is replaced by a valid, bounded WAV. It pins the **current** contract, so it is a characterization check, not a regression test for a fixed bug. If the owner picks option 2 above, this check changes on purpose.
+
 ## Commands run
 
-Worktree: `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p20-13`. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p20-13.r1/logs/`.
+Worktree: `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p20-13`. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p20-13.r2/logs/`. Build commands set `CCACHE_TEMPDIR=/tmp/ccache-tmp-new-p20-13`, because ccache's default temp path is outside the write-jail (`build-mutant-1.log`, EXIT 2, `Permission denied`). That changes only where ccache writes its scratch files.
 
-No product code was changed, so no build or ctest was run for this verdict.
-
-| Command (run from the worktree) | Log | EXIT |
+| Command | Log | EXIT |
 | --- | --- | --- |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `feature-check-1.log` | 1 (wrapper failed before any gate ran, see Self-check) |
-| `bash tests/fork-sources-gate.sh` | `gate-fork-sources-1.log` | 0 |
-| `bash tests/all-sources-reproduce.sh` | `gate-all-sources-reproduce-1.log` | 0 |
-| `bash tests/no-upstream-regression-gate.sh` | `gate-no-upstream-regression-1.log` | 0 |
-| `tests/scripted/check-namespace` | `gate-check-namespace-1.log` | 0 |
-| `bash tests/no-tautology-gate.sh` | `gate-no-tautology-1.log` | 0 |
-| `python3 tests/doc-figures-gate.py` | `gate-doc-figures-1.log` | 0 |
-| `bash tests/complexity-gate.sh --check` | `gate-complexity-1.log` | 1 (7 items; none in a file this branch changes) |
-| `bash tests/file-length-gate.sh --check` | `gate-file-length-1.log` | 1 (22 items; none in a file this branch changes) |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p20-13` | `submit-check-1.log` | 1 (see Self-check) |
+| `cmake --build build --target zene -j4` (no change, confirming the binary is current) | `build-1.log` | 0 |
+| `ctest -N -R ControlRenderSections` | `ctest-list-1.log` | 0 (1 test) |
+| `ctest -R ControlRenderSections --output-on-failure` | `test-1.log` | 0 (output hidden on success) |
+| `python3 tests/control-render-sections.py build/zene` (direct, with `QT_QPA_PLATFORM=offscreen`) | `script-direct-1.log` | 0, `PASS ... every check held` |
+| Mutant: `ControlCommandsRenderSections.cpp` refuses an existing file (temporary, saved as `mutation.patch`), then `cmake --build build --target zene -j4` | `build-mutant-2.log` | 0 |
+| same script against the mutant | `script-mutant-2.log` | 1, one `FAILED` line (`render.sections answered success with a file over the existing one`, reply `refused / Chorus already exists`); all other checks ok |
+| `git apply -R mutation.patch`, then `git diff --stat` on the product file | (none) | 0, empty diff |
+| `cmake --build build --target zene -j4` (restored) | `build-restored-1.log` | 0 |
+| same script against the restored binary | `script-restored-1.log` | 0, `PASS` |
+| `ctest -R ControlRenderSections -V` | `test-2.log` | 0, `100% tests passed out of 1`; the three new-check lines are at 66-69 |
+| `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `feature-check-2.log` | 1: the wrapper cannot create its sibling log folder (`PermissionError`), so no gate ran. See Self-check. |
+| `bash tests/fork-sources-gate.sh` | `gate-fork-sources-2.log` | 0 |
+| `bash tests/all-sources-reproduce.sh` | `gate-all-sources-reproduce-2.log` | 0 |
+| `bash tests/no-upstream-regression-gate.sh` | `gate-no-upstream-regression-2.log` | 0 |
+| `tests/scripted/check-namespace` | `gate-check-namespace-2.log` | 0 |
+| `bash tests/no-tautology-gate.sh` | `gate-no-tautology-2.log` | 0 |
+| `python3 tests/doc-figures-gate.py` | `gate-doc-figures-2b.log` | 0 |
+| `bash tests/complexity-gate.sh --check` | `gate-complexity-2.log` | 1: 7 items, none names `control-render-sections` (`grep`: 0 matches) |
+| `bash tests/file-length-gate.sh --check` | `gate-file-length-2.log` | 1: 22 items, none names `control-render-sections` (`grep`: 0 matches) |
+
+The two ratchets were also red in round 1 with the same item counts (7 and 22). The file under test is 383 lines (`wc -l`), under the 500-line limit. Neither ratchet lists a changed file.
 
 ## Self-check
 
-**The wrapper cannot run here.** `feature_check.py:71` does `logs.mkdir` on `<worktree>-feature-check`, a sibling of the worktree at `projects/zene-studio-program/zene-qwen-new-p20-13-feature-check`. That path is outside the write-jail, and the mkdir failed with `PermissionError` (`feature-check-1.log`). I ran the same commands the wrapper runs (its `SIMPLE` and `RATCHET` lists) directly and wrote their output to the LOG FOLDER. That is the table above. The wrapper's own table was not produced.
+**Wrapper.** `feature_check.py:71` does `logs.mkdir` on `<worktree>-feature-check`, a sibling of the worktree. That path is outside the write-jail, so the wrapper cannot write its logs (`feature-check-2.log`, `PermissionError`). I ran the same gate commands directly, as in round 1, and the table above has their exit codes. The wrapper's own table was not produced.
 
-**Ratchet verdict by the wrapper's rule.** The wrapper fails a ratchet only for an item in a file the branch changed. The only changed file is this report. None of the 7 complexity items or 22 file-length items names `docs/` or this report (`grep` of both logs: 0 matches). Both ratchets are red on the train on the baseline, and this branch adds nothing to them.
+**Regression proof (the "?" item about reverting).** This round changes no product code, so there is no RED→GREEN for a fix. What I can show is that the new check is sensitive: with a temporary refuse-existing-file mutation in `ControlCommandsRenderSections.cpp`, the check fails (`script-mutant-2.log`, EXIT 1), and every other check still passes. With the mutation reverted (`git apply -R`, empty `git diff`), the check passes (`script-restored-1.log`, `test-2.log`, both EXIT 0). The product file is back to the committed state.
 
-**Completion check (`submit-check-1.log`, EXIT 1):**
-- `FAIL commits on the branch` and `FAIL tests added or changed`: expected for this verdict. There is no fix and no regression test, because the contract needs an owner decision first (see "Decision needed"). The report is committed alone.
-- `FAIL working tree clean`: this was the uncommitted report at the time of the check. It is committed in the next step.
-- `FAIL gates (feature_check.py)`: the wrapper cannot run in this sandbox (above). The six direct gates and both ratchets are logged above.
-- The five "?" items:
-  - Regression test fails without the fix, passes with it: **not applicable**. No product change and no test were made. This is the reason the verdict is NEEDS-CONTEXT and not FIXED.
-  - Deterministic test: **not applicable**, no test was added.
-  - Fix at the cause and complete, every caller and sibling checked: **not applicable**. The callers and siblings of `render.sections` were read so the decision is informed: the GUI menu (`src/gui/RenderRangeMenu.cpp:115-124`), the control socket, `src/core/ControlReversibilityTablePassive.cpp`, and `tests/control-render-sections.py` (each check writes its own subdirectory, `sections` at line 151 and `sections-portable` at line 212, so no check exports twice into one folder and none tests re-export). Any fix must touch the GUI caller too.
-  - No collateral damage: **not applicable**. The collateral each option would cause is set out under "Why neither fix was taken".
-  - Verdict is not ALREADY-FIXED or FALSE-POSITIVE, so the "?" item on that does not apply. The overwrite is real in the code (evidence above), and the open question is which contract the owner wants.
+**Determinism.** The check asserts no timing. It uses `session.result`, not `session.timed`, so the only bound is the reply timeout (`SECTIONS_TIMEOUT`), and the duration is never asserted. The stale bytes are the fixed `STALE_BYTES` constant. The section bounds are fixed (`3*ONE_BAR` to `4*ONE_BAR`), and the preset is the fixed `PRESET`. The directory is `sections-existing` inside the run's own temp directory (`instance.tmp`). The surface does not answer until the render child has finished, so the check cannot race the render. The result is read after that reply.
 
-**Not verified:** I did not build `zene` or run `render.sections` on a directory that already holds a same-named file. The claim that the file is replaced rests on the code path (`AudioFileDevice.cpp:47`, `ProjectRenderer.cpp:183`) and was not seen at run time.
+**Fix at the cause, every caller and sibling.** There is no product fix. The callers and siblings were read for the decision: the GUI menu (`src/gui/RenderRangeMenu.cpp:115-124`), the registration and reversibility table (`src/core/ControlReversibilityTablePassive.cpp`), the sibling `render.stems` (`ControlCommandsRenderStems.cpp:266`, unchanged), and `tests/control-render-sections.py`. Under option 2, every caller that exports twice into one folder would change, and the GUI's second export would need the same handling. That is the open decision.
+
+**Collateral.** No product behaviour changed, and the existing checks write their own subdirectories (`sections`, `sections-portable`, `stems`), which the new check does not touch. The new check runs last, so it cannot change the section count that the earlier checks assert. The mutation was only a temporary experiment, and it was reverted before the final runs.
+
+**Verdict.** NEEDS-CONTEXT (not ALREADY-FIXED or FALSE-POSITIVE). The code and contract evidence is in the sections above (`AudioFileDevice.cpp:47`, `ControlCommandsRenderSections.cpp:263-274`, `docs/A16-REVERSIBILITY.md:163`, `ControlCommandsRenderStems.cpp:266`, `ControlCommandsChain.cpp:149-156`). The contract decision is the owner's.
