@@ -3120,6 +3120,7 @@ tests/src/gui/MidiCommandBindingsGuiTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
+tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MixerMeteringTest.cpp
 tests/src/gui/MixerModesTest.cpp

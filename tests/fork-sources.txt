@@ -2774,6 +2774,7 @@ tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
+tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
