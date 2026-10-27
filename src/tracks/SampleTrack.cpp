@@ -182,6 +182,12 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
+		// Audio thread: a clip this track does not hold has nothing to play, and getClip() would
+		// construct one here and append it to the track. InstrumentTrack::play makes the same check.
+		if( _clip_num >= numOfClips() )
+		{
+			return false;
+		}
 		auto sClip = dynamic_cast<SampleClip*>(getClip(_clip_num));
 
 		if (_start > sClip->length())

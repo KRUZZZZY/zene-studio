@@ -2340,6 +2340,7 @@ tests/src/core/AudioOssWriteTest.cpp
 tests/src/core/AudioJackPortRestartTest.cpp
 tests/src/core/AudioFileProcessorPlayheadTest.cpp
 tests/src/core/AudioFileProcessorWaveViewTest.cpp
+tests/src/core/AudioFileMP3InitTest.cpp
 tests/src/core/AudioFileOggInitTest.cpp
 tests/src/core/AudioResamplerRatioTest.cpp
 tests/src/core/AudioWorkerWakeTest.cpp
@@ -2370,6 +2371,7 @@ tests/src/core/CollabTransportTest.cpp
 tests/src/core/ConsoleStripTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlArmReversibilityTest.cpp
+tests/src/core/ControlTrackRouteNoSongTest.cpp
 tests/src/core/ControlBounceSupportTest.cpp
 tests/src/core/ControlBounceRenderTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
@@ -2624,6 +2626,7 @@ tests/src/core/UndoHonestyTest.cpp
 tests/src/core/UnmuteChaseTest.cpp
 tests/src/core/UpnpMapperFakeRouterTest.cpp
 tests/src/core/UpgradeExtendedNoteRangeTest.cpp
+tests/src/core/VideoAudioNameTest.cpp
 tests/src/core/VideoFfmpegTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
@@ -2853,6 +2856,9 @@ tests/src/plugins/SlicerTZoomTest.cpp
 # cluster new-p12-203 (2026-10): ReverbSC reverb-core allocator contract regression
 # (sp_revsc_create / sp_revsc_init), fork-NEW test source.
 tests/src/plugins/ReverbSCInitTest.cpp
+# cluster new-p14-410 (2026-10): ReverbSC output buffer sized per SPFLOAT (base.c compiled with
+# SPFLOAT=double, calloc shimmed); fork-NEW test source, registered in tests/CMakeLists.txt.
+tests/src/plugins/ReverbSCPrecisionTest.cpp
 # BUG new-p12-204: a project sample with sample_rate="0" reached windowTicksFor()'s division by
 # clipFramesPerTick(); loadSettings loads a nonpositive rate as absent (the output rate) and the
 # mapping answers 0 ticks for a nonpositive divisor. Regression SampleClipWarpTest
@@ -2947,6 +2953,8 @@ tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/HistoricalBufferResizeTest.cpp
 # cluster new-p21-188: sfizz HistoricalBuffer empty-average regression.
 tests/src/plugins/HistoricalBufferEmptyTest.cpp
+# cluster new-p23-90: sfizz EQHolder writes its outputs when the buffer pool is exhausted.
+tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
 tests/src/plugins/SfzSimdHelperAlignmentTest.cpp
 tests/src/plugins/SfzTestSupport.h
@@ -3122,3 +3130,25 @@ docs/qwen-fixes-2026-10/cluster-new-p23-187.md
 # Q050-288: fork-authored proof that the Sample Editor docs and agent descriptions match the GUI/registry.
 tests/src/gui/SampleEditorDocsTest.cpp
 tests/control-mixing-strip-features.py
+# Q050-055.1 stage 1 (2026-10-22): panel-scoped shortcuts - the four contexts' action table and key
+# router, the automation editor's edit-mode command (stage 1's one new command), the GUI test that
+# drives the criteria and the two-process restart transcript.
+include/PanelShortcuts.h
+src/gui/PanelShortcuts.cpp
+src/gui/ControlCommandsAutomationMode.cpp
+tests/src/gui/PanelShortcutsTest.cpp
+tests/control-panel-shortcuts.py
+# Q050-055.1 integration onto train 17 (2026-10-27): the shortcuts.* registration table split from
+# ControlCommandsShortcuts.cpp once the panel scopes and the Q050-202 presets both landed in it.
+src/gui/ControlCommandsShortcutsRegister.cpp
+src/gui/ControlCommandsShortcutsShared.h
+# Q050-486 (2026-10): the shared loader for saved plug-in waveform data (fork-NEW) and its regressions.
+include/WaveformData.h
+src/core/WaveformData.cpp
+tests/src/core/WaveformDataTest.cpp
+tests/src/plugins/GraphWaveformLoadTest.cpp
+tests/control-graph-waveform-load.py
+tests/src/gui/GraphWaveformEditorGuiTest.cpp
+docs/050-features/Q050-486.md
+docs/qwen-fixes-2026-10/cluster-Q050-486.md
+tests/src/core/MixerOrderByTracksTest.cpp

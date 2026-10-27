@@ -2351,4 +2351,37 @@ void AutomationEditorWindow::updateEditTanButton()
 	if (!m_editTanAction->isEnabled() && m_editTanAction->isChecked()) { m_drawAction->trigger(); }
 }
 
+
+QString AutomationEditorWindow::editorModeName() const
+{
+	// One spelling per mode, the same words automation.editor_mode takes (ControlCommandsAutomationMode.cpp).
+	switch (m_editor->m_editMode)
+	{
+		case AutomationEditor::EditMode::Draw: return QStringLiteral("draw");
+		case AutomationEditor::EditMode::Erase: return QStringLiteral("erase");
+		case AutomationEditor::EditMode::DrawOutValues: return QStringLiteral("draw_out_values");
+		case AutomationEditor::EditMode::EditTangents: return QStringLiteral("edit_tangents");
+	}
+	return QString();
+}
+
+
+bool AutomationEditorWindow::setEditorMode(AutomationEditor::EditMode mode)
+{
+	QAction* action = nullptr;
+	switch (mode)
+	{
+		case AutomationEditor::EditMode::Draw: action = m_drawAction; break;
+		case AutomationEditor::EditMode::Erase: action = m_eraseAction; break;
+		case AutomationEditor::EditMode::DrawOutValues: action = m_drawOutAction; break;
+		case AutomationEditor::EditMode::EditTangents: action = m_editTanAction; break;
+	}
+	// A mode the toolbar has disabled (Edit Tangents on a discrete or linear curve) cannot be
+	// entered, and saying so is better than entering a mode the window cannot draw.
+	if (action == nullptr || !action->isEnabled()) { return false; }
+	// Through the toolbar's own action: that is what checks the button and reaches setEditMode.
+	action->trigger();
+	return m_editor->m_editMode == mode;
+}
+
 } // namespace lmms::gui

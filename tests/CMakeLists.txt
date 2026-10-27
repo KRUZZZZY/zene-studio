@@ -113,6 +113,8 @@ set(LMMS_TESTS
 	# that outlives it, so control.undo refuses both instead of disarming and leaving the
 	# take behind.
 	src/core/ControlArmReversibilityTest.cpp
+	# Cluster new-p21-6: the record-arm query and the track resolver with no song container (Engine::destroy).
+	src/core/ControlTrackRouteNoSongTest.cpp
 	# Coverage lane (M0): bounce.land, track.flatten, range.bounce and the subproject verbs through a stand-in render child.
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
@@ -457,6 +459,11 @@ set(LMMS_TESTS
 	src/core/MathTest.cpp
 	src/plugins/EqFilterTest.cpp
 	src/plugins/WatsynSelectedGraphTest.cpp
+	# Q050-486: the shared loader for saved plug-in waveform data (bounds, strict base64, exact
+	# counts, finite values, owning storage), and every plug-in that loads a graph through it,
+	# driven through the real modules' saved XML. Both are AddressSanitizer builds on Linux (below).
+	src/core/WaveformDataTest.cpp
+	src/plugins/GraphWaveformLoadTest.cpp
 	# cluster new-p17-203: a Watsyn note that starts while a graph edit has the staging
 	# wavetable half rewritten must render the last complete published wave, never the
 	# half-written one.
@@ -892,6 +899,8 @@ set(LMMS_TESTS
 	src/core/ArticulationPlaybackTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
+	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
+	src/core/MixerOrderByTracksTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
 	src/core/SessionPerformTest.cpp
 	# 0.5.0 L02 (WF-064): sub-scenes - their commands, their launch and the <z:subscenes> section.
@@ -1054,6 +1063,8 @@ set(LMMS_TESTS
 	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
 	src/core/LegacyPatternUpgradeTest.cpp
 	src/core/VideoTestClipTest.cpp
+	# cluster new-p9-66 (BUG 8): the default extraction WAV never names a file that is already there
+	src/core/VideoAudioNameTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	# ARCH-4 slice S3: the id-family registry (clip/lane/note/scene/warp over
 	# the one counter) and the per-object revision pair - absent rev == 0, an
@@ -1230,6 +1241,8 @@ set(LMMS_TESTS
 	src/gui/FollowActionEditorTest.cpp
 	# M0 coverage: the Gate, Modulation and Receiver effects' control dialogs, built over the real modules.
 	src/gui/PluginControlDialogsTest.cpp
+	# Q050-486: the Wave Shaper editor's Graph shows a loaded curve, keeps it on a damaged one, and saves a drawn edit.
+	src/gui/GraphWaveformEditorGuiTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
 	src/gui/MixerWindowsTest.cpp
 	# Regressions for stale panner fields, route refresh, and ignored non-left clicks.
@@ -1373,6 +1386,10 @@ set(LMMS_TESTS
 	# shortcuts.* driven against the real menus: a value that is not key text, an undo of a set
 	# that must not clear bindings it never touched, and a reset of an action no menu has.
 	src/gui/ShortcutsCommandsTest.cpp
+	# Q050-055.1 stage 1 (0.5.0 L13): panel-scoped shortcuts - one key bound to a different action
+	# in the arranger, the note editor, the automation editor and Perform, only the focused panel's
+	# action firing; and a same-context clash resolved in the shortcuts page, surviving a restart.
+	src/gui/PanelShortcutsTest.cpp
 	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
 	src/gui/WorkflowFeedbackTest.cpp
 	# Clusters new-p23-4/new-p22-32/new-p23-5: workflow command names, saved step validation and recording filters.
@@ -1453,6 +1470,13 @@ if(LMMS_HAVE_OGGVORBIS)
 		src/core/AudioFileOggInitTest.cpp
 		src/core/SampleDecoderOggChannelTest.cpp
 		src/core/SampleDecoderOggStateTest.cpp
+	)
+endif()
+
+# MP3 export is optional too; this regression compiles against the LAME-backed writer.
+if(LMMS_HAVE_MP3LAME)
+	list(APPEND LMMS_TESTS
+		src/core/AudioFileMP3InitTest.cpp
 	)
 endif()
 
@@ -1718,6 +1742,8 @@ list(APPEND LMMS_TESTS src/plugins/HistoricalBufferEmptyTest.cpp)
 # buffer alignment, including an unaligned divisor and aligned input/output.
 if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/SfzSimdHelperAlignmentTest.cpp)
+	# Cluster new-p23-90: EQHolder outputs when the buffer pool is exhausted.
+	list(APPEND LMMS_TESTS src/plugins/SfzEQPoolExhaustionTest.cpp)
 endif()
 
 # Qwen cluster new-p21-158: a reset filter holder must bypass until its next setup.
@@ -1833,7 +1859,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Compressor)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "HistoricalBufferResizeTest"
-		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest")
+		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzEQPoolExhaustionTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src
@@ -2267,6 +2294,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
 		# Cluster new-p17-205: the Watsyn save/load regression loads the watsyn module.
 		OR LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest"
+		# Q050-486: the waveform-load regression loads the eight graph-saving modules.
+		OR LMMS_TEST_NAME STREQUAL "GraphWaveformLoadTest"
+		OR LMMS_TEST_NAME STREQUAL "GraphWaveformEditorGuiTest"
 		# 0.5.0 Q050-141: the touch-layout geometry test creates an instrument automation lane.
 		OR LMMS_TEST_NAME STREQUAL "TouchLayoutTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
@@ -2374,6 +2404,18 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} watsyn)
 	endif()
 
+	# Q050-486: the waveform-load regression needs every module whose saved graph it loads.
+	if(LMMS_TEST_NAME STREQUAL "GraphWaveformEditorGuiTest" AND TARGET waveshaper)
+		add_dependencies(${LMMS_TEST_NAME} waveshaper)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "GraphWaveformLoadTest")
+		foreach(GRAPH_MODULE watsyn multitapecho waveshaper dynamicsprocessor freeboy vibedstrings xpressive bitinvader)
+			if(TARGET ${GRAPH_MODULE})
+				add_dependencies(${LMMS_TEST_NAME} ${GRAPH_MODULE})
+			endif()
+		endforeach()
+	endif()
+
 	# cluster new-p11-38-port: the note-command transaction test puts a real instrument on its
 	# track, so the module has to be built beside the test binary.
 	if(LMMS_TEST_NAME STREQUAL "NoteCommandTransactionsTest")
@@ -2389,6 +2431,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest")
 		# The A/B undo cases need at least one effect module so they exercise the command instead of skipping.
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest" AND TARGET amplifier)
+		# clip.process regressions load the build's amplifier module; build it with this targeted test.
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "ScriptDawModelRegistrationTest")
@@ -2692,6 +2738,27 @@ target_compile_definitions(ReverbSCInitTest PRIVATE
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_revsc_test_malloc>
 )
 
+# ReverbSC's output buffer must hold one SPFLOAT per channel. The soundpipe
+# base.c is compiled with SPFLOAT=double (the override base.h allows) and
+# calloc redirected to a shim, so the size sp_createn requests is observable.
+add_executable(ReverbSCPrecisionTest
+	src/plugins/ReverbSCPrecisionTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c
+)
+add_test(NAME ReverbSCPrecisionTest COMMAND ReverbSCPrecisionTest)
+target_include_directories(ReverbSCPrecisionTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC
+)
+target_link_libraries(ReverbSCPrecisionTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(ReverbSCPrecisionTest PRIVATE cxx_std_20)
+target_compile_definitions(ReverbSCPrecisionTest PRIVATE
+	SPFLOAT=double
+	$<$<COMPILE_LANGUAGE:C>:calloc=sp_precision_test_calloc>
+)
+
 # ReverbSC's DSP state lifetime: the effect's own sources are compiled into
 # this test, and the soundpipe C files are built with malloc/calloc/free
 # redirected to a shim in the test, so an allocation failure can be injected
@@ -2747,6 +2814,19 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	target_link_options(AudioFileProcessorWaveViewTest PRIVATE -fsanitize=float-cast-overflow)
 	set_tests_properties(AudioFileProcessorWaveViewTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;UBSAN_OPTIONS=halt_on_error=1")
+endif()
+
+# Q050-486: the waveform-loader tests run under AddressSanitizer where it and LeakSanitizer are
+# supported (Linux, GCC/Clang). The plug-in modules and lmmsobjs stay uninstrumented, but ASan's
+# allocator and memcpy/memmove interceptors cover them, so a read past a decoded buffer aborts
+# the run and GraphWaveformLoadTest's explicit leak checks see every plug-in allocation.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	foreach(ASAN_TEST WaveformDataTest GraphWaveformLoadTest)
+		target_compile_options(${ASAN_TEST} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+		target_link_options(${ASAN_TEST} PRIVATE -fsanitize=address)
+	endforeach()
+	set_tests_properties(GraphWaveformLoadTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ASAN_OPTIONS=detect_leaks=1:leak_check_at_exit=0:use_sigaltstack=0")
 endif()
 
 # The expression clock crosses the 32-bit frame boundary in one rendered
@@ -3182,6 +3262,7 @@ set_tests_properties(InstrumentSetupUiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ShortcutsCommandsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlCommandsMacrosTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PanelShortcutsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3201,6 +3282,9 @@ set_tests_properties(AccessibilityWalkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 add_test(NAME KnobAccessibleTargetSizingTest COMMAND KnobKeyboardTest accessibleTargetSurvivesKnobSizingReset)
 set_tests_properties(KnobAccessibleTargetSizingTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_TEST_ACCESSIBLE=1")
+add_test(NAME KnobAccessibleNullItemTest COMMAND KnobKeyboardTest accessibleTargetSkipsNullLayoutItems)
+set_tests_properties(KnobAccessibleNullItemTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_TEST_ACCESSIBLE=1")
 set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationEditorEditingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3227,6 +3311,7 @@ set_tests_properties(ExportChannelsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(GraphWaveformEditorGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SurroundPannerTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3305,6 +3390,10 @@ set_tests_properties(ExportWavWriteErrorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(LMMS_HAVE_OGGVORBIS)
 	set_tests_properties(AudioFileOggInitTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+if(LMMS_HAVE_MP3LAME)
+	set_tests_properties(AudioFileMP3InitTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(AudioResamplerRatioTest PROPERTIES
@@ -5739,6 +5828,18 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlClipPolarity PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
+	)
+	# Q050-486 over the socket: a project's drawn Watsyn wave and Wave Shaper curve reopen with identical
+	# values and an equal render (golden_audio_lib floor contract, with a negative control); a truncated
+	# wave and a NaN curve are reported in project.open's errors, keep the defaults and still render.
+	add_test(NAME ControlGraphWaveformLoad
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-graph-waveform-load.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlGraphWaveformLoad PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
 	)
 	# The 0.5.0 L09 routing surface over the socket: the listen bus, sends from many channels, send pan,
 	# nested and linked VCA groups, the mixer view's sends-on-faders mode.

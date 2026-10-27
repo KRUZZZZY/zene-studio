@@ -22,6 +22,7 @@
  *
  */
 
+#include <QDebug>
 #include <QDomDocument>
 #include <QDomElement>
 
@@ -78,11 +79,20 @@ void LinkedModelGroup::loadValues(const QDomElement &that)
 
 void LinkedModelGroup::addModel(AutomatableModel *model, const QString &name)
 {
+	// Models are keyed by name. A second model under a taken name cannot be stored, so it is
+	// refused before anything is connected or announced; otherwise its destruction would erase
+	// the first model from the group.
+	if(containsModel(name))
+	{
+		qWarning() << "LinkedModelGroup: refusing a second model named" << name;
+		return;
+	}
 	model->setObjectName(name);
-	m_models.emplace(std::string(name.toUtf8().data()), ModelInfo(name, model));
+	m_models.emplace(name.toStdString(), ModelInfo(name, model));
 	connect(model, &AutomatableModel::destroyed,
 				this, [this, model](jo_id_t){
-					if(containsModel(model->objectName()))
+					// erase only this model's entry: the name may belong to another model
+					if(getModel(model->objectName().toStdString()) == model)
 					{
 						emit modelRemoved(model);
 						eraseModel(model->objectName());
@@ -100,7 +110,8 @@ void LinkedModelGroup::addModel(AutomatableModel *model, const QString &name)
 
 void LinkedModelGroup::removeControl(AutomatableModel* mdl)
 {
-	if(containsModel(mdl->objectName()))
+	// only this model's entry: the name may belong to another model
+	if(getModel(mdl->objectName().toStdString()) == mdl)
 	{
 		emit modelRemoved(mdl);
 		eraseModel(mdl->objectName());

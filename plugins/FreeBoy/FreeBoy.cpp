@@ -39,6 +39,7 @@
 
 #include "GbApuWrapper.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "InstrumentTrack.h"
 #include "Knob.h"
 #include "AudioEngine.h"
@@ -426,11 +427,8 @@ void FreeBoyInstrument::loadSettings( const QDomElement & _this )
 	m_trebleModel.loadSettings( _this, "Treble" );
 	m_bassModel.loadSettings( _this, "Bass" );
 
-	int size = 0;
-	char * decodedSamples = nullptr;
-	base64::decode( _this.attribute( "sampleShape"), &decodedSamples, &size );
-	const std::unique_ptr<char[]> dst{ decodedSamples };
-	m_graphModel.setSamples( reinterpret_cast<const float*>( dst.get() ) );
+	// Exactly 32 finite values, else the current wave pattern is kept (Q050-486).
+	waveform::loadGraph(_this, QStringLiteral("sampleShape"), m_graphModel, QStringLiteral("FreeBoy"));
 }
 
 QString FreeBoyInstrument::nodeName() const

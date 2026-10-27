@@ -272,6 +272,10 @@ void EffectChain::removeEffect( Effect * _effect )
 		return;
 	}
 	m_effects.erase( found );
+	// A removed effect is no longer on this chain, so it must stop naming it: callers read a nullptr
+	// effectChain() as "taken off its chain". Set inside the same model change as the erase, so the
+	// audio thread never sees the effect's back-pointer disagree with the list it renders.
+	_effect->setEffectChain( nullptr );
 
 	rebuildRoutingGraph();
 

@@ -53,6 +53,7 @@
 #include "ContextHelp.h"
 #include "HelpCenter.h"
 #include "LayoutMenu.h"
+#include "PanelShortcuts.h"
 #include "ShellPanel.h"
 #include "ShellRegionTabs.h"
 #include "ShortcutMap.h"
@@ -157,6 +158,7 @@ void Shell::showEvent(QShowEvent* event)
 			MacroMenu::install(main->menuBar());
 			LayoutMenu::followNewProjects(this);  // theme 22: a new project brings the personal layout back
 			ShortcutMap::apply(main->menuBar());
+			panelshortcuts::install();  // 0.5.0 L13 stage 1: the four panels' own scoped keys
 		}
 		m_header->customise(uistore::read(QStringLiteral("header")));
 	});

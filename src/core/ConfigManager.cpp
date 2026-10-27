@@ -438,6 +438,7 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 	{
 		m_configFile = configFile;
 	}
+	m_configUnreadable = false;
 
 	QFile cfg_file(m_configFile);
 	QDomDocument dom_tree;
@@ -552,13 +553,24 @@ void ConfigManager::loadConfigFile(const QString & configFile)
 		#endif
 			setBackgroundPicFile(value("paths", "backgroundtheme"));
 		}
-		else if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+		else
 		{
-			QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"),
-									gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
-													arg(errorLine).
-													arg(errorCol).
-													arg(errorString));
+			m_configUnreadable = true;
+			const QString message = gui::MainWindow::tr("Error while parsing configuration file at line %1:%2: %3").
+											arg(errorLine).
+											arg(errorCol).
+											arg(errorString);
+			if (gui::getGUI() != nullptr && !lmms::isUnattendedRun())
+			{
+				QMessageBox::warning(nullptr, gui::MainWindow::tr("Configuration file"), message);
+			}
+			else
+			{
+				// An unattended run has no dialog to show the error in.  The file is kept
+				// as it is, so the settings in it are not loaded and not overwritten.
+				qWarning("%s; settings not loaded, file left unchanged: %s",
+						qPrintable(message), qPrintable(m_configFile));
+			}
 		}
 		cfg_file.close();
 	}
@@ -646,6 +658,13 @@ void ConfigManager::saveConfigFile()
 	setValue("paths", "defaultsf2", m_sf2File);
 #endif
 	setValue("paths", "backgroundtheme", m_backgroundPicFile);
+
+	// The file did not parse at load time. Its settings were not read, so writing
+	// now would replace them with defaults; leave the file as the user has it.
+	if (m_configUnreadable)
+	{
+		return;
+	}
 
 	QDomDocument doc("zene-config-file");
 

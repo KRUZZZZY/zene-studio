@@ -27,6 +27,7 @@
 
 #include <atomic>
 
+#include <QDir>
 #include <QString>
 
 #include "lmms_export.h"
@@ -59,6 +60,10 @@ LMMS_EXPORT bool extractVideoAudio(const QString& video, const QString& wav, Vid
 //! The same, reporting its progress to @a control and stopping when it asks (a cancelled run fails, leaving @a wav unchanged).
 LMMS_EXPORT bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error,
 	VideoExtractControl* control);
+
+/*! The default WAV for an extraction: "<stem>.wav" in @a dir, then "<stem>-2.wav" up to "<stem>-<maxNames>.wav", the first
+ *  name no file takes. Empty when all of them are taken; the caller refuses rather than reuse one. */
+LMMS_EXPORT QString firstFreeAudioPath(const QDir& dir, const QString& stem, int maxNames);
 
 } // namespace lmms
 

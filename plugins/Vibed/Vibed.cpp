@@ -34,6 +34,7 @@
 #include "NotePlayHandle.h"
 #include "VibratingString.h"
 #include "base64.h"
+#include "WaveformData.h"
 #include "CaptionMenu.h"
 #include "volume.h"
 #include "Song.h"
@@ -197,13 +198,8 @@ void Vibed::loadSettings(const QDomElement& elem)
 			m_randomModels[i]->loadSettings(elem, "slap" + is);
 			m_impulseModels[i]->loadSettings(elem, "impulse" + is);
 
-			int size = 0;
-			float* shp = nullptr;
-			base64::decode(elem.attribute("graph" + is), &shp, &size);
-
-			assert(size == 128 * sizeof(float));
-			m_graphModels[i]->setSamples(shp);
-			delete[] shp;
+			// Exactly s_sampleLength finite values, else the string keeps its shape (Q050-486).
+			waveform::loadGraph(elem, "graph" + is, *m_graphModels[i], QStringLiteral("Vibed"));
 		}
 	}
 }

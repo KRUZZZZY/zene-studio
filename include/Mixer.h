@@ -655,8 +655,19 @@ public:
 
 	MixerChannel * mixerChannel( int _ch )
 	{
+#ifdef LMMS_TESTING
+		if( _ch < 0 || _ch >= static_cast<int>( m_mixerChannels.size() ) ) { return refusedLookupForTesting(); }
+#endif
 		return m_mixerChannels[_ch];
 	}
+
+#ifdef LMMS_TESTING
+	//! Test seam (cluster new-p14-29): a mixerChannel() call that names no channel is refused and counted here,
+	//! before the channel vector is read. Compiled out of the shipping product; no member is added.
+	static MixerChannel * refusedLookupForTesting();
+	//! The refused lookups since the last call; the count starts again at zero.
+	static int takeRefusedLookupsForTesting();
+#endif
 
 	// make the output of channel fromChannel go to the input of channel toChannel
 	// it is safe to call even if the send already exists

@@ -25,6 +25,9 @@
 
 #include <QtTest>
 #include <QMutex>
+#include <QRegularExpression>
+
+#include <memory>
 
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
@@ -33,6 +36,7 @@
 #include "Engine.h"
 #include "LadspaBase.h"
 #include "LadspaControl.h"
+#include "LinkedModelGroups.h"
 #include "TempoSyncKnobModel.h"
 
 class AutomatableModelTest : public QObject
@@ -212,6 +216,80 @@ private slots: // tests
 
 		model.getCustomMeterModel().setNumerator(3);
 		QCOMPARE(updateCount, 4);
+	}
+
+	// new-p9-224: LinkedModelGroup is keyed by model name. A second model under a taken
+	// name must not be stored, announced or connected, and must not displace the original.
+	void linkedGroupRefusesDuplicateNameAndAnnouncesNothingForIt()
+	{
+		using namespace lmms;
+
+		LinkedModelGroup group(nullptr);
+		QSignalSpy added(&group, &LinkedModelGroup::modelAdded);
+		FloatModel original(0.f, 0.f, 1.f, 0.1f);
+		FloatModel duplicate(0.f, 0.f, 1.f, 0.1f);
+		group.addModel(&original, QStringLiteral("x"));
+
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("refusing a second model named \"x\"")));
+		group.addModel(&duplicate, QStringLiteral("x"));
+
+		QCOMPARE(group.modelNum(), std::size_t{1});
+		QVERIFY(group.getModel("x") == &original);
+		QCOMPARE(added.count(), 1);
+	}
+
+	void linkedGroupDestroyingRefusedDuplicateKeepsTheOriginal()
+	{
+		using namespace lmms;
+
+		LinkedModelGroup group(nullptr);
+		QSignalSpy removed(&group, &LinkedModelGroup::modelRemoved);
+		FloatModel original(0.f, 0.f, 1.f, 0.1f);
+		auto duplicate = std::make_unique<FloatModel>(0.f, 0.f, 1.f, 0.1f);
+		group.addModel(&original, QStringLiteral("x"));
+
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("refusing a second model named \"x\"")));
+		group.addModel(duplicate.get(), QStringLiteral("x"));
+		duplicate.reset();
+
+		QCOMPARE(removed.count(), 0);
+		QCOMPARE(group.modelNum(), std::size_t{1});
+		QVERIFY(group.getModel("x") == &original);
+	}
+
+	void linkedGroupRemoveControlOfRefusedDuplicateKeepsTheOriginal()
+	{
+		using namespace lmms;
+
+		LinkedModelGroup group(nullptr);
+		QSignalSpy removed(&group, &LinkedModelGroup::modelRemoved);
+		FloatModel original(0.f, 0.f, 1.f, 0.1f);
+		FloatModel duplicate(0.f, 0.f, 1.f, 0.1f);
+		group.addModel(&original, QStringLiteral("x"));
+
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("refusing a second model named \"x\"")));
+		group.addModel(&duplicate, QStringLiteral("x"));
+		group.removeControl(&duplicate);
+
+		QCOMPARE(removed.count(), 0);
+		QCOMPARE(group.modelNum(), std::size_t{1});
+		QVERIFY(group.getModel("x") == &original);
+	}
+
+	// Control: the stored model, once destroyed, is still removed and announced.
+	void linkedGroupDestroyingStoredModelStillRemovesIt()
+	{
+		using namespace lmms;
+
+		LinkedModelGroup group(nullptr);
+		QSignalSpy removed(&group, &LinkedModelGroup::modelRemoved);
+		auto original = std::make_unique<FloatModel>(0.f, 0.f, 1.f, 0.1f);
+		group.addModel(original.get(), QStringLiteral("x"));
+
+		original.reset();
+
+		QCOMPARE(removed.count(), 1);
+		QCOMPARE(group.modelNum(), std::size_t{0});
 	}
 };
 

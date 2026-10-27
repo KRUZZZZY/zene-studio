@@ -171,6 +171,8 @@ set(LMMS_SRCS
 	core/AutomationRamp.cpp
 	core/BandLimitedWave.cpp
 	core/base64.cpp
+	# Q050-486: the one bounded, validating loader for saved plug-in waveform data.
+	core/WaveformData.cpp
 	core/BrowserCatalog.cpp
 	core/BrowserMetadata.cpp
 	core/BrowserPeakCache.cpp

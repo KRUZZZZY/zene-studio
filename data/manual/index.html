@@ -25,6 +25,16 @@ Undo History); actions outside it - files written to disk, messages sent to hard
 <p class="tip">Hover over a control to see what it does; press <b>Shift+F1</b> (Help &gt; What's This?) and click a
 control for its full description. Help &gt; Command Reference lists every command with its arguments, and the Command Palette finds any menu item or command by name: Enter runs it, or opens its settings when it has any, Shift+Enter runs it with its defaults, and a command that cannot be undone is marked; Help &gt; Keyboard
 Shortcuts lists every shortcut, and Project tools &gt; Customise &gt; Keyboard Shortcuts changes them.</p>
+<p class="tip"><b>One key, four contexts.</b> A shortcut can belong to the arranger, the note editor, the
+automation editor or Perform instead of the whole window: the Keyboard Shortcuts list gives every row an
+<i>action</i> and a <i>context</i>, so you can give Ctrl+Alt+J to the arranger's Knife tool, the note editor's Erase
+tool, the automation editor's Erase mode and Perform's Stop All at once. Only the panel holding the keyboard acts on
+it - focus the arranger and the arranger's meaning runs, focus the note editor and the note editor's does - and a
+panel's own keys (P/B/D in the note editor, Shift+D/E/C/T in the automation editor, the digits and Escape in Perform)
+keep working until you bind a scoped action over them. A clash is two actions of the SAME context on one key: the
+list marks it, Set Keys refuses it until you turn on <i>Force</i>, which moves the key there and unbinds the other
+action of that context only - a binding in another context is never touched. The choices are saved with your
+configuration, so they are there at the next start.</p>
 <nav><a href="#quickstart">Quick start</a> <a href="#window">The window</a> <a href="#arrange">Arranging</a> <a href="#notes">Notes</a> <a href="#mix">Mixing</a>
 <a href="#devices">Devices</a> <a href="#record">Recording</a> <a href="#launch">Launcher</a> <a href="#workflows">Patterns and cells</a>
 <a href="#projects">Projects</a> <a href="#agents">Scripts and agents</a> <a href="#customise">Customising</a> <a href="#access">Access</a></nav>
@@ -418,6 +428,14 @@ the arranger; the video's sound can be extracted to an audio track. Edit &gt; Co
 across the internet, where your router allows it) join the project: you share an invite code, every edit is sent to the
 others, and a remote invite gives a phone or another machine the transport and faders only. Nothing listens until you host,
 and you are asked first.</p>
+<p><b>Damaged drawn waveforms.</b> Watsyn, BitInvader, FreeBoy, Vibed and Xpressive save the waveforms you draw, and
+Wave Shaper, Dynamics Processor and Multitap Echo save their curves, inside the project or preset. When one of those
+saved graphs is damaged - cut short, too long, not readable, or holding values that are not numbers - Zene does not use
+it: the device keeps the waveform it already had (a freshly opened device keeps its default; Dynamics Processor returns
+to its default curve), the rest of the project loads normally, and the problem is listed in the load error report that
+appears after opening (agents read the same lines in <code>project.open</code>'s <code>errors</code>). A graph that is
+simply absent, as in projects saved before the device stored it, loads silently as before. Saving the project writes
+the waveform the device now holds.</p>
 
 <h2 id="agents">Scripts, agents and controllers</h2>
 <p>Every command is reachable over the control socket (JSON-RPC) and from the MCP bridge; Lua scripts

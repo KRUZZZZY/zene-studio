@@ -46,8 +46,11 @@ void sfz::EQHolder::setup(const Region& region, unsigned eqId, float velocity)
 void sfz::EQHolder::process(const float** inputs, float** outputs, unsigned numFrames)
 {
     if (description == nullptr) {
-        for (unsigned channelIdx = 0; channelIdx < eq->channels(); channelIdx++)
-            copy<float>({ inputs[channelIdx], numFrames }, { outputs[channelIdx], numFrames });
+        for (unsigned channelIdx = 0; channelIdx < eq->channels(); channelIdx++) {
+            // Voice processing is in-place; avoid passing identical ranges to std::copy.
+            if (inputs[channelIdx] != outputs[channelIdx])
+                copy<float>({ inputs[channelIdx], numFrames }, { outputs[channelIdx], numFrames });
+        }
         return;
     }
 
@@ -57,8 +60,16 @@ void sfz::EQHolder::process(const float** inputs, float** outputs, unsigned numF
     auto bandwidthSpan = bufferPool.getBuffer(numFrames);
     auto gainSpan = bufferPool.getBuffer(numFrames);
 
-    if (!frequencySpan || !bandwidthSpan || !gainSpan)
+    if (!frequencySpan || !bandwidthSpan || !gainSpan) {
+        // No scratch buffer for the modulated parameters: bypass the EQ for this block
+        // rather than leaving the outputs unwritten
+        for (unsigned channelIdx = 0; channelIdx < eq->channels(); channelIdx++) {
+            // Voice processing is in-place; avoid passing identical ranges to std::copy.
+            if (inputs[channelIdx] != outputs[channelIdx])
+                copy<float>({ inputs[channelIdx], numFrames }, { outputs[channelIdx], numFrames });
+        }
         return;
+    }
 
     fill<float>(*frequencySpan, baseFrequency);
     if (float* mod = mm.getModulation(frequencyTarget))

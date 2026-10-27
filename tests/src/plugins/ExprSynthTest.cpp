@@ -264,6 +264,18 @@ private slots:
 		QVERIFY(copied);
 		QCOMPARE(wave.m_samples[0], 0.5f);
 	}
+
+	void integrateWithoutFrameCounterDoesNotDivideByZero()
+	{
+		// With no frame counter no integrate call is ever counted, so the callback has no
+		// cycle to advance. It must return zero rather than take its cycle position modulo
+		// that empty count, which traps as an integer division by zero.
+		ExprFront expr("integrate(1)", 8);
+		expr.setIntegrate(nullptr, 48000);
+		QVERIFY(expr.compile());
+		QCOMPARE(expr.evaluate(), 0.f);
+		QCOMPARE(expr.evaluate(), 0.f);
+	}
 };
 
 } // namespace lmms

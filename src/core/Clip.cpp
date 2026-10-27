@@ -777,6 +777,15 @@ void Clip::loadWarp(const QDomElement& element)
 			markers[count++] = { node.attribute("src", "0").toULongLong(),
 				node.attribute("pos", "0").toInt() };
 		}
+		// The engine keeps the first MaxMarkers entries (the loop above). The
+		// rest are not loaded, so the next save would not write them: say so
+		// instead of shrinking the map silently (BUG 10, cluster new-p16-325).
+		if (const int stored = warpNode.elementsByTagName("marker").count(); stored > WarpMarkers::MaxMarkers)
+		{
+			Engine::getSong()->collectError(tr("Warp markers in the project file: %1 found, "
+				"but this build keeps %2; the other %3 were left out and will not be saved again.")
+				.arg(stored).arg(WarpMarkers::MaxMarkers).arg(stored - WarpMarkers::MaxMarkers));
+		}
 
 		m_tempoMode = warpNode.attribute("mode", "follow") == "source"
 			? WarpTempoMode::SourceTempo : WarpTempoMode::FollowProject;

@@ -487,6 +487,19 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	void aNullSurfaceOpensNothing()
+	{
+		// No canvas means no list: nothing is made for it and nothing is shown beside it.
+		bool made = false;
+		ItemListPanel* panel = ItemListPanel::open(nullptr, QStringLiteral("notes"), [this, &made](QObject* parent) {
+			made = true;
+			return itemlists::notes(m_editor, parent);
+		});
+		QVERIFY(panel == nullptr);
+		QVERIFY(!made);
+		QVERIFY(ItemListPanel::find(nullptr, QStringLiteral("notes")) == nullptr);
+	}
+
 	void theAuditRunsItsChecksSeparately()
 	{
 		QWidget root;
@@ -548,6 +561,35 @@ private slots:
 		song->setModified();
 		song->noteProjectSaved(m_home.filePath(QStringLiteral("tune.mmpz")));
 		QTRY_COMPARE(a11y::lastAnnouncement(), QStringLiteral("Saved tune.mmpz"));
+	}
+
+	void aSourceWithoutItsEditorStaysEmpty()
+	{
+		// A list can outlive the editor it lists: the source must answer its empty state, not dereference the gone editor.
+		ItemListSource* notes = itemlists::notes(m_editor, this);
+		ItemListSource* points = itemlists::controllerPoints(m_editor, this);
+		delete m_editor;  // QPointer in the source is nulled by the deletion
+		m_editor = nullptr;
+		m_panel = nullptr;
+		QCOMPARE(notes->rowCount(), 0);
+		QCOMPARE(notes->step(0), 1);  // the grid's floor, as with an open editor at grid 1
+		QCOMPARE(notes->step(1), 1);
+		QVERIFY(!notes->remove({}));
+		QCOMPARE(points->rowCount(), 0);
+		QCOMPARE(points->step(0), 1);
+		QVERIFY(!points->remove({}));
+	}
+
+	void aSourceBuiltWithoutAnEditorStaysEmpty()
+	{
+		ItemListSource* notes = itemlists::notes(nullptr, this);
+		ItemListSource* points = itemlists::controllerPoints(nullptr, this);
+		QCOMPARE(notes->rowCount(), 0);
+		QCOMPARE(notes->step(0), 1);
+		QVERIFY(!notes->remove({}));
+		QCOMPARE(points->rowCount(), 0);
+		QCOMPARE(points->step(0), 1);
+		QVERIFY(!points->remove({}));
 	}
 
 private:

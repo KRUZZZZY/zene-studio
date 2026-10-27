@@ -122,6 +122,10 @@ void LocalZynAddSubFx::setSampleRate( int sampleRate )
 
 void LocalZynAddSubFx::setBufferSize( int bufferSize )
 {
+	// Period sizes must be positive: zero makes the synth divide by zero when creating a
+	// voice, and negative sizes violate the transport and synth block-size invariants.
+	if (bufferSize < 1) { return; }
+
 	m_transportSize = bufferSize;
 	// Zyn renders in blocks of its own. A block that is smaller than the period is
 	// what lets a scheduled MIDI event take effect inside the period it was scheduled
