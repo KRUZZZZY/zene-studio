@@ -26,3 +26,26 @@ Not changed on purpose: no production code, no test. The procedure's RED/GREEN s
 Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-222.r1/logs/`.
 
 Files committed in this change: this report only.
+
+## Self-check
+
+- **Regression test fails with the product change reverted and passes with it.** No product change was made, so there is no RED/GREEN pair and no test was added. The procedure's step 4b applies to a real bug; this verdict is FALSE-POSITIVE, which the procedure resolves by skipping to the report. The existing family `LinkAudioStreamTest` passes unmodified: `./LinkAudioStreamTest` EXIT=0, `Totals: 20 passed, 0 failed` (logs `test-3-verbose.log`, `test-2.log`).
+- **Deterministic.** Not applicable: no test was written. The existing family's timing-sensitive cases are outside this report's claim.
+- **Fix at the cause and complete.** Not applicable: no fix. The caller checks were done instead: the only call to `addFromRing` is `src/core/LinkAudioStream.cpp:268`, guarded by the `fill < period` gate at line 263 and the trim at line 259 (see the evidence above). The audit output is in `audit-1.log`.
+- **No collateral damage.** No code changed, so no saved data or caller behaviour changed.
+- **Not-real evidence (file:line).** `src/core/LinkAudioStream.cpp:197-210` (`addFromRing`), `:255` (`fill` snapshot), `:259` (trim), `:263-266` (underrun gate), `:268` (sole call); `src/core/LinkAudioCodec.cpp:187-200` (`AudioRing::read` returns `min(frames, head - tail)`); `include/LinkAudioStream.h:268` (ring consumer is the audio thread).
+- **Gates: `feature_check.py` could not run from this session.** The script creates `<worktree>-feature-check/` next to the worktree in `projects/zene-studio-program/`, which is outside the write-jail, and fails with `PermissionError` (`logs/gates-1.log`, EXIT=1). I did not work around that. I ran each gate command the script lists, from inside the worktree, with the same arguments (logs in `logs/gate-*.log`):
+
+| Gate | Command | Exit |
+| --- | --- | --- |
+| fork-sources | `bash tests/fork-sources-gate.sh` | 0 |
+| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 |
+| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 |
+| check-namespace | `tests/scripted/check-namespace` | 0 |
+| no-tautology | `bash tests/no-tautology-gate.sh` | 0 |
+| doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
+| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1: 7 REGRESSION lines, none in a changed file |
+| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1: 22 REGRESSION lines, none in a changed file |
+
+  The two ratchets are red on the train on purpose. The branch changed only `docs/qwen-fixes-2026-10/cluster-new-p21-222.md` (`git diff --name-only 639e1d23e..HEAD`), so under the script's rule (fail only on a new item in a changed file) both rows would pass. The equivalent of the script's table is therefore: six simple gates PASS; complexity and file-length PASS by that rule. The script's own table was not produced. A fresh `feature_check.py` run from an unjailed shell is still needed to confirm it.
+- **Completion check.** `submit_check.py` ran (`logs/submit-check-1.log`, EXIT=1). The FAIL for the gates row is the same sandbox limit above; the Self-check FAIL is closed by this section.
