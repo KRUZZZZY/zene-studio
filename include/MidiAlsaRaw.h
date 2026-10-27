@@ -31,6 +31,8 @@
 
 #include <alsa/asoundlib.h>
 
+#include <atomic>
+
 #include <QThread>
 
 #include "MidiClient.h"
@@ -68,14 +70,25 @@ protected:
 	void sendByte( const unsigned char c ) override;
 	void run() override;
 
+	//! Asks the worker to stop, wakes it out of its poll and joins it. Idempotent;
+	//! never terminates the thread. Called by the destructor before any resource
+	//! the worker uses is released (Q050-488).
+	void stopWorker();
+
 
 private:
+	void closeDevice();
+	void closeWakePipe();
+
 	snd_rawmidi_t * m_input, * * m_inputp;
 	snd_rawmidi_t * m_output, * * m_outputp;
+	//! Number of ALSA descriptors in m_pfds; m_pfds holds one more, the wake pipe.
 	int m_npfds;
 	pollfd * m_pfds;
+	//! Self-pipe: stopWorker() writes a byte so the worker's poll returns at once.
+	int m_wakePipe[2];
 
-	volatile bool m_quit;
+	std::atomic_bool m_quit;
 
 } ;
 

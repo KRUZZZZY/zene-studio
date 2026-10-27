@@ -3096,3 +3096,7 @@ docs/qwen-fixes-2026-10/cluster-new-p23-128.md
 tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
 # cluster new-p23-187 (2026-10): fix and verification report for Oscilloscope pause-setting persistence (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p23-187.md
+# Q050-488 (2026-10): cooperative ALSA raw-MIDI worker shutdown - regression, feature doc and report (fork-NEW).
+tests/src/core/MidiAlsaRawShutdownTest.cpp
+docs/050-features/Q050-488.md
+docs/qwen-fixes-2026-10/cluster-Q050-488.md

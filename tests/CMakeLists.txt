@@ -1562,6 +1562,8 @@ if(LMMS_HAVE_ALSA)
 	# cluster 4584: the ALSA capture thread must not log a failed recovery -
 	# the failure is parked and reported by the thread that closes the capture.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
+	# Q050-488: the ALSA raw-MIDI worker is woken and joined on close, never terminated.
+	list(APPEND LMMS_TESTS src/core/MidiAlsaRawShutdownTest.cpp)
 endif()
 
 # The OSS MIDI output guard needs the optional backend and its API.
