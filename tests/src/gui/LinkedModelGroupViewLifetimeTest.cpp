@@ -179,6 +179,40 @@ private slots:
 			"removeControl must delete the detached layout item");
 		QVERIFY(layout->itemByString(QStringLiteral("control")) == nullptr);
 	}
+
+	void removingAControlWhoseIdDiffersFromItsDisplayNameFreesItsLayoutItem()
+	{
+		TestLinkedModelGroupView view;
+		view.addControl(new TestControl, "control-id", "Control Display", false);
+		view.addControl(new TestControl, "other-id", "Other Display", false);
+		auto* layout = static_cast<ControlLayout*>(view.layout());
+		QVERIFY(layout != nullptr);
+		QLayoutItem* item = layout->itemByString(QStringLiteral("Control Display"));
+		QVERIFY(item != nullptr);
+		const auto itemAddress = reinterpret_cast<std::uintptr_t>(item);
+
+		allocation_probe::beginTracking();
+		view.removeControl(QStringLiteral("control-id"));
+		allocation_probe::endTracking();
+
+		QVERIFY2(allocation_probe::wasFreed(itemAddress),
+			"removeControl must find the layout item by its display name");
+		QVERIFY(layout->itemByString(QStringLiteral("Control Display")) == nullptr);
+		QVERIFY(layout->itemByString(QStringLiteral("Other Display")) != nullptr);
+	}
+
+	void removingAnUnknownControlLeavesTheLayoutAlone()
+	{
+		TestLinkedModelGroupView view;
+		view.addControl(new TestControl, "control-id", "Control Display", false);
+		auto* layout = static_cast<ControlLayout*>(view.layout());
+		QVERIFY(layout != nullptr);
+
+		view.removeControl(QStringLiteral("missing-id"));
+		view.removeControl(QStringLiteral("Control Display"));
+
+		QVERIFY(layout->itemByString(QStringLiteral("Control Display")) != nullptr);
+	}
 };
 
 } // namespace lmms::gui
