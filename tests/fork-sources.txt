@@ -2815,6 +2815,9 @@ tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
 plugins/VstBase/VstMidiEventBatch.h
 tests/src/core/VstMidiEventBatchTest.cpp
+# cluster new-p15-169: the channel counts a VST plugin reports are refused when the host cannot hold them, not wrapped.
+plugins/VstBase/VstChannelCount.h
+tests/src/core/VstChannelCountTest.cpp
 include/MidiHandoffQueue.h
 tests/src/core/MidiHandoffQueueTest.cpp
 # cluster new-p12-141: ordered MIDI overflow recovery cuts and verification report.

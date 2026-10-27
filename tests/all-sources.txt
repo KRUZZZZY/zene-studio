@@ -1423,6 +1423,7 @@ plugins/Vst3Instrument/Vst3Instrument.h
 plugins/Vst3Instrument/Vst3InstrumentView.cpp
 plugins/Vst3Instrument/Vst3InstrumentView.h
 plugins/VstBase/RemoteVstPlugin.cpp
+plugins/VstBase/VstChannelCount.h
 plugins/VstBase/VstMidiEventBatch.h
 plugins/VstBase/VstPlugin.cpp
 plugins/VstBase/VstPlugin.h
@@ -3044,6 +3045,7 @@ tests/src/core/VideoFfmpegTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
+tests/src/core/VstChannelCountTest.cpp
 tests/src/core/VstMidiEventBatchTest.cpp
 tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp

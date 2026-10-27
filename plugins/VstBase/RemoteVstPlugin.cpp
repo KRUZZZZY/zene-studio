@@ -35,6 +35,7 @@
 #include "lmmsconfig.h"
 
 #include "RemotePluginClient.h"
+#include "VstChannelCount.h"
 #include "VstMidiEventBatch.h"
 
 //! MIDI events the client accepts per processing period; the excess is dropped and counted.
@@ -295,7 +296,9 @@ public:
 	{
 		if( m_plugin )
 		{
-			return static_cast<ch_cnt_t>(m_plugin->numInputs);
+			// A count the host cannot hold is not adopted: updateInOutCount() refuses it
+			// and the count the host last acknowledged stays in effect.
+			return vst::toChannelCount(m_plugin->numInputs).value_or(RemotePluginClient::inputCount());
 		}
 		return 0;
 	}
@@ -305,7 +308,7 @@ public:
 	{
 		if( m_plugin )
 		{
-			return static_cast<ch_cnt_t>(m_plugin->numOutputs);
+			return vst::toChannelCount(m_plugin->numOutputs).value_or(RemotePluginClient::outputCount());
 		}
 		return 0;
 	}
@@ -745,7 +748,12 @@ void RemoteVstPlugin::init( const std::string & _plugin_file )
 		return;
 	}
 
-	updateInOutCount();
+	if( !updateInOutCount() )
+	{
+		debugMessage( "Plugin reported an input/output count the host cannot hold; not loading it.\n" );
+		sendMessage( IdVstFailedLoadingPlugin );
+		return;
+	}
 	updateBufferSize();
 	updateSampleRate();
 
@@ -1775,6 +1783,14 @@ void RemoteVstPlugin::loadChunkFromFile(const std::string& _file, std::size_t _l
 
 int RemoteVstPlugin::updateInOutCount()
 {
+	// A count the host cannot hold is refused before anything is resized. This can run on the
+	// processing thread (audioMasterIOChanged), so it does not log: init() reports the refusal.
+	if( m_plugin && ( !vst::toChannelCount( m_plugin->numInputs ) ||
+		!vst::toChannelCount( m_plugin->numOutputs ) ) )
+	{
+		return 0;
+	}
+
 	if( inputCount() == RemotePluginClient::inputCount() &&
 		outputCount() == RemotePluginClient::outputCount() )
 	{

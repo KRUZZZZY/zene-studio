@@ -761,7 +761,7 @@ plugins/Vectorscope/Vectorscope.cpp	rename layer 1: built-in plugin logo resourc
 plugins/Vectorscope/VectorView.cpp	cluster new-p9-498: double-click color chooser now lives on the stack, so it is destroyed when the modal exec() returns; regression in tests/src/gui/VcaStripLifetimeTest.cpp
 plugins/Vestige/Vestige.cpp	#589 planar-ports migration: play() replaced by processImpl()/processLock(); ports controller passed to VstPlugin; rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/Vestige/Vestige.h	#589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports; 0.5.0 Q050-018: unavailableReason() (plug-in binary missing) and the plug-in mutex made mutable for it.
-plugins/VstBase/RemoteVstPlugin.cpp	#589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize()
+plugins/VstBase/RemoteVstPlugin.cpp	#589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize(); new-p15-169: the plugin's signed channel counts are converted via vst::toChannelCount (refused when the host cannot hold them, not wrapped to ch_cnt_t)
 plugins/VstBase/VstPlugin.cpp	#589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings
 plugins/VstBase/VstPlugin.h	#589 planar-ports migration: VstPlugin takes the ports controller instead of configuring split channels
 plugins/VstBase/vst_base.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
