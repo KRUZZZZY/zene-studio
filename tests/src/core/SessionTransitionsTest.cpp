@@ -250,7 +250,7 @@ private slots:
 		QTRY_COMPARE_WITH_TIMEOUT(columnPhase(0), QStringLiteral("idle"), 3000);
 	}
 
-	/*! Acceptance 2: one deterministic sequence - launch, stop, edit, undo, redo, save, load. Every step compares
+	/*! Acceptance 2: one deterministic sequence - launch, stop, edit, undo, redo, clear, undo, save, load. Every step compares
 	 *  the AUTHORED state (session.get_state without its transient `launch` and `columns`), the identities the cells
 	 *  name (pattern by its track's name, audio by its source, a chain by its jump target) survive the reload, and
 	 *  the saved file carries none of the launch state. */
@@ -286,6 +286,13 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QCOMPARE(authored(), a1);
 		QCOMPARE(columnPhase(0), QStringLiteral("playing"));
+		QVERIFY(run(QStringLiteral("session.clear_slot"), cell(0, 0)).ok);  // the playing cell goes, and stops
+		QTRY_COMPARE_WITH_TIMEOUT(columnPhase(0), QStringLiteral("idle"), 3000);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(authored(), a1);  // the authored cell is back, its playback is not
+		QCOMPARE(columnPhase(0), QStringLiteral("idle"));
+		QVERIFY(run(QStringLiteral("session.launch_slot"), cell(0, 0)).ok);  // saved while it plays
+		QTRY_COMPARE_WITH_TIMEOUT(columnPhase(0), QStringLiteral("playing"), 3000);
 
 		const QString path = m_dir.filePath(QStringLiteral("sequence.mmp"));
 		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), path}}).ok);
