@@ -98,9 +98,11 @@ public:
 	}
 
 	//! Consumer: read up to \a frames frames into \a dst. Returns the number
-	//! of frames read (0 when empty).
+	//! of frames read (0 when empty, or when \a dst is null - nothing is
+	//! consumed then, so the frames stay queued).
 	std::size_t read(SampleFrame* dst, std::size_t frames) noexcept
 	{
+		if (dst == nullptr || frames == 0) { return 0; }
 		const auto readPos = m_readPos.load(std::memory_order_relaxed);
 		const auto writePos = m_writePos.load(std::memory_order_acquire);
 		const auto available = writePos - readPos;
