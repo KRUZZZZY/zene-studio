@@ -108,3 +108,25 @@ Complexity and file-length exit 1 on the train by design; the gate's own "new it
 - `tests/fork-sources.txt` (registers the new test file)
 - `tests/upstream-modifications.txt` (reasons for the three inherited files changed)
 - `docs/qwen-fixes-2026-10/cluster-new-p9-503.md` (this report)
+
+## Self-check
+
+Verdict is FIXED, so the ALREADY-FIXED / FALSE-POSITIVE item does not apply.
+
+1. **Regression fails with the product change reverted, passes with it.** RED: `ctest -R '^VibratingStringTest$' --output-on-failure` EXIT=8 (`test-1-red.log`, unfixed code); unfixed direct run EXIT=136 with the count assertion FAIL and SIGFPE (`run-unfixed-direct.log`, `test-3-unfixed-ctest.log` EXIT=8). GREEN: ctest EXIT=0 (`test-4-regreen-ctest.log`); direct run EXIT=0, `Totals: 5 passed, 0 failed` (`run-regreen-direct.log`). The revert/re-apply used `fix.patch` (the `.cpp` diff) and both `git apply` calls exited 0.
+
+2. **Deterministic.** No sleeps, clocks, threads or timing. Inputs are fixed constants: pitch 440, pick 0.1, pickup 0.25, a 128-sample unit impulse, randomize 0 (so `fastRandInc` adds nothing), stringLoss 0, detune 0, state true. The output rate is passed to the constructor directly (`base * 4`, `base / 2`), not read from the audio device. `fastRand` is a seeded thread-local generator. The seam is `oversampleCount()` (`plugins/Vibed/VibratingString.h:53`), a read-only accessor; the render check (64 `nextSample()` calls) runs only after the count check passes.
+
+3. **Fix at the cause; callers and siblings checked.**
+   - Callers: the only constructor call in the repo is `plugins/Vibed/Vibed.cpp:81` (`StringContainer::addString`), fed by `playNoteImpl` (`Vibed.cpp:229-241`). The setting is the length model `FloatModel(1, 1, 16, 1)` (`Vibed.cpp:119`), so it is in 1..16.
+   - Siblings of the changed value, all in `VibratingString.h`/`.cpp`: `nextSample()` loops `m_oversample` times (`VibratingString.h:58`) and returns `m_outsamp[m_choice]` (`:76`); `m_choice = fastRand(m_oversample)` (`VibratingString.cpp:~70`) lies in `[0, count)`; `m_outsamp` is sized to the count (`:~68`); `stringLength = m_oversample * sampleRate / pitch + 1` grows with the count. All four are consistent with a count of at least one, and none needs a change.
+   - The base-rate division (`ratio = max(rate / base, 1)`) is the only other use of that expression.
+
+4. **No collateral damage.**
+   - Every case that gave a count of at least one gives the same count: the helper is `max(2*setting / ratio, 1)` with `ratio >= 1`, so only a count of 0 changes. `unchangedWhereTheRateFits` pins four such cases (ratio 1/2/4 at settings 1/3/4).
+   - Saved projects: the count is derived at note time from the setting and the output rate; nothing about it is saved, and the saved setting is untouched. Old projects load and render as before, except that the zero-count case is no longer undefined.
+   - No new limit is imposed on any caller: the only added rule is a lower bound of one and a ratio floor of one, and only the zero and divide-by-zero cases hit them.
+   - Realtime: the helper runs inside the constructor on the audio thread, which already allocates on that path; the fix adds no allocation, lock, log or wait.
+   - Undo and commands: none touched; no control command was added.
+
+5. **Gates.** The `feature_check.py` row in `submit_check` FAILs for an environment reason, not a code one: the wrapper creates `<worktree>-feature-check/` next to the worktree, outside this lane's write-jail, and stops with `PermissionError` before running any gate (`feature-check-1.log`, EXIT=1; `submit-check-1.txt`). I did not work around that location inside the wrapper. The same gate commands, with the same NEW-item filter, were run through `gate_driver.py` with logs in the LOG FOLDER: all six simple gates and both ratchets pass (`gate-table-1.txt`, EXIT=0; complexity and file-length exit 1 with no new item in the files this branch changed). Someone with access outside the jail should run `feature_check.py` once to confirm the same table.
