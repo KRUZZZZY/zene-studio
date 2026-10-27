@@ -250,8 +250,9 @@ private slots:
 	}
 
 	//! Renders one period through the instrument and returns the two planes.
-	static auto renderPeriod(TestInstrument& instrument, f_cnt_t frames)
-		-> std::array<std::vector<float>, 2>
+	//! Leading return types on these private-slots helpers: the Qt 5.15.3 moc cannot parse a
+	//! trailing one there (ci-v041-1).
+	static std::array<std::vector<float>, 2> renderPeriod(TestInstrument& instrument, f_cnt_t frames)
 	{
 		std::array<std::vector<float>, 2> planes{std::vector<float>(frames), std::vector<float>(frames)};
 		float* data[2] = {planes[0].data(), planes[1].data()};
@@ -261,8 +262,8 @@ private slots:
 	}
 
 	//! Whether the two renders carry the same samples in [from, to).
-	static auto sameSamples(const std::array<std::vector<float>, 2>& a,
-		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to) -> bool
+	static bool sameSamples(const std::array<std::vector<float>, 2>& a,
+		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to)
 	{
 		for (ch_cnt_t channel = 0; channel < 2; ++channel)
 		{
@@ -276,8 +277,8 @@ private slots:
 
 	//! The first frame in [from, to) at which the two renders differ, or `to` when they
 	//! do not differ at all.
-	static auto firstDifference(const std::array<std::vector<float>, 2>& a,
-		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to) -> f_cnt_t
+	static f_cnt_t firstDifference(const std::array<std::vector<float>, 2>& a,
+		const std::array<std::vector<float>, 2>& b, f_cnt_t from, f_cnt_t to)
 	{
 		for (f_cnt_t frame = from; frame < to; ++frame)
 		{

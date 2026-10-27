@@ -5681,6 +5681,19 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(GoldenAudioSelfTest PROPERTIES TIMEOUT 300)
 endif()
 
+# Qt 5 moc portability (cluster ci-v041-1, 2026-10-27). The Qt 5.15.3 moc of the hosted
+# linux-x86_64 job cannot parse a trailing return type on a meta-method (a slots:/signals:
+# member or a Q_INVOKABLE one) - "include/Song.h:706: Parse error" stopped AutoMoc and the
+# whole build - while the Qt 6 moc here accepts it. The check reads sources only, runs its
+# own red/green fixtures first, and is registered wherever a python3 is.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME MocQt5TrailingReturnCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/moc-qt5-trailing-return-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(MocQt5TrailingReturnCheck PROPERTIES TIMEOUT 300)
+endif()
+
 # The real-time-safety WHOLE-TREE SWEEP (2026-09-16, lane 030/rt-safety, board task #678,
 # feature row 52). AGENTS.md's realtime rule - "no allocation, no locking, no unbounded
 # growth on audio-thread paths" - was held per feature until now: an allocation-counter

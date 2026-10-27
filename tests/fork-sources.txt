@@ -3182,3 +3182,4 @@ tests/control-drum-rack-pads.py
 tests/src/plugins/VibratingStringTest.cpp
 # cluster new-p23-25 (2026-10): regression for window.select during GuiApplication startup (fork-NEW).
 tests/src/gui/WindowSelectStartupTest.cpp
+tests/moc-qt5-trailing-return-check.py

@@ -1345,7 +1345,7 @@ void Song::startExport()
 }
 
 
-auto Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept -> bool
+bool Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept
 {
 	for (Track* const track : tracks())
 	{
