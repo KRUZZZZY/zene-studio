@@ -55,6 +55,7 @@ bool holds(const QLayout* layout, const QWidget* widget)
 	for (int i = 0; layout != nullptr && i < layout->count(); ++i)
 	{
 		QLayoutItem* item = layout->itemAt(i);
+		if (item == nullptr) { continue; }  // QLayout::itemAt may return nullptr for an index below count()
 		if (item->widget() == widget || holds(item->layout(), widget)) { return true; }
 	}
 	return false;

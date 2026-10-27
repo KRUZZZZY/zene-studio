@@ -40,6 +40,7 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QHelpEvent>
+#include <QLayout>
 #include <QLineEdit>
 #include <QProcess>
 #include <QStringList>
@@ -123,6 +124,27 @@ protected:
 
 private:
 	int m_paintCount = 0;
+};
+
+//! A layout that reports a null item at index 0 below its count, which QLayout::itemAt allows ("must return nullptr").
+class GapLayout final : public QLayout
+{
+public:
+	using QLayout::QLayout;
+	~GapLayout() override
+	{
+		qDeleteAll(m_items);
+		m_items.clear();
+	}
+
+	void addItem(QLayoutItem* item) override { m_items.append(item); }
+	QLayoutItem* itemAt(int index) const override { return index >= 0 && index < m_items.size() ? m_items.at(index) : nullptr; }
+	QLayoutItem* takeAt(int index) override { return index >= 0 && index < m_items.size() ? m_items.takeAt(index) : nullptr; }
+	int count() const override { return static_cast<int>(m_items.size()); }
+	QSize sizeHint() const override { return {}; }
+
+private:
+	QList<QLayoutItem*> m_items;
 };
 
 } // namespace
@@ -637,6 +659,39 @@ private slots:
 		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("disable shrank width to %1, target is %2")
 			.arg(knob->minimumWidth()).arg(target)));
 		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("disable shrank height to %1, target is %2")
+			.arg(knob->minimumHeight()).arg(target)));
+	}
+
+	//! Target sizing searches the parent's layout; a null item the layout reports below its count must be stepped over.
+	void accessibleTargetSkipsNullLayoutItems()
+	{
+		if (!qEnvironmentVariableIsSet("ZENE_TEST_ACCESSIBLE"))
+		{
+			// Accessible mode is fixed at startup, so run this slot in a fresh process that has it (see the slot above).
+			QProcess child;
+			QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
+			environment.insert(QStringLiteral("ZENE_TEST_ACCESSIBLE"), QStringLiteral("1"));
+			child.setProcessEnvironment(environment);
+			child.setProcessChannelMode(QProcess::MergedChannels);
+			child.start(QCoreApplication::applicationFilePath(), {QStringLiteral("accessibleTargetSkipsNullLayoutItems")});
+			QVERIFY2(child.waitForStarted(), qPrintable(child.errorString()));
+			QVERIFY2(child.waitForFinished(120000), "the accessible-mode child did not finish");
+			QVERIFY2(child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0,
+				qPrintable(QString::fromLocal8Bit(child.readAll())));
+			return;
+		}
+		QVERIFY(tokens::accessibleMode());
+		const int target = tokens::targetSize();
+
+		QWidget parent;
+		auto* layout = new GapLayout(&parent);
+		layout->addItem(nullptr);  // index 0 reports no item; the knob sits at index 1
+		auto* knob = new Knob(KnobType::Small17, &parent);
+		layout->addWidget(knob);
+		knob->ensurePolished();  // the Polish event runs the cue's target sizing, which searches the parent's layout
+		QVERIFY2(knob->minimumWidth() >= target, qPrintable(QStringLiteral("width %1, target is %2")
+			.arg(knob->minimumWidth()).arg(target)));
+		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("height %1, target is %2")
 			.arg(knob->minimumHeight()).arg(target)));
 	}
 };

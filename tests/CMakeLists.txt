@@ -3242,6 +3242,9 @@ set_tests_properties(KnobKeyboardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 add_test(NAME KnobAccessibleTargetSizingTest COMMAND KnobKeyboardTest accessibleTargetSurvivesKnobSizingReset)
 set_tests_properties(KnobAccessibleTargetSizingTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_TEST_ACCESSIBLE=1")
+add_test(NAME KnobAccessibleNullItemTest COMMAND KnobKeyboardTest accessibleTargetSkipsNullLayoutItems)
+set_tests_properties(KnobAccessibleNullItemTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ZENE_TEST_ACCESSIBLE=1")
 set_tests_properties(AutomationModeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationEditorEditingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationClipDisconnectTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
