@@ -68,6 +68,7 @@ NotePlaybackTest on the final tree: 30 PASS lines, 0 FAIL lines (test-green-4.lo
 ## Gates
 
 - `feature_check.py` could not produce its table. Its first run exited 1 (gates-1.log): it creates a log folder beside the worktree (`zene-qwen-new-p9-297-feature-check`), which is outside the write-jail (PermissionError). The script has no override, and I did not edit it.
+- I tried one other route: a detached temporary worktree under `$TMPDIR`, so the script's log folder would sit on disk. The lane's bunny-guard refused `git worktree add` (`$LOGS/gate-worktree-add.log`), so I did not pursue it. The official table is therefore not produced in this lane.
 - In its place, each gate script from the same list ran from the worktree, logs in `$LOGS/gate2-*.log`:
   - `bash tests/fork-sources-gate.sh`: EXIT 0
   - `bash tests/all-sources-reproduce.sh`: EXIT 0
