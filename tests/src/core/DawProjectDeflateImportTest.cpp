@@ -627,9 +627,9 @@ private slots:
 			qPrintable(error));
 	}
 
-	//! 0xFFFF in the end record's entry count is the ZIP64 sentinel, not 65,535 entries: a ZIP64 container is
-	//! refused by name, never half-read with the rest dropped silently. 0xFFFE, the largest classic count, reads.
-	void aZip64EntryCountSentinelIsRefusedAndTheLargestClassicCountReads()
+	//! 0xFFFF in the end record is the ZIP64 sentinel once a 65,536th record follows the 65,535 it counts: that
+	//! container is refused by name, never half-read with the rest dropped silently.
+	void aZip64OverflowOfTheEntryCountIsRefusedNotTruncated()
 	{
 		std::vector<Spec> many;
 		many.reserve(65536);
@@ -637,21 +637,41 @@ private slots:
 		{
 			many.push_back(stored(QStringLiteral("e%1").arg(index), QByteArray()));
 		}
-		const QString sentinel = containerOf(QStringLiteral("zip64-sentinel.dawproject"), many, 0xFFFF);
+		const QString overflow = containerOf(QStringLiteral("zip64-overflow.dawproject"), many, 0xFFFF);
 		std::vector<DawProjectEntry> entries;
 		DawProjectZipReport report;
 		QString error;
-		QVERIFY(!dawProjectZipReadTolerant(sentinel, &entries, &report, &error));
+		QVERIFY(!dawProjectZipReadTolerant(overflow, &entries, &report, &error));
 		QVERIFY2(error.contains(QStringLiteral("ZIP64")), qPrintable(error));
 		QVERIFY(entries.empty());
-		QVERIFY(!dawProjectZipRead(sentinel, &entries, &error));
+		QVERIFY(!dawProjectZipRead(overflow, &entries, &error));
 		QVERIFY2(error.contains(QStringLiteral("ZIP64")), qPrintable(error));
-		QVERIFY(!run(QStringLiteral("dawproject.import"), {{QStringLiteral("path"), sentinel}}).ok);
+		QVERIFY(!run(QStringLiteral("dawproject.import"), {{QStringLiteral("path"), overflow}}).ok);
+	}
 
-		many.pop_back();
+	//! A classic directory of exactly 65,535 entries declares 0xFFFF and is complete: nothing follows the count, so
+	//! it reads in full, through both readers. A count of 0xFFFE, one below, reads as before.
+	void aClassicDirectoryOfExactly65535EntriesReadsInFull()
+	{
+		std::vector<Spec> many;
+		many.reserve(65535);
+		for (int index = 0; index < 65535; index++)
+		{
+			many.push_back(stored(QStringLiteral("e%1").arg(index), QByteArray()));
+		}
+		const QString exact = containerOf(QStringLiteral("classic-65535.dawproject"), many, 0xFFFF);
+		std::vector<DawProjectEntry> entries;
+		DawProjectZipReport report;
+		QString error;
+		QVERIFY2(dawProjectZipReadTolerant(exact, &entries, &report, &error), qPrintable(error));
+		QCOMPARE(entries.size(), static_cast<std::size_t>(65535));
+		QVERIFY(report.deviations.empty());
+		QVERIFY2(dawProjectZipRead(exact, &entries, &error), qPrintable(error));
+		QCOMPARE(entries.size(), static_cast<std::size_t>(65535));
+
 		many.pop_back();  // 65,534 entries: a count of 0xFFFE is a real count
-		const QString largest = containerOf(QStringLiteral("classic-65534.dawproject"), many, 0xFFFE);
-		QVERIFY2(dawProjectZipReadTolerant(largest, &entries, &report, &error), qPrintable(error));
+		const QString below = containerOf(QStringLiteral("classic-65534.dawproject"), many, 0xFFFE);
+		QVERIFY2(dawProjectZipReadTolerant(below, &entries, &report, &error), qPrintable(error));
 		QCOMPARE(entries.size(), static_cast<std::size_t>(65534));
 		QVERIFY(report.deviations.empty());
 	}

@@ -22,7 +22,8 @@
  *     oversized one: each is a DawProjectDeviation in the report, and the
  *     entries around it are still read. Nothing is dropped without a line in
  *     the report saying so. Only a container with no usable directory at all
- *     (not a ZIP, spanned, ZIP64, a directory past the file's end) is refused outright.
+ *     (not a ZIP, spanned, a directory past the file's end, or a ZIP64 directory
+ *     with entries past the 65,535 its count can state) is refused outright.
  *   - The central directory is authoritative: sizes and the CRC come from it,
  *     so an entry written with a data descriptor (the streaming writers' habit,
  *     where the local header's sizes are zero) reads the same as any other.
@@ -204,14 +205,6 @@ bool locateDirectory(const QString& path, const QByteArray& bytes, int* centralO
 		return refuse(QStringLiteral("%1 is a SPANNED ZIP (the end record names disk %2), which this "
 			"reader does not support").arg(path).arg(thisDisk));
 	}
-	const quint16 entryCount = readU16(bytes, endOffset + 10);
-	if (entryCount == Zip64CountMarker)
-	{
-		// The real count is in a ZIP64 record this reader does not decode; read as a count, the first
-		// 65,535 entries would be listed and the rest dropped with no line in the report.
-		return refuse(QStringLiteral("%1 is a ZIP64 container (its end record carries the ZIP64 "
-			"entry-count sentinel, 0xFFFF), which this reader does not support").arg(path));
-	}
 	const quint32 size = readU32(bytes, endOffset + 12);
 	const quint32 offset = readU32(bytes, endOffset + 16);
 	if (static_cast<qint64>(offset) + static_cast<qint64>(size) > bytes.size())
@@ -220,7 +213,7 @@ bool locateDirectory(const QString& path, const QByteArray& bytes, int* centralO
 			"past the end of the file").arg(path).arg(size).arg(offset));
 	}
 	*centralOffset = static_cast<int>(offset);
-	*count = entryCount;
+	*count = readU16(bytes, endOffset + 10);
 	return true;
 }
 
@@ -244,6 +237,23 @@ bool decodeCentral(const QByteArray& bytes, int cursor, CentralEntry* entry, int
 	entry->name = QString::fromUtf8(bytes.mid(nameAt, nameLength));
 	*next = nameAt + nameLength + readU16(bytes, cursor + 30) + readU16(bytes, cursor + 32);
 	return true;
+}
+
+//! True when a central-directory record follows the \a count records the directory declares. Asked only when the
+//! count is the ZIP64 sentinel: 0xFFFF is then a real count when nothing follows it (a classic archive of exactly
+//! 65,535 entries), and the sentinel of an archive this reader cannot count when a record does. The directory ends
+//! where the end record starts (findEndOfCentralDirectory), so a record signature found there is a further entry.
+bool holdsRecordPastCount(const QByteArray& bytes, int centralOffset, int count)
+{
+	int cursor = centralOffset;
+	for (int index = 0; index < count; index++)
+	{
+		CentralEntry entry;
+		int next = 0;
+		if (!decodeCentral(bytes, cursor, &entry, &next)) { return false; }  // a truncated directory is reported later
+		cursor = next;
+	}
+	return cursor + CentralHeaderSize <= bytes.size() && readU32(bytes, cursor) == CentralHeaderSignature;
 }
 
 //! Feature flags this reader does not decode. True (after a note) when \a entry has one.
@@ -539,6 +549,17 @@ bool dawProjectZipReadTolerant(const QString& path, std::vector<DawProjectEntry>
 	int centralOffset = 0;
 	int count = 0;
 	if (!locateDirectory(path, bytes, &centralOffset, &count, error)) { return false; }
+	if (count == Zip64CountMarker && holdsRecordPastCount(bytes, centralOffset, count))
+	{
+		// The real count is in a ZIP64 record this reader does not decode; read as a count, the first
+		// 65,535 entries would be listed and the rest dropped with no line in the report.
+		if (error)
+		{
+			*error = QStringLiteral("%1 is a ZIP64 container: its end record carries the ZIP64 entry-count "
+				"sentinel (0xFFFF) and more entries follow it, which this reader does not support").arg(path);
+		}
+		return false;
+	}
 
 	DawProjectZipReport local;
 	std::vector<DawProjectEntry> found;
