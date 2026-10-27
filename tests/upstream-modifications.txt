@@ -5301,3 +5301,4 @@ tests/CMakeLists.txt	new-p18-34/new-p15-69/new-p15-70: register three focused Fr
 tests/src/plugins/PluginPortsMigrationTest.cpp	new-p18-34/new-p15-69/new-p15-70: add deterministic FreeBoy pool exhaustion, active-rate-pool retention/reclamation, atomic handoff, and realtime-allocation regressions; pool-note cleanup is explicit.
 tests/all-sources.txt	new-p18-34: re-derive the inherited whole-tree source manifest from its documented recipe so the registration gates pass; header and recipe stay unchanged.
 tests/src/gui/ItemListPanelTest.cpp	2026-10-26 new-p21-203: regression for a negative comp-segment row (aNegativeCompRowIsRefusedNotIndexed); no existing test changed.
+tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Note position and duration are swapped when importing a DAWproject session
