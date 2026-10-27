@@ -437,6 +437,39 @@ Envelope=0,00000001 100,0
 		QVERIFY2(render(nonfinitePath) == expected, "a non-finite envelope level must be stored as zero");
 	}
 
+	void noiseBandStepCountStaysDefinedForOutOfRangeQuotients()
+	{
+		// The step quotient is converted to an int only when it is finite and in range; NaN and
+		// out-of-range values take the defined results below instead of an undefined conversion.
+		constexpr long maxStep = std::numeric_limits<int>::max();
+		QCOMPARE(DrumSynth::noiseBandStepCount(41.7), 42L);
+		QCOMPARE(DrumSynth::noiseBandStepCount(-3.0), 1L);
+		QCOMPARE(DrumSynth::noiseBandStepCount(std::numeric_limits<double>::quiet_NaN()), 1L);
+		QCOMPARE(DrumSynth::noiseBandStepCount(std::numeric_limits<double>::infinity()), maxStep);
+		QCOMPARE(DrumSynth::noiseBandStepCount(1e300), maxStep);
+	}
+
+	void negativeNoiseBandFrequencyRendersLikeTheBandOff()
+	{
+		// A disabled noise band with a negative frequency still derives its step; the render must match a file without the band.
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QByteArray tone = "[General]\nVersion=DrumSynth v2.0\n[Tone]\nOn=1\nLevel=100\n"
+								"Envelope=0,100 2400,100 4800,0\nF1=440\nF2=220\n";
+		const auto writeBytes = [](const QString& path, const QByteArray& contents) {
+			QFile file(path);
+			return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
+		};
+		const QString plainPath = directory.filePath(QStringLiteral("plain-tone.ds"));
+		const QString bandPath = directory.filePath(QStringLiteral("negative-band-off.ds"));
+		QVERIFY(writeBytes(plainPath, tone));
+		QVERIFY(writeBytes(bandPath, tone + "[NoiseBand]\nOn=0\nF=-100\nEnvelope=0,100 4800,0\n"));
+
+		const auto expected = render(plainPath);
+		QVERIFY(std::any_of(expected.begin(), expected.end(), [](int16_t sample) { return sample != 0; }));
+		QVERIFY2(render(bandPath) == expected, "a disabled band with a negative frequency must not change the render");
+	}
+
 	void refusesAnEnvelopeWhoseRoundedLengthOverflows()
 	{
 		QTemporaryDir tempDir;
