@@ -278,7 +278,9 @@ private slots:
 		// can hold it. start + offset wraps in tick_t; the clip must still contribute nothing.
 		Track* track = newSampleTrack();
 		SampleClip* clip = addTake(track, 1, 0.5f);
-		clip->setStartTimeOffset(TimePos(std::numeric_limits<tick_t>::max()));
+		// Set the timeline offset directly. SampleClip's override also converts ticks to an int
+		// frame cache, which is a separate out-of-range conversion for this deliberately huge value.
+		clip->Clip::setStartTimeOffset(TimePos(std::numeric_limits<tick_t>::max()));
 		const tick_t length = clip->length().getTicks();
 		const QString out = m_dir.filePath(QStringLiteral("offsetPastLargestTick.wav"));
 		const ClipConsolidate::Result rendered = ClipConsolidate::render({clip}, 0, 2 * length, out);
