@@ -89,6 +89,12 @@ thread_local float phi[1200];
 thread_local long wavewords, wavemode = 0;
 thread_local float mem_t = 1.0f, mem_o = 1.0f, mem_n = 1.0f, mem_b = 1.0f, mem_tune = 1.0f, mem_time = 1.0f;
 
+// The renderer holds an open envelope end for this long, in 44.1 kHz samples. The longest envelope in the
+// shipped library is 438020 samples (data/samples/drumsynth/misc/verylong.ds), so no real sample reaches it.
+constexpr float maxEnvelopeHold = 442000.f;
+// The largest stretch factor the parser allows; Stretch is clamped to 1000%.
+constexpr float maxStretch = 10.f;
+
 int DrumSynth::LongestEnv()
 {
 	float l = 0.f;
@@ -143,7 +149,7 @@ void DrumSynth::UpdateEnv(int e, long t)
 	envData[e][NEXTT] = envpts[e][0][static_cast<long>(envData[e][PNT] + 1.f)] * timestretch; // get next point
 	if (envData[e][NEXTT] < 0)
 	{
-		envData[e][NEXTT] = 442000 * timestretch; // if end point, hold
+		envData[e][NEXTT] = maxEnvelopeHold * timestretch; // if end point, hold
 	}
 	envData[e][ENV] = envpts[e][1][static_cast<long>(envData[e][PNT] + 0.f)] * 0.01f;		  // this level
 	float endEnv = envpts[e][1][static_cast<long>(envData[e][PNT] + 1.f)] * 0.01f;			  // next level
@@ -456,9 +462,9 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	{
 		timestretch = 0.2f;
 	}
-	if (timestretch > 10.f)
+	if (timestretch > maxStretch)
 	{
-		timestretch = 10.f;
+		timestretch = maxStretch;
 	}
 	// the unit of envelope lengths is a sample in 44100Hz sample rate, so correct it
 	timestretch *= Fs / 44100.f;
@@ -632,6 +638,9 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 		envData[i][PNT] = 0;
 	}
 	Length = LongestEnv();
+	// Refuse a duration past the renderer's own hold at the largest stretch, before any buffer is sized from it.
+	// LongestEnv adds a 2400 sample base and rounds down to whole blocks, so Length exceeds the envelope by at most 2400.
+	if (static_cast<float>(Length) > maxEnvelopeHold * maxStretch * (Fs / 44100.f) + 2400.f) { return 0; }
 	std::size_t waveSampleCount = 0;
 	if (!checkedWaveSampleCount(channels, Length, waveSampleCount)) { return 0; }
 
