@@ -2974,6 +2974,8 @@ tests/src/plugins/HistoricalBufferEmptyTest.cpp
 # cluster new-p23-90: sfizz EQHolder writes its outputs when the buffer pool is exhausted.
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+# cluster new-p21-156: sfizz FilterHolder and EQHolder pass through before setup() and after reset().
+tests/src/plugins/SfzFilterEqDescriptionTest.cpp
 tests/src/plugins/SfzSimdHelperAlignmentTest.cpp
 tests/src/plugins/SfzTestSupport.h
 # cluster new-p21-182: the sfizz AVX gain kernel advances per-sample gains across vector blocks.

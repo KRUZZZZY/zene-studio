@@ -3274,6 +3274,7 @@ tests/src/plugins/SfizzLeakDetectorTest.cpp
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfzEffectBusViewTest.cpp
 tests/src/plugins/SfzFilePoolTest.cpp
+tests/src/plugins/SfzFilterEqDescriptionTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzSimdGainAVXTest.cpp

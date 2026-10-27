@@ -43,7 +43,7 @@ public:
     void reset();
 private:
     Resources& resources;
-    const EQDescription* description;
+    const EQDescription* description { nullptr };
     std::unique_ptr<FilterEq> eq;
     float baseBandwidth { Default::eqBandwidth };
     float baseFrequency { Default::eqFrequency };

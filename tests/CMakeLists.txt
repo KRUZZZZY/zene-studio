@@ -1774,6 +1774,12 @@ if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/FilterPoolTest.cpp)
 endif()
 
+# cluster new-p21-156: FilterHolder and EQHolder must pass through before setup() and after reset(),
+# not read an indeterminate description pointer. Links the built sfizz library for the holders.
+if(TARGET sfzplayer_sfizz)
+	list(APPEND LMMS_TESTS src/plugins/SfzFilterEqDescriptionTest.cpp)
+endif()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -2034,6 +2040,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfzSimdHelperAlignmentTest")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "SfzFilterEqDescriptionTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "VstEffectControlsTest")
