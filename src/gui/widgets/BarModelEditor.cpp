@@ -71,6 +71,11 @@ void BarModelEditor::paintEvent(QPaintEvent *event)
 	QWidget::paintEvent(event);
 
 	auto const * mod = model();
+	if(mod == nullptr)
+	{
+		return;
+	}
+
 	auto const minValue = mod->minValue();
 	auto const maxValue = mod->maxValue();
 	auto const range = maxValue - minValue;

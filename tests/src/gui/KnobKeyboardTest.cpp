@@ -212,6 +212,21 @@ private slots:
 		QApplication::sendEvent(&editor, &menuEvent);
 	}
 
+	//! A visible bar editor schedules a repaint when its model is detached; painting it must
+	//! not dereference the now-missing FloatModel.
+	void aDetachedTempoSyncBarModelEditorCanPaint()
+	{
+		TempoSyncKnobModel model(1.f, 0.f, 100.f, 1.f, 1.f, nullptr, QStringLiteral("Time"));
+		TempoSyncBarModelEditor editor(QStringLiteral("Time"), &model);
+		editor.resize(120, 24);
+		editor.show();
+		QApplication::processEvents();
+
+		editor.setModel(nullptr);
+		QVERIFY(editor.model() == nullptr);
+		editor.repaint();
+	}
+
 	//! A plain FloatModel is not a TempoSyncKnobModel, yet the constructor accepts it. The
 	//! editor must warn and stay empty rather than dereference the failed cast.
 	void aTempoSyncBarModelEditorRefusesAPlainFloatModel()
