@@ -388,9 +388,9 @@ private slots:
 
 	//! Cluster new-p15-258: the FLAC compression level must reach the encoder.
 	//! The same deterministic audio written at the two ends of the scale must
-	//! pack to different bytes (before the fix both used libsndfile's default),
-	//! and both must decode to identical samples - the level changes how the
-	//! audio is packed, never what it decodes to.
+	//! pack differently when libsndfile exposes its compression-level command
+	//! (before the fix both used the default), and both must decode to identical
+	//! samples. Builds without that optional command retain the default output.
 	void aFlacCompressionLevelReachesTheEncoder()
 	{
 		const std::vector<float> signal = richSignal(22050);
@@ -403,9 +403,14 @@ private slots:
 		const QByteArray bestBytes = readBytes(best);
 		evidence("flac bytes: level 0.0 vs level 1.0", static_cast<double>(fastBytes.size()),
 			static_cast<double>(bestBytes.size()));
+	#ifdef LMMS_HAVE_SF_COMPLEVEL
 		QVERIFY2(fastBytes != bestBytes,
 			"FLAC at compression level 0.0 and 1.0 encoded to the same bytes: the level "
 			"never reached the encoder");
+	#else
+		QVERIFY2(fastBytes == bestBytes,
+			"FLAC output changed even though this build lacks compression-level support");
+	#endif
 
 		const std::vector<std::int16_t> fastSamples = readWavS16(fastest);
 		const std::vector<std::int16_t> bestSamples = readWavS16(best);
