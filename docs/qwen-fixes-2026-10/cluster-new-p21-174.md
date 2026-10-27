@@ -92,4 +92,5 @@ Earlier gate run (`gates-3.log`, before the test was added, 0 changed files), sa
 
 Deviations, disclosed:
 - `feature_check.py` writes its log folder to `<worktree>-feature-check`, a sibling of the worktree, which the write area does not allow. I ran a copy from `$TMPDIR/gatecopy/` with only two lines changed: the log folder now goes to the run folder's `logs/feature-check-1`, and `ROOT` points at the original qwen folder so it reads the existing `FIX-BASE` and `gate-baselines` without writing to them. The checks themselves are unchanged.
+- `submit_check.py` runs the unmodified `feature_check.py` in its gate step, and that fails here (`submit-2.log`, "gates (feature_check.py) FAIL") for the same reason: the script cannot create `<worktree>-feature-check` outside the write area. The gate's checks pass when the log folder is redirected (`gates-4-final.log`, exit 0). This is an environment block, not a gate result; the loop should run the gates in a place where that folder can be created.
 - The ccache config (`~/.cache/ccache-bunny/ccache.conf`) sets a temp dir outside the write area. I overrode it per build with `CCACHE_TEMPDIR`; the config is unchanged.
