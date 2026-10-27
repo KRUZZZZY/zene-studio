@@ -65,11 +65,6 @@ bool AudioFileFlac::startEncoding()
 			m_sfinfo.format |= SF_FORMAT_PCM_16;
 	}
 
-#ifdef LMMS_HAVE_SF_COMPLEVEL
-	double compression = getOutputSettings().getCompressionLevel();
-	sf_command(m_sf, SFC_SET_COMPRESSION_LEVEL, &compression, sizeof(double));
-#endif
-
 	m_sf = sf_open(
 #ifdef LMMS_BUILD_WIN32
 		outputFile().toLocal8Bit().constData(),
@@ -83,6 +78,13 @@ bool AudioFileFlac::startEncoding()
 	{
 		return false;
 	}
+
+#ifdef LMMS_HAVE_SF_COMPLEVEL
+	// Applied to the open handle: a command issued before sf_open() has no
+	// encoder to configure and is silently dropped.
+	double compression = getOutputSettings().getCompressionLevel();
+	sf_command(m_sf, SFC_SET_COMPRESSION_LEVEL, &compression, sizeof(double));
+#endif
 
 	sf_command(m_sf, SFC_SET_CLIPPING, nullptr, SF_TRUE);
 
