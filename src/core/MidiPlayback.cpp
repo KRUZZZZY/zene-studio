@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <QDomElement>
 
@@ -97,8 +98,17 @@ f_cnt_t MidiPlayback::delayFrames(tick_t songTick, float framesPerTick, sample_r
 	double frames = offsetMs() * static_cast<double>(sampleRate) / 1000.0;
 	const float amount = swing();
 	const int grid = swingGrid();
-	if (amount > 0.f && songTick % (2 * grid) == grid) { frames += amount * grid * framesPerTick; }
-	return static_cast<f_cnt_t>(std::lround(frames));
+	// A tick length that is not a positive finite number gives the swing nothing to delay by: a negative
+	// one would make the delay negative, and a negative delay converts to a huge unsigned frame count.
+	if (amount > 0.f && songTick % (2 * grid) == grid && std::isfinite(framesPerTick) && framesPerTick > 0.f)
+	{
+		frames += amount * grid * framesPerTick;
+	}
+	// The delay is a count of frames: never below zero (NaN included), and clamped to the largest count
+	// the type holds before the conversion, which is only defined inside the type's range.
+	if (!(frames > 0.0)) { return 0; }
+	if (frames >= static_cast<double>(std::numeric_limits<f_cnt_t>::max())) { return std::numeric_limits<f_cnt_t>::max(); }
+	return static_cast<f_cnt_t>(std::round(frames));
 }
 
 QString MidiPlayback::elementName() const
