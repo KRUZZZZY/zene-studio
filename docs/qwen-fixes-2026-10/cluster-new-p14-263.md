@@ -62,13 +62,24 @@ Gate results (run directly, because `feature_check.py` could not create its log 
 
 ## Self-check
 
-- Verdict and evidence: the verdict is supported by `include/LmmsTypes.h:42-43`, `src/core/RingBuffer.cpp:91-106`, and the
-  static bound in command 8. Nothing in the product changed, so no regression test was written. A test that passes on
-  the unchanged code is not a regression for a non-bug; the existing `SamplerateUpdate_PreservesScaledFrameCount` (command 4,
-  EXIT 0) covers the rescale path.
-- Gates: `feature_check.py` could not run in this write-jail (command 5, EXIT 1). The six simple gates exited 0. The two
-  ratchets exited 1 and their `REGRESSION:` lines are all in files this branch does not change, so they cannot count against it.
-  The owner should re-run `feature_check.py` from outside the jail to confirm the table.
-- `submit_check.py`: see the result recorded below.
-- Not checked: whether any other caller relies on `f_cnt_t` being 32-bit. A grep for `f_cnt_t` as 32-bit would only find
-  the `uint32_t` return types in `include/InstrumentLayers.h:180-188`, which are unrelated to `RingBuffer`.
+Answers to the completion-check items. The verdict is FALSE-POSITIVE, so there is no product fix to prove.
+
+- **Regression test RED/GREEN (exit codes):** N/A. No product change, so there is no fix to revert. The existing
+  `RecordRingBufferTest` family (1/1) passes on the unchanged tree (command 4, EXIT 0). Its
+  `SamplerateUpdate_PreservesScaledFrameCount` (`tests/src/core/RecordRingBufferTest.cpp:184-205`) covers the rescale path.
+- **Determinism:** the rescale arithmetic is pure integer math with no clock, sleep, or thread. The bound is a
+  compile-time `static_assert` (command 8), not a timed or racy check.
+- **Fix at the cause, every caller and sibling:** N/A (no change). The callers of `checkedRateScaledFrames` are the
+  `updateSamplerate()` path (`src/core/RingBuffer.cpp:392`). Its guard at `:94` and the final sum check at `:103` are already in place.
+- **No collateral damage:** nothing changed, so saved projects and existing callers behave as before.
+- **Claim evidence (FALSE-POSITIVE):** `include/LmmsTypes.h:42-43` (`f_cnt_t` is `std::uint64_t`),
+  `src/core/RingBuffer.cpp:91-100` (bounded remainder product), and the commit history
+  (`9bab096b4` is an ancestor of this branch).
+- **Gates:** `feature_check.py` could not run in this write-jail. It exits 1 with `PermissionError` creating its sibling
+  log directory `zene-qwen-new-p14-263-feature-check` in the projects folder, which is outside the jail (command 5).
+  The six simple gates were run directly and exited 0. The two ratchets exited 1, and every `REGRESSION:` line is in a
+  file this branch does not change. The owner should re-run `feature_check.py` from outside the jail to confirm the table.
+- **`submit_check.py` (`submit-1.log`, EXIT 1):** PASS on commits, clean tree, report verdict, and claim-only closure.
+  FAIL only on `gates (feature_check.py)`, the same write-jail cause as above.
+- **Not checked:** whether any other caller relies on `f_cnt_t` being 32-bit. A grep for 32-bit use of `f_cnt_t`
+  would only find the `uint32_t` return types in `include/InstrumentLayers.h:180-188`, which are unrelated to `RingBuffer`.
