@@ -57,6 +57,13 @@ AudioFileMP3::~AudioFileMP3()
 
 bool AudioFileMP3::writeBuffer(const SampleFrame* _buf, const f_cnt_t _frames)
 {
+	if (m_lame == nullptr)
+	{
+		// No encoder started (lame_init() failed): nothing can be encoded, so the write fails.
+		recordWriteError();
+		return false;
+	}
+
 	if (_frames < 1)
 	{
 		return true;
@@ -98,9 +105,19 @@ void AudioFileMP3::flushRemainingBuffers()
 	if (m_flushed) { return; }
 	m_flushed = true;
 
+	if (m_lame == nullptr)
+	{
+		// No encoder started, so there is no tail to flush and the export is not complete.
+		recordWriteError();
+		return;
+	}
+
 	// The documentation states that flush should have at least 7200 bytes. So let's be generous.
 	std::vector<unsigned char> encodingBuffer(7200 * 4);
 
+#ifdef LMMS_TESTING
+	++s_flushCallsForTest;
+#endif
 	int bytesWritten = lame_encode_flush(m_lame, &encodingBuffer[0], static_cast<int>(encodingBuffer.size()));
 	assert (bytesWritten >= 0);
 
@@ -128,7 +145,17 @@ MPEG_mode mapToMPEG_mode(OutputSettings::StereoMode stereoMode)
 
 bool AudioFileMP3::initEncoder()
 {
+#ifdef LMMS_TESTING
+	m_lame = s_failNextLameInitForTest ? nullptr : lame_init();
+	s_failNextLameInitForTest = false;
+#else
 	m_lame = lame_init();
+#endif
+	if (m_lame == nullptr)
+	{
+		// lame_init() returns null when LAME cannot allocate its state: no setter, ID3 or flush call may use it.
+		return false;
+	}
 
 	// Handle stereo/joint/mono settings
 	OutputSettings::StereoMode stereoMode = getOutputSettings().getStereoMode();
@@ -150,7 +177,11 @@ bool AudioFileMP3::initEncoder()
 
 void AudioFileMP3::tearDownEncoder()
 {
-	lame_close(m_lame);
+	if (m_lame != nullptr)
+	{
+		lame_close(m_lame);
+		m_lame = nullptr;
+	}
 }
 
 } // namespace lmms

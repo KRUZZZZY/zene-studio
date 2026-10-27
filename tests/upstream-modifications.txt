@@ -5349,3 +5349,6 @@ src/core/EffectChain.cpp	cluster new-p21-143: removeEffect detaches the removed 
 tests/src/core/MixerStripTest.cpp	cluster new-p21-143: three EffectChain removal cases (detach on removal, a foreign chain leaves the owner intact, re-append attaches to the new chain).
 tests/src/core/ConfigMigrationTest.cpp	# A malformed config can be overwritten with defaults
 tests/src/gui/MidiReconnectActionTest.cpp	# A malformed config can be overwritten with defaults
+include/AudioFileMP3.h	cluster new-p15-259: LMMS_TESTING-only hooks (failNextLameInitForTest, flushCallsForTest) and their private statics, so the MP3 init-failure regression can inject a null LAME handle and count the flushes.
+src/core/audio/AudioFileMP3.cpp	cluster new-p15-259: LMMS_TESTING-only one-shot LAME init-failure injection and flush counter; null LAME handles are checked before any LAME call in init, write, flush and teardown.
+tests/CMakeLists.txt	cluster new-p15-259: registers AudioFileMP3InitTest only when LAME is enabled, with the headless Qt platform.

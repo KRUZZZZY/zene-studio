@@ -1471,6 +1471,13 @@ if(LMMS_HAVE_OGGVORBIS)
 	)
 endif()
 
+# MP3 export is optional too; this regression compiles against the LAME-backed writer.
+if(LMMS_HAVE_MP3LAME)
+	list(APPEND LMMS_TESTS
+		src/core/AudioFileMP3InitTest.cpp
+	)
+endif()
+
 # cluster new-p14-269/271: the Ogg Vorbis decoder's channel handling and the release of its
 # decoder state on every exit (the read-error path included).
 # cluster new-p14-276: the bounded decoder refuses a limit it cannot turn into a frame count.
@@ -3357,6 +3364,10 @@ set_tests_properties(ExportWavWriteErrorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(LMMS_HAVE_OGGVORBIS)
 	set_tests_properties(AudioFileOggInitTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+if(LMMS_HAVE_MP3LAME)
+	set_tests_properties(AudioFileMP3InitTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(AudioResamplerRatioTest PROPERTIES
