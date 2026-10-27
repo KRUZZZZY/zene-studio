@@ -26,6 +26,7 @@
 #include "InstrumentLayers.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -131,7 +132,7 @@ auto readMix(const QDomElement& element) -> InstrumentLayers::Mix
 	mix.solo = element.attribute(QStringLiteral("layersolo")).toInt() != 0;
 	bool ok = false;
 	const float level = element.attribute(QStringLiteral("layerlevel")).toFloat(&ok);
-	mix.level = ok ? std::clamp(level, 0.0f, InstrumentLayers::MaxLevel) : 1.0f;
+	mix.level = ok && std::isfinite(level) ? std::clamp(level, 0.0f, InstrumentLayers::MaxLevel) : 1.0f;
 	return mix;
 }
 
@@ -385,7 +386,8 @@ auto InstrumentLayers::mix(int index) const -> Mix
 
 auto InstrumentLayers::setMix(int index, const Mix& mix) -> bool
 {
-	if (index < 0 || index > layerCount()) { return false; }
+	// std::clamp passes NaN through, so a non-finite level is refused here rather than stored as a gain.
+	if (index < 0 || index > layerCount() || !std::isfinite(mix.level)) { return false; }
 	Mix wanted = mix;
 	wanted.level = index == 0 ? 1.0f : std::clamp(mix.level, 0.0f, MaxLevel);  // layer 0's level is the track's volume
 	m_mix[static_cast<std::size_t>(index)] = wanted;
