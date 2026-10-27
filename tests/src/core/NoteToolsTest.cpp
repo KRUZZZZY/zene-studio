@@ -32,6 +32,7 @@
 #include <QJsonArray>
 #include <QPointer>
 #include <algorithm>
+#include <limits>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -168,6 +169,23 @@ private slots:
 		QVERIFY2(run(QStringLiteral("note.arpeggiate"), mixedArgs).ok,
 			"a chord with a positive-length member must still arpeggiate");
 		QCOMPARE(mixed->notes().size(), std::size_t{4});  // 48 ticks at 12 a step
+	}
+
+	//! Luna cluster new-p17-15: flam()'s range check compared the ratio with `<`
+	//! and `>`, and BOTH comparisons are false for NaN - so a NaN velocity passed
+	//! and the grace notes were written at std::lround(volume * NaN), an
+	//! implementation-dependent value, while the command reported success.
+	//! Non-finite ratios are refused typed, the way note.randomize refuses
+	//! non-finite jitter (ControlCommandsNoteRandom.cpp:212).
+	void aFlamVelocityRatioThatIsNotFiniteIsRefused()
+	{
+		MidiClip* clip = clipWith({{60, 24}});
+		QJsonObject args = self(clip);
+		args.insert(QStringLiteral("velocity"), std::numeric_limits<double>::quiet_NaN());
+		const ControlResult refused = run(QStringLiteral("note.flam"), args);
+		QVERIFY2(!refused.ok, "NaN velocity was accepted as a successful flam");
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clip->notes().size(), std::size_t{1});  // no grace note at a garbage velocity
 	}
 
 	void flamsRepeatsAndKeyedTransposition()

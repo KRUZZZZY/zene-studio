@@ -33,6 +33,7 @@
  *    key, 'step' ticks a step, into the clip. */
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <random>
 
@@ -207,9 +208,12 @@ ControlResult flam(const QJsonObject& args)
 	// never asked for. The args schema is a bare number (it is in the
 	// ControlCommandsSnapshot canary and may not change), so the range is refused HERE -
 	// the same handler-side refusal as 4e288ecb5.
+	// Luna cluster new-p17-15: isfinite FIRST - NaN compares false against BOTH bounds,
+	// so it slipped the range and reached std::lround, which has a domain error for it
+	// (the refusal note.randomize already gives, ControlCommandsNoteRandom.cpp:212).
 	const double ratio = args.contains(QStringLiteral("velocity"))
 		? args.value(QStringLiteral("velocity")).toDouble(0.6) : 0.6;
-	if (ratio < 0.05 || ratio > 1.0)
+	if (!std::isfinite(ratio) || ratio < 0.05 || ratio > 1.0)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'velocity' is %1: the grace notes' velocity ratio must be 0.05..1.0")
