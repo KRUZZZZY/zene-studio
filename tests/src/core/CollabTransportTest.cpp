@@ -514,6 +514,28 @@ private slots:
 		QCOMPARE(m_host->peerCount(), 1);
 	}
 
+	//! A port that is already taken refuses the host with false; the error sink is optional, so nullptr must not crash.
+	void occupiedPortRefusedWithoutErrorSink()
+	{
+		QTcpServer occupier;
+		QVERIFY(occupier.listen(QHostAddress(QHostAddress::LocalHost), 0));
+		CollabHost host;
+		QVERIFY(!host.start(QHostAddress(QHostAddress::LocalHost), occupier.serverPort(), nullptr));
+		QVERIFY(!host.isListening());
+	}
+
+	//! The same refusal fills the error sink with the port that could not be bound.
+	void occupiedPortReportsErrorToSink()
+	{
+		QTcpServer occupier;
+		QVERIFY(occupier.listen(QHostAddress(QHostAddress::LocalHost), 0));
+		CollabHost host;
+		QString error;
+		QVERIFY(!host.start(QHostAddress(QHostAddress::LocalHost), occupier.serverPort(), &error));
+		QVERIFY2(error.contains(QString::number(occupier.serverPort())), qPrintable(error));
+		QVERIFY(!host.isListening());
+	}
+
 	//! The host's broadcast reaches the peer in order, with its arguments, after the snapshot.
 	void hostBroadcastRoundTrip()
 	{
