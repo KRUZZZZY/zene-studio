@@ -116,10 +116,23 @@ built it rather than change that unrelated test).
 
 ## Self-check
 
-Round 5 (integration): built and tested on the integrated tree as tabled above; the fail-without-change proof was
-NOT re-run for the integration (the new tests and product code are the accepted ones; the round-1 proof below - tests
-fail to build / transcript fails at runtime against the base - is carried forward, not re-measured on train 17).
-`git status` clean after the commit.
+Round 5 (integration):
+- **Fails without / passes with, on train 17.** `tests/control-mixing-strip-features.py` run against the train-17
+  binary `zene-cachyos/build/zene` (HEAD `639e1d23e`, built 2026-10-26; used read-only): exit 1 (test-5-base.log:
+  "no command 'mixer.console_strip'", "no command 'pdc.set_offset'", "no command 'meter.inputs'", "no command
+  'window.input_meters'"). The same script against this branch's `build/zene`: exit 0 (test-6-with.log, "every check
+  held"). The C++ tests were not re-built against reverted product code on train 17; their round-1 proof (they do not
+  compile without ConsoleStrip.h / StripMeters.h / AudioBusHandle::offsetFrames / InputReadings.h /
+  ConsoleStripSection.h, none of which exist on the train) is carried forward below.
+- **Criteria proven by tests I ran:** the acceptance table's tests all re-ran on the integrated tree: test-1.log (6/6),
+  test-2.log (17/17), test-3.log (2/2), test-4.log (7/7), all exit 0.
+- **Undo / reversibility, realtime, old projects, portability:** unchanged from the accepted patch (answers below);
+  the integration added no command, audio-path code or format. ReversibilityContractTest (exit 0) confirms the four
+  rows on the train; PdcMixerTest, AudioBusHandleTest, InputMeterTest, MixerRoutingBackwardCompatTest exit 0.
+- **Gates:** `submit_check.py` reports its gates row FAIL because `feature_check.py` raises PermissionError creating
+  `../zene-integrate-Q050-088-639e1d23e4-feature-check` (outside the write area; gate-feature-check-1.log). The same
+  script, copied to /tmp with only its log directory pointed into the run folder, reports all 8 gates PASS
+  (gate-feature-check-4.log, exit 0).
 
 Earlier rounds:
 
