@@ -3203,6 +3203,7 @@ tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
 tests/src/plugins/HistoricalBufferEmptyTest.cpp
 tests/src/plugins/HistoricalBufferResizeTest.cpp
+tests/src/plugins/FilterPoolTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/LadspaChannelCountFixture.cpp
 tests/src/plugins/LadspaChannelCountsTest.cpp
