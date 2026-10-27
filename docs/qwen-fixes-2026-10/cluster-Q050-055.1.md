@@ -150,6 +150,14 @@ no-upstream-regression, check-namespace, no-tautology and doc-figures 0; complex
    the optional `panels` object.
 6. Portability: see "Affected failure paths and supported-platform hazards" above.
 
+`submit_check.py` on the committed tree (`064477c42`, `submit-check-2.log`, exit 1) passes every
+item except "gates (feature_check.py)". That item fails only because of the environment: the
+unmodified `feature_check.py` stops with `PermissionError` creating
+`zene-integrate-Q050-055.1-639e1d23e4-feature-check` beside the worktree, before it runs any gate
+(`feature-check-4.log`, exit 1). The `/tmp` copy with only that path redirected passes all eight
+gates on the same committed tree (`feature-check-5.log`, RESULT: PASS, exit 0). I did not create
+or chmod the sibling directory, because it is outside this lane's writable area.
+
 
 **Round 2 (integration onto train 16), re-measured on the merged tree.** `submit_check.py` (exit 1,
 `submit-check-1.log`): every item PASS except "gates (feature_check.py)". That fail is the tool's
