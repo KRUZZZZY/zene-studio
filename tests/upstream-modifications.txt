@@ -5379,3 +5379,4 @@ tests/CMakeLists.txt	new-p9-503: registers src/plugins/VibratingStringTest.cpp a
 tests/data/lv2-test-instrument/lv2-test-instrument.c	# Lv2Proc::restoreState reports success even when lilv_state_restore fails
 tests/CMakeLists.txt	cluster new-p17-172: links the resid target into PluginPortsMigrationTest so sidSchedulerAdvancesThroughEveryRegisterWithReSid drives the real reSID chip; no other target changes.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p17-172: adds sidSchedulerAdvancesThroughEveryRegisterWithReSid (real reSID::SID through sidplayback::fillBuffer: every register written in order, per-call cycle budget respected, zero budget is a no-op); existing slots unchanged.
+plugins/Eq/EqFilter.h	new-p15-62: clampFrequency maps a NaN frequency to 0 Hz so the non-peak EQ filters keep finite coefficients (std::clamp passed NaN through); the regression is tests/src/plugins/EqFilterTest.cpp
