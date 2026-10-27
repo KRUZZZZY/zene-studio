@@ -44,7 +44,9 @@ Commands and exit codes (logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwe
 | Step 4b: rebuild re-applied | `cmake --build build --target PluginScanCacheTest -j4 > build-6-reapplied.log 2>&1` | EXIT=0 |
 | Step 4b: GREEN with the fix re-applied | `ctest -R '^PluginScanCacheTest$' --output-on-failure > test-6-reapplied-green.log 2>&1` | EXIT=0 |
 | Final zene build | `cmake --build build --target zene -j4 > build-7-zene-final.log 2>&1` | EXIT=0 |
-| Gate, wrapper | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > gate-feature-check-1.log 2>&1` | EXIT=1; not a gate verdict: `PermissionError` creating the sibling log directory `<worktree>-feature-check`, which is outside the write-jail |
+| Gate, wrapper, as written | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > gate-feature-check-1.log 2>&1` | EXIT=1; not a gate verdict: `PermissionError` creating the sibling log directory `<worktree>-feature-check`, which is outside the write-jail |
+| Gate, wrapper logic (table) | `python3 -I logs/wrapper-copy/feature_check_logdir.py <worktree> > gate-feature-check-2-wrapper-copy.log 2>&1` | EXIT=0; RESULT: PASS, all 8 rows PASS (see below) |
+| Completion check, first run | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p10-303 > submit-check-1.log 2>&1` | EXIT=1; only FAIL is `gates (feature_check.py)`, from the same sibling-directory permission error; all other rows PASS |
 | Gate, fork-sources | `bash tests/fork-sources-gate.sh` (from the worktree) | EXIT=0 (also re-run after the doc edit, EXIT=0) |
 | Gate, all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | EXIT=0 |
 | Gate, no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | EXIT=0 |
@@ -54,7 +56,22 @@ Commands and exit codes (logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwe
 | Gate, complexity (ratchet) | `bash tests/complexity-gate.sh --check` | raw EXIT=1 (red on the train, as the brief says); 7 regression lines, **0 new** against the cached base listing `gate-baselines/7641e9493d…json` (key comparison the wrapper uses) |
 | Gate, file-length (ratchet) | `bash tests/file-length-gate.sh --check` | raw EXIT=1 (red on the train); 22 regression lines, **0 new** against the cached base listing (the baseline has 21 keys; the extra line is a duplicate key) |
 
-Why the wrapper row is replaced: `feature_check.py` must create its log directory next to the worktree, which the write-jail forbids. I ran the same gate commands it runs, from the worktree, with logs in the LOG FOLDER, and applied its ratchet rule by hand (a regression fails only when its key is not in the cached baseline and it lives in a changed file). Neither ratchet gate has a new item. I did not edit the wrapper, the gate scripts, any limit or any baseline.
+Why the wrapper needed a copy: `feature_check.py` as written must create its log directory next to the worktree, which the write-jail forbids. So I ran a copy of it (`logs/wrapper-copy/feature_check_logdir.py`) whose only changes are two paths: the log directory is moved into the LOG FOLDER, and ROOT is pinned to the original `qwen/` directory, so it reads the same FIX-BASE and cached base listing. Its gate logic, limits and baselines are unchanged. Its output, with logs in `logs/wrapper-copy/feature-check-out/`:
+
+```
+feature-check zene-qwen-new-p10-303 (base 7641e9493, 4 changed files)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
+
+The two ratchet gates' raw exit codes (1) are the train's red, as the brief says; the wrapper's rule passes them because neither has a new item. I did not edit the original wrapper, the gate scripts, any limit or any baseline.
 
 Files committed for this verdict:
 
@@ -78,4 +95,4 @@ Residual risk, for the owner:
 * **Portability (Qt 5.15 / MSVC / macOS).** Only long-standing Qt APIs (`QFile::size`, `QByteArray`, `QString(n, QChar)`, `qWarning`). No platform-specific code.
 * **Registration.** No new file, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt` are unchanged. The fork-sources gate passes (EXIT=0).
 * **Verdict FIXED, with the cause and the file:line evidence above.** Yes.
-* **The ratchet gates and wrapper.** Not run through `feature_check.py` (write-jail); the same commands were run directly and the ratchet rule was applied by hand (0 new items for either gate). The wrapper's own gate row is therefore unverified in this lane.
+* **Gates.** The original `feature_check.py` cannot run inside the write-jail (it must create a sibling log directory). Its logic, run from a copy with only the log path redirected, gives RESULT: PASS, 8/8 rows (`gate-feature-check-2-wrapper-copy.log`, EXIT=0). The original `submit_check.py` still reports its gate row as FAIL for the same sandbox reason; the rest of its checks pass (`submit-check-1.log`).
