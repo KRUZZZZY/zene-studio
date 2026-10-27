@@ -119,7 +119,7 @@ Verdict is FIXED, so the ALREADY-FIXED / FALSE-POSITIVE item does not apply.
 
 3. **Fix at the cause; callers and siblings checked.**
    - Callers: the only constructor call in the repo is `plugins/Vibed/Vibed.cpp:81` (`StringContainer::addString`), fed by `playNoteImpl` (`Vibed.cpp:229-241`). The setting is the length model `FloatModel(1, 1, 16, 1)` (`Vibed.cpp:119`), so it is in 1..16.
-   - Siblings of the changed value, all in `VibratingString.h`/`.cpp`: `nextSample()` loops `m_oversample` times (`VibratingString.h:58`) and returns `m_outsamp[m_choice]` (`:76`); `m_choice = fastRand(m_oversample)` (`VibratingString.cpp:~70`) lies in `[0, count)`; `m_outsamp` is sized to the count (`:~68`); `stringLength = m_oversample * sampleRate / pitch + 1` grows with the count. All four are consistent with a count of at least one, and none needs a change.
+   - Siblings of the changed value, all in `VibratingString.h`/`.cpp`: `nextSample()` loops `m_oversample` times (`VibratingString.h:57`) and returns `m_outsamp[m_choice]` (`VibratingString.h:76`); `m_choice = fastRand(m_oversample)` (`VibratingString.cpp:57`) lies in `[0, count)`; `m_outsamp` is sized to the count (`VibratingString.cpp:59`); `stringLength = m_oversample * sampleRate / pitch + 1` grows with the count. All four are consistent with a count of at least one, and none needs a change.
    - The base-rate division (`ratio = max(rate / base, 1)`) is the only other use of that expression.
 
 4. **No collateral damage.**
