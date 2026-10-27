@@ -126,4 +126,14 @@ rows are therefore PASS. The exit code of 1 comes from those untouched files.
 8. **Registration.** No new test file (the test sits in an existing registered file), and no new product file.
    `tests/fork-sources.txt` and `tests/upstream-modifications.txt` need no change. `DawProjectSession.cpp` is
    already fork-authored.
-9. **`submit_check.py`.** Run after the commit; the result is reported below.
+9. **Determinism.** The test uses fixed literal inputs only (NaN, ±inf, ±1e300, 5000, 9.4, 999.4). It has no
+   clock, sleep, thread or race, and no injected seam is needed, because `applyDawProjectModel` takes the
+   model and the song as arguments.
+10. **Verdict.** FIXED, so the ALREADY-FIXED / FALSE-POSITIVE evidence question does not apply. The reachability
+   facts behind the verdict are cited above (`DawProjectRead.cpp:77-82,168`; `ControlCommandsDawProject.cpp:520,539`;
+   `TempoMap.cpp:64-67,97-101`).
+11. **`submit_check.py`.** Its only FAIL is the `gates (feature_check.py)` row. That script stops with a
+   `PermissionError` before any gate runs (it writes logs to `projects/zene-studio-program/zene-qwen-new-p9-112-feature-check`,
+   outside the write-jail). Run directly, the six simple gates exit 0. The two ratchets exit 1, but only on `REGRESSION:` lines for
+   files this change does not touch (see the Gates section). This is not a gate pass from the script itself: the
+   script needs to run from a place that can write its logs.
