@@ -1,6 +1,8 @@
-Verdict: FIXED
+Verdict: BLOCKED
 
 Cluster new-p21-174: `FollowActionEditor::rowOf` calls `isAncestorOf` through a null cell widget (`src/gui/FollowActionEditor.cpp:229`, the guard; the unguarded call was at `:228`). The finding is REAL: a member call through a null pointer is undefined behaviour, and UBSan reports it on the reachable row-removal path. The fix guards the cell before the call. A deterministic regression, run in a UBSan leg, fails with the guard reversed and passes with it restored.
+
+Status: the defect is fixed and proven under UBSan (sections 2 and 4). The loop's normal-configuration negative control cannot fail for this defect: with the guard reversed, the normal build passes (`negctl`, and this round's `normal-reverted.log`, exit 0). That is a limit of this toolchain, not a test gap: the undefined call returns the same value, so no normal-build observation exists (section 3). The verdict is BLOCKED on that check until the owner decides how the cluster should be negative-controlled (section 6).
 
 Earlier rounds said FALSE-POSITIVE (`round 2`). That was wrong: the call returned normally on this Qt build, but undefined behaviour is not made safe by a normal return. The removal-path evidence from round 2 still holds and is reused here.
 
@@ -55,7 +57,11 @@ Why a synthetic focus-in: real focus on the removed row re-enters `eventFilter` 
 
 The existing `anExplicitChanceEditIsWritten` and `aPassiveFocusLossKeepsTheLoadedChance` tests are unchanged.
 
-What the normal build can and cannot show: with or without the guard, the normal build passes this test, because the undefined call returns the same value. The normal build therefore cannot prove the regression. The UBSan leg is the proof (section 4).
+What the normal build can and cannot show: with or without the guard, the normal build passes this test, because the undefined call returns the same value. I checked for an observable in the normal build and found none:
+- `QWidget::isAncestorOf` is a non-virtual, out-of-line member exported by `libQt6Widgets` (`nm -DC`). The call on a null `this` returns false without touching memory.
+- Intercepting that call from the test (overriding the Qt symbol and forwarding through `dlsym(RTLD_NEXT)`) would be platform-specific (ELF only, not MSVC) and fragile: GCC may drop a `this == nullptr` check inside a member function. It would also turn a Qt method into a test spy. I did not do it.
+
+So the normal build cannot prove the regression. The UBSan leg is the proof (section 4). Section 6 lists what the owner can do.
 
 ## 4. UBSan leg (the RED/GREEN proof)
 
@@ -80,7 +86,7 @@ Not fixed here. It needs its own triage: the focus behaviour choices (which row 
 
 ## Self-check
 
-- Regression test fails with the product change reversed and passes restored: yes. RED: `red-b-ubsan.log` (exit 1, `FollowActionEditor.cpp:228:44` runtime error). GREEN: `green-final-ubsan.log` (exit 0). The normal build passes both ways (`red-b-regular.log`, `green-final`), so it is not the proof; the UBSan leg is.
+- Regression test fails with the product change reversed and passes restored: yes under UBSan, no under the normal configuration (BLOCKED, see Status). Under UBSan: negative control on this round's `negctl` logs in `runs/new-p21-174.r4/logs` (`ubsan-reverted.log` exit 1 with the `:228:44` runtime error; `ubsan-restored.log` exit 0). The normal build: `normal-reverted.log` exit 0 with the guard reversed, `normal-restored.log` exit 0. RED: `red-b-ubsan.log` (exit 1, `FollowActionEditor.cpp:228:44` runtime error). GREEN: `green-final-ubsan.log` (exit 0). The normal build passes both ways (`red-b-regular.log`, `green-final`), so it is not the proof; the UBSan leg is.
 - Deterministic (no wall-clock timing, sleeps or races): yes. The regression needs no timing or activation. Its focus-in is synthetic, sent from the model's `rowsAboutToBeRemoved` hook. Normal-build repeats: `final-regular-1..3.log` all exit 0. UBSan repeats: `final-ubsan-1..3.log` all exit 0.
 - Fix at the cause and complete: the guard is at the one place that reads a released cell during removal. Siblings are checked in section 2 (`nameRows`, `chain`, `apply`, the only `rowOf` caller).
 - No collateral damage: for non-null cells the code path is unchanged; for null cells, the outcome (false) is the same as before. Saved projects and other callers are not affected; `rowOf` has one caller.
@@ -110,9 +116,30 @@ Run folder `runs/new-p21-174.r3`, logs in `logs/`. Commands run from the worktre
 
 Affected-family test count: 1 test executed in `FollowActionEditorTest` (5 test slots).
 
+Negative control, this round (`runs/new-p21-174.r4/logs`; `fix.patch` is the r3 guard patch, unchanged):
+
+| Step | Command | EXIT | Log |
+|---|---|---|---|
+| Guard reversed (`git apply -R --check`, then `-R`) | `git apply -R logs/fix.patch` | 0 | none |
+| Normal build, guard reversed | `cmake --build build --target FollowActionEditorTest -j4`; `./FollowActionEditorTest` (in `build/tests`) | build 0; test 0, "5 passed" | `build-reverted.log`, `normal-reverted.log` |
+| UBSan leg, guard reversed | `python3 -I $TMPDIR/ubsan-leg/build_leg.py`; `./FollowActionEditorTest_ubsan` | leg 0; test 1 (`runtime error` at `FollowActionEditor.cpp:228:44`) | `leg-reverted-build.log`, `ubsan-reverted.log` |
+| Guard reapplied (`git apply`) | `git apply logs/fix.patch` | 0 | none |
+| Normal build, guard restored | as above | build 0; test 0, "5 passed" | `build-restored.log`, `normal-restored.log` |
+| UBSan leg, guard restored | as above | leg 0; test 0, "5 passed", no runtime error | `leg-restored-build.log`, `ubsan-restored.log` |
+| Focused ctest, guard restored | `ctest -R '^FollowActionEditorTest$' --output-on-failure` | 0, "100% tests passed out of 1" | `ctest-restored.log` |
+
 Earlier leg attempts, disclosed: a leg binary left in scratch crashed the existing chance test with a segfault in `SampleBuffer::emptyBuffer` even with no sanitizer (`nosan-chance.log`, exit 139). The cause was the binary's location outside `build/tests`. Moving the leg binary into `build/tests` fixed it (the green runs above). The reverse-guard RED that used the scratch binary also failed at `:228:44` (`red-ubsan.log`, exit 1).
 
 Deviations, disclosed:
 - `feature_check.py` and `submit_check.py` cannot create their log folder beside the worktree (outside the write area). The gates were run from a scratch copy with the log folder and `ROOT` redirected; the checks are unchanged.
 - ccache's configured temp dir is outside the write area. Builds used `CCACHE_TEMPDIR`; the config is unchanged.
 - The sanitized leg is not a full `WANT_DEBUG_UBSAN` build. It instruments one object and relinks the one test binary.
+
+## 6. Decision needed from the owner
+
+The normal-configuration negative control cannot pass for this defect on this toolchain. The choices:
+- (a) Run this cluster's negative control in a UBSan-enabled build, with `WANT_DEBUG_UBSAN=ON`, then the regression FAILs without the guard and PASSes with it. A full UBSan tree is large (about 45-50 GB and hours of compile time on this shared machine), so it should be a dedicated build dir, not this one. The leg in section 4 is a smaller equivalent (one object instrumented).
+- (b) Accept the guard as a no-behaviour-change hardening of an undefined call, with the UBSan leg as the only evidence and no normal-build regression.
+- (c) Triage the separate focus-cycle defect (section 5) first, since it determines whether real-focus tests can exist here.
+
+I recommend (a) for the loop and (b) only if the owner rules UBSan builds out of scope.
