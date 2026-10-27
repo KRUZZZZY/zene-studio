@@ -20,6 +20,7 @@
 
 #include "PluginPortsHarness.h"
 #include "plugins/Sid/SidPlaybackScheduler.h"
+#include <sid.h>
 
 #include "AudioPlugin.h"
 #include "BasicFilters.h"
@@ -1061,6 +1062,7 @@ private slots:
 	void dynamicsProcessorRejectsShortWaveShape();
 	void comparisonIsSensitive();
 	void sidShortSegmentsKeepRegisterWritesOrdered();
+	void sidSchedulerAdvancesThroughEveryRegisterWithReSid();
 	void watsynOverlappingNotesAreIndependentAndAllocationFree();
 	void watsynServesEveryAdmittedNoteWithoutAllocating();
 	void watsynKeepsTheWaveANoteStartedWith();
@@ -3816,6 +3818,84 @@ void PluginPortsMigrationTest::sidShortSegmentsKeepRegisterWritesOrdered()
 	QVERIFY(sid.clockedCycles - cyclesBeforeNextSegment <= 26);
 	QCOMPARE(sid.overwrittenPendingWrites, 0);
 	QVERIFY(progress.registerIndex > 2);
+}
+
+/*!
+ * Cluster new-p17-172: the scheduler must advance through every SID register
+ * with the real reSID chip, not only with the probe above. reSID::SID::clock()
+ * takes its cycle count by reference and leaves the cycles it did not run in
+ * that count, so `consumed = requested - delta` is the work the chip did. The
+ * recorder forwards every call to a real chip and records the register writes.
+ */
+struct ReSidWriteRecorder
+{
+	reSID::SID sid;
+	std::vector<unsigned char> writes;
+	int clockedCycles = 0;
+
+	void write(unsigned char address, unsigned char value)
+	{
+		writes.push_back(address);
+		sid.write(address, value);
+	}
+
+	int clock(int& cycles, short* buffer, int samples)
+	{
+		const int before = cycles;
+		const int produced = sid.clock(cycles, buffer, samples);
+		clockedCycles += before - cycles;
+		return produced;
+	}
+};
+
+void PluginPortsMigrationTest::sidSchedulerAdvancesThroughEveryRegisterWithReSid()
+{
+	// C64 PAL clock and 44.1 kHz output, the same chip setup SidInstrument uses.
+	ReSidWriteRecorder chip;
+	chip.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	chip.sid.set_chip_model(reSID::MOS8580);
+	chip.sid.reset();
+
+	std::array<unsigned char, lmms::sidplayback::NumSidRegisters> registers{};
+	registers[0x18] = 0x0f;
+	lmms::sidplayback::RegisterWriteProgress progress;
+	std::array<short, 1> output{};
+	constexpr int CycleBudget = 26;
+	constexpr int MaxCalls = 1000;
+
+	// Short segments with one sample each: a sweep spans many calls, and every
+	// call must spend no more cycles than it was given.
+	int calls = 0;
+	while (chip.writes.size() < lmms::sidplayback::NumSidRegisters && calls < MaxCalls)
+	{
+		const int cyclesBefore = chip.clockedCycles;
+		const int samples = lmms::sidplayback::fillBuffer(registers.data(), &chip,
+			lmms::sidplayback::RegisterWriteOrder, CycleBudget, output.data(), 1, progress);
+		QVERIFY(samples <= 1);
+		QVERIFY(chip.clockedCycles - cyclesBefore <= CycleBudget);
+		++calls;
+	}
+
+	QVERIFY2(chip.writes.size() == lmms::sidplayback::NumSidRegisters,
+		"the scheduler stopped before writing every register");
+	for (std::size_t i = 0; i < lmms::sidplayback::NumSidRegisters; ++i)
+	{
+		QCOMPARE(static_cast<int>(chip.writes[i]),
+			static_cast<int>(lmms::sidplayback::RegisterWriteOrder[i]));
+	}
+	QVERIFY(chip.clockedCycles > 0);
+
+	// No budget means no progress: nothing is written and the position holds.
+	ReSidWriteRecorder idle;
+	idle.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	idle.sid.reset();
+	lmms::sidplayback::RegisterWriteProgress idleProgress;
+	const int idleSamples = lmms::sidplayback::fillBuffer(registers.data(), &idle,
+		lmms::sidplayback::RegisterWriteOrder, 0, output.data(), 1, idleProgress);
+	QCOMPARE(idleSamples, 0);
+	QVERIFY(idle.writes.empty());
+	QCOMPARE(idleProgress.registerIndex, std::size_t{0});
+	QVERIFY(idleProgress.stage == lmms::sidplayback::RegisterWriteStage::BeforeRegister);
 }
 
 /*!

@@ -3733,9 +3733,11 @@ target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 )
 target_static_libraries(PluginPortsMigrationTest PRIVATE lmmsobjs)
+# Cluster new-p17-172: the SID scheduler test drives the real reSID chip.
 target_link_libraries(PluginPortsMigrationTest PRIVATE
 	${QT_LIBRARIES}
 	${QT_QTTEST_LIBRARY}
+	resid
 )
 target_compile_features(PluginPortsMigrationTest PRIVATE cxx_std_20)
 target_compile_definitions(PluginPortsMigrationTest PRIVATE
