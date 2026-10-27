@@ -19,6 +19,7 @@ void sfz::FilterHolder::reset()
 {
     filter->clear();
     prepared = false;
+    description = nullptr;
 }
 
 void sfz::FilterHolder::setup(const Region& region, unsigned filterId, int noteNumber, float velocity)

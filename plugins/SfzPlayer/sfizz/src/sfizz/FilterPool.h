@@ -44,7 +44,7 @@ public:
     void reset();
 private:
     Resources& resources;
-    const FilterDescription* description;
+    const FilterDescription* description { nullptr };
     std::unique_ptr<Filter> filter;
     float baseCutoff { Default::filterCutoff };
     float baseResonance { Default::filterResonance };

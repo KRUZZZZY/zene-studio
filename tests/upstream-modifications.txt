@@ -5281,3 +5281,4 @@ src/tracks/InstrumentTrack.cpp	cluster new-p18-44: resets controller-lane lastSe
 src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies and rebases each controller lane, with later clips winning duplicate ticks; beat repaint visits steps only when each button has nonzero pixel width.
 include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
 tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.
+tests/CMakeLists.txt	cluster new-p21-156: registers SfzFilterEqDescriptionTest in LMMS_TESTS and links it to sfzplayer_sfizz (with the sfizz include directories) so the regression can drive the FilterHolder and EQHolder directly.
