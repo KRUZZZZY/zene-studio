@@ -56,7 +56,8 @@ private slots:
 
 	void cleanupTestCase()
 	{
-		Engine::destroy();
+		// The last slot tears the engine down itself; it must not be torn down twice.
+		if( Engine::getSong() != nullptr ) { Engine::destroy(); }
 	}
 
 	void delayTimeParameterIsNamedInSeconds()
@@ -84,6 +85,20 @@ private slots:
 		QCOMPARE( delayTime->displayName(), QStringLiteral( "Delay time (s)" ) );
 
 		delete effect;
+	}
+
+	//! The track resolver (ControlDeviceSupport.cpp:resolveTrackTarget) answers a
+	//! trk-<n> with no song open as a typed not_found, not a crash: the engine-free
+	//! remote.target reaches it before a song exists. Runs last - it tears the
+	//! engine down itself, and cleanupTestCase() leaves a destroyed engine alone.
+	void trackTargetWithNoSongIsNotFound()
+	{
+		Engine::destroy();
+		QVERIFY( Engine::getSong() == nullptr );
+		ControlTarget target;
+		ControlResult error;
+		QVERIFY( !resolveControlTarget( QStringLiteral( "trk-1" ), &target, &error ) );
+		QVERIFY2( error.errorKind == ControlErrorKind::NotFound, qPrintable( error.errorMessage ) );
 	}
 };
 
