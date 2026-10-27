@@ -28,6 +28,8 @@
  *       and an undo of the edit did not put the old sound back;
  *   T3  deleting a pattern track renumbers the patterns, and a cell kept the old number - so it named ANOTHER
  *       pattern (or none); moving a pattern track swapped the numbers under the cells the same way;
+ *   T4  a command queued before a reset (a project change) was applied AFTER it, so the closing project's
+ *       published content came back into the next project;
  *   and the sequence of acceptance 2: launch / stop / edit / undo / redo / save / load keeps every authored identity
  *   and reference, and none of the transient launch state is persisted.
  *  The engine is the real one (Engine::init runs the Dummy device), so a launch is a real launch; the renders go
@@ -62,6 +64,8 @@
 #include "SampleFrame.h"
 #include "SampleTrack.h"
 #include "SessionModel.h"
+#include "SessionPlayback.h"
+#include "SessionScheduler.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -248,6 +252,28 @@ private slots:
 		QVERIFY(slotOf(0, 1).isEmpty());
 		QCOMPARE(patternNameOf(0, 0), QStringLiteral("Sounding"));
 		QTRY_COMPARE_WITH_TIMEOUT(columnPhase(0), QStringLiteral("idle"), 3000);
+	}
+
+	/*! T4: a command queued before a reset (a project change, stop_all, back to arrangement) is dropped with what
+	 *  the reset dropped. The reset is carried out first in a period and used to be followed by the queue it should
+	 *  have emptied, so the previous project's published content came back into the next one. A scheduler of its
+	 *  own: this test is its audio thread, so nothing races it. */
+	void aCommandQueuedBeforeAResetIsDroppedWithIt()
+	{
+		auto scheduler = std::make_unique<SessionScheduler>();
+		SessionClockContext clock;
+		clock.ticksPerBar = 192;
+		clock.framesPerTick = 4.0f;
+		clock.transportRunning = true;
+		QVERIFY(scheduler->publishSlotContent(0, 0, 7, 0));  // the closing project's cell
+		scheduler->reset();
+		QVERIFY(scheduler->requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));  // the next project's
+		scheduler->processAudio(clock, 64);
+		clock.positionTicks = 4;
+		scheduler->processAudio(clock, 64);
+		const SessionSlotPlayback view = scheduler->playbackForColumn(0);
+		QVERIFY2(view.playing, "the launch queued after the reset must still be carried out");
+		QCOMPARE(view.patternId, -1);  // not 7: that content was published before the reset
 	}
 
 	/*! Acceptance 2: one deterministic sequence - launch, stop, edit, undo, redo, clear, undo, save, load. Every step compares

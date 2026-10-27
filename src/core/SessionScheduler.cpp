@@ -234,7 +234,9 @@ LaunchEvent advanceLaunchState( SlotLaunchState& state, LaunchMode mode,
 
 bool SessionScheduler::enqueue( const Command& command ) noexcept
 {
-	if( m_queue.push( command ) )
+	Command tagged = command;
+	tagged.generation = m_resetGeneration.load( std::memory_order_acquire );
+	if( m_queue.push( tagged ) )
 	{
 		return true;
 	}
@@ -305,10 +307,14 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx, std::size_
 	// open must not keep the audio callback in this loop. What is left stays
 	// queued, in order, for the next period.
 	Command command;
-	for( std::size_t drained = 0; drained < budget && m_queue.pop( command ); ++drained )
+	for( std::size_t drained = 0; drained < budget; ++drained )
 	{
+		// Q050-489: a reset asked for since this period's consumeResetRequest goes first, next period - and a
+		// command queued BEFORE a reset is dropped, not applied after it: the reset cleared the content and the
+		// launches that command belonged to (a project change must not inherit the last project's publishes).
+		if( m_resetGeneration.load( std::memory_order_acquire ) != m_seenGeneration || !m_queue.pop( command ) ) { break; }
 		m_processed.fetch_add( 1, std::memory_order_relaxed );
-		applyCommand( command, ctx );
+		if( command.generation == m_seenGeneration ) { applyCommand( command, ctx ); }
 	}
 }
 

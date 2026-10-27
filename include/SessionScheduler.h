@@ -409,6 +409,8 @@ private:
 		SessionSlotContent content;
 		//! Only read for Jump (WF-070): ticks into the clip.
 		tick_t position = 0;
+		//! Q050-489: the reset generation it was queued in; one queued before a reset is dropped with what it reset.
+		std::uint32_t generation = 0;
 	};
 
 	/*! Fixed-capacity single-producer/single-consumer queue. The model thread
