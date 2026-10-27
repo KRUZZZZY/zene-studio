@@ -30,6 +30,9 @@
 #define private public
 #include "../../../plugins/MultitapEcho/MultitapEcho.h"
 #undef private
+#define private public
+#include "../../../plugins/DynamicsProcessor/DynamicsProcessor.h"
+#undef private
 
 #include <cstddef>
 #include <atomic>
@@ -961,6 +964,19 @@ namespace lmms
 		}
 	};
 
+	class DynProcEffectTestAccess
+	{
+	public:
+		// Raw byte of m_needsUpdate, so the poisoned value is inspected without
+		// reading an indeterminate bool.
+		static auto needsUpdateByte(const DynProcEffect& effect) -> unsigned char
+		{
+			unsigned char byte = 0;
+			std::memcpy(&byte, &effect.m_needsUpdate, sizeof(byte));
+			return byte;
+		}
+	};
+
 	class FrequencyShifterEffectTestAccess
 	{
 		static auto concrete(const Effect& effect) -> const FrequencyShifterEffect&
@@ -1059,6 +1075,7 @@ private slots:
 	void gigplayerSurvivesGlobalVoicePoolExhaustion();
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
+	void dynamicsProcessorNeedsUpdateStartsCleared();
 	void comparisonIsSensitive();
 	void sidShortSegmentsKeepRegisterWritesOrdered();
 	void watsynOverlappingNotesAreIndependentAndAllocationFree();
@@ -3722,6 +3739,34 @@ void PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape()
 	QDomElement outputRoot = outputDoc.createElement("effect");
 	const auto savedControls = effect->controls()->saveState(outputDoc, outputRoot);
 	QCOMPARE(savedControls.attribute(QStringLiteral("waveShape")), expectedWaveShape);
+}
+
+/*!
+ * The constructor computes the RMS sizes and attack/release coefficients for the
+ * current sample rate, so m_needsUpdate must start cleared. The allocation is
+ * poisoned so that an unset member keeps a non-zero byte, which is what the
+ * first processImpl() would read.
+ */
+void PluginPortsMigrationTest::dynamicsProcessorNeedsUpdateStartsCleared()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dynamicsprocessor)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	allocationSizeToPoison.store(sizeof(lmms::DynProcEffect), std::memory_order_relaxed);
+	auto* rawEffect = static_cast<lmms::DynProcEffect*>(entry(nullptr, nullptr));
+	std::unique_ptr<lmms::DynProcEffect> effect{rawEffect};
+	QVERIFY(effect != nullptr);
+	QCOMPARE(allocationSizeToPoison.load(std::memory_order_relaxed), std::size_t{0});
+
+	QCOMPARE(lmms::DynProcEffectTestAccess::needsUpdateByte(*effect), static_cast<unsigned char>(0));
 }
 
 /*!
