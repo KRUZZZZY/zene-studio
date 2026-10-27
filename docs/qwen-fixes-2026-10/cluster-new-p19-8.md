@@ -46,3 +46,12 @@ No build and no ctest were run: no product file changed, and the finding does no
 - `docs/qwen-fixes-2026-10/cluster-new-p19-8.md` (this report)
 
 No product code, test, registration or header changed.
+
+## Self-check
+
+- **Regression test fails with the product change reverted and passes with it (exit codes):** not applicable. There is no product change to revert and no test was added, because the verdict is FALSE-POSITIVE (procedure step 2 goes straight to the report). Nothing in this branch is claimed to be regression-proofed.
+- **Test is deterministic (seam or injected values):** not applicable, no test added.
+- **Fix at the cause and complete; every caller and sibling checked:** not applicable, no fix made. The siblings were checked for the claim in the finding: `ControlCommandsOutOfProcess*.cpp` has one `getSong` use (ControlCommandsOutOfProcess.cpp:141), and `dsp.get_state` (ControlCommandsDsp.cpp:85) walks the song unchecked behind the same gate. The residual registry-level window is described above and is not fixed here.
+- **No collateral damage:** nothing changed in product code, so no saved project, limit or caller is affected.
+- **FALSE-POSITIVE evidence (file:line):** ControlCommandsOutOfProcess.cpp (registration of `oop.get_state`, no `requiresEngine` override); include/ControlRegistry.h:104 (default `true`); src/core/ControlRegistry.cpp:205-207 (`isEngineReady`) and 283-291 (the gate, `Busy`); src/core/main.cpp:1829-1831 (`setReady(true)` after startup) and 1847-1862 (server closed before engine destroy); tests/src/core/RecordToolsNoEngineTest.cpp:20-27 and 84-100 (same contract, tested for the sibling commands).
+- **Gates row (FAIL in submit_check):** the gate wrapper cannot run from inside this write-jail. `feature_check.py:71` (`logs.mkdir`) needs `<worktree>-feature-check`, a sibling directory outside the worktree, and it raised PermissionError (log `001-feature-check-pre-report.log`, EXIT=1). I ran the same six simple gates and the two ratchets directly (table in the section above). All six simple gates exit 0. The two ratchets exit 1 on items in test files this branch does not touch. Under the wrapper's own rule (items in changed files only) these would count as PASS. The FAIL is a tooling limit of this session, not a failing gate on this branch. Please re-run the wrapper from outside the jail to confirm the row.
