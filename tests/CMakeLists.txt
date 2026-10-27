@@ -899,6 +899,8 @@ set(LMMS_TESTS
 	src/core/ArticulationPlaybackTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
+	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
+	src/core/MixerOrderByTracksTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
 	src/core/SessionPerformTest.cpp
 	# 0.5.0 L02 (WF-064): sub-scenes - their commands, their launch and the <z:subscenes> section.
