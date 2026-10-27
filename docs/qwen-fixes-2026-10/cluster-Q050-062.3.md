@@ -42,7 +42,8 @@ The docs and the manual are updated. No C/C++, command, engine, GUI or project-f
    the tool removed, the SDR formula mutated, a quality dropped, and the model hash dropped. It passes
    restored (logs `r1/logs/41`-`45`). The stale comment is listed under Known limits in the feature record.
 3. Rebuilt `zene` and the stem test targets (`r2/logs/01-build.log`, exit 0). The 8 targeted ctests passed,
-   exit 0 (`r2/logs/02-ctest.log`). Gates: see below.
+   exit 0 (`r2/logs/02-ctest.log`). Gates on the round-2 tree (`r2/logs/03-feature-check.log`): all 8 pass,
+   exit 0. Completion check (`r2/logs/04-submit-check.log`): `RESULT: PASS - submit`, exit 0.
 
 ## Acceptance
 
