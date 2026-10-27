@@ -106,6 +106,10 @@ public:
 
 private:
 	void setState(State state) noexcept { m_state.store(static_cast<int>(state), std::memory_order_release); }
+	//! The end tick was passed in this period of @a count frames: the take's length is known now. Audio thread.
+	void noteEnd(std::uint64_t count, tick_t ticks, double frameOffset, double framesPerTick) noexcept;
+	//! Done once the take reached its length or the cap. Audio thread.
+	void finishIfDone() noexcept;
 	//! Keeps @a frames frames of @a buffer, scaled, never past the target or the cap. Audio thread.
 	void keep(const SampleFrame* buffer, f_cnt_t frames) noexcept;
 

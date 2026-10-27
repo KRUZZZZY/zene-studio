@@ -98,30 +98,33 @@ std::uint64_t RealtimeExportCapture::framesDropped() const noexcept
 void RealtimeExportCapture::push(const SampleFrame* buffer, f_cnt_t frames, tick_t ticks, double frameOffset,
 	double framesPerTick) noexcept
 {
-	State now = state();
-	if (now == State::Armed)
-	{
-		setState(State::Recording);
-		now = State::Recording;
-	}
-	if (now != State::Recording || buffer == nullptr || frames <= 0) { return; }
+	if (state() == State::Armed) { setState(State::Recording); }
+	if (state() != State::Recording || buffer == nullptr || frames <= 0) { return; }
 	const auto count = static_cast<std::uint64_t>(frames);
 	m_played += count;
-	if (m_target == 0 && ticks >= m_endTick)
-	{
-		// The end tick was passed inside this period: the song's last frame is that many frames back.
-		const double past = static_cast<double>(ticks - m_endTick) * framesPerTick + frameOffset;
-		const auto back = static_cast<std::uint64_t>(std::clamp(std::llround(past), 0LL, static_cast<long long>(count)));
-		// Song frame k is file frame k (the head the delay compensation adds is skipped), so the file ends
-		// at the song's end plus the tail; at least one frame, so a passed end is never read as "not yet".
-		m_target = std::max<std::uint64_t>(1, m_played - back + static_cast<std::uint64_t>(m_tail));
-		m_targetReading.store(m_target, std::memory_order_relaxed);
-	}
+	if (m_target == 0 && ticks >= m_endTick) { noteEnd(count, ticks, frameOffset, framesPerTick); }
 	const std::uint64_t skipped = std::min(count, m_skip);
 	m_skip -= skipped;
 	if (count > skipped) { keep(buffer + skipped, static_cast<f_cnt_t>(count - skipped)); }
-	if (m_taken >= m_maxFrames && (m_target == 0 || m_taken < m_target)) { m_capped.store(true, std::memory_order_relaxed); }
-	if ((m_target > 0 && m_taken >= m_target) || m_taken >= m_maxFrames) { setState(State::Done); }
+	finishIfDone();
+}
+
+void RealtimeExportCapture::noteEnd(std::uint64_t count, tick_t ticks, double frameOffset, double framesPerTick) noexcept
+{
+	// The end tick was passed inside this period: the song's last frame is that many frames back.
+	const double past = static_cast<double>(ticks - m_endTick) * framesPerTick + frameOffset;
+	const auto back = static_cast<std::uint64_t>(std::clamp(std::llround(past), 0LL, static_cast<long long>(count)));
+	// Song frame k is file frame k (the head the delay compensation adds is skipped), so the file ends
+	// at the song's end plus the tail; at least one frame, so a passed end is never read as "not yet".
+	m_target = std::max<std::uint64_t>(1, m_played - back + static_cast<std::uint64_t>(m_tail));
+	m_targetReading.store(m_target, std::memory_order_relaxed);
+}
+
+void RealtimeExportCapture::finishIfDone() noexcept
+{
+	const bool reachedEnd = m_target > 0 && m_taken >= m_target;
+	if (m_taken >= m_maxFrames && !reachedEnd) { m_capped.store(true, std::memory_order_relaxed); }
+	if (reachedEnd || m_taken >= m_maxFrames) { setState(State::Done); }
 }
 
 void RealtimeExportCapture::keep(const SampleFrame* buffer, f_cnt_t frames) noexcept

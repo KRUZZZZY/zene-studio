@@ -139,7 +139,9 @@ private slots:
 			{QStringLiteral("send"), QStringLiteral("7/8")}}).ok);
 		QMenu menu;
 		addHardwareMenu(&menu, m_channel);
-		menuAction(&menu, Entry)->trigger();
+		QAction* entry = menuAction(&menu, Entry);
+		QVERIFY2(entry != nullptr, "the Hardware I/O menu has no real-time render entry");
+		entry->trigger();
 		auto* form = openForm();
 		QVERIFY(form != nullptr);
 		const QString out = m_home.filePath(QStringLiteral("refused.wav"));

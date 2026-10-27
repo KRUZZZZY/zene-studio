@@ -97,29 +97,37 @@ QJsonArray insertsJson(const std::vector<MixerChannel*>& channels, bool withLate
 	return out;
 }
 
+//! Why the device cannot carry @a channel's insert, or empty when it can.
+QString insertUnavailable(MixerChannel* channel, const audioio::Setup& setup, const DeviceChannels& device)
+{
+	const HardwareInsert::Settings s = channel->m_hardwareIo.insert.settings();
+	const QJsonObject send = destinationJson(s.send, setup, device);
+	const QJsonObject ret = destinationJson(s.ret, setup, device, true);
+	const bool sendOk = send.value(QStringLiteral("available")).toBool();
+	if (sendOk && ret.value(QStringLiteral("available")).toBool()) { return {}; }
+	const QJsonObject& bad = sendOk ? ret : send;
+	return QStringLiteral("channel %1's insert %2 %3, which the device cannot carry (%4)")
+		.arg(channelIdOf(channel), sendOk ? QStringLiteral("returns from") : QStringLiteral("sends to"),
+			bad.value(QStringLiteral("channels")).toString(), bad.value(QStringLiteral("status")).toString());
+}
+
 //! Why the running device cannot play @a channels' inserts in real time, or empty when it can.
 QString unavailableReason(const std::vector<MixerChannel*>& channels)
 {
 	AudioEngine* engine = Engine::audioEngine();
 	if (engine == nullptr || engine->audioDev() == nullptr) { return QStringLiteral("no audio device is running"); }
 	const DeviceChannels device = deviceChannels();
-	const audioio::Setup setup = currentSetup();
 	// The return is read from the capture: a device that delivers no input brings nothing back.
 	if (!device.capture && !engine->inputStreamStarted())
 	{
 		return QStringLiteral("the audio device (%1) delivers no input, so no insert's return can come back")
 			.arg(device.backend.isEmpty() ? QStringLiteral("none") : device.backend);
 	}
+	const audioio::Setup setup = currentSetup();
 	for (MixerChannel* channel : channels)
 	{
-		const HardwareInsert::Settings s = channel->m_hardwareIo.insert.settings();
-		const QJsonObject send = destinationJson(s.send, setup, device);
-		const QJsonObject ret = destinationJson(s.ret, setup, device, true);
-		const QJsonObject& bad = !send.value(QStringLiteral("available")).toBool() ? send : ret;
-		if (send.value(QStringLiteral("available")).toBool() && ret.value(QStringLiteral("available")).toBool()) { continue; }
-		return QStringLiteral("channel %1's insert %2 %3, which the device cannot carry (%4)")
-			.arg(channelIdOf(channel), &bad == &send ? QStringLiteral("sends to") : QStringLiteral("returns from"),
-				bad.value(QStringLiteral("channels")).toString(), bad.value(QStringLiteral("status")).toString());
+		const QString why = insertUnavailable(channel, setup, device);
+		if (!why.isEmpty()) { return why; }
 	}
 	return {};
 }
@@ -160,7 +168,8 @@ struct Plan
 	double seconds = 0.0;
 };
 
-ControlResult readPlan(const QJsonObject& args, Plan* plan)
+//! 'out' and 'tail_ms', or the refusal.
+ControlResult readArgs(const QJsonObject& args, Plan* plan, int* tailMs)
 {
 	plan->out = args.value(QStringLiteral("out")).toString();
 	if (plan->out.isEmpty() || !QDir::isAbsolutePath(plan->out) || !plan->out.endsWith(QStringLiteral(".wav"), Qt::CaseInsensitive))
@@ -168,11 +177,17 @@ ControlResult readPlan(const QJsonObject& args, Plan* plan)
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'out' is an absolute path ending in .wav: a real-time render is written as WAV"));
 	}
-	const int tailMs = args.value(QStringLiteral("tail_ms")).toInt(DefaultTailMs);
-	if (tailMs < 0 || tailMs > MaxTailMs)
+	*tailMs = args.value(QStringLiteral("tail_ms")).toInt(DefaultTailMs);
+	if (*tailMs < 0 || *tailMs > MaxTailMs)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tail_ms' is 0 .. %1").arg(MaxTailMs));
 	}
+	return ControlResult::success();
+}
+
+//! Whether the session can be played now: something to play, nothing else rendering or recording.
+ControlResult checkSession()
+{
 	Song* song = Engine::getSong();
 	if (song->isEmpty())
 	{
@@ -185,6 +200,12 @@ ControlResult readPlan(const QJsonObject& args, Plan* plan)
 	{
 		return ControlResult::failure(ControlErrorKind::Busy, QStringLiteral("%1 is running: wait for it to end").arg(QLatin1String(busy)));
 	}
+	return ControlResult::success();
+}
+
+//! Whether an insert is on and the device can play every insert that is.
+ControlResult checkHardware()
+{
 	const std::vector<MixerChannel*> inserts = insertsInUse();
 	if (inserts.empty())
 	{
@@ -197,6 +218,17 @@ ControlResult readPlan(const QJsonObject& args, Plan* plan)
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("real-time hardware is unavailable: %1. Nothing was "
 			"rendered; render.render renders offline with the inserts bypassed (dry)").arg(unavailable));
 	}
+	return ControlResult::success();
+}
+
+ControlResult readPlan(const QJsonObject& args, Plan* plan)
+{
+	int tailMs = DefaultTailMs;
+	ControlResult check = readArgs(args, plan, &tailMs);
+	if (check.ok) { check = checkSession(); }
+	if (check.ok) { check = checkHardware(); }
+	if (!check.ok) { return check; }
+	Song* song = Engine::getSong();
 	song->updateLength();
 	plan->rate = Engine::audioEngine()->outputSampleRate();
 	plan->endTick = TimePos(song->length(), 0).getTicks();
