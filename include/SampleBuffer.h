@@ -52,7 +52,7 @@ public:
 	SampleBuffer(std::vector<SampleFrame> data, int sampleRate, const QString& audioFile = "",
 		int channels = DEFAULT_CHANNELS);
 	SampleBuffer(const SampleFrame* data, size_t numFrames,
-		int sampleRate = Engine::audioEngine()->outputSampleRate(), int channels = DEFAULT_CHANNELS);
+		int sampleRate = engineSampleRate(), int channels = DEFAULT_CHANNELS);
 
 	friend void swap(SampleBuffer& first, SampleBuffer& second) noexcept;
 	auto toBase64() const -> QString;
@@ -92,13 +92,18 @@ public:
 
 	static std::shared_ptr<const SampleBuffer> fromFile(const QString& path);
 	static std::shared_ptr<const SampleBuffer> fromBase64(
-		const QString& str, int sampleRate = Engine::audioEngine()->outputSampleRate(),
+		const QString& str, int sampleRate = engineSampleRate(),
 		int channels = DEFAULT_CHANNELS);
 
 private:
+	//! The engine's output rate, or - before Engine::init() (command registration in main() decodes
+	//! the metronome samples) - the lowest supported rate, which is what the engine itself falls back
+	//! to with no configured rate. A default buffer must never dereference a null engine.
+	static auto engineSampleRate() -> sample_rate_t;
+
 	std::vector<SampleFrame> m_data;
 	QString m_audioFile;
-	sample_rate_t m_sampleRate = Engine::audioEngine()->outputSampleRate();
+	sample_rate_t m_sampleRate = engineSampleRate();
 	int m_channels = DEFAULT_CHANNELS;
 };
 

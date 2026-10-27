@@ -35,6 +35,7 @@
 #include "Effect.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "ParameterReadOnly.h"
 
 namespace lmms
 {
@@ -102,6 +103,7 @@ QJsonObject parameterSchema()
 		{QStringLiteral("max"), numberProperty()},
 		{QStringLiteral("type"), stringProperty()},
 		{QStringLiteral("step"), numberProperty()},
+		{QStringLiteral("read_only"), booleanProperty()},
 	});
 }
 
@@ -145,7 +147,8 @@ void registerParamGet(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("param_get");
 	cmd.description = QStringLiteral("Read one device parameter by 'name' or by 'index'. "
 		"'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range "
-		"reported is the engine's own model range.");
+		"reported is the engine's own model range. A parameter the plug-in owns (a meter or output, "
+		"declared read-only by the plug-in) carries read_only:true; plugin.param_set refuses it.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
@@ -207,6 +210,16 @@ ControlResult booleanRefusal(const AutomatableModel* model, double value)
 			.arg(model->displayName()));
 }
 
+//! The typed read-only refusal (stress-4): the plug-in declared the parameter read-only (VST3 kIsReadOnly,
+//! CLAP_PARAM_IS_READONLY), so it - not the host - sets it. Accepting the write reported a value the plug-in
+//! never took (the CLAP host drops it; the plug-in overwrites it), and a state round-trip then "lost" it.
+ControlResult readOnlyRefusal(const AutomatableModel* model)
+{
+	return ControlResult::failure(ControlErrorKind::Refused,
+		QStringLiteral("parameter '%1' is read-only: the plug-in sets it (a meter, an output or a value it "
+			"reports), so the host does not write it").arg(model->displayName()));
+}
+
 void registerParamSet(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -215,7 +228,8 @@ void registerParamSet(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("param_set");
 	cmd.description = QStringLiteral("Set one device parameter by 'name' or by 'index' with the "
 		"engine's own range enforcement: a value outside the model's min..max is refused with "
-		"invalid_args rather than silently clamped. Reversible through the ProjectJournal.");
+		"invalid_args rather than silently clamped, and a parameter the plug-in declares read-only is "
+		"refused. Reversible through the ProjectJournal.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("target"), stringProperty()},
 		{QStringLiteral("plugin"), stringProperty()},
@@ -248,6 +262,7 @@ void registerParamSet(ControlRegistry& registry)
 			args.value(QStringLiteral("name")).toString(),
 			args.value(QStringLiteral("index")).toInt(), hasIndex, &error);
 		if (model == nullptr) { return error; }
+		if (isParameterReadOnly(model)) { return readOnlyRefusal(model); }
 
 		const double value = args.value(QStringLiteral("value")).toDouble();
 		// Compared as the model stores it, a float: 0.1 is the minimum 0.1f, not "below 0.100000001".

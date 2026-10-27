@@ -48,6 +48,10 @@
  *      a load attempt cannot disagree about why a module was rejected.
  *   10. The sentences stay the ones the product already shows: this task added a
  *      type to the failures, it did not reword them under the user.
+ *   11. A module whose factory is present but missing one of its three required
+ *       callbacks is FactoryInvalid -- on the ladder, the instance path and the
+ *       scan path alike -- and the factory is not kept, so nothing from it is
+ *       ever called.
  *
  * The subjects are real modules built from tests/data/clap-test-plugin/
  * clap-test-broken.c, one per fault, so the faults are structural and a wrong
@@ -93,6 +97,15 @@
 #ifndef CLAP_TEST_BROKEN_NULL_CALLBACK_PATH
 #define CLAP_TEST_BROKEN_NULL_CALLBACK_PATH ""
 #endif
+#ifndef CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH
+#define CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH
+#define CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH ""
+#endif
+#ifndef CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH
+#define CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH ""
+#endif
 
 namespace lmms::clap
 {
@@ -107,6 +120,9 @@ constexpr const char* OldVersionModulePath = CLAP_TEST_BROKEN_OLD_VERSION_PATH;
 constexpr const char* InitFailsModulePath = CLAP_TEST_BROKEN_INIT_FAILS_PATH;
 constexpr const char* NoFactoryModulePath = CLAP_TEST_BROKEN_NO_FACTORY_PATH;
 constexpr const char* NullCallbackModulePath = CLAP_TEST_BROKEN_NULL_CALLBACK_PATH;
+constexpr const char* NullFactoryCountModulePath = CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH;
+constexpr const char* NullFactoryDescriptorModulePath = CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH;
+constexpr const char* NullFactoryCreateModulePath = CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH;
 
 //! The plug-in id inside the good fixture.
 constexpr const char* GoodPluginId = "org.lmms.test.clap-gain";
@@ -142,6 +158,7 @@ private slots:
 	void testInitFailureIsEntryInitFailed();
 	void testMissingFactoryIsFactoryMissing();
 	void testNullCallbacksAreEntryInvalid();
+	void testNullFactoryCallbackIsFactoryInvalid();
 	void testUnknownIdIsPluginNotFound();
 	void testFailuresAreDistinctCodes();
 	void testEveryCodeHasAStableToken();
@@ -317,6 +334,51 @@ void ClapLoaderErrorTest::testNullCallbacksAreEntryInvalid()
 	QVERIFY(classes.empty());
 	QCOMPARE(tokenOf(scanned), token);
 	QVERIFY(!scanError.isEmpty());
+}
+
+void ClapLoaderErrorTest::testNullFactoryCallbackIsFactoryInvalid()
+{
+	// A module whose clap_entry is well formed and whose init() succeeds, and
+	// whose plugin factory is present but is missing ONE of the three callbacks
+	// the host calls on it. Before the ladder checked the factory, the pointer was
+	// stored as it was, and the scan and the instance path each called the null
+	// callback. The three fixtures differ only in which callback is null.
+	const std::array<const char*, 3> cases{{
+		NullFactoryCountModulePath,
+		NullFactoryDescriptorModulePath,
+		NullFactoryCreateModulePath,
+	}};
+	const QString token = QStringLiteral("factory-invalid");
+	for (const char* path : cases)
+	{
+		const QString modulePath = QString::fromLatin1(path);
+
+		// The ladder itself refuses it with the typed code, and does not keep the
+		// factory: nothing from it is ever called.
+		loader::Library library;
+		loader::Status status;
+		QVERIFY2(!loader::load(modulePath, library, status), qPrintable(modulePath));
+		QCOMPARE(tokenOf(status), token);
+		QVERIFY(status.failed());
+		QVERIFY2(!status.detail.isEmpty(), "a failed load must say what it was looking at");
+		QVERIFY(library.factory == nullptr);
+
+		// The instance path refuses the same module for the same reason, and the
+		// scan path reports the same code and the same sentence.
+		HostedPlugin plugin;
+		QString error;
+		QVERIFY(!plugin.load(modulePath, QString(), &error));
+		QCOMPARE(tokenOf(plugin.lastLoadFailure()), token);
+		QVERIFY2(error.contains(QStringLiteral("invalid")), qPrintable(error));
+		QVERIFY(!plugin.isLoaded());
+
+		loader::Status scanned;
+		QString scanError;
+		const auto classes = listClasses(modulePath, &scanned, &scanError);
+		QVERIFY(classes.empty());
+		QCOMPARE(tokenOf(scanned), token);
+		QCOMPARE(scanError, error);
+	}
 }
 
 void ClapLoaderErrorTest::testUnknownIdIsPluginNotFound()

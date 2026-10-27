@@ -49,6 +49,7 @@
 #include "ClapKnobGrid.h"
 #include "ClapSubPluginFeatures.h"
 #include "ConfigManager.h"
+#include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
@@ -80,6 +81,7 @@ private slots:
 	void testProcessesAudioThroughAudioBus();
 	void testMultiChannelBusPassesThroughExtraChannels();
 	void testStateRoundTripThroughMmp();
+	void testAValueTheStateDoesNotCarryIsRestoredFromTheHost();
 	void testRendersBeforeAfterWav();
 	void testLegacyAudioBufferPathRoutesPlanarPorts();
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
@@ -89,6 +91,7 @@ private slots:
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
 	void testReadOnlyParametersGetNoKnob();
+	void testReadOnlyParametersAreReportedReadOnly();
 	void testAProcessingErrorFallsBackToDryAudio();
 	void testScanFailuresAreReported();
 
@@ -350,6 +353,50 @@ void ClapEffectIntegrationTest::testStateRoundTripThroughMmp()
 		qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
 	qInfo("state round trip: input 0.5, restored gain 0.3 -> measured out[0]=%.9f",
 		storage[0][0]);
+}
+
+/*! stress-4 (b): a SUCCESSFUL clap.state load that does not bring a writable parameter back must not lose it.
+ *  The stress run lost Surge XT's parameters this way, and an effect that has not heard audio yet loses every
+ *  edit: the host hands a change to the plug-in only in process(), so a save before the next block writes the
+ *  plug-in's old value into its state. Here Gain is set to 0.3 and the effect saved with no block in between, so
+ *  the plug-in's state holds its default and the host's saved <parameters> hold 0.3. Loading it back leaves Gain
+ *  at 0.3, and the next block applies it to the audio. */
+void ClapEffectIntegrationTest::testAValueTheStateDoesNotCarryIsRestoredFromTheHost()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.3f);
+
+	QDomDocument doc;
+	QDomElement element = doc.createElement("effect");
+	effect->saveSettings(doc, element);
+	QVERIFY2(!element.elementsByTagName(QStringLiteral("state")).isEmpty(),
+		"the effect wrote no plug-in state: this case is about a SUCCESSFUL state load");
+
+	gain->setValue(0.9f);
+	effect->loadSettings(element);
+	QVERIFY2(std::abs(gain->value() - 0.3f) < 1e-6f, qPrintable(QStringLiteral("restored %1").arg(gain->value())));
+
+	SampleFrame storage[fpp];
+	for (f_cnt_t frame = 0; frame < fpp; ++frame)
+	{
+		storage[frame][0] = 0.5f;
+		storage[frame][1] = 0.5f;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f, qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
+	chain.clear();
 }
 
 void ClapEffectIntegrationTest::testRendersBeforeAfterWav()
@@ -674,6 +721,35 @@ void lmms::ClapEffectIntegrationTest::testParameterRescansRebuildTheModels()
 	AudioBus bus{busData, 1, 48};
 	QVERIFY(chain.processAudioBuffer(bus));
 	QVERIFY2(std::abs(storage[0][0] - 0.25f) < 1e-6f, qPrintable(QString::number(storage[0][0])));
+	chain.clear();
+}
+
+/*! stress-4 (a): a CLAP_PARAM_IS_READONLY parameter is the plug-in's to set, so the control surface's parameter
+ *  object - what plugin.param_get and dsp.get_state report - says read_only, and plugin.param_set refuses it
+ *  (the refusal is the shared one Vst3InstrumentIntegrationTest drives). The writable Gain says nothing new. */
+void lmms::ClapEffectIntegrationTest::testReadOnlyParametersAreReportedReadOnly()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_READONLY", "1");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	qunsetenv("CLAP_TEST_GAIN_READONLY");
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* readOnly = controls->modelForParam(2);
+	QVERIFY(readOnly != nullptr && readOnly->descriptor().readOnly);
+
+	const QList<AutomatableModel*> models = controlEffectParameters(effect);
+	const int readOnlyIndex = models.indexOf(readOnly);
+	QVERIFY(readOnlyIndex >= 0);
+	QVERIFY2(controlParameterJson(readOnly, readOnlyIndex).value(QStringLiteral("read_only")).toBool(),
+		"the CLAP_PARAM_IS_READONLY parameter is not reported read_only");
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr && !gain->descriptor().readOnly);
+	QVERIFY2(!controlParameterJson(gain, static_cast<int>(models.indexOf(gain))).contains(QStringLiteral("read_only")),
+		"the writable Gain is reported read-only");
 	chain.clear();
 }
 

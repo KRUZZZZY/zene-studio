@@ -12,6 +12,7 @@
  */
 
 #include "RemotePluginBase.h"
+#include "RemotePluginShmFifoTargetDefinitions.h"
 #include "SharedMemory.h"
 
 #include <QtTest>
@@ -25,6 +26,9 @@
 #include <type_traits>
 
 using namespace lmms;
+
+// RemotePluginShmFifoNoSysIpcProbe.cpp
+int remotePluginShmFifoValueWithoutSysIpc();
 
 class ShmRemotePluginHarness : public RemotePluginBase
 {
@@ -44,6 +48,24 @@ class RemotePluginShmFifoTest : public QObject
 		: std::is_same<decltype(T::m_invalid), std::atomic<bool>> {};
 
 private slots:
+	void headerKeepsTheBuildsShmFifoDefinitionWithoutSysIpc()
+	{
+		// The build defines SYNC_WITH_SHM_FIFO as 1; the header's own fallback
+		// definition (hosts without <sys/ipc.h>) must not replace it.
+		QCOMPARE(remotePluginShmFifoValueWithoutSysIpc(), 1);
+	}
+
+	void targetsCompilingRemotePluginBaseUseTheStaticExportBranch()
+	{
+		// RemotePluginBase.cpp defines LMMS_EXPORT members out of line. Outside
+		// lmmsobjs (which defines lmmsobjs_EXPORTS) the generated lmms_export.h
+		// makes LMMS_EXPORT __declspec(dllimport) on Windows unless
+		// LMMS_STATIC_DEFINE is set - mingw: "redeclared without dllimport
+		// attribute: previous dllimport ignored" (cluster ci-v041-5).
+		QCOMPARE(ZENE_SHM_FIFO_TEST_IS_STATIC_EXPORT, 1);
+		QCOMPARE(ZENE_SHM_FIFO_COMPILE_CHECK_IS_STATIC_EXPORT, 1);
+	}
+
 	void sharedMemoryInvalidFlagIsAtomic()
 	{
 		QVERIFY(( InvalidFlagIsAtomic<shmFifo>::value ));

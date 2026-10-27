@@ -37,6 +37,7 @@
 #include "InstrumentTrack.h"
 #include "LinkedModelGroups.h"
 #include "Mixer.h"
+#include "ParameterReadOnly.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
 #include "SampleTrack.h"
@@ -341,6 +342,10 @@ QJsonObject controlParameterJson(const AutomatableModel* model, int index)
 	out.insert(QStringLiteral("step"), static_cast<double>(model->step<float>()));
 	out.insert(QStringLiteral("type"),
 		boolean != nullptr ? QStringLiteral("boolean") : QStringLiteral("number"));
+	// stress-4: a parameter the plug-in owns (VST3 kIsReadOnly, CLAP_PARAM_IS_READONLY - a meter, an output,
+	// DPF's "Buffer Size") says so, and plugin.param_set refuses it. Written only when true, so every other
+	// parameter's object is what it was.
+	if (isParameterReadOnly(model)) { out.insert(QStringLiteral("read_only"), true); }
 	return out;
 }
 

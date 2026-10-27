@@ -97,6 +97,11 @@ public:
 	//! caller can drain this stage and the stereo stage as ONE capture block.
 	void drain(f_cnt_t maxFrames = std::numeric_limits<f_cnt_t>::max()) noexcept;
 
+	//! Discard every staged frame: a device (re)start must not drain the frames a
+	//! previous capture staged before its stop. Only valid while neither push() nor
+	//! drain() is running. droppedFrames() and refusedBlocks() keep their totals.
+	void discardStaged() noexcept;
+
 	//! Render thread: the most recently drained period.
 	const float* data() const noexcept { return m_buffers[m_read].data(); }
 	f_cnt_t frames() const noexcept { return m_frames[m_read]; }

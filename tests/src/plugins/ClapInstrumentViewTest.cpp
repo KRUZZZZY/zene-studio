@@ -41,10 +41,13 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QFileInfo>
 #include <QLabel>
 #include <QWidget>
 
+#include <cmath>
 #include <memory>
 
 #include "ClapInstrument.h"
@@ -139,6 +142,43 @@ private slots:
 			qPrintable(QStringLiteral("the audio-output label went stale: ") + label->text()));
 
 		qunsetenv("CLAP_TEST_INSTRUMENT_LAYOUT");
+	}
+
+	/*! stress-4 (b): a SUCCESSFUL clap.state load that does not bring a writable parameter back must not lose it
+	 *  (the stress run lost Surge XT's this way). Gain is set and the instrument saved with no block in between, so
+	 *  the plug-in's own state still holds 1.0 while the host's saved <parameters> hold 0.4; loading it back must
+	 *  leave Gain at 0.4 in the host's model and in the value it sends the plug-in. */
+	void aValueTheStateDoesNotCarryIsRestoredFromTheHost()
+	{
+		const QString module = QStringLiteral(CLAP_TEST_INSTRUMENT_PATH);
+		if (module.isEmpty() || !QFileInfo::exists(module)) { QSKIP("no CLAP instrument fixture available"); }
+		qunsetenv("CLAP_TEST_INSTRUMENT_LAYOUT");
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		Plugin::Descriptor::SubPluginFeatures::Key key;
+		key.desc = &clapinstrument_plugin_descriptor;
+		key.name = QStringLiteral("LMMS CLAP Test Instrument");
+		key.attributes[QStringLiteral("file")] = module;
+		key.attributes[QStringLiteral("id")] = QStringLiteral("org.lmms.test.clap-instrument");
+		const std::unique_ptr<ClapInstrument> instrument{new ClapInstrument(track, &key)};
+		QVERIFY2(instrument->clapPlugin()->isLoaded(), "the CLAP test instrument did not load");
+
+		ClapParamModel* gain = nullptr;
+		for (ClapParamModel* model : instrument->paramModels()) { if (model->paramId() == 1) { gain = model; } }
+		QVERIFY2(gain != nullptr, "the fixture has no Gain parameter");
+		gain->setValue(0.4f);
+
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("clapinstrument"));
+		instrument->saveSettings(doc, element);
+		QVERIFY2(!element.firstChildElement(QStringLiteral("state")).isNull(),
+			"the instrument wrote no plug-in state: this case is about a SUCCESSFUL state load");
+
+		gain->setValue(0.8f);
+		instrument->loadSettings(element);
+		QVERIFY2(std::abs(gain->value() - 0.4f) < 1e-6f, qPrintable(QStringLiteral("restored %1").arg(gain->value())));
+		QVERIFY2(std::abs(instrument->clapPlugin()->paramPlain(1) - 0.4) < 1e-6,
+			qPrintable(QStringLiteral("sent %1").arg(instrument->clapPlugin()->paramPlain(1))));
 	}
 };
 

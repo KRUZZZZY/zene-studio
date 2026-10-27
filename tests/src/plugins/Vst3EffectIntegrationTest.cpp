@@ -63,6 +63,7 @@ private slots:
 	void testWrapperProcessingIsQuiescedDuringReprepare();
 	void testStateRoundTripThroughMmp();
 	void testParameterFallbackWithoutStateChunks();
+	void testAValueTheChunksDoNotCarryIsRestoredFromTheHost();
 	void testRendersBeforeAfterWav();
 
 private:
@@ -445,6 +446,48 @@ void Vst3EffectIntegrationTest::testRendersBeforeAfterWav()
 		sampleRate, dryRms, wetRms, wetRms / dryRms);
 	QVERIFY2(std::abs(wetRms - 0.5 * dryRms) < 1e-4,
 		qPrintable(QStringLiteral("dry %1 wet %2").arg(dryRms).arg(wetRms)));
+}
+
+/*! stress-4 (b), the effect side of Vst3InstrumentIntegrationTest's case: a SUCCESSFUL chunk load that does not
+ *  bring a writable parameter back must not lose it. Gain is set and the effect saved before any block carried it
+ *  to the processor - an effect on a silent track is exactly that - so the component state holds the default and
+ *  the host's saved <parameters> hold 0.3. Loading it back leaves Gain at 0.3, and the next block applies it. */
+void Vst3EffectIntegrationTest::testAValueTheChunksDoNotCarryIsRestoredFromTheHost()
+{
+	constexpr f_cnt_t fpp = 48;
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new Vst3Effect{&chain, &key};
+	chain.appendEffect(effect);
+	auto* controls = dynamic_cast<Vst3EffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* gain = controls->modelForParam(1);
+	QVERIFY(gain != nullptr);
+	gain->setValue(0.3f);
+
+	QDomDocument doc;
+	QDomElement element = doc.createElement("effect");
+	effect->saveSettings(doc, element);
+	const auto stateElement = element.firstChildElement(QStringLiteral("vst3"));
+	QVERIFY2(!stateElement.firstChildElement(QStringLiteral("componentstate")).isNull(),
+		"the effect wrote no state chunk: this case is about a SUCCESSFUL chunk load");
+
+	gain->setValue(0.9f);
+	effect->loadSettings(element);
+	QVERIFY2(std::abs(gain->value() - 0.3f) < 1e-6f, qPrintable(QStringLiteral("restored %1").arg(gain->value())));
+
+	SampleFrame storage[fpp];
+	for (f_cnt_t frame = 0; frame < fpp; ++frame)
+	{
+		storage[frame][0] = 0.5f;
+		storage[frame][1] = 0.5f;
+	}
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, fpp};
+	QVERIFY(chain.processAudioBuffer(bus));
+	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f, qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
 }
 
 } // namespace lmms

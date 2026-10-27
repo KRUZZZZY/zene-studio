@@ -676,6 +676,65 @@ private slots:
 		QCOMPARE( probe, QStringLiteral( "old" ) );  // the valid project stands
 		QCOMPARE( readText( target ), oldText );
 	}
+
+	//! A complete pending save whose read permission was removed - the directory
+	//! stays writable - is an I/O failure, not a truncated temp. The open was
+	//! refused, and the recovery used to read that refusal as an incomplete
+	//! document and delete the only staged copy. It must now be left in place,
+	//! reported, and adopted once it can be read again.
+	void unreadableNewFileIsPreservedNotDeleted()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// A complete, recognised document: the content the user asked to save.
+		QVERIFY( writeText( temp, QStringLiteral( "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head/>"
+			"<song s5probe=\"pending\"><trackcontainer type=\"song\"/></song></zene-project>\n" ) ) );
+		QVERIFY( QFile::setPermissions( temp, QFileDevice::WriteOwner ) );
+
+		// Root reads a file with no read permission, so the refused open this test
+		// needs cannot happen there; say so instead of passing without a check.
+		QFile unlocked( temp );
+		if( unlocked.open( QIODevice::ReadOnly ) )
+		{
+			unlocked.close();
+			QVERIFY( QFile::setPermissions( temp, QFileDevice::ReadOwner | QFileDevice::WriteOwner ) );
+			QSKIP( "this process can read a file without read permission, so the open cannot be refused" );
+		}
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( !report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "an unreadable .new was treated as incomplete; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( report.contains( QStringLiteral( "Could not read" ) ),
+			qPrintable( QStringLiteral( "no report line for the unreadable .new; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( QFile::exists( temp ), "the unreadable .new was deleted - the only staged save is gone" );
+		QCOMPARE( probe, QStringLiteral( "old" ) );  // not adopted while it cannot be checked
+		QCOMPARE( readText( target ), oldText );
+
+		// Readable again: the preserved save is still there and is adopted.
+		QVERIFY( QFile::setPermissions( temp, QFileDevice::ReadOwner | QFileDevice::WriteOwner ) );
+		DataFile later( target );
+		QCOMPARE( later.content().attribute( QStringLiteral( "s5probe" ) ), QStringLiteral( "pending" ) );
+		QVERIFY( !QFile::exists( temp ) );
+	}
 };
 
 QTEST_GUILESS_MAIN( DataFileSaveIntegrityTest )

@@ -136,12 +136,12 @@ TrackFolder::~TrackFolder()
 	// Mixer::deleteChannel() indexes its channel vector unchecked. A channel
 	// that is not there is not ours to delete, and there is nothing to
 	// renumber around.
-	if( m_mixerChannel >= 0 && Engine::mixer() != nullptr && Engine::getSong() != nullptr
+	if( m_mixerChannel > 0 && Engine::mixer() != nullptr && Engine::getSong() != nullptr
 		&& m_mixerChannel < static_cast<int>( Engine::mixer()->numChannels() ) )
 	{
 		Engine::mixer()->deleteChannel( static_cast<int>( m_mixerChannel ) );
-		m_mixerChannel = -1;
 	}
+	m_mixerChannel = -1;
 }
 
 /*! A folder makes no sound of its own.
@@ -392,11 +392,12 @@ bool TrackFolder::releaseRouting()
 {
 	for( Track * child : children() ) { unrouteChild( child ); }
 	m_savedChildChannels.clear();
-	if( m_mixerChannel >= 0 )
+	if( m_mixerChannel > 0 && Engine::mixer() != nullptr
+		&& m_mixerChannel < static_cast<int>( Engine::mixer()->numChannels() ) )
 	{
 		Engine::mixer()->deleteChannel( static_cast<int>( m_mixerChannel ) );
-		m_mixerChannel = -1;
 	}
+	m_mixerChannel = -1;
 	// The children are off the folder's channel and that channel no longer exists,
 	// so the RANGE routeChild() widened to hold it goes back to the channels the
 	// mixer really has - the same thing MixerView::updateMaxChannelSelector does

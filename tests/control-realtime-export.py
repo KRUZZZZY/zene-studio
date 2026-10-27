@@ -120,24 +120,21 @@ def check_offline(session, recorder, chan, path):
     return samples
 
 
-def check_realtime(session, recorder, chan, path, dry):
-    reply = realtime(session, path)
-    result = reply.get("result") or {}
-    recorder.check("render.realtime answers with the file it wrote", reply.get("ok") is True and result.get("path") == path
-                   and os.path.isfile(path), "reply=%r" % reply)
-    if not os.path.isfile(path):
-        return
-    wet, frames = left_channel(path)
+def check_reply(recorder, chan, path, result, frames):
+    """The reply's details against the file it names."""
     with open(path, "rb") as handle:
         digest = hashlib.sha256(handle.read()).hexdigest()
     played = ((result.get("hardware_inserts") or {}).get("inserts") or [{}])[0]
     recorder.check("its frames and sha256 are the file's own", result.get("frames") == frames and result.get("sha256") == digest
                    and result.get("mode") == "realtime", "frames=%d reply=%r" % (frames, result))
+    named = (played.get("channel"), played.get("latency_frames"), played.get("latency_source"),
+             result.get("latency_compensation_frames"))
     recorder.check("it names the insert it played and the compensation it dropped",
-                   played.get("channel") == chan and played.get("latency_frames") == ROUND_TRIP
-                   and played.get("latency_source") == "measured"
-                   and result.get("latency_compensation_frames") == ROUND_TRIP, "reply=%r" % result)
-    song = frames - int(result.get("tail_frames", 0))
+                   named == (chan, ROUND_TRIP, "measured", ROUND_TRIP), "reply=%r" % result)
+
+
+def check_processed(recorder, wet, dry, song):
+    """The file holds the insert's return: the dry render x GAIN, aligned to the frame."""
     lag = onset(wet, 0.01 * GAIN) - onset(dry, 0.01)
     recorder.check("the processed return lines up with the song to the frame", lag == 0,
                    "onset wet=%d dry=%d" % (onset(wet, 0.01 * GAIN), onset(dry, 0.01)))
@@ -146,6 +143,19 @@ def check_realtime(session, recorder, chan, path, dry):
     ratio = rms(wet[:window]) / max(1e-9, rms(dry[:window]))
     recorder.check("the file is the insert's return: the dry render x 0.5, sample for sample",
                    abs(ratio - GAIN) < 0.01 and residual < 0.002, "ratio=%.5f residual=%.6f window=%d" % (ratio, residual, window))
+
+
+def check_realtime(session, recorder, chan, path, dry):
+    reply = realtime(session, path)
+    result = reply.get("result") or {}
+    written = os.path.isfile(path)
+    recorder.check("render.realtime answers with the file it wrote", reply.get("ok") is True and result.get("path") == path
+                   and written, "reply=%r" % reply)
+    if not written:
+        return
+    wet, frames = left_channel(path)
+    check_reply(recorder, chan, path, result, frames)
+    check_processed(recorder, wet, dry, frames - int(result.get("tail_frames", 0)))
 
 
 def check_measured(session, recorder, wet_path, dry_path):

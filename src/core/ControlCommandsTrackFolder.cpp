@@ -125,6 +125,10 @@ ControlResult setFolder(const QJsonObject& args)
 		[childId, previousId]() { reparent(childId, previousId); },
 		[childId, folderId]() { reparent(childId, folderId); });
 	child->setParentFolder(folder);
+	// The folder a track is in is saved with the project, so a move that changes it
+	// dirties the project (the save prompt on close depends on it). A move onto the
+	// folder the track is already in changes nothing and leaves the project clean.
+	if (folder != previous) { Engine::getSong()->setModified(); }
 
 	QJsonObject before;
 	before.insert(QStringLiteral("track"), args.value(QStringLiteral("track")).toString());

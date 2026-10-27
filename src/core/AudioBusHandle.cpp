@@ -264,8 +264,9 @@ void AudioBusHandle::doProcessing()
 	// chain reports no latency is bit-identical to the uncompensated path.
 	// Q050-339: a manual offset is part of the path's latency as the graph sees it (alignedLatencyFrames), so a
 	// positive one delays this track by that much more and a negative one raises the channel's alignment point.
-	m_compensation.setDelayFrames(
-		Engine::mixer()->channelInputLatency(m_nextMixerChannel) - alignedLatencyFrames());
+	// Q050-174: a latent instrument monitored in low-latency mode skips its alignment delay (0 is the no-op).
+	m_compensation.setDelayFrames(monitorUnaligned()
+		? 0 : Engine::mixer()->channelInputLatency(m_nextMixerChannel) - alignedLatencyFrames());
 	m_compensation.processInPlace(m_buffer.data(), fpp);
 
 	if (anyOutputAfterEffects || m_bufferUsage || m_compensation.delayFrames() > 0)

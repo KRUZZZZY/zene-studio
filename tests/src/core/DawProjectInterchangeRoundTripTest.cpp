@@ -56,6 +56,7 @@
 
 #include <QByteArray>
 #include <QDir>
+#include <QFile>
 #include <QList>
 #include <QPair>
 #include <QJsonArray>
@@ -286,6 +287,32 @@ private slots:
 		QVERIFY(!dawProjectBeatRepresentable(1.0e12));
 		QVERIFY(!dawProjectBeatRepresentable(std::numeric_limits<double>::quiet_NaN()));
 		QCOMPARE(dawProjectTicksFromBeats(lastTick / perBeat), static_cast<qint64>(lastTick));
+	}
+
+	/*! A read that gives back nothing is refused AS A READ by the strict reader the
+	 *  .mmpz container uses, so a recovery names the file it could not read. The
+	 *  same bytes read without the fault are refused as malformed. The fault is
+	 *  ZENE_TEST_CONTAINER_READ_FAULT. */
+	void aFailedReadOfTheStrictReaderIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("read-fault.dawproject"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(file.write(QByteArray(64, 'x')) == 64);
+		file.close();
+
+		std::vector<DawProjectEntry> entries;
+		QString error;
+		qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+		const bool ok = dawProjectZipRead(path, &entries, &error);
+		qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+		QVERIFY(!ok);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+
+		QVERIFY(!dawProjectZipRead(path, &entries, &error));
+		QVERIFY2(!error.contains(QStringLiteral("cannot read")), qPrintable(error));
 	}
 
 	void cleanupTestCase()

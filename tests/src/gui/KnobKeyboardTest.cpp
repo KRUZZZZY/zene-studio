@@ -37,6 +37,7 @@
 #include <QtTest>
 
 #include <QAccessible>
+#include <QApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QHelpEvent>
@@ -66,6 +67,7 @@
 #include "LcdFloatSpinBox.h"
 #include "LcdSpinBox.h"
 #include "LedCheckBox.h"
+#include "TempoSyncBarModelEditor.h"
 #include "TempoSyncKnob.h"
 #include "TempoSyncKnobModel.h"
 
@@ -204,6 +206,74 @@ private slots:
 		QVERIFY2(qtWarnings.contains(QStringLiteral("no TempoSyncKnobModel has been set!")),
 			qPrintable(qtWarnings.join(QLatin1Char('\n'))));
 		QCOMPARE(knob.syncDescription(), QStringLiteral("Tempo Sync"));
+	}
+
+	//! The bar editor has the knob's contract: a detached model warns and stops. A context
+	//! menu on the detached bar, or a later sync change on the model it left, must not reach
+	//! the missing TempoSyncKnobModel (modelChanged() used to dereference it).
+	void aTempoSyncBarModelEditorStopsAfterWarningAboutADetachedModel()
+	{
+		TempoSyncKnobModel model(1.f, 0.f, 100.f, 1.f, 1.f, nullptr, QStringLiteral("Time"));
+		TempoSyncBarModelEditor editor(QStringLiteral("Time"), &model);
+		QCOMPARE(editor.model(), &model);
+
+		qtWarnings.clear();
+		const auto oldHandler = qInstallMessageHandler(collectQtWarning);
+		editor.setModel(nullptr);  // detach: modelChanged() runs with no TempoSyncKnobModel
+		qInstallMessageHandler(oldHandler);
+
+		QVERIFY(editor.model() == nullptr);
+		QVERIFY2(qtWarnings.contains(QStringLiteral("no TempoSyncKnobModel has been set!")),
+			qPrintable(qtWarnings.join(QLatin1Char('\n'))));
+		QCOMPARE(editor.syncDescription(), QStringLiteral("Tempo Sync"));
+
+		model.setTempoSync(TempoSyncKnobModel::SyncMode::QuarterNote);
+		QCOMPARE(editor.syncDescription(), QStringLiteral("Tempo Sync"));
+
+		QContextMenuEvent menuEvent(QContextMenuEvent::Mouse, QPoint(1, 1));
+		QApplication::sendEvent(&editor, &menuEvent);
+	}
+
+	//! A visible bar editor schedules a repaint when its model is detached; painting it must
+	//! not dereference the now-missing FloatModel.
+	void aDetachedTempoSyncBarModelEditorCanPaint()
+	{
+		TempoSyncKnobModel model(1.f, 0.f, 100.f, 1.f, 1.f, nullptr, QStringLiteral("Time"));
+		TempoSyncBarModelEditor editor(QStringLiteral("Time"), &model);
+		editor.resize(120, 24);
+		editor.show();
+		QApplication::processEvents();
+
+		editor.setModel(nullptr);
+		QVERIFY(editor.model() == nullptr);
+		editor.repaint();
+	}
+
+	//! A plain FloatModel is not a TempoSyncKnobModel, yet the constructor accepts it. The
+	//! editor must warn and stay empty rather than dereference the failed cast.
+	void aTempoSyncBarModelEditorRefusesAPlainFloatModel()
+	{
+		FloatModel plain(0.5f, 0.f, 1.f, 0.01f, nullptr, QStringLiteral("Level"));
+
+		qtWarnings.clear();
+		const auto oldHandler = qInstallMessageHandler(collectQtWarning);
+		TempoSyncBarModelEditor editor(QStringLiteral("Level"), &plain);
+		qInstallMessageHandler(oldHandler);
+
+		QVERIFY(editor.model() == nullptr);
+		QVERIFY2(qtWarnings.contains(QStringLiteral("no TempoSyncKnobModel has been set!")),
+			qPrintable(qtWarnings.join(QLatin1Char('\n'))));
+		QCOMPARE(editor.syncDescription(), QStringLiteral("Tempo Sync"));
+	}
+
+	//! The guard must not change the normal path: a valid model still drives the description.
+	void aTempoSyncBarModelEditorStillFollowsItsModel()
+	{
+		TempoSyncKnobModel model(1.f, 0.f, 100.f, 1.f, 1.f, nullptr, QStringLiteral("Time"));
+		TempoSyncBarModelEditor editor(QStringLiteral("Time"), &model);
+
+		model.setTempoSync(TempoSyncKnobModel::SyncMode::QuarterNote);
+		QCOMPARE(editor.syncDescription(), QStringLiteral("Synced to Quarter Note"));
 	}
 
 	void barModelEditorStoresItsFixedVerticalPolicy()

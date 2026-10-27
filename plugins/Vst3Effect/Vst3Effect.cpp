@@ -34,7 +34,9 @@
 #include <QDebug>
 
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "LmmsCommonMacros.h"
+#include "PluginInstantiationFailure.h"
 #include "Song.h"
 #include "Vst3EffectControls.h"
 #include "Vst3SubPluginFeatures.h"
@@ -77,6 +79,8 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
 	{
 		// A throw must not cross the extern "C" boundary.
 		qCritical() << "VST3 effect could not be created:" << error.what();
+		pluginload::noteInstantiationFailure(QStringLiteral("the VST3 effect could not be created: %1")
+			.arg(QString::fromUtf8(error.what())));
 		return nullptr;
 	}
 }
@@ -94,6 +98,7 @@ Vst3Effect::Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 	if (!m_plugin.load(modulePath, classId, &error))
 	{
 		qWarning() << "VST3: could not load" << modulePath << classId << ":" << error;
+		pluginload::noteInstantiationFailure(error);
 	}
 	else
 	{
@@ -102,9 +107,7 @@ Vst3Effect::Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 		// counts means the common case never needs a re-configuration.
 		const auto mainInputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.inputs));
 		const auto mainOutputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.outputs));
-		audioPorts().setAllChannelCounts(
-			std::max<ch_cnt_t>(ch_cnt_t{2}, std::max(mainInputs, mainOutputs)),
-			mainInputs, mainOutputs);
+		audioPorts().setAllChannelCounts(hostedTrackChannels(mainInputs, mainOutputs), mainInputs, mainOutputs);
 
 		if (auto* engine = Engine::audioEngine())
 		{
