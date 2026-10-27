@@ -5342,3 +5342,4 @@ include/Mixer.h	cluster new-p14-29: declares the LMMS_TESTING refused-lookup sea
 src/core/Mixer.cpp	cluster new-p14-29: defines the LMMS_TESTING refused-lookup seam (a file-static counter) beside the constructor; compiled only with LMMS_TESTING.
 tests/src/core/TimelineTest.cpp	# Metronome tick math can divide/modulo by zero
 tests/src/tracks/SampleClipWarpTest.cpp	# Invalid single-clip index can crash sample playback
+src/core/InstrumentFunctions.cpp	cluster new-p15-78: processNote takes the arpeggio slot arithmetic in whole numbers (arpRange and repeats are not rounded to their step, so a fractional repeat count made range / repeats truncate to zero: a modulo by zero in the audio path, and a negative chord index in the downward inversion); regression: NotePlaybackTest::cycledArpeggioWithFractionalRepeatsDoesNotDivideByZero and downArpeggioWithFractionalRepeatsStaysOnTheChord.

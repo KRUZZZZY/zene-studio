@@ -628,6 +628,54 @@ private slots:
 		}
 	}
 
+	//! Note repeats are not rounded to their step, so 1.5 repeats reach the arpeggio. The slot arithmetic
+	//! then divided by range / repeats = 1 / 1.5, which truncates to zero: a cycled arpeggio took the
+	//! modulo by zero in the audio path. 1.5 plays as the whole number below it (1), a single pitch.
+	void cycledArpeggioWithFractionalRepeatsDoesNotDivideByZero()
+	{
+		oneNote();
+		QDomDocument doc;
+		QDomElement trackSettings = doc.createElement(QStringLiteral("instrumenttrack"));
+		QDomElement arpeggio = doc.createElement(QStringLiteral("arpeggiator"));
+		arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+		arpeggio.setAttribute(QStringLiteral("arp"), 0); // The "octave" chord contains one pitch.
+		arpeggio.setAttribute(QStringLiteral("arprange"), 1);
+		arpeggio.setAttribute(QStringLiteral("arprepeats"), QStringLiteral("1.5"));
+		arpeggio.setAttribute(QStringLiteral("arpcycle"), 1);
+		arpeggio.setAttribute(QStringLiteral("arpdir"), static_cast<int>(InstrumentFunctionArpeggio::ArpDirection::Up));
+		arpeggio.setAttribute(QStringLiteral("arptime"), 25);
+		trackSettings.appendChild(arpeggio);
+		m_track->loadTrackSpecificSettings(trackSettings);
+		QVERIFY(m_track->isArpeggioEnabled());
+
+		const QList<int> keys = playFrom(0, 3);
+		QVERIFY2(!keys.isEmpty(), qPrintable(QString::number(keys.size())));
+		QVERIFY(std::all_of(keys.cbegin(), keys.cend(), [](int key) { return key == 60; }));
+	}
+
+	//! The downward inversion uses the same slot count as the cycle: with 1.5 repeats and no cycle it
+	//! produced index -1, which is key 48 (an octave down) rather than the chord's only pitch.
+	void downArpeggioWithFractionalRepeatsStaysOnTheChord()
+	{
+		oneNote();
+		QDomDocument doc;
+		QDomElement trackSettings = doc.createElement(QStringLiteral("instrumenttrack"));
+		QDomElement arpeggio = doc.createElement(QStringLiteral("arpeggiator"));
+		arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+		arpeggio.setAttribute(QStringLiteral("arp"), 0); // The "octave" chord contains one pitch.
+		arpeggio.setAttribute(QStringLiteral("arprange"), 1);
+		arpeggio.setAttribute(QStringLiteral("arprepeats"), QStringLiteral("1.5"));
+		arpeggio.setAttribute(QStringLiteral("arpdir"), static_cast<int>(InstrumentFunctionArpeggio::ArpDirection::Down));
+		arpeggio.setAttribute(QStringLiteral("arptime"), 25);
+		trackSettings.appendChild(arpeggio);
+		m_track->loadTrackSpecificSettings(trackSettings);
+		QVERIFY(m_track->isArpeggioEnabled());
+
+		const QList<int> keys = playFrom(0, 3);
+		QVERIFY2(!keys.isEmpty(), qPrintable(QString::number(keys.size())));
+		QVERIFY(std::all_of(keys.cbegin(), keys.cend(), [](int key) { return key == 60; }));
+	}
+
 	void aRecurrenceSkipsThePassesItIsNotOn()
 	{
 		Note* note = oneNote();
