@@ -61,9 +61,11 @@ Test count in the family: 9 test cases in one binary (`MixerSendsOnFadersTest`, 
 
 Ratchet classification follows `feature_check.py:83-86`: a ratchet fails only on a `REGRESSION` line whose item lies in a changed file. The changed-file set is only `tests/src/gui/MixerSendsOnFadersTest.cpp`. None of the 7 complexity and 22 file-length `REGRESSION` lines names that file or any product file this lane touched (`logs/30-gate-complexity.log`, `logs/30-gate-file-length.log`; `grep MixerSendsOnFaders` on both returned nothing). Those lines are the train's existing red items. Under the gate's rule both ratchets classify as PASS, but their own script exit is 1, and I report it as 1.
 
+**Gate status: BLOCKED for `feature_check.py` as a single run.** I tried to run the script on a detached copy of the committed tree inside the run folder, so its log directory would be writable. The lane's guard refused `git worktree add` (`bunny-guard`, AGENTS.md rules 1, 2, 11, 12; `logs/041-gate-tree-add.log`, EXIT=97). I did not retry it or use another copy route. The one attempt left an empty directory, which I removed. Its traceback is in `logs/042-feature-check-gate-tree.log`. The per-command results above are the only gate evidence for this commit.
+
 ## Self-check
 
-Results of `submit_check.py`: see the final run recorded below.
+`submit_check.py` on the committed branch (`logs/040-submit-check-final.log`): PASS for commits on the branch, clean tree, report present, and tests added or changed. FAIL for `gates (feature_check.py)`, which is the sandbox block above. The five ASK items are answered below.
 
 1. **Regression test fails with the product change reverted and passes with it.** Not applicable: there is no product change to revert (`logs/005-product-diff.log`, empty). The added case passes on the unchanged product code (`logs/023-ctest-guard-verbose.log`). It is a guard for an unreachable state, so no RED run is possible, and I do not claim it is regression proof.
 2. **Deterministic.** The case has no timers, sleeps or races. It reads `window.mixer_view`'s answer, which `mixerViewState()` builds synchronously (`src/gui/ControlCommandsMixerView.cpp`, `mixerViewState`). The channels it uses (`m_sender`, `m_silent`, `m_return`) are created in `initTestCase`. The deferred `syncMixerViewSoon()` is a GUI refresh, and no assertion depends on it.
