@@ -55,6 +55,15 @@ QString savedStrike(MalletsInstrument* instrument)
 	return element.attribute(QStringLiteral("strike"));
 }
 
+//! The "preset" attribute the instrument writes into a project: the index the synth plays.
+QString savedPreset(MalletsInstrument* instrument)
+{
+	QDomDocument doc;
+	QDomElement element = doc.createElement(QStringLiteral("instrument"));
+	instrument->saveSettings(doc, element);
+	return element.attribute(QStringLiteral("preset"));
+}
+
 } // namespace
 
 class MalletsInstrumentViewTest : public QObject
@@ -118,6 +127,27 @@ private slots:
 		element.setAttribute(QStringLiteral("strike"), QStringLiteral("0"));
 		instrument->loadSettings(element);
 		QVERIFY2(!bowed->model()->value(), "a loaded Bowed=0 setting does not reach the checkbox");
+	}
+
+	void aLoadedPresetOutsideTheScalerTableIsFittedIntoIt()
+	{
+		// The synth indexes its scaler table with the preset the model holds; the table has
+		// the 14 presets 0-13. A project value outside that range must be fitted on load.
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		const std::unique_ptr<MalletsInstrument> instrument{new MalletsInstrument(track)};
+
+		const struct { const char* loaded; const char* saved; } cases[] = {
+			{"-1", "0"}, {"0", "0"}, {"13", "13"}, {"14", "13"}, {"99", "13"},
+		};
+		for (const auto& c : cases)
+		{
+			QDomDocument doc;
+			QDomElement element = doc.createElement(QStringLiteral("instrument"));
+			element.setAttribute(QStringLiteral("preset"), QString::fromUtf8(c.loaded));
+			instrument->loadSettings(element);
+			QCOMPARE(savedPreset(instrument.get()), QString::fromUtf8(c.saved));
+		}
 	}
 };
 
