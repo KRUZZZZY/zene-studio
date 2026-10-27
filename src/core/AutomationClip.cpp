@@ -142,6 +142,7 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	Clip(_clip_to_copy),
 	m_autoTrack( _clip_to_copy.m_autoTrack ),
 	m_objects( _clip_to_copy.m_objects ),
+	m_hasLiveTarget( !_clip_to_copy.m_objects.empty() ),
 	m_tension( _clip_to_copy.m_tension ),
 	m_progressionType(_clip_to_copy.m_progressionType.load(std::memory_order_relaxed)),
 	m_relative(_clip_to_copy.isRelative()),
@@ -212,6 +213,7 @@ bool AutomationClip::addObject( AutomatableModel * _obj, bool _search_dup )
 	}
 
 	m_objects.push_back(_obj);
+	publishLiveTarget();
 
 	connect( _obj, SIGNAL(destroyed(lmms::jo_id_t)),
 			this, SLOT(objectDestroyed(lmms::jo_id_t)),
@@ -240,6 +242,7 @@ bool AutomationClip::removeObject( AutomatableModel * _obj )
 	if (it == m_objects.end()) { return false; }
 
 	m_objects.erase(it);
+	publishLiveTarget();
 	emit dataChanged();
 	return true;
 }
@@ -1554,6 +1557,7 @@ void AutomationClip::objectDestroyed( jo_id_t _id )
 			break;
 		}
 	}
+	publishLiveTarget();
 
 	emit dataChanged();
 }
@@ -1576,6 +1580,7 @@ void AutomationClip::cleanObjects()
 			it = m_objects.erase( it );
 		}
 	}
+	publishLiveTarget();
 }
 
 

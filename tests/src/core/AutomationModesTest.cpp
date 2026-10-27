@@ -931,6 +931,43 @@ private slots:
 			"a recording clip with a target queued no write - the no-target assertion proves nothing");
 	}
 
+	//! The same contract when the target is destroyed rather than removed: a
+	//! deleted control leaves the clip through `objectDestroyed`, and the render
+	//! pass must not write for it. Its inversion attaches a live control again.
+	void testRecordingClipWhoseTargetIsDestroyedWritesNothing()
+	{
+		auto* song = Engine::getSong();
+		AutomationTrack track(song);
+		AutomationClip clip(&track);
+		clip.setProgressionType(AutomationClip::ProgressionType::Linear);
+		clip.putValue(0, 0.5f, false);
+		clip.putValue(96, 0.25f, false);
+		clip.putValue(192, 1.0f, false);
+		clip.changeLength(192);
+		clip.setRecording(true);
+
+		auto* doomed = new FloatModel(1.0f, 0.0f, 2.0f, 0.001f);
+		clip.addObject(doomed);
+		delete doomed;
+		QVERIFY(!clip.hasObjects());
+
+		const auto before = timeMapBits(clip);
+		const auto pendingBefore = clip.pendingWriteCount();
+		playFromZero(song, 8);
+		QCOMPARE(clip.pendingWriteCount(), pendingBefore);
+		QVERIFY(drainAutomationWrites(song));
+		QCOMPARE(timeMapBits(clip), before);
+
+		// --- inversion: a live target attached afterwards is recorded from ------
+		FloatModel replacement(1.0f, 0.0f, 2.0f, 0.001f);
+		clip.addObject(&replacement);
+		playFromZero(song, 8);
+		QVERIFY2(clip.pendingWriteCount() > pendingBefore,
+			"a recording clip with a live target queued no write - the no-target assertion proves nothing");
+		QVERIFY(drainAutomationWrites(song));
+		clip.removeObject(&replacement);
+	}
+
 	//! The realtime contract, stated as a test: the mode state the audio thread
 	//! reads must be lock-free, so `automationWantsWrite()` can never block on a
 	//! mutex. (The stored values are read with relaxed atomics on the render
