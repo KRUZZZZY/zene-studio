@@ -99,6 +99,8 @@ All builds used `CCACHE_TEMPDIR=<run>/ccache-tmp`. The first build failed on cca
 | family test | `ctest -j3 -R '^(ChainPresetMenuTest\|ControlAutomationModesTest\|ControlAutomationScriptTest\|ControlChainPresetTest\|ControlRegistryTest\|DelayControlsTest\|DeviceAbUndoTest\|DeviceCopyTest\|DeviceDspTest\|DevicePanelTest\|DeviceToolsChainTest\|DeviceToolsTest\|InstrumentLayersCommandsTest\|PluginControlDialogsTest\|ReversibilityUndoDeviceTest\|ScriptDawEffectsTest\|SfzPlayerTest\|Vst3HostTest\|Vst3ChunkProbeTest\|Vst3InstrumentTest\|Vst3EffectIntegrationTest\|ClapHostTest\|ClapInstrumentViewTest\|Vst3InstrumentIntegrationTest\|ClapEffectIntegrationTest)$' > logs/32-test-family.log` | 0 — 25/25 passed. Log 33: the named family Vst3HostTest/Vst3ChunkProbeTest/Vst3InstrumentTest and the others run with 0 skipped |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/34-feature-check.log` | 1 — `PermissionError`: the script makes its log dir beside the worktree, outside this lane's write jail |
 | gates | the same script copied to `<run>/scratch/fc/`, with only `ROOT` (pinned to the qwen dir) and the logs dir (run folder) changed, `> logs/35-feature-check.log` | **0** — all 8 PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
+| gates after commit | the same copy `> logs/38-feature-check-final.log` | 1 — fork-sources and all-sources-reproduce: once committed, the recipe derives `include/ParameterReadOnly.h` and `tests/all-sources.txt` lacked it |
+| gates, final | header added to `tests/all-sources.txt` in byte order; the same copy `> logs/39-feature-check-final.log` | **0** — all 8 PASS |
 | real plug-ins after the fix | `python3 scratch/repro3.py '<subject>' load,render,play,state` (logs 24-29, 40-43) | 0 each |
 
 ## Definition of done
@@ -107,7 +109,7 @@ All builds used `CCACHE_TEMPDIR=<run>/ccache-tmp`. The first build failed on cca
 - **Undo:** a refused write takes no step and records no transaction. A writable parameter's write is unchanged.
 - **Commands:** no command added, and the id set is unchanged. Two descriptions and the `plugin.param_get` / `plugin.param_set` result schemas changed (an optional `read_only` field). The committed MCP snapshot (`tools/mcp-zene-control/zene_control/commands_snapshot.json`) still holds the old schema text; the train regenerates it live. The `ControlCommandsSnapshot` test compares id sets.
 - **Saved data:** no save format changed. `Vst3EffectControls`/`Vst3Instrument::saveSettings` already skip read-only parameters in the fallback.
-- **Registration:** `include/ParameterReadOnly.h` was added to `tests/fork-sources.txt` in byte order. The other changed sources are already fork-registered.
+- **Registration:** `include/ParameterReadOnly.h` was added to `tests/fork-sources.txt` and `tests/all-sources.txt` in byte order. Both manifests reproduce from their recipes (log 39). The other changed sources are already fork-registered.
 - **The farm's harness copy:** `~/.cache/zene-plugin-farm/harness/plugin_compat_steps.py` is a separate copy (read-only for this lane). A rerun of the stress run needs it refreshed from the tree to skip `read_only` parameters.
 
 ## Self-check
@@ -132,6 +134,6 @@ All builds used `CCACHE_TEMPDIR=<run>/ccache-tmp`. The first build failed on cca
   - Nothing in the save or load path changed, so old projects and state files load byte-for-byte as before.
   - `read_only` is written only when true, so every writable or non-plug-in parameter's JSON object is unchanged.
   - The refusal applies only to models that a VST3 or CLAP host marked from the plug-in's own read-only flag. Builtin, LADSPA, LV2 and other models carry no mark, and `isParameterReadOnly` returns false for them.
-  - 25 related ctest entries pass (log 32). The 8 gates pass in log 35, the run-folder copy of `feature_check.py` described in the table.
+  - 25 related ctest entries pass (log 32). The 8 gates pass in log 39, the run-folder copy of `feature_check.py` described in the table.
   - `submit_check.py`'s own gates line fails inside this lane because it runs `feature_check.py`, which makes its log directory beside the worktree. The lane's write jail refuses that (`PermissionError`, log 34). The same script, with only the log directory and `ROOT` moved, passes.
 - **ALREADY-FIXED / FALSE-POSITIVE:** not claimed. The verdict is FIXED for (a), and the Surge rows of (b) are traced to the plug-in with log evidence.
