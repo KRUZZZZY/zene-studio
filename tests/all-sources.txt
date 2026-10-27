@@ -2609,6 +2609,7 @@ tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp
 tests/exprtk.hpp
 tests/src/core/AafImportTest.cpp
+tests/src/core/AbletonLinkEsp32RunnerTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
 tests/src/core/AllocationProbe.cpp
@@ -3053,6 +3054,8 @@ tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WaveformDataTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
+tests/src/core/esp32-freertos-host/freertos/FreeRTOS.h
+tests/src/core/esp32-freertos-host/freertos/task.h
 tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp

@@ -63,7 +63,16 @@ Verify with:
     while IFS=$'\t' read -r path repo up sha; do \
       [ "$(git hash-object "$path")" = "$sha" ] || echo "DIFFERS: $path"; done
 
-Local modifications: none. The configuration upstream's CMake applies
+Local modifications: two, deliberate, both in the ESP32 port (which no Zene target compiles).
+- link/include/ableton/platforms/esp32/Context.hpp: a failed xTaskCreatePinnedToCore is
+  reported (the service runner throws std::runtime_error) instead of ignored; the task
+  handle starts null, and the destructor deletes only a task that was created.
+- link/include/ableton/platforms/esp32/LockFreeCallbackDispatcher.hpp: the task handle
+  starts null, and stop() deletes only a task that was created.
+Both files therefore differ from their MANIFEST.tsv blobs, which still record upstream.
+Regression test: tests/src/core/AbletonLinkEsp32RunnerTest.cpp (host FreeRTOS stand-in in
+tests/src/core/esp32-freertos-host/). Every other file is a byte-identical copy.
+The configuration upstream's CMake applies
 (cmake_include/ConfigureAbletonLink.cmake, ConfigureAsioStandalone.cmake) is
 re-stated in CMakeLists.txt here, with this tree's own asio inline namespace
 (zene_link_asio_1_38_2) so this asio copy cannot clash with another.
