@@ -103,7 +103,12 @@ bool ArticulationMap::fromJson(const QJsonArray& array, std::vector<Articulation
 
 void ArticulationMap::save(QDomElement& trackElement) const
 {
-	if (m_entries.empty()) { return; }
+	// Empty: no attribute, and none left over from an earlier save of this element.
+	if (m_entries.empty())
+	{
+		trackElement.removeAttribute(QStringLiteral("articulations"));
+		return;
+	}
 	trackElement.setAttribute(QStringLiteral("articulations"), QString::fromUtf8(QJsonDocument(toJson()).toJson(QJsonDocument::Compact)));
 }
 
