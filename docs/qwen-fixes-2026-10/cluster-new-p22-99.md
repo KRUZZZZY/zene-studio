@@ -19,10 +19,11 @@ Reachability, read from the code (this path is not run end to end; see "Not veri
 - It needs a connected remote. `remote.connect` is also engine-free (`src/core/ControlCommandsRemote.cpp:97`), and `RemoteControls::connect` (`src/core/RemoteControls.cpp:85-99`) does not read the song.
 - A null song is a real state, not a theoretical one: `ControlRegistry::isEngineReady()` (`src/core/ControlRegistry.cpp:205-207`) returns false when `Engine::getSong() == nullptr`.
 
-Other callers of the resolver, all checked:
+Other callers checked:
 
-- Every other caller sits behind a command with the default `requiresEngine = true` (`include/ControlCommandDef.h:53`), so the dispatch gate at `src/core/ControlRegistry.cpp:283` keeps a null song out.
+- `PatcherCanvas` (`src/gui/PatcherCanvas.cpp:77,251`) and `RemoteControls::parametersForTarget` (`src/core/RemoteControls.cpp:50`) also call the resolver directly. Both handle a failed resolution; the null guard makes a no-song track lookup return `NotFound` there too.
 - `control.id_contract` is engine-free (`src/core/ControlCommandsIdContract.cpp:79`). Its track-resolver call sits inside `if (song != nullptr)` (`:92`). Its channel-resolver call (`:62`) goes through `resolveChannelTarget`, which never touches the song. Behaviour there is unchanged.
+- The remaining control-command callers use the default `requiresEngine = true` (`include/ControlCommandDef.h:53`), so the dispatch gate at `src/core/ControlRegistry.cpp:283` keeps a null song out of those handlers.
 
 Sibling not changed: `src/core/ControlAutomationSupport.cpp:100` (`songIndexOfTrack`) also dereferences `Engine::getSong()` without a check. It takes a `Track*`, and a track that exists belongs to a song, so I found no no-song path to it. It is outside this finding and I did not change it. I did not check its callers exhaustively.
 
