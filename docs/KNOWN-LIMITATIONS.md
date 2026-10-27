@@ -2330,29 +2330,46 @@ ignored. (Adds the `fsync`-before-rename durability step on POSIX; on Windows th
 guarantee. The `complete="1"` index marker the same spec section sketches is *not* implemented — it belongs to
 `<z:index>`/`DocumentIndex`, which this slice is scoped out of.)
 
-## The destructive waveform editor's first slice (`sample.*`, board card #706) — its menus and its bounds
+## The destructive waveform editor (`sample.*`, board card #706) — the Sample Editor's range edits, and the whole-source bakers
 
-Five commands exist — `sample.generate` (tone / white / pink / silence into a new audio clip),
-`sample.amplify`, `sample.normalize`, `sample.reverse` and `sample.fade` (linear, in or out) — and
-**every one of them has an interface entry point as well as the control socket**: a sample track's
-**More** menu (the track header's and the Inspector's) offers `sample.generate` as **Insert Test
-Signal...**, which opens the command's own form with that track fixed and position `0`, length `192`
-and kind `tone` pre-filled; a sample clip's **Process** menu offers `sample.normalize`, `sample.amplify`,
-`sample.reverse` and `sample.fade` (in / out). The MCP bridge and the control socket are the same
-command, not a second implementation. There is still **no waveform view** that shows the result in
-place: a generated clip is drawn by the ordinary sample-clip view, and the bakers' feedback is the
-ordinary undo journal and clip repaint. **Placement beyond those two menus is an open owner decision
-for the UI phase** — mixer-slot vs clip editor vs window — and this lane did not take it (board card
-#706, question 4; `design/specs/DECISION-706-DESTRUCTION-MODEL.md` records the same defer). The
-bounds around them, stated rather than left to be discovered: every operator transforms
-the clip's **whole source** — there is no range/selection model, a clip playing a trimmed
-`srcin/srcout` window is REFUSED with the typed error naming that limit, and a fade therefore always
-spans the whole clip and has only the linear curve (`clip.set_fade` remains the non-baking window
-fade; `clip.set_gain` remains the non-baking gain); `sample.amplify` applies **no limiter** (the
-float pipeline keeps values past 0 dBFS); each step's undo bound is the ENGINE's own — `min(100
-steps, 16 MiB)` of retained checkpoints (`docs/UNDO-BOUNDS.md`), against which a baked buffer's
-serialized bytes count — not a private stack; and the deferred verbs register **no id at all** in this
-slice: noise reduction, pitch/tempo change and chirp are named here as not started, not stubbed.
+A sample clip's menu opens **Sample Editor...**. A selection dragged across the waveform, or typed into
+Start, End and Length, is the range every edit button acts on: **-3 dB** and **+3 dB** (gain),
+**Silence**, **Delete**, **Reverse**, **Fade In**, **Fade Out** and **Crop**. Each button is one
+`sample.edit_range` call over source frames `[from, to)` with `op` = `gain` (with `gain_db`),
+`silence`, `delete`, `reverse`, `fade_in`, `fade_out` or `crop` — the same registered command an agent
+runs, so there is one implementation and one undo step per edit (a Clip checkpoint, against the
+engine's `min(100 steps, 16 MiB)` bound in `docs/UNDO-BOUNDS.md`). Silence keeps the range's length;
+Delete closes the gap, so what followed the range moves earlier; Crop keeps only the range. A delete
+that would remove everything the clip plays is refused, and a crop or delete that would move the
+clip's warp markers is refused (remove them first). The buttons are disabled while nothing is
+selected, and each reports its outcome (or its typed refusal) on the editor's status line.
+`window.sample_editor` opens the editor, or brings its open window forward, and can set its range and
+view.
+Two more buttons act on the **whole source**, not the selection: **To Mono** is `sample.edit_range`
+`op: "mono"` (every frame becomes the documented `(L + R) / 2` on both sides, one undo step; a mono
+source is refused), and **Split Stereo...** is `sample.split_stereo`, which writes the left and right
+channels as two mono WAV files and leaves the clip unchanged.
+
+The bounds, stated rather than left to be discovered: range gain multiplies the selected frames and
+applies **no limiter** (the float pipeline keeps values past 0 dBFS), and the destructive **fades are
+linear** — Fade In and Fade Out have no curve choices. The Sample Editor's range tools have
+**no noise reduction**: `sample.edit_range` registers no denoise operation (its eighth value,
+`mono`, is the whole-source downmix above). (A denoiser exists as a
+separate plug-in effect; it is not a destructive range operation.)
+
+The whole-source commands are a different surface, and a clip's **Process** menu reaches them:
+**Normalize...** (`sample.normalize`), **Amplify...** (`sample.amplify`), **Reverse**
+(`sample.reverse`) and **Fade** (`sample.fade`, direction in or out) bake the clip's **whole source**
+and are refused for a clip playing a trimmed `srcin/srcout` window; that fade is linear too, and
+**Amplify...** applies **no limiter** either. The same menu's **Convert to Mono** is the editor's
+To Mono (`sample.edit_range` `op: "mono"`). A sample track's **More** menu (the track header's and
+the Inspector's) offers `sample.generate` as **Insert Test Signal...**, which opens the command's
+own form with that track fixed and position `0`, length `192` and kind `tone` pre-filled. The MCP
+bridge and the control socket are the same commands, not a second implementation. The editor's **Crop** is `sample.edit_range` `op: "crop"` over the
+selection; a clip menu's **Crop the Sample** is `sample.crop`, which discards the source frames
+outside the clip's play window. `clip.set_fade` and `clip.set_gain` remain the non-baking window fade
+and gain. Noise reduction, pitch/tempo change and chirp still register **no id at all** — not started,
+not stubbed.
 
 ## Scheduled Lua evaluation (livecode.*) - board card #708 - 2026-09-22
 
