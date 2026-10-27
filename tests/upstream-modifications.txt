@@ -5377,3 +5377,5 @@ plugins/Vibed/VibratingString.cpp	new-p9-503: the oversampling count is clamped 
 plugins/Vibed/VibratingString.h	new-p9-503: declares the read-only oversampleCount() test seam used by the regression.
 tests/CMakeLists.txt	new-p9-503: registers src/plugins/VibratingStringTest.cpp and compiles the string model sources into it (the Vibed test shape).
 tests/data/lv2-test-instrument/lv2-test-instrument.c	# Lv2Proc::restoreState reports success even when lilv_state_restore fails
+tests/CMakeLists.txt	cluster new-p17-172: links the resid target into PluginPortsMigrationTest so sidSchedulerAdvancesThroughEveryRegisterWithReSid drives the real reSID chip; no other target changes.
+tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p17-172: adds sidSchedulerAdvancesThroughEveryRegisterWithReSid (real reSID::SID through sidplayback::fillBuffer: every register written in order, per-call cycle budget respected, zero budget is a no-op); existing slots unchanged.
