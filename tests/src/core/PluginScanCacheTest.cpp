@@ -73,6 +73,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonObject>
 #include <QLibrary>
 #include <QTemporaryDir>
 
@@ -95,6 +96,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "ConfigManager.h"
+#include "ControlRegistry.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -968,14 +970,20 @@ private slots:
 		QVERIFY2(effect->key().desc == served, "the effect's key must hold the cache-served descriptor");
 		QCOMPARE(effect->key().displayName(), record.displayName);
 
-		// Rescan twice from a changed cache: the store holding `served` is retired by
-		// the first run and the second run retires its replacement.
+		// Rescan twice from a changed cache, through the commands the Plug-in Modules
+		// list's "Rescan" and "Rescan in Background" items dispatch: the synchronous
+		// run retires the store holding `served`, the background run's commit
+		// retires its replacement.
+		ControlRegistry::setReady(true);
 		PluginScanRecord next = record;
 		next.displayName = QStringLiteral("Cached generation 2");
 		QVERIFY(seedCache(next));
-		factory->discoverPlugins();
-		factory->discoverPlugins();
-		QCOMPARE(factory->scanStats().servedFromCache, 1);
+		const ControlResult rescanned = ControlRegistry::instance()->invoke(QStringLiteral("plugin.rescan"));
+		QVERIFY2(rescanned.ok, qPrintable(rescanned.errorMessage));
+		const ControlResult started = ControlRegistry::instance()->invoke(QStringLiteral("plugin.scan_start"));
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		QTRY_VERIFY_WITH_TIMEOUT(!factory->backgroundScanActive(), 10000);
+		QCOMPARE(factory->backgroundScanStatus().outcome, QStringLiteral("done"));
 		const Plugin::Descriptor* current = factory->pluginInfo("amplifier").descriptor;
 		QVERIFY(current != nullptr && current != served);
 		QCOMPARE(QString::fromUtf8(current->displayName), next.displayName);
@@ -988,7 +996,9 @@ private slots:
 		QCOMPARE(QString::fromUtf8(effect->key().desc->author), record.author);
 		QVERIFY(effect->key().logo() != nullptr);
 		const QString project = m_cacheDir->filePath(QStringLiteral("served-effect-rescan-save.mmp"));
-		QVERIFY2(song->saveProjectFile(project), "the project must save after the rescan");
+		const ControlResult savedResult = ControlRegistry::instance()->invoke(QStringLiteral("project.save"),
+			QJsonObject{{QStringLiteral("path"), project}, {QStringLiteral("format"), QStringLiteral("legacy")}});
+		QVERIFY2(savedResult.ok, qPrintable(savedResult.errorMessage));
 		QFile saved(project);
 		QVERIFY(saved.open(QIODevice::ReadOnly));
 		const QByteArray xml = saved.readAll();
@@ -1004,8 +1014,9 @@ private slots:
 		QVERIFY2(reloaded.effects().front()->key().desc == current,
 			"the reloaded effect takes the current descriptor");
 		song->clearProject();
-		factory->discoverPlugins();
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("plugin.rescan")).ok);
 		QVERIFY(!factory->pluginInfo("amplifier").isNull());
+		ControlRegistry::setReady(false);
 		engineShutdown.shutdown();
 	}
 
