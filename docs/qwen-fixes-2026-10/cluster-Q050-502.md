@@ -185,8 +185,11 @@ This section is for round 2: the integrated tip on `050/m0-train-20`. Logs are i
     `testTheButtonNamesThePlatformAPluginCannotEmbedOn` PASS [test-2].
   - Not re-run in round 2: the nested-KWin measurements for criteria 1 and 2 (round 1, base `5c1c6715d`). The
     integration does not touch the start-up decision or the refusal code, only the conflicts listed above.
-  - Criterion 5: the manual and `docs/KNOWN-LIMITATIONS.md` are updated. The owner's check on the real KDE Wayland
-    desktop is still pending, as the criterion intends.
+  - Criterion 5: the manual and `docs/KNOWN-LIMITATIONS.md` are updated. On the live KDE Wayland session, a normal
+    `build/zene --control-socket <socket>` launch with `QT_QPA_PLATFORM` unset printed the automatic XWayland line and
+    mapped `/usr/lib/qt6/plugins/platforms/libqxcb.so`; `control.quit` shut it down cleanly (exit 0). The pinned
+    `vst3-dpf-nekobi` and `clap-dpf-prom` compatibility probes then opened, drew for one second and closed their
+    editors on XWayland `:0` (matrix exit 0, both `editor=pass`). The probe explicitly uses `QT_QPA_PLATFORM=xcb`.
 - **One undo step and honest reversibility classes.**
   - No command was added. `plugin.editor_open` stays `not_mutating`: it opens an editor, which is interface state, so
     there is no undo step.
@@ -219,4 +222,3 @@ This section is for round 2: the integrated tip on `050/m0-train-20`. Logs are i
     no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length [feature-check-2].
   - The WARN "canary figures" reads include names and the existing `plugin.editor_open` as new ids. No id was added.
     `doc-figures-gate.py` -> exit 0 at 871 ids / 76 groups [docfig-1].
-

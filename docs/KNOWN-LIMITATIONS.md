@@ -258,8 +258,9 @@ library to work.
   reason, and there is no Wayland-native embedding. Running through XWayland means XWayland's scaling, so on a
   fractionally scaled KDE screen the whole window can look soft (KDE's "Legacy Applications (X11)" scaling setting
   decides this). The choice is made only when Zene starts: there is no setting in the interface, only the environment
-  variable. Proved in a nested headless `kwin_wayland --virtual --xwayland` against the in-tree fixtures only.
-  **The owner's own KDE Wayland desktop, with third-party plug-ins, has not been checked yet.**
+  variable. Proved in a nested headless `kwin_wayland --virtual --xwayland` against the in-tree fixtures. On 2026-10-27,
+  the live KDE Wayland session was also checked on XWayland `:0` with the pinned third-party DPF Nekobi VST3 and DPF ProM
+  CLAP editor probes (forced to `xcb`); both opened, drew for one second and closed. Their fractional-scaling appearance was not checked.
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
