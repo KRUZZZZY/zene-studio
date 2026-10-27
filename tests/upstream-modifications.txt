@@ -5355,3 +5355,4 @@ tests/CMakeLists.txt	cluster new-p15-259: registers AudioFileMP3InitTest only wh
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	new-p23-141: setBufferSize() refuses a non-positive buffer size and keeps the last valid one, so the transport size and the synth buffer size never go non-positive.
 plugins/ReverbSC/base.c	cluster new-p14-410 (2026-10): sp_createn sizes the SPFLOAT output buffer with sizeof(*out) instead of sizeof(float); covered by tests/src/plugins/ReverbSCPrecisionTest.cpp
 tests/CMakeLists.txt	cluster new-p14-410 (2026-10): registers the ReverbSCPrecisionTest ctest, which compiles plugins/ReverbSC/base.c with SPFLOAT=double and calloc shimmed
+plugins/Xpressive/ExprSynth.cpp	new-p10-128: IntegrateFunction skips the cycle-advance modulo while no frame counter has counted a call, so setIntegrate(nullptr, ...) no longer divides by zero; regression: ExprSynthTest integrateWithoutFrameCounterDoesNotDivideByZero.
