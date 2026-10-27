@@ -632,6 +632,46 @@ private slots:
 		QCOMPARE( readText( target ), oldText );
 	}
 
+	//! A direct content child is not enough: the loader selects the FIRST element
+	//! of the content name in document order, so a temp with a nested song that
+	//! precedes its direct song would be adopted, and the load would then take
+	//! the nested one. Recovery must accept only a temp whose selected content
+	//! element is the root's own child, so this temp is discarded as well.
+	void newFileWithNestedContentBeforeDirectContentIsNotAdopted()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		QVERIFY( writeText( temp, QStringLiteral( "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head/>"
+			"<wrapper><song s5probe=\"nested\"/></wrapper>"
+			"<song s5probe=\"direct\"/></zene-project>\n" ) ) );
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "a nested-before-direct .new was adopted; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( !QFile::exists( temp ), "the nested-before-direct .new was not discarded" );
+		QCOMPARE( probe, QStringLiteral( "old" ) );
+		QCOMPARE( readText( target ), oldText );
+	}
+
 	//! The recovery parses the temp before the guarded project load does, so a
 	//! deeply nested - but well-formed and complete - .new used to be adopted
 	//! with no depth guard at all. Both parses now carry the same limit, so such
