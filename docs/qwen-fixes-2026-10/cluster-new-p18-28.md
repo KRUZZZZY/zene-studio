@@ -50,11 +50,16 @@ None added. The procedure says a not-real verdict skips the RED/GREEN step, and 
 
 ## Self-check
 
+`submit_check.py` (`submit-1.log`, EXIT 1) passed the commit, clean-tree, report, and claim checks. Its gate item failed for the environment reason in the notes above, not for a code reason. The same gate passed when run from the relocated copy (command 4, EXIT 0).
+
 - **Revert-and-fail (RED/GREEN):** not applicable. The verdict is FALSE-POSITIVE and no product file changed, so there is nothing to revert. The family passes unmodified (command 3, EXIT 0).
-- **Acceptance criteria proven by a test:** none claimed. The finding's claim is refuted by code (`:261`, `:278`, `:336-337`, `:345-347`) and the caller sizes listed above.
+- **Test fails with the change reverted and passes with it:** not applicable, since there is no product change and no new test. The cited code is the proof (`:261`, `:278`, `:336-337`, `:345-347`).
+- **Test is deterministic (no timing, sleeps or races):** not applicable, no test added.
+- **Fix at the cause and complete (callers and siblings checked):** not applicable, no fix. The callers that pass a buffer are listed above (`:181`, `:356`, `:370`, `:427`, `:436`), and all of them pass `sizeof` of a real array.
+- **No collateral damage (old projects, saved data, limits):** no product file changed, so behaviour is unchanged.
+- **If ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or contract:** `src/core/DrumSynth.cpp:261, 278, 336-337, 345-347`, plus the caller sizes `:181, 356, 370, 427, 436`.
 - **Edit is one undo step / reversibility class:** no command or product edit made. Only this report is committed.
 - **Audio thread:** no product code changed. Nothing new runs on the audio thread.
-- **Old projects load as before:** no behaviour change, since no product file changed.
 - **Qt 5.15 / MSVC / macOS portability:** no code added.
 - **Sibling commands:** no command file changed, so no sibling set applies.
-- **Gate:** `feature_check` PASS (command 4, EXIT 0).
+- **Gate:** `feature_check` PASS from the relocated copy (command 4, EXIT 0). `submit_check`'s own gate step FAILs with `PermissionError` on the sibling log folder `zene-qwen-new-p18-28-feature-check`, which this session cannot create. That is an environment limit, not a code failure. It needs the owner or the loop to run the gate from a location the session can write.
