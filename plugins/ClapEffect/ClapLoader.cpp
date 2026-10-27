@@ -153,6 +153,7 @@ constexpr CodeText kCodes[] = {
 	{"extension-missing", "the plug-in does not implement a required extension"},
 	{"no-audio-ports", "the plug-in has no usable audio ports"},
 	{"entry-invalid", "clap_entry has a null required callback"},
+	{"factory-invalid", "the plug-in factory has a null required callback"},
 };
 
 //! One row per code, and Code::Count is the row count: adding a code without a
@@ -167,6 +168,15 @@ static_assert(std::size(kCodes) == static_cast<std::size_t>(Code::Count),
 auto entryCallbacksPresent(const clap_plugin_entry_t& entry) -> bool
 {
 	return entry.init != nullptr && entry.deinit != nullptr && entry.get_factory != nullptr;
+}
+
+//! True only when every callback the host calls on a plug-in factory is
+//! non-null. The scan (listClasses) and the instance path (HostedPlugin::load)
+//! both call all three on the factory the ladder hands them.
+auto factoryCallbacksPresent(const clap_plugin_factory_t& factory) -> bool
+{
+	return factory.get_plugin_count != nullptr && factory.get_plugin_descriptor != nullptr
+		&& factory.create_plugin != nullptr;
 }
 
 } // namespace
@@ -298,6 +308,16 @@ auto load(const QString& modulePath, Library& library, Status& status) -> bool
 	{
 		status.code = Code::FactoryMissing;
 		status.detail = QStringLiteral("'%1' has no %2 factory").arg(modulePath, CLAP_PLUGIN_FACTORY_ID);
+		return false;
+	}
+	// Both callers call get_plugin_count, get_plugin_descriptor and create_plugin
+	// on this table, so a null one is a typed refusal here, before either caller
+	// can call it. The factory is not kept on this path.
+	if (!factoryCallbacksPresent(*factory))
+	{
+		status.code = Code::FactoryInvalid;
+		status.detail = QStringLiteral("'%1' exports an invalid %2 factory (a required callback is null)")
+			.arg(modulePath, CLAP_PLUGIN_FACTORY_ID);
 		return false;
 	}
 	library.factory = factory;

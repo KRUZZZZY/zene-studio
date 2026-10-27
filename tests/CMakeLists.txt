@@ -4743,10 +4743,14 @@ if(TARGET lmms_clap)
 		CLAP_TEST_BROKEN_OLD_VERSION_PATH="$<TARGET_FILE:clap-test-broken-old-version>"
 		CLAP_TEST_BROKEN_INIT_FAILS_PATH="$<TARGET_FILE:clap-test-broken-init-fails>"
 		CLAP_TEST_BROKEN_NO_FACTORY_PATH="$<TARGET_FILE:clap-test-broken-no-factory>"
-		CLAP_TEST_BROKEN_NULL_CALLBACK_PATH="$<TARGET_FILE:clap-test-broken-null-callback>")
+		CLAP_TEST_BROKEN_NULL_CALLBACK_PATH="$<TARGET_FILE:clap-test-broken-null-callback>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH="$<TARGET_FILE:clap-test-broken-null-factory-count>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH="$<TARGET_FILE:clap-test-broken-null-factory-descriptor>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH="$<TARGET_FILE:clap-test-broken-null-factory-create>")
 	add_dependencies(ClapLoaderErrorTest clap-test-gain clap-test-broken-no-symbol
 		clap-test-broken-old-version clap-test-broken-init-fails clap-test-broken-no-factory
-		clap-test-broken-null-callback)
+		clap-test-broken-null-callback clap-test-broken-null-factory-count
+		clap-test-broken-null-factory-descriptor clap-test-broken-null-factory-create)
 
 	add_executable(ClapEffectIntegrationTest
 		src/plugins/ClapEffectIntegrationTest.cpp

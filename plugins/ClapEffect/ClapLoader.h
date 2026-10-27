@@ -77,7 +77,8 @@ enum class Code
 	ExtensionMissing,    //!< the plug-in does not implement an extension the host requires
 	NoAudioPorts,        //!< the plug-in's audio-ports description is empty or unusable
 	EntryInvalid,        //!< `clap_entry` exists but a required callback in it is null
-	Count,               //!< not a failure: the number of codes above (the tests walk them)
+	FactoryInvalid,      //!< the plugin factory exists but a required callback in it is null
+	Count,              //!< not a failure: the number of codes above (the tests walk them)
 };
 
 //! Stable, never-localised, never-reformatted machine name of a code: what a
