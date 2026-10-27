@@ -774,6 +774,8 @@ set(LMMS_TESTS
 	# The organiser, plug-in folder and preferred-format halves of DeviceCopyTest, split out to keep
 	# both files under the file-length ratchet.
 	src/core/DeviceOrganiserTest.cpp
+	# Q050-066 stage 1: a drum rack's sample pads created, edited, undone and read back through a save.
+	src/core/DrumRackPadsTest.cpp
 	# 0.5.0 L10 (rework cluster 5639): plugin.ab store undo and redo after the device was recreated.
 	src/core/DeviceAbUndoTest.cpp
 	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
@@ -2259,6 +2261,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"
+		# Q050-066: the pad tests and the pad panel play through the build's audiofileprocessor module.
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest"
 		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
@@ -2362,7 +2366,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>)
 	endif()
 
-	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
+	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()
 
@@ -3362,6 +3367,8 @@ target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")
 # 0.5.0 L10: DeviceCopyTest builds a drum rack from the shipped drum samples.
 target_compile_definitions(DeviceCopyTest PRIVATE
+	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+target_compile_definitions(DrumRackPadsTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a

@@ -276,6 +276,7 @@ set(LMMS_SRCS
 	core/ControlCommandsMixerRename.cpp
 	core/ControlCommandsDeviceCopy.cpp
 	core/ControlCommandsDrumRack.cpp
+	core/DrumPadState.cpp
 	core/ControlCommandsHandoff.cpp
 	core/ControlCommandsImportTracks.cpp
 	core/ControlCommandsLaunchBindings.cpp

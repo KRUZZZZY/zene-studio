@@ -887,6 +887,7 @@ include/DevicePicker.h
 include/DirectChildOfType.h
 include/DocumentIndex.h
 include/DpiHelper.h
+include/DrumPadState.h
 include/DspLoadProbe.h
 include/EditLocks.h
 include/EffectDeviceMenu.h
@@ -1751,6 +1752,7 @@ src/core/DawProjectZipShared.h
 src/core/DeltaTap.cpp
 src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
+src/core/DrumPadState.cpp
 src/core/EditLocks.cpp
 src/core/EffectChainPatcher.cpp
 src/core/ExportDither.cpp
@@ -2317,6 +2319,7 @@ tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
 # Q050-035 (R-platform-26): the docs-truth gate for offline HTDemucs stem separation - built in,
 # local and ON by default. Reads CMakeLists.txt, the release-honesty manifest and the user docs.
+tests/src/core/DrumRackPadsTest.cpp
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
