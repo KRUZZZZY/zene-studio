@@ -92,7 +92,7 @@ area and fails with `Permission denied`. Every build below set `CCACHE_TEMPDIR=/
 | Gates (as specified) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** | Not a gate result: the script creates its log folder `<worktree>-feature-check/` next to the worktree, outside the write area (`PermissionError`). Run aborted before any gate ran. |
 | Gates (log folder redirected) | `python3 -I logs/feature_check_redirected.py <worktree>` | **0** | `logs/gates-2-feature-check-table.txt` — `RESULT: PASS` |
 
-The redirected gate script is a copy in the run folder (`logs/../feature_check_redirected.py`). The only changes from the
+The redirected gate script is a copy in the run folder (`feature_check_redirected.py`, next to `logs/`). The only changes from the
 original are: `ROOT` points at the original qwen folder (so `FIX-BASE` and the cached base listings are read unchanged), and
 the log folder points at the run folder. No limit, baseline or rule was changed. The base listings were already cached
 (`gate-baselines/639e1d23e4b84a751f6ed90bd626d35d24727cc4.json`), so the copy wrote nothing shared.
@@ -136,3 +136,34 @@ and an audible-diff test that expects a rendering difference and gets none (`tes
 - `ctest` for the full suite: the change is confined to the ZIP reader and its direct callers, which are all in the family
   above.
 - GUI or audio paths: none touched. No control command added, so the ControlCommandsSnapshot canary is unaffected.
+
+## Self-check
+
+- **Regression test fails with the product change reverted, passes with it.** RED: `build-1-red.log` (EXIT 0), then
+  `test-1-red.log` (ctest EXIT 8, assertion at `tests/src/core/DawProjectDeflateImportTest.cpp:644`). Patch proof
+  (`git apply -R` / `git apply` of `logs/fix.patch`): reverted `test-4b-reverted.log` EXIT 8 with 11 pass / 1 fail;
+  restored `test-4b-restored.log` EXIT 0 with 12 pass / 0 fail.
+- **Deterministic.** The test uses no clock, sleep, thread or race. Its input is a fixed in-memory 65,536-record directory
+  built by `stored()` and `buildZip()` (the file's existing helpers), with a fixed count override (`0xFFFF`, `0xFFFE`).
+  It writes into the test's `QTemporaryDir`. The result is a function of the bytes only.
+- **Fix at the cause, and complete.** `locateDirectory` (`src/core/DawProjectZipRead.cpp:207-223`) is the only reader of the
+  end record. Both entry points call it (`dawProjectZipReadTolerant` via `src/core/DawProjectRead.cpp:502`;
+  `dawProjectZipRead` via `src/core/ProjectContainer.cpp:320`), so both refuse the sentinel. The writer already refuses
+  to write a count of 0xFFFF (`src/core/DawProjectZip.cpp:145-154`, `MaxEntryCount = 0xFFFE`), so the reader and writer now
+  agree on the same value.
+- **No collateral damage.** For every count other than `0xFFFF` the value stored in `*count` is unchanged
+  (`src/core/DawProjectZipRead.cpp:223`). The boundary is tested: 65,534 real records with count `0xFFFE` still read in
+  full with no deviations (test item 4). The existing family passes: `test-6-family.log` (5/5) and
+  `test-7-family2.log` (SaveAsGui and MmpzV2CliRefusal pass). The only file type changed is a ZIP64 container (count
+  sentinel `0xFFFF`), which this program never writes. Such a file used to import partially and silently; it now refuses
+  with an error that names ZIP64. `MmpzGitDepthTest` fails identically before and after (`test-8-baseline-mmpzgit.log`).
+- **Verdict FIXED** — the ALREADY-FIXED and FALSE-POSITIVE evidence rule does not apply.
+
+### Gate row not passing under the pre-submit check
+
+`submit_check.py` runs `<tools>/feature_check.py` on the worktree. That script creates its log folder
+`<worktree>-feature-check/` next to the worktree, which is outside the write area for this lane, so it exits 1 with
+`PermissionError` before any gate runs (`logs/gates-1-feature-check.log` is the failing run; `submit-check-1.txt` the check).
+The same gate code, with only the log folder changed (`logs/feature_check_redirected.py`), passes all 8 rows with EXIT 0
+(`logs/gates-2-feature-check-table.txt`). The shared gate script and its baselines were not edited. The gate row needs a
+run where the sibling log folder can be created, and this lane could not do that.
