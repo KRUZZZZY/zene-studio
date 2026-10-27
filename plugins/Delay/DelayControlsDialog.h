@@ -76,7 +76,9 @@ class XyPad : public QWidget
 {
 	Q_OBJECT
 public:
-	XyPad( QWidget *parent = 0, FloatModel *xModel = 0, FloatModel *yModel = 0 );
+	//! Both models are required. A null model leaves the pad inert: it neither
+	//! paints nor takes input, so nothing is dereferenced.
+	XyPad( QWidget *parent, FloatModel *xModel, FloatModel *yModel );
 	~XyPad() override = default;
 
 protected:
