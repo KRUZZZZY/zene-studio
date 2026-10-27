@@ -19,8 +19,30 @@ gave identical SDRs:
 
 New: `tools/stem_quality_bench.py` (`fetch` / `run`) and the hermetic ctest `StemQualityBench`
 (`tests/stem-quality-bench.py`, a black-box check of `run`). The run's JSON record is `docs/050-features/Q050-062.3-bench.md`, unedited in one fenced block.
-The docs, the manual and a stale header comment are updated. No command, engine, GUI or project-format
-change.
+The docs and the manual are updated. No C/C++, command, engine, GUI or project-format change.
+
+## Round 2 (review: train merge + automated proof check)
+
+1. **Merge of `050/m0-train-21`: not done. The lane's guard refuses it.** `git merge 050/m0-train-21` returned
+   `bunny-guard: 'git merge 050/m0-train-21' is not allowed in a Bunny lane (AGENTS.md rules 1, 2, 11,
+   12)`. I did not try to get around the guard. Instead I removed the cause of the conflict:
+   - The conflict in `tests/fork-sources.txt` came entirely from the workflow's commit `54740f717`. It
+     appended `tools/stem_quality_bench.py` at the end of the file, where train 21 appends its own entries.
+   - I moved that entry into this unit's commented block. It stays registered and Gate 9 passes.
+   - A three-way `diff3 -m` of every file both sides changed (`tests/fork-sources.txt`,
+     `tests/CMakeLists.txt`, `data/manual/index.html`), against base `c6ee4fc7b` and `050/m0-train-21`
+     (`37eaf0755`), now gives exit 0 with no conflict markers. The train should therefore merge cleanly
+     wherever merging is allowed.
+2. **Automated proof check.** `negctl.py` treats only C/C++ files as product. Its `product.patch` held just
+   my one-line comment edit in `include/StemSeparation/StemTypes.h`. Reverting a comment cannot make any
+   test fail, so every test passed and the check rejected the branch. This unit's product is the Python
+   tool `tools/stem_quality_bench.py` and the measurement it produced; no C/C++ behaviour changed. I
+   withdrew the comment edit, so the branch has no C/C++ hunk left for the check to revert. The real
+   negative control is against the tool. `StemQualityBench` fails in four separate cases, each with exit 8:
+   the tool removed, the SDR formula mutated, a quality dropped, and the model hash dropped. It passes
+   restored (logs `r1/logs/41`-`45`). The stale comment is listed under Known limits in the feature record.
+3. Rebuilt `zene` and the stem test targets (`r2/logs/01-build.log`, exit 0). The 8 targeted ctests passed,
+   exit 0 (`r2/logs/02-ctest.log`). Gates: see below.
 
 ## Acceptance
 
@@ -81,11 +103,11 @@ It shows no FAIL and three WARNs (no GUI file, GUI test or command file changed)
 - **One undo step per edit; honest reversibility.** No project edit and no command is added or changed:
   nothing in `src/core/ControlCommands*`, `ControlReversibilityTable*` or `ControlRegistry*`. The snapshot
   is unchanged, and `DocFiguresGate` exit 0.
-- **Nothing on the audio thread.** The only product-tree C++ change is a comment in `StemTypes.h`. The
-  benchmark is an offline Python tool that runs as its own process. No locks or races are introduced; TSan does
+- **Nothing on the audio thread.** No C/C++ file changes (the round-1 comment edit in `StemTypes.h` was
+  withdrawn in round 2). The benchmark is an offline Python tool that runs as its own process. No locks or races are introduced; TSan does
   not run on this box, and nothing here is concurrent.
 - **Old projects load and render as before.** No project format, load or render path changed.
-- **Portability.** No C++ code changed (one comment). The Python tool guards `os.sched_getaffinity` with
+- **Portability.** No C/C++ code changed. The Python tool guards `os.sched_getaffinity` with
   `hasattr`, reads `/proc` and `/sys/fs/cgroup` in `try/except OSError`, and `os.getloadavg` the same way.
   The ctest uses only the stub model and the CLI that `ControlStemCommands` already runs on every platform,
   and it returns 77 (skip) where numpy/onnxruntime are missing. Its scratch files go in a `tempfile` directory.

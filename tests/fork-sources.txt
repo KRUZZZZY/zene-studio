@@ -2740,6 +2740,7 @@ docs/qwen-fixes-2026-10/cluster-Q050-062.2.md
 # StemQualityBench), and the unit's feature record and report (the measured bench record,
 # docs/050-features/Q050-062.3-bench.md, is data, not source, and is not listed).
 tests/stem-quality-bench.py
+tools/stem_quality_bench.py
 docs/050-features/Q050-062.3.md
 docs/qwen-fixes-2026-10/cluster-Q050-062.3.md
 # cluster Q050-148 (2026-10): the docs regression test the rework asked for - it checks the
@@ -3187,4 +3188,3 @@ tests/control-drum-rack-pads.py
 tests/src/plugins/VibratingStringTest.cpp
 # cluster new-p23-25 (2026-10): regression for window.select during GuiApplication startup (fork-NEW).
 tests/src/gui/WindowSelectStartupTest.cpp
-tools/stem_quality_bench.py
