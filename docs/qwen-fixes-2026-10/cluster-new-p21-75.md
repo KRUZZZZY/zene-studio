@@ -34,3 +34,15 @@ Residual, unverified: I did not trace whether a command already past `isEngineRe
 The ratchets are red on the train on purpose. By the gate's own rule (fail only on items in files the change touches), this lane's change touches no code, so both would pass. I did not run the wrapper's ratchet comparison: it writes its baseline under the gate's own directory, which is outside the write-jail. The six plain gates above all exited 0.
 
 Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p21-75.md`. No product file changed.
+
+## Self-check
+
+Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-75 > logs/019-submit-check.log 2>&1; echo EXIT=$?` gave EXIT=1 with two FAIL rows, answered here.
+
+- **Regression test fails with the change reverted, passes with it** (ASK 1): not applicable. No product change exists to revert, and no test was added. The claim rests on the code paths at ControlRegistry.cpp:205-207 and 283-289 and Engine.cpp:70-72 and 122-123 (evidence above), not on a test result.
+- **Deterministic test** (ASK 2): not applicable. No test was added. A test of the handler with a null song cannot be built: the handler sits in an anonymous namespace, the only public entry (`invoke`) refuses first, and `Engine` has no seam to clear `s_song` (Engine.h:146, no setter).
+- **Fix at the cause and complete** (ASK 3): not applicable (no fix). The callers checked are the rows in the evidence list: the `invoke` gate, `handlerOf`, the NoteAcross and SessionPerform direct calls, and `UndoHistoryPanel.cpp:254`. None reaches this handler without the gate.
+- **No collateral damage** (ASK 4): nothing changed, so no saved project, limit or caller changes behaviour.
+- **Verdict code evidence** (ASK 5): ControlRegistry.cpp:205-207 (`isEngineReady`), ControlRegistry.cpp:283-289 (`requiresEngine` refusal before the handler), ControlRegistry.h:104 (default `true`), Engine.cpp:70-72 and 122-123 (song created after and destroyed before the journal), Engine.h:146 (private static, no setter).
+- **FAIL "gates (feature_check.py)"** (not fixable in this lane): the wrapper stops at `logs.mkdir` with `PermissionError`, because it writes `<worktree-parent>/<name>-feature-check`, which is outside the write-jail. The wrapper therefore produced no table. The six plain gates and two ratchets were run directly, with the exit codes in the evidence table. I did not patch the wrapper or fake its table. This needs the owner to run `feature_check.py` from an unrestricted location, or to allow the wrapper a log folder inside the run folder.
+- **FAIL "report has a Self-check section"**: resolved by this section.
