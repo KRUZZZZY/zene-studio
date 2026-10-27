@@ -353,12 +353,26 @@ bool readFilterKeys(const QJsonObject& json, ControlResult* error)
 	return true;
 }
 
+//! Whether a range the filter uses is empty: its minimum above its maximum (an open side sits at the Filter's
+//! default bound). Such a range matches no note, and 'invert' would then make the filter match EVERY note.
+bool anyRangeEmpty(const NoteTransform::Filter& f)
+{
+	return (f.useKeyRange && f.minKey > f.maxKey) || (f.useVelocityRange && f.minVelocity > f.maxVelocity)
+		|| (f.usePositionRange && f.minPos > f.maxPos) || (f.useLengthRange && f.minLength > f.maxLength);
+}
+
 bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
 {
 	if (!readFilterKeys(json, error)) { return false; }
 	if (!readRanges(json, f))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
+		return false;
+	}
+	if (anyRangeEmpty(*f))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a filter range is empty: its minimum is above its maximum (key, velocity, position or length)"));
 		return false;
 	}
 	return readInvert(json.value(QStringLiteral("invert")), f, error)
