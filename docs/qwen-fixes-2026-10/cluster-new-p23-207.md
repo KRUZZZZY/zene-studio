@@ -1,57 +1,28 @@
-Verdict: FALSE-POSITIVE
+FIXED
 
-new-p23-207: FALSE-POSITIVE
+The finding is real. `PatternClipView::paintEvent` divides by `totalTracks` at `src/gui/clips/PatternClipView.cpp:155`. For an empty pattern store this evaluates `0.0f / 0`, raising `FE_INVALID`. `src/core/main.cpp:593-604` enables `FE_INVALID` traps under `LMMS_DEBUG_FPE`, so painting an empty pattern clip can raise `SIGFPE` in that supported debug configuration. The original FALSE-POSITIVE conclusion overlooked this path.
 
-Evidence: the finding's "divides by zero" is a float division that yields NaN under IEEE-754, with no trap and no integer-division fault. `totalTracks` is `Engine::patternStore()->tracks().size()` at [PatternClipView.cpp:151](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:151), and `TrackList` is `std::vector<Track*>` ([TrackContainer.h:61](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/include/TrackContainer.h:61)), so it is `size_t`. The only division by it is at [PatternClipView.cpp:155](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:155): `float * size_t / size_t * float`, which is float arithmetic. With an empty store this computes `0.0f / 0` = NaN. The NaN is not observable:
-
-- It is stored only in `totalHeightForEmptyTracks` and `totalHeightForTracks` ([PatternClipView.cpp:155-156](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:155)).
-- Both are read only inside ternaries gated on the counts: `trackHeight` uses `numberInstrumentTracksUsed > 0` and `emptyTrackHeight` uses `numberEmptyTracks > 0` ([PatternClipView.cpp:158-163](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:158)). With an empty store both counts are 0, so both are `0.f`.
-- `verticalNoteSpacing` is `int(trackHeight * m_noteVerticalSpacing)` = 0 ([PatternClipView.cpp:165](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:165)), so no NaN reaches an int conversion.
-- The per-track loop that uses `emptyTrackHeight` and `trackHeight` ([PatternClipView.cpp:169-198](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:169)) iterates over the same empty `tracks()` list, so it runs zero times.
-
-Nothing is drawn from the NaN and nothing crashes. The core target is not built with fast-math (the `-ffast-math` flags in the tree are in plugin CMakeLists only), so the IEEE behaviour is the one the code gets. The probe below mirrors lines 151-165 with an empty vector and confirms: `is_iec559=1`, both NaN locals, `trackHeight=0`, `emptyTrackHeight=0`, `verticalNoteSpacing=0`, and 0 loop iterations, at both -O0 and -O2, with exit 0.
-
-The finding's line number is stale: the `~128` anchor is the `gradient()` branch ([PatternClipView.cpp:128](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:128)); the division is at line 155.
-
-A `totalTracks == 0` guard would leave every output unchanged, so no test could fail without it. Under procedure steps 2 and 6 this is the not-real branch: there is no product change, no RED/GREEN pair, and no step 4b patch to reverse.
-
-Adjacent code checked on the same path: `lengthOfPattern()` returns `maxLength.nextFullBar()`, which is at least one bar ([PatternStore.cpp:85-101](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/core/PatternStore.cpp:85)), so the integer modulos at [PatternClipView.cpp:121](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:121) and [:122](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/clips/PatternClipView.cpp:122) do not depend on the store being non-empty. Not verified and out of scope: line 122 divides by `pixelsPerPattern`, which is `int(bars * m_ppb)` and could truncate to 0 at a very small zoom. `setPixelsPerBar` does not clamp `m_ppb` ([TrackContainerView.cpp:507-509](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207/src/gui/editors/TrackContainerView.cpp:507)); I did not check whether the zoom caller bounds it.
+The fix guards the empty-store calculation and assigns zero empty-track height when `totalTracks == 0`. A new case in `tests/src/gui/ArrangerTimelineTest.cpp` renders an empty-store pattern clip and checks the floating-point exception flag. The existing non-empty preview case continues to cover the ordinary rendering path. The guard changes no visible output for the empty-store case and does not touch project data or audio-thread code.
 
 | Evidence | Command | Result |
 | --- | --- | --- |
-| Float-division probe, -O0 build | `g++ -std=c++20 -Wall -Wextra -O0 probe-divzero.cpp -o probe-O0 > .../probe-build-1.log 2>&1; echo BUILD_O0_EXIT=$?` then `./probe-O0 > .../probe-run-O0-1.log 2>&1` | BUILD_O0_EXIT=0, RUN_O0_EXIT=0; output in `logs/probe-run-O0-1.log` |
-| Float-division probe, -O2 build | `g++ -std=c++20 -O2 probe-divzero.cpp -o probe-O2 > .../probe-build-2.log 2>&1` then `./probe-O2 > .../probe-run-O2-1.log 2>&1` | BUILD_O2_EXIT=0, RUN_O2_EXIT=0; output in `logs/probe-run-O2-1.log` |
-| Every use of `totalTracks` and the NaN locals | `rg -n "totalHeightForEmptyTracks|totalHeightForTracks|emptyTrackHeight|trackHeight\b|totalTracks|numberEmptyTracks" src/gui/clips/PatternClipView.cpp` | EXIT=0; uses at lines 151-198 only, as cited above |
-| Integer-division sites in the file | `rg -n " / " src/gui/clips/PatternClipView.cpp` | EXIT=0; line 155 is the only division by `totalTracks` |
-| Fast-math in core build | `rg -n -i "fast.math|Ofast|float-divide" --glob 'CMakeLists.txt' --glob '*.cmake'` (excluding `plugins/`) | No core-target match; fast-math appears only in plugin CMakeLists |
-| Feature-check wrapper | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../gate-feature-check-1.log 2>&1` | EXIT=1 before any gate ran: `PermissionError` creating `zene-qwen-new-p23-207-feature-check` next to the worktree (outside the write jail). The wrapper was not modified. |
-| fork-sources gate (run directly, same command as the wrapper) | `bash tests/fork-sources-gate.sh > .../gate-fork-sources-1.log 2>&1` | EXIT=0 |
-| all-sources-reproduce gate | `bash tests/all-sources-reproduce.sh > .../gate-all-sources-reproduce-1.log 2>&1` | EXIT=0 |
-| no-upstream-regression gate | `bash tests/no-upstream-regression-gate.sh > .../gate-no-upstream-regression-1.log 2>&1` | EXIT=0 |
-| check-namespace | `tests/scripted/check-namespace > .../gate-check-namespace-1.log 2>&1` | EXIT=0 |
-| no-tautology gate | `bash tests/no-tautology-gate.sh > .../gate-no-tautology-1.log 2>&1` | EXIT=0 |
-| doc-figures gate | `python3 tests/doc-figures-gate.py > .../gate-doc-figures-1.log 2>&1` | EXIT=0 |
-| complexity ratchet (run directly) | `bash tests/complexity-gate.sh --check > .../gate-complexity-1.log 2>&1` | EXIT=1 (red on the train on purpose); `REGRESSION:` lines are on the base, not in this branch's changed files |
-| file-length ratchet (run directly) | `bash tests/file-length-gate.sh --check > .../gate-file-length-1.log 2>&1` | EXIT=1 (red on the train on purpose); same as above |
-
-Both ratchet scripts were run directly because the wrapper could not write its log directory. This branch's only changed file is this report, which is not a product file, so the wrapper's rule (fail only on items in changed files) cannot fail on a `REGRESSION:` line here. The base-listing comparison that the wrapper performs was not executed.
-
-Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p23-207.md`. No product file changed.
+| Build before product fix | `cmake --build build --target zene ArrangerTimelineTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-build-red-1.log 2>&1; echo EXIT=$?` | EXIT=0 |
+| Regression before product fix | `ctest -R '^ArrangerTimelineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-test-red-1.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=8; 38 passed, 1 failed. `raisedExceptions` was 1 instead of 0. |
+| Build with fix | `cmake --build build --target zene ArrangerTimelineTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-build-green-1.log 2>&1; echo EXIT=$?` | EXIT=0 |
+| Focused regression with fix | `ctest -R '^ArrangerTimelineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-test-green-1.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=0; 1/1 CTest target passed (39 QtTest cases). |
+| Reverse only the product change | `git show HEAD:src/gui/clips/PatternClipView.cpp > src/gui/clips/PatternClipView.cpp; echo EXIT=$?` | EXIT=0 |
+| Build with product change reversed | `cmake --build build --target zene ArrangerTimelineTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-build-reversed-1.log 2>&1; echo EXIT=$?` | EXIT=0 |
+| Regression with product change reversed | `ctest -R '^ArrangerTimelineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-test-reversed-1.log 2>&1; echo EXIT=$?` (from `build/tests`) | EXIT=8; same assertion failed, 38 passed and 1 failed. |
+| Restore staged product fix | `git checkout -- src/gui/clips/PatternClipView.cpp; echo EXIT=$?` | EXIT=0 |
+| Rebuild and retest after restore | `cmake --build build --target zene ArrangerTimelineTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-build-restored-1.log 2>&1; echo EXIT=$?` then `ctest -R '^ArrangerTimelineTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-207.r1/logs/qa-test-restored-1.log 2>&1; echo EXIT=$?` (ctest from `build/tests`) | EXIT=0 for both; 1/1 CTest target passed (39 QtTest cases). |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207` | EXIT=0; all eight rows PASS. |
 
 ## Self-check
 
-Submit-check log: `logs/submit-check-1.log` (EXIT=1). Its rows: commits on the branch PASS, working tree clean PASS, report PASS, tests-added PASS (no test; see below), and two FAILs: the missing Self-check section (answered here) and `gates (feature_check.py)`.
+- **Regression fails with product change reversed and passes restored:** `ArrangerTimelineTest::anEmptyPatternStorePaintDoesNotRaiseInvalidFloatException`; reversed ctest EXIT=8 due to `raisedExceptions == 1`, restored ctest EXIT=0. Build EXIT=0 in both states.
+- **Deterministic:** the test constructs a fixed empty pattern store and renders once; it uses no sleeps, wall-clock values, races, or random inputs.
+- **Fix at the cause and complete:** the empty-store divisor is guarded at `PatternClipView.cpp:155`; the count-gated height calculations and zero-iteration track loop remain safe. The existing non-empty preview rendering test still passes.
+- **No collateral damage:** this changes only the paint calculation when the pattern store is empty. It does not alter project serialization, saved data, undo, commands, or audio-thread behavior.
+- **Portability review:** the product change uses ordinary C++ arithmetic and no platform-specific API. The regression uses standard `<cfenv>` exception flags and existing Qt test/render APIs.
 
-- **Regression test fails with the change reverted and passes with it (exit codes):** not applicable. The verdict is FALSE-POSITIVE, so there is no product change to revert and no test was added (procedure steps 2 and 6). Nothing here is claimed as RED/GREEN.
-- **Deterministic:** not applicable (no test in the repo). The standalone probe `logs/probe-divzero.cpp` has no timing, sleeps or threads; it only prints values computed from fixed inputs.
-- **Fix at the cause and complete:** not applicable (no fix). Checked instead: every use of `totalTracks` and of the NaN locals (`PatternClipView.cpp:151-198`), the other integer modulos on the same path (`:121`, `:122`), and `lengthOfPattern` (`PatternStore.cpp:85-101`). The NaN has no consumer that changes output.
-- **No collateral damage:** no product code changed, so no saved data, limit or caller behaviour can move.
-- **Not-real evidence (file:line):** `PatternClipView.cpp:155` (the only division by `totalTracks`), `:158-165` (count-gated ternaries, `verticalNoteSpacing` = 0), `:169-198` (loop over the empty `tracks()`), `TrackContainer.h:61` (`TrackList` is `std::vector`, so `size()` is `size_t`).
-
-### Gates: blocked by the sandbox, not by the code
-
-`feature_check.py` exits 1 before it runs any gate. It writes its logs to `wt.parent / "<worktree>-feature-check"` (`feature_check.py` line 70-71), which is `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-207-feature-check`. That directory is outside the write jail, so `mkdir` fails with `PermissionError` (`logs/gate-feature-check-1.log`). I did not change the wrapper or its path; the same failure will recur on any worktree run from inside the jail.
-
-The six gates the wrapper runs as `SIMPLE` all exit 0 when run directly from the worktree with logs in the LOG FOLDER. The two `RATCHET` gates exit 1 when run directly, which is the expected red on the train (base violations). Nothing in those outputs names a file this branch changed: the only change is the report, and `grep -c "cluster-new\|docs/"` over the `REGRESSION:` lines returns 0. So the wrapper's ratchet rule would not fail on this branch, but I did not execute its base-listing comparison (`gate-baselines` cache is outside the jail).
-
-Result: the product gates pass as far as they can be run from here. The wrapper gate itself remains blocked on the jail and needs the owner or the loop to run it from outside the sandbox.
+Files committed: `src/gui/clips/PatternClipView.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`, `tests/upstream-modifications.txt`, and this report.
