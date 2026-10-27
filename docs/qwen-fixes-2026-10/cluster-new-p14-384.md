@@ -93,3 +93,36 @@ Gate notes:
 
 No file registration was needed: no new source files were added, and `AafImportModel.cpp` is already in
 `tests/fork-sources.txt` (line 1329) and `tests/all-sources.txt` (line 1459).
+
+## Self-check
+
+- **Regression test fails with the product change reverted, passes with it.** RED: `test-red-1.log`, ctest EXIT=8,
+  `'first != second' returned FALSE` (`AafImportTest.cpp:259`). Mutant (`git apply -R fix.patch`): `test-mutant-revert.log`,
+  EXIT=8, and the restored GREEN is `test-final-aaf.log`, EXIT=0. The table above has the commands.
+- **Deterministic.** `aafDefaultMediaDir` is a pure function of two strings. The test uses no files, timers, threads or
+  sleeps and needs no seam or injected values. The only external value is the SHA-256 of a fixed string, which the
+  expected value `4cb0fd651a1a` pins (`printf '/in/Reel 1.aaf' | sha256sum`).
+- **At the cause, and complete.** The cause is that the saved-project folder was keyed on the base name alone. The
+  only production caller of `aafDefaultMediaDir` is `mediaDirFor` (`ControlCommandsAafImport.cpp:183`). It feeds
+  both the import's `extractDir` (`:197`) and the reply's `media_dir` (`:212`), so one fix covers both. The unsaved
+  branch is unchanged for the reason given above, `AafImportModel.cpp:124-129`.
+- **No collateral damage.** Loading a saved project never calls this function: `rg` finds no caller outside
+  `ControlCommandsAafImport.cpp`, and the saved project stores extracted media as absolute clip paths. Old projects
+  therefore load as before. No new limit or check was added, so no caller can be newly refused. An explicit
+  `media_dir` argument still overrides the default (`ControlCommandsAafImport.cpp:182`), and its absolute-path check
+  is unchanged (`:190-193`).
+- **Verdict is FIXED, so no ALREADY-FIXED or FALSE-POSITIVE contract is cited.**
+- **Sibling commands** (`interchange.aaf_convention`, `aaf_import`, `aaf_read`, `smf_convention`, `smf_export`,
+  `smf_import`, `smf_read`):
+  - `interchange.aaf_convention` (`ControlCommandsAafImport.cpp:107`) reports the `media_rule` text, which now
+    states the new default. It is a result string only; `commands_snapshot.json` does not contain `media_rule`, so
+    the snapshot and canary are not affected. Updated, not a behaviour change.
+  - `interchange.aaf_read` and `interchange.aaf_import` get the new default through `mediaDirFor` and report it in
+    `media_dir`. Both are consistent with the fix and need no code change.
+  - The `smf_*` commands have no AAF media path (the grep above finds no `aafDefaultMediaDir` or `aaf-media` in them),
+    so they are not affected.
+- **Submit-check gate row (`gates (feature_check.py)`) reports FAIL, but that is the sandbox, not the code.**
+  `submit_check.py` calls the unmodified `feature_check.py`, which exits 1 with `PermissionError` at
+  `<worktree>/../<name>-feature-check` (`logs/gates-1.log`). That sibling folder is outside this lane's write-jail. The
+  same gate logic run with the log folder redirected (`logs/gates-2.log`, EXIT=0) passes all eight rows. The gate
+  scripts themselves were not changed, and no limit or baseline was touched.
