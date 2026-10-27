@@ -35,6 +35,7 @@
 #include <QSet>
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "AudioBus.h"
@@ -612,6 +613,27 @@ private slots:
 
 		random.insert(QStringLiteral("seed"), static_cast<qint64>(4294967296LL));
 		QCOMPARE(run(QStringLiteral("plugin.randomise"), random).errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! A non-finite seed never reaches seedOf's uint32 cast: NaN fails the schema's integer check (floor(NaN) != NaN)
+	//! before the handler runs, and the infinities are refused by the handler's range test. Nothing is written.
+	void aNonFiniteSeedIsRefusedBeforeItIsRead()
+	{
+		const QString amp = loadByName(ch(1), QStringLiteral("amplifier"));
+		if (amp.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 100.0));
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp},
+			{QStringLiteral("amount"), 1.0}};
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		const double infinity = std::numeric_limits<double>::infinity();
+		for (const double seed : {nan, infinity, -infinity})
+		{
+			QJsonObject random = device;
+			random.insert(QStringLiteral("seed"), seed);
+			QCOMPARE(run(QStringLiteral("plugin.randomise"), random).errorKind, ControlErrorKind::InvalidArgs);
+			QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 100.0);
+		}
+		channel(1)->m_fxChain.clear();
 	}
 
 	//! MX-093: randomise that changes nothing reports no change and takes no undo step of its own.
