@@ -25,6 +25,7 @@
 #include "Dispersion.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numbers>
 
 #include "embed.h"
@@ -61,15 +62,39 @@ DispersionEffect::DispersionEffect(Model* parent, const Descriptor::SubPluginFea
 }
 
 
+namespace
+{
+
+//! The construction defaults of the controls (DispersionControls.cpp). They are
+//! constants and not the models' init values: a project that loads a control
+//! as NaN sets its init value to NaN as well, so the init value cannot be the
+//! fallback.
+constexpr float DefaultFrequency = 200.f;
+constexpr float DefaultResonance = 0.707f;
+constexpr float DefaultFeedback = 0.f;
+
+//! Returns the control value, or its default when the value is not finite.
+//! std::min and std::max return their first argument when it is NaN, so a
+//! NaN control (a project can store one) would otherwise reach the all-pass
+//! coefficients and poison the filter output.
+float finiteOr(float value, float fallback)
+{
+	return std::isfinite(value) ? value : fallback;
+}
+
+} // namespace
+
+
 ProcessStatus DispersionEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
 	const float d = dryLevel();
 	const float w = wetLevel();
 	
 	const int amount = m_dispersionControls.m_amountModel.value();
-	const float freq = std::min(m_dispersionControls.m_freqModel.value(), m_sampleRate * 0.499f);
-	const float reso = m_dispersionControls.m_resoModel.value();
-	float feedback = m_dispersionControls.m_feedbackModel.value();
+	const float freq = std::min(finiteOr(m_dispersionControls.m_freqModel.value(), DefaultFrequency),
+		m_sampleRate * 0.499f);
+	const float reso = finiteOr(m_dispersionControls.m_resoModel.value(), DefaultResonance);
+	float feedback = finiteOr(m_dispersionControls.m_feedbackModel.value(), DefaultFeedback);
 	const bool dc = m_dispersionControls.m_dcModel.value();
 	
 	// All-pass coefficient calculation
