@@ -174,6 +174,20 @@ QStringList sectionFileStems(const QVector<ArrangementSection>& sections)
 	return stems;
 }
 
+//! The first generated output path that already holds something, or empty when every path is free. A
+//! symbolic link counts even when it dangles: the writer opens the path and would follow the link.
+QString existingOutputPath(const QString& directory, const QStringList& stems, const QString& extension)
+{
+	const QDir dir(directory);
+	for (const QString& stem : stems)
+	{
+		const QString path = dir.filePath(stem + extension);
+		const QFileInfo info(path);
+		if (info.exists() || info.isSymLink()) { return path; }
+	}
+	return QString();
+}
+
 //! The sections this call renders: every section, or the named ones in the
 //! order they were asked for. A named id the song does not hold is a typed
 //! not_found here, before any render is started.
@@ -262,6 +276,13 @@ ControlResult renderSections(const QJsonObject& args)
 
 	const QStringList stems = sectionFileStems(chosen);
 	const QString extension = QStringLiteral(".") + formatName;
+	const QString existing = existingOutputPath(directory, stems, extension);
+	if (!existing.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 already exists: render.sections refuses the whole batch before it renders "
+				"anything; remove that file or choose another 'out' directory").arg(existing));
+	}
 	QJsonArray files;
 	for (int i = 0; i < chosen.size(); ++i)
 	{
@@ -318,7 +339,10 @@ void registerRenderSections(ControlRegistry& registry)
 		"(CON -> CON_), the same on every platform. Names that are equal after Unicode canonical "
 		"decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so "
 		"the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a "
-		"name empty once cleaned is its id (sec-<n>). 'out' is an absolute directory the files "
+		"name empty once cleaned is its id (sec-<n>). Before any render starts, every generated path is "
+			"checked: a file, a directory or a symbolic link already there (even a dangling one) refuses the "
+			"whole call with a typed refusal that names it, so no existing file is replaced and no part of "
+			"the batch is written. 'out' is an absolute directory the files "
 		"are written into; 'sections' picks specific sec-<n> ids (default: every section, in time "
 		"order); 'format' is one of the build's renderable formats (default wav). Each file is "
 		"rendered through render.render, so the export settings in force - the preset applied "
