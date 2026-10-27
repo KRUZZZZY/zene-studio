@@ -64,9 +64,10 @@ QString upgradeKey(QString const& key)
 // Builds a song with an instrument track that has an automated (element-based)
 // base note with id 7, plus an automation track that holds one pattern
 // targeting that base note and one pattern without any target. Returns the
-// upgraded time values of both patterns.
+// upgraded time values of both patterns and the upgraded stored value of the
+// base note element itself.
 void upgradeAutomationPatterns(int baseNoteValue, int targetlessValue,
-	int& upgradedBaseNoteValue, int& upgradedTargetlessValue)
+	int& upgradedBaseNoteValue, int& upgradedTargetlessValue, int& upgradedBaseNoteElementValue)
 {
 	QDomDocument document;
 	QDomElement root = document.createElement("lmms");
@@ -114,6 +115,7 @@ void upgradeAutomationPatterns(int baseNoteValue, int targetlessValue,
 	upgrade.upgrade();
 	upgradedBaseNoteValue = baseNoteTime.attribute("value").toInt();
 	upgradedTargetlessValue = targetlessTime.attribute("value").toInt();
+	upgradedBaseNoteElementValue = baseNote.attribute("value").toInt();
 }
 
 } // namespace
@@ -147,7 +149,8 @@ private slots:
 	{
 		int upgradedBaseNoteValue = 0;
 		int upgradedTargetlessValue = 0;
-		upgradeAutomationPatterns(10, 3, upgradedBaseNoteValue, upgradedTargetlessValue);
+		int upgradedBaseNoteElementValue = 0;
+		upgradeAutomationPatterns(10, 3, upgradedBaseNoteValue, upgradedTargetlessValue, upgradedBaseNoteElementValue);
 		QCOMPARE(upgradedBaseNoteValue, 22);
 	}
 
@@ -155,8 +158,20 @@ private slots:
 	{
 		int upgradedBaseNoteValue = 0;
 		int upgradedTargetlessValue = 0;
-		upgradeAutomationPatterns(10, 3, upgradedBaseNoteValue, upgradedTargetlessValue);
+		int upgradedBaseNoteElementValue = 0;
+		upgradeAutomationPatterns(10, 3, upgradedBaseNoteValue, upgradedTargetlessValue, upgradedBaseNoteElementValue);
 		QCOMPARE(upgradedTargetlessValue, 3);
+	}
+
+	void automatedBaseNoteStoredValueIsShifted()
+	{
+		// The stored value of an automated base note (57) must move with its
+		// automation points, otherwise playback before the first point uses the old octave.
+		int upgradedBaseNoteValue = 0;
+		int upgradedTargetlessValue = 0;
+		int upgradedBaseNoteElementValue = 0;
+		upgradeAutomationPatterns(10, 3, upgradedBaseNoteValue, upgradedTargetlessValue, upgradedBaseNoteElementValue);
+		QCOMPARE(upgradedBaseNoteElementValue, 69);
 	}
 };
 
