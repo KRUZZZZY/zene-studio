@@ -73,4 +73,10 @@ Gates:
 
 ## Self-check
 
-Pending: `submit_check.py` result is recorded below after it runs.
+`python3 .../qwen/submit_check.py <worktree> new-p16-67` → log `submit-1.log`, EXIT 1. Result: PASS on commits, clean tree, report, and tests changed. One FAIL: `gates (feature_check.py)`. That item runs the unchanged `feature_check.py`, which fails with the same `PermissionError` as `gate-1` (it creates a sibling log directory outside this lane's write-jail). The gate checks themselves pass: `gate-3-feature-check.log`, EXIT 0, `RESULT: PASS`. I did not edit the gate script or its baselines, so this FAIL is environmental and was not fixed.
+
+1. **Regression fails with the change reverted and passes with it.** Reverted: `test-3-revert-red.log`, EXIT 139 (SIGSEGV in `DynProcEffect::processImpl`). With the fix: `test-2-green.log`, EXIT 0, and again after reapply `test-4-green-reapplied.log`, EXIT 0.
+2. **Deterministic.** No wall clock, sleep or race. Input is constant per block: 64 blocks of 128 frames, with attack and release at the 1 ms minimum (`DynamicsProcessorControls.cpp:48-49`), so the envelope settles on a sample count. The only tolerance is 0.01 on a value that should be 1.0. The test has no timing injection because it doesn't need any.
+3. **Fix at the cause; siblings checked.** The only int conversion of the envelope level in `DynamicsProcessor.cpp` is `:189`, and it is now clamped. `fraction()` (`include/lmms_math.h:64`) is float-only. The stereo-mode switch feeds `sm_peak` into the same loop, so all three modes are covered. `tests/reference/DynamicsProcessor/` is a frozen copy used for comparison, so it is left unchanged, by design.
+4. **No collateral damage.** For every finite level the output is identical: below 200 the clamp is a no-op, and at or above 200 the code reads `samples[199]` and never uses `frac`. No limit was added, so no caller can be rejected. No serialized data or command changed. The existing comparison suites still pass: `PluginPortsMigrationTest` 87 passed (2 skipped, Sf2Player not built) and `GraphWaveformLoadTest` 93 passed.
+5. **Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE,** so the code-citation requirement for those verdicts does not apply. The bug site is `DynamicsProcessor.cpp:187` on base `5c1c6715d`.
