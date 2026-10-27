@@ -2,11 +2,11 @@ Verdict: FALSE-POSITIVE
 
 new-p21-106: FALSE-POSITIVE
 
-Evidence: the null dereference cannot happen. `mix` is non-null when it reaches the resample call, and `resampleBuffer()` never returns null, so `mix->size()` at [ControlStemSupport.cpp:249](src/core/ControlStemSupport.cpp:249) is always on a live buffer.
+Evidence: the null dereference cannot happen. `mix` is non-null when it reaches the resample call, and `resampleBuffer()` never returns null for a non-null input (its only caller passes one), so `mix->size()` at [ControlStemSupport.cpp:249](src/core/ControlStemSupport.cpp:249) is always on a live buffer.
 
 1. The guard runs first. `SampleBuffer::fromFile()` returns a shared_ptr ([SampleBuffer.h:93](include/SampleBuffer.h:93)); [ControlStemSupport.cpp:231](src/core/ControlStemSupport.cpp:231) returns a typed error for `!mix || mix->empty()`. From line 232 on, `mix` is non-null.
 2. `fitsAtModelRate()` at [ControlStemSupport.cpp:66-69](src/core/ControlStemSupport.cpp:66) is a pure predicate; it does not touch `mix`.
-3. `resampleBuffer()` ([SampleBufferResample.cpp:58](src/core/SampleBufferResample.cpp:58)) has exactly two kinds of return:
+3. `resampleBuffer()` ([SampleBufferResample.cpp:58](src/core/SampleBufferResample.cpp:58)) has exactly two kinds of return. Passed a null pointer, the first kind would hand the null back; the only caller never does that.
    - `return input;` at [SampleBufferResample.cpp:67](src/core/SampleBufferResample.cpp:67) for empty input, zero source rate, zero target rate, or source rate equal to target. `input` is the non-null `mix` from step 1.
    - `return std::make_shared<const SampleBuffer>(...)` at [SampleBufferResample.cpp:88](src/core/SampleBufferResample.cpp:88), which is non-null by construction.
    The declared contract ([include/SampleBufferResample.h:37-42](include/SampleBufferResample.h:37)) says the input is returned when already at the target rate, and says nothing about a null return.
