@@ -32,8 +32,10 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include "AutomatableModel.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -78,6 +80,16 @@ InstrumentTrack* trackOf(const QJsonValue& id)
 {
 	const int number = id.toString().section(QLatin1Char('-'), 1).toInt();
 	return dynamic_cast<InstrumentTrack*>(Engine::getSong()->findTrackById(number));
+}
+
+//! The sampler's parameter named @a name on @a pad (its knob's model), or nullptr.
+AutomatableModel* samplerModel(InstrumentTrack* pad, const QString& name)
+{
+	for (AutomatableModel* model : pad->instrument()->findChildren<AutomatableModel*>())
+	{
+		if (model->displayName() == name) { return model; }
+	}
+	return nullptr;
 }
 
 } // namespace
@@ -248,6 +260,39 @@ private slots:
 		QVERIFY(run(QStringLiteral("track.drum_rack_pad_set"), {{QStringLiteral("track"), snare}, {QStringLiteral("key"), 50}}).ok);
 		Engine::getSong()->loadProject(path);
 		QCOMPARE(rackState(folder), saved);
+	}
+
+	//! The sampler's attack, release and voice limit - saved by the project, set by a musician on the sampler's
+	//! knobs - are part of the pad's state: read back as set, and the same after a save and reopen.
+	void theEnvelopeAndVoiceLimitReadBackAndSurviveAReopen()
+	{
+		const QString folder = makeRack();
+		const QJsonValue kickId = padsOf(folder).at(0).toObject().value(QStringLiteral("track"));
+		InstrumentTrack* kick = trackOf(kickId);
+		QVERIFY(kick != nullptr);
+		const QJsonObject defaults = padsOf(folder).at(0).toObject().value(QStringLiteral("playback")).toObject();
+		QCOMPARE(defaults.value(QStringLiteral("attack")).toDouble(), 0.0);
+		QCOMPARE(defaults.value(QStringLiteral("release")).toDouble(), 3.0);
+		QCOMPARE(defaults.value(QStringLiteral("voice_limit")).toInt(), 64);
+		AutomatableModel* attack = samplerModel(kick, QStringLiteral("Attack"));
+		AutomatableModel* release = samplerModel(kick, QStringLiteral("Release"));
+		AutomatableModel* voices = samplerModel(kick, QStringLiteral("Voice limit"));
+		QVERIFY(attack != nullptr && release != nullptr && voices != nullptr);
+		attack->setValue(25.f);
+		release->setValue(400.f);
+		voices->setValue(3.f);
+		const QJsonObject set = padsOf(folder).at(0).toObject();
+		const QJsonObject playback = set.value(QStringLiteral("playback")).toObject();
+		QCOMPARE(playback.value(QStringLiteral("attack")).toDouble(), 25.0);
+		QCOMPARE(playback.value(QStringLiteral("release")).toDouble(), 400.0);
+		QCOMPARE(playback.value(QStringLiteral("voice_limit")).toInt(), 3);
+
+		const QString path = m_dir.filePath(QStringLiteral("envelope.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path, false));
+		attack->setValue(0.f);  // the file, not memory, must answer after the reopen
+		voices->setValue(64.f);
+		Engine::getSong()->loadProject(path);
+		QCOMPARE(padsOf(folder).at(0).toObject(), set);
 	}
 
 private:

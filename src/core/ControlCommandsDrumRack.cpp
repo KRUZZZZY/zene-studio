@@ -421,8 +421,8 @@ void registerDrumRackCommand(ControlRegistry& registry)
 	cmd = trackCommand(QStringLiteral("drum_rack_get_state"), QStringLiteral("Read a drum rack back: 'track' is its folder. "
 		"Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty "
 		"when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own "
-		"chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation}} - what the project "
-		"saves. Writes nothing."), rackState);
+		"chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation, attack (ms), "
+		"release (ms), voice_limit}} - what the project saves. Writes nothing."), rackState);
 	cmd.argsSchema = objectSchema({{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")});
 	registry.registerCommand(cmd);
 

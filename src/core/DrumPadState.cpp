@@ -68,6 +68,9 @@ void readSampler(Instrument* sampler, DrumPadState* out)
 	p.reversed = savedValue(saved, QStringLiteral("reversed"), 0.0) != 0.0;
 	p.stutter = savedValue(saved, QStringLiteral("stutter"), 0.0) != 0.0;
 	p.interpolation = static_cast<int>(savedValue(saved, QStringLiteral("interp"), p.interpolation));
+	p.attack = savedValue(saved, QStringLiteral("atk"), p.attack);
+	p.release = savedValue(saved, QStringLiteral("rel"), p.release);
+	p.voiceLimit = static_cast<int>(savedValue(saved, QStringLiteral("voices"), p.voiceLimit));
 }
 
 MixerChannel* channelAt(int index)
@@ -83,7 +86,9 @@ QJsonObject DrumPadState::toJson() const
 	const QJsonObject play{{QStringLiteral("amp"), playback.amp}, {QStringLiteral("start"), playback.start},
 		{QStringLiteral("end"), playback.end}, {QStringLiteral("loop_start"), playback.loopStart},
 		{QStringLiteral("loop"), playback.loop}, {QStringLiteral("reversed"), playback.reversed},
-		{QStringLiteral("stutter"), playback.stutter}, {QStringLiteral("interpolation"), playback.interpolation}};
+		{QStringLiteral("stutter"), playback.stutter}, {QStringLiteral("interpolation"), playback.interpolation},
+		{QStringLiteral("attack"), playback.attack}, {QStringLiteral("release"), playback.release},
+		{QStringLiteral("voice_limit"), playback.voiceLimit}};
 	return {{QStringLiteral("track"), track}, {QStringLiteral("name"), name}, {QStringLiteral("sample"), sample},
 		{QStringLiteral("key"), key}, {QStringLiteral("channel"), channel}, {QStringLiteral("sends_to"), sendsTo},
 		{QStringLiteral("playback"), play}};

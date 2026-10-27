@@ -57,6 +57,9 @@ struct DrumPadPlayback
 	bool reversed = false;
 	bool stutter = false;
 	int interpolation = 1;       //!< 0 none, 1 linear, 2 sinc
+	double attack = 0.0;         //!< attack, ms
+	double release = 3.0;        //!< release, ms
+	int voiceLimit = 64;         //!< the most notes the pad plays at once (1..64)
 };
 
 struct DrumPadState
