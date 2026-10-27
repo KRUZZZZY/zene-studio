@@ -499,6 +499,39 @@ Envelope=0,00000001 100,0
 		QCOMPARE(length, expectedLength);
 	}
 
+	/*! A setting value longer than its destination buffer is cut to that buffer,
+	 *  and a missing setting is read as nothing, not as whatever the buffer held.
+	 *
+	 *  The Version value is copied into a 32 byte buffer. Padding after the
+	 *  version name must leave the version and the rendered samples unchanged,
+	 *  and a file without a Version key must not render. */
+	void boundedProfileValuesKeepTheirSettings()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+
+		const QByteArray base = drumSynthFixture(100, false, false);
+		QByteArray padded = base;
+		padded.replace("Version=DrumSynth v2.0", QByteArray("Version=DrumSynth v2.0") + QByteArray(64, 'x'));
+		QByteArray missing = base;
+		missing.replace("Version=DrumSynth v2.0\n", "");
+		QVERIFY(padded != base);
+		QVERIFY(missing != base);
+
+		const QString basePath = directory.filePath(QStringLiteral("base-version.ds"));
+		const QString paddedPath = directory.filePath(QStringLiteral("padded-version.ds"));
+		const QString missingPath = directory.filePath(QStringLiteral("missing-version.ds"));
+		QVERIFY(writeDrumSynthFixture(basePath, base));
+		QVERIFY(writeDrumSynthFixture(paddedPath, padded));
+		QVERIFY(writeDrumSynthFixture(missingPath, missing));
+
+		const auto expected = render(basePath);
+		QVERIFY(!expected.empty());
+		QVERIFY2(render(paddedPath) == expected,
+			"a Version value longer than its buffer must be cut to the buffer and still be read");
+		QVERIFY2(render(missingPath).empty(), "a file without a Version key must not render");
+	}
+
 	/*! An over-long line must not stop the profile parser.
 	 *
 	 *  The pre-fix parser read every line into a 200 byte buffer: an over-long
