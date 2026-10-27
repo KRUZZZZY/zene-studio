@@ -91,6 +91,17 @@ QString noteFieldRangeError(const DawProjectNote& note)
 	return {};
 }
 
+//! A clip or note ends at start plus duration, which the session adds in tick_t. The start is
+//! already clamped into tick_t (ticksFromBeats), so a duration that would end past the range is
+//! cut back to the room the start leaves, and the cut is counted like a clamped position.
+qint64 durationWithinTickRange(ReadState& state, qint64 startTicks, qint64 durationTicks)
+{
+	const qint64 room = static_cast<qint64>(std::numeric_limits<tick_t>::max()) - startTicks;
+	if (durationTicks <= room) { return durationTicks; }
+	state.report->loss.roundedTimes++;
+	return room;
+}
+
 void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
 {
 	// The unit that matters is the one in force where the NOTES are, which the
@@ -130,13 +141,13 @@ void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip
 			}
 			continue;
 		}
+		const qint64 startTicks = ticksFromBeats(state,
+			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0));
+		const qint64 durationTicks = durationWithinTickRange(state, startTicks,
+			ticksFromBeats(state, duration));
 		DawProjectNote note;
-		note.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
-		note.duration = static_cast<double>(ticksFromBeats(state,
-			duration))
-			/ DawProjectTicksPerQuarterNote;
+		note.time = static_cast<double>(startTicks) / DawProjectTicksPerQuarterNote;
+		note.duration = static_cast<double>(durationTicks) / DawProjectTicksPerQuarterNote;
 		note.channel = intAttribute(attributes, state, QStringLiteral("channel"), 0);
 		note.key = intAttribute(attributes, state, QStringLiteral("key"), 60);
 		note.vel = doubleAttribute(attributes, state, QStringLiteral("vel"), 0.5);
@@ -171,13 +182,13 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 			continue;
 		}
 		const QXmlStreamAttributes attributes = reader.attributes();
+		const qint64 startTicks = ticksFromBeats(state,
+			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0));
+		const qint64 durationTicks = ticksFromBeats(state,
+			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0));
 		DawProjectClip clip;
-		clip.time = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
-		clip.duration = static_cast<double>(ticksFromBeats(state,
-			doubleAttribute(attributes, state, QStringLiteral("duration"), 0.0)))
-			/ DawProjectTicksPerQuarterNote;
+		clip.time = static_cast<double>(startTicks) / DawProjectTicksPerQuarterNote;
+		clip.duration = static_cast<double>(durationTicks) / DawProjectTicksPerQuarterNote;
 		clip.playStart = static_cast<double>(ticksFromBeats(state,
 			doubleAttribute(attributes, state, QStringLiteral("playStart"), 0.0)))
 			/ DawProjectTicksPerQuarterNote;
@@ -211,6 +222,10 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 		}
 		if (hasNotes)
 		{
+			// Only a clip the model carries has its end cut to the tick range; an uncarried
+			// clip keeps its full duration, so the skipped-clip count below is unchanged.
+			clip.duration = static_cast<double>(durationWithinTickRange(state, startTicks, durationTicks))
+				/ DawProjectTicksPerQuarterNote;
 			state.model->tracks[state.currentTrack].clips.append(clip);
 		}
 		else if (clip.duration > 0.0)

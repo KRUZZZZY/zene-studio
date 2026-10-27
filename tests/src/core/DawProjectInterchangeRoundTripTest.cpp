@@ -2115,6 +2115,65 @@ void writerRefusesANoteEndpointPastTheTickRange()
 		"a note endpoint beyond the engine's tick range was written");
 }
 
+//! Cluster new-p14-89: a clip or note whose start plus duration passes tick_t must not
+//! reach the model with an overflowing end. The start is clamped into tick_t like every
+//! position, so the duration is cut back to the room the start leaves and the cut is
+//! counted in rounded_times. An end that fits exactly is kept and is not counted.
+void readerKeepsATimelineEndpointInsideTheTickRange()
+{
+	// 44739241 beats is exactly 2147483568 ticks, 79 ticks below tick_t's maximum.
+	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
+		return QByteArray("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+			"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip ") + clipAttributes + ">" + clipBody + "</Clip>"
+			"</Clips></Lanes></Lanes></Arrangement></Project>";
+	};
+	const QByteArray unitNotes = "<Notes><Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QByteArray notePastMax = "<Notes><Note time=\"44739241\" duration=\"2\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QByteArray noteAtMax = "<Notes><Note time=\"44739241\" duration=\"1.6458333333\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+
+	DawProjectModel clipModel;
+	DawProjectReadReport clipReport;
+	QString error;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"2\"", unitNotes),
+		&clipModel, &clipReport, &error), qPrintable(error));
+	const DawProjectClip& clip = clipModel.tracks[0].clips[0];
+	QCOMPARE(qRound64(clip.time * DawProjectTicksPerQuarterNote), qint64(2147483568));
+	QCOMPARE(qRound(clip.duration * DawProjectTicksPerQuarterNote), 79);
+	QVERIFY2(clipReport.loss.roundedTimes >= 1, "a clip end cut back to the tick range was not counted");
+
+	DawProjectModel noteModel;
+	DawProjectReadReport noteReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", notePastMax),
+		&noteModel, &noteReport, &error), qPrintable(error));
+	const DawProjectNote& note = noteModel.tracks[0].clips[0].notes[0];
+	QCOMPARE(qRound64(note.time * DawProjectTicksPerQuarterNote), qint64(2147483568));
+	QCOMPARE(qRound(note.duration * DawProjectTicksPerQuarterNote), 79);
+	QVERIFY2(noteReport.loss.roundedTimes >= 1, "a note end cut back to the tick range was not counted");
+
+	DawProjectModel fitModel;
+	DawProjectReadReport fitReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"1.6458333333\"", unitNotes),
+		&fitModel, &fitReport, &error), qPrintable(error));
+	QCOMPARE(qRound(fitModel.tracks[0].clips[0].duration * DawProjectTicksPerQuarterNote), 79);
+	DawProjectModel noteFitModel;
+	DawProjectReadReport noteFitReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", noteAtMax),
+		&noteFitModel, &noteFitReport, &error), qPrintable(error));
+	QCOMPARE(qRound(noteFitModel.tracks[0].clips[0].notes[0].duration * DawProjectTicksPerQuarterNote), 79);
+	QCOMPARE(fitReport.loss.roundedTimes + noteFitReport.loss.roundedTimes, 0);
+
+	// A clip the model does not carry (no <Notes>) keeps its full duration and is counted as skipped.
+	DawProjectModel uncarriedModel;
+	DawProjectReadReport uncarriedReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"2\"", ""),
+		&uncarriedModel, &uncarriedReport, &error), qPrintable(error));
+	QCOMPARE(uncarriedModel.tracks[0].clips.size(), 0);
+	QCOMPARE(uncarriedReport.loss.automationClipsSkipped, 1);
+}
+
 //! Luna cluster 5067: dawProjectXmlFromModel(DawProjectModel{}) SUCCEEDED and
 //! wrote <Application name=""/>, which this module's own reader refuses
 //! (Project.xsd makes the name required). The writer has to refuse it for the
