@@ -51,3 +51,9 @@ The one changed file is this report. Gate exit code: 0 (`logs/gates-1.log`). The
 - **The fix is at the cause and complete.** N/A: no fix. The sibling `drawKnob` branch and both `drawFlatKnob` callers were checked (`:392`, `:443`), and both are consistent with the non-null invariant.
 - **No collateral damage.** The branch is unchanged apart from this report.
 - **Verdict evidence.** The file:line evidence above is the verdict evidence.
+
+### submit_check result (`logs/submit-1.log`, EXIT=1)
+
+- PASS: commits on the branch; working tree clean; report verdict line; claim-only closure (FALSE-POSITIVE, no `src/` or `include/` change).
+- FAIL: `gates (feature_check.py)`. This is the environment, not a gate result. `submit_check.py` runs the unmodified `qwen/feature_check.py`, which exits 1 with `PermissionError` on the sibling folder `zene-qwen-new-p21-206-feature-check` (`logs/gates-0-permission.log`). That folder is outside this session's write-jail, and I did not change the shared gate. The same checks, run through the redirected copy with the log folder moved into the run folder, exit 0 with every row PASS (`logs/gates-1.log`).
+- The loop runs the same check when the session ends. If its environment can create that sibling folder, this row should pass there. I did not verify that.
