@@ -91,3 +91,36 @@ stash, no history rewrite.
 - The parabolic refinement uses three CMND points. When they are nearly collinear the vertex can lie far outside
   the bracket. The offline model gave a refined lag of about 562 for the test signal, which was not measured in the
   build. The fix does not change this. The test checks only that the answer does not depend on the bytes past the vector.
+
+## Self-check
+
+Mechanical items (`submit_check.py`, log `submit-1.log`):
+
+- commits on the branch: PASS (`8ce4fbb2f9`); working tree clean: PASS; report: PASS; tests added or changed: PASS.
+- gates (feature_check.py): **FAIL, environmental.** The stock script exits 1 at its own `logs.mkdir`, because its log
+  folder `<worktree>-feature-check` is outside this lane's write-jail (`gate-5-stock-feature-check.log`, PermissionError,
+  exit 1). It is not a gate result. The same checks pass through the driver with logs in the LOG FOLDER: `gate-4-table.log`,
+  exit 0, all eight rows PASS. I did not edit the gate script or work around its path.
+
+Judgement items:
+
+1. Regression fails with the change reverted and passes with it. RED: `git apply -R fix.patch` EXIT 0; build EXIT 0;
+   `ctest -R '^AudioAnalysisTest$' -V` EXIT 8 (`test-10-red-header.log`: `'nanTail == zeroTail' returned FALSE`, 23 passed,
+   1 failed). GREEN: `git apply fix.patch` EXIT 0; build EXIT 0; ctest EXIT 0 (`test-11-green-header.log`: 24 passed, 0 failed).
+2. Deterministic. The test uses no clock, sleep, thread or race. The sine is computed from fixed integers. The seam is
+   the test binary's allocator (`tests/src/core/AudioAnalysisTest.cpp:146`) reading `g_fillAllocationTail` and
+   `g_tailByte` (`tests/src/core/PitchTrackCmndBoundary.h:39-40`): while the flag is set, each allocation gets 16 bytes of
+   a fixed value past its size, and the helper clears the flag before returning. The flags are `thread_local`, and
+   `pitchAt` is synchronous, so both answers come from the same thread and the same inputs.
+3. Fix at the cause, and complete. The cause is the descent guard at `src/core/PitchTrack.cpp:71`, now `tau + 2 < maxLag`.
+   Callers: `bestLag` has one caller, `pitchAt` (`:98`); `pitchAt` is called from `src/core/ControlCommandsTuner.cpp:83`
+   and `detectNotes` (`src/core/PitchTrack.cpp:234`). Signatures are unchanged. Siblings in the same function were
+   checked: the first scan (`:68`), the reads a, b, c (`:72-74`), and the `d` loop (`:88-96`). All are in range, as set out in
+   Evidence above.
+4. No collateral damage. The changed behaviour is only the path that advanced to `maxLag - 1` and then read `cmnd[maxLag]`,
+   which is out of range on every such input. Every other input takes the same branches. `pitchAt` is a pure function and
+   nothing is saved, so old projects and saved data are unaffected. No limit or check was added. The test-binary allocator
+   is inert when the flag is clear: `tail` is 0, the allocation size is unchanged, and the fill writes 0 bytes. That
+   code exists only in the `AudioAnalysisTest` binary. The product code runs on the control thread (`include/PitchTrack.h`,
+   `detectNotes`: "Control thread"); nothing was added to an audio path, and no allocation or logging was added.
+5. Verdict FIXED, so no ALREADY-FIXED or FALSE-POSITIVE claim needs proof.
