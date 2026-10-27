@@ -218,14 +218,16 @@ library to work.
   window stays open. A native Wayland session is refused the same way (start with `QT_QPA_PLATFORM=xcb`).
   **What was proved, and where:**
   - **Linux:** every test named here was run, including the explicit Windows and macOS cases. `ClapHostTest`,
-    `Vst3InstrumentTest` and `ClapEffectIntegrationTest` choose the window system themselves, so all three paths
+    `Vst3EditorTest` and `ClapEffectIntegrationTest` choose the window system themselves, so all three paths
     run on any machine.
   - **Windows and macOS, hosted CI:** the hosted macOS, msvc and msys2 jobs build and run `ClapHostTest` and
-    `ClapEffectIntegrationTest` on their own native path. That run had **not yet been observed** when this was
-    written, because lanes are not pushed.
-  - **VST3 on Windows and macOS:** the VST3 fixture (`tests/data/vst3-test-instrument`) builds only on the
-    linux-x86_64 job; its bundle layout and entry file are Linux-only. So no hosted Windows or macOS job runs
-    the VST3 editor. That side is proved only by the explicit HWND / NSView cases run on Linux.
+    `ClapEffectIntegrationTest` on their own native path. The macOS and msvc jobs now also pass
+    `WANT_VST3_TEST_INSTRUMENT=ON`: the VST3 fixture is laid out per platform (a Windows `.vst3` package with
+    `dllmain.cpp`; a macOS CFBundle with `macmain.cpp` and an `Info.plist`), and `Vst3EditorTest` opens,
+    resizes (host and plug-in), closes and reopens its editor as an `HWND` / `NSView` there. Those hosted runs had
+    **not yet been observed** when this was written, because lanes are not pushed; the Windows and macOS builds of
+    the fixture were not compiled on the Linux box either. The rest of the VST3 fixture suite
+    (`Vst3InstrumentTest`, the probe, the integration cases) still runs on Linux only.
   - **Still to check on a real machine (the owner's Windows laptop and Mac mini):** a real third-party VST3 and
     CLAP editor that opens, draws, resizes (host and plug-in), closes and reopens.
   **Limits:**
