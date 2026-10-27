@@ -32,6 +32,7 @@
 #include "MidiAlsaRaw.h"
 #include "MidiEventProcessor.h"
 #include "MidiPort.h"
+#include "McuSurface.h"
 #include "RetroMidiRing.h"
 #include "Song.h"
 #include "Track.h"
@@ -369,6 +370,14 @@ private slots:
 		auto* raw = dynamic_cast<MidiAlsaRaw*>(Engine::audioEngine()->midiClient());
 		QVERIFY(raw != nullptr);
 		QVERIFY(raw->isRunning());
+		auto* surface = McuSurface::connect(QString(), QString());
+		QVERIFY(surface != nullptr);
+		std::atomic<bool> surfaceDestroyed{false};
+		std::atomic<bool> workerRunningAtSurfaceTeardown{false};
+		QObject::connect(surface, &QObject::destroyed, [&] {
+			surfaceDestroyed = true;
+			if (raw->isRunning()) { workerRunningAtSurfaceTeardown = true; }
+		});
 
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
 		QVERIFY(track != nullptr);
@@ -383,6 +392,8 @@ private slots:
 		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("mididev"), QString());
 		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("audiodev"), QString());
 
+		QVERIFY(surfaceDestroyed.load());
+		QVERIFY2(!workerRunningAtSurfaceTeardown.load(), "the raw-MIDI worker was still running while the MCU surface's MidiPort was destroyed");
 		QCOMPARE(portsDestroyed.load(), 1);
 		QVERIFY2(!workerRunningAtPortTeardown.load(), "the raw-MIDI worker was still running while a track's MidiPort was destroyed");
 		QCOMPARE(g_callsOnClosedHandle.load(), 0);

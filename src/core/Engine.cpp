@@ -96,9 +96,6 @@ void Engine::init( bool renderOnly )
 
 void Engine::destroy()
 {
-	// 0.5.0 WF-126: a connected control surface owns a MIDI port on the audio engine's client;
-	// it goes first, while that client still exists.
-	McuSurface::disconnect();
 	s_projectJournal->stopAllJournalling();
 	s_audioEngine->stopProcessing();
 	// Q050-488: a MIDI client's input thread dispatches to the ports the tracks own,
@@ -108,6 +105,9 @@ void Engine::destroy()
 	{
 		s_audioEngine->midiClient()->stopInput();
 	}
+	// A connected control surface also owns a port on the client's dispatch list.
+	// Disconnect it after input is quiescent, but while the client still exists.
+	McuSurface::disconnect();
 
 	PresetPreviewPlayHandle::cleanup();
 
