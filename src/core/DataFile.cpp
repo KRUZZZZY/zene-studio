@@ -220,6 +220,14 @@ qint64 maxRecoveredDocumentBytes()
 	return ok && limit > 0 ? limit : DefaultMaxRecoveredDocumentBytes;
 }
 
+//! Test seam, ZENE_TEST_PENDING_READ_FAULT: closes the pending file after its open
+//! and before the read, so the read gives back nothing - the first-read fault a
+//! recovery must keep a file through. Portable, like the container seam.
+void armPendingReadFault( QFile & f )
+{
+	if( ! qgetenv( "ZENE_TEST_PENDING_READ_FAULT" ).isEmpty() ) { f.close(); }
+}
+
 //! The uncompressed size a qCompress stream declares in its leading 4 bytes
 //! (big endian), or 0 when the bytes are too short to carry one.
 quint32 declaredUncompressedSize( const QByteArray & bytes )
@@ -296,8 +304,12 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 		*reason = QStringLiteral( "oversized" );
 		return false;
 	}
+	// The size the file reports is what its read must give back. A read that
+	// gives back less failed, and the file was never checked.
+	const qint64 expected = f.size();
+	armPendingReadFault( f );
 	const QByteArray bytes = f.readAll();
-	if( f.error() != QFileDevice::NoError )
+	if( f.error() != QFileDevice::NoError || bytes.size() != expected )
 	{
 		*reason = QStringLiteral( "unreadable" );
 		return false;
