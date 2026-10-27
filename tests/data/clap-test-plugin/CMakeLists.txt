@@ -58,7 +58,8 @@ endif()
 #
 # The same -Wall/-Wextra guard as clap-test-gain above, for the same reason.
 # ---------------------------------------------------------------------------
-set(LMMS_CLAP_BROKEN_FAULTS no-symbol old-version init-fails no-factory null-callback)
+set(LMMS_CLAP_BROKEN_FAULTS no-symbol old-version init-fails no-factory null-callback
+	null-factory-count null-factory-descriptor null-factory-create)
 foreach(LMMS_CLAP_BROKEN_FAULT IN LISTS LMMS_CLAP_BROKEN_FAULTS)
 	string(REPLACE "-" "_" LMMS_CLAP_BROKEN_SUFFIX "${LMMS_CLAP_BROKEN_FAULT}")
 	string(TOUPPER "${LMMS_CLAP_BROKEN_SUFFIX}" LMMS_CLAP_BROKEN_SUFFIX)
