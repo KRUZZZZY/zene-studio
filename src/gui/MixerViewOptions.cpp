@@ -44,7 +44,10 @@
 #include "MacroKnobs.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
+#include "ConsoleStripSection.h"
+#include "ControlMeterSupport.h"
 #include "Song.h"
+#include "StripMeters.h"
 #include "Track.h"
 #include "lmms_math.h"
 
@@ -93,9 +96,26 @@ float minPeakOf(const QString& scale)
 	return dbfsToAmp(scale == QLatin1String("db60") ? -60.f : scale == QLatin1String("db24") ? -24.f : -42.f);
 }
 
+//! Q050-108: the strip's own mode's reading, in words - the VU needle, or the short-term loudness and true peak.
+QString modeReading(const MixerChannel* channel)
+{
+	const auto number = [](float v, int decimals) { return std::isfinite(v) ? QString::number(static_cast<double>(v), 'f', decimals) : QStringLiteral("-inf"); };
+	const int mode = stripmeters::mode(*channel);
+	if (mode == static_cast<int>(stripmeters::Mode::Vu))
+	{
+		const double reference = control::meterReferenceDbfs();
+		const float vu = std::max(stripmeters::vu(*channel, 0, reference), stripmeters::vu(*channel, 1, reference));
+		return QObject::tr("VU %1").arg(number(vu, 1));
+	}
+	const StripLoudness* loudness = stripmeters::loudness(*channel);
+	if (mode != static_cast<int>(stripmeters::Mode::Lufs) || loudness == nullptr) { return QString(); }
+	return QObject::tr("S %1 LUFS TP %2").arg(number(loudness->shortTermLufs(), 1), number(loudness->truePeakDbtp(), 1));
+}
+
 QString meterText(MixerChannel* channel)
 {
 	QStringList parts;
+	if (const QString reading = modeReading(channel); !reading.isEmpty()) { parts << reading; }  // Q050-108
 	const float reduction = channel->m_gainReduction.get();
 	if (reduction >= 0.1f) { parts << QStringLiteral("GR %1").arg(static_cast<double>(reduction), 0, 'f', 1); }
 	if (channel->m_clipped.load(std::memory_order_relaxed))
@@ -223,6 +243,7 @@ Options effective(const Options& o)
 	{
 		shown.inserts = false;
 		shown.macros = false;
+		shown.console = false;  // Q050-088: a processing section, like the inserts
 	}
 	if (!routing && o.density == QLatin1String("compact")) { shown.sends = false; }
 	return shown;
@@ -249,7 +270,7 @@ QJsonObject toJson(const Options& o)
 {
 	return {{QStringLiteral("show_sends"), o.sends}, {QStringLiteral("show_pan"), o.pan}, {QStringLiteral("show_number"), o.number},
 		{QStringLiteral("show_meter_info"), o.meterInfo}, {QStringLiteral("show_inserts"), o.inserts},
-		{QStringLiteral("show_macros"), o.macros}, {QStringLiteral("strip_width"), o.width}, {QStringLiteral("filter"), o.filter},
+		{QStringLiteral("show_macros"), o.macros}, {QStringLiteral("show_console"), o.console}, {QStringLiteral("strip_width"), o.width}, {QStringLiteral("filter"), o.filter},
 		{QStringLiteral("meter_mode"), o.meterMode}, {QStringLiteral("meter_scale"), o.meterScale},
 		{QStringLiteral("meter_falloff"), o.meterFallOff}, {QStringLiteral("peak_hold"), o.peakHold},
 		{QStringLiteral("view"), o.view}, {QStringLiteral("density"), o.density}};
@@ -264,6 +285,7 @@ bool merge(const QJsonObject& args, Options* base, QString* error)
 	next.meterInfo = args.value(QStringLiteral("show_meter_info")).toBool(next.meterInfo);
 	next.inserts = args.value(QStringLiteral("show_inserts")).toBool(next.inserts);
 	next.macros = args.value(QStringLiteral("show_macros")).toBool(next.macros);
+	next.console = args.value(QStringLiteral("show_console")).toBool(next.console);  // Q050-088
 	next.width = pick(args, "strip_width", widthNames(), next.width, error);
 	next.filter = pick(args, "filter", filterNames(), next.filter, error);
 	next.meterMode = pick(args, "meter_mode", meterModeNames(), next.meterMode, error);
@@ -353,6 +375,8 @@ void applyToStrip(MixerChannelView* view, MixerChannel* channel)
 	view->meterInfo()->setVisible(o.meterInfo);
 	if (o.meterInfo) { view->meterInfo()->setText(meterText(channel)); }
 	applyRackSections(view, channel, o);
+	view->consoleSection()->setVisible(o.console);  // Q050-088
+	if (o.console) { view->consoleSection()->refresh(); }
 	Fader* fader = view->fader();
 	fader->setMinPeak(minPeakOf(o.meterScale));
 	fader->setProperty("levelsDisplayedInDBFS", o.meterScale != QLatin1String("linear"));
@@ -369,14 +393,35 @@ QString meterReadout(const MixerChannel* channel)
 		.arg(channel->m_gainReduction.get(), 0, 'f', 1).arg(channel->m_correlation.get(), 0, 'f', 2);
 }
 
+QString meterModeOf(const MixerChannel* channel)
+{
+	const int own = stripmeters::mode(*channel);
+	return own == static_cast<int>(stripmeters::Mode::Default) ? options().meterMode : stripmeters::modeNames().value(own);
+}
+
 bool feedMeter(Fader* fader, MixerChannel* channel)
 {
 	if (fader->underMouse()) { fader->setToolTip(meterReadout(channel)); }  // only while someone is looking (MX-133)
-	const QString& mode = options().meterMode;
+	const QString mode = meterModeOf(channel);  // Q050-108: the strip's own mode, else the view's
 	if (mode == QLatin1String("peak")) { return false; }
 	float left = 0.f;
 	float right = 0.f;
-	meterSource(channel, mode == QLatin1String("rms"), &left, &right);
+	if (mode == QLatin1String("vu"))
+	{
+		// The needle as the bars: a steady sine shows its peak level, so 0 VU sits at the reference's dBFS.
+		left = channel->m_vuLeft.get();
+		right = channel->m_vuRight.get();
+		channel->m_peakLeft = channel->m_peakRight = -1.f;
+	}
+	else if (mode == QLatin1String("lufs"))
+	{
+		// The momentary loudness as a level (-23 LUFS draws at -23 dB); the meter line reads the short-term and the true peak.
+		const StripLoudness* loudness = stripmeters::loudness(*channel);
+		const float lufs = loudness != nullptr ? loudness->momentaryLufs() : LufsMeter::MinusInfinity;
+		left = right = std::isfinite(lufs) ? dbfsToAmp(lufs) : 0.f;
+		channel->m_peakLeft = channel->m_peakRight = -1.f;
+	}
+	else { meterSource(channel, mode == QLatin1String("rms"), &left, &right); }
 	const float fallOff = meterFallOff();  // MX-128
 	fader->setPeak_L(std::max(left, fader->getPeak_L() / fallOff));
 	fader->setPeak_R(std::max(right, fader->getPeak_R() / fallOff));

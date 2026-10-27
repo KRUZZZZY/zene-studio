@@ -43,6 +43,7 @@
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <set>
 #include <vector>
@@ -60,6 +61,9 @@ using MixerSidechainRouteVector = std::vector<MixerSidechainRoute*>;
 
 //! VCA / mix-and-edit group (task #622); defined in VcaGroup.h.
 class VcaGroup;
+
+//! Q050-108: a strip's live loudness meter; defined in StripMeters.h.
+class StripLoudness;
 
 //! Tap point for a sidechain send (Phase D, spec 4.3; Reaper I_SENDMODE 0-3).
 enum class SidechainTapPoint : int
@@ -160,6 +164,15 @@ public:
 	MeterValue m_liveBakedPeakLeft;  //!< The baked post-fader output peak, for post-fader send meters.
 	MeterValue m_liveBakedPeakRight;
 	std::atomic<bool> m_livePostInsertsBaked{false};  //!< Whether this period's live baked peaks are valid.
+	// Q050-108 (StripMeters.h): the strip's own meter mode (0 follows the mixer view), its VU needle (written by the
+	// mixer worker, read by the interface) and its loudness meter, built on the control thread when first asked for.
+	std::atomic<int> m_meterMode{0};
+	MeterValue m_vuLeft;
+	MeterValue m_vuRight;
+	std::array<float, 4> m_vuState{};  //!< the needle's two stages a side (mixer worker only)
+	bool m_vuRunning = false;  //!< mixer worker only
+	std::unique_ptr<StripLoudness> m_loudnessOwner;  //!< control thread
+	std::atomic<StripLoudness*> m_loudness{nullptr};
 	QString m_name;
 	/*! One render thread's private slice of this channel's input (cluster new-p10-249).
 	 *  Mixer::mixToChannel runs on every AudioEngine render thread, so adding straight
@@ -278,6 +291,14 @@ public:
 		m_inputLatencyFrames.store(frames, std::memory_order_relaxed);
 	}
 
+	/*! Q050-339: the channel's manual delay in frames at the engine's rate - positive plays its output later,
+	 *  negative earlier (every other path into the same receivers is then delayed instead). It enters the PDC
+	 *  graph as a negative latency on the channel's output (Mixer::resolveLatency), so the sends out of the
+	 *  channel are compensated by it; the master has no later summing point and takes none. 0 by default
+	 *  (nothing saved). Control thread writes, the audio thread reads. */
+	int offsetFrames() const { return m_offsetFrames.load(std::memory_order_relaxed); }
+	void setOffsetFrames(int frames) { m_offsetFrames.store(frames, std::memory_order_relaxed); }
+
 	//! VCA / mix group (#622): the gain the channel's group publishes, applied
 	//! as one extra multiply to the post-FX buffer. 1.0f when the channel is in
 	//! no group (and when its group is at unity). Written on the control thread
@@ -319,6 +340,7 @@ private:
 	std::optional<QColor> m_color;
 	//! PDC alignment point; see inputLatencyFrames().
 	std::atomic<int> m_inputLatencyFrames{0};
+	std::atomic<int> m_offsetFrames{0};  //!< Q050-339: see offsetFrames()
 };
 
 class MixerRoute : public QObject

@@ -37,6 +37,7 @@
 
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
+#include "ControlMeterSupport.h"
 #include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
@@ -46,6 +47,7 @@
 #include "Mixer.h"
 #include "MixerStrip.h"
 #include "Song.h"
+#include "StripMeters.h"
 
 namespace lmms
 {
@@ -169,6 +171,7 @@ struct StripSettings
 	QString note;
 	bool swap = false;  // MX-033
 	bool inputMono = false;  // MX-059
+	int meterMode = 0;  // Q050-108 (StripMeters.h)
 	bool operator==(const StripSettings&) const = default;
 };
 
@@ -182,7 +185,7 @@ StripSettings settingsOf(const MixerChannel* c)
 {
 	return {c->m_trimModel.value(), c->m_polarityLeftModel.value(), c->m_polarityRightModel.value(), c->m_monoModel.value(),
 		c->m_panModeModel.value(), c->m_panModel.value(), c->m_panRightModel.value(), c->m_widthModel.value(),
-		c->m_soloSafeModel.value(), c->m_note, c->m_swapModel.value(), c->m_inputMonoModel.value()};
+		c->m_soloSafeModel.value(), c->m_note, c->m_swapModel.value(), c->m_inputMonoModel.value(), stripmeters::mode(*c)};
 }
 
 void applySettings(int id, const StripSettings& s)
@@ -201,6 +204,7 @@ void applySettings(int id, const StripSettings& s)
 	c->m_note = s.note;
 	c->m_swapModel.setValue(s.swap);
 	c->m_inputMonoModel.setValue(s.inputMono);
+	stripmeters::setMode(*c, s.meterMode);
 }
 
 //! @a args over @a s; switching into dual pan from two centred pans spreads them hard left and right.
@@ -223,6 +227,10 @@ StripSettings merged(StripSettings s, const QJsonObject& args)
 	s.width = static_cast<float>(args.value(QStringLiteral("width")).toDouble(s.width));
 	s.soloSafe = args.value(QStringLiteral("solo_safe")).toBool(s.soloSafe);
 	s.note = args.value(QStringLiteral("note")).toString(s.note);
+	if (args.contains(QStringLiteral("meter_mode")))  // Q050-108: an unknown name leaves -1, which the caller refuses
+	{
+		s.meterMode = static_cast<int>(stripmeters::modeNames().indexOf(args.value(QStringLiteral("meter_mode")).toString()));
+	}
 	return s;
 }
 
@@ -231,20 +239,38 @@ bool finiteStripSettings(const StripSettings& s)
 	return std::isfinite(s.trim) && std::isfinite(s.panLeft) && std::isfinite(s.panRight) && std::isfinite(s.width);
 }
 
+//! Q050-108: what the strip's own meter modes read - the VU needle (VU against meter.set_reference) and, while the
+//! strip is in 'lufs', its momentary and short-term loudness and true peak; null for no reading.
+void addModeReadings(const MixerChannel* c, QJsonObject* meters)
+{
+	const double reference = meterReferenceDbfs();
+	meters->insert(QStringLiteral("vu_left"), meterReadingJson(stripmeters::vu(*c, 0, reference)));
+	meters->insert(QStringLiteral("vu_right"), meterReadingJson(stripmeters::vu(*c, 1, reference)));
+	const StripLoudness* loudness = stripmeters::loudness(*c);
+	const bool live = loudness != nullptr && stripmeters::mode(*c) == static_cast<int>(stripmeters::Mode::Lufs);
+	meters->insert(QStringLiteral("lufs_momentary"), meterReadingJson(live ? loudness->momentaryLufs() : LufsMeter::MinusInfinity));
+	meters->insert(QStringLiteral("lufs_short_term"), meterReadingJson(live ? loudness->shortTermLufs() : LufsMeter::MinusInfinity));
+	meters->insert(QStringLiteral("true_peak_dbtp"), meterReadingJson(live ? loudness->truePeakDbtp() : LufsMeter::MinusInfinity));
+	meters->insert(QStringLiteral("vu_reference_dbfs"), reference);
+}
+
 QJsonObject stripJson(const MixerChannel* c)
 {
 	const StripSettings s = settingsOf(c);
+	QJsonObject meters{{QStringLiteral("pre_peak_left"), static_cast<double>(c->m_prePeakLeft.get())},
+		{QStringLiteral("pre_peak_right"), static_cast<double>(c->m_prePeakRight.get())},
+		{QStringLiteral("rms_left"), static_cast<double>(c->m_rmsLeft.get())}, {QStringLiteral("rms_right"), static_cast<double>(c->m_rmsRight.get())},
+		{QStringLiteral("clipped"), c->m_clipped.load(std::memory_order_relaxed)},
+		{QStringLiteral("gain_reduction_db"), static_cast<double>(c->m_gainReduction.get())},
+		{QStringLiteral("correlation"), static_cast<double>(c->m_correlation.get())}};
+	addModeReadings(c, &meters);
 	return {{QStringLiteral("channel"), channelIdOf(c)}, {QStringLiteral("trim_db"), static_cast<double>(s.trim)},
 		{QStringLiteral("polarity_left"), s.polarityLeft}, {QStringLiteral("polarity_right"), s.polarityRight},
 		{QStringLiteral("mono"), s.mono}, {QStringLiteral("swap"), s.swap}, {QStringLiteral("pan_mode"), panModeNames().value(s.panMode)},
 		{QStringLiteral("pan"), static_cast<double>(s.panLeft)}, {QStringLiteral("pan_right"), static_cast<double>(s.panRight)},
 		{QStringLiteral("width"), static_cast<double>(s.width)}, {QStringLiteral("solo_safe"), s.soloSafe}, {QStringLiteral("note"), s.note},
-		{QStringLiteral("meters"), QJsonObject{{QStringLiteral("pre_peak_left"), static_cast<double>(c->m_prePeakLeft.get())},
-			{QStringLiteral("pre_peak_right"), static_cast<double>(c->m_prePeakRight.get())},
-			{QStringLiteral("rms_left"), static_cast<double>(c->m_rmsLeft.get())}, {QStringLiteral("rms_right"), static_cast<double>(c->m_rmsRight.get())},
-			{QStringLiteral("clipped"), c->m_clipped.load(std::memory_order_relaxed)},
-			{QStringLiteral("gain_reduction_db"), static_cast<double>(c->m_gainReduction.get())},
-			{QStringLiteral("correlation"), static_cast<double>(c->m_correlation.get())}}}, {QStringLiteral("input_mono"), s.inputMono}};
+		{QStringLiteral("meters"), meters}, {QStringLiteral("input_mono"), s.inputMono},
+		{QStringLiteral("meter_mode"), stripmeters::modeNames().value(s.meterMode)}};
 }
 
 ControlResult setStrip(const QJsonObject& args)
@@ -257,10 +283,10 @@ ControlResult setStrip(const QJsonObject& args)
 	const StripSettings before = settingsOf(channel);
 	const StripSettings after = merged(before, args);
 	if (!finiteStripSettings(after) || std::abs(after.trim) > 24.f || after.panMode < 0 || after.width < 0.f || after.width > 2.f || std::abs(after.panLeft) > 1.f
-		|| std::abs(after.panRight) > 1.f)
+		|| std::abs(after.panRight) > 1.f || after.meterMode < 0)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'trim_db' is -24..24, 'pan_mode' balance / dual / width, "
-			"'width' 0..2, 'pan' and 'pan_right' -1..1"));
+			"'width' 0..2, 'pan' and 'pan_right' -1..1, 'meter_mode' %1").arg(stripmeters::modeNames().join(QStringLiteral(" / "))));
 	}
 	if (after == before) { return ControlResult::success(stripJson(channel)); }
 	const int id = channel->id();
@@ -323,18 +349,25 @@ void registerMixerStripCommands(ControlRegistry& registry)
 		"before the inserts), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left "
 		"side and 'pan_right' the right, so both centred sum the sides to mono; entering dual from centred pans spreads "
 		"them hard left and right -, width - 'width' 0..2 scales the stereo side, then 'pan' balances), 'solo_safe' "
-		"(soloing another channel never mutes this one) and 'note' (free text, shown as the strip's tooltip). A field left "
-		"out keeps its value. Saved with the project; one undo step."),
+		"(soloing another channel never mutes this one), 'note' (free text, shown as the strip's tooltip) and, Q050-108, "
+		"'meter_mode' - what this strip's meter shows: default (the mixer view's meter_mode, as every older project), peak "
+		"(after the fader), rms, pre_fader, vu (a VU meter: 300 ms integration, 0 VU at meter.set_reference's level for a "
+		"steady sine) or lufs (BS.1770 short-term loudness and true peak of this channel, after the fader); other strips "
+		"keep theirs. A field left out keeps its value. Saved with the project; one undo step."),
 		objectSchema({{QStringLiteral("channel"), stringProperty()}, {QStringLiteral("trim_db"), numberProperty()},
 			{QStringLiteral("polarity_left"), booleanProperty()}, {QStringLiteral("polarity_right"), booleanProperty()},
 			{QStringLiteral("mono"), booleanProperty()}, {QStringLiteral("swap"), booleanProperty()}, {QStringLiteral("input_mono"), booleanProperty()},
 			{QStringLiteral("pan_mode"), enumProperty(panModeNames())},
 			{QStringLiteral("pan"), numberProperty()}, {QStringLiteral("pan_right"), numberProperty()},
 			{QStringLiteral("width"), numberProperty()}, {QStringLiteral("solo_safe"), booleanProperty()},
-			{QStringLiteral("note"), stringProperty()}}, {QStringLiteral("channel")}), setStrip, true);
+			{QStringLiteral("note"), stringProperty()}, {QStringLiteral("meter_mode"), enumProperty(stripmeters::modeNames())}},
+			{QStringLiteral("channel")}), setStrip, true);
 	add(registry, "strip_get", QStringLiteral("A channel's own settings (as mixer.set_strip writes them) and its meters: "
 		"pre-fader peak (held since the last clear), RMS after the fader (this period), the latched clip light, and the "
-		"deepest gain reduction (dB) an insert reported."), objectSchema({{QStringLiteral("channel"), stringProperty()}},
+		"deepest gain reduction (dB) an insert reported; Q050-108: its 'meter_mode' and, under 'meters', the VU needle "
+		"('vu_left' / 'vu_right', in VU against 'vu_reference_dbfs') and - while the strip is in lufs - 'lufs_momentary', "
+		"'lufs_short_term' and 'true_peak_dbtp' (null with no reading yet). meter.get_state and the shell's loudness "
+		"readout stay the master's."), objectSchema({{QStringLiteral("channel"), stringProperty()}},
 		{QStringLiteral("channel")}), getStrip, false);
 	add(registry, "solo_mode", QStringLiteral("The solo mode: 'mode' exclusive (soloing a channel unsolos the others - the "
 		"default) or additive (each solo adds to the ones already on). Left out, it reads the mode. A preference in the config "

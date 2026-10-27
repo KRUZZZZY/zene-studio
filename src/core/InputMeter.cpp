@@ -24,6 +24,7 @@
 #include "InputMeter.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 
@@ -50,6 +51,9 @@ std::atomic<float> s_watchRight{0.f};
 // installed by a test (InputMeterTest.cpp).
 detail::PeakObservationHook s_peakObservationHook = nullptr;
 #endif
+//! Q050-340: per reader, per capture channel.
+std::array<std::array<std::atomic<float>, MaxChannels>, 2> s_channels{};
+std::atomic<int> s_channelCount{0};
 
 void raise(std::atomic<float>& held, float value)
 {
@@ -92,6 +96,54 @@ void measure(const SampleFrame* buffer, f_cnt_t frames)
 	raise(s_liveRight, right);
 	raise(s_watchLeft, left);
 	raise(s_watchRight, right);
+}
+
+namespace
+{
+
+void raiseChannel(int channel, float peak)
+{
+	for (auto& reader : s_channels) { raise(reader[static_cast<std::size_t>(channel)], peak); }
+}
+
+} // namespace
+
+void measureChannels(const float* interleaved, int channels, f_cnt_t frames)
+{
+	if (interleaved == nullptr || frames <= 0 || channels <= 0) { return; }
+	channels = std::min(channels, MaxChannels);
+	const auto width = static_cast<std::size_t>(channels);
+	for (int c = 0; c < channels; ++c)
+	{
+		float peak = 0.f;
+		for (f_cnt_t f = 0; f < frames; ++f) { peak = std::max(peak, std::abs(interleaved[static_cast<std::size_t>(f) * width + static_cast<std::size_t>(c)])); }
+		raiseChannel(c, peak);
+	}
+	s_channelCount.store(channels, std::memory_order_relaxed);
+}
+
+void measureStereoChannels(const SampleFrame* buffer, f_cnt_t frames)
+{
+	if (buffer == nullptr || frames <= 0) { return; }
+	float left = 0.f;
+	float right = 0.f;
+	for (f_cnt_t f = 0; f < frames; ++f)
+	{
+		left = std::max(left, std::abs(buffer[f][0]));
+		right = std::max(right, std::abs(buffer[f][1]));
+	}
+	raiseChannel(0, left);
+	raiseChannel(1, right);
+	s_channelCount.store(2, std::memory_order_relaxed);
+}
+
+int channelCount() { return s_channelCount.load(std::memory_order_relaxed); }
+
+void takeChannels(Reader reader, float* peaks, int count)
+{
+	auto& held = s_channels[static_cast<std::size_t>(reader)];
+	for (int c = 0; c < std::min(count, MaxChannels); ++c) { peaks[c] = held[static_cast<std::size_t>(c)].exchange(0.f, std::memory_order_relaxed); }
+	for (int c = MaxChannels; c < count; ++c) { peaks[c] = 0.f; }
 }
 
 void take(float* left, float* right)

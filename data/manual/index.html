@@ -206,6 +206,23 @@ names. Each send in the Inspector has a meter beside it, and instrument and samp
 Compare Channel EQ draws two channels' EQ over each other. The Control Room (Project menu) switches between three sets of
 speakers, each with its own trim, and dims, mutes or checks the mix in mono - on what you hear only, never on an export. A
 channel's "Play Previews Here" sends the browser's previews to it instead of the master. With the keyboard, Tab and Shift+Tab move through a strip's controls and wrap inside it, while Ctrl+Tab and Ctrl+Shift+Tab move to the same control on the next or previous channel and stop at the first and last channel; arrows, Page Up/Down, Home and End adjust a focused fader or knob, and Space toggles Mute or Solo. Every control is announced with its channel's name.</p>
+<p>Mixer View &gt; Show Console Section adds a Console section to every strip (it is off by default, and kept between
+sessions): small knobs for the channel's trim, its EQ (low shelf at 100 Hz, a mid bell and its frequency, high shelf at
+8 kHz) and switches for each side's polarity. When the channel carries a Console device (Console Across the Mix puts one
+on every channel), the section also turns that channel's Console drive and its glue compressor - a switch, threshold,
+ratio and makeup - and changes that channel only; a channel without a Console says so. A knob's drag is one undo step.
+The glue compressor is off until you switch it on, so a Console sounds exactly as before. Scripts and agents use
+mixer.console_strip.</p>
+<p>Each strip can show its own meter: the strip's Strip &gt; Meter Mode chooses Peak (after the fader), RMS, Pre-fader,
+VU or LUFS for that strip alone - Default follows Mixer View &gt; Meter. VU integrates over 300 ms and reads 0 VU for a
+steady tone at the studio reference (meter.set_reference, -18 dBFS unless you change it); LUFS shows the channel's own
+short-term loudness and true peak on the strip's meter line. The LUFS field in the transport bar and Large Meters'
+loudness line are always the master's. Mixer View &gt; Input Meters... shows a meter for every input of your audio
+interface and, under them, one for each record-armed track's chosen input - whether or not the track monitors it.</p>
+<p>Track Delay (an audio or instrument track's menu) and Channel Delay (a channel's Strip menu) move that track or
+channel later - or, with a negative number, earlier - by a number of samples, shown in the menu entry; the automatic
+delay compensation keeps everything else lined up. It is saved with the project and one undo puts it back (an
+instrument track's note delay, which starts notes later, is a separate setting).</p>
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
 round trip measured by a ping and compensated. Interface Channels names your interface's inputs and outputs and pairs them;

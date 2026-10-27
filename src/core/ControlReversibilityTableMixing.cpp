@@ -37,6 +37,9 @@ using RC = ReversibilityClass;
 //! A literal row: R(id, class, reversible, reason, mechanism, fallback).
 #define R(id, cls, rev, reason, mechanism, fallback) \
 	{ id, cls, reason, mechanism, fallback, rev, nullptr }
+//! A row for a command whose consecutive calls on the same @a target coalesce into one undo step (docs/UNDO-BOUNDS.md).
+#define RC(id, cls, rev, reason, mechanism, fallback, target) \
+	{ id, cls, reason, mechanism, fallback, rev, target }
 
 const ReversibilityRow kMixingRows[] = {
 	R("mixer.send_many", RC::TrueInverse, true, "it makes the same send or routing from several channels",
@@ -55,6 +58,17 @@ const ReversibilityRow kMixingRows[] = {
 	R("mixer.set_strip", RC::TrueInverse, true, "it changes a channel's own settings (saved with the project)",
 		"action checkpoint: the recorded undo step puts the channel's previous strip settings back", ""),
 	R("mixer.strip_get", RC::NotMutating, false, "it reads a channel's settings and meters. Nothing is written", "no write", ""),
+	// Q050-088: the strip's Console section; a knob dragged on the strip is one gesture, so a run on one channel coalesces.
+	RC("mixer.console_strip", RC::TrueInverse, true, "it changes one channel's trim, polarity, EQ and its Console's drive and "
+		"glue compressor (saved with the project)", "action checkpoint: the recorded undo step puts the channel's previous "
+		"Console section back", "", "channel"),
+	// Q050-340: the capture channels' and the armed tracks' input levels.
+	R("meter.inputs", RC::NotMutating, false, "it reads the input levels (the agent's own maxima). Nothing is written",
+		"no write", ""),
+	R("window.input_meters", RC::NotMutating, false, "it opens the Input Meters window: a display", "no write", ""),
+	// Q050-339: a track's or channel's manual delay.
+	R("pdc.set_offset", RC::TrueInverse, true, "it changes a track's or a mixer channel's manual delay (saved with the project)",
+		"action checkpoint: the recorded undo step puts the previous offset back", ""),
 	R("mixer.rename_channel", RC::TrueInverse, true, "it renames a mixer channel (saved with the project)", "action checkpoint: the recorded undo step puts the previous name back", ""),
 	R("mixer.solo_mode", RC::TrueInverse, true,
 		"it writes the solo mode, a preference in the config file (ConfigManager is not a JournallingObject) - a bounded "
@@ -89,6 +103,7 @@ const ReversibilityRow kMixingRows[] = {
 	R("mixer.surround_get", RC::NotMutating, false, "it reads every channel's speaker format, panner and outputs", "no write", ""),
 };
 
+#undef RC
 #undef R
 
 constexpr int kMixingRowCount = static_cast<int>(sizeof(kMixingRows) / sizeof(kMixingRows[0]));

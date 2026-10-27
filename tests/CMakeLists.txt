@@ -953,6 +953,14 @@ set(LMMS_TESTS
 	src/core/DeviceToolsChainTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
 	src/core/DeviceDspTest.cpp
+	# Q050-088: the strip's Console section (mixer.console_strip) and the Console's glue compressor.
+	src/core/ConsoleStripTest.cpp
+	# Q050-108: each strip's own meter mode - VU (300 ms), LUFS and true peak per channel.
+	src/core/StripMeterModeTest.cpp
+	# Q050-339: the manual delay of audio tracks, instrument tracks and mixer channels (pdc.set_offset).
+	src/core/TrackOffsetTest.cpp
+	# Q050-340: every capture channel's level and the armed tracks' inputs (meter.inputs).
+	src/core/InputChannelMeterTest.cpp
 	# DrumSynth rejects envelope tokens longer than its fixed parser capacity.
 	src/core/DrumSynthTest.cpp
 	# Q050-030: selecting a Neural Amp model never waits behind a load (the effect is compiled in with a test seam).
@@ -1181,6 +1189,8 @@ set(LMMS_TESTS
 	src/gui/MixerModesTest.cpp
 	# 0.5.0 L08 metering: ballistics (MX-128), the Selected filter (MX-005), live input meters (MX-134), the phase view (MX-137).
 	src/gui/MixerMeteringTest.cpp
+	# MixerStripFeaturesTest: the strip's Console section, its meter mode, the delay entries and the input meters (Q050-088/108/339/340).
+	src/gui/MixerStripFeaturesTest.cpp
 	# The selected mixer channel follows its identity through a removal, a removal of itself, and a reorder.
 	src/gui/MixerSelectionIdentityTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
@@ -1980,6 +1990,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionFftw.h
 		)
 	endif()
+	# Q050-088: these load the build's console module (DeviceDspTest skipped its console cases when a targeted
+	# build had not built it).
+	if(LMMS_TEST_NAME STREQUAL "DeviceDspTest" OR LMMS_TEST_NAME STREQUAL "ConsoleStripTest")
+		add_dependencies(${LMMS_TEST_NAME} console)
+	endif()
+	# The strip-features GUI test (MixerStripFeaturesTest) drives a Console's own controls too.
+	if(LMMS_TEST_NAME STREQUAL "MixerStripFeaturesTest")
+		add_dependencies(MixerStripFeaturesTest console)
+	endif()
 
 	# ThreadPoolTest interposes pthread_create to inject a deterministic startup
 	# failure after one worker has started; the symbol must be exported to bind.
@@ -2213,6 +2232,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest"
+		OR LMMS_TEST_NAME STREQUAL "ConsoleStripTest"
+		OR LMMS_TEST_NAME STREQUAL "MixerStripFeaturesTest"
 		OR LMMS_TEST_NAME STREQUAL "RealtimeSnapshotTest"
 		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
@@ -3108,6 +3129,7 @@ set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerStripFeaturesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5684,6 +5706,15 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-mixing-routing.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlMixingRouting PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# ControlMixingStripFeatures: Q050-088/108/339/340 over the socket (it loads the build's console module).
+	add_test(NAME ControlMixingStripFeatures
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mixing-strip-features.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMixingStripFeatures PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

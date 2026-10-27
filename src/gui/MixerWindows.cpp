@@ -43,6 +43,7 @@
 #include "DesignTokens.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "InputChannelMeters.h"
 #include "InputLevelMeter.h"
 #include "MainWindow.h"
 #include "Mixer.h"
@@ -265,6 +266,9 @@ void addMixerWindows(QMenu* menu)
 	QAction* meters = menu->addAction(QObject::tr("Large Meters..."));
 	meters->setProperty("controlCommand", QStringLiteral("meter.get_state"));
 	QObject::connect(meters, &QAction::triggered, menu, [] { showOne<LargeMeters>(&s_meters); });
+	QAction* inputs = menu->addAction(QObject::tr("Input Meters..."));  // Q050-340: each capture channel, each armed track
+	inputs->setProperty("controlCommand", QStringLiteral("window.input_meters"));
+	QObject::connect(inputs, &QAction::triggered, menu, [] { ControlRegistry::instance()->invoke(QStringLiteral("window.input_meters")); });
 	QAction* scope = menu->addAction(QObject::tr("Phase Scope..."));  // MX-137
 	scope->setProperty("controlCommand", QStringLiteral("window.phase_scope"));
 	QObject::connect(scope, &QAction::triggered, menu, [] { ControlRegistry::instance()->invoke(QStringLiteral("window.phase_scope")); });

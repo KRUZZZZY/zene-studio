@@ -1078,8 +1078,13 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 17** (`050/m0-train-17`, 2026-10-26, automatic): `ReversibilityContractTest` on the merged tree measures `rows=872 true_inverse=430 snapshot=42 irreversible=25 not_mutating=375`.
 
+**The strip-features batch** (`feat/050-Q050-088-oc`, Q050-088 / Q050-108 / Q050-339 / Q050-340; integrated onto
+`050/m0-train-17` 2026-10-27) adds four rows: `mixer.console_strip` and `pdc.set_offset` (`true_inverse`), `meter.inputs` and
+`window.input_meters` (`not_mutating`); `ReversibilityContractTest` on the integrated tree measures
+`rows=876 true_inverse=432 snapshot=42 irreversible=25 not_mutating=377`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=872 true_inverse=430 snapshot=42 irreversible=25 not_mutating=375
+     measured: rows=876 true_inverse=432 snapshot=42 irreversible=25 not_mutating=377
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

@@ -32,12 +32,16 @@
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "CommandForm.h"
+#include "ControlMixerSupport.h"
+#include "ControlRegistry.h"
 #include "CrossfadeEditorDialog.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClient.h"
 #include "MidiClip.h"
+#include "Mixer.h"
 #include "SampleClip.h"
+#include "SampleTrack.h"
 #include "Song.h"
 #include "TrackVersions.h"
 
@@ -164,6 +168,59 @@ void crossfadeEditorEntries(QMenu* menu, Clip* clip)
 	QObject::connect(editor, &QAction::triggered, menu, [self, other, menu] {
 		if (self && other) { CrossfadeEditorDialog::openFor(self, other, menu->parentWidget()); }
 	});
+}
+
+namespace
+{
+
+//! The manual delay of @a target (a track or a channel), its stored value in the entry's name.
+void offsetEntry(QMenu* menu, const QString& label, const QString& target, int samples)
+{
+	QAction* action = menu->addAction(label.arg(samples));
+	action->setProperty("controlCommand", QStringLiteral("pdc.set_offset"));
+	QObject::connect(action, &QAction::triggered, menu, [target, samples, menu] {
+		runCommand(menu->parentWidget(), CommandCall{QStringLiteral("pdc.set_offset"), {{QStringLiteral("target"), target}},
+			{{QStringLiteral("offset_samples"), samples}}, QString(), true});
+	});
+}
+
+} // namespace
+
+void trackDelayEntries(QMenu* menu, Track* track, const QString& id)
+{
+	if (auto* instrument = dynamic_cast<InstrumentTrack*>(track))
+	{
+		offsetEntry(menu, tr("Track Delay (%1 samples)..."), id, instrument->audioBusHandle()->offsetFrames());
+	}
+	else if (auto* sample = dynamic_cast<SampleTrack*>(track))
+	{
+		offsetEntry(menu, tr("Track Delay (%1 samples)..."), id, sample->audioBusHandle()->offsetFrames());
+	}
+}
+
+void channelDelayEntries(QMenu* menu, const QString& channel)
+{
+	ControlResult ignored;
+	const MixerChannel* resolved = control::resolveMixerChannel(channel, &ignored);
+	if (resolved != nullptr && resolved->index() != 0) { offsetEntry(menu, tr("Channel Delay (%1 samples)..."), channel, resolved->offsetFrames()); }
+}
+
+void stripEntries(QMenu* strip, const QString& channel)
+{
+	const QJsonObject self{{QStringLiteral("channel"), channel}};
+	choices(strip, "Polarity Left", "mixer.set_strip", "polarity_left", self);
+	choices(strip, "Polarity Right", "mixer.set_strip", "polarity_right", self);
+	choices(strip, "Mono", "mixer.set_strip", "mono", self);
+	choices(strip, "Swap Left and Right", "mixer.set_strip", "swap", self);  // MX-033
+	choices(strip, "Mono Input", "mixer.set_strip", "input_mono", self);  // MX-059
+	add(strip, "EQ...", "mixer.channel_eq", self, true);  // MX-085
+	choices(strip, "Pan Mode", "mixer.set_strip", "pan_mode", self);
+	choices(strip, "Solo Safe", "mixer.set_strip", "solo_safe", self);
+	choices(strip, "Meter Mode", "mixer.set_strip", "meter_mode", self);  // Q050-108: this strip's own meter
+	add(strip, "Trim, Width and Note...", "mixer.set_strip", self, true);
+	channelDelayEntries(strip, channel);  // Q050-339
+	add(strip, "Meters", "mixer.strip_get", self, false, {}, true);
+	add(strip, "Clear All Clip Lights", "mixer.clear_clips", {}, false);
 }
 
 } // namespace lmms::gui::menuparts

@@ -5281,3 +5281,14 @@ src/tracks/InstrumentTrack.cpp	cluster new-p18-44: resets controller-lane lastSe
 src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies and rebases each controller lane, with later clips winning duplicate ticks; beat repaint visits steps only when each button has nonzero pixel width.
 include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
 tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.
+
+# Q050-088 / Q050-108 / Q050-339 / Q050-340 (2026-10-25, the strip-features batch): each change is skipped at its default, so an older project renders and saves as before; regressions in each unit's own test (ConsoleStripTest, StripMeterModeTest, TrackOffsetTest, InputChannelMeterTest) and the batch's GUI test.
+include/Mixer.h	Q050-108: MixerChannel gains the strip's own meter mode (an atomic int, 0 = follow the view), a VU needle (two MeterValues and fixed filter state) and an owned, lazily built loudness meter published through an atomic pointer; Q050-339: a manual offsetFrames() (atomic int, 0 by default) the PDC graph reads.
+src/core/Mixer.cpp	Q050-339: Mixer::resolveLatency subtracts a channel's manual offset from its output latency and updateLatencyCompensation aligns a track handle by alignedLatencyFrames() (latency less its offset) - both 0 by default, so the graph is unchanged; Q050-108: the destructor note for the channel's loudness meter.
+include/AudioBusHandle.h	Q050-339: setOffsetFrames()/offsetFrames()/alignedLatencyFrames() and one std::atomic<int> m_offsetFrames (0 by default): a track's manual delay as part of its PDC latency.
+src/core/AudioBusHandle.cpp	Q050-339: the handle's PDC delay is the channel's alignment point less alignedLatencyFrames() (latency less the manual offset; identical while the offset is 0); setOffsetFrames clamps to +-LatencyCompensation::MaxManualOffsetFrames.
+src/tracks/SampleTrack.cpp	Q050-339: the track's manual delay saved as the 'offsetframes' attribute only when set, and read back (absent: 0).
+src/tracks/InstrumentTrack.cpp	Q050-339: the track's manual delay saved as the 'offsetframes' attribute only when set, and read back (absent: 0); the note delay ('delayms') is untouched.
+src/core/AudioEngine.cpp	Q050-340: after the stereo input meter, each capture channel's peak is raised into fixed per-reader atomics (inputmeter::measureChannels on the wide capture, else the stereo bus as channels 0 and 1) - no allocation, no lock.
+include/MixerChannelView.h	Q050-088: a ConsoleStripSection member and its consoleSection() accessor.
+src/gui/MixerChannelView.cpp	Q050-088: the strip builds its Console section (hidden unless the mixer view shows it) under the pan knob.

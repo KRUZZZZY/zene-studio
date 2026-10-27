@@ -71,6 +71,26 @@ LMMS_EXPORT void setPeakObservationHook(PeakObservationHook hook);
 } // namespace detail
 #endif
 
+/*! Q050-340: every capture channel's own peak - the raw capture, before the stereo bus picks its pair - so
+ *  each input of a multichannel interface, and each record route's selected input, has its own meter. The
+ *  audio thread raises one relaxed atomic maximum per channel and reader (128 x 2, fixed: no allocation, no
+ *  lock); each reader takes - and resets - only its own, so the interface's meters (InputChannelMeters.h)
+ *  and an agent's meter.inputs never empty each other. */
+constexpr int MaxChannels = 128;  //!< AudioInputPath::MaxChannels
+enum class Reader
+{
+	Interface = 0,
+	Agent = 1
+};
+//! Audio thread: @a frames frames of @a channels interleaved capture channels.
+LMMS_EXPORT void measureChannels(const float* interleaved, int channels, f_cnt_t frames);
+//! Audio thread: the stereo input bus as channels 0 and 1 - what a backend without the wide capture path delivers.
+LMMS_EXPORT void measureStereoChannels(const SampleFrame* buffer, f_cnt_t frames);
+//! How many capture channels the newest period with input carried (0: no capture has delivered anything).
+LMMS_EXPORT int channelCount();
+//! @a reader's peaks of channels 0..@a count-1 since its last read, linear; they start again from zero.
+LMMS_EXPORT void takeChannels(Reader reader, float* peaks, int count);
+
 } // namespace inputmeter
 
 } // namespace lmms
