@@ -81,7 +81,8 @@ inline constexpr int StemModelSampleRate = 44100;
 // caller that does not choose keeps the legacy output bit for bit. Both C++
 // backends and tools/stem_split_cli.py (--quality) derive the hop from
 // stemHopFrames() / the same integer formula, so a setting means one thing
-// everywhere. Real-model SDR per setting is not measured yet (Q050-062 stage 3).
+// everywhere. Real-model SDR and time per setting: doc/STEM-SPLIT.md
+// "End-to-end §5" (Q050-062.3, tools/stem_quality_bench.py).
 enum class StemQuality
 {
 	Fast = 0,     //!< 25% overlap (hop = 3/4 segment)

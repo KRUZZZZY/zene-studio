@@ -20,9 +20,9 @@
 #   fetch     pull the pinned reference set: four MUSDB18-HQ *test* tracks
 #             (Zenodo record 3338373), read out of the 22 GB zip with HTTP
 #             range requests so only those tracks' stems are downloaded. Each
-#             excerpt is a fixed 30 s window; the mix is written as the exact
-#             sum of its four reference stems, so mix and references are
-#             sample-aligned by construction. Every written file's sha256 is
+#             excerpt is a fixed 30 s window; the mix is written as the sum
+#             of its four reference stems (float64, stored as float32), so mix
+#             and references are sample-aligned by construction. Every written file's sha256 is
 #             checked against the pins below (a mismatch is an error).
 #   run       separate every excerpt at every quality with the CLI the GUI
 #             drives, time it, and score the stems against the references.
@@ -261,7 +261,7 @@ def command_fetch(args):
                                                 buffer_size=4 << 20))
     manifest = {"source": args.url, "zip_bytes": MUSDB_ZIP_BYTES,
                 "excerpt_start_s": EXCERPT_START_S, "excerpt_s": EXCERPT_SECONDS,
-                "mix": "exact float sum of the four reference stems",
+                "mix": "sum of the four reference stems (float64, stored as float32)",
                 "tracks": list(REFERENCE_TRACKS), "sha256": {}}
     for track in REFERENCE_TRACKS:
         track_dir = write_excerpt(archive, track, args.out)

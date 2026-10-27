@@ -1,0 +1,769 @@
+{
+ "conditions": {
+  "cli": "tools/stem_split_cli.py",
+  "cli_sha256": "7705c993ff56134c3cb5f74128338f3256d6db35d9be24d2e299c51de54be187",
+  "kernel": "7.3.0-4-cachyos",
+  "logical_cpus": 20,
+  "machine": "x86_64",
+  "model": "htdemucs_fp16weights.onnx",
+  "model_bytes": 165612636,
+  "model_sha256": "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a",
+  "numpy": "2.5.4",
+  "omp_num_threads": null,
+  "onnxruntime": "1.28.0",
+  "processor": "Intel(R) Core(TM) Ultra 7 255HX",
+  "provider": "CPUExecutionProvider",
+  "python": "3.14.8"
+ },
+ "data": {
+  "Al_James___Schoolboy_Facination": {
+   "bass": "d111384f980898878eadac69cbcd97ba8659f1666ee00ebe9b171ff0d169cd3f",
+   "drums": "27055c5cf02b8f33743e2958914043d3411b00c75cd45cb4e99cf2afd620423f",
+   "mix": "f7daa07a0f951c435b433779aeac48c72f2c1cdb343280d27e8feed85532f300",
+   "other": "4829d632591374c7d18d1581f2bf20cc0158a53f4c69313bcc0624338e1715d0",
+   "vocals": "8ea61ee4e71cc030a09394dc6efb2266979b1f0715ee76a59bcd9b62193bd294"
+  },
+  "Angels_In_Amplifiers___I_m_Alright": {
+   "bass": "aca985db4ccb469d00b6399aba6613f470f72abc346f61618abe76ff1f476abe",
+   "drums": "cd357be9d1ea91180af1a53c737491ddf7e13104771c16b8c32b223f14617c3c",
+   "mix": "cd454ba032210a66dc0ede867eaea0db1cf802acfc13ff39ace58fb2b4c16b6c",
+   "other": "b12027c875e1d06cf3d9a7b9c3d5492010284b4e25dc793834c4e53c859f5c43",
+   "vocals": "c1b60f43481cfb5b817c0b66f6f49eb796625b50946407056ed7919068732813"
+  },
+  "Hollow_Ground___Ill_Fate": {
+   "bass": "473fb7cd3adfccc250276240a4b6a4659edcc04d9d7c0dae9a53d31fd0c33d25",
+   "drums": "d58d6dfdd573a61289a2df44443ddb0bc047a9dc1d402ec47457de7652cb3f18",
+   "mix": "976211e259c93374259256a39527fd1cfcf9e2a63cf8929b1f9e85af9dcc96d0",
+   "other": "17a17edd98d92927d361d0b05bbe2ab5527861cd68e59645afac4821a76eb523",
+   "vocals": "d55f57d6ffacb67518440412c9de712bf418ac6f6ec2d8fcd405837689cdd7ca"
+  },
+  "Tom_McKenzie___Directions": {
+   "bass": "3fc3e0632a79ccbcbe51609cc3fcdc17167de3ba15f2084b3686741006d68b28",
+   "drums": "a830e4c8b26cb937d6e4b3edc303548ebb84a4dc5ede03e383a184ef2b44c6db",
+   "mix": "47ddb2d711ae2ddb4922e1bd66f9fa2f5e158313e197b5e6bd63fcd529a2c9c2",
+   "other": "572cb44e652d529f4814d1a9cf799bc1a9f533b2fa05949d3abfdaf81c4ed590",
+   "vocals": "1d6efb1d19d92d51af3e4f4221c419180d7be663f43a80add9f0050641c67597"
+  }
+ },
+ "finished": "2026-10-27T23:13:12+0000",
+ "rows": [
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 62.063752,
+   "excerpt": "Al_James___Schoolboy_Facination",
+   "hop": 257985,
+   "loadavg_after": [
+    1.87,
+    6.7,
+    10.2
+   ],
+   "loadavg_before": [
+    2.67,
+    8.09,
+    10.89
+   ],
+   "process_wall_s": 68.659,
+   "quality": "fast",
+   "repeat": 1,
+   "rtf": 2.068792,
+   "sdr": {
+    "bass": 10.1594,
+    "drums": 7.1479,
+    "other": 1.9623,
+    "vocals": 7.4857
+   },
+   "sdr_mean": 6.6888
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 107.855719,
+   "excerpt": "Al_James___Schoolboy_Facination",
+   "hop": 171990,
+   "loadavg_after": [
+    1.34,
+    4.98,
+    9.16
+   ],
+   "loadavg_before": [
+    1.87,
+    6.7,
+    10.2
+   ],
+   "process_wall_s": 115.418,
+   "quality": "standard",
+   "repeat": 1,
+   "rtf": 3.595191,
+   "sdr": {
+    "bass": 10.2221,
+    "drums": 7.1012,
+    "other": 2.2609,
+    "vocals": 7.8555
+   },
+   "sdr_mean": 6.8599
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 218.232785,
+   "excerpt": "Al_James___Schoolboy_Facination",
+   "hop": 85995,
+   "loadavg_after": [
+    13.51,
+    10.92,
+    10.62
+   ],
+   "loadavg_before": [
+    1.34,
+    4.98,
+    9.16
+   ],
+   "process_wall_s": 225.836,
+   "quality": "high",
+   "repeat": 1,
+   "rtf": 7.274426,
+   "sdr": {
+    "bass": 10.3896,
+    "drums": 7.1919,
+    "other": 2.4186,
+    "vocals": 7.9935
+   },
+   "sdr_mean": 6.9984
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 73.874326,
+   "excerpt": "Angels_In_Amplifiers___I_m_Alright",
+   "hop": 257985,
+   "loadavg_after": [
+    3.99,
+    8.44,
+    9.77
+   ],
+   "loadavg_before": [
+    13.51,
+    10.92,
+    10.62
+   ],
+   "process_wall_s": 80.733,
+   "quality": "fast",
+   "repeat": 1,
+   "rtf": 2.462478,
+   "sdr": {
+    "bass": 10.2301,
+    "drums": 8.0198,
+    "other": 9.0481,
+    "vocals": 10.4849
+   },
+   "sdr_mean": 9.4457
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 79.813831,
+   "excerpt": "Angels_In_Amplifiers___I_m_Alright",
+   "hop": 171990,
+   "loadavg_after": [
+    1.62,
+    6.58,
+    9.0
+   ],
+   "loadavg_before": [
+    3.99,
+    8.44,
+    9.77
+   ],
+   "process_wall_s": 87.193,
+   "quality": "standard",
+   "repeat": 1,
+   "rtf": 2.660461,
+   "sdr": {
+    "bass": 10.2986,
+    "drums": 7.9816,
+    "other": 9.0797,
+    "vocals": 10.5106
+   },
+   "sdr_mean": 9.4676
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 167.669291,
+   "excerpt": "Angels_In_Amplifiers___I_m_Alright",
+   "hop": 85995,
+   "loadavg_after": [
+    1.55,
+    4.27,
+    7.68
+   ],
+   "loadavg_before": [
+    1.62,
+    6.58,
+    9.0
+   ],
+   "process_wall_s": 174.486,
+   "quality": "high",
+   "repeat": 1,
+   "rtf": 5.588976,
+   "sdr": {
+    "bass": 10.3336,
+    "drums": 8.0465,
+    "other": 9.1044,
+    "vocals": 10.5331
+   },
+   "sdr_mean": 9.5044
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 57.88158,
+   "excerpt": "Hollow_Ground___Ill_Fate",
+   "hop": 257985,
+   "loadavg_after": [
+    18.73,
+    8.79,
+    9.01
+   ],
+   "loadavg_before": [
+    1.55,
+    4.27,
+    7.68
+   ],
+   "process_wall_s": 64.629,
+   "quality": "fast",
+   "repeat": 1,
+   "rtf": 1.929386,
+   "sdr": {
+    "bass": 2.7944,
+    "drums": 6.4444,
+    "other": 5.6749,
+    "vocals": 7.5481
+   },
+   "sdr_mean": 5.6155
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 130.672441,
+   "excerpt": "Hollow_Ground___Ill_Fate",
+   "hop": 171990,
+   "loadavg_after": [
+    8.97,
+    10.04,
+    9.57
+   ],
+   "loadavg_before": [
+    18.73,
+    8.79,
+    9.01
+   ],
+   "process_wall_s": 138.317,
+   "quality": "standard",
+   "repeat": 1,
+   "rtf": 4.355748,
+   "sdr": {
+    "bass": 2.7838,
+    "drums": 6.531,
+    "other": 5.6836,
+    "vocals": 7.5466
+   },
+   "sdr_mean": 5.6362
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 188.306294,
+   "excerpt": "Hollow_Ground___Ill_Fate",
+   "hop": 85995,
+   "loadavg_after": [
+    2.04,
+    6.17,
+    8.14
+   ],
+   "loadavg_before": [
+    8.97,
+    10.04,
+    9.57
+   ],
+   "process_wall_s": 198.173,
+   "quality": "high",
+   "repeat": 1,
+   "rtf": 6.276876,
+   "sdr": {
+    "bass": 2.788,
+    "drums": 6.5635,
+    "other": 5.6876,
+    "vocals": 7.5675
+   },
+   "sdr_mean": 5.6517
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 60.936324,
+   "excerpt": "Tom_McKenzie___Directions",
+   "hop": 257985,
+   "loadavg_after": [
+    1.8,
+    5.24,
+    7.67
+   ],
+   "loadavg_before": [
+    2.04,
+    6.17,
+    8.14
+   ],
+   "process_wall_s": 67.935,
+   "quality": "fast",
+   "repeat": 1,
+   "rtf": 2.031211,
+   "sdr": {
+    "bass": 7.1965,
+    "drums": 14.2583,
+    "other": 2.5486,
+    "vocals": 10.8025
+   },
+   "sdr_mean": 8.7015
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 94.031865,
+   "excerpt": "Tom_McKenzie___Directions",
+   "hop": 171990,
+   "loadavg_after": [
+    18.21,
+    9.27,
+    8.81
+   ],
+   "loadavg_before": [
+    1.8,
+    5.24,
+    7.67
+   ],
+   "process_wall_s": 100.766,
+   "quality": "standard",
+   "repeat": 1,
+   "rtf": 3.134395,
+   "sdr": {
+    "bass": 7.4918,
+    "drums": 14.523,
+    "other": 2.8444,
+    "vocals": 10.8603
+   },
+   "sdr_mean": 8.9299
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 135.627926,
+   "excerpt": "Tom_McKenzie___Directions",
+   "hop": 85995,
+   "loadavg_after": [
+    4.41,
+    8.23,
+    8.6
+   ],
+   "loadavg_before": [
+    18.21,
+    9.27,
+    8.81
+   ],
+   "process_wall_s": 142.502,
+   "quality": "high",
+   "repeat": 1,
+   "rtf": 4.520931,
+   "sdr": {
+    "bass": 7.5196,
+    "drums": 14.4622,
+    "other": 2.8372,
+    "vocals": 10.8512
+   },
+   "sdr_mean": 8.9176
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 52.534679,
+   "excerpt": "Al_James___Schoolboy_Facination",
+   "hop": 257985,
+   "loadavg_after": [
+    2.6,
+    7.1,
+    8.19
+   ],
+   "loadavg_before": [
+    4.41,
+    8.23,
+    8.6
+   ],
+   "process_wall_s": 59.268,
+   "quality": "fast",
+   "repeat": 2,
+   "rtf": 1.751156,
+   "sdr": {
+    "bass": 10.1594,
+    "drums": 7.1479,
+    "other": 1.9623,
+    "vocals": 7.4857
+   },
+   "sdr_mean": 6.6888
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 82.584911,
+   "excerpt": "Al_James___Schoolboy_Facination",
+   "hop": 171990,
+   "loadavg_after": [
+    1.15,
+    5.5,
+    7.52
+   ],
+   "loadavg_before": [
+    2.6,
+    7.1,
+    8.19
+   ],
+   "process_wall_s": 89.197,
+   "quality": "standard",
+   "repeat": 2,
+   "rtf": 2.75283,
+   "sdr": {
+    "bass": 10.2221,
+    "drums": 7.1012,
+    "other": 2.2609,
+    "vocals": 7.8555
+   },
+   "sdr_mean": 6.8599
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 190.745974,
+   "excerpt": "Al_James___Schoolboy_Facination",
+   "hop": 85995,
+   "loadavg_after": [
+    17.79,
+    8.04,
+    7.88
+   ],
+   "loadavg_before": [
+    1.15,
+    5.5,
+    7.52
+   ],
+   "process_wall_s": 198.526,
+   "quality": "high",
+   "repeat": 2,
+   "rtf": 6.358199,
+   "sdr": {
+    "bass": 10.3896,
+    "drums": 7.1919,
+    "other": 2.4186,
+    "vocals": 7.9935
+   },
+   "sdr_mean": 6.9984
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 54.302508,
+   "excerpt": "Angels_In_Amplifiers___I_m_Alright",
+   "hop": 257985,
+   "loadavg_after": [
+    17.63,
+    9.98,
+    8.57
+   ],
+   "loadavg_before": [
+    17.79,
+    8.04,
+    7.88
+   ],
+   "process_wall_s": 60.797,
+   "quality": "fast",
+   "repeat": 2,
+   "rtf": 1.810084,
+   "sdr": {
+    "bass": 10.2301,
+    "drums": 8.0198,
+    "other": 9.0481,
+    "vocals": 10.4849
+   },
+   "sdr_mean": 9.4457
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 117.099784,
+   "excerpt": "Angels_In_Amplifiers___I_m_Alright",
+   "hop": 171990,
+   "loadavg_after": [
+    2.46,
+    6.66,
+    7.53
+   ],
+   "loadavg_before": [
+    17.63,
+    9.98,
+    8.57
+   ],
+   "process_wall_s": 132.224,
+   "quality": "standard",
+   "repeat": 2,
+   "rtf": 3.903326,
+   "sdr": {
+    "bass": 10.2986,
+    "drums": 7.9816,
+    "other": 9.0797,
+    "vocals": 10.5106
+   },
+   "sdr_mean": 9.4676
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 209.205214,
+   "excerpt": "Angels_In_Amplifiers___I_m_Alright",
+   "hop": 85995,
+   "loadavg_after": [
+    1.43,
+    3.83,
+    6.19
+   ],
+   "loadavg_before": [
+    2.46,
+    6.66,
+    7.53
+   ],
+   "process_wall_s": 220.192,
+   "quality": "high",
+   "repeat": 2,
+   "rtf": 6.973507,
+   "sdr": {
+    "bass": 10.3336,
+    "drums": 8.0465,
+    "other": 9.1044,
+    "vocals": 10.5331
+   },
+   "sdr_mean": 9.5044
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 92.408805,
+   "excerpt": "Hollow_Ground___Ill_Fate",
+   "hop": 257985,
+   "loadavg_after": [
+    22.48,
+    9.91,
+    8.07
+   ],
+   "loadavg_before": [
+    1.43,
+    3.83,
+    6.19
+   ],
+   "process_wall_s": 103.498,
+   "quality": "fast",
+   "repeat": 2,
+   "rtf": 3.080294,
+   "sdr": {
+    "bass": 2.7944,
+    "drums": 6.4444,
+    "other": 5.6749,
+    "vocals": 7.5481
+   },
+   "sdr_mean": 5.6155
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 103.856365,
+   "excerpt": "Hollow_Ground___Ill_Fate",
+   "hop": 171990,
+   "loadavg_after": [
+    8.98,
+    9.69,
+    8.26
+   ],
+   "loadavg_before": [
+    22.48,
+    9.91,
+    8.07
+   ],
+   "process_wall_s": 115.212,
+   "quality": "standard",
+   "repeat": 2,
+   "rtf": 3.461879,
+   "sdr": {
+    "bass": 2.7838,
+    "drums": 6.531,
+    "other": 5.6836,
+    "vocals": 7.5466
+   },
+   "sdr_mean": 5.6362
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 211.314208,
+   "excerpt": "Hollow_Ground___Ill_Fate",
+   "hop": 85995,
+   "loadavg_after": [
+    1.15,
+    5.33,
+    6.82
+   ],
+   "loadavg_before": [
+    8.98,
+    9.69,
+    8.26
+   ],
+   "process_wall_s": 223.081,
+   "quality": "high",
+   "repeat": 2,
+   "rtf": 7.043807,
+   "sdr": {
+    "bass": 2.788,
+    "drums": 6.5635,
+    "other": 5.6876,
+    "vocals": 7.5675
+   },
+   "sdr_mean": 5.6517
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 8,
+   "elapsed_s": 112.045923,
+   "excerpt": "Tom_McKenzie___Directions",
+   "hop": 257985,
+   "loadavg_after": [
+    19.01,
+    8.41,
+    7.62
+   ],
+   "loadavg_before": [
+    1.15,
+    5.33,
+    6.82
+   ],
+   "process_wall_s": 119.872,
+   "quality": "fast",
+   "repeat": 2,
+   "rtf": 3.734864,
+   "sdr": {
+    "bass": 7.1965,
+    "drums": 14.2583,
+    "other": 2.5486,
+    "vocals": 10.8025
+   },
+   "sdr_mean": 8.7015
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 11,
+   "elapsed_s": 101.467856,
+   "excerpt": "Tom_McKenzie___Directions",
+   "hop": 171990,
+   "loadavg_after": [
+    14.65,
+    11.62,
+    8.98
+   ],
+   "loadavg_before": [
+    19.01,
+    8.41,
+    7.62
+   ],
+   "process_wall_s": 112.389,
+   "quality": "standard",
+   "repeat": 2,
+   "rtf": 3.382262,
+   "sdr": {
+    "bass": 7.4918,
+    "drums": 14.523,
+    "other": 2.8444,
+    "vocals": 10.8603
+   },
+   "sdr_mean": 8.9299
+  },
+  {
+   "audio_s": 30.0,
+   "chunks": 22,
+   "elapsed_s": 201.705571,
+   "excerpt": "Tom_McKenzie___Directions",
+   "hop": 85995,
+   "loadavg_after": [
+    1.88,
+    6.61,
+    7.51
+   ],
+   "loadavg_before": [
+    14.65,
+    11.62,
+    8.98
+   ],
+   "process_wall_s": 212.217,
+   "quality": "high",
+   "repeat": 2,
+   "rtf": 6.723519,
+   "sdr": {
+    "bass": 7.5196,
+    "drums": 14.4622,
+    "other": 2.8372,
+    "vocals": 10.8512
+   },
+   "sdr_mean": 8.9176
+  }
+ ],
+ "sdr_definition": "10*log10((sum ref^2 + 1e-7) / (sum (ref-est)^2 + 1e-7)), per stem over the whole excerpt, both channels",
+ "started": "2026-10-27T22:21:16+0000",
+ "summary": {
+  "fast": {
+   "audio_s_total": 240.0,
+   "chunks_total": 64,
+   "elapsed_s_total": 566.048,
+   "process_wall_s_total": 625.391,
+   "runs": 8,
+   "sdr_mean": 7.6129,
+   "sdr_per_stem": {
+    "bass": 7.5951,
+    "drums": 8.9676,
+    "other": 4.8085,
+    "vocals": 9.0803
+   }
+  },
+  "high": {
+   "audio_s_total": 240.0,
+   "chunks_total": 176,
+   "elapsed_s_total": 1522.807,
+   "process_wall_s_total": 1595.013,
+   "runs": 8,
+   "sdr_mean": 7.768,
+   "sdr_per_stem": {
+    "bass": 7.7577,
+    "drums": 9.066,
+    "other": 5.0119,
+    "vocals": 9.2363
+   }
+  },
+  "standard": {
+   "audio_s_total": 240.0,
+   "chunks_total": 88,
+   "elapsed_s_total": 817.383,
+   "process_wall_s_total": 890.716,
+   "runs": 8,
+   "sdr_mean": 7.7234,
+   "sdr_per_stem": {
+    "bass": 7.6991,
+    "drums": 9.0342,
+    "other": 4.9672,
+    "vocals": 9.1933
+   }
+  }
+ }
+}
