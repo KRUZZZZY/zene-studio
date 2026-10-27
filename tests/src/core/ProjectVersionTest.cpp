@@ -135,6 +135,39 @@ private slots:
 		QVERIFY(ProjectVersion("1.99999999999.2.42").getLabels().isEmpty());
 	}
 
+	//! A MAJOR, MINOR or PATCH that is not a number is reported and sorts below
+	//! every number in its position. It is not read as 0. Missing components,
+	//! empty versions and prerelease labels keep their existing meaning.
+	void malformedIdentifiersAreNotZero()
+	{
+		using namespace lmms;
+
+		// The reported case: 2.x.0 used to compare equal to 2.0.0
+		QVERIFY(!(ProjectVersion("2.x.0") == "2.0.0"));
+		QVERIFY(ProjectVersion("2.x.0") < "2.0.0");
+		QVERIFY(ProjectVersion("2.x.0") < "2.0.1");
+		QVERIFY(ProjectVersion("1.x.0") < "1.0.0");
+		QVERIFY(ProjectVersion("x.1.0") < "0.1.0");
+		QVERIFY(!ProjectVersion("2.x.0").isValid());
+		QVERIFY(!ProjectVersion("1.2.3x").isValid());
+		// Only the identifiers a comparison uses take part in it
+		QVERIFY(ProjectVersion("2.x.0", ProjectVersion::CompareType::Major) == "2.0.0");
+		QVERIFY(ProjectVersion("1.2.3x", ProjectVersion::CompareType::Minor) == "1.2.0");
+		// Files tagged with svn (legacyFileVersion strips it, the reader does not)
+		QVERIFY(ProjectVersion("0.3.0svn1024", ProjectVersion::CompareType::Minor) == "0.3.0");
+		// Missing components are padding, not malformed
+		QVERIFY(ProjectVersion("1.2").isValid());
+		QVERIFY(ProjectVersion("1.2") == "1.2.0");
+		QVERIFY(ProjectVersion("1").isValid());
+		QVERIFY(ProjectVersion("").isValid());
+		QVERIFY(ProjectVersion("") == "0.0.0");
+		// Prerelease labels are not MAJOR.MINOR.PATCH identifiers
+		QVERIFY(ProjectVersion("1.0.0-rc.x").isValid());
+		QVERIFY(ProjectVersion("1.0.0-rc.x") < "1.0.0");
+		// A clamped number is still a number
+		QVERIFY(ProjectVersion("2.999999999999.0").isValid());
+	}
+
 	//! (task #594) A <session> block round-trips every ClipSlot and Scene
 	//! field without loss, and re-serialising the loaded model is
 	//! byte-identical.

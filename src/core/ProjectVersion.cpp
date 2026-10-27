@@ -37,20 +37,40 @@ namespace lmms
 namespace
 {
 
-//! Converts one MAJOR, MINOR or PATCH identifier to an int.
-//! A number too large for an int is clamped to INT_MAX, so it still sorts above
-//! every representable value instead of reading as 0. Other text keeps the 0 that
-//! pads invalid versions, so the order of existing saved files does not change.
-int parseIdentifier(const QString& identifier)
-{
-	bool ok = false;
-	const int value = identifier.toInt(&ok);
-	if (ok){ return value; }
+//! Stored for a MAJOR, MINOR or PATCH identifier that is not a number. Every real
+//! identifier is >= 0, so a malformed one sorts below all of them.
+constexpr int MalformedIdentifier = -1;
 
-	const QString digits = identifier.trimmed();
-	const bool isNumber = !digits.isEmpty() && std::all_of(digits.cbegin(), digits.cend(),
+struct ParsedIdentifier
+{
+	int value;
+	bool valid;
+};
+
+//! Converts one MAJOR, MINOR or PATCH identifier.
+//! An empty identifier is a missing one and is 0, as the padding always made it.
+//! A number too large for an int is clamped to INT_MAX, so it still sorts above
+//! every representable value. Any other text is malformed and is not read as 0.
+ParsedIdentifier parseIdentifier(const QString& identifier)
+{
+	const QString text = identifier.trimmed();
+	if (text.isEmpty()){ return {0, true}; }
+
+	bool ok = false;
+	const int value = text.toInt(&ok);
+	if (ok){ return {value, true}; }
+
+	const bool isDigits = std::all_of(text.cbegin(), text.cend(),
 		[](QChar c){ return c.unicode() >= '0' && c.unicode() <= '9'; });
-	return isNumber ? std::numeric_limits<int>::max() : 0;
+	if (isDigits){ return {std::numeric_limits<int>::max(), true}; }
+	return {MalformedIdentifier, false};
+}
+
+//! Three-way comparison of two identifiers. Subtracting them could overflow,
+//! since a clamped value can be INT_MAX and a malformed one is -1.
+int compareIdentifiers(int a, int b)
+{
+	return (a > b) - (a < b);
 }
 
 } // namespace
@@ -72,9 +92,13 @@ ProjectVersion::ProjectVersion(QString version, CompareType c) :
 	QStringList mainVersion = obligatorySegment.split(".");
 	// HACK: Pad invalid versions in order to prevent crashes
 	while (mainVersion.size() < 3){ mainVersion.append("0"); }
-	m_major = parseIdentifier(mainVersion.at(0));
-	m_minor = parseIdentifier(mainVersion.at(1));
-	m_patch = parseIdentifier(mainVersion.at(2));
+	const ParsedIdentifier major = parseIdentifier(mainVersion.at(0));
+	const ParsedIdentifier minor = parseIdentifier(mainVersion.at(1));
+	const ParsedIdentifier patch = parseIdentifier(mainVersion.at(2));
+	m_major = major.value;
+	m_minor = minor.value;
+	m_patch = patch.value;
+	m_valid = major.valid && minor.valid && patch.valid;
 
 	// Any # of optional pre-release identifiers may follow, separated by '.'s
 	if (!prereleaseSegment.isEmpty()){ m_labels = prereleaseSegment.split("."); }
@@ -86,8 +110,9 @@ ProjectVersion::ProjectVersion(QString version, CompareType c) :
 		mainVersion.erase(mainVersion.begin(), mainVersion.begin() + 3);
 		// Prepend the remaining identifiers as prerelease versions
 		m_labels = mainVersion + m_labels;
-		// Bump the patch version. x.y.z-a < x.y.z, but we want x.y.z.a > x.y.z
-		m_patch += 1;
+		// Bump the patch version. x.y.z-a < x.y.z, but we want x.y.z.a > x.y.z.
+		// A malformed patch stays malformed rather than becoming a real number.
+		if (patch.valid){ m_patch += 1; }
 	}
 }
 
@@ -114,9 +139,9 @@ int ProjectVersion::compare(const ProjectVersion & a, const ProjectVersion & b, 
 	if (limit >= 3){ aPat = a.getPatch(); bPat = b.getPatch(); }
 
 	// Then we can compare as if we care about every identifier
-	if(aMaj != bMaj){ return aMaj - bMaj; }
-	if(aMin != bMin){ return aMin - bMin; }
-	if(aPat != bPat){ return aPat - bPat; }
+	if(aMaj != bMaj){ return compareIdentifiers(aMaj, bMaj); }
+	if(aMin != bMin){ return compareIdentifiers(aMin, bMin); }
+	if(aPat != bPat){ return compareIdentifiers(aPat, bPat); }
 
 	// Decide how many optional identifiers we care about
 	const int maxLabels = std::max(0, limit - 3);
