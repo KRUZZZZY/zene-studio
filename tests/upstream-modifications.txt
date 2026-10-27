@@ -5356,3 +5356,6 @@ plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	new-p23-141: setBufferSize() refuses a 
 plugins/ReverbSC/base.c	cluster new-p14-410 (2026-10): sp_createn sizes the SPFLOAT output buffer with sizeof(*out) instead of sizeof(float); covered by tests/src/plugins/ReverbSCPrecisionTest.cpp
 tests/CMakeLists.txt	cluster new-p14-410 (2026-10): registers the ReverbSCPrecisionTest ctest, which compiles plugins/ReverbSC/base.c with SPFLOAT=double and calloc shimmed
 plugins/Xpressive/ExprSynth.cpp	new-p10-128: IntegrateFunction skips the cycle-advance modulo while no frame counter has counted a call, so setIntegrate(nullptr, ...) no longer divides by zero; regression: ExprSynthTest integrateWithoutFrameCounterDoesNotDivideByZero.
+src/core/LinkedModelGroups.cpp	cluster new-p15-99: the destroyed-model callback and removeControl erase an entry only while it still registers that model (a stale destroy no longer erases a same-named replacement); the destroy callback keeps the name it was registered under; regression LinkedModelGroupsTest.
+include/LinkedModelGroups.h	cluster new-p15-99: declares the private eraseRegisteredModel helper that the destroy callback and removeControl share.
+tests/CMakeLists.txt	cluster new-p15-99: registers LinkedModelGroupsTest in the core test list next to AutomatableModelTest; no existing target properties change.

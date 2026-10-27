@@ -77,6 +77,9 @@ set(LMMS_TESTS
 	# m_sampleRatio (constructor) or survive setSampleRate.
 	src/core/BasicFiltersSampleRateTest.cpp
 	src/core/AutomatableModelTest.cpp
+	# cluster new-p15-99: a LinkedModelGroup erases only the entry that registers
+	# the model it is asked about (destroy callback and removeControl).
+	src/core/LinkedModelGroupsTest.cpp
 	# cluster new-p12-279: EffectControls::m_viewVisible must be atomic because
 	# processImpl() reads it on the audio thread while the GUI writes it.
 	src/core/EffectControlsVisibilityTest.cpp
