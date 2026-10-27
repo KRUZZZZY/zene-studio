@@ -103,14 +103,15 @@ Ratchet items, checked by hand against the two files this change touches:
 - `tests/src/core/MixerToolsTest.cpp`
 - `docs/qwen-fixes-2026-10/cluster-new-p21-31.md`
 
-No header changed, so no other target needs a rebuild. No new file, so `tests/fork-sources.txt` and
+The lane commits changed no header, so no other target needed a rebuild for those commits. No new file, so `tests/fork-sources.txt` and
 `tests/upstream-modifications.txt` are unchanged. No control command was added, so `ControlCommandsSnapshot` is unchanged.
 
-## Sibling not changed (follow-up)
+## Sibling left by the lane tip; closed during QA
 
-`src/core/ControlCommandsVcaShared.h:145-157` (the VCA state reader used by `vca.get_state`) has the same pattern: it calls
-`Engine::mixer()->mixerChannel(member)` with no guard and then `channel->vcaGain()` at line 157. I did not change it. It is a
-different command in a shared header and needs its own regression test. It is a candidate for a follow-up cluster.
+At the lane tip, `src/core/ControlCommandsVcaShared.h:145-157` (the shared state reader for `vca.get_state` and `vca.list`)
+had the same unguarded lookup and dereference. QA added the same range check before the lookup at line 148 and the deterministic
+`ControlVcaCommandsTest::staleMembersAreSkippedFromStateReads` regression. It verifies both read commands keep the valid member
+and omit the stale index.
 
 ## Self-check
 
@@ -122,8 +123,8 @@ different command in a shared header and needs its own regression test. It is a 
    `VcaGroup::addMember(numChannels())`.
 3. **At the cause, siblings checked.** `grep -n "members()"` in `ControlCommandsMixerTools.cpp` returns one loop, the one changed.
    The loops at `Mixer.cpp:1173-1175` and `Mixer.cpp:1345-1348` already guard the index. The loop at `Mixer.cpp:2803`
-   (`saveSettings`) only writes the ids and never dereferences them. The unguarded reader at
-   `ControlCommandsVcaShared.h:145-157` is the same pattern in a different command and is NOT changed here (follow-up above).
+   (`saveSettings`) only writes the ids and never dereferences them. The shared state reader at `ControlCommandsVcaShared.h:145-157`
+   was also guarded and tested during QA (see above).
    Every production path that shrinks the channel list keeps members in range (`Mixer.cpp:1361-1373`, `Mixer.cpp:2566`,
    `Mixer.cpp:1275`), as shown in the decision section.
 4. **No collateral.** The guard only skips a member `>= numChannels()`, which valid state never produces. The loader
@@ -142,7 +143,21 @@ different command in a shared header and needs its own regression test. It is a 
    `meter.arm/get_state/inputs/measure_file` (`ControlCommandsMeter.cpp`, `ControlCommandsInputMeters.cpp:42`), and `meter.input`
    (`ControlCommandsMixerTools.cpp:553`, handler `inputLevel` at `:389`, which reads the input meter only). None is affected
    by the guard.
-7. **Gates (feature_check.py) - not passed.** The script stopped on `PermissionError` creating a directory outside the write-jail
-   (`gates-1-feature-check.log`). Its six simple gates and two ratchet commands were run directly (table above): six exit 0,
-   complexity and file-length exit 1 with no item new to this change. The check therefore still shows this gate as FAIL. It needs
-   to be run by someone with write access beside the worktree, or with the script's log path changed.
+7. **Gates (feature_check.py).** The lane session could not create its adjacent directory (`gates-1-feature-check.log`). QA reran
+   `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-31`
+   after the review fix; it exited 0 with all eight gates PASS, including no new complexity or file-length items.
+
+## QA review evidence (2026-10-27)
+
+- Changed `ControlCommandsVcaShared.h:148-150` to skip a stale member before the shared state reader calls `mixerChannel()`.
+- Added `ControlVcaCommandsTest::staleMembersAreSkippedFromStateReads` in `tests/src/core/ControlVcaCommandsTest.cpp`. It seeds
+  one valid and one stale member, then checks both `vca.get_state` and `vca.list` report the valid member without crashing.
+- `cmake --build build --target zene MixerToolsTest ControlVcaCommandsTest -j4`: EXIT 0.
+- From `build/tests`, `ctest -R 'MixerToolsTest|ControlVcaCommandsTest' --output-on-failure`: EXIT 0, 2/2 passed.
+- Reversed both product guards: `git apply -R .../logs/qa-original-product.patch` and
+  `git apply -R .../logs/qa-fix.patch` (each EXIT 0). Rebuilt the same targets (EXIT 0), then reran the same ctest command:
+  EXIT 8. `ControlVcaCommandsTest` segfaulted in `groupState`; `MixerToolsTest::aStaleMemberIsSkippedNotRead` failed with one
+  refused lookup. Restored the lane product file with `git checkout -- src/core/ControlCommandsMixerTools.cpp` (EXIT 0),
+  re-applied the QA header patch (EXIT 0), rebuilt the targets (EXIT 0), and reran ctest (EXIT 0, 2/2 passed).
+- QA changes committed separately from the lane commits: `src/core/ControlCommandsVcaShared.h`,
+  `tests/src/core/ControlVcaCommandsTest.cpp`, and this report.
