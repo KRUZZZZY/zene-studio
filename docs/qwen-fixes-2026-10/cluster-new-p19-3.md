@@ -20,7 +20,7 @@ Commands and results (log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qw
 | No other `m_descriptor` assignment | `rg -n 'm_descriptor\s*=[^=]' src include` | EXIT=0; `logs/004-descriptor-assignments.log` |
 | The finding's line is guarded by a null check | `rg -n 'instrument != nullptr \? QString::fromUtf8\(instrument->descriptor' src/core/ControlCommandsRackLayers.cpp` | EXIT=0; `logs/005-layer-json.log` |
 
-No product file was changed, so procedure steps 3-4b (RED/GREEN) do not apply. The not-real branch skips the regression test. The gate and completion-check results below are recorded after this report was written.
+No product file was changed, so procedure steps 3-4b (RED/GREEN) do not apply. The not-real branch skips the regression test. The gate results and the completion-check result are in the Self-check section below: the six simple gates pass, and `feature_check.py` itself could not run in this lane's write-jail.
 
 Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p19-3.md` only.
 
