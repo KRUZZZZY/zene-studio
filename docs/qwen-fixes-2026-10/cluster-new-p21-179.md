@@ -113,6 +113,10 @@ No new source or test files were added, so no registration file changed.
   same comparison, using the functions from `feature_check.py`, with the per-gate logs written to the run folder
   (`logs/gate-driver.py`). The baseline for the fix base `639e1d23e` was already cached, so the ratchet comparison did not
   touch git.
+- `submit_check.py` (log `submit-check-1.txt`, EXIT 1) reports `gates (feature_check.py)` as FAIL for the same reason:
+  its inner `feature_check.py` call hits the same `PermissionError` and prints no gate row. The gate logic itself passes
+  (`gate-2-feature-check.txt`, RESULT PASS). The other submit items PASS: commits on the branch, clean tree, report,
+  and tests changed.
 
 ## Self-check
 
@@ -139,5 +143,9 @@ No new source or test files were added, so no registration file changed.
 - **Siblings of the changed code checked and consistent?** Yes. The siblings are listed in "Siblings checked and left
   alone" above. `jitteredTick` is called only from `applyGroove` (`GrooveTemplate.cpp:479`), and `applyGroove` is called
   only from `ControlCommandsGrooveEdit.cpp:251` (the `groove.apply` handler, id at `:387`); no other groove command reaches it.
+- **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values)?** Yes. It uses
+  no clock, sleep, thread or random device. The inputs are the constant `INT32_MAX`, a neutral `GrooveTemplate`, and the
+  fixed seeds 1..64. The jitter comes from `NoteRandom::rollUnit`, a pure hash of (seed, note key, slot tick, length,
+  salt), so the same seeds give the same draws on every run. No seam is needed.
 - **Limit or check added that could hit other callers?** None added. The change only widens an intermediate sum.
 - **Gates pass?** Yes (`gate-2-feature-check.txt`, EXIT 0, `RESULT: PASS`), with the Notes above on how they were run.
