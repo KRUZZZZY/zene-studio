@@ -26,6 +26,7 @@
 #include <QDir>
 #include <QFile>
 #include <QDomDocument>
+#include <QScopeGuard>
 
 #include <algorithm>
 #include <cstddef>
@@ -389,6 +390,38 @@ private slots:
 		QCOMPARE(song->automatedValuesAt(0)[&model], 0.0f);
 		QCOMPARE(song->automatedValuesAt(5)[&model], 0.5f);
 		QCOMPARE(song->automatedValuesAt(TimePos::ticksPerBar() + 5)[&model], 0.5f);
+	}
+
+	// PatternTrack::play() takes `startTimeOffset() % patternLength`, so the divisor must
+	// stay positive for a playable clip. lengthOfPattern() starts from one bar and only
+	// grows, and a bar is never below 6 ticks (192 * 1 / 32, the thinnest time signature),
+	// so the divisor is at least 6 here. This pins that invariant; it passes on the
+	// unchanged code and is not a red-green regression for a fix.
+	void testPatternTrackPlaybackDivisorStaysPositive()
+	{
+		using namespace lmms;
+
+		auto song = Engine::getSong();
+		auto patternStore = Engine::patternStore();
+		auto& meter = song->getTimeSigModel();
+		meter.numeratorModel().setValue(1);
+		meter.denominatorModel().setValue(32);
+		auto restoreMeter = qScopeGuard([&meter] {
+			meter.numeratorModel().setValue(4);
+			meter.denominatorModel().setValue(4);
+		});
+		QCOMPARE(TimePos::ticksPerBar(), tick_t{6});
+
+		PatternTrack patternTrack(song);
+		PatternClip clip(&patternTrack);
+		clip.changeLength(TimePos::ticksPerBar());
+		clip.movePosition(0);
+
+		const bar_t patternBars = patternStore->lengthOfPattern(patternTrack.patternIndex());
+		QVERIFY(patternBars >= 1);
+		QVERIFY(static_cast<tick_t>(patternBars) * TimePos::ticksPerBar() > 0);
+
+		patternTrack.play(TimePos(0), 4410, 0, -1);
 	}
 
 	// A `follows` attribute that is not a number is not a track id: track ids start at
