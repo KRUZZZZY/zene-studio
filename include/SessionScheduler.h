@@ -497,6 +497,12 @@ private:
 	ActiveSlot* claimSlot( int track, int scene ) noexcept;
 	//! Applies at most `budget` queued commands, in order; the rest stay queued for the next period.
 	void drainCommands( const SessionClockContext& snapshot, SessionClockContext& ctx, std::size_t budget ) noexcept;
+	//! The same drain on a period whose clock is @a ctx alone (no reset can move it): the budget's own tests.
+	void drainCommands( const SessionClockContext& ctx, std::size_t budget ) noexcept
+	{
+		SessionClockContext period = ctx;
+		drainCommands( ctx, period, budget );
+	}
 	//! Applies one dequeued command. Audio thread; the body of drainCommands' loop.
 	void applyCommand( const Command& command, const SessionClockContext& ctx ) noexcept;
 	//! Audio thread: applies one published cell's content (#597); body in SessionPlayback.cpp.
