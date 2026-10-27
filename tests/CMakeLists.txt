@@ -2575,6 +2575,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		# Q050-157: the cache-served effect lifetime reproducer copies the amplifier.
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 		if(TARGET lv2instrument)
 			add_dependencies(${LMMS_TEST_NAME} lv2instrument)
 		endif()
