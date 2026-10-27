@@ -760,6 +760,8 @@ set(LMMS_TESTS
 	src/core/MixerListenTest.cpp
 	# 0.5.0 F1: hardware outputs, cue mixes, hardware inserts
 	src/core/HardwareIoTest.cpp
+	# 0.5.0 F1: the hardware bus reads only the frames of its period
+	src/core/HardwareOutputBusTest.cpp
 	# 0.5.0 theme 24: the task area's reporting API and task.* commands
 	src/core/TaskCenterTest.cpp
 	# Destroying a pool drains tasks already queued behind a running task.

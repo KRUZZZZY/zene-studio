@@ -2439,6 +2439,7 @@ tests/src/core/FreezeRegionRepairTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp
 tests/src/core/HardwareIoTest.cpp
+tests/src/core/HardwareOutputBusTest.cpp
 tests/src/core/HydrogenImportTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/ImportTrackIoTest.cpp
