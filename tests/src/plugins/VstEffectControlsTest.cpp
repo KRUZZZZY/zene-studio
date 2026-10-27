@@ -53,6 +53,8 @@ private slots:
 	void initTestCase();
 	void cleanupTestCase();
 	void repeatedSettingsLoadsDoNotRetainOldModels();
+	void labelContainingColonKeepsValueField();
+	void missingParameterEntryKeepsSavedValue();
 };
 
 void VstEffectControlsTest::initTestCase()
@@ -82,6 +84,49 @@ void VstEffectControlsTest::repeatedSettingsLoadsDoNotRetainOldModels()
 
 	controls.loadSettings(settings);
 	QCOMPARE(controls.findChildren<FloatModel*>().size(), 2);
+	testControls = nullptr;
+	testParameterDump.clear();
+}
+
+void VstEffectControlsTest::labelContainingColonKeepsValueField()
+{
+	// A dump entry is "index:label:value"; a label may contain ':' itself,
+	// so the value must still be read from the last field.
+	VstEffectControls controls(nullptr);
+	QDomDocument document;
+	const auto settings = document.createElement("vsteffectcontrols");
+	testControls = &controls;
+	testParameterDump = {
+		{"param0", "0:Gain: 3 dB:0.25"}
+	};
+
+	controls.loadSettings(settings);
+	const auto models = controls.findChildren<FloatModel*>();
+	QVERIFY(models.size() == 1);
+	QVERIFY(qAbs(models.at(0)->value() - 0.25f) < 1e-4f);
+	testControls = nullptr;
+	testParameterDump.clear();
+}
+
+void VstEffectControlsTest::missingParameterEntryKeepsSavedValue()
+{
+	// param1 is absent from the dump, so there is no value to apply; the
+	// project's saved value for that knob must survive the load.
+	VstEffectControls controls(nullptr);
+	QDomDocument document;
+	auto settings = document.createElement("vsteffectcontrols");
+	settings.setAttribute("param1", "0.6");
+	testControls = &controls;
+	testParameterDump = {
+		{"param0", "0:first:0.25"},
+		{"param2", "2:third:0.5"}
+	};
+
+	controls.loadSettings(settings);
+	const auto models = controls.findChildren<FloatModel*>();
+	QVERIFY(models.size() == 2);
+	QVERIFY(qAbs(models.at(0)->value() - 0.25f) < 1e-4f);
+	QVERIFY(qAbs(models.at(1)->value() - 0.6f) < 1e-4f);
 	testControls = nullptr;
 	testParameterDump.clear();
 }

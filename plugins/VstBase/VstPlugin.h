@@ -25,6 +25,8 @@
 #ifndef _VST_PLUGIN_H
 #define _VST_PLUGIN_H
 
+#include <optional>
+
 #include <QMap>
 #include <QPointer>
 #include <QSize>
@@ -33,6 +35,7 @@
 
 #include "Knob.h"
 #include "JournallingObject.h"
+#include "LocaleHelper.h"
 #include "RemotePlugin.h"
 
 #include "vstbase_export.h"
@@ -41,6 +44,32 @@ namespace lmms
 {
 
 class RemotePluginAudioPortsController;
+
+struct VstParameterDumpValue
+{
+	QString label;
+	float value;
+};
+
+// A dump entry is "index:label:value" (VstPlugin::processMessage). The label may
+// contain ':' itself, so the value is the last field and the label is everything
+// between the first and last separators. A missing key or a value that does not
+// parse yields nothing, and the caller keeps the knob's current value.
+inline std::optional<VstParameterDumpValue> parseParameterDumpEntry(const QString& entry)
+{
+	const auto fields = entry.split(":");
+	if (fields.size() < 3)
+	{
+		return std::nullopt;
+	}
+	bool valueOk = false;
+	const float value = LocaleHelper::toFloat(fields.last(), &valueOk);
+	if (!valueOk)
+	{
+		return std::nullopt;
+	}
+	return VstParameterDumpValue{fields.mid(1, fields.size() - 2).join(":"), value};
+}
 
 class VSTBASE_EXPORT VstPlugin : public RemotePlugin, public JournallingObject
 {
