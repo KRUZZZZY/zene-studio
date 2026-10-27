@@ -90,7 +90,7 @@ ExportOutcome MidiExport::tryExport(const TrackContainer::TrackList &tracks,
 
 
 	int nTracks = 1; // the conductor track
-	// One growable chunk buffer for every MTrk and the header; each is written whole, never capped.
+	// One growable chunk buffer for every MTrk and the header; each is written whole, or refused whole when its length cannot be recorded.
 	std::vector<uint8_t> chunk;
 	bool chunkOk = true;
 	const auto writeChunk = [&](const auto &writable)

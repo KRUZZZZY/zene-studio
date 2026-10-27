@@ -42,7 +42,7 @@ const int TICKSPERBEAT = 480;
 const uint64_t SmfMaxChunkBody = 0xFFFFFFFFu;
 
 // Every writer below APPENDS to a growable byte vector. Nothing is written into a fixed-size buffer,
-// so a track of any size is written whole: there is no cap to exceed and nothing to truncate.
+// so a track is written whole up to the 32-bit SMF chunk length; a larger track is refused, never truncated.
 
 
 inline int writeVarLength(uint32_t val, vector<uint8_t> &out)
@@ -296,6 +296,8 @@ class MIDITrack
 
 	//! Appends one complete MTrk chunk: the events, then the end-of-track meta event.
 	//! Every event is written, however many there are; the chunk length is the real length.
+	//! A body larger than maxBody (the 32-bit SMF limit in production) cannot be recorded, so
+	//! nothing is appended and false is returned: a wrapped length would misparse for every reader.
 	inline bool writeToBuffer(vector<uint8_t> &out, uint64_t maxBody = SmfMaxChunkBody) const
 	{
 		vector<uint8_t> body;
@@ -305,6 +307,7 @@ class MIDITrack
 		body.push_back(0xFF);
 		body.push_back(0x2F);
 		body.push_back(0x00);
+		if (uint64_t(body.size()) > maxBody) { return false; }
 
 		// chunk ID
 		out.push_back('M'); out.push_back('T'); out.push_back('r'); out.push_back('k');
