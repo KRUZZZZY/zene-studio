@@ -61,6 +61,7 @@
 #include "Mixer.h"
 #include "MixerPostInserts.h"
 #include "ParameterAliases.h"
+#include "ParameterReadOnly.h"
 #include "Rack.h"
 #include "Song.h"
 #include "Track.h"
@@ -272,10 +273,12 @@ ControlResult paramSearch(const QJsonObject& args)
 // ---------------------------------------------------------------------------
 
 //! A parameter a new setting may change: not the device's own switch, mix and decay (models owned
-//! by the Effect itself), nor a tempo-synced knob's meter.
+//! by the Effect itself), nor a tempo-synced knob's meter, nor a parameter the plug-in declares read-only
+//! (stress-4: plugin.param_set refuses it, and the plug-in overwrites whatever is written to it).
 bool isSetting(const AutomatableModel* model)
 {
-	return qobject_cast<const Effect*>(model->parent()) == nullptr && qobject_cast<const MeterModel*>(model->parent()) == nullptr;
+	return qobject_cast<const Effect*>(model->parent()) == nullptr && qobject_cast<const MeterModel*>(model->parent()) == nullptr
+		&& !isParameterReadOnly(model);
 }
 
 //! Write @a values (one per model) as one undo step, and answer @a reply with the count.

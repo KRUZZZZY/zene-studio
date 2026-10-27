@@ -79,19 +79,26 @@ void ClapEffectControls::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray state;
 	m_effect->plugin()->saveState(&state);
-	if (state.isEmpty()) { return; }
-
-	auto stateElement = doc.createElement(QStringLiteral("state"));
-	stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
-	element.appendChild(stateElement);
+	if (!state.isEmpty())
+	{
+		auto stateElement = doc.createElement(QStringLiteral("state"));
+		stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
+		element.appendChild(stateElement);
+	}
+	m_params.saveValues(doc, element);
 }
 
 void ClapEffectControls::loadSettings(const QDomElement& element)
 {
 	const auto stateElement = element.firstChildElement(QStringLiteral("state"));
-	if (stateElement.isNull()) { return; }
-
-	m_effect->plugin()->loadState(QByteArray::fromBase64(stateElement.text().toLatin1()));
+	if (!stateElement.isNull())
+	{
+		m_effect->plugin()->loadState(QByteArray::fromBase64(stateElement.text().toLatin1()));
+	}
+	// stress-4: the host's saved values of what the plug-in's state did not bring back (none in a document
+	// written before they were saved).
+	const bool restored = m_params.restoreValues(element);
+	if (stateElement.isNull() && !restored) { return; }
 
 	// reflect the restored state in the models
 	m_params.pullValues(0.f);

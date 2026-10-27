@@ -381,6 +381,7 @@ auto HostedPlugin::process(const float* const* inputs, float* const* outputs, in
 		const auto revision = impl.paramSlots[i].revision.load(std::memory_order_relaxed);
 		if (revision == impl.lastSeenRevision[i]) { continue; }
 		impl.lastSeenRevision[i] = revision;
+		impl.paramSlots[i].delivered.store(revision, std::memory_order_relaxed);
 		auto& event = impl.paramEvents[eventCount];
 		event = {};
 		event.header.size = sizeof(clap_event_param_value_t);

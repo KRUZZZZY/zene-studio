@@ -203,6 +203,7 @@ private slots:
 	void testEditorScaleRejectsInfinity();
 	void testMainThreadRequestsAreServiced();
 	void testParameterRescansRereadTheList();
+	void testARescanKeepsAHostValueNotYetDelivered();
 	void testAnInvalidParamRangeIsNormalized();
 	void testAnActiveFlushRequestIsAnsweredWithoutAHostFlush();
 	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
@@ -817,6 +818,34 @@ void ClapHostTest::testNoteOnRefusesNaNVelocity()
 	QCOMPARE(state.noteOnCount, std::uint32_t{0});
 	QCOMPARE(state.activeVoices, std::uint32_t{0});
 	QCOMPARE(rms(outputs[0]), 0.0);
+}
+
+/*! stress-4 (b): a rescan's read-back must not replace a host value the plug-in has not been handed yet. Surge XT
+ *  asks for a value rescan after it loads its state; on an effect that had not processed since, the read-back put
+ *  the plug-in's old value over the one the host had just restored, and the edit was lost. Here Gain is set to 0.3
+ *  with no process() after it, the fixture asks for an info rescan (CLAP_TEST_GAIN_RESCAN=info, serviced on the
+ *  main thread), and Gain must still be 0.3 - then the next block delivers it and the audio carries it. */
+void ClapHostTest::testARescanKeepsAHostValueNotYetDelivered()
+{
+	qputenv("CLAP_TEST_GAIN_RESCAN", "info");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QCOMPARE(plugin.paramPlain(GainParamId), 1.0);
+
+	plugin.setParamPlain(GainParamId, 0.3);
+	plugin.serviceMainThread();  // the plug-in renames Gain and asks for an info rescan: its values are read back
+	qunsetenv("CLAP_TEST_GAIN_RESCAN");
+	QCOMPARE(plugin.parameters()[0].title, QStringLiteral("Level"));
+	QCOMPARE(plugin.paramPlain(GainParamId), 0.3);
+
+	const auto& layout = plugin.busLayout();
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	process(plugin, inputs, outputs, TestFrames);
+	QVERIFY2(std::abs(outputs[0][0] - 0.15f) < 1e-6f, qPrintable(QString::number(outputs[0][0])));
 }
 
 void ClapHostTest::process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,

@@ -362,18 +362,23 @@ void ClapInstrument::modulateNote(std::int64_t target, int channel, int key, flo
 void ClapInstrument::saveSettings(QDomDocument& doc, QDomElement& element)
 {
 	QByteArray state;
-	if (!m_plugin.saveState(&state)) { return; }
-
-	auto stateElement = doc.createElement(QStringLiteral("state"));
-	stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
-	element.appendChild(stateElement);
+	if (m_plugin.saveState(&state))
+	{
+		auto stateElement = doc.createElement(QStringLiteral("state"));
+		stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
+		element.appendChild(stateElement);
+	}
+	m_params.saveValues(doc, element);
 }
 
 void ClapInstrument::loadSettings(const QDomElement& element)
 {
 	const auto node = element.firstChildElement(QStringLiteral("state"));
-	if (node.isNull()) { return; }
-	m_plugin.loadState(QByteArray::fromBase64(node.text().toLatin1()));
+	if (!node.isNull()) { m_plugin.loadState(QByteArray::fromBase64(node.text().toLatin1())); }
+	// stress-4: the host's saved values of what the plug-in's state did not bring back (none in a document
+	// written before they were saved).
+	const bool restored = m_params.restoreValues(element);
+	if (node.isNull() && !restored) { return; }
 
 	// reflect the restored state in the models
 	m_params.pullValues(0.f);

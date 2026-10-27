@@ -29,6 +29,8 @@
 #include <functional>
 #include <vector>
 
+#include <QDomDocument>
+#include <QDomElement>
 #include <QString>
 
 #include "AutomatableModel.h"
@@ -101,6 +103,13 @@ public:
 	//! The plug-in's values into the models, not echoed back: each further from the model's than
 	//! @a tolerance of its range (0: every value that differs).
 	void pullValues(float tolerance);
+	//! stress-4 (b): the host's value of every writable parameter, as `<parameters>` under @a element - saved
+	//! beside the plug-in's own state, which does not always carry what the host set.
+	void saveValues(QDomDocument& doc, QDomElement& element) const;
+	//! After the plug-in restored its state: each writable parameter saved by saveValues() whose value the
+	//! plug-in did not bring back is set to the saved one (sent to the plug-in on its next block). A
+	//! read-only or unknown one, or one the plug-in already restored, is left alone. True when it set any.
+	auto restoreValues(const QDomElement& element) -> bool;
 
 private:
 	auto create(const ClapParamDescriptor& descriptor) -> ClapParamModel*;

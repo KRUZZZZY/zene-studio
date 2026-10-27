@@ -5403,3 +5403,7 @@ src/core/CMakeLists.txt	cluster stress-3: lists the fork-NEW core/PluginInstanti
 tests/CMakeLists.txt	cluster stress-3: registers ControlHostedBusLayoutTest (plug-ins with an odd channel count are hosted, one with no audio port is refused with its reason) in LMMS_TESTS and the ENABLE_EXPORTS list, and gives it the CLAP gain fixture directory and the new three-channel VST3 fixture bundle (vst3-test-three-channel-instrument). No other test, flag or option changes.
 tests/data/clap-test-plugin/clap-test-gain.c	# Plug-ins with mono, multichannel or sidechain bus layouts are refused: 'the engine could not instantiate vst3effect/clapeffect'
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp	# Plug-ins with mono, multichannel or sidechain bus layouts are refused: 'the engine could not instantiate vst3effect/clapeffect'
+tests/plugin_compat_steps.py	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
+tests/src/plugins/ClapEffectIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
+tests/src/plugins/Vst3InstrumentIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
+tests/src/plugins/Vst3EffectIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
