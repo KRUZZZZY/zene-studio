@@ -3065,6 +3065,7 @@ tests/src/gui/FileRevealerTest.cpp
 tests/src/gui/FileSearchJobTest.cpp
 tests/src/gui/FolderSummaryLaneTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
+tests/src/gui/GraphWaveformEditorGuiTest.cpp
 tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp

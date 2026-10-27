@@ -129,9 +129,7 @@ def check_valid_round_trip(session, recorder, work, base, defaults):
     first, second = os.path.join(work, "drawn-1.wav"), os.path.join(work, "drawn-2.wav")
     measured = render(session, first)
     render(session, second)
-    recorder.check("it renders usable audio (audible, finite)",
-                   measured is not None and measured["finite"] and measured["dbfs"] > SILENT_DBFS,
-                   "render=%r" % measured)
+    recorder.check("it renders usable audio (audible, finite)", usable(measured), "render=%r" % measured)
 
     resaved = os.path.join(work, "drawn-resaved.mmp")
     session.result("project.save", {"path": resaved})
@@ -161,6 +159,15 @@ def check_valid_round_trip(session, recorder, work, base, defaults):
     return drawn, wave
 
 
+def reported(messages, owner, attribute):
+    """How many load errors name this plug-in and this graph attribute."""
+    return sum(1 for m in messages if m.startswith(owner + ":") and '"%s"' % attribute in m)
+
+
+def usable(measured):
+    return measured is not None and measured["finite"] and measured["dbfs"] > SILENT_DBFS
+
+
 def check_damaged(session, recorder, instance, work, drawn, wave, defaults):
     damaged = os.path.join(work, "damaged.mmp")
     shape_with_nan = list(defaults[1])
@@ -169,26 +176,22 @@ def check_damaged(session, recorder, instance, work, drawn, wave, defaults):
                              ("waveshapercontrols", SHAPE_ATTRIBUTE): encode(shape_with_nan)})
     opened = session.result("project.open", {"path": damaged})
     messages = [e.get("message", "") for e in opened.get("errors") or []]
+    alive = session.result("control.ping").get("error") is None
     recorder.check("the damaged project opens and the instance is still answering",
-                   bool(opened.get("file")) and session.result("control.ping").get("error") is None,
-                   "reply=%r" % opened)
+                   bool(opened.get("file")) and alive, "reply=%r" % opened)
     recorder.check("project.open reports the truncated Watsyn wave",
-                   sum(1 for m in messages if m.startswith("Watsyn:") and '"%s"' % WAVE_ATTRIBUTE in m) == 1,
-                   "errors=%r" % messages)
+                   reported(messages, "Watsyn", WAVE_ATTRIBUTE) == 1, "errors=%r" % messages)
     recorder.check("project.open reports the Wave Shaper curve with a NaN",
-                   sum(1 for m in messages if m.startswith("Wave Shaper:") and '"%s"' % SHAPE_ATTRIBUTE in m) == 1,
-                   "errors=%r" % messages)
+                   reported(messages, "Wave Shaper", SHAPE_ATTRIBUTE) == 1, "errors=%r" % messages)
 
     measured = render(session, os.path.join(work, "damaged.wav"))
-    recorder.check("the damaged project still renders usable audio (audible, finite)",
-                   measured is not None and measured["finite"] and measured["dbfs"] > SILENT_DBFS,
+    recorder.check("the damaged project still renders usable audio (audible, finite)", usable(measured),
                    "render=%r" % measured)
     resaved = os.path.join(work, "damaged-resaved.mmp")
     session.result("project.save", {"path": resaved})
-    kept_wave, kept_shape = saved_graphs(resaved)
-    recorder.check("both damaged graphs keep the plug-ins' default waveforms",
-                   kept_wave == defaults[0] and kept_shape == defaults[1],
-                   "wave kept=%s shape kept=%s" % (kept_wave == defaults[0], kept_shape == defaults[1]))
+    kept = saved_graphs(resaved)
+    recorder.check("both damaged graphs keep the plug-ins' default waveforms", kept == defaults,
+                   "wave kept=%s shape kept=%s" % (kept[0] == defaults[0], kept[1] == defaults[1]))
     log = instance.read_log()
     recorder.check("no sanitizer or crash report in the instance log",
                    "AddressSanitizer" not in log and "Segmentation" not in log, "log tail=%r" % log[-400:])

@@ -1217,6 +1217,8 @@ set(LMMS_TESTS
 	src/gui/FollowActionEditorTest.cpp
 	# M0 coverage: the Gate, Modulation and Receiver effects' control dialogs, built over the real modules.
 	src/gui/PluginControlDialogsTest.cpp
+	# Q050-486: the Wave Shaper editor's Graph shows a loaded curve, keeps it on a damaged one, and saves a drawn edit.
+	src/gui/GraphWaveformEditorGuiTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
 	src/gui/MixerWindowsTest.cpp
 	# Regressions for stale panner fields, route refresh, and ignored non-left clicks.
@@ -2235,6 +2237,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest"
 		# Q050-486: the waveform-load regression loads the eight graph-saving modules.
 		OR LMMS_TEST_NAME STREQUAL "GraphWaveformLoadTest"
+		OR LMMS_TEST_NAME STREQUAL "GraphWaveformEditorGuiTest"
 		# 0.5.0 Q050-141: the touch-layout geometry test creates an instrument automation lane.
 		OR LMMS_TEST_NAME STREQUAL "TouchLayoutTest"
 		OR LMMS_TEST_NAME STREQUAL "UnmuteChaseTest"
@@ -2333,6 +2336,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 
 	# Q050-486: the waveform-load regression needs every module whose saved graph it loads.
+	if(LMMS_TEST_NAME STREQUAL "GraphWaveformEditorGuiTest" AND TARGET waveshaper)
+		add_dependencies(${LMMS_TEST_NAME} waveshaper)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "GraphWaveformLoadTest")
 		foreach(GRAPH_MODULE watsyn multitapecho waveshaper dynamicsprocessor freeboy vibedstrings xpressive bitinvader)
 			if(TARGET ${GRAPH_MODULE})
@@ -3201,6 +3207,7 @@ set_tests_properties(ExportChannelsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(SessionSyncActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(GraphWaveformEditorGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SurroundPannerTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

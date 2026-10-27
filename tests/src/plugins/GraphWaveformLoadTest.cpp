@@ -200,6 +200,22 @@ const QStringList& allGraphAttributes()
 
 enum class Damage { Empty, Absent, Invalid, Truncated, OneValue, Excessive, Huge, Misaligned, NaN, PosInf, NegInf };
 
+//! A whole number of floats, damaged in count or value.
+std::vector<float> damagedValues(Damage damage, std::vector<float> values)
+{
+	switch (damage)
+	{
+	case Damage::Truncated: values.pop_back(); break;
+	case Damage::OneValue: values.resize(1); break;
+	case Damage::Excessive: values.push_back(values.front()); break;
+	case Damage::Huge: values.assign(values.size() * 512, values.front()); break;
+	case Damage::NaN: values[1] = std::nanf(""); break;
+	case Damage::PosInf: values[0] = INFINITY; break;
+	default: values.back() = -INFINITY; break;
+	}
+	return values;
+}
+
 //! The damaged attribute value, or a null QString for "remove the attribute".
 QString damaged(Damage damage, const Subject& subject, int count)
 {
@@ -209,21 +225,14 @@ QString damaged(Damage damage, const Subject& subject, int count)
 	case Damage::Empty: return QStringLiteral("");
 	case Damage::Absent: return {};
 	case Damage::Invalid: return QStringLiteral("this is not base64 ***");
-	case Damage::Truncated: return encode(std::vector<float>(other.begin(), other.end() - 1));
-	case Damage::OneValue: return encode(std::vector<float>(other.begin(), other.begin() + 1));
-	case Damage::Excessive: { auto more = other; more.push_back(other.front()); return encode(more); }
-	case Damage::Huge: return encode(std::vector<float>(static_cast<std::size_t>(count) * 512, other.front()));
 	case Damage::Misaligned:
 	{
 		QByteArray bytes{reinterpret_cast<const char*>(other.data()), static_cast<int>(other.size() * sizeof(float))};
 		bytes.chop(2);
 		return QString::fromLatin1(bytes.toBase64());
 	}
-	case Damage::NaN: { auto bad = other; bad[1] = std::nanf(""); return encode(bad); }
-	case Damage::PosInf: { auto bad = other; bad[0] = INFINITY; return encode(bad); }
-	case Damage::NegInf: { auto bad = other; bad.back() = -INFINITY; return encode(bad); }
+	default: return encode(damagedValues(damage, other));
 	}
-	return {};
 }
 
 bool reportsNothing(Damage damage) { return damage == Damage::Empty || damage == Damage::Absent; }

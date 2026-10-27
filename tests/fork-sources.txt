@@ -3102,3 +3102,4 @@ src/core/WaveformData.cpp
 tests/src/core/WaveformDataTest.cpp
 tests/src/plugins/GraphWaveformLoadTest.cpp
 tests/control-graph-waveform-load.py
+tests/src/gui/GraphWaveformEditorGuiTest.cpp
