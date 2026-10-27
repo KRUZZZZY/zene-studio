@@ -64,4 +64,5 @@ Packet-allocation subcase: the packet case did not get its own RED line, because
 ## Gates and registration
 
 - No new files. The three changed files are already listed in `tests/fork-sources.txt` (`VideoAudioExtract.cpp`, `VideoDecoder.cpp`, `tests/src/core/VideoTrackTest.cpp`), and they are not inherited LMMS files, so `tests/upstream-modifications.txt` needs no entry. Neither registry file is changed by this commit.
-- `feature_check` (copy, see note): 8/8 PASS, exit 0.
+- `feature_check` (copy, see note): 8/8 PASS, exit 0 (`logs/gate-2-final.log`).
+- The stock `feature_check.py` exits 1 in this sandbox before running any gate: `PermissionError` creating `zene-qwen-new-p10-453-feature-check/` beside the worktree (`logs/gate-3-stock-script.log`). `submit_check.py` calls the stock script, so its `gates` row reads FAIL for that environmental reason only. It is not a gate failure; the same gates pass when the log directory is redirected (above). The write-jail blocks the sibling directory, so I did not work around it further.
