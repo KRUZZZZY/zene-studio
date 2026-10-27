@@ -449,6 +449,8 @@ ControlResult colorMembers(const QJsonObject& args)
 	std::vector<std::pair<int, std::optional<QColor>>> before;
 	for (const mix_ch_t member : group->members())
 	{
+		// A stale member names no channel; mixerChannel() reads the list without a range check outside the tests.
+		if (member >= mixer()->numChannels()) { continue; }
 		if (MixerChannel* channel = mixer()->mixerChannel(member)) { before.emplace_back(channel->id(), channel->color()); }
 	}
 	const auto paint = [](const std::vector<std::pair<int, std::optional<QColor>>>& colors) {
