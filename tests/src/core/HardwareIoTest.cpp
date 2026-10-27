@@ -196,6 +196,25 @@ private slots:
 		QVERIFY2(!bus().active(), "two undos put the master back on 1/2");
 	}
 
+	void outOfRangeFrameReadsAsSilence()
+	{
+		// The bus holds 256 frames a period. Channel 0 carries 0.5 and channel 1 carries 0.25, so frame 256
+		// of channel 0 - past its plane - reads channel 1's first sample unless the frame is bounded.
+		HardwareOutputBus outputs;
+		outputs.init(256);
+		const std::vector<SampleFrame> half(256, SampleFrame(0.5f, 0.5f));
+		const std::vector<SampleFrame> quarter(256, SampleFrame(0.25f, 0.25f));
+		outputs.add(0, 1, half.data(), 256);
+		outputs.add(1, 1, quarter.data(), 256);
+		outputs.setMasterPlacement({-1, 2});  // the master is off the outputs
+		outputs.swap();  // the period just written is the one the device reads
+		const SampleFrame master(0.f, 0.f);
+		QVERIFY(outputs.sample(0, 255, master) == 0.5f);
+		QVERIFY(outputs.monoSample(255, master) == 0.5f);
+		QVERIFY2(outputs.sample(0, 256, master) == 0.f, "a frame past the period is silence");
+		QVERIFY2(outputs.monoSample(256, master) == 0.f, "a frame past the period is silence");
+	}
+
 	void cueMasterFieldsRequireACue()
 	{
 		const ControlResult result = run(QStringLiteral("mixer.cue_master"), {{QStringLiteral("name"), QStringLiteral("Phones")}});
