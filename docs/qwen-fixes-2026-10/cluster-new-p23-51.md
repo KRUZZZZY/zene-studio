@@ -45,4 +45,11 @@ No test was built or run for this cluster. Nothing was built and no product code
 
 ## Self-check
 
-Filled in after `submit_check.py`; see below.
+Ran `submit_check.py <worktree> new-p23-51` (`submit-check-1.log`, EXIT=1). Results: PASS commits on the branch, PASS working tree clean, PASS report present, PASS tests (claim-only, see below). FAIL gates (feature_check.py), explained below.
+
+- **The regression test fails with the product change reverted and passes with it.** Not applicable. The verdict is FALSE-POSITIVE, so there is no product change to revert and no test was added.
+- **The test is deterministic.** Not applicable, for the same reason.
+- **The fix is at the cause and complete.** Not applicable: no fix. Callers and siblings checked for the reachability claim: the two signal connections (`src/gui/ControllerRackView.cpp:172-173`), the emitters (`src/gui/ControllerView.cpp:117,119`), the only `m_controllerViews` mutations (`src/gui/ControllerRackView.cpp:200`, `:226-227`, `:229`), and the deferred-removal path (`:178-185`).
+- **No collateral damage.** Not applicable. No product code changed, so saved data and existing behaviour are untouched.
+- **FALSE-POSITIVE evidence.** The code citations are in the Evidence section above: `src/gui/ControllerRackView.cpp:172-173`, `:187-197`, `:200`, `:226-229`, `:178-185`; `src/gui/ControllerView.cpp:90-96`, `:117-121`, `:156-164`.
+- **Gates (FAIL, environment blocker).** `feature_check.py` exits 1 before running any gate because it creates its log folder at `<worktree>/../zene-qwen-new-p23-51-feature-check`, which is outside the write-jail (`PermissionError`, `feature-check-1.log`). I ran the same gate commands from the worktree, logging to the LOG FOLDER. The six simple gates exit 0. The two ratchets (complexity, file-length) exit 1 with REGRESSION lines, none in a file this branch changes. Clearing this FAIL needs a run of `feature_check.py` from outside the jail, or the log path changed to a writable location. I did not work around it by writing outside the worktree.
