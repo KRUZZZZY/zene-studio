@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T11:43:25Z",
+  "captured_at": "2026-10-27T14:40:41Z",
   "commands": [
     {
       "args_schema": {
@@ -27736,7 +27736,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
+      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation; every playing cell stops. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
       "group": "session",
       "id": "session.clear",
       "mutating": true,
@@ -27773,7 +27773,7 @@
         ],
         "type": "object"
       },
-      "description": "Empty one grid cell, whatever it held. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Empty one grid cell, whatever it held; if it is playing or queued it stops, as session.stop_slot stops it. Undo puts the clip back without launching it. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.clear_slot",
       "mutating": true,
@@ -28490,7 +28490,7 @@
         ],
         "type": "object"
       },
-      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty; a playing cell the grid no longer holds stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_grid",
       "mutating": true,
@@ -28738,7 +28738,7 @@
         ],
         "type": "object"
       },
-      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written; a playing cell sounds its new content at once, and one emptied stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_slot",
       "mutating": true,
@@ -37122,11 +37122,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-489/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-lqpqhnjq/zene.sock",
-    "version": "0.4.0-alpha.5071+f9a57bb"
+    "source_socket": "/tmp/zctl-run-1s79t4kv/zene.sock",
+    "version": "0.4.0-alpha.5076+b1d5439"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
