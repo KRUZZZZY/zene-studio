@@ -84,6 +84,13 @@ public:
 
 	bool active() const { return m_active; }
 };
+
+//! The bytes of the store file, or empty when it cannot be read.
+QByteArray readStore(const QString& path)
+{
+	QFile file(path);
+	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
 #endif
 
 } // namespace
@@ -147,6 +154,56 @@ private slots:
 		const ControlResult listed = run(QStringLiteral("browser.collections"));
 		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
 		QCOMPARE(listed.result.value(QStringLiteral("collections")).toArray().size(), 2);
+#else
+		QSKIP("RLIMIT_FSIZE is POSIX-only, so a store write cannot be cut short here");
+#endif
+	}
+
+	//! An undo or redo whose store write the kernel cuts short is refused, and the store keeps the bytes it
+	//! had. Before this, the undo and redo callbacks dropped writeAll's result, so control.undo and
+	//! control.redo answered success over a store that did not change.
+	void aShortUndoOrRedoOfTheStoreIsRefused()
+	{
+#if defined(Q_OS_UNIX)
+		const QString store = m_dir.filePath(QStringLiteral("collections.json"));
+		const QString bigText = QString(20000, QLatin1Char('h'));
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Snares")},
+			{QStringLiteral("text"), QStringLiteral("name:snare")}}).ok);
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Hats")},
+			{QStringLiteral("text"), bigText}}).ok);
+
+		// Undo: removing Snares leaves the big Hats store. Undoing the removal rewrites the bigger store, cut short.
+		QVERIFY(run(QStringLiteral("browser.collection_remove"), {{QStringLiteral("name"), QStringLiteral("Snares")}}).ok);
+		const QByteArray withoutSnares = readStore(store);
+		QVERIFY(!withoutSnares.isEmpty());
+		{
+			ScopedFileSizeLimit limit(8);
+			QVERIFY2(limit.active(), "RLIMIT_FSIZE could not be lowered, so no write can be cut short");
+			const ControlResult undone = run(QStringLiteral("control.undo"));
+			QVERIFY2(!undone.ok, "an undo whose store write was cut short was reported as success");
+			QCOMPARE(undone.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(undone.errorMessage.contains(QStringLiteral("NOT restored")), qPrintable(undone.errorMessage));
+		}
+		QCOMPARE(readStore(store), withoutSnares);
+
+		// Redo: saving Snares and undoing that save (no limit) leaves the store as it was; the redo writes the bigger store back, cut short.
+		QVERIFY(run(QStringLiteral("browser.collection_save"), {{QStringLiteral("name"), QStringLiteral("Snares")},
+			{QStringLiteral("text"), QStringLiteral("name:snare")}}).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		const QByteArray beforeRedo = readStore(store);
+		QCOMPARE(beforeRedo, withoutSnares);
+		{
+			ScopedFileSizeLimit limit(8);
+			QVERIFY2(limit.active(), "RLIMIT_FSIZE could not be lowered, so no write can be cut short");
+			const ControlResult redone = run(QStringLiteral("control.redo"));
+			QVERIFY2(!redone.ok, "a redo whose store write was cut short was reported as success");
+			QCOMPARE(redone.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(redone.errorMessage.contains(QStringLiteral("NOT re-applied")), qPrintable(redone.errorMessage));
+		}
+		QCOMPARE(readStore(store), beforeRedo);
+		const ControlResult listed = run(QStringLiteral("browser.collections"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("collections")).toArray().size(), 1);
 #else
 		QSKIP("RLIMIT_FSIZE is POSIX-only, so a store write cannot be cut short here");
 #endif
