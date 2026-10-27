@@ -5334,3 +5334,4 @@ plugins/DynamicsProcessor/DynamicsProcessorControls.cpp	Q050-486: saved waveform
 data/manual/index.html	Q050-486: the Projects section says what happens to a damaged drawn waveform or curve in a project or preset (kept/default, listed in the load error report and project.open errors; an absent one loads silently).
 src/core/Clip.cpp	cluster new-p16-325: loadWarp reports a <warp> with more markers than WarpMarkers::MaxMarkers through Song::collectError (the first MaxMarkers still load; nothing else changes).
 tests/src/core/ClipWarpPersistenceTest.cpp	# Excess warp markers are silently discarded
+tests/CMakeLists.txt	cluster new-p21-14: build the amplifier module with DeviceToolsChainTest so clip.process command regressions run rather than skip when the configured test target is built.
