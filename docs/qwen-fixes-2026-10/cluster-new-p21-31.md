@@ -35,10 +35,10 @@ so no new file and no registration change are needed.
 
 ## The change
 
-- `src/core/ControlCommandsMixerTools.cpp:450-454` (in `colorMembers`): a member at or past `mixer()->numChannels()` is skipped
+- `src/core/ControlCommandsMixerTools.cpp:450-455` (in `colorMembers`): a member at or past `mixer()->numChannels()` is skipped
   before `mixerChannel()` is called. Valid state is unchanged; the reply's `colored` count still counts only existing channels,
   and the undo step is unchanged.
-- `tests/src/core/MixerToolsTest.cpp:493-511`: new `aStaleMemberIsSkippedNotRead()`. It counts out-of-range lookups through the
+- `tests/src/core/MixerToolsTest.cpp:494-511`: new `aStaleMemberIsSkippedNotRead()`. It counts out-of-range lookups through the
   existing LMMS_TESTING seam (`Mixer::takeRefusedLookupsForTesting`, `include/Mixer.h`), so it is deterministic: no timing,
   sleeps or races. It colours group `{4, stale}`, asserts that channel 4 is coloured, that the count is 1 and that the refused
   lookup count is 0, then undoes and cleans up. Channel 4 is used because channels 1 and 2 belong to the `Drums` group from the
@@ -132,3 +132,17 @@ different command in a shared header and needs its own regression test. It is a 
    `colouringWhatIsAlreadyColoured` and `aGroupColoursItsMembers` (same test file) still pass (28/28).
 5. **Verdict.** FIXED (not ALREADY-FIXED or FALSE-POSITIVE), so no "already fixed" citation is needed. The reachability caveat is
    stated in the decision section.
+6. **Sibling commands.** The changed file registers its own commands with `add(registry, ...)`
+   (`ControlCommandsMixerTools.cpp:550-578`, including `meter.input` and `chain.bypass_all`/`chain.clean`). The product change is
+   inside `colorMembers` only (`ControlCommandsMixerTools.cpp:442-468`). `grep -rn colorMembers src` finds two hits: the definition
+   (`:442`) and its single registration (`:572`, `vca.color_members`). So no other command in this file calls it or reads VCA
+   members. The other commands the check lists are registered in other files and do not read VCA members either:
+   `chain.apply/copy/get_state/list/receive/remove/rename/save`
+   (`ControlCommandsChain*.cpp`, `ControlCommandsDeviceCopy.cpp:573`, `ControlReversibilityTableW3Engine.cpp:45`),
+   `meter.arm/get_state/inputs/measure_file` (`ControlCommandsMeter.cpp`, `ControlCommandsInputMeters.cpp:42`), and `meter.input`
+   (`ControlCommandsMixerTools.cpp:553`, handler `inputLevel` at `:389`, which reads the input meter only). None is affected
+   by the guard.
+7. **Gates (feature_check.py) - not passed.** The script stopped on `PermissionError` creating a directory outside the write-jail
+   (`gates-1-feature-check.log`). Its six simple gates and two ratchet commands were run directly (table above): six exit 0,
+   complexity and file-length exit 1 with no item new to this change. The check therefore still shows this gate as FAIL. It needs
+   to be run by someone with write access beside the worktree, or with the script's log path changed.
