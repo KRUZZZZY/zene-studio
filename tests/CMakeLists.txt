@@ -668,6 +668,10 @@ set(LMMS_TESTS
 	# glob characters. Split out of RevisionTimelineTest to keep that file under
 	# the file-length ratchet.
 	src/core/ProjectRevisionRestoreStagingTest.cpp
+	# The keep-3 restore into a project file that does not exist (cluster new-p15-24): the
+	# recorded undo removes the file the restore created instead of restoring revision 0,
+	# and the advertised inverse is control.undo. Driven through the registry with a real Engine.
+	src/core/ProjectRestoreMissingTargetTest.cpp
 	# ARCH-4 S1b: the elements a loader did not claim, kept verbatim so that
 	# opening and re-saving cannot destroy them (SPEC-ARCH-4 1.6.1). The
 	# mechanism's own slots are unit-level; the owed proof is the integration
@@ -3234,6 +3238,10 @@ set_tests_properties(MasteringTest PROPERTIES
 # runs real `git` commands, so it needs a Qt platform plugin for the same reason
 # the tests above do.
 set_tests_properties(RevisionTimelineTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ProjectRestoreMissingTargetTest starts a real Engine and drives the registry's
+# undo/redo, so it needs a Qt platform plugin for the same reason.
+set_tests_properties(ProjectRestoreMissingTargetTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The dither and SRC-quality tests build a real Engine and drive the real
