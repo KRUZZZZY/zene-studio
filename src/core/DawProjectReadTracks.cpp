@@ -91,15 +91,17 @@ QString noteFieldRangeError(const DawProjectNote& note)
 	return {};
 }
 
-//! A clip or note ends at start plus duration, which the session adds in tick_t. The start is
-//! already clamped into tick_t (ticksFromBeats), so a duration that would end past the range is
-//! cut back to the room the start leaves, and the cut is counted like a clamped position.
-qint64 durationWithinTickRange(ReadState& state, qint64 startTicks, qint64 durationTicks)
+//! Refuse clip and note endpoints past tick_t; never wrap them or silently alter the document.
+qint64 durationWithinTickRange(ReadState& state, qint64 startTicks, qint64 durationTicks,
+	const QString& kind)
 {
 	const qint64 room = static_cast<qint64>(std::numeric_limits<tick_t>::max()) - startTicks;
 	if (durationTicks <= room) { return durationTicks; }
-	state.report->loss.roundedTimes++;
-	return room;
+	if (state.error.isEmpty())
+	{
+		state.error = QStringLiteral("the %1 start plus duration exceeds the engine's tick range").arg(kind);
+	}
+	return 0;
 }
 
 void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip)
@@ -144,7 +146,7 @@ void parseNotes(QXmlStreamReader& reader, ReadState& state, DawProjectClip* clip
 		const qint64 startTicks = ticksFromBeats(state,
 			doubleAttribute(attributes, state, QStringLiteral("time"), 0.0));
 		const qint64 durationTicks = durationWithinTickRange(state, startTicks,
-			ticksFromBeats(state, duration));
+			ticksFromBeats(state, duration), QStringLiteral("note"));
 		DawProjectNote note;
 		note.time = static_cast<double>(startTicks) / DawProjectTicksPerQuarterNote;
 		note.duration = static_cast<double>(durationTicks) / DawProjectTicksPerQuarterNote;
@@ -222,10 +224,8 @@ void parseClips(QXmlStreamReader& reader, ReadState& state)
 		}
 		if (hasNotes)
 		{
-			// Only a clip the model carries has its end cut to the tick range; an uncarried
-			// clip keeps its full duration, so the skipped-clip count below is unchanged.
-			clip.duration = static_cast<double>(durationWithinTickRange(state, startTicks, durationTicks))
-				/ DawProjectTicksPerQuarterNote;
+			clip.duration = static_cast<double>(durationWithinTickRange(state, startTicks,
+				durationTicks, QStringLiteral("clip"))) / DawProjectTicksPerQuarterNote;
 			state.model->tracks[state.currentTrack].clips.append(clip);
 		}
 		else if (clip.duration > 0.0)

@@ -1,4 +1,4 @@
-FIXED: a clip or note whose end passes `tick_t` no longer reaches the engine with an overflowing end, either in the model (round 1: the duration is cut to fit) or while it is applied (round 2: each clip is built at the origin, its length is set before it moves to its start, and auto-resize is off while notes are added). The finding asked for a refusal instead; see "Design choices".
+FIXED: a clip or note whose endpoint passes `tick_t` is refused before it reaches the engine. Valid boundary clips are built at the origin, assigned their final length, then moved to their start; auto-resize stays off while notes are added.
 
 # Cluster new-p14-89: clip and note end times overflow the engine tick range
 
@@ -6,7 +6,7 @@ FIXED: a clip or note whose end passes `tick_t` no longer reaches the engine wit
 
 **REAL, fixed on `bugs/qwen-new-p14-89`.** The overflow is reachable through two paths, and both are fixed.
 
-*Reader (round 1).* `src/core/DawProjectReadTracks.cpp` clamped each clip and note start and duration into `tick_t` (`src/core/DawProjectReadShared.h:237-255`) and never summed them. `durationWithinTickRange()` (`src/core/DawProjectReadTracks.cpp:97-104`) now cuts a duration to the room its start leaves and counts the cut in `loss.roundedTimes`.
+*Reader.* Individual out-of-domain positions retain the existing clamp-and-count behavior in `src/core/DawProjectReadShared.h:237-255`. `durationWithinTickRange()` (`src/core/DawProjectReadTracks.cpp:97-104`) checks carried clip and note endpoints in a wider type and refuses one past `tick_t`.
 
 *Apply (round 2, review rework).* The engine adds in `tick_t` in every place an imported clip passes through:
 - `include/Clip.h:128-131`: `endPosition()` is `sp + m_length`, an `int` add.
@@ -18,28 +18,29 @@ So a clip starting in the last bar overflowed at creation, and a note ending in 
 
 ## Design choices
 
-1. **Clamp, not refuse (round 1, unchanged).** The file's documented contract (`DawProjectReadShared.h:231-236`) clamps a value past the tick domain and counts it. The existing test `hugeBeatPositionsCannotEnterTheModelOutOfTickRange` (`tests/src/core/DawProjectInterchangeRoundTripTest.cpp:1842`) expects a clamped clip with a duration to import. Refusing would make that test fail, and changing its expectation would weaken it. If the owner wants refusal, that test must change in the same commit.
-2. **Build at the origin, move last (round 2).** `importClip()` creates the clip at 0 (`src/core/DawProjectSession.cpp:312`), so no default-length sum is taken at a late start. `placeImportedClip()` (`:295`) sets the final length, then moves the clip to its start. The start is clamped to the tick range first, so `start + length <= tick_t` max at the final move.
-3. **Auto-resize off while notes are added (round 2).** `addImportedNotes()` (`:261`) turns auto-resize off, so `updateLength()` never runs on a note end near the top of the range. The length the engine would have chosen is computed in `qint64` by `autoLengthForNotes()` (`:245`), and that length is held to the room after the start. Notes are also clamped to that room (`noteSpan()`, `:236`).
+1. **Refuse overflowing endpoints.** `applyDawProjectModel()` checks every carried clip and note endpoint before clearing the live session (`timelineEndpointsFit()`), while individual out-of-domain positions retain the reader's clamp-and-count behavior.
+2. **Build at the origin, move last (round 2).** `importClip()` creates the clip at 0, so no default-length sum is taken at a late start. `placeImportedClip()` sets the final length, then moves the clip to its start. The start and length are held to the range, so the final sum fits.
+3. **Auto-resize off while notes are added (round 2).** `addImportedNotes()` turns auto-resize off, so `updateLength()` never rounds a note end near the top of the range in `tick_t`. `autoLengthForNotes()` computes the equivalent length in `qint64` and it is held to the available clip range.
 4. **Same final state for in-range documents.** With auto-resize off, the engine's own updates are replaced by their results: a document length wins, otherwise the note-driven length (the same rounding the engine does, in `qint64`). The engine's start-offset reset, which runs when notes are added, is kept (`:288`). That reset is pre-existing behaviour: it erases a `playStart` on a clip that has notes. This change keeps it and does not fix it; it is an observation for the owner.
 5. **Zero-duration clip with notes (round 2).** It takes the note-driven length, held to the room after its start. Before this change the same clip overflowed at creation.
 
 ## Changes
 
 - `src/core/DawProjectSession.cpp`: helpers `LastTick`, `NoteSpan`, `noteSpan()`, `autoLengthForNotes()`, `addImportedNotes()`, `placeImportedClip()`, `importClip()` (`:226-320`); `applyDawProjectModel`'s clip loop calls `importClip()` (`:672`); includes `<algorithm>` and `<limits>`.
-- `tests/src/core/DawProjectInterchangeRoundTripTest.cpp`: `readerKeepsATimelineEndpointInsideTheTickRange()` (`:2122`, round 1, model level) and `appliedBoundaryEndpointsStayInTheTickRange()` (`:2181`, round 2, applies through `applyDawProjectModel` into the engine). The apply test counts, through `Song::lengthChanged`, every clip whose start or length leaves the tick range during the import, so a transient overflow is caught even when the final values are right. It then checks the final clip and note positions for three fixtures: a clip 79 ticks short of the end, a note ending on the last tick, and a zero-duration clip 79 ticks short of the end.
+- `tests/src/core/DawProjectInterchangeRoundTripTest.cpp`: `readerRefusesATimelineEndpointPastTheTickRange()` (`:2122`, round 1, model level) and `appliedBoundaryEndpointsStayInTheTickRange()` (`:2181`, round 2, applies through `applyDawProjectModel` into the engine). The apply test counts, through `Song::lengthChanged`, every clip whose start or length leaves the tick range during the import, so a transient overflow is caught even when the final values are right. It then checks the final clip and note positions for three fixtures: a clip 79 ticks short of the end, a note ending on the last tick, and a zero-duration clip 79 ticks short of the end.
 - No header, no new file, no control command, no audio-thread code. Both files are fork-new and already registered (`tests/fork-sources.txt`, `tests/all-sources.txt:2732`).
 
 ## Test matrix
 
 | Path | Case | Covered by |
 | --- | --- | --- |
-| Model, boundary clip | 79-tick end kept; overflowing duration cut and counted | `readerKeepsATimelineEndpointInsideTheTickRange` |
-| Model, boundary note | note end cut and counted | same test |
+| Model, boundary clip | overflowing endpoint refused; exact fit kept | `readerRefusesATimelineEndpointPastTheTickRange` |
+| Model, boundary note | overflowing note endpoint refused; exact fit kept | same test |
 | Model, exact fit | end at `tick_t` max unchanged, nothing counted | same test |
-| Model, uncarried clip | clip without `<Notes>` keeps its duration, counted as skipped | same test |
-| Apply, boundary clip | creation and move stay in range | `appliedBoundaryEndpointsStayInTheTickRange`, fixture 1 |
-| Apply, boundary note | auto-resize does not overflow; clip length equals the end | same test, fixture 2 |
+| Model, uncarried clip | clip without `<Notes>` is counted as skipped | same test |
+| Apply, invalid endpoints | invalid direct models refused before session mutation | `appliedBoundaryEndpointsStayInTheTickRange` |
+| Apply, exact-fit clip | creation and move stay in range | same test, fixture 1 |
+| Apply, exact-fit note | note endpoint stays in range | same test, fixture 2 |
 | Apply, zero-duration boundary clip | length held to room | same test, fixture 3 |
 | In-range round trips | 60 existing tests unchanged | whole binary |
 | Clamped start (existing) | `hugeBeatPositions...` still imports | existing test |
@@ -100,4 +101,4 @@ For this change the relevant measurements are:
 - **Old projects still load and render exactly as before.** Documents whose ends fit produce the same final clip position, length, offset and notes as before (Design choice 4). The 60 other tests in the binary pass unchanged. The writer is untouched.
 - **Callers and siblings.** `createClip` is called from the import in one place (`importClip`). The reader's end cut from round 1 is unchanged. `noteSpan()` feeds both the note creation and the auto length, so the two cannot disagree.
 - **Qt portability.** `std::clamp`, `qRound64`, `qint64` are available on Qt 5.15 and 6, with no Windows macros and no `std::filesystem`.
-- **Still open for the owner.** (a) Refusal or clamp for an over-range end (the finding's wording is refusal). (b) The pre-existing erasure of `playStart` on clips that have notes (Design choice 4), which this change keeps.
+- **Still open for the owner.** The pre-existing erasure of `playStart` on clips that have notes (Design choice 4), which this change keeps.

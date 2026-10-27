@@ -1848,8 +1848,8 @@ private slots:
 			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
 			"<Channel id=\"c1\"/></Track></Structure>"
 			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
-			"<Clip time=\"50000000\" duration=\"4\"><Notes>"
-			"<Note time=\"50000000\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"<Clip time=\"50000000\" duration=\"0\"><Notes>"
+			"<Note time=\"50000000\" duration=\"0\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
 			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
 			"</Project>";
 
@@ -2115,11 +2115,10 @@ void writerRefusesANoteEndpointPastTheTickRange()
 		"a note endpoint beyond the engine's tick range was written");
 }
 
-//! Cluster new-p14-89: a clip or note whose start plus duration passes tick_t must not
-//! reach the model with an overflowing end. The start is clamped into tick_t like every
-//! position, so the duration is cut back to the room the start leaves and the cut is
-//! counted in rounded_times. An end that fits exactly is kept and is not counted.
-void readerKeepsATimelineEndpointInsideTheTickRange()
+//! Cluster new-p14-89: a clip or note whose start plus duration passes tick_t is refused.
+//! An endpoint that fits exactly is kept, and positions outside the domain retain the
+//! reader's existing clamp-and-count behavior.
+void readerRefusesATimelineEndpointPastTheTickRange()
 {
 	// 44739241 beats is exactly 2147483568 ticks, 79 ticks below tick_t's maximum.
 	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
@@ -2134,24 +2133,15 @@ void readerKeepsATimelineEndpointInsideTheTickRange()
 	const QByteArray notePastMax = "<Notes><Note time=\"44739241\" duration=\"2\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
 	const QByteArray noteAtMax = "<Notes><Note time=\"44739241\" duration=\"1.6458333333\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
 
-	DawProjectModel clipModel;
-	DawProjectReadReport clipReport;
+	DawProjectModel rejectedModel;
+	DawProjectReadReport rejectedReport;
 	QString error;
-	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"2\"", unitNotes),
-		&clipModel, &clipReport, &error), qPrintable(error));
-	const DawProjectClip& clip = clipModel.tracks[0].clips[0];
-	QCOMPARE(qRound64(clip.time * DawProjectTicksPerQuarterNote), qint64(2147483568));
-	QCOMPARE(qRound(clip.duration * DawProjectTicksPerQuarterNote), 79);
-	QVERIFY2(clipReport.loss.roundedTimes >= 1, "a clip end cut back to the tick range was not counted");
-
-	DawProjectModel noteModel;
-	DawProjectReadReport noteReport;
-	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", notePastMax),
-		&noteModel, &noteReport, &error), qPrintable(error));
-	const DawProjectNote& note = noteModel.tracks[0].clips[0].notes[0];
-	QCOMPARE(qRound64(note.time * DawProjectTicksPerQuarterNote), qint64(2147483568));
-	QCOMPARE(qRound(note.duration * DawProjectTicksPerQuarterNote), 79);
-	QVERIFY2(noteReport.loss.roundedTimes >= 1, "a note end cut back to the tick range was not counted");
+	QVERIFY(!dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"2\"", unitNotes),
+		&rejectedModel, &rejectedReport, &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(!dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", notePastMax),
+		&rejectedModel, &rejectedReport, &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
 
 	DawProjectModel fitModel;
 	DawProjectReadReport fitReport;
@@ -2165,10 +2155,10 @@ void readerKeepsATimelineEndpointInsideTheTickRange()
 	QCOMPARE(qRound(noteFitModel.tracks[0].clips[0].notes[0].duration * DawProjectTicksPerQuarterNote), 79);
 	QCOMPARE(fitReport.loss.roundedTimes + noteFitReport.loss.roundedTimes, 0);
 
-	// A clip the model does not carry (no <Notes>) keeps its full duration and is counted as skipped.
+	// A clip the model does not carry (no <Notes>) is counted as skipped.
 	DawProjectModel uncarriedModel;
 	DawProjectReadReport uncarriedReport;
-	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"2\"", ""),
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"2\"", ""),
 		&uncarriedModel, &uncarriedReport, &error), qPrintable(error));
 	QCOMPARE(uncarriedModel.tracks[0].clips.size(), 0);
 	QCOMPARE(uncarriedReport.loss.automationClipsSkipped, 1);
@@ -2181,6 +2171,34 @@ void readerKeepsATimelineEndpointInsideTheTickRange()
 void appliedBoundaryEndpointsStayInTheTickRange()
 {
 	const qint64 lastTick = std::numeric_limits<tick_t>::max();
+	Song* song = Engine::getSong();
+	QString error;
+	QVERIFY2(applyDawProjectModel(song, previousSessionModel(), &error), qPrintable(error));
+	Track* preservedTrack = song->tracks().front();
+	const auto modelWithClip = [](const DawProjectClip& clip) {
+		DawProjectModel model;
+		DawProjectTrack track;
+		track.typeName = QStringLiteral("instrument");
+		track.contentType = QStringLiteral("notes");
+		track.clips.append(clip);
+		model.tracks.append(track);
+		return model;
+	};
+	DawProjectClip overflowingClip;
+	overflowingClip.time = dawProjectBeatsFromTicks(lastTick - 79);
+	overflowingClip.duration = dawProjectBeatsFromTicks(80);
+	QVERIFY(!applyDawProjectModel(song, modelWithClip(overflowingClip), &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(song->tracks().size() == 1 && song->tracks().front() == preservedTrack);
+	DawProjectClip overflowingNoteClip;
+	overflowingNoteClip.duration = 4.0;
+	DawProjectNote overflowingNote;
+	overflowingNote.time = dawProjectBeatsFromTicks(lastTick - 79);
+	overflowingNote.duration = dawProjectBeatsFromTicks(80);
+	overflowingNoteClip.notes.append(overflowingNote);
+	QVERIFY(!applyDawProjectModel(song, modelWithClip(overflowingNoteClip), &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(song->tracks().size() == 1 && song->tracks().front() == preservedTrack);
 	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
 		return QByteArray("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
 			"<Transport><Tempo value=\"120\"/></Transport>"
@@ -2210,7 +2228,6 @@ void appliedBoundaryEndpointsStayInTheTickRange()
 			documentWith("time=\"44739241\" duration=\"0\"", oneBeatNote), 2147483568, 79, 0, 48},
 	};
 
-	Song* song = Engine::getSong();
 	for (const Fixture& fixture : fixtures)
 	{
 		DawProjectModel model;

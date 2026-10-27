@@ -225,6 +225,23 @@ void resetMasterForEmptyMixerModel(Mixer* mixer, const DawProjectModel& model)
 //! every sum an import makes must stay at or below it.
 constexpr qint64 LastTick = std::numeric_limits<tick_t>::max();
 
+bool timelineEndpointsFit(const DawProjectModel& model, QString* error)
+{
+	const auto fits = [&](double startBeats, double durationBeats) {
+		const qint64 start = std::clamp<qint64>(dawProjectTicksFromBeats(startBeats), 0, LastTick);
+		if (dawProjectTicksFromBeats(durationBeats) <= LastTick - start) { return true; }
+		if (error) { *error = QStringLiteral("a clip or note start plus duration exceeds the engine's tick range"); }
+		return false;
+	};
+	for (const DawProjectTrack& track : model.tracks) for (const DawProjectClip& clip : track.clips)
+	{
+		if (!fits(clip.time, clip.duration)) { return false; }
+		for (const DawProjectNote& note : clip.notes)
+			if (!fits(note.time, note.duration)) { return false; }
+	}
+	return true;
+}
+
 //! A note's start and length in ticks. The start is held to the tick range, and the length to the room
 //! after it, so the end the engine adds (position plus length) stays in range.
 struct NoteSpan
@@ -585,6 +602,7 @@ bool applyDawProjectModel(Song* song, const DawProjectModel& model, QString* err
 	// refusal below is one the caller sees with its tracks, tempo and metre still
 	// in place rather than after they have been cleared and rewritten.
 	if (!allTrackTypesCreatable(model, error)) { return false; }
+	if (!timelineEndpointsFit(model, error)) { return false; }
 
 	song->aboutToClearTracks();
 	song->clearAllTracks();
