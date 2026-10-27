@@ -319,7 +319,21 @@ def run_conditions(cli, model):
         "model_sha256": sha256_of(model),
         "model_bytes": os.path.getsize(model),
         "omp_num_threads": os.environ.get("OMP_NUM_THREADS"),
+        "affinity_cpus": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None,
+        "cgroup_cpu_max": _cgroup_cpu_max(),
     }
+
+
+def _cgroup_cpu_max():
+    """The cgroup v2 CPU quota of this process ("quota period", or "max"), when
+    there is one: a quota throttles the run however many CPUs are visible."""
+    try:
+        with open("/proc/self/cgroup") as fh:
+            path = fh.read().strip().split("::", 1)[1]
+        with open(f"/sys/fs/cgroup{path}/cpu.max") as fh:
+            return fh.read().strip()
+    except (OSError, IndexError):
+        return None
 
 
 def _cpu_model():
