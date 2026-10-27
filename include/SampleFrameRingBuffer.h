@@ -128,6 +128,15 @@ public:
 		return m_overflow.load(std::memory_order_relaxed);
 	}
 
+	//! Discard all buffered frames, keeping the overflow counter: that count is
+	//! the frames dropped over the ring's life (AudioEngine::inputFramesDropped()),
+	//! not per capture session. Only valid while neither producer nor consumer is
+	//! running.
+	void discardStaged() noexcept
+	{
+		m_readPos.store(m_writePos.load(std::memory_order_acquire), std::memory_order_release);
+	}
+
 	//! Discard all buffered frames and clear the overflow counter. Only valid
 	//! while neither producer nor consumer is running.
 	void reset() noexcept

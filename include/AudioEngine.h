@@ -497,9 +497,15 @@ public:
 	/*! A device (re)start: the capture path has delivered nothing yet, and the
 	 *  next device publishes its own blocks. The wide-path flag follows it, so
 	 *  a device that does not use the wide path at all drains the stereo ring
-	 *  on its own (cluster 3705). */
+	 *  on its own (cluster 3705). The frames staged before the stop go too
+	 *  (cluster new-p14-402): the next render must not take them as new input.
+	 *  Called by AudioDevice::startProcessing, which follows stopProcessing(): that call has
+	 *  waited out every open backend callback (AudioDevice::CallbackScope), so no render and no
+	 *  capture publish is running and neither staging ring is being read or written here. */
 	void resetInputStream()
 	{
+		if (m_inputStage != nullptr) { m_inputStage->discardStaged(); }
+		if (m_wideInputStage != nullptr) { m_wideInputStage->discardStaged(); }
 		m_inputStreamStarted.store(false, std::memory_order_relaxed);
 		m_captureWideInUse.store(false, std::memory_order_relaxed);
 	}
