@@ -2856,6 +2856,9 @@ tests/src/plugins/SlicerTZoomTest.cpp
 # cluster new-p12-203 (2026-10): ReverbSC reverb-core allocator contract regression
 # (sp_revsc_create / sp_revsc_init), fork-NEW test source.
 tests/src/plugins/ReverbSCInitTest.cpp
+# cluster new-p14-410 (2026-10): ReverbSC output buffer sized per SPFLOAT (base.c compiled with
+# SPFLOAT=double, calloc shimmed); fork-NEW test source, registered in tests/CMakeLists.txt.
+tests/src/plugins/ReverbSCPrecisionTest.cpp
 # BUG new-p12-204: a project sample with sample_rate="0" reached windowTicksFor()'s division by
 # clipFramesPerTick(); loadSettings loads a nonpositive rate as absent (the output rate) and the
 # mapping answers 0 ticks for a nonpositive divisor. Regression SampleClipWarpTest

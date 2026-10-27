@@ -2735,6 +2735,27 @@ target_compile_definitions(ReverbSCInitTest PRIVATE
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_revsc_test_malloc>
 )
 
+# ReverbSC's output buffer must hold one SPFLOAT per channel. The soundpipe
+# base.c is compiled with SPFLOAT=double (the override base.h allows) and
+# calloc redirected to a shim, so the size sp_createn requests is observable.
+add_executable(ReverbSCPrecisionTest
+	src/plugins/ReverbSCPrecisionTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c
+)
+add_test(NAME ReverbSCPrecisionTest COMMAND ReverbSCPrecisionTest)
+target_include_directories(ReverbSCPrecisionTest PRIVATE
+	${CMAKE_SOURCE_DIR}/plugins/ReverbSC
+)
+target_link_libraries(ReverbSCPrecisionTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(ReverbSCPrecisionTest PRIVATE cxx_std_20)
+target_compile_definitions(ReverbSCPrecisionTest PRIVATE
+	SPFLOAT=double
+	$<$<COMPILE_LANGUAGE:C>:calloc=sp_precision_test_calloc>
+)
+
 # ReverbSC's DSP state lifetime: the effect's own sources are compiled into
 # this test, and the soundpipe C files are built with malloc/calloc/free
 # redirected to a shim in the test, so an allocation failure can be injected

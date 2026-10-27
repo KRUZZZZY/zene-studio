@@ -5353,3 +5353,5 @@ include/AudioFileMP3.h	cluster new-p15-259: LMMS_TESTING-only hooks (failNextLam
 src/core/audio/AudioFileMP3.cpp	cluster new-p15-259: LMMS_TESTING-only one-shot LAME init-failure injection and flush counter; null LAME handles are checked before any LAME call in init, write, flush and teardown.
 tests/CMakeLists.txt	cluster new-p15-259: registers AudioFileMP3InitTest only when LAME is enabled, with the headless Qt platform.
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	new-p23-141: setBufferSize() refuses a non-positive buffer size and keeps the last valid one, so the transport size and the synth buffer size never go non-positive.
+plugins/ReverbSC/base.c	cluster new-p14-410 (2026-10): sp_createn sizes the SPFLOAT output buffer with sizeof(*out) instead of sizeof(float); covered by tests/src/plugins/ReverbSCPrecisionTest.cpp
+tests/CMakeLists.txt	cluster new-p14-410 (2026-10): registers the ReverbSCPrecisionTest ctest, which compiles plugins/ReverbSC/base.c with SPFLOAT=double and calloc shimmed
