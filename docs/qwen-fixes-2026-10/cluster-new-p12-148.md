@@ -40,3 +40,13 @@ Files committed: `docs/qwen-fixes-2026-10/cluster-new-p12-148.md` only. There is
 Notes:
 - Not an issue for this cluster: the JSON control path (`mixer.downmix_options`) and `inRange()` already reject NaN (see above).
 - Environment: the ccache temp directory was not writable from the build, so builds used `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/zene-tmp` for the command only. The gate's log folder had to be redirected (see above). Neither changed a tracked file.
+
+## Self-check
+
+- **Regression fails with the fix reverted and passes with it.** Yes. With the `std::isfinite` guard removed at `src/core/MixerSurround.cpp:290`, `ctest -R '^ProjectStateTest$'` exited 8 (`test-2-red.log`: `FAIL! ... nonFiniteDownmixSettingsAreIgnored()`, `Actual ...centre: nan`). With the guard restored, the same family passed 4/4 (`test-3-green.log`, EXIT=0). The product change being tested is the guard that already sits on the branch in `3a8724211`.
+- **Deterministic.** Yes. The test builds an in-memory `QDomDocument` with fixed attribute strings (`centre="nan"`, `surround="1e999"`) and calls `surround::loadMixer()` directly. It uses no clock, sleep or thread.
+- **Fix at the cause, every caller and sibling checked.** Yes. `attribute()` (`MixerSurround.cpp:284-290`) is the single parser for the surround float attributes: `loadMixer()` reads `centre`, `surround`, `lfe` (`:445-451`), and `ChannelSurround::load()` reads `x`, `y`, `lfe`, `spread` (`:513-526`). The JSON control path, `mixer.downmix_options`, uses `readDb()`/`inRange()` (`ControlCommandsMixerSurround.cpp:168-170, 235-245`), which rejects NaN because `NaN >= low` is false.
+- **No collateral damage.** Yes, no change in this commit. Valid values take the same path as before (clamp to the same range); only non-finite inputs fall back. SurroundTest, SurroundPannerTest, ExportWavWriteErrorTest and ProjectStateTest all pass (`test-1.log`, `test-3-green.log`).
+- **Verdict ALREADY-FIXED, with the code that shows it.** `src/core/MixerSurround.cpp:290` (guard), `3a8724211` is an ancestor of HEAD (`git merge-base --is-ancestor 3a8724211 HEAD`, ancestor=yes), `tests/src/core/ProjectStateTest.cpp:279-297` (regression).
+
+Gate row `gates (feature_check.py)` in `submit_check.py` shows FAIL. The cause is environmental: the unmodified `feature_check.py` tries to create `<worktree>/../zene-qwen-new-p12-148-feature-check`, which is outside the write-jail, and fails with `PermissionError` (`gate-1-feature-check.log`). The same gate, with only the log directory redirected into the run folder, exits 0 with 8 of 8 rows PASS on the committed tree (`gate-3-final-tree.log`). This needs the owner to allow the sibling log directory or to run the gate with a writable log location.
