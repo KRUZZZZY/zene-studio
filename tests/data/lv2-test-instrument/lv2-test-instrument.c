@@ -47,6 +47,7 @@
  * REFUSES: its restore returns an error status for any state that names it. */
 #define TEST_ACCEPTED_KEY "urn:zene:test:accepted"
 #define TEST_REFUSED_KEY "urn:zene:test:refuse"
+#define TEST_PATH_KEY "urn:zene:test:path"
 
 enum
 {
@@ -64,7 +65,9 @@ typedef struct test_instrument
 	LV2_URID midi_event;
 	LV2_URID accepted_key;
 	LV2_URID refused_key;
+	LV2_URID path_key;
 	LV2_URID string_type;
+	LV2_URID path_type;
 	int latent;
 	uint32_t latency;
 	int held;          /* keys down */
@@ -98,7 +101,9 @@ static LV2_Handle instantiate(const LV2_Descriptor* descriptor, double rate, con
 	self->midi_event = map->map(map->handle, LV2_MIDI__MidiEvent);
 	self->accepted_key = map->map(map->handle, TEST_ACCEPTED_KEY);
 	self->refused_key = map->map(map->handle, TEST_REFUSED_KEY);
+	self->path_key = map->map(map->handle, TEST_PATH_KEY);
 	self->string_type = map->map(map->handle, LV2_ATOM__String);
+	self->path_type = map->map(map->handle, LV2_ATOM__Path);
 	self->latent = getenv(TEST_LATENCY_ENV) != NULL;
 	self->latency = self->latent ? env_latency() : 0;
 	return (LV2_Handle)self;
@@ -213,8 +218,27 @@ static LV2_State_Status restore(LV2_Handle instance, LV2_State_Retrieve_Function
 	size_t size = 0;
 	uint32_t type = 0;
 	uint32_t value_flags = 0;
+	const LV2_State_Map_Path* map_path = NULL;
+	const LV2_State_Free_Path* free_path = NULL;
 	(void)flags;
-	(void)features;
+	for (int i = 0; features != NULL && features[i] != NULL; ++i)
+	{
+		if (!strcmp(features[i]->URI, LV2_STATE__mapPath)) { map_path = (const LV2_State_Map_Path*)features[i]->data; }
+		if (!strcmp(features[i]->URI, LV2_STATE__freePath)) { free_path = (const LV2_State_Free_Path*)features[i]->data; }
+	}
+	/* A path property needs both host path features, and the mapped result must be freed through freePath. */
+	const void* path = retrieve(handle, self->path_key, &size, &type, &value_flags);
+	if (path != NULL)
+	{
+		if (type != self->path_type) { return LV2_STATE_ERR_BAD_TYPE; }
+		if (map_path == NULL || map_path->absolute_path == NULL || free_path == NULL || free_path->free_path == NULL)
+		{
+			return LV2_STATE_ERR_NO_FEATURE;
+		}
+		char* mapped_path = map_path->absolute_path(map_path->handle, (const char*)path);
+		if (mapped_path == NULL) { return LV2_STATE_ERR_UNKNOWN; }
+		free_path->free_path(free_path->handle, mapped_path);
+	}
 	/* A state that names the refused key is syntactically valid, and this plug-in refuses it. */
 	if (retrieve(handle, self->refused_key, &size, &type, &value_flags) != NULL) { return LV2_STATE_ERR_UNKNOWN; }
 	/* The accepted key must arrive as the string it was saved as; a decode that loses it fails here. */

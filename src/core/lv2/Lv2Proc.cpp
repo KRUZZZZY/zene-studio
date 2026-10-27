@@ -850,7 +850,16 @@ const void* retrieveStateProperty(LV2_State_Handle handle, uint32_t key, size_t*
 //! such paths to themselves (its absolute_path returns the input for both absolute and relative paths).
 char* mapPathUnchanged(LV2_State_Map_Path_Handle, const char* path)
 {
-	return strdup(path);
+	const size_t size = std::strlen(path) + 1;
+	auto* copy = static_cast<char*>(std::malloc(size));
+	if (copy != nullptr) { std::memcpy(copy, path, size); }
+	return copy;
+}
+
+//! Frees a path returned by mapPathUnchanged, as LV2_STATE__freePath requires.
+void freePathUnchanged(LV2_State_Free_Path_Handle, char* path)
+{
+	std::free(path);
 }
 
 //! Frees a SordNode when it leaves scope.
@@ -901,11 +910,23 @@ std::optional<StateProperty> decodeStateProperty(SordWorld* world, SordModel* mo
 //! Decodes every property of the document's state:state node. Nullopt when the document is not Turtle.
 std::optional<StateProperties> decodeStateProperties(SordWorld* world, SordModel* model, UridMap& urids)
 {
-	SordNodeRef statePredicate(world, LV2_STATE_PREFIX "state");
-	SordIter* stateTriple = sord_search(model, nullptr, statePredicate.get(), nullptr, nullptr);
-	if (sord_iter_end(stateTriple))
+	// Lilv reads state:state from the selected pset:Preset subject, ignoring unrelated triples.
+	SordNodeRef rdfType(world, "http://www.w3.org/1999/02/22-rdf-syntax-ns#type");
+	SordNodeRef presetType(world, "http://lv2plug.in/ns/ext/presets#Preset");
+	SordIter* presetTriple = sord_search(model, nullptr, rdfType.get(), presetType.get(), nullptr);
+	if (presetTriple == nullptr || sord_iter_end(presetTriple))
 	{
-		sord_iter_free(stateTriple);
+		if (presetTriple != nullptr) { sord_iter_free(presetTriple); }
+		return std::nullopt;
+	}
+	const SordNode* stateSubject = sord_iter_get_node(presetTriple, SORD_SUBJECT);
+	sord_iter_free(presetTriple);
+
+	SordNodeRef statePredicate(world, LV2_STATE_PREFIX "state");
+	SordIter* stateTriple = sord_search(model, stateSubject, statePredicate.get(), nullptr, nullptr);
+	if (stateTriple == nullptr || sord_iter_end(stateTriple))
+	{
+		if (stateTriple != nullptr) { sord_iter_free(stateTriple); }
 		return StateProperties{};
 	}
 	const SordNode* stateNode = sord_iter_get_node(stateTriple, SORD_OBJECT);
@@ -967,7 +988,7 @@ std::optional<StateProperties> decodeStateDocument(const QString& document, Urid
 
 //! Calls the plug-in's own LV2_State_Interface::restore with the decoded properties and returns the status the
 //! plug-in gives. lilv_state_restore() discards that status, so the host makes the call itself; the feature
-//! array is the host's features plus the map-path feature lilv_state_restore() would add.
+//! array is the host's features plus the mapPath and freePath features Lilv adds for state restore.
 LV2_State_Status restorePluginState(LilvInstance* instance, const LV2_Feature* const* hostFeatures,
 	const StateProperties& properties)
 {
@@ -978,12 +999,19 @@ LV2_State_Status restorePluginState(LilvInstance* instance, const LV2_Feature* c
 
 	LV2_State_Map_Path mapPath{nullptr, mapPathUnchanged, mapPathUnchanged};
 	const LV2_Feature mapFeature{LV2_STATE__mapPath, &mapPath};
+	LV2_State_Free_Path freePath{nullptr, freePathUnchanged};
+	const LV2_Feature freeFeature{LV2_STATE__freePath, &freePath};
 	std::vector<const LV2_Feature*> features;
+	bool hasMapPath = false;
+	bool hasFreePath = false;
 	for (const LV2_Feature* const* feature = hostFeatures; *feature != nullptr; ++feature)
 	{
 		features.push_back(*feature);
+		hasMapPath = hasMapPath || std::strcmp((*feature)->URI, LV2_STATE__mapPath) == 0;
+		hasFreePath = hasFreePath || std::strcmp((*feature)->URI, LV2_STATE__freePath) == 0;
 	}
-	features.push_back(&mapFeature);
+	if (!hasMapPath) { features.push_back(&mapFeature); }
+	if (!hasFreePath) { features.push_back(&freeFeature); }
 	features.push_back(nullptr);
 	return iface->restore(lilv_instance_get_handle(instance), retrieveStateProperty,
 		const_cast<StateProperties*>(&properties), 0, features.data());

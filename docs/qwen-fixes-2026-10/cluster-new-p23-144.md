@@ -15,37 +15,39 @@ Scope and limits are listed under "Open points" below.
 
 - `src/core/lv2/Lv2Proc.cpp:835-847` - `retrieveStateProperty()`: the retrieve callback the plug-in
   receives; it serves the decoded properties by key.
-- `src/core/lv2/Lv2Proc.cpp:851-854` - `mapPathUnchanged()`: the map-path feature. For a state read
-  from a string (no directory, empty path map) lilv's `absolute_path` returns its input, so this is
-  the same mapping (checked against lilv's `state.c` source, not a local build; see Open points).
-- `src/core/lv2/Lv2Proc.cpp:876-899` - `decodeStateProperty()`: reads each object with
+- `src/core/lv2/Lv2Proc.cpp:852-864` - `mapPathUnchanged()` and `freePathUnchanged()`: the state
+  path features. For a state read from a string (no directory, empty path map), lilv's
+  `absolute_path` returns its input; returned path memory is freed through `state:freePath`.
+- `src/core/lv2/Lv2Proc.cpp:886-909` - `decodeStateProperty()`: reads each object with
   `sratom_read()` into an LV2 forge, the same way lilv's `new_state_from_model` does; flags are
   `LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE`, or `LV2_STATE_IS_POD` for `atom:Path`.
-- `src/core/lv2/Lv2Proc.cpp:902-926` - `decodeStateProperties()`: finds the `state:state` node and
-  decodes every predicate/object of it.
-- `src/core/lv2/Lv2Proc.cpp:929-945` - `setPrefix()` / `setStatePrefixes()`: the seven prefixes lilv
+- `src/core/lv2/Lv2Proc.cpp:912-948` - `decodeStateProperties()`: selects the same `pset:Preset`
+  subject Lilv parses, then decodes its `state:state` properties. An unrelated `state:state` triple
+  elsewhere in the Turtle document is ignored.
+- `src/core/lv2/Lv2Proc.cpp:951-968` - `setPrefix()` / `setStatePrefixes()`: the seven prefixes lilv
   declares when it reads a state string (atom, lv2, pset, rdf, rdfs, state, xsd). Without them a
   document lilv accepts (it uses `pset:` and `lv2:` names) is refused here.
-- `src/core/lv2/Lv2Proc.cpp:948-966` - `decodeStateDocument()`: parses the document with serd/sord.
-- `src/core/lv2/Lv2Proc.cpp:971-990` - `restorePluginState()`: calls the plug-in's
-  `LV2_State_Interface::restore()` itself with the decoded properties, the host features and a
-  map-path feature, and returns the plug-in's status. It returns `LV2_STATE_ERR_NO_FEATURE` when the
-  plug-in has no state interface.
-- `src/core/lv2/Lv2Proc.cpp:994-1011` - `Lv2Proc::restoreState()`: lilv still validates the document
+- `src/core/lv2/Lv2Proc.cpp:970-988` - `decodeStateDocument()`: parses the document with serd/sord.
+- `src/core/lv2/Lv2Proc.cpp:994-1020` - `restorePluginState()`: calls the plug-in's
+  `LV2_State_Interface::restore()` itself with decoded properties, the host features, and Lilv's
+  `state:mapPath` / `state:freePath` features when the host did not already provide them. It returns
+  the plug-in's status and returns `LV2_STATE_ERR_NO_FEATURE` when the plug-in has no state interface.
+- `src/core/lv2/Lv2Proc.cpp:1024-1040` - `Lv2Proc::restoreState()`: lilv still validates the document
   (so what counts as a state is unchanged); the properties are decoded; the restore runs under
   `requestChangeInModel()`; the function returns `status == LV2_STATE_SUCCESS`.
 - `include/Lv2Proc.h:121-125` - the declaration's comment now states the refusal case.
 - `src/core/lv2/Lv2ControlBase.cpp:237-249` - unchanged: a `false` from `restoreState()` is reported
   through `reportStateRestoreFailure()` (lines 257-264).
-- Fixture: `tests/data/lv2-test-instrument/lv2-test-instrument.c:48-49` (keys) and `:99-100` (URIDs),
+- Fixture: `tests/data/lv2-test-instrument/lv2-test-instrument.c:48-50` (keys) and `:101-106` (URIDs),
   `save()` and `restore()` below them, and `extension_data()` returning `s_state` for
   `LV2_STATE__interface`. `lv2-test-instrument.ttl` declares `lv2:extensionData state:interface`.
   `restore()` returns `LV2_STATE_ERR_UNKNOWN` for a state that names `urn:zene:test:refuse`, and
   `LV2_STATE_ERR_BAD_TYPE` when `urn:zene:test:accepted` does not arrive as the string it was saved as.
-- Test: `tests/src/core/Lv2StateTest.cpp:387-450` - `aPluginRefusingAStateIsReported()`. It checks,
+- Test: `tests/src/core/Lv2StateTest.cpp:388-465` - `aPluginRefusingAStateIsReported()`. It checks,
   in order: the accepted document restores (`true`); the plug-in's own save restores (`true`); a
   syntactically valid document for this plug-in that names the refused key returns `false`; the project
-  load (`Song::errors()`) reports the refusal and names the plug-in.
+  load (`Song::errors()`) reports the refusal and names the plug-in; unrelated state triples do not
+  affect the selected preset; an `atom:Path` property restores through both path features.
 
 ## Test runs (logs in `new-p23-144.r3/logs`)
 
@@ -94,14 +96,22 @@ The product diff is `src/core/lv2/Lv2Proc.cpp` plus the comment in `include/Lv2P
 The project-load assertion (`errors` naming the plug-in) comes after the refusal assertion, so the
 reversed run stops at the first one. It is exercised in the restored run only.
 
+### QA follow-up on the final tree
+
+The final build (`cmake --build build --target zene lv2instrument lv2-test-instrument Lv2StateTest
+ControlDeviceCatalogueTest -j12`) exited 0. From `build/tests`,
+`ctest -R '^(Lv2StateTest|Lv2InstrumentKeyRegressionTest)$' --output-on-failure` exited 0 (2/2).
+With both product files reset to the branch base, the same targets built (EXIT 0) and that CTest
+exited 8 at `!proc->restoreState(documentWith(RefusedKey))`; after restoring the product changes,
+the targets built again (EXIT 0) and CTest passed (EXIT 0). The final requested `feature_check.py`
+run exited 0, with all six gates passing and no new complexity or file-length items.
+
 ## Gates
 
-`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (log `gates-final.log`)
-exits 1 before any gate: it writes its per-gate logs into
-`zene-studio-program/zene-qwen-new-p23-144-feature-check/`, outside the write-jail (`PermissionError`
-on `fork-sources.log`). The script was not changed, and that folder was not written. The same gate
-scripts were run directly from the worktree (final run, logs `*-5.log`, `check-namespace-7.log`,
-`doc-figures-6.log`):
+The lane's initial `feature_check.py` invocation exited 1 because its write-jail blocked its sibling
+log directory. QA reran the requested command on the final tree; it exited 0 with all gates passing
+and no new complexity or file-length items. The same gate scripts had also been run directly from the
+worktree (logs `*-5.log`, `check-namespace-7.log`, `doc-figures-6.log`):
 
 | Gate script | Log | EXIT | Result |
 | --- | --- | --- | --- |
@@ -133,7 +143,7 @@ namespace is written as the repo's other files write it (`namespace` then `{`).
 2. **The test is deterministic.** No clock, sleep, thread or race. The documents are literal Turtle
    strings built from fixed URIs (`urn:zene:test:lv2-instrument`, `urn:zene:test:accepted`,
    `urn:zene:test:refuse`). The fixture's decisions depend only on the keys it is given and the atom
-   type and first byte of the accepted value. Nothing depends on the time or on the order of
+   type and first byte of the accepted value, plus a fixed `atom:Path` value. Nothing depends on the time or on the order of
    threads; the audio thread is not involved (main thread; `requestChangeInModel()` as before).
 3. **The fix is at the cause, with callers and siblings checked.** The cause is that lilv hides the
    plug-in's status, so the host makes the call itself. Callers of `Lv2Proc::restoreState`
@@ -144,17 +154,17 @@ namespace is written as the repo's other files write it (`namespace` then `{`).
    paths - parse failure, empty payload, malformed instance attribute, the existing report
    (`aFailedStateRestoreIsReported`) - all still pass in the family run.
 4. **No collateral damage.** Which state is applied is unchanged: the same lilv validation, the same
-   sratom decoding as lilv's `new_state_from_model`, the same flags, the same map-path mapping for a
-   string-loaded state, and the same host features plus the map-path feature. No limit or check on
+   sratom decoding as lilv's `new_state_from_model`, the same flags, the same path mapping for a
+   string-loaded state, and the host features plus the mapPath/freePath features Lilv adds. No limit or check on
    sizes or counts was added; the only new check is the plug-in's own status. Behaviour changes that
    are intended, and that a reviewer should know about:
    - a plug-in that returns a non-success status for a document that loads today now produces a load
      error (the state is still applied as before; the error is new). That is the finding's contract;
    - a document naming a plug-in without a state interface now reports a load error (it was silent).
      Zene never writes such a document, because `saveState()` returns nothing for those plug-ins.
-5. **Verdict evidence (FIXED).** `src/core/lv2/Lv2Proc.cpp:994-1011` (the status is returned),
-   `:971-990` (the plug-in's own restore), `Lv2ControlBase.cpp:237-249` (the report), and the test at
-   `tests/src/core/Lv2StateTest.cpp:387-450` with the RED/GREEN runs above.
+5. **Verdict evidence (FIXED).** `src/core/lv2/Lv2Proc.cpp:1024-1040` (the status is returned),
+   `:994-1020` (the plug-in's own restore and path features), `Lv2ControlBase.cpp:237-249` (the
+   report), and the test at `tests/src/core/Lv2StateTest.cpp:388-465` with the RED/GREEN runs above.
 
 ## Open points
 
@@ -162,13 +172,12 @@ namespace is written as the repo's other files write it (`namespace` then `{`).
   `m_plugin` (`lilv_state_get_plugin_uri()` exists, `lilv.h:1522`). It is now handed to this plug-in's
   restore, which decides from its own keys. Whether to refuse such documents outright, and whether a
   document with no `appliesTo` is still accepted, is still a compatibility decision for the owner.
-- **Decoder parity is tested only for a string property.** The fixture's accepted value is a
-  `atom:String`. Other atom types (numbers, paths, vectors, objects) go through the same sratom path
-  as lilv, but no test here decodes them.
+- **Decoder parity is tested for strings and paths.** The fixture round-trips an `atom:String` and
+  separately restores an `atom:Path` value through both path features. Other atom types (numbers,
+  vectors, objects) go through the same sratom path as lilv, but no test here decodes them.
 - **Map-path parity is taken from lilv's source**, fetched from `lv2/lilv` `master`
   (`src/state.c`: `absolute_path` returns its input for a state with no directory and an empty
   path map). The installed lilv is 0.28.0; that source was not compared with it locally.
 - **Skipped tests.** `aPluginsOwnStateRoundTrips`, `theStateElementIsWrittenExactlyWhenThereIsState`
   and `aSecondInstanceIsFoundByTheFirstsUri` still skip, because no installed LV2 effect implements
   the State interface here. The fixture's round trip (`aPluginRefusingAStateIsReported`) runs instead.
-- **The gate script.** `feature_check.py` cannot run inside this lane's write-jail (see Gates).

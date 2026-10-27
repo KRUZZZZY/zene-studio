@@ -79,6 +79,7 @@ constexpr const char* FixtureUri = "urn:zene:test:lv2-instrument";
 //! The fixture's state keys: it accepts AcceptedKey only as the string it saved, and REFUSES RefusedKey.
 constexpr const char* AcceptedKey = "urn:zene:test:accepted";
 constexpr const char* RefusedKey = "urn:zene:test:refuse";
+constexpr const char* PathKey = "urn:zene:test:path";
 
 //! The first loadable LV2 effect whose State interface saves something, its controls and that state.
 Effect* firstStatefulLv2(EffectChain& chain, Lv2ControlBase** controls, QString* state)
@@ -446,6 +447,22 @@ private slots:
 			namesThePlugin = namesThePlugin || it.key().contains(QString::fromUtf8(FixtureUri));
 		}
 		QVERIFY2(namesThePlugin, qPrintable(errors.keys().join(QStringLiteral(" | "))));
+
+		// An unrelated state:state triple is ignored by Lilv; it must not override the selected preset.
+		const QString withUnrelatedState = documentWith(AcceptedKey) +
+			QStringLiteral("<urn:aaa:unrelated> state:state [ <%1> \"1\" ] .\n")
+				.arg(QString::fromUtf8(RefusedKey));
+		QVERIFY2(proc->restoreState(withUnrelatedState),
+			"state properties are decoded from the selected preset subject");
+
+		const QString pathState = QStringLiteral("@prefix atom: <http://lv2plug.in/ns/ext/atom#> .\n"
+			"@prefix lv2: <http://lv2plug.in/ns/lv2core#> .\n"
+			"@prefix pset: <http://lv2plug.in/ns/ext/presets#> .\n"
+			"@prefix state: <http://lv2plug.in/ns/ext/state#> .\n"
+			"<urn:zene:test:path-state> a pset:Preset ; lv2:appliesTo <%1> ;\n"
+			"\tstate:state [ <%2> \"1\" ; <%3> \"relative/state\"^^atom:Path ] .\n")
+			.arg(QString::fromUtf8(FixtureUri), QString::fromUtf8(AcceptedKey), QString::fromUtf8(PathKey));
+		QVERIFY2(proc->restoreState(pathState), "path values can be restored with mapPath and freePath");
 #endif
 	}
 
