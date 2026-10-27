@@ -161,6 +161,8 @@ namespace
 {
 
 std::atomic_bool failFrameAllocation{false};
+std::atomic_bool failNextFrameAllocation{false};  //!< fails the next av_frame_alloc only, before FFmpeg's own calls
+std::atomic_bool failNextPacketAllocation{false};  //!< the same for av_packet_alloc
 std::atomic_bool failCodecContextAllocation{false};
 std::atomic_bool failCodecAfterStream{false};
 std::atomic_bool failStreamAllocation{false};
@@ -187,7 +189,15 @@ bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std:
 extern "C" AVFrame* av_frame_alloc()
 {
 	if (failFrameAllocation.load(std::memory_order_relaxed)) { return nullptr; }
+	if (failNextFrameAllocation.exchange(false, std::memory_order_relaxed)) { return nullptr; }
 	static const auto real = reinterpret_cast<decltype(&av_frame_alloc)>(dlsym(RTLD_NEXT, "av_frame_alloc"));
+	return real == nullptr ? nullptr : real();
+}
+
+extern "C" AVPacket* av_packet_alloc()
+{
+	if (failNextPacketAllocation.exchange(false, std::memory_order_relaxed)) { return nullptr; }
+	static const auto real = reinterpret_cast<decltype(&av_packet_alloc)>(dlsym(RTLD_NEXT, "av_packet_alloc"));
 	return real == nullptr ? nullptr : real();
 }
 
@@ -752,6 +762,52 @@ private slots:
 		QVERIFY2(allocationFailureIsReported([&frameCase] { return !videotest::allocateFrame(frameCase); },
 			failFrameAllocation),
 			"allocateFrame dereferenced the failed av_frame_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
+	}
+
+	//! A failed frame or packet allocation in the decoder's open() is reported with a reason, never dereferenced.
+	void decoderAllocationFailureIsReportedNotDereferenced()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		const QString clip = m_clip;
+		const auto openFailsOutOfMemory = [&clip] {
+			VideoDecoder decoder;
+			QString why;
+			return !decoder.open(clip, &why) && why.contains(QStringLiteral("out of memory")) && !decoder.isOpen();
+		};
+		QVERIFY2(allocationFailureIsReported(openFailsOutOfMemory, failNextFrameAllocation),
+			"VideoDecoder::open did not report a failed av_frame_alloc");
+		QVERIFY2(allocationFailureIsReported(openFailsOutOfMemory, failNextPacketAllocation),
+			"VideoDecoder::open did not report a failed av_packet_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
+	}
+
+	//! A failed frame or packet allocation in the audio extraction is reported and leaves no WAV behind.
+	void audioExtractAllocationFailureIsReportedNotDereferenced()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		const QString clip = m_clip;
+		const QString wav = m_dir.filePath(QStringLiteral("allocation-failure.wav"));
+		const auto extractionFailsOutOfMemory = [&clip, &wav] {
+			VideoAudio audio;
+			QString error;
+			return !extractVideoAudio(clip, wav, &audio, &error) && error.contains(QStringLiteral("out of memory"))
+				&& !QFileInfo::exists(wav);
+		};
+		QVERIFY2(allocationFailureIsReported(extractionFailsOutOfMemory, failNextFrameAllocation),
+			"the audio extraction did not report a failed av_frame_alloc");
+		QVERIFY2(allocationFailureIsReported(extractionFailsOutOfMemory, failNextPacketAllocation),
+			"the audio extraction did not report a failed av_packet_alloc");
 #elif defined(ZENE_HAVE_FFMPEG)
 		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
 #else

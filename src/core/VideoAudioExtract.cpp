@@ -158,11 +158,27 @@ bool reportFrame(const video::MediaStream& media, const AVFrame* frame, double l
 	return !control->cancel.load();
 }
 
-//! Decode every frame of @a media into @a sink; false on cancellation or a failed WAV write.
-bool decodeAll(video::MediaStream& media, WavSink& sink, VideoExtractControl* control)
+//! The frame and packet a decode runs through; freed on every path out of extract().
+struct DecodeBuffers
 {
 	AVFrame* frame = av_frame_alloc();
 	AVPacket* packet = av_packet_alloc();
+
+	DecodeBuffers() = default;
+	DecodeBuffers(const DecodeBuffers&) = delete;
+	DecodeBuffers& operator=(const DecodeBuffers&) = delete;
+	~DecodeBuffers()
+	{
+		av_frame_free(&frame);
+		av_packet_free(&packet);
+	}
+
+	bool ok() const { return frame != nullptr && packet != nullptr; }
+};
+
+//! Decode @a media's frames into @a sink via @a frame and @a packet; false on cancellation or a failed WAV write.
+bool decodeAll(video::MediaStream& media, WavSink& sink, AVFrame* frame, AVPacket* packet, VideoExtractControl* control)
+{
 	const double length = lengthOf(media);
 	bool whole = true;
 	while (media.receive(frame, packet))
@@ -171,14 +187,14 @@ bool decodeAll(video::MediaStream& media, WavSink& sink, VideoExtractControl* co
 		if (!reportFrame(media, frame, length, control)) { whole = false; break; }
 	}
 	if (!sink.write(nullptr, 0)) { whole = false; }
-	av_frame_free(&frame);
-	av_packet_free(&packet);
 	return whole;
 }
 
 //! Write @a video's audio to @a wav; the error text, or empty on success.
 QString extract(const QString& video, const QString& wav, VideoAudio* out, VideoExtractControl* control)
 {
+	const DecodeBuffers buffers;  // before the file is opened, so a failed allocation leaves nothing behind
+	if (!buffers.ok()) { return QObject::tr("the video's audio cannot be decoded: out of memory"); }
 	video::MediaStream media;
 	QString why;
 	if (!media.open(video, AVMEDIA_TYPE_AUDIO, &why)) { return QObject::tr("cannot read the video's audio (%1)").arg(why); }
@@ -186,7 +202,7 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out, Video
 	WavSink sink;
 	if (!sink.openResampler(media.codec)) { return QObject::tr("the video's audio cannot be converted to stereo"); }
 	if (!sink.openFile(wav, media.codec->sample_rate)) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
-	if (!decodeAll(media, sink, control))
+	if (!decodeAll(media, sink, buffers.frame, buffers.packet, control))
 	{
 		if (sink.writeFailed) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 		return QObject::tr("the extraction was cancelled");
