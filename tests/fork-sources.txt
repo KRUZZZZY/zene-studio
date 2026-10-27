@@ -3096,3 +3096,5 @@ docs/qwen-fixes-2026-10/cluster-new-p23-128.md
 tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
 # cluster new-p23-187 (2026-10): fix and verification report for Oscilloscope pause-setting persistence (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p23-187.md
+# cluster new-p10-290 (2026-10): fix and verification report for pitchAt's window bound (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p10-290.md

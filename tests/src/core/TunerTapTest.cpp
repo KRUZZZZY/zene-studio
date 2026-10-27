@@ -30,8 +30,12 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <limits>
 #include <vector>
 
+#include "PitchTrack.h"
 #include "SampleFrame.h"
 #include "TunerTap.h"
 
@@ -112,6 +116,27 @@ private slots:
 		tap().push(TunerTap::Source::Input, frames.data(), static_cast<f_cnt_t>(frames.size()));
 		QVERIFY(tap().latest(window.data(), window.size()));
 		for (const float value : window) { QCOMPARE(value, 1.f); }
+	}
+
+	//! The tuner reads its pitch through pitchtrack::pitchAt, whose window must lie inside the buffer even
+	//! when frame + size wraps past SIZE_MAX. The periodic padding makes a wrapped read a clean tone, so a
+	//! missing bounds check shows as a pitch where the window lies outside the buffer.
+	void pitchAtRejectsAWindowWhoseFrameWrapsPastTheEnd()
+	{
+		constexpr int rate = 11025;
+		constexpr std::size_t count = 2048;
+		constexpr std::size_t pad = 16;
+		std::vector<float> storage(pad + count);
+		for (std::size_t i = 0; i < storage.size(); ++i)
+		{
+			storage[i] = 0.5f * static_cast<float>(std::sin(2.0 * M_PI * static_cast<double>(i) / 100.0));
+		}
+		const float* mono = storage.data() + pad;
+		QVERIFY(pitchtrack::pitchAt(mono, count, 0, 1024, rate) > 0.f);
+		QVERIFY(pitchtrack::pitchAt(mono, count, count - 1024, 1024, rate) > 0.f);
+		// frame + 1024 wraps to 1013, which is below count: only an explicit frame bound refuses it.
+		const std::size_t wrapped = std::numeric_limits<std::size_t>::max() - 10;
+		QCOMPARE(pitchtrack::pitchAt(mono, count, wrapped, 1024, rate), 0.f);
 	}
 };
 
