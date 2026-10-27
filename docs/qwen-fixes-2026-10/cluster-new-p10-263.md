@@ -104,4 +104,34 @@ No product file changed. `plugins/Flanger/MonoDelay.cpp` matches `HEAD` after th
 
 ## Self-check
 
-Filled in after `submit_check.py` runs (see the section below).
+`submit_check.py <worktree> new-p10-263` (log `submit-check-1.log`, EXIT 1 before this section existed):
+PASS commits on the branch, PASS working tree clean, PASS report present, PASS tests changed.
+**FAIL `gates (feature_check.py)`**: this is a lane-environment block, not a code failure. `feature_check.py`
+creates `<worktree>-feature-check/` next to the worktree, in `projects/zene-studio-program/`, which the lane
+cannot write (`PermissionError: [Errno 13]`, traceback in the same log). A scratch detached worktree
+under `$TMPDIR` to host the logs was refused by the lane guard (`bunny-guard`: `git worktree add` not allowed
+in a Bunny lane); no worktree was kept (the empty scratch folder was removed). Substitute evidence: every gate
+command that `feature_check.py` runs was executed from the worktree with its log in the LOG folder (table
+above). The six pass-gates exit 0; the two ratchets exit 1 with no regression line naming a changed file.
+The row needs a run of `feature_check.py` from an allowed location to turn green.
+
+Answers to the "?" items:
+
+1. **RED/GREEN.** The product hunk of `40da59feea` was reversed with `git apply -R`, the test built and run:
+   EXIT 136 (SIGFPE, `FPE_INTDIV`, `test-red-1.log`). Restored with `git apply` (EXIT 0), `MonoDelay.cpp`
+   matches `HEAD`, and the test passed (EXIT 0, `test-green-1.log`). The product patch is the `40da59feea` hunk,
+   not a diff of my own change, because I changed no product file.
+2. **Deterministic.** The test constructs `MonoDelay` with fixed integers, ticks fixed sample values and
+   compares them exactly. It has no clock, sleep, thread or random input, so no seam is needed.
+3. **At the cause, complete.** The cause is the unguarded `tick()` modulo. The guard at
+   `plugins/Flanger/MonoDelay.cpp:59` covers it, and the invariant it relies on holds on every write path:
+   constructor `:36-37`, `setSampleRate` `:79-88`, `setLength` `plugins/Flanger/MonoDelay.h:41-43`. The callers
+   `plugins/Flanger/FlangerEffect.cpp:65-66` and `:139-140` construct and reconfigure with `maxTime = 1`. No
+   product code was changed, so no sibling needed a matching change.
+4. **No collateral.** No product code changed; the test adds one slot that runs in the existing
+   `PluginPortsMigrationTest` entry. The family ran 89 slots: 86 passed, 2 skipped, and 1 failed
+   (`nonRealtimeLadspaEffectsAreInvalid`). That failure is environmental: the `decimator_1202.so` LADSPA fixture
+   is not installed, and it fails when run alone (`test-ladspa-iso-1.log`). `MonoDelayTest` passed.
+5. **ALREADY-FIXED evidence.** The guard `plugins/Flanger/MonoDelay.cpp:59` is in `HEAD` from commit
+   `40da59feea`, and the invariant that zero capacity implies zero length is at `:36-37`, `:79-88` and
+   `plugins/Flanger/MonoDelay.h:41-43`. The RED run shows the same `tick()` without the guard does divide by zero.
