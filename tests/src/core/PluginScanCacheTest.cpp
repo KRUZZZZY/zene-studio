@@ -92,9 +92,14 @@
 #include "lmmsconfig.h"
 
 #include "embed.h"
+#include "AudioDevice.h"
+#include "AudioEngine.h"
 #include "ConfigManager.h"
+#include "Effect.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "Mixer.h"
 #include "Plugin.h"
 #include "PluginBrowser.h"
 #include "PluginFactory.h"
@@ -119,6 +124,16 @@ constexpr auto moduleFileName() -> const char*
 	return "tripleoscillator.dll";
 #else
 	return "libtripleoscillator.so";
+#endif
+}
+
+//! The effect module Q050-157's reproducer copies, under the scanner's file name.
+constexpr auto effectModuleFileName() -> const char*
+{
+#ifdef LMMS_BUILD_WIN32
+	return "amplifier.dll";
+#else
+	return "libamplifier.so";
 #endif
 }
 
@@ -871,6 +886,127 @@ private slots:
 		engineShutdown.shutdown();
 		const QString workingDir = ConfigManager::inst()->workingDir();
 		QVERIFY2(!workingDir.isEmpty(), "ConfigManager::inst() must recreate the manager after Engine::destroy()");
+	}
+
+	/*!
+	 * Q050-157: the whole user path on one cache-served effect. The scan serves the
+	 * Amplifier's descriptor from the cache; the effect is created on the master
+	 * channel the way EffectChain::loadSettings() and the effect browser create it -
+	 * with a plug-in key, which Plugin::instantiateWithKey() points at the
+	 * factory's descriptor, and an effect keeps that key for its whole life. Rescan
+	 * then runs twice (each run retires the store the key's descriptor lives in),
+	 * the live effect's key is read and the project saved, the project reloads
+	 * (releasing the old effect), and one more rescan runs with nothing holding the
+	 * old descriptor. Built with WANT_DEBUG_ASAN=ON this is the ASan reproducer: a
+	 * rescan that freed the store under the live effect makes the key reads below a
+	 * heap-use-after-free and ASan aborts the process.
+	 */
+	void testCacheServedEffectSurvivesRescanAndSave()
+	{
+		using namespace lmms;
+
+		if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+		const QFileInfo built(QDir(QStringLiteral(LMMS_TEST_SCAN_PLUGIN_DIR)).filePath(QLatin1String(effectModuleFileName())));
+		if (!built.exists()) { QSKIP("no built amplifier module to scan"); }
+		QTemporaryDir effectDir(QDir::tempPath() + "/zene-scan-effect-XXXXXX");
+		QVERIFY(effectDir.isValid());
+		const QString modulePath = effectDir.filePath(QLatin1String(effectModuleFileName()));
+		QVERIFY(QFile::copy(built.absoluteFilePath(), modulePath));
+
+		// A cache record for the copy, carrying a display name only the cache can
+		// supply: a key showing it was built from the cache-served descriptor.
+		const QFileInfo file(modulePath);
+		PluginScanRecord record = recordFor(file.absoluteFilePath(), PluginScanRecord::Status::HasDescriptor);
+		record.size = file.size();
+		record.mtimeMs = file.lastModified().toMSecsSinceEpoch();
+		record.name = QStringLiteral("amplifier");
+		record.displayName = QStringLiteral("Cached generation 1");
+		record.description = QStringLiteral("cache-served lifetime fixture");
+		record.author = QStringLiteral("Zene Studio test");
+		record.logoName = QStringLiteral("zene-plugin-logo");
+		record.version = 0x0100;
+		record.type = static_cast<int>(Plugin::Type::Effect);
+		record.hasSubPluginFeatures = false;
+		qputenv("LMMS_PLUGIN_SCAN_CACHE", cachePath("served-effect-rescan-save").toLocal8Bit());
+
+		Engine::init(true);
+		struct EngineShutdown
+		{
+			bool active = true;
+			~EngineShutdown() { if (active) { Engine::destroy(); } }
+			void shutdown() { Engine::destroy(); active = false; }
+		} engineShutdown;
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		// Pinned after Engine::init(), which sets the plugin search paths itself.
+		QDir::setSearchPaths("plugins", QStringList{effectDir.path()});
+		// The engine's factory is the process-wide one, so its cache file may be the
+		// one an earlier slot named; the record goes into whichever file it reads.
+		PluginFactory* factory = getPluginFactory();
+		const QString cacheFile = factory->scanCache().filePath();
+		QVERIFY2(!cacheFile.isEmpty(), "the factory's scan cache must be persistent");
+		auto seedCache = [&cacheFile](const PluginScanRecord& r) {
+			PluginScanCache cache(cacheFile);
+			cache.load();
+			cache.store(r);
+			return cache.save();
+		};
+		QVERIFY(seedCache(record));
+		factory->discoverPlugins();
+		QCOMPARE(factory->scanStats().candidateFiles, 1);
+		QCOMPARE(factory->scanStats().servedFromCache, 1);
+		QCOMPARE(factory->scanStats().scanned, 0);
+		const Plugin::Descriptor* served = factory->pluginInfo("amplifier").descriptor;
+		QVERIFY(served != nullptr);
+
+		Song* song = Engine::getSong();
+		EffectChain& chain = Engine::mixer()->mixerChannel(0)->m_fxChain;
+		// A project's <key> element carries no descriptor; instantiateWithKey fills it in.
+		Plugin::Descriptor::SubPluginFeatures::Key projectKey;
+		Effect* effect = Effect::instantiate(QStringLiteral("amplifier"), &chain, &projectKey);
+		QVERIFY(effect != nullptr);
+		chain.appendEffect(effect);
+		QVERIFY2(effect->key().desc == served, "the effect's key must hold the cache-served descriptor");
+		QCOMPARE(effect->key().displayName(), record.displayName);
+
+		// Rescan twice from a changed cache: the store holding `served` is retired by
+		// the first run and the second run retires its replacement.
+		PluginScanRecord next = record;
+		next.displayName = QStringLiteral("Cached generation 2");
+		QVERIFY(seedCache(next));
+		factory->discoverPlugins();
+		factory->discoverPlugins();
+		QCOMPARE(factory->scanStats().servedFromCache, 1);
+		const Plugin::Descriptor* current = factory->pluginInfo("amplifier").descriptor;
+		QVERIFY(current != nullptr && current != served);
+		QCOMPARE(QString::fromUtf8(current->displayName), next.displayName);
+
+		// The live effect still reads the descriptor its key holds, and the project saves.
+		QVERIFY(effect->key().desc == served);
+		QCOMPARE(QString::fromUtf8(effect->key().desc->name), QStringLiteral("amplifier"));
+		QCOMPARE(effect->key().displayName(), record.displayName);
+		QCOMPARE(effect->key().description(), record.description);
+		QCOMPARE(QString::fromUtf8(effect->key().desc->author), record.author);
+		QVERIFY(effect->key().logo() != nullptr);
+		const QString project = m_cacheDir->filePath(QStringLiteral("served-effect-rescan-save.mmp"));
+		QVERIFY2(song->saveProjectFile(project), "the project must save after the rescan");
+		QFile saved(project);
+		QVERIFY(saved.open(QIODevice::ReadOnly));
+		const QByteArray xml = saved.readAll();
+		saved.close();
+		QVERIFY2(xml.contains("<effect") && xml.contains("name=\"amplifier\""),
+			"the saved project must carry the live effect");
+
+		// The saved project loads back onto the current catalogue (the old effect is
+		// released), and a rescan with nothing holding the old descriptor is safe.
+		song->loadProject(project);
+		const EffectChain& reloaded = Engine::mixer()->mixerChannel(0)->m_fxChain;
+		QCOMPARE(reloaded.effects().size(), 1);
+		QVERIFY2(reloaded.effects().front()->key().desc == current,
+			"the reloaded effect takes the current descriptor");
+		song->clearProject();
+		factory->discoverPlugins();
+		QVERIFY(!factory->pluginInfo("amplifier").isNull());
+		engineShutdown.shutdown();
 	}
 
 	/*! A full scan that loads an LV2 host module must not crash when the Engine was
