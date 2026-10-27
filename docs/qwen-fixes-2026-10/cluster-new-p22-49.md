@@ -62,6 +62,11 @@ script itself could not run here, so the table is my reconstruction from its com
 Two earlier loop attempts (`gate-*-2.log`) failed with exit 127 because my shell loop did not word-split the command; those
 results are not used.
 
+`python3 .../qwen/submit_check.py <worktree> new-p22-49` gave EXIT 1 (`submit-check-1.log`). Its only FAIL is
+"gates (feature_check.py)", which is the `PermissionError` above. Every other row passed: commits on the branch, clean
+tree, this report's verdict line, and the claim-only closure. Nothing in the branch could clear that FAIL from inside the
+write area, so it is reported as an environment limit, not fixed.
+
 Ratchet items listed (none in a changed file): `src/core/ControlCommandsMixerStrip.cpp`,
 `src/core/ControlCommandsMixerTools.cpp`, `src/core/ControlCommandsSessionRecordLand.cpp`,
 `src/core/DawProjectReadTracks.cpp`, `src/wasm/WasmSandbox.cpp`, `tests/src/gui/XyPadPairTest.cpp`.
