@@ -385,64 +385,24 @@ private slots:
 	 *  CLAP window API, with no editor and no window left. */
 	void theShowEditorButtonOpensOnThisPlatformOrNamesTheWindow()
 	{
-#ifndef CLAP_TEST_EFFECT_DIR
-		QSKIP("this build has no CLAP effect fixture");
-#else
-		if (!QFileInfo::exists(QStringLiteral(CLAP_TEST_EFFECT_DIR))) { QSKIP("the CLAP effect fixture is not built"); }
-		ConfigManager::inst()->setVSTDir(QStringLiteral(CLAP_TEST_EFFECT_DIR));
-		QString device;
-		const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("format"), QStringLiteral("clap")}});
-		for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
-		{
-			const QJsonObject entry = value.toObject();
-			if (entry.value(QStringLiteral("name")).toString() == QLatin1String("LMMS CLAP Test Gain")
-				|| entry.value(QStringLiteral("display_name")).toString() == QLatin1String("LMMS CLAP Test Gain"))
-			{
-				device = entry.value(QStringLiteral("id")).toString();
-			}
-		}
-		if (device.isEmpty()) { QSKIP("plugin.list carries no CLAP test gain (no clapeffect module in this build)"); }
-		auto* track = dynamic_cast<InstrumentTrack*>(newTrack());
-		const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), control::trackIdOf(track)},
-			{QStringLiteral("device"), device}});
-		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
-		Effect* effect = track->audioBusHandle()->effects()->effects().back();
-
+		Effect* effect = clapFixtureEffect();
+		if (effect == nullptr) { QSKIP("this build has no CLAP effect fixture, or no clapeffect module to host it"); }
 		const bool headless = ControlRegistry::instance()->isHeadless();
 		ControlRegistry::instance()->setHeadless(false);  // the offscreen platform is a display
-		QWidget* box = makeNativeEditorButton(effect, nullptr);
-		box->show();
-		auto* button = box->findChild<QToolButton*>();
-		QLabel* reason = box->findChild<QLabel*>();
-		QVERIFY(button != nullptr && reason != nullptr);
-		button->click();
-		const bool opened = effect->nativeEditorOpen();
-		const QString openRefusal = reason->text();
-		QWidget* window = editorWindow(effect->displayName());
-		const bool windowShown = window != nullptr && window->isVisible();
-		effect->closeNativeEditor();
+		const EditorClick native = clickShowEditor(effect);
 
-		const PluginWindowSystem native = currentPluginWindowSystem();
-		const char* api = native == PluginWindowSystem::Win32 ? "win32" : native == PluginWindowSystem::Cocoa ? "cocoa" : "x11";
-		qputenv("CLAP_TEST_GAIN_GUI_API", native == PluginWindowSystem::Win32 ? "x11" : "win32");
-		button->click();
+		const PluginWindowSystem system = currentPluginWindowSystem();
+		const char* api = system == PluginWindowSystem::Win32 ? "win32" : system == PluginWindowSystem::Cocoa ? "cocoa" : "x11";
+		qputenv("CLAP_TEST_GAIN_GUI_API", system == PluginWindowSystem::Win32 ? "x11" : "win32");
+		const EditorClick elsewhere = clickShowEditor(effect);
 		qunsetenv("CLAP_TEST_GAIN_GUI_API");
-		const bool refusedOpen = effect->nativeEditorOpen();
-		const QString refusal = reason->text();
-		const bool reasonShown = reason->isVisible();
-		effect->closeNativeEditor();
-		delete box;
 		ControlRegistry::instance()->setHeadless(headless);
-		QVERIFY2(opened, qPrintable(QStringLiteral("refused: %1").arg(openRefusal)));
-		QVERIFY(windowShown);
-		QVERIFY2(!refusedOpen, "an editor that cannot embed here reported open");
-		QVERIFY(reasonShown);
-		const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(pluginWindowSystemName(native),
+
+		QVERIFY2(native.opened && native.windowShown, qPrintable(QStringLiteral("refused: %1").arg(native.reason)));
+		QVERIFY2(!elsewhere.opened && !elsewhere.windowShown, "an editor that cannot embed here opened or left a window");
+		const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(pluginWindowSystemName(system),
 			QLatin1String(api));
-		QVERIFY2(refusal.contains(expected), qPrintable(refusal));
-		QWidget* left = editorWindow(effect->displayName());
-		QVERIFY2(left == nullptr || !left->isVisible(), "a refused editor left a window on screen");
-#endif
+		QVERIFY2(elsewhere.reasonShown && elsewhere.reason.contains(expected), qPrintable(elsewhere.reason));
 	}
 
 	void aChainIsAddressedByTheTrackOrChannelThatOwnsIt()
@@ -455,6 +415,56 @@ private slots:
 	}
 
 private:
+	//! What one click of an effect's "Show plugin editor" did; the editor is closed again afterwards.
+	struct EditorClick
+	{
+		bool opened = false;
+		bool windowShown = false;
+		bool reasonShown = false;
+		QString reason;
+	};
+
+	EditorClick clickShowEditor(Effect* effect)
+	{
+		QWidget* box = makeNativeEditorButton(effect, nullptr);
+		box->show();
+		box->findChild<QToolButton*>()->click();
+		EditorClick click;
+		click.opened = effect->nativeEditorOpen();
+		const QWidget* window = editorWindow(effect->displayName());
+		click.windowShown = window != nullptr && window->isVisible();
+		const QLabel* reason = box->findChild<QLabel*>();
+		click.reasonShown = reason->isVisible();
+		click.reason = reason->text();
+		effect->closeNativeEditor();
+		delete box;
+		return click;
+	}
+
+	//! Q050-490: the in-tree CLAP gain fixture, found by plugin.list and loaded by plugin.load onto a new track.
+	Effect* clapFixtureEffect()
+	{
+#ifdef CLAP_TEST_EFFECT_DIR
+		if (!QFileInfo::exists(QStringLiteral(CLAP_TEST_EFFECT_DIR))) { return nullptr; }
+		ConfigManager::inst()->setVSTDir(QStringLiteral(CLAP_TEST_EFFECT_DIR));
+		const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("format"), QStringLiteral("clap")}});
+		const QString name = QStringLiteral("LMMS CLAP Test Gain");
+		for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() != name && entry.value(QStringLiteral("display_name")).toString() != name)
+			{
+				continue;
+			}
+			auto* track = dynamic_cast<InstrumentTrack*>(newTrack());
+			const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), control::trackIdOf(track)},
+				{QStringLiteral("device"), entry.value(QStringLiteral("id")).toString()}});
+			return loaded.ok ? track->audioBusHandle()->effects()->effects().back() : nullptr;
+		}
+#endif
+		return nullptr;
+	}
+
 	Effect* amplifier()
 	{
 		EffectChain& chain = Engine::mixer()->mixerChannel(1)->m_fxChain;

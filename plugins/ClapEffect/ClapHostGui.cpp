@@ -55,6 +55,46 @@ const char* windowApiOf(PluginWindowSystem system)
 	}
 	return nullptr;
 }
+
+//! The api the plug-in's editor embeds in on @a system, or nullptr with the refusal in @a error.
+const char* embeddableApi(const clap_plugin_gui_t* gui, const clap_plugin_t* plugin, PluginWindowSystem system,
+	QString* error)
+{
+	const char* api = windowApiOf(system);
+	if (api == nullptr)
+	{
+		*error = noPluginWindowSystemError();
+		return nullptr;
+	}
+	if (!gui->is_api_supported(plugin, api, false))
+	{
+		*error = QStringLiteral("the plug-in's editor cannot embed on %1 (CLAP window API %2)")
+			.arg(pluginWindowSystemName(system), QLatin1String(api));
+		return nullptr;
+	}
+	return api;
+}
+
+//! MX-094: the device's zoom; a plug-in that cannot scale refuses it and keeps its own size. Never on cocoa: its
+//! sizes are logical and clap/ext/gui.h says not to call set_scale there.
+void askForScale(const clap_plugin_gui_t* gui, const clap_plugin_t* plugin, PluginWindowSystem system, double scale)
+{
+	if (system != PluginWindowSystem::Cocoa) { gui->set_scale(plugin, scale); }
+}
+
+//! @a parent (QWidget::winId()) in the union member of @a system's api.
+clap_window_t parentWindowOf(PluginWindowSystem system, const char* api, void* parent)
+{
+	clap_window_t window{};
+	window.api = api;
+	switch (system)
+	{
+	case PluginWindowSystem::Win32: window.win32 = parent; break;
+	case PluginWindowSystem::Cocoa: window.cocoa = parent; break;
+	default: window.x11 = static_cast<clap_xwnd>(reinterpret_cast<std::uintptr_t>(parent)); break;
+	}
+	return window;
+}
 } // namespace
 
 auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
@@ -81,18 +121,8 @@ auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 		return false;
 	}
 	const PluginWindowSystem system = impl.editorWindowSystem.value_or(currentPluginWindowSystem());
-	const char* api = windowApiOf(system);
-	if (api == nullptr)
-	{
-		*error = noPluginWindowSystemError();
-		return false;
-	}
-	if (!gui->is_api_supported(impl.plugin, api, false))
-	{
-		*error = QStringLiteral("the plug-in's editor cannot embed on %1 (CLAP window API %2)")
-			.arg(pluginWindowSystemName(system), QLatin1String(api));
-		return false;
-	}
+	const char* api = embeddableApi(gui, impl.plugin, system, error);
+	if (api == nullptr) { return false; }
 	if (!gui->create(impl.plugin, api, false))
 	{
 		*error = QStringLiteral("the plug-in refused to create its editor");
@@ -100,16 +130,8 @@ auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 	}
 	impl.guiCreated = true;
 	impl.guiClosedByPlugin = false;
-	// MX-094: the device's zoom; a plug-in that cannot scale refuses it and keeps its own size.
-	if (system != PluginWindowSystem::Cocoa) { gui->set_scale(impl.plugin, impl.editorScale); }
-	clap_window_t window{};
-	window.api = api;
-	switch (system)
-	{
-	case PluginWindowSystem::Win32: window.win32 = parentWindow; break;
-	case PluginWindowSystem::Cocoa: window.cocoa = parentWindow; break;
-	default: window.x11 = static_cast<clap_xwnd>(reinterpret_cast<std::uintptr_t>(parentWindow)); break;
-	}
+	askForScale(gui, impl.plugin, system, impl.editorScale);
+	const clap_window_t window = parentWindowOf(system, api, parentWindow);
 	if (!gui->set_parent(impl.plugin, &window) || !gui->show(impl.plugin))
 	{
 		closeEditor();
