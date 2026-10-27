@@ -402,6 +402,23 @@ private slots:
 		sections.clear();
 	}
 
+	//! A negative span is refused at the command boundary and never reaches the store: 'start' has a
+	//! schema minimum of 0, so section.add and section.set fail InvalidArgs and the section is unchanged.
+	void aNegativeSectionSpanIsRefusedOverTheCommands()
+	{
+		ArrangementSections& sections = ArrangementSections::instance();
+		QCOMPARE(run(QStringLiteral("section.add"), {{QStringLiteral("start"), -5}, {QStringLiteral("end"), -1}}).errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(sections.sections().isEmpty());
+		const int id = sections.add(0, 768, QStringLiteral("Verse"), QString());
+		QVERIFY(id > 0);
+		const QString wireId = QStringLiteral("sec-%1").arg(id);
+		QCOMPARE(run(QStringLiteral("section.set"), {{QStringLiteral("section"), wireId}, {QStringLiteral("start"), -5}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("section.set"), {{QStringLiteral("section"), wireId}, {QStringLiteral("end"), -1}}).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(sections.find(id)->start, tick_t{0});
+		QCOMPARE(sections.find(id)->end, tick_t{768});
+		sections.clear();
+	}
+
 	//! A section whose start or end is missing or not a number is refused, not silently read as tick
 	//! zero: a hand-edited <section start="oops" end="192"/> used to load as a section from 0.
 	void aMalformedSectionSpanIsNotReadAsTickZero()
