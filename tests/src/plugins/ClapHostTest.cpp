@@ -247,6 +247,7 @@ void ClapHostTest::cleanup()
 	m_plugin.closeEditor();
 	qunsetenv("CLAP_TEST_GAIN_GUI_API");
 	qunsetenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+	qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE");
 	m_plugin.setEditorScale(1.0);
 	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
@@ -1484,9 +1485,8 @@ void lmms::clap::ClapHostTest::testAnEditorThatCannotEmbedIsRefusedByName()
 	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
-/*! Q050-490: clap.gui says a cocoa host does not call set_scale (cocoa sizes are logical); win32 and
- *  x11 are physical, so the device's zoom is asked for there. The fixture refuses to be parented
- *  after a set_scale on cocoa, so a host that called it cannot open the editor at 1.5. */
+/*! Q050-490: cocoa forbids set_scale, and win32/x11 must receive the device's zoom. The fixture
+ *  refuses a cocoa set_scale and requires an exact 1.5 set_scale before parenting on win32/x11. */
 void lmms::clap::ClapHostTest::testCocoaIsNeverAskedToScale()
 {
 	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
@@ -1494,10 +1494,13 @@ void lmms::clap::ClapHostTest::testCocoaIsNeverAskedToScale()
 	for (const WindowCase& each : WindowCases)
 	{
 		m_plugin.setEditorWindowSystem(each.system);
+		if (each.system == PluginWindowSystem::Cocoa) { qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE"); }
+		else { qputenv("CLAP_TEST_GAIN_EXPECT_SCALE", "1.5"); }
 		QString error;
 		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
 		m_plugin.closeEditor();
 	}
+	qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE");
 	m_plugin.setEditorScale(1.0);
 	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }

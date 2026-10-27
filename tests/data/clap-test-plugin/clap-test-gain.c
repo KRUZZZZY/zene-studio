@@ -457,8 +457,9 @@ static bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_flo
 	self->gui_created = true;
 	self->gui_api = strcmp(api, CLAP_WINDOW_API_WIN32) == 0 ? CLAP_WINDOW_API_WIN32
 		: strcmp(api, CLAP_WINDOW_API_COCOA) == 0 ? CLAP_WINDOW_API_COCOA : CLAP_WINDOW_API_X11;
-	/* No set_scale is a scale of 1 (a cocoa host never calls it); a set_scale replaces it. */
-	self->gui_scale_finite = true;
+	/* No set_scale is a scale of 1 (a cocoa host never calls it). A test can require the host to
+	   call set_scale with one exact factor before it accepts the parent. */
+	self->gui_scale_finite = getenv("CLAP_TEST_GAIN_EXPECT_SCALE") == NULL;
 	self->gui_width = 400;
 	self->gui_height = 300;
 	return true;
@@ -482,7 +483,8 @@ static bool gui_set_scale(const clap_plugin_t* plugin, double scale)
 		self->gui_scale_finite = false;
 		return false;
 	}
-	self->gui_scale_finite = isfinite(scale);
+	const char* expected = getenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	self->gui_scale_finite = isfinite(scale) && (expected == NULL || scale == strtod(expected, NULL));
 	return true;
 }
 
