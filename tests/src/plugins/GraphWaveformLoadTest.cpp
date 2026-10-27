@@ -26,6 +26,7 @@
 #include <memory>
 #include <vector>
 
+#include <QDirIterator>
 #include <QDomDocument>
 #include <QtTest>
 
@@ -55,7 +56,7 @@
 // process: the engine's own teardown is not what this test measures.
 // use_sigaltstack=0: a library the engine loads replaces a thread's alternate signal stack with
 // one of its own, which ASan then fails to unmap at thread exit ("unable to unmmap", measured).
-extern "C" const char* __asan_default_options() { return "detect_leaks=1:leak_check_at_exit=0:use_sigaltstack=0"; }
+extern "C" __attribute__((visibility("default"))) const char* __asan_default_options() { return "detect_leaks=1:leak_check_at_exit=0:use_sigaltstack=0"; }
 #endif
 
 using namespace lmms;
@@ -186,6 +187,15 @@ std::vector<float> pattern(const Subject& subject, int count, int seed)
 		for (auto& value : values) { value = subject.high - value; }  // still whole steps, mirrored
 	}
 	return values;
+}
+
+//! Every attribute any of these plug-ins saves a graph in (the subjects above test a sample of Vibed's nine).
+const QStringList& allGraphAttributes()
+{
+	static const QStringList all{"a1_wave", "a2_wave", "b1_wave", "b2_wave", "sampleShape", "W1sample", "W2sample",
+		"W3sample", "ampsteps", "lpsteps", "waveShape", "graph0", "graph1", "graph2", "graph3", "graph4", "graph5",
+		"graph6", "graph7", "graph8"};
+	return all;
 }
 
 enum class Damage { Empty, Absent, Invalid, Truncated, OneValue, Excessive, Huge, Misaligned, NaN, PosInf, NegInf };
@@ -394,6 +404,60 @@ private slots:
 			QCOMPARE(diagnosticsFor(QStringLiteral("BitInvader"), QStringLiteral("sampleShape")).size(), 1);
 		}
 		Engine::getSong()->clearErrors();
+	}
+
+	//! Every graph the bundled presets and demo projects carry for these plug-ins loads with no
+	//! diagnostic and saves back with identical float values (BitInvader: its saved prefix).
+	void bundledPresetsRoundTripExactly()
+	{
+		const QDir data{QDir{QStringLiteral(QT_TESTCASE_SOURCEDIR)}.filePath(QStringLiteral("../data"))};
+		QVERIFY2(data.exists(), "the bundled data directory was not found");
+		const std::map<QString, const char*> tags{{"watsyn", "watsyn"}, {"bitinvader", "bitinvader"},
+			{"vibedstrings", "vibedstrings"}, {"xpressive", "xpressive"}, {"freeboy", "freeboy"},
+			{"waveshapercontrols", "waveshaper"}, {"dynamicsprocessor_controls", "dynamicsprocessor"},
+			{"multitapechocontrols", "multitapecho"}};
+		int graphs = 0;
+		QDirIterator files{data.path(), {"*.xpf", "*.mmp", "*.mmpz"}, QDir::Files, QDirIterator::Subdirectories};
+		while (files.hasNext())
+		{
+			const QString path = files.next();
+			QFile file{path};
+			QVERIFY(file.open(QIODevice::ReadOnly));
+			QByteArray bytes = file.readAll();
+			if (path.endsWith(QStringLiteral(".mmpz"))) { bytes = qUncompress(bytes); }
+			QDomDocument doc;
+			if (!doc.setContent(bytes)) { continue; }
+			for (const auto& [tag, plugin] : tags)
+			{
+				const QDomNodeList found = doc.elementsByTagName(tag);
+				for (int i = 0; i < found.size(); ++i)
+				{
+					const QDomElement element = found.at(i).toElement();
+					const Subject& who = subject(plugin);
+					Device device(who);
+					if (!device.loaded()) { QSKIP(qPrintable(QStringLiteral("the %1 module is not built here").arg(plugin))); }
+					Engine::getSong()->clearErrors();
+					device.restore(element);
+					QVERIFY2(Engine::getSong()->errors().isEmpty(), qPrintable(path + QStringLiteral(": ")
+						+ Engine::getSong()->errors().keys().join(QStringLiteral(" | "))));
+					QDomDocument savedDoc;
+					const QDomElement saved = device.save(savedDoc);
+					const QDomNamedNodeMap attributes = element.attributes();
+					for (int a = 0; a < attributes.size(); ++a)
+					{
+						const QString name = attributes.item(a).nodeName();
+						if (!allGraphAttributes().contains(name)) { continue; }
+						const std::vector<float> original = decodeSaved(element.attribute(name));
+						const std::vector<float> resaved = decodeSaved(saved.attribute(name));
+						QVERIFY2(resaved.size() >= original.size() && std::equal(original.begin(), original.end(), resaved.begin()),
+							qPrintable(QStringLiteral("%1: %2 %3 did not round-trip exactly").arg(path, tag, name)));
+						++graphs;
+					}
+				}
+			}
+		}
+		qInfo("%d bundled graphs round-tripped exactly", graphs);
+		QVERIFY2(graphs >= 100, "fewer bundled graphs were found than the corpus holds");
 	}
 
 	//! Loading over and over - valid and damaged payloads alike - leaves no decoded buffer behind.

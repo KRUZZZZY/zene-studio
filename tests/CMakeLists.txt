@@ -5703,6 +5703,18 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-486 over the socket: a project's drawn Watsyn wave and Wave Shaper curve reopen with identical
+	# values and an equal render (golden_audio_lib floor contract, with a negative control); a truncated
+	# wave and a NaN curve are reported in project.open's errors, keep the defaults and still render.
+	add_test(NAME ControlGraphWaveformLoad
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-graph-waveform-load.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlGraphWaveformLoad PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
 	# The 0.5.0 L09 routing surface over the socket: the listen bus, sends from many channels, send pan,
 	# nested and linked VCA groups, the mixer view's sends-on-faders mode.
 	add_test(NAME ControlMixingRouting
