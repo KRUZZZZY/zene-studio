@@ -271,8 +271,8 @@ auto HostedPlugin::load(const QString& modulePath, const QString& pluginId, QStr
 		(impl.layout.inputs > 0 || impl.info.isInstrument);
 	if (!usableAudio)
 	{
-		impl.status = {loader::Code::NoAudioPorts,
-			QStringLiteral("'%1' has no usable audio ports").arg(pluginId)};
+		impl.status = {loader::Code::NoAudioPorts, QStringLiteral("'%1' has no usable audio ports (%2 input, %3 output "
+			"channels; a note-only plug-in has none)").arg(pluginId).arg(impl.layout.inputs).arg(impl.layout.outputs)};
 		setError(error, impl.status.message());
 		unload();
 		return false;

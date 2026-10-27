@@ -35,6 +35,7 @@
 #include "ClapInstrumentView.h"
 #include "ClapSubPluginFeatures.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "InstrumentPlayHandle.h"
 #include "LmmsCommonMacros.h"
 #include "MidiEvent.h"
@@ -102,7 +103,7 @@ ChannelCounts channelCountsOf(const clap::PortLayout& layout)
 {
 	const auto inputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
 	const auto outputs = std::max<ch_cnt_t>(ch_cnt_t{2}, static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-	return {std::max(inputs, outputs), inputs, outputs};
+	return {hostedTrackChannels(inputs, outputs), inputs, outputs};
 }
 
 } // namespace

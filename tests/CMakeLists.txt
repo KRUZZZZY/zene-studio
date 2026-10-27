@@ -216,6 +216,9 @@ set(LMMS_TESTS
 	# file-length ratchet, so it is its own binary now - same registry read,
 	# same picker comparison, same built-in amplifier naming Zene Studio.
 	src/core/ControlDeviceVendorTest.cpp
+	# Cluster stress-3: plug-ins whose bus layout is not one stereo in + one stereo out (an odd channel
+	# count: mono x4 mixers, a mono side-chain) are hosted; one with no audio port is refused with why.
+	src/core/ControlHostedBusLayoutTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	# The control selection store keeps the SELECTED NOTES' ids, so a removal
 	# cannot shift the selection onto another note (cluster new-p12-53-port).
@@ -2378,6 +2381,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# the binary discovers the build tree's modules like its catalogue
 		# sibling does (the built-in amplifier is the case that names Zene Studio).
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceVendorTest"
+		# Cluster stress-3: plugin.load of the CLAP/VST3 fixtures through the real host modules.
+		OR LMMS_TEST_NAME STREQUAL "ControlHostedBusLayoutTest"
 		# WF-033: the options half of the undo-history proof needs the same real
 		# instrument (its baseline loads one) as the format half.
 		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest")
@@ -4865,6 +4870,12 @@ if(TARGET lmms_clap)
 			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
 		add_dependencies(PluginNativeEditorTest clap-test-gain clapeffect)
 	endif()
+	# Cluster stress-3: the CLAP fixture's mono side-chain and no-audio layouts, through plugin.load.
+	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET ControlHostedBusLayoutTest)
+		target_compile_definitions(ControlHostedBusLayoutTest PRIVATE
+			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
+		add_dependencies(ControlHostedBusLayoutTest clap-test-gain clapeffect)
+	endif()
 	# MX-114 (plugin.output_*): the fixture's multi-output class is the instrument with output buses.
 	if(TARGET clap-test-instrument AND TARGET InstrumentLayersCommandsTest)
 		target_compile_definitions(InstrumentLayersCommandsTest PRIVATE
@@ -5591,6 +5602,13 @@ if(TARGET lmms_vst3_sdk)
 				vst3instrument
 				vst3-test-instrument
 			)
+		endif()
+		# Cluster stress-3: the three-channel variant is hosted by vst3effect and vst3instrument.
+		if(TARGET vst3effect AND TARGET vst3instrument AND TARGET ControlHostedBusLayoutTest)
+			target_compile_definitions(ControlHostedBusLayoutTest PRIVATE
+				VST3_TEST_THREE_INSTRUMENT_BUNDLE="${LMMS_VST3_THREE_TEST_BUNDLE_DIR}")
+			add_dependencies(ControlHostedBusLayoutTest vst3effect vst3instrument
+				vst3-test-three-channel-instrument)
 		endif()
 		# The VST3 EFFECT half: plugin.list carries the SDK's gain sample and plugin.load hosts it in
 		# vst3effect.
