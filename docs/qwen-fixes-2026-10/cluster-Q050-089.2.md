@@ -77,7 +77,8 @@ Regression runs with the change, all exit 0 (test-9, test-11, test-12): `Control
 - **Audio thread:** these run on it: `realtimeexport::master()`, then `RealtimeExportCapture::push/noteEnd/finishIfDone/keep`
   (called from `Mixer::masterMix`), and the Dummy loopback's gain multiply (`AudioDummy::feedBack`, the fixture's device
   thread).
-  - While nothing is armed, this costs one acquire load.
+  - The capture singleton is a namespace-scope object, initialized before audio processing starts, so the callback
+    does not enter a function-local static initialization guard. While nothing is armed, this costs one acquire load.
   - While armed, it reads the song position, which is the render thread's own state. It also reads `m_playing`, which
     is ordered by the change lock that both arm and play run under.
   - It scales into a fixed 512-frame member array and writes the accumulator's pre-allocated lock-free ring.

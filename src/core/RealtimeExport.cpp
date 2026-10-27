@@ -36,14 +36,22 @@
 namespace lmms
 {
 
+namespace
+{
+
+// The master mix can be the first caller. Make the capture before the audio thread starts, rather than
+// invoking a function-local static's initialization guard from a real-time callback.
+RealtimeExportCapture g_realtimeExportCapture;
+
+} // namespace
+
 RealtimeExportCapture::RealtimeExportCapture() = default;
 
 RealtimeExportCapture::~RealtimeExportCapture() = default;
 
 RealtimeExportCapture& RealtimeExportCapture::instance()
 {
-	static RealtimeExportCapture capture;
-	return capture;
+	return g_realtimeExportCapture;
 }
 
 bool RealtimeExportCapture::arm(sample_rate_t sampleRate, tick_t endTick, f_cnt_t skipFrames, f_cnt_t tailFrames,
