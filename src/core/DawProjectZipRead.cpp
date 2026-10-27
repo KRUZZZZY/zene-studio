@@ -59,6 +59,12 @@
 #include <limits>
 #include <vector>
 
+#include <QtGlobal>
+#ifdef Q_OS_UNIX
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #if defined(ZENE_HAVE_ZLIB)
 #include <zlib.h>
 #endif
@@ -140,6 +146,23 @@ void note(Scan& scan, const QString& entry, const char* kind, const QString& det
 	scan.report->deviations.push_back({entry, QString::fromLatin1(kind), detail});
 }
 
+//! Test seam, ZENE_TEST_CONTAINER_READ_FAULT: makes the read that follows the open
+//! fail in the kernel while the open itself succeeded. The descriptor is pointed
+//! at a write-only /dev/null, so the next read() returns EBADF, QFile reports a
+//! read error and nothing is read. Unix only; elsewhere the seam does nothing.
+void armTestReadFault(QFile& source)
+{
+#ifdef Q_OS_UNIX
+	if (qgetenv("ZENE_TEST_CONTAINER_READ_FAULT").isEmpty()) { return; }
+	const int sink = ::open("/dev/null", O_WRONLY);
+	if (sink < 0) { return; }
+	::dup2(sink, source.handle());
+	::close(sink);
+#else
+	Q_UNUSED(source)
+#endif
+}
+
 //! Reads the whole of \a path. Every offset is an int, so a file past INT_MAX
 //! bytes is refused before it is read.
 bool readWhole(const QString& path, QByteArray* bytes, QString* error)
@@ -155,6 +178,7 @@ bool readWhole(const QString& path, QByteArray* bytes, QString* error)
 		if (error) { *error = QStringLiteral("%1 is too large for this reader (over 2 GiB)").arg(path); }
 		return false;
 	}
+	armTestReadFault(source);
 	*bytes = source.readAll();
 	return true;
 }
