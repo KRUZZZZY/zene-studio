@@ -2253,6 +2253,9 @@ tests/control_vendor_libs.py
 # product-source search on every run (ctest DocPricingModelGate).
 tests/doc-pricing-model-gate.py
 tests/exprtk.hpp
+# cluster ci-v041-6: checks include/fenv.h takes no #include_next under cl.exe's
+# predefines (MSVC C1021), by preprocessing it with the host GCC/Clang (ctest FenvShimMsvcInclude).
+tests/fenv-shim-msvc-check.py
 tests/freeze_bounce_evidence.py
 tests/golden_audio_lib.py
 tests/golden_audio_record.py
