@@ -5281,3 +5281,5 @@ src/tracks/InstrumentTrack.cpp	cluster new-p18-44: resets controller-lane lastSe
 src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies and rebases each controller lane, with later clips winning duplicate ticks; beat repaint visits steps only when each button has nonzero pixel width.
 include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
 tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.
+src/core/TimePos.cpp	new-p9-487: quantize() returns the position unchanged for a grid under one tick (zero, negative, NaN, or a bar count that truncates to zero ticks) instead of dividing by a zero interval; the same no-op as Note::quantized for a non-positive grid; a real grid snaps as before.
+tests/src/core/NoteTransformTest.cpp	new-p9-487: adds subTickTimePosGridIsANoop, the regression for TimePos::quantize on zero, negative and sub-tick grids, with a real 12-tick grid asserted to still snap.
