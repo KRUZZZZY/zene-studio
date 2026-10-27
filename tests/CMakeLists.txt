@@ -3740,10 +3740,17 @@ add_executable(PluginPortsMigrationTest
 	src/plugins/PluginPortsHarness.h
 )
 add_test(NAME PluginPortsMigrationTest COMMAND PluginPortsMigrationTest)
+# FreeBoy's focused voice-pool regressions share the migration harness because
+# it already hosts the real plugin module and a headless audio engine.
+add_test(NAME FreeBoy COMMAND PluginPortsMigrationTest freeBoyExhaustedNoteRetriesWhenVoiceFrees)
+add_test(NAME FreeBoyPoolReclamation COMMAND PluginPortsMigrationTest freeBoyOldSampleRatePoolsAreReclaimed)
+add_test(NAME FreeBoySampleRateHandoff COMMAND PluginPortsMigrationTest freeBoySampleRatePoolHandoffIsRealtimeSafe)
 # The harness constructs a full Engine, which needs a Qt platform plugin even
 # though the test itself is guiless. Without this, ctest aborts before the first
 # assertion on any machine with no display (CI, headless shell).
 set_tests_properties(PluginPortsMigrationTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(FreeBoy FreeBoyPoolReclamation FreeBoySampleRateHandoff PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Cluster new-p9-326: the focused OpulenZ held-note regression. It runs in the
 # PluginPortsMigrationTest executable (the plugin-module host it needs lives
@@ -3772,6 +3779,10 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	WATSYN_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Watsyn"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
+if(BUILD_TESTING AND TARGET freeboy)
+	# Export test-only pool probes from the module; they are absent from shipping builds.
+	target_compile_definitions(freeboy PRIVATE LMMS_TESTING)
+endif()
 if(TARGET partial_init_failure_ladspa)
 	target_compile_definitions(PluginPortsMigrationTest PRIVATE
 		"PART_C_FAILURE_LADSPA_MODULE=\"$<TARGET_FILE:partial_init_failure_ladspa>\"")

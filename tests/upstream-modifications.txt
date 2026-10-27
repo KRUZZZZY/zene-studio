@@ -5292,3 +5292,8 @@ src/tracks/InstrumentTrack.cpp	Q050-339: the track's manual delay saved as the '
 src/core/AudioEngine.cpp	Q050-340: after the stereo input meter, each capture channel's peak is raised into fixed per-reader atomics (inputmeter::measureChannels on the wide capture, else the stereo bus as channels 0 and 1) - no allocation, no lock.
 include/MixerChannelView.h	Q050-088: a ConsoleStripSection member and its consoleSection() accessor.
 src/gui/MixerChannelView.cpp	Q050-088: the strip builds its Console section (hidden unless the mixer view shows it) under the pan knob.
+plugins/FreeBoy/FreeBoy.cpp	new-p18-34/new-p15-69/new-p15-70: expose test-only pool-count, publication, and deterministic reaper probes; retire inactive pools on the control-side worker or other control paths.
+plugins/FreeBoy/FreeBoy.h	new-p15-70: declare the test-only check that fails unless the audio path's pool pointer is a lock-free atomic.
+tests/CMakeLists.txt	new-p18-34/new-p15-69/new-p15-70: register three focused FreeBoy migration-harness tests and compile the plugin's probes only in test builds.
+tests/src/plugins/PluginPortsMigrationTest.cpp	new-p18-34/new-p15-69/new-p15-70: add deterministic FreeBoy pool exhaustion, active-rate-pool retention/reclamation, atomic handoff, and realtime-allocation regressions; pool-note cleanup is explicit.
+tests/all-sources.txt	new-p18-34: re-derive the inherited whole-tree source manifest from its documented recipe so the registration gates pass; header and recipe stay unchanged.
