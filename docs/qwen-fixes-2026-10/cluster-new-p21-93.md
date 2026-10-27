@@ -83,4 +83,21 @@ Step 4b does not apply. Definition-of-done item 2 is not needed for a false posi
 
 ## Self-check
 
-To be filled in after `submit_check.py` runs (see below).
+Completion check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-93` →
+`logs/submit-check-1.log`, EXIT=1. Passing rows: commits on the branch, working tree clean, this report, tests (claim-only closure).
+Failing row: **gates (feature_check.py)**. Its cause is environmental: `feature_check.py:70-71` creates
+`<worktree>-feature-check/` beside the worktree, outside the allowed write paths, so it raised PermissionError
+(`gate-feature-check-1.log`). I did not edit the shared script.
+
+Gate logic on the same committed tree, run from a copy of the runner whose only change is the log directory
+(`logs/feature_check_logdir_copy.py`, the cache still at its original location): `logs/feature-check-table-1.log`,
+EXIT=0, RESULT: PASS, eight rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
+no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item in your files").
+The changed set is this report only, so no ratchet item can be in a changed file.
+
+The four open questions:
+- **Regression test RED/GREEN:** not applicable. The verdict is FALSE-POSITIVE and no product code changed, so there is no RED or GREEN to show.
+- **Deterministic test:** not applicable, no test was added.
+- **Fix at the cause and complete:** not applicable, no fix. The sibling candidate (`ControlCommandsMixerListen.cpp:85-87, 103`) is unproven and is not fixed here.
+- **No collateral damage:** not applicable, no product change.
+- **FALSE-POSITIVE evidence:** the file:line contract is listed in "Why the stated mechanism is not real", items 1-4.
