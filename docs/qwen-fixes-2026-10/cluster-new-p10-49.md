@@ -105,5 +105,13 @@ Gates:
   and `addUndoStep`, so a refused batch leaves no undo step. The success path's undo record is unchanged.
 - **Registration:** no new files. `src/core/ControlCommandsNoteHarmony.cpp` is already in `tests/fork-sources.txt`, and the test file is
   already registered. No upstream-modifications entry is needed (`no-upstream-regression` PASS).
+- **Siblings in the command file (`ControlCommandsNoteHarmony.cpp:212-216`):** `scale.define` and `scale.custom` are registered
+  there and are unchanged. The other `scale.*` commands the completion check lists are registered elsewhere
+  (`ControlCommandsScale.cpp:296-408` for `scale.list`, `scale.get_state`, `scale.root_set`, `scale.set`, `scale.from_detected_key`;
+  `ControlCommandsScaleEdit.cpp:162` for `scale.snap_notes`; `ControlCommandsNoteMoves.cpp:228` for `scale.detect`). They work on
+  pitch classes and note keys, never on clip start positions or the grid, so the fix does not reach them.
+- **Gate row `gates (feature_check.py)` in the completion check: blocked by the jail, not by the code.** `feature_check.py` exits 1 with
+  `PermissionError` creating `<worktree>-feature-check` beside the worktree (`gate-1-feature-check.log`). The identical gate sequence,
+  with logs in the run folder via `gate-driver.py`, exits 0 with every row PASS (`gate-3-feature-check.log`, `gates-3/`).
 - **Verdict basis:** the bug reproduces through the command path (clip at MaxSongLength-1, grid 1000, accepted with errorKind 0 before
   the fix). The overflow half is real but reachable only from a corrupt project position; the report says so.
