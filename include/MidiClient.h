@@ -136,6 +136,15 @@ public:
 		return false;
 	}
 
+	//! Stops delivering input to the ports (Q050-488). When it returns, no input
+	//! dispatch is in flight and none can start, so the ports may be destroyed.
+	//! Idempotent. Engine::destroy() calls it before the project's tracks - the
+	//! owners of the ports - are cleared. The base does nothing: a client without
+	//! an input thread of its own has nothing to stop.
+	virtual void stopInput()
+	{
+	}
+
 	//! Number of realtime MIDI output events refused by this client queue.
 	virtual std::uint64_t outputQueueOverflowCount() const noexcept
 	{

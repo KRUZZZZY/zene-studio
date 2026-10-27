@@ -18,11 +18,23 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <poll.h>
+#include <thread>
 #include <unistd.h>
 
+#include <QSemaphore>
+
 #include "AllocationProbe.h"
+#include "AudioDummy.h"
+#include "AudioEngine.h"
+#include "ConfigManager.h"
+#include "Engine.h"
+#include "InstrumentTrack.h"
 #include "MidiAlsaRaw.h"
+#include "MidiEventProcessor.h"
+#include "MidiPort.h"
 #include "RetroMidiRing.h"
+#include "Song.h"
+#include "Track.h"
 
 namespace
 {
@@ -138,6 +150,23 @@ class TestMidiAlsaRaw final : public lmms::MidiAlsaRaw
 public:
 	using lmms::MidiAlsaRaw::sendByte;
 	using lmms::MidiAlsaRaw::stopWorker;
+};
+
+//! A port's event processor that holds the worker inside the dispatch until released.
+class GatedProcessor final : public lmms::MidiEventProcessor
+{
+public:
+	void processInEvent(const lmms::MidiEvent&, const lmms::TimePos&, lmms::f_cnt_t) override
+	{
+		++calls;
+		entered.release();
+		gate.acquire();
+	}
+	void processOutEvent(const lmms::MidiEvent&, const lmms::TimePos&, lmms::f_cnt_t) override {}
+
+	std::atomic<int> calls{0};
+	QSemaphore entered;
+	QSemaphore gate;
 };
 
 class MidiAlsaRawShutdownTest : public QObject
@@ -286,6 +315,77 @@ private slots:
 		QCOMPARE(lmms::test::tlFreeCount, std::uint64_t{0});
 		QCOMPARE(g_writeCalls.load(), 2);
 		QCOMPARE(g_lastWritten.load(), 0x3c);
+	}
+
+	//! Callback ownership: stopInput() is the point after which a port may be destroyed.
+	//! The worker is held INSIDE a port's dispatch; stopInput() must not return until that
+	//! dispatch has finished, and no event written afterwards reaches the port. Without it,
+	//! the port (and the client's port list) could be torn down under a running dispatch.
+	void stopInputWaitsForAnInFlightDispatch()
+	{
+		lmms::Engine::init(true); // a MidiPort's models need the project journal
+		auto engineGuard = qScopeGuard([] { lmms::Engine::destroy(); });
+		TestMidiAlsaRaw client;
+		g_client = &client;
+		GatedProcessor processor;
+		{
+			lmms::MidiPort port(QStringLiteral("q050-488"), &client, &processor, nullptr, lmms::MidiPort::Mode::Input);
+			const std::array<unsigned char, 3> noteOn{0x90, 60, 100};
+			QCOMPARE(::write(g_devicePipe[1], noteOn.data(), noteOn.size()), ssize_t{3});
+			QVERIFY(processor.entered.tryAcquire(1, 5000)); // the worker is inside the port's dispatch
+
+			std::atomic<bool> stopped{false};
+			std::thread stopper([&] { client.stopInput(); stopped = true; });
+			// The dispatch is held by the gate, so a correct stopInput() cannot have returned;
+			// the wait only gives one that does not wait for it the time to show it.
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			const bool returnedDuringDispatch = stopped.load();
+			processor.gate.release();
+			stopper.join();
+			QVERIFY2(!returnedDuringDispatch, "stopInput() returned while a dispatch to the port was in flight");
+			QVERIFY(stopped.load());
+			QVERIFY(!client.isRunning());
+
+			// Input after the stop is never dispatched.
+			processor.gate.release(8);
+			QCOMPARE(::write(g_devicePipe[1], noteOn.data(), noteOn.size()), ssize_t{3});
+			std::this_thread::sleep_for(std::chrono::milliseconds(50));
+			QCOMPARE(processor.calls.load(), 1);
+		} // the port is destroyed here, after stopInput(): nothing can be dispatching to it
+		QCOMPARE(g_callsOnClosedHandle.load(), 0);
+	}
+
+	//! The shutdown order the review found wrong: Engine::destroy() cleared the project -
+	//! destroying every track's MidiPort - while the raw worker was still running, and
+	//! stopped it only later, in ~AudioEngine. A real engine with the raw client is built
+	//! over the fake device; the moment the track's port is destroyed, the worker must
+	//! already be stopped. Deterministic: it checks the order, not a lucky interleaving.
+	void engineShutdownStopsRawInputBeforePortsAreDestroyed()
+	{
+		using namespace lmms;
+		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("audiodev"), AudioDummy::name());
+		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("mididev"), MidiAlsaRaw::name());
+		Engine::init(false);
+		auto* raw = dynamic_cast<MidiAlsaRaw*>(Engine::audioEngine()->midiClient());
+		QVERIFY(raw != nullptr);
+		QVERIFY(raw->isRunning());
+
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		std::atomic<int> portsDestroyed{0};
+		std::atomic<bool> workerRunningAtPortTeardown{false};
+		QObject::connect(track->midiPort(), &QObject::destroyed, [&] {
+			++portsDestroyed;
+			if (raw->isRunning()) { workerRunningAtPortTeardown = true; }
+		});
+
+		Engine::destroy();
+		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("mididev"), QString());
+		ConfigManager::inst()->setValue(QStringLiteral("audioengine"), QStringLiteral("audiodev"), QString());
+
+		QCOMPARE(portsDestroyed.load(), 1);
+		QVERIFY2(!workerRunningAtPortTeardown.load(), "the raw-MIDI worker was still running while a track's MidiPort was destroyed");
+		QCOMPARE(g_callsOnClosedHandle.load(), 0);
 	}
 };
 

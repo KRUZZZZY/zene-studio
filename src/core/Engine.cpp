@@ -27,6 +27,7 @@
 #include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "McuSurface.h"
+#include "MidiClient.h"
 #include "Mixer.h"
 #include "Ladspa2LMMS.h"
 #include "Lv2Manager.h"
@@ -100,6 +101,13 @@ void Engine::destroy()
 	McuSurface::disconnect();
 	s_projectJournal->stopAllJournalling();
 	s_audioEngine->stopProcessing();
+	// Q050-488: a MIDI client's input thread dispatches to the ports the tracks own,
+	// and clearProject() below destroys those tracks. Stop the input first, so no event
+	// is dispatched to a port being destroyed or reads the port list while it shrinks.
+	if (s_audioEngine->midiClient() != nullptr)
+	{
+		s_audioEngine->midiClient()->stopInput();
+	}
 
 	PresetPreviewPlayHandle::cleanup();
 

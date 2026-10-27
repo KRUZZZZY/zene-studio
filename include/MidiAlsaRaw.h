@@ -53,6 +53,12 @@ public:
 
 	static QString probeDevice();
 
+	//! Joins the input worker (stopWorker()); the device stays open until destruction.
+	void stopInput() override
+	{
+		stopWorker();
+	}
+
 
 	inline static QString name()
 	{
