@@ -126,4 +126,26 @@ Tests executed: 1 for `NoteShapeValidationTest` (ctest) with 11 QTest slots; 10 
 - **Other callers consistent.** `filterFrom` has exactly two callers, `select_where` and `transform_where`, and both now refuse the
   same filters. `ControlScaleSupport.cpp:259-260` builds its own filter from a scale context and is not affected.
 - **Gates and submit check.** `feature_check.py` as shipped exits 1 because of its log-folder write outside the jail (note 2).
-  The same checks pass with the log folder redirected (gates-2.log, EXIT 0).
+  The same checks pass with the log folder redirected (gates-2.log, EXIT 0). `submit_check.py` (submit-check-1.log, EXIT 1) shows
+  the same single FAIL, `gates (feature_check.py)`, for that reason. Its other mechanical items PASS: commits on the branch,
+  clean tree, report verdict, tests changed.
+
+### ASK items (submit_check.py)
+
+1. **Regression test FAILS with the change reverted, PASSES with it.** Reverted: `ctest -R NoteShapeValidationTest` EXIT 8,
+   failing at `tests/src/core/NoteShapeValidationTest.cpp:224` (test-red-2.log). Restored: EXIT 0 (test-green-2.log), and
+   `Totals: 11 passed, 0 failed` (qtest-direct-green.log).
+2. **Deterministic.** No wall-clock time, sleep, thread or race. The test builds its clip in `freshClip()` with fixed notes
+   (keys 60, 61, 67; positions 48, 12, 12; velocities 100, 40, 160) and fixed filter bounds. The only state it reads back is the
+   clip's note list and the command's `ControlErrorKind`. No seam is needed: the refusal is decided by the bound values.
+3. **Fix at the cause; every caller and sibling checked.** The cause is `filterFrom`, which both callers use (select_where at
+   `src/core/ControlCommandsNoteShape.cpp:479-480`, transform_where at `:553-554`). The check covers all four ranges (key, velocity,
+   position, length) in one function, `anyRangeEmpty` (`:358-362`). The other filter builder, `ControlScaleSupport.cpp:259-260`,
+   sets only `scaleMatch` and has no ranges, so it is unaffected. The sibling commands in the same file are not filter users.
+4. **No collateral damage.** Saved projects and the save/load path are not touched, because `filterFrom` runs only on command
+   arguments. The only new refusals are contradictory ranges: min above max, with an open side at the filter's default bound. The
+   existing ranges in `tests/src/core/NoteNoOpEditUndoStepTest.cpp:257` (60/60), and in `NoteEditingCommandsTest.cpp` (all ordered),
+   stay legal, and the existing family run passes 10 of 10. Note 3 and note 4 above list the two behaviour changes for reviewers.
+5. **Verdict FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The code evidence is in "Verdict and cause": `NoteTransform.cpp:73-79`
+   (an empty range matches nothing) and `:154-161` (invert selects the complement), reached through the unchecked `filterFrom`
+   path at `ControlCommandsNoteShape.cpp:364-380`.
