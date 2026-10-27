@@ -92,9 +92,15 @@ bool readForEdit(QJsonObject* all, ControlResult* error)
 
 bool writeAll(const QJsonObject& all)
 {
+	const QByteArray bytes = QJsonDocument(all).toJson(QJsonDocument::Indented);
 	QSaveFile file(storePath());
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
-	file.write(QJsonDocument(all).toJson(QJsonDocument::Indented));
+	// Written whole or not at all: a write the kernel cuts short is cancelled, never committed as the store.
+	if (file.write(bytes) != bytes.size())
+	{
+		file.cancelWriting();
+		return false;
+	}
 	return file.commit();
 }
 
