@@ -432,6 +432,7 @@ include/HardwareIo.h
 include/HardwareOutputBus.h
 include/HelpCenter.h
 include/HelpTasks.h
+include/HostedTrackChannels.h
 include/ImportDetection.h
 include/ImportDetectionDsp.h
 include/ImportFilter.h
@@ -677,6 +678,7 @@ include/PluginEditorHost.h
 include/PluginFactory.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
+include/PluginInstantiationFailure.h
 include/PluginIssue.h
 include/PluginLoadPolicy.h
 include/PluginNativeEditor.h
@@ -2032,6 +2034,7 @@ src/core/PluginFactoryBackgroundScan.cpp
 src/core/PluginFactoryScanDetail.h
 src/core/PluginHostChunking.cpp
 src/core/PluginHostNotes.cpp
+src/core/PluginInstantiationFailure.cpp
 src/core/PluginIssue.cpp
 src/core/PluginOrganiser.cpp
 src/core/PluginPaths.cpp
@@ -2695,6 +2698,7 @@ tests/src/core/ControlDeviceCatalogueTest.cpp
 tests/src/core/ControlDeviceVendorTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp
+tests/src/core/ControlHostedBusLayoutTest.cpp
 tests/src/core/ControlHostedDeviceCatalogueTest.cpp
 tests/src/core/ControlLinkCommandsTest.cpp
 tests/src/core/ControlMidiReconnectSharedTest.cpp
