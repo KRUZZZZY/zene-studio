@@ -91,7 +91,9 @@ void ArrangerRangeOverlay::beginRangeFrom(const QPoint& globalPos)
 bool ArrangerRangeOverlay::eventFilter(QObject* watched, QEvent* event)
 {
 	if (event->type() == QEvent::Resize) { setGeometry(static_cast<QWidget*>(watched)->rect()); }
-	if (event->type() == QEvent::Paint) { update(); }
+	// The overlay is a transparent child of the viewport it watches, and repainting it repaints that viewport, so an
+	// unconditional update() here would feed itself forever. Repaint only when the rows it draws have moved.
+	if (event->type() == QEvent::Paint && rangeRows() != m_paintedRows) { update(); }
 	return QWidget::eventFilter(watched, event);
 }
 
@@ -160,7 +162,8 @@ void ArrangerRangeOverlay::paintEvent(QPaintEvent*)
 	fill.setAlpha(48);
 	QPainter p(this);
 	p.setPen(QPen(tokens::palette().accent, 1));
-	for (const QRect& row : rangeRows())
+	m_paintedRows = rangeRows();
+	for (const QRect& row : m_paintedRows)
 	{
 		if (row.isEmpty()) { continue; }
 		p.fillRect(row, fill);
