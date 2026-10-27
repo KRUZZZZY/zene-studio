@@ -214,6 +214,9 @@ class MIDITrack
 
 	inline void addEvent(const Event &e)
 	{
+		// A zero tempo is not a tempo: Event::writeToBuffer divides by it. Refused here, the one
+		// place every event enters, so addTempo() and a direct addEvent() both keep it out.
+		if (e.type == Event::TEMPO && e.tempo == 0) { return; }
 		Event E = e;
 		events.push_back(E);
 	}
