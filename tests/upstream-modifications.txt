@@ -5359,3 +5359,4 @@ plugins/Xpressive/ExprSynth.cpp	new-p10-128: IntegrateFunction skips the cycle-a
 tests/plugin_compat_steps.py	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
 tests/src/plugins/ClapEffectIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
+tests/src/plugins/Vst3EffectIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
