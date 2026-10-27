@@ -42,7 +42,11 @@ Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p23-64.md
 ## Self-check
 
 - Verdict evidence: each claim above is a file:line in the worktree, read directly. The only place a stale-artifact concern could matter is the decoder mono path; that is source, not a binary, so the tree is the proof.
-- RED/GREEN: not applicable to a not-real verdict. No product patch exists to reverse for step 4b, and no test was added, because a regression test would pass on the current code and prove nothing about a bug.
+- RED/GREEN (submit_check "regression test fails with the change reverted and passes with it"): not applicable. This is a not-real verdict, so there is no product change to revert for step 4b. No test was added: a regression test for this finding would pass on the current code and prove nothing about a bug. No test is claimed.
+- Determinism: not applicable, no test added. The evidence is static: file:line reads of the code listed above, with no clock, sleep or race involved.
+- Fix at the cause / callers and siblings: not applicable, no fix. The callers of `channelOf` (ConvolutionReverb.cpp:195-196) and the decoders (SampleDecoder.cpp:152-155, 237-238, 302-303, 344) were all checked; each keeps two channels in every frame.
+- Collateral behavior: none. No product code changed; projects and saved data load exactly as before.
+- Gate row FAIL in submit_check (`gates (feature_check.py)`): this is the environment, not the change. `feature_check.py` calls `logs.mkdir` on `<worktree>-feature-check/`, which is outside this worktree and outside the write jail, so it raises PermissionError before any gate runs (log 001). The six exit-code gates were run one by one with the same commands from the worktree and all exit 0 (logs 002-007, 010-011); the two ratchets exit 1 on the untouched base, the train's expected state (logs 008-009). The orchestrator should run `feature_check.py` outside the jail to confirm this row.
 - Gates: six exit-code gates pass (EXIT=0). Two ratchets exit 1 on the untouched base, which is the train's expected state; the changed set is one doc file, so no ratchet item can be new in it.
 - `feature_check.py` and `submit_check.py` cannot write their log folder (`<worktree>-feature-check/`) from inside the write jail. The gates were run directly; the orchestrator should run the combined check outside the jail.
 - Collateral behavior: none. No code changed.
