@@ -544,6 +544,33 @@ private slots:
 			"a prevch pair that is not two numbers is discarded, not adopted as 0:<n>");
 	}
 
+	//! A loaded `mixch="0"` is malformed: releasing or deleting that folder must not delete the mixer master.
+	void aMalformedFolderChannelCannotDeleteTheMaster()
+	{
+		Mixer* mixer = Engine::mixer();
+		mixer->clear();
+		QCOMPARE(mixer->numChannels(), mix_ch_t{1});
+
+		QDomDocument settings;
+		QVERIFY(settings.setContent(QStringLiteral("<trackfolder mode=\"routing\" mixch=\"0\"/>")));
+		const QString name = QStringLiteral("a-master-index");
+		TrackFolder* released = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		released->loadTrackSpecificSettings(settings.documentElement());
+		QString error;
+		QVERIFY2(released->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		const bool masterSurvivedRelease = mixer->numChannels() == 1;
+		if (!masterSurvivedRelease) { mixer->createChannel(); }
+
+		TrackFolder* deleted = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		deleted->loadTrackSpecificSettings(settings.documentElement());
+		removeAll(name);
+		const bool masterSurvivedDelete = mixer->numChannels() == 1;
+		if (!masterSurvivedDelete) { mixer->createChannel(); }
+
+		QVERIFY2(masterSurvivedRelease, "leaving routing with a saved master index deleted mixer channel 0");
+		QVERIFY2(masterSurvivedDelete, "deleting a folder with a saved master index deleted mixer channel 0");
+	}
+
 	//! A child that LEAVES a routing folder keeps its binding, so it can be routed
 	//! again without inventing a channel for it. But the channel it is given while it
 	//! is OUTSIDE the folder is the one a later release has to restore: routeChild()
