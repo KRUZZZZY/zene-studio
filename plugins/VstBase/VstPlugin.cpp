@@ -261,14 +261,7 @@ void VstPlugin::loadSettings( const QDomElement & _this )
 	else if( num_params > 0 )
 	{
 		// no chunk, restore individual parameters
-		QMap<QString, QString> dump;
-		for( int i = 0; i < num_params; ++i )
-		{
-			const QString key = "param" +
-						QString::number( i );
-			dump[key] = _this.attribute( key );
-		}
-		setParameterDump( dump );
+		setParameterDump( savedParameterValues( _this ) );
 	}
 
 	// The audio ports (channel counts, pin connections) round-trip with the
@@ -383,15 +376,30 @@ const QMap<QString, QString> & VstPlugin::parameterDump()
 
 
 
-void VstPlugin::setParameterDump( const QMap<QString, QString> & _pdump )
+std::vector<VstParameterDumpValue> savedParameterValues( const QDomElement & _this )
+{
+	std::vector<VstParameterDumpValue> values;
+	const int num_params = _this.attribute( "numparams" ).toInt();
+	for( int i = 0; i < num_params; ++i )
+	{
+		const QString key = "param" + QString::number( i );
+		if( const auto value = parseParameterDumpEntry( _this.attribute( key ) ) )
+		{
+			values.push_back( *value );
+		}
+	}
+	return values;
+}
+
+void VstPlugin::setParameterDump( const std::vector<VstParameterDumpValue> & _values )
 {
 	message m( IdVstSetParameterDump );
-	m.addInt( _pdump.size() );
-	for (const auto& str : _pdump)
+	m.addInt( static_cast<int>( _values.size() ) );
+	for (const auto& value : _values)
 	{
 		const VstParameterDumpItem item =
 		{
-			str.section(':', 0, 0).toInt(), "", LocaleHelper::toFloat(str.section(':', 2, -1))
+			value.index, "", value.value
 		};
 		m.addInt( item.index );
 		m.addString( item.shortLabel );

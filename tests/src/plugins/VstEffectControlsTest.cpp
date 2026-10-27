@@ -21,6 +21,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include "../../../plugins/VstBase/VstPlugin.h"
 #include "../../../plugins/VstEffect/VstEffectControls.h"
 
 #include <QDomDocument>
@@ -55,6 +56,7 @@ private slots:
 	void repeatedSettingsLoadsDoNotRetainOldModels();
 	void labelContainingColonKeepsValueField();
 	void missingParameterEntryKeepsSavedValue();
+	void savedRestoreKeepsColonLabelsAndSkipsMalformedEntries();
 };
 
 void VstEffectControlsTest::initTestCase()
@@ -129,6 +131,27 @@ void VstEffectControlsTest::missingParameterEntryKeepsSavedValue()
 	QVERIFY(qAbs(models.at(1)->value() - 0.6f) < 1e-4f);
 	testControls = nullptr;
 	testParameterDump.clear();
+}
+
+void VstEffectControlsTest::savedRestoreKeepsColonLabelsAndSkipsMalformedEntries()
+{
+	// The no-chunk restore reads the entries saved by VstPlugin::saveSettings,
+	// which are the same "index:label:value" text as the dump. It must keep a
+	// colon-bearing label's value and skip the entries it cannot read.
+	QDomDocument document;
+	auto saved = document.createElement("vstplugin");
+	saved.setAttribute("numparams", 4);
+	saved.setAttribute("param0", "0:Gain: 3 dB:0.25");
+	saved.setAttribute("param1", "1:Freq:0.5");
+	saved.setAttribute("param2", "2:Mix:abc");
+	// param3 is absent from the project
+
+	const auto values = savedParameterValues(saved);
+	QVERIFY(values.size() == 2);
+	QCOMPARE(values[0].index, 0);
+	QVERIFY(qAbs(values[0].value - 0.25f) < 1e-4f);
+	QCOMPARE(values[1].index, 1);
+	QVERIFY(qAbs(values[1].value - 0.5f) < 1e-4f);
 }
 
 } // namespace lmms
