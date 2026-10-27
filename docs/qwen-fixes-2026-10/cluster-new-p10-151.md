@@ -139,6 +139,15 @@ No new files (so no registration), no control command added, no canary/snapshot 
    matches the existing `1..64 characters` contract in the header, `docs/GROOVE-POOL.md:19` and the error text. No limit was added beyond that contract, and
    no legitimate caller passes an overlong name (product saves never write one).
 5. Verdict is FIXED, so the ALREADY-FIXED / FALSE-POSITIVE item does not apply.
+6. **Sibling commands in the changed command files** (`ControlCommandsGroove.cpp`, `ControlCommandsGroovePool.cpp`; ids from their `cmd.id =` lines):
+   - `groove.set` (`ControlCommandsGroovePool.cpp:316`, reader `readGrooveBody`): **fixed** (raw name judged).
+   - `groove.extract` (`ControlCommandsGroove.cpp:248`, reader `readExtractGeometry`): **fixed** (raw name judged).
+   - `groove.rename` (`ControlCommandsGroovePool.cpp:369`): `to` **fixed** (`nameFits`); `from` is a lookup, reported below.
+   - `groove.list` (`ControlCommandsGroove.cpp:229`, lookup at `:136`), `groove.remove` (`ControlCommandsGroovePool.cpp:347`, lookup normalises `name`),
+     `groove.apply` / `groove.quantize` (in `ControlCommandsGrooveEdit.cpp`, not changed): **not changed**. They normalise a lookup name, so an overlong
+     lookup still resolves to the 64-character groove. This is the separate lookup defect reported above.
+   - Undo inverses (`ControlCommandsGroovePool.cpp:204,244,306`; `ControlCommandsGroove.cpp:214`) replay `groove.set` / `groove.remove` / `groove.rename`
+     with names that were already stored, so they are ≤ 64 and pass the new checks unchanged.
 
 **Gate note (honest).** `feature_check.py` as shipped fails in this sandbox with `PermissionError` creating `<parent>/zene-qwen-new-p10-151-feature-check`
 (outside the write-jail; output in the conversation, exit 1). Its logic is unchanged in a copy (`feature-check-run/feature_check_logdir.py`) that writes logs to
