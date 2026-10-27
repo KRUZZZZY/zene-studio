@@ -3157,6 +3157,7 @@ tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/VersionedSaveDialogTest.cpp
 tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/WcagContrastTest.cpp
+tests/src/gui/WindowSelectStartupTest.cpp
 tests/src/gui/WorkflowFeedbackTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/gui/XyPadPairTest.cpp
