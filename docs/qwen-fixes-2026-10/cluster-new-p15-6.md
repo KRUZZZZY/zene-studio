@@ -88,3 +88,29 @@ sandboxed `dsh/home` path. The rebuilds set `CCACHE_TEMPDIR=/home/kruzzzzy/.cach
 - Realtime: no audio-thread code changed. The new check runs on the control thread.
 - No `tests/fork-sources.txt` or `tests/upstream-modifications.txt` change is needed: the product file is already
   registered in `fork-sources.txt` (line 1437), and no new file was added.
+
+## Self-check
+
+- **Regression test fails with the product change reverted, passes with it.** Reverted (`git apply -R fix.patch`, rebuild
+  EXIT 0, `ctest -R ClipConsolidateTest` EXIT 8): `aReplacementTheCompositeCannotCarryIsRefusedBeforeAnythingChanges`
+  fails with `done.errorKind` 0, expected 5 (Refused). Restored (`git apply fix.patch`, rebuild EXIT 0, ctest EXIT 0,
+  binary EXIT 0, `Totals: 10 passed, 0 failed`). The full list is in the table above. Logs: `test-3-unfixed-red.log`,
+  `test-4-fixed-green.log`, `test-6-direct-green.log`.
+- **Deterministic.** No wall-clock, sleep, thread or race. The composite is built with `selectSegment` on integer ticks
+  (`length + 1 + 2*i`), the region is the clip's own extent (`unmutedExtent`), and the output file goes to the test's
+  own temporary directory. The refusal is decided by `canSelect`, which is a pure function of the segments.
+- **Caller and sibling check.**
+  - `compositeRefusal` and `replaceWithConsolidated` have one caller each (`ControlCommandsConsolidate.cpp:226` and
+    `:242`, from `rg -n "replaceWithConsolidated|compositeRefusal" src tests include`).
+  - The sibling composite edits already ask `canSelect` before `selectSegment`: `ControlCommandsCompEdits.cpp:160/171`,
+    `ControlCommandsCompGroup.cpp:223/237`, `ControlCommandsRecordingPass.cpp:128/133`. The same rule now applies
+    to consolidate.
+  - `Track::removeClip` (`Track.cpp:1044-1058`) and `assignTakeLane` (`ControlCommandsComp.cpp:364-367`) do not touch the
+    composite's segments, so the pre-render answer equals the answer the replacement would have got.
+- **No collateral damage.**
+  - The check runs only when the track has a composite with segments. Tracks without one are unchanged.
+  - A composite under budget is unchanged: the 255-span boundary test succeeds with `recomped` true, and the existing
+    `theCompositeIsHonouredThenNamesTheOneClip` and `twoClipsAndAGapBecomeOneClipAndUndoBringsThemBack` pass.
+  - Saved projects: no serialisation, load path, or saved field changed. `TakeLane.cpp` and `canSelect`'s budget are
+    unchanged, so no other caller's limit moved.
+  - Verdict is REAL, so no already-fixed or false-positive citation is needed.
