@@ -3124,6 +3124,7 @@ tests/src/gui/RenderRangeMenuTest.cpp
 tests/src/gui/RowTableViewTest.cpp
 tests/src/gui/SampleClipWarpModeMenuTest.cpp
 tests/src/gui/SampleEditorDialogTest.cpp
+tests/src/gui/SampleEditorDocsTest.cpp
 tests/src/gui/SamplerTakeGuiTest.cpp
 tests/src/gui/ScriptBudgetActionTest.cpp
 tests/src/gui/SessionGridRecordTest.cpp

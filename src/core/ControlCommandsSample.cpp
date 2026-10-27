@@ -37,6 +37,7 @@
 // Process menu. The same ids stay on the control socket and through MCP.
 // docs/KNOWN-LIMITATIONS.md carries the bounds around them, not a no-interface
 // claim.
+// The Sample Editor's range operations run their own id, sample.edit_range.
 
 #include <cmath>
 #include <memory>
@@ -206,7 +207,8 @@ void registerSampleCommands(ControlRegistry& registry)
 		"track header's and the Inspector's - offers it as Insert Test Signal..., which opens "
 		"this command's form with that track fixed and position 0, length 192 and kind tone as "
 		"the starting values; confirming creates the clip. Agents reach the same command on the "
-		"control socket, through MCP and from a script (docs/KNOWN-LIMITATIONS.md).");
+		"control socket, through MCP and from a script; the Sample Editor's range operations are "
+		"sample.edit_range (docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{
 			{QStringLiteral("track"), stringProperty()},
