@@ -1034,6 +1034,7 @@ include/PluginPaths.h
 include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/PluginVendors.h
+include/PluginWindowSystem.h
 include/PortMapping.h
 include/PortMappingCodec.h
 include/PreviewOutput.h

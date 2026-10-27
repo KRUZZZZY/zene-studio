@@ -116,9 +116,10 @@ void registerPluginEditorCommands(ControlRegistry& registry)
 	registerOne(registry, "editor_open", QStringLiteral("Open a device's OWN editor - the plug-in's "
 		"interface, not the host's generic knob view (which stays) - in a window of its own. 'target' "
 		"is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for "
-		"a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view "
-		"and CLAP plug-ins whose gui embeds in X11 open; a plug-in with no editor, or one that can "
-		"only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, "
+		"a track's instrument), as plugin.param_set names them. VST3 and CLAP plug-ins whose editor "
+		"embeds in this platform's window (X11, a Windows HWND, a macOS NSView) open; a plug-in with no "
+		"editor, one that cannot embed on this platform (the refusal names the platform and the window "
+		"API), or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, "
 		"not project state: nothing is saved or journalled."), &editorOpen, false);
 	registerOne(registry, "editor_close", QStringLiteral("Close a device's own editor window, if "
 		"it has one open. 'was_open' says whether there was one; closing a closed editor is not an "
