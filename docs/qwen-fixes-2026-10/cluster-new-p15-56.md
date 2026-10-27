@@ -82,3 +82,18 @@ Proof of the regression: step 11 (fix removed) fails exactly the three new cases
 - `tests/src/core/DrumSynthTest.cpp` — the two regression tests.
 - `tests/upstream-modifications.txt` — one line registering the `src/core/DrumSynth.cpp` change for cluster new-p15-56 (the file is inherited and already listed there for earlier clusters).
 - `docs/qwen-fixes-2026-10/cluster-new-p15-56.md` — this report.
+
+## Self-check
+
+Evidence for each item of `submit_check.py`'s list (`logs/submit-check-1.log`).
+
+1. **The regression fails with the product change reverted and passes with it.** RED: `test-1-red.log`, `ctest -R '^DrumSynthTest$'` EXIT 8, 3 failed. Revert proof: `test-5-proof-unfixed.log` EXIT 8 (same three cases), and after `git apply` restore `test-6-proof-fixed.log` EXIT 0 (19/19). The family run `test-7-final-family-verbose.log` is EXIT 0 with 30/30.
+2. **Deterministic.** The new tests use fixed fixture text in a `QTemporaryDir`, with no timers, sleeps, threads or races. The EOF case (`emptyEnvelopeFieldIgnoresAnEarlierParse`) depends on the thread-local `envpts` left by an earlier render in the same thread. QTest runs its cases sequentially on the main thread, so that ordering is fixed.
+3. **At the cause, every caller and sibling checked.** `GetEnv` has seven callers (`src/core/DrumSynth.cpp:478, 485, 508, 538, 539, 585, 599`), all through the one function, so one fix covers them. `storeEnvelopeValue` has two delimiter callers (`:191`, `:198`) and the final store (`:222`), which reads `s` after the last delimiter; with `s` cleared at each delimiter that final read is also correct. The other numeric `sscanf` sites (`:357`, `:373`) already use `!= 1`. No header is changed.
+4. **No collateral damage.** Well-formed envelopes are unchanged: all 16 pre-existing `DrumSynthTest` cases, the 3 `DrumSynthLevelTest` cases and the 8 `SampleBufferResampleTest` cases pass. The only behaviour change is for empty fields, as described above. The trailing-space case is reasoned from the code, not rendered. No new limit or check is added, so nothing else can hit one.
+5. **Verdict FIXED**, so the ALREADY-FIXED / FALSE-POSITIVE evidence clause does not apply.
+
+### Gate status — BLOCKED by the environment, not by the change
+
+- `submit_check.py` runs `feature_check.py` directly. That script writes its logs to `<worktree>/../zene-qwen-new-p15-56-feature-check`, which is outside the write-jail. It fails with `PermissionError` before any gate runs (`logs/gate-1-feature-check.log`). `submit_check` therefore reports `FAIL gates` with no gate-level FAIL lines, which is the same environmental failure, not a gate result.
+- Running the same gate with only its log directory redirected (`logs/feature_check_logdir.py`, the copy described above) gives `RESULT: PASS`, EXIT 0, and every row PASS (`logs/gate-2-feature-check.log`). The gate logic is unchanged. Whoever owns the loop should run `feature_check.py` from outside the jail to confirm the gate result independently.
