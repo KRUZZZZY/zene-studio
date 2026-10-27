@@ -38,6 +38,23 @@ all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, do
 file-length "no new item in your files"; RESULT PASS, EXIT=0 [feature-check-2.log]. The same gates run one by one
 also exit 0 [gate-*-1.log]. `submit_check.py`'s "gates" row will show FAIL for the same PermissionError.
 
+## Rework round 1 (Luna: complete sampler-side read-back)
+
+The review found the read-back left out three settings the sampler saves (`atk`, `rel`, `voices`,
+`plugins/AudioFileProcessor/AudioFileProcessor.cpp:324-326`). `DrumPadPlayback` now carries `attack` (ms), `release`
+(ms) and `voiceLimit`, read from the same saved attributes (`src/core/DrumPadState.cpp`), and `track.drum_rack_get_state`
+answers them as `attack`, `release`, `voice_limit`; its description says so and the snapshot was regenerated from a live
+instance (871 ids / 76 groups, unchanged count). The playback block now holds every setting the sampler saves except the
+sample data itself. Logs for this round: run folder `Q050-066.1.r2/logs`.
+
+| Criterion | Test | Reverted (only this round's `DrumPadState.{h,cpp}` hunks reversed) | With the change |
+| --- | --- | --- | --- |
+| Attack, release and voice limit read back as set and after save/reopen | `./DrumRackPadsTest theEnvelopeAndVoiceLimitReadBackAndSurviveAReopen` (defaults 0/3/64; knobs set to 25 ms / 400 ms / 3; saved, changed, reopened: the saved values) | EXIT=1, "release ... Actual 0, Expected 3" [test-revert-1] | `./DrumRackPadsTest` 8 passed EXIT=0 [test-2] |
+
+Rerun with the change: `ctest -R '^(DrumRackPadsTest|DrumRackPanelTest|ControlDrumRackPads|DeviceCopyTest)$'` EXIT=0
+[test-1]; `ReversibilityContractTest`, `ControlCommandsSnapshot`, `agent_surface` EXIT=0 [test-3]; doc-figures EXIT=0
+[docfig-1]; gates: every row PASS, RESULT PASS, EXIT=0 with the log-redirected copy of `feature_check.py` [feature-check-1].
+
 ## Self-check
 
 - **Each new test fails with the product change reverted, passes restored.** Reverse-applied the ten product files
