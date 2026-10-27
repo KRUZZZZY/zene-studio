@@ -342,6 +342,15 @@ cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell f
 action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
 scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps
 a setlist of songs to step through. A marker can run a command when playback crosses it (marker.set 'action'). Launches and stops are announced once they actually play or stop, not when queued, and one scene launch is one scene announcement rather than one per cell; view.announcements gates these routine messages.</p>
+<p><b>Editing a cell while it plays.</b> The launcher always plays what the grid holds. Give a playing cell another
+pattern or audio file (Edit Cell..., Set Pattern, Audio File... or a drop) and it sounds the new one at once, without a
+relaunch. Clear Cell on a playing or queued cell stops it the way the column's stop button does, and its track's
+arrangement plays again; shrinking the grid (Grid Size...) stops the cells it removes; clearing the whole launcher stops
+everything. Edit &gt; Undo and Redo of any of these follow the same rule: they put the cell back as it was written, but an
+undo never launches a cell - press it again to hear it. Deleting a pattern track empties (and stops) the cells that
+played that pattern, and every other cell keeps the pattern it had even though the pattern numbers move; moving a
+pattern track up or down does not change what any cell plays. A saved project keeps the cells, never what was playing:
+it opens with nothing launched (session.set_slot, session.clear_slot, session.set_grid, session.clear).</p>
 <p>For a show, View &gt; Perform Mode (or Launcher &gt; Perform Mode) opens a window made to be read from a distance: the
 setlist's song and the next one, Play and Stop, the bar and beat, the tempo with - and + (each an undoable change), the scene
 playing and the scene that plays next, one big button per scene, what each track is playing, and a large Stop All. Its keys:
