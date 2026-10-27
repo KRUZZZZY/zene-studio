@@ -71,3 +71,18 @@ Procedure items 1-5 are answered above. The completion check's items:
 - `docs/qwen-fixes-2026-10/cluster-new-p15-164.md`
 
 All six files are already registered in `tests/fork-sources.txt` (`src/core/ProjectRecovery.cpp:1859`, `src/core/RevisionTimeline.cpp:1881`, `include/ProjectRecovery.h:1048`), so no registration change was needed.
+
+## Completion check (`submit_check.py`, `logs/submit-1.log`, EXIT=1)
+
+Mechanical rows: PASS for commits on the branch, working tree clean, report present, tests added or changed (`ProjectRecoveryTest.cpp`, `RevisionTimelineTest.cpp`).
+
+FAIL: `gates (feature_check.py)`. That row runs the unmodified `feature_check.py`, which cannot create `<worktree-parent>/zene-qwen-new-p15-164-feature-check` (`PermissionError`, Errno 13) because that directory is outside my write area. The same gates pass with the log folder redirected (`logs/gates-1-table.log`, EXIT=0, `RESULT: PASS`, see Gates above). This needs the owner or loop to run the gate with a writable log directory, or to create that directory. I did not change the shared script.
+
+The four "?" items, quoted and answered:
+
+- *The regression test FAILS with your product change reverted and PASSES with it (exit codes).* Yes. Reverted: `ctest` EXIT=8, both new assertions fail (`logs/test-3-reverted-red.log`). Reapplied: EXIT=0, 2/2 families pass (`logs/test-4-reapplied-green.log`).
+- *The test is deterministic: no wall-clock timing, sleeps or races.* Yes. Fixed temp directories, fixed timestamps, and a fixed 1 MiB comment padding. No clock, sleep, thread or race is involved.
+- *The fix is at the cause and complete: every caller and sibling was checked.* Yes. `applyAutosaveIdentity` has one caller, `findRevision` at `src/core/RevisionTimeline.cpp:279` (after the fix; it was line 275 before). The sibling reader is `readRecoveryInfo` at `src/core/ProjectRecovery.cpp:198`, now on the same helper. `rg recoveryInfoPath src include` shows no third reader. The writer (`ProjectRecovery.cpp:227`) and remover (`:243`) are unchanged.
+- *No collateral damage.* Yes. The bound is 128 KiB and a sidecar this build writes is far under it (see Self-check item 5). The judgement call in item 8 is the one behaviour change outside the test cases, and it is flagged for review.
+
+Verdict is FIXED, so the ALREADY-FIXED or FALSE-POSITIVE evidence ask does not apply.
