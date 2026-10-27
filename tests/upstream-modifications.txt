@@ -5369,3 +5369,4 @@ plugins/Xpressive/ExprSynth.cpp	new-p12-80: WaveSample::copyFrom copies min(tabl
 tests/src/gui/ShellTest.cpp	# focusTarget dereferences a null frame
 src/core/LocklessAllocator.cpp	new-p10-226: reject allocator dimensions whose rounding, pool byte count or ptrdiff_t addressing would overflow before the pool is allocated; covered by ArrayVectorTest.
 tests/src/core/ArrayVectorTest.cpp	new-p10-226: test that overflowing LocklessAllocator dimensions are rejected with std::length_error.
+tests/src/core/LoudnessReportTest.cpp	# `addBlock()` does pointer arithmetic on null
