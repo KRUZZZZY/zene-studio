@@ -104,7 +104,7 @@ on this box.
 Other suites run on the final tree: `MainCliStartupTest`, `ReversibilityContractTest` and `ControlCommandsSnapshot` -> 0
 [test-7-final]. `AppearanceStartupTest` and `ControlShutdown` -> 0 [test-6].
 
-## Self-check
+### Round 1 self-check
 
 - **Fails reverted, passes restored.** I reversed the wiring hunks in `main.cpp`, `PluginNativeEditor.cpp` and
   `ControlCommandsPluginEditor.cpp`. I also stubbed `decide()` and `editorRefusal()` to return nothing, which is the
@@ -145,7 +145,7 @@ Other suites run on the final tree: `MainCliStartupTest`, `ReversibilityContract
     this lane.
   - The nested KWin used `XDG_RUNTIME_DIR=/tmp/zq502-rt`, because `/run/user` is blocked.
 
-### What `submit_check.py` reported
+#### What `submit_check.py` reported (round 1)
 
 `submit_check.py <worktree> Q050-502` -> exit 1. Every mechanical row passed except two.
 
@@ -162,3 +162,61 @@ Other suites run on the final tree: `MainCliStartupTest`, `ReversibilityContract
   in `Vst3InstrumentIntegrationTest.cpp`. The other is the `display(` inside `EnvGuard display("DISPLAY")` in the new
   test. No audio-path function is added or changed. The new code runs at start-up (`chooseStartupPlatform`) and on
   the main thread when an editor opens (`editorRefusal`, `PluginNativeEditor::open`, `editorOpen`).
+
+## Self-check
+
+This section is for round 2: the integrated tip on `050/m0-train-20`. Logs are in `Q050-502.r2/logs`.
+
+- **Each new test fails reverted and passes restored.**
+  - Reverted on the integrated tip: the wiring hunks in `src/core/main.cpp`, `src/gui/PluginNativeEditor.cpp` and
+    `src/core/ControlCommandsPluginEditor.cpp`, plus `decide()` and `editorRefusal()` stubbed to `{}`. Rebuilt
+    [build-6-reverted] -> exit 0.
+  - Results reverted: `PluginWindowPlatformTest` exit 8 (6 decision/refusal cases FAIL), `PluginNativeEditorTest` exit
+    8 (`onNativeWaylandNoViewIsHandedAWindowId`), `ClapEffectIntegrationTest` exit 8
+    (`testOnNativeWaylandTheEditorRefusesWithTheReason`), `Vst3InstrumentIntegrationTest` exit 8 (the same slot).
+    Nothing else failed [test-6-reverted-*].
+  - Restored with `git checkout --` on those 4 files and rebuilt [build-7-restored] -> exit 0. All four pass, plus
+    `Vst3EditorTest`, `ReversibilityContractTest` and `ControlCommandsSnapshot` -> exit 0 [test-7-restored].
+- **Every criterion is proven by a test I ran.**
+  - Criteria 2-4 were re-run on the integrated tip: `PluginWindowPlatformTest`, `PluginNativeEditorTest` (12/12 with
+    the amplifier module), `ClapEffectIntegrationTest` and `Vst3InstrumentIntegrationTest` -> exit 0 [test-2, test-3,
+    test-7-restored].
+  - The X11/offscreen path and Q050-490's cross-platform cases are unchanged: `Vst3EditorTest` 7/7 and
+    `testTheButtonNamesThePlatformAPluginCannotEmbedOn` PASS [test-2].
+  - Not re-run in round 2: the nested-KWin measurements for criteria 1 and 2 (round 1, base `5c1c6715d`). The
+    integration does not touch the start-up decision or the refusal code, only the conflicts listed above.
+  - Criterion 5: the manual and `docs/KNOWN-LIMITATIONS.md` are updated. The owner's check on the real KDE Wayland
+    desktop is still pending, as the criterion intends.
+- **One undo step and honest reversibility classes.**
+  - No command was added. `plugin.editor_open` stays `not_mutating`: it opens an editor, which is interface state, so
+    there is no undo step.
+  - `ReversibilityContractTest` -> exit 0 [test-5]. The A16 histogram is unchanged, because no class changed.
+- **Realtime.**
+  - Nothing added runs on the audio thread. `chooseStartupPlatform()` runs once in `main()` before the
+    `QApplication` exists.
+  - `editorRefusal()`, `PluginNativeEditor::open` and `editorOpen` run on the main thread when an editor is opened.
+  - The test seam statics are main-thread only.
+  - The checker's "audio-path" hint matches only an unchanged `#include "NotePlayHandle.h"` context line and a
+    test's `EnvGuard display("DISPLAY")`.
+  - TSan does not run on this box: by design, nothing is shared across threads.
+- **Projects.**
+  - No project, preset or state format is touched, so old projects load and render as before.
+  - Nothing new is saved, so there is no new data to round-trip.
+- **Portability.**
+  - The `xcb;wayland` list is behind `QT_VERSION >= 6`; Qt 5 gets `xcb`.
+  - The start-up step is a no-op under `LMMS_BUILD_WIN32`/`LMMS_BUILD_APPLE`.
+  - Only Qt 5.15 API is used (`qputenv`, `qgetenv`, `QGuiApplication::platformName`).
+  - There are no `windows.h` macro names as identifiers and no std::filesystem.
+  - The merged test files use both `PluginWindowSystem.h` (header-only, train) and `PluginWindowPlatform.h`, and
+    neither carries a platform guard the other lacks.
+- **Gates.**
+  - `submit_check.py <worktree> Q050-502` -> exit 1 [submit-check-1]. Its only FAIL is "gates (feature_check.py)".
+    Run from this lane, `feature_check.py` exits 1 before any gate runs [feature-check-1]:
+    `PermissionError: ... zene-integrate-Q050-502-c6ee4fc7bc-feature-check`. It creates its log dir beside the
+    worktree, which is outside the write-jail.
+  - A copy whose only changes are an absolute log dir in the run folder and an absolute `ROOT` (so its baselines and
+    `FIX-BASE` are the originals) -> exit 0, every row PASS: fork-sources, all-sources-reproduce,
+    no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length [feature-check-2].
+  - The WARN "canary figures" reads include names and the existing `plugin.editor_open` as new ids. No id was added.
+    `doc-figures-gate.py` -> exit 0 at 871 ids / 76 groups [docfig-1].
+
