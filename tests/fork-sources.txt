@@ -3174,3 +3174,5 @@ tests/control-drum-rack-pads.py
 
 # cluster new-p9-503 (2026-10): VibratingString oversampling-count regression test (fork-NEW).
 tests/src/plugins/VibratingStringTest.cpp
+# cluster new-p23-25 (2026-10): regression for window.select during GuiApplication startup (fork-NEW).
+tests/src/gui/WindowSelectStartupTest.cpp
