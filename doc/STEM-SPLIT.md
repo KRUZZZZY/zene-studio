@@ -71,6 +71,12 @@ before the call (empty until then).
 `segment_frames` is NOT a quality control: it changes the model's context, and
 HTDemucs is trained at its own 343,980-frame segment.
 
+The sample clip's **Split to stems** submenu (Q050-062.2,
+`StemSplitController::addSplitToStemsMenu`) has one item per quality and passes
+its name to `stem.job_start`. The progress label and completion message name
+the job's own `inference_quality` (else `quality`), and the source clip is not
+touched: `stem.tracks_create` only adds tracks.
+
 Not measured yet: real-model SDR per quality (Q050-062 stage 3). More overlap
 averages more predictions per frame, which is how Demucs's own `--overlap`
 works, but no figure here claims it separates better.
