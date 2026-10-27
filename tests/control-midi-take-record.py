@@ -42,9 +42,7 @@ TRACK_NAME = "Control Target"
 # song runs at 120 bpm too, 48 song ticks a beat: a file beat (480) is 48 song ticks.
 PHRASE = ((240, 60, 100, 240), (720, 64, 80, 240), (1200, 67, 127, 480))
 SONG_TICKS_PER_FILE_TICK = 48.0 / 480.0
-# Song ticks: ~60 ms of sequencer and period jitter at 120 bpm. Measured: exact on an idle box; on one run of
-# seven at load average 7 every note-on was stamped 3-4 ticks early (lengths 29/28/49 for 24/24/48).
-TOLERANCE = 6
+TOLERANCE = 4  # song ticks: ~40 ms of sequencer and period jitter at 120 bpm
 # The loop is the fixture's one bar [0, 192) = 2 s at 120 bpm: one note early in each of two passes.
 LOOP_PHRASE = ((480, 72, 100, 240), (2400, 74, 100, 240))
 LOOP_SECONDS = 3.2

@@ -88,27 +88,21 @@ void MidiTakeCapture::capture(const MidiEvent& event) noexcept
 
 bool MidiTakeCapture::push(const MidiTakeEvent& event) noexcept
 {
-	// Vyukov's bounded queue: a cell is free for position p when its sequence is p. Lock-free - a producer
-	// only retries when another producer claimed the same position first.
+	// Vyukov's bounded queue: a cell is free for position p when its sequence is p. A producer only retries
+	// when another producer claimed the same position first, and at most MaxClaimAttempts times: under that
+	// much contention the event is dropped (and counted), so an audio-thread caller never spins unbounded.
 	std::uint64_t pos = m_enqueue.load(std::memory_order_relaxed);
-	for (;;)
+	bool claimed = false;
+	for (int attempt = 0; attempt < MaxClaimAttempts && !claimed; ++attempt)
 	{
 		Cell& cell = m_cells[pos & Mask];
 		const std::uint64_t sequence = cell.sequence.load(std::memory_order_acquire);
 		const auto diff = static_cast<std::int64_t>(sequence) - static_cast<std::int64_t>(pos);
-		if (diff == 0)
-		{
-			if (m_enqueue.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) { break; }
-		}
-		else if (diff < 0)
-		{
-			return false;  // full: the consumer has not freed this cell yet
-		}
-		else
-		{
-			pos = m_enqueue.load(std::memory_order_relaxed);
-		}
+		if (diff < 0) { return false; }  // full: the consumer has not freed this cell yet
+		if (diff == 0) { claimed = m_enqueue.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed); }
+		else { pos = m_enqueue.load(std::memory_order_relaxed); }
 	}
+	if (!claimed) { return false; }
 	Cell& cell = m_cells[pos & Mask];
 	cell.event = event;
 	cell.sequence.store(pos + 1, std::memory_order_release);

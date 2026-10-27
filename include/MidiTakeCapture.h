@@ -57,7 +57,8 @@ struct MidiTakeEvent
  *  Producers are whatever thread delivers MIDI to InstrumentTrack::processInEvent - the ALSA sequencer
  *  thread, a JACK MIDI port on the audio thread, the GUI's on-screen keyboard - possibly at once, so the
  *  queue is a bounded multi-producer / single-consumer ring (Vyukov's bounded queue): capture() takes no
- *  lock, never allocates and never waits; when the ring is full the event is dropped and counted. The
+ *  lock, never allocates and never waits; when the ring is full, or a producer loses MaxClaimAttempts
+ *  races for a slot in a row, the event is dropped and counted. The
  *  single consumer is the main thread (MidiTakeRecorder), which drains while recording and once at Stop.
  *
  *  The storage is allocated by arm() on the main thread the first time the track is armed and is kept
@@ -68,6 +69,9 @@ public:
 	//! 4096 events x 24 B = 96 KiB per armed track; drained every MidiTakeRecorder::DrainIntervalMs, so the
 	//! bound is ~80 000 events/s - far above two-handed playing.
 	static constexpr std::size_t CapacityEvents = 4096;
+	//! A producer that loses the race for a slot this many times in a row drops its event (counted in
+	//! dropped()) rather than retrying: capture() finishes in bounded time even on the audio thread.
+	static constexpr int MaxClaimAttempts = 64;
 
 	MidiTakeCapture() = default;
 	~MidiTakeCapture();

@@ -119,6 +119,7 @@ private:
 	bool loopRecording() const;
 	tick_t loopLength() const { return m_loopEnd - m_loopBegin; }
 	std::vector<CapturedNote> notesOf(const std::vector<MidiTakeEvent>& events) const;
+	bool beforeRecordPoint(const MidiTakeEvent& event, bool loop) const;
 	int passOf(const MidiTakeEvent& event, bool loop) const;
 	tick_t unfolded(const MidiTakeEvent& event, int pass, bool loop) const;
 	void closeHeldNotes(std::vector<CapturedNote>* notes, const std::array<int, 128>& open, bool loop) const;

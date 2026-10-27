@@ -215,8 +215,7 @@ std::vector<MidiTakeRecorder::CapturedNote> MidiTakeRecorder::notesOf(const std:
 	open.fill(-1);
 	for (const MidiTakeEvent& e : events)
 	{
-		// A count-in or pre-roll is heard, not recorded (the audio punch gate opens at the same tick).
-		if (!loop && m_recordFrom >= 0 && e.tick < m_recordFrom) { continue; }
+		if (beforeRecordPoint(e, loop)) { continue; }
 		const int pass = passOf(e, loop);
 		const tick_t at = unfolded(e, pass, loop);
 		int& slot = open[e.key];
@@ -227,6 +226,15 @@ std::vector<MidiTakeRecorder::CapturedNote> MidiTakeRecorder::notesOf(const std:
 	closeHeldNotes(&notes, open, loop);
 	if (loop) { foldIntoLoop(&notes); }
 	return notes;
+}
+
+
+bool MidiTakeRecorder::beforeRecordPoint(const MidiTakeEvent& event, bool loop) const
+{
+	// A count-in or pre-roll is heard, not recorded (the audio punch gate opens at the same tick). In a loop
+	// recording only the first pass has one: a later pass at the same loop ticks is recorded.
+	if (m_recordFrom < 0 || event.tick >= m_recordFrom) { return false; }
+	return !loop || event.wraps == m_wrapsAtStart;
 }
 
 

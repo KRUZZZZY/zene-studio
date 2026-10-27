@@ -411,6 +411,49 @@ private slots:
 		run("track.set_midi_arm", {{QStringLiteral("track"), m_trackId}, {QStringLiteral("armed"), false}});
 	}
 
+	//! A loop recording's pre-roll is heard, not recorded - before the loop and inside it, up to the record
+	//! point - while a later pass at the same loop ticks as a pre-roll note is recorded.
+	void aLoopPreRollIsNotRecorded()
+	{
+		run("track.set_midi_arm", {{QStringLiteral("track"), m_trackId}, {QStringLiteral("armed"), true}});
+		auto& timeline = song()->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos(192), TimePos(384));
+		timeline.setLoopEnabled(true);
+		song()->setPlayPos(288, Song::PlayMode::Song);  // Record pressed mid-loop: one bar of pre-roll from 96
+		const recordoptions::Options saved = recordoptions::options();
+		recordoptions::Options preRoll;
+		preRoll.preRollBars = 1;
+		recordoptions::setOptions(preRoll);
+		const ControlResult started = run("transport.record");
+		recordoptions::setOptions(saved);
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		QVERIFY2(songTick() < 192, qPrintable(QString::number(songTick())));
+
+		const auto note = [this](tick_t at, tick_t until, int key, std::uint64_t wraps) {
+			renderUntil(at, wraps);
+			play(m_track, key, 100);
+			renderUntil(until);
+			release(m_track, key);
+		};
+		note(120, 144, 50, 0);  // pre-roll, before the loop
+		note(216, 240, 52, 0);  // pre-roll inside the loop, before the record point
+		note(312, 336, 60, 0);  // the first pass, recorded
+		note(216, 240, 62, 1);  // the second pass, at the loop ticks of the pre-roll note 52
+		renderUntil(260);
+		run("transport.stop");
+		timeline.setLoopEnabled(false);
+
+		const std::vector<MidiClip*> takes = midiClips(m_track);
+		QCOMPARE(int(takes.size()), 2);
+		QCOMPARE(int(takes[0]->notes().size()), 1);
+		QCOMPARE(takes[0]->notes()[0]->key(), 60);
+		QVERIFY(withinATick(takes[0]->notes()[0]->pos().getTicks(), 312 - 192));
+		QCOMPARE(int(takes[1]->notes().size()), 1);
+		QCOMPARE(takes[1]->notes()[0]->key(), 62);
+		QVERIFY(withinATick(takes[1]->notes()[0]->pos().getTicks(), 216 - 192));
+		run("track.set_midi_arm", {{QStringLiteral("track"), m_trackId}, {QStringLiteral("armed"), false}});
+	}
+
 	//! The takes, their lanes, their group and its active take survive a save and a reload.
 	void takesRoundTripThroughSaveAndLoad()
 	{
