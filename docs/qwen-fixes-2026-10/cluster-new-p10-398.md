@@ -7,7 +7,7 @@ Cluster new-p10-398: a zero-length StereoDelay divides by zero in `tick()`.
 - **Reachable on this branch (before the fix).** `tick()` takes the ring length as a modulo divisor:
   `plugins/Delay/StereoDelay.cpp:63` (`m_writeIndex = ( m_writeIndex + 1 ) % ( int )m_maxLength;`).
   Nothing bounded `m_maxLength` from below. The constructor sets it to `maxTime * sampleRate`
-  (`:37`) and `setSampleRate()` (the only other writer) sets it to `sampleRate * m_maxTime`
+  (`:39`) and `setSampleRate()` (the only other writer) sets it to `sampleRate * m_maxTime`
   with no lower bound. So `StereoDelay{0, 48000}`, `StereoDelay{20, 0}` and
   `setSampleRate(0)` all leave a zero-length ring, and the next `tick()` is a modulo by zero.
   A negative argument also made `new SampleFrame[negative]` throw, and a negative `m_length`
@@ -109,3 +109,37 @@ the ratchet is red on the train on purpose), file-length PASS (same).
 - `tests/src/core/StereoDelay.cpp`: already in `tests/fork-sources.txt` (no new file).
 - `plugins/Delay/StereoDelay.cpp`: inherited, already listed in `tests/upstream-modifications.txt` for
   `new-p9-443`. A line for `new-p10-398` was added beside it (same commit).
+
+## Self-check
+
+`submit_check.py new-p10-398` (`logs/submit-check-1.log`, EXIT 1): PASS commits on the branch,
+working tree clean, report verdict line, tests changed. **FAIL gates (feature_check.py)**: blocked,
+not fixed. `submit_check` runs `feature_check.py`, which must create `<worktree>-feature-check` next to
+the worktree. That path is outside the write-jail (`PermissionError`, `logs/gates-direct.log`, EXIT 1), so
+no gate runs through the checker. The same gate commands, run from the worktree with logs in the run folder
+(`gates_wrapper.py`, EXIT 0), all pass. This is the only blocker; the fix itself is committed. A fix to the
+checker or the jail path is outside this lane.
+
+1. **RED then GREEN, with the change reverted and restored (exit codes).** Revert: `test-5-proof-unfixed.log`,
+   EXIT 8, four slots FAIL (`m_maxLength` 0 at `tests/src/core/StereoDelay.cpp:30`; constructor
+   `bad_alloc` at `:94`). Restored: `test-6-proof-fixed.log`, EXIT 0, and `test-6b-fixed-verbose.log`
+   shows 7 passed, 0 failed. The RED run before the fix, `test-2-red.log`, gives the same four failures.
+2. **Deterministic.** No clock, sleep, thread, or random input. The inputs are fixed constructor and
+   setter arguments, and sample values are exact in binary (`0.5f`, `0.25f`). The test reads the
+   existing private members through the file's existing `#define private public` seam (already in the
+   file before this change). The negative-argument slot catches a `bad_alloc` from a fixed argument.
+3. **At the cause, and the siblings are consistent.** Callers of `setSampleRate()`: the constructor
+   (`StereoDelay.cpp:44`, which now always goes through the clamp) and `DelayEffect::changeSampleRate()`
+   (`DelayEffect.cpp:159`). Siblings checked: `setLength()` (`StereoDelay.h:40-46`) already accepts only
+   `0 <= length <= m_maxLength`, which is consistent with a one-frame ring; `tick()` (`:63`) now always divides
+   by `>= 1` and reads `readIndex` in `[0, m_maxLength)`; the scale branch `if (m_maxLength > 0)` (`:89`) is
+   unchanged; the destructor is unchanged. The reference copies under `tests/reference/Delay/` are upstream
+   snapshots and were not edited.
+4. **No collateral damage.** For `maxTime > 0` and `sampleRate > 0`, `max(1, x) == x`, so `bufferSize`
+   and `m_length` are unchanged, and the new `m_length < 0` branch is not reached (`setLength()`
+   rejects negatives). The only production construction is a constant 20 s in `DelayEffect.cpp:63`; no
+   saved project data sets the delay ring size, so saved projects load as before. The one-frame floor only
+   acts on arguments that were already broken (zero or negative). Existing `sampleRateChangeRebuildsRingState`
+   and `DelayLfoAutomationTest`, `MonoDelayTest`, `DelayControlsTest` pass (`test-8-family.log`, EXIT 0).
+5. **Verdict.** FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" or "not real" proof is
+   needed. The bug is reachable on this branch at `StereoDelay.cpp:63` before the fix.
