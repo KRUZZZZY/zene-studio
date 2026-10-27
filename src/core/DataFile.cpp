@@ -317,13 +317,13 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	{
 		QByteArray document;
 		QString ignored;
+		bool unreadable = false;
 		if( !lmms::projectcontainer::readDocumentContainer( path,
-			QStringLiteral( "song" ), &document, &ignored ) )
+			QStringLiteral( "song" ), &document, &ignored, &unreadable ) )
 		{
-			// readDocumentContainer() opens the file again: one that no longer
-			// opens was refused, not found truncated, so it is kept.
-			QFile again( path );
-			if( !again.open( QIODevice::ReadOnly ) )
+			// A read that failed never checked the container, so it is kept. Content
+			// the reader refused (malformed or truncated) is not unreadable.
+			if( unreadable )
 			{
 				*reason = QStringLiteral( "unreadable" );
 			}

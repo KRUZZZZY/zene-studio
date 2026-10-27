@@ -361,6 +361,7 @@ set(LMMS_TESTS
 	src/core/SafeStartLoadPathTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
+	src/core/DataFileContainerRecoveryTest.cpp
 	# ARCH-4 S2a: the document index (SPEC-ARCH-4 1.4) and the ONE condition
 	# under which a project may carry one - the S1 preserved set being non-empty
 	# (risk 2, "a release invariant"). The index's own slots are DOM-level; the

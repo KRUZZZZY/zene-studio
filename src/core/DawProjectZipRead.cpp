@@ -164,12 +164,16 @@ void armTestReadFault(QFile& source)
 }
 
 //! Reads the whole of \a path. Every offset is an int, so a file past INT_MAX
-//! bytes is refused before it is read.
-bool readWhole(const QString& path, QByteArray* bytes, QString* error)
+//! bytes is refused before it is read. \a unreadable is set true when the file
+//! could not be opened or read: its bytes were never checked, which is not the
+//! same as the file being malformed or truncated, and a caller must not treat
+//! the two alike.
+bool readWhole(const QString& path, QByteArray* bytes, QString* error, bool* unreadable)
 {
 	QFile source(path);
 	if (!source.open(QIODevice::ReadOnly))
 	{
+		if (unreadable) { *unreadable = true; }
 		if (error) { *error = QStringLiteral("cannot read %1: %2").arg(path, source.errorString()); }
 		return false;
 	}
@@ -180,6 +184,12 @@ bool readWhole(const QString& path, QByteArray* bytes, QString* error)
 	}
 	armTestReadFault(source);
 	*bytes = source.readAll();
+	if (source.error() != QFileDevice::NoError)
+	{
+		if (unreadable) { *unreadable = true; }
+		if (error) { *error = QStringLiteral("cannot read %1: %2").arg(path, source.errorString()); }
+		return false;
+	}
 	return true;
 }
 
@@ -546,10 +556,10 @@ void scanDirectory(Scan& scan, int cursor, int count)
 
 bool dawProjectZipReadTolerant(const QString& path, std::vector<DawProjectEntry>* entries,
 	DawProjectZipReport* report, QString* error, const DawProjectZipLimits& limits,
-	const QStringList& retain)
+	const QStringList& retain, bool* unreadable)
 {
 	QByteArray bytes;
-	if (!readWhole(path, &bytes, error)) { return false; }
+	if (!readWhole(path, &bytes, error, unreadable)) { return false; }
 	int centralOffset = 0;
 	int count = 0;
 	if (!locateDirectory(path, bytes, &centralOffset, &count, error)) { return false; }
@@ -563,7 +573,8 @@ bool dawProjectZipReadTolerant(const QString& path, std::vector<DawProjectEntry>
 	return true;
 }
 
-bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries, QString* error)
+bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entries, QString* error,
+	bool* unreadable)
 {
 	DawProjectZipLimits limits;
 	limits.maxEntryBytes = std::numeric_limits<int>::max();
@@ -571,7 +582,7 @@ bool dawProjectZipRead(const QString& path, std::vector<DawProjectEntry>* entrie
 	limits.allowDeflate = false;  // the .mmpz v2 container is STORE; a deflated one stays refused
 	DawProjectZipReport report;
 	std::vector<DawProjectEntry> found;
-	if (!dawProjectZipReadTolerant(path, &found, &report, error, limits)) { return false; }
+	if (!dawProjectZipReadTolerant(path, &found, &report, error, limits, QStringList(), unreadable)) { return false; }
 	if (!report.deviations.empty())
 	{
 		if (error) { *error = QStringLiteral("%1: %2").arg(path, report.deviations.front().detail); }

@@ -568,7 +568,7 @@ LMMS_EXPORT bool dawProjectZipWrite(const QString& path,
  *  truncated or hostile container is refused rather than read past its end.
  *  This is the `.mmpz` v2 container's reader. */
 LMMS_EXPORT bool dawProjectZipRead(const QString& path,
-	std::vector<DawProjectEntry>* entries, QString* error);
+	std::vector<DawProjectEntry>* entries, QString* error, bool* unreadable = nullptr);
 
 /*! Read the ZIP at \\a path TOLERANTLY: STORE and raw DEFLATE entries, each held
  *  to \\a limits, and an entry that is corrupt, fails its CRC, uses an unsupported
@@ -583,7 +583,7 @@ LMMS_EXPORT bool dawProjectZipRead(const QString& path,
 LMMS_EXPORT bool dawProjectZipReadTolerant(const QString& path,
 	std::vector<DawProjectEntry>* entries, DawProjectZipReport* report, QString* error,
 	const DawProjectZipLimits& limits = DawProjectZipLimits(),
-	const QStringList& retain = QStringList());
+	const QStringList& retain = QStringList(), bool* unreadable = nullptr);
 
 //! The SHA-256 of \\a bytes, lowercase hex - the writer's own file identity.
 LMMS_EXPORT QString dawProjectSha256(const QByteArray& bytes);

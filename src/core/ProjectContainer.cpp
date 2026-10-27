@@ -307,7 +307,7 @@ bool writeContainer( const QString& path, const QByteArray& skeleton,
 
 
 bool readContainer( const QString& path, const QStringList& keepEntries,
-	std::vector<std::pair<QString, QByteArray>>* entries, QString* error )
+	std::vector<std::pair<QString, QByteArray>>* entries, QString* error, bool* unreadable )
 {
 	if( entries == nullptr )
 	{
@@ -317,7 +317,7 @@ bool readContainer( const QString& path, const QStringList& keepEntries,
 
 	const QString skeleton = skeletonEntryName();
 	std::vector<interchange::DawProjectEntry> all;
-	if( !interchange::dawProjectZipRead( path, &all, error ) ) { return false; }
+	if( !interchange::dawProjectZipRead( path, &all, error, unreadable ) ) { return false; }
 
 	const bool keepEverything = keepEntries.isEmpty();
 	bool sawSkeleton = false;
