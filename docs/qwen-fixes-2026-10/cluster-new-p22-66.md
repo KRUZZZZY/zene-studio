@@ -38,6 +38,9 @@ registration. The commit after it carries the `clip.set_gain` sibling, the manif
   pushed. `<cmath>` is included at `:36`.
 - `src/core/ControlCommandsClipEdits.cpp:348-349`: `!std::isfinite(db) || db < kMinGainDb || db > kMaxGainDb`
   (`clip.set_gain`). `<cmath>` is included at `:39`. The refusal returns before any edit or transaction.
+- `src/core/ControlCommandsSampleRange.cpp:160`: `return !std::isfinite(db) || db < -60.0 || db > 24.0;` in
+  `gainRefused` (`sample.edit_range`, op `gain`). The refusal is `InvalidArgs` and returns before any frame is
+  written. The function is called only with `gain_db`, and returns false for every other op.
 - The idiom matches sibling handlers that already put `!std::isfinite(x) || ...` first, for example
   `src/core/ControlCommandsMixerTools.cpp:237` and `src/core/ControlCommandsNoteProbability.cpp:91`.
 
@@ -52,13 +55,15 @@ registration. The commit after it carries the `clip.set_gain` sibling, the manif
 ## Regression test
 
 `tests/src/core/ControlSampleBakeGuardTest.cpp` (new), method `nonFiniteLevelsAreRefusedAndWriteNothing`.
-It covers five refusals:
+It covers six refusals:
 
 1. NaN `gain_db` on `sample.amplify`: `InvalidArgs`.
 2. NaN `target_db` on `sample.normalize`: `InvalidArgs`.
 3. A subnormal-peak source (only frame = 1e-39f) with `target_db` 0: `Refused`, message contains "finite".
 4. An infinite-sample source with `target_db` 0: `Refused`, message contains "finite".
 5. NaN `gain_db` on `clip.set_gain`: `InvalidArgs` (`:158-160`).
+6. NaN `gain_db` with `op` `gain` on `sample.edit_range` over the whole source: `InvalidArgs`, and the source
+   frames are unchanged (`:163-172`). The RED run failed at `:170`.
 
 After each refusal the source frames are compared bit-for-bit with the frames before the call. A final
 `control.undo` must remove the generated clip, which proves no refusal pushed an undo step.
@@ -108,6 +113,23 @@ The sample-sub-case runs, from the earlier version of the same test, have the sa
 Both were restored. `git diff -- src/core/ControlCommandsSampleEdit.cpp` was byte-equal to `logs/fix.patch`
 (`cmp` EXIT 0, `SAME_AS_FIX_PATCH`).
 
+### Round 2: sample.edit_range gain (review rework)
+
+The reviewer's report showed `nanRangeGain.ok` 1 at `ControlSampleBakeGuardTest.cpp:183` on an earlier
+branch state. On this branch the regression is at `:166-172`. Its own first run, before the guard, is below.
+`logs/range-fix.patch` is the `ControlCommandsSampleRange.cpp` diff (14 lines), relative to the pre-guard code.
+
+| Step | Command (from `build/`, then `build/tests`) | EXIT | Result |
+|---|---|---|---|
+| RED, guard absent | `cmake --build . --target ControlSampleBakeGuardTest zene -j4`; `ctest -R ControlSampleBakeGuardTest --output-on-failure` | 0; **8** | FAIL at `ControlSampleBakeGuardTest.cpp:170`, `nanRangeGain.ok` Actual 1 Expected 0 (`test-1-red-range.log`) |
+| GREEN | `git diff -- src/core/ControlCommandsSampleRange.cpp > logs/range-fix.patch` (EXIT 0); build; ctest | 0; 0; **0** | 1/1 passed (`test-2-green-range.log`) |
+| RED, guard hunk reversed | `git apply -R logs/range-fix.patch`; build; ctest | 0; 0; **8** | FAIL at `:170`, `nanRangeGain.ok` Actual 1 (`test-3-red-range-reversed.log`) |
+| Restored | `git apply logs/range-fix.patch`; build; ctest | 0; 0; **0** | 1/1 passed (`test-4-green-restored.log`) |
+
+The final undo in the test (`REV_UNDO_OR_FAIL`) runs after the range refusal, so a refusal that pushed an undo
+step would remove the wrong step and fail the test. The sample-level frames are compared bit-for-bit before
+and after the refusal (`beforeRange`).
+
 ### Affected family
 
 | Command | EXIT | Result |
@@ -115,6 +137,7 @@ Both were restored. `git diff -- src/core/ControlCommandsSampleEdit.cpp` was byt
 | `cmake --build . --target ClipEditsTest ClipPolarityTest ClipEditsMenuTest ClipWaveformEditTest -j4` | 0 | built (`build-18-clip-family.log`) |
 | `cmake --build . --target LinkedClipEditsTest -j4` | 0 | built (`build-19-linked.log`) |
 | `cd tests && ctest -R "ClipEdits|ClipPolarity|ClipWaveformEdit|ControlSample|LinkedClipEdits" --output-on-failure` | 0 | 10/10 passed: ClipEditsTest, ClipPolarityTest, LinkedClipEditsTest, ControlSampleArrayTest, ControlSampleOperatorTest, ControlSampleBakeGuardTest, ControlSampleStereoTest, ClipEditsMenuTest, ClipWaveformEditTest, ControlClipPolarity (`test-20-family-final.log`) |
+| Round 2 family: `cmake --build . --target ClipEditsTest ClipPolarityTest LinkedClipEditsTest ControlSampleArrayTest ControlSampleOperatorTest ControlSampleStereoTest ControlSampleBakeGuardTest ClipEditsMenuTest ClipWaveformEditTest AudioAnalysisTest SampleEditorDialogTest SampleEditorDocsTest DevicePanelTest -j4`; `ctest -R "ClipEdits|ClipPolarity|ClipWaveformEdit|ControlSample|LinkedClipEdits|AudioAnalysis|SampleEditor|DevicePanel"` | 0; 0 | 14/14 passed. Adds AudioAnalysisTest, SampleEditorDialogTest, SampleEditorDocsTest and DevicePanelTest, which call `sample.edit_range` (`test-5-family.log`). `ControlClipPolarity` is a Python driver that runs the rebuilt `zene` binary. |
 
 The first run of this family (`test-18-clip-family.log`) exited 8 with `LinkedClipEditsTest` "Not Run". I had
 matched it by name but not built it. The build and the run above are the fix for that. The other 9 passed.
@@ -164,8 +187,12 @@ both pass. I did not check this against the base listing, because that needs the
   - `sample.reverse`, `sample.fade` (`ControlCommandsSampleEdit.cpp`): use the same `commitBake`, which this
     change does not touch. `sample.reverse` takes no numeric argument, and `sample.fade` takes only `direction`.
     Neither is affected.
-  - `sample.crop`, `sample.make_unique` (`src/core/ControlCommandsSampleTools.cpp`), `sample.edit_range`
-    (`src/core/ControlCommandsSampleRange.cpp`), `sample.generate` (`src/core/ControlCommandsSample.cpp`),
+  - `sample.edit_range`: fixed, and an earlier version of this report wrongly listed it as not affected. Its
+    `gain` op takes `gain_db` and had the same NaN-blind range test, so a NaN gain scaled the clip's source
+    frames and wrote NaN samples. The
+    finite check is now in `gainRefused`, `src/core/ControlCommandsSampleRange.cpp:155-160`. The function
+    returns false for every op other than `gain`, so the other ops are unchanged.
+  - `sample.crop`, `sample.make_unique` (`src/core/ControlCommandsSampleTools.cpp`),
     `sample.spectrogram` (`src/core/ControlCommandsAudioAnalysis.cpp`), `sample.split_stereo`
     (`src/core/ControlCommandsSampleStereo.cpp`): registered in other files. The helpers `resolveBakeTarget`,
     `commitBake` and `sourceState` are in an anonymous namespace in `ControlCommandsSampleEdit.cpp`, so none of
@@ -193,11 +220,13 @@ both pass. I did not check this against the base listing, because that needs the
 - The following commit: `src/core/ControlCommandsClipEdits.cpp`, `tests/src/core/ControlSampleBakeGuardTest.cpp`
   (the `clip.set_gain` assertion), `tests/fork-sources.txt`, `tests/all-sources.txt`,
   `docs/qwen-fixes-2026-10/cluster-new-p22-66.md`.
+- The round-2 commit (review rework): `src/core/ControlCommandsSampleRange.cpp` (the `gainRefused` finite check),
+  `tests/src/core/ControlSampleBakeGuardTest.cpp` (the `sample.edit_range` regression), and this report.
 
 ## Not done
 
-- The full `ctest` suite was not run. I ran the affected families: the sample family, and the clip family that
-  calls `clip.set_gain`.
+- The full `ctest` suite was not run. I ran the affected families: the sample family, the clip family that calls
+  `clip.set_gain`, and the four tests that call `sample.edit_range` (14/14 in round 2).
 - The other numeric `clip.*` edit commands were not audited for the same NaN check (see Self-check).
 - `feature_check.py` could not run in this sandbox (`PermissionError` on its log directory, outside the write
   jail). The six gates above were run by hand. Complexity and file-length are reported as red on the train with

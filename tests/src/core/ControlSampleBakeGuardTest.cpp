@@ -160,6 +160,17 @@ private slots:
 		QCOMPARE(nanClipGain.ok, false);
 		QCOMPARE(nanClipGain.errorKind, ControlErrorKind::InvalidArgs);
 
+		// The selected-range gain op declares the same range, so it refuses NaN too,
+		// and the source frames it would have written are left as they were.
+		const Capture beforeRange = captureOf(clip);
+		const ControlResult nanRangeGain = run(QStringLiteral("sample.edit_range"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("from"), 0},
+				{QStringLiteral("to"), static_cast<int>(count)},
+				{QStringLiteral("op"), QStringLiteral("gain")}, {QStringLiteral("gain_db"), nan}});
+		QCOMPARE(nanRangeGain.ok, false);
+		QCOMPARE(nanRangeGain.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(sameFrames(captureOf(clip), beforeRange));
+
 		// No refusal pushed an undo step: this undo removes the GENERATE.
 		REV_UNDO_OR_FAIL();
 		control::ClipRef ref;
