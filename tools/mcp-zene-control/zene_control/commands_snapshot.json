@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T20:06:46Z",
+  "captured_at": "2026-10-27T23:25:12Z",
   "commands": [
     {
       "args_schema": {
@@ -25389,6 +25389,33 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "out": {
+            "type": "string"
+          },
+          "tail_ms": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Render the project IN REAL TIME through the running audio device, so every hardware insert that is on is heard: its send goes out to the outboard gear and its return is recorded into the mix (an offline render - render.render - bypasses them and renders the dry signal). The song plays from its start to its end plus 'tail_ms' (default 500, at most 10000), with the loop and the metronome off for the pass, and the master mix is written to 'out' (absolute, .wav) at the device's sample rate and the export bit depth in force; the head that delay compensation adds is dropped, so frame k of the file is song frame k, as offline. The reply has the path, frames, seconds, sha256, the compensation dropped and each insert played (channel, send, return, latency). Refused, with nothing rendered and no offline fallback, when no insert is on or the device cannot carry an insert's send or return or delivers no input. The surface does not answer until the pass ends (at most 600 s of song). Changes nothing in the project.",
+      "group": "render",
+      "id": "render.realtime",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channels": {
             "enum": [
               "stereo",
@@ -25424,7 +25451,7 @@
         ],
         "type": "object"
       },
-      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused on a stereo master, for a format other than wav, and with the loudness report on; the reply's `channels` and `channel_layout` say what the file holds. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused on a stereo master, for a format other than wav, and with the loudness report on; the reply's `channels` and `channel_layout` say what the file holds. The render is OFFLINE (no audio device), so hardware inserts are bypassed and the dry signal is rendered: the reply's `hardware_inserts` says so (hardware 'unavailable', `bypassed`, the inserts that are on); render.realtime plays the song through them. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.render",
       "mutating": false,
@@ -25452,6 +25479,9 @@
           },
           "frames": {
             "type": "integer"
+          },
+          "hardware_inserts": {
+            "type": "object"
           },
           "path": {
             "type": "string"
@@ -37287,23 +37317,23 @@
       }
     }
   ],
-  "count": 871,
+  "count": 872,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-089.2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-6lez5hw1/zene.sock",
-    "version": "0.4.0-alpha.5380+df0f2d0"
+    "source_socket": "/tmp/zctl-run-j8ep2cm8/zene.sock",
+    "version": "0.4.0-alpha.5381+c6ee4fc"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 871,
-    "ids_sha256": "6d53edb592b77fa1e893d6bfdc9dd7e9c12acee591cfaf69e27fc8972409fdc4"
+    "id_count": 872,
+    "ids_sha256": "7402835c83240865544a1b47cec16c90b641837446eb6a326730a5f23fd3eb0c"
   }
 }

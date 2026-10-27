@@ -240,7 +240,16 @@ instrument track's note delay, which starts notes later, is a separate setting).
 round trip measured by a ping and compensated. Hover the channel's strip to see the insert's latency in frames and
 milliseconds - the measured round trip, or the figure you typed in place of it ("typed"); "not measured" means the insert
 is on but adds nothing yet, so ping it or type a figure. An agent reads the same number in <code>pdc.report</code>
-(<code>hardware_insert_latency_frames</code>, with <code>hardware_insert_latency_source</code>). Interface Channels names your interface's inputs and outputs and pairs them;
+(<code>hardware_insert_latency_frames</code>, with <code>hardware_insert_latency_source</code>). An ordinary export
+runs no audio device, so it bypasses hardware inserts and writes the dry signal; an agent's <code>render.render</code> reply
+says so in <code>hardware_inserts</code> (hardware unavailable, the inserts it bypassed). To print the outboard gear,
+choose Hardware I/O &gt; Render Through Hardware (Real Time)... and give a <code>.wav</code> path: the song plays once
+through your interface from its start to its end plus a short tail (loop and metronome off for the pass), and the master
+mix, with every insert's return, is written at the interface's sample rate and the export bit depth. The delay
+compensation head is trimmed, so the file lines up with an offline export. The form shows the file, its length and the
+inserts it played; if an insert's send or return is beyond what the interface opened, or the interface has no inputs, it
+refuses and writes nothing - it never falls back to a dry render. Agents run the same <code>render.realtime</code>
+command. Interface Channels names your interface's inputs and outputs and pairs them;
 the names are kept per device, not per project. Its Surround &gt; Format menu sets a channel to LCR, quad, 5.1, 7.1,
 Mono, or a Discrete layout of 2 to 8 channels: the Surround Panner places a channel's sends into a speaker layout on a 2-D
 room with an LFE send and spread, and a stereo master or a stereo export gets the standard downmix. Mono has one M channel.
