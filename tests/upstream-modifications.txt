@@ -5357,3 +5357,4 @@ plugins/ReverbSC/base.c	cluster new-p14-410 (2026-10): sp_createn sizes the SPFL
 tests/CMakeLists.txt	cluster new-p14-410 (2026-10): registers the ReverbSCPrecisionTest ctest, which compiles plugins/ReverbSC/base.c with SPFLOAT=double and calloc shimmed
 plugins/Xpressive/ExprSynth.cpp	new-p10-128: IntegrateFunction skips the cycle-advance modulo while no frame counter has counted a call, so setIntegrate(nullptr, ...) no longer divides by zero; regression: ExprSynthTest integrateWithoutFrameCounterDoesNotDivideByZero.
 src/core/ProjectVersion.cpp	new-p10-308: a numeric MAJOR/MINOR/PATCH identifier too large for an int is clamped to INT_MAX instead of parsing as 0 (other malformed text still pads to 0); covered by ProjectVersionTest::oversizedComponentsAreClamped.
+tests/src/core/ProjectVersionTest.cpp	# Invalid and oversized project versions are silently parsed as zero
