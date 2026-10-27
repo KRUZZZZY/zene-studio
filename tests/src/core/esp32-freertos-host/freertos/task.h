@@ -48,11 +48,17 @@ inline BaseType_t xTaskCreatePinnedToCore(
   return pdPASS;
 }
 
-inline BaseType_t xTaskCreate(TaskFunction_t, const char*, uint32_t, void*, UBaseType_t, TaskHandle_t* handle)
+inline BaseType_t xTaskCreate(
+  TaskFunction_t, const char*, uint32_t, void*, UBaseType_t, TaskHandle_t* handle)
 {
   ++freertos_host::createCalls;
+  if (!freertos_host::createSucceeds)
+  {
+    return pdFAIL;
+  }
   static char taskToken;
-  *handle = &taskToken;
+  freertos_host::lastCreatedHandle = &taskToken;
+  *handle = freertos_host::lastCreatedHandle;
   return pdPASS;
 }
 

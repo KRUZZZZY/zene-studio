@@ -121,6 +121,35 @@ private slots:
     }
     QCOMPARE(freertos_host::deleteCalls - deletesBefore, 0);
   }
+
+  void failedDispatcherTaskCreationIsReportedAndCanRetry()
+  {
+    const int createsBefore = freertos_host::createCalls;
+    const int deletesBefore = freertos_host::deleteCalls;
+    {
+      EspDispatcher dispatcher([] {}, std::chrono::milliseconds(1));
+
+      freertos_host::createSucceeds = false;
+      QVERIFY_EXCEPTION_THROWN(dispatcher.start(), std::runtime_error);
+      QCOMPARE(freertos_host::createCalls - createsBefore, 1);
+      QCOMPARE(freertos_host::deleteCalls - deletesBefore, 0);
+
+      freertos_host::createSucceeds = true;
+      bool retryThrew = false;
+      try
+      {
+        dispatcher.start();
+      }
+      catch (const std::runtime_error&)
+      {
+        retryThrew = true;
+      }
+      QVERIFY(!retryThrew);
+      QCOMPARE(freertos_host::createCalls - createsBefore, 2);
+    }
+    QCOMPARE(freertos_host::deleteCalls - deletesBefore, 1);
+    QCOMPARE(freertos_host::lastDeletedHandle, freertos_host::lastCreatedHandle);
+  }
 };
 
 QTEST_GUILESS_MAIN(AbletonLinkEsp32RunnerTest)

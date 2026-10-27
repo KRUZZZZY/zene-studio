@@ -23,6 +23,8 @@
 #include <condition_variable>
 #include <freertos/task.h>
 
+#include <stdexcept>
+
 namespace ableton
 {
 namespace platforms
@@ -51,7 +53,13 @@ public:
 
   ~LockFreeCallbackDispatcher() { stop(); }
 
-  void start() { xTaskCreate(run, "link", 4096, this, tskIDLE_PRIORITY, &mTaskHandle); }
+  void start()
+  {
+    if (xTaskCreate(run, "link", 4096, this, tskIDLE_PRIORITY, &mTaskHandle) != pdPASS)
+    {
+      throw std::runtime_error("Link: could not create the callback dispatcher task");
+    }
+  }
 
   void stop()
   {

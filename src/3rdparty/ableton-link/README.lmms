@@ -68,7 +68,8 @@ Local modifications: two, deliberate, both in the ESP32 port (which no Zene targ
   reported (the service runner throws std::runtime_error) instead of ignored; the task
   handle starts null, and the destructor deletes only a task that was created.
 - link/include/ableton/platforms/esp32/LockFreeCallbackDispatcher.hpp: the task handle
-  starts null, and stop() deletes only a task that was created.
+  starts null, start() reports a failed xTaskCreate with std::runtime_error, and
+  stop() deletes only a task that was created.
 Both files therefore differ from their MANIFEST.tsv blobs, which still record upstream.
 Regression test: tests/src/core/AbletonLinkEsp32RunnerTest.cpp (host FreeRTOS stand-in in
 tests/src/core/esp32-freertos-host/). Every other file is a byte-identical copy.

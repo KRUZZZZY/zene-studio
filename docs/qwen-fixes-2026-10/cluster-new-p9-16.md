@@ -37,10 +37,11 @@ The `std::runtime_error` error model is already used by this file (`Context.hpp:
   `std::runtime_error`. The member services and work guard are unique_ptrs, so nothing leaks.
 - `Context.hpp:102`: `mTaskHandle = nullptr`.
 - `Context.hpp:85-91`: the destructor deletes only a non-null handle.
-- `LockFreeCallbackDispatcher.hpp:66-68` (sibling, in `stop()` at lines 56-70): `mTaskHandle = nullptr`
-  (line 107), and `stop()` deletes only a non-null handle. Before this, destroying a dispatcher that was
-  never started (reachable: a Link `Controller` destroyed without `start()`, `Controller.hpp:570,572`)
-  called `vTaskDelete` on an uninitialized handle.
+- `LockFreeCallbackDispatcher.hpp:56-62` (sibling): `start()` checks `xTaskCreate` and throws
+  `std::runtime_error` on failure. Its handle starts null (line 115), and `stop()` deletes only a
+  non-null handle. Before this, destroying a dispatcher that was never started (reachable: a Link
+  `Controller` destroyed without `start()`, `Controller.hpp:570,572`) called `vTaskDelete` on an
+  uninitialized handle.
 - `src/3rdparty/ableton-link/README.lmms`: the "Local modifications: none" statement is corrected. These
   are the first local changes to the vendored tree; `MANIFEST.tsv` still records the upstream blobs, so
   those two entries now intentionally differ from their upstream hashes.
@@ -56,10 +57,11 @@ that records calls and lets the test choose whether creation succeeds. No sleeps
 | `failedTaskCreationIsReported` | a failed creation on the first use throws; one creation attempted |
 | `failedTaskCreationIsNotCachedAndRecoversOnRetry` | failure throws, a later attempt succeeds, exactly two creation attempts |
 | `dispatcherNeverStartedDeletesNoTask` | destroying an unstarted dispatcher deletes no task (sibling) |
+| `failedDispatcherTaskCreationIsReportedAndCanRetry` | sibling start reports failure, retries successfully, and deletes the successful handle |
 
-Not covered by a test, on purpose: the destructor's `vTaskDelete` path with a live handle (a
-`ServiceRunner` is private; the static is never destroyed before exit), and the real FreeRTOS
-out-of-memory condition.
+Not covered by a test, on purpose: `ServiceRunner`'s destructor `vTaskDelete` path with a live handle
+(the class is private; its static is never destroyed before exit), and the real FreeRTOS out-of-memory
+condition.
 
 ## Commands and EXIT codes
 
@@ -100,13 +102,11 @@ Final gate run after the last edit: see "Self-check" and `feature-check-3.log`.
   `ESP_PLATFORM` (`Config.hpp:46`), which no Zene build defines. So this diff cannot reach those binaries.
   I did not run the crash under a debugger, so its cause is unknown.
 
-## Residual (not fixed here)
+## Review follow-up
 
-- `LockFreeCallbackDispatcher::start()` (`LockFreeCallbackDispatcher.hpp`, the `xTaskCreate` line) still
-  ignores a failed creation. **NEEDS-CONTEXT.** Making it throw would propagate through
-  `Controller::start()` (`Controller.hpp:570`), and I have not reviewed what Link's enable path does with
-  an exception on ESP32. The guarded `stop()` makes a failed start safe to destroy; the callback simply
-  never runs.
+- The initial self-check called out the sibling `LockFreeCallbackDispatcher::start()` failure path as
+  unresolved. The QA follow-up for this branch now reports failed `xTaskCreate` from `start()` and covers
+  failure plus retry in the regression test above.
 - The ESP-IDF build itself was not run; there is no ESP toolchain on this host. Exceptions: the port
   already throws `std::runtime_error` (`Context.hpp:146,186`), so this adds no new build requirement.
 - Vendored-tree divergence: two files now differ from `MANIFEST.tsv` (recorded in `README.lmms`).
@@ -128,18 +128,19 @@ folder, or the owner to run it.
    EXIT 8), 6 and 10 (GREEN), 4b (EXIT 8 reverted, EXIT 0 reapplied), and final 4b, steps 11-12 (EXIT 8
    reverted, 3 failures; EXIT 0 reapplied, 5 passed). Per-test failures are in the logs above.
 2. **Deterministic:** no wall clock, sleep, or thread. FreeRTOS is a stand-in whose creation outcome the
-   test sets (`freertos_host::createSucceeds`) and whose calls it counts. The dispatcher is never started,
-   so its `fallbackPeriod` is never waited on. One ordering dependence, stated: `ServiceRunner` is a
+   test sets (`freertos_host::createSucceeds`) and whose calls it counts. The stand-in does not run created
+   tasks, so no `fallbackPeriod` is waited on. One ordering dependence, stated: `ServiceRunner` is a
    process-wide static, so the failed-then-retry test assumes the earlier failed test left no runner. QTest
    runs functions in declaration order, so this is fixed, not raced.
 3. **Callers and siblings:** every caller reaches the runner through `serviceRunner()`: `openUnicastSocket`
    (`IpInterface.hpp:57-58`), `makeTimer` (`PeerGateway.hpp:74`, `UdpMessenger.hpp:161`,
-   `InterfaceScanner.hpp:46`), and `async`. No caller was changed. Consequence to review:
-   **NEEDS-CONTEXT:** the Link discovery catches (`UdpMessenger.hpp:76`, `PeerGateway.hpp:85`) wrap `send`
-   and `broadcastState`, not these constructors. On ESP32 a failed creation can now escape these constructors
-   (and `Controller::start()` if they run there) instead of silently leaving the runner dead. I did not trace
-   the full ESP32 call chain; that is the open question. The sibling `LockFreeCallbackDispatcher::start()` is the same
-   open question and is unchanged.
+   `InterfaceScanner.hpp:46`), and `async`. The service runner is first reached by the timer in
+   `Controller::mSessions` (`Controller.hpp:160`, `Sessions.hpp:65`), so its creation failure propagates
+   out of the Link constructor. Later discovery timers and sockets are created during `mDiscovery`
+   construction (`Controller.hpp:167`; `PeerGateways.hpp:51-54` creates the scanner). The discovery catches
+   (`UdpMessenger.hpp:76`, `PeerGateway.hpp:85`) cover sends and broadcasts, not these constructors. The
+   sibling dispatcher failure is raised by `SessionController`'s constructor (`SessionController.hpp:71`)
+   and is covered by the failure-and-retry regression above.
 4. **No collateral damage:** no saved data, no control command, no limit added. The only changed
    behaviour is on the dormant ESP32 port, which no Zene target compiles (see Verdict). The `AbletonLink`
    family binaries do not include the changed headers; their run results are in "Family".
