@@ -128,7 +128,7 @@ public:
 
 	bool setValue(int row, int column, int value) override
 	{
-		if (clip() == nullptr || row >= rowCount()) { return false; }
+		if (clip() == nullptr || row < 0 || row >= rowCount()) { return false; }
 		const QList<ItemColumn> all = columns();
 		if (column >= all.size()) { return false; }
 		const ItemColumn& c = all.at(column);
@@ -238,7 +238,7 @@ public:
 	bool setValue(int row, int column, int value) override
 	{
 		std::vector<ControllerPoint> all = points();
-		if (row >= static_cast<int>(all.size())) { return false; }
+		if (row < 0 || row >= static_cast<int>(all.size())) { return false; }
 		ControllerPoint& point = all[static_cast<std::size_t>(row)];
 		if (column == 0)
 		{
