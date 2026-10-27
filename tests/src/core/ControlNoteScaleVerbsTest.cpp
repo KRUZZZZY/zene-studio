@@ -419,6 +419,23 @@ private slots:
 		QCOMPARE(positionNan.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	//! Luna cluster new-p15-16: readNumber()'s range check compared with `<` and
+	//! `>`, and BOTH are false for NaN - so a NaN factor passed and
+	//! note.velocity_scale multiplied every velocity by NaN, writing an
+	//! implementation-dependent value while reporting success. Non-finite numbers
+	//! are refused typed, the way note.randomize refuses non-finite jitter.
+	void nonfiniteVelocityScaleFactorIsRefused()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("factor"), std::nan("0")}});
+		QVERIFY2(!scaled.ok, "NaN factor was accepted as a successful velocity scale");
+		QCOMPARE(scaled.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteVelocity(fixture.clip, 0), 100.0);  // the note is untouched
+	}
+
 	//! W5: the slide verbs, from the trap state (a note at the DEFAULT, which writes
 	//! no "slide" attribute at all).
 	void slideSetAndClearAreOneUndoableStepEach()
