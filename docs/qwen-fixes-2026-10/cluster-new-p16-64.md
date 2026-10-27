@@ -2,14 +2,14 @@ FIXED
 
 # Cluster new-p16-64 - Dispersion frequency clamp lets NaN reach the audio output
 
-Finding: `plugins/Dispersion/Dispersion.cpp:68` (historical line; the clamp was `:70` on this branch's base and is `:86` after the fix):
+Finding: `plugins/Dispersion/Dispersion.cpp:68` (historical line; the clamp was `:70` on the base and is `:94` after the fix):
 `std::min(value, limit)` returns its first argument when that argument is NaN, so the Nyquist
 clamp did not sanitize a NaN frequency. Verdict REAL, fixed on this branch.
 
 ## Decision evidence (file:line, current tree)
 
 - The controls are read unchecked in `DispersionEffect::processImpl`:
-  `plugins/Dispersion/Dispersion.cpp:70-72` on the base commit `639e1d23e`; after the fix `:86-89`.
+  `plugins/Dispersion/Dispersion.cpp:70-72` on the base commit `639e1d23e`; after the fix `:94-97`.
 - NaN reaches the model and is kept: `include/AutomatableModel.h:753` (FloatModel ctor),
   `src/core/AutomatableModel.cpp:419` (project load: `setValue( LocaleHelper::toFloat(...) )`),
   `src/core/AutomatableModel.cpp:606` (`fittedValue` uses `std::clamp`, which returns a NaN
@@ -27,8 +27,14 @@ clamp did not sanitize a NaN frequency. Verdict REAL, fixed on this branch.
 
 `plugins/Dispersion/Dispersion.cpp` (+ `#include <cmath>`):
 
-- `finiteOrDefault(value, model)` in an anonymous namespace returns the control value when it is
-  finite, otherwise `model.initValue()` (the model's own default: 200 Hz, 0.707, 0).
+- `finiteOr(value, fallback)` in an anonymous namespace returns the control value when it is
+  finite, otherwise the fallback. The fallbacks are the controls' construction defaults, as
+  constants: `DefaultFrequency = 200`, `DefaultResonance = 0.707`, `DefaultFeedback = 0`
+  (`plugins/Dispersion/DispersionControls.cpp:37-39`).
+- The model's init value is deliberately not used. An attribute-form project load runs
+  `setInitValue(NaN)` (`src/core/AutomatableModel.cpp:440`; `setInitValue` at `:1058-1075`), so
+  `initValue()` is NaN exactly when the control was loaded as NaN from an attribute. Review round 1
+  showed that fallback still rendered 512/512 non-finite samples for the attribute form.
 - Applied to the three float controls read in `processImpl` (frequency, resonance, feedback).
   The Nyquist clamp `std::min(..., m_sampleRate * 0.499f)` now sees a finite value.
 - Finite values are unchanged; only NaN takes the default. Amount (IntModel) and DC (BoolModel)
@@ -44,14 +50,18 @@ shared `Effect` base, so a NaN there would poison every effect; that is a separa
 `tests/src/plugins/DispersionNonFiniteTest.cpp` (new, fork-NEW; registered in
 `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt`).
 
-The test builds an effect, loads its controls from a project element (the real load path),
-and renders one impulse. Four test functions:
+The test builds an effect, loads its controls from project XML (the real load path), and renders
+one impulse. Seven test functions plus init/cleanup:
 
-1. `nonFiniteFrequencyRendersLikeTheDefault` - NaN frequency: all samples finite and equal to the
-   default render (tolerance 1e-6).
-2. `nonFiniteResonanceRendersLikeTheDefault` - same for resonance.
-3. `nonFiniteFeedbackRendersLikeTheDefault` - same for feedback.
-4. `finiteFrequencyStillDrivesTheFilter` - a finite 1000 Hz frequency must differ from the default
+1. `nonFiniteFrequencyRendersLikeTheDefault` - child-element form `<freq value="nan"/>`: all samples
+   finite and equal to the default render (tolerance 1e-6).
+2. `nonFiniteResonanceRendersLikeTheDefault` - same for resonance (child form).
+3. `nonFiniteFeedbackRendersLikeTheDefault` - same for feedback (child form).
+4. `attributeFormNonFiniteFrequencyRendersLikeTheDefault` - attribute form `freq="nan"` on the
+   `<dispersion>` element. Also checks that the init value is NaN, so the init-value path is exercised.
+5. `attributeFormNonFiniteResonanceRendersLikeTheDefault` - same for `reso="nan"`.
+6. `attributeFormNonFiniteFeedbackRendersLikeTheDefault` - same for `feedback="nan"`.
+7. `finiteFrequencyStillDrivesTheFilter` - a finite 1000 Hz frequency must differ from the default
    render by more than 1e-3 (guards against a fix that overrides every value).
 
 Each NaN test first checks that the control really loaded as NaN (so it exercises the bug).
@@ -60,6 +70,25 @@ The test is deterministic: no timing, threads or audio device; the engine is onl
 the sample rate.
 
 ## Evidence (exact commands and exit codes)
+
+Round 1 rows below use log folder `new-p16-64.r1/logs`; round 2 rows (the attribute-form rework)
+use `new-p16-64.r2/logs`.
+
+Round 2 (rework: construction defaults + attribute-form regression):
+
+| Step | Command (cwd) | Exit | Result |
+| --- | --- | --- | --- |
+| Build, reworked | `CCACHE_DISABLE=1 cmake --build build --target DispersionNonFiniteTest -j4` (log `build-1-green.log`) | 0 | no errors or warnings |
+| GREEN, ctest | `ctest -R '^DispersionNonFiniteTest$' --output-on-failure` (build/tests), log `test-1-green-fix.log` | 0 | 100% of 1 |
+| GREEN, binary | `./DispersionNonFiniteTest` (build/tests), log `test-2-green-direct.log` | 0 | Totals: 9 passed, 0 failed (7 functions + init/cleanup); attribute-form rows PASS |
+| Reversed: rework only | `git diff -- plugins/Dispersion/Dispersion.cpp > rework.patch; git apply -R rework.patch`, rebuild, run binary, log `test-3-rework-reversed.log` | 3 | attribute frequency 512/512, resonance 512/512, feedback 510/512 non-finite; 3 FAIL, 6 PASS. The round-1 `initValue()` fallback fails exactly where the review said. |
+| Reversed: whole fix (to base `639e1d23e`) | `git diff 639e1d23e -- plugins/Dispersion/Dispersion.cpp > full-fix.patch; git apply -R full-fix.patch`, rebuild, run binary, log `test-4-base-reversed.log` | 6 | 6 FAIL (all NaN cases, both forms), 3 PASS |
+| Re-applied | `git apply rework.patch` / `git apply full-fix.patch` (forward), rebuild, run | 0 | GREEN again (`test-5-green-final.log`, `test-6-ctest-final.log`, ctest exit 0) |
+| Plugin module | `CCACHE_DISABLE=1 cmake --build build --target dispersion -j4` (log `build-5-plugin-dispersion.log`) | 0 | no errors |
+| zene | `CCACHE_DISABLE=1 cmake --build build --target zene -j4` (log `build-6-zene.log`) | 0 | no errors |
+| PluginPorts, reworked | `ctest -R '^PluginPortsMigrationTest$' --output-on-failure` (build/tests), log `test-8-portsmig-final.log` | 8 | 82 passed, 1 failed (same LADSPA case as round 1), 2 skipped. Dispersion sha256 identical to reference `4d21a52a...`. |
+
+Round 1 rows (`new-p16-64.r1/logs`):
 
 Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p16-64.r1/logs/`.
 
@@ -106,7 +135,8 @@ Plugin build: `CCACHE_DISABLE=1 cmake --build build --target dispersion -j4` (lo
 `feature_check.py` cannot run from this lane: it writes its logs to
 `<worktree>/../zene-qwen-new-p16-64-feature-check/`, outside the write-jail (PermissionError,
 log `gate-1-feature-check.log`). I ran each of its commands by hand from the worktree, logs in
-`gate-2-<name>.log`:
+`gate-2-<name>.log` (round 1 in `new-p16-64.r1/logs`; round 2 re-run in `new-p16-64.r2/logs`, same exits and
+the same 7 and 22 ratchet lines, none in a changed file):
 
 | Gate | Exit | Note |
 | --- | --- | --- |
@@ -128,17 +158,20 @@ because no listed item is in a changed file.
 
 ## Self-check
 
-- Regression FAILS with the change reverted and PASSES with it: test-1-red (original code, exit 3),
-  test-7-ctest-red-reverted (ctest, exit 8), test-8-ctest-green (ctest, exit 0); manual runs
-  test-4-reverted-fail (exit 3) and test-5-reapplied-pass (exit 0).
+- Regression FAILS with the change reverted and PASSES with it. Round 2: whole fix reversed
+  (`test-4-base-reversed.log`, exit 6), rework reversed (`test-3-rework-reversed.log`, exit 3), reworked
+  fix (`test-2-green-direct.log`, exit 0, ctest `test-1-green-fix.log` exit 0). Round 1: test-1-red
+  (original code, exit 3), test-7-ctest-red-reverted (ctest, exit 8), test-8-ctest-green (ctest, exit 0).
 - Deterministic: no timers, sleeps, threads, files or audio device. The inputs are injected as
   project XML and an impulse buffer; the only environment input is the engine's sample rate, which
   is the same for both renders of a pair.
 - At the cause, and complete for the reader: every read of the three float controls in
-  `processImpl` now goes through `finiteOrDefault`. The only other reader is the constructor's
+  `processImpl` now goes through `finiteOr`, with construction defaults that cannot be NaN. Both
+  project forms are covered: the child element (`<freq value=...>`) and the attribute (`freq=...`),
+  which also sets the init value. The only other reader is the constructor's
   `m_sampleRate` (engine value, not a control). `processImpl` is the only caller of the coefficient
   path. The root in `AutomatableModel::fittedValue` is recorded above and left as is (wider effect).
-- No collateral damage: finite values take the same path as before (test 4 shows they still drive
+- No collateral damage: finite values take the same path as before (test 7 shows they still drive
   the filter; the default-vs-default comparisons are exact). Project files with finite values load
   the same. Only a NaN value, which before produced a silent NaN output, changes.
 - Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" proof is needed.
