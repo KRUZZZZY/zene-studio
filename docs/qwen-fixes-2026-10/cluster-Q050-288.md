@@ -223,6 +223,38 @@ wrapper before the commit).
 
 ## Self-check
 
+**Round 4 (integration on `639e1d23e`), checked on the integrated tree** (logs in
+`~/.local/share/zene-bunny-fix/qwen/runs/Q050-288.r4/logs/`):
+
+- `submit_check.py` after the integration commit (`submit-check-2.log`, EXIT=1): every mechanical row
+  PASS except **"gates (feature_check.py)"**, and that FAIL is not a gate failing: `feature_check.py`
+  dies with `PermissionError` creating `../zene-integrate-Q050-288-639e1d23e4-feature-check`, a
+  sibling of the worktree outside this session's write-jail (`feature-check-2.log`, EXIT=1). Its own
+  gate lists and base-comparison logic, imported unchanged with only the log folder moved to the run
+  folder (`/tmp/q288-gates.py`), give all 8 rows PASS on the committed tree (`gates-2.log`, EXIT=0).
+  The two WARNs are the same as before (see "Submitted-check warnings"); the canary figure is now
+  863 ids / 76 groups and `doc-figures-gate.py` EXIT=0.
+- **? Test fails reverted / passes restored:** the four non-test product files reverted to train-17,
+  test kept, rebuilt → `SampleEditorDocsTest` EXIT=8 (2 failed: docs slot on `-3 dB`, descriptions
+  slot on `sample.generate` → `sample.edit_range`; `test-4-reverted.log`); restored and rebuilt →
+  EXIT=0, 6 passed, 0 skipped (`test-5-restored.log`).
+- **? Each criterion proven by a test I ran:** criteria 1-2 `SampleEditorDocsTest::theDocsNameTheRangeOperationsAndTheirBounds`
+  plus `SampleEditorDialogTest`, `AudioAnalysisTest`, `ControlSampleOperatorTest`; criterion 3
+  `everyButtonIsOneUndoStepThroughTheRegisteredCommand`. The six-test focused run is 6/6 EXIT=0
+  (`test-7.log`).
+- **? One undo step / reversibility:** no command id, schema or handler changed (description text
+  only); `ReversibilityContractTest` EXIT=0 (`test-7.log`); the test proves depth +1 and bit-exact
+  restore for each of the eight range buttons.
+- **? Audio thread:** the diff (`git diff --name-only 639e1d23e..HEAD`) touches no audio-path code.
+  The production change is three description string literals plus comments, built at registration
+  time on the UI thread. The check's "touches audio-path code" note comes from this report's own prose,
+  which quotes `processImpl` as a path NOT touched. `git diff 639e1d23e..HEAD | grep -E '^\+.*(processImpl|...)'`
+  matches only lines in this file.
+- **? Old projects:** no save/load, schema, model or sample-data code changed. The range-edit behaviour
+  tests pass unchanged.
+- **? Portability:** the test's round-4 additions use only `QStringList::contains`, `QString::contains`
+  and `QStringLiteral`. They use no Qt-6-only API, no `windows.h` macro names and no `std::filesystem`.
+
 **Round 3 (integration on `cf3618e61`), checked again on the integrated tree:** red/green re-proven
 (`src/` hunks reverted → `SampleEditorDocsTest` EXIT=8; restored → 6/6 EXIT=0); every criterion's
 test re-run EXIT=0 (table in "Integration" above); no command, undo path, format or audio-path code
