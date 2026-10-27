@@ -27,6 +27,8 @@
  *  selection follows both ways. Theme 17: the audit runs its checks separately (duplicate names among them), and
  *  announcements follow the level, the repeat window and the song's transitions. */
 
+#include <stdexcept>
+
 #include <QtTest>
 
 #include <QJsonArray>
@@ -302,6 +304,31 @@ private slots:
 		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), 10);
 		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), 11);
 		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 0);
+	}
+
+	void aNegativeCompRowIsRefusedNotIndexed()
+	{
+		const QString track = invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!track.isEmpty());
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.select"), {{QStringLiteral("track"), track}, {QStringLiteral("begin"), 10},
+			{QStringLiteral("end"), 11}, {QStringLiteral("lane"), 0}}).ok);
+
+		CompSwipeStrip strip(track, nullptr);
+		strip.setState(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result);
+		ItemListSource* source = itemlists::compSegments(&strip, &strip);
+		const int rows = source->rowCount();
+		QVERIFY(rows >= 1);
+		const QJsonObject before = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result;
+
+		bool accepted = true;
+		try { accepted = source->setValue(-1, 0, 5); }
+		catch (const std::out_of_range&) { QFAIL("a negative row reached the segment list and threw out_of_range"); }
+		QVERIFY(!accepted);
+		QCOMPARE(source->rowCount(), rows);
+		QVERIFY(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result == before);
 	}
 
 	void theSelectionFollowsBothWays()
