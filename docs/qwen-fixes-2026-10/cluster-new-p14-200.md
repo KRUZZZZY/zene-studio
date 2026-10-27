@@ -69,3 +69,7 @@ Gate note. The stock `feature_check.py` exited 1 (`logs/gates-1.log`, a `Permiss
 - **No collateral damage:** the rejected range is only pairs outside the song, which `loadSettings` already clamps. The boundary pairs `(0, MaxSongLength)` and `(MaxSongLength-1, 1)` still restore (the test's accepted loop). The affected family passes 6 of 6 (`test-6-family.log`, EXIT=0). Editor-produced notes stay within the bound (`InspectorClipFields.cpp:214-217`, `NoteProperties.cpp:57-58`).
 - **Verdict is not claim-only:** FIXED, with a product change and a regression.
 - **Gates, known environment limit:** the stock `feature_check.py` exits 1 with `PermissionError` because it creates `<worktree>-feature-check/` outside the write-jail (`logs/gates-1.log`). The same checks, run from a copy that changes only the log directory and pins `ROOT` (`logs/gates-2.log`, EXIT=0, 8 of 8 PASS), pass. `submit_check` runs the stock script, so its gate row will show FAIL for this reason only. I did not write outside the jail to work around it.
+
+## Independent QA review (2026-10-27)
+
+- The requested stock gate command, `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p14-200`, ran successfully in QA (EXIT=0, RESULT: PASS; all eight rows passed). The earlier lane run's `PermissionError` was not reproducible in this review.
