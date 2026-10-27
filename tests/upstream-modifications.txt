@@ -5305,3 +5305,8 @@ tests/src/gui/ItemListPanelTest.cpp	2026-10-26 new-p21-203: regression for a neg
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Note position and duration are swapped when importing a DAWproject session
 src/gui/RowTableView.cpp	cluster new-p14-267 (2026-10-26): keyPressEvent walks the column count only when a model is set, so Tab/Backtab with no model (new view or after setModel(nullptr)) no longer dereferences null; regression tests/src/gui/RowTableViewTest.cpp (tabAndBacktabWithoutModelAreSafe, tabAndBacktabAfterClearingModelAreSafe).
 tests/src/gui/RowTableViewTest.cpp	# Tab handling crashes when RowTableView has no model
+tests/data/clap-test-plugin/clap-test-gain.c	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/data/vst3-test-instrument/vst3-test-instrument.cpp	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/plugin_compat_page.py	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/src/plugins/ClapEffectIntegrationTest.cpp	# Open VST3 and CLAP plug-in windows on Windows and macOS
+tests/src/plugins/Vst3InstrumentTest.cpp	# Open VST3 and CLAP plug-in windows on Windows and macOS
