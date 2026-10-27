@@ -147,8 +147,10 @@ Project &gt; Sections names the song's parts (verse, chorus) as bands over the r
 finds a clip by name; Next and Previous Transient move the play position through the audio's hits. A clip's Sample Editor... (its menu) raises or lowers by 3 dB, silences, deletes, reverses, fades or crops a selection
 of its audio; Split to stems (a sample clip's menu) separates its audio into stems on tracks of their own. A split runs at one of three qualities - fast, standard or high - which set how much the model's
 overlapping passes over the audio overlap (25 %, 50 % or 75 %): high takes about twice as long as standard and fast about two
-thirds of it. The menu splits at standard, the quality every split used before the setting existed; an agent picks one with the
-<code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's
+thirds of it. Split to stems is a submenu: pick Fast, Standard or High quality and the split starts at it (the one you used last is
+ticked; standard until you choose another). The progress window and the message at the end name the quality the job actually ran at,
+and the original clip stays on its track, unchanged, next to the new stem tracks. The menu goes through the same command an agent uses:
+the <code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's
 Process menu also converts its whole source to mono with (L + R) / 2 on both sides (one undo step), or writes its left and
 right channels as two mono WAV files at the source rate and length (Split Stereo to Two Mono Files..., which leaves the clip
 unchanged). A sample clip's menu

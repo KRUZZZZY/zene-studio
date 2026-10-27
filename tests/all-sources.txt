@@ -3176,6 +3176,7 @@ tests/src/gui/ShellTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
+tests/src/gui/StemSplitMenuTest.cpp
 tests/src/gui/StepRecorderWidgetTest.cpp
 tests/src/gui/SurroundPannerTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
