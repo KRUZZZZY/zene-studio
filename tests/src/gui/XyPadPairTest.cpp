@@ -254,6 +254,25 @@ private slots:
 			"the dot for the maximum is not drawn at the pad's last pixel");
 	}
 
+	//! Cluster new-p15-51: the pad's constructor defaulted both models to null, and
+	//! painting and dragging dereferenced them. A pad missing a model paints and takes
+	//! no input, and the model that is present is left unchanged.
+	void delayXyPadWithMissingModelIsInert()
+	{
+		FloatModel xModel{0.2f, 0.f, 1.f, 0.001f};
+		XyPad bothMissing{nullptr, nullptr, nullptr};
+		XyPad yMissing{nullptr, &xModel, nullptr};
+		for (XyPad* pad : {&bothMissing, &yMissing})
+		{
+			pad->show();
+			pad->repaint();
+			QTest::mousePress(pad, Qt::LeftButton, Qt::NoModifier, QPoint(10, 10));
+			QTest::mouseMove(pad, QPoint(80, 70));
+			QTest::mouseRelease(pad, Qt::LeftButton, Qt::NoModifier, QPoint(80, 70));
+		}
+		QCOMPARE(xModel.value(), 0.2f);
+	}
+
 	void aDragIsOneStepAndARefusalIsShown()
 	{
 		const QString channel = control::channelIdOf(Engine::mixer()->mixerChannel(1));
