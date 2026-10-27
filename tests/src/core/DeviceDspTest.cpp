@@ -1020,6 +1020,35 @@ private slots:
 				qPrintable(QStringLiteral("one undo put the console back on only some of the %1 channels").arg(channels)));
 		}
 	}
+
+	//! A NaN drive passes the schema's number check, and every range comparison with NaN is false, so it
+	//! used to pass the 0..100 check and reach the consoles. It is refused as InvalidArgs, and the
+	//! console already on a channel keeps its drive.
+	void aNaNDriveIsRefusedAndChangesNothing()
+	{
+		const QString console = loadByName(ch(1), QStringLiteral("console"));
+		if (console.isEmpty()) { QSKIP("this build has no console module"); }
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		while (Engine::mixer()->numChannels() <= 3) { Engine::mixer()->createChannel(); }
+		const int channels = Engine::mixer()->numChannels();
+		for (int i = 0; i < channels; ++i) { chainOf(i).clear(); }
+		QVERIFY(run(QStringLiteral("mixer.console_apply"), {{QStringLiteral("drive"), 50.0}}).ok);
+		QCOMPARE(consolesOn(2), 1);
+		const QString onTwo = control::effectIdOf(chainOf(2).effects().back());
+
+		const ControlResult refused = run(QStringLiteral("mixer.console_apply"),
+			{{QStringLiteral("drive"), std::numeric_limits<double>::quiet_NaN()}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(parameterValue(ch(2), onTwo, QStringLiteral("Drive")), 50.0);
+		QCOMPARE(consolesOn(2), 1);
+
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		for (int i = 0; i < channels; ++i) { QCOMPARE(consolesOn(i), 0); }
+		QVERIFY(!run(QStringLiteral("mixer.console_apply"),
+			{{QStringLiteral("drive"), std::numeric_limits<double>::quiet_NaN()}}).ok);
+		for (int i = 0; i < channels; ++i) { QCOMPARE(consolesOn(i), 0); }
+	}
 };
 
 QTEST_MAIN(DeviceDspTest)
