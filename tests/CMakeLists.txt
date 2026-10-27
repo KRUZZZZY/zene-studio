@@ -668,6 +668,11 @@ set(LMMS_TESTS
 	# glob characters. Split out of RevisionTimelineTest to keep that file under
 	# the file-length ratchet.
 	src/core/ProjectRevisionRestoreStagingTest.cpp
+	# The undo of a revisions.restore that CREATED the project file (cluster
+	# new-p15-27, BUG 9): undo removes the file only while it still holds the bytes
+	# the restore wrote, and leaves a newer file at the path in place. Its own file
+	# so RevisionTimelineTest does not grow past the file-length ratchet.
+	src/core/RevisionRestoreCreatedFileUndoTest.cpp
 	# ARCH-4 S1b: the elements a loader did not claim, kept verbatim so that
 	# opening and re-saving cannot destroy them (SPEC-ARCH-4 1.6.1). The
 	# mechanism's own slots are unit-level; the owed proof is the integration
@@ -3234,6 +3239,10 @@ set_tests_properties(MasteringTest PROPERTIES
 # runs real `git` commands, so it needs a Qt platform plugin for the same reason
 # the tests above do.
 set_tests_properties(RevisionTimelineTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# RevisionRestoreCreatedFileUndoTest drives a real Engine through the registry,
+# the same way RevisionTimelineTest does, so it needs the same Qt platform plugin.
+set_tests_properties(RevisionRestoreCreatedFileUndoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The dither and SRC-quality tests build a real Engine and drive the real

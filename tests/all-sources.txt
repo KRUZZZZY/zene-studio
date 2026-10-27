@@ -2899,6 +2899,7 @@ tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoDeviceTest.cpp
 tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/RevisionRestoreCreatedFileUndoTest.cpp
 tests/src/core/RevisionTimelineTest.cpp
 tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
