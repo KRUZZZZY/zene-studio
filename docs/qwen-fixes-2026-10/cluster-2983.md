@@ -51,3 +51,7 @@ The procedure's step 4b (patch reversal of a product fix) does not apply: there 
 - *Environment notes.* ccache needed `CCACHE_TEMPDIR` pointing at a writable directory. `feature_check.py`'s log directory is outside the write-jail. Neither touches the product.
 
 Files committed for this verdict: `tests/src/core/SessionPerformTest.cpp` and `docs/qwen-fixes-2026-10/cluster-2983.md`.
+
+## Completion check
+
+`python3 -I /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 2983 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/2983.r1/logs/submit-check-1.log 2>&1; echo EXIT=$?` gave EXIT=1 (`submit-check-1.log`). Its PASS rows are commits on the branch, a clean tree, the report, and the claim-only closure for a FALSE-POSITIVE with no product change. Its only FAIL is `gates (feature_check.py)`. That row runs `feature_check.py` itself, which writes its logs to `<worktree>/../zene-qwen-2983-feature-check`, outside the write-jail. It stopped with `PermissionError: [Errno 13] Permission denied` at `logs.mkdir` (`gate-1.log`, `feature_check.py:71`). The same gate functions, run with logs in the LOG folder, pass: `gate-1-table.log`, RESULT: PASS, EXIT=0. The FAIL is the environment's log path, not a gate result on the code, and I could not clear it within the write-jail. The reviewer or the loop should rerun the completion check outside the jail.
