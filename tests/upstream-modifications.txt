@@ -5341,3 +5341,4 @@ tests/src/core/AutomatableModelTest.cpp	new-p9-224: adds the LinkedModelGroup du
 include/Mixer.h	cluster new-p14-29: declares the LMMS_TESTING refused-lookup seam (static refusedLookupForTesting() and takeRefusedLookupsForTesting()) and the LMMS_TESTING branch in the inline mixerChannel() that refuses an index naming no channel before the vector read; no member is added, and the shipping body is unchanged.
 src/core/Mixer.cpp	cluster new-p14-29: defines the LMMS_TESTING refused-lookup seam (a file-static counter) beside the constructor; compiled only with LMMS_TESTING.
 tests/src/core/TimelineTest.cpp	# Metronome tick math can divide/modulo by zero
+tests/src/tracks/SampleClipWarpTest.cpp	# Invalid single-clip index can crash sample playback
