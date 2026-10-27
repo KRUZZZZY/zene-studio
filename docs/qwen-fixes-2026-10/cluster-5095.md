@@ -43,3 +43,13 @@ Gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` 
 With the runner's rule (ratchet items fail only when they name a file the branch changed), the two ratchets pass for this branch: the only changed file is `tests/src/core/LoudnessReportTest.cpp`, and no ratchet line names it.
 
 Files committed: `tests/src/core/LoudnessReportTest.cpp`, `docs/qwen-fixes-2026-10/cluster-5095.md`.
+
+## Self-check
+
+1. **RED fails / GREEN passes with the product change reverted:** not applicable. There is no product change, so there is no hunk to revert. The new test `aNullBlockIsIgnored()` passes on the original product code (`test-2.log`, `run-2-verbose.log`, both EXIT=0), so it is not regression proof. It pins the null-input contract the finding names; the finding's behaviour does not change.
+2. **Deterministic:** yes. Fixed inputs only: `makeSine(-23.0, 0.5)` (a pure generated sine), `BlockFrames`, and `SampleRate`. No clocks, sleeps, threads or races. It compares values that cannot change when no frames are read.
+3. **Fix at the cause and complete:** no fix was made, because the finding is not a defect. Checked every null-input path: `addBlock` → `inPieces` (`src/core/LoudnessReport.cpp:61-75`, offset always 0 for null) → `LufsMeter::processBlock` (`src/core/LufsMeter.cpp:150`, returns on null); and `addPlanarBlock` → `LufsMeter::processPlanar` (`src/core/LufsMeter.cpp:163`, returns on null).
+4. **No collateral damage:** no product file changed, so no saved data, project load, limit or caller behaviour can change. The only changed file is `tests/src/core/LoudnessReportTest.cpp`, which is an existing registered test (`tests/CMakeLists.txt:436`, `tests/all-sources.txt:2769`).
+5. **Verdict evidence (FALSE-POSITIVE):** `src/core/LoudnessReport.cpp:107-110` (null piece and `frames + at`), `src/core/LoudnessReport.cpp:61-75` (single feed of offset 0), `src/core/LufsMeter.cpp:150` and `:163` (meter refusals), `include/LoudnessReport.h:110-119` (passive read-only contract); C++ [expr.add] ¶4.1 via the secondary sources cited above.
+
+**Gates row FAIL (environment, not content):** `feature_check.py` exits 1 before running any gate with `PermissionError` creating `projects/zene-studio-program/zene-qwen-5095-feature-check`, a directory outside this worktree that the write-jail forbids. Its log is `gates-1.log`. I ran each gate command directly in the worktree (table above): all six simple gates EXIT=0; the two ratchets EXIT=1 for train-wide reasons, with no REGRESSION line naming a file this branch changed. The runner itself needs a writable log directory before it can produce its PASS table here.
