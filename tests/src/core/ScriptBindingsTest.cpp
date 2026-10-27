@@ -42,12 +42,27 @@
 #include "SampleTrack.h"
 #include "ScriptBindings.h"
 #include "ScriptApiVersion.h"
+#include "ScriptCommandBridge.h"
+#include "ScriptDawBindings.h"
 #include "ScriptEngine.h"
 #include "Song.h"
 #include "Track.h"
 
 namespace
 {
+
+//! Queue a project.new the way zene.command() does (a RegistryCall the apply side runs), but
+//! without zene.command()'s own flush, so the next read's flush is what applies it.
+bool queueProjectNew(lmms::ScriptCommandBridge::Request& request)
+{
+	using namespace lmms;
+	request.id = QStringLiteral("project.new");
+	ScriptCommand command;
+	command.type = ScriptCommand::Type::DawEdit;
+	command.i0 = static_cast<std::int32_t>(ScriptDawBindings::Op::RegistryCall);
+	command.object0 = &request;
+	return ScriptEngine::instance()->enqueue(command);
+}
 
 //! Run \a fn and report whether it threw a std::exception; its what() lands in
 //! \a message when non-null.
@@ -485,6 +500,82 @@ print('opened views are inert')
 		QVERIFY2(error.isEmpty(), qPrintable(error));
 		QVERIFY(engine->takeLogMessages().contains(QStringLiteral("opened views are inert")));
 		engine->setProjectDir(QDir::currentPath());
+	}
+
+	/*! A read flushes the command queue before it dereferences the object it
+	 *  names. A queued project replacement that the flush applies deletes that
+	 *  object during the read: the check made before the flush passed, so the
+	 *  check made after it must decide. Each read below must answer with the
+	 *  dead-view sentinel and never touch the freed Track / MidiClip / model. */
+	void readAcrossAQueuedProjectReplacementIsSafe()
+	{
+		using namespace lmms;
+
+		{
+			LuaPatternStore store;
+			store.addInstrumentTrack();
+			LuaTrack& track = store.track(0);
+			QVERIFY(track.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(track.name(), QString());
+			QVERIFY(!track.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.name(), QString());
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.volume(), 0);
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			QVERIFY(row.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(row.panning(), 0);
+			QVERIFY(!row.isValid());
+		}
+		{
+			LuaPatternStore store;
+			store.addInstrumentTrack();
+			LuaBoolModel& mute = store.track(0).muteModel();
+			QVERIFY(mute.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(mute.value(), false);
+			QVERIFY(!mute.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaPatternClip& clip = store.addPattern();
+			QVERIFY(clip.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(clip.name(), QString());
+			QVERIFY(!clip.isValid());
+		}
+		{
+			LuaPatternStore store;
+			LuaPatternClip& clip = store.addPattern();
+			QVERIFY(clip.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(clip.noteCount(), 0);
+			QVERIFY(!clip.isValid());
+		}
 	}
 
 	/*! A Lua view of an instrument must not outlive the instrument it names:
