@@ -23,11 +23,55 @@ it because both go through the same registered commands. T4 is fixed inside the 
 with the reset generation. Four items are listed as unresolved in the feature record and not counted as fixes. One of
 them is that grid columns are track positions.
 
+## Rework r2 (from the round-1 review)
+
+All three blocking points are fixed. Each has a deterministic test that fails with the r1 behaviour and passes now.
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-489.r2/logs`.
+
+- **Queue exhaustion.** `syncSessionLauncher` now counts the commands a change needs before queuing any. The model
+  thread is the queue's only producer, so if they fit at that point they all land. If they do not fit, it stops the
+  whole launcher with one atomic `reset()`, which is what `session.stop_all` does.
+  - Test: `SessionTransitionsTest::aClearTooLargeForTheQueueStillStopsThePlayingCell`, on a standalone scheduler. It
+    clears 129 cells with cell 128 playing and checks that the cell ends Idle with 0 dropped commands.
+- **Reset ordering.** `drainCommands` now judges each command after popping it. Any reset requested by then is carried
+  out first, with the clock caught up the way the period's start would set it. The command then applies only if its
+  generation still matches.
+  - The r1 window between the generation check and the pop no longer exists. The generation is read after the pop, and
+    that read is acquire-ordered after the command's push.
+  - Test: `::aResetBetweenTwoQueuedCommandsSplitsThem`. It drives `drainCommands` directly with a reset between two
+    queued commands, through a test friend. The pre-reset content is dropped, the post-reset launch is applied in the
+    same period, and the clock is coherent.
+  - The existing two-argument `drainCommands` is kept as an overload so `SessionSchedulerTest` builds unchanged.
+- **Undo of a pattern-track deletion.** `journalTrackRemoval`, and its lanes variant, now capture the launcher cells
+  that play the track's pattern. The undo restores the track and then those cells, pointing at the pattern's new
+  number. The redo empties them again.
+  - Core test: `::aCellFollowsItsPatternWhenThePatternsAreRenumbered`, now with undo and redo.
+  - Socket check: "one undo brings back the track and the cell playing it".
+
+How the r1 behaviour was tested:
+- **Core cases.** The new tests need the new interfaces (the test friend, the `drainCommands` signature and
+  `commandQueueSpace`), so a full revert of the product hunks does not compile them (build-2-reverted.log, 2 errors).
+  Instead I kept the interfaces and restored only the r1 behaviour:
+  - the queue check disabled;
+  - the r1 check-before-pop drain;
+  - no cell restore on undo.
+
+  Result: exit 8, all three new cases fail (test-2-behaviour-reverted.log).
+- **Socket check.** Disabling only the cell restore makes the socket test exit 8 (test-5-negctrl.log).
+
+I restored the fix byte-for-byte; `git diff` matched the saved patch. After the refactor that the complexity and
+file-length gates required, every test passes again: SessionTransitionsTest 10/10 and the socket test 0.
+
+Final runs on fresh binaries:
+- Related regression set: 44/45 pass (test-7-regression.log). The one failure is the same environmental
+  `ControlUndoStructuralTranscript`.
+- `feature_check` copy: all 8 gates PASS (feature-check-4.log).
+
 ## Acceptance
 
 | # | Criterion | Test (command) | Exit with change | Exit, product reverted |
 |---|---|---|---|---|
-| 1 | Transition map + reproduced failures | `ctest -R ^SessionTransitionsTest$` (T1-T4 cases), map in `docs/050-features/Q050-489.md` | 0 (8/8, test-14.log, test-18.log) | 8: all product hunks reverted, 5 of 8 cases fail (test-11-reverted.log). Only the scheduler hunk reverted: the T4 case fails, `patternId` 7 vs -1 (test-15-reverted-sched.log) |
+| 1 | Transition map + reproduced failures | `ctest -R ^SessionTransitionsTest$` (T1-T4 cases + the three r2 cases), map in `docs/050-features/Q050-489.md` | 0 (10/10, r2 test-3.log, test-7-regression.log) | 8: all product hunks reverted, 5 of 8 cases fail (test-11-reverted.log). Only the scheduler hunk reverted: the T4 case fails, `patternId` 7 vs -1 (test-15-reverted-sched.log) |
 | 2 | Deterministic launch/stop/edit/undo/redo/save/load sequence, authored identities kept, transient fields excluded | `SessionTransitionsTest::launchStopEditUndoRedoSaveLoadKeepsTheAuthoredState` | 0 | 8 (fails, test-11-reverted.log) |
 | 3 | Socket MIDI + audio workflows with record-to-arrangement, readback, rendered/audio events | `ctest -R ^ControlSessionTransitions$` (`tests/control-session-transitions.py`) | 0 (test-10.log) | 8: 4 checks fail (test-7-reverted.log) |
 | 4 | Quantisation, follow-action, legato, linked-content and scene behaviour unchanged | 45 related tests (list in regression-targets.txt + the session socket tests) | 44/45 pass (test-19-final-regression.log); the one failure is environmental, see below | n/a |
@@ -60,8 +104,9 @@ Failures that are not mine:
   `ControlCommandsSnapshot` pass.
 - **Realtime:** the boundary runs on the model thread and reaches the engine only through lock-free POD queue pushes
   (`SessionScheduler::publishSlotContent` and `requestStop`).
-  - The only audio-thread change is `SessionScheduler::drainCommands`: one atomic load and an integer compare per
-    command. It does not allocate, lock, wait, do I/O or emit a signal.
+  - The only audio-thread change is `SessionScheduler::drainCommands`. Per command it does one atomic load (inside
+    `consumeResetRequest`) and an integer compare; when a reset is pending it carries it out with the existing bounded
+    reset code and `advanceClock`. It does not allocate, lock, wait, do I/O or emit a signal.
   - `SessionScheduler::enqueue` is model thread; it copies the command and adds its tag there.
   - `SessionSchedulerTest` (including its allocation probe) passes.
   - TSan does not run on this box. The race reasoning is in the feature record: the generation is an atomic written by
@@ -77,6 +122,7 @@ Failures that are not mine:
     already uses.
   - There is no `std::filesystem`, and no `min`/`max`/`small`/`near`/`far`/`interface` identifiers.
   - The test includes `<algorithm>` explicitly.
+- **Round 2:** see "Rework r2" above for each new test's exit code with the fix (0) and with the r1 behaviour (8).
 - **Gates:** `feature_check.py` writes its logs into `<worktree>/../…-feature-check`, which is outside my write jail,
   and it exited with PermissionError. I ran an identical copy whose only change is the log directory
   (`runs/Q050-489.r1/scratch/feature_check_local.py`, same base cache). All 8 gates PASS (feature-check-3.log, exit 0).
