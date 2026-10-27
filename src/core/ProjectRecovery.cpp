@@ -124,6 +124,18 @@ QString recoveryInfoPath(const QString& recoveryFile)
 	return recoveryFile + QStringLiteral(".info");
 }
 
+bool readRecoveryIdentityText(const QString& sidecarPath, QString& text)
+{
+	QFile sidecar(sidecarPath);
+	if (!sidecar.open(QIODevice::ReadOnly | QIODevice::Text)) { return false; }
+	// One byte past the bound tells "at most the bound" from "over it" without
+	// reading the rest of the file into memory.
+	const QByteArray bytes = sidecar.read(MaxRecoveryIdentityBytes + 1);
+	if (bytes.size() > MaxRecoveryIdentityBytes) { return false; }
+	text = QString::fromUtf8(bytes);
+	return true;
+}
+
 const char* recoveryVerdictName(RecoveryVerdict verdict)
 {
 	switch (verdict)
@@ -182,12 +194,12 @@ RecoveryInfo readRecoveryInfo(const QString& recoveryFile)
 	info.fileSize = recovery.size();
 	info.fileModified = recovery.lastModified().toUTC();
 
-	QFile sidecar(recoveryInfoPath(recoveryFile));
-	if (sidecar.exists() && sidecar.open(QIODevice::ReadOnly | QIODevice::Text))
+	QString identityText;
+	if (readRecoveryIdentityText(recoveryInfoPath(recoveryFile), identityText))
 	{
 		QString sourceProject;
 		QDateTime savedAtUtc;
-		if (parseRecoveryIdentity(QString::fromUtf8(sidecar.readAll()), sourceProject, savedAtUtc))
+		if (parseRecoveryIdentity(identityText, sourceProject, savedAtUtc))
 		{
 			info.hasIdentity = true;
 			info.sourceProject = sourceProject;

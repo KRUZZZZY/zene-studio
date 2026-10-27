@@ -207,16 +207,20 @@ QString sha256OfFile(const QString& path)
  *  for the same reason: a stale autosave of something else is not this project's
  *  revision). A recovery with NO sidecar, or one that names no project, is
  *  reported: an upstream-written autosave cannot say whose it is, and hiding a
- *  real artefact would be the worse error.
+ *  real artefact would be the worse error. A sidecar over the identity bound
+ *  (ProjectRecovery::MaxRecoveryIdentityBytes) is malformed and counts as absent.
  */
 bool applyAutosaveIdentity(const QString& projectPath, RevisionEntry* entry)
 {
-	QFile sidecar(ProjectRecovery::recoveryInfoPath(entry->path));
-	if (!sidecar.open(QIODevice::ReadOnly)) { return true; }
+	QString identity;
+	if (!ProjectRecovery::readRecoveryIdentityText(
+			ProjectRecovery::recoveryInfoPath(entry->path), identity))
+	{
+		return true;
+	}
 	QString from;
 	QDateTime savedAt;
-	const bool parsed = ProjectRecovery::parseRecoveryIdentity(
-		QString::fromUtf8(sidecar.readAll()), from, savedAt);
+	const bool parsed = ProjectRecovery::parseRecoveryIdentity(identity, from, savedAt);
 	if (!parsed) { return true; }
 	if (savedAt.isValid()) { entry->timestamp = savedAt.toUTC(); }
 	entry->note = QStringLiteral("autosave of %1").arg(from);
