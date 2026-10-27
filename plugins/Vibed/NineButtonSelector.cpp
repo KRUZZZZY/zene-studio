@@ -79,6 +79,7 @@ void NineButtonSelector::modelChanged()
 
 void NineButtonSelector::setSelected(int newButton)
 {
+	newButton = clampButtonIndex(newButton);
 	model()->setValue(newButton);
 	updateButton(newButton);
 }
