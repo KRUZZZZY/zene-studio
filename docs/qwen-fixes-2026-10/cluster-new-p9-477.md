@@ -107,3 +107,28 @@ I'm reporting it as such rather than as a pass.
 - `docs/qwen-fixes-2026-10/cluster-new-p9-477.md` (this report) — the only file in this cluster's commit.
 
 No product file, test, or registration file is changed.
+
+## Self-check
+
+- **Regression FAILS with the fix reverted, PASSES with it.** Yes. Reverted: `ctest -R '^ThreadPoolTest$'`
+  → EXIT=8 (`logs/test-red.log`, two `FAIL!  : ... Compared values are not the same`). Restored:
+  same command → EXIT=0 (`logs/test-green.log`, 1 test executed). Build exits for both: 0 and 0.
+- **Deterministic.** No sleeps and no wall-clock assertions. The child (`tests/src/core/ThreadPoolTest.cpp:121-135`)
+  blocks on `future.get()` and returns 0 only if the task ran. The parent's `waitForFinished(10000)` at `:291`
+  exists only as a hang guard; a hang fails the test, it does not pass it. The seam is the existing
+  `ThreadPool::s_numWorkers` (`include/ThreadPool.h:122`) set to 0 inside the child process.
+- **Fix at the cause, callers and siblings.** The cause is the unclamped count, and the clamp sites are
+  `include/ThreadPool.h:111-114`, `:122` and `src/core/ThreadPool.cpp:32`. Every caller of the global pool
+  (`ThreadPool::instance()`, e.g. `src/gui/FileSearchJob.cpp:57`) goes through `s_pool` at
+  `src/core/ThreadPool.cpp:101`, so it inherits the clamp. The other `hardware_concurrency()` user in the
+  thread-pool area, `src/wasm/WasmWorkerPool.cpp:40-44`, already clamps to at least one lane.
+- **No collateral damage.** This cluster changes no product code. The clamp only changes a zero request,
+  which could never run tasks before, so positive counts and existing callers are unaffected.
+- **ALREADY-FIXED evidence.** `include/ThreadPool.h:111-114,122`, `src/core/ThreadPool.cpp:32-33`, commit
+  `4d56342039` (ancestor of HEAD, EXIT=0), regression `tests/src/core/ThreadPoolTest.cpp:121-135,273-300`.
+  The finding's `include/ThreadPool.h:89` is `set_exception` (`:89`), not the worker count.
+- **Gate row FAIL (environment, not code).** `feature_check.py` cannot create its log folder beside the
+  worktree (`PermissionError`, `logs/gates-1.log`), so the wrapper's table could not be produced. Its eight
+  commands were run directly (table above); six exit 0, and the two ratchet gates exit 1 on items in
+  files this branch does not change. The wrapper's baseline comparison is unverified. This needs a
+  writable parent folder or the wrapper's log directory set elsewhere by the owner.
