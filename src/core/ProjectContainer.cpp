@@ -309,6 +309,7 @@ bool writeContainer( const QString& path, const QByteArray& skeleton,
 bool readContainer( const QString& path, const QStringList& keepEntries,
 	std::vector<std::pair<QString, QByteArray>>* entries, QString* error, bool* unreadable )
 {
+	if( unreadable != nullptr ) { *unreadable = false; }
 	if( entries == nullptr )
 	{
 		setError( error, QStringLiteral( "no destination for the container's entries" ) );

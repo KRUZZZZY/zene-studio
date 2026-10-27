@@ -322,9 +322,11 @@ private slots:
 		QTemporaryDir dir;
 		QVERIFY( dir.isValid() );
 		QString error;
+		bool unreadable = true;
 		QVERIFY( !projectcontainer::readContainer(
-			dir.filePath( QStringLiteral( "song.mmpz" ) ), QStringList(), nullptr, &error ) );
+			dir.filePath( QStringLiteral( "song.mmpz" ) ), QStringList(), nullptr, &error, &unreadable ) );
 		QVERIFY( !error.isEmpty() );
+		QVERIFY( !unreadable );
 	}
 
 	/*! A read that gives back nothing never checked the container, so the refusal
@@ -352,8 +354,10 @@ private slots:
 
 		// Control: bytes that are simply not a container are refused as malformed.
 		QVERIFY( writeBytes( path, opaque() ) );
-		QVERIFY( !projectcontainer::readContainer( path, QStringList(), &read, &error ) );
+		bool unreadable = true;
+		QVERIFY( !projectcontainer::readContainer( path, QStringList(), &read, &error, &unreadable ) );
 		QVERIFY2( !error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+		QVERIFY( !unreadable );
 	}
 };
 

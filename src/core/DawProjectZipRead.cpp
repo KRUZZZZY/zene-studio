@@ -170,6 +170,7 @@ bool refuseUnreadable(const QString& path, const QFile& source, qint64 gotBytes,
 
 bool readWhole(const QString& path, QByteArray* bytes, QString* error, bool* unreadable)
 {
+	if (unreadable) { *unreadable = false; }
 	QFile source(path);
 	if (!source.open(QIODevice::ReadOnly)) { return refuseUnreadable(path, source, 0, 0, error, unreadable); }
 	if (source.size() > std::numeric_limits<int>::max())
