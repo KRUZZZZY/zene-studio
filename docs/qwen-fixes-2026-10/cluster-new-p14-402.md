@@ -130,4 +130,4 @@ Round 1 (the discard; its RED, GREEN and reversal proof are in the r1 logs, and 
 
 ## Completion check
 
-Recorded after the round-2 commit: see the `docs(new-p14-402)` follow-up commit.
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p14-402` on the round-2 commit `69df727c3` (EXIT 1, `submit-check-r2.log`): PASS for commits on the branch, a clean working tree, the report, and tests changed. The one FAIL is `gates (feature_check.py)`, the same write-jail `PermissionError` described under Gates. The five ASK items are answered in the Self-check above; the fifth (ALREADY-FIXED or FALSE-POSITIVE) does not apply, because the verdict is FIXED.
