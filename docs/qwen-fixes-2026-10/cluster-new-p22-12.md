@@ -45,4 +45,14 @@ Environment notes for reviewers:
 - The first `DeviceDspTest` run also showed `theFrequencyShifterMuteRouteDoesNotPassDryInput` FAILED because `libfrequencyshifter.so` was not built. It passes once `frequencyshifter` is built (test-2-red.log onward). It is unrelated to this change.
 
 ## Self-check
-(to be filled from `submit_check.py` output below)
+
+`submit_check.py <worktree> new-p22-12` after the fix commit (`3b8b8656c`), log `logs/submit-check-2.log`, EXIT=1:
+- PASS: commits on the branch; working tree clean; report present; tests added or changed (`DeviceDspTest.cpp`).
+- FAIL: `gates (feature_check.py)`. This is environmental, not a gate verdict. The check runs the original `feature_check.py`, which exits 1 with `PermissionError` creating `<worktree-parent>/zene-qwen-new-p22-12-feature-check` (`logs/gates-1.log`), a folder outside this write-jail. I did not change the gate. The same gate logic, with only the log folder and `ROOT` pinned, run from a copy in the run folder, gives `RESULT: PASS`, all 8 rows PASS, EXIT=0 (`logs/gates-2.log`). A reviewer with write access beside the worktree should rerun the original.
+
+Answers to the "?" items:
+- **Regression FAILS without the fix and PASSES with it:** RED is row 5 (`test-2-red.log`) and row 12 (`test-5-reverted-red.log`), both EXIT=8 with `'!refused.ok' returned FALSE` at `DeviceDspTest.cpp:1041`. GREEN is rows 7, 8 and 15, all EXIT=0 with 34 passed and 0 failed.
+- **Deterministic:** no clock, sleep, thread or random input. The NaN is a constant (`std::numeric_limits<double>::quiet_NaN()`), the state comes from `project.new` and `mixer.console_apply`, and the assertions compare the Drive value and console counts. The test skips only if the console module is absent, as its MX-150 neighbours do.
+- **Fix is at the cause and complete:** the cause is the single range check at `ControlCommandsDeviceTools.cpp:317`. Both paths that write the console drive (`consoleTemplate` and `placeConsoles` via `consoleWrites`) are reached only after that check (`:266`, `:305`). `rg "100\.0"` over `src/core/ControlCommands*.cpp` finds no other drive range check. The `rack.*` siblings in the list are not in this file; `rg` finds them in `ControlCommandsRackZones.cpp` and `ControlCommandsChain.cpp`, and this fix does not touch those, so they are not affected.
+- **No collateral damage:** accepted values are unchanged (finite 0..100 still passes). Only NaN is newly refused, and a NaN drive could only ever write a NaN into the console's Drive model, which no valid saved project relies on. The limit is the existing 0..100 range, which every legitimate caller already meets. No command was added or changed, so the snapshot and the undo path are unchanged. Nothing on the audio thread changed.
+- **Verdict is FIXED,** not ALREADY-FIXED or FALSE-POSITIVE, so no contract citation is needed; the code citations above are the cause.
