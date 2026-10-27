@@ -33,6 +33,7 @@
 #include <QtTest>
 
 #include <atomic>
+#include <functional>
 #include <thread>
 #include <vector>
 
@@ -64,6 +65,36 @@ public:
 private:
 	void startProcessingImpl() override {}
 	void stopProcessingImpl() override {}
+};
+
+//! The retained JACK device as the restore path meets it (AudioJack): stopProcessingImpl() does nothing,
+//! and its process callback runs, rendering and publishing, for as long as the client stays active. The
+//! callback body is AudioJack's: one CallbackScope for the whole body, capture only while the device runs.
+class RetainedCaptureDevice : public AudioDevice
+{
+public:
+	explicit RetainedCaptureDevice(AudioEngine* engine) : AudioDevice(DEFAULT_CHANNELS, engine) {}
+	void prepare(f_cnt_t frames, int left, int right) { prepareCapture(frames, left, right); }
+
+	//! One process-callback cycle carrying a four-channel block. \a midCallback runs inside the scope,
+	//! where JACK's callback renders: the window a stop can land in.
+	void callback(const std::vector<float>& block, const std::function<void()>& midCallback = {})
+	{
+		const CallbackScope scope(*this);
+		if (midCallback) { midCallback(); }
+		if (isRunning())
+		{
+			publishCaptured(block.data(), 4, static_cast<f_cnt_t>(block.size() / 4));
+		}
+	}
+
+	//! Set by the stop's wait loop (onStopWait): the stop is waiting for an open callback.
+	std::atomic<bool> stopIsWaiting{false};
+
+private:
+	void startProcessingImpl() override {}
+	void stopProcessingImpl() override {}
+	void onStopWait() override { stopIsWaiting.store(true); }
 };
 
 //! Channel c of frame f carries c * 1000 + f, so every sample names where it came from.
@@ -430,6 +461,63 @@ private slots:
 		engine->renderNextPeriod();
 		QString why;
 		const int fresh = comparePeriod(engine, 64, &why);
+		QVERIFY2(fresh >= 0, qPrintable(why));
+		QCOMPARE(fresh, 64);
+	}
+
+	//! Cluster new-p14-402, the retained JACK restore: the process callback is open - past its render - when
+	//! the device stops, and the restore starts the same device again. The stop must wait for that callback,
+	//! so the callback's block is never published after the restore and the restore leaves no frame behind.
+	//! Handshakes only, no clock: the test waits for the callback to be open, then for the stop to be waiting
+	//! (the fix) or to have returned (without it).
+	void aStopWaitsForAnOpenCallbackAndTheRestoreHearsNothingFromIt()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		RetainedCaptureDevice device(engine);
+		device.prepare(64, 2, 3);
+		device.startProcessing();  // the restore's reset: empty rings to start from
+		device.callback(uniqueBlock(0, 64));  // block A: captured and staged, never rendered
+		QCOMPARE(engine->inputFramesStaged(), std::size_t{64});
+		QCOMPARE(engine->inputWideFramesStaged(), std::size_t{64});
+
+		std::atomic<bool> inCallback{false};
+		std::atomic<bool> release{false};
+		std::thread processCallback([&] {
+			// Block B: the callback is held open inside its render, and checks isRunning() after it.
+			device.callback(uniqueBlock(64, 64), [&] {
+				inCallback.store(true);
+				while (!release.load()) { std::this_thread::yield(); }
+			});
+		});
+		while (!inCallback.load()) { std::this_thread::yield(); }
+
+		std::atomic<bool> stopReturned{false};
+		std::thread stopper([&] {
+			device.stopProcessing();
+			stopReturned.store(true);
+		});
+		while (!device.stopIsWaiting.load() && !stopReturned.load()) { std::this_thread::yield(); }
+		if (!stopReturned.load())
+		{
+			// The stop is waiting for the open callback (the fix): let it finish. It checks isRunning()
+			// as false, and the stop returns only after the callback has ended.
+			release.store(true);
+			stopper.join();
+		}
+		device.startProcessing();  // the restore: with the fix the stop has returned; without it, the callback is still open
+		release.store(true);
+		processCallback.join();
+		if (stopper.joinable()) { stopper.join(); }
+
+		QCOMPARE(engine->inputFramesStaged(), std::size_t{0});
+		QCOMPARE(engine->inputWideFramesStaged(), std::size_t{0});
+		engine->renderNextPeriod();
+		QVERIFY2(!engine->inputStreamStarted(), "the restore heard a block from the callback that was open at the stop");
+
+		device.callback(uniqueBlock(128, 64));  // the first block captured after the restore
+		engine->renderNextPeriod();
+		QString why;
+		const int fresh = comparePeriod(engine, 128, &why);
 		QVERIFY2(fresh >= 0, qPrintable(why));
 		QCOMPARE(fresh, 64);
 	}
