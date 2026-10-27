@@ -67,6 +67,13 @@ const ReversibilityRow kDeviceRows[] = {
 	R("track.drum_rack", RC::TrueInverse, true, "it adds a folder of pad tracks, a channel per pad and a bus channel",
 		"action checkpoint: the recorded undo step removes the rack's tracks and channels; its redo builds it again from "
 		"the same pads", ""),
+	// Q050-066 stage 1: the rack's pads, read back and edited.
+	R("track.drum_rack_get_state", RC::NotMutating, false, "it reads a drum rack's pads. Nothing is written", "no write", ""),
+	R("track.drum_rack_pad_add", RC::TrueInverse, true, "it adds a pad to a drum rack: a sampler track in the folder and a "
+		"channel of its own", "action checkpoint: the recorded undo step removes the pad's track and channel; its redo builds "
+		"the pad again under the same ids", ""),
+	R("track.drum_rack_pad_set", RC::TrueInverse, true, "it writes a pad's name, trigger key (base note) and sample",
+		"ProjectJournal (Track checkpoint): the pad's track carries its name, base note and sampler", ""),
 	// 0.5.0 L03 / L02, beside the device rows (one table for the W2 lanes after L09).
 	R("transport.record_options", RC::TrueInverse, true,
 		"it writes the count-in, pre-roll and record mode, a preference in the config file - three bounded scalars",

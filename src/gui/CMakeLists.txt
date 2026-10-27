@@ -113,6 +113,7 @@ SET(LMMS_SRCS
 	gui/CommandLists.cpp
 	gui/InstrumentCommandMenus.cpp
 	gui/LayerRackPanel.cpp
+	gui/DrumRackPanel.cpp
 	gui/LibraryCommandMenus.cpp
 	gui/ReferenceProjectPanel.cpp
 	gui/CompSwipeStrip.cpp

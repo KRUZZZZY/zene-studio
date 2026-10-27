@@ -30,6 +30,7 @@
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DrumRackPanel.h"
 #include "Engine.h"
 #include "Song.h"
 #include "TrackFolder.h"
@@ -102,6 +103,10 @@ void addTrackFolderMenu(QMenu* menu, Track* track)
 			QStringLiteral("track.set_pinned"), trackId, QStringLiteral("pinned"));
 		addToggle(folderMenu, QObject::tr("Route children through the folder"), folder->isRouting(),
 			QStringLiteral("track.set_routing"), trackId, QStringLiteral("routing"));
+		// Q050-066: the folder as a drum rack - its sample pads, added and edited through track.drum_rack_*.
+		QAction* pads = folderMenu->addAction(QObject::tr("Drum Rack Pads..."));
+		pads->setData(QStringLiteral("track.drum_rack_get_state"));
+		QObject::connect(pads, &QAction::triggered, folderMenu, [trackId] { showDrumRackPanel(nullptr, trackId); });
 		folderMenu->addSeparator();
 	}
 	addMoveTo(folderMenu, track, trackId);

@@ -774,6 +774,8 @@ set(LMMS_TESTS
 	# The organiser, plug-in folder and preferred-format halves of DeviceCopyTest, split out to keep
 	# both files under the file-length ratchet.
 	src/core/DeviceOrganiserTest.cpp
+	# Q050-066 stage 1: a drum rack's sample pads created, edited, undone and read back through a save.
+	src/core/DrumRackPadsTest.cpp
 	# 0.5.0 L10 (rework cluster 5639): plugin.ab store undo and redo after the device was recreated.
 	src/core/DeviceAbUndoTest.cpp
 	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
@@ -1225,6 +1227,8 @@ set(LMMS_TESTS
 	src/gui/XyPadPairTest.cpp
 	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
 	src/gui/TrackFolderMenuTest.cpp
+	# Q050-066 stage 1: the folder's Drum Rack Pads... panel adds and edits pads through track.drum_rack_*.
+	src/gui/DrumRackPanelTest.cpp
 	# 0.5.0 ED-035: a folder's row draws its children's clips as summary clips, each moved, copied or deleted as one.
 	src/gui/FolderSummaryLaneTest.cpp
 	# 0.5.0 L06 (Q050-022): a lane is drawn as a collapsible child under its owner in the arranger.
@@ -2267,6 +2271,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"
+		# Q050-066: the pad tests and the pad panel play through the build's audiofileprocessor module.
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest"
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest"
 		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
@@ -2370,7 +2377,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>)
 	endif()
 
-	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
+	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()
 
@@ -3312,6 +3320,7 @@ set_tests_properties(MidiClipLinkedEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(MidiClipStepMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(DrumRackPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationLaneChildGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MainWindowGeometryTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3372,6 +3381,10 @@ target_compile_definitions(ThemeContrastTest PRIVATE
 	ZENE_THEMES_DIR="${CMAKE_SOURCE_DIR}/data/themes")
 # 0.5.0 L10: DeviceCopyTest builds a drum rack from the shipped drum samples.
 target_compile_definitions(DeviceCopyTest PRIVATE
+	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+target_compile_definitions(DrumRackPadsTest PRIVATE
+	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+target_compile_definitions(DrumRackPanelTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
@@ -5908,6 +5921,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77
+	)
+	# Q050-066 stage 1 over the socket: an old-style drum rack saves, reopens, reads back and renders the
+	# same; pads made and edited through track.drum_rack_pad_add / _pad_set read back as answered, each
+	# edit one undo step, and the edited rack survives a save and reopen field for field and in sound.
+	add_test(NAME ControlDrumRackPads
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-drum-rack-pads.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDrumRackPads PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
 	)
 	# The 0.5.0 L09 routing surface over the socket: the listen bus, sends from many channels, send pan,
 	# nested and linked VCA groups, the mixer view's sends-on-faders mode.
