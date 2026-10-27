@@ -73,3 +73,21 @@ RESULT: PASS
 Gate exit codes for the report: feature_check (copy) EXIT=0. Per-gate exit codes are in `logs/feature-check/*.log`.
 
 Not run: RED/GREEN regression, the `git apply -R` / `git apply` proof (no fix exists to reverse), `ctest`.
+
+## Self-check
+
+- **Regression test RED/GREEN (exit codes):** not applicable. The verdict is FALSE-POSITIVE, so there is no product
+  change to revert. No test was run and none was written, and no exit codes exist for that step.
+- **Deterministic test:** not applicable (no test added). The "tests added or changed" item is claim-only.
+- **Fix at the cause, every caller and sibling checked:** no fix. The callers were checked instead:
+  `src/core/NotePlayHandle.cpp:160-162` (destructor, the only production caller), `src/tracks/InstrumentTrack.cpp:800-806`
+  (forwarder), `src/core/Instrument.cpp:103` (base no-op). The direct test calls are listed above.
+- **No collateral damage:** no product file changed (`git show --stat 74bc13a1c` touches only this report).
+- **Verdict evidence (file:line):** `src/core/NotePlayHandle.cpp:60` (ctor sets `m_pluginData(nullptr)`),
+  `:814` (placement-new on acquire), `:821` (explicit destructor on release),
+  `plugins/Kicker/Kicker.cpp:166-175` (construction guard), `:221-227` (hook without reset).
+- **submit_check gate item (FAIL, environment):** `submit_check.py` runs `feature_check.py` on the real worktree. That
+  script creates `<worktree>/../<name>-feature-check`, in the projects directory, and it fails there with
+  `PermissionError` (log: `logs/feature-check-1.log`, EXIT=1). A copy of the same script with only the log folder
+  changed passes all 8 rows (`logs/feature-check-2.log`, EXIT=0). Under a permitted log location the real gate should
+  give the same table, since the diff against the base is empty; this is not proven by an unmodified run.
