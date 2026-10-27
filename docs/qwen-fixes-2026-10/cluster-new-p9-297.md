@@ -33,6 +33,7 @@ The finding's test pointer, `tests/reference/Monstro/Monstro.cpp` with `ctest -R
 - The seam is `AudioDevice::setSampleRateForTesting` ([include/AudioDevice.h:83](include/AudioDevice.h:83), `LMMS_TESTING` only), which the existing `FixedRateAudioDevice` test already uses. No wall clock, no sleeps, no races: the render is driven by `playNote` on a note handle, as the other slots in the file do.
 - The slot pins the dummy device to 8000 Hz, creates a Monstro track with LFO 1 at 0.1 ms, and renders 16 periods for WAVE_RANDOM (9) and for WAVE_RANDOM_SMOOTH (10). It asserts every frame is finite and the output is not silent.
 - `DeviceRatePin` restores the original rate and re-emits `sampleRateChanged` on scope exit, including when a `QVERIFY` fails.
+- Build edge (added in review round 1): `tests/CMakeLists.txt:2334-2339` makes the `NotePlaybackTest` target depend on `monstro`. The test loads Monstro by name from `build/plugins`, not by link, so before this edge a build of the test target alone left the old module in place. That is why the review's revert passed (see the negative control).
 
 Test matrix:
 - Normal path (rates of one frame or more): unchanged; covered by `monstroLfoAttackRampsWithinPeriod` and by `PluginPortsMigrationTest::migratedPluginsPreserveBehaviour`, whose Monstro render matches the reference by SHA-256.
@@ -41,6 +42,22 @@ Test matrix:
 - Audio thread: no processing is started; `playNote` is called directly, as the other slots do.
 - Platform: offscreen Qt and the dummy device; no platform-specific code.
 - Limit: with the fix reverted, the first crash is at wave 9. The second site (line 781) is covered by the GREEN run and by the shared cause, not by its own RED.
+
+## Negative control (review round 1)
+
+The review's automated proof reverted the product change, rebuilt, and got PASS. The loop's rebuild ran `lmmsobjs` and `NotePlaybackTest` only, so the `monstro` module kept the fix (`r1/negctl/build-reverted.log` has no Monstro line; `test-reverted.log` shows `Passed`). My earlier proof (Proof A/B below) rebuilt `monstro` by hand, so it did not reproduce the loop's build. The test was right; the build edge was missing. The fix is the build edge above.
+
+The negative control, run the way the loop runs it (`LOGS` is `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-297.r2/logs`):
+
+| Step | Command | EXIT | Log |
+| --- | --- | --- | --- |
+| Save the fix as a patch | `git show ce51818bb -- plugins/Monstro/Monstro.cpp > $LOGS/fix-product.patch` | 0 | — |
+| Revert the product change | `git apply -R $LOGS/fix-product.patch` | 0 | — |
+| Build only the test target | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target NotePlaybackTest -j4 > $LOGS/neg-build-reverted.log 2>&1` | 0 | The log now builds `plugins/Monstro` (`Monstro.cpp.o`, the `monstro` module) as a dependency of the test. |
+| Run the test, fix reverted | `cd build/tests && ctest -R '^NotePlaybackTest$' --output-on-failure > $LOGS/neg-test-reverted.log 2>&1` | 8 | `Received signal 8 (SIGFPE), code FPE_INTDIV` in `updateModulators`, `Monstro.cpp:769` |
+| Restore the fix | `git apply $LOGS/fix-product.patch` | 0 | — |
+| Build the test target, fix restored | `CCACHE_TEMPDIR=$TMPDIR cmake --build build --target NotePlaybackTest -j4 > $LOGS/neg-build-restored.log 2>&1` | 0 | — |
+| Run the test, fix restored | `ctest -R '^NotePlaybackTest$' -V > $LOGS/neg-test-restored.log 2>&1` | 0 | 30 PASS, 0 FAIL |
 
 ## Commands and exit codes
 
@@ -69,7 +86,7 @@ NotePlaybackTest on the final tree: 30 PASS lines, 0 FAIL lines (test-green-4.lo
 
 - `feature_check.py` could not produce its table. Its first run exited 1 (gates-1.log): it creates a log folder beside the worktree (`zene-qwen-new-p9-297-feature-check`), which is outside the write-jail (PermissionError). The script has no override, and I did not edit it.
 - I tried one other route: a detached temporary worktree under `$TMPDIR`, so the script's log folder would sit on disk. The lane's bunny-guard refused `git worktree add` (`$LOGS/gate-worktree-add.log`), so I did not pursue it. The official table is therefore not produced in this lane.
-- In its place, each gate script from the same list ran from the worktree, logs in `$LOGS/gate2-*.log`:
+- In its place, each gate script from the same list ran from the worktree, logs in `$LOGS/gate2-*.log` (first run) and `$LOGS/gate-*.log` (re-run after the review-round-1 build edge, same exit codes):
   - `bash tests/fork-sources-gate.sh`: EXIT 0
   - `bash tests/all-sources-reproduce.sh`: EXIT 0
   - `bash tests/no-upstream-regression-gate.sh`: EXIT 0
@@ -85,7 +102,7 @@ The file-length item is carried over, not introduced. At HEAD the same file coun
 
 ## Self-check
 
-- The regression test fails with the product change reverted and passes with it: `git apply -R` + build + `ctest -R '^NotePlaybackTest$'` gives EXIT 8 with `Received signal 8 (SIGFPE), code FPE_INTDIV` (test-red-3.log). With the change re-applied it gives EXIT 0, 30 PASS, 0 FAIL (test-green-5.log).
+- The regression test fails with the product change reverted and passes with it, under the loop's build (the negative control above): reverted, build of the test target, `ctest` EXIT 8 with `Received signal 8 (SIGFPE), code FPE_INTDIV` (neg-test-reverted.log); restored, EXIT 0, 30 PASS, 0 FAIL (neg-test-restored.log). The earlier proof (test-red-3.log, test-green-5.log) also gave EXIT 8 then EXIT 0, but built `monstro` by hand.
 - Deterministic: no wall-clock, sleep or race. The device rate comes from `setSampleRateForTesting` (`include/AudioDevice.h:83`, `LMMS_TESTING`); the note and the 16 periods are fixed; the output checks are exact (finite, peak greater than 0).
 - The fix is at the cause and complete: the two modulo sites (`Monstro.cpp:773`, `:781`) share the one clamped period. `updateModulators` is called from one place, `renderOutput` at `:345`. Every other use of `m_lfo_rate` is a float operation that cannot divide by zero.
 - No collateral damage: `max(1, n) == n` for every rate of one frame or more, so every rate that worked before computes the same period. The only changed case previously crashed. The sample-exact Monstro comparison (`PluginPortsMigrationTest`) still matches. No saved data, format or command changed.

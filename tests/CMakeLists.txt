@@ -2331,6 +2331,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 
+	# cluster new-p9-297: the random-LFO regression in NotePlaybackTest renders through the build's
+	# monstro module, which the test loads by name. Building the test must rebuild that module too;
+	# otherwise a fix reverted in the source leaves the fixed module in place and the test passes.
+	if(LMMS_TEST_NAME STREQUAL "NotePlaybackTest")
+		add_dependencies(${LMMS_TEST_NAME} monstro)
+	endif()
+
 	# The script's removeEffect undo cases load the build's own effect modules, and a
 	# targeted build of the test alone did not build them: every case skipped ("this
 	# build lists no loadable effect module") and the undo regression ran nowhere. The
