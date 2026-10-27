@@ -303,6 +303,9 @@ private:
 	QString m_themeDir;
 	QString m_backgroundPicFile;
 	QString m_configFile;
+	// Set when the config file exists but does not parse; saveConfigFile() then
+	// leaves the file alone instead of replacing the user's settings with defaults.
+	bool m_configUnreadable = false;
 	QString m_version;
 	unsigned int m_configVersion;
 	QStringList m_recentlyOpenedProjects;

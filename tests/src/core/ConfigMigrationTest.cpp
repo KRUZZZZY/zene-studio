@@ -23,6 +23,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QObject>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QtTest>
 
@@ -204,6 +205,46 @@ private slots:
 		QVERIFY( !mixer.isNull() );
 		QCOMPARE( mixer.attribute( "audiodev" ), QStringLiteral( "PulseAudio" ) );
 		QCOMPARE( mixer.attribute( "samplerate" ), QStringLiteral( "44100" ) );
+	}
+
+	// A config that does not parse must be reported, and the shutdown save must
+	// not replace it with defaults: the file keeps the settings the user has.
+	void malformedConfigIsReportedAndNotOverwritten()
+	{
+		QTemporaryDir tmp;
+		QVERIFY( tmp.isValid() );
+		const QString configPath = tmp.path() + "/.zenestudio.xml";
+		const QByteArray malformed = "<zene version=\"1.0.99\" configversion=\"3\"><mixer audiodev=\"saved\"\n";
+		QVERIFY( writeFile( configPath, malformed ) );
+
+		auto * configManager = ConfigManager::inst();
+		QTest::ignoreMessage( QtWarningMsg, QRegularExpression( QStringLiteral( "Error while parsing configuration file" ) ) );
+		configManager->loadConfigFile( configPath );
+		configManager->saveConfigFile();
+
+		QCOMPARE( readFile( configPath ), malformed );
+	}
+
+	// Loading a readable config again clears the unreadable mark, so its next save
+	// is written as usual.
+	void readableReloadClearsTheUnreadableMark()
+	{
+		QTemporaryDir tmp;
+		QVERIFY( tmp.isValid() );
+		const QString badPath = tmp.path() + "/bad.xml";
+		const QString goodPath = tmp.path() + "/zene.xml";
+		const QByteArray malformed = "<zene version=\"1.0.99\" configversion=\"3\"><mixer audiodev=\"saved\"\n";
+		const QByteArray good = "<zene version=\"1.0.99\" configversion=\"3\"/>\n";
+		QVERIFY( writeFile( badPath, malformed ) );
+		QVERIFY( writeFile( goodPath, good ) );
+
+		auto * configManager = ConfigManager::inst();
+		QTest::ignoreMessage( QtWarningMsg, QRegularExpression( QStringLiteral( "Error while parsing configuration file" ) ) );
+		configManager->loadConfigFile( badPath );
+		configManager->loadConfigFile( goodPath );
+		configManager->saveConfigFile();
+
+		QVERIFY2( readFile( goodPath ).startsWith( "<?xml" ), "a readable config must be saved again" );
 	}
 
 	void failedConfigWritePreservesExistingFile()

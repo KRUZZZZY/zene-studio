@@ -29,6 +29,7 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QFile>
 #include <QJsonObject>
 #include <QMenu>
 #include <QTemporaryDir>
@@ -89,6 +90,35 @@ private slots:
 		QCOMPARE(reconnect->isChecked(), !before);
 		reconnect->trigger();
 		QCOMPARE(armed(), before);
+	}
+
+	// The arm switch persists through saveConfigFile(). A config the product cannot
+	// parse must survive that save byte-for-byte: the mode still toggles in memory,
+	// and the file keeps what the user had.
+	void armSwitchDoesNotOverwriteAMalformedConfig()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("zene.xml"));
+		const QByteArray malformed = "<zene version=\"1.0.99\" configversion=\"3\"><midi\n";
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			QCOMPARE(file.write(malformed), malformed.size());
+		}
+
+		ConfigManager::inst()->loadConfigFile(path);
+		QMenu menu;
+		QAction* reconnect = addMidiReconnectAction(&menu);
+		const bool before = armed();
+		reconnect->trigger();
+		QCOMPARE(armed(), !before);
+		reconnect->trigger();
+		QCOMPARE(armed(), before);
+
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::ReadOnly));
+		QCOMPARE(file.readAll(), malformed);
 	}
 
 private:

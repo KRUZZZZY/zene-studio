@@ -5347,3 +5347,5 @@ src/core/InstrumentFunctions.cpp	cluster new-p15-78: processNote takes the arpeg
 tests/src/gui/EnvelopeGraphTest.cpp	# Cyclic convolution indexes out of bounds for a negative center offset
 src/core/EffectChain.cpp	cluster new-p21-143: removeEffect detaches the removed effect (setEffectChain(nullptr) inside the same model change as the erase), so effectChain() no longer names a chain the effect left; regression MixerStripTest::removedEffectIsDetachedFromItsChain.
 tests/src/core/MixerStripTest.cpp	cluster new-p21-143: three EffectChain removal cases (detach on removal, a foreign chain leaves the owner intact, re-append attaches to the new chain).
+tests/src/core/ConfigMigrationTest.cpp	# A malformed config can be overwritten with defaults
+tests/src/gui/MidiReconnectActionTest.cpp	# A malformed config can be overwritten with defaults
