@@ -154,6 +154,12 @@ private slots:
 		QVERIFY(infiniteSource.errorMessage.contains(QStringLiteral("finite")));
 		QVERIFY(sameFrames(captureOf(clip), infiniteBefore));
 
+		// The non-baking sibling declares the same -60..24 dB range, so it refuses NaN too.
+		const ControlResult nanClipGain = run(QStringLiteral("clip.set_gain"),
+			QJsonObject{{QStringLiteral("clip"), clip}, {QStringLiteral("gain_db"), nan}});
+		QCOMPARE(nanClipGain.ok, false);
+		QCOMPARE(nanClipGain.errorKind, ControlErrorKind::InvalidArgs);
+
 		// No refusal pushed an undo step: this undo removes the GENERATE.
 		REV_UNDO_OR_FAIL();
 		control::ClipRef ref;
