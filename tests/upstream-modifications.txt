@@ -5374,3 +5374,4 @@ tests/src/plugins/MalletsInstrumentViewTest.cpp	# Mallets can index its scaler t
 plugins/Vibed/VibratingString.cpp	new-p9-503: the oversampling count is clamped to at least one, and an output rate below the base rate counts as the base rate (no division by zero).
 plugins/Vibed/VibratingString.h	new-p9-503: declares the read-only oversampleCount() test seam used by the regression.
 tests/CMakeLists.txt	new-p9-503: registers src/plugins/VibratingStringTest.cpp and compiles the string model sources into it (the Vibed test shape).
+tests/data/lv2-test-instrument/lv2-test-instrument.c	# Lv2Proc::restoreState reports success even when lilv_state_restore fails
