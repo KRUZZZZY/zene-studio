@@ -1063,6 +1063,8 @@ set(LMMS_TESTS
 	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
 	src/core/LegacyPatternUpgradeTest.cpp
 	src/core/VideoTestClipTest.cpp
+	# cluster new-p9-66 (BUG 8): the default extraction WAV never names a file that is already there
+	src/core/VideoAudioNameTest.cpp
 	src/core/StableTrackIdsTest.cpp
 	# ARCH-4 slice S3: the id-family registry (clip/lane/note/scene/warp over
 	# the one counter) and the per-object revision pair - absent rev == 0, an
