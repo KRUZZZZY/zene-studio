@@ -1412,6 +1412,7 @@ plugins/Vst3Instrument/Vst3Instrument.cpp
 plugins/Vst3Instrument/Vst3Instrument.h
 plugins/Vst3Instrument/Vst3InstrumentView.cpp
 plugins/Vst3Instrument/Vst3InstrumentView.h
+plugins/VstBase/PeMachineType.h
 plugins/VstBase/RemoteVstPlugin.cpp
 plugins/VstBase/VstMidiEventBatch.h
 plugins/VstBase/VstPlugin.cpp
@@ -3006,6 +3007,7 @@ tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
 tests/src/core/VstMidiEventBatchTest.cpp
+tests/src/core/VstPeMachineTypeTest.cpp
 tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpMarkersTest.cpp

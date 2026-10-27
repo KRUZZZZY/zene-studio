@@ -24,6 +24,7 @@
 
 #include "VstPlugin.h"
 
+#include "PeMachineType.h"
 #include "communication.h"
 
 #include <QtEndian>
@@ -64,22 +65,8 @@
 #	include <X11/Xlib.h>
 #endif
 
-namespace PE
+namespace lmms::vst::PE
 {
-// Utilities for reading PE file machine type
-// See specification at https://msdn.microsoft.com/library/windows/desktop/ms680547(v=vs.85).aspx
-
-// Work around name conflict
-#ifdef i386
-#	undef i386
-#endif
-
-enum class MachineType : uint16_t
-{
-	unknown = 0x0,
-	amd64 = 0x8664,
-	i386 = 0x14c,
-};
 
 class FileInfo
 {
@@ -100,14 +87,7 @@ public:
 
 	MachineType machineType()
 	{
-		int32_t peOffset = qFromLittleEndian(* reinterpret_cast<int32_t*>(m_map + 0x3C));
-		uchar* peSignature = m_map + peOffset;
-		if (memcmp(peSignature, "PE\0\0", 4)) {
-			throw std::runtime_error("Invalid PE file");
-		}
-		uchar * coffHeader = peSignature + 4;
-		uint16_t machineType = qFromLittleEndian(* reinterpret_cast<uint16_t*>(coffHeader));
-		return static_cast<MachineType>(machineType);
+		return machineTypeOf(m_map, m_file.size());
 	}
 
 private:
@@ -115,7 +95,7 @@ private:
 	uchar* m_map;
 };
 
-} // namespace PE
+} // namespace lmms::vst::PE
 
 namespace lmms
 {
@@ -149,13 +129,13 @@ VstPlugin::VstPlugin( const QString & _plugin, RemotePluginAudioPortsController 
 #endif
 	{
 		try {
-			PE::FileInfo peInfo(m_plugin);
+			vst::PE::FileInfo peInfo(m_plugin);
 			switch (peInfo.machineType())
 			{
-			case PE::MachineType::amd64:
+			case vst::PE::MachineType::amd64:
 				pluginType = ExecutableType::Win64;
 				break;
-			case PE::MachineType::i386:
+			case vst::PE::MachineType::i386:
 				pluginType = ExecutableType::Win32;
 				break;
 			default:
