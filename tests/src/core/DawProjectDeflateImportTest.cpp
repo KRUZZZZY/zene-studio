@@ -626,6 +626,35 @@ private slots:
 		QVERIFY2(error.contains(QStringLiteral("DEFLATE")) && error.contains(QStringLiteral("project.xml")),
 			qPrintable(error));
 	}
+
+	//! 0xFFFF in the end record's entry count is the ZIP64 sentinel, not 65,535 entries: a ZIP64 container is
+	//! refused by name, never half-read with the rest dropped silently. 0xFFFE, the largest classic count, reads.
+	void aZip64EntryCountSentinelIsRefusedAndTheLargestClassicCountReads()
+	{
+		std::vector<Spec> many;
+		many.reserve(65536);
+		for (int index = 0; index < 65536; index++)
+		{
+			many.push_back(stored(QStringLiteral("e%1").arg(index), QByteArray()));
+		}
+		const QString sentinel = containerOf(QStringLiteral("zip64-sentinel.dawproject"), many, 0xFFFF);
+		std::vector<DawProjectEntry> entries;
+		DawProjectZipReport report;
+		QString error;
+		QVERIFY(!dawProjectZipReadTolerant(sentinel, &entries, &report, &error));
+		QVERIFY2(error.contains(QStringLiteral("ZIP64")), qPrintable(error));
+		QVERIFY(entries.empty());
+		QVERIFY(!dawProjectZipRead(sentinel, &entries, &error));
+		QVERIFY2(error.contains(QStringLiteral("ZIP64")), qPrintable(error));
+		QVERIFY(!run(QStringLiteral("dawproject.import"), {{QStringLiteral("path"), sentinel}}).ok);
+
+		many.pop_back();
+		many.pop_back();  // 65,534 entries: a count of 0xFFFE is a real count
+		const QString largest = containerOf(QStringLiteral("classic-65534.dawproject"), many, 0xFFFE);
+		QVERIFY2(dawProjectZipReadTolerant(largest, &entries, &report, &error), qPrintable(error));
+		QCOMPARE(entries.size(), static_cast<std::size_t>(65534));
+		QVERIFY(report.deviations.empty());
+	}
 };
 
 QTEST_GUILESS_MAIN(DawProjectDeflateImportTest)

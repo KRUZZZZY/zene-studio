@@ -22,7 +22,7 @@
  *     oversized one: each is a DawProjectDeviation in the report, and the
  *     entries around it are still read. Nothing is dropped without a line in
  *     the report saying so. Only a container with no usable directory at all
- *     (not a ZIP, spanned, a directory past the file's end) is refused outright.
+ *     (not a ZIP, spanned, ZIP64, a directory past the file's end) is refused outright.
  *   - The central directory is authoritative: sizes and the CRC come from it,
  *     so an entry written with a data descriptor (the streaming writers' habit,
  *     where the local header's sizes are zero) reads the same as any other.
@@ -111,6 +111,8 @@ constexpr quint16 MethodDeflate = 8;
 constexpr quint16 EncryptedFlag = 0x0001;
 //! A 32-bit field holding this value is a ZIP64 "see the extra field" marker.
 constexpr quint32 Zip64Marker = 0xFFFFFFFFu;
+//! The end record's 16-bit entry-count fields hold this value when the real count is in a ZIP64 record.
+constexpr quint16 Zip64CountMarker = 0xFFFFu;
 
 //! One central-directory record, decoded.
 struct CentralEntry
@@ -202,6 +204,14 @@ bool locateDirectory(const QString& path, const QByteArray& bytes, int* centralO
 		return refuse(QStringLiteral("%1 is a SPANNED ZIP (the end record names disk %2), which this "
 			"reader does not support").arg(path).arg(thisDisk));
 	}
+	const quint16 entryCount = readU16(bytes, endOffset + 10);
+	if (entryCount == Zip64CountMarker)
+	{
+		// The real count is in a ZIP64 record this reader does not decode; read as a count, the first
+		// 65,535 entries would be listed and the rest dropped with no line in the report.
+		return refuse(QStringLiteral("%1 is a ZIP64 container (its end record carries the ZIP64 "
+			"entry-count sentinel, 0xFFFF), which this reader does not support").arg(path));
+	}
 	const quint32 size = readU32(bytes, endOffset + 12);
 	const quint32 offset = readU32(bytes, endOffset + 16);
 	if (static_cast<qint64>(offset) + static_cast<qint64>(size) > bytes.size())
@@ -210,7 +220,7 @@ bool locateDirectory(const QString& path, const QByteArray& bytes, int* centralO
 			"past the end of the file").arg(path).arg(size).arg(offset));
 	}
 	*centralOffset = static_cast<int>(offset);
-	*count = readU16(bytes, endOffset + 10);
+	*count = entryCount;
 	return true;
 }
 
