@@ -153,8 +153,7 @@ def main(argv):
         session = Session(client, transcript)
         listed = session.result("plugin.list", {"kind": "instrument", "loadable_only": True}).get("devices") or []
         if not any(str(d.get("name", "")).lower() == "audiofileprocessor" for d in listed):
-            print("this build lists no loadable audiofileprocessor module")
-            return 77
+            H.fail("build lists no loadable audiofileprocessor module", instance, transcript)
         work = instance.workspace
         old = check_old_rack(session, recorder, work)
         if old is None:
