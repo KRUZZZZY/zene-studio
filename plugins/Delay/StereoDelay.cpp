@@ -26,6 +26,8 @@
 
 #include "SampleFrame.h"
 
+#include <algorithm>
+
 namespace lmms
 {
 
@@ -81,7 +83,9 @@ void StereoDelay::setSampleRate( int sampleRate )
 		delete[] m_buffer;
 	}
 
-	const int bufferSize = static_cast<int>(sampleRate * m_maxTime);
+	// tick() uses the ring length as a modulo divisor, so the ring must hold at
+	// least one frame even when maxTime or sampleRate is zero or negative.
+	const int bufferSize = std::max(1, static_cast<int>(sampleRate * m_maxTime));
 	if (m_maxLength > 0)
 	{
 		m_length *= static_cast<float>(bufferSize) / static_cast<float>(m_maxLength);
@@ -90,6 +94,11 @@ void StereoDelay::setSampleRate( int sampleRate )
 	if (m_length > static_cast<float>(m_maxLength))
 	{
 		m_length = static_cast<float>(m_maxLength);
+	}
+	// A negative length would make tick() read past the end of the ring.
+	if (m_length < 0.0f)
+	{
+		m_length = 0.0f;
 	}
 	m_writeIndex = 0;
 
