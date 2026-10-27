@@ -339,6 +339,15 @@ channel of their own, so one track plays several parts of a multitimbral plug-in
 Layers &gt; Layer Rack stacks more instruments on the track, each with Mute, Solo, a Level and its own window, and Layer Zones
 picks which layers a note plays on. Per-Voice Modulation makes a modulator run once per note of the track and binds it to a
 parameter of the instrument; Modulation Assignments changes a depth or removes a binding.</p>
+<p><b>Drum rack pads.</b> A drum rack is a folder track of sample pads: each pad is a sampler track playing one sample,
+with a mixer channel of its own (the pad's chain, for its effects) that sends to the rack's bus channel. On a folder's
+track menu, Folder &gt; Drum Rack Pads... opens the rack's pads: a row per pad with its name, its trigger key (the note that
+plays the sample at its own pitch) and its sample. Type a new name or key and press Return to change it, Sample... plays
+another file, and Add Pad... asks for a sample file and adds a pad for it on the next key after the rack's pads. Each change
+is one step of Edit &gt; Undo. A pad is stored as the ordinary tracks and channels it is made of, so a rack saved by an
+earlier version opens and plays the same and shows its pads here. Agents use <code>track.drum_rack</code> (build a rack),
+<code>track.drum_rack_pad_add</code>, <code>track.drum_rack_pad_set</code> and <code>track.drum_rack_get_state</code>,
+which reads back what the project saves.</p>
 
 <h2 id="launch">The launcher</h2>
 <p>Show the launcher from the footer's Clip Launcher button, View &gt; Clip Launcher or Alt+L. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it. Each column is headed by its track's name. A cell's play mark shows its state - ▷ stopped, ▷… queued, ▶ playing - and a scene's mark shows its row's, so you can see what will launch. Dragging a sample over a filled cell shows "Replace" before you let go; after the drop, Undo Replace (or Edit &gt; Undo) puts the old clip back.
