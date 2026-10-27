@@ -147,8 +147,10 @@ Project &gt; Sections names the song's parts (verse, chorus) as bands over the r
 finds a clip by name; Next and Previous Transient move the play position through the audio's hits. A clip's Sample Editor... (its menu) raises or lowers by 3 dB, silences, deletes, reverses, fades or crops a selection
 of its audio; Split to stems (a sample clip's menu) separates its audio into stems on tracks of their own. A split runs at one of three qualities - fast, standard or high - which set how much the model's
 overlapping passes over the audio overlap (25 %, 50 % or 75 %): high takes about twice as long as standard and fast about two
-thirds of it. The menu splits at standard, the quality every split used before the setting existed; an agent picks one with the
-<code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's
+thirds of it. Split to stems is a submenu: pick Fast, Standard or High quality and the split starts at it (the one you used last is
+ticked; standard until you choose another). The progress window and the message at the end name the quality the job actually ran at,
+and the original clip stays on its track, unchanged, next to the new stem tracks. The menu goes through the same command an agent uses:
+the <code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's
 Process menu also converts its whole source to mono with (L + R) / 2 on both sides (one undo step), or writes its left and
 right channels as two mono WAV files at the source rate and length (Split Stereo to Two Mono Files..., which leaves the clip
 unchanged). A sample clip's menu
@@ -235,7 +237,10 @@ delay compensation keeps everything else lined up. It is saved with the project 
 instrument track's note delay, which starts notes later, is a separate setting).</p>
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
-round trip measured by a ping and compensated. Interface Channels names your interface's inputs and outputs and pairs them;
+round trip measured by a ping and compensated. Hover the channel's strip to see the insert's latency in frames and
+milliseconds - the measured round trip, or the figure you typed in place of it ("typed"); "not measured" means the insert
+is on but adds nothing yet, so ping it or type a figure. An agent reads the same number in <code>pdc.report</code>
+(<code>hardware_insert_latency_frames</code>, with <code>hardware_insert_latency_source</code>). Interface Channels names your interface's inputs and outputs and pairs them;
 the names are kept per device, not per project. Its Surround &gt; Format menu sets a channel to LCR, quad, 5.1, 7.1,
 Mono, or a Discrete layout of 2 to 8 channels: the Surround Panner places a channel's sends into a speaker layout on a 2-D
 room with an LFE send and spread, and a stereo master or a stereo export gets the standard downmix. Mono has one M channel.
@@ -300,6 +305,16 @@ reordering and removing devices work as usual. Wiring you author is not saved wi
 LV2 plug-ins that were tried, each by its package, version and file hash, with whether it loaded, whether its own editor opened and whether its saved state
 came back, and every failure. A plug-in that is not on that page is untested - that Zene lists it as loadable only means the host accepted it.</p>
 
+<p>A VST3 or CLAP plug-in's own editor (Show plugin editor, or Open Editor in a device card's Actions menu; the agent command
+<code>plugin.editor_open</code>) opens in a window of its own on Linux, Windows and macOS: Zene puts the editor inside the system's own kind of
+window (an X11 window on Linux, a Windows window, a macOS view). A plug-in whose editor cannot go inside that kind of window does not
+open; the line under the button says why, naming the system and the plug-in's window type - for example <em>cannot embed on Windows (VST3
+platform type HWND)</em> - and no empty window is left behind. On a Linux desktop that runs Wayland without X11, start Zene with
+<code>QT_QPA_PLATFORM=xcb</code> to open plug-in editors. The device's Editor zoom (<code>plugin.options editor_scale</code>) is passed to
+the plug-in on Linux and Windows; on macOS the system scales the editor for the screen itself, so a VST3 editor is only given the larger
+size and a CLAP editor keeps its own size. Windows and macOS editors have so far been proved with Zene's test plug-ins only; the
+compatibility page says which real plug-ins have been opened where.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 
@@ -339,6 +354,15 @@ channel of their own, so one track plays several parts of a multitimbral plug-in
 Layers &gt; Layer Rack stacks more instruments on the track, each with Mute, Solo, a Level and its own window, and Layer Zones
 picks which layers a note plays on. Per-Voice Modulation makes a modulator run once per note of the track and binds it to a
 parameter of the instrument; Modulation Assignments changes a depth or removes a binding.</p>
+<p><b>Drum rack pads.</b> A drum rack is a folder track of sample pads: each pad is a sampler track playing one sample,
+with a mixer channel of its own (the pad's chain, for its effects) that sends to the rack's bus channel. On a folder's
+track menu, Folder &gt; Drum Rack Pads... opens the rack's pads: a row per pad with its name, its trigger key (the note that
+plays the sample at its own pitch) and its sample. Type a new name or key and press Return to change it, Sample... plays
+another file, and Add Pad... asks for a sample file and adds a pad for it on the next key after the rack's pads. Each change
+is one step of Edit &gt; Undo. A pad is stored as the ordinary tracks and channels it is made of, so a rack saved by an
+earlier version opens and plays the same and shows its pads here. Agents use <code>track.drum_rack</code> (build a rack),
+<code>track.drum_rack_pad_add</code>, <code>track.drum_rack_pad_set</code> and <code>track.drum_rack_get_state</code>,
+which reads back what the project saves.</p>
 
 <h2 id="launch">The launcher</h2>
 <p>Show the launcher from the footer's Clip Launcher button, View &gt; Clip Launcher or Alt+L. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it. Each column is headed by its track's name. A cell's play mark shows its state - ▷ stopped, ▷… queued, ▶ playing - and a scene's mark shows its row's, so you can see what will launch. Dragging a sample over a filled cell shows "Replace" before you let go; after the drop, Undo Replace (or Edit &gt; Undo) puts the old clip back.
@@ -352,6 +376,15 @@ cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell f
 action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
 scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps
 a setlist of songs to step through. A marker can run a command when playback crosses it (marker.set 'action'). Launches and stops are announced once they actually play or stop, not when queued, and one scene launch is one scene announcement rather than one per cell; view.announcements gates these routine messages.</p>
+<p><b>Editing a cell while it plays.</b> The launcher always plays what the grid holds. Give a playing cell another
+pattern or audio file (Edit Cell..., Set Pattern, Audio File... or a drop) and it sounds the new one at once, without a
+relaunch. Clear Cell on a playing or queued cell stops it the way the column's stop button does, and its track's
+arrangement plays again; shrinking the grid (Grid Size...) stops the cells it removes; clearing the whole launcher stops
+everything. Edit &gt; Undo and Redo of any of these follow the same rule: they put the cell back as it was written, but an
+undo never launches a cell - press it again to hear it. Deleting a pattern track empties (and stops) the cells that
+played that pattern, and every other cell keeps the pattern it had even though the pattern numbers move; moving a
+pattern track up or down does not change what any cell plays. A saved project keeps the cells, never what was playing:
+it opens with nothing launched (session.set_slot, session.clear_slot, session.set_grid, session.clear).</p>
 <p>For a show, View &gt; Perform Mode (or Launcher &gt; Perform Mode) opens a window made to be read from a distance: the
 setlist's song and the next one, Play and Stop, the bar and beat, the tempo with - and + (each an undoable change), the scene
 playing and the scene that plays next, one big button per scene, what each track is playing, and a large Stop All. Its keys:

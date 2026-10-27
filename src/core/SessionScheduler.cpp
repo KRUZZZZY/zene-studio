@@ -234,7 +234,9 @@ LaunchEvent advanceLaunchState( SlotLaunchState& state, LaunchMode mode,
 
 bool SessionScheduler::enqueue( const Command& command ) noexcept
 {
-	if( m_queue.push( command ) )
+	Command tagged = command;
+	tagged.generation = m_resetGeneration.load( std::memory_order_acquire );
+	if( m_queue.push( tagged ) )
 	{
 		return true;
 	}
@@ -299,7 +301,8 @@ SessionScheduler::ActiveSlot* SessionScheduler::claimSlot( int track, int scene 
 }
 
 
-void SessionScheduler::drainCommands( const SessionClockContext& ctx, std::size_t budget ) noexcept
+void SessionScheduler::drainCommands( const SessionClockContext& snapshot, SessionClockContext& ctx,
+	std::size_t budget ) noexcept
 {
 	// Bounded by the period's budget: a producer that refills slots as they
 	// open must not keep the audio callback in this loop. What is left stays
@@ -307,8 +310,17 @@ void SessionScheduler::drainCommands( const SessionClockContext& ctx, std::size_
 	Command command;
 	for( std::size_t drained = 0; drained < budget && m_queue.pop( command ); ++drained )
 	{
+		// Q050-489: judged AFTER the pop. A reset asked for by now is carried out first - its generation is read
+		// after this command's push was observed, so a reset that preceded the push is seen - with the clock set
+		// as the period's own start would have set it. Then the command applies only if no reset came after it was
+		// queued: a pre-reset command is dropped with what the reset dropped, a post-reset one is kept.
+		if( consumeResetRequest() )
+		{
+			advanceClock( snapshot, 0 );
+			ctx.positionTicks = m_positionTicks;
+		}
 		m_processed.fetch_add( 1, std::memory_order_relaxed );
-		applyCommand( command, ctx );
+		if( command.generation == m_seenGeneration ) { applyCommand( command, ctx ); }
 	}
 }
 
@@ -434,7 +446,7 @@ void SessionScheduler::processAudio( const SessionClockContext& snapshot,
 	SessionClockContext ctx = snapshot;
 	ctx.positionTicks = m_positionTicks;
 
-	drainCommands( ctx, CommandQueueCapacity );
+	drainCommands( snapshot, ctx, CommandQueueCapacity );
 	advanceSlots( ctx );
 	evaluateSceneFollow( ctx );
 	publishColumns();

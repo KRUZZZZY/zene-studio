@@ -82,8 +82,10 @@ typedef struct gain_plugin
 	clap_id timer_id;
 	bool timer_registered;
 	uint32_t timer_ticks;
-	/* R4.3: an embedded X11 editor - sized 400x300, never smaller than 100x80. */
+	/* R4.3: an embedded editor - sized 400x300, never smaller than 100x80. Q050-490: on X11, win32
+	   or cocoa, the api it was created for in gui_api. */
 	bool gui_created;
+	const char* gui_api;
 	bool gui_visible;
 	uint64_t gui_parent;
 	uint32_t gui_width;
@@ -422,16 +424,28 @@ static void gain_on_timer(const clap_plugin_t* plugin, clap_id timer_id)
 
 /* ------------------------------------------------------------------ gui --- */
 
+/* Q050-490: x11, win32 and cocoa, embedded, as a real cross-platform editor offers;
+   CLAP_TEST_GAIN_GUI_API names the only api it takes instead, so the host's refusal can be exercised. */
 static bool gui_is_api_supported(const clap_plugin_t* plugin, const char* api, bool is_floating)
 {
 	(void)plugin;
-	return strcmp(api, CLAP_WINDOW_API_X11) == 0 && !is_floating;
+	if (api == NULL || is_floating) { return false; }
+	const char* only = getenv("CLAP_TEST_GAIN_GUI_API");
+	if (only != NULL) { return strcmp(api, only) == 0; }
+	return strcmp(api, CLAP_WINDOW_API_X11) == 0 || strcmp(api, CLAP_WINDOW_API_WIN32) == 0
+		|| strcmp(api, CLAP_WINDOW_API_COCOA) == 0;
 }
 
 static bool gui_get_preferred_api(const clap_plugin_t* plugin, const char** api, bool* is_floating)
 {
 	(void)plugin;
+#if defined(_WIN32)
+	*api = CLAP_WINDOW_API_WIN32;
+#elif defined(__APPLE__)
+	*api = CLAP_WINDOW_API_COCOA;
+#else
 	*api = CLAP_WINDOW_API_X11;
+#endif
 	*is_floating = false;
 	return true;
 }
@@ -441,6 +455,11 @@ static bool gui_create(const clap_plugin_t* plugin, const char* api, bool is_flo
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
 	if (!gui_is_api_supported(plugin, api, is_floating) || self->gui_created) { return false; }
 	self->gui_created = true;
+	self->gui_api = strcmp(api, CLAP_WINDOW_API_WIN32) == 0 ? CLAP_WINDOW_API_WIN32
+		: strcmp(api, CLAP_WINDOW_API_COCOA) == 0 ? CLAP_WINDOW_API_COCOA : CLAP_WINDOW_API_X11;
+	/* No set_scale is a scale of 1 (a cocoa host never calls it). A test can require the host to
+	   call set_scale with one exact factor before it accepts the parent. */
+	self->gui_scale_finite = getenv("CLAP_TEST_GAIN_EXPECT_SCALE") == NULL;
 	self->gui_width = 400;
 	self->gui_height = 300;
 	return true;
@@ -457,7 +476,15 @@ static void gui_destroy(const clap_plugin_t* plugin)
 static bool gui_set_scale(const clap_plugin_t* plugin, double scale)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
-	self->gui_scale_finite = isfinite(scale);
+	/* Q050-490: "cocoa uses logical size, don't call set_scale" (clap/ext/gui.h). A host that does
+	   anyway is refused the parent, as a non-finite scale is. */
+	if (self->gui_api == CLAP_WINDOW_API_COCOA)
+	{
+		self->gui_scale_finite = false;
+		return false;
+	}
+	const char* expected = getenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	self->gui_scale_finite = isfinite(scale) && (expected == NULL || scale == strtod(expected, NULL));
 	return true;
 }
 
@@ -501,9 +528,12 @@ static bool gui_set_size(const clap_plugin_t* plugin, uint32_t width, uint32_t h
 static bool gui_set_parent(const clap_plugin_t* plugin, const clap_window_t* window)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
-	if (!self->gui_created || !self->gui_scale_finite || window == NULL ||
-		strcmp(window->api, CLAP_WINDOW_API_X11) != 0) { return false; }
-	self->gui_parent = (uint64_t)window->x11;
+	if (!self->gui_created || !self->gui_scale_finite || window == NULL || window->api == NULL ||
+		strcmp(window->api, self->gui_api) != 0) { return false; }
+	/* The handle is read from the union member of the api the editor was created for. */
+	if (self->gui_api == CLAP_WINDOW_API_WIN32) { self->gui_parent = (uint64_t)(uintptr_t)window->win32; }
+	else if (self->gui_api == CLAP_WINDOW_API_COCOA) { self->gui_parent = (uint64_t)(uintptr_t)window->cocoa; }
+	else { self->gui_parent = (uint64_t)window->x11; }
 	return self->gui_parent != 0;
 }
 
@@ -520,6 +550,8 @@ static bool gui_show(const clap_plugin_t* plugin)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
 	self->gui_visible = self->gui_created && self->gui_parent != 0;
+	/* CLAP_TEST_GAIN_REQUEST_RESIZE: once shown, the editor asks for a new size from the main thread. */
+	if (self->gui_visible && getenv("CLAP_TEST_GAIN_REQUEST_RESIZE") != NULL) { self->host->request_callback(self->host); }
 	return self->gui_visible;
 }
 
@@ -739,6 +771,19 @@ static void gain_request_rescan(gain_plugin_t* self, const char* kind)
 static void gain_on_main_thread(const clap_plugin_t* plugin)
 {
 	gain_plugin_t* self = (gain_plugin_t*)plugin->plugin_data;
+	/* Q050-490, CLAP_TEST_GAIN_REQUEST_RESIZE="<w>x<h>": the plug-in resizes its OWN editor (a resize
+	   handle in the editor) through clap.gui's request_resize; the host grants it with set_size. */
+	const char* resize = getenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
+	if (resize != NULL && self->gui_created)
+	{
+		char* end = NULL;
+		const uint32_t resize_width = (uint32_t)strtoul(resize, &end, 10);
+		const uint32_t resize_height = *end == 'x' ? (uint32_t)strtoul(end + 1, NULL, 10) : 0u;
+		const clap_host_gui_t* resizeGui =
+			(const clap_host_gui_t*)self->host->get_extension(self->host, CLAP_EXT_GUI);
+		if (resizeGui != NULL) { resizeGui->request_resize(self->host, resize_width, resize_height); }
+		return;
+	}
 	/* CLAP_TEST_GAIN_CLOSE_GUI: the plug-in closes its OWN editor from the editor's side, the way a
 	   plug-in with a close button does - "hide" leaves the GUI alive, "destroy" takes it down and says
 	   so with was_destroyed. The host must reopen it correctly afterwards. */

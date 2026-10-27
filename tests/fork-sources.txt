@@ -887,6 +887,8 @@ include/DevicePicker.h
 include/DirectChildOfType.h
 include/DocumentIndex.h
 include/DpiHelper.h
+include/DrumPadState.h
+include/DrumRackPanel.h
 include/DspLoadProbe.h
 include/EditLocks.h
 include/EffectDeviceMenu.h
@@ -1034,6 +1036,7 @@ include/PluginPaths.h
 include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/PluginVendors.h
+include/PluginWindowSystem.h
 include/PortMapping.h
 include/PortMappingCodec.h
 include/PreviewOutput.h
@@ -1751,6 +1754,7 @@ src/core/DawProjectZipShared.h
 src/core/DeltaTap.cpp
 src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
+src/core/DrumPadState.cpp
 src/core/EditLocks.cpp
 src/core/EffectChainPatcher.cpp
 src/core/ExportDither.cpp
@@ -1914,6 +1918,7 @@ src/core/SessionPlayback.cpp
 src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionSubScenes.cpp
+src/core/SessionTransitions.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
@@ -1964,6 +1969,7 @@ src/gui/AccessibleAnnouncements.cpp
 src/gui/AccessibleCanvas.cpp
 src/gui/AccessibleMode.cpp
 src/gui/AccessibleWidgets.cpp
+src/gui/DrumRackPanel.cpp
 src/gui/ValueAnnouncementState.h
 src/gui/ArrangerAids.cpp
 src/gui/ArrangerClipKeys.cpp
@@ -2317,6 +2323,8 @@ tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
 # Q050-035 (R-platform-26): the docs-truth gate for offline HTDemucs stem separation - built in,
 # local and ON by default. Reads CMakeLists.txt, the release-honesty manifest and the user docs.
+tests/src/core/DrumRackPadsTest.cpp
+tests/src/gui/DrumRackPanelTest.cpp
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
@@ -2447,6 +2455,7 @@ tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
+tests/src/core/BrowserCollectionStoreWriteTest.cpp
 tests/src/core/TrackPresetCommandsTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
 tests/src/core/LinkAudioStreamTestSupport.h
@@ -2722,6 +2731,11 @@ tests/stem_commands_lib.py
 # and the QtTest of the quality table and hop formula the backends share.
 tests/stem_quality_lib.py
 tests/src/core/StemQualityTest.cpp
+# cluster Q050-062.2 (2026-10): the QtTest that triggers the sample clip's Split to stems
+# quality submenu, and the unit's feature record and report.
+tests/src/gui/StemSplitMenuTest.cpp
+docs/050-features/Q050-062.2.md
+docs/qwen-fixes-2026-10/cluster-Q050-062.2.md
 # cluster Q050-148 (2026-10): the docs regression test the rework asked for - it checks the
 # warp docs keep stating the three warp.stretch modes, the per-algorithm caveats and the
 # runnable reviewer example, and rejects the old "pitch-preserving stretch is not built"
@@ -2774,6 +2788,7 @@ tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
+tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
@@ -2800,6 +2815,9 @@ tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
 plugins/VstBase/VstMidiEventBatch.h
 tests/src/core/VstMidiEventBatchTest.cpp
+# cluster new-p15-169: the channel counts a VST plugin reports are refused when the host cannot hold them, not wrapped.
+plugins/VstBase/VstChannelCount.h
+tests/src/core/VstChannelCountTest.cpp
 include/MidiHandoffQueue.h
 tests/src/core/MidiHandoffQueueTest.cpp
 # cluster new-p12-141: ordered MIDI overflow recovery cuts and verification report.
@@ -2956,6 +2974,8 @@ tests/src/plugins/HistoricalBufferEmptyTest.cpp
 # cluster new-p23-90: sfizz EQHolder writes its outputs when the buffer pool is exhausted.
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+# cluster new-p21-156: sfizz FilterHolder and EQHolder pass through before setup() and after reset().
+tests/src/plugins/SfzFilterEqDescriptionTest.cpp
 tests/src/plugins/SfzSimdHelperAlignmentTest.cpp
 tests/src/plugins/SfzTestSupport.h
 # cluster new-p21-182: the sfizz AVX gain kernel advances per-sample gains across vector blocks.
@@ -3152,3 +3172,12 @@ tests/src/gui/GraphWaveformEditorGuiTest.cpp
 docs/050-features/Q050-486.md
 docs/qwen-fixes-2026-10/cluster-Q050-486.md
 tests/src/core/MixerOrderByTracksTest.cpp
+tests/control-session-transitions.py
+tests/src/core/SessionTransitionsTest.cpp
+tests/src/plugins/Vst3EditorTest.cpp
+tests/control-drum-rack-pads.py
+
+# cluster new-p9-503 (2026-10): VibratingString oversampling-count regression test (fork-NEW).
+tests/src/plugins/VibratingStringTest.cpp
+# cluster new-p23-25 (2026-10): regression for window.select during GuiApplication startup (fork-NEW).
+tests/src/gui/WindowSelectStartupTest.cpp

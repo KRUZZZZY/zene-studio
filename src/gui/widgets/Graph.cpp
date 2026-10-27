@@ -137,13 +137,18 @@ void Graph::mouseMoveEvent ( QMouseEvent * _me )
 	y = qMax( 2, qMin( y, height()-3 ) );
 
 
-	if ( m_lastCursorX >= 0 )
+	// only a left-button stroke edits samples; a move with another
+	// button, or with none, must leave the waveform alone
+	if( m_mouseDown )
 	{
-		drawLineAt( x, y, m_lastCursorX );
-	}
-	else
-	{
-		changeSampleAt( x, y );
+		if ( m_lastCursorX >= 0 )
+		{
+			drawLineAt( x, y, m_lastCursorX );
+		}
+		else
+		{
+			changeSampleAt( x, y );
+		}
 	}
 
 	// update mouse

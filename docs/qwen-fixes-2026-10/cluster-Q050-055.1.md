@@ -81,7 +81,7 @@ conflicted and no design changed. Five files conflicted, all ledgers or measured
 | --- | --- | --- |
 | `tests/fork-sources.txt`, `tests/upstream-modifications.txt` | both sides appended entries at the end | union (train entries, then this unit's), no line dropped; `fork-sources` gate exit 0 |
 | `tools/mcp-zene-control/zene_control/commands_snapshot.json` | both sides regenerated it | regenerated live from this tree's `zene` (`snapshot_live.py`): **850 ids / 76 groups** = the train's 849 + `automation.editor_mode` |
-| `README.md` | canary (train 849, patch 846) | `<!-- canary -->868 ids / 76 groups<!-- /canary -->`; `doc-figures-gate.py` exit 0 |
+| `README.md` | canary (train 849, patch 846) | `<!-- canary -->871 ids / 76 groups<!-- /canary -->`; `doc-figures-gate.py` exit 0 |
 | `docs/RELEASE-NOTES-v0.3.0-alpha.md` | A16 histogram (train 858 rows, patch 855) | re-taken from `ReversibilityContractTest` on the merged tree: `rows=859 true_inverse=425 snapshot=42 irreversible=24 not_mutating=368` (the train's figure plus the one `not_mutating` row); the test exit 0 |
 
 The files both the train and the patch changed without a textual conflict (`src/gui/CommandLists.cpp`,

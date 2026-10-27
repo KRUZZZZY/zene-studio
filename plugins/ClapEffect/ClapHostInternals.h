@@ -40,11 +40,13 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <clap/clap.h>
 
 #include "PluginEditorHost.h"
+#include "PluginWindowSystem.h"
 
 namespace lmms::clap
 {
@@ -249,6 +251,8 @@ struct HostedPlugin::Impl
 	bool guiClosedByPlugin = false;
 	//! 0.5.0 L10 (MX-094): the zoom the editor is created at (clap.gui set_scale), the device's option.
 	double editorScale = 1.0;
+	//! Q050-490: the window system a test asked for (HostedPlugin::setEditorWindowSystem); unset, the running one.
+	std::optional<PluginWindowSystem> editorWindowSystem;
 	auto guiExt() const -> const clap_plugin_gui_t*
 	{
 		return plugin != nullptr ? static_cast<const clap_plugin_gui_t*>(plugin->get_extension(plugin, CLAP_EXT_GUI))

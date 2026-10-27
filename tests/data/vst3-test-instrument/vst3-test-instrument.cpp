@@ -55,6 +55,7 @@
  *   moment it needs.
  */
 
+#include <cstdio>
 #include <cstdlib>
 
 #include <cstring>
@@ -99,7 +100,7 @@ enum
 };
 
 static const float kDefaultLevel = 0.5f;
-static const float kTestStateMagic = 0x5A4E5431; // 'ZNT1'
+static const float kTestStateMagic = static_cast<float> (0x5A4E5431); // 'ZNT1' (explicit: MSVC C4305)
 static const int32 kNumKeys = 128;
 // The largest latency a latent instance takes, and the size of its delay rings.
 static const int32 kMaxLatency = 16384;
@@ -555,7 +556,7 @@ tresult PLUGIN_API TestInstrument::getEditorState (IBStream* state)
 
 //------------------------------------------------------------------------
 // R4.2: the fixture's EDITOR - what a real plug-in's view does with its host, minus the
-// drawing: it embeds in an X11 window, resizes, and on attach asks the frame for
+// drawing: it embeds in an X11 window (an HWND or an NSView too, Q050-490), resizes, and on attach asks the frame for
 // Linux::IRunLoop and registers a 10 ms timer (a repaint timer), unregistering it on
 // The two Linux interfaces' UIDs, spelled here: the SDK defines their iids only in its Linux build
 // (commoniids.cpp, #if SMTG_OS_LINUX), so naming Linux::...::iid failed to link elsewhere.
@@ -624,9 +625,17 @@ public:
 	}
 	REFCOUNT_METHODS (CPluginView)
 
+	// Q050-490: X11, HWND and NSView, as a real cross-platform editor offers; VST3_TEST_EDITOR_PLATFORM
+	// names the only one it takes instead, so the host's refusal of the others can be exercised.
 	tresult PLUGIN_API isPlatformTypeSupported (FIDString type) SMTG_OVERRIDE
 	{
-		return strcmp (type, kPlatformTypeX11EmbedWindowID) == 0 ? kResultTrue : kResultFalse;
+		if (type == nullptr) return kResultFalse;
+		if (const char* only = std::getenv ("VST3_TEST_EDITOR_PLATFORM"))
+			return strcmp (type, only) == 0 ? kResultTrue : kResultFalse;
+		return strcmp (type, kPlatformTypeX11EmbedWindowID) == 0 || strcmp (type, kPlatformTypeHWND) == 0 ||
+		               strcmp (type, kPlatformTypeNSView) == 0
+		           ? kResultTrue
+		           : kResultFalse;
 	}
 	tresult PLUGIN_API canResize () SMTG_OVERRIDE { return kResultTrue; }
 	tresult PLUGIN_API checkSizeConstraint (ViewRect* rect) SMTG_OVERRIDE
@@ -638,7 +647,21 @@ public:
 	}
 	tresult PLUGIN_API attached (void* parent, FIDString type) SMTG_OVERRIDE
 	{
+		// Attached with the type the host asked about, or not at all.
+		if (parent == nullptr || isPlatformTypeSupported (type) != kResultTrue) return kResultFalse;
 		const tresult attachedResult = CPluginView::attached (parent, type);
+		// Q050-490: VST3_TEST_EDITOR_REQUEST_RESIZE="<w>x<h>" - the editor asks the host for a new size
+		// through the frame once attached, the way a plug-in's own resize handle does.
+		if (const char* request = std::getenv ("VST3_TEST_EDITOR_REQUEST_RESIZE"))
+		{
+			int width = 0;
+			int height = 0;
+			if (plugFrame && std::sscanf (request, "%dx%d", &width, &height) == 2)
+			{
+				ViewRect wanted (0, 0, width, height);
+				plugFrame->resizeView (this, &wanted);
+			}
+		}
 		Linux::IRunLoop* loop = nullptr;
 		if (plugFrame && plugFrame->queryInterface (kRunLoopIid, reinterpret_cast<void**> (&loop)) == kResultOk)
 		{

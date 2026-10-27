@@ -1733,6 +1733,10 @@ void Song::clearProject()
 		getGUI()->mixerView()->clear();
 	}
 	QCoreApplication::sendPostedEvents();
+	// Q050-489: the grid goes BEFORE the tracks. A deleted pattern track renumbers the patterns and the session
+	// cells follow it (PatternTrack.cpp); the cells of a project being closed must not be rewritten one track at a
+	// time on the way out.
+	m_sessionModel.clear();
 	Engine::patternStore()->clearAllTracks();
 	clearAllTracks();
 
@@ -1774,7 +1778,6 @@ void Song::clearProject()
 
 	removeAllControllers();
 
-	m_sessionModel.clear();
 	ProjectSection::clearAll();
 	m_sessionScheduler.reset();
 

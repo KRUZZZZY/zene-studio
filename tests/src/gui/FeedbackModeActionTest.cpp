@@ -37,6 +37,7 @@
 #include "Engine.h"
 #include "FeedbackModeAction.h"
 #include "Mixer.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -111,16 +112,19 @@ private slots:
 	// off, pdc_suspended is false, so the reply must not claim compensation is SUSPENDED.
 	void theSuspensionTextFollowsTheSubmode()
 	{
+		Song* song = Engine::getSong();
 		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("feedback.enable"), QJsonObject{}).ok);
 		const QJsonObject on = state();
 		QVERIFY(on.value(QStringLiteral("pdc_suspended")).toBool());
 		QVERIFY(on.value(QStringLiteral("suspension")).toString().contains(QStringLiteral("SUSPENDED")));
 
+		song->noteProjectSaved(QStringLiteral("feedback-clean.mmpz"));
 		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("feedback.disable"), QJsonObject{}).ok);
 		const QJsonObject off = state();
 		QVERIFY(!off.value(QStringLiteral("enabled")).toBool());
 		QVERIFY(!off.value(QStringLiteral("pdc_suspended")).toBool());
 		QVERIFY(!off.value(QStringLiteral("suspension")).toString().contains(QStringLiteral("SUSPENDED")));
+		QVERIFY(!song->isModified());  // disabling an empty submode removes no saved route
 	}
 
 	// The inverse feedback.disable advertises must be one command that restores the WHOLE edit:
@@ -137,9 +141,13 @@ private slots:
 		QVERIFY(mixer->createChannelSend(b, a) != nullptr);
 		QCOMPARE(state().value(QStringLiteral("feedback_routes")).toArray().size(), 1);
 
+		Song* song = Engine::getSong();
+		song->noteProjectSaved(QStringLiteral("feedback-clean.mmpz"));
+		QVERIFY(!song->isModified());
 		const ControlResult off = registry->invoke(QStringLiteral("feedback.disable"), QJsonObject{});
 		QVERIFY2(off.ok, qPrintable(off.errorMessage));
 		QCOMPARE(off.result.value(QStringLiteral("removed")).toInt(), 1);
+		QVERIFY(song->isModified());
 		// The registry strips the private __transaction key from the wire result, so the
 		// advertised inverse is read back from the recorded transaction.
 		QJsonObject inverse;

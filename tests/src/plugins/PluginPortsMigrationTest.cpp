@@ -20,6 +20,7 @@
 
 #include "PluginPortsHarness.h"
 #include "plugins/Sid/SidPlaybackScheduler.h"
+#include <sid.h>
 
 #include "AudioPlugin.h"
 #include "BasicFilters.h"
@@ -29,6 +30,9 @@
 #include "../../../plugins/MultitapEcho/MultitapEchoControlDialog.h"
 #define private public
 #include "../../../plugins/MultitapEcho/MultitapEcho.h"
+#undef private
+#define private public
+#include "../../../plugins/DynamicsProcessor/DynamicsProcessor.h"
 #undef private
 
 #include <cstddef>
@@ -961,6 +965,19 @@ namespace lmms
 		}
 	};
 
+	class DynProcEffectTestAccess
+	{
+	public:
+		// Raw byte of m_needsUpdate, so the poisoned value is inspected without
+		// reading an indeterminate bool.
+		static auto needsUpdateByte(const DynProcEffect& effect) -> unsigned char
+		{
+			unsigned char byte = 0;
+			std::memcpy(&byte, &effect.m_needsUpdate, sizeof(byte));
+			return byte;
+		}
+	};
+
 	class FrequencyShifterEffectTestAccess
 	{
 		static auto concrete(const Effect& effect) -> const FrequencyShifterEffect&
@@ -1062,8 +1079,10 @@ private slots:
 	void gigplayerSurvivesGlobalVoicePoolExhaustion();
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
+	void dynamicsProcessorNeedsUpdateStartsCleared();
 	void comparisonIsSensitive();
 	void sidShortSegmentsKeepRegisterWritesOrdered();
+	void sidSchedulerAdvancesThroughEveryRegisterWithReSid();
 	void watsynOverlappingNotesAreIndependentAndAllocationFree();
 	void watsynServesEveryAdmittedNoteWithoutAllocating();
 	void watsynKeepsTheWaveANoteStartedWith();
@@ -3941,6 +3960,34 @@ void PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape()
 }
 
 /*!
+ * The constructor computes the RMS sizes and attack/release coefficients for the
+ * current sample rate, so m_needsUpdate must start cleared. The allocation is
+ * poisoned so that an unset member keeps a non-zero byte, which is what the
+ * first processImpl() would read.
+ */
+void PluginPortsMigrationTest::dynamicsProcessorNeedsUpdateStartsCleared()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dynamicsprocessor)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	allocationSizeToPoison.store(sizeof(lmms::DynProcEffect), std::memory_order_relaxed);
+	auto* rawEffect = static_cast<lmms::DynProcEffect*>(entry(nullptr, nullptr));
+	std::unique_ptr<lmms::DynProcEffect> effect{rawEffect};
+	QVERIFY(effect != nullptr);
+	QCOMPARE(allocationSizeToPoison.load(std::memory_order_relaxed), std::size_t{0});
+
+	QCOMPARE(lmms::DynProcEffectTestAccess::needsUpdateByte(*effect), static_cast<unsigned char>(0));
+}
+
+/*!
  * Negative control: the comparison above must be able to fail. Comparing two
  * *different* plugins' renders has to produce different checksums; otherwise
  * the harness would be comparing silence with silence and prove nothing.
@@ -4032,6 +4079,84 @@ void PluginPortsMigrationTest::sidShortSegmentsKeepRegisterWritesOrdered()
 	QVERIFY(sid.clockedCycles - cyclesBeforeNextSegment <= 26);
 	QCOMPARE(sid.overwrittenPendingWrites, 0);
 	QVERIFY(progress.registerIndex > 2);
+}
+
+/*!
+ * Cluster new-p17-172: the scheduler must advance through every SID register
+ * with the real reSID chip, not only with the probe above. reSID::SID::clock()
+ * takes its cycle count by reference and leaves the cycles it did not run in
+ * that count, so `consumed = requested - delta` is the work the chip did. The
+ * recorder forwards every call to a real chip and records the register writes.
+ */
+struct ReSidWriteRecorder
+{
+	reSID::SID sid;
+	std::vector<unsigned char> writes;
+	int clockedCycles = 0;
+
+	void write(unsigned char address, unsigned char value)
+	{
+		writes.push_back(address);
+		sid.write(address, value);
+	}
+
+	int clock(int& cycles, short* buffer, int samples)
+	{
+		const int before = cycles;
+		const int produced = sid.clock(cycles, buffer, samples);
+		clockedCycles += before - cycles;
+		return produced;
+	}
+};
+
+void PluginPortsMigrationTest::sidSchedulerAdvancesThroughEveryRegisterWithReSid()
+{
+	// C64 PAL clock and 44.1 kHz output, the same chip setup SidInstrument uses.
+	ReSidWriteRecorder chip;
+	chip.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	chip.sid.set_chip_model(reSID::MOS8580);
+	chip.sid.reset();
+
+	std::array<unsigned char, lmms::sidplayback::NumSidRegisters> registers{};
+	registers[0x18] = 0x0f;
+	lmms::sidplayback::RegisterWriteProgress progress;
+	std::array<short, 1> output{};
+	constexpr int CycleBudget = 26;
+	constexpr int MaxCalls = 1000;
+
+	// Short segments with one sample each: a sweep spans many calls, and every
+	// call must spend no more cycles than it was given.
+	int calls = 0;
+	while (chip.writes.size() < lmms::sidplayback::NumSidRegisters && calls < MaxCalls)
+	{
+		const int cyclesBefore = chip.clockedCycles;
+		const int samples = lmms::sidplayback::fillBuffer(registers.data(), &chip,
+			lmms::sidplayback::RegisterWriteOrder, CycleBudget, output.data(), 1, progress);
+		QVERIFY(samples <= 1);
+		QVERIFY(chip.clockedCycles - cyclesBefore <= CycleBudget);
+		++calls;
+	}
+
+	QVERIFY2(chip.writes.size() == lmms::sidplayback::NumSidRegisters,
+		"the scheduler stopped before writing every register");
+	for (std::size_t i = 0; i < lmms::sidplayback::NumSidRegisters; ++i)
+	{
+		QCOMPARE(static_cast<int>(chip.writes[i]),
+			static_cast<int>(lmms::sidplayback::RegisterWriteOrder[i]));
+	}
+	QVERIFY(chip.clockedCycles > 0);
+
+	// No budget means no progress: nothing is written and the position holds.
+	ReSidWriteRecorder idle;
+	idle.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	idle.sid.reset();
+	lmms::sidplayback::RegisterWriteProgress idleProgress;
+	const int idleSamples = lmms::sidplayback::fillBuffer(registers.data(), &idle,
+		lmms::sidplayback::RegisterWriteOrder, 0, output.data(), 1, idleProgress);
+	QCOMPARE(idleSamples, 0);
+	QVERIFY(idle.writes.empty());
+	QCOMPARE(idleProgress.registerIndex, std::size_t{0});
+	QVERIFY(idleProgress.stage == lmms::sidplayback::RegisterWriteStage::BeforeRegister);
 }
 
 /*!

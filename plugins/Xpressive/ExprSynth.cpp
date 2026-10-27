@@ -25,6 +25,7 @@
 
 #include "ExprSynth.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 #include <cmath>
@@ -725,7 +726,12 @@ void WaveSample::copyFrom(const graphModel* graph)
 	// runs either before a period starts or after it ends, never while notes read m_samples.
 	AudioEngine* const engine = Engine::audioEngine();
 	const auto changes = engine ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
-	memcpy(m_samples, graph->samples(), m_length * sizeof(float));
+	// Playing notes keep this table's pointer and length, so the table keeps its length. A graph
+	// of another length fills the start of the table and the rest stays silent. The copy never
+	// reads past the graph's own length, which its buffer may not hold.
+	const int copied = std::min(m_length, graph->length());
+	memcpy(m_samples, graph->samples(), copied * sizeof(float));
+	std::fill(m_samples + copied, m_samples + m_length, 0.0f);
 }
 
 ExprSynth::ExprSynth(const WaveSample *gW1, const WaveSample *gW2, const WaveSample *gW3,

@@ -107,6 +107,33 @@ std::pair<InstrumentTrack*, Instrument*> createModulatedMonstroTrack()
 	return {track, instrument};
 }
 
+//! Pins the dummy device's rate for one test. The original rate and the sampleRateChanged
+//! listeners are restored however the test leaves.
+class DeviceRatePin
+{
+public:
+	explicit DeviceRatePin(sample_rate_t rate) :
+		m_device(Engine::audioEngine()->audioDev()),
+		m_original(m_device->sampleRate())
+	{
+		m_device->setSampleRateForTesting(rate);
+		emit Engine::audioEngine()->sampleRateChanged();
+	}
+
+	~DeviceRatePin()
+	{
+		m_device->setSampleRateForTesting(m_original);
+		emit Engine::audioEngine()->sampleRateChanged();
+	}
+
+	DeviceRatePin(const DeviceRatePin&) = delete;
+	DeviceRatePin& operator=(const DeviceRatePin&) = delete;
+
+private:
+	AudioDevice* m_device;
+	sample_rate_t m_original;
+};
+
 bool sameSamples(const std::vector<SampleFrame>& lhs, const std::vector<SampleFrame>& rhs)
 {
 	if (lhs.size() != rhs.size()) { return false; }
@@ -555,6 +582,45 @@ private slots:
 		releaseMonstroVoiceSet(parallelVoices);
 		QVERIFY2(monstroVoiceSetsMatch(serialVoices, parallelVoices),
 			"a voice was dropped or its modulation changed at engine render concurrency");
+	}
+
+	void monstroRandomLfoAtLowSampleRateRenders()
+	{
+		// At 8 kHz the 0.1 ms LFO rate is 0.8 frames. The random LFO modes take the period as
+		// whole frames for their modulo, and it truncated to zero: a division by zero on the
+		// first period.
+		DeviceRatePin pin(8000);
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		// WAVE_RANDOM (9) and WAVE_RANDOM_SMOOTH (10): both take the period from the same LFO rate
+		for (const int wave : {9, 10})
+		{
+			Engine::getSong()->clearProject();
+			auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+			QVERIFY(track != nullptr);
+			Instrument* instrument = track->loadInstrument(QStringLiteral("monstro"));
+			QVERIFY(instrument != nullptr);
+			QDomDocument document;
+			QDomElement settings = document.createElement(QStringLiteral("monstro"));
+			settings.setAttribute(QStringLiteral("l1wav"), wave);
+			settings.setAttribute(QStringLiteral("l1rat"), 0.1);   // LFO 1 rate in ms, the minimum
+			settings.setAttribute(QStringLiteral("v1l1"), 1.0);
+			instrument->restoreState(settings);
+
+			std::vector<SampleFrame> output(static_cast<std::size_t>(frames));
+			const Note note(TimePos(384), TimePos(0), 60);
+			NotePlayHandle* handle = NotePlayHandleManager::acquire(track, 0, frames, note);
+			for (int period = 0; period < 16; ++period) { instrument->playNote(handle, output); }
+			NotePlayHandleManager::release(handle);
+
+			float peak = 0.0f;
+			for (const SampleFrame& frame : output)
+			{
+				QVERIFY(std::isfinite(frame[0]) && std::isfinite(frame[1]));
+				peak = std::max(peak, std::max(std::abs(frame[0]), std::abs(frame[1])));
+			}
+			QVERIFY2(peak > 0.0f, "the note rendered silence, so the LFO path proves nothing");
+		}
+		Engine::getSong()->clearProject();
 	}
 
 	void repeatsSoundAsMoreHits()

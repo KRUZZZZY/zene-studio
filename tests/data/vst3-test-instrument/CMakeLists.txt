@@ -19,11 +19,18 @@
 # translation units are listed here instead. Both sets come from the SDK's own
 # cmake/modules/SMTG_VST3_SDK.cmake (smtg_create_public_sdk_target).
 
-# The VST3 bundle on Linux is a DIRECTORY:
-#   <name>.vst3/Contents/<uname -m>-linux/<name>.so
-# The SDK's loader insists on that layout
-# (public.sdk/source/vst/hosting/module_linux.cpp:getSOPath returns nothing at
-# all for anything that is not a directory).
+# A VST3 module is a DIRECTORY, laid out per platform the way the SDK's own
+# loader (public.sdk/source/vst/hosting/module_<platform>) looks for it, and
+# entered through the SDK's per-platform entry file. Q050-490 adds the Windows
+# and macOS halves, so the editor tests run on those hosted jobs too; the recipe
+# is tests/data/vst3-test-effect/CMakeLists.txt's, whose header records the
+# hosted-CI failures each part of it answers:
+#   Linux    <name>.vst3/Contents/<uname -m>-linux/<name>.so      linuxmain.cpp
+#            (module_linux.cpp:getSOPath returns nothing for a non-directory)
+#   Windows  <name>.vst3/Contents/<arch>-win/<name>.vst3 (a DLL)  dllmain.cpp
+#            (module_win32.cpp:loadAsPackage; InitDll/ExitDll)
+#   macOS    <name>.vst3/Contents/MacOS/<name> + Contents/Info.plist   macmain.cpp
+#            (module_mac.mm: CFBundleCreate + CFBundleLoadExecutable, bundleEntry)
 execute_process(COMMAND uname -m
 	OUTPUT_VARIABLE LMMS_VST3_TEST_MACHINE
 	OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -32,17 +39,46 @@ if(NOT LMMS_VST3_TEST_MACHINE)
 	set(LMMS_VST3_TEST_MACHINE "${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 
+if(APPLE)
+	set(LMMS_VST3_TEST_ENTRY "macmain.cpp")
+	set(LMMS_VST3_TEST_BUNDLE_SUBDIR "Contents/MacOS")
+	set(LMMS_VST3_TEST_BUNDLE_SUFFIX "")
+elseif(WIN32)
+	# The arch directory is the TARGET's (what the loader compiles in), so ask the
+	# compiler, as the effect fixture does (MSYS2's uname -m answers x86_64 on arm64).
+	include(CheckCXXSourceCompiles)
+	check_cxx_source_compiles("
+#if !(defined(_M_ARM64) || defined(__aarch64__)) || defined(_M_ARM64EC)
+#error not a native ARM64 target
+#endif
+int main() { return 0; }" LMMS_VST3_INSTRUMENT_FIXTURE_TARGET_ARM64)
+	if(LMMS_VST3_INSTRUMENT_FIXTURE_TARGET_ARM64)
+		set(LMMS_VST3_TEST_BUNDLE_SUBDIR "Contents/arm64-win")
+	elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+		set(LMMS_VST3_TEST_BUNDLE_SUBDIR "Contents/x86_64-win")
+	else()
+		set(LMMS_VST3_TEST_BUNDLE_SUBDIR "Contents/x86-win")
+	endif()
+	set(LMMS_VST3_TEST_ENTRY "dllmain.cpp")
+	# A Windows VST3 module is a PE DLL under the .vst3 extension, named after the bundle directory.
+	set(LMMS_VST3_TEST_BUNDLE_SUFFIX ".vst3")
+else()
+	set(LMMS_VST3_TEST_ENTRY "linuxmain.cpp")
+	set(LMMS_VST3_TEST_BUNDLE_SUBDIR "Contents/${LMMS_VST3_TEST_MACHINE}-linux")
+	set(LMMS_VST3_TEST_BUNDLE_SUFFIX ".so")
+endif()
+if(NOT EXISTS "${LMMS_VST3_SDK_PATH}/public.sdk/source/main/${LMMS_VST3_TEST_ENTRY}")
+	message(FATAL_ERROR "The VST3 instrument fixture needs the SDK's ${CMAKE_SYSTEM_NAME} entry point "
+		"public.sdk/source/main/${LMMS_VST3_TEST_ENTRY}, which is not in ${LMMS_VST3_SDK_PATH}.")
+endif()
+
 set(LMMS_VST3_TEST_INSTRUMENT_NAME "vst3-test-instrument")
 set(LMMS_VST3_TEST_BUNDLE_DIR
 	"${CMAKE_CURRENT_BINARY_DIR}/${LMMS_VST3_TEST_INSTRUMENT_NAME}.vst3")
-set(LMMS_VST3_TEST_BUNDLE_SO
-	"${LMMS_VST3_TEST_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux/${LMMS_VST3_TEST_INSTRUMENT_NAME}.so")
 
 set(LMMS_VST3_MONO_TEST_INSTRUMENT_NAME "vst3-test-mono-instrument")
 set(LMMS_VST3_MONO_TEST_BUNDLE_DIR
 	"${CMAKE_CURRENT_BINARY_DIR}/${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME}.vst3")
-set(LMMS_VST3_MONO_TEST_BUNDLE_SO
-	"${LMMS_VST3_MONO_TEST_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux/${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME}.so")
 
 # --- plug-in-side SDK sources (third-party) --------------------------------
 # Compiled separately from the fixture's own source so that the fixture stays
@@ -53,10 +89,11 @@ set(LMMS_VST3_MONO_TEST_BUNDLE_SO
 # dlopen, so nothing inside it references ModuleEntry/ModuleExit. In a static
 # library the linker would therefore drop linuxmain.cpp.o entirely and the
 # module would load with "does not export the required 'ModuleEntry' function".
-# Object libraries are always linked whole.
+# Object libraries are always linked whole. (The same holds for InitDll and
+# bundleEntry, the Windows and macOS entries.)
 add_library(${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase OBJECT
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/common/pluginview.cpp"
-	"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/linuxmain.cpp"
+	"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/${LMMS_VST3_TEST_ENTRY}"
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/moduleinit.cpp"
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/pluginfactory.cpp"
 	"${LMMS_VST3_SDK_PATH}/public.sdk/source/vst/vstbus.cpp"
@@ -69,45 +106,47 @@ target_compile_features(${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase PUBLIC cxx_std
 set_target_properties(${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase PROPERTIES
 	POSITION_INDEPENDENT_CODE ON
 	SYSTEM ON)
+if(MSVC)
+	# As for lmms_vst3_sdk (cmake/modules/Vst3Sdk.cmake): the SDK picks its C++ level
+	# from __cplusplus, which MSVC reports as 199711L without this flag. PUBLIC, so the
+	# fixture's own source (which includes the same SDK headers) agrees with it.
+	target_compile_options(${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase PUBLIC "/Zc:__cplusplus")
+	# The fixture reads its test switches with std::getenv; that is what it is for.
+	target_compile_definitions(${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase PUBLIC _CRT_SECURE_NO_WARNINGS)
+endif()
+
+#! One fixture module, laid out at @a bundle as its platform's loader expects it - the
+#! Linux tree, the Windows package, or the CFBundle with the Info.plist that names it.
+function(lmms_vst3_test_module name bundle)
+	add_library(${name} MODULE vst3-test-instrument.cpp)
+	set_target_properties(${name} PROPERTIES
+		PREFIX ""
+		OUTPUT_NAME "${name}"
+	)
+	target_link_libraries(${name} PRIVATE ${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase)
+	set(steps
+		COMMAND ${CMAKE_COMMAND} -E make_directory "${bundle}/${LMMS_VST3_TEST_BUNDLE_SUBDIR}"
+		COMMAND ${CMAKE_COMMAND} -E copy_if_different
+			"$<TARGET_FILE:${name}>"
+			"${bundle}/${LMMS_VST3_TEST_BUNDLE_SUBDIR}/${name}${LMMS_VST3_TEST_BUNDLE_SUFFIX}")
+	if(APPLE)
+		set(LMMS_VST3_TEST_PLIST_NAME "${name}")
+		configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+			"${CMAKE_CURRENT_BINARY_DIR}/${name}-Info.plist" @ONLY)
+		list(APPEND steps
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${CMAKE_CURRENT_BINARY_DIR}/${name}-Info.plist"
+				"${bundle}/Contents/Info.plist")
+	endif()
+	add_custom_command(TARGET ${name} POST_BUILD ${steps}
+		COMMENT "Laying out the ${name}.vst3 bundle")
+endfunction()
 
 # --- the fixture ------------------------------------------------------------
-add_library(${LMMS_VST3_TEST_INSTRUMENT_NAME} MODULE
-	vst3-test-instrument.cpp
-)
-set_target_properties(${LMMS_VST3_TEST_INSTRUMENT_NAME} PROPERTIES
-	PREFIX ""
-	OUTPUT_NAME "${LMMS_VST3_TEST_INSTRUMENT_NAME}"
-)
-target_link_libraries(${LMMS_VST3_TEST_INSTRUMENT_NAME} PRIVATE
-	${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase)
-
-# Lay the module out as the SDK's loader expects it.
-add_custom_command(TARGET ${LMMS_VST3_TEST_INSTRUMENT_NAME} POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E make_directory
-		"${LMMS_VST3_TEST_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux"
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"$<TARGET_FILE:${LMMS_VST3_TEST_INSTRUMENT_NAME}>"
-		"${LMMS_VST3_TEST_BUNDLE_SO}"
-	COMMENT "Laying out the ${LMMS_VST3_TEST_INSTRUMENT_NAME}.vst3 bundle")
-
-add_library(${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME} MODULE
-	vst3-test-instrument.cpp
-)
-set_target_properties(${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME} PROPERTIES
-	PREFIX ""
-	OUTPUT_NAME "${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME}"
-)
+lmms_vst3_test_module(${LMMS_VST3_TEST_INSTRUMENT_NAME} "${LMMS_VST3_TEST_BUNDLE_DIR}")
+lmms_vst3_test_module(${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME} "${LMMS_VST3_MONO_TEST_BUNDLE_DIR}")
 target_compile_definitions(${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME} PRIVATE
 	ZENE_TEST_INSTRUMENT_MONO)
-target_link_libraries(${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME} PRIVATE
-	${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase)
-add_custom_command(TARGET ${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME} POST_BUILD
-	COMMAND ${CMAKE_COMMAND} -E make_directory
-		"${LMMS_VST3_MONO_TEST_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux"
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different
-		"$<TARGET_FILE:${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME}>"
-		"${LMMS_VST3_MONO_TEST_BUNDLE_SO}"
-	COMMENT "Laying out the ${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME}.vst3 bundle")
 
 # The probe lives in ../.. (tests/CMakeLists.txt) so that it sits with the other
 # plug-in test executables; it needs this path, and variables do not travel up a

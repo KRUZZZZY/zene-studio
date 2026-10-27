@@ -377,6 +377,8 @@ include/DirectChildOfType.h
 include/DocumentIndex.h
 include/DpiHelper.h
 include/Draggable.h
+include/DrumPadState.h
+include/DrumRackPanel.h
 include/DrumSynth.h
 include/DspEffectLibrary.h
 include/DspLoadProbe.h
@@ -686,6 +688,7 @@ include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/PluginVendors.h
 include/PluginView.h
+include/PluginWindowSystem.h
 include/PortMapping.h
 include/PortMappingCodec.h
 include/PositionLine.h
@@ -1420,6 +1423,7 @@ plugins/Vst3Instrument/Vst3Instrument.h
 plugins/Vst3Instrument/Vst3InstrumentView.cpp
 plugins/Vst3Instrument/Vst3InstrumentView.h
 plugins/VstBase/RemoteVstPlugin.cpp
+plugins/VstBase/VstChannelCount.h
 plugins/VstBase/VstMidiEventBatch.h
 plugins/VstBase/VstPlugin.cpp
 plugins/VstBase/VstPlugin.h
@@ -1908,6 +1912,7 @@ src/core/DawProjectZipShared.h
 src/core/DeltaTap.cpp
 src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
+src/core/DrumPadState.cpp
 src/core/DrumSynth.cpp
 src/core/EditLocks.cpp
 src/core/Effect.cpp
@@ -2131,6 +2136,7 @@ src/core/SessionPlayback.cpp
 src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionSubScenes.cpp
+src/core/SessionTransitions.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
@@ -2296,6 +2302,7 @@ src/gui/ControllerView.cpp
 src/gui/Controls.cpp
 src/gui/CrashReportMenu.cpp
 src/gui/CrossfadeEditorDialog.cpp
+src/gui/DrumRackPanel.cpp
 src/gui/EffectControlDialog.cpp
 src/gui/EffectDeviceMenu.cpp
 src/gui/EffectHostingMenu.cpp
@@ -2655,6 +2662,7 @@ tests/src/core/BiquadSectionTest.cpp
 tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogQueryTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
+tests/src/core/BrowserCollectionStoreWriteTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/CapturePublisherTest.cpp
@@ -2748,6 +2756,7 @@ tests/src/core/DeviceToolsChainTest.cpp
 tests/src/core/DeviceToolsTest.cpp
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
+tests/src/core/DrumRackPadsTest.cpp
 tests/src/core/DrumSynthLevelTest.cpp
 tests/src/core/DrumSynthTest.cpp
 tests/src/core/DummyPacingTest.cpp
@@ -2975,6 +2984,7 @@ tests/src/core/SessionSceneFollowTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SessionSubSceneTest.cpp
+tests/src/core/SessionTransitionsTest.cpp
 tests/src/core/SessionTuningPublicationTest.cpp
 tests/src/core/SessionTuningTest.cpp
 tests/src/core/SidechainInputsTest.cpp
@@ -3035,6 +3045,7 @@ tests/src/core/VideoFfmpegTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
+tests/src/core/VstChannelCountTest.cpp
 tests/src/core/VstMidiEventBatchTest.cpp
 tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
@@ -3077,6 +3088,7 @@ tests/src/gui/CrossfadeEditorTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
+tests/src/gui/DrumRackPanelTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
@@ -3120,6 +3132,7 @@ tests/src/gui/MidiCommandBindingsGuiTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
+tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MixerMeteringTest.cpp
 tests/src/gui/MixerModesTest.cpp
@@ -3173,6 +3186,7 @@ tests/src/gui/ShellTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
 tests/src/gui/StartHubTest.cpp
+tests/src/gui/StemSplitMenuTest.cpp
 tests/src/gui/StepRecorderWidgetTest.cpp
 tests/src/gui/SurroundPannerTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
@@ -3192,6 +3206,7 @@ tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/VersionedSaveDialogTest.cpp
 tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/WcagContrastTest.cpp
+tests/src/gui/WindowSelectStartupTest.cpp
 tests/src/gui/WorkflowFeedbackTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/gui/XyPadPairTest.cpp
@@ -3259,6 +3274,7 @@ tests/src/plugins/SfizzLeakDetectorTest.cpp
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfzEffectBusViewTest.cpp
 tests/src/plugins/SfzFilePoolTest.cpp
+tests/src/plugins/SfzFilterEqDescriptionTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzSimdGainAVXTest.cpp
@@ -3271,8 +3287,10 @@ tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/TripleOscillatorUserWaveTest.cpp
 tests/src/plugins/VestigeMidiHandoffTest.cpp
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+tests/src/plugins/VibratingStringTest.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3ChunkProbeTest.cpp
+tests/src/plugins/Vst3EditorTest.cpp
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
 tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp

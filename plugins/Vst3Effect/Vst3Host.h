@@ -30,6 +30,7 @@
 #include <functional>
 #include <memory>
 #include <cstddef>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -42,6 +43,7 @@
 #include "Vst3ParamDescriptor.h"
 
 namespace Steinberg::Vst { class IEditController; }
+namespace lmms { enum class PluginWindowSystem; }  // PluginWindowSystem.h
 
 namespace lmms::vst3
 {
@@ -291,8 +293,12 @@ public:
 	auto paramDisplayValue(std::uint32_t id, float normalized) const -> QString;
 
 	// ---- R4.2: the plug-in's own editor (Vst3EditorSession.h) --------------------------
-	//! Main thread: attach the plug-in's editor to @a parentWindow (an X11 window id).
+	//! Main thread: attach the plug-in's editor to @a parentWindow - the platform's native window
+	//! (Q050-490: an X11 window id, an HWND or an NSView*, whatever QWidget::winId() gives there).
 	auto openEditor(void* parentWindow, QString* error) -> bool;
+	//! Q050-490: the window system the next openEditor() embeds in, instead of the running one, so a
+	//! test proves the Windows and macOS selection on any machine. Nothing in the product calls it.
+	void setEditorWindowSystem(PluginWindowSystem system);
 	void closeEditor();
 	auto editorOpen() const -> bool;
 	auto resizeEditor(int width, int height) -> bool;
@@ -314,6 +320,7 @@ private:
 	//! reset explicitly in the destructor before the controller is released.
 	std::unique_ptr<Vst3EditorSession> m_editor;
 	double m_editorScale = 1.0;
+	std::optional<PluginWindowSystem> m_editorWindowSystem;
 };
 
 } // namespace lmms::vst3

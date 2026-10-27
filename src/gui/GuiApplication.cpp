@@ -99,6 +99,10 @@ bool GuiApplication::isWayland()
 
 GuiApplication::GuiApplication()
 {
+	// Until the constructor assigns the main window (below, after s_instance is published), the event pumps it runs
+	// deliver control commands; they must read "no main window", not an indeterminate pointer.
+	m_mainWindow = nullptr;
+
 	// Immediately register our SIGINT handler
 	createSocketNotifier();
 	a11y::installAccessibility();  // 0.5.0: screen-reader roles and values, focus rings, accessible mode

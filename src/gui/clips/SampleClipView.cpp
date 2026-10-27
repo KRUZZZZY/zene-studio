@@ -131,11 +131,8 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 	addClipTrimActions(cm, m_clip);
 
 #ifdef LMMS_HAVE_STEM_SPLIT
-	cm->addAction(
-		tr("Split to stems"),
-		this,
-		SLOT(splitToStems())
-	);
+	// Split to stems at a chosen quality (stem.job_start's `quality`, Q050-062.2).
+	StemSplitController::addSplitToStemsMenu(cm, m_clip);
 #endif
 
 }

@@ -295,7 +295,7 @@ The view then asks for its new size through `IPlugFrame::resizeView`. A view wit
 but able to resize, gets the scaled size through its own `checkSizeConstraint`. A view that can do
 neither keeps its own size. At 1 nothing is asked of the view. The zoom is a VST3 *effect's* editor-scale
 option (`plugin.options editor_scale`, `DeviceOptions::editorScale`), read when its editor opens, as the
-CLAP effect host does. Instruments have no such option yet. `Vst3InstrumentTest::testTheEditorOpensAtTheDeviceScale`
+CLAP effect host does. Instruments have no such option yet. `Vst3EditorTest::testTheEditorOpensAtTheDeviceScale` (moved from `Vst3InstrumentTest` by Q050-490)
 covers both paths against the in-tree fixture, whose view now implements the interface (the
 `VST3_TEST_EDITOR_NO_CONTENT_SCALE` environment variable withholds it).
 `Vst3InstrumentIntegrationTest::testAnEffectsEditorOpensAtItsDeviceScale` covers the product path:

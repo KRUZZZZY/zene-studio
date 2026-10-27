@@ -212,9 +212,11 @@ struct Landed
 
 void applyLanded(const Landed& landed)
 {
+	const SessionModel before = Engine::getSong()->sessionModel();
 	ClipSlot& slot = Engine::getSong()->sessionModel().slot(landed.track, landed.scene);
 	slot.setAudioReference(landed.path);
 	slot.setName(landed.name);
+	syncLauncherFrom(before);  // Q050-489: the launcher hears the landed take (and its undo stops it)
 }
 
 ControlResult writeAndLand(SessionModel& model, SessionAudioRecorder& recorder, const QString& path, const QString& name)
@@ -236,7 +238,7 @@ ControlResult writeAndLand(SessionModel& model, SessionAudioRecorder& recorder, 
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the take could not be written: %1").arg(why));
 	}
 	applyLanded(*landed);
-	addUndoStep([landed] { restoreSessionBlock(Engine::getSong()->sessionModel(), landed->session); },
+	addUndoStep([landed] { restoreSessionBlockAndSync(*Engine::getSong(), landed->session); },
 		[landed] { applyLanded(*landed); });
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("slot"), clipSlotState(landed->track, landed->scene, model.slot(landed->track, landed->scene))},
