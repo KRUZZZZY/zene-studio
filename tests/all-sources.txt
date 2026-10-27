@@ -2641,6 +2641,7 @@ tests/src/core/AutomationPrepassProofTest.cpp
 tests/src/core/AutomationRenderAllocationTest.cpp
 tests/src/core/AutomationThinTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
+tests/src/core/BandLimitedWaveTest.cpp
 tests/src/core/BasicFiltersSampleRateTest.cpp
 tests/src/core/BenchmarkBaseline.h
 tests/src/core/BiquadSectionTest.cpp
