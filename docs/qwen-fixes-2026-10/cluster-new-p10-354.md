@@ -132,3 +132,66 @@ change. `ControlSampleOperatorTest.cpp` is already registered in `tests/fork-sou
   unless `CCACHE_DISABLE=1` is set. This lane worked around it on the command line only.
 - `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check`, which is not writable
   from a lane worktree. A lane cannot run it to completion as written.
+
+## Self-check
+
+Result of `submit_check.py <worktree> new-p10-354` (`submit-check-1.log`, EXIT=1): commits on the
+branch PASS, working tree clean PASS, report PASS, tests changed PASS. The Self-check row and the
+gates row are answered below.
+
+**1. Regression test fails with the product change reverted, passes with it.** Yes. Reverting
+`src/core/SampleOperators.cpp` and `.h` with `git apply -R fix.patch`: build EXIT 0, test EXIT 8
+(`test-3-4b-unfixed.log`: `FAIL! ... a tone at rate 0 produced 16 frames`). Re-applying with
+`git apply fix.patch`: build EXIT 0, test EXIT 0 (`test-4-4b-fixed.log`). The same proof was
+repeated on the final test text: EXIT 8 (`test-5-final-unfixed-RED.log`), then EXIT 0
+(`test-6-final-fixed-GREEN.log`). Full table above.
+
+**2. Deterministic.** The test calls the pure function `sampleops::generate` with literal inputs
+(kind, 440.0 Hz, 1.0 amplitude, 16 frames, rate 0, -44100, 44100). It reads no clock, sleeps, starts
+no thread and waits on nothing. The seam is the `sampleRate` argument itself; no Engine state is
+read by the new slot. Its only failure modes are the assertions.
+
+**3. Cause fixed, callers and siblings checked.**
+- The cause is the division at `src/core/SampleOperators.cpp:93`. The guard at `:91` runs before it.
+- Caller: `sample.generate`, `src/core/ControlCommandsSample.cpp:262`. Its path is unchanged.
+  `sizeFrames()` at `:145-146` already refuses a tone unless `0 < frequency < sampleRate * 0.5`,
+  so with rate 0 no tone reaches `generate()` through the command. The command's result
+  (`sample_rate`, `frames`, `kind`) is unchanged.
+- Siblings: silence, white and pink ignore the rate; they are checked at rate 0 in the test (16
+  frames each). `generate()` and `tone()` are the only functions that read `sampleRate` in
+  `SampleOperators.cpp`.
+- Header contract updated (`SampleOperators.h:55-58`) to match the new behaviour.
+
+**4. No collateral damage.**
+- Saved data: the sample rate is a runtime argument, never saved in a project. Old projects load
+  and play as before.
+- The guard changes output only for a rate that is `<= 0`, which no positive-rate caller produces.
+  Nothing in the tree calls `generate` with a non-positive rate outside the test.
+- No limit was added to any caller. The 512 MiB cap and the frequency-versus-Nyquist check are
+  unchanged.
+- Realtime: `generate()` is control-thread only (`SampleOperators.h:44-47`). The guard neither
+  allocates nor locks nor logs, and the audio thread does not call it.
+- Undo: no command or journal changed. `sample.generate`'s one-step undo is unchanged, and the
+  family run (10/10, `test-7-family-final.log`) confirms it.
+- Commands: none added, so the canary and `ControlCommandsSnapshot` are not affected.
+
+**5. Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** The last ASK item does not apply.
+For context, the earlier note at `docs/bunny-fixes-2026-10-05/engine/batch-14.md` (cluster 3512,
+FALSE-POSITIVE) made the same reachability argument and called a helper guard dead code. This fix
+takes the other view, because the helper returns NaN for an input its own contract does not
+exclude.
+
+**Gates row: BLOCKED by the environment.** `feature_check.py` exits 1 before running any gate:
+`PermissionError` when it creates `zene-qwen-new-p10-354-feature-check` in
+`projects/zene-studio-program/`, which is outside this lane's write-jail. The folder is
+`drwxrwxrwx`, but the sandbox still denies the creation, and the script's log location is not
+configurable. I did not edit the shared script or fake its table. Its gate commands were run one
+by one from the worktree (table above): six gates EXIT 0; `complexity` and `file-length` EXIT 1
+with 7 and 22 regression lines, none naming `SampleOperators.cpp`, `SampleOperators.h` or
+`ControlSampleOperatorTest.cpp`. By the script's own rule that is a PASS for both ratchet rows, but
+the script itself did not produce that table. To settle this row, run `feature_check.py` from
+outside the sandbox, or make its log folder writable for lanes.
+
+**File-length margin.** `ControlSampleOperatorTest.cpp` is at exactly 500 code lines (base 489,
++11). The gate's limit is 500, and the final gate run lists no regression for this file. No further
+code can be added to it without a new file.
