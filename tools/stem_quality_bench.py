@@ -64,14 +64,56 @@ EXCERPT_SECONDS = 30
 # The fixed reference set: test-split tracks (HTDemucs was not trained on
 # them), each read from EXCERPT_START_S for EXCERPT_SECONDS. The sha256 pins
 # are of the excerpt files `fetch` writes (interleaved float32 stereo); they
-# were recorded on the first fetch and every later fetch must reproduce them.
+# were recorded on the first fetch (2026-10-27) and every later fetch must
+# reproduce them - an unpinned or mismatching file is an error.
 REFERENCE_TRACKS = (
     "Al James - Schoolboy Facination",
     "Angels In Amplifiers - I'm Alright",
     "Hollow Ground - Ill Fate",
     "Tom McKenzie - Directions",
 )
-REFERENCE_SHA256 = {}
+REFERENCE_SHA256 = {
+    "Al_James___Schoolboy_Facination/bass.f32":
+        "d111384f980898878eadac69cbcd97ba8659f1666ee00ebe9b171ff0d169cd3f",
+    "Al_James___Schoolboy_Facination/drums.f32":
+        "27055c5cf02b8f33743e2958914043d3411b00c75cd45cb4e99cf2afd620423f",
+    "Al_James___Schoolboy_Facination/mix.f32":
+        "f7daa07a0f951c435b433779aeac48c72f2c1cdb343280d27e8feed85532f300",
+    "Al_James___Schoolboy_Facination/other.f32":
+        "4829d632591374c7d18d1581f2bf20cc0158a53f4c69313bcc0624338e1715d0",
+    "Al_James___Schoolboy_Facination/vocals.f32":
+        "8ea61ee4e71cc030a09394dc6efb2266979b1f0715ee76a59bcd9b62193bd294",
+    "Angels_In_Amplifiers___I_m_Alright/bass.f32":
+        "aca985db4ccb469d00b6399aba6613f470f72abc346f61618abe76ff1f476abe",
+    "Angels_In_Amplifiers___I_m_Alright/drums.f32":
+        "cd357be9d1ea91180af1a53c737491ddf7e13104771c16b8c32b223f14617c3c",
+    "Angels_In_Amplifiers___I_m_Alright/mix.f32":
+        "cd454ba032210a66dc0ede867eaea0db1cf802acfc13ff39ace58fb2b4c16b6c",
+    "Angels_In_Amplifiers___I_m_Alright/other.f32":
+        "b12027c875e1d06cf3d9a7b9c3d5492010284b4e25dc793834c4e53c859f5c43",
+    "Angels_In_Amplifiers___I_m_Alright/vocals.f32":
+        "c1b60f43481cfb5b817c0b66f6f49eb796625b50946407056ed7919068732813",
+    "Hollow_Ground___Ill_Fate/bass.f32":
+        "473fb7cd3adfccc250276240a4b6a4659edcc04d9d7c0dae9a53d31fd0c33d25",
+    "Hollow_Ground___Ill_Fate/drums.f32":
+        "d58d6dfdd573a61289a2df44443ddb0bc047a9dc1d402ec47457de7652cb3f18",
+    "Hollow_Ground___Ill_Fate/mix.f32":
+        "976211e259c93374259256a39527fd1cfcf9e2a63cf8929b1f9e85af9dcc96d0",
+    "Hollow_Ground___Ill_Fate/other.f32":
+        "17a17edd98d92927d361d0b05bbe2ab5527861cd68e59645afac4821a76eb523",
+    "Hollow_Ground___Ill_Fate/vocals.f32":
+        "d55f57d6ffacb67518440412c9de712bf418ac6f6ec2d8fcd405837689cdd7ca",
+    "Tom_McKenzie___Directions/bass.f32":
+        "3fc3e0632a79ccbcbe51609cc3fcdc17167de3ba15f2084b3686741006d68b28",
+    "Tom_McKenzie___Directions/drums.f32":
+        "a830e4c8b26cb937d6e4b3edc303548ebb84a4dc5ede03e383a184ef2b44c6db",
+    "Tom_McKenzie___Directions/mix.f32":
+        "47ddb2d711ae2ddb4922e1bd66f9fa2f5e158313e197b5e6bd63fcd529a2c9c2",
+    "Tom_McKenzie___Directions/other.f32":
+        "572cb44e652d529f4814d1a9cf799bc1a9f533b2fa05949d3abfdaf81c4ed590",
+    "Tom_McKenzie___Directions/vocals.f32":
+        "1d6efb1d19d92d51af3e4f4221c419180d7be663f43a80add9f0050641c67597",
+}
 
 
 def emit(obj):
@@ -209,7 +251,7 @@ def check_pins(track_dir, track):
         key = f"{track_slug(track)}/{name}.f32"
         hashes[key] = sha256_of(os.path.join(track_dir, name + ".f32"))
         pinned = REFERENCE_SHA256.get(key)
-        if pinned is not None and pinned != hashes[key]:
+        if pinned != hashes[key]:
             raise ValueError(f"{key}: sha256 {hashes[key]} != pinned {pinned}")
     return hashes
 
@@ -311,25 +353,28 @@ def measure_one(args, track_dir, quality, repeat):
     return row
 
 
+def _mean(values):
+    values = list(values)
+    return round(sum(values) / len(values), 4)
+
+
+def _quality_summary(mine):
+    per_stem = {stem: _mean(r["sdr"][stem] for r in mine) for stem in STEM_NAMES}
+    return {
+        "runs": len(mine),
+        "sdr_mean": _mean(per_stem.values()),
+        "sdr_per_stem": per_stem,
+        "elapsed_s_total": round(sum(r["elapsed_s"] for r in mine), 3),
+        "process_wall_s_total": round(sum(r["process_wall_s"] for r in mine), 3),
+        "audio_s_total": round(sum(r["audio_s"] for r in mine), 3),
+        "chunks_total": sum(r["chunks"] for r in mine),
+    }
+
+
 def summarise(rows):
     """Per quality: mean SDR per stem and overall, total elapsed and wall."""
-    summary = {}
-    for quality in QUALITIES:
-        mine = [row for row in rows if row["quality"] == quality]
-        if not mine:
-            continue
-        per_stem = {stem: round(sum(r["sdr"][stem] for r in mine) / len(mine), 4)
-                    for stem in STEM_NAMES}
-        summary[quality] = {
-            "runs": len(mine),
-            "sdr_mean": round(sum(per_stem.values()) / len(per_stem), 4),
-            "sdr_per_stem": per_stem,
-            "elapsed_s_total": round(sum(r["elapsed_s"] for r in mine), 3),
-            "process_wall_s_total": round(sum(r["process_wall_s"] for r in mine), 3),
-            "audio_s_total": round(sum(r["audio_s"] for r in mine), 3),
-            "chunks_total": sum(r["chunks"] for r in mine),
-        }
-    return summary
+    by_quality = {quality: [row for row in rows if row["quality"] == quality] for quality in QUALITIES}
+    return {quality: _quality_summary(mine) for quality, mine in by_quality.items() if mine}
 
 
 def command_run(args):
@@ -382,7 +427,20 @@ def make_synthetic_refset(refset):
     return expected
 
 
-def selftest_failures(record, expected):
+def _row_failures(row, expected):
+    failures = []
+    for stem, want in expected.items():
+        got = row["sdr"][stem]
+        if want is None and got < 60.0:
+            failures.append(f"{row['quality']}/{stem}: exact estimate scored {got} dB, want >= 60")
+        if want is not None and abs(got - want) > 0.01:
+            failures.append(f"{row['quality']}/{stem}: SDR {got} dB, want {want:.4f}")
+    if not row["elapsed_s"] > 0 or row["hop"] < 1:
+        failures.append(f"{row['quality']}: elapsed {row['elapsed_s']} hop {row['hop']}")
+    return failures
+
+
+def _record_failures(record):
     failures = []
     rows = record["rows"]
     if sorted({row["quality"] for row in rows}) != sorted(QUALITIES):
@@ -390,21 +448,18 @@ def selftest_failures(record, expected):
     chunks = {row["quality"]: row["chunks"] for row in rows}
     if not chunks.get("fast", 0) < chunks.get("standard", 0) < chunks.get("high", 0):
         failures.append(f"chunk counts do not rise with quality: {chunks}")
-    for row in rows:
-        for stem, want in expected.items():
-            got = row["sdr"][stem]
-            if want is None and got < 60.0:
-                failures.append(f"{row['quality']}/{stem}: exact estimate scored {got} dB, want >= 60")
-            if want is not None and abs(got - want) > 0.01:
-                failures.append(f"{row['quality']}/{stem}: SDR {got} dB, want {want:.4f}")
-        if not row["elapsed_s"] > 0 or row["hop"] < 1:
-            failures.append(f"{row['quality']}: elapsed {row['elapsed_s']} hop {row['hop']}")
-    conditions = record["conditions"]
-    for key in ("model_sha256", "cli_sha256", "onnxruntime", "python"):
-        if not conditions.get(key):
-            failures.append(f"run conditions lack {key}")
+    missing = [key for key in ("model_sha256", "cli_sha256", "onnxruntime", "python")
+               if not record["conditions"].get(key)]
+    failures += [f"run conditions lack {key}" for key in missing]
     if set(record["summary"]) != set(QUALITIES):
         failures.append(f"summary covers {sorted(record['summary'])}")
+    return failures
+
+
+def selftest_failures(record, expected):
+    failures = _record_failures(record)
+    for row in record["rows"]:
+        failures += _row_failures(row, expected)
     return failures
 
 
