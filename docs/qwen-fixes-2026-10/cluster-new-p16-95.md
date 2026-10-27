@@ -40,8 +40,11 @@ immediately.
   clamped to [0.01, 5] s by `AutomatableModel::fittedValue` (`src/core/AutomatableModel.cpp:604-606`) on every
   `setValue` (`:462-500`) and on automation (`include/AutomatableModel.h:228`). So the LFO frequency is in
   [0.2, 100] Hz.
-- The engine never goes below 44100 Hz: `src/core/AudioEngine.cpp:481` takes the max of the configured rate and
-  `SUPPORTED_SAMPLERATES.front()` (`include/AudioEngine.h:84`, 44100). The Nyquist limit is therefore at least 22050 Hz.
+- The configured base sample rate is clamped to at least 44100 Hz in `src/core/AudioEngine.cpp:480-481`, but
+  `AudioEngine::outputSampleRate()` returns the active device's rate when a device is present
+  (`include/AudioEngine.h:340-343`). That base-rate clamp alone does not prove a floor for the active output rate.
+- The specific 20 kHz scenario is still unreachable through the Delay controls because the LFO-period model limits
+  frequency to 0.2-100 Hz; the class-level setter fix also keeps valid state if a lower device rate is supplied.
 - A 20 kHz LFO would need a period of 50 µs. The model forbids that, so the product cannot reach the aliasing case.
 
 ## Regression test
