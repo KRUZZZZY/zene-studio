@@ -29,8 +29,10 @@ The finding's line 251 (`restoreTiming`) is not the defect. The defect was the p
 - `anyRangeEmpty` (`:358-362`): true when any range in use has `min > max` (key, velocity, position, length). Only ranges
   whose `use*` flag is set are checked. An open side keeps the `Filter`'s default bound (`include/NoteTransform.h:66-82`),
   so the same check covers a lone bound beyond the open side.
-- `filterFrom` (`:372-373`): after the whole-number check, refuses with `InvalidArgs` before any note is read or changed.
-  The refusal happens before `checkpointNoteEdit`, so it takes no undo step, the same as the other filter refusals.
+- `readRanges` (`:282-292`) checks explicit numeric pairs before `readBound` narrows them to the filter's storage types,
+  so a reversed pair that would clamp to equal values is still refused.
+- `filterFrom` (`:366-375`): returns `InvalidArgs` for invalid bounds or empty active ranges before any note is read or
+  changed. The refusal happens before `checkpointNoteEdit`, so it takes no undo step, the same as other filter refusals.
 
 Both `select_where` and `transform_where` get the check, because both go through `filterFrom`.
 
@@ -44,6 +46,8 @@ the 500 limit, because the first version of the check added 14 lines. The check 
 existing test (no new file, so no registration change). It covers:
 
 - (a) the finding's filter, key 80..40 inverted and removing: `InvalidArgs`, and every note is still there.
+- A reversed key pair beyond `int` range (`2147483648..2147483647`) that would otherwise clamp to equal values: refused,
+  and the notes remain.
 - (b) velocity, position and length each with min above max, inverted: `InvalidArgs`.
 - (c) an open side: `key_min: 200` alone and `key_max: -5` alone, inverted: `InvalidArgs`. Also `note.select_where` with the
   finding's filter: `ok == false`, `InvalidArgs`, and no note selected.
@@ -112,6 +116,14 @@ Tests executed: 1 for `NoteShapeValidationTest` (ctest) with 11 QTest slots; 10 
 7. **Adjacent, not investigated.** A velocity bound is parsed as `volume_t` (`uint8_t`), so `velocity_max: -5` is clamped to
    0 by `readBound` before the new check sees it. That is existing behaviour outside this finding. I did not change it.
 
+## QA owner correction
+
+The review found that `readBound` could clamp `key_min: 2147483648` and `key_max: 2147483647` to the same `int` value
+before `anyRangeEmpty` compared them. `readRanges` now refuses an explicitly reversed numeric pair before that conversion.
+The added deterministic assertion failed against the submitted code (ctest EXIT 8), then passed after the correction. Reversing
+only the owner product hunk again made `NoteShapeValidationTest` fail (EXIT 8); after restoring it, the requested build exited 0,
+the `NoteShapeValidationTest` and `NoteTransformTest` run passed 2/2, and the shipped `feature_check.py` exited 0.
+
 ## Self-check
 
 ### ASK items (submit_check.py)
@@ -124,8 +136,8 @@ Tests executed: 1 for `NoteShapeValidationTest` (ctest) with 11 QTest slots; 10 
    (keys 60, 61, 67; positions 48, 12, 12; velocities 100, 40, 160) and fixed filter bounds. The only state it reads back is the
    clip's note list and the command's `ControlErrorKind`. No seam is needed: the refusal is decided by the bound values.
 3. **Fix at the cause; every caller and sibling checked.** The cause is `filterFrom`, which both callers use (select_where at
-   `src/core/ControlCommandsNoteShape.cpp:479-480`, transform_where at `:553-554`). The check covers all four ranges (key,
-   velocity, position, length) in one function, `anyRangeEmpty` (`:358-362`). The other filter builder,
+   `src/core/ControlCommandsNoteShape.cpp:479-480`, transform_where at `:553-554`). Raw pair ordering is checked in `readRanges`
+   and open-sided ranges in `anyRangeEmpty` (`:358-362`); both cover all four ranges (key, velocity, position, length). The other filter builder,
    `src/core/ControlScaleSupport.cpp:259-260`, sets only `scaleMatch` and has no ranges, so it is unaffected. No other command in
    `src/core` takes a `"filter"` argument (`rg`), so there are no further siblings to keep consistent.
 4. **No collateral damage.** Saved projects and the save/load path are not touched, because `filterFrom` runs only on command

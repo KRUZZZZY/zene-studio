@@ -224,6 +224,10 @@ private slots:
 		QCOMPARE(transform({{QStringLiteral("key_min"), 80}, {QStringLiteral("key_max"), 40},
 			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
 		QCOMPARE(noteIds(), before);
+		// A reversed pair must be checked before readBound clamps both values to INT_MAX.
+		QCOMPARE(transform({{QStringLiteral("key_min"), 2147483648.0}, {QStringLiteral("key_max"), 2147483647.0},
+			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
 		// (b) the same contradiction in each other range.
 		QCOMPARE(transform({{QStringLiteral("velocity_min"), 150}, {QStringLiteral("velocity_max"), 50},
 			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
