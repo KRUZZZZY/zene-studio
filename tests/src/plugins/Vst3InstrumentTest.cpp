@@ -56,6 +56,7 @@
 
 #include "AllocationProbe.h"
 #include "Midi.h"        // lmms::MidiEventTypes - the type codes MidiEventIn carries
+#include "PluginWindowSystem.h"
 #include "Vst3Host.h"
 
 #ifndef VST3_TEST_INSTRUMENT_BUNDLE
@@ -181,6 +182,9 @@ private slots:
 	void testProcessAllocatesNothing();
 	void testTheEditorAttachesResizesAndDetaches();
 	void testTheEditorOpensAtTheDeviceScale();
+	void testTheEditorEmbedsOnEveryWindowSystem();
+	void testAnEditorThatCannotEmbedIsRefusedByName();
+	void testTheDeviceScaleOnEveryWindowSystem();
 
 private:
 	auto renderWith(const std::vector<MidiEventIn>& events) -> Block;
@@ -647,6 +651,117 @@ void Vst3InstrumentTest::testTheEditorOpensAtTheDeviceScale()
 	QVERIFY(m_plugin.editorScaling() == EditorScaling::Unscaled);
 	m_plugin.closeEditor();
 	std::printf("VST3_EDITOR_SCALE_EVIDENCE 1.5 by the view -> 600x450, 0.5 by the window -> 200x150, 1 -> 400x300\n");
+}
+
+namespace
+{
+//! Q050-490: the three window systems, with the name and IPlugView platform type a refusal carries.
+struct WindowCase
+{
+	PluginWindowSystem system;
+	const char* name;
+	const char* type;
+};
+constexpr WindowCase WindowCases[] = {
+	{PluginWindowSystem::X11, "X11", "X11EmbedWindowID"},
+	{PluginWindowSystem::Win32, "Windows", "HWND"},
+	{PluginWindowSystem::Cocoa, "macOS", "NSView"},
+};
+} // namespace
+
+/*! Q050-490: the editor on each window system - the fixture takes ONLY that platform type (and is
+ *  attached with it, or refuses), so an editor that opens was asked for and attached with it. Open,
+ *  host resize and the view's minimum, a resize the plug-in asks for through the frame
+ *  (IPlugFrame::resizeView), close and reopen. Chosen explicitly so all three run on any machine. */
+void Vst3InstrumentTest::testTheEditorEmbedsOnEveryWindowSystem()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	for (const WindowCase& each : WindowCases)
+	{
+		qputenv("VST3_TEST_EDITOR_PLATFORM", each.type);
+		m_plugin.setEditorWindowSystem(each.system);
+		QString error;
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		int width = 0;
+		int height = 0;
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 400);
+		QCOMPARE(height, 300);
+		QVERIFY(m_plugin.resizeEditor(640, 480));
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 640);
+		QCOMPARE(height, 480);
+		QVERIFY(m_plugin.resizeEditor(10, 10));
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 100);
+		QCOMPARE(height, 80);
+		m_plugin.closeEditor();
+		QVERIFY(!m_plugin.editorOpen());
+
+		qputenv("VST3_TEST_EDITOR_REQUEST_RESIZE", "520x390");
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1 reopen: %2").arg(QLatin1String(each.name), error)));
+		qunsetenv("VST3_TEST_EDITOR_REQUEST_RESIZE");
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 520);
+		QCOMPARE(height, 390);
+		m_plugin.closeEditor();
+		std::printf("VST3_EDITOR_PLATFORM_EVIDENCE %s (%s): open 400x300, resize 640x480, min 100x80, close, "
+			"reopen, plug-in resize 520x390\n", each.name, each.type);
+	}
+	qunsetenv("VST3_TEST_EDITOR_PLATFORM");
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
+}
+
+/*! Q050-490: a view that cannot embed in this platform's window is refused with the platform and
+ *  the platform type named, and nothing stays open; a session with no window to embed in (native
+ *  Wayland) is refused before a view is created. */
+void Vst3InstrumentTest::testAnEditorThatCannotEmbedIsRefusedByName()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	for (const WindowCase& each : WindowCases)
+	{
+		qputenv("VST3_TEST_EDITOR_PLATFORM", each.system == PluginWindowSystem::X11 ? "HWND" : "X11EmbedWindowID");
+		m_plugin.setEditorWindowSystem(each.system);
+		QString error;
+		QVERIFY2(!m_plugin.openEditor(standInWindow, &error), each.name);
+		QVERIFY(!m_plugin.editorOpen());
+		const QString expected = QStringLiteral("cannot embed on %1 (VST3 platform type %2)").arg(QLatin1String(each.name),
+			QLatin1String(each.type));
+		QVERIFY2(error.contains(expected), qPrintable(error));
+		std::printf("VST3_EDITOR_REFUSAL_EVIDENCE %s\n", qPrintable(error));
+	}
+	qunsetenv("VST3_TEST_EDITOR_PLATFORM");
+	m_plugin.setEditorWindowSystem(PluginWindowSystem::None);
+	QString error;
+	QVERIFY(!m_plugin.openEditor(standInWindow, &error));
+	QVERIFY(!m_plugin.editorOpen());
+	QVERIFY2(error.contains(QLatin1String("no native window a plug-in editor can embed in")), qPrintable(error));
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
+}
+
+/*! Q050-490 (MX-094 per platform): on X11 and Windows a view that scales itself is told the zoom
+ *  (IPlugViewContentScaleSupport - the SDK's interface for physical-pixel platforms); on macOS the
+ *  SDK keeps it out (NSView sizes are logical), so the host gives the view the scaled size instead. */
+void Vst3InstrumentTest::testTheDeviceScaleOnEveryWindowSystem()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+	m_plugin.setEditorScale(1.5);
+	for (const WindowCase& each : WindowCases)
+	{
+		m_plugin.setEditorWindowSystem(each.system);
+		QString error;
+		QVERIFY2(m_plugin.openEditor(standInWindow, &error), qPrintable(QStringLiteral("%1: %2").arg(QLatin1String(each.name), error)));
+		int width = 0;
+		int height = 0;
+		m_plugin.editorSize(&width, &height);
+		QCOMPARE(width, 600);
+		QCOMPARE(height, 450);
+		const EditorScaling expected = each.system == PluginWindowSystem::Cocoa ? EditorScaling::ByWindow : EditorScaling::ByView;
+		QVERIFY2(m_plugin.editorScaling() == expected, each.name);
+		m_plugin.closeEditor();
+	}
+	m_plugin.setEditorScale(1.0);
+	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
 
 } // namespace lmms::vst3
