@@ -120,3 +120,15 @@ result.
 
 `e249684e77` feat · `cdeb5d6e4d` test · `116b88718b` docs · `5e4268018b` test cleanup · `56ff253ac8` GUI test ·
 `b1e5e71c36` feature record · `54cc5040c1` complexity refactor · this report.
+
+## Completion check (`submit_check.py`, final commit)
+
+`submit-check-2.log`, EXIT=1. Every row passes except the two below:
+
+- **FAIL gates (feature_check.py).** The script stops at once on `PermissionError: ... zene-feat-q050-490-feature-check`.
+  It writes its logs beside the worktree, outside this session's write-jail. The same script with only that folder moved
+  passes every gate on the same commit: `feature-check-5.log`, EXIT=0, `RESULT: PASS`. Run outside the jail, the loop's
+  own check should get the same.
+- **WARN canary figures.** The "new command ids" it lists (`plugin.editor_open`, `plugin.list`, `plugin.load`) are
+  existing ids quoted in the new tests and description. No command was added: the snapshot holds 867 ids / 76 groups,
+  as on the train, and `tests/doc-figures-gate.py` passes.
