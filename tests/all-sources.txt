@@ -2131,6 +2131,7 @@ src/core/SessionPlayback.cpp
 src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionSubScenes.cpp
+src/core/SessionTransitions.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
@@ -2975,6 +2976,7 @@ tests/src/core/SessionSceneFollowTest.cpp
 tests/src/core/SessionSchedulerRenderTest.cpp
 tests/src/core/SessionSchedulerTest.cpp
 tests/src/core/SessionSubSceneTest.cpp
+tests/src/core/SessionTransitionsTest.cpp
 tests/src/core/SessionTuningPublicationTest.cpp
 tests/src/core/SessionTuningTest.cpp
 tests/src/core/SidechainInputsTest.cpp

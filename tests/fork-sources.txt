@@ -1914,6 +1914,7 @@ src/core/SessionPlayback.cpp
 src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionSubScenes.cpp
+src/core/SessionTransitions.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
@@ -3152,3 +3153,5 @@ tests/src/gui/GraphWaveformEditorGuiTest.cpp
 docs/050-features/Q050-486.md
 docs/qwen-fixes-2026-10/cluster-Q050-486.md
 tests/src/core/MixerOrderByTracksTest.cpp
+tests/control-session-transitions.py
+tests/src/core/SessionTransitionsTest.cpp
