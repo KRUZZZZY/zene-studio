@@ -599,6 +599,26 @@ private slots:
 		QVERIFY(!run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("running")).toBool());
 	}
 
+	void omittedEnabledIsRefusedAndTheRunningStreamKeepsRunning()
+	{
+		// 'enabled' is required by the schema (ControlCommandsLinkAudio.cpp:180; docs/LINK-AUDIO.md:80), so a call
+		// that only sets peer/latency is refused by ControlRegistry::invoke before mergeArgs runs: the stream stays up.
+		const ControlResult on = run(QStringLiteral("link.audio_set_enabled"),
+			{{QStringLiteral("enabled"), true}, {QStringLiteral("listen_port"), 0}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QVERIFY(run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("running")).toBool());
+
+		const ControlResult omitted = run(QStringLiteral("link.audio_set_enabled"),
+			{{QStringLiteral("peer"), QStringLiteral("127.0.0.1")}, {QStringLiteral("latency_ms"), 40}});
+		QVERIFY(!omitted.ok);
+		QVERIFY2(omitted.errorMessage.contains(QStringLiteral("missing required property 'enabled'")),
+			qPrintable(omitted.errorMessage));
+		QVERIFY(run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("running")).toBool());
+
+		QVERIFY(run(QStringLiteral("link.audio_set_enabled"), {{QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(!run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("running")).toBool());
+	}
+
 	void theStreamLeavesLinkSyncAlone()
 	{
 		// Link stays OFF here (it would multicast); the claim is that the two surfaces share no
