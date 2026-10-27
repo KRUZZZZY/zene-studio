@@ -31,6 +31,7 @@
 #include "SessionPlayback.h"
 
 #include <algorithm>
+#include <tuple>
 
 #include "SessionModel.h"
 #include "SessionScheduler.h"
@@ -48,15 +49,19 @@ const ClipSlot& cellOrEmpty( const SessionModel& model, int track, int scene )
 	return track < model.trackCount() && scene < model.sceneCount() ? model.slot( track, scene ) : empty;
 }
 
+//! What a cell renders: the fields publishSessionCell sends and the audio bake reads (SessionAudioBake.h).
+auto contentOf( const ClipSlot& slot )
+{
+	return std::make_tuple( slot.type(), slot.patternId(), slot.audioSource(), slot.legato(), slot.loopStart(),
+		slot.loopLength(), slot.gainDb(), slot.transpose(), slot.detune(), slot.warp(), slot.warpBpm(), slot.ramMode() );
+}
+
 } // namespace
 
 
 bool sameSessionContent( const ClipSlot& a, const ClipSlot& b ) noexcept
 {
-	return a.type() == b.type() && a.patternId() == b.patternId() && a.audioSource() == b.audioSource()
-		&& a.legato() == b.legato() && a.loopStart() == b.loopStart() && a.loopLength() == b.loopLength()
-		&& a.gainDb() == b.gainDb() && a.transpose() == b.transpose() && a.detune() == b.detune()
-		&& a.warp() == b.warp() && a.warpBpm() == b.warpBpm() && a.ramMode() == b.ramMode();
+	return contentOf( a ) == contentOf( b );
 }
 
 
