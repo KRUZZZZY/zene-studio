@@ -1306,10 +1306,19 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   - A channel fed by a latent instrument has a non-zero alignment point, so its rack's key zones do not
     route notes (`RackZoneFeed` routes only through a channel aligned at 0) - the existing zone rule, now
     met by latent instruments too.
-  - Live playing through a latent instrument is late by its latency plus the alignment; nothing bypasses
-    an instrument the way the low-latency mode bypasses latent effects. *(Measured 2026-10-19, Q050-169:
+  - Live playing through a latent instrument is late by its latency plus the alignment unless low-latency
+    monitoring takes its path; nothing bypasses an instrument the way the low-latency mode bypasses latent
+    effects. *(Measured 2026-10-19, Q050-169:
     `InstrumentLatencyPdcTest::lowLatencyModeDoesNotBypassALatentInstrument` arms `transport.low_latency`,
     sees a latent EFFECT stopped and the latent INSTRUMENT's reference still delayed by its latency.)*
+    *(Updated 2026-10-27, Q050-174:)* the mode instead takes the **alignment** off a record-armed (or, with
+    `scope: all`, any) instrument track whose instrument reports more than `max_ms`: its track handle applies
+    no PDC delay, so it is heard after its own latency only, and its latency still counts in the graph, so
+    every other path stays aligned (`InstrumentLowLatencyMonitorTest::lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment`).
+    Its limits: the instrument's own latency is still heard (it is the plug-in's); a delay PDC adds further
+    downstream - on a send from the channel it plays into to a later channel or the master - still applies;
+    a multi-output instrument's routed output buses keep their alignment; and the answer's
+    `alignment_skipped_frames` is the alignment as the mixer last published it (it moves once a period).
 - *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
   add and the point its input is aligned to, in frames and ms, and on the master the compensated total
   (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not

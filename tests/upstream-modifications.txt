@@ -5407,3 +5407,7 @@ tests/plugin_compat_steps.py	# Plug-in state round-trip loses parameters on 53 V
 tests/src/plugins/ClapEffectIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
 tests/src/plugins/Vst3EffectIntegrationTest.cpp	# Plug-in state round-trip loses parameters on 53 VST3/CLAP plug-ins; read-only/output parameters are offered as settable
+include/AudioBusHandle.h	Q050-174 (MX-159): setMonitorUnaligned()/monitorUnaligned() and one std::atomic<bool> m_monitorUnaligned (default false) - transport.low_latency's session flag for a latent instrument monitored without its alignment delay; nothing else in the class moves.
+src/core/AudioBusHandle.cpp	Q050-174 (MX-159): doProcessing() applies a 0-frame PDC delay while monitorUnaligned() is set (one relaxed atomic read); the delay is unchanged while it is not (the default).
+src/core/Mixer.cpp	Q050-174 (MX-159): updateLatencyCompensation's clamp check skips a handle monitored unaligned (it applies no delay); its latency still counts in the alignment, so the graph is unchanged.
+tests/src/gui/DevicePanelTest.cpp	Q050-174: theProjectMenuMonitorsAnArmedLatentInstrument triggers Project -> Low-Latency Monitoring On/Off and checks the armed latent instrument's handle flag (two includes).

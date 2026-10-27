@@ -347,6 +347,15 @@ instrument's window captures a bounded take (click again to stop, or let it reac
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
 puts the sampler's previous sample back. Agents use record.sampler_capture, record.sampler_capture_stop,
 record.sampler_capture_status and record.sampler_capture_land for the same take.</p>
+<p>Project &gt; Low-Latency Monitoring helps you play in through a latent device. On, it stops each device whose latency is
+over 3 ms on the chains a record-armed track plays through (its own, the channels it plays into and the master), and a
+record-armed instrument track whose instrument reports more than 3 ms of latency keeps playing but is no longer held back
+to line up with a later path: delay compensation normally delays it until the slowest other track catches up, and now you
+hear it after its own latency only. Every other track stays lined up exactly as before, an unarmed latent instrument is
+left alone, and Off puts the normal alignment back. Arm another track and choose On again to take it in. The mode belongs
+to the session: it is not saved with the project and makes no undo step. Scripts and agents use transport.low_latency,
+whose answer lists the devices it stopped and each instrument path it took (track, mixer channel, latency, and the
+alignment frames skipped); max_ms sets the threshold and scope all applies it to every track.</p>
 <p>An instrument track's Instrument Setup menu - on its header menu, the Inspector's More menu and its instrument's device
 card - holds what a multi-output, multitimbral or layered instrument needs. Output Buses lists a plug-in's extra outputs:
 route one to a mixer channel, or make a channel for each. MIDI Parts sends the notes in a key and velocity range on a MIDI

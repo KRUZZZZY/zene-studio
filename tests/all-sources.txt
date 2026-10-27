@@ -2790,6 +2790,7 @@ tests/src/core/InputMonitorTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
 tests/src/core/InstrumentLayerZonePublishTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
+tests/src/core/InstrumentLowLatencyMonitorTest.cpp
 tests/src/core/InstrumentNoteOffProbe.h
 tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/LadspaManagerTest.cpp
