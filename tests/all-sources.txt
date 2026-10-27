@@ -3202,9 +3202,9 @@ tests/src/plugins/ExprSynthAllocationTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/FakeRemotePluginClient.cpp
+tests/src/plugins/FilterPoolTest.cpp
 tests/src/plugins/HistoricalBufferEmptyTest.cpp
 tests/src/plugins/HistoricalBufferResizeTest.cpp
-tests/src/plugins/FilterPoolTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/LadspaChannelCountFixture.cpp
 tests/src/plugins/LadspaChannelCountsTest.cpp
@@ -3240,8 +3240,8 @@ tests/src/plugins/SampleRateDependentLadspa.cpp
 tests/src/plugins/Sf2PlayerFixture.h
 tests/src/plugins/Sf2PlayerRealtimeTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
-tests/src/plugins/SfzFilePoolTest.cpp
 tests/src/plugins/SfzEffectBusViewTest.cpp
+tests/src/plugins/SfzFilePoolTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 tests/src/plugins/SfzSimdGainAVXTest.cpp
