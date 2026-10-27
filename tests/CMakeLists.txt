@@ -5959,6 +5959,21 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Q050-174 (MX-159): transport.low_latency on a record-armed LATENT instrument, over the socket of
+	# the real binary - the in-tree CLAP fixture (made latent by CLAP_TEST_INSTRUMENT_LATENCY, which the
+	# script sets) found by the binary's own scan of the fixture's directory. Needs the
+	# clap-test-instrument and clapinstrument targets built; the audio proof is InstrumentLatencyPdcTest.
+	if(TARGET clap-test-instrument AND TARGET clapinstrument)
+		add_test(NAME ControlLowLatencyCommands
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-low-latency-commands.py
+				$<TARGET_FILE:zene>
+				$<TARGET_FILE_DIR:clap-test-instrument>)
+		set_tests_properties(ControlLowLatencyCommands PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
+		)
+	endif()
 	# routing.* and the mixer group's routing verbs (0.3.0, feature rows 27-28):
 	# routing.get_state on a MEASURED graph - load effects and read the node set,
 	# the connections, the cached topological order and the output node back off

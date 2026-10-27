@@ -2200,6 +2200,7 @@ tests/control-import-lifetime.py
 tests/control-link-interop.py
 tests/control-link-sync.py
 tests/control-livecode-commands.py
+tests/control-low-latency-commands.py
 tests/control-mastering-commands.py
 tests/control-mastering-quit.py
 tests/control-mastering-run-bound.py
