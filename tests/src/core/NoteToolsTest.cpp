@@ -32,7 +32,6 @@
 #include <QJsonArray>
 #include <QPointer>
 #include <algorithm>
-#include <limits>
 
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -140,52 +139,6 @@ private slots:
 		QCOMPARE(clip->notes().size(), std::size_t{2});
 		QCOMPARE(clip->notes().front()->length().getTicks(), tick_t{5001});
 		QCOMPARE(clip->notes().back()->pos().getTicks(), tick_t{5001});
-	}
-
-	//! Luna cluster new-p15-17: exceedsArpeggioOutputLimit() started each chord's
-	//! length at zero, so a chord whose members all have zero or negative length
-	//! counted as ZERO output notes and passed the limit check; arpeggiate() then
-	//! removed every member while its generation loop (`at < length`) never ran -
-	//! the chord was deleted and nothing replaced it. A chord with no positive
-	//! length to play over is refused typed, before the clip is touched.
-	void arpeggiatingAChordWithNoPositiveLengthIsRefusedAndKeepsIt()
-	{
-		MidiClip* clip = clipWith({{60, 0}, {64, 0}}, 0);  // a chord of zero-length notes
-		QCOMPARE(clip->notes().size(), std::size_t{2});
-		QJsonObject args = self(clip);
-		args.insert(QStringLiteral("rate"), 12);
-		const ControlResult refused = run(QStringLiteral("note.arpeggiate"), args);
-		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
-		QVERIFY2(refused.errorMessage.contains(QStringLiteral("length")),
-			"the refusal must say the chord has no length to play over");
-		QCOMPARE(clip->notes().size(), std::size_t{2});  // the chord was NOT deleted
-
-		// No collateral: a chord whose longest member is positive still becomes a run,
-		// even when another member of the same chord is zero-length.
-		MidiClip* mixed = clipWith({{60, 0}, {64, 0}}, 48);
-		mixed->notes()[1]->setLength(TimePos(0));
-		QJsonObject mixedArgs = self(mixed);
-		mixedArgs.insert(QStringLiteral("rate"), 12);
-		QVERIFY2(run(QStringLiteral("note.arpeggiate"), mixedArgs).ok,
-			"a chord with a positive-length member must still arpeggiate");
-		QCOMPARE(mixed->notes().size(), std::size_t{4});  // 48 ticks at 12 a step
-	}
-
-	//! Luna cluster new-p17-15: flam()'s range check compared the ratio with `<`
-	//! and `>`, and BOTH comparisons are false for NaN - so a NaN velocity passed
-	//! and the grace notes were written at std::lround(volume * NaN), an
-	//! implementation-dependent value, while the command reported success.
-	//! Non-finite ratios are refused typed, the way note.randomize refuses
-	//! non-finite jitter (ControlCommandsNoteRandom.cpp:212).
-	void aFlamVelocityRatioThatIsNotFiniteIsRefused()
-	{
-		MidiClip* clip = clipWith({{60, 24}});
-		QJsonObject args = self(clip);
-		args.insert(QStringLiteral("velocity"), std::numeric_limits<double>::quiet_NaN());
-		const ControlResult refused = run(QStringLiteral("note.flam"), args);
-		QVERIFY2(!refused.ok, "NaN velocity was accepted as a successful flam");
-		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
-		QCOMPARE(clip->notes().size(), std::size_t{1});  // no grace note at a garbage velocity
 	}
 
 	void flamsRepeatsAndKeyedTransposition()

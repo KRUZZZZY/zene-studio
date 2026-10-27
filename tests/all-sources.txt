@@ -2833,6 +2833,7 @@ tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteSelectionIdentityTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp
 tests/src/core/NoteToolsTest.cpp
+tests/src/core/NoteToolsValidationTest.cpp
 tests/src/core/NoteTransformTest.cpp
 tests/src/core/OnnxRuntimeStemSeparatorTest.cpp
 tests/src/core/OutOfProcessHostClientLoopTest.cpp

@@ -881,6 +881,8 @@ set(LMMS_TESTS
 	src/core/NoteCurvesAcrossTest.cpp
 	# 0.5.0 L07 (W3): the note tools - invert, arpeggiate, flam, keyed transpose, repeat, generate, move, split, detect, follow chords.
 	src/core/NoteToolsTest.cpp
+	# clusters new-p15-17 / new-p17-15: degenerate note-tool input the happy path never reaches - a nonpositive-length chord, a NaN flam ratio.
+	src/core/NoteToolsValidationTest.cpp
 	# 0.5.0 L07 (W3): repeats, recurrence, articulations, chase, swing, the MIDI offset, lyrics and groups.
 	src/core/NotePlaybackTest.cpp
 	# cluster new-p11-38-port: the reversibility record the note commands leave behind.
