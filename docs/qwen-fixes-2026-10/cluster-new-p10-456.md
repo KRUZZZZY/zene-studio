@@ -143,3 +143,5 @@ because no file was added.
    LADSPA slot failure is environmental and existed before the change.
 5. **Verdict.** FIXED. Not ALREADY-FIXED and not FALSE-POSITIVE: the original code has the
    undefined conversion (line evidence above) and the regression test failed on it.
+
+6. **Completion check.** `submit_check.py` (`logs/submit-check-2.log`, EXIT 1) passes commits, clean tree, report and tests. Its one FAIL is `gates (feature_check.py)`, which fails only on the PermissionError in `logs/feature-check-attempt.log` (write outside the jail). The six simple gates and the two ratchet gates were run by hand above; the ratchet gates exit 1 only on pre-existing items in other files.
