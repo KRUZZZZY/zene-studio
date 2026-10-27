@@ -122,6 +122,14 @@ void registerClipAdd(ControlRegistry& registry)
 		ControlResult error;
 		Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 		if (track == nullptr) { return error; }
+		// A folder track holds no clips: TrackFolder::createClip() returns null. Refuse
+		// before the checkpoint below, so a refused add leaves no no-op undo step and
+		// does not clear the redo history.
+		if (track->type() == Track::Type::Folder)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("a folder track holds no clips; add the clip to a track that carries clips"));
+		}
 		const int clipCount = track->numOfClips();
 		QJsonObject before;
 		before.insert(QStringLiteral("track"), args.value(QStringLiteral("track")).toString());
@@ -132,6 +140,11 @@ void registerClipAdd(ControlRegistry& registry)
 		track->addJournalCheckPoint();
 		Clip* clip = track->createClip(TimePos(static_cast<tick_t>(
 			args.value(QStringLiteral("position")).toDouble())));
+		if (clip == nullptr)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the clip could not be created on this track"));
+		}
 		if (!args.value(QStringLiteral("name")).toString().isEmpty())
 		{
 			clip->setName(args.value(QStringLiteral("name")).toString());
