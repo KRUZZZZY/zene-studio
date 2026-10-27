@@ -33,6 +33,7 @@
 #include <QtTest>
 #include <QMouseEvent>
 #include <QTimer>
+#include <QWheelEvent>
 
 #include "ControlRegistry.h"
 #include "Engine.h"
@@ -141,6 +142,80 @@ private slots:
 		delete model;
 		QVERIFY(fader.model() == nullptr);
 		fader.grab();  // must not read through the null
+	}
+
+	void aLiveFaderStillTakesWheelInput()
+	{
+		FloatModel model(1.f, 0.f, 2.f, 0.01f);
+		Fader fader(&model, QStringLiteral("Live"), nullptr);
+		const QPointF at{20., 100.};
+		QWheelEvent wheel{at, at, QPoint{}, QPoint{0, 120}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false};
+		QCoreApplication::sendEvent(&fader, &wheel);
+		QVERIFY(model.value() > 1.f);  // +1 dB on a live model: the guards must not swallow normal input
+	}
+
+	void aFaderWhoseModelDiesIgnoresMousePressAndDrag()
+	{
+		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
+		Fader fader(model, QStringLiteral("Doomed"), nullptr);
+		fader.resize(40, 200);
+		delete model;
+		QVERIFY(fader.model() == nullptr);
+		// Press and drag read the freed model through calculateKnobPosYFromModel and setVolumeByLocalPixelValue.
+		const QPointF at{20., 100.};
+		QMouseEvent press{QEvent::MouseButtonPress, at, at, at, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QCoreApplication::sendEvent(&fader, &press);
+		QMouseEvent move{QEvent::MouseMove, at, at, at, Qt::NoButton, Qt::LeftButton, Qt::NoModifier};
+		QCoreApplication::sendEvent(&fader, &move);
+		QMouseEvent release{QEvent::MouseButtonRelease, at, at, at, Qt::LeftButton, Qt::NoButton, Qt::NoModifier};
+		QCoreApplication::sendEvent(&fader, &release);
+		QVERIFY(fader.model() == nullptr);
+	}
+
+	void aFaderWhoseModelDiesIgnoresWheel()
+	{
+		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
+		Fader fader(model, QStringLiteral("Doomed"), nullptr);
+		delete model;
+		QVERIFY(fader.model() == nullptr);
+		const QPointF at{20., 100.};
+		QWheelEvent wheel{at, at, QPoint{}, QPoint{0, 120}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false};
+		QCoreApplication::sendEvent(&fader, &wheel);
+		QVERIFY(fader.model() == nullptr);
+	}
+
+	void aFaderWhoseModelDiesIgnoresKeyboardAdjust()
+	{
+		// MixerView's arrow keys reach a fader through adjust(), not through keyPressEvent.
+		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
+		Fader fader(model, QStringLiteral("Doomed"), nullptr);
+		delete model;
+		fader.adjust(Qt::NoModifier, Fader::AdjustmentDirection::Up);
+		fader.adjust(Qt::NoModifier, Fader::AdjustmentDirection::Down);
+		QVERIFY(fader.model() == nullptr);
+	}
+
+	void aFaderWhoseModelDiesOpensNoContextMenu()
+	{
+		// The context menu's Reset and Copy entries read the model, and exec() would block the test.
+		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
+		Fader fader(model, QStringLiteral("Doomed"), nullptr);
+		delete model;
+		QContextMenuEvent menu{QContextMenuEvent::Mouse, QPoint{20, 100}, QPoint{20, 100}};
+		QCoreApplication::sendEvent(&fader, &menu);
+		QVERIFY(fader.model() == nullptr);
+	}
+
+	void aFaderWhoseModelDiesIgnoresDoubleClick()
+	{
+		// The double-click opens the "Set value" dialog; with no model there must be no dialog and no read.
+		auto* model = new FloatModel(1.f, 0.f, 2.f, 0.01f);
+		Fader fader(model, QStringLiteral("Doomed"), nullptr);
+		delete model;
+		const QPointF at{20., 100.};
+		QMouseEvent dblClick{QEvent::MouseButtonDblClick, at, at, at, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QCoreApplication::sendEvent(&fader, &dblClick);
+		QVERIFY(fader.model() == nullptr);
 	}
 
 	void aFadeButtonKeepsItsSuppliedParentWithoutALayout()
