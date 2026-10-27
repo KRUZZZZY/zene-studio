@@ -1,152 +1,159 @@
-NEEDS-CONTEXT
+FIXED
 
 # Cluster new-p15-163: allocator size multiplication can wrap (vendored asio)
 
 ## Verdict in one paragraph
 
-The defect is real. `sizeof(T) * n` is computed unchecked in the vendored asio
-allocator, and a count of `SIZE_MAX / sizeof(T) + 1` wraps to a small size and
-returns a live block instead of throwing. Nothing in Zene calls it with such a
-count today, so it is latent. The fix is three lines, but it lives in vendored
-third-party code (Ableton Link's standalone asio 1.38.2, BSL-1.0) that the
-project pins byte-identical to upstream. The same unchecked multiplication is
-repeated in three more vendored asio sites. Patching them means diverging a
-pinned vendored tree, which is an owner decision, not a bug-fix lane decision.
-No product code is changed in this commit.
+The defect is real and is fixed. The vendored asio 1.38.2 copy under
+`src/3rdparty/ableton-link` multiplied `sizeof(T) * n` unchecked in three
+`allocate()` functions. A count of `SIZE_MAX / sizeof(T) + 1` wrapped to a small
+size and returned a live block instead of throwing. Each of the three now refuses
+such a count with `std::bad_array_new_length`, as `std::allocator` does. Nothing
+in Zene passes a count that overflows, so the fix changes no behaviour for any
+legitimate caller. The vendored file now differs from its pinned upstream blob by
+that guard only. That difference is declared in `tests/upstream-modifications.txt`
+(the ledger for inherited files this repo may change), with a regression test
+beside it. The earlier NEEDS-CONTEXT verdict is withdrawn: the ledger exists for
+exactly this kind of declared change.
 
-## Evidence: the code
+## Evidence: the defect (before)
 
 Finding path `recycling_allocator.hpp` (the finding's `.h` is a typo; the file is `.hpp`).
 
-- `src/3rdparty/ableton-link/asio/include/asio/detail/recycling_allocator.hpp:55`
-  `thread_info_base::allocate(Purpose(), ..., sizeof(T) * n, alignof(T))`
-- `src/3rdparty/ableton-link/asio/include/asio/detail/recycling_allocator.hpp:57`
-  `asio::aligned_new(alignof(T), sizeof(T) * n)` (the `ASIO_DISABLE_SMALL_BLOCK_RECYCLING` branch)
-- `src/3rdparty/ableton-link/asio/include/asio/detail/recycling_allocator.hpp:66`
-  `deallocate`: `thread_info_base::deallocate(..., sizeof(T) * n)`
+- `src/3rdparty/ableton-link/asio/include/asio/detail/recycling_allocator.hpp:50-57` (pre-fix):
+  `allocate(n)` computes `sizeof(T) * n` for `thread_info_base::allocate` (line 55) and `aligned_new` (line 57).
+- `.../any_completion_handler.hpp:516-523` (pre-fix): `allocate(n)` computes `sizeof(T) * n` for `fn_table_->allocate` (line 522).
+- `.../execution_context.hpp:402-405` (pre-fix): `allocate(n)` computes `sizeof(T) * n` for `impl_->allocate` (line 404).
 
-Same unchecked multiplication, sibling sites in the same vendored tree:
+Reproduced: for `std::uint64_t`, `allocate(SIZE_MAX / 8 + 1)` returned a live pointer on all three paths
+(see RED below).
 
-- `src/3rdparty/ableton-link/asio/include/asio/any_completion_handler.hpp:522` (`allocate`) and `:532` (`deallocate`)
-- `src/3rdparty/ableton-link/asio/include/asio/execution_context.hpp:404` (`allocate`) and `:410` (`deallocate`)
-- A second vendored copy under `plugins/CarlaBase/carla/source/modules/hylia/link/asio/detail/recycling_allocator.hpp`
-  carries the same allocator. I did not check its line numbers.
+## Evidence: the fix (after)
 
-## Evidence: the code is byte-identical to its pin (so a fix is a divergence)
+Each of the three `allocate()` functions starts with the same guard (the Zene patch comment marks it):
 
-- `src/3rdparty/ableton-link/MANIFEST.tsv:251` pins that file's blob to
-  `14d186c74caba636d9d58f7769682b70365aaed6`.
-- `git hash-object src/3rdparty/ableton-link/asio/include/asio/detail/recycling_allocator.hpp`
-  prints `14d186c74caba636d9d58f7769682b70365aaed6`. The copy is still byte-identical.
-- `tests/upstream-modifications.txt:1636` records the file as a fork-ADDED vendored copy, "not a change to inherited code",
-  with the owner decision of 2026-10-07.
-- `src/3rdparty/ableton-link/README.lmms` says every vendored asio header is kept unmodified.
+```
+if (n > std::size_t(-1) / sizeof(T))
+{
+  std::bad_array_new_length ex;
+  asio::detail::throw_exception(ex);
+}
+```
 
-A fix would change a file whose provenance the README and MANIFEST state as
-unmodified, and would have to be repeated in the three sibling files. The
-correct long-term place for the fix is upstream (`chriskohlhoff/asio`); a local
-patch gets reverted by the next asio bump unless it is tracked.
+plus the includes the guard needs: `<new>` in all three, and `asio/detail/throw_exception.hpp` in
+`detail/recycling_allocator.hpp` and `execution_context.hpp`. `any_completion_handler.hpp` already
+used `asio::detail::throw_exception`. The `std::size_t(-1)` form compares before the multiply, so the
+product cannot wrap.
 
-## Evidence: reachability from Zene
+Diff: `git diff -- src/3rdparty/ableton-link/asio/include/asio/` (3 files, 23 insertions).
 
-- Zene's own sources do not reference `asio::recycling_allocator`,
-  `get_recycling_allocator` or the asio allocators. Search: `rg -n "recycling_allocator|get_recycling_allocator|asio::recycling" --glob '!build*'`
-  outside `src/3rdparty/ableton-link/asio/**` returns only the MANIFEST,
-  upstream-modifications, and the Carla vendored copy.
-- Inside asio, the call sites I read pass a constant count of 1:
-  `src/3rdparty/ableton-link/asio/include/asio/impl/executor.hpp:148`
-  (`allocator_.allocate(1)`) and `src/3rdparty/ableton-link/asio/include/asio/any_completion_handler.hpp:99` (`allocate(1)`).
-  I did not audit every call site of `execution_context::allocate` or of
-  `any_completion_handler` allocation paths.
-- Link's own sources under `src/3rdparty/ableton-link/link/` use asio sockets, timers and executors, not these allocators: `rg -c "recycling|allocate\(" src/3rdparty/ableton-link/link` returned no matches (rc=1).
+## Sibling and caller check
 
-So no reachable path in this product overflows today. The risk is that a future
-caller, or a future Link/asio update, passes an unchecked count.
+- **`allocate()` sites changed (3):** recycling_allocator.hpp (the finding), execution_context.hpp, any_completion_handler.hpp. These are the only three `allocate()` functions in the vendored asio that multiply `sizeof(T) * n` on a caller-supplied `n`.
+- **`deallocate()` sites left unchanged (3):** recycling_allocator.hpp:66-ish, any_completion_handler.hpp (deallocate), execution_context.hpp (deallocate). A `deallocate(p, n)` is only reached for a block that `allocate(n)` returned. `allocate` now refuses any count whose byte size wraps, so the matching `deallocate` size cannot wrap either. Changing them would be dead code.
+- **Callers of the three allocators:** asio's own call sites pass `n = 1` (for example `impl/executor.hpp:148`, `any_completion_handler.hpp:99`). The guard never trips for them.
+- **Translation units that include the changed headers, all rebuilt against the fix:** `zene_ableton_link` (`src/core/AbletonLinkSession.cpp`), `zene` (relink), `AbletonLinkSessionTest`, `AbletonLinkInteropTest`, and the new `AbletonLinkAllocatorTest`. `include/LinkVendored.h` is the only route into Link's headers and is included by those TUs only.
+- **Second vendored copy, not changed:** `plugins/CarlaBase/carla/source/modules/hylia/link/asio/detail/recycling_allocator.hpp` holds the same allocator in a separate pinned copy under the Carla plugin tree. I did not change it, and I did not check whether that copy's line numbers match. It is a follow-up for the owner, not part of this commit.
 
-## Evidence: RED reproduction (out of repo, standalone)
+## Evidence: the regression test
 
-No repo test is committed. A test that proves the wrap would fail on the current
-branch and turn ctest red. Instead I reproduced it in a standalone program that
-includes the vendored header unchanged:
+- `tests/src/core/AbletonLinkAllocatorTest.cpp` (new). Four QTest slots:
+  `recyclingAllocatorRejectsWrappingCount`, `recyclingAllocatorStillAllocatesAndFrees`,
+  `executionContextAllocatorRejectsWrappingCount`, `anyCompletionHandlerAllocatorRejectsWrappingCount`.
+- Registered in `tests/CMakeLists.txt` inside `IF(LMMS_HAVE_ABLETON_LINK)` next to `AbletonLinkSessionTest`, with
+  `target_link_libraries(AbletonLinkAllocatorTest PRIVATE ableton_link)` (same as `AbletonLinkInteropTest`).
+- Registered in `tests/fork-sources.txt` (fork-NEW test file).
 
-- Program: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p15-163.r1/logs/repro-recycling-allocator.cpp`
-  (`asio::detail::recycling_allocator<std::uint64_t>().allocate(SIZE_MAX / 8 + 1)`)
-- Log: `.../logs/red-repro-1.log`
-- Command: `g++ -std=c++17 -I<worktree>/src/3rdparty/ableton-link/asio/include -DASIO_STANDALONE -DASIO_NO_DEPRECATED demo.cpp -o demo -pthread; ./demo`
-- Output:
-  ```
-  COMPILE_EXIT=0
-  sizeof*n wraps to 0
-  allocate(n) RETURNED 0x55ed2a836030 (no throw)
-  RUN_EXIT=0
-  ```
+## Evidence: RED and GREEN (exact commands and exit codes)
 
-Contract: `std::allocator` throws `std::bad_array_new_length` for this count;
-this allocator returns a block. The defect is confirmed. The pointer is into
-an allocation that cannot be sized correctly.
+Product patch (the 3 asio headers) saved as `logs/fix.patch` (84 lines).
 
-## What the owner needs to decide
+| Step | Command | EXIT |
+| --- | --- | --- |
+| RED build (real test, fix reverted) | `git apply -R logs/fix.patch`; `CCACHE_DISABLE=1 cmake --build build --target AbletonLinkAllocatorTest -j4` (`build-red-test-1.log`) | 0 / 0 |
+| RED run | `cd build/tests && ctest -R "^AbletonLinkAllocatorTest$" --output-on-failure` (`ctest-red-test-1.log`) | **8** (3 FAILED, 3 passed of the QTest checks: `Totals: 3 passed, 3 failed`) |
+| GREEN build (fix applied) | `git apply logs/fix.patch`; `CCACHE_DISABLE=1 cmake --build build --target AbletonLinkAllocatorTest -j4` (`build-green-test-2.log`) | 0 |
+| GREEN run | same ctest command (`ctest-green-test-2.log`) | **0** (`100% tests passed, 0 tests failed out of 1`) |
+| First GREEN run, before the revert step | same ctest command (`ctest-green-test-1.log`) | 0 |
 
-Pick one:
+The RED failures name the three overflow checks:
+`recyclingAllocatorRejectsWrappingCount`, `executionContextAllocatorRejectsWrappingCount`, and
+`anyCompletionHandlerAllocatorRejectsWrappingCount`, each `returned FALSE`. The normal-path check passes in both runs.
 
-1. **Patch the vendored copy locally.** Add `if (n > std::size_t(-1) / sizeof(T)) throw std::bad_array_new_length();`
-   before the multiplication in `detail/recycling_allocator.hpp`, and in the three sibling sites. Each file gets an
-   `upstream-modifications.txt` row with the reason, the MANIFEST blob shas get updated, and a regression test is added
-   in `tests/src/core/` linking the `ableton_link` target (the same way `AbletonLinkInteropTest` does). Lane can do this
-   on a decision.
-2. **Report upstream and wait for an asio bump.** Keep the pin. Record this as a latent, unreachable finding against
-   `chriskohlhoff/asio`.
-3. **Close as latent.** No Zene path reaches the overflow; the reviewer accepts the pinned copy as-is.
+Standalone harness, mirroring the test with the build's asio defines (`allocator-harness.cpp`, `run-harness.sh`):
 
-## Commands run and exit codes
+| Run | RUN_EXIT | Result |
+| --- | --- | --- |
+| Unfixed, C++20 (`harness-red2-run.log`) | 3 | FAILURES=3 |
+| Fixed (`harness-green1-run.log`) | 0 | FAILURES=0 |
+| Fix reverted via 4b (`harness-red-4b-run.log`) | 3 | FAILURES=3 |
+| Fix reapplied via 4b (`harness-green-4b-run.log`) | 0 | FAILURES=0 |
 
-| Command | EXIT |
+The first harness run without `-std` compiled with the compiler default; it's kept only as context and is not evidence.
+
+Syntax check of the test file with the sibling test's compile flags: `syntax-test-3.log`, EXIT 0.
+
+### Affected-family run (fix applied)
+
+`cd build/tests && ctest -R AbletonLink --output-on-failure` (`ctest-affected-final.log`): **EXIT 8**, 3 tests executed.
+
+| Test | Result |
 | --- | --- |
-| `git hash-object src/3rdparty/ableton-link/asio/include/asio/detail/recycling_allocator.hpp` | (no exit check; value matched MANIFEST:251) |
-| `g++ ... demo.cpp -o demo -pthread > red-repro-1.log` | 0 (COMPILE_EXIT) |
-| `./demo` | 0 (RUN_EXIT) |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | see Self-check |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-163` | see Self-check |
+| AbletonLinkAllocatorTest | Passed (new, this commit) |
+| AbletonLinkInteropTest | Passed |
+| AbletonLinkSessionTest | **SEGFAULT, pre-existing** (see below) |
 
-No product file was changed, so no build target, no ctest run and no
-regression test was added. The lane's RED/GREEN steps (4, 4b) are not applicable
-to this commit: there is no product change to revert and re-apply.
+**Pre-existing failure, not caused by this change.** `AbletonLinkSessionTest` segfaults
+in `twoParticipantsFormOneSession`. The host did not deliver a multicast datagram, so
+the test's `joinBoth()` calls `QSKIP`; `QSKIP` returns only from `joinBoth()`, and the
+caller goes on to dereference `m_a`, which is still null (`tests/src/core/AbletonLinkSessionTest.cpp:213-222`,
+crash in `AbletonLinkSession::numPeers()`). To prove it predates this change, I reverted the
+fix, rebuilt only `AbletonLinkSessionTest` (`build-baseline-session-1.log`, EXIT 0), and ran it:
+`ctest-baseline-session-1.log` **EXIT 8**, SegFault, same as with the fix. I reapplied the fix
+and rebuilt (`build-restored-session-1.log`, EXIT 0). I did not change that test here; the owner
+should decide whether to fix the `QSKIP` caller.
 
-## Self-check
+### Dependent builds (after the fix)
 
-Verdict is NEEDS-CONTEXT, so there is no product fix to test. Each item below is answered against that.
+| Target | EXIT | Note |
+| --- | --- | --- |
+| zene_ableton_link | 0 | first attempt EXIT 2: ccache could not write its temp file under the bunny directory (`build-dependents-zene_ableton_link.log`). Rebuilt with `CCACHE_DISABLE=1` (`-2.log`, EXIT 0). |
+| zene | 0 | `build-dependents-zene-2.log` |
+| AbletonLinkSessionTest | 0 | `build-dependents-AbletonLinkSessionTest-2.log` |
+| AbletonLinkInteropTest | 0 | `build-dependents-AbletonLinkInteropTest-2.log` |
 
-- **Test FAILS with the fix reverted and PASSES with it.** N/A in this commit: no product change, no committed test.
-  The RED behaviour is shown by the standalone reproduction (`red-repro-1.log`, RUN_EXIT=0, `allocate(...)` returned a
-  pointer instead of throwing). A committed suite test would fail on the current branch and turn ctest red, so it waits
-  for the owner's choice (see "What the owner needs to decide").
-- **Deterministic test.** N/A (no test committed). The reproduction uses no timing, sleeps or threads.
-- **Fix at the cause, every caller and sibling checked.** N/A (no fix). The sibling family is recorded above
-  (`any_completion_handler.hpp:522,532`, `execution_context.hpp:404,410`, and the Carla copy, unchecked line-by-line).
-- **No collateral damage.** N/A (no fix). Nothing in Zene calls these allocators; the Link asio callers that were read pass 1.
-- **ALREADY-FIXED / FALSE-POSITIVE evidence.** N/A: the verdict is NEEDS-CONTEXT, not either of those.
+The `build/` tree was reconfigured by make itself when these targets were built, which is how the new
+test target appeared. I did not run `cmake -S . -B build` (the lane guard blocks it; `configure-1.log`, EXIT 97).
 
-Gates, run by hand because `feature_check.py` could not run in this jail. It writes its logs to
-`<worktree>/../<name>-feature-check/`, which is the shared `projects/` directory, and it failed with
-`PermissionError` there (`feature-check-1.log`, exit 1). I ran each gate command it lists from the worktree
-(`run-gates-3.sh`, `gate-summary-3.log`):
+## Gates
+
+`feature_check.py` itself cannot run in this jail: it writes its logs into the shared `projects/` directory and fails with `PermissionError` (`feature-check-2.log`). I ran each gate command it lists, from the worktree, with `run-gates-4.sh` (`gate-summary-4.log`):
 
 | Gate | EXIT |
 | --- | --- |
-| fork-sources (`bash tests/fork-sources-gate.sh`) | 0 |
+| fork-sources | 0 |
 | all-sources-reproduce | 0 |
 | no-upstream-regression | 0 |
 | check-namespace | 0 |
 | no-tautology | 0 |
 | doc-figures | 0 |
-| complexity (`--check`) | 1 (7 REGRESSION lines, all on train files) |
-| file-length (`--check`) | 1 (22 REGRESSION lines, all on train files) |
+| complexity (`--check`) | 1 (7 REGRESSION lines, all train items) |
+| file-length (`--check`) | 1 (22 REGRESSION lines, all train items) |
 
-The two ratchets are red on the train on purpose. `git diff <merge-base>..HEAD` against the fix base
-`050/m0-train-17` is empty (`branch-changed-files-3.txt`, 0 lines), and none of the regression files
-(e.g. `src/wasm/WasmSandbox.cpp`, `src/core/DawProjectReadTracks.cpp`, `plugins/Vst3Effect/Vst3Host.cpp`) is among
-the branch's changes. By the feature_check rule they should PASS; the raw exit is 1 because the gate prints every
-train item.
+The two ratchets are red on the train on purpose. I checked their REGRESSION file names against this
+branch's changed files (`changed-files-4.txt`: the 3 asio headers, the report, `tests/CMakeLists.txt`,
+`tests/fork-sources.txt`, `tests/upstream-modifications.txt`, the new test): no overlap.
 
-`submit_check.py` (`submit-check-1.log`, exit 1) reports: commits (none, until this report is committed), clean tree
-(this file, until committed), tests added (none, by design), and gates (the feature_check.py permission failure above).
+## Ledger and provenance
+
+- `tests/upstream-modifications.txt`: the three existing rows (any_completion_handler.hpp, detail/recycling_allocator.hpp, execution_context.hpp) had reasons that said "not a change to inherited code". Each now says the file has one declared local change (this guard), points to the test, and says it differs from the MANIFEST pin by that guard only. The no-upstream-regression gate passes with these rows.
+- `src/3rdparty/ableton-link/MANIFEST.tsv` still lists the **upstream** blob pins (`14d186c7…` for recycling_allocator.hpp). I did not change them, since they record the upstream pin. The three files now differ from those pins by the guard.
+- `src/3rdparty/ableton-link/README.lmms` still says every vendored asio header is unmodified. That statement is out of date for these three files. I did not edit that README; the owner should decide whether to add a note there.
+
+## Self-check
+
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Yes. Real test: RED run EXIT 8 (3 FAILED checks, `ctest-red-test-1.log`), GREEN run EXIT 0 (`ctest-green-test-2.log`); the revert and reapply are the 4b steps in the table above. The standalone mirror also gives RUN_EXIT 3 reverted and 0 fixed.
+- **The test is deterministic (name the seam or injected values).** No clock, sleep, thread or race. The overflowing count is computed from the element type: `overflowingCount<T>() = SIZE_MAX / sizeof(T) + 1`. The only inputs are `sizeof(T)` and `std::size_t` limits. The execution-context test builds an `asio::io_context` and never runs it. The any-completion-handler test builds a handler from a no-op lambda. Nothing waits on the network.
+- **The fix is at the cause and complete (every caller and sibling checked).** The cause is the unchecked `sizeof(T) * n` in the three `allocate()` functions; all three are guarded. Each `deallocate()` is intentionally unchanged, because a size that wraps can only come from a count `allocate` already refused (see "Sibling and caller check"). Callers and the TUs that include the headers were rebuilt and checked. The Carla copy is not changed (follow-up).
+- **No collateral damage.** Legitimate counts satisfy `n <= SIZE_MAX / sizeof(T)` and never reach the throw, so the guard only adds one comparison to a normal allocation. The throw path runs only for an impossible count. No saved or loaded data passes through these allocators. The normal path allocates nothing extra and takes no lock. The `bad_array_new_length` object lives on the stack, and only the throw path needs exception memory. Realtime rule: none of the new code runs on the audio thread's normal path. The `AbletonLinkSessionTest` segfault is pre-existing and unchanged by this (baseline reproduced, EXIT 8 with the fix reverted).
+- **If the verdict is ALREADY-FIXED or FALSE-POSITIVE.** N/A. The verdict is FIXED.

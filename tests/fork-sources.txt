@@ -2306,6 +2306,7 @@ tests/session_api_proof_rows.py
 # local and ON by default. Reads CMakeLists.txt, the release-honesty manifest and the user docs.
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
+tests/src/core/AbletonLinkAllocatorTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
 tests/src/core/ArrangeToolsTest.cpp

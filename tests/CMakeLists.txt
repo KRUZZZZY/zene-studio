@@ -1474,6 +1474,8 @@ ENDIF()
 IF(LMMS_HAVE_ABLETON_LINK)
 	LIST(APPEND LMMS_TESTS
 		src/core/AbletonLinkSessionTest.cpp
+		# The vendored asio allocators refuse a count whose byte size wraps (new-p15-163).
+		src/core/AbletonLinkAllocatorTest.cpp
 		# Zene's engine in a real Link session against a peer built from Link's own
 		# API (that test constructs ableton::Link itself, hence the link below).
 		src/core/AbletonLinkInteropTest.cpp
@@ -6655,6 +6657,7 @@ IF(LMMS_HAVE_ABLETON_LINK)
 	set_tests_properties(AbletonLinkSessionTest AbletonLinkInteropTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
 	target_link_libraries(AbletonLinkInteropTest PRIVATE ableton_link)
+	target_link_libraries(AbletonLinkAllocatorTest PRIVATE ableton_link)
 ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full
