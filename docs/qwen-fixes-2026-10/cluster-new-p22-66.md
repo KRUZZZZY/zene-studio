@@ -25,6 +25,10 @@ registration. The commit after it carries the `clip.set_gain` sibling, the manif
   `src/core/ControlCommandsClipEdits.cpp:347` before the fix. Its range is the one the `sample.amplify`
   description names ("the range both this bake and clip.set_gain declare"). A NaN there is stored in the
   clip's edits (`after.gain = gainDbToLinear(...)`, `ControlCommandsClipEdits.cpp:358`). It is fixed too, so the two commands agree.
+- The nested-array sibling `clip.gain_envelope_set` also stores dB gain points in a sample clip. Its `points`
+  schema checks only the array shape; `ControlCommandsClipEnvelope.cpp:117-124` reads each value and the old
+  range comparison let NaN through. Independent QA added `!std::isfinite(db)` before those comparisons, with a
+  regression in `ClipGainEnvelopeTest` that checks refusal, unchanged edits, and unchanged undo depth.
 
 ### The fix
 
@@ -146,11 +150,9 @@ Test counts: ctest executed 1 test for `ControlSampleBakeGuardTest` and 10 for t
 
 ### Gates
 
-`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exits 1 without printing a table. It
-fails with `PermissionError` while creating `<worktree>-feature-check/` (`gates-1.log`), which is outside the
-write jail. It also builds a baseline worktree in `zene-cachyos` for the ratchets. I did not do either. Instead
-I ran each gate command the script would run, from the worktree, with logs in the LOG FOLDER
-(`gates-final3.log`):
+The fixer recorded that `feature_check.py` could not create its log directory in its sandbox and ran the simple
+gates manually. Independent QA ran the required feature check on the final reviewed tree; it exited 0 with all
+six simple gates and both base-comparison ratchets passing.
 
 | Gate | Command | EXIT |
 |---|---|---|
@@ -163,13 +165,22 @@ I ran each gate command the script would run, from the worktree, with logs in th
 | complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 |
 | file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 |
 
-The two ratchets are red on the train, as the brief says. Under feature_check's rule they fail only on items new
-in files this branch changed. Neither ratchet's REGRESSION lines name `src/core/ControlCommandsSampleEdit.cpp`,
-`src/core/ControlCommandsClipEdits.cpp`, `tests/src/core/ControlSampleBakeGuardTest.cpp` or `tests/CMakeLists.txt`
-(`gate6-complexity.log`, `gate6-file-length.log`: 7 and 22 REGRESSION lines, all in other files). By that rule
-both pass. I did not check this against the base listing, because that needs the baseline worktree.
+The independent feature check compared against base `7641e9493` and reported no new complexity or file-length
+items in changed files. The manual gate table above records the fixer's earlier run; its feature-check and
+submit-check results were environment-limited at that time.
 
-`submit_check.py` also runs feature_check, so its gate line fails for the same reason (`submit-check-1.log`).
+### Independent QA verification (2026-10-27)
+
+| Check | Command | EXIT | Result |
+|---|---|---:|---|
+| Whole change reversed | `cmake --build build --target zene ControlSampleBakeGuardTest -j12`; `ctest -R ControlSampleBakeGuardTest --output-on-failure` from `build/tests` | 0; **8** | Regression failed at `ControlSampleBakeGuardTest.cpp:122`; `nanGain.ok` was 1. Product files `ControlCommandsSampleEdit.cpp`, `ControlCommandsClipEdits.cpp`, and `ControlCommandsSampleRange.cpp` were restored from base `7641e9493`. |
+| Round-2 range guard isolated and reversed | same build; same ctest | 0; **8** | With only `ControlCommandsSampleRange.cpp` reverted, failure was `nanRangeGain.ok` 1 at `ControlSampleBakeGuardTest.cpp:170`. |
+| Whole change restored | same build; same ctest | 0; 0 | 1/1 passed. Product files restored with `git checkout -- <paths>`. |
+| Envelope regression before QA guard | `cmake --build build --target zene ClipGainEnvelopeTest -j12`; `ctest -R ClipGainEnvelopeTest --output-on-failure` from `build/tests` | 0; **8** | `nonFinite.ok` was 1 at `ClipGainEnvelopeTest.cpp:167`. |
+| Envelope guard reversed | same build; same ctest | 0; **8** | `nonFinite.ok` was 1 again at line 167. The test's direct `QJsonValue` assertion confirms NaN remains a numeric array element. |
+| Final focused targets | `cmake --build build --target zene ClipGainEnvelopeTest ControlSampleBakeGuardTest -j12`; `ctest -R ClipGainEnvelopeTest --output-on-failure`; `ctest -R ControlSampleBakeGuardTest --output-on-failure` | 0; 0; 0 | Both focused tests passed 1/1 after restoring all product guards. |
+| Feature check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p22-66` | 0 | All six simple gates and both ratchet comparisons passed. |
+| Whitespace | `git diff --check` | 0 | No whitespace errors. |
 
 ## Self-check
 
@@ -198,8 +209,8 @@ both pass. I did not check this against the base listing, because that needs the
     `commitBake` and `sourceState` are in an anonymous namespace in `ControlCommandsSampleEdit.cpp`, so none of
     these share the changed code path. Not affected.
   - `clip.set_gain` (`src/core/ControlCommandsClipEdits.cpp:348-349`): fixed. It declares the same range.
-  - Not audited: the other numeric `clip.*` edits (`src/core/ClipEdits.cpp`, `src/core/Clip.cpp` use
-    `gainDbToLinear`/`peakOf`). I did not check them for the same NaN check. That is a gap in this report.
+  - `clip.gain_envelope_set` (`src/core/ControlCommandsClipEnvelope.cpp:117-124`): the nested point parser had the
+    same NaN-blind range check. QA added the finite guard and regression described above.
 - **No collateral damage.**
   - Every value that was accepted before is still accepted. The ranges -60..24 (gain) and -60..0 (target) are
     unchanged. The new checks fire only for NaN or infinity.
@@ -222,14 +233,16 @@ both pass. I did not check this against the base listing, because that needs the
   `docs/qwen-fixes-2026-10/cluster-new-p22-66.md`.
 - The round-2 commit (review rework): `src/core/ControlCommandsSampleRange.cpp` (the `gainRefused` finite check),
   `tests/src/core/ControlSampleBakeGuardTest.cpp` (the `sample.edit_range` regression), and this report.
+- Independent QA also changed `src/core/ControlCommandsClipEnvelope.cpp` and
+  `tests/src/core/ClipGainEnvelopeTest.cpp` for the nested gain-envelope point path.
 
 ## Not done
 
 - The full `ctest` suite was not run. I ran the affected families: the sample family, the clip family that calls
   `clip.set_gain`, and the four tests that call `sample.edit_range` (14/14 in round 2).
-- The other numeric `clip.*` edit commands were not audited for the same NaN check (see Self-check).
-- `feature_check.py` could not run in this sandbox (`PermissionError` on its log directory, outside the write
-  jail). The six gates above were run by hand. Complexity and file-length are reported as red on the train with
-  no REGRESSION line in the changed files. That is the rule, but the base comparison is unverified.
+- The non-finite gain paths audited for this review are the sample bakers, `sample.edit_range`,
+  `clip.set_gain`, and `clip.gain_envelope_set`; this review did not audit unrelated clip edits.
+- The fixer could not run `feature_check.py` in its sandbox; independent QA reran it successfully on the final
+  reviewed tree and verified the base comparison for both ratchets.
 - `sampleops::peakOf` ignores NaN samples, so a source that already contains NaN keeps it through a bake (see
   "Checked and not changed"). Out of scope for this finding.
