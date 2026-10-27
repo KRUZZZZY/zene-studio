@@ -2938,6 +2938,7 @@ plugins/SfzPlayer/SfzPlayerView.h
 plugins/SfzPlayer/SfzSynth.cpp
 plugins/SfzPlayer/SfzSynth.h
 tests/src/plugins/SfzFilePoolTest.cpp
+tests/src/plugins/SfzEffectBusViewTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
 # cluster new-p21-187: sfizz HistoricalBuffer resize regression.

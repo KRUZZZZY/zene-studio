@@ -924,6 +924,8 @@ set(LMMS_TESTS
 	# cluster new-p21-208: sfizz's shutdown leak diagnostic reports the actual residual instance count.
 	src/plugins/SfizzLeakDetectorTest.cpp
 	src/plugins/SfzFilePoolTest.cpp
+	# Cluster new-p21-142: sfizz's effect bus view must reject the index equal to its effect count (links sfzplayer_sfizz).
+	src/plugins/SfzEffectBusViewTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/SamplerTakeGuiTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
@@ -2305,6 +2307,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			absl::strings absl::span absl::flat_hash_map absl::optional absl::memory
 			Threads::Threads SndFile::sndfile)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer_sfizz)
+	endif()
+
+	# Cluster new-p21-142: the effect-bus test calls sfizz's EffectBus directly, so it links the static sfizz library
+	# and takes the sfizz headers (Effects.h includes "absl" headers, which the abseil targets supply).
+	if(LMMS_TEST_NAME STREQUAL "SfzEffectBusViewTest")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz absl::span absl::strings)
+		# sfizz's own private include directories (simde, hiir, ...), which its headers reach through MathHelpers.h.
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			"${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz"
+			$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>)
 	endif()
 
 	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
