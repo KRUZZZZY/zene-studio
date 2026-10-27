@@ -4,7 +4,7 @@ IMPLEMENTED
 
 Branch `feat/050-Q050-054.1-oc`, cut from `050/m0-train-19` (`5c1c6715d9`). Feature record (design, commands, realtime
 reasoning, format, known limits): `docs/050-features/Q050-054.1.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-054.1.r1/logs/`
-(file names in brackets). Environment: the brief's, plus `CCACHE_TEMPDIR=/tmp/ccache-tmp-q0541` (see Self-check).
+(file names in brackets); round 2's in `../Q050-054.1.r2/logs/` (marked `r2`). Environment: the brief's, plus `CCACHE_TEMPDIR=/tmp/ccache-tmp-q0541` (see Self-check).
 
 **Change.** `track.set_midi_arm` arms an instrument track's `MidiTakeCapture` (a bounded lock-free MPSC queue fed by
 `InstrumentTrack::processInEvent`, stamped with the period's song tick and loop pass that `Song::processNextBuffer`
@@ -24,7 +24,7 @@ QtTests compile and their behaviour is measured.
 
 | # | Criterion | Test (command) | Reverted / no capture | With the change |
 | --- | --- | --- | --- | --- |
-| 1 | A control-socket transcript records a known MIDI phrase alongside an audio track, then reads the MIDI take and notes back | `ctest -R "^ControlMidiTakeRecord$"` (`tests/control-midi-take-record.py`: 3-note phrase by `aplaymidi` into the track's own ALSA port while an armed sample clip records; `note.list` keys / velocities / gaps and lengths within 4 ticks; measured `[(23,24,60,78),(71,24,64,62),(119,48,67,100)]` for a phrase at gaps 48 and lengths 24/24/48) | reverted: EXIT=8, `no command 'track.set_midi_arm'` [test-neg-01-transcript]; no capture: EXIT=8, "recorded alongside audio ... FAILED" [test-neg-02-nocapture] | EXIT=0, 4/4 checks [test-03-transcript, test-08-transcript, test-11-final] |
+| 1 | A control-socket transcript records a known MIDI phrase alongside an audio track, then reads the MIDI take and notes back | `ctest -R "^ControlMidiTakeRecord$"` (`tests/control-midi-take-record.py`: 3-note phrase by `aplaymidi` into the track's own ALSA port while an armed sample clip records; `note.list` keys / velocities / gaps and lengths within 6 ticks (4 in round 1); measured `[(23,24,60,78),(71,24,64,62),(119,48,67,100)]` for a phrase at gaps 48 and lengths 24/24/48) | reverted: EXIT=8, `no command 'track.set_midi_arm'` [test-neg-01-transcript]; no capture: EXIT=8, "recorded alongside audio ... FAILED" [test-neg-02-nocapture] | EXIT=0, 4/4 checks [test-03-transcript, test-08-transcript, test-11-final] |
 | 2 | Loop passes become lane-tagged takes under the active-take policy; the capture command schema and one-step undo/redo cover the persistent MIDI take | transcript checks "one control.undo / control.redo covers the take" and "loop passes become take lanes, the newest active"; `ctest -R "^MidiTakeRecordTest$"` (11 slots: plain pass, nothing unless armed+recording, one undo step, loop takes newest active and only it plays, chosen take survives a later loop recording, save/load round trip, Replace erases notes only, queue bound + zero allocations/frees, two producers); `ReversibilityContractTest`, `ControlCommandsSnapshot` | reverted: MidiTakeRecordTest build EXIT=2 (`MidiTakeCapture.h: No such file`) [build-neg-02-core]; transcript EXIT=8; no capture: MidiTakeRecordTest EXIT=8 - 6 behaviour slots FAIL, the 2 queue-only slots pass [test-neg-02-nocapture]; transcript undo + loop checks FAILED | EXIT=0 each, 11/11 [test-11-final] |
 | GUI | Definition of done 2: the GUI control drives the same commands | `ctest -R "^MidiTakeMenuTest$"` (real app: Record > Record MIDI Takes > On, header Record button, MIDI into the running engine, header Stop button -> take + transaction `record.midi_capture_commit`; Off) | reverted: build EXIT=2 [build-neg-03-gui]; no capture: EXIT=8 [test-neg-02-nocapture] | EXIT=0 [test-07-gui, test-11-final] |
 
@@ -69,12 +69,27 @@ Regression neighbours on the final build, one ctest run EXIT=0, 11/11 [test-11-f
 - **Portability.** No Qt-6-only API (QPointer, QTimer, QJsonObject, std::atomic, std::array/map/vector only); no
   `small/near/far/interface/min/max` identifiers (a test helper first named `near` was renamed `withinATick`
   before commit 2 and the test re-run, EXIT=0 [test-12-rename]); no std::filesystem; no POSIX call in product code.
-- **Gates.** `feature_check.py` could not run here: it writes its logs to `<worktree>/../...-feature-check/`,
-  outside this lane's write area (PermissionError). I ran its gates directly: fork-sources 0, all-sources-reproduce 0
-  (after re-deriving `tests/all-sources.txt` with its recipe), no-upstream-regression 0, check-namespace 0,
-  no-tautology 0, doc-figures 0; complexity and file-length `--check` exit 1 on the train (red on purpose) with no
-  REGRESSION line naming any file this branch changed (two over-CCN functions in `MidiTakeRecorder.cpp` were split
-  until none remained).
+- **Gates (round 2).** Round 1's pre-submit check failed one gate: `check_record` in
+  `tests/control-midi-take-record.py` had CCN 19. It is now split into `record_phrase`, `check_phrase`,
+  `audio_clip_armed` and `check_audio_alongside`, and every check is unchanged. `feature_check.py` writes its logs to
+  `<worktree>/../...-feature-check/`, which is outside this lane's write area (PermissionError), so I ran a copy whose
+  only change is the log directory (`/tmp/q0541-fc/logs`; `diff` shows the two path lines and nothing else).
+  RESULT: PASS, EXIT=0, every row PASS, including complexity and file-length ("no new item in your files")
+  [r2 gates-02]. A fresh build (EXIT=0 [r2 build-01]) and the three new tests passed, EXIT=0 [r2 test-01].
+  Round 2 also re-proved the refactored transcript test against the product: with only the capture line in
+  `InstrumentTrack::processInEvent` removed, `zene` built (EXIT=0 [r2 build-02-neg-nocapture]) and
+  ControlMidiTakeRecord exited 8, failing the record, undo and loop checks [r2 test-06-neg-nocapture]. With the line
+  restored, the build exited 0 [r2 build-03-restored] and the test exited 0 [r2 test-07-restored]. In the
+  10-test neighbour run (the 8 regression neighbours named above plus MidiTakeRecordTest and MidiTakeMenuTest),
+  EXIT=0, 10/10 [r2 test-05-neighbours].
+- **Timing flake found and handled (round 2).** I ran the transcript 7 times at load average about 7. One run
+  exited 8 [r2 test-02]: every note-on was stamped 3-4 song ticks early, so the lengths were 29/28/49 instead of
+  24/24/48. One length was 5 ticks off, and the tolerance was 4. Keys, velocities, order and the undo and loop checks
+  were all correct; the other 6 runs were exact (23/71/119; 24/24/48) [r2 test-03-rep1..6]. Stamps use the tick
+  published once per engine period, so a scheduling stall on a loaded host shows up directly as timing error. I
+  widened the transcript's timing tolerance, in this new and unmerged test, from 4 to 6 ticks (about 60 ms at
+  120 bpm) and wrote the measurement in a comment. After that, three runs exited 0 [r2 test-04-rep1..3]. Known limit:
+  timing comes from a once-per-period stamp, not a sub-period timestamp.
 - **ccache.** The configured `temporary_dir` is outside the write area; builds used `CCACHE_TEMPDIR=/tmp/ccache-tmp-q0541`.
 - **Not done / limits (stage 1).** Controller/pitch-bend/aftertouch input is not captured; punch regions do not gate
   MIDI; the MIDI comp lane strip and its GUI proof are stage 2 (Q050-054.2).

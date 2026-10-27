@@ -42,7 +42,9 @@ TRACK_NAME = "Control Target"
 # song runs at 120 bpm too, 48 song ticks a beat: a file beat (480) is 48 song ticks.
 PHRASE = ((240, 60, 100, 240), (720, 64, 80, 240), (1200, 67, 127, 480))
 SONG_TICKS_PER_FILE_TICK = 48.0 / 480.0
-TOLERANCE = 4  # song ticks: ~40 ms of sequencer and period jitter at 120 bpm
+# Song ticks: ~60 ms of sequencer and period jitter at 120 bpm. Measured: exact on an idle box; on one run of
+# seven at load average 7 every note-on was stamped 3-4 ticks early (lengths 29/28/49 for 24/24/48).
+TOLERANCE = 6
 # The loop is the fixture's one bar [0, 192) = 2 s at 120 bpm: one note early in each of two passes.
 LOOP_PHRASE = ((480, 72, 100, 240), (2400, 74, 100, 240))
 LOOP_SECONDS = 3.2
@@ -191,7 +193,8 @@ def check_arm(context, problems):
                      "record.midi_capture_status lists %r armed" % status["armed_tracks"])
 
 
-def check_record(context, problems):
+def record_phrase(context, problems):
+    """Arms an audio clip, records the phrase alongside it and returns the commit's report."""
     session = context["session"]
     audio_clip = session.ok("clip.add", {"track": context["audio_track"], "position": 0})["clip"]
     context["audio_clip"] = audio_clip
@@ -205,7 +208,47 @@ def check_record(context, problems):
     play(context, PHRASE, "phrase.mid", problems)
     time.sleep(0.5)
     session.ok("transport.stop")
-    commit = session.ok("record.midi_capture_status")["last_commit"]
+    return session.ok("record.midi_capture_status")["last_commit"]
+
+
+def check_phrase(rows, problems):
+    """The keys, velocities, gaps and lengths read back match the phrase played."""
+    problems.require([r[2] for r in rows] == [n[1] for n in PHRASE], "keys %r, played %r" % (rows, PHRASE))
+    problems.require([r[3] for r in rows] == [n[2] * 100 // BASE_VELOCITY for n in PHRASE],
+                     "velocities %r for the played %r" % ([r[3] for r in rows], [n[2] for n in PHRASE]))
+    if len(rows) != len(PHRASE):
+        return
+    for i in range(1, len(PHRASE)):
+        gap = rows[i][0] - rows[i - 1][0]
+        expected = (PHRASE[i][0] - PHRASE[i - 1][0]) * SONG_TICKS_PER_FILE_TICK
+        problems.require(abs(gap - expected) <= TOLERANCE, "gap %d before note %d, played %g" % (gap, i, expected))
+    for row, note in zip(rows, PHRASE):
+        expected = note[3] * SONG_TICKS_PER_FILE_TICK
+        problems.require(abs(row[1] - expected) <= TOLERANCE, "length %d, played %g" % (row[1], expected))
+
+
+def audio_clip_armed(session, clip):
+    return any(c.get("record") for c in session.ok("arrangement.get_state")["clips"] if c["id"] == clip)
+
+
+def check_audio_alongside(context, problems):
+    """The armed sample clip is still there and recorded the same pass."""
+    session = context["session"]
+    audio = [c for c in session.ok("arrangement.get_state")["clips"] if c["id"] == context["audio_clip"]]
+    problems.require(len(audio) == 1, "the audio clip recorded alongside is gone: %r" % audio)
+    # The armed sample clip recorded the same pass: installing its take disarms it (SampleClip::acceptRecordedTake).
+    deadline = time.time() + 3
+    while audio_clip_armed(session, context["audio_clip"]) and time.time() < deadline:
+        time.sleep(0.1)
+    disarm = session.ok("clip.set_record", {"clip": context["audio_clip"], "record": False})
+    print("  the audio clip after the pass: %r" % disarm)
+    problems.require(disarm.get("record_before") is False,
+                     "the audio clip is still armed after the pass: its take was not installed (%r)" % disarm)
+
+
+def check_record(context, problems):
+    session = context["session"]
+    commit = record_phrase(context, problems)
     takes = commit.get("takes") or []
     problems.require(len(takes) == 1 and takes[0]["track"] == context["track"],
                      "the commit reports %r" % commit)
@@ -221,29 +264,8 @@ def check_record(context, problems):
     rows = note_rows(session, clip)
     context["rows"] = rows
     print("  the take %s holds %r (position, length, key, velocity)" % (clip, rows))
-    problems.require([r[2] for r in rows] == [n[1] for n in PHRASE], "keys %r, played %r" % (rows, PHRASE))
-    problems.require([r[3] for r in rows] == [n[2] * 100 // BASE_VELOCITY for n in PHRASE],
-                     "velocities %r for the played %r" % ([r[3] for r in rows], [n[2] for n in PHRASE]))
-    if len(rows) == len(PHRASE):
-        for i in range(1, len(PHRASE)):
-            gap = rows[i][0] - rows[i - 1][0]
-            expected = (PHRASE[i][0] - PHRASE[i - 1][0]) * SONG_TICKS_PER_FILE_TICK
-            problems.require(abs(gap - expected) <= TOLERANCE, "gap %d before note %d, played %g" % (gap, i, expected))
-        for row, note in zip(rows, PHRASE):
-            expected = note[3] * SONG_TICKS_PER_FILE_TICK
-            problems.require(abs(row[1] - expected) <= TOLERANCE, "length %d, played %g" % (row[1], expected))
-    audio = [c for c in session.ok("arrangement.get_state")["clips"] if c["id"] == context["audio_clip"]]
-    problems.require(len(audio) == 1, "the audio clip recorded alongside is gone: %r" % audio)
-    # The armed sample clip recorded the same pass: installing its take disarms it (SampleClip::acceptRecordedTake).
-    deadline = time.time() + 3
-    armed = True
-    while armed and time.time() < deadline:
-        armed = any(c.get("record") for c in session.ok("arrangement.get_state")["clips"] if c["id"] == context["audio_clip"])
-        time.sleep(0.1)
-    disarm = session.ok("clip.set_record", {"clip": context["audio_clip"], "record": False})
-    print("  the audio clip after the pass: %r" % disarm)
-    problems.require(disarm.get("record_before") is False,
-                     "the audio clip is still armed after the pass: its take was not installed (%r)" % disarm)
+    check_phrase(rows, problems)
+    check_audio_alongside(context, problems)
 
 
 def check_undo(context, problems):
