@@ -437,6 +437,56 @@ Envelope=0,00000001 100,0
 		QVERIFY2(render(nonfinitePath) == expected, "a non-finite envelope level must be stored as zero");
 	}
 
+	void emptyEnvelopeFieldIsZeroNotAStaleToken_data()
+	{
+		QTest::addColumn<QString>("malformed");
+		QTest::addColumn<QString>("literal");
+		// The empty level after "10," must not reuse the "10" read just before it.
+		QTest::newRow("empty-level") << QStringLiteral("0,100 10, 20,100")
+			<< QStringLiteral("0,100 10,0 20,100");
+		// The empty time before ",100" must not reuse the "50" level read just before it.
+		QTest::newRow("empty-time") << QStringLiteral("0,100 10,50 ,100 30,0")
+			<< QStringLiteral("0,100 10,50 0,100 30,0");
+	}
+
+	void emptyEnvelopeFieldIsZeroNotAStaleToken()
+	{
+		QFETCH(QString, malformed);
+		QFETCH(QString, literal);
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString malformedPath = directory.filePath(QStringLiteral("empty-field-envelope.ds"));
+		const QString literalPath = directory.filePath(QStringLiteral("literal-zero-envelope.ds"));
+		QVERIFY(writeToneFixture(malformedPath, malformed));
+		QVERIFY(writeToneFixture(literalPath, literal));
+
+		const auto expected = render(literalPath);
+		QVERIFY(!expected.empty());
+		QVERIFY2(render(malformedPath) == expected,
+			"an empty envelope field must be stored as zero, not as the token before it");
+	}
+
+	void emptyEnvelopeFieldIgnoresAnEarlierParse()
+	{
+		// The envelope parse state is thread local and outlives one file. The earlier file leaves a level
+		// of 50 in the slot that the empty level field of the next file reaches, so the empty field must
+		// overwrite it with zero rather than keep it.
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString earlierPath = directory.filePath(QStringLiteral("earlier-envelope.ds"));
+		const QString emptyPath = directory.filePath(QStringLiteral("empty-level-envelope.ds"));
+		const QString literalPath = directory.filePath(QStringLiteral("literal-zero-envelope.ds"));
+		QVERIFY(writeToneFixture(earlierPath, QStringLiteral("0,100 10,50 20,100")));
+		QVERIFY(writeToneFixture(emptyPath, QStringLiteral("0,100 10, 20,100")));
+		QVERIFY(writeToneFixture(literalPath, QStringLiteral("0,100 10,0 20,100")));
+
+		QVERIFY(!render(earlierPath).empty());
+		const auto expected = render(literalPath);
+		QVERIFY(!expected.empty());
+		QVERIFY2(render(emptyPath) == expected,
+			"an empty envelope level must be stored as zero, not kept from an earlier parse");
+	}
+
 	void refusesAnEnvelopeWhoseRoundedLengthOverflows()
 	{
 		QTemporaryDir tempDir;

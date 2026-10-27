@@ -159,15 +159,15 @@ void DrumSynth::UpdateEnv(int e, long t)
 // Each envelope row has 32 points; the last slot is reserved for the end-of-envelope sentinel.
 constexpr int maxEnvelopePoints = 31;
 
-// Stores one parsed envelope value. Points past the capacity are dropped, and malformed or overlong
-// tokens become 0.
+// Stores one parsed envelope value. Points past the capacity are dropped, and malformed, empty or overlong
+// tokens become 0. sscanf returns EOF (not 0) for an empty token, so only exactly one conversion is accepted.
 static void storeEnvelopeValue(int env, int row, int point, const char* token, bool tokenTooLong)
 {
 	if (point >= maxEnvelopePoints)
 	{
 		return;
 	}
-	if (tokenTooLong || sscanf(token, "%f", &envpts[env][row][point]) == 0 || !std::isfinite(envpts[env][row][point]))
+	if (tokenTooLong || sscanf(token, "%f", &envpts[env][row][point]) != 1 || !std::isfinite(envpts[env][row][point]))
 	{
 		envpts[env][row][point] = 0.f;
 	}
@@ -190,12 +190,14 @@ void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
 		{
 			storeEnvelopeValue(env, 0, ep, s, tokenTooLong);
 			o = 0;
+			s[0] = 0;
 			tokenTooLong = false;
 		}
 		else if (en[i] == ' ')
 		{
 			storeEnvelopeValue(env, 1, ep, s, tokenTooLong);
 			o = 0;
+			s[0] = 0;
 			tokenTooLong = false;
 			if (ep < maxEnvelopePoints)
 			{
