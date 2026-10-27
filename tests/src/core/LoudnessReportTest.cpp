@@ -151,6 +151,9 @@ private slots:
 	//! The render loop calls addBlock() per period: it must allocate nothing.
 	void thePerBlockPathAllocatesNothing();
 
+	//! A null block (no frames, the caller's "nothing to measure") is refused whole: no change, no crash.
+	void aNullBlockIsIgnored();
+
 	//! The paths the render-time tests do not reach: every verdict name, the summary's deviation
 	//! clause, reset(), the planar tap (mono fed channel by channel) and a sidecar that cannot be
 	//! written (gate 2, hosted run 36747963198: these lines entered uncovered).
@@ -324,6 +327,23 @@ void LoudnessReportTest::thePerBlockPathAllocatesNothing()
 	lmms::test::tlCountAllocations = false;
 
 	QCOMPARE(static_cast<qulonglong>(lmms::test::tlAllocationCount), static_cast<qulonglong>(0));
+}
+
+void LoudnessReportTest::aNullBlockIsIgnored()
+{
+	// No frames is the meter's refusal, passed through whole: the report must neither change nor crash.
+	auto buffer = makeSine(-23.0, 0.5);
+	LoudnessReport report(SampleRate, lmms::DEFAULT_CHANNELS);
+	feedInBlocks(report, buffer);
+	const float integrated = report.integratedLufs();
+	const float shortTerm = report.shortTermMaxLufs();
+
+	report.addBlock(nullptr, 0);
+	report.addBlock(nullptr, BlockFrames);
+	report.addPlanarBlock(nullptr, lmms::DEFAULT_CHANNELS, BlockFrames);
+
+	QCOMPARE(report.integratedLufs(), integrated);
+	QCOMPARE(report.shortTermMaxLufs(), shortTerm);
 }
 
 void LoudnessReportTest::theRestOfTheReportsSurface()
