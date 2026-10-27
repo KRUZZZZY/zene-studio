@@ -1556,6 +1556,9 @@ ENDIF()
 		src/core/SessionAudioRecordTest.cpp
 		# ...and a launched audio cell sounding its clip through its sample track (the landed take included).
 		src/core/SessionAudioCellPlaybackTest.cpp
+		# Q050-489: the launcher, the arrangement and the grid in step through edits, undo, redo, pattern renumbering,
+		# save and load - heard through the export path, so it needs tripleoscillator (below).
+		src/core/SessionTransitionsTest.cpp
 	# What a <session> command ACCEPTS: a wrong-typed Follow Action field is
 	# refused rather than converted, a non-array `actions` does not fall back to
 	# the stored chain, a cell address needs both coordinates - and the session
@@ -2220,6 +2223,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# needs a real instrument in the pattern store - the same requirement, for
 		# the same reason, as SessionTuningTest above.
 		OR LMMS_TEST_NAME STREQUAL "SessionPlaybackRenderTest"
+		OR LMMS_TEST_NAME STREQUAL "SessionTransitionsTest"
 		# The hosting test loads the build's own plugin modules to get devices with
 		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
 		# client - see the OUTOFPROC_ZYN_* definitions below).
@@ -2885,6 +2889,7 @@ if(TARGET sid AND TARGET SidInstrument)
 endif()
 if(TARGET tripleoscillator)
 	add_dependencies(SessionPlaybackRenderTest tripleoscillator)
+	add_dependencies(SessionTransitionsTest tripleoscillator)
 	add_dependencies(SessionTuningTest tripleoscillator)
 	# Q050-022: the lane-child tests drive a real instrument's parameter.
 	add_dependencies(AutomationLaneChildrenTest tripleoscillator)
@@ -5563,6 +5568,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 			TIMEOUT 300
 			SKIP_RETURN_CODE 77
+		)
+		# Q050-489: a MIDI and an audio cell edited, undone and recorded to the arrangement while they play, read
+		# back, heard on the live master and the landed clips rendered (needs the tripleoscillator module).
+		add_test(NAME ControlSessionTransitions
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-transitions.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionTransitions PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
 		)
 		# The GROUP's audit proof: one row per id for all ELEVEN session.* ids
 		# (docs/reports/SESSION-API-PROOF-2026-09-15.md). The two tests above
