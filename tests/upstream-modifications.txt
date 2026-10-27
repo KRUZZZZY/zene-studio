@@ -5305,3 +5305,4 @@ tests/src/gui/ItemListPanelTest.cpp	2026-10-26 new-p21-203: regression for a neg
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Note position and duration are swapped when importing a DAWproject session
 src/gui/RowTableView.cpp	cluster new-p14-267 (2026-10-26): keyPressEvent walks the column count only when a model is set, so Tab/Backtab with no model (new view or after setModel(nullptr)) no longer dereferences null; regression tests/src/gui/RowTableViewTest.cpp (tabAndBacktabWithoutModelAreSafe, tabAndBacktabAfterClearingModelAreSafe).
 tests/src/gui/RowTableViewTest.cpp	# Tab handling crashes when RowTableView has no model
+src/core/DrumSynth.cpp	new-p14-95: clamp the loudest-envelope level into the short range before converting it to short (the cast was undefined for Level=50000 squared to 2.5e9 with distortion on); covered by DrumSynthLevelTest.
