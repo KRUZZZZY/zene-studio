@@ -35,6 +35,7 @@
 #include <lv2/atom/util.h>
 #include <lv2/core/lv2.h>
 #include <lv2/midi/midi.h>
+#include <lv2/state/state.h>
 #include <lv2/urid/urid.h>
 
 #define TEST_URI "urn:zene:test:lv2-instrument"
@@ -42,6 +43,10 @@
 /* The largest latency a latent instance takes, and the size of its ring. */
 #define TEST_MAX_LATENCY 16384u
 #define TEST_LATENCY_ENV "LV2_TEST_INSTRUMENT_LATENCY"
+/* The state this plug-in saves (a string), the key it accepts only as that string, and the key it
+ * REFUSES: its restore returns an error status for any state that names it. */
+#define TEST_ACCEPTED_KEY "urn:zene:test:accepted"
+#define TEST_REFUSED_KEY "urn:zene:test:refuse"
 
 enum
 {
@@ -57,6 +62,9 @@ typedef struct test_instrument
 	float* out[2];
 	float* latency_port;
 	LV2_URID midi_event;
+	LV2_URID accepted_key;
+	LV2_URID refused_key;
+	LV2_URID string_type;
 	int latent;
 	uint32_t latency;
 	int held;          /* keys down */
@@ -88,6 +96,9 @@ static LV2_Handle instantiate(const LV2_Descriptor* descriptor, double rate, con
 	test_instrument_t* self = (test_instrument_t*)calloc(1, sizeof(*self));
 	if (self == NULL) { return NULL; }
 	self->midi_event = map->map(map->handle, LV2_MIDI__MidiEvent);
+	self->accepted_key = map->map(map->handle, TEST_ACCEPTED_KEY);
+	self->refused_key = map->map(map->handle, TEST_REFUSED_KEY);
+	self->string_type = map->map(map->handle, LV2_ATOM__String);
 	self->latent = getenv(TEST_LATENCY_ENV) != NULL;
 	self->latency = self->latent ? env_latency() : 0;
 	return (LV2_Handle)self;
@@ -182,10 +193,47 @@ static void cleanup(LV2_Handle instance)
 	free(instance);
 }
 
+/* LV2_State_Interface: the plug-in saves one string property; restore accepts it only as the string it
+ * saved and returns an error status for a state that names the refused key. */
+static LV2_State_Status save(LV2_Handle instance, LV2_State_Store_Function store, LV2_State_Handle handle,
+	uint32_t flags, const LV2_Feature* const* features)
+{
+	const test_instrument_t* self = (const test_instrument_t*)instance;
+	static const char value[] = "1";
+	(void)flags;
+	(void)features;
+	return store(handle, self->accepted_key, value, sizeof(value), self->string_type,
+		LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE);
+}
+
+static LV2_State_Status restore(LV2_Handle instance, LV2_State_Retrieve_Function retrieve, LV2_State_Handle handle,
+	uint32_t flags, const LV2_Feature* const* features)
+{
+	const test_instrument_t* self = (const test_instrument_t*)instance;
+	size_t size = 0;
+	uint32_t type = 0;
+	uint32_t value_flags = 0;
+	(void)flags;
+	(void)features;
+	/* A state that names the refused key is syntactically valid, and this plug-in refuses it. */
+	if (retrieve(handle, self->refused_key, &size, &type, &value_flags) != NULL) { return LV2_STATE_ERR_UNKNOWN; }
+	/* The accepted key must arrive as the string it was saved as; a decode that loses it fails here. */
+	const void* accepted = retrieve(handle, self->accepted_key, &size, &type, &value_flags);
+	if (accepted != NULL && (type != self->string_type || size == 0 || ((const char*)accepted)[0] != '1'))
+	{
+		return LV2_STATE_ERR_BAD_TYPE;
+	}
+	return LV2_STATE_SUCCESS;
+}
+
+static const LV2_State_Interface s_state = {
+	save,
+	restore,
+};
+
 static const void* extension_data(const char* uri)
 {
-	(void)uri;
-	return NULL;
+	return strcmp(uri, LV2_STATE__interface) == 0 ? &s_state : NULL;
 }
 
 static const LV2_Descriptor s_descriptor = {

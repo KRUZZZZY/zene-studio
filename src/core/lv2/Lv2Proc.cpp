@@ -27,8 +27,17 @@
 #ifdef LMMS_HAVE_LV2
 
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <optional>
+#include <serd/serd.h>
+#include <sord/sord.h>
+#include <sratom/sratom.h>
+#include <vector>
 #include <lv2/midi/midi.h>
 #include <lv2/atom/atom.h>
+#include <lv2/atom/forge.h>
+#include <lv2/atom/util.h>
 #include <lv2/resize-port/resize-port.h>
 #include <lv2/worker/worker.h>
 #include <lv2/state/state.h>
@@ -807,19 +816,198 @@ QString Lv2Proc::saveState() const
 	return document;
 }
 
+namespace
+{
+
+//! One property of a state document, decoded the way lilv decodes it (lilv's new_state_from_model): the
+//! predicate's URID, the atom sratom reads from the object, and the flags lilv gives the property.
+struct StateProperty
+{
+	LV2_URID key = 0;
+	LV2_URID type = 0;
+	uint32_t flags = 0;
+	std::vector<uint8_t> value;
+};
+
+using StateProperties = std::vector<StateProperty>;
+
+//! The LV2_State_Retrieve_Function a plug-in gets: the handle is the StateProperties it restores from.
+const void* retrieveStateProperty(LV2_State_Handle handle, uint32_t key, size_t* size, uint32_t* type,
+	uint32_t* flags)
+{
+	for (const StateProperty& prop : *static_cast<const StateProperties*>(handle))
+	{
+		if (prop.key != key) { continue; }
+		if (size != nullptr) { *size = prop.value.size(); }
+		if (type != nullptr) { *type = prop.type; }
+		if (flags != nullptr) { *flags = prop.flags; }
+		return prop.value.data();
+	}
+	return nullptr;
+}
+
+//! The LV2_State_Map_Path of a state read from a string: it has no directory and no path map, and lilv maps
+//! such paths to themselves (its absolute_path returns the input for both absolute and relative paths).
+char* mapPathUnchanged(LV2_State_Map_Path_Handle, const char* path)
+{
+	return strdup(path);
+}
+
+//! Frees a SordNode when it leaves scope.
+class SordNodeRef
+{
+public:
+	SordNodeRef(SordWorld* world, const char* uri)
+		: m_world(world)
+		, m_node(sord_new_uri(world, reinterpret_cast<const uint8_t*>(uri)))
+	{}
+	~SordNodeRef() { sord_node_free(m_world, m_node); }
+	SordNodeRef(const SordNodeRef&) = delete;
+	SordNodeRef& operator=(const SordNodeRef&) = delete;
+
+	const SordNode* get() const { return m_node; }
+
+private:
+	SordWorld* m_world;
+	SordNode* m_node;
+};
+
+//! Reads the atom of one object with sratom, as lilv does, and keeps its type, bytes and flags.
+std::optional<StateProperty> decodeStateProperty(SordWorld* world, SordModel* model, Sratom* sratom,
+	const SordNode* predicate, const SordNode* object, UridMap& urids)
+{
+	SerdChunk chunk{nullptr, 0};
+	LV2_Atom_Forge forge;
+	lv2_atom_forge_init(&forge, urids.mapFeature());
+	lv2_atom_forge_set_sink(&forge, sratom_forge_sink, sratom_forge_deref, &chunk);
+	sratom_read(sratom, &forge, world, model, object);
+	if (chunk.len == 0)
+	{
+		// sratom wrote no atom for this object: lilv skips such a triple, so this one is skipped too.
+		std::free(const_cast<uint8_t*>(chunk.buf));
+		return std::nullopt;
+	}
+	const auto* atom = reinterpret_cast<const LV2_Atom*>(chunk.buf);
+	StateProperty prop;
+	prop.key = urids.map(reinterpret_cast<const char*>(sord_node_get_string(predicate)));
+	prop.type = atom->type;
+	prop.flags = atom->type == forge.Path ? LV2_STATE_IS_POD : LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE;
+	const auto* body = static_cast<const uint8_t*>(LV2_ATOM_BODY_CONST(atom));
+	prop.value.assign(body, body + atom->size);
+	std::free(const_cast<uint8_t*>(chunk.buf));
+	return prop;
+}
+
+//! Decodes every property of the document's state:state node. Nullopt when the document is not Turtle.
+std::optional<StateProperties> decodeStateProperties(SordWorld* world, SordModel* model, UridMap& urids)
+{
+	SordNodeRef statePredicate(world, LV2_STATE_PREFIX "state");
+	SordIter* stateTriple = sord_search(model, nullptr, statePredicate.get(), nullptr, nullptr);
+	if (sord_iter_end(stateTriple))
+	{
+		sord_iter_free(stateTriple);
+		return StateProperties{};
+	}
+	const SordNode* stateNode = sord_iter_get_node(stateTriple, SORD_OBJECT);
+	sord_iter_free(stateTriple);
+
+	Sratom* sratom = sratom_new(urids.mapFeature());
+	StateProperties properties;
+	SordIter* iter = sord_search(model, stateNode, nullptr, nullptr, nullptr);
+	for (; !sord_iter_end(iter); sord_iter_next(iter))
+	{
+		std::optional<StateProperty> prop = decodeStateProperty(world, model, sratom,
+			sord_iter_get_node(iter, SORD_PREDICATE), sord_iter_get_node(iter, SORD_OBJECT), urids);
+		if (prop) { properties.push_back(std::move(*prop)); }
+	}
+	sord_iter_free(iter);
+	sratom_free(sratom);
+	return properties;
+}
+
+//! Declares one prefix on a serd environment.
+void setPrefix(SerdEnv* env, const char* name, const char* uri)
+{
+	serd_env_set_prefix_from_strings(env, reinterpret_cast<const uint8_t*>(name),
+		reinterpret_cast<const uint8_t*>(uri));
+}
+
+//! The prefixes lilv declares when it reads a state string (its set_prefixes), so a document reads the same here.
+void setStatePrefixes(SerdEnv* env)
+{
+	setPrefix(env, "atom", "http://lv2plug.in/ns/ext/atom#");
+	setPrefix(env, "lv2", "http://lv2plug.in/ns/lv2core#");
+	setPrefix(env, "pset", "http://lv2plug.in/ns/ext/presets#");
+	setPrefix(env, "rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+	setPrefix(env, "rdfs", "http://www.w3.org/2000/01/rdf-schema#");
+	setPrefix(env, "state", LV2_STATE_PREFIX);
+	setPrefix(env, "xsd", "http://www.w3.org/2001/XMLSchema#");
+}
+
+//! The document's properties, or nullopt when sord/serd cannot read it as Turtle.
+std::optional<StateProperties> decodeStateDocument(const QString& document, UridMap& urids)
+{
+	const QByteArray text = document.toUtf8();
+	SordWorld* world = sord_world_new();
+	SordModel* model = sord_new(world, SORD_SPO | SORD_OPS, false);
+	SerdEnv* env = serd_env_new(nullptr);
+	setStatePrefixes(env);
+	SerdReader* reader = sord_new_reader(model, env, SERD_TURTLE, nullptr);
+	std::optional<StateProperties> properties;
+	if (serd_reader_read_string(reader, reinterpret_cast<const uint8_t*>(text.constData())) == SERD_SUCCESS)
+	{
+		properties = decodeStateProperties(world, model, urids);
+	}
+	serd_reader_free(reader);
+	serd_env_free(env);
+	sord_free(model);
+	sord_world_free(world);
+	return properties;
+}
+
+//! Calls the plug-in's own LV2_State_Interface::restore with the decoded properties and returns the status the
+//! plug-in gives. lilv_state_restore() discards that status, so the host makes the call itself; the feature
+//! array is the host's features plus the map-path feature lilv_state_restore() would add.
+LV2_State_Status restorePluginState(LilvInstance* instance, const LV2_Feature* const* hostFeatures,
+	const StateProperties& properties)
+{
+	const LV2_Descriptor* descriptor = lilv_instance_get_descriptor(instance);
+	if (descriptor == nullptr || descriptor->extension_data == nullptr) { return LV2_STATE_ERR_NO_FEATURE; }
+	const auto* iface = static_cast<const LV2_State_Interface*>(descriptor->extension_data(LV2_STATE__interface));
+	if (iface == nullptr || iface->restore == nullptr) { return LV2_STATE_ERR_NO_FEATURE; }
+
+	LV2_State_Map_Path mapPath{nullptr, mapPathUnchanged, mapPathUnchanged};
+	const LV2_Feature mapFeature{LV2_STATE__mapPath, &mapPath};
+	std::vector<const LV2_Feature*> features;
+	for (const LV2_Feature* const* feature = hostFeatures; *feature != nullptr; ++feature)
+	{
+		features.push_back(*feature);
+	}
+	features.push_back(&mapFeature);
+	features.push_back(nullptr);
+	return iface->restore(lilv_instance_get_handle(instance), retrieveStateProperty,
+		const_cast<StateProperties*>(&properties), 0, features.data());
+}
+
+} // namespace
+
 bool Lv2Proc::restoreState(const QString& document)
 {
 	if (m_instance == nullptr || document.isEmpty()) { return false; }
 	UridMap& urids = Engine::getLv2Manager()->uridMap();
+	// lilv still reads the document, so what counts as a state is unchanged; the properties are then decoded and
+	// handed to the plug-in here, because lilv_state_restore() discards the plug-in's own status.
 	LilvState* state = lilv_state_new_from_string(Engine::getLv2Manager()->world(), urids.mapFeature(),
 		document.toUtf8().constData());
 	if (state == nullptr) { return false; }
+	lilv_state_free(state);
+	const std::optional<StateProperties> properties = decodeStateDocument(document, urids);
+	if (!properties) { return false; }
 	// The plug-in's run() and its state restore must not overlap (LV2 State threading rules).
 	Engine::audioEngine()->requestChangeInModel();
-	lilv_state_restore(state, m_instance, nullptr, nullptr, 0, m_features.featurePointers());
+	const LV2_State_Status status = restorePluginState(m_instance, m_features.featurePointers(), *properties);
 	Engine::audioEngine()->doneChangeInModel();
-	lilv_state_free(state);
-	return true;
+	return status == LV2_STATE_SUCCESS;
 }
 
 int Lv2Proc::latencyFrames() const
