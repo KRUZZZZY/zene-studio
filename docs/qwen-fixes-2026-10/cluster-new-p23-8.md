@@ -1,116 +1,81 @@
-Verdict: FALSE-POSITIVE
+Verdict: FIXED
 
-# Cluster new-p23-8: phaseScope dereferences showPhaseScope()'s window and its channel without checks
+# Cluster new-p23-8: phaseScope window and channel safety
 
-Finding (historical): `src/core/ControlCommandsMixerView.cpp:199`. On this branch the handler lives at
-`src/gui/ControlCommandsMixerView.cpp:182-203`, and the line in question is `:199`
-(`Engine::mixer()->mixerChannel(window->channel())`). Branch `bugs/qwen-new-p23-8`, base commit `639e1d23e`.
+## Review correction
 
-Claim: the unchecked `showPhaseScope()` result, or an out-of-range `window->channel()`, can reach line 199 and crash.
-Neither path is reachable. No product change is made.
+The null-window half of the finding is a false positive on this path. `phaseScope` returns `Requires` when
+`controlMainWindow()` is null (`src/gui/ControlCommandsMixerView.cpp:197`), and `ControlRegistry::invoke()` runs the
+handler on the UI thread (`src/core/ControlRegistry.cpp:249-259`). With no event processing between the check and
+`showPhaseScope()`, its GUI-null return at `src/gui/PhaseScopeView.cpp:221-225` is not reachable there.
 
-## Evidence
+The channel-safety conclusion was incomplete. `PhaseScopeWindow::channel()` clamps a missing saved channel ID to
+index 0 (`src/gui/PhaseScopeView.cpp:56-63, 181-184`), which is safe only while the master exists. Mixer channel
+access is unchecked (`include/Mixer.h:634-637`). A loaded `trackfolder` accepts `mixch="0"` verbatim
+(`src/tracks/TrackFolder.cpp:579-589`). Before this fix, both `releaseRouting()` and `~TrackFolder()` passed that
+index to `Mixer::deleteChannel()`, which erases it (`src/core/Mixer.cpp:1440-1443`). With only the master present,
+that leaves an empty mixer. `PhaseScopeWindow` then calls `setChannel(0)` during construction
+(`src/gui/PhaseScopeView.cpp:143-151`), and dereferences `mixerChannel(0)` before `showPhaseScope()` can return.
 
-Null window cannot be returned to line 199:
-- `src/gui/ControlCommandsMixerView.cpp:197`: `if (controlMainWindow() == nullptr) { return noInterface(...); }`
-  runs immediately before `showPhaseScope(index)` at `:198`.
-- `showPhaseScope` returns `nullptr` only when `getGUI() == nullptr || getGUI()->mainWindow() == nullptr`
-  (`src/gui/PhaseScopeView.cpp:221-224`).
-- `controlMainWindow()` is `getGUI() != nullptr ? getGUI()->mainWindow() : nullptr`
-  (`src/gui/ControlGuiSupport.cpp:51-55`). It is the same condition, evaluated on the same GUI thread with nothing
-  between the two checks, so the `nullptr` return cannot be reached from `phaseScope`.
-- `new PhaseScopeWindow(...)` (`src/gui/PhaseScopeView.cpp:225`) does not return null.
+The fix guards both folder channel-release paths: only an in-range index greater than 0 can be deleted, and the
+folder's stored index is cleared even when the saved value is invalid. Valid routing-folder channels continue to be
+released normally. The regression parses the saved `trackfolder` node and exercises both release and destruction.
 
-`window->channel()` is always a valid mixer index:
-- `PhaseScopeWindow::channel()` is `std::max(0, indexOfId(m_channelId))` (`src/gui/PhaseScopeView.cpp:181-184`).
-  It resolves the stored channel id against the live mixer on each call, so it cannot be a stale cached index.
-- `indexOfId` returns `i` only for `i < Engine::mixer()->numChannels()`, and `-1` otherwise
-  (`src/gui/PhaseScopeView.cpp:56-63`). The `-1` case is clamped to `0` by `channel()`.
-- `setChannel` also clamps out-of-range indices to `0` (`src/gui/PhaseScopeView.cpp:170`).
-- Channel 0 always exists. The `Mixer` constructor calls `createChannel()` for the master
-  (`src/core/Mixer.cpp:1029-1030`), and the control surface refuses to remove it
-  (`src/core/ControlCommandsMixer.cpp:334`, "the master channel ch-0 cannot be removed"). So `numChannels() >= 1`
-  and `mixerChannel(0)` is valid.
+## Regression evidence
 
-Caveat: the in-range guarantee relies on the master-channel invariant held in other files, not on a local check at
-line 199. A defensive check would be harmless, but I found no reachable path that demonstrates the crash, so I did not
-add one. The finding's medium confidence does not survive the code above.
+Test: `TrackFolderTest::aMalformedFolderChannelCannotDeleteTheMaster`, in the existing registered
+`tests/src/core/TrackFolderTest.cpp` target. It uses no clock, sleep, or race. The existing normal phase-scope path
+also passes in `MixerMeteringTest`.
 
-Existing coverage on the same path: `tests/src/gui/MixerMeteringTest.cpp:692-717`
-(`thePhaseScopeListensToTheChosenChannel`). It drives `window.phase_scope` through the command path, asserts that
-`window->channel()` equals the requested channel, asserts that a refused channel (`ch-9999`, NotFound) leaves it
-unchanged, and checks the master default. It passes on this build (see the commands below).
+| Run | Command | Exit | Result |
+|---|---|---:|---|
+| RED | `CCACHE_DISABLE=1 cmake --build build --target zene TrackFolderTest -j4` | 0 | Test compiled before the product change. |
+| RED | `ctest -R TrackFolderTest --output-on-failure` from `build/tests` | 8 | `masterSurvivedRelease` was false at `TrackFolderTest.cpp:570`. |
+| GREEN | `CCACHE_DISABLE=1 cmake --build build --target zene TrackFolderTest -j4` | 0 | Product fix and regression target rebuilt. |
+| GREEN | `ctest -R TrackFolderTest --output-on-failure` from `build/tests` | 0 | 1/1 CTest test passed. |
+| REVERSED | `git diff --cached -- src/tracks/TrackFolder.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-8.r1/logs/qa-fix.patch` | 0 | Saved only the product patch. |
+| REVERSED | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-8.r1/logs/qa-fix.patch` | 0 | Reversed only the product file; test remained. |
+| REVERSED | `CCACHE_DISABLE=1 cmake --build build --target zene TrackFolderTest -j4` | 0 | Rebuilt without the product change. |
+| REVERSED | `ctest -R TrackFolderTest --output-on-failure` from `build/tests` | 8 | Same `masterSurvivedRelease` failure. |
+| RESTORED | `git checkout -- src/tracks/TrackFolder.cpp` | 0 | Restored the staged product file. |
+| RESTORED | `CCACHE_DISABLE=1 cmake --build build --target zene TrackFolderTest -j4` | 0 | Rebuilt the restored product code. |
+| RESTORED | `ctest -R TrackFolderTest --output-on-failure` from `build/tests` | 0 | 1/1 CTest test passed. |
+| SIBLING | `CCACHE_DISABLE=1 cmake --build build --target zene TrackFolderTest MixerMeteringTest -j4` | 0 | Both affected targets rebuilt. |
+| SIBLING | `ctest -R MixerMeteringTest --output-on-failure` from `build/tests` | 0 | 1/1 CTest test passed, including normal phase-scope coverage. |
 
-## Commands and exit codes
+Build/test logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-8.r1/logs/`:
+`qa-build-1.log`, `qa-test-red-1.log`, `qa-build-2.log`, `qa-test-green-1.log`, `qa-fix.patch`,
+`qa-build-reversed.log`, `qa-test-reversed.log`, `qa-build-3.log`, `qa-test-green-restored.log`,
+`qa-build-4.log`, and `qa-test-mixer-green.log`.
 
-| # | Command (run from the worktree, or `build/tests` for ctest) | EXIT | Log (run folder `logs/`) |
-|---|---|---|---|
-| 1 | `cmake --build build --target MixerMeteringTest -j4 > build-1.log 2>&1` | 2 | build-1.log. ccache could not write its temp file under `/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ccache-tmp-r6` ("Permission denied"). Environment failure, not a code failure. |
-| 2 | `CCACHE_DISABLE=1 cmake --build build --target MixerMeteringTest -j4 > build-2.log 2>&1` | 0 | build-2.log. Ccache disabled for this command only. Target built and linked. |
-| 3 | `ctest -R MixerMeteringTest --output-on-failure > test-1.log 2>&1` (from `build/tests`) | 0 | test-1.log. "100% tests passed, 0 failed out of 1". |
-| 4 | `ctest -R MixerMeteringTest -V > test-2.log 2>&1` (from `build/tests`) | 0 | test-2.log. Line 62: `PASS : MixerMeteringTest::thePhaseScopeListensToTheChosenChannel()`. Line 66: "Totals: 31 passed, 0 failed, 0 skipped". |
-
-Affected family: `MixerMeteringTest`, 1 ctest test, 31 test functions executed, 0 failed.
-
-Regression test: not written. The finding is not real (step 2 of the procedure: skip to step 6), so there is no RED or
-GREEN cycle. No product file changed, so there is no `fix.patch` to revert and reapply (step 4b does not apply).
+Affected family: `TrackFolderTest`, 1 CTest test; `MixerMeteringTest`, 1 CTest test. No full suite was run.
 
 ## Gates
 
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`: **could not run.** It exits 1 with
-`PermissionError` while creating its log folder `zene-qwen-new-p23-8-feature-check` beside the worktree
-(`feature_check.py:69-71`), which is outside my write-jail. I did not modify the script. Log: `gate-1.log`.
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p23-8`: **PASS, exit 0**. All six simple gates passed; complexity and file-length report no new item in this change's files.
 
-Equivalent manual run, using the unchanged check commands from `feature_check.py:22-29` in the worktree:
-
-| Check | Command | EXIT | Log |
-|---|---|---|---|
-| fork-sources | `bash tests/fork-sources-gate.sh` | 0 | gate-fork-sources.log |
-| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 | gate-all-sources.log |
-| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 | gate-no-upstream.log |
-| check-namespace | `tests/scripted/check-namespace` | 0 | gate-check-namespace.log |
-| no-tautology | `bash tests/no-tautology-gate.sh` | 0 | gate-no-tautology.log |
-| doc-figures | `python3 tests/doc-figures-gate.py` | 0 | gate-doc-figures.log |
-| complexity | `bash tests/complexity-gate.sh --check` | 1 | gate-complexity.log (7 REGRESSION lines) |
-| file-length | `bash tests/file-length-gate.sh --check` | 1 | gate-file-length.log (22 REGRESSION lines) |
-
-The two ratchets exit 1 on whole-tree items that already exist on the train (for example
-`WasmSandbox::loadModuleBytes` CCN 15 -> 16). `feature_check.py` fails a ratchet only on items in files changed
-against the fix base. Changed-file check: `git diff --name-only 050/m0-train-17 HEAD` returned 0 lines (EXIT 0), and
-`git status --short` was empty before this report was written. No REGRESSION item is in a changed file, so the
-feature_check ratchet rows would read "no new item in your files". This is inferred from the script's logic, not from
-a run of the script.
+The original feature-check failure in the first report was environmental and stale: the reviewer ran the required gate
+successfully on this machine. Complexity and file-length are interpreted by the gate's changed-file baseline filter.
 
 ## Files committed
 
-- `docs/qwen-fixes-2026-10/cluster-new-p23-8.md` (this file)
-
-No product or test source changed.
+- `src/tracks/TrackFolder.cpp`
+- `tests/src/core/TrackFolderTest.cpp`
+- `tests/upstream-modifications.txt`
+- `docs/qwen-fixes-2026-10/cluster-new-p23-8.md`
 
 ## Self-check
 
-- **Regression test RED with the change reverted / GREEN restored (exit codes):** not applicable. There is no product
-  change to revert, and the finding is not real, so I did not write a new regression test. The existing
-  `MixerMeteringTest::thePhaseScopeListensToTheChosenChannel` (`tests/src/gui/MixerMeteringTest.cpp:692-717`) is the
-  test that covers this path. It passes on this build (ctest EXIT=0, `test-2.log` line 62 PASS). Its nearest
-  equivalent of a RED run is absent, and I say so rather than claim one.
-- **Determinism:** not a property I can claim for the existing test. It waits on the tap's frame count with a bounded
-  `QTRY_VERIFY_WITH_TIMEOUT(..., 5000)` (`tests/src/gui/MixerMeteringTest.cpp:711`), which is a wall-clock wait. I did
-  not add that wait and I did not change the test.
-- **Fix at the cause and every caller/sibling:** no fix. `showPhaseScope` has one caller in `src/`, `phaseScope` at
-  `src/gui/ControlCommandsMixerView.cpp:198` (grep of `src/`). That caller's guard is at `:197`. The only nullptr
-  return (`src/gui/PhaseScopeView.cpp:224`) is therefore guarded upstream, and the channel result is clamped
-  (`src/gui/PhaseScopeView.cpp:170, 181-184`).
-- **No collateral damage:** no code or saved-data change, so nothing else behaves differently.
-- **ALREADY-FIXED / FALSE-POSITIVE evidence (file:line):** the null path is blocked by the matching guard at
-  `src/gui/ControlCommandsMixerView.cpp:197` against `src/gui/ControlGuiSupport.cpp:51-55` and
-  `src/gui/PhaseScopeView.cpp:221-224`. The channel path is bounded by `src/gui/PhaseScopeView.cpp:56-63, 170,
-  181-184` and by the master invariant at `src/core/Mixer.cpp:1029-1030` with `src/core/ControlCommandsMixer.cpp:334`.
-- **Gates:** `feature_check.py` **FAILS in this sandbox**, and that is not a code result. It exits 1 with
-  `PermissionError` creating `zene-qwen-new-p23-8-feature-check` beside the worktree (`feature_check.py:69-71`). That
-  path is outside my write-jail, so the gate could not write its logs. I did not change the script. The manual
-  equivalent (table above) gives EXIT 0 for six checks, and the two ratchets exit 1 only on pre-existing whole-tree
-  items. Their feature_check filter should drop them, since no changed files exist. A human or a runner with write
-  access beside the worktree should run `feature_check.py` to close this row.
-- **Completion check:** `submit_check.py` (`logs/submit-1.log`, EXIT 1) passes the commit, clean tree and report
-  checks. The gate row above is the one open FAIL, and it is environmental as described.
+- **Regression red without the product change and green restored:** red `ctest -R TrackFolderTest --output-on-failure`
+  exited 8 both before the fix and after reversing only the product file; it passed with exit 0 after restoration.
+- **Deterministic:** the test parses a fixed XML node with `mixch="0"` and checks the mixer channel count. It uses no
+  wall-clock wait, sleep, or race.
+- **Cause and sibling paths:** `releaseRouting()` and `~TrackFolder()` were both checked and now apply the same
+  positive/in-range rule. The command is the only `src/` caller of `showPhaseScope()`; the null-window guard is already
+  effective on its UI-thread path.
+- **No collateral damage:** valid folder indices are positive and in range, so their release behavior is unchanged.
+  No saved project data is rewritten. No control command, undo behavior, or audio-thread path changed.
+- **Portability:** product changes use existing C++ and Qt APIs. The regression uses `QDomDocument::setContent`, which
+  is available on the supported Qt builds; no platform-specific API was added.
+- **Gates:** `feature_check.py` passed with exit 0 on the final source and test changes. The report correction itself
+  does not alter source or test behavior.
