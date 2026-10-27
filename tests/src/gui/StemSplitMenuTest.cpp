@@ -84,6 +84,77 @@ std::shared_ptr<const SampleBuffer> makeSineMix(int seconds)
 	return std::make_shared<const SampleBuffer>(std::move(data), sampleRate);
 }
 
+//! The stem job with the highest id this instance issued; empty when none.
+QJsonObject newestStemJob()
+{
+	QJsonObject newest;
+	const QJsonObject all = ControlRegistry::instance()->invoke(QStringLiteral("stem.job_status")).result;
+	for (const QJsonValue& value : all.value(QStringLiteral("jobs")).toArray())
+	{
+		const QJsonObject job = value.toObject();
+		if (job.value(QStringLiteral("job_id")).toInt() > newest.value(QStringLiteral("job_id")).toInt(-1))
+		{
+			newest = job;
+		}
+	}
+	return newest;
+}
+
+QProgressDialog* visibleProgressDialog()
+{
+	QProgressDialog* found = nullptr;
+	for (QWidget* widget : QApplication::topLevelWidgets())
+	{
+		auto* dialog = qobject_cast<QProgressDialog*>(widget);
+		if (dialog != nullptr && dialog->isVisible()) { found = dialog; }
+	}
+	return found;
+}
+
+//! Records the text of every open message box in \a messages, then accepts it.
+void collectMessageBoxes(QStringList* messages)
+{
+	for (QWidget* widget : QApplication::topLevelWidgets())
+	{
+		if (auto* message = qobject_cast<QMessageBox*>(widget))
+		{
+			*messages << message->text();
+			message->accept();
+		}
+	}
+}
+
+//! The quality names the submenu's items carry, in menu order.
+QStringList itemQualities(const QMenu* sub)
+{
+	QStringList names;
+	for (const QAction* action : sub->actions()) { names << action->data().toString(); }
+	return names;
+}
+
+//! The submenu item for \a quality, or nullptr.
+QAction* itemFor(const QMenu* sub, const QString& quality)
+{
+	for (QAction* action : sub->actions())
+	{
+		if (action->data().toString() == quality) { return action; }
+	}
+	return nullptr;
+}
+
+//! The qualities of the checked, and of the checkable, items.
+QStringList checkedQualities(const QMenu* sub, int* checkable)
+{
+	QStringList checked;
+	*checkable = 0;
+	for (const QAction* action : sub->actions())
+	{
+		if (action->isCheckable()) { ++*checkable; }
+		if (action->isChecked()) { checked << action->data().toString(); }
+	}
+	return checked;
+}
+
 } // namespace
 
 class StemSplitMenuTest : public QObject
@@ -139,54 +210,25 @@ private slots:
 		QMenu* sub = menu.actions().front()->menu();
 		QVERIFY(sub != nullptr);
 		QCOMPARE(sub->title(), QStringLiteral("Split to stems"));
-		QStringList names;
-		QAction* high = nullptr;
-		for (QAction* action : sub->actions())
-		{
-			names << action->data().toString();
-			QVERIFY(action->isCheckable());
-			if (action->data().toString() == QLatin1String("high")) { high = action; }
-		}
 		// The same names, in the same order, the command advertises.
-		QCOMPARE(names, control::stemQualityNames());
+		QCOMPARE(itemQualities(sub), control::stemQualityNames());
+		int checkable = 0;
+		checkedQualities(sub, &checkable);
+		QCOMPARE(checkable, sub->actions().size());
+		QAction* high = itemFor(sub, QStringLiteral("high"));
 		QVERIFY(high != nullptr);
 
-		const int lastJobBefore = [] {
-			int last = -1;
-			const QJsonObject all = ControlRegistry::instance()
-				->invoke(QStringLiteral("stem.job_status")).result;
-			for (const QJsonValue& job : all.value(QStringLiteral("jobs")).toArray())
-			{
-				last = std::max(last, job.toObject().value(QStringLiteral("job_id")).toInt());
-			}
-			return last;
-		}();
-
+		const int lastJobBefore = newestStemJob().value(QStringLiteral("job_id")).toInt(-1);
 		high->trigger();
 
 		// The job the registry started is a new one, at the chosen quality.
-		int jobId = -1;
-		QJsonObject job;
-		const QJsonObject all = ControlRegistry::instance()->invoke(QStringLiteral("stem.job_status")).result;
-		for (const QJsonValue& value : all.value(QStringLiteral("jobs")).toArray())
-		{
-			const QJsonObject candidate = value.toObject();
-			if (candidate.value(QStringLiteral("job_id")).toInt() > jobId)
-			{
-				jobId = candidate.value(QStringLiteral("job_id")).toInt();
-				job = candidate;
-			}
-		}
+		const QJsonObject job = newestStemJob();
+		const int jobId = job.value(QStringLiteral("job_id")).toInt(-1);
 		QVERIFY2(jobId > lastJobBefore, "the menu item started no stem.job_start job");
 		QCOMPARE(job.value(QStringLiteral("quality")).toString(), QStringLiteral("high"));
 		QCOMPARE(job.value(QStringLiteral("overlap")).toDouble(), 0.75);
 
-		QPointer<QProgressDialog> progress;
-		for (QWidget* widget : QApplication::topLevelWidgets())
-		{
-			auto* dialog = qobject_cast<QProgressDialog*>(widget);
-			if (dialog != nullptr && dialog->isVisible()) { progress = dialog; }
-		}
+		QPointer<QProgressDialog> progress(visibleProgressDialog());
 		QVERIFY(!progress.isNull());
 		QVERIFY2(progress->labelText().contains(QStringLiteral("high quality, 75% overlap")),
 			qPrintable(progress->labelText()));
@@ -194,16 +236,7 @@ private slots:
 		QStringList messages;
 		QTimer closeMessageBox;
 		closeMessageBox.setInterval(10);
-		connect(&closeMessageBox, &QTimer::timeout, [&messages] {
-			for (QWidget* widget : QApplication::topLevelWidgets())
-			{
-				if (auto* message = qobject_cast<QMessageBox*>(widget))
-				{
-					messages << message->text();
-					message->accept();
-				}
-			}
-		});
+		connect(&closeMessageBox, &QTimer::timeout, [&messages] { collectMessageBoxes(&messages); });
 		closeMessageBox.start();
 		QTRY_VERIFY_WITH_TIMEOUT(progress.isNull(), 180000);
 		QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 5000);
@@ -232,10 +265,7 @@ private slots:
 		QCOMPARE(gui::StemSplitController::instance()->lastQuality(), QStringLiteral("high"));
 		QMenu again;
 		gui::StemSplitController::addSplitToStemsMenu(&again, clip);
-		for (QAction* action : again.actions().front()->menu()->actions())
-		{
-			QCOMPARE(action->isChecked(), action->data().toString() == QLatin1String("high"));
-		}
+		QCOMPARE(checkedQualities(again.actions().front()->menu(), &checkable), QStringList{QStringLiteral("high")});
 
 		const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
 		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
