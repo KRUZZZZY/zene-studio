@@ -189,7 +189,8 @@ addressable from `comp.` and every id has exactly one A16 row to review. The div
 
 Refusals are typed and happen **before** the journal checkpoint, so a refused call writes nothing
 and leaves no undo step behind: an empty or reversed range (`invalid_args`), a lane the track does
-not have (`not_found`, naming the lanes it does have), a MIDI clip (`refused`), a half-given span
+not have (`not_found`, naming the lanes it does have), a pattern or automation clip (`refused` - audio and
+MIDI clips are both takes; a nonzero `srcpos` on a MIDI track is refused), a half-given span
 (`invalid_args`).
 
 ## 5. What is NOT built here (read this before assuming)
@@ -203,9 +204,14 @@ not have (`not_found`, naming the lanes it does have), a MIDI clip (`refused`), 
   track-wide Play all takes checkbox, range comping and consolidation. The panel reads
   `comp.get_state` and runs registered `comp.*` commands, so the GUI and control surface share one
   state model.
-- **Scope.** The active-take group is created by loop recording on sample clips. MIDI clips retain
-  their note-level comp behavior; they do not participate in this sample recording group's
-  `takegroup` selection. The existing comp consolidation remains available from the panel.
+- **Scope.** The active-take group is created by loop recording: on sample clips, and (Q050-054.1) on
+  instrument tracks armed with `track.set_midi_arm`, whose loop passes become MIDI take clips over the
+  loop region, one take lane each, in one `takegroup` - the newest pass active unless a take was chosen,
+  and a later loop recording over the same region joins the group (`record.midi_capture_commit`,
+  docs/050-features/Q050-054.1.md). An instrument track plays a grouped MIDI take only when it is the
+  group's active take, unless a composite, an audition or `comp.play_all_takes` decides, as on a sample
+  track; a composite gates each MIDI note by the lane at the note's start. The existing comp
+  consolidation remains available from the panel.
 - **The slip is audio-only and linear-rate-only** (§2.3): a warped or pitch-preserving take plays a
   slipped span unslipped, and at most 4 distinct slips per take are read (a fifth plays unslipped).
 - **Divergence from the design's `CompClip`**: the design sketches the composite as a new clip

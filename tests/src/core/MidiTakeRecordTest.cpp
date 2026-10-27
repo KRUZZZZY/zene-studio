@@ -105,7 +105,7 @@ std::vector<MidiClip*> midiClips(Track* track)
 }
 
 //! Within one tick: positions are stamped per audio period, a fraction of a tick.
-bool near(tick_t a, tick_t b) { return std::abs(a - b) <= 1; }
+bool withinATick(tick_t a, tick_t b) { return std::abs(a - b) <= 1; }
 
 } // namespace
 
@@ -276,12 +276,12 @@ private slots:
 		const Note* first = clip->notes()[0];
 		const Note* second = clip->notes()[1];
 		QCOMPARE(first->key(), 60);
-		QVERIFY2(near(192 + first->pos().getTicks(), 200), qPrintable(QString::number(first->pos().getTicks())));
-		QVERIFY2(near(first->length().getTicks(), 24), qPrintable(QString::number(first->length().getTicks())));
+		QVERIFY2(withinATick(192 + first->pos().getTicks(), 200), qPrintable(QString::number(first->pos().getTicks())));
+		QVERIFY2(withinATick(first->length().getTicks(), 24), qPrintable(QString::number(first->length().getTicks())));
 		QCOMPARE(int(first->getVolume()), 100);  // 127 * 100 / 127
 		QCOMPARE(second->key(), 64);
-		QVERIFY(near(192 + second->pos().getTicks(), 224));
-		QVERIFY(near(second->length().getTicks(), 36));
+		QVERIFY(withinATick(192 + second->pos().getTicks(), 224));
+		QVERIFY(withinATick(second->length().getTicks(), 36));
 		QCOMPARE(int(second->getVolume()), 64 * 100 / 127);
 
 		// An agent reads the take back: the commit's report names the clip, note.list answers its notes.
@@ -366,7 +366,7 @@ private slots:
 			QCOMPARE(take->length().getTicks(), 192);
 			QCOMPARE(int(take->notes().size()), 1);
 			QCOMPARE(take->notes()[0]->key(), 60 + 2 * int(i));
-			QVERIFY(near(take->notes()[0]->pos().getTicks(), 24));
+			QVERIFY(withinATick(take->notes()[0]->pos().getTicks(), 24));
 			lanes.push_back(take->laneIndex());
 		}
 		QCOMPARE(int(std::unique(lanes.begin(), lanes.end()) - lanes.begin()), 3);  // three lanes
