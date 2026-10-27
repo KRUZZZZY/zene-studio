@@ -237,7 +237,10 @@ delay compensation keeps everything else lined up. It is saved with the project 
 instrument track's note delay, which starts notes later, is a separate setting).</p>
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
-round trip measured by a ping and compensated. Interface Channels names your interface's inputs and outputs and pairs them;
+round trip measured by a ping and compensated. Hover the channel's strip to see the insert's latency in frames and
+milliseconds - the measured round trip, or the figure you typed in place of it ("typed"); "not measured" means the insert
+is on but adds nothing yet, so ping it or type a figure. An agent reads the same number in <code>pdc.report</code>
+(<code>hardware_insert_latency_frames</code>, with <code>hardware_insert_latency_source</code>). Interface Channels names your interface's inputs and outputs and pairs them;
 the names are kept per device, not per project. Its Surround &gt; Format menu sets a channel to LCR, quad, 5.1, 7.1,
 Mono, or a Discrete layout of 2 to 8 channels: the Surround Panner places a channel's sends into a speaker layout on a 2-D
 room with an LFE send and spread, and a stereo master or a stereo export gets the standard downmix. Mono has one M channel.

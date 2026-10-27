@@ -125,6 +125,11 @@ LMMS_EXPORT void processInsert(MixerChannel& channel, f_cnt_t frames);
 //! off, and while an export bypasses it.
 LMMS_EXPORT int insertLatency(const MixerChannel& channel);
 
+//! Where insertLatency()'s figure comes from, as pdc.report and the strip tooltip name it: "off" (the
+//! insert is disabled), "bypassed" (an export runs), "override" (a typed figure), "measured" (the last
+//! ping, at this rate and on this route) or "unmeasured" (on, but no figure: it adds 0).
+LMMS_EXPORT QString insertLatencySource(const MixerChannel& channel);
+
 /*! The render thread, at the end of Mixer::masterMix, after every worker and before the listen bus
  *  replaces the main output: place the master (@a master, the main mix after its fader) and add every
  *  direct out, cue mix and hardware insert send to the engine's hardware bus. Muted channels send

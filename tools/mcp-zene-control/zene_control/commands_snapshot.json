@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T15:37:49Z",
+  "captured_at": "2026-10-27T18:17:04Z",
   "commands": [
     {
       "args_schema": {
@@ -18404,7 +18404,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Plugin delay compensation as the mixer publishes it: the total latency to the master output, every channel's alignment point and the latency its own chain adds, the compensation applied at every send, and whether sidechain routing exists. Read-only.",
+      "description": "Plugin delay compensation as the mixer publishes it: the total latency to the master output, every channel's alignment point and the latency its own chain adds, its hardware insert's effective latency (hardware_insert_latency_frames: the typed override, else the measured ping; 0 while the insert is off or an export bypasses it) and where that figure comes from (hardware_insert_latency_source: off, bypassed, override, measured or unmeasured), the compensation applied at every send, and whether sidechain routing exists. Read-only.",
       "group": "pdc",
       "id": "pdc.report",
       "mutating": false,
@@ -37203,11 +37203,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-089.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-s3reqlds/zene.sock",
-    "version": "0.4.0-alpha.5215+17edcb1"
+    "source_socket": "/tmp/zctl-run-hhpen5a4/zene.sock",
+    "version": "0.4.0-alpha.5216+5c1c671"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

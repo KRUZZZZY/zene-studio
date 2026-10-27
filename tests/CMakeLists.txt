@@ -1209,6 +1209,8 @@ set(LMMS_TESTS
 	src/gui/MixerStripFeaturesTest.cpp
 	# The selected mixer channel follows its identity through a removal, a removal of itself, and a reorder.
 	src/gui/MixerSelectionIdentityTest.cpp
+	# Q050-089.1: a hardware insert's effective latency (measured, then typed) in pdc.report and the strip tooltip.
+	src/gui/MixerInsertLatencyTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
 	# 0.5.0 L03: the punch ruler band (Q050-147) and the take-lane rows/waveforms (Q050-123).
@@ -3246,6 +3248,7 @@ set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerInsertLatencyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerStripFeaturesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

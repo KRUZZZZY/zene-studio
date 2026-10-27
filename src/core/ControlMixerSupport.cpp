@@ -32,6 +32,7 @@
 #include "ControlVocabulary.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "HardwareIo.h"
 #include "Mixer.h"
 
 namespace lmms
@@ -156,6 +157,10 @@ QJsonObject channelLatencyJson(MixerChannel& channel)
 	// What this channel's own effect chain adds to its output
 	// (EffectChain::latencyFrames, refreshed by EffectChain::refreshLatency).
 	out.insert(QStringLiteral("chain_latency_frames"), channel.m_fxChain.latencyFrames());
+	// Q050-089.1: what the channel's hardware insert adds, the figure the mixer's PDC counts
+	// (hardwareio::insertLatency: the override, else the measured figure; 0 while off or bypassed).
+	out.insert(QStringLiteral("hardware_insert_latency_frames"), hardwareio::insertLatency(channel));
+	out.insert(QStringLiteral("hardware_insert_latency_source"), hardwareio::insertLatencySource(channel));
 
 	QJsonArray sends;
 	for (MixerRoute* route : channel.m_sends) { sends.append(routeJson(*route)); }

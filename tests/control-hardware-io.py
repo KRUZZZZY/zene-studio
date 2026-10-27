@@ -13,6 +13,8 @@ Starts the REAL `zene` binary headless on the Dummy device, configured as a four
   5. a hardware insert sending to 3/4 and returning from 1/2 measures its round trip with a ping:
      the device's 300 frames plus one engine period of output double buffer and one of capture
      staging (the harness config sets no buffer size, so the engine's default 256-frame period);
+     pdc.report lists that measured figure on the channel, then a typed override in its place
+     (Q050-089.1: hardware_insert_latency_frames / _source, the figure PDC counts);
   6. the routes, the cue mix and the insert survive project.save / project.open.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-hardware-io.py <zene>
@@ -107,6 +109,30 @@ def check_insert(session, recorder, chan):
                    and insert.get("latency") == expected, "expected %d, insert=%r" % (expected, insert))
 
 
+def pdc_insert(session, chan):
+    """The channel's hardware insert latency as pdc.report lists it: (frames, source)."""
+    for channel in session.result("pdc.report").get("channels") or []:
+        if channel.get("id") == chan:
+            return channel.get("hardware_insert_latency_frames"), channel.get("hardware_insert_latency_source")
+    return None, None
+
+
+def check_insert_in_pdc(session, recorder, chan):
+    """Q050-089.1: pdc.report names the insert's effective latency - the measured figure, then an override."""
+    measured = DEVICE_LATENCY + 2 * ENGINE_PERIOD
+    shown = pdc_insert(session, chan)
+    recorder.check("pdc.report lists the measured insert latency on its channel", shown == (measured, "measured"),
+                   "expected (%d, 'measured'), pdc=%r" % (measured, shown))
+    session.result("mixer.hardware_insert", {"channel": chan, "latency_frames": 300})
+    shown = pdc_insert(session, chan)
+    recorder.check("a typed override replaces the measured figure in pdc.report", shown == (300, "override"),
+                   "pdc=%r" % (shown,))
+    session.result("control.undo")
+    shown = pdc_insert(session, chan)
+    recorder.check("undoing the override shows the measured figure again", shown == (measured, "measured"),
+                   "pdc=%r" % (shown,))
+
+
 def routed_channel(state):
     """The channel whose own (not default) hardware output is 3/4, or {}."""
     for channel in state.get("channels") or []:
@@ -145,6 +171,7 @@ def main(argv):
         check_routes(session, recorder, chan)
         check_cue(session, recorder, chan)
         check_insert(session, recorder, chan)
+        check_insert_in_pdc(session, recorder, chan)
         check_persistence(session, recorder, chan, os.path.join(instance.tmp, "hardware-io.mmp"))
     report_results(recorder)
     if recorder.problems:
