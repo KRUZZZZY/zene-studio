@@ -124,7 +124,16 @@ All runs were on this worktree on Linux (CachyOS, GCC, Qt 6, offscreen). Logs: r
 
 ## Completion check (`submit_check.py`)
 
-Its result on the final commit is in `r2/submit-check-1.log`, with the notes I add below it.
+`r2/submit-check-1.log`, EXIT=1. Every row passes except the two below; the one `?` item is answered under Self-check
+(the round-2 revert proof).
+
+- **FAIL gates (feature_check.py).** The original script dies on `PermissionError:
+  .../zene-feat-q050-490-feature-check/fork-sources.log`: it writes beside the worktree, outside this session's
+  write-jail. The same script with only that folder moved passes every gate on the same commit: `r2/feature-check-2.log`,
+  EXIT=0, `RESULT: PASS`.
+- **WARN canary figures.** The "new command ids" it lists (`dllmain.cpp`, `linuxmain.cpp`, `macmain.cpp`,
+  `plugin.editor_open`, `plugin.list`) are file names and existing ids quoted in the diff. No command was added, and
+  `tests/doc-figures-gate.py` passes.
 
 ## Commits
 
