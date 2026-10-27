@@ -109,10 +109,12 @@ are `WasmSandbox::loadModuleBytes` (`src/wasm/WasmSandbox.cpp`), `dotCentreAlong
 name `Vst3Host.cpp`, `WasmSandbox.cpp` and several `tests/src/core` and `src/core` files. The new test is 95 lines
 (under the 500-line limit) and `Impl::process` is not listed. The ratchets are red on the train on purpose.
 
-**Feature gate runner.** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exited 1 with
-`PermissionError: ... zene-qwen-new-p21-169-feature-check` (`gates-feature-check-1.log`). The runner writes its logs in
-the worktree's parent folder, which lies outside the write-jail, so it could not run. I ran each of its gates directly
-(table above). `submit_check.py` reports its gate row (`feature_check.py`) as FAIL, which is the same PermissionError.
+**Feature gate runner.** The original run of
+`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exited 1 with
+`PermissionError: ... zene-qwen-new-p21-169-feature-check` (`gates-feature-check-1.log`); at that time, its log
+directory was outside the worktree's write-jail. During independent QA, the exact requested command was rerun and
+exited 0: all seven gates passed, including both ratchets reporting no new item in the changed files. This supersedes
+the original feature-check and `submit_check.py` failure noted above.
 
 ## Self-check
 
@@ -142,6 +144,6 @@ the worktree's parent folder, which lies outside the write-jail, so it could not
 - **Undo, commands, registration.** No control command was added. The new test is registered in
   `tests/CMakeLists.txt`, `tests/all-sources.txt` (regenerated), and `tests/fork-sources.txt`. The vendored file is
   recorded in `tests/upstream-modifications.txt`.
-- **Open items, not fixed here:** the `feature_check.py` runner cannot write its log folder from this worktree (see
-  above), and `submit_check.py` therefore still reports its gate row as FAIL. The ratchets are red on the train, as
-  intended. The finding's "~195" line was a historical number; the code sits at `FlexEnvelope.cpp:242-253`.
+- **Open items, not fixed here:** none from the feature gate; its independent rerun passed. The ratchets are red on the
+  train only for pre-existing items outside this change. The finding's "~195" line was a historical number; the code
+  sits at `FlexEnvelope.cpp:242-253`.
