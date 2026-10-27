@@ -36,6 +36,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QMenu>
 #include <QPointer>
 #include <QProgressDialog>
 #include <QMessageBox>
@@ -548,6 +549,148 @@ subprocess.Popen(
 		const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
 		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
 		QCOMPARE(song->tracks().size(), before + 1);   // ONE undo removed all four
+	}
+
+	/* Q050-062.2: the sample clip's "Split to stems" submenu offers each
+	 * quality stem.job_start accepts. Triggering "High quality" passes
+	 * `quality: high` through the registered command (the job the registry
+	 * reports carries it, and the worker ran at it), the progress and completion
+	 * dialogs name the effective setting, and the source clip is still on its
+	 * track with its own audio afterwards. */
+	void testClipMenuSplitsAtTheChosenQualityAndKeepsTheSource()
+	{
+		auto* song = Engine::getSong();
+		const auto before = song->tracks().size();
+		auto* sourceTrack = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, song));
+		QVERIFY(sourceTrack != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(sourceTrack->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->setName(QStringLiteral("Menu mix"));
+		clip->setSampleBuffer(makeSineMix(1));
+		const QPointer<SampleClip> source(clip);
+		const auto sourceBuffer = clip->sample().buffer();
+
+		QMenu menu;
+		gui::StemSplitController::addSplitToStemsMenu(&menu, clip);
+		QCOMPARE(menu.actions().size(), 1);
+		QMenu* sub = menu.actions().front()->menu();
+		QVERIFY(sub != nullptr);
+		QCOMPARE(sub->title(), QStringLiteral("Split to stems"));
+		QStringList names;
+		QAction* high = nullptr;
+		for (QAction* action : sub->actions())
+		{
+			names << action->data().toString();
+			QVERIFY(action->isCheckable());
+			if (action->data().toString() == QLatin1String("high")) { high = action; }
+		}
+		// The same names, in the same order, the command advertises.
+		QCOMPARE(names, control::stemQualityNames());
+		QVERIFY(high != nullptr);
+
+		const int lastJobBefore = [] {
+			int last = -1;
+			const QJsonObject all = ControlRegistry::instance()
+				->invoke(QStringLiteral("stem.job_status")).result;
+			for (const QJsonValue& job : all.value(QStringLiteral("jobs")).toArray())
+			{
+				last = std::max(last, job.toObject().value(QStringLiteral("job_id")).toInt());
+			}
+			return last;
+		}();
+
+		high->trigger();
+
+		// The job the registry started is a new one, at the chosen quality.
+		int jobId = -1;
+		QJsonObject job;
+		const QJsonObject all = ControlRegistry::instance()->invoke(QStringLiteral("stem.job_status")).result;
+		for (const QJsonValue& value : all.value(QStringLiteral("jobs")).toArray())
+		{
+			const QJsonObject candidate = value.toObject();
+			if (candidate.value(QStringLiteral("job_id")).toInt() > jobId)
+			{
+				jobId = candidate.value(QStringLiteral("job_id")).toInt();
+				job = candidate;
+			}
+		}
+		QVERIFY2(jobId > lastJobBefore, "the menu item started no stem.job_start job");
+		QCOMPARE(job.value(QStringLiteral("quality")).toString(), QStringLiteral("high"));
+		QCOMPARE(job.value(QStringLiteral("overlap")).toDouble(), 0.75);
+
+		QPointer<QProgressDialog> progress;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			auto* dialog = qobject_cast<QProgressDialog*>(widget);
+			if (dialog != nullptr && dialog->isVisible()) { progress = dialog; }
+		}
+		QVERIFY(!progress.isNull());
+		QVERIFY2(progress->labelText().contains(QStringLiteral("high quality, 75% overlap")),
+			qPrintable(progress->labelText()));
+
+		QStringList messages;
+		QTimer closeMessageBox;
+		closeMessageBox.setInterval(10);
+		connect(&closeMessageBox, &QTimer::timeout, [&messages] {
+			for (QWidget* widget : QApplication::topLevelWidgets())
+			{
+				if (auto* message = qobject_cast<QMessageBox*>(widget))
+				{
+					messages << message->text();
+					message->accept();
+				}
+			}
+		});
+		closeMessageBox.start();
+		QTRY_VERIFY_WITH_TIMEOUT(progress.isNull(), 180000);
+		QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 5000);
+		closeMessageBox.stop();
+
+		// The worker ran inference at the chosen setting, and the completion
+		// message names it and where the source is.
+		const QJsonObject finished = ControlRegistry::instance()->invoke(QStringLiteral("stem.job_status"),
+			QJsonObject{{QStringLiteral("job_id"), jobId}}).result
+			.value(QStringLiteral("jobs")).toArray().first().toObject();
+		QCOMPARE(finished.value(QStringLiteral("state")).toString(), QStringLiteral("completed"));
+		QCOMPARE(finished.value(QStringLiteral("inference_quality")).toString(), QStringLiteral("high"));
+		const QString done = messages.join(QLatin1Char('\n'));
+		QVERIFY2(done.contains(QStringLiteral("Created 4 stem tracks at high quality, 75% overlap")), qPrintable(done));
+		QVERIFY2(done.contains(QStringLiteral("The original clip \"Menu mix\" is unchanged on its track.")),
+			qPrintable(done));
+
+		// The source clip is still there, on its track, with its own audio.
+		QCOMPARE(song->tracks().size(), before + 5);
+		QVERIFY(!source.isNull());
+		QCOMPARE(static_cast<int>(sourceTrack->getClips().size()), 1);
+		QCOMPARE(sourceTrack->getClips().front(), static_cast<Clip*>(source.data()));
+		QVERIFY(source->sample().buffer() == sourceBuffer);
+
+		// The menu remembers the setting the command took.
+		QCOMPARE(gui::StemSplitController::instance()->lastQuality(), QStringLiteral("high"));
+		QMenu again;
+		gui::StemSplitController::addSplitToStemsMenu(&again, clip);
+		for (QAction* action : again.actions().front()->menu()->actions())
+		{
+			QCOMPARE(action->isChecked(), action->data().toString() == QLatin1String("high"));
+		}
+
+		const ControlResult undone = ControlRegistry::instance()->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(song->tracks().size(), before + 1);
+		delete sourceTrack;
+	}
+
+	/* Q050-062.2: the job UI's wording of the effective setting, from the job
+	 * object's own fields - the worker's `inference_quality` once it ran. */
+	void testQualityTextNamesTheEffectiveSetting()
+	{
+		using gui::StemSplitController;
+		QCOMPARE(StemSplitController::qualityText(QJsonObject{{QStringLiteral("quality"), QStringLiteral("fast")}}),
+			QStringLiteral("fast quality, 25% overlap"));
+		QCOMPARE(StemSplitController::qualityText(QJsonObject{{QStringLiteral("quality"), QStringLiteral("high")},
+			{QStringLiteral("inference_quality"), QStringLiteral("standard")}}),
+			QStringLiteral("standard quality, 50% overlap"));
+		QCOMPARE(StemSplitController::qualityText(QJsonObject{}), QString());
 	}
 
 	void controllerUsesClipSnapshotAfterSourceClipIsDeleted()
