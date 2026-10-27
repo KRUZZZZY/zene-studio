@@ -32,6 +32,7 @@
 #include <QFileInfo>
 #include <QImage>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
 #include <QApplication>
@@ -130,7 +131,22 @@ public:
 
 	void deliverDrop(QDropEvent* event) { dropEvent(event); }
 	void deliverDragEnter(QDragEnterEvent* event) { dragEnterEvent(event); }
+	void deliverMove(QMouseEvent* event) { mouseMoveEvent(event); }
 };
+
+//! Sends one mouse event straight to the widget, so the button state is exactly
+//! what the test says and does not depend on QTest's internal button tracking.
+void sendMouse(Graph& graph, QEvent::Type type, QPoint pos,
+	Qt::MouseButton button, Qt::MouseButtons buttons)
+{
+	QMouseEvent event(type, QPointF(pos), QPointF(pos), button, buttons, Qt::NoModifier);
+	QCoreApplication::sendEvent(&graph, &event);
+}
+
+std::vector<float> samplesOf(Graph& graph)
+{
+	return std::vector<float>(graph.model()->samples(), graph.model()->samples() + graph.model()->length());
+}
 
 } // namespace
 
@@ -289,6 +305,78 @@ private slots:
 		{
 			if (i != clickedSample) { QCOMPARE(graph.model()->samples()[i], 0.0f); }
 		}
+	}
+
+	//! Only a left-button stroke writes samples. A right-button drag over a graph
+	//! that has no last position used to edit at the cursor.
+	void rightButtonDragOnFreshGraphEditsNoSample()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 200, 100);
+		graph.show();
+		const auto before = samplesOf(graph);
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::RightButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(120, 80), Qt::NoButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(150, 30), Qt::NoButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(150, 30), Qt::RightButton, Qt::NoButton);
+
+		QVERIFY2(before == samplesOf(graph), "a right-button drag on a fresh graph wrote samples");
+	}
+
+	//! After a left stroke has set the last cursor position, a right-button drag
+	//! used to draw a line through the samples.
+	void rightButtonDragAfterLeftStrokeEditsNoSample()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 200, 100);
+		graph.show();
+		const auto before = samplesOf(graph);
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::LeftButton, Qt::LeftButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(60, 20), Qt::LeftButton, Qt::NoButton);
+		const auto afterLeftStroke = samplesOf(graph);
+		QVERIFY2(before != afterLeftStroke, "the left stroke did not edit: the case is not set up");
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::RightButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(120, 80), Qt::NoButton, Qt::RightButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(120, 80), Qt::RightButton, Qt::NoButton);
+
+		QVERIFY2(afterLeftStroke == samplesOf(graph), "a right-button drag after a left stroke wrote samples");
+	}
+
+	//! The move handler itself writes nothing for a move with no button held, on a
+	//! fresh graph or after a left stroke. Qt drops such moves before they reach a
+	//! widget without mouse tracking, so the handler is called directly here.
+	void hoverEditsNoSample()
+	{
+		TestGraph fresh(nullptr, Graph::Style::Linear, 200, 100);
+		fresh.show();
+		const auto freshBefore = samplesOf(fresh);
+		QMouseEvent hover(QEvent::MouseMove, QPointF(120, 80), QPointF(120, 80),
+			Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+		fresh.deliverMove(&hover);
+		QVERIFY2(freshBefore == samplesOf(fresh), "a hover over a fresh graph wrote samples");
+
+		TestGraph stroked(nullptr, Graph::Style::Linear, 200, 100);
+		stroked.show();
+		sendMouse(stroked, QEvent::MouseButtonPress, QPoint(60, 20), Qt::LeftButton, Qt::LeftButton);
+		sendMouse(stroked, QEvent::MouseButtonRelease, QPoint(60, 20), Qt::LeftButton, Qt::NoButton);
+		const auto strokedBefore = samplesOf(stroked);
+		stroked.deliverMove(&hover);
+		QVERIFY2(strokedBefore == samplesOf(stroked), "a hover after a left stroke wrote samples");
+	}
+
+	//! Control: a left-button drag still draws through its press and moves.
+	void leftButtonDragStillEditsSamples()
+	{
+		Graph graph(nullptr, Graph::Style::Linear, 200, 100);
+		graph.show();
+		const auto before = samplesOf(graph);
+
+		sendMouse(graph, QEvent::MouseButtonPress, QPoint(60, 20), Qt::LeftButton, Qt::LeftButton);
+		sendMouse(graph, QEvent::MouseMove, QPoint(120, 80), Qt::NoButton, Qt::LeftButton);
+		sendMouse(graph, QEvent::MouseButtonRelease, QPoint(120, 80), Qt::LeftButton, Qt::NoButton);
+
+		QVERIFY2(before != samplesOf(graph), "a left-button drag no longer edits samples");
 	}
 
 	void graphModelRejectsLengthsBelowTwoSamples()
