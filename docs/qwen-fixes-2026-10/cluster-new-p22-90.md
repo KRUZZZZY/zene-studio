@@ -16,7 +16,7 @@ REAL. The finding is confirmed on the unfixed branch and is fixed here. The repo
 
 ## Fix
 
-- `src/core/ControlCommandsW3Engine.cpp:218-223`: a non-finite level is refused with `InvalidArgs` ("'level' is not a finite number") before any send or device is made. The check is in `chainReceive` after the existing tap check, and before the first mutation (`makeReceive`). Out-of-range finite levels are still clamped to 0..2 as before. `<cmath>` added at `:33`.
+- `src/core/ControlCommandsW3Engine.cpp:218-224`: a non-finite level is refused with `InvalidArgs` ("'level' is not a finite number") before any send or device is made. The check is in `chainReceive` after the existing tap check, and before the first mutation (`makeReceive`). Out-of-range finite levels are still clamped to 0..2 as before. `<cmath>` added at `:33`.
 - An infinity is refused the same way. Before, `+inf` was silently clamped to 2 and `-inf` to 0. The finding asks for a finiteness check, and this is what that check does. Nothing that legitimately passes a finite level changes.
 
 ## Reachability
@@ -66,4 +66,11 @@ Files: `src/core/ControlCommandsW3Engine.cpp`, `tests/src/core/W3EngineTest.cpp`
 
 ## Self-check
 
-(filled in below after submit_check)
+- **Test fails with the fix reverted, passes with it.** Reverse-apply of the product diff, rebuild, run: `test-7-final-red.log`, ctest EXIT 8, `FAIL! … aReceiveRefusesANonFiniteLevel() Compared values are not the same` at `W3EngineTest.cpp:538`. Re-apply, rebuild, run: `test-8-final-green.log`, EXIT 0, "100% tests passed out of 1". Full sequence in the table above.
+- **Deterministic.** The test uses three fixed literal levels (`std::nan("")`, `HUGE_VAL`, `-HUGE_VAL`) and calls `ControlRegistry::invoke` synchronously on the test thread. No timing, sleeps, threads or seams. It reads the mixer state (`channelSidechainSend(1, 3)`, channel 3's device count) right after the call.
+- **Fix at the cause, complete.** The only place a `chain.receive` level is read is `chainReceive` (`ControlCommandsW3Engine.cpp:218-224`). `makeReceive` is called only from `chainReceive` (`:225`) and from the undo/redo lambda (`:227`), and both use the `receive.level` that `chainReceive` set, which is now finite. `rg -n makeReceive src include tests` shows only `:128` (definition), `:225` and `:227`. The non-finite refusal sits before any mutation: `receiveEnds` only resolves channels, and the first mutation is `makeReceive` at `:225`.
+  - Sibling reads in the same file: `clip.pre_fade` reads `fade_in`/`fade_out` as integers (`:260-261`). The integer schema rule (`ControlSchema.cpp:52`) rejects NaN (`floor(NaN) == NaN` is false), so they cannot be NaN. `automation.latency_compensation` (`:277`) reads a boolean. `mixer.post_inserts` (`:283`) reads a string. The other `automation.*` ids on the checker's list are defined in other files, not in this file.
+  - Other `toDouble` clamps without a finiteness check exist in other commands. They are separate findings, listed under "Not changed" above, and were not touched.
+- **No collateral damage.** `makeReceive` is not called from any project load or save path (see the `rg` above), so old projects and saved data are unaffected. Finite levels go through the same clamp to 0..2 as before. The only behaviour change is for non-finite input: NaN is now refused (it was stored), and ±inf is now refused (it was clamped to 2 or 0). Wire callers cannot send either (the JSON parser does not produce a non-finite number; see "Reachability"), so the change reaches in-process callers only. The new check is not a limit on legitimate values, so it cannot reject a caller that is in range today.
+- **Verdict FIXED.** ALREADY-FIXED and FALSE-POSITIVE do not apply.
+- **Gate (feature_check.py) — not run as written.** The script writes its logs to `<worktree>/../<name>-feature-check` (projects directory, outside this run's write-jail): `gates-1-feature-check.log`, EXIT 1, `PermissionError`. The same checks, through the script's own functions with the logs redirected to the LOG folder (`logs/gate_driver.py`), give `gates-3-final-summary.log`: EXIT 0, `RESULT: PASS`, all eight rows PASS. The script itself is unchanged. Re-run `feature_check.py` from a shell with write access to the projects directory to get its own table.
