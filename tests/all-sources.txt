@@ -2748,6 +2748,7 @@ tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/CustomAccessTest.cpp
+tests/src/core/DataFileContainerRecoveryTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DawProjectDeflateImportTest.cpp

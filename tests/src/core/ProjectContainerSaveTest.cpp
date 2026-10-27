@@ -671,6 +671,50 @@ private slots:
 		QCOMPARE( song->projectFileName(), displacedFile );
 		QVERIFY2( !song->isContainerV2Project(), "the rollback must put the displaced legacy format back" );
 	}
+
+	//! A v2 save read back through the document entry point: an ordinary read
+	//! reassembles it, and a read that gives back nothing is refused AS A READ, so
+	//! the recovery keeps the file. The read fault is ZENE_TEST_CONTAINER_READ_FAULT.
+	void aFailedReadOfASavedContainerIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		buildSession();
+		const QString path = dir.filePath( QStringLiteral( "read-fault.mmpz" ) );
+		QVERIFY( saveTo( path, QStringLiteral( "v2" ) ).ok );
+		QVERIFY( projectcontainer::isContainer( readBytes( path ) ) );
+
+		QByteArray document;
+		QString error;
+		QVERIFY2( projectcontainer::readDocumentContainer( path, QStringLiteral( "song" ),
+			&document, &error ), qPrintable( error ) );
+
+		qputenv( "ZENE_TEST_CONTAINER_READ_FAULT", "1" );
+		const bool ok = projectcontainer::readDocumentContainer( path, QStringLiteral( "song" ),
+			&document, &error );
+		qunsetenv( "ZENE_TEST_CONTAINER_READ_FAULT" );
+		QVERIFY( !ok );
+		QVERIFY2( error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+	}
+
+	//! Control: a saved container cut in half is malformed - its directory is gone -
+	//! and is refused as such, never as an unreadable file.
+	void aTruncatedSavedContainerIsRefusedAsMalformed()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		buildSession();
+		const QString path = dir.filePath( QStringLiteral( "cut.mmpz" ) );
+		QVERIFY( saveTo( path, QStringLiteral( "v2" ) ).ok );
+		const QByteArray whole = readBytes( path );
+		QVERIFY( writeBytes( path, whole.left( whole.size() / 2 ) ) );
+
+		QByteArray document;
+		QString error;
+		QVERIFY( !projectcontainer::readDocumentContainer( path, QStringLiteral( "song" ),
+			&document, &error ) );
+		QVERIFY2( !error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+	}
 };
 
 QTEST_GUILESS_MAIN( ProjectContainerSaveTest )
