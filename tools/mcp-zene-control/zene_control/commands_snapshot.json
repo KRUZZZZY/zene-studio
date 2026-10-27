@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T15:37:49Z",
+  "captured_at": "2026-10-27T20:03:46Z",
   "commands": [
     {
       "args_schema": {
@@ -32454,7 +32454,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
+      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. A latent instrument on those tracks (over 'max_ms') keeps playing but is monitored without the alignment delay PDC adds to line it up with later paths ('instruments': track, channel, path, latency, the frames skipped); every other path stays aligned. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
       "group": "transport",
       "id": "transport.low_latency",
       "mutating": false,
@@ -37203,11 +37203,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-174/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-s3reqlds/zene.sock",
-    "version": "0.4.0-alpha.5215+17edcb1"
+    "source_socket": "/tmp/zctl-run-qnvnwlkn/zene.sock",
+    "version": "0.4.0-alpha.5216+5c1c671"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
