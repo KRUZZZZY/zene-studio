@@ -150,7 +150,14 @@ Track* resolveTrack(const QString& id, ControlResult* error)
 	// carries an id from construction, so a fallback could only ever resolve a
 	// stale position - exactly the silent mis-resolution this change removes.
 	// A well-formed id naming no live track is the typed not_found below.
-	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no track %1 (there is no song)").arg(id));
+		return nullptr;
+	}
+	const TrackContainer::TrackList& tracks = song->tracks();
 	for (Track* track : tracks)
 	{
 		if (track->id() == wanted) { return track; }

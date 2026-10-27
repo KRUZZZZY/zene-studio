@@ -2370,6 +2370,7 @@ tests/src/core/CollabTransportTest.cpp
 tests/src/core/ConsoleStripTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
 tests/src/core/ControlArmReversibilityTest.cpp
+tests/src/core/ControlTrackRouteNoSongTest.cpp
 tests/src/core/ControlBounceSupportTest.cpp
 tests/src/core/ControlBounceRenderTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
