@@ -143,6 +143,14 @@ Items from the completion check (`submit_check.py`), each answered:
    an empty track and is now refused, staying offered in the journal (the same outcome as the existing first-placement
    failure). No limit or check was added. Other tests in the family pass (see the family table).
 5. **Verdict is FIXED,** so the ALREADY-FIXED / FALSE-POSITIVE item does not apply.
+6. **Sibling commands.** `src/core/ControlCommandsRecordingPlace.cpp` registers one command, `record.recovery_place`
+   (`:170`, `registry.registerCommand` at `:202`). The other `record.*` names the completion check lists
+   (`record.recovery_restore`, `record.recovery_discard`, `record.journal_*`, `record.arm_track`, ...) are registered in
+   other files (`src/core/ControlCommandsRecordingRecovery.cpp`, `src/core/ControlCommandsRecording.cpp`,
+   `src/core/ControlCommandsRecordingRetro.cpp`, ...). None is changed, and none calls `landRecoveredTake` or the
+   placement path. `src/core/CollabPolicy.cpp` mentions the `record.recovery_*` names as policy text; it is unaffected.
+   `record.recovery_restore` is the resolve-only verb, so it does not land a track and is not affected by a change to the
+   landing path. `ControlRecordingRecovery` (live-instance test, `test-11-family-final.log`) passes.
 
 **Gate runs.** `feature_check.py` as written exits 1 before running any gate: it creates
 `<worktree>-feature-check/` as a sibling of the worktree (`PermissionError`; the log folder was not created, see
@@ -151,4 +159,6 @@ Items from the completion check (`submit_check.py`), each answered:
 (AGENTS.md rules 1, 2, 11, 12)", `gate-2-feature-check.log`). I did not work around the guard. I ran the six
 non-ratchet gate commands and the two ratchet commands directly in the worktree (table above). The ratchets' baseline
 comparison is not done. The raw REGRESSION lines name no file this change touches, and `feature_check.py` only fails
-items in changed files. This gate still needs a run outside this lane.
+items in changed files. This gate still needs a run outside this lane. The six non-ratchet commands were run again on the
+final tree, after this report was written (`gate-4-final-simple-exits.txt`, all EXIT 0; both ratchets still EXIT 1 with
+0 REGRESSION lines in a changed file).
