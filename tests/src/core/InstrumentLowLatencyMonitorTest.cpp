@@ -213,8 +213,8 @@ private:
 		m_latent = addPlayingTrack(QStringLiteral("pdc-latent"));
 		QVERIFY(m_latent != nullptr);
 		Engine::audioEngine()->renderNextPeriod();
-		QVERIFY2(QTest::qWaitFor([this] { return m_latent->audioBusHandle()->latencyFrames() == Latency; }, PollMs),
-			"the latent fixture's latency was not reported");
+		QTRY_VERIFY2_WITH_TIMEOUT(m_latent->audioBusHandle()->latencyFrames() == Latency,
+			"the latent fixture's latency was not reported", PollMs);
 		Engine::audioEngine()->renderNextPeriod();
 	}
 
