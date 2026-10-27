@@ -2709,7 +2709,11 @@ Fleshed out, because both halves of that sentence hide something real:
   `multichannel:false` / `stereo_backend`. PortAudio is not compiled in this build.
 - Input channel names and buses are labels only; JACK port names do not use them.
 - A hardware insert is bypassed during an export: the dry signal passes and it reports 0 latency.
-- `pdc.report` does not list the insert's latency per channel, although PDC includes it.
+- ~~`pdc.report` does not list the insert's latency per channel, although PDC includes it.~~ Lifted by
+  Q050-089.1 (2026-10-27): every channel carries `hardware_insert_latency_frames` (the figure PDC counts)
+  and `hardware_insert_latency_source`, and the strip tooltip names the same frames. During an export the
+  source reads `bypassed` and the figure 0 - there is still no real-time export through the insert
+  (Q050-089 stages 2 and 3).
 
 **F2, instruments (MX-114/112/120).**
 - Output buses have an interface: Instrument Setup > Output Buses on the track's header menu, its
