@@ -1493,6 +1493,8 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		# Q050-062.1: the quality table and the hop formula every backend shares.
 		src/core/StemQualityTest.cpp
 		src/core/StemSplitPipelineTest.cpp
+		# Q050-062.2: the sample clip's Split to stems submenu picks the job's quality.
+		src/gui/StemSplitMenuTest.cpp
 	)
 	IF(LMMS_HAVE_ONNXRUNTIME)
 		LIST(APPEND LMMS_TESTS src/core/OnnxRuntimeStemSeparatorTest.cpp)
@@ -6922,6 +6924,9 @@ ENDIF()
 IF(LMMS_HAVE_STEM_SPLIT)
 	# The controller regression exercises its progress and completion dialogs.
 	set_tests_properties(StemSplitPipelineTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	# Q050-062.2: the menu test triggers the submenu and reads the job dialogs.
+	set_tests_properties(StemSplitMenuTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 ENDIF()
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an

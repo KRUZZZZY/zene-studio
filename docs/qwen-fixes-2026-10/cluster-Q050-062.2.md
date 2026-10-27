@@ -15,13 +15,19 @@ track. No command or metadata changes.
 
 | Criterion | Test | Exit |
 | --- | --- | --- |
-| The menu passes the selected setting through the registered command | `StemSplitPipelineTest::testClipMenuSplitsAtTheChosenQualityAndKeepsTheSource`: triggers the real "High quality" action; the new job in `stem.job_status` has `quality: high`, `overlap: 0.75`, and when finished `inference_quality: high` | ctest 0 |
+| The menu passes the selected setting through the registered command | `StemSplitMenuTest::testClipMenuSplitsAtTheChosenQualityAndKeepsTheSource`: triggers the real "High quality" action; the new job in `stem.job_status` has `quality: high`, `overlap: 0.75`, and when finished `inference_quality: high` | ctest 0 |
 | The job UI reports the effective setting and leaves the source clip available | same test: the progress label is `high quality, 75% overlap`; the completion message says `at high quality, 75% overlap` and `The original clip "Menu mix" is unchanged on its track.`; the source clip is the same object with the same buffer, still on its track; `testQualityTextNamesTheEffectiveSetting` | ctest 0 |
 
-Revert proof: dropping the menu's quality makes `StemSplitPipelineTest` exit 8 (the new test fails on the
-quality compare). Reverting every non-test hunk makes the test target fail to build (exit 2). With the
-change restored: 18/18, exit 0. Logs are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-062.2.r1/logs`
-(`build-3-mutation.log`/`test-3-mutation.log`, `build-4-revert.log`, `build-5.log`/`test-5.log`).
+Both tests are in `tests/src/gui/StemSplitMenuTest.cpp` (CTest `StemSplitMenuTest`, new, registered in
+`tests/CMakeLists.txt` and `tests/fork-sources.txt`; `tests/all-sources.txt` re-derived, `all-sources-reproduce.sh` exit 0).
+
+Revert proof (logs in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-062.2.r1/logs`):
+- Mutation, the menu's quality dropped in `startJob`: build 0, `StemSplitMenuTest` exit 8. The new test fails at
+  `StemSplitMenuTest.cpp:181`, the job's `quality` compare (`test-9-mutation.log`).
+- Every non-test hunk reverted to base: the test target does not build, exit 2 (`build-10-revert.log`).
+- Restored: build 0; `StemSplitMenuTest`, `StemSplitPipelineTest`, `StemJobManagerTest`, `ControlStemCommands`,
+  `ReversibilityContractTest`, `ControlCommandsSnapshot`, `DocFiguresGate`, `StemAvailabilityDocsGate` 8/8 pass, exit 0
+  (`test-11.log`).
 
 ## Notes
 

@@ -2722,6 +2722,11 @@ tests/stem_commands_lib.py
 # and the QtTest of the quality table and hop formula the backends share.
 tests/stem_quality_lib.py
 tests/src/core/StemQualityTest.cpp
+# cluster Q050-062.2 (2026-10): the QtTest that triggers the sample clip's Split to stems
+# quality submenu, and the unit's feature record and report.
+tests/src/gui/StemSplitMenuTest.cpp
+docs/050-features/Q050-062.2.md
+docs/qwen-fixes-2026-10/cluster-Q050-062.2.md
 # cluster Q050-148 (2026-10): the docs regression test the rework asked for - it checks the
 # warp docs keep stating the three warp.stretch modes, the per-algorithm caveats and the
 # runnable reviewer example, and rejects the old "pitch-preserving stretch is not built"
