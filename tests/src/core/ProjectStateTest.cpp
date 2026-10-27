@@ -296,6 +296,38 @@ private slots:
 		surround::resetMixer();
 	}
 
+	//! A panner value that parses as NaN or infinity in the project XML loads the panner's default, and the
+	//! gains of every format stay finite (NaN in the position or spread would make every gain NaN).
+	void nonFinitePannerAttributesFallBackToTheDefaults()
+	{
+		QDomDocument doc;
+		QDomElement channelElement = doc.createElement(QStringLiteral("channel"));
+		doc.appendChild(channelElement);
+		QDomElement panElement = doc.createElement(QStringLiteral("surround"));
+		panElement.setAttribute(QStringLiteral("format"), QStringLiteral("5.1"));
+		panElement.setAttribute(QStringLiteral("pan"), QStringLiteral("1"));
+		panElement.setAttribute(QStringLiteral("x"), QStringLiteral("nan"));
+		panElement.setAttribute(QStringLiteral("y"), QStringLiteral("inf"));
+		panElement.setAttribute(QStringLiteral("lfe"), QStringLiteral("-inf"));
+		panElement.setAttribute(QStringLiteral("spread"), QStringLiteral("nan"));
+		channelElement.appendChild(panElement);
+
+		ChannelSurround side;
+		side.init(64);
+		side.load(channelElement);  // the reader Mixer::loadSettings() calls for each channel
+
+		const surround::PanPosition defaults{};
+		QVERIFY(side.pan().enabled);
+		QCOMPARE(side.pan().x, defaults.x);
+		QCOMPARE(side.pan().y, defaults.y);
+		QCOMPARE(side.pan().lfe, defaults.lfe);
+		QCOMPARE(side.pan().spread, defaults.spread);
+		for (int k = 0; k < surround::FormatCount; ++k)
+		{
+			for (const float gain : side.gains(static_cast<surround::Format>(k))) { QVERIFY(std::isfinite(gain)); }
+		}
+	}
+
 	void projectSettingsWriteAndUndo()
 	{
 		QVERIFY(!ProjectInfo::instance().shouldPersist());
