@@ -119,3 +119,12 @@ not create its log folder (see below).
   control thread, not the audio thread.
 - **Verdict FIXED, not ALREADY-FIXED or FALSE-POSITIVE.** Not applicable: the code evidence above shows the defect is
   real and was fixed.
+
+### Completion check (`submit_check.py new-p8-42`, after the fix commit `ed00bff7e`)
+
+Output in `submit-check-1.log`, EXIT 1. PASS: commits on the branch, working tree clean, report present, tests changed
+(`MixingRoutingTest.cpp`). FAIL: `gates (feature_check.py)` only. That row is the sandbox limit described above
+(`feature_check.py` cannot create `<worktree>/../<name>-feature-check`). Its gate commands were run one by one, with
+the exit codes in the table: all pass except the two ratchet scripts, whose listed items are in other files. The
+five ASK items are answered above. The gate row is therefore unresolved here and needs the loop, or an owner-run
+`feature_check.py` outside the jail, to confirm it.
