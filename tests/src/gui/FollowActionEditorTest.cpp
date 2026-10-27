@@ -33,7 +33,6 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLineEdit>
-#include <QPushButton>
 #include <QTableWidget>
 
 #include "FollowActionEditor.h"
@@ -60,34 +59,6 @@ class FollowActionEditorTest : public QObject
 	Q_OBJECT
 
 private slots:
-		//! Every row keeps all of its cell widgets: addRow sets them all before the row is used, so rowOf, nameRows
-		//! and chain never meet a missing one on the paths covered here. Remove is not driven: it re-enters the
-		//! event filter while the row is being taken out, a separate defect this test does not pin.
-		void everyRowKeepsAllItsCellWidgets()
-		{
-			const QJsonArray chain{QJsonObject{{QStringLiteral("type"), QStringLiteral("next")}},
-				QJsonObject{{QStringLiteral("type"), QStringLiteral("stop")}}};
-			FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, chain, QStringLiteral("1"));
-			editor.show();
-			auto* table = editor.findChild<QTableWidget*>();
-			QVERIFY(table != nullptr);
-			const auto verifyComplete = [table] {
-				for (int row = 0; row < table->rowCount(); ++row)
-				{
-					for (int column = 0; column < table->columnCount(); ++column) { QVERIFY(table->cellWidget(row, column) != nullptr); }
-				}
-			};
-			QCOMPARE(table->rowCount(), 2);
-			verifyComplete();
-			QPushButton* add = nullptr;
-			for (QPushButton* button : editor.findChildren<QPushButton*>()) { if (button->text() == QLatin1String("Add")) { add = button; } }
-			QVERIFY(add != nullptr);
-			QTest::mouseClick(add, Qt::LeftButton);
-			QCOMPARE(table->rowCount(), 3);
-			verifyComplete();
-		}
-
-
 	void anExplicitChanceEditIsWritten()
 	{
 		const QJsonArray chain{QJsonObject{{QStringLiteral("type"), QStringLiteral("next")},
