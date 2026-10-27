@@ -2455,6 +2455,7 @@ tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
+tests/src/core/BrowserCollectionStoreWriteTest.cpp
 tests/src/core/TrackPresetCommandsTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
 tests/src/core/LinkAudioStreamTestSupport.h

@@ -92,10 +92,27 @@ bool readForEdit(QJsonObject* all, ControlResult* error)
 
 bool writeAll(const QJsonObject& all)
 {
+	const QByteArray bytes = QJsonDocument(all).toJson(QJsonDocument::Indented);
 	QSaveFile file(storePath());
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
-	file.write(QJsonDocument(all).toJson(QJsonDocument::Indented));
+	// Written whole or not at all: a write the kernel cuts short is cancelled, never committed as the store.
+	if (file.write(bytes) != bytes.size())
+	{
+		file.cancelWriting();
+		return false;
+	}
 	return file.commit();
+}
+
+//! The store snapshot an undo (@a isUndo) or a redo writes. A write that fails is recorded with
+//! recordActionRestoreFailure, so control.undo / control.redo refuse instead of answering success over a
+//! store that still holds what it held before the step.
+void writeStep(const QJsonObject& snapshot, bool isUndo)
+{
+	if (writeAll(snapshot)) { return; }
+	recordActionRestoreFailure(QStringLiteral("the collections file %1 was NOT %2 - the write failed, so the store still "
+		"holds what it held when the %3 ran").arg(storePath(), isUndo ? QStringLiteral("restored") : QStringLiteral("re-applied"),
+		isUndo ? QStringLiteral("undo") : QStringLiteral("redo")));
 }
 
 //! Replace the store with @a next as one undo step.
@@ -108,7 +125,7 @@ ControlResult store(const QJsonObject& next, const QJsonObject& answer)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the collections file %1 could not be written").arg(storePath()));
 	}
-	addUndoStep([before]() { writeAll(before); }, [next]() { writeAll(next); });
+	addUndoStep([before]() { writeStep(before, true); }, [next]() { writeStep(next, false); });
 	return ControlResult::success(answer);
 }
 

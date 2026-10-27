@@ -785,6 +785,9 @@ set(LMMS_TESTS
 	src/core/MidiCommandBindingsTest.cpp
 	# 0.5.0 L11 / L12: search expressions, collections, track presets, importing tracks, the hand-off folder.
 	src/core/LibraryProjectsTest.cpp
+	# cluster new-p17-271: a collection store write the kernel cuts short is refused, and the store keeps what it had.
+	# The short write is provoked by capping RLIMIT_FSIZE, so it is deterministic: no disk, no timing, no race.
+	src/core/BrowserCollectionStoreWriteTest.cpp
 	# Focused regressions for track preset command replies.
 	src/core/TrackPresetCommandsTest.cpp
 	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
