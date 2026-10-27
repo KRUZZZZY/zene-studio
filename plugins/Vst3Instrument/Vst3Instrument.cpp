@@ -37,6 +37,7 @@
 #include "AudioEngine.h"
 #include "DeviceOptions.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "InstrumentPlayHandle.h"
 #include "LmmsCommonMacros.h"
 #include "MidiEvent.h"
@@ -232,8 +233,7 @@ void Vst3Instrument::applyChannelCounts()
 	const auto mainInputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
 	const auto mainOutputs = std::max<ch_cnt_t>(ch_cnt_t{2},
 		static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-	audioPorts().setAllChannelCounts(std::max(mainInputs, mainOutputs),
-		mainInputs, mainOutputs);
+	audioPorts().setAllChannelCounts(hostedTrackChannels(mainInputs, mainOutputs), mainInputs, mainOutputs);
 }
 
 bool Vst3Instrument::enableOutputBus(int bus)

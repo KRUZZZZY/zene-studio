@@ -44,6 +44,13 @@ set(LMMS_VST3_MONO_TEST_BUNDLE_DIR
 set(LMMS_VST3_MONO_TEST_BUNDLE_SO
 	"${LMMS_VST3_MONO_TEST_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux/${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME}.so")
 
+# Cluster stress-3: the three-channel (L R C) output variant, an odd channel count.
+set(LMMS_VST3_THREE_TEST_INSTRUMENT_NAME "vst3-test-three-channel-instrument")
+set(LMMS_VST3_THREE_TEST_BUNDLE_DIR
+	"${CMAKE_CURRENT_BINARY_DIR}/${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME}.vst3")
+set(LMMS_VST3_THREE_TEST_BUNDLE_SO
+	"${LMMS_VST3_THREE_TEST_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux/${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME}.so")
+
 # --- plug-in-side SDK sources (third-party) --------------------------------
 # Compiled separately from the fixture's own source so that the fixture stays
 # under the repository's own warning policy while the SDK is compiled the way
@@ -109,8 +116,28 @@ add_custom_command(TARGET ${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME} POST_BUILD
 		"${LMMS_VST3_MONO_TEST_BUNDLE_SO}"
 	COMMENT "Laying out the ${LMMS_VST3_MONO_TEST_INSTRUMENT_NAME}.vst3 bundle")
 
+add_library(${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME} MODULE
+	vst3-test-instrument.cpp
+)
+set_target_properties(${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME} PROPERTIES
+	PREFIX ""
+	OUTPUT_NAME "${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME}"
+)
+target_compile_definitions(${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME} PRIVATE
+	ZENE_TEST_INSTRUMENT_THREE_CHANNEL)
+target_link_libraries(${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME} PRIVATE
+	${LMMS_VST3_TEST_INSTRUMENT_NAME}-sdkbase)
+add_custom_command(TARGET ${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME} POST_BUILD
+	COMMAND ${CMAKE_COMMAND} -E make_directory
+		"${LMMS_VST3_THREE_TEST_BUNDLE_DIR}/Contents/${LMMS_VST3_TEST_MACHINE}-linux"
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different
+		"$<TARGET_FILE:${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME}>"
+		"${LMMS_VST3_THREE_TEST_BUNDLE_SO}"
+	COMMENT "Laying out the ${LMMS_VST3_THREE_TEST_INSTRUMENT_NAME}.vst3 bundle")
+
 # The probe lives in ../.. (tests/CMakeLists.txt) so that it sits with the other
 # plug-in test executables; it needs this path, and variables do not travel up a
 # directory level on their own.
 set(LMMS_VST3_TEST_BUNDLE_DIR "${LMMS_VST3_TEST_BUNDLE_DIR}" PARENT_SCOPE)
 set(LMMS_VST3_MONO_TEST_BUNDLE_DIR "${LMMS_VST3_MONO_TEST_BUNDLE_DIR}" PARENT_SCOPE)
+set(LMMS_VST3_THREE_TEST_BUNDLE_DIR "${LMMS_VST3_THREE_TEST_BUNDLE_DIR}" PARENT_SCOPE)

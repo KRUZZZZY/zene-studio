@@ -3152,3 +3152,8 @@ tests/src/gui/GraphWaveformEditorGuiTest.cpp
 docs/050-features/Q050-486.md
 docs/qwen-fixes-2026-10/cluster-Q050-486.md
 tests/src/core/MixerOrderByTracksTest.cpp
+include/HostedTrackChannels.h
+include/PluginInstantiationFailure.h
+src/core/PluginInstantiationFailure.cpp
+tests/src/core/ControlHostedBusLayoutTest.cpp
+docs/qwen-fixes-2026-10/cluster-stress-3.md

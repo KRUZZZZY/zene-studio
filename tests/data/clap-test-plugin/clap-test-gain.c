@@ -259,6 +259,9 @@ static const clap_plugin_params_t s_params = {
      sidechain-first   inputs: 0 = side-chain (not main), 1 = main; one stereo output
      unreadable-input  inputs: 0 reports no info (get() fails), 1 = main; one stereo output
      zero-output       one stereo input; outputs: 0 = zero-channel, 1 = main stereo
+     mono-sidechain    inputs: 0 = main stereo, 1 = MONO side-chain (three input channels, an odd count:
+                       ZAM's ZamCompX2); one stereo output (cluster stress-3)
+     no-audio          no audio port at all, the shape of a note-only plug-in (Stochas; cluster stress-3)
    Each process() copies the main input to the main output (scaled by the gain), and when the ports do
    not match the expected indices it writes nothing, so a misrouted buffer reads back as silence. */
 static const char* gain_layout(void) { return getenv("CLAP_TEST_GAIN_LAYOUT"); }
@@ -266,7 +269,7 @@ static const char* gain_layout(void) { return getenv("CLAP_TEST_GAIN_LAYOUT"); }
 static uint32_t gain_main_index(bool is_input)
 {
 	const char* layout = gain_layout();
-	if (layout == NULL) { return 0; }
+	if (layout == NULL || strcmp(layout, "mono-sidechain") == 0) { return 0; }
 	if (strcmp(layout, "zero-output") == 0) { return is_input ? 0 : 1; }
 	return is_input ? 1 : 0;
 }
@@ -276,6 +279,7 @@ static uint32_t gain_audio_ports_count(const clap_plugin_t* plugin, bool is_inpu
 	(void)plugin;
 	const char* layout = gain_layout();
 	if (layout == NULL) { return 1; }
+	if (strcmp(layout, "no-audio") == 0) { return 0; }
 	const bool zero = strcmp(layout, "zero-output") == 0;
 	return is_input ? (zero ? 1 : 2) : (zero ? 2 : 1);
 }
@@ -300,8 +304,9 @@ static bool gain_audio_ports_get(const clap_plugin_t* plugin, uint32_t index, bo
 			: "Output"), sizeof(info->name) - 1);
 	}
 	info->flags = index == gain_main_index(is_input) ? CLAP_AUDIO_PORT_IS_MAIN : 0;
-	info->channel_count = empty ? 0 : 2;
-	info->port_type = empty ? NULL : CLAP_PORT_STEREO;
+	const bool mono = layout != NULL && is_input && index == 1 && strcmp(layout, "mono-sidechain") == 0;
+	info->channel_count = empty ? 0 : (mono ? 1 : 2);
+	info->port_type = empty ? NULL : (mono ? CLAP_PORT_MONO : CLAP_PORT_STEREO);
 	info->in_place_pair = CLAP_INVALID_ID;
 	return true;
 }

@@ -965,6 +965,8 @@ set(LMMS_SRCS
 	core/PluginScanCache.cpp
 	# The vendor each VST3 / CLAP class's own factory reports, recorded by the hosts' discovery.
 	core/PluginVendors.cpp
+	# Cluster stress-3: the reason a hosted plug-in module's entry point produced no plug-in.
+	core/PluginInstantiationFailure.cpp
 	# 0.5.0 Q050-018: the placeholders a project open could not load (name, format, vendor)
 	core/MissingDevices.cpp
 	core/PresetPreviewPlayHandle.cpp

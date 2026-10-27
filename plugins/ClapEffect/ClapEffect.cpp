@@ -36,7 +36,9 @@
 #include "ClapEffectControls.h"
 #include "ClapSubPluginFeatures.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "LmmsCommonMacros.h"
+#include "PluginInstantiationFailure.h"
 #include "Song.h"
 #include "plugin_export.h"
 
@@ -76,6 +78,8 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* parent, void* data)
 	{
 		// A throw must not cross the extern "C" boundary.
 		qCritical() << "CLAP effect could not be created:" << error.what();
+		pluginload::noteInstantiationFailure(QStringLiteral("the CLAP effect could not be created: %1")
+			.arg(QString::fromUtf8(error.what())));
 		return nullptr;
 	}
 }
@@ -93,6 +97,7 @@ ClapEffect::ClapEffect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 	if (!m_plugin.load(modulePath, pluginId, &error))
 	{
 		qWarning() << "CLAP: could not load" << modulePath << pluginId << ":" << error;
+		pluginload::noteInstantiationFailure(error);
 	}
 	else
 	{
@@ -141,9 +146,7 @@ void ClapEffect::applyLayout()
 	// counts means the common case never needs a re-configuration.
 	const auto mainInputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.inputs));
 	const auto mainOutputs = std::max<ch_cnt_t>(1, static_cast<ch_cnt_t>(layout.outputs));
-	audioPorts().setAllChannelCounts(
-		std::max<ch_cnt_t>(ch_cnt_t{2}, std::max(mainInputs, mainOutputs)),
-		mainInputs, mainOutputs);
+	audioPorts().setAllChannelCounts(hostedTrackChannels(mainInputs, mainOutputs), mainInputs, mainOutputs);
 	m_appliedLayout = m_plugin.layoutRevision();
 }
 

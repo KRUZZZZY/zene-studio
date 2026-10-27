@@ -83,6 +83,12 @@ namespace ZeneTestInstrument {
 static const FUID kTestInstrumentUID (0x5A1E57B1, 0x9C4D42E7, 0xB0C3F81A, 0x6D2E4A90);
 constexpr SpeakerArrangement kOutputArrangement = SpeakerArr::kMono;
 #define ZENE_TEST_INSTRUMENT_CLASS_NAME "Zene VST3 Mono Test Instrument"
+#elif defined(ZENE_TEST_INSTRUMENT_THREE_CHANNEL)
+// Cluster stress-3: an output of three channels (L R C), an odd count - the layout class of LSP's
+// Crossover Mono x8 or Mixer x4 Mono, which the hosts refused before they were ever hosted.
+static const FUID kTestInstrumentUID (0x5A1E57B2, 0x9C4D42E7, 0xB0C3F81A, 0x6D2E4A90);
+constexpr SpeakerArrangement kOutputArrangement = SpeakerArr::k30Cine;
+#define ZENE_TEST_INSTRUMENT_CLASS_NAME "Zene VST3 Three-Channel Test Instrument"
 #else
 static const FUID kTestInstrumentUID (0x5A1E57B0, 0x9C4D42E7, 0xB0C3F81A, 0x6D2E4A90);
 constexpr SpeakerArrangement kOutputArrangement = SpeakerArr::kStereo;
