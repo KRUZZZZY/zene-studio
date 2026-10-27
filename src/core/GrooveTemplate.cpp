@@ -421,8 +421,10 @@ static tick_t jitteredTick(const Note& note, tick_t slotTick, tick_t moved, tick
 	if (randomTicks <= 0) { return moved; }
 	const double unit = static_cast<double>(NoteRandom::rollUnit(seed,
 		note.key(), slotTick, note.length().getTicks(), GrooveRandomTickSalt));
-	const tick_t jittered = clampedTick(moved + static_cast<tick_t>(std::lround(
-		(unit * 2.0 - 1.0) * static_cast<double>(randomTicks))));
+	// The sum is taken in long long: moved + a positive draw past INT32_MAX wraps
+	// negative in tick_t, and the floor below would then pull the note to tick 0.
+	const long long offset = std::lround((unit * 2.0 - 1.0) * static_cast<double>(randomTicks));
+	const tick_t jittered = clampedTick(static_cast<long long>(moved) + offset);
 	return jittered < 0 ? 0 : jittered;
 }
 
