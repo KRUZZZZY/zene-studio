@@ -111,4 +111,33 @@ position; both manifest gates then reproduced.
 
 ## Self-check
 
-(Filled after `submit_check.py`; see the section below.)
+`submit_check.py` (log `submit-check-1.log`): PASS for commits, clean tree, report, test added, test registered.
+**FAIL for `gates (feature_check.py)` only, and this is environmental.** `feature_check.py` must create
+`<worktree>-feature-check/` next to the worktree (`feature_check.py:70-71`); the write-jail blocks that path, so it
+exits 1 with `PermissionError` before any gate runs. I did not change the script or the path. The gate commands it
+runs were run one by one from the worktree (table above): six pass, both ratchets exit 1 and their 29 reported items
+are outside every file this branch changes. The loop or the owner needs to run `feature_check.py` where it can write
+its logs; until then the gates row is not verified by this lane.
+
+- **Regression test fails with the change reverted and passes with it:** RED `ctest -R ProjectRestoreMissingTargetTest`
+  EXIT 8 with the three expected failures (`test-final-red.log`); GREEN EXIT 0, `Totals: 6 passed`
+  (`test-final-green.log`). The revert and re-apply were done with `git apply -R` / `git apply` on the saved patch.
+- **Deterministic:** no wall-clock time, sleeps, threads or races. Each case writes its own files in a `QTemporaryDir`
+  and checks the bytes. The advertised-inverse case reads `control.transactions` through `revtest::stateOf`. It takes the
+  last record for `project.restore_revision`; the records before it are the first two cases, which both give
+  `control.undo` after the fix and `project.restore_revision` before it, so the assertion holds whichever end of the
+  journal the lookup takes.
+- **Fix at the cause, complete:** the cause is an undo that assumes the restore rotated the displaced file into revision
+  0. For a missing target `restoreProjectRevision` rotates nothing (`ProjectRevisions.cpp:364-368`), so the fix
+  branches on `liveExisted`. Callers: the only handler is `project.restore_revision` (`ControlCommandsProjectFiles.cpp`).
+  The redo closure is unchanged and was checked by the test: after the undo removes the file, revision N is still in the
+  set, so `revisionHoldingBytes` finds it and the redo restores it. The sibling `revisions.restore`
+  (`ControlCommandsRevisions.cpp:147-168`, `:398`) already does this, and the fix uses the same shape. The engine function
+  `restoreProjectRevision` is not changed, so its other callers (the sibling, the redo closures) keep their behaviour.
+- **No collateral:** the existing-file path is unchanged, and the guard case passes before and after the fix. Related
+  tests pass with the fix: ProjectRevisionRestoreStagingTest, RevisionTimelineTest, ReversibilityUndoTest,
+  ReversibilityContractTest, ProjectRecoveryTest, ControlRegistryTest. No file format changes, and no limit or check was
+  added. The only remaining family failure, ReversibilityUndoDeviceTest, fails the same way on the unfixed tree.
+- **Verdict:** FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so the citation item does not apply. The sibling
+  `revisions.restore` is already correct at `ControlCommandsRevisions.cpp:147-168`, which is the evidence for why
+  only `project.restore_revision` was broken.
