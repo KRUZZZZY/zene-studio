@@ -30,6 +30,7 @@
 
 #include <QtTest>
 
+#include <limits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -38,12 +39,14 @@
 #include "AudioEngine.h"
 #include "AutomationRamp.h"
 #include "AutomatableModel.h"
+#include "ControlMixerSupport.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerListen.h"
 #include "SampleFrame.h"
+#include "Song.h"
 
 using namespace lmms;
 
@@ -208,6 +211,79 @@ private slots:
 		QVERIFY2(identical(pfl, mix), "master PFL should bypass the master fader");
 		mixerlisten::clear();
 		mixerlisten::setMode(mixerlisten::Mode::AfterFader);
+	}
+
+	//! A send-pan undo must follow its persistent endpoints after a mixer reorder.
+	void aSendPanUndoFollowsItsChannelsThroughAReorder()
+	{
+		Engine::getSong()->clearProject();
+		Mixer* mixer = Engine::mixer();
+		while (mixer->numChannels() <= 4) { mixer->createChannel(); }
+		const QString fromId = control::channelIdOf(mixer->mixerChannel(1));
+		const QString toId = control::channelIdOf(mixer->mixerChannel(2));
+		const QString otherId = control::channelIdOf(mixer->mixerChannel(3));
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), otherId},
+			{QStringLiteral("pan"), 0.75}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), fromId}, {QStringLiteral("to"), toId},
+			{QStringLiteral("pan"), 0.5}}).ok);
+		MixerRoute* target = control::findMixerRoute(1, 2);
+		MixerRoute* other = control::findMixerRoute(1, 3);
+		QVERIFY(target != nullptr);
+		QVERIFY(other != nullptr);
+
+		// A GUI topology change does not add a journal step. The old positions
+		// now belong to the other route.
+		mixer->moveChannelLeft(3);
+		QCOMPARE(control::findMixerRoute(1, 2), other);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(other->pan()->value(), 0.75f);
+		QCOMPARE(control::findMixerRoute(1, 3), target);
+		QCOMPARE(target->pan()->value(), 0.0f);
+
+		const int removed = mixer->createChannel();
+		const QString removedId = control::channelIdOf(mixer->mixerChannel(removed));
+		const QString masterId = control::channelIdOf(mixer->mixerChannel(0));
+		QVERIFY(run(QStringLiteral("mixer.send_to"), {{QStringLiteral("channel"), removedId}, {QStringLiteral("to"), masterId}}).ok);
+		QVERIFY(run(QStringLiteral("mixer.send_pan"), {{QStringLiteral("channel"), removedId}, {QStringLiteral("to"), masterId},
+			{QStringLiteral("pan"), 0.25}}).ok);
+		mixer->deleteChannel(removed);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(static_cast<int>(mixer->numChannels()), removed);
+	}
+
+	void feedbackDisableUndoFollowsItsEndpointsAfterAReorder()
+	{
+		Engine::getSong()->clearProject();
+		Mixer* mixer = Engine::mixer();
+		while (mixer->numChannels() <= 3) { mixer->createChannel(); }
+		MixerChannel* from = mixer->mixerChannel(1);
+		MixerChannel* to = mixer->mixerChannel(2);
+		MixerChannel* other = mixer->mixerChannel(3);
+		mixer->setFeedbackMode(true);
+		QVERIFY(mixer->createChannelSend(from->index(), to->index()) != nullptr);
+		MixerRoute* edge = mixer->createChannelSend(to->index(), from->index());
+		QVERIFY(edge != nullptr);
+		QVERIFY(edge->feedback());
+		QVERIFY(run(QStringLiteral("feedback.disable")).ok);
+		QVERIFY(!mixer->feedbackMode());
+		QVERIFY(mixer->channelSendModel(to->index(), from->index()) == nullptr);
+
+		mixer->moveChannelLeft(3);
+		QCOMPARE(to->index(), 3);
+		QCOMPARE(other->index(), 2);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(mixer->feedbackMode());
+		MixerRoute* restored = control::findMixerRoute(to->index(), from->index());
+		QVERIFY(restored != nullptr);
+		QVERIFY(restored->feedback());
+		QVERIFY(control::findMixerRoute(other->index(), from->index()) == nullptr);
+	}
+
+	void findMixerRouteRejectsAnOutOfRangeSender()
+	{
+		QVERIFY(control::findMixerRoute(std::numeric_limits<mix_ch_t>::max(), 0) == nullptr);
 	}
 };
 

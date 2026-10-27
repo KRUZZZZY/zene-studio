@@ -1,103 +1,41 @@
-Verdict: FALSE-POSITIVE
+Verdict: FIXED
 
-new-p21-93: findMixerRoute dereferences mixer/channel without null checks (src/core/ControlMixerSupport.cpp:182-190)
+# new-p21-93: findMixerRoute stale sender index
 
-## Finding as stated
+## Finding and QA correction
 
-Luna's claim: `Engine::mixer()->mixerChannel(fromIndex)` returns nullptr for a removed channel, and the loop at
-`ControlMixerSupport.cpp:184-185` then dereferences it. A null guard on `Engine::mixer()` and `from` is the proposed fix.
+The brief's specific pointer explanation was wrong: `Mixer::mixerChannel(int)` indexes an unchecked `std::vector`, so removing a channel does not leave a null slot. However, the failure was real. `findMixerRoute` dereferenced `Engine::mixer()` and indexed the channel vector without validating the sender index. `mixer.send_pan` and `feedback.disable` also retained endpoint indices in their undo closures. Mixer UI reorders call `Mixer::moveChannelLeft` directly (`src/gui/MixerView.cpp:664-685`) without adding a journal step, so a later undo could use an in-range stale index and change a different route. An out-of-range sender segfaulted in `findMixerRoute`.
 
-## Why the stated mechanism is not real
+`MixerListenTest::aSendPanUndoFollowsItsChannelsThroughAReorder` reproduces the wrong-route write: after moving the destination, undo changed the other route's pan from 0.75 to 0.0. It also removes an endpoint and confirms that replay safely does nothing. `MixerListenTest::feedbackDisableUndoFollowsItsEndpointsAfterAReorder` reproduces a feedback edge restored onto the wrong channel after a reorder. `MixerListenTest::findMixerRouteRejectsAnOutOfRangeSender` reproduces the unchecked lookup as SIGSEGV. The false-positive verdict is therefore superseded by this QA finding.
 
-1. **`mixerChannel()` never returns nullptr for a valid index.** `Mixer::mixerChannel(int)` is
-   `return m_mixerChannels[_ch];` (`include/Mixer.h:634-637`), an unchecked `std::vector<MixerChannel*>` read
-   (`include/Mixer.h:786`). Every element is a fresh `new MixerChannel` (`src/core/Mixer.cpp:1075`), and removal
-   erases the element, so the vector shrinks (`src/core/Mixer.cpp:1441`). A removed channel is therefore not a null
-   slot. An index past the end is undefined behaviour inside `mixerChannel`, not a `nullptr` that `findMixerRoute`
-   could see. A guard added to `findMixerRoute` would not catch that case.
-2. **The intended contract for "no such channel" is a typed result, not a null pointer from the index path.**
-   `resolveMixerChannel` (`src/core/ControlMixerSupport.cpp:45-84`) resolves by persistent id and returns
-   `NotFound` for a missing channel. `findMixerRoute` takes raw indices by design and returns `nullptr` only for
-   "no such route" (`ControlMixerSupport.cpp:189`). Every caller that can meet a missing route already handles that
-   case (`ControlCommandsMixerRoutes.cpp:305-310`, `ControlCommandsMixerListen.cpp:98-99`, `MixerOverlays.cpp:77-78`).
-3. **Every caller passes an index that was resolved live in the same call.** Callers listed by
-   `rg -n 'findMixerRoute\(' src/core/*.cpp src/gui/*.cpp` (log `evidence-2.log`):
-   - `ControlMixerSupport.cpp:298`: `liveRouteEnds` resolves the ids to live indices first (`ControlMixerSupport.cpp:268-279`).
-   - `ControlCommandsMixerRoutes.cpp:147`, `:304`: indices from `resolveRoutingEnds` (`ControlMixerSupport.cpp:192-197`).
-   - `ControlCommandsMixerTools.cpp:111`: `channelWithId` then `->index()` (`ControlCommandsMixerTools.cpp:106-111`).
-   - `ControlCommandsMixerTools.cpp:124`, `ControlCommandsMixerListen.cpp:97`: indices from `resolveRoutingEnds`.
-   - `MixerOverlays.cpp:77`, `:87`: `apply()` only reaches `showFader`/`roleOf` for `i < numChannels()` (`MixerOverlays.cpp:161`), and `roleOf` returns `Volume` for `index == 0` or no target.
-   - `ControlCommandsFeedback.cpp:187`: `restoreEdges` calls `mixer->createChannelSend(edge.from, edge.to, ...)` on the same indices first (`ControlCommandsFeedback.cpp:186`). That function indexes the vector unchecked too (`src/core/Mixer.cpp:1600-1601`), so a stale index fails there before `findMixerRoute` runs. A guard in `findMixerRoute` changes nothing for this path.
-4. **`Engine::mixer()` is null only outside the engine lifetime.** `Engine::s_mixer` is set in `Engine::init` (`src/core/Engine.cpp:73`) and nulled by `deleteHelper(&s_mixer)` in `Engine::destroy` (`src/core/Engine.cpp:112`). The control and GUI callers above run only while the engine is up. I did not find a path that calls `findMixerRoute` after `destroy`, but I did not trace the shutdown order end to end, so treat that part as checked by reading, not by running.
+## QA fix
 
-## Sibling observation (not part of this verdict; not fixed here)
+- `src/core/ControlMixerSupport.cpp`: `findMixerRoute` now returns `nullptr` if the mixer is absent, the sender index is out of range, or the channel pointer is null.
+- `src/core/ControlCommandsMixerListen.cpp`: send-pan undo and redo retain persistent channel IDs and resolve their live indices when replayed. If an endpoint was removed, replay is a no-op.
+- `src/core/ControlCommandsFeedback.cpp`: feedback-disable undo retains persistent endpoint IDs and resolves them before recreating routes, skipping removed endpoints.
+- `tests/src/core/MixerListenTest.cpp`: added deterministic pan/feedback reorder, endpoint-removal, and out-of-range regressions.
 
-The undo steps in `ControlCommandsMixerListen.cpp:103` capture raw indices (`from`, `to`) and replay them through
-`setSendPan` → `findMixerRoute` (`ControlCommandsMixerListen.cpp:85-87`). Unlike `setSendEnabled`
-(`ControlCommandsMixerTools.cpp:106-110`, BUG 6) and `recordMixerRouteStep` (`ControlMixerSupport.cpp:283-311`), this
-path does not resolve live ids at undo time. It would act on the wrong route, or read out of range, if a channel was
-removed or moved after the step was recorded without its own undo step. I could not establish whether such a
-topology change can happen outside the undo system while a pan step is still on the stack. `UndoHistory::clear()`
-(`src/core/UndoHistory.cpp:483`) has no callers in `src/` or `src/gui/` (`evidence-8.log`), and I did not locate where
-project load resets the control undo history. This is an unproven candidate for a separate cluster, with
-NEEDS-CONTEXT on its reachability. It is not the finding as written.
+## Verification
 
-## Commands run and exit codes
+Commands ran in the worktree unless noted. Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-93.r1/logs/`.
 
-Logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-93.r1/logs/`.
-
-| Step | Command (run from the worktree) | Exit | Log |
+| Step | Command | Exit | Evidence |
 | --- | --- | --- | --- |
-| Mixer index writes and reads | `rg -n 'm_mixerChannels\.(erase\|push_back\|pop_back)\|return m_mixerChannels\[' src/core/Mixer.cpp include/Mixer.h` | 0 | `evidence-1.log` |
-| Callers of `findMixerRoute` | `rg -n 'findMixerRoute\(' src/core/*.cpp src/gui/*.cpp` plus the `mixerChannel(index)` sites | 0 | `evidence-2.log` |
-| Channel delete and move call sites | `rg -n 'deleteChannel\(\|moveChannel...' src include` (non-test) | 0 | `evidence-3.log` |
-| Undo teardown and load paths | `sed` of `src/tracks/TrackFolder.cpp:125-145`, `src/core/ControlCommandsDrumRack.cpp:120-140`, `src/core/ControlCommandsBus.cpp:160-170` | 0 | `evidence-4.log` |
-| Undo-history clearing search | `rg -n -i 'clear\w*undo\|undo\w*clear...'` | 0 (no matches) | `evidence-5.log` |
-| Undo implementation search | `rg -l 'addUndoStep\(' ...`; `rg` for `UndoHistory` clears | 0 | `evidence-6.log`, `evidence-7.log`, `evidence-8.log` |
-| Feature-check wrapper, as designed | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 | `gate-feature-check-1.log` |
-| Gate 1, fork-sources | `bash tests/fork-sources-gate.sh` | 0 | `gate-2-fork-sources.log` |
-| Gate 2, all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 | `gate-3-all-sources-reproduce.log` |
-| Gate 3, no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 | `gate-4-no-upstream-regression.log` |
-| Gate 4, check-namespace | `tests/scripted/check-namespace` | 0 | `gate-5-check-namespace.log` |
-| Gate 5, no-tautology | `bash tests/no-tautology-gate.sh` | 0 | `gate-6-no-tautology.log` |
-| Gate 6, doc-figures | `python3 tests/doc-figures-gate.py` | 0 | `gate-7-doc-figures.log` |
-| Gate 7, complexity ratchet | `bash tests/complexity-gate.sh --check` | 1 | `gate-8-complexity.log` |
-| Gate 8, file-length ratchet | `bash tests/file-length-gate.sh --check` | 1 | `gate-9-file-length.log` |
+| Product fix build | `cmake --build build --target zene MixerListenTest -j4` | 0 | `qa-compact-feedback-build-1.log` |
+| Product fix GREEN | `ctest -R '^MixerListenTest$' --output-on-failure` from `build/tests` | 0 | 1/1 CTest target passed (`qa-compact-feedback-green-1.log`). |
+| Product hunks reversed build | `cmake --build build --target zene MixerListenTest -j4` | 0 | `qa-final-reversed-build-1.log` |
+| Product hunks reversed | `ctest -R '^MixerListenTest$' --output-on-failure` from `build/tests` | 8 | Pan and feedback undo assertions failed; the out-of-range lookup segfaulted (`qa-final-reversed-ctest-1.log`). |
+| Restored fix build | `cmake --build build --target zene MixerListenTest -j4` | 0 | `qa-final-restored-build-1.log` |
+| Restored fix GREEN | `ctest -R '^MixerListenTest$' --output-on-failure` from `build/tests` | 0 | 1/1 CTest target passed (`qa-final-restored-green-1.log`). |
+| Required feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-93` | 0 | Final table: all eight rows pass; no new complexity or file-length item in touched files. |
 
-Gate summary is in `gate-summary-1.log`.
-
-## Gate notes
-
-- **`feature_check.py` did not run.** It tries to create `<worktree>-feature-check/` beside the worktree
-  (`feature_check.py:70-71`), which is outside the allowed write paths, and failed with PermissionError
-  (`gate-feature-check-1.log`). I did not change the script. I ran its eight gate commands one by one from the worktree instead (table above), so the logs are the same commands but not its single table.
-- **Complexity and file-length are red on the train.** The regressions in those logs are on files this branch does
-  not touch: `tests/src/core/VideoTrackTest.cpp (651)` and `tests/src/gui/ArrangerTimelineTest.cpp (948)` in
-  `gate-9-file-length.log`, plus 7 complexity regressions in `gate-8-complexity.log`. This branch has no source
-  changes (`git status` was clean before this report), so none of them is in a file it changed.
-
-## Regression test
-
-Not written. The verdict is FALSE-POSITIVE, and no product code changed. There was nothing to show RED and GREEN.
-Step 4b does not apply. Definition-of-done item 2 is not needed for a false positive.
+An intermediate gate run found `tests/src/core/MixerToolsTest.cpp` at 510 lines. The regression was moved into the existing, shorter `MixerListenTest.cpp`; no gate or assertion was changed. The final direct feature-check run passed. The lane's original write-jail failure did not reproduce in QA.
 
 ## Self-check
 
-Completion check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-93` →
-`logs/submit-check-1.log`, EXIT=1. Passing rows: commits on the branch, working tree clean, this report, tests (claim-only closure).
-Failing row: **gates (feature_check.py)**. Its cause is environmental: `feature_check.py:70-71` creates
-`<worktree>-feature-check/` beside the worktree, outside the allowed write paths, so it raised PermissionError
-(`gate-feature-check-1.log`). I did not edit the shared script.
-
-Gate logic on the same committed tree, run from a copy of the runner whose only change is the log directory
-(`logs/feature_check_logdir_copy.py`, the cache still at its original location): `logs/feature-check-table-1.log`,
-EXIT=0, RESULT: PASS, eight rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
-no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item in your files").
-The changed set is this report only, so no ratchet item can be in a changed file.
-
-The four open questions:
-- **Regression test RED/GREEN:** not applicable. The verdict is FALSE-POSITIVE and no product code changed, so there is no RED or GREEN to show.
-- **Deterministic test:** not applicable, no test was added.
-- **Fix at the cause and complete:** not applicable, no fix. The sibling candidate (`ControlCommandsMixerListen.cpp:85-87, 103`) is unproven and is not fixed here.
-- **No collateral damage:** not applicable, no product change.
-- **FALSE-POSITIVE evidence:** the file:line contract is listed in "Why the stated mechanism is not real", items 1-4.
+- **RED/GREEN:** With only product changes reversed, `cmake --build build --target zene MixerListenTest -j4` exited 0 and `ctest -R '^MixerListenTest$' --output-on-failure` from `build/tests` exited 8 (`qa-final-reversed-build-1.log`, `qa-final-reversed-ctest-1.log`). After restoring the product hunks, the same build exited 0 and ctest exited 0 (`qa-final-restored-build-1.log`, `qa-final-restored-green-1.log`).
+- **Deterministic:** The pan test uses fixed channel IDs and pan values plus a synchronous `Mixer::moveChannelLeft(3)` call. The feedback test creates one explicit two-channel cycle and reorders a third channel. Neither uses a clock, sleep, or race. The out-of-range check passes a fixed maximum `mix_ch_t` value.
+- **Cause and callers:** `rg -n 'findMixerRoute\(' src/core/*.cpp src/gui/*.cpp` exited 0. Live command handlers resolve endpoints before lookup; `recordMixerRouteStep`, send-enable undo, send-pan undo, and feedback-disable undo now resolve persistent IDs at replay; mixer overlay callers use current channel indices.
+- **Sibling commands:** `feedback.disable` is the writer that retains and restores loop-closing edges, and it now resolves their stable endpoint IDs. `feedback.enable` only toggles the mode, while `feedback.get_state` only reads the mode and edge list; neither is affected. The response keeps the same endpoint ID fields.
+- **Collateral:** The change does not alter project serialization, channel limits, or audio-thread behavior. The bounds guard excludes only invalid sender indices; valid current indices retain their existing behavior. Feedback route JSON retains the same stable endpoint IDs. The focused test and final feature gate pass.
+- **False-positive evidence:** Not applicable to the final verdict, which is FIXED. The original null-slot description was inaccurate; `include/Mixer.h:634-637` performs unchecked vector indexing, and the stale undo path and out-of-range lookup are demonstrated above.

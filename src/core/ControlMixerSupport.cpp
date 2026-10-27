@@ -181,7 +181,10 @@ QJsonObject channelLatencyJson(MixerChannel& channel)
 
 MixerRoute* findMixerRoute(mix_ch_t fromIndex, mix_ch_t toIndex)
 {
-	MixerChannel* from = Engine::mixer()->mixerChannel(fromIndex);
+	Mixer* mixer = Engine::mixer();
+	if (mixer == nullptr || fromIndex >= mixer->numChannels()) { return nullptr; }
+	MixerChannel* from = mixer->mixerChannel(fromIndex);
+	if (from == nullptr) { return nullptr; }
 	for (MixerRoute* route : from->m_sends)
 	{
 		if (route->receiverIndex() == toIndex) { return route; }

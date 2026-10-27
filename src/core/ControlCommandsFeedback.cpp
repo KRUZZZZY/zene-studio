@@ -114,6 +114,8 @@ struct FeedbackEdge
 {
 	mix_ch_t from;
 	mix_ch_t to;
+	QString fromId;
+	QString toId;
 	float amount;
 	bool preFader;
 };
@@ -127,6 +129,7 @@ QVector<FeedbackEdge> feedbackEdges(Mixer* mixer)
 		if (route->feedback())
 		{
 			edges.append({route->senderIndex(), route->receiverIndex(),
+				channelIdOf(route->sender()), channelIdOf(route->receiver()),
 				route->amount()->value(), route->preFader()});
 		}
 	}
@@ -183,8 +186,13 @@ void restoreEdges(Mixer* mixer, const QVector<FeedbackEdge>& edges)
 	mixer->setFeedbackMode(true);
 	for (const FeedbackEdge& edge : edges)
 	{
-		mixer->createChannelSend(edge.from, edge.to, edge.amount, edge.preFader);
-		if (MixerRoute* route = findMixerRoute(edge.from, edge.to))
+		ControlResult ignored;
+		MixerChannel* from = resolveMixerChannel(edge.fromId, &ignored);
+		MixerChannel* to = resolveMixerChannel(edge.toId, &ignored);
+		if (from == nullptr || to == nullptr) { continue; }
+		const mix_ch_t fromIndex = static_cast<mix_ch_t>(from->index());
+		const mix_ch_t toIndex = static_cast<mix_ch_t>(to->index());
+		if (MixerRoute* route = mixer->createChannelSend(fromIndex, toIndex, edge.amount, edge.preFader))
 		{
 			route->setFeedback(true);
 		}
