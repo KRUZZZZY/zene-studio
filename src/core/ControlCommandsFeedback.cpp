@@ -72,6 +72,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -243,7 +244,7 @@ ControlResult handleDisable(Mixer* mixer)
 	control::addUndoStep(
 		[mixer, edges]() { restoreEdges(mixer, edges); },
 		[mixer]() { mixer->setFeedbackMode(false); });
-	mixer->setFeedbackMode(false);
+	if (mixer->setFeedbackMode(false) > 0) { Engine::getSong()->setModified(); }
 	QJsonObject before;
 	before.insert(QStringLiteral("enabled"), true);
 	before.insert(QStringLiteral("removed"), edges.size());
