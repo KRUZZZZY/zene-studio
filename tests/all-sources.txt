@@ -3286,6 +3286,7 @@ tests/src/plugins/SlicerTZoomTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/TripleOscillatorUserWaveTest.cpp
 tests/src/plugins/VestigeMidiHandoffTest.cpp
+tests/src/plugins/VibedSubBaseRateTest.cpp
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 tests/src/plugins/VibratingStringTest.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
