@@ -107,6 +107,9 @@ struct BiquadSection
 	}
 	float run(float x, int channel) noexcept
 	{
+		// A channel outside the section's state is a caller error: pass the input through and touch
+		// nothing, rather than read or write past the fixed-size arrays.
+		if (channel < 0 || channel >= Channels) { return x; }
 		const float y = c.b0 * x + z1[channel];
 		z1[channel] = c.b1 * x - c.a1 * y + z2[channel];
 		z2[channel] = c.b2 * x - c.a2 * y;

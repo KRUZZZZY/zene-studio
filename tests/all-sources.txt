@@ -2643,6 +2643,7 @@ tests/src/core/AutomationThinTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BasicFiltersSampleRateTest.cpp
 tests/src/core/BenchmarkBaseline.h
+tests/src/core/BiquadSectionTest.cpp
 tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogQueryTest.cpp
 tests/src/core/BrowserCatalogTest.cpp

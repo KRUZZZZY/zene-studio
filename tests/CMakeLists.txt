@@ -963,6 +963,8 @@ set(LMMS_TESTS
 	src/core/TrackOffsetTest.cpp
 	# Q050-340: every capture channel's level and the armed tracks' inputs (meter.inputs).
 	src/core/InputChannelMeterTest.cpp
+	# new-p16-306: the shared biquad section ignores a channel outside its state instead of writing past it.
+	src/core/BiquadSectionTest.cpp
 	# DrumSynth rejects envelope tokens longer than its fixed parser capacity.
 	src/core/DrumSynthTest.cpp
 	# Q050-030: selecting a Neural Amp model never waits behind a load (the effect is compiled in with a test seam).

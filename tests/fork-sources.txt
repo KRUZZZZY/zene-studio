@@ -2348,6 +2348,7 @@ tests/src/core/AutomationLaneChildrenTest.cpp
 tests/src/core/AutomationLanesTest.cpp
 tests/src/core/AutomationRenderAllocationTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
+tests/src/core/BiquadSectionTest.cpp
 tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogQueryTest.cpp
 tests/src/core/AutomationThinTest.cpp
