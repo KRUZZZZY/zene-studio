@@ -139,6 +139,13 @@ void recordMenu(QMenu* menu, const QJsonObject& self, bool instrument)
 	add(record, "Disarm", "track.set_arm", with(self, "armed", false), false);
 	record->addSeparator();
 	add(record, "Audio Input...", "record.input_set", {}, true);
+	if (instrument)  // Q050-054.1: MIDI takes - armed tracks record what is played while Record runs
+	{
+		record->addSeparator();
+		choices(record, "Record MIDI Takes", "track.set_midi_arm", "armed", self);
+		add(record, "MIDI Take Status", "record.midi_capture_status", {}, false, {}, true);
+		add(record, "Keep the Captured MIDI", "record.midi_capture_commit", {}, false);
+	}
 	QMenu* retro = menu->addMenu(tr("Retrospective Capture"));
 	choices(retro, "Keep Listening", "record.retro_capture_arm", "armed", {});
 	if (instrument) { add(retro, "Last MIDI to a New Clip", "midi.retro_capture_to_clip", self, false, {}, true); }

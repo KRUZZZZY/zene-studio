@@ -364,6 +364,7 @@ set(LMMS_SRCS
 	core/ControlCommandsModulatorRoutes.cpp
 	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsMidi.cpp
+	core/ControlCommandsMidiTakes.cpp
 	core/ControlCommandsMidiReconnect.cpp
 	core/ControlCommandsMidiReconnectEdit.cpp
 	core/ControlCommandsNotes.cpp
@@ -1228,6 +1229,8 @@ set(LMMS_SRCS
 	core/ArticulationMap.cpp
 	core/ArticulationRemap.cpp
 	core/MidiPlayback.cpp
+	core/MidiTakeCapture.cpp
+	core/MidiTakeRecorder.cpp
 	core/NoteConditions.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp

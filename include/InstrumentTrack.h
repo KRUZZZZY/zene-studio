@@ -41,6 +41,7 @@
 #include "MidiEventProcessor.h"
 #include "MidiInputTransform.h"
 #include "MidiPort.h"
+#include "MidiTakeCapture.h"
 #include "MpeExpression.h"
 #include "NotePlayHandle.h"
 #include "Piano.h"
@@ -98,6 +99,10 @@ public:
 	const MpeExpression& mpeExpression() const { return m_mpeExpression; }
 	//! 0.5.0 L07 (ED-145): what this track does to live MIDI input (MidiInputTransform.h).
 	MidiInputTransform& inputTransform() { return m_inputTransform; }
+	//! Q050-054.1: the arrangement MIDI take capture this track's live input feeds while armed
+	//! (track.set_midi_arm) and transport.record runs (MidiTakeRecorder).
+	MidiTakeCapture& midiTakeCapture() { return m_midiTakeCapture; }
+	const MidiTakeCapture& midiTakeCapture() const { return m_midiTakeCapture; }
 	//! 0.5.0 L09 (MX-035): every note of the track started this many milliseconds later (0..500) - a
 	//! manual offset for a slow instrument or to sit a part behind the beat. Saved only when set.
 	int delayMs() const { return m_delayMs.load(std::memory_order_relaxed); }
@@ -198,6 +203,10 @@ public:
 	//! R3.3: whether a note of @a clip at @a songTick plays under the track's
 	//! composite (and audition). True for every note of a track with neither.
 	bool compPlays(const MidiClip* clip, int songTick) const;
+	//! Q050-054.1: whether a loop-recorded take @a clip plays under the active-take model - an ordinary
+	//! clip always does; a take only when it is its group's active take, or a composite, an audition or
+	//! "play all takes" decides instead (the SampleTrack rule). Lock-free: the render thread calls it.
+	bool takePlays(const MidiClip* clip) const;
 	//! What play() applies to a fresh note play handle beyond the note itself: velocity jitter,
 	//! the slide source, the song-global offset (@a songOffset: the song position of the clip's own
 	//! time 0 for the pass playing) and the clip's transpose (InstrumentTrackNotes.cpp).
@@ -460,6 +469,8 @@ private:
 	//! Whether @a name is one of those elements (the loader must not take it for an instrument plug-in).
 	static bool isZeneInstrumentNode( const QString& name );
 
+	//! Before the port: destroyed after it, so no event the port delivers reaches a freed capture.
+	MidiTakeCapture m_midiTakeCapture;
 	MidiPort m_midiPort;
 
 	MpeExpression m_mpeExpression;

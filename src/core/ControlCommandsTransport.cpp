@@ -32,6 +32,7 @@
 #include "Engine.h"
 #include "SampleTrack.h"
 #include "InputMonitor.h"
+#include "MidiTakeRecorder.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackFolder.h"
@@ -171,12 +172,16 @@ void registerTransportCommands(ControlRegistry& registry)
 			"armed for recording write, while it plays (Song::playAndRecord). Starting from a "
 			"stopped transport only: while the song is already playing the record mode cannot be "
 			"switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. "
-			"Audio capture on a record route is armed per track (track.set_arm) and runs on its own.");
+			"Audio capture on a record route is armed per track (track.set_arm) and runs on its own. "
+			"Instrument tracks armed with track.set_midi_arm record the MIDI played into them alongside "
+			"(Q050-054.1): 'midi_tracks' lists them, and Stop leaves their takes in the arrangement through "
+			"record.midi_capture_commit - one MIDI clip per plain pass, a take lane per loop pass.");
 		cmd.requiresDecl = QStringList{QStringLiteral("device")};
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("playing"), booleanProperty()},
 			{QStringLiteral("recording"), booleanProperty()},
+			{QStringLiteral("midi_tracks"), arrayProperty()},
 		});
 		cmd.handler = [](const QJsonObject&) {
 			Song* song = Engine::getSong();
@@ -187,7 +192,8 @@ void registerTransportCommands(ControlRegistry& registry)
 			}
 			song->playAndRecord();
 			return ControlResult::success(QJsonObject{{QStringLiteral("playing"), song->isPlaying()},
-				{QStringLiteral("recording"), song->isRecording()}});
+				{QStringLiteral("recording"), song->isRecording()},
+				{QStringLiteral("midi_tracks"), MidiTakeRecorder::instance()->sessionTracks()}});
 		};
 		registry.registerCommand(cmd);
 	}

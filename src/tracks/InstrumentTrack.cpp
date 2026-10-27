@@ -487,6 +487,9 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 	}
 	// 0.5.0 L07 (ED-145): live input through the track's MIDI input transform.
 	if (handleInputTransform(event, time, offset)) { return; }
+	// Q050-054.1: an armed track records what is played while transport.record runs - before the
+	// monitoring gate, so a track that is not heard still records. Lock- and allocation-free.
+	if (event.source() == MidiEvent::Source::External) { m_midiTakeCapture.capture(event); }
 	// R2.1: monitoring Off keeps live notes out of the instrument. Only the NOTE-ON is
 	// dropped - a note-off still reaches a note that sounded before the mode changed.
 	if (event.type() == MidiNoteOn && event.source() == MidiEvent::Source::External
@@ -899,6 +902,17 @@ bool InstrumentTrack::compPlays(const MidiClip* clip, int songTick) const
 
 
 
+bool InstrumentTrack::takePlays(const MidiClip* clip) const
+{
+	if (!clip->hasTakeGroup()) { return true; }
+	const TakeLaneModel& comp = takeLanes();
+	return !comp.segments().empty() || comp.auditionLane() >= 0 || comp.playAllTakes()
+		|| clip->activeTakeLane() == clip->laneIndex();
+}
+
+
+
+
 bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 							const f_cnt_t _offset, int _clip_num )
 {
@@ -997,6 +1011,8 @@ bool InstrumentTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			continue;
 		}
+		// Q050-054.1: a loop-recorded take that is not its group's active take is silent in the arrangement.
+		if (_clip_num < 0 && !takePlays(c)) { continue; }
 		TimePos cur_start = _start;
 		tick_t passBase = 0;  // where the pass of a looped clip playing now starts, in the clip's own time
 		if( _clip_num < 0 )

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T15:37:49Z",
+  "captured_at": "2026-10-27T19:33:19Z",
   "commands": [
     {
       "args_schema": {
@@ -24323,6 +24323,79 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Leave the MIDI captured by the last transport.record pass in the arrangement. Stop runs this by itself - the header's Stop, the space bar or transport.stop - so a client calls it only for a capture a refusal left pending (record.midi_capture_status 'pending'). A plain pass becomes one MIDI clip on its instrument track from the bar of its first note; a loop recording (the transport wrapped at least once) makes every pass that holds notes a take clip over the loop region, each on a new take lane of one take group, and the newest pass is the active take unless a take of that group was chosen (comp.take_select): a later loop recording over the same region joins the group and keeps that choice. In Replace record mode a plain pass erases the earlier notes it overlaps (notes only, never controller lanes or automation). Notes keep the velocity they sounded with. One undo step: control.undo removes the takes, control.redo restores them. Refused while recording and when nothing is pending.",
+      "group": "record",
+      "id": "record.midi_capture_commit",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dropped_events": {
+            "type": "integer"
+          },
+          "loop_recording": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "integer"
+          },
+          "takes": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The MIDI take recording state: 'armed_tracks' (each armed instrument track, whether it is capturing now, the events captured this pass and the events dropped because the bounded capture queue was full), 'recording' (a transport.record pass is capturing), 'pending' (a stopped pass whose takes were not committed), 'loop_recording', 'capacity_events' (the queue bound per track) and 'last_commit' (record.midi_capture_commit's last report: each take's track, clip, position, length, pass, notes, lane and take group). Reads only.",
+      "group": "record",
+      "id": "record.midi_capture_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed_tracks": {
+            "type": "array"
+          },
+          "capacity_events": {
+            "type": "integer"
+          },
+          "last_commit": {
+            "type": "object"
+          },
+          "loop_recording": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "recording": {
+            "type": "boolean"
+          },
+          "session_tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "channels": {
             "type": "integer"
@@ -31678,6 +31751,48 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "armed"
+        ],
+        "type": "object"
+      },
+      "description": "Arm (armed: true) or disarm an instrument track for MIDI take recording: while transport.record runs, the MIDI played into an armed track - from a controller, the on-screen keyboard or any input routed to it - is captured, and Stop leaves it in the arrangement (record.midi_capture_commit): one MIDI clip for a plain pass, a take clip per pass on its own take lane for a loop recording, the newest pass active unless a take was chosen (comp.take_select). This is not track.set_arm, which records the audio input to a WAV file. Mode state, not saved with the project and not an undo step.",
+      "group": "track",
+      "id": "track.set_midi_arm",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "capturing": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channel": {
             "type": "string"
           },
@@ -32722,7 +32837,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Start playback in record mode - the header's Record button dispatches this: sample tracks with recording enabled capture, and automation clips armed for recording write, while it plays (Song::playAndRecord). Starting from a stopped transport only: while the song is already playing the record mode cannot be switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. Audio capture on a record route is armed per track (track.set_arm) and runs on its own.",
+      "description": "Start playback in record mode - the header's Record button dispatches this: sample tracks with recording enabled capture, and automation clips armed for recording write, while it plays (Song::playAndRecord). Starting from a stopped transport only: while the song is already playing the record mode cannot be switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. Audio capture on a record route is armed per track (track.set_arm) and runs on its own. Instrument tracks armed with track.set_midi_arm record the MIDI played into them alongside (Q050-054.1): 'midi_tracks' lists them, and Stop leaves their takes in the arrangement through record.midi_capture_commit - one MIDI clip per plain pass, a take lane per loop pass.",
       "group": "transport",
       "id": "transport.record",
       "mutating": false,
@@ -32732,6 +32847,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "midi_tracks": {
+            "type": "array"
+          },
           "playing": {
             "type": "boolean"
           },
@@ -37198,23 +37316,23 @@
       }
     }
   ],
-  "count": 868,
+  "count": 871,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-054.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-s3reqlds/zene.sock",
-    "version": "0.4.0-alpha.5215+17edcb1"
+    "source_socket": "/tmp/zctl-run-hv552av4/zene.sock",
+    "version": "0.4.0-alpha.5216+5c1c671"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 868,
-    "ids_sha256": "f8d3dba72a91ae1b6493ea2983c6ccf4ebf711671e61e81d3ece2c056f486862"
+    "id_count": 871,
+    "ids_sha256": "2fb1b210b3e3ee6dcea9e53ec9f31abace77d08ed4972ca83e00c99363a43781"
   }
 }

@@ -118,6 +118,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRemoteCommands(registry);
 	registerDrumRackCommand(registry);
 	registerRecordingPassCommands(registry);
+	registerMidiTakeCommands(registry);
 	registerLaunchBindingCommands(registry);
 	registerSessionCaptureCommand(registry);
 	registerSessionAudioRecordCommands(registry);

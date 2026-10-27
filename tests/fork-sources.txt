@@ -3152,3 +3152,15 @@ tests/src/gui/GraphWaveformEditorGuiTest.cpp
 docs/050-features/Q050-486.md
 docs/qwen-fixes-2026-10/cluster-Q050-486.md
 tests/src/core/MixerOrderByTracksTest.cpp
+# Q050-054.1 (2026-10-27): MIDI takes recorded on armed instrument tracks by transport.record - the realtime
+# capture queue, the main-thread recorder, the three commands, the core and GUI tests and the transcript.
+include/MidiTakeCapture.h
+include/MidiTakeRecorder.h
+src/core/MidiTakeCapture.cpp
+src/core/MidiTakeRecorder.cpp
+src/core/ControlCommandsMidiTakes.cpp
+tests/src/core/MidiTakeRecordTest.cpp
+tests/src/gui/MidiTakeMenuTest.cpp
+tests/control-midi-take-record.py
+docs/050-features/Q050-054.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-054.1.md

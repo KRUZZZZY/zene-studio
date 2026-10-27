@@ -1087,8 +1087,12 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 19** (`050/m0-train-19`, 2026-10-27, automatic): `ReversibilityContractTest` on the merged tree measures `rows=877 true_inverse=432 snapshot=42 irreversible=25 not_mutating=378`.
 
+**Q050-054.1** (MIDI takes on armed instrument tracks, on `050/m0-train-19`, 2026-10-27): `record.midi_capture_commit`
+adds one `true_inverse` row, `track.set_midi_arm` and `record.midi_capture_status` two `not_mutating` rows -
+`rows=880 true_inverse=433 snapshot=42 irreversible=25 not_mutating=380`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=877 true_inverse=432 snapshot=42 irreversible=25 not_mutating=378
+     measured: rows=880 true_inverse=433 snapshot=42 irreversible=25 not_mutating=380
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
