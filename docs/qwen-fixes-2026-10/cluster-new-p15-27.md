@@ -83,4 +83,13 @@ Source-list fix: `all-sources.txt` is derived by `git ls-files`, so the new file
 
 ## Self-check
 
-(To be filled from `submit_check.py`, see the next section update.)
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-27` (log `submit-check-1.log`, EXIT 1). Mechanical items: commits on the branch PASS, working tree clean PASS, report PASS, tests changed PASS, new test file registered PASS. **One FAIL, not closed by this lane:** `gates (feature_check.py)`. `feature_check.py` creates its log folder at `<worktree>/../zene-qwen-new-p15-27-feature-check`, outside the write jail, and fails with `PermissionError` before running any gate (`feature-check-1.log`). Every gate row was run directly and passes or is at its train baseline (table above). The ratchet rows (complexity, file-length) were compared with the feature_check rule: 0 new items in changed files. Someone with write access to the parent folder needs to run `feature_check.py` once to close this row.
+
+Judgement items:
+
+1. *Regression fails with the change reverted and passes with it.* Yes: RED `ctest` 8 / binaries 1 and 1, GREEN `ctest` 0 / binaries 0 and 0 (table above; `build-11`, `test-10`, `qtest-10/11`, `build-12`, `test-11`, `qtest-12/13`).
+2. *Deterministic.* Yes. No clock, sleep or race. Each case writes fixed documents (`documentWith(1)`, `documentWith(7)`) into a `QTemporaryDir` and checks bytes and sha256. The undo decision depends only on the bytes at the path and on the sha captured at restore time.
+3. *Fix at the cause, siblings consistent.* The cause is that undo never read `restoredSha`. The only created-file removal in the revision group was `undoRestoreStep` (`ControlCommandsRevisions.cpp:160` at HEAD). The other `QFile::remove` calls are staging/rotation cleanup. `project.restore_revision` undoes only through `restoreProjectRevision(target, 0)` (`ControlCommandsProjectFiles.cpp:372`). The redo path (`redoRestoreStep`) was left unchanged; it already uses `restoredSha`.
+4. *No collateral damage.* No file format, save, load or restore change. The new refusal applies only when undo of a restore that CREATED the file finds different bytes (or a non-regular entry) at the path, which is the case the finding describes. The added cost is one sha256 read of that file, on undo only. No size limit was added, so no caller hits a new cap. The existing directory and dangling-symlink cases still refuse (the symlink assertion was flipped; see Tests).
+5. *ALREADY-FIXED / FALSE-POSITIVE evidence.* Not applicable: the verdict is FIXED.
+6. *Sibling commands in the changed command file.* `revisions.list` and `revisions.compare` are read-only and their code was not changed. `revisions.restore` is the one changed command: its description and schema are unchanged, so `ControlCommandsSnapshot` does not move. Only its undo-result text (`recovered_by`) and comments changed. No command was added.
