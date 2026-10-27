@@ -239,7 +239,7 @@ private slots:
 		QCOMPARE(aafDefaultMediaDir(QStringLiteral("/in/Reel 1.aaf"), QString()),
 			QStringLiteral("/in/Reel 1-aaf-media"));
 		QCOMPARE(aafDefaultMediaDir(QStringLiteral("/in/Reel 1.aaf"), QStringLiteral("/songs/Film.mmpz")),
-			QStringLiteral("/songs/Film-aaf-media/Reel 1"));
+			QStringLiteral("/songs/Film-aaf-media/Reel 1-4cb0fd651a1a"));
 		AafModel model = authoredModel(m_wave);
 		QCOMPARE(model.clipCount(), 3);
 		QCOMPARE(model.firstClipFrame(), qint64{0});
@@ -247,6 +247,23 @@ private slots:
 			AafMedia{QStringLiteral("b"), QStringLiteral("file:///x.wav"), QString(), false, true, 1, 48000},
 			AafMedia{QStringLiteral("c"), QString(), QString(), true, false, 1, 48000}};
 		QCOMPARE(model.missingMedia(), QStringList{QStringLiteral("file:///x.wav")});  // once, and not the embedded one
+	}
+
+	//! Two AAFs named alike, imported into one saved project, must not share an extraction folder: the first
+	//! import's clips still play the media that the second would overwrite.
+	void twoAafsNamedAlikeGetSeparateMediaFolders()
+	{
+		const QString project = QStringLiteral("/songs/Film.mmpz");
+		const QString first = aafDefaultMediaDir(QStringLiteral("/one/Reel.aaf"), project);
+		const QString second = aafDefaultMediaDir(QStringLiteral("/two/Reel.aaf"), project);
+		QVERIFY2(first != second, qPrintable(first));
+		QVERIFY(first.startsWith(QStringLiteral("/songs/Film-aaf-media/Reel")));
+		QVERIFY(second.startsWith(QStringLiteral("/songs/Film-aaf-media/Reel")));
+		// The same AAF always maps to the same folder, so importing it again reuses that folder.
+		QCOMPARE(aafDefaultMediaDir(QStringLiteral("/one/Reel.aaf"), project), first);
+		// Never saved: the folder sits beside each AAF, so alike names in different folders already differ.
+		QVERIFY(aafDefaultMediaDir(QStringLiteral("/one/Reel.aaf"), QString())
+			!= aafDefaultMediaDir(QStringLiteral("/two/Reel.aaf"), QString()));
 	}
 
 	//! The builder, on a hand-made model: everything the model carries lands where it says.

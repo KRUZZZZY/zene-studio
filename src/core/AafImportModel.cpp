@@ -27,6 +27,7 @@
 
 #include "AafImport.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -127,9 +128,13 @@ QString aafDefaultMediaDir(const QString& aafPath, const QString& projectFile)
 	{
 		return QFileInfo(aafPath).dir().filePath(aafName + QStringLiteral("-aaf-media"));
 	}
+	// Every AAF in a project shares this folder, so alike names must not collide: the folder name carries a hash
+	// of the AAF's full path (SHA-256, stable across runs, unlike qHash).
+	const QByteArray identity = QCryptographicHash::hash(QFileInfo(aafPath).absoluteFilePath().toUtf8(),
+		QCryptographicHash::Sha256);
 	const QFileInfo project(projectFile);
 	const QDir media(project.dir().filePath(project.completeBaseName() + QStringLiteral("-aaf-media")));
-	return media.filePath(aafName);
+	return media.filePath(aafName + QLatin1Char('-') + QString::fromLatin1(identity.toHex().left(12)));
 }
 
 namespace
