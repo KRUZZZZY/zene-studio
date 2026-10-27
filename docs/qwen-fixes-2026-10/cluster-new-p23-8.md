@@ -86,3 +86,31 @@ a run of the script.
 - `docs/qwen-fixes-2026-10/cluster-new-p23-8.md` (this file)
 
 No product or test source changed.
+
+## Self-check
+
+- **Regression test RED with the change reverted / GREEN restored (exit codes):** not applicable. There is no product
+  change to revert, and the finding is not real, so I did not write a new regression test. The existing
+  `MixerMeteringTest::thePhaseScopeListensToTheChosenChannel` (`tests/src/gui/MixerMeteringTest.cpp:692-717`) is the
+  test that covers this path. It passes on this build (ctest EXIT=0, `test-2.log` line 62 PASS). Its nearest
+  equivalent of a RED run is absent, and I say so rather than claim one.
+- **Determinism:** not a property I can claim for the existing test. It waits on the tap's frame count with a bounded
+  `QTRY_VERIFY_WITH_TIMEOUT(..., 5000)` (`tests/src/gui/MixerMeteringTest.cpp:711`), which is a wall-clock wait. I did
+  not add that wait and I did not change the test.
+- **Fix at the cause and every caller/sibling:** no fix. `showPhaseScope` has one caller in `src/`, `phaseScope` at
+  `src/gui/ControlCommandsMixerView.cpp:198` (grep of `src/`). That caller's guard is at `:197`. The only nullptr
+  return (`src/gui/PhaseScopeView.cpp:224`) is therefore guarded upstream, and the channel result is clamped
+  (`src/gui/PhaseScopeView.cpp:170, 181-184`).
+- **No collateral damage:** no code or saved-data change, so nothing else behaves differently.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence (file:line):** the null path is blocked by the matching guard at
+  `src/gui/ControlCommandsMixerView.cpp:197` against `src/gui/ControlGuiSupport.cpp:51-55` and
+  `src/gui/PhaseScopeView.cpp:221-224`. The channel path is bounded by `src/gui/PhaseScopeView.cpp:56-63, 170,
+  181-184` and by the master invariant at `src/core/Mixer.cpp:1029-1030` with `src/core/ControlCommandsMixer.cpp:334`.
+- **Gates:** `feature_check.py` **FAILS in this sandbox**, and that is not a code result. It exits 1 with
+  `PermissionError` creating `zene-qwen-new-p23-8-feature-check` beside the worktree (`feature_check.py:69-71`). That
+  path is outside my write-jail, so the gate could not write its logs. I did not change the script. The manual
+  equivalent (table above) gives EXIT 0 for six checks, and the two ratchets exit 1 only on pre-existing whole-tree
+  items. Their feature_check filter should drop them, since no changed files exist. A human or a runner with write
+  access beside the worktree should run `feature_check.py` to close this row.
+- **Completion check:** `submit_check.py` (`logs/submit-1.log`, EXIT 1) passes the commit, clean tree and report
+  checks. The gate row above is the one open FAIL, and it is environmental as described.
