@@ -3257,6 +3257,7 @@ tests/src/plugins/VestigeMidiHandoffTest.cpp
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 tests/src/plugins/Vst3BusMapTest.cpp
 tests/src/plugins/Vst3ChunkProbeTest.cpp
+tests/src/plugins/Vst3EditorTest.cpp
 tests/src/plugins/Vst3EffectIntegrationTest.cpp
 tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp

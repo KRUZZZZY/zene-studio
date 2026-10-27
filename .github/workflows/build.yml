@@ -41,20 +41,25 @@ jobs:
   linux-x86_64:
     name: linux-x86_64
     runs-on: ubuntu-22.04
-    # WANT_VST3_TEST_INSTRUMENT=ON is passed by THIS job and by no other.
+    # WANT_VST3_TEST_INSTRUMENT=ON is passed by THIS job for the whole fixture suite,
+    # and by the macos and msvc jobs for its editor cases only (Q050-490, see below).
     #
     # The option (tests/CMakeLists.txt, default OFF) builds the MIT test-instrument
-    # FIXTURE and its three ctest targets - Vst3InstrumentFixtureProbe,
-    # Vst3InstrumentTest and Vst3InstrumentIntegrationTest - which are the only
+    # FIXTURE and its ctest targets - Vst3EditorTest everywhere and, on Linux,
+    # Vst3InstrumentFixtureProbe, Vst3InstrumentTest and
+    # Vst3InstrumentIntegrationTest - which are the only
     # tests that exercise VST3 INSTRUMENT hosting, the 0.2.1 headline capability,
     # end to end. Until this line existed no job passed it, so that capability had
     # no CI-run test at all: the option defaulted OFF and nothing turned it on (a
     # gap an audit of the release's own claim list found, alongside the three VST3
-    # effect-test sources that were registered nowhere). It is passed here, and
-    # only here, because this job is the fastest of the seven and already
-    # provisions the pinned VST3 SDK that the fixture needs, and one job is enough
-    # to prove the suite runs on every push. Elsewhere the default OFF stands, so
-    # an ordinary release package gains no test asset.
+    # effect-test sources that were registered nowhere). The whole suite is run
+    # here, because this job is the fastest of the seven and already provisions
+    # the pinned VST3 SDK that the fixture needs, and one job is enough to prove it
+    # runs on every push. Q050-490: the macos and msvc jobs pass it too, so that a
+    # VST3 editor is opened in an NSView and an HWND on the platforms that use them
+    # (Vst3EditorTest; the fixture is laid out per platform). The other jobs keep
+    # the default OFF. The fixture is installed by nothing, so no release package
+    # gains a test asset either way.
     #
     # The fixture is installed by nothing and is named "vst3-test-instrument", so
     # it adds no module to a package and matches none of
@@ -577,6 +582,7 @@ jobs:
         -DUSE_COMPILE_CACHE=ON
         -DWANT_VST3=ON
         -DWANT_CLAP=ON
+        -DWANT_VST3_TEST_INSTRUMENT=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
       MAKEFLAGS: -j3
@@ -1186,6 +1192,7 @@ jobs:
             -DUSE_WERROR=ON `
             -DWANT_VST3=ON `
             -DWANT_CLAP=ON `
+            -DWANT_VST3_TEST_INSTRUMENT=ON `
             -DVCPKG_TARGET_TRIPLET="x64-windows" `
             -DVCPKG_HOST_TRIPLET="x64-windows" `
             -DVCPKG_MANIFEST_INSTALL="${{ env.should_install_manifest }}"
