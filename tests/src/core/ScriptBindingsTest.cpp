@@ -576,6 +576,16 @@ print('opened views are inert')
 			QCOMPARE(clip.noteCount(), 0);
 			QVERIFY(!clip.isValid());
 		}
+		{
+			LuaPatternStore store;
+			LuaInstrumentTrack& row = store.addInstrumentTrack();
+			LuaFloatModel& volume = row.volumeModel();
+			QVERIFY(volume.isValid());
+			ScriptCommandBridge::Request request;
+			QVERIFY(queueProjectNew(request));
+			QCOMPARE(volume.value(), 0.0f);
+			QVERIFY(!volume.isValid());
+		}
 	}
 
 	/*! A Lua view of an instrument must not outlive the instrument it names:
