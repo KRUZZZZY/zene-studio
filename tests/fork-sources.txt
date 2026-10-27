@@ -2438,6 +2438,7 @@ tests/src/core/ImportTrackIoTest.cpp
 tests/src/core/InputChannelMeterTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
+tests/src/core/InstrumentLowLatencyMonitorTest.cpp
 # cluster new-p8-127 (2026-10-07): import journalling exception regression and throwing importer fixture.
 tests/src/core/ImportFilterTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp

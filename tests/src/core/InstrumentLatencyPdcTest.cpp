@@ -63,9 +63,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QRegularExpression>
 #include <QStringList>
-#include <QTemporaryDir>
 
 #include <cmath>
 #include <cstdio>
@@ -126,8 +124,6 @@ constexpr int OverCapacityLatency = LatencyCompensation::MaxFrames + 3616;  // 2
 constexpr int EffectDelay = 2000;
 //! Periods rendered per measurement: the note sounds throughout (it is a bar long).
 constexpr int Periods = 8;
-//! Q050-174: periods a render aligned to the EffectDelay path needs (its onset is past 8 periods).
-constexpr int AlignedPeriods = 24;
 //! Anything above this is sound; the fixtures write exact constants or exact zero.
 constexpr float Audible = 1e-6f;
 
@@ -366,36 +362,6 @@ private:
 		provesAlignment(subject, ChangedLatency);
 	}
 
-	//! Q050-174: a render with every track but @a track muted (each still counts in the alignment).
-	std::vector<float> renderAlone(InstrumentTrack* track)
-	{
-		InstrumentTrack* other = track == m_latent ? m_reference : m_latent;
-		other->setMuted(true);
-		std::vector<float> audio = render(AlignedPeriods);
-		other->setMuted(false);
-		return audio;
-	}
-
-	//! Q050-174: arms (into the take @a file) or disarms @a track through track.set_arm.
-	static bool setArmed(InstrumentTrack* track, bool armed, const QString& file = QString())
-	{
-		QJsonObject args{{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("armed"), armed}};
-		if (!file.isEmpty()) { args.insert(QStringLiteral("file"), file); }
-		const ControlResult result = run(QStringLiteral("track.set_arm"), args);
-		if (!result.ok) { std::printf("INST_PDC_EVIDENCE track.set_arm: %s\n", qPrintable(result.errorMessage)); }
-		return result.ok;
-	}
-
-	//! Q050-174: a saved project's text without its append-only save journal (<z:provenance>).
-	static QString withoutJournal(const QString& path)
-	{
-		QFile file(path);
-		if (!file.open(QIODevice::ReadOnly)) { return QString(); }
-		QString text = QString::fromUtf8(file.readAll());
-		text.remove(QRegularExpression(QStringLiteral("<z:provenance[\\s\\S]*?</z:provenance>")));
-		return text;
-	}
-
 	//! A one-object automation clip on @a model at the song's start: what AutomationLatency then stamps
 	//! with the model's upstream frames.
 	AutomationClip* automationClipOn(AutomatableModel* model)
@@ -424,13 +390,6 @@ private slots:
 		ControlRegistry::setReady(true);
 		std::printf("INST_PDC_EVIDENCE frames_per_period=%d latency=%d changed=%d\n",
 			static_cast<int>(Engine::audioEngine()->framesPerPeriod()), Latency, ChangedLatency);
-	}
-
-	//! Q050-174: a case that fails half-way must not leave a track armed or the session mode on for the next.
-	void cleanup()
-	{
-		run(QStringLiteral("record.disarm_all"));
-		run(QStringLiteral("transport.low_latency"), {{QStringLiteral("enabled"), false}});
 	}
 
 	void cleanupTestCase()
@@ -704,110 +663,6 @@ private slots:
 		const ControlResult off = run(QStringLiteral("transport.low_latency"), {{QStringLiteral("enabled"), false}});
 		QVERIFY2(off.ok, qPrintable(off.errorMessage));
 		QVERIFY(!probe->dontRun());
-	}
-
-	/*! Q050-174 AC1/AC2/AC3: low-latency monitoring of an ARMED latent instrument, on rendered audio. The
-	 *  unarmed reference track carries a latent effect (EffectDelay frames) on its own chain - a later
-	 *  path the armed scope does not cover - so normal PDC delays the latent instrument by
-	 *  EffectDelay - Latency to land on it. With the mode on (default scope armed, 3 ms) and the latent
-	 *  track NOT armed, nothing changes; armed and re-evaluated, the instrument still plays but sounds
-	 *  after its own latency only, the result names its path and the frames skipped, and the unarmed
-	 *  reference renders bit-identically. Off restores the normal render bit-identically. */
-	void lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment()
-	{
-		if (!available(clap(), "clapinstrument")) { QSKIP("this build has no clapinstrument module or CLAP fixture"); }
-		buildPair(clap());
-		QTemporaryDir takes;
-		QVERIFY(takes.isValid());
-		EffectChain* referenceChain = m_reference->audioBusHandle()->effects();
-		auto* later = new partd::LatentDelayEffect(referenceChain, EffectDelay);
-		referenceChain->appendEffect(later);
-		Engine::audioEngine()->renderNextPeriod();
-		const std::vector<float> normalLatent = renderAlone(m_latent);
-		const std::vector<float> normalReference = renderAlone(m_reference);
-		const std::vector<float> normalBoth = render(AlignedPeriods);
-		QCOMPARE(onsetOf(normalLatent) - m_base, EffectDelay);  // aligned to the later path
-		QCOMPARE(onsetOf(normalReference) - m_base, EffectDelay);
-
-		// Unarmed: the default scope leaves the latent instrument's path alone.
-		// The documented defaults (an earlier case left the session at scope all, 1 ms).
-		const ControlResult unarmed = run(QStringLiteral("transport.low_latency"), {{QStringLiteral("enabled"), true},
-			{QStringLiteral("scope"), QStringLiteral("armed")}, {QStringLiteral("max_ms"), 3}});
-		QVERIFY2(unarmed.ok, qPrintable(unarmed.errorMessage));
-		QCOMPARE(unarmed.result.value(QStringLiteral("scope")).toString(), QStringLiteral("armed"));
-		QVERIFY(unarmed.result.value(QStringLiteral("instruments")).toArray().isEmpty());
-		QVERIFY(!m_latent->audioBusHandle()->monitorUnaligned());
-		QCOMPARE(sha256(renderAlone(m_latent)), sha256(normalLatent));
-
-		// Armed, and called again: the policy is re-evaluated and takes the instrument's path.
-		QVERIFY(setArmed(m_latent, true, takes.filePath(QStringLiteral("take.wav"))));
-		const ControlResult on = run(QStringLiteral("transport.low_latency"));
-		QVERIFY2(on.ok, qPrintable(on.errorMessage));
-		const QJsonArray paths = on.result.value(QStringLiteral("instruments")).toArray();
-		QCOMPARE(paths.size(), 1);
-		const QJsonObject path = paths.at(0).toObject();
-		QCOMPARE(path.value(QStringLiteral("track")).toString(), control::trackIdOf(m_latent));
-		QCOMPARE(path.value(QStringLiteral("name")).toString(), QStringLiteral("pdc-latent"));
-		QCOMPARE(path.value(QStringLiteral("channel")).toString(), control::channelIdOf(Engine::mixer()->mixerChannel(0)));
-		QCOMPARE(path.value(QStringLiteral("latency_frames")).toInt(), Latency);
-		QCOMPARE(path.value(QStringLiteral("alignment_skipped_frames")).toInt(), EffectDelay - Latency);
-		QVERIFY(on.result.value(QStringLiteral("bypassed")).toArray().isEmpty());  // the unarmed path's effect runs
-		QVERIFY(!later->dontRun());
-		QVERIFY(m_latent->audioBusHandle()->monitorUnaligned());
-		QVERIFY(!m_reference->audioBusHandle()->monitorUnaligned());
-		const std::vector<float> lowLatent = renderAlone(m_latent);
-		const int lowOnset = onsetOf(lowLatent);
-		evidence("low-latency base=%d normal=%d monitored=%d total=%d", m_base, onsetOf(normalLatent), lowOnset,
-			Engine::mixer()->totalLatencyFrames());
-		QCOMPARE(lowOnset - m_base, Latency);  // its own latency only, not the alignment
-		QCOMPARE(lowLatent[static_cast<std::size_t>(lowOnset)], clap().level);  // still playing, not muted
-		QCOMPARE(sha256(renderAlone(m_reference)), sha256(normalReference));  // the unarmed path is unchanged
-		QCOMPARE(Engine::mixer()->totalLatencyFrames(), EffectDelay);
-
-		// Off: the alignment is back, and so is the normal output.
-		const ControlResult off = run(QStringLiteral("transport.low_latency"), {{QStringLiteral("enabled"), false}});
-		QVERIFY2(off.ok, qPrintable(off.errorMessage));
-		QVERIFY(off.result.value(QStringLiteral("instruments")).toArray().isEmpty());
-		QVERIFY(!m_latent->audioBusHandle()->monitorUnaligned());
-		QCOMPARE(sha256(renderAlone(m_latent)), sha256(normalLatent));
-		QCOMPARE(sha256(render(AlignedPeriods)), sha256(normalBoth));
-		QVERIFY(setArmed(m_latent, false));
-	}
-
-	/*! Q050-174 AC3: the mode is session state. Turning it on records no undo step, the project saved
-	 *  while it is on is the project saved while it is off (the save journal aside), and opening that
-	 *  file brings back no instrument path monitored unaligned. */
-	void theLowLatencyModeIsNeitherSavedNorUndone()
-	{
-		if (!available(clap(), "clapinstrument")) { QSKIP("this build has no clapinstrument module or CLAP fixture"); }
-		buildPair(clap());
-		QTemporaryDir dir;
-		QVERIFY(dir.isValid());
-		QVERIFY(setArmed(m_latent, true, dir.filePath(QStringLiteral("take.wav"))));
-		const int depth = run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
-		const QString offFile = dir.filePath(QStringLiteral("off.mmp"));
-		QVERIFY(Engine::getSong()->saveProjectFile(offFile));
-		const ControlResult on = run(QStringLiteral("transport.low_latency"), {{QStringLiteral("enabled"), true},
-			{QStringLiteral("scope"), QStringLiteral("armed")}, {QStringLiteral("max_ms"), 3}});
-		QVERIFY2(on.ok, qPrintable(on.errorMessage));
-		QCOMPARE(on.result.value(QStringLiteral("instruments")).toArray().size(), 1);
-		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth);
-		const QString onFile = dir.filePath(QStringLiteral("on.mmp"));
-		QVERIFY(Engine::getSong()->saveProjectFile(onFile));
-		QCOMPARE(withoutJournal(onFile), withoutJournal(offFile));
-		QVERIFY(setArmed(m_latent, false));
-		Engine::getSong()->loadProject(onFile);
-		int instruments = 0;
-		for (Track* track : Engine::getSong()->tracks())
-		{
-			if (auto* instrument = dynamic_cast<InstrumentTrack*>(track))
-			{
-				++instruments;
-				QVERIFY(!instrument->audioBusHandle()->monitorUnaligned());
-			}
-		}
-		QCOMPARE(instruments, 2);
-		QVERIFY(run(QStringLiteral("transport.low_latency"), {{QStringLiteral("enabled"), false}}).ok);
 	}
 };
 

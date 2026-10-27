@@ -632,6 +632,8 @@ set(LMMS_TESTS
 	src/core/InstrumentLayerZonePublishTest.cpp
 	# MX-157 (BUGS 11.34): a hosted instrument's latency reaches PDC, measured on rendered audio
 	src/core/InstrumentLatencyPdcTest.cpp
+	# Q050-174 (MX-159): low-latency monitoring takes an armed latent instrument off its alignment, on rendered audio
+	src/core/InstrumentLowLatencyMonitorTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/InputChannelRingTest.cpp
 	src/core/RecordRingBufferTest.cpp
@@ -2316,6 +2318,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayerZonePublishTest"
 		# MX-157: the hosted instrument modules (clapinstrument, vst3instrument) carry the fixtures.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLatencyPdcTest"
+		OR LMMS_TEST_NAME STREQUAL "InstrumentLowLatencyMonitorTest"
 		OR LMMS_TEST_NAME STREQUAL "InstrumentSetupUiTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingSpacerReferenceTest"
@@ -3075,7 +3078,7 @@ set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawMode
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
 set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest InstrumentRoutingTest InstrumentLayersCommandsTest
-	InstrumentLayerZonePublishTest InstrumentLatencyPdcTest PROPERTIES
+	InstrumentLayerZonePublishTest InstrumentLatencyPdcTest InstrumentLowLatencyMonitorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
@@ -4786,6 +4789,15 @@ if(TARGET lmms_clap)
 			add_dependencies(InstrumentLatencyPdcTest clapinstrument)
 		endif()
 	endif()
+	# Q050-174: the same latent CLAP subject for the low-latency monitoring proof.
+	if(TARGET clap-test-instrument AND TARGET InstrumentLowLatencyMonitorTest)
+		target_compile_definitions(InstrumentLowLatencyMonitorTest PRIVATE
+			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
+		add_dependencies(InstrumentLowLatencyMonitorTest clap-test-instrument)
+		if(TARGET clapinstrument)
+			add_dependencies(InstrumentLowLatencyMonitorTest clapinstrument)
+		endif()
+	endif()
 	# The F2 interface's output-bus surface drives the same multi-output class.
 	if(TARGET clap-test-instrument AND TARGET InstrumentSetupUiTest)
 		target_compile_definitions(InstrumentSetupUiTest PRIVATE
@@ -5962,7 +5974,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# Q050-174 (MX-159): transport.low_latency on a record-armed LATENT instrument, over the socket of
 	# the real binary - the in-tree CLAP fixture (made latent by CLAP_TEST_INSTRUMENT_LATENCY, which the
 	# script sets) found by the binary's own scan of the fixture's directory. Needs the
-	# clap-test-instrument and clapinstrument targets built; the audio proof is InstrumentLatencyPdcTest.
+	# clap-test-instrument and clapinstrument targets built; the audio proof is InstrumentLowLatencyMonitorTest.
 	if(TARGET clap-test-instrument AND TARGET clapinstrument)
 		add_test(NAME ControlLowLatencyCommands
 			COMMAND ${PYTHON3_EXECUTABLE}

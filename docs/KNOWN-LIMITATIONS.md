@@ -1286,7 +1286,7 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
     *(Updated 2026-10-27, Q050-174:)* the mode instead takes the **alignment** off a record-armed (or, with
     `scope: all`, any) instrument track whose instrument reports more than `max_ms`: its track handle applies
     no PDC delay, so it is heard after its own latency only, and its latency still counts in the graph, so
-    every other path stays aligned (`InstrumentLatencyPdcTest::lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment`).
+    every other path stays aligned (`InstrumentLowLatencyMonitorTest::lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment`).
     Its limits: the instrument's own latency is still heard (it is the plug-in's); a delay PDC adds further
     downstream - on a send from the channel it plays into to a later channel or the master - still applies;
     a multi-output instrument's routed output buses keep their alignment; and the answer's

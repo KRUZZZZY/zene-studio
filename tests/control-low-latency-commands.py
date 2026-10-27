@@ -15,7 +15,7 @@ clap-test-instrument.clap), found by the real binary's own plug-in scan through
 a config whose <paths vstdir> is the fixture's directory, and made LATENT by
 CLAP_TEST_INSTRUMENT_LATENCY (every instance reports that many frames and
 really delays its output by them). What the mode does to the rendered audio is
-proven in process by InstrumentLatencyPdcTest
+proven in process by InstrumentLowLatencyMonitorTest
 (lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment); this transcript
 proves the agent surface on the real binary.
 
