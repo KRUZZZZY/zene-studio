@@ -60,3 +60,39 @@ Restored afterwards. Rebuilt -> `0`. Tests -> `0`.
 - Projects/render: no format or audio path change.
 - Portability: the code is inside `LMMS_HAVE_ALSA` (Linux only, POSIX `pipe`/`fcntl`); no Qt-6-only API.
 - Not done: TSan; a full-tree sanitizer build; the full ctest suite (forbidden by the brief); stages 3-4 beyond the inventory.
+
+### submit_check.py answers
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-488` -> `1`
+(`submit-check-1.log`). Its only FAIL is "gates (feature_check.py)".
+
+**The gates FAIL is environmental, not a gate result.** The original script exits `1` with
+`PermissionError: ... zene-feat-q050-488-feature-check`: its log directory sits beside the worktree, which
+this lane's write-jail refuses (`gates-3-original.log`). The `/tmp` copy, with only the log path changed,
+runs the same 8 gates on the final HEAD -> `0`, RESULT: PASS (`gates-4.log`). The loop runs the original
+outside the jail.
+
+**The three WARNs (GUI path, GUI test, agent command).** This unit adds no user-facing action. It changes
+how an existing device closes. That close is reached only through the existing quit paths (File > Quit,
+and the registered `control.quit`), which are unchanged. No command or GUI file needed to change.
+
+**The "?" items:**
+
+- **Fails reverted / passes restored.** Yes, see "Negative controls" above:
+  - full revert: build `2`;
+  - old behaviour: `1, 1, 1, 134, 1, 1` for the six fix tests, `0, 0` for the two preservation checks;
+  - restored: build `0`, ctest `0` three times.
+- **Each criterion proven by a test I ran.** Yes, see the acceptance table: test name and exit code per row.
+  For row 3, TSan was not run (it does not run on this box). ASan+UBSan was run -> `0`.
+- **One undo step / reversibility.** Not applicable. No edit, command or journal step is added or changed.
+- **Audio thread.** The only function on the audio path is `MidiAlsaRaw::sendByte`, reached from
+  `MidiClientRaw::processOutEvent`. It gains one null-pointer compare, and is otherwise the same
+  `snd_rawmidi_write` it always made. `sendByteStaysAllocationFree` shows 0 allocations and 0 frees.
+  `stopWorker`, the destructor, `closeDevice` and `closeWakePipe` run only on the thread that deletes the
+  MIDI client (`AudioEngine::~AudioEngine`, main thread). The worker `run()` is a low-priority MIDI input
+  thread, not the audio thread.
+- **Projects/render.** No load, save or render code was touched, and no project data changed.
+- **Portability.** The code is inside `#ifdef LMMS_HAVE_ALSA`, which is Linux only, so POSIX `pipe`/`fcntl`/`poll`
+  are available. It uses no Qt-6-only API: `QThread::wait(unsigned long)` exists in Qt 5.15 and 6. There are
+  no windows.h macro names, no `std::filesystem`, and none of `small`/`near`/`far`/`interface`/`min`/`max` as
+  identifiers.
