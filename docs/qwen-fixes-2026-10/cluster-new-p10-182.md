@@ -59,3 +59,14 @@ The table of gate results from the passing run:
 Affected test family: **0 tests run**. No product file changed, so no build or ctest was run.
 
 Files committed: `docs/qwen-fixes-2026-10/cluster-new-p10-182.md` only.
+
+`submit_check.py` (logs: `…/logs/submit-check-1.log`) returned **EXIT=1**. Its "gates" row fails for the same reason as the first `feature_check.py` run above: the shared script cannot create its log directory from inside the write-jail. The gate logic itself passed in the redirected run (EXIT=0). I did not edit the shared script to get around this.
+
+## Self-check
+
+- **Regression test RED/GREEN (exit codes):** not applicable. No product file changed, so there is no fix to revert. The verdict is claim-only.
+- **Deterministic test:** not applicable. No test was added or changed.
+- **Fix at the cause, every caller checked:** not applicable. No fix was made. The callers of the repeat field were checked as evidence in items 2-5 above.
+- **No collateral damage:** no product code changed, so no load path or saved data is affected. The load clamp at `src/core/NoteConditions.cpp:65` already applies to every saved project, which is why the finding does not reproduce.
+- **Evidence for FALSE-POSITIVE:** `src/tracks/InstrumentTrackNotes.cpp:283-284` (division and its divisor); `src/core/NoteConditions.cpp:62-65` (load clamp to 0..16, from commit `c414ab31d4`); `src/core/ControlCommandsNoteEdit.cpp:82`, `:130-141`, `:296-306` (command range and refusal before any write); `src/gui/noteeditor/NoteLanes.cpp:63`, `:123` (UI range, same command path); `include/NoteConditions.h:48`, `:52` (`MaxRepeats` and the field default). No other writer of `repeats` exists in `src/`, `include/` or `tests/` (item 5).
+- **Gate row:** the shared `feature_check.py` exits 1 with `PermissionError` (environment limit, see above). The redirected copy exits 0 with `RESULT: PASS`.
