@@ -72,3 +72,9 @@ is outside this lane's write-jail; the copy differs only in `ROOT` and `logs`): 
   `CCACHE_TEMPDIR=/tmp/q486/ccache-tmp`. ASan on this box needs `use_sigaltstack=0` (a library loaded by the engine
   swaps the thread's alternate signal stack and ASan fails to unmap it at thread exit; a plain ASan thread program
   works) - set in the test's exported `__asan_default_options` and its ctest environment.
+- **Completion check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py $PWD Q050-486` EXIT=1 with one
+  FAIL, "gates (feature_check.py)": that row runs `feature_check.py`, which here dies with `PermissionError` creating
+  `../zene-feat-q050-486-feature-check` (outside this lane's write-jail), not on a gate. The same gates with the log
+  directory moved into the run folder: all eight PASS, EXIT=0 [feature-check-4.log]. Every other row PASSes
+  [submit-check-2.log]; its WARN "no command file changed" is by design: no capability was added - the agent path is
+  the existing `project.open` (its `errors` carry the diagnostic), proven by `ControlGraphWaveformLoad`.
