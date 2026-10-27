@@ -30,6 +30,8 @@
  *       pattern (or none); moving a pattern track swapped the numbers under the cells the same way;
  *   T4  a command queued before a reset (a project change) was applied AFTER it, so the closing project's
  *       published content came back into the next project;
+ *   (round 2) a change bigger than the launch queue left its last removed cell playing; a reset between two
+ *       queued commands could apply the older one or discard the newer; a pattern track's undo lost its cells;
  *   and the sequence of acceptance 2: launch / stop / edit / undo / redo / save / load keeps every authored identity
  *   and reference, and none of the transient launch state is persisted.
  *  The engine is the real one (Engine::init runs the Dummy device), so a launch is a real launch; the renders go
@@ -130,6 +132,16 @@ QString patternNameOf(int track, int scene)
 	if (slot.value(QStringLiteral("type")).toString() != QLatin1String("midi")) { return QString(); }
 	const PatternTrack* named = PatternTrack::findPatternTrack(slot.value(QStringLiteral("pattern")).toInt());
 	return named != nullptr ? named->name() : QStringLiteral("<no pattern>");
+}
+
+//! The song transport running at the start, 192 ticks a bar: a scheduler's period as a test drives it.
+SessionClockContext runningClock()
+{
+	SessionClockContext clock;
+	clock.ticksPerBar = 192;
+	clock.framesPerTick = 4.0f;
+	clock.transportRunning = true;
+	return clock;
 }
 
 bool isSilent(const QByteArray& wav)
@@ -253,6 +265,63 @@ private slots:
 		QVERIFY(slotOf(0, 1).isEmpty());
 		QCOMPARE(patternNameOf(0, 0), QStringLiteral("Sounding"));
 		QTRY_COMPARE_WITH_TIMEOUT(columnPhase(0), QStringLiteral("idle"), 3000);
+
+		// ONE undo brings back the track AND the cell that played it - pointing at the pattern's new number - and
+		// launches nothing; the redo empties the cell again.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(patternNameOf(0, 1), QStringLiteral("Third"));
+		QCOMPARE(patternNameOf(0, 0), QStringLiteral("Sounding"));
+		QCOMPARE(columnPhase(0), QStringLiteral("idle"));
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY(slotOf(0, 1).isEmpty());
+		QCOMPARE(patternNameOf(0, 0), QStringLiteral("Sounding"));
+	}
+
+	/*! T1 at the queue's bound: clearing 129 filled cells needs 258 commands, more than the fixed queue holds (256).
+	 *  The playing cell is the LAST one; it must still stop, and nothing may be dropped half-way. */
+	void aClearTooLargeForTheQueueStillStopsThePlayingCell()
+	{
+		auto scheduler = std::make_unique<SessionScheduler>();
+		SessionModel before;
+		before.setTrackCount(129);
+		before.setSceneCount(1);
+		for (int track = 0; track < 129; ++track) { before.slot(track, 0).setPatternReference(0); }
+		const SessionModel after;  // the cleared grid
+		SessionClockContext clock = runningClock();
+		QVERIFY(scheduler->requestLaunch(128, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		scheduler->processAudio(clock, 64);
+		QCOMPARE(scheduler->slotPhase(128, 0), SlotPhase::Playing);
+
+		syncSessionLauncher(*scheduler, before, after);
+		clock.positionTicks = 4;
+		scheduler->processAudio(clock, 64);
+		clock.positionTicks = 8;
+		scheduler->processAudio(clock, 64);
+		QCOMPARE(scheduler->slotPhase(128, 0), SlotPhase::Idle);
+		QVERIFY(!scheduler->playbackForColumn(128).playing);
+		QCOMPARE(scheduler->droppedCommands(), std::uint64_t{0});
+	}
+
+	/*! T4 inside one period: a reset asked for AFTER the period's own start, while commands of both sides of it
+	 *  wait in the queue. The drain must drop the one queued before the reset and carry out the one queued after
+	 *  it - in this period, on the clock the reset left - not discard it or defer the reset past it. */
+	void aResetBetweenTwoQueuedCommandsSplitsThem()
+	{
+		auto scheduler = std::make_unique<SessionScheduler>();
+		SessionClockContext clock = runningClock();
+		clock.positionTicks = 960;
+		scheduler->processAudio(clock, 64);  // this period's start has run: no reset pending then
+		QVERIFY(scheduler->publishSlotContent(0, 0, 7, 0));  // queued before the reset
+		scheduler->reset();
+		QVERIFY(scheduler->requestLaunch(0, 0, LaunchMode::Trigger, LaunchQuantisation::None));  // after it
+		SessionClockContext ctx = clock;
+		scheduler->drainCommands(clock, ctx, SessionScheduler::CommandQueueCapacity);  // the rest of the period
+		QCOMPARE(scheduler->slotPhase(0, 0), SlotPhase::LaunchPending);  // kept, not discarded or deferred
+		QCOMPARE(ctx.positionTicks, tick_t{960});  // the transport's clock, as the period's start would set it
+		scheduler->advanceSlots(ctx);
+		const SessionSlotPlayback view = scheduler->playbackForColumn(0);
+		QVERIFY(view.playing);
+		QCOMPARE(view.patternId, -1);  // the pre-reset content went with the reset
 	}
 
 	/*! T4: a command queued before a reset (a project change, stop_all, back to arrangement) is dropped with what

@@ -29,6 +29,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "LmmsTypes.h"
 
@@ -171,6 +172,13 @@ bool publishSessionCell( SessionScheduler& scheduler, int track, int scene, cons
  *  MODEL THREAD. Bounded by the cells that changed, and only queue pushes reach the engine (no allocation or
  *  lock on the audio thread). Returns the cells published. */
 int syncSessionLauncher( SessionScheduler& scheduler, const SessionModel& before, const SessionModel& after ) noexcept;
+
+class Track;
+struct SessionCellCopy;
+//! Q050-489: the launcher cells that play @a track's pattern (none for any other track), for its deletion's undo.
+std::vector<SessionCellCopy> sessionCellsOfPatternTrack( Track* track );
+//! Q050-489: a deleted pattern track's undo - @a cells play @a restored (its new number) again; the launcher follows.
+void restoreSessionPatternCells( const std::vector<SessionCellCopy>& cells, Track* restored );
 
 //! Whether two cells render the same thing: the fields publishSessionCell sends (and the audio bake reads).
 bool sameSessionContent( const ClipSlot& a, const ClipSlot& b ) noexcept;

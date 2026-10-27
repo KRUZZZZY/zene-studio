@@ -218,6 +218,34 @@ def reload_check(session, workdir, recorder):
     recorder.check("a reopened project launches nothing", not after.get("columns"), "columns=%r" % after.get("columns"))
 
 
+def pattern_names(session):
+    """{pattern number: its pattern track's name}, as session.pattern_list reports them."""
+    return {int(p.get("pattern", -2)): p.get("name") for p in session.result("session.pattern_list").get("patterns", [])}
+
+
+def pattern_track_of(session, name):
+    """The track.list entries of the pattern track named @name."""
+    return [t for t in session.result("track.list").get("tracks", []) if t.get("type") == "pattern" and t.get("name") == name]
+
+
+def pattern_track_undo(session, recorder):
+    """Deleting the pattern track a cell plays empties the cell; ONE control.undo brings the track and the cell back."""
+    target = slot(session, 0, 0)
+    name = pattern_names(session).get(int(target.get("pattern", -1)))
+    tracks = pattern_track_of(session, name)
+    recorder.check("the MIDI cell's pattern track is found", target.get("type") == "midi" and len(tracks) == 1,
+                   "slot=%r tracks=%r" % (target, tracks))
+    if len(tracks) != 1:
+        return
+    session.result("track.remove", {"track": tracks[0].get("id")})
+    recorder.check("deleting the pattern track empties its cell", not slot(session, 0, 0), "%r" % slot(session, 0, 0))
+    undone = session.result("control.undo")
+    back = slot(session, 0, 0)
+    played = pattern_names(session).get(int(back.get("pattern", -2)))
+    recorder.check("one undo brings back the track and the cell playing it",
+                   back.get("name") == target.get("name") and played == name, "undo=%r slot=%r" % (undone, back))
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -238,6 +266,7 @@ def main(argv):
             midi_workflow(session, workdir, recorder, tracks)
             audio_workflow(session, workdir, recorder, tracks)
             session.result("transport.stop")
+            pattern_track_undo(session, recorder)
             reload_check(session, workdir, recorder)
         session.call("control.quit")
     report_results(recorder)

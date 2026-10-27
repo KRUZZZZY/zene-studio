@@ -40,6 +40,7 @@
 
 #ifdef LMMS_TESTING
 class SessionSchedulerTest;
+class SessionTransitionsTest;
 #endif
 
 namespace lmms
@@ -259,6 +260,8 @@ public:
 	//! What this column should render this period (#597). Audio thread.
 	SessionSlotPlayback playbackForColumn( int track ) const noexcept;
 
+	//! Q050-489: commands that can still be queued now - a lower bound, the audio thread only frees more. Model thread.
+	std::size_t commandQueueSpace() const noexcept { return m_queue.space(); }
 	//! Commands refused because the queue was full. Any thread.
 	std::uint64_t droppedCommands() const noexcept
 	{
@@ -393,6 +396,7 @@ public:
 private:
 #ifdef LMMS_TESTING
 	friend class ::SessionSchedulerTest;
+	friend class ::SessionTransitionsTest;  // Q050-489: drives drainCommands with a reset between two periods' steps
 #endif
 
 	struct Command
@@ -434,6 +438,13 @@ private:
 			return true;
 		}
 
+		//! Entries a push can still take. Producer side: the consumer only ever frees more.
+		std::size_t space() const noexcept
+		{
+			const std::size_t used = ( m_write.load( std::memory_order_relaxed ) + storageSize
+				- m_read.load( std::memory_order_acquire ) ) % storageSize;
+			return CommandQueueCapacity - used;
+		}
 		bool pop( Command& command ) noexcept
 		{
 			const std::size_t read = m_read.load( std::memory_order_relaxed );
@@ -485,7 +496,7 @@ private:
 	ActiveSlot* findSlot( int track, int scene ) noexcept;
 	ActiveSlot* claimSlot( int track, int scene ) noexcept;
 	//! Applies at most `budget` queued commands, in order; the rest stay queued for the next period.
-	void drainCommands( const SessionClockContext& ctx, std::size_t budget ) noexcept;
+	void drainCommands( const SessionClockContext& snapshot, SessionClockContext& ctx, std::size_t budget ) noexcept;
 	//! Applies one dequeued command. Audio thread; the body of drainCommands' loop.
 	void applyCommand( const Command& command, const SessionClockContext& ctx ) noexcept;
 	//! Audio thread: applies one published cell's content (#597); body in SessionPlayback.cpp.
