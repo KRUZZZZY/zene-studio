@@ -27,11 +27,14 @@
  *  leaves no window; an open window is sized to the view plus the host header above it; opening again raises it
  *  instead of attaching twice; closing from the window manager or from the editor detaches exactly once. The host
  *  header's buttons (Bypass, A/B, presets) run plugin.* commands on the device the window shows. Also the "Show
- *  plugin editor" button of a generated control view, and the owner address of a chain. */
+ *  plugin editor" button of a generated control view, and the owner address of a chain. Q050-490: that button against
+ *  the in-tree CLAP effect fixture - its editor opens in this platform's window, or the refusal names the window. */
 
 #include <QtTest>
 
 #include <QApplication>
+#include <QFileInfo>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QTemporaryDir>
@@ -39,6 +42,7 @@
 
 #include "CommandForm.h"
 #include "CommandListDialog.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
@@ -50,6 +54,7 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "PluginNativeEditor.h"
+#include "PluginWindowSystem.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -372,6 +377,72 @@ private slots:
 		QVERIFY(instrumentBox->findChild<QLabel*>()->isVisible());
 		QVERIFY(!instrumentBox->findChild<QLabel*>()->text().isEmpty());
 		delete instrumentBox;
+	}
+
+	/*! Q050-490 through the GUI, against the real CLAP host and fixture: clicking "Show plugin editor" opens the
+	 *  fixture's editor in this platform's window (x11 here, win32 / cocoa on those jobs); restricted to another
+	 *  platform's window API, the same click is refused and the line under the button names this platform and its
+	 *  CLAP window API, with no editor and no window left. */
+	void theShowEditorButtonOpensOnThisPlatformOrNamesTheWindow()
+	{
+#ifndef CLAP_TEST_EFFECT_DIR
+		QSKIP("this build has no CLAP effect fixture");
+#else
+		if (!QFileInfo::exists(QStringLiteral(CLAP_TEST_EFFECT_DIR))) { QSKIP("the CLAP effect fixture is not built"); }
+		ConfigManager::inst()->setVSTDir(QStringLiteral(CLAP_TEST_EFFECT_DIR));
+		QString device;
+		const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("format"), QStringLiteral("clap")}});
+		for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+		{
+			const QJsonObject entry = value.toObject();
+			if (entry.value(QStringLiteral("name")).toString() == QLatin1String("LMMS CLAP Test Gain")
+				|| entry.value(QStringLiteral("display_name")).toString() == QLatin1String("LMMS CLAP Test Gain"))
+			{
+				device = entry.value(QStringLiteral("id")).toString();
+			}
+		}
+		if (device.isEmpty()) { QSKIP("plugin.list carries no CLAP test gain (no clapeffect module in this build)"); }
+		auto* track = dynamic_cast<InstrumentTrack*>(newTrack());
+		const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), control::trackIdOf(track)},
+			{QStringLiteral("device"), device}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		Effect* effect = track->audioBusHandle()->effects()->effects().back();
+
+		const bool headless = ControlRegistry::instance()->isHeadless();
+		ControlRegistry::instance()->setHeadless(false);  // the offscreen platform is a display
+		QWidget* box = makeNativeEditorButton(effect, nullptr);
+		box->show();
+		auto* button = box->findChild<QToolButton*>();
+		QLabel* reason = box->findChild<QLabel*>();
+		QVERIFY(button != nullptr && reason != nullptr);
+		button->click();
+		const bool opened = effect->nativeEditorOpen();
+		const QString openRefusal = reason->text();
+		QWidget* window = editorWindow(effect->displayName());
+		const bool windowShown = window != nullptr && window->isVisible();
+		effect->closeNativeEditor();
+
+		const PluginWindowSystem native = currentPluginWindowSystem();
+		const char* api = native == PluginWindowSystem::Win32 ? "win32" : native == PluginWindowSystem::Cocoa ? "cocoa" : "x11";
+		qputenv("CLAP_TEST_GAIN_GUI_API", native == PluginWindowSystem::Win32 ? "x11" : "win32");
+		button->click();
+		qunsetenv("CLAP_TEST_GAIN_GUI_API");
+		const bool refusedOpen = effect->nativeEditorOpen();
+		const QString refusal = reason->text();
+		const bool reasonShown = reason->isVisible();
+		effect->closeNativeEditor();
+		delete box;
+		ControlRegistry::instance()->setHeadless(headless);
+		QVERIFY2(opened, qPrintable(QStringLiteral("refused: %1").arg(openRefusal)));
+		QVERIFY(windowShown);
+		QVERIFY2(!refusedOpen, "an editor that cannot embed here reported open");
+		QVERIFY(reasonShown);
+		const QString expected = QStringLiteral("cannot embed on %1 (CLAP window API %2)").arg(pluginWindowSystemName(native),
+			QLatin1String(api));
+		QVERIFY2(refusal.contains(expected), qPrintable(refusal));
+		QWidget* left = editorWindow(effect->displayName());
+		QVERIFY2(left == nullptr || !left->isVisible(), "a refused editor left a window on screen");
+#endif
 	}
 
 	void aChainIsAddressedByTheTrackOrChannelThatOwnsIt()
