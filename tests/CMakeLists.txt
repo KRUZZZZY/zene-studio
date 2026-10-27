@@ -1521,6 +1521,8 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		src/core/StemSplitPipelineTest.cpp
 		# Q050-062.2: the sample clip's Split to stems submenu picks the job's quality.
 		src/gui/StemSplitMenuTest.cpp
+		# new-p21-107: the stem WAV writer's header arithmetic and its refusals (ControlStemWav.cpp).
+		src/core/ControlStemWavTest.cpp
 	)
 	IF(LMMS_HAVE_ONNXRUNTIME)
 		LIST(APPEND LMMS_TESTS src/core/OnnxRuntimeStemSeparatorTest.cpp)
