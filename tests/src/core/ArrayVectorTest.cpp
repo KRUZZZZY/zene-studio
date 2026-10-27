@@ -31,6 +31,7 @@
 #include <array>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 
 using lmms::ArrayVector;
@@ -140,6 +141,23 @@ private slots:
 	void zeroElementSizeConstructorTest()
 	{
 		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, 0)), std::invalid_argument);
+	}
+
+	void overflowingLocklessAllocatorDimensionsTest()
+	{
+		// Each request wraps size_t somewhere before the pool is allocated;
+		// none of them may produce an allocator whose offsets outrun its pool.
+		constexpr auto maxSize = std::numeric_limits<std::size_t>::max();
+		// Element count rounded up to a multiple of the bitset width wraps.
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(maxSize - 5, 1)), std::length_error);
+		// Element size rounded up to pointer alignment wraps to zero (free() would divide by it).
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, maxSize - 3)), std::length_error);
+		// capacity * elementSize == 2^64 wraps to zero.
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(32, std::size_t{1} << 59)), std::length_error);
+		// capacity * elementSize == 2^64 + 256 wraps to a 256-byte pool.
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(32, (std::size_t{1} << 59) + 8)), std::length_error);
+		// A pool larger than ptrdiff_t cannot be addressed by free().
+		QVERIFY_EXCEPTION_THROWN((lmms::LocklessAllocator(1, std::size_t{1} << 63)), std::length_error);
 	}
 
 	void defaultConstructorTest()
