@@ -105,8 +105,13 @@ ProcessStatus WaveShaperEffect::processImpl(InterleavedBufferView<float, 2> inOu
 
 		for( i=0; i <= 1; ++i )
 		{
-			const int lookup = static_cast<int>( qAbs( s[i] ) * 200.0f );
-			const float frac = fraction( qAbs( s[i] ) * 200.0f );
+			// Saturate the table position before the int conversion: a magnitude past
+			// the last entry (or past the int range) and NaN would make it undefined.
+			// The comparison sends NaN to the last entry as well.
+			const float position = qAbs( s[i] ) * 200.0f;
+			const float bounded = position < 200.0f ? position : 200.0f;
+			const int lookup = static_cast<int>( bounded );
+			const float frac = fraction( bounded );
 			const float posneg = s[i] < 0 ? -1.0f : 1.0f;
 
 			if( lookup < 1 )
