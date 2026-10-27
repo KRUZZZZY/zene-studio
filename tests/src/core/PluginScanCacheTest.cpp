@@ -483,6 +483,70 @@ private slots:
 		}
 	}
 
+	/*! The read side has a size limit, so a huge cache file is refused before it is
+	    loaded whole into memory. The limit is 64 MiB (PluginScanCache.cpp); this test
+	    pins that value. Trailing whitespace keeps the JSON valid, so only the size
+	    decides: a file of exactly the limit loads, one byte more is refused. */
+	void testOversizedCacheDegradesToFullScan()
+	{
+		using namespace lmms;
+
+		constexpr qint64 limit = 64LL * 1024 * 1024;
+		const QString cacheFile = cachePath("oversized");
+		const QByteArray json(R"({"version":1,"files":[{"path":"/fixture/libsized.so","size":1,"mtime":1,"status":"not-a-plugin"}],"quarantine":[]})");
+		QByteArray atLimit = json;
+		atLimit.append(QByteArray(limit - json.size(), ' '));
+		{
+			QFile file(cacheFile);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+			QCOMPARE(file.write(atLimit), qint64(atLimit.size()));
+		}
+		{
+			PluginScanCache cache(cacheFile);
+			QVERIFY2(cache.load(), "a cache of exactly the limit must still load");
+			QCOMPARE(cache.fileCount(), 1);
+		}
+		{
+			QFile file(cacheFile);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Append));
+			QCOMPARE(file.write(" ", 1), qint64(1));
+		}
+		PluginScanCache oversized(cacheFile);
+		QVERIFY2(!oversized.load(), "a cache one byte over the limit must be refused");
+		QCOMPARE(oversized.fileCount(), 0);
+		QCOMPARE(oversized.quarantineCount(), 0);
+
+		// The refused file is replaced by the next save, so the next start is warm.
+		oversized.store(recordFor(QStringLiteral("/fixture/libfresh.so"), PluginScanRecord::Status::NotAPlugin));
+		QVERIFY2(oversized.save(), "a refused cache must be replaced by a normal save");
+		PluginScanCache rewritten(cacheFile);
+		QVERIFY2(rewritten.load(), "the replacement cache must load");
+		QCOMPARE(rewritten.fileCount(), 1);
+	}
+
+	/*! The write side keeps to the same limit: a cache that load() would refuse is
+	    never written, and a normal cache still saves. */
+	void testOversizedCacheIsNotWritten()
+	{
+		using namespace lmms;
+
+		constexpr qint64 limit = 64LL * 1024 * 1024;
+		const QString cacheFile = cachePath("oversized-write");
+		PluginScanCache huge(cacheFile);
+		PluginScanRecord record = recordFor(QStringLiteral("/fixture/libhuge.so"), PluginScanRecord::Status::HasDescriptor);
+		record.description = QString(limit, QChar('x'));
+		huge.store(record);
+		QVERIFY2(!huge.save(), "a cache larger than the limit must not be written");
+		QVERIFY2(!QFileInfo::exists(cacheFile), "a refused save must leave no file behind");
+
+		PluginScanCache normal(cacheFile);
+		normal.store(recordFor(QStringLiteral("/fixture/libsmall.so"), PluginScanRecord::Status::NotAPlugin));
+		QVERIFY2(normal.save(), "a normal cache must still be written");
+		PluginScanCache reloaded(cacheFile);
+		QVERIFY2(reloaded.load(), "the normal cache must load");
+		QCOMPARE(reloaded.fileCount(), 1);
+	}
+
 	// --- driven through PluginFactory and a real plugin module --------------
 	void testRealPluginIsScannedThenServedFromCache()
 	{
