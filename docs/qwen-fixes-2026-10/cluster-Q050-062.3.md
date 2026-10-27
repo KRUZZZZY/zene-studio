@@ -39,7 +39,9 @@ The loop has since merged train 21 into the branch (`188e5acd1`). On that tree:
 - The build of `zene` and the stem test targets succeeded, exit 0 (`03-build.log`).
 - The 8 targeted ctests passed, exit 0 (`04-ctest.log`).
 - The tools-scope complexity and file-length gates passed, exit 0 and 0 (`05`, `06`).
-- The full gates and the completion check: see the end of this section.
+- The full gates passed, all 8 at exit 0 (`07-feature-check.log`).
+- The completion check gave `RESULT: PASS - submit`, exit 0 (`08-submit-check.log`). It runs from local
+  copies whose log directory is under the run folder, as in rounds 1 and 2.
 
 ## Round 2 (review: train merge + automated proof check)
 
