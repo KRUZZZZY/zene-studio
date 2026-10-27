@@ -256,6 +256,7 @@ void Note::setReleaseVelocity( int velocity )
 
 int Note::releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity )
 {
+	if( midiBaseVelocity <= 0 ) { return 0; }
 	// Q050-039: round-half-up. With truncation the round trip through the
 	// volume scale lost a unit (an incoming 96 landed on 152 and came back as
 	// 95 at the default base velocity 63); rounding makes this the exact
