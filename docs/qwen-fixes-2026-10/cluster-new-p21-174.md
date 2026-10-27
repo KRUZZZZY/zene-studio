@@ -46,9 +46,9 @@ Caveats: the runs are on the offscreen platform, not a real display. The re-entr
 
 ## Files
 
-- Product code: unchanged (HEAD `639e1d23e`; the temporary guard and experiment slots were reverted).
-- Committed: `docs/qwen-fixes-2026-10/cluster-new-p21-174.md` only.
-- No regression test added: no fix, so there is no RED/GREEN pair. A RED test for the crash would fail the suite until the design is decided, so it is not committed.
+- Product code: unchanged (HEAD `639e1d23e`; the temporary guard, the mutation and the experiment slots were reverted).
+- Committed: this report, and one passing test, `FollowActionEditorTest::everyRowKeepsAllItsCellWidgets` (`tests/src/gui/FollowActionEditorTest.cpp`, a product-new file already listed in `tests/fork-sources.txt`, so no upstream-modifications entry). It pins the invariant the verdict depends on. It is a guard, not a regression proof: it passes on the unchanged code.
+- A RED test for the Remove crash is not committed: the crash kills the process, which a test cannot absorb, and committing it would fail the suite until the design is decided.
 - Step 4b (revert-and-prove): not applicable, no product fix.
 
 ## Evidence table
@@ -65,6 +65,11 @@ Caveats: the runs are on the offscreen platform, not a real display. The re-entr
 | Guard build | `CCACHE_TEMPDIR=… cmake --build build --target FollowActionEditorTest zene -j4` | 0 | `build-4-guard-experiment.log` |
 | EXP-A with guard | `gdb -batch … zzExperimentRemoveRowWithFocus` | inferior SIGSEGV | `gdb-a-guard.log` |
 | EXP-B with guard | `./FollowActionEditorTest zzExperimentRemoveButtonWithCellFocus` | 139 | `exp-b-guard-plain.log` |
+| Invariant test, direct run | `./FollowActionEditorTest everyRowKeepsAllItsCellWidgets` | 0, "Totals: 3 passed, 0 failed" (3 = init, the test, cleanup) | `inv-direct.log` |
+| Invariant test, family | `cd build/tests && ctest -R '^FollowActionEditorTest$' --output-on-failure` | 0, "100% tests passed out of 1" | `test-3-invariant.log` |
+| Mutant: `addRow` without the Jump `setCellWidget` (commented out), run | `./FollowActionEditorTest everyRowKeepsAllItsCellWidgets` | 139 (SIGSEGV; the test does not reach a clean assertion) | `inv-mutant.log` |
+| Mutant reverted | `git checkout -- src/gui/FollowActionEditor.cpp` (status then shows only the test file) | 0 | none |
+| Final family test | `cd build/tests && ctest -R '^FollowActionEditorTest$' --output-on-failure` | 0, "100% tests passed out of 1" | `test-4-final.log` |
 | Revert experiment edits | `git checkout -- src/gui/FollowActionEditor.cpp tests/src/gui/FollowActionEditorTest.cpp && git status --short` (status printed nothing) | 0 (status ran, so checkout succeeded) | none |
 | Rebuild after revert | `CCACHE_TEMPDIR=… cmake --build build --target zene FollowActionEditorTest -j4` | 0 | `build-5-restored.log` |
 | Family test after revert | `cd build/tests && ctest -R '^FollowActionEditorTest$' --output-on-failure` | 0, "100% tests passed out of 1" | `test-2-restored.log` |
@@ -73,7 +78,17 @@ Caveats: the runs are on the offscreen platform, not a real display. The re-entr
 
 Affected-family test count: 1 test executed in `FollowActionEditorTest` (both runs), not zero.
 
-Gates, last run (`gates-3.log`, base `639e1d23e`, 0 changed files): fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS, check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item in changed files), file-length PASS (no new item in changed files).
+## Self-check
+
+- Regression test fails with the product change reverted and passes with it: not applicable, there is no product change. The committed test passes on the unchanged code. Its sensitivity was checked with a mutant (`inv-mutant.log`, exit 139), which is a crash, not a clean assertion. The Remove crash has no passing test; see section 4.
+- Deterministic: yes. No timing, sleeps or races. It drives the Add button with `QTest::mouseClick` and checks cell widgets with `QVERIFY`. Row counts are exact (`QCOMPARE` on 2, then 3).
+- Fix at the cause and complete: not applicable, no fix. The verdict is backed by the sibling check in section 1: `nameRows` (`:215`), `chain` (`:239-243`) also dereference cell widgets unguarded, and `apply` reaches them through `chain()` (`:251`), and they are safe only because of the same invariant. A guard at `:228` alone would leave the rest on that invariant too.
+- No collateral damage: no product code changed, so no saved data or caller is affected.
+- Verdict evidence: section 1 (`addRow` `:176-195`, `removeRow` `:157`, filter `:194`) and section 2 (EXP-A and EXP-B, exit 139, gdb logs). The "not reachable" claim is about complete rows only; the removal window is reachable and crashes.
+
+Gates, last run (`gates-4-final.log`, base `639e1d23e`, 2 changed files, both in the commit): RESULT: PASS, exit 0, all eight gates PASS.
+
+Earlier gate run (`gates-3.log`, before the test was added, 0 changed files), same eight gates, each PASS: fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS, check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item in changed files), file-length PASS (no new item in changed files).
 
 Deviations, disclosed:
 - `feature_check.py` writes its log folder to `<worktree>-feature-check`, a sibling of the worktree, which the write area does not allow. I ran a copy from `$TMPDIR/gatecopy/` with only two lines changed: the log folder now goes to the run folder's `logs/feature-check-1`, and `ROOT` points at the original qwen folder so it reads the existing `FIX-BASE` and `gate-baselines` without writing to them. The checks themselves are unchanged.
