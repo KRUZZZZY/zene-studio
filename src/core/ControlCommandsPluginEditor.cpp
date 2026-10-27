@@ -37,6 +37,7 @@
 #include "ControlVocabulary.h"
 #include "Effect.h"
 #include "Plugin.h"
+#include "PluginWindowPlatform.h"
 
 namespace lmms
 {
@@ -61,6 +62,13 @@ ControlResult editorOpen(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1/%2 (%3) is set to the generic editor "
 			"(plugin.options generic_editor)").arg(device.targetId, device.deviceId, device.pluginLabel));
+	}
+	// Q050-502: a session whose windows are not X11 windows cannot embed any format's editor - typed like the
+	// missing display, with the reason and the way out.
+	if (const QString platform = pluginwindow::editorRefusal(); !platform.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Requires,
+			QStringLiteral("%1/%2 (%3): %4").arg(device.targetId, device.deviceId, device.pluginLabel, platform));
 	}
 	QString why;
 	if (!device.plugin()->openNativeEditor(&why))
@@ -119,7 +127,9 @@ void registerPluginEditorCommands(ControlRegistry& registry)
 		"a track's instrument), as plugin.param_set names them. VST3 and CLAP plug-ins whose editor "
 		"embeds in this platform's window (X11, a Windows HWND, a macOS NSView) open; a plug-in with no "
 		"editor, one that cannot embed on this platform (the refusal names the platform and the window "
-		"API), or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, "
+		"API), or one that can only float, refuses with the reason. On Linux editors embed only in X11 windows: on a "
+		"Wayland desktop Zene runs through XWayland, and natively on Wayland (QT_QPA_PLATFORM=wayland, no XWayland) "
+		"every editor refuses ('requires') with the reason. An editor already open is brought forward. Needs a display; interface state, "
 		"not project state: nothing is saved or journalled."), &editorOpen, false);
 	registerOne(registry, "editor_close", QStringLiteral("Close a device's own editor window, if "
 		"it has one open. 'was_open' says whether there was one; closing a closed editor is not an "

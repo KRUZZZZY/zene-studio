@@ -949,6 +949,8 @@ set(LMMS_TESTS
 	src/gui/WorkspaceAccessTest.cpp
 	# Qt reads the startup scale before QApplication; the selected config must win over its fallback file.
 	src/core/AppearanceStartupTest.cpp
+	# Q050-502: the Qt platform a Wayland desktop runs on (XWayland unless the user chose), and the editor refusal it leaves.
+	src/core/PluginWindowPlatformTest.cpp
 	src/core/CustomAccessTest.cpp
 	# 0.5.0 L12 (W3): mixer snapshots, project settings and metadata, the document type, edit locks.
 	src/core/ProjectStateTest.cpp

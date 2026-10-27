@@ -64,6 +64,7 @@
 #include "CrashReporter.h"
 #include "SafeStart.h"
 #include "Appearance.h"
+#include "PluginWindowPlatform.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
 #include "NotePlayHandle.h"
@@ -698,6 +699,13 @@ int main( int argc, char * * argv )
 
 	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
 	if (!coreOnly) { lmms::appearance::applyStoredScale(configFile); }
+	// Q050-502: plug-in editors embed only in X11 windows, so a Wayland desktop runs the GUI on XWayland
+	// unless the user chose a platform (include/PluginWindowPlatform.h). Qt reads it only before the application exists.
+	if (!coreOnly)
+	{
+		const QString platformNote = pluginwindow::describe(pluginwindow::chooseStartupPlatform(argc, argv));
+		if (!platformNote.isEmpty()) { fprintf(stderr, "%s\n", qPrintable(platformNote)); }
+	}
 
 	QCoreApplication * app = coreOnly ?
 			new QCoreApplication( argc, argv ) :

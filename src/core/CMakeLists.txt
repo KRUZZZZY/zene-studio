@@ -217,6 +217,8 @@ set(LMMS_SRCS
 	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsPluginEditor.cpp
+	# Q050-502: the Qt platform a Wayland desktop runs on, so plug-in editors can embed (XWayland).
+	core/PluginWindowPlatform.cpp
 	core/ControlBounceSupport.cpp
 	core/ControlCommandsBounceLand.cpp
 	core/ControlCommandsBrowserCollections.cpp

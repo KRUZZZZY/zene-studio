@@ -688,6 +688,7 @@ include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/PluginVendors.h
 include/PluginView.h
+include/PluginWindowPlatform.h
 include/PluginWindowSystem.h
 include/PortMapping.h
 include/PortMappingCodec.h
@@ -2042,6 +2043,7 @@ src/core/PluginOrganiser.cpp
 src/core/PluginPaths.cpp
 src/core/PluginScanCache.cpp
 src/core/PluginVendors.cpp
+src/core/PluginWindowPlatform.cpp
 src/core/PortMapping.cpp
 src/core/PortMappingCodec.cpp
 src/core/PortMappingPmp.cpp
@@ -2887,6 +2889,7 @@ tests/src/core/PluginEditorHostTest.cpp
 tests/src/core/PluginHostMetadataTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
+tests/src/core/PluginWindowPlatformTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/PortMappingOrchestratorTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp

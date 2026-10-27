@@ -247,6 +247,19 @@ library to work.
   button in `src/gui/Lv2ViewBase.cpp` sits behind `if (false)`), so there is no UI to send `ui:scaleFactor` to, and no
   LV2 UI fixture exists. Proved offscreen against the in-tree VST3 fixture only; no third-party editor has
   been zoomed on a real display.
+- *(Added 2026-10-27, Q050-502.)* **Plug-in editors on a Wayland desktop run through XWayland.** Both formats' editors
+  embed only in X11 windows (VST3 `kPlatformTypeX11EmbedWindowID`, CLAP `CLAP_WINDOW_API_X11`). On Qt's native
+  `wayland` platform a widget's window id is not an X11 window: measured in a nested KWin session, a heap pointer that
+  X11 answers with `BadWindow`, while `plugin.editor_open` still reported `open: true` for both in-tree fixtures. At
+  start-up a Wayland session (`WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland`) that has XWayland (`DISPLAY` set) now
+  runs on `QT_QPA_PLATFORM=xcb;wayland`, as other Linux DAWs do (`src/core/PluginWindowPlatform.cpp`). A
+  `QT_QPA_PLATFORM` or `-platform` set by the user is never overridden. Limits: on native Wayland (the user's choice,
+  no XWayland, or a Qt without its xcb plug-in) every hosted editor refuses with a typed `requires` that names the
+  reason, and there is no Wayland-native embedding. Running through XWayland means XWayland's scaling, so on a
+  fractionally scaled KDE screen the whole window can look soft (KDE's "Legacy Applications (X11)" scaling setting
+  decides this). The choice is made only when Zene starts: there is no setting in the interface, only the environment
+  variable. Proved in a nested headless `kwin_wayland --virtual --xwayland` against the in-tree fixtures only.
+  **The owner's own KDE Wayland desktop, with third-party plug-ins, has not been checked yet.**
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
