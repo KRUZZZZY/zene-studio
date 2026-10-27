@@ -54,11 +54,17 @@ No test file is new, so no registration in `tests/fork-sources.txt` / `tests/ups
 
 ## Self-check
 
-1. **RED/GREEN by reverting the product change:** not applicable — no product file changed. The new test passes on the current code (step e, EXIT 0). It is a guard, not regression proof; its sensitivity to the `set` path is analysed above, not run.
-2. **Acceptance criteria:** not applicable (bug fix, no feature record).
-3. **One undo step, reversibility:** no command or undo code changed. Refused calls never reach `recorded()`, so no undo step is recorded (`ControlCommandsSections.cpp:117-119` and `:98`). No new command was added.
-4. **Audio thread:** no product code changed; nothing on the audio path is touched.
-5. **Old projects load as before:** no product code changed. Loaded sections still go through `ArrangementSections::sectionOf` / `load()` checks (`ArrangementSections.cpp:155-158`), unchanged.
-6. **Portability:** the test uses only existing `QStringLiteral`/`QCOMPARE` helpers; no platform-specific code.
-7. **Sibling commands:** `section.add` and `section.set` are both checked by the new test. `section.list/remove/select` take no span, so they are unaffected. The `setSection` pre-check gap is recorded above, not changed.
-8. **Scope:** one test method added; the finding's bug is not present on this branch, so no product change is justified.
+Answers to the completion-check questions (`submit_check.py new-p22-76`, saved in `submit-check-1.log`):
+
+- **Regression test FAILS with the product change reverted and PASSES with it:** not applicable as a RED/GREEN pair, because this branch has no product change to revert. The new test passes on the current code (ArrangeToolsTest step e, EXIT 0; step d, EXIT 0). It is a guard that pins existing behaviour, not regression proof. Its sensitivity to the `section.set` path (removing the schema `minimum` on `tickProperty()` would make `setSection` return `ok`) is an analysis, not a run.
+- **Deterministic:** yes. No timing, sleeps or threads. The test uses only the registry (`run()`) and the singleton `ArrangementSections` with fixed ticks (-5, -1, 0, 768), and clears the store at the end.
+- **Fix at the cause and complete / siblings:** no fix was needed. Callers checked: `addSection` (`ControlCommandsSections.cpp:94-105`) and `setSection` (`:107-122`), both behind the schema. The `setSection` pre-check gap (`:117` checks only `end <= start`; `:119` ignores `replace()`'s bool) is not reachable over the wire and is recorded above, not changed.
+- **No collateral damage:** no product code changed, so saved projects, `ArrangementSections::load()` (`ArrangementSections.cpp:155-158`), and every other caller behave exactly as before. The test file is the only file changed.
+- **ALREADY-FIXED evidence:** `src/core/ControlVocabulary.cpp:117-120` (tick schema minimum 0), `src/core/ControlSchema.cpp:87-91` (minimum enforced), `src/core/ControlRegistry.cpp:277-280` (refusal before the handler), `src/core/ArrangementSections.cpp:60` and `:71` (core refusal), `tests/src/core/ArrangeToolsTest.cpp:379` and `:384-405` (existing core tests).
+
+Other checks:
+
+- **Undo / reversibility:** unchanged. Refused calls never reach `recorded()`, so they add no undo step.
+- **Audio thread:** nothing touched.
+- **Portability:** the test uses only existing helpers.
+- **Gates:** `feature_check.py` could not run in the lane because it creates `<worktree>-feature-check` next to the worktree, outside the write jail (PermissionError, gate-1.log, EXIT 1). The same script logic run with its log folder redirected to the LOG FOLDER returned `RESULT: PASS` (feature-check-1.log, EXIT 0). The `submit_check.py` gate row therefore fails for this environment reason only and needs the sibling folder to be writable to pass as written.
