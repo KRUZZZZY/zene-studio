@@ -41,6 +41,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <barrier>
 #include <cmath>
 #include <new>
@@ -71,6 +72,12 @@
 #include "Song.h"
 
 using namespace lmms;
+
+namespace lmms
+{
+LMMS_EXPORT void resetInternLyricLookupWorkForTest() noexcept;
+LMMS_EXPORT std::uint64_t internLyricLookupWorkForTest() noexcept;
+}
 
 namespace
 {
@@ -396,6 +403,51 @@ private slots:
 		ControlRegistry::setReady(false);
 		Engine::getSong()->clearProject();
 		Engine::destroy();
+	}
+
+	void importingDistinctLyricsUsesIndexedLookup()
+	{
+		QDomDocument document;
+		QDomElement emptyLyric = document.createElement(QStringLiteral("note"));
+		NoteConditions emptyConditions;
+		emptyConditions.load(emptyLyric);
+		QCOMPARE(emptyConditions.lyric, 0);
+		QCOMPARE(lyricText(0), QString());
+		QCOMPARE(lyricText(std::numeric_limits<int>::max()), QString());
+
+		constexpr int lyricCount = 512;
+		std::vector<QString> lyrics;
+		std::vector<QDomElement> notes;
+		std::vector<int> ids;
+		lyrics.reserve(lyricCount);
+		notes.reserve(lyricCount);
+		ids.reserve(lyricCount);
+		for (int i = 0; i < lyricCount; ++i)
+		{
+			lyrics.push_back(QStringLiteral("new-p18-69-import-") + QString::number(i));
+			QDomElement note = document.createElement(QStringLiteral("note"));
+			note.setAttribute(QStringLiteral("lyr"), lyrics.back());
+			notes.push_back(note);
+		}
+
+		resetInternLyricLookupWorkForTest();
+		for (const QDomElement& note : notes)
+		{
+			NoteConditions conditions;
+			conditions.load(note);
+			ids.push_back(conditions.lyric);
+		}
+		for (int i = 0; i < lyricCount; ++i)
+		{
+			QCOMPARE(ids[static_cast<std::size_t>(i)], ids.front() + i);
+			QCOMPARE(lyricText(ids[static_cast<std::size_t>(i)]), lyrics[static_cast<std::size_t>(i)]);
+
+			NoteConditions repeated;
+			repeated.load(notes[static_cast<std::size_t>(i)]);
+			QCOMPARE(repeated.lyric, ids[static_cast<std::size_t>(i)]);
+		}
+
+		QVERIFY(internLyricLookupWorkForTest() <= static_cast<std::uint64_t>(2 * lyricCount));
 	}
 
 	void monstroNoteStartDoesNotAllocate()

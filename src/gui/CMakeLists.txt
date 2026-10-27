@@ -116,6 +116,8 @@ SET(LMMS_SRCS
 	gui/CommandPalette.cpp
 	gui/MacroMenu.cpp
 	gui/MacroKnobs.cpp
+	gui/ConsoleStripSection.cpp
+	gui/InputChannelMeters.cpp
 	gui/MenuBarExtras.cpp
 	gui/RecordLaunchMenus.cpp
 	# Q050-156: the sampler views' "Record take" button, over the same registered record.sampler_capture* commands.

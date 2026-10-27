@@ -24,8 +24,10 @@
 #include "NoteConditions.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <vector>
 
+#include <QHash>
 #include <QDomElement>
 
 namespace lmms
@@ -87,16 +89,44 @@ std::vector<QString>& lyricTable()
 	return table;
 }
 
+QHash<QString, int>& lyricIndex()
+{
+	static QHash<QString, int> index;
+	return index;
+}
+
+#ifdef LMMS_TESTING
+std::uint64_t internLyricLookupWork = 0;
+#endif
+
 } // namespace
+
+#ifdef LMMS_TESTING
+LMMS_EXPORT void resetInternLyricLookupWorkForTest() noexcept
+{
+	internLyricLookupWork = 0;
+}
+
+LMMS_EXPORT std::uint64_t internLyricLookupWorkForTest() noexcept
+{
+	return internLyricLookupWork;
+}
+#endif
 
 int internLyric(const QString& text)
 {
 	if (text.isEmpty()) { return 0; }
+	QHash<QString, int>& index = lyricIndex();
+#ifdef LMMS_TESTING
+	++internLyricLookupWork;
+#endif
+	const auto found = index.constFind(text);
+	if (found != index.cend()) { return found.value(); }
 	std::vector<QString>& table = lyricTable();
-	const auto found = std::find(table.begin(), table.end(), text);
-	if (found != table.end()) { return static_cast<int>(found - table.begin()); }
+	const int id = static_cast<int>(table.size());
 	table.push_back(text);
-	return static_cast<int>(table.size()) - 1;
+	index.insert(text, id);
+	return id;
 }
 
 QString lyricText(int id)

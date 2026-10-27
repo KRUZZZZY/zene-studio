@@ -117,6 +117,15 @@ public:
 	void setSourceLatencyFrames(int frames);
 	int sourceLatencyFrames() const { return m_sourceLatencyFrames.load(std::memory_order_relaxed); }
 
+	/*! Q050-339: the track's manual delay, in frames at the engine's rate: positive plays it later, negative
+	 *  earlier (the other paths are then delayed instead - the offset is added to the PDC graph, never a
+	 *  replacement for it). 0 (the default, and every older project) leaves the handle exactly as it was.
+	 *  Control thread; a lock-free value the audio thread reads. Clamped to +-MaxManualOffsetFrames. */
+	void setOffsetFrames(int frames);
+	int offsetFrames() const { return m_offsetFrames.load(std::memory_order_relaxed); }
+	//! What the PDC graph aligns this path by: its latency less its manual offset (may be negative).
+	int alignedLatencyFrames() const { return latencyFrames() - offsetFrames(); }
+
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 
@@ -213,6 +222,8 @@ private:
 
 	//! MX-157: see setSourceLatencyFrames().
 	std::atomic<int> m_sourceLatencyFrames{0};
+	//! Q050-339: see setOffsetFrames().
+	std::atomic<int> m_offsetFrames{0};
 
 	friend class AudioEngine;
 	friend class AudioEngineWorkerThread;

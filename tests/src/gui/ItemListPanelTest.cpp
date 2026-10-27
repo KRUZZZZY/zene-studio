@@ -27,6 +27,8 @@
  *  selection follows both ways. Theme 17: the audit runs its checks separately (duplicate names among them), and
  *  announcements follow the level, the repeat window and the song's transitions. */
 
+#include <stdexcept>
+
 #include <QtTest>
 
 #include <QJsonArray>
@@ -304,6 +306,31 @@ private slots:
 		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 0);
 	}
 
+	void aNegativeCompRowIsRefusedNotIndexed()
+	{
+		const QString track = invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!track.isEmpty());
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.lane_add"), {{QStringLiteral("track"), track}}).ok);
+		QVERIFY(invoke(QStringLiteral("comp.select"), {{QStringLiteral("track"), track}, {QStringLiteral("begin"), 10},
+			{QStringLiteral("end"), 11}, {QStringLiteral("lane"), 0}}).ok);
+
+		CompSwipeStrip strip(track, nullptr);
+		strip.setState(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result);
+		ItemListSource* source = itemlists::compSegments(&strip, &strip);
+		const int rows = source->rowCount();
+		QVERIFY(rows >= 1);
+		const QJsonObject before = invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result;
+
+		bool accepted = true;
+		try { accepted = source->setValue(-1, 0, 5); }
+		catch (const std::out_of_range&) { QFAIL("a negative row reached the segment list and threw out_of_range"); }
+		QVERIFY(!accepted);
+		QCOMPARE(source->rowCount(), rows);
+		QVERIFY(invoke(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), track}}).result == before);
+	}
+
 	void theSelectionFollowsBothWays()
 	{
 		m_panel->table()->selectRow(1);
@@ -410,6 +437,35 @@ private slots:
 		}
 		QVERIFY(keptTen);
 		QVERIFY(keptHundred);
+	}
+
+	void aNegativeControllerRowIsRefusedNotIndexed()
+	{
+		// The row comes from the caller, not from the list: a negative one must be refused, never used to index the points.
+		m_editor->setControllerLane(QStringLiteral("cc:7"));
+		const QJsonArray initial{QJsonObject{{QStringLiteral("tick"), 0}, {QStringLiteral("value"), 10}},
+			QJsonObject{{QStringLiteral("tick"), 12}, {QStringLiteral("value"), 100}}};
+		QVERIFY(invoke(QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), m_editor->clipId()},
+			{QStringLiteral("lane"), QStringLiteral("cc:7")}, {QStringLiteral("points"), initial}}).ok);
+		QObject owner;
+		ItemListSource* points = itemlists::controllerPoints(m_editor, &owner);
+		QVERIFY(!points->setValue(-1, 0, 5));
+		QVERIFY(!points->setValue(-1, 1, 5));
+
+		const ControllerLane* lane = m_clip->controllers().lane(ControllerKind::ControlChange, 7);
+		QVERIFY(lane != nullptr);
+		QCOMPARE(lane->points.size(), std::size_t{2});
+		QCOMPARE(lane->points[0].value, 10);
+		QCOMPARE(lane->points[1].value, 100);
+	}
+
+	void aNegativeNoteRowIsRefusedNotIndexed()
+	{
+		QObject owner;
+		ItemListSource* notes = itemlists::notes(m_editor, &owner);
+		QVERIFY(!notes->setValue(-1, 1, 62));
+		QVERIFY(!notes->setValue(-1, 0, 12));
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
 	}
 
 	void theCommandOpensAndClosesTheList()

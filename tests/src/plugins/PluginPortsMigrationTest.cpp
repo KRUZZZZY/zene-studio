@@ -1021,6 +1021,9 @@ public:
 private slots:
 	void initTestCase();
 	void freeBoyShapeBufferIsReleased();
+	void freeBoyExhaustedNoteRetriesWhenVoiceFrees();
+	void freeBoyOldSampleRatePoolsAreReclaimed();
+	void freeBoySampleRatePoolHandoffIsRealtimeSafe();
 	void invalidSbiSignatureIsRejected_data();
 	void invalidSbiSignatureIsRejected();
 	void waveSampleDefaultsInterpolationToDisabled();
@@ -1236,6 +1239,219 @@ void PluginPortsMigrationTest::freeBoyShapeBufferIsReleased()
 	QDomElement savedParent = savedDocument.createElement("instrument");
 	const QDomElement saved = instrument->saveState(savedDocument, savedParent);
 	QCOMPARE(saved.attribute("sampleShape"), encodedShape);
+}
+
+void PluginPortsMigrationTest::freeBoyExhaustedNoteRetriesWhenVoiceFrees()
+{
+	if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	struct NoteHandleReleaser
+	{
+		lmms::Instrument* instrument;
+		void operator()(lmms::NotePlayHandle* handle) const
+		{
+			if (handle->m_pluginData != nullptr)
+			{
+				instrument->deleteNotePluginData(handle);
+				handle->m_pluginData = nullptr;
+			}
+			lmms::NotePlayHandleManager::release(handle);
+		}
+	};
+	using NoteHandle = std::unique_ptr<lmms::NotePlayHandle, NoteHandleReleaser>;
+
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	partc::prepareInstrumentEnvironment("freeboy");
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+
+	constexpr int voiceCapacity = 1024;
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	std::vector<NoteHandle> notes;
+	notes.reserve(voiceCapacity + 1);
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	auto render = [&](lmms::NotePlayHandle* handle) {
+		std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+		instrument->playNote(handle, span);
+		return std::any_of(data.begin(), data.end(), [](const lmms::SampleFrame& frame) {
+			return frame.left() != 0.0f || frame.right() != 0.0f;
+		});
+	};
+	auto acquireNote = [&]() {
+		auto* handle = lmms::NotePlayHandleManager::acquire(instrument->instrumentTrack(), 0,
+			frames * 8, note, nullptr, -1, lmms::NotePlayHandle::Origin::MidiClip);
+		notes.emplace_back(handle, NoteHandleReleaser{instrument.get()});
+		return handle;
+	};
+
+	auto* first = acquireNote();
+	QVERIFY(render(first));
+	for (int i = 1; i < voiceCapacity; ++i) { render(acquireNote()); }
+	auto* waiting = acquireNote();
+	QVERIFY(!render(waiting));
+
+	instrument->deleteNotePluginData(first);
+	first->m_pluginData = nullptr;
+	partc::RealtimeAllocationWatch::begin();
+	const bool waitingNoteBecameAudible = render(waiting);
+	const auto retryCounts = partc::RealtimeAllocationWatch::end();
+	QVERIFY2(waitingNoteBecameAudible,
+		"a note that found the voice pool full did not retry after a voice became free");
+	QCOMPARE(retryCounts.allocations, std::size_t{0});
+	QCOMPARE(retryCounts.deallocations, std::size_t{0});
+}
+
+void PluginPortsMigrationTest::freeBoyOldSampleRatePoolsAreReclaimed()
+{
+	if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	using PoolCountFn = std::size_t (*)();
+	auto poolCount = reinterpret_cast<PoolCountFn>(
+		library.resolve("lmms_freeboy_test_voice_pool_count"));
+	QVERIFY(poolCount != nullptr);
+	using PoolCollectorFn = void (*)();
+	auto collectPools = reinterpret_cast<PoolCollectorFn>(
+		library.resolve("lmms_freeboy_test_collect_voice_pools"));
+	QVERIFY(collectPools != nullptr);
+	using ReaperPauseFn = void (*)(bool);
+	auto pauseReaper = reinterpret_cast<ReaperPauseFn>(
+		library.resolve("lmms_freeboy_test_pause_pool_reaper"));
+	QVERIFY(pauseReaper != nullptr);
+	pauseReaper(true);
+	struct ReaperResume
+	{
+		ReaperPauseFn pause;
+		~ReaperResume() { pause(false); }
+	} reaperResume{pauseReaper};
+
+	auto* engine = lmms::Engine::audioEngine();
+	auto* device = engine->audioDev();
+	const auto originalRate = device->sampleRate();
+	struct RestoreRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t rate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(rate);
+			emit engine->sampleRateChanged();
+		}
+	} restoreRate{engine, device, originalRate};
+
+	const auto poolsBefore = poolCount();
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	partc::prepareInstrumentEnvironment("freeboy");
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * 8, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	instrument->playNote(&handle, span);
+	QVERIFY(handle.m_pluginData != nullptr);
+	void* const oldVoice = handle.m_pluginData;
+	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{101});
+	emit engine->sampleRateChanged();
+	QCOMPARE(poolCount(), poolsBefore + 2);
+	instrument->playNote(&handle, span);
+	QCOMPARE(handle.m_pluginData, oldVoice);
+	instrument->deleteNotePluginData(&handle);
+	handle.m_pluginData = nullptr;
+	QCOMPARE(poolCount(), poolsBefore + 2);
+	collectPools();
+	QCOMPARE(poolCount(), poolsBefore + 1);
+	for (const auto offset : {lmms::sample_rate_t{202}, lmms::sample_rate_t{303}})
+	{
+		device->setSampleRateForTesting(originalRate + offset);
+		emit engine->sampleRateChanged();
+	}
+	QCOMPARE(poolCount(), poolsBefore + 1);
+}
+
+void PluginPortsMigrationTest::freeBoySampleRatePoolHandoffIsRealtimeSafe()
+{
+	if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	using HandoffFn = bool (*)();
+	auto handoffIsRealtimeSafe = reinterpret_cast<HandoffFn>(
+		library.resolve("lmms_freeboy_test_pool_pointer_is_realtime_safe"));
+	QVERIFY(handoffIsRealtimeSafe != nullptr);
+	QVERIFY2(handoffIsRealtimeSafe(),
+		"the render path must read a lock-free atomic pool pointer");
+
+	auto* engine = lmms::Engine::audioEngine();
+	auto* device = engine->audioDev();
+	const auto originalRate = device->sampleRate();
+	struct RestoreRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t rate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(rate);
+			emit engine->sampleRateChanged();
+		}
+	} restoreRate{engine, device, originalRate};
+
+	partc::prepareInstrumentEnvironment("freeboy");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * 8, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	instrument->playNote(&handle, span);
+	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{404});
+	emit engine->sampleRateChanged();
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	partc::RealtimeAllocationWatch::begin();
+	instrument->playNote(&handle, span);
+	const auto renderCounts = partc::RealtimeAllocationWatch::end();
+	QVERIFY(std::any_of(data.begin(), data.end(), [](const lmms::SampleFrame& frame) {
+		return frame.left() != 0.0f || frame.right() != 0.0f;
+	}));
+	QCOMPARE(renderCounts.allocations, std::size_t{0});
+	QCOMPARE(renderCounts.deallocations, std::size_t{0});
+	if (handle.m_pluginData != nullptr)
+	{
+		instrument->deleteNotePluginData(&handle);
+		handle.m_pluginData = nullptr;
+	}
 }
 
 void PluginPortsMigrationTest::invalidSbiSignatureIsRejected_data()

@@ -40,7 +40,12 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include <csignal>
 #include <vector>
+
+#ifdef Q_OS_UNIX
+#include <sys/resource.h>
+#endif
 
 #include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
@@ -150,6 +155,42 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
+
+#ifdef Q_OS_UNIX
+/*! Lowers this process's file size limit for the lifetime of the object, so the kernel
+ *  REFUSES a write past \a bytes (EFBIG) - a real refused write, not a simulated one. The
+ *  signal that limit raises is ignored meanwhile. Both are restored on destruction. */
+class FileSizeLimit
+{
+public:
+	explicit FileSizeLimit(rlim_t bytes)
+	{
+		if (getrlimit(RLIMIT_FSIZE, &m_saved) != 0) { return; }
+		rlimit lowered = m_saved;
+		lowered.rlim_cur = bytes;
+		if (setrlimit(RLIMIT_FSIZE, &lowered) != 0) { return; }
+		m_previousSigxfsz = std::signal(SIGXFSZ, SIG_IGN);
+		m_applied = (m_previousSigxfsz != SIG_ERR);
+	}
+
+	~FileSizeLimit()
+	{
+		if (!m_applied) { return; }
+		std::signal(SIGXFSZ, m_previousSigxfsz);
+		setrlimit(RLIMIT_FSIZE, &m_saved);
+	}
+
+	FileSizeLimit(const FileSizeLimit&) = delete;
+	FileSizeLimit& operator=(const FileSizeLimit&) = delete;
+
+	bool applied() const { return m_applied; }
+
+private:
+	rlimit m_saved{};
+	void (*m_previousSigxfsz)(int) = SIG_DFL;
+	bool m_applied = false;
+};
+#endif
 
 } // namespace
 
@@ -429,6 +470,64 @@ private slots:
 		QFile kept(path);
 		QVERIFY(kept.open(QIODevice::ReadOnly));
 		QCOMPARE(kept.readAll(), previous);
+	}
+
+	/*! The destination cannot be created at all (its directory does not exist). The call created
+	 *  nothing, so the exporter's outcome is NotCreated - never a written file. The caller relies
+	 *  on that answer, so it is checked on the exporter itself, not only through the command. */
+	void anUncreatableDestinationIsNotReportedAsWritten()
+	{
+		const QString path = m_dir.filePath(QStringLiteral("no-such-directory/export.mid"));
+		const ExportOutcome outcome = Engine::getSong()->exportProjectMidi(path);
+		QVERIFY2(outcome == ExportOutcome::NotCreated,
+			"an export whose file could not be created did not report NotCreated");
+		QVERIFY(!QFileInfo::exists(path));
+	}
+
+	/*! A write the disk REFUSES is a failed export, never a success. The file size limit makes the
+	 *  kernel refuse the export's writes for real once the file passes 4 bytes (the header alone is
+	 *  longer), so the case is a fact of the test rather than a full disk. The refusal is reported,
+	 *  the partial file this call created is removed, and the previous export at the target
+	 *  survives byte for byte. */
+	void aRefusedWriteIsAFailedExportNotASuccess()
+	{
+#ifdef Q_OS_UNIX
+		// The export works at all in this process (the filter loads), so the refusal below
+		// is the refused write and nothing else.
+		const ControlResult works = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), m_dir.filePath(QStringLiteral("works.mid"))}});
+		QVERIFY2(works.ok, qPrintable(works.errorMessage));
+
+		const QString path = m_dir.filePath(QStringLiteral("write-refused.mid"));
+		const QByteArray previous("PREVIOUS-EXPORT-BYTES");
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(previous) == previous.size());
+		}
+
+		QString tempPath;
+		control::setControlExportMidiTempPathHook([&](const QString& p) { tempPath = p; });
+		// Held until the end of this case: the kernel refuses the export's writes past 4 bytes.
+		// No product write happens after the export call, so the limit is not in the way of any
+		// assertion below; it is restored on every exit path by the guard's destructor.
+		FileSizeLimit limit(4);
+		QVERIFY2(limit.applied(), "could not lower the file size limit for the refused-write case");
+		const ControlResult result = run(QStringLiteral("project.export_midi"),
+			{{QStringLiteral("path"), path}});
+		control::setControlExportMidiTempPathHook(nullptr);
+
+		QVERIFY2(!result.ok, "the export reported success although the disk refused its write");
+		QVERIFY(!tempPath.isEmpty());
+		// The partial output this call created is removed.
+		QVERIFY2(!QFileInfo::exists(tempPath), "the partial temporary file was left behind");
+		// The previous export is still there, byte for byte.
+		QFile kept(path);
+		QVERIFY(kept.open(QIODevice::ReadOnly));
+		QCOMPARE(kept.readAll(), previous);
+#else
+		QSKIP("refusing a write needs a POSIX file size limit (RLIMIT_FSIZE)");
+#endif
 	}
 
 	//! Zero pattern steps: writePatternClip() divides by `steps * 12`. The loader keeps a clip's step count at

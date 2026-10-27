@@ -108,13 +108,13 @@ bool ReferenceProject::open(const QString& path, QString* why)
 {
 	if (!QFileInfo(path).isFile())
 	{
-		*why = QStringLiteral("no project file '%1'").arg(path);
+		if (why != nullptr) { *why = QStringLiteral("no project file '%1'").arg(path); }
 		return false;
 	}
 	auto file = std::make_unique<DataFile>(path);
 	if (control::transplant::songTracks(file->content()).isEmpty())
 	{
-		*why = QStringLiteral("'%1' is not a project with song tracks").arg(path);
+		if (why != nullptr) { *why = QStringLiteral("'%1' is not a project with song tracks").arg(path); }
 		return false;
 	}
 	m_file = std::move(file);

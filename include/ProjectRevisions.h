@@ -78,7 +78,9 @@ LMMS_EXPORT QJsonObject projectRevisionState(const QString& projectPath);
  *
  * The live file is rotated first (so the restore is itself recoverable: the
  * file it replaced is the new revision 0), then the revision is copied into
- * place. False with \a error set when the revision does not exist.
+ * place. False with \a error set when the revision does not exist, or when the
+ * bytes a restore would install are over MaxRevisionBytes: that refusal comes
+ * before anything is staged or rotated, so the retained set is left as it was.
  *
  * The revision is staged on disk first, under a path of its own. A stage an
  * earlier FAILED attempt left behind is reused, because the rotation may

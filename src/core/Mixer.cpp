@@ -53,6 +53,7 @@
 #include "MixerGroups.h"
 #include "MixerSendPan.h"
 #include "MixerStrip.h"
+#include "StripMeters.h"
 #include "PatternStore.h"
 #include "ProjectIds.h"
 #include "SampleTrack.h"
@@ -434,6 +435,7 @@ MixerChannel::MixerChannel( int idx, Model * _parent ) :
 
 MixerChannel::~MixerChannel()
 {
+	// m_loudnessOwner (Q050-108) goes with the channel: a channel is deleted while no period is processed.
 	delete[] m_buffer;
 }
 
@@ -2244,7 +2246,8 @@ int Mixer::resolveLatency(std::size_t index)
 	m_latencyOutputScratch[index] =
 		input + std::max(0, channel->m_fxChain.latencyFrames())
 		+ std::max(0, channel->m_postInserts.chain().latencyFrames())  // 0.5.0 MX-082 (0 while empty)
-		+ hardwareio::insertLatency( *channel );  // 0.5.0 F1 (MX-061): 0 while off or bypassed
+		+ hardwareio::insertLatency( *channel )  // 0.5.0 F1 (MX-061): 0 while off or bypassed
+		- channel->offsetFrames();  // Q050-339: a channel delay moves every path out of the channel (0 by default)
 	m_latencyVisitScratch[index] = 2;
 	return m_latencyOutputScratch[index];
 }
@@ -2300,9 +2303,10 @@ void Mixer::updateLatencyCompensation()
 			// so a handle pointing at a bus contributes nothing.
 			if (channel < count && !m_mixerChannels[channel]->isBus())
 			{
+				// Q050-339: less the track's manual offset (a negative offset raises the alignment point).
 				m_directSourceLatencyScratch[channel] =
 					std::max(m_directSourceLatencyScratch[channel],
-						std::max(0, handle->latencyFrames()));
+						std::max(0, handle->alignedLatencyFrames()));
 			}
 		}
 	}
@@ -2365,7 +2369,7 @@ void Mixer::updateLatencyCompensation()
 			{
 				clamped = clamped
 					|| (m_latencyInputScratch[channel]
-						- std::max(0, handle->latencyFrames())) > cap;
+						- handle->alignedLatencyFrames()) > cap;
 			}
 		}
 	}

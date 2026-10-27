@@ -116,6 +116,13 @@ void AudioBusHandle::setSourceLatencyFrames(int frames)
 }
 
 
+void AudioBusHandle::setOffsetFrames(int frames)
+{
+	const int bound = LatencyCompensation::MaxManualOffsetFrames;
+	m_offsetFrames.store(std::clamp(frames, -bound, bound), std::memory_order_relaxed);
+}
+
+
 
 
 AudioBusHandle::~AudioBusHandle()
@@ -255,8 +262,10 @@ void AudioBusHandle::doProcessing()
 	// PDC (#605): delay this track's output to the alignment point of the
 	// mixer channel it feeds. A zero delay is an exact no-op, so a track whose
 	// chain reports no latency is bit-identical to the uncompensated path.
+	// Q050-339: a manual offset is part of the path's latency as the graph sees it (alignedLatencyFrames), so a
+	// positive one delays this track by that much more and a negative one raises the channel's alignment point.
 	m_compensation.setDelayFrames(
-		Engine::mixer()->channelInputLatency(m_nextMixerChannel) - latencyFrames());
+		Engine::mixer()->channelInputLatency(m_nextMixerChannel) - alignedLatencyFrames());
 	m_compensation.processInPlace(m_buffer.data(), fpp);
 
 	if (anyOutputAfterEffects || m_bufferUsage || m_compensation.delayFrames() > 0)

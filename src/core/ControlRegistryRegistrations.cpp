@@ -107,6 +107,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerControllerMapCommands(registry);
 	registerMixerListenCommands(registry);
 	registerMixerStripCommands(registry);
+	registerConsoleStripCommand(registry);  // Q050-088
+	registerTrackOffsetCommand(registry);  // Q050-339
+	registerInputMetersCommand(registry);  // Q050-340
 	registerMixerRenameCommands(registry);  // 0.5.0 theme 13: mixer.rename_channel
 	registerDeviceCopyCommands(registry);
 	registerPluginOrganiseCommands(registry);

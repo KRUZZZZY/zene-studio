@@ -280,6 +280,7 @@ void populateTrack(QMenu* menu, Track* track)
 		InstrumentCommandMenus::populate(menu, id);  // 0.5.0 F2: output buses, MIDI parts, layers, per-voice modulation
 	}
 	automationMenu(menu, id);
+	trackDelayEntries(menu, track, id);  // Q050-339
 	trackMidiOutEntries(menu, track, self);  // MX-062
 	trackVersionEntries(menu, track, self);  // ED-049
 	QMenu* takes = menu->addMenu(tr("Takes and Comping"));
@@ -395,6 +396,7 @@ void viewOptionsMenu(QMenu* menu)
 	choices(view, "Show Meter Line", "window.mixer_view", "show_meter_info", {});
 	choices(view, "Show Inserts", "window.mixer_view", "show_inserts", {});
 	choices(view, "Show Macro Knobs", "window.mixer_view", "show_macros", {});
+	choices(view, "Show Console Section", "window.mixer_view", "show_console", {});  // Q050-088
 	choices(view, "Strip Width", "window.mixer_view", "strip_width", {});
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});
 	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
@@ -473,19 +475,7 @@ void populateChannel(QMenu* menu, const QString& channel)
 	}
 	mixerViewMenu(menu, channel);
 	viewOptionsMenu(menu);
-	// L08: the strip's own settings (mixer.set_strip).
-	QMenu* strip = menu->addMenu(tr("Strip"));
-	choices(strip, "Polarity Left", "mixer.set_strip", "polarity_left", self);
-	choices(strip, "Polarity Right", "mixer.set_strip", "polarity_right", self);
-	choices(strip, "Mono", "mixer.set_strip", "mono", self);
-	choices(strip, "Swap Left and Right", "mixer.set_strip", "swap", self);  // MX-033
-	choices(strip, "Mono Input", "mixer.set_strip", "input_mono", self);  // MX-059
-	add(strip, "EQ...", "mixer.channel_eq", self, true);  // MX-085
-	choices(strip, "Pan Mode", "mixer.set_strip", "pan_mode", self);
-	choices(strip, "Solo Safe", "mixer.set_strip", "solo_safe", self);
-	add(strip, "Trim, Width and Note...", "mixer.set_strip", self, true);
-	add(strip, "Meters", "mixer.strip_get", self, false, {}, true);
-	add(strip, "Clear All Clip Lights", "mixer.clear_clips", {}, false);
+	stripEntries(menu->addMenu(tr("Strip")), channel);  // L08: the strip's own settings (ShellMenuEntries.cpp)
 	// MX-027: every channel at once.
 	add(menu, "Unmute All Channels", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("muted"), false}}, false);
 	add(menu, "Clear All Solos", "mixer.set_many", {{QStringLiteral("all"), true}, {QStringLiteral("soloed"), false}}, false);

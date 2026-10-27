@@ -359,6 +359,37 @@ private slots:
 			.value(QStringLiteral("seed")).toDouble(), 424242.0);
 	}
 
+	//! Luna cluster new-p19-7: the recorded randomize inverse is the argument-free
+	//! control.undo operation, and replaying it restores the notes.
+	void randomizeInverseCanBeReissuedThroughControlUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		QVERIFY2(addRollFixtureNotes(fixture.clip), "could not add the roll fixture's notes");
+		const QJsonArray before = run(QStringLiteral("roll.get_state"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}}).result
+			.value(QStringLiteral("notes")).toArray();
+
+		const ControlResult rolled = run(QStringLiteral("note.randomize"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("velocity_jitter"), 1.0}, {QStringLiteral("seed"), 424242}});
+		QVERIFY2(rolled.ok, qPrintable(rolled.errorMessage));
+		QVERIFY(rolled.result.value(QStringLiteral("velocities_moved")).toInt() > 0);
+		const ControlRegistry::Transaction* transaction = ControlRegistry::instance()->lastTransaction();
+		QVERIFY(transaction != nullptr);
+		QCOMPARE(transaction->command, QStringLiteral("note.randomize"));
+		const QString inverseOp = transaction->inverse.value(QStringLiteral("op")).toString();
+		const QJsonObject inverseArgs = transaction->inverse.value(QStringLiteral("args")).toObject();
+		const ControlResult undone = ControlRegistry::instance()->invoke(inverseOp, inverseArgs);
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(inverseOp, QStringLiteral("control.undo"));
+		QVERIFY(inverseArgs.isEmpty());
+		const QJsonArray after = run(QStringLiteral("roll.get_state"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}}).result
+			.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(after, before);
+	}
+
 	//! W4: the roll's typed refusals - a missing jitter, an out-of-range one, and a
 	//! clip with no notes at all.
 	void theRollRefusesWhatItCannotMean()
@@ -417,6 +448,43 @@ private slots:
 				{QStringLiteral("position_jitter"), nan}});
 		QVERIFY2(!positionNan.ok, "NaN position_jitter was accepted as a successful no-op roll");
 		QCOMPARE(positionNan.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! Luna cluster new-p22-42: a handler call that bypasses schema validation must
+	//! still reject NaN before converting it to the engine's uint32 seed.
+	void nonfiniteSeedIsRefusedByRandomizeHandler()
+	{
+		Fixture fixture;
+		QVERIFY2(makeFixture(&fixture), "could not build a track + clip fixture");
+		QVERIFY2(addRollFixtureNotes(fixture.clip), "could not add the roll fixture's notes");
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* command = registry->command(QStringLiteral("note.randomize"));
+		QVERIFY(command != nullptr);
+		QVERIFY(static_cast<bool>(command->handler));
+		const double nan = std::nan("0");
+		const ControlResult rejected = command->handler(QJsonObject{
+			{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("velocity_jitter"), 0.5},
+			{QStringLiteral("seed"), nan}});
+		QVERIFY2(!rejected.ok, "note.randomize handler accepted a NaN seed");
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+	}
+
+	//! The same readSeed helper serves random_seed_set, so its direct-handler path
+	//! must reject NaN without changing the persisted project seed.
+	void nonfiniteSeedIsRefusedBySeedSetHandler()
+	{
+		const double previous = run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlCommand* command = registry->command(QStringLiteral("note.random_seed_set"));
+		QVERIFY(command != nullptr);
+		QVERIFY(static_cast<bool>(command->handler));
+		const ControlResult rejected = command->handler(
+			QJsonObject{{QStringLiteral("seed"), std::nan("0")}});
+		QVERIFY2(!rejected.ok, "note.random_seed_set handler accepted a NaN seed");
+		QCOMPARE(rejected.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(run(QStringLiteral("note.random_seed_get")).result
+			.value(QStringLiteral("seed")).toDouble(), previous);
 	}
 
 	//! W5: the slide verbs, from the trap state (a note at the DEFAULT, which writes
@@ -622,6 +690,48 @@ private slots:
 		QVERIFY2(run(QStringLiteral("note.select"),
 			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("notes"),
 				QJsonArray()}}).ok, "could not clear the selection");
+	}
+
+	//! Luna cluster new-p19-7: transform transactions also record an argument-free
+	//! control.undo inverse, which restores the transformed note through validation.
+	void transformInverseCanBeReissuedThroughControlUndo()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		const auto undoAsRecorded = [](const QString& command) {
+			ControlRegistry* registry = ControlRegistry::instance();
+			const ControlRegistry::Transaction* transaction = registry->lastTransaction();
+			if (transaction == nullptr || transaction->command != command) { return false; }
+			const QString inverseOp = transaction->inverse.value(QStringLiteral("op")).toString();
+			const QJsonObject inverseArgs = transaction->inverse.value(QStringLiteral("args")).toObject();
+			const ControlResult undone = registry->invoke(inverseOp, inverseArgs);
+			return undone.ok && inverseOp == QLatin1String("control.undo") && inverseArgs.isEmpty();
+		};
+
+		const ControlResult transposed = run(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("semitones"), 12}});
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		QCOMPARE(noteKey(fixture.clip, 0), 72);
+		QVERIFY2(undoAsRecorded(QStringLiteral("note.transpose")),
+			"the transpose's recorded control.undo failed validation or retained arguments");
+		QCOMPARE(noteKey(fixture.clip, 0), 60);
+
+		const ControlResult offset = run(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), 25}});
+		QVERIFY2(offset.ok, qPrintable(offset.errorMessage));
+		QCOMPARE(noteVelocity(fixture.clip, 0), 125.0);
+		QVERIFY2(undoAsRecorded(QStringLiteral("note.velocity_offset")),
+			"the velocity-offset control.undo inverse retained arguments or failed");
+		QCOMPARE(noteVelocity(fixture.clip, 0), 100.0);
+
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 0.5}});
+		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
+		QCOMPARE(noteVelocity(fixture.clip, 0), 50.0);
+		QVERIFY2(undoAsRecorded(QStringLiteral("note.velocity_scale")),
+			"the velocity-scale control.undo inverse retained arguments or failed");
+		QCOMPARE(noteVelocity(fixture.clip, 0), 100.0);
 	}
 
 	//! A hand-edited scales/custom entry must not turn into a bogus "degree 0" scale.

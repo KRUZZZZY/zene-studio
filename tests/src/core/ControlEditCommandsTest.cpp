@@ -730,6 +730,36 @@ private slots:
 			.value(QStringLiteral("args")).toObject()
 			.value(QStringLiteral("solo")).toBool(), false);
 	}
+
+	//! A folder track is a container with no clips of its own: Track::createClip()
+	//! returns null for it. clip.add used to dereference that null (a crash). It must
+	//! refuse the add instead, and the refusal must leave no undo step behind - the
+	//! checkpoint is taken only for a track that can hold a clip.
+	void clipAddOnAFolderTrackIsRefusedWithoutAnUndoStep()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult addedFolder = registry->invoke(QStringLiteral("track.add"),
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("folder")}});
+		QVERIFY2(addedFolder.ok, qPrintable(addedFolder.errorMessage));
+		const QString folder = addedFolder.result.value(QStringLiteral("track")).toString();
+
+		const ControlResult depthBefore = registry->invoke(QStringLiteral("control.undo_depth"), QJsonObject{});
+		QVERIFY2(depthBefore.ok, qPrintable(depthBefore.errorMessage));
+
+		// A name and a length are the handler's own dereferences (setName, changeLength):
+		// without them the null clip is never touched and the old code only got as far
+		// as a NotFound reply.
+		const ControlResult added = registry->invoke(QStringLiteral("clip.add"),
+			QJsonObject{{QStringLiteral("track"), folder}, {QStringLiteral("position"), 0},
+				{QStringLiteral("length"), 192}, {QStringLiteral("name"), QStringLiteral("Kick")}});
+		QVERIFY2(!added.ok, "a clip was added to a folder track");
+		QCOMPARE(added.errorKind, ControlErrorKind::Refused);
+
+		const ControlResult depthAfter = registry->invoke(QStringLiteral("control.undo_depth"), QJsonObject{});
+		QVERIFY2(depthAfter.ok, qPrintable(depthAfter.errorMessage));
+		QCOMPARE(depthAfter.result.value(QStringLiteral("depth")).toInt(),
+			depthBefore.result.value(QStringLiteral("depth")).toInt());
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlEditCommandsTest)

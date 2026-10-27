@@ -798,6 +798,12 @@ LMMS_EXPORT void registerMixerListenCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerVcaNestCommands(ControlRegistry& registry);
 //! 0.5.0 L08: mixer.set_many and the strip settings (ControlCommandsMixerStrip.cpp).
 LMMS_EXPORT void registerMixerStripCommands(ControlRegistry& registry);
+//! Q050-088: mixer.console_strip - one channel's Console section (ControlCommandsConsoleStrip.cpp).
+LMMS_EXPORT void registerConsoleStripCommand(ControlRegistry& registry);
+//! Q050-339: pdc.set_offset - a track's or a channel's manual delay (ControlCommandsTrackOffset.cpp).
+LMMS_EXPORT void registerTrackOffsetCommand(ControlRegistry& registry);
+//! Q050-340: meter.inputs - every capture channel's level and the armed tracks' inputs (ControlCommandsInputMeters.cpp).
+LMMS_EXPORT void registerInputMetersCommand(ControlRegistry& registry);
 LMMS_EXPORT void registerMixerRenameCommands(ControlRegistry& registry);  //!< 0.5.0 theme 13: mixer.rename_channel (ControlCommandsMixerRename.cpp)
 //! 0.5.0 L10 (MX-076/092): plugin.copy, chain.copy, plugin.ab (ControlCommandsDeviceCopy.cpp).
 LMMS_EXPORT void registerDeviceCopyCommands(ControlRegistry& registry);

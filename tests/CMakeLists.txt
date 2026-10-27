@@ -500,6 +500,7 @@ set(LMMS_TESTS
 	# name the follower cannot hold is refused invalid_args.
 	src/core/MidiClockSourceTest.cpp
 	src/core/MidiLearnThreadTest.cpp
+	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
@@ -928,6 +929,8 @@ set(LMMS_TESTS
 	# cluster new-p21-208: sfizz's shutdown leak diagnostic reports the actual residual instance count.
 	src/plugins/SfizzLeakDetectorTest.cpp
 	src/plugins/SfzFilePoolTest.cpp
+	# Cluster new-p21-142: sfizz's effect bus view must reject the index equal to its effect count (links sfzplayer_sfizz).
+	src/plugins/SfzEffectBusViewTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/SamplerTakeGuiTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
@@ -957,6 +960,16 @@ set(LMMS_TESTS
 	src/core/DeviceToolsChainTest.cpp
 	# 0.5.0 L10 (W3): the de-esser, transient shaper, vocoder and console devices.
 	src/core/DeviceDspTest.cpp
+	# Q050-088: the strip's Console section (mixer.console_strip) and the Console's glue compressor.
+	src/core/ConsoleStripTest.cpp
+	# Q050-108: each strip's own meter mode - VU (300 ms), LUFS and true peak per channel.
+	src/core/StripMeterModeTest.cpp
+	# Q050-339: the manual delay of audio tracks, instrument tracks and mixer channels (pdc.set_offset).
+	src/core/TrackOffsetTest.cpp
+	# Q050-340: every capture channel's level and the armed tracks' inputs (meter.inputs).
+	src/core/InputChannelMeterTest.cpp
+	# new-p16-306: the shared biquad section ignores a channel outside its state instead of writing past it.
+	src/core/BiquadSectionTest.cpp
 	# DrumSynth rejects envelope tokens longer than its fixed parser capacity.
 	src/core/DrumSynthTest.cpp
 	# Q050-030: selecting a Neural Amp model never waits behind a load (the effect is compiled in with a test seam).
@@ -1121,6 +1134,9 @@ set(LMMS_TESTS
 	# 0.5.0 wave 3 theme 11/15: lane scales and readouts; the Sample Editor's range fields
 	src/gui/LaneReadoutTest.cpp
 	src/gui/SampleEditorDialogTest.cpp
+	# Q050-288: the Sample Editor's documented range operations, checked against its buttons, the
+	# registered sample.edit_range values, the clip menu's whole-source bakes, and one undo step each.
+	src/gui/SampleEditorDocsTest.cpp
 	# 0.5.0 ED-176: the crossfade editor, offered where clips overlap and driven through its fields.
 	src/gui/CrossfadeEditorTest.cpp
 	# LADSPA Ports renders sample-rate-dependent ranges and their displayed defaults.
@@ -1182,6 +1198,8 @@ set(LMMS_TESTS
 	src/gui/MixerModesTest.cpp
 	# 0.5.0 L08 metering: ballistics (MX-128), the Selected filter (MX-005), live input meters (MX-134), the phase view (MX-137).
 	src/gui/MixerMeteringTest.cpp
+	# MixerStripFeaturesTest: the strip's Console section, its meter mode, the delay entries and the input meters (Q050-088/108/339/340).
+	src/gui/MixerStripFeaturesTest.cpp
 	# The selected mixer channel follows its identity through a removal, a removal of itself, and a reorder.
 	src/gui/MixerSelectionIdentityTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
@@ -1706,6 +1724,11 @@ if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/SfzSimdHelperAlignmentTest.cpp)
 endif()
 
+# Qwen cluster new-p21-158: a reset filter holder must bypass until its next setup.
+if(TARGET sfzplayer_sfizz)
+	list(APPEND LMMS_TESTS src/plugins/FilterPoolTest.cpp)
+endif()
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -1859,6 +1882,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/LadspaEffect)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING PLUGIN_NAME=ladspaeffect)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "FilterPoolTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
+	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
@@ -1980,6 +2008,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionFftw.cpp
 			${CMAKE_SOURCE_DIR}/plugins/ConvolutionReverb/ConvolutionFftw.h
 		)
+	endif()
+	# Q050-088: these load the build's console module (DeviceDspTest skipped its console cases when a targeted
+	# build had not built it).
+	if(LMMS_TEST_NAME STREQUAL "DeviceDspTest" OR LMMS_TEST_NAME STREQUAL "ConsoleStripTest")
+		add_dependencies(${LMMS_TEST_NAME} console)
+	endif()
+	# The strip-features GUI test (MixerStripFeaturesTest) drives a Console's own controls too.
+	if(LMMS_TEST_NAME STREQUAL "MixerStripFeaturesTest")
+		add_dependencies(MixerStripFeaturesTest console)
 	endif()
 
 	# ThreadPoolTest interposes pthread_create to inject a deterministic startup
@@ -2214,6 +2251,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceDspTest"
+		OR LMMS_TEST_NAME STREQUAL "ConsoleStripTest"
+		OR LMMS_TEST_NAME STREQUAL "MixerStripFeaturesTest"
 		OR LMMS_TEST_NAME STREQUAL "RealtimeSnapshotTest"
 		# 0.5.0: the note-playback tests play a real instrument (tripleoscillator) on their tracks.
 		OR LMMS_TEST_NAME STREQUAL "NotePlaybackTest"
@@ -2285,6 +2324,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			absl::strings absl::span absl::flat_hash_map absl::optional absl::memory
 			Threads::Threads SndFile::sndfile)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer_sfizz)
+	endif()
+
+	# Cluster new-p21-142: the effect-bus test calls sfizz's EffectBus directly, so it links the static sfizz library
+	# and takes the sfizz headers (Effects.h includes "absl" headers, which the abseil targets supply).
+	if(LMMS_TEST_NAME STREQUAL "SfzEffectBusViewTest")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz absl::span absl::strings)
+		# sfizz's own private include directories (simde, hiir, ...), which its headers reach through MathHelpers.h.
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			"${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz"
+			$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>)
 	endif()
 
 	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
@@ -2830,6 +2879,11 @@ set_target_properties(mpe_test_consumer PROPERTIES
 if(TARGET receiver AND TARGET insertrecorder)
 	add_dependencies(ReceiverEffectTest receiver insertrecorder)
 endif()
+# new-p22-61/new-p22-64: DeviceDspTest exercises Recorder commands and its frequency-shifter and console
+# slots require the build's modules; a targeted test build must not skip or fail on missing modules.
+if(TARGET DeviceDspTest AND TARGET insertrecorder AND TARGET frequencyshifter AND TARGET console)
+	add_dependencies(DeviceDspTest insertrecorder frequencyshifter console)
+endif()
 if(TARGET sid AND TARGET SidInstrument)
 	add_dependencies(SidInstrument sid)
 endif()
@@ -3105,10 +3159,11 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(LaneReadoutTest SampleEditorDialogTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
+set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerStripFeaturesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3719,10 +3774,17 @@ add_executable(PluginPortsMigrationTest
 	src/plugins/PluginPortsHarness.h
 )
 add_test(NAME PluginPortsMigrationTest COMMAND PluginPortsMigrationTest)
+# FreeBoy's focused voice-pool regressions share the migration harness because
+# it already hosts the real plugin module and a headless audio engine.
+add_test(NAME FreeBoy COMMAND PluginPortsMigrationTest freeBoyExhaustedNoteRetriesWhenVoiceFrees)
+add_test(NAME FreeBoyPoolReclamation COMMAND PluginPortsMigrationTest freeBoyOldSampleRatePoolsAreReclaimed)
+add_test(NAME FreeBoySampleRateHandoff COMMAND PluginPortsMigrationTest freeBoySampleRatePoolHandoffIsRealtimeSafe)
 # The harness constructs a full Engine, which needs a Qt platform plugin even
 # though the test itself is guiless. Without this, ctest aborts before the first
 # assertion on any machine with no display (CI, headless shell).
 set_tests_properties(PluginPortsMigrationTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(FreeBoy FreeBoyPoolReclamation FreeBoySampleRateHandoff PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Cluster new-p9-326: the focused OpulenZ held-note regression. It runs in the
 # PluginPortsMigrationTest executable (the plugin-module host it needs lives
@@ -3751,6 +3813,10 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	WATSYN_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Watsyn"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
+if(BUILD_TESTING AND TARGET freeboy)
+	# Export test-only pool probes from the module; they are absent from shipping builds.
+	target_compile_definitions(freeboy PRIVATE LMMS_TESTING)
+endif()
 if(TARGET partial_init_failure_ladspa)
 	target_compile_definitions(PluginPortsMigrationTest PRIVATE
 		"PART_C_FAILURE_LADSPA_MODULE=\"$<TARGET_FILE:partial_init_failure_ladspa>\"")
@@ -5688,6 +5754,15 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# ControlMixingStripFeatures: Q050-088/108/339/340 over the socket (it loads the build's console module).
+	add_test(NAME ControlMixingStripFeatures
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mixing-strip-features.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMixingStripFeatures PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The Inspector and the Device panel over the socket: window.select selects a track, a clip or
 	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
 	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
@@ -6714,6 +6789,11 @@ set_tests_properties(AafImportTest VideoTrackTest LegacyPatternUpgradeTest Hardw
 # VideoTrackTest's Linux/macOS allocation-failure case interposes FFmpeg entry points from
 # the test executable, so its symbols must be exported - same reason plugin-loading tests carry ENABLE_EXPORTS.
 set_target_properties(VideoTrackTest PROPERTIES ENABLE_EXPORTS ON)
+# The MIDI surface base's engine-backed case builds a real Engine (its port
+# needs the MIDI client), so it needs a Qt platform plugin even though nothing
+# opens a window.
+set_tests_properties(MidiSurfaceInputTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The retrospective MIDI capture surface (owner item 14) builds a real Engine,
 # a MIDI client and MidiClips and drives the registry commands, so it needs a
 # Qt platform plugin even though nothing opens a window.

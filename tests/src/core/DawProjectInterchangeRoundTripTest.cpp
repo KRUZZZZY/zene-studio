@@ -1788,6 +1788,51 @@ private slots:
 				.arg(roundTripped.rel)));
 	}
 
+	//! A note's time is its position and its duration its length. The import
+	//! passes Note's length first and its position second (Note.h), so a swap
+	//! would move the note to its duration and stretch it to its start. The
+	//! other notes in this file start at 0, which is why they cannot see one.
+	void noteTimeIsPositionAndDurationIsLength()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		Track* track = Track::create(Track::Type::Instrument, song);
+		QVERIFY(track != nullptr);
+		Clip* clip = track->createClip(TimePos(0));
+		QVERIFY(dynamic_cast<MidiClip*>(clip) != nullptr);
+
+		DawProjectModel model = previousSessionModel();
+		model.tracks.clear();
+		DawProjectTrack entry;
+		entry.typeName = QStringLiteral("instrument");
+		entry.contentType = QStringLiteral("notes");
+		entry.name = QStringLiteral("Pos");
+		DawProjectClip clipEntry;
+		clipEntry.time = 0.0;
+		clipEntry.duration = 4.0;
+		DawProjectNote noteEntry;
+		noteEntry.time = 1.0;
+		noteEntry.duration = 2.0;
+		noteEntry.key = 60;
+		noteEntry.vel = 0.8;
+		noteEntry.rel = 0.8;
+		clipEntry.notes.append(noteEntry);
+		entry.clips.append(clipEntry);
+		model.tracks.append(entry);
+
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
+
+		DawProjectLossReport loss;
+		const DawProjectModel back = dawProjectModelFromSong(song, &loss);
+		QCOMPARE(back.tracks.size(), 1);
+		QCOMPARE(back.tracks[0].clips.size(), 1);
+		QCOMPARE(back.tracks[0].clips[0].notes.size(), 1);
+		const DawProjectNote& roundTripped = back.tracks[0].clips[0].notes[0];
+		QCOMPARE(roundTripped.time, 1.0);
+		QCOMPARE(roundTripped.duration, 2.0);
+	}
+
 //! Luna cluster 3137: a clip far past the engine's 32-bit tick grid cannot
 	//! enter the model as an out-of-range tick. The reader converts every beat
 	//! through ticksFromBeats(), which clamps into the signed 32-bit tick domain
