@@ -250,7 +250,9 @@ bool parsesAsRecoverableDocument( const QByteArray & bytes )
 //! can leave a .new truncated at any byte, and adopting truncated bytes would
 //! trade one corrupt file for another. A payload that begins with '<' but does
 //! not parse is truncated plain XML and is never handed to qUncompress, which
-//! would only warn on XML bytes; anything else is tried as compressed.
+//! would only warn on XML bytes; anything else is tried as compressed. \a reason
+//! is set to "oversized" or "unreadable" when the file was refused rather than
+//! found incomplete, so the caller keeps it instead of discarding it.
 //! ARCH-4 S5. The compressed-temp half of isCompleteDocument(): \a bytes are
 //! not plain XML, so they are a compressed temp (a .mmpz/.xptz save). Its
 //! declared uncompressed size is checked against the recovery limit BEFORE
@@ -282,6 +284,8 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 	QFile f( path );
 	if( ! f.open( QIODevice::ReadOnly ) )
 	{
+		// Refused, not truncated: nothing in the file was checked, so it is kept.
+		*reason = QStringLiteral( "unreadable" );
 		return false;
 	}
 	// A container's file is measured with its framing allowance (see above); its
@@ -293,6 +297,11 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 		return false;
 	}
 	const QByteArray bytes = f.readAll();
+	if( f.error() != QFileDevice::NoError )
+	{
+		*reason = QStringLiteral( "unreadable" );
+		return false;
+	}
 	if( bytes.isEmpty() )
 	{
 		return false;
@@ -311,6 +320,13 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 		if( !lmms::projectcontainer::readDocumentContainer( path,
 			QStringLiteral( "song" ), &document, &ignored ) )
 		{
+			// readDocumentContainer() opens the file again: one that no longer
+			// opens was refused, not found truncated, so it is kept.
+			QFile again( path );
+			if( !again.open( QIODevice::ReadOnly ) )
+			{
+				*reason = QStringLiteral( "unreadable" );
+			}
 			return false;
 		}
 		if( document.size() > maxRecoveredDocumentBytes() )
@@ -363,6 +379,13 @@ void recoverPendingWrite( const QString & fileName )
 		// never validated, so it stays where it is - the bytes are the user's.
 		qWarning() << "Refused an oversized" << pending << "left by an interrupted save of"
 			<< fileName << "- it declares more content than the recovery holds; leaving it in place";
+	}
+	else if( reason == QLatin1String( "unreadable" ) )
+	{
+		// It could not be opened or read, so it was never checked - it may be the
+		// only copy of the save. It stays where it is for the next open to check.
+		qWarning() << "Could not read" << pending << "left by an interrupted save of"
+			<< fileName << "- it was not checked, so it is left in place";
 	}
 	else if( QFile::remove( pending ) )
 	{
