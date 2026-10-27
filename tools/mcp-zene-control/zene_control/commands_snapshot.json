@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T15:37:49Z",
+  "captured_at": "2026-10-27T18:46:39Z",
   "commands": [
     {
       "args_schema": {
@@ -30743,6 +30743,95 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Read a drum rack back: 'track' is its folder. Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation}} - what the project saves. Writes nothing.",
+      "group": "track",
+      "id": "track.drum_rack_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "sample"
+        ],
+        "type": "object"
+      },
+      "description": "Add a sample pad to a drum rack: 'track' is the rack's folder, 'sample' a file, 'name' (the file's name when left out), 'key' (0..127; the next after 36 when left out). The pad is a sampler track in the folder with a channel of its own sending to the rack's bus. Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Edit a drum-rack pad: 'track' is the pad, and any of 'name', 'key' (the trigger key, 0..127) and 'sample' (a file). Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "end": {
             "type": "integer"
           },
@@ -37198,23 +37287,23 @@
       }
     }
   ],
-  "count": 868,
+  "count": 871,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-066.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-s3reqlds/zene.sock",
-    "version": "0.4.0-alpha.5215+17edcb1"
+    "source_socket": "/tmp/zctl-run-4cghax8n/zene.sock",
+    "version": "0.4.0-alpha.5218+418887a"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 76,
-    "id_count": 868,
-    "ids_sha256": "f8d3dba72a91ae1b6493ea2983c6ccf4ebf711671e61e81d3ece2c056f486862"
+    "id_count": 871,
+    "ids_sha256": "6d53edb592b77fa1e893d6bfdc9dd7e9c12acee591cfaf69e27fc8972409fdc4"
   }
 }
