@@ -113,4 +113,35 @@ Final gate run after the last edit: see "Self-check" and `feature-check-3.log`.
 
 ## Self-check
 
-(to be filled from `submit_check.py`)
+`submit_check.py` (log `submit-check-1.log`, EXIT=1): PASS on commits, clean tree, report, tests added and
+registered. **FAIL on "gates (feature_check.py)", an environment blocker and not a gate result.** The
+checker runs `feature_check.py` directly, and that script creates its log folder beside the worktree
+(`projects/zene-studio-program/zene-qwen-new-p9-16-feature-check`), which is outside this lane's write-jail.
+The direct run fails with `PermissionError` (`feature-check-direct-attempt.log`, EXIT=1). The same
+unmodified gate logic, with only the log folder redirected into the LOG FOLDER
+(`logs/run_feature_check_logdir.py`), gives **RESULT: PASS, EXIT=0** on the committed tree
+(`feature-check-3.log`: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
+no-tautology, doc-figures, complexity, file-length). The gate needs the lane to be allowed to write that
+folder, or the owner to run it.
+
+1. **RED/GREEN with exit codes:** the test fails with the fix reverted and passes with it. Steps 5 (RED,
+   EXIT 8), 6 and 10 (GREEN), 4b (EXIT 8 reverted, EXIT 0 reapplied), and final 4b, steps 11-12 (EXIT 8
+   reverted, 3 failures; EXIT 0 reapplied, 5 passed). Per-test failures are in the logs above.
+2. **Deterministic:** no wall clock, sleep, or thread. FreeRTOS is a stand-in whose creation outcome the
+   test sets (`freertos_host::createSucceeds`) and whose calls it counts. The dispatcher is never started,
+   so its `fallbackPeriod` is never waited on. One ordering dependence, stated: `ServiceRunner` is a
+   process-wide static, so the failed-then-retry test assumes the earlier failed test left no runner. QTest
+   runs functions in declaration order, so this is fixed, not raced.
+3. **Callers and siblings:** every caller reaches the runner through `serviceRunner()`: `openUnicastSocket`
+   (`IpInterface.hpp:57-58`), `makeTimer` (`PeerGateway.hpp:74`, `UdpMessenger.hpp:161`,
+   `InterfaceScanner.hpp:46`), and `async`. No caller was changed. Consequence to review:
+   **NEEDS-CONTEXT:** the Link discovery catches (`UdpMessenger.hpp:76`, `PeerGateway.hpp:85`) wrap `send`
+   and `broadcastState`, not these constructors. On ESP32 a failed creation can now escape these constructors
+   (and `Controller::start()` if they run there) instead of silently leaving the runner dead. I did not trace
+   the full ESP32 call chain; that is the open question. The sibling `LockFreeCallbackDispatcher::start()` is the same
+   open question and is unchanged.
+4. **No collateral damage:** no saved data, no control command, no limit added. The only changed
+   behaviour is on the dormant ESP32 port, which no Zene target compiles (see Verdict). The `AbletonLink`
+   family binaries do not include the changed headers; their run results are in "Family".
+5. **Verdict:** REAL (not ALREADY-FIXED, not FALSE-POSITIVE), so no "already fixed" or "false positive"
+   evidence is needed.
