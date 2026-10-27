@@ -338,6 +338,13 @@ inline bool isCompleteDocument( const QString & path, QString * reason )
 //! Called only from the file constructor, never from audio or realtime paths.
 void recoverPendingWrite( const QString & fileName )
 {
+	// An unnamed DataFile has no file, so it has no temp either. Without this
+	// guard "" + ".new" is "./.new": a temp of some other save in the working
+	// directory was adopted or discarded by a load that opened nothing.
+	if( fileName.isEmpty() )
+	{
+		return;
+	}
 	const QString pending = fileName + QStringLiteral( ".new" );
 	if( ! QFile::exists( pending ) )
 	{

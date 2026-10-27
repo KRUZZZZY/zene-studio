@@ -134,6 +134,28 @@ private:
 	QtMessageHandler m_previous{ nullptr };
 };
 
+//! Enters \a path as the working directory for one test and puts the previous
+//! one back when the test returns - including through a failed QVERIFY, which
+//! returns early and would otherwise leave the rest of the run in the temp dir.
+class WorkingDirectory
+{
+public:
+	explicit WorkingDirectory( const QString& path )
+		: m_previous( QDir::currentPath() ), m_moved( QDir::setCurrent( path ) )
+	{
+	}
+	~WorkingDirectory() { QDir::setCurrent( m_previous ); }
+
+	WorkingDirectory( const WorkingDirectory& ) = delete;
+	WorkingDirectory& operator=( const WorkingDirectory& ) = delete;
+
+	bool moved() const { return m_moved; }
+
+private:
+	QString m_previous;
+	bool m_moved;
+};
+
 } // namespace
 
 
@@ -675,6 +697,40 @@ private slots:
 			qPrintable( QStringLiteral( "the declared size was not checked; captured: [%1]" ).arg( report ) ) );
 		QCOMPARE( probe, QStringLiteral( "old" ) );  // the valid project stands
 		QCOMPARE( readText( target ), oldText );
+	}
+
+	//! Cluster new-p23-77 (BUG 2). A DataFile built from an EMPTY name has no file
+	//! to recover, but recoverPendingWrite("") derived "./.new" from it and
+	//! discarded whatever interrupted-save temp sat in the working directory - a
+	//! file that belongs to some other project. An unnamed load must leave that
+	//! temp exactly where it is and must not report a recovery it never made.
+	void unnamedDataFileLeavesTheWorkingDirectoryTempAlone()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		// A truncated temp, the kind recovery discards: someone else's save.
+		const QString temp = dir.filePath( QStringLiteral( ".new" ) );
+		QVERIFY( writeText( temp, QStringLiteral(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head><s5" ) ) );
+
+		WorkingDirectory cwd( dir.path() );
+		QVERIFY2( cwd.moved(), "could not enter the temporary working directory" );
+
+		QString report;
+		{
+			MessageRecorder recorder;
+			DataFile unnamed{ QString() };
+			report = recorder.messages();
+		}
+
+		QVERIFY2( QFile::exists( temp ),
+			"an unnamed DataFile discarded the working directory's .new temp" );
+		QVERIFY2( !report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "an unnamed DataFile reported a discard; captured: [%1]" )
+				.arg( report ) ) );
 	}
 };
 
