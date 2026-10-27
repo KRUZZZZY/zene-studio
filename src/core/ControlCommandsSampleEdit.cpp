@@ -33,6 +33,7 @@
 // on the control socket and through MCP; placing them anywhere else stays an
 // open owner decision for the UI phase (docs/KNOWN-LIMITATIONS.md).
 
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -185,7 +186,8 @@ void registerSampleAmplify(ControlRegistry& registry)
 		ControlResult error;
 		if (!resolveBakeTarget(args, &target, &error)) { return error; }
 		const double db = args.value(QStringLiteral("gain_db")).toDouble(0.0);
-		if (db < -60.0 || db > 24.0)
+		// isfinite FIRST: a NaN compares false against both bounds and would pass.
+		if (!std::isfinite(db) || db < -60.0 || db > 24.0)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("gain_db %1 is outside -60..24 dB, the range both this bake and "
@@ -236,7 +238,8 @@ void registerSampleNormalize(ControlRegistry& registry)
 		ControlResult error;
 		if (!resolveBakeTarget(args, &target, &error)) { return error; }
 		const double targetDb = args.value(QStringLiteral("target_db")).toDouble(0.0);
-		if (targetDb < -60.0 || targetDb > 0.0)
+		// isfinite FIRST: a NaN compares false against both bounds and would pass.
+		if (!std::isfinite(targetDb) || targetDb < -60.0 || targetDb > 0.0)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("target_db %1 is outside -60..0 dBFS: a peak target cannot sit "
@@ -253,6 +256,16 @@ void registerSampleNormalize(ControlRegistry& registry)
 					.arg(clipId(target.ref.id)));
 		}
 		const float scale = gainDbToLinear(static_cast<float>(targetDb)) / peak;
+		// A non-finite peak (an infinite source sample) or scale (1/peak past float
+		// max for a subnormal peak) would bake NaN: 0 * inf. Refuse before checkpointing.
+		if (!std::isfinite(peak) || !std::isfinite(scale))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1 cannot be scaled to target_db: its measured peak %2 or the "
+					"scale that reaches the target is not finite (an infinite sample, or a peak "
+					"too quiet to scale in float)").arg(clipId(target.ref.id))
+					.arg(static_cast<double>(peak)));
+		}
 		std::vector<SampleFrame> baked = sampleops::amplify(source.data(), frames, scale);
 		QJsonObject result;
 		result.insert(QStringLiteral("clip"), clipId(target.ref.id));

@@ -302,6 +302,10 @@ set(LMMS_TESTS
 	# it pushed no undo step. Needs a real Engine: the checkpoints are the
 	# Track/Clip journal steps ProjectJournal owns.
 	src/core/ControlSampleOperatorTest.cpp
+	# The sample bakers' NaN and non-finite guards (new-p22-66): NaN gain_db and
+	# target_db, a subnormal peak whose scale overflows float, and an infinite
+	# source sample - each refused before any checkpoint, with no undo step.
+	src/core/ControlSampleBakeGuardTest.cpp
 	# 0.5.0 L05 (Q050-106): the stereo pair - sample.split_stereo's two mono files read
 	# back against the source, and sample.edit_range op 'mono' with the documented
 	# (L + R) / 2 mean, mono/stereo agent read-back and one-step undo through a project
@@ -6620,6 +6624,8 @@ set_tests_properties(ControlRecordingRoutesTest PROPERTIES
 # Engine and undoes them through control.undo, which wants a real Qt platform
 # plugin even though nothing opens a window.
 set_tests_properties(ControlSampleOperatorTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ControlSampleBakeGuardTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Q050-106: real Engine, real clip checkpoints and a real project save/load.
 set_tests_properties(ControlSampleStereoTest PROPERTIES
