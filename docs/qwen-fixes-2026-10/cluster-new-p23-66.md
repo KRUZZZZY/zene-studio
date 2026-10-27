@@ -70,18 +70,31 @@ prove. No ctest run and no build were needed; the build tree was not touched.
 
 ## Self-check
 
-Each item from the report contract, answered against this claim-only closure:
+Answers to the completion-check items. No product change, so the regression-test items are answered as not applicable.
 
-1. Regression test FAILS with the change reverted and PASSES with it: **N/A** - no product change; the verdict is
-   FALSE-POSITIVE. The procedure (step 2) says to skip to the report when the finding is not real.
-2. Test is deterministic: **N/A** - no test added.
-3. Fix at the cause and complete (every caller and sibling checked): **N/A** - no fix. Callers
-   `ControlStemSupport.cpp:374` and `StemSplitController.cpp:241` checked; sibling `ControlStemWav.cpp:104` checked and
-   left unchanged (unverified for the GUI path, see Siblings).
-4. No collateral damage: **PASS** by construction - no code changed.
-5. The verdict is a decision with evidence (file:line or the intended contract): **PASS** - `ControlStemWav.cpp:77,81-86`,
-   `SampleBuffer.h:47,88,99`, probe `probe-run-1.log`.
-6. Registration and gates: **PASS** - table `feature-check-table-1.log`, RESULT PASS (see Commands run for the path redirect
-   and the un-redirected failure).
-7. `git status` clean after commit: see the submit check below.
-8. Completion check: run after the commit - result recorded in the final message.
+- **Regression test FAILS with the change reverted and PASSES with it:** not applicable - no product change, and no test
+  was added. The verdict is FALSE-POSITIVE, so there is no fix to revert (procedure step 2). Evidence that the code is
+  already correct: `ControlStemWav.cpp:77,81-86` and `probe-run-1.log`.
+- **Test is deterministic:** not applicable - no test added.
+- **Fix is at the cause and complete (callers and siblings checked):** not applicable - no fix. Callers
+  `ControlStemSupport.cpp:374` and `StemSplitController.cpp:241` handle the refusal (see Callers). Sibling
+  `ControlStemWav.cpp:104` (int product) was checked and left unchanged; it is unreachable on the stem path
+  (fixed 44100 Hz) and unverified for the GUI path (see Siblings).
+- **No collateral damage:** holds by construction - no code changed, so no old project, saved data or other caller is
+  affected.
+- **Verdict evidence (file:line):** `ControlStemWav.cpp:77` (quint64 size from `buffer.size()`), `include/SampleBuffer.h:47,88,99`
+  (size bounded by `std::vector<SampleFrame>`), `probe-run-1.log` (max_size 2^60-1; no wrap), `ControlStemWav.cpp:81-86`
+  (32-bit RIFF bound checked before the write).
+
+### Completion check result (`submit_check.py`, log `submit-check-1.log`, EXIT 1)
+
+- PASS: commits on the branch; working tree clean; report present with the verdict in its first line; claim-only closure
+  (tests row PASS as a claim-only closure).
+- FAIL: `gates (feature_check.py)`. This is an environment blocker, not a gate failure. `feature_check.py` writes its logs
+  to `<worktree>-feature-check`, next to the worktree in `projects/zene-studio-program/`, which is outside this session's
+  write jail. Running it as given fails with `PermissionError` (`gates-1.log`, EXIT 1). I did not edit the gate script.
+  The same gate logic, with only the ROOT and log path redirected into the run folder, passes all 8 rows with `RESULT: PASS`
+  (`feature-check-table-2.log`, EXIT 0). The individual gate commands each exit 0 except the two ratchets, which exit 1 with
+  REGRESSION lines only in files this branch does not change (`gate-complexity-7.log`, `gate-file-length-8.log`).
+  Resolving the FAIL needs the gate run in an environment where its log folder is writable.
+- The 5 "?" items are answered in the list above. Item 1 and item 2 are not applicable because no test was added.
