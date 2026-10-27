@@ -276,6 +276,53 @@ private slots:
 		QCOMPARE(expr.evaluate(), 0.f);
 		QCOMPARE(expr.evaluate(), 0.f);
 	}
+
+	void waveTableCopyFromShorterGraphStaysInGraphSamples()
+	{
+		// A graph shorter than its table takes only its own samples. The graph's buffer
+		// still holds older samples past its length after setLength() shrinks it, and
+		// they must not reach the table. The table keeps its length: playing notes hold
+		// its pointer and length.
+		graphModel graph(-1.f, 1.f, 8, nullptr);
+		const float oldSamples[8] = {0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f, 0.9f};
+		graph.setSamples(oldSamples);
+		graph.setLength(2);
+		const float newSamples[2] = {0.5f, -0.5f};
+		graph.setSamples(newSamples);
+
+		WaveSample wave(8);
+		for (int i = 0; i < 8; ++i)
+		{
+			wave.m_samples[i] = 0.25f;
+		}
+		wave.copyFrom(&graph);
+
+		QCOMPARE(wave.m_length, 8);
+		QCOMPARE(wave.m_samples[0], 0.5f);
+		QCOMPARE(wave.m_samples[1], -0.5f);
+		for (int i = 2; i < 8; ++i)
+		{
+			QVERIFY2(wave.m_samples[i] == 0.0f,
+				qPrintable(QString("table sample %1 was copied from past the graph's length").arg(i)));
+		}
+	}
+
+	void waveTableCopyFromLongerGraphKeepsTableLength()
+	{
+		// A graph longer than its table fills the table and leaves its own length alone.
+		graphModel graph(-1.f, 1.f, 8, nullptr);
+		const float samples[8] = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f};
+		graph.setSamples(samples);
+
+		WaveSample wave(4);
+		wave.copyFrom(&graph);
+
+		QCOMPARE(wave.m_length, 4);
+		for (int i = 0; i < 4; ++i)
+		{
+			QCOMPARE(wave.m_samples[i], samples[i]);
+		}
+	}
 };
 
 } // namespace lmms
