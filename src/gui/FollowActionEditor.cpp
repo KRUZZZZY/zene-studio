@@ -225,7 +225,8 @@ int FollowActionEditor::rowOf(const QWidget* widget) const
 		for (int column = 0; column < ColumnCount; ++column)
 		{
 			const QWidget* cell = m_rows->cellWidget(row, column);
-			if (cell == widget || cell->isAncestorOf(widget)) { return row; }
+			// A row being removed has released its cells while it is still in the model, so a cell can be null here.
+			if (cell != nullptr && (cell == widget || cell->isAncestorOf(widget))) { return row; }
 		}
 	}
 	return -1;

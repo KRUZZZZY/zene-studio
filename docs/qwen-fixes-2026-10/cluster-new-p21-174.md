@@ -1,19 +1,18 @@
-Verdict: FALSE-POSITIVE
+Verdict: FIXED
 
-Cluster new-p21-174: `FollowActionEditor::rowOf` "dereferences a possibly null cell widget" (`src/gui/FollowActionEditor.cpp:228`, inside `rowOf` at `:221-232`; declared `include/FollowActionEditor.h:62`).
+Cluster new-p21-174: `FollowActionEditor::rowOf` calls `isAncestorOf` through a null cell widget (`src/gui/FollowActionEditor.cpp:229`, the guard; the unguarded call was at `:228`). The finding is REAL: a member call through a null pointer is undefined behaviour, and UBSan reports it on the reachable row-removal path. The fix guards the cell before the call. A deterministic regression, run in a UBSan leg, fails with the guard reversed and passes with it restored.
 
-The reachable path exists, and a null cell is read at line 228 during a row removal. The read does not dereference anything: the call `cell->isAncestorOf(widget)` on a null `cell` returns normally on this build and the loop continues, so the stated harm (a null dereference causing a fault or a wrong row) does not occur. Strictly, a non-virtual member call through a null pointer is undefined behaviour in C++, and the guard the finding proposes would remove it with no change in behaviour. I did not apply that guard: both versions return the same row, so no test can ever fail for it, and an unprovable change is not a fix under this lane's rules. The owner may add it as hygiene.
+Earlier rounds said FALSE-POSITIVE (`round 2`). That was wrong: the call returned normally on this Qt build, but undefined behaviour is not made safe by a normal return. The removal-path evidence from round 2 still holds and is reused here.
 
-Round 1 (`REWORK`) is addressed as follows. The disposition is now decided with a code path and runtime evidence (sections 1-2). The post-Add invariant test is removed, because it is not regression proof for `rowOf`. Section 3 corrects two round-1 claims and records the Remove re-entry crash as a separate candidate.
-
-## 1. Reachable path
+## 1. The defect and the reachable path
 
 Code:
-- `addRow` (`src/gui/FollowActionEditor.cpp:176-195`) sets all five cell widgets before installing the event filter (`:194`) and calling `nameRows` (`:195`). Complete rows always have five cells.
-- `removeRow` (`:157`) removes whole rows, then calls `nameRows`.
-- The FocusIn branch of `eventFilter` (`:201-204`) calls `rowOf` and then `setCurrentCell`.
+- `addRow` (`src/gui/FollowActionEditor.cpp:176-195`) sets all five cell widgets before installing the event filter (`:194`) and calling `nameRows` (`:195`). A complete row always has five cells.
+- `removeRow` (`:157`) removes whole rows. Qt releases a removed row's cell widgets while the row is still in the model.
+- The FocusIn branch of `eventFilter` (`:201-204`) calls `rowOf` (`:203`). `rowOf` (`:221-232`) scans every row and calls `cell->isAncestorOf(widget)` on each cell, with no null check, before the guard.
+- `rowOf` has one caller, `eventFilter` (`:203`; checked with `rg`).
 
-Runtime (gdb, experiment A: focus on row 0's Type cell, then `table->removeRow(0)`; stopped at the first `rowOf` call that sees a null cell, `gdb-a-window2.log`, `gdb-a-window.log`):
+Runtime path (round 2 gdb trace, `runs/new-p21-174.r2/logs/gdb-a-window2.log`):
 
 ```
 QTableWidget::removeRow(0)
@@ -23,64 +22,97 @@ QTableWidget::removeRow(0)
     QAbstractItemView::focusNextPrevChild
      QAbstractItemView::currentChanged -> edit -> focus moves -> FocusIn
       FollowActionEditor::eventFilter
-       FollowActionEditor::rowOf(widget in row 1)   rowCount() == 3, row-0 cells already null
+       FollowActionEditor::rowOf          rowCount() == 3, row-0 cells already null
 ```
 
-The window also opens without any focus set by the test. Experiment C (`removeRow(0)` after `show()`, `instr-zzExpC_removeRowNoFocus.log:8-14`): `show()` leaves focus on row 0's Type combo, and removing row 0 moves focus, so `rowOf` runs with row 0 cells null.
+The null cells are seen in that window (`runs/new-p21-174.r2/logs/gdb-a-window.log:16-22`: row 0, columns 0-4, `(nil)`).
 
-## 2. The null read does not dereference
+UBSan confirms the null call on this path (round 2 review and this round):
+`FollowActionEditor.cpp:228:44: runtime error: member call on null pointer of type 'const struct QWidget'` (`runs/new-p21-174.r3/logs/red-b-ubsan.log:4`).
 
-- `gdb-a-window.log:16-22`: cells (0,0) through (0,4) are `(nil)`. The loop continues to row 1 and returns at (1,1). Five `cell->isAncestorOf(widget)` calls on a null pointer returned normally, with no fault.
-- `instr-zzExpC_removeRowNoFocus.log:9-14`: the first in-window call reads (0,0) as null and returns at (0,1); the second reads (0,0) and (0,1) as null and returns at (0,2). Neither faults.
+## 2. Fix
 
-So the null read happens in a normal removal, and the call completes without touching memory, because `QWidget::isAncestorOf` only compares pointers on this Qt 6.12 build. The Qt docs describe it as an ancestry query and do not state the null case; the runtime observation above is the evidence here. The result of the null read is `false` and its effect is the same as the guarded version's.
+`src/gui/FollowActionEditor.cpp:228-229`:
 
-## 3. Corrections to round 1, and the separate candidate
+```cpp
+// A row being removed has released its cells while it is still in the model, so a cell can be null here.
+if (cell != nullptr && (cell == widget || cell->isAncestorOf(widget))) { return row; }
+```
 
-Corrections:
-- Round 1 said that clicking Remove after focusing row 1's Linked checkbox crashes. It does not reach the click. The debug log has no `EXPB` marker, and the crash happens at `table->cellWidget(1, 2)->setFocus()` (`instr-zzExpB_removeButtonWithCellFocus.log`; EXIT 139).
-- Round 1 said the fault was inside `QTableWidget::cellWidget`. That was only where the stack ran out, not a null read. The `rowOf` frames in that trace are stack exhaustion, not evidence about line 228.
-- Round 1's "the guard does not stop the crash" is consistent with section 2: the guard removes the harmless null call, but the re-entry continues.
+Cause and siblings:
+- The cause is that `rowOf` can scan a row whose cells Qt has released during removal. The guard is at the one place that reads a cell in that state.
+- `nameRows` (`:208-219`) and `chain` (`:234-246`) also read cells. They run only on complete rows: `nameRows` after `addRow` (`:195`) and after `removeRow` (`:157`); `chain` from `apply` (`:251`), which the user reaches outside any removal. Neither is reached during a removal, so they are unchanged.
+- Behaviour: for non-null cells the guard changes nothing. For a null cell the call was undefined and returned false on this build; the guard skips it, so the result is the same false. No caller can see a difference, so this is not a behavioural change.
 
-Separate candidate (not this finding; needs its own triage). The FocusIn branch of `eventFilter` calls `setCurrentCell` synchronously, and that re-enters the focus chain. Two triggers were reproduced on offscreen Qt 6.12:
-- (a) Focus on row 1's Linked checkbox with no removal (experiment B). Focus ping-pongs between row 1's Type combo and Linked checkbox, 9690 `rowOf` calls, then SIGSEGV (`instr-zzExpB_removeButtonWithCellFocus.log`, EXIT 139). The loop is in focus handling, not in removal.
-- (b) Removing the row that holds focus (experiment A, section 1). The re-entry runs through `hide_helper` and `currentChanged`. In the instrumented build it did not finish (it hung with debug output, and the process was stopped by hand). In the uninstrumented round-1 build it crashed with a stack overflow.
+## 3. Regression test
 
-Neither trigger has been checked on a real display. Trigger (a) could matter for real clicks on that checkbox and should be triaged first.
+`tests/src/gui/FollowActionEditorTest.cpp:65-87`, `aRowRemovedWhileItsControlsReceiveFocusLeavesTheEditorIntact`:
+- Builds a 3-row editor (the same chain shape as the existing tests).
+- Connects a lambda to the table model's `rowsAboutToBeRemoved`. It runs after Qt's own handler, so row 2's cells are already released. When the removed row is row 2, the lambda sends a `FocusIn` to row 2's chance control, which reaches `eventFilter`, then `rowOf`, with a null cell.
+- Calls `table->removeRow(2)` and checks the row count is 2.
 
-## 4. Test
+Why a synthetic focus-in: real focus on the removed row re-enters `eventFilter` through `setCurrentCell` (the separate focus-cycle defect, see section 5). In the normal build, the real-focus variant segfaulted in two of four runs (`red-regular.log`, `rep-1.log`) and passed in two (`rep-2.log`, `rep-3.log`), so it cannot be a deterministic regression test. The synthetic event reaches the same `rowOf` call from the same point in the removal, with no focus movement.
 
-The post-Add invariant test (`FollowActionEditorTest::everyRowKeepsAllItsCellWidgets`, added in `7707d9b18`) is removed from the tree. It checks construction and Add, not `rowOf`, and it passes with or without the finding. No replacement test is committed, because no deterministic test can distinguish the guarded from the unguarded `rowOf`: both return the same row and differ only in undefined behaviour, which no test can observe.
+The existing `anExplicitChanceEditIsWritten` and `aPassiveFocusLossKeepsTheLoadedChance` tests are unchanged.
+
+What the normal build can and cannot show: with or without the guard, the normal build passes this test, because the undefined call returns the same value. The normal build therefore cannot prove the regression. The UBSan leg is the proof (section 4).
+
+## 4. UBSan leg (the RED/GREEN proof)
+
+`WANT_DEBUG_UBSAN` is OFF in this build, and a full UBSan build is too large for this shared machine. Instead, a scratch script (`$TMPDIR/ubsan-leg/build_leg.py`, outside the repo) builds the leg:
+- recompiles only `FollowActionEditor.cpp` with the build's own compile command plus `-fsanitize=undefined -fno-sanitize=vptr -fno-sanitize-recover=all` (the same flags as the project's `add_sanitizer(undefined ...)`, plus no-recover so a hit aborts);
+- relinks `build/tests/FollowActionEditorTest` with that object swapped in for `lmmsobjs`' normal one, and with `-fsanitize=undefined`;
+- writes the leg binary to `build/tests/FollowActionEditorTest_ubsan`.
+
+The sanitized object is the only instrumented code. Everything else is the regular build. The portability requirement is covered: the leg uses GCC, which supports `-fsanitize=undefined`. MSVC has no UBSan, so the regular path is the only check there.
+
+RED (guard reversed, `git apply -R fix.patch`): the leg aborts at `FollowActionEditor.cpp:228:44` with `runtime error: member call on null pointer`, exit 1. The normal build passes (exit 0).
+
+GREEN (guard applied): the leg exits 0, 5 tests pass, no runtime error. The normal build exits 0. The focused ctest passes (1 of 1).
+
+## 5. Separate candidate (not this finding)
+
+The FocusIn branch of `eventFilter` calls `setCurrentCell` synchronously. That re-enters the focus chain. It is a separate defect:
+- Real focus on a row's Linked checkbox, with no removal, ping-pongs focus between that row's Type combo and Linked checkbox until the stack overflows (round 2, `instr-zzExpB_removeButtonWithCellFocus.log`, exit 139).
+- A removal can also trigger the same cycle when the focus that moves during removal lands in a row that is not the removed one (`instr-variant.log` in this round: row 1's controls ping-pong after the removal window).
+
+Not fixed here. It needs its own triage: the focus behaviour choices (which row is current during removal, and whether FocusIn should set the current row) are a design question.
 
 ## Self-check
 
-- Regression test fails with the product change reversed and passes restored: not applicable. There is no product change, and the verdict is FALSE-POSITIVE, so no regression applies. The post-Add test is removed and is not presented as regression proof.
-- Deterministic (no timing, sleeps or races): no test is committed.
-- Fix at the cause and complete: not applicable, no fix. The caller-side question was checked in section 1: `nameRows` (`:208-219`) and `chain` (`:234-246`) run on complete rows only (`addRow` `:195`; `removeRow` `:157`).
-- No collateral damage: no product code changed.
-- FALSE-POSITIVE evidence: section 1 (`:157`, `:176-195`, `:201-204`, `:221-232`, gdb backtrace) and section 2 (null reads that return normally, `gdb-a-window.log:16-22`, `instr-zzExpC_removeRowNoFocus.log:9-13`). Undefined-behaviour caveat stated above.
+- Regression test fails with the product change reversed and passes restored: yes. RED: `red-b-ubsan.log` (exit 1, `FollowActionEditor.cpp:228:44` runtime error). GREEN: `green-final-ubsan.log` (exit 0). The normal build passes both ways (`red-b-regular.log`, `green-final`), so it is not the proof; the UBSan leg is.
+- Deterministic (no wall-clock timing, sleeps or races): yes. The regression needs no timing or activation. Its focus-in is synthetic, sent from the model's `rowsAboutToBeRemoved` hook. Normal-build repeats: `final-regular-1..3.log` all exit 0. UBSan repeats: `final-ubsan-1..3.log` all exit 0.
+- Fix at the cause and complete: the guard is at the one place that reads a released cell during removal. Siblings are checked in section 2 (`nameRows`, `chain`, `apply`, the only `rowOf` caller).
+- No collateral damage: for non-null cells the code path is unchanged; for null cells, the outcome (false) is the same as before. Saved projects and other callers are not affected; `rowOf` has one caller.
+- FIXED evidence: section 1 (`:157`, `:176-195`, `:201-204`, `:221-232`, the gdb trace in round 2 and the UBSan message).
+- Realtime: not applicable. `rowOf` is reached only from the QWidget FocusIn event filter.
 
 ## Evidence table
 
-Run folder `runs/new-p21-174.r2`, logs in `logs/`. Commands run from the worktree unless noted.
+Run folder `runs/new-p21-174.r3`, logs in `logs/`. Commands run from the worktree unless noted.
 
 | Step | Command | EXIT | Log |
 |---|---|---|---|
-| Instrumented build (temporary `fprintf` in `rowOf`) | `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/zene-tmp cmake --build build --target FollowActionEditorTest -j4` | not captured; ends "Built target FollowActionEditorTest" | `build-1-instr.log` |
-| Experiment C, `removeRow` after `show()` | `timeout 60 ./FollowActionEditorTest zzExpC_removeRowNoFocus` (in `build/tests`) | 0 | `instr-zzExpC_removeRowNoFocus.log` |
-| Experiment B, focus on row 1 Linked | `timeout 60 ./FollowActionEditorTest zzExpB_removeButtonWithCellFocus` | 139 | `instr-zzExpB_removeButtonWithCellFocus.log` |
-| Experiment A, stopped at first null-cell `rowOf` | `timeout 180 gdb -batch -ex "break …rowOf" -ex run -ex "ignore 1 1" -ex run/continue -ex "bt 22"/"bt 80" --args ./FollowActionEditorTest zzExpA_removeRowWithCellFocus` | gdb 0 (inferior stopped at the breakpoint) | `gdb-a-window.log`, `gdb-a-window2.log` |
-| Experiment A, uninstrumented run (round 1, `r1`) | `./FollowActionEditorTest zzExpA_removeRowWithCellFocus` | 139 (round-1 log) | `exp-a-1.log` (r1) |
-| Experiment A, instrumented, no timeout | `./FollowActionEditorTest zzExpA_removeRowWithCellFocus` | none: hung in sleep, no output for 10+ minutes; stopped by hand (`kill`) | `instr-zzExpA_removeRowWithCellFocus.log` |
-| Revert instrumentation | `git checkout -- src/gui/FollowActionEditor.cpp tests/src/gui/FollowActionEditorTest.cpp` | 0 (status ran after it) | none |
-| Remove post-Add test | `git checkout c04953b60 -- tests/src/gui/FollowActionEditorTest.cpp` | 0 | none |
-| Rebuild on restored tree | `CCACHE_TEMPDIR=… cmake --build build --target zene FollowActionEditorTest -j4` | 0 | `build-2-restored.log` |
-| Family test | `cd build/tests && ctest -R '^FollowActionEditorTest$' --output-on-failure` | 0, "100% tests passed out of 1" | `test-1-restored.log` |
-| Gates, redirected copy | `python3 -I $TMPDIR/gatecopy/feature_check.py <worktree>` (only log folder and ROOT redirected) | 0, RESULT: PASS (8/8 PASS, 2 changed files: report and test-file revert, staged) | `gates-1.log` |
+| Test object, regular build, guard reversed | `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/zene-tmp cmake --build build --target FollowActionEditorTest -j4` | 0 | `build-6-red2.log` |
+| UBSan leg, guard reversed | `python3 -I $TMPDIR/ubsan-leg/build_leg.py` | 0 | `ubsan-build-red2.log` |
+| RED sanitized, guard reversed | `./FollowActionEditorTest_ubsan` (in `build/tests`) | 1 (`runtime error` at `FollowActionEditor.cpp:228:44`) | `red-b-ubsan.log` |
+| RED normal, guard reversed | `./FollowActionEditorTest` (in `build/tests`) | 0, "5 passed" | `red-b-regular.log` |
+| Patch | `git diff -- src/gui/FollowActionEditor.cpp > logs/fix.patch`; `git apply -R --check logs/fix.patch` | 0 (reverse applies) | `fix.patch` |
+| Reverse the guard | `git apply -R logs/fix.patch` | 0 | none |
+| Reapply the guard | `git apply logs/fix.patch` | 0 | none |
+| GREEN build | `CCACHE_TEMPDIR=… cmake --build build --target zene FollowActionEditorTest -j4` | 0 | `build-10-green-final.log` |
+| GREEN UBSan leg | `python3 -I $TMPDIR/ubsan-leg/build_leg.py` | 0 | `ubsan-build-green-final.log` |
+| GREEN sanitized | `./FollowActionEditorTest_ubsan` | 0, "5 passed", no runtime error | `green-final-ubsan.log` |
+| GREEN normal, repeats 1-3 | `./FollowActionEditorTest` | 0, 0, 0 | `final-regular-1..3.log` |
+| Sanitized repeats 1-3 | `./FollowActionEditorTest_ubsan` | 0, 0, 0 | `final-ubsan-1..3.log` |
+| Focused ctest | `ctest -R '^FollowActionEditorTest$' --output-on-failure` (in `build/tests`) | 0, "100% tests passed out of 1" | `test-green-final.log` |
+| Gates, redirected copy | `python3 -I $TMPDIR/gatecopy/feature_check.py <worktree>` (only log folder and `ROOT` redirected) | 0, RESULT: PASS, 8/8 PASS, 3 changed files | `gates-final.log` |
 
-Affected-family test count: 1 test executed in `FollowActionEditorTest`.
+Affected-family test count: 1 test executed in `FollowActionEditorTest` (5 test slots).
+
+Earlier leg attempts, disclosed: a leg binary left in scratch crashed the existing chance test with a segfault in `SampleBuffer::emptyBuffer` even with no sanitizer (`nosan-chance.log`, exit 139). The cause was the binary's location outside `build/tests`. Moving the leg binary into `build/tests` fixed it (the green runs above). The reverse-guard RED that used the scratch binary also failed at `:228:44` (`red-ubsan.log`, exit 1).
 
 Deviations, disclosed:
-- `feature_check.py` and `submit_check.py` cannot create their log folder beside the worktree (outside the write area). The gates were run from a scratch copy with the log folder and `ROOT` redirected. The checks are unchanged.
+- `feature_check.py` and `submit_check.py` cannot create their log folder beside the worktree (outside the write area). The gates were run from a scratch copy with the log folder and `ROOT` redirected; the checks are unchanged.
 - ccache's configured temp dir is outside the write area. Builds used `CCACHE_TEMPDIR`; the config is unchanged.
-- Experiment A's instrumented run hung and was stopped with `kill` on its own PID. The debug instrumentation and experiment slots were reverted before the final build.
+- The sanitized leg is not a full `WANT_DEBUG_UBSAN` build. It instruments one object and relinks the one test binary.
