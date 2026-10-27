@@ -1,6 +1,13 @@
 #pragma once
 
+#if defined(_MSC_VER) && !defined(__clang__)
+// cl.exe has no #include_next (C1021), and its <cfenv> includes <fenv.h>, which
+// lands here because include/ is on the search path.  Reach the UCRT's header
+// through its Windows SDK sibling directory (Include/<ver>/{um,ucrt}) instead.
+#include <../ucrt/fenv.h>
+#else
 #include_next <fenv.h>
+#endif
 
 #if defined(__APPLE__) && defined(__MACH__)
 

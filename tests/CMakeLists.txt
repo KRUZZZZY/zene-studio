@@ -5728,6 +5728,19 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(RtSafetySelfTest PROPERTIES TIMEOUT 300)
 endif()
 
+# include/fenv.h (the macOS feenableexcept shim) must not take #include_next under
+# cl.exe, which rejects it (C1021, hosted msvc-x64 job, cluster ci-v041-6). The
+# check preprocesses the shim with the host GCC/Clang under cl.exe's predefines and
+# a fake Windows SDK layout, so it needs a GNU-style driver (not MSVC itself).
+if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+	add_test(NAME FenvShimMsvcInclude
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/fenv-shim-msvc-check.py
+			${CMAKE_CXX_COMPILER}
+			${CMAKE_SOURCE_DIR}/include)
+	set_tests_properties(FenvShimMsvcInclude PROPERTIES TIMEOUT 60)
+endif()
+
 # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
 # schedule (required/pending/class + ready list) versus the plan-order
 # execution, both walks against the committed reference render, plus the two
