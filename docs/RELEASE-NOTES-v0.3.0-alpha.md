@@ -1085,8 +1085,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-055.1** (panel-scoped shortcuts, integrated onto `050/m0-train-17`, 2026-10-27): `automation.editor_mode` adds one `not_mutating` row - `rows=873 true_inverse=430 snapshot=42 irreversible=25 not_mutating=376`.
 
+**M0 merge train 19** (`050/m0-train-19`, 2026-10-27, automatic): `ReversibilityContractTest` on the merged tree measures `rows=877 true_inverse=432 snapshot=42 irreversible=25 not_mutating=378`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=876 true_inverse=432 snapshot=42 irreversible=25 not_mutating=377
+     measured: rows=877 true_inverse=432 snapshot=42 irreversible=25 not_mutating=378
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
