@@ -556,6 +556,12 @@ void populateCustomise(QMenu* menu)
 	add(scripts, "Start Script...", "controller.script_start", {}, true, {}, true);
 	add(scripts, "Script State", "controller.script_state", {}, false, {}, true);
 	add(scripts, "Stop Script...", "controller.script_stop", {}, true);
+	// Q050-205: the opt-in OSC server - off until Start runs osc.start; the form shows where it listens.
+	QMenu* osc = menu->addMenu(tr("OSC Control Server"));
+	add(osc, "Start...", "osc.start", {}, true, {{QStringLiteral("address"), QStringLiteral("127.0.0.1")},
+		{QStringLiteral("port"), 9000}, {QStringLiteral("scope"), QStringLiteral("remote")}}, true);
+	add(osc, "State", "osc.get_state", {}, false, {}, true);
+	add(osc, "Stop", "osc.stop", {}, false, {}, true);
 	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
 	for (const ShellPanelSpec& spec : ShellLayout::panels())
 	{

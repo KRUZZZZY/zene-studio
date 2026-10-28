@@ -717,9 +717,10 @@ LMMS_EXPORT void registerUndoHistoryCommands(ControlRegistry& registry);
  *  project load or by controller.template_apply all answer to the same
  *  address, the model's fullDisplayName().
  *
- *  OSC IS OUT (Bar 3): this group is MIDI controller surfaces only. There is no
- *  interface for any of it in this release - the group is the only way to reach
- *  it. Named in docs/KNOWN-LIMITATIONS.md and the release notes. */
+ *  This group is MIDI controller surfaces only; OSC is the separate, opt-in
+ *  osc.* server (Q050-205, include/OscCommands.h). Its interface is Customise >
+ *  MIDI Mappings... and Mapping Templates...; Lua control-surface scripts are
+ *  controller.script_* (Q050-081, include/ControllerScript.h). */
 LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
 /*! controller.template_save / template_list / template_apply / template_delete -
  *  the four FILE verbs of the same group, in their own translation unit

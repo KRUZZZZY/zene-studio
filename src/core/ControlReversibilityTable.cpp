@@ -71,6 +71,7 @@
  */
 
 #include "CollabCommands.h"
+#include "OscCommands.h"
 #include "ControllerScript.h"
 #include "ControlReversibility.h"
 
@@ -171,7 +172,7 @@ const ReversibilityRow* reversibilityRowTable(int* rowCount)
 				reversibilityCustomisationRowTable, reversibilityArrangerRowTable, reversibilityMixingRowTable,
 				reversibilityDeviceRowTable, reversibilityW3CustomRowTable, reversibilityW3LibraryRowTable,
 				reversibilityW3DevicesRowTable, reversibilityW3EngineRowTable, reversibilityVideoRowTable, reversibilityCollabRowTable,
-				reversibilityControllerScriptRowTable,
+				reversibilityOscRowTable, reversibilityControllerScriptRowTable,
 				reversibilityTaskRowTable})
 		{
 			int count = 0;

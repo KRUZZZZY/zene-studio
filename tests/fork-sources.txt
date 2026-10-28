@@ -3215,3 +3215,13 @@ src/core/ControllerScript.cpp
 src/core/ControlCommandsControllerScripts.cpp
 tests/src/core/ControllerScriptTest.cpp
 tests/src/gui/ControllerMappingEditorTest.cpp
+# Q050-205 (2026-10): the opt-in OSC control server - codec/bridge, UDP listener, osc.* commands and rows, tests (fork-NEW).
+include/OscBridge.h
+include/OscCommands.h
+include/OscServer.h
+src/core/OscBridge.cpp
+src/core/OscServer.cpp
+src/core/ControlCommandsOsc.cpp
+src/core/ControlReversibilityTableOsc.cpp
+tests/src/core/ControlOscServerTest.cpp
+tests/src/gui/OscServerMenuTest.cpp

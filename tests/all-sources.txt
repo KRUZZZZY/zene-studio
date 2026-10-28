@@ -641,6 +641,9 @@ include/NoteProperties.h
 include/NoteRandom.h
 include/NoteTransform.h
 include/NoteTransformActions.h
+include/OscBridge.h
+include/OscCommands.h
+include/OscServer.h
 include/Oscillator.h
 include/OscillatorConstants.h
 include/Oscilloscope.h
@@ -1678,6 +1681,7 @@ src/core/ControlCommandsNoteSlide.cpp
 src/core/ControlCommandsNoteTools.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsOsc.cpp
 src/core/ControlCommandsOutOfProcess.cpp
 src/core/ControlCommandsOutOfProcessEdit.cpp
 src/core/ControlCommandsOutOfProcessShared.h
@@ -1857,6 +1861,7 @@ src/core/ControlReversibilityTableMixing.cpp
 src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableMts.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
+src/core/ControlReversibilityTableOsc.cpp
 src/core/ControlReversibilityTableOutOfProcess.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp
@@ -2024,6 +2029,8 @@ src/core/NotePlayHandle.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/OscBridge.cpp
+src/core/OscServer.cpp
 src/core/Oscillator.cpp
 src/core/OutOfProcessHosting.cpp
 src/core/ParameterAliases.cpp
@@ -2721,6 +2728,7 @@ tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteNoOpUndoTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
+tests/src/core/ControlOscServerTest.cpp
 tests/src/core/ControlPluginBusesTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlProjectMediaTest.cpp
@@ -3169,6 +3177,7 @@ tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/OnlineHelpNoticeTest.cpp
+tests/src/gui/OscServerMenuTest.cpp
 tests/src/gui/PanelShortcutsTest.cpp
 tests/src/gui/PatcherCanvasTest.cpp
 tests/src/gui/PerformViewTest.cpp

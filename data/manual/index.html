@@ -514,6 +514,23 @@ disappears (a cable pulled) Script State says so, and the binding is made again 
 with the project. The bindings themselves - which knob drives which parameter - are edited in Customise &gt; MIDI
 Mappings..., saved with the project.</p>
 
+<p id="osc"><b>OSC control (Customise &gt; OSC Control Server).</b> An opt-in OSC 1.0 server over UDP; nothing listens
+until you start it, and it is not saved with the project or remembered after a restart. <i>Start...</i> asks for the
+address (127.0.0.1 by default: this machine only), the port (9000 by default; 0 picks any free port) and the scope, and
+runs <code>osc.start</code>; <i>State</i> (<code>osc.get_state</code>) shows where it listens and how many requests it
+received, ran and refused; <i>Stop</i> (<code>osc.stop</code>) closes the port. The address map: a message to
+<code>/zene/&lt;command-id&gt;</code> runs that registered command - for example <code>/zene/transport.play</code>,
+<code>/zene/transport.get_state</code> or <code>/zene/mixer.set_volume</code>. Its arguments are either none, one string
+holding the command's JSON arguments, or key/value pairs (a string key, then its value), e.g.
+<code>"channel" "ch-1" "volume" 0.5</code>. The sender gets <code>/zene/reply</code> with the command id and the result
+as JSON (a fader write answers with its channel and the applied volume; a state read answers with the state), or
+<code>/zene/error</code> with the id, the error kind (malformed, unsupported, not_found, refused, invalid_args, too_large
+...) and a message of at most 512 characters. Requests over 8 KiB, bundles and blobs are refused; a malformed packet
+never stops the server. The <i>remote</i> scope (the default) allows transport, markers, mixer faders and state reads;
+<i>full</i> allows every command except scripts and controller scripts, sessions, crash and telemetry uploads, the OSC
+server itself and quitting, names no file, and binds only a loopback address. An OSC edit is the same command as the menu's, with the
+same single undo step.</p>
+
 <p><b>Live code (Edit &gt; Live Code).</b> The panel edits a Lua script and schedules it on the
 transport: <i>Every bar</i>, <i>Every beat</i> or <i>Transport play/stop</i>, under an id of your choosing (an id that
 already exists is replaced in place, one slot). Schedule compiles the buffer first - a script that does not compile is

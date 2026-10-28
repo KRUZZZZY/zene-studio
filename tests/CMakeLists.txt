@@ -1576,6 +1576,9 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel (requires: display) over the real main window.
 		src/gui/CollabPanelTest.cpp
+		# Q050-205: the opt-in OSC control server over real UDP loopback, and its Customise menu entries.
+		src/core/ControlOscServerTest.cpp
+		src/gui/OscServerMenuTest.cpp
 	)
 ENDIF()
 
@@ -2167,7 +2170,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest" OR LMMS_TEST_NAME STREQUAL "LinkAudioStreamTest"
-		OR LMMS_TEST_NAME STREQUAL "ControllerScriptTest")
+		OR LMMS_TEST_NAME STREQUAL "ControlOscServerTest" OR LMMS_TEST_NAME STREQUAL "ControllerScriptTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "AutomationModesTest")
@@ -3392,6 +3395,7 @@ set_tests_properties(WindowSelectStartupTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(OnlineHelpNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	set_tests_properties(ControlOscServerTest OscServerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
