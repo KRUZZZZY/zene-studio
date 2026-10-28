@@ -277,6 +277,11 @@ bool decode(const QByteArray& packet, Message* out, QString* error)
 	{
 		if (!readArgument(packet, tag, &offset, &message.args, error)) { return false; }
 	}
+	if (offset != packet.size())
+	{
+		*error = QStringLiteral("malformed OSC packet: trailing bytes after its arguments");
+		return false;
+	}
 	message.typeTags = tags;
 	*out = message;
 	return true;

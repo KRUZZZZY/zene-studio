@@ -257,6 +257,7 @@ private slots:
 		const QList<Case> cases{
 			{QByteArray("\x01\x02\x03", 3), QStringLiteral("malformed")},
 			{QByteArray("/zene/transport.play"), QStringLiteral("malformed")},  // not NUL-terminated nor aligned
+			{osc::encode(QStringLiteral("/zene/transport.get_state"), {}) + QByteArray(4, '\0'), QStringLiteral("malformed")},
 			{QByteArray("#bundle\0\0\0\0\0\0\0\0\1", 16), QStringLiteral("malformed")},
 			{QByteArray(osc::MaxPacketBytes + 64, 'x'), QStringLiteral("malformed")},
 			{blob, QStringLiteral("malformed")},
