@@ -30,10 +30,12 @@ Files committed for this verdict: `docs/qwen-fixes-2026-10/cluster-new-p21-101.m
 
 ## Self-check
 
-- Real or not: decided with file:line evidence above. Not real.
-- Regression test: not required on the not-real branch; none added.
-- Fix at the cause: not applicable; no defect found. The sibling paths (`recordAggregate`, `flushNestedRecords`, `extendTopTransaction`, `trimTransactions`) were read and have the same non-empty precondition.
-- Realtime, undo, commands: no product change. No new control command.
-- Registration: no new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt` are unchanged.
-- Gates: the rows pass on the unchanged tree (EXIT=0). The script itself cannot run here because of the write-jail (EXIT=1, logged above), so the driver ran the same rows.
-- Stale binary: not applicable. No build or runtime test was run, and this report does not claim one.
+- **Regression test fails with the change reverted, passes with it:** not applicable. No product change exists, so there is no fix to revert; no test was added (see above). Nothing here claims a RED/GREEN result.
+- **Test deterministic:** not applicable (no test).
+- **Fix at the cause, siblings consistent:** not applicable (no defect). Sibling paths in the same file were read: `recordAggregate` (`ControlRegistryRecords.cpp:121`), `flushNestedRecords` (`:64`), and `extendTopTransaction` / `trimTransactions` (`ControlTransactions.cpp:60-90`). Each depends on the same non-empty precondition, which holds per the trim analysis above.
+- **No collateral damage:** no product code changed, so behaviour is unchanged. Evicting old records is unchanged, and the newest record is still never dropped.
+- **Not-real evidence:** the code and contract citations are above (`ControlRegistryRecords.cpp:92-98,105`; `ControlTransactions.cpp:60-76,89`; `ControlReversibility.h:437`; `ControlUndoCoalescing.cpp:139-147`; the `trimTransactions` comment at `ControlTransactions.cpp:62-63`).
+- **Realtime, undo, commands:** no product change; no new control command.
+- **Registration:** no new files, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt` are unchanged.
+- **Gates:** the same six simple gates and two ratchet rows that `feature_check.py` runs all PASS on this tree (`logs/007-feature-check.log`, `RESULT: PASS`, EXIT=0), run through `gate_driver.py`. The script itself exits 1 with `PermissionError` (`logs/008-feature-check-direct.log`) because it creates its log folder beside the worktree, outside this lane's write-jail. `submit_check.py` runs that same script, so its "gates (feature_check.py)" row shows FAIL (`logs/009-submit-check.log`, EXIT=1). That row is an environment failure, not a gate failure. Fixing it needs the script to write logs inside the worktree or the run folder; this lane did not edit the shared script.
+- **Stale binary:** not applicable. No build or runtime test was run, and this report does not claim one.
