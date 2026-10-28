@@ -264,7 +264,11 @@ private slots:
 		arrangerzoom::remember(start + 1);  // make the history result unambiguous if cancellation is ignored
 		arrangerzoom::zoomAround(m_editor, changed, 0);
 		QCOMPARE(m_editor->zoomingModel()->value(), changed);
+#ifndef QT_NO_GESTURES
 		arrangerzoom::finishPinch(start, changed, Qt::GestureCanceled);
+#else
+		arrangerzoom::finishPinch(start, changed, true);  // a Qt without gestures has no Qt::GestureState
+#endif
 		const ControlResult back = run(QStringLiteral("arrangement.zoom_back"));
 		QVERIFY2(back.ok, qPrintable(back.errorMessage));
 		QCOMPARE(m_editor->zoomingModel()->value(), start);
