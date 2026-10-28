@@ -14,7 +14,8 @@ Drives the REAL binary the way an agent does and prints every request and reply:
      track carries no synthesis figure at all;
   4. `late_periods`: a count, the ring's size and at most that many marks, each with
      serial / tick / position / playing / took_us > period_us - the engine's
-     deadline misses as recorded; two reads with nothing rendered between agree;
+     deadline misses as recorded, oldest first (a forced late period is proven
+     in-process by TrackSynthesisLoadTest and CpuDiagnosticsDialogTest);
   5. `control.commands_list`: both commands stay not_mutating with empty schemas.
 
 No timing value is asserted beyond "above zero" (the machine's speed is not the test's).
@@ -105,20 +106,26 @@ def check_overview(session, loud, silent, sample, problems):
                      "both share ONE channel figure, apart from their synthesis: %r / %r" % (loud_row, silent_row))
 
 
-def check_late_periods(session, problems):
-    first = session.ok("mixer.cpu_load").get("late_periods") or {}
-    count, held, marks = first.get("count"), first.get("held"), first.get("marks")
-    problems.require(isinstance(count, (int, float)) and count >= 0, "late_periods.count is a number: %r" % first)
-    problems.require(held == 64, "late_periods.held is the ring's size: %r" % held)
-    problems.require(isinstance(marks, list) and len(marks) <= min(count or 0, held or 0),
-                     "at most count and held marks: %r" % first)
-    keys = {"serial", "tick", "position", "playing", "took_us", "period_us", "percent"}
-    for mark in marks or []:
-        problems.require(keys <= set(mark), "a mark has every field: %r" % mark)
+MARK_KEYS = {"serial", "tick", "position", "playing", "took_us", "period_us", "percent"}
+
+
+def check_marks(marks, problems):
+    for mark in marks:
+        problems.require(MARK_KEYS <= set(mark), "a mark has every field: %r" % mark)
         problems.require(mark.get("took_us", 0) > mark.get("period_us", 0), "a mark took longer than its period: %r" % mark)
-    serials = [mark.get("serial") for mark in marks or []]
+    serials = [mark.get("serial") for mark in marks]
     problems.require(serials == sorted(serials), "marks are oldest first: %r" % serials)
-    print("late periods on this host: %r (%d held)" % (count, len(marks or [])))
+
+
+def check_late_periods(session, problems):
+    late = session.ok("mixer.cpu_load").get("late_periods") or {}
+    count, held, marks = late.get("count", -1), late.get("held"), late.get("marks")
+    problems.require(isinstance(count, (int, float)) and count >= 0, "late_periods.count is a number: %r" % late)
+    problems.require(held == 64, "late_periods.held is the ring's size: %r" % held)
+    marks = marks if isinstance(marks, list) else []
+    problems.require(len(marks) <= min(max(count, 0), 64), "at most count and held marks: %r" % late)
+    check_marks(marks, problems)
+    print("late periods on this host: %r (%d held)" % (count, len(marks)))
 
 
 def check_commands(session, problems):
