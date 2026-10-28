@@ -374,6 +374,15 @@ is one step of Edit &gt; Undo. A pad is stored as the ordinary tracks and channe
 earlier version opens and plays the same and shows its pads here. Agents use <code>track.drum_rack</code> (build a rack),
 <code>track.drum_rack_pad_add</code>, <code>track.drum_rack_pad_set</code> and <code>track.drum_rack_get_state</code>,
 which reads back what the project saves.</p>
+<p><b>A pad's own effects.</b> Each row of the pad panel also shows the pad's chain - the effects on its own mixer channel,
+in the order they play - and an Effects button. Its menu adds a built-in effect (Add Effect), switches one off or back on
+(Bypass / Switch On) and removes one (Remove). An effect put on one pad plays on that pad only: the other pads have channels
+of their own. When a pad plays through a channel that is not its own - the master, a channel another track also plays
+into, or one another channel sends into - the panel says so and Add Effect is greyed out, since an effect there would
+change more than that pad. Each change is one step of Edit &gt; Undo, and the chain is saved with the project as any
+channel's effects are. Agents read the chain in <code>track.drum_rack_get_state</code> (each pad's <code>chain</code> and
+<code>chain_shared</code>) and edit it with <code>plugin.load</code>, <code>plugin.bypass</code> and
+<code>plugin.unload</code> on the pad's <code>channel</code> - the commands the menu runs.</p>
 
 <h2 id="launch">The launcher</h2>
 <p>Show the launcher from the footer's Clip Launcher button, View &gt; Clip Launcher or Alt+L. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it. Each column is headed by its track's name. A cell's play mark shows its state - ▷ stopped, ▷… queued, ▶ playing - and a scene's mark shows its row's, so you can see what will launch. Dragging a sample over a filled cell shows "Replace" before you let go; after the drop, Undo Replace (or Edit &gt; Undo) puts the old clip back.
