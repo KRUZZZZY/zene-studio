@@ -1209,6 +1209,7 @@ include/WorkspaceWindows.h
 include/XmlDepthGuard.h
 include/XyPad.h
 include/zene/api/ControlApi.h
+plugins/AuEffect/AuCocoaView.cpp
 plugins/AuEffect/AuEffect.cpp
 plugins/AuEffect/AuEffect.h
 plugins/AuEffect/AuEffectControlDialog.cpp
@@ -1220,6 +1221,7 @@ plugins/AuEffect/AuHost.h
 plugins/AuEffect/AuKnobGrid.h
 plugins/AuEffect/AuParameter.cpp
 plugins/AuEffect/AuParameter.h
+plugins/AuEffect/AuState.cpp
 plugins/AuEffect/AuSubPluginFeatures.cpp
 plugins/AuEffect/AuSubPluginFeatures.h
 plugins/AuEffect/logo.png

@@ -32,23 +32,19 @@
 #include <cstdlib>
 #include <cstring>
 
-#include <QDebug>
-#include <QDomDocument>
-#include <QDomElement>
 #include <QGuiApplication>
 
 #import <AppKit/AppKit.h>
 #include <AudioToolbox/AudioToolbox.h>
-#include <AudioUnit/AUCocoaUIView.h>
 #import <CoreAudioKit/AUGenericView.h>
 
-#include "AuParameter.h"
-#include "AudioEngine.h"
-#include "Engine.h"
 #include "Vst3MidiQueue.h"
 
 namespace lmms::au
 {
+
+//! The unit's own Cocoa view (kAudioUnitProperty_CocoaUI), retained; nil when it has none. AuCocoaView.cpp.
+NSView* customView(AudioUnit unit);
 
 namespace
 {
@@ -90,50 +86,6 @@ void appendType(OSType type, QList<Component>* out)
 		const ComponentId id{found.componentType, found.componentSubType, found.componentManufacturer};
 		out->append(splitComponentName(id, registryName(component), version));
 	}
-}
-
-//! The view the factory class @a info names makes for @a unit, retained; nil when the class is not one.
-NSView* factoryView(AudioUnit unit, const AudioUnitCocoaViewInfo& info)
-{
-	NSURL* location = (NSURL*)info.mCocoaAUViewBundleLocation;
-	NSString* className = (NSString*)info.mCocoaAUViewClass[0];
-	NSBundle* bundle = location != nil ? [NSBundle bundleWithURL:location] : nil;
-	Class factoryClass = bundle != nil && className != nil ? [bundle classNamed:className] : nil;
-	if (factoryClass == nil || ![factoryClass conformsToProtocol:@protocol(AUCocoaUIBase)]) { return nil; }
-	// AUCocoaUIBase does not adopt <NSObject>: the factory is typed as the NSObject it is, for -release.
-	NSObject<AUCocoaUIBase>* factory = (NSObject<AUCocoaUIBase>*)[[factoryClass alloc] init];
-	NSView* view = [[factory uiViewForAudioUnit:unit withSize:NSZeroSize] retain];
-	[factory release];
-	return view;
-}
-
-//! kAudioUnitProperty_CocoaUI hands over one reference to the URL and to each class name of its @a size bytes.
-void releaseViewInfo(AudioUnitCocoaViewInfo* info, UInt32 size)
-{
-	const auto classes = (size - offsetof(AudioUnitCocoaViewInfo, mCocoaAUViewClass)) / sizeof(CFStringRef);
-	if (info->mCocoaAUViewBundleLocation != nullptr) { CFRelease(info->mCocoaAUViewBundleLocation); }
-	for (std::size_t i = 0; i < classes; ++i)
-	{
-		if (info->mCocoaAUViewClass[i] != nullptr) { CFRelease(info->mCocoaAUViewClass[i]); }
-	}
-}
-
-//! The unit's own Cocoa view (kAudioUnitProperty_CocoaUI), retained; nil when it has none.
-NSView* customView(AudioUnit unit)
-{
-	UInt32 size = 0;
-	Boolean writable = false;
-	if (AudioUnitGetPropertyInfo(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, &size, &writable) != noErr
-		|| size < sizeof(AudioUnitCocoaViewInfo))
-	{
-		return nil;
-	}
-	std::vector<std::uint8_t> raw(size);
-	auto* info = reinterpret_cast<AudioUnitCocoaViewInfo*>(raw.data());
-	if (AudioUnitGetProperty(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, info, &size) != noErr) { return nil; }
-	NSView* view = factoryView(unit, *info);
-	releaseViewInfo(info, size);
-	return view;
 }
 
 } // namespace
@@ -583,31 +535,3 @@ void HostedUnit::editorSize(int* width, int* height) const
 }
 
 } // namespace lmms::au
-
-namespace lmms
-{
-
-void saveAuState(au::HostedUnit* unit, QDomDocument& doc, QDomElement& element)
-{
-	QByteArray state;
-	if (!unit->saveState(&state)) { return; }
-	auto stateElement = doc.createElement(QStringLiteral("state"));
-	stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
-	element.appendChild(stateElement);
-}
-
-bool loadAuState(au::HostedUnit* unit, const QDomElement& element)
-{
-	const auto stateElement = element.firstChildElement(QStringLiteral("state"));
-	if (stateElement.isNull() || !unit->isLoaded()) { return false; }
-	AudioEngine* engine = Engine::audioEngine();
-	// Not while the unit renders: the engine is held for the property write.
-	if (engine != nullptr) { engine->requestChangeInModel(); }
-	QString error;
-	const bool loaded = unit->loadState(QByteArray::fromBase64(stateElement.text().toLatin1()), &error);
-	if (engine != nullptr) { engine->doneChangeInModel(); }
-	if (!loaded) { qWarning() << "AU:" << error; }
-	return loaded;
-}
-
-} // namespace lmms

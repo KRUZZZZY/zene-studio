@@ -11,14 +11,17 @@ ENDIF()
 
 SET(LMMS_AU_HOST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../AuEffect")
 # A source property is seen by the targets of the directory that sets it, so it is set here again.
-SET_SOURCE_FILES_PROPERTIES("${LMMS_AU_HOST_DIR}/AuHost.cpp" PROPERTIES COMPILE_OPTIONS "-xobjective-c++")
+SET_SOURCE_FILES_PROPERTIES("${LMMS_AU_HOST_DIR}/AuHost.cpp" "${LMMS_AU_HOST_DIR}/AuCocoaView.cpp"
+	PROPERTIES COMPILE_OPTIONS "-xobjective-c++")
 INCLUDE_DIRECTORIES("${LMMS_AU_HOST_DIR}")
 
 BUILD_PLUGIN(auinstrument
 	AuInstrument.cpp
 	AuInstrumentView.cpp
+	"${LMMS_AU_HOST_DIR}/AuCocoaView.cpp"
 	"${LMMS_AU_HOST_DIR}/AuHost.cpp"
 	"${LMMS_AU_HOST_DIR}/AuParameter.cpp"
+	"${LMMS_AU_HOST_DIR}/AuState.cpp"
 	"${LMMS_AU_HOST_DIR}/AuSubPluginFeatures.cpp"
 	MOCFILES
 		AuInstrument.h

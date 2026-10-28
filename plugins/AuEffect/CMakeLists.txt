@@ -13,14 +13,16 @@ ENDIF()
 
 # AuHost.cpp talks to AppKit and CoreAudioKit, so it is Objective-C++ (manual retain/release, no ARC).
 # It keeps the .cpp name so the source manifests and gates see it like any other source.
-SET_SOURCE_FILES_PROPERTIES(AuHost.cpp PROPERTIES COMPILE_OPTIONS "-xobjective-c++")
+SET_SOURCE_FILES_PROPERTIES(AuHost.cpp AuCocoaView.cpp PROPERTIES COMPILE_OPTIONS "-xobjective-c++")
 
 BUILD_PLUGIN(aueffect
+	AuCocoaView.cpp
 	AuEffect.cpp
 	AuEffectControlDialog.cpp
 	AuEffectControls.cpp
 	AuHost.cpp
 	AuParameter.cpp
+	AuState.cpp
 	AuSubPluginFeatures.cpp
 	MOCFILES
 		AuEffectControlDialog.h
