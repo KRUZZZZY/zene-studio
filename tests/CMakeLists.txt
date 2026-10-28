@@ -4250,6 +4250,34 @@ target_compile_definitions(DelayControlsTest PRIVATE
 	PLUGIN_NAME=delay
 )
 
+# Cluster new-p10-318: the Peak Controller effect divided its RMS sum by the
+# block's frame count, so a zero-frame block produced NaN instead of holding the
+# last measured output. The plugin sources are compiled into this test so the
+# regression drives the real processAudioBuffer() path.
+add_executable(PeakControllerEffectZeroFrameTest
+	src/plugins/PeakControllerEffectZeroFrameTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffect.cpp
+	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControls.h
+)
+add_test(NAME PeakControllerEffectZeroFrameTest COMMAND PeakControllerEffectZeroFrameTest)
+set_tests_properties(PeakControllerEffectZeroFrameTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(PeakControllerEffectZeroFrameTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect
+	${CMAKE_BINARY_DIR}/plugins/PeakControllerEffect
+)
+target_static_libraries(PeakControllerEffectZeroFrameTest PRIVATE lmmsobjs)
+target_link_libraries(PeakControllerEffectZeroFrameTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(PeakControllerEffectZeroFrameTest PRIVATE cxx_std_20)
+target_compile_definitions(PeakControllerEffectZeroFrameTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=peakcontrollereffect
+)
+
 # Cluster new-p23-187: Oscilloscope's pause control must survive the same
 # settings load/save cycle as its other controls. Compile the plugin sources
 # into the test so the regression exercises its real EffectControls methods.

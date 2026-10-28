@@ -97,6 +97,12 @@ ProcessStatus PeakControllerEffect::processImpl(InterleavedBufferView<float, 2> 
 {
 	PeakControllerEffectControls & c = m_peakControls;
 
+	if (inOut.frames() == 0)
+	{
+		// Nothing to measure: keep the last output. The RMS below divides by the frame count.
+		return ProcessStatus::Continue;
+	}
+
 	// RMS:
 	double sum = 0;
 
