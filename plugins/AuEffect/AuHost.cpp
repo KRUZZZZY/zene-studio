@@ -376,7 +376,8 @@ bool HostedUnit::prepare(double sampleRate, int maxFrames, int channels, QString
 	// One channel's worth of silence first, then a block per channel for outputs the caller has no buffer for.
 	d.scratch.assign(static_cast<std::size_t>(d.maxFrames) * static_cast<std::size_t>(d.channels + 1), 0.f);
 	d.sampleTime = 0.0;
-	d.midi.reset();
+	// The MIDI queue is not reset: the MIDI thread may be pushing live input into it while the engine is held for
+	// a re-prepare, and the engine's hold does not stop that thread. What is queued plays on the next block.
 	d.initialized = true;
 	return true;
 }
