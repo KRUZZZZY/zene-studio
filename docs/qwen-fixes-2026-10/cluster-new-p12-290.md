@@ -117,3 +117,31 @@ Nothing else was changed. `git status` was clean apart from these before the com
   compiles `Vst3EditorSession.cpp`, and `Vst3EditorTest` exercises the editor through a real fixture. Neither
   called the frame with a null out-pointer.
 - No new control commands, no `tests/fork-sources.txt` change (the product file is already registered).
+
+## Self-check
+
+Verdict is FIXED, so no ALREADY-FIXED or FALSE-POSITIVE evidence is needed.
+
+- **The regression test fails with the change reverted and passes with it.** RED: step 3, `ctest -R Vst3HostTest`
+  EXIT 8, `test-1.log` (SIGSEGV in `HostPlugFrame::queryInterface`). Reverted again under 4b: step 6, EXIT 8,
+  `test-3.log`. GREEN: step 5, EXIT 0, `test-2.log`; step 7, EXIT 0, `test-4.log` (`PASS` for the test, 23 passed).
+- **Deterministic.** The test has no timing, sleeps, threads or races. The seam is the in-test
+  `FrameProbeView`, which keeps the frame that `setFrame()` gives it, and `FrameProbeController`, which returns
+  that view from `createView()`. The window system is injected with `setWindowSystem(PluginWindowSystem::X11)`
+  instead of read from the running platform. The parent is the stand-in value `reinterpret_cast<void*>(1)`,
+  which the fake view never dereferences.
+- **At the cause and complete.** The guard sits before both branches of `queryInterface`, so the IPlugFrame,
+  FUnknown and unknown-IID paths all get it. The sibling `Vst3ComponentHandler::queryInterface` already has it
+  (`plugins/Vst3Effect/Vst3ComponentHandler.h:116`). The repo search found no other frame-style
+  `queryInterface` in product code (`plugins`, `src`, `include`). Product code never queries the frame; its
+  queries are on the view (`Vst3EditorSession.cpp:249`) and on the component (`Vst3Host.cpp:250`).
+- **No collateral damage.** The only behaviour change is that a null `obj` now returns `kInvalidArgument` instead
+  of crashing. Valid queries still return the frame with a reference taken, and unknown IIDs still return
+  `kNoInterface` with a null output (both asserted in the test). No limit or check was added, so none can hit
+  a caller that legitimately exceeds it. No project, save or saved-data path is touched. The editor family
+  (`Vst3EditorTest`, 7 passed, step 9) still passes.
+- **Gates: still FAIL in this sandbox.** `feature_check.py` exits 1 with a `PermissionError` when it creates
+  `<worktree>-feature-check` beside the worktree, which is outside the write-jail. The six simple gate scripts
+  pass when run directly (steps 11-16), and the two ratchets exit 1 with no reported items in the changed files
+  (steps 17-18). The ratchets' base comparison did not run. Someone who can write beside the worktree should run
+  `feature_check.py` once to confirm the table.
