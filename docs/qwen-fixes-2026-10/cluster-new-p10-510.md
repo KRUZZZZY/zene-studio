@@ -80,7 +80,11 @@ The two ratchets exit 1 on items in files this branch does not touch (WasmSandbo
 
 - Decision with evidence: yes (`src/core/AutomationClip.cpp:1078-1080, 1125-1157, 1058`; reachability above).
 - Regression fails without the fix and passes with it: yes, both directions (RED 1, RED 2 / GREEN 1, GREEN 3). The `infinite` row gives a clean assertion failure. The `nan` row hangs without the fix: that is the bug's symptom, observed through ctest's timeout. It is not an assertion, and the test contains no timing.
-- No wall-clock or sleeps in the test: yes; the only timeout is in the shell/ctest command.
+- Deterministic (ASK): yes. The test injects the tick values directly (`std::numeric_limits<double>::infinity()` and `quiet_NaN()` through QTest data rows) and uses no clock, sleep or thread. The only timeout is the ctest `--timeout` on the RED run, which is outside the test code.
+- Old projects and saved data (ASK): unaffected. `writeBlockRamp()` and `buildAutomationRamps()` are playback-only; neither the save format nor the load path is touched, and finite ticks take the same code as before (family 5/5).
+- Limits that could hit legitimate callers (ASK): the new check accepts only finite values, and no legitimate caller produces a non-finite tick (Reachability). Nothing else is limited.
+- Verdict FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" evidence is needed.
+- Gates via `feature_check.py`: NOT PASSED by the script. It exits 1 with `PermissionError` before any gate runs (it writes logs to `<worktree>/../new-p10-510-feature-check`, outside the write-jail, and its base-baseline cache lives in the qwen folder, also outside it). `submit_check.py` therefore reports the gates row FAIL for the same reason. The gate commands were run by hand (table above): six PASS, two ratchets exit 1 on items in files this branch does not touch. This needs a run from a shell that can write the parent folder, or the owner's runner.
 - Complete at the cause, and siblings checked: yes for the two callers of this guard (`writeBlockRamp` and the `Song::buildAutomationRamps` gate). `addRampKnot` and the other `framesPerTick` readers are not changed (listed above).
 - Collateral: finite values unchanged (family 5/5). Only the non-finite path changes, including the `+inf` behaviour noted above.
 - Realtime: the change adds one `std::isfinite` call to an existing guard. No allocation, lock, log or wait.
