@@ -3021,6 +3021,12 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   quantised stop, and the grid lands the take it started into the user's `samples/Recordings` folder. There is no
   record BUTTON on the cell itself, no keyboard shortcut for it, no count-in, and the grid does not land a take it
   did not start (an agent's take is left for the agent).
+- *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
+  and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
+  sentences below about them are the earlier record. These settings are no longer socket-only: the cell's
+  right-click menu has Playback and Warp (every `session.set_slot` playback field in one form, Warp to Song Tempo
+  and RAM Mode On/Off, a reset), and the cell shows its non-default settings after its name
+  (`docs/050-features/Q050-493.md`). RAM mode is stored and editable but still changes nothing in playback.
 - **A launched audio cell renders only on a sample track's column**, through that track, from the clip's top (or
   its loop start), looping the whole file. The cell's gain, transpose, detune, RAM mode and loop LENGTH are not
   applied to audio, and there is no warping: a file plays at its own speed whatever the tempo. A file at another

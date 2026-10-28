@@ -396,6 +396,17 @@ undo never launches a cell - press it again to hear it. Deleting a pattern track
 played that pattern, and every other cell keeps the pattern it had even though the pattern numbers move; moving a
 pattern track up or down does not change what any cell plays. A saved project keeps the cells, never what was playing:
 it opens with nothing launched (session.set_slot, session.clear_slot, session.set_grid, session.clear).</p>
+<p><b>An audio cell's gain, pitch, loop and warp.</b> Right-click an audio cell and open Playback and Warp. Gain, Pitch,
+Loop and Warp... shows every playback setting of the cell at its current value: gain (dB), transpose (semitones),
+detune (cents), the loop region (loop start and loop length, in ticks; a length of 0 loops to the end of the file),
+warp and the clip's own tempo (warp BPM), and RAM mode. Change any of them and press Run. Warp to Song Tempo On/Off
+switches the tempo warp alone: a warped cell plays at the song's tempo, keeping its pitch, as if it was recorded at
+its warp BPM. Transpose and detune change the pitch the way a sampler does, so the clip also gets shorter or longer.
+Reset Gain, Pitch, Loop and Warp puts them all back to their defaults. Each change is one Edit &gt; Undo step and is
+saved with the project. A cell with settings away from their defaults shows them after its name, for example
+"-6.0dB +12st +50ct ⟲ W128" (gain, transpose, detune, a loop region, warped from 128 BPM), and a screen reader hears
+them in words. RAM mode is kept with the cell but does not change playback yet. An agent sets the same fields with
+session.set_slot (gain_db, transpose, detune, loop_start, loop_length, warp, warp_bpm, ram).</p>
 <p>For a show, View &gt; Perform Mode (or Launcher &gt; Perform Mode) opens a window made to be read from a distance: the
 setlist's song and the next one, Play and Stop, the bar and beat, the tempo with - and + (each an undoable change), the scene
 playing and the scene that plays next, one big button per scene, what each track is playing, and a large Stop All. Its keys:
