@@ -90,3 +90,27 @@ No product files, test files or gate baselines were changed.
   guard it against a future change to `ProjectJournal::undo()`. Not added, because it would not be RED and the
   verdict does not call for a fix.
 - I did not run `SessionCommandArgsTest` (cited above, not run).
+
+## Self-check
+
+Answers to the completion check's items (`submit_check.py`, run log in the LOG FOLDER `submit-*.log`).
+
+- **Regression test FAILS with the change reverted and PASSES with it.** N/A: the verdict is FALSE-POSITIVE, so there is
+  no product change to revert and no test was added. The existing test that exercises the landed-take undo and redo
+  (`SessionAudioRecordTest::undoAndRedoOfALandedTakeMarkTheSongModified`) PASSES on the unchanged tree (`test-2.log`,
+  PASS line; EXIT 0).
+- **Test is deterministic.** N/A (no new test). The existing test was not examined for timing; it was only run.
+- **Fix at the cause, complete, callers consistent.** No fix. Every invocation of a recorded undo or redo closure is in
+  `src/core/ProjectJournal.cpp`: `:142` (undo), `:175` (redo replay) and `:185` (redo rollback). Every caller of those
+  paths goes through `ProjectJournal::undo()` or `redo()`: `src/gui/MainWindow.cpp:1649,1657`,
+  `src/core/ControlCommandsControl.cpp:353,571`, `src/core/RenderQueueBounce.cpp:95`. The declined-redo branch
+  (`ProjectJournal.cpp:179-186`) skips `setModified()` but applies no net change, so the clean flag stays correct there.
+- **No collateral damage.** N/A: no product code changed. Saved data and old projects are untouched.
+- **Verdict evidence (FALSE-POSITIVE).** The code is cited above: closures at `ControlCommandsSections.cpp:82` and
+  `ControlCommandsSessionAudioRecord.cpp:241-242`; setter in the journal at `ProjectJournal.cpp:148` (undo) and `:198`
+  (redo); `Song::setModified` at `Song.cpp:975-981`; clean-marking only at `Song.cpp:1902`, `:2325`, `:2668`.
+
+**Gate note.** `feature_check.py` and `submit_check.py` try to create `<worktree>-feature-check` in the projects folder,
+which the write-jail blocks (`PermissionError`, EXIT 1). The gate logic was run unchanged through
+`logs/run_gate_redirect.py`, which redirects only that log folder (EXIT 0, RESULT: PASS, see `gates-3.log`). The
+completion check's gate item fails for the same jail reason and is not a product failure.
