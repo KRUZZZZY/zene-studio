@@ -103,6 +103,29 @@ private slots:
 		QVERIFY(delay.m_length <= static_cast<float>(delay.m_maxLength));
 		checkOneFrameDelay(delay);
 	}
+
+	void overflowingConstructorRateIsRefusedBeforeIntNarrowing()
+	{
+		// 20 * 200000000 does not fit an int, and the ring is above the int index range:
+		// the delay must start empty instead of holding a wrapped or clamped size.
+		lmms::StereoDelay delay{20, 200000000};
+		QCOMPARE(delay.m_maxLength, 0);
+		QVERIFY(delay.m_buffer == nullptr);
+
+		lmms::SampleFrame frame{0.25f, -0.5f};
+		delay.tick(frame);
+		QCOMPARE(frame[0], 0.25f);
+		QCOMPARE(frame[1], -0.5f);
+	}
+
+	void outOfRangeSampleRateKeepsTheCurrentRing()
+	{
+		// 20 * 200000000 is above the int index range: the live ring must not be replaced.
+		lmms::StereoDelay delay{20, 48000};
+		delay.setSampleRate(200000000);
+		QVERIFY(delay.m_buffer != nullptr);
+		QCOMPARE(delay.m_maxLength, 960000);
+	}
 };
 
 QTEST_GUILESS_MAIN(StereoDelayTest)

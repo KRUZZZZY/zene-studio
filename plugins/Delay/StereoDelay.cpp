@@ -26,7 +26,8 @@
 
 #include "SampleFrame.h"
 
-#include <algorithm>
+#include <cstdint>
+#include <limits>
 
 namespace lmms
 {
@@ -36,12 +37,22 @@ StereoDelay::StereoDelay( int maxTime, int sampleRate )
 {
 	m_buffer = 0;
 	m_maxTime = static_cast<float>(maxTime);
-	m_maxLength = maxTime * sampleRate;
+	// Size the first ring in 64 bits: maxTime * sampleRate can overflow an int.
+	// A positive product that fits an int is kept; anything else starts empty.
+	const std::int64_t frames = static_cast<std::int64_t>(maxTime) * sampleRate;
+	m_maxLength = ( frames >= 1 && frames <= std::numeric_limits<int>::max() )
+		? static_cast<int>(frames) : 0;
 	m_length = static_cast<float>(m_maxLength);
 
 	m_writeIndex = 0;
 	m_feedback = 0.0f;
 	setSampleRate( sampleRate );
+	if( !m_buffer )
+	{
+		// setSampleRate refused the rate, so there is no ring and no length.
+		m_maxLength = 0;
+		m_length = 0.0f;
+	}
 }
 
 
@@ -60,6 +71,12 @@ StereoDelay::~StereoDelay()
 
 void StereoDelay::tick( SampleFrame& frame )
 {
+	// No ring exists when the constructor was given a refused rate; pass through.
+	if( !m_buffer )
+	{
+		return;
+	}
+
 	m_writeIndex = ( m_writeIndex + 1 ) % ( int )m_maxLength;
 	int readIndex = m_writeIndex - static_cast<int>(m_length);
 	if (readIndex < 0 ) { readIndex += m_maxLength; }
@@ -78,14 +95,23 @@ void StereoDelay::tick( SampleFrame& frame )
 
 void StereoDelay::setSampleRate( int sampleRate )
 {
+	// A ring above 2^31 frames cannot be indexed by an int. Refuse it before the
+	// current ring is touched, so the delay keeps its last good ring.
+	const float bufferSizeF = sampleRate * m_maxTime;
+	if( bufferSizeF >= 2147483648.0f ) // 2^31
+	{
+		return;
+	}
+
 	if( m_buffer )
 	{
 		delete[] m_buffer;
 	}
 
 	// tick() uses the ring length as a modulo divisor, so the ring must hold at
-	// least one frame even when maxTime or sampleRate is zero or negative.
-	const int bufferSize = std::max(1, static_cast<int>(sampleRate * m_maxTime));
+	// least one frame even when maxTime or sampleRate is zero or negative. The
+	// float is only converted when it is in range; a negative one would not be.
+	const int bufferSize = bufferSizeF >= 1.0f ? static_cast<int>(bufferSizeF) : 1;
 	if (m_maxLength > 0)
 	{
 		m_length *= static_cast<float>(bufferSize) / static_cast<float>(m_maxLength);
