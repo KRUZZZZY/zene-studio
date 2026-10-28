@@ -25,6 +25,7 @@
 #include "NoteRandom.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace lmms
 {
@@ -81,7 +82,9 @@ bool passesProbability( float probability, uint32_t seed, int key, int pos, int 
 
 float velocityFactor( float jitter, uint32_t seed, int key, int pos, int length )
 {
-	if( jitter <= 0.f ) { return 1.f; }
+	// A non-finite jitter is not velocity jitter either (Note::setVelocityJitter
+	// maps it to 0): NaN would slip past `<= 0` and come back as the factor.
+	if( !std::isfinite( jitter ) || jitter <= 0.f ) { return 1.f; }
 	const float j = std::min( jitter, 1.f );
 	// Salt 1: an independent stream from the probability roll, so setting a
 	// probability does not move the velocities of the notes that do play.
