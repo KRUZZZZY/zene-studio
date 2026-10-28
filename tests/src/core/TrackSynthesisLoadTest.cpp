@@ -124,6 +124,7 @@ private:
 	static void playFrom(tick_t tick)
 	{
 		Song* song = Engine::getSong();
+		song->stop();  // a case that failed while playing leaves the song rolling
 		song->setPlayPos(tick, Song::PlayMode::Song);
 		MidiPlayback::instance().stopped();
 		song->playSong();
