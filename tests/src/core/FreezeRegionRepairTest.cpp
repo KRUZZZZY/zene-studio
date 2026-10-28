@@ -208,6 +208,40 @@ private slots:
 		QVERIFY(track->frozenTakeSilencesSource(500));
 	}
 
+	//! BUG 14: a region take must end past its start. An inverted or empty window has no end boundary in
+	//! frozenTakeSilencesSource(), so the source would stay silent from the start onward. Such a take is
+	//! refused when it is made (freezeTo) and when a project carries it (loadFrozenTake).
+	void reversedRegionTakeIsRefusedWhenCreatedAndLoaded()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = trackWithOneClip(scratch.path());
+		QVERIFY(track != nullptr);
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("reversed.wav")), 330.0);
+
+		// Made: an inverted and an empty window are refused, and the track keeps its own clips.
+		QString why;
+		QVERIFY(!track->freezeTo(wav, 200, 100, {}, &why, true));
+		QVERIFY(!why.isEmpty());
+		QVERIFY(!track->freezeTo(wav, 50, 50, {}, &why, true));
+		QVERIFY(!track->isFrozen());
+		// A whole-track take has no region window, so it is still accepted.
+		QVERIFY2(track->freezeTo(wav, 0, 0, {}, &why, false), qPrintable(why));
+		track->unfreeze();
+
+		// Loaded: a project whose region take is inverted does not install the take.
+		QVERIFY2(track->freezeTo(wav, 10, 50, {}, &why, true), qPrintable(why));
+		QDomDocument doc;
+		QDomElement parent = doc.createElement(QStringLiteral("track"));
+		QDomElement element = track->saveState(doc, parent);
+		element.setAttribute(QStringLiteral("frozenStart"), QStringLiteral("200"));
+		element.setAttribute(QStringLiteral("frozenEnd"), QStringLiteral("100"));
+		Track* loaded = Track::create(element, Engine::getSong());
+		QVERIFY(loaded != nullptr);
+		QVERIFY2(!loaded->isFrozen(), "a region take that ends before it starts must not load");
+		QVERIFY2(!loaded->frozenTakeSilencesSource(250), "the source must not be silenced from the start onward");
+	}
+
 	//! A2: with a tempo map in force, the take's playback frames at the region's START and END equal the
 	//! frames the render actually cuts for those ticks (BounceInPlace::prepareRenderTracks' window) and the
 	//! timeline frames the tempo map gives; the one-rate arithmetic would be off by thousands of frames.
