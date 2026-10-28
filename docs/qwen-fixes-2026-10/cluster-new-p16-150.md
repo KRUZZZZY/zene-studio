@@ -73,9 +73,16 @@ Gate note: `feature_check.py` writes its logs to `<worktree>-feature-check`, a s
 
 ## Self-check
 
-- RED: `ctest -R '^NoteRandomTest$'` with the fix reverted, exit 8, `velocityJitterNonFiniteIsNeutral` FAILS at `NoteRandomTest.cpp:235`.
-- GREEN: same command with the fix, exit 0, 10/10 slots PASS.
-- The regression is deterministic: fixed fixture (`s_notes`), fixed seed `5`, no clock, sleep or thread.
-- Sibling callers: `rollNotes` and `decorateNoteHandle` both guard with `> 0`, so they never reach the function with NaN; unchanged.
-- Sibling commands in `ControlCommandsNoteRandom.cpp` / `ControlCommandsNoteEdit.cpp`: the randomize command refuses non-finite (`readJitter`, line 213) and the edit command writes through `setVelocityJitter`. No change needed there.
-- Header `include/NoteRandom.h:74-76` still says jitter in [1-j, 1+j] for valid jitter; the non-finite rule is in the `.cpp` comment. I did not touch the header, so no dependent rebuild was needed.
+1. **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** Reverting `src/core/NoteRandom.cpp` (saved as `logs/fix.patch`, `git apply -R`), rebuilding and running `ctest -R '^NoteRandomTest$'` from `build/tests` gives EXIT=8 with `FAIL! : NoteRandomTest::velocityJitterNonFiniteIsNeutral() 'f == 1.f' returned FALSE` (`logs/test-4-proof-red.log`). With the fix re-applied and rebuilt, the same command gives EXIT=0, `Totals: 10 passed, 0 failed` (`logs/test-5-proof-green.log`). The first RED run, before any fix, is the same (`logs/test-2-red.log`, EXIT=8).
+
+2. **Deterministic.** The slot uses the fixed `s_notes` fixture and the fixed seed `5`, and calls only the pure `velocityFactor` function. There is no clock, sleep, thread or I/O. The inputs are the three values `NaN`, `+inf`, `-inf`.
+
+3. **Fix at the cause, complete.** The only decision is the guard at `src/core/NoteRandom.cpp:87`. Callers checked: `src/tracks/InstrumentTrackNotes.cpp:78-80` and `src/core/ControlCommandsNoteRandom.cpp:125-127` both guard with `> 0` before calling, so they never pass NaN; the note boundaries (`Note.cpp:78-83`, `Note.cpp:377-381`, `ControlCommandsNoteRandom.cpp:213-218`, `ControlCommandsNoteEdit.cpp:338`) already refuse or map non-finite jitter. Sibling commands in the command files: the randomize command refuses non-finite input, and the note-edit command writes through the setter. Nothing else needs to change.
+
+4. **No collateral damage.** Finite jitter takes the same arithmetic path as before (`velocityJitterBounds` and `velocityJitterIsSeeded` pass, 10/10 slots). The only changed output is for non-finite jitter, which no project load, command or in-tree caller produces (table above). No limit or check was added, so no caller is affected by one. `MidiProbabilityPersistenceTest` (10/10) passes.
+
+5. **Verdict evidence (ALREADY-FIXED / FALSE-POSITIVE only).** Not applicable: the verdict is FIXED. The contract the fix follows is the one already written at `src/core/Note.cpp:379-381` (a non-finite value "is not velocity jitter ... the documented default is an untouched velocity").
+
+## Submit-check note
+
+`submit_check.py` runs `feature_check.py` as a subprocess without the log-directory redirect, so its gate row fails with the same `PermissionError` on the sibling directory `<worktree>-feature-check` (`logs/submit-check-1.log`). The gate itself, with its logs redirected into the LOG FOLDER, passes: `logs/gates-3-feature-check-final.log`, EXIT=0, 8/8 PASS.
