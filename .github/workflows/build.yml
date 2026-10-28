@@ -856,9 +856,10 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
-      - name: Cache vcpkg dependencies
+      # Restore only; saved right after Configure (below), so a red Build keeps the ports.
+      - name: Restore vcpkg dependencies
         id: cache-deps
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v4
         with:
           key: vcpkg-mingw${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
@@ -995,6 +996,13 @@ jobs:
         env:
           should_install_manifest:
             ${{ steps.cache-deps.outputs.cache-hit == 'true' && 'NO' || 'YES' }}
+      # Only after a successful Configure (see the msvc job's note on the same step).
+      - name: Save vcpkg dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.cache-deps.outputs.cache-primary-key }}
+          path: build/vcpkg_installed
       - name: Build
         run: cmake --build build
       - name: Disk profile at failure (the arithmetic the disk fix rests on)
@@ -1124,9 +1132,12 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
-      - name: Cache vcpkg dependencies
+      # Restore only: the save is its own step right after Configure (below). A combined
+      # actions/cache saves at the END of a successful job, and every red Build threw away
+      # the ~18 min vcpkg spent building 34 ports in Configure, so each run rebuilt them.
+      - name: Restore vcpkg dependencies
         id: cache-deps
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v4
         with:
           key: vcpkg-msvc-x86_64-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
@@ -1199,6 +1210,15 @@ jobs:
         env:
           should_install_manifest:
             ${{ steps.cache-deps.outputs.cache-hit == 'true' && 'NO' || 'YES' }}
+      # Runs only when Configure succeeded (the default success() condition), so a
+      # half-installed tree is never saved under a key that cannot be overwritten until
+      # vcpkg.json changes; and it runs before Build, so a red Build keeps the ports.
+      - name: Save vcpkg dependencies
+        if: steps.cache-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          key: ${{ steps.cache-deps.outputs.cache-primary-key }}
+          path: build\vcpkg_installed
       - name: Build
         run: cmake --build build
       - name: Run tests
