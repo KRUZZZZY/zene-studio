@@ -307,6 +307,10 @@ private slots:
 		const float after = peakOf(playNote());
 		QVERIFY2(std::abs(after / before - 0.25f) < 0.02f,
 			qPrintable(QStringLiteral("gain 0.8 -> 0.2 quarters the level: %1 -> %2").arg(before).arg(after)));
+		// The write is one undo step.
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QVERIFY(std::abs(model(QStringLiteral("Output Gain"))->value<float>() - 0.8f) < 1e-6f);
 	}
 
 	//! A graph replaced while a note sounds: the note goes on with the new graph, nothing reads the freed one.
