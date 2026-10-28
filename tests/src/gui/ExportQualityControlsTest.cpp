@@ -169,6 +169,27 @@ private slots:
 		QCOMPARE(changes.constFirst().at(0).toInt(), 0);
 		QCOMPARE(changes.constFirst().at(1).toInt(), graph.model()->length() - 1);
 	}
+
+	void plainClicksStayWithinGraphSamples()
+	{
+		Graph graph(nullptr, Graph::Style::LinearNonCyclic, 20, 40);
+		graph.show();
+		QSignalSpy changes(graph.model(), &graphModel::samplesChanged);
+		QVERIFY(changes.isValid());
+		const auto last = graph.model()->length() - 1;
+
+		// a plain press on the left border computes a negative index, on the right border one past the end
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(0, 20));
+		QCOMPARE(changes.size(), 1);
+		QCOMPARE(changes.constFirst().at(0).toInt(), 0);
+		QCOMPARE(changes.constFirst().at(1).toInt(), 0);
+
+		changes.clear();
+		QTest::mouseClick(&graph, Qt::LeftButton, Qt::NoModifier, QPoint(19, 20));
+		QCOMPARE(changes.size(), 1);
+		QCOMPARE(changes.constFirst().at(0).toInt(), last);
+		QCOMPARE(changes.constFirst().at(1).toInt(), last);
+	}
 };
 
 QTEST_MAIN(ExportQualityControlsTest)

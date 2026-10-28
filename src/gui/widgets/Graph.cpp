@@ -299,7 +299,10 @@ void Graph::changeSampleAt( int _x, int _y )
 	float range = minVal - maxVal;
 	float val = ( _y*range/( height()-5 ) ) + maxVal;
 
-	model()->setSampleAt( (int)( _x*xscale ), val );
+	// a press on the border gives an index outside the model; keep it inside, as
+	// drawSampleAt() does for the write, so samplesChanged() reports a valid sample
+	const int sample = std::clamp( (int)( _x*xscale ), 0, model()->length() - 1 );
+	model()->setSampleAt( sample, val );
 }
 
 
