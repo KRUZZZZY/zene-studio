@@ -55,6 +55,8 @@ Gates. `feature_check.py` could not run: it writes its logs to `<worktree>-featu
 
 The two ratchets are red on the train on purpose. Under the `feature_check.py` rule they fail only on items in files this branch changes. The branch's changed file is `tests/src/gui/PianoRollBenchmarkTest.cpp`, and no REGRESSION line names it (`grep` of `gate-final-complexity.log` and `gate-final-file-length.log`). So both rows pass under that rule. Logs: `gate-final-*.log`.
 
+Full table, from the same script with one change: its log folder points at this LOG FOLDER (`feature_check_logdir.py`, a copy of `feature_check.py` that differs only in lines 19 and 70; the baseline cache at `qwen/gate-baselines` is read unchanged). Command: `python3 -I feature_check_logdir.py <worktree> > feature-check-1.log 2>&1; echo EXIT=$?` gave `EXIT=0`, `RESULT: PASS`: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures all PASS (exit 0); complexity and file-length "no new item in your files" (base `37eaf0755`, 2 changed files). The official `feature_check.py` exits 1 here because it cannot create `<worktree>-feature-check/` outside this lane's write area; its traceback is in the first run's output and is not a gate result.
+
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it.** Yes. With the guard at `src/core/Piano.cpp:128` removed, `ctest -R '^PianoRollBenchmarkTest$'` exits 8 (`PianoRollBenchmarkTest.cpp(196)`, `!Piano::isBlackKey(NumKeys)` returned FALSE). With the guard restored it exits 0 (1/1 passed). Exit codes are in the table above.
