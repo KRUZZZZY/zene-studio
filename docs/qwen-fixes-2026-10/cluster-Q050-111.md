@@ -43,6 +43,10 @@ DeviceToolsChainTest, ReversibilityContractTest, ControlCommandsSnapshot, agent_
 so I ran copies in /tmp that differ only in the log directory (written to the run folder instead); the gates
 and the baseline cache are the originals'.
 
+- **Completion check** (`submit_check.py` copy, log submit-check-1): RESULT PASS, EXIT=0. Its one WARN ("canary
+  figures (README) updated - new command ids: control.redo, control.undo, dsp.get_state, ...") is the regex reading
+  existing ids out of my tests' string literals: no command id was added (871 ids / 76 groups before and after, the
+  doc-figures gate passes), so README's canary needs no change.
 - **Gates** (`feature_check.py` copy, log feature-check-2): PASS on all of fork-sources, all-sources-reproduce,
   no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity (no new item in my files),
   file-length (no new item in my files). EXIT=0.
