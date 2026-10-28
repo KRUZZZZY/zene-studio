@@ -294,6 +294,7 @@ include/CommandPalette.h
 include/CompSlip.h
 include/CompSwipeStrip.h
 include/ConfigManager.h
+include/ConnectionRestoreScope.h
 include/ConsoleStrip.h
 include/ConsoleStripSection.h
 include/ContainedCrossfade.h
@@ -695,6 +696,7 @@ include/PluginWindowSystem.h
 include/PortMapping.h
 include/PortMappingCodec.h
 include/PositionLine.h
+include/PresetBindings.h
 include/PresetPreviewPlayHandle.h
 include/PreviewOutput.h
 include/ProjectContainer.h
@@ -2050,6 +2052,7 @@ src/core/PortMapping.cpp
 src/core/PortMappingCodec.cpp
 src/core/PortMappingPmp.cpp
 src/core/PortMappingUpnp.cpp
+src/core/PresetBindings.cpp
 src/core/PresetPreviewPlayHandle.cpp
 src/core/PreviewOutput.cpp
 src/core/ProjectContainer.cpp
@@ -2897,6 +2900,7 @@ tests/src/core/PluginLogoResourceTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/PortMappingOrchestratorTest.cpp
+tests/src/core/PresetBindingsTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerSaveTest.cpp
 tests/src/core/ProjectContainerTest.cpp
@@ -3171,6 +3175,7 @@ tests/src/gui/PluginCompatEditorProbe.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
+tests/src/gui/PresetBindingsGuiTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/gui/RackMenuTest.cpp

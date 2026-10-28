@@ -295,7 +295,7 @@ void populateTrack(QMenu* menu, Track* track)
 	add(render, "Freeze", "freeze.track", self, false);
 	QMenu* presets = menu->addMenu(tr("Track Preset"));  // L11 (WF-024)
 	add(presets, "Save Preset...", "track.preset_save", self, true);
-	add(presets, "Load Preset...", "track.preset_load", self, true);
+	add(presets, "Load Preset...", "track.preset_load", self, true, {}, true);  // Q050-331: the form shows the bindings it restored
 	LibraryCommandMenus::populateTrack(menu, track);  // L12 (WF-044)
 	if (dynamic_cast<SampleTrack*>(track) != nullptr)
 	{

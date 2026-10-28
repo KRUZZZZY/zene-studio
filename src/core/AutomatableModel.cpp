@@ -23,6 +23,7 @@
  */
 
 #include "AutomatableModel.h"
+#include "ConnectionRestoreScope.h"
 
 #include <bit>
 #include <chrono>
@@ -361,6 +362,7 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 	QDomNode connectionNode = element.namedItem( "connection" );
 	// reads controller connection
+	bool connectionLoaded = false;
 	if( connectionNode.isElement() )
 	{
 		QDomNode thisConnection = connectionNode.toElement().namedItem( name );
@@ -380,7 +382,14 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 			setControllerConnection(new ControllerConnection(nullptr));
 			m_controllerConnection->loadSettings( thisConnection.toElement() );
 			//m_controllerConnection->setTargetName( displayName() );
+			connectionLoaded = true;
 		}
+	}
+	// Q050-331: a journal restore puts the model back exactly as saved, so a connection the saved element does
+	// not carry (one added after the checkpoint) goes. An ordinary load only adds (ConnectionRestoreScope.h).
+	if( !connectionLoaded && m_controllerConnection != nullptr && ConnectionRestoreScope::active() )
+	{
+		setControllerConnection( nullptr );
 	}
 
 	// models can be stored as elements (port00) or attributes (port10):
@@ -453,6 +462,28 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 
 
+
+namespace
+{
+//! ConnectionRestoreScope's state (Q050-331): one flag per thread, so no lock and no interference between threads.
+thread_local bool t_connectionRestore = false;
+} // namespace
+
+ConnectionRestoreScope::ConnectionRestoreScope() :
+	m_previous(t_connectionRestore)
+{
+	t_connectionRestore = true;
+}
+
+ConnectionRestoreScope::~ConnectionRestoreScope()
+{
+	t_connectionRestore = m_previous;
+}
+
+bool ConnectionRestoreScope::active()
+{
+	return t_connectionRestore;
+}
 
 std::atomic<jo_id_t> AutomatableModel::s_lastTouched{0};
 

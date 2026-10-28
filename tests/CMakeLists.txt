@@ -182,6 +182,8 @@ set(LMMS_TESTS
 	# The socket proof of the same claim is the registered ctest
 	# ControlChainPresets (tests/control-chain-presets.py).
 	src/core/ControlChainPresetTest.cpp
+	# Q050-331: controller bindings saved with track and chain presets, on real devices.
+	src/core/PresetBindingsTest.cpp
 	# Out-of-process plugin hosting BEYOND ZynAddSubFx (feature row 80 of
 	# docs/FEATURE-LIST-0.3.0.md, board card #670): the family table
 	# (include/OutOfProcessHosting.h), the client-process record it keys the
@@ -1341,6 +1343,8 @@ set(LMMS_TESTS
 	src/gui/SampleClipWarpModeMenuTest.cpp
 	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
 	src/gui/ChainPresetMenuTest.cpp
+	# Q050-331: the preset menus show the controller bindings a load restored.
+	src/gui/PresetBindingsGuiTest.cpp
 	# A mixer channel's Rack menu (rack.* chains, routing and macros).
 	src/gui/RackMenuTest.cpp
 	# The pin matrix's hover cursor, and what a drag over it does.
@@ -2278,6 +2282,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
+		# Q050-331: preset bindings ride a real instrument's and a real effect's parameters.
+		OR LMMS_TEST_NAME STREQUAL "PresetBindingsTest"
+		OR LMMS_TEST_NAME STREQUAL "PresetBindingsGuiTest"
 		# The modulators panel binds a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
 		# The Device panel draws one real effect's card and the modulator driving it.
@@ -2600,6 +2607,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# library owner when Plugin::instantiate() returns it.
 	if(LMMS_TEST_NAME STREQUAL "DevicePanelTest")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
+	endif()
+	# Q050-331: the preset-binding tests load the build's tripleoscillator and amplifier modules.
+	if(LMMS_TEST_NAME STREQUAL "PresetBindingsTest" OR LMMS_TEST_NAME STREQUAL "PresetBindingsGuiTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	# Q050-047: RackMenuTest's zones and empty-parallel-chain cases load a real effect module, so a targeted
 	# build (cmake --build build --target RackMenuTest) must build amplifier too; otherwise plugin.list has no

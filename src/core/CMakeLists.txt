@@ -590,6 +590,7 @@ set(LMMS_SRCS
 	# and its edit half. A chain preset is NOT a rack chain - see
 	# control/ControlCommandsChain.cpp.
 	core/ControlChainPresetSupport.cpp
+	core/PresetBindings.cpp
 	core/ControlCommandsChain.cpp
 	core/ControlCommandsChainEdit.cpp
 	# The chord engine (feature row 35): the read-only view over the piano roll's

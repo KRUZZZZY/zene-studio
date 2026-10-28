@@ -3203,3 +3203,9 @@ include/PluginInstantiationFailure.h
 src/core/PluginInstantiationFailure.cpp
 tests/src/core/ControlHostedBusLayoutTest.cpp
 docs/qwen-fixes-2026-10/cluster-stress-3.md
+# Q050-331 (2026-10): controller bindings saved with track and chain presets - the manifest, the restore scope, tests (fork-NEW).
+include/ConnectionRestoreScope.h
+include/PresetBindings.h
+src/core/PresetBindings.cpp
+tests/src/core/PresetBindingsTest.cpp
+tests/src/gui/PresetBindingsGuiTest.cpp
