@@ -5502,3 +5502,6 @@ tests/src/core/ScriptBindingsTest.cpp	# Lua wrappers can dereference objects del
 include/MidiEventToByteSeq.h	BUG new-p23-156: document that the buffer must hold bufsize bytes (not a fixed 3) and that a message which does not fit returns 0 with nothing written; covered by MidiEventToByteSeqTest.
 src/core/midi/MidiEventToByteSeq.cpp	BUG new-p23-156: build the message in a local array and copy it out only when it fits bufsize (the release build had only a Q_ASSERT on bufsize, so a short buffer was written past its end); covered by MidiEventToByteSeqTest.
 include/RingBuffer.h	cluster new-p14-264: saturate non-finite and out-of-range millisecond-to-frame conversions in msToFrames()/msToFrameOffset() (NaN gives zero, out-of-range values clamp to the integer limits) instead of an undefined float-to-integer cast; regression RecordRingBufferTest::RingBuffer_NonFiniteMillisecondOffsetsAreDefined.
+tests/src/core/ControlDeviceVendorTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
+tests/src/gui/EffectRackAddTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
+tests/src/plugins/DelayControlsTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.

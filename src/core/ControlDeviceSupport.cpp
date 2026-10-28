@@ -81,9 +81,18 @@ bool resolveTrackTarget(const QString& id, ControlTarget* target, ControlResult*
 			QStringLiteral("'%1' is not a target id of the form trk-<n>").arg(id));
 		return false;
 	}
+	// No song yet (or torn down): there is no track to find. remote.target is
+	// engine-free, so it reaches this resolver before a song is open.
+	const Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no track %1 (no song is open)").arg(id));
+		return false;
+	}
 	// By id, not by position (SPEC-stable-ids.md): the number names the track
 	// object, so a device chain is still addressable after a sibling moves.
-	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
+	const TrackContainer::TrackList& tracks = song->tracks();
 	Track* track = nullptr;
 	for (Track* candidate : tracks)
 	{
