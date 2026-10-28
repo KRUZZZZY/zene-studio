@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T22:13:36Z",
+  "captured_at": "2026-10-28T00:46:19Z",
   "commands": [
     {
       "args_schema": {
@@ -9309,7 +9309,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device.",
+      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device. A clip-<n> target reads an audio clip's own effects (Q050-111).",
       "group": "dsp",
       "id": "dsp.get_state",
       "mutating": false,
@@ -18982,7 +18982,7 @@
         ],
         "type": "object"
       },
-      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in.",
+      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in. Q050-111: a `target` of clip-<n> (an audio clip) puts the effect on that clip's OWN chain - realtime, processing that clip alone before the track sums its clips; plugin.unload / plugin.bypass / plugin.move / plugin.param_set take the same clip-<n> target, and dsp.get_state reads it.",
       "group": "plugin",
       "id": "plugin.load",
       "mutating": true,
@@ -20748,7 +20748,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
+      "description": "Remove a device instance (fx-<n>) from a track's chain, a mixer channel or an audio clip's own chain (clip-<n>). When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
       "group": "plugin",
       "id": "plugin.unload",
       "mutating": true,
@@ -37298,11 +37298,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-111/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-6x1yudpn/zene.sock",
-    "version": "0.4.0-alpha.5511+ba8fc34"
+    "source_socket": "/tmp/zctl-run-y998yrrk/zene.sock",
+    "version": "0.4.0-alpha.5512+37eaf07"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

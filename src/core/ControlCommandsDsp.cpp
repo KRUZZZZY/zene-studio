@@ -164,7 +164,8 @@ void registerDspCommands(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Every device chain with its fx-<n> instances, each one's "
 		"parameter values and, on an instrument track, its 'inst' entry with the instrument's "
 		"parameters. With 'target' it reads exactly that target, an empty chain included; "
-		"without it, every track and mixer channel that carries at least one device.");
+		"without it, every track and mixer channel that carries at least one device. A clip-<n> target reads an audio "
+		"clip's own effects (Q050-111).");
 	cmd.argsSchema = objectSchema({{QStringLiteral("target"), stringProperty()}});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("chains"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},

@@ -87,6 +87,7 @@
 #include "Mixer.h"
 #include "Plugin.h"
 #include "ProjectJournal.h"
+#include "SampleClip.h"
 #include "SessionModel.h"
 #include "SessionPlayback.h"
 #include "Song.h"
@@ -575,6 +576,12 @@ QJsonObject chainArgs(const EffectChain* chain)
 		ControlResult ignored;
 		const QString id = trackIdOf(track);
 		if (resolveControlTarget(id, &target, &ignored) && target.chain == chain) { return {{QStringLiteral("target"), id}}; }
+		// Q050-111: an audio clip's own effects, by the clip's persistent id (it survives the clip's undo rebuild).
+		for (Clip* clip : track->getClips())
+		{
+			const auto* audio = dynamic_cast<const SampleClip*>(clip);
+			if (audio != nullptr && audio->clipEffects() == chain) { return {{QStringLiteral("target"), clipIdOf(clip)}}; }
+		}
 	}
 	return channelChainArgs(chain);
 }

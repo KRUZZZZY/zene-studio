@@ -88,6 +88,12 @@ public:
 	 *  handle that never reaches the engine; the live path never sets it. */
 	void setIgnoresTrackMute(bool ignores) { m_ignoresTrackMute = ignores; }
 
+	/*! Q050-111: run @a clip's own effects (SampleClip::processClipEffects) on every period this handle renders,
+	 *  after the clip's fades, gain and take gating and before the track sums it with its other clips. Only the
+	 *  live schedule (SampleTrack::play) sets it; an offline render of the clip's source (clip.consolidate, the
+	 *  previews) leaves it null and renders the source as it always did. */
+	void setClipEffects(SampleClip* clip) { m_effectsClip = clip; }
+
 	inline f_cnt_t framesDone() const
 	{
 		return( m_frame );
@@ -192,6 +198,7 @@ private:
 	bool m_doneMayReturnTrue = true;
 	bool m_ownAudioBusHandle = false;
 	bool m_ignoresTrackMute = false;
+	SampleClip* m_effectsClip = nullptr;  //!< Q050-111: see setClipEffects(); borrowed, like m_sample
 	std::uint16_t m_poolSlot = NotPooled;
 	bool m_frozenTakePoolVoice = false;
 

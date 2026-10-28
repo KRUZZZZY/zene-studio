@@ -40,6 +40,7 @@
 namespace lmms
 {
 
+class EffectChain;
 class SampleBuffer;
 class SampleRecordHandle;
 class SampleTrack;
@@ -261,6 +262,17 @@ public:
 		return new SampleClip(*this);
 	}
 
+	/*! Q050-111: the clip's own realtime effects - an ordered EffectChain this clip owns, processed on the
+	 *  clip's audio BEFORE the track sums its clips, so it never touches a sibling clip. Empty (and switched
+	 *  off) for every clip nobody gave an effect; never null; lives as long as the clip. Control thread only:
+	 *  edits go through EffectChain's own model-change guard, exactly as a track's chain does. */
+	EffectChain* clipEffects() const { return m_clipEffects.get(); }
+	/*! Audio thread (the clip's play handle): runs the clip's effects in place on one period. Allocates
+	 *  nothing, takes no lock and never waits: a chain that is empty or off returns at once, and a second
+	 *  handle of the same clip rendering in the same period (never the case for the live schedule, which
+	 *  holds one handle per clip) skips the effects rather than share the chain's state. */
+	void processClipEffects(std::span<SampleFrame> buffer) noexcept;
+
 public slots:
 	void setSampleFile(const QString& sf);
 	void toggleRecord();
@@ -325,6 +337,14 @@ private:
 	//! Builds @a mode's pool if it asks for one and it is absent, then publishes it.
 	void ensureRubberBandPool(WarpStretchMode mode);
 	void prepareWarpStretchMode(WarpStretchMode mode) override { ensureRubberBandPool(mode); }
+	//! Q050-111: see clipEffects(). Built with the clip; saved as an `<fxchain>` child only when it holds a device.
+	std::unique_ptr<EffectChain> m_clipEffects;
+	//! Q050-111: set while one play handle runs the chain this period (see processClipEffects()).
+	std::atomic<bool> m_clipEffectsBusy{false};
+	//! Q050-111 (src/core/SampleClipEffects.cpp): the chain's part of the clip's state, copy and save/load.
+	void copyClipEffects(const SampleClip& orig);
+	void saveClipEffects(QDomDocument& doc, QDomElement& element) const;
+	void loadClipEffects(const QDomElement& element);
 	bool m_isPlaying;
 	int m_startFrameOffset;
 	//! ED-021: see leadFrames(). Written on the UI thread, read by the playback path: a relaxed atomic, the

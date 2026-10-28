@@ -129,6 +129,9 @@ set(LMMS_TESTS
 	src/core/ScriptDawEffectsTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
+	# Q050-111: an audio clip's own realtime effects - only that clip's audio changes (a render with an
+	# overlapping sibling), save/reopen, the plugin.* commands on a clip-<n> target, no allocation per period.
+	src/core/ClipEffectsTest.cpp
 	# Q050-125: a clip's polarity - its rendered sign, the source left alone, and the gain curve the
 	# waveform is drawn with is the multiplier the render got.
 	src/core/ClipPolarityTest.cpp
@@ -1334,6 +1337,8 @@ set(LMMS_TESTS
 	# A mixer strip's tooltip names its delay compensation.
 	# A sample clip's Gain and fades (clip.set_gain / clip.set_fade), with one control.undo.
 	src/gui/ClipEditsMenuTest.cpp
+	# Q050-111: the audio clip's Clip effects... window - add, move, bypass, a parameter and remove, CLICKED.
+	src/gui/ClipEffectsDialogTest.cpp
 	# Q050-125: the clip-gain handle, envelope points and the polarity item are DRAGGED/TRIGGERED on the
 	# real clip view, and the drawn waveform follows the gain curve.
 	src/gui/ClipWaveformEditTest.cpp
@@ -2400,7 +2405,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ControlHostedBusLayoutTest"
 		# WF-033: the options half of the undo-history proof needs the same real
 		# instrument (its baseline loads one) as the format half.
-		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest")
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest"
+		# Q050-111: clip effects load the build's amplifier module (the test and its GUI half).
+		OR LMMS_TEST_NAME STREQUAL "ClipEffectsTest"
+		OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2510,6 +2518,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest")
 		# The A/B undo cases need at least one effect module so they exercise the command instead of skipping.
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+	# Q050-111: the clip-effect tests load the build's amplifier module; build it with them.
+	if((LMMS_TEST_NAME STREQUAL "ClipEffectsTest" OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest") AND TARGET amplifier)
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest" AND TARGET amplifier)
@@ -3442,7 +3454,7 @@ set_tests_properties(MidiControllerMenuTest LfoControllerUserWaveTest PROPERTIES
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(ClipEditsMenuTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ClipEditsMenuTest ClipEffectsDialogTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

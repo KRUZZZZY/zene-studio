@@ -1023,6 +1023,7 @@ set(LMMS_SRCS
 	core/SampleBuffer.cpp
 	core/SampleBufferResample.cpp
 	core/SampleClip.cpp
+	core/SampleClipEffects.cpp
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp
 	core/SampleRecordHandle.cpp
