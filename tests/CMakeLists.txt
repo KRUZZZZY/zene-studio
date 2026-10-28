@@ -5475,6 +5475,11 @@ if(NOT MSVC)
 endif()
 target_compile_features(NamModelLoaderTest PRIVATE cxx_std_20)
 target_compile_options(NamModelLoaderTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
+# The loader test uses std::filesystem, which Apple's libc++ only ships from macOS 10.15; the test is never shipped.
+if(APPLE)
+	target_compile_options(NamModelLoaderTest PRIVATE -mmacosx-version-min=10.15)
+	target_link_options(NamModelLoaderTest PRIVATE -mmacosx-version-min=10.15)
+endif()
 
 # Native VST3 instrument fixture and its probe.
 #

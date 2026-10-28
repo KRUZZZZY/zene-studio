@@ -60,7 +60,7 @@ static sf_count_t sndfile_vio_read(void *ptr, sf_count_t count, void *user_data)
 	struct st_audio_file* af = user_data;
     sf_count_t remaining = af->size - af->offset;
     sf_count_t to_read = remaining > count ? count : remaining;
-    memcpy(ptr, af->data + af->offset, to_read);
+    memcpy(ptr, (const char*)af->data + af->offset, to_read);
     af->offset += to_read;
 	return to_read;
 }
