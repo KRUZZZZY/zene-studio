@@ -59,6 +59,8 @@ thread_local unsigned s_deferredRegistrations = 0;
 //! The ramp-read probe (see the header). Test builds only, and a plain pointer
 //! test - it allocates nothing, locks nothing and is never set in the product.
 void (*s_valueBufferRampReadProbeForTest)(AutomatableModel*) = nullptr;
+//! The cache-hit probe (Q050-161, see the header): same rules as the ramp probe.
+void (*s_valueBufferCacheHitProbeForTest)(AutomatableModel*) = nullptr;
 #endif
 
 AudioEngine::RequestChangesGuard modelChangeGuard(const AutomatableModel* model)
@@ -751,6 +753,11 @@ void AutomatableModel::setValueBufferRampReadProbeForTest(void (*probe)(Automata
 {
 	s_valueBufferRampReadProbeForTest = probe;
 }
+
+void AutomatableModel::setValueBufferCacheHitProbeForTest(void (*probe)(AutomatableModel*))
+{
+	s_valueBufferCacheHitProbeForTest = probe;
+}
 #endif
 
 
@@ -775,6 +782,14 @@ ValueBuffer * AutomatableModel::valueBuffer()
 			engine->recordUnpreparedAutomatableBufferRequest();
 			return nullptr;
 		}
+		// Q050-161: a hit on the period's prepared buffer is a plain read of
+		// render-owned state - no mutex, no change guard, no wait. Control
+		// writes are serialised against the render period by the engine's
+		// change lock (taken by the writer, never here), and the next period's
+		// serial prepass recomputes from what they published.
+#ifdef LMMS_TESTING
+		if (s_valueBufferCacheHitProbeForTest != nullptr) { s_valueBufferCacheHitProbeForTest(this); }
+#endif
 		return cachedValueBuffer();
 	}
 
