@@ -504,6 +504,37 @@ subprocess.Popen(
 			qPrintable(QStringLiteral("a relative path is still refused typed: ") + relative.errorMessage));
 	}
 
+	/* A UNC form is absolute only when it names a server AND a share. `\\server`
+	 * has no share, and on a Unix host QDir reads it as a relative file name, so
+	 * a client could make the writer create files under the working directory.
+	 * Each incomplete value below is refused on every host; the complete shares
+	 * beside them (with or without a trailing path) are still accepted. */
+	void testValidatorRefusesIncompleteUncPaths()
+	{
+		const QString name = QStringLiteral("out");
+		const QString incomplete[] = {
+			QStringLiteral("\\\\server"),
+			QStringLiteral("\\\\server\\"),
+			QStringLiteral("\\\\\\share\\mix"),
+			QStringLiteral("\\\\s") };
+		for (const QString& path : incomplete)
+		{
+			QVERIFY2(!control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("incomplete UNC path refused: ") + path));
+		}
+
+		const QString complete[] = {
+			QStringLiteral("\\\\server\\share"),
+			QStringLiteral("\\\\server\\share\\"),
+			QStringLiteral("\\\\server\\share\\stems"),
+			QStringLiteral("//server/share") };
+		for (const QString& path : complete)
+		{
+			QVERIFY2(control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("complete UNC path accepted: ") + path));
+		}
+	}
+
 	/* The GUI action and the agent surface take the SAME registered command,
 	 * materialise the four stems as ONE undo step, and one control.undo removes
 	 * all four together. This is the "shared command + one undo step" contract

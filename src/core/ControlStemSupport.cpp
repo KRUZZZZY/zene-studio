@@ -511,9 +511,15 @@ StemSurface* surface()
 } // namespace
 
 
+static bool isPathSeparator(QChar c)
+{
+	return c == QLatin1Char('\\') || c == QLatin1Char('/');
+}
+
 /*! Whether \a value is a Windows absolute path, whatever this host is: a drive
  *  path (`C:\…` or `C:/…`, but NOT `C:…`, which is drive-relative) or a UNC
- *  share (`\\server\share…` / `//server/share…`). `stemRequireAbsolutePath`
+ *  share (`\\server\share…` / `//server/share…`: a non-empty server AND a
+ *  non-empty share, so `\\server` alone is NOT one). `stemRequireAbsolutePath`
  *  consults this for every drive-prefixed value BEFORE `QDir::isAbsolutePath`,
  *  which on Qt 5 Windows answers any `X:` prefix as absolute and would let the
  *  drive-relative `C:relative.wav` through; for every other form QDir answers
@@ -523,14 +529,18 @@ StemSurface* surface()
 static bool isWindowsAbsolutePath(const QString& value)
 {
 	if (value.size() < 3) { return false; }
-	const QChar first = value.at(0);
-	if (first == QLatin1Char('\\') || first == QLatin1Char('/'))
+	if (isPathSeparator(value.at(0)))
 	{
-		const QChar second = value.at(1);
-		return second == QLatin1Char('\\') || second == QLatin1Char('/');
+		if (!isPathSeparator(value.at(1))) { return false; }
+		// The server name runs from index 2 to the next separator; it must be
+		// non-empty and followed by a separator, then a non-empty share name.
+		int serverEnd = 2;
+		while (serverEnd < value.size() && !isPathSeparator(value.at(serverEnd))) { ++serverEnd; }
+		if (serverEnd == 2 || serverEnd >= value.size()) { return false; }
+		const int shareStart = serverEnd + 1;
+		return shareStart < value.size() && !isPathSeparator(value.at(shareStart));
 	}
-	return first.isLetter() && value.at(1) == QLatin1Char(':')
-		&& (value.at(2) == QLatin1Char('\\') || value.at(2) == QLatin1Char('/'));
+	return value.at(0).isLetter() && value.at(1) == QLatin1Char(':') && isPathSeparator(value.at(2));
 }
 
 QString stemRequireAbsolutePath(const QString& value, const QString& name)
@@ -543,13 +553,16 @@ QString stemRequireAbsolutePath(const QString& value, const QString& name)
 	 * Qt 5's `QDir::isAbsolutePath` answers any `X:` prefix as absolute on
 	 * Windows, which would let the drive-relative `C:relative.wav` through.
 	 * Only `X:\…` or `X:/…` is drive-absolute; `X:…` is drive-relative and
-	 * refused. Every other form keeps QDir's answer, plus the strict Windows
-	 * forms a Unix host would otherwise miss. */
+	 * refused. A backslash-pair value is a Windows UNC form on every host, so it
+	 * is absolute only when the helper accepts it as a complete server+share:
+	 * QDir reads `\\server` as a relative name on Unix, so QDir is not asked
+	 * about it. Every other form keeps QDir's answer. */
 	const bool hasDrive = value.size() >= 2
 		&& value.at(0).isLetter() && value.at(1) == QLatin1Char(':');
+	const bool backslashUnc = value.startsWith(QStringLiteral("\\\\"));
 	const bool absolute = hasDrive
 		? isWindowsAbsolutePath(value)
-		: (isWindowsAbsolutePath(value) || QDir::isAbsolutePath(value));
+		: (isWindowsAbsolutePath(value) || (!backslashUnc && QDir::isAbsolutePath(value)));
 	if (absolute)
 	{
 		return QString();
