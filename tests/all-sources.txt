@@ -3248,6 +3248,7 @@ tests/src/gui/SampleEditorDialogTest.cpp
 tests/src/gui/SampleEditorDocsTest.cpp
 tests/src/gui/SamplerTakeGuiTest.cpp
 tests/src/gui/ScriptBudgetActionTest.cpp
+tests/src/gui/SessionCellPlaybackMenuTest.cpp
 tests/src/gui/SessionGridRecordTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
 tests/src/gui/SessionSubSceneGridTest.cpp

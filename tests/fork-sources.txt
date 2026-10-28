@@ -3286,3 +3286,4 @@ tests/src/core/ControlOscServerTest.cpp
 tests/src/gui/OscServerMenuTest.cpp
 # Q050-246 (2026-10): repeated 1/32-note MIDI output timing through an ALSA loopback (fork-NEW).
 tests/src/core/MidiOutTimingTest.cpp
+tests/src/gui/SessionCellPlaybackMenuTest.cpp
