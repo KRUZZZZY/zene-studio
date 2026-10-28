@@ -99,7 +99,7 @@ run passes after reapplying it (`test-5-refixed.log`).
 `projects/zene-studio-program/zene-qwen-new-p20-49-feature-check`, outside the write-jail. Nothing was computed.
 
 The same runner was run with two changes and nothing else (copy at
-`/home/kruzzzzy/.cache/zene-tmp/fc-new-p20-49/feature_check_logdir.py`, diff = two lines): `ROOT` points at the real
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p20-49.r1/logs/feature_check_logdir.py`, diff = two lines): `ROOT` points at the real
 `qwen/` directory (for `FIX-BASE` and the cached base listing for `37eaf07557`), and the log folder is the scratch
 `gate-logs` (copied to `gate-logs/` in the LOG FOLDER). Command: `python3 -I …/feature_check_logdir.py <worktree>`,
 `EXIT=0` (`gates-2.log`).
