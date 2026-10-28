@@ -135,18 +135,37 @@ Notes on the environment:
 
 ## Self-check
 
-Answers are to the items in `submit_check.py`, with evidence above.
+Answers to the `submit_check.py` items, with the evidence above and in the logs.
 
-- Commits on the branch: `91260338d1` (fix + test + registration), this report on top.
-- Working tree clean after the report commit: see the commit's `git status` (verified below).
-- Verdict line present in the first lines of this report: yes.
-- One verdict line per batch unit: not applicable (single cluster).
-- Test fails before the fix and passes after: yes, `test-1-red.log` EXIT 8 and `test-2-green.log` EXIT 0, and the
-  4b revert proof `test-3-red-proof.log` EXIT 8 / `test-4-regreen.log` EXIT 0.
-- Family run, with its one pre-existing failure explained by an A/B: `test-8-family-final.log`, `test-7-ab-reverted.log`.
-- All gates pass: `gates-3.log` RESULT PASS.
-- Registration: `tests/fork-sources.txt`, `tests/all-sources.txt`, `tests/CMakeLists.txt`, `tests/upstream-modifications.txt`, all in the fix commit.
-- Realtime, undo, commands: see the section above; nothing new on an audio path, no command added.
-- Known-by-design items: none touched.
-- Things not checked: whether Link's own paths reach the legacy (TS) specialisation; whether upstream asio has since
-  fixed this line (not checked; this tree's copy has it).
+- **Gates row: FAIL in `submit_check.py`, for an environment reason, not a gate failure.** `submit_check` runs
+  `qwen/feature_check.py`, which writes its logs to `<worktree>-feature-check`, a sibling directory outside this
+  lane's write jail. It fails with `PermissionError` (`gates-1.log`, `submit-check-1.log`). The same gate commands
+  with the same ratchet comparison, logged to the run folder, all PASS (`gates-3.log`, EXIT 0). Re-running
+  `feature_check.py` outside the jail is needed to turn that row green; I did not work around the jail.
+- **The regression test FAILS with the change reverted and PASSES with it (exit codes):** RED `test-1-red.log` EXIT 8
+  (built from the unfixed header, `build-3-red.log` EXIT 0); GREEN `test-2-green.log` EXIT 0. Step 4b:
+  `git apply -R` EXIT 0, rebuild EXIT 0 (`build-6-reverted.log`), run EXIT 8 (`test-3-red-proof.log`); `git apply`
+  EXIT 0, rebuild EXIT 0 (`build-7-regreen.log`), run EXIT 0 (`test-4-regreen.log`).
+- **Deterministic, with the seam named:** no wall clock, sleep, thread or race. The moved-to dispatcher is placement-new'd
+  into a test-owned `alignas` buffer, so its address is known before the move. `Payload::movedFrom` records only the
+  address its move constructor reads from, and the assertion compares that address to the buffer; the test never
+  depends on the uninitialised value that the bug reads. The outstanding-work count is a plain `int` owned by the
+  test, and the legacy executor is hand-written, so the seams are `Payload::movedFrom` and `LegacyExecutor`.
+- **Fix at the cause, and complete:** the cause is `work_dispatcher.hpp:283`. Callers are `initiate_post.hpp:151,202`
+  and `initiate_dispatch.hpp:137,188`, all of which go through this one template. Siblings: the other move
+  constructors in the file (`:94,127,162,193,231`) all move from `other`, and the fix matches the non-TS sibling at
+  `:233`. The other `*this` reads in the vendored asio are correct (swap in `execution/any_executor.hpp:664`, and the
+  `operator()` calls in `impl/*.hpp`).
+- **No collateral damage:** the change alters only which object the move reads, which removes undefined behaviour.
+  It adds no limit or check, touches no saved data, and changes no defined behaviour. The Link family: with the fix,
+  `AbletonLinkInteropTest` and `AbletonLinkWorkDispatcherTest` pass; `AbletonLinkSessionTest` segfaults identically
+  with the fix reverted (`test-7-ab-reverted.log`), so its crash predates this change (the `QSKIP` in the helper
+  `joinBoth()`, `AbletonLinkSessionTest.cpp:215`, reported above and not changed here).
+- **Verdict is FIXED,** so the ALREADY-FIXED / FALSE-POSITIVE evidence rule does not apply. The finding's historical
+  line numbers were checked against the file (`.hpp:283` now, not `.h:273`).
+- **Working tree:** clean after both commits (`git status --porcelain` empty; `submit-check-1.log` ran on that tree).
+- **Registration:** `tests/CMakeLists.txt`, `tests/fork-sources.txt`, `tests/all-sources.txt` and
+  `tests/upstream-modifications.txt` are in the fix commit `91260338d1`.
+- **Realtime, undo, commands:** nothing new on an audio path, no command added, no undo involved.
+- **Not checked:** whether Link's own paths ever reach the legacy (TS) specialisation; whether upstream asio has since
+  fixed this line (this tree's copy has it).
