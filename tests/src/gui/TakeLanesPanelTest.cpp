@@ -112,6 +112,10 @@ bool hasWaveformInk(const QImage& image, const QRect& rect)
 }
 
 //! Qt 5.15's touch sequence commit() returns void; Qt 6 returns whether delivery accepted it.
+// Qt 5 overloads press/move/release on QWidget* and QWindow* (both defaulted), so a two-argument call is
+// ambiguous there; naming the null widget picks the same overload Qt 6 uses (the sequence's own target).
+QWidget* const NoTouchWidget = nullptr;
+
 bool commitTouchSequence(QTest::QTouchEventSequence& sequence)
 {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -355,22 +359,22 @@ private slots:
 		// A tap leaves the comp alone.
 		{
 			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
-			sequence.press(0, QPoint(fromX, rowY));
+			sequence.press(0, QPoint(fromX, rowY), NoTouchWidget);
 			QVERIFY(commitTouchSequence(sequence));
-			sequence.release(0, QPoint(fromX, rowY));
+			sequence.release(0, QPoint(fromX, rowY), NoTouchWidget);
 			QVERIFY(commitTouchSequence(sequence));
 		}
 		QCOMPARE(segmentsOf().size(), 0);
 
 		auto swipe = [strip, rowY](int from, int to) {
 			auto sequence = QTest::touchEvent(strip, QTest::createTouchDevice(), false);
-			sequence.press(0, QPoint(from, rowY));
+			sequence.press(0, QPoint(from, rowY), NoTouchWidget);
 			const bool pressed = commitTouchSequence(sequence);
-			sequence.move(0, QPoint((from + to) / 2, rowY));
+			sequence.move(0, QPoint((from + to) / 2, rowY), NoTouchWidget);
 			const bool moved = commitTouchSequence(sequence);
-			sequence.move(0, QPoint(to, rowY));
+			sequence.move(0, QPoint(to, rowY), NoTouchWidget);
 			const bool movedAgain = commitTouchSequence(sequence);
-			sequence.release(0, QPoint(to, rowY));
+			sequence.release(0, QPoint(to, rowY), NoTouchWidget);
 			const bool released = commitTouchSequence(sequence);
 			return pressed && moved && movedAgain && released;
 		};

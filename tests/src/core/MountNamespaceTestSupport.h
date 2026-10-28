@@ -72,10 +72,10 @@ inline bool mapOwnUidIntoNamespace(pid_t parentPid, int readEnd, int writeEnd)
 	char line[64];
 	const long uid = static_cast<long>(::geteuid());
 	const int len = ::snprintf(line, sizeof(line), "%ld %ld 1\n", uid, uid);
-	const bool written = len > 0 && ::write(fd, line, static_cast<size_t>(len)) == len;
+	bool written = len > 0 && ::write(fd, line, static_cast<size_t>(len)) == len;
 	::close(fd);
 	char done = written ? 1 : 0;
-	(void)::write(writeEnd, &done, 1);
+	if (::write(writeEnd, &done, 1) != 1) { written = false; } // the parent sees a failed handshake either way
 	return written;
 }
 
@@ -107,14 +107,14 @@ inline bool enterOwnMountNamespace()
 	::close(toParent[1]);
 	const bool unshared = ::unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0;
 	char go = 1;
-	(void)::write(toChild[1], &go, 1);
+	const bool signalled = ::write(toChild[1], &go, 1) == 1;
 	char done = 0;
 	const bool answered = ::read(toParent[0], &done, 1) == 1;
 	::close(toChild[1]);
 	::close(toParent[0]);
 	int status = 0;
 	::waitpid(child, &status, 0);
-	return unshared && answered && done == 1;
+	return unshared && signalled && answered && done == 1;
 }
 
 //! Binds @a source onto @a target in this process's mount namespace: one filesystem under two

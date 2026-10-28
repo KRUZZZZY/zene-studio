@@ -2415,6 +2415,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	# Q050-103: the envelope and voice-reuse test renders through the build's audiofileprocessor module.
 	# Q050-484: the SFZ tests load the build's sfzplayer module (sfizz) and render through it.
+	if(LMMS_TEST_NAME STREQUAL "SfzPlayerTest")
+		# The test includes sfizz's vendored abseil header by path; that header includes its siblings as
+		# <absl/...>, which only resolves where a system abseil happens to be installed (not on Windows).
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp)
+	endif()
 	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
 	endif()

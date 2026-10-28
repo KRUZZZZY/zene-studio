@@ -59,6 +59,7 @@ namespace
 constexpr int Rate = 48000;
 constexpr int BlockFrames = 512;
 
+#ifndef _WIN32 // only the POSIX crash cases push blocks
 void pushBlock(lmms::TrackRecorder& recorder, std::vector<float>& block, std::size_t index)
 {
 	for (std::size_t i = 0; i < block.size(); ++i)
@@ -67,6 +68,7 @@ void pushBlock(lmms::TrackRecorder& recorder, std::vector<float>& block, std::si
 	}
 	recorder.processInputInterleaved(block.data(), 1, static_cast<lmms::f_cnt_t>(block.size()));
 }
+#endif
 
 #ifndef _WIN32
 //! The crashing process: never returns.
