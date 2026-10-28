@@ -41,50 +41,86 @@ is saved and loaded consistently); a null model.
 
 ## Test
 
-`tests/src/core/ParameterControlsTest.cpp` (new, registered in `tests/CMakeLists.txt`, `tests/fork-sources.txt`,
-`tests/all-sources.txt`, `tests/upstream-modifications.txt`):
+Regression tests, the ones that must FAIL without the fix (negative control below):
 
-- `distinctKeysBothRegister` (:69) - two keys, both registered, in order.
-- `duplicateKeyIsRejectedAndOtherKeysStillRegister` (:82) - the second "gain" is refused, a later "other" still registers. **RED.**
-- `distinctModelsKeepIndependentValuesThroughSaveAndLoad` (:98) - two keys keep independent values through save and load.
-- `duplicateKeyDoesNotLetTheRejectedModelOverwriteTheSavedValue` (:124) - the saved "gain" is the first model's `3`, not
-  the rejected model's `7`. **RED.**
+- `tests/src/core/ParameterControlsTest.cpp` (new; registered in `tests/CMakeLists.txt`, `tests/fork-sources.txt`,
+  `tests/all-sources.txt`, `tests/upstream-modifications.txt`):
+  - `duplicateKeyIsRejectedAndOtherKeysStillRegister` (:82) - the second "gain" is refused, a later "other" still registers. **RED.**
+  - `duplicateKeyDoesNotLetTheRejectedModelOverwriteTheSavedValue` (:124) - the saved "gain" is the first model's `3`, not the rejected model's `7`. **RED.**
+  - `distinctKeysBothRegister` (:69) and `distinctModelsKeepIndependentValuesThroughSaveAndLoad` (:98) - normal-path guards; they pass both ways by design.
+- `tests/src/core/DeviceToolsTest.cpp` (`aRepeatedSaveKeyKeepsTheFirstModelsValueThroughTheDeviceSave`, device path):
+  a real `Effect` whose `ParameterControls` list registers two models under `gain` is saved with `Effect::saveSettings`
+  and loaded with `Effect::loadSettings`. The first model must come back with `0.3`, not the rejected model's `0.7`. **RED.**
+  The fixture is `RepeatedSaveKeyEffect` / `RepeatedSaveKeyControls` in the same file.
 
-No timing, sleeps or races. The test needs the engine (`Engine::init(true)`, the same as ConsoleStripTest), because
-each `AutomatableModel` registers with the audio engine on construction; it is not on the audio thread.
+No timing, sleeps, threads or races. Values are set directly on `FloatModel` objects. Both tests call
+`Engine::init(true)` followed by `audioDev()->stopProcessing()` (the same setup as `ConsoleStripTest`/`AutomationModesTest`),
+because each `AutomatableModel` registers with the audio engine on construction; the test is not on the audio thread.
 
-## Commands and exit codes
+### Other tests the review named
 
-Build tree: `/…/zene-qwen-new-p10-284/build`. Run from `build/tests` for ctest. `CCACHE_TEMPDIR=$TMPDIR/ccache-tmp-p10-284`
-was set for the build commands because the default ccache temp dir in the shared `dsh` area is not writable from this lane
-(`ccache: error: failed to create temporary file ... Permission denied`, `logs/build-regen-1.log`).
+`ConsoleStripTest`, `DeviceToolsChainTest` and `EffectDeviceMenuTest` **do not fail without the fix, and I did not make
+them fail.** Their subjects never register two parameters under one key: the Console's keys are fixed in
+`plugins/Console/Console.cpp:85-93`, `DeviceToolsChainTest` tests chains and `EffectDeviceMenuTest` tests menu entries.
+The only way to make them fail would be to add a deliberately duplicated fixture to a test whose purpose is something else.
+That would be a test written to fail, not a test of their behaviour, so I left them as no-regression guards for the
+in-tree device paths (they confirm the change does not alter those devices). If the review still wants them red, that is a
+decision for the reviewer; I recommend against it.
+
+## Negative control (product change reverted, tests kept)
+
+Method, as the loop does it: `git diff 37eaf07557 7183f5a3a3 -- include/ParameterControls.h src/core/ParameterControls.cpp > logs/fix.patch`,
+`git apply -R logs/fix.patch`, rebuild the five targets, run ctest, then `git apply logs/fix.patch` and rebuild.
+
+| Test | Without fix | With fix |
+| --- | --- | --- |
+| ParameterControlsTest | **FAIL** (2 of 6 cases: size 3 != 2; restored 7 != 3) | PASS (6 of 6) |
+| DeviceToolsTest | **FAIL** (`aRepeatedSaveKeyKeepsTheFirstModelsValueThroughTheDeviceSave`: 0.7 != 0.3) | PASS |
+| ConsoleStripTest | PASS (expected: not a duplicate-key test) | PASS |
+| DeviceToolsChainTest | PASS (expected: not a duplicate-key test) | PASS |
+| EffectDeviceMenuTest | PASS (expected: not a duplicate-key test) | PASS |
+
+Exit codes: without fix `ctest` **8** (`logs/test-negctl.log`; build exit 0, `logs/build-negctl.log`); with fix `ctest` **0**
+(`logs/test-positive.log`; build exit 0, `logs/build-positive.log`).
+
+Note on the first attempt of this round: I passed the five target names as one `--target` argument, which made the build
+fail with exit 2 (`make: No rule to make target ...`). The ctest run that followed used the previously built binaries, so it
+was discarded and rerun after a correct build. The numbers above are from the rerun only.
+
+## Commands and exit codes (earlier rounds)
+
+Build tree: `/…/zene-qwen-new-p10-284/build`. ctest runs from `build/tests`. `CCACHE_TEMPDIR=$TMPDIR/ccache-tmp-p10-284`
+was set for build commands because the default ccache temp dir in the shared `dsh` area is not writable from this lane
+(`ccache: error: failed to create temporary file ... Permission denied`, `new-p10-284.r1/logs/build-regen-1.log`).
+Logs from the first round are in `new-p10-284.r1/logs`; this round's are in `new-p10-284.r2/logs`.
 
 | Step | Command | Exit | Log |
 | --- | --- | --- | --- |
-| Register the test target | `cmake --build build --target EffectControlsVisibilityTest -j4` (regenerates the build system after the CMakeLists edit) | 0 | `logs/build-regen-2.log` |
-| RED build | `cmake --build build --target ParameterControlsTest -j4` | 0 | `logs/build-red-5.log` |
-| **RED run (unfixed)** | `QT_QPA_PLATFORM=offscreen ctest -R ParameterControlsTest --output-on-failure` | **8** (2 fails: size 3 != 2; restored 7 != 3) | `logs/test-red-3.log` |
-| GREEN build | `cmake --build build --target ParameterControlsTest -j4` | 0 | `logs/build-green-1.log` |
-| **GREEN run (fixed)** | `ctest -R ParameterControlsTest --output-on-failure` | **0** (6 of 6 cases pass, 1 test) | `logs/test-green-1.log` |
-| Direct run | `./ParameterControlsTest` (in `build/tests`) | 0 | `logs/test-green-direct.log` |
-| Proof, step 4b, revert | `git diff -- src/core/ParameterControls.cpp include/ParameterControls.h > logs/fix.patch && git apply -R logs/fix.patch` | 0 / 0 | - |
-| Proof, step 4b, RED | build `ParameterControlsTest`, then `ctest -R ParameterControlsTest` | build 0; **ctest 8** (2 fails, same assertions) | `logs/build-4b-red.log`, `logs/test-4b-red.log` |
-| Proof, step 4b, reapply | `git apply logs/fix.patch` | 0 | - |
-| Proof, step 4b, GREEN | build `ParameterControlsTest`, then `ctest -R ParameterControlsTest` | build 0; **ctest 0** | `logs/build-4b-green.log`, `logs/test-4b-green.log` |
-| Rebuild dependents | `cmake --build build --target zene -j4` (header changed) | 0 | `logs/build-zene-2.log` |
-| Family | `ctest -R "ParameterControlsTest|ConsoleStripTest|DeviceToolsTest|DeviceToolsChainTest|EffectControlsVisibilityTest|EffectDeviceMenuTest|ControlDeviceCatalogueTest|ControlDeviceVendorTest"` (after building all 8 targets, `logs/build-family-1.log`, exit 0) | **8** (7 pass, 1 fail, see below) | `logs/test-family-1.log` |
+| Register the test target | `cmake --build build --target EffectControlsVisibilityTest -j4` (regenerates the build system after the CMakeLists edit) | 0 | r1 `build-regen-2.log` |
+| RED run (unfixed, first round) | `ctest -R ParameterControlsTest --output-on-failure` | **8** (2 fails) | r1 `test-red-3.log` |
+| Proof 4b, RED | build `ParameterControlsTest`, then `ctest -R ParameterControlsTest` (product reverted) | build 0; **ctest 8** | r1 `build-4b-red.log`, `test-4b-red.log` |
+| Proof 4b, GREEN | build `ParameterControlsTest`, then `ctest -R ParameterControlsTest` (fix re-applied) | build 0; **ctest 0** | r1 `build-4b-green.log`, `test-4b-green.log` |
+| Rebuild dependents | `cmake --build build --target zene -j4` (header changed) | 0 | r1 `build-zene-2.log` |
 
-Family result: ParameterControlsTest, EffectControlsVisibilityTest, ControlDeviceVendorTest, DeviceToolsTest,
-DeviceToolsChainTest, ConsoleStripTest and EffectDeviceMenuTest pass. **ControlDeviceCatalogueTest fails one case,
-`aTruncatedPatchKeepsThePreviouslyLoadedSound`** (`tests/src/core/ControlDeviceCatalogueTest.cpp:189`):
-`Patman plugin is unavailable`. The Patman plugin library is not built in this lane's build tree (`find build -name
-"*patman*.so*"` returns nothing), and the same run also logs `plugin-scan-cache: cannot write ".../Documents/Zene Studio/plugin-scan-cache.json" - "Permission denied"`.
-That case never touches ParameterControls (Patman is not in the `addParameter` list above). I did not build the base commit to prove it red there, so this is
-attributed to the lane's build scope and sandbox, not to this change, and is unverified on base.
+## Family (final state, after the round-2 commit)
 
-Gates (`tests/`, run one by one in the worktree, because `feature_check.py` could not run here, see below):
+Eight targets built (`zene` plus `ParameterControlsTest`, `DeviceToolsTest`, `ConsoleStripTest`, `DeviceToolsChainTest`,
+`EffectControlsVisibilityTest`, `EffectDeviceMenuTest`, `ControlDeviceCatalogueTest`, `ControlDeviceVendorTest`, build exit 0,
+`r2/logs/build-final.log`). `ctest -R "ParameterControlsTest|ConsoleStripTest|DeviceToolsTest|DeviceToolsChainTest|EffectControlsVisibilityTest|EffectDeviceMenuTest|ControlDeviceCatalogueTest|ControlDeviceVendorTest"`
+exit **8**, `r2/logs/test-final-family.log`: 7 pass, 1 fails.
 
-| Gate | Command | Exit (after commit `7183f5a3a3`) |
+The failing case is `ControlDeviceCatalogueTest::aTruncatedPatchKeepsThePreviouslyLoadedSound`
+(`tests/src/core/ControlDeviceCatalogueTest.cpp:189`): `Patman plugin is unavailable`. The Patman plugin library is not built
+in this lane's build tree (`find build -name "*patman*.so*"` returns nothing), and the same run logs
+`plugin-scan-cache: cannot write ".../Documents/Zene Studio/plugin-scan-cache.json" - "Permission denied"`. That case never
+touches ParameterControls (Patman is not in the `addParameter` list above). I did not build the base commit to prove it red
+there, so it is attributed to the lane's build scope and sandbox and is unverified on base.
+
+## Gates (final state, commit `ca04cf120c`)
+
+Run one by one in the worktree (`r2/logs/gate-*.log`), because `feature_check.py` could not run here (see below).
+
+| Gate | Command | Exit |
 | --- | --- | --- |
 | fork-sources | `bash tests/fork-sources-gate.sh` | 0 |
 | all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 |
@@ -92,29 +128,42 @@ Gates (`tests/`, run one by one in the worktree, because `feature_check.py` coul
 | check-namespace | `tests/scripted/check-namespace` | 0 |
 | no-tautology | `bash tests/no-tautology-gate.sh` | 0 |
 | doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
-| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 (train-red, see below) |
-| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 (train-red, see below) |
+| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 (train-red) |
+| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 (train-red) |
 
-Ratchets: the exit 1 is the train's standing red (complexity: `WasmSandbox::loadModuleBytes`, `XyPadPairTest`,
-`DawProjectReadTracks`, `setStrip`; file-length: `Vst3Host.cpp`, `TakeLane.cpp`, `WasmSandbox.cpp`, `ArrangeToolsTest.cpp`, ...).
-None of the 6 + 23 `REGRESSION:` lines names `ParameterControls.h`, `ParameterControls.cpp`, `ParameterControlsTest.cpp`
-or `tests/CMakeLists.txt` (`logs/gate2-complexity.log`, `logs/gate2-file-length.log`). The new function
-`ParameterControls::addParameter` is CCN about 3 and the file is well under 500 lines. So nothing new is attributable to
-this change in the ratchets, which `feature_check.py` would also report as PASS.
+Ratchets. The exit 1 is the train's standing red: complexity lists `WasmSandbox::loadModuleBytes`, `XyPadPairTest`,
+`DawProjectReadTracks`, `setStrip`; file-length lists `Vst3Host.cpp`, `TakeLane.cpp`, `WasmSandbox.cpp`, `ArrangeToolsTest.cpp`, and others.
+No complexity item names a changed file. The file-length list does include
+`tests/src/core/DeviceToolsTest.cpp (565)` as "new file over 500 lines". That is the same item the base commit already
+produces: at `37eaf07557` the file was 637 lines (`git show 37eaf07557:tests/src/core/DeviceToolsTest.cpp | wc -l`) and it is
+not in `tests/file-length-baseline.tsv`. `feature_check.py` compares items by name with the base commit's output, so the item
+is not new, though the file did grow by 64 lines in this round. The new function `addParameter` is about CCN 3.
 
-**`feature_check.py` did not run.** It writes its per-gate logs to `<worktree>/../<name>-feature-check/`, i.e.
-`/…/zene-studio-program/zene-qwen-new-p10-284-feature-check`, which is outside this lane's write-jail. It died with
-`PermissionError: [Errno 13]` at `logs/feature-check-1.log` (line 71 of the script, `logs.mkdir`). Its six simple gates and
-two ratchets were run by hand above, and the table is the same set of commands. The tool itself was not run, so
-its PASS/FAIL table is not a claim.
+**`feature_check.py` did not run.** It writes its per-gate logs to `<worktree>/../<name>-feature-check/`, which is outside
+this lane's write-jail. It died with `PermissionError: [Errno 13]` at `logs.mkdir` (`tests/…/feature_check.py:71`; first-round log
+`r1/logs/feature-check-1.log`). The six simple gates and two ratchets were run by hand above, with the same commands. The
+tool itself was not run, so its PASS/FAIL table is not a claim.
 
 ## Self-check
 
 Verdict is FIXED, so the ALREADY-FIXED / FALSE-POSITIVE item does not apply; the code evidence is in "Evidence" above.
 
-- **Regression test FAILS with the change reverted and PASSES with it:** yes. Reverted (`git apply -R logs/fix.patch`, exit 0), build exit 0, `ctest -R ParameterControlsTest` exit **8** with two failures (`logs/test-4b-red.log`); reapplied (`git apply logs/fix.patch`, exit 0), build exit 0, `ctest` exit **0**, 6 of 6 PASS (`logs/test-4b-green.log`). The RED before the fix was also seen first, on the unfixed code (`logs/test-red-3.log`, exit 8).
-- **Deterministic:** yes. No wall-clock time, sleeps, threads or races in the test. Every value is set directly on `FloatModel` objects (`setValue(3.f)`, `setValue(7.f)`) and read back. The only environment is `Engine::init(true)` followed by `audioDev()->stopProcessing()`, the same setup `AutomationModesTest` and `ConsoleStripTest` use; that stops the dummy device thread from rendering, so the test runs single-threaded.
-- **Fix at the cause, and complete:** the cause is `addParameter` accepting a repeated key, and the save/load path (`AutomatableModel.cpp:279`, `:437-440`) is keyed by that name. All 32 `addParameter` call sites in `plugins/` were checked (table above): none repeats a key, so the check changes nothing for them. The lookups that depend on the list (`ParameterAliases.cpp:51-60`, `ControlCommandsDeviceTools.cpp:191`, `ConsoleStrip.cpp:105`) now see one model per key. The header contract is updated (`include/ParameterControls.h:62`), and the signature is unchanged, so no caller needed editing.
-- **No collateral damage:** no saved project changes. A key is refused only when it is already registered; a project saved before this change has, at worst, one key that was overwritten, and the load of such a file was already ambiguous. No device in the tree registers a duplicate, so the refusal is not hit by any existing device. No new limit was added (the check is "already registered", not a count), so nothing that legitimately exceeds a count is affected. The one behaviour change is the warning on a repeat, which is on the constructor path.
-- **Not run from this lane (blocking the completion check's gate item):** `feature_check.py` (see "Gates" above). The gate the completion check reports as FAIL is that script's `PermissionError`; the six simple gates and the two ratchets were run by hand and are recorded above.
-- **Known gap:** the family's `ControlDeviceCatalogueTest` Patman case (`aTruncatedPatchKeepsThePreviouslyLoadedSound`) was not proven red on the base commit; see the family note above.
+- **Regression tests FAIL without the change and PASS with it:** yes for `ParameterControlsTest` (2 RED cases) and for
+  `DeviceToolsTest::aRepeatedSaveKeyKeepsTheFirstModelsValueThroughTheDeviceSave` (device path). Both measured in the negative
+  control table above. The other three tests the review named are not regression tests for this bug; they pass both ways, and
+  that is stated, not hidden.
+- **Deterministic:** yes. No wall-clock time, sleeps, threads or races. Values are set directly and read back.
+  The engine setup is the same as in the existing device tests, with the dummy device stopped.
+- **Fix at the cause, and complete:** the cause is `addParameter` accepting a repeated key, and the save/load path
+  (`AutomatableModel.cpp:279`, `:437-440`) is keyed by that name. All 32 `addParameter` call sites in `plugins/` were checked
+  (table above): none repeats a key, so the check changes nothing for them. The readers of the list
+  (`ParameterAliases.cpp:51-60`, `ControlCommandsDeviceTools.cpp:191`, `ConsoleStrip.cpp:105`) now see one model per key.
+  The header contract is updated (`include/ParameterControls.h:62`); the signature is unchanged, so no caller needed editing.
+- **No collateral damage:** no saved project changes. A key is refused only when it is already registered; a project saved
+  before this change has, at worst, one key that was overwritten, and loading such a file was already ambiguous. No device in
+  the tree registers a duplicate, so the refusal is not hit by any existing device. No new limit was added (the check is
+  "already registered", not a count). The one behaviour change is the warning on a repeat, which is on the constructor path.
+- **Realtime / undo / commands:** constructor-time only; no audio-thread code changed; no control command added; the
+  command snapshot is untouched (doc-figures gate exit 0).
+- **Known gaps:** `feature_check.py` could not run from this write-jail (see above). The Patman case of
+  `ControlDeviceCatalogueTest` is unverified on the base commit.
