@@ -84,6 +84,7 @@ All logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p23-180.r1
 | step 4b: GREEN | `ctest -R '^MultiTrackRecorderTest$' --output-on-failure` | **0** | `test-4b-fix.log`; `-V` run in `test-4b-fix-verbose.log` (Test #161 Passed) |
 | family build | `cmake --build . --target ControlRecordingRoutesTest InputChannelMeterTest RecordingInputPathTest -j4` | 0 | `build-7-family.log` |
 | family | `ctest -R '^(MultiTrackRecorderTest\|ControlRecordingRoutesTest\|InputChannelMeterTest\|RecordingInputPathTest)$' -V` | **0** | `test-family-1.log` |
+| monitor (caller check) | `cmake --build . --target InputMonitorTest -j4` ; `ctest -R '^InputMonitorTest$' -V` | 0 ; 0 | `build-8-monitor.log` ; `test-monitor-1.log` (9 passed) |
 
 Affected-family test count: **4 test binaries, 28 test functions executed, all passed**
 (MultiTrackRecorderTest 11, RecordingInputPathTest 8, ControlRecordingRoutesTest 3,
@@ -146,11 +147,35 @@ change (both are product-authored, not upstream LMMS files).
   (comment at line 38-39). `std::min`/`std::max` and one `inputChannelCapacity()` read
   are not on any audio path. The only new call is `setInputChannel` on the same
   objects, as before.
-- **Old projects still load and render as before?** Yes, by construction: the default
-  mapping only differs for routes at or past the input width, and it is not saved in
-  projects (it is the constructor's initial value; armed routes always carry an
-  explicit channel through `armTrack`). Existing tests `RecordingInputPathTest`,
-  `ControlRecordingRoutesTest`, `InputChannelMeterTest`, `MultiTrackRecorderTest` pass.
+- **Deterministic test?** Yes. The test reads only construction-time values
+  (`inputChannel()`, `inputChannelSelectable()`); the arm step writes WAV files into a
+  `QTemporaryDir`. No timing, threads or sleeps.
+- **Every caller and sibling checked?** Constructor callers: the engine,
+  `src/core/AudioEngine.cpp:491` (`m_recorder(MaxRoutes, configuredChannelCount())`,
+  member at `include/AudioEngine.h:787`); tests and probes
+  (`tests/src/core/TwoTrackRecordingHarness.cpp:296`, `TwoTrackAlsaCaptureProbe.cpp:149`,
+  `RecordingInputPathTest.cpp`, `MultiTrackRecorderTest.cpp`). The probes arm with
+  explicit channels (`TwoTrackRecordingHarness.cpp:299-300`), so they do not read the
+  default. Readers of the default: `ControlCommandsArrangementState.cpp:156` and
+  `ControlRecordingSupport.cpp:200` (state reports), `InputMonitor.cpp:106` (see below).
+  Sibling `ControlCommandsRecordingRoutes.cpp:110-115` already uses `min(route, channels-1)`
+  and now matches the constructor. The `armTrack` callers in the control commands pass
+  an explicit channel from that same rule (`ControlCommandsRecordingRoutes.cpp:224`).
+- **Old projects still load and render as before?** The route input channel is not
+  written to any project file: `rg` of `src/core` shows it only in state reports
+  (`ControlCommandsArrangementState.cpp:156`, `ControlRecordingSupport.cpp:200`). Old
+  projects therefore load the same. Existing tests `RecordingInputPathTest`,
+  `ControlRecordingRoutesTest`, `InputChannelMeterTest`, `MultiTrackRecorderTest`, and
+  `InputMonitorTest` (9/9, `test-monitor-1.log`) pass.
+- **Collateral: REVIEWER DECISION.** This changes the default for every route at or past
+  the configured input width. With a stereo input, route 2 and up now default to channel 1
+  (right) where they used to default to channel 0 (left). The one audible consequence is
+  an input-monitor track on such a route with no channel chosen: `InputMonitor.cpp:106`
+  reads `track(route).inputChannel()`, so it now monitors the right channel. This is the
+  documented contract and the control-command default, so I kept it. But
+  `InputMonitorTest` does not cover a route past the width, and I did not run an audio
+  check. If the owner wants monitoring to stay on channel 0, that is a separate decision
+  and should not be made silently inside this fix.
 - **Qt 5.15 / MSVC / macOS portability?** No Qt API added; `std::min`/`std::max`
   with `int` operands, `<algorithm>` already included (`MultiTrackRecorder.cpp:28`).
   Test uses `QStringLiteral`, `QTemporaryDir`, `QVERIFY2`, all already used in the file.
