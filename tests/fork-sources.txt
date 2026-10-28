@@ -1222,10 +1222,12 @@ plugins/AuEffect/AuParameter.cpp
 plugins/AuEffect/AuParameter.h
 plugins/AuEffect/AuSubPluginFeatures.cpp
 plugins/AuEffect/AuSubPluginFeatures.h
+plugins/AuEffect/logo.png
 plugins/AuInstrument/AuInstrument.cpp
 plugins/AuInstrument/AuInstrument.h
 plugins/AuInstrument/AuInstrumentView.cpp
 plugins/AuInstrument/AuInstrumentView.h
+plugins/AuInstrument/logo.png
 plugins/CarlaBase/CarlaMidiHandoff.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h

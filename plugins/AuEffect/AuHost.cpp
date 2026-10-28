@@ -86,6 +86,32 @@ void appendType(OSType type, QList<Component>* out)
 	}
 }
 
+//! The view the factory class @a info names makes for @a unit, retained; nil when the class is not one.
+NSView* factoryView(AudioUnit unit, const AudioUnitCocoaViewInfo& info)
+{
+	NSURL* location = (NSURL*)info.mCocoaAUViewBundleLocation;
+	NSString* className = (NSString*)info.mCocoaAUViewClass[0];
+	NSBundle* bundle = location != nil ? [NSBundle bundleWithURL:location] : nil;
+	Class factoryClass = bundle != nil && className != nil ? [bundle classNamed:className] : nil;
+	if (factoryClass == nil || ![factoryClass conformsToProtocol:@protocol(AUCocoaUIBase)]) { return nil; }
+	// AUCocoaUIBase does not adopt <NSObject>: the factory is typed as the NSObject it is, for -release.
+	NSObject<AUCocoaUIBase>* factory = (NSObject<AUCocoaUIBase>*)[[factoryClass alloc] init];
+	NSView* view = [[factory uiViewForAudioUnit:unit withSize:NSZeroSize] retain];
+	[factory release];
+	return view;
+}
+
+//! kAudioUnitProperty_CocoaUI hands over one reference to the URL and to each class name of its @a size bytes.
+void releaseViewInfo(AudioUnitCocoaViewInfo* info, UInt32 size)
+{
+	const auto classes = (size - offsetof(AudioUnitCocoaViewInfo, mCocoaAUViewClass)) / sizeof(CFStringRef);
+	if (info->mCocoaAUViewBundleLocation != nullptr) { CFRelease(info->mCocoaAUViewBundleLocation); }
+	for (std::size_t i = 0; i < classes; ++i)
+	{
+		if (info->mCocoaAUViewClass[i] != nullptr) { CFRelease(info->mCocoaAUViewClass[i]); }
+	}
+}
+
 //! The unit's own Cocoa view (kAudioUnitProperty_CocoaUI), retained; nil when it has none.
 NSView* customView(AudioUnit unit)
 {
@@ -99,25 +125,8 @@ NSView* customView(AudioUnit unit)
 	std::vector<std::uint8_t> raw(size);
 	auto* info = reinterpret_cast<AudioUnitCocoaViewInfo*>(raw.data());
 	if (AudioUnitGetProperty(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, info, &size) != noErr) { return nil; }
-	NSView* view = nil;
-	NSURL* location = (NSURL*)info->mCocoaAUViewBundleLocation;
-	NSString* className = (NSString*)info->mCocoaAUViewClass[0];
-	NSBundle* bundle = location != nil ? [NSBundle bundleWithURL:location] : nil;
-	Class factoryClass = bundle != nil && className != nil ? [bundle classNamed:className] : nil;
-	if (factoryClass != nil && [factoryClass conformsToProtocol:@protocol(AUCocoaUIBase)])
-	{
-		// AUCocoaUIBase does not adopt <NSObject>: the factory is typed as the NSObject it is, for -release.
-		NSObject<AUCocoaUIBase>* factory = (NSObject<AUCocoaUIBase>*)[[factoryClass alloc] init];
-		view = [[factory uiViewForAudioUnit:unit withSize:NSZeroSize] retain];
-		[factory release];
-	}
-	// The property hands over one reference to the URL and to each class name.
-	const auto classes = (size - offsetof(AudioUnitCocoaViewInfo, mCocoaAUViewClass)) / sizeof(CFStringRef);
-	if (info->mCocoaAUViewBundleLocation != nullptr) { CFRelease(info->mCocoaAUViewBundleLocation); }
-	for (std::size_t i = 0; i < classes; ++i)
-	{
-		if (info->mCocoaAUViewClass[i] != nullptr) { CFRelease(info->mCocoaAUViewClass[i]); }
-	}
+	NSView* view = factoryView(unit, *info);
+	releaseViewInfo(info, size);
 	return view;
 }
 
@@ -237,6 +246,44 @@ struct HostedUnit::Impl
 		return false;
 	}
 
+	//! Audio thread: the parameter values set since the last block.
+	void applyPendingParameters()
+	{
+		for (std::size_t i = 0; i < params.size(); ++i)
+		{
+			if (pendingDirty[i].exchange(false, std::memory_order_acq_rel))
+			{
+				AudioUnitSetParameter(unit, params[i].id, kAudioUnitScope_Global, 0,
+					pendingValues[i].load(std::memory_order_relaxed), 0);
+			}
+		}
+	}
+
+	//! Audio thread: the queued MIDI, each message at its frame inside this block.
+	void deliverMidi(int frames)
+	{
+		if (!instrument) { return; }
+		vst3::MidiEventIn event;
+		while (midi.pop(&event))
+		{
+			MusicDeviceMIDIEvent(unit, event.type, event.data0, event.data1,
+				static_cast<UInt32>(std::clamp(event.frameOffset, 0, frames - 1)));
+		}
+	}
+
+	//! Audio thread: the output buffers at the caller's channels, scratch for any it did not supply.
+	void pointOutputs(float* const* out, int outChannels, UInt32 bytes)
+	{
+		for (UInt32 c = 0; c < output->mNumberBuffers; ++c)
+		{
+			AudioBuffer& buffer = output->mBuffers[c];
+			buffer.mNumberChannels = 1;
+			buffer.mData = static_cast<int>(c) < outChannels ? out[c]
+				: scratch.data() + static_cast<std::size_t>(maxFrames) * (c + 1);
+			buffer.mDataByteSize = bytes;
+		}
+	}
+
 	void freeBuffers()
 	{
 		std::free(output);
@@ -346,32 +393,10 @@ bool HostedUnit::process(const float* const* in, float* const* out, int inChanne
 {
 	Impl& d = *m_impl;
 	if (!d.initialized || frames <= 0 || frames > d.maxFrames) { return false; }
-	for (std::size_t i = 0; i < d.params.size(); ++i)
-	{
-		if (d.pendingDirty[i].exchange(false, std::memory_order_acq_rel))
-		{
-			AudioUnitSetParameter(d.unit, d.params[i].id, kAudioUnitScope_Global, 0,
-				d.pendingValues[i].load(std::memory_order_relaxed), 0);
-		}
-	}
-	if (d.instrument)
-	{
-		vst3::MidiEventIn event;
-		while (d.midi.pop(&event))
-		{
-			MusicDeviceMIDIEvent(d.unit, event.type, event.data0, event.data1,
-				static_cast<UInt32>(std::clamp(event.frameOffset, 0, frames - 1)));
-		}
-	}
+	d.applyPendingParameters();
+	d.deliverMidi(frames);
 	const auto bytes = static_cast<UInt32>(frames) * sizeof(float);
-	for (UInt32 c = 0; c < d.output->mNumberBuffers; ++c)
-	{
-		AudioBuffer& buffer = d.output->mBuffers[c];
-		buffer.mNumberChannels = 1;
-		buffer.mData = static_cast<int>(c) < outChannels ? out[c]
-			: d.scratch.data() + static_cast<std::size_t>(d.maxFrames) * (c + 1);
-		buffer.mDataByteSize = bytes;
-	}
+	d.pointOutputs(out, outChannels, bytes);
 	d.input = in;
 	d.inputChannels = inChannels;
 	AudioUnitRenderActionFlags flags = 0;

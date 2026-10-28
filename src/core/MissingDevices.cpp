@@ -62,13 +62,14 @@ namespace missingdevices
 
 QString formatOf(const QString& moduleName)
 {
-	const QString n = moduleName.toLower();
-	if (n == QLatin1String("vestige") || n == QLatin1String("vsteffect")) { return QStringLiteral("vst"); }
-	if (n == QLatin1String("vst3instrument") || n == QLatin1String("vst3effect")) { return QStringLiteral("vst3"); }
-	if (n == QLatin1String("clapinstrument") || n == QLatin1String("clapeffect")) { return QStringLiteral("clap"); }
-	if (n == QLatin1String("auinstrument") || n == QLatin1String("aueffect")) { return QStringLiteral("au"); }  // Q050-491
-	if (n == QLatin1String("lv2instrument") || n == QLatin1String("lv2effect")) { return QStringLiteral("lv2"); }
-	return QStringLiteral("native");
+	// The hosting modules by name, and the format each hosts; every other module is native.
+	static const QMap<QString, QString> formats{
+		{QStringLiteral("vestige"), QStringLiteral("vst")}, {QStringLiteral("vsteffect"), QStringLiteral("vst")},
+		{QStringLiteral("vst3instrument"), QStringLiteral("vst3")}, {QStringLiteral("vst3effect"), QStringLiteral("vst3")},
+		{QStringLiteral("clapinstrument"), QStringLiteral("clap")}, {QStringLiteral("clapeffect"), QStringLiteral("clap")},
+		{QStringLiteral("auinstrument"), QStringLiteral("au")}, {QStringLiteral("aueffect"), QStringLiteral("au")},  // Q050-491
+		{QStringLiteral("lv2instrument"), QStringLiteral("lv2")}, {QStringLiteral("lv2effect"), QStringLiteral("lv2")}};
+	return formats.value(moduleName.toLower(), QStringLiteral("native"));
 }
 
 QDomElement detachedCopy(const QDomElement& element)
