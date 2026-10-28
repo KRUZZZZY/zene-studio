@@ -516,6 +516,16 @@ static bool isPathSeparator(QChar c)
 	return c == QLatin1Char('\\') || c == QLatin1Char('/');
 }
 
+//! Whether the leading separator pair is a UNC prefix on this host.
+static bool hasUncPrefixForHost(const QString& value)
+{
+#if defined(Q_OS_WIN)
+	return value.size() >= 2 && isPathSeparator(value.at(0)) && isPathSeparator(value.at(1));
+#else
+	return value.startsWith(QStringLiteral("\\\\"));
+#endif
+}
+
 //! The index of the first separator at or after \a from, or the size when none.
 static int nextSeparator(const QString& value, int from)
 {
@@ -560,16 +570,16 @@ QString stemRequireAbsolutePath(const QString& value, const QString& name)
 	 * Qt 5's `QDir::isAbsolutePath` answers any `X:` prefix as absolute on
 	 * Windows, which would let the drive-relative `C:relative.wav` through.
 	 * Only `X:\…` or `X:/…` is drive-absolute; `X:…` is drive-relative and
-	 * refused. A backslash-pair value is a Windows UNC form on every host, so it
-	 * is absolute only when the helper accepts it as a complete server+share:
-	 * QDir reads `\\server` as a relative name on Unix, so QDir is not asked
-	 * about it. Every other form keeps QDir's answer. */
+	 * refused. A backslash pair is a Windows UNC form on every host, and either
+	 * separator pair is one on Windows, so neither can fall through to QDir
+	 * unless it names a complete server+share. On Unix, `//...` keeps QDir's
+	 * absolute-path meaning. */
 	const bool hasDrive = value.size() >= 2
 		&& value.at(0).isLetter() && value.at(1) == QLatin1Char(':');
-	const bool backslashUnc = value.startsWith(QStringLiteral("\\\\"));
+	const bool uncPrefix = hasUncPrefixForHost(value);
 	const bool absolute = hasDrive
 		? isWindowsAbsolutePath(value)
-		: (isWindowsAbsolutePath(value) || (!backslashUnc && QDir::isAbsolutePath(value)));
+		: (isWindowsAbsolutePath(value) || (!uncPrefix && QDir::isAbsolutePath(value)));
 	if (absolute)
 	{
 		return QString();

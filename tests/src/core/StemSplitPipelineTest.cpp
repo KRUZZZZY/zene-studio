@@ -507,8 +507,8 @@ subprocess.Popen(
 	/* A UNC form is absolute only when it names a server AND a share. `\\server`
 	 * has no share, and on a Unix host QDir reads it as a relative file name, so
 	 * a client could make the writer create files under the working directory.
-	 * Each incomplete value below is refused on every host; the complete shares
-	 * beside them (with or without a trailing path) are still accepted. */
+	 * The backslash forms are refused on every host. Windows also refuses
+	 * incomplete forward-slash UNC forms; Unix keeps `//...` as absolute. */
 	void testValidatorRefusesIncompleteUncPaths()
 	{
 		const QString name = QStringLiteral("out");
@@ -522,6 +522,19 @@ subprocess.Popen(
 			QVERIFY2(!control::stemRequireAbsolutePath(path, name).isEmpty(),
 				qPrintable(QStringLiteral("incomplete UNC path refused: ") + path));
 		}
+	#if defined(Q_OS_WIN)
+		const QString incompleteSlashUnc[] = {
+			QStringLiteral("//server"), QStringLiteral("//server/"),
+			QStringLiteral("/\\\\server"), QStringLiteral("/\\\\server/") };
+		for (const QString& path : incompleteSlashUnc)
+		{
+			QVERIFY2(!control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("incomplete slash UNC path refused: ") + path));
+		}
+	#else
+		QVERIFY2(control::stemRequireAbsolutePath(QStringLiteral("//server"), name).isEmpty(),
+			"a POSIX double-slash absolute path stays accepted");
+	#endif
 
 		const QString complete[] = {
 			QStringLiteral("\\\\server\\share"),
