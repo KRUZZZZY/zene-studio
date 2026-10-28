@@ -42,4 +42,10 @@ So the "when" in the finding (the registry does not contain `project.open`) cann
 
 ## Self-check
 
-Filled in after running `submit_check.py` (see below).
+`submit_check.py` (log `logs/015-submit-check.log`, EXIT=1) passes commits, clean tree, report and the test rule, and fails one row: **gates (feature_check.py)**. That row runs the same script that raised the `PermissionError` at `feature_check.py:71` in `logs/001-feature-check.log`, because it writes logs to `<worktree>/../<name>-feature-check`, outside the write-jail. This is an environment blocker, not a branch failure. The six non-ratchet gates were run with their own commands (EXIT 0, table above), and the two ratchets had no item in a changed file. I did not write into the parent directory and did not edit the shared gate script.
+
+- **Regression test RED/GREEN.** Not applicable. The verdict is FALSE-POSITIVE, so there is no product change to revert and no test was added. The reason is in the report: a test that reaches the null branch would need a test-only seam into a singleton whose constructor is private and which has no removal path (`include/ControlRegistry.h:289-290`, `src/core/ControlRegistry.cpp:161-185`).
+- **Deterministic.** Not applicable. No test was written.
+- **Fix at the cause and complete.** No fix. The callers and siblings were checked: `invoke()`-based callers at `src/core/CollabSessionSync.cpp:234`, `src/core/ControlCommandsAlternatives.cpp:208` and `src/core/ControlCommandsDocuments.cpp:337` (via `run()` at `:65-67`); the direct handler calls at `src/core/ControlCommandsNoteAcross.cpp:130` (guarded at `:116`) and `src/core/ControlCommandsRecordTools.cpp:69`. None has the unchecked pattern.
+- **No collateral damage.** Nothing changed in product code, so no saved data, project load or limit is affected. `git diff --name-only 37eaf07557..HEAD` is empty (`logs/010-changed-vs-base.txt`).
+- **Verdict citations.** Given in the body: the dereference at `src/core/ControlCommandsSessionPerform.cpp:266-267`, the singleton at `src/core/ControlRegistry.cpp:161-170`, unconditional registration at `src/core/ControlRegistryRegistrations.cpp:87` → `src/core/ControlCommandsProject.cpp:582` → `src/core/ControlCommandsProjectFiles.cpp:721`, the handler at `:621` and `registerCommand` at `:713`, and no removal path (`logs/013-no-removal.log`).
