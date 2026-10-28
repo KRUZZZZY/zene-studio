@@ -10,16 +10,41 @@ are missing, and a lane cannot supply either:
    `auinstrument` or run those cases.
    - **Compile check done here, syntax only:**
      - the seven plain C++ files of the two modules: GCC, with the real headers and `clapeffect`'s flags;
-     - `AuHost.cpp` (Objective-C++): clang, against stub Apple headers written from the SDK signatures;
+     - `AuHost.cpp` and `AuCocoaView.cpp` (Objective-C++): clang, against stub Apple headers written from the SDK
+       signatures;
      - both are clean.
    - The first hosted macOS run of the merged line is the build proof.
 2. **The Cocoa view itself (criterion 4).** The hosted jobs run tests under Qt's `offscreen` platform, where a window
    id is not an NSView. The host refuses there by name, and the test asserts that refusal. Opening the unit's view
    needs a real Mac under the `cocoa` platform: the owner's checklist is in `docs/KNOWN-LIMITATIONS.md` (Q050-491).
 
-Branch `feat/050-Q050-491-oc`, cut from `050/m0-train-21` (`37eaf07557`); six commits. Feature record:
-`docs/050-features/Q050-491.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-491.r1/logs/`. Every run below was
-on this worktree on Linux (CachyOS, GCC, Qt 6, `QT_QPA_PLATFORM=offscreen`).
+Branch `feat/050-Q050-491-oc`, cut from `050/m0-train-21` (`37eaf07557`). Feature record:
+`docs/050-features/Q050-491.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-491.r1/logs/` (round 0),
+`.r2/logs/` (review round 1), `.r3/logs/` (round 2). Every run below was on this worktree on Linux (CachyOS, GCC, Qt 6,
+`QT_QPA_PLATFORM=offscreen`).
+
+## Review rounds
+
+- **Round 1 (realtime): fixed in `8dc258a3bc`.** The review found that AU parameter automation emitted `dataChanged()`
+  on the render thread: the models reached the unit through a direct `dataChanged` connection, without
+  render-thread deferral. Now:
+  - the models defer that signal;
+  - the device's `processImpl` hands the block's changed values to the unit through atomics
+    (`AuParamModelList::pushChangedValues`);
+  - the GUI poll emits the held-back signals.
+  - **Regression:** `AuParameterHandoffTest` runs on every build. An automation clip plays on an AU parameter model
+    through one real render period. The value must reach the unit in that period, with zero `dataChanged()` while it
+    renders. Results:
+    - restored: exit 0 (`r2/test-3-direct.log`);
+    - the deferral line removed: exit 1, one signal during the render (`r2/test-4-nodefer.log`);
+    - the handoff made a no-op: exit 2, the unit kept 1000 (`r2/test-5-nopush.log`);
+    - HEAD's pre-fix `AuParameter.h/.cpp` and `AuHost.h` put back: the test does not compile, exit 2
+      (`r2/build-9-reverted.log`).
+- **Round 2 (gate): fixed in `d3a22caa2a`.** `AuHost.cpp` had 527 counted lines, over Gate 7's 500.
+  - The state helpers moved to `AuState.cpp`, and the Cocoa view lookup to `AuCocoaView.cpp`. The moved code is
+    unchanged.
+  - The copy of `feature_check.py` that logs to /tmp: `RESULT: PASS`.
+  - Focused tests rerun: 7/7 exit 0 (`r3/test-1.log`).
 
 ## What was built
 
@@ -49,6 +74,7 @@ on this worktree on Linux (CachyOS, GCC, Qt 6, `QT_QPA_PLATFORM=offscreen`).
 | 1 | registry discovery, scan-cache record, the same quarantine rules | Rules: `AuComponentTest` (`aScanRecordsEveryComponentAndTheQuarantineHidesOne`, `theRecordsAndTheQuarantinePersistInTheCacheFile`, `eachComponentHasItsOwnAbsoluteScanCachePath`). The real registry through `plugin.scan_cache_quarantine_add`/`_remove`: `AuHostingTest::theRegistryIsListedRecordedAndQuarantined` | same | Linux 0 (12/12, `test-4-direct.log`); registry case: macOS job, not observed (SKIP here) |
 | 2 | AU instrument plays MIDI; AU effect processes audio via the device/chain model | `AuHostingTest::anInstrumentPlaysMidi`, `...anEffectProcessesAudioAndItsParametersAreReachable` | same | macOS job: not observed (SKIP here, `test-3-direct.log`) |
 | 2 | parameters via `plugin.param_get/param_set` and automation | the effect case: `param_set` / `param_get`, the value read back from the unit, `automation.add_point` creates the clip | same | macOS job: not observed |
+| 2 | automation reaches the unit per block with no render-thread signal | `AuParameterHandoffTest` (every build): the real model list, a stand-in unit, a playing automation clip, one real render period | `ctest -R '^AuParameterHandoffTest$'` (`r3/test-1.log`) | Linux 0 |
 | 3 | `plugin.state_save/state_load` and project save/reopen round-trip ClassInfo | `AuHostingTest::theStateRoundTripsThroughAFileAndAProject` | same | macOS job: not observed |
 | 3 | a component that fails to instantiate is refused with a typed error | `AuHostingTest::aComponentThatDoesNotInstantiateIsRefusedTyped` (`Refused`, the reason by name); `AuComponentTest::theRefusalNamesTheComponentTheStepAndTheStatus`, `aFailedStatusIsNamed` | same | Linux 0 (the "built on macOS only" branch and the message rules); the macOS branch ("...registry has no such component"): not observed |
 | 4 | editor opens in an NSView | `AuHostingTest::theEditorButtonOpensTheCocoaViewOrNamesWhyNot`: clicks "Show plugin editor" and runs `plugin.editor_open`. Under `cocoa` both open; under `offscreen` both are refused with "...has no NSView (window API cocoa)" | same | macOS job: not observed; a real Mac for the view itself |
@@ -75,6 +101,12 @@ module was not built; it passed once `patman` was built (the same note as Q050-4
     - `./AuHostingTest`: exit 1, the refusal case got `InvalidArgs` and not `Refused` (`test-8-mutated-hosting.log`).
   - **Restored (patch re-applied, rebuilt):** `ctest -R '^(AuComponentTest|AuHostingTest)$'` exit 0
     (`test-9-restored.log`; again in `test-12.log` after `376b214f35`, the last commit that changes code Linux builds - `8999fb0ff9` touches only the macOS-only `AuHost.cpp`, re-checked with the clang syntax pass).
+  - **`AuParameterHandoffTest` (round 1):**
+    - the deferral removed: exit 1;
+    - the handoff removed: exit 2;
+    - the pre-fix files put back: compile failure, exit 2;
+    - restored: exit 0.
+    - Logs: `r2/test-4-nodefer.log`, `r2/test-5-nopush.log`, `r2/build-9-reverted.log`, `r2/test-3-direct.log`.
   - **Limit:** the macOS-only cases have never run, so their revert proof does not exist yet.
 - **Every acceptance criterion proven by a test I ran.** **No.**
   - **Ran and passed (Linux):** criterion 1's off-macOS half and its scan-cache and quarantine rules; criterion 3's
@@ -94,8 +126,13 @@ module was not built; it passed once `patman` was built (the same note as Q050-4
     buffers.
   - `AuInstrument::handleMidiEvent` (audio or MIDI thread) and `HostedUnit::queueMidi`: one bounded push into the
     preallocated MPSC ring (`Vst3MidiQueue.h`).
-  - `HostedUnit::setParam`: two atomic stores. It is also what a model's `dataChanged` calls when automation moves a
-    parameter on the audio thread.
+  - `HostedUnit::setParam`: two atomic stores.
+  - `AuParamModelList::pushChangedValues` (round 1), called by both `processImpl`s before rendering. For each model it
+    does one `value()` read and one atomic compare; a changed one gets `setParam` and one atomic store. The model list
+    is fixed after `build()`, so the audio thread does not allocate, lock or signal here.
+  - **Signals:** the models defer `dataChanged()` on the render thread (`setDeferChangeSignalOnRenderThread`), and
+    `flushDeferred()` emits them from the GUI poll. `AuParameterHandoffTest` counts zero emissions during a real
+    render period that applies automation.
   - `HostedUnit::process`, which calls `Impl::applyPendingParameters` (atomic exchange, then `AudioUnitSetParameter`),
     `Impl::deliverMidi` (ring pop, then `MusicDeviceMIDIEvent`), `Impl::pointOutputs` (pointer writes into the
     `AudioBufferList` built in `prepare()`), `AudioUnitRender`, and `memcpy` only when the unit answered with its own
@@ -121,8 +158,8 @@ module was not built; it passed once `patman` was built (the same note as Q050-4
     - no `std::filesystem` and no POSIX-only call.
   - The AU modules are built on macOS only. They use AudioToolbox/AudioUnit/CoreAudioKit APIs available since 10.6–10.7,
     and `QString::fromCFString` (Qt ≥ 5.2).
-  - `AuHost.cpp` is compiled as Objective-C++ through a per-source `COMPILE_OPTIONS -xobjective-c++`. It keeps the
-    `.cpp` name so the manifests and gates see it.
+  - `AuHost.cpp` and `AuCocoaView.cpp` are compiled as Objective-C++ through a per-source
+    `COMPILE_OPTIONS -xobjective-c++`. They keep the `.cpp` name so the manifests and gates see them.
   - Not compiled on any of those toolchains here.
 - **Gates.**
   - `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` cannot run from this lane. It creates its
@@ -132,6 +169,7 @@ module was not built; it passed once `patman` was built (the same note as Q050-4
   - Result: `RESULT: PASS`. All six simple gates exit 0. Complexity and file-length: no new item in my files.
   - On the first run it reported Gate 6 (the two new `logo.png` files, now registered like
     `plugins/Vst3Instrument/logo.png`) and three complexity items. Commit `376b214f35` fixed all of them.
+  - **Round 2:** Gate 7 flagged `AuHost.cpp` (527 lines). After the split in `d3a22caa2a`: `RESULT: PASS`, every row.
 - **Completion check WARN "canary figures (README) updated - new command ids: au.mmp, automation.add_point, ...".** These
   are file names and existing command ids in test strings, not new commands. The live snapshot keeps 871 ids / 76 groups,
   and `python3 tests/doc-figures-gate.py` exit 0.
