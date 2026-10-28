@@ -49,4 +49,12 @@ The branch has no changed files versus its base, so no ratchet item can be "new 
 
 ## Self-check
 
-Filled in after running `submit_check.py` (see below).
+Product change: none (verdict FALSE-POSITIVE), so the fix-specific items are not applicable. Answers per `submit_check.py`:
+
+- **Regression fails with the change reverted and passes with it:** not applicable. No product change, so there is no fix to revert. No regression test was written, because the reported state cannot be produced (evidence items 2 and 3 above).
+- **Deterministic test (no wall-clock, sleeps or races):** not applicable; no test was added or changed.
+- **Fix at the cause and complete (every caller and sibling checked):** not applicable. The callers were checked as evidence: the only `PatternClip(Track*)` construction is `src/tracks/PatternTrack.cpp:176`, and `patternIndex()` callers at `src/tracks/PatternTrack.cpp:146`, `src/gui/clips/PatternClipView.cpp:119-120,139,253`, `src/gui/clips/ClipView.cpp:1024` all act on clips of pattern tracks.
+- **No collateral damage:** not applicable; nothing changed. Loading of old projects is unchanged, since the loader path that would reach `PatternClip` is `src/core/Track.cpp:183`, which is not modified.
+- **FALSE-POSITIVE evidence (file:line / contract):** `src/tracks/PatternTrack.cpp:174-178`, `src/core/Track.cpp:154-157` and `:183`, `src/tracks/InstrumentTrack.cpp:1091-1093`, `src/core/Clip.cpp:55-57`.
+
+Gate status: `submit_check.py` reports `gates (feature_check.py)` FAIL because `feature_check.py` cannot run inside the write-jail: it creates `<worktree>-feature-check` next to the worktree, which is the non-writable `projects/zene-studio-program/` directory (`PermissionError`, `logs/001-feature-check-pre.log`). This is an environment block, not a gate result. The gate commands it runs were run one by one from the worktree (table above): six simple gates exit 0; the two ratchets exit 1 and are the train's standing red, with no item in a changed file because the branch changes no file. A full `feature_check.py` run needs a writable parent or the run folder path, which the lane cannot change.
