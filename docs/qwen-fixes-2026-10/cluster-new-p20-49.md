@@ -18,13 +18,14 @@ the box clamped to 1, OK wrote 0). Loading `jump_to` = 600 wrote 511.
 - The fix:
   - `src/gui/FollowActionEditor.cpp:51`: `kMaxScenes = 512`, the grid's cap (`src/core/SessionModelPrivate.h:157`,
     `MaxScenes = 512`). The box range is `1..kMaxScenes` (line 199).
-  - `:200-204`: the stored value is read as a `double` (exact for every `int`), clamped to `[0, 511]` before the `+ 1` for
-    display, and kept in the box's `loaded` property.
+  - `:204-206`: the stored value is read as a `double` (exact for every `int`), clamped to `[0, 511]` before the `+ 1` for
+    display, and kept in the box's `loaded` property. A negative value is normalized to zero: the project loader uses
+    `-1` for a malformed saved target, and `set_slot` refuses negative targets.
   - `:130-135` `jumpOf()`: returns the typed or stepped scene (`value() - 1`) if the box was edited, else the loaded scene
-    unchanged.
-  - `:205-209`: the box is marked `edited` on any value change (arrow or wheel step) and on typing (`textEdited`, which
+    unchanged (after the negative-sentinel fallback above).
+  - `:207-210`: the box is marked `edited` on any value change (arrow or wheel step) and on typing (`textEdited`, which
     catches typing the number the box already shows, the same rule `numberBox` uses).
-  - `:266`: `chain()` writes `jumpOf(...)`.
+  - `:268`: `chain()` writes `jumpOf(...)`.
 - The engine side (not changed): `src/core/ControlCommandsSessionFollow.cpp:131-149` (`intField`: whole number in the int
   range), `:198-203` (`jump_to` refused if negative, or if it is `>= sceneCount` for a Jump). For a non-Jump row the
   engine accepts any non-negative int, so a stored value past the grid is valid data for that row. The old editor
@@ -37,19 +38,21 @@ the box clamped to 1, OK wrote 0). Loading `jump_to` = 600 wrote 511.
 ## Behaviour change (for review)
 
 Before the fix, OK on a row whose stored scene the box could not show silently rewrote it (to 511, or to 0 for the
-overflow case). After the fix, OK writes the stored value unchanged unless the user edits that Jump box, and the engine
-then decides:
-- A Jump row past the grid (`>= sceneCount`) or below 0 is refused by the engine with its own error, and the dialog stays
-  open until the user edits the box. The old behaviour retargeted it silently.
+overflow case). After the fix, OK writes a loaded nonnegative stored value unchanged unless the user edits that Jump box.
+The malformed `-1` sentinel is shown/submitted as zero, matching the old fallback and keeping the row editable.
+- A Jump row with a nonnegative target past the grid (`>= sceneCount`) is refused by the engine with its own error, and
+  the dialog stays open until the user edits the box. The old behaviour retargeted it silently.
 - A non-Jump row with a stored scene past 512 is kept as stored. The old behaviour rewrote it to 511.
 - Limit: the box still shows the nearest scene it can (512 for INT_MAX). The stored value is not displayed. This is the
   one part of the finding's "display a different target" that the fix does not change.
 
 ## Regression test
 
-`tests/src/gui/FollowActionEditorTest.cpp` (4 new test functions, same family, file already registered in
+`tests/src/gui/FollowActionEditorTest.cpp` (5 new test functions, same family, file already registered in
 `tests/CMakeLists.txt:1270`):
 - `aMaximumJumpSceneIsWrittenBackAsLoaded`: INT_MAX is written back, box shows 512. **RED before the fix.**
+- `aMalformedNegativeJumpSceneKeepsTheEditorApplicable`: the loader's `-1` malformed-value sentinel keeps the prior
+  zero fallback so `set_slot` can accept edits to the row.
 - `aJumpSceneTheBoxCannotShowIsKeptUntilTyped`: 600 is written back; typing 512 writes 511. **RED before the fix**
   (the typing half is a guard).
 - `aStepOfAJumpBoxIsAnEdit`: a Down step from the shown 512 writes 510, not the loaded 600. Guards the `valueChanged`
@@ -83,12 +86,12 @@ Environment notes (not code failures):
 | GREEN build (first) | `cmake --build build --target FollowActionEditorTest -j4` | 0 | `build-3-green.log` |
 | GREEN test (first) | `ctest -R '^FollowActionEditorTest$' --output-on-failure` | 0 | `test-2-green.log` |
 
-Affected family: `FollowActionEditorTest` is one ctest test (`#451`) with 9 cases in the verbose run: 7 test functions
-plus init/cleanup. Count from `test-5-refixed.log`: `Totals: 9 passed, 0 failed, 0 skipped`.
+Affected family: `FollowActionEditorTest` is one ctest test (`#451`) with 10 cases: 8 test functions plus init/cleanup.
+The initial builder run had 9 cases; the independent QA run after the compatibility correction had 10, all passing.
 
 RED failures (`test-1-red.log`):
 - `aMaximumJumpSceneIsWrittenBackAsLoaded()` at `tests/src/gui/FollowActionEditorTest.cpp:136`: actual 0, expected 2147483647.
-- `aJumpSceneTheBoxCannotShowIsKeptUntilTyped()` at `FollowActionEditorTest.cpp:148`: actual 511, expected 600.
+- `aJumpSceneTheBoxCannotShowIsKeptUntilTyped()` at `FollowActionEditorTest.cpp:155`: actual 511, expected 600.
 
 Mutation proof: the RED failures reproduce after reverting only the product file (`test-4-unfixed.log`), and the GREEN
 run passes after reapplying it (`test-5-refixed.log`).
@@ -132,9 +135,8 @@ changed. No command was added; the snapshot and canary are not affected.
    check). The engine already range-checks `jump_to` (`ControlCommandsSessionFollow.cpp:198-203`), so the editor does not
    need its own bound.
 4. **No collateral damage.** Loading does not change: the box still shows `clamp(scene) + 1`, and an in-range scene is
-   written exactly as before (guard test `anInRangeJumpSceneIsWrittenAsLoaded`). The changed behaviour is the
-   write-back of out-of-range stored values, described above under "Behaviour change". It is a decision for review, not
-   an accident.
+   written exactly as before (guard test `anInRangeJumpSceneIsWrittenAsLoaded`). The malformed `-1` sentinel retains the
+   old zero fallback; other nonnegative out-of-range stored values are retained as described above.
 5. **Realtime, undo, commands.** The editor is GUI-only. Nothing runs on the audio thread. No command was added, and
    apply still goes through `runCommand` (one undo step, as before).
 6. **Registration and gates.** No new files. Gates pass (table above, via the logdir copy). The literal `feature_check.py`
@@ -154,3 +156,19 @@ changed. No command was added; the snapshot and canary are not affected.
     `feature_check.py`, which hits the same write-jail PermissionError described under "Gates", so it is an environment
     limit and not a code failure. Every other item passes: commits on the branch, working tree clean, verdict in the
     first lines, tests changed.
+
+## Independent QA correction (2026-10-28)
+
+`SessionClip.cpp:97-109` deliberately restores a malformed saved `jump` attribute as `-1`. Since
+`ControlCommandsSessionFollow.cpp:198-203` rejects negative `jump_to` values on `set_slot`, returning `-1` unchanged
+would prevent the editor from applying other edits to that row. The editor now maps this sentinel to zero, the prior
+fallback, while still preserving nonnegative stored values the box cannot display.
+
+| Check | Command | EXIT | Log |
+| --- | --- | --- | --- |
+| Build | `CCACHE_TEMPDIR=/home/kruzzzzy/.cache/zene-tmp/ccache-tmp cmake --build build --target zene FollowActionEditorTest -j12` | 0 | `qa-build-final.log` |
+| GREEN | `ctest -R '^FollowActionEditorTest$' --output-on-failure` (from `build/tests`) | 0 | `qa-test-final.log` |
+| RED with product source reverted to base | same `ctest` command after `git checkout 37eaf07557842a34c66bd34f6706cb0c31b0c737 -- src/gui/FollowActionEditor.cpp` and rebuild | 8 (two bug tests failed; negative-sentinel guard passed) | `qa-test-reversed.log` |
+| Gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p20-49` | 0 | `qa-feature-check-final.log` |
+
+The independent logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p20-49.r1/qa-logs/`.

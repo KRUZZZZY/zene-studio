@@ -199,7 +199,9 @@ void FollowActionEditor::addRow(const QJsonObject& action)
 	jump->setRange(1, kMaxScenes);
 	// The file's scene is any whole number, but the box shows scenes 1 to kMaxScenes. The value is converted in double so
 	// nothing overflows, and the scene loaded is kept for jumpOf to write back while the box is not edited.
-	const double scene = action.value(QStringLiteral("jump_to")).toDouble(0.0);
+	// SessionClip uses -1 for a malformed saved target. It cannot be submitted back through set_slot,
+	// which rejects negative targets, so keep the editor's previous zero fallback for that sentinel.
+	const double scene = std::max(0.0, action.value(QStringLiteral("jump_to")).toDouble(0.0));
 	jump->setValue(static_cast<int>(std::clamp(scene, 0.0, kMaxScenes - 1.0)) + 1);
 	jump->setProperty("loaded", scene);
 	QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { jump->setProperty("edited", true); });  // a step

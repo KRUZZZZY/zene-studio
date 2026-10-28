@@ -137,6 +137,13 @@ private slots:
 		QCOMPARE(jumpBoxOf(&editor, 0)->value(), 512);  // the nearest scene the box can show
 	}
 
+	void aMalformedNegativeJumpSceneKeepsTheEditorApplicable()
+	{
+		// SessionClip restores a malformed saved jump target as -1; set_slot rejects it, so preserve the old zero fallback.
+		FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, jumpChain(-1.0), QStringLiteral("1"));
+		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("jump_to")).toDouble(), 0.0);
+	}
+
 	void aJumpSceneTheBoxCannotShowIsKeptUntilTyped()
 	{
 		// Scene 600 is past the grid's 512 scenes, so the box shows 512. Left alone, the row keeps 600. Typing 512 is an edit
