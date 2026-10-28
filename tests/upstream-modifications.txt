@@ -764,6 +764,8 @@ plugins/Vestige/Vestige.cpp	#589 planar-ports migration: play() replaced by proc
 plugins/Vestige/Vestige.h	#589 planar-ports migration: VestigeInstrument is an AudioPlugin with dynamic planar ports; 0.5.0 Q050-018: unavailableReason() (plug-in binary missing) and the plug-in mutex made mutable for it.
 plugins/VstBase/RemoteVstPlugin.cpp	#589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize(); new-p15-169: the plugin's signed channel counts are converted via vst::toChannelCount (refused when the host cannot hold them, not wrapped to ch_cnt_t)
 plugins/VstBase/VstPlugin.cpp	#589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings
+plugins/VstBase/RemoteVstPlugin.cpp	#589 planar-ports migration: remote VST host reads/writes planar planes at i * bufferSize()
+plugins/VstBase/VstPlugin.cpp	#589 planar-ports migration: setSplittedChannels() gone; ports channel counts round-trip in load/saveSettings; new-p16-264: PE machine-type probe moved to plugins/VstBase/PeMachineType.h, which bounds-checks the DOS and PE headers against the file size
 plugins/VstBase/VstPlugin.h	#589 planar-ports migration: VstPlugin takes the ports controller instead of configuring split channels
 plugins/VstBase/vst_base.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo
 plugins/Xpressive/ExprSynth.h	BUG new-p9-142: compute positive wave fractions with std::fmod so finite values outside int range never undergo undefined conversion; keep negative wrapping in [0,1) and non-finite inputs at zero; covered by PluginPortsMigrationTest.

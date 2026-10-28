@@ -665,6 +665,9 @@ set(LMMS_TESTS
 	# The channel counts the VST remote client converts from the plugin's signed numInputs/numOutputs
 	# (plugins/VstBase/VstChannelCount.h): an out-of-range count is refused, never wrapped into range.
 	src/core/VstChannelCountTest.cpp
+	# The VST host's PE machine-type probe (plugins/VstBase/PeMachineType.h) reads only bytes inside the file:
+	# a truncated or malformed binary is rejected, never read past the mapping.
+	src/core/VstPeMachineTypeTest.cpp
 	# The bounded lock-free MIDI hand-off the instrument hosts use to get events off their audio paths
 	# (include/MidiHandoffQueue.h): FIFO, drop-and-count when full, no allocation, no lost accepted event.
 	src/core/MidiHandoffQueueTest.cpp
