@@ -57,12 +57,12 @@ constexpr int ValueRole = Qt::UserRole + 4;
 
 std::function<std::optional<double>(const QString&, double, double, double)> s_valuePrompt;
 
-std::optional<double> promptValue(QWidget* parent, const QString& name, double value, double min, double max)
+std::optional<double> promptValue(QWidget* parent, const QString& name, double value, double lowest, double highest)
 {
-	if (s_valuePrompt) { return s_valuePrompt(name, value, min, max); }
+	if (s_valuePrompt) { return s_valuePrompt(name, value, lowest, highest); }
 	bool ok = false;
-	const double chosen = QInputDialog::getDouble(parent, ClipEffectsDialog::tr("Clip effects"), name, value, min,
-		max, 2, &ok);
+	const double chosen = QInputDialog::getDouble(parent, ClipEffectsDialog::tr("Clip effects"), name, value, lowest,
+		highest, 2, &ok);
 	return ok ? std::optional<double>(chosen) : std::nullopt;
 }
 

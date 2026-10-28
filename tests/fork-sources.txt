@@ -3209,3 +3209,4 @@ src/gui/ClipEffectsDialog.cpp
 tests/src/core/ClipEffectsTest.cpp
 tests/src/gui/ClipEffectsDialogTest.cpp
 docs/050-features/Q050-111.md
+docs/qwen-fixes-2026-10/cluster-Q050-111.md

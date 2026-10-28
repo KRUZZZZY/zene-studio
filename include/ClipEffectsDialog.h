@@ -71,8 +71,8 @@ public:
 
 	//! Tests replace the parameter prompt (default: a number input between the parameter's min and max, seeded
 	//! with its value; nullopt cancels). Passing an empty function restores the default.
-	static void setValuePrompt(std::function<std::optional<double>(const QString& name, double value, double min,
-		double max)> prompt);
+	static void setValuePrompt(std::function<std::optional<double>(const QString& name, double value, double lowest,
+		double highest)> prompt);
 
 public slots:
 	void addEffect();
