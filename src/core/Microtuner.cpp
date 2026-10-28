@@ -60,7 +60,7 @@ Microtuner::Microtuner() :
 
 /** \brief Return frequency for a given MIDI key, using the active mapping and scale.
  *  \param key A MIDI key number ranging from 0 to 127.
- *  \return Frequency in Hz; 0 if key is out of range or not mapped.
+ *  \return Frequency in Hz; 0 if key is out of range, not mapped, or the scale has no intervals.
  */
 float Microtuner::keyToFreq(int key, int userBaseNote) const
 {
@@ -72,6 +72,7 @@ float Microtuner::keyToFreq(int key, int userBaseNote) const
 	std::shared_ptr<const Keymap> keymap = song->getKeymap(m_keymapModel.value());
 	std::shared_ptr<const Scale> scale = song->getScale(m_scaleModel.value());
 	const std::vector<Interval> &intervals = scale->getIntervals();
+	if (intervals.empty()) {return 0;}						// no pitches to give; the octave degree below would be -1
 
 	// Convert MIDI key to scale degree + octave offset.
 	// The octaves are primarily driven by the keymap wraparound: octave count is increased or decreased if the key

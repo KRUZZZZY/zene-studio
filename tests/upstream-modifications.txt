@@ -5507,3 +5507,4 @@ tests/src/gui/EffectRackAddTest.cpp	# ControlDeviceSupport::resolveTrackTarget d
 tests/src/plugins/DelayControlsTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
 src/core/DataFile.cpp	new-p23-77: recoverPendingWrite() returns at once for an empty file name, so an unnamed DataFile no longer adopts or discards the working directory's ./.new temp; regression DataFileSaveIntegrityTest::unnamedDataFileLeavesTheWorkingDirectoryTempAlone.
 tests/src/core/DawProjectDeflateImportTest.cpp	# ZIP64 entry-count sentinel silently drops entries
+src/core/Microtuner.cpp	new-p21-238: keyToFreq returns 0 for a scale with no intervals (an empty list is reachable through the public Scale constructor and Song::setScale and would index an empty vector); proved by SessionTuningTest::emptyStoredScaleReadsSilenceForAMappedKey.
