@@ -3215,3 +3215,5 @@ plugins/ModularSynth/ModularSynthView.h
 tests/src/plugins/ModularSynthTest.cpp
 tests/src/plugins/ModularSynthTestSupport.h
 tests/src/gui/ModularSynthViewTest.cpp
+docs/050-features/Q050-059.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-059.1.md
