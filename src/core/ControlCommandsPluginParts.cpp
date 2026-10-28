@@ -99,6 +99,12 @@ namespace
 
 const QString kGroup = QStringLiteral("plugin");
 
+//! The most parts one track holds: 128, one for each MIDI key. A note-on resolves against the whole list on the
+//! audio thread (InstrumentMidiParts::noteOnChannel is a first-match scan), so the list's length is a per-note
+//! cost and this command must not grow it without bound. A saved list longer than this (an older project) still
+//! loads whole; only adding one more part is refused.
+constexpr int kMaxParts = 128;
+
 QString partId(int index) { return QStringLiteral("part-") + QString::number(index); }
 
 QJsonObject partJson(const RackZone& zone, int index)
@@ -168,6 +174,11 @@ ControlResult addPart(InstrumentTrack* track, const QJsonObject& args)
 		return zoneArgsRefusal(zone, InstrumentMidiParts::Channels, QStringLiteral("MIDI channel index"));
 	}
 	RackZones& zones = track->midiParts().zones();
+	if (zones.zoneCount() >= kMaxParts)
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the track already has %1 MIDI parts, the most it holds; remove one first").arg(kMaxParts));
+	}
 	const int before = zones.zoneCount();
 	const int index = zones.addZone(zone);
 	const QString trackIdText = trackIdOf(track);
