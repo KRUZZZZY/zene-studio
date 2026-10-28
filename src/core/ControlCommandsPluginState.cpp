@@ -172,6 +172,14 @@ void registerStateLoad(ControlRegistry& registry)
 			return error;
 		}
 		const QString path = args.value(QStringLiteral("path")).toString();
+		// The rule plugin.state_save applies above and the instrument's file load applies
+		// too: an absolute path to an existing file. A relative name would otherwise be
+		// read from the DAW's working directory.
+		if (!QFileInfo(path).isAbsolute() || !QFileInfo(path).isFile())
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'path' must be an absolute path to an existing file"));
+		}
 		QByteArray bytes;
 		if (!controlReadFileBytes(path, &bytes, &error)) { return error; }
 
