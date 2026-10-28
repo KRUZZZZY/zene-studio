@@ -47,6 +47,11 @@ namespace
 
 constexpr f_cnt_t BlockFrames = 512;
 
+//! The most audio render() will write: 2 GiB of 32-bit float stereo (about 93 minutes at 48 kHz).
+//! The mix and the interleaved copy writeWav makes are held at once, so the peak is twice this.
+constexpr std::size_t MaxRenderBytes = std::size_t{2} << 30;
+constexpr std::size_t MaxRenderFrames = MaxRenderBytes / sizeof(SampleFrame);
+
 //! Adds \a clip's audio into \a mix, which starts at tick \a start. The clip starts where
 //! the arrangement starts it (SampleTrack::play): at its start, or later by a positive
 //! content offset, from the source frame under that tick to the one under its end.
@@ -134,8 +139,15 @@ ClipConsolidate::Result ClipConsolidate::render(const std::vector<SampleClip*>& 
 	result.sampleRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 	const double framesPerTick = Engine::framesPerTick(result.sampleRate);
 	const double ticks = static_cast<double>(end) - start;  // end - start in tick_t overflows for a far negative start
-	std::vector<SampleFrame> mix(static_cast<std::size_t>(std::llround(ticks * framesPerTick)),
-		SampleFrame(0.0f, 0.0f));
+	// Refused before the mix is allocated: a slow tempo or a wide range makes terabytes of frames.
+	const long long frames = std::llround(ticks * framesPerTick);
+	if (frames > static_cast<long long>(MaxRenderFrames))
+	{
+		result.error = QStringLiteral("a range of %1 frames is over the %2-frame limit (2 GiB of audio); "
+			"consolidate a shorter range").arg(frames).arg(static_cast<qint64>(MaxRenderFrames));
+		return result;
+	}
+	std::vector<SampleFrame> mix(static_cast<std::size_t>(frames), SampleFrame(0.0f, 0.0f));
 	for (SampleClip* clip : clips) { mixClip(clip, start, framesPerTick, &mix); }
 	if (!writeWav(outPath, mix, result.sampleRate, &result.error)) { return result; }
 	result.ok = true;

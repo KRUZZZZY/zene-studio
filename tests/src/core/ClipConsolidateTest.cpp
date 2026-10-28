@@ -30,7 +30,10 @@
  *    * clip gain is baked in (the clips' own audio), the composite's lane gate is honoured
  *      and the composite then names the one clip, and undo restores the composite;
  *    * a clip crossing the region's edge, an instrument track and an empty region are
- *      refused and change nothing; a default path is never reused.
+ *      refused and change nothing; a default path is never reused;
+ *    * a range too large to render (a whole-song range at a slow tempo, or a tick range
+ *      near the full width of tick_t) is refused before its mix is allocated, and no file
+ *      is written.
  */
 
 #include <QtTest>
@@ -41,7 +44,9 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <limits>
 #include <memory>
+#include <new>
 #include <vector>
 
 #include "AudioEngine.h"
@@ -248,6 +253,50 @@ private slots:
 		QVERIFY(QFileInfo::exists(a) && QFileInfo::exists(b));
 		QFile::remove(a);
 		QFile::remove(b);
+	}
+
+	// Both tests run under an address-space cap (see the step that records the RED run): an
+	// unfixed render asks for terabytes, fails at the allocation, and is caught below as a
+	// failure rather than an out-of-memory kill of the host.
+	void aRangeTooLargeToRenderIsRefusedBeforeItIsAllocated()
+	{
+		const QString out = m_dir.filePath(QStringLiteral("huge.wav"));
+		try
+		{
+			// The whole tick_t width: about 2^32 ticks of mix at any tempo.
+			const ClipConsolidate::Result rendered = ClipConsolidate::render({},
+				std::numeric_limits<tick_t>::min() + 1, std::numeric_limits<tick_t>::max(), out);
+			QVERIFY(!rendered.ok);
+			QVERIFY2(rendered.error.contains(QStringLiteral("limit")), qPrintable(rendered.error));
+		}
+		catch (const std::bad_alloc&)
+		{
+			QFAIL("render() allocated the whole tick range instead of refusing it");
+		}
+		QVERIFY(!QFileInfo::exists(out));
+	}
+
+	void theWholeSongRangeOfACommandIsRefusedAndChangesNothing()
+	{
+		Track* track = newSampleTrack();
+		SampleClip* clip = addTake(track, 0, 0.5f);
+		const QString out = m_dir.filePath(QStringLiteral("whole.wav"));
+		try
+		{
+			// Every tick a song can hold: about 9999 bars, several hundred million frames at 140 BPM.
+			const ControlResult refused = run(QStringLiteral("clip.consolidate"), args(track,
+				{{QStringLiteral("start"), 0}, {QStringLiteral("end"), MaxSongLength},
+					{QStringLiteral("out"), out}}));
+			QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(refused.errorMessage.contains(QStringLiteral("limit")), qPrintable(refused.errorMessage));
+		}
+		catch (const std::bad_alloc&)
+		{
+			QFAIL("clip.consolidate allocated the whole song range instead of refusing it");
+		}
+		QVERIFY(!QFileInfo::exists(out));
+		QCOMPARE(clipsOf(track).size(), std::size_t{1});
+		QCOMPARE(clipsOf(track)[0], clip);
 	}
 
 private:
