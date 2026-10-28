@@ -292,6 +292,7 @@ public:
 	}
 
 	inline BasicFilters( const sample_rate_t _sample_rate ) :
+		m_type( FilterType::LowPass ),
 		m_doubleFilter( false ),
 		m_sampleRate( (float)( _sample_rate > 0 ? _sample_rate : 1 ) ),
 		m_sampleRatio( 1.0f / m_sampleRate ),
@@ -920,6 +921,7 @@ private:
 	// in/out history for Lowpass_SV (state-variant lowpass)
 	frame m_delay1, m_delay2, m_delay3, m_delay4;
 
+	// LowPass until setFilterType() is called
 	FilterType m_type;
 	bool m_doubleFilter;
 
