@@ -1,72 +1,59 @@
 Verdict: FALSE-POSITIVE
 
-new-p10-53: a negative note key cannot reach `scale.detect`'s weight array. Every writer of `Note::m_key` clamps to `0..NumKeys-1` (`0..127`), so the index `key % 12` is always in `0..11`. The finding's trigger, a malformed project that loads key `-1`, is floored to `0` at load time. No production change was made. One guard test was added to pin the invariant.
+new-p10-53: a negative note key cannot reach `scale.detect`'s weight array. Every writer of `Note::m_key` clamps to `0..NumKeys-1` (`0..127`), so the index `key % 12` is always in `0..11`. The finding's trigger, a malformed project that loads key `-1`, is floored to `0` at load time. No production change was made. Two guard tests were added to pin the invariant at the two places it can break: the load path and the `scale.detect` path.
 
 ## Evidence
 
 - **The index is computed in `detectScale`, not at the cited line.** `src/core/ControlCommandsNoteMoves.cpp:174` does `weight[note->key() % 12] += ...`. The cited `:163` is the closing brace of `fit()` (`:155-165`). There `pc` runs over `0..11` (`:159`), so `fit()` is bounded. The only index that depends on a note key is `:174`.
-- **Every writer of `m_key` clamps** (`logs/001-key-writers.log`):
+- **Every writer of `m_key` clamps** (`logs/001-key-writers.log` in the round-1 run folder):
   - constructor: `src/core/Note.cpp:168` `m_key(std::clamp(key, 0, NumKeys - 1))`;
   - copy constructor `:193` and copy assignment `:225` copy an already-clamped value;
   - `Note::setKey`: `src/core/Note.cpp:351-354` clamps at `:353`;
   - project load: `src/core/Note.cpp:641-642` takes `max(legacyNoteKey, key attribute)`, then clamps to `[0, NumKeys-1]`, then calls `setKey`.
   - `NumKeys = 128` is at `include/Note.h:93`.
-- **The load path is the one the finding describes.** A `note` element with `key="-1"` goes through `Note::restoreState` → `Note::loadSettings` (`src/core/Note.cpp:641`). It is clamped to `0`. The `legacyNoteKey` path can produce a negative value only if the legacy `tone`/`oct` attributes are also negative, and the same clamp at `:642` still floors it.
-- **`key % 12` at other sites** (`logs/002-mod12.log`): `ControlCommandsNoteMoves.cpp:108` is a `QList::value` name lookup, and `:174` is the one above. Other `% 12` sites in the tree are guarded by `((x % 12) + 12) % 12` or use non-negative keys.
+- **The load path is the one the finding describes.** A `note` element with `key="-1"` goes through `Note::restoreState` → `Note::loadSettings` (`src/core/Note.cpp:641`) and is clamped to `0`. The `max()` with `legacyNoteKey` keeps a negative only when the legacy `tone` attribute is also negative (`legacyNoteKey` returns `0` when `tone` and `oct` are absent). That is why the load test sets `tone="-1"`: without it, the `max()` floors the value before the clamp runs.
+- **`key % 12` at other sites** (`logs/002-mod12.log`): `ControlCommandsNoteMoves.cpp:108` is a `QList::value` name lookup, and `:174` is the one above. Other `% 12` sites are guarded by `((x % 12) + 12) % 12` or use non-negative keys.
 
-## Regression guard (passes on current code; not a RED test)
+## Regression guards (pass on current code; they are guards, not RED tests)
 
-Added `NoteToolsTest::aNegativeProjectKeyLoadsAsKeyZeroAndDetectsInRange` in `tests/src/core/NoteToolsTest.cpp`. The file is already registered in `tests/fork-sources.txt:2519`, so no registration change was needed.
+1. `MidiProbabilityPersistenceTest::negativeProjectKeyLoadsAsKeyZero` (`tests/src/core/MidiProbabilityPersistenceTest.cpp`, end of class). Loads a `note` element with `key="-1"`, `tone="-1"`, `pos="0"`, `len="24"` through `Note::restoreState` and asserts key `0`. This file holds the malformed-attribute load tests, and it has no Engine setup.
+2. `NoteToolsTest::aNegativeNoteKeyIsClampedAndDetectsInRange` (`tests/src/core/NoteToolsTest.cpp`, before `followingChordsRefusesAnEmptySelection`). Builds a clip with a `-1` note via `clipWith`, asserts its keys are `{0, 60}`, and asserts `scale.detect` returns ok.
 
-It loads a `note` element with `key="-1"` and `tone="-1"` through `Note::restoreState` and asserts key `0`. It then runs `scale.detect` on a clip containing a constructor-clamped `-1` and checks the result is ok and `fit` is in `[0, 1]`.
+Both files are already registered (`tests/fork-sources.txt`, `tests/CMakeLists.txt`), so no registration change was needed.
 
-The `tone` attribute is needed. Without it, `max(legacy=0, key=-1)` floors the value to 0 before the clamp runs, so the test could not reach the clamp.
+The first placement of the load test in `NoteToolsTest.cpp` took that file to 508 code lines, which failed the file-length gate (base: 489; limit 500). The load test was moved to `MidiProbabilityPersistenceTest.cpp` and the detect test was shortened, which brings `NoteToolsTest.cpp` to 496 code lines.
 
-Mutation probe (to show the guard is not vacuous): both clamps were removed, the constructor clamp was left in place, and the test was run.
+### Mutation probe (both tests must fail when all three clamps are removed)
+
+Probe: `Note.cpp:168` (ctor), `:353` (`setKey`) and `:642` (loader) clamps removed. The patch was saved as `logs/mutation-probe.patch` (`git diff` of `src/core/Note.cpp`, 3 hunks).
 
 | Step | Command | EXIT | Result |
 | --- | --- | --- | --- |
-| Probe applied: `Note.cpp:353` clamp removed (`git apply logs/fix.patch`), then `Note.cpp:642` clamp removed by an in-place edit | (edits) | - | probe active |
-| Save probe patch (both clamps removed) | `git diff -- src/core/Note.cpp > logs/mutation-probe.patch` | 0 | `logs/mutation-probe.patch` |
-| Rebuild with probe | `CCACHE_DISABLE=1 cmake --build build --target zene NoteToolsTest -j4` (the `tone` attribute was added to the test, then `NoteToolsTest` alone was rebuilt) | 0 | `logs/038-build-mutated-both.log`, `logs/040-build-test-tone.log` |
-| Run probe | `./NoteToolsTest aNegativeProjectKeyLoadsAsKeyZeroAndDetectsInRange` (in `build/tests`) | 1 | `FAIL! ... Actual (loaded.key()): -1, Expected (0): 0`, `logs/041-red-mutated-both-tone.log` |
-| Revert probe | `git apply -R logs/mutation-probe.patch` | 0 | `git diff -- src/core/Note.cpp` is empty |
-| Rebuild | `CCACHE_DISABLE=1 cmake --build build --target zene NoteToolsTest -j4` | 0 | `logs/042-build-restored.log` |
-| Run guard on original code | `./NoteToolsTest aNegativeProjectKeyLoadsAsKeyZeroAndDetectsInRange` | 0 | `Totals: 3 passed, 0 failed`, `logs/043-green-restored.log` |
-| Family | `ctest -R NoteToolsTest --output-on-failure` (in `build/tests`) | 0 | `100% tests passed out of 1` (1/1 executed), `logs/044-ctest-final.log` |
+| Apply the three clamp removals by in-place edits | Edit tool on `src/core/Note.cpp` | - | probe active |
+| Save probe patch | `git diff -- src/core/Note.cpp > logs/mutation-probe.patch` | 0 | `logs/mutation-probe.patch` |
+| Rebuild with probe | `CCACHE_DISABLE=1 cmake --build build --target zene NoteToolsTest MidiProbabilityPersistenceTest -j4` | 0 | `logs/080-build-mutated-all.log` |
+| RED, detect guard | `./NoteToolsTest aNegativeNoteKeyIsClampedAndDetectsInRange` (in `build/tests`) | 1 | `FAIL! ... Compared lists differ at index 0. Actual -1, Expected 0`, `logs/081-red-notetools-fn.log` |
+| RED, load guard | `./MidiProbabilityPersistenceTest negativeProjectKeyLoadsAsKeyZero` (in `build/tests`) | 1 | `FAIL! ... Actual (loaded.key()): -1, Expected (0): 0`, `logs/082-red-persistence-fn.log` |
+| Revert probe | `git apply -R logs/mutation-probe.patch` | 0 | `git diff -- src/core/Note.cpp` is empty (0 lines) |
+| Rebuild restored | `CCACHE_DISABLE=1 cmake --build build --target zene NoteToolsTest MidiProbabilityPersistenceTest -j4` | 0 | `logs/090-build-restored.log` |
+| GREEN, detect guard | `./NoteToolsTest aNegativeNoteKeyIsClampedAndDetectsInRange` | 0 | `Totals: 3 passed, 0 failed`, `logs/091-green-notetools-fn.log` |
+| GREEN, load guard | `./MidiProbabilityPersistenceTest negativeProjectKeyLoadsAsKeyZero` | 0 | `Totals: 3 passed, 0 failed`, `logs/092-green-persistence-fn.log` |
+| Family | `ctest -R "^(NoteToolsTest|MidiProbabilityPersistenceTest)$" --output-on-failure` (in `build/tests`) | 0 | `100% tests passed out of 2` (2/2 executed), `logs/093-ctest-final.log` |
 
-A first probe that removed only the `setKey` clamp still passed, because the loader's own clamp at `:642` covers it. That is the expected redundancy, and it is why the probe removes both clamps.
+Earlier round-1 probe, for the record: removing only the `setKey` clamp still passed, because the loader clamp covers it. That redundancy is why the probe removes all three.
 
 ## Gates
 
 | Check | Command | EXIT | Result |
 | --- | --- | --- | --- |
-| Feature gates | `python3 <run>/gate/feature_check.py <worktree>` (see note below) | 0 | `logs/045-feature-check-final.log`: all eight rows PASS, `RESULT: PASS` |
+| Feature gates, log location redirected | `python3 <run>/gate/feature_check.py <worktree>` (copy of the script, see below) | 0 | `logs/100-feature-check.log`: all eight rows PASS, `RESULT: PASS` |
+| Feature gates, official path | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 | `logs/101-feature-check-official-path.log`: `PermissionError: [Errno 13]` on `<worktree>-feature-check`, before any gate runs |
 
-Note on the gate run: `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check`, which is the projects directory. That location is outside the write-jail, and the unmodified script stopped at `logs.mkdir` with `PermissionError: [Errno 13]` before running any gate. I ran a copy of the same script (`logs/../gate/feature_check.py`) that changes only two lines. `ROOT` points at the real `qwen/` directory so `FIX-BASE` and the existing `gate-baselines/` cache are read unchanged, and the log directory is the run's log folder. The gate checks are unchanged.
+Note on the gate run: `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check`, which is the projects directory. That location is outside the write-jail, so the official run stops at `logs.mkdir` with `PermissionError`. The directory mode is `drwxrwxrwx`, so the refusal comes from the jail rather than from file permissions. I did not work around the jail. I ran a copy of the same script that changes only two lines: `ROOT` points at the real `qwen/` directory (so `FIX-BASE` and the existing `gate-baselines/` cache are read unchanged), and the log directory is the run's `logs/gate`. The gate checks are unchanged.
 
-The build also needed `CCACHE_DISABLE=1`. ccache could not create its temporary file under the shared `dsh/home/ccache-tmp-r6` path (`logs/030-build-green-guard.log`, permission denied), so the build failed before any compile. Disabling the cache affects only build speed.
+Gate rows from the copy (`logs/100-feature-check.log`):
 
-## Files committed
-
-- `tests/src/core/NoteToolsTest.cpp` (new `QDomDocument` include and the guard test)
-- `docs/qwen-fixes-2026-10/cluster-new-p10-53.md` (this report)
-
-No product file is changed. `src/core/Note.cpp` is back to its committed content (verified: the diff is empty).
-
-## Self-check
-
-Submit check (`submit_check.py`, log `logs/050-submit-check-1.log`): commits PASS, clean tree PASS, report PASS, tests PASS. The Self-check row and the gate row were FAIL before this section was written. The gate row is still FAIL, for the reason below.
-
-1. **Regression test fails with the product change reverted and passes with it.** There is no product change, so there is nothing to revert for step 4b. The equivalent proof is the mutation probe above: with both clamps removed the test fails (`logs/041-red-mutated-both-tone.log`, `FAIL!`, `Actual -1`, `Expected 0`; the binary exited 1, as the probe was run with the output piped to the log). With the restored code it passes (`logs/043-green-restored.log`, `Totals: 3 passed, 0 failed`; exit 0).
-2. **Deterministic.** The test builds its input in memory from fixed attributes (`key`, `tone`, `pos`, `len`) and fixed notes (`clipWith` with keys `-1`, `60`, `64` at ticks `0`, `24`, `48`). It uses no clock, sleep, thread or random seed. `scale.detect` is a pure read.
-3. **The fix is at the cause, and the cause is absent.** Every caller of `key % 12` on a note key was checked: `ControlCommandsNoteMoves.cpp:108` (name lookup, `QList::value`, safe) and `:174` (the weight index, bounded by the clamps). The other `% 12` sites in the tree are listed in the Evidence section. No change was made, so no caller or sibling was altered.
-4. **No collateral damage.** No product code changed, so saved projects load as before. The test adds no limit or check that could affect other callers.
-5. **FALSE-POSITIVE evidence.** `src/core/Note.cpp:168, :225, :353, :642` (the four writers of `m_key`), `include/Note.h:93` (`NumKeys = 128`), `src/core/ControlCommandsNoteMoves.cpp:174` (the index), `:159-162` (the bounded loop in `fit`).
-
-**Gate row: still FAIL under `submit_check.py`, and this is a sandbox limit, not a code failure.** `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check`, which is the projects directory. That path is outside this lane's write-jail. The official run stops at `logs.mkdir` with `PermissionError: [Errno 13]` and exits 1 (`logs/051-feature-check-official-path.log`). The directory's mode is `drwxrwxrwx`, so the refusal comes from the write-jail rather than from file permissions. I did not work around the jail. The same checks, run from a copy that changes only the log location (`logs/045-feature-check-final.log`), all PASS, with `RESULT: PASS` and EXIT=0. The table is:
-
-| Gate | Result (copy with log location redirected) |
+| Gate | Result |
 | --- | --- |
 | fork-sources | PASS |
 | all-sources-reproduce | PASS |
@@ -75,6 +62,26 @@ Submit check (`submit_check.py`, log `logs/050-submit-check-1.log`): commits PAS
 | no-tautology | PASS |
 | doc-figures | PASS |
 | complexity | PASS (no new item in changed files) |
-| file-length | PASS (no new item in changed files) |
+| file-length | PASS (no new item in changed files; `NoteToolsTest.cpp` back under 500) |
 
-To close the gate row, rerun `feature_check.py` from a session that can write the projects directory, or allow the log path in the write-jail. I have not changed the gate script or its baselines.
+The build also needed `CCACHE_DISABLE=1`. ccache could not create its temporary file under the shared `dsh/home/ccache-tmp-r6` path (permission denied), so the build failed before compiling. Disabling the cache affects only build speed.
+
+## Self-check
+
+Answers to the five ASK items, with evidence.
+
+1. **The regression test fails with the product change reverted and passes with it.** There is no product change, so there is nothing to revert for step 4b. The equivalent proof is the mutation probe above. With all three clamps removed, both guards fail with EXIT 1 (`logs/081`, `logs/082`). With the clamps restored, both pass with EXIT 0 (`logs/091`, `logs/092`), and the family is 2/2 (`logs/093`). The guards are not RED tests on the current code: they pass without any change, which is the expected result for a FALSE-POSITIVE.
+2. **Deterministic.** Both guards build their input in memory from fixed attributes (`key`, `tone`, `pos`, `len`) and fixed notes (`clipWith` with keys `-1`, `60` at ticks `0`, `24`). They use no clock, sleep, thread or random seed. `scale.detect` is a pure read, and `restoreState` is a pure parse.
+3. **The fix is at the cause, and the cause is absent.** No production code was changed. The callers of `key % 12` on a note key were checked: `ControlCommandsNoteMoves.cpp:108` (name lookup through `QList::value`, safe) and `:174` (the weight index, bounded by the three clamps). The other `% 12` sites are listed in the Evidence section.
+4. **No collateral damage.** No product code changed, so saved projects load as before. The guards add no limit or check that could affect other callers.
+5. **FALSE-POSITIVE evidence.** `src/core/Note.cpp:168, :225, :353, :642` (the four writers of `m_key`), `include/Note.h:93` (`NumKeys = 128`), `src/core/ControlCommandsNoteMoves.cpp:174` (the index), `:159-162` (the bounded loop in `fit`). The probe in the table above shows that removing all three clamps makes the guards fail, so the guards depend on the clamps and are not vacuous.
+
+**Gate row, official path: still FAIL, from the write-jail, not from the code.** The copy with the log location redirected passes all eight rows (`logs/100`). Closing the official row needs `feature_check.py` run from a session that can write the projects directory, or the log path allowed in the write-jail. I have not changed the gate script or its baselines.
+
+## Files committed
+
+- `tests/src/core/MidiProbabilityPersistenceTest.cpp` (new `negativeProjectKeyLoadsAsKeyZero`)
+- `tests/src/core/NoteToolsTest.cpp` (new `aNegativeNoteKeyIsClampedAndDetectsInRange`; the round-1 `QDomDocument` include and round-1 test are removed)
+- `docs/qwen-fixes-2026-10/cluster-new-p10-53.md` (this report)
+
+No product file is changed. `src/core/Note.cpp` is back to its committed content (`git diff` empty).

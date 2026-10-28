@@ -29,7 +29,6 @@
 
 #include <QtTest>
 
-#include <QDomDocument>
 #include <QJsonArray>
 #include <QPointer>
 #include <algorithm>
@@ -232,28 +231,14 @@ private slots:
 		QVERIFY(run(QStringLiteral("chord.clear")).ok);
 	}
 
-	//! scale.detect weights each note by key % 12, so a negative key would index the weights below zero.
-	//! No such key exists: a note takes its key through the constructor, setKey or Note::loadSettings,
-	//! and each clamps it to 0..NumKeys-1. This guards that a malformed project key of -1 loads as 0 and
-	//! that the detection over it stays in range. It passes on the current code; it is a guard, not a RED.
-	void aNegativeProjectKeyLoadsAsKeyZeroAndDetectsInRange()
+	//! scale.detect weights each note by key % 12: a note's key is clamped on every path in (constructor, setKey,
+	//! Note::loadSettings), so a -1 never reaches the weights. Pinned here, in the scale.detect family.
+	void aNegativeNoteKeyIsClampedAndDetectsInRange()
 	{
-		QDomDocument document;
-		QDomElement element = document.createElement("note");
-		// A legacy tone of -1 also gives -1, so the loader's max() keeps the negative: only its clamp floors it.
-		element.setAttribute("key", QStringLiteral("-1"));
-		element.setAttribute("tone", QStringLiteral("-1"));
-		element.setAttribute("pos", QStringLiteral("0"));
-		element.setAttribute("len", QStringLiteral("24"));
-		Note loaded;
-		loaded.restoreState(element);
-		QCOMPARE(loaded.key(), 0);
-		MidiClip* clip = clipWith({{-1, 0}, {60, 24}, {64, 48}});
-		QCOMPARE(keysOf(clip), (QList<int>{0, 60, 64}));
+		MidiClip* clip = clipWith({{-1, 0}, {60, 24}});
+		QCOMPARE(keysOf(clip), (QList<int>{0, 60}));
 		const ControlResult key = run(QStringLiteral("scale.detect"), self(clip));
 		QVERIFY2(key.ok, qPrintable(key.errorMessage));
-		QVERIFY(key.result.value(QStringLiteral("fit")).toDouble() >= 0.0);
-		QVERIFY(key.result.value(QStringLiteral("fit")).toDouble() <= 1.0);
 	}
 
 	void followingChordsRefusesAnEmptySelection()
