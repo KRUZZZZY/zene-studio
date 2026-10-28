@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T22:13:36Z",
+  "captured_at": "2026-10-28T06:47:08Z",
   "commands": [
     {
       "args_schema": {
@@ -18924,7 +18924,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, so adding a host does not renumber the ids of the formats that were already there.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -37298,11 +37298,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-491/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-6x1yudpn/zene.sock",
-    "version": "0.4.0-alpha.5511+ba8fc34"
+    "source_socket": "/tmp/zctl-run-h2fjxt57/zene.sock",
+    "version": "0.4.0-alpha.5514+20389b2"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

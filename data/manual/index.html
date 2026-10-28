@@ -317,6 +317,19 @@ the plug-in on Linux and Windows; on macOS the system scales the editor for the 
 size and a CLAP editor keeps its own size. Windows and macOS editors have so far been proved with Zene's test plug-ins only; the
 compatibility page says which real plug-ins have been opened where.</p>
 
+<p>On macOS, Zene also hosts <strong>Audio Units</strong> (AUv2 effects and instruments). They come from the system's own list of
+installed Audio Units - there is no folder to set - and appear in the device picker and the instrument browser with the format
+<em>Audio Unit</em> (<code>plugin.list</code> format <code>au</code>, each entry naming its component, for example
+<code>aufx:bpas:appl</code> for Apple's AUBandpass). An Audio Unit effect goes on a track's or a mixer channel's chain like any other
+device, with bypass, wet/dry and its latency compensated; an Audio Unit instrument plays the track's notes and live MIDI. Every parameter
+is a knob in the device's window, a <code>plugin.param_get</code> / <code>plugin.param_set</code> parameter and an automation target.
+The unit's own settings are saved with the project and with <code>plugin.state_save</code>, and come back with
+<code>plugin.state_load</code> or when the project is opened. Show plugin editor opens the unit's own Cocoa editor, or Apple's generic
+editor for a unit that has none. Each Audio Unit is listed under Project tools &gt; Plug-in Modules by its own path, such as
+<code>/AudioUnits/aufx/dist/appl</code>, and quarantining that path hides that one unit; a unit that cannot be created is refused with
+the reason the system gave (for example <em>AudioUnitInitialize failed (status -10875, kAudioUnitErr_FailedInitialization)</em>).
+Windows and Linux builds have no Audio Unit format. Audio Unit v3 extensions are not hosted.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 
