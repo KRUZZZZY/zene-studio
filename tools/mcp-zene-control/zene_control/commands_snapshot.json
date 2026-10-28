@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T22:13:36Z",
+  "captured_at": "2026-10-28T03:20:37Z",
   "commands": [
     {
       "args_schema": {
@@ -3157,7 +3157,7 @@
         ],
         "type": "object"
       },
-      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead.",
+      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead. The devices' MIDI controller bindings come back on the new devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), with a one-line 'summary'.",
       "group": "chain",
       "id": "chain.apply",
       "mutating": true,
@@ -3165,6 +3165,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bindings": {
+            "type": "object"
+          },
           "device_count": {
             "type": "integer"
           },
@@ -3518,7 +3521,7 @@
         ],
         "type": "object"
       },
-      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
+      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter, with its MIDI controller binding, listed in a per-device binding manifest chain.apply reports against). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
       "group": "chain",
       "id": "chain.save",
       "mutating": true,
@@ -8174,6 +8177,80 @@
       "group": "controller",
       "id": "controller.map",
       "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Start a Lua control-surface script ('path', an absolute .lua file) under 'name', bound to the MIDI client's 'input' and 'output' ports (midi.device_list / surface.mcu_ports names). Each event from the input calls the script's on_midi(event) - event.type (note_on, note_off, cc, pitch_bend, ...), channel 1..16, key/velocity or controller/value - and the script runs registered commands with zene.command(id, args) and sends feedback to the output with surface.send_cc(channel, cc, value) and surface.send_note(channel, key, velocity). Sandboxed (no files, no OS), 1,000,000 Lua instructions per call, 8 MiB of Lua memory; 8 errors in a row stop it, and a lost input port is reported and re-bound when it returns. Replaces a running script of that name. Device state: not recorded, not saved.",
+      "group": "controller",
+      "id": "controller.script_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The running control-surface scripts (or the one 'name'): their ports, whether they are faulted or have lost their input, how many events they received, ran and dropped, the commands and feedback they sent, their errors and recent log lines.",
+      "group": "controller",
+      "id": "controller.script_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Stop the control-surface script 'name' and release its MIDI ports.",
+      "group": "controller",
+      "id": "controller.script_stop",
+      "mutating": false,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -18262,6 +18339,70 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The OSC control server: running or not, its address, port and scope, and how many requests it received, ran and refused.",
+      "group": "osc",
+      "id": "osc.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "remote",
+              "full"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start the OSC control server (off until this runs): listen for UDP on 'address' (an IP literal, default 127.0.0.1 - this machine only) and 'port' (default 9000; 0 = any free port). A message to /zene/<command-id> runs that registered command - its arguments one JSON-object string or string-key/value pairs - and the sender gets /zene/reply (id, result JSON) or /zene/error (id, kind, message). 'scope' remote (default) allows transport, markers, mixer faders and state reads; full allows every command except scripts, sessions and quitting, on a loopback address only. Replaces a running server. Device state: not recorded.",
+      "group": "osc",
+      "id": "osc.start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop the OSC control server and close its port.",
+      "group": "osc",
+      "id": "osc.stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -31343,7 +31484,7 @@
         ],
         "type": "object"
       },
-      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step.",
+      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step. The preset's MIDI controller bindings come back on the loaded devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), and 'bindings_summary' says it in one line.",
       "group": "track",
       "id": "track.preset_load",
       "mutating": true,
@@ -31369,7 +31510,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings, without its mute and solo. Writes the file only.",
+      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings - with their MIDI controller bindings - without its mute and solo. Writes the file only; 'bindings' is how many controller bindings it holds.",
       "group": "track",
       "id": "track.preset_save",
       "mutating": false,
@@ -37293,23 +37434,23 @@
       }
     }
   ],
-  "count": 871,
+  "count": 877,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-161/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-6x1yudpn/zene.sock",
-    "version": "0.4.0-alpha.5511+ba8fc34"
+    "source_socket": "/tmp/zctl-run-uk065hpl/zene.sock",
+    "version": "0.4.0-alpha.5513+40213f1"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 76,
-    "id_count": 871,
-    "ids_sha256": "6d53edb592b77fa1e893d6bfdc9dd7e9c12acee591cfaf69e27fc8972409fdc4"
+    "group_count": 77,
+    "id_count": 877,
+    "ids_sha256": "de6d08fc4c296857b3f91d1eed0bb3c6ed2287ba3d5ea990103a4b1396226225"
   }
 }

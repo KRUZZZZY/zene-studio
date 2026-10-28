@@ -1089,8 +1089,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-066.1** (drum-rack pads, stage 1, 2026-10-27): `track.drum_rack_pad_add` and `track.drum_rack_pad_set` add two `true_inverse` rows and `track.drum_rack_get_state` one `not_mutating` row - `rows=880 true_inverse=434 snapshot=42 irreversible=25 not_mutating=379`.
 
+**The L15 control-surface batch** (`feat/050-Q050-161-oc`: Q050-205 OSC server, Q050-081 controller scripts, 2026-10-28) adds six `not_mutating` rows - `osc.start`, `osc.stop`, `osc.get_state` and `controller.script_start`, `controller.script_stop`, `controller.script_state` (device state, the `surface.mcu_connect` precedent; what they run records as itself) - `rows=886 true_inverse=434 snapshot=42 irreversible=25 not_mutating=385`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=880 true_inverse=434 snapshot=42 irreversible=25 not_mutating=379
+     measured: rows=886 true_inverse=434 snapshot=42 irreversible=25 not_mutating=385
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
