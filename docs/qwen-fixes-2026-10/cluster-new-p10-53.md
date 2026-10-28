@@ -53,3 +53,28 @@ The build also needed `CCACHE_DISABLE=1`. ccache could not create its temporary 
 - `docs/qwen-fixes-2026-10/cluster-new-p10-53.md` (this report)
 
 No product file is changed. `src/core/Note.cpp` is back to its committed content (verified: the diff is empty).
+
+## Self-check
+
+Submit check (`submit_check.py`, log `logs/050-submit-check-1.log`): commits PASS, clean tree PASS, report PASS, tests PASS. The Self-check row and the gate row were FAIL before this section was written. The gate row is still FAIL, for the reason below.
+
+1. **Regression test fails with the product change reverted and passes with it.** There is no product change, so there is nothing to revert for step 4b. The equivalent proof is the mutation probe above: with both clamps removed the test fails (`logs/041-red-mutated-both-tone.log`, `FAIL!`, `Actual -1`, `Expected 0`; the binary exited 1, as the probe was run with the output piped to the log). With the restored code it passes (`logs/043-green-restored.log`, `Totals: 3 passed, 0 failed`; exit 0).
+2. **Deterministic.** The test builds its input in memory from fixed attributes (`key`, `tone`, `pos`, `len`) and fixed notes (`clipWith` with keys `-1`, `60`, `64` at ticks `0`, `24`, `48`). It uses no clock, sleep, thread or random seed. `scale.detect` is a pure read.
+3. **The fix is at the cause, and the cause is absent.** Every caller of `key % 12` on a note key was checked: `ControlCommandsNoteMoves.cpp:108` (name lookup, `QList::value`, safe) and `:174` (the weight index, bounded by the clamps). The other `% 12` sites in the tree are listed in the Evidence section. No change was made, so no caller or sibling was altered.
+4. **No collateral damage.** No product code changed, so saved projects load as before. The test adds no limit or check that could affect other callers.
+5. **FALSE-POSITIVE evidence.** `src/core/Note.cpp:168, :225, :353, :642` (the four writers of `m_key`), `include/Note.h:93` (`NumKeys = 128`), `src/core/ControlCommandsNoteMoves.cpp:174` (the index), `:159-162` (the bounded loop in `fit`).
+
+**Gate row: still FAIL under `submit_check.py`, and this is a sandbox limit, not a code failure.** `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check`, which is the projects directory. That path is outside this lane's write-jail. The official run stops at `logs.mkdir` with `PermissionError: [Errno 13]` and exits 1 (`logs/051-feature-check-official-path.log`). The directory's mode is `drwxrwxrwx`, so the refusal comes from the write-jail rather than from file permissions. I did not work around the jail. The same checks, run from a copy that changes only the log location (`logs/045-feature-check-final.log`), all PASS, with `RESULT: PASS` and EXIT=0. The table is:
+
+| Gate | Result (copy with log location redirected) |
+| --- | --- |
+| fork-sources | PASS |
+| all-sources-reproduce | PASS |
+| no-upstream-regression | PASS |
+| check-namespace | PASS |
+| no-tautology | PASS |
+| doc-figures | PASS |
+| complexity | PASS (no new item in changed files) |
+| file-length | PASS (no new item in changed files) |
+
+To close the gate row, rerun `feature_check.py` from a session that can write the projects directory, or allow the log path in the write-jail. I have not changed the gate script or its baselines.
