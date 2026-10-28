@@ -1091,6 +1091,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-089.2** (real-time hardware insert export, 2026-10-27): `render.realtime` adds one `not_mutating` row - `rows=881 true_inverse=434 snapshot=42 irreversible=25 not_mutating=380`.
 
+**The L15 control-surface batch** (`feat/050-Q050-161-oc`: Q050-205 OSC server, Q050-081 controller scripts, 2026-10-28) adds six `not_mutating` rows - `osc.start`, `osc.stop`, `osc.get_state` and `controller.script_start`, `controller.script_stop`, `controller.script_state` (device state, the `surface.mcu_connect` precedent; what they run records as itself) - `rows=886 true_inverse=434 snapshot=42 irreversible=25 not_mutating=385`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=881 true_inverse=434 snapshot=42 irreversible=25 not_mutating=380
      configuration: telemetry.status wasm.load session.get_state stem.get_state

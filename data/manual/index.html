@@ -359,6 +359,16 @@ install it, then restart), or the plug-in has no X11 editor - Open Editor, the S
 command <code>plugin.editor_open</code> say why, and no empty window appears. The device's knobs and the generic editor
 work either way.</p>
 
+<p id="preset-bindings"><b>Presets keep their controller bindings.</b> A track preset (track menu &gt; Track Preset &gt;
+Save Preset... / Load Preset..., <code>track.preset_save</code> / <code>track.preset_load</code>) and an effect chain preset
+(track menu &gt; Effect chain presets, <code>chain.save</code> / <code>chain.apply</code>) carry the MIDI controller bindings of
+their devices' parameters - channel, CC, soft takeover and feedback - and a load puts each one back on the same
+parameter of the device it just loaded, never on another parameter of the same name elsewhere. Load Preset's form and
+the chain menu then say what happened: "2 of 2 controller bindings restored: ..." - or which ones were skipped because
+the loaded device no longer has that parameter (by name, channel and CC); a skipped binding makes no mapping at all.
+Agents read the same as <code>bindings</code> (restored, skipped, a one-line summary) in the load's reply. One undo takes
+the load back, bindings included. Presets saved before this release load as before.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 
@@ -385,7 +395,8 @@ cannot be measured, "0m" when the budget is spent); scripts and agents ask the s
 recording route can take the master or a channel
 instead of the input (record.route_source), before or after the channel's devices or fader - if you also monitor what
 you record, lower the level first: a signal recorded from what it feeds can howl. Track &gt; MIDI Out sends an
-instrument track's notes to a hardware synth; record its audio back on an audio track that monitors the input.
+instrument track's notes to a hardware synth (on ALSA each note leaves at its own frame inside the audio period, so a
+fast 1/32-note line keeps its spacing - measured within 1 ms); record its audio back on an audio track that monitors the input.
 AudioFileProcessor and SlicerT also record the input straight into the sampler: Record take in the
 instrument's window captures a bounded take (click again to stop, or let it reach its length), then loads it
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
@@ -539,6 +550,38 @@ the waveform the device now holds.</p>
 by you alone); anything connected to it can do whatever the menus can - save, render, delete - so connect only programs
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
+
+<p id="controller-scripts"><b>Controller scripts (Customise &gt; Controller Scripts).</b> A control-surface script is a
+Lua file that stays loaded and answers a MIDI controller: Start Script... (<code>controller.script_start</code>) takes a
+name, the file, and the MIDI input and output to bind; every event from the input calls the script's
+<code>on_midi(event)</code> (<code>event.type</code> - note_on, note_off, cc, pitch_bend ... - <code>channel</code> 1-16, then
+<code>key</code>/<code>velocity</code> or <code>controller</code>/<code>value</code>). The script runs any registered command with
+<code>zene.command(id, args)</code> - the same commands, refusals and undo as the menus - and lights LEDs or moves motor
+faders on the output with <code>surface.send_cc(channel, cc, value)</code> and <code>surface.send_note(channel, key,
+velocity)</code>. <code>data/scripts/controller-surface.lua</code> is an example: CC 7 drives the master fader and is echoed
+back; notes 94 and 93 play and stop. Scripts run on the interface thread, never the audio thread, sandboxed (no files,
+no system calls), with 1,000,000 Lua instructions per call and 8 MiB of memory; an error is logged in Script State
+(<code>controller.script_state</code>), and eight in a row stop the script until you start it again. If the input
+disappears (a cable pulled) Script State says so, and the binding is made again when it returns. Scripts are not saved
+with the project. The bindings themselves - which knob drives which parameter - are edited in Customise &gt; MIDI
+Mappings..., saved with the project.</p>
+
+<p id="osc"><b>OSC control (Customise &gt; OSC Control Server).</b> An opt-in OSC 1.0 server over UDP; nothing listens
+until you start it, and it is not saved with the project or remembered after a restart. <i>Start...</i> asks for the
+address (127.0.0.1 by default: this machine only), the port (9000 by default; 0 picks any free port) and the scope, and
+runs <code>osc.start</code>; <i>State</i> (<code>osc.get_state</code>) shows where it listens and how many requests it
+received, ran and refused; <i>Stop</i> (<code>osc.stop</code>) closes the port. The address map: a message to
+<code>/zene/&lt;command-id&gt;</code> runs that registered command - for example <code>/zene/transport.play</code>,
+<code>/zene/transport.get_state</code> or <code>/zene/mixer.set_volume</code>. Its arguments are either none, one string
+holding the command's JSON arguments, or key/value pairs (a string key, then its value), e.g.
+<code>"channel" "ch-1" "volume" 0.5</code>. The sender gets <code>/zene/reply</code> with the command id and the result
+as JSON (a fader write answers with its channel and the applied volume; a state read answers with the state), or
+<code>/zene/error</code> with the id, the error kind (malformed, unsupported, not_found, refused, invalid_args, too_large
+...) and a message of at most 512 characters. Requests over 8 KiB, bundles and blobs are refused; a malformed packet
+never stops the server. The <i>remote</i> scope (the default) allows transport, markers, mixer faders and state reads;
+<i>full</i> allows every command except scripts and controller scripts, sessions, crash and telemetry uploads, the OSC
+server itself and quitting, names no file, and binds only a loopback address. An OSC edit is the same command as the menu's, with the
+same single undo step.</p>
 
 <p><b>Live code (Edit &gt; Live Code).</b> The panel edits a Lua script and schedules it on the
 transport: <i>Every bar</i>, <i>Every beat</i> or <i>Transport play/stop</i>, under an id of your choosing (an id that

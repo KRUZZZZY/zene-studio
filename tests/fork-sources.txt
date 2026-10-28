@@ -3235,3 +3235,27 @@ src/gui/shell/CpuDiagnosticsDialog.cpp
 tests/control-cpu-diagnostics.py
 tests/src/core/TrackSynthesisLoadTest.cpp
 tests/src/gui/CpuDiagnosticsDialogTest.cpp
+# Q050-331 (2026-10): controller bindings saved with track and chain presets - the manifest, the restore scope, tests (fork-NEW).
+include/ConnectionRestoreScope.h
+include/PresetBindings.h
+src/core/PresetBindings.cpp
+tests/src/core/PresetBindingsTest.cpp
+tests/src/gui/PresetBindingsGuiTest.cpp
+# Q050-081 (2026-10): Lua control-surface scripts bound to MIDI ports - runtime, controller.script_* commands and rows, tests (fork-NEW).
+include/ControllerScript.h
+src/core/ControllerScript.cpp
+src/core/ControlCommandsControllerScripts.cpp
+tests/src/core/ControllerScriptTest.cpp
+tests/src/gui/ControllerMappingEditorTest.cpp
+# Q050-205 (2026-10): the opt-in OSC control server - codec/bridge, UDP listener, osc.* commands and rows, tests (fork-NEW).
+include/OscBridge.h
+include/OscCommands.h
+include/OscServer.h
+src/core/OscBridge.cpp
+src/core/OscServer.cpp
+src/core/ControlCommandsOsc.cpp
+src/core/ControlReversibilityTableOsc.cpp
+tests/src/core/ControlOscServerTest.cpp
+tests/src/gui/OscServerMenuTest.cpp
+# Q050-246 (2026-10): repeated 1/32-note MIDI output timing through an ALSA loopback (fork-NEW).
+tests/src/core/MidiOutTimingTest.cpp

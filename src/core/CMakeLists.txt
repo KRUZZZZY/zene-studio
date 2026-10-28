@@ -64,6 +64,10 @@ SET(LMMS_COLLAB_SRCS
 	core/CollabPolicy.cpp
 	core/ControlCommandsCollab.cpp
 	core/ControlReversibilityTableCollab.cpp
+	# Q050-205: the OSC server's commands and its wire codec are always built; the UDP listener needs Qt Network.
+	core/ControlCommandsOsc.cpp
+	core/ControlReversibilityTableOsc.cpp
+	core/OscBridge.cpp
 )
 IF(ZENE_HAVE_COLLAB)
 	LIST(APPEND LMMS_COLLAB_SRCS
@@ -77,6 +81,7 @@ IF(ZENE_HAVE_COLLAB)
 		core/PortMappingCodec.cpp
 		core/PortMappingPmp.cpp
 		core/PortMappingUpnp.cpp
+		core/OscServer.cpp
 	)
 ENDIF()
 
@@ -596,6 +601,9 @@ set(LMMS_SRCS
 	# and its edit half. A chain preset is NOT a rack chain - see
 	# control/ControlCommandsChain.cpp.
 	core/ControlChainPresetSupport.cpp
+	core/PresetBindings.cpp
+	core/ControllerScript.cpp
+	core/ControlCommandsControllerScripts.cpp
 	core/ControlCommandsChain.cpp
 	core/ControlCommandsChainEdit.cpp
 	# The chord engine (feature row 35): the read-only view over the piano roll's

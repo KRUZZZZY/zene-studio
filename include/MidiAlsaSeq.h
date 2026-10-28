@@ -76,6 +76,9 @@ public:
 
 	static QString probeDevice();
 
+	//! Q050-246: the output queue's timer, in Hz: a scheduled event leaves on this grid (0.25 ms).
+	static constexpr unsigned int QueueTimerHz = 4000;
+
 
 	inline static QString name()
 	{
@@ -94,6 +97,12 @@ public:
 	void processOutEvent( const MidiEvent & _me,
 						const TimePos & _time,
 						const MidiPort * _port ) override;
+	/*! Q050-246: @a event, produced @a offset frames into the render period, is due at the period's start plus
+	 *  that offset in real time; the sequencer thread schedules it there on the ALSA queue (sub-tick, in
+	 *  nanoseconds) instead of at the period's whole tick. Called on the audio path: one clock read and a
+	 *  bounded, lock-free push, as processOutEvent(). */
+	void processOutEventAt( const MidiEvent& event, const TimePos& time, const MidiPort* port,
+						f_cnt_t offset ) override;
 
 	void applyPortMode( MidiPort * _port ) override;
 	void applyPortName( MidiPort * _port ) override;
@@ -156,6 +165,8 @@ private slots:
 
 
 private:
+	//! The shared, audio-path half of processOutEvent() / processOutEventAt(): @a dueNs 0 = no frame position.
+	void enqueueOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port, std::int64_t dueNs );
 	void run() override;
 	void processQueuedOutEvent(const MidiOutQueue::Command& command);
 

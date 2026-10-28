@@ -2095,7 +2095,9 @@ What is bounded, stated rather than implied:
   own counter (`MidiPort::outputEventsWritten()`) is read where `m_midiClient->processOutEvent()` is
   called. That is a write reaching the client, **not** a proof that a lamp lit — with the dummy client
   `sendByte()` is a no-op, and nothing here has been run against a controller that could confirm it.
-- **OSC is out** — this is the MIDI controller surface only.
+- **OSC is a separate, opt-in server** (Q050-205, `osc.*`, Customise > OSC Control Server): it maps `/zene/<command-id>`
+  onto the registry; this controller-surface group stays MIDI. The OSC server sends replies to requests only - no
+  unsolicited feedback, subscriptions or meter streams - and is not remembered across restarts.
 - **No motorised-fader return path is proved.** `controller.feedback` writes the value the project
   holds; whether a given device acts on it (moves a fader rather than lighting a ring) is a property of
   the device, and is unverified here.

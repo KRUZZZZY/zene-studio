@@ -185,6 +185,10 @@ set(LMMS_TESTS
 	# The socket proof of the same claim is the registered ctest
 	# ControlChainPresets (tests/control-chain-presets.py).
 	src/core/ControlChainPresetTest.cpp
+	# Q050-081: Lua control-surface scripts on a bound MIDI port.
+	src/core/ControllerScriptTest.cpp
+	# Q050-331: controller bindings saved with track and chain presets, on real devices.
+	src/core/PresetBindingsTest.cpp
 	# Out-of-process plugin hosting BEYOND ZynAddSubFx (feature row 80 of
 	# docs/FEATURE-LIST-0.3.0.md, board card #670): the family table
 	# (include/OutOfProcessHosting.h), the client-process record it keys the
@@ -513,6 +517,8 @@ set(LMMS_TESTS
 	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
+	# Q050-246: repeated 1/32-note output timing through an ALSA sequencer loopback (skips without ALSA).
+	src/core/MidiOutTimingTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/FreezeRegionRepairTest.cpp
@@ -1352,6 +1358,10 @@ set(LMMS_TESTS
 	src/gui/SampleClipWarpModeMenuTest.cpp
 	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
 	src/gui/ChainPresetMenuTest.cpp
+	# Q050-081: the MIDI mapping editor (list, edit, persist) and the Controller Scripts menu.
+	src/gui/ControllerMappingEditorTest.cpp
+	# Q050-331: the preset menus show the controller bindings a load restored.
+	src/gui/PresetBindingsGuiTest.cpp
 	# A mixer channel's Rack menu (rack.* chains, routing and macros).
 	src/gui/RackMenuTest.cpp
 	# The pin matrix's hover cursor, and what a drag over it does.
@@ -1581,6 +1591,9 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel (requires: display) over the real main window.
 		src/gui/CollabPanelTest.cpp
+		# Q050-205: the opt-in OSC control server over real UDP loopback, and its Customise menu entries.
+		src/core/ControlOscServerTest.cpp
+		src/gui/OscServerMenuTest.cpp
 	)
 ENDIF()
 
@@ -2171,7 +2184,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
-	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest" OR LMMS_TEST_NAME STREQUAL "LinkAudioStreamTest")
+	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest" OR LMMS_TEST_NAME STREQUAL "LinkAudioStreamTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlOscServerTest" OR LMMS_TEST_NAME STREQUAL "ControllerScriptTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "AutomationModesTest")
@@ -2291,6 +2305,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
+		# Q050-331: preset bindings ride a real instrument's and a real effect's parameters.
+		OR LMMS_TEST_NAME STREQUAL "PresetBindingsTest"
+		OR LMMS_TEST_NAME STREQUAL "PresetBindingsGuiTest"
 		# The modulators panel binds a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
 		# The Device panel draws one real effect's card and the modulator driving it.
@@ -2626,6 +2643,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# library owner when Plugin::instantiate() returns it.
 	if(LMMS_TEST_NAME STREQUAL "DevicePanelTest")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
+	endif()
+	# Q050-331: the preset-binding tests load the build's tripleoscillator and amplifier modules.
+	if(LMMS_TEST_NAME STREQUAL "PresetBindingsTest" OR LMMS_TEST_NAME STREQUAL "PresetBindingsGuiTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	# Q050-047: RackMenuTest's zones and empty-parallel-chain cases load a real effect module, so a targeted
 	# build (cmake --build build --target RackMenuTest) must build amplifier too; otherwise plugin.list has no
@@ -3404,6 +3426,7 @@ set_tests_properties(WindowSelectStartupTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(OnlineHelpNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	set_tests_properties(ControlOscServerTest OscServerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3473,6 +3496,7 @@ set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ClipEditsMenuTest ClipEffectsDialogTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ControllerMappingEditorTest ControllerScriptTest MidiOutTimingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

@@ -295,7 +295,7 @@ void populateTrack(QMenu* menu, Track* track)
 	add(render, "Freeze", "freeze.track", self, false);
 	QMenu* presets = menu->addMenu(tr("Track Preset"));  // L11 (WF-024)
 	add(presets, "Save Preset...", "track.preset_save", self, true);
-	add(presets, "Load Preset...", "track.preset_load", self, true);
+	add(presets, "Load Preset...", "track.preset_load", self, true, {}, true);  // Q050-331: the form shows the bindings it restored
 	LibraryCommandMenus::populateTrack(menu, track);  // L12 (WF-044)
 	if (dynamic_cast<SampleTrack*>(track) != nullptr)
 	{
@@ -551,6 +551,17 @@ void populateCustomise(QMenu* menu)
 	add(surface, "Ports", "surface.mcu_ports", {}, false, {}, true);
 	add(surface, "State", "surface.mcu_state", {}, false, {}, true);
 	add(surface, "Disconnect", "surface.mcu_disconnect", {}, false);
+	// Q050-081: Lua control-surface scripts on MIDI ports (the bindings themselves stay in MIDI Mappings above).
+	QMenu* scripts = menu->addMenu(tr("Controller Scripts"));
+	add(scripts, "Start Script...", "controller.script_start", {}, true, {}, true);
+	add(scripts, "Script State", "controller.script_state", {}, false, {}, true);
+	add(scripts, "Stop Script...", "controller.script_stop", {}, true);
+	// Q050-205: the opt-in OSC server - off until Start runs osc.start; the form shows where it listens.
+	QMenu* osc = menu->addMenu(tr("OSC Control Server"));
+	add(osc, "Start...", "osc.start", {}, true, {{QStringLiteral("address"), QStringLiteral("127.0.0.1")},
+		{QStringLiteral("port"), 9000}, {QStringLiteral("scope"), QStringLiteral("remote")}}, true);
+	add(osc, "State", "osc.get_state", {}, false, {}, true);
+	add(osc, "Stop", "osc.stop", {}, false, {}, true);
 	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
 	for (const ShellPanelSpec& spec : ShellLayout::panels())
 	{

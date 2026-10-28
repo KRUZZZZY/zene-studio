@@ -295,6 +295,7 @@ include/CommandPalette.h
 include/CompSlip.h
 include/CompSwipeStrip.h
 include/ConfigManager.h
+include/ConnectionRestoreScope.h
 include/ConsoleStrip.h
 include/ConsoleStripSection.h
 include/ContainedCrossfade.h
@@ -353,6 +354,7 @@ include/ControllerConnectionDialog.h
 include/ControllerDialog.h
 include/ControllerLaneView.h
 include/ControllerRackView.h
+include/ControllerScript.h
 include/ControllerSurface.h
 include/ControllerTemplateMenu.h
 include/ControllerView.h
@@ -641,6 +643,9 @@ include/NoteProperties.h
 include/NoteRandom.h
 include/NoteTransform.h
 include/NoteTransformActions.h
+include/OscBridge.h
+include/OscCommands.h
+include/OscServer.h
 include/Oscillator.h
 include/OscillatorConstants.h
 include/Oscilloscope.h
@@ -698,6 +703,7 @@ include/PluginWindowSystem.h
 include/PortMapping.h
 include/PortMappingCodec.h
 include/PositionLine.h
+include/PresetBindings.h
 include/PresetPreviewPlayHandle.h
 include/PreviewOutput.h
 include/ProjectContainer.h
@@ -1597,6 +1603,7 @@ src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
 src/core/ControlCommandsControllerMap.cpp
+src/core/ControlCommandsControllerScripts.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsCrashControl.cpp
@@ -1679,6 +1686,7 @@ src/core/ControlCommandsNoteSlide.cpp
 src/core/ControlCommandsNoteTools.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
+src/core/ControlCommandsOsc.cpp
 src/core/ControlCommandsOutOfProcess.cpp
 src/core/ControlCommandsOutOfProcessEdit.cpp
 src/core/ControlCommandsOutOfProcessShared.h
@@ -1859,6 +1867,7 @@ src/core/ControlReversibilityTableMixing.cpp
 src/core/ControlReversibilityTableMmpzGit.cpp
 src/core/ControlReversibilityTableMts.cpp
 src/core/ControlReversibilityTableNoteScale.cpp
+src/core/ControlReversibilityTableOsc.cpp
 src/core/ControlReversibilityTableOutOfProcess.cpp
 src/core/ControlReversibilityTablePassive.cpp
 src/core/ControlReversibilityTableRecording.cpp
@@ -1902,6 +1911,7 @@ src/core/ControlVocabulary.cpp
 src/core/ControlWasmSupport.cpp
 src/core/Controller.cpp
 src/core/ControllerConnection.cpp
+src/core/ControllerScript.cpp
 src/core/ControllerSurface.cpp
 src/core/CrashReporter.cpp
 src/core/CrashReporterFormat.cpp
@@ -2025,6 +2035,8 @@ src/core/NotePlayHandle.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
+src/core/OscBridge.cpp
+src/core/OscServer.cpp
 src/core/Oscillator.cpp
 src/core/OutOfProcessHosting.cpp
 src/core/ParameterAliases.cpp
@@ -2057,6 +2069,7 @@ src/core/PortMapping.cpp
 src/core/PortMappingCodec.cpp
 src/core/PortMappingPmp.cpp
 src/core/PortMappingUpnp.cpp
+src/core/PresetBindings.cpp
 src/core/PresetPreviewPlayHandle.cpp
 src/core/PreviewOutput.cpp
 src/core/ProjectContainer.cpp
@@ -2728,6 +2741,7 @@ tests/src/core/ControlModulatorCommandsTest.cpp
 tests/src/core/ControlNoteExpressionCommandsTest.cpp
 tests/src/core/ControlNoteNoOpUndoTest.cpp
 tests/src/core/ControlNoteScaleVerbsTest.cpp
+tests/src/core/ControlOscServerTest.cpp
 tests/src/core/ControlPluginBusesTest.cpp
 tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlProjectMediaTest.cpp
@@ -2758,6 +2772,7 @@ tests/src/core/ControlVcaTestSupport.h
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControlWasmRenderTest.cpp
+tests/src/core/ControllerScriptTest.cpp
 tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
@@ -2844,6 +2859,7 @@ tests/src/core/MidiLearnTest.cpp
 tests/src/core/MidiLearnThreadTest.cpp
 tests/src/core/MidiOssTest.cpp
 tests/src/core/MidiOutQueueTest.cpp
+tests/src/core/MidiOutTimingTest.cpp
 tests/src/core/MidiProbabilityPersistenceTest.cpp
 tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
@@ -2911,6 +2927,7 @@ tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/PluginWindowPlatformTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
 tests/src/core/PortMappingOrchestratorTest.cpp
+tests/src/core/PresetBindingsTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerSaveTest.cpp
 tests/src/core/ProjectContainerTest.cpp
@@ -3110,6 +3127,7 @@ tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControlCommandsMacrosTest.cpp
 tests/src/gui/ControlCommandsSaveVersionTest.cpp
+tests/src/gui/ControllerMappingEditorTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CpuDiagnosticsDialogTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
@@ -3177,6 +3195,7 @@ tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/OnlineHelpNoticeTest.cpp
+tests/src/gui/OscServerMenuTest.cpp
 tests/src/gui/PanelShortcutsTest.cpp
 tests/src/gui/PatcherCanvasTest.cpp
 tests/src/gui/PerformViewTest.cpp
@@ -3188,6 +3207,7 @@ tests/src/gui/PluginCompatEditorProbe.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
+tests/src/gui/PresetBindingsGuiTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/gui/RackMenuTest.cpp

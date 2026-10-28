@@ -25,6 +25,7 @@
 #include <QDomElement>
 
 #include "JournallingObject.h"
+#include "ConnectionRestoreScope.h"
 #include "AutomatableModel.h"
 #include "ProjectJournal.h"
 #include "Engine.h"
@@ -102,7 +103,11 @@ QDomElement JournallingObject::saveState( QDomDocument & _doc,
 
 void JournallingObject::restoreState( const QDomElement & _this )
 {
-	SerializingObject::restoreState( _this );
+	{
+		// Q050-331: a restore states each model's controller connection in full (ConnectionRestoreScope.h).
+		const ConnectionRestoreScope restoring;
+		SerializingObject::restoreState( _this );
+	}
 
 	saveJournallingState( false );
 
