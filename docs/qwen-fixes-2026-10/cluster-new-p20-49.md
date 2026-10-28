@@ -148,3 +148,9 @@ changed. No command was added; the snapshot and canary are not affected.
 9. **Residual risk.** The box still shows the nearest scene (512) for a stored value it cannot show, so the display
    still differs from the stored value. A reviewer may want a "not in grid" hint on that row. Not done here (out of
    scope for a bug fix, and it would add UI).
+10. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE"**: not applicable. The verdict is FIXED, and the code cited
+    above is the evidence for the fix.
+11. **`submit_check.py` (`submit-check-1.log`, EXIT=1).** Its only FAIL is the gates item. That item runs
+    `feature_check.py`, which hits the same write-jail PermissionError described under "Gates", so it is an environment
+    limit and not a code failure. Every other item passes: commits on the branch, working tree clean, verdict in the
+    first lines, tests changed.
