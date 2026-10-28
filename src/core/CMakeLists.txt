@@ -591,6 +591,8 @@ set(LMMS_SRCS
 	# control/ControlCommandsChain.cpp.
 	core/ControlChainPresetSupport.cpp
 	core/PresetBindings.cpp
+	core/ControllerScript.cpp
+	core/ControlCommandsControllerScripts.cpp
 	core/ControlCommandsChain.cpp
 	core/ControlCommandsChainEdit.cpp
 	# The chord engine (feature row 35): the read-only view over the piano roll's

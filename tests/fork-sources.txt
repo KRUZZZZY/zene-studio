@@ -3209,3 +3209,9 @@ include/PresetBindings.h
 src/core/PresetBindings.cpp
 tests/src/core/PresetBindingsTest.cpp
 tests/src/gui/PresetBindingsGuiTest.cpp
+# Q050-081 (2026-10): Lua control-surface scripts bound to MIDI ports - runtime, controller.script_* commands and rows, tests (fork-NEW).
+include/ControllerScript.h
+src/core/ControllerScript.cpp
+src/core/ControlCommandsControllerScripts.cpp
+tests/src/core/ControllerScriptTest.cpp
+tests/src/gui/ControllerMappingEditorTest.cpp

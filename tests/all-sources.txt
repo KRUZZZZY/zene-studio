@@ -353,6 +353,7 @@ include/ControllerConnectionDialog.h
 include/ControllerDialog.h
 include/ControllerLaneView.h
 include/ControllerRackView.h
+include/ControllerScript.h
 include/ControllerSurface.h
 include/ControllerTemplateMenu.h
 include/ControllerView.h
@@ -1594,6 +1595,7 @@ src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
 src/core/ControlCommandsControllerMap.cpp
+src/core/ControlCommandsControllerScripts.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
 src/core/ControlCommandsCrashControl.cpp
@@ -1898,6 +1900,7 @@ src/core/ControlVocabulary.cpp
 src/core/ControlWasmSupport.cpp
 src/core/Controller.cpp
 src/core/ControllerConnection.cpp
+src/core/ControllerScript.cpp
 src/core/ControllerSurface.cpp
 src/core/CrashReporter.cpp
 src/core/CrashReporterFormat.cpp
@@ -2748,6 +2751,7 @@ tests/src/core/ControlVcaTestSupport.h
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControlWasmRenderTest.cpp
+tests/src/core/ControllerScriptTest.cpp
 tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
@@ -3098,6 +3102,7 @@ tests/src/gui/CommandFormTest.cpp
 tests/src/gui/CommandPaletteTest.cpp
 tests/src/gui/ControlCommandsMacrosTest.cpp
 tests/src/gui/ControlCommandsSaveVersionTest.cpp
+tests/src/gui/ControllerMappingEditorTest.cpp
 tests/src/gui/ControllerTemplateMenuTest.cpp
 tests/src/gui/CrashReportMenuTest.cpp
 tests/src/gui/CrossfadeEditorTest.cpp

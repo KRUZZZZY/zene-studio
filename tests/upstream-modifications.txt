@@ -5443,3 +5443,5 @@ src/core/AutomatableModel.cpp	Q050-331: inside a ConnectionRestoreScope (a journ
 src/core/JournallingObject.cpp	Q050-331: restoreState() opens a ConnectionRestoreScope around SerializingObject::restoreState(), so undo/redo and snapshot restores state each model's controller connection in full; covered by PresetBindingsTest::trackPresetRestoresBindingsOnTheLoadedDevices.
 src/core/CMakeLists.txt	Q050-331: lists the fork-NEW core/PresetBindings.cpp in LMMS_SRCS. One source path; no target, flag or option moved.
 tests/CMakeLists.txt	Q050-331: registers PresetBindingsTest and PresetBindingsGuiTest, gives them the build tree's plug-in directory and a dependency on the tripleoscillator and amplifier modules they load.
+src/core/CMakeLists.txt	Q050-081: lists the fork-NEW core/ControllerScript.cpp and core/ControlCommandsControllerScripts.cpp in LMMS_SRCS. Source paths only; no target, flag or option moved.
+tests/CMakeLists.txt	Q050-081: registers ControllerScriptTest (with ZENE_SOURCE_DIR, for the shipped example script) and ControllerMappingEditorTest, both on the offscreen platform.

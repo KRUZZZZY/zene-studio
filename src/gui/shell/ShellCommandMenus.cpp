@@ -551,6 +551,11 @@ void populateCustomise(QMenu* menu)
 	add(surface, "Ports", "surface.mcu_ports", {}, false, {}, true);
 	add(surface, "State", "surface.mcu_state", {}, false, {}, true);
 	add(surface, "Disconnect", "surface.mcu_disconnect", {}, false);
+	// Q050-081: Lua control-surface scripts on MIDI ports (the bindings themselves stay in MIDI Mappings above).
+	QMenu* scripts = menu->addMenu(tr("Controller Scripts"));
+	add(scripts, "Start Script...", "controller.script_start", {}, true, {}, true);
+	add(scripts, "Script State", "controller.script_state", {}, false, {}, true);
+	add(scripts, "Stop Script...", "controller.script_stop", {}, true);
 	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
 	for (const ShellPanelSpec& spec : ShellLayout::panels())
 	{

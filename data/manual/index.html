@@ -499,6 +499,21 @@ by you alone); anything connected to it can do whatever the menus can - save, re
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
 
+<p id="controller-scripts"><b>Controller scripts (Customise &gt; Controller Scripts).</b> A control-surface script is a
+Lua file that stays loaded and answers a MIDI controller: Start Script... (<code>controller.script_start</code>) takes a
+name, the file, and the MIDI input and output to bind; every event from the input calls the script's
+<code>on_midi(event)</code> (<code>event.type</code> - note_on, note_off, cc, pitch_bend ... - <code>channel</code> 1-16, then
+<code>key</code>/<code>velocity</code> or <code>controller</code>/<code>value</code>). The script runs any registered command with
+<code>zene.command(id, args)</code> - the same commands, refusals and undo as the menus - and lights LEDs or moves motor
+faders on the output with <code>surface.send_cc(channel, cc, value)</code> and <code>surface.send_note(channel, key,
+velocity)</code>. <code>data/scripts/controller-surface.lua</code> is an example: CC 7 drives the master fader and is echoed
+back; notes 94 and 93 play and stop. Scripts run on the interface thread, never the audio thread, sandboxed (no files,
+no system calls), with 1,000,000 Lua instructions per call and 8 MiB of memory; an error is logged in Script State
+(<code>controller.script_state</code>), and eight in a row stop the script until you start it again. If the input
+disappears (a cable pulled) Script State says so, and the binding is made again when it returns. Scripts are not saved
+with the project. The bindings themselves - which knob drives which parameter - are edited in Customise &gt; MIDI
+Mappings..., saved with the project.</p>
+
 <p><b>Live code (Edit &gt; Live Code).</b> The panel edits a Lua script and schedules it on the
 transport: <i>Every bar</i>, <i>Every beat</i> or <i>Transport play/stop</i>, under an id of your choosing (an id that
 already exists is replaced in place, one slot). Schedule compiles the buffer first - a script that does not compile is
