@@ -119,9 +119,10 @@ private slots:
 			audioEngine->requestChangeInModel();
 			acquiredLock.set_value();
 			int event = buildEvent.load(std::memory_order_acquire);
+			// Polled, not std::atomic::wait: that needs macOS 11 and AudioEngine (floor 10.13) cannot notify.
 			while (event == 0)
 			{
-				buildEvent.wait(event, std::memory_order_acquire);
+				std::this_thread::yield();
 				event = buildEvent.load(std::memory_order_acquire);
 			}
 			audioEngine->doneChangeInModel();
@@ -131,7 +132,6 @@ private slots:
 			int pending = 0;
 			buildEvent.compare_exchange_strong(pending, 2, std::memory_order_release,
 				std::memory_order_relaxed);
-			buildEvent.notify_all();
 			if (holder.joinable()) { holder.join(); }
 			audioEngine->setAutomatableModelRegistrationAttemptStateForTest(nullptr);
 		});
@@ -141,7 +141,6 @@ private slots:
 		int pending = 0;
 		buildEvent.compare_exchange_strong(pending, 2, std::memory_order_release,
 			std::memory_order_relaxed);
-		buildEvent.notify_all();
 		const int observedEvent = buildEvent.load(std::memory_order_acquire);
 		holder.join();
 		audioEngine->setAutomatableModelRegistrationAttemptStateForTest(nullptr);

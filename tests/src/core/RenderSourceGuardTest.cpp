@@ -157,9 +157,11 @@ private slots:
 		QCOMPARE(contents(project), original);
 	}
 
-#ifndef _WIN32
 	void successfulRenderKeepsSymbolicLinkDestination()
 	{
+#ifdef _WIN32
+		QSKIP("POSIX symbolic links and long names; moc cannot see _WIN32, so the slot exists everywhere");
+#else
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		const QString target = dir.filePath(QStringLiteral("target.wav"));
@@ -176,10 +178,14 @@ private slots:
 		QVERIFY(QFileInfo(destination).isSymLink());
 		QCOMPARE(contents(target), QByteArray("rendered output"));
 		RenderQueue::instance().clearFinished();
+#endif
 	}
 
 	void renderToSymbolicLinkDirectoryDoesNotReplaceIt()
 	{
+#ifdef _WIN32
+		QSKIP("POSIX symbolic links and long names; moc cannot see _WIN32, so the slot exists everywhere");
+#else
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		QTemporaryDir targetDirectory(dir.filePath(QStringLiteral("target-XXXXXX")));
@@ -193,10 +199,14 @@ private slots:
 		QVERIFY(QFileInfo(destination).isSymLink());
 		QVERIFY(QFileInfo(destination).isDir());
 		RenderQueue::instance().clearFinished();
+#endif
 	}
 
 	void successfulRenderSupportsLongDestinationNames()
 	{
+#ifdef _WIN32
+		QSKIP("POSIX symbolic links and long names; moc cannot see _WIN32, so the slot exists everywhere");
+#else
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
 		const QString destination = dir.filePath(QString(240, QLatin1Char('r')) + QStringLiteral(".wav"));
@@ -210,8 +220,8 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(RenderQueue::instance().job(id)->state == RenderJob::State::Done, 5000);
 		QCOMPARE(contents(destination), QByteArray("rendered output"));
 		RenderQueue::instance().clearFinished();
-	}
 #endif
+	}
 };
 
 int main(int argc, char** argv)

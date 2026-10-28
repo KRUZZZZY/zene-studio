@@ -545,7 +545,7 @@ private slots:
 		struct sigaction action{};
 		action.sa_handler = &alternateStackSignalHandler;
 		action.sa_flags = SA_ONSTACK;
-		QVERIFY(::sigemptyset(&action.sa_mask) == 0);
+		QVERIFY(sigemptyset(&action.sa_mask) == 0);
 		QVERIFY(::sigaction(SIGUSR1, &action, nullptr) == 0);
 		struct sigaction crashAction{};
 		QVERIFY(::sigaction(SIGSEGV, nullptr, &crashAction) == 0);

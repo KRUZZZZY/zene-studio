@@ -78,8 +78,14 @@ int s_injectedSigactionFailures = 0;
 
 } // namespace
 
+// glibc declares sigaction noexcept (__THROW); Apple's libc does not, and the redeclaration must match.
+#ifdef __APPLE__
+#define ZENE_SIGACTION_NOEXCEPT
+#else
+#define ZENE_SIGACTION_NOEXCEPT noexcept
+#endif
 extern "C" int sigaction(int signum, const struct sigaction* action,
-	struct sigaction* oldAction) noexcept
+	struct sigaction* oldAction) ZENE_SIGACTION_NOEXCEPT
 {
 	if (action != nullptr && signum == s_failSigactionForTest)
 	{
@@ -195,7 +201,7 @@ private slots:
 		struct sigaction ignored;
 		std::memset(&ignored, 0, sizeof(ignored));
 		ignored.sa_handler = SIG_IGN;
-		QVERIFY(::sigemptyset(&ignored.sa_mask) == 0);
+		QVERIFY(sigemptyset(&ignored.sa_mask) == 0);
 		QVERIFY(::sigaction(SIGSEGV, &ignored, nullptr) == 0);
 
 		s_injectedSigactionFailures = 0;

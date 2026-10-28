@@ -152,6 +152,18 @@ jobs:
         # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
         # later runs restore both from the cache and clone nothing.
         run: bash .github/workflows/provision-plugin-hosting-deps.sh build
+      - name: Free disk space (the RelWithDebInfo test tree outgrew the runner)
+        # Round 6 of ci/050-m0-train-21 (2026-10-28) died in Build on both Linux jobs with
+        # "No space left on device" while linking test executables. Debug info stays (the
+        # signal-death backtrace step needs it); the pre-installed trees this build never
+        # uses go instead - the same list, and the same reasons, as the mingw64 job's step.
+        run: |
+          echo "[free-disk-space] df -h before:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h after:"
+          df -h /
       - name: Configure
         run: |
           ccache --zero-stats
@@ -381,6 +393,18 @@ jobs:
         # ~39 MB of SDK sources + ~7 MB of CLAP headers once per operating system;
         # later runs restore both from the cache and clone nothing.
         run: bash .github/workflows/provision-plugin-hosting-deps.sh build
+      - name: Free disk space (the RelWithDebInfo test tree outgrew the runner)
+        # Round 6 of ci/050-m0-train-21 (2026-10-28) died in Build on both Linux jobs with
+        # "No space left on device" while linking test executables. Debug info stays (the
+        # signal-death backtrace step needs it); the pre-installed trees this build never
+        # uses go instead - the same list, and the same reasons, as the mingw64 job's step.
+        run: |
+          echo "[free-disk-space] df -h before:"
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          if command -v docker >/dev/null 2>&1; then docker image prune -a -f || true; fi
+          echo "[free-disk-space] df -h after:"
+          df -h /
       - name: Configure
         run: |
           ccache --zero-stats
