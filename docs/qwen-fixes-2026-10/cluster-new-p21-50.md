@@ -36,3 +36,4 @@ Commands run (EXIT codes as observed):
 - Undo and commands: nothing added. No command was added or changed, so the `ControlCommandsSnapshot` canary is unaffected.
 - Registration: no new files, so nothing to register in `tests/fork-sources.txt` or `tests/upstream-modifications.txt`.
 - Gates: the first `feature_check.py` attempt failed with a permission error (EXIT=1, see table). A logs-directory copy of the same gate passed with EXIT=0 (8/8).
+- `submit_check.py` gates row: FAIL, with the same cause. It runs the unmodified `feature_check.py`, which cannot create its log directory beside the worktree (outside the write-jail). The gate's checks themselves pass (8/8, see above). This is an environment limit, not a code failure. The output is in `logs/submit-1.log`.
