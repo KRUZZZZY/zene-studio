@@ -28,6 +28,7 @@
 #include <QJsonArray>
 
 #include "ControlVocabulary.h"
+#include "DummyEffect.h"
 #include "Effect.h"
 #include "Engine.h"
 #include "Instrument.h"
@@ -88,8 +89,17 @@ void readChain(MixerChannel* channel, DrumPadState* out)
 	{
 		DrumPadEffect entry;
 		entry.id = effectIdOf(effect);
-		entry.plugin = QString::fromUtf8(effect->descriptor()->name);
-		entry.displayName = QString::fromUtf8(effect->descriptor()->displayName);
+		if (const auto* missing = dynamic_cast<const DummyEffect*>(effect))
+		{
+			entry.plugin = missing->originalPluginData().attribute(QStringLiteral("name"));
+			entry.displayName = entry.plugin.isEmpty() ? QStringLiteral("Missing effect")
+				: entry.plugin + QStringLiteral(" (missing)");
+		}
+		else if (const Plugin::Descriptor* descriptor = effect->descriptor())
+		{
+			entry.plugin = QString::fromUtf8(descriptor->name);
+			entry.displayName = QString::fromUtf8(descriptor->displayName);
+		}
 		entry.enabled = effect->isEnabled();
 		out->chain.push_back(entry);
 	}

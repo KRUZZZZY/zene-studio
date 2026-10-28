@@ -30,11 +30,13 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
 #include "AutomatableModel.h"
 #include "ControlRegistry.h"
+#include "DummyEffect.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -387,6 +389,23 @@ private slots:
 		QCOMPARE(padsOf(folder).at(1).toObject().value(QStringLiteral("chain_shared")).toBool(), true);
 		snare->mixerChannelModel()->setValue(own);
 		QCOMPARE(padsOf(folder).at(1).toObject().value(QStringLiteral("chain_shared")).toBool(), false);
+	}
+
+	//! A missing plug-in is retained as DummyEffect with a generic descriptor; read-back preserves its plug-in name.
+	void aMissingEffectStillReadsFromThePadChain()
+	{
+		const QString folder = makeRack();
+		InstrumentTrack* kick = trackOf(padsOf(folder).at(0).toObject().value(QStringLiteral("track")));
+		MixerChannel* channel = Engine::mixer()->mixerChannel(kick->mixerChannelModel()->value());
+		QDomDocument document;
+		QDomElement missingXml = document.createElement(QStringLiteral("effect"));
+		missingXml.setAttribute(QStringLiteral("name"), QStringLiteral("missing-effect"));
+		document.appendChild(missingXml);
+		channel->m_fxChain.appendEffect(new DummyEffect(&channel->m_fxChain, missingXml));
+
+		const QJsonObject effect = padsOf(folder).at(0).toObject().value(QStringLiteral("chain")).toArray().at(0).toObject();
+		QCOMPARE(effect.value(QStringLiteral("plugin")).toString(), QStringLiteral("missing-effect"));
+		QCOMPARE(effect.value(QStringLiteral("display_name")).toString(), QStringLiteral("missing-effect (missing)"));
 	}
 
 private:
