@@ -47,9 +47,11 @@ constexpr qint64 Megabyte = 1024ll * 1024;
 
 //! The fingerprint schemes. The stored value says which scheme wrote it, so a
 //! history written before the scheme was versioned is read as that scheme's:
-//! v1 hashed the sections only, v2 hashes the root's format attributes too.
+//! v1 hashed the sections only, v2 hashes the root's format attributes too, v3
+//! leaves the revision stamps out (a stored v2 value is still read as v2).
 const QString FingerprintV1Prefix = QStringLiteral("sha256:");
 const QString FingerprintV2Prefix = QStringLiteral("sha256:v2:");
+const QString FingerprintV3Prefix = QStringLiteral("sha256:v3:");
 
 int configInt(const QString& attribute, int fallback, int low, int high)
 {
@@ -82,6 +84,18 @@ bool stripMetadataNodes(QDomElement element)
 		node = next;
 	}
 	return true;
+}
+
+//! Drops the save bookkeeping a revision stamp adds (`rev` and the `writer` that stamped it) from the
+//! element and every element under it - the attributes ProjectIds' content comparison leaves out too.
+void stripRevisionStamps(QDomElement element)
+{
+	element.removeAttribute(QStringLiteral("rev"));
+	element.removeAttribute(QStringLiteral("writer"));
+	for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+	{
+		stripRevisionStamps(child);
+	}
 }
 
 bool stepDamaged(const QDomElement& step, const QByteArray& bytes)
@@ -130,18 +144,20 @@ void pushLoadedStep(ProjectJournal* journal, const ProjectJournal::Snapshot& bef
 //! The digest of the sections a fingerprint covers: <head> (without its
 //! `writer`) and every <song> section except the ones that are not the
 //! project's content. \a schemeLine is what the scheme adds to the digest (the
-//! root's format attributes for v2, nothing for v1).
-QString digestOfSections(const QDomDocument& document, bool stripMetadata, const QString& schemeLine)
+//! root's format attributes for v2 and v3, nothing for v1); \a stripStamps leaves
+//! the revision stamps out (v3).
+QString digestOfSections(const QDomDocument& document, bool stripMetadata, const QString& schemeLine, bool stripStamps)
 {
 	const QDomElement root = document.documentElement();
 	QCryptographicHash hash(QCryptographicHash::Sha256);
 	if (!schemeLine.isEmpty()) { hash.addData(schemeLine.toUtf8()); }
-	const auto add = [&hash, stripMetadata](const QDomElement& element) {
+	const auto add = [&hash, stripMetadata, stripStamps](const QDomElement& element) {
 		QDomElement measured = element;
-		if (stripMetadata)
+		if (stripMetadata || stripStamps)
 		{
 			measured = element.cloneNode(true).toElement();
-			if (!stripMetadataNodes(measured)) { return; }
+			if (stripMetadata && !stripMetadataNodes(measured)) { return; }
+			if (stripStamps) { stripRevisionStamps(measured); }
 		}
 		hash.addData(element.tagName().toUtf8());
 		hash.addData(QByteArrayLiteral(" "));
@@ -283,14 +299,21 @@ ProjectJournal::PersistPlan UndoHistory::currentPlan() const
 QString UndoHistory::fingerprint(const QDomDocument& document, bool stripMetadata, const QString& version, const QString& type)
 {
 	// The root's format attributes lead the digest: a document whose version
-	// or type changed is not the document the history was written from.
+	// or type changed is not the document the history was written from. The
+	// revision stamps are left out: a re-save that changes only them is not an edit.
+	const QString scheme = QStringLiteral("v3 ") + version + QLatin1Char(' ') + type + QLatin1Char('\n');
+	return FingerprintV3Prefix + digestOfSections(document, stripMetadata, scheme, true);
+}
+
+QString UndoHistory::fingerprintV2(const QDomDocument& document, bool stripMetadata, const QString& version, const QString& type)
+{
 	const QString scheme = QStringLiteral("v2 ") + version + QLatin1Char(' ') + type + QLatin1Char('\n');
-	return FingerprintV2Prefix + digestOfSections(document, stripMetadata, scheme);
+	return FingerprintV2Prefix + digestOfSections(document, stripMetadata, scheme, false);
 }
 
 QString UndoHistory::legacyFingerprint(const QDomDocument& document, bool stripMetadata)
 {
-	return FingerprintV1Prefix + digestOfSections(document, stripMetadata, QString());
+	return FingerprintV1Prefix + digestOfSections(document, stripMetadata, QString(), false);
 }
 
 // ---- the section ---------------------------------------------------------------
@@ -384,6 +407,7 @@ void UndoHistory::seal(DataFile& file, bool withResources)
 void UndoHistory::beginLoad(const DataFile& file)
 {
 	m_loadFingerprint.clear();
+	m_loadFingerprintV2.clear();
 	m_loadLegacyFingerprint.clear();
 	m_loadSourceFormatChanged = false;
 	const QDomElement song = file.documentElement().firstChildElement(QStringLiteral("song"));
@@ -392,10 +416,11 @@ void UndoHistory::beginLoad(const DataFile& file)
 		// The root's format attributes AS THE FILE HAD THEM: a load that
 		// upgraded the file rewrote the root's version, and a file whose root
 		// version was changed under it must not be taken for the project its
-		// history was written from. The scheme v1 fingerprint is measured too,
-		// for a history written before the scheme was versioned.
-		m_loadFingerprint = fingerprint(file, false,
-			QString::number(file.originalFileVersion()), file.originalType());
+		// history was written from. The scheme v2 and v1 fingerprints are
+		// measured too, for a history written by an earlier build.
+		const QString version = QString::number(file.originalFileVersion());
+		m_loadFingerprint = fingerprint(file, false, version, file.originalType());
+		m_loadFingerprintV2 = fingerprintV2(file, false, version, file.originalType());
 		m_loadLegacyFingerprint = legacyFingerprint(file, false);
 		m_loadSourceFormatChanged = file.sourceFormatChanged();
 	}
@@ -405,7 +430,8 @@ bool UndoHistory::fingerprintMatches(const QString& stored) const
 {
 	if (m_loadFingerprint.isEmpty()) { return false; }
 	// The stored value says which scheme wrote it.
-	if (stored.startsWith(FingerprintV2Prefix)) { return stored == m_loadFingerprint; }
+	if (stored.startsWith(FingerprintV3Prefix)) { return stored == m_loadFingerprint; }
+	if (stored.startsWith(FingerprintV2Prefix)) { return stored == m_loadFingerprintV2; }
 	// A fingerprint written before the scheme was versioned: honoured only when
 	// the file's format did not change under the load - then the version the
 	// file claims is the one the history was written against, which is what

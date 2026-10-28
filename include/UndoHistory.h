@@ -162,8 +162,11 @@ public:
 	/*! The document's fingerprint: <head> and every <song> section except the
 	 *  history itself, the append-only provenance log and the document index,
 	 *  each as DocumentIndex's canonical digest (process-independent), plus the
-	 *  root's format attributes - the SCHEME v2 hash, whose value says which
-	 *  scheme wrote it ("sha256:v2:...").
+	 *  root's format attributes - the SCHEME v3 hash, whose value says which
+	 *  scheme wrote it ("sha256:v3:..."). The revision stamps (`rev` and
+	 *  `writer`, on any element) are left out: they record who saved and how
+	 *  often, not what the project is - ProjectIds' content comparison leaves
+	 *  them out the same way, so a re-save that changes only them is not an edit.
 	 *  \a version and \a type are the root's attributes AS THE FILE HAD THEM:
 	 *  a load that upgraded the file must still measure the version the file
 	 *  claims, or a file whose root version was changed under it would look
@@ -171,6 +174,12 @@ public:
 	 *  \a stripMetadata drops `metadata="1"` nodes first, as the writer does on
 	 *  its way to disk - so the save-time and load-time values agree. */
 	static QString fingerprint(const QDomDocument& document, bool stripMetadata,
+		const QString& version, const QString& type);
+
+	/*! SCHEME v2: as fingerprint() before the revision stamps were left out -
+	 *  the value a history written by an earlier build carries ("sha256:v2:...").
+	 *  Kept so such a history still describes its project when it loads. */
+	static QString fingerprintV2(const QDomDocument& document, bool stripMetadata,
 		const QString& version, const QString& type);
 
 	/*! SCHEME v1: the sections only, as written before the root's format
@@ -201,9 +210,11 @@ private:
 	//! Whether the stored fingerprint describes THIS document.
 	bool fingerprintMatches(const QString& stored) const;
 
-	//! beginLoad()'s fingerprints, consumed by load(): the scheme v2 one and
-	//! the scheme v1 one (a history written before the scheme was versioned).
+	//! beginLoad()'s fingerprints, consumed by load(): the scheme v3 one, the
+	//! scheme v2 one, and the scheme v1 one (a history written before the scheme
+	//! was versioned).
 	QString m_loadFingerprint;
+	QString m_loadFingerprintV2;
 	QString m_loadLegacyFingerprint;
 	//! True when the file's format changed under the load (an upgrade ran).
 	bool m_loadSourceFormatChanged = false;
