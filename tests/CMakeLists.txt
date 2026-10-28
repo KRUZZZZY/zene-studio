@@ -2415,6 +2415,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# The top level only looks for Threads on POSIX hosts; MinGW and
 		# Windows reach this target without it, so find it here.
 		find_package(Threads REQUIRED)
+		# The vendored atomic_queue trips a newer Clang diagnostic that is an error by default; see
+		# plugins/SfzPlayer/CMakeLists.txt. The check result is cached, so this costs nothing extra.
+		INCLUDE(CheckCXXCompilerFlag)
+		CHECK_CXX_COMPILER_FLAG("-Wmissing-template-arg-list-after-template-kw" ZENE_HAS_WMISSING_TEMPLATE_ARG_LIST)
+		IF(ZENE_HAS_WMISSING_TEMPLATE_ARG_LIST)
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE -Wno-missing-template-arg-list-after-template-kw)
+		ENDIF()
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			"$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE

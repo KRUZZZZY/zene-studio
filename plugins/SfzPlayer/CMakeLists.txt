@@ -1,5 +1,6 @@
 INCLUDE(BuildPlugin)
 INCLUDE(CheckCXXSourceCompiles)
+INCLUDE(CheckCXXCompilerFlag)
 
 # SFZ Player (Q050-484): the sfizz SFZ sampler engine (BSD-2-Clause, sfizz 1.2.3) built from the sources vendored
 # in sfizz/ - on every platform Zene ships, with no system sfizz, abseil or other dependency beyond libsndfile
@@ -206,6 +207,13 @@ IF(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 	TARGET_COMPILE_OPTIONS(sfzplayer_sfizz PRIVATE -ffast-math -Wno-error)
 ELSEIF(MSVC)
 	TARGET_COMPILE_OPTIONS(sfzplayer_sfizz PRIVATE /fp:fast /utf-8 /Zc:__cplusplus /WX-)
+ENDIF()
+
+# Newer Clang makes -Wmissing-template-arg-list-after-template-kw an error by default, and the vendored
+# atomic_queue (sfizz/external) trips it. Test the positive form so compilers without the flag are left alone.
+CHECK_CXX_COMPILER_FLAG("-Wmissing-template-arg-list-after-template-kw" ZENE_HAS_WMISSING_TEMPLATE_ARG_LIST)
+IF(ZENE_HAS_WMISSING_TEMPLATE_ARG_LIST)
+	TARGET_COMPILE_OPTIONS(sfzplayer_sfizz PRIVATE -Wno-missing-template-arg-list-after-template-kw)
 ENDIF()
 
 # C++17 aligned new/delete: absent below macOS 10.14, where sfizz supplies its own.
