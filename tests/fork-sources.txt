@@ -3203,3 +3203,10 @@ include/PluginInstantiationFailure.h
 src/core/PluginInstantiationFailure.cpp
 tests/src/core/ControlHostedBusLayoutTest.cpp
 docs/qwen-fixes-2026-10/cluster-stress-3.md
+include/CpuDiagnosticsDialog.h
+include/RenderDiagnostics.h
+src/core/RenderDiagnostics.cpp
+src/gui/shell/CpuDiagnosticsDialog.cpp
+tests/control-cpu-diagnostics.py
+tests/src/core/TrackSynthesisLoadTest.cpp
+tests/src/gui/CpuDiagnosticsDialogTest.cpp

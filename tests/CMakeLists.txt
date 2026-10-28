@@ -920,6 +920,8 @@ set(LMMS_TESTS
 	src/core/UnmuteChaseTest.cpp
 	# 0.5.0 L07 (Q050-015): what each articulation sends before its note, and the map's edits moving the notes with them.
 	src/core/ArticulationPlaybackTest.cpp
+	# Q050-074.1: each instrument track's synthesis load by track id, and a late period at its song position.
+	src/core/TrackSynthesisLoadTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
 	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
@@ -1429,6 +1431,8 @@ set(LMMS_TESTS
 	src/gui/TaskIndicatorTest.cpp
 	# 0.5.0 Q050-179 (WF-085): the header's Rec left readout shows record.remaining's estimate.
 	src/gui/RecordRemainingTest.cpp
+	# Q050-074.1: the CPU readout's right-click opens CPU diagnostics, showing mixer.cpu_load's synthesis loads and late periods.
+	src/gui/CpuDiagnosticsDialogTest.cpp
 	# Q050-094: the Record Mode menu and the Rec mode readout offer overdub, replace and keep history through transport.record_options.
 	src/gui/RecordModeMenuTest.cpp
 	# Version number insertion with a dotted parent path.
@@ -2311,6 +2315,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# needs a real instrument in the pattern store - the same requirement, for
 		# the same reason, as SessionTuningTest above.
 		OR LMMS_TEST_NAME STREQUAL "SessionPlaybackRenderTest"
+		# Q050-074.1: three real tripleoscillator tracks render the synthesis loads it measures.
+		OR LMMS_TEST_NAME STREQUAL "TrackSynthesisLoadTest"
 		OR LMMS_TEST_NAME STREQUAL "SessionTransitionsTest"
 		# The hosting test loads the build's own plugin modules to get devices with
 		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
@@ -3068,6 +3074,7 @@ if(TARGET sid AND TARGET SidInstrument)
 endif()
 if(TARGET tripleoscillator)
 	add_dependencies(SessionPlaybackRenderTest tripleoscillator)
+	add_dependencies(TrackSynthesisLoadTest tripleoscillator)
 	add_dependencies(SessionTransitionsTest tripleoscillator)
 	add_dependencies(SessionTuningTest tripleoscillator)
 	# Q050-022: the lane-child tests drive a real instrument's parameter.
@@ -3340,9 +3347,10 @@ set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=of
 set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
-	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
+	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest CpuDiagnosticsDialogTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackSynthesisLoadTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerInsertLatencyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerStripFeaturesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6402,6 +6410,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlRecordInputs PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
+	)
+	# Q050-074.1: mixer.cpu_load / track.overview report each instrument track's synthesis load by id, apart
+	# from the shared channel's, and the engine's late periods, headless on the Dummy device.
+	add_test(NAME ControlCpuDiagnostics
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-cpu-diagnostics.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlCpuDiagnostics PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
 	)
 	# JACK into the capture path (relief plan R2.3, owner decision 16): the real binary on the
 	# JACK backend against a private `jackd -d dummy`; the capture must report open, its frame

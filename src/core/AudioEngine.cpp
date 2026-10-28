@@ -82,6 +82,7 @@
 
 #include <limits>
 #include <memory>
+#include <utility>
 
 namespace lmms
 {
@@ -1025,6 +1026,7 @@ void AudioEngine::renderStageNoteSetup()
 		const Song* song = Engine::getSong();
 		m_periodSongPlaying = song->isPlaying() && song->playMode() == Song::PlayMode::Song;
 		m_periodStartFrame = static_cast<double>(song->getFrames());
+		m_periodStartTick = song->getPlayPos(Song::PlayMode::Song).getTicks();  // Q050-074.1
 	}
 
 	// Retry engine-list additions deferred by capacity in the previous period.
@@ -1078,6 +1080,34 @@ void AudioEngine::renderStageInstruments()
 
 	AudioEngineWorkerThread::fillJobQueue(m_playHandles);
 	AudioEngineWorkerThread::startAndWaitForJobs();
+}
+
+
+
+void AudioEngine::foldSynthesisLoads(std::uint64_t period) noexcept
+{
+	// Q050-074.1: the workers are done, so every handle's time is in its track's accumulator. A track's
+	// handles fold it once (SynthesisLoad::fold returns at the second); a track without a handle this
+	// period is not visited and decays on its next fold or read. No allocation, no lock.
+	const sample_rate_t rate = outputSampleRate();
+	const double periodSeconds = rate > 0 ? static_cast<double>(m_framesPerPeriod) / rate : 0.0;
+	for (PlayHandle* const handle : std::as_const(m_playHandles))  // const: a QList never detaches here
+	{
+		if (SynthesisLoad* const load = handle->synthesisLoad()) { load->fold(period, periodSeconds); }
+	}
+}
+
+
+
+void AudioEngine::noteLatePeriod() noexcept
+{
+	// Q050-074.1: an offline render (an export) has no deadline to miss.
+	const Song* song = Engine::getSong();
+	const sample_rate_t rate = outputSampleRate();
+	if (song == nullptr || song->isExporting() || rate == 0) { return; }
+	const auto periodMicros = static_cast<std::uint32_t>(std::uint64_t{1000000} * m_framesPerPeriod / rate);
+	const std::uint32_t tookMicros = m_profiler.lastPeriodMicros();
+	if (tookMicros > periodMicros) { m_latePeriods.record(m_periodStartTick, m_periodSongPlaying, tookMicros, periodMicros); }
 }
 
 
@@ -1169,9 +1199,13 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	} periodEnd;
 	m_profiler.startPeriod();
 	s_renderingThread = true;
+	// Q050-074.1: this thread is the only writer, so a load and a store number the period.
+	const std::uint64_t period = m_renderedPeriods.load(std::memory_order_relaxed) + 1;
+	m_renderedPeriods.store(period, std::memory_order_relaxed);
 
 	renderStageNoteSetup();     // STAGE 0: clear old play handles and buffers, setup new play handles
 	renderStageInstruments();   // STAGE 1: run and render all play handles
+	foldSynthesisLoads(period); // Q050-074.1: each instrument track's share of STAGE 1
 	renderStageEffects();       // STAGE 2: process effects of all instrument- and sampletracks
 	renderStageMix();           // STAGE 3: do master mix in mixer
 
@@ -1239,6 +1273,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 
 	s_renderingThread = false;
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
+	noteLatePeriod();
 	m_outputBufferReadIndex = 0;
 
 	return {m_outputBufferRead.get(), m_framesPerPeriod};

@@ -164,6 +164,9 @@ public:
 	/*! Returns whether the play handle plays on a certain track */
 	bool isFromTrack( const Track* _track ) const override;
 
+	//! Q050-074.1: the note's rendering counts toward its instrument track's synthesis load.
+	SynthesisLoad* synthesisLoad() noexcept override;
+
 	/*! Releases the note (and plays release frames) */
 	void noteOff( const f_cnt_t offset = 0 );
 

@@ -233,6 +233,7 @@ SET(LMMS_SRCS
 	gui/shell/ShellPanel.cpp
 	gui/shell/ShellSelection.cpp
 	gui/shell/TransportReadouts.cpp
+	gui/shell/CpuDiagnosticsDialog.cpp
 	gui/shell/WaveformPreview.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp

@@ -50,6 +50,9 @@ public:
 
 	bool isFromTrack(const Track* track) const override;
 
+	//! Q050-074.1: the instrument's own stream counts toward its track's synthesis load.
+	SynthesisLoad* synthesisLoad() noexcept override;
+
 private:
 	Instrument* m_instrument;
 	//! The track this handle plays for, recorded at construction so isFromTrack()
