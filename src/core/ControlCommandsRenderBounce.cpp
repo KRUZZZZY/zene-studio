@@ -421,6 +421,13 @@ ControlResult captureOperationState(const std::shared_ptr<BounceContext>& contex
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 is already frozen; freeze.unfreeze first").arg(control::trackIdOf(first)));
 	}
+	if (context->operation == QLatin1String("flatten"))
+	{
+		if (const QString refusal = control::flattenRefusal(first); !refusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, refusal);
+		}
+	}
 	if (context->operation == QLatin1String("flatten")
 		&& !captureTrackXml(first, &context->sourceXml, StructuralSnapshotLimit))
 	{

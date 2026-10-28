@@ -78,10 +78,23 @@ int landAudioTrackId(const QString& name, const QString& path, tick_t at, int in
 	return track->id();
 }
 
+//! The track a flatten acts on: `track` resolved, and refused (in \a error) when it makes no audio to render.
+Track* resolveFlattenSource(const QJsonObject& args, ControlResult* error)
+{
+	Track* source = resolveTrack(args.value(QStringLiteral("track")).toString(), error);
+	if (source == nullptr) { return nullptr; }
+	if (const QString refusal = flattenRefusal(source); !refusal.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, refusal);
+		return nullptr;
+	}
+	return source;
+}
+
 ControlResult flatten(const QJsonObject& args)
 {
 	ControlResult error;
-	Track* source = resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
+	Track* source = resolveFlattenSource(args, &error);
 	if (source == nullptr) { return error; }
 	BounceInPlace::Range range;
 	if (const QString problem = parseRange(args, false, &range); !problem.isEmpty())
