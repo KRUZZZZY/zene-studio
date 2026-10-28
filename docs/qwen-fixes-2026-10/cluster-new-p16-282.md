@@ -10,25 +10,25 @@ Finding: `src/gui/ArrangerClipKeys.cpp` (Luna patrol, "BUG 4", historical lines 
 
 Before the fix, `nearestOn` computed `std::abs(clip->startPosition().getTicks() - tick)` entirely in `tick_t`
 (`include/LmmsTypes.h:35`, `using tick_t = std::int32_t`). A difference of two `tick_t` values can need one more
-bit than `tick_t` holds, so the subtraction wraps, and `std::abs` of the narrow minimum is undefined.
+bit than `tick_t` holds, so the subtraction can overflow signed `tick_t`; `std::abs` of its minimum is undefined.
 
-Reachability, honestly stated: the finding's trigger needs a negative play position. I traced every writer and
-found none that reaches that range in practice:
+Reachability: selected clip starts are nonnegative, but with no clip selected `chooseAcross` uses the song play
+position. A small negative song position is reachable through loop points:
 
-- Clip start: the only writer of `m_startPosition` is `Clip::movePosition`, which clamps with
-  `std::max(0, pos.getTicks())` (`src/core/Clip.cpp:282`). The loaders call it with the saved `pos`, guarded
-  by `pos >= 0` in `src/tracks/MidiClip.cpp:518`, `src/core/SampleClip.cpp:983` and `src/core/PatternClip.cpp:77`;
-  `src/core/AutomationClip.cpp:1274` calls it unguarded, and the clamp in `movePosition` covers that too.
-- Play position: `transport.seek` is schema-bounded to `[0, 0x7fffffff]` (`src/core/ControlCommandsTransport.cpp:221-222`);
-  count-in start is clamped `std::max<tick_t>(0, ...)` (`src/core/RecordOptions.cpp:203`); the MIDI-clip stop
-  position is clamped (`src/core/Song.cpp:1228`); Link jumps clamp at 0 (`src/core/LinkAudioFollower.cpp:86`).
-- The one unclamped path found is a negative loop begin (`src/core/Timeline.cpp:33-40`), reachable from the GUI
-  (`src/gui/editors/TimeLineWidget.cpp:614`, `begin - snap * ticksPerBar`) only by small magnitudes, nowhere near
-  the ~2e9 needed to wrap. No control command sets loop points.
+- The ruler's "Set loop end here" action can set a negative loop begin when the requested end equals the current
+  begin (`src/gui/editors/TimeLineWidget.cpp:610-615`, especially line 614); `Timeline::setLoopPoints` does not
+  clamp it (`src/core/Timeline.cpp:55-63`), and `Timeline::loadSettings` restores loop points from project XML
+  without clamping (`src/core/Timeline.cpp:130-136`).
+- While loop playback is enabled, `Song::enforceLoop` sets the play position to that begin when the loop wraps
+  (`src/core/Song.cpp:695-703`).
+- Clip starts are clamped only at zero by `Clip::movePosition` (`src/core/Clip.cpp:280-288`). Project loaders such
+  as `MidiClip::loadSettings` accept any nonnegative `int` position (`src/tracks/MidiClip.cpp:518-520`) and do not
+  enforce `MaxSongLength`. Thus a small negative play position and a saved clip near `INT32_MAX` can overflow
+  their `tick_t` difference. This is an unusual long-position project edge, but the arithmetic bug is reachable.
 
-So the overflow is latent in the current code, not a user-reachable crash. The fix is still the cause-level,
-behaviour-preserving change the finding asks for: for every input that did not overflow, the chosen clip is
-unchanged (the widened difference equals the old one).
+So the overflow is reachable for a long-position project with a small negative loop position and can choose the
+wrong clip. The fix is the cause-level, behaviour-preserving change the finding asks for: for every input that did
+not overflow, the chosen clip is unchanged (the widened difference equals the old one).
 
 Changes:
 
@@ -50,8 +50,8 @@ Siblings checked:
 `nearestClipStaysRightWhenTheDistanceExceedsTickRange`. A track holds clips at 0 and 500 000 000; the play position
 is -2 000 000 000 (no clip selected). Shift+Alt+Down must select the clip at 0.
 
-Arithmetic: the clip at 0 is 2e9 away (fits). The clip at 5e8 is 2.5e9 away, which wraps in `tick_t` to about
--1.79e9, so the buggy code reads it as 1.79e9 and picks it. The fixed code keeps 2.5e9 and picks the origin.
+Arithmetic: the clip at 0 is 2e9 away (fits). The clip at 5e8 is 2.5e9 away, which overflowed in the tested build
+to about -1.79e9, so the buggy code read it as 1.79e9 and picked it. The fixed code keeps 2.5e9 and picks the origin.
 
 The test is deterministic: no timing, no sleeps, no races. It drives the real key path (`arrangerkeys::handle`
 through the test's existing `press()` helper).
