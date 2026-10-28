@@ -66,6 +66,7 @@ QString formatOf(const QString& moduleName)
 	if (n == QLatin1String("vestige") || n == QLatin1String("vsteffect")) { return QStringLiteral("vst"); }
 	if (n == QLatin1String("vst3instrument") || n == QLatin1String("vst3effect")) { return QStringLiteral("vst3"); }
 	if (n == QLatin1String("clapinstrument") || n == QLatin1String("clapeffect")) { return QStringLiteral("clap"); }
+	if (n == QLatin1String("auinstrument") || n == QLatin1String("aueffect")) { return QStringLiteral("au"); }  // Q050-491
 	if (n == QLatin1String("lv2instrument") || n == QLatin1String("lv2effect")) { return QStringLiteral("lv2"); }
 	return QStringLiteral("native");
 }
@@ -147,6 +148,13 @@ Named namedFor(const QString& format, const QDomElement& original, const QString
 {
 	if (format == QLatin1String("vst3")) { return namedVst3(attrs); }
 	if (format == QLatin1String("clap")) { return namedClap(attrs); }
+	if (format == QLatin1String("au"))  // Q050-491: the component a project saved, by name and key
+	{
+		const QString component = attrs.value(QStringLiteral("component"));
+		identity << QStringLiteral("component=") + component;
+		const QString name = attrs.value(QStringLiteral("name"));
+		return {name.isEmpty() ? component : name, pluginvendors::vendorOf(QStringLiteral("au"), component)};
+	}
 	if (format == QLatin1String("lv2")) { return namedLv2(attrs); }
 	if (format == QLatin1String("vst")) { return namedVst(original, moduleName, identity); }
 	return {QString(), QStringLiteral("LMMS")};
