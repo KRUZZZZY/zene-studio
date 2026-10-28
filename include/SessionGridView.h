@@ -139,6 +139,9 @@ private:
 	void readPlayback(const QJsonArray& slotList);
 	void paintHeaders();
 	void paintCell(int track, int scene);
+	//! Q050-493: an audio cell's playback settings off their defaults after its name ("-6.0dB +12st W128"), and in
+	//! words in its accessible name and tooltip. Called by paintCell after the cell's own text and tip.
+	void paintPlayback(QToolButton* cell, int index);
 	//! What launching cell (@a track, @a scene) replaces in its track, for its tooltip; empty when nothing.
 	QString launchNote(int track, int scene) const;
 	void paintScenes(const QJsonArray& sceneStates);

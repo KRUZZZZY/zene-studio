@@ -362,10 +362,7 @@ void SessionGridView::paintCell(int track, int scene)
 	const QString phase = here ? m_phases[static_cast<std::size_t>(track)] : QString();
 	const bool playing = phase == QLatin1String("playing");
 	// 0.5.0 theme 14: every filled cell carries its play mark - its launch affordance and, by shape, its state.
-	// Q050-493: an audio cell's playback settings off their defaults follow its name ("-6.0dB +12st W128").
-	const QString& badge = m_badges[static_cast<std::size_t>(index)];
-	cell->setText(name.isEmpty() ? QString() : sessiongrid::cellMark(phase, true) + name
-		+ (badge.isEmpty() ? QString() : QStringLiteral("  ") + badge));
+	cell->setText(name.isEmpty() ? QString() : sessiongrid::cellMark(phase, true) + name);
 	const bool taking = m_take.value(QStringLiteral("track")).toInt() == track && m_take.value(QStringLiteral("scene")).toInt() == scene;
 	const QString recording = taking ? sessiongrid::recordingWords(m_take.value(QStringLiteral("state")).toString()) : QString();
 	if (!recording.isEmpty()) { cell->setText(sessiongrid::recordingMark(m_take.value(QStringLiteral("state")).toString()) + name); }
@@ -376,11 +373,21 @@ void SessionGridView::paintCell(int track, int scene)
 	cell->setAccessibleName((name.isEmpty() ? tr("%1: empty").arg(where)
 		: tr("%1: %2%3").arg(where, name, phase.isEmpty() ? QString() : QStringLiteral(", ") + phase)) + selected);
 	if (!recording.isEmpty()) { cell->setAccessibleName(cell->accessibleName() + QStringLiteral(", ") + recording); }
-	const QString& playback = m_playback[static_cast<std::size_t>(index)];
-	if (!playback.isEmpty()) { cell->setAccessibleName(cell->accessibleName() + QStringLiteral(", ") + playback); }
-	const QString note = launchNote(track, scene);
-	setTip(cell, playback.isEmpty() ? note : (note.isEmpty() ? playback : note + QStringLiteral("\n") + playback));
+	setTip(cell, launchNote(track, scene));
+	paintPlayback(cell, index);
 	paintDropPreview(cell, index);
+}
+
+
+void SessionGridView::paintPlayback(QToolButton* cell, int index)
+{
+	const QString& badge = m_badges[static_cast<std::size_t>(index)];
+	const QString& words = m_playback[static_cast<std::size_t>(index)];
+	if (badge.isEmpty() || words.isEmpty()) { return; }
+	cell->setText(cell->text() + QStringLiteral("  ") + badge);
+	cell->setAccessibleName(cell->accessibleName() + QStringLiteral(", ") + words);
+	const QString note = cell->toolTip();
+	setTip(cell, note.isEmpty() ? words : note + QStringLiteral("\n") + words);
 }
 
 
