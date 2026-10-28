@@ -30,7 +30,11 @@
  *  Q050-066 stage 1: the rack's pads are read back (track.drum_rack_get_state, through the shared
  *  DrumPadState contract), a pad is added to a rack (track.drum_rack_pad_add) and a pad's name, trigger
  *  key and sample are edited (track.drum_rack_pad_set), each one undo step. No new project data: a pad
- *  is still only a track, its sampler and its channel, so a rack saved before reads back the same. */
+ *  is still only a track, its sampler and its channel, so a rack saved before reads back the same.
+ *
+ *  Q050-066 stage 2: the read-back carries each pad's chain (the effects on its own channel) and whether
+ *  that chain is the pad's alone; the chain is edited through the existing plugin.load / plugin.unload /
+ *  plugin.bypass on the pad's channel - the same commands the pad panel runs. */
 
 #include <algorithm>
 #include <functional>
@@ -422,7 +426,10 @@ void registerDrumRackCommand(ControlRegistry& registry)
 		"Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty "
 		"when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own "
 		"chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation, attack (ms), "
-		"release (ms), voice_limit}} - what the project saves. Writes nothing."), rackState);
+		"release (ms), voice_limit}, chain (the effects on the pad's channel, in order: [{id (fx-<n>), plugin, display_name, "
+		"enabled}] - plugin.load / plugin.unload / plugin.bypass with 'target' = the pad's channel edit it), chain_shared "
+		"(true when anything else plays through that channel - the master, another track, a send into it - so an effect "
+		"there would not be the pad's alone)} - what the project saves. Writes nothing."), rackState);
 	cmd.argsSchema = objectSchema({{QStringLiteral("track"), stringProperty()}}, {QStringLiteral("track")});
 	registry.registerCommand(cmd);
 

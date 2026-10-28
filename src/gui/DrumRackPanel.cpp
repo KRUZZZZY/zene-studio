@@ -1,5 +1,5 @@
 /*
- * DrumRackPanel.cpp - a drum rack's sample pads: name, trigger key and sample (Q050-066)
+ * DrumRackPanel.cpp - a drum rack's sample pads: name, trigger key, sample and chain (Q050-066)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -27,8 +27,10 @@
 #include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QToolButton>
@@ -189,6 +191,15 @@ void DrumRackPanel::addRow(int pad, const QString& track)
 	m_grid->addWidget(row.key, pad, 1);
 	m_grid->addWidget(row.sample, pad, 2);
 	m_grid->addWidget(row.replace, pad, 3);
+	row.chain = new QLabel(this);
+	row.chain->setAccessibleName(tr("Effects of pad %1").arg(pad + 1));
+	row.effects = makeButton(this, QStringLiteral("plugin.load"), tr("Effects"));
+	row.effects->setAccessibleName(tr("Edit the effects of pad %1").arg(pad + 1));
+	row.effects->setToolTip(tr("Add, bypass or remove an effect on this pad's own chain"));
+	row.effects->setPopupMode(QToolButton::InstantPopup);
+	row.effects->setMenu(new QMenu(row.effects));
+	m_grid->addWidget(row.chain, pad, 4);
+	m_grid->addWidget(row.effects, pad, 5);
 	m_rows.push_back(row);
 }
 
@@ -198,7 +209,7 @@ void DrumRackPanel::showPads(const QJsonArray& pads)
 	for (int pad = 0; pad < pads.size() && pad < rowCount(); ++pad)
 	{
 		const QJsonObject state = pads.at(pad).toObject();
-		const Row& row = m_rows[static_cast<std::size_t>(pad)];
+		Row& row = m_rows[static_cast<std::size_t>(pad)];
 		const int key = state.value(QStringLiteral("key")).toInt();
 		row.key->setProperty("shownKey", key);
 		if (!row.name->hasFocus()) { row.name->setText(state.value(QStringLiteral("name")).toString()); }  // never under typing
@@ -210,7 +221,85 @@ void DrumRackPanel::showPads(const QJsonArray& pads)
 		const QString sample = state.value(QStringLiteral("sample")).toString();
 		row.sample->setText(sample.isEmpty() ? tr("(embedded)") : QFileInfo(sample).fileName());
 		row.sample->setToolTip(sample);
+		showChain(&row, state);
 	}
+}
+
+
+void DrumRackPanel::showChain(Row* row, const QJsonObject& pad)
+{
+	const QJsonArray chain = pad.value(QStringLiteral("chain")).toArray();
+	QStringList names;
+	for (const QJsonValue& value : chain)
+	{
+		const QJsonObject effect = value.toObject();
+		const QString name = effect.value(QStringLiteral("display_name")).toString();
+		names << (effect.value(QStringLiteral("enabled")).toBool(true) ? name : tr("%1 (bypassed)").arg(name));
+	}
+	row->chain->setText(names.isEmpty() ? tr("(no effects)") : names.join(QStringLiteral(" > ")));
+	const bool shared = pad.value(QStringLiteral("chain_shared")).toBool();
+	row->chain->setToolTip(shared ? tr("This pad's channel is not its own: something else plays through it") : QString());
+	// The menu is built again only when the chain changed, and never under the pointer while it is open.
+	const QString signature = QString::fromUtf8(QJsonDocument(QJsonObject{{QStringLiteral("chain"), chain},
+		{QStringLiteral("shared"), shared}, {QStringLiteral("channel"), pad.value(QStringLiteral("channel"))}}).toJson(QJsonDocument::Compact));
+	if (signature == row->chainSignature || row->effects->menu()->isVisible()) { return; }
+	row->chainSignature = signature;
+	fillEffectsMenu(row->effects->menu(), pad);
+}
+
+
+void DrumRackPanel::fillEffectsMenu(QMenu* menu, const QJsonObject& pad)
+{
+	menu->clear();
+	const QString channel = pad.value(QStringLiteral("channel")).toString();
+	QMenu* add = menu->addMenu(tr("Add Effect"));
+	add->setEnabled(!channel.isEmpty() && !pad.value(QStringLiteral("chain_shared")).toBool());
+	add->setToolTip(add->isEnabled() ? QString() : tr("The pad's channel is shared, so an effect there would not be the pad's alone"));
+	for (const Device& device : effectDevices())
+	{
+		QAction* action = add->addAction(device.name);
+		action->setProperty("controlCommand", QStringLiteral("plugin.load"));
+		connect(action, &QAction::triggered, this, [this, channel, id = device.id] {
+			run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), channel}, {QStringLiteral("device"), id}});
+		});
+	}
+	for (const QJsonValue& value : pad.value(QStringLiteral("chain")).toArray())
+	{
+		const QJsonObject effect = value.toObject();
+		const QString id = effect.value(QStringLiteral("id")).toString();
+		const QString name = effect.value(QStringLiteral("display_name")).toString();
+		const bool enabled = effect.value(QStringLiteral("enabled")).toBool(true);
+		menu->addSeparator();
+		QAction* bypass = menu->addAction(enabled ? tr("Bypass %1").arg(name) : tr("Switch %1 On").arg(name));
+		bypass->setProperty("controlCommand", QStringLiteral("plugin.bypass"));
+		connect(bypass, &QAction::triggered, this, [this, channel, id, enabled] {
+			run(QStringLiteral("plugin.bypass"), {{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), id},
+				{QStringLiteral("bypass"), enabled}});
+		});
+		QAction* remove = menu->addAction(tr("Remove %1").arg(name));
+		remove->setProperty("controlCommand", QStringLiteral("plugin.unload"));
+		connect(remove, &QAction::triggered, this, [this, channel, id] {
+			run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), channel}, {QStringLiteral("plugin"), id}});
+		});
+	}
+}
+
+
+const std::vector<DrumRackPanel::Device>& DrumRackPanel::effectDevices()
+{
+	if (m_devicesRead) { return m_devices; }
+	m_devicesRead = true;
+	const ControlResult listed = ControlRegistry::instance()->invoke(QStringLiteral("plugin.list"),
+		{{QStringLiteral("format"), QStringLiteral("builtin")}, {QStringLiteral("kind"), QStringLiteral("effect")},
+			{QStringLiteral("loadable_only"), true}});
+	for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
+	{
+		const QJsonObject device = value.toObject();
+		const QString shown = device.value(QStringLiteral("display_name")).toString();
+		m_devices.push_back({device.value(QStringLiteral("id")).toString(),
+			shown.isEmpty() ? device.value(QStringLiteral("name")).toString() : shown});
+	}
+	return m_devices;
 }
 
 
@@ -222,6 +311,8 @@ const DrumRackPanel::Row* DrumRackPanel::rowAt(int pad) const
 QLineEdit* DrumRackPanel::nameEdit(int pad) const { return rowAt(pad) != nullptr ? rowAt(pad)->name : nullptr; }
 QSpinBox* DrumRackPanel::keyBox(int pad) const { return rowAt(pad) != nullptr ? rowAt(pad)->key : nullptr; }
 QToolButton* DrumRackPanel::sampleButton(int pad) const { return rowAt(pad) != nullptr ? rowAt(pad)->replace : nullptr; }
+QToolButton* DrumRackPanel::effectsButton(int pad) const { return rowAt(pad) != nullptr ? rowAt(pad)->effects : nullptr; }
+QLabel* DrumRackPanel::chainLabel(int pad) const { return rowAt(pad) != nullptr ? rowAt(pad)->chain : nullptr; }
 
 QString DrumRackPanel::statusText() const
 {

@@ -28,11 +28,13 @@
 #include <QJsonArray>
 
 #include "ControlVocabulary.h"
+#include "Effect.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "PathUtil.h"
+#include "Song.h"
 #include "TrackFolder.h"
 
 namespace lmms::control
@@ -79,6 +81,32 @@ MixerChannel* channelAt(int index)
 	return index >= 0 && index < mixer->numChannels() ? mixer->mixerChannel(index) : nullptr;
 }
 
+//! The pad's chain: the effects of its channel's chain 0, in processing order.
+void readChain(MixerChannel* channel, DrumPadState* out)
+{
+	for (const Effect* effect : channel->m_fxChain.effects())
+	{
+		DrumPadEffect entry;
+		entry.id = effectIdOf(effect);
+		entry.plugin = QString::fromUtf8(effect->descriptor()->name);
+		entry.displayName = QString::fromUtf8(effect->descriptor()->displayName);
+		entry.enabled = effect->isEnabled();
+		out->chain.push_back(entry);
+	}
+}
+
+//! Whether anything but @a pad plays through @a channel: the master, another track on it, another channel sending in.
+bool channelShared(const MixerChannel* channel, const Track* pad)
+{
+	if (channel->index() == 0 || !channel->m_receives.empty()) { return true; }
+	for (Track* other : Engine::getSong()->tracks())
+	{
+		IntModel* model = other != pad ? other->mixerChannelModel() : nullptr;
+		if (model != nullptr && model->value() == channel->index()) { return true; }
+	}
+	return false;
+}
+
 } // namespace
 
 QJsonObject DrumPadState::toJson() const
@@ -89,9 +117,15 @@ QJsonObject DrumPadState::toJson() const
 		{QStringLiteral("stutter"), playback.stutter}, {QStringLiteral("interpolation"), playback.interpolation},
 		{QStringLiteral("attack"), playback.attack}, {QStringLiteral("release"), playback.release},
 		{QStringLiteral("voice_limit"), playback.voiceLimit}};
+	QJsonArray effects;
+	for (const DrumPadEffect& effect : chain)
+	{
+		effects.append(QJsonObject{{QStringLiteral("id"), effect.id}, {QStringLiteral("plugin"), effect.plugin},
+			{QStringLiteral("display_name"), effect.displayName}, {QStringLiteral("enabled"), effect.enabled}});
+	}
 	return {{QStringLiteral("track"), track}, {QStringLiteral("name"), name}, {QStringLiteral("sample"), sample},
 		{QStringLiteral("key"), key}, {QStringLiteral("channel"), channel}, {QStringLiteral("sends_to"), sendsTo},
-		{QStringLiteral("playback"), play}};
+		{QStringLiteral("playback"), play}, {QStringLiteral("chain"), effects}, {QStringLiteral("chain_shared"), chainShared}};
 }
 
 QString drumPadSampler()
@@ -118,7 +152,10 @@ bool readDrumPad(InstrumentTrack* track, DrumPadState* out)
 	{
 		pad.channel = channelIdOf(channel);
 		if (channel->m_sends.size() == 1) { pad.sendsTo = channelIdOf(channel->m_sends.front()->receiver()); }
+		readChain(channel, &pad);
+		pad.chainShared = channelShared(channel, track);
 	}
+	else { pad.chainShared = true; }  // no channel the mixer has: not a chain of its own
 	readSampler(track->instrument(), &pad);
 	*out = pad;
 	return true;

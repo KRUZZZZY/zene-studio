@@ -3189,6 +3189,7 @@ tests/src/core/MixerOrderByTracksTest.cpp
 tests/control-session-transitions.py
 tests/src/core/SessionTransitionsTest.cpp
 tests/src/plugins/Vst3EditorTest.cpp
+tests/control-drum-rack-chains.py
 tests/control-drum-rack-pads.py
 
 # cluster new-p9-503 (2026-10): VibratingString oversampling-count regression test (fork-NEW).

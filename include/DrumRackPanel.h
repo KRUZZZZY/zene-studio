@@ -38,6 +38,7 @@
 class QGridLayout;
 class QLabel;
 class QLineEdit;
+class QMenu;
 class QSpinBox;
 class QToolButton;
 
@@ -48,7 +49,12 @@ namespace lmms::gui
  *  name, its trigger key and its sample (Sample... replaces it), and under the rows Add Pad... (a sample file,
  *  then a pad for it). REGISTRY-FIRST, like the layer rack: every control runs a track.drum_rack_* command
  *  and every redraw is read from track.drum_rack_get_state, so the panel shows what an agent reads over the
- *  socket, and each edit is the command's one undo step. */
+ *  socket, and each edit is the command's one undo step.
+ *
+ *  Stage 2: each row also shows the pad's chain (the effects on its own mixer channel) and an Effects button
+ *  whose menu adds a built-in effect (plugin.load), bypasses or switches one back on (plugin.bypass) and
+ *  removes one (plugin.unload) - each with 'target' = the pad's channel, as an agent sends them. Adding is
+ *  refused in the menu when the pad's chain is shared (track.drum_rack_get_state's chain_shared). */
 class LMMS_EXPORT DrumRackPanel : public QWidget
 {
 	Q_OBJECT
@@ -63,6 +69,8 @@ public:
 	QLineEdit* nameEdit(int pad) const;
 	QSpinBox* keyBox(int pad) const;
 	QToolButton* sampleButton(int pad) const;
+	QToolButton* effectsButton(int pad) const;
+	QLabel* chainLabel(int pad) const;
 	QToolButton* addButton() const { return m_add; }
 	QString statusText() const;
 
@@ -78,6 +86,15 @@ private:
 		QSpinBox* key = nullptr;
 		QLabel* sample = nullptr;
 		QToolButton* replace = nullptr;
+		QLabel* chain = nullptr;
+		QToolButton* effects = nullptr;
+		QString chainSignature;  //!< the chain the menu was last built for
+	};
+
+	struct Device
+	{
+		QString id;    //!< dev-<n>
+		QString name;  //!< what the menu shows
 	};
 
 	QString chooseSample();
@@ -86,6 +103,9 @@ private:
 	void rebuild(const QJsonArray& pads, const QStringList& signature);
 	void addRow(int pad, const QString& track);
 	void showPads(const QJsonArray& pads);
+	void showChain(Row* row, const QJsonObject& pad);
+	void fillEffectsMenu(QMenu* menu, const QJsonObject& pad);
+	const std::vector<Device>& effectDevices();
 	const Row* rowAt(int pad) const;
 
 	QString m_folderId;
@@ -94,6 +114,8 @@ private:
 	QLabel* m_status = nullptr;
 	std::vector<Row> m_rows;
 	QStringList m_signature;
+	std::vector<Device> m_devices;  //!< the built-in effects plugin.list offers, read once
+	bool m_devicesRead = false;
 	QTimer m_timer;
 };
 
