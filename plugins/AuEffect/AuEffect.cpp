@@ -151,6 +151,8 @@ auto AuEffect::processImpl(PlanarBufferView<const float, DynamicChannelCount> in
 {
 	const auto frames = static_cast<int>(std::min(in.frames(), out.frames()));
 	const auto dryChannels = std::min(in.channels(), out.channels());
+	// This block's parameter values (automation, controllers, the GUI) to the unit: no signal, no lock.
+	if (m_controls != nullptr) { m_controls->pushParameters(); }
 	if (!m_unit.isPrepared() || !m_unit.process(in.data(), out.data(), static_cast<int>(in.channels()),
 			static_cast<int>(out.channels()), frames))
 	{

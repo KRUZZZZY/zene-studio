@@ -60,6 +60,9 @@ set(LMMS_TESTS
 	# Q050-491: the format-neutral half of Audio Unit hosting (component keys, the scan cache and its
 	# quarantine, status names) - every build; the macOS-only half is AuHostingTest.
 	src/core/AuComponentTest.cpp
+	# Q050-491 review round 1: an AU parameter's automation reaches the unit in the same render block with no
+	# dataChanged() on the render thread (the hosts' parameter models, compiled in with a stand-in unit).
+	src/plugins/AuParameterHandoffTest.cpp
 	src/core/AudioOssWriteTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
@@ -2211,6 +2214,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "NamespaceRegistryTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			ZENE_ARCH4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "AuParameterHandoffTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/AuEffect/AuParameter.cpp
+			${CMAKE_SOURCE_DIR}/plugins/AuEffect/AuParameter.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AuEffect)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SlicerTWaveformTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE

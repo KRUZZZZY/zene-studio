@@ -32,6 +32,9 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <QDebug>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QGuiApplication>
 
 #import <AppKit/AppKit.h>
@@ -39,6 +42,9 @@
 #include <AudioUnit/AUCocoaUIView.h>
 #import <CoreAudioKit/AUGenericView.h>
 
+#include "AuParameter.h"
+#include "AudioEngine.h"
+#include "Engine.h"
 #include "Vst3MidiQueue.h"
 
 namespace lmms::au
@@ -577,3 +583,31 @@ void HostedUnit::editorSize(int* width, int* height) const
 }
 
 } // namespace lmms::au
+
+namespace lmms
+{
+
+void saveAuState(au::HostedUnit* unit, QDomDocument& doc, QDomElement& element)
+{
+	QByteArray state;
+	if (!unit->saveState(&state)) { return; }
+	auto stateElement = doc.createElement(QStringLiteral("state"));
+	stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
+	element.appendChild(stateElement);
+}
+
+bool loadAuState(au::HostedUnit* unit, const QDomElement& element)
+{
+	const auto stateElement = element.firstChildElement(QStringLiteral("state"));
+	if (stateElement.isNull() || !unit->isLoaded()) { return false; }
+	AudioEngine* engine = Engine::audioEngine();
+	// Not while the unit renders: the engine is held for the property write.
+	if (engine != nullptr) { engine->requestChangeInModel(); }
+	QString error;
+	const bool loaded = unit->loadState(QByteArray::fromBase64(stateElement.text().toLatin1()), &error);
+	if (engine != nullptr) { engine->doneChangeInModel(); }
+	if (!loaded) { qWarning() << "AU:" << error; }
+	return loaded;
+}
+
+} // namespace lmms

@@ -155,6 +155,7 @@ void AuInstrument::poll()
 {
 	if (!m_unit.isLoaded()) { return; }
 	if (m_needsReprepare.load(std::memory_order_relaxed)) { reprepare(); }
+	m_params.flushDeferred();  // the signals automation held back on the render thread
 	m_params.pullValues(1e-4f);
 }
 
@@ -196,6 +197,8 @@ bool AuInstrument::handleMidiEvent(const MidiEvent& event, const TimePos&, f_cnt
 auto AuInstrument::processImpl(PlanarBufferView<const float, DynamicChannelCount> in,
 	PlanarBufferView<float, DynamicChannelCount> out) -> lmms::ProcessStatus
 {
+	// This block's parameter values (automation, controllers, the GUI) to the unit: no signal, no lock.
+	m_params.pushChangedValues();
 	if (!m_unit.isPrepared() || !m_unit.process(in.data(), out.data(), static_cast<int>(in.channels()),
 			static_cast<int>(out.channels()), static_cast<int>(out.frames())))
 	{

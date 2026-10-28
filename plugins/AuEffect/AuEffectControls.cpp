@@ -47,6 +47,7 @@ void AuEffectControls::poll()
 {
 	if (!m_effect->unit()->isLoaded()) { return; }
 	if (m_effect->needsReprepare()) { m_effect->reprepare(); }
+	m_params.flushDeferred();  // the signals automation held back on the render thread
 	m_params.pullValues(1e-4f);
 }
 

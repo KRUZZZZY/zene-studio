@@ -2354,6 +2354,7 @@ tests/src/core/AuComponentTest.cpp
 tests/src/core/DrumRackPadsTest.cpp
 tests/src/gui/AuHostingTest.cpp
 tests/src/gui/DrumRackPanelTest.cpp
+tests/src/plugins/AuParameterHandoffTest.cpp
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp

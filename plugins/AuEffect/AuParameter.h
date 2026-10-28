@@ -24,6 +24,8 @@
 #ifndef LMMS_AU_PARAMETER_H
 #define LMMS_AU_PARAMETER_H
 
+#include <atomic>
+#include <memory>
 #include <vector>
 
 #include <QDomDocument>
@@ -52,19 +54,27 @@ private:
 /*!
  * The models of one unit's parameters, children of the device, so plugin.param_get / param_set, automation,
  * controllers and modulators find them as they find any device's (findChildren<AutomatableModel*>).
- * A model's change is written to the unit by setParam() - an atomic store the next block applies - from
- * whichever thread changed it (automation: the audio thread), except the host's own pullValues(). GUI thread
- * otherwise.
+ *
+ * The handoff to the unit is per block and lock free: the audio path calls pushChangedValues() before it renders,
+ * which reads each model's value and hands a changed one to the unit (ParamTarget::setParam, an atomic store the
+ * same block applies). Nothing listens to dataChanged() to reach the unit, and each model defers that signal when it
+ * changes on the render thread (an automation tick): flushDeferred(), on the GUI thread, emits it there. So no Qt
+ * signal is emitted on the render thread for an automated Audio Unit parameter (Q050-491 review round 1).
  */
 class AuParamModelList
 {
 public:
-	AuParamModelList(au::HostedUnit* unit, Model* parent);
-	//! One model per parameter the unit reported after load(). Once.
+	AuParamModelList(au::ParamTarget* unit, Model* parent);
+	//! GUI thread, once after load(): one model per parameter the unit reported.
 	void build();
 	const std::vector<AuParamModel*>& models() const { return m_models; }
-	//! The unit's values into the models (its own editor, a restored state), not echoed back; only values
-	//! further than @a tolerance of a model's range from it.
+	//! Audio thread, once per block before rendering: every model whose value changed since the last block is sent to
+	//! the unit. Allocation and lock free; the model list is fixed after build().
+	void pushChangedValues();
+	//! GUI thread: the dataChanged() each model held back while it changed on the render thread.
+	void flushDeferred();
+	//! GUI thread: the unit's values into the models (its own editor, a restored state), for a value further than
+	//! @a tolerance of a model's range from it. A model whose value the audio path has not handed over yet is left alone.
 	void pullValues(float tolerance);
 	//! Every model under <parameters>, with its automation link (AutomatableModel::saveSettings).
 	void saveValues(QDomDocument& doc, QDomElement& element);
@@ -72,10 +82,11 @@ public:
 	void restoreValues(const QDomElement& element);
 
 private:
-	au::HostedUnit* m_unit;
+	au::ParamTarget* m_unit;
 	Model* m_parent;
 	std::vector<AuParamModel*> m_models;
-	bool m_syncing = false;
+	//! Per model, the value last handed to the unit. Written by the audio path, read by pullValues().
+	std::unique_ptr<std::atomic<float>[]> m_pushed;
 };
 
 //! The state element both AU hosts write: kAudioUnitProperty_ClassInfo as a binary plist, base64, under <state>.

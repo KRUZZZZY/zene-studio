@@ -58,6 +58,8 @@ public:
 
 	auto auEffect() -> AuEffect* { return m_effect; }
 	auto paramModels() const -> const std::vector<AuParamModel*>& { return m_params.models(); }
+	//! Audio thread: the parameter values changed since the last block, to the unit (AuParamModelList).
+	void pushParameters() { m_params.pushChangedValues(); }
 
 private slots:
 	//! GUI thread: the unit's own changes (its editor) into the models, and a re-prepare the audio thread asked for.

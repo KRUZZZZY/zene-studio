@@ -25,37 +25,10 @@
 
 #include <cmath>
 
-#include <QDebug>
-
-#include "AudioEngine.h"
-#include "Engine.h"
 #include "ParameterReadOnly.h"
 
 namespace lmms
 {
-
-void saveAuState(au::HostedUnit* unit, QDomDocument& doc, QDomElement& element)
-{
-	QByteArray state;
-	if (!unit->saveState(&state)) { return; }
-	auto stateElement = doc.createElement(QStringLiteral("state"));
-	stateElement.appendChild(doc.createTextNode(QString::fromLatin1(state.toBase64())));
-	element.appendChild(stateElement);
-}
-
-bool loadAuState(au::HostedUnit* unit, const QDomElement& element)
-{
-	const auto stateElement = element.firstChildElement(QStringLiteral("state"));
-	if (stateElement.isNull() || !unit->isLoaded()) { return false; }
-	AudioEngine* engine = Engine::audioEngine();
-	// Not while the unit renders: the engine is held for the property write.
-	if (engine != nullptr) { engine->requestChangeInModel(); }
-	QString error;
-	const bool loaded = unit->loadState(QByteArray::fromBase64(stateElement.text().toLatin1()), &error);
-	if (engine != nullptr) { engine->doneChangeInModel(); }
-	if (!loaded) { qWarning() << "AU:" << error; }
-	return loaded;
-}
 
 AuParamModel::AuParamModel(const au::ParamInfo& info, int index, Model* parent) :
 	FloatModel(info.defaultValue, info.minimum, info.maximum, (info.maximum - info.minimum) * 0.001f, parent, info.name),
@@ -67,7 +40,7 @@ AuParamModel::AuParamModel(const au::ParamInfo& info, int index, Model* parent) 
 	markParameterReadOnly(this, !info.writable);
 }
 
-AuParamModelList::AuParamModelList(au::HostedUnit* unit, Model* parent) :
+AuParamModelList::AuParamModelList(au::ParamTarget* unit, Model* parent) :
 	m_unit(unit),
 	m_parent(parent)
 {
@@ -80,24 +53,48 @@ void AuParamModelList::build()
 	for (int i = 0; i < static_cast<int>(params.size()); ++i)
 	{
 		auto* model = new AuParamModel(params[static_cast<std::size_t>(i)], i, m_parent);
-		QObject::connect(model, &Model::dataChanged, model, [this, model] {
-			if (!m_syncing) { m_unit->setParam(model->index(), model->value()); }
-		}, Qt::DirectConnection);
+		// An automation tick sets the model on the render thread: its signal waits for flushDeferred().
+		model->setDeferChangeSignalOnRenderThread(true);
 		m_models.push_back(model);
 	}
-	pullValues(0.f);
+	m_pushed = std::make_unique<std::atomic<float>[]>(m_models.size());
+	for (std::size_t i = 0; i < m_models.size(); ++i)
+	{
+		const float value = m_unit->paramValue(static_cast<int>(i));
+		m_models[i]->setValue(value);
+		m_pushed[i].store(m_models[i]->value(), std::memory_order_relaxed);
+	}
+}
+
+void AuParamModelList::pushChangedValues()
+{
+	for (std::size_t i = 0; i < m_models.size(); ++i)
+	{
+		const AuParamModel* model = m_models[i];
+		const float value = model->value();
+		if (!model->info().writable || value == m_pushed[i].load(std::memory_order_relaxed)) { continue; }
+		m_unit->setParam(model->index(), value);
+		m_pushed[i].store(value, std::memory_order_release);
+	}
+}
+
+void AuParamModelList::flushDeferred()
+{
+	for (AuParamModel* model : m_models) { model->flushDeferredChange(); }
 }
 
 void AuParamModelList::pullValues(float tolerance)
 {
-	m_syncing = true;
-	for (AuParamModel* model : m_models)
+	for (std::size_t i = 0; i < m_models.size(); ++i)
 	{
+		AuParamModel* model = m_models[i];
+		// A host-side change the audio path has not handed over yet: the unit still has the old value.
+		if (model->value() != m_pushed[i].load(std::memory_order_acquire)) { continue; }
 		const float value = m_unit->paramValue(model->index());
 		const float range = model->maxValue() - model->minValue();
+		// The model follows the unit; the next block hands the same value back, which changes nothing.
 		if (std::fabs(value - model->value()) > tolerance * range) { model->setValue(value); }
 	}
-	m_syncing = false;
 }
 
 void AuParamModelList::saveValues(QDomDocument& doc, QDomElement& element)
