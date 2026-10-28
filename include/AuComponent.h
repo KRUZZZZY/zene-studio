@@ -82,9 +82,9 @@ enum class Kind
 
 LMMS_EXPORT Kind kindOf(std::uint32_t type);
 
-//! 'aufx' as "aufx". A code with a byte outside printable ASCII is written as eight hex digits.
+//! 'aufx' as "aufx". A code with non-printable ASCII or ':' is written as eight hex digits.
 LMMS_EXPORT QString fourCC(std::uint32_t code);
-//! "aufx" (or eight hex digits) back to the code; false for anything else.
+//! "aufx" (or eight hex digits for codes that need escaping) back to the code; false for anything else.
 LMMS_EXPORT bool fromFourCC(const QString& text, std::uint32_t* code);
 
 //! The device's identity as a project and plugin.list store it: "aufx:bpas:appl".

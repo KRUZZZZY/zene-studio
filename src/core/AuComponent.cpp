@@ -57,6 +57,16 @@ bool printable(std::uint32_t value)
 	return true;
 }
 
+bool requiresHex(std::uint32_t value)
+{
+	if (!printable(value)) { return true; }
+	for (int shift = 24; shift >= 0; shift -= 8)
+	{
+		if (((value >> shift) & 0xffu) == static_cast<unsigned char>(':')) { return true; }
+	}
+	return false;
+}
+
 //! The OSStatus values an Audio Unit host meets (AUComponent.h, AudioComponent.h, CoreAudioTypes.h).
 const QHash<std::int32_t, QString>& statusNames()
 {
@@ -137,7 +147,7 @@ Kind kindOf(std::uint32_t type)
 
 QString fourCC(std::uint32_t value)
 {
-	if (!printable(value)) { return QStringLiteral("%1").arg(value, 8, 16, QLatin1Char('0')); }
+	if (requiresHex(value)) { return QStringLiteral("%1").arg(value, 8, 16, QLatin1Char('0')); }
 	QString out;
 	for (int shift = 24; shift >= 0; shift -= 8) { out.append(QLatin1Char(static_cast<char>((value >> shift) & 0xffu))); }
 	return out;
@@ -149,7 +159,7 @@ bool fromFourCC(const QString& text, std::uint32_t* value)
 	{
 		bool ok = false;
 		const auto parsed = text.toUInt(&ok, 16);
-		if (!ok || printable(parsed)) { return false; }  // a printable code is always written as four characters
+		if (!ok || !requiresHex(parsed)) { return false; }  // printable codes without the key separator use four characters
 		*value = parsed;
 		return true;
 	}
@@ -172,8 +182,7 @@ QString componentKey(const ComponentId& id)
 
 bool parseComponentKey(const QString& key, ComponentId* id)
 {
-	// Split by hand: a four-character code may itself contain ':' only when written as hex, which it never
-	// is for a printable code, so exactly three fields are expected.
+	// Colons inside a code are written as hex, keeping the key's three-field separator unambiguous.
 	const QStringList parts = key.split(QLatin1Char(':'));
 	if (parts.size() != 3) { return false; }
 	ComponentId out;

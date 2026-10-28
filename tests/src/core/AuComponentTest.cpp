@@ -83,11 +83,14 @@ private slots:
 		QCOMPARE(au::fourCC(code("aufx")), QStringLiteral("aufx"));
 		QCOMPARE(au::fourCC(code("dls ")), QStringLiteral("dls "));  // a trailing space is part of the code
 		QCOMPARE(au::fourCC(0x00000001u), QStringLiteral("00000001"));  // not printable: hex
+		QCOMPARE(au::fourCC(code("b:as")), QStringLiteral("623a6173"));  // key separator: hex
 		std::uint32_t value = 0;
 		QVERIFY(au::fromFourCC(QStringLiteral("dls "), &value));
 		QCOMPARE(value, code("dls "));
 		QVERIFY(au::fromFourCC(QStringLiteral("00000001"), &value));
 		QCOMPARE(value, 0x00000001u);
+		QVERIFY(au::fromFourCC(QStringLiteral("623a6173"), &value));
+		QCOMPARE(value, code("b:as"));
 		QVERIFY(!au::fromFourCC(QStringLiteral("abc"), &value));
 		QVERIFY(!au::fromFourCC(QStringLiteral("61756678"), &value));  // a printable code is never written as hex
 		QVERIFY(!au::fromFourCC(QStringLiteral("ab\nc"), &value));  // a control character is not a code
@@ -97,9 +100,13 @@ private slots:
 	{
 		QCOMPARE(au::componentKey(Bandpass), QStringLiteral("aufx:bpas:appl"));
 		QCOMPARE(au::componentKey(Dls), QStringLiteral("aumu:dls :appl"));
+		const au::ComponentId embeddedColon{code("aufx"), code("b:as"), code("appl")};
+		QCOMPARE(au::componentKey(embeddedColon), QStringLiteral("aufx:623a6173:appl"));
 		au::ComponentId parsed;
 		QVERIFY(au::parseComponentKey(QStringLiteral("aumu:dls :appl"), &parsed));
 		QVERIFY(parsed == Dls);
+		QVERIFY(au::parseComponentKey(au::componentKey(embeddedColon), &parsed));
+		QVERIFY(parsed == embeddedColon);
 		for (const QString& bad : {QString(), QStringLiteral("aufx:bpas"), QStringLiteral("aufx:bpas:appl:x"),
 				 QStringLiteral("aufx:bp:appl"), QStringLiteral("00000000:bpas:appl")})
 		{
