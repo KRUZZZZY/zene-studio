@@ -126,7 +126,8 @@ private:
 	/*! R2.2's LOOPBACK FIXTURE, for a box with no audio interface: with
 	 *  LMMS_DUMMY_LOOPBACK set, each rendered period is fed back as the capture input after
 	 *  exactly LMMS_DUMMY_OUTPUT_LATENCY + LMMS_DUMMY_INPUT_LATENCY frames - a cable from
-	 *  the output jack to the input jack of a device that reports those two figures. Off
+	 *  the output jack to the input jack of a device that reports those two figures (and, with
+	 *  LMMS_DUMMY_LOOPBACK_GAIN, a box on the cable that scales the level). Off
 	 *  (the default) the Dummy behaves as it always has. The delay line is allocated here,
 	 *  once, never on the render loop. Defined in src/core/AudioEngine.cpp. */
 	void configureLoopback();
@@ -135,6 +136,7 @@ private:
 	bool m_loopback = false;
 	f_cnt_t m_loopInLatency = 0;
 	f_cnt_t m_loopOutLatency = 0;
+	float m_loopGain = 1.f;  //!< LMMS_DUMMY_LOOPBACK_GAIN (Q050-089.2): the cable's level, 1 unless set
 	std::vector<SampleFrame> m_loopLine;
 	std::vector<SampleFrame> m_loopBlock;
 	std::size_t m_loopWrite = 0;

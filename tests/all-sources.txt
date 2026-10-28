@@ -724,6 +724,7 @@ include/RackZoneFeed.h
 include/RackZoneInputs.h
 include/RackZones.h
 include/RaiiHelpers.h
+include/RealtimeExport.h
 include/RealtimeScope.h
 include/RecentProjectsMenu.h
 include/RecordLaunchMenus.h
@@ -1726,6 +1727,7 @@ src/core/ControlCommandsReference.cpp
 src/core/ControlCommandsRemote.cpp
 src/core/ControlCommandsRenderBounce.cpp
 src/core/ControlCommandsRenderQueue.cpp
+src/core/ControlCommandsRenderRealtime.cpp
 src/core/ControlCommandsRenderSections.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRevisions.cpp
@@ -2078,6 +2080,7 @@ src/core/RackSplit.cpp
 src/core/RackZoneFeed.cpp
 src/core/RackZoneInputs.cpp
 src/core/RackZones.cpp
+src/core/RealtimeExport.cpp
 src/core/RecordOptions.cpp
 src/core/RecorderTaps.cpp
 src/core/RecordingJournal.cpp
@@ -3177,6 +3180,7 @@ tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
 tests/src/gui/RackMenuTest.cpp
+tests/src/gui/RealtimeExportMenuTest.cpp
 tests/src/gui/RecordModeMenuTest.cpp
 tests/src/gui/RecordRemainingTest.cpp
 tests/src/gui/RecordingRecoveryMenuTest.cpp

@@ -1061,6 +1061,7 @@ include/RackSplit.h
 include/RackZoneFeed.h
 include/RackZoneInputs.h
 include/RackZones.h
+include/RealtimeExport.h
 include/RealtimeScope.h
 include/RecordLaunchMenus.h
 include/RecordOptions.h
@@ -1572,6 +1573,7 @@ src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsReference.cpp
 src/core/ControlCommandsRemote.cpp
 src/core/ControlCommandsRenderQueue.cpp
+src/core/ControlCommandsRenderRealtime.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
@@ -1869,6 +1871,7 @@ src/core/RackSplit.cpp
 src/core/RackZoneFeed.cpp
 src/core/RackZoneInputs.cpp
 src/core/RackZones.cpp
+src/core/RealtimeExport.cpp
 src/core/RecordOptions.cpp
 src/core/RecorderTaps.cpp
 src/core/RecordingJournal.cpp
@@ -2807,6 +2810,7 @@ tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
 tests/src/gui/MixerInsertLatencyTest.cpp
+tests/src/gui/RealtimeExportMenuTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
@@ -3202,6 +3206,7 @@ tests/control-drum-rack-pads.py
 tests/src/plugins/VibratingStringTest.cpp
 # cluster new-p23-25 (2026-10): regression for window.select during GuiApplication startup (fork-NEW).
 tests/src/gui/WindowSelectStartupTest.cpp
+tests/control-realtime-export.py
 tests/moc-qt5-trailing-return-check.py
 tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
 docs/qwen-fixes-2026-10/cluster-ci-v041-5.md

@@ -138,6 +138,8 @@ SET(LMMS_SESSION_SRCS
 		core/ControlCommandsSessionRecordLand.cpp
 		# 0.5.0 L02 (WF-055): the audio take a launcher cell records (include/SessionAudioRecorder.h).
 		core/SessionAudioRecorder.cpp
+		# Q050-089.2: render.realtime's capture of the master mix (include/RealtimeExport.h).
+		core/RealtimeExport.cpp
 		# ...and a launched audio cell rendering its clip through its sample track (include/SessionAudioCells.h).
 		core/SessionAudioCells.cpp
 		core/SessionAudioBake.cpp
@@ -471,6 +473,8 @@ set(LMMS_SRCS
 	# render.sections (0.5.0 L12, Q050-009): the song's named sections exported one
 	# bounded file each, through render.render.
 	core/ControlCommandsRenderSections.cpp
+	# render.realtime (Q050-089.2): the project played through the device, so hardware inserts are heard.
+	core/ControlCommandsRenderRealtime.cpp
 	core/ControlCommandsRack.cpp
 	core/ControlCommandsRackMacros.cpp
 	core/ControlCommandsRackZones.cpp

@@ -1089,8 +1089,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-066.1** (drum-rack pads, stage 1, 2026-10-27): `track.drum_rack_pad_add` and `track.drum_rack_pad_set` add two `true_inverse` rows and `track.drum_rack_get_state` one `not_mutating` row - `rows=880 true_inverse=434 snapshot=42 irreversible=25 not_mutating=379`.
 
+**Q050-089.2** (real-time hardware insert export, 2026-10-27): `render.realtime` adds one `not_mutating` row - `rows=881 true_inverse=434 snapshot=42 irreversible=25 not_mutating=380`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=880 true_inverse=434 snapshot=42 irreversible=25 not_mutating=379
+     measured: rows=881 true_inverse=434 snapshot=42 irreversible=25 not_mutating=380
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
