@@ -528,8 +528,11 @@ const ModulationRoute* ModulationLayer::findRoute(const ModulationRoute& route) 
 	{
 		for (const ModulationRoute& candidate : modulator.routes)
 		{
-			const bool same = candidate.channel == route.channel && candidate.track == route.track
-				&& candidate.chain == route.chain && candidate.effect == route.effect
+			// A track route is its instrument parameter's address alone: channel, chain and effect
+			// are unused for it, so they must not tell two bindings of one parameter apart.
+			const bool rackFieldsMatch = route.track >= 0
+				|| (candidate.channel == route.channel && candidate.chain == route.chain && candidate.effect == route.effect);
+			const bool same = candidate.track == route.track && rackFieldsMatch
 				&& candidate.parameter == route.parameter;
 			if (same) { return &candidate; }
 		}
