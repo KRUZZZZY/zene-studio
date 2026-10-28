@@ -98,3 +98,12 @@ rebuild it by creating a worktree outside the write-jail.
 7. **Old projects load and render as before.** Unchanged: no product code.
 8. **Portability.** The test uses only the `QCOMPARE`/`QVERIFY` idioms already in the file.
 9. **Sibling commands.** No command files changed, so no sibling check applies.
+
+## Completion check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p16-289` → EXIT=1 (`submit-check-1.log`):
+commits on the branch PASS, working tree clean PASS, report verdict PASS, tests added or changed PASS (claim-only
+closure), **gates FAIL**. The gates row is the same `feature_check.py` `PermissionError` described above (sibling
+log directory outside the write-jail), not a product or test failure. The fix-loop run, or a session with write
+access beside the worktree, should re-run that row. The gate commands themselves exited 0 for the six simple gates
+and exited 1 for the two ratchet gates, which the report explains.
