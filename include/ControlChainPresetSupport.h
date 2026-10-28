@@ -113,9 +113,10 @@ LMMS_EXPORT QString controlChainPresetName(const QString& path);
 LMMS_EXPORT QStringList controlChainPresetFiles();
 
 /*! The preset file \\a path holds. False and *error set when the file cannot be
- *  read, is not XML, is not a <zenechainpreset> document, or carries a device
- *  with no state document - a half-readable preset is refused rather than
- *  applied with a device silently missing its settings.
+ *  read, is not XML, is not a <zenechainpreset> document, has no version or a
+ *  version other than the one this build writes, or carries a device with no
+ *  state document - a half-readable preset is refused rather than applied with
+ *  a device silently missing its settings.
  */
 LMMS_EXPORT bool controlReadChainPreset(const QString& path, ControlChainPreset* out,
 	ControlResult* error);

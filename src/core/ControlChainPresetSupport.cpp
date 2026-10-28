@@ -66,6 +66,12 @@ QString chainPresetRootName()
 	return QStringLiteral("zenechainpreset");
 }
 
+//! The one chain preset document version this build writes, and the only one it reads.
+int chainPresetVersion()
+{
+	return 1;
+}
+
 //! The one element name a device document's root must carry (the same name
 //! controlRestoreEffectState refuses anything else by).
 QString deviceStateRootName()
@@ -104,6 +110,23 @@ bool checkDeclaredDeviceCount(const QDomElement& root, const QString& path, Cont
 		return false;
 	}
 	return true;
+}
+
+/*! True when \a root declares the chain preset version this build writes.
+ *
+ *  False and *error set (typed invalid_args) when the attribute is absent or is
+ *  anything but that version. Another version's layout is not this one's layout,
+ *  so it is refused rather than read as the current device list - an empty list
+ *  read that way would clear the chain the preset is applied to.
+ */
+bool checkChainPresetVersion(const QDomElement& root, const QString& path, ControlResult* error)
+{
+	const QString version = QString::number(chainPresetVersion());
+	if (root.attribute(QStringLiteral("version")) == version) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("%1 has no supported chain preset version (this build reads version %2)")
+			.arg(path, version));
+	return false;
 }
 
 //! Keep temporary effect construction and state restoration out of the user's undo history.
@@ -236,7 +259,7 @@ QByteArray controlChainPresetDocument(const QString& name,
 {
 	QDomDocument doc;
 	QDomElement root = doc.createElement(chainPresetRootName());
-	root.setAttribute(QStringLiteral("version"), 1);
+	root.setAttribute(QStringLiteral("version"), chainPresetVersion());
 	root.setAttribute(QStringLiteral("name"), name);
 	root.setAttribute(QStringLiteral("devices"), static_cast<int>(devices.size()));
 	doc.appendChild(root);
@@ -281,6 +304,7 @@ bool controlReadChainPreset(const QString& path, ControlChainPreset* out, Contro
 				.arg(path, root.tagName()));
 		return false;
 	}
+	if (!checkChainPresetVersion(root, path, error)) { return false; }
 	if (!checkDeclaredDeviceCount(root, path, error)) { return false; }
 
 	ControlChainPreset preset;
