@@ -95,6 +95,12 @@ void StereoDelay::tick( SampleFrame& frame )
 
 void StereoDelay::setSampleRate( int sampleRate )
 {
+	// Invalid rates must not free or replace the last usable ring.
+	if( sampleRate <= 0 )
+	{
+		return;
+	}
+
 	// A ring above 2^31 frames cannot be indexed by an int. Refuse it before the
 	// current ring is touched, so the delay keeps its last good ring.
 	const float bufferSizeF = sampleRate * m_maxTime;
@@ -109,12 +115,17 @@ void StereoDelay::setSampleRate( int sampleRate )
 	}
 
 	// tick() uses the ring length as a modulo divisor, so the ring must hold at
-	// least one frame even when maxTime or sampleRate is zero or negative. The
-	// float is only converted when it is in range; a negative one would not be.
+	// least one frame when maxTime is zero or negative. The float is only
+	// converted when it is in range; a negative one would not be.
 	const int bufferSize = bufferSizeF >= 1.0f ? static_cast<int>(bufferSizeF) : 1;
 	if (m_maxLength > 0)
 	{
 		m_length *= static_cast<float>(bufferSize) / static_cast<float>(m_maxLength);
+	}
+	else
+	{
+		// A previously refused constructor rate has no duration to scale from.
+		m_length = static_cast<float>(bufferSize);
 	}
 	m_maxLength = bufferSize;
 	if (m_length > static_cast<float>(m_maxLength))
