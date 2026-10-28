@@ -181,4 +181,5 @@ tools/stem-export-demo.py
 # by the fork scope when this list was added, so moving it would narrow that scope). This
 # file's command subtracts all six.
 
+tools/stem_quality_bench.py
 tools/stem_split_cli.py
