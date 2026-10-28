@@ -5506,3 +5506,4 @@ tests/src/core/ControlDeviceVendorTest.cpp	# ControlDeviceSupport::resolveTrackT
 tests/src/gui/EffectRackAddTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
 tests/src/plugins/DelayControlsTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
 src/core/DataFile.cpp	new-p23-77: recoverPendingWrite() returns at once for an empty file name, so an unnamed DataFile no longer adopts or discards the working directory's ./.new temp; regression DataFileSaveIntegrityTest::unnamedDataFileLeavesTheWorkingDirectoryTempAlone.
+tests/src/core/DawProjectDeflateImportTest.cpp	# ZIP64 entry-count sentinel silently drops entries
