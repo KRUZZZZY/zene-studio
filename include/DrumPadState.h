@@ -62,6 +62,16 @@ struct DrumPadPlayback
 	int voiceLimit = 64;         //!< the most notes the pad plays at once (1..64)
 };
 
+/*! Q050-066 stage 2: one effect of a pad's chain - the insert chain of the pad's own mixer channel, in
+ *  processing order. The mixer channel already saves it; this only reads it. */
+struct DrumPadEffect
+{
+	QString id;          //!< fx-<n>, what plugin.unload / plugin.bypass / plugin.param_set take
+	QString plugin;      //!< the plug-in's name (e.g. "amplifier")
+	QString displayName; //!< what a person reads (e.g. "Amplifier")
+	bool enabled = true; //!< false when bypassed
+};
+
 struct DrumPadState
 {
 	QString track;     //!< the pad's track, trk-<n>
@@ -71,6 +81,10 @@ struct DrumPadState
 	QString channel;   //!< the pad's mixer channel (its chain), ch-<n>
 	QString sendsTo;   //!< the one channel the pad's channel sends to (the rack's bus), ch-<n>; empty unless exactly one
 	DrumPadPlayback playback;
+	std::vector<DrumPadEffect> chain;  //!< stage 2: the effects on the pad's channel (its chain 0), in order
+	/*! Stage 2: true when the pad's chain is not its own - the channel is the master, another track plays into
+	 *  it, or another channel sends into it - so an effect put there would process more than this pad. */
+	bool chainShared = false;
 
 	QJsonObject toJson() const;
 };

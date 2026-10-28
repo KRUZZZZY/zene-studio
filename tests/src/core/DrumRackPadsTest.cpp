@@ -24,16 +24,19 @@
 /*! Q050-066 stage 1 through the registry: track.drum_rack_get_state reads every pad of a rack (its name,
  *  sample, trigger key, chain and bus) the way the tracks hold them; track.drum_rack_pad_add puts a pad in
  *  a rack and track.drum_rack_pad_set edits one, each ONE undo step whose redo keeps the ids; the state reads
- *  back the same after a save and reopen. The interface half is DrumRackPanelTest.cpp, the socket and
+ *  back the same after a save and reopen. Stage 2: each pad's chain (the effects on its own channel) reads back
+ *  on that pad alone, each chain edit one undo step. The interface half is DrumRackPanelTest.cpp, the socket and
  *  render half tests/control-drum-rack-pads.py. */
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QTemporaryDir>
 
 #include "AutomatableModel.h"
 #include "ControlRegistry.h"
+#include "DummyEffect.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -80,6 +83,28 @@ InstrumentTrack* trackOf(const QJsonValue& id)
 {
 	const int number = id.toString().section(QLatin1Char('-'), 1).toInt();
 	return dynamic_cast<InstrumentTrack*>(Engine::getSong()->findTrackById(number));
+}
+
+//! The id (dev-<n>) of the built-in effect named @a name (plugin.list's 'name'), or empty.
+QString effectDevice(const QString& name)
+{
+	for (const QJsonValue& device : run(QStringLiteral("plugin.list"), {{QStringLiteral("kind"), QStringLiteral("effect")},
+		{QStringLiteral("format"), QStringLiteral("builtin")}}).result.value(QStringLiteral("devices")).toArray())
+	{
+		if (device.toObject().value(QStringLiteral("name")).toString() == name) { return device.toObject().value(QStringLiteral("id")).toString(); }
+	}
+	return QString();
+}
+
+//! The plug-in names of pad @a pad's chain, in order.
+QStringList chainOf(const QString& folder, int pad)
+{
+	QStringList names;
+	for (const QJsonValue& effect : padsOf(folder).at(pad).toObject().value(QStringLiteral("chain")).toArray())
+	{
+		names << effect.toObject().value(QStringLiteral("plugin")).toString();
+	}
+	return names;
 }
 
 //! The sampler's parameter named @a name on @a pad (its knob's model), or nullptr.
@@ -293,6 +318,94 @@ private slots:
 		voices->setValue(64.f);
 		Engine::getSong()->loadProject(path);
 		QCOMPARE(padsOf(folder).at(0).toObject(), set);
+	}
+
+	/*! Stage 2: an effect put on one pad's chain (its own channel) reads back on that pad only - the other pad's
+	 *  chain and channel stay empty - each chain edit is one undo step, a bypass reads back, and the chain survives
+	 *  a save and reopen. */
+	void anEffectOnOnePadIsNotOnAnother()
+	{
+		const QString folder = makeRack();
+		const QJsonObject kick = padsOf(folder).at(0).toObject();
+		const QJsonObject snare = padsOf(folder).at(1).toObject();
+		QCOMPARE(kick.value(QStringLiteral("chain")).toArray().size(), 0);
+		QCOMPARE(kick.value(QStringLiteral("chain_shared")).toBool(), false);
+		QCOMPARE(snare.value(QStringLiteral("chain_shared")).toBool(), false);
+		QVERIFY(kick.value(QStringLiteral("channel")) != snare.value(QStringLiteral("channel")));
+		const QString amplifier = effectDevice(QStringLiteral("amplifier"));
+		QVERIFY2(!amplifier.isEmpty(), "the build lists no amplifier module");
+
+		const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), kick.value(QStringLiteral("channel"))},
+			{QStringLiteral("device"), amplifier}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		QCOMPARE(chainOf(folder, 0), QStringList{QStringLiteral("amplifier")});
+		QCOMPARE(chainOf(folder, 1), QStringList{});
+		const QJsonObject effect = padsOf(folder).at(0).toObject().value(QStringLiteral("chain")).toArray().at(0).toObject();
+		QCOMPARE(effect.value(QStringLiteral("id")).toString(), loaded.result.value(QStringLiteral("id")).toString());
+		QCOMPARE(effect.value(QStringLiteral("enabled")).toBool(), true);
+		// The models agree: the snare's channel holds no effect, the kick's holds the one loaded.
+		QCOMPARE(Engine::mixer()->mixerChannel(trackOf(snare.value(QStringLiteral("track")))->mixerChannelModel()->value())
+			->m_fxChain.effects().size(), std::size_t{0});
+		QCOMPARE(Engine::mixer()->mixerChannel(trackOf(kick.value(QStringLiteral("track")))->mixerChannelModel()->value())
+			->m_fxChain.effects().size(), std::size_t{1});
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(chainOf(folder, 0), QStringList{});
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(chainOf(folder, 0), QStringList{QStringLiteral("amplifier")});
+		QCOMPARE(chainOf(folder, 1), QStringList{});
+
+		const QJsonValue fx = padsOf(folder).at(0).toObject().value(QStringLiteral("chain")).toArray().at(0).toObject().value(QStringLiteral("id"));
+		QVERIFY(run(QStringLiteral("plugin.bypass"), {{QStringLiteral("target"), kick.value(QStringLiteral("channel"))},
+			{QStringLiteral("plugin"), fx}, {QStringLiteral("bypass"), true}}).ok);
+		QCOMPARE(padsOf(folder).at(0).toObject().value(QStringLiteral("chain")).toArray().at(0).toObject()
+			.value(QStringLiteral("enabled")).toBool(), false);
+
+		const QString path = m_dir.filePath(QStringLiteral("chain.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path, false));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the bypass
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the effect
+		QCOMPARE(chainOf(folder, 0), QStringList{});
+		Engine::getSong()->loadProject(path);
+		QCOMPARE(chainOf(folder, 0), QStringList{QStringLiteral("amplifier")});
+		QCOMPARE(chainOf(folder, 1), QStringList{});
+		QCOMPARE(padsOf(folder).at(0).toObject().value(QStringLiteral("chain")).toArray().at(0).toObject()
+			.value(QStringLiteral("enabled")).toBool(), false);
+	}
+
+	//! Stage 2: a pad whose channel something else plays through reads chain_shared - the master, or a channel
+	//! another pad plays into - so neither the panel nor an agent mistakes it for the pad's own chain.
+	void aSharedChannelIsNotAPadsOwnChain()
+	{
+		const QString folder = makeRack();
+		InstrumentTrack* kick = trackOf(padsOf(folder).at(0).toObject().value(QStringLiteral("track")));
+		InstrumentTrack* snare = trackOf(padsOf(folder).at(1).toObject().value(QStringLiteral("track")));
+		const int own = snare->mixerChannelModel()->value();
+		snare->mixerChannelModel()->setValue(kick->mixerChannelModel()->value());
+		QCOMPARE(padsOf(folder).at(0).toObject().value(QStringLiteral("chain_shared")).toBool(), true);
+		QCOMPARE(padsOf(folder).at(1).toObject().value(QStringLiteral("chain_shared")).toBool(), true);
+		snare->mixerChannelModel()->setValue(0);
+		QCOMPARE(padsOf(folder).at(0).toObject().value(QStringLiteral("chain_shared")).toBool(), false);
+		QCOMPARE(padsOf(folder).at(1).toObject().value(QStringLiteral("chain_shared")).toBool(), true);
+		snare->mixerChannelModel()->setValue(own);
+		QCOMPARE(padsOf(folder).at(1).toObject().value(QStringLiteral("chain_shared")).toBool(), false);
+	}
+
+	//! A missing plug-in is retained as DummyEffect with a generic descriptor; read-back preserves its plug-in name.
+	void aMissingEffectStillReadsFromThePadChain()
+	{
+		const QString folder = makeRack();
+		InstrumentTrack* kick = trackOf(padsOf(folder).at(0).toObject().value(QStringLiteral("track")));
+		MixerChannel* channel = Engine::mixer()->mixerChannel(kick->mixerChannelModel()->value());
+		QDomDocument document;
+		QDomElement missingXml = document.createElement(QStringLiteral("effect"));
+		missingXml.setAttribute(QStringLiteral("name"), QStringLiteral("missing-effect"));
+		document.appendChild(missingXml);
+		channel->m_fxChain.appendEffect(new DummyEffect(&channel->m_fxChain, missingXml));
+
+		const QJsonObject effect = padsOf(folder).at(0).toObject().value(QStringLiteral("chain")).toArray().at(0).toObject();
+		QCOMPARE(effect.value(QStringLiteral("plugin")).toString(), QStringLiteral("missing-effect"));
+		QCOMPARE(effect.value(QStringLiteral("display_name")).toString(), QStringLiteral("missing-effect (missing)"));
 	}
 
 private:

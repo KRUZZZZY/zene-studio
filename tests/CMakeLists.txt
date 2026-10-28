@@ -2441,6 +2441,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()
+	# Q050-066 stage 2: the pad-chain cases put the build's amplifier module on a pad's channel.
+	if(LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
 
 	# Q050-071: the probe loads third-party plug-ins through the build's hosting modules, so they have to be built first.
 	if(LMMS_TEST_NAME STREQUAL "PluginCompatEditorProbe")
@@ -6125,6 +6129,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-drum-rack-pads.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlDrumRackPads PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# Q050-066 stage 2 over the socket: an amplifier at 0 % on one pad's channel silences that pad and no other
+	# (the rack renders as the other pad alone), reads back on that pad's chain only, undoes and redoes one step
+	# at a time, and survives a save and reopen in state and in sound.
+	add_test(NAME ControlDrumRackChains
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-drum-rack-chains.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDrumRackChains PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
