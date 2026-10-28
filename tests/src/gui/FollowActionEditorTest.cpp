@@ -36,6 +36,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLineEdit>
+#include <QSpinBox>
 #include <QTableWidget>
 
 #include "FollowActionEditor.h"
@@ -53,6 +54,22 @@ QDoubleSpinBox* chanceBoxOf(FollowActionEditor* editor)
 		if (box->minimum() == 0.0 && box->maximum() == 1.0) { return box; }
 	}
 	return nullptr;
+}
+
+//! The row's Jump box (column 4, after Action, Chance, After the clip and Bars): the scene a Jump goes to.
+QSpinBox* jumpBoxOf(FollowActionEditor* editor, int row)
+{
+	return qobject_cast<QSpinBox*>(editor->findChild<QTableWidget*>()->cellWidget(row, 4));
+}
+
+//! A one-row chain of a Jump to @a scene, as a file stores it (a whole number, which may lie outside the grid).
+QJsonArray jumpChain(double scene)
+{
+	return QJsonArray{QJsonObject{{QStringLiteral("type"), QStringLiteral("jump")},
+		{QStringLiteral("chance"), 1.0},
+		{QStringLiteral("linked"), true},
+		{QStringLiteral("time_bars"), 2.0},
+		{QStringLiteral("jump_to"), scene}}};
 }
 
 } // namespace
@@ -108,6 +125,55 @@ private slots:
 		QTest::keyClicks(chance, "0.12");
 		QTest::keyClick(chance, Qt::Key_Return);
 		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("chance")).toDouble(), 0.12);
+	}
+
+	void aMaximumJumpSceneIsWrittenBackAsLoaded()
+	{
+		// The largest int is a valid stored scene. Loading it used to add 1 to a signed int (undefined behaviour), then the
+		// box clamped to its 512 and OK wrote 511 over the stored value.
+		FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, jumpChain(2147483647.0), QStringLiteral("1"));
+		editor.show();
+		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("jump_to")).toDouble(), 2147483647.0);
+		QCOMPARE(jumpBoxOf(&editor, 0)->value(), 512);  // the nearest scene the box can show
+	}
+
+	void aJumpSceneTheBoxCannotShowIsKeptUntilTyped()
+	{
+		// Scene 600 is past the grid's 512 scenes, so the box shows 512. Left alone, the row keeps 600. Typing 512 is an edit
+		// and writes scene 511 (the number the box shows).
+		FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, jumpChain(600.0), QStringLiteral("1"));
+		editor.show();
+		QSpinBox* jump = jumpBoxOf(&editor, 0);
+		QVERIFY(jump != nullptr);
+		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("jump_to")).toDouble(), 600.0);
+
+		jump->setFocus();
+		jump->clear();
+		QTest::keyClicks(jump, "512");
+		QTest::keyClick(jump, Qt::Key_Return);
+		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("jump_to")).toDouble(), 511.0);
+	}
+
+	void aStepOfAJumpBoxIsAnEdit()
+	{
+		FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, jumpChain(600.0), QStringLiteral("1"));
+		editor.show();
+		QSpinBox* jump = jumpBoxOf(&editor, 0);
+		QVERIFY(jump != nullptr);
+		jump->setFocus();
+		QTest::keyClick(jump, Qt::Key_Down);  // from the 512 shown to 511: written, not the loaded 600
+		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("jump_to")).toDouble(), 510.0);
+	}
+
+	void anInRangeJumpSceneIsWrittenAsLoaded()
+	{
+		// The grid's first and last scenes (0 and 511) are written back unchanged, as they always were.
+		QJsonArray chain = jumpChain(0.0);
+		chain.append(jumpChain(511.0).at(0));
+		FollowActionEditor editor(QStringLiteral("session.set_slot"), QJsonObject{}, chain, QStringLiteral("1"));
+		editor.show();
+		QCOMPARE(editor.chain().at(0).toObject().value(QStringLiteral("jump_to")).toDouble(), 0.0);
+		QCOMPARE(editor.chain().at(1).toObject().value(QStringLiteral("jump_to")).toDouble(), 511.0);
 	}
 
 	void aPassiveFocusLossKeepsTheLoadedChance()
