@@ -45,6 +45,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <new>
 #include <vector>
 
@@ -193,7 +194,8 @@ private slots:
 	{
 		Piano piano(nullptr);
 		QVERIFY(!Piano::isBlackKey(NumKeys));
-		for (const int key : {-1, NumKeys})
+		// Negative keys, including ones whose remainder would be negative, must not index KEY_ORDER.
+		for (const int key : {-1, -KeysPerOctave - 1, std::numeric_limits<int>::min(), NumKeys})
 		{
 			QVERIFY(!piano.isKeyPressed(key));
 			QVERIFY(!Piano::isBlackKey(key));
