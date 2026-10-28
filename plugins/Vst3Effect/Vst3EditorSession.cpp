@@ -61,6 +61,13 @@ FIDString platformTypeOf(PluginWindowSystem system)
 	}
 	return nullptr;
 }
+
+//! The refusal open() returns: the reason goes to @a error when the caller asked for it, then false.
+bool refuseOpen(QString* error, const QString& why)
+{
+	if (error != nullptr) { *error = why; }
+	return false;
+}
 } // namespace
 
 /*! The frame a view is given: IPlugFrame (the view asks to be resized) and Linux::IRunLoop
@@ -192,29 +199,25 @@ bool Vst3EditorSession::open(void* parentWindow, QString* error)
 	if (isOpen()) { return true; }
 	if (m_controller == nullptr)
 	{
-		*error = QStringLiteral("the plug-in has no edit controller");
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in has no edit controller"));
 	}
 	// Q050-490: the platform's own window type - an X11 id, an HWND or an NSView, as winId() gives.
 	const PluginWindowSystem system = m_windowSystem.value_or(currentPluginWindowSystem());
 	const FIDString type = platformTypeOf(system);
 	if (type == nullptr)
 	{
-		*error = noPluginWindowSystemError();
-		return false;
+		return refuseOpen(error, noPluginWindowSystemError());
 	}
 	IPlugView* view = m_controller->createView(Vst::ViewType::kEditor);
 	if (view == nullptr)
 	{
-		*error = QStringLiteral("the plug-in offers no editor view (createView returned nothing)");
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in offers no editor view (createView returned nothing)"));
 	}
 	if (view->isPlatformTypeSupported(type) != kResultTrue)
 	{
 		view->release();
-		*error = QStringLiteral("the plug-in's editor cannot embed on %1 (VST3 platform type %2)")
-			.arg(pluginWindowSystemName(system), QLatin1String(type));
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in's editor cannot embed on %1 (VST3 platform type %2)")
+			.arg(pluginWindowSystemName(system), QLatin1String(type)));
 	}
 	auto* frame = new HostPlugFrame;
 	view->setFrame(frame);
@@ -224,8 +227,7 @@ bool Vst3EditorSession::open(void* parentWindow, QString* error)
 		frame->dropAll();
 		frame->release();
 		view->release();
-		*error = QStringLiteral("the plug-in's editor refused to attach");
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in's editor refused to attach"));
 	}
 	m_view = view;
 	m_frame = frame;

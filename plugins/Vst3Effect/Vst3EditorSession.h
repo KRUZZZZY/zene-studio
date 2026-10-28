@@ -61,6 +61,7 @@ public:
 	Vst3EditorSession(const Vst3EditorSession&) = delete;
 	Vst3EditorSession& operator=(const Vst3EditorSession&) = delete;
 
+	//! @a error may be null: a refusal writes its reason there only when the caller asked for it.
 	bool open(void* parentWindow, QString* error);
 	void close();
 	bool isOpen() const { return m_view != nullptr; }
