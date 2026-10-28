@@ -123,6 +123,39 @@ void addRecordEntries(QMenu* menu, const QJsonObject& where, const QString& titl
 	cancel->setEnabled(cancel->isEnabled() && !idle);
 }
 
+//! Q050-493: an audio cell's playback - gain, transpose, detune, loop region, tempo warp and RAM mode, every one of
+//! session.set_slot's playback fields - from its menu, through session.set_slot as an agent sets them (one undo step
+//! each). The form starts at the cell's current values, so Run with one field changed changes that field alone.
+void addPlaybackEntries(QMenu* menu, const QJsonObject& where, const QJsonObject& slot, const QString& title)
+{
+	static const char* const keys[] = {"gain_db", "transpose", "detune", "loop_start", "loop_length", "warp", "warp_bpm", "ram"};
+	const QString id = QStringLiteral("session.set_slot");
+	QMenu* playback = menu->addMenu(QObject::tr("Playback and Warp"));
+	addCommandAction(playback, QObject::tr("Gain, Pitch, Loop and Warp..."), id, [id, where, slot, title] {
+		CommandCall edit = call(id, where, title);
+		for (const char* key : keys)
+		{
+			const QString name = QLatin1String(key);
+			if (slot.contains(name)) { edit.defaults.insert(name, slot.value(name)); }
+		}
+		return edit;
+	});
+	const auto set = [id, where, title] { return call(id, where, title); };
+	addCommandChoices(playback, QObject::tr("Warp to Song Tempo"), id, QStringLiteral("warp"), set);
+	addCommandChoices(playback, QObject::tr("RAM Mode"), id, QStringLiteral("ram"), set);
+	playback->addSeparator();
+	addCommandAction(playback, QObject::tr("Reset Gain, Pitch, Loop and Warp"), id, [id, where, title] {
+		QJsonObject reset = where;
+		reset.insert(QStringLiteral("gain_db"), 0.0);
+		reset.insert(QStringLiteral("transpose"), 0);
+		reset.insert(QStringLiteral("detune"), 0);
+		reset.insert(QStringLiteral("loop_start"), 0);
+		reset.insert(QStringLiteral("loop_length"), 0);
+		reset.insert(QStringLiteral("warp"), false);
+		return call(id, reset, title, false);
+	});
+}
+
 } // namespace
 
 //! WF-061: an entry opening the follow-action editor on @a chain, written back through @a command.
@@ -154,6 +187,7 @@ void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
 		audio.insert(QStringLiteral("type"), QStringLiteral("audio"));
 		return call(QStringLiteral("session.set_slot"), audio, title);
 	});
+	if (slot.value(QStringLiteral("type")).toString() == QLatin1String("audio")) { addPlaybackEntries(menu, where, slot, title); }
 	addRecordEntries(menu, where, title, slot.isEmpty());  // WF-055
 	const auto set = [where, title] { return call(QStringLiteral("session.set_slot"), where, title); };
 	addCommandChoices(menu, QObject::tr("Launch Mode"), QStringLiteral("session.set_slot"), QStringLiteral("mode"), set);

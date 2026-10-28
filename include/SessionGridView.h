@@ -135,6 +135,8 @@ private:
 	//! A cell's Ctrl+click or Ctrl+Space: true when @a event on @a button was one (the selection changed).
 	bool selectOnCell(QToolButton* button, QEvent* event);
 	std::vector<QString> cellNames(const QJsonArray& slotList) const;
+	//! Q050-493: each audio cell's playback settings off their defaults into m_badges and m_playback (cellNames' order).
+	void readPlayback(const QJsonArray& slotList);
 	void paintHeaders();
 	void paintCell(int track, int scene);
 	//! What launching cell (@a track, @a scene) replaces in its track, for its tooltip; empty when nothing.
@@ -162,6 +164,8 @@ private:
 	std::vector<QToolButton*> m_stopButtons;
 	std::vector<QLabel*> m_headers;    //!< per column: its track's name
 	std::vector<QString> m_names;      //!< each cell's name from the last refresh, empty for an empty cell
+	std::vector<QString> m_badges;     //!< Q050-493: each cell's playback badge (sessiongrid::playbackBadge)
+	std::vector<QString> m_playback;   //!< Q050-493: the same settings in words (sessiongrid::playbackWords)
 	int m_dropCell = -1;               //!< the cell a drag is over (track * scenes + scene)
 	QString m_dropFile;                //!< and the audio file it carries
 	std::vector<int> m_playingScene;  //!< per column, from the last refresh; -1 when idle
