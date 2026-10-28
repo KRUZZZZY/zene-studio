@@ -53,6 +53,16 @@
  *   retry policy asks again on every poll tick. The variable is read per
  *   setupProcessing() call, so a test can switch it on and off around the
  *   moment it needs.
+ * - BUS ACTIVATION (cluster stress-2): the fixture renders only into an audio
+ *   output bus the host ACTIVATED with IComponent::activateBus(). The SDK's Bus
+ *   starts inactive (vstbus.cpp) and kDefaultActive only asks the host to
+ *   activate it (ivstcomponent.h); a JUCE plug-in copies its audio only into
+ *   host-activated buses (juce_VST3Common.h, DynamicChannelMapping::hostActive),
+ *   so a host that skips the call renders silence from Surge XT, Dexed and the
+ *   rest. The fixture holds the host to the same rule. An instance created while
+ *   VST3_TEST_INSTRUMENT_OUTPUT_OFF is set declares that bus WITHOUT
+ *   kDefaultActive, as Vitalium does; without the variable it is exactly the
+ *   fixture it always was.
  */
 
 #include <cstdio>
@@ -114,6 +124,8 @@ static const char* const kLatencyEnv = "VST3_TEST_INSTRUMENT_LATENCY";
 // The environment that makes this fixture REFUSE to be prepared (setupProcessing
 // fails), so a host can be shown a plug-in whose preparation keeps failing.
 static const char* const kFailPrepareEnv = "VST3_TEST_INSTRUMENT_FAIL_PREPARE";
+// The environment that makes an instance declare its output bus off by default (BUS ACTIVATION).
+static const char* const kOutputOffEnv = "VST3_TEST_INSTRUMENT_OUTPUT_OFF";
 
 // The count the environment names now, one short of the ring (a whole-ring delay would read the frame just
 // written).
@@ -178,6 +190,12 @@ private:
 
 	/** Write one constant value over [from, to) on every output channel. */
 	void renderSegment (ProcessData& data, int32 from, int32 to);
+
+	/** Whether the host activated the main output bus (the SDK's Bus starts inactive). */
+	bool mainOutputActive () const
+	{
+		return !audioOutputs.empty () && audioOutputs[0] && audioOutputs[0]->isActive ();
+	}
 
 	/** A latent instance: follow a new count, then delay the block by it. No allocation. */
 	void applyLatency (ProcessData& data);
@@ -276,7 +294,10 @@ tresult PLUGIN_API TestInstrument::initialize (FUnknown* context)
 	// An instrument: NO audio input, one audio output, one event input.
 	// An effect would add an audio input here; this asymmetry is exactly what
 	// the host has to handle and what the probe asserts.
-	addAudioOutput (STR16 ("Audio Output"), kOutputArrangement);
+	// VST3_TEST_INSTRUMENT_OUTPUT_OFF set: the output bus is declared WITHOUT kDefaultActive, the shape
+	// Vitalium (DISTRHO-Ports) reports (see BUS ACTIVATION).
+	addAudioOutput (STR16 ("Audio Output"), kOutputArrangement, kMain,
+	                std::getenv (kOutputOffEnv) != nullptr ? 0 : BusInfo::kDefaultActive);
 	addEventInput (STR16 ("Event Input"), 1);
 
 	parameters.addParameter (STR16 ("Level"), nullptr, /*flags*/ 0, kDefaultLevel,
@@ -411,8 +432,10 @@ void TestInstrument::renderSegment (ProcessData& data, int32 from, int32 to)
 		return;
 	}
 
-	// Constant level while at least one key is down, exact zero otherwise.
-	const Sample32 value = mActiveNotes > 0 ? static_cast<Sample32> (mLevel) : 0.0f;
+	// Constant level while at least one key is down, exact zero otherwise - and
+	// exact zero on an output bus the host never activated (see BUS ACTIVATION).
+	const Sample32 value =
+	    mActiveNotes > 0 && mainOutputActive () ? static_cast<Sample32> (mLevel) : 0.0f;
 
 	for (int32 channel = 0; channel < outBus.numChannels; ++channel)
 	{

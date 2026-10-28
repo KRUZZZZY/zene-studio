@@ -123,8 +123,11 @@ Vst3Instrument::Vst3Instrument(InstrumentTrack* parent,
 
 		if (auto* engine = Engine::audioEngine())
 		{
-			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
-				&error);
+			// A refused preparation is reported, not left as a silent instrument (cluster stress-2).
+			if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error))
+			{
+				qWarning() << "VST3:" << modulePath << classId << "could not be prepared:" << error;
+			}
 		}
 		cacheLatency();  // MX-157
 		m_plugin.setLatencyChangedCallback([this] { m_latencyChanged.store(true, std::memory_order_relaxed); });

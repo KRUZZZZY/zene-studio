@@ -287,6 +287,8 @@ public:
 	//! Test-only: sample offset of that chunk's event @a index, or -1 when there is none. A VST3
 	//! event offset is always in [0, chunk length).
 	auto lastChunkEventOffset(int index) const -> int;
+	//! Test-only: how many parameters the LAST process() call sent the plug-in a change for.
+	auto lastParameterChangeCount() const -> int;
 #endif
 
 	//! GUI thread: plug-in rendered string for a normalized value
