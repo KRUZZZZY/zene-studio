@@ -86,6 +86,7 @@ struct Playback
 	int loopLength = 0;
 	bool warp = false;
 	double warpBpm = 0.0;
+	bool ram = false;
 
 	explicit Playback(const QJsonObject& slot) :
 		audio(slot.value(QStringLiteral("type")).toString() == QLatin1String("audio")),
@@ -95,7 +96,8 @@ struct Playback
 		loopStart(slot.value(QStringLiteral("loop_start")).toInt()),
 		loopLength(slot.value(QStringLiteral("loop_length")).toInt()),
 		warp(slot.value(QStringLiteral("warp")).toBool()),
-		warpBpm(slot.value(QStringLiteral("warp_bpm")).toDouble())
+		warpBpm(slot.value(QStringLiteral("warp_bpm")).toDouble()),
+		ram(slot.value(QStringLiteral("ram")).toBool())
 	{
 	}
 	bool gained() const { return std::fabs(gainDb) >= 0.05; }  // what one decimal shows
@@ -184,6 +186,7 @@ QString playbackBadge(const QJsonObject& slot)
 	if (p.detune != 0) { parts.append(signedText(p.detune, 0) + QStringLiteral("ct")); }
 	if (p.looped()) { parts.append(QStringLiteral("\u27F2")); }  // ⟲ a loop region
 	if (p.warp) { parts.append(QStringLiteral("W") + QString::number(p.warpBpm, 'g', 6)); }
+	if (p.ram) { parts.append(QStringLiteral("RAM")); }
 	return parts.join(QLatin1Char(' '));
 }
 
@@ -201,6 +204,7 @@ QString playbackWords(const QJsonObject& slot)
 			: QObject::tr("looping from tick %1 to the end").arg(p.loopStart));
 	}
 	if (p.warp) { parts.append(QObject::tr("warped to the song tempo from %1 BPM").arg(QString::number(p.warpBpm, 'g', 6))); }
+	if (p.ram) { parts.append(QObject::tr("RAM mode enabled")); }
 	return parts.join(QStringLiteral(", "));
 }
 

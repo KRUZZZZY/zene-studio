@@ -26,18 +26,19 @@ Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-493.r1/logs/`.
 | Shown on the cell | the same cases check the cell's text, accessible name and tooltip | same | 0 |
 | GUI test drives each control and checks `session.get_state` | all cases trigger the menu `QAction` (and the form's `setField` + `accept()` = Run); every state check reads `session.get_state` | same | 0 |
 | Rendered audio changes as the Q050-013 PCM tests expect | `gainAndLoopFromTheFormRenderAsTheEngineExpects` (-6.02 dB = exact half; loop 2/1 = exact frames), `transposeAndDetuneFromTheFormRepitch` (+12 st ×2, +100 ct one semitone), `warpFromTheMenuFollowsTheSongTempo` (Warp On at 240 BPM, clip 120: 0.5 s burst → 0.25 s at 400 Hz; Off → 0.5 s) | same | 0 |
-| KNOWN-LIMITATIONS socket-only note removed | `docs/KNOWN-LIMITATIONS.md` launcher audio-cell bullet now says these fields are applied and editable from the cell's menu; `docs/050-features/Q050-013.md` known limit marked done | doc-figures gate | 0 |
+| KNOWN-LIMITATIONS socket-only note removed | `docs/KNOWN-LIMITATIONS.md` launcher audio-cell bullet now says these fields are applied and editable from the cell's menu; the obsolete Q050-013 known-limit row was removed | doc-figures gate | 0 |
 
 Neighbours, rebuilt and run after the change: `ctest -R '^(SessionGridViewTest|SessionGridRecordTest|SessionSubSceneGridTest|AccessibilityWalkTest|PerformViewTest|TouchWorkspaceTest|SessionAudioCellPlaybackTest)$'`: 7/7 passed, exit 0
 (test-4.log); after the refactor, `SessionCellPlaybackMenuTest|SessionGridViewTest|SessionGridRecordTest|SessionSubSceneGridTest|AccessibilityWalkTest`:
 5/5 passed, exit 0 (test-5.log).
 
 ## Self-check
-- **Fails without the change, passes with it.** I reversed every `src/` and `include/` hunk (`git diff 37eaf0755 HEAD -- src include | git apply -R`),
-  rebuilt `SessionCellPlaybackMenuTest` (build exit 0, build-6-reverted.log) and ran it: **exit 7**, 7 cases FAILED, for example "no
-  menu entry Playback and Warp > Gain, Pitch, Loop and Warp...", "output frame 0 is (0.000488281, ...), expected
-  (0.000244141, ...)" and "warped sound 22049 frames, expected 11025" (test-6-reverted.log). After restoring with
-  `git apply` and rebuilding `zene` and the test (build exit 0): ctest **exit 0**, 1/1 (test-7-restored.log). The tree was clean afterwards.
+- **Fails without the change, passes with it.** With the test unchanged, I reversed all `include/` and `src/` hunks into
+  `logs/verifier-reverse-product.patch`, rebuilt `zene SessionCellPlaybackMenuTest` (exit 0,
+  `logs/verifier-build-reverted-2.log`), and ran `ctest -R '^SessionCellPlaybackMenuTest$' --output-on-failure`: **exit 8**,
+  one failed ctest target with 7 QtTest cases failing, including the missing Playback and Warp menu, unscaled PCM, and
+  the unwarped 22049-frame output. I restored the patch and rebuilt `zene` plus the seven affected GUI/audio targets
+  (exit 0, `logs/verifier-build-restored-2.log`); the eight focused ctests then passed (exit 0).
 - **Every criterion proven by a test I ran:** see the table. Every case is in `SessionCellPlaybackMenuTest`, exit 0.
 - **One undo step per edit; reversibility.** Each GUI entry is one `session.set_slot` call, which makes one journal
   checkpoint. The test undoes every edit with a single `control.undo`, including Reset, which writes six fields in one call. No new command, and no
@@ -53,12 +54,9 @@ Neighbours, rebuilt and run after the change: `ctest -R '^(SessionGridViewTest|S
 - **Portability.** Only Qt 5/6-common API (`QMenu`, `QJsonObject`, `QString::number`, `QStringList::join`). No new
   identifiers named `small`/`near`/`far`/`interface`/`min`/`max`, no `std::filesystem`, no POSIX calls. The test uses
   `std::span` and libsndfile, as its neighbour `SessionAudioCellPlaybackTest` does.
-- **Gates.** `submit_check.py` reports `gates (feature_check.py)` as FAIL. The cause is the jail: `feature_check.py` tries to
-  create `<worktree>/../zene-feat-q050-493-feature-check` and gets `PermissionError` (gates-1.log). I ran a copy that differs only
-  in its log folder (`/tmp/q493-fc/logs`) and in `ROOT` set to the original folder, so it reads the same FIX-BASE and cached
-  baseline: **RESULT: PASS, exit 0**. All 8 rows passed: fork-sources, all-sources-reproduce, no-upstream-regression,
-  check-namespace, no-tautology, doc-figures, complexity, file-length (gates-4.log). The first run of that copy flagged
-  `SessionGridView::paintCell` at CCN 14. Commit `6503eba92e` fixed it by moving the display into `paintPlayback`.
+- **Gates.** `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` passed on the final
+  source (exit 0): fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
+  doc-figures, complexity (no new item), and file-length (no new item).
 - **Agent surface (submit_check WARN, "no command file changed").** This is on purpose: the GUI runs the existing registered
   `session.set_slot`, which agents already reach on the socket and through MCP (`zene_session_set_slot`) with the same fields.
 - **Build environment note.** ccache's configured temporary directory is not writable from the jail, so every build

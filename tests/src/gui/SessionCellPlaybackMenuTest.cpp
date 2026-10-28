@@ -207,7 +207,7 @@ private slots:
 			{"loop_start", 48, QStringLiteral("⟲"), QStringLiteral("looping from tick 48 to the end")},
 			{"loop_length", 192, QStringLiteral("⟲"), QStringLiteral("looping 192 ticks from tick 0")},
 			{"warp", true, QStringLiteral("W120"), QStringLiteral("warped to the song tempo from 120 BPM")},
-			{"ram", true, QString(), QString()},
+			{"ram", true, QStringLiteral("RAM"), QStringLiteral("RAM mode enabled")},
 		};
 		for (const Case& c : cases)
 		{
@@ -260,7 +260,7 @@ private slots:
 		QCOMPARE(reset.value(QStringLiteral("warp")).toBool(), false);
 		SessionGridView view;
 		view.refresh();
-		QVERIFY2(view.cellButton(0, 0)->text().endsWith(QStringLiteral("switch")), qPrintable(view.cellButton(0, 0)->text()));
+		QVERIFY2(view.cellButton(0, 0)->text().endsWith(QStringLiteral("switch  RAM")), qPrintable(view.cellButton(0, 0)->text()));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one step brings every field back
 		const QJsonObject back = cellState();
 		QCOMPARE(back.value(QStringLiteral("gain_db")).toDouble(), -2.0);
@@ -292,7 +292,7 @@ private slots:
 		}
 		SessionGridView view;
 		view.refresh();
-		QVERIFY2(view.cellButton(0, 0)->text().endsWith(QStringLiteral("-4.5dB +3st -15ct ⟲ W132")),
+		QVERIFY2(view.cellButton(0, 0)->text().endsWith(QStringLiteral("-4.5dB +3st -15ct ⟲ W132 RAM")),
 			qPrintable(view.cellButton(0, 0)->text()));
 	}
 
