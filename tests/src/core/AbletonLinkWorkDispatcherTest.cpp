@@ -8,13 +8,14 @@
  * move the function base out of the dispatcher it is given. It instead moved the
  * base out of *this, the object still being constructed, before that base existed.
  *
- * The read of an unconstructed base is undefined behaviour and often harmless, so
- * the test does not rely on the garbage it reads. The function's move constructor
- * records the address it was moved from: a correct move reads the source
- * dispatcher, the buggy one reads the storage of the dispatcher being constructed.
- * The address is compared, never the value read, so the RED result is the same on
- * every run. The value check then proves the moved dispatcher still runs its
- * function and hands the result to its handler.
+ * Reading the unconstructed base is undefined behaviour, so the test must not read
+ * the value it would see there. The function's move constructor first compares the
+ * address of its source with its own. A correct move has two distinct objects and
+ * reads the source's value. The buggy move's source is the destination itself: that
+ * is detected by the address comparison alone, and the value is replaced by a
+ * sentinel without being read. Each test asserts that the move was not a self-move,
+ * so the RED result is the same on every run. The value check then proves the moved
+ * dispatcher still runs its function and hands the result to its handler.
  *
  * Requires asio's TS executors (ASIO_NO_TS_EXECUTORS undefined), which the Link
  * build never defines: without them there is no TS specialisation to move.
@@ -41,7 +42,6 @@
 
 #include <QtTest>
 
-#include <cstddef>
 #include <new>
 #include <utility>
 
@@ -69,16 +69,24 @@ struct LegacyExecutor
 	void defer(F&&, const Allocator&) {}
 };
 
-// The function a dispatcher carries. Its move constructor records the address it is
-// moved from (see the file comment).
+// The function a dispatcher carries. Its move constructor compares its source's address
+// with its own before it reads any value (see the file comment). A self-source move
+// takes the sentinel instead of reading the unconstructed value, and records that it
+// happened.
 struct Payload
 {
-	static inline const void* movedFrom = nullptr;
+	// Stands in for the value a self-source move cannot read. No test expects it.
+	static constexpr int unreadValue = -1;
+	static inline bool movedFromSelf = false;
 
 	int value;
 
 	explicit Payload(int v) : value(v) {}
-	Payload(Payload&& other) noexcept : value(other.value) { movedFrom = &other; }
+	Payload(Payload&& other) noexcept
+		: value(&other == this ? unreadValue : other.value)
+	{
+		movedFromSelf = &other == this;
+	}
 	Payload(const Payload&) = default;
 
 	int operator()() { return value; }
@@ -109,14 +117,13 @@ void AbletonLinkWorkDispatcherTest::movedDispatcherRunsItsFunction()
 	int outstanding = 0;
 	Dispatcher source(Payload(42), Handler{&received}, LegacyExecutor{&outstanding});
 
-	// The moved-to dispatcher lives in storage the test owns, so its address is known
-	// before the move starts.
+	// The moved-to dispatcher lives in storage the test owns, so the move has a
+	// destination that is not the source.
 	alignas(Dispatcher) unsigned char storage[sizeof(Dispatcher)];
-	Payload::movedFrom = nullptr;
+	Payload::movedFromSelf = false;
 	Dispatcher* moved = new (storage) Dispatcher(std::move(source));
 
-	QVERIFY(Payload::movedFrom != nullptr);
-	QVERIFY2(Payload::movedFrom != static_cast<const void*>(storage),
+	QVERIFY2(!Payload::movedFromSelf,
 		"the move read the dispatcher being constructed, not the one it moves from");
 
 	(*moved)();
@@ -132,7 +139,10 @@ void AbletonLinkWorkDispatcherTest::movedDispatcherTransfersItsWorkOnce()
 	QCOMPARE(outstanding, 1);
 
 	alignas(Dispatcher) unsigned char storage[sizeof(Dispatcher)];
+	Payload::movedFromSelf = false;
 	Dispatcher* moved = new (storage) Dispatcher(std::move(source));
+	QVERIFY2(!Payload::movedFromSelf,
+		"the move read the dispatcher being constructed, not the one it moves from");
 	QCOMPARE(outstanding, 1);   // the move transfers the unit of work, it does not add one
 
 	(*moved)();
