@@ -304,7 +304,10 @@ while the key is down, and its release is the note's release; the filter's Mode 
 Cutoff is in Hz, Resonance sharpens it and Mod depth is how many octaves the LFO moves the cutoff; the LFO's Wave picks sine,
 triangle, saw or square, Rate is in Hz and Depth scales it; the output's Gain sets the instrument's level. Every knob can be
 automated, and an agent reads and sets each one by its name (for example <code>Filter 1 Cutoff</code>) with
-<code>plugin.param_get</code> and <code>plugin.param_set</code> on the track's <code>inst</code> plug-in. The modules, their
+<code>plugin.param_get</code> and <code>plugin.param_set</code> on the track's <code>inst</code> plug-in. Turning a knob runs that
+same <code>plugin.param_set</code>, so one Undo takes back a whole turn of a knob, whether you or an agent made it. Automate a
+knob from the automation editor or with the automation commands: the knobs of this window have no right-click automation menu
+and no Ctrl-drag yet. The modules, their
 settings and their wiring are saved with the project; an instrument saved without a graph loads with the
 starter graph, and a graph that cannot be played (an unknown module, a missing output, a loop in the wiring) is replaced by the
 starter graph and reported when the project opens. Adding and wiring modules yourself comes in a later version: this one plays
