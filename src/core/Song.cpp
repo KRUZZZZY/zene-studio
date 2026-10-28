@@ -1579,7 +1579,7 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 	const double framesPerTick = Engine::framesPerTick();
 	// The song-wide read switch (ED-200) gates the ramp exactly as it gates the per-tick apply in
 	// processAutomations(): with reads off, every control keeps its manual value, so nothing is published.
-	if( frames == 0 || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
+	if( frames == 0 || !std::isfinite( framesPerTick ) || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
 	{
 		return;
 	}

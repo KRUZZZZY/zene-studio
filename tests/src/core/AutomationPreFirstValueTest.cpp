@@ -44,6 +44,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 
 #include <QFile>
 #include <QTemporaryDir>
@@ -520,6 +521,41 @@ private slots:
 		QCOMPARE(reloaded->valueAt(TimePos(50)), atNodeBefore);
 		QCOMPARE(reloaded->valueAt(TimePos(125)), interpolatedBefore);
 		QCOMPARE(reloaded->valueAt(TimePos(300)), heldBefore);
+	}
+
+	//! BUG 19 (new-p10-510): writeBlockRamp() must never build knots from a
+	//! non-finite framesPerTick. It used to reject only "<= 0", so a NaN got
+	//! through: every comparison with NaN is false, the tick loop never reached
+	//! its break, and the int conversions of the NaN positions were undefined.
+	//! Both non-finite values now build no ramp at all, while a finite tick still
+	//! builds the block's knots (the positive control, so the empty result is not
+	//! just a clip without automation).
+	void aNonFiniteFramesPerTickBuildsNoRamp_data()
+	{
+		QTest::addColumn<double>("framesPerTick");
+		QTest::newRow("infinite") << std::numeric_limits<double>::infinity();
+		QTest::newRow("nan") << std::numeric_limits<double>::quiet_NaN();
+	}
+
+	void aNonFiniteFramesPerTickBuildsNoRamp()
+	{
+		QFETCH(double, framesPerTick);
+		Song* song = Engine::getSong();
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		FloatModel model{kParamInit, 0.0f, 1.0f, 0.001f};
+		AutomationTrack track(song);
+		AutomationClip* clip = laterFirstNodeClip(track, model);
+		QVERIFY(firstNodeIsAtTick50(clip));
+
+		AutomationRamp finite;
+		clip->writeBlockRamp(finite, clip->startPosition(), frames,
+			static_cast<double>(Engine::framesPerTick()), 0);
+		QVERIFY(finite.knotCount() > 0);
+
+		AutomationRamp ramp;
+		clip->writeBlockRamp(ramp, clip->startPosition(), frames, framesPerTick, 0, &model);
+		QCOMPARE(ramp.knotCount(), 0);
+		QCOMPARE(ramp.refusals(), std::uint32_t{0});
 	}
 
 private:
