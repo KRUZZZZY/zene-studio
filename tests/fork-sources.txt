@@ -3213,3 +3213,5 @@ plugins/ModularSynth/ModularSynth.h
 plugins/ModularSynth/ModularSynthView.cpp
 plugins/ModularSynth/ModularSynthView.h
 tests/src/plugins/ModularSynthTest.cpp
+tests/src/plugins/ModularSynthTestSupport.h
+tests/src/gui/ModularSynthViewTest.cpp

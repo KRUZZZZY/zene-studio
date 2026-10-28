@@ -6,7 +6,7 @@
  * wiring and every module parameter - saves and restores, through a state and through project.save/project.open;
  * a state without a graph (what an instrument saved before the graph existed has) loads as the starter graph, and a
  * damaged one falls back to it instead of playing half-wired. Agents reach it through plugin.list / plugin.load /
- * plugin.param_*, the window has a knob bound to every parameter, and the render path allocates nothing.
+ * plugin.param_*, and the render path allocates nothing. (The window: tests/src/gui/ModularSynthViewTest.cpp.)
  *
  * This file is part of Zene Studio, derived from LMMS - https://lmms.io
  *
@@ -18,188 +18,30 @@
 
 #include <QtTest>
 
-#include <QApplication>
 #include <QDomDocument>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
-#include <QLabel>
 #include <QTemporaryDir>
-#include <QWheelEvent>
 
 #include <cmath>
-#include <memory>
 #include <vector>
 
 #include "../core/AllocationProbe.h"
-#include "../core/ReversibilityTestSupport.h"
-#include "AudioEngine.h"
-#include "AutomatableModel.h"
-#include "ControlRegistry.h"
-#include "ControlVocabulary.h"
-#include "Engine.h"
-#include "Instrument.h"
-#include "InstrumentTrack.h"
-#include "InstrumentView.h"
-#include "Knob.h"
-#include "Note.h"
-#include "NotePlayHandle.h"
+#include "ModularSynthTestSupport.h"
 #include "PluginFactory.h"
-#include "SampleFrame.h"
-#include "Song.h"
-#include "Track.h"
 
 using namespace lmms;
-
-namespace
-{
-
-const QString StarterWiring = QStringLiteral(
-	"osc1 -> filter1.in\nfilter1 -> out.in\nenv1 -> out.amp\nlfo1 -> filter1.cutoff");
-
-//! A <modularsynth> state holding @a body inside its <graph> (or no graph at all when @a withGraph is false).
-QDomElement stateElement(QDomDocument& doc, const QString& body, bool withGraph = true)
-{
-	const QString xml = withGraph
-		? QStringLiteral("<modularsynth version=\"1\"><graph>%1</graph></modularsynth>").arg(body)
-		: QStringLiteral("<modularsynth/>");
-	doc.setContent(xml);
-	return doc.documentElement();
-}
-
-float peakOf(const std::vector<float>& v, std::size_t from = 0)
-{
-	float peak = 0.f;
-	for (std::size_t i = from; i < v.size(); ++i) { peak = std::max(peak, std::abs(v[i])); }
-	return peak;
-}
-
-//! How much of a signal's energy is in its fast changes: the energy of its first difference over its own.
-float brightness(const std::vector<float>& v, std::size_t from)
-{
-	double diff = 0.0;
-	double level = 0.0;
-	for (std::size_t i = from + 1; i < v.size(); ++i)
-	{
-		diff += (v[i] - v[i - 1]) * (v[i] - v[i - 1]);
-		level += v[i] * v[i];
-	}
-	return level > 0.0 ? static_cast<float>(diff / level) : 0.f;
-}
-
-int zeroCrossings(const std::vector<float>& v, std::size_t from)
-{
-	int n = 0;
-	for (std::size_t i = from + 1; i < v.size(); ++i) { n += (v[i - 1] < 0.f) != (v[i] < 0.f) ? 1 : 0; }
-	return n;
-}
-
-} // namespace
+using namespace lmms::modular_test;
 
 
-class ModularSynthTest : public QObject
+class ModularSynthTest : public ModularSynthFixture
 {
 	Q_OBJECT
 
-private:
-	InstrumentTrack* m_track = nullptr;
-	Instrument* m_instrument = nullptr;
-	f_cnt_t m_fpp = 0;
-
-	static ControlResult run(const QString& id, const QJsonObject& args = {}) { return revtest::run(id, args); }
-
-	//! A fresh project with one track carrying the modular instrument.
-	void fresh()
-	{
-		Engine::getSong()->clearProject();
-		m_track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
-		QVERIFY(m_track != nullptr);
-		m_instrument = m_track->loadInstrument(QStringLiteral("modularsynth"));
-		QVERIFY2(m_instrument != nullptr, "the modularsynth module did not load");
-	}
-
-	AutomatableModel* model(const QString& name) const
-	{
-		for (int i = 0; i < m_instrument->parameterCount(); ++i)
-		{
-			if (m_instrument->parameterName(i) == name) { return m_instrument->parameterModel(i); }
-		}
-		return nullptr;
-	}
-
-	void setValue(const QString& name, float value)
-	{
-		AutomatableModel* m = model(name);
-		QVERIFY2(m != nullptr, qPrintable(name));
-		m->setValue(value);
-	}
-
-	QString wiring() const
-	{
-		QString text;
-		QMetaObject::invokeMethod(m_instrument, "wiringText", Q_RETURN_ARG(QString, text));
-		return text;
-	}
-
-	QString loadProblem() const
-	{
-		QString text;
-		QMetaObject::invokeMethod(m_instrument, "loadProblem", Q_RETURN_ARG(QString, text));
-		return text;
-	}
-
-	/*! The left channel of a note of @a key held for @a heldPeriods periods and then left to finish (or @a maxPeriods
-	 *  in all), rendered through the note's own play path - InstrumentTrack, the instrument, its release. */
-	std::vector<float> playNote(int key = 57, int heldPeriods = 8, int maxPeriods = 400)
-	{
-		const Note note(TimePos(384), TimePos(0), key);
-		NotePlayHandle* nph = NotePlayHandleManager::acquire(m_track, 0, m_fpp * heldPeriods, note);
-		std::vector<float> left;
-		std::vector<SampleFrame> buffer(static_cast<std::size_t>(m_fpp));
-		for (int i = 0; i < maxPeriods && !nph->isFinished(); ++i)
-		{
-			std::fill(buffer.begin(), buffer.end(), SampleFrame{});
-			nph->play(std::span<SampleFrame>{buffer});
-			for (const SampleFrame& frame : buffer) { left.push_back(frame[0]); }
-		}
-		NotePlayHandleManager::release(nph);
-		return left;
-	}
-
-	void restore(const QDomElement& state) { m_instrument->restoreState(state); }
-
-	//! Makes the project's track carrying the modular instrument the one the test plays; false if there is none.
-	bool adoptModularTrack()
-	{
-		m_track = nullptr;
-		for (Track* t : Engine::getSong()->tracks())
-		{
-			auto* it = dynamic_cast<InstrumentTrack*>(t);
-			if (it != nullptr && it->instrument() != nullptr && it->instrument()->nodeName() == QLatin1String("modularsynth")) { m_track = it; }
-		}
-		m_instrument = m_track != nullptr ? m_track->instrument() : nullptr;
-		return m_track != nullptr;
-	}
-
 private slots:
-	void initTestCase()
-	{
-#ifdef LMMS_TEST_PLUGIN_DIR
-		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);
-#endif
-		Engine::init(true);
-		Engine::audioEngine()->audioDev()->stopProcessing();
-		NotePlayHandleManager::init();
-		ControlRegistry::setReady(true);
-		m_fpp = Engine::audioEngine()->framesPerPeriod();
-	}
-
-	void cleanupTestCase()
-	{
-		ControlRegistry::setReady(false);
-		Engine::getSong()->clearProject();
-		Engine::destroy();
-	}
+	void initTestCase() { initEngine(); }
+	void cleanupTestCase() { cleanupEngine(); }
 
 	//! ACCEPTANCE 1: a new modular instrument carries the starter graph, and a note through it sounds.
 	void aNoteThroughTheStarterGraphSounds()
@@ -465,68 +307,6 @@ private slots:
 		const float after = peakOf(playNote());
 		QVERIFY2(std::abs(after / before - 0.25f) < 0.02f,
 			qPrintable(QStringLiteral("gain 0.8 -> 0.2 quarters the level: %1 -> %2").arg(before).arg(after)));
-	}
-
-	//! The window: a knob bound to every parameter and the wiring; turning a knob is the change an agent reads back
-	//! and hears; a replaced graph rebuilds the window onto the new modules.
-	void theWindowHasAKnobForEveryParameterAndTurningOneIsHeard()
-	{
-		fresh();
-		setValue(QStringLiteral("LFO 1 Depth"), 0.f);
-		setValue(QStringLiteral("Filter 1 Cutoff"), 20000.f);
-		QWidget parent;
-		std::unique_ptr<gui::PluginView> view(m_instrument->createView(&parent));
-		QVERIFY(view != nullptr);
-		parent.resize(260, 260);
-		parent.show();
-		QApplication::processEvents();
-
-		const auto knobs = [&] { return view->findChildren<gui::Knob*>(); };
-		for (int i = 0; i < m_instrument->parameterCount(); ++i)
-		{
-			bool bound = false;
-			for (const gui::Knob* k : knobs()) { bound |= k->model() == m_instrument->parameterModel(i); }
-			QVERIFY2(bound, qPrintable(m_instrument->parameterName(i) + " has a knob in the window"));
-		}
-		auto* wiringLabel = view->findChild<QLabel*>(QStringLiteral("modularWiring"));
-		QVERIFY(wiringLabel != nullptr);
-		QVERIFY2(wiringLabel->text().contains(QStringLiteral("osc1 -> filter1.in")), qPrintable(wiringLabel->text()));
-
-		const int crossingsBefore = zeroCrossings(playNote(57, 30), static_cast<std::size_t>(m_fpp));
-		auto* coarse = view->findChild<gui::Knob*>(QStringLiteral("osc1.coarse"));
-		QVERIFY(coarse != nullptr);
-		QVERIFY(coarse->isVisible() || coarse->isVisibleTo(&parent));
-		const QPointF at(coarse->width() / 2.0, coarse->height() / 2.0);
-		for (int step = 0; step < 12; ++step)
-		{
-			QWheelEvent up(at, coarse->mapToGlobal(at.toPoint()), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
-				Qt::NoScrollPhase, false);
-			QApplication::sendEvent(coarse, &up);
-		}
-		const float turned = model(QStringLiteral("Osc 1 Coarse"))->value<float>();
-		QVERIFY2(turned > 0.f, qPrintable(QStringLiteral("the wheel raised the pitch knob (%1)").arg(turned)));
-		const ControlResult got = run(QStringLiteral("plugin.param_get"), {{QStringLiteral("target"), control::trackIdOf(m_track)},
-			{QStringLiteral("plugin"), QStringLiteral("inst")}, {QStringLiteral("name"), QStringLiteral("Osc 1 Coarse")}});
-		QVERIFY2(got.ok, qPrintable(got.errorMessage));
-		QCOMPARE(got.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble(),
-			static_cast<double>(turned));
-		const int crossingsAfter = zeroCrossings(playNote(57, 30), static_cast<std::size_t>(m_fpp));
-		const double expected = crossingsBefore * std::exp2(turned / 12.0);
-		QVERIFY2(std::abs(crossingsAfter - expected) < 0.05 * expected,
-			qPrintable(QStringLiteral("+%1 semitones: %2 -> %3 crossings").arg(turned).arg(crossingsBefore).arg(crossingsAfter)));
-
-		QDomDocument smaller;
-		restore(stateElement(smaller, QStringLiteral(
-			"<module id=\"o\" type=\"oscillator\"/><module id=\"out\" type=\"output\"/><wire from=\"o\" to=\"out\" port=\"in\"/>")));
-		QApplication::processEvents();
-		QCOMPARE(knobs().size(), 5);
-		for (const gui::Knob* k : knobs())
-		{
-			bool current = false;
-			for (int i = 0; i < m_instrument->parameterCount(); ++i) { current |= k->model() == m_instrument->parameterModel(i); }
-			QVERIFY2(current, "every knob is bound to a parameter of the new graph");
-		}
-		QVERIFY(view->findChild<QLabel*>(QStringLiteral("modularWiring"))->text().contains(QStringLiteral("o -> out.in")));
 	}
 
 	//! A graph replaced while a note sounds: the note goes on with the new graph, nothing reads the freed one.
