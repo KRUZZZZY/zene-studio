@@ -116,4 +116,32 @@ control-thread code, not on the audio path.
 
 ## Self-check
 
-(to be filled from submit_check.py output)
+Output of `submit_check.py` on commit 0b00d4b308 (LOGS/submit-check-1.log, EXIT=1):
+PASS commits on the branch, PASS working tree clean, PASS report, PASS tests added or changed, **FAIL gates**.
+
+The gates FAIL is the sandbox, not the code. `submit_check.py` runs the unmodified `feature_check.py`, which writes to
+`<worktree>/../<name>-feature-check` and fails with `PermissionError` before any gate runs (reproduced directly, same
+message). The gate content passed: the redirected run (`LOGS/gates-2.log`, EXIT=0, RESULT: PASS, table above). I did not
+change the shared script or create directories outside the write-jail. The gate row needs a run outside this sandbox,
+or a log path the lane can write. Nothing in the diff is unchecked by the gates.
+
+1. **RED / GREEN proof.** RED: the test failed before the fix (`test-red-1.log`, EXIT=8, assertion at line 23). Also
+   RED with the product file reverted (`git apply -R LOGS/fix.patch`, `test-4b-revert.log`, EXIT=8, same assertion).
+   GREEN with the fix (`test-green-1.log` EXIT=0, `test-green-2.log` "Totals: 15 passed"; `test-4b-fix.log` EXIT=0 after
+   reapplying the patch).
+2. **Deterministic.** The test builds an in-memory `ModulationLayer` and calls `addRoute` / `findRoute`. No timer, sleep,
+   thread or audio period. Inputs come from `routeOf` and `sineAt` (`tests/src/core/ModulationTestSupport.h`) and
+   literal values.
+3. **At the cause, complete.** `findRoute` (`src/core/ModulationLayer.cpp:525`) is the only route-address comparator in
+   the layer. Searched with `rg` for `candidate.channel ==` / `.effect ==` / `.chain ==`: no other comparator. Callers
+   checked: `ControlCommandsModulatorVoices.cpp:170` (instrument bind), `ControlCommandsModulatorRoutes.cpp:174` (rack
+   bind), `tests/src/core/InstrumentRoutingTest.cpp:614-617` (rack address is not the instrument parameter, still true
+   because a rack candidate has `track == -1`), and `ModulationLayerValueTest.cpp:129-130` (findRoute of rack routes
+   returns nullptr where no rack route matches; rack path unchanged). Track-route resolution (`ControlModulationSupport.cpp:133`, `:83-97`) already uses
+   track and parameter only, so the matcher now agrees with it.
+4. **No collateral damage.** `saveRoute` / `readRoute` / `loadSettings` are untouched, so saved bytes and loading are
+   unchanged. No limit or check added. The only behaviour change: a track route is now refused when another track route
+   has the same track and parameter, whatever its unused fields. The family run passed 8/8 (`test-family-1.log`), including
+   `InstrumentRoutingTest`, `ModulationLayerProjectRoundTripTest` and `ControlModulatorCommandsTest`. Open point (not
+   changed): a file that already contains such a pair still loads both (see "Open points").
+5. **Verdict.** REAL, so the ALREADY-FIXED / FALSE-POSITIVE evidence clause does not apply.
