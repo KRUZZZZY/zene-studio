@@ -427,7 +427,25 @@ bool addTempoPoints(const QVector<DawProjectPoint>& points, TempoMap& rebuilt, Q
 		TempoMapEvent event;
 		event.tick = static_cast<tick_t>(dawProjectTicksFromBeats(point.time));
 		event.hasTempo = true;
-		event.tempo = static_cast<int>(std::floor(point.value + 0.5));
+		// Check finiteness and the rounding-equivalent range before floor or the int
+		// cast. The half-step endpoints preserve the old rounding rule: 9.5 rounds
+		// to the minimum tempo, while 999.5 rounds past the maximum.
+		const double minValueThatRoundsInRange = DawProjectMinTempo - 0.5;
+		const double firstValueThatRoundsOutOfRange = DawProjectMaxTempo + 0.5;
+		if (!std::isfinite(point.value) || point.value < minValueThatRoundsInRange
+			|| point.value >= firstValueThatRoundsOutOfRange)
+		{
+			if (error)
+			{
+				*error = QStringLiteral("a tempo-map point at beat %1 carries %2 bpm, outside the "
+					"engine's own %3..%4")
+					.arg(point.time, 0, 'g', 17).arg(point.value, 0, 'g', 17)
+					.arg(DawProjectMinTempo).arg(DawProjectMaxTempo);
+			}
+			return false;
+		}
+		const double bpm = std::floor(point.value + 0.5);
+		event.tempo = static_cast<int>(bpm);
 		if (!rebuilt.addEvent(event))
 		{
 			if (error)
