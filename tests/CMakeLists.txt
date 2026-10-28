@@ -1554,6 +1554,10 @@ IF(LMMS_HAVE_ABLETON_LINK)
 		# Zene's engine in a real Link session against a peer built from Link's own
 		# API (that test constructs ableton::Link itself, hence the link below).
 		src/core/AbletonLinkInteropTest.cpp
+		# The vendored asio's work_dispatcher, moved through its TS-executor
+		# specialisation (the header is asio's, so the test needs ableton_link's
+		# include directories and ASIO_STANDALONE definitions).
+		src/core/AbletonLinkWorkDispatcherTest.cpp
 	)
 ENDIF()
 
@@ -7128,6 +7132,7 @@ IF(LMMS_HAVE_ABLETON_LINK)
 	set_tests_properties(AbletonLinkSessionTest AbletonLinkInteropTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
 	target_link_libraries(AbletonLinkInteropTest PRIVATE ableton_link)
+	target_link_libraries(AbletonLinkWorkDispatcherTest PRIVATE ableton_link)
 ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full

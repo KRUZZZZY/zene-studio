@@ -2615,6 +2615,7 @@ tests/exprtk.hpp
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
+tests/src/core/AbletonLinkWorkDispatcherTest.cpp
 tests/src/core/AllocationProbe.cpp
 tests/src/core/AllocationProbe.h
 tests/src/core/AllocationProbeTest.cpp

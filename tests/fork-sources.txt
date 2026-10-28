@@ -2334,6 +2334,7 @@ tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
+tests/src/core/AbletonLinkWorkDispatcherTest.cpp
 tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
