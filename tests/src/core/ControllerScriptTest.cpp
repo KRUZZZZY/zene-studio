@@ -137,6 +137,7 @@ private slots:
 		ControllerScript::stopAll();
 		m_client.sent.clear();
 		m_client.readable = {QStringLiteral("Pad:in")};
+		m_client.writable = {QStringLiteral("Pad:out")};
 	}
 
 	//! Criterion 1: the shipped example, MIDI in -> registered command -> feedback out, on the bound port.
@@ -303,6 +304,24 @@ private slots:
 		QVERIFY(m_client.subscribedIn.contains(QStringLiteral("Pad:in")));
 		script->port().processInEvent(cc(1, 9, 1));
 		QCOMPARE(script->drain(), 1);
+
+		// The output can disappear independently while input still works; report it and re-subscribe when it returns.
+		m_client.subscribedOut.clear();
+		m_client.writable.clear();
+		script->checkPorts();
+		script->checkPorts();
+		state = script->state();
+		QCOMPARE(state.value(QStringLiteral("port_lost")).toBool(), true);
+		QCOMPARE(state.value(QStringLiteral("output_port_lost")).toBool(), true);
+		QCOMPARE(state.value(QStringLiteral("port_losses")).toInt(), 2);
+		QVERIFY(state.value(QStringLiteral("last_error")).toString().contains(QStringLiteral("Pad:out")));
+		m_client.writable = {QStringLiteral("Pad:out")};
+		script->checkPorts();
+		state = script->state();
+		QCOMPARE(state.value(QStringLiteral("port_lost")).toBool(), false);
+		QCOMPARE(state.value(QStringLiteral("output_port_lost")).toBool(), false);
+		QCOMPARE(state.value(QStringLiteral("reconnects")).toInt(), 2);
+		QVERIFY(m_client.subscribedOut.contains(QStringLiteral("Pad:out")));
 	}
 
 	//! A script cannot reach files or the OS, and cannot start another script.

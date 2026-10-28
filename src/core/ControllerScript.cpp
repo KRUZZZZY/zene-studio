@@ -370,9 +370,33 @@ void ControllerScript::fail(const QString& message)
 	}
 }
 
+void ControllerScript::checkOutputPort()
+{
+	if (m_options.output.isEmpty()) { return; }
+	const bool present = m_client->writablePorts().contains(m_options.output);
+	if (!present && !m_outputPortLost)
+	{
+		m_outputPortLost = true;
+		++m_portLosses;
+		m_lastError = QStringLiteral("the MIDI output '%1' went away; waiting for it").arg(m_options.output);
+		m_log.append(m_lastError);
+		qWarning("controller script '%s': %s", qPrintable(m_options.name), qPrintable(m_lastError));
+	}
+	else if (present && m_outputPortLost)
+	{
+		m_outputPortLost = false;
+		++m_reconnects;
+		m_port->subscribeWritablePort(m_options.output, true);
+		m_log.append(QStringLiteral("the MIDI output '%1' is back").arg(m_options.output));
+	}
+	while (m_log.size() > MaxLogLines) { m_log.removeFirst(); }
+}
+
 void ControllerScript::checkPorts()
 {
-	if (m_options.input.isEmpty() || m_client->isRaw()) { return; }
+	if (m_client->isRaw()) { return; }
+	checkOutputPort();
+	if (m_options.input.isEmpty()) { return; }
 	const bool present = m_client->readablePorts().contains(m_options.input);
 	if (!present && !m_portLost)
 	{
@@ -387,10 +411,6 @@ void ControllerScript::checkPorts()
 		m_portLost = false;
 		++m_reconnects;
 		m_port->subscribeReadablePort(m_options.input, true);
-		if (!m_options.output.isEmpty() && m_client->writablePorts().contains(m_options.output))
-		{
-			m_port->subscribeWritablePort(m_options.output, true);
-		}
 		m_log.append(QStringLiteral("the MIDI input '%1' is back").arg(m_options.input));
 	}
 	while (m_log.size() > MaxLogLines) { m_log.removeFirst(); }
@@ -401,7 +421,8 @@ QJsonObject ControllerScript::state() const
 	return {{QStringLiteral("name"), m_options.name}, {QStringLiteral("path"), m_options.path},
 		{QStringLiteral("input"), m_options.input}, {QStringLiteral("output"), m_options.output},
 		{QStringLiteral("running"), !m_faulted}, {QStringLiteral("faulted"), m_faulted},
-		{QStringLiteral("port_lost"), m_portLost},
+		{QStringLiteral("port_lost"), m_portLost || m_outputPortLost},
+		{QStringLiteral("output_port_lost"), m_outputPortLost},
 		{QStringLiteral("received"), static_cast<double>(m_received.load(std::memory_order_relaxed))},
 		{QStringLiteral("dropped"), static_cast<double>(m_dropped.load(std::memory_order_relaxed) + m_droppedWhileFaulted)},
 		{QStringLiteral("handled"), static_cast<double>(m_handled)},

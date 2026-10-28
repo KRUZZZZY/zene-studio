@@ -118,6 +118,7 @@ private:
 	bool load(QString* error);
 	bool call(const char* function, const Packed* event);
 	void fail(const QString& message);
+	void checkOutputPort();
 	static int luaCommand(lua_State* L);
 	static int luaSendCc(lua_State* L);
 	static int luaSendNote(lua_State* L);
@@ -149,6 +150,7 @@ private:
 	int m_consecutiveErrors = 0;
 	bool m_faulted = false;
 	bool m_portLost = false;
+	bool m_outputPortLost = false;
 	quint64 m_portLosses = 0;
 	quint64 m_reconnects = 0;
 	QString m_lastError;

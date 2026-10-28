@@ -116,7 +116,7 @@ void registerControllerScriptCommands(ControlRegistry& registry)
 		"...), channel 1..16, key/velocity or controller/value - and the script runs registered commands with "
 		"zene.command(id, args) and sends feedback to the output with surface.send_cc(channel, cc, value) and "
 		"surface.send_note(channel, key, velocity). Sandboxed (no files, no OS), 1,000,000 Lua instructions per call, "
-		"8 MiB of Lua memory; 8 errors in a row stop it, and a lost input port is reported and re-bound when it "
+		"8 MiB of Lua memory; 8 errors in a row stop it, and a lost input or output port is reported and re-bound when it "
 		"returns. Replaces a running script of that name. Device state: not recorded, not saved."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("path"), stringProperty()},
 			{QStringLiteral("input"), stringProperty()}, {QStringLiteral("output"), stringProperty()}},
@@ -124,7 +124,7 @@ void registerControllerScriptCommands(ControlRegistry& registry)
 	add(registry, "script_stop", QStringLiteral("Stop the control-surface script 'name' and release its MIDI ports."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, QJsonArray{QStringLiteral("name")}), scriptStop);
 	add(registry, "script_state", QStringLiteral("The running control-surface scripts (or the one 'name'): their ports, "
-		"whether they are faulted or have lost their input, how many events they received, ran and dropped, the "
+		"whether they are faulted or have lost a bound MIDI port, how many events they received, ran and dropped, the "
 		"commands and feedback they sent, their errors and recent log lines."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}), scriptState);
 }
