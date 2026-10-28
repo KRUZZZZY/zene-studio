@@ -57,6 +57,12 @@ set(LMMS_TESTS
 	# Short ALSA writes must advance through every remaining frame in a period.
 	src/core/AudioAlsaWriteTest.cpp
 	src/core/AudioBufferTest.cpp
+	# Q050-491: the format-neutral half of Audio Unit hosting (component keys, the scan cache and its
+	# quarantine, status names) - every build; the macOS-only half is AuHostingTest.
+	src/core/AuComponentTest.cpp
+	# Q050-491 review round 1: an AU parameter's automation reaches the unit in the same render block with no
+	# dataChanged() on the render thread (the hosts' parameter models, compiled in with a stand-in unit).
+	src/plugins/AuParameterHandoffTest.cpp
 	src/core/AudioOssWriteTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
@@ -1296,6 +1302,10 @@ set(LMMS_TESTS
 	src/gui/EffectPickerOrganiserTest.cpp
 	# M0 coverage: the plug-in editor window, its host header and the Show plugin editor button.
 	src/gui/PluginNativeEditorTest.cpp
+	# Q050-491: Audio Unit hosting through the product - every build checks the format is offered only where it is
+	# hosted and that a component that cannot instantiate is refused, typed; the macos jobs run the rest against
+	# Apple's built-in AUBandpass, AUDistortion and DLSMusicDevice.
+	src/gui/AuHostingTest.cpp
 	# M0 coverage: the reference project's window and its track / clip / device copies.
 	src/gui/ReferenceProjectPanelTest.cpp
 	# M0 coverage: the telemetry consent window, File > Import AAF..., track header icons and the level meter.
@@ -2232,6 +2242,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			ZENE_ARCH4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "AuParameterHandoffTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/AuEffect/AuParameter.cpp
+			${CMAKE_SOURCE_DIR}/plugins/AuEffect/AuParameter.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AuEffect)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "SlicerTWaveformTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerT.cpp
@@ -2324,6 +2340,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "EffectDeviceMenuTest"
 		OR LMMS_TEST_NAME STREQUAL "EffectPickerOrganiserTest"
 		OR LMMS_TEST_NAME STREQUAL "PluginNativeEditorTest"
+		# Q050-491: plugin.list and plugin.load reach the build's aueffect / auinstrument modules (macOS).
+		OR LMMS_TEST_NAME STREQUAL "AuHostingTest"
 		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
@@ -3476,6 +3494,10 @@ set_tests_properties(SurroundPannerTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginNativeEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AuHostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(TARGET aueffect AND TARGET auinstrument)
+	add_dependencies(AuHostingTest aueffect auinstrument)
+endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

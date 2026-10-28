@@ -210,6 +210,26 @@ library to work.
   chain keeps a saved one as its placeholder, state intact, as before.
   `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
   and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
+- *(Added 2026-10-28, Q050-491.)* **Audio Units (AUv2) are hosted on macOS - and that host has not yet run.** The
+  `aueffect` and `auinstrument` modules (`plugins/AuEffect`, `plugins/AuInstrument`) are built on macOS only; every
+  other build compiles the format out and `plugin.list` has no `au` format there. Discovery is the system component
+  registry, each component recorded in the plug-in scan cache under its own path (`/AudioUnits/<type>/<subtype>/<maker>`)
+  and hidden by a quarantine entry for that path. Stereo in and out only; MIDI SysEx is not passed to an instrument;
+  AUv3 app extensions, side-chain buses, multiple output buses and the unit's factory presets are not offered.
+  **What was proved, and where:**
+  - **Linux (this lane):** `AuComponentTest` (the format-neutral rules: component keys, scan-cache records,
+    quarantine, persistence, typed errors) and the every-build half of `AuHostingTest` (no `au` format, a hand-made AU
+    device refused by name). The macOS sources were checked for syntax only: the seven plain C++ files with GCC against
+    the real headers, and `AuHost.cpp` (Objective-C++) with clang against stub Apple headers. **They have not been
+    compiled against the macOS SDK.**
+  - **Hosted macOS jobs (not yet observed; the lane is not pushed):** the rest of `AuHostingTest` against Apple's
+    AUBandpass, AUDistortion and DLSMusicDevice - listing, scan cache and quarantine, audio through an effect,
+    parameters and automation, state through a file and a project, MIDI to an instrument, the device picker, and the
+    editor button. Under the jobs' offscreen Qt platform the editor is refused by name (no NSView exists there), so the
+    Cocoa view itself is only opened on a real Mac.
+  - **For the owner's Mac mini:** open AUBandpass and DLSMusicDevice editors under the normal (cocoa) platform; play
+    DLSMusicDevice from a MIDI keyboard; load a third-party AU effect and instrument, save, quit, reopen; quarantine a
+    unit in Plug-in Modules and rescan; a project saved there opened on Linux keeps the AU device as a placeholder.
 - *(Added 2026-10-27, Q050-490.)* **VST3 and CLAP editors now try to open on Windows and macOS too.** The host
   chooses the platform's native window when an editor opens (`include/PluginWindowSystem.h`): VST3 `HWND` /
   CLAP `win32` on Windows, VST3 `NSView` / CLAP `cocoa` on macOS, and X11 on Linux as before. Before this change

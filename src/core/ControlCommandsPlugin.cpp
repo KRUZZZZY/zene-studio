@@ -37,6 +37,7 @@
 #include "EffectChain.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "PluginInstantiationFailure.h"
 
 namespace lmms
 {
@@ -74,6 +75,15 @@ QJsonObject stateSnapshot(Effect* effect)
 	return snapshot;
 }
 
+//! The formats plugin.list filters by: "au" only on a build that hosts Audio Units (Q050-491).
+QStringList pluginListFormats()
+{
+	QStringList formats{QStringLiteral("builtin"), QStringLiteral("ladspa"), QStringLiteral("lv2"),
+		QStringLiteral("vst3"), QStringLiteral("clap")};
+	if (controlAuHostingBuilt()) { formats << QStringLiteral("au"); }
+	return formats;
+}
+
 void registerPluginList(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -88,12 +98,12 @@ void registerPluginList(ControlRegistry& registry)
 		"format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, "
 		"the VST3 or CLAP factory's vendor; empty when the format reports none, which the "
 		"device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then "
-		"VST3, then CLAP, so adding a host does not renumber the ids of the formats that were "
-		"already there.");
+		"VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were "
+		"already there. macOS builds also list Audio Units (format 'au', from the system component "
+		"registry; each entry carries its 'component' type:subtype:manufacturer and the "
+		"'scan_cache_path' its quarantine entry uses); other builds have no 'au' format.");
 	cmd.argsSchema = objectSchema({
-		{QStringLiteral("format"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
-			{QStringLiteral("enum"), QJsonArray{QStringLiteral("builtin"), QStringLiteral("ladspa"),
-				QStringLiteral("lv2"), QStringLiteral("vst3"), QStringLiteral("clap")}}}},
+		{QStringLiteral("format"), enumProperty(pluginListFormats())},
 		{QStringLiteral("kind"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("effect"),
 				QStringLiteral("instrument"), QStringLiteral("tool"), QStringLiteral("other")}}}},
@@ -211,13 +221,18 @@ ControlResult loadInstrument(const ControlTarget& target, const ControlDeviceEnt
 	bool useKey = false;
 	if (!controlDeviceModule(entry, &pluginName, &key, &useKey, &error)) { return error; }
 	if (!controlPluginIsInstantiable(pluginName, &error)) { return error; }
+	pluginload::takeInstantiationFailure();  // a reason an earlier load left is not this load's
 	Instrument* instrument = target.instrumentTrack->loadInstrument(pluginName,
 		useKey ? &key : nullptr);
 	if (instrument == nullptr ||
 		QString::fromUtf8(instrument->descriptor()->name) != pluginName)
 	{
+		// Q050-491: the host module's own reason (an Audio Unit's typed instantiation error) follows, as
+		// controlInstantiateDevice() does for an effect.
+		const QString reason = pluginload::takeInstantiationFailure();
+		const QString refusal = QStringLiteral("the engine could not load instrument '%1'").arg(pluginName);
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the engine could not load instrument '%1'").arg(pluginName));
+			reason.isEmpty() ? refusal : QStringLiteral("%1: %2").arg(refusal, reason));
 	}
 
 	QJsonObject result;

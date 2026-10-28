@@ -596,6 +596,10 @@ set(LMMS_SRCS
 	# the instrument host's this lane adds - and plugin.load loads one onto a
 	# track. Its own translation unit, the same rule as the VST3 half above.
 	core/ControlDeviceClap.cpp
+	# Q050-491: the Audio Unit half of the catalogue, and the format-neutral AU rules (component ids,
+	# scan-cache records and quarantine, status names) it and the macOS-only hosts share.
+	core/ControlDeviceAu.cpp
+	core/AuComponent.cpp
 	# The chain PRESET store and the chain.* group (the 0.3.0 ladder's
 	# "plugin-chain presets", OWNER-31 item 2): the store, its read/capture half
 	# and its edit half. A chain preset is NOT a rack chain - see

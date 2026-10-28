@@ -182,6 +182,7 @@ include/ArticulationEvents.h
 include/ArticulationMap.h
 include/ArticulationMapEditor.h
 include/ArticulationRemap.h
+include/AuComponent.h
 include/AudioAlsa.h
 include/AudioAlsaSetupWidget.h
 include/AudioAlsaWrite.h
@@ -978,6 +979,25 @@ plugins/Amplifier/AmplifierControlDialog.cpp
 plugins/Amplifier/AmplifierControlDialog.h
 plugins/Amplifier/AmplifierControls.cpp
 plugins/Amplifier/AmplifierControls.h
+plugins/AuEffect/AuCocoaView.cpp
+plugins/AuEffect/AuEffect.cpp
+plugins/AuEffect/AuEffect.h
+plugins/AuEffect/AuEffectControlDialog.cpp
+plugins/AuEffect/AuEffectControlDialog.h
+plugins/AuEffect/AuEffectControls.cpp
+plugins/AuEffect/AuEffectControls.h
+plugins/AuEffect/AuHost.cpp
+plugins/AuEffect/AuHost.h
+plugins/AuEffect/AuKnobGrid.h
+plugins/AuEffect/AuParameter.cpp
+plugins/AuEffect/AuParameter.h
+plugins/AuEffect/AuState.cpp
+plugins/AuEffect/AuSubPluginFeatures.cpp
+plugins/AuEffect/AuSubPluginFeatures.h
+plugins/AuInstrument/AuInstrument.cpp
+plugins/AuInstrument/AuInstrument.h
+plugins/AuInstrument/AuInstrumentView.cpp
+plugins/AuInstrument/AuInstrumentView.h
 plugins/AudioFileProcessor/AudioFileProcessor.cpp
 plugins/AudioFileProcessor/AudioFileProcessor.h
 plugins/AudioFileProcessor/AudioFileProcessorView.cpp
@@ -1491,6 +1511,7 @@ src/core/ArrangementEdits.cpp
 src/core/ArrangementSections.cpp
 src/core/ArticulationMap.cpp
 src/core/ArticulationRemap.cpp
+src/core/AuComponent.cpp
 src/core/AudioBuffer.cpp
 src/core/AudioBus.cpp
 src/core/AudioBusHandle.cpp
@@ -1812,6 +1833,7 @@ src/core/ControlCommandsWasmEdit.cpp
 src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDetectSupport.cpp
+src/core/ControlDeviceAu.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceClap.cpp
 src/core/ControlDeviceHosted.cpp
@@ -2650,6 +2672,7 @@ tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/ArrangingSpacerReferenceTest.cpp
 tests/src/core/ArrayVectorTest.cpp
 tests/src/core/ArticulationPlaybackTest.cpp
+tests/src/core/AuComponentTest.cpp
 tests/src/core/AudioAlsaCaptureErrorTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
@@ -3107,6 +3130,7 @@ tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
+tests/src/gui/AuHostingTest.cpp
 tests/src/gui/AutomationClipDisconnectTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationLaneChildGuiTest.cpp
@@ -3260,6 +3284,7 @@ tests/src/gui/WindowSelectStartupTest.cpp
 tests/src/gui/WorkflowFeedbackTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp
 tests/src/gui/XyPadPairTest.cpp
+tests/src/plugins/AuParameterHandoffTest.cpp
 tests/src/plugins/AudioPluginTest.cpp
 tests/src/plugins/BitInvaderAllocationTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp

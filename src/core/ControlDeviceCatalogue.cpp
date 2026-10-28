@@ -24,6 +24,8 @@
 
 #include "ControlDeviceSupport.h"
 
+#include "AuComponent.h"
+
 #include <algorithm>
 
 #include <QHash>
@@ -174,6 +176,11 @@ QString controlDeviceVendor(const ControlDeviceEntry& entry)
 	{
 		maker = pluginvendors::vendorOf(entry.file, entry.name);
 	}
+	// Q050-491: the maker the registry's "Vendor: Name" carried when the AU host listed the component.
+	else if (entry.format == QLatin1String("au"))
+	{
+		maker = pluginvendors::vendorOf(QStringLiteral("au"), entry.component);
+	}
 	return maker.trimmed();
 }
 
@@ -189,6 +196,7 @@ QList<ControlDeviceEntry> controlDeviceCatalogue()
 	controlLv2DeviceEntries(&out);
 	controlVst3DeviceEntries(&out);
 	controlClapDeviceEntries(&out);
+	controlAuDeviceEntries(&out);  // Q050-491: macOS builds only, after every format already there
 	return out;
 }
 
@@ -256,6 +264,15 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 		// way.
 		out.insert(QStringLiteral("file"), entry.file);
 		out.insert(QStringLiteral("clap_id"), entry.name);
+	}
+	if (entry.format == QLatin1String("au"))
+	{
+		// Q050-491: the component's type:subtype:manufacturer - what the host instantiates and a saved
+		// project stores - and its scan-cache path, the one plugin.scan_cache_quarantine_add takes.
+		au::ComponentId id;
+		au::parseComponentKey(entry.component, &id);
+		out.insert(QStringLiteral("component"), entry.component);
+		out.insert(QStringLiteral("scan_cache_path"), au::scanCachePath(id));
 	}
 	return out;
 }

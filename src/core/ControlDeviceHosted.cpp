@@ -173,6 +173,11 @@ bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 		// unit (ControlDeviceClap.cpp).
 		return controlClapDeviceModule(entry, pluginName, key, useKey, error);
 	}
+	if (entry.format == QLatin1String("au"))
+	{
+		// Q050-491: the Audio Unit half (ControlDeviceAu.cpp) - refused, typed, off macOS.
+		return controlAuDeviceModule(entry, pluginName, key, useKey, error);
+	}
 	return true; // a built-in module is addressed by its plugin name alone
 }
 
