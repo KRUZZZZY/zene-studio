@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T23:38:57Z",
+  "captured_at": "2026-10-28T09:13:52Z",
   "commands": [
     {
       "args_schema": {
@@ -3157,7 +3157,7 @@
         ],
         "type": "object"
       },
-      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead.",
+      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead. The devices' MIDI controller bindings come back on the new devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), with a one-line 'summary'.",
       "group": "chain",
       "id": "chain.apply",
       "mutating": true,
@@ -3165,6 +3165,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bindings": {
+            "type": "object"
+          },
           "device_count": {
             "type": "integer"
           },
@@ -3518,7 +3521,7 @@
         ],
         "type": "object"
       },
-      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
+      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter, with its MIDI controller binding, listed in a per-device binding manifest chain.apply reports against). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
       "group": "chain",
       "id": "chain.save",
       "mutating": true,
@@ -8183,6 +8186,80 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "input": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Start a Lua control-surface script ('path', an absolute .lua file) under 'name', bound to the MIDI client's 'input' and 'output' ports (midi.device_list / surface.mcu_ports names). Each event from the input calls the script's on_midi(event) - event.type (note_on, note_off, cc, pitch_bend, ...), channel 1..16, key/velocity or controller/value - and the script runs registered commands with zene.command(id, args) and sends feedback to the output with surface.send_cc(channel, cc, value) and surface.send_note(channel, key, velocity). Sandboxed (no files, no OS), 1,000,000 Lua instructions per call, 8 MiB of Lua memory; 8 errors in a row stop it, and a lost input or output port is reported and re-bound when it returns. Replaces a running script of that name. Device state: not recorded, not saved.",
+      "group": "controller",
+      "id": "controller.script_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The running control-surface scripts (or the one 'name'): their ports, whether they are faulted or have lost a bound MIDI port, how many events they received, ran and dropped, the commands and feedback they sent, their errors and recent log lines.",
+      "group": "controller",
+      "id": "controller.script_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Stop the control-surface script 'name' and release its MIDI ports.",
+      "group": "controller",
+      "id": "controller.script_stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "control": {
             "type": "string"
           },
@@ -9309,7 +9386,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device.",
+      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device. A clip-<n> target reads an audio clip's own effects (Q050-111).",
       "group": "dsp",
       "id": "dsp.get_state",
       "mutating": false,
@@ -13559,7 +13636,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "How much of each audio period every mixer channel's devices and strip take, in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before the mixer and is in engine_percent, not in its channel's figure. Read-only.",
+      "description": "How much of each audio period every mixer channel's devices and strip take, in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before the mixer and is not in its channel's figure: 'tracks' gives each instrument track's own synthesis share (track id, name, instrument, synthesis_percent; CPU time, so several cores can pass 100) and synthesis_total_percent their sum. 'late_periods' counts the render periods that took longer than they last - the engine's deadline misses, not the audio device's xruns - and lists the newest (serial, tick, position, playing, took_us, period_us, percent). Read-only.",
       "group": "mixer",
       "id": "mixer.cpu_load",
       "mutating": false,
@@ -18268,6 +18345,70 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The OSC control server: running or not, its address, port and scope, and how many requests it received, ran and refused.",
+      "group": "osc",
+      "id": "osc.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "remote",
+              "full"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start the OSC control server (off until this runs): listen for UDP on 'address' (an IP literal, default 127.0.0.1 - this machine only) and 'port' (default 9000; 0 = any free port). A message to /zene/<command-id> runs that registered command - its arguments one JSON-object string or string-key/value pairs - and the sender gets /zene/reply (id, result JSON) or /zene/error (id, kind, message). 'scope' remote (default) allows transport, markers, mixer faders and state reads; full allows every command except scripts, sessions and quitting, on a loopback address only. Replaces a running server. Device state: not recorded.",
+      "group": "osc",
+      "id": "osc.start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop the OSC control server and close its port.",
+      "group": "osc",
+      "id": "osc.stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "target": {
             "type": "string"
@@ -18741,7 +18882,7 @@
         ],
         "type": "object"
       },
-      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 and CLAP plug-ins whose editor embeds in this platform's window (X11, a Windows HWND, a macOS NSView) open; a plug-in with no editor, one that cannot embed on this platform (the refusal names the platform and the window API), or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
+      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 and CLAP plug-ins whose editor embeds in this platform's window (X11, a Windows HWND, a macOS NSView) open; a plug-in with no editor, one that cannot embed on this platform (the refusal names the platform and the window API), or one that can only float, refuses with the reason. On Linux editors embed only in X11 windows: on a Wayland desktop Zene runs through XWayland, and natively on Wayland (QT_QPA_PLATFORM=wayland, no XWayland) every editor refuses ('requires') with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
       "group": "plugin",
       "id": "plugin.editor_open",
       "mutating": false,
@@ -18924,7 +19065,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, so adding a host does not renumber the ids of the formats that were already there.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -18982,7 +19123,7 @@
         ],
         "type": "object"
       },
-      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in.",
+      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in. Q050-111: a `target` of clip-<n> (an audio clip) puts the effect on that clip's OWN chain - realtime, processing that clip alone before the track sums its clips; plugin.unload / plugin.bypass / plugin.move / plugin.param_set take the same clip-<n> target, and dsp.get_state reads it.",
       "group": "plugin",
       "id": "plugin.load",
       "mutating": true,
@@ -20748,7 +20889,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
+      "description": "Remove a device instance (fx-<n>) from a track's chain, a mixer channel or an audio clip's own chain (clip-<n>). When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
       "group": "plugin",
       "id": "plugin.unload",
       "mutating": true,
@@ -30788,7 +30929,7 @@
         ],
         "type": "object"
       },
-      "description": "Read a drum rack back: 'track' is its folder. Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation, attack (ms), release (ms), voice_limit}} - what the project saves. Writes nothing.",
+      "description": "Read a drum rack back: 'track' is its folder. Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation, attack (ms), release (ms), voice_limit}, chain (the effects on the pad's channel, in order: [{id (fx-<n>), plugin, display_name, enabled}] - plugin.load / plugin.unload / plugin.bypass with 'target' = the pad's channel edit it), chain_shared (true when anything else plays through that channel - the master, another track, a send into it - so an effect there would not be the pad's alone)} - what the project saves. Writes nothing.",
       "group": "track",
       "id": "track.drum_rack_get_state",
       "mutating": false,
@@ -31347,7 +31488,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every track in one list, for the track manager: id, index, name, type, colour, icon, muted, soloed, visible, folder, clip count, instrument, its mixer channel, that channel's device count and its processing load (cpu_percent, mixer.cpu_load's figure).",
+      "description": "Every track in one list, for the track manager: id, index, name, type, colour, icon, muted, soloed, visible, folder, clip count, instrument, its mixer channel, that channel's device count and its processing load (cpu_percent, mixer.cpu_load's figure), and for an instrument track its own synthesis load (synthesis_cpu_percent, apart from the channel's).",
       "group": "track",
       "id": "track.overview",
       "mutating": false,
@@ -31373,7 +31514,7 @@
         ],
         "type": "object"
       },
-      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step.",
+      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step. The preset's MIDI controller bindings come back on the loaded devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), and 'bindings_summary' says it in one line.",
       "group": "track",
       "id": "track.preset_load",
       "mutating": true,
@@ -31399,7 +31540,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings, without its mute and solo. Writes the file only.",
+      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings - with their MIDI controller bindings - without its mute and solo. Writes the file only; 'bindings' is how many controller bindings it holds.",
       "group": "track",
       "id": "track.preset_save",
       "mutating": false,
@@ -37323,23 +37464,23 @@
       }
     }
   ],
-  "count": 872,
+  "count": 878,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-089.2/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-dfenq7zm/zene.sock",
-    "version": "0.4.0-alpha.5386+6c004a7"
+    "source_socket": "/tmp/zctl-run-mvtw6ft4/zene.sock",
+    "version": "0.4.0-alpha.5690+d6c336f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 76,
-    "id_count": 872,
-    "ids_sha256": "7402835c83240865544a1b47cec16c90b641837446eb6a326730a5f23fd3eb0c"
+    "group_count": 77,
+    "id_count": 878,
+    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
   }
 }

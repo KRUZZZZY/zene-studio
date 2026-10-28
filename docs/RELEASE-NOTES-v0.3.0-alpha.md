@@ -1093,8 +1093,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **The L15 control-surface batch** (`feat/050-Q050-161-oc`: Q050-205 OSC server, Q050-081 controller scripts, 2026-10-28) adds six `not_mutating` rows - `osc.start`, `osc.stop`, `osc.get_state` and `controller.script_start`, `controller.script_stop`, `controller.script_state` (device state, the `surface.mcu_connect` precedent; what they run records as itself) - `rows=886 true_inverse=434 snapshot=42 irreversible=25 not_mutating=385`.
 
+**M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=881 true_inverse=434 snapshot=42 irreversible=25 not_mutating=380
+     measured: rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
