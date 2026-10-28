@@ -1885,6 +1885,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
+		# the plug-in source is compiled into the test: its PLUGIN_EXPORT symbols are defined here, not imported
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE)
 	endif()
 	# cluster new-p14-358 / 5451: VestigeMidiHandoffTest compiles the VeSTige plug-in's
 	# own sources into the test (the SlicerT and Vibed tests' shape), so the "Turn off all
@@ -2139,7 +2141,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Patman
 			${CMAKE_BINARY_DIR}/plugins/Patman
 		)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=patman)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=patman)
 		add_dependencies(${LMMS_TEST_NAME} patman)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2159,6 +2161,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE unofficial::libstk::libstk)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+		# the plug-in source is compiled into the test: its PLUGIN_EXPORT symbols are defined here, not imported
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE)
 	endif()
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
 	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest" OR LMMS_TEST_NAME STREQUAL "LinkAudioStreamTest")
@@ -2218,7 +2222,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/SlicerT/SlicerTWaveform.h)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SlicerT ${CMAKE_BINARY_DIR}/plugins/SlicerT ${FFTW3F_INCLUDE_DIRS})
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=slicert slicert_EXPORTS)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=slicert slicert_EXPORTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE ${FFTW3F_LIBRARIES} SampleRate::samplerate)
 	endif()
 	# BitInvader is a plug-in module, so the test compiles the product's own note code in.
@@ -2240,7 +2244,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Watsyn/Watsyn.h)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/Watsyn ${CMAKE_BINARY_DIR}/plugins/Watsyn)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=watsyn watsyn_EXPORTS)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=watsyn watsyn_EXPORTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE SampleRate::samplerate)
 	endif()
 	IF(LMMS_HAVE_STEM_SPLIT)

@@ -29,6 +29,16 @@
 
 using lmms::gui::RowTableView;
 
+// QAbstractItemView::itemDelegateForIndex is Qt 6; Qt 5's spelling is itemDelegate(index).
+static const QAbstractItemDelegate* rowDelegate(const RowTableView& view, const QModelIndex& index)
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return view.itemDelegateForIndex(index);
+#else
+	return view.itemDelegate(index);
+#endif
+}
+
 class RowTableViewTest : public QObject
 {
 	Q_OBJECT
@@ -51,10 +61,10 @@ private slots:
 		RowTableView view;
 		view.setModel(&model);
 
-		const QAbstractItemDelegate* existingRowDelegate = view.itemDelegateForIndex(model.index(0, 0));
+		const QAbstractItemDelegate* existingRowDelegate = rowDelegate(view, model.index(0, 0));
 		QVERIFY(existingRowDelegate);
 		QVERIFY(model.insertRow(1));
-		QCOMPARE(view.itemDelegateForIndex(model.index(1, 0)), existingRowDelegate);
+		QCOMPARE(rowDelegate(view, model.index(1, 0)), existingRowDelegate);
 	}
 
 	void tabAndBacktabWithoutModelAreSafe()

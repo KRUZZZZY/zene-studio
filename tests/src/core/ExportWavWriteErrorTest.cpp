@@ -198,6 +198,7 @@ struct RiffSizes
 	bool found = false;
 };
 
+#ifdef Q_OS_UNIX // only the POSIX write-error cases read the RIFF sizes back
 RiffSizes riffSizes(const QString& path)
 {
 	RiffSizes sizes;
@@ -221,6 +222,7 @@ RiffSizes riffSizes(const QString& path)
 	}
 	return sizes;
 }
+#endif // Q_OS_UNIX
 
 #ifdef Q_OS_UNIX
 //! Caps the size of the files this process writes: a write that would grow a
