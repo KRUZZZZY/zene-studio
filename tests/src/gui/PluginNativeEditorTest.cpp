@@ -55,6 +55,7 @@
 #include "Mixer.h"
 #include "PluginNativeEditor.h"
 #include "PluginWindowSystem.h"
+#include "PluginWindowPlatform.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -174,6 +175,28 @@ private slots:
 		PluginNativeEditor noHooks;
 		QVERIFY(!noHooks.open({}, QStringLiteral("No hooks"), &error));  // a format that cannot even attach
 		QVERIFY(!noHooks.isOpen());
+	}
+
+	//! Q050-502: on Qt's native wayland platform no format is handed a window id (it is not an X11 window): the
+	//! open refuses with the reason before a window exists, and the real platform's open is untouched.
+	void onNativeWaylandNoViewIsHandedAWindowId()
+	{
+		Calls calls;
+		PluginNativeEditor editor;
+		QString error;
+		pluginwindow::setPlatformForTesting(QStringLiteral("wayland"), pluginwindow::Decision{pluginwindow::Choice::NoXWayland, {}});
+		const bool opened = editor.open(hooksFor(&calls, 100, 100), QStringLiteral("Wayland"), &error);
+		const bool windowShown = editorWindow(QStringLiteral("Wayland")) != nullptr;
+		pluginwindow::setPlatformForTesting({}, {});
+		QVERIFY(!opened);
+		QVERIFY2(error.contains(QStringLiteral("no XWayland")), qPrintable(error));
+		QVERIFY(calls.parent == nullptr);  // the plug-in was never handed the id
+		QVERIFY(!windowShown);
+		QVERIFY(!editor.isOpen());
+
+		QVERIFY2(editor.open(hooksFor(&calls, 100, 100), QStringLiteral("Wayland"), &error), qPrintable(error));
+		QCOMPARE(calls.attached, 1);
+		editor.close();
 	}
 
 	void anOpenWindowIsSizedToTheViewAndOpeningAgainRaisesIt()

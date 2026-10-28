@@ -311,11 +311,20 @@ came back, and every failure. A plug-in that is not on that page is untested - t
 <code>plugin.editor_open</code>) opens in a window of its own on Linux, Windows and macOS: Zene puts the editor inside the system's own kind of
 window (an X11 window on Linux, a Windows window, a macOS view). A plug-in whose editor cannot go inside that kind of window does not
 open; the line under the button says why, naming the system and the plug-in's window type - for example <em>cannot embed on Windows (VST3
-platform type HWND)</em> - and no empty window is left behind. On a Linux desktop that runs Wayland without X11, start Zene with
-<code>QT_QPA_PLATFORM=xcb</code> to open plug-in editors. The device's Editor zoom (<code>plugin.options editor_scale</code>) is passed to
+platform type HWND)</em> - and no empty window is left behind. On a Wayland desktop see below. The device's Editor zoom (<code>plugin.options editor_scale</code>) is passed to
 the plug-in on Linux and Windows; on macOS the system scales the editor for the screen itself, so a VST3 editor is only given the larger
 size and a CLAP editor keeps its own size. Windows and macOS editors have so far been proved with Zene's test plug-ins only; the
 compatibility page says which real plug-ins have been opened where.</p>
+
+<p><b>Plug-in windows on a Wayland desktop (KDE, GNOME).</b> On Linux a VST3 or CLAP plug-in's own editor can only be placed inside an X11
+window. So on a Wayland desktop Zene Studio runs through XWayland, the X11 layer KDE and GNOME provide, and editors open
+there as they do on an X11 desktop. Zene chooses this when it starts and prints one line about it in the terminal. To
+choose yourself, set <code>QT_QPA_PLATFORM</code> before starting: <code>QT_QPA_PLATFORM=wayland zene</code> runs
+natively on Wayland, and <code>QT_QPA_PLATFORM=xcb</code> forces X11. Zene never overrides a value you set. When an
+editor cannot open - Zene runs natively on Wayland because you asked for it, the desktop has no XWayland (enable or
+install it, then restart), or the plug-in has no X11 editor - Open Editor, the Show plugin editor button and the agent
+command <code>plugin.editor_open</code> say why, and no empty window appears. The device's knobs and the generic editor
+work either way.</p>
 
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>

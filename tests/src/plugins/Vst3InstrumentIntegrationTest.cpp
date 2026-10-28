@@ -50,6 +50,7 @@
 #include <QApplication>
 #include <QJsonObject>
 #include <QWidget>
+#include <QLabel>
 #include <QToolButton>
 
 #include "ControlVocabulary.h"
@@ -86,6 +87,7 @@
 #include "Plugin.h"
 #include "PluginFactory.h"
 #include "PluginView.h"
+#include "PluginWindowPlatform.h"
 #include "Knob.h"
 #include "Vst3Instrument.h"
 #include "Song.h"
@@ -253,6 +255,7 @@ private slots:
 	void testAGuiLessInstrumentExposesItsParameters();
 	void testTheViewsEntryPointIsSafeOutsideAnInstrumentTrackWindow();
 	void testTheInstrumentsOwnEditorOpensInItsOwnWindow();
+	void testOnNativeWaylandTheEditorRefusesWithTheReason();
 	void testAnEffectsEditorOpensAtItsDeviceScale();
 	void testReadOnlyParametersAreNotKnobs();
 	void testReadOnlyParametersAreNotEffectKnobs();
@@ -895,6 +898,56 @@ void Vst3InstrumentIntegrationTest::testTheInstrumentsOwnEditorOpensInItsOwnWind
 	instrument->closeNativeEditor();
 	ControlRegistry::instance()->setHeadless(headless);
 	ControlRegistry::setReady(false);
+}
+
+/*! Q050-502: on Qt's native wayland platform a window id is not an X11 window, so the VST3 view is never handed one:
+ *  the instrument's open, plugin.editor_open (typed 'requires') and the view's "Show plugin editor" button all refuse
+ *  with the reason, and no editor opens. The platform is faked through the module's test seam (no compositor here);
+ *  back on the real platform the same command opens the editor as before. */
+void Vst3InstrumentIntegrationTest::testOnNativeWaylandTheEditorRefusesWithTheReason()
+{
+	auto track = makeTrack();
+	auto* instrument = makeInstrument(track.get());
+	QVERIFY(instrument != nullptr);
+	const QJsonObject address{{QStringLiteral("target"), control::trackIdOf(track.get())},
+		{QStringLiteral("plugin"), QStringLiteral("inst")}};
+	ControlRegistry::setReady(true);
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(false);
+	QWidget parent;
+	gui::PluginView* view = instrument->createView(&parent);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : view->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+
+	pluginwindow::setPlatformForTesting(QStringLiteral("wayland"), pluginwindow::Decision{pluginwindow::Choice::NoXWayland, {}});
+	QString error;
+	const bool openedDirectly = instrument->openNativeEditor(&error);
+	const ControlResult refused = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"), address);
+	if (show != nullptr) { QTest::mouseClick(show, Qt::LeftButton); }
+	const bool openedByButton = instrument->nativeEditorOpen();
+	const QLabel* reason = show != nullptr ? show->parentWidget()->findChild<QLabel*>() : nullptr;
+	const QString shown = reason != nullptr && reason->isVisibleTo(&parent) ? reason->text() : QString();
+	pluginwindow::setPlatformForTesting({}, {});
+
+	const ControlResult opened = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"), address);
+	instrument->closeNativeEditor();
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
+
+	QVERIFY2(show != nullptr, "the instrument view has no plugin-editor button");
+	QVERIFY2(!openedDirectly, "the VST3 view was handed a Wayland window id");
+	QVERIFY2(error.contains(QStringLiteral("no XWayland")), qPrintable(error));
+	QVERIFY(!refused.ok);
+	QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+	QVERIFY2(refused.errorMessage.contains(address.value(QStringLiteral("target")).toString())
+		&& refused.errorMessage.contains(QStringLiteral("X11 windows")), qPrintable(refused.errorMessage));
+	QVERIFY2(!openedByButton, "the view's button opened an editor on Wayland");
+	QVERIFY2(shown.contains(QStringLiteral("XWayland")), qPrintable(shown));
+	QVERIFY2(opened.ok, qPrintable(opened.errorMessage));  // the X11 (here: offscreen) path is unchanged
+	QVERIFY(opened.result.value(QStringLiteral("open")).toBool());
 }
 
 /*! 0.5.0 MX-094, through the product's own path: the installed vst3effect module, hosting the

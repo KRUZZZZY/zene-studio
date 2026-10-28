@@ -51,11 +51,13 @@
 #include "ConfigManager.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "Plugin.h"
+#include "PluginWindowPlatform.h"
 #include "PluginWindowSystem.h"
 #include "Song.h"
 #include "Track.h"
@@ -87,6 +89,7 @@ private slots:
 	void testTheEffectsOwnEditorOpensInItsOwnWindow();
 	void testTheControlDialogsButtonOpensTheEditor();
 	void testTheButtonNamesThePlatformAPluginCannotEmbedOn();
+	void testOnNativeWaylandTheEditorRefusesWithTheReason();
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
 	void testParameterRescansRebuildTheModels();
@@ -634,6 +637,58 @@ void lmms::ClapEffectIntegrationTest::testTheButtonNamesThePlatformAPluginCannot
 		QLatin1String(nativeApi));
 	QVERIFY2(reason.contains(expected), qPrintable(QStringLiteral("refusal line: '%1'").arg(reason)));
 	std::printf("CLAP_EDITOR_BUTTON_REFUSAL_EVIDENCE %s\n", qPrintable(reason));
+}
+
+/*! Q050-502: on Qt's native wayland platform (here: the user forced it) the plug-in's clap.gui is never created with a
+ *  window that is not an X11 window: the effect's open, plugin.editor_open (typed 'requires') and the control dialog's
+ *  button all refuse with the reason naming the override. Faked through the module's test seam (no compositor);
+ *  back on the real platform the dialog's button opens the editor as before. */
+void lmms::ClapEffectIntegrationTest::testOnNativeWaylandTheEditorRefusesWithTheReason()
+{
+	EffectChain& master = Engine::mixer()->mixerChannel(0)->m_fxChain;
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&master, &key};
+	master.appendEffect(effect);
+	ControlRegistry::setReady(true);
+	const bool headless = ControlRegistry::instance()->isHeadless();
+	ControlRegistry::instance()->setHeadless(false);
+	QWidget parent;
+	gui::EffectControlDialog* dialog = effect->controls()->createView();
+	dialog->setParent(&parent);
+	QToolButton* show = nullptr;
+	for (QToolButton* button : dialog->findChildren<QToolButton*>())
+	{
+		if (button->property("controlCommand").toString() == QLatin1String("plugin.editor_open")) { show = button; }
+	}
+
+	pluginwindow::setPlatformForTesting(QStringLiteral("wayland"), pluginwindow::Decision{pluginwindow::Choice::UserChoice, {}});
+	QString error;
+	const bool openedDirectly = effect->openNativeEditor(&error);
+	const ControlResult refused = ControlRegistry::instance()->invoke(QStringLiteral("plugin.editor_open"),
+		{{QStringLiteral("target"), control::channelIdOf(Engine::mixer()->mixerChannel(0))}, {QStringLiteral("plugin"), control::effectIdOf(effect)}});
+	if (show != nullptr) { QTest::mouseClick(show, Qt::LeftButton); }
+	const bool openedByButton = effect->nativeEditorOpen();
+	const QLabel* reason = show != nullptr ? show->parentWidget()->findChild<QLabel*>() : nullptr;
+	const QString shown = reason != nullptr && reason->isVisibleTo(&parent) ? reason->text() : QString();
+	pluginwindow::setPlatformForTesting({}, {});
+
+	if (show != nullptr) { QTest::mouseClick(show, Qt::LeftButton); }
+	const bool openedAfter = effect->nativeEditorOpen();
+	effect->closeNativeEditor();
+	ControlRegistry::instance()->setHeadless(headless);
+	ControlRegistry::setReady(false);
+	delete dialog;
+	master.removeEffect(effect);
+	delete effect;
+
+	QVERIFY2(show != nullptr, "the effect's control dialog has no plugin-editor button");
+	QVERIFY2(!openedDirectly, "the CLAP gui was given a Wayland window id");
+	QVERIFY2(error.contains(QStringLiteral("QT_QPA_PLATFORM")), qPrintable(error));
+	QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+	QVERIFY2(refused.errorMessage.contains(QStringLiteral("X11 windows")), qPrintable(refused.errorMessage));
+	QVERIFY2(!openedByButton, "the dialog's button opened an editor on Wayland");
+	QVERIFY2(shown.contains(QStringLiteral("QT_QPA_PLATFORM")), qPrintable(shown));
+	QVERIFY2(openedAfter, "the dialog's button no longer opens the editor on the real platform");
 }
 
 /*! BUGS 11.34: the latency a CLAP plug-in declares (clap.latency) is what the effect reports

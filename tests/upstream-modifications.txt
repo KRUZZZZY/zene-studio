@@ -5440,3 +5440,11 @@ tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-456: add regressi
 tests/data/vst3-test-instrument/vst3-test-instrument.cpp	# VST3 instruments render silence: Dexed, Vitalium, JC303, Surge XT, Vaporizer2, Stochas (Surge XT as CLAP plays)
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp	# VST3 instruments render silence: Dexed, Vitalium, JC303, Surge XT, Vaporizer2, Stochas (Surge XT as CLAP plays)
 tests/src/plugins/Vst3InstrumentTest.cpp	# VST3 instruments render silence: Dexed, Vitalium, JC303, Surge XT, Vaporizer2, Stochas (Surge XT as CLAP plays)
+src/core/main.cpp	Q050-502: before the GUI application exists (not core-only), pluginwindow::chooseStartupPlatform() runs and its one-line note goes to stderr: a Wayland session with XWayland and no QT_QPA_PLATFORM/-platform from the user runs on QT_QPA_PLATFORM=xcb;wayland so plug-in editors (X11-embedded) can open. An X11 session, a user-set platform and core-only runs are unchanged; regression tests/src/core/PluginWindowPlatformTest.cpp.
+src/core/CMakeLists.txt	Q050-502: names the fork-NEW core/PluginWindowPlatform.cpp in LMMS_SRCS. One added source path; no target, flag or option moved.
+tests/CMakeLists.txt	Q050-502: registers PluginWindowPlatformTest (the Wayland/XWayland start-up decision and the editor refusal, no compositor needed) in the LMMS_TESTS list.
+data/manual/index.html	Q050-502: a paragraph on plug-in windows on a Wayland desktop - Zene runs through XWayland so editors open, QT_QPA_PLATFORM overrides it, and when an editor cannot open the reason is shown.
+docs/KNOWN-LIMITATIONS.md	Q050-502: the Wayland behaviour of plug-in editors (XWayland chosen at start-up, typed refusal on native Wayland, XWayland scaling, not yet checked on the owner's KDE desktop).
+tools/mcp-zene-control/zene_control/commands_snapshot.json	Q050-502: regenerated live; plugin.editor_open's description names the Wayland behaviour (XWayland, typed 'requires' refusal on native Wayland). No id, schema or class changed.
+tests/src/plugins/ClapEffectIntegrationTest.cpp	# Open plug-in windows on Wayland desktops
+tests/src/plugins/Vst3InstrumentIntegrationTest.cpp	# Open plug-in windows on Wayland desktops
