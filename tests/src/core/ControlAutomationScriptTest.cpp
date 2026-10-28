@@ -53,6 +53,7 @@
 #include "ControlAutomationSupport.h"
 #include "ControlDeviceSupport.h"
 #include "ControlRegistry.h"
+#include "DeprecationHelper.h"
 #include "Engine.h"
 #include "ReversibilityTestSupport.h"
 #include "ScriptEngine.h"
@@ -593,7 +594,7 @@ private slots:
 			const QJsonObject entry = value.toObject();
 			if (entry.value(QStringLiteral("name")).toString() != QStringLiteral("large.lua")) { continue; }
 			foundLargeScript = true;
-			QCOMPARE(entry.value(QStringLiteral("bytes")).toInteger(), largeScriptSize);
+			QCOMPARE(lmms::jsonInteger(entry.value(QStringLiteral("bytes"))), largeScriptSize);
 			QCOMPARE(entry.value(QStringLiteral("sha256")).toString(),
 				QString::fromLatin1(expectedHash.result().toHex()));
 		}

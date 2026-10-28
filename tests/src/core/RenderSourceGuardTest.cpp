@@ -72,6 +72,7 @@ int fakeRender(int argc, char** argv)
 	return output.write("rendered output") == 15 ? 0 : 5;
 }
 
+#ifndef _WIN32 // only the POSIX symlink cases below queue a render
 int queueRender(const QString& source, const QString& destination)
 {
 	RenderJob job;
@@ -83,6 +84,7 @@ int queueRender(const QString& source, const QString& destination)
 	if (id > 0) { queue.start(); }
 	return id;
 }
+#endif
 
 } // namespace
 

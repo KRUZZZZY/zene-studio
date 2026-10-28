@@ -2688,6 +2688,11 @@ target_include_directories(RemotePluginShmFifoTest PRIVATE
 	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated)
 target_link_libraries(RemotePluginShmFifoTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 target_compile_features(RemotePluginShmFifoTest PRIVATE cxx_std_20)
+if(APPLE)
+	# std::barrier needs macOS 11.0 in Apple's libc++ (test-only floor; the product floor is unchanged)
+	target_compile_options(RemotePluginShmFifoTest PRIVATE -mmacosx-version-min=11.0)
+	target_link_options(RemotePluginShmFifoTest PRIVATE -mmacosx-version-min=11.0)
+endif()
 target_compile_definitions(RemotePluginShmFifoTest PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 add_test(NAME RemotePluginShmFifoTest COMMAND RemotePluginShmFifoTest)
 
@@ -2696,6 +2701,8 @@ add_test(NAME RemotePluginShmFifoTest COMMAND RemotePluginShmFifoTest)
 add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/common/RemotePluginBase.cpp)
 target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+# Qt's usage requirements carry /Zc:__cplusplus on MSVC; without them qcompilerdetection.h stops the build.
+target_link_libraries(RemotePluginShmFifoCompileCheck PRIVATE ${QT_LIBRARIES})
 target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
 # LMMS_STATIC_DEFINE: this TU defines LMMS_EXPORT members, and outside lmmsobjs
 # lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
@@ -4038,6 +4045,11 @@ target_link_libraries(PluginPortsMigrationTest PRIVATE
 	resid
 )
 target_compile_features(PluginPortsMigrationTest PRIVATE cxx_std_20)
+if(APPLE)
+	# std::barrier needs macOS 11.0 in Apple's libc++ (test-only floor; the product floor is unchanged)
+	target_compile_options(PluginPortsMigrationTest PRIVATE -mmacosx-version-min=11.0)
+	target_link_options(PluginPortsMigrationTest PRIVATE -mmacosx-version-min=11.0)
+endif()
 target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	LMMS_TESTING
 	PART_C_REFERENCE_EXE="$<TARGET_FILE:PluginPortsMigrationReference>"
