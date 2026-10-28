@@ -32,7 +32,6 @@
  *    device's own settings document (its 'impulse' attribute), so an undo restores the previous one. */
 
 #include <algorithm>
-#include <cmath>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -313,8 +312,7 @@ int placeConsoles(const QJsonObject& args, const QString& state, std::vector<std
 ControlResult consoleApply(const QJsonObject& args)
 {
 	const double drive = args.value(QStringLiteral("drive")).toDouble(0.0);
-	// NaN compares false against every bound, so the range test alone lets it through.
-	if (!std::isfinite(drive) || drive < 0.0 || drive > 100.0)
+	if (drive < 0.0 || drive > 100.0)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'drive' is 0..100 (%)"));
 	}
