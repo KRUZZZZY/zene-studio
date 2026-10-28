@@ -11,14 +11,19 @@
 
 #include "ModularSynthView.h"
 
+#include <QContextMenuEvent>
 #include <QGridLayout>
+#include <QJsonObject>
 #include <QLabel>
 #include <QPainter>
+#include <QMouseEvent>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "FontHelper.h"
-#include "Knob.h"
+#include "InstrumentTrack.h"
 #include "ModularSynth.h"
 
 namespace lmms::gui
@@ -69,6 +74,7 @@ void ModularSynthView::rebuild()
 {
 	auto* synth = castModel<ModularSynth>();
 	const modular::Graph& graph = synth->graph();
+	std::vector<std::unique_ptr<Binding>> bindings;
 
 	auto* content = new QWidget;
 	content->setObjectName(QStringLiteral("modularModules"));
@@ -89,14 +95,8 @@ void ModularSynthView::rebuild()
 		const std::vector<FloatModel*> params = synth->moduleParameters(i);
 		for (std::size_t k = 0; k < params.size(); ++k)
 		{
-			const modular::ParamSpec& p = spec.params[k];
-			auto* knob = new Knob(KnobType::Bright26, tr(p.label), content);
-			knob->setObjectName(QStringLiteral("%1.%2").arg(module.id, QString::fromLatin1(p.key)));
-			knob->setModel(params[k]);
-			const QString choices = choicesOf(module.kind, QString::fromLatin1(p.key));
-			knob->setHintText(params[k]->displayName() + (choices.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(choices))
-				+ QStringLiteral(":"), QString::fromLatin1(p.unit));
-			knobs->addWidget(knob, 0, static_cast<int>(k), Qt::AlignLeft);
+			knobs->addWidget(makeKnob(module, spec.params[k], params[k], content, bindings), 0, static_cast<int>(k),
+				Qt::AlignLeft);
 		}
 		knobs->setColumnStretch(modular::MaxParams, 1);
 		rows->addLayout(knobs);
@@ -110,7 +110,83 @@ void ModularSynthView::rebuild()
 	rows->addStretch(1);
 
 	m_scroll->setWidget(content); // deletes the previous rows and their knobs
+	m_bindings.swap(bindings);    // ... and only then the proxies those knobs were showing
 	update();
+}
+
+Knob* ModularSynthView::makeKnob(const modular::Module& module, const modular::ParamSpec& p, FloatModel* target,
+	QWidget* parent, std::vector<std::unique_ptr<Binding>>& bindings)
+{
+	auto binding = std::make_unique<Binding>();
+	binding->target = target;
+	// A model of the view's own, not a child of the instrument: it is not a parameter, it saves nothing and it
+	// records no undo step. It shows the parameter, and what the knob does to it becomes a plugin.param_set.
+	binding->proxy = std::make_unique<FloatModel>(target->value(), p.lowest, p.highest, p.step, nullptr);
+	binding->proxy->setInitValue(p.init);
+	binding->proxy->setValue(target->value());
+	binding->proxy->setScaleLogarithmic(p.logarithmic);
+	binding->proxy->setJournalling(false);
+	Binding* b = binding.get();
+	connect(b->proxy.get(), &Model::dataChanged, this, [this, b] { dispatch(*b); });
+	connect(target, &Model::dataChanged, b->proxy.get(), [b] { follow(*b); });
+
+	auto* knob = new CommandKnob(KnobType::Bright26, tr(p.label), parent);
+	knob->setObjectName(QStringLiteral("%1.%2").arg(module.id, QString::fromLatin1(p.key)));
+	knob->setProperty("parameter", target->displayName());
+	knob->setModel(b->proxy.get());
+	const QString choices = choicesOf(module.kind, QString::fromLatin1(p.key));
+	knob->setHintText(target->displayName() + (choices.isEmpty() ? QString() : QStringLiteral(" (%1)").arg(choices))
+		+ QStringLiteral(":"), QString::fromLatin1(p.unit));
+	bindings.push_back(std::move(binding));
+	return knob;
+}
+
+void ModularSynthView::dispatch(Binding& binding)
+{
+	if (binding.following) { return; }
+	const float value = binding.proxy->value();
+	if (value == binding.target->value()) { return; }
+	// The command an agent runs: the same range check, the same journal step, and a knob drag's run of calls on one
+	// parameter coalesces into one undo step (the plugin.param_set row's coalescing key).
+	auto* synth = castModel<ModularSynth>();
+	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("plugin.param_set"),
+		QJsonObject{{QStringLiteral("target"), control::trackIdOf(synth->instrumentTrack())},
+			{QStringLiteral("plugin"), QStringLiteral("inst")},
+			{QStringLiteral("name"), binding.target->displayName()},
+			{QStringLiteral("value"), static_cast<double>(value)}});
+	if (!result.ok)
+	{
+		// The control surface cannot address this instrument (an instrument layered on another track, or the surface
+		// is not up yet): the knob still works, as a plain journalled edit of the parameter.
+		binding.target->addJournalCheckPoint();
+		binding.target->setValue(value);
+	}
+	follow(binding);
+}
+
+void ModularSynthView::follow(Binding& binding)
+{
+	binding.following = true;
+	binding.proxy->setValue(binding.target->value());
+	binding.following = false;
+}
+
+void CommandKnob::contextMenuEvent(QContextMenuEvent* event)
+{
+	// The knob shows a stand-in model; automation and controller links made on it would be lost. They are made on the
+	// parameter itself (the automation editor, or an agent's automation and modulator commands).
+	event->accept();
+}
+
+void CommandKnob::mousePressEvent(QMouseEvent* event)
+{
+	// Ctrl-drag would hand the stand-in model to an automation clip; see contextMenuEvent.
+	if (event->modifiers() & Qt::ControlModifier)
+	{
+		event->accept();
+		return;
+	}
+	Knob::mousePressEvent(event);
 }
 
 void ModularSynthView::paintEvent(QPaintEvent*)
