@@ -1116,6 +1116,7 @@ private slots:
 	void opulenzRendersTheProvidedSpanSize();
 	void opulenzZeroFrameCountStopsLoop();
 	void opulenzReappliesVelocityScalingToHeldVoice();
+	void opulenzHz2fnumChecksRangeBeforeUnsignedCast();
 	void realtimeWatchCoversSingleStreamedPlay();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
@@ -5843,6 +5844,33 @@ void PluginPortsMigrationTest::opulenzZeroFrameCountStopsLoop()
 	QVERIFY2(chunkPosition >= 0 && zeroGuardPosition > chunkPosition
 		&& breakPosition > zeroGuardPosition && emulatorUpdatePosition > breakPosition,
 		"playImpl must break on a zero chunk before updating the emulator, so offset cannot stall");
+}
+
+/*!
+ * Regression for cluster new-p16-157: Hz2fnum() converted the scaled
+ * frequency to unsigned before checking it. A value that is negative, NaN or
+ * at least 2^32 has no unsigned representation, so that conversion is
+ * undefined behaviour. The pitch-bend sensitivity RPN can produce such a value
+ * (its data entry is not limited to 7 bits, so the bend reaches 25500 cents),
+ * and the conversion's result is not defined across compilers, so the test
+ * checks the source: the float range guard must come before the only unsigned
+ * conversion in Hz2fnum().
+ */
+void PluginPortsMigrationTest::opulenzHz2fnumChecksRangeBeforeUnsignedCast()
+{
+	const auto sourcePath = QDir{QCoreApplication::applicationDirPath()}
+		.filePath(QStringLiteral("../../plugins/OpulenZ/OpulenZ.cpp"));
+	QFile source{sourcePath};
+	QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+	const auto contents = source.readAll();
+	const auto hz2fnumBody = functionBody(contents, "int OpulenzInstrument::Hz2fnum(float Hz)");
+	QVERIFY2(!hz2fnumBody.isEmpty(), "OpulenzInstrument::Hz2fnum() source was not found");
+
+	const auto castPosition = hz2fnumBody.indexOf("static_cast<unsigned>");
+	QVERIFY2(castPosition >= 0, "Hz2fnum() must still convert the scaled value to an F-number");
+	const auto beforeCast = hz2fnumBody.left(castPosition);
+	QVERIFY2(beforeCast.contains(">= 0.0f") && beforeCast.contains("< 1023.0f"),
+		"Hz2fnum() must check the scaled float is in [0, 1023) before converting it to unsigned");
 }
 
 /*!
