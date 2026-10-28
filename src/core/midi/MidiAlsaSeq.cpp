@@ -29,8 +29,10 @@
 #include "MidiClock.h"
 #include "MidiLearn.h"
 #include "MidiPort.h"
+#include "RenderPeriodClock.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 
 #ifdef LMMS_HAVE_ALSA
@@ -174,6 +176,20 @@ MidiAlsaSeq::MidiAlsaSeq() :
 	}
 	snd_seq_queue_tempo_free( tempo );
 
+	// Q050-246: the queue delivers a scheduled event on its timer's tick. The default tick is 1 ms, which put
+	// up to a whole millisecond of jitter on every frame-placed event; ask for 4 kHz (0.25 ms). A sequencer that
+	// refuses keeps its default timer - the events still go out, on the coarser grid.
+	snd_seq_queue_timer_t * queueTimer = nullptr;
+	if( snd_seq_queue_timer_malloc( &queueTimer ) >= 0 )
+	{
+		if( snd_seq_get_queue_timer( m_seqHandle, m_queueID, queueTimer ) >= 0 )
+		{
+			snd_seq_queue_timer_set_resolution( queueTimer, QueueTimerHz );
+			snd_seq_set_queue_timer( m_seqHandle, m_queueID, queueTimer );
+		}
+		snd_seq_queue_timer_free( queueTimer );
+	}
+
 	if( int err = snd_seq_start_queue( m_seqHandle, m_queueID, nullptr ); err < 0 )
 	{
 		qCritical( "MidiAlsaSeq: cannot start queue: %s", snd_strerror( err ) );
@@ -297,11 +313,39 @@ QString MidiAlsaSeq::probeDevice()
 
 void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
 {
+	enqueueOutEvent( event, time, port, 0 );
+}
+
+
+
+
+void MidiAlsaSeq::processOutEventAt( const MidiEvent& event, const TimePos& time, const MidiPort* port,
+					f_cnt_t offset )
+{
+	// Q050-246: the event's real-time due point. Inside a render period (the render thread or one of its
+	// workers) that is the period's start plus the frame offset; anywhere else (a test, a control thread) the
+	// offset counts from now. One clock read and integer arithmetic: nothing here allocates, locks or waits.
+	const auto start = RenderPeriodClock::inPeriod() ? RenderPeriodClock::periodStart()
+		: std::chrono::steady_clock::now();
+	const sample_rate_t rate = Engine::audioEngine() != nullptr ? Engine::audioEngine()->outputSampleRate() : 0;
+	const std::int64_t offsetNs = rate > 0
+		? static_cast<std::int64_t>( offset ) * 1000000000LL / static_cast<std::int64_t>( rate ) : 0;
+	const std::int64_t dueNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		start.time_since_epoch() ).count() + offsetNs;
+	enqueueOutEvent( event, time, port, dueNs > 0 ? dueNs : 1 );
+}
+
+
+
+
+void MidiAlsaSeq::enqueueOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port,
+					std::int64_t dueNs )
+{
 	// This is called from the audio path. The sequencer thread owns all ALSA
 	// calls and the mutex; enqueueing is bounded, lock-free, and allocation-free.
 	// Cluster 5129: the sequencer thread sleeps in poll() for up to EventPollTimeOut, so the first
 	// push after each drain writes one byte to the wake pipe. One non-blocking write per drain, not per event.
-	if( m_outQueue.pushAndRequestWake( event, time, port ) && m_pipe[1] >= 0 )
+	if( m_outQueue.pushAndRequestWake( event, time, port, dueNs ) && m_pipe[1] >= 0 )
 	{
 		const char wake = 0;
 		// A full pipe already holds a pending wake, so a short or refused write loses nothing.
@@ -346,6 +390,21 @@ void MidiAlsaSeq::processQueuedOutEvent(const MidiOutQueue::Command& command)
 	if( clockMessage != MidiClockMessage::None )
 	{
 		snd_seq_ev_set_direct( &ev );
+	}
+	else if( command.dueNs != 0 )
+	{
+		// Q050-246: scheduled at its own frame inside the period, in real time relative to now. The
+		// integer tick below loses everything under one tick - at 120 BPM a whole 10 ms - so every event of
+		// a period left at the period's drain instead of at its frame. A due point already passed is
+		// scheduled at 0 on the same queue, which keeps the events' order.
+		const std::int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now().time_since_epoch() ).count();
+		const std::int64_t delayNs = command.dueNs > nowNs ? command.dueNs - nowNs : 0;
+		snd_seq_real_time_t delay;
+		delay.tv_sec = static_cast<unsigned int>( delayNs / 1000000000LL );
+		delay.tv_nsec = static_cast<unsigned int>( delayNs % 1000000000LL );
+		snd_seq_ev_schedule_real( &ev, m_queueID, 1, &delay );
+		ev.queue = m_queueID;
 	}
 	else
 	{

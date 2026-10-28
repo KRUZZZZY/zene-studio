@@ -514,6 +514,8 @@ set(LMMS_TESTS
 	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
+	# Q050-246: repeated 1/32-note output timing through an ALSA sequencer loopback (skips without ALSA).
+	src/core/MidiOutTimingTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/FreezeRegionRepairTest.cpp
@@ -3465,7 +3467,7 @@ set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ClipEditsMenuTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(ControllerMappingEditorTest ControllerScriptTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ControllerMappingEditorTest ControllerScriptTest MidiOutTimingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
