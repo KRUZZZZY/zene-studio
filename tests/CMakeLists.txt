@@ -4258,6 +4258,7 @@ add_executable(PeakControllerEffectZeroFrameTest
 	src/plugins/PeakControllerEffectZeroFrameTest.cpp
 	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffect.cpp
 	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControlDialog.cpp
 	${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControls.h
 )
 add_test(NAME PeakControllerEffectZeroFrameTest COMMAND PeakControllerEffectZeroFrameTest)
