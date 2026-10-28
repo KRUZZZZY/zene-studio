@@ -245,6 +245,17 @@ private slots:
 		QCOMPARE(ab.hasInterleavedBuffer(), false);
 	}
 
+	//! Verifies zero-frame constructor with default channels adds a stereo group whose channels are empty
+	void Constructor_ZeroFramesDefaultChannels()
+	{
+		auto ab = AudioBuffer{0};
+		QCOMPARE(ab.groupCount(), 1);
+		QCOMPARE(ab.group(0).channels(), 2);
+		QCOMPARE(ab.totalChannels(), 2);
+		QCOMPARE(ab.frames(), 0);
+		QCOMPARE(ab.hasAnySignal(), false);
+	}
+
 	//! Verifies allocation-size reporting rejects dimensions that overflow size_t
 	void AllocationSize_ThrowsOnOverflow()
 	{
