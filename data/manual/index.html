@@ -97,7 +97,14 @@ area reference below, and points at the command an agent sends for the same job.
 <ul>
 <li><b>Header</b> - transport (play, stop, record), tempo, time signature, position, the master level, the transpose,
 the CPU load and the loudness readout. Right-click
-it to choose which buttons it shows. Pressing Play hands the period's work to the worker threads and wakes any that
+it to choose which buttons it shows. Right-click the <b>CPU</b> readout and choose <b>CPU diagnostics...</b> to see
+what the load is made of: every instrument track's own <i>synthesis</i> share of the audio period - the instrument
+alone, apart from its mixer channel and effects (several cores working at once can take it past 100%) - and the
+<i>late periods</i>, the renders that took longer than the period lasts, each at the bar.beat it started at, newest
+first. A late period is the engine missing its deadline, not the audio device reporting an xrun. The window refreshes
+twice a second and shows exactly what agents read from <code>mixer.cpu_load</code> (its <code>tracks</code> and
+<code>late_periods</code>); <code>track.overview</code> gives each instrument track's <code>synthesis_cpu_percent</code>
+beside its channel's <code>cpu_percent</code>. The readings are live only: nothing is saved with the project. Pressing Play hands the period's work to the worker threads and wakes any that
 are asleep; that wake is a single atomic word, so it never waits for a lock or allocates, on macOS as on every other
 platform. On the Apple build the supported floor is <b>macOS 10.13</b> (High Sierra); a build for a newer macOS runs
 the same wake.</li>

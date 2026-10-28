@@ -45,6 +45,7 @@
 #include "NotePlayHandle.h"
 #include "Piano.h"
 #include "Plugin.h"
+#include "RenderDiagnostics.h"
 #include "Track.h"
 
 //! cluster 5186: the modulation-lifetime regression installs a watchable instrument in a track.
@@ -291,6 +292,10 @@ public:
 		return &m_lastKeyModel;
 	}
 
+	//! Q050-074.1: this track's share of the engine's synthesis stage (its play handles feed it).
+	SynthesisLoad& synthesisLoad() { return m_synthesisLoad; }
+	const SynthesisLoad& synthesisLoad() const { return m_synthesisLoad; }
+
 	bool keyRangeImport() const;
 	bool isKeyMapped(int key) const;
 	int firstKey() const;
@@ -488,6 +493,7 @@ private:
 	IntModel m_baseNoteModel;	//!< The "A4" or "440 Hz" key (default 69)
 	IntModel m_firstKeyModel;	//!< First key the instrument reacts to
 	IntModel m_lastKeyModel;	//!< Last key the instrument reacts to
+	SynthesisLoad m_synthesisLoad;	//!< Q050-074.1: written by the render workers, read by mixer.cpu_load
 
 	bool m_hasAutoMidiDev;
 	static InstrumentTrack *s_autoAssignedTrack;

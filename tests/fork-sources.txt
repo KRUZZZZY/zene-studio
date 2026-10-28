@@ -3228,3 +3228,10 @@ tests/src/core/ClipEffectsTest.cpp
 tests/src/gui/ClipEffectsDialogTest.cpp
 docs/050-features/Q050-111.md
 docs/qwen-fixes-2026-10/cluster-Q050-111.md
+include/CpuDiagnosticsDialog.h
+include/RenderDiagnostics.h
+src/core/RenderDiagnostics.cpp
+src/gui/shell/CpuDiagnosticsDialog.cpp
+tests/control-cpu-diagnostics.py
+tests/src/core/TrackSynthesisLoadTest.cpp
+tests/src/gui/CpuDiagnosticsDialogTest.cpp
