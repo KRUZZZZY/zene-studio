@@ -375,6 +375,19 @@ bool sceneColorValid(const QJsonObject& args, ControlResult* error)
 	return false;
 }
 
+//! A scene's `tempo` argument: a tempo override is a Song tempo, so it takes the engine's own range
+//! (Song.h MinTempo..MaxTempo). Outside it, or not a number, false with @a error - before anything is
+//! written. The project load does not apply this: a saved value is read back as it was stored.
+bool sceneTempoValid(const QJsonObject& args, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("tempo"))) { return true; }
+	const double tempo = args.value(QStringLiteral("tempo")).toDouble();
+	if (tempo >= static_cast<double>(MinTempo) && tempo <= static_cast<double>(MaxTempo)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("tempo %1 is outside the engine's %2..%3 BPM")
+		.arg(tempo).arg(static_cast<double>(MinTempo)).arg(static_cast<double>(MaxTempo)));
+	return false;
+}
+
 //! session.set_scene's writes: the follow chain, the name, the overrides, the colour - each only if supplied.
 void applySceneEdits(Scene& scene, const QJsonObject& args, const std::optional<std::vector<FollowAction>>& chain)
 {
@@ -429,6 +442,7 @@ void registerSessionSetScene(ControlRegistry& registry)
 		std::optional<std::vector<FollowAction>> chain;
 		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
 		if (!sceneColorValid(args, &error)) { return error; }
+		if (!sceneTempoValid(args, &error)) { return error; }
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		Scene& sceneModel = model->scene(index);
