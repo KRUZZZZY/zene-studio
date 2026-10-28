@@ -5498,3 +5498,4 @@ src/core/AutomationClip.cpp	cluster new-p9-439: publishes the live-target flag a
 include/LinkedModelGroupViews.h	new-p10-210: LinkedModelGroupView keeps the layout (display) name of each control beside it (ControlEntry in m_widgets, keyed by the addControl id), so removeControl(id) finds the layout item under its display name; LinkedModelGroupViewLifetimeTest covers an id that differs from its display name.
 src/gui/LinkedModelGroupViews.cpp	new-p10-210: removeControl looks up the layout item by the display name stored at addControl, not by the control id (they differ for Lv2 ports); modelChanged and addControl use the ControlEntry shape; LinkedModelGroupViewLifetimeTest covers the id != display case.
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp	# Removing a linked control can dereference a missing layout item
+tests/src/core/ScriptBindingsTest.cpp	# Lua wrappers can dereference objects deleted during a read flush
