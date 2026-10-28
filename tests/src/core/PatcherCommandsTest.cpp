@@ -60,6 +60,7 @@
 #include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "AudioPortsModel.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
@@ -122,6 +123,34 @@ const Plugin::Descriptor PatcherScaleEffect::s_descriptor
 	nullptr,
 	nullptr,
 	nullptr
+};
+
+//! An audio-port model whose output map excludes the first track-channel pair.
+class PatcherUnroutedOutputModel final : public AudioPortsModel
+{
+public:
+	PatcherUnroutedOutputModel() : AudioPortsModel{0, 2, false}
+	{
+		out().setPin(0, 0, false);
+		out().setPin(1, 1, false);
+	}
+
+private:
+	void bufferPropertiesChanging(ch_cnt_t, ch_cnt_t, f_cnt_t) override {}
+};
+
+class PatcherScaleEffectWithPorts final : public PatcherScaleEffect
+{
+public:
+	PatcherScaleEffectWithPorts(Model* parent, float left, float right, const AudioPortsModel& model)
+		: PatcherScaleEffect{parent, left, right}, m_model{model}
+	{
+	}
+
+	auto audioPortsModel() const -> const AudioPortsModel* override { return &m_model; }
+
+private:
+	const AudioPortsModel& m_model;
 };
 
 //! 8 * 256 frames - enough for the chain to have produced audio.
@@ -679,6 +708,18 @@ private slots:
 		passthrough->deltaTap().process(*passthrough, bus);
 		QVERIFY(bus.quietChannels()[0]);
 		QVERIFY(bus.quietChannels()[1]);
+
+		// An output-port map may omit pair 0, but DeltaTap still subtracts it; its
+		// quiet bits must therefore be measured independently of that map.
+		PatcherUnroutedOutputModel unroutedOutput;
+		auto* routedPassthrough = new PatcherScaleEffectWithPorts(chain, 1.f, 1.f, unroutedOutput);
+		fillBus(1.f);
+		bus.quietChannels().reset();
+		routedPassthrough->deltaTap().setEnabled(true, fpp);
+		routedPassthrough->deltaTap().process(*routedPassthrough, bus);
+		QVERIFY(bus.quietChannels()[0]);
+		QVERIFY(bus.quietChannels()[1]);
+		routedPassthrough->deltaTap().setEnabled(false, fpp);
 
 		// ...while a doubling device's delta is the signal, not silence.
 		fillBus(1.f);
