@@ -62,6 +62,10 @@ inline void run(SampleFrame* dst, const sample_t* srcLeft, const sample_t* srcRi
 
 bool isSilent(const SampleFrame* src, int frames)
 {
+	// An empty (or negative) range is silent. Check before forming `&src[0][0]`:
+	// an empty buffer may have a null data pointer, and a negative count would wrap to a huge span.
+	if (frames <= 0) { return true; }
+
 	return isSilent({&src[0][0], static_cast<std::size_t>(frames * 2)});
 }
 
