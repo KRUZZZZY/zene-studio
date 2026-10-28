@@ -86,3 +86,12 @@ The completion check (`submit_check.py`) runs after this commit; its result is r
 - *Nothing new runs on the audio thread.* **Yes**: no code added.
 - *Old projects still load and render as before.* **Yes**: no code or data change.
 - *Sibling commands in the changed command files.* **N/A** (no command file changed).
+
+## Completion check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p10-68` - EXIT=1, log `logs/submit-1.log`:
+PASS commits on the branch, PASS working tree clean, PASS report, PASS tests (claim-only closure), **FAIL gates
+(feature_check.py)**. The gates FAIL is the same write-jail problem as above: `feature_check.py` cannot create its log
+folder beside the worktree, so it exits 1 before any check runs. The unmodified gate's checks all PASS when run from the
+copy (`gate-2.log`, EXIT=0). Fixing it needs the gate's log location changed in the shared script, which this lane may
+not edit. The five ASK items are answered in the Self-check section above.
