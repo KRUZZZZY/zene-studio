@@ -122,3 +122,14 @@ No new file, so no registration change. `RangeEditsTest.cpp` is already in `test
 - **Verdict basis:** the verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so no "already fixed" evidence is
   claimed. The finding's literal trigger (`all: false` with no tracks) is shown above not to occur (`ArrangementEdits.cpp:537`).
 - **Realtime:** not applicable. The change is on the command thread and touches no audio path.
+- **Sibling commands (`arrangement.*`):** none is in a file this commit changes. Those commands are registered in
+  the GUI and arrangement command files (for example `tests/src/gui/ArrangerTimelineTest.cpp` and
+  `src/gui/PanelShortcuts.cpp`), not in `src/core/ControlCommandsRange.cpp`. `rippledOthers` and `rippleOthers` sit in
+  that file's anonymous namespace (`src/core/ControlCommandsRange.cpp:49` on), so no other translation unit can call
+  them. `arrangement.modes` only sets the ripple mode this fix reads; its behaviour is unchanged (ArrangementModesTest,
+  18/18, step 14).
+- **Gates via `submit_check.py`:** still FAIL, for an environment reason. That check runs `feature_check.py`, which
+  creates `<worktree parent>/<name>-feature-check/` outside the write jail and exits 1 with `PermissionError`. The
+  eight gate commands it runs were run individually from the worktree (table above): six exit 0, and the two
+  ratchets' only REGRESSION lines are in files this commit does not change. The gate itself is not satisfied by
+  this report; a run from outside the jail is needed to get its single table.
