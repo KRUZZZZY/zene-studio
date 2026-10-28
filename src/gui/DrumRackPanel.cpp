@@ -148,7 +148,7 @@ void DrumRackPanel::rebuild(const QJsonArray& pads, const QStringList& signature
 {
 	for (const Row& row : m_rows)
 	{
-		for (QWidget* widget : std::initializer_list<QWidget*>{row.name, row.key, row.sample, row.replace})
+		for (QWidget* widget : std::initializer_list<QWidget*>{row.name, row.key, row.sample, row.replace, row.chain, row.effects})
 		{
 			widget->hide();
 			widget->deleteLater();

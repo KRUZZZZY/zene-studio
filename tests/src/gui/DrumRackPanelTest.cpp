@@ -34,6 +34,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPointer>
 #include <QSpinBox>
 #include <QToolButton>
 
@@ -148,9 +149,14 @@ private slots:
 		QCOMPARE(panel->nameEdit(0)->text(), QStringLiteral("bassdrum01"));
 
 		// Add Pad...: the sample asked for, then track.drum_rack_pad_add on the next key.
+		QPointer<QLabel> oldChainLabel(panel->chainLabel(0));
+		QPointer<QToolButton> oldEffectsButton(panel->effectsButton(0));
 		DrumRackPanel::setSampleChooser([](QWidget*) { return sample("snare01.ogg"); });
 		QTest::mouseClick(panel->addButton(), Qt::LeftButton);
 		QVERIFY2(panel->rowCount() == 2, qPrintable(panel->statusText()));
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+		QVERIFY(oldChainLabel.isNull());
+		QVERIFY(oldEffectsButton.isNull());
 		QCOMPARE(pads().size(), 2);
 		QCOMPARE(pads().at(1).toObject().value(QStringLiteral("key")).toInt(), 37);
 
