@@ -1824,7 +1824,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser
 			${CMAKE_BINARY_DIR}/plugins/RnnoiseDenoiser)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=rnnoisedenoiser)
+		# This target compiles the plug-in's own RnnoiseDenoiserEffect.cpp, which defines the
+		# descriptor with PLUGIN_EXPORT; without <name>_EXPORTS the plug-in's generated export header
+		# marks it dllimport on Windows (error C2491/dllimport), so use the static branch.
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=rnnoisedenoiser)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE rnnoise_vendored)
 		add_dependencies(${LMMS_TEST_NAME} rnnoise_vendored)
 		if(NOT MSVC)
@@ -1899,7 +1902,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/Vestige
 			${CMAKE_BINARY_DIR}/plugins/Vestige)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=vestige)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=vestige)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
 		add_dependencies(${LMMS_TEST_NAME} vestige)
 		# The vstbase module resolves the LMMS core symbols from its host process,
@@ -2226,7 +2229,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.h)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=bitinvader)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=bitinvader)
 	endif()
 	# cluster new-p17-203: the Watsyn wavetable-snapshot regression compiles the plug-in's
 	# own sources into the test (the SlicerT/Vibed/BitInvader shape), so the note path under
@@ -2411,6 +2414,21 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
 	endif()
+	# macOS deployment floors for tests only. std::barrier, std::latch and std::binary_semaphore need
+	# macOS 11.0 in Apple's libc++; std::filesystem needs 10.15. The product floor (ZENE_MACOS_MINIMUM in
+	# CMakeLists.txt) is unchanged; these targets are never shipped.
+	if(APPLE)
+		set(ZENE_TEST_MACOS_FLOOR "")
+		if(LMMS_TEST_NAME MATCHES "^(RemotePluginShmFifoTest|NotePlaybackTest|PluginPortsMigrationTest|WasmWorkerPoolTest|TempoMapTest|ModulationAudioViewTest)$")
+			set(ZENE_TEST_MACOS_FLOOR 11.0)
+		elseif(LMMS_TEST_NAME MATCHES "^(BounceInPlaceTest|VstSubPluginFeaturesTest|TwoTrackRecordingHarness)$")
+			set(ZENE_TEST_MACOS_FLOOR 10.15)
+		endif()
+		if(ZENE_TEST_MACOS_FLOOR)
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE -mmacosx-version-min=${ZENE_TEST_MACOS_FLOOR})
+			target_link_options(${LMMS_TEST_NAME} PRIVATE -mmacosx-version-min=${ZENE_TEST_MACOS_FLOOR})
+		endif()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfzFilePoolTest")
 		# The top level only looks for Threads on POSIX hosts; MinGW and
 		# Windows reach this target without it, so find it here.
@@ -2558,7 +2576,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${NAM_DIR} "${CMAKE_BINARY_DIR}/plugins/NeuralAmp"
 			${NAM_DIR}/rtneural/modules/Eigen ${NAM_DIR}/rtneural/modules/json)
 		target_compile_options(${LMMS_TEST_NAME} PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_NAM_TEST_SEAM PLUGIN_NAME=neuralamp)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_NAM_TEST_SEAM PLUGIN_STATIC_DEFINE PLUGIN_NAME=neuralamp)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 
@@ -4602,6 +4620,11 @@ if(WANT_WASM)
 		${CMAKE_DL_LIBS}
 	)
 	target_compile_features(WasmWorkerPoolTest PRIVATE cxx_std_20)
+	# std::barrier and std::binary_semaphore need macOS 11.0 (test-only floor; see the foreach loop).
+	if(APPLE)
+		target_compile_options(WasmWorkerPoolTest PRIVATE -mmacosx-version-min=11.0)
+		target_link_options(WasmWorkerPoolTest PRIVATE -mmacosx-version-min=11.0)
+	endif()
 	target_compile_definitions(WasmWorkerPoolTest PRIVATE
 		LMMS_TESTING
 		WASM_TEST_DISABLE_PARALLEL_COMPILATION

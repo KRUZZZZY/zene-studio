@@ -31,7 +31,9 @@
 
 #include <QtTest>
 
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QByteArrayView>
+#endif
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -571,7 +573,11 @@ private slots:
 		for (qint64 remaining = largeScriptSize; remaining > 0;)
 		{
 			const qsizetype chunkSize = static_cast<qsizetype>(qMin<qint64>(zeroes.size(), remaining));
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 			expectedHash.addData(QByteArrayView(zeroes.constData(), chunkSize));
+#else
+			expectedHash.addData(zeroes.constData(), static_cast<int>(chunkSize));  // Qt 5 (hosted CI)
+#endif
 			remaining -= chunkSize;
 		}
 

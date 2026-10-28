@@ -37,8 +37,37 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace
 {
+
+// Thread CPU time in the same timespec form clock_gettime(CLOCK_THREAD_CPUTIME_ID) fills, so the
+// callers below read identically on POSIX and Windows. GetThreadTimes reports kernel and user time
+// in 100 ns units.
+void threadCpuTime(timespec& t)
+{
+#ifdef _WIN32
+	FILETIME creation{}, exitTime{}, kernel{}, user{};
+	GetThreadTimes(GetCurrentThread(), &creation, &exitTime, &kernel, &user);
+	const auto toHundredNs = [](const FILETIME& ft) {
+		return (static_cast<uint64_t>(ft.dwHighDateTime) << 32) | ft.dwLowDateTime;
+	};
+	const uint64_t hundredNs = toHundredNs(kernel) + toHundredNs(user);
+	t.tv_sec = static_cast<time_t>(hundredNs / 10'000'000u);
+	t.tv_nsec = static_cast<long>((hundredNs % 10'000'000u) * 100u);
+#else
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t);
+#endif
+}
 
 constexpr double kTwoPi = 6.283185307179586476925286766559;
 constexpr int64_t kMaxGeneratedSamples = 4'194'304;
@@ -631,9 +660,9 @@ int main(int argc, char** argv)
 		{
 			const size_t n = std::min(static_cast<size_t>(opt.blockSize), wavIn.size() - pos);
 			std::memcpy(inB.data(), wavIn.data() + pos, n * sizeof(float));
-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
+			threadCpuTime(t0);
 			model->process(inB.data(), outB.data(), static_cast<int>(n));
-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
+			threadCpuTime(t1);
 			cpuUs += (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
 			std::memcpy(wavOut.data() + pos, outB.data(), n * sizeof(float));
 			pos += n;
@@ -751,9 +780,9 @@ int main(int argc, char** argv)
 
 		timespec t0{};
 		timespec t1{};
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
+		threadCpuTime(t0);
 		model->process(inBlock.data(), outBlock.data(), opt.blockSize);
-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
+		threadCpuTime(t1);
 
 		const double cpuUs = (t1.tv_sec - t0.tv_sec) * 1e6 +
 			(t1.tv_nsec - t0.tv_nsec) / 1e3;
