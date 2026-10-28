@@ -111,7 +111,11 @@ Vst3Effect::Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 
 		if (auto* engine = Engine::audioEngine())
 		{
-			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error);
+			// A refused preparation is reported, not left as a silent effect (cluster stress-2).
+			if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error))
+			{
+				qWarning() << "VST3:" << modulePath << classId << "could not be prepared:" << error;
+			}
 		}
 		cacheLatency();
 		m_plugin.setLatencyChangedCallback([this] { cacheLatency(); });

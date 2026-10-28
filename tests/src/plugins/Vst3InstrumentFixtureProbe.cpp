@@ -228,6 +228,10 @@ int main()
 	setup.maxSamplesPerBlock = kBlockSize;
 	setup.sampleRate = 44100.0;
 	check(processor->setupProcessing(setup) == kResultOk, "setupProcessing(kSample32, 44.1 kHz, 512)");
+	// A host activates the buses it drives (kDefaultActive asks for exactly that, ivstcomponent.h);
+	// the fixture renders nothing into an output bus nobody activated (cluster stress-2).
+	check(component->activateBus(kAudio, kOutput, 0, true) == kResultOk, "activateBus(audio output 0)");
+	check(component->activateBus(kEvent, kInput, 0, true) == kResultOk, "activateBus(event input 0)");
 	check(component->setActive(true) == kResultOk, "setActive(true)");
 	const tresult processing = processor->setProcessing(true);
 	check(processing == kResultOk || processing == kNotImplemented, "setProcessing(true)");
