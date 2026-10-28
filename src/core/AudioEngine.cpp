@@ -467,7 +467,13 @@ void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
 static thread_local bool s_renderingThread = false;
 
 #ifdef LMMS_TESTING
-thread_local int AudioEngine::s_changeInModelDepth = 0;
+//! Nesting depth of requestChangeInModel() on the calling thread (the guard
+//! is recursive). Only read by isChangeInModelHeld() in tests. File-local
+//! rather than a static member: a thread_local data member of the exported
+//! AudioEngine class fails MSVC (C2492) when the class is dllexported.
+static thread_local int s_changeInModelDepth = 0;
+
+bool AudioEngine::isChangeInModelHeld() const noexcept { return s_changeInModelDepth > 0; }
 #endif
 
 AudioEngine::AudioEngine(bool renderOnly)

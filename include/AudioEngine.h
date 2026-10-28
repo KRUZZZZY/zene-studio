@@ -614,7 +614,7 @@ public:
 	//! guard through requestChangeInModel(). A test uses it to prove a topology
 	//! rebuild excludes the audio thread for its whole duration; it is not a
 	//! product query (the render thread takes m_changeMutex directly).
-	bool isChangeInModelHeld() const noexcept { return s_changeInModelDepth > 0; }
+	bool isChangeInModelHeld() const noexcept;
 
 	/*! Test-only: takes the change lock like requestChangeInModel(), but
 	 *  reports a CONTENDED acquisition through @a contendedProbe - the probe is
@@ -870,11 +870,6 @@ private:
 
 	std::recursive_mutex m_changeMutex;
 	std::atomic<int> m_modelChangeWaiters{0};
-#ifdef LMMS_TESTING
-	//! Nesting depth of requestChangeInModel() on the calling thread (the guard
-	//! is recursive). Only read by isChangeInModelHeld() in tests.
-	static thread_local int s_changeInModelDepth;
-#endif
 	std::atomic<AutomatableModelRegistry*> m_automatableModelRegistry{nullptr};
 	std::atomic<std::uint64_t> m_registeredAutomatableModelCount{0};
 	std::atomic<std::uint64_t> m_automatableModelRegistrationFailures{0};

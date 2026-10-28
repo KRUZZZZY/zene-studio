@@ -27,7 +27,6 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -103,7 +102,7 @@ QString scriptFileSha256(const QString& path)
 			if (file.atEnd() && file.error() == QFileDevice::NoError) { break; }
 			return {};
 		}
-		hash.addData(QByteArrayView(chunk));
+		hash.addData(chunk);
 	}
 	if (file.error() != QFileDevice::NoError) { return {}; }
 	return QString::fromLatin1(hash.result().toHex());

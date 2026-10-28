@@ -2412,6 +2412,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfzFilePoolTest")
+		# The top level only looks for Threads on POSIX hosts; MinGW and
+		# Windows reach this target without it, so find it here.
+		find_package(Threads REQUIRED)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			"$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -5464,6 +5467,7 @@ if(NOT MSVC)
 	target_link_libraries(NamModelLoaderTest PRIVATE m)
 endif()
 target_compile_features(NamModelLoaderTest PRIVATE cxx_std_20)
+target_compile_options(NamModelLoaderTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 
 # Native VST3 instrument fixture and its probe.
 #

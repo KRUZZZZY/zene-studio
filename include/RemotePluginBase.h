@@ -53,6 +53,11 @@
 #ifdef LMMS_HAVE_PROCESS_H
 #include <process.h>
 #endif
+// getpid() and usleep() are used by the shm-FIFO sync path on POSIX hosts
+// that lack SysV semaphores (e.g. macOS), where the unistd include below is skipped.
+#ifdef LMMS_HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 #else // !(LMMS_HAVE_SYS_IPC_H && LMMS_HAVE_SEMAPHORE_H)
 #ifdef LMMS_HAVE_UNISTD_H
 #include <unistd.h>
