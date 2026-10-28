@@ -127,29 +127,37 @@ void ControllerScript::budgetHook(lua_State* L, lua_Debug*)
 	}
 }
 
+namespace
+{
+
+//! Why @a options cannot start on @a client, or an empty string.
+QString startRefusal(const ControllerScript::Options& options, const MidiClient* client, bool replacing, int running)
+{
+	if (client == nullptr) { return QStringLiteral("no MIDI client"); }
+	if (options.name.isEmpty()) { return QStringLiteral("a controller script needs a name"); }
+	if (!replacing && running >= ControllerScript::MaxScripts)
+	{
+		return QStringLiteral("%1 controller scripts are running; stop one first").arg(ControllerScript::MaxScripts);
+	}
+	if (client->isRaw()) { return QString(); }
+	if (!options.input.isEmpty() && !client->readablePorts().contains(options.input))
+	{
+		return QStringLiteral("no MIDI input '%1' (inputs: %2)").arg(options.input, client->readablePorts().join(QStringLiteral(", ")));
+	}
+	if (!options.output.isEmpty() && !client->writablePorts().contains(options.output))
+	{
+		return QStringLiteral("no MIDI output '%1' (outputs: %2)").arg(options.output, client->writablePorts().join(QStringLiteral(", ")));
+	}
+	return QString();
+}
+
+} // namespace
+
 ControllerScript* ControllerScript::start(const Options& options, MidiClient* client, QString* error)
 {
 	if (client == nullptr && Engine::audioEngine() != nullptr) { client = Engine::audioEngine()->midiClient(); }
-	if (client == nullptr) { *error = QStringLiteral("no MIDI client"); return nullptr; }
-	if (options.name.isEmpty()) { *error = QStringLiteral("a controller script needs a name"); return nullptr; }
-	if (!scripts().contains(options.name) && scripts().size() >= MaxScripts)
-	{
-		*error = QStringLiteral("%1 controller scripts are running; stop one first").arg(MaxScripts);
-		return nullptr;
-	}
-	if (!client->isRaw())
-	{
-		if (!options.input.isEmpty() && !client->readablePorts().contains(options.input))
-		{
-			*error = QStringLiteral("no MIDI input '%1' (inputs: %2)").arg(options.input, client->readablePorts().join(QStringLiteral(", ")));
-			return nullptr;
-		}
-		if (!options.output.isEmpty() && !client->writablePorts().contains(options.output))
-		{
-			*error = QStringLiteral("no MIDI output '%1' (outputs: %2)").arg(options.output, client->writablePorts().join(QStringLiteral(", ")));
-			return nullptr;
-		}
-	}
+	*error = startRefusal(options, client, scripts().contains(options.name), static_cast<int>(scripts().size()));
+	if (!error->isEmpty()) { return nullptr; }
 	auto* script = new ControllerScript(options, client);
 	if (!script->load(error))
 	{
