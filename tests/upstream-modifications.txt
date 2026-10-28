@@ -5499,3 +5499,5 @@ include/LinkedModelGroupViews.h	new-p10-210: LinkedModelGroupView keeps the layo
 src/gui/LinkedModelGroupViews.cpp	new-p10-210: removeControl looks up the layout item by the display name stored at addControl, not by the control id (they differ for Lv2 ports); modelChanged and addControl use the ControlEntry shape; LinkedModelGroupViewLifetimeTest covers the id != display case.
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp	# Removing a linked control can dereference a missing layout item
 tests/src/core/ScriptBindingsTest.cpp	# Lua wrappers can dereference objects deleted during a read flush
+include/MidiEventToByteSeq.h	BUG new-p23-156: document that the buffer must hold bufsize bytes (not a fixed 3) and that a message which does not fit returns 0 with nothing written; covered by MidiEventToByteSeqTest.
+src/core/midi/MidiEventToByteSeq.cpp	BUG new-p23-156: build the message in a local array and copy it out only when it fits bufsize (the release build had only a Q_ASSERT on bufsize, so a short buffer was written past its end); covered by MidiEventToByteSeqTest.
