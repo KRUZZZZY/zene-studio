@@ -70,3 +70,22 @@ Commit 1 (fix, test, registration of the CMake target, reason line, this report)
 - `docs/qwen-fixes-2026-10/cluster-new-p10-318.md` (this report)
 
 Commit 2 (manifest registration, after commit 1 so that the derived manifests can see the test): `tests/fork-sources.txt` (test and this report) and `tests/all-sources.txt` (test). Their gate results are in the self-check below.
+
+## Self-check
+
+Completion check: `submit_check.py` run as `submit-check-1.log` (EXIT=1) before commit 2. Its items:
+
+- **commits on the branch**: PASS (commit 1 `e5773c6eaa`).
+- **working tree clean**: FAIL before commit 2 only, because the two manifest files were still uncommitted. Commit 2 commits them (see "Files committed").
+- **report**: PASS. **tests added or changed**: PASS. **new test files registered in tests/CMakeLists.txt**: PASS.
+- **gates (feature_check.py)**: FAIL, and environmental. `submit_check.py` runs the unmodified `feature_check.py`, which tries to create `<worktree>-feature-check` outside my write-jail. It fails with the same PermissionError as command 17 (`gates-1.log`). The gate content passes with the log folder redirected (`gates-4-precommit.log`, `gates-5-postcommit1.log`, both EXIT=0). I did not change the gate.
+
+Answers to the ask items:
+
+1. **Fails with the change reverted, passes with it.** Yes. Revert: `test-3-reverted-red.log`, EXIT=1, FAIL `zeroFrameBlockHoldsLastOutput`. With the fix: `test-2-green.log` and `test-4-fixed-green.log`, both EXIT=0, 5 of 5 passed. The revert and re-apply are steps 7-11 of the command table, with the patch in `fix.patch`.
+2. **Deterministic.** The test has no sleeps, no wall-clock reads and no threads. Its input is a fixed buffer of 0.25 samples, and the frame count is passed explicitly in `AudioBus{busData, 1, frames}` (0 for the empty block). `Engine::init(true)` only sets up the headless Dummy audio device used by the other Engine tests. The expected value is `0.5 + sqrt(0.125)` from the default base (0.5), amount (1) and abs model. The result does not depend on timing or order.
+3. **Fix at the cause; callers and siblings.** The cause is the single division at `PeakControllerEffect.cpp:138`. The guard at `:100-104` runs before the mute step and the RMS, so it covers both the abs and non-abs branches. Callers that reach `processImpl`: `AudioPlugin.h:184` (`playImpl`) and `:282-284` (`processAudioBuffer`), both through the router (`AudioPorts.h:175-211`). `processImpl` returns `Continue` for an empty block, which is the same status these paths already handle. `lastSample()` (`PeakControllerEffect.h:26-29`) is the public read; I did not audit its consumers.
+4. **No collateral.** The guard applies only when `frames() == 0`. Non-empty blocks take the old path unchanged, which `nonEmptyBlockMeasuresSignal` checks. The change does not touch save or load, the control surface, or any limit, and no saved project changes. The plugin module builds with the product's `-Werror` flags (`build-10-plugin-module-noccache.log`, EXIT=0).
+5. **Verdict.** REAL, so no ALREADY-FIXED or FALSE-POSITIVE evidence is needed. The NaN is real, but on Qt 6.12 it is clamped rather than propagated, so the observable effect is the spurious 0.0 output described above.
+
+Realtime: the change adds one compare-and-return on the audio thread. It allocates nothing, takes no lock, and logs nothing.
