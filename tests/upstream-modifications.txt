@@ -5505,3 +5505,4 @@ include/RingBuffer.h	cluster new-p14-264: saturate non-finite and out-of-range m
 tests/src/core/ControlDeviceVendorTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
 tests/src/gui/EffectRackAddTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
 tests/src/plugins/DelayControlsTest.cpp	# ControlDeviceSupport::resolveTrackTarget dereferences Engine::getSong() without a null check.
+src/core/DataFile.cpp	new-p23-77: recoverPendingWrite() returns at once for an empty file name, so an unnamed DataFile no longer adopts or discards the working directory's ./.new temp; regression DataFileSaveIntegrityTest::unnamedDataFileLeavesTheWorkingDirectoryTempAlone.
