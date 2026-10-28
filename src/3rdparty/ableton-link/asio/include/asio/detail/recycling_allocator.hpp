@@ -16,9 +16,11 @@
 #endif // defined(_MSC_VER) && (_MSC_VER >= 1200)
 
 #include "asio/detail/config.hpp"
+#include <new>
 #include "asio/detail/memory.hpp"
 #include "asio/detail/thread_context.hpp"
 #include "asio/detail/thread_info_base.hpp"
+#include "asio/detail/throw_exception.hpp"
 
 #include "asio/detail/push_options.hpp"
 
@@ -49,6 +51,12 @@ public:
 
   T* allocate(std::size_t n)
   {
+    // Zene patch (new-p15-163): refuse a count whose byte size would wrap, as std::allocator does.
+    if (n > std::size_t(-1) / sizeof(T))
+    {
+      std::bad_array_new_length ex;
+      asio::detail::throw_exception(ex);
+    }
 #if !defined(ASIO_DISABLE_SMALL_BLOCK_RECYCLING)
     void* p = thread_info_base::allocate(Purpose(),
         thread_context::top_of_thread_call_stack(),
