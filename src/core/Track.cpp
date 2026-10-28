@@ -1426,8 +1426,9 @@ void Track::loadFrozenTake(const QDomElement& element)
 void Track::adoptTempoMapForFrozenTake(const TempoMap& map)
 {
 	if (!m_frozen.isFrozen()) { return; }
+	// Always kept, inactive or not: the pass helper decides from this copy, so a stale in-force copy must not survive.
 	m_frozenLastMapInForce = map.active() && !map.empty();
-	if (m_frozenLastMapInForce) { m_frozenLastMap = map; }
+	m_frozenLastMap = map;
 	m_frozenLastMapKnown = true;
 }
 
@@ -1495,7 +1496,7 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 	const int globalTempo = static_cast<int>(song->getTempo());
 	const bool pinned = song->tempoMap().withRealtimeMap([&](const TempoMap& map) {
 		m_frozenLastMapInForce = map.active() && !map.empty();
-		if (m_frozenLastMapInForce) { m_frozenLastMap = map; }
+		m_frozenLastMap = map;
 	});
 	if (pinned) { m_frozenLastMapKnown = true; }
 	else if (!m_frozenLastMapKnown)
@@ -1505,10 +1506,10 @@ bool Track::playFrozenTake(const TimePos& start, f_cnt_t /*frames*/, f_cnt_t off
 		m_frozenTakePlaying.store(false, std::memory_order_relaxed);
 		return false;
 	}
-	const qint64 sourceIn = m_frozenLastMapInForce
-		? frozenTakeSourceFrame(m_frozenLastMap, globalTempo, m_frozen.startTicks, position,
-			static_cast<int>(bufferRate), oneRate)
-		: static_cast<qint64>(std::llround((position - m_frozen.startTicks) * oneRate));
+	// Every pass maps through the one helper, in force or not: its no-tempo-map branch is the widened span, so a
+	// negative take start with a large seek cannot wrap here either.
+	const qint64 sourceIn = frozenTakeSourceFrame(m_frozenLastMap, globalTempo, m_frozen.startTicks, position,
+		static_cast<int>(bufferRate), oneRate);
 	const qint64 sourceOut = static_cast<qint64>(m_frozenBuffer->size());
 	if (sourceIn >= sourceOut)
 	{

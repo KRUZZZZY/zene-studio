@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "ArrangementEdits.h"
@@ -488,6 +489,37 @@ private slots:
 		control::ProjectAssetScan after;
 		QVERIFY(control::controlScanProjectAssets(project, &after, &error));
 		QCOMPARE(after.missingCount(), 0);
+	}
+
+	//! A saved take can start below tick 0 (parseTick takes the whole tick_t range) and transport.seek reaches
+	//! tick 0x7fffffff. The span between them is 2^31 ticks, past tick_t, so the no-tempo-map pass must map it
+	//! wide and find the pass past the take's audio: no voice is queued. Subtracted in tick_t, the span wraps to
+	//! a negative source frame that passes the end check and queues a voice from it.
+	void negativeTakeStartAndHugeSeekDoNotWrapTheSourceFrame()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = trackWithOneClip(scratch.path());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("t.wav")), 330.0);
+		const TempoMap map = Engine::getSong()->tempoMap().map();
+		QVERIFY2(!map.active() || map.empty(), "the fixture must take the no-tempo-map path");
+
+		constexpr tick_t takeStart = -1;
+		constexpr tick_t hugeSeek = std::numeric_limits<tick_t>::max();  // transport.seek's top tick, 0x7fffffff
+		QString why;
+		// A whole-track take (end <= start): the track's pass is the take's alone, so play() reports the take's result.
+		QVERIFY2(track->freezeTo(wav, takeStart, takeStart, {}, &why, false), qPrintable(why));
+		AudioEngine* const audio = Engine::audioEngine();
+		const bool queued = track->play(TimePos(hugeSeek), audio->framesPerPeriod(), 0, -1);
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+		QVERIFY2(!queued, "a pass past the take's audio queued a voice from a wrapped source frame");
+
+		// A pass refused for lying past the take's audio must release its pass latch, as the window check does: the
+		// next pass inside the take still plays, with no playback jump and no re-freeze in between. A wrapped pass
+		// takes the voice branch instead, which leaves the latch set and blocks that next pass.
+		const bool next = track->play(TimePos(10), audio->framesPerPeriod(), 0, -1);
+		audio->removePlayHandlesOfTypes(track, PlayHandle::Type::SamplePlayHandle);
+		QVERIFY2(next, "the pass after a refused pass past the take's audio was blocked by its latch");
 	}
 };
 
