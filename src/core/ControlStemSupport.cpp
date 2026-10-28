@@ -516,6 +516,23 @@ static bool isPathSeparator(QChar c)
 	return c == QLatin1Char('\\') || c == QLatin1Char('/');
 }
 
+//! The index of the first separator at or after \a from, or the size when none.
+static int nextSeparator(const QString& value, int from)
+{
+	while (from < value.size() && !isPathSeparator(value.at(from))) { ++from; }
+	return from;
+}
+
+//! Whether \a value opens with two separators, then a non-empty server, a
+//! separator and a non-empty share (any trailing path is not checked).
+static bool isCompleteUncPath(const QString& value)
+{
+	if (!isPathSeparator(value.at(0)) || !isPathSeparator(value.at(1))) { return false; }
+	const int serverEnd = nextSeparator(value, 2);
+	const int shareEnd = nextSeparator(value, serverEnd + 1);
+	return serverEnd > 2 && serverEnd < value.size() && shareEnd > serverEnd + 1;
+}
+
 /*! Whether \a value is a Windows absolute path, whatever this host is: a drive
  *  path (`C:\…` or `C:/…`, but NOT `C:…`, which is drive-relative) or a UNC
  *  share (`\\server\share…` / `//server/share…`: a non-empty server AND a
@@ -529,17 +546,7 @@ static bool isPathSeparator(QChar c)
 static bool isWindowsAbsolutePath(const QString& value)
 {
 	if (value.size() < 3) { return false; }
-	if (isPathSeparator(value.at(0)))
-	{
-		if (!isPathSeparator(value.at(1))) { return false; }
-		// The server name runs from index 2 to the next separator; it must be
-		// non-empty and followed by a separator, then a non-empty share name.
-		int serverEnd = 2;
-		while (serverEnd < value.size() && !isPathSeparator(value.at(serverEnd))) { ++serverEnd; }
-		if (serverEnd == 2 || serverEnd >= value.size()) { return false; }
-		const int shareStart = serverEnd + 1;
-		return shareStart < value.size() && !isPathSeparator(value.at(shareStart));
-	}
+	if (isPathSeparator(value.at(0))) { return isCompleteUncPath(value); }
 	return value.at(0).isLetter() && value.at(1) == QLatin1Char(':') && isPathSeparator(value.at(2));
 }
 
