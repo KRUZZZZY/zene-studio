@@ -632,6 +632,83 @@ private slots:
 		QVERIFY(!tap.enabled());
 	}
 
+	//! The tap hands the mixer the silence of the delta, measured and never assumed. A device that
+	//! changes nothing (gain 1) leaves an exact zero delta, which is quiet on both overloads; a
+	//! doubling device's delta is the signal, so it stays non-silent. With silence tracking off the
+	//! planar block is still assumed non-silent, as AudioBuffer documents.
+	void theDeltaTapMeasuresTheSilenceOfItsDelta()
+	{
+		EffectChain* chain = &Engine::mixer()->mixerChannel(kEmptyChannel)->m_fxChain;
+		auto* passthrough = new PatcherScaleEffect(chain, 1.f, 1.f);
+		auto* doubling = new PatcherScaleEffect(chain, kBypassedGain, kBypassedGain);
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+
+		// The plain chain's path: an interleaved stereo bus.
+		std::vector<SampleFrame> block(fpp);
+		SampleFrame* busData[1] = {block.data()};
+		AudioBus bus{busData, 1, fpp};
+		const auto fillBus = [&block](float value)
+		{
+			for (auto& frame : block)
+			{
+				frame[0] = value;
+				frame[1] = value;
+			}
+		};
+
+		// The graph's path: a planar block, run with the silence flags the graph gives it.
+		AudioBuffer buffer{fpp};
+		buffer.allocateInterleavedBuffer();
+		const auto fillBuffer = [&buffer, fpp](float value)
+		{
+			std::fill_n(buffer.buffer(0).data(), fpp, value);
+			std::fill_n(buffer.buffer(1).data(), fpp, value);
+			toInterleaved(buffer.groupBuffers(0), buffer.interleavedBuffer());
+			buffer.assumeNonSilent(0);
+			buffer.assumeNonSilent(1);
+		};
+
+		passthrough->deltaTap().setEnabled(true, fpp);
+		doubling->deltaTap().setEnabled(true, fpp);
+		QVERIFY(passthrough->deltaTap().enabled());
+		QVERIFY(doubling->deltaTap().enabled());
+
+		// The bus: a silent block through a device that changes nothing is quiet...
+		fillBus(0.f);
+		bus.quietChannels().reset();
+		passthrough->deltaTap().process(*passthrough, bus);
+		QVERIFY(bus.quietChannels()[0]);
+		QVERIFY(bus.quietChannels()[1]);
+
+		// ...while a doubling device's delta is the signal, not silence.
+		fillBus(1.f);
+		doubling->deltaTap().process(*doubling, bus);
+		QVERIFY(!bus.quietChannels()[0]);
+		QVERIFY(!bus.quietChannels()[1]);
+
+		// The buffer with silence tracking on: the same two answers.
+		buffer.enableSilenceTracking(true);
+		fillBuffer(0.f);
+		passthrough->deltaTap().process(*passthrough, buffer);
+		QVERIFY(buffer.silenceFlags()[0]);
+		QVERIFY(buffer.silenceFlags()[1]);
+
+		fillBuffer(1.f);
+		doubling->deltaTap().process(*doubling, buffer);
+		QVERIFY(!buffer.silenceFlags()[0]);
+		QVERIFY(!buffer.silenceFlags()[1]);
+
+		// The buffer with tracking off: nothing is measured, so the block stays non-silent.
+		buffer.enableSilenceTracking(false);
+		fillBuffer(0.f);
+		passthrough->deltaTap().process(*passthrough, buffer);
+		QVERIFY(!buffer.silenceFlags()[0]);
+		QVERIFY(!buffer.silenceFlags()[1]);
+
+		passthrough->deltaTap().setEnabled(false, fpp);
+		doubling->deltaTap().setEnabled(false, fpp);
+	}
+
 private:
 	EffectChain* chainUnderTest() { return &Engine::mixer()->mixerChannel(kChannel)->m_fxChain; }
 

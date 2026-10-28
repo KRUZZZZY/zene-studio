@@ -59,9 +59,10 @@ bool DeltaTap::process(Effect& effect, AudioBus& bus) noexcept
 	std::copy(samples, samples + count, m_dry.begin());
 	const bool more = effect.processAudioBuffer(bus);
 	for (std::size_t i = 0; i < count; ++i) { samples[i] -= m_dry[i]; }
-	// The delta of a silent output is the inverted input: never flagged quiet.
-	bus.quietChannels().set(0, false);
-	bus.quietChannels().set(1, false);
+	// The delta is measured, not assumed: a device that changes nothing leaves silence, while a
+	// silent output's delta is the inverted input, which is audio. The same update the effect ran on its output.
+	if (const auto* apm = effect.audioPortsModel()) { bus.update(*apm); }
+	else { bus.updateAll(); }
 	return more;
 }
 
@@ -79,8 +80,8 @@ bool DeltaTap::process(Effect& effect, AudioBuffer& buffer) noexcept
 		left[i] -= m_dry[i];
 		right[i] -= m_dry[frames + i];
 	}
-	buffer.assumeNonSilent(0);
-	buffer.assumeNonSilent(1);
+	// Measured like the output: with silence tracking off this assumes non-silence, as before.
+	buffer.updateSilenceFlags(0b11);
 	return more;
 }
 
