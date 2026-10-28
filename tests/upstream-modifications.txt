@@ -5514,3 +5514,4 @@ tests/src/core/RecordingRealtimeTest.cpp	new-p10-345: adds ringBufferReadRejects
 src/core/Note.cpp	new-p14-200: loadUnquantisedTiming() accepts a saved qpos/qlen only when the pair is a note the song can hold (pos < MaxSongLength and pos + len <= MaxSongLength, summed in 64 bits), so restore_timing cannot move a note past the song end or wrap its end tick. Proof: MidiProbabilityPersistenceTest::unquantisedTimingOutsideTheSongIsNotRestored.
 src/core/MixHelpers.cpp	new-p9-283: isSilent(const SampleFrame*, int) returns true for frames <= 0 before forming &src[0][0] (no null dereference, no wrap of a negative count into a huge span); covered by AudioBufferTest IsSilent_ZeroOrNegativeFramesAreSilent.
 tests/src/core/AudioBufferTest.cpp	new-p9-283: regressions for MixHelpers::isSilent on normal frames, zero-frame (null and loud pointer) and negative frame counts.
+tests/src/core/GrooveTemplateTest.cpp	# GrooveTemplate target tick arithmetic overflows before clamping

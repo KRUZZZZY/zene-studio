@@ -409,6 +409,41 @@ private slots:
 		}
 	}
 
+	/*! The timing offset is added to the grid in wide arithmetic and narrowed
+	 *  CLAMPED. A note at the end of the timeline whose slot carries a positive
+	 *  shift stays on the last tick, where tick_t addition would wrap it negative. */
+	void theTimingOffsetDoesNotWrapAtTheEndOfTheTimeline()
+	{
+		GrooveTemplate groove(QStringLiteral("late"), 48, 12);
+		QVERIFY(groove.setStep(0, GrooveStep{5, GrooveStep::NoVelocityOpinion}));
+		const tick_t last = std::numeric_limits<tick_t>::max();
+		QCOMPARE(groove.targetTickFor(last), last);
+	}
+
+	/*! The random jitter is added to the moved position in wide arithmetic too.
+	 *  A note on the last tick that the groove leaves in place, drawn a positive
+	 *  jitter, stays within the jitter of the last tick. Tick_t addition would
+	 *  wrap it negative, and the floor would then pull the note to tick 0. The
+	 *  seeds are fixed and there are enough of them that some draw a positive
+	 *  jitter, so this is deterministic, not a sampled probability. */
+	void theRandomJitterDoesNotWrapAtTheEndOfTheTimeline()
+	{
+		const tick_t last = std::numeric_limits<tick_t>::max();
+		const tick_t randomTicks = 6;
+		const GrooveTemplate flat(QStringLiteral("flat"), 48, 12);
+		QVERIFY(flat.neutral());
+		for (std::uint32_t seed = 1; seed <= 64; ++seed)
+		{
+			NoteTable notes;
+			notes.add(60, static_cast<int>(last), 12, 100);
+			applyGroove(notes.vector(), flat, 1.0f, randomTicks, 0, seed);
+			const tick_t moved = notes.vector().front()->pos().getTicks();
+			QVERIFY2(moved >= last - randomTicks && moved <= last,
+				qPrintable(QStringLiteral("seed %1 moved the last-tick note to %2")
+					.arg(seed).arg(moved)));
+		}
+	}
+
 	//! A step saved at exactly half a slot (accepted before the half-slot bound)
 	//! loads one tick inside its slot rather than being dropped; a step wider
 	//! than half a slot was never valid and still leaves the slot neutral.
