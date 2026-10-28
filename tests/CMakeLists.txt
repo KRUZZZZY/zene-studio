@@ -2780,7 +2780,7 @@ target_include_directories(TapTempoTest PRIVATE
 	${CMAKE_SOURCE_DIR}/plugins/TapTempo
 	${CMAKE_BINARY_DIR}/plugins/TapTempo
 )
-target_compile_definitions(TapTempoTest PRIVATE PLUGIN_NAME=taptempo)
+target_compile_definitions(TapTempoTest PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=taptempo)
 set_tests_properties(TapTempoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -2935,7 +2935,7 @@ target_link_libraries(ReverbSCPluginStateTest PRIVATE
 	${QT_QTTEST_LIBRARY}
 )
 target_compile_features(ReverbSCPluginStateTest PRIVATE cxx_std_20)
-target_compile_definitions(ReverbSCPluginStateTest PRIVATE
+target_compile_definitions(ReverbSCPluginStateTest PRIVATE PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=reverbsc
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_test_malloc>
@@ -4148,7 +4148,7 @@ target_link_libraries(SlicerTZoomTest PRIVATE
 	${FFTW3F_LIBRARIES}
 )
 target_compile_features(SlicerTZoomTest PRIVATE cxx_std_20)
-target_compile_definitions(SlicerTZoomTest PRIVATE
+target_compile_definitions(SlicerTZoomTest PRIVATE PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=slicert
 )
@@ -4260,7 +4260,7 @@ target_link_libraries(TripleOscillatorUserWaveTest PRIVATE
 	${FFTW3F_LIBRARIES}
 )
 target_compile_features(TripleOscillatorUserWaveTest PRIVATE cxx_std_20)
-target_compile_definitions(TripleOscillatorUserWaveTest PRIVATE
+target_compile_definitions(TripleOscillatorUserWaveTest PRIVATE PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=tripleoscillator
 )
@@ -4295,7 +4295,7 @@ target_link_libraries(DelayControlsTest PRIVATE
 	${QT_QTTEST_LIBRARY}
 )
 target_compile_features(DelayControlsTest PRIVATE cxx_std_20)
-target_compile_definitions(DelayControlsTest PRIVATE
+target_compile_definitions(DelayControlsTest PRIVATE PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=delay
 )
@@ -4364,7 +4364,7 @@ target_link_libraries(ConvolutionFftwPlanScopeTest PRIVATE
 	${FFTW3F_LIBRARIES}
 )
 target_compile_features(ConvolutionFftwPlanScopeTest PRIVATE cxx_std_20)
-target_compile_definitions(ConvolutionFftwPlanScopeTest PRIVATE
+target_compile_definitions(ConvolutionFftwPlanScopeTest PRIVATE PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=convolutionreverb
 )
@@ -4569,7 +4569,7 @@ if(WANT_WASM)
 	set_target_properties(WasmSandboxTest PROPERTIES ENABLE_EXPORTS ON)
 
 	target_compile_features(WasmSandboxTest PRIVATE cxx_std_20)
-	target_compile_definitions(WasmSandboxTest PRIVATE
+	target_compile_definitions(WasmSandboxTest PRIVATE PLUGIN_STATIC_DEFINE
 		LMMS_TESTING
 		PLUGIN_NAME=wasm_effect
 		WASM_MODULES_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
@@ -5371,7 +5371,7 @@ target_link_libraries(AudioPluginTest PRIVATE
 	${QT_QTTEST_LIBRARY}
 )
 target_compile_features(AudioPluginTest PRIVATE cxx_std_20)
-target_compile_definitions(AudioPluginTest PRIVATE
+target_compile_definitions(AudioPluginTest PRIVATE PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=taptempo
 	SYNTHETIC_PLUGIN_PATH="$<TARGET_FILE:synthetic_audio_plugin>"

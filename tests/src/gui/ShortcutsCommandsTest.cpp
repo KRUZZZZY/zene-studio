@@ -127,7 +127,7 @@ private slots:
 		QVERIFY(gui::getGUI() != nullptr);
 		ControlRegistry::setReady(true);
 		gui::getGUI()->mainWindow()->show();
-		QTest::qWaitForWindowExposed(gui::getGUI()->mainWindow());
+		static_cast<void>(QTest::qWaitForWindowExposed(gui::getGUI()->mainWindow())); // a wait, not a check (Qt 5.15 marks it nodiscard)
 		QTest::qWait(100);
 	}
 

@@ -47,10 +47,12 @@ using namespace lmms;
 namespace
 {
 
+#if defined(Q_OS_UNIX) // only the POSIX write-limit cases call it
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
 }
+#endif
 
 #if defined(Q_OS_UNIX)
 //! Caps the size any file may grow to for the scope, so a write past it is cut short by the kernel

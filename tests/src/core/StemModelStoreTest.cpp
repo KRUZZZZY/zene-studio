@@ -86,7 +86,7 @@ protected:
 		socket->setLocalCertificate(QSslCertificate(m_certPem));
 		socket->setPrivateKey(QSslKey(m_keyPem, QSsl::Rsa));
 		addPendingConnection(socket);
-		connect(socket, &QSslSocket::sslErrors, socket, [socket](const QList<QSslError>&){ socket->ignoreSslErrors(); });
+		connect(socket, qOverload<const QList<QSslError>&>(&QSslSocket::sslErrors), socket, [socket](const QList<QSslError>&){ socket->ignoreSslErrors(); });
 		socket->startServerEncryption();
 	}
 private:
@@ -537,7 +537,7 @@ private slots:
 				while (server.hasPendingConnections())
 				{
 					QSslSocket* sock = qobject_cast<QSslSocket*>(server.nextPendingConnection());
-					connect(sock, &QSslSocket::sslErrors, sock, [sock](const QList<QSslError>&){ sock->ignoreSslErrors(); });
+					connect(sock, qOverload<const QList<QSslError>&>(&QSslSocket::sslErrors), sock, [sock](const QList<QSslError>&){ sock->ignoreSslErrors(); });
 					auto respond = [sock]() {
 						std::this_thread::sleep_for(std::chrono::milliseconds(200));
 						sock->readAll();
@@ -642,7 +642,7 @@ private slots:
 			while (server.hasPendingConnections())
 			{
 				QSslSocket* sock = qobject_cast<QSslSocket*>(server.nextPendingConnection());
-				connect(sock, &QSslSocket::sslErrors, sock, [sock](const QList<QSslError>&){ sock->ignoreSslErrors(); });
+				connect(sock, qOverload<const QList<QSslError>&>(&QSslSocket::sslErrors), sock, [sock](const QList<QSslError>&){ sock->ignoreSslErrors(); });
 				auto respond = [sock]() {
 					std::this_thread::sleep_for(std::chrono::milliseconds(50));
 					sock->readAll();

@@ -84,7 +84,7 @@ jobs:
         -DWANT_VST3_TEST_INSTRUMENT=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
-      MAKEFLAGS: -j2
+      MAKEFLAGS: -j2 -k   # keep going: one CI round reports every compile error, not the first (the job still fails)
     steps:
       - name: Configure git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -338,7 +338,7 @@ jobs:
         -DWANT_CLAP=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
-      MAKEFLAGS: -j2
+      MAKEFLAGS: -j2 -k   # keep going: one CI round reports every compile error, not the first (the job still fails)
       DEBIAN_FRONTEND: noninteractive
     steps:
       - name: Configure git
@@ -619,7 +619,7 @@ jobs:
         -DWANT_VST3_TEST_INSTRUMENT=ON
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
-      MAKEFLAGS: -j3
+      MAKEFLAGS: -j3 -k   # keep going: one CI round reports every compile error, not the first (the job still fails)
       DEVELOPER_DIR: /Applications/Xcode_${{ matrix.xcode }}.app/Contents/Developer
     steps:
       - name: Check out
@@ -876,7 +876,7 @@ jobs:
       # cache to 500M.
       CCACHE_MAXSIZE: 2G
       CCACHE_NOCOMPRESS: 1
-      MAKEFLAGS: -j2
+      MAKEFLAGS: -j2 -k   # keep going: one CI round reports every compile error, not the first (the job still fails)
       # This job runs on a Linux runner but builds a WINDOWS target, so the uname-based
       # platform detection in tests/release-honesty-gate.sh would judge `linux` and never
       # exercise the Windows direction of a platform-scoped row. Say what the target is
@@ -1254,7 +1254,7 @@ jobs:
           key: ${{ steps.cache-deps.outputs.cache-primary-key }}
           path: build\vcpkg_installed
       - name: Build
-        run: cmake --build build
+        run: cmake --build build -- -k 0   # Ninja keeps going: one round reports every error (job still fails)
       - name: Run tests
         run: |
           cd build/tests
@@ -1413,7 +1413,7 @@ jobs:
         -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
       CCACHE_MAXSIZE: 0
       CCACHE_NOCOMPRESS: 1
-      MAKEFLAGS: -j2
+      MAKEFLAGS: -j2 -k   # keep going: one CI round reports every compile error, not the first (the job still fails)
       # Explicit for the same reason as mingw's: the platform the gate judges is the one
       # this build TARGETS, not the one the runner happens to be.
       RELEASE_HONESTY_PLATFORM: windows
@@ -1471,7 +1471,7 @@ jobs:
           /clang64/bin/ccache.exe --zero-stats
           cmake -B build $CMAKE_OPTS
       - name: Build
-        run: cmake --build build
+        run: cmake --build build -- -k 0   # Ninja keeps going: one round reports every error (job still fails)
       - name: Run tests
         # R7.5 (relief plan): ctest on every platform. This job builds the whole test tree on a
         # real Windows ARM64 machine and, until now, ran none of it. Same step as msvc's.
