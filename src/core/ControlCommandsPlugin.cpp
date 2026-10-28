@@ -258,7 +258,10 @@ void registerPluginLoad(ControlRegistry& registry)
 		"parametrisable through plugin.param_get / plugin.param_set on a display-less instance. "
 		"Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer "
 		"channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot "
-		"instead of appending; the reply's `index` is the slot it landed in.");
+		"instead of appending; the reply's `index` is the slot it landed in. Q050-111: a `target` of clip-<n> (an audio "
+		"clip) puts the effect on that clip's OWN chain - realtime, processing that clip alone before the track sums "
+		"its clips; plugin.unload / plugin.bypass / plugin.move / plugin.param_set take the same clip-<n> target, and "
+		"dsp.get_state reads it.");
 	cmd.argsSchema = objectSchema(
 		{{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("device"), stringProperty()},
@@ -308,8 +311,8 @@ void registerPluginUnload(ControlRegistry& registry)
 	cmd.id = QStringLiteral("plugin.unload");
 	cmd.group = QStringLiteral("plugin");
 	cmd.verb = QStringLiteral("unload");
-	cmd.description = QStringLiteral("Remove a device instance (fx-<n>) from a track's chain or a "
-		"mixer channel. When its state fits the capture cap and the undo stack is addressable, "
+	cmd.description = QStringLiteral("Remove a device instance (fx-<n>) from a track's chain, a "
+		"mixer channel or an audio clip's own chain (clip-<n>). When its state fits the capture cap and the undo stack is addressable, "
 		"one control.undo re-instantiates the same plugin at the same index with its settings "
 		"restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; "
 		"its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is "

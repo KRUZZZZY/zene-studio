@@ -253,6 +253,7 @@ SET(LMMS_SRCS
 	gui/BrowserSearchViewMedia.cpp
 	gui/BrowserResults.cpp
 	gui/ClipEditsMenu.cpp
+	gui/ClipEffectsDialog.cpp
 	gui/CrashReportMenu.cpp
 	gui/EffectDeviceMenu.cpp
 	gui/EffectHostingMenu.cpp

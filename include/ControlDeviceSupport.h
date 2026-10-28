@@ -110,17 +110,18 @@ LMMS_EXPORT QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int i
 //! read, so the wire and the window cannot disagree.
 LMMS_EXPORT QString controlDeviceVendor(const ControlDeviceEntry& entry);
 
-//! A plugin.* target: a Song track or a mixer channel and the effect chain it owns.
+//! A plugin.* target: a Song track, a mixer channel or (Q050-111) an audio clip, and the effect chain it owns.
 struct ControlTarget
 {
-	QString id;                      //!< "trk-<n>" / "ch-<n>"
-	QString kind;                    //!< "track" | "channel"
+	QString id;                      //!< "trk-<n>" / "ch-<n>" / "clip-<n>"
+	QString kind;                    //!< "track" | "channel" | "clip"
 	QString typeName;                //!< the track's type, or "channel"
 	EffectChain* chain = nullptr;    //!< never null on success
 	InstrumentTrack* instrumentTrack = nullptr;
 };
 
-//! Resolves "trk-<n>" or "ch-<n>"; false and *error set on failure.
+//! Resolves "trk-<n>", "ch-<n>" or "clip-<n>" (an audio clip's own effects, Q050-111); false and *error set
+//! on failure.
 LMMS_EXPORT bool resolveControlTarget(const QString& id, ControlTarget* target, ControlResult* error);
 
 //! The effect addressed by \a pluginId ("fx-<n>") inside \a target.

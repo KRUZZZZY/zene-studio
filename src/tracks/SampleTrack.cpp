@@ -298,6 +298,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			{
 				auto smpHandle = new SamplePlayHandle(st, scheduled.window);
 				smpHandle->setPatternTrack(pattern_track);
+				smpHandle->setClipEffects(st);  // Q050-111: the clip's own effects, before the track's sum
 				handle = smpHandle;
 			}
 			handle->setOffset( _offset + scheduled.lead );

@@ -35,6 +35,7 @@
 
 #include "AudioEngine.h"
 #include "ControlEdit.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "PatternStore.h"
 #include "PathUtil.h"
@@ -51,6 +52,7 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	Clip(_track),
 	m_sample(std::move(sample)),
 	m_window(SampleWindow::full(m_sample.sampleSize())),
+	m_clipEffects(std::make_unique<EffectChain>(this)),  // Q050-111: empty and off until a device is added
 	m_isPlaying(false),
 	m_startFrameOffset(0)
 {
@@ -97,6 +99,7 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	m_window(orig.m_window),
 	// The warp members moved to Clip (SPEC-ARCH-4 census row 5);
 	// Clip(const Clip&) copies them for every clip type now.
+	m_clipEffects(std::make_unique<EffectChain>(this)),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset),
 	m_leadFrames(orig.leadFrames())
@@ -135,6 +138,8 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	// A copy carries the mode (Clip's copy constructor) but never the source's
 	// voices: each clip claims from its own pool.
 	ensureRubberBandPool();
+	// Q050-111: and its own devices, built from the source's chain document (never the source's instances).
+	copyClipEffects(orig);
 }
 
 
@@ -973,6 +978,8 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	{
 		_this.setAttribute("reversed", "true");
 	}
+	// Q050-111: the clip's own effects - an `<fxchain>` child, written only when the chain holds a device.
+	saveClipEffects(_doc, _this);
 }
 
 
@@ -1076,6 +1083,8 @@ void SampleClip::loadSettings( const QDomElement & _this )
 		m_sample.setReversed(reversed);
 		emit wasReversed(); // tell SampleClipView to update the view
 	}
+	// Q050-111: reset on absence, so an older project (and a checkpoint taken before the first device) has none.
+	loadClipEffects(_this);
 }
 
 
