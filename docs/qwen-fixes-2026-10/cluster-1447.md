@@ -67,4 +67,20 @@ No RED or GREEN run was executed, so no RED/GREEN result is claimed. The affecte
 
 ## Self-check
 
-Pending: `submit_check.py` is run after this commit; its output is recorded below.
+`submit_check.py <wt> 1447` (log `logs/submit-check-1.log`, EXIT=1): PASS commits on the branch, PASS working tree
+clean, PASS report present, PASS tests (claim-only closure), **FAIL gates (feature_check.py)**. The gates item is
+the blocker above: the script could not write its log directory from this lane (exit 1, `PermissionError`).
+
+- **Regression test FAILS with the change reverted and PASSES with it:** not run; there is no product change
+  (the verdict is FALSE-POSITIVE), and the proposed test is not registered or built in this lane. No RED/GREEN
+  result is claimed.
+- **Deterministic (no wall-clock, sleeps, races):** the proposed test uses no injected values or seams. It drives
+  the real `start()` on the host's sockets, and the only clock is the production probe's 250 ms bound, which it
+  never asserts on. Its determinism is unverified until it is built and run.
+- **Fix at the cause and complete:** no product change. The caller `configure()` (`LinkUdpTransport.cpp:287-322`)
+  and its sibling `start()` (`:126-150`) were read; both use the one `joinGroup()` (`:188`) and the one
+  `m_group` (`:308`) in the order described above.
+- **No collateral damage:** no product file changed; no saved data or limits touched.
+- **Verdict evidence:** `LinkUdpTransport.cpp:308` (`m_group = group;`) precedes `:310` (`if (!measureLoopback(fd))`);
+  the probe's `sendto` at `:262-263` uses `m_group`; `IP_MULTICAST_LOOP` is set at `:298`, before the probe.
+  History: `c1fb542b11` (line 308) predates `ebe3e16dd8` (line 310), so the probe never ran before the assignment.
