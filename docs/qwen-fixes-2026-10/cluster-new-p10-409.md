@@ -70,14 +70,16 @@ A duplicate GREEN build was started and then stopped so only one build ran in th
 
 ## Self-check
 
-Answered from the evidence above; the `submit_check.py` output is in the LOG folder once run.
+Each judgement item from the completion check, answered with evidence:
 
-- Verdict line present and first: FIXED (narrowed) - see the top of this file.
-- Regression fails without the fix and passes with it: test-red-1.log / test-revert-red-1.log (exit 8) and test-green-2.log / test-reapply-green-1.log (exit 0).
-- Siblings: all 24 `getNumerator()` call sites read through the one accessor; no other divisor site needed changing (checked by grep). `numeratorModel().value()` readers are not divisors and are unchanged.
-- Old projects and saved data: a valid numerator (1..32) reads back as the same integer; saved values are written from the model value, which is unchanged.
-- Realtime: `getNumerator()` is a const read of a float with no allocation, lock, or log; `Song::processMetronome` calls it on the audio thread and still does no more than before.
-- Undo and commands: no control command added; `setNumerator` keeps the same `setValue((float) val)` body.
-- Registration: no new files.
-- Gates: see the Gates section; the official command could not write its log directory from inside the write-jail, so the PASS comes from the redirected copy described above.
-- Unverified: the controller-driven NaN path (`Controller::fittedValue` passing NaN into `controllerValue`) is reasoned from the code and not exercised by a runtime test.
+1. **Regression fails with the product change reverted and passes with it.** Yes. Reverted (`git apply -R fix.patch`), rebuilt, `ctest -R '^TapTempoTest$'` exit 8 with `TapTempoTest.cpp:109` (test-revert-red-1.log). Restored (`git apply fix.patch`), rebuilt, exit 0 (test-reapply-green-1.log). The unmodified-code RED is test-red-1.log (exit 8).
+2. **Deterministic.** The test injects the state directly: `numeratorModel().setValue(NaN)` on the song's meter model, then three `tap(false)` calls. `m_beat` moves only by the count (`TapTempo::tap`, `TapTempo.cpp:57-64`); `updateTempo` (which reads the steady clock) runs after the count and does not change `m_beat`. There are no sleeps and no threads. The original numerator is restored before the assertions.
+3. **Cause and siblings.** The change is at `MeterModel::getNumerator()`, which all 24 call sites read through (`rg -n "getNumerator\(\)"` in `src`, `include`, `plugins`). Checked: `TapTempo.cpp:63`, `TimeDisplayWidget.cpp:106,108`, `TimePos.cpp:46`, `Song.cpp:971`, `TakeLanesPanel.cpp:66`, `McuSurface.cpp:85`, `MusicalTime.cpp:66`. The NaN is still stored by `fittedValue` (`AutomatableModel.cpp:604-618`); that is a residual, not fixed here, and is written up in the Verdict section.
+4. **No collateral damage.** Valid numerators (finite, 1..32) return the same integer, so saved projects, `numeratorModel().value()`, `setNumerator` and every caller see no change. Only NaN and values below 1 now read as 1. No limit was added. Family tests `AudioPluginTest`, `AutomatableModelTest`, `TempoMapTest`, `TimelineTest`, `TapTempoTest` all pass (test-family-2.log, exit 0, 5 of 5).
+5. **Verdict basis.** Verdict FIXED (narrowed), not ALREADY-FIXED or FALSE-POSITIVE. The file:line evidence is in the Verdict section: finite values are clamped (`AutomatableModel.cpp:604-618`, `MeterModel.cpp:35`); controller paths stay in range (`Controller.h:123-125`, `AutomatableModel.cpp:722-741`, `lmms_math.h:301-313`); NaN passes `fittedValue` and reaches the undefined `int` cast (`AutomatableModel.h:197-200`, `:209-233`).
+
+### Gate status in the completion check
+
+`submit_check.py` runs `feature_check.py` from its own directory, and that script writes its logs to `<worktree>-feature-check`, outside the worktree. The write-jail denies that directory (`PermissionError`, gate-feature-check-1.log), so the completion check's gate row shows FAIL for this environment reason, not a gate result. The gate was run with its log directory redirected into the LOG folder (`feature_check_logdir_redirect.py`, log gate-feature-check-2.log) and returned **EXIT 0, RESULT: PASS**. The shared gate and its baselines were not changed. Unless the sibling directory can be created (or the gate's log path is made configurable), `submit_check.py` will keep reporting this one FAIL.
+
+Unverified: the controller-driven NaN path (`Controller::fittedValue` passing NaN into `controllerValue`) is reasoned from the code; no runtime test exercises it.
