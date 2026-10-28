@@ -28,6 +28,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <QObject>
 #include "LmmsTypes.h"
 #include "lmms_export.h"
@@ -209,14 +210,26 @@ protected slots:
 	void updateSamplerate();
 
 private:
+	/** \brief Converts an already rounded frame count to Int without undefined behaviour: NaN becomes
+	 * 	zero and values outside the range of Int saturate to its limits
+	 */
+	template<typename Int>
+	static Int saturatingFrameCount( float frames )
+	{
+		if( std::isnan( frames ) ) { return 0; }
+		if( frames <= static_cast<float>( std::numeric_limits<Int>::min() ) ) { return std::numeric_limits<Int>::min(); }
+		if( frames >= static_cast<float>( std::numeric_limits<Int>::max() ) ) { return std::numeric_limits<Int>::max(); }
+		return static_cast<Int>( frames );
+	}
+
 	inline f_cnt_t msToFrames( float ms )
 	{
-		return static_cast<f_cnt_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
+		return saturatingFrameCount<f_cnt_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
 	}
 
 	inline std::int64_t msToFrameOffset( float ms )
 	{
-		return static_cast<std::int64_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
+		return saturatingFrameCount<std::int64_t>( ceilf( ms * (float)m_samplerate * 0.001f ) );
 	}
 
 	const f_cnt_t m_fpp;
