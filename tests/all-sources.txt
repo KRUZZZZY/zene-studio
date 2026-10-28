@@ -1245,6 +1245,14 @@ plugins/MidiExport/MidiExport.h
 plugins/MidiExport/MidiFile.hpp
 plugins/MidiImport/MidiImport.cpp
 plugins/MidiImport/MidiImport.h
+plugins/ModularSynth/ModularGraph.cpp
+plugins/ModularSynth/ModularGraph.h
+plugins/ModularSynth/ModularProgram.cpp
+plugins/ModularSynth/ModularProgram.h
+plugins/ModularSynth/ModularSynth.cpp
+plugins/ModularSynth/ModularSynth.h
+plugins/ModularSynth/ModularSynthView.cpp
+plugins/ModularSynth/ModularSynthView.h
 plugins/Modulation/Modulation.cpp
 plugins/Modulation/Modulation.h
 plugins/Modulation/ModulationControlDialog.cpp
@@ -3255,6 +3263,7 @@ tests/src/plugins/LadspaGlobalLinkTest.cpp
 tests/src/plugins/Lb302NotePathTest.cpp
 tests/src/plugins/MalletsInstrumentViewTest.cpp
 tests/src/plugins/MissingDevicesNoEntryModule.cpp
+tests/src/plugins/ModularSynthTest.cpp
 tests/src/plugins/MpeConsumerProbe.h
 tests/src/plugins/MpeTestConsumer.cpp
 tests/src/plugins/MultitapEchoBoundsTest.cpp
