@@ -125,7 +125,7 @@ No new file, so no registration change. `RangeEditsTest.cpp` is already in `test
 - **Sibling commands (`arrangement.*`):** none is in a file this commit changes. Those commands are registered in
   the GUI and arrangement command files (for example `tests/src/gui/ArrangerTimelineTest.cpp` and
   `src/gui/PanelShortcuts.cpp`), not in `src/core/ControlCommandsRange.cpp`. `rippledOthers` and `rippleOthers` sit in
-  that file's anonymous namespace (`src/core/ControlCommandsRange.cpp:49` on), so no other translation unit can call
+  that file's anonymous namespace (`src/core/ControlCommandsRange.cpp:56` on), so no other translation unit can call
   them. `arrangement.modes` only sets the ripple mode this fix reads; its behaviour is unchanged (ArrangementModesTest,
   18/18, step 14).
 - **Gates via `submit_check.py`:** still FAIL, for an environment reason. That check runs `feature_check.py`, which
