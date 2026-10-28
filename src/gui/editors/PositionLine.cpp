@@ -26,6 +26,9 @@
 
 #include <QPainter>
 
+#include <algorithm>
+#include <cmath>
+
 
 namespace lmms::gui
 {
@@ -99,9 +102,14 @@ void PositionLine::paintEvent(QPaintEvent* pe)
 // in an unexpected location when positioned at the start of the track
 void PositionLine::zoomChange(float zoom)
 {
+	// A NaN or infinite zoom has no width: keep the line where it is.
+	if (!std::isfinite(zoom)) { return; }
+
 	int playHeadPos = x() + width() - 1;
 
-	resize(std::max(8.0 * zoom, 1.0), height());
+	// Clamp before the double-to-int conversion: a huge zoom is past the int range and past any widget width.
+	const double newWidth = std::clamp(std::max(8.0 * zoom, 1.0), 1.0, static_cast<double>(QWIDGETSIZE_MAX));
+	resize(static_cast<int>(newWidth), height());
 	move(playHeadPos - width() + 1, y());
 
 	update();
