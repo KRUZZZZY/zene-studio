@@ -111,3 +111,27 @@ was affected.
    the write-jail forbids. Command 5 is the same logic with only the log location redirected. This affects only where
    logs go, not what is checked. The shared tool was not edited. It should write logs under the run folder, or
    accept a log directory argument, for worktrees run in a write-jail.
+
+### Answers to the submit_check ASK items
+
+- **"The regression test FAILS with your product change reverted and PASSES with it."** No product change and no
+  regression test, so there are no RED/GREEN exit codes to report. Reason: evidence 1-4 (no reachable out-of-range
+  position). The verdict is FALSE-POSITIVE, not a fix.
+- **"The test is deterministic."** No test was added. The existing `NoteSelectionIdentityTest` has no wall-clock
+  timing or sleeps in the lines I read (`tests/src/core/NoteSelectionIdentityTest.cpp:100`, `:148`); I did not audit
+  its full body for races.
+- **"The fix is at the cause and complete: every caller and sibling checked."** No fix. The cause is not present
+  (evidence 1-7). Siblings checked are listed in item 3 above.
+- **"No collateral damage."** Nothing changed, so nothing new can break.
+- **"Verdict FALSE-POSITIVE: the code (file:line) that shows it."** `src/core/ControlCommandsNoteSelect.cpp:115-120`
+  (positions only from `resolveNote`), `src/core/ControlEditSupport.cpp:236-241` (index written only for a real note
+  in range), `src/core/ControlVocabulary.cpp:193-210` (negative ids refused), `src/core/ControlRegistry.cpp:296`
+  (handler runs on the UI thread, no interleaving).
+
+### submit_check result
+
+`submit_check.py` (command 6, `<LOG>/submit-1.log`, EXIT=1) reports: commits on the branch PASS, working tree clean
+PASS, report PASS, tests added or changed PASS (claim-only closure), **gates FAIL**. The gates FAIL is the
+environment issue from command 4 (the same `PermissionError` when `feature_check.py` writes its logs outside the
+worktree). The gate logic itself passed under command 5 (`RESULT: PASS`). This FAIL is not a code result; it needs a
+fix in the shared tool (or a writable log location), which I did not make.
