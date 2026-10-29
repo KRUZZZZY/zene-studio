@@ -149,8 +149,20 @@ Environment notes (recorded, not worked around in the tree):
   pre-existing module skips); accepted finite values 0..100 are untouched; `+/-infinity` still refused; no
   saved format changed; no limit added anywhere.
 - **Verdict is FIXED**, so no ALREADY-FIXED/FALSE-POSITIVE citation is needed; the code evidence is above.
-- **Sibling commands in the changed command file** (`ControlCommandsDeviceTools.cpp`: `plugin.impulse_load`,
-  `mixer.console_apply`, `rack.split`): `plugin.impulse_load` and `rack.split` do not touch the console or a
-  non-finite ratio of this kind and are unchanged; `mixer.console_strip` (registered in
-  `ControlCommandsConsoleStrip.cpp`) writes the same console drive and already rejects non-finite values. No
-  command was added or changed, so the command snapshot and canary are untouched.
+- **Sibling commands in the changed command file.** The `submit_check` sibling list is the `rack.*` group
+  (`rack.add_chain`, `rack.get_state`, `rack.layer_add`, `rack.layer_remove`, `rack.layer_set`,
+  `rack.layer_zone_add`, `rack.layer_zone_remove`, `rack.layers`, `rack.macro_add`, `rack.macro_remove`,
+  `rack.macro_set`, `rack.macro_set_pair`, `rack.macro_target_add`, `rack.macro_target_remove`,
+  `rack.remove_chain`). None of them is affected: they are registered in `ControlCommandsRackLayers.cpp` /
+  `ControlCommandsRackZones.cpp` / `ControlCommandsChain.cpp`, they do not read or write a console `drive`,
+  and this change touches no rack code — the only product edit is the `std::isfinite` guard inside
+  `consoleApply()`. The sibling that *does* write the same console drive, `mixer.console_strip`, already
+  refuses non-finite values (`ConsoleStrip.cpp:184`) and is unchanged. No command was added or changed, so
+  the command snapshot and canary are untouched.
+- **Why the `gates` row is still FAIL in `submit_check`.** `submit_check.py` executes the original
+  `feature_check.py`, whose line 70 does `wt.parent / "<name>-feature-check"` and `mkdir()`; this host's write
+  policy denies creating that directory next to the worktree, so the script dies with `PermissionError`
+  before running any gate (row 11 above, EXIT=1, `gates-1-original.log`). No gate logic was changed: row 12
+  runs the same file with only `ROOT` pinned and the log directory moved to the run folder and gets
+  `RESULT: PASS`, 8/8 rows, EXIT=0 (`gates-2-redirected.log`). A reviewer with normal write access beside the
+  worktree should rerun row 11 verbatim; the gate verdict itself is PASS.
