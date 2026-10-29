@@ -184,9 +184,17 @@ the baseline cache); gate commands, limits and baseline contents are untouched, 
 - **Integration-specific.** The conflict resolution retains every target-side manifest entry and appends only the
   accepted line; the header hunk and test function are byte-identical to the accepted patch. Luna's round-1 wording
   note ("keeps the previous phase" → "keeps the previous offset") is corrected in the manifest line.
-- **Completion check (`submit_check.py`).** Recorded in `submit-check-1.log`. Any row that FAILs only because
-  the unmodified `feature_check.py` cannot create its sibling directory inside the jail is answered here with the
-  redirected run #18 (EXIT 0, `RESULT: PASS`); the gate logic, limits and baselines are the same.
+- **Completion check (`submit_check.py`).** Run after the commit, recorded in `submit-check-1.log`, EXIT **1**:
+  `commits on the branch`, `working tree clean`, `report docs/qwen-fixes-2026-10/cluster-new-p16-180.md` and
+  `tests added or changed` all PASS. The single FAIL is the `gates (feature_check.py)` row, and it is the jail, not a
+  gate: `submit_check.py:117` runs the unmodified `feature_check.py`, which does
+  `logs = wt.parent / f"{wt.name}-feature-check"` and dies with
+  `PermissionError: [Errno 13] Permission denied: '…/zene-integrate-new-p16-180-4ee5321ffc-feature-check'` (EXIT 1,
+  reproduced in `gate-feature-unwrapped.log` and re-reproduced directly before this report). That directory is a
+  sibling of the worktree, outside the Landlock write-jail. The same gate file with only its log and baseline paths
+  redirected passes: run #18, EXIT **0**, `RESULT: PASS`, 8/8 rows, `no new item in your files` on both ratchets.
+  Gate commands, thresholds and baseline contents are unchanged, so this row needs a run outside the jail to be a
+  plain PASS; it is not a code or gate failure.
 
 ## Notes for the reviewer
 
