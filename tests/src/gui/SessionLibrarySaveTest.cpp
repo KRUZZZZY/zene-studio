@@ -343,9 +343,17 @@ private slots:
 		// A source that is not there / is empty / is not audio at all.
 		const QString missing = m_home.filePath(QStringLiteral("source/missing.wav"));
 		const QString empty = m_home.filePath(QStringLiteral("source/empty.wav"));
+		const QString validEmpty = m_home.filePath(QStringLiteral("source/empty-valid.wav"));
 		const QString damaged = m_home.filePath(QStringLiteral("source/damaged.wav"));
 		const QString unsupported = m_home.filePath(QStringLiteral("source/notes.txt"));
 		QFile(empty).open(QIODevice::WriteOnly);
+		SF_INFO emptyInfo{};
+		emptyInfo.channels = 1;
+		emptyInfo.samplerate = taketest::kRate;
+		emptyInfo.format = SF_FORMAT_WAV | SF_FORMAT_PCM_16;
+		SNDFILE* emptyWav = sf_open(validEmpty.toUtf8().constData(), SFM_WRITE, &emptyInfo);
+		QVERIFY(emptyWav != nullptr);
+		QCOMPARE(sf_close(emptyWav), 0);
 		QFile text(damaged);
 		QVERIFY(text.open(QIODevice::WriteOnly));
 		text.write("this is not a RIFF file");
@@ -354,7 +362,7 @@ private slots:
 		QVERIFY(other.open(QIODevice::WriteOnly));
 		other.write("notes");
 		other.close();
-		for (const QString& source : {missing, empty, damaged, unsupported})
+		for (const QString& source : {missing, validEmpty, empty, damaged, unsupported})
 		{
 			setSource(0, 0, source);
 			const ControlResult refused = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("track"), 0},

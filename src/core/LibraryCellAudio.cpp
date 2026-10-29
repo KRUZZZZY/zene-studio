@@ -325,6 +325,11 @@ auto saveThroughSndfile(const QString& source, const QString& target, SNDFILE* s
 	WavWriter writer(target, sampleRate);
 	if (!writer.open(&result->error)) { return false; }
 	if (!streamBlocks(source, snd, channels, sampleRate, &writer, result)) { return false; }
+	if (result->frames <= 0)
+	{
+		result->error = QStringLiteral("'%1' contains no audio frames; nothing was written").arg(source);
+		return false;
+	}
 	if (declaredFrames > 0 && result->frames != declaredFrames)
 	{
 		// A file that ends early would be saved truncated; refused rather than published short.
