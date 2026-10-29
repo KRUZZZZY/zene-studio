@@ -207,7 +207,11 @@ jobs:
           # 40800856674, 40828420263); the second showed 11.6 of 16 GB used 15 s into ctest while the
           # running tests peak under 200 MB each. Log memory and the largest processes every 5 s so
           # the next one names what holds it.
-          ( while true; do echo "[resources] $(df -h / | tail -1) | $(free -m | sed -n 2p)"; ps -eo rss=,etimes=,args= --sort=-rss | head -5 | cut -c1-160 | sed 's/^/[resources]   /'; sleep 5; done ) &
+          ( while true; do
+              echo "[resources] $(df -h / | tail -1) | $(free -m | sed -n 2p)"
+              ps -eo rss=,etimes=,args= --sort=-rss | head -5 | cut -c1-160 | sed 's/^/[resources]   /'
+              sleep 5
+            done ) &
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
           ctest --output-on-failure --timeout 1500 -j2 || {
@@ -459,7 +463,11 @@ jobs:
           # 40800856674, 40828420263); the second showed 11.6 of 16 GB used 15 s into ctest while the
           # running tests peak under 200 MB each. Log memory and the largest processes every 5 s so
           # the next one names what holds it.
-          ( while true; do echo "[resources] $(df -h / | tail -1) | $(free -m | sed -n 2p)"; ps -eo rss=,etimes=,args= --sort=-rss | head -5 | cut -c1-160 | sed 's/^/[resources]   /'; sleep 5; done ) &
+          ( while true; do
+              echo "[resources] $(df -h / | tail -1) | $(free -m | sed -n 2p)"
+              ps -eo rss=,etimes=,args= --sort=-rss | head -5 | cut -c1-160 | sed 's/^/[resources]   /'
+              sleep 5
+            done ) &
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
           ctest --output-on-failure --timeout 1500 -j2 || {
