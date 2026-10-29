@@ -27,6 +27,7 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <cmath>
 #include <functional>
 #include <vector>
 
@@ -412,7 +413,8 @@ ControlResult layerSetRefusal(const InstrumentLayers& layers, int index, const Q
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("layer-0 is the track's own instrument: its level is the track's volume (mixer.set_volume)"));
 	}
-	if (level < 0.0 || level > InstrumentLayers::MaxLevel)
+	// NaN fails both comparisons below, so a NaN level would pass the range check: refuse non-finite explicitly.
+	if (!std::isfinite(level) || level < 0.0 || level > InstrumentLayers::MaxLevel)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("level %1 is not inside 0..%2 (1 is unity)").arg(level).arg(InstrumentLayers::MaxLevel));

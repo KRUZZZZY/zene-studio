@@ -29,7 +29,15 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
+#include <QDomElement>
+#include <QDomNodeList>
+
+#include <cmath>
+#include <limits>
+
 #include "ControlInstrumentCommands.h"
+#include "InstrumentLayers.h"
 #include "InstrumentTrack.h"
 #include "NotePlayHandle.h"
 #include "RackTestSupport.h"
@@ -137,6 +145,71 @@ private slots:
 		track->layers().zones().setChangedHook({});
 		QVERIFY(removedLayer);
 		QVERIFY(removePublishedTogether);
+	}
+
+	//! A layer's level is a finite gain (cluster new-p22-60). NaN passes every < and > range check, so a NaN
+	//! level used to reach the layer's gain: rack.layer_set refuses it typed, and InstrumentLayers::setMix
+	//! refuses it for any other caller. The layer's mix stays what it was; a finite level still lands.
+	void layerLevelRefusesNonFinite()
+	{
+		if (m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const QString fresh = revtest::addInstrumentTrack();
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		const ControlResult added = revtest::run(QStringLiteral("rack.layer_add"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const int index = track->layers().layerCount();  // the layer added last
+		const QString layer = added.result.value(QStringLiteral("layer")).toString();
+		const float before = track->layers().mix(index).level;
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+
+		const ControlResult refused = revtest::run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("layer"), layer}, {QStringLiteral("level"), nan}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(track->layers().mix(index).level, before);
+
+		InstrumentLayers::Mix nanMix = track->layers().mix(index);
+		nanMix.level = static_cast<float>(nan);
+		QVERIFY(!track->layers().setMix(index, nanMix));
+		QCOMPARE(track->layers().mix(index).level, before);
+
+		QVERIFY(revtest::run(QStringLiteral("rack.layer_set"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("layer"), layer}, {QStringLiteral("level"), 0.5}}).ok);
+		QCOMPARE(track->layers().mix(index).level, 0.5f);
+	}
+
+	//! A saved layer level that is not a number loads as unity, not as a NaN gain (readMix clamped it, and
+	//! std::clamp passes NaN through). A finite saved level still loads as saved. The track goes through its
+	//! own save and restore, the path a project load takes.
+	void savedLayerLevelNotANumberLoadsAsUnity()
+	{
+		if (m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const QString fresh = revtest::addInstrumentTrack();
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		const ControlResult added = revtest::run(QStringLiteral("rack.layer_add"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const int index = track->layers().layerCount();  // the layer added last
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("trackcontainer"));
+		doc.appendChild(root);
+		const QDomElement saved = track->saveState(doc, root);
+		const QDomNodeList entries = saved.elementsByTagName(QStringLiteral("layer"));
+		QVERIFY(!entries.isEmpty());
+		QDomElement entry = entries.at(entries.size() - 1).toElement();  // the layer added last
+
+		entry.setAttribute(QStringLiteral("layerlevel"), QStringLiteral("0.5"));
+		track->restoreState(saved);
+		QCOMPARE(track->layers().mix(index).level, 0.5f);
+
+		entry.setAttribute(QStringLiteral("layerlevel"), QStringLiteral("nan"));
+		track->restoreState(saved);
+		QVERIFY(std::isfinite(track->layers().mix(index).level));
+		QCOMPARE(track->layers().mix(index).level, 1.0f);
 	}
 };
 
