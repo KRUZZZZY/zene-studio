@@ -101,20 +101,10 @@ def write_tone(path, frequency=TONE_HZ, seconds=TONE_SECONDS, rate=TONE_RATE):
             for i in range(frames)))
 
 
-def read_wav(path):
-    """(rate, channels, frames) of a RIFF/WAVE file this test reads ITSELF, or None.
-
-    The standard library's `wave` module reads integer PCM only, and the library writes 32-bit
-    FLOAT (`SF_FORMAT_WAV | SF_FORMAT_FLOAT`, format tag 3), so the chunks are parsed here: it is
-    the test's own reader, not the product's, and it handles both PCM and IEEE float.
-    """
-    try:
-        with open(path, "rb") as handle:
-            data = handle.read()
-    except OSError:
-        return None
+def wav_chunks(data):
+    """(fmt, payload) of a RIFF/WAVE byte string, or (None, None) when it is not one."""
     if len(data) < 12 or data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
-        return None
+        return None, None
     fmt = None
     payload = b""
     at = 12
@@ -127,27 +117,53 @@ def read_wav(path):
         elif chunk_id == b"data":
             payload = body
         at += 8 + size + (size % 2)
-    if fmt is None or len(fmt) < 16:
-        return None
-    tag, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
-    if channels <= 0 or rate <= 0 or bits <= 0 or not payload:
-        return None
-    if tag == 3 and bits == 32:
-        values = struct.unpack("<%df" % (len(payload) // 4), payload)
-    elif tag == 3 and bits == 64:
-        values = struct.unpack("<%dd" % (len(payload) // 8), payload)
-    elif bits == 16:
-        values = [value / 32768.0 for value in struct.unpack("<%dh" % (len(payload) // 2), payload)]
-    elif bits == 24:
+    return fmt, payload
+
+
+def decode_payload(tag, bits, payload):
+    """The payload's samples as a flat list of floats, or None for a bit depth this reader does not know."""
+    if bits == 24:
         values = []
         for i in range(0, len(payload), 3):
             raw = int.from_bytes(payload[i:i + 3], "little", signed=False)
             if raw & 0x800000:
                 raw -= 1 << 24
             values.append(raw / 8388608.0)
+        return values
+    # Every other width is one struct format and one scale: IEEE float (tag 3) or integer PCM.
+    if tag == 3 and bits in (32, 64):
+        code, scale = ("f", 1.0) if bits == 32 else ("d", 1.0)
+    elif bits == 16:
+        code, scale = "h", 32768.0
     elif bits == 32:
-        values = [value / 2147483648.0 for value in struct.unpack("<%di" % (len(payload) // 4), payload)]
+        code, scale = "i", 2147483648.0
     else:
+        return None
+    width = struct.calcsize(code)
+    values = struct.unpack("<%d%s" % (len(payload) // width, code), payload)
+    return [value / scale for value in values]
+
+
+def read_wav(path):
+    """(rate, channels, frames) of a RIFF/WAVE file this test reads ITSELF, or None.
+
+    The standard library's `wave` module reads integer PCM only, and the library writes 32-bit
+    FLOAT (`SF_FORMAT_WAV | SF_FORMAT_FLOAT`, format tag 3), so the chunks are parsed here: it is
+    the test's own reader, not the product's, and it handles both PCM and IEEE float.
+    """
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    fmt, payload = wav_chunks(data)
+    if fmt is None or len(fmt) < 16 or not payload:
+        return None
+    tag, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
+    if channels <= 0 or rate <= 0 or bits <= 0:
+        return None
+    values = decode_payload(tag, bits, payload)
+    if values is None:
         return None
     frames = [tuple(values[i:i + channels]) for i in range(0, len(values), channels)]
     return rate, channels, frames
@@ -230,32 +246,8 @@ def populate(session, source, recorder):
     session.result("session.set_slot", {"track": 1, "scene": 0, "type": "midi", "pattern": 0, "name": "lead"})
 
 
-def drive_save(session, recorder, source):
-    """The ordinary save: the reply, the file, the frames, the tags and the one true-inverse step."""
-    saved = session.result("browser.save_clip", {"track": 0, "scene": 0, "tags": ["drums", "one-shot"]})
-    path = saved.get("path", "")
-    recorder.check("browser.save_clip saves the audio cell", "error" not in saved and path.endswith("kick.wav"),
-                   "%r" % saved)
-    recorder.check("the reply says the entry is audio", saved.get("kind") == "audio", "%r" % saved.get("kind"))
-    recorder.check("the reply's byte count is the file's", int(saved.get("bytes", -1)) ==
-                   (os.path.getsize(path) if os.path.isfile(path) else -2), "%r" % saved.get("bytes"))
-    recorder.check("the reply carries the tags added", saved.get("tags") == ["drums", "one-shot"],
-                   "%r" % saved.get("tags"))
-    worst = compare(source, path) if path else None
-    recorder.check("the saved WAV holds the source's own frames (rate, count, every sample)",
-                   worst is not None and worst <= FRAME_TOLERANCE, "worst=%r" % worst)
-    root = samples_root(session)
-    recorder.check("the entry landed in the user samples tree", bool(path) and root != ""
-                   and os.path.commonpath([path, root]) == os.path.normpath(root),
-                   "path=%r root=%r" % (path, root))
-
-    before = open(path, "rb").read() if os.path.isfile(path) else b""
-    refused = session.call("browser.save_clip", {"track": 0, "scene": 0})
-    recorder.check("a second save without overwrite is refused", refused.get("ok") is False
-                   and (refused.get("error") or {}).get("kind") == "refused", "%r" % (refused.get("error"),))
-    recorder.check("the refused save left the file alone",
-                   os.path.isfile(path) and open(path, "rb").read() == before, "%s" % path)
-
+def check_read_back(session, recorder, path):
+    """browser.query / browser.tags see the entry the save wrote, with the tags it added."""
     reply, items = query(session, "kick.wav")
     recorder.check("browser.query finds the saved entry under the samples root",
                    "error" not in reply and len(items) == 1, "query=%r" % reply)
@@ -271,6 +263,40 @@ def drive_save(session, recorder, source):
                    "error" not in tagged_query and bool(tagged_items)
                    and sorted(tagged_items[0].get("tags", [])) == ["drums", "one-shot"],
                    "%r" % (tagged_items[:1],))
+
+
+def check_save_reply(session, recorder, source, saved):
+    """The reply's own claims, and that the file it names holds the source's frames."""
+    path = saved.get("path", "")
+    recorder.check("browser.save_clip saves the audio cell", "error" not in saved and path.endswith("kick.wav"),
+                   "%r" % saved)
+    recorder.check("the reply says the entry is audio", saved.get("kind") == "audio", "%r" % saved.get("kind"))
+    recorder.check("the reply's byte count is the file's", int(saved.get("bytes", -1)) ==
+                   (os.path.getsize(path) if os.path.isfile(path) else -2), "%r" % saved.get("bytes"))
+    recorder.check("the reply carries the tags added", saved.get("tags") == ["drums", "one-shot"],
+                   "%r" % saved.get("tags"))
+    worst = compare(source, path) if path else None
+    recorder.check("the saved WAV holds the source's own frames (rate, count, every sample)",
+                   worst is not None and worst <= FRAME_TOLERANCE, "worst=%r" % worst)
+    root = samples_root(session)
+    recorder.check("the entry landed in the user samples tree", bool(path) and root != ""
+                   and os.path.commonpath([path, root]) == os.path.normpath(root),
+                   "path=%r root=%r" % (path, root))
+    return path
+
+
+def drive_save(session, recorder, source):
+    """The ordinary save: the reply, the file, the frames, the tags and the one true-inverse step."""
+    saved = session.result("browser.save_clip", {"track": 0, "scene": 0, "tags": ["drums", "one-shot"]})
+    path = check_save_reply(session, recorder, source, saved)
+
+    before = open(path, "rb").read() if os.path.isfile(path) else b""
+    refused = session.call("browser.save_clip", {"track": 0, "scene": 0})
+    recorder.check("a second save without overwrite is refused", refused.get("ok") is False
+                   and (refused.get("error") or {}).get("kind") == "refused", "%r" % (refused.get("error"),))
+    recorder.check("the refused save left the file alone",
+                   os.path.isfile(path) and open(path, "rb").read() == before, "%s" % path)
+    check_read_back(session, recorder, path)
 
     undone = session.result("control.undo")
     recorder.check("control.undo removes the library file", "error" not in undone and not os.path.exists(path),
@@ -321,19 +347,8 @@ def drive_refusals(session, recorder, workdir, source):
     session.result("session.set_slot", {"track": 0, "scene": 0, "type": "audio", "source": source})
 
 
-def drive_seams(binary, recorder, source):
-    """The exhaustion and failure cases, each in an instance whose environment sets one deterministic seam.
-
-    The decoded-size seam is the point of the review: this 16-bit mono source is 2 bytes a frame on disk and
-    8 bytes a frame once decoded (stereo float), so a budget between the two refuses it while the ENCODED file
-    is under the budget - the case the old input-size check let through to a full decode."""
-    file_bytes = os.path.getsize(source)
-    frames = decoded_frames(source)
-    decoded_bytes = frames * 8
-    budget = (file_bytes + decoded_bytes) // 2
-    recorder.check("the over-limit fixture is under the budget encoded and over it decoded",
-                   file_bytes < budget < decoded_bytes,
-                   "file=%d decoded=%d budget=%d" % (file_bytes, decoded_bytes, budget))
+def check_over_decoded(binary, recorder, source, file_bytes, frames, budget):
+    """The decoded-size bound refuses a source whose FILE is under the budget but whose audio is over it."""
     instance, session, _ = start(binary, {"ZENE_TEST_LIBRARY_SAVE_MAX_DECODED_BYTES": str(budget)})
     try:
         populate(session, source, recorder)
@@ -351,30 +366,50 @@ def drive_seams(binary, recorder, source):
     finally:
         instance.close()
 
+
+def check_write_seam(binary, recorder, source, seam, value, message):
+    """One allocation/write failure seam: a typed refusal that replaces nothing and leaves nothing behind."""
+    instance, session, _ = start(binary, {seam: value})
+    try:
+        populate(session, source, recorder)
+        clips = os.path.join(samples_root(session), "Clips")
+        os.makedirs(clips, exist_ok=True)
+        keep = os.path.join(clips, "failure.wav")
+        with open(keep, "wb") as handle:
+            handle.write(b"keep me")
+        before = files_in(clips)
+        reply = session.call("browser.save_clip", {"track": 0, "scene": 0, "name": "failure", "overwrite": True})
+        error = reply.get("error") or {}
+        recorder.check("%s is a typed refusal" % seam, reply.get("ok") is False
+                       and error.get("kind") == "refused" and message in (error.get("message") or ""),
+                       "%r" % (reply,))
+        recorder.check("%s leaves the destination untouched" % seam,
+                       open(keep, "rb").read() == b"keep me", keep)
+        recorder.check("%s leaves no partial file or temporary" % seam, files_in(clips) == before,
+                       "%r" % (files_in(clips),))
+        session.call("control.quit")
+    finally:
+        instance.close()
+
+
+def drive_seams(binary, recorder, source):
+    """The exhaustion and failure cases, each in an instance whose environment sets one deterministic seam.
+
+    The decoded-size seam is the point of the review: this 16-bit mono source is 2 bytes a frame on disk and
+    8 bytes a frame once decoded (stereo float), so a budget between the two refuses it while the ENCODED file
+    is under the budget - the case the old input-size check let through to a full decode."""
+    file_bytes = os.path.getsize(source)
+    frames = decoded_frames(source)
+    decoded_bytes = frames * 8
+    budget = (file_bytes + decoded_bytes) // 2
+    recorder.check("the over-limit fixture is under the budget encoded and over it decoded",
+                   file_bytes < budget < decoded_bytes,
+                   "file=%d decoded=%d budget=%d" % (file_bytes, decoded_bytes, budget))
+    check_over_decoded(binary, recorder, source, file_bytes, frames, budget)
     for seam, value, message in (("ZENE_TEST_LIBRARY_SAVE_ALLOC_FAULT", "1", "ran out of memory"),
                                  ("ZENE_TEST_LIBRARY_SAVE_WRITE_FAULT", "short-write", "failed"),
                                  ("ZENE_TEST_LIBRARY_SAVE_WRITE_FAULT", "before-commit", "not completed")):
-        instance, session, _ = start(binary, {seam: value})
-        try:
-            populate(session, source, recorder)
-            clips = os.path.join(samples_root(session), "Clips")
-            os.makedirs(clips, exist_ok=True)
-            keep = os.path.join(clips, "failure.wav")
-            with open(keep, "wb") as handle:
-                handle.write(b"keep me")
-            before = files_in(clips)
-            reply = session.call("browser.save_clip", {"track": 0, "scene": 0, "name": "failure", "overwrite": True})
-            error = reply.get("error") or {}
-            recorder.check("%s is a typed refusal" % seam, reply.get("ok") is False
-                           and error.get("kind") == "refused" and message in (error.get("message") or ""),
-                           "%r" % (reply,))
-            recorder.check("%s leaves the destination untouched" % seam,
-                           open(keep, "rb").read() == b"keep me", keep)
-            recorder.check("%s leaves no partial file or temporary" % seam, files_in(clips) == before,
-                           "%r" % (files_in(clips),))
-            session.call("control.quit")
-        finally:
-            instance.close()
+        check_write_seam(binary, recorder, source, seam, value, message)
 
 
 def drive_reopen(session, recorder, workdir, source, path):

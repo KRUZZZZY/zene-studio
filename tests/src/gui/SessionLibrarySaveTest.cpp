@@ -58,6 +58,7 @@
 #include <QToolButton>
 
 #include <cmath>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -252,9 +253,11 @@ private slots:
 		view.refresh();
 		QMenu menu;
 		view.populateMenu(&menu, view.cellButton(0, 0));
-		menuAction(&menu, {QStringLiteral("Save to Library...")})->trigger();
+		QAction* save = menuAction(&menu, {QStringLiteral("Save to Library...")});
+		QVERIFY2(save != nullptr, "a populated audio cell's menu has no Save to Library... entry");
+		save->trigger();
 		CommandForm* form = visibleForm();
-		QVERIFY(form != nullptr);
+		QVERIFY2(form != nullptr, "Save to Library... opened no form");
 		clickRun(form);
 		const QString saved = QDir(ConfigManager::inst()->userSamplesDir()).filePath(QStringLiteral("Clips/kick.wav"));
 		QVERIFY2(QFileInfo::exists(saved), qPrintable(saved));
@@ -503,22 +506,7 @@ private slots:
 		QVERIFY2(saveAllocations > 0, "the probe did not see the save's own allocations");
 
 		// Two loops of the cell after the save: the stream never stopped and every frame is the clip's.
-		while (m_out.size() < 2 * clip.size() + 8 * static_cast<std::size_t>(Engine::audioEngine()->framesPerPeriod())) { period(); }
-		std::size_t first = 0;
-		while (first < m_out.size() && std::fabs(m_out[first].left()) + std::fabs(m_out[first].right()) == 0.0f) { ++first; }
-		QVERIFY2(first < m_out.size(), "the launched cell went silent across the save");
-		std::size_t from = 0;
-		while (from < clip.size() && std::fabs(clip[from].left()) + std::fabs(clip[from].right()) == 0.0f) { ++from; }
-		QVERIFY(first >= from);
-		first -= from;
-		QVERIFY(first + 2 * clip.size() <= m_out.size());
-		for (std::size_t i = 0; i < 2 * clip.size(); ++i)
-		{
-			const SampleFrame& want = clip[i % clip.size()];
-			const SampleFrame& got = m_out[first + i];
-			QVERIFY2(std::fabs(got.left() - want.left()) < 1e-5f && std::fabs(got.right() - want.right()) < 1e-5f,
-				qPrintable(QStringLiteral("frame %1 changed across the save").arg(i)));
-		}
+		QVERIFY2(renderedTwiceFromTheTop(clip), "the launched cell went silent or changed across the save");
 
 		auto* track = dynamic_cast<SampleTrack*>(Engine::getSong()->tracks().front());
 		QVERIFY(track != nullptr);
@@ -537,6 +525,37 @@ private slots:
 	}
 
 private:
+	//! The index in m_out where @a clip's own first sound begins, or npos when it is not there.
+	std::size_t clipStart(const std::vector<SampleFrame>& clip) const
+	{
+		std::size_t first = 0;
+		while (first < m_out.size() && m_out[first].left() == 0.0f && m_out[first].right() == 0.0f) { ++first; }
+		std::size_t from = 0;
+		while (from < clip.size() && clip[from].left() == 0.0f && clip[from].right() == 0.0f) { ++from; }
+		return first < from || first >= m_out.size() ? std::numeric_limits<std::size_t>::max() : first - from;
+	}
+
+	//! One loop of @a clip at @a at matches frame for frame.
+	bool loopMatches(const std::vector<SampleFrame>& clip, std::size_t at) const
+	{
+		for (std::size_t i = 0; i < clip.size(); ++i)
+		{
+			const SampleFrame& want = clip[i];
+			const SampleFrame& got = m_out[at + i];
+			if (std::fabs(got.left() - want.left()) >= 1e-5f || std::fabs(got.right() - want.right()) >= 1e-5f) { return false; }
+		}
+		return true;
+	}
+
+	//! Renders until two loops of @a clip are in m_out, then true when both loops match it exactly.
+	bool renderedTwiceFromTheTop(const std::vector<SampleFrame>& clip)
+	{
+		while (m_out.size() < 2 * clip.size() + 8 * static_cast<std::size_t>(Engine::audioEngine()->framesPerPeriod())) { period(); }
+		const std::size_t at = clipStart(clip);
+		if (at == std::numeric_limits<std::size_t>::max() || at + 2 * clip.size() > m_out.size()) { return false; }
+		return loopMatches(clip, at) && loopMatches(clip, at + clip.size());
+	}
+
 	//! Points cell @a track,@a scene at @a source (as session.set_slot does), keeping its type audio.
 	void setSource(int track, int scene, const QString& source)
 	{

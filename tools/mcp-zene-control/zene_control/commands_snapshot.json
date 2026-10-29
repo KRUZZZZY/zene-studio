@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T12:18:30Z",
+  "captured_at": "2026-10-29T18:41:32Z",
   "commands": [
     {
       "args_schema": {
@@ -2794,16 +2794,24 @@
           "overwrite": {
             "type": "boolean"
           },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
           "tags": {
             "type": "array"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
           }
         },
-        "required": [
-          "clip"
-        ],
+        "required": [],
         "type": "object"
       },
-      "description": "Save a 'clip' into the library: a sample clip as the audio it plays (a WAV), a MIDI clip as a MIDI file at the song's tempo. Written to 'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when left out) as 'name' (the clip's name when left out), refused when the file exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the file again.",
+      "description": "Save a clip into the library, addressed either by 'clip' (an arrangement clip) or by the pair 'track' + 'scene' (a populated launcher audio cell), exactly one of the two. A sample clip is written as the audio it plays; a MIDI clip as a MIDI file at the song's tempo; an audio cell as the audio its source file holds, at the source's own rate (the cell's gain, transpose, loop and warp are playback settings and are not baked into the entry; the decoded audio is bounded, and a source past the bound is refused before it is decoded). A MIDI cell holds a PatternStore pattern and is refused for now. Written to 'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when left out) as 'name' (the clip's or the cell's own name when left out), refused when the file exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the file again.",
       "group": "browser",
       "id": "browser.save_clip",
       "mutating": true,
@@ -37469,11 +37477,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-273.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-kyxvp232/zene.sock",
-    "version": "0.4.0-alpha.5816+db341cc"
+    "source_socket": "/tmp/zctl-run-7_4ufdw2/zene.sock",
+    "version": "0.4.0-alpha.5818+e90f6ee"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

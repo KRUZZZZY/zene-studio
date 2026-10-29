@@ -325,6 +325,33 @@ struct SaveSubject
 	bool cell = false;       //!< the subject is a launcher cell, not a Clip
 };
 
+//! Whether @a slot at (track, scene) is one this stage can save; false with the typed refusal in @a error.
+bool cellSavable(const ClipSlot& slot, int track, int scene, ControlResult* error)
+{
+	if (slot.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the cell at track %1, scene %2 is empty: there is nothing to save").arg(track).arg(scene));
+		return false;
+	}
+	if (slot.type() == ClipSlot::Type::Midi)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the cell at track %1, scene %2 holds a MIDI pattern; saving a pattern's notes to the "
+				"library is stage 2 of this work, so only an audio cell can be saved yet").arg(track).arg(scene));
+		return false;
+	}
+	return true;
+}
+
+//! The entry's name: the cell's own, else the source file's, else the coordinates.
+QString cellEntryName(const ClipSlot& slot, const QString& source, int track, int scene)
+{
+	QString name = slot.name().trimmed();
+	if (name.isEmpty()) { name = QFileInfo(source).completeBaseName(); }
+	return name.isEmpty() ? QStringLiteral("track-%1-scene-%2").arg(track).arg(scene) : name;
+}
+
 //! A populated AUDIO launcher cell, addressed by 'track' + 'scene', as a save subject.
 bool resolveCellSubject(const QJsonObject& args, SaveSubject* subject, ControlResult* error)
 {
@@ -352,19 +379,7 @@ bool resolveCellSubject(const QJsonObject& args, SaveSubject* subject, ControlRe
 		return false;
 	}
 	const ClipSlot& slot = model.slot(track, scene);
-	if (slot.isEmpty())
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the cell at track %1, scene %2 is empty: there is nothing to save").arg(track).arg(scene));
-		return false;
-	}
-	if (slot.type() == ClipSlot::Type::Midi)
-	{
-		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the cell at track %1, scene %2 holds a MIDI pattern; saving a pattern's notes to the "
-				"library is stage 2 of this work, so only an audio cell can be saved yet").arg(track).arg(scene));
-		return false;
-	}
+	if (!cellSavable(slot, track, scene, error)) { return false; }
 	const QString source = PathUtil::toAbsolute(slot.audioSource());
 	if (!QFileInfo(source).isFile())
 	{
@@ -375,9 +390,7 @@ bool resolveCellSubject(const QJsonObject& args, SaveSubject* subject, ControlRe
 	subject->cell = true;
 	subject->source = source;
 	subject->audio = true;
-	subject->defaultName = slot.name().trimmed();
-	if (subject->defaultName.isEmpty()) { subject->defaultName = QFileInfo(source).completeBaseName(); }
-	if (subject->defaultName.isEmpty()) { subject->defaultName = QStringLiteral("track-%1-scene-%2").arg(track).arg(scene); }
+	subject->defaultName = cellEntryName(slot, source, track, scene);
 	return true;
 }
 

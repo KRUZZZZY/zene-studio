@@ -232,40 +232,47 @@ bool writeFrames(const QString& target, const float* data, sf_count_t frames, in
 	return true;
 }
 
-//! The libsndfile path: the source's header gives the decoded size up front, and the audio is
-//! streamed block by block, so neither the whole source nor a second interleaved copy is ever
-//! held. Every failure cancels the write, leaving the destination as it was.
-auto saveThroughSndfile(const QString& source, const QString& target, SNDFILE* snd, int channels,
-	int sampleRate, qint64 declaredFrames, CellAudio::Result* result) -> bool
+//! The refusals both decode paths share: a source with no usable format, one past the decoded-size
+//! bound, and the deterministic allocation seam. @a declaredFrames < 0 means "not known yet".
+bool budgetRefusal(const QString& source, qint64 declaredFrames, int sampleRate, CellAudio::Result* result)
 {
-	if (channels < 1 || sampleRate <= 0 || channels > 64)
+	if (sampleRate <= 0)
 	{
-		result->error = QStringLiteral("'%1' has no usable channels or sample rate").arg(source);
-		return false;
+		result->error = QStringLiteral("'%1' has no usable sample rate").arg(source);
+		return true;
 	}
 	const qint64 budget = CellAudio::decodedByteBudget();
 	if (declaredFrames > 0 && !fitsBudget(declaredFrames, budget))
 	{
 		result->error = overBudgetMessage(source, declaredFrames, sampleRate, budget);
-		return false;
+		return true;
 	}
 	if (allocFault())
 	{
 		result->error = QStringLiteral("ran out of memory decoding '%1': nothing was written").arg(source);
-		return false;
+		return true;
 	}
+	return false;
+}
 
-	WavWriter writer(target, sampleRate);
-	QString error;
-	if (!writer.open(&error))
+//! One block's libsndfile floats as interleaved stereo: mono upmixed (both channels equal) and a wider
+//! source keeping its first two channels, the way SampleDecoder converts them.
+void toStereo(const std::vector<float>& readBuffer, int channels, sf_count_t frames, std::vector<float>* out)
+{
+	for (sf_count_t f = 0; f < frames; ++f)
 	{
-		result->error = error;
-		return false;
+		const auto frame = static_cast<std::size_t>(f) * static_cast<std::size_t>(channels);
+		(*out)[static_cast<std::size_t>(f) * 2] = readBuffer[frame];
+		(*out)[static_cast<std::size_t>(f) * 2 + 1] = readBuffer[frame + (channels > 1 ? 1 : 0)];
 	}
-	// libsndfile hands back INTERLEAVED floats (channels per frame), so one block-sized read
-	// buffer and one block-sized stereo output scratch are the whole working set - never a copy
-	// of the file. A mono source is upmixed the way SampleDecoder upmixes it (both channels equal);
-	// a source with more than two channels keeps its first two, as the decoder does.
+}
+
+/*! Streams @a snd into @a writer, one bounded block at a time. The running total is checked against the
+ *  budget too, so a header that understates the length is still bounded. False with @a result->error set. */
+bool streamBlocks(const QString& source, SNDFILE* snd, int channels, int sampleRate, WavWriter* writer,
+	CellAudio::Result* result)
+{
+	const qint64 budget = CellAudio::decodedByteBudget();
 	std::vector<float> readBuffer;
 	std::vector<float> interleaved;
 	try
@@ -294,32 +301,39 @@ auto saveThroughSndfile(const QString& source, const QString& target, SNDFILE* s
 			result->error = overBudgetMessage(source, done + got, sampleRate, budget);
 			return false;
 		}
-		for (sf_count_t f = 0; f < got; ++f)
-		{
-			const auto frame = static_cast<std::size_t>(f) * static_cast<std::size_t>(channels);
-			interleaved[static_cast<std::size_t>(f) * 2] = readBuffer[frame];
-			interleaved[static_cast<std::size_t>(f) * 2 + 1] = readBuffer[frame + (channels > 1 ? 1 : 0)];
-		}
-		if (!writer.write(interleaved.data(), got, &error))
-		{
-			result->error = error;
-			return false;
-		}
+		toStereo(readBuffer, channels, got, &interleaved);
+		if (!writer->write(interleaved.data(), got, &result->error)) { return false; }
 		done += got;
 	}
-	if (declaredFrames > 0 && done != declaredFrames)
+	result->frames = done;
+	return true;
+}
+
+//! The libsndfile path: the source's header gives the decoded size up front, and the audio is
+//! streamed block by block, so neither the whole source nor a second interleaved copy is ever
+//! held. Every failure cancels the write, leaving the destination as it was.
+auto saveThroughSndfile(const QString& source, const QString& target, SNDFILE* snd, int channels,
+	int sampleRate, qint64 declaredFrames, CellAudio::Result* result) -> bool
+{
+	if (channels < 1 || channels > 64)
+	{
+		result->error = QStringLiteral("'%1' has no usable channels").arg(source);
+		return false;
+	}
+	if (budgetRefusal(source, declaredFrames, sampleRate, result)) { return false; }
+
+	WavWriter writer(target, sampleRate);
+	if (!writer.open(&result->error)) { return false; }
+	if (!streamBlocks(source, snd, channels, sampleRate, &writer, result)) { return false; }
+	if (declaredFrames > 0 && result->frames != declaredFrames)
 	{
 		// A file that ends early would be saved truncated; refused rather than published short.
 		result->error = QStringLiteral("'%1' ended after %2 of its %3 frames; nothing was written")
-			.arg(source).arg(done).arg(declaredFrames);
+			.arg(source).arg(result->frames).arg(declaredFrames);
 		return false;
 	}
 	qint64 published = 0;
-	if (!writer.finish(&published, &error))
-	{
-		result->error = error;
-		return false;
-	}
+	if (!writer.finish(&published, &result->error)) { return false; }
 	result->ok = true;
 	result->frames = published;
 	result->sampleRate = sampleRate;
@@ -339,17 +353,7 @@ auto saveThroughSampleDecoder(const QString& source, const QString& target, Cell
 			.arg(source);
 		return false;
 	}
-	const qint64 budget = CellAudio::decodedByteBudget();
-	if (!fitsBudget(window->totalFrames, budget))
-	{
-		result->error = overBudgetMessage(source, window->totalFrames, window->window.sampleRate, budget);
-		return false;
-	}
-	if (allocFault())
-	{
-		result->error = QStringLiteral("ran out of memory decoding '%1': nothing was written").arg(source);
-		return false;
-	}
+	if (budgetRefusal(source, window->totalFrames, window->window.sampleRate, result)) { return false; }
 	const auto decoded = SampleDecoder::decode(source);
 	if (!decoded || decoded->data.empty() || decoded->sampleRate <= 0)
 	{
