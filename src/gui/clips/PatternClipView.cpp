@@ -152,7 +152,9 @@ void PatternClipView::paintEvent(QPaintEvent*)
 	const auto numberEmptyTracks = totalTracks - numberInstrumentTracksUsed;
 
 	const float totalHeight = height() * (1.0f - 2 * m_verticalPadding);
-	const float totalHeightForEmptyTracks = totalHeight * numberEmptyTracks / totalTracks * m_emptyTrackHeightRatio;
+	const float totalHeightForEmptyTracks = totalTracks > 0
+		? totalHeight * numberEmptyTracks / totalTracks * m_emptyTrackHeightRatio
+		: 0.f;
 	const float totalHeightForTracks = totalHeight - totalHeightForEmptyTracks;
 
 	const float trackHeight = numberInstrumentTracksUsed > 0

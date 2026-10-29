@@ -37,6 +37,7 @@
 
 #include <QtTest>
 
+#include <cfenv>
 #include <cstdlib>
 #include <limits>
 
@@ -540,6 +541,53 @@ private slots:
 			}
 		}
 		QCOMPARE(notePixelX - 4, 1); // x=1 repeats at x=5; x=1 itself lies under the clip border.
+	}
+
+	void anEmptyPatternStorePaintDoesNotRaiseInvalidFloatException()
+	{
+		QCOMPARE(Engine::patternStore()->tracks().size(), size_t(0));
+		PatternTrack* patternTrack = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			patternTrack = dynamic_cast<PatternTrack*>(track);
+			if (patternTrack != nullptr) { break; }
+		}
+		if (patternTrack == nullptr)
+		{
+			Engine::getSong()->addPatternTrack();
+			QCoreApplication::processEvents();
+			for (Track* track : Engine::getSong()->tracks())
+			{
+				patternTrack = dynamic_cast<PatternTrack*>(track);
+				if (patternTrack != nullptr) { break; }
+			}
+		}
+		QVERIFY(patternTrack != nullptr);
+
+		auto* patternClip = dynamic_cast<PatternClip*>(patternTrack->createClip(TimePos(0)));
+		QVERIFY(patternClip != nullptr);
+		QCoreApplication::processEvents();
+		PatternClipView* view = nullptr;
+		for (PatternClipView* candidate : m_editor->findChildren<PatternClipView*>())
+		{
+			if (candidate->getClip() == patternClip) { view = candidate; break; }
+		}
+		QVERIFY(view != nullptr);
+		view->setFixedWidth(40);
+		view->setFixedHeight(40);
+		view->setNeedsUpdate(true);
+
+		QImage image(view->size(), QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		std::fenv_t previousEnvironment;
+		QVERIFY(std::fegetenv(&previousEnvironment) == 0);
+		QVERIFY(std::feclearexcept(FE_ALL_EXCEPT) == 0);
+		view->render(&painter);
+		const int raisedExceptions = std::fetestexcept(FE_INVALID);
+		QVERIFY(std::fesetenv(&previousEnvironment) == 0);
+		painter.end();
+		QCOMPARE(raisedExceptions, 0);
 	}
 
 	void theDragPreviewShowsWhatTheDropWillDo()
