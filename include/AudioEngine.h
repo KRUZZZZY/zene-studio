@@ -58,7 +58,6 @@
 
 #ifdef LMMS_TESTING
 class AudioBusPlayHandleQueueTest;
-class AudioBusRegistrationTest;
 class ArrangeToolsTest;
 #endif
 
@@ -222,46 +221,6 @@ public:
 	void addAudioBusHandle(AudioBusHandle* busHandle);
 
 	void removeAudioBusHandle(AudioBusHandle* busHandle);
-
-	/*! cluster new-p12-313: bus registration never allocates, locks or waits on a realtime thread.
-	 *
-	 *  A bus built on the audio path (a standalone AudioBusHandle, which the class explicitly allows)
-	 *  is parked in a fixed preallocated array and published under the model lock at a period
-	 *  boundary; a thread that finds the model lock held does the same instead of blocking. The
-	 *  control-thread timer - or the next render period - publishes the backlog. */
-	bool deferAudioBusRegistration(AudioBusHandle* busHandle) noexcept;
-	//! Publish one registration; the caller owns m_changeMutex.
-	void publishAudioBusRegistration(AudioBusHandle* busHandle);
-	//! Publish every deferred registration; the caller owns m_changeMutex.
-	void drainDeferredAudioBusRegistrations() noexcept;
-	//! Control-thread timer entry: takes the model lock (off the audio path) and publishes the backlog.
-	void serviceAudioBusRegistrationsOnControlThread();
-
-	//! cluster new-p12-313: how many registrations the fixed overflow can hold. A bus made on the
-	//! audio path is bounded by the play handles one period can start; 64 is far above that and
-	//! costs 512 bytes, preallocated.
-	static constexpr std::size_t AudioBusRegistrationCapacity = 64;
-	std::array<AudioBusHandle*, AudioBusRegistrationCapacity> m_deferredAudioBusHandles{};
-	std::atomic<std::size_t> m_deferredAudioBusHandleCount{0};
-	//! One producer at a time claims the overflow; the drainer releases it.
-	std::atomic<bool> m_audioBusRegistrationProducer{false};
-	//! How many registrations were refused because the overflow was full or already claimed.
-	std::atomic<std::uint64_t> m_audioBusRegistrationOverflows{0};
-	std::atomic<std::uint64_t> m_audioBusRegistrationDeferrals{0};
-
-	//! cluster new-p12-313: refused registrations (diagnostics; the count never resets).
-	std::uint64_t audioBusRegistrationOverflows() const noexcept
-	{
-		return m_audioBusRegistrationOverflows.load(std::memory_order_relaxed);
-	}
-
-	//! cluster new-p12-313: registrations parked in the fixed overflow because they were made on
-	//! the realtime path, or while another thread held the model lock. Each is published later, so
-	//! a non-zero count with a matching publish is the deferral working, not a lost bus.
-	std::uint64_t audioBusRegistrationDeferrals() const noexcept
-	{
-		return m_audioBusRegistrationDeferrals.load(std::memory_order_relaxed);
-	}
 
 	//! Read-only view of the registered handles (#605). The audio thread
 	//! iterates this under m_changeMutex (see renderStageEffects), which is the
@@ -689,40 +648,10 @@ public:
 	//! Enable/disable sanitization of inf/nan values
 	void setSanitizationEnabled(bool enabled) { m_sanitizationEnabled.store(enabled, std::memory_order_relaxed); }
 
-	//! cluster new-p9-551: snapshot buffers kept for nextAudioBuffer() - a FIXED ROTATION, so the
-	//! pointer an emit hands out stays valid for that many periods and a queued receiver can copy it.
-	static constexpr int RenderTapSlots = 4;
-
-	//! cluster new-p9-551: the slot nextAudioBuffer() last published, or -1 before the first period.
-	int renderTapSlot() const noexcept { return m_renderTapSlot.load(std::memory_order_acquire); }
-
-	//! cluster new-p9-551: the snapshot buffer of \a slot; null until that slot has been published.
-	const SampleFrame* renderTapBuffer(int slot) const noexcept
-	{
-		if (slot < 0 || slot >= RenderTapSlots) { return nullptr; }
-		return m_renderTapBuffers[static_cast<std::size_t>(slot)].get();
-	}
-
 signals:
 	void qualitySettingsChanged();
 	void sampleRateChanged();
-
-	/*! cluster new-p9-551: the period just mixed, for a receiver that may run LATER.
-	 *
-	 *  The pointer is into a FIXED ROTATION of preallocated snapshot buffers,
-	 *  never into the engine's reusable output buffer, and it stays valid until
-	 *  the same slot comes round again (RenderTapSlots periods later) - long
-	 *  enough for a queued receiver to be dispatched, and bounded, so a receiver
-	 *  that keeps the pointer cannot make the engine allocate, grow or wait on
-	 *  the audio thread. It used to be the engine's output buffer, which
-	 *  swapBuffers() zeroes and refills every period: a queued receiver could
-	 *  read the NEXT period - or silence - instead of the one it was handed.
-	 *
-	 *  A receiver that runs inside the audio period should connect with
-	 *  Qt::DirectConnection (the engine's own taps do); a queued one gets this
-	 *  owned copy instead of a pointer into live engine state. */
 	void nextAudioBuffer(const lmms::SampleFrame* buffer);
-
 
 
 private:
@@ -732,9 +661,6 @@ private:
 	struct AutomatableModelRegistry;
 #ifdef LMMS_TESTING
 	friend class ::AudioBusPlayHandleQueueTest;
-	// cluster new-p12-313: the registration regression reads the bus list and its capacity
-	// directly - that capacity is what made the registration allocate on the audio path.
-	friend class ::AudioBusRegistrationTest;
 	// The track-version regression reads the change mutex directly: it is the
 	// lock the audio thread takes, and a test needs to see whether a model
 	// edit runs inside it.
@@ -895,13 +821,6 @@ private:
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
-
-	/*! cluster new-p9-551: the buffers nextAudioBuffer() hands out, one per slot, each one period
-	 *  long. Allocated once in the constructor, so publishing a period copies into the next slot and
-	 *  never allocates. m_renderTapSlot is the slot of the last publication (-1 before the first). */
-	std::array<std::unique_ptr<SampleFrame[]>, RenderTapSlots> m_renderTapBuffers;
-	std::atomic<int> m_renderTapSlot{-1};
-	int m_renderTapNext = 0;
 	f_cnt_t m_outputBufferReadIndex;
 	//! 0.5.0 F1 (MX-040): the hardware outputs beyond the master, flipped with the two buffers above.
 	HardwareOutputBus m_hardwareOut;

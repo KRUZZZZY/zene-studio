@@ -70,9 +70,6 @@ set(LMMS_TESTS
 	# cluster null-1: an offline render of a unity sample clip at position 0 must
 	# BE its source frame for frame, at 44.1 and 48 kHz, with no alignment.
 	src/core/AudioEngineNullRenderTest.cpp
-	# cluster new-p12-313: bus registration allocates nothing inside a RealtimeScope
-	# and does not wait for the model lock held by another thread.
-	src/core/AudioBusRegistrationTest.cpp
 	src/core/AudioEngineProfilerTest.cpp
 	# The flanger delay buffer is allocated as an array, so both release sites
 	# must use array delete.

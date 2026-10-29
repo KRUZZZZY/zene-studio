@@ -536,9 +536,6 @@ AudioEngine::AudioEngine(bool renderOnly)
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
-	// cluster new-p9-551: the render tap's snapshot rotation, allocated once here so publishing a
-	// period on the audio thread only copies into the next slot - it never allocates or grows.
-	for (auto& slot : m_renderTapBuffers) { slot = std::make_unique<SampleFrame[]>(m_framesPerPeriod); }
 	m_hardwareOut.init(m_framesPerPeriod);  // 0.5.0 F1 (MX-040): allocated once, here, never on the render path
 
 
@@ -557,9 +554,6 @@ AudioEngine::AudioEngine(bool renderOnly)
 		m_recorder.reconcileInputChannelCapacity();
 		serviceSampleVoicePoolOnControlThread();
 		topUpPlayHandleCapacityOnControlThread();
-		// cluster new-p12-313: publish bus registrations deferred while the render thread held
-		// the model lock (off the audio path, so waiting for it here is allowed).
-		serviceAudioBusRegistrationsOnControlThread();
 		// Q050-016 round 3: free the expression-stream snapshots the render path
 		// retired (a playing handle held the last reference) - here, off it.
 		MpeStreamSnapshot::reclaimRetired();
@@ -1181,20 +1175,7 @@ void AudioEngine::renderStageMix()
 	// 0.5.0 W3 (WF-147): the tuner's tap on the master - one relaxed load unless it listens here (TunerTap.h).
 	TunerTap::instance().push( TunerTap::Source::Master, m_outputBufferWrite.get(), m_framesPerPeriod );
 
-	// cluster new-p9-551: publish THIS period into an owned snapshot slot, not the live output buffer.
-	// The emit used to hand out m_outputBufferRead.get(), which swapBuffers() zeroes and refills at the
-	// start of the next period - so a queued receiver could read the next period (or silence) instead
-	// of the one it was signalled for. A copy of one period is the smallest correct handoff: the slot
-	// is preallocated, so this is a memcpy with no allocation, lock or wait, and the pointer stays
-	// valid until that same slot is reused RenderTapSlots periods later.
-	{
-		const int slot = m_renderTapNext;
-		m_renderTapNext = (m_renderTapNext + 1) % RenderTapSlots;
-		SampleFrame* const tap = m_renderTapBuffers[static_cast<std::size_t>(slot)].get();
-		std::copy_n(m_outputBufferRead.get(), m_framesPerPeriod, tap);
-		m_renderTapSlot.store(slot, std::memory_order_release);
-		emit nextAudioBuffer(tap);
-	}
+	emit nextAudioBuffer(m_outputBufferRead.get());
 
 	// and trigger LFOs
 	EnvelopeAndLfoParameters::instances()->trigger();
@@ -1219,9 +1200,6 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	} periodEnd;
 	m_profiler.startPeriod();
 	s_renderingThread = true;
-	// cluster new-p12-313: publish the bus handles a render thread (or a thread that found the
-	// model lock held) deferred. Already under m_changeMutex; a no-op load when empty.
-	drainDeferredAudioBusRegistrations();
 	// Q050-074.1: this thread is the only writer, so a load and a store number the period.
 	const std::uint64_t period = m_renderedPeriods.load(std::memory_order_relaxed) + 1;
 	m_renderedPeriods.store(period, std::memory_order_relaxed);
@@ -1450,140 +1428,27 @@ void AudioEngine::restoreAudioDevice()
 
 
 
-/*! cluster new-p12-313: bus registration must not allocate, lock or wait on a realtime thread.
- *
- *  `AudioBusHandle`'s constructor registers itself here (AudioBusHandle.cpp:101) and the class
- *  explicitly allows a standalone bus to be built on the audio path (its own constructor comment
- *  says so). The historical body did `requestChangeInModel(); m_audioBusHandles.push_back(...)`,
- *  which is exactly what the realtime rule forbids on that path:
- *
- *   - push_back() may GROW the vector: an allocation and a copy of every registered pointer, on
- *     the render thread, whenever the list has no spare capacity;
- *   - requestChangeInModel() takes m_changeMutex, so a bus created on a WORKER thread can block
- *     behind the render thread that holds it for the whole period.
- *
- *  Two bounded, realtime-safe paths now cover the producers that actually exist:
- *
- *   - RENDER THREAD (the common case: a SamplePlayHandle built while a period renders). The
- *     pointer goes into a fixed preallocated overflow array (no allocation, no lock). The render
- *     period - which already owns the model lock - publishes it at the next period boundary.
- *   - CONTROL/OTHER THREAD with the model lock FREE. try_lock() takes it without waiting; the
- *     push then happens under the same lock the render period uses. If the render thread holds
- *     it, the pointer is deferred to the same overflow array and published by the control-thread
- *     timer (serviceAudioBusRegistrationsOnControlThread), which is off the audio path.
- *
- *  Nothing here grows a container or waits on the realtime path, and the list a render iterates
- *  is still published only under the model lock. */
 void AudioEngine::addAudioBusHandle(AudioBusHandle* busHandle)
 {
-	if (busHandle == nullptr) { return; }
-
-	if (RealtimeScope::isActive() || s_renderingThread)
-	{
-		if (!deferAudioBusRegistration(busHandle))
-		{
-			// The bounded overflow is full: the handle is not registered for this period. The
-			// caller keeps the handle alive either way; the next period's timer retries.
-			m_audioBusRegistrationOverflows.fetch_add(1, std::memory_order_relaxed);
-		}
-		return;
-	}
-
-	// Off the realtime path. try_lock() is the whole point: a thread that happens to run while
-	// the render thread owns the model lock must NOT wait here (that wait is what the finding
-	// reports for a worker), it defers instead.
-	if (m_changeMutex.try_lock())
-	{
-		struct Unlock
-		{
-			std::recursive_mutex& mutex;
-			~Unlock() { mutex.unlock(); }
-		} guard{m_changeMutex};
-#ifdef LMMS_TESTING
-		++s_changeInModelDepth;
-#endif
-		publishAudioBusRegistration(busHandle);
-		// Publish whatever the render thread deferred while this thread was running too.
-		drainDeferredAudioBusRegistrations();
-#ifdef LMMS_TESTING
-		--s_changeInModelDepth;
-#endif
-		return;
-	}
-
-	if (!deferAudioBusRegistration(busHandle))
-	{
-		m_audioBusRegistrationOverflows.fetch_add(1, std::memory_order_relaxed);
-	}
-}
-
-
-bool AudioEngine::deferAudioBusRegistration(AudioBusHandle* busHandle) noexcept
-{
-	// ONE producer at a time: a compare-exchange claim means two render threads (or a render
-	// thread and a worker) can never write the same slot, and a losing producer refuses instead
-	// of waiting. The claim is released by whichever thread drains it.
-	bool expected = false;
-	if (!m_audioBusRegistrationProducer.compare_exchange_strong(expected, true,
-			std::memory_order_acq_rel, std::memory_order_relaxed))
-	{
-		m_audioBusRegistrationOverflows.fetch_add(1, std::memory_order_relaxed);
-		return false;
-	}
-	const std::size_t count = m_deferredAudioBusHandleCount.load(std::memory_order_relaxed);
-	if (count >= m_deferredAudioBusHandles.size())
-	{
-		m_audioBusRegistrationProducer.store(false, std::memory_order_release);
-		return false;
-	}
-	m_deferredAudioBusHandles[count] = busHandle;
-	m_deferredAudioBusHandleCount.store(count + 1, std::memory_order_release);
-	m_audioBusRegistrationDeferrals.fetch_add(1, std::memory_order_relaxed);
-	return true;
-}
-
-
-void AudioEngine::publishAudioBusRegistration(AudioBusHandle* busHandle)
-{
-	// The caller owns m_changeMutex (the render period, or the thread that took it with try_lock).
-	// Idempotent: a handle is registered EXACTLY once. Without this a second registration would
-	// double-process the bus and, because removeAudioBusHandle() erases one occurrence, leave a
-	// dangling pointer in the list for every later period.
-	if (std::find(m_audioBusHandles.begin(), m_audioBusHandles.end(), busHandle) != m_audioBusHandles.end())
-	{
-		return;
-	}
+	requestChangeInModel();
 	m_audioBusHandles.push_back(busHandle);
-}
-
-
-void AudioEngine::drainDeferredAudioBusRegistrations() noexcept
-{
-	// The caller owns m_changeMutex. Publishing is the only step that may grow the list.
-	const std::size_t count = m_deferredAudioBusHandleCount.load(std::memory_order_acquire);
-	for (std::size_t i = 0; i < count; ++i)
+	if (!RealtimeScope::isActive() && QThread::currentThread() == thread())
 	{
-		AudioBusHandle* const deferred = m_deferredAudioBusHandles[i];
-		m_deferredAudioBusHandles[i] = nullptr;
-		if (deferred != nullptr) { publishAudioBusRegistration(deferred); }
+		const qsizetype capacity = m_playHandles.capacity();
+		const qsizetype required = static_cast<qsizetype>(m_audioBusHandles.size()
+			* PlayHandle::MaxNumber);
+		if (capacity < required || capacity - m_playHandles.size() <= PlayHandleListLowWater)
+		{
+			const qsizetype requested = std::max(required,
+				capacity + static_cast<qsizetype>(PlayHandle::MaxNumber));
+			if (AudioResampler::ensureRealtimeVoiceConverterPoolCapacity(
+				realtimeVoiceConverterCapacity(requested)))
+			{
+				m_playHandles.reserve(requested);
+			}
+		}
 	}
-	m_deferredAudioBusHandleCount.store(0, std::memory_order_release);
-	m_audioBusRegistrationProducer.store(false, std::memory_order_release);
-}
-
-
-void AudioEngine::serviceAudioBusRegistrationsOnControlThread()
-{
-	// The control-thread timer (m_playHandleCapacityTimer): off the audio path, so it may block on
-	// the model lock while a period renders. That is the whole reason the deferral exists.
-	if (m_deferredAudioBusHandleCount.load(std::memory_order_acquire) == 0
-		&& !m_audioBusRegistrationProducer.load(std::memory_order_acquire))
-	{
-		return;
-	}
-	const auto guard = requestChangesGuard();
-	drainDeferredAudioBusRegistrations();
-	topUpPlayHandleCapacityOnControlThread();
+	doneChangeInModel();
 }
 
 
@@ -1595,12 +1460,6 @@ void AudioEngine::removeAudioBusHandle(AudioBusHandle* busHandle)
 	if (it != m_audioBusHandles.end())
 	{
 		m_audioBusHandles.erase(it);
-	}
-	// A handle destroyed before its deferred registration was published must not be published
-	// afterwards: a later render would call through a dangling pointer.
-	for (std::size_t i = 0; i < m_deferredAudioBusHandleCount.load(std::memory_order_acquire); ++i)
-	{
-		if (m_deferredAudioBusHandles[i] == busHandle) { m_deferredAudioBusHandles[i] = nullptr; }
 	}
 	doneChangeInModel();
 }

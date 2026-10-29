@@ -2379,7 +2379,6 @@ tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBusHandleTest.cpp
 tests/src/core/AudioBurstSupport.h
 tests/src/core/AudioBusPlayHandleQueueTest.cpp
-tests/src/core/AudioBusRegistrationTest.cpp
 tests/src/core/AudioClipLoopTest.cpp
 tests/src/core/AudioEditingTest.cpp
 tests/src/core/AudioOssWriteTest.cpp
