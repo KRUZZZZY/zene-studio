@@ -331,6 +331,28 @@ limit. Both new test files are under 500 lines.
 
 ---
 
+**Pre-submit check.** `submit_check.py` (unmodified; only `FEATURE_CHECK_LOGS` redirected
+into the ignored `build/feature-check/`, because its default log path is the same
+unwritable sibling directory) reports:
+
+```
+$TMPDIR/logs-null-1/100-submit-shim.log   EXIT=0
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-null-1.md
+  PASS  tests added or changed
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+When run from the temporary shim directory it also prints one `WARN scope guard -
+ModuleNotFoundError("No module named 'scope_guard'")`; that is the optional module not
+being importable from the shim, not a finding about this patch (the scope guard is off
+for non-feature units unless `qwen/SCOPE-GUARD.json` enables it).
+
+---
+
 ## Self-check
 
 **Q: The regression test FAILS with your product change reverted and PASSES with it
