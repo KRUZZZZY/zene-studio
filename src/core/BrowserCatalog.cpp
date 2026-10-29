@@ -37,9 +37,11 @@
 
 #include "BrowserCatalog.h"
 
+#include "BrowserIndex.h"
 #include "BrowserSearch.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <QDateTime>
 #include <QDir>
@@ -136,16 +138,57 @@ const KindNameRow kKindNames[] = {
 	{"other", BrowserKind::Other},
 };
 
+//! The key vocabulary (0.5.0 L11, Q050-316.1): pitch class names. The sharp
+//! spelling is what browserKeyName writes; the flat spellings are what a caller
+//! may send (Db == C#), case-insensitively. One table for both directions, so a
+//! name that is read and a name that is written cannot drift.
+struct KeyNameRow
+{
+	const char* name;
+	int pitchClass;
+};
+
+const KeyNameRow kKeyNames[] = {
+	{"c", 0}, {"c#", 1}, {"db", 1}, {"d", 2}, {"d#", 3}, {"eb", 3}, {"e", 4},
+	{"f", 5}, {"f#", 6}, {"gb", 6}, {"g", 7}, {"g#", 8}, {"ab", 8}, {"a", 9},
+	{"a#", 10}, {"bb", 10}, {"b", 11},
+};
+
+constexpr int kKeyNameCount = static_cast<int>(sizeof(kKeyNames) / sizeof(kKeyNames[0]));
+
 //! The state one query carries across its directories.
 struct QueryContext
 {
 	const BrowserQuery* query = nullptr;
 	const BrowserSearch* search = nullptr;  //!< 0.5.0 L11 (WF-003): the text, parsed once
+	/*! 0.5.0 L11 (Q050-316.1): the index's measured tempo/key by canonical path,
+	 *  copied ONCE per query when a tempo or key facet is active. Empty
+	 *  otherwise, so a query that does not ask about tempo or key never reads the
+	 *  index at all - a plain walked search is the walk it always was. */
+	QHash<QString, BrowserFeatures> measured;
 	QList<BrowserItem> matched;
 	int scanned = 0;
 	int probed = 0;
 	bool truncated = false;
 };
+
+//! An active range holds only on a MEASURED number: unknown tempo (0) is not
+//! "0 BPM", and a file nobody measured carries no number to compare at all.
+bool tempoHolds(const BrowserItem& item, double minBpm, double maxBpm)
+{
+	if (!item.hasMeasuredTempoKey || item.measuredBpm <= 0.0) { return false; }
+	if (minBpm > 0.0 && item.measuredBpm < minBpm) { return false; }
+	if (maxBpm > 0.0 && item.measuredBpm > maxBpm) { return false; }
+	return true;
+}
+
+//! An active key holds only on a MEASURED pitch class: unknown (-1) never
+//! matches, because the caller asked for a fact the file does not carry.
+bool keyHolds(const BrowserItem& item, int keyPitchClass)
+{
+	return item.hasMeasuredTempoKey && item.measuredKeyPitchClass >= 0
+		&& item.measuredKeyPitchClass == keyPitchClass;
+}
 
 bool tagsMatch(const QStringList& present, const QStringList& wanted)
 {
@@ -216,6 +259,30 @@ bool metadataCanOverturn(const QueryContext* context)
 	return context->query->probe && context->search->hasUnfieldedExclusion();
 }
 
+/*! Attaches \a item's measured tempo/key when the query asks for either, and
+ *  answers whether it passes the shared tag/category/tempo/key filter.
+ *
+ *  The measurement comes from the index's one-shot copy, keyed by canonical path
+ *  as the index keys a file - the walk's item path is absolute but not canonical,
+ *  and on a platform where a root resolves through a link (macOS's /tmp) the two
+ *  spellings differ. A file with no measurement keeps hasMeasuredTempoKey false:
+ *  nobody looked, which is not a value.
+ */
+bool passesFacets(BrowserItem* item, const QueryContext& context)
+{
+	if (browserTempoKeyActive(context.query->minBpm, context.query->maxBpm, context.query->keyPitchClass))
+	{
+		const auto found = context.measured.constFind(browserCanonicalKey(item->path));
+		if (found != context.measured.constEnd() && found->valid)
+		{
+			item->hasMeasuredTempoKey = true;
+			item->measuredBpm = found->bpm;
+			item->measuredKeyPitchClass = found->keyPitchClass;
+		}
+	}
+	return browserItemMatchesFilters(*item, *context.query);
+}
+
 /*! Considers one file: the cheap filters first, and a metadata probe only for a
  *  candidate whose name, path and tags did not already answer the query.
  */
@@ -228,9 +295,7 @@ void considerPath(const QString& path, BrowserKind kind, QueryContext* context)
 	// precedes that count: this file has been read, so a tag filter that refuses
 	// it does not un-read it.
 	++context->scanned;
-	if (!tagsMatch(item.tags, context->query->tags)) { return; }
-	if (!context->query->category.isEmpty()
-		&& QString::compare(item.category, context->query->category, Qt::CaseInsensitive) != 0) { return; }
+	if (!passesFacets(&item, *context)) { return; }
 
 	const bool cheapMatch = context->search->matches(item);
 	// Only audio carries the metadata a probe reads, and the probe budget is a
@@ -402,6 +467,69 @@ bool browserIsLv2Bundle(const QFileInfo& info)
 		&& info.suffix().compare(QLatin1String("lv2"), Qt::CaseInsensitive) == 0;
 }
 
+QString browserKeyName(int pitchClass)
+{
+	if (pitchClass < 0 || pitchClass > 11) { return QString(); }
+	// The sharp spelling only: browserKeyFromName accepts both, but ONE name is
+	// written, so a client comparing a reported key with a filter value reads the
+	// same string for the same pitch class.
+	static const char* const names[12] = {"C", "C#", "D", "D#", "E", "F",
+		"F#", "G", "G#", "A", "A#", "B"};
+	return QString::fromLatin1(names[pitchClass]);
+}
+
+bool browserKeyFromName(const QString& name, int* pitchClass)
+{
+	const QString trimmed = name.trimmed().toLower();
+	if (trimmed.isEmpty() || trimmed == QLatin1String("any"))
+	{
+		*pitchClass = -1;
+		return true;
+	}
+	for (int i = 0; i < kKeyNameCount; ++i)
+	{
+		if (trimmed == QLatin1String(kKeyNames[i].name))
+		{
+			*pitchClass = kKeyNames[i].pitchClass;
+			return true;
+		}
+	}
+	// A bare pitch class is accepted too: an agent that already holds the
+	// index's number (browser.index_query reports it) can send it back without
+	// naming a note.
+	bool numeric = false;
+	const int value = trimmed.toInt(&numeric);
+	if (numeric && value >= 0 && value <= 11)
+	{
+		*pitchClass = value;
+		return true;
+	}
+	return false;
+}
+
+bool browserTempoKeyActive(double minBpm, double maxBpm, int keyPitchClass)
+{
+	return minBpm > 0.0 || maxBpm > 0.0 || keyPitchClass >= 0;
+}
+
+bool browserTempoKeyPasses(const BrowserItem& item, double minBpm, double maxBpm, int keyPitchClass)
+{
+	if (!browserTempoKeyActive(minBpm, maxBpm, keyPitchClass)) { return true; }
+	if (minBpm > 0.0 || maxBpm > 0.0)
+	{
+		if (!tempoHolds(item, minBpm, maxBpm)) { return false; }
+	}
+	return keyPitchClass < 0 || keyHolds(item, keyPitchClass);
+}
+
+bool browserItemMatchesFilters(const BrowserItem& item, const BrowserQuery& query)
+{
+	if (!tagsMatch(item.tags, query.tags)) { return false; }
+	if (!query.category.isEmpty()
+		&& QString::compare(item.category, query.category, Qt::CaseInsensitive) != 0) { return false; }
+	return browserTempoKeyPasses(item, query.minBpm, query.maxBpm, query.keyPitchClass);
+}
+
 QList<BrowserRoot> browserRoots()
 {
 	QList<BrowserRoot> out;
@@ -454,6 +582,14 @@ BrowserQueryResult runBrowserQuery(const BrowserQuery& query)
 	context.query = &query;
 	const BrowserSearch search(query.text);
 	context.search = &search;
+	// 0.5.0 L11 (Q050-316.1): a tempo or key facet reads the index's measurement,
+	// so it is copied ONCE here - never per file, and never while holding the
+	// index's mutex across this walk (a background scan needs it to publish). A
+	// query that asks for neither does not read the index at all.
+	if (browserTempoKeyActive(query.minBpm, query.maxBpm, query.keyPitchClass))
+	{
+		context.measured = browserMeasuredFeatures();
+	}
 
 	BrowserKind kind = BrowserKind::Other;
 	const bool kindFiltered = browserKindFromName(query.kind, &kind);

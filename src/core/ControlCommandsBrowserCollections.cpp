@@ -136,7 +136,9 @@ ControlResult save(const QJsonObject& args)
 	QJsonObject query;
 	// 0.5.0 L11 (WF-007): the category facet rides along, so a collection saved
 	// from a category-filtered search runs the same filter later.
-	for (const char* key : {"text", "tags", "kind", "root", "category"})
+	// 0.5.0 L11 (Q050-316.1): so do the tempo and key facets, validated by the
+	// same reader below - a collection that could never run is refused at save.
+	for (const char* key : {"text", "tags", "kind", "root", "category", "tempo_min", "tempo_max", "key"})
 	{
 		if (args.contains(QLatin1String(key))) { query.insert(QLatin1String(key), args.value(QLatin1String(key))); }
 	}
@@ -202,12 +204,15 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 void registerBrowserCollectionCommands(ControlRegistry& registry)
 {
 	add(registry, "collection_save", QStringLiteral("Save a search as a smart collection: 'name' and browser.query's 'text' (a "
-		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root' and "
-		"'category'. A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the "
-		"project; one undo step."),
+		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root', "
+		"'category', 'tempo_min', 'tempo_max' and 'key' (the measured tempo range and pitch class, as browser.query takes "
+		"them, so a tempo/key-filtered search runs again later). A collection of the same name is replaced. Kept beside the "
+		"browser tags in the config directory, not the project; one undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("text"), stringProperty()},
 			{QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()},
-			{QStringLiteral("root"), stringProperty()}, {QStringLiteral("category"), stringProperty()}},
+			{QStringLiteral("root"), stringProperty()}, {QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("tempo_min"), numberProperty()}, {QStringLiteral("tempo_max"), numberProperty()},
+			{QStringLiteral("key"), stringProperty()}},
 			{QStringLiteral("name")}), save, true);
 	add(registry, "collection_remove", QStringLiteral("Remove a smart collection ('name'). One undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), remove, true);
