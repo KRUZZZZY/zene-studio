@@ -26,6 +26,9 @@
 #ifndef LMMS_OUTPUT_SETTINGS_H
 #define LMMS_OUTPUT_SETTINGS_H
 
+#include <algorithm>
+#include <cmath>
+
 #include "ExportRenderSettings.h"
 #include "LmmsTypes.h"
 #include "SrcQuality.h"
@@ -109,8 +112,10 @@ public:
 
 	double getCompressionLevel() const{ return m_compressionLevel; }
 	void setCompressionLevel(double level){
-		// legal range is 0.0 to 1.0.
-		m_compressionLevel = level;
+		// legal range is 0.0 to 1.0: anything outside it is clamped to the nearer bound.
+		// NaN is not a level at all, so it leaves the current one in place.
+		if (std::isnan(level)) { return; }
+		m_compressionLevel = std::clamp(level, 0.0, 1.0);
 	}
 
 	/**
