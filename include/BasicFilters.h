@@ -34,6 +34,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <limits>
 #include <memory>
 #include <numbers>
@@ -300,6 +301,21 @@ public:
 		clearHistory();
 	}
 
+	// Signed rates are checked before the conversion to sample_rate_t: a
+	// negative value would otherwise wrap to a large positive rate. A
+	// nonpositive value maps to 0 and takes the zero paths above.
+	template<std::signed_integral SampleRate>
+	static constexpr sample_rate_t toSampleRate( const SampleRate _sample_rate )
+	{
+		return _sample_rate > 0 ? static_cast<sample_rate_t>( _sample_rate ) : 0;
+	}
+
+	template<std::signed_integral SampleRate>
+	inline BasicFilters( const SampleRate _sample_rate ) :
+		BasicFilters( toSampleRate( _sample_rate ) )
+	{
+	}
+
 	inline ~BasicFilters() = default;
 
 	inline void clearHistory()
@@ -336,6 +352,13 @@ public:
 		{
 			m_subFilter->clearHistory();
 		}
+	}
+
+	template<std::signed_integral SampleRate>
+	inline void setSampleRate( const SampleRate _sample_rate )
+	{
+		// a nonpositive value maps to 0 and is rejected below
+		setSampleRate( toSampleRate( _sample_rate ) );
 	}
 
 	inline void setSampleRate(const sample_rate_t sampleRate)
