@@ -9,7 +9,7 @@ Integration job, not a re-implementation. Accepted patch: `bugs/qwen-714` @ `bda
 ## Verdict: REAL, integrated and fixed
 
 The defect and the accepted fix are unchanged from the accepted branch. A zero-byte artefact reads back as success with
-no bytes (`src/core/RevisionTimeline.cpp:396-403`, `readFileBytes()` at `:161-183`), and `readRevisionBytes()` only fails
+no bytes (`src/core/RevisionTimeline.cpp:405-406`, `readFileBytes()` at `:167-189`), and `readRevisionBytes()` only fails
 when `error` is set. Restore then staged the empty bytes, rotated the live project into the keep-3 set and installed the
 empty file over it. The same gap exists on the rotation path via `control::restoreProjectRevision()`.
 
@@ -26,14 +26,14 @@ Resolution (new design NOT needed; the accepted semantics are kept and the train
 
 - `src/core/ProjectRevisions.cpp:168-176` - `emptyRevisionRefusal()`: the accepted refusal message, extracted to one
   helper so the "empty" wording a client sees is identical on both paths.
-- `:178-207` - `copyNonEmptyRevision()`: refuses a zero-byte source BEFORE copying it (the accepted QA correction), and
+- `:178-202` - `copyNonEmptyRevision()`: refuses a zero-byte source BEFORE copying it (the accepted QA correction), and
   additionally checks the STAGED bytes after a successful copy, removing the stage and refusing if it is empty. That
   keeps the accepted patch's "check the bytes that would be installed" property for a source that is not a regular file
   (a FIFO or device copies as zero bytes without being empty by `isFile()`).
-- `:220-252` - `stageRestoreTarget()`: keeps the train's cap check first (unchanged), then refuses and REMOVES a
+- `:212-253` - `stageRestoreTarget()`: keeps the train's cap check first (unchanged), then refuses and REMOVES a
   zero-byte pending stage, then stages a fresh copy through `copyNonEmptyRevision()`. Both orderings are pre-rotation,
   so the live file is still never rotated out for a restore that would install nothing.
-- `:432-434` - `restoreProjectRevision()` calls the helper, with the accepted patch's comment.
+- `:432-439` - `restoreProjectRevision()` calls the helper, with the accepted patch's comment.
 - `src/core/RevisionTimeline.cpp` - accepted patch applied unchanged: `readRestorableBytes()` at `:243-251`, called at
   `:438`. No semantic difference from the accepted patch.
 
@@ -155,3 +155,44 @@ Only Linux was built and run (this machine). Reviewed for portability: no new AP
 - **Gates.** All 8 rows PASS (EXIT 0) with only the gate's own log path redirected; the unmodified script cannot run in
   this sandbox because it writes beside the worktree (`gate/feature-check-direct.log`, EXIT 1, PermissionError). The
   earlier round-1 note about the same limitation still applies, unchanged by this job.
+
+## Self-check answers to the pre-submit ASK items
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 714` (`submit-check-1.log`, EXIT 1):
+PASS - commits on the branch; PASS - working tree clean; PASS - report; PASS - tests added or changed. The one FAIL is
+the gates row: it runs the UNMODIFIED `feature_check.py`, which creates its log directory at
+`<worktree>-feature-check` (`PermissionError 13`, reproduced with a bare `Path.mkdir` in that directory; the parent is
+mode 0777 and owned by this uid, so this is the sandbox's file-access policy, not a permissions mistake). The same eight
+gate rows with the identical gate logic and base listing PASS in `gate/feature-check-2-final.log` (EXIT 0).
+
+- **? Regression FAILS reverted, PASSES restored.** Reverting only the two product files (`fix.patch`, 140 lines) and
+  rebuilding gives EXIT 8 with both regressions failing (`test-9-4b-red.log`: `RevisionTimelineTest` at the empty
+  `backup`, `ProjectRevisionRestoreStagingTest` at the empty pending stage; 0/2 passed). Re-applying and rebuilding
+  gives EXIT 0 with 4/4 family tests passing (`test-10-4b-green.log`). The rotation sibling alone, reversed
+  (`fix-rotation-only.patch`), also gives EXIT 8 while the timeline test stays green (`test-7-rot-red.log`).
+- **? Deterministic.** No `QDateTime::currentDateTime()`, `QThread`, `QTest::qWait` or sleep in either new test. The
+  fixture is fixed bytes (`documentWith(n)`) in a `QTemporaryDir`; the zero-byte inputs are written explicitly with
+  `writeBytes(path, QByteArray())`; the recovery path is pinned by the existing `ZENE_RECOVERY_FILE` override in
+  `RevisionTimelineTest::initTestCase`. The pending-stage test drives the product's own path-resolution helpers
+  (`projectRevisionPath()` + a fixed UUID name and the legacy `.restore` name), so no clock or randomised seam is
+  involved. The "nothing changed" assertions compare exact bytes and a sorted directory listing.
+- **? At the cause, callers and siblings consistent.** Cause: zero bytes accepted as a restorable revision. Fixed at
+  `readRestorableBytes()` (`src/core/RevisionTimeline.cpp:243`, called from `:438`) for every timeline id including
+  `git:<sha>`, and at `stageRestoreTarget()`/`copyNonEmptyRevision()` (`src/core/ProjectRevisions.cpp:178-253`, called
+  from `:439`) for the rotation slot and for a reused pending stage. Callers checked and left consistent:
+  `revisions.restore` (`ControlCommandsRevisions.cpp:438`), its undo/redo (`:189`, `:224`), `project.restore`
+  (`ControlCommandsProjectFiles.cpp:374`, `:394`, `:417`). Sibling `revisions.compare` (`ControlCommandsRevisions.cpp:316`,
+  `:321`) intentionally still uses `readRevisionBytes()` so comparing an empty revision keeps working. The
+  save/rotation path (`rotateProjectRevision`, `copyRevision`) is untouched.
+- **? No collateral damage.** No header, cap, command id, registration or schema change. The train's cap check still
+  runs FIRST inside `stageRestoreTarget()`, so an over-cap revision or over-cap pending stage is refused exactly as
+  before (`anOversizedRevisionIsRefusedBeforeTheRetainedSetMoves`, `anOversizedPendingStageIsNotInstalled` pass), and a
+  revision of exactly `MaxRevisionBytes` still restores (`aRevisionExactlyAtTheCapStillRestores` passes). A valid
+  pending stage is still reused (`failedRestoreRetryUsesPendingStagedTarget` passes). Old projects and saved data are
+  not read, written or migrated by this change: the new code only runs inside restore/undo/redo/project.restore, and
+  only refuses a zero-byte source. The single intended behaviour change is the accepted patch's: an undo of a restore
+  whose replaced live file was zero bytes is refused and reported rather than silently reinstalling the empty file.
+- **? ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable - the verdict is FIXED. For completeness, the
+  unfixed code paths are `src/core/RevisionTimeline.cpp:405-406` (an empty read returns `QByteArray()` with no error)
+  and `src/core/RevisionTimeline.cpp:438` / `src/core/ProjectRevisions.cpp:439`, which staged and installed it; the RED
+  runs above demonstrate the consequence directly rather than inferring it.
