@@ -370,6 +370,14 @@ int TakeLaneModel::addLane(const QString& name)
 }
 
 
+bool TakeLaneModel::canAddLanes(int count) const
+{
+	// addLane() succeeds while the mark is below the limit, so 'count' more fit exactly when the
+	// mark is at most 'count' below it. The mark is never negative, so the subtraction cannot overflow.
+	return count >= 0 && count <= std::numeric_limits<int>::max() - m_nextLaneIndex;
+}
+
+
 int TakeLaneModel::baseLane() const
 {
 	return m_lanes.empty() ? -1 : m_lanes.front().index;
