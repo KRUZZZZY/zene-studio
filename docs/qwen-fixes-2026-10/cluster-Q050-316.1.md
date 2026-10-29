@@ -141,7 +141,7 @@ Each item below answers one ASK of `submit_check.py`, with the commands and exit
    commands keep `not_mutating` / `not_mutating` / `snapshot`, with their existing contract rows
    (`src/core/ControlReversibilityTablePassive.cpp:379`,
    `src/core/ControlReversibilityTableW3Library.cpp:71`,
-   `src/core/ControlReversibilityTableSnapshot.cpp` for `browser.collection_save`).
+   `src/core/ControlReversibilityTableDevices.cpp:125` for `browser.collection_save`).
    `ReversibilityContractTest` **EXIT=0** and `ControlCommandsSnapshot` **EXIT=0** confirm the
    table and the published histogram are unchanged (`test-9.log`). Nothing new is editable, so
    there is no new snapshot inverse to get wrong.
