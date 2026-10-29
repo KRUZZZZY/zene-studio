@@ -5516,3 +5516,4 @@ src/core/MixHelpers.cpp	new-p9-283: isSilent(const SampleFrame*, int) returns tr
 tests/src/core/AudioBufferTest.cpp	new-p9-283: regressions for MixHelpers::isSilent on normal frames, zero-frame (null and loud pointer) and negative frame counts.
 tests/src/core/GrooveTemplateTest.cpp	# GrooveTemplate target tick arithmetic overflows before clamping
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Extreme tempo-map values are cast to `int` before validation
+include/QuadratureLfo.h	new-p16-180: reject non-finite stereo offsets so a NaN or infinite offset keeps the previous offset and the right channel stays finite; regression DeviceDspTest::quadratureLfoIgnoresNonFiniteOffset in tests/src/core/DeviceDspTest.cpp.

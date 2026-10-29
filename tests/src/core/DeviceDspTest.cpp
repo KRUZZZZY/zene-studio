@@ -649,6 +649,38 @@ private slots:
 		QVERIFY(std::isfinite(right));
 	}
 
+	void quadratureLfoIgnoresNonFiniteOffset()
+	{
+		const double nonFiniteOffsets[] = {
+			std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity()};
+		for (const double offset : nonFiniteOffsets)
+		{
+			QuadratureLfo lfo(48000);
+			lfo.setFrequency(1.0);
+			lfo.setOffset(0.0);
+			lfo.setOffset(offset);
+			lfo.restart();
+
+			for (int i = 0; i < 8; ++i)
+			{
+				float left = 0.0f;
+				float right = 0.0f;
+				lfo.tick(&left, &right);
+				QVERIFY(std::isfinite(right));
+				QCOMPARE(right, left);
+			}
+
+			lfo.setOffset(std::numbers::pi);
+			float left = 0.0f;
+			float right = 0.0f;
+			lfo.tick(&left, &right);
+			QVERIFY(std::isfinite(right));
+			QVERIFY(std::abs(right + left) < 1e-6f);
+		}
+	}
+
 	void nonFiniteFormantFrequenciesUseMinimumFrequency()
 	{
 		using Filters = BasicFilters<2>;
