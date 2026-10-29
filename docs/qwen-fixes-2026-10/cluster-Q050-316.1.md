@@ -37,8 +37,8 @@ This makes that one measurement a **search facet**:
 
 All runs from `build/tests` with `ctest`, `QT_QPA_PLATFORM=offscreen`, and a writable temporary
 `$HOME` (the browser tag store lives in `$HOME`; several browser suites already require this).
-Logs: `/tmp/q050-316.1-r2/logs/` (the session could not write the shared run log directory —
-see Self-check).
+Logs: `~/.cache/zene-tmp/q050-316.1-r2-logs/` (kept after the session; the shared run log
+directory was not writable by this session's jail — see Self-check).
 
 | # | Criterion | Test and slot | What it proves | Exit |
 |---|-----------|---------------|----------------|-----:|
@@ -48,7 +48,7 @@ see Self-check).
 | 1 | Both commands return the same matching local files | same slot | `namesOf(browser.query) == namesOf(browser.index_query)` through the registry for: no filter, 100–130, key Db (none), key D / key "2", 80–120, 40–60 (only unknown/unmeasured files) | 0 |
 | 1 | Unknown metadata does not match an active tempo or key filter | `BrowserTempoKeyTest::anActiveFacetNeedsAMeasuredValue`, `::unknownAndUnmeasuredNeverMatchAnActiveFacet` | the 0 BPM / −1 key record and the never-measured file are refused by both facets; a 1–400 BPM search answers 2 of 4 files; an "any" facet passes everything | 0 |
 | 1 | The item wire form reports the measurement | `BrowserTempoKeyTest::theItemWireFormReportsWhatWasMeasured` | filtered walk reports `tempo_bpm` 120 / `tempo_known` true / `key` "A"; a plain walk carries none; the detected-nothing item reports `tempo_known` false, `key` "" | 0 |
-| 2 | Search remains local and offline | both targets; live socket probe `/tmp/q050-316.1-r2/socket-check.py` (`socket-check-1.log`) | every fixture is a temp local file the test writes; the real binary over the loopback socket answered the same facets, refusing a reversed range with `invalid_args` (`SOCKET PROBE: PASS`) | 0 |
+| 2 | Search remains local and offline | both targets; live socket probe `~/.cache/zene-tmp/q050-316.1-r2-logs/socket-check.py` (`socket-check-1.log`) | every fixture is a temp local file the test writes; the real binary over the loopback socket answered the same facets, refusing a reversed range with `invalid_args` (`SOCKET PROBE: PASS`) | 0 |
 | 2 | Older browser stores and indexes continue to load | `BrowserTempoKeyTest::anOlderIndexWithoutMeasurementsLoadsAndMatchesNoFacet`; `BrowserCatalogQueryTest::theCategoryTableRoundTripsAndAnOldStoreLoadsEmpty`; `BrowserCatalogQueryTest::theQueryMatchesNameTagAndMetadata` (`test-6.log`, `test-9.log`) | an index with no `f` records lists all files unfiltered and matches no facet; the old-store and old-query slots are unchanged and pass | 0 |
 | 2 | Existing projects continue to load | `ProjectVersionTest`, `ProjectOpenIntegrityTest`, `DataFileFormatTest` (`test-11.log`) | no project-format change; the project-version, open-integrity and data-format suites pass on the same build | 0 |
 | 2 | Existing browser behaviour unchanged | `BrowserCatalogTest`, `ControlBrowserCommandsTest`, `LibraryBrowserTest`, `ControlResultSchemaTest`, `ControlRegistryTest`, `ControlCommandsSnapshot`, `ReversibilityContractTest`, `LibraryMenusTest` (`test-9.log`) | the neighbouring suites (including the A16 contract and the committed snapshot) pass unchanged; 11 of 11 tests in that run | 0 |
@@ -177,7 +177,7 @@ Each item below answers one ASK of `submit_check.py`, with the commands and exit
 8. **Environment note (not a product issue).** The shared run-log directory
    `~/.local/share/zene-bunny-fix/qwen/runs/Q050-316.1.r2/logs` and the `bunny/build-pool.lock`
    are not writable by this session's Landlock jail, so logs for this session are under
-   `/tmp/q050-316.1-r2/logs/`; builds used `ZENE_BUILD_GUARDED=1` with `/usr/bin/cmake` (the
+   `~/.cache/zene-tmp/q050-316.1-r2-logs/`; builds used `ZENE_BUILD_GUARDED=1` with `/usr/bin/cmake` (the
    direct path, so the parent's jobserver admission is unchanged at `-j4`). The gate and
    submission scripts were run from `/tmp` copies with only their log paths redirected (the gate
    logic is byte-identical); `feature_check.py` **EXIT=0** with all eight gates PASS
