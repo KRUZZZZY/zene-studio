@@ -1093,6 +1093,7 @@ private slots:
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
+	void zeroCapacityDelayPassesInputThrough();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
@@ -4917,6 +4918,35 @@ void PluginPortsMigrationTest::zeroLengthDelayPassesInputThrough()
 	sample = 17.0f;
 	delay.tick(&sample);
 	QCOMPARE(sample, 17.0f);
+}
+
+void PluginPortsMigrationTest::zeroCapacityDelayPassesInputThrough()
+{
+	// A zero-second delay or a zero sample rate leaves no ring: m_maxLength is 0.
+	// tick() must return the input untouched rather than take the write index
+	// modulo that zero capacity.
+	lmms::MonoDelay zeroTime{0, 48000};
+	QCOMPARE(zeroTime.m_maxLength, 0);
+	zeroTime.setLength(5.0f);
+	QCOMPARE(zeroTime.m_length, 0.0f);
+
+	lmms::MonoDelay zeroRate{1, 0};
+	QCOMPARE(zeroRate.m_maxLength, 0);
+
+	lmms::MonoDelay reconfigured{1, 4};
+	reconfigured.setLength(2.0f);
+	reconfigured.setSampleRate(0);
+	QCOMPARE(reconfigured.m_maxLength, 0);
+
+	for (lmms::MonoDelay* delay : {&zeroTime, &zeroRate, &reconfigured})
+	{
+		for (int frame = 1; frame <= 8; ++frame)
+		{
+			lmms::sample_t sample = static_cast<lmms::sample_t>(frame);
+			delay->tick(&sample);
+			QCOMPARE(sample, static_cast<lmms::sample_t>(frame));
+		}
+	}
 }
 
 /*!
