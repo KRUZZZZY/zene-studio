@@ -1081,6 +1081,7 @@ private slots:
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
 	void dynamicsProcessorNeedsUpdateStartsCleared();
+	void dynamicsProcessorHugeLevelReadsLastCurvePoint();
 	void comparisonIsSensitive();
 	void sidShortSegmentsKeepRegisterWritesOrdered();
 	void sidSchedulerAdvancesThroughEveryRegisterWithReSid();
@@ -4015,6 +4016,78 @@ void PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape()
 	QDomElement outputRoot = outputDoc.createElement("effect");
 	const auto savedControls = effect->controls()->saveState(outputDoc, outputRoot);
 	QCOMPARE(savedControls.attribute(QStringLiteral("waveShape")), expectedWaveShape);
+}
+
+// The envelope level is scaled by 200 to index the 200-point wave shape. A level
+// above the table (including one whose x200 is beyond the int range, about
+// 10.7 million) must read the last point. The curve here has samples[0] = 0.005
+// and samples[199] = 1.0, so a wrong index changes the output, not just the path.
+void PluginPortsMigrationTest::dynamicsProcessorHugeLevelReadsLastCurvePoint()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	std::array<float, 200> shape{};
+	for (int i = 0; i < static_cast<int>(shape.size()); ++i)
+	{
+		shape[i] = (static_cast<float>(i) + 1.0f) / 200.0f;
+	}
+	QString encodedShape;
+	lmms::base64::encode(reinterpret_cast<const char*>(shape.data()),
+		static_cast<int>(sizeof(shape)), encodedShape);
+
+	// Settles a fresh instance on a constant input level and returns the last output sample.
+	const auto settledOutput = [&](float level, float& last) {
+		QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dynamicsprocessor)};
+		library.setLoadHints(QLibrary::PreventUnloadHint);
+		QVERIFY2(library.load(), qPrintable(library.errorString()));
+		auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+		QVERIFY(entry != nullptr);
+		auto effect = std::unique_ptr<lmms::Effect>{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+		QVERIFY(effect != nullptr);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement("effect");
+		root.setAttribute("on", 1);
+		root.setAttribute("wet", 1);
+		root.setAttribute("autoquit", 0);
+		QDomElement controls = effect->controls()->saveState(doc, root);
+		controls.setAttribute("inputGain", "1");
+		controls.setAttribute("outputGain", "1");
+		controls.setAttribute("attack", "1");
+		controls.setAttribute("release", "1");
+		controls.setAttribute("stereoMode", "0");
+		controls.setAttribute("waveShape", encodedShape);
+		effect->loadSettings(root);
+
+		// 64 blocks of 128 frames: far longer than the 1 ms attack/release, so the envelope settles.
+		constexpr lmms::f_cnt_t frames = 128;
+		std::array<lmms::SampleFrame, frames> buffer{};
+		lmms::SampleFrame* busPointers[] = {buffer.data()};
+		for (int block = 0; block < 64; ++block)
+		{
+			buffer.fill(lmms::SampleFrame{level, level});
+			lmms::AudioBus bus{busPointers, 1, frames};
+			effect->processAudioBuffer(bus);
+			for (const auto& sample : buffer)
+			{
+				QVERIFY(std::isfinite(sample.left()) && std::isfinite(sample.right()));
+			}
+			last = buffer.back().left();
+		}
+	};
+
+	// Output = input * gain / envelope, so for a settled constant input the
+	// output is the table's last point, 1.0. Both levels are above the table range.
+	// 2.0 never overflowed the int conversion; 1.0e8 does (x200 is 2.0e10).
+	float overTable = 0.0f;
+	settledOutput(2.0f, overTable);
+	QVERIFY(std::abs(overTable - 1.0f) < 0.01f);
+	float overflowing = 0.0f;
+	settledOutput(1.0e8f, overflowing);
+	QVERIFY(std::abs(overflowing - 1.0f) < 0.01f);
 }
 
 /*!

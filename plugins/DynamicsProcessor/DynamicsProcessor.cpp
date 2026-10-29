@@ -184,8 +184,10 @@ ProcessStatus DynProcEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 
 		for ( i=0; i <= 1; i++ )
 		{
-			const int lookup = static_cast<int>( sm_peak[i] * 200.0f );
-			const float frac = fraction( sm_peak[i] * 200.0f );
+			// clamp in float before the int conversion: a level past the table reads its last point
+			const float level = std::min( sm_peak[i] * 200.0f, 200.0f );
+			const int lookup = static_cast<int>( level );
+			const float frac = fraction( level );
 
 			if( sm_peak[i] > DYN_NOISE_FLOOR )
 			{
