@@ -41,6 +41,7 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -307,6 +308,47 @@ private slots:
 		QCOMPARE(comp.segments().front().beginTick, 0);
 		QCOMPARE(comp.segments().front().laneIndex, base);
 		QVERIFY(comp.segments().front().endTick >= length);
+	}
+
+	void aClipEndingPastTheLargestTickIsRenderedUpToIt()
+	{
+		// Clip end = start + length is a tick sum: here it passes the largest tick and wraps
+		// negative in tick_t, which dropped the whole clip. The part before the largest tick
+		// is still audible and must reach the file.
+		Track* track = newSampleTrack();
+		const tick_t largest = std::numeric_limits<tick_t>::max();
+		SampleClip* clip = addTake(track, largest - 20, 0.5f);
+		QVERIFY(clip->length().getTicks() > 20);
+		const QString out = m_dir.filePath(QStringLiteral("nearLargestTick.wav"));
+		const ClipConsolidate::Result rendered = ClipConsolidate::render({clip}, largest - 20, largest,
+			out);
+		QVERIFY2(rendered.ok, qPrintable(rendered.error));
+		auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(largest - 20)));
+		fresh->setSampleFile(out);
+		fresh->changeLength(TimePos(20));
+		fresh->setAutoResize(false);
+		QVERIFY2(std::fabs(levelAt(fresh, 2, 18) - 0.5) < 1e-4,
+			"the clip's audio before the largest tick is missing from the rendered file");
+	}
+
+	void aClipOffsetPastTheLargestTickContributesNothing()
+	{
+		// The offset carries the clip's audio past the largest tick, where no tick of the mix
+		// can hold it. start + offset wraps in tick_t; the clip must still contribute nothing.
+		Track* track = newSampleTrack();
+		SampleClip* clip = addTake(track, 1, 0.5f);
+		// Set the timeline offset directly. SampleClip's override also converts ticks to an int
+		// frame cache, which is a separate out-of-range conversion for this deliberately huge value.
+		clip->Clip::setStartTimeOffset(TimePos(std::numeric_limits<tick_t>::max()));
+		const tick_t length = clip->length().getTicks();
+		const QString out = m_dir.filePath(QStringLiteral("offsetPastLargestTick.wav"));
+		const ClipConsolidate::Result rendered = ClipConsolidate::render({clip}, 0, 2 * length, out);
+		QVERIFY2(rendered.ok, qPrintable(rendered.error));
+		auto* fresh = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		fresh->setSampleFile(out);
+		fresh->changeLength(TimePos(2 * length));
+		fresh->setAutoResize(false);
+		QCOMPARE(levelAt(fresh, 0, 2 * length), 0.0);
 	}
 
 private:

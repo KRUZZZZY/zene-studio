@@ -5546,3 +5546,4 @@ src/core/ProjectVersion.cpp	new-p10-308: a numeric MAJOR/MINOR/PATCH identifier 
 tests/src/core/ProjectVersionTest.cpp	# Invalid and oversized project versions are silently parsed as zero
 include/ProjectVersion.h	new-p10-308 round 2: declares isValid() and the m_valid flag for non-numeric MAJOR/MINOR/PATCH identifiers (they are reported, not read as 0); covered by ProjectVersionTest::malformedIdentifiersAreNotZero.
 src/core/DataFile.cpp	cluster new-p10-90: isRecoverableDocument() requires the first content element that loading selects to be the root's direct child (was a descendant search, so a misnested or nested-before-direct .new was adopted); regression: DataFileSaveIntegrityTest newFileWithContentNestedUnderAnotherElementIsNotAdopted.
+tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding a clip offset
