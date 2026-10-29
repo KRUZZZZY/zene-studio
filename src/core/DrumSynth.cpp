@@ -624,7 +624,10 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 
 	if (DiON == 1)
 	{
-		DAtten = DGain * static_cast<short>(LoudestEnv());
+		// LoudestEnv() can exceed the short range (Level=50000 gives 2.5e9), and converting
+		// such a float to short is undefined, so clamp it first.
+		const float loudestEnv = std::clamp(LoudestEnv(), 0.f, 32767.f);
+		DAtten = DGain * static_cast<short>(loudestEnv);
 		clippoint = DAtten > 32700 ? 32700 : static_cast<short>(DAtten);
 		const int distortionBits = GetPrivateProfileInt(sec, "Bits", 0, dsfile);
 		if (distortionBits < 0 || distortionBits > 7) { return 0; }
