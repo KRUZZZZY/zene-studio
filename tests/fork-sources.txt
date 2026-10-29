@@ -3303,3 +3303,5 @@ docs/qwen-fixes-2026-10/cluster-new-p10-290.md
 # bytes (not the input file's size) and written atomically, with deterministic allocation/write-fault seams.
 include/LibraryCellAudio.h
 tests/src/gui/SessionLibrarySaveTest.cpp
+docs/050-features/Q050-273.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-273.1.md
