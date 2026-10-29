@@ -494,6 +494,7 @@ include/LeftRightNav.h
 include/LevelBar.h
 include/LfoController.h
 include/LfoGraph.h
+include/LibraryCellAudio.h
 include/LibraryCommandMenus.h
 include/LinkAudioFollower.h
 include/LinkAudioStream.h
@@ -1998,6 +1999,7 @@ src/core/LadspaManager.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
 src/core/LfoController.cpp
+src/core/LibraryCellAudio.cpp
 src/core/LinkAudioCodec.cpp
 src/core/LinkAudioFollower.cpp
 src/core/LinkAudioSocket.cpp
@@ -3257,6 +3259,7 @@ tests/src/gui/ScriptBudgetActionTest.cpp
 tests/src/gui/SessionCellPlaybackMenuTest.cpp
 tests/src/gui/SessionGridRecordTest.cpp
 tests/src/gui/SessionGridViewTest.cpp
+tests/src/gui/SessionLibrarySaveTest.cpp
 tests/src/gui/SessionSubSceneGridTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp
