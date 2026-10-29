@@ -366,6 +366,26 @@ private slots:
 		QVERIFY(!info.fileExists);
 		QVERIFY(!decideRecovery(info, "").offered());
 	}
+
+	void anOversizedIdentitySidecarIsReadAsAbsent()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString recoveryFile = dir.filePath("recover.mmp");
+		const QString project = dir.filePath("Track.mmp");
+		QVERIFY(writeWithTime(recoveryFile, "<lmms/>", at(11, 12)));
+		QVERIFY(writeRecoveryIdentity(recoveryFile, project, at(11, 12)));
+		// A valid identity followed by 1 MiB of comment: far past any real sidecar.
+		const QByteArray padding = QByteArray("#") + QByteArray(1024 * 1024, 'x') + QByteArray("\n");
+		QFile sidecar(recoveryInfoPath(recoveryFile));
+		QVERIFY(sidecar.open(QIODevice::Append));
+		QVERIFY(sidecar.write(padding) == padding.size());
+		sidecar.close();
+
+		const RecoveryInfo info = readRecoveryInfo(recoveryFile);
+		QVERIFY(info.fileExists);
+		QVERIFY(!info.hasIdentity);
+	}
 };
 
 QTEST_GUILESS_MAIN(ProjectRecoveryTest)

@@ -5549,3 +5549,4 @@ src/core/DataFile.cpp	cluster new-p10-90: isRecoverableDocument() requires the f
 tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding a clip offset
 include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the documented 0.0-1.0 range (NaN keeps the current level); the only caller (ExportProjectDialog) passes in-range values, so renders are unchanged. Held by tests/src/gui/ExportQualityControlsTest.cpp::compressionLevelStaysInItsLegalRange
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
+tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit

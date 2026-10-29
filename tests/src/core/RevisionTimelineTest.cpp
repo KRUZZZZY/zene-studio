@@ -1180,6 +1180,33 @@ private slots:
 		QCOMPARE(findRevision(QString(), unsavedAutosave, QStringLiteral("autosave_prev")).id,
 			QStringLiteral("autosave_prev"));
 	}
+
+	//! A sidecar over the read bound is malformed by definition, so it is treated
+	//! as absent and its autosave is reported as an upstream one would be. The
+	//! sidecar is otherwise valid and names ANOTHER project: without the bound it is
+	//! parsed in full and the autosave is wrongly excluded from this timeline. The
+	//! padding is 1 MiB, well past the bound in ProjectRecovery.h.
+	void anOversizedIdentitySidecarIsUnavailableNotRead()
+	{
+		const QString dir = path(QStringLiteral("oversized"));
+		QVERIFY(QDir().mkpath(dir));
+		const QString project = dir + QStringLiteral("/song.mmp");
+		const QString recovery = dir + QStringLiteral("/recover.mmp");
+		const QString other = dir + QStringLiteral("/other.mmp");
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(recovery, documentWith(4)));
+
+		const QByteArray sidecar = QByteArray("version=1\nproject=") + other.toUtf8()
+			+ QByteArray("\nsavedUTC=2026-09-15T10:00:00Z\n#") + QByteArray(1024 * 1024, 'x')
+			+ QByteArray("\n");
+		QVERIFY(writeBytes(recovery + QStringLiteral(".info"), sidecar));
+
+		const QJsonObject state = revisionTimelineState(project, recovery, false);
+		const QJsonObject autosave = entryById(state, QStringLiteral("autosave"));
+		QVERIFY2(!autosave.isEmpty(), "an oversized sidecar must not hide the autosave");
+		QVERIFY(!autosave.value(QStringLiteral("detail")).toString()
+			.contains(QStringLiteral("other.mmp")));
+	}
 };
 
 QTEST_GUILESS_MAIN(RevisionTimelineTest)
