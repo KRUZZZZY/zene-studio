@@ -125,11 +125,22 @@ ctest -R '^AudioEngineNullRenderTest$'                               # EXIT=0  (
 100% tests passed out of 1
 ```
 
-The focused run on this final tree, after the out-of-scope removals, rebuilt and re-run:
+The focused proof on this final tree, after the out-of-scope removals:
 
 ```
-$TMPDIR/logs-null-1/110-r2-build.log   zene + AudioEngineNullRenderTest   EXIT=0
-$TMPDIR/logs-null-1/111-r2-green.log   ctest -R '^AudioEngineNullRenderTest$'   EXIT=0
+git diff 2a7fd9f9c7 -- src/core/Sample.cpp > $TMPDIR/logs-null-1/fix-final.patch  # 56 lines
+git apply -R $TMPDIR/logs-null-1/fix-final.patch      # EXIT=0
+/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (120-red-build.log)
+ctest -R '^AudioEngineNullRenderTest$'                # EXIT=8  (121-red-run.log)
+FAIL!  : unityClipAtPositionZeroRendersItsSourceBitExactly()
+         the 48000 Hz unity render is not its source: 9598 mismatched samples,
+         first at frame 1 (render 0.5/-0.25, source 0.278782/-0.399834),
+         peak residual 0.221218
+Totals: 3 passed, 1 failed, 0 skipped, 0 blacklisted
+
+git checkout -- src/core/Sample.cpp                  # EXIT=0
+/usr/bin/cmake --build build --target zene AudioEngineNullRenderTest -j4  # EXIT=0  (122-green-build.log)
+ctest -R '^AudioEngineNullRenderTest$'                # EXIT=0  (123-green-run.log)
 1/1 Test #14: AudioEngineNullRenderTest ........   Passed    0.54 sec
 100% tests passed out of 1
 ```
@@ -180,9 +191,11 @@ with only its log path redirected into the ignored `build/` directory.
 | complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 0 hits in this unit's files |
 | file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 0 hits in this unit's files |
 
-Through the unmodified runner (log path redirected only):
+Through the unmodified runner on the reduced tree (log path redirected only,
+`$TMPDIR/logs-null-1/124-feature-check.log`, exit 0):
 
 ```
+feature-check zene-qwen-null-1 (base 2a7fd9f9c, 7 changed files)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -255,6 +268,13 @@ off-by-one, was disproved by measurement before any code changed: engine frame 0
 master-mix frame 0 (`03-probe-first-frames.log`), and the duplicated frame came from the
 unity-ratio converter (`05…10-libsamplerate-*.log`). The finding's `file:line` was
 explicitly a guess, so the fix was placed at the measured cause.
+
+**Pre-submit check.** `submit_check.py` (unmodified; only `FEATURE_CHECK_LOGS`
+redirected into the ignored `build/feature-check/`) on the reduced tree reports
+`RESULT: PASS - submit`, exit 0: commits on the branch, clean tree, report with the
+verdict word, the test change, the CMake registration and all eight gates PASS. The one
+`WARN` is the optional `scope_guard` module not importable from the temporary shim
+directory, not a finding about this patch.
 
 **Q: Are the out-of-scope `new-p9-551` and `new-p12-313` changes really gone?**
 
