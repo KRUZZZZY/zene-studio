@@ -34,7 +34,17 @@ tests/scripted/check-namespace                                                 e
 bash tests/no-tautology-gate.sh                                                exit 0
 python3 tests/doc-figures-gate.py                                              exit 0
 python3 <snapshot_live.py> $PWD                                                exit 0    (878 ids / 77 groups; snapshot committed)
+python3 tests/agent-surface-gate.py --check build/zene tests/data/agent-control-fixture.mmp
+                                                                               exit 0    (381 reflected actions, 0 unregistered;
+                                                                                         reverse 878 commands, 876 swept)
 ```
+
+No command id was added or removed: comparing the committed snapshot with the base
+(`64bd86ae94`) gives 878 -> 878 ids, 77 -> 77 groups, `added: []`, `removed: []`. Only
+`browser.save_clip`'s `argsSchema` and description changed, so the README canary figure is
+still correct and the A16 histogram did not move (`ReversibilityContractTest` exit 0). The
+`submit_check` WARN about "new command ids" is that check's text-diff heuristic reading the
+new `track`/`scene` argument strings; it is not a new id.
 
 ## Self-check
 
