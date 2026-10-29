@@ -214,9 +214,22 @@ jobs:
             done ) &
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
-          ctest --output-on-failure --timeout 1500 -j2 || {
+          # That log named it (run 40854042953): AudioResamplerRatioTest reaches 11-15 GB (22.7 GB
+          # measured locally) once it selects SincBest - the realtime converter pool prepares one
+          # converter per play handle. The suite runs in a 12 GB cgroup, so the kernel kills that
+          # test (which then fails, red) instead of the runner, and every other result survives.
+          limited() {
+            if sudo -n systemd-run --scope --quiet -p MemoryMax=12G true >/dev/null 2>&1; then
+              sudo -E systemd-run --scope --quiet -p MemoryMax=12G -p MemorySwapMax=0 \
+                --uid="$(id -u)" --gid="$(id -g)" -- "$@"
+            else
+              echo "[resources] systemd-run is unavailable: running without the memory cap"
+              "$@"
+            fi
+          }
+          limited ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
-            ctest --rerun-failed -V --timeout 1500
+            limited ctest --rerun-failed -V --timeout 1500
             exit 1
           }
         env:
@@ -470,9 +483,22 @@ jobs:
             done ) &
           monitor=$!
           trap 'kill "$monitor" 2>/dev/null || true' EXIT
-          ctest --output-on-failure --timeout 1500 -j2 || {
+          # That log named it (run 40854042953): AudioResamplerRatioTest reaches 11-15 GB (22.7 GB
+          # measured locally) once it selects SincBest - the realtime converter pool prepares one
+          # converter per play handle. The suite runs in a 12 GB cgroup, so the kernel kills that
+          # test (which then fails, red) instead of the runner, and every other result survives.
+          limited() {
+            if sudo -n systemd-run --scope --quiet -p MemoryMax=12G true >/dev/null 2>&1; then
+              sudo -E systemd-run --scope --quiet -p MemoryMax=12G -p MemorySwapMax=0 \
+                --uid="$(id -u)" --gid="$(id -g)" -- "$@"
+            else
+              echo "[resources] systemd-run is unavailable: running without the memory cap"
+              "$@"
+            fi
+          }
+          limited ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
-            ctest --rerun-failed -V --timeout 1500
+            limited ctest --rerun-failed -V --timeout 1500
             exit 1
           }
         env:
