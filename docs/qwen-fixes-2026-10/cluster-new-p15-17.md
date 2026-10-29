@@ -61,18 +61,18 @@ one `note.arpeggiate` transaction, one `control.undo`. No command id was added o
 ## Why the state is reachable
 
 `Note::loadSettings` clamps a saved `len` to `>= 1` (`src/core/Note.cpp:652`) and MIDI import
-clamps a zero-duration event to 1 tick (`plugins/MidiImport/MidiImport.cpp:417`), so a **saved**
-project cannot carry these notes in from disk. The state is reachable through the engine API the
-finding names: `Note::setLength` (`src/core/Note.cpp:339-342`) stores the value unclamped, and
-`MidiClip::addNote`/`Note`'s constructor (`src/core/Note.cpp:165-190`, `src/tracks/MidiClip.cpp:
-190-210`) copy it as given. Paths that hand a zero/negative length to a note include the
-script binding `LuaNote::setLength` (`include/ScriptBindings.h:70`, no clamp) through
-`LuaPatternClip::addPannedNote` (`src/core/ScriptBindings.cpp:833-844`), `StepRecorder` while a
-step is still zero-length (`src/core/StepRecorder.cpp:353`), and the piano roll's
-`PianoRoll::constrainNoteLengths` with a zero `m_lenOfNewNotes` (`src/gui/editors/PianoRoll.cpp:
-779-799`). The defect is therefore real in the command's contract even though a well-formed saved
-file does not produce it; the finding's `confidence: low` is right about the trigger, not about
-the outcome.
+clamps a zero-duration event to 1 tick (`plugins/MidiImport/MidiImport.cpp:417`), so those normal
+load paths do not produce the state. The existing piano-roll resize code explicitly accounts for
+negative-length pattern-editor notes (`src/gui/editors/PianoRoll.cpp:1958-1961`); these are
+in-memory notes on the clip, and `MidiClip::addNote` stores the supplied note without a
+positive-length clamp (`src/tracks/MidiClip.cpp:190-210`). `Note::setLength` also stores the value
+unclamped (`src/core/Note.cpp:339-342`). The other paths previously listed here do not produce
+such a clip note: `LuaPatternClip::addPannedNote` clamps lengths to at least 1
+(`src/core/ScriptBindings.cpp:833-844`), and `StepRecorder` dismisses a zero-length pending step
+instead of applying it (`src/core/StepRecorder.cpp:131-139`). The defect is therefore real for
+legacy/in-memory pattern-editor notes even though the project and MIDI import paths cited in the
+finding sanitize their input; the finding's confidence was right about the trigger's uncertainty,
+not the destructive outcome.
 
 ## Siblings and callers checked
 
