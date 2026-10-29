@@ -141,6 +141,24 @@ Therefore:
   `$TMPDIR/p15-138-logs/gate-runs` and changes no gate logic, thresholds or baseline. `FIX-BASE`
   (`050/m0-train-24`), the baseline cache and all eight gates are the real ones.
 
+### Completion check
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p15-138` — **EXIT=0,
+PASS**. Five checks PASS (`commits on the branch`, `working tree clean`, `report`,
+`tests added or changed`, `gates (feature_check.py)`); all five ASK items are answered in the
+`Self-check` section below.
+
+The unmodified `submit_check.py` run against this worktree exits 1 with the single item
+`FAIL gates (feature_check.py)`, and that FAIL is the *same* sandbox denial, not a gate result:
+`submit_check.py` re-runs `feature_check.py` itself, which tries to
+`mkdir /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p15-138-feature-check`
+and dies with `PermissionError: [Errno 13] Permission denied` before evaluating any gate (the
+same `mkdir` invoked directly also fails, EXIT=1). The identical, unmodified `feature_check.py`
+logic run with only that log directory redirected exits **EXIT=0, all eight rows PASS** (table
+above), and the completion check run through a harness copy that redirects only that path exits
+**EXIT=0, PASS**. No threshold, baseline or gate was altered; the wrapper at
+`$TMPDIR/p15-138-logs/harness/` and the patched line are both in the log folder.
+
 ## Collateral damage
 
 None. No saved format, project data, parameter, control command or audio path changed. The
