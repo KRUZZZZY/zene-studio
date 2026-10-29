@@ -176,6 +176,27 @@ private slots:
 		QCOMPARE(run(QStringLiteral("range.copy")).errorKind, ControlErrorKind::Refused);
 	}
 
+	//! range.set orders its ends and an empty range is no range, so insert_time's default length (the
+	//! range's length) is never negative: an inverted range.set is read as the ordered one, and an empty one is refused.
+	void insertTimeDefaultLengthIsNeverNegative()
+	{
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 2 * Bar}, {QStringLiteral("end"), Bar},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(m_track)}}}).ok);
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("start")).toInt(), Bar);
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("end")).toInt(), 2 * Bar);
+		const ControlResult inserted = run(QStringLiteral("range.insert_time"));
+		QVERIFY2(inserted.ok, qPrintable(inserted.errorMessage));
+		QCOMPARE(inserted.result.value(QStringLiteral("length")).toInt(), Bar);
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, Bar}, {2 * Bar, 4 * Bar}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}}));
+
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), Bar}, {QStringLiteral("end"), Bar},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(m_track)}}}).ok);
+		QCOMPARE(run(QStringLiteral("range.insert_time")).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}}));
+	}
+
 	//! ED-030: repeat puts copies back to back; one undo removes them all.
 	void repeatPutsCopiesBackToBack()
 	{
