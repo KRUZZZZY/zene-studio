@@ -1038,6 +1038,28 @@ private slots:
 		QCOMPARE(playback.swing(), 0.f);
 	}
 
+	//! delayFrames() returns a frame count. A frames-per-tick that is negative or not finite has no
+	//! swing to give, and a negative delay must never reach the unsigned result: at full swing,
+	//! -1 frame per tick used to come back as -9 frames, which is 2^64 - 9 frames.
+	void delayFramesStaysAFrameCount()
+	{
+		MidiPlayback& playback = MidiPlayback::instance();
+		playback.setSwing(0.75f, MidiPlayback::DefaultSwingGrid);
+		const float badTicks[] = {-1.f, -100.f, std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()};
+		for (const float framesPerTick : badTicks)
+		{
+			QCOMPARE(playback.delayFrames(12, framesPerTick, 44100), f_cnt_t{0});  // an off-beat, no swing
+		}
+		QCOMPARE(playback.delayFrames(12, 100.f, 44100), f_cnt_t{900});  // 0.75 of a 12-tick step at 100 frames a tick
+		// The MIDI offset is not swing: it still delays a note when the tick length is unusable.
+		QVERIFY(run(QStringLiteral("transport.midi_options"), {{QStringLiteral("offset_ms"), 10}}).ok);
+		QCOMPARE(playback.delayFrames(12, -1.f, 44100), f_cnt_t{441});
+		QCOMPARE(playback.delayFrames(0, -1.f, 44100), f_cnt_t{441});
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(playback.offsetMs(), 0);
+		playback.setSwing(0.f, MidiPlayback::DefaultSwingGrid);
+	}
+
 	void swingRejectsValuesJustAboveMaximum()
 	{
 		MidiPlayback& playback = MidiPlayback::instance();
