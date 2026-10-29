@@ -1,5 +1,9 @@
 # cluster null-1
 
+**FIXED** — every bug in this batch is fixed at its measured cause, each with its own
+regression test and a recorded RED/GREEN proof; no verdict here is ALREADY-FIXED or
+FALSE-POSITIVE.
+
 null-1: FIXED
 new-p9-551: FIXED
 new-p12-313: FIXED
