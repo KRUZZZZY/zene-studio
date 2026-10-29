@@ -58,6 +58,7 @@
 
 #ifdef LMMS_TESTING
 class AudioBusPlayHandleQueueTest;
+class AudioBusRegistrationTest;
 class ArrangeToolsTest;
 #endif
 
@@ -221,6 +222,46 @@ public:
 	void addAudioBusHandle(AudioBusHandle* busHandle);
 
 	void removeAudioBusHandle(AudioBusHandle* busHandle);
+
+	/*! cluster new-p12-313: bus registration never allocates, locks or waits on a realtime thread.
+	 *
+	 *  A bus built on the audio path (a standalone AudioBusHandle, which the class explicitly allows)
+	 *  is parked in a fixed preallocated array and published under the model lock at a period
+	 *  boundary; a thread that finds the model lock held does the same instead of blocking. The
+	 *  control-thread timer - or the next render period - publishes the backlog. */
+	bool deferAudioBusRegistration(AudioBusHandle* busHandle) noexcept;
+	//! Publish one registration; the caller owns m_changeMutex.
+	void publishAudioBusRegistration(AudioBusHandle* busHandle);
+	//! Publish every deferred registration; the caller owns m_changeMutex.
+	void drainDeferredAudioBusRegistrations() noexcept;
+	//! Control-thread timer entry: takes the model lock (off the audio path) and publishes the backlog.
+	void serviceAudioBusRegistrationsOnControlThread();
+
+	//! cluster new-p12-313: how many registrations the fixed overflow can hold. A bus made on the
+	//! audio path is bounded by the play handles one period can start; 64 is far above that and
+	//! costs 512 bytes, preallocated.
+	static constexpr std::size_t AudioBusRegistrationCapacity = 64;
+	std::array<AudioBusHandle*, AudioBusRegistrationCapacity> m_deferredAudioBusHandles{};
+	std::atomic<std::size_t> m_deferredAudioBusHandleCount{0};
+	//! One producer at a time claims the overflow; the drainer releases it.
+	std::atomic<bool> m_audioBusRegistrationProducer{false};
+	//! How many registrations were refused because the overflow was full or already claimed.
+	std::atomic<std::uint64_t> m_audioBusRegistrationOverflows{0};
+	std::atomic<std::uint64_t> m_audioBusRegistrationDeferrals{0};
+
+	//! cluster new-p12-313: refused registrations (diagnostics; the count never resets).
+	std::uint64_t audioBusRegistrationOverflows() const noexcept
+	{
+		return m_audioBusRegistrationOverflows.load(std::memory_order_relaxed);
+	}
+
+	//! cluster new-p12-313: registrations parked in the fixed overflow because they were made on
+	//! the realtime path, or while another thread held the model lock. Each is published later, so
+	//! a non-zero count with a matching publish is the deferral working, not a lost bus.
+	std::uint64_t audioBusRegistrationDeferrals() const noexcept
+	{
+		return m_audioBusRegistrationDeferrals.load(std::memory_order_relaxed);
+	}
 
 	//! Read-only view of the registered handles (#605). The audio thread
 	//! iterates this under m_changeMutex (see renderStageEffects), which is the
@@ -691,6 +732,9 @@ private:
 	struct AutomatableModelRegistry;
 #ifdef LMMS_TESTING
 	friend class ::AudioBusPlayHandleQueueTest;
+	// cluster new-p12-313: the registration regression reads the bus list and its capacity
+	// directly - that capacity is what made the registration allocate on the audio path.
+	friend class ::AudioBusRegistrationTest;
 	// The track-version regression reads the change mutex directly: it is the
 	// lock the audio thread takes, and a test needs to see whether a model
 	// edit runs inside it.
