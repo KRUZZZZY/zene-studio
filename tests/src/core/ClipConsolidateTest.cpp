@@ -250,6 +250,65 @@ private slots:
 		QFile::remove(b);
 	}
 
+	//! A region whose replacement would push the base lane past its span budget is refused
+	//! before the render and the checkpoint: no file, no clip removed, composite unchanged.
+	void aReplacementTheCompositeCannotCarryIsRefusedBeforeAnythingChanges()
+	{
+		Track* track = newSampleTrack();
+		TakeLaneModel& comp = track->takeLanes();
+		const int base = comp.addLane();
+		const int other = comp.addLane();
+		QVERIFY(base != other);
+		SampleClip* clip = addTake(track, 0, 0.5f, other);
+		const int length = clip->length().getTicks();
+		QVERIFY(comp.selectSegment(0, length, other));
+		// The base lane sits at its budget, all of it past the clip's region with a tick to spare:
+		// a span that touched the region would merge into the replacement and cost nothing.
+		for (int i = 0; i < TakeLaneModel::MaxCompositeSpansPerLane; ++i)
+		{
+			QVERIFY(comp.selectSegment(length + 1 + 2 * i, length + 2 + 2 * i, base));
+		}
+		const auto segmentsBefore = comp.segments();
+		const QString out = m_dir.filePath(QStringLiteral("refused-budget.wav"));
+
+		const ControlResult done = run(QStringLiteral("clip.consolidate"),
+			args(track, {{QStringLiteral("out"), out}}));
+		QCOMPARE(done.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(done.errorMessage.contains(QStringLiteral("spans")), qPrintable(done.errorMessage));
+		QVERIFY(!QFileInfo::exists(out));
+		QCOMPARE(clipsOf(track).size(), std::size_t{1});
+		QCOMPARE(clipsOf(track)[0], clip);
+		QCOMPARE(comp.segments().size(), segmentsBefore.size());
+		QCOMPARE(comp.segments().front().laneIndex, other);
+		QCOMPARE(comp.segments().front().endTick, length);
+	}
+
+	//! One span short of the budget, the same replacement fits: the composite is repainted onto
+	//! the base lane, and the clip it names plays the region.
+	void aReplacementThatFitsTheBudgetRepaintsTheComposite()
+	{
+		Track* track = newSampleTrack();
+		TakeLaneModel& comp = track->takeLanes();
+		const int base = comp.addLane();
+		const int other = comp.addLane();
+		SampleClip* clip = addTake(track, 0, 0.5f, other);
+		const int length = clip->length().getTicks();
+		QVERIFY(comp.selectSegment(0, length, other));
+		for (int i = 0; i < TakeLaneModel::MaxCompositeSpansPerLane - 1; ++i)
+		{
+			QVERIFY(comp.selectSegment(length + 1 + 2 * i, length + 2 + 2 * i, base));
+		}
+
+		const ControlResult done = run(QStringLiteral("clip.consolidate"), args(track, {}));
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		QVERIFY(done.result.value(QStringLiteral("recomped")).toBool());
+		const auto after = clipsOf(track);
+		QCOMPARE(after.size(), std::size_t{1});
+		QCOMPARE(comp.segments().front().beginTick, 0);
+		QCOMPARE(comp.segments().front().laneIndex, base);
+		QVERIFY(comp.segments().front().endTick >= length);
+	}
+
 private:
 	Track* newSampleTrack()
 	{

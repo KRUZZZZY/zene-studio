@@ -161,9 +161,23 @@ QString uniqueOutPath(const QJsonObject& args, const Track* track, const Region&
 	return candidate;
 }
 
+/*! The composite's budget, asked BEFORE the render and the checkpoint: when there is a
+ *  composite to repaint, the replacement takes the base lane over the region, and a lane past
+ *  its span budget refuses that selection. Refused here, nothing is rendered or removed. */
+QString compositeRefusal(SampleTrack* track, const Region& region)
+{
+	const TakeLaneModel& lanes = track->takeLanes();
+	if (lanes.laneCount() == 0 || lanes.segments().empty()) { return QString(); }
+	if (lanes.canSelect(region.start, region.end, lanes.baseLane())) { return QString(); }
+	return QStringLiteral("%1's composite cannot take the consolidated clip over %2..%3 on its base "
+		"lane: that lane would exceed %4 spans; shorten or remove its selections on that lane first")
+		.arg(control::trackIdOf(track)).arg(region.start).arg(region.end)
+		.arg(TakeLaneModel::MaxCompositeSpansPerLane);
+}
+
 /*! ONE Track checkpoint, then the swap: the source clips go, one clip playing @a path takes
  *  the region, on the base lane when the track has lanes, and the composite over the region
- *  names it. @a recomped says whether there was a composite to repaint. */
+ *  names it. @a recomped says whether the composite was repainted. */
 SampleClip* replaceWithConsolidated(SampleTrack* track, const Region& region, const QString& path,
 	bool* recomped)
 {
@@ -179,9 +193,10 @@ SampleClip* replaceWithConsolidated(SampleTrack* track, const Region& region, co
 	fresh->changeLength(TimePos(region.end - region.start));
 	fresh->setAutoResize(false);
 	TakeLaneModel& lanes = track->takeLanes();
-	*recomped = lanes.laneCount() > 0 && !lanes.segments().empty();
+	const bool repaints = lanes.laneCount() > 0 && !lanes.segments().empty();
 	if (lanes.laneCount() > 0) { control::assignTakeLane(fresh, lanes.baseLane()); }
-	if (*recomped) { lanes.selectSegment(region.start, region.end, lanes.baseLane()); }
+	// compositeRefusal() asked this same selection before anything changed, so it holds.
+	*recomped = repaints && lanes.selectSegment(region.start, region.end, lanes.baseLane());
 	track->restoreJournallingState();
 	return fresh;
 }
@@ -208,6 +223,10 @@ ControlResult clipConsolidate(const QJsonObject& args)
 	ControlErrorKind kind = ControlErrorKind::InvalidArgs;
 	const QString problem = collectRegion(track, args, &region, &kind);
 	if (!problem.isEmpty()) { return ControlResult::failure(kind, problem); }
+	if (const QString refusal = compositeRefusal(track, region); !refusal.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, refusal);
+	}
 
 	const ClipConsolidate::Result rendered = ClipConsolidate::render(region.inside, region.start,
 		region.end, uniqueOutPath(args, track, region));
