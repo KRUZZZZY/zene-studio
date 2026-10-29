@@ -147,6 +147,13 @@ void JournallingObject::restoreState( const QDomElement & _this )
 
 void JournallingObject::changeID( jo_id_t _id )
 {
+	// No journal outside a live engine (see the constructor): nothing can be
+	// registered there, so the id stays where it is (0 for such an object).
+	if( Engine::projectJournal() == nullptr )
+	{
+		return;
+	}
+
 	if( id() != _id )
 	{
 		JournallingObject * jo = Engine::projectJournal()->

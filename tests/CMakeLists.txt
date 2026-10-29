@@ -733,6 +733,9 @@ set(LMMS_TESTS
 	src/core/UnclaimedTrackTypeTest.cpp
 	# The bounded, coalescing undo (task #623): the declared depth caps, the
 	# drag rule, the byte budget and the refusal of an evicted step.
+	# A JournallingObject restored with a file id while no project journal exists
+	# (before Engine::init): the restore must not dereference the null journal.
+	src/core/JournallingObjectRestoreTest.cpp
 	src/core/UndoBoundsTest.cpp
 	# WF-033: the undo history saved with the project - a real save -> open -> undo
 	# round trip through the control surface, checking every undo against the
