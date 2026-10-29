@@ -118,6 +118,75 @@ private slots:
 		QVERIFY(run.value(QStringLiteral("ok")).toBool());
 		QCOMPARE(run.value(QStringLiteral("non_finite_samples")).toInt(-1), 1);
 	}
+
+	void renderOfflineRefusesASampleRateThatIsNotAFiniteFloatRate()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString modulePath = directory.filePath(QStringLiteral("nan-output.wasm"));
+		QString error;
+		QVERIFY2(writeNaNModule(modulePath, error), qPrintable(error));
+
+		// 1e300 and -1 are the finding's inputs; 0 and 1e-60 (which rounds to a
+		// float zero) are the other ways a rate stops being a positive one.
+		const std::vector<double> rates = {1e300, -1.0, 0.0, 1e-60};
+		for (const double rate : rates)
+		{
+			const ControlResult rendered = ControlRegistry::instance()->invoke(
+				QStringLiteral("wasm.render_offline"),
+				{{QStringLiteral("module"), modulePath},
+					{QStringLiteral("frames"), 4},
+					{QStringLiteral("block_frames"), 4},
+					{QStringLiteral("repeats"), 2},
+					{QStringLiteral("sample_rate"), rate}});
+			const QString label = QStringLiteral("sample_rate %1 was rendered").arg(rate);
+			QVERIFY2(!rendered.ok, qPrintable(label));
+			QCOMPARE(rendered.errorKind, ControlErrorKind::InvalidArgs);
+		}
+	}
+
+	void renderOfflineCarriesAFiniteSampleRateToTheRender()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString modulePath = directory.filePath(QStringLiteral("nan-output.wasm"));
+		QString error;
+		QVERIFY2(writeNaNModule(modulePath, error), qPrintable(error));
+
+		const ControlResult rendered = ControlRegistry::instance()->invoke(
+			QStringLiteral("wasm.render_offline"),
+			{{QStringLiteral("module"), modulePath},
+				{QStringLiteral("frames"), 4},
+				{QStringLiteral("block_frames"), 4},
+				{QStringLiteral("repeats"), 2},
+				{QStringLiteral("sample_rate"), 44100.0}});
+		QVERIFY2(rendered.ok, qPrintable(rendered.errorMessage));
+
+		const QJsonObject response = QJsonDocument::fromJson(
+			QJsonDocument(rendered.result).toJson(QJsonDocument::Compact)).object();
+		QCOMPARE(response.value(QStringLiteral("sample_rate")).toDouble(), 44100.0);
+	}
+
+	void processRefusesASampleRateThatIsNotAFiniteFloatRate()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString modulePath = directory.filePath(QStringLiteral("nan-output.wasm"));
+		QString error;
+		QVERIFY2(writeNaNModule(modulePath, error), qPrintable(error));
+
+		const ControlResult loaded = ControlRegistry::instance()->invoke(
+			QStringLiteral("wasm.load"), {{QStringLiteral("path"), modulePath}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+
+		// The same rule as render_offline: 'sample_rate' reaches the module as
+		// a float, so a rate outside the float range is refused, not run.
+		const ControlResult processed = ControlRegistry::instance()->invoke(
+			QStringLiteral("wasm.process"),
+			{{QStringLiteral("frames"), 4}, {QStringLiteral("sample_rate"), 1e300}});
+		QVERIFY2(!processed.ok, "wasm.process ran with sample_rate 1e300");
+		QCOMPARE(processed.errorKind, ControlErrorKind::InvalidArgs);
+	}
 };
 
 } // namespace lmms::wasm
