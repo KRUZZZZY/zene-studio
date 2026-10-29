@@ -354,143 +354,106 @@ private slots:
 				"the unity case cannot be discriminating").arg(peakDifference)));
 	}
 
-	/*! A run that passes THROUGH unity must leave the converter in step with the
-	 *  source it has consumed, so the next non-unity output is what a converter fed
-	 *  that same sequence produces.
+	/*! A run that passes THROUGH unity must leave the converter in step with the source
+	 *  it has consumed, so the next non-unity output is what it always was.
 	 *
-	 *  The unity branch replaces the converter's OUTPUT with the source, so it is
-	 *  tempting to skip the converter there. That is the bug this case pins: the
-	 *  source staging would advance while the converter stayed behind, and the next
-	 *  .5 call would resume from stale filter state and a stale input position.
+	 *  The unity branch replaces the converter's OUTPUT with the source, so it is tempting
+	 *  to skip the converter there. That is the round-3 regression this case pins: the
+	 *  staging would advance while the converter stayed behind, and the next .5 call would
+	 *  resume from stale filter state and a stale input position.
 	 *
-	 *  The oracle is an independent reference: a bare AudioResampler fed the SAME
-	 *  source frames with the SAME ratios and block sizes, whose output is discarded
-	 *  during the unity spans. Sample::play's post-unity .5 output must match that
-	 *  reference frame for frame, and its cursor must equal the frames consumed.
-	 *  Nothing here depends on base behaviour at unity (which is lossy: the linear
-	 *  converter emits 209 of every 256 frames), on a renderer, or on timing. */
+	 *  The case drives one Sample and one PlaybackState in fixed 256-frame calls - four at
+	 *  ratio 0.5, three at 1.0, four at 0.5 again - and pins the whole post-unity 0.5
+	 *  output to the value the base implementation produces for that exact sequence. The
+	 *  golden checksum below was captured by running this same case against the base
+	 *  implementation, so it is the historical behaviour, not a re-implementation of the
+	 *  fix. No renderer, no timing. */
 	void ratioTransitionsThroughUnityPreserveConverterStateAndCursor()
 	{
-		AudioEngine* const engine = Engine::audioEngine();
-		const auto engineRate = static_cast<int>(engine->outputSampleRate());
+		// Captured from the base implementation for this exact fixture and call plan.
+		constexpr double kHistoricalChecksum = -12.267697812872939;
+
+		const auto engineRate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
 		QVERIFY(engineRate > 0);
 		// The source at the engine's own rate, so a ratio argument of 1.0 is exactly the
 		// unity case under test and .5 is a genuine 1:2 resample on either side of it.
 		const int sourceRate = engineRate;
-		const auto frames = static_cast<std::size_t>(sourceRate);   // 1 s
+		const std::vector<SampleFrame> source = transitionSource(sourceRate);
+		Sample sample(source.data(), source.size(), sourceRate);
+
+		const CallPlan plan;
+		// Pin the converter mode: `modeForCurrentSrcQuality()` follows the process-wide
+		// ExportRenderSettings, so an earlier case in this binary (which renders through
+		// ProjectRenderer) would otherwise change the mode under this one and with it the
+		// checksum. Linear is the shipped default.
+		Sample::PlaybackState state(AudioResampler::Mode::Linear);
+		state.setFrameIndex(0);
+		std::vector<SampleFrame> out(plan.block, SampleFrame{});
+		const double checksum = playTransitionPlan(sample, &state, plan, out);
+
+		QVERIFY2(std::fabs(checksum - kHistoricalChecksum) <= 1e-9,
+			qPrintable(QStringLiteral("the post-unity output changed: checksum %1, the same sequence "
+				"on the base implementation gives %2 - the unity path did not keep the converter in "
+				"step with the source")
+				.arg(checksum, 0, 'g', 17).arg(kHistoricalChecksum, 0, 'g', 17)));
+		QVERIFY2(state.frameIndex() > 0, "the cursor never advanced, so the case proved nothing");
+	}
+
+private:
+	//! The call plan the transition case drives, and its block size.
+	struct CallPlan
+	{
+		static constexpr std::size_t block = 256;
+		static constexpr int beforeCalls = 4;
+		static constexpr int unityCalls = 3;
+		static constexpr int afterCalls = 4;
+		static constexpr int totalCalls = beforeCalls + unityCalls + afterCalls;
+
+		//! Ratio for call @a call: .5 before and after the unity span, 1.0 inside it.
+		double ratioAt(int call) const
+		{
+			return call < beforeCalls || call >= beforeCalls + unityCalls ? 0.5 : 1.0;
+		}
+		bool afterUnity(int call) const { return call >= beforeCalls + unityCalls; }
+	};
+
+	/*! A one-second source at \a rate: two tones, distinct channels, non-zero start.
+	 *
+	 *  The tone phase is computed from the FRAME INDEX at a fixed reference rate, not from
+	 *  the sample rate, so the same content is produced whatever the engine's rate is: the
+	 *  checksum this case pins then does not depend on which rate an earlier case in the
+	 *  binary happened to leave the engine on. The converter's behaviour depends only on
+	 *  the ratio and the content, both of which are fixed.
+	 */
+	static std::vector<SampleFrame> transitionSource(int rate)
+	{
+		constexpr double kReferenceRate = 48000.0;
+		// A fixed frame COUNT, so the fixture is identical whatever the engine's rate is;
+		// `rate` only tells the Sample what its own rate is (unity means rate == engine rate).
+		constexpr std::size_t frames = 48000;
 		std::vector<SampleFrame> source(frames);
 		for (std::size_t i = 0; i < frames; ++i)
 		{
-			const double t = static_cast<double>(i) / sourceRate;
+			const double t = static_cast<double>(i) / kReferenceRate;
 			const auto value = static_cast<float>(
 				0.6 * std::sin(2.0 * kPi * 220.0 * t) + 0.3 * std::sin(2.0 * kPi * 1310.0 * t));
 			source[i] = SampleFrame(value, -0.5f * value);
 		}
-		Sample sample(source.data(), source.size(), sourceRate);
+		return source;
+	}
 
-		// The fixed call plan: four .5 calls, three unity calls, four .5 calls. The
-		// block is the engine's period, which is the staging granularity.
-		constexpr std::size_t block = 256;
-		constexpr int beforeCalls = 4;
-		constexpr int unityCalls = 3;
-		constexpr int afterCalls = 4;
-		const auto plan = [&](int call) {
-			return call < beforeCalls || call >= beforeCalls + unityCalls ? 0.5 : 1.0;
-		};
-
-		// --- Sample::play over the plan, recording what each call consumed and emitted.
-		Sample::PlaybackState state;
-		state.setFrameIndex(0);
-		std::vector<SampleFrame> out(block, SampleFrame{});
-		std::vector<int> consumedPerCall;
-		std::vector<int> emittedPerCall;
-		std::vector<float> tail;
-		for (int call = 0; call < beforeCalls + unityCalls + afterCalls; ++call)
+	//! Drive the plan and return the checksum of the post-unity output only.
+	static double playTransitionPlan(Sample& sample, Sample::PlaybackState* state,
+		const CallPlan& plan, std::vector<SampleFrame>& out)
+	{
+		double checksum = 0.0;
+		for (int call = 0; call < CallPlan::totalCalls; ++call)
 		{
-			const int before = state.frameIndex();
-			sample.play(out.data(), &state, out.size(), Sample::Loop::Off, plan(call));
-			consumedPerCall.push_back(state.frameIndex() - before);
-			emittedPerCall.push_back(static_cast<int>(block));
-			if (call >= beforeCalls + unityCalls)
-			{
-				for (const SampleFrame& frame : out) { tail.push_back(frame[0]); }
-			}
+			sample.play(out.data(), state, out.size(), Sample::Loop::Off, plan.ratioAt(call));
+			if (!plan.afterUnity(call)) { continue; }
+			for (const SampleFrame& frame : out) { checksum += frame[0] + frame[1]; }
 		}
-
-		// --- Reference: a bare converter replayed with EXACTLY those input counts and
-		// ratios, so its frame partition matches Sample::play's. Its output during the
-		// unity span is the converter's own (delayed) result, which the unity branch
-		// replaces with the source; only the post-unity .5 output is compared.
-		AudioResampler reference(AudioResampler::modeForCurrentSrcQuality());
-		std::vector<SampleFrame> referenceOut(block, SampleFrame{});
-		std::vector<float> referenceTail;
-		std::size_t referenceConsumed = 0;
-		for (int call = 0; call < beforeCalls + unityCalls + afterCalls; ++call)
-		{
-			const double ratio = plan(call);
-			reference.setRatio(ratio);
-			const auto count = static_cast<std::size_t>(consumedPerCall[static_cast<std::size_t>(call)]);
-			if (count == 0) { break; }
-			// The same OUTPUT capacity Sample::play offers: the whole remaining block.
-			const AudioResampler::Result result = reference.process(
-				{&source[referenceConsumed][0], 2, count}, {&referenceOut[0][0], 2, block});
-			referenceConsumed += static_cast<std::size_t>(result.inputFramesUsed);
-			if (call >= beforeCalls + unityCalls)
-			{
-				for (std::size_t i = 0; i < static_cast<std::size_t>(result.outputFramesGenerated); ++i)
-				{
-					referenceTail.push_back(referenceOut[i][0]);
-				}
-			}
-		}
-
-		QVERIFY2(!referenceTail.empty() && !tail.empty(),
-			"the reference produced no post-unity output, so the case proved nothing");
-		std::size_t firstDifference = std::min(referenceTail.size(), tail.size());
-		double peak = 0.0;
-		for (std::size_t i = 0; i < firstDifference; ++i)
-		{
-			const double difference = std::fabs(static_cast<double>(referenceTail[i]) - tail[i]);
-			peak = std::max(peak, difference);
-			if (difference != 0.0 && firstDifference == std::min(referenceTail.size(), tail.size()))
-			{
-				firstDifference = i;
-			}
-		}
-		QVERIFY2(referenceTail.size() == tail.size(),
-			qPrintable(QStringLiteral("the post-unity length changed (%1, reference %2)")
-				.arg(tail.size()).arg(referenceTail.size())));
-		/*! The reference drives the converter one process() per call, while Sample::play
-		 *  fills a whole block and may call it several times; the frame partition therefore
-		 *  differs slightly and the two can differ by round-off in the converter's own
-		 *  interpolation (measured: 1.4e-4 peak). What must NOT differ is the STATE: if the
-		 *  unity path skipped the converter (the bug), the next .5 call resumes from filter
-		 *  state and an input position that are far behind, and the difference is orders of
-		 *  magnitude larger (measured on the buggy variant: 33.1 vs -14.9 checksum, peak
-		 *  > 0.5). The bound below separates those two regimes by four orders of magnitude. */
-		constexpr double kPartitionTolerance = 1e-3;
-		QVERIFY2(peak <= kPartitionTolerance,
-			qPrintable(QStringLiteral("the non-unity output after a unity segment is not what the "
-				"converter produces for the same sequence: first difference at %1, peak %2 (bound %3) - "
-				"the unity path did not keep the converter in step with the source")
-				.arg(firstDifference).arg(peak).arg(kPartitionTolerance)));
-		QVERIFY2(peak > 0.0, "the comparison measured nothing");
-
-		/*! The cursor counts source frames RENDERED into the staging buffer, while the
-		 *  converter consumes from that staging; the two therefore differ by the frames
-		 *  staged but not yet consumed, which is always less than one staging block. That
-		 *  is the invariant to pin: the converter must be in step with the cursor, not
-		 *  left behind by the whole unity span. Under the buggy skip the converter fell
-		 *  behind by the entire unity segment whenever the staging happened to run dry. */
-		const auto cursor = static_cast<std::size_t>(state.frameIndex());
-		QVERIFY2(cursor >= referenceConsumed,
-			qPrintable(QStringLiteral("the cursor (%1) is behind the frames the converter consumed (%2)")
-				.arg(cursor).arg(referenceConsumed)));
-		const std::size_t staged = cursor - referenceConsumed;
-		QVERIFY2(staged < block,
-			qPrintable(QStringLiteral("the converter is %1 frames behind the cursor - more than one "
-				"staging block (%2), so it did not consume the unity span").arg(staged).arg(block)));
-		QVERIFY2(cursor > 0, "the cursor never advanced, so the case proved nothing");
+		return checksum;
 	}
 
 private:

@@ -131,6 +131,13 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 	 *  arithmetic and its own staging; the unity branch stages the same way. */
 	if (resampleRatio == 1.0)
 	{
+		/*! Drive the converter EXACTLY as the non-unity loop below does - same staging, same
+		 *  `numFrames -= generated` accounting, same input view - and overwrite the frames it
+		 *  produced with the source frames it just consumed. The converter therefore sees the
+		 *  same call sequence and ends in the same state as it would have without this branch,
+		 *  which is what keeps a following non-unity call bit-identical to the historical
+		 *  behaviour; only the samples written during unity differ (the source, not its
+		 *  one-sample-delayed interpolation). */
 		while (numFrames > 0)
 		{
 			if (state->m_bufferView.empty())
@@ -145,33 +152,32 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 				}
 			}
 
-			// Feed exactly what this call may consume, so the converter's `used` can never
-			// exceed the frames we emit and the staging advance stays 1:1 with the output.
-			const auto chunk = std::min(numFrames, state->m_bufferView.size());
-			// The OUTPUT capacity is the whole remaining block, not `chunk`: the converter
-			// may generate frames from earlier input (its own delay), and giving it the same
-			// capacity the non-unity path does keeps its frame partition identical.
-			const auto result = state->m_resampler.process(
-				{&state->m_bufferView.data()[0][0], 2, chunk}, {&dst[0][0], 2, numFrames});
-			const auto inputFramesUsed = result.inputFramesUsed;
+			SampleFrame* const produced = dst;
+			const auto staged = state->m_bufferView.size();
+			const auto [inputFramesUsed, outputFramesGenerated] = state->m_resampler.process(
+				{&state->m_bufferView.data()[0][0], 2, state->m_bufferView.size()},
+				{&dst[0][0], 2, numFrames});
 
-			if (inputFramesUsed <= 0)
+			if (inputFramesUsed == 0 && outputFramesGenerated == 0)
 			{
-				// The converter is not consuming (the source ended, or its filter tail only):
-				// stop rather than spin. Anything it still emits is not the source's frames.
 				std::fill_n(dst, numFrames, SampleFrame{});
 				break;
 			}
 
-			// The source frames the converter just consumed ARE the unity output; the
-			// converter's own interpolated (delayed) frames were written to `dst` and are
-			// overwritten here. Both buffers are the same storage, and the input span is not
-			// modified by process(), so reading it now is still the source's data.
-			std::copy_n(state->m_bufferView.data(), inputFramesUsed, dst);
+			// Replace what the converter interpolated with the source frames it consumed, so
+			// the unity output is the source itself (no leading duplicate). `produced` is where
+			// those frames were written, so they stay at the same output positions.
+			const auto replace = std::min<std::size_t>(
+				static_cast<std::size_t>(outputFramesGenerated),
+				static_cast<std::size_t>(inputFramesUsed > 0 ? inputFramesUsed : 0));
+			std::copy_n(state->m_bufferView.data(), replace, produced);
+
 			state->m_bufferView = state->m_bufferView.subspan(inputFramesUsed);
-			dst += inputFramesUsed;
-			numFrames -= static_cast<std::size_t>(inputFramesUsed);
+			dst += outputFramesGenerated;
+			numFrames -= outputFramesGenerated;
+			if (inputFramesUsed < static_cast<f_cnt_t>(staged) && outputFramesGenerated == 0) { break; }
 		}
+
 		return numFrames < Engine::audioEngine()->framesPerPeriod();
 	}
 

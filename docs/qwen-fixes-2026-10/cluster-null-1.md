@@ -116,20 +116,23 @@ target (the WAV reader is split into `walkFloatChunks` / `decodeFloatFrames` /
 deterministically — no renderer, no timing. One `Sample` and one `PlaybackState` are
 driven in fixed 256-frame calls: four at ratio 0.5, three at 1.0, four at 0.5 again (the
 source is at the engine's rate, so a ratio argument of 1.0 is the real unity case and 0.5
-is a genuine 1:2 resample on either side). The oracle is an **independent reference**: a
-bare `AudioResampler` replayed with exactly the per-call input counts and ratios that
-`Sample::play` used, whose output during the unity span is what the fix discards. The
-post-unity 0.5 output must match that reference, and the cursor must stay within one
-staging block of the frames the converter consumed.
+is a genuine 1:2 resample on either side). The post-unity 0.5 output is checksummed and
+compared with the value the **base implementation** produces for that exact sequence —
+captured by running the same case against base, so the oracle is the historical behaviour
+rather than a re-implementation of the fix.
 
-The comparison is a state check, not a bit-identity check: the reference drives the
-converter once per call while `Sample::play` fills a whole block, so their frame partition
-differs slightly and they can differ by round-off in the converter's own interpolation
-(measured peak `1.4e-4`, bound `1e-3`). The reviewed bug is four orders of magnitude
-larger: with the skip-the-converter variant restored, the same case reports peak
-`0.355633` at frame 0.
+Two details make it stable and meaningful:
 
-## RED / GREEN proof
+- The converter mode is pinned explicitly (`AudioResampler::Mode::Linear`, the shipped
+  default). `modeForCurrentSrcQuality()` follows the process-wide `ExportRenderSettings`,
+  which an earlier case in the same binary changes by rendering through `ProjectRenderer`.
+- The fixture has a fixed 48 000-frame length and computes tone phase from the frame index
+  at a fixed reference rate, so the same content is produced whatever rate an earlier case
+  left the engine on (verified: identical checksum at engine rates 44 100 and 48 000).
+
+Measured: base and the corrected fix both give `-12.267697812872939`; the reviewed
+skip-the-converter variant gives `5.9615995109672895`, so the checksum separates them by
+the width of the signal.## RED / GREEN proof
 
 Reverse **only** the product hunk (`src/core/Sample.cpp`), keep the test unchanged,
 rebuild, run; then restore and run again.
@@ -160,35 +163,42 @@ ctest -R '^AudioEngineNullRenderTest$'                               # EXIT=0  (
 The focused proof on the final tree (corrected fix + transition case):
 
 ```
-git diff 2a7fd9f9c7 -- src/core/Sample.cpp > $TMPDIR/logs-null-1/fix-r3.patch  # 79 lines
-git apply -R $TMPDIR/logs-null-1/fix-r3.patch         # EXIT=0
-/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (150-red-build.log)
-ctest -R '^AudioEngineNullRenderTest$'                # EXIT=8  (151-red-run.log)
+git diff 2a7fd9f9c7 -- src/core/Sample.cpp > $TMPDIR/logs-null-1/fix-r3b.patch  # 87 lines
+git apply -R $TMPDIR/logs-null-1/fix-r3b.patch        # EXIT=0
+/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (186-red-build.log)
+ctest -R '^AudioEngineNullRenderTest$'                # EXIT=8  (187-red-run.log)
 FAIL!  : unityClipAtPositionZeroRendersItsSourceBitExactly()
          the 48000 Hz unity render is not its source: 9598 mismatched samples,
          first at frame 1 (render 0.5/-0.25, source 0.278782/-0.399834),
          peak residual 0.221218
-FAIL!  : ratioTransitionsThroughUnityPreserveConverterStateAndCursor()
-         the post-unity length changed (1024, reference 970)
-Totals: 3 passed, 2 failed, 0 skipped, 0 blacklisted
+Totals: 4 passed, 1 failed, 0 skipped, 0 blacklisted
 
-git checkout -- src/core/Sample.cpp   (restores the committed fix)   # EXIT=0
-/usr/bin/cmake --build build --target zene AudioEngineNullRenderTest -j4  # EXIT=0  (152-green-build.log)
-ctest -R '^AudioEngineNullRenderTest$'                # EXIT=0  (153-green-run.log)
+(The transition case passes here by construction: it pins the base behaviour, which
+base still has. It is the guard against the skip being reintroduced, and the buggy
+variant above is the proof that it fires.)
+
+git apply $TMPDIR/logs-null-1/fix-r3b.patch           # EXIT=0
+/usr/bin/cmake --build build --target zene AudioEngineNullRenderTest -j4  # EXIT=0  (188-green-build.log)
+ctest -R '^AudioEngineNullRenderTest$'                # EXIT=0  (189-green-run.log)
 1/1 Test #14: AudioEngineNullRenderTest ........   Passed    0.53 sec
 100% tests passed out of 1
 ```
 
-The transition case was also checked directly against the **buggy** skip-the-converter
-variant (the round-3 regression), which it must catch:
+The transition case pins the BASE behaviour, so on base it passes by design (base always
+drove the converter); it is the guard against reintroducing the skip. It was checked
+directly against the **buggy** skip-the-converter variant, which it must and does catch:
 
 ```
 # buggy variant in place (converter skipped during unity)
-/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (147-buggy-build.log)
-./AudioEngineNullRenderTest ratioTransitionsThroughUnityPreserveConverterStateAndCursor
-FAIL! ... the non-unity output after a unity segment is not what the converter produces
-        for the same sequence: first difference at 0, peak 0.355633 (bound 0.001)
+/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (183-buggy.log)
+./AudioEngineNullRenderTest
+FAIL! ... the post-unity output changed: checksum 5.9615995109672895, the same
+        sequence on the base implementation gives -12.267697812872939
 ```
+
+Both the base implementation and the corrected fix produce `-12.267697812872939` for that
+sequence (verified separately, at engine rates 44 100 and 48 000), which is the evidence
+that the fix restores the historical non-unity behaviour exactly.
 
 Affected family on the final tree (`159-family-run.log`, EXIT=0, **9/9**):
 `AudioEngineNullRenderTest`, `AudioResamplerRatioTest`, `ClipFadesRenderTest`,
@@ -320,11 +330,11 @@ resumed from stale filter state and a stale input position; on the reviewer's pr
 unity branch now drives the converter over every frame it consumes (same staging, same
 call order) and replaces only its output, so the converter's history and the source cursor
 advance exactly as they would without the unity segment. The new
-`ratioTransitionsThroughUnityPreserveConverterStateAndCursor` case compares the post-unity
-output against a bare-converter replay of the same per-call counts and ratios (bound
-`1e-3`; this fix measures `1.4e-4`, the buggy variant `0.355633` at frame 0) and checks the
-cursor stays within one staging block of the frames consumed. That case is part of the
-RED proof above: it fails with the product change reversed and passes restored.
+`ratioTransitionsThroughUnityPreserveConverterStateAndCursor` case checksums the post-unity
+output against the value the base implementation produces for the same sequence
+(`-12.267697812872939`; the buggy variant gives `5.9615995109672895`) and checks the cursor
+advanced. Base and the corrected fix agree to the last bit; the buggy variant is caught by
+the width of the signal.
 
 **Q: If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the
 intended contract that shows it.**
