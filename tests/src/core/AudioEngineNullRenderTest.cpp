@@ -174,41 +174,56 @@ quint16 le16(const QByteArray& bytes, int at)
 	return quint16(quint8(bytes[at])) | (quint16(quint8(bytes[at + 1])) << 8);
 }
 
-/*! The frames of a 32-bit float WAV, exactly as written.
- *
- *  Only the format this test exports is accepted; anything else returns an empty
- *  vector, which the cases treat as "the render is broken", never as "the render
- *  matches". */
-std::vector<SampleFrame> readFloatWav(const QString& path, int* rate = nullptr)
+//! The `fmt ` chunk of a float WAV: stereo 32-bit is the only layout this test writes.
+struct FloatFormat
 {
-	QFile file(path);
-	if (!file.open(QIODevice::ReadOnly)) { return {}; }
-	const QByteArray blob = file.readAll();
-	if (blob.size() < 44 || blob.mid(0, 4) != "RIFF" || blob.mid(8, 4) != "WAVE") { return {}; }
-
 	int channels = 0;
 	int sampleRate = 0;
 	int bits = 0;
-	QByteArray data;
+	bool ieeeFloat = false;
+};
+
+//! Read the `fmt ` chunk into \a format; false when it is not float stereo 32-bit.
+bool readFloatFormat(const QByteArray& blob, int at, quint32 size, FloatFormat* format)
+{
+	if (size < 16) { return false; }
+	format->ieeeFloat = le16(blob, at + 8) == 3;
+	format->channels = le16(blob, at + 10);
+	format->sampleRate = static_cast<int>(le32(blob, at + 12));
+	format->bits = le16(blob, at + 22);
+	return true;
+}
+
+//! Walk the chunks, taking the format and the payload out of whichever chunks carry them.
+bool walkFloatChunks(const QByteArray& blob, FloatFormat* format, QByteArray* data)
+{
 	int at = 12;
 	while (at + 8 <= blob.size())
 	{
 		const QByteArray id = blob.mid(at, 4);
 		const quint32 size = le32(blob, at + 4);
-		if (id == "fmt ")
-		{
-			if (size < 16) { return {}; }
-			if (le16(blob, at + 8) != 3) { return {}; }   // not float
-			channels = le16(blob, at + 10);
-			sampleRate = static_cast<int>(le32(blob, at + 12));
-			bits = le16(blob, at + 22);
-		}
-		else if (id == "data") { data = blob.mid(at + 8, static_cast<int>(size)); }
+		if (id == "fmt " && !readFloatFormat(blob, at, size, format)) { return false; }
+		if (id == "data") { *data = blob.mid(at + 8, static_cast<int>(size)); }
 		at += 8 + static_cast<int>(size) + static_cast<int>(size & 1);
 	}
-	if (channels != 2 || bits != 32 || data.isEmpty()) { return {}; }
-	if (rate != nullptr) { *rate = sampleRate; }
+	return true;
+}
 
+//! Parse one WAV, splitting the chunk walk from the sample decode so each stays simple.
+bool parseFloatWav(const QByteArray& blob, FloatFormat* format, QByteArray* data)
+{
+	if (blob.size() < 44) { return false; }
+	if (blob.mid(0, 4) != "RIFF") { return false; }
+	if (blob.mid(8, 4) != "WAVE") { return false; }
+	if (!walkFloatChunks(blob, format, data)) { return false; }
+	if (format->channels != 2) { return false; }
+	if (format->bits != 32) { return false; }
+	return format->ieeeFloat && !data->isEmpty();
+}
+
+//! Decode interleaved 32-bit float samples, two channels per frame.
+std::vector<SampleFrame> decodeFloatFrames(const QByteArray& data)
+{
 	std::vector<SampleFrame> frames(static_cast<std::size_t>(data.size()) / 8);
 	for (std::size_t i = 0; i < frames.size(); ++i)
 	{
@@ -221,6 +236,23 @@ std::vector<SampleFrame> readFloatWav(const QString& path, int* rate = nullptr)
 		}
 	}
 	return frames;
+}
+
+/*! The frames of a 32-bit float WAV, exactly as written.
+ *
+ *  Only the format this test exports is accepted; anything else returns an empty
+ *  vector, which the cases treat as "the render is broken", never as "the render
+ *  matches". */
+std::vector<SampleFrame> readFloatWav(const QString& path, int* rate = nullptr)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return {}; }
+	const QByteArray blob = file.readAll();
+	FloatFormat format;
+	QByteArray data;
+	if (!parseFloatWav(blob, &format, &data)) { return {}; }
+	if (rate != nullptr) { *rate = format.sampleRate; }
+	return decodeFloatFrames(data);
 }
 
 //! The fixture project: one sample track, one clip at position 0, no effects.
