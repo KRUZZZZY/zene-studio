@@ -115,6 +115,12 @@ every word must match (<code>kick 808</code> finds items with both), <code>kick 
 <i>Where to look</i> and <i>Category</i> narrow by what the files are, where they sit and how you classified them - pick a
 category a file carries, or <i>Any category</i> to see everything again - and <i>Whole library</i> searches the built index
 instead of walking the folders. Right-click a result and use the <i>Category</i> submenu to give a file its one category.
+A <i>Tempo</i> row under them narrows the audio files to a BPM range (leave a side at <i>Any</i> for an open end) and a
+<i>Key</i> picker narrows to one key; both read the tempo and key the library index measured when it scanned the files
+(<i>Rescan Library</i> measures new ones), and a file whose tempo or key is not known is never listed by an active filter -
+unknown is not a value. The filters combine (tempo and key and category and tags) and work in <i>Whole library</i> mode too,
+answering the same files; the agent commands <code>browser.query</code> and <code>browser.index_query</code> take the same
+<code>tempo_min</code>, <code>tempo_max</code> and <code>key</code> arguments, and a saved collection keeps them.
 The
 <i>Search file metadata</i> checkbox also matches what the audio files themselves say rather than just
 their names - the embedded title, artist, album, comment and genre tags, and the sample rate, channel

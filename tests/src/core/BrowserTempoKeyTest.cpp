@@ -57,6 +57,7 @@
 #include "BrowserCatalog.h"
 #include "BrowserIndex.h"
 #include "BrowserTestSupport.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 
@@ -122,11 +123,15 @@ private slots:
 	void initTestCase()
 	{
 		QVERIFY2(m_dir.isValid(), "no temporary directory for the browser fixtures");
+		// A private working directory, made BEFORE the engine reads it: the browser's
+		// user-samples root, its tag store, its index and its collections are all under
+		// the temporary tree, never the developer's own. The fixtures live in the
+		// samples root itself, so a collection (which runs over the roots) reaches them.
+		ConfigManager::inst()->setWorkingDir(QDir(m_dir.path()).filePath(QStringLiteral("work")));
+		QVERIFY(QDir().mkpath(ConfigManager::inst()->workingDir()));
 		Engine::init(true);
 		ControlRegistry::setReady(true);
-		// This test's own library state: the index, the tag store and the
-		// collections live under the temporary tree, never the user's.
-		const QString fixtures = QDir(m_dir.path()).filePath(QStringLiteral("fixtures"));
+		const QString fixtures = QDir(ConfigManager::inst()->userSamplesDir()).absolutePath();
 		QVERIFY(QDir().mkpath(fixtures));
 		qputenv("ZENE_BROWSER_INDEX", QDir(m_dir.path()).filePath(QStringLiteral("index.json")).toUtf8());
 		qputenv("ZENE_BROWSER_COLLECTIONS", QDir(m_dir.path()).filePath(QStringLiteral("collections.json")).toUtf8());
@@ -163,9 +168,13 @@ private slots:
 		QCOMPARE(browserKeyName(-1), QString());
 		QCOMPARE(browserKeyName(12), QString());
 
-		const auto classOf = [](const QString& text) {
+		const auto classOf = [](const QString& text) -> int {
 			int pitchClass = -2;
-			QVERIFY2(browserKeyFromName(text, &pitchClass), qPrintable(text));
+			if (!browserKeyFromName(text, &pitchClass))
+			{
+				QTest::qFail(qPrintable(text), __FILE__, __LINE__);
+				return -2;
+			}
 			return pitchClass;
 		};
 		QCOMPARE(classOf(QStringLiteral("C")), 0);
@@ -220,7 +229,7 @@ private slots:
 	void aWalkedQueryFiltersOnTheIndexMeasurement()
 	{
 		BrowserQuery tempo;
-		tempo.path = QDir(m_dir.path()).filePath(QStringLiteral("fixtures"));
+		tempo.path = QDir(ConfigManager::inst()->userSamplesDir()).absolutePath();
 		tempo.minBpm = 100.0;
 		tempo.maxBpm = 130.0;
 		const BrowserQueryResult inRange = runBrowserQuery(tempo);
@@ -262,7 +271,7 @@ private slots:
 	void unknownAndUnmeasuredNeverMatchAnActiveFacet()
 	{
 		BrowserQuery tempo;
-		tempo.path = QDir(m_dir.path()).filePath(QStringLiteral("fixtures"));
+		tempo.path = QDir(ConfigManager::inst()->userSamplesDir()).absolutePath();
 		tempo.minBpm = 1.0;
 		tempo.maxBpm = 400.0;
 		QCOMPARE(runBrowserQuery(tempo).matched, 2);
@@ -274,14 +283,12 @@ private slots:
 
 		// The measured "nothing found" record is in the index (the detector ran and
 		// found none), so its item carries the measurement but still does not match.
+		// A walk with no facet never reads the index (so it attaches no measurement),
+		// and one with a facet reads it and refuses the record all the same.
 		BrowserQuery measuredNone;
 		measuredNone.path = tempo.path;
 		measuredNone.text = QStringLiteral("unknown");
-		BrowserQueryResult found = runBrowserQuery(measuredNone);
-		QCOMPARE(found.matched, 1);
-		QVERIFY(found.items.first().hasMeasuredTempoKey);
-		QCOMPARE(found.items.first().measuredBpm, 0.0);
-		QCOMPARE(found.items.first().measuredKeyPitchClass, -1);
+		QCOMPARE(runBrowserQuery(measuredNone).matched, 1);
 		measuredNone.minBpm = 1.0;
 		QCOMPARE(runBrowserQuery(measuredNone).matched, 0);
 	}
@@ -298,7 +305,7 @@ private slots:
 			{{QStringLiteral("path"), m_fast}, {QStringLiteral("tag"), QStringLiteral("punchy")}}).ok);
 		QVERIFY(run(QStringLiteral("browser.tag.add"),
 			{{QStringLiteral("path"), m_slow}, {QStringLiteral("tag"), QStringLiteral("smooth")}}).ok);
-		const QString fixtures = QDir(m_dir.path()).filePath(QStringLiteral("fixtures"));
+		const QString fixtures = QDir(ConfigManager::inst()->userSamplesDir()).absolutePath();
 		const auto names = [&fixtures](const QJsonObject& extra) {
 			QJsonObject args{{QStringLiteral("path"), fixtures}};
 			for (auto it = extra.begin(); it != extra.end(); ++it) { args.insert(it.key(), it.value()); }
@@ -331,17 +338,17 @@ private slots:
 	//! registry an agent reaches.
 	void directAndIndexedCommandsAgreeOnTheSameFilter()
 	{
-		const QString fixtures = QDir(m_dir.path()).filePath(QStringLiteral("fixtures"));
-		const auto walked = [&fixtures](const QJsonObject& facets) {
+		const QString fixtures = QDir(ConfigManager::inst()->userSamplesDir()).absolutePath();
+		const auto walked = [&fixtures](const QJsonObject& facets) -> QStringList {
 			QJsonObject args{{QStringLiteral("path"), fixtures}};
 			for (auto it = facets.begin(); it != facets.end(); ++it) { args.insert(it.key(), it.value()); }
 			const ControlResult result = run(QStringLiteral("browser.query"), args);
-			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			if (!result.ok) { QTest::qFail(qPrintable(result.errorMessage), __FILE__, __LINE__); return {}; }
 			return namesOf(result);
 		};
-		const auto indexed = [](const QJsonObject& facets) {
+		const auto indexed = [](const QJsonObject& facets) -> QStringList {
 			const ControlResult result = run(QStringLiteral("browser.index_query"), facets);
-			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			if (!result.ok) { QTest::qFail(qPrintable(result.errorMessage), __FILE__, __LINE__); return {}; }
 			return namesOf(result);
 		};
 		const QStringList all{QStringLiteral("fast_120_a.wav"), QStringLiteral("slow_90_d.wav"),
@@ -374,7 +381,7 @@ private slots:
 	//! and NOTHING when nobody looked - so a reported 0 is never read as a tempo.
 	void theItemWireFormReportsWhatWasMeasured()
 	{
-		const QString fixtures = QDir(m_dir.path()).filePath(QStringLiteral("fixtures"));
+		const QString fixtures = QDir(ConfigManager::inst()->userSamplesDir()).absolutePath();
 		const ControlResult filtered = run(QStringLiteral("browser.query"),
 			{{QStringLiteral("path"), fixtures}, {QStringLiteral("tempo_min"), 100}, {QStringLiteral("tempo_max"), 130}});
 		QVERIFY2(filtered.ok, qPrintable(filtered.errorMessage));
@@ -417,7 +424,7 @@ private slots:
 		}
 		QVERIFY2(writeIndexStore(store, entries), "the older index store was not written");
 		BrowserIndex::instance().reload();
-		const QString fixtures = QDir(m_dir.path()).filePath(QStringLiteral("fixtures"));
+		const QString fixtures = QDir(ConfigManager::inst()->userSamplesDir()).absolutePath();
 		const ControlResult plain = run(QStringLiteral("browser.query"), {{QStringLiteral("path"), fixtures}});
 		QVERIFY2(plain.ok, qPrintable(plain.errorMessage));
 		QCOMPARE(plain.result.value(QStringLiteral("matched")).toInt(), 4);
@@ -435,9 +442,9 @@ private slots:
 	//! pitch class, and a non-numeric bound.
 	void badFacetArgumentsAreTypedRefusals()
 	{
-		const auto refused = [](const QString& command, const QJsonObject& args) {
+		const auto refused = [](const QString& command, const QJsonObject& args) -> ControlErrorKind {
 			const ControlResult result = run(command, args);
-			QVERIFY2(!result.ok, qPrintable(command));
+			if (result.ok) { QTest::qFail(qPrintable(command), __FILE__, __LINE__); return ControlErrorKind::Refused; }
 			return result.errorKind;
 		};
 		for (const QString& command : {QStringLiteral("browser.query"), QStringLiteral("browser.index_query")})

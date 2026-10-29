@@ -31,6 +31,7 @@
 
 #include <QtTest>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
@@ -57,11 +58,6 @@ using namespace lmms::gui;
 
 namespace
 {
-
-ControlResult run(const QString& id, const QJsonObject& args = {})
-{
-	return ControlRegistry::instance()->invoke(id, args);
-}
 
 //! A file the browser lists, written by us: the index store below is written by
 //! hand, so the tempo/key values are exact and no detector is involved.
