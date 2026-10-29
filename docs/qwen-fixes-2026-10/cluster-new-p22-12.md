@@ -110,7 +110,8 @@ convolution reverb x2) and skip identically before and after.
 | 9 | rebuild restored | 0 | `build-6-restored-green.log` |
 | 10 | `cd build/tests && ctest -R '^DeviceDspTest$' -V` restored | 0 | `test-5-restored-green.log`: **38 passed, 0 failed, 7 skipped** |
 | 11 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (exact required command) | 1 | `gates-1-original.log`: `PermissionError` creating `<worktree>-feature-check` beside the worktree — the host denies writes outside the session area, so the gate could not start |
-| 12 | Same gate file with only the log path redirected to `$TMPDIR` (two lines: `ROOT` pinned to the qwen folder, `logs` to the run folder; no gate logic, limit, baseline or command changed) | 0 | `gates-2-redirected.log`: **RESULT: PASS**, all 8 rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item in your files") |
+| 12 | Same gate file with only the log path redirected to `$TMPDIR` (two lines: `ROOT` pinned to the qwen folder, `logs` to the run folder; no gate logic, limit, baseline or command changed) — before the commit (3 changed files) | 0 | `gates-2-redirected.log`: **RESULT: PASS**, all 8 rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item in your files") |
+| 13 | Same redirected gate run again **after** the commits (4 changed files, the registration included) | 0 | `gates-3-post-commit.log`: **RESULT: PASS**, all 8 rows PASS again |
 
 Patch comparison: `git diff HEAD -- src/core/ControlCommandsDeviceTools.cpp` is identical to the accepted
 product hunk in `new-p22-12.r2/accepted.patch` (compared with `diff`; only the trailing
@@ -122,8 +123,10 @@ Affected family: `ctest -R '^DeviceDspTest$'` is one ctest entry with 45 QTest f
 Environment notes (recorded, not worked around in the tree):
 - The host's write policy blocks this session from writing to the harness log folder and to
   `<worktree>-feature-check`; every build/test/gate log for this round was therefore written to
-  `$TMPDIR/new-p22-12-r2-logs` (a disk path, not `/tmp`), and the exact required gate command's own failure is
-  logged from its real invocation (row 11). A reviewer with normal write access can rerun row 11 verbatim.
+  `$TMPDIR/new-p22-12-r2-logs` (a disk path, not `/tmp`) and copied to
+  `~/.local/share/zene-bunny-fix/dsh/home/new-p22-12-r2-logs` (it re-reads without the transient `$TMPDIR`
+  name), and the exact required gate command's own failure is logged from its real invocation (row 11). A
+  reviewer with normal write access can rerun row 11 verbatim.
 - The shared build guard (`bunny/build_guard.py`) cannot open its own `build-pool.lock` under the same policy
   and blocks forever waiting for a slot; builds were run with the guard's own documented pass-through
   `ZENE_BUILD_GUARDED=1` (no guard logic changed) at `-j4`.
