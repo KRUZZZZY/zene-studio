@@ -434,7 +434,13 @@ bool DataFile::isRecoverableDocument( const QDomDocument & doc )
 	{
 		return false;
 	}
-	return ! root.elementsByTagName( DataFile::typeName( type ) ).item( 0 ).toElement().isNull();
+	// The content element is the root's own child (DataFile::DataFile(Type) and
+	// every save write it there). Loading takes the FIRST element of that name in
+	// document order (loadData's elementsByTagName(...).item(0)), so that is the
+	// one checked: a direct child that a nested same-named element precedes would
+	// be adopted and then loaded as the nested element.
+	const QDomElement content = root.elementsByTagName( DataFile::typeName( type ) ).item( 0 ).toElement();
+	return ! content.isNull() && content.parentNode() == root;
 }
 
 
