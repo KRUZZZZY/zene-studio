@@ -5516,3 +5516,4 @@ src/core/MixHelpers.cpp	new-p9-283: isSilent(const SampleFrame*, int) returns tr
 tests/src/core/AudioBufferTest.cpp	new-p9-283: regressions for MixHelpers::isSilent on normal frames, zero-frame (null and loud pointer) and negative frame counts.
 tests/src/core/GrooveTemplateTest.cpp	# GrooveTemplate target tick arithmetic overflows before clamping
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Extreme tempo-map values are cast to `int` before validation
+tests/src/core/RecordingRealtimeTest.cpp	new-p12-215 (integration, 2026-10-29): adds ringBufferReadRefusesNullDestination, the accepted cluster regression, alongside the line's ringBufferReadRejectsNullDestination (new-p10-345); both stage a frame and prove read(nullptr, n) returns 0 without consuming it, so removing the null guard in SampleFrameRingBuffer::read() segfaults the slot.

@@ -252,6 +252,29 @@ private slots:
 		QCOMPARE(asNumber(ring.writeBlock(block.data(), block.size())), asNumber(capacity));
 	}
 
+	//! The consumer half of the null contract: read() refuses a null destination
+	//! with 0 and leaves the staged frames in the ring, as writeBlock() refuses a
+	//! null source. Reading zero frames stays a no-op.
+	void ringBufferReadRefusesNullDestination()
+	{
+		SampleFrameRingBuffer ring{16};
+		const SampleFrame frame = frameAt(7);
+		QCOMPARE(asNumber(ring.writeBlock(&frame, 1)), asNumber(1));
+
+		QCOMPARE(asNumber(ring.read(nullptr, 0)), asNumber(0));
+		QCOMPARE(asNumber(ring.read(nullptr, 1)), asNumber(0));
+		QCOMPARE(asNumber(ring.available()), asNumber(1));
+
+		SampleFrame out;
+		QCOMPARE(asNumber(ring.read(&out, 1)), asNumber(1));
+		QCOMPARE(out.left(), frame.left());
+		QCOMPARE(out.right(), frame.right());
+		QCOMPARE(asNumber(ring.available()), asNumber(0));
+
+		// Empty ring: a null destination is still refused, and nothing is read.
+		QCOMPARE(asNumber(ring.read(nullptr, 1)), asNumber(0));
+	}
+
 	//! The producer/consumer contract pushInputFrames()/drainInputStage() rely on.
 	void ringBufferIsSpscUnderConcurrency()
 	{
