@@ -1094,6 +1094,7 @@ private slots:
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
 	void zeroCapacityDelayPassesInputThrough();
+	void monoDelayCannotBeCopied();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
@@ -4947,6 +4948,26 @@ void PluginPortsMigrationTest::zeroCapacityDelayPassesInputThrough()
 			QCOMPARE(sample, static_cast<lmms::sample_t>(frame));
 		}
 	}
+}
+
+void PluginPortsMigrationTest::monoDelayCannotBeCopied()
+{
+	// MonoDelay owns the sample_t ring it allocates in setSampleRate() and
+	// releases in both its destructor and setSampleRate(). The implicit copy
+	// operations would copy the pointer, so two objects would delete the same
+	// array - a double free. Unique ownership must be enforced by the type.
+	QVERIFY2(!std::is_copy_constructible_v<lmms::MonoDelay>,
+		"MonoDelay must not shallow-copy its owned delay buffer");
+	QVERIFY2(!std::is_copy_assignable_v<lmms::MonoDelay>,
+		"MonoDelay must not copy-assign its owned delay buffer");
+
+	// Moving is equally unsafe while the class keeps a raw owning pointer and
+	// no move operations (the implicit move would also copy the pointer), so
+	// the type must stay immovable as well as non-copyable.
+	QVERIFY2(!std::is_move_constructible_v<lmms::MonoDelay>,
+		"MonoDelay has no move constructor, so it must not be move-constructible");
+	QVERIFY2(!std::is_move_assignable_v<lmms::MonoDelay>,
+		"MonoDelay has no move assignment, so it must not be move-assignable");
 }
 
 /*!
