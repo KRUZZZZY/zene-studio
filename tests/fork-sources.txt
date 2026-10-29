@@ -2506,6 +2506,7 @@ tests/src/core/LinkPhaseLockTest.cpp
 tests/src/core/LinkRealtimeProbe.h
 tests/src/core/LinkedClipEditsTest.cpp
 tests/src/core/LinkedClipGroupEditsTest.cpp
+tests/src/core/LinkedModelGroupsTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp

@@ -5531,3 +5531,6 @@ data/wavetables/sqr.bin	cluster new-p12-328: regenerated with the corrected cuto
 data/wavetables/tri.bin	cluster new-p12-328: regenerated with the corrected cutoff; the shipped table had an aliased harmonic for len >= 8. Regression: BandLimitedWaveShipped.
 data/wavetables/moog.bin	cluster new-p12-328: regenerated because the moog table averages the triangle table, which had the aliased harmonic. Regression: BandLimitedWaveShipped.
 src/core/DrumSynth.cpp	new-p14-95: clamp the loudest-envelope level into the short range before converting it to short (the cast was undefined for Level=50000 squared to 2.5e9 with distortion on); covered by DrumSynthLevelTest.
+src/core/LinkedModelGroups.cpp	cluster new-p15-99: the destroyed-model callback and removeControl erase an entry only while it still registers that model (a stale destroy no longer erases a same-named replacement); the destroy callback keeps the name it was registered under; regression LinkedModelGroupsTest.
+include/LinkedModelGroups.h	cluster new-p15-99: declares the private eraseRegisteredModel helper that the destroy callback and removeControl share.
+tests/CMakeLists.txt	cluster new-p15-99: registers LinkedModelGroupsTest in the core test list next to AutomatableModelTest; no existing target properties change.
