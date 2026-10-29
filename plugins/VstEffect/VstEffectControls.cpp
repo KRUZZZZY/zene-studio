@@ -84,19 +84,18 @@ void VstEffectControls::loadSettings( const QDomElement & _this )
 		}
 		knobFModel.clear();
 		knobFModel.resize(paramCount);
-		QStringList s_dumpValues;
 		for (int i = 0; i < paramCount; ++i)
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-			s_dumpValues = dump[paramStr.data()].split(":");
+			const auto entry = parseParameterDumpEntry(dump.value(paramStr.data()));
 
 			knobFModel[i] = new FloatModel(0.0f, 0.0f, 1.0f, 0.01f, this, QString::number(i));
 			knobFModel[i]->loadSettings(_this, paramStr.data());
 
-			if (!(knobFModel[i]->isAutomated() || knobFModel[i]->controllerConnection()))
+			if (entry && !(knobFModel[i]->isAutomated() || knobFModel[i]->controllerConnection()))
 			{
-				knobFModel[i]->setValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
-				knobFModel[i]->setInitValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
+				knobFModel[i]->setValue(entry->value);
+				knobFModel[i]->setInitValue(entry->value);
 			}
 
 			connect(knobFModel[i], &FloatModel::dataChanged, this,
@@ -392,14 +391,12 @@ ManageVSTEffectView::ManageVSTEffectView( VstEffect * _eff, VstEffectControls * 
 	}
 
 	auto paramStr = std::array<char, 35>{};
-	QStringList s_dumpValues;
 
 	for( int i = 0; i < m_vi->paramCount; i++ )
 	{
 		std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-		s_dumpValues = dump[paramStr.data()].split(":");
-
-		const auto& description = s_dumpValues.at(1);
+		const auto entry = parseParameterDumpEntry(dump.value(paramStr.data()));
+		const auto description = entry ? entry->label : QString{};
 
 		auto knob = new VstPluginKnob{m_effect->m_plugin.get(), i, description, widget};
 		m_vstKnobs.push_back(knob);
@@ -407,7 +404,7 @@ ManageVSTEffectView::ManageVSTEffectView( VstEffect * _eff, VstEffectControls * 
 		if( !hasKnobModel )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "%d", i);
-			m_vi->knobFModel[i] = new FloatModel(LocaleHelper::toFloat(s_dumpValues.at(2)),
+			m_vi->knobFModel[i] = new FloatModel(entry ? entry->value : 0.0f,
 					0.0f, 1.0f, 0.01f, _eff, paramStr.data());
 		}
 
@@ -462,7 +459,6 @@ void ManageVSTEffectView::closeWindow()
 void ManageVSTEffectView::syncPlugin()
 {
 	auto paramStr = std::array<char, 35>{};
-	QStringList s_dumpValues;
 	const QMap<QString, QString> & dump = m_effect->m_plugin->parameterDump();
 
 	for( int i = 0; i < m_vi2->paramCount; i++ )
@@ -473,10 +469,11 @@ void ManageVSTEffectView::syncPlugin()
 					m_vi2->knobFModel[ i ]->controllerConnection() ) )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-			s_dumpValues = dump[paramStr.data()].split(":");
-			float f_value = LocaleHelper::toFloat(s_dumpValues.at(2));
-			m_vi2->knobFModel[i]->setValue(f_value, true);
-			m_vi2->knobFModel[i]->setInitValue(f_value);
+			if (const auto entry = parseParameterDumpEntry(dump.value(paramStr.data())))
+			{
+				m_vi2->knobFModel[i]->setValue(entry->value, true);
+				m_vi2->knobFModel[i]->setInitValue(entry->value);
+			}
 		}
 	}
 	m_effect->m_plugin->loadParameterLabels();

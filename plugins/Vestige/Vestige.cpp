@@ -221,19 +221,18 @@ void VestigeInstrument::loadSettings( const QDomElement & _this )
 		paramCount = dump.size();
 		auto paramStr = std::array<char, 35>{};
 		knobFModel = new FloatModel *[ paramCount ];
-		QStringList s_dumpValues;
 		for( int i = 0; i < paramCount; i++ )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-			s_dumpValues = dump[paramStr.data()].split(":");
+			const auto entry = parseParameterDumpEntry(dump.value(paramStr.data()));
 
 			knobFModel[i] = new FloatModel( 0.0f, 0.0f, 1.0f, 0.01f, this, QString::number(i) );
 			knobFModel[i]->loadSettings(_this, paramStr.data());
 
-			if( !( knobFModel[ i ]->isAutomated() || knobFModel[ i ]->controllerConnection() ) )
+			if( entry && !( knobFModel[ i ]->isAutomated() || knobFModel[ i ]->controllerConnection() ) )
 			{
-				knobFModel[ i ]->setValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
-				knobFModel[ i ]->setInitValue(LocaleHelper::toFloat(s_dumpValues.at(2)));
+				knobFModel[ i ]->setValue(entry->value);
+				knobFModel[ i ]->setInitValue(entry->value);
 			}
 
 			connect( knobFModel[i], &FloatModel::dataChanged, this,
@@ -1016,14 +1015,12 @@ ManageVestigeInstrumentView::ManageVestigeInstrumentView( VestigeInstrument * _i
 	}
 
 	auto paramStr = std::array<char, 35>{};
-	QStringList s_dumpValues;
 
 	for( int i = 0; i < m_vi->paramCount; i++ )
 	{
 		std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-		s_dumpValues = dump[paramStr.data()].split(":");
-
-		const auto& description = s_dumpValues.at(1);
+		const auto entry = parseParameterDumpEntry(dump.value(paramStr.data()));
+		const auto description = entry ? entry->label : QString{};
 
 		auto knob = new VstPluginKnob{m_vi->m_plugin, i, description, this};
 		m_vstKnobs.push_back(knob);
@@ -1031,7 +1028,7 @@ ManageVestigeInstrumentView::ManageVestigeInstrumentView( VestigeInstrument * _i
 		if( !hasKnobModel )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "%d", i);
-			m_vi->knobFModel[i] = new FloatModel(LocaleHelper::toFloat(s_dumpValues.at(2)),
+			m_vi->knobFModel[i] = new FloatModel(entry ? entry->value : 0.0f,
 				0.0f, 1.0f, 0.01f, castModel<VestigeInstrument>(), paramStr.data());
 		}
 
@@ -1085,7 +1082,6 @@ void ManageVestigeInstrumentView::closeWindow()
 void ManageVestigeInstrumentView::syncPlugin( void )
 {
 	auto paramStr = std::array<char, 35>{};
-	QStringList s_dumpValues;
 	const QMap<QString, QString> & dump = m_vi->m_plugin->parameterDump();
 
 	for( int i = 0; i < m_vi->paramCount; i++ )
@@ -1095,10 +1091,11 @@ void ManageVestigeInstrumentView::syncPlugin( void )
 		if( !( m_vi->knobFModel[ i ]->isAutomated() || m_vi->knobFModel[ i ]->controllerConnection() ) )
 		{
 			std::snprintf(paramStr.data(), paramStr.size(), "param%d", i);
-			s_dumpValues = dump[paramStr.data()].split(":");
-			float f_value = LocaleHelper::toFloat(s_dumpValues.at(2));
-			m_vi->knobFModel[i]->setValue(f_value, true);
-			m_vi->knobFModel[i]->setInitValue(f_value);
+			if (const auto entry = parseParameterDumpEntry(dump.value(paramStr.data())))
+			{
+				m_vi->knobFModel[i]->setValue(entry->value, true);
+				m_vi->knobFModel[i]->setInitValue(entry->value);
+			}
 		}
 	}
 	m_vi->m_plugin->loadParameterLabels();
