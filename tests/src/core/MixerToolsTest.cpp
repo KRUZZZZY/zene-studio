@@ -489,6 +489,27 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 	}
 
+	//! A group that holds a stale member (an index past the channel list) colours the members that exist, and the
+	//! stale index is refused before the channel list is read - observed through the LMMS_TESTING refusal seam.
+	void aStaleMemberIsSkippedNotRead()
+	{
+		Engine::mixer()->takeRefusedLookupsForTesting();  // start with no refusals counted
+		VcaGroup* group = Engine::mixer()->createVcaGroup(QStringLiteral("Stale"));
+		QVERIFY(group->addMember(4));  // channels 1 and 2 belong to the Drums group, 3 is taken later
+		const auto stale = static_cast<mix_ch_t>(Engine::mixer()->numChannels());
+		QVERIFY(group->addMember(stale));
+		QVERIFY(!channel(4)->color().has_value());
+		const ControlResult painted = run(QStringLiteral("vca.color_members"), {{QStringLiteral("group"), group->id()}, {QStringLiteral("color"), QStringLiteral("#445566")}});
+		QVERIFY2(painted.ok, qPrintable(painted.errorMessage));
+		QCOMPARE(painted.result.value(QStringLiteral("colored")).toInt(), 1);
+		QCOMPARE(channel(4)->color().value_or(QColor()).name(), QStringLiteral("#445566"));
+		QCOMPARE(Engine::mixer()->takeRefusedLookupsForTesting(), 0);  // the stale member was never looked up
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!channel(4)->color().has_value());
+		QVERIFY(group->removeMember(stale));
+		QVERIFY(group->removeMember(4));
+	}
+
 	void aClampOnlyAdjustmentDoesNothing()
 	{
 		Song* song = Engine::getSong();
