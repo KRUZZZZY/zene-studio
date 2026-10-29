@@ -389,6 +389,16 @@ float DrumSynth::GetPrivateProfileFloat(const char* sec, const char* key, float 
 //  an associative array or something once we have a datastructure to load in to.
 //  llama
 
+// Converts a noise-band step quotient to a whole step count of at least one. A NaN quotient (a negative
+// frequency makes the square root undefined) has no step and gives one. Other quotients are clamped into
+// the int range before the conversion, so the cast is always defined and in-range values are unchanged.
+long DrumSynth::noiseBandStepCount(double quotient)
+{
+	if (std::isnan(quotient)) { return 1; }
+	const double clamped = std::clamp(quotient, 0.0, static_cast<double>(std::numeric_limits<int>::max() - 1));
+	return 1 + static_cast<long>(clamped);
+}
+
 int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sample_rate_t Fs)
 {
 	using namespace std::numbers;
@@ -592,8 +602,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ = static_cast<float>(BFStep);
 	BQ = BQ * BQ / (10000.f - 6600.f * (std::sqrt(BF) - 0.19f));
-	BFStep = 1 + static_cast<int>((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
-	BFStep = std::max(BFStep, 1L);
+	BFStep = noiseBandStepCount((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
 
 	std::strcpy(sec, "NoiseBand2");
 	chkOn[4] = GetPrivateProfileInt(sec, "On", 0, dsfile);
@@ -606,8 +615,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep2 = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ2 = static_cast<float>(BFStep2);
 	BQ2 = BQ2 * BQ2 / (10000.f - 6600.f * (std::sqrt(BF2) - 0.19f));
-	BFStep2 = 1 + static_cast<int>((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
-	BFStep2 = std::max(BFStep2, 1L);
+	BFStep2 = noiseBandStepCount((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
 
 	// read distortion parameters
 	std::strcpy(sec, "Distortion");
