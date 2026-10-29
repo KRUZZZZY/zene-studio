@@ -278,14 +278,14 @@ bool readBound(const QJsonValue& value, T* out)
 	return true;
 }
 
-//! The filter's {key,velocity,position,length}_{min,max} bounds (an absent bound is open); false for a fractional one.
+//! The filter's {key,velocity,position,length}_{min,max} bounds (an absent bound is open); false for a bad bound or reversed pair.
 bool readRanges(const QJsonObject& json, NoteTransform::Filter* f)
 {
 	const auto range = [&json](const char* field, bool* use, auto* low, auto* high) {
 		const QJsonValue lo = json.value(QLatin1String(field) + QStringLiteral("_min"));
 		const QJsonValue hi = json.value(QLatin1String(field) + QStringLiteral("_max"));
 		*use = lo.isDouble() || hi.isDouble();
-		return readBound(lo, low) && readBound(hi, high);
+		return !(lo.isDouble() && hi.isDouble() && lo.toDouble() > hi.toDouble()) && readBound(lo, low) && readBound(hi, high);
 	};
 	return range("key", &f->useKeyRange, &f->minKey, &f->maxKey) && range("velocity", &f->useVelocityRange, &f->minVelocity, &f->maxVelocity)
 		&& range("position", &f->usePositionRange, &f->minPos, &f->maxPos) && range("length", &f->useLengthRange, &f->minLength, &f->maxLength);
@@ -353,14 +353,24 @@ bool readFilterKeys(const QJsonObject& json, ControlResult* error)
 	return true;
 }
 
+//! Whether a range the filter uses is empty: its minimum above its maximum (an open side sits at the Filter's
+//! default bound). Such a range matches no note, and 'invert' would then make the filter match EVERY note.
+bool anyRangeEmpty(const NoteTransform::Filter& f)
+{
+	return (f.useKeyRange && f.minKey > f.maxKey) || (f.useVelocityRange && f.minVelocity > f.maxVelocity)
+		|| (f.usePositionRange && f.minPos > f.maxPos) || (f.useLengthRange && f.minLength > f.maxLength);
+}
+
 bool filterFrom(const QJsonObject& json, NoteTransform::Filter* f, ControlResult* error)
 {
 	if (!readFilterKeys(json, error)) { return false; }
 	if (!readRanges(json, f))
 	{
-		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a filter bound is a whole number (a JSON number)"));
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("filter bounds are whole numbers and each minimum is no greater than its maximum"));
 		return false;
 	}
+	if (anyRangeEmpty(*f)) { *error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+		QStringLiteral("a filter range's minimum is above its maximum")); return false; }
 	return readInvert(json.value(QStringLiteral("invert")), f, error)
 		&& readScale(json.value(QStringLiteral("scale")), f, error);
 }
