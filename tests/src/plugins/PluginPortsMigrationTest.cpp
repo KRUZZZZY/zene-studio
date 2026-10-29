@@ -427,24 +427,26 @@ public:
 	LogCapture() : m_previous(qInstallMessageHandler(&LogCapture::handler))
 	{
 		s_count = 0;
-		s_first.clear();
+		firstMessage().clear();
 	}
 	~LogCapture() { qInstallMessageHandler(m_previous); }
 	LogCapture(const LogCapture&) = delete;
 	LogCapture& operator=(const LogCapture&) = delete;
 
 	int count() const { return s_count; }
-	QString first() const { return s_first; }
+	QString first() const { return firstMessage(); }
 
 private:
 	static void handler(QtMsgType, const QMessageLogContext&, const QString& message)
 	{
 		++s_count;
-		if (s_first.isEmpty()) { s_first = message; }
+		if (firstMessage().isEmpty()) { firstMessage() = message; }
 	}
 
 	inline static thread_local int s_count = 0;
-	inline static thread_local QString s_first;
+	// A function-local thread_local: MSVC rejects (C5046) a class-scope one of a
+	// non-trivial type inside an anonymous namespace.
+	static QString& firstMessage() { thread_local QString s; return s; }
 	QtMessageHandler m_previous = nullptr;
 };
 
@@ -3089,6 +3091,7 @@ auto renderGigNotesCountingHeap(lmms::Instrument& instrument, int key, int notes
 #endif
 
 
+#ifdef PART_C_MIGRATED_gigplayer // only the gig cases use it (MinGW -Werror=unused-function otherwise)
 //! Starts the given number of notes in one period and renders them.
 auto renderGigNotes(lmms::Instrument& instrument, int key, int notes) -> float
 {
@@ -3130,6 +3133,7 @@ auto renderGigNotes(lmms::Instrument& instrument, int key, int notes) -> float
 
 	return peak;
 }
+#endif
 #ifdef PART_C_MIGRATED_gigplayer // only the gig cases use it (MinGW -Werror=unused-function otherwise)
 
 

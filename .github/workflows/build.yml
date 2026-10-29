@@ -203,11 +203,21 @@ jobs:
       - name: Run tests
         run: |
           cd build/tests
+          # Both Linux runners died mid-suite with "The runner has received a shutdown signal" (run
+          # 40800856674) and left no evidence of why; log free disk and memory every 15 s so the next
+          # one names its cause.
+          ( while sleep 15; do echo "[resources] $(df -h / | tail -1) | $(free -m | sed -n 2p)"; done ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
           ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
             ctest --rerun-failed -V --timeout 1500
             exit 1
           }
+        env:
+          # The suite's documented test environment (CLAUDE.md, AGENTS.md): every QtTest binary on the
+          # offscreen platform. Without it the QTEST_MAIN suites abort on "could not connect to display".
+          QT_QPA_PLATFORM: offscreen
       - name: Signal-death backtrace (a SIGSEGV must name its frame)
         # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
@@ -444,11 +454,21 @@ jobs:
       - name: Run tests
         run: |
           cd build/tests
+          # Both Linux runners died mid-suite with "The runner has received a shutdown signal" (run
+          # 40800856674) and left no evidence of why; log free disk and memory every 15 s so the next
+          # one names its cause.
+          ( while sleep 15; do echo "[resources] $(df -h / | tail -1) | $(free -m | sed -n 2p)"; done ) &
+          monitor=$!
+          trap 'kill "$monitor" 2>/dev/null || true' EXIT
           ctest --output-on-failure --timeout 1500 -j2 || {
             echo "=== ctest failed: re-running only the failed tests, verbosely ==="
             ctest --rerun-failed -V --timeout 1500
             exit 1
           }
+        env:
+          # The suite's documented test environment (CLAUDE.md, AGENTS.md): every QtTest binary on the
+          # offscreen platform. Without it the QTEST_MAIN suites abort on "could not connect to display".
+          QT_QPA_PLATFORM: offscreen
       # BUGS_FOUND 11.20: every render suite runs ~50x slower here than on linux-x86_64 (run
       # 36747963198: ControlGoldenAudio 1018 s vs 20 s; two synchronous renders overran the 30 s
       # reply bound), with the same code and library versions. Best-effort evidence, never a verdict:
@@ -741,6 +761,10 @@ jobs:
             ctest --rerun-failed -V --timeout 1500
             exit 1
           }
+        env:
+          # The suite's documented test environment (CLAUDE.md, AGENTS.md): every QtTest binary on the
+          # offscreen platform. Without it the QTEST_MAIN suites abort on "could not connect to display".
+          QT_QPA_PLATFORM: offscreen
       - name: Signal-death backtrace (a SIGSEGV must name its frame)
         # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the
@@ -1411,8 +1435,10 @@ jobs:
         -DWANT_VST3=ON
         -DWANT_CLAP=ON
         -DCPACK_NSIS_EXECUTABLE=/clang64/bin/makensis.exe
-      CCACHE_MAXSIZE: 0
-      CCACHE_NOCOMPRESS: 1
+      # Capped and compressed: the cache lives on C:, the same disk as the build, and an
+      # unlimited uncompressed copy of every test object ran the runner out of space
+      # (run 40800856674: 134 links failed with "No space left on device").
+      CCACHE_MAXSIZE: 4G
       MAKEFLAGS: -j2 -k   # keep going: one CI round reports every compile error, not the first (the job still fails)
       # Explicit for the same reason as mingw's: the platform the gate judges is the one
       # this build TARGETS, not the one the runner happens to be.
@@ -1472,6 +1498,12 @@ jobs:
           cmake -B build $CMAKE_OPTS
       - name: Build
         run: cmake --build build -- -k 0   # Ninja keeps going: one round reports every error (job still fails)
+      - name: Disk usage after the build
+        # Measurement for the disk budget: free space on every mount, and what the build and ccache hold.
+        if: always()
+        run: |
+          df -h || true
+          du -sh build build/tests ~/AppData/Local/ccache 2>/dev/null || true
       - name: Run tests
         # R7.5 (relief plan): ctest on every platform. This job builds the whole test tree on a
         # real Windows ARM64 machine and, until now, ran none of it. Same step as msvc's.

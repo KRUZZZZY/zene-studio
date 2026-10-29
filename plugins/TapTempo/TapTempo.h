@@ -52,7 +52,13 @@ public:
 private:
 	static constexpr auto MaxIntervals = 3;
 	using clock = std::chrono::steady_clock;
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so the test target (built with LMMS_TESTING) must see it public too
+#endif
 	void updateTempo(clock::time_point now);
+#ifdef LMMS_TESTING
+private:
+#endif
 	std::chrono::time_point<clock> m_lastTap;
 	std::array<std::chrono::milliseconds, MaxIntervals> m_intervals;
 	int m_beat = 0;

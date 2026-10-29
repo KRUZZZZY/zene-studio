@@ -31,9 +31,20 @@
 
 #include <QtTest>
 
-#define private public // the regression needs a live mixer with the song pointer absent
 #include "Engine.h"
-#undef private
+
+namespace {
+// The regression needs a live mixer with the song pointer absent. Engine::s_song is private; an
+// explicit instantiation may name a private member, which reaches it without `#define private
+// public` (MSVC mangles the access level, so that redefinition no longer links against lmmsobjs).
+template <lmms::Song** Slot>
+struct EngineSongSlot
+{
+	friend lmms::Song** engineSongSlot() { return Slot; }
+};
+lmms::Song** engineSongSlot();
+template struct EngineSongSlot<&lmms::Engine::s_song>;
+} // namespace
 
 #include <QDataStream>
 #include <QDir>
@@ -894,17 +905,17 @@ private slots:
 		stop.insert(QStringLiteral("on"), false);
 		QVERIFY2(run(QStringLiteral("plugin.record"), stop).ok, "could not finish the test take");
 
-		QVERIFY(Engine::s_song != nullptr);
+		QVERIFY(*engineSongSlot() != nullptr);
 		const ControlCommand* command = ControlRegistry::instance()->command(QStringLiteral("plugin.recorder_land"));
 		QVERIFY(command != nullptr);
 		const ControlResult landed = [&]()
 		{
-			Song* song = Engine::s_song;
-			Engine::s_song = nullptr;
+			Song* song = *engineSongSlot();
+			*engineSongSlot() = nullptr;
 			// The public registry rejects a missing song before calling the handler; test the handler's
 			// own no-song safety directly so this failure path is covered too.
 			const ControlResult result = command->handler(device);
-			Engine::s_song = song;
+			*engineSongSlot() = song;
 			return result;
 		}();
 		QCOMPARE(landed.errorKind, ControlErrorKind::Refused);

@@ -112,7 +112,13 @@ private:
 	{
 		return hardwareConcurrency == 0 ? size_t{1} : hardwareConcurrency;
 	}
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so it must match what lmmsobjs (built with LMMS_TESTING) defines
+#endif
 	ThreadPool(size_t numWorkers);
+#ifdef LMMS_TESTING
+private:
+#endif
 	void run();
 	std::vector<std::thread> m_workers;
 	std::queue<std::packaged_task<void()>> m_queue;

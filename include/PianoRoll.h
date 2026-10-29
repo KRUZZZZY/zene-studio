@@ -306,7 +306,13 @@ private:
 	QMenu * m_semiToneMarkerMenu; // when you right click on the key area
 	int m_pianoKeySelected;
 
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so it must match what lmmsobjs (built with LMMS_TESTING) defines
+#endif
 	PianoRoll();
+#ifdef LMMS_TESTING
+private:
+#endif
 	bool editorWindowHasFocus() const;
 	PianoRoll( const PianoRoll & );
 	~PianoRoll() override;

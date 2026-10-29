@@ -133,7 +133,11 @@ private:
 	friend class gui::OrganicInstrumentView;
 
 
+#ifdef LMMS_TESTING // the Organic tests reach these through `#define private public`; MSVC mangles the access
+public slots:      // level into the symbol, so their moc output must see them public too
+#else
 private slots:
+#endif
 	void oscButtonChanged();
 	void updateVolume();
 	void updateDetuning();
@@ -194,7 +198,11 @@ private:
 	gui::PluginView* instantiateView( QWidget * _parent ) override;
 
 
+#ifdef LMMS_TESTING // the Organic tests reach these through `#define private public`; MSVC mangles the access
+public slots:      // level into the symbol, so their moc output must see them public too
+#else
 private slots:
+#endif
 	void updateAllDetuning();
 
 	friend class gui::OrganicInstrumentView;

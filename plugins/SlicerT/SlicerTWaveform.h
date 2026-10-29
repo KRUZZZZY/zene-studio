@@ -75,7 +75,13 @@ protected:
 	void mouseReleaseEvent(QMouseEvent* me) override;
 	void mouseMoveEvent(QMouseEvent* me) override;
 	void mouseDoubleClickEvent(QMouseEvent* me) override;
+#ifdef LMMS_TESTING // SlicerTZoomTest reaches this through `#define protected public`; MSVC mangles the access
+public:            // level into the symbol, so the compiled-in plugin sources must see it public too
+#endif
 	void wheelEvent(QWheelEvent* we) override;
+#ifdef LMMS_TESTING
+protected:
+#endif
 
 	void paintEvent(QPaintEvent* pe) override;
 	void resizeEvent(QResizeEvent* event) override;

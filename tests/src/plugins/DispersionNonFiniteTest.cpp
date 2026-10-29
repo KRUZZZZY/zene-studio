@@ -54,6 +54,11 @@
 #include "AudioBufferView.h"
 #include "DispersionControlDialog.h"
 
+// Engine.h and AutomatableModel.h come in first so the redefinition below reaches only the
+// Dispersion classes: MSVC mangles the access level, and lmmsobjs sees these two unchanged.
+#include "AutomatableModel.h"
+#include "Engine.h"
+
 #define private public
 #include "DispersionControls.h"
 #include "Dispersion.h"

@@ -66,6 +66,10 @@ if(WIN32)
 	if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 		add_compile_options(-Wno-mismatched-new-delete)
 	endif()
+	# Same COFF section limit as /bigobj above, for the MinGW and clang (windows-arm64) assemblers.
+	if(MINGW)
+		add_compile_options(-Wa,-mbig-obj)
+	endif()
 endif()
 
 set(LMMS_TESTS
