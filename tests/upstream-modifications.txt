@@ -5540,3 +5540,5 @@ src/core/DrumSynth.cpp	cluster new-p20-43: the noise-band step quotient is conve
 include/DrumSynth.h	cluster new-p20-43: expose the static noiseBandStepCount seam for the out-of-range step regression in DrumSynthTest.
 src/gui/widgets/Graph.cpp	cluster new-p9-163: graphModel stores reversed range bounds in order, in both the constructor and setRange (setRange swaps them before its no-op check and the sample trim), so std::clamp never gets lo > hi; regression tests/src/gui/EnvelopeGraphTest.cpp (setRange*, constructorStoresReversedBoundsInOrder).
 tests/src/core/ClipConsolidateTest.cpp	# Consolidation can remove clips without successfully updating the composite
+tests/src/core/ControlGrooveCommandsTest.cpp	# Overlong groove names can overwrite distinct templates
+tests/src/core/GrooveTemplateTest.cpp	# Overlong groove names can overwrite distinct templates

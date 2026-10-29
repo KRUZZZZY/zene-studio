@@ -106,10 +106,18 @@ GrooveTemplate::GrooveTemplate(const QString& name, tick_t lengthTicks, tick_t s
 
 bool GrooveTemplate::isWritable(const QString& name, tick_t lengthTicks, tick_t stepTicks)
 {
-	if (normalisedName(name).isEmpty()) { return false; }
+	// The name is judged BEFORE it is normalised: normalising cuts an overlong name
+	// down to its first 64 characters, which may be a different groove's name.
+	if (!nameFits(name) || normalisedName(name).isEmpty()) { return false; }
 	if (stepTicks < MinStepTicks || stepTicks > MaxStepTicks) { return false; }
 	if (lengthTicks <= 0 || lengthTicks % stepTicks != 0) { return false; }
 	return lengthTicks / stepTicks <= MaxSteps;
+}
+
+
+bool GrooveTemplate::nameFits(const QString& name)
+{
+	return name.trimmed().size() <= MaxNameLength;
 }
 
 

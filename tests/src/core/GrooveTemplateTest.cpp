@@ -49,6 +49,60 @@ class GrooveTemplateTest : public QObject
 	Q_OBJECT
 private slots:
 
+	//! An overlong name is REFUSED, never truncated: a name longer than
+	//! MaxNameLength is a different name from its first 64 characters, so truncating
+	//! it would let it replace that other groove, or be refused as if it were that one.
+	void overlongNamesAreRefusedNotTruncated()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString first = prefix + QStringLiteral("-one");
+		const QString second = prefix + QStringLiteral("-two");
+
+		QVERIFY(GrooveTemplate::isWritable(prefix, 48, 12));
+		QVERIFY(!GrooveTemplate::isWritable(first, 48, 12));
+		QVERIFY(!GrooveTemplate::isWritable(second, 48, 12));
+		// Blanks are trimmed before the bound applies, so they do not count against it.
+		QVERIFY(GrooveTemplate::isWritable(QStringLiteral("  ") + prefix + QStringLiteral("  "),
+			48, 12));
+	}
+
+	//! An overlong name must not rename onto, or load over, the groove it would
+	//! truncate to: the pool and the project file both hold the name as the key.
+	void overlongNamesDoNotRenameOrLoadOntoOtherGrooves()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString first = prefix + QStringLiteral("-one");
+
+		// A rename onto the overlong name is refused and creates no truncated alias.
+		GroovePool pool;
+		QVERIFY(pool.set(GrooveTemplate(QStringLiteral("swing"), 48, 12), nullptr));
+		QVERIFY2(!pool.rename(QStringLiteral("swing"), first),
+			"rename accepted an overlong name");
+		QVERIFY(pool.find(QStringLiteral("swing")) != nullptr);
+		QVERIFY2(pool.find(prefix) == nullptr, "rename stored the truncated name");
+	}
+
+	//! A project holding two grooves whose names differ only after the 64th
+	//! character must not let the second replace the first.
+	void overlongGroovesDoNotLoadOverEachOther()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString first = prefix + QStringLiteral("-one");
+		const QString second = prefix + QStringLiteral("-two");
+		GroovePool pool;
+
+		// A project holding two grooves that differ only after the 64th character loads
+		// neither of them, and the valid groove beside them still loads.
+		QVERIFY(pool.fromXml(QStringLiteral("<groove-pool>"
+			"<groove name=\"%1\" length=\"48\" step=\"12\"/>"
+			"<groove name=\"%2\" length=\"48\" step=\"12\"/>"
+			"<groove name=\"shuffle\" length=\"48\" step=\"12\"/>"
+			"</groove-pool>").arg(first, second)));
+		QCOMPARE(pool.size(), 1);
+		QVERIFY(pool.find(QStringLiteral("shuffle")) != nullptr);
+		QVERIFY2(pool.find(prefix) == nullptr, "loading an overlong name stored a truncated groove");
+	}
+
 	//! The geometry the engine accepts, and the bounds every refusal names.
 	void theGeometryBoundsAreTheEnginesOwn()
 	{
@@ -62,7 +116,8 @@ private slots:
 			(GrooveTemplate::MaxSteps + 1) * 12, 12));
 		QVERIFY(GrooveTemplate::isWritable(QStringLiteral("feel"),
 			GrooveTemplate::MaxSteps * 12, 12));
-		// A name is trimmed and bounded, not rejected at 65 characters.
+		// normalisedName is the STORED form (trimmed and bounded). It is not the admission
+		// test: isWritable refuses an overlong name, see overlongNamesAreRefusedNotTruncated.
 		QCOMPARE(GrooveTemplate::normalisedName(QStringLiteral("  feel \n")),
 			QStringLiteral("feel"));
 		QCOMPARE(GrooveTemplate::normalisedName(QString(80, QLatin1Char('x'))).size(),

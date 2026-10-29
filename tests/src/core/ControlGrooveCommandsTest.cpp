@@ -441,6 +441,69 @@ private slots:
 			{{QStringLiteral("name"), QStringLiteral("after")}}).ok);
 	}
 
+	//! An overlong name is REFUSED on the wire by every command that writes one. It
+	//! is never truncated onto the 64-character groove it begins with: that would
+	//! overwrite the groove, or rename onto it, under a name nobody typed.
+	void overlongNamesAreRefusedOnTheWire()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString overlong = prefix + QStringLiteral("-two");
+
+		// groove.rename: the overlong target would be stored as 'prefix', a name that
+		// does not exist yet, instead of being refused.
+		QVERIFY(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), QStringLiteral("swing")},
+				{QStringLiteral("length_ticks"), 12}, {QStringLiteral("step_ticks"), 12}}).ok);
+		QCOMPARE(run(QStringLiteral("groove.rename"),
+			{{QStringLiteral("name"), QStringLiteral("swing")}, {QStringLiteral("to"), overlong}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(namesInPool().contains(QStringLiteral("swing")), "the refused rename moved swing");
+		QVERIFY2(!namesInPool().contains(prefix), "the overlong rename stored a truncated name");
+	}
+
+	//! groove.set and groove.extract under an overlong name are refused, so they
+	//! cannot replace the 64-character groove the name begins with.
+	void overlongNamesAreRefusedOnSetAndExtract()
+	{
+		const QString prefix(GrooveTemplate::MaxNameLength, QLatin1Char('g'));
+		const QString overlong = prefix + QStringLiteral("-two");
+		const QJsonArray oneStep{QJsonObject{
+			{QStringLiteral("slot"), 0}, {QStringLiteral("timing"), 2},
+			{QStringLiteral("velocity"), 4}}};
+
+		// groove.set and groove.extract under the overlong name would replace the
+		// 64-character groove beside it. Both are refused, and nothing is written.
+		QVERIFY(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), prefix}, {QStringLiteral("length_ticks"), 12},
+				{QStringLiteral("step_ticks"), 12}, {QStringLiteral("steps"), oneStep}}).ok);
+		const ControlResult before = run(QStringLiteral("groove.list"),
+			{{QStringLiteral("name"), prefix}});
+		QVERIFY(before.ok);
+
+		const QJsonArray otherStep{QJsonObject{
+			{QStringLiteral("slot"), 0}, {QStringLiteral("timing"), -2},
+			{QStringLiteral("velocity"), 9}}};
+		QCOMPARE(run(QStringLiteral("groove.set"),
+			{{QStringLiteral("name"), overlong}, {QStringLiteral("length_ticks"), 12},
+				{QStringLiteral("step_ticks"), 12}, {QStringLiteral("steps"), otherStep}})
+			.errorKind, ControlErrorKind::InvalidArgs);
+
+		const QString clip = makeClip();
+		QVERIFY2(!clip.isEmpty(), "the fixture clip was not created");
+		QVERIFY(addNote(clip, 60, 5, 100));
+		QVERIFY(addNote(clip, 62, 17, 100));
+		QCOMPARE(run(QStringLiteral("groove.extract"),
+			{{QStringLiteral("clip"), clip}, {QStringLiteral("name"), overlong},
+				{QStringLiteral("grid"), 12}}).errorKind, ControlErrorKind::InvalidArgs);
+
+		const ControlResult after = run(QStringLiteral("groove.list"),
+			{{QStringLiteral("name"), prefix}});
+		QVERIFY(after.ok);
+		QVERIFY2(after.result == before.result,
+			"an overlong name changed the groove it would have truncated onto");
+		QVERIFY2(!namesInPool().contains(overlong), "an overlong name was stored");
+	}
+
 	//! Every refusal is typed, and changes nothing - not the pool, not a clip.
 	void refusalsAreTypedAndChangeNothing()
 	{
