@@ -94,8 +94,10 @@ has one Linux/Qt 6.12 configuration. That is a stated limit, not a claim.
   above therefore ran the real `/usr/bin/cmake` (same build tree, same flags, `-j4`) and wrote its log to
   the writable scratch dir `/home/kruzzzzy/.cache/zene-tmp/Q050-273.1.r2/logs/`. No exit code reported here
   came through a pipe.
-- `submit_check.py` reports `FAIL gates (feature_check.py)` and `FAIL report ... missing`; the first is because
-  `feature_check.py` itself dies writing `<worktree>-feature-check/` beside the worktree (same permission
-  wall). I reproduced its ratchet comparison in-process with its own `feature_check` helpers: **complexity
-  PASS (no new over-target function in a changed file), file-length PASS (no item in a changed file)**; the
-  six simple gates were run directly and all exited 0 (listed above). The missing report is this file.
+- `submit_check.py`'s only remaining red is `FAIL gates (feature_check.py)`, and that is the tool's log
+  directory, not a gate: `feature_check.py` dies creating `<worktree>-feature-check/` beside the worktree
+  (same permission wall). Run with only that directory redirected to writable scratch (every gate command
+  unchanged), it prints its full table and **RESULT: PASS** — fork-sources exit 0, all-sources-reproduce
+  exit 0, no-upstream-regression exit 0, check-namespace exit 0, no-tautology exit 0, doc-figures exit 0,
+  complexity "no new item in your files", file-length "no new item in your files" (14 changed files, base
+  `64bd86ae9`). The six simple gates were also run directly and all exited 0 (listed above).
