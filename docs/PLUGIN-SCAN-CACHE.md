@@ -111,8 +111,10 @@ Shape:
   always re-scanned.
 * Failure tolerance is the contract: a missing file, an unreadable file, invalid JSON, a wrong
   format version or an individually malformed record all degrade to a full scan — `load()` returns
-  false and the cache stays empty. `save()` writes through `QSaveFile`, so a failed write leaves the
-  previous cache intact. Nothing in the discovery result depends on the cache file's state; it only
+  false and the cache stays empty. A file larger than 64 MiB (`s_maxCacheFileBytes`) is refused
+  before it is read, and `save()` refuses to write one, so a cache `load()` cannot read back is never
+  left on disk. `save()` writes through `QSaveFile`, so a failed write leaves the previous cache
+  intact. Nothing in the discovery result depends on the cache file's state; it only
   decides how much work a scan repeats.
 
 ### 2.2 Where discovery changes — `src/core/PluginFactory.cpp`
