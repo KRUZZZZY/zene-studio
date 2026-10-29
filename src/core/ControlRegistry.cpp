@@ -172,6 +172,9 @@ void ControlRegistry::destroy()
 {
 	delete s_instance;
 	s_instance = nullptr;
+	// Readiness is what the application told the instance that just went away.
+	// The next instance() has not been told, so it starts not ready.
+	s_ready = false;
 }
 
 void ControlRegistry::registerCommand(const ControlCommand& command)
