@@ -105,7 +105,50 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / m_buffer->sampleRate();
 	const auto freqRatio = frequency() / DefaultBaseFreq;
-	state->m_resampler.setRatio(sampleRateRatio * freqRatio * ratio);
+	const double resampleRatio = sampleRateRatio * freqRatio * ratio;
+	state->m_resampler.setRatio(resampleRatio);
+
+	/*! cluster null-1: a 1:1 read is the source, not the converter's output.
+	 *
+	 *  libsamplerate's converters are not identity filters, and the linear one -
+	 *  the default - delays by ONE SAMPLE at ratio 1.0: it emits the first input
+	 *  frame twice (measured on the linked library, all converter modes; see the
+	 *  fix's log). That made an offline render of a unity clip at the source's
+	 *  own rate exactly one sample late, and made `zene render` of a plain
+	 *  sample track stop being bit-identical to the file it plays.
+	 *
+	 *  At ratio 1.0 with default pitch there is nothing to convert, so the read
+	 *  is the source's frames and the delay cannot enter the render. This branch
+	 *  is a read-and-copy of the same frames the converter would have consumed -
+	 *  same cursor advance, same window/loop bounds, same amplification - so every
+	 *  OTHER ratio keeps the converter path and its exact arithmetic. The frame
+	 *  buffer staging (`m_bufferView`) is bypassed here and left empty, so a
+	 *  ratio change in a later call cannot replay stale staged frames. */
+	if (resampleRatio == 1.0)
+	{
+		if (!state->m_bufferView.empty())
+		{
+			// Staged frames are unconsumed source frames; at unity they are the output as well.
+			const auto staged = std::min(numFrames, state->m_bufferView.size());
+			std::copy_n(state->m_bufferView.data(), staged, dst);
+			state->m_bufferView = state->m_bufferView.subspan(staged);
+			dst += staged;
+			numFrames -= staged;
+		}
+		while (numFrames > 0)
+		{
+			const auto chunk = std::min(numFrames, state->m_buffer.size());
+			const auto rendered = render(state->m_buffer.data(), static_cast<f_cnt_t>(chunk), state, loop);
+			std::copy_n(state->m_buffer.data(), rendered, dst);
+			if (rendered < chunk) { std::fill_n(dst + rendered, chunk - rendered, SampleFrame{}); }
+			dst += chunk;
+			numFrames -= chunk;
+			// The source ended (the window or the loop): the rest of the block is silence.
+			if (rendered < chunk) { break; }
+		}
+		if (numFrames > 0) { std::fill_n(dst, numFrames, SampleFrame{}); }
+		return true;
+	}
 
 	// TODO: These kind of playback pipelines/graphs are repeated within other parts of the codebase that work with
 	// audio samples. We should find a way to unify this but the right abstraction is not so clear yet.
