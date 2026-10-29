@@ -24,13 +24,13 @@ around the older inline staging block, so both sides changed the same region.
 
 Resolution (new design NOT needed; the accepted semantics are kept and the train's helper is kept):
 
-- `src/core/ProjectRevisions.cpp:168-176` - `emptyRevisionRefusal()`: the accepted refusal message, extracted to one
+- `src/core/ProjectRevisions.cpp:171-176` - `emptyRevisionRefusal()`: the accepted refusal message, extracted to one
   helper so the "empty" wording a client sees is identical on both paths.
 - `:178-202` - `copyNonEmptyRevision()`: refuses a zero-byte source BEFORE copying it (the accepted QA correction), and
   additionally checks the STAGED bytes after a successful copy, removing the stage and refusing if it is empty. That
   keeps the accepted patch's "check the bytes that would be installed" property for a source that is not a regular file
   (a FIFO or device copies as zero bytes without being empty by `isFile()`).
-- `:212-253` - `stageRestoreTarget()`: keeps the train's cap check first (unchanged), then refuses and REMOVES a
+- `:217-253` - `stageRestoreTarget()`: keeps the train's cap check first (unchanged), then refuses and REMOVES a
   zero-byte pending stage, then stages a fresh copy through `copyNonEmptyRevision()`. Both orderings are pre-rotation,
   so the live file is still never rotated out for a restore that would install nothing.
 - `:432-439` - `restoreProjectRevision()` calls the helper, with the accepted patch's comment.
