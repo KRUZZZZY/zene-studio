@@ -267,10 +267,12 @@ ControlResult restoreTiming(const QJsonObject& args)
 
 //! One filter bound into @a out, held to what its type carries; false for a value that is not a whole number
 //! (QJsonValue::toInt would read 60.5 as 0, an open bound where a tight one was meant) - a string "60" too.
+//! An explicit null is refused like any other wrong value: only an OMITTED bound (undefined) is open, since a
+//! null read as open made {key_min: null} match every note and 'action: remove' then removed them all.
 template <typename T>
 bool readBound(const QJsonValue& value, T* out)
 {
-	if (value.isUndefined() || value.isNull()) { return true; }  // absent: the bound is open
+	if (value.isUndefined()) { return true; }  // omitted: the bound is open
 	if (!value.isDouble()) { return false; }
 	const double v = value.toDouble();
 	if (v != std::floor(v)) { return false; }
@@ -310,10 +312,10 @@ bool readInvert(const QJsonValue& value, NoteTransform::Filter* f, ControlResult
 //! filter.scale as NoteTransform::Filter's scale channel: the string "in" / "out" (the scale
 //! context's pitch classes). A value of the wrong type used to become an EMPTY string through
 //! toString(), which the code below reads as "no scale filter" - so a malformed filter matched
-//! every note, and 'action: remove' then removed all of them.
+//! every note, and 'action: remove' then removed all of them. An explicit null is such a value too.
 bool readScale(const QJsonValue& value, NoteTransform::Filter* f, ControlResult* error)
 {
-	if (value.isUndefined() || value.isNull()) { return true; }  // absent: no scale channel
+	if (value.isUndefined()) { return true; }  // omitted: no scale channel
 	if (!value.isString())
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,

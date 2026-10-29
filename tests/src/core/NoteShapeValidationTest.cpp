@@ -201,6 +201,37 @@ private slots:
 		QCOMPARE(noteIds(), survivors);
 	}
 
+	//! Luna finding new-p10-52 (BUG 17): readBound read an explicit JSON null like an omitted bound, so
+	//! {key_min: null} left the key range open and, with no other bound, matched every note - 'action:
+	//! remove' then removed them all. A null is a value the caller got wrong; an open side is what an
+	//! omitted property means. The scale channel had the same null-as-absent read.
+	void anExplicitNullFilterValueIsRefusedNotReadAsOpen()
+	{
+		freshClip();
+		const QStringList before = noteIds();
+		const QJsonValue null(QJsonValue::Null);
+
+		// (a) a null bound on its own is refused - it used to match all three notes and remove them.
+		QCOMPARE(transform({{QStringLiteral("key_min"), null}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// (b) beside a real bound it is refused too, not taken for an open side of the range.
+		QCOMPARE(transform({{QStringLiteral("key_max"), 61}, {QStringLiteral("velocity_min"), null}}, "remove"),
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// (c) a null scale is not "no scale filter": it used to widen the filter to every note.
+		QCOMPARE(transform({{QStringLiteral("scale"), null}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// (d) select_where reads the same filter, so it refuses the null too and leaves the selection alone.
+		const ControlResult selected = run(QStringLiteral("note.select_where"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("filter"), QJsonObject{{QStringLiteral("key_min"), null}}}});
+		QVERIFY(!selected.ok);
+		QCOMPARE(selected.errorKind, ControlErrorKind::InvalidArgs);
+		// (e) an OMITTED bound is still open: key_max 61 with no key_min matches the two low notes,
+		//     so only the note above survives.
+		QCOMPARE(transform({{QStringLiteral("key_max"), 61}}, "remove"), ControlErrorKind::None);
+		QCOMPARE(noteIds(), QStringList{before.at(2)});
+	}
+
 	//! Luna cluster new-p8-37: an unknown filter key such as key_mni was ignored, leaving an empty
 	//! filter that matched every note and let action: remove erase the clip.
 	void anUnknownFilterKeyIsRefusedWithoutRemovingNotes()
