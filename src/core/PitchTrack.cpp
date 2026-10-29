@@ -68,7 +68,7 @@ float bestLag(const std::vector<float>& d, int maxLag)
 	for (int tau = 2; tau + 1 < maxLag; ++tau)
 	{
 		if (cmnd[static_cast<std::size_t>(tau)] >= Threshold) { continue; }
-		while (tau + 1 < maxLag && cmnd[static_cast<std::size_t>(tau) + 1] < cmnd[static_cast<std::size_t>(tau)]) { ++tau; }
+		while (tau + 2 < maxLag && cmnd[static_cast<std::size_t>(tau) + 1] < cmnd[static_cast<std::size_t>(tau)]) { ++tau; }
 		const float a = cmnd[static_cast<std::size_t>(tau) - 1];
 		const float b = cmnd[static_cast<std::size_t>(tau)];
 		const float c = cmnd[static_cast<std::size_t>(tau) + 1];
