@@ -266,6 +266,15 @@ Bus/mixer/engine family, same build (`79-family-b3-run.log`, EXIT=0, **12/12**):
 | `tests/fork-sources.txt`, `tests/all-sources.txt` | both new test files registered |
 | `tests/upstream-modifications.txt` | the three inherited files' divergences recorded |
 
+Final targeted run after all four commits
+(`build/tests`, `$TMPDIR/logs-null-1/98-final-tests.log`, EXIT=0):
+
+```
+1/2 Test #14: AudioEngineNullRenderTest ........   Passed
+2/2 Test #15: AudioBusRegistrationTest .........   Passed
+100% tests passed out of 2
+```
+
 All new test sources are listed in `tests/fork-sources.txt` and
 `tests/all-sources.txt`; the latter is regenerated from its own header recipe, so the
 lists reproduce (`all-sources-reproduce.sh`: `REPRODUCES`, EXIT=0).
@@ -274,10 +283,16 @@ lists reproduce (`all-sources-reproduce.sh`: `REPRODUCES`, EXIT=0).
 
 ## Gates
 
-`feature_check.py` runs eight gates. Its log directory
-(`<worktree>-feature-check/`) is not writable in this session, so each gate was run
-directly in the worktree with the same command `feature_check.py` uses, and logged to
-`$TMPDIR/logs-null-1/89-<gate>.log`:
+`feature_check.py` runs eight gates. It can only write its log directory to
+`<worktree>-feature-check/` — a sibling of the worktree — and this session's sandbox
+denies every write outside the worktree, including that directory at mode 0777
+(`touch` → `EACCES`; the directory's own `probe.txt` is likewise denied). The gates were
+therefore run twice: each one directly in the worktree with the identical command
+(logged to `$TMPDIR/logs-null-1/89-<gate>.log`), and then as the unmodified
+`feature_check.py` with only its log path redirected into the worktree
+(`build/feature-check/`, `$TMPDIR/logs-null-1/96-feature-check-inworktree.log`), which
+reported **RESULT: PASS**. That redirection changes no gate logic: `feature_check.py`'s
+only use of the path is `log.write_text(...)`:
 
 | gate | command | exit |
 |---|---|---|
@@ -289,6 +304,21 @@ directly in the worktree with the same command `feature_check.py` uses, and logg
 | doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
 | complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 overall (train baseline), **0 hits in this cluster's files** |
 | file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 overall (train baseline), **0 hits in this cluster's files** |
+
+The same eight gates through the unmodified runner (log path redirected only):
+
+```
+$TMPDIR/logs-null-1/96-feature-check-inworktree.log   EXIT=0
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
 
 The two ratchet gates are red on the train on purpose; they PASS when nothing new
 appears in a changed file. Filtering their output to this cluster's files
