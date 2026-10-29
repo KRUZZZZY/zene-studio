@@ -325,6 +325,29 @@ struct SaveSubject
 	bool cell = false;       //!< the subject is a launcher cell, not a Clip
 };
 
+//! Whether @a target and @a source are the same file (a cell saved onto its own audio): a write there
+//! would read one file and rename another over it, and on Windows could not even open the temporary.
+bool sameFile(const QString& target, const QString& source)
+{
+	const QFileInfo a(target);
+	const QFileInfo b(source);
+	if (a.exists() && b.exists())
+	{
+		const QString canonicalA = a.canonicalFilePath();
+		const QString canonicalB = b.canonicalFilePath();
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+		return canonicalA.compare(canonicalB, Qt::CaseInsensitive) == 0 && !canonicalA.isEmpty();
+#else
+		return canonicalA == canonicalB && !canonicalA.isEmpty();
+#endif
+	}
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+	return QDir::cleanPath(a.absoluteFilePath()).compare(QDir::cleanPath(b.absoluteFilePath()), Qt::CaseInsensitive) == 0;
+#else
+	return QDir::cleanPath(a.absoluteFilePath()) == QDir::cleanPath(b.absoluteFilePath());
+#endif
+}
+
 //! Whether @a slot at (track, scene) is one this stage can save; false with the typed refusal in @a error.
 bool cellSavable(const ClipSlot& slot, int track, int scene, ControlResult* error)
 {
@@ -469,6 +492,12 @@ ControlResult saveClip(const QJsonObject& args)
 	if (!resolveSaveSubject(args, &subject, &error)) { return error; }
 	QString path;
 	if (!targetPath(args, subject.audio, subject.defaultName, &path, &error)) { return error; }
+	if (subject.cell && sameFile(path, subject.source))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the cell's audio is already '%1': saving it there would replace the file it is reading; "
+				"choose another 'name' or 'dir'").arg(path));
+	}
 	// What the write is about to replace, read before it: undo puts that file back.
 	PreviousFile previous;
 	QString why;

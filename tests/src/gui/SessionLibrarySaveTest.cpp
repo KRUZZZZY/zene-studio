@@ -364,6 +364,17 @@ private slots:
 				qPrintable(QStringLiteral("%1 produced a file").arg(source)));
 		}
 		setSource(0, 0, m_tone);
+
+		// A cell saved onto its own audio file is refused, not read and renamed over at once.
+		const QString sourceDir = QFileInfo(m_tone).absolutePath();
+		const ControlResult ontoSource = run(QStringLiteral("browser.save_clip"), {{QStringLiteral("track"), 0},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("dir"), sourceDir}, {QStringLiteral("name"), QStringLiteral("tone")},
+			{QStringLiteral("overwrite"), true}});
+		QCOMPARE(ontoSource.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(ontoSource.errorMessage.contains(QStringLiteral("already")), qPrintable(ontoSource.errorMessage));
+		QFile unrenamed(m_tone);
+		QVERIFY(unrenamed.open(QIODevice::ReadOnly));
+		QVERIFY(unrenamed.read(4) == QByteArray("RIFF"));
 	}
 
 	/*! The bound is the DECODED size, not the source file's: a 16-bit mono WAV is 8 bytes a frame once
