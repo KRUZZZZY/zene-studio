@@ -467,6 +467,48 @@ Envelope=0,00000001 100,0
 		QVERIFY(samples == nullptr);
 	}
 
+	/*! An envelope past the renderer's own longest hold must be refused before
+	 *  any buffer is sized from it. At the largest stretch (Stretch=1000, the
+	 *  10x clamp) a 500000 sample envelope asks for about 5M frames; the
+	 *  unbounded renderer allocated and rendered all of them. */
+	void refusesAnEnvelopeLongerThanTheRendererHold()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath("long-hold.ds"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray content = "[General]\nVersion=DrumSynth v2.0\nStretch=1000\n\n"
+			"[Tone]\nOn=1\nEnvelope=0,100 500000,0\n";
+		QCOMPARE(file.write(content), static_cast<qint64>(content.size()));
+		file.close();
+
+		int16_t* samples = nullptr;
+		DrumSynth synth;
+		const int frames = synth.GetDSFileSamples(file.fileName(), samples, 1, 44100);
+		const auto owned = std::unique_ptr<int16_t[]>{samples};
+
+		QCOMPARE(frames, 0);
+		QVERIFY(samples == nullptr);
+	}
+
+	/*! The longest envelope the shipped library uses (data/samples/drumsynth/misc/verylong.ds,
+	 *  438020 samples) is under the renderer's hold, so it must still render at the
+	 *  largest stretch. */
+	void rendersTheLongestShippedEnvelopeAtMaximumStretch()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath("shipped-hold.ds"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray content = "[General]\nVersion=DrumSynth v2.0\nStretch=1000\n\n"
+			"[Tone]\nOn=1\nEnvelope=0,100 438020,0\n";
+		QCOMPARE(file.write(content), static_cast<qint64>(content.size()));
+		file.close();
+
+		const auto samples = render(file.fileName());
+		QVERIFY2(!samples.empty(), "an envelope under the renderer's hold must still render");
+	}
+
 	void mapsAFractionalStepAboveMaxToTheSafeMaximumLength()
 	{
 		// globals declared at file scope below
