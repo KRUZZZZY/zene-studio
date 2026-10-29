@@ -484,14 +484,17 @@ graphModel::graphModel(float ymin, float ymax, int length, Model* parent, bool d
 	Model(parent, tr("Graph"), defaultConstructed),
 	m_samples(std::max(length, MinGraphLength)),
 	m_length(std::max(length, MinGraphLength)),
-	m_minValue(ymin),
-	m_maxValue(ymax),
+	// A reversed pair names the same interval: store it ordered, as std::clamp needs
+	m_minValue(ymin > ymax ? ymax : ymin),
+	m_maxValue(ymin > ymax ? ymin : ymax),
 	m_step(std::clamp(step, 0.f, std::abs(ymax - ymin)))
 {
 }
 
 void graphModel::setRange(float ymin, float ymax)
 {
+	// A reversed pair names the same interval: store it ordered, as std::clamp needs
+	if (ymin > ymax) { std::swap(ymin, ymax); }
 	if (ymin == m_minValue && ymax == m_maxValue) { return; }
 	// Step sizes less than zero or larger than the entire range of
 	// values are nonsense, clamp those
